@@ -5,8 +5,8 @@
 # mirror, which on some days gave the runners 18 kB a second and held a
 # walks job for twelve minutes, #462.
 #
-# The job image in .github/workflows/ci.yml builds it and keeps it in
-# GitHub's container registry, tagged by a sum of this file, of
+# .github/workflows/ci-image.yml builds it and keeps it in GitHub's
+# container registry, tagged by a sum of this file, of
 # scripts/ci-packages.sh and of the Playwright version in
 # frontend/package-lock.json. So a change to any of them makes a new image
 # and an unchanged one is pulled as it is. A file this one comes to read

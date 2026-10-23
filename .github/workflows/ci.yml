@@ -242,7 +242,7 @@ jobs:
   # others when they run, and one linux when they are skipped. The step
   # shard turns each into its pattern.
   #
-  # In the CI image, see the job image, as the walks are and for the same
+  # In the CI image, see ci-image.yml, as the walks are and for the same
   # reasons, so no machine waits on the Ubuntu mirror. A change to the
   # image starts it too, since the tests then run on another machine, but
   # not the job macos, which does not run in it.
@@ -356,59 +356,20 @@ jobs:
             ~/.cache/go-build
           key: go-v2-linux-${{ runner.os }}-${{ steps.shard.outputs.flags }}-${{ github.sha }}
 
-  # The machine the walks and the job linux run on,
-  # .github/ci-image/Dockerfile: Ubuntu with every system package they use
-  # and Playwright's Chromium already in it, so neither downloads from the
-  # Ubuntu mirror, which on some days held a walks job for twelve minutes,
-  # #462. It is kept in GitHub's container
-  # registry under a sum of what goes into it: the Dockerfile,
-  # scripts/ci-packages.sh, which it runs, and the version of Playwright
-  # the interface pins. So nearly every run only asks the registry whether
-  # that image is there, and builds and pushes one only when one of them
-  # changed. The step that builds stops after ten minutes, as the system
-  # packages of the other jobs do.
+  # The machine the walks and the Linux Go jobs run on, see
+  # .github/workflows/ci-image.yml, which finds it or builds it.
   image:
     needs: changes
     if: needs.changes.outputs.app == 'true'
-    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
-    outputs:
-      ref: ${{ steps.tag.outputs.ref }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          sparse-checkout: |
-            .github/ci-image/Dockerfile
-            scripts/ci-packages.sh
-            frontend/package-lock.json
-          sparse-checkout-cone-mode: false
-      - id: tag
-        run: |
-          playwright=$(jq -r '.packages["node_modules/playwright"].version' frontend/package-lock.json)
-          sum=$({ echo "playwright $playwright"; cat .github/ci-image/Dockerfile scripts/ci-packages.sh; } | sha256sum | cut -c1-16)
-          echo "playwright=$playwright" >> "$GITHUB_OUTPUT"
-          echo "ref=ghcr.io/${GITHUB_REPOSITORY}-ci:$sum" >> "$GITHUB_OUTPUT"
-      - name: The image, unless it is there
-        timeout-minutes: 10
-        env:
-          REF: ${{ steps.tag.outputs.ref }}
-          PLAYWRIGHT: ${{ steps.tag.outputs.playwright }}
-          TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          echo "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          if docker buildx imagetools inspect "$REF" >/dev/null 2>&1; then
-            echo "$REF is there"
-            exit 0
-          fi
-          docker buildx build --push --build-arg PLAYWRIGHT="$PLAYWRIGHT" \
-            -t "$REF" -f .github/ci-image/Dockerfile .
+    uses: ./.github/workflows/ci-image.yml
 
   # The interface in Chromium against the real Go side: the sequences of
   # the cases found by hand and the walks, see docs/TESTING.md. It needs
   # what the Go tests need, the interface's Node, and the Chromium
-  # Playwright drives, all of it in the image the job image keeps, which
+  # Playwright drives, all of it in the image ci-image.yml keeps, which
   # the job runs in.
   #
   # On four machines, each with a quarter of the runs by how long they took
@@ -532,15 +493,36 @@ jobs:
   # the last one stopped instead of finding the same easy inputs again, and
   # does not build every package before it starts. What a pull request
   # finds is not saved, because a cache a pull request writes is its own.
+  #
+  # In the CI image, as the job linux is. The nightly fuzzing runs in it
+  # too, because the two share the cache, which keeps a path by where it
+  # lies, see the walks: v2 since they moved there together.
   fuzz:
-    needs: changes
-    if: needs.changes.outputs.go == 'true'
+    needs: [changes, image]
+    if: needs.changes.outputs.go == 'true' || needs.changes.outputs.image == 'true'
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
+    defaults:
+      run:
+        shell: bash -e {0}
+    container:
+      image: ${{ needs.image.outputs.ref }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+      options: --init
+      volumes:
+        - /home/runner/work:/home/runner/work
     steps:
       # Two commits, for the main the merge commit sits on.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
+      # The checkout is the runner's user's and the job runs as root, see
+      # the walks.
+      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
@@ -550,20 +532,8 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: fuzz-v1-${{ runner.os }}-${{ github.sha }}
-          restore-keys: fuzz-v1-${{ runner.os }}-
-      # The packages apt downloaded, kept for a week and for this job's
-      # list, so a run downloads only what changed. See ci-packages.sh.
-      - id: week
-        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/apt
-          key: apt-fuzz-${{ steps.week.outputs.week }}-${{ hashFiles('scripts/ci-packages.sh') }}
-          restore-keys: apt-fuzz-
-      - name: System packages
-        timeout-minutes: 10
-        run: sh scripts/ci-packages.sh
+          key: fuzz-v2-${{ runner.os }}-${{ github.sha }}
+          restore-keys: fuzz-v2-${{ runner.os }}-
       # The licence dispenser's simulation is fuzzed at night only, see
       # SIMTIME in scripts/fuzz.sh. Its known seeds run in the job linux.
       # On a pull request only the targets of the packages the change
@@ -587,7 +557,7 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: fuzz-v1-${{ runner.os }}-${{ github.sha }}
+          key: fuzz-v2-${{ runner.os }}-${{ github.sha }}
 
   # The Go tests on Tim's platform, against the ffmpeg we ship, built by
   # the same script a release uses, so what renders here is what renders

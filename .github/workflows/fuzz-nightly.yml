@@ -26,11 +26,39 @@ permissions:
   contents: read
 
 jobs:
+  image:
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/ci-image.yml
+
+  # In the CI image, as the job fuzz of ci.yml is, whose cache this shares.
+  # One of the targets is in the app's package, so the fuzzing compiles
+  # it, and that needs GTK and WebKit, which the image has. Without them
+  # make stopped before fuzzing anything, every night.
   linux:
+    needs: image
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: read
+    defaults:
+      run:
+        shell: bash -e {0}
+    container:
+      image: ${{ needs.image.outputs.ref }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+      options: --init
+      volumes:
+        - /home/runner/work:/home/runner/work
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The checkout is the runner's user's and the job runs as root, see
+      # the walks in ci.yml.
+      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
@@ -40,21 +68,8 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: fuzz-v1-${{ runner.os }}-${{ github.sha }}
-          restore-keys: fuzz-v1-${{ runner.os }}-
-      # One of the targets is in the app's package, so the fuzzing compiles
-      # it, and that needs GTK and WebKit, as the job fuzz of ci.yml does.
-      # Without them make stopped before fuzzing anything, every night.
-      - id: week
-        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/apt
-          key: apt-fuzz-${{ steps.week.outputs.week }}-${{ hashFiles('scripts/ci-packages.sh') }}
-          restore-keys: apt-fuzz-
-      - name: System packages
-        timeout-minutes: 10
-        run: sh scripts/ci-packages.sh
+          key: fuzz-v2-${{ runner.os }}-${{ github.sha }}
+          restore-keys: fuzz-v2-${{ runner.os }}-
       # 600 histories of 400 steps, about a minute on one core while the
       # others fuzz the rest.
       - name: Fuzz
@@ -79,7 +94,7 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: fuzz-v1-${{ runner.os }}-nightly-${{ github.run_id }}
+          key: fuzz-v2-${{ runner.os }}-nightly-${{ github.run_id }}
 
   # The two targets about paths, on the disk a customer has.
   macos:

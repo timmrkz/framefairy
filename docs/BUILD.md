@@ -246,13 +246,14 @@ regression suite, but after a few days of fuzzing the replay is what a run
 mostly spends its time on. `go clean -fuzzcache`, which `make clean` also
 does, puts it back to the seeds.
 
-CI keeps that cache too, in the Actions cache under `fuzz-v1-`, with the
+CI keeps that cache too, in the Actions cache under `fuzz-v2-`, with the
 packages built for fuzzing. A push to main and the nightly run save it, and
 every pull request starts from the newest. So a run goes on from where the
 last one stopped, rather than spending its 10000 executions finding the same
 easy inputs as every run before it. Should the replay ever take longer than
-the fuzzing, raise the `v1` in `ci.yml` and `fuzz-nightly.yml`, which starts
-the cache over from the seeds.
+the fuzzing, raise the `v2` in `ci.yml` and `fuzz-nightly.yml`, which starts
+the cache over from the seeds. It was raised from `v1` when the fuzzing
+on Linux moved into the CI image, whose home is another place.
 
 `.github/workflows/fuzz-nightly.yml` is the long fuzzing, at night on main
 and by hand from the Actions tab: half a minute on every target, 600 new
@@ -323,9 +324,9 @@ and `image`, which the jobs in the CI image wait for:
 | `interface` | Linux | `make interface`, ESLint among it. Needs only Node, so it is first back by a long way |
 | `build` | Linux | a check that `go.mod` is tidy, which `make` would fix quietly, then `make NOTOOLS=1`. The programs and the interface, which is what proves they still link, without the tools we ship, which nothing builds for Linux yet. Then `scripts/lint-test.sh` and `make lint` |
 | `linux (A-AR+B-O)`, `linux (AS-AZ+P-S)`, `linux (rest)` | Linux, in the CI image | `make unit` under the race detector, on a pull request the packages `make changed` picks and on main every package, on each, with `UNITFLAGS` of `-run` for the tests whose names start with those letters, and `-skip` for both patterns on the third. On one machine they took six minutes |
-| `image` | Linux | the CI image `linux` and the walks run in, see [The CI image](#the-ci-image). Asks the registry whether the image for this commit's recipe is there, and builds and pushes it only when it is not |
+| `image` | Linux | the CI image `linux`, `fuzz` and the walks run in, see [The CI image](#the-ci-image), by `.github/workflows/ci-image.yml`. Asks the registry whether the image for this commit's recipe is there, and builds and pushes it only when it is not |
 | `walks (1/4)` to `walks (4/4)` | Linux, in the CI image | `make walks WALKSHARD=1/4` to `4/4` with `WALKTIMEOUT=8m`, a quarter of the runs each by how long they took last, so a run that hangs is named in minutes. On three machines each job took four and three quarter minutes |
-| `fuzz` | Linux | on a pull request `make fuzz` for the targets `make changed` fuzzes, named by `scripts/changed.sh --fuzz-targets`, and on main `make fuzz SIMTIME=0`, from the fuzz cache main left, see [Tests](#tests) |
+| `fuzz` | Linux, in the CI image | on a pull request `make fuzz` for the targets `make changed` fuzzes, named by `scripts/changed.sh --fuzz-targets`, and on main `make fuzz SIMTIME=0`, from the fuzz cache main left, see [Tests](#tests) |
 | `macos` | macOS | the ffmpeg we ship, built by its script and kept until the script changes, then `make unit` against it, on a pull request for the packages `make changed` picks, without the race detector, which Linux runs, and without the licence server's packages, which never run on a Mac |
 | `outside` | macOS | the ffmpeg and the llama-server we ship, then `make` with no warnings allowed, then `make outside`: a keychain of its own, then the app opened by macOS from an Unlock link, closed and open, with the local dispenser beside it, see [TESTING.md](TESTING.md#from-outside-the-app). Stopped after 30 minutes |
 
@@ -544,51 +545,54 @@ than holding the job for hours.
 
 ### The CI image
 
-`linux` and the walks run in a container, the CI image, built from
-`.github/ci-image/Dockerfile`: Ubuntu 24.04, the runners' own system,
-with every package `scripts/ci-packages.sh` installs for the Go side,
-ffmpeg, meson, ninja, nasm and patchelf beside them, and the headless
-Chromium of the Playwright version in `frontend/package-lock.json` with
-the libraries and fonts it needs. Go and Node are not in it: setup-go
-and setup-node bring them as in every other job.
+`linux`, `fuzz`, the nightly fuzzing and the walks run in a container,
+the CI image, built from `.github/ci-image/Dockerfile`: Ubuntu 24.04,
+the runners' own system, with every package `scripts/ci-packages.sh`
+installs for the Go side, ffmpeg, meson, ninja, nasm and patchelf beside
+them, and the headless Chromium of the Playwright version in
+`frontend/package-lock.json` with the libraries and fonts it needs. Go
+and Node are not in it: setup-go and setup-node bring them as in every
+other job.
 
 On some days the runners' Ubuntu mirror gave 18 to 40 kB a second, and
 the libraries Chromium needs, mostly fonts, held a walks job for up to
 twelve minutes, #462. Chromium itself comes from Playwright's own
 servers and was always fast. The Go tests of `linux` waited the same
-way, up to five minutes for their packages. An image is downloaded from
-GitHub's container registry instead, and no job in it asks the mirror
-for anything. A change to the image starts `linux` by the filter
-`image`, but not `macos`, which does not run in it.
+way, up to five minutes for their packages, and the fuzzing once
+fifteen. An image is downloaded from GitHub's container registry
+instead, and no job in it asks the mirror for anything. A change to the
+image starts `linux` and `fuzz` by the filter `image`, but not `macos`,
+which does not run in it.
 
-The job `image` names the image by a sum of the Dockerfile, of
-`scripts/ci-packages.sh` and of the Playwright version, as
-`ghcr.io/timmrkz/framefairy-ci:<sum>`. When the registry has that tag,
-the job is done in seconds, and when it does not, which is only when one
-of the three changed, it builds the image and pushes it, and the jobs
-in it wait for it. Both images the Dockerfile starts from are pinned to a
-digest, so the same sum always means the same image, and moving them is
-a change to the file. Dependabot moves both once a week, in one pull
-request. A Playwright update from Dependabot likewise builds its own
-image on its own pull request. A file the Dockerfile comes to read joins
-the sum and the job's sparse checkout, or a change to it would reuse
-the old image.
+`.github/workflows/ci-image.yml`, which `ci.yml` calls as the job
+`image` and `fuzz-nightly.yml` calls too, names the image by a sum of
+the Dockerfile, of `scripts/ci-packages.sh` and of the Playwright
+version, as `ghcr.io/timmrkz/framefairy-ci:<sum>`. When the registry has
+that tag, the job is done in seconds, and when it does not, which is
+only when one of the three changed, it builds the image and pushes it,
+and the jobs in it wait for it. Both images the Dockerfile starts from
+are pinned to a digest, so the same sum always means the same image, and
+moving them is a change to the file. Dependabot moves both once a week,
+in one pull request. A Playwright update from Dependabot likewise builds
+its own image on its own pull request. A file the Dockerfile comes to
+read joins the sum and the job's sparse checkout, or a change to it
+would reuse the old image.
 
 The jobs run in it as root, which is how GitHub runs a container, with
 an init process, which reaps what a test leaves behind, and the walks
 with the machine's IPC as well, as Playwright says to run Chromium in
 one. The runners' work folder is mounted at the place it has on the
-machine as well, because the ffmpeg we ship comes from the cache the
-job `linux` fills, and its pkg-config files name the folder it was
-built in. The one in the cache now was built on a runner, and the next,
-when `scripts/build-ffmpeg.sh` changes, is built in the container, at a
-place every job in the image has. From then on the mount can go. A container runs a step with `sh`, so
-each job in the image sets `bash -e {0}`, the shell a runner's step
-has, and tells git the checkout, which is the runner's user's, is safe
-to read, since `go build` asks git for the commit it stamps.
-Shard 1 saves Go's build cache only after walks that passed, because a
-share that stopped early has built little and its cache would be found
-first by every run after it.
+machine as well, because the ffmpeg we ship comes from the cache the job
+`linux` fills, and its pkg-config files name the folder it was built in.
+The one in the cache now was built on a runner, and the next, when
+`scripts/build-ffmpeg.sh` changes, is built in the container, at a place
+every job in the image has. From then on the mount can go. A container
+runs a step with `sh`, so each job in the image sets `bash -e {0}`, the
+shell a runner's step has, and tells git the checkout, which is the
+runner's user's, is safe to read, since `go build` asks git for the
+commit it stamps. Shard 1 saves Go's build cache only after walks that
+passed, because a share that stopped early has built little and its
+cache would be found first by every run after it.
 
 A pull request from a fork pulls the image like any other, since the
 package is public, but cannot push one: its token may not write

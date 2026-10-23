@@ -66,7 +66,7 @@ workflows:
 changed:
   - 'scripts/changed{,-test}.sh'
 
-# The Go jobs that run in the CI image, linux for now, beside what starts
+# The Go jobs that run in the CI image, linux and fuzz, beside what starts
 # them by the filter go: a change to the image is a change to the machine
 # their tests run on. The walks run in it too, and app starts them.
 image:
