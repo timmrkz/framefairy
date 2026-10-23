@@ -156,7 +156,7 @@ func (f *EpisodeFrames) warm(gone chan struct{}) {
 		id := f.nextID
 		// A grid of one frame: an open moves a cursor to the grid it is
 		// asked on, whatever it was on before.
-		kind, request := pictureCursor, framewire.OpenRequest(id, 0, 2, 2, framewire.Grid{Num: 1, Den: 1, Count: 1})
+		kind, request := pictureCursor, framewire.OpenRequest(id, 0, 2, 2, framewire.Grid{Num: 1, Den: 1, Count: 1}, false)
 		if i == cursorsKept[pictureCursor] {
 			kind, request = soundCursor, fmt.Sprintf("sound %d 0 0 48000 2", id)
 		}
@@ -462,8 +462,10 @@ func (f *EpisodeFrames) Light() framewire.Light {
 // pictures of them that are thrown away. The next frames are asked for as
 // soon as the ones before are made, so a skip that comes with a pull counts
 // from the batch after the one already on its way, which is still made into
-// pictures. Plan row 2.269.
-func (f *EpisodeFrames) Stream(ctx context.Context, grid framewire.Grid, from float64, width, height int,
+// pictures. Plan row 2.269. With key, a stream that the decoder has to
+// seek for hands over the key frame it starts decoding from first, and the
+// frames from there, see the decoder's open, issue #281.
+func (f *EpisodeFrames) Stream(ctx context.Context, grid framewire.Grid, from float64, width, height int, key bool,
 	skip func() float64, got func(at float64, frame []byte) error) error {
 	if grid.Num <= 0 || grid.Den <= 0 {
 		return errors.New("the video has no frame rate to count its frames by")
@@ -476,7 +478,7 @@ func (f *EpisodeFrames) Stream(ctx context.Context, grid framewire.Grid, from fl
 	}
 	first := grid.Holding(from)
 	return f.stream(ctx, pictureCursor, &place{grid: grid, w: width, h: height, frame: first}, func(id uint32) string {
-		return framewire.OpenRequest(id, first, width, height, grid)
+		return framewire.OpenRequest(id, first, width, height, grid, key)
 	}, skip, got)
 }
 

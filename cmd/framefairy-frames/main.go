@@ -234,7 +234,7 @@ func (d *decoder) request(f []string) {
 	id := uint32(id64)
 	switch {
 	case f[0] == "open":
-		_, frame, w, h, grid, ok := framewire.ReadOpen(f)
+		_, frame, w, h, grid, key, ok := framewire.ReadOpen(f)
 		if !ok {
 			d.answer(framewire.Record{Cursor: id, Kind: framewire.Failed, Body: []byte("an open the decoder cannot take")})
 			return
@@ -243,7 +243,7 @@ func (d *decoder) request(f []string) {
 		if c == nil {
 			return
 		}
-		c.work <- func() { c.open(frame, w, h, grid) }
+		c.work <- func() { c.open(frame, w, h, grid, key) }
 	case f[0] == "sound" && len(f) == 6:
 		seek, err1 := strconv.ParseFloat(f[2], 64)
 		from, err2 := strconv.ParseFloat(f[3], 64)
@@ -490,6 +490,9 @@ type cursor struct {
 	until int
 	// How often this open sought again for a seek that landed too late.
 	retries int
+	// Whether this open hands over the key frame its decoding starts from
+	// first, see open.
+	fromKey bool
 	// Whether this open went on with the processor after the graphics
 	// chip failed, see toProcessor.
 	fellBack bool
@@ -581,7 +584,17 @@ func (c *cursor) fail(why string) {
 // its moment or before, with what the decoder held dropped. The file and
 // the decoder stay open, which is the whole point: the first open of a
 // cursor opens them, every one after it only seeks.
-func (c *cursor) open(frame, w, h int, grid framewire.Grid) {
+//
+// With key, an open that seeks hands over first the key frame the seek
+// lands on, as the frame of the grid it is shown for, and the frames from
+// there on, so the next batch can skip ahead to the frame asked for. A
+// key frame takes one frame's decoding, where the frame asked for takes
+// every frame from the key frame to it, up to two seconds of them. The
+// video preview shows the key frame while the hand drags the playhead
+// faster than the frames under it can be decoded, the way established
+// players scrub, issue #281. An open that goes on without a seek is near
+// already, and hands over the frame asked for.
+func (c *cursor) open(frame, w, h int, grid framewire.Grid, key bool) {
 	c.failedWhy = ""
 	c.asked, c.firstSaid = time.Now(), false
 	c.sentInOpen, c.madeToFail, c.decodedInOpen = 0, false, 0
@@ -627,12 +640,13 @@ func (c *cursor) open(frame, w, h int, grid framewire.Grid) {
 		c.freeGraph()
 	}
 	from := grid.At(frame)
+	c.fromKey = false
 	if !opened && !reopened && c.goOn(frame, w, h, grid) {
 		c.say(fmt.Sprintf("went on, at frame %d, %.3f s, for %dx%d, %d ms", frame, from, w, h, time.Since(c.asked).Milliseconds()))
 		c.d.answer(framewire.Record{Cursor: c.id, Kind: framewire.Opened, Body: framewire.OpenedBody(false, c.light)})
 		return
 	}
-	c.grid, c.rank, c.until, c.shown, c.retries = grid, frame, frame, nil, 0
+	c.grid, c.rank, c.until, c.shown, c.retries, c.fromKey = grid, frame, frame, nil, 0, key
 	if err := c.seek(from + framewire.Hair); err != nil {
 		c.fail(err.Error())
 		return
@@ -912,6 +926,13 @@ func (c *cursor) advance() error {
 		}
 		first := c.grid.FirstShown(begins)
 		held := c.holding
+		if !held && c.fromKey && first <= c.rank {
+			// The key frame a seek landed on, handed over from the frame
+			// of the grid it is shown for, see open. One that landed too
+			// late is sought before, as any other.
+			c.fromKey = false
+			c.rank = first
+		}
 		if !held && first > c.rank && !c.firstOfFile() {
 			// The first frame after a seek begins after the moment asked
 			// for, and it is not the file's first frame, which stands for

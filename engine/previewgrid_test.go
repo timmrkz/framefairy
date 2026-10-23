@@ -125,7 +125,7 @@ func previewShowsTheShort(t *testing.T, e *Engine, program string, c timesCase, 
 	// The whole grid, from the start.
 	var got []int
 	streams++
-	err = dec.Stream(context.Background(), grid, 0, w, h, nil, func(at float64, data []byte) error {
+	err = dec.Stream(context.Background(), grid, 0, w, h, false, nil, func(at float64, data []byte) error {
 		r := len(got)
 		if math.Abs(at-grid.At(r)) > 1e-9 {
 			t.Fatalf("frame %d of the grid came at %.6f, its moment is %.6f", r, at, grid.At(r))
@@ -162,7 +162,7 @@ func previewShowsTheShort(t *testing.T, e *Engine, program string, c timesCase, 
 		first := grid.Holding(from)
 		var near []int
 		streams++
-		err := dec.Stream(context.Background(), grid, from, w, h, nil, func(at float64, data []byte) error {
+		err := dec.Stream(context.Background(), grid, from, w, h, false, nil, func(at float64, data []byte) error {
 			if r := first + len(near); math.Abs(at-grid.At(r)) > 1e-9 {
 				t.Fatalf("from %.4f frame %d came at %.6f, want %.6f", from, len(near), at, grid.At(r))
 			}

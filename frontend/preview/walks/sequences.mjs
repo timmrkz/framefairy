@@ -75,6 +75,20 @@
 //   ["drag edge", which, px, "at the playhead"]
 //                      the same, pressed where the playhead's grip and the
 //                      edge's handle overlap rather than in its middle
+//   ["scrub far"]      presses the clip timeline's track near the clip's
+//                      start, waits for its frame, and with the button
+//                      still down moves the hand in one step at least 5 s
+//                      on, to 1.4 s after a key frame of the bridge's
+//                      episode, which has one every 2 s, and waits for the
+//                      frame under the hand, noting every frame the video
+//                      preview puts up on the way, then lets go
+//   ["keyed on the way"]
+//                      since "scrub far", the video preview put up the key
+//                      frame decoding starts from, a frame before the one
+//                      under the hand and no more than 2 s before it, while
+//                      that one was decoded, and the frame it ended on,
+//                      with the button down and after it was let go, is
+//                      the frame under the hand, by the number drawn on it
 //   ["hold on", which] presses the track near the end away from it, then the
 //                      clip's "start" or "end" edge, the "cut from" or "cut
 //                      to" edge of its first cut, its first "thumbnail" or
@@ -1912,6 +1926,14 @@ export const sequences = [
       ["wait for", "Search"],
       ["wake on a caption"],
     ],
+  },
+  {
+    // Issue #281, Tim's idea: while the playhead is dragged faster than
+    // the frames under it can be decoded, the video preview shows the key
+    // frame decoding starts from, the way established players scrub, and
+    // the frame under the hand once it rests, never the key frame.
+    name: "a playhead dragged far shows the key frame on the way, and the frame under the hand once it rests",
+    steps: [["scrub far"], ["keyed on the way"]],
   },
   {
     // Plan row 2.235, found by Tim: the clip's edges took the playhead
@@ -4931,6 +4953,8 @@ for (const seq of toWalk) {
   // it, said if the playhead did not go with the edge (2.271).
   let pressedOn = "";
   let held = null;
+  // What "scrub far" saw, for "keyed on the way".
+  let scrubbed = null;
   let wrong = null;
   // The video and the other file dropped last.
   let droppedVideo = "";
@@ -5899,6 +5923,66 @@ for (const seq of toWalk) {
         if (dragShift) await page.keyboard.up("Shift");
         await watch.step("drag edge", s);
         await page.evaluate(() => (window.__followWatch = false));
+        break;
+      }
+      case "scrub far": {
+        const fps = await rate(page);
+        const t = await timeline(page);
+        const g = await handles(page);
+        const y = high(g.track);
+        await page.mouse.move(await xOf(page, t.start + 0.4), y);
+        await page.mouse.down();
+        await settle(page);
+        await shownOnPlayhead(page);
+        // Every frame the video preview puts up, by where the app says it
+        // begins, each a change of data-shown, and the key frames the frame
+        // queue counts as put up on the way.
+        await page.evaluate(() => {
+          const screen = document.querySelector(".screen");
+          window.__scrubShown = [];
+          window.__scrubKeys = window.__frameQueue?.stats.keys ?? 0;
+          window.__scrubWatch = new MutationObserver(() => window.__scrubShown.push(Number(screen.dataset.shown)));
+          window.__scrubWatch.observe(screen, { attributes: true, attributeFilter: ["data-shown"] });
+        });
+        // 1.4 s after a key frame, so the frame under the hand is 7 frames
+        // of decoding from it.
+        const to = Math.floor((t.start + 6) / 2) * 2 + 1.4;
+        if (to >= t.end) {
+          wrong = `the clip ends at ${t.end.toFixed(3)} s, before ${to.toFixed(3)} s`;
+          await page.mouse.up();
+          break;
+        }
+        await page.mouse.move(await xOf(page, to), y);
+        await settle(page);
+        await shownOnPlayhead(page);
+        const rested = await preview(page, 1 / fps);
+        const seen = await page.evaluate(() => {
+          window.__scrubWatch.disconnect();
+          return { shown: window.__scrubShown, keys: (window.__frameQueue?.stats.keys ?? 0) - window.__scrubKeys };
+        });
+        await page.mouse.up();
+        await settle(page);
+        await shownOnPlayhead(page);
+        scrubbed = { fps, ...seen, rested, after: await preview(page, 1 / fps) };
+        await watch.step("scrub far", s);
+        break;
+      }
+      case "keyed on the way": {
+        if (!scrubbed) {
+          wrong = "nothing was scrubbed";
+          break;
+        }
+        const { fps, shown, keys, rested, after } = scrubbed;
+        const frameOf = (at) => Math.floor((at + 0.001) * fps);
+        const under = frameOf(rested.at);
+        const key = shown.find((at) => frameOf(at) < under && frameOf(at) >= under - 2 * fps);
+        if (!keys || key === undefined) {
+          wrong = `no key frame came on the way to the frame under the hand at ${rested.at.toFixed(3)} s, the video preview put up ${shown.map((a) => a.toFixed(3)).join(", ")}`;
+        } else if (Math.round(rested.frame * fps) !== under) {
+          wrong = `with the button still down, the picture stood on frame ${Math.round(rested.frame * fps)}, not frame ${under} under the hand`;
+        } else if (Math.round(after.frame * fps) !== frameOf(after.at)) {
+          wrong = `once the button was let go, the picture stood on frame ${Math.round(after.frame * fps)}, not frame ${frameOf(after.at)} under the hand`;
+        }
         break;
       }
       case "hold on": {

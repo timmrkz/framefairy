@@ -99,18 +99,25 @@ func (g Grid) frames(us int64) int64 {
 }
 
 // OpenRequest is the request that opens a cursor at frame of the grid,
-// for frames width by height.
-func OpenRequest(cursor uint32, frame, width, height int, g Grid) string {
-	return fmt.Sprintf("open %d %d %d %d %s %s %d %d %d", cursor, frame, width, height,
+// for frames width by height. With key, the cursor hands over the key
+// frame its decoding starts from first, as the frame of the grid that
+// holds it, and goes on from there, see the decoder's open.
+func OpenRequest(cursor uint32, frame, width, height int, g Grid, key bool) string {
+	r := fmt.Sprintf("open %d %d %d %d %s %s %d %d %d", cursor, frame, width, height,
 		strconv.FormatFloat(g.Origin, 'f', -1, 64), strconv.FormatFloat(g.Start, 'f', -1, 64), g.Num, g.Den, g.Count)
+	if key {
+		r += " key"
+	}
+	return r
 }
 
 // ReadOpen reads an open request, split into its words, the other way:
-// the cursor, the frame, the size and the grid, and whether they are an
-// open the decoder can take.
-func ReadOpen(f []string) (cursor uint32, frame, width, height int, g Grid, ok bool) {
-	if len(f) != 10 || f[0] != "open" {
-		return 0, 0, 0, 0, Grid{}, false
+// the cursor, the frame, the size and the grid, whether the key frame
+// comes first, and whether they are an open the decoder can take.
+func ReadOpen(f []string) (cursor uint32, frame, width, height int, g Grid, key, ok bool) {
+	key = len(f) == 11 && f[10] == "key"
+	if (len(f) != 10 && !key) || f[0] != "open" {
+		return 0, 0, 0, 0, Grid{}, false, false
 	}
 	id, err := strconv.ParseUint(f[1], 10, 32)
 	ints := [6]int{}
@@ -129,9 +136,9 @@ func ReadOpen(f []string) (cursor uint32, frame, width, height int, g Grid, ok b
 	g.Num, g.Den, g.Count = ints[3], ints[4], ints[5]
 	if err != nil || !g.Valid() || frame < 0 || frame >= g.Count ||
 		width < 2 || height < 2 || width > 7680 || height > 4320 || width%2 != 0 || height%2 != 0 {
-		return 0, 0, 0, 0, Grid{}, false
+		return 0, 0, 0, 0, Grid{}, false, false
 	}
-	return uint32(id), frame, width, height, g, true
+	return uint32(id), frame, width, height, g, key, true
 }
 
 // GridText is the grid as the video preview hands it back with a stream it

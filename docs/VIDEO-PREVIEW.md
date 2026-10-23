@@ -225,6 +225,16 @@ closed for standing unused.
   frames a jump passes are decoded but never scaled. While the playhead
   is dragged, each place it passes shows its frame alone and cues no
   play, `FrameQueue.grip`, and the play is cued where the hand lets go.
+  A place the hand reaches that needs a stream of its own opens it with
+  `key`, and the decoder hands over the key frame its seek lands on
+  before it decodes on to the frame asked for, issue #281. The queue puts
+  that key frame up only when it is nearer the playhead than the frame on
+  screen, and the exact frame still follows and takes its place. So a
+  hand that outruns the decoder sees a frame near it at the cost of one
+  decode, not the frame of a place it left long ago, and a place it has
+  already left costs its key frame alone, since the queue lets go of that
+  stream sooner. Where the hand rests, and once it lets go, the frame on
+  screen is the exact one, as before.
 - The routes the interface reads from, `/frames/open`, `/frames/sound`,
   `/frames/read` and `/frames/close`, stay as they are. The interface
   cannot tell whether a frame came from it or from the ffmpeg program.
