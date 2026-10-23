@@ -3,13 +3,13 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/rs/zerolog"
-	"github.com/spf13/afero"
 
 	"framefairy/engine"
 )
@@ -61,7 +61,9 @@ var transcriptFormats = map[string]struct {
 //
 // The file always ends in the format's own ending, whatever name was
 // typed, so the box can only ever replace a file of that kind, never the
-// video or anything else of the person's that it was pointed at.
+// video or anything else of the person's that it was pointed at. It is
+// the one file the app writes outside the library, where the person says
+// in the system's box, see docs/APP.md.
 func (s *FrameFairy) ExportTranscript(path, format string) (saved string, err error) {
 	if !s.store.Known(path) {
 		return "", errNotInLibrary
@@ -106,10 +108,22 @@ func (s *FrameFairy) ExportTranscript(path, format string) (saved string, err er
 	if err != nil || dest == "" {
 		return "", err
 	}
+	// The ending is added to a name typed without it, which is a file the
+	// box never asked to replace, so one already there is left as it is,
+	// found by the review of #458.
 	if !strings.EqualFold(filepath.Ext(dest), as.ext) {
 		dest += as.ext
+		if _, err := engine.LstatIn(s.store.files, dest); err == nil {
+			return "", fmt.Errorf("%s is already there. Export again and pick another name, or that file to replace it", filepath.Base(dest))
+		}
 	}
-	if err := afero.WriteFile(s.store.files, dest, []byte(text), 0o644); err != nil {
+	// Written beside it and moved in place, so a file it replaces is
+	// whole or untouched, and a link is replaced and not what it leads to.
+	if err := engine.WriteAtomic(s.store.files, dest, []byte(text)); err != nil {
+		return "", err
+	}
+	// A file made to share, so it is readable the way a saved file is.
+	if err := s.store.files.Chmod(dest, 0o644); err != nil {
 		return "", err
 	}
 	bytes = len(text)

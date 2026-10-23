@@ -191,7 +191,13 @@ menu's to show, Tim's call on #458:
   same word differently, the clip in the plan changed last wins. A word
   removed from a clip's captions is still said, so it stays. The file
   always gets the format's ending, whatever name is typed, so the save
-  box can never replace the video or any other kind of file.
+  box can never replace the video or any other kind of file. A name typed
+  without it is given the ending, and a file already there under that
+  name was never asked about, so it is left alone and a toast says to
+  pick another name. A file the box asked to replace is replaced whole,
+  written beside it and moved in place, and a link is replaced and not
+  what it leads to. It is the one file the app writes outside the
+  library, where the person says in the system's own box.
 
 While it runs, the dots on the range picker shrink as it hears, and the
 video's dot in the sidebar pulses the way it does for all work, from the

@@ -18,7 +18,7 @@
     type TranscriptFormat,
     errorText,
   } from "./lib/api";
-    import { jobs, nav, shell } from "./lib/state.svelte";
+  import { jobs, nav, shell } from "./lib/state.svelte";
   import { railDot, standing, updates } from "./lib/updates.svelte";
   import { sortEpisodes, type EpisodeOrder } from "./lib/order";
   import Icon from "./components/Icon.svelte";
@@ -173,17 +173,24 @@
   // How far Transcribe whole video has come is shown by the dots on the
   // range picker and by nothing else, Tim's call on #458: the video's dot
   // pulses while it runs, the way it does for all work. These keep that
-  // true from the frame of the click. The transcriptions Stop transcribing
-  // was pressed for: the dot stops, unless other work runs, and the menu
-  // offers to carry it on before the job has said it stopped. And the videos Transcribe whole
-  // video was pressed for, whose job is on its way.
+  // true from the frame of the click. stopped is the transcriptions Stop
+  // transcribing was pressed for: the dot stops, unless other work runs,
+  // and the menu offers to carry it on before the job has said it
+  // stopped. starting is the videos Transcribe whole video was pressed
+  // for, whose job is on its way.
   let stopped = $state<string[]>([]);
   let starting = $state<string[]>([]);
+  const live = (j: Job) => j.state === "running" || j.state === "queued";
   function working(path: string): boolean {
-    return (
-      starting.includes(path) ||
-      jobs.list.some((j) => j.episode === path && (j.state === "running" || j.state === "queued") && !stopped.includes(j.id))
-    );
+    return starting.includes(path) || jobs.list.some((j) => j.episode === path && live(j) && !stopped.includes(j.id));
+  }
+
+  // Why a transcription failed, said in a toast with Report, whether the
+  // job failed as it ran or was refused as it was asked for.
+  function sayFailed(j: Job) {
+    const said = j.error?.trim() ?? "";
+    const why = said ? said[0].toUpperCase() + said.slice(1) : "The transcription failed, and no reason was given.";
+    toasts.say("transcribe whole video", why, { video: j.episode, report: true });
   }
 
   // Transcribe whole video, and Continue transcribing, in a video's menu.
@@ -193,7 +200,12 @@
     said(`video menu: transcribe whole video`, { video: ep.source });
     starting = [...starting, ep.source];
     try {
-      jobs.apply(await api.transcribe(ep.source));
+      const job = await api.transcribe(ep.source);
+      jobs.apply(job);
+      // Refused, while the app relaunches or the video is being removed,
+      // it never ran, so the effect below never sees it fail. Found by
+      // the review of #458.
+      if (job.state === "failed") sayFailed(job);
     } catch (err) {
       toasts.say("transcribe whole video", errorText(err), { video: ep.source });
     } finally {
@@ -209,13 +221,14 @@
   $effect(() => {
     for (const j of jobs.list) {
       if (j.kind !== "transcribe") continue;
-      if (j.state === "running" || j.state === "queued") transcribingSeen.add(j.id);
-      else if (transcribingSeen.delete(j.id) && j.state === "failed") {
-        const said = j.error?.trim() ?? "";
-        const why = said ? said[0].toUpperCase() + said.slice(1) : "The transcription failed, and no reason was given.";
-        toasts.say("transcribe whole video", why, { video: j.episode, report: true });
-      }
+      if (live(j)) transcribingSeen.add(j.id);
+      else if (transcribingSeen.delete(j.id) && j.state === "failed") sayFailed(j);
     }
+    // A transcription that has stopped is no longer one Stop was pressed
+    // for.
+    const pressed = untrack(() => stopped);
+    const still = pressed.filter((id) => jobs.list.some((j) => j.id === id && live(j)));
+    if (still.length !== pressed.length) stopped = still;
   });
 
   // Export transcript: the save box is the system's, so nothing is said

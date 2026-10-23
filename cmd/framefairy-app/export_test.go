@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -60,6 +62,30 @@ func TestTheTranscriptIsExportedWithItsCorrections(t *testing.T) {
 		t.Errorf("pointed at the video, saved at %q: %v", saved, err)
 	}
 
+	// A name typed without the ending is given it, and a file already
+	// there under that name was never asked about, so it stays.
+	chosen = "/Users/tim/Desktop/notes"
+	if err := afero.WriteFile(svc.store.files, chosen+".txt", []byte("my notes"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if saved, err := svc.ExportTranscript(mine, "text"); saved != "" || err == nil {
+		t.Errorf("saved over a file the box never asked about, at %q: %v", saved, err)
+	}
+	if body, _ := afero.ReadFile(svc.store.files, chosen+".txt"); string(body) != "my notes" {
+		t.Errorf("the file the box never asked about reads %q", body)
+	}
+	// One the box asked about is replaced whole.
+	chosen += ".txt"
+	if saved, err := svc.ExportTranscript(mine, "text"); saved != chosen || err != nil {
+		t.Errorf("replacing a file the box asked about saved at %q: %v", saved, err)
+	}
+	if body, _ := afero.ReadFile(svc.store.files, chosen); string(body) != "0:10\neins zwo drei.\n" {
+		t.Errorf("the replaced file reads %q", body)
+	}
+	if info, err := svc.store.files.Stat(chosen); err != nil || info.Mode().Perm() != 0o644 {
+		t.Errorf("the file is saved as %v: %v", info.Mode(), err)
+	}
+
 	chosen = ""
 	if saved, err := svc.ExportTranscript(mine, "text"); saved != "" || err != nil {
 		t.Errorf("a cancelled save box saved %q: %v", saved, err)
@@ -69,5 +95,29 @@ func TestTheTranscriptIsExportedWithItsCorrections(t *testing.T) {
 	}
 	if _, err := svc.ExportTranscript("/elsewhere/other.mp4", "text"); !errors.Is(err, errNotInLibrary) {
 		t.Errorf("exported a video that is not in the library: %v", err)
+	}
+}
+
+// A file the save box asked to replace that is a link is replaced itself,
+// and what it leads to, the video here, is left as it was. Found by the
+// review of #458: the export wrote through the link.
+//
+// On the real disk: a link and where it leads are what the test is about.
+func TestTheExportReplacesALinkAndNotTheVideo(t *testing.T) {
+	svc, mine, home := library(t)
+	heardEpisode(t, svc, mine, 30, [][3]any{{10.1, 10.4, "eins"}})
+	link := filepath.Join(home, "ep.srt")
+	if err := os.Symlink(mine, link); err != nil {
+		t.Fatal(err)
+	}
+	svc.saveBox = func(string) (string, error) { return link, nil }
+	if saved, err := svc.ExportTranscript(mine, "srt"); saved != link || err != nil {
+		t.Fatalf("saved at %q: %v", saved, err)
+	}
+	if body, err := os.ReadFile(mine); err != nil || string(body) != "video" {
+		t.Errorf("the video reads %q: %v", body, err)
+	}
+	if info, err := os.Lstat(link); err != nil || !info.Mode().IsRegular() {
+		t.Errorf("the link was not replaced by the subtitles: %v", err)
 	}
 }
