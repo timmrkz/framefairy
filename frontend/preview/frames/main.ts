@@ -17,7 +17,7 @@ declare global {
     __queue: FrameQueue;
     __drawn: Drawn[];
     __heard: { frame: number; data: Float32Array }[];
-    __ready: boolean | string;
+    __opened: Promise<true | string>;
   }
 }
 
@@ -86,7 +86,8 @@ registerProcessor("recorder", class extends AudioWorkletProcessor {
   }
 });`;
 
-queue.ready.then(
+// Settles with true once the queue is open, or with why it is not.
+window.__opened = queue.ready.then(
   async () => {
     if (params.has("hear")) {
       const url = URL.createObjectURL(new Blob([recorder], { type: "text/javascript" }));
@@ -97,7 +98,7 @@ queue.ready.then(
       hush.gain.value = 0;
       queue.out.connect(node).connect(hush).connect(queue.audio.destination);
     }
-    window.__ready = true;
+    return true as const;
   },
-  (e) => (window.__ready = String(e)),
+  (e) => String(e),
 );

@@ -18,7 +18,7 @@
 // frame that holds neither the playhead nor where it was a moment before,
 // and a seek's frame is up within a quarter of a second. It exits 1 when a
 // rule is broken.
-import { screen } from "../open.mjs";
+import { pageUntil, screen, settled } from "../open.mjs";
 const query = process.argv[2] ?? "?growing&lagging&hear=100";
 // From the first moment of the page, on every animation frame.
 const recorder = () => {
@@ -69,8 +69,14 @@ page.on("pageerror", (e) => errors.push(String(e)));
 await page.evaluate(() => window.__mark("open the episode"));
 await page.getByText("Mein Arm ist zersprungen").first().click();
 // The search: heard from 10 minutes to the end of its half hour at 100 s a
-// second, then twelve clips found, a few seconds each way.
-await page.waitForTimeout(26000);
+// second, then twelve clips found, a few seconds each way. It has ended
+// when the head of the clip list says Search again with its clips in the
+// list, read each time the page changes.
+await pageUntil(page, () => {
+  const pane = [...document.querySelectorAll("aside")].find((a) => a.querySelector(".listhead"));
+  const head = pane?.querySelector(".listhead button.search")?.textContent.trim();
+  return head === "Search" && pane.querySelectorAll("ol li[data-key]").length > 0;
+});
 const picked = page.locator("aside .list li button.pick");
 const n = await picked.count();
 const clips = [];
@@ -79,7 +85,7 @@ for (const i of [Math.min(3, n - 1), Math.min(7, n - 1), 0]) {
   await page.evaluate((i) => window.__mark(`pick clip ${i + 1}`), i);
   await picked.nth(i).click();
   clips.push(i);
-  await page.waitForTimeout(1500);
+  await settled(page);
 }
 const rows = await page.evaluate(() => window.__rows);
 await stop();

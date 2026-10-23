@@ -859,10 +859,13 @@ ESLint refuses a new wait on the clock in a walk, in `make interface`:
 `performance.now`, and a `timeout` or `polling` handed to a wait like
 `waitForFunction`, see `frontend/eslint.config.js`. Playwright's
 `page.clock` is no clock to it, so `holdClock` and `runClock` are the way
-to let time pass. The walks wait on no clock since #341. What
-`frontend/eslint-suppressions.json` still counts for them are reads of the
-clock that measure, and the stalls and late answers a step puts on the app
-on purpose. One more in a file fails. See No test waits on the clock in
+to let time pass. It reads the probes in `frontend/preview/` the same way.
+Playwright's own 30 s on every action and wait is off too, `noDeadlines` in
+`walks/bridge.mjs`, so a wait that never ends is ended by the `-timeout`
+of `make walks`. The walks and the probes wait on no clock since #341 and
+#495. What `frontend/eslint-suppressions.json` still counts for them are
+reads of the clock that measure, and the stalls and late answers a step
+puts on the app on purpose. One more in a file fails. See No test waits on the clock in
 [BUILD.md](BUILD.md#no-test-waits-on-the-clock).
 
 `make changed` runs it whenever the interface changed, the preview's own

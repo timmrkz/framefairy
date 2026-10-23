@@ -1,4 +1,14 @@
 {
+  "preview/frames/added.mjs": {
+    "no-restricted-properties": {
+      "count": 2
+    }
+  },
+  "preview/frames/cuts.mjs": {
+    "no-restricted-properties": {
+      "count": 4
+    }
+  },
   "preview/walks/bridge.mjs": {
     "no-restricted-properties": {
       "count": 2

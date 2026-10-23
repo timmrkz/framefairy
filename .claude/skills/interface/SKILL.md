@@ -37,7 +37,12 @@ cuts it, so a playhead on the clip's own start is in silence and there is
 no caption box on screen at all. Every probe about the captions would be
 measuring an empty picture.
 `screen()` is the same window with nothing clicked, for anything that is
-not the workspace: the first run, the settings, the empty window.
+not the workspace: the first run, the settings, the empty window. Each
+step of them waits with `settled(page)` until the app has nothing on its
+way and the picture stands, see `preview/settled.ts`, and a probe waits
+the same way after its own steps, or with `pageUntil` for what the page
+shows a moment later, never with `waitForTimeout`, which ESLint refuses.
+On the frame queue's own page, `queueUntil` waits on the queue's reports.
 `query` tells the fake Go side what to pretend. The modes are in
 `frontend/preview/wails-stub.ts`, and today they are:
 
