@@ -291,6 +291,11 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
+      # make checks for npm before it builds anything, and the image has
+      # no Node, as a runner does.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
       # Go's build cache, kept by main after every push, see above the job
       # linux. v2 since the job runs in the image, see the walks.
       - id: gocache
@@ -336,6 +341,7 @@ jobs:
       # on what a failed test had left running, until it was cancelled by
       # hand.
       - name: Go tests
+        id: tests
         timeout-minutes: 15
         run: |
           make unit UNITFLAGS='${{ steps.shard.outputs.flags }}' 2>&1 | tee unit.log
@@ -347,7 +353,10 @@ jobs:
       - name: Nothing left running
         if: always()
         run: sh scripts/leftovers.sh
-      - if: always() && (github.ref == 'refs/heads/main' || steps.gocache.outputs.cache-matched-key == '')
+      # Only after the tests ran, whether or not they passed, since they
+      # built everything either way: a job that stopped before them has built
+      # little, and its cache would be found first by every run after.
+      - if: always() && steps.tests.outcome != 'skipped' && (github.ref == 'refs/heads/main' || steps.gocache.outputs.cache-matched-key == '')
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -533,12 +542,18 @@ jobs:
             ~/.cache/go-build
           key: fuzz-v2-${{ runner.os }}-${{ github.sha }}
           restore-keys: fuzz-v2-${{ runner.os }}-
+      # make checks for npm before it builds anything, and the image has
+      # no Node, as a runner does.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
       # The licence dispenser's simulation is fuzzed at night only, see
       # SIMTIME in scripts/fuzz.sh. Its known seeds run in the job linux.
       # On a pull request only the targets of the packages the change
       # reaches, as make changed fuzzes them, see scripts/changed.sh,
       # compared with main.
       - name: Fuzz
+        id: fuzz
         run: |
           if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
             targets=$(BASE=HEAD^1 sh scripts/changed.sh --fuzz-targets)
@@ -550,7 +565,9 @@ jobs:
           else
             make fuzz SIMTIME=0
           fi
-      - if: always() && github.ref == 'refs/heads/main'
+      # Only after the fuzzing ran: a job that stopped before it has built
+      # little, and its cache would be found first by every run after.
+      - if: always() && steps.fuzz.outcome != 'skipped' && github.ref == 'refs/heads/main'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |

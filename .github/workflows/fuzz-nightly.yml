@@ -70,9 +70,15 @@ jobs:
             ~/.cache/go-build
           key: fuzz-v2-${{ runner.os }}-${{ github.sha }}
           restore-keys: fuzz-v2-${{ runner.os }}-
+      # make checks for npm before it builds anything, and the image has
+      # no Node, as a runner does.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
       # 600 histories of 400 steps, about a minute on one core while the
       # others fuzz the rest.
       - name: Fuzz
+        id: fuzz
         run: make fuzz FUZZTIME=30s SIMTIME=600x
       # Go writes an input that crashed into the target's testdata/fuzz/,
       # where git sees it as new.
@@ -88,7 +94,8 @@ jobs:
           name: crashers
           path: ${{ runner.temp }}/crashers
           retention-days: 30
-      - if: always()
+      # Only after the fuzzing ran, see the job fuzz of ci.yml.
+      - if: always() && steps.fuzz.outcome != 'skipped'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
