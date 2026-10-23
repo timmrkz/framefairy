@@ -23,7 +23,7 @@ var programs = []string{"./cmd/framefairy-app", "./cmd/framefairy", "./cmd/frame
 // extraTexts are licences inside a module besides the one at its top, for
 // code the module carries from someone else.
 var extraTexts = map[string][]string{
-	"github.com/wailsapp/wails/v3": {
+	wailsModule: {
 		"internal/go-common-file-dialog/LICENSE",
 		"internal/webview2/webviewloader/LICENSE",
 	},
@@ -33,6 +33,10 @@ var extraTexts = map[string][]string{
 // the folder of every npm package the bundle took code from, see
 // frontend/vite.config.ts.
 const bundled = "cmd/framefairy-app/dist/packages.json"
+
+// wailsModule is the Go side of Wails. Its runtime in the interface is
+// pinned to the same version, see CLAUDE.md.
+const wailsModule = "github.com/wailsapp/wails/v3"
 
 // module is a Go module as go list names it: the version and the folder
 // are the ones the build really uses, a replacement's where go.mod
@@ -47,7 +51,11 @@ func built(fsys afero.Fs, into string) error {
 	if err != nil {
 		return err
 	}
+	var wails module
 	for _, m := range modules {
+		if m.Path == wailsModule {
+			wails = m
+		}
 		n, sources, err := moduleNotice(fsys, m)
 		if err != nil {
 			return err
@@ -64,12 +72,8 @@ func built(fsys afero.Fs, into string) error {
 	if err := json.Unmarshal(raw, &folders); err != nil {
 		return fmt.Errorf("%s: %w", bundled, err)
 	}
-	cache, err := goEnv("GOMODCACHE")
-	if err != nil {
-		return err
-	}
 	for _, folder := range folders {
-		n, sources, err := packageNotice(fsys, "frontend", folder, cache)
+		n, sources, err := packageNotice(fsys, "frontend", folder, wails)
 		if err != nil {
 			return err
 		}
@@ -164,9 +168,9 @@ func moduleNotice(fsys afero.Fs, m module) (notice, map[string][]byte, error) {
 }
 
 // packageNotice is the notice of the npm package in folder, under root,
-// refused when its licence is not one a paid app may ship. cache is the
-// Go module cache, where the Wails runtime's text is.
-func packageNotice(fsys afero.Fs, root, folder, cache string) (notice, map[string][]byte, error) {
+// refused when its licence is not one a paid app may ship. wails is the
+// Wails module the programs compile, which the Wails runtime has to match.
+func packageNotice(fsys afero.Fs, root, folder string, wails module) (notice, map[string][]byte, error) {
 	dir := filepath.Join(root, filepath.FromSlash(folder))
 	raw, err := afero.ReadFile(fsys, filepath.Join(dir, "package.json"))
 	if err != nil {
@@ -185,13 +189,17 @@ func packageNotice(fsys afero.Fs, root, folder, cache string) (notice, map[strin
 	if want := path.Base(path.Dir(folder)) + "/" + path.Base(folder); pkg.Name != path.Base(folder) && pkg.Name != want {
 		return notice{}, nil, fmt.Errorf("%s holds the package %q", folder, pkg.Name)
 	}
+	if pkg.Name == "@wailsio/runtime" && "v"+pkg.Version != wails.Version {
+		return notice{}, nil, fmt.Errorf("the interface has the Wails runtime %s and the programs Wails %s. "+
+			"Pin both to the same version, in go.mod and frontend/package.json", pkg.Version, wails.Version)
+	}
 	name, body, err := licence.In(fsys, dir)
 	if err != nil && pkg.Name == "@wailsio/runtime" {
 		// The Wails runtime is published without its licence file. It is
 		// the same project and the same licence as the Wails module, at
 		// the same version, so the text is taken from there.
 		name = "LICENSE"
-		dir = filepath.Join(cache, "github.com", "wailsapp", "wails", "v3@v"+pkg.Version)
+		dir = wails.Dir
 		body, err = afero.ReadFile(fsys, filepath.Join(dir, name))
 	}
 	if err != nil {

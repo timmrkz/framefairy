@@ -142,27 +142,6 @@ func TestTheNoticesTheBuildWroteAreShownWithTheRest(t *testing.T) {
 	}
 }
 
-// The Wails runtime the interface talks to is pinned to the version of the
-// Wails module, see CLAUDE.md, and its notice is the module's text.
-//
-// On the real disk: what is read is the repository's own go.mod and
-// frontend/package.json.
-func TestTheWailsRuntimeIsPinnedWithWails(t *testing.T) {
-	mod, err := os.ReadFile("../go.mod")
-	if err != nil {
-		t.Fatal(err)
-	}
-	pkg, err := os.ReadFile("../frontend/package.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	module := regexp.MustCompile(`wailsapp/wails/v3 v(\S+)`).FindSubmatch(mod)
-	runtime := regexp.MustCompile(`"@wailsio/runtime": "(\S+)"`).FindSubmatch(pkg)
-	if module == nil || runtime == nil || string(module[1]) != string(runtime[1]) {
-		t.Errorf("go.mod pins Wails %q and package.json the runtime %q", module, runtime)
-	}
-}
-
 // binary can get its source. The notice says where.
 func TestTheFFmpegNoticeSaysWhereTheSourceIs(t *testing.T) {
 	n, _ := find(all(t), "ffmpeg")

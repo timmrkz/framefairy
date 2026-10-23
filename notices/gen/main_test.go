@@ -90,7 +90,7 @@ func TestAModuleIsNoticedAsTheBuildHasIt(t *testing.T) {
 // An npm package is noticed from the folder the bundle took it from, so a
 // copy one package carries in its own node_modules is named for itself,
 // at its own version. The Wails runtime, published without a licence
-// file, has the Wails module's text.
+// file, has the Wails module's text, and is refused at any other version.
 func TestAPackageIsNoticedFromTheFolderTheBundleTookItFrom(t *testing.T) {
 	fsys := afero.NewMemMapFs()
 	write := func(path, body string) {
@@ -103,22 +103,27 @@ func TestAPackageIsNoticedFromTheFolderTheBundleTookItFrom(t *testing.T) {
 	write("/f/node_modules/bits-ui/node_modules/@floating-ui/dom/package.json", `{"name": "@floating-ui/dom", "version": "2.0.0", "license": "MIT"}`)
 	write("/f/node_modules/bits-ui/node_modules/@floating-ui/dom/LICENSE", "MIT, floating-ui")
 	write("/f/node_modules/@wailsio/runtime/package.json", `{"name": "@wailsio/runtime", "version": "3.0.0-beta.23", "license": "MIT"}`)
-	write("/cache/github.com/wailsapp/wails/v3@v3.0.0-beta.23/LICENSE", "MIT, Wails")
+	write("/cache/wails/LICENSE", "MIT, Wails")
 	write("/f/node_modules/copyleft/package.json", `{"name": "copyleft", "version": "1.0.0", "license": "GPL-3.0-only"}`)
 	write("/f/node_modules/copyleft/LICENSE", "GPL")
 
-	n, sources, err := packageNotice(fsys, "/f", "node_modules/bits-ui/node_modules/@floating-ui/dom", "/cache")
+	wails := module{Path: wailsModule, Version: "v3.0.0-beta.23", Dir: "/cache/wails"}
+	n, sources, err := packageNotice(fsys, "/f", "node_modules/bits-ui/node_modules/@floating-ui/dom", wails)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if n.Name != "@floating-ui/dom" || n.Version != "2.0.0" || n.Part != partScreen || string(sources["npm-floating-ui-dom.txt"]) != "MIT, floating-ui" {
 		t.Errorf("the nested copy noticed as %+v with %q", n, sources)
 	}
-	n, sources, err = packageNotice(fsys, "/f", "node_modules/@wailsio/runtime", "/cache")
+	n, sources, err = packageNotice(fsys, "/f", "node_modules/@wailsio/runtime", wails)
 	if err != nil || string(sources["npm-wailsio-runtime.txt"]) != "MIT, Wails" {
 		t.Errorf("the Wails runtime noticed as %+v with %q, %v", n, sources, err)
 	}
-	if _, _, err := packageNotice(fsys, "/f", "node_modules/copyleft", "/cache"); err == nil {
+	wails.Version = "v3.0.0-beta.24"
+	if _, _, err := packageNotice(fsys, "/f", "node_modules/@wailsio/runtime", wails); err == nil {
+		t.Error("a Wails runtime of another version than Wails was let in")
+	}
+	if _, _, err := packageNotice(fsys, "/f", "node_modules/copyleft", wails); err == nil {
 		t.Error("a package under the GPL was let in")
 	}
 }

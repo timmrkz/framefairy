@@ -90,7 +90,8 @@ These checks keep both complete:
 
 - The build of the app stops when a module or a package is under a
   licence that is not allowed, or one it cannot tell, and says which file
-  to read.
+  to read. It also stops when the Wails runtime in the interface is not
+  the version of the Wails module, since its notice is that module's text.
 - `TestEveryModuleTheProgramsCompileMayShip` does the same for every
   module the programs compile on macOS, Linux and Windows, since a build
   only sees its own system.
