@@ -23,6 +23,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -346,23 +347,14 @@ func (d *desk) outcome(path string) outcome {
 	return outcome{}
 }
 
-// idle waits until nothing of the episode is queued or running.
+// idle waits until nothing of the episode is queued or running, told by
+// the queue the moment its last job ends. Work that never ends hangs the
+// test until go test's own -timeout, which shows every goroutine.
 func (d *desk) idle(path string) {
 	d.t.Helper()
-	deadline := time.Now().Add(60 * time.Second)
-	for time.Now().Before(deadline) {
-		busy := false
-		for _, j := range d.svc.jobs.list() {
-			if j.Episode == path && (j.State == JobQueued || j.State == JobRunning) {
-				busy = true
-			}
-		}
-		if !busy {
-			return
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	d.t.Fatalf("the work on %s never ended: %+v", filepath.Base(path), d.svc.jobs.list())
+	d.svc.jobs.until(func(jobs []*Job) bool {
+		return !slices.ContainsFunc(jobs, func(j *Job) bool { return j.Episode == path && going(j) })
+	}, nil)
 }
 
 // clips are the clips in the episode's list.
@@ -575,16 +567,6 @@ func stream(w http.ResponseWriter, answer string) {
 	send(`{"choices":[{"delta":{},"finish_reason":"stop"}]}`)
 	send(`{"choices":[],"usage":{"prompt_tokens":100,"completion_tokens":40}}`)
 	_, _ = w.Write([]byte("data: [DONE]\n\n"))
-}
-
-// within waits for a channel, or fails the test.
-func within(t *testing.T, c <-chan struct{}, what string) {
-	t.Helper()
-	select {
-	case <-c:
-	case <-time.After(30 * time.Second):
-		t.Fatalf("%s never happened", what)
-	}
 }
 
 var errBroken = errors.New("the speech model could not be loaded")

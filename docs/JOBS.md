@@ -210,6 +210,15 @@ Continue, see row 2.169 in [GUI-PLAN.md](GUI-PLAN.md). Search on an episode wait
 was just called off to be on its way out first, because both write the
 same record.
 
+Three things wait for jobs to stop: Search after Cancel, removing a video
+with its files, and quitting. Each goes on the moment the last job it
+waits for stops, because the queue tells whoever waits at every change
+to a job, see `until` in `cmd/framefairy-app/jobs.go`. A job that will
+not stop is given `stopWait`, 15 s, and then the removal says so and
+deletes nothing, and the app quits anyway. The waits used to look at the
+list every 20, 50 or 100 ms, so each took up to that much longer than
+the work, #394.
+
 **The interface** sends what was clicked and shows what it is told. There
 is no logic about jobs in TypeScript.
 
@@ -487,6 +496,13 @@ at the moment its lane came free still took it.
 
 The interface's harness has one fake search that goes through the same
 steps from the same kind of record, see the interface skill.
+
+The tests of the queue never wait on the clock. They wait on `until`,
+with no time limit, or on a job's news, and a job that never ends is left
+to `go test`'s own `-timeout`. `TestTheQueueGoesOnTheMomentAJobStops`
+runs the waits of the app on the fake clock of a `testing/synctest`
+bubble, and holds that each goes on the moment its job stops, and that a
+job that will not stop is given `stopWait` and no more.
 
 ## Batches
 

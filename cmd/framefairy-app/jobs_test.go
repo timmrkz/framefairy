@@ -351,9 +351,9 @@ func TestQuittingStopsEveryJob(t *testing.T) {
 // counted in rounds, not in milliseconds: 300 ms of hands was not enough
 // on a busy Mac runner for any work that breaks to reach a lane, #387. A
 // queue that never gets there hangs the test until go test's own
-// -timeout, which shows every goroutine. The queue's own waits still poll
-// the clock, cancelEpisode every 100 ms and shutDown every 50 ms up to
-// stopWait, and that is #394.
+// -timeout, which shows every goroutine. The queue's own waits,
+// cancelEpisode and shutDown, go on the moment the jobs they wait for
+// have stopped, see TestTheQueueGoesOnTheMomentAJobStops.
 func TestTheQueueUnderEverythingTheAppDoesAtOnce(t *testing.T) {
 	t.Parallel()
 	var events, broken atomic.Int64
