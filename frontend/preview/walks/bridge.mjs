@@ -6,8 +6,11 @@ import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { chromium } from "playwright";
 
-// The Chromium the pinned Playwright was made for, which CI installs. A
-// machine that has only another one walks on that rather than not at all:
+// The Chromium the pinned Playwright was made for. CI's image holds only
+// its headless shell, which a headless launch finds by itself, so there
+// the full browser this names is missing and the launch is left to
+// Playwright. A machine that has only another Chromium walks on that
+// rather than not at all:
 // a cloud session keeps the Chromium of the Playwright it came with in
 // PLAYWRIGHT_BROWSERS_PATH, and after Playwright went from 1.56 to 1.63
 // every walk there stopped on a browser that was not installed.

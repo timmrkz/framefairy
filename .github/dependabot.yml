@@ -9,6 +9,11 @@
 # pins by checksum beside the Go module's version. scripts/upstream.sh
 # watches the speech library instead, with ffmpeg and llama.cpp.
 #
+# The CI image, .github/ci-image/Dockerfile, starts from two images pinned
+# to a digest. Dependabot moves the digest when the tag gets a new build,
+# with the security fixes in it, and the version when there is a newer
+# one, both in one pull request a week, which builds the image anew.
+#
 # Minor and patch versions come together, one pull request a week for the
 # Go modules and one for the interface. A new major version comes alone,
 # because a major can break the build, and a broken one in the group
@@ -51,4 +56,11 @@ updates:
       interval: weekly
     groups:
       actions:
+        patterns: ["*"]
+  - package-ecosystem: docker
+    directory: /.github/ci-image
+    schedule:
+      interval: weekly
+    groups:
+      ci-image:
         patterns: ["*"]
