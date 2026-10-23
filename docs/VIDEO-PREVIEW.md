@@ -438,6 +438,33 @@ cloud draws each frame on the processor, which takes most of the time
 there, and they moved by more between two runs of the same code than
 between before and after.
 
+A playhead dragged faster than the frames under it can be decoded shows
+the key frame on the way, issue #281, see The interface. `speed.mjs` in
+the cloud, on its camera videos of 25 frames a second, five drags over a clip and back a run, two runs each with the
+key frame first turned off and on, on the same branch, the frames behind
+the playhead while it moved and the time to the frame under it after
+letting go, the mean of the two runs:
+
+| Frames behind the playhead   | Before (frames) | After (frames) | Change     |
+| ---------------------------- | --------------: | -------------: | ---------- |
+| 4K HEVC, median              |            65.0 |           50.5 | 22 % fewer |
+| 4K HEVC, 90th percentile     |           162.5 |          108.0 | 34 % fewer |
+| 4K HEVC, most                |           288.0 |          190.5 | 34 % fewer |
+| 1080p H.264, median          |            10.0 |            9.0 | no change  |
+| 1080p H.264, 90th percentile |            20.5 |           20.0 | no change  |
+
+| Frame under the hand after letting go | Before (ms) | After (ms) | Change    |
+| ------------------------------------- | ----------: | ---------: | --------- |
+| 4K HEVC, median                       |       312.5 |      325.0 | no change |
+| 1080p H.264, median                   |       112.0 |       74.5 | no change |
+
+Letting go is marked no change because the two runs of the same code
+were further apart than before and after: 204 and 421 ms for 4K before, 85
+and 139 ms for 1080p. At 1080p the cloud decodes about as fast as the
+hand moves, so there is little for a key frame to make up. The steps by
+word and by frame never ask for a key frame first, so they are not in
+the tables.
+
 ## Colour
 
 **What Tim saw** was a pale, foggy picture: black shown as a grey of 17
