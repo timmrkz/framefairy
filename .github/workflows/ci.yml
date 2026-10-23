@@ -411,6 +411,10 @@ jobs:
         - /home/runner/work:/home/runner/work
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The checkout belongs to the runner's user and the job runs as root,
+      # so git refuses the folder as someone else's, and go build, which
+      # asks git for the commit it stamps, fails with it.
+      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
