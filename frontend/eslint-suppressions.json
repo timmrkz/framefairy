@@ -9,13 +9,7 @@
       "count": 6
     },
     "no-restricted-properties": {
-      "count": 38
-    },
-    "no-restricted-syntax": {
-      "count": 4
-    },
-    "playwright/no-wait-for-timeout": {
-      "count": 95
+      "count": 31
     }
   },
   "preview/walks/speed.mjs": {
