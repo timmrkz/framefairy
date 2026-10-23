@@ -6,10 +6,12 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"framefairy/engine"
@@ -78,23 +80,9 @@ func TestTheQueueTakesEverythingAtOnce(t *testing.T) {
 	}()
 	wg.Wait()
 
-	// Nothing may be left running: every job was asked to stop.
-	deadline := time.Now().Add(20 * time.Second)
-	for {
-		busy := 0
-		for _, j := range q.list() {
-			if j.State == JobQueued || j.State == JobRunning {
-				busy++
-			}
-		}
-		if busy == 0 {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("%d jobs never stopped", busy)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+	// Nothing may be left running: every job was asked to stop. A job
+	// that never stops hangs the test until go test's own -timeout.
+	q.until(func(jobs []*Job) bool { return !slices.ContainsFunc(jobs, going) }, nil)
 	if events.Load() == 0 {
 		t.Error("the interface was told nothing")
 	}
@@ -121,20 +109,18 @@ func TestStoppingAnEpisodeWaitsForItsJobs(t *testing.T) {
 			return "", engine.ErrCancelled
 		})
 	}
-	// Wait until one of them really is running, so the stop has something
-	// to wait for rather than finding everything still queued.
-	select {
-	case <-running:
-	case <-time.After(10 * time.Second):
-		t.Fatal("no job ever started")
-	}
+	// One of them really is running, so the stop has something to wait
+	// for rather than finding everything still queued.
+	<-running
 
 	var wg sync.WaitGroup
 	for i := 0; i < 3; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			q.cancelEpisode(episode)
+			if !q.cancelEpisode(episode) {
+				t.Error("the jobs of the episode did not stop")
+			}
 		}()
 	}
 	wg.Wait()
@@ -144,6 +130,73 @@ func TestStoppingAnEpisodeWaitsForItsJobs(t *testing.T) {
 			t.Errorf("job %s is still %s", j.ID, j.State)
 		}
 	}
+}
+
+// Removing a video, Search after Cancel and quitting go on the moment the
+// last job they wait for has stopped. The queue's waits used to look again
+// every 100, 20 and 50 ms, so each of them took that much longer than its
+// work, #394. A job that will not stop is given stopWait and no more.
+//
+// The bubble's clock is fake, so the test runs in no time and reads the
+// time each wait took exactly. Each job takes 1234 ms to stop once told,
+// the way a render ends its ffmpeg, a time no look every 20, 50 or 100 ms
+// lands on.
+func TestTheQueueGoesOnTheMomentAJobStops(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const stopping = 1234 * time.Millisecond
+		q := newQueue(memoryStore(), func(JobUpdate) {}, func(string) {})
+		slow := func(ctx context.Context, p *engine.Project) (string, error) {
+			<-ctx.Done()
+			time.Sleep(stopping) //nolint:forbidigo // synctest bubble
+			return "", engine.ErrCancelled
+		}
+		removed := q.add("/eps/a.mp4", "render", "Render", slow)
+		searched := q.add("/eps/b.mp4", "plan", "Find clips", slow)
+		q.add("/eps/c.mp4", "model", "Speech model", slow)
+		synctest.Wait()
+		for _, j := range q.list() {
+			if j.State != JobRunning {
+				t.Fatalf("%s is %s, want all three running", j.ID, j.State)
+			}
+		}
+
+		took := func(what string, wait func() bool) {
+			t.Helper()
+			start := time.Now()
+			if !wait() {
+				t.Errorf("%s: the job did not stop", what)
+			}
+			if got := time.Since(start); got != stopping {
+				t.Errorf("%s took %v for a job that stopped in %v", what, got, stopping)
+			}
+		}
+		took("removing a video", func() bool { return q.cancelEpisode(removed.Episode) })
+		took("Search after Cancel", func() bool {
+			q.cancel(searched.ID)
+			q.waitJob(searched.ID)
+			j, _ := q.find(searched.Episode, searched.Kind)
+			return j.State == JobCancelled
+		})
+		took("quitting", q.shutDown)
+
+		// A job that will not stop is waited for stopWait, then given up on.
+		q = newQueue(memoryStore(), func(JobUpdate) {}, func(string) {})
+		release := make(chan struct{})
+		q.add("/eps/d.mp4", "render", "Render", func(ctx context.Context, p *engine.Project) (string, error) {
+			<-ctx.Done()
+			<-release
+			return "", engine.ErrCancelled
+		})
+		synctest.Wait()
+		start := time.Now()
+		if q.shutDown() {
+			t.Error("quitting said a job stopped that never did")
+		}
+		if got := time.Since(start); got != stopWait {
+			t.Errorf("quitting gave up after %v, want stopWait, %v", got, stopWait)
+		}
+		close(release)
+	})
 }
 
 // Work asked for twice at once is queued once.
@@ -213,14 +266,7 @@ func TestAskingForTheSameWorkTwiceAtOnceQueuesItOnce(t *testing.T) {
 func TestALaneSurvivesAPanicAroundAJob(t *testing.T) {
 	st := memoryStore()
 
-	var mu sync.Mutex
-	finished := map[string]string{}
 	q := newQueue(st, func(u JobUpdate) {
-		mu.Lock()
-		if u.Job.State != JobQueued && u.Job.State != JobRunning {
-			finished[u.Job.ID] = u.Job.State
-		}
-		mu.Unlock()
 		// The first job's news cannot be delivered at all.
 		if u.Job.ID == "job-1" {
 			panic("the window went away")
@@ -236,17 +282,9 @@ func TestALaneSurvivesAPanicAroundAJob(t *testing.T) {
 	second := q.add("/eps/b.mp4", "render", "Render", quick)
 	third := q.add("/eps/c.mp4", "transcribe", "Transcription", quick)
 
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		mu.Lock()
-		_, b := finished[second.ID]
-		_, c := finished[third.ID]
-		mu.Unlock()
-		if b && c {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	// A lane that died leaves the job behind it queued, and the test hangs
+	// until go test's own -timeout, which shows every goroutine.
+	q.until(func(jobs []*Job) bool { return !slices.ContainsFunc(jobs, going) }, nil)
 	for _, j := range []Job{first, second, third} {
 		got, ok := q.find(j.Episode, j.Kind)
 		if !ok || got.State != JobDone {
@@ -265,19 +303,16 @@ func TestQuittingStopsEveryJob(t *testing.T) {
 	q.add("/eps/a.mp4", "render", "Render", waiting)
 	q.add("/eps/b.mp4", "transcribe", "Transcription", waiting)
 	q.add("/eps/c.mp4", "render", "Render", waiting)
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
+	// One job in each of the two lanes runs, the third waits its turn.
+	q.until(func(jobs []*Job) bool {
 		n := 0
-		for _, j := range q.list() {
+		for _, j := range jobs {
 			if j.State == JobRunning {
 				n++
 			}
 		}
-		if n == 2 {
-			break
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+		return n == 2
+	}, nil)
 	var wg sync.WaitGroup
 	for range 4 {
 		wg.Add(1)
@@ -293,7 +328,8 @@ func TestQuittingStopsEveryJob(t *testing.T) {
 	if j := q.add("/eps/e.mp4", "render", "Render", waiting); j.State != JobFailed {
 		t.Errorf("work was queued after the app closed: %s", j.State)
 	}
-	time.Sleep(50 * time.Millisecond)
+	// A job that slipped in after shutDown looked would be queued or
+	// running now, and nothing has to pass for that to show.
 	for _, j := range q.list() {
 		if j.State == JobQueued || j.State == JobRunning {
 			t.Errorf("%s %s is %s after the app closed", j.ID, j.Episode, j.State)
@@ -503,6 +539,9 @@ func (n *jobNews) heard(j Job) {
 	n.change.Broadcast()
 }
 
+// going says whether a job is queued or running.
+func going(j *Job) bool { return j.State == JobQueued || j.State == JobRunning }
+
 // until waits for the news that makes done true.
 func (n *jobNews) until(done func(map[string]Job) bool) {
 	n.mu.Lock()
@@ -518,30 +557,26 @@ func (n *jobNews) until(done func(map[string]Job) bool) {
 // other way round, and a window that kept the last one it heard showed a
 // finished job as waiting, for good.
 func TestTheNewestNewsOfAJobIsHowItEnded(t *testing.T) {
-	var mu sync.Mutex
-	newest := map[string]Job{}
+	news := newJobNews()
 	q := newQueue(memoryStore(), func(u JobUpdate) {
-		mu.Lock()
-		defer mu.Unlock()
 		if u.Job.Seq == 0 {
 			t.Errorf("%s arrived without a number", u.Job.ID)
 		}
-		if have, ok := newest[u.Job.ID]; !ok || u.Job.Seq > have.Seq {
-			newest[u.Job.ID] = u.Job
-		}
+		news.heard(u.Job)
 	}, func(string) {})
 
 	quick := func(ctx context.Context, p *engine.Project) (string, error) {
 		p.Log().ProgressOf("working", 0.5, 1)
 		return "", nil
 	}
+	// Work that ends by itself unless it was called off by then, so some
+	// jobs end done and some cancelled while they run.
 	waiting := func(ctx context.Context, p *engine.Project) (string, error) {
-		select {
-		case <-ctx.Done():
+		runtime.Gosched()
+		if ctx.Err() != nil {
 			return "", engine.ErrCancelled
-		case <-time.After(5 * time.Millisecond):
-			return "", nil
 		}
+		return "", nil
 	}
 	var wg sync.WaitGroup
 	for g := range 8 {
@@ -571,23 +606,21 @@ func TestTheNewestNewsOfAJobIsHowItEnded(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		busy := false
-		for _, j := range q.list() {
-			if j.State == JobQueued || j.State == JobRunning {
-				busy = true
+	// Every job was heard of as it was added, so the news has them all.
+	// It says each has ended once its last snapshot has arrived, and the
+	// queue's state cannot be newer than that.
+	news.until(func(jobs map[string]Job) bool {
+		for _, j := range jobs {
+			if going(&j) {
+				return false
 			}
 		}
-		if !busy {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	mu.Lock()
-	defer mu.Unlock()
+		return true
+	})
+	news.mu.Lock()
+	defer news.mu.Unlock()
 	for _, j := range q.list() {
-		heard := newest[j.ID]
+		heard := news.jobs[j.ID]
 		if heard.State != j.State {
 			t.Errorf("%s ended %s, and the newest news of it says %s", j.ID, j.State, heard.State)
 		}
@@ -623,26 +656,19 @@ func TestAJobKeepsItsLogInTheWorkFolder(t *testing.T) {
 		p.Log().Detail("%s", "ffmpeg said something odd")
 		return "", fmt.Errorf("%s", "the disk is full")
 	})
-	select {
-	case <-done:
-	case <-time.After(10 * time.Second):
-		t.Fatal("the job never ended")
+	<-done
+	// The log writes each line to the file as it is said, unbuffered, so
+	// what the work said is there before the job says it ended, although
+	// the file is closed only after that.
+	logs, _ := filepath.Glob(filepath.Join(engine.JobsDir(episode), "*-render.log"))
+	if len(logs) != 1 {
+		t.Fatalf("%d job logs, want 1: %v", len(logs), logs)
 	}
-	// The file is closed after the job says it ended, so it is read once
-	// it holds what was said.
-	var body string
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		logs, _ := filepath.Glob(filepath.Join(engine.JobsDir(episode), "*-render.log"))
-		if len(logs) == 1 {
-			b, _ := os.ReadFile(logs[0])
-			body = string(b)
-			if strings.Contains(body, "ffmpeg said something odd") {
-				break
-			}
-		}
-		time.Sleep(20 * time.Millisecond)
+	b, err := os.ReadFile(logs[0])
+	if err != nil {
+		t.Fatal(err)
 	}
+	body := string(b)
 	for _, want := range []string{"rendering the first clip", "ffmpeg said something odd"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the log has no %q:\n%s", want, body)

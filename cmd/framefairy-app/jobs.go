@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"runtime/debug"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -165,18 +166,25 @@ type queue struct {
 	// keeps its model loaded again, see keep.go: such a job may have put
 	// the kept model aside for another one, or for a bigger copy of it.
 	searched func()
+	// changed is closed at every change to a job and made again, so
+	// whoever waits for jobs to stop hears it the moment they do, see
+	// until. It is the way the lanes tell their waiters, see lanes.go.
+	changed chan struct{}
 }
 
-// stampLocked marks a change to a job. q.mu is held.
+// stampLocked marks a change to a job, and tells whoever waits on the
+// jobs. q.mu is held.
 func (q *queue) stampLocked(j *Job) {
 	q.seq++
 	j.Seq = q.seq
+	close(q.changed)
+	q.changed = make(chan struct{})
 }
 
 // newQueue builds the queue.
 func newQueue(s *store, emit func(JobUpdate), notify func(string)) *queue {
 	return &queue{emit: quietly(emit), store: s, notify: quietly(notify), closed: map[string]int{},
-		lanes: newLanes(), calledOff: map[string]string{}}
+		lanes: newLanes(), calledOff: map[string]string{}, changed: make(chan struct{})}
 }
 
 // newIdleQueue builds the queue without setting it running, so work can be
@@ -569,21 +577,41 @@ func (q *queue) openEpisode(episode string) {
 // waitEpisode waits until no job of an episode is running any more, and
 // says whether that happened within stopWait.
 func (q *queue) waitEpisode(episode string) bool {
-	deadline := time.Now().Add(stopWait)
+	return q.stopped(func(j *Job) bool { return j.Episode == episode && j.State == JobRunning })
+}
+
+// stopped waits, at most stopWait, until no job that going picks is left,
+// and says whether that happened in time.
+func (q *queue) stopped(going func(*Job) bool) bool {
+	timer := time.NewTimer(stopWait)
+	defer timer.Stop()
+	return q.until(func(jobs []*Job) bool { return !slices.ContainsFunc(jobs, going) }, timer.C)
+}
+
+// until waits until done holds for the jobs, and says whether it did
+// before expire fired. It looks again at every change to a job, the
+// moment it is made, see changed, never on a clock of its own. A nil
+// expire never fires, which is how a test waits for as long as the work
+// takes. done is called under the queue's lock, so it only reads.
+func (q *queue) until(done func(jobs []*Job) bool, expire <-chan time.Time) bool {
+	expired := false
 	for {
-		running := false
-		for _, j := range q.list() {
-			if j.Episode == episode && j.State == JobRunning {
-				running = true
-			}
-		}
-		if !running {
+		q.mu.Lock()
+		if done(q.jobs) {
+			q.mu.Unlock()
 			return true
 		}
-		if !time.Now().Before(deadline) {
+		if expired {
+			q.mu.Unlock()
 			return false
 		}
-		time.Sleep(100 * time.Millisecond)
+		changed := q.changed
+		q.mu.Unlock()
+		select {
+		case <-changed:
+		case <-expire:
+			expired = true
+		}
 	}
 }
 
@@ -605,22 +633,7 @@ func (q *queue) shutDown() bool {
 		}
 	}
 	q.mu.Unlock()
-	deadline := time.Now().Add(stopWait)
-	for {
-		running := false
-		for _, j := range q.list() {
-			if j.State == JobRunning {
-				running = true
-			}
-		}
-		if !running {
-			return true
-		}
-		if !time.Now().Before(deadline) {
-			return false
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	return q.stopped(func(j *Job) bool { return j.State == JobRunning })
 }
 
 // cancelEpisode stops every job of an episode and waits until none of them
@@ -722,19 +735,7 @@ func (q *queue) settleRefused(id string) {
 
 // waitJob waits, at most stopWait, until a job is no longer running.
 func (q *queue) waitJob(id string) {
-	deadline := time.Now().Add(stopWait)
-	for time.Now().Before(deadline) {
-		running := false
-		for _, j := range q.list() {
-			if j.ID == id && (j.State == JobRunning || j.State == JobQueued) {
-				running = true
-			}
-		}
-		if !running {
-			return
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+	q.stopped(func(j *Job) bool { return j.ID == id && (j.State == JobRunning || j.State == JobQueued) })
 }
 
 // find returns the newest job of a kind for an episode, if any.
