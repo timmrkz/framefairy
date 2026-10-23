@@ -48,3 +48,14 @@ export function escapeLetsGo(e: KeyboardEvent) {
   field.blur();
   said(`keys: Escape let go of ${field.getAttribute("aria-label") || field.id || field.tagName.toLowerCase()}`);
 }
+
+// A key that moves the focus shows where it went. Where macOS would not
+// move it, Tab to a button or an arrow along a row of them, the page moves
+// it itself, and WebKit draws no ring on a focus a script moved when the
+// focus before it came from a click, see Element::focus in WebKit. Tim
+// clicked into the report, pressed Tab, and Report had the focus with no
+// ring to show it. Chromium, which the walks drive, rings it anyway, so
+// the move asks for the ring and does not leave it to the engine's guess.
+export function keyFocus(to: HTMLElement) {
+  to.focus({ focusVisible: true });
+}

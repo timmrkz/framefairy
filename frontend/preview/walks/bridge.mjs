@@ -13,19 +13,49 @@ import { chromium } from "playwright";
 // rather than not at all:
 // a cloud session keeps the Chromium of the Playwright it came with in
 // PLAYWRIGHT_BROWSERS_PATH, and after Playwright went from 1.56 to 1.63
-// every walk there stopped on a browser that was not installed.
-function browserPath() {
-  if (existsSync(chromium.executablePath())) return undefined;
+// every walk there stopped on a browser that was not installed. Whether
+// to fall back is Playwright's own answer, the launch saying the browser
+// it would run is not there, since the file it would run is its headless
+// shell, not the browser executablePath names. The fallback is the newest
+// headless shell there, the kind CI runs, and only then the newest full
+// browser, which runs another headless mode. Newer builds keep them in
+// folders ending in linux64, older ones in chrome-linux, and a walk that
+// looked only in the second stopped again, #490. The fallback is said
+// once, so a walk that fails on it says which browser it ran in.
+const builds = [
+  ["chromium_headless_shell", ["chrome-headless-shell-linux64", "chrome-headless-shell"], ["chrome-linux", "headless_shell"]],
+  ["chromium", ["chrome-linux64", "chrome"], ["chrome-linux", "chrome"]],
+];
+function fallbackBrowser() {
   const root = process.env.PLAYWRIGHT_BROWSERS_PATH;
   if (!root || !existsSync(root)) return undefined;
-  const builds = readdirSync(root)
-    .filter((d) => /^chromium-\d+$/.test(d))
-    .sort((a, b) => Number(b.split("-")[1]) - Number(a.split("-")[1]));
-  for (const dir of builds) {
-    const exe = join(root, dir, "chrome-linux", "chrome");
-    if (existsSync(exe)) return exe;
+  const dirs = readdirSync(root);
+  for (const [kind, ...places] of builds) {
+    const found = dirs
+      .filter((d) => new RegExp(`^${kind}-\\d+$`).test(d))
+      .sort((a, b) => Number(b.split("-")[1]) - Number(a.split("-")[1]));
+    for (const dir of found) {
+      for (const place of places) {
+        const exe = join(root, dir, ...place);
+        if (existsSync(exe)) return exe;
+      }
+    }
   }
   return undefined;
+}
+let fellBack;
+async function launch(args) {
+  try {
+    return await chromium.launch({ args });
+  } catch (e) {
+    const exe = String(e?.message).includes("Executable doesn't exist") && fallbackBrowser();
+    if (!exe) throw e;
+    if (fellBack !== exe) {
+      fellBack = exe;
+      console.error(`walking on ${exe}, since the Chromium of this Playwright is not installed`);
+    }
+    return chromium.launch({ executablePath: exe, args });
+  }
 }
 
 // A random number generator that a seed decides, so a walk that breaks a
@@ -79,7 +109,7 @@ export async function open(url, { viewport = { width: 1500, height: 1000 }, scal
   // preview itself draws on a 2D canvas here, __flatScreen, because
   // headless Chromium gives nothing back from a WebGPU canvas, and the
   // walks read the frame on screen from the canvas. See screen.ts.
-  const browser = again ?? (await chromium.launch({ executablePath: browserPath(), args: ["--enable-unsafe-webgpu"] }));
+  const browser = again ?? (await launch(["--enable-unsafe-webgpu"]));
   const page = await browser.newPage({ viewport, deviceScaleFactor: scale });
   await page.addInitScript(() => {
     window.__flatScreen = true;
@@ -777,24 +807,72 @@ export async function fromSidebar(page, click) {
   );
 }
 
+// Until fn, run in the page with arg, says true. It is asked again each
+// time the page changes, an attribute, a node or a text, never on the
+// clock, so what it waits for has to show on the page. One that never
+// comes is a walk that hangs, ended by the -timeout of make walks with
+// the step the walk printed last. seenUntil is the same wait for a read
+// the walk makes itself.
+export function pageUntil(page, fn, arg) {
+  return page.evaluate(
+    ([source, arg]) =>
+      new Promise((done) => {
+        const holds = new Function(`return (${source})`)();
+        if (holds(arg)) return done();
+        const o = new MutationObserver(() => {
+          if (!holds(arg)) return;
+          o.disconnect();
+          done();
+        });
+        o.observe(document, { subtree: true, childList: true, characterData: true, attributes: true });
+      }),
+    [fn.toString(), arg],
+  );
+}
+
+// Reads read until ok says it is what was wanted, and says what it read
+// last: once the interface has heard everything the Go side told it and
+// has settled on it, see caughtUp, and then each time the page's body
+// changes, never on the clock. What the app shows a moment later by
+// itself, like the Updates page holding its looking for 1.4 s, comes that
+// way. read must change nothing in the body, or it wakes itself. A page
+// that never comes to it hangs the walk, as pageUntil does.
+export async function seenUntil(page, url, read, ok) {
+  await caughtUp(page, url);
+  for (;;) {
+    const changed = page.evaluate(
+      () =>
+        new Promise((done) => {
+          const o = new MutationObserver(() => {
+            o.disconnect();
+            done();
+          });
+          o.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true });
+        }),
+    );
+    // Left waiting once ok is met, so it must not throw when the page
+    // closes.
+    changed.catch(() => {});
+    const now = await read();
+    if (ok(now)) return now;
+    await changed;
+  }
+}
+
 // Adds an HEVC 10-bit episode with Add and chooses the clip its first
 // search finds.
 export async function addHEVC(url, page) {
   await control(url, "/pick?seconds=40&codec=hevc");
   await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());
-  await page.waitForFunction(
-    () => {
-      const pane = [...document.querySelectorAll("aside")].find((a) => a.querySelector(".listhead"));
-      const on = document.querySelector("aside button.episode.current .name")?.textContent ?? "";
-      return (
-        on.startsWith("folge-") &&
-        pane?.querySelector(".listhead button.search")?.textContent.includes("Search") &&
-        pane.querySelectorAll("ol li[data-key]").length > 0
-      );
-    },
-    null,
-    { timeout: 120000, polling: 250 },
-  );
+  await pageUntil(page, () => {
+    const pane = [...document.querySelectorAll("aside")].find((a) => a.querySelector(".listhead"));
+    const on = document.querySelector("aside button.episode.current .name")?.textContent ?? "";
+    return (
+      on.startsWith("folge-") &&
+      pane?.querySelector(".listhead button.search")?.textContent.includes("Search") &&
+      pane.querySelectorAll("ol li[data-key]").length > 0
+    );
+  });
   await page.locator("aside ol li[data-key] button.pick").first().click();
   await settle(page);
   // The frames on screen came through the Go side's streams, or this walk
@@ -854,26 +932,20 @@ export async function xOf(page, at) {
 
 // Puts the playhead on a moment of the clip with a click on the clip
 // timeline, the way a hand does, and waits until the video preview shows
-// the frame that holds it, at fps frames a second. Says whether that
-// frame came.
+// the frame that holds it, see shownOnPlayhead. Says whether the picture
+// is that frame by the number drawn on it, at fps frames a second.
 export async function seekTo(page, at, fps) {
   const g = await handles(page);
   await page.mouse.click(await xOf(page, at), high(g.track));
   await settle(page);
   await reader(page);
-  return page
-    .waitForFunction(
-      (fps) => {
-        const at = Number(document.querySelector(".screen").dataset.playhead);
-        // The frame that holds the playhead, a frame that begins a
-        // millisecond or less after it included, see frameAt in
-        // lib/flow.ts.
-        return window.__pictured() === Math.floor((at + 0.001) * fps);
-      },
-      fps,
-      { polling: 50, timeout: 5000 },
-    )
-    .then(() => true, () => false);
+  await shownOnPlayhead(page);
+  return page.evaluate((fps) => {
+    const at = Number(document.querySelector(".screen").dataset.playhead);
+    // The frame that holds the playhead, a frame that begins a
+    // millisecond or less after it included, see frameAt in lib/flow.ts.
+    return window.__pictured() === Math.floor((at + 0.001) * fps);
+  }, fps);
 }
 
 // The crop frame in the video preview, where the playhead is: where it

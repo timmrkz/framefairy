@@ -111,20 +111,27 @@ const gestures = [
     },
   },
   {
+    // loop says whether L loops the clip on the way, when the walk makes
+    // this first, see the end of this file. Otherwise the seed says.
     name: "end",
     weight: 1,
     when: () => true,
-    async run(g) {
+    async run(g, { loop } = {}) {
       const state = await engineState(page, watch.at);
       const p = state.segments;
-      if (!(await playsClip())) return "nothing, the playhead is on the video";
+      const made = loop !== undefined;
+      const off = (why) => {
+        if (made) watch.broke("a clip is played to its end on every walk", why);
+        return `nothing, ${why}`;
+      };
+      if (!(await playsClip())) return off("the playhead is on the video");
       // Played from anywhere, a clip takes up to half a minute of real
       // time to reach its end, and that was most of what the walks took.
       // So the playhead goes a moment before the last cut first, which is
       // still a cut to jump on the way, or before the end when there is
       // none.
       await nearEnd(p, g);
-      if (!(await playsClip())) return "a click on the clip timeline, which put the playhead on the video";
+      if (!(await playsClip())) return off("a click on the clip timeline put the playhead on the video");
       const from = (await at()).at;
       // A clip at its end starts over, so as long as the whole clip.
       const length = p.reduce((sum, x) => sum + (x.end - x.start), 0);
@@ -137,7 +144,7 @@ const gestures = [
       // loop a moment before the end, once the next time through is worked
       // out, which is how Tim heard the clip's start play on after the
       // play had stopped at its end.
-      const looped = rng.next() < 0.5 ? 0.3 + rng.next() * 2 : 0;
+      const looped = made ? (loop ? 1 : 0) : rng.next() < 0.5 ? 0.3 + rng.next() * 2 : 0;
       // Each wait ends at the latest once the play has gone on by the
       // whole clip and a second more, in the episode's own time, so a clip
       // that plays on breaks the rule below. A play that stalls is ended by
@@ -278,8 +285,15 @@ const gestures = [
   },
 ];
 
+// Every walk plays the clip to its end first, once with L on and off on
+// the way and once without, whatever its seed draws later. Left to the
+// seeds, none of the three CI walks played the loop to the end, #479.
 await walk(w, gestures, {
   look: handles,
+  first: [
+    ["end", { loop: true }],
+    ["end", { loop: false }],
+  ],
   async show(page) {
     const v = await at();
     return `at ${v.at.toFixed(2)}${v.paused ? "" : " playing"}`;
