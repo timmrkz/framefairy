@@ -20,6 +20,10 @@
 /framefairy
 /framefairy-app
 /framefairy-train
+# The same, built inside its own folder
+/cmd/framefairy/framefairy
+/cmd/framefairy-app/framefairy-app
+/cmd/framefairy-train/framefairy-train
 *.exe
 *.test
 *.out
