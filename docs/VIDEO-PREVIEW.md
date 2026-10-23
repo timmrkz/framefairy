@@ -402,6 +402,32 @@ to start, about 45 ms, which every play does on purpose, see
 off its line by 23 to 47 ms each play, so the line is now fitted from the
 moment the sound starts.
 
+Tim's third report on #430 still missed about 9 refreshes a minute, and
+the time went to the page's own work after each animation frame, not to
+the frame queue's. While it played, the playhead moved on every
+animation frame, and everything in the workspace that depends on it was
+worked out again and laid out each time, 120 times a second on Tim's
+screen for a video of 25 frames a second. Everything that follows the
+playhead is drawn by its frame, so the playhead now moves only when the
+sound heard is in another frame, `playMoves` in `lib/playhead.ts`, issue
+#446. A trace of plays in the cloud, headless Chromium at 60 Hz, with
+`smooth.mjs`'s video of a minute at 1080p, two runs of three plays each,
+101.3 s of play a run, the work of a second of play averaged over the
+two:
+
+| Work a second of play       | Before (ms) | After (ms) | Change    |
+| --------------------------- | ----------: | ---------: | --------- |
+| The app's own JavaScript    |        33.4 |       20.8 | 38 % less |
+| Working out styles          |        22.8 |       13.5 | 41 % less |
+| Layout                      |        17.1 |       14.6 | 15 % less |
+| Paint                       |        22.3 |       19.3 | 13 % less |
+
+The playhead moved 3434 times in the first play of 60 s before and 1497
+times after. The refreshes missed in the cloud are not in the table: the
+cloud draws each frame on the processor, which takes most of the time
+there, and they moved by more between two runs of the same code than
+between before and after.
+
 ## Colour
 
 **What Tim saw** was a pale, foggy picture: black shown as a grey of 17
