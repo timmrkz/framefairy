@@ -82,6 +82,10 @@ check ".github/workflows/ci.yml" "app go interface workflows"
 check ".github/ci-filters.yml" "app go interface"
 check ".golangci.yml" "app go interface"
 check "frontend/package.json" "app interface"
+# The CI image is the walks' alone, so it starts the jobs of app only. The
+# script it runs is also the Go jobs', so it starts everything.
+check ".github/ci-image/Dockerfile" "app"
+check "scripts/ci-packages.sh" "app go interface"
 
 # The rules that no job runs but their own check in build start nothing.
 # Issue #322: a pull request that changed only them ran every job.
@@ -115,11 +119,12 @@ done
 
 # A push to main runs everything: each filter has an output in the job
 # changes of ci.yml that is true whenever the event is not a pull request,
-# and each output has its filter.
+# and each output of that job has its filter.
 want=$(sed -n 's/^\([a-z]*\):$/\1/p' "$root/.github/ci-filters.yml" | sort)
 got=$(sed -n "s/^      \([a-z]*\): \\\${{ github.event_name != 'pull_request' || steps.filter.outputs.\([a-z]*\) == 'true' }}\$/\1 \2/p" "$root/.github/workflows/ci.yml" |
 	awk '$1 == $2 { print $1 }' | sort)
-outputs=$(sed -n '/^    outputs:$/,/^    steps:$/p' "$root/.github/workflows/ci.yml" | grep -c '^      [a-z]*: ')
+outputs=$(sed -n '/^  changes:$/,/^    steps:$/p' "$root/.github/workflows/ci.yml" |
+	sed -n '/^    outputs:$/,$p' | grep -c '^      [a-z]*: ')
 if [ "$got" = "$want" ] && [ "$outputs" = "$(echo "$want" | wc -l)" ]; then
 	printf 'ok  \t%-52s %s\n' "a push to main" "$(echo $want)"
 else

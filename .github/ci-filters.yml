@@ -30,6 +30,8 @@ app:
 # interface, so only the files of it a Go test reads count, like api.ts,
 # and the one that reads all of it runs in the job build. These jobs run
 # scripts/changed.sh on a pull request, so a change to it starts them.
+# They do not run in the CI image, which only the walks do, so a change
+# to it does not start them.
 go:
   - '**'
   - '!docs/**'
@@ -39,9 +41,10 @@ go:
   - '!.claude/**'
   - '!scripts/{main-moved,needs-build,plan-frozen}{,-test}.sh'
   - '!scripts/changed-test.sh'
+  - '!.github/ci-image/**'
   - '!frontend/**/!(api.ts|*.cases.json)'
 
-# The job interface, which needs Node and nothing of Go.
+# The job interface, which needs Node and nothing of Go, nor the CI image.
 interface:
   - '**'
   - '!docs/**'
@@ -50,6 +53,7 @@ interface:
   - '!.vscode/**'
   - '!.claude/**'
   - '!scripts/{main-moved,needs-build,plan-frozen,changed}{,-test}.sh'
+  - '!.github/ci-image/**'
   - '!**/*.go'
   - '!go.{mod,sum}'
 

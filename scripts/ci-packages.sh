@@ -6,8 +6,10 @@
 #
 #   sh scripts/ci-packages.sh            # the fuzzing, govulncheck
 #   sh scripts/ci-packages.sh patchelf   # the build, which carries the speech library
-#   sh scripts/ci-packages.sh ffmpeg     # the tests, some of which render,
-#                                        # and the walks, whose episode it makes
+#   sh scripts/ci-packages.sh ffmpeg     # the tests, some of which render
+#
+# The walks run in the CI image, .github/ci-image/Dockerfile, which this
+# script fills as root, where there is no sudo and none is needed.
 #
 # The packages are downloaded into CACHE, which the workflow keeps from one
 # run to the next, so a run downloads only what changed since. The mirror
@@ -17,32 +19,30 @@
 set -eu
 
 CACHE=${CACHE:-$HOME/.cache/apt}
+sudo=sudo
+[ "$(id -u)" != 0 ] || sudo=
 mkdir -p "$CACHE/partial"
 
 # man-db rebuilds its index after every install that brings a manual page,
 # and nobody reads a manual page on a runner. It is most of the time apt
 # spends after the downloads.
-sudo rm -f /var/lib/man-db/auto-update
+$sudo rm -f /var/lib/man-db/auto-update
 
 # A download that stalls is tried again rather than waited on. The cache
 # is in the runner's home, which apt's own user cannot reach, so apt
 # downloads as root, as it would anyway, without saying so each time.
-# They are apt's own settings, not flags of this call, so whatever runs
-# apt after it in the same job takes the cache too: the walks job installs
-# the libraries Chromium needs through Playwright, and on a slow day the
-# fonts among them took eleven minutes from the runners' mirror, #462.
 printf '%s\n' \
 	'Acquire::Retries "3";' \
 	'Acquire::http::Timeout "20";' \
 	"Dir::Cache::Archives \"$CACHE\";" \
 	'APT::Keep-Downloaded-Packages "true";' \
 	'APT::Sandbox::User "root";' |
-	sudo tee /etc/apt/apt.conf.d/99ci-cache >/dev/null
-apt="sudo apt-get -q"
+	$sudo tee /etc/apt/apt.conf.d/99ci-cache >/dev/null
+apt="$sudo apt-get -q"
 $apt update
 $apt install -y --no-install-recommends \
 	pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libsoup-3.0-dev "$@"
 
 # The cache is saved by the runner's user, and apt left it root's.
-sudo rm -rf "$CACHE/partial" "$CACHE/lock"
-sudo chown -R "$(id -u):$(id -g)" "$CACHE"
+$sudo rm -rf "$CACHE/partial" "$CACHE/lock"
+$sudo chown -R "$(id -u):$(id -g)" "$CACHE"
