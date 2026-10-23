@@ -529,30 +529,25 @@ frame, and with forty identical episodes made one by one it was most of
 the five minutes the engine's tests took. `TestProjectSteps` still frames
 with it.
 
-**A Linux job installs what it uses and nothing else**, through
-`scripts/ci-packages.sh`. Every Go job compiles the app's package, the
-fuzzing too because one of its targets is there, so GTK, WebKit and
-pkg-config are in every one, and patchelf only in `build`, which
-carries the speech library. `linux` and the walks install nothing, they
-run in the CI image below.
-ffmpeg was once in all three, and it is most of what apt downloads: on a
-day the Ubuntu mirror crawled, the fuzzing waited fifteen minutes for a
-speech synthesis library ffmpeg depends on, for a job that never runs
-ffmpeg. The packages apt downloads are kept by the workflow for a week,
-so a run normally downloads only the package lists, a download that
-stalls is tried again, and the step gives up after ten minutes rather
-than holding the job for hours.
+**No Linux job of CI installs a system package.** Every one that
+compiles Go, `build` when the app changed, `linux`, `fuzz`, the walks,
+the nightly fuzzing and govulncheck, runs in the CI image below, which
+has everything they use. On a day the Ubuntu mirror crawled, the fuzzing
+once waited fifteen minutes for a speech synthesis library ffmpeg
+depends on, and the walks up to twelve for Chromium's fonts. Only
+`tools.yml`, the build of the tools we ship, still installs its own,
+because it runs by hand, takes half an hour anyway and holds up nothing.
 
 ### The CI image
 
-`linux`, `fuzz`, the nightly fuzzing and the walks run in a container,
-the CI image, built from `.github/ci-image/Dockerfile`: Ubuntu 24.04,
-the runners' own system, with every package `scripts/ci-packages.sh`
-installs for the Go side, ffmpeg, meson, ninja, nasm and patchelf beside
-them, and the headless Chromium of the Playwright version in
-`frontend/package-lock.json` with the libraries and fonts it needs. Go
-and Node are not in it: setup-go and setup-node bring them as in every
-other job.
+`build`, `linux`, `fuzz`, the walks, the nightly fuzzing and govulncheck
+run in a container, the CI image, built from
+`.github/ci-image/Dockerfile`: Ubuntu 24.04, the runners' own system,
+with every package `scripts/ci-packages.sh` installs for the Go side,
+ffmpeg, meson, ninja, nasm and patchelf beside them, and the headless
+Chromium of the Playwright version in `frontend/package-lock.json` with
+the libraries and fonts it needs. Go and Node are not in it: setup-go
+and setup-node bring them as in every other job.
 
 On some days the runners' Ubuntu mirror gave 18 to 40 kB a second, and
 the libraries Chromium needs, mostly fonts, held a walks job for up to
@@ -565,7 +560,7 @@ image starts `linux` and `fuzz` by the filter `image`, but not `macos`,
 which does not run in it.
 
 `.github/workflows/ci-image.yml`, which `ci.yml` calls as the job
-`image` and `fuzz-nightly.yml` calls too, names the image by a sum of
+`image`, and `fuzz-nightly.yml` and `security.yml` call too, names the image by a sum of
 the Dockerfile, of `scripts/ci-packages.sh` and of the Playwright
 version, as `ghcr.io/timmrkz/framefairy-ci:<sum>`. When the registry has
 that tag, the job is done in seconds, and when it does not, which is

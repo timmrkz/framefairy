@@ -2,8 +2,9 @@
 # .github/ci-image/Dockerfile: Ubuntu with every system package they use
 # and Playwright's Chromium already in it, so none of them downloads from
 # the Ubuntu mirror, which on some days held a walks job for twelve
-# minutes, #462. Called by every workflow with a job in it, ci.yml and
-# fuzz-nightly.yml, whose jobs run in the image this names as ref.
+# minutes, #462. Called by every workflow with a job in it, ci.yml,
+# fuzz-nightly.yml and security.yml, whose jobs run in the image this
+# names as ref.
 #
 # It is kept in GitHub's container registry under a sum of what goes into
 # it: the Dockerfile, scripts/ci-packages.sh, which it runs, and the

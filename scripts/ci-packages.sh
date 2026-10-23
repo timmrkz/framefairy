@@ -2,19 +2,20 @@
 # Installs the system packages a Linux CI job needs to compile the Go side:
 # GTK and WebKit for the app, and pkg-config to find them. Every Go job
 # compiles the app's package, the fuzzing too, because one of its targets
-# is there. Whatever else a job uses is named after it, and only there:
+# is there. Whatever else is wanted is named after it:
 #
-#   sh scripts/ci-packages.sh            # the fuzzing, govulncheck
-#   sh scripts/ci-packages.sh patchelf   # the build, which carries the speech library
+#   sh scripts/ci-packages.sh ffmpeg patchelf
 #
-# The Go tests and the walks run in the CI image, .github/ci-image/Dockerfile,
-# which this script fills as root, where there is no sudo and none is needed.
+# Every Linux job of CI that compiles Go runs in the CI image,
+# .github/ci-image/Dockerfile, which this script fills, as root, where
+# there is no sudo and none is needed. It still runs on a runner too.
 #
-# The packages are downloaded into CACHE, which the workflow keeps from one
-# run to the next, so a run downloads only what changed since. The mirror
-# the runners use is fast most days and crawls on some: a fuzz job once
-# spent fifteen minutes on it, 13.6 MB of ffmpeg's speech synthesis library
-# arriving at 100 kB a second, ffmpeg being a package fuzzing never runs.
+# The packages are downloaded into CACHE, which a workflow can keep from
+# one run to the next. The mirror the runners use is fast most days and
+# crawls on some: a fuzz job once spent fifteen minutes on it, 13.6 MB of
+# ffmpeg's speech synthesis library arriving at 100 kB a second. That is
+# why the jobs run in the image, which asks the mirror only when it is
+# built.
 set -eu
 
 CACHE=${CACHE:-$HOME/.cache/apt}
