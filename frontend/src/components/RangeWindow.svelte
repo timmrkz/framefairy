@@ -124,9 +124,9 @@
     giving?: number;
     // The part of the video Transcribe whole video works on, or nothing.
     // It is framed, breathing and shedding the motes, the way the window
-    // of a search is while it hears, and the frame stands in for the dots
-    // of that part, so the motes read clearly over it. Still while the
-    // work gives the hearing to a clip made by hand. Tim's pick on #458.
+    // of a search is while it hears, over the dots of that part, which
+    // still say what is not transcribed yet. Still while the work gives
+    // the hearing to a clip made by hand. Tim's pick on #458.
     part?: [number, number] | null;
     partStill?: boolean;
     // The one of them under the hand here, by its place among them, or -1,
@@ -402,7 +402,6 @@
       class="unheard"
       class:lit={i === unheardLit || i === unheardOn}
       class:giving={giving >= 0 && Math.abs(a - giving) < 0.5}
-      class:framed={!!part && part[0] < b && a < part[1]}
       style="--at: {on(a)}; --to: {on(b)}"
     ></div>
   {/each}
@@ -856,13 +855,6 @@
 
   .unheard.lit::before {
     background-image: var(--halftone-lit);
-  }
-
-  /* The part Transcribe whole video works on is framed, and the frame
-     stands in for its dots, so the motes rising through it are not lost
-     among them. Tim's pick on #458. */
-  .unheard.framed::before {
-    display: none;
   }
 
   /* The box the playhead is drawn over, exactly the track and nothing

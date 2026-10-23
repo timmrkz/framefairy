@@ -201,9 +201,8 @@ menu's to show, Tim's call on #458:
 
 While it runs, the range picker frames the part it works on the way it
 frames the window of a search that hears, the same line, breath and
-motes, and the frame stands in for that part's dots, so the motes read
-clearly over it. Its left edge follows the work as it hears, and the
-parts it has not reached keep their dots. While a search runs, the
+motes, over that part's dots, which still say what is not transcribed
+yet, Tim's pick on #458. Its left edge follows the work as it hears. While a search runs, the
 search's window is the work on the range picker and the whole video
 gives way to it, so its frame goes until the search is done. The video's
 dot in the sidebar pulses the way it does for all work, from the frame

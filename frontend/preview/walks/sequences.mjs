@@ -204,8 +204,8 @@
 //                      frame the menu has closed and the video's dot
 //                      pulses, with no number in its row. Once the work
 //                      runs, the range picker frames the part it works
-//                      on, breathing with the motes, and that part shows
-//                      no dots. "stop" needs Stop transcribing and
+//                      on, breathing with the motes, over that part's
+//                      dots. "stop" needs Stop transcribing and
 //                      clicks it: the menu has closed, and opened again
 //                      it says Continue transcribing at once.
 //                      "continue" waits the same way for the stopped
@@ -6839,8 +6839,8 @@ for (const seq of toWalk) {
             wrong = "the video's dot pulses with nothing running";
             break;
           }
-          // Nothing running, the range picker frames nothing, and a part the
-          // stopped work framed shows its dots again.
+          // Nothing running, the range picker frames nothing, and what is
+          // not transcribed yet still shows its dots.
           if (await page.locator(".window.frame.locked").count()) {
             wrong = "with nothing running, the range picker frames a part as work in hand";
             break;
@@ -6867,22 +6867,28 @@ for (const seq of toWalk) {
           }
           // Once the work has said it runs, the range picker frames the part
           // it works on the way a search's window is framed while it hears,
-          // breathing and shedding the motes, and the frame stands in for
-          // that part's dots, Tim's pick on #458.
+          // breathing and shedding the motes, over that part's dots, Tim's
+          // pick on #458.
           const framed = () =>
             page.evaluate(() => {
               const frame = document.querySelector(".window.frame.locked.waiting");
               return {
                 frame: !!frame,
                 motes: frame?.querySelectorAll(".mote").length ?? 0,
-                dots: [...document.querySelectorAll(".unheard.framed")].filter((el) => getComputedStyle(el, "::before").display !== "none").length,
-                hidden: document.querySelectorAll(".unheard.framed").length,
+                dots: (() => {
+                  if (!frame) return 0;
+                  const f = frame.getBoundingClientRect();
+                  return [...document.querySelectorAll(".unheard")].filter((el) => {
+                    const r = el.getBoundingClientRect();
+                    return r.left < f.right && f.left < r.right && getComputedStyle(el, "::before").display !== "none";
+                  }).length;
+                })(),
               };
             });
           for (let seen = await news(page); !(await framed()).frame; ) seen = await nextNews(page, seen);
           const look = await framed();
           if (!look.motes) wrong = `while the whole video is transcribed, its frame on the range picker sheds no motes`;
-          else if (!look.hidden || look.dots) wrong = `while the whole video is transcribed, the part it works on shows its dots under the frame`;
+          else if (!look.dots) wrong = `while the whole video is transcribed, the part it works on shows no dots under its frame`;
           break;
         }
         if (arg === "stop") {
