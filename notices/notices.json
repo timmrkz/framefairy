@@ -1,7 +1,6 @@
 [
   {
     "name": "github.com/abadojack/whatlanggo",
-    "version": "1.0.1",
     "licence": "MIT",
     "url": "https://github.com/abadojack/whatlanggo",
     "part": "The app",
@@ -11,7 +10,6 @@
   },
   {
     "name": "github.com/adrg/xdg",
-    "version": "0.5.3",
     "licence": "MIT",
     "url": "https://github.com/adrg/xdg",
     "part": "The app",
@@ -21,7 +19,6 @@
   },
   {
     "name": "github.com/asticode/go-astiav",
-    "version": "0.43.0",
     "licence": "MIT",
     "url": "https://github.com/asticode/go-astiav",
     "part": "The app",
@@ -31,7 +28,6 @@
   },
   {
     "name": "github.com/asticode/go-astikit",
-    "version": "0.42.0",
     "licence": "MIT",
     "url": "https://github.com/asticode/go-astikit",
     "part": "The app",
@@ -41,7 +37,6 @@
   },
   {
     "name": "github.com/gen2brain/malgo",
-    "version": "0.11.26",
     "licence": "Unlicense",
     "url": "https://github.com/gen2brain/malgo",
     "part": "The app",
@@ -51,7 +46,6 @@
   },
   {
     "name": "github.com/go-ole/go-ole",
-    "version": "1.3.0",
     "licence": "MIT",
     "url": "https://github.com/go-ole/go-ole",
     "part": "The app",
@@ -61,7 +55,6 @@
   },
   {
     "name": "github.com/godbus/dbus/v5",
-    "version": "5.2.2",
     "licence": "BSD-2-Clause",
     "url": "https://github.com/godbus/dbus/v5",
     "part": "The app",
@@ -71,7 +64,6 @@
   },
   {
     "name": "github.com/mattn/go-colorable",
-    "version": "0.1.14",
     "licence": "MIT",
     "url": "https://github.com/mattn/go-colorable",
     "part": "The app",
@@ -81,7 +73,6 @@
   },
   {
     "name": "github.com/mattn/go-isatty",
-    "version": "0.0.20",
     "licence": "MIT",
     "url": "https://github.com/mattn/go-isatty",
     "part": "The app",
@@ -91,7 +82,6 @@
   },
   {
     "name": "github.com/rs/zerolog",
-    "version": "1.35.1",
     "licence": "MIT",
     "url": "https://github.com/rs/zerolog",
     "part": "The app",
@@ -101,7 +91,6 @@
   },
   {
     "name": "github.com/speedata/hyphenation",
-    "version": "1.0.4",
     "licence": "CC0-1.0",
     "url": "https://github.com/speedata/hyphenation",
     "part": "The app",
@@ -111,7 +100,6 @@
   },
   {
     "name": "github.com/spf13/afero",
-    "version": "1.15.0",
     "licence": "Apache-2.0",
     "url": "https://github.com/spf13/afero",
     "part": "The app",
@@ -121,7 +109,6 @@
   },
   {
     "name": "github.com/wailsapp/wails/v3",
-    "version": "3.0.0-beta.23",
     "licence": "MIT",
     "url": "https://github.com/wailsapp/wails/v3",
     "part": "The app",
@@ -144,7 +131,6 @@
   },
   {
     "name": "golang.org/x/sys",
-    "version": "0.46.0",
     "licence": "BSD-3-Clause",
     "url": "https://golang.org/x/sys",
     "part": "The app",
@@ -154,7 +140,6 @@
   },
   {
     "name": "golang.org/x/text",
-    "version": "0.39.0",
     "licence": "BSD-3-Clause",
     "url": "https://golang.org/x/text",
     "part": "The app",
@@ -164,7 +149,6 @@
   },
   {
     "name": "gopkg.in/natefinch/lumberjack.v2",
-    "version": "2.2.1",
     "licence": "MIT",
     "url": "https://gopkg.in/natefinch/lumberjack.v2",
     "part": "The app",
@@ -427,7 +411,6 @@
   },
   {
     "name": "@floating-ui/core",
-    "version": "1.8.0",
     "licence": "MIT",
     "url": "https://www.npmjs.com/package/@floating-ui/core",
     "part": "The app's interface",
@@ -437,7 +420,6 @@
   },
   {
     "name": "@floating-ui/dom",
-    "version": "1.8.0",
     "licence": "MIT",
     "url": "https://www.npmjs.com/package/@floating-ui/dom",
     "part": "The app's interface",
@@ -447,7 +429,6 @@
   },
   {
     "name": "@floating-ui/utils",
-    "version": "0.2.12",
     "licence": "MIT",
     "url": "https://www.npmjs.com/package/@floating-ui/utils",
     "part": "The app's interface",
@@ -457,7 +438,6 @@
   },
   {
     "name": "@lucide/svelte",
-    "version": "1.60.0",
     "licence": "ISC",
     "url": "https://www.npmjs.com/package/@lucide/svelte",
     "part": "The app's interface",
@@ -467,7 +447,6 @@
   },
   {
     "name": "@wailsio/runtime",
-    "version": "3.0.0-beta.23",
     "licence": "MIT",
     "url": "https://www.npmjs.com/package/@wailsio/runtime",
     "part": "The app's interface",
@@ -477,7 +456,6 @@
   },
   {
     "name": "bits-ui",
-    "version": "2.20.0",
     "licence": "MIT",
     "url": "https://www.npmjs.com/package/bits-ui",
     "part": "The app's interface",
@@ -487,7 +465,6 @@
   },
   {
     "name": "clsx",
-    "version": "2.1.1",
     "licence": "MIT",
     "url": "https://www.npmjs.com/package/clsx",
     "part": "The app's interface",
@@ -497,7 +474,6 @@
   },
   {
     "name": "inline-style-parser",
-    "version": "0.2.7",
     "licence": "MIT",
     "url": "https://www.npmjs.com/package/inline-style-parser",
     "part": "The app's interface",
@@ -507,7 +483,6 @@
   },
   {
     "name": "runed",
-    "version": "0.35.1",
     "licence": "MIT",
     "url": "https://www.npmjs.com/package/runed",
     "part": "The app's interface",
@@ -517,7 +492,6 @@
   },
   {
     "name": "style-to-object",
-    "version": "1.0.14",
     "licence": "MIT",
     "url": "https://www.npmjs.com/package/style-to-object",
     "part": "The app's interface",
@@ -527,7 +501,6 @@
   },
   {
     "name": "svelte",
-    "version": "5.57.2",
     "licence": "MIT",
     "url": "https://www.npmjs.com/package/svelte",
     "part": "The app's interface",
@@ -537,7 +510,6 @@
   },
   {
     "name": "svelte-toolbelt",
-    "version": "0.10.6",
     "licence": "MIT",
     "url": "https://www.npmjs.com/package/svelte-toolbelt",
     "part": "The app's interface",
@@ -547,7 +519,6 @@
   },
   {
     "name": "tabbable",
-    "version": "6.5.0",
     "licence": "MIT",
     "url": "https://www.npmjs.com/package/tabbable",
     "part": "The app's interface",
@@ -568,7 +539,6 @@
   },
   {
     "name": "github.com/k2-fsa/sherpa-onnx-go",
-    "version": "1.13.8",
     "licence": "Apache-2.0",
     "url": "https://github.com/k2-fsa/sherpa-onnx-go",
     "part": "Speech recognition",
@@ -578,7 +548,6 @@
   },
   {
     "name": "github.com/k2-fsa/sherpa-onnx-go-linux",
-    "version": "1.13.8",
     "licence": "Apache-2.0",
     "url": "https://github.com/k2-fsa/sherpa-onnx-go-linux",
     "part": "Speech recognition",
@@ -588,7 +557,6 @@
   },
   {
     "name": "github.com/k2-fsa/sherpa-onnx-go-macos",
-    "version": "1.13.8",
     "licence": "Apache-2.0",
     "url": "https://github.com/k2-fsa/sherpa-onnx-go-macos",
     "part": "Speech recognition",
@@ -598,7 +566,6 @@
   },
   {
     "name": "github.com/k2-fsa/sherpa-onnx-go-windows",
-    "version": "1.13.8",
     "licence": "Apache-2.0",
     "url": "https://github.com/k2-fsa/sherpa-onnx-go-windows",
     "part": "Speech recognition",

@@ -2,6 +2,7 @@ package notices
 
 import (
 	"io/fs"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,6 +11,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"framefairy/notices/licence"
 )
 
 func all(t *testing.T) []Notice {
@@ -68,14 +71,20 @@ func TestEveryNoticeIsWhole(t *testing.T) {
 }
 
 // Every Go module the shipped programs compile on this system has its
-// notice, at the version they compile. CI runs this on Linux and macOS, so
-// both of those are checked on every change.
+// notice, at the version they compile, and still carries the licence text
+// its notice shows. The version is go.mod's, so this checks that All reads
+// it right, and only a module that is new, gone or under another licence
+// text needs make notices. CI runs this on Linux and macOS, so both of
+// those are checked on every change.
+//
+// On the real disk: what is read is the module cache, where go keeps the
+// modules the programs compile.
 func TestEveryGoModuleCompiledInHasANotice(t *testing.T) {
 	t.Parallel()
 	list := all(t)
 	// framefairy-frames as make builds it, with ffmpeg's libraries.
 	cmd := exec.Command("go", "list", "-tags", "ffmpeglibs", "-deps", "-f",
-		"{{with .Module}}{{if not .Main}}{{.Path}} {{.Version}}{{end}}{{end}}",
+		"{{with .Module}}{{if not .Main}}{{.Path}} {{.Version}} {{.Dir}}{{end}}{{end}}",
 		"./cmd/framefairy-app", "./cmd/framefairy", "./cmd/framefairy-frames")
 	cmd.Dir = ".."
 	raw, err := cmd.Output()
@@ -85,22 +94,56 @@ func TestEveryGoModuleCompiledInHasANotice(t *testing.T) {
 	seen := map[string]bool{}
 	for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
 		fields := strings.Fields(line)
-		if len(fields) != 2 || seen[fields[0]] {
+		if len(fields) != 3 || seen[fields[0]] {
 			continue
 		}
 		seen[fields[0]] = true
 		n, ok := find(list, fields[0])
-		switch {
-		case !ok:
+		if !ok {
 			t.Errorf("%s is compiled into the app on %s and has no notice. Run make notices",
 				fields[0], runtime.GOOS)
-		case n.Version != strings.TrimPrefix(fields[1], "v"):
-			t.Errorf("%s is compiled in at %s and its notice is for %s. Run make notices",
-				fields[0], fields[1], n.Version)
+			continue
+		}
+		if n.Version != strings.TrimPrefix(fields[1], "v") {
+			t.Errorf("%s is compiled in at %s and its notice is for %s", fields[0], fields[1], n.Version)
+		}
+		_, body, err := licence.In(fields[2])
+		if err != nil {
+			t.Error(err)
+			continue
+		}
+		carried := false
+		for _, name := range n.Texts {
+			text, err := Text(name)
+			carried = carried || err == nil && strings.TrimSpace(text) == strings.TrimSpace(string(body))
+		}
+		if !carried {
+			t.Errorf("%s at %s carries another licence text than its notice shows. Run make notices",
+				fields[0], fields[1])
 		}
 	}
 	if len(seen) == 0 {
 		t.Fatal("go list found no modules at all")
+	}
+}
+
+// A Go module and an interface package take their version from go.mod and
+// the lock file. Every other notice names its own.
+func TestTheVersionsComeFromWhatDependabotMoves(t *testing.T) {
+	mod := []byte("module x\n\ngo 1.27\n\nrequire github.com/a/b v1.2.3\n\nrequire (\n\tgithub.com/c/d v0.4.0 // indirect\n\tgolang.org/x/e v0.5.0\n)\n\nignore ./frontend/node_modules\n")
+	got := goModules(mod)
+	want := map[string]string{"github.com/a/b": "v1.2.3", "github.com/c/d": "v0.4.0", "golang.org/x/e": "v0.5.0"}
+	if !maps.Equal(got, want) {
+		t.Errorf("go.mod read as %v, want %v", got, want)
+	}
+	lock := []byte(`{"packages": {"": {"version": "0.0.0"}, "node_modules/bits-ui": {"version": "2.20.0"},
+		"node_modules/@scope/pkg": {"version": "1.0.0"}, "node_modules/a/node_modules/bits-ui": {"version": "1.0.0"}}}`)
+	packages, err := npmPackages(lock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := map[string]string{"bits-ui": "2.20.0", "@scope/pkg": "1.0.0"}; !maps.Equal(packages, want) {
+		t.Errorf("the lock file read as %v, want %v", packages, want)
 	}
 }
 

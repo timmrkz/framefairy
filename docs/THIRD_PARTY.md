@@ -13,7 +13,11 @@ the text itself goes.
 In `notices/`, and nowhere else. `notices/notices.json` lists every piece
 of work with its version, its licence, where it comes from, where it is in
 Frame Fairy and anything the licence asks to be said besides its text, and
-`notices/texts/` holds the texts. The app has them built in and shows them
+`notices/texts/` holds the texts. A Go module and an interface package
+keep no version there: the app shows the one `go.mod` and
+`frontend/package-lock.json` name, which it carries for that, see
+`modules.go`. Those are the files Dependabot moves, so an update that
+keeps its licence text needs no new notice and goes green by itself. The app has them built in and shows them
 under **Help → Acknowledgements**, which is where apps keep them.
 
 | Part | What |
@@ -38,7 +42,11 @@ with `notices/gen`, from what the programs are really built from:
 - the source maps of an interface build, which name every file of every
   package that went into the bundle, and each package's licence file
 - the source trees in `.build/` that `make` builds ffmpeg and llama-server
-  from, at the versions their build scripts pin
+  from, at the versions their build scripts pin. When they are not on the
+  machine, their notices are kept as they are, as long as the scripts
+  still pin the versions those are for. So a new module or package is
+  noticed in about a minute, without building either program. A raised
+  pin stops it with the build to run first, `make ffmpeg` or `make llama`
 - the hyphenation patterns in `engine/hyphenation/`, from the metadata at
   the top of each file: its language, version and source, and the first of
   the licences it is offered under that a paid app may ship, MIT before
@@ -61,12 +69,14 @@ licence asks.
 Four checks say when it is due:
 
 - `TestEveryGoModuleCompiledInHasANotice` fails when a Go module is
-  compiled into the app without a notice, or at another version. CI runs it
-  on Linux and on macOS.
+  compiled into the app without a notice, or carries another licence text
+  than its notice shows. CI runs it on Linux and on macOS.
 - `TestTheToolsNoticesAreForTheVersionsBuilt` fails when ffmpeg, one of its
   four libraries or llama.cpp is pinned to another version than its notice.
-- The interface build fails when it bundles a package without a notice, or
-  at another version, see `frontend/vite.config.ts`.
+- The interface build fails when it bundles a package without a notice,
+  one whose licence file is another text than its notice shows, or when a
+  notice is left for a package it no longer bundles, see
+  `frontend/vite.config.ts`.
 - `TestEveryHyphenationFileHasANotice` fails when a pattern file is in
   `engine/hyphenation/` without a notice, or a notice is left for one that
   is gone.

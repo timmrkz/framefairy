@@ -376,16 +376,20 @@ tools-archive:
 
 # The licence of everything the programs are made of or bring with them,
 # and the text each asks to travel with every copy, into notices/, which
-# the app shows under Licences. It reads the source trees ffmpeg and
-# llama-server are built from and the interface's packages, so it builds
-# everything first. The tests and the interface build say when it is due:
-# a module, a package or a pinned version that changed without it.
+# the app shows under Licences. It reads the Go modules and the
+# interface's packages, so it installs those first. The source trees
+# ffmpeg and llama-server are built from it reads when make has built
+# them, and keeps their notices as they are while their pins stay put, so
+# a new module or package is noticed in a minute and not after both
+# builds. The tests and the interface build say when it is due: a module
+# or a package that is new, gone or carries another licence text, or a
+# pinned version that changed without it.
 #
 # The interface build's own check is off while it runs: after a package
 # update, the very build it does first stopped on the notices it was
 # there to write, and "Run make notices" could never be done.
 notices: export FRAMEFAIRY_WRITING_NOTICES := 1
-notices: all
+notices: frontend/node_modules/.package-lock.json
 	@$(GO) run ./notices/gen
 	@printf 'ok  \tnotices\n'
 

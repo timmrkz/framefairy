@@ -1,22 +1,28 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { defineConfig, type Plugin } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 
 // Every package that ends up in the bundle has its licence shown in the
 // app, from notices/notices.json. A package the bundle takes in without a
-// notice, or at another version than its notice, stops the build here,
-// because the day it is added is the day it is easiest to say what it is.
-// make notices writes the notices again. It builds the interface itself to
-// see what the bundle holds, and says so in FRAMEFAIRY_WRITING_NOTICES, so
-// the notices it is there to write do not stop it.
+// notice, a notice for one it no longer takes in, or a package whose
+// licence file is no longer the text its notice shows, stops the build
+// here, because the day it changes is the day it is easiest to say what it
+// is. A new version alone stops nothing: the app shows the version the
+// lock file installs, see notices/notices.go, so an update that keeps its
+// licence needs no new notice. make notices writes the notices again. It
+// builds the interface itself to see what the bundle holds, and says so in
+// FRAMEFAIRY_WRITING_NOTICES, so the notices it is there to write do not
+// stop it.
 function notices(): Plugin {
   return {
     name: "framefairy-notices",
     apply: (_, env) => env.command === "build" && !process.env.FRAMEFAIRY_WRITING_NOTICES,
     generateBundle(_, bundle) {
-      const noticed = new Map<string, string>();
-      const list = JSON.parse(readFileSync(new URL("../notices/notices.json", import.meta.url), "utf8"));
-      for (const n of list) noticed.set(n.name, n.version);
+      const root = new URL("../notices/", import.meta.url);
+      const noticed = new Map<string, string[]>();
+      for (const n of JSON.parse(readFileSync(new URL("notices.json", root), "utf8"))) {
+        if (n.part === "The app's interface") noticed.set(n.name, n.texts);
+      }
       const found = new Set<string>();
       for (const output of Object.values(bundle)) {
         if (output.type !== "chunk") continue;
@@ -27,10 +33,24 @@ function notices(): Plugin {
       }
       const wrong: string[] = [];
       for (const name of found) {
-        const pkg = JSON.parse(readFileSync(new URL(`./node_modules/${name}/package.json`, import.meta.url), "utf8"));
-        const version = noticed.get(name);
-        if (version === undefined) wrong.push(`${name} has no notice`);
-        else if (version !== pkg.version) wrong.push(`${name} is ${pkg.version} and its notice is for ${version}`);
+        const texts = noticed.get(name);
+        if (texts === undefined) {
+          wrong.push(`${name} has no notice`);
+          continue;
+        }
+        // The licence files at the top of the package, by the names
+        // notices/licence looks for. A package without one, like the
+        // Wails runtime, has its text from elsewhere and nothing to
+        // compare.
+        const dir = new URL(`./node_modules/${name}/`, import.meta.url);
+        const files = readdirSync(dir).filter((f) => /^(licen[cs]e|copying)/i.test(f));
+        const shown = texts.map((t) => readFileSync(new URL(`texts/${t}`, root), "utf8").trim());
+        if (files.length > 0 && !files.some((f) => shown.includes(readFileSync(new URL(f, dir), "utf8").trim()))) {
+          wrong.push(`${name} carries another licence text than its notice shows`);
+        }
+      }
+      for (const name of noticed.keys()) {
+        if (!found.has(name)) wrong.push(`${name} has a notice and is not in the bundle`);
       }
       if (found.size === 0) wrong.push("no package was found in the bundle, so nothing was checked");
       if (wrong.length > 0) this.error(`${wrong.join(", ")}. Run make notices.`);

@@ -1,7 +1,10 @@
 // Command gen writes notices/notices.json and notices/texts/ from what the
-// programs are really built from. Run it with make notices, after make has
-// built ffmpeg, llama-server and the interface once, because their source
-// trees and node_modules are where the texts are read from.
+// programs are really built from. Run it with make notices, which installs
+// the interface's packages first, because node_modules is where their
+// texts are read from. The source trees make builds ffmpeg and
+// llama-server from are read when they are on this machine. When they are
+// not, their notices are kept as they were, as long as the build scripts
+// still pin the versions those are for, see keep.
 //
 // It reads, in this order:
 //
@@ -32,6 +35,8 @@ import (
 	"strings"
 	"time"
 
+	"framefairy/notices/licence"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -39,13 +44,17 @@ import (
 // embeds what this writes and cannot be built before it exists. The tests
 // in notices read what this wrote with the real type.
 type notice struct {
-	Name    string   `json:"name"`
-	Version string   `json:"version"`
+	Name string `json:"name"`
+	// Version is left out for a Go module and an interface package, whose
+	// version notices reads from go.mod and the lock file, see built.
+	Version string   `json:"version,omitempty"`
 	Licence string   `json:"licence"`
 	URL     string   `json:"url"`
 	Part    string   `json:"part"`
 	Note    string   `json:"note,omitempty"`
 	Texts   []string `json:"texts"`
+	// built says the version is the build's to name, not this notice's.
+	built bool
 }
 
 // The parts, as parts has them and in its order.
@@ -73,6 +82,10 @@ var (
 	// written are the texts made so far, by name, so two notices that ask
 	// for the same file do not write it twice.
 	written = map[string]bool{}
+	// before is what notices/ held when this started, with its texts by
+	// name, for the parts whose source is not on this machine, see keep.
+	before      []notice
+	beforeTexts = map[string][]byte{}
 )
 
 func main() {
@@ -83,6 +96,9 @@ func main() {
 }
 
 func run() error {
+	if err := remember(); err != nil {
+		return err
+	}
 	if err := os.RemoveAll(texts); err != nil {
 		return err
 	}
@@ -112,11 +128,71 @@ func run() error {
 	return os.WriteFile(filepath.Join(out, "notices.json"), append(body, '\n'), 0o644)
 }
 
+// remember reads what notices/ holds before it is written again.
+func remember() error {
+	raw, err := os.ReadFile(filepath.Join(out, "notices.json"))
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(raw, &before); err != nil {
+		return err
+	}
+	for _, n := range before {
+		for _, name := range n.Texts {
+			body, err := os.ReadFile(filepath.Join(texts, name))
+			if err != nil {
+				return err
+			}
+			beforeTexts[name] = body
+		}
+	}
+	return nil
+}
+
+// keep writes the notices of a part again as they were, for a program
+// whose source tree is not on this machine. That is right only while its
+// build script pins the versions the notices are for, so a module or a
+// package can be noticed without building ffmpeg and llama-server first.
+// pinned is each piece's version as the script pins it.
+func keep(part, build string, pinned map[string]string) error {
+	found := map[string]bool{}
+	for _, n := range before {
+		if n.Part != part {
+			continue
+		}
+		if want, ok := pinned[n.Name]; ok {
+			if n.Version != want {
+				return fmt.Errorf("%s is pinned to %s and its notice is for %s, and its source is not here. "+
+					"Run %s, then make notices again", n.Name, want, n.Version, build)
+			}
+			found[n.Name] = true
+		}
+		sources := map[string][]byte{}
+		for _, name := range n.Texts {
+			sources[name] = beforeTexts[name]
+		}
+		n.Texts = nil
+		if err := add(n, sources); err != nil {
+			return err
+		}
+	}
+	for name := range pinned {
+		if !found[name] {
+			return fmt.Errorf("%s has no notice yet, and its source is not here. Run %s, then make notices again",
+				name, build)
+		}
+	}
+	return nil
+}
+
 // add records a notice, and copies each source file into texts/ under the
 // name given beside it.
 func add(n notice, sources map[string][]byte) error {
-	if n.Licence == "" || n.URL == "" || n.Part == "" || n.Version == "" {
-		return fmt.Errorf("%s is missing its licence, address, part or version", n.Name)
+	if n.Licence == "" || n.URL == "" || n.Part == "" || (n.Version == "") != n.built {
+		return fmt.Errorf("%s is missing its licence, address, part or version, or names a version the build names", n.Name)
 	}
 	names := make([]string, 0, len(sources))
 	for name := range sources {
@@ -156,51 +232,6 @@ func slug(s string) string {
 	s = strings.ToLower(s)
 	s = regexp.MustCompile(`[^a-z0-9.]+`).ReplaceAllString(s, "-")
 	return strings.Trim(s, "-")
-}
-
-// classify names the licence a text is, from the words every copy of that
-// licence has. It is only used where the maker does not say.
-func classify(text string) string {
-	t := strings.Join(strings.Fields(text), " ")
-	switch {
-	case strings.Contains(t, "Apache License") && strings.Contains(t, "Version 2.0"):
-		return "Apache-2.0"
-	case strings.Contains(t, "Permission is hereby granted, free of charge"):
-		return "MIT"
-	case strings.Contains(t, "Redistribution and use in source and binary forms") &&
-		strings.Contains(t, "Neither the name"):
-		return "BSD-3-Clause"
-	case strings.Contains(t, "Redistribution and use in source and binary forms"):
-		return "BSD-2-Clause"
-	case strings.Contains(t, "Permission to use, copy, modify, and/or distribute"):
-		return "ISC"
-	case strings.Contains(t, "CC0 1.0 Universal"):
-		return "CC0-1.0"
-	case strings.Contains(t, "This is free and unencumbered software released into the public domain"):
-		return "Unlicense"
-	}
-	return ""
-}
-
-// licenceFiles are the names a licence goes by at the top of a module or
-// package, in the order they are looked for.
-var licenceFiles = []string{"LICENSE", "LICENSE.md", "LICENSE.txt", "LICENCE", "LICENCE.md", "COPYING", "LICENSE-MIT"}
-
-func licenceIn(dir string) (string, []byte, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return "", nil, err
-	}
-	// Some packages spell it in lower case.
-	for _, want := range licenceFiles {
-		for _, e := range entries {
-			if !e.IsDir() && strings.EqualFold(e.Name(), want) {
-				body, err := os.ReadFile(filepath.Join(dir, e.Name()))
-				return e.Name(), body, err
-			}
-		}
-	}
-	return "", nil, fmt.Errorf("no licence file in %s", dir)
 }
 
 func goEnv(key string) (string, error) {
@@ -289,12 +320,12 @@ func goModules() error {
 		if err := json.Unmarshal(raw, &m); err != nil {
 			return err
 		}
-		name, body, err := licenceIn(m.Dir)
+		name, body, err := licence.In(m.Dir)
 		if err != nil {
 			return err
 		}
-		licence := classify(string(body))
-		if licence == "" {
+		named := licence.Classify(string(body))
+		if named == "" {
 			return fmt.Errorf("cannot tell what licence %s/%s is", m.Path, name)
 		}
 		sources := map[string][]byte{slug(m.Path) + ".txt": body}
@@ -309,8 +340,8 @@ func goModules() error {
 		if strings.HasPrefix(m.Path, "github.com/k2-fsa/") {
 			part = partSpeech
 		}
-		if err := add(notice{Name: m.Path, Version: strings.TrimPrefix(m.Version, "v"),
-			Licence: licence, URL: "https://" + m.Path, Part: part}, sources); err != nil {
+		if err := add(notice{Name: m.Path, Licence: named, URL: "https://" + m.Path, Part: part,
+			built: true}, sources); err != nil {
 			return err
 		}
 	}
@@ -667,11 +698,19 @@ func ffmpeg() error {
 		{"libass", "LIBASS_VERSION", "libass", "ISC", "https://github.com/libass/libass",
 			"Draws the captions into the picture.", []string{"COPYING"}},
 	}
+	pinned := map[string]string{}
 	for _, l := range libs {
 		v, err := version(l.key, script)
 		if err != nil {
 			return err
 		}
+		pinned[l.name] = v
+	}
+	if _, err := os.Stat(work); os.IsNotExist(err) {
+		return keep(partFFmpeg, "make ffmpeg", pinned)
+	}
+	for _, l := range libs {
+		v := pinned[l.name]
 		dir := filepath.Join(work, l.dir+"-"+v)
 		sources := map[string][]byte{}
 		for _, f := range l.files {
@@ -694,7 +733,11 @@ func llama() error {
 	if err != nil {
 		return err
 	}
-	src := filepath.Join(".build", "llama", "work", "llama.cpp-"+v)
+	work := filepath.Join(".build", "llama", "work")
+	if _, err := os.Stat(work); os.IsNotExist(err) {
+		return keep(partLlama, "make llama", map[string]string{"llama.cpp": v})
+	}
+	src := filepath.Join(work, "llama.cpp-"+v)
 	body, err := read(filepath.Join(src, "LICENSE"))
 	if err != nil {
 		return err
@@ -841,7 +884,7 @@ func npm() error {
 		if err := json.Unmarshal(raw, &pkg); err != nil {
 			return err
 		}
-		_, body, err := licenceIn(dir)
+		_, body, err := licence.In(dir)
 		if err != nil && p == "@wailsio/runtime" {
 			// The Wails runtime is published without its licence file. It is
 			// the same project and the same licence as the Wails module, at
@@ -851,15 +894,15 @@ func npm() error {
 		if err != nil {
 			return err
 		}
-		licence := pkg.License
-		if licence == "" {
-			licence = classify(string(body))
+		named := pkg.License
+		if named == "" {
+			named = licence.Classify(string(body))
 		}
-		if licence == "" {
+		if named == "" {
 			return fmt.Errorf("cannot tell what licence %s is", p)
 		}
-		if err := add(notice{Name: p, Version: pkg.Version, Licence: licence,
-			URL: "https://www.npmjs.com/package/" + p, Part: partScreen},
+		if err := add(notice{Name: p, Licence: named,
+			URL: "https://www.npmjs.com/package/" + p, Part: partScreen, built: true},
 			map[string][]byte{slug("npm-"+p) + ".txt": body}); err != nil {
 			return err
 		}
