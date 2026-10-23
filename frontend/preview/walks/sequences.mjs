@@ -690,8 +690,9 @@
 //                      popped n times since "count pops"
 //   ["played through"] since "drag while playing", the play went on as if
 //                      no hand were there: the playhead never went back nor
-//                      stood still for longer than 150 ms, and no frame
-//                      drawn was older than the one before it
+//                      stood still for longer than a frame of the video and
+//                      150 ms, since it moves once a frame (#446), and no
+//                      frame drawn was older than the one before it
 //   ["loop through the end", seconds]
 //                      puts the playhead so many seconds before the clip's
 //                      end, plays, switches the loop on with L at once and
@@ -9442,6 +9443,7 @@ for (const seq of toWalk) {
       }
       case "played through": {
         const played = await page.evaluate(() => window.__played ?? []);
+        const frame = 1000 / (await rate(page));
         let still = 0;
         let longest = 0;
         for (let i = 1; i < played.length && !wrong; i++) {
@@ -9454,7 +9456,7 @@ for (const seq of toWalk) {
           longest = Math.max(longest, still);
         }
         if (!wrong && played.length < 30) wrong = `only ${played.length} animation frames were read`;
-        if (!wrong && longest > 150) wrong = `the playhead stood still for ${longest.toFixed(0)} ms while the hand was on the edge`;
+        if (!wrong && longest > frame + 150) wrong = `the playhead stood still for ${longest.toFixed(0)} ms while the hand was on the edge, a frame is ${frame.toFixed(0)} ms`;
         break;
       }
       case "stopped at its end": {
