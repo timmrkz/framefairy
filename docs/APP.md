@@ -203,8 +203,13 @@ While it runs, the range picker frames the part it works on the way it
 frames the window of a search that hears, the same line, breath and
 motes, over that part's dots, which still say what is not transcribed
 yet, Tim's pick on #458. Its left edge follows the work as it hears. While a search runs, the
-search's window is the work on the range picker and the whole video
-gives way to it, so its frame goes until the search is done. The video's
+whole video gives way to it and its frame stays, at half the colour and
+with no motes, still breathing, so it reads as on hold and not as gone,
+Tim's report of 23 October. Stop transcribing stops everything on the
+range picker in the frame it is clicked: the dots stay where they are,
+although the speech model finishes the piece it is in and the library is
+read again as the job ends, and the frame stands still and fades out.
+The dots follow the work again once other work hears. The video's
 dot in the sidebar pulses the way it does for all work, from the frame
 Transcribe whole video is clicked until the frame Stop transcribing is.
 Nothing else says how far it has come, Tim's calls on #458: a number in

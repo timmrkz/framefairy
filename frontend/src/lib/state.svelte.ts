@@ -11,11 +11,25 @@ const recheck = 5000;
 
 class JobStore {
   list = $state<Job[]>([]);
+  // The transcriptions Stop transcribing was pressed for that have not
+  // said they stopped yet. Everything that shows the work stops on the
+  // press, the video's dot, the menu and the range picker, and not when
+  // the job ends a second or two later.
+  stopping = $state<string[]>([]);
 
   // A snapshot of a job, kept unless the list already has a later one.
   apply(job: Job) {
     const next = mergeJob(this.list, job);
     if (next) this.list = next;
+    // A job that has ended is no longer one Stop was pressed for.
+    if (next && job.state !== "running" && job.state !== "queued" && this.stopping.includes(job.id)) {
+      this.stopping = this.stopping.filter((id) => id !== job.id);
+    }
+  }
+
+  // Stop transcribing pressed for this job.
+  stop(id: string) {
+    if (!this.stopping.includes(id)) this.stopping = [...this.stopping, id];
   }
 
   async start() {

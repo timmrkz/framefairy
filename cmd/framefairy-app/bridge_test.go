@@ -423,6 +423,11 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 			answer(w, nil, nil)
 			return
 		}
+		if q.Get("ms") == "hold one" {
+			b.words.holdOne()
+			answer(w, nil, nil)
+			return
+		}
 		b.words.release()
 		ms, _ := strconv.Atoi(q.Get("ms"))
 		b.words.pace.Store(int64(min(max(ms, 0), 5000)))
@@ -528,6 +533,9 @@ type prose struct {
 	turn    *sync.Cond
 	held    bool
 	hearing int
+	// waiting counts the pieces handed to it while it is held, which the
+	// engine is part way through as far as it knows.
+	waiting int
 }
 
 func (p *prose) cond() *sync.Cond {
@@ -544,6 +552,17 @@ func (p *prose) hold() {
 	defer p.gate.Unlock()
 	p.held = true
 	for p.hearing > 0 {
+		p.cond().Wait()
+	}
+}
+
+// holdOne holds it and returns once a piece is waiting in it, so a walk
+// can stop the work while a piece is being heard, the way a person does.
+func (p *prose) holdOne() {
+	p.hold()
+	p.gate.Lock()
+	defer p.gate.Unlock()
+	for p.held && p.waiting == 0 {
 		p.cond().Wait()
 	}
 }
@@ -565,8 +584,13 @@ ich. Und eigentlich erinnere ich mich an die Lüge besser als an den Arm.`)
 
 func (p *prose) Recognize(samples []float32, rate int) []engine.Token {
 	p.gate.Lock()
-	for p.held {
-		p.cond().Wait()
+	if p.held {
+		p.waiting++
+		p.cond().Broadcast()
+		for p.held {
+			p.cond().Wait()
+		}
+		p.waiting--
 	}
 	p.hearing++
 	p.gate.Unlock()

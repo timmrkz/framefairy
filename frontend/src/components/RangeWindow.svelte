@@ -18,6 +18,7 @@
   // on the range picker says what has been searched: any part can be
   // searched, as often as anyone likes.
   import { onMount } from "svelte";
+  import { fade } from "svelte/transition";
   import { clock } from "../lib/api";
   import { gridStep } from "../lib/flow";
   import { hoverClip } from "../lib/hover";
@@ -55,6 +56,7 @@
     giving = -1,
     part = null,
     partStill = false,
+    partBehind = false,
     onhoverunheard,
   }: {
     duration: number;
@@ -127,8 +129,14 @@
     // of a search is while it hears, over the dots of that part, which
     // still say what is not transcribed yet. Still while the work gives
     // the hearing to a clip made by hand. Tim's pick on #458.
+    // When it goes, on Stop transcribing, everything in it stands still
+    // where it is and it fades, so nothing moves on after the press.
+    // Behind a search that has the hearing, it keeps its breath, dimmed,
+    // and sheds no motes: the work is on hold, not gone. Tim's report of
+    // 23 October.
     part?: [number, number] | null;
     partStill?: boolean;
+    partBehind?: boolean;
     // The one of them under the hand here, by its place among them, or -1,
     // so its card is lit too, while the cards are open.
     onhoverunheard?: (index: number) => void;
@@ -183,6 +191,17 @@
   // The part Transcribe whole video works on, framed the way the window of
   // a search is while it hears, Tim's pick on #458.
   const partFrame = $derived(part ? frameOver(part[0], part[1]) : null);
+  // The part's frame going: its breath and its motes stop where they are,
+  // and it fades from however bright the breath had it. The fade is an
+  // animation of its own over the breath's, so it starts from there and
+  // does not jump to full first. Slower than a toast's, because it is a
+  // frame leaving the middle of the workspace, not a note in its corner,
+  // and Tim found it went abruptly.
+  function going(node: Element, on: boolean) {
+    if (!on) return { duration: 0 };
+    node.classList.add("going");
+    return fade(node, { duration: 400 });
+  }
   onMount(() => {
     // Nothing measured while the workspace is put away, see App.svelte.
     const observer = new ResizeObserver(() => {
@@ -462,28 +481,37 @@
      window and its breath. The part Transcribe whole video works on is
      drawn the same way, by the same lines, because it is the same thing:
      work in hand on a stretch of the video. -->
-{#snippet stretch(f: { style: string; first: boolean; last: boolean }, busy: boolean, all: boolean, still: boolean)}
+{#snippet stretch(
+  f: { style: string; first: boolean; last: boolean },
+  busy: boolean,
+  all: boolean,
+  still: boolean,
+  behind: boolean,
+  fades: boolean,
+)}
   <div
     class="window frame"
     class:waiting={busy}
     class:locked={busy}
     class:whole={all}
+    class:behind
     class:first={f.first}
     class:last={f.last}
     style={f.style}
+    out:going|global={fades}
   >
     <!-- The motes of work in hand rise through it while its clips are
          found, the ones every control of the app sheds, with no rim and no
          fill: how far the search has come is said on the clip cards, and
          only there. -->
-    {#if busy}<Busy rim={false} {still} />{/if}
+    {#if busy && !behind}<Busy rim={false} {still} />{/if}
   </div>
 {/snippet}
 {#if shown}
-  {@render stretch(frame, locked, whole, false)}
+  {@render stretch(frame, locked, whole, false, false, false)}
 {/if}
 {#if partFrame}
-  {@render stretch(partFrame, true, false, partStill)}
+  {@render stretch(partFrame, true, false, partStill, partBehind, true)}
 {/if}
 {#if !shown && to > from && duration > 0}
   <!-- The window at rest, marked at its four corners and not drawn over
@@ -635,6 +663,23 @@
   .window.locked.whole {
     background-color: var(--accent-wash);
     border-color: var(--accent);
+  }
+
+  /* The whole video's part while a search has the hearing: the same frame
+     and breath at half the colour, the accent at 50 % the app already
+     has, and its wash at half of its own. The breath is the frame's
+     opacity, so the dimming is done in the colours and the two never
+     fight. */
+  .window.locked.behind {
+    background-color: color-mix(in srgb, var(--accent-wash) 50%, transparent);
+    border-color: var(--accent-fill-hi);
+  }
+
+  /* Going, nothing in it moves on: the breath and the motes stop where
+     they are while it fades. */
+  .window.going,
+  .window.going :global(*) {
+    animation-play-state: paused !important;
   }
 
   /* On the range picker's own edge, its round corner. */
