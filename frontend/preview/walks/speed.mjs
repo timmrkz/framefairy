@@ -47,8 +47,8 @@ try {
       { timeout: 180000, polling: 250 },
     );
     await page.evaluate((fps) => {
-      // The moment a key goes down, before the app hears it.
-      window.addEventListener("keydown", () => (window.__keyAt = performance.now()), { capture: true });
+      // The moment a key or the button goes down, before the app hears it.
+      for (const down of ["keydown", "pointerdown"]) window.addEventListener(down, () => (window.__keyAt = performance.now()), { capture: true });
       // Resolves with the milliseconds from the last key until the video
       // preview shows the frame that holds the playhead, and until that
       // frame has its own captions, the word a step lands on lifted out to
@@ -147,6 +147,29 @@ try {
     settled.push(took);
     await page.waitForTimeout(500);
   };
+  // A click far along the clip timeline, the button down for 8 animation
+  // frames the way a person's click is, and how long until the frame
+  // clicked shows, from the button going down.
+  const clicked = [];
+  const clickFar = async (share) => {
+    const g = await handles(page);
+    const left = g.start.x + g.start.w;
+    const span = g.end.x - left;
+    const before = await page.evaluate(() => Number(document.querySelector(".screen")?.dataset.playhead));
+    await page.mouse.move(left + share * span, high(g.track));
+    await page.mouse.down();
+    await page.evaluate(
+      () =>
+        new Promise((done) => {
+          let n = 0;
+          const frame = () => (++n >= 8 ? done() : requestAnimationFrame(frame));
+          requestAnimationFrame(frame);
+        }),
+    );
+    await page.mouse.up();
+    const [took] = await page.evaluate((b) => window.__followed(b), before);
+    clicked.push(took);
+  };
   const pickClip = async () => {
     await page.locator("aside ol li[data-key] button.pick").first().click();
     await settle(page);
@@ -180,6 +203,8 @@ try {
       await press("Left after a word", "ArrowLeft");
     }
     await dragAcross();
+    await clickFar(0.85);
+    await clickFar(0.15);
   }
 
   await count();
@@ -207,6 +232,8 @@ try {
       `and the frame that holds it ${Math.round(q(z, 0.5))} ms after letting go on the median, ${Math.round(z[z.length - 1])} ms at most, ` +
       `${keyed} key frames put up on the way`,
   );
+  const c = sorted(clicked);
+  console.log(`clicking far along the clip timeline: the frame clicked ${Math.round(q(c, 0.5))} ms after the press on the median, ${Math.round(c[c.length - 1])} ms at most, ${clicked.length - c.length} never`);
   if (errors.length) console.log("errors on the page:", errors.join("\n"));
 } finally {
   await browser.close();

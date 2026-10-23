@@ -726,16 +726,17 @@ read on in one already open, or from the frames kept. Each round ends
 with the playhead dragged over the clip timeline and back, a step every
 16 ms, and the last line says how many frames the video preview was
 behind the playhead while it moved, and how long after letting go the
-frame under it showed, with how many key frames were put up on the way. `REST` is the pause between presses, 250 ms
-unless set, `ROUNDS` the times the clip is walked, each on a page opened
-afresh so no round finds the frames the one before kept, 5 unless set,
-`SCALE` the device pixels of a CSS pixel, 2 unless set, a Mac's screen,
-`CODEC=hevc` makes the video HEVC with 10-bit colour, and `SIZE=2160`
-makes it 3840 by 2160, the way a 4K camera records. The window is
-1728 by 1080, a 16 inch MacBook Pro's screen, unless `VIEWPORT` sets
-another, `2560x1440` for frames about the size of Tim's. The line under
-the table also counts the frames read ahead, and those of them let go of
-from the kept frames before the hand asked for them. Plan row 2.269 in
+frame under it showed, with how many key frames were put up on the way.
+`REST` is the pause between presses, 250 ms unless set, `ROUNDS` the
+times the clip is walked, each on a page opened afresh so no round finds
+the frames the one before kept, 5 unless set, `SCALE` the device pixels
+of a CSS pixel, 2 unless set, a Mac's screen, `CODEC=hevc` makes the
+video HEVC with 10-bit colour, and `SIZE=2160` makes it 3840 by 2160,
+the way a 4K camera records. The window is 1728 by 1080, a 16 inch
+MacBook Pro's screen, unless `VIEWPORT` sets another, `2560x1440` for
+frames about the size of Tim's. The line under the table also counts the
+frames read ahead, and those of them let go of from the kept frames
+before the hand asked for them. Plan row 2.269 in
 [GUI-PLAN.md](GUI-PLAN.md) has the numbers it measured.
 
 ### `smooth.mjs`: how evenly the video preview plays

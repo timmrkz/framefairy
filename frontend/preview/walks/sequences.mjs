@@ -77,18 +77,31 @@
 //                      edge's handle overlap rather than in its middle
 //   ["scrub far"]      presses the clip timeline's track near the clip's
 //                      start, waits for its frame, and with the button
-//                      still down moves the hand in one step at least 5 s
-//                      on, to 1.4 s after a key frame of the bridge's
-//                      episode, which has one every 2 s, and waits for the
-//                      frame under the hand, noting every frame the video
-//                      preview puts up on the way, then lets go
+//                      still down moves the hand in one step at least 4 s
+//                      on, to 7 frames after a key frame of the video, as
+//                      ffprobe finds them, and waits for the frame under
+//                      the hand, noting every frame the video preview puts
+//                      up on the way and the key frames the frame queue
+//                      put up, then lets go
+//   ["once a frame", seconds]
+//                      clicks the clip timeline's track half a second into
+//                      the clip, plays it for so many seconds of the
+//                      episode and counts every change of the playhead on
+//                      the way: one for each frame of the video the play
+//                      crosses, two more or fewer at most, never one for
+//                      every animation frame (#446)
 //   ["keyed on the way"]
-//                      since "scrub far", the video preview put up the key
-//                      frame decoding starts from, a frame before the one
-//                      under the hand and no more than 2 s before it, while
-//                      that one was decoded, and the frame it ended on,
-//                      with the button down and after it was let go, is
-//                      the frame under the hand, by the number drawn on it
+//                      since "scrub far", the frame queue put up the key
+//                      frame the frame under the hand is decoded from,
+//                      that one exactly, and the frame it ended on, with
+//                      the button down and after it was let go, is the
+//                      frame under the hand, by the number drawn on it
+//   ["click far"]      clicks the clip timeline's track near the clip's
+//                      start and waits for its frame, then the same 7
+//                      frames after a key frame at least 4 s on, the button
+//                      down for 8 animation frames the way a person's click
+//                      is, and asks that the frame queue put up no key
+//                      frame and the video preview shows the frame clicked
 //   ["hold on", which] presses the track near the end away from it, then the
 //                      clip's "start" or "end" edge, the "cut from" or "cut
 //                      to" edge of its first cut, its first "thumbnail" or
@@ -1934,6 +1947,29 @@ export const sequences = [
     // the frame under the hand once it rests, never the key frame.
     name: "a playhead dragged far shows the key frame on the way, and the frame under the hand once it rests",
     steps: [["scrub far"], ["keyed on the way"]],
+  },
+  {
+    // Issue #446. While a clip plays the playhead moves when the sound is in
+    // another frame of the video, not on every animation frame: everything
+    // that follows the playhead was worked out again 120 times a second on
+    // Tim's screen for a video of 25 frames a second, and a play missed
+    // refreshes for it.
+    name: "a play moves the playhead once a frame of the video",
+    steps: [["once a frame", 3]],
+  },
+  {
+    // The same on HEVC with frames stored after their key frame, where the
+    // decoder's way to a key frame differs most.
+    name: "a playhead dragged far over HEVC shows the key frame on the way, and the frame under the hand once it rests",
+    steps: [["add hevc"], ["scrub far"], ["keyed on the way"]],
+  },
+  {
+    // A click outruns nothing, so it shows the frame clicked and no key
+    // frame before it. The first version of #281 asked for the key frame
+    // first for every place a press reached, the place it landed on too,
+    // found by the review of #502.
+    name: "a click far along the clip timeline shows the frame clicked and no key frame",
+    steps: [["click far"]],
   },
   {
     // Plan row 2.235, found by Tim: the clip's edges took the playhead
@@ -5925,22 +5961,44 @@ for (const seq of toWalk) {
         await page.evaluate(() => (window.__followWatch = false));
         break;
       }
-      case "scrub far": {
+      case "scrub far":
+      case "click far": {
         const fps = await rate(page);
         const t = await timeline(page);
         const g = await handles(page);
         const y = high(g.track);
-        await page.mouse.move(await xOf(page, t.start + 0.4), y);
-        await page.mouse.down();
+        // The key frames of the video, in the episode's time, as the
+        // packets say, and the first at least 4 s on with 7 frames after
+        // it in the clip.
+        const keyTimes = execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts_time,flags", "-of", "csv=p=0", await episodeOn(page)])
+          .toString()
+          .trim()
+          .split("\n")
+          .filter((l) => l.split(",")[1]?.startsWith("K"))
+          .map((l) => Number(l.split(",")[0]))
+          .sort((a, b) => a - b);
+        const k = keyTimes.find((at) => at >= t.start + 4 && at + 8 / fps < t.end);
+        if (k === undefined) {
+          wrong = `no key frame 4 s into the clip from ${t.start.toFixed(3)} to ${t.end.toFixed(3)} s, the key frames are at ${keyTimes.join(", ")}`;
+          break;
+        }
+        const to = k + 7.5 / fps;
+        const click = what === "click far";
+        if (click) {
+          await page.mouse.click(await xOf(page, t.start + 0.4), y);
+        } else {
+          await page.mouse.move(await xOf(page, t.start + 0.4), y);
+          await page.mouse.down();
+        }
         await settle(page);
         await shownOnPlayhead(page);
         // Every frame the video preview puts up, by where the app says it
         // begins, each a change of data-shown, and the key frames the frame
-        // queue counts as put up on the way.
+        // queue puts up.
         await page.evaluate(() => {
           const screen = document.querySelector(".screen");
           window.__scrubShown = [];
-          window.__scrubKeys = window.__frameQueue?.stats.keysAt.length ?? 0;
+          window.__scrubKeys = window.__frameQueue?.stats.keys ?? 0;
           // Each record's old value, and the value now once it is read, so
           // two changes before the observer runs are both kept.
           window.__scrubWatch = new MutationObserver((records) => {
@@ -5948,15 +6006,19 @@ for (const seq of toWalk) {
           });
           window.__scrubWatch.observe(screen, { attributes: true, attributeOldValue: true, attributeFilter: ["data-shown"] });
         });
-        // 1.4 s after a key frame, so the frame under the hand is 7 frames
-        // of decoding from it.
-        const to = Math.floor((t.start + 6) / 2) * 2 + 1.4;
-        if (to >= t.end) {
-          wrong = `the clip ends at ${t.end.toFixed(3)} s, before ${to.toFixed(3)} s`;
-          await page.mouse.up();
-          break;
-        }
         await page.mouse.move(await xOf(page, to), y);
+        if (click) {
+          await page.mouse.down();
+          await page.evaluate(
+            () =>
+              new Promise((done) => {
+                let n = 0;
+                const frame = () => (++n >= 8 ? done() : requestAnimationFrame(frame));
+                requestAnimationFrame(frame);
+              }),
+          );
+          await page.mouse.up();
+        }
         await settle(page);
         await shownOnPlayhead(page);
         const rested = await preview(page, 1 / fps);
@@ -5964,13 +6026,56 @@ for (const seq of toWalk) {
           for (const r of window.__scrubWatch.takeRecords()) window.__scrubShown.push(Number(r.oldValue));
           window.__scrubWatch.disconnect();
           window.__scrubShown.push(Number(document.querySelector(".screen").dataset.shown));
-          return { shown: window.__scrubShown, keys: window.__frameQueue?.stats.keysAt.slice(window.__scrubKeys) ?? [] };
+          const q = window.__frameQueue?.stats;
+          const n = (q?.keys ?? 0) - window.__scrubKeys;
+          return { shown: window.__scrubShown, keys: n > 0 ? (q?.keysAt.slice(-n) ?? []) : [], count: n };
         });
+        if (click) {
+          const under = Math.floor((rested.at + 0.001) * fps);
+          if (seen.count) wrong = `a click put up key frames, ${seen.count} of them, at ${seen.keys.map((a) => a.toFixed(3)).join(", ")}, before the frame clicked at ${rested.at.toFixed(3)} s`;
+          else if (Math.round(rested.frame * fps) !== under) wrong = `after the click the picture stood on frame ${Math.round(rested.frame * fps)}, not frame ${under} clicked`;
+          await watch.step(what, s);
+          break;
+        }
         await page.mouse.up();
         await settle(page);
         await shownOnPlayhead(page);
-        scrubbed = { fps, ...seen, rested, after: await preview(page, 1 / fps) };
+        // The key frame the frame under the hand is decoded from: the last
+        // at or before it.
+        const key = keyTimes.filter((at) => at <= rested.at + 0.001).at(-1);
+        scrubbed = { fps, ...seen, key, rested, after: await preview(page, 1 / fps) };
         await watch.step("scrub far", s);
+        break;
+      }
+      case "once a frame": {
+        const fps = await rate(page);
+        const t = await timeline(page);
+        const g = await handles(page);
+        await page.mouse.click(await xOf(page, t.start + 0.5), high(g.track));
+        await settle(page);
+        await shownOnPlayhead(page);
+        // Every moment the playhead stands on while it plays, from the
+        // first change after the play starts.
+        await page.evaluate(() => {
+          const screen = document.querySelector(".screen");
+          window.__onceAt = [];
+          window.__onceWatch = new MutationObserver(() => window.__onceAt.push(Number(screen.dataset.playhead)));
+          window.__onceWatch.observe(screen, { attributes: true, attributeFilter: ["data-playhead"] });
+        });
+        await page.keyboard.press("Space");
+        await playUntil(page, { most: arg });
+        const at = await page.evaluate(() => {
+          window.__onceWatch.disconnect();
+          return window.__onceAt;
+        });
+        await page.keyboard.press("Space");
+        await settle(page);
+        const frameOf = (x) => Math.floor((x + 0.001) * fps);
+        const crossed = at.length ? frameOf(at.at(-1)) - frameOf(at[0]) : 0;
+        if (crossed < arg * fps - 2) wrong = `the play crossed only ${crossed} frames in ${arg} s`;
+        else if (at.length > crossed + 2) wrong = `the playhead changed ${at.length} times while the play crossed ${crossed} frames`;
+        else if (at.length < crossed - 2) wrong = `the playhead changed only ${at.length} times while the play crossed ${crossed} frames`;
+        await watch.step(what, s);
         break;
       }
       case "keyed on the way": {
@@ -5978,15 +6083,14 @@ for (const seq of toWalk) {
           wrong = "nothing was scrubbed";
           break;
         }
-        const { fps, shown, keys, rested, after } = scrubbed;
+        const { fps, shown, keys, key, rested, after } = scrubbed;
         const frameOf = (at) => Math.floor((at + 0.001) * fps);
         const under = frameOf(rested.at);
         // What the frame queue put up, rather than what was painted: on a
         // busy machine the frame under the hand can come before the next
         // paint, and then the key frame is rightly never painted.
-        const key = keys.find((at) => frameOf(at) < under && frameOf(at) >= under - 2 * fps);
-        if (key === undefined) {
-          wrong = `no key frame was put up on the way to the frame under the hand at ${rested.at.toFixed(3)} s, the frame queue put up key frames at ${keys.map((a) => a.toFixed(3)).join(", ") || "none"} and the video preview showed ${shown.map((a) => a.toFixed(3)).join(", ")}`;
+        if (!keys.some((at) => Math.abs(at - key) < 0.5 / fps)) {
+          wrong = `the key frame at ${key.toFixed(3)} s was not put up on the way to the frame under the hand at ${rested.at.toFixed(3)} s, the frame queue put up key frames at ${keys.map((a) => a.toFixed(3)).join(", ") || "none"} and the video preview showed ${shown.map((a) => a.toFixed(3)).join(", ")}`;
         } else if (Math.round(rested.frame * fps) !== under) {
           wrong = `with the button still down, the picture stood on frame ${Math.round(rested.frame * fps)}, not frame ${under} under the hand`;
         } else if (Math.round(after.frame * fps) !== frameOf(after.at)) {
@@ -6563,15 +6667,15 @@ for (const seq of toWalk) {
         await playUntil(page, { most: 0.3 });
         await page.keyboard.press("l");
         // The playhead moves once a frame of the video (#446), so it is on
-        // the clip's last frame up to a frame before the end, and the page
-        // is held for that frame longer.
+        // the clip's last frame up to a frame before the end. The page is
+        // held from there until the sound card has played past the end,
+        // which is what the step is about, so no wait is long or short.
         const frame = 1 / (await rate(page));
         await playUntil(page, { past: end - frame - 0.03 });
-        const r = await page.evaluate(async (frame) => {
+        const r = await page.evaluate(async () => {
           const q = window.__frameQueue;
           const sounded = () => q.m0 / q.sampleRate + (q.audio.currentTime - q.c0);
-          const t = performance.now();
-          while (performance.now() - t < 250 + frame * 1000) {}
+          while (q.c0 !== null && sounded() < q.program.length) {}
           const crossed = q.c0 !== null && sounded() >= q.program.length;
           document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "l", bubbles: true }));
           // The loop is switched by the page's next microtasks, not its
@@ -6579,7 +6683,7 @@ for (const seq of toWalk) {
           await Promise.resolve();
           await new Promise((done) => setTimeout(done, 0));
           return { crossed, loop: q.program.loop, ends: q.program.end, sounded: sounded() };
-        }, frame);
+        });
         await page.keyboard.press("Space");
         await settle(page);
         if (!r.crossed) wrong = "the sound had not crossed the clip's end when L came";

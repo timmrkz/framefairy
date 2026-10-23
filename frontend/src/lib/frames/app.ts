@@ -51,14 +51,16 @@ const STREAMS = 3;
 // seq numbers the asks in the order they were made. place is set on the
 // frame that holds the playhead, a place the hand put it, see frame.
 // ahead is set on a frame read ahead of the hand, see AppFrames.ahead.
-type Waiter = { rank: number; seq: number; done: (f: Picture | null) => void; gone?: boolean; place?: boolean; ahead?: boolean };
+type Waiter = { rank: number; seq: number; done: (f: Picture | null) => void; gone?: boolean; place?: boolean; ahead?: boolean; key?: boolean };
 
 // Where the time of a stream's first frame went, in milliseconds from when
 // it was asked for, for a probe to read, see docs/VIDEO-PREVIEW.md, Speed:
 // ms until the interface had it, and on the Go side until the decoder had
 // the request, until it was at the place, until the first frame was out,
-// and whether that meant opening the file or only moving a cursor.
-export type Opened = { ms: number; started: number; opened: number; first: number; file: boolean };
+// and whether that meant opening the file or only moving a cursor. key
+// says the first frame was the key frame handed over first, issue #281,
+// so the frame asked for came later than these times say.
+export type Opened = { ms: number; started: number; opened: number; first: number; file: boolean; key: boolean };
 
 class Stream {
   id: Promise<string | null>;
@@ -249,7 +251,7 @@ class Stream {
 
   private take(got: Got) {
     if (!this.gave && got.frames.length) {
-      this.owner.opened(performance.now() - this.asked, got.times);
+      this.owner.opened(performance.now() - this.asked, got.times, this.key);
       queueMicrotask(() => this.owner.unpark());
     }
     for (const { at, frame } of got.frames) {
@@ -309,8 +311,10 @@ export class AppFrames {
   // frame decoding starts from, on the way to the frame asked for. The
   // frame stays the kept one's.
   onPassing?: (rank: number, frame: Picture, seq: number, key?: boolean) => void;
-  // Whether the hand holds the playhead, see FrameQueue.grip.
-  dragging = false;
+  // Whether the hand holds the playhead, see grip, and the places it
+  // asked for since it took hold.
+  private dragging = false;
+  private dragPlaces = 0;
   // The number of the newest ask.
   asked = 0;
   // The frames read ahead of the hand, withdrawn by the hand's next ask.
@@ -384,9 +388,9 @@ export class AppFrames {
 
   // A stream gave its first frame: how long that took here, from asking to
   // having it, and on the Go side, see Opened.
-  opened(ms: number, times: string) {
+  opened(ms: number, times: string, key = false) {
     const [started, open, first, file] = times.split(",").map(Number);
-    this.stats.opens.push({ ms: Math.round(ms), started: started || 0, opened: open || 0, first: first || 0, file: file === 1 });
+    this.stats.opens.push({ ms: Math.round(ms), started: started || 0, opened: open || 0, first: first || 0, file: file === 1, key });
     if (this.stats.opens.length > 64) this.stats.opens.shift();
   }
 
@@ -408,12 +412,22 @@ export class AppFrames {
   // withdrew them, and they were put up between the edge's frames, so the
   // video preview flickered between the two. Found by Tim on youtube.mp4,
   // plan row 2.270.
+  // The hand takes hold of the playhead, or lets go of it, see
+  // FrameQueue.grip.
+  grip(held: boolean) {
+    this.dragging = held;
+    this.dragPlaces = 0;
+  }
+
   frame(rank: number, timestamp: number, asked?: Set<Waiter>, place = false): Promise<Picture | null> {
     return new Promise((done) => {
       const w: Waiter = {
         rank,
         seq: ++this.asked,
         place,
+        // Every place but the first of a hold, which is where the press
+        // landed: a click outruns nothing, see route.
+        key: place && this.dragging && ++this.dragPlaces > 1,
         done: (f) => {
           asked?.delete(w);
           if (f && w.gone && w.place) this.onPassing?.(rank, f, w.seq);
@@ -604,8 +618,10 @@ export class AppFrames {
       return;
     } else {
       // A place the hand drags the playhead to is opened with its key frame
-      // first. The key frame takes one frame's decoding, where the frame
-      // under the hand takes every frame from the key frame to it, up to
+      // first, every place but the one the press landed on, see frame. The
+      // key frame takes its own decoding and that of the few frames stored
+      // next to it, where the frame under the hand takes every frame from
+      // the key frame to it, up to
       // two seconds of them, which in a 4K video is a quarter of a second
       // of decoding or more, so while the hand moves faster than the
       // frames under it can be decoded the picture keeps up with key
@@ -613,7 +629,7 @@ export class AppFrames {
       // by the hand costs its key frame only, and lets the newest place go
       // the moment it came, see unpark. Where the hand rests, the frame
       // under it follows from the same stream. Issue #281.
-      const key = this.dragging && !!w.place && !w.ahead;
+      const key = !!w.key && !w.ahead;
       s = new Stream(this, w.rank, width, height, key);
       if (key) this.stats.keyFirst++;
       s.aheadOnly = !!w.ahead;

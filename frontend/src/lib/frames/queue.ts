@@ -109,7 +109,7 @@ export type Stats = {
   // press of L starts none, see relooped.
   starts: number;
   // Key frames put up on the way to the frame under a hand that drags the
-  // playhead, see passing, and where each begins, for the walks.
+  // playhead, see passing, and where the last 16 begin, for the walks.
   keys: number;
   keysAt: number[];
   // Packets of sound decoded, and stretches handed to the sound card.
@@ -628,6 +628,10 @@ export class FrameQueue {
   // The playhead is held under the hand, being dragged: each place it
   // passes is shown on its own, with no play cued from it, see grip.
   private gripped = false;
+  // How a drag of the playhead goes, for the log, see grip: how many
+  // frames the frame on screen was from each place the hand moved to, the
+  // key frames put up before it, and when the hand let go.
+  private drag: { behind: number[]; keys: number; letGo: number } | null = null;
   // The first frame of a cue or a play that is waiting for what lies over
   // it, and the one that has it, each by its ticket and rank, see dressed.
   private dressing = "";
@@ -877,6 +881,9 @@ export class FrameQueue {
     // up, and starting over would throw away what was decoded between.
     if (!changed && this.state === "starting" && at === this.startFrom) return;
     this.at = at;
+    if (this.gripped && this.drag && this.shown && this.video && this.drag.behind.length < 4096) {
+      this.drag.behind.push(Math.abs(this.shown.rank - rankAt(this.video.samples, at)));
+    }
     if (this.state === "playing" || this.state === "starting") {
       this.start(at);
       return;
@@ -930,8 +937,26 @@ export class FrameQueue {
   grip(held: boolean) {
     if (this.gripped === held) return;
     this.gripped = held;
-    if (this.app) this.app.dragging = held;
+    this.app?.grip(held);
+    if (held) this.drag = { behind: [], keys: this.stats.keys, letGo: -1 };
+    else if (this.drag) {
+      this.drag.letGo = performance.now();
+      if (this.shown && this.video && this.shown.rank === rankAt(this.video.samples, this.at)) this.dragged();
+    }
     if (!held && !this.closed && (this.state === "paused" || this.state === "cued")) this.settle(this.at);
+  }
+
+  // Says how the drag went, once the frame under the hand is up after it
+  // let go, issue #281. A click moves the hand once and says nothing.
+  private dragged() {
+    const d = this.drag;
+    this.drag = null;
+    if (!d || d.behind.length < 2) return;
+    const behind = [...d.behind].sort((a, b) => a - b);
+    this.trace(
+      `a drag of the playhead let go at ${this.at.toFixed(3)} s, after ${behind.length} moves: the frame on screen ${behind[Math.floor(behind.length / 2)]} frames from the playhead on the median and ${behind[behind.length - 1]} at most as the hand moved, ` +
+        `${this.stats.keys - d.keys} key frames put up on the way, the frame under the hand ${Math.round(performance.now() - d.letGo)} ms after letting go`,
+    );
   }
 
   // The moments the hand is likely to step to next while paused, the first
@@ -1191,6 +1216,7 @@ export class FrameQueue {
     if (!passing) {
       this.putFor = this.ticket;
       this.shownAsked = this.app?.asked ?? 0;
+      if (this.drag && this.drag.letGo >= 0) this.dragged();
       // A frame asked for before the canvas last changed its size comes at
       // the size it was asked at.
       setTimeout(() => this.sharpen());
@@ -1227,6 +1253,7 @@ export class FrameQueue {
     if (key) {
       this.stats.keys++;
       this.stats.keysAt.push(this.shownAt(rank));
+      if (this.stats.keysAt.length > 16) this.stats.keysAt.shift();
     }
     this.put(frame.clone(), -1, rank, true);
     this.shownKey = key;

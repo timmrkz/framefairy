@@ -428,8 +428,8 @@ once a frame of the video, not on every refresh of the screen, because
 everything that follows it is drawn by its frame: the mark on the clip
 timeline, the time field and the captions. Moved on every refresh, the
 whole workspace worked itself out again 120 times a second on a screen
-of 120 Hz for a video of 25 frames a second, issue #446. It never goes back while playing. A
-press while it plays, on the clip timeline or the range picker, holds the
+of 120 Hz for a video of 25 frames a second, issue #446. It never goes
+back while playing. A press while it plays, on the clip timeline or the range picker, holds the
 play under the hand, like a nail, for as long as the button is down: the
 playhead goes to the press and stays there, follows the hand once it
 moves, and the play goes on from where the hand lets go, the clip's or

@@ -325,11 +325,15 @@ func TestTheEpisodesDecoderHandsOverTheKeyFrameFirst(t *testing.T) {
 	case has("hevc_videotoolbox"):
 		kinds = append(kinds, kind{"HEVC", []string{"-c:v", "hevc_videotoolbox", "-b:v", "2M", "-g", "50", "-tag:v", "hvc1"}})
 	default:
-		ffmpegtest.Unusable(t, "this ffmpeg has no HEVC encoder to make the episode with")
+		// Ends only this case, so MPEG-4 still runs.
+		kinds = append(kinds, kind{"HEVC", nil})
 	}
 	for _, enc := range kinds {
 		t.Run(enc.name, func(t *testing.T) {
 			t.Parallel()
+			if enc.args == nil {
+				ffmpegtest.Unusable(t, "this ffmpeg has no HEVC encoder to make the episode with")
+			}
 			path := filepath.Join(t.TempDir(), "episode.mp4")
 			// Four seconds at 25 frames a second, a key frame every two.
 			args := append([]string{"-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=25:d=4"}, enc.args...)
@@ -732,33 +736,52 @@ func TestTheEpisodesDecoderAgreesOnAPictureThatStartsLate(t *testing.T) {
 			}
 			return all[k]
 		}
-		dec := NewEpisodeFrames(program, c.path)
-		for _, from := range []float64{0, 0.2, 0.31, 0.35, 1.0, 1.02, 2.3} {
-			first := grid.Holding(from)
-			var got []frame
-			err := dec.Stream(context.Background(), grid, from, 160, 90, false, nil, func(at float64, data []byte) error {
-				got = append(got, frame{at, data})
-				if len(got) == 6 {
-					return errStop
-				}
-				return nil
-			})
-			if err != nil && !errors.Is(err, errStop) {
-				t.Fatalf("%s from %.2f: %v", name, from, err)
-			}
+		// The frames a stream handed over from frame first of the grid,
+		// each at its moment and the file's frame there.
+		checkFrames := func(t *testing.T, what string, got []frame, first int) {
+			t.Helper()
 			for i, g := range got {
 				moment := grid.At(first + i)
 				if math.Abs(g.at-moment) > 1e-9 {
-					t.Fatalf("%s from %.2f: frame %d at %.4f, its moment is %.4f", name, from, i, g.at, moment)
+					t.Fatalf("%s: frame %d at %.4f, its moment is %.4f", what, i, g.at, moment)
 				}
 				want := holds(moment)
 				if d := meanDiff(g.data, want.data); d > 2 {
-					t.Fatalf("%s from %.2f: frame %d, at %.4f, differs from the file's frame at %.4f by %.2f on average",
-						name, from, i, moment, want.at, d)
+					t.Fatalf("%s: frame %d, at %.4f, differs from the file's frame at %.4f by %.2f on average",
+						what, i, moment, want.at, d)
 				}
 			}
 			if len(got) != 6 {
-				t.Fatalf("%s from %.2f: %d frames, want 6", name, from, len(got))
+				t.Fatalf("%s: %d frames, want 6", what, len(got))
+			}
+		}
+		dec := NewEpisodeFrames(program, c.path)
+		for _, from := range []float64{0, 0.2, 0.31, 0.35, 1.0, 1.02, 2.3} {
+			// With the key frame first too, issue #281: the first frame is
+			// then the key frame, which stands for no frame before the
+			// grid's first even where the picture starts late, and the
+			// frames after it follow on.
+			for _, key := range []bool{false, true} {
+				first := grid.Holding(from)
+				var got []frame
+				err := dec.Stream(context.Background(), grid, from, 160, 90, key, nil, func(at float64, data []byte) error {
+					got = append(got, frame{at, data})
+					if len(got) == 6 {
+						return errStop
+					}
+					return nil
+				})
+				if err != nil && !errors.Is(err, errStop) {
+					t.Fatalf("%s from %.2f, key %v: %v", name, from, key, err)
+				}
+				if key && len(got) > 0 {
+					k := grid.Holding(got[0].at)
+					if k < 0 || k > first || math.Abs(got[0].at-grid.At(k)) > 1e-9 {
+						t.Fatalf("%s from %.2f: the key frame at %.4f is frame %d, want a frame from 0 to %d at its moment", name, from, got[0].at, k, first)
+					}
+					first = k
+				}
+				checkFrames(t, fmt.Sprintf("%s from %.2f, key %v", name, from, key), got, first)
 			}
 		}
 		dec.Close()

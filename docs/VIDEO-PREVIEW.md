@@ -225,16 +225,22 @@ closed for standing unused.
   frames a jump passes are decoded but never scaled. While the playhead
   is dragged, each place it passes shows its frame alone and cues no
   play, `FrameQueue.grip`, and the play is cued where the hand lets go.
-  A place the hand reaches that needs a stream of its own opens it with
+  A place the hand moves to that needs a stream of its own opens it with
   `key`, and the decoder hands over the key frame its seek lands on
-  before it decodes on to the frame asked for, issue #281. The queue puts
-  that key frame up only when it is nearer the playhead than the frame on
-  screen, and the exact frame still follows and takes its place. So a
-  hand that outruns the decoder sees a frame near it at the cost of one
-  decode, not the frame of a place it left long ago, and a place it has
+  before it decodes on to the frame asked for, issue #281. The place a
+  press lands on does not, so a click shows the frame clicked and nothing
+  before it. The queue puts that key frame up only when it is nearer the
+  playhead than the frame on screen, and the exact frame still follows
+  and takes its place. So a hand that outruns the decoder sees a frame
+  near it at the cost of the key frame and the few frames stored next to
+  it, not the frame of a place it left long ago, and a place it has
   already left costs its key frame alone, since the queue lets go of that
   stream sooner. Where the hand rests, and once it lets go, the frame on
-  screen is the exact one, as before.
+  screen is the exact one, as before. The app's log says how each drag
+  went once the hand lets go: how far the frame on screen was from the
+  playhead as the hand moved, the key frames put up, and how long the
+  frame under the hand took after letting go. The decoder's own lines say
+  when an open asked for the key frame first and when it came.
 - The routes the interface reads from, `/frames/open`, `/frames/sound`,
   `/frames/read` and `/frames/close`, stay as they are. The interface
   cannot tell whether a frame came from it or from the ffmpeg program.
@@ -440,10 +446,11 @@ between before and after.
 
 A playhead dragged faster than the frames under it can be decoded shows
 the key frame on the way, issue #281, see The interface. `speed.mjs` in
-the cloud, on its camera videos of 25 frames a second, five drags over a clip and back a run, two runs each with the
-key frame first turned off and on, on the same branch, the frames behind
-the playhead while it moved and the time to the frame under it after
-letting go, the mean of the two runs:
+the cloud, on its camera videos of 25 frames a second, five drags over a
+clip and back a run, two runs each with the key frame first turned off
+and on, on the same branch, the frames behind the playhead while it
+moved and the time to the frame under it after letting go, the mean of
+the two runs:
 
 | Frames behind the playhead   | Before (frames) | After (frames) | Change     |
 | ---------------------------- | --------------: | -------------: | ---------- |

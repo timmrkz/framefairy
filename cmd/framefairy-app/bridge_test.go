@@ -1019,12 +1019,13 @@ func makeEpisode(path string, seconds int, switchAt float64, hevc bool) error {
 }
 
 // makeCameraEpisode makes a video the size a camera or an export has, 1920
-// by 1080 or, with height 2160, 3840 by 2160, at 25 frames a second, with a key frame every two seconds and
-// three B-frames between the others, in H.264 or with hevc in HEVC with
-// 10-bit colour and open GOPs. Its picture moves all over, so every frame
-// costs the decoder what a real one does. It is for timing how quickly the
-// video preview follows the keys, see walks/speed.mjs, which a picture of
-// 320 by 180 cannot say anything about. Its frames carry no number.
+// by 1080 or, with height 2160, 3840 by 2160, at 25 frames a second, with a
+// key frame every two seconds and three B-frames between the others, in
+// H.264 or with hevc in HEVC with 10-bit colour and open GOPs. Its picture
+// moves all over, so every frame costs the decoder what a real one does. It
+// is for timing how quickly the video preview follows the keys, see
+// walks/speed.mjs, which a picture of 320 by 180 cannot say anything about.
+// Its frames carry no number.
 func makeCameraEpisode(path string, seconds, height int, hevc bool) error {
 	d := strconv.Itoa(seconds)
 	size := fmt.Sprintf("%dx%d", height*16/9, height)
