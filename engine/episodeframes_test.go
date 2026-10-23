@@ -309,14 +309,25 @@ func TestTheEpisodesDecoderHandsOverTheKeyFrameFirst(t *testing.T) {
 	if program == "" {
 		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
 	}
-	for _, enc := range []struct {
+	type kind struct {
 		name string
 		args []string
-	}{
-		{"MPEG-4", []string{"-c:v", "mpeg4", "-q:v", "3", "-g", "50", "-bf", "2"}},
-		{"HEVC with open GOPs", []string{"-c:v", "libx265", "-preset", "ultrafast",
-			"-x265-params", "keyint=50:min-keyint=50:scenecut=0:bframes=3:open-gop=1:log-level=error"}},
-	} {
+	}
+	kinds := []kind{{"MPEG-4", []string{"-c:v", "mpeg4", "-q:v", "3", "-g", "50", "-bf", "2"}}}
+	// Our own ffmpeg on the Mac has no x265, which is GPL, and makes the
+	// HEVC with the Mac's encoder, which writes no open GOPs.
+	encoders, _ := exec.Command("ffmpeg", "-hide_banner", "-encoders").Output()
+	has := func(name string) bool { return strings.Contains(string(encoders), " "+name+" ") }
+	switch {
+	case has("libx265"):
+		kinds = append(kinds, kind{"HEVC with open GOPs", []string{"-c:v", "libx265", "-preset", "ultrafast",
+			"-x265-params", "keyint=50:min-keyint=50:scenecut=0:bframes=3:open-gop=1:log-level=error"}})
+	case has("hevc_videotoolbox"):
+		kinds = append(kinds, kind{"HEVC", []string{"-c:v", "hevc_videotoolbox", "-b:v", "2M", "-g", "50", "-tag:v", "hvc1"}})
+	default:
+		ffmpegtest.Unusable(t, "this ffmpeg has no HEVC encoder to make the episode with")
+	}
+	for _, enc := range kinds {
 		t.Run(enc.name, func(t *testing.T) {
 			t.Parallel()
 			path := filepath.Join(t.TempDir(), "episode.mp4")
