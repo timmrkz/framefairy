@@ -25,24 +25,40 @@ export async function begin({ steps: usual = 60 } = {}) {
 }
 
 // Walks: look is what a gesture's when and run are handed, the caption box
-// unless a walk says otherwise, and show is what VERBOSE prints.
+// unless a walk says otherwise, and show is what VERBOSE prints. first is
+// the gestures made before the seed picks any, each as its name and what
+// its run is handed after look, for what a walk checks on every push
+// whatever its seed draws. They take no random number, so the seed still
+// decides every step after them, the same way on every run. They leave
+// the app in another state than the walk began in, so a seed walks
+// another path after them than it did before a walk had them. One that
+// cannot be made in the state it finds breaks a rule, rather than run
+// where it was never meant to.
 //
 // Each step is printed as it begins, with the seed, so a walk that waits
 // for good on something that never comes says which step it hung in when
 // the -timeout of make walks ends it. A step that throws ends the walk as
 // a broken rule, with the seed and the steps.
-export async function walk(w, gestures, { look = shown, show } = {}) {
+export async function walk(w, gestures, { look = shown, show, first = [] } = {}) {
   const { page, rng, watch, seed, steps } = w;
   const walked = [];
+  const firsts = first.map(([name, ...args]) => {
+    const g = gestures.find((x) => x.name === name);
+    if (!g) throw new Error(`no gesture ${name} to make first`);
+    return { g, args };
+  });
   await watch.start();
-  for (let step = 1; step <= steps && !watch.failed; step++) {
+  for (let step = 1; step <= firsts.length + steps && !watch.failed; step++) {
     try {
       const seen = await look(page);
       const box = await shown(page);
-      const can = gestures.filter((g) => g.when(seen));
-      const g = rng.weighted(can);
+      const { g, args } = firsts[step - 1] ?? { g: rng.weighted(gestures.filter((g) => g.when(seen))), args: [] };
       console.log(`seed ${seed}, step ${step}: ${g.name}`);
-      const said = await g.run(seen);
+      if (!g.when(seen)) {
+        watch.broke("a gesture made first can be made", `step ${step}, ${g.name}`);
+        break;
+      }
+      const said = await g.run(seen, ...args);
       walked.push(`${String(step).padStart(3)}  ${said}`);
       const { now } = await watch.step(g.name, box);
       if (process.env.VERBOSE) {

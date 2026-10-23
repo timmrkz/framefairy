@@ -42,6 +42,11 @@ apt="$sudo apt-get -q"
 $apt update
 $apt install -y --no-install-recommends \
 	pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libsoup-3.0-dev "$@"
+# The cache comes back from last week through the workflow's restore-keys,
+# so the package a newer version replaced would stay in it for good, and
+# it grew every week, #478. autoclean drops each one the mirror no longer
+# offers, which keeps every package this run installed.
+$apt autoclean
 
 # The cache is saved by the runner's user, and apt left it root's.
 $sudo rm -rf "$CACHE/partial" "$CACHE/lock"
