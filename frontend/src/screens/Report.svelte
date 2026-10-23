@@ -11,7 +11,7 @@
     type ReportDraft,
     type ReportPicture,
   } from "../lib/api";
-  import { asking, typing } from "../lib/keys";
+  import { asking, keyFocus, typing } from "../lib/keys";
   import Removed from "../components/Removed.svelte";
   import { chime, wake } from "../lib/chime";
   import Busy from "../components/Busy.svelte";
@@ -663,6 +663,13 @@
     const sel = getSelection();
     const had = sel?.rangeCount && field.contains(sel.anchorNode) ? [count(sel.anchorNode!, sel.anchorOffset), count(sel.focusNode!, sel.focusOffset)] : null;
     was.remove();
+    // The words can only be written in with the focus in the field, and
+    // the focus goes back where the person had it after. Tim ended a
+    // dictation with Enter and pressed Tab while the last words were
+    // still being written down, and when they came the field took the
+    // focus back from Report.
+    const elsewhere = document.activeElement !== field && document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
+    const ring = !!elsewhere?.matches(":focus-visible");
     let words = "";
     if (kept && text) {
       words = (/\S$/.test(before) && /^\S/.test(text) ? " " : "") + text + (/\S$/.test(text) && /^\S/.test(after) ? " " : "");
@@ -695,6 +702,7 @@
     // own way.
     field.scrollTop = after.trim() || !following ? top : field.scrollHeight;
     ours = false;
+    if (elsewhere?.isConnected && document.activeElement !== elsewhere) elsewhere.focus({ preventScroll: true, focusVisible: ring });
     read();
   }
 
@@ -809,7 +817,7 @@
     e.preventDefault();
     const open = stops().filter((s) => s === here || !(s as HTMLButtonElement).disabled);
     const next = open[(open.indexOf(here) + (e.shiftKey ? -1 : 1) + open.length) % open.length];
-    next.focus();
+    keyFocus(next);
     if (next !== here) log(`report: ${e.shiftKey ? "Shift+Tab" : "Tab"} moved the focus from ${named(here)} to ${named(next)}`);
   }
 

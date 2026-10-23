@@ -306,6 +306,14 @@
 //                      a Mac. The sidebar closes then, stays closed when
 //                      the focus comes back to the button, and the next
 //                      move of the pointer outside leaves it closed
+//   ["mission control"]
+//                      hovers the sidebar open, then plays what macOS hands
+//                      the app with the pointer held still, as in Mission
+//                      Control: the pointer leaving the sidebar and coming
+//                      back to where it is, with no movement, again and
+//                      again. The sidebar closes and opens no more. A real
+//                      move away and back opens it again, and none while
+//                      the app is not in front
 //   ["bugs"]           clicks Bugs in the sidebar, which has the app open
 //                      the report window or bring it forward, and opens
 //                      the report window as a second page if none is open,
@@ -422,7 +430,9 @@
 //                      Escape and Enter right after it, while what was
 //                      said is still being written down, "enter, then
 //                      tab and enter" presses Enter, Tab and Enter, the
-//                      two after it while it is written down, "escape, the
+//                      two after it while it is written down, "enter, then
+//                      tab" the same without the Enter, and sees the focus
+//                      still on Report once the words are written, "escape, the
 //                      cursor stays" sees the cursor still drawn after the
 //                      words while they are written down, and "ends"
 //                      presses nothing
@@ -2447,6 +2457,19 @@ export const sequences = [
     ],
   },
   {
+    // Tim ended a dictation with Enter and pressed Tab while the last
+    // words were still being written down. Tab put the focus on Report,
+    // and when the words came the field took it back, so Tab looked as if
+    // it passed Report over. The words are held back until after the Tab.
+    name: "Tab right after a dictation leaves the focus on Report once the words are written",
+    steps: [
+      ["bugs"],
+      ["write", "It froze.", "end"],
+      ["dictate", "enter, then tab"],
+      ["report reads", "It froze. *"],
+    ],
+  },
+  {
     // Issue #404. Tab while dictating stopped it, and Tim wants only Enter,
     // Escape and the button to end a dictation. Tab does nothing then. A
     // picture is attached so Tab has somewhere else it could go.
@@ -2771,6 +2794,13 @@ export const sequences = [
       ["label", ["nicolas", "Return"]],
       ["title bar"],
     ],
+  },
+  {
+    // Tim had the pointer on the sidebar and swiped up for Mission Control,
+    // and saw the sidebar open and close over and over until he clicked
+    // back into the app.
+    name: "The sidebar stays shut under a pointer that does not move, and while the app is not in front",
+    steps: [["mission control"]],
   },
   {
     // Plan row 2.244. Tim clicked Bugs, and the sidebar stayed open behind
@@ -7451,6 +7481,16 @@ for (const seq of toWalk) {
               return start.apply(this, a);
             };
           });
+          // Whether the page asked for the ring when it moved the focus
+          // last, for the tab step: WebKit rings a focus moved by a script
+          // after a click only when asked, and Chromium rings it anyway.
+          await reportPage.addInitScript(() => {
+            const focus = HTMLElement.prototype.focus;
+            HTMLElement.prototype.focus = function (options) {
+              window.__focusAsked = { on: this, ring: options?.focusVisible === true };
+              return focus.call(this, options);
+            };
+          });
           await reportPage.goto(new URL("?window=report", url).toString());
         } else {
           await reportPage.bringToFront();
@@ -7458,6 +7498,95 @@ for (const seq of toWalk) {
         page = reportPage;
         await page.locator("button.dictate").waitFor();
         await settle(page);
+        break;
+      }
+      case "mission control": {
+        page = main;
+        const shut = () => main.evaluate(() => !document.querySelector("aside")?.classList.contains("open"));
+        // Every time the sidebar opens from here on.
+        await main.evaluate(() => {
+          window.__sidebarOpened = 0;
+          new MutationObserver(() => {
+            const now = document.querySelector("aside").classList.contains("open");
+            if (now && !window.__sidebarWas) window.__sidebarOpened++;
+            window.__sidebarWas = now;
+          }).observe(document.querySelector("aside"), { attributes: true, attributeFilter: ["class"] });
+          window.__sidebarWas = document.querySelector("aside").classList.contains("open");
+        });
+        await main.mouse.move(750, 400);
+        await sidebarStill(main);
+        await main.mouse.move(20, 500);
+        await sidebarStill(main);
+        if (await shut()) {
+          wrong = "the sidebar did not open under the pointer";
+          break;
+        }
+        // What WebKit makes of the mouse exited and entered macOS sends
+        // while the pointer stands still: the pointer leaving, and moves
+        // to where it is with no movement. Each time after the sidebar has
+        // done whatever it does about the one before.
+        const still = (leave) =>
+          main.evaluate((leave) => {
+            const aside = document.querySelector("aside");
+            const at = { clientX: 20, clientY: 500, pointerType: "mouse", isPrimary: true, movementX: 0, movementY: 0 };
+            if (leave) {
+              aside.dispatchEvent(new PointerEvent("pointerout", { ...at, bubbles: true }));
+              aside.dispatchEvent(new PointerEvent("pointerleave", at));
+            } else {
+              aside.dispatchEvent(new PointerEvent("pointerover", { ...at, bubbles: true }));
+              aside.dispatchEvent(new PointerEvent("pointerenter", at));
+              aside.dispatchEvent(new PointerEvent("pointermove", { ...at, bubbles: true }));
+            }
+          }, leave);
+        const before = await main.evaluate(() => window.__sidebarOpened);
+        for (let i = 0; i < 4; i++) {
+          await still(true);
+          await sidebarStill(main);
+          await still(false);
+          await sidebarStill(main);
+        }
+        const again = (await main.evaluate(() => window.__sidebarOpened)) - before;
+        if (again) {
+          wrong = `the sidebar opened ${again} times more under a pointer that did not move`;
+          break;
+        }
+        if (!(await shut())) {
+          wrong = "the sidebar is open after the pointer left it and came back without moving";
+          break;
+        }
+        // The app goes behind another: the sidebar answers no pointer.
+        await main.mouse.move(750, 400);
+        await sidebarStill(main);
+        await main.evaluate(() => {
+          document.hasFocus = () => false;
+          window.dispatchEvent(new FocusEvent("blur"));
+        });
+        await main.mouse.move(20, 500);
+        await sidebarStill(main);
+        if (!(await shut())) {
+          wrong = "the sidebar opened under the pointer while the app was not in front";
+          break;
+        }
+        // In front again with the pointer on it, the next move opens it.
+        // What the pointer did while another app was in front is no
+        // move onto it the app has already seen.
+        await main.evaluate(() => {
+          delete document.hasFocus;
+          window.dispatchEvent(new FocusEvent("focus"));
+        });
+        await main.mouse.move(24, 500);
+        await sidebarStill(main);
+        if (await shut()) {
+          wrong = "the sidebar stayed shut under a pointer that moved on it once the app was in front again";
+          break;
+        }
+        await main.mouse.move(750, 400);
+        await sidebarStill(main);
+        await main.mouse.move(20, 500);
+        await sidebarStill(main);
+        if (await shut()) wrong = "the sidebar did not open under the pointer once the app was in front again";
+        await main.mouse.move(750, 400);
+        await sidebarStill(main);
         break;
       }
       case "bugs, the pointer gone": {
@@ -7904,10 +8033,15 @@ for (const seq of toWalk) {
                   : (e?.outerHTML.slice(0, 80) ?? "nothing"),
             ring: !!e?.matches(":focus-visible"),
             seen: !!box && box.width > 0 && box.height > 0,
+            // The field is written in, and WebKit rings it however the
+            // focus came. Anything else the page moved the focus to rings
+            // on a Mac only when the page asked.
+            asked: !!e?.isContentEditable || (window.__focusAsked?.on === e && window.__focusAsked.ring),
           };
         });
         if (on.name !== arg) wrong = `${what === "tab" ? "Tab" : "Shift+Tab"} put the focus on ${on.name}, not ${arg}`;
         else if (!on.ring || !on.seen) wrong = `the focus is on ${arg} with no ring to see it by`;
+        else if (!on.asked) wrong = `the page moved the focus to ${arg} without asking for its ring, which WebKit then does not draw after a click into the field`;
         break;
       }
       case "report":
@@ -8284,13 +8418,18 @@ for (const seq of toWalk) {
           await pageUntil(page, () => /without a word/.test(document.querySelector(".words")?.textContent ?? ""));
         } else {
           await page.locator(".telling").focus();
+          // The last words are held back until Tab is pressed, so Tab
+          // comes while they are written down on any machine.
+          const late = arg === "enter, then tab and enter" || arg === "enter, then tab";
+          if (late) await control(url, "/hold?call=StopListening&gate=shut");
           await page.keyboard.press(arg === "enter" ? "Enter" : "Escape");
           if (arg === "escape, then enter") await page.keyboard.press("Enter");
-          if (arg === "enter, then tab and enter") {
-            const writing = await button.getAttribute("aria-label");
+          if (late) {
             await page.keyboard.press("Tab");
-            await page.keyboard.press("Enter");
-            if (writing !== "Writing") wrong = `the button says ${writing} right after Enter, not Writing, so Tab and Enter came after the words were written`;
+            if (arg === "enter, then tab and enter") await page.keyboard.press("Enter");
+            const writing = await button.getAttribute("aria-label");
+            await control(url, "/hold?call=StopListening&gate=open");
+            if (writing !== "Writing") wrong = `the button says ${writing} after Tab, not Writing, so Tab came after the words were written`;
           }
           // While the last words are written down, the cursor is still
           // drawn after them, where they end.
@@ -8302,6 +8441,16 @@ for (const seq of toWalk) {
         }
         await pageUntil(page, () => document.querySelector("button.dictate")?.getAttribute("aria-label") === "Dictate");
         if (await page.locator(".telling .dictated").count()) wrong = "what was being said is still grey in the report";
+        // Tab put the focus on Report while the last words were written
+        // down, and it is still there, ringed, once they are.
+        if (arg === "enter, then tab") {
+          const on = await page.evaluate(() => ({
+            name: document.activeElement?.classList.contains("report") ? "Report" : document.activeElement?.classList.contains("telling") ? "the field" : (document.activeElement?.tagName ?? "nothing"),
+            ring: !!document.activeElement?.matches(":focus-visible") && window.__focusAsked?.on === document.activeElement && window.__focusAsked.ring,
+          }));
+          if (on.name !== "Report") wrong ||= `once the last words were written the focus was on ${on.name}, not on Report where Tab put it`;
+          else if (!on.ring) wrong ||= "once the last words were written Report had the focus with no ring asked for";
+        }
         // Two notes going down say it stopped, however it stopped, and
         // only those two.
         const down = await page.evaluate((from) => window.__notes.slice(from), kept.notes);

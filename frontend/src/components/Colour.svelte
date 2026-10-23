@@ -22,6 +22,7 @@
   import { Popover } from "bits-ui";
   import Icon from "./Icon.svelte";
   import { hexToHSV, hsvToHex, readHex, type HSV } from "../lib/colour";
+  import { keyFocus } from "../lib/keys";
 
   let {
     value,
@@ -186,7 +187,7 @@
     event.preventDefault();
     const row = (event.currentTarget as HTMLElement).parentElement;
     const next = row?.children[(i + by + presets.length) % presets.length] as HTMLElement | undefined;
-    next?.focus();
+    if (next) keyFocus(next);
   }
 
   // The hex field is drawn as it is typed, once it is a colour, and saved
