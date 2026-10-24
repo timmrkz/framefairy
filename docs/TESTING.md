@@ -1096,7 +1096,7 @@ What the code takes from outside, so a test can drive it:
 | random numbers | `io.Reader` | `signer.WithRandom` |
 | the model, the recogniser | an interface with a fake | the fake recogniser and fake llama-server in `engine/project_test.go` |
 | a program we run | its path | ffmpeg and the decoder through `FRAMEFAIRY_FRAMES` |
-| the end of work | a callback the caller gives, or a channel closed at every change | `emit` in `newQueue`, and `until` on `queue.changed`, `cmd/framefairy-app/jobs.go` |
+| the end of work | a callback the caller gives, a channel closed at every change, or a `sync.WaitGroup` | `emit` in `newQueue`, and `until` on `queue.changed`, `cmd/framefairy-app/jobs.go`, `clearing` in `cmd/framefairy-app/main.go` |
 
 The fake clocks: `testing/synctest` in Go, whose `time.Sleep` line says
 `//nolint:forbidigo // synctest bubble`, Vitest's fake timers in the

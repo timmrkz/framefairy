@@ -105,8 +105,10 @@ type Job struct {
 	ask    *ask
 	cancel context.CancelFunc
 	ctx    context.Context
-	// byHand is a search called off with Cancel, which says so where its
-	// work was the way one cut off by the app closing does, see stopByHand.
+	// byHand is a search, a clip or a render called off with Cancel, see
+	// stopByHand. A job that makes clips says so where its work was the way
+	// one cut off by the app closing does, and a render takes its record
+	// with it, see runJob.
 	byHand bool
 	// click is the press of Search or Continue that asked for the job, named
 	// by the window, see stopClips.
@@ -648,12 +650,13 @@ func (q *queue) cancelEpisode(episode string) bool {
 	return q.waitEpisode(episode)
 }
 
-// stopByHand calls off a job that makes clips with Cancel, see makesClips.
-// It ends as work that stopped, not as work that is gone, see runJob.
+// stopByHand calls off a job that keeps a record with Cancel. One that
+// makes clips ends as work that stopped, not as work that is gone, and a
+// render ends with its record forgotten, see makesClips and runJob.
 func (q *queue) stopByHand(id string) {
 	q.mu.Lock()
 	for _, j := range q.jobs {
-		if j.ID == id && makesClips(j.Kind) && j.Record != "" {
+		if j.ID == id && j.Record != "" {
 			j.byHand = true
 		}
 	}
@@ -870,13 +873,21 @@ func (q *queue) runJob(job *Job) {
 	result, err := run(ctx, job, project, q.turn(job, opts))
 	// A search called off by hand says so in its record before it says
 	// it has ended, so the note is there whenever anyone looks, the app
-	// quit a moment later included.
+	// quit a moment later included. A render called off by hand forgets
+	// its record at the same point, once nothing it does can write it
+	// again, so the record is gone by the time the window hears it ended.
 	q.mu.Lock()
 	byHand := job.byHand
 	q.mu.Unlock()
-	if byHand && errors.Is(err, engine.ErrCancelled) {
+	switch {
+	case !byHand || !errors.Is(err, engine.ErrCancelled):
+	case makesClips(job.Kind):
 		if serr := engine.StopJob(q.store.files, job.Episode, job.Record); serr != nil {
 			project.Log().Warn("could not note the search as stopped: %s", serr)
+		}
+	default:
+		if rerr := engine.RemoveJob(q.store.files, job.Episode, job.Record); rerr != nil {
+			project.Log().Warn("could not clear the record of the render: %s", rerr)
 		}
 	}
 	log.SetSink(nil)
@@ -889,7 +900,7 @@ func (q *queue) runJob(job *Job) {
 		switch {
 		case err == nil:
 			j.State, j.Underway = JobDone, nil
-		case errors.Is(err, engine.ErrCancelled) && j.byHand:
+		case errors.Is(err, engine.ErrCancelled) && j.byHand && makesClips(j.Kind):
 			// Called off by hand, a search says Stopped, Click Continue,
 			// because what it heard stays and it can be carried on.
 			j.State, j.Step = JobInterrupted, engine.StepStopped

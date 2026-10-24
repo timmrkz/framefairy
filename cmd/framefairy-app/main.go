@@ -365,6 +365,10 @@ type FrameFairy struct {
 	toldOld sync.Map
 	// histories are the undo and redo of each episode, see history.go.
 	histories map[string]*history
+	// clearing counts the clearLetGo calls under way. Wait returns once
+	// every one started has returned, whether it deleted what was written
+	// back or gave up, see clearLetGo.
+	clearing sync.WaitGroup
 	// link is what became of the last framefairy:// link, waiting for
 	// the settings, see licence.go.
 	link *LicenceLink
