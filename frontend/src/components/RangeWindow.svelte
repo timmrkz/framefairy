@@ -17,7 +17,7 @@
   // turns into the window, and back into the mark when they are. Nothing
   // on the range picker says what has been searched: any part can be
   // searched, as often as anyone likes.
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { fade } from "svelte/transition";
   import { clock } from "../lib/api";
   import { gridStep } from "../lib/flow";
@@ -369,6 +369,22 @@
   // under the hand is read from where it is. A mark over a part is the
   // mark's.
   let unheardHere = $state(-1);
+
+  // The parts the work has heard into, by where they end, which never
+  // moves. Their dots stay laid from that edge once the work stops or
+  // waits, whole columns with what is left over on the left, so not one
+  // dot moves: centred again, they jumped sideways each time the work
+  // stopped, went on hold or carried on, Tim's report of 24 October. A
+  // part nobody has heard into is centred, the way Tim measured it.
+  let worked = $state<number[]>([]);
+  const givingEnd = $derived(giving >= 0 ? (unheard.find(([a]) => Math.abs(a - giving) < 0.5)?.[1] ?? -1) : -1);
+  $effect(() => {
+    const end = givingEnd;
+    if (end < 0) return;
+    untrack(() => {
+      if (!worked.some((w) => Math.abs(w - end) < 0.5)) worked = [...worked, end];
+    });
+  });
   function hoverUnheard(event: PointerEvent) {
     const over = event.type === "pointerleave" || !track || (event.target as Element | null)?.closest?.(".clipmark") ? -1 : timeAt(event.clientX);
     const i = over < 0 ? -1 : unheard.findIndex(([a, b]) => a <= over && over < b);
@@ -424,6 +440,7 @@
       class="unheard"
       class:lit={i === unheardLit || i === unheardOn || i === unheardHere}
       class:giving={giving >= 0 && Math.abs(a - giving) < 0.5}
+      class:worked={worked.some((w) => Math.abs(w - b) < 0.5)}
       style="--at: {on(a)}; --to: {on(b)}"
     ></div>
   {/each}
@@ -905,9 +922,18 @@
      each time a column went, so the pattern walked back and forth, found
      by Tim. The right edge is where something heard begins or the video
      ends, so it never moves, and the dots are laid from it. Once the work
-     stops, the part holds still and its dots are centred again. */
+     stops or waits, the part holds still and keeps them where they are,
+     whole columns from that edge, the room left over on the left: centred
+     again, every dot jumped sideways, Tim's report of 24 October. */
+  .unheard.worked::before {
+    left: calc(var(--width) - round(down, var(--width), var(--dot-pitch)));
+    right: 0;
+  }
+
   .unheard.giving::before {
     --side: 0px;
+    left: 0;
+    right: 0;
   }
 
   .unheard.lit::before {

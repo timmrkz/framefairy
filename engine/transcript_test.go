@@ -687,7 +687,7 @@ func stoppedKeepsWhatItHeard(t *testing.T, rec Recognizer) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var mu sync.Mutex
-	heard := 0.0
+	heard, stoppedAt := 0.0, 0.0
 	log := NewLog(&bytes.Buffer{}, false, false)
 	log.SetSink(func(ev Event) {
 		if ev.Kind != EventProgress || ev.Covered <= 0 {
@@ -696,7 +696,8 @@ func stoppedKeepsWhatItHeard(t *testing.T, rec Recognizer) {
 		mu.Lock()
 		defer mu.Unlock()
 		heard = ev.Covered
-		if heard > 20 {
+		if heard > 20 && stoppedAt == 0 {
+			stoppedAt = heard
 			cancel()
 		}
 	})
@@ -710,11 +711,18 @@ func stoppedKeepsWhatItHeard(t *testing.T, rec Recognizer) {
 		t.Fatal("a stopped transcription finished")
 	}
 	mu.Lock()
-	want := heard
+	want, said := stoppedAt, heard
 	mu.Unlock()
+	// What it said it heard as it was stopped is what is kept, and it
+	// says nothing more after: the copies still hearing then are let go.
+	// Taken in, they moved the range picker's edge after the stop, or
+	// were saved without being shown, Tim's report of 24 October.
 	covered, done := Coverage(disk, source, base.ASRModel)
-	if done || want <= 20 || covered < want-0.001 {
+	if done || want <= 20 || math.Abs(covered-want) > 0.001 {
 		t.Errorf("stopped after hearing %.2f s, %.2f s written down (done %v)", want, covered, done)
+	}
+	if said != want {
+		t.Errorf("stopped after hearing %.2f s, it said it heard %.2f s after", want, said)
 	}
 }
 

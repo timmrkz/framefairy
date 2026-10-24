@@ -7158,9 +7158,11 @@ for (const seq of toWalk) {
         // and nothing else's, Tim's call on #458.
         // Where the dots of what is not transcribed are, part by part,
         // from where to where each is drawn.
+        // And how far the columns of dots stand in from the part's right
+        // edge, which moves every dot sideways when it changes.
         const dotsNow = () =>
           [...document.querySelectorAll(".unheard")]
-            .map((el) => `${el.style.getPropertyValue("--at")} to ${el.style.getPropertyValue("--to")}`)
+            .map((el) => `${el.style.getPropertyValue("--at")} to ${el.style.getPropertyValue("--to")} laid ${getComputedStyle(el, "::before").right} in`)
             .join(", ");
         await page.evaluate(`window.dotsNow = ${dotsNow}`);
         const pick = (want) =>
@@ -7349,7 +7351,6 @@ for (const seq of toWalk) {
           // speech as Search is clicked.
           await control(url, "/model?hang=1");
           await control(url, "/speech?ms=hold%20one");
-          const heardTo = (await transcription())?.progress?.covered ?? 0;
           const dotsBefore = await page.evaluate(() => window.dotsNow());
           await page.locator(".listhead button.search").click();
           // The Go side says the whole video waits before it says the
@@ -7365,12 +7366,15 @@ for (const seq of toWalk) {
           }
           wrong = await onHold("a search finding, the piece still being heard");
           if (wrong) break;
-          // The piece is heard to its end, and the dots stay where they
-          // were at the click.
-          await control(url, "/speech?ms=1500");
-          for (let seen = await news(page), left = 20; !((await transcription())?.progress?.covered > heardTo) && left > 0; left--) seen = await nextNews(page, seen);
+          // The piece is heard to its end and let go, the search has the
+          // hearing, and its first piece waits in the speech: the dots
+          // stand where they were at the click.
+          await control(url, "/speech?step=1");
+          const hears = async () => (await ask(page, "Jobs")).findLast((j) => j.episode === source && j.kind === "search")?.step === "hearing";
+          for (let seen = await news(page); !(await hears()); ) seen = await nextNews(page, seen);
           await settle(page);
           const dotsAfter = await page.evaluate(() => window.dotsNow());
+          await control(url, "/speech?ms=1500");
           if (dotsAfter !== dotsBefore) {
             wrong = `the whole video went on hold for a search, and its dots moved on from ${dotsBefore} to ${dotsAfter}`;
             break;
@@ -7461,6 +7465,8 @@ for (const seq of toWalk) {
           // Then held with a piece of the audio in it, so the press comes
           // while that piece is being heard, the way Tim pressed it.
           await control(url, "/speech?ms=hold%20one");
+          await settle(page);
+          const held = await page.evaluate(() => window.dotsNow());
           const after = await pick("Stop transcribing");
           if (after.said !== "Stop transcribing") wrong = `the menu of a video being transcribed says ${JSON.stringify(after.said)}, not Stop transcribing`;
           else if (after.open) wrong = "the menu stayed open after Stop transcribing was clicked";
@@ -7495,9 +7501,11 @@ for (const seq of toWalk) {
           const runs = async () => (await ask(page, "Jobs")).some((j) => j.episode === source && j.kind === "transcribe" && (j.state === "running" || j.state === "queued"));
           for (let seen = await news(page); await runs(); ) seen = await nextNews(page, seen);
           await settle(page);
+          // Not one dot moves sideways either: centred again as the work
+          // stopped, every dot jumped, Tim's report of 24 October.
           const dots = await page.evaluate(() => window.dotsNow());
-          if (dots !== after.dots) {
-            wrong = `after Stop transcribing the dots moved on, from ${after.dots} to ${dots}`;
+          if (dots !== held) {
+            wrong = `after Stop transcribing the dots moved, from ${held} to ${dots}`;
           }
           break;
         }
@@ -11494,6 +11502,7 @@ for (const seq of toWalk) {
                 foot: b.backgroundPositionY,
                 fade: b.maskImage,
                 laid,
+                worked: u.classList.contains("worked"),
               };
               if (giving) u.classList.add("giving");
               return at;
@@ -11587,12 +11596,17 @@ for (const seq of toWalk) {
           else if (grid.dots[2] !== grid.columns[0]?.fade)
             wrong = `the dots of a card leave a row or a column clear round them: masked by ${grid.dots[2]}`;
           else if (
-            grid.columns.some((c) => c.height.some(Boolean) || !c.fade.endsWith("rgb(0, 0, 0))") || !Number.isInteger(c.columns) || c.sides.some((v) => v < 0 || v >= grid.pitch / 2))
+            grid.columns.some(
+              (c) => c.height.some(Boolean) || !c.fade.endsWith("rgb(0, 0, 0))") || !Number.isInteger(c.columns) || c.sides.some((v) => v < 0 || v >= (c.worked ? grid.pitch : grid.pitch / 2)),
+            )
           )
             wrong = `the dots of a part on the range picker leave a row or a column clear round them: ${JSON.stringify(grid.columns)}`;
           // Centred, the same either side, found by Tim, who measured it.
-          else if (grid.columns.some((c) => c.sides[0] !== c.sides[1]))
-            wrong = `the dots of a part on the range picker are not centred in it: ${JSON.stringify(grid.columns.map((c) => c.sides))} left and right`;
+          // A part the work heard into keeps its dots where they stood,
+          // laid from its right edge, so none jumps sideways as the work
+          // stops, Tim's report of 24 October.
+          else if (grid.columns.some((c) => (c.worked ? c.sides[1] !== 0 : c.sides[0] !== c.sides[1])))
+            wrong = `the dots of a part on the range picker are not centred in it, or laid from its right edge once the work heard into it: ${JSON.stringify(grid.columns.map((c) => [c.worked, c.sides]))}, worked and left and right`;
           // And the foot row a pixel up from the range picker's foot,
           // where it looked clutched to it, found by Tim.
           else if (grid.columns.some((c) => c.laid && (c.laid[0] !== 0 || c.laid[1] !== 0 || !/^(right|100%)/.test(c.laid[2]))))

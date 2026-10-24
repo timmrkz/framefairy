@@ -208,12 +208,13 @@ that finds with the local model, a clip made by hand or a model being
 installed, its frame stays, in less of the colour and with no motes,
 still breathing, so it reads as on hold and not as gone, Tim's reports of
 23 and 24 October. It goes on hold the moment the search takes the
-hearing, while the speech model still finishes its piece, so its dots
-stand still from Search on. A search with a model in the cloud holds
+hearing, so its dots stand still from Search on, and what the speech
+model was still hearing then is let go, so nothing is kept that was not
+shown and the edge does not jump when it carries on. A search with a model in the cloud holds
 nothing up, so the frame stays as it is. Stop transcribing stops everything on the
 range picker in the frame it is clicked: the dots stay where they are,
-although the speech model finishes the piece it is in and the library is
-read again as the job ends, and the frame stands still and fades out.
+because what the speech model was still hearing is let go, and the frame
+stands still and fades out.
 The dots follow the work again once other work hears, or once the video
 is transcribed to its end, which a stop on its last piece can still
 bring. The video's
@@ -2266,7 +2267,10 @@ found is a place in the video, and I and O make a clip there.
   into a part, its dots stand still, laid from its right edge, which
   never moves, and its left edge wipes over them as it goes. Centred, the
   pattern walked back and forth as the edge passed, found by Tim. Once
-  the work stops, the dots are centred in the part again.
+  the work stops or waits, a part it heard into keeps its dots where they
+  stand, whole columns from its right edge with the room left over on
+  the left: centred again, every dot jumped sideways, Tim's report of 24
+  October. A part nobody heard into is centred.
 - **Escape steps back wherever the keyboard is**, unless the keyboard is
   in another field. The first takes back what was typed, so the whole of
   what was said is there again, and the next closes the search. Tim

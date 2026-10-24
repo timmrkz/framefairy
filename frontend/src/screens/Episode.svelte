@@ -698,6 +698,11 @@
   // the press is work nobody asked for any more.
   let stoppedAt = $state<Parts | null>(null);
   const shownHeard = $derived(stoppedAt ?? heard);
+  // Where the work hears into a part not transcribed yet, so its dots
+  // stand still under the edge. The whole video on hold still holds its
+  // part, so the dots do not shift as it waits and carries on, Tim's
+  // report of 24 October.
+  const givingAt = $derived(stoppedAt ? -1 : live ? live[1] : wholePart && !wholeHearing ? wholePart[0] : -1);
   // Stop transcribing holds the edge the same way, on the press, when the
   // whole video is what hears: the speech model finishes its chunk, and
   // the library is read again as the job ends, and the dots went on
@@ -3323,7 +3328,7 @@
     {unheard}
     unheardLit={saying ? unheardLit : -1}
     unheardOn={saying ? unheardOn : -1}
-    giving={live && !stoppedAt ? live[1] : -1}
+    giving={givingAt}
     part={wholePart}
     partWaiting={!wholeHearing}
     partKey={wholeWork?.id ?? ""}
