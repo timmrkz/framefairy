@@ -368,9 +368,10 @@
 //                      its length written in its corner as length
 //   ["pictures", n]    the report window shows n pictures
 //   ["toast", text]    a toast over the window says text, and with "" no
-//                      toast is there. Nothing under it moved since the
-//                      step before it, and the line beside the report's
-//                      buttons says nothing (#327)
+//                      toast is there. With a list of texts, the toasts
+//                      say each and nothing else, newest first. Nothing
+//                      under it moved since the step before it, and the
+//                      line beside the report's buttons says nothing (#327)
 //   ["fake clock"]     gives the app Playwright's clock, running as the real
 //                      one does, so a timer the app starts from now on can
 //                      be held and run on by hand later, see fakeClock
@@ -2677,14 +2678,19 @@ export const sequences = [
     name: "Pictures come from the paperclip, a drop and a paste, and what is not one is left out",
     steps: [
       ["bugs"],
+      // Held, so the toast's ten seconds cannot run out on a busy machine
+      // before the good drop after it is read.
+      ["hold the clock"],
       ["attach", 1],
       ["drop pictures", 2, "notes.txt"],
       ["toast", "notes.txt cannot be attached because it is not a picture or a screen recording"],
-      // A good drop after it was to take the old reason away, found in
-      // the review of #217. The step never read the toast, and the app
-      // no longer does it since the reason is a toast, issue #488, which
-      // puts ["toast", ""] back here.
+      // A good drop after it says nothing of its own and leaves the old
+      // reason to run its time, issue #488. The reason is still true, and
+      // a toast goes by its own time, the way each reason Tim dropped one
+      // after another stays in the stack. It once was a line beside the
+      // buttons, which the review of #217 asked a good drop to clear.
       ["drop pictures", 1],
+      ["toast", ["notes.txt cannot be attached because it is not a picture or a screen recording"]],
       ["paste picture"],
       ["pictures", 5],
       ["report lines up"],
@@ -3882,7 +3888,12 @@ export const sequences = [
     name: "the episode played through a clip shows only the video, and the clip its frame and captions",
     steps: [
       ["trim", "start", 300],
-      ["play from", "before", 6],
+      // From before, the play starts 3.6 s ahead of the clip, and the
+      // rule reads 2 s inside it, more than a frame from its start. Six
+      // seconds left 0.2 s to spare, and on a busy machine the frames read
+      // last came that much behind the play, issue #519. Seven leave a
+      // second.
+      ["play from", "before", 7],
       ["only the video"],
       ["play from", "in", 4],
       ["the clip shown"],
@@ -8109,15 +8120,18 @@ for (const seq of toWalk) {
         break;
       }
       case "toast": {
-        // No toast is read once the app has heard all it was told, since a
-        // toast waited for would go by itself after ten seconds and pass.
-        // One that is wanted is read until it comes.
-        const said =
-          arg === ""
-            ? (await caughtUp(page, url), await toastSays(page))
-            : await seenUntil(page, url, () => toastSays(page), (said) => said.includes(arg));
+        // No toast, or the whole list of them, is read once the app has
+        // heard all it was told, since a toast waited for would go by
+        // itself after ten seconds and pass, and so would one the step
+        // before should not have added. One that is wanted is read until
+        // it comes.
+        const all = arg === "" ? [] : Array.isArray(arg) ? arg : null;
+        const said = all
+          ? (await caughtUp(page, url), await toastsSay(page))
+          : await seenUntil(page, url, () => toastSays(page), (said) => said.includes(arg));
         const line = await page.evaluate(() => document.querySelector(".words")?.textContent.trim() ?? "");
-        if (arg === "" ? said !== "" : !said.includes(arg)) wrong = `the toast says "${said}", not "${arg}"`;
+        if (all ? said.length !== all.length || said.some((t, i) => !t.includes(all[i])) : !said.includes(arg))
+          wrong = `the toasts say ${JSON.stringify(said)}, not ${JSON.stringify(all ?? arg)}`;
         else if (line) wrong = `the line beside the buttons says "${line}", where only the toast should`;
         else wrong = await stillStands(page, standing);
         break;
@@ -14692,7 +14706,12 @@ async function onePiece(page, url, path) {
 // though it is still in the page for its fade: Svelte marks it inert the
 // moment it starts to leave.
 async function toastSays(page) {
-  return page.evaluate(() => [...document.querySelectorAll(".toast:not([inert]) .text")].map((t) => t.textContent.trim()).join(" "));
+  return (await toastsSay(page)).join(" ");
+}
+
+// The same, each toast on its own, newest first.
+async function toastsSay(page) {
+  return page.evaluate(() => [...document.querySelectorAll(".toast:not([inert]) .text")].map((t) => t.textContent.trim()));
 }
 
 // Where what a toast must not move stands: the workspace in front, the
