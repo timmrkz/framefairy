@@ -1,39 +1,36 @@
-import { readFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { defineConfig, type Plugin } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 
 // Every package that ends up in the bundle has its licence shown in the
-// app, from notices/notices.json. A package the bundle takes in without a
-// notice, or at another version than its notice, stops the build here,
-// because the day it is added is the day it is easiest to say what it is.
-// make notices writes the notices again. It builds the interface itself to
-// see what the bundle holds, and says so in FRAMEFAIRY_WRITING_NOTICES, so
-// the notices it is there to write do not stop it.
+// app. The build knows which ones those are, so it says so here: it writes
+// the folder of each into dist/packages.json, and make hands that to
+// notices/gen -built, which reads each package's version and licence from
+// its folder and stops the build on a licence nobody allowed. The folder
+// is the one the code came from, so a copy a package carries in its own
+// node_modules counts as itself, not as the package that carries it.
 function notices(): Plugin {
   return {
     name: "framefairy-notices",
-    apply: (_, env) => env.command === "build" && !process.env.FRAMEFAIRY_WRITING_NOTICES,
+    apply: "build",
     generateBundle(_, bundle) {
-      const noticed = new Map<string, string>();
-      const list = JSON.parse(readFileSync(new URL("../notices/notices.json", import.meta.url), "utf8"));
-      for (const n of list) noticed.set(n.name, n.version);
-      const found = new Set<string>();
+      const folders = new Set<string>();
       for (const output of Object.values(bundle)) {
         if (output.type !== "chunk") continue;
         for (const id of output.moduleIds) {
-          const hit = /node_modules\/((?:@[^/]+\/)?[^/]+)\//.exec(id.replaceAll("\\", "/"));
-          if (hit) found.add(hit[1]);
+          const file = id.replaceAll("\\", "/");
+          const at = file.indexOf("/node_modules/");
+          if (at < 0) continue;
+          // node_modules/a/node_modules/@b/c/dist/c.js comes from
+          // node_modules/a/node_modules/@b/c.
+          const hit = /^(?:node_modules\/(?:@[^/]+\/)?[^/]+\/)+/.exec(file.slice(at + 1));
+          if (hit) folders.add(hit[0].slice(0, -1));
         }
       }
-      const wrong: string[] = [];
-      for (const name of found) {
-        const pkg = JSON.parse(readFileSync(new URL(`./node_modules/${name}/package.json`, import.meta.url), "utf8"));
-        const version = noticed.get(name);
-        if (version === undefined) wrong.push(`${name} has no notice`);
-        else if (version !== pkg.version) wrong.push(`${name} is ${pkg.version} and its notice is for ${version}`);
-      }
-      if (found.size === 0) wrong.push("no package was found in the bundle, so nothing was checked");
-      if (wrong.length > 0) this.error(`${wrong.join(", ")}. Run make notices.`);
+      if (folders.size === 0) this.error("no package was found in the bundle, so no licence can be shown");
+      const dist = new URL("../cmd/framefairy-app/dist/", import.meta.url);
+      mkdirSync(dist, { recursive: true });
+      writeFileSync(new URL("packages.json", dist), JSON.stringify([...folders].sort(), null, 2) + "\n");
     },
   };
 }

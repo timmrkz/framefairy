@@ -868,8 +868,11 @@ Playwright's own 30 s on every action and wait is off too, `noDeadlines` in
 of `make walks`. The walks and the probes wait on no clock since #341 and
 #495. What `frontend/eslint-suppressions.json` still counts for them are
 reads of the clock that measure, and the stalls and late answers a step
-puts on the app on purpose. One more in a file fails. Some walks still
-wait a fixed number of the browser's frames, which #503 takes out. See
+puts on the app on purpose. One more in a file fails. A walk counts the
+browser's frames only where the count is the scenario, a hand held still
+and a Go side made slow on purpose, since #503. A probe fails at once
+when its video preview shows no picture or its list has no clip to pick,
+since #501, so a broken test video is said where it is found. See
 No test waits on the clock in
 [BUILD.md](BUILD.md#no-test-waits-on-the-clock).
 
@@ -1093,12 +1096,12 @@ What the code takes from outside, so a test can drive it:
 | What | Handed in as | Where |
 | --- | --- | --- |
 | the time of day | `now func() time.Time` | `signer.WithClock` in `licence/signer/signer.go`, `Now` in `licence/dispenser/engine.go` |
-| timers inside goroutines | `testing/synctest` around the test | the lint fixture `scripts/testdata/lint/go/signals` |
+| timers inside goroutines | `testing/synctest` around the test | the lint fixture `scripts/testdata/lint/go/signals`, and the dictation tests in `cmd/framefairy-app/listen_test.go` |
 | the disk | `afero.Fs` | `engine/files.go`, the project and the app's store |
 | random numbers | `io.Reader` | `signer.WithRandom` |
 | the model, the recogniser | an interface with a fake | the fake recogniser and fake llama-server in `engine/project_test.go` |
 | a program we run | its path | ffmpeg and the decoder through `FRAMEFAIRY_FRAMES` |
-| the end of work | a callback the caller gives, a channel closed at every change, or a `sync.WaitGroup` | `emit` in `newQueue`, and `until` on `queue.changed`, `cmd/framefairy-app/jobs.go`, `clearing` in `cmd/framefairy-app/main.go` |
+| the end of work | a callback the caller gives, a channel closed at every change, a channel closed when the work ends, or a `sync.WaitGroup` | `emit` in `newQueue`, and `until` on `queue.changed`, `cmd/framefairy-app/jobs.go`, `changed` on the updates in `cmd/framefairy-app/updates.go`, `done` of a measuring in `cmd/framefairy-app/levels.go`, `Arrived` in `updates/fetch.go`, `clearing` in `cmd/framefairy-app/main.go` |
 
 The fake clocks: `testing/synctest` in Go, whose `time.Sleep` line says
 `//nolint:forbidigo // synctest bubble`, Vitest's fake timers in the
@@ -1107,6 +1110,13 @@ Playwright's clock in the walks, through `fakeClock`, `holdClock`,
 `runClock` and `letClockGo` in `walks/bridge.mjs`. The end-to-end tests
 are the walks, against the real Go side through the bridge, and the
 rules every walk checks after every step are in `walks/rules.mjs`.
+
+A bubble fails its test with a deadlock when a goroutine started in it is
+still blocked as the test ends. lumberjack, which keeps the app's log,
+starts one with the first line it writes, and it never ends, so a test in
+a bubble that reads the app's log opens it outside the bubble and writes
+its first line there, `bubbleLog` in
+`cmd/framefairy-app/listen_test.go`.
 
 What CI holds of the skill's rules today: golangci-lint's `forbidigo` in
 `make lint` and ESLint in `make interface` for the clock in a test, with

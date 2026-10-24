@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/spf13/afero"
+)
 
 // A pattern file is taken under the licence the app would most want of those
 // it is offered under, and a file offered only under a licence a paid app
@@ -50,19 +54,98 @@ func TestAFilesOwnTermsCountOnceRead(t *testing.T) {
 	}
 }
 
-// Every licence a module of the app is under is told from its text, so
-// make notices never stops on one. malgo, which Report a Problem records
-// with, is under the Unlicense, and make notices stopped on it.
-func TestEveryLicenceTextOfAModuleIsTold(t *testing.T) {
-	for _, c := range []struct{ text, want string }{
-		{"This is free and unencumbered software released into the public domain.\n\nAnyone is free to copy", "Unlicense"},
-		{"Permission is hereby granted, free of charge, to any person", "MIT"},
-		{"Permission to use, copy, modify, and/or distribute this software", "ISC"},
-		{"Apache License\n  Version 2.0, January 2004", "Apache-2.0"},
-		{"Some terms of its own", ""},
-	} {
-		if got := classify(c.text); got != c.want {
-			t.Errorf("%q told as %q, want %q", c.text, got, c.want)
+// A Go module's notice carries the version and the text of the module the
+// build really uses, and one under a licence nobody allowed stops the
+// build.
+func TestAModuleIsNoticedAsTheBuildHasIt(t *testing.T) {
+	fsys := afero.NewMemMapFs()
+	write := func(path, body string) {
+		if err := afero.WriteFile(fsys, path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("/cache/zerolog@v1.35.1/LICENSE", "Permission is hereby granted, free of charge, to any person")
+	write("/cache/sherpa@v1.13.8/LICENSE", "Apache License\n  Version 2.0, January 2004")
+	write("/cache/gpl@v1.0.0/COPYING", "GNU GENERAL PUBLIC LICENSE Version 3")
+
+	n, sources, err := moduleNotice(fsys, module{"github.com/rs/zerolog", "v1.35.1", "/cache/zerolog@v1.35.1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n.Version != "1.35.1" || n.Licence != "MIT" || n.Part != partApp || len(sources) != 1 {
+		t.Errorf("zerolog noticed as %+v with %d texts", n, len(sources))
+	}
+	n, _, err = moduleNotice(fsys, module{"github.com/k2-fsa/sherpa-onnx-go", "v1.13.8", "/cache/sherpa@v1.13.8"})
+	if err != nil || n.Part != partSpeech || n.Licence != "Apache-2.0" {
+		t.Errorf("the speech bindings noticed as %+v, %v", n, err)
+	}
+	if _, _, err := moduleNotice(fsys, module{"example.com/gpl", "v1.0.0", "/cache/gpl@v1.0.0"}); err == nil {
+		t.Error("a module under the GPL was let in")
+	}
+	if _, _, err := moduleNotice(fsys, module{"example.com/gone", "v1.0.0", ""}); err == nil {
+		t.Error("a module that is not in the cache was let in")
+	}
+}
+
+// An npm package is noticed from the folder the bundle took it from, so a
+// copy one package carries in its own node_modules is named for itself,
+// at its own version. The Wails runtime, published without a licence
+// file, has the Wails module's text, and is refused at any other version.
+func TestAPackageIsNoticedFromTheFolderTheBundleTookItFrom(t *testing.T) {
+	fsys := afero.NewMemMapFs()
+	write := func(path, body string) {
+		if err := afero.WriteFile(fsys, path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("/f/node_modules/bits-ui/package.json", `{"name": "bits-ui", "version": "2.20.0", "license": "MIT"}`)
+	write("/f/node_modules/bits-ui/LICENSE", "MIT, bits-ui")
+	write("/f/node_modules/bits-ui/node_modules/@floating-ui/dom/package.json", `{"name": "@floating-ui/dom", "version": "2.0.0", "license": "MIT"}`)
+	write("/f/node_modules/bits-ui/node_modules/@floating-ui/dom/LICENSE", "MIT, floating-ui")
+	write("/f/node_modules/@wailsio/runtime/package.json", `{"name": "@wailsio/runtime", "version": "3.0.0-beta.23", "license": "MIT"}`)
+	write("/cache/wails/LICENSE", "MIT, Wails")
+	write("/f/node_modules/copyleft/package.json", `{"name": "copyleft", "version": "1.0.0", "license": "GPL-3.0-only"}`)
+	write("/f/node_modules/copyleft/LICENSE", "GPL")
+
+	wails := module{Path: wailsModule, Version: "v3.0.0-beta.23", Dir: "/cache/wails"}
+	n, sources, err := packageNotice(fsys, "/f", "node_modules/bits-ui/node_modules/@floating-ui/dom", wails)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n.Name != "@floating-ui/dom" || n.Version != "2.0.0" || n.Part != partScreen || string(sources["npm-floating-ui-dom.txt"]) != "MIT, floating-ui" {
+		t.Errorf("the nested copy noticed as %+v with %q", n, sources)
+	}
+	n, sources, err = packageNotice(fsys, "/f", "node_modules/@wailsio/runtime", wails)
+	if err != nil || string(sources["npm-wailsio-runtime.txt"]) != "MIT, Wails" {
+		t.Errorf("the Wails runtime noticed as %+v with %q, %v", n, sources, err)
+	}
+	wails.Version = "v3.0.0-beta.24"
+	if _, _, err := packageNotice(fsys, "/f", "node_modules/@wailsio/runtime", wails); err == nil {
+		t.Error("a Wails runtime of another version than Wails was let in")
+	}
+	if _, _, err := packageNotice(fsys, "/f", "node_modules/copyleft", wails); err == nil {
+		t.Error("a package under the GPL was let in")
+	}
+}
+
+// Every module the programs compile, on each system they ship on, is under
+// a licence the app may ship, with its text where the build reads it. The
+// build checks only the system it builds for, so this is where Windows is
+// checked.
+//
+// On the real disk: what is read is the Go module cache, where go keeps
+// the modules the programs compile.
+func TestEveryModuleTheProgramsCompileMayShip(t *testing.T) {
+	t.Parallel()
+	for _, goos := range []string{"darwin", "linux", "windows"} {
+		modules, err := compiled("../..", goos)
+		if err != nil {
+			t.Fatalf("%s: %v", goos, err)
+		}
+		for _, m := range modules {
+			if _, _, err := moduleNotice(afero.NewOsFs(), m); err != nil {
+				t.Errorf("%s: %v", goos, err)
+			}
 		}
 	}
 }

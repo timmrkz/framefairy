@@ -367,6 +367,10 @@
 //                      a video with no speech is heard
 //   ["settings"]       opens the settings from the sidebar, and remembers
 //                      the models they name
+//   ["acknowledgements"]
+//                      Help, Acknowledgements: every group is a head over a
+//                      card with a border, and the words of every row stand
+//                      in from the card's edges, never on them
 //   ["app log", "open"]
 //                      the app starts its log, with an older file beside
 //                      the one in use, see /app-log in bridge_test.go
@@ -2418,6 +2422,13 @@ export const sequences = [
       ["licence row whole"],
       ["licence row whole", "refused"],
     ],
+  },
+  {
+    // Tim saw the names and the licences in Help, Acknowledgements sit on
+    // the border of their box, with no room round them (#500). Each group
+    // is now a card the way the settings draw one.
+    name: "Acknowledgements keeps its words in from the edges of its cards",
+    steps: [["acknowledgements"]],
   },
   {
     // Plan row 2.245. Settings, Advanced shows the app's log, and its bin
@@ -6632,6 +6643,17 @@ for (const seq of toWalk) {
         await page.evaluate(async () => {
           const q = window.__frameQueue;
           const code = `registerProcessor("recorder", class extends AudioWorkletProcessor {
+            constructor() {
+              super();
+              // Asked to flush, it posts what it holds and then says so.
+              // Messages on one port come in order, so after "flushed"
+              // every sample it was handed has been heard.
+              this.port.onmessage = () => {
+                if (this.batch?.n) this.port.postMessage({ frame: this.batch.frame, data: this.batch.data.slice(0, this.batch.n) });
+                this.batch = null;
+                this.port.postMessage("flushed");
+              };
+            }
             process(inputs) {
               const ch = inputs[0][0];
               // Chromium now and then hands two render quanta the same
@@ -6659,7 +6681,7 @@ for (const seq of toWalk) {
           await q.audio.audioWorklet.addModule(URL.createObjectURL(new Blob([code], { type: "text/javascript" })));
           const node = new AudioWorkletNode(q.audio, "recorder", { numberOfOutputs: 1 });
           window.__heard = [];
-          node.port.onmessage = (e) => window.__heard.push(e.data);
+          node.port.onmessage = (e) => (e.data === "flushed" ? window.__flushed?.() : window.__heard.push(e.data));
           const hush = q.audio.createGain();
           hush.gain.value = 0;
           q.out.connect(node).connect(hush).connect(q.audio.destination);
@@ -6695,10 +6717,33 @@ for (const seq of toWalk) {
           await playUntil(page, { most: 0.12 });
         }
         // Until the play stops at the end, or has gone on by what was left
-        // of the clip and eight seconds more, and then a second of frames,
-        // in which the start played on when Tim heard it.
+        // of the clip and eight seconds more, and then until the queue
+        // holds the sound card, see end in lib/frames/queue.ts: whatever
+        // the sound card is handed after the end, where the start played
+        // on when Tim heard it, comes before that, and nothing comes
+        // after. Then the recorder is flushed, so every sample it was
+        // handed is in. A play that did not end holds nothing, and is said
+        // below.
         await playUntil(page, { most: arg + 8 });
-        await nextPaint(page, 60);
+        await page.evaluate(
+          () =>
+            new Promise((done) => {
+              const q = window.__frameQueue;
+              const a = q.audio;
+              let off = () => {};
+              const look = () => {
+                if (q.state === "ended" && a.state === "running") return;
+                a.removeEventListener("statechange", look);
+                off();
+                const [node] = window.__recorder;
+                window.__flushed = done;
+                node.port.postMessage("flush");
+              };
+              a.addEventListener("statechange", look);
+              off = q.listen(look);
+              look();
+            }),
+        );
         const q = await page.evaluate(() => {
           window.__playWatch = false;
           const q = window.__frameQueue;
@@ -6877,6 +6922,10 @@ for (const seq of toWalk) {
         await page.mouse.move(x, y);
         await hand("down");
         await page.mouse.down();
+        // The hand holds still for 42 of the page's frames, about 0.7 s,
+        // here and after it moves. That is the gesture itself, a press
+        // held the way Tim held it, not a wait for the app: "nailed" asks
+        // that the playhead stood under the hand for all of it.
         await nextPaint(page, 42);
         await hand("moves");
         for (let i = 1; i <= 10; i++) {
@@ -6887,7 +6936,10 @@ for (const seq of toWalk) {
         await nextPaint(page, 42);
         await hand("up");
         await page.mouse.up();
-        await nextPaint(page, 42);
+        // After the hand lets go, the play goes on for a second of the
+        // episode's own time, which "nailed" reads from 300 ms on. A play
+        // that stopped ends this at once, and "nailed" says so.
+        await playUntil(page, { most: 1 });
         await page.evaluate(() => (window.__playWatch = false));
         await settle(page);
         break;
@@ -6973,9 +7025,16 @@ for (const seq of toWalk) {
           return card && card !== was && (await ask(page, "Clips", path)).some((c) => c.key === card) ? card : "";
         };
         const written = await seenUntil(page, url, chosenCard, (card) => !!card);
-        // And two seconds more of the play, or a moment of frames paused.
+        // And two seconds more of the play. Paused, until the app has done
+        // all the clip made set going and the picture stands, and the
+        // frames drawn then: a clip dimmed after it was written is dimmed
+        // by then, and nothing is on its way to dim it later.
         if (playing) await playUntil(page, { most: 2 });
-        else await nextPaint(page, 30);
+        else {
+          await settle(page);
+          await page.evaluate(() => window.__standing());
+          await nextPaint(page, 2);
+        }
         await page.evaluate(() => {
           if (document.querySelector('button[aria-label="Play"]')) return;
           const key = { key: " ", code: "Space", bubbles: true, cancelable: true };
@@ -8356,6 +8415,27 @@ for (const seq of toWalk) {
         });
         break;
       }
+      case "acknowledgements": {
+        await page.evaluate(() => window.__help());
+        await page.locator("h2 + ol > li").first().waitFor();
+        await settle(page);
+        wrong = await page.evaluate(() => {
+          const rows = [...document.querySelectorAll("h2 + ol > li")];
+          for (const li of rows) {
+            const card = li.closest("ol");
+            if (getComputedStyle(card).borderTopWidth === "0px") return "a group of Acknowledgements has no card round it";
+            const box = card.getBoundingClientRect();
+            const words = [...li.querySelector("button").children].map((c) => c.getBoundingClientRect());
+            const left = Math.round(words[0].left - box.left);
+            const right = Math.round(box.right - words.at(-1).right);
+            if (left < 12 || right < 12) {
+              return `"${li.textContent.trim().slice(0, 40)}" stands ${left} px from its card's left edge and ${right} px from its right, not 12 or more`;
+            }
+          }
+          return rows.length ? null : "Acknowledgements shows no row";
+        });
+        break;
+      }
       case "bugs": {
         await fromSidebar(main, () => main.locator("aside button.bugs").click());
         if (!reportPage) {
@@ -8825,15 +8905,24 @@ for (const seq of toWalk) {
         );
         // The pointer is still on it, so its time has not started: the
         // fill stands full until the pointer leaves. Tim saw it run for a
-        // moment and stop a little short of full. So a fill that ran would
-        // have moved in half a second of frames.
-        await nextPaint(page, 30);
-        const fill = await page.evaluate((id) => {
+        // moment and stop a little short of full. Once the app has heard
+        // all of it, the fill is held, with no animation of it running,
+        // and stands full. A frame of running, of a time of seconds, is
+        // more than the tenth of a percent allowed, so it is seen then
+        // with no wait for it to move further.
+        await settle(page);
+        const { fill, running } = await page.evaluate((id) => {
           const run = document.querySelector(`li.tile[data-id="${id}"] .gone .run`);
           const box = run?.parentElement?.getBoundingClientRect();
-          return run && box ? -new DOMMatrix(getComputedStyle(run).transform).m41 / box.width : null;
+          return {
+            fill: run && box ? -new DOMMatrix(getComputedStyle(run).transform).m41 / box.width : null,
+            running: !!run?.getAnimations().some((a) => a.playState === "running"),
+          };
         }, id);
-        if (fill === null || fill > 0.001) {
+        if (running) {
+          const heard = await page.evaluate(() => window.__heardPointer.slice(0, 12).join(", "));
+          wrong = `picture ${i}'s time runs with the pointer still on it, the page heard ${heard}`;
+        } else if (fill === null || fill > 0.001) {
           const heard = await page.evaluate(() => window.__heardPointer.slice(0, 12).join(", "));
           wrong = `picture ${i}'s time ran out by ${Math.round((fill ?? 1) * 1000) / 10} % with the pointer still on it, the page heard ${heard}`;
         }
@@ -9426,8 +9515,11 @@ for (const seq of toWalk) {
         await fromSidebar(page, () => page.locator("aside li", { hasText: episodeBefore.split("/").pop() }).first().click());
         await page.locator(".listhead button.search").first().waitFor();
         await settle(page);
-        // And a second of frames more.
-        await nextPaint(page, 60);
+        // Until the picture stands on the clip's frame, and the frame drawn
+        // then: a frame of the episode's start comes on the way there, not
+        // after it.
+        await page.evaluate(() => window.__standing());
+        await nextPaint(page, 2);
         await page.evaluate(() => (window.__watching = false));
         break;
       }
@@ -12662,7 +12754,11 @@ for (const seq of toWalk) {
           };
           requestAnimationFrame(read);
         });
-        await nextPaint(page, 30);
+        // Half a second of the play before the hand comes, and a second
+        // after the clip is put back, in the episode's time: a jump back
+        // or a stop comes as the app takes the answers in, before the app
+        // settles, and the play going on after shows it was not stopped.
+        await playUntil(page, { most: 0.5 });
         await page.hover(`aside ol li[data-key="${other}"]`);
         await page.locator(`aside ol li[data-key="${other}"] button.drop`).click();
         await settle(page);
@@ -12675,7 +12771,7 @@ for (const seq of toWalk) {
         await settle(page);
         const kept = (await ask(page, "Clips", path)).some((c) => c.key === other && !c.rejected);
         if (!kept) wrong = "Put it back left the other clip removed";
-        await nextPaint(page, 60);
+        await playUntil(page, { most: 1 });
         const heads = await page.evaluate(() => {
           const h = window.__heads;
           delete window.__heads;
@@ -15001,8 +15097,11 @@ for (const seq of toWalk) {
           }
         }
         await page.mouse.up();
-        // And a second of frames after the hand let go.
-        await nextPaint(page, 60);
+        // And the frames after the hand let go, until the picture stands
+        // on the frame it let go on.
+        await settle(page);
+        await page.evaluate(() => window.__standing());
+        await nextPaint(page, 2);
         await page.evaluate(() => (window.__scrubbing = false));
         await watch.step("scrub", s);
         break;
@@ -15816,7 +15915,10 @@ async function wakeOnCaption(page) {
     requestAnimationFrame(step);
   });
   // The frames of the video gone back to open only once the page has drawn
-  // twenty animation frames since they were asked, about 330 ms.
+  // twenty animation frames since they were asked, about 330 ms. That is
+  // a slow Go side put on the app on purpose, not a wait of the walk's:
+  // the woken video preview has no frame of its own for that long, which
+  // is when what lies over it was drawn over nothing and went black.
   const slow = async (route) => {
     await nextPaint(page, 20).catch(() => {});
     await route.continue().catch(() => {});
@@ -15825,7 +15927,11 @@ async function wakeOnCaption(page) {
   try {
     await fromSidebar(page, () => page.locator("aside li", { hasText: name }).first().click());
     await restAhead(page);
-    await nextPaint(page, 10);
+    // Until the woken video preview stands on its own frame, which comes
+    // only once the slowed frames have opened, and the frames drawn then.
+    await settle(page);
+    await page.evaluate(() => window.__standing());
+    await nextPaint(page, 2);
   } finally {
     await page.unroute(/\/frames\/open\?/, slow);
   }

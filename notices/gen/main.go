@@ -1,16 +1,23 @@
-// Command gen writes notices/notices.json and notices/texts/ from what the
-// programs are really built from. Run it with make notices, after make has
-// built ffmpeg, llama-server and the interface once, because their source
-// trees and node_modules are where the texts are read from.
+// Command gen writes the licence notices, in two ways.
 //
-// It reads, in this order:
+// With -built, make runs it for every build of the app, after the
+// interface: it writes the notices of every Go module the programs compile
+// on this system and of every npm package in the interface bundle into the
+// build's own output, at the versions and with the texts that build really
+// has, see built.go. Nothing of that is kept in the repository, so a
+// Dependabot update needs no notice written by hand, and the build stops
+// only on a licence nobody allowed, see notices/licence.
 //
-//   - the Go toolchain and every Go module the three shipped systems
-//     compile into framefairy or framefairy-app, found with go list
-//   - every npm package that ends up in the interface bundle, found by
-//     building the interface with source maps and reading what they name
+// Without it, make notices runs it to write notices/notices.json and
+// notices/texts/ for everything else, the pieces whose versions are pinned
+// by hand and change in a pull request that builds them anyway:
+//
+//   - the Go toolchain, at the version go.mod pins
 //   - the source trees in .build/ that ffmpeg and llama-server are built
-//     from, at the versions the build scripts pin
+//     from, at the versions the build scripts pin, so make builds them
+//     first
+//   - the hyphenation patterns, the caption fonts and the code kept in
+//     kept/
 //   - the few texts nothing on disk holds, fetched from their makers
 //
 // What it cannot place, it refuses, rather than write a notice that says
@@ -21,6 +28,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -32,6 +40,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/afero"
 	"gopkg.in/yaml.v3"
 )
 
@@ -70,31 +79,64 @@ var (
 	out   = "notices"
 	texts = filepath.Join(out, "texts")
 	list  []notice
-	// written are the texts made so far, by name, so two notices that ask
-	// for the same file do not write it twice.
-	written = map[string]bool{}
+	// made are the texts made so far, by name. Two notices that ask for
+	// the same file share it.
+	made = map[string][]byte{}
 )
 
 func main() {
-	if err := run(); err != nil {
+	into := flag.String("built", "", "write the notices of the Go modules and npm packages this build has into this file")
+	flag.Parse()
+	var err error
+	if *into != "" {
+		err = built(afero.NewOsFs(), *into)
+	} else {
+		err = run()
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "notices:", err)
 		os.Exit(1)
 	}
 }
 
+// run writes notices/. It makes everything first and writes it at the
+// end, so a step that fails leaves notices/ as it was.
 func run() error {
-	if err := os.RemoveAll(texts); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(texts, 0o755); err != nil {
-		return err
-	}
-	steps := []func() error{goToolchain, goModules, kept, hyphenation, speech, ffmpeg, llama, fonts, npm, downloads}
+	steps := []func() error{goToolchain, kept, hyphenation, speech, ffmpeg, llama, fonts, downloads}
 	for _, step := range steps {
 		if err := step(); err != nil {
 			return err
 		}
 	}
+	sortList()
+	body, err := json.MarshalIndent(list, "", "  ")
+	if err != nil {
+		return err
+	}
+	fresh := texts + ".new"
+	if err := os.RemoveAll(fresh); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(fresh, 0o755); err != nil {
+		return err
+	}
+	for name, body := range made {
+		if err := os.WriteFile(filepath.Join(fresh, name), append(body, '\n'), 0o644); err != nil {
+			return err
+		}
+	}
+	if err := os.RemoveAll(texts); err != nil {
+		return err
+	}
+	if err := os.Rename(fresh, texts); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(out, "notices.json"), append(body, '\n'), 0o644)
+}
+
+// sortList puts the notices in the order of parts, and by name within a
+// part.
+func sortList() {
 	order := map[string]int{}
 	for i, p := range parts {
 		order[p] = i
@@ -105,15 +147,10 @@ func run() error {
 		}
 		return strings.ToLower(list[i].Name) < strings.ToLower(list[j].Name)
 	})
-	body, err := json.MarshalIndent(list, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(filepath.Join(out, "notices.json"), append(body, '\n'), 0o644)
 }
 
-// add records a notice, and copies each source file into texts/ under the
-// name given beside it.
+// add records a notice, with each of its texts under the name given
+// beside it.
 func add(n notice, sources map[string][]byte) error {
 	if n.Licence == "" || n.URL == "" || n.Part == "" || n.Version == "" {
 		return fmt.Errorf("%s is missing its licence, address, part or version", n.Name)
@@ -128,12 +165,7 @@ func add(n notice, sources map[string][]byte) error {
 		if len(body) == 0 {
 			return fmt.Errorf("the text %s for %s is empty", name, n.Name)
 		}
-		if !written[name] {
-			if err := os.WriteFile(filepath.Join(texts, name), append(body, '\n'), 0o644); err != nil {
-				return err
-			}
-			written[name] = true
-		}
+		made[name] = body
 		n.Texts = append(n.Texts, name)
 	}
 	if len(n.Texts) == 0 {
@@ -156,51 +188,6 @@ func slug(s string) string {
 	s = strings.ToLower(s)
 	s = regexp.MustCompile(`[^a-z0-9.]+`).ReplaceAllString(s, "-")
 	return strings.Trim(s, "-")
-}
-
-// classify names the licence a text is, from the words every copy of that
-// licence has. It is only used where the maker does not say.
-func classify(text string) string {
-	t := strings.Join(strings.Fields(text), " ")
-	switch {
-	case strings.Contains(t, "Apache License") && strings.Contains(t, "Version 2.0"):
-		return "Apache-2.0"
-	case strings.Contains(t, "Permission is hereby granted, free of charge"):
-		return "MIT"
-	case strings.Contains(t, "Redistribution and use in source and binary forms") &&
-		strings.Contains(t, "Neither the name"):
-		return "BSD-3-Clause"
-	case strings.Contains(t, "Redistribution and use in source and binary forms"):
-		return "BSD-2-Clause"
-	case strings.Contains(t, "Permission to use, copy, modify, and/or distribute"):
-		return "ISC"
-	case strings.Contains(t, "CC0 1.0 Universal"):
-		return "CC0-1.0"
-	case strings.Contains(t, "This is free and unencumbered software released into the public domain"):
-		return "Unlicense"
-	}
-	return ""
-}
-
-// licenceFiles are the names a licence goes by at the top of a module or
-// package, in the order they are looked for.
-var licenceFiles = []string{"LICENSE", "LICENSE.md", "LICENSE.txt", "LICENCE", "LICENCE.md", "COPYING", "LICENSE-MIT"}
-
-func licenceIn(dir string) (string, []byte, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return "", nil, err
-	}
-	// Some packages spell it in lower case.
-	for _, want := range licenceFiles {
-		for _, e := range entries {
-			if !e.IsDir() && strings.EqualFold(e.Name(), want) {
-				body, err := os.ReadFile(filepath.Join(dir, e.Name()))
-				return e.Name(), body, err
-			}
-		}
-	}
-	return "", nil, fmt.Errorf("no licence file in %s", dir)
 }
 
 func goEnv(key string) (string, error) {
@@ -234,87 +221,6 @@ func goToolchain() error {
 		Licence: "BSD-3-Clause", URL: "https://go.dev", Part: partApp,
 		Note: "The Go runtime and standard library are compiled into the app."},
 		map[string][]byte{"go.txt": body})
-}
-
-// Programs is what ships, and systems what it ships on.
-var (
-	// framefairy-frames is built with the tag ffmpeglibs, without which it
-	// compiles to a program that only says it was built without them.
-	programs = []string{"./cmd/framefairy-app", "./cmd/framefairy", "./cmd/framefairy-frames"}
-	systems  = []string{"darwin", "linux", "windows"}
-)
-
-// extraTexts are licences inside a module besides the one at its top, for
-// code the module carries from someone else.
-var extraTexts = map[string][]string{
-	"github.com/wailsapp/wails/v3": {
-		"internal/go-common-file-dialog/LICENSE",
-		"internal/webview2/webviewloader/LICENSE",
-	},
-}
-
-// goModules is every module the shipped programs compile, on any of the
-// systems they ship on. The speech bindings are a Go module whose native
-// libraries travel beside the app, so they are shown under speech.
-func goModules() error {
-	type module struct{ Path, Version, Dir string }
-	found := map[string]module{}
-	for _, goos := range systems {
-		args := append([]string{"list", "-tags", "ffmpeglibs", "-deps", "-f",
-			"{{with .Module}}{{if not .Main}}{{.Path}} {{.Version}}{{end}}{{end}}"}, programs...)
-		cmd := exec.Command("go", args...)
-		cmd.Env = append(os.Environ(), "GOOS="+goos, "GOARCH=arm64", "CGO_ENABLED=1")
-		raw, err := cmd.Output()
-		if err != nil {
-			return fmt.Errorf("go list for %s: %w", goos, err)
-		}
-		for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
-			fields := strings.Fields(line)
-			if len(fields) == 2 {
-				found[fields[0]] = module{Path: fields[0], Version: fields[1]}
-			}
-		}
-	}
-	paths := make([]string, 0, len(found))
-	for p := range found {
-		paths = append(paths, p)
-	}
-	sort.Strings(paths)
-	for _, p := range paths {
-		m := found[p]
-		raw, err := exec.Command("go", "mod", "download", "-json", m.Path+"@"+m.Version).Output()
-		if err != nil {
-			return fmt.Errorf("go mod download %s: %w", m.Path, err)
-		}
-		if err := json.Unmarshal(raw, &m); err != nil {
-			return err
-		}
-		name, body, err := licenceIn(m.Dir)
-		if err != nil {
-			return err
-		}
-		licence := classify(string(body))
-		if licence == "" {
-			return fmt.Errorf("cannot tell what licence %s/%s is", m.Path, name)
-		}
-		sources := map[string][]byte{slug(m.Path) + ".txt": body}
-		for _, extra := range extraTexts[m.Path] {
-			more, err := read(filepath.Join(m.Dir, extra))
-			if err != nil {
-				return err
-			}
-			sources[slug(m.Path+"-"+filepath.Dir(extra))+".txt"] = more
-		}
-		part := partApp
-		if strings.HasPrefix(m.Path, "github.com/k2-fsa/") {
-			part = partSpeech
-		}
-		if err := add(notice{Name: m.Path, Version: strings.TrimPrefix(m.Version, "v"),
-			Licence: licence, URL: "https://" + m.Path, Part: part}, sources); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // kept is the code taken into the engine by hand, whose notices are kept
@@ -779,94 +685,6 @@ func fonts() error {
 	return nil
 }
 
-// npm is every package the interface bundle holds. The interface is built
-// once more with source maps into a folder of its own, and the maps say
-// which files of which packages went in. The build is told the notices are
-// being written, because its own check of them would stop it at the very
-// change they are written for.
-func npm() error {
-	tmp, err := os.MkdirTemp("", "framefairy-notices")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(tmp)
-	cmd := exec.Command("npx", "--no-install", "vite", "build", "--sourcemap",
-		"--outDir", tmp, "--emptyOutDir", "--logLevel", "error")
-	cmd.Dir = "frontend"
-	cmd.Env = append(os.Environ(), "FRAMEFAIRY_WRITING_NOTICES=1")
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("building the interface: %w", err)
-	}
-	maps, _ := filepath.Glob(filepath.Join(tmp, "*", "*.map"))
-	more, _ := filepath.Glob(filepath.Join(tmp, "*.map"))
-	maps = append(maps, more...)
-	if len(maps) == 0 {
-		return fmt.Errorf("the interface built without source maps")
-	}
-	inPackage := regexp.MustCompile(`node_modules/((?:@[^/]+/)?[^/]+)/`)
-	packages := map[string]bool{}
-	for _, m := range maps {
-		raw, err := os.ReadFile(m)
-		if err != nil {
-			return err
-		}
-		var sm struct{ Sources []string }
-		if err := json.Unmarshal(raw, &sm); err != nil {
-			return err
-		}
-		for _, s := range sm.Sources {
-			if hit := inPackage.FindStringSubmatch(s); hit != nil {
-				packages[hit[1]] = true
-			}
-		}
-	}
-	names := make([]string, 0, len(packages))
-	for p := range packages {
-		names = append(names, p)
-	}
-	sort.Strings(names)
-	for _, p := range names {
-		dir := filepath.Join("frontend", "node_modules", p)
-		raw, err := read(filepath.Join(dir, "package.json"))
-		if err != nil {
-			return err
-		}
-		var pkg struct {
-			Version    string `json:"version"`
-			License    string `json:"license"`
-			Homepage   string `json:"homepage"`
-			Repository any    `json:"repository"`
-		}
-		if err := json.Unmarshal(raw, &pkg); err != nil {
-			return err
-		}
-		_, body, err := licenceIn(dir)
-		if err != nil && p == "@wailsio/runtime" {
-			// The Wails runtime is published without its licence file. It is
-			// the same project and the same licence as the Wails module, at
-			// the same version, so the text is taken from there.
-			body, err = wailsLicence(pkg.Version)
-		}
-		if err != nil {
-			return err
-		}
-		licence := pkg.License
-		if licence == "" {
-			licence = classify(string(body))
-		}
-		if licence == "" {
-			return fmt.Errorf("cannot tell what licence %s is", p)
-		}
-		if err := add(notice{Name: p, Version: pkg.Version, Licence: licence,
-			URL: "https://www.npmjs.com/package/" + p, Part: partScreen},
-			map[string][]byte{slug("npm-"+p) + ".txt": body}); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // downloads are the models the app fetches from their makers on the
 // user's say. Nothing of them is in the app, and the licence is between
 // the user and the maker, but the attribution CC BY asks for is given
@@ -918,14 +736,6 @@ func fetch(url string) ([]byte, error) {
 		return nil, fmt.Errorf("%s answered %s", url, response.Status)
 	}
 	return io.ReadAll(response.Body)
-}
-
-func wailsLicence(version string) ([]byte, error) {
-	cache, err := goEnv("GOMODCACHE")
-	if err != nil {
-		return nil, err
-	}
-	return read(filepath.Join(cache, "github.com", "wailsapp", "wails", "v3@v"+version, "LICENSE"))
 }
 
 // textName is a file's name without an ending that only says it is text.

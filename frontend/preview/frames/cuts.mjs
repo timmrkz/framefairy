@@ -22,7 +22,7 @@
 // frames while paused and reads back the frame drawn for each, then seeks
 // into a cut while the clip plays.
 import { execFile } from "node:child_process";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, rename, rm, stat } from "node:fs/promises";
 import { promisify } from "node:util";
 import { frames, framesAt, queueUntil } from "../open.mjs";
 
@@ -256,11 +256,22 @@ console.log(`late frames ${rec.stats.late}, late sound ${rec.stats.lateSound}, d
 
 // ---- The sound
 
+// Written to a part file of its own and then named, so a run stopped
+// half way, or two at once, never leave a part of it to be trusted, the
+// way the episode is made, see made in open.mjs. One kept from before is
+// trusted only when it is about ten minutes of sound and newer than the
+// video it was decoded from, which may have been made again since.
 const refAt = framesAt + ".f32";
-try {
-  await stat(refAt);
-} catch {
-  await run("ffmpeg", ["-v", "error", "-c:a", "libopus", "-i", framesAt, "-f", "f32le", "-ac", "1", "-ar", "48000", refAt, "-y"]);
+const kept = await stat(refAt).catch(() => null);
+const video = await stat(framesAt);
+if (!kept || Math.abs(kept.size / 4 / R - 600) > 1 || kept.mtimeMs < video.mtimeMs) {
+  const part = `${refAt}.${process.pid}.part`;
+  try {
+    await run("ffmpeg", ["-v", "error", "-c:a", "libopus", "-i", framesAt, "-f", "f32le", "-ac", "1", "-ar", "48000", part, "-y"]);
+    await rename(part, refAt);
+  } finally {
+    await rm(part, { force: true });
+  }
 }
 const refBytes = await readFile(refAt);
 const ref = new Float32Array(refBytes.buffer, refBytes.byteOffset, refBytes.length / 4);

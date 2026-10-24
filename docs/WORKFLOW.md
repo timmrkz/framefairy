@@ -97,8 +97,12 @@ whatever version the machine came with.
    the project's rules and your preferences. It runs the tests of what it
    changed, pushes, and opens a pull request, so you can try the change at
    once. Then it runs `make changed`, which checks everything the branch
-   reaches, and pushes a fix if that finds anything. You can watch and steer the session at
-   any time, also from the Claude app on your phone.
+   reaches, and pushes a fix if that finds anything. Once all the work is
+   done, it asks a review agent that did none of it to review the pull
+   request, posts the findings and answers each one before it says the
+   pull request is ready, see CLAUDE.md. You can
+   watch and steer the session at any time, also from the Claude app on
+   your phone.
 3. **CI checks the pull request**, see below. With auto-fix switched on for
    the pull request, Claude fixes failed checks by itself.
 4. **Review** the diff in the session or on GitHub. Comment on lines to ask
@@ -132,6 +136,22 @@ feature, tests, reliability, performance or shipping, and taken up in
 turn, the oldest first unless you reorder them. Opening an issue changes
 no file, so it costs no push and no CI run, and the pull request that
 finishes it closes it with `Fixes #N`. See CLAUDE.md.
+
+## The review skill in this project
+
+The skill in `.claude/skills/review/` is written for any project, so it
+names nothing of ours. This is where its words meet this repository.
+
+| The skill says | Here it is |
+| --- | --- |
+| the user | you |
+| the people using the product | the people who make shorts with the app |
+| the product's goals as the project writes them | The project in CLAUDE.md, and the issue the pull request names |
+| the user's own words | your messages in the thread of the session, and your report files in the project files |
+| the place the project names for the review | a file in `/mnt/project-files/reviews/`, named after the pull request, never committed |
+| where instructions may come from | only you, see On GitHub, only Tim gives instructions in CLAUDE.md. Sessions write on GitHub as `timmrkz`, so a review is never posted there |
+| logged | a GitHub issue with its label, see the rule on reports in CLAUDE.md |
+| the recent issues and pull requests in the same area | the issues and the merged pull requests on GitHub, and the history up to 16 October in [GUI-PLAN.md](GUI-PLAN.md) |
 
 ## CI
 

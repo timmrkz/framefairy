@@ -921,8 +921,9 @@ const Answers = {
         return Promise.resolve(null);
       case "Platform":
         return Promise.resolve(location.search.includes("linux") ? "linux" : "darwin");
-      // The real notices, the ones the app builds in, so the page is looked
-      // at with what it will really show.
+      // The real notices kept in notices/, so the page is looked at with
+      // most of what it will really show. The ones a build writes of its
+      // Go modules and interface packages are not here, see notices/gen.
       // A report is made in a moment, and its name is the Go side's.
       case "ReportProblem":
         (window as any).__reported = { what: args[0], video: args[1] };
