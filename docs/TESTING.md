@@ -1096,8 +1096,7 @@ What the code takes from outside, so a test can drive it:
 | What | Handed in as | Where |
 | --- | --- | --- |
 | the time of day | `now func() time.Time` | `signer.WithClock` in `licence/signer/signer.go`, `Now` in `licence/dispenser/engine.go`, `now` on the app, which times an edit, in `cmd/framefairy-app/main.go` |
-| timers inside goroutines | `testing/synctest` around the test | the lint fixture `scripts/testdata/lint/go/signals`, and the dictation tests in `cmd/framefairy-app/listen_test.go` |
-| every goroutine of a test waiting | `synctest.Wait` in a `testing/synctest` bubble | the asks at once for a transcript in `cmd/framefairy-app/kept_test.go` |
+| timers inside goroutines | `testing/synctest` around the test | the lint fixture `scripts/testdata/lint/go/signals`, the dictation tests in `cmd/framefairy-app/listen_test.go`, and `TestOnlyAFewDecodersNobodyHoldsStandRunning` in `cmd/framefairy-app/frames_test.go` |
 | the disk | `afero.Fs` | `engine/files.go`, the project and the app's store |
 | random numbers | `io.Reader` | `signer.WithRandom` |
 | the model, the recogniser | an interface with a fake | the fake recogniser and fake llama-server in `engine/project_test.go` |
@@ -1108,7 +1107,10 @@ The fake clocks: `testing/synctest` in Go, whose `time.Sleep` line says
 `//nolint:forbidigo // synctest bubble`, Vitest's fake timers in the
 interface tests, as `frontend/src/lib/frames/captions.test.ts` does, and
 Playwright's clock in the walks, through `fakeClock`, `holdClock`,
-`runClock` and `letClockGo` in `walks/bridge.mjs`. The end-to-end tests
+`runClock` and `letClockGo` in `walks/bridge.mjs`. In a bubble,
+`synctest.Wait` tells a test that every goroutine of the bubble waits, as
+the asks at once for a transcript in `cmd/framefairy-app/kept_test.go`
+use it. The end-to-end tests
 are the walks, against the real Go side through the bridge, and the
 rules every walk checks after every step are in `walks/rules.mjs`.
 

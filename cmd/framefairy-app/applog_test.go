@@ -460,7 +460,7 @@ func heardEpisode(t *testing.T, svc *FrameFairy, path string, seconds float64, w
 //
 // The edits are timed by a clock the test moves. While the first edit
 // works, the second asks, and the clock says so as it is read. Then the
-// first edit takes twice as long as an edit may.
+// first edit takes 200 ms, longer than an edit may.
 func TestASlowEditSaysWhereItsTimeWent(t *testing.T) {
 	svc, mine, _ := anEpisodeWithAPlan(t)
 	_, read := testLog(t)
@@ -476,7 +476,7 @@ func TestASlowEditSaysWhereItsTimeWent(t *testing.T) {
 			// An edit that read its clock only once it held the video
 			// would never come here, and go test's own timeout shows it.
 			<-asked
-			clock.move(2 * slowEditAfter)
+			clock.move(200 * time.Millisecond)
 			return nil
 		})
 	}()
@@ -505,8 +505,8 @@ func TestASlowEditSaysWhereItsTimeWent(t *testing.T) {
 	if worked == nil || waited == nil {
 		t.Fatalf("one edit should have worked and one waited: %v", slow)
 	}
-	has(t, worked, map[string]any{"ms": 200.0, "waited": 0.0, "edit": 200.0})
-	has(t, waited, map[string]any{"ms": 200.0, "waited": 200.0, "edit": 0.0})
+	has(t, worked, map[string]any{"ms": 200.0, "waited": 0.0, "before": 0.0, "edit": 200.0, "after": 0.0})
+	has(t, waited, map[string]any{"ms": 200.0, "waited": 200.0, "before": 0.0, "edit": 0.0, "after": 0.0})
 	has(t, waited, map[string]any{"level": "warn", "from": "edits", "video": "ep.mp4"})
 }
 

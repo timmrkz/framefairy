@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 
@@ -92,7 +91,7 @@ func TestTwoModelsOneInUseAndOneRemoved(t *testing.T) {
 		t.Error("removed while clips were being found")
 	}
 	close(release)
-	svc.jobs.until(func(jobs []*Job) bool { return !slices.ContainsFunc(jobs, (*Job).going) }, nil)
+	svc.jobs.untilNoneGoing()
 
 	if err := svc.RemoveLanguageModel(second.Name); err != nil {
 		t.Fatal(err)
@@ -129,7 +128,7 @@ func TestRemovingTheSpeechModelWaitsForTheTranscription(t *testing.T) {
 		t.Error("removed while an episode was being transcribed")
 	}
 	close(release)
-	svc.jobs.until(func(jobs []*Job) bool { return !slices.ContainsFunc(jobs, (*Job).going) }, nil)
+	svc.jobs.untilNoneGoing()
 	if err := svc.RemoveSpeechModel(model.Name); err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +227,7 @@ func TestNothingASearchUsesChangesUnderIt(t *testing.T) {
 		})
 		return func() {
 			close(release)
-			svc.jobs.until(func(jobs []*Job) bool { return !slices.ContainsFunc(jobs, (*Job).going) }, nil)
+			svc.jobs.untilNoneGoing()
 		}
 	}
 	type change struct {

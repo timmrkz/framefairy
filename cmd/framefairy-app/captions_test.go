@@ -15,7 +15,6 @@ import (
 	"strconv"
 	"sync"
 	"testing"
-	"time"
 
 	"framefairy/engine"
 	"framefairy/internal/ffmpegtest"
@@ -295,8 +294,14 @@ func TestTheCaptionsRouteAnswersManyAtOnce(t *testing.T) {
 			for round := range len(asks) {
 				a := asks[(worker*5+round)%len(asks)]
 				if (worker+round)%4 == 3 {
-					// Called off half way.
-					ctx, cancel := context.WithTimeout(context.Background(), time.Duration(round%3)*time.Millisecond)
+					// Called off before it asks, or wherever it has come
+					// to by the time the cancel runs.
+					ctx, cancel := context.WithCancel(context.Background())
+					if round%3 == 0 {
+						cancel()
+					} else {
+						go cancel()
+					}
 					serve(ctx, a)
 					cancel()
 					continue
@@ -319,10 +324,11 @@ func TestTheCaptionsRouteAnswersManyAtOnce(t *testing.T) {
 	})
 	wg.Wait()
 	// A colour never asked for before, so its caption file is made while
-	// two ask for it, and the first is called off the moment the second
-	// has asked, which lands while the file is made in most rounds. The
-	// second answered 500 "context canceled" before, found by the second
-	// review. With a wait on the clock between the steps this caught it in
+	// two ask for it, and the first is called off as soon as the second
+	// request's goroutine runs. The channels only say that each goroutine
+	// has started, not how far its request has come, but the cancel lands
+	// while the file is made in most rounds. The second answered 500
+	// "context canceled" before, found by the second review. With a wait on the clock between the steps this caught it in
 	// about 6 rounds of 40, and without one in about 35. That exact order
 	// is proven every time by TestACaptionFileOutlivesTheRequestThatAskedFirst
 	// in engine.

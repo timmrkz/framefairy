@@ -246,13 +246,16 @@ func TestTurnsFromEverywhereAtOnce(t *testing.T) {
 				if which == 1 && (kind == hearingTurn || kind == handHearingTurn) {
 					kind = findingTurn
 				}
-				ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+				ctx, cancel := context.WithCancel(context.Background())
 				defer cancel()
 				if i%7 == 0 {
-					// Some give up at once.
-					short, stop := context.WithTimeout(ctx, time.Millisecond)
-					defer stop()
-					ctx = short
+					// Some give up before they ask, and some wherever
+					// they have come to by the time the cancel runs.
+					if i%14 == 0 {
+						cancel()
+					} else {
+						go cancel()
+					}
 				}
 				turn, release, err := l.take(ctx, lanesOf[which], kind)
 				if err != nil {
