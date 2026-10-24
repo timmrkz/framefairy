@@ -91,23 +91,23 @@ func (s *FrameFairy) edit(path string, fn func() error) error {
 // where it stood before and after. The playhead is part of the step, never
 // a step of its own: a gesture that changed nothing is still no step.
 func (s *FrameFairy) editMoving(path string, playhead *[2]float64, fn func() error) error {
-	asked := time.Now()
+	asked := s.clock()
 	h := s.historyOf(path)
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	held := time.Now()
+	held := s.clock()
 	logs := s.project(path).LogsDir()
 	before := engine.TakeSnapshot(s.store.files, s.store.records, logs)
-	read := time.Now()
+	read := s.clock()
 	heightWas := s.store.Settings().CaptionY
 	err := fn()
 	if err != nil {
 		theLog.line(zerolog.DebugLevel, "app").Str("video", filepath.Base(path)).Err(err).Msg("an edit of the clips was refused")
 	}
-	written := time.Now()
+	written := s.clock()
 	// A search can land a clip while the edit runs. It is not the edit's.
 	change := engine.ChangeBetween(before, engine.TakeSnapshot(s.store.files, s.store.records, logs)).LeaveOutNewClips()
-	slowEdit(path, asked, held, read, written, time.Now())
+	slowEdit(path, asked, held, read, written, s.clock())
 	heightNow := s.store.Settings().CaptionY
 	st := step{change: change}
 	if heightWas != heightNow {
