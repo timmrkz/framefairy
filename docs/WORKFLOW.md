@@ -97,12 +97,13 @@ whatever version the machine came with.
    the project's rules and your preferences. It runs the tests of what it
    changed, pushes, and opens a pull request, so you can try the change at
    once. Then it runs `make changed`, which checks everything the branch
-   reaches, and pushes a fix if that finds anything. You can watch and steer the session at
-   any time, also from the Claude app on your phone.
+   reaches, and pushes a fix if that finds anything. Beside it, a review
+   agent reads the change. The session posts its findings and answers each
+   one before it says the pull request is ready, see CLAUDE.md. You can
+   watch and steer the session at any time, also from the Claude app on
+   your phone.
 3. **CI checks the pull request**, see below. With auto-fix switched on for
-   the pull request, Claude fixes failed checks by itself. The session also
-   starts a review agent of its own, posts its findings in the session and
-   fixes them before it says the pull request is ready, see CLAUDE.md.
+   the pull request, Claude fixes failed checks by itself.
 4. **Review** the diff in the session or on GitHub. Comment on lines to ask
    for changes. Merge when it is right.
 5. **In the app:** Updates, at the foot of the sidebar, following main,
