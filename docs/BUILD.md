@@ -405,7 +405,7 @@ a machine, so a typo in a README does not fuzz two platforms:
 | `scripts/main-moved*.sh`, `scripts/needs-build*.sh`, `scripts/plan-frozen*.sh` only | `build` only, whose checks of the rules run whatever changed |
 | `scripts/changed-test.sh` only | `build`, with `scripts/changed-test.sh` |
 | `scripts/changed.sh` | `build`, with `scripts/changed-test.sh`, and `linux`, `fuzz` and `macos`, which run it on a pull request, so its own pull request runs it on Linux and on the Mac |
-| `.github/ci-image/`, `scripts/ci-packages.sh` only | `image`, and the jobs that run in it, `build`, `linux`, `fuzz` and the walks, with every package and every fuzz target. Not `macos` or `interface`, which do not. `outside` too, by the filter `app`, see #484 |
+| `.github/ci-image/`, `scripts/ci-packages.sh` only | `image`, and the jobs that run in it, `build`, `linux`, `fuzz` and the walks, with every package and every fuzz target. Not `macos`, `outside` or `interface`, which do not, so a change to the image alone starts no Mac. `outside` hangs on the filter `mac`, which is `app` less the image, #484 |
 | anything else, or a mix | everything |
 
 Each filter is every file less the files that cannot matter to its jobs,

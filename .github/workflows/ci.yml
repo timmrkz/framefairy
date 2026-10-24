@@ -58,6 +58,7 @@ jobs:
       pull-requests: read
     outputs:
       app: ${{ github.event_name != 'pull_request' || steps.filter.outputs.app == 'true' }}
+      mac: ${{ github.event_name != 'pull_request' || steps.filter.outputs.mac == 'true' }}
       go: ${{ github.event_name != 'pull_request' || steps.filter.outputs.go == 'true' }}
       interface: ${{ github.event_name != 'pull_request' || steps.filter.outputs.interface == 'true' }}
       workflows: ${{ github.event_name != 'pull_request' || steps.filter.outputs.workflows == 'true' }}
@@ -653,7 +654,7 @@ jobs:
   # rather than twice.
   outside:
     needs: changes
-    if: needs.changes.outputs.app == 'true'
+    if: needs.changes.outputs.mac == 'true'
     runs-on: macos-latest
     # The app is opened by macOS and nothing ends it but the test. A run
     # that hangs stops here, not at GitHub's six hours.

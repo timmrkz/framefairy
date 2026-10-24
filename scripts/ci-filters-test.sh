@@ -63,28 +63,29 @@ check "README.md docs/APP.md frontend/README.md LICENSE .claude/x.json" ""
 
 # No Go test builds the interface, so the interface on its own does not
 # start the Go tests.
-check "frontend/src/App.svelte" "app interface"
-check "frontend/src/routes/Updates.svelte" "app interface"
+check "frontend/src/App.svelte" "app mac interface"
+check "frontend/src/routes/Updates.svelte" "app mac interface"
 # Except the files of it a Go test reads.
-check "frontend/src/lib/api.ts" "app go interface"
-check "frontend/src/lib/suggest.cases.json" "app go interface"
-check "frontend/src/lib/flow.ts" "app interface"
+check "frontend/src/lib/api.ts" "app mac go interface"
+check "frontend/src/lib/suggest.cases.json" "app mac go interface"
+check "frontend/src/lib/flow.ts" "app mac interface"
 
 # The other way round.
-check "engine/edit.go" "app go"
-check "engine/edit_test.go go.sum" "app go"
-check "go.mod" "app go"
+check "engine/edit.go" "app mac go"
+check "engine/edit_test.go go.sum" "app mac go"
+check "go.mod" "app mac go"
 
 # Whatever decides how the project is built starts everything.
-check "Makefile" "app go interface"
-check "scripts/build-ffmpeg.sh" "app go interface"
-check ".github/workflows/ci.yml" "app go interface workflows"
-check ".github/ci-filters.yml" "app go interface"
-check ".golangci.yml" "app go interface"
-check "frontend/package.json" "app interface"
+check "Makefile" "app mac go interface"
+check "scripts/build-ffmpeg.sh" "app mac go interface"
+check ".github/workflows/ci.yml" "app mac go interface workflows"
+check ".github/ci-filters.yml" "app mac go interface"
+check ".golangci.yml" "app mac go interface"
+check "frontend/package.json" "app mac interface"
 # The CI image starts the jobs that run in it, the walks by app and the
-# Go jobs by image, but not the Go tests on the Mac. So does the script
-# that fills it, which nothing else runs.
+# Go jobs by image, but no job on a Mac, neither the Go tests nor the app
+# opened from outside, issue #484. So does the script that fills it,
+# which nothing else runs.
 check ".github/ci-image/Dockerfile" "app image"
 check "scripts/ci-packages.sh" "app image"
 
@@ -96,11 +97,11 @@ check "scripts/changed-test.sh" "changed"
 # Except changed.sh, which the Go jobs run on a pull request, so a change
 # to it runs it there, on Linux and on the Mac.
 check "scripts/changed.sh" "go changed"
-check "scripts/needs-build.sh engine/edit.go" "app go"
+check "scripts/needs-build.sh engine/edit.go" "app mac go"
 
 # A file nobody thought of starts everything.
-check "some/new/thing.py" "app go interface"
-check ".gitignore" "app go interface"
+check "some/new/thing.py" "app mac go interface"
+check ".gitignore" "app mac go interface"
 
 # Every file of the interface a Go test reads starts the Go tests, found
 # by the path the test reads it by, so a new one needs no case here. A
@@ -114,7 +115,7 @@ for f in $(grep -rhoE --include='*_test.go' --exclude-dir=node_modules --exclude
 		printf 'FAIL\t%s is a folder a Go test reads, start the Go tests for it in ci-filters.yml or run the test in the job build\n' "$f"
 		fail=1
 	elif [ -f "$root/$f" ]; then
-		check "$f" "app go interface"
+		check "$f" "app mac go interface"
 	fi
 done
 
