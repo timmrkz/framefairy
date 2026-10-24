@@ -172,6 +172,65 @@ func TestASearchTakesItsTurnByWhereItsModelIs(t *testing.T) {
 	})
 }
 
+// A turn taken back says the job waits the moment it is, before whoever
+// took it has its turn, while the step still finishes the piece it is in,
+// so the whole video goes on hold on the range picker as Search is
+// pressed and not once its piece is heard, Tim's report of 24 October. A turn let go of as its step ends says
+// nothing of the kind, and neither does a job that is stopped.
+func TestATurnTakenBackSaysItWaitsAtOnce(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		q := newQueue(nil, func(JobUpdate) {}, func(string) {})
+		step := func(j *Job) string {
+			q.mu.Lock()
+			defer q.mu.Unlock()
+			return j.Step
+		}
+		local := engine.Options{Planner: "local"}
+
+		whole := &Job{Kind: engine.JobTranscribe}
+		_, heard, err := q.turn(whole, local)(context.Background(), engine.StepHearing)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, found, err := q.turn(&Job{Kind: engine.JobSearch}, local)(context.Background(), "finding")
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Before the search has said it finds.
+		if got := step(whole); got != engine.StepWaiting {
+			t.Errorf("the whole video taken back by a search that finds says %q", got)
+		}
+		heard()
+		found()
+
+		// Let go of as its step ends, it stays in the step it was in.
+		done := &Job{Kind: engine.JobTranscribe}
+		_, let, err := q.turn(done, local)(context.Background(), engine.StepHearing)
+		if err != nil {
+			t.Fatal(err)
+		}
+		let()
+		synctest.Wait()
+		if got := step(done); got != engine.StepHearing {
+			t.Errorf("a turn let go of says %q", got)
+		}
+
+		// Stopped, it is the stop that says what became of it.
+		ctx, stop := context.WithCancel(context.Background())
+		stopped := &Job{Kind: engine.JobTranscribe}
+		_, gone, err := q.turn(stopped, local)(ctx, engine.StepHearing)
+		if err != nil {
+			t.Fatal(err)
+		}
+		stop()
+		synctest.Wait()
+		if got := step(stopped); got != engine.StepHearing {
+			t.Errorf("a job stopped says %q", got)
+		}
+		gone()
+	})
+}
+
 // A clip made by hand hears first: it takes the lane back from a search
 // that hears, goes ahead of a search waiting to hear, and does not wait for
 // a search that finds. Clips made by hand hear in the order asked.

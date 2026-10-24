@@ -108,6 +108,9 @@ type Job struct {
 	// byHand is a search called off with Cancel, which says so where its
 	// work was the way one cut off by the app closing does, see stopByHand.
 	byHand bool
+	// turns counts the turns the job has had, so news that a turn was
+	// taken back is never news about a later one, see turn.
+	turns int
 	// click is the press of Search or Continue that asked for the job, named
 	// by the window, see stopClips.
 	click string
@@ -378,12 +381,38 @@ func (q *queue) turn(job *Job, opts engine.Options) engine.Turn {
 		// machine, so a log says why a transcription waited on a search.
 		theLog.jobLine(zerolog.DebugLevel, job).Str("step", step).Str("lane", lane).
 			Bool("model_here", onThisMachine).Msg("the job waits for its turn")
-		q.update(job, func(j *Job) { j.Step, j.Lane, j.Progress = engine.StepWaiting, lane, nil })
-		stepCtx, release, err := q.lanes.take(ctx, lane, kind)
+		// A turn taken back says so the moment it is, not once the step
+		// has finished the piece it is in and asks again: the whole video,
+		// put on hold by a search, kept its frame's motes and moved its
+		// dots on for two seconds after Search, Tim's report of 24 October.
+		// The lanes say so before the job that took it back says it waits
+		// or has its turn, so news of that job is never news from before
+		// the one it took the turn from went on hold. turns tells this
+		// turn from a later one.
+		q.mu.Lock()
+		job.turns++
+		mine := job.turns
+		q.mu.Unlock()
+		var taken atomic.Bool
+		waits := func() {
+			q.update(job, func(j *Job) {
+				if j.turns == mine {
+					j.Step, j.Lane, j.Progress = engine.StepWaiting, lane, nil
+				}
+			})
+		}
+		stepCtx, release, err := q.lanes.takeTold(ctx, lane, kind, waits, func() {
+			taken.Store(true)
+			waits()
+		})
 		if err != nil {
 			return nil, nil, err
 		}
-		q.update(job, func(j *Job) { j.Step, j.Lane, j.Progress = step, lane, nil })
+		q.update(job, func(j *Job) {
+			if !taken.Load() {
+				j.Step, j.Lane, j.Progress = step, lane, nil
+			}
+		})
 		return stepCtx, release, nil
 	}
 }

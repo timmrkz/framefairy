@@ -361,12 +361,14 @@
     onreset?.();
   }
 
-  // The part not transcribed yet under the hand lights its card in the
-  // list, the way a clip's mark lights its card, found by Tim. The parts
-  // take no pointer, so a press on one is a press on the track, and which
-  // is under the hand is read from where it is. A mark over a part is the
+  // The part not transcribed yet under the hand is lit, and lights its
+  // card in the list while the cards are open, the way a clip's mark
+  // lights its card, found by Tim. Lit only with the cards open, it lit
+  // one way and not the other, Tim's report of 24 October. The parts take
+  // no pointer, so a press on one is a press on the track, and which is
+  // under the hand is read from where it is. A mark over a part is the
   // mark's.
-  let unheardHere = -1;
+  let unheardHere = $state(-1);
   function hoverUnheard(event: PointerEvent) {
     const over = event.type === "pointerleave" || !track || (event.target as Element | null)?.closest?.(".clipmark") ? -1 : timeAt(event.clientX);
     const i = over < 0 ? -1 : unheard.findIndex(([a, b]) => a <= over && over < b);
@@ -405,7 +407,7 @@
      the very start or the very end it would otherwise be cut off by the
      corner. -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="over" onpointermove={unheard.length && onhoverunheard ? hoverUnheard : undefined} onpointerleave={unheard.length && onhoverunheard ? hoverUnheard : undefined}>
+<div class="over" onpointermove={unheard.length || unheardHere >= 0 ? hoverUnheard : undefined} onpointerleave={unheard.length || unheardHere >= 0 ? hoverUnheard : undefined}>
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="track asks"
@@ -420,7 +422,7 @@
   {#each unheard as [a, b], i (i)}
     <div
       class="unheard"
-      class:lit={i === unheardLit || i === unheardOn}
+      class:lit={i === unheardLit || i === unheardOn || i === unheardHere}
       class:giving={giving >= 0 && Math.abs(a - giving) < 0.5}
       style="--at: {on(a)}; --to: {on(b)}"
     ></div>
@@ -663,13 +665,14 @@
   }
 
   /* The whole video's part while it waits its turn: the same frame
-     and breath at half the colour, the accent at 50 % the app already
-     has, and its wash at half of its own. The breath is the frame's
-     opacity, so the dimming is done in the colours and the two never
-     fight. */
+     and breath in less of the colour, the accent at the 30 % the app
+     already has, and its wash at 30 % of its own. Half of each was too
+     little to read as on hold, Tim's report of 24 October. The breath is
+     the frame's opacity, so the dimming is done in the colours and the
+     two never fight. */
   .window.locked.behind {
-    background-color: color-mix(in srgb, var(--accent-wash) 50%, transparent);
-    border-color: var(--accent-fill-hi);
+    background-color: color-mix(in srgb, var(--accent-wash) 30%, transparent);
+    border-color: var(--accent-fill);
   }
 
   /* What the part's frame fades in: the same box the frames are laid
@@ -861,12 +864,14 @@
     pointer-events: none;
   }
 
-  /* Under the hand or the keys on its card, the grey of a lit card, with
-     the range picker's own border over it, which is the range picker's
-     and not the part's. With the border gone the range picker looked
-     broken, found by Tim. */
+  /* Under the hand, here or on its card, or the keys on its card, half
+     the grey of a lit card, with the range picker's own border over it,
+     which is the range picker's and not the part's. With the border gone
+     the range picker looked broken, found by Tim. The whole grey of a
+     card was far too strong on the range picker, Tim's report of 24
+     October. */
   .unheard.lit {
-    background: var(--ink-3);
+    background: color-mix(in srgb, var(--ink-3) 50%, transparent);
   }
 
   /* Its dots, the card's, rising from the foot, so the minutes stand

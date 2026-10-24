@@ -205,10 +205,12 @@ motes, over that part's dots, which still say what is not transcribed
 yet, Tim's pick on #458. Its left edge follows the work as it hears.
 Whenever it waits its turn, behind a search
 that finds with the local model, a clip made by hand or a model being
-installed, its frame stays, at half the colour and with no motes, still
-breathing, so it reads as on hold and not as gone, Tim's report of 23
-October. A search with a model in the cloud holds nothing up, so the
-frame stays as it is. Stop transcribing stops everything on the
+installed, its frame stays, in less of the colour and with no motes,
+still breathing, so it reads as on hold and not as gone, Tim's reports of
+23 and 24 October. It goes on hold the moment the search takes the
+hearing, while the speech model still finishes its piece, so its dots
+stand still from Search on. A search with a model in the cloud holds
+nothing up, so the frame stays as it is. Stop transcribing stops everything on the
 range picker in the frame it is clicked: the dots stay where they are,
 although the speech model finishes the piece it is in and the library is
 read again as the job ends, and the frame stands still and fades out.
@@ -2248,10 +2250,12 @@ found is a place in the video, and I and O make a clip there.
   a step with the grey of every lit card, which the card's dashes
   go into, the way every card's edge does, and its dots go up a step
   too, `--halftone-lit`, keeping their fade. On the range picker the
-  range picker's own border stays over the lit part. The hand on a part
-  lights its card and the hand on a card lights its part, both ways
-  round, and the keys on its card light the part as well, the same
-  way. Walked to with the keys it lit nothing on the range picker,
+  part takes half that grey, because the whole of it was far too strong
+  there, Tim's report of 24 October, and the range picker's own border
+  stays over the lit part. The hand on a part lights its card and the
+  hand on a card lights its part, both ways round, and the keys on its
+  card light the part as well, the same way. With the cards closed, the
+  hand on a part on the range picker still lights it. Walked to with the keys it lit nothing on the range picker,
   found by Tim. The parts give way as the work hears, from what is heard, not
   from the transcript, which is saved in pieces: a search hearing half an
   hour took the parts away in thirds, found by Tim. While the work hears

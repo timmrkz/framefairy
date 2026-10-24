@@ -63,12 +63,19 @@ const (
 type holder struct {
 	kind   turnKind
 	cancel context.CancelFunc
+	// told is said to once, when the turn is taken back, and taken says
+	// it was.
+	told  func()
+	taken bool
 }
 
-// ask is a turn asked for and not yet given.
+// ask is a turn asked for and not yet given. asked is said to once, if it
+// has to wait, and told goes to its holder.
 type ask struct {
-	lane string
-	kind turnKind
+	lane  string
+	kind  turnKind
+	asked func()
+	told  func()
 }
 
 func newLanes() *lanes {
@@ -95,10 +102,40 @@ func (l *lanes) take(ctx context.Context, lane string, kind turnKind) (context.C
 	return l.wait(ctx, l.enqueue(lane, kind))
 }
 
+// takeTold takes a turn the way take does. asked is said to when the turn
+// has to wait, after the turn it takes back, if it takes one, was told.
+// Once the turn is taken back itself, told is said to before whoever took
+// it back is said to or has its turn. Both are said to outside the lanes'
+// lock, so they may do as they like.
+func (l *lanes) takeTold(ctx context.Context, lane string, kind turnKind, asked, told func()) (context.Context, func(), error) {
+	a := l.enqueue(lane, kind)
+	a.asked, a.told = asked, told
+	return l.wait(ctx, a)
+}
+
+// takeBackLocked takes a turn back, and gives what it is to be told, the
+// first time only. l.mu is held.
+func (l *lanes) takeBackLocked(h *holder, told []func()) []func() {
+	h.cancel()
+	if h.taken || h.told == nil {
+		return told
+	}
+	h.taken = true
+	return append(told, h.told)
+}
+
+func tell(told []func()) {
+	for _, f := range told {
+		f()
+	}
+}
+
 // wait waits for a turn asked for, and gives the context the turn runs in,
 // which ends when the lane is taken back, and the function that lets it
 // go. It gives up when ctx ends.
 func (l *lanes) wait(ctx context.Context, a *ask) (context.Context, func(), error) {
+	var told []func()
+	asked := a.asked
 	l.mu.Lock()
 	for ctx.Err() != nil || !l.mayLocked(a) {
 		// Given up, it gives up even when the lane has just come free:
@@ -107,16 +144,23 @@ func (l *lanes) wait(ctx context.Context, a *ask) (context.Context, func(), erro
 			l.dropLocked(a)
 			l.wakeLocked()
 			l.mu.Unlock()
+			tell(told)
 			return nil, nil, ctx.Err()
 		}
 		// A clip made by hand takes the lane back from a search that
 		// hears. The search saves what it heard and asks again, behind it.
 		// Both take it back from the whole video heard by itself.
 		if hearing := l.held[a.lane]; hearing != nil && givesWay(hearing.kind, a.kind) {
-			hearing.cancel()
+			told = l.takeBackLocked(hearing, told)
 		}
 		changed := l.changed.waitLocked()
 		l.mu.Unlock()
+		tell(told)
+		told = nil
+		if asked != nil {
+			asked()
+			asked = nil
+		}
 		select {
 		case <-ctx.Done():
 			l.mu.Lock()
@@ -130,15 +174,16 @@ func (l *lanes) wait(ctx context.Context, a *ask) (context.Context, func(), erro
 	}
 	l.dropLocked(a)
 	turnCtx, cancel := context.WithCancel(ctx)
-	h := &holder{kind: a.kind, cancel: cancel}
+	h := &holder{kind: a.kind, cancel: cancel, told: a.told}
 	l.held[a.lane] = h
 	if a.kind == findingTurn {
 		if hearing := l.held[LaneHearing]; hearing != nil && (hearing.kind == hearingTurn || hearing.kind == wholeHearingTurn) {
-			hearing.cancel()
+			told = l.takeBackLocked(hearing, told)
 		}
 	}
 	l.wakeLocked()
 	l.mu.Unlock()
+	tell(told)
 	var once sync.Once
 	release := func() {
 		once.Do(func() {

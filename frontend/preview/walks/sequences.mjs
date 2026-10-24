@@ -202,16 +202,21 @@
 //                      sidebar, whose row about the words says the one
 //                      thing that can be done with them now, issue #432.
 //                      "transcribe" waits until nothing runs for the
-//                      video and holds the speech, then needs it to say
+//                      video and holds the speech, needs the hand on the
+//                      last part not transcribed yet to light it in half
+//                      the grey of a lit card with the cards of what was
+//                      said closed, then needs the menu to say
 //                      Transcribe whole video and clicks it: in the next
 //                      frame the menu has closed and the video's dot
 //                      pulses, with no number in its row. Once the work
 //                      runs, the range picker frames the part it works
 //                      on, breathing with the motes, over that part's
-//                      dots. "behind" clicks Search in the head: in the
-//                      next frame the whole video's frame still breathes,
-//                      dimmed and with no motes, and once the search is
-//                      cancelled it sheds them again. "stop" needs Stop
+//                      dots. "behind" clicks Search in the head while a
+//                      piece waits in the speech: the Go side says the
+//                      whole video waits before the piece is heard, its
+//                      frame still breathes, dimmed and with no motes,
+//                      its dots stand still once the piece is heard, and
+//                      once the search is cancelled it sheds them again. "stop" needs Stop
 //                      transcribing and clicks it while a piece is being
 //                      heard: in the next frame the
 //                      frame is fading, standing still, the menu has
@@ -4313,6 +4318,23 @@ const updatesPage = (page) => page.evaluate(readUpdates);
 // #431. The row is the Removed's offset parent, see li in ClipList.svelte.
 // The app's clock is held while a remove runs, see fakeClock, so a slide
 // in would stand at its start and be read here.
+
+// Whether one colour is the other at half its strength, the colours as
+// getComputedStyle writes them, rgb() or color(srgb).
+function halfOf(half, whole) {
+  const rgba = (c) => {
+    const m = (c ?? "").match(/rgba?\(([^)]*)\)/);
+    if (m) {
+      const [r, g, b, a = 1] = m[1].split(",").map(Number);
+      return [r, g, b, a];
+    }
+    const n = (c ?? "").match(/color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)(?: \/ ([\d.]+))?\)/);
+    return n ? [...n.slice(1, 4).map((v) => Math.round(Number(v) * 255)), n[4] === undefined ? 1 : Number(n[4])] : [];
+  };
+  const [h, w] = [rgba(half), rgba(whole)];
+  return h.length === 4 && w.length === 4 && h.slice(0, 3).join() === w.slice(0, 3).join() && Math.abs(h[3] - w[3] / 2) < 0.02;
+}
+
 async function removedStrip(page, row) {
   const boxes = await page.evaluate((sel) => {
     const li = document.querySelector(sel);
@@ -6991,6 +7013,42 @@ for (const seq of toWalk) {
             wrong = "the whole video stopped, and the range picker shows no dots on what is left";
             break;
           }
+          // With the cards of what was said closed, the hand on a part not
+          // transcribed yet lights it all the same, in half the grey of a
+          // lit card. It lit only with the cards open, and in the whole
+          // grey, which was far too strong, Tim's report of 24 October.
+          if (arg === "transcribe") {
+            const lit = async (x, y) => {
+              await page.mouse.move(x, y);
+              await settle(page);
+              return page.evaluate(() => {
+                const probe = document.createElement("div");
+                probe.style.background = "var(--ink-3)";
+                document.body.append(probe);
+                const grey = getComputedStyle(probe).backgroundColor;
+                probe.remove();
+                const parts = [...document.querySelectorAll(".track .unheard")];
+                const on = parts.find((u) => u.classList.contains("lit"));
+                return { cards: !!document.querySelector("ol.said"), lit: parts.map((u) => u.classList.contains("lit")), fill: on ? getComputedStyle(on).backgroundColor : "", grey };
+              });
+            };
+            const part = await page.evaluate(() => {
+              const r = [...document.querySelectorAll(".track .unheard")].at(-1)?.getBoundingClientRect();
+              return r ? { x: r.left + r.width / 2, y: r.top + r.height * 0.75 } : null;
+            });
+            if (!part) {
+              wrong = "before the whole video is transcribed, the range picker shows no part not transcribed yet";
+              break;
+            }
+            const under = await lit(part.x, part.y);
+            const away = await lit(0, 0);
+            if (under.cards) wrong = "the cards of what was said are open, and this step is about the range picker without them";
+            else if (!under.lit.at(-1) || under.lit.filter(Boolean).length !== 1)
+              wrong = `with the cards of what was said closed, the hand on the last part not transcribed yet lit parts ${JSON.stringify(under.lit)}`;
+            else if (!halfOf(under.fill, under.grey)) wrong = `a part not transcribed yet under the hand is lit in ${under.fill}, not half the grey of a lit card, ${under.grey}`;
+            else if (away.lit.some(Boolean)) wrong = `the hand gone from the range picker, parts ${JSON.stringify(away.lit)} stay lit`;
+            if (wrong) break;
+          }
           await row.hover();
           await row.locator("button.more").click();
           await menu.waitFor();
@@ -7081,12 +7139,44 @@ for (const seq of toWalk) {
             if (!seen.motes) return `${what}, the whole video hears and its frame sheds no motes`;
             return "";
           };
+          // It goes on hold the moment the search takes the hearing, while
+          // the piece it is in is still being heard, and its dots stand
+          // still from then on: they went on shrinking for two seconds
+          // after Search, Tim's report of 24 October. The model holds its
+          // answer, so the search keeps finding, and a piece waits in the
+          // speech as Search is clicked.
+          await control(url, "/model?hang=1");
+          await control(url, "/speech?ms=hold%20one");
+          const heardTo = (await transcription())?.progress?.covered ?? 0;
+          const dotsBefore = await page.evaluate(() => window.dotsNow());
           await page.locator(".listhead button.search").click();
-          wrong = await onHold("a search finding");
+          // The Go side says the whole video waits before it says the
+          // search waits to hear its window or finds.
+          const asked = async () => {
+            const j = (await ask(page, "Jobs")).findLast((j) => j.episode === source && j.kind === "search");
+            return j?.lane === "hearing" || j?.step === "hearing" || j?.step === "finding";
+          };
+          for (let seen = await news(page); !(await asked()); ) seen = await nextNews(page, seen);
+          if ((await transcription())?.step !== "waiting") {
+            wrong = "a search takes the hearing while a piece is being heard, and the whole video still says it hears until the piece is done";
+            break;
+          }
+          wrong = await onHold("a search finding, the piece still being heard");
           if (wrong) break;
+          // The piece is heard to its end, and the dots stay where they
+          // were at the click.
+          await control(url, "/speech?ms=1500");
+          for (let seen = await news(page), left = 20; !((await transcription())?.progress?.covered > heardTo) && left > 0; left--) seen = await nextNews(page, seen);
+          await settle(page);
+          const dotsAfter = await page.evaluate(() => window.dotsNow());
+          if (dotsAfter !== dotsBefore) {
+            wrong = `the whole video went on hold for a search, and its dots moved on from ${dotsBefore} to ${dotsAfter}`;
+            break;
+          }
           const searching = async () => (await ask(page, "Jobs")).some((j) => j.episode === source && j.kind === "search" && (j.state === "running" || j.state === "queued"));
           await page.locator(".listhead button.search").click();
           for (let seen = await news(page); await searching(); ) seen = await nextNews(page, seen);
+          await control(url, "/model");
           wrong = await back("the search cancelled");
           if (wrong) break;
           // The playhead on a part not heard yet, near the end, and a clip
@@ -10532,7 +10622,9 @@ for (const seq of toWalk) {
           else if (part.card !== keyed) wrong = `the part not transcribed yet the keys are on is ${part.card} in the list, not the grey of every lit card, ${keyed}`;
           else if (part.lit.join() !== String(part.mine))
             wrong = `the part not transcribed yet the keys are on lit parts ${JSON.stringify(part.lit)} on the range picker, not its own, ${part.mine}`;
-          else if (part.fill !== keyed) wrong = `the part not transcribed yet lit on the range picker is ${part.fill}, not the grey of its card, ${keyed}`;
+          // On the range picker in half that grey: the whole of it was far
+          // too strong there, Tim's report of 24 October.
+          else if (!halfOf(part.fill, keyed)) wrong = `the part not transcribed yet lit on the range picker is ${part.fill}, not half the grey of its card, ${keyed}`;
           break;
         }
         // A clip's card under the hand and the chosen clip's card, and the
