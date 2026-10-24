@@ -12,8 +12,10 @@
     onLicenceLink,
     onQuit,
     type EpisodeStatus,
+    type Job,
     type Label,
     type Added,
+    type TranscriptFormat,
     errorText,
   } from "./lib/api";
   import { jobs, nav, shell } from "./lib/state.svelte";
@@ -221,6 +223,72 @@
       if (made[ep.source] === mine) delete drafts[ep.source];
     };
     queued[ep.source] = (queued[ep.source] ?? Promise.resolve()).then(save);
+  }
+
+  // How far Transcribe whole video has come is shown on the range picker
+  // and by nothing else, Tim's calls on #458: the video's dot
+  // pulses while it runs, the way it does for all work. The store keeps
+  // that true from the frame of the click: a start on its way pulses it,
+  // and work a stop was pressed for does not, unless other work runs.
+  const live = (j: Job) => j.state === "running" || j.state === "queued";
+  function working(path: string): boolean {
+    return (
+      jobs.isStarting(path, "whole") ||
+      jobs.isStarting(path, "clips") ||
+      jobs.list.some((j) => j.episode === path && live(j) && !jobs.stops(j))
+    );
+  }
+
+  // Why a transcription failed, said in a toast with Report, whether the
+  // job failed as it ran or was refused as it was asked for.
+  function sayFailed(j: Job) {
+    const said = j.error?.trim() ?? "";
+    const why = said ? said[0].toUpperCase() + said.slice(1) : "The transcription failed, and no reason was given.";
+    toasts.say("transcribe whole video", why, { video: j.episode, report: true });
+  }
+
+  // Transcribe whole video, and Continue transcribing, in a video's menu.
+  // The job it answers with is taken at once, so the row says Transcribing
+  // without waiting for the job's first news.
+  async function transcribe(ep: EpisodeStatus) {
+    said(`video menu: transcribe whole video`, { video: ep.source });
+    jobs.press(ep.source, "whole");
+    try {
+      const job = await api.transcribe(ep.source);
+      jobs.apply(job);
+      // Refused, while the app relaunches or the video is being removed,
+      // it never ran, so the effect below never sees it fail. Found by
+      // the review of #458.
+      if (job.state === "failed") sayFailed(job);
+    } catch (err) {
+      toasts.say("transcribe whole video", errorText(err), { video: ep.source });
+    } finally {
+      jobs.answered(ep.source, "whole");
+    }
+  }
+
+  // A transcription that fails says why in a toast, the way a search does,
+  // and its row says Continue transcribing. One seen failed only as the
+  // app opened has said why already. Only the state and id are read, see
+  // the rule on watching jobs.
+  const transcribingSeen = new Set<string>();
+  $effect(() => {
+    for (const j of jobs.list) {
+      if (j.kind !== "transcribe") continue;
+      if (live(j)) transcribingSeen.add(j.id);
+      else if (transcribingSeen.delete(j.id) && j.state === "failed") sayFailed(j);
+    }
+  });
+
+  // Export transcript: the save box is the system's, so nothing is said
+  // here but a failure.
+  async function exportTranscript(ep: EpisodeStatus, format: TranscriptFormat) {
+    try {
+      const saved = await api.exportTranscript(ep.source, format);
+      said(`video menu: export transcript as ${format}, ${saved ? "saved" : "cancelled"}`, { video: ep.source });
+    } catch (err) {
+      toasts.say("export transcript", errorText(err), { video: ep.source });
+    }
   }
 
   // A menu closed: what it drew and did not save is let go, unless a save
@@ -558,12 +626,14 @@
   }
 
   function dotFor(ep: EpisodeStatus): string {
-    if (jobs.active(ep.source)) return "busy";
+    if (working(ep.source)) return "busy";
     if (ep.missing) return "err";
     // A search that stopped says so here as well as in its row, so it can
     // be found from the sidebar: stopped or cut off in the colour of a
-    // warning, failed in the colour of an error.
-    const search = jobs.search(ep.source);
+    // warning, failed in the colour of an error. One set aside has no row,
+    // so it says nothing here either, issue #436.
+    const found = jobs.search(ep.source);
+    const search = found?.aside ? undefined : found;
     if (search?.state === "failed") return "err";
     if (search?.state === "interrupted") return "warn";
     if (ep.transcriptStale) return "warn";
@@ -779,6 +849,17 @@
               onsave={(l) => saveLabel(ep, l)}
               onreveal={() => api.reveal(ep.source)}
               onremove={() => (removing = ep)}
+              work={jobs.transcription(ep.source)}
+              stopping={jobs.isStopping(ep.source, "whole")}
+              ontranscribe={() => transcribe(ep)}
+              onstoptranscribe={() => {
+                const work = jobs.transcribing(ep.source);
+                if (!work) return;
+                jobs.stop(ep.source, "whole");
+                said("video menu: stop transcribing", { video: ep.source });
+                void api.cancelJob(work.id);
+              }}
+              onexport={(format) => exportTranscript(ep, format)}
             />
           </span>
         </li>

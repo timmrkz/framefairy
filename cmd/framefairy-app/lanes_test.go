@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -171,6 +172,65 @@ func TestASearchTakesItsTurnByWhereItsModelIs(t *testing.T) {
 	})
 }
 
+// A turn taken back says the job waits the moment it is, before whoever
+// took it has its turn, while the step still finishes the piece it is in,
+// so the whole video goes on hold on the range picker as Search is
+// pressed and not once its piece is heard, Tim's report of 24 October. A turn let go of as its step ends says
+// nothing of the kind, and neither does a job that is stopped.
+func TestATurnTakenBackSaysItWaitsAtOnce(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		q := newQueue(nil, func(JobUpdate) {}, func(string) {})
+		step := func(j *Job) string {
+			q.mu.Lock()
+			defer q.mu.Unlock()
+			return j.Step
+		}
+		local := engine.Options{Planner: "local"}
+
+		whole := &Job{Kind: engine.JobTranscribe}
+		_, heard, err := q.turn(whole, local)(context.Background(), engine.StepHearing)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, found, err := q.turn(&Job{Kind: engine.JobSearch}, local)(context.Background(), "finding")
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Before the search has said it finds.
+		if got := step(whole); got != engine.StepWaiting {
+			t.Errorf("the whole video taken back by a search that finds says %q", got)
+		}
+		heard()
+		found()
+
+		// Let go of as its step ends, it stays in the step it was in.
+		done := &Job{Kind: engine.JobTranscribe}
+		_, let, err := q.turn(done, local)(context.Background(), engine.StepHearing)
+		if err != nil {
+			t.Fatal(err)
+		}
+		let()
+		synctest.Wait()
+		if got := step(done); got != engine.StepHearing {
+			t.Errorf("a turn let go of says %q", got)
+		}
+
+		// Stopped, it is the stop that says what became of it.
+		ctx, stop := context.WithCancel(context.Background())
+		stopped := &Job{Kind: engine.JobTranscribe}
+		_, gone, err := q.turn(stopped, local)(ctx, engine.StepHearing)
+		if err != nil {
+			t.Fatal(err)
+		}
+		stop()
+		synctest.Wait()
+		if got := step(stopped); got != engine.StepHearing {
+			t.Errorf("a job stopped says %q", got)
+		}
+		gone()
+	})
+}
+
 // A clip made by hand hears first: it takes the lane back from a search
 // that hears, goes ahead of a search waiting to hear, and does not wait for
 // a search that finds. Clips made by hand hear in the order asked.
@@ -227,7 +287,8 @@ func TestFindingLeavesOtherWorkAlone(t *testing.T) {
 }
 
 // Asked for, given up and let go from many goroutines at once, a lane
-// never has two turns at a time and every turn that is not given up comes.
+// never has two turns at a time and every turn that is not given up comes,
+// the whole video's hearing that gives way to every other among them.
 func TestTurnsFromEverywhereAtOnce(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		l := newLanes()
@@ -239,11 +300,11 @@ func TestTurnsFromEverywhereAtOnce(t *testing.T) {
 			go func() {
 				defer wg.Done()
 				which := i % 2
-				kind := []turnKind{plainTurn, hearingTurn, findingTurn, handHearingTurn}[(i/2)%4]
+				kind := []turnKind{plainTurn, hearingTurn, findingTurn, handHearingTurn, wholeHearingTurn}[(i/2)%5]
 				if which == 0 && kind == findingTurn {
 					kind = hearingTurn
 				}
-				if which == 1 && (kind == hearingTurn || kind == handHearingTurn) {
+				if which == 1 && (kind == hearingTurn || kind == handHearingTurn || kind == wholeHearingTurn) {
 					kind = findingTurn
 				}
 				ctx, cancel := context.WithCancel(context.Background())
@@ -281,6 +342,96 @@ func TestTurnsFromEverywhereAtOnce(t *testing.T) {
 		defer l.mu.Unlock()
 		if len(l.held) != 0 || len(l.asks) != 0 {
 			t.Errorf("left behind: %d held, %d asked", len(l.held), len(l.asks))
+		}
+	})
+}
+
+// The whole video heard by itself, Transcribe whole video in its menu,
+// hears last: it gives the hearing lane to a search or a clip made by hand
+// that asks for it, a search asked after it goes ahead of it, and it waits
+// while a search finds. Nobody waits on it the way somebody waits on a
+// search, and it can take an hour. Issue #432.
+//
+// Every wait is on a turn coming or a turn's context ending, and which of
+// two comes first is read from the one channel that gets it.
+func TestTheWholeVideoHearsLast(t *testing.T) {
+	if lane, kind := laneOfStep(engine.JobTranscribe, "hearing", true); lane != LaneHearing || kind != wholeHearingTurn {
+		t.Fatalf("the whole video hears in %s as %d", lane, kind)
+	}
+	synctest.Test(t, func(t *testing.T) {
+		l := newLanes()
+		whole, wholeDone := given(t, l, LaneHearing, wholeHearingTurn)
+		search, _ := waiting(t, l, LaneHearing, hearingTurn)
+		<-whole.Done()
+		wholeDone()
+		again, _ := waiting(t, l, LaneHearing, wholeHearingTurn)
+		searched := comes(t, search, "the search")
+		hand, _ := waiting(t, l, LaneHearing, handHearingTurn)
+		searched()
+		comes(t, hand, "the clip made by hand, before the whole video,")()
+		comes(t, again, "the whole video")()
+
+		// A search asked after it goes ahead of it.
+		_, held := given(t, l, LaneHearing, plainTurn)
+		later, _ := waiting(t, l, LaneHearing, wholeHearingTurn)
+		first, _ := waiting(t, l, LaneHearing, hearingTurn)
+		held()
+		comes(t, first, "the search asked after the whole video")()
+		comes(t, later, "the whole video")()
+
+		// A search that finds takes it back and holds it up.
+		whole, wholeDone = given(t, l, LaneHearing, wholeHearingTurn)
+		_, found := given(t, l, LaneFinding, findingTurn)
+		<-whole.Done()
+		wholeDone()
+		after, _ := waiting(t, l, LaneHearing, wholeHearingTurn)
+		waits(t, after, "the whole video while a search finds")
+		found()
+		comes(t, after, "the whole video")()
+
+		// A model being installed takes it back too, and goes first: it
+		// waited behind the whole video for as long as that heard. Found by
+		// the second review of #458.
+		whole, wholeDone = given(t, l, LaneHearing, wholeHearingTurn)
+		install, _ := waiting(t, l, LaneHearing, plainTurn)
+		<-whole.Done()
+		if !errors.Is(whole.Err(), context.Canceled) {
+			t.Fatalf("the whole video kept the lane from the model being installed: %v", whole.Err())
+		}
+		wholeDone()
+		resumed, _ := waiting(t, l, LaneHearing, wholeHearingTurn)
+		comes(t, install, "the model being installed, before the whole video,")()
+		comes(t, resumed, "the whole video")()
+	})
+}
+
+// What is asked for after the whole video never waits behind it, because
+// the whole video waits for every search that asks to hear. A model being
+// installed, asked for after it and before a search, once waited behind
+// the whole video, the search behind the install, and the whole video for
+// the search, so none of them ever heard. Found by the review of #458.
+func TestNothingWaitsBehindTheWholeVideo(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		l := newLanes()
+		_, held := given(t, l, LaneHearing, plainTurn)
+		whole := l.enqueue(LaneHearing, wholeHearingTurn)
+		install := l.enqueue(LaneHearing, plainTurn)
+		search := l.enqueue(LaneHearing, hearingTurn)
+		held()
+		l.mu.Lock()
+		wholeMay, installMay, searchMay := l.mayLocked(whole), l.mayLocked(install), l.mayLocked(search)
+		l.mu.Unlock()
+		if wholeMay || !installMay || searchMay {
+			t.Fatalf("with the lane free, the whole video may hear %v, the install %v, the search %v",
+				wholeMay, installMay, searchMay)
+		}
+		// And so each has its turn, the whole video last.
+		for _, a := range []*ask{install, search, whole} {
+			_, done, err := l.wait(context.Background(), a)
+			if err != nil {
+				t.Fatal(err)
+			}
+			done()
 		}
 	})
 }

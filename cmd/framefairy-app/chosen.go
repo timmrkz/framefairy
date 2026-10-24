@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"math"
@@ -142,6 +143,8 @@ func (s *FrameFairy) ChooseWindow(path string, from, to, length float64, byHand 
 	h := s.historyOf(path)
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	windowMu.Lock()
+	defer windowMu.Unlock()
 	was := readChosen(s.store.files, path).Window
 	if err := changeChosen(s.store.files, path, func(c *chosen) { c.Window = &w }); err != nil {
 		return err
@@ -153,17 +156,23 @@ func (s *FrameFairy) ChooseWindow(path string, from, to, length float64, byHand 
 		}
 		h.redo = nil
 	}
+	s.markAside(path)
 	return nil
 }
 
-// ChosenWindow gives back the window an episode was left with, or nil where
-// there is none or what is written down is not a window. The interface
-// checks it against the episode's length, which it knows and this does not.
+// ChosenWindow gives back the window of a video, the one the workspace
+// draws: as it was left, after a restart too, and where there is none, or
+// what is written down is not a window of this video, the one the app
+// places, see videoWindow. nil while the video cannot be read.
 func (s *FrameFairy) ChosenWindow(path string) *KeptWindow {
 	if !s.store.Known(path) {
 		return nil
 	}
-	return readChosen(s.store.files, path).Window
+	w, ok := s.videoWindow(context.Background(), path)
+	if !ok {
+		return nil
+	}
+	return &w
 }
 
 // looksLikeClipKey reports whether a string could be the key of a clip: a

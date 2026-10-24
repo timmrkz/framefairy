@@ -90,6 +90,9 @@ type Job struct {
 	// Whole is, for a search, that its answer is read to its end, so every
 	// clip still to come is in Underway.
 	Whole bool `json:"whole,omitempty"`
+	// Aside is, for a search that stopped, that the video's window was
+	// moved off the window it was about, see markAside.
+	Aside bool `json:"aside,omitempty"`
 	// Seq grows with every change to any job, and is set under the queue's
 	// lock, so of two snapshots of a job the later one has the larger
 	// number. News is sent after the lock is let go, so two changes made
@@ -110,6 +113,9 @@ type Job struct {
 	// one cut off by the app closing does, and a render takes its record
 	// with it, see runJob.
 	byHand bool
+	// turns counts the turns the job has had, so news that a turn was
+	// taken back is never news about a later one, see turn.
+	turns int
 	// click is the press of Search or Continue that asked for the job, named
 	// by the window, see stopClips.
 	click string
@@ -219,7 +225,7 @@ func newIdleQueue(s *store, emit func(JobUpdate), notify func(string)) *queue {
 // the lane of finding and moves as its steps go, see lanes.go.
 func laneFor(kind string) string {
 	switch kind {
-	case "model":
+	case "model", engine.JobTranscribe:
 		return LaneHearing
 	case "render":
 		return LaneRendering
@@ -380,12 +386,38 @@ func (q *queue) turn(job *Job, opts engine.Options) engine.Turn {
 		// machine, so a log says why a transcription waited on a search.
 		theLog.jobLine(zerolog.DebugLevel, job).Str("step", step).Str("lane", lane).
 			Bool("model_here", onThisMachine).Msg("the job waits for its turn")
-		q.update(job, func(j *Job) { j.Step, j.Lane, j.Progress = engine.StepWaiting, lane, nil })
-		stepCtx, release, err := q.lanes.take(ctx, lane, kind)
+		// A turn taken back says so the moment it is, not once the step
+		// has finished the piece it is in and asks again: the whole video,
+		// put on hold by a search, kept its frame's motes and moved its
+		// dots on for two seconds after Search, Tim's report of 24 October.
+		// The lanes say so before the job that took it back says it waits
+		// or has its turn, so news of that job is never news from before
+		// the one it took the turn from went on hold. turns tells this
+		// turn from a later one.
+		q.mu.Lock()
+		job.turns++
+		mine := job.turns
+		q.mu.Unlock()
+		var taken atomic.Bool
+		waits := func() {
+			q.update(job, func(j *Job) {
+				if j.turns == mine {
+					j.Step, j.Lane, j.Progress = engine.StepWaiting, lane, nil
+				}
+			})
+		}
+		stepCtx, release, err := q.lanes.takeTold(ctx, lane, kind, waits, func() {
+			taken.Store(true)
+			waits()
+		})
 		if err != nil {
 			return nil, nil, err
 		}
-		q.update(job, func(j *Job) { j.Step, j.Lane, j.Progress = step, lane, nil })
+		q.update(job, func(j *Job) {
+			if !taken.Load() {
+				j.Step, j.Lane, j.Progress = step, lane, nil
+			}
+		})
 		return stepCtx, release, nil
 	}
 }
@@ -398,6 +430,16 @@ func makesClips(kind string) bool {
 	return kind == engine.JobSearch || kind == engine.JobClip
 }
 
+// stopsAsStopped says whether a kind of job called off by hand keeps its
+// record and says Stopped with Continue: those that make clips, and the
+// whole video being transcribed, whose Stop transcribing offers Continue
+// transcribing, after a restart too. Found by the review of #458: its
+// record was removed instead, and could take the record of the Continue
+// clicked right after with it.
+func stopsAsStopped(kind string) bool {
+	return makesClips(kind) || kind == engine.JobTranscribe
+}
+
 // jobLabel is what a job is called, by what it does.
 func jobLabel(kind string, preview bool) string {
 	switch {
@@ -407,6 +449,8 @@ func jobLabel(kind string, preview bool) string {
 		return "Render"
 	case kind == engine.JobClip:
 		return "Make a clip"
+	case kind == engine.JobTranscribe:
+		return "Transcribe whole video"
 	}
 	return "Find clips"
 }
@@ -650,9 +694,22 @@ func (q *queue) cancelEpisode(episode string) bool {
 	return q.waitEpisode(episode)
 }
 
-// stopByHand calls off a job that keeps a record with Cancel. One that
-// makes clips ends as work that stopped, not as work that is gone, and a
-// render ends with its record forgotten, see makesClips and runJob.
+// carriedOnLocked says whether another job that waits or runs writes the
+// same record as this one: Continue clicked while this one stopped.
+func (q *queue) carriedOnLocked(job *Job) bool {
+	for _, j := range q.jobs {
+		if j != job && j.Episode == job.Episode && j.Record == job.Record &&
+			(j.State == JobQueued || j.State == JobRunning) && j.ctx.Err() == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// stopByHand calls off a job that keeps a record with Cancel or Stop
+// transcribing. One that stopsAsStopped ends as work that stopped, not as
+// work that is gone, and a render ends with its record forgotten, see
+// runJob.
 func (q *queue) stopByHand(id string) {
 	q.mu.Lock()
 	for _, j := range q.jobs {
@@ -715,6 +772,51 @@ func (q *queue) settle(episode, kind, record string) {
 	q.mu.Unlock()
 	for _, j := range settled {
 		theLog.jobLine(zerolog.InfoLevel, &j).Msg("the job that stopped is settled, nothing says it stopped any more")
+		q.emit(JobUpdate{Job: j})
+	}
+}
+
+// setAside marks each search of an episode that stopped by aside, and
+// tells the window of those it changed.
+func (q *queue) setAside(episode string, aside func(j *Job) bool) {
+	q.mu.Lock()
+	var changed []Job
+	for _, j := range q.jobs {
+		if j.Episode != episode || j.Kind != engine.JobSearch || (j.State != JobInterrupted && j.State != JobFailed) {
+			continue
+		}
+		if now := aside(j); now != j.Aside {
+			j.Aside = now
+			q.stampLocked(j)
+			changed = append(changed, *j)
+		}
+	}
+	q.mu.Unlock()
+	for _, j := range changed {
+		theLog.jobLine(zerolog.InfoLevel, &j).Bool("aside", j.Aside).Msg("the window was moved off the stopped search, or back onto it")
+		q.emit(JobUpdate{Job: j})
+	}
+}
+
+// forgetEpisode settles every job of a video that left the library and
+// said how it ended, stopped, cut off or failed, so none of it says so any
+// more. Tim removed a video, added the same file again, and its menu
+// offered to carry on a transcription the video he added never had, his
+// report of 24 October on #458. What the work folder still holds, when it was kept, comes
+// back from its records when the video is added again, see addEpisodes.
+func (q *queue) forgetEpisode(episode string) {
+	q.mu.Lock()
+	var settled []Job
+	for _, j := range q.jobs {
+		if j.Episode == episode && !j.going() && (j.State == JobInterrupted || j.State == JobFailed) {
+			j.State = JobCancelled
+			q.stampLocked(j)
+			settled = append(settled, *j)
+		}
+	}
+	q.mu.Unlock()
+	for _, j := range settled {
+		theLog.jobLine(zerolog.InfoLevel, &j).Msg("the video left the library, nothing says how its job ended any more")
 		q.emit(JobUpdate{Job: j})
 	}
 }
@@ -840,12 +942,30 @@ func (q *queue) runJob(job *Job) {
 		}
 	}
 	log := engine.NewLog(out, false, true)
+	// Where the part being heard began, so a new part is seen beginning.
+	var partMu sync.Mutex
+	partFrom := -1.0
 	log.SetSink(func(ev engine.Event) {
 		// Detail lines are for bug reports, not for the interface.
 		if ev.Kind == engine.EventDetail {
 			return
 		}
 		copied := ev
+		// A hearing that begins another part has saved the part before
+		// it, so the library is read again: what it says was heard stays
+		// true while a job hears a video in parts, not only once the job
+		// ends. Read only when it ended, a share of the video worked out
+		// from it went back each time the work went on to another part,
+		// found by Tim on #458.
+		if copied.Kind == engine.EventProgress && copied.Covered > 0 {
+			partMu.Lock()
+			moved := partFrom >= 0 && copied.From != partFrom
+			partFrom = copied.From
+			partMu.Unlock()
+			if moved && q.notify != nil {
+				q.notify(job.Episode)
+			}
+		}
 		if copied.Kind == engine.EventUnderway {
 			q.update(job, func(j *Job) {
 				j.Underway, j.Written, j.Whole = copied.Underway, copied.Found, copied.Whole
@@ -876,12 +996,21 @@ func (q *queue) runJob(job *Job) {
 	// quit a moment later included. A render called off by hand forgets
 	// its record at the same point, once nothing it does can write it
 	// again, so the record is gone by the time the window hears it ended.
+	//
+	// Continue may have been clicked while it stopped, and the job it
+	// started writes the same record. That record is the newer job's, so
+	// it is left alone. The look and the write are under the queue's lock,
+	// so a job added at the same moment is either seen here or writes its
+	// record after this one, found by the review of #458. The write ends in
+	// a full flush and holds every job's news for as long, tens of
+	// milliseconds on a slow drive. That is chosen: it happens once, on a
+	// press of Stop or Cancel, and a write outside the lock could land
+	// over the record of the job Continue started.
 	q.mu.Lock()
-	byHand := job.byHand
-	q.mu.Unlock()
 	switch {
-	case !byHand || !errors.Is(err, engine.ErrCancelled):
-	case makesClips(job.Kind):
+	case !job.byHand || !errors.Is(err, engine.ErrCancelled):
+	case stopsAsStopped(job.Kind) && q.carriedOnLocked(job):
+	case stopsAsStopped(job.Kind):
 		if serr := engine.StopJob(q.store.files, job.Episode, job.Record); serr != nil {
 			project.Log().Warn("could not note the search as stopped: %s", serr)
 		}
@@ -890,6 +1019,7 @@ func (q *queue) runJob(job *Job) {
 			project.Log().Warn("could not clear the record of the render: %s", rerr)
 		}
 	}
+	q.mu.Unlock()
 	log.SetSink(nil)
 	q.update(job, func(j *Job) {
 		j.Progress = nil
@@ -900,7 +1030,7 @@ func (q *queue) runJob(job *Job) {
 		switch {
 		case err == nil:
 			j.State, j.Underway = JobDone, nil
-		case errors.Is(err, engine.ErrCancelled) && j.byHand && makesClips(j.Kind):
+		case errors.Is(err, engine.ErrCancelled) && j.byHand && stopsAsStopped(j.Kind):
 			// Called off by hand, a search says Stopped, Click Continue,
 			// because what it heard stays and it can be carried on.
 			j.State, j.Step = JobInterrupted, engine.StepStopped

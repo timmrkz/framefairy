@@ -412,8 +412,10 @@ func (s *FrameFairy) languageLocked() error {
 }
 
 // speechLocked says why the speech model may not change now, or nil.
+// Every job that hears holds it: a search, a clip made by hand and the
+// whole video being transcribed.
 func (s *FrameFairy) speechLocked() error {
-	if s.busyWith(engine.JobSearch, engine.JobClip) {
+	if s.busyWith(engine.JobSearch, engine.JobClip, engine.JobTranscribe) {
 		return errHearing
 	}
 	return nil

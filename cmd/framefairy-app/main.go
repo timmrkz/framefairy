@@ -121,7 +121,7 @@ func main() {
 	}
 	// The searches and renders that were cut off or failed the last time
 	// say so where their work was.
-	svc.jobs.restore(st.Episodes())
+	svc.restoreJobs(st.Episodes())
 	// Nothing the app started outlives it: a model loaded or still loading
 	// is stopped and no other is loaded, and the jobs are stopped, and with
 	// them any ffmpeg they run. On macOS app.Run never returns: Cmd+Q ends
@@ -374,6 +374,8 @@ type FrameFairy struct {
 	link *LicenceLink
 	// clipboard stands in for the system's in tests, see copyText.
 	clipboard func(string) bool
+	// saveBox stands in for the system's save box in tests, see saveAs.
+	saveBox func(name string) (string, error)
 	// firstFrame is how long Add waits for a video's first frame,
 	// firstFrameWait unless a test says otherwise, see undecodable.
 	firstFrame time.Duration

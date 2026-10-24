@@ -77,3 +77,87 @@ func SearchPasses(plans []PlanSummary, duration float64) []Pass {
 	}
 	return out
 }
+
+// NextWindow is the window the app chooses by itself: where the fewest
+// searches have been, earliest first, and at most one window of it, size
+// long, see SuggestedWindow. The first round walks the episode from its
+// start, and when every part has been searched once the second starts
+// over at the start, and so on, so Search always does the same thing and
+// never runs out. A part shorter than least, too short to hold a clip, is
+// passed over.
+func NextWindow(passes []Pass, duration, size, least float64) Window {
+	var room *Pass
+	for i, p := range passes {
+		if p.End-p.Start < math.Max(least, 0.5) {
+			continue
+		}
+		if room == nil || p.Times < room.Times {
+			room = &passes[i]
+		}
+	}
+	if room == nil {
+		return Window{0, duration}
+	}
+	// A part only a little longer than a window is taken whole, rather
+	// than leaving a scrap behind that is too short to search.
+	span := room.End - room.Start
+	if span > size*1.5 {
+		span = size
+	}
+	return Window{room.Start, room.Start + span}
+}
+
+// FollowingWindow is where the window goes after a search found its
+// clips: on from where the search ended, length long, the length the
+// window was made, so a window made a minute long stays a minute long and
+// the episode is walked in the steps chosen. The last one is cut at the
+// end of the episode, and is only cut: the window after it is length long
+// again. At the end of the episode it starts over at the start, and a
+// scrap at the end shorter than least, too short for a clip, is passed
+// over the same way.
+func FollowingWindow(ended, length, duration, least float64) Window {
+	from := ended
+	if duration-from < math.Max(least, 0.5) {
+		from = 0
+	}
+	return Window{from, math.Min(from+math.Max(length, 0), duration)}
+}
+
+// placeSteps are the round steps a window the app places lands on, the
+// same as the range picker's, see gridStep in frontend/src/lib/flow.ts.
+var placeSteps = []float64{1, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800}
+
+// PlaceStep is the round step a window the app places lands on: the
+// smallest still about a 180th of the episode, two minutes for four hours,
+// 30 seconds for one, five for six minutes. The range picker draws its
+// lines on one of the same steps, finer the wider it is, so the edges of
+// such a window lie on its lines from about 1440 pixels wide up, and on a
+// narrower one on most of them. It depends on the episode alone, never on
+// how wide the app is, so the window is the same whoever places it. It
+// was once the range picker's own step, and the first search, placed
+// here, could never agree with it.
+func PlaceStep(duration float64) float64 {
+	for _, step := range placeSteps {
+		if step >= duration/180 {
+			return step
+		}
+	}
+	return placeSteps[len(placeSteps)-1]
+}
+
+// OnStep puts a window the app placed on the step: its start, and its
+// length, which is never less than one step. The ends of the episode win
+// over the step, and an end that would leave a scrap too short for a
+// clip, least, or shorter than a step, takes it in rather than leaving it
+// behind. The episode's own windows are an even share of it, 30:02 of a
+// little over four hours, and a window that long lay a few seconds off
+// the range picker's lines, which shows as a pixel.
+func OnStep(w Window, length, duration, step, least float64) Window {
+	from := math.Min(math.Max(math.Round(w.Start/step)*step, 0), duration)
+	size := math.Max(math.Round(length/step)*step, step)
+	to := math.Min(from+size, duration)
+	if duration-to < math.Max(least, step) {
+		to = duration
+	}
+	return Window{from, to}
+}

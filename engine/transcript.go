@@ -89,8 +89,12 @@ func (f transcriptFile) done() bool {
 	if f.Version < 3 {
 		return !f.Partial && len(parts) == 1 && parts[0][0] <= 0.001
 	}
+	// Done is nothing left to hear, by the same measure hear uses to stop,
+	// see gapsIn. Found by the review of #458: a gap too short to hold a
+	// word, left between two parts, was never heard, and the video was
+	// never done.
 	end := float64(f.End)
-	return end > 0 && len(parts) == 1 && parts[0][0] <= 0.005 && parts[0][1] >= end-0.05
+	return end > 0 && len(parts) > 0 && len(gapsIn(parts, Window{0, end})) == 0
 }
 
 func stampOf(fsys afero.Fs, path string) (sourceStamp, error) {
@@ -241,6 +245,10 @@ func Unheard(fsys afero.Fs, source, asrModelDir string, span Window) []Window {
 	return gapsIn(HeardParts(fsys, source, asrModelDir), span)
 }
 
+// shortestGap is the shortest stretch not heard that is worth hearing, in
+// seconds. Anything shorter holds no word.
+const shortestGap = 0.1
+
 func gapsIn(parts [][2]float64, span Window) []Window {
 	var gaps []Window
 	at := span.Start
@@ -258,7 +266,7 @@ func gapsIn(parts [][2]float64, span Window) []Window {
 	}
 	out := gaps[:0]
 	for _, g := range gaps {
-		if g.End-g.Start >= 0.1 {
+		if g.End-g.Start >= shortestGap {
 			out = append(out, g)
 		}
 	}
@@ -682,12 +690,8 @@ func ModelHelp(dir string) string {
 }
 
 // WriteTranscriptSRT writes the whole window as an srt file, for reading
-// and checking. It is not used for rendering.
+// and checking, the same subtitles Export transcript makes in the app, see
+// TranscriptSRT. It is not used for rendering.
 func WriteTranscriptSRT(t *Transcript, path string) error {
-	lines := BuildLines(t.Words, nil, nil)
-	cues := make([]Cue, len(lines))
-	for i, l := range lines {
-		cues[i] = Cue{l.Start(), l.End(), l.Text()}
-	}
-	return WriteSRT(cues, path)
+	return os.WriteFile(path, []byte(TranscriptSRT(t)), 0o644)
 }

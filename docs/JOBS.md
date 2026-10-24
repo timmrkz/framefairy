@@ -51,11 +51,23 @@ Cancel, because nothing could tell the two apart.
 ## What a job is
 
 A job is one piece of work a person started, or the app started for them:
-a **search**, a **clip** made by hand, or a **render**. It is owned by the
+a **search**, a **clip** made by hand, a **render**, or the whole video
+**transcribed** to its end from its menu, issue #432. It is owned by the
 Go side. It has what it was asked for and a step it is in. An episode has
 at most one search at a time, and any number of clips and renders.
 
-A search goes **waiting**, **hearing**, **finding**, **done**. A clip made
+A search goes **waiting**, **hearing**, **finding**, **done**. A
+transcription of the whole video goes **waiting**, **hearing**, **done**,
+and its hearing comes last: it gives the lane back to any search or clip
+made by hand that asks to hear, and to a model being installed,
+anything but another whole video asked after it goes first, and
+it waits while a search finds, because it can take an hour and nobody is
+waiting on it, see `wholeHearingTurn` in `lanes.go`. Its record is
+`transcribe.json`, so an app closed while it hears says so in the
+video's menu, and Continue transcribing carries it on. Stopped with Stop
+transcribing in the menu, it ends the way a search called off with Cancel
+does: its record says stopped, what it heard stays, and the menu offers
+Continue transcribing, after a restart too. A clip made
 by hand goes **waiting**, **hearing** where the transcript does not reach
 far enough yet, **framing**, **done**. A render goes **waiting**,
 **rendering**, **done**. Waiting is its turn behind
@@ -112,8 +124,13 @@ no search hears, because the speech model and the language model want the
 same memory and the same graphics chip, and each is slower for sharing
 them. A search that comes to finding takes the lane of hearing back from a
 search that hears, which saves what it heard, waits its turn and carries
-on after. Work that is not a step of a search, a model being installed, is
-neither taken back nor held up. Nor is a search whose language model is in
+on after. A job whose turn is taken back says it waits the moment it is,
+before the job that took it says anything, so the whole video goes on
+hold on the range picker as Search is pressed. What the speech model is
+still hearing then is waited for and let go, not saved, in
+`engine/audio.go`, so what was shown as heard is what is kept, and the
+work carries on from there. Work that is not a step of a search, a model
+being installed, is neither taken back nor held up. Nor is a search whose language model is in
 the cloud: it shares nothing with the speech model, so hearing goes on
 beside it, and a video added while it waits for its answer is heard at
 once.
@@ -201,9 +218,12 @@ command line keeps its flags and its own run, and keeps no records.
 When it starts, it reads the records of the episodes in its library: a
 record in a running step is a job in the list in the state `interrupted`,
 a failed one a job that `failed`, with its reason. Adding a video asks for
-its first search, of its first window, see `engine.SuggestedWindow`, and
-no longer than the model can read at once, see `firstSearch` in
-`cmd/framefairy-app/search.go`. Cancel on a search that runs marks its
+its first search, of the video's window, which the Go side places then:
+the first of the windows the video is cut into, see
+`engine.SuggestedWindow`, on a round step, and no longer than the model
+can read at once, see `videoWindow` in `cmd/framefairy-app/window.go`.
+Every search starts on the video's window, and one that found its clips
+moves the window on before it says it is done. Cancel on a search that runs marks its
 record stopped as it ends. A new search takes the record of one that
 stopped away. A render or a clip made by hand that stopped has only
 Continue, see row 2.169 in [GUI-PLAN.md](GUI-PLAN.md). Search on an episode waits for a search that

@@ -902,3 +902,113 @@ func TestASearchThatEndsKeepsTheModelAgain(t *testing.T) {
 	})
 	<-searched
 }
+
+// A job that hears a video in parts has the library read again each time
+// it goes on to the next part, so the parts the library says were heard
+// keep up with the work rather than catching up only when the job ends.
+// Read only at the end, the share of a video heard went back each time the
+// work went on to the next part and jumped from 60 to 96 % when it was
+// stopped, found by Tim on PR #458.
+func TestTheLibraryIsReadAgainWhenTheHearingGoesOnToTheNextPart(t *testing.T) {
+	t.Parallel()
+	told := make(chan string, 8)
+	q := newQueue(memoryStore(), func(JobUpdate) {}, func(episode string) { told <- episode })
+	part := make(chan struct{})
+	q.add("/eps/ep.mp4", engine.JobTranscribe, "Transcribe whole video", func(ctx context.Context, p *engine.Project) (string, error) {
+		// The same part going on is no news to the library, the next is.
+		p.Log().ProgressTo("transcribing", 0.1, 10, 0, 10)
+		p.Log().ProgressTo("transcribing", 0.2, 9, 0, 20)
+		p.Log().ProgressTo("transcribing", 0.3, 8, 100, 110)
+		<-part
+		return "", nil
+	})
+	if got := <-told; got != "/eps/ep.mp4" {
+		t.Fatalf("the library was told of %q", got)
+	}
+	select {
+	case got := <-told:
+		t.Fatalf("the library was told of %q again before the job ended", got)
+	default:
+	}
+	close(part)
+	// And once more when it ends, as every job does.
+	if got := <-told; got != "/eps/ep.mp4" {
+		t.Fatalf("at the end the library was told of %q", got)
+	}
+}
+
+// Stop transcribing keeps the record, so the menu says Continue
+// transcribing after a restart too, and Continue clicked while the work
+// still stops keeps the record of the job it started. Found by the review
+// of #458: the record was removed once the stopped job ended, the new
+// job's with it.
+func TestStopTranscribingKeepsTheRecordOfTheJobThatCarriesOn(t *testing.T) {
+	t.Parallel()
+	svc, eps := memoryLibrary(t, "ep.mp4")
+	ep := eps[0]
+	news := make(chan Job, 256)
+	svc.jobs = newQueue(svc.store, func(u JobUpdate) { news <- u.Job }, func(string) {})
+	record := func() (engine.JobRecord, bool) {
+		for _, rec := range engine.ReadJobs(svc.store.files, ep) {
+			if rec.ID == engine.TranscribeID {
+				return rec, true
+			}
+		}
+		return engine.JobRecord{}, false
+	}
+	// A stand-in for TranscribeJob: it writes its record and hears until
+	// it is called off, and then holds until it is let go.
+	started := make(chan struct{})
+	transcribe := func(letGo chan struct{}) Job {
+		return svc.jobs.addSteps(ep, engine.JobTranscribe, "Transcribe whole video", true, func(j *Job) {
+			j.Record = engine.TranscribeID
+		}, func(ctx context.Context, p *engine.Project, turn engine.Turn) (string, error) {
+			rec := engine.JobRecord{ID: engine.TranscribeID, Kind: engine.JobTranscribe, Step: engine.StepHearing}
+			if err := engine.WriteJob(svc.store.files, ep, rec); err != nil {
+				return "", err
+			}
+			started <- struct{}{}
+			<-ctx.Done()
+			<-letGo
+			return "", engine.ErrCancelled
+		})
+	}
+	ended := func(id string) Job {
+		for j := range news {
+			if j.ID == id && j.State != JobQueued && j.State != JobRunning {
+				return j
+			}
+		}
+		panic("the news ended")
+	}
+
+	firstGo := make(chan struct{})
+	first := transcribe(firstGo)
+	<-started
+	if !svc.cancelSteps(first.ID) {
+		t.Fatal("Stop transcribing found no job")
+	}
+	// Continue transcribing, clicked while the first still stops.
+	secondGo := make(chan struct{})
+	second := transcribe(secondGo)
+	if second.ID == first.ID {
+		t.Fatal("Continue gave the job that stops")
+	}
+	<-started
+	close(firstGo)
+	if j := ended(first.ID); j.State != JobInterrupted {
+		t.Errorf("Stop transcribing ended the job as %s", j.State)
+	}
+	if rec, ok := record(); !ok || rec.Step == engine.StepStopped {
+		t.Errorf("the job that carries on lost its record: %+v, there %v", rec, ok)
+	}
+
+	svc.cancelSteps(second.ID)
+	close(secondGo)
+	if j := ended(second.ID); j.State != JobInterrupted || j.Step != engine.StepStopped {
+		t.Errorf("Stop transcribing ended the job as %s, %s", j.State, j.Step)
+	}
+	if rec, ok := record(); !ok || rec.Step != engine.StepStopped {
+		t.Errorf("after Stop transcribing the record is %+v, there %v", rec, ok)
+	}
+}

@@ -72,7 +72,7 @@ func TestPathAVideoMovedAwayKeepsItsClips(t *testing.T) {
 
 func TestPathClosedWhileHearing(t *testing.T) {
 	d := open(t)
-	hearing := d.speech.hearing()
+	hearing := d.speech.hearingAfter(1)
 	ep := d.add("ep", minutes5)
 	<-hearing
 	d.close()
@@ -151,7 +151,7 @@ func TestPathClosedWhileFinding(t *testing.T) {
 
 func TestPathCancelWhileHearing(t *testing.T) {
 	d := open(t)
-	hearing := d.speech.hearing()
+	hearing := d.speech.hearingAfter(1)
 	ep := d.add("ep", minutes5)
 	<-hearing
 	d.cancel(ep)
@@ -180,6 +180,60 @@ func TestPathCancelWhileHearing(t *testing.T) {
 	}
 	if again > 300-heardBefore+30 {
 		t.Errorf("%.0f s were heard before Cancel, and %.0f s after", heardBefore, again)
+	}
+}
+
+// Removed and added again, a video says how its work ended only as far as
+// its work folder still holds it. Kept, the search called off says Stopped
+// again. Deleted, nothing of it is left, and its first search starts again
+// by itself. Tim removed a video, added the same file again, and its menu
+// offered to carry on a transcription the video he added never had, his
+// report of 24 October on #458.
+//
+// On the real disk: ffmpeg reads the episode the search hears.
+func TestPathAVideoRemovedAndAddedAgainSaysOnlyWhatItsFolderHolds(t *testing.T) {
+	d := open(t)
+	hearing := d.speech.hearingAfter(1)
+	ep := d.add("ep", minutes5)
+	<-hearing
+	d.cancel(ep)
+	d.idle(ep)
+	if o := d.outcome(ep); !o.stopped {
+		t.Fatalf("a search called off says %+v", o)
+	}
+	ended := func(when string) {
+		t.Helper()
+		for _, j := range d.svc.jobs.list() {
+			if j.Episode == ep && (j.State == JobInterrupted || j.State == JobFailed) {
+				t.Errorf("%s, %s %s still says it ended %s", when, j.ID, j.Kind, j.State)
+			}
+		}
+	}
+	again := func() {
+		t.Helper()
+		if added, err := d.svc.addEpisodes([]string{ep}); err != nil || len(added) != 1 {
+			t.Fatalf("adding it again: %v", err)
+		}
+	}
+
+	if err := d.svc.RemoveEpisode(ep, false); err != nil {
+		t.Fatal(err)
+	}
+	ended("removed with its folder kept")
+	again()
+	if o := d.outcome(ep); !o.stopped {
+		t.Errorf("added again with its folder, its search says %+v", o)
+	}
+
+	if err := d.svc.RemoveEpisode(ep, true); err != nil {
+		t.Fatal(err)
+	}
+	ended("removed with its folder")
+	again()
+	d.idle(ep)
+	ended("added again without its folder")
+	if n := len(d.clips(ep)); n == 0 {
+		t.Error("added again without its folder, its first search found no clips")
 	}
 }
 
@@ -504,5 +558,66 @@ func TestPathATargetStaysWithItsWindow(t *testing.T) {
 	}
 	if n := asked(d.add("same", minutes5)); n != 3 {
 		t.Errorf("five minutes asked for %d, with 3 typed for five minutes", n)
+	}
+}
+
+// A video has one window. The first search of a video just added is on
+// it, the window the workspace draws, a search cancelled on it says
+// Continue, moved off it the search is set aside and the job says so,
+// Undo brings it back, and a search that found its clips moves the window
+// on. The first search once placed a window of its own, two seconds off
+// the workspace's, so Cancel said Search where it should have said
+// Continue, Tim's report of 24 October on #458.
+//
+// On the real disk: ffprobe reads how long the video is, which places
+// its window, and the speech model hears it.
+func TestPathAVideoHasOneWindow(t *testing.T) {
+	// Not side by side: open sets HOME for the whole process.
+	d := open(t)
+	hearing := d.speech.hearingAfter(1)
+	ep := d.add("ep", "1200")
+	<-hearing
+	j, ok := d.svc.jobs.find(ep, "search")
+	if !ok {
+		t.Fatal("the video just added was not searched")
+	}
+	w := d.svc.ChosenWindow(ep)
+	if w == nil || *w != (KeptWindow{From: 0, To: 600, Length: 600}) {
+		t.Fatalf("the video's window is %+v, want the first ten minutes", w)
+	}
+	if j.From != w.From || j.To != w.To {
+		t.Errorf("the first search is of %v to %v, the video's window %v to %v", j.From, j.To, w.From, w.To)
+	}
+	d.cancel(ep)
+	d.idle(ep)
+	if o := d.outcome(ep); !o.stopped {
+		t.Fatalf("cancelled, the search says %+v", o)
+	}
+	aside := func() bool {
+		j, _ := d.svc.jobs.find(ep, "search")
+		return j.Aside
+	}
+	if aside() {
+		t.Error("the search was set aside on its own window")
+	}
+	if err := d.svc.ChooseWindow(ep, 600, 1200, 600, true); err != nil {
+		t.Fatal(err)
+	}
+	if !aside() {
+		t.Error("the window moved off the stopped search did not set it aside")
+	}
+	if _, err := d.svc.Undo(ep); err != nil {
+		t.Fatal(err)
+	}
+	if aside() {
+		t.Error("Undo put the window back on the stopped search, and it stayed set aside")
+	}
+	d.carryOn(ep)
+	d.idle(ep)
+	if o := d.outcome(ep); o != (outcome{}) {
+		t.Fatalf("carried on, the search says %+v", o)
+	}
+	if w := d.svc.ChosenWindow(ep); w == nil || *w != (KeptWindow{From: 600, To: 1200, Length: 600}) {
+		t.Errorf("after the search found its clips the window is %+v, want the next ten minutes", w)
 	}
 }
