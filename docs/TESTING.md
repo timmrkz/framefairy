@@ -1096,12 +1096,13 @@ What the code takes from outside, so a test can drive it:
 | What | Handed in as | Where |
 | --- | --- | --- |
 | the time of day | `now func() time.Time` | `signer.WithClock` in `licence/signer/signer.go`, `Now` in `licence/dispenser/engine.go`, `now` on the app, which times an edit, in `cmd/framefairy-app/main.go` |
-| timers inside goroutines | `testing/synctest` around the test | the lint fixture `scripts/testdata/lint/go/signals`, the dictation tests in `cmd/framefairy-app/listen_test.go`, and `TestOnlyAFewDecodersNobodyHoldsStandRunning` in `cmd/framefairy-app/frames_test.go` |
+| timers inside goroutines | `testing/synctest` around the test | the lint fixture `scripts/testdata/lint/go/signals`, the dictation tests in `cmd/framefairy-app/listen_test.go`, `TestOnlyAFewDecodersNobodyHoldsStandRunning` in `cmd/framefairy-app/frames_test.go`, and `TestALocalModelThatKeepsTalkingIsWaitedFor` in `engine/local_test.go`, which streams llama-server's answer through `streamFrom`, a transport with no network |
 | the disk | `afero.Fs` | `engine/files.go`, the project and the app's store |
 | random numbers | `io.Reader` | `signer.WithRandom` |
 | the model, the recogniser | an interface with a fake | the fake recogniser and fake llama-server in `engine/project_test.go` |
 | a program we run | its path | ffmpeg and the decoder through `FRAMEFAIRY_FRAMES` |
-| the end of work | a callback the caller gives, a channel closed at every change, a channel closed when the work ends, or a `sync.WaitGroup` | `emit` in `newQueue`, and `until` on `queue.changed`, `cmd/framefairy-app/jobs.go`, `changed` on the updates in `cmd/framefairy-app/updates.go`, `done` of a measuring in `cmd/framefairy-app/levels.go`, `Arrived` in `updates/fetch.go`, `clearing` in `cmd/framefairy-app/main.go` |
+| asking another program to stop | a function | `interrupt` in `engine/leftover.go`, which a test wraps to hear which servers left behind were asked |
+| the end of work | a callback the caller gives, a channel closed at every change, a channel closed when the work ends, or a `sync.WaitGroup` | `emit` in `newQueue`, and `until` on `queue.changed`, `cmd/framefairy-app/jobs.go`, `changed` on the updates in `cmd/framefairy-app/updates.go`, `done` of a measuring in `cmd/framefairy-app/levels.go`, `Arrived` in `updates/fetch.go`, `clearing` in `cmd/framefairy-app/main.go`, `news` on the model host in `engine/modelhost.go`, waited on by `untilHost`, `cursors` on the episode's decoder in `engine/episodeframes.go`, waited on by `untilCursors`. A stand-in program says it is up on its output, or ends once it has said what the test reads, as in `engine/leftover_test.go` and `engine/local_test.go` |
 
 The fake clocks: `testing/synctest` in Go, whose `time.Sleep` line says
 `//nolint:forbidigo // synctest bubble`, Vitest's fake timers in the

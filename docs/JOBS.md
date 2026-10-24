@@ -220,7 +220,8 @@ lane, and a removal deletes that folder next. On Windows a folder with
 an open file in it cannot be deleted. So a job is waited for until its
 goroutine is done, `alive` in `cmd/framefairy-app/jobs.go`, and the queue
 tells whoever waits of every change, see `until` there and `wake` in
-`wake.go`, which the lanes use too. A job that will not stop is given
+`internal/wake`, which the lanes, the updates and the engine's model host
+use too. A job that will not stop is given
 `stopWait`, 15 s, and then the removal says so and deletes nothing, and
 the app quits anyway. The waits used to look at the list every 20, 50 or
 100 ms, so each took up to that much longer than the work, #394.
