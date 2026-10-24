@@ -1106,10 +1106,11 @@ Playwright's clock in the walks, through `fakeClock`, `holdClock`,
 are the walks, against the real Go side through the bridge, and the
 rules every walk checks after every step are in `walks/rules.mjs`.
 
-A bubble waits for every goroutine started in it to end. lumberjack, which
-keeps the app's log, starts one with the first line it writes that never
-ends, so a test in a bubble that reads the app's log opens it outside the
-bubble and writes its first line there, `bubbleLog` in
+A bubble fails its test with a deadlock when a goroutine started in it is
+still blocked as the test ends. lumberjack, which keeps the app's log,
+starts one with the first line it writes, and it never ends, so a test in
+a bubble that reads the app's log opens it outside the bubble and writes
+its first line there, `bubbleLog` in
 `cmd/framefairy-app/listen_test.go`.
 
 What CI holds of the skill's rules today: golangci-lint's `forbidigo` in

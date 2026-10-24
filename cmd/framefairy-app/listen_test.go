@@ -115,9 +115,9 @@ func listenTo(t *testing.T, samples []float32) *FrameFairy {
 
 // bubbleLog opens the app's log for a test whose recording runs in a
 // testing/synctest bubble, and writes its first line, outside the bubble.
-// lumberjack starts a goroutine with the first line it writes, which runs
-// until the process ends, and a bubble that started it would wait for it
-// for ever.
+// A bubble fails its test with a deadlock when a goroutine started in it
+// is still blocked as the test ends. lumberjack starts one with the first
+// line it writes, and it never ends, so that line is written here.
 func bubbleLog(t *testing.T) func() []map[string]any {
 	t.Helper()
 	_, read := testLog(t)
@@ -551,7 +551,13 @@ func room(t *testing.T, mic *talkingMicrophone) {
 // everything waits on it, on any machine.
 func TestListeningStopsByItself(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		f, mic, told := dictatingTo(t, &voices{}, func(l *listening) { l.quiet = 300 * time.Millisecond })
+		// The longest a recording can be is short too, so a quiet stop
+		// that is broken fails at once, on the wrong reason, rather than
+		// after ten minutes of the bubble's clock.
+		f, mic, told := dictatingTo(t, &voices{}, func(l *listening) {
+			l.quiet = 300 * time.Millisecond
+			l.most = 30 * engine.SampleRate
+		})
 		mic.say(tone(1.2))
 		room(t, mic)
 		d := awaitTold(t, told, func(d Dictation) bool { return d.Ended != "" })

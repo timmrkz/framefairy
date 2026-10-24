@@ -740,6 +740,13 @@ func TestADownloadLetGoOfIsThereOnComingBack(t *testing.T) {
 	// asked for it, where it is held.
 	<-cs.asked
 	arrived := c.src.Arrived(cs.sum("/main-0.3.0-main.5.zip"))
+	// Arrived is closed already for a build that is not on its way, so a
+	// wrong path would make the wait below prove nothing.
+	select {
+	case <-arrived:
+		t.Fatal("main's download is not on its way into the cache")
+	default:
+	}
 	waitFor(t, c, "downloading main", func(s UpdateState) bool {
 		return s.Phase == "downloading" && s.Next == "0.3.0-main.5"
 	})
@@ -805,9 +812,17 @@ func TestAPickAsACheckEndsIsLookedFor(t *testing.T) {
 		return c.again || s.Phase == "ready"
 	})
 	let()
-	waitFor(t, c, "ready with pr-20", func(s UpdateState) bool {
-		return s.Phase == "ready" && s.Next == "0.3.0-pr20.9"
+	// Every check ends, whatever it found, so the wait ends either way,
+	// and a pick that was lost fails here with the state it left. Only
+	// checking is asked: a lost pick leaves again set for ever.
+	s := waitFor(t, c, "every check ended", func(UpdateState) bool {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		return !c.checking
 	})
+	if s.Phase != "ready" || s.Next != "0.3.0-pr20.9" {
+		t.Errorf("once every check ended: %+v", s)
+	}
 }
 
 // Check reads the channel list at once, even while a download is waited
@@ -1056,8 +1071,9 @@ func TestABuildMadeOnTheMacStartsOutFollowingNothing(t *testing.T) {
 	c, _ := testUpdating(t, cs, false, "", "pr-143")
 	cleanStaged(t, c)
 	// Each look ends by asking how long to wait for the next one. The
-	// first four are answered with no wait, and the fourth closes looked.
-	// Then the loop waits longer than any test runs, until shutDown.
+	// first three are answered with no wait. The fourth closes looked and
+	// is answered with an hour, so the loop waits longer than any test
+	// runs, until shutDown.
 	var looks atomic.Int32
 	looked := make(chan struct{})
 	c.next = func(UpdateState) time.Duration {

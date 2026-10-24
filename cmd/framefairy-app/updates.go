@@ -157,8 +157,9 @@ type updating struct {
 	// are only ever read and written together, see check.
 	checking bool
 	again    bool
-	// changed tells whoever waits on the state of every change to it, and
-	// of a check that has ended, see wake. Only the tests wait on it.
+	// changed tells whoever waits on the state of every change to it, of
+	// a check asked for while one runs, and of a check that has ended, see
+	// wake. Only the tests wait on it.
 	changed wake
 	// ended is told when a check has decided it is done, before it has
 	// returned. Nil but in the tests, which hold a check there.
@@ -588,6 +589,7 @@ func (c *updating) check() {
 	}
 	if c.checking {
 		c.again = true
+		c.changed.wakeLocked()
 		c.mu.Unlock()
 		return
 	}

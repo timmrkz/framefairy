@@ -12,7 +12,9 @@ import (
 )
 
 // levelsLibrary is a library with n short episodes in it and a service
-// that measures their loudness the way the app does.
+// that measures their loudness the way the app does. The tests that use
+// it are not parallel, though they take up to a second or two, because it
+// sets HOME and XDG_CONFIG_HOME for the whole process.
 //
 // On the real disk: ffmpeg reads the episodes.
 func levelsLibrary(t *testing.T, n int) (*FrameFairy, []string, *atomic.Int64) {
@@ -50,8 +52,9 @@ func levelsLibrary(t *testing.T, n int) (*FrameFairy, []string, *atomic.Int64) {
 	return s, paths, told
 }
 
-// measured waits until the measuring of an episode has ended, on the
-// channel it closes when it does, and says whether it measured it whole.
+// measured waits until the measuring of a video has ended, on the channel
+// it closes when it does, and fails the test when it did not measure the
+// video whole.
 // A measuring that is not running has ended already, because start adds
 // it before it returns.
 //
