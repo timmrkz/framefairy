@@ -13,7 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
+	"testing/synctest"
 
 	"github.com/spf13/afero"
 )
@@ -67,20 +67,27 @@ func searching(t *testing.T, letGo <-chan struct{}) (*Project, string) {
 	return p, filepath.Join(p.LogsDir(), "clips-10-30.json")
 }
 
-// landed waits for the plan to hold n clips and gives them.
+// landed goes on once the plan holds n clips and gives them. It reads the
+// plan again each time the search says anything, which it does once a
+// clip is written, and a plan that never holds them is go test's -timeout
+// to end.
 //
 // On the real disk: the plan is written by a search that runs ffmpeg on the episode.
-func landed(t *testing.T, path string, n int) []Clip {
+func landed(t *testing.T, p *Project, path string, n int) []Clip {
 	t.Helper()
-	deadline := time.Now().Add(60 * time.Second)
-	for time.Now().Before(deadline) {
+	said := make(chan struct{}, 1)
+	p.engine.Log.SetSink(func(Event) {
+		select {
+		case said <- struct{}{}:
+		default:
+		}
+	})
+	for {
 		if _, clips, err := LoadClips(disk, path); err == nil && len(clips) >= n {
 			return clips
 		}
-		time.Sleep(20 * time.Millisecond)
+		<-said
 	}
-	t.Fatalf("the plan never held %d clip(s)", n)
-	return nil
 }
 
 // On the real disk: a search runs ffmpeg on the episode.
@@ -101,7 +108,7 @@ func TestAClipLandsWhileTheModelIsStillWriting(t *testing.T) {
 
 	// The model has written one clip and is still going. That clip is in
 	// the plan, whole, with the id it will be recorded under.
-	clips := landed(t, path, 1)
+	clips := landed(t, p, path, 1)
 	if len(clips) != 1 || clips[0].ID != "t10-01" {
 		t.Fatalf("clips %+v", clips)
 	}
@@ -185,7 +192,7 @@ func TestAStoppedSearchKeepsWhatArrived(t *testing.T) {
 		_, err := p.Plan(ctx, PlanRequest{From: 10, To: 30, Count: 2, Min: 1})
 		finished <- err
 	}()
-	landed(t, path, 1)
+	landed(t, p, path, 1)
 	cancel()
 	if err := <-finished; err == nil {
 		t.Fatal("a stopped search said it finished")
@@ -224,32 +231,32 @@ func TestAClipThatPanicsWhileFramedIsLeftOut(t *testing.T) {
 }
 
 // The search clock stops reporting when reporting panics, and nothing
-// else stops.
+// else stops. It runs in a bubble, so the clock ticks on the bubble's
+// clock, as often as the app has it.
 func TestAClockThatPanicsStopsQuietly(t *testing.T) {
-	log := NewLog(&bytes.Buffer{}, false, false)
-	c := newSearchClock(log, nil, "gemma", true, 1000, 12, 2048)
-	c.mu.Lock()
-	c.now.Part = "reading"
-	c.mu.Unlock()
-	log.SetSink(func(ev Event) {
-		if ev.Kind == EventProgress {
-			panic("the window went away")
+	synctest.Test(t, func(t *testing.T) {
+		log := NewLog(&bytes.Buffer{}, false, false)
+		c := newSearchClock(log, nil, "gemma", true, 1000, 12, 2048)
+		c.mu.Lock()
+		c.now.Part = "reading"
+		c.mu.Unlock()
+		log.SetSink(func(ev Event) {
+			if ev.Kind == EventProgress {
+				panic("the window went away")
+			}
+		})
+		done := make(chan struct{})
+		go func() {
+			c.run()
+			close(done)
+		}()
+		// A clock that neither reports nor stops hangs here, and the bubble
+		// says so at once.
+		<-done
+		if log.held.Load() {
+			t.Error("the clock stopped and left the progress line held")
 		}
 	})
-	done := make(chan struct{})
-	go func() {
-		c.run()
-		close(done)
-	}()
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		c.stop()
-		t.Fatal("the clock neither reported nor stopped")
-	}
-	if log.held.Load() {
-		t.Error("the clock stopped and left the progress line held")
-	}
 }
 
 // Two clips that keep mostly the same lines are one moment given twice.
