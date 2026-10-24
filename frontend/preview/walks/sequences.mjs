@@ -3888,11 +3888,12 @@ export const sequences = [
     name: "the episode played through a clip shows only the video, and the clip its frame and captions",
     steps: [
       ["trim", "start", 300],
-      // From before, the play starts 3.6 s ahead of the clip, and the
-      // rule reads 2 s inside it, more than a frame from its start. Six
-      // seconds left 0.2 s to spare, and on a busy machine the frames read
-      // last came that much behind the play, issue #519. Seven leave a
-      // second.
+      // From before, the play starts at 3.4 s and the clip at 7.0 s, and
+      // the rule reads 2 s inside it from more than a frame on, 7.2 s at
+      // this video's 5 fps. So the play has to reach 9.2 s, 5.8 s of play.
+      // Six seconds left 0.2 s to spare, and the last frame the walk reads
+      // comes behind the play, 0.18 s at SLOW=8, issue #519. Seven leave
+      // 1.2 s.
       ["play from", "before", 7],
       ["only the video"],
       ["play from", "in", 4],

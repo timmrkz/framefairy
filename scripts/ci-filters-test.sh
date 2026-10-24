@@ -119,6 +119,18 @@ for f in $(grep -rhoE --include='*_test.go' --exclude-dir=node_modules --exclude
 	fi
 done
 
+# The filter mac is app less the CI image and nothing else, so the two
+# cannot drift apart and start a Mac for what only Linux runs, #484.
+app=$(sed -n '/^app:$/,/^$/p' "$root/.github/ci-filters.yml" | grep '^  - ')
+mac=$(sed -n '/^mac:$/,/^$/p' "$root/.github/ci-filters.yml" | grep '^  - ')
+image="  - '!{.github/ci-image/**,scripts/ci-packages.sh}'"
+if [ "$mac" = "$(printf '%s\n%s' "$app" "$image")" ]; then
+	printf 'ok  \t%-52s %s\n' "the filter mac" "app less the CI image"
+else
+	printf 'FAIL\tthe filter mac is not app less the CI image\n'
+	fail=1
+fi
+
 # A push to main runs everything: each filter has an output in the job
 # changes of ci.yml that is true whenever the event is not a pull request,
 # and each output of that job has its filter.
