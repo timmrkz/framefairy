@@ -421,6 +421,8 @@ type speech struct {
 	mu      sync.Mutex
 	broken  error
 	started chan struct{}
+	// skip is how many pieces are heard before started is closed.
+	skip    int
 	samples atomic.Int64
 }
 
@@ -435,9 +437,18 @@ func (s *speech) breaks(err error) {
 // hearing gives a channel that is closed when the speech model is next
 // given audio.
 func (s *speech) hearing() <-chan struct{} {
+	return s.hearingAfter(0)
+}
+
+// hearingAfter gives a channel that is closed when the speech model is
+// given audio once more after heard pieces, so those are heard to their
+// end. A piece still being heard when the work stops is let go, so a test
+// about what a stop keeps stops it after a piece was heard.
+func (s *speech) hearingAfter(heard int) <-chan struct{} {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.started = make(chan struct{})
+	s.skip = heard
 	return s.started
 }
 
@@ -458,7 +469,10 @@ func (s *speech) seconds() float64 {
 func (s *speech) Recognize(samples []float32, rate int) []engine.Token {
 	s.samples.Add(int64(len(samples)))
 	s.mu.Lock()
-	if s.started != nil {
+	switch {
+	case s.started != nil && s.skip > 0:
+		s.skip--
+	case s.started != nil:
 		close(s.started)
 		s.started = nil
 	}

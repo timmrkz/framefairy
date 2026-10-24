@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -116,15 +117,19 @@ func TestASearchOfTheWholeEpisodeFinishesTheTranscript(t *testing.T) {
 	}
 }
 
-// stops is a speech model that stops the search the moment it is given
-// audio, the way the app closing does.
+// stops is a speech model that stops the search the way the app closing
+// does. It stops the work as it is given its second piece, so the first is
+// heard to its end and kept: a piece still being heard at the stop is let
+// go.
 type stops struct {
 	cancel context.CancelFunc
 	fakeRecognizer
 }
 
 func (s stops) Recognize(samples []float32, rate int) []Token {
-	s.cancel()
+	if atomic.LoadInt32(s.calls) > 0 {
+		s.cancel()
+	}
 	return s.fakeRecognizer.Recognize(samples, rate)
 }
 

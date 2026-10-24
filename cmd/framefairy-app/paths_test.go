@@ -72,7 +72,7 @@ func TestPathAVideoMovedAwayKeepsItsClips(t *testing.T) {
 
 func TestPathClosedWhileHearing(t *testing.T) {
 	d := open(t)
-	hearing := d.speech.hearing()
+	hearing := d.speech.hearingAfter(1)
 	ep := d.add("ep", minutes5)
 	<-hearing
 	d.close()
@@ -151,7 +151,7 @@ func TestPathClosedWhileFinding(t *testing.T) {
 
 func TestPathCancelWhileHearing(t *testing.T) {
 	d := open(t)
-	hearing := d.speech.hearing()
+	hearing := d.speech.hearingAfter(1)
 	ep := d.add("ep", minutes5)
 	<-hearing
 	d.cancel(ep)
