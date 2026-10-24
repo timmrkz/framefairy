@@ -33,3 +33,17 @@ describe("a transcription Stop was pressed for", () => {
     expect(jobs.stopping).toEqual([]);
   });
 });
+
+// A transcription settled, because the video left the library or Continue
+// started the next one, is nothing for the menu to carry on. Tim removed a
+// video, added the same file again, and its menu offered Continue
+// transcribing, his report of 24 October on #458.
+describe("the video's transcription", () => {
+  test("is not one once it is settled", () => {
+    const jobs = new JobStore();
+    jobs.apply(job("interrupted", 1));
+    expect(jobs.transcription("/v.mp4")?.state).toBe("interrupted");
+    jobs.apply(job("cancelled", 2));
+    expect(jobs.transcription("/v.mp4")).toBeUndefined();
+  });
+});

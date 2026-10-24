@@ -1311,11 +1311,12 @@
   // The step of the range picker, see gridStep, 0 until it is measured.
   // A window the app placed before then lands on it once it is known, the
   // first time only: a window placed by hand, or kept from before, stays
-  // where it was put.
+  // where it was put, and so does the window of a search that stopped,
+  // which is the window Continue carries on.
   let grid = $state(0);
   let unplaced = false;
   $effect(() => {
-    if (grid > 0 && unplaced && !busy) {
+    if (grid > 0 && unplaced && !busy && !halted) {
       unplaced = false;
       placeWindow({ from, to }, windowSize);
     }
@@ -1376,6 +1377,24 @@
     }
     if (path !== was) return;
     windowRead = true;
+    // A search that runs holds its window, see followed, whatever was kept
+    // or would be placed. The first search of a video just added is the
+    // Go side's, which cuts its window as an even share of the video,
+    // 30:02 of four hours, and the window placed on the range picker's step
+    // took its place at 30:00. Cancelled, the search then stood on a
+    // window that was not the one drawn, so it was set aside and said
+    // Search, not Continue, Tim's report of 24 October on #458.
+    if (working) {
+      const start = working.from ?? 0;
+      const end = working.to && working.to > 0 ? working.to : duration;
+      if (end > start) {
+        from = start;
+        to = end;
+        length = to - from;
+        unplaced = false;
+        return;
+      }
+    }
     if (kept && kept.to > kept.from && kept.to <= duration + 0.5) {
       from = kept.from;
       to = Math.min(kept.to, duration);
@@ -3313,7 +3332,7 @@
     {duration}
     {from}
     {to}
-    shown={busy}
+    shown={busy && !stopping}
     resumes={!!stopped}
     {marks}
     {selected}

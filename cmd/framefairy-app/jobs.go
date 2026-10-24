@@ -773,6 +773,29 @@ func (q *queue) settle(episode, kind, record string) {
 	}
 }
 
+// forgetEpisode settles every job of a video that left the library and
+// said how it ended, stopped, cut off or failed, so none of it says so any
+// more. Tim removed a video, added the same file again, and its menu
+// offered to carry on a transcription the video he added never had, his
+// report of 24 October on #458. What the work folder still holds, when it was kept, comes
+// back from its records when the video is added again, see addEpisodes.
+func (q *queue) forgetEpisode(episode string) {
+	q.mu.Lock()
+	var settled []Job
+	for _, j := range q.jobs {
+		if j.Episode == episode && !j.going() && (j.State == JobInterrupted || j.State == JobFailed) {
+			j.State = JobCancelled
+			q.stampLocked(j)
+			settled = append(settled, *j)
+		}
+	}
+	q.mu.Unlock()
+	for _, j := range settled {
+		theLog.jobLine(zerolog.InfoLevel, &j).Msg("the video left the library, nothing says how its job ended any more")
+		q.emit(JobUpdate{Job: j})
+	}
+}
+
 // settleRefused settles a job the queue refused, which failed before it
 // wrote anything, so its row goes like one whose record was forgotten.
 func (q *queue) settleRefused(id string) {

@@ -60,7 +60,8 @@
     onhoverunheard,
   }: {
     duration: number;
-    // The window of the search in hand, drawn while shown.
+    // The window of the search in hand, drawn while shown, and fading out
+    // from the frame it no longer is: Cancel pressed, or its search ended.
     from?: number;
     to?: number;
     shown?: boolean;
@@ -189,16 +190,22 @@
     return { style: `left: calc(${left}); width: max(calc(${right} - ${left}), 0px)`, first, last };
   }
   const frame = $derived(frameOver(from, to));
+  // Each time the search's window is shown is a frame of its own, so a
+  // search started while the frame of the last one still fades never takes
+  // that frame over, the way partKey keeps the part's apart.
+  let shownTimes = 0;
+  const shownKey = $derived(shown ? ++shownTimes : shownTimes);
   // The part Transcribe whole video works on, framed the way the window of
   // a search is while it hears, Tim's pick on #458.
   const partFrame = $derived(part ? frameOver(part[0], part[1]) : null);
-  // The part's frame going: its breath and its motes stop where they are,
-  // and it fades from however bright the breath had it. The fade is an
-  // animation of its own over the breath's, so it starts from there and
-  // does not jump to full first. Slower than a toast's, because it is a
-  // frame leaving the middle of the workspace, not a note in its corner,
-  // and Tim found it went abruptly. It is the part's alone: the search's
-  // window goes in the frame its search ends.
+  // A frame of work going, the part's or the search's window: its breath
+  // and its motes stop where they are, and it fades from however bright
+  // the breath had it. The fade is an animation of its own over the
+  // breath's, so it starts from there and does not jump to full first.
+  // Slower than a toast's, because it is a frame leaving the middle of the
+  // workspace, not a note in its corner, and Tim found both went
+  // abruptly, the part's on 23 October and the search's window on 24
+  // October.
   function going(node: Element) {
     node.classList.add("going");
     return fade(node, { duration: 400 });
@@ -520,7 +527,11 @@
   </div>
 {/snippet}
 {#if shown}
-  {@render stretch(frame, locked, whole, false)}
+  {#key shownKey}
+    <div class="searched" out:going|global>
+      {@render stretch(frame, locked, whole, false)}
+    </div>
+  {/key}
 {/if}
 {#if partFrame}
   {#key partKey}
@@ -692,10 +703,11 @@
     border-color: var(--accent-fill);
   }
 
-  /* What the part's frame fades in: the same box the frames are laid
-     out in, so the frame inside is where it would be without it, and over
-     the track the same way. */
-  .part {
+  /* What a frame of work fades in, the part's or the search's window:
+     the same box the frames are laid out in, so the frame inside is where
+     it would be without it, and over the track the same way. */
+  .part,
+  .searched {
     position: absolute;
     inset: 0;
     z-index: 3;
@@ -704,8 +716,8 @@
 
   /* Going, nothing in it moves on: the breath and the motes stop where
      they are while it fades. */
-  .part.going,
-  .part.going :global(*) {
+  .going,
+  .going :global(*) {
     animation-play-state: paused !important;
   }
 

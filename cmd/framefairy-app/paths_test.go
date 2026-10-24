@@ -183,6 +183,60 @@ func TestPathCancelWhileHearing(t *testing.T) {
 	}
 }
 
+// Removed and added again, a video says how its work ended only as far as
+// its work folder still holds it. Kept, the search called off says Stopped
+// again. Deleted, nothing of it is left, and its first search starts again
+// by itself. Tim removed a video, added the same file again, and its menu
+// offered to carry on a transcription the video he added never had, his
+// report of 24 October on #458.
+//
+// On the real disk: ffmpeg reads the episode the search hears.
+func TestPathAVideoRemovedAndAddedAgainSaysOnlyWhatItsFolderHolds(t *testing.T) {
+	d := open(t)
+	hearing := d.speech.hearingAfter(1)
+	ep := d.add("ep", minutes5)
+	<-hearing
+	d.cancel(ep)
+	d.idle(ep)
+	if o := d.outcome(ep); !o.stopped {
+		t.Fatalf("a search called off says %+v", o)
+	}
+	ended := func(when string) {
+		t.Helper()
+		for _, j := range d.svc.jobs.list() {
+			if j.Episode == ep && (j.State == JobInterrupted || j.State == JobFailed) {
+				t.Errorf("%s, %s %s still says it ended %s", when, j.ID, j.Kind, j.State)
+			}
+		}
+	}
+	again := func() {
+		t.Helper()
+		if added, err := d.svc.addEpisodes([]string{ep}); err != nil || len(added) != 1 {
+			t.Fatalf("adding it again: %v", err)
+		}
+	}
+
+	if err := d.svc.RemoveEpisode(ep, false); err != nil {
+		t.Fatal(err)
+	}
+	ended("removed with its folder kept")
+	again()
+	if o := d.outcome(ep); !o.stopped {
+		t.Errorf("added again with its folder, its search says %+v", o)
+	}
+
+	if err := d.svc.RemoveEpisode(ep, true); err != nil {
+		t.Fatal(err)
+	}
+	ended("removed with its folder")
+	again()
+	d.idle(ep)
+	ended("added again without its folder")
+	if n := len(d.clips(ep)); n == 0 {
+		t.Error("added again without its folder, its first search found no clips")
+	}
+}
+
 func TestPathCancelWhileFinding(t *testing.T) {
 	d := open(t)
 	d.model.hangs(true)

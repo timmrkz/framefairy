@@ -318,6 +318,12 @@ running on that episode is stopped either way, so a removed episode never
 goes on transcribing and holding up the episodes added after it. From the
 moment removing begins, nothing new starts on it until it is added again,
 not even the transcription a stopped search would otherwise carry on.
+Once it is out of the list, nothing about how its work ended is said any
+more. Added again, a video says only what its folder still holds: kept,
+a search or a transcription that stopped says so again with Continue, the
+way it does after a restart, and deleted, it starts from nothing. Tim
+removed a video, added the same file again, and its menu offered Continue
+transcribing for work the new video never had.
 Deleting also waits for the work to stop, and if something will not stop,
 nothing is deleted and the episode stays where it is with a line saying
 so. The answer clicked says Removing at once and the box takes no second
@@ -1489,7 +1495,10 @@ bubble scrolled by those eight pixels.
       search that was cut off, a failed one says why. **Cancel** says
       *Stopping* in that row the moment it is pressed, standing still, and
       then leaves the same row, *Stopped. Click Continue*, with how far the episode was
-      transcribed, because what it did stays and can be carried on. **Search**
+      transcribed, because what it did stays and can be carried on. The
+      frame over the window stands still and fades out from the press, the
+      way the whole video's frame does on Stop transcribing, Tim's report
+      of 24 October. **Search**
       takes its place. Clips it wrote before it stopped stay, with the row
       after them. The window's mark stays on the window the search was
       about and can be dragged as at rest: moved anywhere else, the
@@ -1497,7 +1506,12 @@ bubble scrolled by those eight pixels.
       and Search starts a fresh search where the window is. Moved back, by
       hand or with Undo, Continue carries the search on as before. It is
       read from where the window is, which is kept, so it is the same
-      after a restart. Tim cancelled a search to look somewhere else and
+      after a restart. A window only a person moves sets a search aside:
+      the first search of a video just added is the app's, with its window
+      an even share of the video, 30:02 of four hours, and that window is
+      the one the range picker shows and keeps, never one placed on the
+      range picker's step beside it, which once made a search cancelled
+      while it heard say Search with no Continue. Tim cancelled a search to look somewhere else and
       could not, because the window stood locked until it was carried on. The episode's dot in the sidebar says it too: the colour
       of a warning for a search stopped or cut off, of an error for one
       that failed, the red of its row and of its toast. **Its trash can**,

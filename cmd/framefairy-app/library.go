@@ -103,6 +103,10 @@ func (s *FrameFairy) addEpisodes(videos []string) ([]string, error) {
 	}
 	for _, v := range added {
 		s.jobs.openEpisode(v)
+		// A video added again whose work folder was kept picks up where it
+		// left off, so what its records say stopped says so again, the way
+		// it does when the app starts.
+		s.jobs.restore([]string{v})
 		s.levels.start(v)
 		s.firstSearch(context.Background(), v)
 	}
@@ -214,6 +218,7 @@ func (s *FrameFairy) RemoveEpisode(path string, deleteWork bool) error {
 		return err
 	}
 	removed = true
+	s.jobs.forgetEpisode(path)
 	return nil
 }
 
@@ -247,6 +252,7 @@ func (s *FrameFairy) letGoOfRemoved() {
 			Str("folder", filepath.Base(engine.WorkDir(ep))).Bool("videoDeleted", err != nil).
 			Msg("the video's folder was deleted outside the app, so the video leaves the library")
 		s.jobs.closeEpisode(ep)
+		s.jobs.forgetEpisode(ep)
 		s.levels.stop(ep)
 		s.forget(ep)
 		s.clearing.Go(func() { s.clearLetGo(ep) })

@@ -3121,6 +3121,24 @@ export const sequences = [
     ],
   },
   {
+    // Tim's report of 24 October, 21.42. The first search of a video just
+    // added is the Go side's, with its window an even share of the video,
+    // here 751.5 s, off the range picker's step. The window placed on the
+    // step took its place, so Cancel while it heard left a search on a
+    // window that was not the one drawn: set aside, it said Search, with
+    // the sidebar's dot yellow. And the frame over the window dropped the
+    // moment the search ended, where it now fades from the press.
+    name: "Cancel while a video just added is transcribed says Stopped with Continue, and the window's frame fades",
+    steps: [
+      ["speech", "hold"],
+      ["add, the window read late", 1503],
+      ["cancel fades"],
+      ["speech", 0],
+      ["wait for", "Continue"],
+      ["row", "Stopped. Click Continue"],
+    ],
+  },
+  {
     name: "Cancel stops a search, and Continue carries it on to its clips",
     steps: [
       ["model", "holds"],
@@ -8232,9 +8250,61 @@ for (const seq of toWalk) {
         await pressHead(page);
         await watch.step("head", s);
         break;
+      case "cancel fades": {
+        // Cancel pressed on a search: two frames on, the frame over its
+        // window is fading and standing still, with the window at rest
+        // under it, long before the search has stopped. Tim found it
+        // dropped abruptly, his report of 24 October, 21.42.
+        const seen = await page.evaluate(
+          () =>
+            new Promise((done) => {
+              const pane = [...document.querySelectorAll("aside")].find((a) => a.querySelector(".listhead"));
+              const button = pane.querySelector(".listhead button.search");
+              const frames = () => [...document.querySelectorAll(".searched")];
+              const before = frames().filter((p) => !p.classList.contains("going")).length;
+              button.click();
+              requestAnimationFrame(() =>
+                requestAnimationFrame(() =>
+                  done({
+                    before,
+                    going: frames().filter((p) => p.classList.contains("going")).length,
+                    left: frames().filter((p) => !p.classList.contains("going")).length,
+                    rest: !!document.querySelector(".aim"),
+                  }),
+                ),
+              );
+            }),
+        );
+        if (seen.before !== 1) wrong = `before Cancel, ${seen.before} frames over the window`;
+        else if (seen.going !== 1 || seen.left !== 0 || !seen.rest)
+          wrong = `the window's frame does not fade at Cancel: ${JSON.stringify(seen)}`;
+        await watch.step("head", s);
+        break;
+      }
       case "speech":
         await control(url, arg === "wordless" ? "/speech?wordless=1" : `/speech?ms=${arg}`);
         break;
+      case "add, the window read late": {
+        // A video added whose workspace hears that no window was kept for
+        // it only once its first search is seen, the order Tim's Mac took
+        // on 24 October. The call is held and then fails, which the
+        // workspace takes as nothing kept: let through, it would find the
+        // window the search had already kept. Nothing settles while the
+        // call is held, so this step waits on the head of the clip list
+        // instead, and settles once the call has answered.
+        await control(url, "/hold?call=ChosenWindow&gate=shut&fail=nothing%20kept");
+        await control(url, `/pick?seconds=${arg}`);
+        await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());
+        await pageUntil(page, () => {
+          const pane = [...document.querySelectorAll("aside")].find((a) => a.querySelector(".listhead"));
+          return pane?.querySelector(".listhead button.search")?.textContent.replace(/\s+/g, " ").trim() === "Cancel";
+        });
+        await control(url, "/hold?call=ChosenWindow&gate=open");
+        await settle(page);
+        // The call failed on purpose, so the watch reads on from here.
+        await watch.start();
+        break;
+      }
       case "hold":
         await control(url, `/hold?call=${arg[0]}&ms=${arg[1]}`);
         break;
