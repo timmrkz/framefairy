@@ -97,9 +97,10 @@ whatever version the machine came with.
    the project's rules and your preferences. It runs the tests of what it
    changed, pushes, and opens a pull request, so you can try the change at
    once. Then it runs `make changed`, which checks everything the branch
-   reaches, and pushes a fix if that finds anything. Beside it, a review
-   agent reads the change. The session posts its findings and answers each
-   one before it says the pull request is ready, see CLAUDE.md. You can
+   reaches, and pushes a fix if that finds anything. Once all the work is
+   done, it asks a review agent that did none of it to review the pull
+   request, posts the findings and answers each one before it says the
+   pull request is ready, see CLAUDE.md. You can
    watch and steer the session at any time, also from the Claude app on
    your phone.
 3. **CI checks the pull request**, see below. With auto-fix switched on for

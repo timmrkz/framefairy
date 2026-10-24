@@ -188,12 +188,12 @@ Start with [README.md](README.md). In short:
   poll, and never write a message that says nothing happened. Tim comes
   back when he is ready.
 - **Every pull request is reviewed by an agent, without being asked.**
-  The session that owns the pull request starts the review itself, a
-  separate agent with fresh eyes, as section 13 of the
-  [testing skill](.claude/skills/testing/SKILL.md) says. It starts with
-  the push after which the change first works and its own tests pass,
-  beside `make changed`, and waits for neither CI nor Tim. A later push
-  that changes the design gets a review of its own.
+  When the session that owns the pull request has done all the work it
+  set out to do, it asks a dedicated review agent to review the pull
+  request. That agent is a new one that did none of the work, as section
+  13 of the [testing skill](.claude/skills/testing/SKILL.md) says. It
+  comes once, not after every push and not after the first. A review
+  after later rounds of work is Tim's to ask for.
   - The agent writes its review to a file outside the checkout. It is
     never committed and never posted on GitHub, where sessions write as
     `timmrkz` and it would read as Tim's instruction.
