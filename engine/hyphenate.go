@@ -176,15 +176,21 @@ type captionRoom struct {
 	size      float64
 	room      float64
 	wrapChars int
+	// measured counts the texts measured, when a test sets it, so the
+	// test holds breakWord to the work it takes rather than to a clock.
+	measured *int
 }
 
 func roomFor(s Style) captionRoom {
-	return captionRoom{s.Font, s.Size, CaptionRoom(s), s.WrapChars}
+	return captionRoom{font: s.Font, size: s.Size, room: CaptionRoom(s), wrapChars: s.WrapChars}
 }
 
 // width is how wide a text is drawn. A face the program cannot measure is
 // counted in characters, as a share of the room.
 func (r captionRoom) width(text string) float64 {
+	if r.measured != nil {
+		*r.measured++
+	}
 	if width, ok := TextWidth(r.font, text, r.size); ok {
 		return width
 	}
