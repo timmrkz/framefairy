@@ -45,7 +45,10 @@ type channelServer struct {
 	slow chan struct{}
 	// slowOnly holds back only the builds whose path has this in it.
 	slowOnly string
-	hits     atomic.Int32
+	// asked is told the path of each build held back, as it is asked for,
+	// when it is set.
+	asked chan string
+	hits  atomic.Int32
 	// fetched counts the downloads of each build, by its path.
 	fetched map[string]int
 	// newest is a channel's commit still to be built, as the list says it.
@@ -73,7 +76,7 @@ func newChannelServer(t *testing.T) *channelServer {
 		if ok {
 			cs.fetched[r.URL.Path]++
 		}
-		slow := cs.slow
+		slow, asked := cs.slow, cs.asked
 		if cs.slowOnly != "" && !strings.Contains(r.URL.Path, cs.slowOnly) {
 			slow = nil
 		}
@@ -88,6 +91,9 @@ func newChannelServer(t *testing.T) *channelServer {
 			_, _ = w.Write(list)
 		case ok:
 			if slow != nil {
+				if asked != nil {
+					asked <- r.URL.Path
+				}
 				<-slow
 			}
 			_, _ = w.Write(data)
@@ -136,6 +142,14 @@ func zipOf(t *testing.T, says string) []byte {
 	_, _ = f.Write([]byte(says))
 	_ = w.Close()
 	return buf.Bytes()
+}
+
+// sum is the SHA-256 of a build, by its path, the name it is kept under.
+func (cs *channelServer) sum(path string) string {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	digest, _, _ := updates.Digest(bytes.NewReader(cs.zips[path]))
+	return hex.EncodeToString(digest)
 }
 
 func (cs *channelServer) publicKey() string {
@@ -197,17 +211,24 @@ func testUpdating(t *testing.T, cs *channelServer, busy bool, own, stored string
 	}
 }
 
+// waitFor waits until ok holds for the state, and gives it. It looks
+// again at every change to the state, the moment it is made, see changed,
+// never on a clock. what names the state for whoever reads the test. A
+// state that never comes is ended by go test's -timeout, which shows
+// where it waited.
 func waitFor(t *testing.T, c *updating, what string, ok func(UpdateState) bool) UpdateState {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
+	for {
+		// Taken before the look, so a change between the look and the
+		// wait still ends the wait.
+		c.mu.Lock()
+		changed := c.changed.waitLocked()
+		c.mu.Unlock()
 		if s := c.State(); ok(s) {
 			return s
 		}
-		time.Sleep(10 * time.Millisecond)
+		<-changed
 	}
-	t.Fatalf("never %s: %+v", what, c.State())
-	return UpdateState{}
 }
 
 // waitDone is waitFor that also waits for the check that got there to
@@ -707,7 +728,7 @@ func TestADownloadLetGoOfIsThereOnComingBack(t *testing.T) {
 	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"}, [3]string{"pr-20", "0.3.0-pr20.9", "twenty"})
 	release := make(chan struct{})
 	cs.mu.Lock()
-	cs.slow, cs.slowOnly = release, "/main-"
+	cs.slow, cs.slowOnly, cs.asked = release, "/main-", make(chan string, 4)
 	cs.mu.Unlock()
 	let := sync.OnceFunc(func() { close(release) })
 	t.Cleanup(let)
@@ -715,6 +736,17 @@ func TestADownloadLetGoOfIsThereOnComingBack(t *testing.T) {
 	c.src.Cache = t.TempDir()
 	cleanStaged(t, c)
 	_ = c.Follow("main")
+	// Main's download is on its way into the cache once the server is
+	// asked for it, where it is held.
+	<-cs.asked
+	arrived := c.src.Arrived(cs.sum("/main-0.3.0-main.5.zip"))
+	// Arrived is closed already for a build that is not on its way, so a
+	// wrong path would make the wait below prove nothing.
+	select {
+	case <-arrived:
+		t.Fatal("main's download is not on its way into the cache")
+	default:
+	}
 	waitFor(t, c, "downloading main", func(s UpdateState) bool {
 		return s.Phase == "downloading" && s.Next == "0.3.0-main.5"
 	})
@@ -724,16 +756,9 @@ func TestADownloadLetGoOfIsThereOnComingBack(t *testing.T) {
 	})
 	// Main's download was waiting on the server all along, and arrives.
 	let()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		kept, _ := filepath.Glob(filepath.Join(c.src.Cache, "*.zip"))
-		if len(kept) == 2 {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("main's download was not kept, the cache holds %v", kept)
-		}
-		time.Sleep(10 * time.Millisecond)
+	<-arrived
+	if kept, _ := filepath.Glob(filepath.Join(c.src.Cache, "*.zip")); len(kept) != 2 {
+		t.Fatalf("main's download was not kept, the cache holds %v", kept)
 	}
 	_ = c.Follow("main")
 	waitFor(t, c, "ready with main", func(s UpdateState) bool {
@@ -787,9 +812,17 @@ func TestAPickAsACheckEndsIsLookedFor(t *testing.T) {
 		return c.again || s.Phase == "ready"
 	})
 	let()
-	waitFor(t, c, "ready with pr-20", func(s UpdateState) bool {
-		return s.Phase == "ready" && s.Next == "0.3.0-pr20.9"
+	// Every check ends, whatever it found, so the wait ends either way,
+	// and a pick that was lost fails here with the state it left. Only
+	// checking is asked: a lost pick leaves again set for ever.
+	s := waitFor(t, c, "every check ended", func(UpdateState) bool {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		return !c.checking
 	})
+	if s.Phase != "ready" || s.Next != "0.3.0-pr20.9" {
+		t.Errorf("once every check ended: %+v", s)
+	}
 }
 
 // Check reads the channel list at once, even while a download is waited
@@ -904,17 +937,11 @@ func TestANewerBuildReplacesTheOneReady(t *testing.T) {
 	let := sync.OnceFunc(func() { close(release) })
 	t.Cleanup(let)
 	cs.mu.Lock()
-	cs.slow, cs.slowOnly = release, "/main-0.3.0-main.7"
+	cs.slow, cs.slowOnly, cs.asked = release, "/main-0.3.0-main.7", make(chan string, 4)
 	cs.mu.Unlock()
 	cs.publish(t, [3]string{"main", "0.3.0-main.7", "seven"})
 	go c.check()
-	deadline := time.Now().Add(10 * time.Second)
-	for cs.fetches("/main-0.3.0-main.7.zip") == 0 {
-		if time.Now().After(deadline) {
-			t.Fatal("main.7 was never asked for")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	<-cs.asked
 	if s := c.State(); s.Phase != "ready" || s.Next != "0.3.0-main.5" {
 		t.Errorf("while main.7 downloads: %+v", s)
 	}
@@ -1043,7 +1070,21 @@ func TestABuildMadeOnTheMacStartsOutFollowingNothing(t *testing.T) {
 	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"}, [3]string{"pr-143", "0.3.0-pr143.2", "pr"})
 	c, _ := testUpdating(t, cs, false, "", "pr-143")
 	cleanStaged(t, c)
-	c.next = func(UpdateState) time.Duration { return 20 * time.Millisecond }
+	// Each look ends by asking how long to wait for the next one. The
+	// first three are answered with no wait. The fourth closes looked and
+	// is answered with an hour, so the loop waits longer than any test
+	// runs, until shutDown.
+	var looks atomic.Int32
+	looked := make(chan struct{})
+	c.next = func(UpdateState) time.Duration {
+		switch n := looks.Add(1); {
+		case n < 4:
+			return 0
+		case n == 4:
+			close(looked)
+		}
+		return time.Hour
+	}
 	c.start()
 	c.check()
 	c.mu.Lock()
@@ -1061,20 +1102,24 @@ func TestABuildMadeOnTheMacStartsOutFollowingNothing(t *testing.T) {
 		t.Errorf("with the list read: %+v", s)
 	}
 
+	read := cs.hits.Load()
 	if err := c.Follow("main"); err != nil {
 		t.Fatal(err)
+	}
+	c.mu.Lock()
+	looking = c.looking
+	c.mu.Unlock()
+	if !looking {
+		t.Fatal("the pick did not start looking now and then")
 	}
 	s := waitFor(t, c, "ready with main", func(s UpdateState) bool { return s.Phase == "ready" && s.Next == "0.3.0-main.5" })
 	if s.Picked != "main" || s.Follows != "main" {
 		t.Errorf("ready as %+v", s)
 	}
-	read := cs.hits.Load()
-	deadline := time.Now().Add(10 * time.Second)
-	for cs.hits.Load() < read+3 {
-		if time.Now().After(deadline) {
-			t.Fatalf("after the pick it looked %d times more, and stopped", cs.hits.Load()-read)
-		}
-		time.Sleep(10 * time.Millisecond)
+	// Each look reads the list, the one the pick asked for and three more.
+	<-looked
+	if n := cs.hits.Load() - read; n < 4 {
+		t.Errorf("after the pick it looked %d times, and stopped", n)
 	}
 }
 
@@ -1118,16 +1163,9 @@ func TestShuttingDownEndsTheLooks(t *testing.T) {
 	c.ended = func() { ends.Add(1) }
 	_ = c.Follow("main")
 	waitFor(t, c, "downloading main", func(s UpdateState) bool { return s.Phase == "downloading" })
-	done := make(chan struct{})
-	go func() {
-		c.shutDown()
-		close(done)
-	}()
-	select {
-	case <-done:
-	case <-time.After(10 * time.Second):
-		t.Fatal("shutting down waited for the download")
-	}
+	// A shutDown that waited for the download, which never comes, would
+	// be ended by go test's -timeout.
+	c.shutDown()
 	c.mu.Lock()
 	checking := c.checking
 	c.mu.Unlock()

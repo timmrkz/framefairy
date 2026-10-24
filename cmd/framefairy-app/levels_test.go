@@ -6,14 +6,15 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"framefairy/engine"
 	"framefairy/internal/ffmpegtest"
 )
 
 // levelsLibrary is a library with n short episodes in it and a service
-// that measures their loudness the way the app does.
+// that measures their loudness the way the app does. The tests that use
+// it are not parallel, though they take up to a second or two, because it
+// sets HOME and XDG_CONFIG_HOME for the whole process.
 //
 // On the real disk: ffmpeg reads the episodes.
 func levelsLibrary(t *testing.T, n int) (*FrameFairy, []string, *atomic.Int64) {
@@ -51,18 +52,23 @@ func levelsLibrary(t *testing.T, n int) (*FrameFairy, []string, *atomic.Int64) {
 	return s, paths, told
 }
 
+// measured waits until the measuring of a video has ended, on the channel
+// it closes when it does, and fails the test when it did not measure the
+// video whole.
+// A measuring that is not running has ended already, because start adds
+// it before it returns.
+//
 // On the real disk: ffmpeg measures the levels from the episode on the disk.
-func measured(t *testing.T, path string) {
+func measured(t *testing.T, s *FrameFairy, path string) {
 	t.Helper()
-	deadline := time.Now().Add(20 * time.Second)
-	for {
-		if _, done := engine.LevelsReach(disk, path); done {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("%s was never measured", filepath.Base(path))
-		}
-		time.Sleep(20 * time.Millisecond)
+	s.levels.mu.Lock()
+	run := s.levels.running[path]
+	s.levels.mu.Unlock()
+	if run != nil {
+		<-run.done
+	}
+	if _, done := engine.LevelsReach(disk, path); !done {
+		t.Fatalf("%s was never measured", filepath.Base(path))
 	}
 }
 
@@ -74,7 +80,7 @@ func TestTheWaveformComesBeforeTheTranscript(t *testing.T) {
 	if _, err := s.Waveform(path, 0, 20, 200); err != nil {
 		t.Fatal(err)
 	}
-	measured(t, path)
+	measured(t, s, path)
 	peaks, err := s.Waveform(path, 0, 20, 200)
 	if err != nil {
 		t.Fatal(err)
@@ -88,13 +94,8 @@ func TestTheWaveformComesBeforeTheTranscript(t *testing.T) {
 	if len(peaks) != 200 || loud < 190 {
 		t.Errorf("%d buckets, %d of them the tone", len(peaks), loud)
 	}
-	// The interface is told after the waveform is written, so it can come
-	// a moment after the file says it is done. It came too late for a read
-	// straight after on a busy machine.
-	deadline := time.Now().Add(5 * time.Second)
-	for told.Load() == 0 && time.Now().Before(deadline) {
-		time.Sleep(5 * time.Millisecond)
-	}
+	// The interface is told after the waveform is written, and before the
+	// measuring says it has ended, so it has been told by now.
 	if told.Load() == 0 {
 		t.Error("the interface was never told the waveform grew")
 	}
@@ -141,7 +142,7 @@ func TestMeasuringUnderEverythingAtOnce(t *testing.T) {
 	}
 	for _, path := range paths[:3] {
 		s.levels.start(path)
-		measured(t, path)
+		measured(t, s, path)
 	}
 	// Removing waits for its measuring to end, so nothing is left of it
 	// that could write the folder back after this.
@@ -176,7 +177,7 @@ func TestTheWaveformAskedForIsMeasuredFirst(t *testing.T) {
 	if from, to := s.levels.lookingAt(path); from != 12 || to != 15 {
 		t.Errorf("the measuring looks at %v to %v, the clip timeline at 12 to 15", from, to)
 	}
-	measured(t, path)
+	measured(t, s, path)
 	s.levels.stop(path)
 	if from, to := s.levels.lookingAt(path); from != 0 || to != 0 {
 		t.Errorf("a stopped episode is still looked at, %v to %v", from, to)

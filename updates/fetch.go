@@ -81,6 +81,21 @@ func (s *Source) fetchOf(sum, where string, total int64) *fetching {
 	return f
 }
 
+// Arrived is closed once the build with this SHA-256 that is on its way
+// into the cache has arrived there, or failed to, whoever still waits for
+// it. With none on its way it is closed already. Nothing in the app waits
+// for a download nobody waits for, so only the tests ask.
+func (s *Source) Arrived(sum string) <-chan struct{} {
+	s.fetchMu.Lock()
+	defer s.fetchMu.Unlock()
+	if f := s.fetches[sum]; f != nil {
+		return f.done
+	}
+	done := make(chan struct{})
+	close(done)
+	return done
+}
+
 // inFlight says whether a build is on its way into the cache, so pruning
 // leaves it alone.
 func (s *Source) inFlight(sum string) bool {
