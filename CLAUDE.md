@@ -576,7 +576,8 @@ messages, pull request text, code comments and chat replies.
   same. Where the code
   under test offers only the clock, the code gains the signal. The
   linters hold it, and CI fails a wait on the clock: golangci-lint in
-  `make lint` for a Go test, a context with a deadline included, over
+  `make lint` for a Go test, a context with a deadline and a check on
+  how long something took included, over
   the whole tree, where a line that keeps the real clock on purpose says
   why on the line, and ESLint in `make interface` for a walk or an interface test,
   which passes the uses counted in `frontend/eslint-suppressions.json`.

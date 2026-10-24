@@ -1034,7 +1034,9 @@ A check that never holds is ended by `go test -timeout` in `make
 outside`, and what the app had each time it changed is in the log.
 
 The job stops after 30 minutes, so an app that hangs does not hold a Mac
-for GitHub's six hours.
+for GitHub's six hours. Each check waits on what the app says, with no
+limit of its own, so a check whose signal never comes is ended by go
+test after `OUTSIDETIMEOUT`, 2m in CI, which prints every goroutine.
 
 `make outside` builds the app as `make` does, then once more with the
 probe into `.build/outside`, so `bin/` never has it, and builds the
@@ -1123,6 +1125,7 @@ What the code takes from outside, so a test can drive it:
 | the model, the recogniser | an interface with a fake | the fake recogniser and fake llama-server in `engine/project_test.go` |
 | a program we run | its path | ffmpeg and the decoder through `FRAMEFAIRY_FRAMES` |
 | asking another program to stop | a function | `interrupt` in `engine/leftover.go`, which a test wraps to hear which servers left behind were asked |
+| a lock that has to wait | `lockWaits(path)`, called as the plan lock starts to wait for another holder | `engine/edit.go` and `engine/filelock_unix.go`, waited on through `waitsOn` in `engine/files_test.go`, which `engine/edit_test.go` uses too |
 | the end of work | a callback the caller gives, a channel closed at every change, a channel closed when the work ends, or a `sync.WaitGroup` | `emit` in `newQueue`, and `until` on `queue.changed`, `cmd/framefairy-app/jobs.go`, `changed` on the updates in `cmd/framefairy-app/updates.go`, `done` of a measuring in `cmd/framefairy-app/levels.go`, `Arrived` in `updates/fetch.go`, `clearing` in `cmd/framefairy-app/main.go`, `news` on the model host in `engine/modelhost.go`, waited on by `untilHost`, `cursors` on the episode's decoder in `engine/episodeframes.go`, waited on by `untilCursors`. A stand-in program says it is up on its output, or ends once it has said what the test reads, as in `engine/leftover_test.go` and `engine/local_test.go` |
 
 The fake clocks: `testing/synctest` in Go, whose `time.Sleep` line says
@@ -1144,8 +1147,11 @@ its first line there, `bubbleLog` in
 `cmd/framefairy-app/listen_test.go`.
 
 What CI holds of the skill's rules today: golangci-lint's `forbidigo` in
-`make lint` for the clock and for a context with a deadline in a Go test,
-over the whole tree with no old breaks let through, ESLint in `make
+`make lint` for the clock, for a context with a deadline and for a check
+on how long something took in a Go test, over the whole tree with no old
+breaks let through and the checks from outside the app read the way they
+build, on a Mac with the outside tag, `-timeout` from `OUTSIDETIMEOUT`
+in `make outside`, 2m in CI, ESLint in `make
 interface` for the clock in a walk or an interface test, with the old
 breaks in `frontend/eslint-suppressions.json`, the race detector on every
 Go test, `internal/offdisk` for a test on the real disk, and `-timeout`

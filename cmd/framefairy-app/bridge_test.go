@@ -1625,7 +1625,7 @@ func TestWalks(t *testing.T) {
 				var out bytes.Buffer
 				err := walk(ctx, node, []string{filepath.Join(walks, r.script)}, walks,
 					append(append(os.Environ(), "BRIDGE_URL="+url), r.env...), &out)
-				seconds := time.Since(began).Seconds()
+				seconds := time.Since(began).Seconds() //nolint:forbidigo // the seconds a walk took, reported, never waited on
 				tookMu.Lock()
 				took[name(r)] = seconds
 				tookMu.Unlock()

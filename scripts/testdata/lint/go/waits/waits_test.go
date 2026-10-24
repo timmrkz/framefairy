@@ -19,4 +19,7 @@ func TestWaits(t *testing.T) {
 	cancel()
 	_, cancel = context.WithDeadline(context.Background(), time.Now().Add(time.Second))
 	cancel()
+	// So is a check on how long something took.
+	_ = time.Since(time.Now()) > time.Second
+	_ = time.Until(time.Now()) < 0
 }

@@ -278,10 +278,13 @@ test to the part about the clock, each with that one rule:
 - golangci-lint, `make lint`, with only forbidigo, and only on test files,
   see `.golangci.yml`. It refuses `time.Sleep`, `time.After`, `time.Tick`,
   `time.NewTimer`, `time.NewTicker` and `time.AfterFunc`, and a context
-  with a deadline, `context.WithTimeout` and `context.WithDeadline`, by
+  with a deadline, `context.WithTimeout` and `context.WithDeadline`, and a
+  check on how long something took, `time.Since` and `time.Until`, by
   type, so `time` under another name is caught too. `time.Second` and the
   other durations are fine. It runs over the whole tree, so a line main
-  already has fails the same as a new one. The few lines that keep the
+  already has fails the same as a new one, and a second run reads
+  `internal/outside` as `GOOS=darwin` with the outside tag, the only way
+  it builds. The few lines that keep the
   real clock on purpose say why on the line, with
   `//nolint:forbidigo // why`, and the issue when there is one. The
   version is the one the Makefile pins, 2.14.0, which make

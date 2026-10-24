@@ -27,7 +27,10 @@ expect() {
 }
 
 go="cd '$fix/go' && '$golangci' run --config '$root/.golangci.yml'"
-expect 1 "forbidigo: 8" "a Go test that waits on the clock or on a deadline fails" "$go ./waits/..."
+expect 1 "forbidigo: 10" "a Go test that waits on the clock, on a deadline or on how long it took fails" "$go ./waits/..."
+# The checks from outside the app build on a Mac with the outside tag
+# only, so make lint reads them the way they build, as this does.
+expect 1 "forbidigo: 1" "a Go test behind the outside tag that waits on the clock fails" "cd '$fix/go' && GOOS=darwin '$golangci' run --config '$root/.golangci.yml' --build-tags outside ./outside/..."
 expect 0 "0 issues" "a Go test on signals or a synctest bubble passes" "$go ./signals/..."
 
 # Read as if they were a walk and a test of the interface, so the config's

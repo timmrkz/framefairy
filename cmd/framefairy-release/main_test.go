@@ -186,7 +186,7 @@ func TestTheListLeavesOutWhatNoAppWouldTake(t *testing.T) {
 	}
 	// When it was written, so the app can tell the newer of the list's two
 	// copies.
-	if age := time.Since(l.Written); l.Written.IsZero() || age < 0 || age > time.Minute {
+	if age := time.Since(l.Written); l.Written.IsZero() || age < 0 || age > time.Minute { //nolint:forbidigo // reads when the list was written, waits on nothing
 		t.Errorf("the list says it was written at %v", l.Written)
 	}
 }

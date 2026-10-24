@@ -497,8 +497,12 @@ walks: toolchain modules frontend/node_modules/.package-lock.json $(FRESH_FRAMES
 # beside it. Only on a Mac, and only in CI, because it replaces the
 # licence in the keychain. The app is built again with the probe the test
 # drives it through, into a folder of its own, so bin/ never has it. See
-# From outside the app in docs/TESTING.md.
+# From outside the app in docs/TESTING.md. Each check waits on what the
+# app says, with no limit of its own, so a check whose signal never comes
+# hangs until go test ends it after OUTSIDETIMEOUT, 2m in CI, and prints
+# every goroutine.
 OUTSIDE := $(STAMPS)/outside
+OUTSIDETIMEOUT ?= 10m
 outside: outside-allowed all
 	@rm -rf $(OUTSIDE) && mkdir -p $(OUTSIDE)
 	@cp -R $(BIN)/. $(OUTSIDE)/ && rm -rf "$(OUTSIDE)/Frame Fairy.app"
@@ -509,7 +513,7 @@ outside: outside-allowed all
 	@sh scripts/bundle-macos.sh $(OUTSIDE) $(OUTSIDE)
 	@$(GO) build -o $(OUTSIDE)/framefairy-dispenser ./cmd/framefairy-dispenser
 	@FRAMEFAIRY_OUTSIDE_APP="$(CURDIR)/$(OUTSIDE)/Frame Fairy.app" FRAMEFAIRY_OUTSIDE_DISPENSER="$(CURDIR)/$(OUTSIDE)/framefairy-dispenser" \
-		$(GO) test -tags outside -count=1 -v -timeout 10m ./internal/outside
+		$(GO) test -tags outside -count=1 -v -timeout $(OUTSIDETIMEOUT) ./internal/outside
 
 # Said before anything is built, so the refusal is the first thing read.
 outside-allowed:
@@ -535,11 +539,14 @@ interface:
 	fi
 
 # No Go test waits on the clock, see .golangci.yml, over the whole tree:
-# a line main already has fails the same as a new one.
+# a line main already has fails the same as a new one. The checks from
+# outside the app build only on a Mac with the outside tag, so they are
+# read a second time the way they build.
 GOLANGCI_LINT_VERSION := 2.14.0
 GOLANGCI_LINT := $(STAMPS)/golangci-lint-$(GOLANGCI_LINT_VERSION)/golangci-lint
 lint: toolchain modules golangci-lint
 	@out=$$($(GOLANGCI_LINT) run ./... 2>&1) || { echo "$$out"; exit 1; }
+	@out=$$(GOOS=darwin $(GOLANGCI_LINT) run --build-tags outside ./internal/outside/ 2>&1) || { echo "$$out"; exit 1; }
 	@printf 'ok  \tGo tests wait on no clock\n'
 
 # The release golangci-lint builds and checks against its own checksums,
