@@ -654,13 +654,15 @@ func TestAllAtOnce(t *testing.T) {
 
 // Deliver on the dev page answers once the webhooks that were due are
 // answered, so the buyer's letter is there when it answers. The checks
-// from outside the app read the letter right after it.
+// from outside the app read the letter right after it. The sale is made
+// at the shop itself, without the checkout page, which sends the webhook
+// on its own as well, so Deliver is the only one that sends it here.
 func TestDeliverAnswersOnceTheLetterIsSent(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t, 10)
-	resp, ref, _, err := checkout(w.client, w.base, "noor@example.com", 2)
-	if err != nil || resp.StatusCode != http.StatusSeeOther {
-		t.Fatalf("checkout: %v", err)
+	ref, err := w.d.shop.Buy("noor@example.com", 2, nonce())
+	if err != nil {
+		t.Fatal(err)
 	}
 	w.press("deliver", nil)
 	_, letters, _ := w.d.mail.read()
