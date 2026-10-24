@@ -1,12 +1,15 @@
 // ESLint holds one rule here and nothing else: a test waits on a signal,
-// never on the clock, see CLAUDE.md. It reads the walks and the
-// interface's own tests, and has no rule about style.
+// never on the clock, see CLAUDE.md. It reads the walks, the probes in
+// preview/ and preview/frames/, and the interface's own tests, and has no
+// rule about style.
 //
 // What waited on the clock before the rule was enforced is listed in
 // eslint-suppressions.json, file by file and rule by rule, so only a new
-// one fails. Taking one out is #341, and ESLint then fails until
+// one fails. Taking one out makes ESLint fail until
 // npm run lint -- --prune-suppressions shortens the list. The list only
-// ever shrinks. A clock the test controls is not the clock: Playwright's
+// ever shrinks. What it counts for the walks are reads of the clock that
+// measure, and the stalls and late answers a step puts on the app on
+// purpose. A clock the test controls is not the clock: Playwright's
 // page.clock and Vitest's vi.useFakeTimers and vi.advanceTimersByTime are
 // not touched by any rule below.
 import playwright from "eslint-plugin-playwright";
@@ -43,7 +46,7 @@ const clock = {
 
 export default [
   {
-    files: ["preview/walks/*.mjs"],
+    files: ["preview/walks/*.mjs", "preview/*.mjs", "preview/frames/*.mjs"],
     languageOptions: { ecmaVersion: "latest", sourceType: "module" },
     plugins: { playwright },
     rules: {
@@ -51,7 +54,11 @@ export default [
       "playwright/no-wait-for-timeout": "error",
       // The plugin knows a page by its name, page or frame. A walk that
       // drives a second window calls it main, so any other waitForTimeout
-      // is caught here.
+      // is caught here. A timeout or a polling handed to a wait, like
+      // waitForFunction or waitFor, is a deadline or a look on the clock,
+      // and the -timeout of make walks ends a wait that never ends, see
+      // noDeadlines in walks/bridge.mjs. Options kept in a variable, or
+      // spread in from one, are not seen here.
       "no-restricted-syntax": [
         "error",
         {
@@ -59,12 +66,23 @@ export default [
             "CallExpression[callee.property.name='waitForTimeout']:not([callee.object.name=/(^(page|frame)|(Page|Frame)$)/])",
           message: why,
         },
+        { selector: "CallExpression > ObjectExpression > Property[key.name=/^(timeout|polling)$/]", message: why },
+        { selector: "CallExpression > ObjectExpression > Property[key.value=/^(timeout|polling)$/]", message: why },
       ],
     },
   },
   {
     files: ["src/**/*.test.ts"],
     languageOptions: { parser: typescript, ecmaVersion: "latest", sourceType: "module" },
-    rules: clock,
+    rules: {
+      ...clock,
+      // Vitest's waitFor and waitUntil look again every 50 ms until a
+      // deadline of a second: a poll on the clock.
+      "no-restricted-properties": [
+        ...clock["no-restricted-properties"],
+        { object: "vi", property: "waitFor", message: why },
+        { object: "vi", property: "waitUntil", message: why },
+      ],
+    },
   },
 ];

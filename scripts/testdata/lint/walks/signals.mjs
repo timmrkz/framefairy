@@ -3,4 +3,5 @@ export async function signals(page) {
   await page.clock.install();
   await page.clock.runFor(1000);
   await page.waitForFunction(() => document.body.dataset.ready === "yes");
+  await page.locator("menu").waitFor({ state: "detached" });
 }

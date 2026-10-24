@@ -291,12 +291,18 @@ test to the part about the clock, each with that one rule:
 - ESLint, in `make interface`, see `frontend/eslint.config.js`:
   `eslint-plugin-playwright`'s `no-wait-for-timeout`, and `waitForTimeout`
   on a window of another name, `setTimeout`, `setInterval`, `Date.now`,
-  `performance.now` and Node's timers by import, in
-  `frontend/preview/walks/*.mjs` and `frontend/src/**/*.test.ts`. The uses
-  from before are counted in `frontend/eslint-suppressions.json`, ESLint's
-  own list: one more in a file fails, and so does one fewer, until
-  `npm run lint -- --prune-suppressions` in `frontend/` counts again. The
-  walks' waits are #341.
+  `performance.now` and Node's timers by import, a `timeout` or `polling`
+  handed to a wait, in the walks, `frontend/preview/walks/*.mjs`, and the
+  probes, `frontend/preview/*.mjs` and `frontend/preview/frames/*.mjs`,
+  and the same with `vi.waitFor` and `vi.waitUntil` in
+  `frontend/src/**/*.test.ts`. What is left is counted in
+  `frontend/eslint-suppressions.json`, ESLint's own list: reads of the
+  clock that measure, and the stalls a walk puts on the app on purpose.
+  One more in a file fails, and so does one fewer, until
+  `npm run lint -- --prune-suppressions` in `frontend/` counts again. No
+  walk, probe or interface test waits on the clock since #341 and #495.
+  Some walks still wait a fixed number of the browser's frames, which
+  ESLint cannot see, and #503 takes them out.
 
 A clock the test controls is not refused: Playwright's `page.clock`,
 Vitest's `vi.useFakeTimers`, and a `time.Sleep` in a `testing/synctest`

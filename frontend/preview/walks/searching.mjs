@@ -85,13 +85,23 @@ function expected(job) {
 // took to show it. The episode on screen is asked again each time too: a
 // video just added opens when the Go side has added it, which can be after
 // the walk first looked, and the walk then held the new episode's list to
-// the search of the one before.
+// the search of the one before. No video on screen is a broken rule too,
+// once the app has caught up, unless the library is empty: the walk never
+// removes one, so a list it could not find was compared with nothing.
 async function agree() {
   let problem = null;
   for (let looks = 0; looks < 24; looks++) {
     const before = await heardAll();
     const path = await episodeOn();
-    if (!path) return null;
+    if (!path) {
+      await caughtUp(page, url);
+      if (await episodeOn()) continue;
+      const library = (await ask(page, "Library")) ?? [];
+      if (!library.length) return null;
+      problem = `no video is on screen, and the library has ${library.length}`;
+      if ((await heardAll()) === before) return problem;
+      continue;
+    }
     const job = await searchOf(path);
     await caughtUp(page, url, job ? [job] : []);
     const list = await clipList(page);
