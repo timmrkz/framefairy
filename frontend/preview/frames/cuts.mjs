@@ -22,7 +22,7 @@
 // frames while paused and reads back the frame drawn for each, then seeks
 // into a cut while the clip plays.
 import { execFile } from "node:child_process";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, rename, stat } from "node:fs/promises";
 import { promisify } from "node:util";
 import { frames, framesAt, queueUntil } from "../open.mjs";
 
@@ -256,11 +256,16 @@ console.log(`late frames ${rec.stats.late}, late sound ${rec.stats.lateSound}, d
 
 // ---- The sound
 
+// Written to a part file of its own and then named, so a run stopped
+// half way, or two at once, never leave a part of it to be trusted, the
+// way the episode is made, see made in open.mjs.
 const refAt = framesAt + ".f32";
 try {
   await stat(refAt);
 } catch {
-  await run("ffmpeg", ["-v", "error", "-c:a", "libopus", "-i", framesAt, "-f", "f32le", "-ac", "1", "-ar", "48000", refAt, "-y"]);
+  const part = `${refAt}.${process.pid}.part`;
+  await run("ffmpeg", ["-v", "error", "-c:a", "libopus", "-i", framesAt, "-f", "f32le", "-ac", "1", "-ar", "48000", part, "-y"]);
+  await rename(part, refAt);
 }
 const refBytes = await readFile(refAt);
 const ref = new Float32Array(refBytes.buffer, refBytes.byteOffset, refBytes.length / 4);

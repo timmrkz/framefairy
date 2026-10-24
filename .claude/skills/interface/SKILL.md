@@ -25,13 +25,17 @@ A probe is short:
 
 ```js
 import { workspace, boxes, rows } from "./frontend/preview/open.mjs";
-const { page, stop } = await workspace({ query: "?found", scale: 2 });
+const { page, stop } = await workspace({ scale: 2 });
 // ... measure the one thing this is about ...
 await stop();
 ```
 
 `workspace()` opens an episode, puts the sidebar away, picks a clip and
-steps the playhead onto its first word. That last step is not tidiness: a
+steps the playhead onto its first word. It fails when the video preview
+shows no picture or the list has no clip to pick, rather than hand a
+probe an empty workspace to measure. `?found` and `?growing` start with
+no clips until a search lands them, so a probe of those passes
+`clip: false`. That last step is not tidiness: a
 clip begins a little before the first thing said in it, the way the engine
 cuts it, so a playhead on the clip's own start is in silence and there is
 no caption box on screen at all. Every probe about the captions would be

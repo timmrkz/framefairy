@@ -9,7 +9,7 @@
 import { chromium } from "/opt/node22/lib/node_modules/playwright/index.mjs";
 import { createServer } from "node:http";
 import { execFile, spawn } from "node:child_process";
-import { readFile, rename, stat } from "node:fs/promises";
+import { readFile, rename, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { extname, join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -51,11 +51,23 @@ const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/cs
 // Sixteen by nine, at 25 frames a second with a key frame every four
 // seconds, so a cut lands in the middle of a group of pictures the way it
 // does in a camera's file.
-async function made(file, { seconds, bits, bar, height, climb, picture, sound }) {
-  try {
-    await stat(file);
-    return file;
-  } catch {}
+//
+// Each file is made once per run, whoever asks for it first, and a file
+// kept from before is used only when it has its picture and its sound.
+// Every call of the page under /frames/ asked for the episode, and each
+// started an ffmpeg of its own on the same part file. The first to end
+// named it the episode, and the others went on writing into it, so the
+// file kept had no picture and no sound. Every probe after trusted it and
+// measured a workspace with nothing in it, issue #501. A part file of its
+// own per program keeps two probes run at once apart the same way.
+const making = new Map();
+function made(file, how) {
+  if (!making.has(file)) making.set(file, make(file, how));
+  return making.get(file);
+}
+async function make(file, { seconds, bits, bar, height, climb, picture, sound }) {
+  if (await whole(file)) return file;
+  const part = `${file}.${process.pid}.part.mp4`;
   const width = bits * bar;
   try {
     // The bars are worked out on a picture one pixel a bit and made large
@@ -77,12 +89,24 @@ async function made(file, { seconds, bits, bar, height, climb, picture, sound })
       "-g", "100", "-keyint_min", "100",
       "-c:a", "libopus", "-b:a", sound,
       "-movflags", "+faststart",
-      file + ".part.mp4", "-y",
+      part, "-y",
     ]);
-    await rename(file + ".part.mp4", file);
+    await rename(part, file);
     return file;
   } catch {
+    await rm(part, { force: true });
     return null;
+  }
+}
+
+// Whether a file kept from before has a picture and a sound.
+async function whole(file) {
+  try {
+    const { stdout } = await run("ffprobe", ["-v", "error", "-show_entries", "stream=codec_type", "-of", "csv=p=0", file]);
+    const kinds = stdout.split("\n").map((l) => l.trim());
+    return kinds.includes("video") && kinds.includes("audio");
+  } catch {
+    return false;
   }
 }
 
@@ -247,6 +271,9 @@ export async function workspace({
   // Picking a clip is what puts the caption settings and the clip panel on
   // screen. Without it half the workspace is not there to look at.
   clip = true,
+  // A probe of a video preview that shows nothing on purpose says so.
+  // Otherwise a workspace with no picture is refused, never measured.
+  picture = true,
   init = null,
   initArg = undefined,
 } = {}) {
@@ -254,6 +281,14 @@ export async function workspace({
   const { page } = open;
   await page.getByText("Mein Arm ist zersprungen").first().click();
   await settled(page);
+  // A probe that measures an empty workspace reports what is not there,
+  // issue #501. So no picture, or no clip to pick, ends it with why.
+  if (picture) {
+    const why = await page.evaluate(() =>
+      Number.isNaN(Number(document.querySelector(".screen")?.dataset.shown)) ? (window.__frameQueue?.stats.errors[0] ?? "no frame queue") : "",
+    );
+    if (why) throw new Error(`the video preview shows no picture: ${why}`);
+  }
 
   // The sidebar lies over the settings column when it is open, so it is
   // put away first or it covers half of what is being looked at.
@@ -264,19 +299,20 @@ export async function workspace({
   }
   if (clip) {
     const first = page.locator("aside .list li button.pick").first();
-    if (await first.count()) {
-      await first.click();
-      await settled(page);
-      // And onto the clip's first word. A clip starts a little before the
-      // first thing said in it, the way the engine cuts it, so a playhead
-      // sitting on the clip's own start is sitting in silence and the
-      // caption box is not on screen at all. Anything about the captions
-      // would then be measuring an empty picture. Shift and an arrow step
-      // a word, which is exactly the one step needed.
-      await page.evaluate(() => document.body.focus());
-      await page.keyboard.press("Shift+ArrowRight");
-      await settled(page);
+    if (!(await first.count())) {
+      throw new Error(`the list has no clip to pick with ${query || "no query"}. ?found and ?growing start with none until a search lands them, so pass clip: false for those`);
     }
+    await first.click();
+    await settled(page);
+    // And onto the clip's first word. A clip starts a little before the
+    // first thing said in it, the way the engine cuts it, so a playhead
+    // sitting on the clip's own start is sitting in silence and the
+    // caption box is not on screen at all. Anything about the captions
+    // would then be measuring an empty picture. Shift and an arrow step
+    // a word, which is exactly the one step needed.
+    await page.evaluate(() => document.body.focus());
+    await page.keyboard.press("Shift+ArrowRight");
+    await settled(page);
   }
 
   return open;
