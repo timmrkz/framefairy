@@ -18,9 +18,10 @@ import (
 // Each goroutine does a number of rounds, not as many as fit in some
 // seconds, so the test does the same work on any machine. The one that
 // presses Cancel waits for what it called off to stop, told by the queue,
-// so its next round finds that work stopped and carries it on. Every change
-// to a job is looked at for two searches of one episode, the moment it is
-// made, until the drive is over.
+// so its next round finds that work stopped and carries it on. A watcher
+// looks at the jobs again after every change, which may be several at
+// once. Two searches of one video stay until one of them is called off or
+// ends, so the watcher sees them, until the drive is over.
 func TestSearchesFromEverywhereAtOnce(t *testing.T) {
 	d := open(t)
 	a := d.add("a", minutes5)
@@ -96,7 +97,7 @@ func TestSearchesFromEverywhereAtOnce(t *testing.T) {
 	d.svc.jobs.mu.Unlock()
 	<-watched
 	if most > 1 {
-		t.Errorf("%d searches of one episode at once", most)
+		t.Errorf("%d searches of one video at once", most)
 	}
 	for _, j := range d.svc.Jobs() {
 		if j.State == JobRunning || j.State == JobQueued {

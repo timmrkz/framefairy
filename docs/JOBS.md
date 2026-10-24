@@ -225,9 +225,9 @@ tells whoever waits of every change, see `until` there and `wake` in
 the app quits anyway. The waits used to look at the list every 20, 50 or
 100 ms, so each took up to that much longer than the work, #394.
 
-A render called off with Cancel forgets its record in its own goroutine,
-once its work has returned and before it says it has ended, the point
-where a search called off notes that it stopped, see `runJob`. So nothing
+A render called off with Cancel forgets its record on the job's own
+goroutine, in `runJob`, once its work has returned and before it says it
+has ended, the point where a search called off notes that it stopped. So nothing
 it writes on its way out brings the record back, and the record is gone
 by the time the window hears the render ended. It was forgotten by a
 goroutine of its own that waited for the render, which told nobody when
@@ -514,7 +514,8 @@ steps from the same kind of record, see the interface skill.
 The tests in `jobs_test.go`, `lanes_test.go`, `remove_test.go`,
 `steps_test.go`, `store_test.go`, `history_test.go` and `letgo_test.go`
 never wait on the clock. They wait on `until`, with no time limit, on a job's
-news, or on the fake clock of a `testing/synctest` bubble, and a job that
+news, on the fake clock of a `testing/synctest` bubble, or on `clearing`,
+which is done once clearing a video let go has returned, and a job that
 never ends is left to `go test`'s own `-timeout`. What is left of waits
 on the clock in the other Go tests is #394.
 `TestTheQueueGoesOnTheMomentAJobStops` holds that each wait of the app

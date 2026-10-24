@@ -48,47 +48,51 @@ func (p *leaveProbe) words() []string {
 // wheel for five seconds with nothing to say the key had been heard.
 //
 // Stopping is held until Cmd+Q has answered, so an answer that waited for
-// it never comes, on a machine of any speed, and the test hangs until go
-// test's own -timeout. A bound of 50 ms on the answer measured the machine
-// as much as the app.
+// it never comes, on a machine of any speed. In the bubble every goroutine
+// is then blocked, so the test fails at once as a deadlock. A bound of
+// 50 ms on the answer measured the machine as much as the app.
 func TestCmdQAnswersAtOnceAndQuitsWhenStopped(t *testing.T) {
-	l, p := newLeaving(false)
-	hold := make(chan struct{})
-	stop := l.stop
-	l.stop = func() { <-hold; stop() }
-	l.shouldQuit()
-	if l.shouldQuit() {
-		t.Fatal("quit before anything was stopped")
-	}
-	close(hold)
-	if got := p.words(); len(got) != 2 || got[1] != "going" {
-		t.Errorf("the interface heard %v", got)
-	}
-	<-p.quit
-	if p.stopped.Load() != 1 {
-		t.Errorf("stopped %d times", p.stopped.Load())
-	}
+	synctest.Test(t, func(t *testing.T) {
+		l, p := newLeaving(false)
+		hold := make(chan struct{})
+		stop := l.stop
+		l.stop = func() { <-hold; stop() }
+		l.shouldQuit()
+		if l.shouldQuit() {
+			t.Fatal("quit before anything was stopped")
+		}
+		close(hold)
+		if got := p.words(); len(got) != 2 || got[1] != "going" {
+			t.Errorf("the interface heard %v", got)
+		}
+		<-p.quit
+		if p.stopped.Load() != 1 {
+			t.Errorf("stopped %d times", p.stopped.Load())
+		}
+	})
 }
 
 // The first Cmd+Q only asks, and the second quits. Always, whether work
 // runs or not: it asked only while work ran, so the workspace took two
 // presses and the settings page quit on the first.
 func TestTheFirstCmdQAlwaysAsks(t *testing.T) {
-	l, p := newLeaving(false)
-	if l.shouldQuit() {
-		t.Fatal("the first Cmd+Q quit")
-	}
-	if got := p.words(); len(got) != 1 || got[0] != "ask" {
-		t.Fatalf("the interface heard %v", got)
-	}
-	if p.stopped.Load() != 0 {
-		t.Fatal("the first Cmd+Q stopped everything")
-	}
-	l.shouldQuit()
-	<-p.quit
-	if got := p.words(); len(got) != 2 || got[1] != "going" {
-		t.Errorf("the interface heard %v", got)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		l, p := newLeaving(false)
+		if l.shouldQuit() {
+			t.Fatal("the first Cmd+Q quit")
+		}
+		if got := p.words(); len(got) != 1 || got[0] != "ask" {
+			t.Fatalf("the interface heard %v", got)
+		}
+		if p.stopped.Load() != 0 {
+			t.Fatal("the first Cmd+Q stopped everything")
+		}
+		l.shouldQuit()
+		<-p.quit
+		if got := p.words(); len(got) != 2 || got[1] != "going" {
+			t.Errorf("the interface heard %v", got)
+		}
+	})
 }
 
 // A second Cmd+Q long after the first asks again.
@@ -107,21 +111,25 @@ func TestALateSecondCmdQAsksAgain(t *testing.T) {
 // Closing the app's window quits without asking: there is no window left to
 // press Cmd+Q into a second time.
 func TestClosingTheWindowQuitsWithoutAsking(t *testing.T) {
-	l, p := newLeaving(false)
-	l.closing()
-	l.shouldQuit()
-	<-p.quit
+	synctest.Test(t, func(t *testing.T) {
+		l, p := newLeaving(false)
+		l.closing()
+		l.shouldQuit()
+		<-p.quit
+	})
 }
 
 // Relaunch on the Updates page quits into the new build without asking: it
 // was asked for with a click, and the question would stand in its way.
 func TestRelaunchQuitsWithoutAsking(t *testing.T) {
-	l, p := newLeaving(true)
-	l.shouldQuit()
-	<-p.quit
-	if got := p.words(); len(got) != 1 || got[0] != "going" {
-		t.Errorf("the interface heard %v", got)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		l, p := newLeaving(true)
+		l.shouldQuit()
+		<-p.quit
+		if got := p.words(); len(got) != 1 || got[0] != "going" {
+			t.Errorf("the interface heard %v", got)
+		}
+	})
 }
 
 // Cmd+Q pressed again and again while the app stops stops it once and
@@ -153,20 +161,22 @@ func TestCmdQPressedOverAndOverStopsOnce(t *testing.T) {
 // asks again. The second press counted though the question had gone, so
 // Cmd+Q on one page, Escape, and Cmd+Q on the next quit at once.
 func TestCmdQAfterTheQuestionWasTakenAwayAsksAgain(t *testing.T) {
-	l, p := newLeaving(false)
-	l.shouldQuit()
-	l.stay()
-	if l.shouldQuit() {
-		t.Fatal("quit")
-	}
-	if got := p.words(); len(got) != 2 || got[1] != "ask" {
-		t.Fatalf("the interface heard %v", got)
-	}
-	if p.stopped.Load() != 0 {
-		t.Fatal("stopped everything")
-	}
-	// Once on its way out, taking the question away changes nothing.
-	l.shouldQuit()
-	l.stay()
-	<-p.quit
+	synctest.Test(t, func(t *testing.T) {
+		l, p := newLeaving(false)
+		l.shouldQuit()
+		l.stay()
+		if l.shouldQuit() {
+			t.Fatal("quit")
+		}
+		if got := p.words(); len(got) != 2 || got[1] != "ask" {
+			t.Fatalf("the interface heard %v", got)
+		}
+		if p.stopped.Load() != 0 {
+			t.Fatal("stopped everything")
+		}
+		// Once on its way out, taking the question away changes nothing.
+		l.shouldQuit()
+		l.stay()
+		<-p.quit
+	})
 }
