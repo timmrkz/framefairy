@@ -62,6 +62,7 @@ Start with [README.md](README.md). In short:
 | build | `Makefile`, `scripts/` | [docs/BUILD.md](docs/BUILD.md) |
 | interface tests | `frontend/preview/`, `cmd/framefairy-app/bridge_test.go` | [docs/TESTING.md](docs/TESTING.md) |
 | how every test is written | `*_test.go`, `*.test.ts`, `frontend/preview/walks/` | [the testing skill](.claude/skills/testing/SKILL.md), and where it meets this repository in [docs/TESTING.md](docs/TESTING.md#the-testing-skill-in-this-project) |
+| how a pull request is reviewed | | [the review skill](.claude/skills/review/SKILL.md), and where it meets this repository in [docs/WORKFLOW.md](docs/WORKFLOW.md#the-review-skill-in-this-project) |
 | shipping | not yet | [docs/PACKAGING.md](docs/PACKAGING.md) |
 | open work | | [issues](https://github.com/timmrkz/framefairy/issues), and the history in [docs/GUI-PLAN.md](docs/GUI-PLAN.md) |
 
@@ -190,8 +191,11 @@ Start with [README.md](README.md). In short:
 - **Every pull request is reviewed by an agent, without being asked.**
   When the session that owns the pull request has done all the work it
   set out to do, it asks a dedicated review agent to review the pull
-  request. That agent is a new one that did none of the work, as section
-  13 of the [testing skill](.claude/skills/testing/SKILL.md) says. It
+  request. That agent is a new one that did none of the work, and it
+  reviews the way the [review skill](.claude/skills/review/SKILL.md)
+  says: whether the work serves the people using the app first, then the
+  code. Its brief carries Tim's own messages, the issue and the goals
+  under The project above, never the session's summary of them. It
   comes once, not after every push and not after the first. A review
   after later rounds of work is Tim's to ask for.
   - The agent writes its review to a file outside the checkout. It is

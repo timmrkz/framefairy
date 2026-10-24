@@ -575,14 +575,11 @@ never a scanner of our own:
 
 ## 13. Review and handing over
 
-- **An independent review, once the work is done.** When the agent doing
-  the work has done all it set out to do, a separate review agent that
-  did none of it reads the design and the tests with fresh eyes, without
-  waiting for CI. It comes once, and a review after later rounds is the
-  user's to ask for. It gets the user's own findings too. It breaks
-  the code to see the tests fail, and looks for a test that passes by
+- **An independent review, once the work is done.** The review skill
+  says who reviews, when and what for. Of the tests, the reviewer breaks
+  the code to see them fail, and looks for a test that passes by
   coincidence, a test that checks code against a copy of its own rule,
-  and a wait on time. Every finding is answered, fixed or argued.
+  and a wait on time.
 - **Review your own work for design first.** A change of thousands of
   lines that is still broken is a sign the design is wrong. Ask why it
   needs so much code.
