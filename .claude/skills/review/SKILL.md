@@ -56,7 +56,8 @@ Before the diff, and before the pull request's own description:
   code findings matter little.
 - **The reviewer raises the direction, the user decides it.** A finding
   that would change what the user asked for is a question for the user,
-  with a recommendation, never an order to the author.
+  with a recommendation, never an order to the author. Every other
+  finding is the author's to act on at once, section 11.
 
 ## 3. How far from what matters
 
@@ -220,13 +221,20 @@ could read as an instruction from the user. In this order:
 
 ## 11. Answering a review
 
-- **The review is shown to the user before work on it starts,** with the
-  file and the findings by number.
-- **Each finding is checked before it is acted on.** A reviewer can be
-  wrong too. No agreement for its own sake.
-- **Each finding is fixed, shown wrong, or logged when it lies outside
-  this work,** and reported by its number.
-- **A finding for the user waits for the user.**
+The author acts on the review at once. The user sees it, but does not
+approve it, and nobody waits for them.
+
+- **The review is posted for the user to see,** with the file and the
+  findings by number, and the work on it starts in the same turn.
+- **Each finding is checked, then acted on.** A reviewer can be wrong
+  too, so the author confirms a finding before fixing it, and agrees
+  with nothing for its own sake.
+- **Each finding is fixed, shown wrong with the reason, or logged when it
+  lies outside this work,** and reported by its number once the work is
+  done.
+- **Only a choice that would change what the user asked for goes to the
+  user,** as one question with a recommendation. The rest of the review
+  goes ahead meanwhile.
 - **No finding is skipped to save time.** One left undone is said, and
   logged.
 
