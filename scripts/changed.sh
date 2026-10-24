@@ -162,7 +162,7 @@ for file in $changed; do
 		lint_rules=1
 		read_by_tests "$file"
 		;;
-	frontend/preview/walks/* | frontend/preview/wails-bridge.ts | frontend/preview/bridge.config.ts | frontend/preview/vite.config.ts)
+	frontend/preview/walks/* | frontend/preview/wails-bridge.ts | frontend/preview/settled.ts | frontend/preview/standing.ts | frontend/preview/bridge.config.ts | frontend/preview/vite.config.ts)
 		interface=1
 		walks=1
 		read_by_tests "$file"

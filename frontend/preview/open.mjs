@@ -13,6 +13,9 @@ import { readFile, rename, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { extname, join, resolve } from "node:path";
 import { promisify } from "node:util";
+import { noDeadlines, pageUntil } from "./walks/bridge.mjs";
+
+export { pageUntil };
 
 const run = promisify(execFile);
 const dist = resolve(import.meta.dirname, "dist");
@@ -215,12 +218,13 @@ export async function screen({
   // the video preview draws the way it does in the app, see screen.ts.
   const browser = await chromium.launch({ args: ["--enable-unsafe-webgpu", ...args] });
   const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: scale });
+  noDeadlines(page);
   // A probe that reports nothing because the page threw is worse than no
   // probe at all, so anything thrown is printed.
   page.on("pageerror", (e) => console.log("pageerror", String(e)));
   if (init) await page.addInitScript(init, initArg);
   await page.goto(`http://127.0.0.1:${at}/${path}${query}`);
-  await page.waitForTimeout(700);
+  await settled(page);
 
   return {
     page,
@@ -249,20 +253,20 @@ export async function workspace({
   const open = await screen({ query, width, height, scale, init, initArg });
   const { page } = open;
   await page.getByText("Mein Arm ist zersprungen").first().click();
-  await page.waitForTimeout(1100);
+  await settled(page);
 
   // The sidebar lies over the settings column when it is open, so it is
   // put away first or it covers half of what is being looked at.
   if (await page.evaluate(() => document.querySelector("aside")?.classList.contains("open"))) {
     await page.locator("aside .head .glyph").click();
     await page.mouse.move(width / 2, height / 2);
-    await page.waitForTimeout(400);
+    await settled(page);
   }
   if (clip) {
     const first = page.locator("aside .list li button.pick").first();
     if (await first.count()) {
       await first.click();
-      await page.waitForTimeout(800);
+      await settled(page);
       // And onto the clip's first word. A clip starts a little before the
       // first thing said in it, the way the engine cuts it, so a playhead
       // sitting on the clip's own start is sitting in silence and the
@@ -271,7 +275,7 @@ export async function workspace({
       // a word, which is exactly the one step needed.
       await page.evaluate(() => document.body.focus());
       await page.keyboard.press("Shift+ArrowRight");
-      await page.waitForTimeout(400);
+      await settled(page);
     }
   }
 
@@ -343,8 +347,38 @@ export async function frames({ query = "", width = 900, height = 520 } = {}) {
     page: "preview/frames/index.html",
     args: ["--autoplay-policy=no-user-gesture-required"],
   });
-  await open.page.waitForFunction(() => window.__ready, null, { timeout: 20000 });
-  const ready = await open.page.evaluate(() => window.__ready);
+  const ready = await open.page.evaluate(() => window.__opened);
   if (ready !== true) throw new Error(`the frame queue did not open: ${ready}`);
   return open;
+}
+
+// Until the app has nothing on its way, its calls, its timers of a second
+// or less and what moves on the page, see preview/settled.ts, and the
+// picture on the video preview stands, see __standing in
+// preview/standing.ts. Each is heard from the page when it ends, never
+// looked at again and again. The frame queue's own page has no app, so
+// there it is only the picture.
+export async function settled(page) {
+  await page.evaluate(() => window.__settled?.(false));
+  await page.evaluate(() => window.__standing());
+}
+
+// Until the frame queue of the frame queue's own page reports something
+// that until says yes to, run in the page with arg and the report, and
+// says that report. The last report already made is asked first.
+export function queueUntil(page, until, arg) {
+  return page.evaluate(
+    ([source, arg]) =>
+      new Promise((done) => {
+        const holds = new Function(`return (${source})`)();
+        const last = window.__drawn[window.__drawn.length - 1];
+        if (last && holds(last, arg)) return done(last);
+        const off = window.__queue.listen((s) => {
+          if (!holds(s, arg)) return;
+          off();
+          done(s);
+        });
+      }),
+    [until.toString(), arg],
+  );
 }

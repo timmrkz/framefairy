@@ -768,7 +768,7 @@ export class CaptionLayers {
         if (lift.done) this.more();
       };
       lift.tick = requestAnimationFrame(step);
-    });
+    }).finally(() => this.took(2));
   }
 
   // The word put back, by a move to another frame, a play, or another ask.
@@ -812,6 +812,26 @@ export class CaptionLayers {
     });
   }
   private restWaiters: (() => void)[] = [];
+
+  // Settles once n answers of the Go side have been taken in since the
+  // layers were made: each layer, those called off too, and the two parts
+  // of a lifted word, which count as two once both are in. For the tests,
+  // which give the answers themselves and wait on this rather than on the
+  // clock.
+  taken(n: number): Promise<void> {
+    return new Promise((done) => {
+      if (this.answers >= n) done();
+      else this.takers.push({ n, done });
+    });
+  }
+  private answers = 0;
+  private takers: { n: number; done: () => void }[] = [];
+  private took(k: number) {
+    this.answers += k;
+    const due = this.takers.filter((t) => this.answers >= t.n);
+    this.takers = this.takers.filter((t) => this.answers < t.n);
+    for (const t of due) t.done();
+  }
 
   private settleRest() {
     if (this.busy || this.soon.some((a) => !this.kept.has(a.key))) return;
@@ -922,6 +942,7 @@ export class CaptionLayers {
           this.drawAgain();
         }
         this.more();
-      });
+      })
+      .finally(() => this.took(1));
   }
 }
