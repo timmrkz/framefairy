@@ -8,7 +8,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/spf13/afero"
 
@@ -187,26 +186,20 @@ func TestCancellingAQueuedJobNeverRunsIt(t *testing.T) {
 		ran <- "second"
 		return "", nil
 	})
-	select {
-	case <-running:
-	case <-time.After(5 * time.Second):
-		t.Fatal("the first job never started")
-	}
+	<-running
 	q.cancel(second.ID)
 	close(release)
 
-	select {
-	case name := <-ran:
-		if name != "first" {
-			t.Fatalf("%s ran", name)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("the first job never finished")
+	if name := <-ran; name != "first" {
+		t.Fatalf("%s ran", name)
 	}
+	// Once the goroutines of both jobs are done, the second can no longer
+	// run, so whatever it ran is in ran by now.
+	q.until(func(jobs []*Job) bool { return !slices.ContainsFunc(jobs, func(j *Job) bool { return j.alive }) }, nil)
 	select {
 	case name := <-ran:
 		t.Fatalf("the cancelled job ran as %s", name)
-	case <-time.After(300 * time.Millisecond):
+	default:
 	}
 
 	states := map[string]string{}
@@ -239,12 +232,8 @@ func TestAFailedJobKeepsItsReason(t *testing.T) {
 	})
 	seen := map[string]Job{}
 	for len(seen) < 2 {
-		select {
-		case job := <-done:
-			seen[job.Episode] = job
-		case <-time.After(5 * time.Second):
-			t.Fatalf("only %d job(s) reported: %v", len(seen), seen)
-		}
+		job := <-done
+		seen[job.Episode] = job
 	}
 	if seen["a.mp4"].State != JobFailed || seen["a.mp4"].Error != "no model on this machine" {
 		t.Errorf("failed job %+v", seen["a.mp4"])

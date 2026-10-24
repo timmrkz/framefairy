@@ -62,6 +62,7 @@ jobs:
       interface: ${{ github.event_name != 'pull_request' || steps.filter.outputs.interface == 'true' }}
       workflows: ${{ github.event_name != 'pull_request' || steps.filter.outputs.workflows == 'true' }}
       changed: ${{ github.event_name != 'pull_request' || steps.filter.outputs.changed == 'true' }}
+      image: ${{ github.event_name != 'pull_request' || steps.filter.outputs.image == 'true' }}
     steps:
       - if: github.event_name == 'pull_request'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -94,15 +95,30 @@ jobs:
 
   # Builds everything, the interface included, which is what proves the
   # programs still link and that Go can embed what make built.
+  #
+  # On every pull request, for the checks of the rules, unless the image
+  # it needs failed. In the CI image when the app changed, so the build
+  # waits on no mirror. A change that leaves the app alone runs the checks
+  # on the runner as it is, since they need none of what the image has,
+  # and a container given no image is none. The image is public, so no
+  # job logs in to pull it.
   build:
-    needs: changes
+    needs: [changes, image]
+    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.image.result != 'failure' }}
     runs-on: ubuntu-24.04
+    defaults:
+      run:
+        shell: bash -e {0}
+    container: ${{ needs.changes.outputs.app == 'true' && needs.image.outputs.ref || '' }}
     steps:
       # Two commits, for the main the merge commit sits on, which the
       # clock lint and the check of the plan compare against.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
+      # In the image the job runs as root, and the checkout is the
+      # runner's user's, see the walks.
+      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       # Node for the check of the CI rules, which matches with the
       # picomatch the action uses, and for the build.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -154,21 +170,6 @@ jobs:
       - name: Check what make changed runs
         if: needs.changes.outputs.app == 'true' || needs.changes.outputs.changed == 'true'
         run: sh scripts/changed-test.sh
-      # The packages apt downloaded, kept for a week and for this job's
-      # list, so a run downloads only what changed. See ci-packages.sh.
-      - id: week
-        if: needs.changes.outputs.app == 'true'
-        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
-      - if: needs.changes.outputs.app == 'true'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/apt
-          key: apt-build-${{ steps.week.outputs.week }}-${{ hashFiles('scripts/ci-packages.sh') }}
-          restore-keys: apt-build-
-      - name: System packages
-        if: needs.changes.outputs.app == 'true'
-        timeout-minutes: 10
-        run: sh scripts/ci-packages.sh patchelf
       # make tidies go.mod and go.sum quietly, so a change that leaves them
       # untidy builds everywhere and is committed that way. This says so,
       # before make has had the chance to tidy them.
@@ -240,15 +241,28 @@ jobs:
   # a name without one, so the machines are linux (A-AR+B-O) and the
   # others when they run, and one linux when they are skipped. The step
   # shard turns each into its pattern.
+  #
+  # In the CI image, see ci-image.yml, as the walks are and for the same
+  # reasons, so no machine waits on the Ubuntu mirror. A change to the
+  # image starts it too, since the tests then run on another machine, but
+  # not the job macos, which does not run in it.
   linux:
-    needs: changes
-    if: needs.changes.outputs.go == 'true'
+    needs: [changes, image]
+    if: needs.changes.outputs.go == 'true' || needs.changes.outputs.image == 'true'
     name: linux
     strategy:
       fail-fast: false
       matrix:
         tests: [A-AR+B-O, AS-AZ+P-S, rest]
     runs-on: ubuntu-24.04
+    defaults:
+      run:
+        shell: bash -e {0}
+    container:
+      image: ${{ needs.image.outputs.ref }}
+      options: --init
+      volumes:
+        - /home/runner/work:/home/runner/work
     steps:
       - id: shard
         env:
@@ -265,32 +279,28 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
+      # The checkout is the runner's user's and the job runs as root, see
+      # the walks.
+      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: false
+      # make checks for npm before it builds anything, and the image has
+      # no Node, which a runner has.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
       # Go's build cache, kept by main after every push, see above the job
-      # linux.
+      # linux. v2 since the job runs in the image, see the walks.
       - id: gocache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: go-v1-linux-${{ runner.os }}-${{ steps.shard.outputs.flags }}-${{ github.sha }}
-          restore-keys: go-v1-linux-${{ runner.os }}-${{ steps.shard.outputs.flags }}-
-      # The packages apt downloaded, kept for a week and for this job's
-      # list, so a run downloads only what changed. See ci-packages.sh.
-      - id: week
-        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/apt
-          key: apt-linux-${{ steps.week.outputs.week }}-${{ hashFiles('scripts/ci-packages.sh') }}
-          restore-keys: apt-linux-
-      - name: System packages
-        timeout-minutes: 10
-        run: sh scripts/ci-packages.sh ffmpeg meson ninja-build nasm
+          key: go-v2-linux-${{ runner.os }}-${{ steps.shard.outputs.flags }}-${{ github.sha }}
+          restore-keys: go-v2-linux-${{ runner.os }}-${{ steps.shard.outputs.flags }}-
       # The episode's decoder, which the tests and the walks play through,
       # built against the ffmpeg we ship, see docs/VIDEO-PREVIEW.md. That
       # ffmpeg is built once and kept until scripts/build-ffmpeg.sh
@@ -326,6 +336,7 @@ jobs:
       # on what a failed test had left running, until it was cancelled by
       # hand.
       - name: Go tests
+        id: tests
         timeout-minutes: 15
         run: |
           make unit UNITFLAGS='${{ steps.shard.outputs.flags }}' 2>&1 | tee unit.log
@@ -337,66 +348,35 @@ jobs:
       - name: Nothing left running
         if: always()
         run: sh scripts/leftovers.sh
-      - if: always() && (github.ref == 'refs/heads/main' || steps.gocache.outputs.cache-matched-key == '')
+      # Only after the tests ran to their end, whether or not they passed,
+      # since they built everything either way: a job that stopped before
+      # them, or was cancelled during them, has built little, and its cache
+      # would be found first by every run after.
+      - if: ${{ !cancelled() && steps.tests.outcome != 'skipped' && (github.ref == 'refs/heads/main' || steps.gocache.outputs.cache-matched-key == '') }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: go-v1-linux-${{ runner.os }}-${{ steps.shard.outputs.flags }}-${{ github.sha }}
+          key: go-v2-linux-${{ runner.os }}-${{ steps.shard.outputs.flags }}-${{ github.sha }}
 
-  # The machine the walks run on, .github/ci-image/Dockerfile: Ubuntu with
-  # every system package they use and Playwright's Chromium already in it,
-  # so no walks job downloads from the Ubuntu mirror, which on some days
-  # held one for twelve minutes, #462. It is kept in GitHub's container
-  # registry under a sum of what goes into it: the Dockerfile,
-  # scripts/ci-packages.sh, which it runs, and the version of Playwright
-  # the interface pins. So nearly every run only asks the registry whether
-  # that image is there, and builds and pushes one only when one of them
-  # changed. The step that builds stops after ten minutes, as the system
-  # packages of the other jobs do.
+  # The machine the walks and the Linux Go jobs run on, see
+  # .github/workflows/ci-image.yml, which finds it or builds it. Whenever
+  # any of them runs: linux and fuzz wait on it, and a job whose need was
+  # skipped is skipped too. scripts/changed.sh starts the Go jobs and not
+  # the app, and a change to the image starts app.
   image:
     needs: changes
-    if: needs.changes.outputs.app == 'true'
-    runs-on: ubuntu-24.04
+    if: needs.changes.outputs.app == 'true' || needs.changes.outputs.go == 'true'
     permissions:
       contents: read
       packages: write
-    outputs:
-      ref: ${{ steps.tag.outputs.ref }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          sparse-checkout: |
-            .github/ci-image/Dockerfile
-            scripts/ci-packages.sh
-            frontend/package-lock.json
-          sparse-checkout-cone-mode: false
-      - id: tag
-        run: |
-          playwright=$(jq -r '.packages["node_modules/playwright"].version' frontend/package-lock.json)
-          sum=$({ echo "playwright $playwright"; cat .github/ci-image/Dockerfile scripts/ci-packages.sh; } | sha256sum | cut -c1-16)
-          echo "playwright=$playwright" >> "$GITHUB_OUTPUT"
-          echo "ref=ghcr.io/${GITHUB_REPOSITORY}-ci:$sum" >> "$GITHUB_OUTPUT"
-      - name: The image, unless it is there
-        timeout-minutes: 10
-        env:
-          REF: ${{ steps.tag.outputs.ref }}
-          PLAYWRIGHT: ${{ steps.tag.outputs.playwright }}
-          TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          echo "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          if docker buildx imagetools inspect "$REF" >/dev/null 2>&1; then
-            echo "$REF is there"
-            exit 0
-          fi
-          docker buildx build --push --build-arg PLAYWRIGHT="$PLAYWRIGHT" \
-            -t "$REF" -f .github/ci-image/Dockerfile .
+    uses: ./.github/workflows/ci-image.yml
 
   # The interface in Chromium against the real Go side: the sequences of
   # the cases found by hand and the walks, see docs/TESTING.md. It needs
   # what the Go tests need, the interface's Node, and the Chromium
-  # Playwright drives, all of it in the image the job image keeps, which
+  # Playwright drives, all of it in the image ci-image.yml keeps, which
   # the job runs in.
   #
   # On four machines, each with a quarter of the runs by how long they took
@@ -415,8 +395,10 @@ jobs:
   # would not fit the 64 MB a container has, and with an init process,
   # which Playwright asks for too, so what Chromium leaves behind is
   # reaped. The runners' work folder is also where it is on the machine,
-  # because the ffmpeg we ship comes from the cache the job linux fills
-  # there, and its pkg-config files name the folder it was built in.
+  # because the ffmpeg we ship comes from a cache the job linux filled
+  # when it still ran on a runner, and its pkg-config files name the
+  # folder it was built in there. The next one is built in the image, and
+  # then the mount can go, here and in linux.
   walks:
     needs: [changes, image]
     if: needs.changes.outputs.app == 'true'
@@ -426,9 +408,6 @@ jobs:
       matrix:
         shard: [1/4, 2/4, 3/4, 4/4]
     runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      packages: read
     # A container runs a step with sh, where ${PIPESTATUS[0]} is no word.
     # bash as a runner has it, without pipefail, so a walk that fails still
     # reaches the step that names it.
@@ -437,9 +416,6 @@ jobs:
         shell: bash -e {0}
     container:
       image: ${{ needs.image.outputs.ref }}
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
       options: --init --ipc=host
       volumes:
         - /home/runner/work:/home/runner/work
@@ -473,9 +449,8 @@ jobs:
       # The episode's decoder, which the tests and the walks play through,
       # built against the ffmpeg we ship, see docs/VIDEO-PREVIEW.md. That
       # ffmpeg is built once and kept until scripts/build-ffmpeg.sh
-      # changes, by the job linux, whose cache this only reads: one built
-      # here would name this container's folders, which the machines of
-      # linux do not have. The tests still take the system's ffmpeg from
+      # changes, by the job linux, whose cache this only reads, so one
+      # machine builds it and not five. The tests still take the system's ffmpeg from
       # the PATH, because ours has no H.264 encoder on Linux, see
       # TOOLS_FIRST.
       - id: ffmpeg
@@ -520,15 +495,28 @@ jobs:
   # the last one stopped instead of finding the same easy inputs again, and
   # does not build every package before it starts. What a pull request
   # finds is not saved, because a cache a pull request writes is its own.
+  #
+  # In the CI image, as the job linux is. The nightly fuzzing runs in it
+  # too, because the two share the cache, which keeps a path by where it
+  # lies, see the walks: v2 since they moved there together.
   fuzz:
-    needs: changes
-    if: needs.changes.outputs.go == 'true'
+    needs: [changes, image]
+    if: needs.changes.outputs.go == 'true' || needs.changes.outputs.image == 'true'
     runs-on: ubuntu-24.04
+    defaults:
+      run:
+        shell: bash -e {0}
+    container:
+      image: ${{ needs.image.outputs.ref }}
+      options: --init
     steps:
       # Two commits, for the main the merge commit sits on.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
+      # The checkout is the runner's user's and the job runs as root, see
+      # the walks.
+      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
@@ -538,26 +526,20 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: fuzz-v1-${{ runner.os }}-${{ github.sha }}
-          restore-keys: fuzz-v1-${{ runner.os }}-
-      # The packages apt downloaded, kept for a week and for this job's
-      # list, so a run downloads only what changed. See ci-packages.sh.
-      - id: week
-        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+          key: fuzz-v2-${{ runner.os }}-${{ github.sha }}
+          restore-keys: fuzz-v2-${{ runner.os }}-
+      # make checks for npm before it builds anything, and the image has
+      # no Node, which a runner has.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          path: ~/.cache/apt
-          key: apt-fuzz-${{ steps.week.outputs.week }}-${{ hashFiles('scripts/ci-packages.sh') }}
-          restore-keys: apt-fuzz-
-      - name: System packages
-        timeout-minutes: 10
-        run: sh scripts/ci-packages.sh
+          node-version: 22
       # The licence dispenser's simulation is fuzzed at night only, see
       # SIMTIME in scripts/fuzz.sh. Its known seeds run in the job linux.
       # On a pull request only the targets of the packages the change
       # reaches, as make changed fuzzes them, see scripts/changed.sh,
       # compared with main.
       - name: Fuzz
+        id: fuzz
         run: |
           if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
             targets=$(BASE=HEAD^1 sh scripts/changed.sh --fuzz-targets)
@@ -569,13 +551,16 @@ jobs:
           else
             make fuzz SIMTIME=0
           fi
-      - if: always() && github.ref == 'refs/heads/main'
+      # Only after the fuzzing ran to its end: a job that stopped before it,
+      # or was cancelled during it, has built little, and its cache would be
+      # found first by every run after.
+      - if: ${{ !cancelled() && steps.fuzz.outcome != 'skipped' && github.ref == 'refs/heads/main' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: fuzz-v1-${{ runner.os }}-${{ github.sha }}
+          key: fuzz-v2-${{ runner.os }}-${{ github.sha }}
 
   # The Go tests on Tim's platform, against the ffmpeg we ship, built by
   # the same script a release uses, so what renders here is what renders
@@ -649,7 +634,7 @@ jobs:
       - name: Nothing left running
         if: always()
         run: sh scripts/leftovers.sh
-      - if: always() && (github.ref == 'refs/heads/main' || steps.gocache.outputs.cache-matched-key == '')
+      - if: ${{ !cancelled() && (github.ref == 'refs/heads/main' || steps.gocache.outputs.cache-matched-key == '') }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |

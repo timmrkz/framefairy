@@ -492,6 +492,19 @@ function sentence(e: unknown): string {
   return text[0].toUpperCase() + text.slice(1) + ".";
 }
 
+// The queues not closed, oldest first, for the walks: window.__frameQueue
+// is the newest of them, the one on the video preview, and the newest made
+// once all are closed. A workspace that went to sleep made a queue after
+// the one on screen and closed it, and the walks then listened to a queue
+// that was closed, see the walk speed.mjs, which counted presses whose
+// frame showed as never shown.
+const opened: FrameQueue[] = [];
+let newest: FrameQueue | undefined;
+Object.defineProperty(globalThis, "__frameQueue", {
+  configurable: true,
+  get: () => opened[opened.length - 1] ?? newest,
+});
+
 export class FrameQueue {
   // Settles once the file is read and the decoders are set up, and fails
   // with the reason in a sentence when the file cannot be played here.
@@ -525,6 +538,12 @@ export class FrameQueue {
   // and size last asked for again, see sharpen.
   private sized = false;
   private sharpened = "";
+  // The frame and size said in the log to have come blurred, once, and
+  // the frame said to have been asked for again. A window edge dragged
+  // with the video paused asks for the same frame again at every size it
+  // passes, and only the first is written down, so the log keeps room.
+  private blurTold = "";
+  private sharpenTold = -1;
   // Settled the first time the canvas is told its size. No frame is asked
   // for before: a frame is decoded at the canvas's size, and a canvas
   // nobody has sized is 300 by 150. The first frame of every workspace was
@@ -587,6 +606,9 @@ export class FrameQueue {
   // the newest ask of the Go side's frames made when it was put up.
   private putFor = -1;
   private shownAsked = 0;
+  // The ticket of the newest seek, cue or play that has said how it went,
+  // see report and standing.
+  private toldFor = -1;
   private shown: { frame: Picture; run: number; rank: number } | null = null;
   // The sound card's time at which the program's sample m0 is played.
   private c0: number | null = null;
@@ -638,8 +660,9 @@ export class FrameQueue {
     this.canvas = canvas;
     this.known = woken;
     this.given = movie;
-    // For the walks, which listen to what it plays, see the sequences.
-    (globalThis as unknown as { __frameQueue?: FrameQueue }).__frameQueue = this;
+    // For the walks, which listen to what it plays, see opened.
+    opened.push(this);
+    newest = this;
     this.laidOut = new Promise((done) => (this.sizeKnown = done));
     this.ready = this.open().catch((e) => {
       throw new Error(sentence(e));
@@ -756,6 +779,27 @@ export class FrameQueue {
   listen(fn: (s: Shown) => void): () => void {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);
+  }
+
+  // Whether the picture standing still is the one the queue leaves there:
+  // the newest seek or cue has said how it went, and its frame is at the
+  // canvas's size or was asked for at it once already, see sharpen. A
+  // queue just opened stands only once its first seek has said how it
+  // went, so the first frame is waited for too. A seek that put up no
+  // frame, the file could not be read, stands with none. A queue that
+  // plays has no picture standing still to wait for, and says true. Each
+  // time it comes true the listeners are told, or the canvas has changed
+  // its size, or the queue has closed, which tells no one: the video
+  // preview it belonged to has gone or has a queue of its own by then. For the walks and the
+  // benchmark, which read the picture once it stands, see stillBlurred in
+  // walks/rules.mjs. It needs the app's own timers to run, the one after
+  // a frame is put up that asks for it again among them, see put.
+  get standing(): boolean {
+    if (this.closed || (this.state !== "paused" && this.state !== "cued")) return true;
+    if (this.toldFor !== this.ticket) return false;
+    if (!this.shown || this.sharp(this.shown.frame)) return true;
+    const { width, height } = this.previewSize();
+    return this.sharpened === `${this.shown.rank} ${width} ${height}`;
   }
 
   private get program(): Program {
@@ -909,7 +953,11 @@ export class FrameQueue {
         else if (last && at === last.end) void this.still(at, Math.max(last.start, at - this.video!.frame));
         else void this.still(at);
       },
-      () => {},
+      // The file could not be read: the seek says so with no frame, so
+      // the picture stands, see standing.
+      () => {
+        if (ticket === this.ticket && !this.closed) this.report();
+      },
     );
   }
 
@@ -1056,6 +1104,7 @@ export class FrameQueue {
   close() {
     if (this.closed) return;
     this.closed = true;
+    opened.splice(opened.indexOf(this), 1);
     this.idler?.port1.close();
     // A queue closed before its canvas had a size stops waiting for one.
     this.sizeKnown();
@@ -1112,11 +1161,24 @@ export class FrameQueue {
   // again and again.
   private sharpen() {
     if (this.closed || (this.state !== "paused" && this.state !== "cued") || !this.shown) return;
-    if (this.sharp(this.shown.frame)) return;
+    const f = this.shown.frame;
+    if (this.sharp(f)) return;
     const { width, height } = this.previewSize();
     const key = `${this.shown.rank} ${width} ${height}`;
-    if (key === this.sharpened) return;
+    if (key === this.sharpened) {
+      // Asked for again at this size and come back at another, once the
+      // ask has said how it went: it stays as it came.
+      if (this.toldFor === this.ticket && this.blurTold !== key) {
+        this.blurTold = key;
+        this.trace(`frame ${this.shown.rank} came again at ${f.width}x${f.height}, not the ${width}x${height} asked for, and stays`);
+      }
+      return;
+    }
     this.sharpened = key;
+    if (this.sharpenTold !== this.shown.rank) {
+      this.sharpenTold = this.shown.rank;
+      this.trace(`frame ${this.shown.rank} is up at ${f.width}x${f.height}, asked for again at the canvas's ${width}x${height}`);
+    }
     this.seek(this.at);
   }
 
@@ -1147,6 +1209,8 @@ export class FrameQueue {
   }
 
   private report(drew = false, passing = false) {
+    // A frame passing is put up on the way to the one asked for.
+    if (!passing) this.toldFor = this.ticket;
     const playing = this.state === "playing" || this.state === "starting";
     // A play that stopped lets the cards' frames be read again, see
     // AppFrames.paused.
@@ -1324,6 +1388,11 @@ export class FrameQueue {
     }
     if (asked !== this.ticket || this.closed) return;
     const ticket = ++this.ticket;
+    // A still given up on with no newer seek to take its place still says
+    // how it went, with no frame, or the picture would never stand.
+    const gaveUp = () => {
+      if (ticket === this.ticket && !this.closed) this.report();
+    };
     const slot = this.slots[0];
     this.release(slot);
     const s = this.video!.samples;
@@ -1334,7 +1403,7 @@ export class FrameQueue {
     // Already on screen, at the canvas's size: nothing to decode. What
     // lies over it may be another clip's still, see over.
     if (this.shown && this.shown.rank === feed.rank && this.sharp(this.shown.frame)) {
-      if (dressed && !(await dressed)) return;
+      if (dressed && !(await dressed)) return gaveUp();
       this.putFor = ticket;
       this.at = at;
       this.paint(true);
@@ -1344,7 +1413,7 @@ export class FrameQueue {
     slot.run = { id: -1 - ticket, key: feed.key, last: feed.last, kFirst: 0, kLast: 0, lastRank: feed.rank };
     slot.firstRank = feed.rank;
     for (let i = feed.key; i <= feed.last; i++) {
-      if (ticket !== this.ticket || slot.decoder.state !== "configured") return;
+      if (ticket !== this.ticket || slot.decoder.state !== "configured") return gaveUp();
       const ts = stamp(0, s.pts[i] / s.timescale);
       slot.fed.set(ts, s.rank[i]);
       const holds = s.rank[i] === feed.rank;
@@ -1353,12 +1422,12 @@ export class FrameQueue {
     try {
       await slot.decoder.flush();
     } catch {
-      return;
+      return gaveUp();
     }
     if (ticket !== this.ticket) return;
     // The frame waits for what lies over it, and a seek made meanwhile
     // takes the decoder and closes what it holds.
-    if (dressed && !(await dressed)) return;
+    if (dressed && !(await dressed)) return gaveUp();
     const got = slot.ready.findIndex((h) => h.rank === feed.rank);
     let drew = false;
     if (got >= 0) {

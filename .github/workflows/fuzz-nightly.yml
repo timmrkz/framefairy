@@ -26,11 +26,31 @@ permissions:
   contents: read
 
 jobs:
+  image:
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/ci-image.yml
+
+  # In the CI image, as the job fuzz of ci.yml is, whose cache this shares.
+  # One of the targets is in the app's package, so the fuzzing compiles
+  # it, and that needs GTK and WebKit, which the image has. Without them
+  # make stopped before fuzzing anything, every night.
   linux:
+    needs: image
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash -e {0}
+    container:
+      image: ${{ needs.image.outputs.ref }}
+      options: --init
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The checkout is the runner's user's and the job runs as root, see
+      # the walks in ci.yml.
+      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
@@ -40,24 +60,17 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: fuzz-v1-${{ runner.os }}-${{ github.sha }}
-          restore-keys: fuzz-v1-${{ runner.os }}-
-      # One of the targets is in the app's package, so the fuzzing compiles
-      # it, and that needs GTK and WebKit, as the job fuzz of ci.yml does.
-      # Without them make stopped before fuzzing anything, every night.
-      - id: week
-        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+          key: fuzz-v2-${{ runner.os }}-${{ github.sha }}
+          restore-keys: fuzz-v2-${{ runner.os }}-
+      # make checks for npm before it builds anything, and the image has
+      # no Node, which a runner has.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          path: ~/.cache/apt
-          key: apt-fuzz-${{ steps.week.outputs.week }}-${{ hashFiles('scripts/ci-packages.sh') }}
-          restore-keys: apt-fuzz-
-      - name: System packages
-        timeout-minutes: 10
-        run: sh scripts/ci-packages.sh
+          node-version: 22
       # 600 histories of 400 steps, about a minute on one core while the
       # others fuzz the rest.
       - name: Fuzz
+        id: fuzz
         run: make fuzz FUZZTIME=30s SIMTIME=600x
       # Go writes an input that crashed into the target's testdata/fuzz/,
       # where git sees it as new.
@@ -73,13 +86,14 @@ jobs:
           name: crashers
           path: ${{ runner.temp }}/crashers
           retention-days: 30
-      - if: always()
+      # Only after the fuzzing ran to its end, see the job fuzz of ci.yml.
+      - if: ${{ !cancelled() && steps.fuzz.outcome != 'skipped' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: fuzz-v1-${{ runner.os }}-nightly-${{ github.run_id }}
+          key: fuzz-v2-${{ runner.os }}-nightly-${{ github.run_id }}
 
   # The two targets about paths, on the disk a customer has.
   macos:
@@ -112,7 +126,7 @@ jobs:
           name: crashers-macos
           path: ${{ runner.temp }}/crashers
           retention-days: 30
-      - if: always()
+      - if: ${{ !cancelled() }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |

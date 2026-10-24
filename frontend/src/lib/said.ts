@@ -73,7 +73,7 @@ export function said(text: string, how: Said = {}) {
 }
 
 // A walk waits for the app's timers but not for this one, which only
-// writes the log, see preview/wails-bridge.ts.
+// writes the log, see preview/settled.ts.
 (write as unknown as { logOnly: boolean }).logOnly = true;
 
 function write() {

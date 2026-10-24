@@ -162,7 +162,7 @@ for file in $changed; do
 		lint_rules=1
 		read_by_tests "$file"
 		;;
-	frontend/preview/walks/* | frontend/preview/wails-bridge.ts | frontend/preview/bridge.config.ts | frontend/preview/vite.config.ts)
+	frontend/preview/walks/* | frontend/preview/wails-bridge.ts | frontend/preview/settled.ts | frontend/preview/standing.ts | frontend/preview/bridge.config.ts | frontend/preview/vite.config.ts)
 		interface=1
 		walks=1
 		read_by_tests "$file"
@@ -233,6 +233,12 @@ for file in $changed; do
 		*/builds.yml | */publish.yml) build_rules=1 ;;
 		*/main-moved.yml) moved_rules=1 ;;
 		esac
+		;;
+	# Every Linux job of CI runs in the CI image, so a change to it is a
+	# change to the machine every test runs on.
+	.github/ci-image/*)
+		build=1
+		all_go=1
 		;;
 	.github/*) ;;
 	*)

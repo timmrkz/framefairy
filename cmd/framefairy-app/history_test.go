@@ -3,9 +3,9 @@ package main
 import (
 	"context"
 	"path/filepath"
+	"slices"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/spf13/afero"
 
@@ -323,9 +323,15 @@ func TestThumbnailsAreSavedAndUndone(t *testing.T) {
 // once the job is over, which is how the button never saw its own render.
 func TestARenderSaysWhatItIsOfFromTheStart(t *testing.T) {
 	svc, mine, plan := anEpisodeWithAPlan(t)
+	// Another render holds the lane, so this one is still waiting for its
+	// turn when it is called off, and never fails first on a video that
+	// is not one.
+	_, release, err := svc.jobs.lanes.take(context.Background(), LaneRendering, plainTurn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
 	job := svc.Render(mine, engine.RenderRequest{Plan: plan, Clips: []string{"01"}})
-	// Called off, the render takes its record with it once it has stopped,
-	// and that is waited for before the test's folder goes.
 	defer calledOff(t, svc, mine, job.ID)
 	if job.Plan != plan || len(job.Clips) != 1 || job.Clips[0] != "01" {
 		t.Fatalf("the render is of %q %v", job.Plan, job.Clips)
@@ -337,23 +343,21 @@ func TestARenderSaysWhatItIsOfFromTheStart(t *testing.T) {
 	}
 }
 
-// calledOff presses Cancel on a job and waits until it has stopped and its
-// record is gone.
+// calledOff presses Cancel on a render and checks that its record is gone
+// by the time the job says it has stopped: the window offers Render again
+// from that moment, and a record left behind would say Interrupted after
+// a restart. It then waits for the job's goroutine to be done, before the
+// test's library goes.
 func calledOff(t *testing.T, svc *FrameFairy, path, id string) {
 	t.Helper()
 	svc.CancelJob(id)
-	deadline := time.Now().Add(20 * time.Second)
-	for time.Now().Before(deadline) {
-		running := false
-		for _, j := range svc.Jobs() {
-			if j.ID == id && (j.State == JobQueued || j.State == JobRunning) {
-				running = true
-			}
-		}
-		if !running && len(engine.ReadJobs(svc.store.files, path)) == 0 {
-			return
-		}
-		time.Sleep(20 * time.Millisecond)
+	svc.jobs.until(func(jobs []*Job) bool {
+		return !slices.ContainsFunc(jobs, func(j *Job) bool { return j.ID == id && j.going() })
+	}, nil)
+	if recs := engine.ReadJobs(svc.store.files, path); len(recs) != 0 {
+		t.Errorf("the render called off says it has stopped, and its record %s is still there", recs[0].ID)
 	}
-	t.Error("the job called off never stopped")
+	svc.jobs.until(func(jobs []*Job) bool {
+		return !slices.ContainsFunc(jobs, func(j *Job) bool { return j.ID == id && j.alive })
+	}, nil)
 }

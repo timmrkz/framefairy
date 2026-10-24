@@ -249,7 +249,7 @@ func (s *FrameFairy) letGoOfRemoved() {
 		s.jobs.closeEpisode(ep)
 		s.levels.stop(ep)
 		s.forget(ep)
-		go s.clearLetGo(ep)
+		s.clearing.Go(func() { s.clearLetGo(ep) })
 	}
 }
 

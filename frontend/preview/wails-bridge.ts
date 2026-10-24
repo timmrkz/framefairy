@@ -3,6 +3,7 @@
 // A call is a POST to /call, and what the Go side tells the interface
 // comes as server-sent events on /events. Nothing here knows what any
 // call or event means: that is the Go side's, which is the point of it.
+import { callOut } from "./settled";
 
 type Listener = (ev: { data: unknown }) => void;
 const listeners = new Map<string, Set<Listener>>();
@@ -10,103 +11,6 @@ const listeners = new Map<string, Set<Listener>>();
 // The calls made and how each ended, for a walk to read.
 const calls: { name: string; args: unknown[]; failed?: string }[] = [];
 (window as any).__calls = calls;
-// What the app still has on its way after a step, so a walk can wait
-// until it is done before it compares the screen with the engine: the
-// calls out, the timers set to fire in a moment, and what moves on the
-// page for a moment. __settled answers when none is left, woken by the
-// call coming back, the timer firing or being cleared and the movement
-// ending, never by looking again and again.
-//
-// The calls that only write the app's log are left out: they change
-// nothing on screen. So is the timer that writes the log, see said.ts.
-// A timer counts when it is to fire within a second: a clip timeline
-// that loads its view when a swipe has stopped, a frame put up without
-// its captions when they are late, a workspace shown once it has had its
-// second to be built. Longer ones are how long something stays on
-// screen, a toast or a Copied, which a walk turns on itself with
-// holdClock. A movement counts the same way: a row sliding open or a clip
-// timeline gliding to its view, not the shimmer over a place waiting to
-// be filled, which moves for good.
-const SOON = 1000;
-const logOnly = new Set(["Said", "Acted"]);
-let out = 0;
-let back = 0;
-const soon = new Set<unknown>();
-let faked = false;
-let woken: (() => void)[] = [];
-function wake() {
-  const now = woken;
-  woken = [];
-  for (const fn of now) fn();
-}
-
-const arm = window.setTimeout.bind(window);
-const disarm = window.clearTimeout.bind(window);
-window.setTimeout = ((fn: TimerHandler, ms = 0, ...args: unknown[]) => {
-  if (faked || typeof fn !== "function" || ms > SOON || (fn as any).logOnly) return arm(fn, ms, ...args);
-  const id = arm(
-    (...given: unknown[]) => {
-      soon.delete(id);
-      fn(...given);
-      wake();
-    },
-    ms,
-    ...args,
-  );
-  soon.add(id);
-  return id;
-}) as typeof window.setTimeout;
-window.clearTimeout = ((id?: number) => {
-  if (soon.delete(id)) queueMicrotask(wake);
-  disarm(id);
-}) as typeof window.clearTimeout;
-
-// Playwright's fake clock, put in while the page is open, takes the place
-// of these two for the app, and keeps them for its own timers, which run
-// it as fast as the real one and are cleared where this never sees it.
-// So the walk stops counting then, see fakeClock in walks/bridge.mjs: the
-// app's timers are the fake clock's from then on, which a walk turns on
-// itself. After a load the fake clock comes first, with the browser's
-// own timers, and these wrap what it gives the app.
-(window as any).__forgetSoon = () => {
-  faked = true;
-  soon.clear();
-  wake();
-};
-
-const moving = () =>
-  document.getAnimations().filter((a) => {
-    const end = Number(a.effect?.getComputedTiming().endTime);
-    return a.playState === "running" && Number.isFinite(end) && end <= SOON;
-  });
-
-// Answers once nothing is on its way. When nothing is, it lets two of the
-// browser's frames go by, so a call the app makes as it draws is out by
-// then, and answers if nothing came or came back in between, or looks
-// again. The
-// frames are the browser's own, kept before a fake clock comes, see
-// fakeClock. While the app's time is held, held, its timers fire only
-// when the walk turns the clock on, so they are not waited for.
-(window as any).__settled = (held: boolean) =>
-  new Promise<void>((done) => {
-    const frame: (fn: () => void) => void = (window as any).__real?.frame ?? requestAnimationFrame;
-    const busy = () => out > 0 || (!held && soon.size > 0);
-    const look = () => {
-      if (busy()) {
-        woken.push(look);
-        return;
-      }
-      const going = moving();
-      if (going.length) {
-        Promise.all(going.map((a) => a.finished.catch(() => {}))).then(look);
-        return;
-      }
-      const seen = back;
-      frame(() => frame(() => (back === seen && !busy() && !moving().length ? done() : look())));
-    };
-    look();
-  });
-
 // Settled once the interface is listening, so a walk asks for a mark only
 // when the interface can hear it, after a reload too.
 let opened = () => {};
@@ -204,8 +108,7 @@ export const Call = {
     const now = calling.filter((w) => w.match(call));
     calling = calling.filter((w) => !now.includes(w));
     for (const w of now) w.done();
-    const counted = !logOnly.has(call.name);
-    if (counted) out++;
+    const back = callOut(call.name);
     let answer: Response;
     let body: string;
     try {
@@ -216,11 +119,7 @@ export const Call = {
       });
       body = await answer.text();
     } finally {
-      if (counted) {
-        out--;
-        back++;
-        wake();
-      }
+      back();
     }
     if (!answer.ok) {
       call.failed = body.trim();

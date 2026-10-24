@@ -3,9 +3,9 @@ package main
 import (
 	"context"
 	"math"
+	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"framefairy/engine"
 )
@@ -21,20 +21,19 @@ func (d *desk) madeByHand(path string) []ClipEntry {
 	return out
 }
 
-// waitFor waits until a job is over and hands back how it ended.
+// waitFor waits until a job is over, told by the queue the moment it is,
+// and hands back how it ended.
 func (d *desk) waitFor(id string) Job {
 	d.t.Helper()
-	deadline := time.Now().Add(60 * time.Second)
-	for time.Now().Before(deadline) {
-		for _, j := range d.svc.jobs.list() {
-			if j.ID == id && j.State != JobQueued && j.State != JobRunning {
-				return j
-			}
+	var ended Job
+	d.svc.jobs.until(func(jobs []*Job) bool {
+		i := slices.IndexFunc(jobs, func(j *Job) bool { return j.ID == id && !j.going() })
+		if i >= 0 {
+			ended = *jobs[i]
 		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	d.t.Fatalf("job %s never ended", id)
-	return Job{}
+		return i >= 0
+	}, nil)
+	return ended
 }
 
 // I and O pressed while a search is still finding make their clips there
@@ -46,7 +45,7 @@ func TestPathClipsMadeByHandWhileASearchFinds(t *testing.T) {
 	d.model.hangs(true)
 	asked := d.model.asking()
 	ep := d.add("hand", minutes5)
-	within(t, asked, "the first search asking the model")
+	<-asked
 
 	var jobs []Job
 	for _, press := range []struct {
@@ -106,7 +105,7 @@ func TestPathClosedWhileAClipIsHeard(t *testing.T) {
 	}
 	hearing := d.speech.hearing()
 	j := d.in(ep, 250)
-	within(t, hearing, "hearing for the clip")
+	<-hearing
 	d.close()
 	given := d.speech.seconds()
 
