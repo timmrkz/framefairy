@@ -1144,10 +1144,13 @@ its first line there, `bubbleLog` in
 `cmd/framefairy-app/listen_test.go`.
 
 What CI holds of the skill's rules today: golangci-lint's `forbidigo` in
-`make lint` and ESLint in `make interface` for the clock in a test, with
-the old breaks in `frontend/eslint-suppressions.json` and `--new-from-rev`
-for Go, the race detector on every Go test, and `internal/offdisk` for a
-test on the real disk. What it does not hold yet, skipped tests, polls
-with a deadline, mutation testing and a check a pull request cannot
-weaken, is #475. What is left of waits on the clock is #394, in the Go
-tests.
+`make lint` for the clock and for a context with a deadline in a Go test,
+over the whole tree with no old breaks let through, ESLint in `make
+interface` for the clock in a walk or an interface test, with the old
+breaks in `frontend/eslint-suppressions.json`, the race detector on every
+Go test, `internal/offdisk` for a test on the real disk, and `-timeout`
+from `UNITTIMEOUT` in `make unit`, 4m in CI, which ends a test whose signal
+never comes. What it does not hold yet, skipped tests, polls with a
+deadline that use no clock call, mutation testing and a check a pull
+request cannot weaken, is #475. The product's own timers set short and
+left to run on the real clock are #510.

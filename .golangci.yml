@@ -1,10 +1,11 @@
 # One rule and no other: a test waits on a signal, never on the clock,
-# see CLAUDE.md. forbidigo refuses the clock in test files only. make lint
-# runs it with --new-from-rev, so a wait from before #445 passes until #394
-# takes it out, and a new or changed line fails. time.Second and the other
-# durations are allowed, and so is a fake clock a test drives. A line in a
+# see CLAUDE.md. forbidigo refuses the clock in test files only, over the
+# whole tree: a sleep, a timer or a ticker, and a context with a deadline,
+# which is a timer by another name. time.Second and the other durations
+# are allowed, and so is a fake clock a test drives. A line in a
 # testing/synctest bubble, whose clock is fake, says
-# //nolint:forbidigo // synctest bubble.
+# //nolint:forbidigo // synctest bubble. A line that keeps the real clock
+# on purpose says why on the line, and names its issue when it has one.
 version: "2"
 linters:
   default: none
@@ -16,6 +17,9 @@ linters:
         - pattern: ^time\.(Sleep|After|Tick|NewTimer|NewTicker|AfterFunc)$
           pkg: ^time$
           msg: a test waits on a signal, never on the clock, see CLAUDE.md
+        - pattern: ^context\.(WithTimeout|WithDeadline|WithTimeoutCause|WithDeadlineCause)$
+          pkg: ^context$
+          msg: a test waits on a signal, never on the clock, and a deadline is a clock, see CLAUDE.md
   exclusions:
     rules:
       - path-except: _test\.go$

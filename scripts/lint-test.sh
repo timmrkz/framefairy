@@ -27,7 +27,7 @@ expect() {
 }
 
 go="cd '$fix/go' && '$golangci' run --config '$root/.golangci.yml'"
-expect 1 "forbidigo: 6" "a Go test that waits on the clock fails" "$go ./waits/..."
+expect 1 "forbidigo: 8" "a Go test that waits on the clock or on a deadline fails" "$go ./waits/..."
 expect 0 "0 issues" "a Go test on signals or a synctest bubble passes" "$go ./signals/..."
 
 # Read as if they were a walk and a test of the interface, so the config's

@@ -571,12 +571,14 @@ messages, pull request text, code comments and chat replies.
   busy one, so the test fails now and then, and the waits that are long
   enough add up to minutes of CI. Work is counted in steps, not in
   milliseconds. A test that would hang is ended by `go test`'s own
-  `-timeout`, which shows every goroutine. The walks are held to the
+  `-timeout`, which shows every goroutine, after `UNITTIMEOUT` in `make
+  unit`, 4m in CI. The walks are held to the
   same. Where the code
   under test offers only the clock, the code gains the signal. The
-  linters hold it, and CI fails a new wait on the clock: golangci-lint in
-  `make lint` for a Go test, which passes only the lines main already
-  has, and ESLint in `make interface` for a walk or an interface test,
+  linters hold it, and CI fails a wait on the clock: golangci-lint in
+  `make lint` for a Go test, a context with a deadline included, over
+  the whole tree, where a line that keeps the real clock on purpose says
+  why on the line, and ESLint in `make interface` for a walk or an interface test,
   which passes the uses counted in `frontend/eslint-suppressions.json`.
   A clock the test controls is no clock to them: Playwright's
   `page.clock`, Vitest's fake timers, and a `time.Sleep` in a

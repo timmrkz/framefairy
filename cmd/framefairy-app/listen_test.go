@@ -43,7 +43,7 @@ func (m *playingMicrophone) start(heard func([]float32)) error {
 					select {
 					case <-m.stopped:
 						return
-					case <-time.After(100 * time.Millisecond):
+					case <-time.After(100 * time.Millisecond): //nolint:forbidigo // the live microphone the walks talk into, at the speed of speech. No test waits on it
 					}
 				}
 				heard(samples[at:min(at+engine.SampleRate/10, len(samples))])

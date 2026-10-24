@@ -441,10 +441,16 @@ test: unit fuzz interface walks lint
 # UNITPKGS names the packages to test, every one unless it says. On a pull
 # request CI names the ones make changed picks, see the job linux in
 # ci.yml, and when that is none, no test runs.
+#
+# UNITTIMEOUT is how long one package's tests may take before go test
+# ends them and prints every goroutine. A test waits on signals and never
+# on the clock, so one whose signal never comes hangs until then. Go's own
+# ten minutes here, and CI sets 4m, under its five-minute jobs.
 RACE ?= -race
 UNITSKIP ?=
 UNITFLAGS ?=
 UNITPKGS ?= ./...
+UNITTIMEOUT ?= 10m
 unit: toolchain modules $(FRESH_FRAMES)
 	@pkgs='$(strip $(UNITPKGS))'; \
 	if [ -n "$$pkgs" ] && [ -n '$(UNITSKIP)' ]; then \
@@ -453,7 +459,7 @@ unit: toolchain modules $(FRESH_FRAMES)
 	fi; \
 	if [ -z "$$pkgs" ]; then echo "no Go package to test"; exit 0; fi; \
 	PATH="$(TOOLS_FIRST)" FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" \
-		$(GO) test $(RACE) $(if $(UNITFLAGS),'$(UNITFLAGS)') -ldflags '$(LDFLAGS)' $$pkgs
+		$(GO) test $(RACE) -timeout $(UNITTIMEOUT) $(if $(UNITFLAGS),'$(UNITFLAGS)') -ldflags '$(LDFLAGS)' $$pkgs
 
 # The fuzzing runs without the race detector: it is the same code, many more
 # times over.
@@ -528,14 +534,12 @@ interface:
 		printf 'ok  \tinterface waits on no clock\n'; \
 	fi
 
-# No Go test waits on the clock, see .golangci.yml. Only the lines that
-# are new against main fail: HEAD^1 in CI, whose pull request is a merge
-# commit on main, and where the branch left origin/main here.
+# No Go test waits on the clock, see .golangci.yml, over the whole tree:
+# a line main already has fails the same as a new one.
 GOLANGCI_LINT_VERSION := 2.14.0
 GOLANGCI_LINT := $(STAMPS)/golangci-lint-$(GOLANGCI_LINT_VERSION)/golangci-lint
-LINTBASE ?= $(if $(GITHUB_ACTIONS),HEAD^1,$(shell git merge-base HEAD origin/main 2>/dev/null || echo HEAD))
 lint: toolchain modules golangci-lint
-	@out=$$($(GOLANGCI_LINT) run --new-from-rev=$(LINTBASE) ./... 2>&1) || { echo "$$out"; exit 1; }
+	@out=$$($(GOLANGCI_LINT) run ./... 2>&1) || { echo "$$out"; exit 1; }
 	@printf 'ok  \tGo tests wait on no clock\n'
 
 # The release golangci-lint builds and checks against its own checksums,
