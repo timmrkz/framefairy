@@ -1,22 +1,22 @@
 package engine
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strconv"
-	"strings"
+	"slices"
+	"sync"
 	"testing"
-	"time"
 
 	"framefairy/internal/standin"
 )
 
 // leftover starts a stand-in for a llama-server that outlived its app: a
 // script that runs until it is interrupted, with the arguments a real one
-// is started with.
+// is started with. done is closed once it has ended.
 type standingServer struct {
 	cmd  *exec.Cmd
 	done chan struct{}
@@ -30,16 +30,30 @@ func leftover(t *testing.T, args ...string) *standingServer {
 	}
 	dir := t.TempDir()
 	script := filepath.Join(dir, "llama-server")
-	body := "#!/bin/sh\ntrap 'exit 0' INT TERM\nwhile true; do sleep 0.05; done\n"
+	// It says it is up once it runs, with its command line and the
+	// interrupt it stops on. Until then ps sees the program that started
+	// it, and the app would take it for somebody else's.
+	body := "#!/bin/sh\ntrap 'exit 0' INT TERM\necho up\nwhile true; do sleep 0.05; done\n"
 	if err := standin.Write(script, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	cmd := exec.Command(script, args...)
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	// One goroutine waits for it, and everything else asks that one.
 	s := &standingServer{cmd: cmd, done: make(chan struct{})}
+	line, err := bufio.NewReader(out).ReadString('\n')
+	if err != nil || line != "up\n" {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		t.Fatalf("the stand-in said %q, %v", line, err)
+	}
+	// One goroutine waits for it, and everything else asks that one. It
+	// starts once the line is read, since Wait closes the pipe.
 	go func() {
 		_ = cmd.Wait()
 		close(s.done)
@@ -48,15 +62,28 @@ func leftover(t *testing.T, args ...string) *standingServer {
 		_ = cmd.Process.Kill()
 		<-s.done
 	})
-	// Until the system shows its command line, ps sees the program that
-	// started it, and the app would take it for somebody else's. The
-	// tests slept 100 ms for it and hoped.
-	want := strings.Join(args, " ")
-	waitFor(t, func() bool {
-		out, err := exec.Command("ps", "-p", strconv.Itoa(cmd.Process.Pid), "-o", "args=").Output()
-		return err == nil && strings.Contains(string(out), want)
-	})
 	return s
+}
+
+// asked records the servers the app asks to stop, by process number, and
+// still asks them.
+func asked(t *testing.T) func() []int {
+	t.Helper()
+	var mu sync.Mutex
+	var pids []int
+	was := interrupt
+	interrupt = func(proc *os.Process) error {
+		mu.Lock()
+		pids = append(pids, proc.Pid)
+		mu.Unlock()
+		return was(proc)
+	}
+	t.Cleanup(func() { interrupt = was })
+	return func() []int {
+		mu.Lock()
+		defer mu.Unlock()
+		return slices.Clone(pids)
+	}
 }
 
 // On the real disk: the note is read by the next program to start.
@@ -80,15 +107,6 @@ func gone(t *testing.T) int {
 	return cmd.Process.Pid
 }
 
-func exited(s *standingServer, within time.Duration) bool {
-	select {
-	case <-s.done:
-		return true
-	case <-time.After(within):
-		return false
-	}
-}
-
 // A server a run that has gone left running is stopped when the app
 // starts, and its note goes.
 //
@@ -102,9 +120,8 @@ func TestALeftoverServerIsStopped(t *testing.T) {
 	if !StopLeftoverServer() {
 		t.Fatal("the server left behind was not stopped")
 	}
-	if !exited(cmd, 3*time.Second) {
-		t.Error("the server left behind is still running")
-	}
+	// A server that is still running hangs here until go test's -timeout.
+	<-cmd.done
 	if _, err := os.Stat(noteFile(dir, pid)); !os.IsNotExist(err) {
 		t.Error("the note is still there")
 	}
@@ -120,11 +137,12 @@ func TestAServerInUseIsLeftAlone(t *testing.T) {
 	pid := cmd.cmd.Process.Pid
 	// Owned by this test, which is running.
 	noteServer(serverNote{PID: pid, Port: 41234, Model: "/models/gemma.gguf"})
+	stops := asked(t)
 	if StopLeftoverServer() {
 		t.Error("a server in use was stopped")
 	}
-	if exited(cmd, 300*time.Millisecond) {
-		t.Error("a server in use ended")
+	if slices.Contains(stops(), pid) {
+		t.Error("a server in use was asked to stop")
 	}
 	if _, err := os.Stat(noteFile(dir, pid)); err != nil {
 		t.Error("the note of a server in use was taken away")
@@ -142,9 +160,9 @@ func TestEveryServerKeepsItsOwnNote(t *testing.T) {
 	if !StopLeftoverServer() {
 		t.Fatal("nothing was stopped")
 	}
-	if !exited(cli, 3*time.Second) || !exited(app, 3*time.Second) {
-		t.Error("a server left behind is still running")
-	}
+	// A server that is still running hangs here until go test's -timeout.
+	<-cli.done
+	<-app.done
 }
 
 // A model whose path has a space in it is still the same model.
@@ -156,9 +174,8 @@ func TestAModelPathWithASpaceIsFound(t *testing.T) {
 	if !StopLeftoverServer() {
 		t.Fatal("the server left behind was not stopped")
 	}
-	if !exited(cmd, 3*time.Second) {
-		t.Error("the server left behind is still running")
-	}
+	// A server that is still running hangs here until go test's -timeout.
+	<-cmd.done
 }
 
 // The one note of the versions before a note had an owner is still read,
@@ -176,9 +193,8 @@ func TestTheNoteOfAnOlderVersionIsRead(t *testing.T) {
 	if !StopLeftoverServer() {
 		t.Fatal("the server left behind was not stopped")
 	}
-	if !exited(cmd, 3*time.Second) {
-		t.Error("the server left behind is still running")
-	}
+	// A server that is still running hangs here until go test's -timeout.
+	<-cmd.done
 	if _, err := os.Stat(old); !os.IsNotExist(err) {
 		t.Error("the old note is still there")
 	}
@@ -190,11 +206,12 @@ func TestSomebodyElsesProcessIsLeftAlone(t *testing.T) {
 	noteIn(t)
 	cmd := leftover(t, "-m", "/models/other.gguf", "--port", "41234")
 	noteServer(serverNote{PID: cmd.cmd.Process.Pid, Port: 41234, Model: "/models/gemma.gguf", Owner: gone(t)})
+	stops := asked(t)
 	if StopLeftoverServer() {
 		t.Error("a process that is not the server was stopped")
 	}
-	if exited(cmd, 300*time.Millisecond) {
-		t.Error("a process that is not the server ended")
+	if slices.Contains(stops(), cmd.cmd.Process.Pid) {
+		t.Error("a process that is not the server was asked to stop")
 	}
 }
 

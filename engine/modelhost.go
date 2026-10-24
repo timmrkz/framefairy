@@ -5,6 +5,8 @@ import (
 	"errors"
 	"sync"
 	"time"
+
+	"framefairy/internal/wake"
 )
 
 // ---------------------------------------------------------------------------
@@ -75,9 +77,15 @@ type hostedModel struct {
 var host struct {
 	mu    sync.Mutex
 	model *hostedModel
-	// changed is closed and made again whenever the model is let go of,
-	// stopped or loaded, so whoever waits for it looks again.
-	changed chan struct{}
+	// changed wakes whoever waits for the model whenever it is let go of,
+	// stopped or loaded, so they look again.
+	changed wake.Wake
+	// news wakes a test on every change to the host, an ask that starts
+	// waiting, joins a load or lets go included, so the test goes on when
+	// that happens rather than after a guess at the time. changed is not
+	// told of those, since an ask woken by another ask starting to wait
+	// would only wait again, and two asks would wake each other forever.
+	news wake.Wake
 	// down ends every load under way when the app stops the models.
 	down    context.Context
 	stopAll context.CancelFunc
@@ -87,7 +95,7 @@ var host struct {
 	// KeepModel, empty for none.
 	kept string
 	// waiting is how many asks wait for the model in use to be let go
-	// of, which a test waits for instead of guessing how long it takes.
+	// of, which a test waits for on news.
 	waiting int
 	// idled is called by an idle timer once it has decided whether the
 	// model goes, so a test waits for that rather than for the clock.
@@ -95,14 +103,13 @@ var host struct {
 }
 
 func init() {
-	host.changed = make(chan struct{})
 	host.down, host.stopAll = context.WithCancel(context.Background())
 }
 
 // changedLocked wakes whoever waits on the model. host.mu is held.
 func changedLocked() {
-	close(host.changed)
-	host.changed = make(chan struct{})
+	host.changed.WakeLocked()
+	host.news.WakeLocked()
 }
 
 func loaded(h *hostedModel) bool {
@@ -205,6 +212,7 @@ func (e *Engine) hold(ctx context.Context, m LocalModel, size int, logDir string
 			return e.load(ctx, m, size, logDir, release)
 		case h.model == m.Model && h.size >= size:
 			h.users++
+			host.news.WakeLocked()
 			if h.idle != nil {
 				h.idle.Stop()
 				h.idle = nil
@@ -239,8 +247,9 @@ func (e *Engine) hold(ctx context.Context, m LocalModel, size int, logDir string
 		default:
 			// Another model in use or on its way. This ask waits for it to
 			// be let go of rather than load a second one beside it.
-			wait := host.changed
+			wait := host.changed.WaitLocked()
 			host.waiting++
+			host.news.WakeLocked()
 			host.mu.Unlock()
 			select {
 			case <-wait:
@@ -248,6 +257,7 @@ func (e *Engine) hold(ctx context.Context, m LocalModel, size int, logDir string
 			}
 			host.mu.Lock()
 			host.waiting--
+			host.news.WakeLocked()
 			host.mu.Unlock()
 			if ctx.Err() != nil {
 				return "", nil, ctx.Err()
@@ -312,6 +322,7 @@ func (h *hostedModel) let(keep time.Duration, search bool) {
 	host.mu.Lock()
 	defer host.mu.Unlock()
 	h.users--
+	host.news.WakeLocked()
 	if h.users > 0 {
 		return
 	}
