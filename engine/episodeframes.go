@@ -716,6 +716,7 @@ func (f *EpisodeFrames) Captions(ctx context.Context, captions framewire.Caption
 	if c == nil || c.gone != f.gone {
 		f.nextID++
 		c = &captionsCursor{id: f.nextID, ch: make(chan framewire.Record, 2), gone: f.gone}
+		f.cursors.WakeLocked()
 		f.answers[c.id] = c.ch
 		f.captions = c
 	}

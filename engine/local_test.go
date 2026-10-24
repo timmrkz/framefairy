@@ -176,11 +176,10 @@ func TestAServerThatWillNotStopIsKilledAtOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	began := time.Now()
+	// A server that is never killed hangs here until go test's -timeout.
+	// It is killed once stopGrace is up, which runs on the real clock, the
+	// kind of wait #510 is about.
 	stop()
-	if took := time.Since(began); took > 2*time.Second {
-		t.Errorf("stopping a server that ignores the interrupt took %s", took)
-	}
 }
 
 // The name of a model is enough on the command line. A bare file name that
@@ -237,54 +236,47 @@ func TestAComputeErrorSaysTheMemoryRanOut(t *testing.T) {
 // its health no longer than healthWait, and not a moment once the load is
 // cancelled. Without a limit, a load that hung there outlived Cancel and
 // quitting.
+//
+// It runs in a bubble, with healthWait as the app has it, on the bubble's
+// clock. Changes localClient, which the whole package shares, so it does
+// not run in parallel.
 func TestAHealthCheckThatGetsNoAnswerGivesUp(t *testing.T) {
-	was := healthWait
-	healthWait = 200 * time.Millisecond
-	t.Cleanup(func() { healthWait = was })
+	synctest.Test(t, func(t *testing.T) {
+		was := localClient
+		localClient = &http.Client{Transport: neverAnswers{}}
+		defer func() { localClient = was }()
 
-	url, _ := neverAnswers(t)
-	began := time.Now()
-	if healthy(context.Background(), url) {
-		t.Error("a server that never answered was taken for ready")
-	}
-	if took := time.Since(began); took > 2*time.Second {
-		t.Errorf("a look at a server that never answers took %s", took)
-	}
+		began := time.Now()
+		if healthy(context.Background(), "http://llama-server") {
+			t.Error("a server that never answered was taken for ready")
+		}
+		if took := time.Since(began); took != healthWait {
+			t.Errorf("a look at a server that never answers took %s on the bubble's clock, want %s", took, healthWait)
+		}
 
-	// A look that is not given up when the load is cancelled hangs here
-	// until go test's -timeout.
-	healthWait = time.Hour
-	url, asked := neverAnswers(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	looked := make(chan bool)
-	go func() { looked <- healthy(ctx, url) }()
-	// Cancelled while it waits for the answer, not before it asks.
-	<-asked
-	cancel()
-	if <-looked {
-		t.Error("a server that never answered was taken for ready once the load was cancelled")
-	}
+		ctx, cancel := context.WithCancel(context.Background())
+		looked := make(chan bool)
+		began = time.Now()
+		go func() { looked <- healthy(ctx, "http://llama-server") }()
+		// Cancelled while it waits for the answer, not before it asks.
+		synctest.Wait()
+		cancel()
+		if <-looked {
+			t.Error("a server that never answered was taken for ready once the load was cancelled")
+		}
+		if took := time.Since(began); took != 0 {
+			t.Errorf("a cancelled look waited %s on the bubble's clock, want none", took)
+		}
+	})
 }
 
-// neverAnswers is a server that takes every request and answers none, and
-// says on asked when a request has come.
-func neverAnswers(t *testing.T) (string, <-chan struct{}) {
-	t.Helper()
-	release := make(chan struct{})
-	asked := make(chan struct{}, 1)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		select {
-		case asked <- struct{}{}:
-		default:
-		}
-		select {
-		case <-release:
-		case <-r.Context().Done():
-		}
-	}))
-	t.Cleanup(server.Close)
-	t.Cleanup(func() { close(release) })
-	return server.URL, asked
+// neverAnswers takes every request and answers none, until the request is
+// called off. No network, so it runs in a bubble.
+type neverAnswers struct{}
+
+func (neverAnswers) RoundTrip(r *http.Request) (*http.Response, error) {
+	<-r.Context().Done()
+	return nil, r.Context().Err()
 }
 
 // A llama-server the app starts answers only to the app: it is handed a

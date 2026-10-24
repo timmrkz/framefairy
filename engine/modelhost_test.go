@@ -152,7 +152,8 @@ func TestAWarmModelNobodyUsesGoes(t *testing.T) {
 	}
 	release(warmKeep)
 	host.mu.Lock()
-	// The minutes are up now.
+	// The minutes are up now. That the model stays for them first is the
+	// product's own timer, a test for #510.
 	host.model.idle.Reset(0)
 	host.mu.Unlock()
 	// Should it stay, the test hangs here until go test's -timeout.

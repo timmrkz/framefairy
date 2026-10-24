@@ -1,7 +1,7 @@
 // Package wake tells whoever waits that something changed. A waiter takes
 // the channel and waits on it, and the next change closes it. The app's
-// lanes, queue and updates each hold one, and so does the engine's model
-// host. Their own lock is held for both calls, so a change between a
+// lanes, queue and updates each hold one, and so do the engine's model
+// host and the episode's decoder. Their own lock is held for both calls, so a change between a
 // waiter's look and its wait still reaches it.
 //
 // The channel is made only when somebody waits. A job's progress changes
