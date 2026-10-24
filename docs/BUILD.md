@@ -305,7 +305,7 @@ test to the part about the clock, each with that one rule:
   scenario: a hand held still on the clip timeline for about 0.7 s, and a
   Go side made slow on purpose. Everywhere else a watch ends on the app's
   own signals, the page settled, the picture standing, the sound card
-  let go, or the episode's own time.
+  held, or the episode's own time.
 
 A clock the test controls is not refused: Playwright's `page.clock`,
 Vitest's `vi.useFakeTimers`, and a `time.Sleep` in a `testing/synctest`

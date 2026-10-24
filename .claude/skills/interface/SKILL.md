@@ -31,15 +31,15 @@ await stop();
 ```
 
 `workspace()` opens an episode, puts the sidebar away, picks a clip and
-steps the playhead onto its first word. It fails when the video preview
-shows no picture or the list has no clip to pick, rather than hand a
-probe an empty workspace to measure. `?found` and `?growing` start with
-no clips until a search lands them, so a probe of those passes
-`clip: false`. That last step is not tidiness: a
+steps the playhead onto its first word. That last step is not tidiness: a
 clip begins a little before the first thing said in it, the way the engine
 cuts it, so a playhead on the clip's own start is in silence and there is
 no caption box on screen at all. Every probe about the captions would be
 measuring an empty picture.
+`workspace()` fails when the video preview shows no picture or the list
+has no clip to pick, rather than hand a probe an empty workspace to
+measure. A query whose search has not landed clips yet, like `?found` or
+`?growing`, starts with none, so a probe of it passes `clip: false`.
 `screen()` is the same window with nothing clicked, for anything that is
 not the workspace: the first run, the settings, the empty window. Each
 step of them waits with `settled(page)` until the app has nothing on its

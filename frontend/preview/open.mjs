@@ -9,7 +9,7 @@
 import { chromium } from "/opt/node22/lib/node_modules/playwright/index.mjs";
 import { createServer } from "node:http";
 import { execFile, spawn } from "node:child_process";
-import { readFile, rename, rm } from "node:fs/promises";
+import { readFile, rename, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { extname, join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -66,7 +66,7 @@ function made(file, how) {
   return making.get(file);
 }
 async function make(file, { seconds, bits, bar, height, climb, picture, sound }) {
-  if (await whole(file)) return file;
+  if (await whole(file, seconds)) return file;
   const part = `${file}.${process.pid}.part.mp4`;
   const width = bits * bar;
   try {
@@ -99,15 +99,22 @@ async function make(file, { seconds, bits, bar, height, climb, picture, sound })
   }
 }
 
-// Whether a file kept from before has a picture and a sound.
-async function whole(file) {
+// Whether a file kept from before has a picture and a sound, and is as
+// long as it was made to be. A file cut short has both and is not whole.
+async function whole(file, seconds) {
+  if (!(await stat(file).catch(() => null))) return false;
+  let out;
   try {
-    const { stdout } = await run("ffprobe", ["-v", "error", "-show_entries", "stream=codec_type", "-of", "csv=p=0", file]);
-    const kinds = stdout.split("\n").map((l) => l.trim());
-    return kinds.includes("video") && kinds.includes("audio");
-  } catch {
+    ({ stdout: out } = await run("ffprobe", ["-v", "error", "-show_entries", "stream=codec_type:format=duration", "-of", "csv=p=0", file]));
+  } catch (e) {
+    // Without ffprobe nothing kept can be trusted, so the video is made
+    // again on every run. That costs minutes, so it says why.
+    if (e.code === "ENOENT") console.error(`ffprobe is not installed, so ${file} is made again`);
     return false;
   }
+  const lines = out.split("\n").map((l) => l.trim());
+  const duration = Math.max(...lines.map(Number).filter(Number.isFinite));
+  return lines.includes("video") && lines.includes("audio") && Math.abs(duration - seconds) < 1;
 }
 
 // The episode of the workspace: four hours, the length the fake Go side
@@ -271,9 +278,6 @@ export async function workspace({
   // Picking a clip is what puts the caption settings and the clip panel on
   // screen. Without it half the workspace is not there to look at.
   clip = true,
-  // A probe of a video preview that shows nothing on purpose says so.
-  // Otherwise a workspace with no picture is refused, never measured.
-  picture = true,
   init = null,
   initArg = undefined,
 } = {}) {
@@ -282,13 +286,16 @@ export async function workspace({
   await page.getByText("Mein Arm ist zersprungen").first().click();
   await settled(page);
   // A probe that measures an empty workspace reports what is not there,
-  // issue #501. So no picture, or no clip to pick, ends it with why.
-  if (picture) {
-    const why = await page.evaluate(() =>
-      Number.isNaN(Number(document.querySelector(".screen")?.dataset.shown)) ? (window.__frameQueue?.stats.errors[0] ?? "no frame queue") : "",
-    );
-    if (why) throw new Error(`the video preview shows no picture: ${why}`);
-  }
+  // issue #501. So no picture, or no clip to pick, ends it with why. The
+  // browser is closed first, so a probe that catches the error still ends.
+  const refuse = async (why) => {
+    await open.stop();
+    throw new Error(why);
+  };
+  const why = await page.evaluate(() =>
+    Number.isNaN(Number(document.querySelector(".screen")?.dataset.shown)) ? (window.__frameQueue?.stats.errors[0] ?? "no frame queue") : "",
+  );
+  if (why) await refuse(`the video preview shows no picture: ${why}`);
 
   // The sidebar lies over the settings column when it is open, so it is
   // put away first or it covers half of what is being looked at.
@@ -300,7 +307,7 @@ export async function workspace({
   if (clip) {
     const first = page.locator("aside .list li button.pick").first();
     if (!(await first.count())) {
-      throw new Error(`the list has no clip to pick with ${query || "no query"}. ?found and ?growing start with none until a search lands them, so pass clip: false for those`);
+      await refuse(`the list has no clip to pick with ${query || "no query"}. A query whose search has not landed clips yet starts with none, like ?found or ?growing, so pass clip: false for those`);
     }
     await first.click();
     await settled(page);

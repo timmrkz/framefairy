@@ -6309,6 +6309,17 @@ for (const seq of toWalk) {
         await page.evaluate(async () => {
           const q = window.__frameQueue;
           const code = `registerProcessor("recorder", class extends AudioWorkletProcessor {
+            constructor() {
+              super();
+              // Asked to flush, it posts what it holds and then says so.
+              // Messages on one port come in order, so after "flushed"
+              // every sample it was handed has been heard.
+              this.port.onmessage = () => {
+                if (this.batch?.n) this.port.postMessage({ frame: this.batch.frame, data: this.batch.data.slice(0, this.batch.n) });
+                this.batch = null;
+                this.port.postMessage("flushed");
+              };
+            }
             process(inputs) {
               const ch = inputs[0][0];
               // Chromium now and then hands two render quanta the same
@@ -6336,7 +6347,7 @@ for (const seq of toWalk) {
           await q.audio.audioWorklet.addModule(URL.createObjectURL(new Blob([code], { type: "text/javascript" })));
           const node = new AudioWorkletNode(q.audio, "recorder", { numberOfOutputs: 1 });
           window.__heard = [];
-          node.port.onmessage = (e) => window.__heard.push(e.data);
+          node.port.onmessage = (e) => (e.data === "flushed" ? window.__flushed?.() : window.__heard.push(e.data));
           const hush = q.audio.createGain();
           hush.gain.value = 0;
           q.out.connect(node).connect(hush).connect(q.audio.destination);
@@ -6376,7 +6387,9 @@ for (const seq of toWalk) {
         // holds the sound card, see end in lib/frames/queue.ts: whatever
         // the sound card is handed after the end, where the start played
         // on when Tim heard it, comes before that, and nothing comes
-        // after. A play that did not end holds nothing, and is said below.
+        // after. Then the recorder is flushed, so every sample it was
+        // handed is in. A play that did not end holds nothing, and is said
+        // below.
         await playUntil(page, { most: arg + 8 });
         await page.evaluate(
           () =>
@@ -6388,7 +6401,9 @@ for (const seq of toWalk) {
                 if (q.state === "ended" && a.state === "running") return;
                 a.removeEventListener("statechange", look);
                 off();
-                done();
+                const [node] = window.__recorder;
+                window.__flushed = done;
+                node.port.postMessage("flush");
               };
               a.addEventListener("statechange", look);
               off = q.listen(look);
@@ -6583,7 +6598,10 @@ for (const seq of toWalk) {
         await nextPaint(page, 42);
         await hand("up");
         await page.mouse.up();
-        await nextPaint(page, 42);
+        // After the hand lets go, the play goes on for a second of the
+        // episode's own time, which "nailed" reads from 300 ms on. A play
+        // that stopped ends this at once, and "nailed" says so.
+        await playUntil(page, { most: 1 });
         await page.evaluate(() => (window.__playWatch = false));
         await settle(page);
         break;
@@ -11862,7 +11880,7 @@ for (const seq of toWalk) {
           else if (!playing) wrong = `the play stopped at ${at.toFixed(3)} when the other clip was removed or put back`;
           else if (at < at0 - 1e-6) wrong = `the playhead went back from ${at0.toFixed(3)} to ${at.toFixed(3)} when the other clip was removed or put back`;
         }
-        if (!wrong && heads.length < 10) wrong = `only ${heads.length} animation frames were read`;
+        if (!wrong && heads.length < 30) wrong = `only ${heads.length} animation frames were read`;
         await watch.step("put back", s);
         break;
       }
