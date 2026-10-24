@@ -16,20 +16,25 @@
 // picture is the episode's first frame, with the playhead at 0, and the
 // playhead stays there until a clip is chosen. No animation frame shows a
 // frame that holds neither the playhead nor where it was a moment before,
-// and a seek's frame is up within a quarter of a second. It exits 1 when a
-// rule is broken.
+// and a seek's frame is up within a quarter of a second, and comes at all.
+// Each pick chooses its clip and puts the playhead inside it. It exits 1
+// when a rule is broken.
 import { pageUntil, screen, settled } from "../open.mjs";
 const query = process.argv[2] ?? "?growing&lagging&hear=100";
 // From the first moment of the page, on every animation frame.
 const recorder = () => {
+  // The picture is read back from the canvas, and headless Chromium gives
+  // nothing back of a WebGPU canvas, so the video preview draws on a 2D
+  // one, the way the walks do, see screen.ts. Without it every frame read
+  // black and the probe said "first picture never", issue #501.
+  window.__flatScreen = true;
   window.__rows = [];
   window.__mark = (what) => window.__rows.push({ t: performance.now(), mark: what });
   const step = () => {
     const s = document.querySelector(".screen");
     const c = s?.querySelector("canvas");
     if (c && c.width) {
-      // The canvas may be a WebGPU canvas, which has no 2D context, so a piece
-      // of it is copied to a 2D canvas to be read.
+      // A piece of the canvas is copied to a small 2D canvas to be read.
       const grab = (x, y, w, h) => {
         const s = document.createElement("canvas");
         s.width = w;
@@ -77,15 +82,28 @@ await pageUntil(page, () => {
   const head = pane?.querySelector(".listhead button.search")?.textContent.trim();
   return head === "Search" && pane.querySelectorAll("ol li[data-key]").length > 0;
 });
+// The search chooses its earliest clip by itself once it is over. The
+// picks start after that choice is made, so no move of the search's is
+// read as a pick's.
+await pageUntil(page, () => !!document.querySelector("aside .list li button.pick.current"));
+await settled(page);
 const picked = page.locator("aside .list li button.pick");
 const n = await picked.count();
-const clips = [];
+// Where each pick left the playhead, against the clip its card says.
+const landed = [];
 for (const i of [Math.min(3, n - 1), Math.min(7, n - 1), 0]) {
   if (n === 0) break;
   await page.evaluate((i) => window.__mark(`pick clip ${i + 1}`), i);
   await picked.nth(i).click();
-  clips.push(i);
   await settled(page);
+  landed.push(
+    await page.evaluate((i) => {
+      const card = document.querySelectorAll("aside .list li button.pick")[i];
+      const [, clock, seconds] = card.querySelector(".meta").textContent.match(/([\d:]+), (\d+) s/) ?? [];
+      const start = (clock ?? "").split(":").reduce((a, b) => a * 60 + Number(b), 0);
+      return { i, chosen: card.classList.contains("current"), start, seconds: Number(seconds), at: Number(document.querySelector(".screen").dataset.playhead) };
+    }, i),
+  );
 }
 const rows = await page.evaluate(() => window.__rows);
 await stop();
@@ -121,6 +139,8 @@ for (const r of rows) {
   }
   if (r.pic === want) lastAt = { held: r.at };
 }
+// A seek still on its way when the rows end never brought its frame.
+const neverCame = way;
 const t0 = marks[0].t;
 const shown = rows.filter((r) => !r.mark);
 const firstPicture = shown.find((r) => r.pic >= 0);
@@ -139,12 +159,21 @@ if (errors.length) console.log("page errors", errors);
 const broken = [];
 if (!firstPicture || firstPicture.pic !== 0 || firstPicture.at !== 0) broken.push("the first picture is not the episode's first frame at 0");
 if (shown.some((r) => firstPicture && r.t > firstPicture.t && r.pic === -1)) broken.push("the picture went black");
-const firstPick = marks.find((m) => m.mark.startsWith("pick"));
 const firstMove = shown.findIndex((r, i) => i > 0 && r.at !== shown[i - 1].at);
 if (firstMove < 0) broken.push("no clip was ever chosen");
 if (wrong) broken.push("a frame that holds neither the playhead nor where it was");
 if (ways.some((w) => w.ms > 250)) broken.push("a seek's frame took longer than a quarter of a second");
-if (!firstPick || ways.length < 4) broken.push("the search chose no clip, or a pick did not move the playhead");
+if (neverCame) broken.push(`the frame for ${neverCame.to.toFixed(2)} never came`);
+// Every pick chooses its card's clip and puts the playhead inside it. The
+// card says where the clip starts, to the second, and how long it is. A
+// seek whose frame is up in the same animation frame is no seek on its
+// way, so the picks are checked by where they landed, not by the ways: a
+// quick seek was once read as a pick that did nothing, issue #501.
+if (!landed.length) broken.push("the list had no clip to pick");
+for (const l of landed) {
+  console.log(`pick clip ${l.i + 1}: card ${l.start} s for ${l.seconds} s, playhead ${l.at.toFixed(3)}${l.chosen ? "" : ", not chosen"}`);
+  if (!l.chosen || !(l.at >= l.start && l.at <= l.start + l.seconds + 1)) broken.push(`pick clip ${l.i + 1} did not put the playhead in its clip`);
+}
 if (errors.length) broken.push("the page threw");
 console.log(broken.length ? `broken: ${broken.join(", ")}` : "every rule held");
 process.exit(broken.length ? 1 : 0);
