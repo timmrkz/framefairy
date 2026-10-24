@@ -1,6 +1,7 @@
 // Stands in for the Wails runtime so the interface can be looked at in a
 // plain browser. Only for taking a picture of the layout.
 import noticeList from "../../notices/notices.json";
+import { callOut } from "./settled";
 
 const noticeTexts = import.meta.glob("../../notices/texts/*.txt", {
   query: "?raw",
@@ -869,16 +870,19 @@ const late = <T,>(method: string, answer: Promise<T>): Promise<T> => {
   );
 };
 
+// Each call is counted out until it is answered, for a probe that waits
+// until the app is done, see settled.ts.
 export const Call = {
   ByName(name: string, ...args: unknown[]): Promise<unknown> {
-    if (!slowGo) return Answers.ByName(name, ...args);
+    const method = name.split(".").pop() ?? "";
+    const back = callOut(method);
     let answer: Promise<unknown>;
     try {
       answer = Promise.resolve(Answers.ByName(name, ...args));
     } catch (e) {
       answer = Promise.reject(e);
     }
-    return late(name.split(".").pop() ?? "", answer);
+    return late(method, answer).finally(back);
   },
 };
 

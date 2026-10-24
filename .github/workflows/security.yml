@@ -35,17 +35,33 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  image:
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/ci-image.yml
+
+  # In the CI image, see ci-image.yml, because govulncheck compiles the
+  # app's package, which needs GTK and WebKit, and the image has them
+  # without asking the Ubuntu mirror. The image is public, so a pull from
+  # it needs no login.
   go:
+    needs: image
     runs-on: ubuntu-24.04
+    container: ${{ needs.image.outputs.ref }}
+    # A container runs a step with sh, see the walks in ci.yml.
+    defaults:
+      run:
+        shell: bash -e {0}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The checkout is the runner's user's and the job runs as root, see
+      # the walks in ci.yml.
+      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
-      - name: System packages
-        timeout-minutes: 10
-        run: sh scripts/ci-packages.sh
       # The interface is embedded in the app, and Go wants the folder.
       - name: An interface to embed
         run: mkdir -p cmd/framefairy-app/dist/app && touch cmd/framefairy-app/dist/app/index.html

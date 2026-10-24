@@ -11,15 +11,22 @@
 // press it times, in the page, how long from the key going down until the
 // video preview shows the frame that holds the playhead, and until that
 // frame has its own captions, which libass draws on the Go side. Between presses
-// the hand rests for REST milliseconds, 250 unless set, about as long as a
-// person takes to look and press again. ROUNDS, 5 unless set, walks the
+// the hand rests for REST_FRAMES frames of the page, 15 unless set, a
+// quarter of a second on a screen of 60 Hz, about as long as a person takes
+// to look and press again. That rest is the one pause on the clock made on
+// purpose: the browser's frames come by its own timer, and the rest is part
+// of what is measured, a person's pace, not a wait for work. ROUNDS, 5
+// unless set, walks the
 // clip that many times. CODEC=hevc makes the video HEVC with 10-bit colour.
 // SIZE=2160 makes it 3840 by 2160, the way a 4K camera records.
 // SCALE, 2 unless set, is the device pixels of a CSS pixel, a Mac's screen.
-import { control, fromSidebar, handles, high, open, settle } from "./bridge.mjs";
+import { control, fromSidebar, handles, high, nextPaint, open, pageUntil, settle, shownOnPlayhead } from "./bridge.mjs";
 
 const url = process.env.BRIDGE_URL ?? "http://127.0.0.1:8123/";
-const rest = Number(process.env.REST ?? 250);
+// REST was the same pause in milliseconds, and 250 of them now would be
+// four seconds of frames.
+if (process.env.REST) throw new Error("REST is now REST_FRAMES, the rest between presses in frames of the page, 15 unless set");
+const rest = Number(process.env.REST_FRAMES ?? 15);
 const rounds = Number(process.env.ROUNDS ?? 5);
 const scale = Number(process.env.SCALE ?? 2);
 const codec = process.env.CODEC === "hevc" ? "&codec=hevc" : "";
@@ -36,37 +43,59 @@ try {
   // The page is opened afresh for every round, so no round finds the frames
   // the one before kept, and each times what a first walk of a clip costs.
   // The Go side stays as it is, the way the app stays open.
+  // Until the video on screen is the one added and its search has put a
+  // clip in the list, read each time the page changes, never on the clock.
   const ready = async () => {
-    await page.waitForFunction(
-      () => {
-        const pane = [...document.querySelectorAll("aside")].find((a) => a.querySelector(".listhead"));
-        const on = document.querySelector("aside button.episode.current .name")?.textContent ?? "";
-        return on.startsWith("folge-") && pane?.querySelectorAll("ol li[data-key]").length > 0;
-      },
-      null,
-      { timeout: 180000, polling: 250 },
-    );
+    await pageUntil(page, () => {
+      const pane = [...document.querySelectorAll("aside")].find((a) => a.querySelector(".listhead"));
+      const on = document.querySelector("aside button.episode.current .name")?.textContent ?? "";
+      return on.startsWith("folge-") && pane?.querySelectorAll("ol li[data-key]").length > 0;
+    });
     await page.evaluate((fps) => {
       // The moment a key or the button goes down, before the app hears it.
       for (const down of ["keydown", "pointerdown"]) window.addEventListener(down, () => (window.__keyAt = performance.now()), { capture: true });
       // Resolves with the milliseconds from the last key until the video
       // preview shows the frame that holds the playhead, and until that
       // frame has its own captions, the word a step lands on lifted out to
-      // bounce included, each -1 after 3 s.
+      // bounce included, read on every frame of the page. Each is -1 when
+      // it never comes: the frame when the frame queue has done all the
+      // press asked of it and the picture standing is another frame, see
+      // standing in lib/frames/queue.ts, and the captions when a layer of
+      // them is given up on, data-captions-lost. A press that left the
+      // playhead where it was, once the app has done all it set going,
+      // window.__settled, is a press that did nothing, and fails the run,
+      // so the table never counts it.
       window.__followed = (before, still = false) =>
-        new Promise((done) => {
+        new Promise((done, failed) => {
           let frame = -1;
+          let over = false;
+          const end = (r) => {
+            over = true;
+            done(r);
+          };
+          if (!still)
+            window.__settled(false).then(() => {
+              if (!over && Number(document.querySelector(".screen")?.dataset.playhead) === before) {
+                over = true;
+                failed(new Error(`a press left the playhead at ${before}`));
+              }
+            });
+          const lost = document.querySelector(".screen")?.dataset.captionsLost ?? "";
           const check = () => {
             const s = document.querySelector(".screen");
+            const q = window.__frameQueue;
             const at = Number(s?.dataset.playhead);
             const shown = Number(s?.dataset.shown);
             const holds = Math.floor(at * fps + 1e-6) / fps;
             const took = performance.now() - window.__keyAt;
             const layers = window.__captionLayers;
             const captioned = !layers || (!layers.waiting && !(layers.lift && !layers.lift.word));
-            if (frame < 0 && (still || at !== before) && Math.abs(shown - holds) < 1e-3) frame = took;
-            if (frame >= 0 && captioned) done([frame, took]);
-            else if (took > 3000) done([frame, -1]);
+            const moved = still || at !== before;
+            if (frame < 0 && moved && Math.abs(shown - holds) < 1e-3) frame = took;
+            if (over) return;
+            if (frame >= 0 && captioned) end([frame, took]);
+            else if (frame >= 0 && (s?.dataset.captionsLost ?? "") !== lost) end([frame, -1]);
+            else if (frame < 0 && moved && q?.standing) end([-1, -1]);
             else requestAnimationFrame(check);
           };
           check();
@@ -95,13 +124,13 @@ try {
     times.get(name).push(took);
     if (!captions.has(name)) captions.set(name, []);
     captions.get(name).push(captioned);
-    await page.waitForTimeout(rest);
+    await nextPaint(page, rest);
     const now = await how();
     const w = ways.get(name) ?? [0, 0, 0];
     ways.set(name, w.map((n, i) => n + now[i] - was[i]));
   };
   // The playhead dragged over the clip timeline, across the clip and back,
-  // a step every 16 ms the way a hand moves. Every frame of the page notes
+  // a step every frame of the page the way a hand moves. Every frame of the page notes
   // how many frames the frame on screen is from the playhead, and once the
   // hand lets go, how long until the frame that holds the playhead shows.
   const apart = [];
@@ -132,7 +161,7 @@ try {
       const [a, b] = [path[leg - 1], path[leg]];
       for (let i = 1; i <= 60; i++) {
         await page.mouse.move(left + (a + ((b - a) * i) / 60) * span, y);
-        await page.waitForTimeout(16);
+        await nextPaint(page);
       }
     }
     const before = await page.evaluate(() => {
@@ -145,7 +174,7 @@ try {
     await page.mouse.up();
     const [took] = await page.evaluate((b) => window.__followed(b, true), before);
     settled.push(took);
-    await page.waitForTimeout(500);
+    await settle(page);
   };
   // A click far along the clip timeline, the button down for 8 animation
   // frames the way a person's click is, and how long until the frame
@@ -158,23 +187,20 @@ try {
     const before = await page.evaluate(() => Number(document.querySelector(".screen")?.dataset.playhead));
     await page.mouse.move(left + share * span, high(g.track));
     await page.mouse.down();
-    await page.evaluate(
-      () =>
-        new Promise((done) => {
-          let n = 0;
-          const frame = () => (++n >= 8 ? done() : requestAnimationFrame(frame));
-          requestAnimationFrame(frame);
-        }),
-    );
+    await nextPaint(page, 8);
     await page.mouse.up();
     const [took] = await page.evaluate((b) => window.__followed(b), before);
     clicked.push(took);
   };
+  // A clip picked, and the hand rests until its first frame is up with
+  // its captions and what is read ahead for the next step is in, the way
+  // a person looks at a clip before walking it.
   const pickClip = async () => {
     await page.locator("aside ol li[data-key] button.pick").first().click();
     await settle(page);
     await page.evaluate(() => document.body.focus());
-    await page.waitForTimeout(500);
+    await shownOnPlayhead(page, { captions: true });
+    await page.evaluate(() => window.__readAheadRested());
   };
 
   const seen = { streams: 0, continued: 0, kept: 0, parked: 0, ahead: 0, aheadLost: 0, size: "" };
@@ -197,7 +223,10 @@ try {
     for (let i = 0; i < 8; i++) await press("Shift+Right, a word on", "Shift+ArrowRight");
     for (let i = 0; i < 3; i++) await press("Left, a frame back", "ArrowLeft");
     for (let i = 0; i < 3; i++) await press("Right, a frame on", "ArrowRight");
-    for (let i = 0; i < 8; i++) await press("Shift+Left, a word back", "Shift+ArrowLeft");
+    // Seven back, not eight: the clip is picked with the playhead before
+    // its first word, so eight on lands on the eighth word, and an eighth
+    // step back from the first word has no word to go to and does nothing.
+    for (let i = 0; i < 7; i++) await press("Shift+Left, a word back", "Shift+ArrowLeft");
     for (let i = 0; i < 4; i++) {
       await press("Shift+Right, a word on", "Shift+ArrowRight");
       await press("Left after a word", "ArrowLeft");

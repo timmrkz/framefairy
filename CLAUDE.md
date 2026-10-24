@@ -544,7 +544,7 @@ messages, pull request text, code comments and chat replies.
   enough add up to minutes of CI. Work is counted in steps, not in
   milliseconds. A test that would hang is ended by `go test`'s own
   `-timeout`, which shows every goroutine. The walks are held to the
-  same. What is left of their waits on the clock is #341. Where the code
+  same. Where the code
   under test offers only the clock, the code gains the signal. The
   linters hold it, and CI fails a new wait on the clock: golangci-lint in
   `make lint` for a Go test, which passes only the lines main already

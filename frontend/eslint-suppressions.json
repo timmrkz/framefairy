@@ -1,4 +1,14 @@
 {
+  "preview/frames/added.mjs": {
+    "no-restricted-properties": {
+      "count": 2
+    }
+  },
+  "preview/frames/cuts.mjs": {
+    "no-restricted-properties": {
+      "count": 4
+    }
+  },
   "preview/walks/bridge.mjs": {
     "no-restricted-properties": {
       "count": 2
@@ -6,7 +16,7 @@
   },
   "preview/walks/sequences.mjs": {
     "no-restricted-globals": {
-      "count": 3
+      "count": 2
     },
     "no-restricted-properties": {
       "count": 25
@@ -15,19 +25,6 @@
   "preview/walks/speed.mjs": {
     "no-restricted-properties": {
       "count": 3
-    },
-    "playwright/no-wait-for-timeout": {
-      "count": 4
-    }
-  },
-  "src/lib/frames/app.test.ts": {
-    "no-restricted-globals": {
-      "count": 1
-    }
-  },
-  "src/lib/frames/captions.test.ts": {
-    "no-restricted-globals": {
-      "count": 4
     }
   }
 }

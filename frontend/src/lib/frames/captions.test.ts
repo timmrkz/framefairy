@@ -159,20 +159,22 @@ describe("the layers of the captions", () => {
     const q = new URLSearchParams(asked[0].split("?")[1]);
     expect(Object.fromEntries(q)).toEqual({ path: "/v.mp4", track: "abc", at: "1.000000", w: "10", h: "20", text: "#ffffff" });
     answer.shift()!();
-    await vi.waitFor(() => expect(came).toBe(1));
+    await layers.taken(1);
+    expect(came).toBe(1);
     expect(layers.at(1.0, [10, 20])?.pixels[0]).toBe(1);
     // What the layer shows comes with it, for the caption box.
     expect(layers.at(1.0, [10, 20])?.showing).toEqual({ caption: 1, word: 0 });
     // The next frame: the first one's layer stays until its own comes.
     expect(layers.at(1.04, [10, 20])?.pixels[0]).toBe(1);
     answer.shift()!();
-    await vi.waitFor(() => expect(came).toBe(2));
+    await layers.taken(2);
+    expect(came).toBe(2);
     expect(layers.at(1.04, [10, 20])?.pixels[0]).toBe(2);
     // A frame on its way asks ahead, and is there when it is drawn.
     layers.coming(1.08, [10, 20]);
+    expect(asked.length).toBe(3);
     answer.shift()!();
-    await vi.waitFor(() => expect(asked.length).toBe(3));
-    await new Promise((r) => setTimeout(r));
+    await layers.taken(3);
     expect(layers.at(1.08, [10, 20])?.pixels[0]).toBe(3);
     expect(came).toBe(2);
     // No captions, nothing drawn and nothing kept up.
@@ -233,13 +235,15 @@ describe("the layers of the captions", () => {
       expect(layers.at(1.0, [10, 20])).toBeNull();
       answer.shift()!();
       // The failure leaves the frame waiting, and a second ask set for later.
-      await vi.waitFor(() => expect(vi.getTimerCount()).toBe(1));
+      await layers.taken(1);
+      expect(vi.getTimerCount()).toBe(1);
       expect(layers.busy).toBe(true);
       expect(asked.length).toBe(1);
       vi.advanceTimersByTime(300);
       expect(asked.length).toBe(2);
       answer.shift()!();
-      await vi.waitFor(() => expect(came).toBe(1));
+      await layers.taken(2);
+      expect(came).toBe(1);
       expect(layers.at(1.0, [10, 20])?.pixels[0]).toBe(2);
     } finally {
       vi.useRealTimers();
@@ -261,12 +265,14 @@ describe("the layers of the captions", () => {
       layers.set({ path: "/v.mp4", clip: "a", track: "abc", drafts: {} });
       layers.at(1.0, [10, 20]);
       answer.shift()!();
-      await vi.waitFor(() => expect(vi.getTimerCount()).toBe(1));
+      await layers.taken(1);
+      expect(vi.getTimerCount()).toBe(1);
       expect(told).toEqual([]);
       vi.advanceTimersByTime(300);
       expect(asked.length).toBe(2);
       answer.shift()!();
-      await vi.waitFor(() => expect(layers.busy).toBe(false));
+      await layers.taken(2);
+      expect(layers.busy).toBe(false);
       expect(vi.getTimerCount()).toBe(0);
       expect(asked.length).toBe(2);
       expect(told).toEqual(["/v.mp4: captions: a layer did not come, Error: gone"]);
@@ -275,7 +281,8 @@ describe("the layers of the captions", () => {
       expect(asked.length).toBe(3);
       // Given up on again for the same reason, it is not said again.
       answer.shift()!();
-      await vi.waitFor(() => expect(layers.busy).toBe(false));
+      await layers.taken(3);
+      expect(layers.busy).toBe(false);
       expect(asked.length).toBe(3);
       expect(told.length).toBe(1);
     } finally {
@@ -295,13 +302,16 @@ describe("the layers of the captions", () => {
     expect(asked.length).toBe(3);
     expect(layers.busy).toBe(true);
     answer.shift()!();
-    await vi.waitFor(() => expect(asked.length).toBe(4));
+    await layers.taken(1);
+    expect(asked.length).toBe(4);
     expect(new URLSearchParams(asked[3].split("?")[1]).get("at")).toBe("1.120000");
     answer.shift()!();
-    await vi.waitFor(() => expect(asked.length).toBe(5));
+    await layers.taken(2);
+    expect(asked.length).toBe(5);
     expect(new URLSearchParams(asked[4].split("?")[1]).get("at")).toBe("1.160000");
     for (const a of answer.splice(0)) a();
-    await vi.waitFor(() => expect(layers.busy).toBe(false));
+    await layers.taken(5);
+    expect(layers.busy).toBe(false);
     // All five are there when they are drawn.
     for (const [i, at] of [1.0, 1.04, 1.08, 1.12, 1.16].entries()) expect(layers.at(at, [10, 20])?.pixels[0]).toBe(i + 1);
     expect(layers.stats.late).toBe(0);
@@ -335,7 +345,7 @@ describe("the layers of the captions", () => {
     layers.set({ path: "/v.mp4", clip: "b", track: "two", drafts: {} });
     expect(layers.busy).toBe(false);
     for (const a of answer.splice(0)) a();
-    await new Promise((done) => setTimeout(done, 10));
+    await layers.taken(3);
     expect(layers.busy).toBe(false);
     expect(asked.length).toBe(3);
     expect(asked.every((a) => new URLSearchParams(a.split("?")[1]).get("track") === "one")).toBe(true);
@@ -353,7 +363,8 @@ describe("the layers of the captions", () => {
     layers.set({ path: "/v.mp4", clip: "a", track: "one", drafts: {} });
     layers.at(1.0, [10, 20]);
     answer.shift()!();
-    await vi.waitFor(() => expect(came).toBe(1));
+    await layers.taken(1);
+    expect(came).toBe(1);
     expect(layers.at(1.0, [10, 20])?.pixels[0]).toBe(1);
     layers.set({ path: "/v.mp4", clip: "a", track: "one", drafts: { text: "#ff0000" } });
     expect(layers.at(1.0, [10, 20])?.pixels[0]).toBe(1);
@@ -396,7 +407,8 @@ describe("a layer laid while the app is resized", () => {
     layers.set({ path: "/v.mp4", clip: "a", track: "one", drafts: {} });
     layers.at(1.0, [20, 20]);
     answers.shift()!();
-    await vi.waitFor(() => expect(came).toBe(1));
+    await layers.taken(1);
+    expect(came).toBe(1);
     const own = layers.at(1.0, [20, 20])!;
     expect(own.size).toEqual([20, 20]);
     // The app grows: the old layer stays up until the new one comes.
@@ -404,7 +416,8 @@ describe("a layer laid while the app is resized", () => {
     expect(old).toBe(own);
     const at = (layer: Layer, size: [number, number]) => inkBox({ layer, size, left: 0.1, width: 0.8, turn: 0 });
     answers.shift()!();
-    await vi.waitFor(() => expect(came).toBe(2));
+    await layers.taken(2);
+    expect(came).toBe(2);
     const grown = layers.at(1.0, [40, 40])!;
     expect(grown.size).toEqual([40, 40]);
     expect(at(old, [40, 40])).toEqual(at(grown, [40, 40]));
@@ -465,11 +478,6 @@ describe("the bounce after a word step", () => {
     };
   }
 
-  // Lets every answer on its way come.
-  const flush = async () => {
-    for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0));
-  };
-
   // Tim saw the pop the short burns in played again over every frame he
   // stepped to, the arrow keys included, and wanted a step from word to
   // word to bounce its word and a step from frame to frame to show only
@@ -487,6 +495,9 @@ describe("the bounce after a word step", () => {
     let paused = true;
     let came = 0;
     const layers = new CaptionLayers(() => came++, { paused: () => paused });
+    // Until every answer asked for has come, the Go side here answering
+    // each at once.
+    const flush = () => layers.taken(asked.length);
     layers.set({ path: "/v.mp4", clip: "a", track: "abc", drafts: {} });
     const at = (t: number) => layers.at(t, [10, 20]);
     // The first frame shows its own layer, and nothing bounces.
@@ -605,6 +616,7 @@ describe("the bounce after a word step", () => {
     );
     const s = screen();
     const layers = new CaptionLayers(() => {}, { paused: () => true });
+    const flush = () => layers.taken(asked.length);
     layers.set({ path: "/v.mp4", clip: "a", track: "abc", drafts: {} });
     layers.at(1.0, [10, 20]);
     await flush();
@@ -651,7 +663,7 @@ describe("the bounce after a word step", () => {
     const at = (t: number) => layers.at(t, [10, 20]);
     at(1.0);
     held.shift()!.go();
-    await flush();
+    await layers.taken(1);
     expect(at(1.0)?.pixels[0]).toBe(100);
     // Two word steps, the second before the first frame's layer came.
     // The screen still shows the frame passed over while the one landed on
@@ -660,12 +672,12 @@ describe("the bounce after a word step", () => {
     at(1.04);
     layers.sought(true);
     held.splice(held.findIndex((h) => h.at === "1.040000"), 1)[0].go();
-    await flush();
+    await layers.taken(2);
     expect(at(1.04)?.pixels[0]).toBe(100);
     expect(layers.stats.popped).toBe(0);
     at(1.08);
     held.splice(held.findIndex((h) => h.at === "1.080000" && !h.part), 1)[0].go();
-    await flush();
+    await layers.taken(3);
     at(1.08);
     expect(layers.stats.popped).toBe(1);
     const parts = held.filter((h) => h.part);
@@ -814,19 +826,20 @@ describe("asks no longer wanted", () => {
     // A frame's own layer comes at once and shows a word. The two parts of
     // a lifted word never come.
     const parts: AbortSignal[] = [];
+    let frames = 0;
     vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
       if (url.includes("part=")) {
         parts.push(init!.signal!);
         return new Promise(() => {});
       }
+      frames++;
       const b = new ArrayBuffer(8 + 4);
       [0, 0, 1, 1].forEach((n, i) => new DataView(b).setUint16(2 * i, n, true));
       return new Response(b, { headers: { "X-Caption-Showing": "0 1", "X-Caption-Scale": "1.0000" } });
     });
-    const flush = async () => {
-      for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0));
-    };
     const layers = new CaptionLayers(() => {}, { paused: () => true });
+    // Until every frame's own layer asked for has come.
+    const flush = () => layers.taken(frames);
     layers.set({ path: "/v.mp4", clip: "a", track: "abc", drafts: {} });
     layers.at(1.0, [10, 20]);
     await flush();

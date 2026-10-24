@@ -210,6 +210,21 @@ Continue, see row 2.169 in [GUI-PLAN.md](GUI-PLAN.md). Search on an episode wait
 was just called off to be on its way out first, because both write the
 same record.
 
+Five things wait for jobs to stop: Search after Cancel, a render called
+off before its record is forgotten, removing a video with its files,
+clearing a video whose folder was deleted outside the app, and quitting.
+Each goes on the moment the last job it waits for is done, which is
+later than its state saying it ended: after that the job still closes
+its log in the video's work folder, tells the window and lets go of its
+lane, and a removal deletes that folder next. On Windows a folder with
+an open file in it cannot be deleted. So a job is waited for until its
+goroutine is done, `alive` in `cmd/framefairy-app/jobs.go`, and the queue
+tells whoever waits of every change, see `until` there and `wake` in
+`wake.go`, which the lanes use too. A job that will not stop is given
+`stopWait`, 15 s, and then the removal says so and deletes nothing, and
+the app quits anyway. The waits used to look at the list every 20, 50 or
+100 ms, so each took up to that much longer than the work, #394.
+
 **The interface** sends what was clicked and shows what it is told. There
 is no logic about jobs in TypeScript.
 
@@ -487,6 +502,16 @@ at the moment its lane came free still took it.
 
 The interface's harness has one fake search that goes through the same
 steps from the same kind of record, see the interface skill.
+
+The tests in `jobs_test.go`, `lanes_test.go` and `remove_test.go` never
+wait on the clock. They wait on `until`, with no time limit, on a job's
+news, or on the fake clock of a `testing/synctest` bubble, and a job that
+never ends is left to `go test`'s own `-timeout`. What is left of waits
+on the clock in the other Go tests is #394.
+`TestTheQueueGoesOnTheMomentAJobStops` holds that each wait of the app
+goes on the moment its job stops, and that a job that will not stop is
+given `stopWait` and no more. `TestAWaitForJobsGoesOnOnlyOnceTheirWorkIsDone`
+holds that none goes on while the job is still on its way out.
 
 ## Batches
 

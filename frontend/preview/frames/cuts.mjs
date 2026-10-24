@@ -24,7 +24,7 @@
 import { execFile } from "node:child_process";
 import { readFile, stat } from "node:fs/promises";
 import { promisify } from "node:util";
-import { frames, framesAt } from "../open.mjs";
+import { frames, framesAt, queueUntil } from "../open.mjs";
 
 const run = promisify(execFile);
 const args = process.argv.slice(2);
@@ -46,16 +46,23 @@ const { page, stop } = await frames({ query });
 const errors = [];
 page.on("pageerror", (e) => errors.push(String(e)));
 
+// Until the picture stands, see standing in lib/frames/queue.ts.
+const standing = () => queueUntil(page, () => window.__queue.standing);
+// Until a play has reached at, in the episode, or ended.
+const playedTo = (at) => queueUntil(page, (s, at) => s.ended || (s.playing && s.at >= at), at);
+
 if (memory) {
   await page.evaluate(() => {
     window.__queue.setProgram([{ start: 0, end: 600 }], false);
     window.__queue.seek(100);
   });
-  await page.waitForTimeout(500);
+  await standing();
   await page.evaluate(() => window.__queue.play());
+  // Each second of the episode played, which is a second of the clock
+  // while the play keeps up.
   const rows = [];
   for (let s = 1; s <= 60; s++) {
-    await page.waitForTimeout(1000);
+    await playedTo(100 + s);
     rows.push(
       await page.evaluate(() => ({
         open: window.__queue.stats.open,
@@ -86,7 +93,14 @@ if (seeking) {
       window.__drawn = [];
       const from = performance.now();
       window.__queue.seek(t);
-      while (!window.__drawn.length) await new Promise((r) => setTimeout(r, 5));
+      // The seek's own frame, the first report it makes once it stands.
+      await new Promise((done) => {
+        const off = window.__queue.listen(() => {
+          if (!window.__queue.standing) return;
+          off();
+          done();
+        });
+      });
       return { ...window.__drawn[window.__drawn.length - 1], took: performance.now() - from };
     }, t);
     // A frame that begins up to a millisecond after the moment holds it,
@@ -105,15 +119,24 @@ if (seeking) {
     window.__queue.setProgram(pieces, false);
     window.__queue.seek(57);
   }, pieces);
-  await page.waitForTimeout(300);
+  await standing();
   await page.evaluate(() => window.__queue.play());
-  await page.waitForTimeout(800);
+  // Into the first piece far enough that the play runs on its own.
+  await playedTo(57.8);
+  // The seek, and the first four frames the play draws after it.
   const jumped = await page.evaluate(async () => {
     window.__drawn = [];
     const from = performance.now();
     window.__queue.seek(60.0);
-    await new Promise((r) => setTimeout(r, 700));
-    return window.__drawn.filter((x) => x.playing && x.drew).map((x) => ({ frame: x.frame, after: x.drawnAt - from }));
+    const drawn = () => window.__drawn.filter((x) => x.playing && x.drew);
+    await new Promise((done) => {
+      const off = window.__queue.listen(() => {
+        if (drawn().length < 4) return;
+        off();
+        done();
+      });
+    });
+    return drawn().map((x) => ({ frame: x.frame, after: x.drawnAt - from }));
   });
   console.log(
     `seek to 60.00, in the cut, while playing: first frame ${jumped[0].frame.toFixed(2)} after ${jumped[0].after.toFixed(0)} ms, then ${jumped
@@ -132,14 +155,38 @@ await page.evaluate(
   },
   [pieces, loop],
 );
-await page.waitForTimeout(400);
+await standing();
 const started = await page.evaluate(() => {
   window.__drawn = [];
   window.__heard = [];
   window.__queue.play();
   return performance.now();
 });
-await page.waitForTimeout(seconds * 1000);
+// Until seconds of the clip have played, counted on the program, which
+// a loop starts again, or the play has ended. The program is the queue's
+// own, as it places a moment of the episode on the clip.
+await page.evaluate(
+  (seconds) =>
+    new Promise((done) => {
+      const q = window.__queue;
+      let last = null;
+      let played = 0;
+      const off = q.listen((s) => {
+        if (s.ended) {
+          off();
+          return done();
+        }
+        if (!s.playing) return;
+        const at = q.program.place(s.at);
+        if (last !== null) played += at >= last ? at - last : at + q.program.length - last;
+        last = at;
+        if (played < seconds) return;
+        off();
+        done();
+      });
+    }),
+  seconds,
+);
 const rec = await page.evaluate(() => ({
   drawn: window.__drawn,
   heard: window.__heard.map((h) => ({ frame: h.frame, data: Array.from(h.data) })),
