@@ -4,6 +4,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -16,7 +17,7 @@ type leaveProbe struct {
 }
 
 // asked is quitting asked for in the app already, the way Relaunch does.
-func newLeaving(asked bool, stopTakes time.Duration) (*leaving, *leaveProbe) {
+func newLeaving(asked bool) (*leaving, *leaveProbe) {
 	p := &leaveProbe{quit: make(chan struct{}, 4)}
 	l := &leaving{
 		asked: func() bool { return asked },
@@ -25,10 +26,7 @@ func newLeaving(asked bool, stopTakes time.Duration) (*leaving, *leaveProbe) {
 			p.said = append(p.said, what)
 			p.mu.Unlock()
 		},
-		stop: func() {
-			time.Sleep(stopTakes)
-			p.stopped.Add(1)
-		},
+		stop: func() { p.stopped.Add(1) },
 	}
 	l.quit = func() {
 		// Quitting for real asks again, the way Wails does.
@@ -45,44 +43,28 @@ func (p *leaveProbe) words() []string {
 	return append([]string(nil), p.said...)
 }
 
-func (p *leaveProbe) quitWithin(t *testing.T, d time.Duration) {
-	t.Helper()
-	select {
-	case <-p.quit:
-	case <-time.After(d):
-		t.Fatal("the app never quit")
-	}
-}
-
 // Cmd+Q answers at once, whatever stopping takes. It used to stop
 // everything on the main thread, which froze the app under the spinning
 // wheel for five seconds with nothing to say the key had been heard.
 //
 // Stopping is held until Cmd+Q has answered, so an answer that waited for
-// it never comes, on a machine of any speed. A bound of 50 ms on the
-// answer measured the machine as much as the app.
+// it never comes, on a machine of any speed, and the test hangs until go
+// test's own -timeout. A bound of 50 ms on the answer measured the machine
+// as much as the app.
 func TestCmdQAnswersAtOnceAndQuitsWhenStopped(t *testing.T) {
-	l, p := newLeaving(false, 0)
+	l, p := newLeaving(false)
 	hold := make(chan struct{})
 	stop := l.stop
 	l.stop = func() { <-hold; stop() }
 	l.shouldQuit()
-	answer := make(chan bool, 1)
-	go func() { answer <- l.shouldQuit() }()
-	select {
-	case quit := <-answer:
-		if quit {
-			t.Fatal("quit before anything was stopped")
-		}
-	case <-time.After(5 * time.Second):
-		close(hold)
-		t.Fatal("Cmd+Q waited for everything to stop before it answered")
+	if l.shouldQuit() {
+		t.Fatal("quit before anything was stopped")
 	}
 	close(hold)
 	if got := p.words(); len(got) != 2 || got[1] != "going" {
 		t.Errorf("the interface heard %v", got)
 	}
-	p.quitWithin(t, 2*time.Second)
+	<-p.quit
 	if p.stopped.Load() != 1 {
 		t.Errorf("stopped %d times", p.stopped.Load())
 	}
@@ -92,7 +74,7 @@ func TestCmdQAnswersAtOnceAndQuitsWhenStopped(t *testing.T) {
 // runs or not: it asked only while work ran, so the workspace took two
 // presses and the settings page quit on the first.
 func TestTheFirstCmdQAlwaysAsks(t *testing.T) {
-	l, p := newLeaving(false, 0)
+	l, p := newLeaving(false)
 	if l.shouldQuit() {
 		t.Fatal("the first Cmd+Q quit")
 	}
@@ -103,7 +85,7 @@ func TestTheFirstCmdQAlwaysAsks(t *testing.T) {
 		t.Fatal("the first Cmd+Q stopped everything")
 	}
 	l.shouldQuit()
-	p.quitWithin(t, 2*time.Second)
+	<-p.quit
 	if got := p.words(); len(got) != 2 || got[1] != "going" {
 		t.Errorf("the interface heard %v", got)
 	}
@@ -111,7 +93,7 @@ func TestTheFirstCmdQAlwaysAsks(t *testing.T) {
 
 // A second Cmd+Q long after the first asks again.
 func TestALateSecondCmdQAsksAgain(t *testing.T) {
-	l, p := newLeaving(false, 0)
+	l, p := newLeaving(false)
 	l.shouldQuit()
 	l.mu.Lock()
 	l.askedAt = time.Now().Add(-2 * quitAgain)
@@ -125,48 +107,53 @@ func TestALateSecondCmdQAsksAgain(t *testing.T) {
 // Closing the app's window quits without asking: there is no window left to
 // press Cmd+Q into a second time.
 func TestClosingTheWindowQuitsWithoutAsking(t *testing.T) {
-	l, p := newLeaving(false, 0)
+	l, p := newLeaving(false)
 	l.closing()
 	l.shouldQuit()
-	p.quitWithin(t, 2*time.Second)
+	<-p.quit
 }
 
 // Relaunch on the Updates page quits into the new build without asking: it
 // was asked for with a click, and the question would stand in its way.
 func TestRelaunchQuitsWithoutAsking(t *testing.T) {
-	l, p := newLeaving(true, 0)
+	l, p := newLeaving(true)
 	l.shouldQuit()
-	p.quitWithin(t, 2*time.Second)
+	<-p.quit
 	if got := p.words(); len(got) != 1 || got[0] != "going" {
 		t.Errorf("the interface heard %v", got)
 	}
 }
 
 // Cmd+Q pressed again and again while the app stops stops it once and
-// quits once.
+// quits once. Stopping is held until every press has answered, and the
+// bubble says when every goroutine the presses started is done.
 func TestCmdQPressedOverAndOverStopsOnce(t *testing.T) {
-	l, p := newLeaving(false, 200*time.Millisecond)
-	var wg sync.WaitGroup
-	for range 8 {
-		wg.Go(func() { l.shouldQuit() })
-	}
-	wg.Wait()
-	p.quitWithin(t, 2*time.Second)
-	select {
-	case <-p.quit:
-		t.Error("quit twice")
-	case <-time.After(300 * time.Millisecond):
-	}
-	if p.stopped.Load() != 1 {
-		t.Errorf("stopped %d times", p.stopped.Load())
-	}
+	synctest.Test(t, func(t *testing.T) {
+		l, p := newLeaving(false)
+		hold := make(chan struct{})
+		stop := l.stop
+		l.stop = func() { <-hold; stop() }
+		var wg sync.WaitGroup
+		for range 8 {
+			wg.Go(func() { l.shouldQuit() })
+		}
+		wg.Wait()
+		close(hold)
+		synctest.Wait()
+		if n := len(p.quit); n != 1 {
+			t.Errorf("quit %d times", n)
+		}
+		if p.stopped.Load() != 1 {
+			t.Errorf("stopped %d times", p.stopped.Load())
+		}
+	})
 }
 
 // Cmd+Q, the question taken away with Escape or a click, and Cmd+Q again
 // asks again. The second press counted though the question had gone, so
 // Cmd+Q on one page, Escape, and Cmd+Q on the next quit at once.
 func TestCmdQAfterTheQuestionWasTakenAwayAsksAgain(t *testing.T) {
-	l, p := newLeaving(false, 0)
+	l, p := newLeaving(false)
 	l.shouldQuit()
 	l.stay()
 	if l.shouldQuit() {
@@ -181,5 +168,5 @@ func TestCmdQAfterTheQuestionWasTakenAwayAsksAgain(t *testing.T) {
 	// Once on its way out, taking the question away changes nothing.
 	l.shouldQuit()
 	l.stay()
-	p.quitWithin(t, 2*time.Second)
+	<-p.quit
 }

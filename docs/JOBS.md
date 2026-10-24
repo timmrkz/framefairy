@@ -512,8 +512,8 @@ The interface's harness has one fake search that goes through the same
 steps from the same kind of record, see the interface skill.
 
 The tests in `jobs_test.go`, `lanes_test.go`, `remove_test.go`,
-`steps_test.go`, `history_test.go` and `letgo_test.go` never wait on the
-clock. They wait on `until`, with no time limit, on a job's
+`steps_test.go`, `store_test.go`, `history_test.go` and `letgo_test.go`
+never wait on the clock. They wait on `until`, with no time limit, on a job's
 news, or on the fake clock of a `testing/synctest` bubble, and a job that
 never ends is left to `go test`'s own `-timeout`. What is left of waits
 on the clock in the other Go tests is #394.
