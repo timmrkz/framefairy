@@ -18,6 +18,7 @@
 // of what is measured, a person's pace, not a wait for work. ROUNDS, 5
 // unless set, walks the
 // clip that many times. CODEC=hevc makes the video HEVC with 10-bit colour.
+// SIZE=2160 makes it 3840 by 2160, the way a 4K camera records.
 // SCALE, 2 unless set, is the device pixels of a CSS pixel, a Mac's screen.
 import { control, fromSidebar, handles, high, nextPaint, open, pageUntil, settle, shownOnPlayhead } from "./bridge.mjs";
 
@@ -29,6 +30,7 @@ const rest = Number(process.env.REST_FRAMES ?? 15);
 const rounds = Number(process.env.ROUNDS ?? 5);
 const scale = Number(process.env.SCALE ?? 2);
 const codec = process.env.CODEC === "hevc" ? "&codec=hevc" : "";
+const size = process.env.SIZE === "2160" ? 2160 : 1080;
 
 // A window as big as a 16 inch MacBook Pro's screen, which has the video
 // preview draw frames about the size Tim's do.
@@ -36,7 +38,7 @@ const codec = process.env.CODEC === "hevc" ? "&codec=hevc" : "";
 const [vw, vh] = (process.env.VIEWPORT ?? "1728x1080").split("x").map(Number);
 const { browser, page, errors } = await open(url, { viewport: { width: vw, height: vh }, scale });
 try {
-  await control(url, `/pick?seconds=60&size=1080${codec}`);
+  await control(url, `/pick?seconds=60&size=${size}${codec}`);
   await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());
   // The page is opened afresh for every round, so no round finds the frames
   // the one before kept, and each times what a first walk of a clip costs.
@@ -50,8 +52,8 @@ try {
       return on.startsWith("folge-") && pane?.querySelectorAll("ol li[data-key]").length > 0;
     });
     await page.evaluate((fps) => {
-      // The moment a key goes down, before the app hears it.
-      window.addEventListener("keydown", () => (window.__keyAt = performance.now()), { capture: true });
+      // The moment a key or the button goes down, before the app hears it.
+      for (const down of ["keydown", "pointerdown"]) window.addEventListener(down, () => (window.__keyAt = performance.now()), { capture: true });
       // Resolves with the milliseconds from the last key until the video
       // preview shows the frame that holds the playhead, and until that
       // frame has its own captions, the word a step lands on lifted out to
@@ -133,6 +135,7 @@ try {
   // hand lets go, how long until the frame that holds the playhead shows.
   const apart = [];
   const settled = [];
+  let keyed = 0;
   const dragAcross = async () => {
     const g = await handles(page);
     const left = g.start.x + g.start.w;
@@ -166,11 +169,28 @@ try {
       return Number(document.querySelector(".screen")?.dataset.playhead);
     });
     apart.push(...(await page.evaluate(() => window.__dragged)));
+    keyed += await page.evaluate(() => window.__frameQueue?.stats.keys ?? 0);
     await page.evaluate(() => (window.__keyAt = performance.now()));
     await page.mouse.up();
     const [took] = await page.evaluate((b) => window.__followed(b, true), before);
     settled.push(took);
     await settle(page);
+  };
+  // A click far along the clip timeline, the button down for 8 animation
+  // frames the way a person's click is, and how long until the frame
+  // clicked shows, from the button going down.
+  const clicked = [];
+  const clickFar = async (share) => {
+    const g = await handles(page);
+    const left = g.start.x + g.start.w;
+    const span = g.end.x - left;
+    const before = await page.evaluate(() => Number(document.querySelector(".screen")?.dataset.playhead));
+    await page.mouse.move(left + share * span, high(g.track));
+    await page.mouse.down();
+    await nextPaint(page, 8);
+    await page.mouse.up();
+    const [took] = await page.evaluate((b) => window.__followed(b), before);
+    clicked.push(took);
   };
   // A clip picked, and the hand rests until its first frame is up with
   // its captions and what is read ahead for the next step is in, the way
@@ -212,6 +232,8 @@ try {
       await press("Left after a word", "ArrowLeft");
     }
     await dragAcross();
+    await clickFar(0.85);
+    await clickFar(0.15);
   }
 
   await count();
@@ -236,8 +258,11 @@ try {
   const z = sorted(settled);
   console.log(
     `dragging the playhead: the frame on screen ${q(a, 0.5)} frames from it on the median, ${q(a, 0.9)} at the 90th, ${a[a.length - 1]} at most, ` +
-      `and the frame that holds it ${Math.round(q(z, 0.5))} ms after letting go on the median, ${Math.round(z[z.length - 1])} ms at most`,
+      `and the frame that holds it ${Math.round(q(z, 0.5))} ms after letting go on the median, ${Math.round(z[z.length - 1])} ms at most, ` +
+      `${keyed} key frames put up on the way`,
   );
+  const c = sorted(clicked);
+  console.log(`clicking far along the clip timeline: the frame clicked ${Math.round(q(c, 0.5))} ms after the press on the median, ${Math.round(c[c.length - 1])} ms at most, ${clicked.length - c.length} never`);
   if (errors.length) console.log("errors on the page:", errors.join("\n"));
 } finally {
   await browser.close();

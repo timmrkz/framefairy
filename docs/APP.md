@@ -422,10 +422,14 @@ sound decoded, so the space bar starts it at once rather than decoding the
 same frames again. The picture moves about 80 ms after the space bar in
 the harness, most of it the sound card's own latency and the first
 frame's own time on screen, since the picture waits for the sound to be
-heard. While it plays, the playhead is the sound being heard,
-on every animation frame, so it moves smoothly, jumps a cut with the sound
-and stands in the frame on screen. It never goes back while playing. A
-press while it plays, on the clip timeline or the range picker, holds the
+heard. While it plays, the playhead is the sound being heard, so it
+jumps a cut with the sound and stands in the frame on screen. It moves
+once a frame of the video, not on every refresh of the screen, because
+everything that follows it is drawn by its frame: the mark on the clip
+timeline, the time field and the captions. Moved on every refresh, the
+whole workspace worked itself out again 120 times a second on a screen
+of 120 Hz for a video of 25 frames a second, issue #446. It never goes
+back while playing. A press while it plays, on the clip timeline or the range picker, holds the
 play under the hand, like a nail, for as long as the button is down: the
 playhead goes to the press and stays there, follows the hand once it
 moves, and the play goes on from where the hand lets go, the clip's or

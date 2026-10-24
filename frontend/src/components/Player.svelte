@@ -23,7 +23,7 @@
   import { onMount, untrack, type Snippet } from "svelte";
   import { said } from "../lib/said";
   import { insideClip, wordInEpisode, type Piece } from "../lib/flow";
-  import { inEpisode, onVideo, placeFor, placeOf, playedToEnd, playFrom, type About, type Place, type Playhead } from "../lib/playhead";
+  import { inEpisode, onVideo, placeFor, placeOf, playedToEnd, playFrom, playMoves, type About, type Place, type Playhead } from "../lib/playhead";
   import { FrameQueue, type Shown } from "../lib/frames/queue";
   import { movieOf } from "../lib/frames/movie";
   import { CaptionLayers, quarters, type CaptionAsk, type Over, type Showing, type WordFrame } from "../lib/frames/captions";
@@ -302,9 +302,9 @@
   });
 
   // What the queue says: where the playhead is and whether it plays. While
-  // it plays the playhead is the sound being heard, on every animation
-  // frame. A play of the clip that reaches its end leaves the playhead on
-  // the clip, at its end, see lib/playhead.ts.
+  // it plays the playhead is the sound being heard, moved once a frame of
+  // the video, see playMoves in lib/playhead.ts. A play of the clip that
+  // reaches its end leaves the playhead on the clip, at its end.
   function heard(s: Shown) {
     trouble = s.trouble;
     frameStart = s.frame;
@@ -330,7 +330,8 @@
       return;
     }
     if (s.playing) {
-      time = inEpisode(s.at, source.duration);
+      const at = inEpisode(s.at, source.duration);
+      if (playMoves(time, at, oneFrame, source.videoStart ?? 0)) time = at;
       return;
     }
     // Paused: where the queue stopped, or where it was sent, which is

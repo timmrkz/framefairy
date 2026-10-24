@@ -46,11 +46,13 @@ func TestAGridShowsEachMomentTheFrameThatHoldsIt(t *testing.T) {
 // take is no open.
 func TestAnOpenCarriesItsGrid(t *testing.T) {
 	g := Grid{Origin: 1.4, Start: 0.033367, Num: 30000, Den: 1001, Count: 1200}
-	id, frame, w, h, got, ok := ReadOpen(strings.Fields(OpenRequest(7, 42, 640, 360, g)))
-	if !ok || id != 7 || frame != 42 || w != 640 || h != 360 || got != g {
-		t.Fatalf("read back as %d %d %dx%d %+v %v", id, frame, w, h, got, ok)
+	for _, want := range []bool{false, true} {
+		id, frame, w, h, got, key, ok := ReadOpen(strings.Fields(OpenRequest(7, 42, 640, 360, g, want)))
+		if !ok || id != 7 || frame != 42 || w != 640 || h != 360 || got != g || key != want {
+			t.Fatalf("read back as %d %d %dx%d %+v %v %v", id, frame, w, h, got, key, ok)
+		}
 	}
-	if _, _, _, _, got, ok := ReadOpen(strings.Fields("open 1 0 640 360 -0.021 0 30 1 1200")); !ok || got.Origin != -0.021 {
+	if _, _, _, _, got, _, ok := ReadOpen(strings.Fields("open 1 0 640 360 -0.021 0 30 1 1200")); !ok || got.Origin != -0.021 {
 		t.Errorf("a clock that starts before nought was read as %+v %v", got, ok)
 	}
 	for _, bad := range []string{
@@ -67,8 +69,10 @@ func TestAnOpenCarriesItsGrid(t *testing.T) {
 		"open 1 0 640 360 0 -1 30 1 1200",
 		"open 1 0 640 360 0 0 30 1 0",
 		"open 1 0 640 360 0 0 30 1 999999999",
+		"open 1 0 640 360 0 0 30 1 1200 keys",
+		"open 1 0 640 360 0 0 30 1 1200 key key",
 	} {
-		if _, _, _, _, _, ok := ReadOpen(strings.Fields(bad)); ok {
+		if _, _, _, _, _, _, ok := ReadOpen(strings.Fields(bad)); ok {
 			t.Errorf("%q was taken", bad)
 		}
 	}
