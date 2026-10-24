@@ -22,6 +22,11 @@ import { pageUntil, screen, settled } from "../open.mjs";
 const query = process.argv[2] ?? "?growing&lagging&hear=100";
 // From the first moment of the page, on every animation frame.
 const recorder = () => {
+  // The picture is read back from the canvas, and headless Chromium gives
+  // nothing back of a WebGPU canvas, so the video preview draws on a 2D
+  // one, the way the walks do, see screen.ts. Without it every frame read
+  // black and the probe said "first picture never", issue #501.
+  window.__flatScreen = true;
   window.__rows = [];
   window.__mark = (what) => window.__rows.push({ t: performance.now(), mark: what });
   const step = () => {
@@ -139,12 +144,21 @@ if (errors.length) console.log("page errors", errors);
 const broken = [];
 if (!firstPicture || firstPicture.pic !== 0 || firstPicture.at !== 0) broken.push("the first picture is not the episode's first frame at 0");
 if (shown.some((r) => firstPicture && r.t > firstPicture.t && r.pic === -1)) broken.push("the picture went black");
-const firstPick = marks.find((m) => m.mark.startsWith("pick"));
 const firstMove = shown.findIndex((r, i) => i > 0 && r.at !== shown[i - 1].at);
 if (firstMove < 0) broken.push("no clip was ever chosen");
 if (wrong) broken.push("a frame that holds neither the playhead nor where it was");
 if (ways.some((w) => w.ms > 250)) broken.push("a seek's frame took longer than a quarter of a second");
-if (!firstPick || ways.length < 4) broken.push("the search chose no clip, or a pick did not move the playhead");
+// Every pick moves the playhead before the next one. A seek's frame that
+// is up in the same animation frame is no seek on its way, so the moves
+// are counted, not the ways: a quick seek was once read as a pick that
+// did nothing, issue #501.
+const picks = marks.filter((m) => m.mark.startsWith("pick"));
+const movedAt = shown.filter((r, i) => i > 0 && r.at !== shown[i - 1].at).map((r) => r.t);
+const movedAfter = (from, to) => movedAt.some((t) => t > from && t <= to);
+if (!picks.length) broken.push("the list had no clip to pick");
+picks.forEach((m, i) => {
+  if (!movedAfter(m.t, picks[i + 1]?.t ?? Infinity)) broken.push(`${m.mark} did not move the playhead`);
+});
 if (errors.length) broken.push("the page threw");
 console.log(broken.length ? `broken: ${broken.join(", ")}` : "every rule held");
 process.exit(broken.length ? 1 : 0);
