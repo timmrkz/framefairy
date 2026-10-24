@@ -8,8 +8,10 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
+	"github.com/rs/zerolog"
 	"github.com/spf13/afero"
 
 	"framefairy/asr"
@@ -81,6 +83,14 @@ func tone(seconds float64) []float32 {
 func listenWith(t *testing.T, samples []float32) (*FrameFairy, func() []map[string]any) {
 	t.Helper()
 	_, read := testLog(t)
+	return listenTo(t, samples), read
+}
+
+// listenTo is listenWith with no log open, so the lines a recording writes
+// go nowhere. A test in a testing/synctest bubble opens its log outside
+// the bubble, see bubbleLog.
+func listenTo(t *testing.T, samples []float32) *FrameFairy {
+	t.Helper()
 	s := &speech{}
 	fakes := func(e *engine.Engine, o *engine.Options) { e.OpenRecognizer = s.open }
 	standIns.Store(&fakes)
@@ -100,7 +110,19 @@ func listenWith(t *testing.T, samples []float32) (*FrameFairy, func() []map[stri
 		f.CancelListening()
 		f.listening.running.Wait()
 	})
-	return f, read
+	return f
+}
+
+// bubbleLog opens the app's log for a test whose recording runs in a
+// testing/synctest bubble, and writes its first line, outside the bubble.
+// lumberjack starts a goroutine with the first line it writes, which runs
+// until the process ends, and a bubble that started it would wait for it
+// for ever.
+func bubbleLog(t *testing.T) func() []map[string]any {
+	t.Helper()
+	_, read := testLog(t)
+	theLog.line(zerolog.InfoLevel, "test").Msg("the log is open")
+	return read
 }
 
 // What the person says into the microphone is written down by the speech
@@ -266,10 +288,11 @@ func hush(seconds float64) []float32 {
 }
 
 // dictating starts a recording on a microphone the test talks into, and
-// gives what the window is told about it.
+// gives what the window is told about it. Its log is not open, so it can
+// run in a testing/synctest bubble.
 func dictating(t *testing.T, set ...func(*listening)) (*FrameFairy, *talkingMicrophone, chan Dictation) {
 	t.Helper()
-	f, _ := listenWith(t, nil)
+	f := listenTo(t, nil)
 	mic := &talkingMicrophone{}
 	openMicrophone = func() microphone { return mic }
 	told := make(chan Dictation, 100)
@@ -338,12 +361,9 @@ func TestDroppingARecording(t *testing.T) {
 	// The window is told only from the goroutine that writes the words
 	// down, which closes over when it ends. Once it has, what it said
 	// before it heard of the drop is all there will be. Waiting 100 ms
-	// missed whatever came later than that.
-	select {
-	case <-r.over:
-	case <-time.After(10 * time.Second):
-		t.Fatal("writing the words down went on after the recording was dropped")
-	}
+	// missed whatever came later than that. Writing the words down that
+	// goes on after the drop is ended by go test's -timeout.
+	<-r.over
 	// What was on its way as the recording was dropped.
 	for len(told) > 0 {
 		<-told
@@ -441,7 +461,8 @@ type voices struct {
 	mu   sync.Mutex
 	held chan struct{}
 	in   chan struct{}
-	// slow is how long each pass takes, nothing when zero.
+	// slow is how long each pass takes, nothing when zero. Only a test in
+	// a testing/synctest bubble sets it, whose clock is fake.
 	slow time.Duration
 }
 
@@ -462,7 +483,9 @@ func (v *voices) Recognize(samples []float32, rate int) []engine.Token {
 		in <- struct{}{}
 		<-held
 	}
-	time.Sleep(v.slow)
+	if v.slow > 0 {
+		time.Sleep(v.slow) //nolint:forbidigo // synctest bubble
+	}
 	step := rate * 6 / 10
 	var tokens []engine.Token
 	for at := 0; at+step/2 <= len(samples); at += step {
@@ -496,7 +519,8 @@ func dictatingTo(t *testing.T, v *voices, set ...func(*listening)) (*FrameFairy,
 }
 
 // room keeps a quiet room going into the microphone until the test ends,
-// the way a real one never stops sending.
+// the way a real one never stops sending, 20 ms of it every 20 ms of the
+// clock of the testing/synctest bubble it runs in.
 func room(t *testing.T, mic *talkingMicrophone) {
 	done := make(chan struct{})
 	over := make(chan struct{})
@@ -510,7 +534,7 @@ func room(t *testing.T, mic *talkingMicrophone) {
 			select {
 			case <-done:
 				return
-			case <-time.After(20 * time.Millisecond):
+			case <-time.After(20 * time.Millisecond): //nolint:forbidigo // synctest bubble
 				mic.say(hush(0.02))
 			}
 		}
@@ -522,66 +546,76 @@ func room(t *testing.T, mic *talkingMicrophone) {
 // that has reached the longest a recording can be, rather than going on
 // listening and hearing nothing, which is what Tim found after ten
 // minutes. Stop pressed after that gives the same, once. Plan row 2.189.
+//
+// The bubble's clock is fake, so the quiet of 300 ms passes the moment
+// everything waits on it, on any machine.
 func TestListeningStopsByItself(t *testing.T) {
-	f, mic, told := dictatingTo(t, &voices{}, func(l *listening) { l.quiet = 300 * time.Millisecond })
-	mic.say(tone(1.2))
-	room(t, mic)
-	d := awaitTold(t, told, func(d Dictation) bool { return d.Ended != "" })
-	if !strings.Contains(d.Ended, "without a word") || strings.Join(d.Said, " ") != "wort wort" {
-		t.Errorf("after the quiet the window was told %q with %q", d.Ended, d.Said)
-	}
-	if stopped, err := f.StopListening(); stopped.Ended != d.Ended || strings.Join(stopped.Said, " ") != "wort wort" || stopped.Recording != d.Recording || err != nil {
-		t.Errorf("Stop pressed after it stopped by itself gave %+v, %v", stopped, err)
-	}
-	if stopped, err := f.StopListening(); len(stopped.Said) != 0 || err != nil {
-		t.Errorf("Stop pressed again gave %q, %v", stopped.Said, err)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		f, mic, told := dictatingTo(t, &voices{}, func(l *listening) { l.quiet = 300 * time.Millisecond })
+		mic.say(tone(1.2))
+		room(t, mic)
+		d := awaitTold(t, told, func(d Dictation) bool { return d.Ended != "" })
+		if !strings.Contains(d.Ended, "without a word") || strings.Join(d.Said, " ") != "wort wort" {
+			t.Errorf("after the quiet the window was told %q with %q", d.Ended, d.Said)
+		}
+		if stopped, err := f.StopListening(); stopped.Ended != d.Ended || strings.Join(stopped.Said, " ") != "wort wort" || stopped.Recording != d.Recording || err != nil {
+			t.Errorf("Stop pressed after it stopped by itself gave %+v, %v", stopped, err)
+		}
+		if stopped, err := f.StopListening(); len(stopped.Said) != 0 || err != nil {
+			t.Errorf("Stop pressed again gave %q, %v", stopped.Said, err)
+		}
 
-	f, mic, told = dictatingTo(t, &voices{}, func(l *listening) { l.most = 2 * engine.SampleRate })
-	mic.say(tone(1), tone(1), tone(1))
-	d = awaitTold(t, told, func(d Dictation) bool { return d.Ended != "" })
-	if !strings.Contains(d.Ended, "longest") || len(d.Said) == 0 {
-		t.Errorf("at the longest the window was told %q with %q", d.Ended, d.Said)
-	}
-	if _, err := f.Listen(); err != nil {
-		t.Errorf("listening again: %v", err)
-	}
-	f.CancelListening()
+		f, mic, told = dictatingTo(t, &voices{}, func(l *listening) { l.most = 2 * engine.SampleRate })
+		mic.say(tone(1), tone(1), tone(1))
+		d = awaitTold(t, told, func(d Dictation) bool { return d.Ended != "" })
+		if !strings.Contains(d.Ended, "longest") || len(d.Said) == 0 {
+			t.Errorf("at the longest the window was told %q with %q", d.Ended, d.Said)
+		}
+		if _, err := f.Listen(); err != nil {
+			t.Errorf("listening again: %v", err)
+		}
+		f.CancelListening()
+	})
 }
 
 // Stop pressed while a recording that stopped by itself is still being
 // written down waits for it and gives every word, rather than nothing.
 // The review of #190 found the last piece lost that way. Plan row 2.189.
+//
+// In the bubble the quiet of 300 ms passes on a fake clock, and
+// synctest.Wait says when Stop is waiting for the words.
 func TestStopWhileItStopsByItself(t *testing.T) {
-	v := &voices{}
-	f, mic, told := dictatingTo(t, v, func(l *listening) { l.quiet = 300 * time.Millisecond })
-	mic.say(tone(1.2))
-	awaitTold(t, told, func(d Dictation) bool { return d.Hearing != "" })
-	// No more sound comes, so the next pass is the last one.
-	held, in := v.hold()
-	select {
-	case <-in:
-	case <-time.After(10 * time.Second):
-		t.Fatal("the recording never stopped by itself")
-	}
-	stopped := make(chan Dictation)
-	go func() {
-		d, err := f.StopListening()
-		if err != nil {
-			t.Error(err)
-		}
-		stopped <- d
-	}()
-	// The last pass ends only once Stop has taken the recording in hand.
-	until(t, "Stop to take the recording", func() bool {
+	synctest.Test(t, func(t *testing.T) {
+		v := &voices{}
+		f, mic, told := dictatingTo(t, v, func(l *listening) { l.quiet = 300 * time.Millisecond })
+		mic.say(tone(1.2))
+		awaitTold(t, told, func(d Dictation) bool { return d.Hearing != "" })
+		// No more sound comes, so the next pass is the last one, once the
+		// recording stops by itself.
+		held, in := v.hold()
+		<-in
+		stopped := make(chan Dictation)
+		go func() {
+			d, err := f.StopListening()
+			if err != nil {
+				t.Error(err)
+			}
+			stopped <- d
+		}()
+		// The last pass ends only once Stop has taken the recording in
+		// hand and waits for its words.
+		synctest.Wait()
 		f.listening.mu.Lock()
-		defer f.listening.mu.Unlock()
-		return f.listening.now == nil
+		taken := f.listening.now == nil
+		f.listening.mu.Unlock()
+		if !taken {
+			t.Fatal("Stop is waiting, and the recording is still in hand")
+		}
+		close(held)
+		if d := <-stopped; strings.Join(d.Said, " ") != "wort wort" {
+			t.Errorf("Stop gave %q", d.Said)
+		}
 	})
-	close(held)
-	if d := <-stopped; strings.Join(d.Said, " ") != "wort wort" {
-		t.Errorf("Stop gave %q", d.Said)
-	}
 }
 
 // A microphone that hands over nothing but zeros is said while it
@@ -650,25 +684,34 @@ func TestClickingWhatWasHeardBeforeAPause(t *testing.T) {
 // there were and how long the slowest took, so a report from a slower
 // machine shows why the words fell behind. The review of #190 asked for
 // it. Plan row 2.189.
+//
+// Each pass takes 30 ms of the fake clock of a testing/synctest bubble, and
+// a pass is asked for every 10 ms, so the speech model is slower than the
+// words on any machine, and by exactly as much.
 func TestASlowSpeechModelIsSaidOnce(t *testing.T) {
-	f, read := listenWith(t, nil)
-	mic := &talkingMicrophone{}
-	openMicrophone = func() microphone { return mic }
-	v := &voices{slow: 30 * time.Millisecond}
-	fakes := func(e *engine.Engine, o *engine.Options) {
-		e.OpenRecognizer = func(string) (engine.Recognizer, error) { return v, nil }
-	}
-	standIns.Store(&fakes)
-	if _, err := f.Listen(); err != nil {
-		t.Fatal(err)
-	}
-	for range 5 {
-		mic.say(tone(0.3))
-		time.Sleep(40 * time.Millisecond)
-	}
-	if _, err := f.StopListening(); err != nil {
-		t.Fatal(err)
-	}
+	read := bubbleLog(t)
+	synctest.Test(t, func(t *testing.T) {
+		f := listenTo(t, nil)
+		mic := &talkingMicrophone{}
+		openMicrophone = func() microphone { return mic }
+		v := &voices{slow: 30 * time.Millisecond}
+		fakes := func(e *engine.Engine, o *engine.Options) {
+			e.OpenRecognizer = func(string) (engine.Recognizer, error) { return v, nil }
+		}
+		standIns.Store(&fakes)
+		if _, err := f.Listen(); err != nil {
+			t.Fatal(err)
+		}
+		// A person talks on, so a pass is taken between one piece and the
+		// next.
+		for range 5 {
+			mic.say(tone(0.3))
+			time.Sleep(40 * time.Millisecond) //nolint:forbidigo // synctest bubble
+		}
+		if _, err := f.StopListening(); err != nil {
+			t.Fatal(err)
+		}
+	})
 	lines := read()
 	slow := 0
 	for _, l := range lines {
@@ -688,39 +731,41 @@ func TestASlowSpeechModelIsSaidOnce(t *testing.T) {
 // The window is told how loud the microphone is, a few times a second, so
 // the button can move with the voice and the person sees they are heard.
 // Plan row 2.189.
+//
+// The bubble's clock is fake, so each piece said is followed by exactly
+// one tenth of a second in which the window is told once.
 func TestTheMicrophoneSaysHowLoud(t *testing.T) {
-	var mu sync.Mutex
-	var levels []float64
-	f, mic, _ := dictating(t, func(l *listening) {
-		l.loud = func(n Loudness) {
+	synctest.Test(t, func(t *testing.T) {
+		var mu sync.Mutex
+		var levels []float64
+		f, mic, _ := dictating(t, func(l *listening) {
+			l.loud = func(n Loudness) {
+				mu.Lock()
+				levels = append(levels, n.Level)
+				mu.Unlock()
+			}
+		})
+		defer f.CancelListening()
+		// told is how loud the window was told the microphone is, a tenth
+		// of a second after the samples were said into it, -1 for never.
+		told := func(samples []float32) float64 {
+			mic.say(samples)
+			time.Sleep(100 * time.Millisecond) //nolint:forbidigo // synctest bubble
+			synctest.Wait()
 			mu.Lock()
-			levels = append(levels, n.Level)
-			mu.Unlock()
+			defer mu.Unlock()
+			if len(levels) == 0 {
+				return -1
+			}
+			return levels[len(levels)-1]
+		}
+		if l := told(tone(0.1)); l <= 0.5 {
+			t.Errorf("a voice was told as %v", l)
+		}
+		if l := told(hush(0.1)); l < 0 || l >= 0.2 {
+			t.Errorf("a quiet room was told as %v", l)
 		}
 	})
-	defer f.CancelListening()
-	heard := func(ok func(float64) bool, samples []float32) bool {
-		for range 50 {
-			mic.say(samples)
-			time.Sleep(20 * time.Millisecond)
-			mu.Lock()
-			last := -1.0
-			if len(levels) > 0 {
-				last = levels[len(levels)-1]
-			}
-			mu.Unlock()
-			if last >= 0 && ok(last) {
-				return true
-			}
-		}
-		return false
-	}
-	if !heard(func(l float64) bool { return l > 0.5 }, tone(0.1)) {
-		t.Errorf("a voice was told as %v", levels)
-	}
-	if !heard(func(l float64) bool { return l < 0.2 }, hush(0.1)) {
-		t.Errorf("a quiet room was told as %v", levels)
-	}
 }
 
 // A recording goes with the report window it was started in. Tim closed
@@ -765,37 +810,24 @@ func TestNobodySpeakingIsWrittenDownAsNothing(t *testing.T) {
 	if _, err := f.Listen(); err != nil {
 		t.Fatal(err)
 	}
-	// Stopped once the whole room is heard, rather than 200 ms on, which
-	// a busy machine may not have played it all in.
 	f.listening.mu.Lock()
 	r := f.listening.now
 	f.listening.mu.Unlock()
-	until(t, "the room was heard", func() bool {
-		r.mu.Lock()
-		defer r.mu.Unlock()
-		return len(r.samples) == len(room)
-	})
+	// Stopping stops the microphone before what was said is written
+	// down, and the stand-in hands over all it has before it stops, so the
+	// whole room is heard however busy the machine is. It was once given
+	// 200 ms to play it all.
 	d, err := f.StopListening()
 	if err != nil {
 		t.Fatal(err)
+	}
+	if heard := len(r.recorded()); heard != len(room) {
+		t.Fatalf("%d samples of the room were heard, want all %d", heard, len(room))
 	}
 	if len(d.Said) != 0 {
 		t.Fatalf("the hum of a room was written down as %q", d.Said)
 	}
 	if find(read(), "nobody spoke, so nothing was written down") == nil {
 		t.Fatal("the log does not say nobody spoke")
-	}
-}
-
-// until waits for ok to say yes, looking every millisecond, and fails
-// the test after ten seconds with what was waited for.
-func until(t *testing.T, what string, ok func() bool) {
-	t.Helper()
-	give := time.Now().Add(10 * time.Second)
-	for !ok() {
-		if time.Now().After(give) {
-			t.Fatalf("%s never came", what)
-		}
-		time.Sleep(time.Millisecond)
 	}
 }
