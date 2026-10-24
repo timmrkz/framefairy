@@ -5,9 +5,11 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/spf13/afero"
@@ -28,10 +30,6 @@ func stubbornJob(release <-chan struct{}) func(context.Context, *engine.Project)
 
 func anEpisodeWithWork(t *testing.T) (*FrameFairy, string, string) {
 	t.Helper()
-	// The real wait is fifteen seconds, which is a long test.
-	was := stopWait
-	stopWait = 300 * time.Millisecond
-	t.Cleanup(func() { stopWait = was })
 	s, eps := memoryLibrary(t, "ep.mp4")
 	source := eps[0]
 	work := engine.WorkDir(source)
@@ -40,6 +38,7 @@ func anEpisodeWithWork(t *testing.T) (*FrameFairy, string, string) {
 		t.Fatal(err)
 	}
 	s.jobs = newQueue(s.store, func(JobUpdate) {}, func(string) {})
+	logJobsOnFailure(t, s.jobs)
 	return s, source, work
 }
 
@@ -50,25 +49,29 @@ func anEpisodeWithWork(t *testing.T) (*FrameFairy, string, string) {
 // back, and an episode the user removed leaves a folder behind with a
 // partial transcript in it. Worse, the app keeps working on an episode
 // that is no longer in the library.
+//
+// The removal gives the job stopWait, fifteen seconds, which pass on the
+// fake clock of a synctest bubble in no time.
 func TestAnEpisodeIsNotDeletedUnderARunningJob(t *testing.T) {
-	s, source, work := anEpisodeWithWork(t)
-	release := make(chan struct{})
-	defer close(release)
+	synctest.Test(t, func(t *testing.T) {
+		s, source, work := anEpisodeWithWork(t)
+		release := make(chan struct{})
+		defer close(release)
 
-	s.jobs.add(source, "render", "Render", stubbornJob(release))
-	// Let the queue pick it up.
-	waitForRunning(t, s, source)
+		s.jobs.add(source, "render", "Render", stubbornJob(release))
+		waitForRunning(t, s, source)
 
-	err := s.RemoveEpisode(source, true)
-	if err == nil {
-		t.Error("the episode was removed while a job was still running on it")
-	}
-	if _, statErr := s.store.files.Stat(work); os.IsNotExist(statErr) {
-		t.Error("the work folder was deleted while a job was still running on it")
-	}
-	if !s.store.Known(source) {
-		t.Error("the episode was taken out of the library while a job was still running on it")
-	}
+		err := s.RemoveEpisode(source, true)
+		if err == nil {
+			t.Error("the episode was removed while a job was still running on it")
+		}
+		if _, statErr := s.store.files.Stat(work); os.IsNotExist(statErr) {
+			t.Error("the work folder was deleted while a job was still running on it")
+		}
+		if !s.store.Known(source) {
+			t.Error("the episode was taken out of the library while a job was still running on it")
+		}
+	})
 }
 
 // The same call, once nothing is running, does what it says.
@@ -126,43 +129,30 @@ func TestAnEpisodeIsAlwaysRemovedWhenItsWorkIsKept(t *testing.T) {
 	}
 }
 
+// waitForRunning waits until a job of a video runs, told by the queue as
+// it starts.
 func waitForRunning(t *testing.T, s *FrameFairy, source string) {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		for _, j := range s.jobs.list() {
-			if j.Episode == source && j.State == JobRunning {
-				return
-			}
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	t.Fatal("no job ever started")
+	s.jobs.until(func(jobs []*Job) bool {
+		return slices.ContainsFunc(jobs, func(j *Job) bool { return j.Episode == source && j.State == JobRunning })
+	}, nil)
 }
 
 // waitForSettled waits until no job of an episode is queued or running,
-// for as long as a slow machine may take and no longer. A fixed sleep was
-// either longer than the work needed or, on a busy machine, shorter.
+// told by the queue the moment the last one ends. A job that never ends
+// hangs the test until go test's own -timeout, which shows every goroutine.
 func waitForSettled(t *testing.T, s *FrameFairy, source string) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		busy := false
-		for _, j := range s.jobs.list() {
-			if j.Episode == source && (j.State == JobQueued || j.State == JobRunning) {
-				busy = true
-			}
-		}
-		if !busy {
-			return
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+	s.jobs.until(func(jobs []*Job) bool {
+		return !slices.ContainsFunc(jobs, func(j *Job) bool { return j.Episode == source && j.going() })
+	}, nil)
 }
 
 // hearing puts a search in the queue that hears the episode until it is
 // told to stop, and then takes a moment to save what it heard, the way a
-// real one does. What it gives says when that save is done.
+// real one does. What it gives says when that save is done. It runs in a
+// synctest bubble, whose clock is fake, so that moment costs no time and a
+// removal that did not wait for it always finds the save not done.
 func hearing(t *testing.T, s *FrameFairy, path string) *atomic.Bool {
 	t.Helper()
 	saved := new(atomic.Bool)
@@ -179,38 +169,37 @@ func hearing(t *testing.T, s *FrameFairy, path string) *atomic.Bool {
 			close(started)
 			<-stepCtx.Done()
 			// Long enough that a removal which did not wait would be seen.
-			time.Sleep(20 * time.Millisecond)
+			time.Sleep(20 * time.Millisecond) //nolint:forbidigo // synctest bubble
 			saved.Store(true)
 			return "", engine.ErrCancelled
 		})
-	select {
-	case <-started:
-	case <-time.After(10 * time.Second):
-		t.Fatal("the search never started hearing")
-	}
+	<-started
 	return saved
 }
 
 // Removing an episode while its search hears it. The search is stopped and
 // waited for, and nothing of it is left running on an episode that is gone.
 func TestRemovingAnEpisodeWhileItsSearchHears(t *testing.T) {
-	s, source, work := anEpisodeWithWork(t)
-	saved := hearing(t, s, source)
-	if err := s.RemoveEpisode(source, true); err != nil {
-		t.Fatalf("removing the episode: %v", err)
-	}
-	if !saved.Load() {
-		t.Error("the work folder was removed before the search had saved what it heard")
-	}
-	if _, err := s.store.files.Stat(work); !os.IsNotExist(err) {
-		t.Error("the work folder is still there")
-	}
-	waitForSettled(t, s, source)
-	for _, j := range s.jobs.list() {
-		if j.Episode == source && (j.State == JobQueued || j.State == JobRunning) {
-			t.Errorf("%s is %s on an episode that was removed", j.Kind, j.State)
+	synctest.Test(t, func(t *testing.T) {
+		s, source, work := anEpisodeWithWork(t)
+		saved := hearing(t, s, source)
+		if err := s.RemoveEpisode(source, true); err != nil {
+			t.Fatalf("removing the episode: %v", err)
 		}
-	}
+		if !saved.Load() {
+			t.Error("the work folder was removed before the search had saved what it heard")
+		}
+		if _, err := s.store.files.Stat(work); !os.IsNotExist(err) {
+			t.Error("the work folder is still there")
+		}
+		// The removal waited for the search to stop, so nothing of the
+		// video is left without anything more to wait for.
+		for _, j := range s.jobs.list() {
+			if j.Episode == source && j.going() {
+				t.Errorf("%s is %s on an episode that was removed", j.Kind, j.State)
+			}
+		}
+	})
 }
 
 // While an episode is being removed, and after it is gone, nothing new is
@@ -277,19 +266,21 @@ func TestNothingStartsOnAnEpisodeBeingRemoved(t *testing.T) {
 // waiting for them, so a removed episode does not go on holding the lane of
 // hearing.
 func TestARemovedEpisodeStopsHearing(t *testing.T) {
-	s, source, _ := anEpisodeWithWork(t)
-	hearing(t, s, source)
-	if err := s.RemoveEpisode(source, false); err != nil {
-		t.Fatal(err)
-	}
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if j, ok := s.jobs.find(source, engine.JobSearch); !ok || j.State != JobRunning {
-			return
+	synctest.Test(t, func(t *testing.T) {
+		s, source, _ := anEpisodeWithWork(t)
+		hearing(t, s, source)
+		if err := s.RemoveEpisode(source, false); err != nil {
+			t.Fatal(err)
 		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	t.Error("the removed episode is still being heard")
+		// The search saves what it heard and ends, told by the queue. One
+		// that never stops leaves everything in the bubble blocked, and
+		// synctest fails the test at once.
+		s.jobs.until(func(jobs []*Job) bool {
+			return !slices.ContainsFunc(jobs, func(j *Job) bool {
+				return j.Episode == source && j.Kind == engine.JobSearch && j.State == JobRunning
+			})
+		}, nil)
+	})
 }
 
 // An episode added again after it was removed takes work again.

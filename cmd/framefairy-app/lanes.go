@@ -43,7 +43,7 @@ type lanes struct {
 	mu      sync.Mutex
 	held    map[string]*holder
 	asks    []*ask
-	changed chan struct{}
+	changed wake
 }
 
 // A turn is either plain, or a step of a search: hearing, which gives way,
@@ -72,13 +72,12 @@ type ask struct {
 }
 
 func newLanes() *lanes {
-	return &lanes{held: map[string]*holder{}, changed: make(chan struct{})}
+	return &lanes{held: map[string]*holder{}}
 }
 
 // wakeLocked tells everyone waiting that something changed. l.mu is held.
 func (l *lanes) wakeLocked() {
-	close(l.changed)
-	l.changed = make(chan struct{})
+	l.changed.wakeLocked()
 }
 
 // enqueue asks for a turn now, so the turn keeps its place from this
@@ -116,7 +115,7 @@ func (l *lanes) wait(ctx context.Context, a *ask) (context.Context, func(), erro
 		if hearing := l.held[a.lane]; hearing != nil && givesWay(hearing.kind, a.kind) {
 			hearing.cancel()
 		}
-		changed := l.changed
+		changed := l.changed.waitLocked()
 		l.mu.Unlock()
 		select {
 		case <-ctx.Done():

@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"runtime/debug"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -113,7 +114,16 @@ type Job struct {
 	// act is what the person did that asked for the job, so the app's log
 	// ties the job's lines to it however long it runs. See applog.go.
 	act string
+	// alive is set while the job's goroutine runs, from the moment it is
+	// started until runSafely returns. A job's state says it ended before
+	// the job has closed its log in the video's work folder, told the
+	// window and let go of its lane, so whatever waits for jobs to stop
+	// waits for this too, see runSafely.
+	alive bool
 }
+
+// going says whether a job is queued or running.
+func (j *Job) going() bool { return j.State == JobQueued || j.State == JobRunning }
 
 // JobUpdate is what the interface receives on the "job" event.
 type JobUpdate struct {
@@ -165,12 +175,17 @@ type queue struct {
 	// keeps its model loaded again, see keep.go: such a job may have put
 	// the kept model aside for another one, or for a bigger copy of it.
 	searched func()
+	// changed tells whoever waits on the jobs of every change to one, so
+	// a wait for jobs to stop goes on the moment they have, see until.
+	changed wake
 }
 
-// stampLocked marks a change to a job. q.mu is held.
+// stampLocked marks a change to a job, and tells whoever waits on the
+// jobs. q.mu is held.
 func (q *queue) stampLocked(j *Job) {
 	q.seq++
 	j.Seq = q.seq
+	q.changed.wakeLocked()
 }
 
 // newQueue builds the queue.
@@ -262,8 +277,7 @@ func (q *queue) queueFor(episode, kind, label, plan string, clips []string, once
 	if once {
 		for i := len(q.jobs) - 1; i >= 0; i-- {
 			j := q.jobs[i]
-			if j.Episode == episode && j.Kind == kind &&
-				(j.State == JobQueued || j.State == JobRunning) {
+			if j.Episode == episode && j.Kind == kind && j.going() {
 				already := *j
 				q.mu.Unlock()
 				return already
@@ -278,6 +292,7 @@ func (q *queue) queueFor(episode, kind, label, plan string, clips []string, once
 	// Its turn is asked for now, under the lock, so jobs of one lane run
 	// in the order they were queued.
 	job.ask = q.lanes.enqueue(lane, plainTurn)
+	job.alive = !q.idle
 	q.stampLocked(job)
 	q.jobs = append(q.jobs, job)
 	snapshot := *job
@@ -313,8 +328,7 @@ func (q *queue) addSteps(episode, kind, label string, once bool, prepare func(*J
 		for _, j := range q.jobs {
 			// One that was called off and is still stopping is not it: Search
 			// pressed right after Cancel is a new search.
-			if j.Episode == episode && j.Kind == kind && (j.State == JobQueued || j.State == JobRunning) &&
-				j.ctx.Err() == nil {
+			if j.Episode == episode && j.Kind == kind && j.going() && j.ctx.Err() == nil {
 				already := *j
 				q.mu.Unlock()
 				return already
@@ -336,6 +350,7 @@ func (q *queue) addSteps(episode, kind, label string, once bool, prepare func(*J
 		job.byHand = job.Record != ""
 		cancel()
 	}
+	job.alive = !q.idle
 	q.stampLocked(job)
 	q.jobs = append(q.jobs, job)
 	snapshot := *job
@@ -466,12 +481,7 @@ func (q *queue) busy() bool {
 }
 
 func (q *queue) busyLocked() bool {
-	for _, j := range q.jobs {
-		if j.State == JobQueued || j.State == JobRunning {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(q.jobs, (*Job).going)
 }
 
 // closeIfIdle is how Relaunch asks the queue. When no job runs or waits,
@@ -542,7 +552,7 @@ func (q *queue) closeEpisode(episode string) (reopen func()) {
 	q.closed[episode]++
 	var queued []Job
 	for _, j := range q.jobs {
-		if j.Episode != episode || (j.State != JobQueued && j.State != JobRunning) {
+		if j.Episode != episode || !j.going() {
 			continue
 		}
 		j.cancel()
@@ -579,28 +589,48 @@ func (q *queue) openEpisode(episode string) {
 }
 
 // waitEpisode waits until no job of an episode is running any more, and
-// says whether that happened within stopWait.
+// its goroutine is done, and says whether that happened within stopWait.
 func (q *queue) waitEpisode(episode string) bool {
-	deadline := time.Now().Add(stopWait)
+	return q.stopped(func(j *Job) bool { return j.Episode == episode && (j.State == JobRunning || j.alive) })
+}
+
+// stopped waits, at most stopWait, until no job that left picks is left,
+// and says whether that happened in time.
+func (q *queue) stopped(left func(*Job) bool) bool {
+	timer := time.NewTimer(stopWait)
+	defer timer.Stop()
+	return q.until(func(jobs []*Job) bool { return !slices.ContainsFunc(jobs, left) }, timer.C)
+}
+
+// until waits until done holds for the jobs, and says whether it did
+// before expire fired. It looks again at every change to a job, the
+// moment it is made, see changed, never on a clock of its own. A nil
+// expire never fires, which is how a test waits for as long as the work
+// takes. done is called under the queue's lock, so it only reads.
+func (q *queue) until(done func(jobs []*Job) bool, expire <-chan time.Time) bool {
+	expired := false
 	for {
-		running := false
-		for _, j := range q.list() {
-			if j.Episode == episode && j.State == JobRunning {
-				running = true
-			}
-		}
-		if !running {
+		q.mu.Lock()
+		if done(q.jobs) {
+			q.mu.Unlock()
 			return true
 		}
-		if !time.Now().Before(deadline) {
+		if expired {
+			q.mu.Unlock()
 			return false
 		}
-		time.Sleep(100 * time.Millisecond)
+		changed := q.changed.waitLocked()
+		q.mu.Unlock()
+		select {
+		case <-changed:
+		case <-expire:
+			expired = true
+		}
 	}
 }
 
 // shutDown stops every job and waits, at most stopWait, for the running
-// ones to end. The app calls it on the way out. A render's ffmpeg and a
+// ones to end and their goroutines to be done. The app calls it on the way out. A render's ffmpeg and a
 // transcription were left running after the app had gone, and a
 // transcription keeps the file it writes open, so the next start found it
 // half written by a program nobody could see.
@@ -608,7 +638,7 @@ func (q *queue) shutDown() bool {
 	q.mu.Lock()
 	q.shut = true
 	for _, j := range q.jobs {
-		if j.State == JobQueued || j.State == JobRunning {
+		if j.going() {
 			j.cancel()
 			if j.State == JobQueued {
 				j.State = JobCancelled
@@ -617,22 +647,7 @@ func (q *queue) shutDown() bool {
 		}
 	}
 	q.mu.Unlock()
-	deadline := time.Now().Add(stopWait)
-	for {
-		running := false
-		for _, j := range q.list() {
-			if j.State == JobRunning {
-				running = true
-			}
-		}
-		if !running {
-			return true
-		}
-		if !time.Now().Before(deadline) {
-			return false
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	return q.stopped(func(j *Job) bool { return j.State == JobRunning || j.alive })
 }
 
 // cancelEpisode stops every job of an episode and waits until none of them
@@ -687,7 +702,7 @@ func (q *queue) stopClips(episode, click string) {
 	}
 	var stopped []Job
 	for _, j := range q.jobs {
-		if j.Episode != episode || !makesClips(j.Kind) || (j.State != JobQueued && j.State != JobRunning) ||
+		if j.Episode != episode || !makesClips(j.Kind) || !j.going() ||
 			j.ctx.Err() != nil {
 			continue
 		}
@@ -745,21 +760,10 @@ func (q *queue) settleRefused(id string) {
 	}
 }
 
-// waitJob waits, at most stopWait, until a job is no longer running.
+// waitJob waits, at most stopWait, until a job is no longer running and
+// its goroutine is done.
 func (q *queue) waitJob(id string) {
-	deadline := time.Now().Add(stopWait)
-	for time.Now().Before(deadline) {
-		running := false
-		for _, j := range q.list() {
-			if j.ID == id && (j.State == JobRunning || j.State == JobQueued) {
-				running = true
-			}
-		}
-		if !running {
-			return
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+	q.stopped(func(j *Job) bool { return j.ID == id && (j.going() || j.alive) })
 }
 
 // find returns the newest job of a kind for an episode, if any.
@@ -780,6 +784,14 @@ func (q *queue) find(episode, kind string) (Job, bool) {
 // lane: every job queued after it waited for ever, and the app looked
 // frozen with nothing to say why.
 func (q *queue) runSafely(job *Job) {
+	// Registered first, so it runs last, once everything the job does on
+	// its way out is done, see alive.
+	defer func() {
+		q.mu.Lock()
+		job.alive = false
+		q.changed.wakeLocked()
+		q.mu.Unlock()
+	}()
 	defer func() {
 		if caught := recover(); caught != nil {
 			theLog.jobLine(zerolog.ErrorLevel, job).Str("stack", string(debug.Stack())).Msgf("the job stopped unexpectedly: %v", caught)
