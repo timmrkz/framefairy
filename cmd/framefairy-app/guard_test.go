@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io/fs"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -11,7 +12,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/spf13/afero"
 
@@ -269,8 +269,8 @@ func TestTheFramesRouteServesKnownEpisodesOnly(t *testing.T) {
 // all hang on this process staying alive.
 func TestAJobThatPanicsOnlyFailsItself(t *testing.T) {
 	svc, mine, _ := library(t)
-	updates := make(chan Job, 100)
-	svc.jobs = newQueue(svc.store, func(u JobUpdate) { updates <- u.Job }, func(string) {})
+	news := newJobNews()
+	svc.jobs = newQueue(svc.store, func(u JobUpdate) { news.heard(u.Job) }, func(string) {})
 
 	bad := svc.jobs.add(mine, "render", "Render", func(context.Context, *engine.Project) (string, error) {
 		var clips []string
@@ -279,22 +279,25 @@ func TestAJobThatPanicsOnlyFailsItself(t *testing.T) {
 	good := svc.jobs.add(mine, "render", "Render", func(context.Context, *engine.Project) (string, error) {
 		return "still here", nil
 	})
-	states := map[string]string{}
-	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); {
-		select {
-		case job := <-updates:
-			states[job.ID] = job.State
-			if job.Error != "" && job.ID == bad.ID && !strings.Contains(job.Error, "unexpectedly") {
-				t.Errorf("the reason was %q", job.Error)
+	// Both end, as the window hears it. A lane that died with the panic
+	// leaves the job after it queued, and the test hangs until go test's
+	// own -timeout, which shows every goroutine.
+	var ended map[string]Job
+	news.until(func(jobs map[string]Job) bool {
+		for _, id := range []string{bad.ID, good.ID} {
+			if j, ok := jobs[id]; !ok || j.going() {
+				return false
 			}
-		case <-time.After(100 * time.Millisecond):
 		}
-		if states[bad.ID] == JobFailed && states[good.ID] == JobDone {
-			return
-		}
+		ended = maps.Clone(jobs)
+		return true
+	})
+	if j := ended[bad.ID]; j.State != JobFailed || !strings.Contains(j.Error, "unexpectedly") {
+		t.Errorf("the panicking job ended as %q with the reason %q", j.State, j.Error)
 	}
-	t.Fatalf("the panicking job ended as %q and the one after it as %q",
-		states[bad.ID], states[good.ID])
+	if j := ended[good.ID]; j.State != JobDone {
+		t.Errorf("the job after the one that panicked ended as %q", j.State)
+	}
 }
 
 // Everything about an episode lives in a folder named after it without its

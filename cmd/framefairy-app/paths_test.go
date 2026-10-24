@@ -74,7 +74,7 @@ func TestPathClosedWhileHearing(t *testing.T) {
 	d := open(t)
 	hearing := d.speech.hearing()
 	ep := d.add("ep", minutes5)
-	within(t, hearing, "hearing")
+	<-hearing
 	d.close()
 	heardBefore, _ := d.heard(ep)
 	given := d.speech.seconds()
@@ -130,7 +130,7 @@ func TestPathClosedWhileFinding(t *testing.T) {
 	d.model.hangs(true)
 	asked := d.model.asking()
 	ep := d.add("ep", minutes5)
-	within(t, asked, "asking the model")
+	<-asked
 	d.close()
 
 	d.reopen()
@@ -153,7 +153,7 @@ func TestPathCancelWhileHearing(t *testing.T) {
 	d := open(t)
 	hearing := d.speech.hearing()
 	ep := d.add("ep", minutes5)
-	within(t, hearing, "hearing")
+	<-hearing
 	d.cancel(ep)
 	d.idle(ep)
 	// Called off, it says so where its clips would be, with Continue, the
@@ -188,7 +188,7 @@ func TestPathCancelWhileFinding(t *testing.T) {
 	d.model.hangs(true)
 	asked := d.model.asking()
 	ep := d.add("ep", minutes5)
-	within(t, asked, "asking the model")
+	<-asked
 	d.cancel(ep)
 	d.idle(ep)
 	if o := d.outcome(ep); !o.stopped {
@@ -224,12 +224,12 @@ func TestPathAVideoAddedOnceTheModelAnswersGetsItsClips(t *testing.T) {
 	d.model.hangs(true)
 	asked := d.model.asking()
 	first := d.add("first", "72")
-	within(t, asked, "the first search asking the model")
+	<-asked
 	d.stop(first, "")
 	d.idle(first)
 	asked = d.model.asking()
 	d.carryOn(first)
-	within(t, asked, "the search Continue started asking the model")
+	<-asked
 	d.model.hangs(false)
 	second := d.add("second", "71")
 	d.idle(second)

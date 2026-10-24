@@ -343,8 +343,8 @@ What ends it:
 ### Smaller
 
 - Two queue paths and five ways in (`add`, `addOnce`, `addFor`, `queue`,
-  `queueFor`), one of them unused. Waiters poll every 20 to 100 ms, and
-  `Search` can hold a call for 15 s. `RemoveEpisode` waits with no limit
+  `queueFor`), one of them unused. Waiters poll every 20 to 100 ms,
+  which #504 ended, and `Search` can hold a call for 15 s. `RemoveEpisode` waits with no limit
   on a loudness measuring whose ffmpeg may hang. One `add`, and a `done`
   channel per job that waiters select on with a deadline.
 - 69 bindings with no one rule for errors. Calls that start work never
