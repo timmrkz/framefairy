@@ -73,12 +73,16 @@ func run(args []string, out io.Writer) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	return serve(ctx, ln, *batch, out)
+	every := time.NewTicker(time.Second)
+	defer every.Stop()
+	return serve(ctx, ln, *batch, out, every.C)
 }
 
-// serve runs the dispenser and its world on ln until ctx ends. The pool is
-// filled before the address is printed, so the first buyer finds keys.
-func serve(ctx context.Context, ln net.Listener, batch int, out io.Writer) error {
+// serve runs the dispenser and its world on ln until ctx ends, and the
+// world takes a step each time ticks says so, once a second from run. The
+// pool is filled before the address is printed, so the first buyer finds
+// keys. A stop that has to cut off what is still running says so.
+func serve(ctx context.Context, ln net.Listener, batch int, out io.Writer, ticks <-chan time.Time) error {
 	base := "http://" + ln.Addr().String()
 	dir, err := os.MkdirTemp("", "framefairy-dispenser-")
 	if err != nil {
@@ -93,7 +97,7 @@ func serve(ctx context.Context, ln net.Listener, batch int, out io.Writer) error
 	served := make(chan error, 1)
 	go func() { served <- srv.Serve(ln) }()
 	d.Tick(ctx)
-	go d.run(ctx)
+	go d.run(ctx, ticks)
 	fmt.Fprintf(out, "The dispenser runs at %s\n  dev page  %s/dev\n  checkout  %s/shop\nCtrl-C stops it, and it forgets everything.\n", base, base, base)
 	select {
 	case err := <-served:
@@ -108,7 +112,8 @@ func serve(ctx context.Context, ln net.Listener, batch int, out io.Writer) error
 	shut, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shut); err != nil {
-		return srv.Close()
+		_ = srv.Close()
+		return fmt.Errorf("the dispenser did not stop in time, what was running was cut off: %w", err)
 	}
 	return nil
 }

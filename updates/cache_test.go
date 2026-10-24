@@ -15,7 +15,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 )
 
 // install checks the list and downloads the channel's build, the way the
@@ -242,17 +241,12 @@ func TestADownloadLetGoOfGoesOnAndIsKept(t *testing.T) {
 	if err := u.DownloadAndInstall(ctx); err == nil {
 		t.Fatal("the wait was not cut off")
 	}
-	kept := filepath.Join(src.Cache, b.SHA256+".zip")
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		if _, err := os.Stat(kept); err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			left, _ := os.ReadDir(src.Cache)
-			t.Fatalf("the download let go of was never kept, the cache holds %v", left)
-		}
-		time.Sleep(10 * time.Millisecond)
+	// The download began before the wait was cut off, so it is on its way
+	// now, and the cache says when it has arrived.
+	<-src.Arrived(b.SHA256)
+	if _, err := os.Stat(filepath.Join(src.Cache, b.SHA256+".zip")); err != nil {
+		left, _ := os.ReadDir(src.Cache)
+		t.Fatalf("the download let go of was never kept, the cache holds %v", left)
 	}
 	if got := install(t, src, key); got != string(noise) {
 		t.Fatal("the kept build is not the build")

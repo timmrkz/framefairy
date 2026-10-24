@@ -669,7 +669,10 @@ func TestTheFirstBuyerFindsKeys(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	printed := make(chan struct{})
 	done := make(chan error, 1)
-	go func() { done <- serve(ctx, ln, 10, writerFunc(func(p []byte) { close(printed) })) }()
+	// The test is the clock. run takes a tick only once the one before it
+	// is done, so the second tick says the first has delivered the webhook.
+	ticks := make(chan time.Time)
+	go func() { done <- serve(ctx, ln, 10, writerFunc(func(p []byte) { close(printed) }), ticks) }()
 	<-printed
 	base := "http://" + ln.Addr().String()
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
@@ -677,29 +680,22 @@ func TestTheFirstBuyerFindsKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		resp, err := client.Post(base+"/v1/thanks/"+ref, "application/json", strings.NewReader(`{"nonce":"`+n+`"}`))
-		if err != nil {
-			t.Fatal(err)
-		}
-		resp.Body.Close()
-		if resp.StatusCode == http.StatusOK {
-			break
-		}
-		if resp.StatusCode != http.StatusAccepted || time.Now().After(deadline) {
-			t.Fatalf("the first buyer's thank-you page answered %d", resp.StatusCode)
-		}
-		time.Sleep(20 * time.Millisecond)
+	ticks <- time.Time{}
+	ticks <- time.Time{}
+	resp, err := client.Post(base+"/v1/thanks/"+ref, "application/json", strings.NewReader(`{"nonce":"`+n+`"}`))
+	if err != nil {
+		t.Fatal(err)
 	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("the first buyer's thank-you page answered %d", resp.StatusCode)
+	}
+	// Idle connections held the stop up once. A stop that has to cut them
+	// off says so.
 	client.CloseIdleConnections()
-	start := time.Now()
 	cancel()
 	if err := <-done; err != nil {
 		t.Fatal(err)
-	}
-	if took := time.Since(start); took > 2*time.Second {
-		t.Fatalf("stopping took %v", took)
 	}
 }
 
