@@ -112,7 +112,9 @@ Start with [README.md](README.md). In short:
 - **At most five pull requests open at a time**, on the whole
   repository, from every session together. Before opening one, count
   the open pull requests. When five are open, open none: say so to Tim
-  in the thread and wait until one is merged or closed.
+  in the thread and wait until one is merged or closed. Tim can lift
+  the limit for one pull request by saying so, and the next one waits
+  again.
 - **A report that is not about the open pull request is logged, not
   started.** A bug Tim finds on the way, a review that points elsewhere,
   something seen while testing: it becomes a
