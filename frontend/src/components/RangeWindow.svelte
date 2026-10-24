@@ -8,7 +8,7 @@
   // Laid over a short episode searched whole, the window hid every clip
   // just found, and a frame round it read as the same window, so nothing
   // of the mark lies over the track but the tips. It says where Search looks
-  // next, which the app decides, see nextWindow in lib/flow.ts, or where
+  // next, which the Go side decides, see window.go, or where
   // Continue carries on a search that stopped. Moved off that, the search
   // is set aside and Search starts afresh where it is, see aside in
   // Episode.svelte. A triangle
@@ -44,7 +44,6 @@
     locked = false,
     onmove,
     onreset,
-    grid = $bindable(0),
     least = 0,
     leastSays = "",
     most = Infinity,
@@ -98,9 +97,6 @@
     // A double-click on the outline, which puts the window back where the
     // app would have it.
     onreset?: () => void;
-    // The round step an edge lands on, see gridStep, 0 until the track has
-    // been measured.
-    grid?: number;
     // The shortest the window may be, with room for the clips asked for,
     // and the longest, as much as the model reads at once, each with what
     // it is in words, said on the handle that runs into it.
@@ -250,11 +246,9 @@
   // wide on the track, five minutes on a four hour episode and five seconds
   // on a six minute one. The ends of the episode win over it. The window
   // snapped this way before it was taken away, and Tim missed it.
-  // The workspace places its own windows on the same step, see onGrid in
-  // lib/flow.ts, so it is handed back to it.
-  $effect(() => {
-    grid = width > 0 && duration > 0 ? gridStep(duration, width) : 0;
-  });
+  // The Go side places the app's own windows on one of the same steps,
+  // chosen from the episode alone, see PlaceStep in engine/windows.go.
+  const grid = $derived(width > 0 && duration > 0 ? gridStep(duration, width) : 0);
 
   function round(t: number): number {
     return grid > 0 ? Math.round(t / grid) * grid : Math.round(t);

@@ -216,9 +216,13 @@ func (s *FrameFairy) step(path string, back bool) (Undone, error) {
 		}
 		if window != nil {
 			w := *window
-			if err := changeChosen(s.store.files, path, func(c *chosen) { c.Window = &w }); err != nil {
+			windowMu.Lock()
+			err := changeChosen(s.store.files, path, func(c *chosen) { c.Window = &w })
+			windowMu.Unlock()
+			if err != nil {
 				return Undone{}, err
 			}
+			s.markAside(path)
 		}
 	}
 	*from = (*from)[:len(*from)-1]

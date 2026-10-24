@@ -383,7 +383,7 @@ export interface CaptionsView {
   pieces?: { start: number; end: number }[];
 }
 
-// The window as it was left on the range picker, see chosenWindow.
+// The window of a video, see chosenWindow.
 export interface KeptWindow {
   from: number;
   to: number;
@@ -519,6 +519,9 @@ export interface Job {
   // The answer is read to its end: every clip still to come is in
   // underway, so no row is held open for one the model did not name.
   whole?: boolean;
+  // A search that stopped whose window the video's window was moved off,
+  // so it is set aside, see markAside in window.go.
+  aside?: boolean;
   // Grows with every change to any job. Of two snapshots of a job, the one
   // with the larger number is the later one.
   seq?: number;
@@ -719,13 +722,18 @@ export const api = {
   opened: (n: number) => call<string[]>("Opened", n),
   openEpisode: (path: string) => call<void>("OpenEpisode", path),
   chooseClip: (path: string, key: string) => call<void>("ChooseClip", path, key),
-  // The window an episode's range picker was left with, so opening it
-  // again, after a restart too, opens on the same one. length is how long
-  // it was made, longer than it is when the end of the episode cut it.
+  // The window of a video, which the Go side owns: as it was left, after
+  // a restart too, and where there is none, the one the app places. Every
+  // search starts on it, and one that found its clips moves it on. length
+  // is how long it was made, longer than it is when the end of the
+  // episode cut it. null while the video cannot be read.
   chosenWindow: (path: string) => call<KeptWindow | null>("ChosenWindow", path),
-  // byHand makes it a step that undo takes back, as a drag or a
-  // double-click on the window's marks is. A window the app moved on by
-  // itself is not.
+  // The window put back where the app places it, a double-click on its
+  // marks, as a step undo takes back.
+  placeWindow: (path: string) => call<KeptWindow | null>("PlaceWindow", path),
+  // The window as a hand moved it, or as the workspace fitted it to what
+  // a search can read. byHand makes it a step that undo takes back, as a
+  // drag is.
   chooseWindow: (path: string, from: number, to: number, length: number, byHand: boolean) =>
     call<void>("ChooseWindow", path, from, to, length, byHand),
   getSettings: () => call<Settings>("GetSettings"),

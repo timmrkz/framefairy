@@ -121,7 +121,7 @@ func main() {
 	}
 	// The searches and renders that were cut off or failed the last time
 	// say so where their work was.
-	svc.jobs.restore(st.Episodes())
+	svc.restoreJobs(st.Episodes())
 	// Nothing the app started outlives it: a model loaded or still loading
 	// is stopped and no other is loaded, and the jobs are stopped, and with
 	// them any ffmpeg they run. On macOS app.Run never returns: Cmd+Q ends

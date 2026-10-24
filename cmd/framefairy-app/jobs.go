@@ -90,6 +90,9 @@ type Job struct {
 	// Whole is, for a search, that its answer is read to its end, so every
 	// clip still to come is in Underway.
 	Whole bool `json:"whole,omitempty"`
+	// Aside is, for a search that stopped, that the video's window was
+	// moved off the window it was about, see markAside.
+	Aside bool `json:"aside,omitempty"`
 	// Seq grows with every change to any job, and is set under the queue's
 	// lock, so of two snapshots of a job the later one has the larger
 	// number. News is sent after the lock is let go, so two changes made
@@ -769,6 +772,28 @@ func (q *queue) settle(episode, kind, record string) {
 	q.mu.Unlock()
 	for _, j := range settled {
 		theLog.jobLine(zerolog.InfoLevel, &j).Msg("the job that stopped is settled, nothing says it stopped any more")
+		q.emit(JobUpdate{Job: j})
+	}
+}
+
+// setAside marks each search of an episode that stopped by aside, and
+// tells the window of those it changed.
+func (q *queue) setAside(episode string, aside func(j *Job) bool) {
+	q.mu.Lock()
+	var changed []Job
+	for _, j := range q.jobs {
+		if j.Episode != episode || j.Kind != engine.JobSearch || (j.State != JobInterrupted && j.State != JobFailed) {
+			continue
+		}
+		if now := aside(j); now != j.Aside {
+			j.Aside = now
+			q.stampLocked(j)
+			changed = append(changed, *j)
+		}
+	}
+	q.mu.Unlock()
+	for _, j := range changed {
+		theLog.jobLine(zerolog.InfoLevel, &j).Bool("aside", j.Aside).Msg("the window was moved off the stopped search, or back onto it")
 		q.emit(JobUpdate{Job: j})
 	}
 }

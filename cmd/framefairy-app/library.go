@@ -106,7 +106,7 @@ func (s *FrameFairy) addEpisodes(videos []string) ([]string, error) {
 		// A video added again whose work folder was kept picks up where it
 		// left off, so what its records say stopped says so again, the way
 		// it does when the app starts.
-		s.jobs.restore([]string{v})
+		s.restoreJobs([]string{v})
 		s.levels.start(v)
 		s.firstSearch(context.Background(), v)
 	}

@@ -560,3 +560,64 @@ func TestPathATargetStaysWithItsWindow(t *testing.T) {
 		t.Errorf("five minutes asked for %d, with 3 typed for five minutes", n)
 	}
 }
+
+// A video has one window. The first search of a video just added is on
+// it, the window the workspace draws, a search cancelled on it says
+// Continue, moved off it the search is set aside and the job says so,
+// Undo brings it back, and a search that found its clips moves the window
+// on. The first search once placed a window of its own, two seconds off
+// the workspace's, so Cancel said Search where it should have said
+// Continue, Tim's report of 24 October on #458.
+//
+// On the real disk: ffprobe reads how long the video is, which places
+// its window, and the speech model hears it.
+func TestPathAVideoHasOneWindow(t *testing.T) {
+	// Not side by side: open sets HOME for the whole process.
+	d := open(t)
+	hearing := d.speech.hearingAfter(1)
+	ep := d.add("ep", "1200")
+	<-hearing
+	j, ok := d.svc.jobs.find(ep, "search")
+	if !ok {
+		t.Fatal("the video just added was not searched")
+	}
+	w := d.svc.ChosenWindow(ep)
+	if w == nil || *w != (KeptWindow{From: 0, To: 600, Length: 600}) {
+		t.Fatalf("the video's window is %+v, want the first ten minutes", w)
+	}
+	if j.From != w.From || j.To != w.To {
+		t.Errorf("the first search is of %v to %v, the video's window %v to %v", j.From, j.To, w.From, w.To)
+	}
+	d.cancel(ep)
+	d.idle(ep)
+	if o := d.outcome(ep); !o.stopped {
+		t.Fatalf("cancelled, the search says %+v", o)
+	}
+	aside := func() bool {
+		j, _ := d.svc.jobs.find(ep, "search")
+		return j.Aside
+	}
+	if aside() {
+		t.Error("the search was set aside on its own window")
+	}
+	if err := d.svc.ChooseWindow(ep, 600, 1200, 600, true); err != nil {
+		t.Fatal(err)
+	}
+	if !aside() {
+		t.Error("the window moved off the stopped search did not set it aside")
+	}
+	if _, err := d.svc.Undo(ep); err != nil {
+		t.Fatal(err)
+	}
+	if aside() {
+		t.Error("Undo put the window back on the stopped search, and it stayed set aside")
+	}
+	d.carryOn(ep)
+	d.idle(ep)
+	if o := d.outcome(ep); o != (outcome{}) {
+		t.Fatalf("carried on, the search says %+v", o)
+	}
+	if w := d.svc.ChosenWindow(ep); w == nil || *w != (KeptWindow{From: 600, To: 1200, Length: 600}) {
+		t.Errorf("after the search found its clips the window is %+v, want the next ten minutes", w)
+	}
+}

@@ -330,7 +330,7 @@ func (d *desk) copied() string {
 func (d *desk) reopen() {
 	st := openStore()
 	d.start(st)
-	d.svc.jobs.restore(st.Episodes())
+	d.svc.restoreJobs(st.Episodes())
 }
 
 // outcome is what the app says about an episode's last search where its

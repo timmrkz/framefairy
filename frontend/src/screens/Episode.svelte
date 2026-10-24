@@ -44,10 +44,7 @@
     inEpisode,
     endInEpisode,
     Newest,
-    nextWindow,
     timesIn,
-    followingWindow,
-    onGrid,
     frameAt,
     frameMiddle,
   } from "../lib/flow";
@@ -61,7 +58,7 @@
     mostClips,
     type RoomView,
   } from "../lib/room";
-  import { suggestedCount, suggestedWindow } from "../lib/suggest";
+  import { suggestedCount } from "../lib/suggest";
   import { captionColours, joinColour, splitColour } from "../lib/colour";
   import { stepLine } from "../lib/steps";
   import { Failures } from "../lib/failed";
@@ -138,9 +135,6 @@
   let clips = $state<ClipEntry[]>([]);
   let from = $state(0);
   let to = $state(0);
-  // Whether the window the workspace opens with is in from and to yet,
-  // see openWindow.
-  let windowRead = $state(false);
   // The target typed in the workspace, or 0 while it follows the window,
   // and how long the window was it was typed for. It is the target of a
   // window that long and of no other, see typed.
@@ -257,11 +251,9 @@
   const typed = $derived(target > 0 && Math.abs(to - from - targetWindow) < 0.5 ? target : 0);
   const leastLong = $derived(leastWindow(typed > 0 ? typed : 1, min, duration));
   const clipsAtMost = $derived(mostClips(reachAnywhere, min, 30));
-  // How long the windows of this episode are when the app chooses them, and
-  // how many clips the window drawn now suggests. The engine works out the
+  // How many clips the window drawn now suggests. The engine works out the
   // same, see engine/suggest.go. What a search looks for is the target
   // typed, or the suggestion while nothing is typed.
-  const windowSize = $derived(suggestedWindow(duration));
   const suggested = $derived(Math.min(suggestedCount(to - from, min, max), clipsAtMost));
   const count = $derived(typed > 0 ? typed : suggested);
   const shortestAtMost = $derived(longestShortest(reachAnywhere, count, 5, 180));
@@ -917,16 +909,10 @@
   // starts afresh in the window as it is now. Moved back, by hand or with
   // Undo, Continue carries the search on as before. Tim cancelled a search
   // to look somewhere else and could not, because the window stood locked
-  // on the range picker until the search was carried on. It is read from
-  // where the window is, so it is the same after a restart, the window
-  // being kept, and only once the window is known: before that the
-  // workspace opening would flash Search.
-  const aside = $derived(
-    !!halted &&
-      windowRead &&
-      to > from &&
-      (Math.abs(from - halted.from) > 0.5 || Math.abs(to - halted.to) > 0.5),
-  );
+  // on the range picker until the search was carried on. The Go side says
+  // it, from the video's one window, so the row and the video's dot in the
+  // sidebar say the same, after a restart too, issue #436.
+  const aside = $derived(!!halted && !!search?.aside);
   const stopped = $derived(aside ? null : halted);
   // The row as the clip list shows it. It can be removed, issue #431: it
   // says Removed and offers the search back while its time runs down, the
@@ -1238,45 +1224,26 @@
     }
   }
 
-  // The window the app would choose: where the fewest searches have been,
-  // earliest first, as long as the episode's windows are, see nextWindow.
-  // The workspace opens on it, and a double-click on the window's marks
-  // puts it back there. After a search the window walks on instead, see
-  // followingWindow.
-  function moveWindowOn(byHand = false) {
-    const next = nextWindow(coverage.passes, duration, windowSize, min);
-    placeWindow(next, windowSize, byHand);
-  }
-
-  // A window the app places lands on the range picker's step, the one a
-  // drag lands on, so its edges lie on the ruler's lines like a window
-  // placed by hand, and the length it carries on with is a whole number
-  // of steps. The episode's own windows are an even share of it, 30:02 of
-  // four hours, and a window that length drifted a few seconds off the
-  // lines with every search, which shows as a pixel. See onGrid.
-  function placeWindow(w: { from: number; to: number }, size: number, byHand = false) {
-    unplaced = grid <= 0;
-    const placed = onGrid(w, w.to - w.from, duration, grid, min);
-    from = placed.from;
-    to = placed.to;
-    length = grid > 0 ? Math.max(Math.round(size / grid) * grid, grid) : size;
-    keepWindow();
-    rememberWindow(byHand);
-  }
-
-  // The step of the range picker, see gridStep, 0 until it is measured.
-  // A window the app placed before then lands on it once it is known, the
-  // first time only: a window placed by hand, or kept from before, stays
-  // where it was put, and so does the window of a search that stopped,
-  // which is the window Continue carries on.
-  let grid = $state(0);
-  let unplaced = false;
-  $effect(() => {
-    if (grid > 0 && unplaced && !busy && !halted) {
-      unplaced = false;
-      placeWindow({ from, to }, windowSize);
+  // The window put back where the app places it, a double-click on its
+  // marks. The Go side places it, as it places every window the app
+  // chooses, see chosenWindow.
+  async function placeWindowBack() {
+    try {
+      drawWindow(await api.placeWindow(path));
+    } catch (err) {
+      oops(errorText(err));
     }
-  });
+  }
+
+  // The video's window, drawn as the Go side has it. It fits what a search
+  // can do with it here, or is fitted and written back, see keepWindow.
+  function drawWindow(w: KeptWindow | null) {
+    if (!w || w.to <= w.from || duration <= 0) return;
+    from = w.from;
+    to = Math.min(w.to, duration);
+    length = Math.max(w.length, to - from);
+    keepWindow();
+  }
 
   // How long the window was made, by the app or by a hand on its marks.
   // A window cut short at the end of the episode is still this long when
@@ -1292,7 +1259,7 @@
     from = start;
     to = end;
     if (done) {
-      keepWindow();
+      fit();
       length = to - from;
       rememberWindow(true);
     }
@@ -1302,12 +1269,19 @@
   // what that is changes: the room, or the clips asked for. Not while clips
   // are being found for it, because then it is the window being searched.
   // Nor while a search stands stopped on it, because it is the window
-  // Continue carries on.
+  // Continue carries on. A window fitted is written back, so the window
+  // drawn is the video's window.
   function keepWindow() {
-    if (busy || stopped || duration <= 0 || to <= from) return;
+    if (fit()) rememberWindow();
+  }
+
+  function fit(): boolean {
+    if (busy || stopped || duration <= 0 || to <= from) return false;
     const kept = fitWindow({ from, to }, reachAnywhere, leastLong, duration);
+    const moved = Math.abs(kept.from - from) > 0.001 || Math.abs(kept.to - to) > 0.001;
     if (Math.abs(kept.from - from) > 0.001) from = kept.from;
     if (Math.abs(kept.to - to) > 0.001) to = kept.to;
+    return moved;
   }
 
   async function refreshRoom() {
@@ -1319,10 +1293,10 @@
     keepWindow();
   }
 
-  // The window the workspace opens with: the one the episode was left
-  // with, after a restart too, and where there is none, the one the app
-  // would choose, see moveWindowOn. One that no longer fits the episode
-  // is not one.
+  // The window the workspace opens with: the video's window, which the
+  // Go side keeps and places, see chosenWindow. A search that runs has
+  // its window drawn when it is heard of, see followed, and it is the
+  // same window, because every search starts on the video's window.
   async function openWindow(asked: Promise<KeptWindow | null> = api.chosenWindow(path)) {
     const was = path;
     let kept: KeptWindow | null = null;
@@ -1332,46 +1306,11 @@
       kept = null;
     }
     if (path !== was) return;
-    windowRead = true;
-    // A search that runs holds its window, see followed, whatever was kept
-    // or would be placed. The first search of a video just added is the
-    // Go side's, which cuts its window as an even share of the video,
-    // 30:02 of four hours, and the window placed on the range picker's step
-    // took its place at 30:00. Cancelled, the search then stood on a
-    // window that was not the one drawn, so it was set aside and said
-    // Search, not Continue, Tim's report of 24 October on #458.
-    if (working) {
-      const start = working.from ?? 0;
-      const end = working.to && working.to > 0 ? working.to : duration;
-      if (end > start) {
-        from = start;
-        to = end;
-        length = to - from;
-        unplaced = false;
-        return;
-      }
-    }
-    if (kept && kept.to > kept.from && kept.to <= duration + 0.5) {
-      from = kept.from;
-      to = Math.min(kept.to, duration);
-      length = Math.max(kept.length, to - from);
-      keepWindow();
-      return;
-    }
-    // A search that stopped holds its window, so a workspace opened on one
-    // opens on it rather than set it aside.
-    if (halted) {
-      from = halted.from;
-      to = halted.to;
-      length = to - from;
-      return;
-    }
-    moveWindowOn();
+    drawWindow(kept);
   }
 
-  // The window is kept the moment it changes, by a hand, by a search that
-  // moved it on, or by a double-click that put it back, so it is where it
-  // was left when the episode is opened again.
+  // The window is written the moment a hand moves it, or the workspace
+  // fits it, so the Go side's window is the window drawn.
   function rememberWindow(byHand = false) {
     if (duration <= 0 || to <= from) return;
     api.chooseWindow(path, from, to, Math.max(length, to - from), byHand).catch(() => {});
@@ -2946,11 +2885,6 @@
     if (end > start) {
       from = start;
       to = end;
-      // Where the search is, not where the app placed a window before the
-      // range picker was measured, see unplaced. And kept, so a search the
-      // app is closed on opens on its own window, see aside.
-      unplaced = false;
-      rememberWindow();
     }
     if (!listedBefore) {
       listedBefore = new Set(clips.map((c) => c.key));
@@ -3082,12 +3016,8 @@
         return;
       }
       // The window walks on from where the search ended, as long as it
-      // was, and starts over at the start at the end of the episode, see
-      // followingWindow. The search's own window, which the Go side may
-      // have started by itself, not whatever the workspace held.
-      const searchedTo = ended.to && ended.to > 0 ? ended.to : duration;
-      const size = length || searchedTo - (ended.from ?? 0);
-      placeWindow(followingWindow(searchedTo, size, duration, min), size);
+      // was, which the Go side did before the search said it was done.
+      void openWindow();
       // The earliest clip it found, unless something else has been picked
       // since the search chose one, which is where the hand is now.
       showFirstFound(true);
@@ -3307,8 +3237,7 @@
     partKey={wholeWork?.id ?? ""}
     onhoverunheard={saying ? (i) => (unheardLit = i) : undefined}
     onmove={moveWindow}
-    onreset={() => moveWindowOn(true)}
-    bind:grid
+    onreset={() => void placeWindowBack()}
     least={leastLong}
     leastSays={typed > 0 ? `room for ${typed} clips of ${min} s` : `room for a clip of ${min} s`}
     most={reachAnywhere}

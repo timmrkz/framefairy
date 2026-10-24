@@ -630,8 +630,10 @@
     if (ep.missing) return "err";
     // A search that stopped says so here as well as in its row, so it can
     // be found from the sidebar: stopped or cut off in the colour of a
-    // warning, failed in the colour of an error.
-    const search = jobs.search(ep.source);
+    // warning, failed in the colour of an error. One set aside has no row,
+    // so it says nothing here either, issue #436.
+    const found = jobs.search(ep.source);
+    const search = found?.aside ? undefined : found;
     if (search?.state === "failed") return "err";
     if (search?.state === "interrupted") return "warn";
     if (ep.transcriptStale) return "warn";

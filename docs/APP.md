@@ -1504,17 +1504,13 @@ bubble scrolled by those eight pixels.
       about and can be dragged as at rest: moved anywhere else, the
       search is set aside, its row closes, **Continue** becomes **Search**,
       and Search starts a fresh search where the window is. Moved back, by
-      hand or with Undo, Continue carries the search on as before. It is
-      read from where the window is, which is kept, so it is the same
-      after a restart. A window only a person moves sets a search aside:
-      the first search of a video just added is the app's, with its window
-      an even share of the video, 30:02 of four hours, and that window is
-      the one the range picker shows and keeps, never one placed on the
-      range picker's step beside it, which once made a search cancelled
-      while it heard say Search with no Continue. Tim cancelled a search to look somewhere else and
+      hand or with Undo, Continue carries the search on as before. The Go
+      side says whether a search is set aside, from the video's one
+      window, see below, so it is the same after a restart. Tim cancelled a search to look somewhere else and
       could not, because the window stood locked until it was carried on. The episode's dot in the sidebar says it too: the colour
       of a warning for a search stopped or cut off, of an error for one
-      that failed, the red of its row and of its toast. **Its trash can**,
+      that failed, the red of its row and of its toast. A search set
+      aside has no row, so the dot says nothing of it either, issue #436. **Its trash can**,
       there while the pointer is on the row, removes the search when it
       is no longer wanted: the row says Removed with Put it back for ten
       seconds, the way a removed clip's row does, and the search's cards
@@ -1529,12 +1525,20 @@ bubble scrolled by those eight pixels.
       episode it starts over at the start. The last window may be cut
       short by the end of the episode, and the one after it, at the
       start, is as long as the window was made again.
-      The window is kept with the episode the moment it changes, beside
-      the clip last worked on in `chosen.json`, so the workspace opens on
-      it again, after a restart too. An episode that has none opens on the
-      window where the fewest searches have been, earliest first, as long
-      as the episode's windows are, and a double-click on the window's
-      marks puts it back there. A short
+      **A video has one window**, and the Go side owns it, see
+      `cmd/framefairy-app/window.go`. It is kept beside the clip last
+      worked on in `chosen.json`, so the workspace opens on it again,
+      after a restart too. A video that has none gets the window where
+      the fewest searches have been, earliest first, as long as the
+      video's windows are, placed by the Go side, and a double-click on
+      the window's marks puts it back there. Every search starts on the
+      video's window, the first search of a video just added too, and a
+      search that found its clips moves it on before it says it is done.
+      The workspace draws it, and writes it only when a hand moves it or
+      when it no longer fits what a search can read. The first search
+      once placed its window here and the workspace placed another on the
+      range picker's step, two seconds apart, so a search cancelled while
+      it heard said Search with no Continue, Tim's report of 24 October. A short
       episode is one window and is searched whole each time. A window searched again keeps every
       clip there is: the model is told which lines are clips already and
       asked for other moments, and a search that brings none ends with
@@ -1605,10 +1609,13 @@ bubble scrolled by those eight pixels.
       on a round step, the smallest one still about eight pixels wide,
       five minutes on a four hour episode and five seconds on a six
       minute one, and the ends of the episode win over the step. Every
-      window the app places itself lands on the same step, its start and
-      its length, so the app's own half hour of a four hour episode is
-      30:00 rather than an even eighth of it, 30:02, which drifted a few
-      seconds off the ruler's lines with every search. The last window of
+      window the app places itself lands on a step of the same kind,
+      chosen from the length of the video alone and never from how wide
+      the app is, about a 180th of the video, two minutes for four hours,
+      its start and its length, so the app's own half hour of a four hour
+      episode is 30:00 rather than an even eighth of it, 30:02, which
+      drifted a few seconds off the ruler's lines with every search, and
+      the window is the same whoever places it. The last window of
       the episode takes in a scrap shorter than a step rather than leaving
       it behind. A handle
       stops where the window would hold too few clips, room for the
