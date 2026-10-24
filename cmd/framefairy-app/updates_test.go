@@ -222,7 +222,7 @@ func waitFor(t *testing.T, c *updating, what string, ok func(UpdateState) bool) 
 		// Taken before the look, so a change between the look and the
 		// wait still ends the wait.
 		c.mu.Lock()
-		changed := c.changed.waitLocked()
+		changed := c.changed.WaitLocked()
 		c.mu.Unlock()
 		if s := c.State(); ok(s) {
 			return s

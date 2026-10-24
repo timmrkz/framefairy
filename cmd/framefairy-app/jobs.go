@@ -16,6 +16,7 @@ import (
 
 	"framefairy/asr"
 	"framefairy/engine"
+	"framefairy/internal/wake"
 )
 
 // Job states.
@@ -179,7 +180,7 @@ type queue struct {
 	searched func()
 	// changed tells whoever waits on the jobs of every change to one, so
 	// a wait for jobs to stop goes on the moment they have, see until.
-	changed wake
+	changed wake.Wake
 }
 
 // stampLocked marks a change to a job, and tells whoever waits on the
@@ -187,7 +188,7 @@ type queue struct {
 func (q *queue) stampLocked(j *Job) {
 	q.seq++
 	j.Seq = q.seq
-	q.changed.wakeLocked()
+	q.changed.WakeLocked()
 }
 
 // newQueue builds the queue.
@@ -609,7 +610,7 @@ func (q *queue) until(done func(jobs []*Job) bool, expire <-chan time.Time) bool
 			q.mu.Unlock()
 			return false
 		}
-		changed := q.changed.waitLocked()
+		changed := q.changed.WaitLocked()
 		q.mu.Unlock()
 		select {
 		case <-changed:
@@ -767,7 +768,7 @@ func (q *queue) runSafely(job *Job) {
 	defer func() {
 		q.mu.Lock()
 		job.alive = false
-		q.changed.wakeLocked()
+		q.changed.WakeLocked()
 		q.mu.Unlock()
 	}()
 	defer func() {

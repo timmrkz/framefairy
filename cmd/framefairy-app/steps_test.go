@@ -93,7 +93,7 @@ func TestSearchesFromEverywhereAtOnce(t *testing.T) {
 	// change to a job.
 	d.svc.jobs.mu.Lock()
 	over = true
-	d.svc.jobs.changed.wakeLocked()
+	d.svc.jobs.changed.WakeLocked()
 	d.svc.jobs.mu.Unlock()
 	<-watched
 	if most > 1 {

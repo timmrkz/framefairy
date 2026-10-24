@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -13,20 +14,20 @@ import (
 )
 
 // standIn replaces llama-server for a test: it counts the servers started
-// and stopped and the ones running, and loads in the given time.
+// and stopped and the ones running, and loads at once unless it is held.
 type standIn struct {
 	started, stopped atomic.Int32
 	running          atomic.Int32
 	// peak is the most servers ever running at once, loading included.
-	peak    atomic.Int32
-	up      atomic.Int32
-	loading time.Duration
-	fail    atomic.Bool
+	peak atomic.Int32
+	up   atomic.Int32
+	fail atomic.Bool
 	// began has a value for every server that starts loading, so a test
 	// knows a load is under way rather than sleeping until it may be.
 	began chan struct{}
 	// holding keeps the next load loading until hold is closed or the
-	// load is called off.
+	// load is called off. A nil hold keeps it loading until it is called
+	// off.
 	holding atomic.Bool
 	hold    chan struct{}
 }
@@ -42,9 +43,9 @@ func (s *standIn) rise() {
 	}
 }
 
-func useStandIn(t *testing.T, loading time.Duration) *standIn {
+func useStandIn(t *testing.T) *standIn {
 	t.Helper()
-	s := &standIn{loading: loading, began: make(chan struct{}, 64)}
+	s := &standIn{began: make(chan struct{}, 64)}
 	was := launch
 	launch = func(_ *Engine, ctx context.Context, m LocalModel, size int, _ string) (string, func(), error) {
 		// A llama-server is in memory from the moment it starts loading.
@@ -53,17 +54,16 @@ func useStandIn(t *testing.T, loading time.Duration) *standIn {
 		case s.began <- struct{}{}:
 		default:
 		}
-		loaded := time.After(s.loading)
-		var held <-chan struct{}
 		if s.holding.CompareAndSwap(true, false) {
-			loaded, held = nil, s.hold
-		}
-		select {
-		case <-loaded:
-		case <-held:
-		case <-ctx.Done():
-			s.up.Add(-1)
-			return "", nil, ctx.Err()
+			select {
+			case <-s.hold:
+			case <-ctx.Done():
+				s.up.Add(-1)
+				return "", nil, ctx.Err()
+			}
+		} else {
+			// Others get their turn while this one loads.
+			runtime.Gosched()
 		}
 		if s.fail.Load() {
 			s.up.Add(-1)
@@ -97,7 +97,7 @@ var gemma = LocalModel{Model: "gemma"}
 // A model loaded ahead of a search is the one the search uses, and the
 // search lets go of it when it is done.
 func TestTheSearchFindsTheModelLoaded(t *testing.T) {
-	s := useStandIn(t, 10*time.Millisecond)
+	s := useStandIn(t)
 	e := quietEngine()
 	ctx := context.Background()
 
@@ -128,7 +128,7 @@ func TestTheSearchFindsTheModelLoaded(t *testing.T) {
 // A search that needs more room than the model was loaded with starts it
 // again, and one model runs at a time.
 func TestABiggerSearchStartsTheModelAgain(t *testing.T) {
-	s := useStandIn(t, time.Millisecond)
+	s := useStandIn(t)
 	e := quietEngine()
 	ctx := context.Background()
 	_, release, _ := e.holdModel(ctx, gemma, 32768, "")
@@ -145,26 +145,25 @@ func TestABiggerSearchStartsTheModelAgain(t *testing.T) {
 
 // A model loaded ahead and never asked for goes by itself.
 func TestAWarmModelNobodyUsesGoes(t *testing.T) {
-	s := useStandIn(t, time.Millisecond)
+	s := useStandIn(t)
 	_, release, err := quietEngine().holdModel(context.Background(), gemma, 32768, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	release(20 * time.Millisecond)
-	deadline := time.Now().Add(2 * time.Second)
-	for s.running.Load() != 0 && time.Now().Before(deadline) {
-		time.Sleep(5 * time.Millisecond)
-	}
-	if s.running.Load() != 0 {
-		t.Error("the model stayed loaded with nobody to use it")
-	}
+	release(warmKeep)
+	host.mu.Lock()
+	// The minutes are up now.
+	host.model.idle.Reset(0)
+	host.mu.Unlock()
+	// Should it stay, the test hangs here until go test's -timeout.
+	untilHost(func() bool { return s.running.Load() == 0 })
 }
 
 // A search that arrives while the model is still loading waits for it
 // rather than loading a second one. If the load it waited on fails, it
 // loads the model itself.
 func TestASearchWaitsForTheModelBeingLoaded(t *testing.T) {
-	s := useStandIn(t, time.Millisecond)
+	s := useStandIn(t)
 	// The warm-up loads until it is called off, so the search finds it
 	// loading however slow the machine.
 	s.holding.Store(true)
@@ -189,11 +188,7 @@ func TestASearchWaitsForTheModelBeingLoaded(t *testing.T) {
 		answered <- answer{url, release, err}
 	}()
 	// The search waits on the load before the load is called off.
-	waitFor(t, func() bool {
-		host.mu.Lock()
-		defer host.mu.Unlock()
-		return host.model != nil && host.model.users == 2
-	})
+	untilHost(func() bool { return host.model != nil && host.model.users == 2 })
 	cancel()
 	a := <-answered
 	url, release, err := a.url, a.release, a.err
@@ -213,7 +208,7 @@ func TestASearchWaitsForTheModelBeingLoaded(t *testing.T) {
 // memory, none is left running once everybody has let go, and none loads
 // after the app has closed them.
 func TestTheModelHeldFromEverywhereAtOnce(t *testing.T) {
-	s := useStandIn(t, 2*time.Millisecond)
+	s := useStandIn(t)
 	t.Cleanup(func() {
 		host.mu.Lock()
 		host.closed = false
@@ -253,7 +248,7 @@ func TestTheModelHeldFromEverywhereAtOnce(t *testing.T) {
 			if err != nil {
 				return
 			}
-			time.Sleep(time.Millisecond)
+			runtime.Gosched()
 			if i%3 == 0 {
 				release(time.Millisecond)
 			} else {
@@ -280,10 +275,8 @@ func TestTheModelHeldFromEverywhereAtOnce(t *testing.T) {
 	if kept != "" {
 		t.Errorf("%s is still kept after the app closed the models", kept)
 	}
-	deadline := time.Now().Add(2 * time.Second)
-	for s.running.Load() != 0 && time.Now().Before(deadline) {
-		time.Sleep(5 * time.Millisecond)
-	}
+	// Closing them stops them before it returns, whatever was still let
+	// go of with a moment to stay.
 	if s.running.Load() != 0 {
 		t.Errorf("%d models left running", s.running.Load())
 	}
@@ -293,7 +286,7 @@ func TestTheModelHeldFromEverywhereAtOnce(t *testing.T) {
 }
 
 func TestStopModelsStopsTheModel(t *testing.T) {
-	s := useStandIn(t, time.Millisecond)
+	s := useStandIn(t)
 	_, release, _ := quietEngine().holdModel(context.Background(), gemma, 32768, "")
 	release(warmKeep)
 	StopModels()
@@ -306,7 +299,7 @@ func TestStopModelsStopsTheModel(t *testing.T) {
 // the warm-up and then takes its place. It used to see the model in use,
 // start a second one beside it, and hold two in memory.
 func TestABiggerSearchDuringAWarmUpNeverLoadsTwo(t *testing.T) {
-	s := useStandIn(t, time.Millisecond)
+	s := useStandIn(t)
 	// The warm-up loads until the search waits for it, so the search
 	// comes while it loads however slow the machine.
 	s.hold = make(chan struct{})
@@ -320,19 +313,10 @@ func TestABiggerSearchDuringAWarmUpNeverLoadsTwo(t *testing.T) {
 		}
 	}()
 	<-s.began
-	// Not waitFor, which ends the test with t.Fatal and so may not run
-	// in a goroutine. Should the search never wait, the load goes on
-	// after two seconds and the checks below say what happened.
+	// The load goes on once the search waits for it.
 	go func() {
 		defer close(s.hold)
-		for give := time.Now().Add(2 * time.Second); time.Now().Before(give); time.Sleep(time.Millisecond) {
-			host.mu.Lock()
-			waiting := host.waiting
-			host.mu.Unlock()
-			if waiting == 1 {
-				return
-			}
-		}
+		untilHost(func() bool { return host.waiting == 1 })
 	}()
 	url, release, err := e.holdModel(context.Background(), gemma, 131072, "")
 	<-warming
@@ -349,19 +333,19 @@ func TestABiggerSearchDuringAWarmUpNeverLoadsTwo(t *testing.T) {
 // model gives up rather than load a second one. The search it was for
 // loads the model when its turn comes.
 func TestAWarmUpGivesWayToAModelInUse(t *testing.T) {
-	s := useStandIn(t, time.Millisecond)
+	s := useStandIn(t)
 	e := quietEngine()
 	_, release, err := e.holdModel(context.Background(), gemma, 32768, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	began := time.Now()
+	// A warm-up that waited would wait for the release below, and hang
+	// until go test's -timeout.
 	if _, _, err := e.warmModel(context.Background(), gemma, 131072, ""); !errors.Is(err, errModelBusy) {
 		t.Errorf("a warm-up beside a model in use: %v", err)
 	}
-	if time.Since(began) > time.Second || s.started.Load() != 1 {
-		t.Errorf("the warm-up waited %s or started a server, %d started",
-			time.Since(began), s.started.Load())
+	if s.started.Load() != 1 {
+		t.Errorf("the warm-up started a server, %d started", s.started.Load())
 	}
 	release(0)
 }
@@ -370,44 +354,51 @@ func TestAWarmUpGivesWayToAModelInUse(t *testing.T) {
 // StopModels returns. It was left to its loader, which never ran again
 // once the app had quit.
 func TestStopModelsStopsAModelStillLoading(t *testing.T) {
-	s := useStandIn(t, time.Hour)
+	s := useStandIn(t)
+	// The load goes on until it is called off.
+	s.holding.Store(true)
 	e := quietEngine()
 	failed := make(chan error, 1)
 	go func() {
 		_, _, err := e.warmModel(context.Background(), gemma, 32768, "")
 		failed <- err
 	}()
-	deadline := time.Now().Add(2 * time.Second)
-	for s.up.Load() == 0 && time.Now().Before(deadline) {
-		time.Sleep(time.Millisecond)
-	}
+	<-s.began
 	StopModels()
 	if s.up.Load() != 0 {
 		t.Errorf("%d servers still in memory after the app stopped them", s.up.Load())
 	}
-	select {
-	case err := <-failed:
-		if err == nil {
-			t.Error("a load stopped by the app said it loaded")
-		}
-	case <-time.After(2 * time.Second):
-		t.Error("the loader never heard it was stopped")
+	// A loader that never heard it was stopped hangs here until go
+	// test's -timeout.
+	if err := <-failed; err == nil {
+		t.Error("a load stopped by the app said it loaded")
 	}
 }
 
 // A search waiting for the model in use gives up when it is stopped.
 func TestASearchWaitingForAnotherModelCanBeStopped(t *testing.T) {
-	useStandIn(t, time.Millisecond)
+	useStandIn(t)
 	e := quietEngine()
 	_, release, err := e.holdModel(context.Background(), gemma, 32768, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer release(0)
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	if _, _, err := e.holdModel(ctx, LocalModel{Model: "qwen"}, 32768, ""); err == nil {
-		t.Error("a search got a second model while the first was in use")
+	got := make(chan error, 1)
+	go func() {
+		_, release, err := e.holdModel(ctx, LocalModel{Model: "qwen"}, 32768, "")
+		if err == nil {
+			release(0)
+		}
+		got <- err
+	}()
+	// Stopped while it waits, not before it asks.
+	untilHost(func() bool { return host.waiting == 1 })
+	cancel()
+	if err := <-got; !errors.Is(err, context.Canceled) {
+		t.Errorf("a search stopped while it waited for the model in use gave %v", err)
 	}
 }
 
@@ -416,7 +407,7 @@ func TestASearchWaitingForAnotherModelCanBeStopped(t *testing.T) {
 // model and started a llama-server after the app had stopped the last one,
 // and nothing was left to stop it.
 func TestNoModelIsLoadedAfterTheAppClosesThem(t *testing.T) {
-	s := useStandIn(t, time.Millisecond)
+	s := useStandIn(t)
 	t.Cleanup(func() {
 		host.mu.Lock()
 		host.closed = false
@@ -438,19 +429,12 @@ func TestNoModelIsLoadedAfterTheAppClosesThem(t *testing.T) {
 	}()
 	// The ask is waiting when the app closes the models, or this would
 	// test an ask that came after.
-	waitFor(t, func() bool {
-		host.mu.Lock()
-		defer host.mu.Unlock()
-		return host.waiting == 1
-	})
+	untilHost(func() bool { return host.waiting == 1 })
 	CloseModels()
-	select {
-	case err := <-waited:
-		if err == nil {
-			t.Error("an ask loaded a model after the app had closed them")
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("the waiting ask never heard the app closed the models")
+	// An ask that never heard the app closed the models hangs here until
+	// go test's -timeout.
+	if err := <-waited; err == nil {
+		t.Error("an ask loaded a model after the app had closed them")
 	}
 	if s.started.Load() != 1 || s.running.Load() != 0 {
 		t.Errorf("%d started, %d still running after the app closed them",
@@ -458,16 +442,17 @@ func TestNoModelIsLoadedAfterTheAppClosesThem(t *testing.T) {
 	}
 }
 
-// waitFor waits until ok says yes, looking every millisecond, and fails
-// the test after two seconds.
-func waitFor(t *testing.T, ok func() bool) {
-	t.Helper()
-	give := time.Now().Add(2 * time.Second)
+// untilHost goes on once ok says yes, and asks it again each time the
+// host has news, never on the clock. ok is asked with host.mu held. What
+// never comes is go test's -timeout to end, which shows where it hangs.
+func untilHost(ok func() bool) {
+	host.mu.Lock()
+	defer host.mu.Unlock()
 	for !ok() {
-		if time.Now().After(give) {
-			t.Fatal("what was waited for never came")
-		}
-		time.Sleep(time.Millisecond)
+		news := host.news.WaitLocked()
+		host.mu.Unlock()
+		<-news
+		host.mu.Lock()
 	}
 }
 
@@ -475,7 +460,7 @@ func waitFor(t *testing.T, ok func() bool) {
 // that holds it, so the next search loads nothing. Given up, or another
 // model kept in its place, it goes at once.
 func TestAKeptModelStaysBetweenSearches(t *testing.T) {
-	s := useStandIn(t, time.Millisecond)
+	s := useStandIn(t)
 	e := quietEngine()
 	ctx := context.Background()
 	if _, err := e.keep(ctx, gemma, 0, ""); err != nil {
@@ -524,7 +509,7 @@ func TestAKeptModelStaysBetweenSearches(t *testing.T) {
 // ahead of a search, and a search of another size replaces it with one
 // that is kept in turn.
 func TestAKeptModelIsFreeToReadInto(t *testing.T) {
-	s := useStandIn(t, time.Millisecond)
+	s := useStandIn(t)
 	e := quietEngine()
 	ctx := context.Background()
 	if _, err := e.keep(ctx, gemma, 0, ""); err != nil {
@@ -551,7 +536,7 @@ func TestAKeptModelIsFreeToReadInto(t *testing.T) {
 // used to wait for the read to end by itself, which can take as long as
 // reading the whole transcript of another video again.
 func TestABiggerSearchCallsOffARead(t *testing.T) {
-	s := useStandIn(t, time.Millisecond)
+	s := useStandIn(t)
 	e := quietEngine()
 	ctx := context.Background()
 	if _, release, err := e.warmModel(ctx, gemma, 32768, ""); err != nil {
@@ -592,7 +577,7 @@ func TestABiggerSearchCallsOffARead(t *testing.T) {
 // the whole prompt again. Once the search is done with it, it can be read
 // into, and a model the app keeps the same.
 func TestAReadWaitsForTheSearchToComeBack(t *testing.T) {
-	useStandIn(t, time.Millisecond)
+	useStandIn(t)
 	e := quietEngine()
 	ctx := context.Background()
 	if _, err := e.keep(ctx, gemma, 0, ""); err != nil {
@@ -634,7 +619,7 @@ func TestAReadWaitsForTheSearchToComeBack(t *testing.T) {
 // The model kept is left as it is when the settings change, at any size,
 // so a change of the caption colour does not load it again.
 func TestKeepingTheModelLoadedSmallerLoadsNothing(t *testing.T) {
-	s := useStandIn(t, time.Millisecond)
+	s := useStandIn(t)
 	e := quietEngine()
 	ctx := context.Background()
 	_, release, err := e.warmModel(ctx, gemma, warmSize("gemma", 0, 0)/2, "")
@@ -653,7 +638,7 @@ func TestKeepingTheModelLoadedSmallerLoadsNothing(t *testing.T) {
 // A model let go of with a few minutes to stay, and then kept by the app,
 // stays when those minutes are up. It used to be stopped by its timer.
 func TestAModelKeptAfterItWasLetGoOfStays(t *testing.T) {
-	s := useStandIn(t, time.Millisecond)
+	s := useStandIn(t)
 	e := quietEngine()
 	ctx := context.Background()
 	_, release, err := e.warmModel(ctx, gemma, 32768, "")
@@ -682,7 +667,7 @@ func TestAModelKeptAfterItWasLetGoOfStays(t *testing.T) {
 // Stopping the models gives up the model kept as well, so the next search
 // stops what it loads when it is done.
 func TestStopModelsGivesUpTheModelKept(t *testing.T) {
-	s := useStandIn(t, time.Millisecond)
+	s := useStandIn(t)
 	e := quietEngine()
 	ctx := context.Background()
 	if _, err := e.keep(ctx, gemma, 0, ""); err != nil {
