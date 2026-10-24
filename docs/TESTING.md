@@ -866,8 +866,11 @@ Playwright's own 30 s on every action and wait is off too, `noDeadlines` in
 of `make walks`. The walks and the probes wait on no clock since #341 and
 #495. What `frontend/eslint-suppressions.json` still counts for them are
 reads of the clock that measure, and the stalls and late answers a step
-puts on the app on purpose. One more in a file fails. Some walks still
-wait a fixed number of the browser's frames, which #503 takes out. See
+puts on the app on purpose. One more in a file fails. A walk counts the
+browser's frames only where the count is the scenario, a hand held still
+and a Go side made slow on purpose, since #503. A probe fails at once
+when its video preview shows no picture or its list has no clip to pick,
+since #501, so a broken test video is said where it is found. See
 No test waits on the clock in
 [BUILD.md](BUILD.md#no-test-waits-on-the-clock).
 

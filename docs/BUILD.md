@@ -301,8 +301,11 @@ test to the part about the clock, each with that one rule:
   One more in a file fails, and so does one fewer, until
   `npm run lint -- --prune-suppressions` in `frontend/` counts again. No
   walk, probe or interface test waits on the clock since #341 and #495.
-  Some walks still wait a fixed number of the browser's frames, which
-  ESLint cannot see, and #503 takes them out.
+  Since #503 a walk counts browser frames only where the count is the
+  scenario: a hand held still on the clip timeline for about 0.7 s, and a
+  Go side made slow on purpose. Everywhere else a watch ends on the app's
+  own signals, the page settled, the picture standing, the sound card
+  let go, or the episode's own time.
 
 A clock the test controls is not refused: Playwright's `page.clock`,
 Vitest's `vi.useFakeTimers`, and a `time.Sleep` in a `testing/synctest`
