@@ -1012,6 +1012,27 @@ in front comes from `lsappinfo`, which needs no permission a runner does
 not have. The app's log goes to `~/Library/Logs/FrameFairy-outside.log`
 as well, and the test shows it when a check fails.
 
+No check waits on the clock, the same as every other test. Each waits to
+be told:
+
+- **The app is up.** The test listens on 127.0.0.1:47291, and the probe
+  says hello there once it listens. Starting the app waits for that.
+- **Something changed.** The probe counts changes: a link handed over,
+  what the app tells the page, its window coming to the front or going
+  to the back, and what the page shows, which the page tells it once a
+  frame at most from a `MutationObserver` the probe puts there.
+  `GET /state?after=N` answers once the count is past N, and a check asks
+  again after each change until what it waits for holds.
+- **The app is gone.** `GET /gone` answers at once and holds the answer
+  open for as long as the app runs, so quitting waits for that answer to
+  end with the process.
+- **The letter is there.** After a checkout the test presses Deliver on
+  the dispenser's dev page, which answers once Paddle's webhook is
+  answered, and the letter goes out while it is.
+
+A check that never holds is ended by `go test -timeout` in `make
+outside`, and what the app had each time it changed is in the log.
+
 The job stops after 30 minutes, so an app that hangs does not hold a Mac
 for GitHub's six hours.
 

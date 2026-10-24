@@ -520,6 +520,7 @@ func TestEveryButton(t *testing.T) {
 		{"sign", url.Values{"n": {"3"}}},
 		{"sign", url.Values{"n": {"3"}, "generation": {"0123456789abcdef"}}},
 		{"refill", nil},
+		{"deliver", nil},
 		{"cron-mail", nil},
 		{"cron-daily", nil},
 		{"feed", nil},
@@ -649,6 +650,26 @@ func TestAllAtOnce(t *testing.T) {
 		}
 	}
 	w.audit()
+}
+
+// Deliver on the dev page answers once the webhooks that were due are
+// answered, so the buyer's letter is there when it answers. The checks
+// from outside the app read the letter right after it.
+func TestDeliverAnswersOnceTheLetterIsSent(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t, 10)
+	resp, ref, _, err := checkout(w.client, w.base, "noor@example.com", 2)
+	if err != nil || resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("checkout: %v", err)
+	}
+	w.press("deliver", nil)
+	_, letters, _ := w.d.mail.read()
+	for _, l := range letters {
+		if l.Ref == ref && len(l.Keys) == 2 {
+			return
+		}
+	}
+	t.Fatalf("no letter with two keys for %s among %+v", ref, letters)
 }
 
 func TestRunRefusesAnOutsideAddress(t *testing.T) {
