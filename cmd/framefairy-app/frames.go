@@ -33,7 +33,7 @@ import (
 // A stream left open is how a paused play goes on at once, and how the
 // next frame is there when the arrow key steps to it.
 //
-//	/frames/open?path=<episode>&from=<seconds>&w=<width>&h=<height>&grid=<grid>  {"id": "..."}
+//	/frames/open?path=<episode>&from=<seconds>&w=<width>&h=<height>&grid=<grid>[&key=1]  {"id": "..."}
 //	                                 the frames of the grid from the one that
 //	                                 holds from: the grid the engine named,
 //	                                 see engine.SourceInfo.Grid, as the page
@@ -209,6 +209,9 @@ func (p *previews) serveOpen(st *store, w http.ResponseWriter, r *http.Request) 
 			http.Error(w, "a preview needs the grid of frames it counts on", http.StatusBadRequest)
 			return
 		}
+		// key=1 asks for the key frame before from first, while the hand
+		// drags the playhead, see engine.EpisodeFrames.Stream.
+		key := q.Get("key") == "1"
 		times = engine.NewPreviewTimes()
 		skip = new(atomic.Uint64)
 		skipped := func() float64 { return math.Float64frombits(skip.Load()) }
@@ -220,7 +223,7 @@ func (p *previews) serveOpen(st *store, w http.ResponseWriter, r *http.Request) 
 			if err != nil {
 				return err
 			}
-			return dec.Stream(engine.WithPreviewTimes(ctx, times), grid, from, width&^1, height&^1, skipped, got)
+			return dec.Stream(engine.WithPreviewTimes(ctx, times), grid, from, width&^1, height&^1, key, skipped, got)
 		}
 	}
 	kind := ""

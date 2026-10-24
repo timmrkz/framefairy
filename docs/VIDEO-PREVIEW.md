@@ -225,6 +225,24 @@ closed for standing unused.
   frames a jump passes are decoded but never scaled. While the playhead
   is dragged, each place it passes shows its frame alone and cues no
   play, `FrameQueue.grip`, and the play is cued where the hand lets go.
+  A place the hand moves to that needs a stream of its own opens it with
+  `key`, and the decoder hands over the key frame its seek lands on
+  before it decodes on to the frame asked for, issue #281. The place a
+  press lands on does not, so a click shows the frame clicked and nothing
+  before it. The queue puts that key frame up only when it is nearer the
+  playhead than the frame on screen, and the exact frame still follows
+  and takes its place. The frame asked for is the next frame the decoder
+  hands over after the key frame: the frames between are decoded and let
+  go unscaled, the way a jump lets them go. So a hand that outruns the decoder sees a frame
+  near it at the cost of the key frame and the few frames stored next to
+  it, not the frame of a place it left long ago, and a place it has
+  already left costs its key frame alone, since the queue lets go of that
+  stream sooner. Where the hand rests, and once it lets go, the frame on
+  screen is the exact one, as before. The app's log says how each drag
+  went once the hand lets go: how far the frame on screen was from the
+  playhead as the hand moved, the key frames put up, and how long the
+  frame under the hand took after letting go. The decoder's own lines say
+  when an open asked for the key frame first and when it came.
 - The routes the interface reads from, `/frames/open`, `/frames/sound`,
   `/frames/read` and `/frames/close`, stay as they are. The interface
   cannot tell whether a frame came from it or from the ffmpeg program.
@@ -401,6 +419,56 @@ to start, about 45 ms, which every play does on purpose, see
 `START_LEAD` in `lib/frames/queue.ts`. That wait once read as the clock
 off its line by 23 to 47 ms each play, so the line is now fitted from the
 moment the sound starts.
+
+Tim's third report on #430 still missed about 9 refreshes a minute, and
+the time went to the page's own work after each animation frame, not to
+the frame queue's. While it played, the playhead moved on every
+animation frame, and everything in the workspace that depends on it was
+worked out again and laid out each time, 120 times a second on Tim's
+screen for a video of 25 frames a second. Everything that follows the
+playhead is drawn by its frame, so the playhead now moves only when the
+sound heard is in another frame, `playMoves` in `lib/playhead.ts`, issue
+#446. A trace of plays in the cloud, headless Chromium at 60 Hz, with
+`smooth.mjs`'s video of a minute at 1080p, two runs of three plays each,
+101.3 s of play a run, the work of a second of play averaged over the
+two:
+
+| Work a second of play       | Before (ms) | After (ms) | Change    |
+| --------------------------- | ----------: | ---------: | --------- |
+| The app's own JavaScript    |        33.4 |       20.8 | 38 % less |
+| Working out styles          |        22.8 |       13.5 | 41 % less |
+| Layout                      |        17.1 |       14.6 | 15 % less |
+| Paint                       |        22.3 |       19.3 | 13 % less |
+
+The playhead moved 3434 times in the first play of 60 s before and 1497
+times after. The refreshes missed in the cloud are not in the table: the
+cloud draws each frame on the processor, which takes most of the time
+there, and they moved by more between two runs of the same code than
+between before and after.
+
+A playhead dragged faster than the frames under it can be decoded shows
+the key frame on the way, issue #281, see The interface. `speed.mjs` in
+the cloud, on its camera videos of 25 frames a second, five runs a side,
+each five drags over a clip and back, with the key frame first turned
+off for Before by an edit of `AppFrames.frame` and on for After, on the
+same branch, off and on taking turns. The 1080p H.264 video stands in
+for Tim's youtube.mp4. Each number is the median of the five runs, with
+the lowest and highest run beside it:
+
+| Frames behind while dragging | Before (frames) | Before, runs | After (frames) | After, runs | Change                        |
+| ---------------------------- | --------------: | -----------: | -------------: | ----------: | ----------------------------- |
+| 4K HEVC, median              |              66 |     61 to 71 |             48 |    45 to 55 | 27 % fewer                    |
+| 4K HEVC, 90th percentile     |             142 |   122 to 154 |            112 |  106 to 121 | 21 % fewer                    |
+| 4K HEVC, most                |             231 |   183 to 305 |            195 |  160 to 259 | 16 % fewer, inside the spread |
+| 1080p H.264, median          |              10 |     10 to 13 |              8 |     7 to 10 | 20 % fewer, inside the spread |
+| 1080p H.264, 90th percentile |              21 |     20 to 21 |             20 |    20 to 21 | 5 % fewer, inside the spread  |
+
+At 4K the median and the 90th percentile moved further than the runs of
+either side lie apart. Letting go of a drag, a far click, and the steps
+by word and by frame came out inside the spread of the runs at both
+sizes, faster or slower by a few per cent in most rows: the numbers are
+in pull request #502. A click and a step never ask for a key frame first,
+so they take the path they took before.
 
 ## Colour
 

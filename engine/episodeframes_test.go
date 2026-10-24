@@ -78,7 +78,7 @@ func TestTheEpisodesDecoderHandsOverTheFramesFFmpegDoes(t *testing.T) {
 		})
 		times := NewPreviewTimes()
 		got := collect(func(got func(float64, []byte) error) error {
-			return dec.Stream(WithPreviewTimes(context.Background(), times), grid, from, 160, 90, nil, got)
+			return dec.Stream(WithPreviewTimes(context.Background(), times), grid, from, 160, 90, false, nil, got)
 		})
 		if times.File.Load() != (i == 0) {
 			t.Errorf("stream %d from %.2f opened the file: %v, want only the first to", i, from, times.File.Load())
@@ -171,7 +171,7 @@ func TestTheEpisodesDecoderDecodesAJumpNoFurtherThanItMust(t *testing.T) {
 			return e.PreviewFrames(context.Background(), path, grid.At(grid.Holding(j.from)), 160, 90, got)
 		})
 		gotAts, got := collect(func(got func(float64, []byte) error) error {
-			return dec.Stream(context.Background(), grid, j.from, 160, 90, nil, got)
+			return dec.Stream(context.Background(), grid, j.from, 160, 90, false, nil, got)
 		})
 		if len(got) != len(want) {
 			t.Fatalf("from %.2f the decoder gave %d frames, ffmpeg %d", j.from, len(got), len(want))
@@ -258,7 +258,7 @@ func TestTheEpisodesDecoderMakesNoFrameBeforeTheSkip(t *testing.T) {
 	var skip atomic.Uint64
 	var ats []float64
 	var at []byte
-	err := dec.Stream(context.Background(), grid, 0.2, 160, 90, func() float64 {
+	err := dec.Stream(context.Background(), grid, 0.2, 160, 90, false, func() float64 {
 		return math.Float64frombits(skip.Load())
 	}, func(a float64, data []byte) error {
 		ats = append(ats, a)
@@ -292,6 +292,133 @@ func TestTheEpisodesDecoderMakesNoFrameBeforeTheSkip(t *testing.T) {
 	}
 	if d := meanDiff(at, want); d > 2 {
 		t.Errorf("the frame at %.1f s differs from ffmpeg's by %.2f on average", to, d)
+	}
+}
+
+// A stream that asks for the key frame first hands over the key frame its
+// decoding starts from, the same picture the ffmpeg program makes of it,
+// and goes on from there to the frame asked for once the skip names it,
+// with no more than a batch of frames between. A frame that is itself a
+// key frame comes at once. HEVC with open GOPs too, where a seek finds its
+// key frame by when it is decoded. Issue #281.
+//
+// On the real disk: ffmpeg makes the episode and the frames decoder reads it.
+func TestTheEpisodesDecoderHandsOverTheKeyFrameFirst(t *testing.T) {
+	ffmpegtest.Need(t)
+	program := os.Getenv("FRAMEFAIRY_FRAMES")
+	if program == "" {
+		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
+	}
+	type kind struct {
+		name string
+		args []string
+	}
+	kinds := []kind{{"MPEG-4", []string{"-c:v", "mpeg4", "-q:v", "3", "-g", "50", "-bf", "2"}}}
+	// Our own ffmpeg on the Mac has no x265, which is GPL, and makes the
+	// HEVC with the Mac's encoder, which writes no open GOPs.
+	encoders, _ := exec.Command("ffmpeg", "-hide_banner", "-encoders").Output()
+	has := func(name string) bool { return strings.Contains(string(encoders), " "+name+" ") }
+	switch {
+	case has("libx265"):
+		kinds = append(kinds, kind{"HEVC with open GOPs", []string{"-c:v", "libx265", "-preset", "ultrafast",
+			"-x265-params", "keyint=50:min-keyint=50:scenecut=0:bframes=3:open-gop=1:log-level=error"}})
+	case has("hevc_videotoolbox"):
+		kinds = append(kinds, kind{"HEVC", []string{"-c:v", "hevc_videotoolbox", "-b:v", "2M", "-g", "50", "-tag:v", "hvc1"}})
+	default:
+		// Ends only this case, so MPEG-4 still runs.
+		kinds = append(kinds, kind{"HEVC", nil})
+	}
+	for _, enc := range kinds {
+		t.Run(enc.name, func(t *testing.T) {
+			t.Parallel()
+			if enc.args == nil {
+				ffmpegtest.Unusable(t, "this ffmpeg has no HEVC encoder to make the episode with")
+			}
+			path := filepath.Join(t.TempDir(), "episode.mp4")
+			// Four seconds at 25 frames a second, a key frame every two.
+			args := append([]string{"-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=25:d=4"}, enc.args...)
+			if out, err := exec.Command("ffmpeg", append(args, path)...).CombinedOutput(); err != nil {
+				ffmpegtest.Unusable(t, "ffmpeg could not make an episode: %s %s", err, out)
+			}
+			e := NewEngine(NewLog(nil, false, false), disk)
+			e.FFmpeg, e.FFprobe = "ffmpeg", "ffprobe"
+			grid := gridOf(t, path)
+			ffmpegs := func(at float64) []byte {
+				var want []byte
+				if err := e.PreviewFrames(context.Background(), path, at, 160, 90, func(_ float64, data []byte) error {
+					want = data
+					return errStop
+				}); err != nil && !errors.Is(err, errStop) {
+					t.Fatal(err)
+				}
+				return want
+			}
+			// The key frames as ffprobe finds them: with B-frames the
+			// second is not shown at 2 s but a frame or so later.
+			out, err := exec.Command("ffprobe", "-v", "error", "-select_streams", "v", "-skip_frame", "nokey",
+				"-show_entries", "frame=pts_time", "-of", "csv=p=0", path).Output()
+			if err != nil {
+				t.Fatal(err)
+			}
+			var keys []float64
+			for _, l := range strings.Fields(string(out)) {
+				k, err := strconv.ParseFloat(strings.TrimSuffix(l, ","), 64)
+				if err != nil {
+					t.Fatalf("ffprobe said %q", out)
+				}
+				keys = append(keys, k)
+			}
+			if len(keys) < 2 || keys[1] < 1.5 || keys[1] > 2.5 {
+				t.Fatalf("the key frames are at %v, want one at 0 and one at about 2 s", keys)
+			}
+			// Before the second key frame, after it, and onto it. Each on a
+			// decoder of its own, since a cursor that reads on to the frame
+			// needs no seek and hands over the frame asked for, see the
+			// decoder's open.
+			for _, c := range []struct{ from, key float64 }{{keys[1] - 0.4, keys[0]}, {keys[1] + 1, keys[1]}, {keys[1], keys[1]}} {
+				dec := NewEpisodeFrames(program, path)
+				defer dec.Close()
+				to := grid.At(grid.Holding(c.from))
+				var skip atomic.Uint64
+				var ats []float64
+				var first, at []byte
+				err := dec.Stream(context.Background(), grid, c.from, 160, 90, true, func() float64 {
+					return math.Float64frombits(skip.Load())
+				}, func(a float64, data []byte) error {
+					ats = append(ats, a)
+					if len(ats) == 1 {
+						first = data
+						skip.Store(math.Float64bits(to - 0.02))
+					}
+					if a >= to-1e-6 {
+						at = data
+						return errStop
+					}
+					return nil
+				})
+				if err != nil && !errors.Is(err, errStop) {
+					t.Fatal(err)
+				}
+				if key := grid.At(grid.Holding(c.key)); math.Abs(ats[0]-key) > 1e-6 {
+					t.Fatalf("a stream from %.1f s began at %.4f s, want the key frame at %.4f s", c.from, ats[0], key)
+				}
+				if last := ats[len(ats)-1]; math.Abs(last-to) > 1e-6 {
+					t.Fatalf("a stream from %.1f s went on to %.4f s, want the frame at %.4f s", c.from, last, to)
+				}
+				// The frames between the key frame and the frame asked for
+				// are never wanted, so none is made into a picture, issue
+				// #281: the frame asked for comes right after the key frame.
+				if n := len(ats) - 2; n > 0 {
+					t.Errorf("a stream from %.1f s handed over %d frames between the key frame and the frame asked for, want none: %v", c.from, n, ats)
+				}
+				if d := meanDiff(first, ffmpegs(ats[0])); d > 2 {
+					t.Errorf("the key frame at %.1f s differs from ffmpeg's by %.2f on average", ats[0], d)
+				}
+				if d := meanDiff(at, ffmpegs(to)); d > 2 {
+					t.Errorf("the frame at %.1f s differs from ffmpeg's by %.2f on average", to, d)
+				}
+			}
+		})
 	}
 }
 
@@ -330,7 +457,7 @@ func TestTheEpisodesDecoderIsReadyBeforeTheFirstFrame(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	times := NewPreviewTimes()
-	err := dec.Stream(WithPreviewTimes(context.Background(), times), gridOf(t, path), 1.5, 160, 90, nil, func(float64, []byte) error { return errStop })
+	err := dec.Stream(WithPreviewTimes(context.Background(), times), gridOf(t, path), 1.5, 160, 90, false, nil, func(float64, []byte) error { return errStop })
 	if !errors.Is(err, errStop) {
 		t.Fatal(err)
 	}
@@ -413,7 +540,7 @@ func TestTheEpisodesDecoderTakesStreamsFromEverywhereAtOnce(t *testing.T) {
 					cancel()
 				}
 				last, n := -1.0, 0
-				err := dec.Stream(ctx, grid, from, 64, 36, nil, func(at float64, data []byte) error {
+				err := dec.Stream(ctx, grid, from, 64, 36, false, nil, func(at float64, data []byte) error {
 					if at < grid.At(grid.Holding(from))-1e-6 || at <= last {
 						t.Errorf("a stream from %.1f got a frame at %.3f after %.3f", from, at, last)
 					}
@@ -515,7 +642,7 @@ func TestTheEpisodesDecoderPlaysTheFilesPeopleBring(t *testing.T) {
 					return nil
 				}
 			}
-			if err := dec.Stream(context.Background(), grid, from, 160, 90, nil, collect(&got, &gotData)); err != nil && !errors.Is(err, errStop) {
+			if err := dec.Stream(context.Background(), grid, from, 160, 90, false, nil, collect(&got, &gotData)); err != nil && !errors.Is(err, errStop) {
 				t.Fatalf("%s from %.2f: %v", k.name, from, err)
 			}
 			if err := e.PreviewFrames(context.Background(), path, grid.At(grid.Holding(from)), 160, 90, collect(&want, &wantData)); err != nil && !errors.Is(err, errStop) {
@@ -612,33 +739,59 @@ func TestTheEpisodesDecoderAgreesOnAPictureThatStartsLate(t *testing.T) {
 			}
 			return all[k]
 		}
-		dec := NewEpisodeFrames(program, c.path)
-		for _, from := range []float64{0, 0.2, 0.31, 0.35, 1.0, 1.02, 2.3} {
-			first := grid.Holding(from)
-			var got []frame
-			err := dec.Stream(context.Background(), grid, from, 160, 90, nil, func(at float64, data []byte) error {
-				got = append(got, frame{at, data})
-				if len(got) == 6 {
-					return errStop
-				}
-				return nil
-			})
-			if err != nil && !errors.Is(err, errStop) {
-				t.Fatalf("%s from %.2f: %v", name, from, err)
-			}
+		// The frames a stream handed over, each at its moment of the grid
+		// and the file's frame there: frame first and those after it, or
+		// with the key frame first, frame key and then those from first.
+		checkFrames := func(t *testing.T, what string, got []frame, key, first int) {
+			t.Helper()
 			for i, g := range got {
 				moment := grid.At(first + i)
+				if key < first {
+					moment = grid.At(first + i - 1)
+					if i == 0 {
+						moment = grid.At(key)
+					}
+				}
 				if math.Abs(g.at-moment) > 1e-9 {
-					t.Fatalf("%s from %.2f: frame %d at %.4f, its moment is %.4f", name, from, i, g.at, moment)
+					t.Fatalf("%s: frame %d at %.4f, its moment is %.4f", what, i, g.at, moment)
 				}
 				want := holds(moment)
 				if d := meanDiff(g.data, want.data); d > 2 {
-					t.Fatalf("%s from %.2f: frame %d, at %.4f, differs from the file's frame at %.4f by %.2f on average",
-						name, from, i, moment, want.at, d)
+					t.Fatalf("%s: frame %d, at %.4f, differs from the file's frame at %.4f by %.2f on average",
+						what, i, moment, want.at, d)
 				}
 			}
 			if len(got) != 6 {
-				t.Fatalf("%s from %.2f: %d frames, want 6", name, from, len(got))
+				t.Fatalf("%s: %d frames, want 6", what, len(got))
+			}
+		}
+		dec := NewEpisodeFrames(program, c.path)
+		for _, from := range []float64{0, 0.2, 0.31, 0.35, 1.0, 1.02, 2.3} {
+			// With the key frame first too, issue #281: the first frame is
+			// then the key frame, which stands for no frame before the
+			// grid's first even where the picture starts late, and the
+			// frame asked for and those after it follow.
+			for _, key := range []bool{false, true} {
+				first := grid.Holding(from)
+				k := first
+				var got []frame
+				err := dec.Stream(context.Background(), grid, from, 160, 90, key, nil, func(at float64, data []byte) error {
+					got = append(got, frame{at, data})
+					if len(got) == 6 {
+						return errStop
+					}
+					return nil
+				})
+				if err != nil && !errors.Is(err, errStop) {
+					t.Fatalf("%s from %.2f, key %v: %v", name, from, key, err)
+				}
+				if key && len(got) > 0 {
+					k = grid.Holding(got[0].at)
+					if k < 0 || k > first || math.Abs(got[0].at-grid.At(k)) > 1e-9 {
+						t.Fatalf("%s from %.2f: the key frame at %.4f is frame %d, want a frame from 0 to %d at its moment", name, from, got[0].at, k, first)
+					}
+				}
+				checkFrames(t, fmt.Sprintf("%s from %.2f, key %v", name, from, key), got, k, first)
 			}
 		}
 		dec.Close()
@@ -699,7 +852,7 @@ func TestTheEpisodesDecoderGivesTheFramesBeforeAnOpenKeyFrame(t *testing.T) {
 	grid := gridOf(t, path)
 	for _, from := range leading {
 		var got []float64
-		err := dec.Stream(context.Background(), grid, from, 160, 90, nil, func(at float64, _ []byte) error {
+		err := dec.Stream(context.Background(), grid, from, 160, 90, false, nil, func(at float64, _ []byte) error {
 			got = append(got, at)
 			if len(got) == 4 {
 				return errStop
@@ -829,7 +982,7 @@ func TestTheEpisodesDecoderComesBackFromTheEnd(t *testing.T) {
 	grid := gridOf(t, path)
 	count := func(from float64, most int) int {
 		n := 0
-		err := dec.Stream(context.Background(), grid, from, 160, 90, nil, func(float64, []byte) error {
+		err := dec.Stream(context.Background(), grid, from, 160, 90, false, nil, func(float64, []byte) error {
 			n++
 			if n == most {
 				return errStop
@@ -935,7 +1088,7 @@ func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
 		}
 		dec := NewEpisodeFrames(program, path)
 		var frame []byte
-		err := dec.Stream(context.Background(), gridOf(t, path), 0, w, h, nil, func(_ float64, data []byte) error {
+		err := dec.Stream(context.Background(), gridOf(t, path), 0, w, h, false, nil, func(_ float64, data []byte) error {
 			frame = data
 			return errStop
 		})
@@ -1074,7 +1227,7 @@ func TestADecoderThatStopsAtOnceSaysWhyToAStreamThatAskedMeanwhile(t *testing.T)
 	before := cursor()
 	asked := make(chan error, 1)
 	go func() {
-		asked <- dec.Stream(context.Background(), framewire.Grid{Num: 1, Den: 1, Count: 1}, 0, 64, 36, nil,
+		asked <- dec.Stream(context.Background(), framewire.Grid{Num: 1, Den: 1, Count: 1}, 0, 64, 36, false, nil,
 			func(float64, []byte) error { return nil })
 	}()
 	var err error

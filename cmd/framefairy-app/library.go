@@ -148,7 +148,7 @@ func undecodable(video string, wait time.Duration) string {
 		grid = framewire.Grid{Num: 1, Den: 1, Count: 1}
 	}
 	frames := 0
-	err = dec.Stream(ctx, grid, 0, 64, 36, nil, func(float64, []byte) error {
+	err = dec.Stream(ctx, grid, 0, 64, 36, false, nil, func(float64, []byte) error {
 		frames++
 		return errFirstFrame
 	})
@@ -249,7 +249,7 @@ func (s *FrameFairy) letGoOfRemoved() {
 		s.jobs.closeEpisode(ep)
 		s.levels.stop(ep)
 		s.forget(ep)
-		go s.clearLetGo(ep)
+		s.clearing.Go(func() { s.clearLetGo(ep) })
 	}
 }
 

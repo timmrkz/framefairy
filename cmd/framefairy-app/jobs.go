@@ -105,8 +105,10 @@ type Job struct {
 	ask    *ask
 	cancel context.CancelFunc
 	ctx    context.Context
-	// byHand is a search called off with Cancel, which says so where its
-	// work was the way one cut off by the app closing does, see stopByHand.
+	// byHand is a search, a clip or a render called off with Cancel, see
+	// stopByHand. A job that makes clips says so where its work was the way
+	// one cut off by the app closing does, and a render takes its record
+	// with it, see runJob.
 	byHand bool
 	// turns counts the turns the job has had, so news that a turn was
 	// taken back is never news about a later one, see turn.
@@ -701,13 +703,14 @@ func (q *queue) carriedOnLocked(job *Job) bool {
 	return false
 }
 
-// stopByHand calls off a job with Cancel or Stop transcribing, see
-// stopsAsStopped. It ends as work that stopped, not as work that is gone,
-// see runJob.
+// stopByHand calls off a job that keeps a record with Cancel or Stop
+// transcribing. One that stopsAsStopped ends as work that stopped, not as
+// work that is gone, and a render ends with its record forgotten, see
+// runJob.
 func (q *queue) stopByHand(id string) {
 	q.mu.Lock()
 	for _, j := range q.jobs {
-		if j.ID == id && stopsAsStopped(j.Kind) && j.Record != "" {
+		if j.ID == id && j.Record != "" {
 			j.byHand = true
 		}
 	}
@@ -942,7 +945,9 @@ func (q *queue) runJob(job *Job) {
 	result, err := run(ctx, job, project, q.turn(job, opts))
 	// A search called off by hand says so in its record before it says
 	// it has ended, so the note is there whenever anyone looks, the app
-	// quit a moment later included.
+	// quit a moment later included. A render called off by hand forgets
+	// its record at the same point, once nothing it does can write it
+	// again, so the record is gone by the time the window hears it ended.
 	//
 	// Continue may have been clicked while it stopped, and the job it
 	// started writes the same record. That record is the newer job's, so
@@ -954,9 +959,16 @@ func (q *queue) runJob(job *Job) {
 	// press of Stop or Cancel, and a write outside the lock could land
 	// over the record of the job Continue started.
 	q.mu.Lock()
-	if job.byHand && errors.Is(err, engine.ErrCancelled) && !q.carriedOnLocked(job) {
+	switch {
+	case !job.byHand || !errors.Is(err, engine.ErrCancelled):
+	case stopsAsStopped(job.Kind) && q.carriedOnLocked(job):
+	case stopsAsStopped(job.Kind):
 		if serr := engine.StopJob(q.store.files, job.Episode, job.Record); serr != nil {
 			project.Log().Warn("could not note the search as stopped: %s", serr)
+		}
+	default:
+		if rerr := engine.RemoveJob(q.store.files, job.Episode, job.Record); rerr != nil {
+			project.Log().Warn("could not clear the record of the render: %s", rerr)
 		}
 	}
 	q.mu.Unlock()
@@ -970,7 +982,7 @@ func (q *queue) runJob(job *Job) {
 		switch {
 		case err == nil:
 			j.State, j.Underway = JobDone, nil
-		case errors.Is(err, engine.ErrCancelled) && j.byHand:
+		case errors.Is(err, engine.ErrCancelled) && j.byHand && stopsAsStopped(j.Kind):
 			// Called off by hand, a search says Stopped, Click Continue,
 			// because what it heard stays and it can be carried on.
 			j.State, j.Step = JobInterrupted, engine.StepStopped

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { inEpisode, onVideo, placeFor, placeOf, playedToEnd, playFrom, playheadClock, type Playhead } from "./playhead";
+import { inEpisode, onVideo, placeFor, placeOf, playedToEnd, playFrom, playheadClock, playMoves, type Playhead } from "./playhead";
 
 // A clip of two pieces with a cut between them, at twenty-five frames a
 // second, the way the episodes are. Its start falls three quarters of a
@@ -271,5 +271,28 @@ describe("the time field says the frame the playhead is in", () => {
     // 1/30 s frames: frame 1799 starts at 59.9667, frame 1800 at 60.
     expect(playheadClock(59.99, 1 / 30, 0, false)).toBe("00:59.967");
     expect(playheadClock(59.9999, 1 / 30, 0, false)).toBe("01:00.000");
+  });
+});
+
+describe("a play moves the playhead once a frame", () => {
+  test("not inside the frame it stands in", () => {
+    expect(playMoves(10.0, 10.016, frame)).toBe(false);
+    expect(playMoves(10.0, 10.035, frame)).toBe(false);
+  });
+
+  test("into the next frame, a cut jumped and a loop back", () => {
+    expect(playMoves(10.0, 10.04, frame)).toBe(true);
+    expect(playMoves(10.0, 12.5, frame)).toBe(true);
+    expect(playMoves(10.0, 2.0, frame)).toBe(true);
+  });
+
+  test("frames counted from where the picture starts", () => {
+    // Frames of 29.97 a second from 0.25 s: the tenth starts at 0.5837.
+    expect(playMoves(0.57, 0.58, 1001 / 30000, 0.25)).toBe(false);
+    expect(playMoves(0.58, 0.585, 1001 / 30000, 0.25)).toBe(true);
+  });
+
+  test("on every animation frame while the frame's length is not known", () => {
+    expect(playMoves(10.0, 10.001, 0)).toBe(true);
   });
 });

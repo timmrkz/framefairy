@@ -127,6 +127,19 @@ export function inEpisode(at: number, duration: number): number {
   return duration > 0 ? Math.max(0, Math.min(at, duration)) : at;
 }
 
+// Whether a play moves the playhead from was to at, the sound heard on
+// an animation frame, in an episode of frames frame seconds long whose
+// picture starts start seconds into the file: only when at is in another
+// frame. Everything that follows the playhead is drawn by its frame, the
+// mark on the clip timeline, the time field and the captions, so a move
+// inside a frame changes nothing on screen. Moved on every animation
+// frame, the whole workspace worked itself out again 120 times a second on
+// a screen of 120 Hz for a video of 25 frames a second, and the page
+// missed refreshes doing it, issue #446.
+export function playMoves(was: number, at: number, frame: number, start = 0): boolean {
+  return !(frame > 0) || frameAt(at, frame, start) !== frameAt(was, frame, start);
+}
+
 // The playhead's time, for the field beside the buttons under the clip
 // timeline: where the frame it stands in starts, to the millisecond. A
 // frame and not the moment itself, because the playhead is never quite

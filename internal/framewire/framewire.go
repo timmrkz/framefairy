@@ -6,9 +6,10 @@
 // A request names a cursor, one place in the episode the decoder keeps
 // open with a decoder of its own, by a number the Go side chooses:
 //
-//	open <cursor> <frame> <width> <height> <origin> <grid>
+//	open <cursor> <frame> <width> <height> <origin> <grid> [key]
 //	                                        the cursor goes to a frame of the
-//	                                        grid, see Grid and OpenRequest
+//	                                        grid, from the key frame before it
+//	                                        with key, see Grid and OpenRequest
 //	sound <cursor> <seek> <from> <rate> <channels>
 //	                                        a cursor of sound seeks to seek, or
 //	                                        reads from the start where it is 0,

@@ -291,19 +291,10 @@ func (s *FrameFairy) cancelSteps(id string) bool {
 			s.jobs.settle(j.Episode, j.Kind, j.Record)
 			return true
 		}
-		if stopsAsStopped(j.Kind) {
-			// Its record says stopped as it ends, see runJob.
-			s.jobs.stopByHand(id)
-			return true
-		}
-		s.jobs.cancel(id)
-		// The record goes once the render has stopped, so nothing it
-		// writes on its way out brings it back.
-		go func() {
-			defer func() { _ = recover() }()
-			s.jobs.waitJob(id)
-			s.forgetRecord(j.Episode, j.Record)
-		}()
+		// A search, a clip or the whole video's transcription says Stopped
+		// in its record as it ends, and a render forgets its record then,
+		// so nothing it writes on its way out brings it back, see runJob.
+		s.jobs.stopByHand(id)
 		return true
 	}
 	return false

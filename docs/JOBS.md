@@ -225,9 +225,9 @@ Continue, see row 2.169 in [GUI-PLAN.md](GUI-PLAN.md). Search on an episode wait
 was just called off to be on its way out first, because both write the
 same record.
 
-Five things wait for jobs to stop: Search after Cancel, a render called
-off before its record is forgotten, removing a video with its files,
-clearing a video whose folder was deleted outside the app, and quitting.
+Four things wait for jobs to stop: Search after Cancel, removing a video
+with its files, clearing a video whose folder was deleted outside the
+app, and quitting.
 Each goes on the moment the last job it waits for is done, which is
 later than its state saying it ended: after that the job still closes
 its log in the video's work folder, tells the window and lets go of its
@@ -239,6 +239,14 @@ tells whoever waits of every change, see `until` there and `wake` in
 `stopWait`, 15 s, and then the removal says so and deletes nothing, and
 the app quits anyway. The waits used to look at the list every 20, 50 or
 100 ms, so each took up to that much longer than the work, #394.
+
+A render called off with Cancel forgets its record on the job's own
+goroutine, in `runJob`, once its work has returned and before it says it
+has ended, the point where a search called off notes that it stopped. So nothing
+it writes on its way out brings the record back, and the record is gone
+by the time the window hears the render ended. It was forgotten by a
+goroutine of its own that waited for the render, which told nobody when
+it was done.
 
 **The interface** sends what was clicked and shows what it is told. There
 is no logic about jobs in TypeScript.
@@ -518,9 +526,11 @@ at the moment its lane came free still took it.
 The interface's harness has one fake search that goes through the same
 steps from the same kind of record, see the interface skill.
 
-The tests in `jobs_test.go`, `lanes_test.go` and `remove_test.go` never
-wait on the clock. They wait on `until`, with no time limit, on a job's
-news, or on the fake clock of a `testing/synctest` bubble, and a job that
+The tests in `jobs_test.go`, `lanes_test.go`, `remove_test.go`,
+`steps_test.go`, `store_test.go`, `history_test.go` and `letgo_test.go`
+never wait on the clock. They wait on `until`, with no time limit, on a job's
+news, on the fake clock of a `testing/synctest` bubble, or on `clearing`,
+which is done once clearing a video let go has returned, and a job that
 never ends is left to `go test`'s own `-timeout`. What is left of waits
 on the clock in the other Go tests is #394.
 `TestTheQueueGoesOnTheMomentAJobStops` holds that each wait of the app
