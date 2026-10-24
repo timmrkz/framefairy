@@ -100,7 +100,9 @@ whatever version the machine came with.
    reaches, and pushes a fix if that finds anything. You can watch and steer the session at
    any time, also from the Claude app on your phone.
 3. **CI checks the pull request**, see below. With auto-fix switched on for
-   the pull request, Claude fixes failed checks by itself.
+   the pull request, Claude fixes failed checks by itself. The session also
+   starts a review agent of its own, posts its findings in the session and
+   fixes them before it says the pull request is ready, see CLAUDE.md.
 4. **Review** the diff in the session or on GitHub. Comment on lines to ask
    for changes. Merge when it is right.
 5. **In the app:** Updates, at the foot of the sidebar, following main,
