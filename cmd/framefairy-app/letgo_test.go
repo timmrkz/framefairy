@@ -4,7 +4,6 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
-	"time"
 
 	"github.com/spf13/afero"
 
@@ -90,16 +89,9 @@ func TestAFolderWrittenBackAfterItWasDeletedIsLetGoAndCleared(t *testing.T) {
 	if lib := svc.Library(); listed(lib, ep) {
 		t.Fatalf("the folder written back kept %s in the library", ep)
 	}
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		there, _ := afero.DirExists(files, engine.WorkDir(ep))
-		if !there {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("what was written back into %s is still there", engine.WorkDir(ep))
-		}
-		time.Sleep(10 * time.Millisecond)
+	svc.clearing.Wait()
+	if there, _ := afero.DirExists(files, engine.WorkDir(ep)); there {
+		t.Errorf("what was written back into %s is still there", engine.WorkDir(ep))
 	}
 }
 

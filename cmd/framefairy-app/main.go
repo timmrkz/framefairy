@@ -365,6 +365,10 @@ type FrameFairy struct {
 	toldOld sync.Map
 	// histories are the undo and redo of each episode, see history.go.
 	histories map[string]*history
+	// clearing is done once what was written back into the folders of
+	// videos let go is deleted, see clearLetGo, so whoever needs that done
+	// hears when it is.
+	clearing sync.WaitGroup
 	// link is what became of the last framefairy:// link, waiting for
 	// the settings, see licence.go.
 	link *LicenceLink
