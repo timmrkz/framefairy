@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"math"
-	"math/rand/v2"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -12,9 +11,8 @@ import (
 	"time"
 )
 
-// sideBySide is a recogniser with several copies, the way asr.Pool is, each
-// piece taking a time of its own so they finish in any order, the way copies
-// on a busy machine do.
+// sideBySide is a recogniser with several copies, the way asr.Pool is,
+// whose pieces finish out of order, the way copies on a busy machine do.
 type sideBySide struct {
 	inner  Recognizer
 	copies int
@@ -34,6 +32,12 @@ type sideBySide struct {
 	pairOnce sync.Once
 	makeOnce sync.Once
 	paired   chan struct{}
+	// The pieces being heard, by the order they came in. A piece is done
+	// only once every piece that came after it is, see Recognize.
+	order  sync.Mutex
+	turn   *sync.Cond
+	came   int
+	flying map[int]bool
 }
 
 func (s *sideBySide) pairedChan() chan struct{} {
@@ -68,18 +72,43 @@ func (s *sideBySide) Recognize(samples []float32, rate int) []Token {
 	if s.fail > 0 && s.n.Add(1) == s.fail {
 		panic("a copy of the speech model broke")
 	}
-	// Each piece takes a time of its own, so they finish in any order.
-	// A spread of 20 to 60 ms is wider than the time a piece takes to be
-	// handed out, so they still overtake each other, and an episode of many
-	// pieces is not held up by seconds of sleeping.
-	time.Sleep(time.Duration(20+rand.IntN(40)) * time.Millisecond)
+	s.order.Lock()
+	if s.turn == nil {
+		s.turn, s.flying = sync.NewCond(&s.order), map[int]bool{}
+	}
+	s.came++
+	me := s.came
+	s.flying[me] = true
+	s.order.Unlock()
 	s.mu.Lock()
 	out := s.inner.Recognize(samples, rate)
 	s.mu.Unlock()
+	// A piece that came later and is still being heard finishes first, so
+	// whenever two are heard at once, the later overtakes the earlier, on
+	// any machine. The piece that came last never waits, so one always
+	// goes on.
+	s.order.Lock()
+	for s.later(me) {
+		s.turn.Wait()
+	}
+	delete(s.flying, me)
+	s.turn.Broadcast()
+	s.order.Unlock()
 	if s.seen != nil {
 		s.seen()
 	}
 	return out
+}
+
+// later says whether a piece that came after me is still being heard.
+// Under s.order.
+func (s *sideBySide) later(me int) bool {
+	for n := range s.flying {
+		if n > me {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *sideBySide) Close() {}

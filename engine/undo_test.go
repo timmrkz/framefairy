@@ -8,7 +8,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/spf13/afero"
 )
@@ -390,12 +389,15 @@ func TestASearchLandsWhileItsPlanIsEditedUndoneAndRemoved(t *testing.T) {
 	// meet however slow the machine is.
 	const landing = 16
 	var reads atomic.Int64
+	// read has a value once a hand has read the plan since it was last
+	// taken.
+	read := make(chan struct{}, 1)
 	searched := make(chan struct{})
 	go func() {
 		defer close(searched)
 		for i := 1; i <= landing; i++ {
 			for reads.Load() < int64(3*i) {
-				time.Sleep(100 * time.Microsecond)
+				<-read
 			}
 			clip := PlanClip{ID: fmt.Sprintf("s%02d", i), Slug: "neu",
 				Segments: []PlanSegment{{Start: PyFloat(40 + 3*i), End: PyFloat(42 + 3*i)}}}
@@ -425,6 +427,10 @@ func TestASearchLandsWhileItsPlanIsEditedUndoneAndRemoved(t *testing.T) {
 					return
 				}
 				reads.Add(1)
+				select {
+				case read <- struct{}{}:
+				default:
+				}
 				// 02 stays removed until the search takes it out.
 				id := clips[(hand+k)%len(clips)].ID
 				if id == "02" {
