@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"framefairy/engine"
 )
@@ -92,9 +92,7 @@ func TestTwoModelsOneInUseAndOneRemoved(t *testing.T) {
 		t.Error("removed while clips were being found")
 	}
 	close(release)
-	for svc.busyWith(engine.JobSearch) {
-		time.Sleep(time.Millisecond)
-	}
+	svc.jobs.until(func(jobs []*Job) bool { return !slices.ContainsFunc(jobs, (*Job).going) }, nil)
 
 	if err := svc.RemoveLanguageModel(second.Name); err != nil {
 		t.Fatal(err)
@@ -131,9 +129,7 @@ func TestRemovingTheSpeechModelWaitsForTheTranscription(t *testing.T) {
 		t.Error("removed while an episode was being transcribed")
 	}
 	close(release)
-	for svc.busyWith(engine.JobClip) {
-		time.Sleep(time.Millisecond)
-	}
+	svc.jobs.until(func(jobs []*Job) bool { return !slices.ContainsFunc(jobs, (*Job).going) }, nil)
 	if err := svc.RemoveSpeechModel(model.Name); err != nil {
 		t.Fatal(err)
 	}
@@ -232,9 +228,7 @@ func TestNothingASearchUsesChangesUnderIt(t *testing.T) {
 		})
 		return func() {
 			close(release)
-			for svc.busyWith(kind) {
-				time.Sleep(time.Millisecond)
-			}
+			svc.jobs.until(func(jobs []*Job) bool { return !slices.ContainsFunc(jobs, (*Job).going) }, nil)
 		}
 	}
 	type change struct {

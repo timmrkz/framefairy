@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"framefairy/engine"
 )
@@ -32,13 +31,12 @@ func TestLanesRunSideBySide(t *testing.T) {
 	}
 	q.add("a.mp4", "model", "Speech model", block("model"))
 	q.add("a.mp4", "llm", "Language model", block("llm"))
-	for i := 0; i < 2; i++ {
-		select {
-		case <-started:
-		case <-time.After(5 * time.Second):
-			t.Fatal("the two lanes did not run at the same time")
-		}
-	}
+	// Each job holds its lane until release, so both have started only
+	// when the two lanes run side by side. Lanes that took turns would
+	// never start the second, and go test's own timeout ends the test and
+	// shows where it hung.
+	<-started
+	<-started
 	close(release)
 }
 

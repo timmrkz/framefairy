@@ -1095,8 +1095,9 @@ What the code takes from outside, so a test can drive it:
 
 | What | Handed in as | Where |
 | --- | --- | --- |
-| the time of day | `now func() time.Time` | `signer.WithClock` in `licence/signer/signer.go`, `Now` in `licence/dispenser/engine.go` |
+| the time of day | `now func() time.Time` | `signer.WithClock` in `licence/signer/signer.go`, `Now` in `licence/dispenser/engine.go`, `now` on the app, which times an edit, in `cmd/framefairy-app/main.go` |
 | timers inside goroutines | `testing/synctest` around the test | the lint fixture `scripts/testdata/lint/go/signals`, and the dictation tests in `cmd/framefairy-app/listen_test.go` |
+| every goroutine of a test waiting | `synctest.Wait` in a `testing/synctest` bubble | the asks at once for a transcript in `cmd/framefairy-app/kept_test.go` |
 | the disk | `afero.Fs` | `engine/files.go`, the project and the app's store |
 | random numbers | `io.Reader` | `signer.WithRandom` |
 | the model, the recogniser | an interface with a fake | the fake recogniser and fake llama-server in `engine/project_test.go` |

@@ -457,16 +457,26 @@ func heardEpisode(t *testing.T, svc *FrameFairy, path string, seconds float64, w
 // An edit that takes long enough to be felt says so, and where the time
 // went. The second of two edits of one video waits for the first, and the
 // line says it waited rather than worked. Plan row 2.242.
+//
+// The edits are timed by a clock the test moves. While the first edit
+// works, the second asks, and the clock says so as it is read. Then the
+// first edit takes twice as long as an edit may.
 func TestASlowEditSaysWhereItsTimeWent(t *testing.T) {
 	svc, mine, _ := anEpisodeWithAPlan(t)
 	_, read := testLog(t)
+	clock := &movedClock{at: time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)}
+	svc.now = clock.now
 	first := make(chan struct{})
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		_ = svc.edit(mine, func() error {
+			asked := clock.nextRead()
 			close(first)
-			time.Sleep(2 * slowEditAfter)
+			// An edit that read its clock only once it held the video
+			// would never come here, and go test's own timeout shows it.
+			<-asked
+			clock.move(2 * slowEditAfter)
 			return nil
 		})
 	}()
@@ -482,9 +492,11 @@ func TestASlowEditSaysWhereItsTimeWent(t *testing.T) {
 	if len(slow) != 2 {
 		t.Fatalf("%d edits said they were slow, not both: %v", len(slow), slow)
 	}
+	// The first worked 200 ms and waited for nothing, the second waited
+	// those 200 ms and did nothing.
 	var worked, waited map[string]any
 	for _, l := range slow {
-		if l["edit"].(float64) >= float64(slowEditAfter.Milliseconds()) {
+		if l["edit"].(float64) > 0 {
 			worked = l
 		} else {
 			waited = l
@@ -493,10 +505,41 @@ func TestASlowEditSaysWhereItsTimeWent(t *testing.T) {
 	if worked == nil || waited == nil {
 		t.Fatalf("one edit should have worked and one waited: %v", slow)
 	}
-	if waited["waited"].(float64) < float64(slowEditAfter.Milliseconds()) {
-		t.Errorf("the second edit does not say it waited for the first: %v", waited)
-	}
+	has(t, worked, map[string]any{"ms": 200.0, "waited": 0.0, "edit": 200.0})
+	has(t, waited, map[string]any{"ms": 200.0, "waited": 200.0, "edit": 0.0})
 	has(t, waited, map[string]any{"level": "warn", "from": "edits", "video": "ep.mp4"})
+}
+
+// movedClock is a time of day that only the test moves. It tells the test
+// when it is next read, so the test knows a step has been taken.
+type movedClock struct {
+	mu   sync.Mutex
+	at   time.Time
+	read chan struct{}
+}
+
+func (c *movedClock) now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.read != nil {
+		close(c.read)
+		c.read = nil
+	}
+	return c.at
+}
+
+// nextRead is closed by the next read of the clock.
+func (c *movedClock) nextRead() <-chan struct{} {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.read = make(chan struct{})
+	return c.read
+}
+
+func (c *movedClock) move(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.at = c.at.Add(d)
 }
 
 // The caption layers of a stretch of playing are said in one line once

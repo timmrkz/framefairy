@@ -11,7 +11,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"framefairy/engine"
 	"framefairy/internal/ffmpegtest"
@@ -74,15 +73,17 @@ func placeSpeechModel(t *testing.T, name string) {
 // away. That is how a build runner found this the first time.
 func TestTheQueueTheseTestsUseNeverRunsAnything(t *testing.T) {
 	s := emptyMachine(t)
-	ran := make(chan struct{})
-	s.jobs.add("", "plan", "Test", func(ctx context.Context, p *engine.Project) (string, error) {
-		close(ran)
+	job := s.jobs.add("", "plan", "Test", func(ctx context.Context, p *engine.Project) (string, error) {
 		return "", nil
 	})
-	select {
-	case <-ran:
-		t.Fatal("the queue did the work, so every test in this file fetches a model")
-	case <-time.After(300 * time.Millisecond):
+	// A queue that does its work marks a job alive as it hands it to a
+	// goroutine, before add returns, and the job is no longer queued by
+	// the time that goroutine is done. Still queued and never alive is a
+	// job nothing will run.
+	for _, j := range s.jobs.list() {
+		if j.ID == job.ID && (j.alive || j.State != JobQueued) {
+			t.Fatalf("the queue took the work up, %s and alive %v, so every test in this file fetches a model", j.State, j.alive)
+		}
 	}
 }
 

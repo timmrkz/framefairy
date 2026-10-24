@@ -319,22 +319,31 @@ func TestTheCaptionsRouteAnswersManyAtOnce(t *testing.T) {
 	})
 	wg.Wait()
 	// A colour never asked for before, so its caption file is made while
-	// two ask for it, and the first is called off as it is made, a little
-	// later each time, so some land while it is made. The second answered
-	// 500 "context canceled" before, found by the second review, here 2 in
-	// 40.
+	// two ask for it, and the first is called off the moment the second
+	// has asked, which lands while the file is made in most rounds. The
+	// second answered 500 "context canceled" before, found by the second
+	// review. With a wait on the clock between the steps this caught it in
+	// about 6 rounds of 40, and without one in about 35. That exact order
+	// is proven every time by TestACaptionFileOutlivesTheRequestThatAskedFirst
+	// in engine.
 	for i := range 40 {
 		q := url.Values{"path": {mine}, "track": {view.Track}, "at": {"10.20"}, "w": {"270"}, "h": {"480"},
 			"text": {fmt.Sprintf("#%02x8040", 16+i)}}
 		ctx, cancel := context.WithCancel(context.Background())
 		rec := httptest.NewRecorder()
 		var both sync.WaitGroup
+		asked := make(chan struct{})
 		both.Go(func() {
+			close(asked)
 			handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/frames/captions?"+q.Encode(), nil).WithContext(ctx))
 		})
-		time.Sleep(100 * time.Microsecond)
-		both.Go(func() { handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/captions?"+q.Encode(), nil)) })
-		time.Sleep(time.Duration(100*(i+1)) * time.Microsecond)
+		<-asked
+		second := make(chan struct{})
+		both.Go(func() {
+			close(second)
+			handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/captions?"+q.Encode(), nil))
+		})
+		<-second
 		cancel()
 		both.Wait()
 		if rec.Code != http.StatusOK {

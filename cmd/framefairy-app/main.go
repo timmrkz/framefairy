@@ -377,6 +377,17 @@ type FrameFairy struct {
 	// firstFrame is how long Add waits for a video's first frame,
 	// firstFrameWait unless a test says otherwise, see undecodable.
 	firstFrame time.Duration
+	// now is the time of day an edit is timed by, time.Now unless a test
+	// hands in a clock it moves, see clock.
+	now func() time.Time
+}
+
+// clock is the time of day, from now when a test handed one in.
+func (s *FrameFairy) clock() time.Time {
+	if s.now != nil {
+		return s.now()
+	}
+	return time.Now()
 }
 
 // Updates says which build is running, which channel it follows and how far
