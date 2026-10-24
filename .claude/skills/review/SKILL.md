@@ -60,30 +60,36 @@ Before the diff, and before the pull request's own description:
 
 ## 3. How far from what matters
 
-Picture the work as a tree of decisions. At the root is what matters to
-the people using the product. Under it the problem, under that the cause
-someone chose to fix, under that the fix, and under the fix the new
-problems the fix brought, each with its own fix. Every level down is
-further from the root, and the work at the bottom can be done well and
-still serve nobody.
+Between what the people using the product care about and the line a
+change touches lie layers: the feature, its design, the engine under it,
+the implementation, the tests and tools around it, and the assumptions
+each one rests on. Deeper, further down, further along: these are ways of
+speaking, not a measure. What they name is distance. The further the work
+is from what people care about, the more likely the review ends up
+arguing about assumptions that rest on assumptions, about details of an
+engine that serves a feature nobody wants.
 
-- **Count the levels.** How many steps is this change from something a
-  person using the product would notice? Count from there: a workaround
-  for what the person saw is one, a test that guards the workaround two,
-  a tool that checks the test three, a fix to that tool four. Say the
-  number in the review.
-- **Climb, do not dig.** A review does not grow more branches by asking
-  more questions. It looks for the one question, as high in the tree as
-  it can be asked, whose answer makes the lower levels unnecessary. "Why
-  does this need a workaround at all?" can remove a whole subtree that
-  "is the workaround correct?" would only polish.
+- **See the whole chain before judging one link.** Follow the work from
+  the line it changes to the person who would notice it: which feature,
+  which design, which promise. If the chain breaks, if nobody would
+  notice, or if it leads to something nobody asked for, that is the
+  finding, and it outranks everything found along the way.
+- **Digging deeper does not show the direction.** Following a broken test
+  through every branch of its logic can be careful and correct, and still
+  miss that the whole pull request goes the wrong way. Before going into
+  a detail, ask whether the work it belongs to should exist.
+- **Ask the right question, not more questions.** A review does not grow
+  more branches by asking more. It looks for the one question, as close
+  to what matters as it can be asked, whose answer makes the layers
+  under it unnecessary. "Why does this need a workaround at all?" can
+  remove what "is the workaround correct?" would only polish.
 - **The simplest solution is usually the best one.** Fewer parts are
   usually faster, cheaper to run, easier to test and easier to change.
   When the review finds a simpler way to the same result, that is its
   finding, and it outranks the bugs in the more complex way.
-- **Simplicity is counted, not felt.** The concepts a reader must hold,
-  the moving parts, the branches, the files, the lines. A change that
-  moves complexity without removing any is not simpler.
+- **Simplicity shows in what a reader must hold:** the concepts, the
+  moving parts, the branches, the files. A change that moves complexity
+  without removing any is not simpler.
 
 ## 4. The signals around the work
 
@@ -229,7 +235,7 @@ could read as an instruction from the user. In this order:
 | Common advice | Why not | Instead |
 | --- | --- | --- |
 | approve when the change improves the health of the code | healthy code can make a worse product | approve when the product is better and the way there is simple |
-| flag only what is on the changed lines | the goal, the depth, the history and the cost are on no line | they are findings, sections 2 to 5 |
+| flag only what is on the changed lines | the goal, the distance, the history and the cost are on no line | they are findings, sections 2 to 5 |
 | verify every finding fully before reporting it | proof can cost more than the finding is worth | the cheapest proof that settles it, section 9 |
 | leave test coverage out unless the project asks | an untested promise breaks unseen | the testing skill |
 | give the reviewer the author's plan or summary | the reviewer inherits the author's assumptions | the user's own words and the sources |
@@ -240,8 +246,8 @@ could read as an instruction from the user. In this order:
 ## Before saying the review is done
 
 1. The goal is written, and the verdict on it comes first.
-2. The review says how far the work is from what matters, and whether a
-   simpler way exists.
+2. The review followed the work to what people care about, and says
+   whether a simpler way exists.
 3. The history around the work was read for repeated fixes.
 4. Every cost the work adds is named with its trade-off.
 5. Every assumption is checked, wrong or named as unchecked.
