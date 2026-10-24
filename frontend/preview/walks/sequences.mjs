@@ -13708,12 +13708,6 @@ for (const seq of toWalk) {
           if (!started) continue;
           popped++;
           grew = Math.max(grew, most / least);
-          // The frames of the screen from the first the bounce was drawn
-          // on to the last, read off the count of bounce paints on each,
-          // and those of them it was not drawn on.
-          const paints = frames.map((f, i) => (i > 0 ? f.bounced - frames[i - 1].bounced : 0));
-          const span = paints.slice(paints.findIndex((d) => d > 0), paints.findLastIndex((d) => d > 0) + 1);
-          const skipped = span.filter((d) => d === 0).length;
           // The word and its pill grow together, to 115 % of rest, from
           // the word's first frame, where the step lands, at rest, and
           // back to rest, however briefly the short lights it, every word
@@ -13723,17 +13717,16 @@ for (const seq of toWalk) {
           // On the screen's frames, one scale each: Tim found the bounce
           // laggy when it was the short's frames of the pop, 25 a second.
           // The walk gives the bounce a frame every sixtieth of a second,
-          // so its 220 ms are drawn on 13 frames at the least on any
-          // machine, the one nearest its peak within 0.2 % of it, and
-          // every one of them is read off the screen. A busy machine drew
+          // so it is drawn on 15 frames on any machine, from its start to
+          // the first frame past its 220 ms, the one nearest its peak
+          // within 0.2 % of it, and every one of them is read off the
+          // screen. A busy machine drew
           // two before, and missed the peak, issues #328, #329 and #460.
           // That every frame gets its own scale is held by "the bounce
           // after a word step" in captions.test.ts. A word holds that its
           // pill grew by 12 % of the 15 %, its edges read to a whole pixel.
-          if (bounced < 13) {
-            wrong = `"${last.keyed.text}" bounced on ${bounced} of the frames given it, where its 220 ms take 13`;
-          } else if (skipped > 0) {
-            wrong = `"${last.keyed.text}" bounced on ${span.length - skipped} of the ${span.length} frames the screen drew while it lasted`;
+          if (bounced !== 15) {
+            wrong = `"${last.keyed.text}" bounced on ${bounced} frames given it a sixtieth of a second apart, where its 220 ms take 15`;
           } else if (most < least * 1.12) {
             wrong = `"${last.keyed.text}" popped, but its pill grew only from ${least.toFixed(1)} to ${most.toFixed(1)} px`;
           } else if (Math.abs(widths[0] - least) > 1.5 || Math.abs(last.pill.w - least) > 1.5) {
@@ -15081,7 +15074,8 @@ async function pickCards(page, n) {
   // libass drawing a layer once took 590 ms, so the frame came without
   // its captions and they came after it, issue #468. The click was then
   // taken again on another new clip, up to three times. That the frame
-  // does not wait for good is the app's, and no walk's to time.
+  // does not wait for good, but 600 ms of the browser's clock, is held by
+  // "a frame waiting for its captions" in queue.test.ts.
   await page.evaluate(() => {
     window.__dressWait = window.__frameQueue.dressWait;
     window.__frameQueue.dressWait = () => () => {};

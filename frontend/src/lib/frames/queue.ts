@@ -1355,7 +1355,7 @@ export class FrameQueue {
   // where the walk's own steps on a busy one used up the 600 ms, issue
   // #468.
   dressWait: (late: () => void) => () => void = (late) => {
-    const timer = window.setTimeout(late, DRESS_WAIT);
+    const timer = setTimeout(late, DRESS_WAIT);
     return () => clearTimeout(timer);
   };
 
