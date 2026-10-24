@@ -725,8 +725,9 @@ It also installs the engineering skills from `samber/cc-skills-golang` and
 `addyosmani/agent-skills` into `~/.claude/skills`, each pinned to a commit,
 because plugins added on claude.ai do not reach cloud sessions. They are
 general advice. Where one disagrees with this file, this file wins, and
-on tests the skill in `.claude/skills/testing/` wins too, which lists
-the places they disagree.
+on tests the skill in `.claude/skills/testing/` wins too, and on
+reviews the skill in `.claude/skills/review/`. Each lists the places
+they disagree.
 Most Go skills name `**/*.go` as their paths, so Claude Code lists them
 only once a Go file has been read in the session.
 `.claude/settings.json` raises the room Claude Code gives the list of

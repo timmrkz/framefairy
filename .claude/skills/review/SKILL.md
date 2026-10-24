@@ -25,8 +25,9 @@ goes and who may give instructions. This skill says what to look for.
 - **An agent that did none of the work.** The author carries its own
   reasoning, and that reasoning has turned guesses into facts. A fresh
   reviewer has only the sources, so it sees what the work rests on.
-- **Once, when the work is done** and the tests of the change pass. A
-  review after later rounds is the user's to ask for.
+- **Once, when the work is done** and the tests of the change pass,
+  without waiting for CI, whose results it reads as they stand. A review
+  after later rounds is the user's to ask for.
 - **The brief hands over sources, not conclusions:** the user's own
   words, the issue, the product's goals as the project writes them, the
   pull request and its commits. Not the author's plan or summary of what
@@ -67,9 +68,10 @@ further from the root, and the work at the bottom can be done well and
 still serve nobody.
 
 - **Count the levels.** How many steps is this change from something a
-  person using the product would notice? A fix for the tool that checks
-  the test that guards the workaround is four levels down. Say the number
-  in the review.
+  person using the product would notice? Count from there: a workaround
+  for what the person saw is one, a test that guards the workaround two,
+  a tool that checks the test three, a fix to that tool four. Say the
+  number in the review.
 - **Climb, do not dig.** A review does not grow more branches by asking
   more questions. It looks for the one question, as high in the tree as
   it can be asked, whose answer makes the lower levels unnecessary. "Why
@@ -106,15 +108,19 @@ The work sits in a history. Read it before judging the diff.
   line, setting, test, workflow and dependency is kept up for as long as
   it lives. Prefer the solution that leaves less to keep up, today and
   after the next change.
-- **A change that makes something worse is flagged,** with the number:
+- **A change that makes something measurably worse is flagged,** with
+  the number against the main branch:
   - slower for the people using the product, where speed matters to them
   - more memory, a bigger download, more disk
   - more money or tokens per run
-  - more steps or more to learn for a person using it
-  - slower builds and slower CI, more for the next person to work through
-- **It goes in only with a trade-off worth it,** named in the work and
-  measured against the main branch. A change that is worse on one of
-  these and says nothing about it is a must fix.
+  - slower builds and slower CI
+- **It goes in only with a trade-off worth it,** named in the work. A
+  change that is measurably worse and says nothing about it is a must
+  fix.
+- **What cannot be measured is weighed, not counted.** More steps or more
+  to learn for a person using the product, more for the next person to
+  work through: these are maintenance, a should fix when a simpler way
+  exists, and a question for the user when the gain may be worth it.
 
 ## 6. The facts it rests on
 

@@ -150,7 +150,7 @@ names nothing of ours. This is where its words meet this repository.
 | the user's own words | your messages in the thread of the session, and your report files in the project files |
 | the place the project names for the review | a file in `/mnt/project-files/reviews/`, named after the pull request, never committed |
 | where instructions may come from | only you, see On GitHub, only Tim gives instructions in CLAUDE.md. Sessions write on GitHub as `timmrkz`, so a review is never posted there |
-| logged as the project logs work | a GitHub issue with its label, see the rule on reports in CLAUDE.md |
+| logged | a GitHub issue with its label, see the rule on reports in CLAUDE.md |
 | the recent issues and pull requests in the same area | the issues and the merged pull requests on GitHub, and the history up to 16 October in [GUI-PLAN.md](GUI-PLAN.md) |
 
 ## CI
