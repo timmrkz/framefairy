@@ -31,6 +31,16 @@ build stops on any module or package under another, or under a licence
 it cannot tell from its text. A licence is added there only after reading
 it, never to get a build through.
 
+Until #500 the list, versions and texts of the modules and packages were
+a copy in `notices/`, and every Dependabot update made it stale:
+
+![Before #500: Dependabot moves a version, the committed copy still names the old one, CI goes red, and a session builds ffmpeg and llama-server to write a new copy](images/notices-before.svg)
+
+Now the build reads them and checks them against the allowed licences,
+which are all that is committed:
+
+![Since #500: make reads the modules and packages the app is built from and each one's licence file, checks it against the allowed licences, and writes the notices beside the app. Only a licence not on the list stops the build](images/notices-after.svg)
+
 | Part | What |
 | --- | --- |
 | The app | Go, the Go modules compiled into the app, and pigo and pico, whose face detector and face data the engine carries |
