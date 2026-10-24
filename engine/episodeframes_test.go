@@ -405,8 +405,11 @@ func TestTheEpisodesDecoderHandsOverTheKeyFrameFirst(t *testing.T) {
 				if last := ats[len(ats)-1]; math.Abs(last-to) > 1e-6 {
 					t.Fatalf("a stream from %.1f s went on to %.4f s, want the frame at %.4f s", c.from, last, to)
 				}
-				if n := len(ats) - 2; n > 2*ahead {
-					t.Errorf("a stream from %.1f s handed over %d frames between the key frame and it, want no more than %d: %v", c.from, n, 2*ahead, ats)
+				// The frames between the key frame and the frame asked for
+				// are never wanted, so none is made into a picture, issue
+				// #281: the frame asked for comes right after the key frame.
+				if n := len(ats) - 2; n > 0 {
+					t.Errorf("a stream from %.1f s handed over %d frames between the key frame and the frame asked for, want none: %v", c.from, n, ats)
 				}
 				if d := meanDiff(first, ffmpegs(ats[0])); d > 2 {
 					t.Errorf("the key frame at %.1f s differs from ffmpeg's by %.2f on average", ats[0], d)
@@ -736,12 +739,19 @@ func TestTheEpisodesDecoderAgreesOnAPictureThatStartsLate(t *testing.T) {
 			}
 			return all[k]
 		}
-		// The frames a stream handed over from frame first of the grid,
-		// each at its moment and the file's frame there.
-		checkFrames := func(t *testing.T, what string, got []frame, first int) {
+		// The frames a stream handed over, each at its moment of the grid
+		// and the file's frame there: frame first and those after it, or
+		// with the key frame first, frame key and then those from first.
+		checkFrames := func(t *testing.T, what string, got []frame, key, first int) {
 			t.Helper()
 			for i, g := range got {
 				moment := grid.At(first + i)
+				if key < first {
+					moment = grid.At(first + i - 1)
+					if i == 0 {
+						moment = grid.At(key)
+					}
+				}
 				if math.Abs(g.at-moment) > 1e-9 {
 					t.Fatalf("%s: frame %d at %.4f, its moment is %.4f", what, i, g.at, moment)
 				}
@@ -760,9 +770,10 @@ func TestTheEpisodesDecoderAgreesOnAPictureThatStartsLate(t *testing.T) {
 			// With the key frame first too, issue #281: the first frame is
 			// then the key frame, which stands for no frame before the
 			// grid's first even where the picture starts late, and the
-			// frames after it follow on.
+			// frame asked for and those after it follow.
 			for _, key := range []bool{false, true} {
 				first := grid.Holding(from)
+				k := first
 				var got []frame
 				err := dec.Stream(context.Background(), grid, from, 160, 90, key, nil, func(at float64, data []byte) error {
 					got = append(got, frame{at, data})
@@ -775,13 +786,12 @@ func TestTheEpisodesDecoderAgreesOnAPictureThatStartsLate(t *testing.T) {
 					t.Fatalf("%s from %.2f, key %v: %v", name, from, key, err)
 				}
 				if key && len(got) > 0 {
-					k := grid.Holding(got[0].at)
+					k = grid.Holding(got[0].at)
 					if k < 0 || k > first || math.Abs(got[0].at-grid.At(k)) > 1e-9 {
 						t.Fatalf("%s from %.2f: the key frame at %.4f is frame %d, want a frame from 0 to %d at its moment", name, from, got[0].at, k, first)
 					}
-					first = k
 				}
-				checkFrames(t, fmt.Sprintf("%s from %.2f, key %v", name, from, key), got, first)
+				checkFrames(t, fmt.Sprintf("%s from %.2f, key %v", name, from, key), got, k, first)
 			}
 		}
 		dec.Close()

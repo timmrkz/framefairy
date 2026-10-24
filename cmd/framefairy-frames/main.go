@@ -492,8 +492,9 @@ type cursor struct {
 	retries int
 	// Whether this open hands over the key frame its decoding starts from
 	// first, see open, and whether the frame handed over next is that key
-	// frame, for the log.
+	// frame. wanted is the frame asked for, which comes right after it.
 	fromKey, keyNext bool
+	wanted           int
 	// Whether this open went on with the processor after the graphics
 	// chip failed, see toProcessor.
 	fellBack bool
@@ -892,7 +893,8 @@ func (c *cursor) next(n int, skip float64) {
 			continue
 		}
 		at := c.grid.At(c.rank)
-		if c.keyNext {
+		key := c.keyNext
+		if key {
 			// The frame asked for is said when it comes, as the first.
 			c.keyNext = false
 			c.say(fmt.Sprintf("key frame %d at %.3f s first, %d ms after the open, %d decoded", c.rank, at, time.Since(c.asked).Milliseconds(), c.decodedInOpen))
@@ -902,6 +904,12 @@ func (c *cursor) next(n int, skip float64) {
 		}
 		c.d.answer(framewire.Record{Cursor: c.id, Kind: framewire.Frame, At: at, Body: c.shown})
 		c.rank++
+		if key {
+			// The frames between the key frame and the frame asked for
+			// are wanted by nobody, so they are decoded and let go
+			// unscaled, the way a skip lets them go.
+			c.rank = max(c.rank, c.wanted)
+		}
 		sent++
 	}
 	if took := time.Since(began); took > 250*time.Millisecond {
@@ -942,7 +950,7 @@ func (c *cursor) advance() error {
 			// late is sought before, as any other.
 			// A key frame shown before the grid begins stands for its
 			// first frame, as the first frame of a file does.
-			c.fromKey, c.keyNext = false, true
+			c.fromKey, c.keyNext, c.wanted = false, true, c.rank
 			c.rank = max(first, 0)
 		}
 		if !held && first > c.rank && !c.firstOfFile() {

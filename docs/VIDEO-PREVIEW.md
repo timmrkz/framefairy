@@ -231,7 +231,9 @@ closed for standing unused.
   press lands on does not, so a click shows the frame clicked and nothing
   before it. The queue puts that key frame up only when it is nearer the
   playhead than the frame on screen, and the exact frame still follows
-  and takes its place. So a hand that outruns the decoder sees a frame
+  and takes its place. The frame asked for is the next frame the decoder
+  hands over after the key frame: the frames between are decoded and let
+  go unscaled, the way a jump lets them go. So a hand that outruns the decoder sees a frame
   near it at the cost of the key frame and the few frames stored next to
   it, not the frame of a place it left long ago, and a place it has
   already left costs its key frame alone, since the queue lets go of that
