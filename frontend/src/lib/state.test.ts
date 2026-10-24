@@ -5,20 +5,23 @@ import { JobStore } from "./state.svelte";
 
 vi.mock("./api", () => ({ api: {}, onJob: () => {} }));
 
-const job = (state: string, seq: number): Job => ({ id: "job-5", episode: "/v.mp4", kind: "transcribe", state, seq }) as Job;
+const job = (state: string, seq: number, kind = "transcribe", id = "job-5"): Job =>
+  ({ id, episode: "/v.mp4", kind, state, seq }) as Job;
 
-// Stop transcribing stops what shows the work in the frame it is pressed,
-// so the store keeps the press until the job says it ended. Found by the
-// second review of #458, which saw it covered only by a walk.
-describe("a transcription Stop was pressed for", () => {
-  test("is stopping until it ends, and not after", () => {
+// A Stop or Cancel stops what shows the work in the frame it is pressed,
+// so the store keeps the press until the work says it ended. Found by the
+// second review of #458, which saw it covered only by a walk, and kept
+// once for both kinds of work since the third.
+describe("a stop pressed for a video's work", () => {
+  test("is stopping until the transcription ends, and not after", () => {
     const jobs = new JobStore();
     jobs.apply(job("running", 1));
-    jobs.stop("job-5");
-    jobs.stop("job-5");
-    expect(jobs.stopping).toEqual(["job-5"]);
+    jobs.stop("/v.mp4", "whole");
+    jobs.stop("/v.mp4", "whole");
+    expect(jobs.stopping).toEqual(["whole /v.mp4"]);
     jobs.apply(job("running", 2));
-    expect(jobs.stopping).toEqual(["job-5"]);
+    expect(jobs.isStopping("/v.mp4", "whole")).toBe(true);
+    expect(jobs.stops(job("running", 2))).toBe(true);
     jobs.apply(job("interrupted", 3));
     expect(jobs.stopping).toEqual([]);
   });
@@ -26,11 +29,45 @@ describe("a transcription Stop was pressed for", () => {
   test("is still stopping when an older news of its end comes after a newer one of it running", () => {
     const jobs = new JobStore();
     jobs.apply(job("running", 4));
-    jobs.stop("job-5");
+    jobs.stop("/v.mp4", "whole");
     jobs.apply(job("interrupted", 3));
-    expect(jobs.stopping).toEqual(["job-5"]);
+    expect(jobs.isStopping("/v.mp4", "whole")).toBe(true);
     jobs.apply(job("interrupted", 5));
     expect(jobs.stopping).toEqual([]);
+  });
+
+  test("stops the search and the clips made by hand, and lasts until the last of them ends", () => {
+    const jobs = new JobStore();
+    jobs.apply(job("running", 1, "search", "s"));
+    jobs.apply(job("queued", 1, "clip", "c"));
+    jobs.apply(job("running", 1, "transcribe", "t"));
+    jobs.stop("/v.mp4", "clips");
+    expect(jobs.stops(job("running", 2, "search", "s"))).toBe(true);
+    expect(jobs.stops(job("running", 2, "transcribe", "t"))).toBe(false);
+    jobs.apply(job("interrupted", 2, "search", "s"));
+    expect(jobs.isStopping("/v.mp4", "clips")).toBe(true);
+    jobs.apply(job("interrupted", 2, "clip", "c"));
+    expect(jobs.isStopping("/v.mp4", "clips")).toBe(false);
+  });
+
+  test("pressed before the Go side answered Search, lasts until the answer and its work have ended", () => {
+    const jobs = new JobStore();
+    jobs.press("/v.mp4", "clips");
+    jobs.stop("/v.mp4", "clips");
+    jobs.apply(job("running", 1, "search", "s"));
+    jobs.answered("/v.mp4", "clips");
+    expect(jobs.isStopping("/v.mp4", "clips")).toBe(true);
+    jobs.apply(job("interrupted", 2, "search", "s"));
+    expect(jobs.isStopping("/v.mp4", "clips")).toBe(false);
+  });
+
+  test("is over when the work is started again", () => {
+    const jobs = new JobStore();
+    jobs.apply(job("running", 1));
+    jobs.stop("/v.mp4", "whole");
+    jobs.press("/v.mp4", "whole");
+    expect(jobs.isStopping("/v.mp4", "whole")).toBe(false);
+    expect(jobs.isStarting("/v.mp4", "whole")).toBe(true);
   });
 });
 

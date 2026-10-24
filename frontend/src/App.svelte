@@ -227,18 +227,15 @@
 
   // How far Transcribe whole video has come is shown on the range picker
   // and by nothing else, Tim's calls on #458: the video's dot
-  // pulses while it runs, the way it does for all work. These keep that
-  // true from the frame of the click. A transcription Stop transcribing
-  // was pressed for, jobs.stopping, stops the dot, unless other work
-  // runs, and the menu offers to carry it on before the job has said it
-  // stopped. starting is the videos Transcribe whole video was pressed
-  // for, whose job is on its way.
-  let starting = $state<string[]>([]);
+  // pulses while it runs, the way it does for all work. The store keeps
+  // that true from the frame of the click: a start on its way pulses it,
+  // and work a stop was pressed for does not, unless other work runs.
   const live = (j: Job) => j.state === "running" || j.state === "queued";
   function working(path: string): boolean {
     return (
-      starting.includes(path) ||
-      jobs.list.some((j) => j.episode === path && live(j) && !jobs.stopping.includes(j.id))
+      jobs.isStarting(path, "whole") ||
+      jobs.isStarting(path, "clips") ||
+      jobs.list.some((j) => j.episode === path && live(j) && !jobs.stops(j))
     );
   }
 
@@ -255,7 +252,7 @@
   // without waiting for the job's first news.
   async function transcribe(ep: EpisodeStatus) {
     said(`video menu: transcribe whole video`, { video: ep.source });
-    starting = [...starting, ep.source];
+    jobs.press(ep.source, "whole");
     try {
       const job = await api.transcribe(ep.source);
       jobs.apply(job);
@@ -266,7 +263,7 @@
     } catch (err) {
       toasts.say("transcribe whole video", errorText(err), { video: ep.source });
     } finally {
-      starting = starting.filter((p) => p !== ep.source);
+      jobs.answered(ep.source, "whole");
     }
   }
 
@@ -851,12 +848,12 @@
               onreveal={() => api.reveal(ep.source)}
               onremove={() => (removing = ep)}
               work={jobs.transcription(ep.source)}
-              stopping={jobs.stopping.includes(jobs.transcribing(ep.source)?.id ?? "")}
+              stopping={jobs.isStopping(ep.source, "whole")}
               ontranscribe={() => transcribe(ep)}
               onstoptranscribe={() => {
                 const work = jobs.transcribing(ep.source);
                 if (!work) return;
-                jobs.stop(work.id);
+                jobs.stop(ep.source, "whole");
                 said("video menu: stop transcribing", { video: ep.source });
                 void api.cancelJob(work.id);
               }}

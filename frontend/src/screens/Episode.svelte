@@ -150,7 +150,9 @@
   let max = $state(30);
   let waiting = $state<string[]>([]);
   // A click has to show at once, long before the job it starts reports in.
-  let starting = $state(false);
+  // The store keeps the press, the same for this work as for the whole
+  // video heard from its menu.
+  const starting = $derived(jobs.isStarting(path, "clips"));
   // The press of Search or Continue the work in hand was asked for by. Cancel
   // names it, so it stops that search whether or not the Go side has heard
   // of it yet, see stopWork.
@@ -335,7 +337,7 @@
       ? `${clock(working.progress.remaining)} left`
       : "",
   );
-  let stopping = $state(false);
+  const stopping = $derived(jobs.isStopping(path, "clips"));
 
   // The pane has one shape, whatever it is busy with. The head says what
   // that is, the button does the one thing there is to do about it, and
@@ -398,17 +400,10 @@
     lane.job?.progress && lane.job.progress.fraction >= 0 ? lane.job.progress.fraction : -1,
   );
 
-  // Stopping lasts until the work has stopped. A search asked for and not
-  // answered yet is work too, which the Go side will say has stopped.
-  $effect(() => {
-    if (!starting && !working && !handRunning.length) stopping = false;
-  });
-
   // Cancel: the search stops, and what it heard of the episode stays, so
   // the next search goes on from there. The edge on the range picker stops
-  // where it is, on the click: the speech model is part way through a
-  // chunk and keeps reporting until it hears the stop, and without this
-  // the edge carries on for a second or two and the click looks missed.
+  // where it is, because the engine keeps no piece heard after the stop
+  // and reports none, so what was shown is what was saved.
   // It names the episode's work and the press it came after, not a job,
   // so it takes effect the moment it is pressed: it called off the jobs it
   // knew, and between Search and the Go side's answer it knew none, so it
@@ -416,12 +411,7 @@
   // search the press asked for even if Cancel reaches it first.
   function stopWork() {
     if (!busy || stopping) return;
-    stopping = true;
-    // Only what this Cancel stops: the whole video heard on, and its
-    // edge held here stood still under it until the next search, found
-    // on #458.
-    const stops = transcribing ?? handRunning.find((j) => j.step === "hearing");
-    if (stops) hold(stops.id);
+    jobs.stop(path, "clips");
     void api.stopClipWork(path, click);
   }
 
@@ -538,7 +528,7 @@
     if (!(duration > 0)) return [] as [number, number][];
     const out: [number, number][] = [];
     let at = 0;
-    for (const [a, b] of [...shownHeard].sort((x, y) => x[0] - y[0])) {
+    for (const [a, b] of [...heard].sort((x, y) => x[0] - y[0])) {
       if (a - at >= 1) out.push([at, a]);
       at = Math.max(at, b);
     }
@@ -546,7 +536,7 @@
     return out;
   });
   // Stop transcribing pressed and the job not ended yet.
-  const wholeStopping = $derived(!!wholeWork && jobs.stopping.includes(wholeWork.id));
+  const wholeStopping = $derived(jobs.isStopping(path, "whole"));
   // The part Transcribe whole video works on, framed on the range picker
   // the way the window of a search is while it hears, Tim's pick on #458:
   // the part it hears, or the one it hears next while it waits its turn.
@@ -693,47 +683,13 @@
     return [p.from ?? 0, p.covered];
   });
   const heard = $derived(mark.seen(path, saved, live, restarted));
-  // Where the edge was when pause was pressed, or null while it is free to
-  // move. Held rather than followed, because what the work reports after
-  // the press is work nobody asked for any more.
-  let stoppedAt = $state<Parts | null>(null);
-  const shownHeard = $derived(stoppedAt ?? heard);
   // Where the work hears into a part not transcribed yet, so its dots
   // stand still under the edge. The whole video on hold still holds its
   // part, so the dots do not shift as it waits and carries on, Tim's
-  // report of 24 October.
-  const givingAt = $derived(stoppedAt ? -1 : live ? live[1] : wholePart && !wholeHearing ? wholePart[0] : -1);
-  // Stop transcribing holds the edge the same way, on the press, when the
-  // whole video is what hears: the speech model finishes its chunk, and
-  // the library is read again as the job ends, and the dots went on
-  // shrinking after the frame had gone, Tim's report of 23 October.
-  // Either hold lasts until other work hears, or the video is transcribed
-  // to its end, and Search lets it go anyway. Stopped on its last pieces,
-  // the work heard to the end, the menu offered Export, and the dots stayed
-  // for good, found by the second review of #458. heldFor is the job it was pressed for. Ids, not jobs, so the
-  // effects run on the press and on the next work, not on every report,
-  // see the rule on watching jobs.
-  let heldFor = "";
-  function hold(id: string) {
-    stoppedAt ??= heard;
-    heldFor = id;
-  }
-  const wholeStopped = $derived(wholeStopping && hearing === wholeHearing ? (wholeHearing?.id ?? "") : "");
-  const hearingId = $derived(hearing?.id ?? "");
-  const heardToEnd = $derived(!!status?.transcribed);
-  $effect(() => {
-    const id = wholeStopped;
-    if (id) untrack(() => hold(id));
-  });
-  $effect(() => {
-    const id = hearingId;
-    const all = heardToEnd;
-    untrack(() => {
-      if (!heldFor || (!all && (!id || id === heldFor))) return;
-      heldFor = "";
-      stoppedAt = null;
-    });
-  });
+  // report of 24 October. Nothing holds the edge on a stop: the engine
+  // keeps no piece heard after it, so the edge it last reported is the
+  // edge it saved, found by the third review of #458.
+  const givingAt = $derived(live ? live[1] : wholePart && !wholeHearing ? wholePart[0] : -1);
 
   // Whether the episode has been heard to the end of the window. A search
   // of a window not heard yet hears it first, which the title of Search says.
@@ -2836,10 +2792,8 @@
   // A click shows at once: the list opens its rows and the head says
   // Cancel before the job has reported in. It gives the press its name.
   function begin(): string {
-    starting = true;
+    jobs.press(path, "clips");
     click = `${Date.now()}-${++clicks}`;
-    stoppedAt = null;
-    heldFor = "";
     listedBefore = new Set(clips.map((c) => c.key));
     pickedBefore = selected;
     shownFirst = false;
@@ -2877,10 +2831,10 @@
     try {
       const job = await ask();
       jobs.apply(job);
-      if (job.state !== "running" && job.state !== "queued") starting = false;
     } catch (err) {
       oops(errorText(err));
-      starting = false;
+    } finally {
+      jobs.answered(path, "clips");
     }
   }
 
@@ -2975,7 +2929,7 @@
 
   // The job has reported in, so the placeholder can give way to it.
   $effect(() => {
-    if (working) starting = false;
+    if (working) untrack(() => jobs.answered(path, "clips"));
   });
 
   // The window on the range picker is the window being searched, for as
@@ -3120,7 +3074,7 @@
     if (!searchRan) return;
     const ended = jobs.list.find((j) => j.id === searchRan);
     searchRan = "";
-    starting = false;
+    untrack(() => jobs.answered(path, "clips"));
     onchange();
     load().then(() => {
       if (ended?.state !== "done") {

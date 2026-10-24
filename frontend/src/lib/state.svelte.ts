@@ -9,27 +9,79 @@ import type { EpisodeOrder } from "./order";
 // Cancelling for good, and only a restart cleared it.
 const recheck = 5000;
 
+// The two kinds of work a person starts and stops for a video: the whole
+// video heard, from its menu, and the clip list's work, the search with
+// the clips made by hand, from Search, Continue and Cancel.
+export type Work = "whole" | "clips";
+
+const live = (j: Job) => j.state === "running" || j.state === "queued";
+
+function doing(work: Work, j: Job): boolean {
+  return work === "whole" ? j.kind === "transcribe" : j.kind === "search" || j.kind === "clip";
+}
+
+const key = (path: string, work: Work) => `${work} ${path}`;
+
 export class JobStore {
   list = $state<Job[]>([]);
-  // The transcriptions Stop transcribing was pressed for that have not
-  // said they stopped yet. Everything that shows the work stops on the
-  // press, the video's dot, the menu and the range picker, and not when
-  // the job ends a second or two later.
+  // What a person pressed that the Go side has not caught up with yet, the
+  // same for both kinds of work. starting is a start whose job has not
+  // answered. stopping is a stop whose work has not said it ended: the
+  // video's dot, its menu, the clip list's head and the range picker all
+  // stop on the press, and not when the work ends a second or two later.
+  // It was kept twice, once in the store for the transcription and once in
+  // the workspace for the search, found by the third review of #458.
+  starting = $state<string[]>([]);
   stopping = $state<string[]>([]);
 
   // A snapshot of a job, kept unless the list already has a later one.
   apply(job: Job) {
     const next = mergeJob(this.list, job);
     if (next) this.list = next;
-    // A job that has ended is no longer one Stop was pressed for.
-    if (next && job.state !== "running" && job.state !== "queued" && this.stopping.includes(job.id)) {
-      this.stopping = this.stopping.filter((id) => id !== job.id);
-    }
+    this.settle();
   }
 
-  // Stop transcribing pressed for this job.
-  stop(id: string) {
-    if (!this.stopping.includes(id)) this.stopping = [...this.stopping, id];
+  isStarting(path: string, work: Work): boolean {
+    return this.starting.includes(key(path, work));
+  }
+
+  isStopping(path: string, work: Work): boolean {
+    return this.stopping.includes(key(path, work));
+  }
+
+  // Whether a stop was pressed for the work this job does.
+  stops(j: Job): boolean {
+    return (["whole", "clips"] as const).some((w) => doing(w, j) && this.isStopping(j.episode, w));
+  }
+
+  // A start pressed. It is a new press, so a stop before it is over.
+  press(path: string, work: Work) {
+    const k = key(path, work);
+    if (!this.starting.includes(k)) this.starting = [...this.starting, k];
+    if (this.stopping.includes(k)) this.stopping = this.stopping.filter((s) => s !== k);
+  }
+
+  // The Go side answered the start, with its job or with a refusal.
+  answered(path: string, work: Work) {
+    const k = key(path, work);
+    if (this.starting.includes(k)) this.starting = this.starting.filter((s) => s !== k);
+    this.settle();
+  }
+
+  // A stop pressed, for whatever of the work runs or is on its way.
+  stop(path: string, work: Work) {
+    const k = key(path, work);
+    if (!this.stopping.includes(k)) this.stopping = [...this.stopping, k];
+  }
+
+  // A stop lasts until nothing of its work runs or is asked for.
+  private settle() {
+    const ended = this.stopping.filter((k) => {
+      const [work, ...rest] = k.split(" ");
+      const path = rest.join(" ");
+      return !this.starting.includes(k) && !this.list.some((j) => j.episode === path && live(j) && doing(work as Work, j));
+    });
+    if (ended.length) this.stopping = this.stopping.filter((k) => !ended.includes(k));
   }
 
   async start() {
@@ -96,11 +148,11 @@ export class JobStore {
   // The video's transcription to its end while it runs or waits its turn.
   transcribing(path: string): Job | undefined {
     const work = this.transcription(path);
-    return work?.state === "running" || work?.state === "queued" ? work : undefined;
+    return work && live(work) ? work : undefined;
   }
 
   get busy(): number {
-    return this.list.filter((j) => j.state === "running" || j.state === "queued").length;
+    return this.list.filter(live).length;
   }
 }
 
