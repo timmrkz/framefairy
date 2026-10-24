@@ -321,6 +321,10 @@
 //                      a video with no speech is heard
 //   ["settings"]       opens the settings from the sidebar, and remembers
 //                      the models they name
+//   ["acknowledgements"]
+//                      Help, Acknowledgements: every group is a head over a
+//                      card with a border, and the words of every row stand
+//                      in from the card's edges, never on them
 //   ["app log", "open"]
 //                      the app starts its log, with an older file beside
 //                      the one in use, see /app-log in bridge_test.go
@@ -2328,6 +2332,13 @@ export const sequences = [
       ["licence row whole"],
       ["licence row whole", "refused"],
     ],
+  },
+  {
+    // Tim saw the names and the licences in Help, Acknowledgements sit on
+    // the border of their box, with no room round them (#500). Each group
+    // is now a card the way the settings draw one.
+    name: "Acknowledgements keeps its words in from the edges of its cards",
+    steps: [["acknowledgements"]],
   },
   {
     // Plan row 2.245. Settings, Advanced shows the app's log, and its bin
@@ -7740,6 +7751,27 @@ for (const seq of toWalk) {
           new MutationObserver((changes) => {
             for (const c of changes) if (c.target.classList?.contains("shaking")) window.__shook.push(c.target.className);
           }).observe(document.body, { attributes: true, attributeFilter: ["class"], subtree: true });
+        });
+        break;
+      }
+      case "acknowledgements": {
+        await page.evaluate(() => window.__help());
+        await page.locator("h2 + ol > li").first().waitFor();
+        await settle(page);
+        wrong = await page.evaluate(() => {
+          const rows = [...document.querySelectorAll("h2 + ol > li")];
+          for (const li of rows) {
+            const card = li.closest("ol");
+            if (getComputedStyle(card).borderTopWidth === "0px") return "a group of Acknowledgements has no card round it";
+            const box = card.getBoundingClientRect();
+            const words = [...li.querySelector("button").children].map((c) => c.getBoundingClientRect());
+            const left = Math.round(words[0].left - box.left);
+            const right = Math.round(box.right - words.at(-1).right);
+            if (left < 12 || right < 12) {
+              return `"${li.textContent.trim().slice(0, 40)}" stands ${left} px from its card's left edge and ${right} px from its right, not 12 or more`;
+            }
+          }
+          return rows.length ? null : "Acknowledgements shows no row";
         });
         break;
       }

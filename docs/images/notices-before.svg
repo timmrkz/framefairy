@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 200" width="760" height="200" role="img" aria-label="Before #500: Dependabot moves a version, the committed notices still name the old one, CI goes red, and a session builds ffmpeg and llama-server to write a new copy.">
+  <style>
+    text { font-family: -apple-system, "Segoe UI", system-ui, sans-serif; fill: #1d1a20; }
+    .t { font-size: 13px; font-weight: 600; }
+    .s { font-size: 11px; fill: #625b68; }
+    .m { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; }
+    .lbl { font-size: 11px; fill: #625b68; font-style: italic; }
+    .bg { fill: #f6f5f7; }
+    .box { fill: #ffffff; stroke: #c9c3ce; stroke-width: 1.5; }
+    .keep { fill: #f3e3f2; stroke: #942192; stroke-width: 2; }
+    .stop { fill: #fbe4e2; stroke: #b3261e; stroke-width: 2; }
+    .ar { stroke: #1d1a20; stroke-width: 1.5; fill: none; }
+    .ar-stop { stroke: #b3261e; stroke-width: 1.5; fill: none; }
+    .head { fill: #1d1a20; }
+    .head-stop { fill: #b3261e; }
+    @media (prefers-color-scheme: dark) {
+      text { fill: #ebe7ee; }
+      .s, .lbl { fill: #a49cab; }
+      .bg { fill: #17151a; }
+      .box { fill: #211e25; stroke: #4a4450; }
+      .keep { fill: #3a1d3a; stroke: #d26ad0; }
+      .stop { fill: #3d1d1b; stroke: #f08a80; }
+      .ar { stroke: #ebe7ee; }
+      .ar-stop { stroke: #f08a80; }
+      .head { fill: #ebe7ee; }
+      .head-stop { fill: #f08a80; }
+    }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head" d="M0 0 L10 5 L0 10 z"/></marker>
+    <marker id="as" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head-stop" d="M0 0 L10 5 L0 10 z"/></marker>
+  </defs>
+  <rect class="bg" width="760" height="200"/>
+  <rect class="box" x="10" y="30" width="160" height="70" rx="6"/>
+  <text class="t" x="90" y="60" text-anchor="middle">Dependabot</text>
+  <text class="s" x="90" y="78" text-anchor="middle">moves a version</text>
+  <rect class="box" x="200" y="30" width="170" height="70" rx="6"/>
+  <text class="m" x="285" y="58" text-anchor="middle">notices.json</text>
+  <text class="s" x="285" y="76" text-anchor="middle">committed copy, still</text>
+  <text class="s" x="285" y="90" text-anchor="middle">names the old version</text>
+  <rect class="stop" x="400" y="30" width="150" height="70" rx="6"/>
+  <text class="t" x="475" y="60" text-anchor="middle">CI compares</text>
+  <text class="s" x="475" y="78" text-anchor="middle">the copy is stale: red</text>
+  <rect class="box" x="580" y="30" width="170" height="70" rx="6"/>
+  <text class="t" x="665" y="54" text-anchor="middle">A session</text>
+  <text class="s" x="665" y="72" text-anchor="middle">builds ffmpeg and llama,</text>
+  <text class="s" x="665" y="86" text-anchor="middle">runs make notices</text>
+  <line class="ar" x1="170" y1="65" x2="198" y2="65" marker-end="url(#a)"/>
+  <line class="ar" x1="370" y1="65" x2="398" y2="65" marker-end="url(#a)"/>
+  <line class="ar-stop" x1="550" y1="65" x2="578" y2="65" marker-end="url(#as)"/>
+  <path class="ar" d="M665 100 V150 H285 V102" marker-end="url(#a)"/>
+  <text class="lbl" x="475" y="168" text-anchor="middle">commits a new copy, about 30 minutes, every time</text>
+</svg>

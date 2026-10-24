@@ -3,10 +3,8 @@ package notices
 import (
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -14,7 +12,7 @@ import (
 
 func all(t *testing.T) []Notice {
 	t.Helper()
-	list, err := All()
+	list, err := All(Built{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +47,7 @@ func TestEveryNoticeIsWhole(t *testing.T) {
 			t.Errorf("%s has no licence text", n.Name)
 		}
 		for _, name := range n.Texts {
-			text, err := Text(name)
+			text, err := Text(Built{}, name)
 			if err != nil || strings.TrimSpace(text) == "" {
 				t.Errorf("%s: the text %s is missing or empty", n.Name, name)
 			}
@@ -64,43 +62,6 @@ func TestEveryNoticeIsWhole(t *testing.T) {
 		if !used[e.Name()] {
 			t.Errorf("texts/%s belongs to no notice", e.Name())
 		}
-	}
-}
-
-// Every Go module the shipped programs compile on this system has its
-// notice, at the version they compile. CI runs this on Linux and macOS, so
-// both of those are checked on every change.
-func TestEveryGoModuleCompiledInHasANotice(t *testing.T) {
-	t.Parallel()
-	list := all(t)
-	// framefairy-frames as make builds it, with ffmpeg's libraries.
-	cmd := exec.Command("go", "list", "-tags", "ffmpeglibs", "-deps", "-f",
-		"{{with .Module}}{{if not .Main}}{{.Path}} {{.Version}}{{end}}{{end}}",
-		"./cmd/framefairy-app", "./cmd/framefairy", "./cmd/framefairy-frames")
-	cmd.Dir = ".."
-	raw, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("go list: %v", err)
-	}
-	seen := map[string]bool{}
-	for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) != 2 || seen[fields[0]] {
-			continue
-		}
-		seen[fields[0]] = true
-		n, ok := find(list, fields[0])
-		switch {
-		case !ok:
-			t.Errorf("%s is compiled into the app on %s and has no notice. Run make notices",
-				fields[0], runtime.GOOS)
-		case n.Version != strings.TrimPrefix(fields[1], "v"):
-			t.Errorf("%s is compiled in at %s and its notice is for %s. Run make notices",
-				fields[0], fields[1], n.Version)
-		}
-	}
-	if len(seen) == 0 {
-		t.Fatal("go list found no modules at all")
 	}
 }
 
@@ -148,19 +109,39 @@ func TestTheToolsNoticesAreForTheVersionsBuilt(t *testing.T) {
 	}
 }
 
-// The interface's own packages are checked where they are bundled, by the
-// build of the interface. The one this side can check is the Wails runtime,
-// which is pinned to the same version as the Wails module.
-func TestTheWailsRuntimeNoticeMatchesWails(t *testing.T) {
-	list := all(t)
-	module, _ := find(list, "github.com/wailsapp/wails/v3")
-	runtime, ok := find(list, "@wailsio/runtime")
-	if !ok || runtime.Version != module.Version {
-		t.Errorf("@wailsio/runtime is noticed at %q and Wails at %q", runtime.Version, module.Version)
+// The notices the build wrote are shown with the ones kept here, each in
+// its part and by name, and their texts are read from what the build
+// wrote.
+func TestTheNoticesTheBuildWroteAreShownWithTheRest(t *testing.T) {
+	built, err := ReadBuilt([]byte(`{"notices": [
+		{"name": "zerolog", "version": "1.35.1", "licence": "MIT", "url": "https://x", "part": "The app", "texts": ["zerolog.txt"]},
+		{"name": "bits-ui", "version": "2.20.0", "licence": "MIT", "url": "https://y", "part": "The app's interface", "texts": ["npm-bits-ui.txt"]}],
+		"texts": {"zerolog.txt": "MIT, zerolog", "npm-bits-ui.txt": "MIT, bits-ui"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	list, err := All(built)
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := map[string]int{}
+	for i, n := range list {
+		at[n.Name] = i
+	}
+	if at["Go"] > at["zerolog"] || at["zerolog"] > at["bits-ui"] || at["bits-ui"] > at["ffmpeg"] {
+		t.Errorf("Go, zerolog, bits-ui and ffmpeg stand at %d, %d, %d and %d", at["Go"], at["zerolog"], at["bits-ui"], at["ffmpeg"])
+	}
+	if text, err := Text(built, "npm-bits-ui.txt"); err != nil || text != "MIT, bits-ui" {
+		t.Errorf("the built text reads %q, %v", text, err)
+	}
+	if text, err := Text(built, "go.txt"); err != nil || !strings.Contains(text, "Go Authors") {
+		t.Errorf("the kept text reads %q, %v", text, err)
+	}
+	if empty, err := ReadBuilt(nil); err != nil || len(empty.Notices) != 0 {
+		t.Errorf("a program built without make reads %+v, %v", empty, err)
 	}
 }
 
-// The ffmpeg we ship is LGPL, and the LGPL asks that anyone who has the
 // binary can get its source. The notice says where.
 func TestTheFFmpegNoticeSaysWhereTheSourceIs(t *testing.T) {
 	n, _ := find(all(t), "ffmpeg")

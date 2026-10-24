@@ -10,11 +10,36 @@ the text itself goes.
 
 ## Where the notices are
 
-In `notices/`, and nowhere else. `notices/notices.json` lists every piece
-of work with its version, its licence, where it comes from, where it is in
-Frame Fairy and anything the licence asks to be said besides its text, and
-`notices/texts/` holds the texts. The app has them built in and shows them
-under **Help → Acknowledgements**, which is where apps keep them.
+In two places, by who knows them. Each notice names the piece of work,
+its version, its licence, where it comes from, where it is in Frame Fairy
+and anything the licence asks to be said besides its text, and the texts
+go with it. The app has both built in and shows them together under
+**Help → Acknowledgements**, which is where apps keep them.
+
+- **The Go modules and the interface's packages** are written by the
+  build, into `cmd/framefairy-app/dist/licences.json`, and never kept in
+  the repository. Their list, versions and texts change with every
+  Dependabot update, and only the build knows them for certain, so the
+  build writes them each time, from what it really compiles and bundles.
+- **Everything else** is in `notices/`: `notices/notices.json` and
+  `notices/texts/`. These are pieces whose versions are pinned by hand and
+  move only in a pull request that builds them anyway.
+
+The one thing only a person can decide is which licences a paid app may
+ship. That list is `allowed` in `notices/licence/licence.go`, and the
+build stops on any module or package under another, or under a licence
+it cannot tell from its text. A licence is added there only after reading
+it, never to get a build through.
+
+Until #500 the list, versions and texts of the modules and packages were
+a copy in `notices/`, and every Dependabot update made it stale:
+
+![Before #500: Dependabot moves a version, the committed copy still names the old one, CI goes red, and a session builds ffmpeg and llama-server to write a new copy](images/notices-before.svg)
+
+Now the build reads them and checks them against the allowed licences,
+which are all that is committed:
+
+![Since #500: make reads the modules and packages the app is built from and each one's licence file, checks it against the allowed licences, and writes the notices beside the app. Only a licence not on the list stops the build](images/notices-after.svg)
 
 | Part | What |
 | --- | --- |
@@ -29,14 +54,24 @@ under **Help → Acknowledgements**, which is where apps keep them.
 
 ## How they are made, and kept complete
 
+Every build of the app writes the notices of its modules and packages with
+`notices/gen -built`, after the interface and before the app:
+
+- `go list -deps` of `framefairy-app`, `framefairy` and
+  `framefairy-frames` for the system it builds for, and each module's own
+  licence file from the module cache. Where `go.mod` replaces a module, the
+  replacement's version and text are the ones taken.
+- `cmd/framefairy-app/dist/packages.json`, which the interface build
+  writes, see `frontend/vite.config.ts`: the folder of every package the
+  bundle took code from, and each package's version and licence from that
+  folder. A copy a package carries in its own `node_modules` is noticed as
+  itself.
+
 Nothing in `notices/` is written by hand except `notices/kept/`, the two
 notices no module brings: pigo and pico. `make notices` writes the rest
 with `notices/gen`, from what the programs are really built from:
 
-- `go list -deps` of `framefairy-app` and `framefairy`, for macOS, Linux
-  and Windows, and each module's own licence file from the module cache
-- the source maps of an interface build, which name every file of every
-  package that went into the bundle, and each package's licence file
+- the Go toolchain, at the version `go.mod` pins
 - the source trees in `.build/` that `make` builds ffmpeg and llama-server
   from, at the versions their build scripts pin
 - the hyphenation patterns in `engine/hyphenation/`, from the metadata at
@@ -58,15 +93,20 @@ It refuses what it cannot place, a package with no licence file or a
 licence it cannot name, rather than write a notice that says less than the
 licence asks.
 
-Four checks say when it is due:
+It writes everything at the end, so a step that fails leaves `notices/`
+as it was.
 
-- `TestEveryGoModuleCompiledInHasANotice` fails when a Go module is
-  compiled into the app without a notice, or at another version. CI runs it
-  on Linux and on macOS.
+These checks keep both complete:
+
+- The build of the app stops when a module or a package is under a
+  licence that is not allowed, or one it cannot tell, and says which file
+  to read. It also stops when the Wails runtime in the interface is not
+  the version of the Wails module, since its notice is that module's text.
+- `TestEveryModuleTheProgramsCompileMayShip` does the same for every
+  module the programs compile on macOS, Linux and Windows, since a build
+  only sees its own system.
 - `TestTheToolsNoticesAreForTheVersionsBuilt` fails when ffmpeg, one of its
   four libraries or llama.cpp is pinned to another version than its notice.
-- The interface build fails when it bundles a package without a notice, or
-  at another version, see `frontend/vite.config.ts`.
 - `TestEveryHyphenationFileHasANotice` fails when a pattern file is in
   `engine/hyphenation/` without a notice, or a notice is left for one that
   is gone.
