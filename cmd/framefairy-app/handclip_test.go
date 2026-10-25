@@ -103,10 +103,10 @@ func TestPathClosedWhileAClipIsHeard(t *testing.T) {
 	if _, err := d.svc.store.AddEpisodes([]string{ep}); err != nil {
 		t.Fatal(err)
 	}
-	hearing := d.speech.hearing()
+	in, let := d.speech.hold()
 	j := d.in(ep, 250)
-	<-hearing
-	d.close()
+	<-in
+	d.closeWhileIn(j, let)
 	given := d.speech.seconds()
 
 	d.reopen()
