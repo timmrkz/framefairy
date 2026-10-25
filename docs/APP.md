@@ -1495,7 +1495,11 @@ bubble scrolled by those eight pixels.
       search that was cut off, a failed one says why. **Cancel** says
       *Stopping* in that row the moment it is pressed, standing still, and
       then leaves the same row, *Stopped. Click Continue*, with how far the episode was
-      transcribed, because what it did stays and can be carried on. The
+      transcribed, because what it did stays and can be carried on.
+      Continue goes on saying how much of the window is transcribed, in
+      the same words, *16:45 of 30:00 transcribed*, growing as it hears.
+      It once said *Window 0:00 to 30:00* under Transcribing, as if
+      nothing were heard yet, Tim's report of 25 October. The
       frame over the window stands still and fades out from the press, the
       way the whole video's frame does on Stop transcribing, Tim's report
       of 24 October. **Search**

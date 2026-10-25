@@ -1080,7 +1080,9 @@
 //                      Continue and lets the speech on one piece at a time
 //                      until the search has heard one, and the fill of the
 //                      row that says Transcribing starts at nothing and
-//                      only grows, however much was heard before
+//                      only grows, however much was heard before, while
+//                      its words say how much of the window is
+//                      transcribed, from what was heard before
 //   ["no mark after the end", seconds]
 //                      puts the playhead at the end of a video this long,
 //                      after its last word, and Mark In is not offered and
@@ -13274,11 +13276,14 @@ for (const seq of toWalk) {
         // Transcribing, from the press on, read off the fill's place.
         await page.evaluate(() => {
           window.__fills = [];
+          window.__said = [];
           const list = [...document.querySelectorAll("aside")].find((a) => a.querySelector(".listhead"));
           const look = () => {
             const li = list.querySelector("ol li.next");
             const i = li?.querySelector(".fill i");
             if (li?.querySelector(".title")?.textContent.trim() !== "Transcribing" || !i) return;
+            const said = li.querySelector(".meta")?.textContent.replace(/\s+/g, " ").trim();
+            if (window.__said.at(-1) !== said) window.__said.push(said);
             const moved = /translateX\((-?[\d.]+)%\)/.exec(i.style.transform);
             const fraction = moved ? 1 + Number(moved[1]) / 100 : NaN;
             if (window.__fills.at(-1) !== fraction) window.__fills.push(fraction);
@@ -13312,6 +13317,17 @@ for (const seq of toWalk) {
         if (!fills.length) wrong = "the row never showed a fill while it said Transcribing";
         else if (!(fills[0] < 0.05)) wrong = `the fill started at ${Math.round(fills[0] * 100)} %, not at nothing, with ${Math.round(before * 100)} % of the window heard before: ${JSON.stringify(fills)}`;
         else if (fills.some((f, n) => n > 0 && f < fills[n - 1])) wrong = `the fill went back: ${JSON.stringify(fills)}`;
+        if (wrong) break;
+        // Tim's report of 25 October: the row said Window 0:00 to 30:00
+        // under Transcribing, over a window transcribed half already. It
+        // says how much of the window is transcribed, from what was heard
+        // before Continue, the way the row of the stopped search did.
+        const said = await page.evaluate(() => window.__said);
+        const span = clockOf(to - from);
+        const secondsOf = (c) => c.split(":").reduce((t, n) => t * 60 + Number(n), 0);
+        const off = said.find((line) => !new RegExp(`^\\d+:\\d\\d of ${span} transcribed$`).test(line ?? ""));
+        if (off !== undefined) wrong = `under Transcribing the row said ${JSON.stringify(off)}, not how much of the ${span} of its window is transcribed: ${JSON.stringify(said)}`;
+        else if (!(secondsOf(said[0].split(" ")[0]) >= Math.floor(heard))) wrong = `under Transcribing the row said ${JSON.stringify(said[0])} at first, less than the ${Math.round(heard)} s heard before Continue`;
         break;
       }
       case "no mark after the end": {

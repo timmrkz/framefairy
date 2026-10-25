@@ -739,18 +739,32 @@
       const fraction = heardWindow ? -1 : 0;
       // Cancel pressed before the Go side answered: the row says so at
       // once, the same as for a search that runs.
-      if (stopping) return { what: "Stopping", left: windowText, fraction, still: true, now: true };
-      return { what: heardWindow ? "Finding clips" : "Transcribing", left: windowText, fraction, now: true };
+      const left = heardWindow ? windowText : transcribedIn(heard, from, to);
+      if (stopping) return { what: "Stopping", left, fraction, still: true, now: true };
+      return { what: heardWindow ? "Finding clips" : "Transcribing", left, fraction, now: true };
     }
     const line = stepLine(working);
+    // While it hears, or waits to, the row says how much of its window is
+    // transcribed, as it grows, in the words the row of a search that
+    // stopped uses. It said the whole window, Window 0:00 to 30:00, over a
+    // window transcribed half already, Tim's report of 25 October.
+    const start = working.from ?? 0;
+    const end = working.to && working.to > 0 ? working.to : duration;
+    const left = working.lane === "hearing" && end > start ? transcribedIn(heard, start, end) : line.left || windowText;
     // Cancel pressed: the row says so in the same frame, and stands still
     // where it got to, until the search has saved what it did and says it
     // stopped. It went on saying Transcribing for a second after the click.
     if (stopping) {
-      return { what: "Stopping", left: line.left || windowText, fraction: line.fraction, still: true, now: true };
+      return { what: "Stopping", left, fraction: line.fraction, still: true, now: true };
     }
-    return { ...line, left: line.left || windowText };
+    return { ...line, left };
   });
+
+  // How much of a window the parts given cover, as the rows of a search
+  // say it.
+  function transcribedIn(parts: Parts, start: number, end: number): string {
+    return `${clock(heardIn(parts, start, end))} of ${clock(end - start)} transcribed`;
+  }
 
   // What the row says, held long enough to be read. The engine reports
   // twice a second and a search goes through its steps faster than anyone
@@ -892,7 +906,7 @@
       return {
         ...span,
         what,
-        left: `${clock(heardIn(saved, start, end))} of ${clock(end - start)} transcribed`,
+        left: transcribedIn(saved, start, end),
         full: `${window}. ${how} while the window was transcribed for it. Continue transcribes the rest of it and then finds the clips`,
       };
     }
