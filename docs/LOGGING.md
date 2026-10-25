@@ -178,7 +178,11 @@ and that is not the app standing still. Plan row 2.242.
 When the app goes out of sight and comes back is a `window` line too,
 `the app went out of sight` and `the app came back into sight` with
 `away_ms`, from what macOS tells the window, so a glance in Mission
-Control at a covered app is two lines a second or two apart, #536.
+Control at a covered app is two lines a second or two apart, #536. Coming
+back also says what WebKit's processes used of the processor while the
+app was away, in ms, `web_cpu_ms` for the page and `gpu_cpu_ms` for its
+drawing, which is what keeping a covered app drawn costs. Either is left
+out where WebKit does not say which process it is.
 
 ```sh
 # what took long enough to be felt

@@ -9,6 +9,8 @@ package main
 #import <Cocoa/Cocoa.h>
 #import <WebKit/WebKit.h>
 #import <objc/message.h>
+#include <libproc.h>
+#include <mach/mach_time.h>
 
 struct refreshOut {
 	// What came of it: 0 no web view in the window, 1 WebKit has no such
@@ -110,6 +112,52 @@ static int drawingKeep(void *nsWindow) {
 	((void (*)(id, SEL, BOOL))objc_msgSend)(view, set, NO);
 	return 2;
 }
+
+// The processor time WebKit's own processes for the app's window have
+// used since they started, in ms: the web process that runs the page and
+// lays it out, and the GPU process that draws it. -1 where WebKit does not
+// say which process it is, or the system does not answer.
+struct webCPUOut {
+	double web;
+	double gpu;
+};
+
+static double webCPUOf(WKWebView *view, NSString *name) {
+	SEL get = NSSelectorFromString(name);
+	if (![view respondsToSelector:get]) {
+		return -1;
+	}
+	pid_t pid = ((pid_t (*)(id, SEL))objc_msgSend)(view, get);
+	if (pid <= 0) {
+		return -1;
+	}
+	struct rusage_info_v2 use;
+	if (proc_pid_rusage(pid, RUSAGE_INFO_V2, (rusage_info_t *)&use) != 0) {
+		return -1;
+	}
+	// On Apple silicon the times are in ticks of the machine's clock, not
+	// in nanoseconds.
+	mach_timebase_info_data_t base;
+	mach_timebase_info(&base);
+	return (double)(use.ri_user_time + use.ri_system_time) * base.numer / base.denom / 1e6;
+}
+
+// webCPU asks for both. _webProcessIdentifier and _gpuProcessIdentifier
+// are WebKit's own, like the settings above.
+static struct webCPUOut webCPU(void *nsWindow) {
+	struct webCPUOut out = {-1, -1};
+	NSWindow *window = (NSWindow *)nsWindow;
+	if (window == nil) {
+		return out;
+	}
+	WKWebView *view = webViewIn([window contentView]);
+	if (view == nil) {
+		return out;
+	}
+	out.web = webCPUOf(view, @"_webProcessIdentifier");
+	out.gpu = webCPUOf(view, @"_gpuProcessIdentifier");
+	return out;
+}
 */
 import "C"
 
@@ -133,4 +181,15 @@ func drawingKeep(window unsafe.Pointer) int {
 		return drawingNoWebView
 	}
 	return int(C.drawingKeep(window))
+}
+
+// webCPU is the processor time WebKit's processes for the window have used
+// so far. It must be called on the main thread, which is what the caller
+// sees to.
+func webCPU(window unsafe.Pointer) cpuUse {
+	if window == nil {
+		return cpuUse{web: -1, gpu: -1}
+	}
+	out := C.webCPU(window)
+	return cpuUse{web: float64(out.web), gpu: float64(out.gpu)}
 }

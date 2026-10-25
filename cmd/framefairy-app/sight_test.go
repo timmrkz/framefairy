@@ -12,32 +12,39 @@ import (
 // A glance in Mission Control at an app covered for a minute is two lines
 // in the log, out of sight and back after a minute, and macOS telling the
 // window the same twice is one. An app that starts in sight says nothing,
-// since it came back from nowhere, #536.
+// since it came back from nowhere. Coming back says what WebKit used while
+// the app was away, and nothing it cannot know: a process it does not
+// name, or one started again in between, #536.
 func TestTheLogSaysHowLongTheAppWasOutOfSight(t *testing.T) {
 	start := time.Date(2026, 10, 25, 13, 47, 46, 0, time.UTC)
+	unknown := cpuUse{web: -1, gpu: -1}
 	steps := []struct {
 		visible bool
 		after   time.Duration
+		used    cpuUse
 		said    bool
 		back    bool
 		away    time.Duration
+		spent   cpuUse
 	}{
-		{true, 0, false, false, 0},
-		{false, 2 * time.Second, true, false, 0},
-		{false, 3 * time.Second, false, false, 0},
-		{true, 72 * time.Second, true, true, 70 * time.Second},
-		{true, 73 * time.Second, false, false, 0},
-		{false, 74 * time.Second, true, false, 0},
-		{true, 75*time.Second + 354*time.Millisecond, true, true, 1354 * time.Millisecond},
+		{true, 0, cpuUse{100, 50}, false, false, 0, unknown},
+		{false, 2 * time.Second, cpuUse{1200, 300}, true, false, 0, unknown},
+		{false, 3 * time.Second, cpuUse{1210, 301}, false, false, 0, unknown},
+		{true, 72 * time.Second, cpuUse{1500, 340}, true, true, 70 * time.Second, cpuUse{300, 40}},
+		{true, 73 * time.Second, cpuUse{1510, 341}, false, false, 0, unknown},
+		{false, 74 * time.Second, cpuUse{1520, -1}, true, false, 0, unknown},
+		{true, 75*time.Second + 354*time.Millisecond, cpuUse{1540, 400}, true, true, 1354 * time.Millisecond, cpuUse{20, -1}},
+		{false, 80 * time.Second, cpuUse{1600, 410}, true, false, 0, unknown},
+		{true, 90 * time.Second, cpuUse{40, 420}, true, true, 10 * time.Second, cpuUse{-1, 10}},
 	}
 	s := &sight{}
 	for i, st := range steps {
-		change, said := s.seen(st.visible, start.Add(st.after))
+		change, said := s.seen(st.visible, start.Add(st.after), st.used)
 		if said != st.said {
 			t.Fatalf("step %d, in sight %v: said %v, want %v", i, st.visible, said, st.said)
 		}
-		if said && (change.back != st.back || change.away != st.away) {
-			t.Errorf("step %d, in sight %v: said back %v after %s, want back %v after %s", i, st.visible, change.back, change.away, st.back, st.away)
+		if said && (change.back != st.back || change.away != st.away || change.used != st.spent) {
+			t.Errorf("step %d, in sight %v: said back %v after %s using %v, want back %v after %s using %v", i, st.visible, change.back, change.away, change.used, st.back, st.away, st.spent)
 		}
 	}
 }
