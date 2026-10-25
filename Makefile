@@ -546,7 +546,7 @@ WALKTIMEOUT ?= 30m
 # and not on every add, issue #527. CI keeps the folder between runs.
 WALKVIDEOS ?= $(CURDIR)/.build/walk-videos
 walks: toolchain modules frontend/node_modules/.package-lock.json $(FRESH_FRAMES)
-	@cd frontend && $(NPM) exec -- vite build --config preview/bridge.config.ts --logLevel error
+	@cd frontend && WALKRECORD='$(WALKRECORD)' $(NPM) exec -- vite build --config preview/bridge.config.ts --logLevel error
 	@FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" FRAMEFAIRY_WALKS=1 FRAMEFAIRY_WALK_VIDEOS='$(WALKVIDEOS)' WALKS='$(WALKS)' STEPS='$(STEPS)' WALKERS='$(WALKERS)' WALKSHARD='$(WALKSHARD)' WALKPICK='$(WALKPICK)' WALKRECORD='$(WALKRECORD)' WALKTIMES='$(WALKTIMES)' STILL='$(STILL)' $(GO) test -count=1 -ldflags '$(LDFLAGS)' $(if $(WALKRECORD),-cover -coverpkg=./...) -timeout $(WALKTIMEOUT) -run '^TestWalks$$' ./cmd/framefairy-app
 
 # The map of what each run of the walks went through, made from what make

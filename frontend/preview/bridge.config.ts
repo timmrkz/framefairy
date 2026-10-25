@@ -1,8 +1,10 @@
 // Builds the interface against the real Go side, through the bridge in
 // cmd/framefairy-app/bridge_test.go. The same as vite.config.ts but for
-// the runtime it is built with, where it goes, and its source maps, which
-// say what line of ours each piece of the build came from, for the map of
-// what each walk runs, see walks/walkmap.mjs. See docs/TESTING.md.
+// the runtime it is built with and where it goes. A build for recording
+// the walks, WALKRECORD in the Makefile, has source maps too, which say
+// what line of ours each piece of the build came from, for the map of
+// what each walk runs, see walks/walkmap.mjs. Every other build is the
+// one the walks always walked. See docs/TESTING.md.
 import { defineConfig, mergeConfig } from "vite";
 import { resolve } from "node:path";
 import preview from "./vite.config";
@@ -13,6 +15,6 @@ export default mergeConfig(
   preview,
   defineConfig({
     resolve: { alias: { "@wailsio/runtime": resolve(here, "wails-bridge.ts") } },
-    build: { outDir: resolve(here, "dist-bridge"), emptyOutDir: true, sourcemap: true },
+    build: { outDir: resolve(here, "dist-bridge"), emptyOutDir: true, sourcemap: !!process.env.WALKRECORD },
   }),
 );
