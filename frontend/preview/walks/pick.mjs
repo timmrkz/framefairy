@@ -13,9 +13,7 @@
 //                              quarter of every run fills
 //
 // BASE is the commit the change is compared with, origin/main's merge
-// base unless set, and WALKMAP the map of what every run went through,
-// see walkmap.mjs, which picks for a change to the interface or the Go
-// side. With no map, such a change takes every run.
+// base unless set.
 //
 // A walk file is read for what it changed:
 //
@@ -32,13 +30,13 @@
 //   walk-times.tsv          nothing, it is only how long the runs took
 //
 // Anything else in the folder, the runner, the bridge or the rules, is
-// what every run runs, and so is a file of the interface no rule names.
+// what every run runs, and so is a change to the interface or the Go
+// side: every run goes through the app, and no name says which part.
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { pickByMap, readMap } from "./walkmap.mjs";
 
 const here = import.meta.dirname;
 const top = join(here, "../../..");
@@ -155,26 +153,6 @@ async function sequencesNow(root) {
 
 const sequence = (name) => `sequence ${name}`;
 
-// Every run there is now: each sequence and each walk script.
-async function runsNow(root) {
-  const out = (await sequencesNow(root)).map((q) => sequence(q.name));
-  for (const f of readdirSync(join(root, walks))) {
-    if (!f.endsWith(".mjs") || f.endsWith(".test.mjs") || f === "walk.mjs") continue;
-    if (readFileSync(join(root, walks, f), "utf8").includes(`from "./walk.mjs"`)) out.push(`script ${f}`);
-  }
-  return out;
-}
-
-// Whether a changed line of a Svelte file's style is a :global rule,
-// which reaches every component, not only its own.
-function global(root, base, file) {
-  try {
-    return /^[+-].*:global/m.test(git(root, "diff", "-U0", "--no-renames", base, "--", file));
-  } catch {
-    return true;
-  }
-}
-
 // Whether another folder's steps import the steps of folder.
 const importedElsewhere = (root, folder) =>
   foldersOf(root).some((f) => {
@@ -185,13 +163,12 @@ const importedElsewhere = (root, folder) =>
 const takes = (q, names) => q.steps.some(([s]) => names.has(s));
 
 // The runs files need, or "all".
-export async function pick(files, { base, map, root = top }) {
+export async function pick(files, { base, root = top }) {
   const runs = new Set();
   let all = false;
   let sequences = null;
   const now = async () => (sequences ??= await sequencesNow(root));
   const folders = foldersOf(root);
-  let mapped = false;
   for (const file of files) {
     if (all) break;
     const inWalks = file.startsWith(`${walks}/`) ? file.slice(walks.length + 1) : null;
@@ -231,7 +208,7 @@ export async function pick(files, { base, map, root = top }) {
     }
     // A test of the harness is Vitest's, run by make interface, no walk,
     // and so is what picks the walks, which walks nothing itself.
-    if (inWalks && (inWalks.endsWith(".test.mjs") || inWalks === "pick.mjs" || inWalks === "walkmap.mjs")) continue;
+    if (inWalks && (inWalks.endsWith(".test.mjs") || inWalks === "pick.mjs")) continue;
     if (inWalks && !inWalks.includes("/") && inWalks.endsWith(".mjs")) {
       const text = existsSync(join(root, file)) ? readFileSync(join(root, file), "utf8") : (before(root, base, file) ?? "");
       if (inWalks !== "walk.mjs" && text.includes(`from "./walk.mjs"`)) {
@@ -239,27 +216,9 @@ export async function pick(files, { base, map, root = top }) {
         continue;
       }
     }
-    if (file.endsWith(".svelte") && global(root, base, file)) {
-      all = true;
-      break;
-    }
-    // The interface and the Go side, by what each run went through.
-    const byMap = map && pickByMap(map, file, root);
-    if (byMap) {
-      if (byMap === "all") all = true;
-      else for (const r of byMap) runs.add(r);
-      mapped = true;
-      continue;
-    }
     all = true;
   }
   if (all) return "all";
-  // A run the map does not know went through nothing it can tell, like
-  // one added since the night it was recorded, so it is walked.
-  if (mapped) {
-    const known = new Set(map.runs);
-    for (const r of await runsNow(root)) if (!known.has(r)) runs.add(r);
-  }
   return [...runs].sort();
 }
 
@@ -309,8 +268,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
         base = "HEAD";
       }
     }
-    const map = process.env.WALKMAP ? readMap(process.env.WALKMAP) : null;
-    const runs = await pick(input(), { base, map });
+    const runs = await pick(input(), { base });
     console.log(runs === "all" ? "all" : runs.join("\n"));
   }
 }

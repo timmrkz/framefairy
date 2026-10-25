@@ -625,10 +625,9 @@ messages, pull request text, code comments and chat replies.
   command, `make changed PART=` its part with `SHARD=` its share, and a
   first job asks the same script which parts have work and how many
   machines each needs, so a job with nothing to do starts no machine. Of
-  the walks, a change runs only the runs that go through it: a changed
-  sequence or step by its name, a line of the interface or of the Go
-  side by the map of what each run ran, recorded every night, see
-  `frontend/preview/walks/pick.mjs`. A job holds nothing but that
+  the walks, a changed sequence or step runs the sequences that take it,
+  by its name, and a change to the interface or the Go side runs them
+  all, see `frontend/preview/walks/pick.mjs`. A job holds nothing but that
   command and what its machine needs around it, the checkout, Go and
   Node, the caches. A check is added to a make target, never as a step
   of its own in a workflow, and the rule for what reaches it is added to

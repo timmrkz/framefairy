@@ -8,7 +8,7 @@
 // episode whose picture is HEVC with 10-bit colour instead of the bridge's
 // own, added and searched first: the Chromium a walk drives cannot decode
 // it, so every frame of it comes from the Go side, see lib/frames/app.ts.
-import { random, open, chosen, shown, addHEVC, recordCover } from "./bridge.mjs";
+import { random, open, chosen, shown, addHEVC } from "./bridge.mjs";
 import { Watch } from "./rules.mjs";
 
 // The page on the bridge, the seed's random numbers, and the watch. A walk
@@ -79,7 +79,6 @@ export async function walk(w, gestures, { look = shown, show, first = [] } = {})
     await page.screenshot({ path: `/tmp/walk-${seed}.png` });
     console.log(`picture: /tmp/walk-${seed}.png`);
   }
-  await recordCover(w.browser);
   await w.browser.close();
   process.exit(failed ? 1 : 0);
 }

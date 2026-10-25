@@ -127,7 +127,7 @@ What a change reaches, part by part:
 | `interface` | anything under `frontend/` | all of `make interface` |
 | `unit` | a Go package | the packages that changed, every package that imports them however far down, and those whose tests read a file that changed |
 | `fuzz` | a Go package | the fuzz targets of those packages |
-| `walks` | the interface, the walks, anything the app's Go side is built from | the runs that go through what changed, see [Which walks a change runs](#which-walks-a-change-runs) |
+| `walks` | the interface, the walks, anything the app's Go side is built from | every run, or for a change to the walks alone the runs it names, see [Which walks a change runs](#which-walks-a-change-runs) |
 | `build` | anything that ships | `make`, which on a Mac may print no warning |
 | `outside` | anything that ships, on a Mac in CI | `make outside` |
 
@@ -155,27 +155,14 @@ for CI alike. A run is a sequence by its name, or a walk like
 | a helper in a folder's `steps.mjs` | the sequences that take a step of that file, and every sequence for `common/steps.mjs` |
 | a walk, like `timeline.mjs` | that walk |
 | `walk-times.tsv` | none |
-| a line of the interface or of the Go side the app is built from | the runs that ran that line, by the map below |
-| a line no run ran, a style, a type, an import | the runs that ran a line of that file |
-| a declaration in Go, a constant or a type | the runs that ran a line of its package |
-| a style sheet, a file only a worker runs, the bridge in `cmd/framefairy-app`, the runner, the rules, `package.json` | every run |
+| the interface, the Go side the app is built from, the bridge, the runner, the rules, `package.json` | every run |
 
-The map is what each run went through, line by line, of Go and of the
-interface. `make walks WALKRECORD=folder` records it: the test is built
-with Go's coverage, `-cover -coverpkg=./...`, and every run has a bridge
-of its own, which writes what it counted as it ends, its own start
-included, since Go reads no counts of a test binary while it runs. Every
-page counts what it runs through Chromium's coverage, read back to our
-lines through the build's source maps, a worker's among them. A run the
-map does not know, like one added since the night it was recorded, is
-walked whenever the map picks, and a map of no runs is no map. `make walkmap` makes the records of every machine
-into one map, `.build/walkmap.json`. The nightly walks record it on main
-and keep it in the Actions cache, and CI's first job takes the newest,
-see `walks-nightly.yml` in [CI](#ci). A change is compared with the commit the
-map was recorded on, so its lines are the lines the map knows. With no
-map, or with its commit gone, a change to the interface or the Go side
-takes every run, which is also what a machine with no map, a Mac or a
-cloud session, runs.
+A walk's own files are picked by name because a name is all a sequence
+is: a step it does not name, it does not run, so the picker can be sure.
+The interface and the Go side are another matter. Every run goes through
+the app, and which part of it a run reaches is not written anywhere, so
+a change to them takes every run, and main walks every run after each
+merge as well.
 
 A cloud session runs the tests of what it changed before a push and
 leaves the rest to CI, see the tests rule in CLAUDE.md.
@@ -287,11 +274,7 @@ motion, `make walks STILL=none`, at night on main and by hand, in the
 same four shares and the CI image as the walks in `ci.yml`. On a pull
 request a sequence asks for less motion unless it looks at motion, see
 Where they run in [TESTING.md](TESTING.md#where-they-run), and this is
-the run that sees a step that looks at motion and was left out. The
-same workflow records the map of the walks: every run walked as `ci.yml`
-walks it, `make walks WALKRECORD=` on four machines, then `make walkmap`,
-kept in the Actions cache as `walkmap-v1-` and the commit, see
-[Which walks a change runs](#which-walks-a-change-runs).
+the run that sees a step that looks at motion and was left out.
 
 A failing input is written to `engine/testdata/fuzz/`. Keep it, it is the
 test case for the bug, and it becomes a seed for every later run.
@@ -368,7 +351,7 @@ command, `make changed` for its part, the one a person runs, see
 
 | Job | Machine | What it runs |
 | --- | --- | --- |
-| `plan` | Linux | `make changed MODE=parts` and `MODE=shares`, with the newest map of the walks. Starts nothing itself |
+| `plan` | Linux | `make changed MODE=parts` and `MODE=shares`. Starts nothing itself |
 | `interface` | Linux | `make changed PART=interface`, ESLint among it. Needs only Node, so it is first back by a long way |
 | `build` | Linux, in the CI image | `make changed PART="lint build"`: `make lint`, then `make NOTOOLS=1`, the programs and the interface, which is what proves they still link, without the tools we ship, which nothing builds for Linux yet. In CI `make` fails on a `go.mod` that is not tidy, where it would tidy it elsewhere |
 | `linux (1/3)` to `linux (3/3)` | Linux, in the CI image | `make changed PART=unit SHARD=1/3` to `3/3`, a third of the tests each by the first letters of their names, for a change that reaches the engine or the app. On one machine those took six minutes. Any other change takes one machine, `SHARD=1/1` |

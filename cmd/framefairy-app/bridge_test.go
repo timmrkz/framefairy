@@ -1468,9 +1468,6 @@ func TestWalks(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// WALKRECORD keeps what each run went through, see recorder.
-	rec := newRecorder(t)
-
 	walkers := min(envNumber("WALKERS", runtime.NumCPU()*3/2), len(runs))
 	todo := make(chan walkRun, len(runs))
 	for _, r := range runs {
@@ -1480,59 +1477,22 @@ func TestWalks(t *testing.T) {
 	// The bridges start at once, each in its walker, since each takes a
 	// few seconds to hear and search its episode.
 	var wg sync.WaitGroup
-	var unbridged atomic.Int32
 	for range walkers {
 		wg.Go(func() {
-			// The walker's bridge, and its sequences, walked one after
-			// another by one node, see sequencer. A recorded run has a
-			// bridge and a node of its own, so what the bridge counted
-			// when it ends is what that run went through, its start
-			// included, see recorder.
-			record := rec.walker()
-			var seqs *sequencer
-			var env []string
-			stopBridge := func() {}
-			up := func() error {
-				var args []string
-				if record != nil {
-					var err error
-					if args, err = record.begin(); err != nil {
-						return err
-					}
-				}
-				url, stop, err := startBridge(t, kept, args...)
-				if err != nil {
-					return err
-				}
-				stopBridge = stop
-				env = append(os.Environ(), "BRIDGE_URL="+url)
-				env = append(env, record.env()...)
-				seqs = &sequencer{run: []string{node, filepath.Join(walks, "sequences.mjs"), "--serve"}, dir: walks, env: env}
-				return nil
-			}
-			down := func() {
-				if seqs != nil {
-					seqs.stop(ctx)
-					seqs = nil
-				}
-				stopBridge()
-			}
-			defer down()
-			if err := up(); err != nil {
+			url, err := startBridge(t, kept)
+			if err != nil {
 				t.Error(err)
 				return
 			}
+			env := append(os.Environ(), "BRIDGE_URL="+url)
+			// The walker's sequences, walked one after another by one
+			// node, see sequencer.
+			seqs := &sequencer{run: []string{node, filepath.Join(walks, "sequences.mjs"), "--serve"}, dir: walks, env: env}
+			defer seqs.stop(ctx)
 			for r := range todo {
 				if ctx.Err() != nil {
 					unwalked.Add(1)
 					continue
-				}
-				if seqs == nil {
-					if err := up(); err != nil {
-						unbridged.Add(1)
-						t.Error(err)
-						return
-					}
 				}
 				fmt.Fprintf(os.Stderr, "walking %s\n", name(r))
 				began := time.Now()
@@ -1544,13 +1504,6 @@ func TestWalks(t *testing.T) {
 					err = walk(ctx, node, []string{filepath.Join(walks, r.script)}, walks, append(env, r.env...), &out)
 				}
 				seconds := time.Since(began).Seconds() //nolint:forbidigo // the seconds a walk took, reported, never waited on
-				if record != nil {
-					// The bridge writes what it counted as it ends.
-					down()
-					if err := record.end(walkID(r.script, r.sequence)); err != nil {
-						t.Errorf("recording %s: %v", name(r), err)
-					}
-				}
 				// A run the test's time stopped says nothing of how long it
 				// takes, so walk-times.tsv keeps the time it had for it.
 				if err == nil || ctx.Err() == nil {
@@ -1568,13 +1521,6 @@ func TestWalks(t *testing.T) {
 					} else {
 						fmt.Fprintf(os.Stderr, "failed %s\n", what)
 					}
-					// A recording is of what the runs went through, and a
-					// run that failed went through it too. The nightly
-					// walks are the ones that fail on it.
-					if rec != nil {
-						t.Logf("%s: %v\n%s", what, err, out.Bytes())
-						continue
-					}
 					t.Errorf("%s: %v\n%s", what, err, out.Bytes())
 					continue
 				}
@@ -1584,7 +1530,7 @@ func TestWalks(t *testing.T) {
 		})
 	}
 	wg.Wait()
-	if left := len(todo) + int(unbridged.Load()); left > 0 {
+	if left := len(todo); left > 0 {
 		t.Errorf("%d runs were not walked, since no bridge started", left)
 	}
 	if n := unwalked.Load(); n > 0 {
@@ -1630,23 +1576,22 @@ func pickedRuns[T any](all []T, picked string, id func(T) string) []T {
 }
 
 // startBridge starts TestBridge in a process of its own, on a free port,
-// keeping the videos it makes in the folder videos and handed the flags
-// args, and gives back where it answers and how to stop it, which waits
-// until it has ended. It is stopped when the test ends, if not before.
-func startBridge(t *testing.T, videos string, args ...string) (string, func(), error) {
-	cmd := exec.Command(os.Args[0], append([]string{"-test.run", "^TestBridge$", "-test.timeout", "0"}, args...)...)
+// keeping the videos it makes in the folder videos, and gives back where
+// it answers. It is stopped when the test ends.
+func startBridge(t *testing.T, videos string) (string, error) {
+	cmd := exec.Command(os.Args[0], "-test.run", "^TestBridge$", "-test.timeout", "0")
 	cmd.Env = append(os.Environ(), "FRAMEFAIRY_BRIDGE=127.0.0.1:0", "FRAMEFAIRY_BRIDGE_WALKER=1", "FRAMEFAIRY_WALKS=",
 		"FRAMEFAIRY_WALK_VIDEOS="+videos)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		return "", nil, err
+		return "", err
 	}
 	// What it says, read until it says where it answers and let go of
 	// after that.
 	said, says := io.Pipe()
 	cmd.Stdout, cmd.Stderr = says, says
 	if err := cmd.Start(); err != nil {
-		return "", nil, err
+		return "", err
 	}
 	ended := make(chan struct{})
 	go func() {
@@ -1654,11 +1599,10 @@ func startBridge(t *testing.T, videos string, args ...string) (string, func(), e
 		_ = says.Close()
 		close(ended)
 	}()
-	stop := sync.OnceFunc(func() {
+	t.Cleanup(func() {
 		_ = stdin.Close()
 		<-ended
 	})
-	t.Cleanup(stop)
 	lines := bufio.NewScanner(said)
 	var before []string
 	for lines.Scan() {
@@ -1666,12 +1610,11 @@ func startBridge(t *testing.T, videos string, args ...string) (string, func(), e
 		if rest, ok := strings.CutPrefix(line, "bridge on "); ok {
 			url, _, _ := strings.Cut(rest, " ")
 			go func() { _, _ = io.Copy(io.Discard, said) }()
-			return url + "/", stop, nil
+			return url + "/", nil
 		}
 		before = append(before, line)
 	}
-	stop()
-	return "", nil, fmt.Errorf("the bridge did not start:\n%s", strings.Join(before, "\n"))
+	return "", fmt.Errorf("the bridge did not start:\n%s", strings.Join(before, "\n"))
 }
 
 // A walk that hangs is stopped when the test's time runs out, and what it

@@ -174,8 +174,9 @@ the same thing, see [One way to test](BUILD.md#one-way-to-test):
   machines for the engine or the app, `UNITSHARD=1/3` to `3/3`, and on
   one for the rest.
 - **walks:** the interface in Chromium against the real Go side,
-  `make walks`, only the runs that go through what changed, on as many
-  of four machines as they fill.
+  `make walks`, every run for a change to the interface or the Go side,
+  and for a change to the walks only the runs it names, on as many of
+  four machines as they fill.
 - **fuzz:** `make fuzz` on Linux, the targets of the packages the change
   reaches, going on from the fuzz cache main left.
 - **macos:** `make unit` against our own ffmpeg, which on a Mac leaves

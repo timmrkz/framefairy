@@ -48,10 +48,7 @@
 #   make walks      the interface against the real Go side, in Chromium:
 #                   the sequences, and every walk WALKS times, each of
 #                   its own length unless STEPS says, WALKERS at once,
-#                   stopped after WALKTIMEOUT, 30m unless set.
-#                   WALKRECORD=folder records what each run went through
-#   make walkmap    the map of what each walk runs, from what make walks
-#                   WALKRECORD recorded, which picks the walks of a change
+#                   stopped after WALKTIMEOUT, 30m unless set
 #   make check      what this machine still needs to run framefairy
 #   make tools      install the missing tools and nothing else
 #   make models     download the models for the command line, which has no
@@ -149,7 +146,7 @@ APP_LDFLAGS := $(LDFLAGS) -X main.buildVersion=$(BUILD_VERSION) -X main.buildCha
 
 PROGRAMS := $(BIN)/framefairy$(EXE) $(BIN)/framefairy-app$(EXE) $(BIN)/framefairy-train$(EXE)
 
-.PHONY: frames all run app install update-key dispenser icon motion ffmpeg llama tools-archive notices hyphenation deps tools-beside changed test unit fuzz interface walks walkmap lint golangci-lint outside outside-allowed check tools models speechbench clean help toolchain modules $(PROGRAMS)
+.PHONY: frames all run app install update-key dispenser icon motion ffmpeg llama tools-archive notices hyphenation deps tools-beside changed test unit fuzz interface walks lint golangci-lint outside outside-allowed check tools models speechbench clean help toolchain modules $(PROGRAMS)
 
 all: deps toolchain frames $(PROGRAMS) tools-beside
 	@echo "Ready: $(PROGRAMS)"
@@ -440,7 +437,7 @@ PART ?=
 SHARD ?=
 MODE ?=
 changed:
-	@PART='$(PART)' SHARD='$(SHARD)' WALKMAP='$(WALKMAP)' OS='$(UNAME)' UNITSKIP='$(UNITSKIP)' GO='$(GO)' MAKE='$(MAKE)' sh scripts/changed.sh $(if $(MODE),--$(MODE))
+	@PART='$(PART)' SHARD='$(SHARD)' OS='$(UNAME)' UNITSKIP='$(UNITSKIP)' GO='$(GO)' MAKE='$(MAKE)' sh scripts/changed.sh $(if $(MODE),--$(MODE))
 
 # The tests run with the race detector, because the app is a queue of jobs
 # on their own goroutines and a window asking them things from another, and
@@ -527,13 +524,6 @@ WALKTIMES ?=
 # WALKPICK names a file of the runs to walk, one a line, which make changed
 # writes for what a change needs, see frontend/preview/walks/pick.mjs.
 WALKPICK ?=
-# WALKRECORD names a folder each run writes what it went through into, the
-# lines of Go and of the interface, with the test built with Go's
-# coverage and a bridge for every run, which make walkmap makes the map of
-# the walks from. A walk that fails is recorded and fails nothing, a run
-# that records nothing fails the test. It is
-# recorded at night, see .github/workflows/walks-nightly.yml.
-WALKRECORD ?=
 # STILL=none walks every sequence with the app's motion, see moving in
 # frontend/preview/walks/sequences.mjs.
 STILL ?=
@@ -546,19 +536,8 @@ WALKTIMEOUT ?= 30m
 # and not on every add, issue #527. CI keeps the folder between runs.
 WALKVIDEOS ?= $(CURDIR)/.build/walk-videos
 walks: toolchain modules frontend/node_modules/.package-lock.json $(FRESH_FRAMES)
-	@cd frontend && WALKRECORD='$(WALKRECORD)' $(NPM) exec -- vite build --config preview/bridge.config.ts --logLevel error
-	@FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" FRAMEFAIRY_WALKS=1 FRAMEFAIRY_WALK_VIDEOS='$(WALKVIDEOS)' WALKS='$(WALKS)' STEPS='$(STEPS)' WALKERS='$(WALKERS)' WALKSHARD='$(WALKSHARD)' WALKPICK='$(WALKPICK)' WALKRECORD='$(WALKRECORD)' WALKTIMES='$(WALKTIMES)' STILL='$(STILL)' $(GO) test -count=1 -ldflags '$(LDFLAGS)' $(if $(WALKRECORD),-cover -coverpkg=./...) -timeout $(WALKTIMEOUT) -run '^TestWalks$$' ./cmd/framefairy-app
-
-# The map of what each run of the walks went through, made from what make
-# walks WALKRECORD=folder wrote, there or in folders under it, one for each
-# machine, into WALKMAP, which make changed picks the walks a change needs
-# by, see frontend/preview/walks/walkmap.mjs. It needs Node and nothing
-# of the interface's packages.
-WALKMAP ?= $(CURDIR)/.build/walkmap.json
-walkmap:
-	@test -n '$(WALKRECORD)' || { echo "make walkmap WALKRECORD=folder, where make walks recorded"; exit 1; }
-	@mkdir -p $(dir $(WALKMAP))
-	@node frontend/preview/walks/walkmap.mjs build '$(WALKRECORD)' '$(WALKMAP)'
+	@cd frontend && $(NPM) exec -- vite build --config preview/bridge.config.ts --logLevel error
+	@FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" FRAMEFAIRY_WALKS=1 FRAMEFAIRY_WALK_VIDEOS='$(WALKVIDEOS)' WALKS='$(WALKS)' STEPS='$(STEPS)' WALKERS='$(WALKERS)' WALKSHARD='$(WALKSHARD)' WALKPICK='$(WALKPICK)' WALKTIMES='$(WALKTIMES)' STILL='$(STILL)' $(GO) test -count=1 -ldflags '$(LDFLAGS)' -timeout $(WALKTIMEOUT) -run '^TestWalks$$' ./cmd/framefairy-app
 
 # The checks from outside the app: a link that opens it, closed or open,
 # handed to macOS the way a browser does, with the local dispenser running

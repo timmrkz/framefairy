@@ -183,7 +183,6 @@ alone=""
 # The files the walks are picked by, see pick.mjs, and whether a change
 # takes every walk whatever they are.
 walkfiles=""
-gofiles=""
 walks_all=0
 all_go=0
 lint=0
@@ -242,7 +241,7 @@ for file in $changed; do
 	frontend/*)
 		interface=1
 		walks=1
-		walkfiles="$walkfiles $file"
+		walks_all=1
 		ships
 		read_by_tests "$file"
 		;;
@@ -293,7 +292,6 @@ for file in $changed; do
 		pkg=$(package_of "$file")
 		if [ -n "$pkg" ]; then
 			gopkgs="$gopkgs $pkg"
-			gofiles="$gofiles $file"
 			case $file in
 			# internal/offdisk and internal/ffmpegtest have a test that
 			# reads every test file, so a changed test is what reaches
@@ -370,26 +368,17 @@ for p in $affected; do
 done
 if [ "$app" = 1 ]; then
 	walks=1
-	# Of the Go files, those of the packages the app and its bridge are
-	# built from pick the walks.
-	deps=$($GO list -test -deps ./cmd/framefairy-app)
-	for file in $gofiles; do
-		pkg=$(package_of "$file")
-		if printf '%s\n' "$deps" | grep -qxF "$pkg"; then
-			walkfiles="$walkfiles $file"
-		fi
-	done
+	walks_all=1
 fi
 
 # The runs of the walks the change needs, one a line, or all. Picked
 # only where the walks are asked for, since it reads the walks' files.
-# WALKMAP is the map of what each run went through, kept by CI, see
-# pick.mjs, and with none a change to the interface or the Go side takes
-# every run. A change that takes none leaves the walks out.
+# Only a change to the walks themselves picks runs, see pick.mjs: every
+# run goes through the interface and the Go side, so a change to them
+# takes every run. A change that takes none leaves the walks out.
 walkruns=all
 if [ "$walks" = 1 ] && [ "$walks_all" = 0 ] && [ "${EVERYTHING:-}" != 1 ] && { wanted walks || [ "$mode" != run ]; }; then
-	map=${WALKMAP:-.build/walkmap.json}
-	walkruns=$(printf '%s\n' $walkfiles | BASE="$base" WALKMAP="$map" node frontend/preview/walks/pick.mjs)
+	walkruns=$(printf '%s\n' $walkfiles | BASE="$base" node frontend/preview/walks/pick.mjs)
 	[ -z "$walkruns" ] && walks=0
 fi
 

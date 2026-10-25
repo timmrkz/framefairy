@@ -16,7 +16,7 @@ fail=0
 # make hands the variables it was called with to what it runs, so make
 # lint PART=lint in CI would plan every case below for that part alone.
 # Each case says what it needs itself.
-unset PART SHARD EVERYTHING BASE WALKMAP UNITSKIP
+unset PART SHARD EVERYTHING BASE UNITSKIP
 
 # plan FILES: what changed.sh would run for these files, one line each,
 # on one line.
@@ -90,8 +90,7 @@ is "README.md docs/APP.md CLAUDE.md .claude/skills/interface/SKILL.md" ""
 # against the bridge, but the bridge is. Neither ships, so neither builds,
 # and a walk alone starts no Mac (#521). Of the walks, a walk takes itself,
 # their times take none, and the rest of what they run every run, as the
-# interface does with no map of what each run goes through, see pick.mjs
-# and its tests.
+# interface does, see pick.mjs and its tests.
 is "frontend/src/App.svelte" "interface walks walk all build"
 is "frontend/preview/wails-stub.ts" "interface"
 is "frontend/preview/walks/words.mjs" "interface walks walk script words.mjs"
