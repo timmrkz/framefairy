@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { pick, stepsOf } from "./pick.mjs";
-import { pickByMap } from "./walkmap.mjs";
+import { buildMap, linesRan, pickByMap, toSpans } from "./walkmap.mjs";
 
 const walks = "frontend/preview/walks";
 let roots = [];
@@ -210,4 +210,106 @@ describe("the map picks the runs that ran a line that changed", () => {
     write(root, { "frontend/src/lib/a.ts": ts.replace("return 2", "return 3") });
     expect(pickByMap(mapAt("0".repeat(40)), "frontend/src/lib/a.ts", root)).toBe("all");
   });
+});
+
+// A source map's mappings for pieces at [line, column] of the generated
+// code from [source, line] of ours, all counted from 0.
+function mappings(pieces) {
+  const vlq = (n) => {
+    let v = n < 0 ? (-n << 1) | 1 : n << 1;
+    let out = "";
+    do {
+      let d = v & 31;
+      v >>>= 5;
+      if (v) d |= 32;
+      out += "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[d];
+    } while (v);
+    return out;
+  };
+  const lines = [];
+  let src = 0;
+  let srcLine = 0;
+  for (const [[line, col], [s, l]] of pieces) {
+    while (lines.length <= line) lines.push([]);
+    const row = lines[line];
+    const prevCol = row.at(-1)?.col ?? 0;
+    row.push({ col, text: vlq(col - prevCol) + vlq(s - src) + vlq(l - srcLine) + vlq(0) });
+    src = s;
+    srcLine = l;
+  }
+  return lines.map((r) => r.map((x) => x.text).join(",")).join(";");
+}
+
+describe("what a run's pages ran is read by the lines of our files", () => {
+  test("through the build's source map, the innermost range saying what ran", () => {
+    // The build: one script of two lines, a.ts called and b.ts not.
+    const root = mkdtempSync(join(tmpdir(), "walkmap-dist-"));
+    roots.push(root);
+    const dist = join(root, "frontend/preview/dist-bridge");
+    mkdirSync(join(dist, "assets"), { recursive: true });
+    const source = "function a(){return 1}\nfunction b(){return 2}a();\n";
+    writeFileSync(join(dist, "assets", "index.js"), source);
+    const map = {
+      version: 3,
+      sources: ["../../../src/lib/a.ts", "../../../src/lib/b.ts", "../../../node_modules/x/x.js"],
+      mappings: mappings([
+        [[0, 0], [0, 0]],
+        [[0, 13], [0, 1]],
+        [[1, 0], [1, 4]],
+        [[1, 13], [1, 5]],
+        [[1, 22], [0, 7]],
+        [[1, 23], [2, 0]],
+      ]),
+    };
+    writeFileSync(join(dist, "assets", "index.js.map"), JSON.stringify(map));
+    // V8's ranges: the script ran, a ran, b did not.
+    const at = (text) => source.indexOf(text);
+    const entries = [
+      {
+        url: "http://127.0.0.1:1/assets/index.js",
+        source,
+        functions: [
+          { ranges: [{ startOffset: 0, endOffset: source.length, count: 1 }] },
+          { ranges: [{ startOffset: at("function a"), endOffset: at("}") + 1, count: 1 }] },
+          { ranges: [{ startOffset: at("function b"), endOffset: at("}a") + 1, count: 0 }] },
+        ],
+      },
+      { url: "http://127.0.0.1:1/index.html", source: "", functions: [] },
+    ];
+    const { ran, known } = linesRan(entries, dist, root);
+    expect(ran).toEqual({ "frontend/src/lib/a.ts": [[1, 2], [8, 8]] });
+    expect(known).toEqual({ "frontend/src/lib/a.ts": [[1, 2], [8, 8]], "frontend/src/lib/b.ts": [[5, 6]] });
+  });
+
+  test("lines that follow each other are one span", () => {
+    expect(toSpans([5, 1, 2, 3, 9, 8])).toEqual([
+      [1, 3],
+      [5, 5],
+      [8, 9],
+    ]);
+  });
+});
+
+test("the map holds, for every line, the runs that ran it, and lines no run ran", () => {
+  const dir = mkdtempSync(join(tmpdir(), "walkmap-record-"));
+  roots.push(dir);
+  write(dir, {
+    "walk-record-0/runs/1.json": JSON.stringify({ run: "sequence two", ran: { "engine/a.go": [[3, 5]] } }),
+    "walk-record-0/runs/2.json": JSON.stringify({ run: "script timeline.mjs", ran: { "engine/a.go": [[4, 6]] } }),
+    "walk-record-1/runs/1.json": JSON.stringify({ run: "script timeline.mjs", ran: { "engine/a.go": [[9, 9]] } }),
+    "walk-record-1/known-1.json": JSON.stringify({ known: { "engine/a.go": [[1, 10]] }, bundle: ["frontend/src/lib/w.ts"] }),
+  });
+  const map = buildMap(dir, "abc");
+  expect(map.runs).toEqual(["script timeline.mjs", "sequence two"]);
+  const named = map.lines["engine/a.go"].map(([a, b, set]) => [a, b, map.sets[set].map((r) => map.runs[r])]);
+  expect(named).toEqual([
+    [1, 2, []],
+    [3, 3, ["sequence two"]],
+    [4, 5, ["script timeline.mjs", "sequence two"]],
+    [6, 6, ["script timeline.mjs"]],
+    [7, 8, []],
+    [9, 9, ["script timeline.mjs"]],
+    [10, 10, []],
+  ]);
+  expect(map.bundle).toEqual(["frontend/src/lib/w.ts"]);
 });

@@ -2,9 +2,10 @@
 // its clip chosen, a way to wait until the app has settled, and the
 // engine's own answer to compare the screen with. See docs/TESTING.md.
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { chromium } from "playwright";
+import { bundleOf, linesRan } from "./walkmap.mjs";
 
 // The Chromium the pinned Playwright was made for. CI's image holds only
 // its headless shell, which a headless launch finds by itself, so there
@@ -101,6 +102,37 @@ export function noDeadlines(page) {
   page.setDefaultTimeout(0);
 }
 
+// WALKCOVER names the file a run writes what its pages ran into, for the
+// map of the walks, see walkmap.mjs and recorder in TestWalks. Every page
+// counts what it runs from before it loads, and so does every window it
+// opens, like the report window, from the moment it is there. What a
+// window ran is read when the run ends, so a window closed before then is
+// not counted.
+async function covering(page) {
+  if (!process.env.WALKCOVER) return;
+  const start = (p) => p.coverage.startJSCoverage({ resetOnNavigation: false });
+  page.context().on("page", (p) => start(p).catch(() => {}));
+  await start(page);
+}
+
+// Writes what the pages of browser ran into WALKCOVER, once the run's
+// steps are done and before its pages close.
+export async function recordCover(browser) {
+  if (!process.env.WALKCOVER) return;
+  const entries = [];
+  for (const context of browser.contexts()) {
+    for (const p of context.pages()) {
+      try {
+        entries.push(...(await p.coverage.stopJSCoverage()));
+      } catch {
+        // A page whose count never started, or that is closing.
+      }
+    }
+  }
+  const dist = join(import.meta.dirname, "../dist-bridge");
+  writeFileSync(process.env.WALKCOVER, JSON.stringify({ ...linesRan(entries, dist), bundle: bundleOf(dist) }));
+}
+
 // A browser for the walks to open the interface in. WebGPU on, which
 // headless Chromium on Linux only gives when asked, for the step that
 // checks what the GPU draws, ["screen light"]. The video preview itself
@@ -131,6 +163,7 @@ export async function open(url, { viewport = { width: 1500, height: 1000 }, scal
   // the walk does not wait for it, see still in sequences.mjs.
   const page = await browser.newPage({ viewport, deviceScaleFactor: scale, reducedMotion: still ? "reduce" : "no-preference" });
   noDeadlines(page);
+  await covering(page);
   await page.addInitScript(() => {
     window.__flatScreen = true;
   });

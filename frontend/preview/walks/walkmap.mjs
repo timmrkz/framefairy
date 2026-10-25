@@ -17,8 +17,9 @@
 //   bundle  every file of the interface the walks' build holds, those
 //           only a worker runs among them, which the recording cannot see
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const top = join(import.meta.dirname, "../../..");
 const git = (root, ...args) => execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 1 << 28 });
@@ -149,4 +150,220 @@ export function pickByMap(map, file, root = top) {
   if (wholePackage) for (const r of dirUnion(map, dirname(file))) out.add(r);
   else if (wholeFile) for (const r of fileUnion(map, file)) out.add(r);
   return [...out];
+}
+
+// ---- Recording what a run's pages ran.
+
+const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+const digit = new Map([...B64].map((c, i) => [c, i]));
+
+// The mappings of a source map, decoded: for every piece of the generated
+// code, its line and column, and the source and line it came from.
+export function decodeMappings(mappings) {
+  const out = [];
+  let src = 0;
+  let srcLine = 0;
+  let srcCol = 0;
+  let name = 0;
+  let line = 0;
+  for (const group of mappings.split(";")) {
+    let col = 0;
+    if (group) {
+      for (const seg of group.split(",")) {
+        if (!seg) continue;
+        const v = [];
+        let value = 0;
+        let shift = 0;
+        for (const c of seg) {
+          const d = digit.get(c);
+          value += (d & 31) << shift;
+          if (d & 32) shift += 5;
+          else {
+            v.push(value & 1 ? -(value >>> 1) : value >>> 1);
+            value = 0;
+            shift = 0;
+          }
+        }
+        col += v[0];
+        if (v.length >= 4) {
+          src += v[1];
+          srcLine += v[2];
+          srcCol += v[3];
+          if (v.length >= 5) name += v[4];
+          out.push({ line, col, src, srcLine });
+        }
+      }
+    }
+    line++;
+  }
+  return out;
+}
+
+// The interface's own files a source map names, from root, the top of
+// the repository, by their place in its sources, and null for a file of a
+// package or of the preview.
+function sourcesOf(map, mapFile, root) {
+  const base = join(dirname(mapFile), map.sourceRoot ?? "");
+  return map.sources.map((s) => {
+    const file = relative(root, resolve(base, s)).split(sep).join("/");
+    return file.startsWith("frontend/src/") && !file.includes("/node_modules/") ? file : null;
+  });
+}
+
+// Every file of the interface the build in dist holds, workers among them.
+export function bundleOf(dist, root = top) {
+  const files = new Set();
+  for (const f of readdirSync(join(dist, "assets"))) {
+    if (!f.endsWith(".map")) continue;
+    const mapFile = join(dist, "assets", f);
+    for (const s of sourcesOf(JSON.parse(readFileSync(mapFile, "utf8")), mapFile, root)) if (s) files.add(s);
+  }
+  return [...files].sort();
+}
+
+// The count at each offset of a script, from V8's ranges of what ran: the
+// innermost range holding an offset says it, since ranges nest.
+function countsAt(functions, offsets) {
+  const ranges = functions.flatMap((f) => f.ranges).sort((a, b) => a.startOffset - b.startOffset || b.endOffset - a.endOffset);
+  const out = new Array(offsets.length);
+  const open = [];
+  let next = 0;
+  for (let i = 0; i < offsets.length; i++) {
+    const at = offsets[i];
+    while (next < ranges.length && ranges[next].startOffset <= at) {
+      while (open.length && open.at(-1).endOffset <= ranges[next].startOffset) open.pop();
+      open.push(ranges[next++]);
+    }
+    while (open.length && open.at(-1).endOffset <= at) open.pop();
+    out[i] = open.length ? open.at(-1).count : 0;
+  }
+  return out;
+}
+
+const decoded = new Map();
+
+// What the pages of a run ran, from Playwright's JS coverage: the lines of
+// each file of the interface that ran, and the lines that are code at all,
+// through the source maps of the build in dist.
+export function linesRan(entries, dist, root = top) {
+  const ran = new Map();
+  const known = new Map();
+  const add = (m, file, line) => {
+    if (!m.has(file)) m.set(file, new Set());
+    m.get(file).add(line);
+  };
+  for (const entry of entries) {
+    let path;
+    try {
+      path = new URL(entry.url).pathname;
+    } catch {
+      continue;
+    }
+    if (!path.startsWith("/assets/") || !path.endsWith(".js")) continue;
+    const mapFile = join(dist, path + ".map");
+    if (!decoded.has(mapFile)) {
+      let map = null;
+      try {
+        map = JSON.parse(readFileSync(mapFile, "utf8"));
+      } catch {
+        // A script with no map holds nothing of ours.
+      }
+      decoded.set(mapFile, map && { sources: sourcesOf(map, mapFile, root), segments: decodeMappings(map.mappings) });
+    }
+    const map = decoded.get(mapFile);
+    if (!map) continue;
+    const starts = [0];
+    for (let i = 0; i < entry.source.length; i++) if (entry.source.charCodeAt(i) === 10) starts.push(i + 1);
+    const segments = map.segments.filter((s) => map.sources[s.src]);
+    const counts = countsAt(
+      entry.functions,
+      segments.map((s) => (starts[s.line] ?? 0) + s.col),
+    );
+    segments.forEach((s, i) => {
+      const file = map.sources[s.src];
+      add(known, file, s.srcLine + 1);
+      if (counts[i] > 0) add(ran, file, s.srcLine + 1);
+    });
+  }
+  const spans = (m) => Object.fromEntries([...m].map(([f, lines]) => [f, toSpans([...lines])]));
+  return { ran: spans(ran), known: spans(known) };
+}
+
+// Lines as spans of lines that follow each other, [from, to].
+export function toSpans(lines) {
+  const out = [];
+  for (const l of lines.sort((a, b) => a - b)) {
+    if (out.length && l <= out.at(-1)[1] + 1) out.at(-1)[1] = Math.max(out.at(-1)[1], l);
+    else out.push([l, l]);
+  }
+  return out;
+}
+
+// ---- Making the map from what the runs wrote.
+
+// Every file named name under dir, however deep, the way the records of
+// each machine come down into a folder of their own.
+function filesUnder(dir, test) {
+  const out = [];
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const p = join(dir, e.name);
+    if (e.isDirectory()) out.push(...filesUnder(p, test));
+    else if (test(p)) out.push(p);
+  }
+  return out;
+}
+
+// The map from the records in dir, see make walkmap, recorded on commit.
+export function buildMap(dir, commit) {
+  const records = filesUnder(dir, (p) => basename(dirname(p)) === "runs" && p.endsWith(".json")).map((f) => JSON.parse(readFileSync(f, "utf8")));
+  const knowns = filesUnder(dir, (p) => /^known-\d+\.json$/.test(basename(p))).map((f) => JSON.parse(readFileSync(f, "utf8")));
+  const runs = [...new Set(records.map((r) => r.run))].sort();
+  const index = new Map(runs.map((r, i) => [r, i]));
+  // For every file, for every line, the runs that ran it.
+  const byLine = new Map();
+  const at = (file, line) => {
+    if (!byLine.has(file)) byLine.set(file, new Map());
+    const lines = byLine.get(file);
+    if (!lines.has(line)) lines.set(line, new Set());
+    return lines.get(line);
+  };
+  const bundle = new Set();
+  for (const k of knowns) {
+    for (const [file, spans] of Object.entries(k.known ?? {})) for (const [a, b] of spans) for (let l = a; l <= b; l++) at(file, l);
+    for (const f of k.bundle ?? []) bundle.add(f);
+  }
+  for (const r of records) {
+    const n = index.get(r.run);
+    for (const [file, spans] of Object.entries(r.ran)) for (const [a, b] of spans) for (let l = a; l <= b; l++) at(file, l).add(n);
+  }
+  const sets = [];
+  const setOf = new Map();
+  const lines = {};
+  for (const file of [...byLine.keys()].sort()) {
+    const out = [];
+    for (const [line, set] of [...byLine.get(file)].sort((x, y) => x[0] - y[0])) {
+      const key = [...set].sort((x, y) => x - y).join(",");
+      if (!setOf.has(key)) {
+        setOf.set(key, sets.length);
+        sets.push(key ? key.split(",").map(Number) : []);
+      }
+      const s = setOf.get(key);
+      const last = out.at(-1);
+      if (last && last[1] === line - 1 && last[2] === s) last[1] = line;
+      else out.push([line, line, s]);
+    }
+    lines[file] = out;
+  }
+  return { version: 1, commit, runs, sets, lines, bundle: [...bundle].sort() };
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url) && process.argv[2] === "build") {
+  const [, , , dir, out] = process.argv;
+  const commit = git(top, "rev-parse", "HEAD").trim();
+  const map = buildMap(dir, commit);
+  writeFileSync(out, JSON.stringify(map));
+  const files = Object.keys(map.lines);
+  console.log(
+    `walk map of ${commit.slice(0, 7)}: ${map.runs.length} runs, ${files.filter((f) => f.endsWith(".go")).length} files of Go and ${files.filter((f) => !f.endsWith(".go")).length} of the interface, ${map.sets.length} sets of runs`,
+  );
 }

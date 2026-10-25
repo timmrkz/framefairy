@@ -60,6 +60,7 @@ jobs:
       mac: ${{ steps.parts.outputs.mac }}
       unit: ${{ steps.parts.outputs.unit }}
       walks: ${{ steps.parts.outputs.walks }}
+      walkmap: ${{ steps.walkmap.outputs.cache-matched-key }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -73,6 +74,16 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
+      # The newest map of what each run of the walks goes through, which
+      # walks-nightly.yml records on main, so a change to the interface or
+      # the Go side walks only the runs that go through it. The walks take
+      # the same map by its key, so both pick the same runs.
+      - id: walkmap
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .build/walkmap.json
+          key: walkmap-v1-${{ github.sha }}
+          restore-keys: walkmap-v1-
       # The parts with work on Linux and on a Mac, and how many machines
       # the unit tests and the walks need, as unit=["1/3","2/3","3/3"].
       - id: parts
@@ -371,6 +382,13 @@ jobs:
           restore-keys: walk-videos-${{ strategy.job-index }}-${{ needs.image.outputs.ref }}-${{ hashFiles('cmd/framefairy-app/walkvideos_test.go') }}-
       - name: The videos there were
         run: ls .build/walk-videos > "$RUNNER_TEMP/videos-before" 2>/dev/null || true
+      # The map the first job picked the runs by, see plan.
+      - if: needs.plan.outputs.walkmap != ''
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .build/walkmap.json
+          key: ${{ needs.plan.outputs.walkmap }}
+          fail-on-cache-miss: true
       # A walk or a sequence that breaks a rule is named on the check, see
       # scripts/test-failures.sh. A share takes about two and a half
       # minutes, so one that hangs is stopped and named after eight rather

@@ -345,6 +345,8 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 	mux.HandleFunc("/reset", func(w http.ResponseWriter, r *http.Request) {
 		answer(w, nil, b.reset())
 	})
+	// What the Go side ran, for the map of the walks, see coverHandler.
+	mux.HandleFunc("/cover", coverHandler)
 	// A mark sent down the events behind everything the Go side told the
 	// interface before it. A page that has heard the mark has heard all
 	// of that, since every page hears the events in the order they were
@@ -1456,6 +1458,9 @@ func TestWalks(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// WALKRECORD keeps what each run went through, see recorder.
+	rec := newRecorder(t)
+
 	walkers := min(envNumber("WALKERS", runtime.NumCPU()*3/2), len(runs))
 	todo := make(chan walkRun, len(runs))
 	for _, r := range runs {
@@ -1473,6 +1478,15 @@ func TestWalks(t *testing.T) {
 				return
 			}
 			env := append(os.Environ(), "BRIDGE_URL="+url)
+			var record *walkerRecord
+			if rec != nil {
+				var more []string
+				if record, more, err = rec.walker(url); err != nil {
+					t.Error(err)
+					return
+				}
+				env = append(env, more...)
+			}
 			// The walker's sequences, walked one after another by one
 			// node, see sequencer.
 			seqs := &sequencer{run: []string{node, filepath.Join(walks, "sequences.mjs"), "--serve"}, dir: walks, env: env}
@@ -1483,6 +1497,11 @@ func TestWalks(t *testing.T) {
 					continue
 				}
 				fmt.Fprintf(os.Stderr, "walking %s\n", name(r))
+				if record != nil {
+					if err := record.begin(); err != nil {
+						t.Error(err)
+					}
+				}
 				began := time.Now()
 				var out bytes.Buffer
 				var err error
@@ -1492,6 +1511,11 @@ func TestWalks(t *testing.T) {
 					err = walk(ctx, node, []string{filepath.Join(walks, r.script)}, walks, append(env, r.env...), &out)
 				}
 				seconds := time.Since(began).Seconds() //nolint:forbidigo // the seconds a walk took, reported, never waited on
+				if record != nil {
+					if err := record.end(walkID(r.script, r.sequence)); err != nil {
+						t.Errorf("recording %s: %v", name(r), err)
+					}
+				}
 				// A run the test's time stopped says nothing of how long it
 				// takes, so walk-times.tsv keeps the time it had for it.
 				if err == nil || ctx.Err() == nil {

@@ -14,7 +14,7 @@
 // The episode is the bridge's, so the words are the sentences its speech
 // stand-in says: "Ich war vielleicht sechs Jahre alt, als mich auf dem
 // Schulhof irgendein Typ geschubst hat."
-import { chosen, newBrowser, open, settle, shown, shownOnPlayhead } from "./bridge.mjs";
+import { chosen, newBrowser, open, recordCover, settle, shown, shownOnPlayhead } from "./bridge.mjs";
 import { moving, still, url } from "./common/steps.mjs";
 import { Watch } from "./rules.mjs";
 import captions from "./captions/sequences.mjs";
@@ -498,6 +498,7 @@ async function walkSequence(seq, shared = null) {
   const took = ((performance.now() - began) / 1000).toFixed(1).padStart(5);
   console.log(`${failed ? "FAIL" : "ok  "}  ${took} s  ${seq.name}`);
   if (failed) console.log(`      after ${done.join(", ")}\n      ${failed.replaceAll("\n", "\n      ")}`);
+  await recordCover(browser);
   if (shared) await Promise.all(shared.contexts().map((c) => c.close()));
   else await browser.close();
   return Boolean(failed);
