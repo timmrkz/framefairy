@@ -88,16 +88,15 @@ is "README.md docs/APP.md CLAUDE.md .claude/skills/interface/SKILL.md" ""
 # The interface on its own is the interface, the walks and the build, and
 # no Go at all. The preview's stand-in is not under the walks, which run
 # against the bridge, but the bridge is. Neither ships, so neither builds,
-# and a walk alone starts no Mac (#521). Of the walks, a walk takes itself,
-# their times take none, and the rest of what they run every run, as the
-# interface does, see pick.mjs and its tests.
-is "frontend/src/App.svelte" "interface walks walk all build"
+# and a walk alone starts no Mac (#521). Whatever reaches the walks walks
+# every run, and the times they took reach none.
+is "frontend/src/App.svelte" "interface walks build"
 is "frontend/preview/wails-stub.ts" "interface"
-is "frontend/preview/walks/words.mjs" "interface walks walk script words.mjs"
+is "frontend/preview/walks/words.mjs" "interface walks"
 is "frontend/preview/walks/walk-times.tsv" "interface"
-is "frontend/preview/wails-bridge.ts" "interface walks walk all"
-is "frontend/preview/settled.ts" "interface walks walk all"
-is "frontend/preview/standing.ts" "interface walks walk all"
+is "frontend/preview/wails-bridge.ts" "interface walks"
+is "frontend/preview/settled.ts" "interface walks"
+is "frontend/preview/standing.ts" "interface walks"
 mac "frontend/preview/walks/words.mjs" "interface walks"
 mac "frontend/src/App.svelte" "interface walks build outside"
 
@@ -105,7 +104,7 @@ mac "frontend/src/App.svelte" "interface walks build outside"
 # package too. A file a Go test only names in a comment is not one of them.
 has "frontend/src/lib/api.ts" "interface" "unit" "go framefairy/cmd/framefairy-app" "walks"
 has "frontend/src/lib/suggest.cases.json" "interface" "go framefairy/engine"
-is "frontend/src/lib/flow.ts" "interface walks walk all build"
+is "frontend/src/lib/flow.ts" "interface walks build"
 
 # A package reaches every package that imports it, and only those.
 has "updates/updates.go" "go framefairy/updates" "go framefairy/cmd/framefairy-app" \

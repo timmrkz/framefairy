@@ -59,7 +59,6 @@ jobs:
       linux: ${{ steps.parts.outputs.linux }}
       mac: ${{ steps.parts.outputs.mac }}
       unit: ${{ steps.parts.outputs.unit }}
-      walks: ${{ steps.parts.outputs.walks }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -68,13 +67,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      # The walks are picked by Node, see frontend/preview/walks/pick.mjs,
-      # which needs none of the interface's packages.
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 22
       # The parts with work on Linux and on a Mac, and how many machines
-      # the unit tests and the walks need, as unit=["1/3","2/3","3/3"].
+      # the unit tests need, as unit=["1/3","2/3","3/3"].
       - id: parts
         run: |
           linux=$(make -s changed MODE=parts)
@@ -273,10 +267,8 @@ jobs:
   # Playwright drives, all of it in the image ci-image.yml keeps, which
   # the job runs in.
   #
-  # On as many as four machines, as many as the runs picked fill, see
-  # --shares in scripts/changed.sh, each with a share of the runs by how
-  # long they took last, see frontend/preview/walks/walk-times.tsv. For
-  # every run: on one the runs took
+  # On four machines, each with a quarter of the runs by how long they took
+  # last, see frontend/preview/walks/walk-times.tsv: on one the runs took
   # five and a half minutes after two of setting up, on two each still took
   # six with a cold build cache, and on three each job took four and three
   # quarters, too close to five. More walkers on a machine of four cores
@@ -297,7 +289,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: ${{ fromJSON(needs.plan.outputs.walks) }}
+        shard: [1/4, 2/4, 3/4, 4/4]
     runs-on: ubuntu-24.04
     # A container runs a step with sh, where ${PIPESTATUS[0]} is no word.
     # bash as a runner has it, without pipefail, so a walk that fails still

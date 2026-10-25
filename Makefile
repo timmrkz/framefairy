@@ -521,9 +521,6 @@ WALKERS ?=
 # walk-times.tsv. WALKTIMES=1 writes what the runs took into that file.
 WALKSHARD ?=
 WALKTIMES ?=
-# WALKPICK names a file of the runs to walk, one a line, which make changed
-# writes for what a change needs, see frontend/preview/walks/pick.mjs.
-WALKPICK ?=
 # STILL=none walks every sequence with the app's motion, see moving in
 # frontend/preview/walks/sequences.mjs.
 STILL ?=
@@ -537,7 +534,7 @@ WALKTIMEOUT ?= 30m
 WALKVIDEOS ?= $(CURDIR)/.build/walk-videos
 walks: toolchain modules frontend/node_modules/.package-lock.json $(FRESH_FRAMES)
 	@cd frontend && $(NPM) exec -- vite build --config preview/bridge.config.ts --logLevel error
-	@FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" FRAMEFAIRY_WALKS=1 FRAMEFAIRY_WALK_VIDEOS='$(WALKVIDEOS)' WALKS='$(WALKS)' STEPS='$(STEPS)' WALKERS='$(WALKERS)' WALKSHARD='$(WALKSHARD)' WALKPICK='$(WALKPICK)' WALKTIMES='$(WALKTIMES)' STILL='$(STILL)' $(GO) test -count=1 -ldflags '$(LDFLAGS)' -timeout $(WALKTIMEOUT) -run '^TestWalks$$' ./cmd/framefairy-app
+	@FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" FRAMEFAIRY_WALKS=1 FRAMEFAIRY_WALK_VIDEOS='$(WALKVIDEOS)' WALKS='$(WALKS)' STEPS='$(STEPS)' WALKERS='$(WALKERS)' WALKSHARD='$(WALKSHARD)' WALKTIMES='$(WALKTIMES)' STILL='$(STILL)' $(GO) test -count=1 -ldflags '$(LDFLAGS)' -timeout $(WALKTIMEOUT) -run '^TestWalks$$' ./cmd/framefairy-app
 
 # The checks from outside the app: a link that opens it, closed or open,
 # handed to macOS the way a browser does, with the local dispenser running

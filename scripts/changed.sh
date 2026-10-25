@@ -15,9 +15,9 @@
 #   sh scripts/changed.sh --plan  say what each part would run, and run
 #                                 nothing
 #   sh scripts/changed.sh --shares
-#                                 how many machines the unit tests and the
-#                                 walks need, as the lists CI's matrix
-#                                 takes, unit=["1/3","2/3","3/3"]
+#                                 how many machines the unit tests need,
+#                                 as the list CI's matrix takes,
+#                                 unit=["1/3","2/3","3/3"]
 #
 # The parts are the parts of make test, and each runs through its own
 # make target, so what runs here is what that target runs:
@@ -30,10 +30,9 @@
 #              package that imports them, however far down, and the
 #              packages whose tests read a file that changed
 #   fuzz       make fuzz, for the fuzz targets of those packages
-#   walks      make walks, for the interface the app shows and for
-#              anything that reaches the app's Go side, and of the walks
-#              only the runs that go through what changed, which
-#              frontend/preview/walks/pick.mjs picks
+#   walks      make walks, every run, for the interface the app shows,
+#              the walks themselves and anything that reaches the app's
+#              Go side
 #   build      make, for anything that ships. On a Mac the build may
 #              print no warning
 #   outside    make outside, on a Mac in CI, for anything that ships
@@ -180,10 +179,6 @@ runs_the_decoder() {
 
 gopkgs=""
 alone=""
-# The files the walks are picked by, see pick.mjs, and whether a change
-# takes every walk whatever they are.
-walkfiles=""
-walks_all=0
 all_go=0
 lint=0
 interface=0
@@ -200,7 +195,6 @@ everything() {
 	lint=1
 	interface=1
 	walks=1
-	walks_all=1
 	build=1
 }
 
@@ -222,16 +216,16 @@ for file in $changed; do
 	frontend/package.json | frontend/package-lock.json)
 		interface=1
 		walks=1
-		walks_all=1
 		lint=1
 		ships
 		read_by_tests "$file"
 		;;
+	# How long each run of the walks took, which only shares them out.
+	frontend/preview/walks/walk-times.tsv) interface=1 ;;
 	# The walk harness: what the walks run, and none of it ships.
 	frontend/preview/walks/* | frontend/preview/wails-bridge.ts | frontend/preview/settled.ts | frontend/preview/standing.ts | frontend/preview/bridge.config.ts | frontend/preview/vite.config.ts)
 		interface=1
 		walks=1
-		walkfiles="$walkfiles $file"
 		read_by_tests "$file"
 		;;
 	frontend/preview/*)
@@ -241,13 +235,11 @@ for file in $changed; do
 	frontend/*)
 		interface=1
 		walks=1
-		walks_all=1
 		ships
 		read_by_tests "$file"
 		;;
 	go.mod | go.sum)
 		all_go=1
-		walks_all=1
 		lint=1
 		ships
 		;;
@@ -278,7 +270,7 @@ for file in $changed; do
 		# The decoder is built against the ffmpeg this builds.
 		if [ "$file" = scripts/build-ffmpeg.sh ]; then
 			runs_the_decoder
-			walks_all=1
+			walks=1
 		fi
 		;;
 	# Every workflow is read by internal/workflows, and its pins and the
@@ -313,7 +305,7 @@ for file in $changed; do
 			# Every frame the walks show comes from the decoder.
 			cmd/framefairy-frames/*)
 				runs_the_decoder
-				walks_all=1
+				walks=1
 				;;
 			esac
 			# The notices test counts these by a path it builds, which
@@ -368,18 +360,6 @@ for p in $affected; do
 done
 if [ "$app" = 1 ]; then
 	walks=1
-	walks_all=1
-fi
-
-# The runs of the walks the change needs, one a line, or all. Picked
-# only where the walks are asked for, since it reads the walks' files.
-# Only a change to the walks themselves picks runs, see pick.mjs: every
-# run goes through the interface and the Go side, so a change to them
-# takes every run. A change that takes none leaves the walks out.
-walkruns=all
-if [ "$walks" = 1 ] && [ "$walks_all" = 0 ] && [ "${EVERYTHING:-}" != 1 ] && { wanted walks || [ "$mode" != run ]; }; then
-	walkruns=$(printf '%s\n' $walkfiles | BASE="$base" node frontend/preview/walks/pick.mjs)
-	[ -z "$walkruns" ] && walks=0
 fi
 
 # The fuzz targets of the packages a change reaches, by name on one line.
@@ -419,16 +399,13 @@ if [ "$mode" = parts ]; then
 	exit 0
 fi
 
-# The machines each part needs. The unit tests take three for the engine
-# or the app, whose tests are most of the time, and one for anything
-# else. The walks take as many of four as the runs picked fill.
+# The machines the unit tests need: three for the engine or the app,
+# whose tests are most of the time, and one for anything else.
 if [ "$mode" = shares ]; then
 	unit=1
 	for a in $affected; do
 		case $a in "$module/engine" | "$module/cmd/framefairy-app") unit=3 ;; esac
 	done
-	walkshares=4
-	[ "$walks" = 1 ] && walkshares=$(printf '%s\n' "$walkruns" | node frontend/preview/walks/pick.mjs --shares 4)
 	list() {
 		out=""
 		i=1
@@ -439,7 +416,6 @@ if [ "$mode" = shares ]; then
 		echo "[${out#,}]"
 	}
 	echo "unit=$(list $unit)"
-	echo "walks=$(list $walkshares)"
 	exit 0
 fi
 
@@ -463,14 +439,6 @@ for p in $ran; do
 		say "unit:     $short"
 		;;
 	fuzz) say "fuzz:      $targets" ;;
-	walks)
-		if [ "$walkruns" = all ]; then
-			say "walks:     every run"
-		else
-			say "walks:     $(printf '%s\n' "$walkruns" | wc -l | tr -d ' ') runs"
-			printf '%s\n' "$walkruns" | sed 's/^/           /' >&2
-		fi
-		;;
 	*) say "$p" ;;
 	esac
 done
@@ -482,7 +450,6 @@ if [ "$mode" = plan ]; then
 		case $p in
 		unit) for a in $affected; do echo "go $a"; done ;;
 		fuzz) for t in $targets; do echo "fuzz $t"; done ;;
-		walks) printf '%s\n' "$walkruns" | sed 's/^/walk /' ;;
 		esac
 	done
 	exit 0
@@ -499,15 +466,7 @@ for p in $ran; do
 	interface) $MAKE -s --no-print-directory interface ;;
 	unit) $MAKE -s --no-print-directory unit UNITPKGS="$pkgs" UNITSHARD="$SHARD" ;;
 	fuzz) $MAKE -s --no-print-directory fuzz FUZZTARGETS="$targets" ;;
-	walks)
-		pick=""
-		if [ "$walkruns" != all ]; then
-			mkdir -p .build
-			pick=$root/.build/walk-pick
-			printf '%s\n' "$walkruns" >"$pick"
-		fi
-		$MAKE -s --no-print-directory walks WALKSHARD="$SHARD" WALKPICK="$pick"
-		;;
+	walks) $MAKE -s --no-print-directory walks WALKSHARD="$SHARD" ;;
 	build)
 		# Away from a Mac nothing builds the tools we ship, and make
 		# stops without them, so there the build proves the programs

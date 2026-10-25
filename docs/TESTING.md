@@ -439,10 +439,7 @@ caption box showed before it and its own name. The walk is what
 `walkSequence` holds, the page, the marks and what went wrong so far,
 read and written by name. A sequence of any folder can take any step,
 and a new sequence goes in the folder of the part of the app it is
-about. A pull request walks a sequence it changed, and those that take a
-step it changed, see [Which walks a change runs](BUILD.md#which-walks-a-change-runs),
-so a step keeps the shape it has: its comment above it, `async` and its
-name at the start of a line, and `},` alone on its last.
+about.
 
 A sequence is a named list of steps and of what has to come of them,
 written as data, so a case found by hand is kept as it was found. The steps are the walk's gestures by name, `frame` a
@@ -895,9 +892,8 @@ at 122 of its frames in the video preview, takes a little over a minute,
 so however many bridges run, the set takes at least that.
 
 CI splits the set over four machines, `make walks WALKSHARD=1/4` to
-`4/4`, walks and sequences alike. A pull request walks only the runs
-that go through what it changed, `WALKPICK`, on as many of the four as
-they fill, see [Which walks a change runs](BUILD.md#which-walks-a-change-runs). Five and a half minutes on one machine,
+`4/4`, walks and sequences alike, every run whatever the change, see
+[Why the walks run whole](BUILD.md#why-the-walks-run-whole). Five and a half minutes on one machine,
 after two of setting up, made a job of seven and a half, and on two
 machines each job still took six with a cold build cache. No job may take
 over five.

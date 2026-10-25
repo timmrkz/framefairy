@@ -624,10 +624,11 @@ messages, pull request text, code comments and chat replies.
   all of `make test`, and what is long runs at night. Every CI job is one
   command, `make changed PART=` its part with `SHARD=` its share, and a
   first job asks the same script which parts have work and how many
-  machines each needs, so a job with nothing to do starts no machine. Of
-  the walks, a changed sequence or step runs the sequences that take it,
-  by its name, and a change to the interface or the Go side runs them
-  all, see `frontend/preview/walks/pick.mjs`. A job holds nothing but that
+  machines each needs, so a job with nothing to do starts no machine. A
+  part is reached by the kind of file that changed, Go, the interface,
+  a script, a workflow, and a doc reaches none. Within a part only Go
+  is picked finer, by the packages that import what changed, and the
+  walks run whole. A job holds nothing but that
   command and what its machine needs around it, the checkout, Go and
   Node, the caches. A check is added to a make target, never as a step
   of its own in a workflow, and the rule for what reaches it is added to

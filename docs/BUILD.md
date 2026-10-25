@@ -127,7 +127,7 @@ What a change reaches, part by part:
 | `interface` | anything under `frontend/` | all of `make interface` |
 | `unit` | a Go package | the packages that changed, every package that imports them however far down, and those whose tests read a file that changed |
 | `fuzz` | a Go package | the fuzz targets of those packages |
-| `walks` | the interface, the walks, anything the app's Go side is built from | every run, or for a change to the walks alone the runs it names, see [Which walks a change runs](#which-walks-a-change-runs) |
+| `walks` | the interface, the walks, anything the app's Go side is built from | every run, see [Why the walks run whole](#why-the-walks-run-whole) |
 | `build` | anything that ships | `make`, which on a Mac may print no warning |
 | `outside` | anything that ships, on a Mac in CI | `make outside` |
 
@@ -139,30 +139,19 @@ rule has its case in `scripts/changed-test.sh`, which `make lint` runs.
 `make changed PART=unit SHARD=1/3` runs one part, or one share of it,
 which is what each CI job runs. `sh scripts/changed.sh --plan` says what
 each part would run and runs nothing. `--parts` names the parts with
-work and `--shares` how many machines the unit tests and the walks need,
+work and `--shares` how many machines the unit tests need,
 which is what CI's first job asks, see [CI](#ci).
 
-### Which walks a change runs
+### Why the walks run whole
 
-`frontend/preview/walks/pick.mjs` picks them, for `make changed` and
-for CI alike. A run is a sequence by its name, or a walk like
-`timeline.mjs` with all its seeds.
-
-| What changed | The runs it takes |
-| --- | --- |
-| a sequence in a folder's `sequences.mjs` | that sequence, when its steps changed, and none for a comment |
-| a step in a folder's `steps.mjs` | the sequences that take that step, under every name it has |
-| a helper in a folder's `steps.mjs` | the sequences that take a step of that file, and every sequence for `common/steps.mjs` |
-| a walk, like `timeline.mjs` | that walk |
-| `walk-times.tsv` | none |
-| the interface, the Go side the app is built from, the bridge, the runner, the rules, `package.json` | every run |
-
-A walk's own files are picked by name because a name is all a sequence
-is: a step it does not name, it does not run, so the picker can be sure.
-The interface and the Go side are another matter. Every run goes through
-the app, and which part of it a run reaches is not written anywhere, so
-a change to them takes every run, and main walks every run after each
-merge as well.
+A change is sorted by the kind of file it is, and that can be sure of
+itself. Go picks its packages finer, because the compiler says which
+package imports which, `go list -deps`, and a test cannot reach a
+package it does not import. Nothing says that much for the walks. Every
+run goes through the app, and which part of it a run reaches is written
+nowhere, so a pick of some runs could leave out the one that breaks. A
+change that reaches the walks runs every run, on four machines, and
+main walks every run after each merge too.
 
 A cloud session runs the tests of what it changed before a push and
 leaves the rest to CI, see the tests rule in CLAUDE.md.
