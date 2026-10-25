@@ -1,7 +1,7 @@
 // A walk over finding clips: adding a video, its first search starting by
 // itself, Search, Cancel, Continue, the app closed and opened again, with the
-// language model holding its answers or failing and the speech model slow
-// or quick, in an order a seed decides. Besides the rules every walk
+// language model holding its answers or failing and the speech model held
+// or hearing on by itself, in an order a seed decides. Besides the rules every walk
 // keeps, see rules.mjs, the clip list says after every step what the
 // engine's jobs are doing. See docs/TESTING.md.
 //
@@ -16,7 +16,9 @@ const { page, rng, watch, url } = w;
 // How the model and the speech are set, which decides what may be
 // expected of a search.
 const model = { hang: false, fail: false };
-let pace = 0;
+// Held, the speech model hears a piece of audio only when the walk lets
+// it, see the gesture wait, so the next steps land while a video is heard.
+let held = false;
 const setModel = () => control(url, `/model?hang=${model.hang ? 1 : 0}&fail=${model.fail ? 1 : 0}`);
 
 const episodeOn = () => episodeOnIn(page);
@@ -36,6 +38,12 @@ const running = (j) => j.state === "running" || j.state === "queued";
 async function reporting() {
   const jobs = (await ask(page, "Jobs")).filter((j) => j.state === "running" && j.step !== "waiting");
   return jobs.length > (await control(url, "/model-holding"));
+}
+
+// Whether a search or a clip made by hand is hearing its video, which
+// with the speech held only goes on a piece at a time.
+async function hearing() {
+  return (await ask(page, "Jobs")).some((j) => j.state === "running" && j.step === "hearing");
 }
 
 // Waits on the engine's reports until the first search of a video just
@@ -150,9 +158,9 @@ const gestures = [
       await sidebar(() => page.locator("aside").getByText("Add", { exact: true }).first().click());
       // A new video is transcribed and its first search starts by itself.
       // With the model answering and the speech quick, the clips come
-      // without a click. With the speech slow the walk goes on while it is
+      // without a click. With the speech held the walk goes on while it is
       // transcribed, so the next steps land in the middle of it.
-      if (!model.hang && !model.fail && pace === 0) {
+      if (!model.hang && !model.fail && !held) {
         const search = await firstSearch(path);
         await caughtUp(page, url, search ? [search] : []);
         const list = await clipList(page);
@@ -241,14 +249,13 @@ const gestures = [
     },
   },
   {
-    name: "pace",
+    name: "speech",
     weight: 2,
     when: () => true,
     async run() {
-      const ms = rng.pick([0, 0, 900, 2500]);
-      pace = ms;
-      await control(url, `/speech?ms=${ms}`);
-      return `speech takes ${ms} ms a piece`;
+      held = rng.pick([false, true]);
+      await control(url, held ? "/speech?hold" : "/speech?go");
+      return held ? "the speech model is held" : "the speech model hears on by itself";
     },
   },
   {
@@ -303,11 +310,13 @@ const gestures = [
       // engine's reports, never on the clock, so a busy machine waits as
       // far into the work, only longer. Work that has nothing more to
       // report is not waited for: none runs, or what runs waits on a
-      // model that holds its answers.
+      // model that holds its answers. With the speech held, what hears
+      // is let through one piece of audio for each report.
       const n = 1 + rng.int(4);
       let seen = await news(page);
       let came = 0;
       while (came < n && (await reporting())) {
+        if (held && (await hearing())) await control(url, "/speech?step=1");
         seen = await nextNews(page, seen);
         came++;
       }

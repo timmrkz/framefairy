@@ -313,11 +313,10 @@
 //                      head says Cancel and takes the click, never greyed
 //                      out
 //   ["restart"]        closes the app and opens it again on the episode
-//   ["speech", ms]     the speech model takes so many milliseconds over
-//                      each piece of audio, so a video added is heard
-//                      slowly enough to do something while it is.
-//                      ["speech", "hold"] stops it hearing, and the steps
-//                      that say so let it on one piece at a time.
+//   ["speech", "hold"] stops the speech model hearing, so a video added
+//                      is heard only as far as the walk lets it, and the
+//                      steps that say so let it on one piece at a time.
+//                      ["speech", "go"] lets it hear on by itself.
 //                      ["speech", "wordless"] hears no word at all, the way
 //                      a video with no speech is heard
 //   ["settings"]       opens the settings from the sidebar, and remembers
@@ -820,8 +819,8 @@
 //                      again and sees the cards with nothing said of it
 //   ["heard some"]     waits until the engine has a sentence of the video
 //                      on screen, or n with ["heard some", n], asking again each time the work says how
-//                      far it heard. ["speech", "hold"] after it lets the
-//                      piece of audio being heard then land
+//                      far it heard. With the speech held it lets a piece
+//                      of audio through at a time, and stops between two
 //   ["font list"]      the Font list hangs on the field's left edge with
 //                      its corners, every row is as tall as the field and
 //                      square, nothing stands between the search field and
@@ -1668,14 +1667,13 @@ export const sequences = [
     // range picker.
     name: "a search of what was said shows the parts not transcribed yet",
     steps: [
-      // Heard slowly, and held once some of it is, so part of it is still
-      // to come while the search looks.
-      ["speech", 1500],
-      ["add", 600],
-      ["heard some"],
+      // Held, and let through a piece at a time until some of it is
+      // heard, so part of it is still to come while the search looks.
       ["speech", "hold"],
+      ["add", 600],
+      ["heard some", 12],
       ["search said", ["*", 1]],
-      ["speech", 0],
+      ["speech", "go"],
     ],
   },
   {
@@ -1684,7 +1682,7 @@ export const sequences = [
     // it. Then a click on that card lit the part. The speech model is
     // held, so the part stays where it is.
     name: "Shift and the arrows walk onto a part not transcribed yet and off it",
-    steps: [["speech", 1500], ["add", 600], ["heard some"], ["speech", "hold"], ["walk over a part"], ["speech", 0]],
+    steps: [["speech", "hold"], ["add", 600], ["heard some"], ["walk over a part"], ["speech", "go"]],
   },
   {
     // Found by Tim on 20 October: the edge of a clip's card in the
@@ -1707,7 +1705,7 @@ export const sequences = [
     // walked to with the keys lit nothing on the range picker, where the
     // hand on its card lit it there. Whatever is lit is lit one way.
     name: "the hand and the keys light a card of the transcript and a part not transcribed yet the same",
-    steps: [["speech", 1500], ["add", 600], ["heard some", 3], ["speech", "hold"], ["one light", "said"], ["speech", 0]],
+    steps: [["speech", "hold"], ["add", 600], ["heard some", 3], ["one light", "said"], ["speech", "go"]],
   },
   {
     // Found by Tim on 20 October: the clip chosen with the keys had its
@@ -1729,7 +1727,7 @@ export const sequences = [
     // not transcribed yet gave way in thirds of it, each time the
     // transcript was saved. They give way as the work hears.
     name: "the parts not transcribed yet give way as the work hears",
-    steps: [["speech", 1500], ["add", 600], ["heard some"], ["parts give way"], ["speech", 0]],
+    steps: [["speech", "hold"], ["add", 600], ["heard some"], ["parts give way"], ["speech", "go"]],
   },
   {
     // Found by Tim on #349: the Style list of one style lay over the Size
@@ -2629,16 +2627,15 @@ export const sequences = [
   {
     // Issue #404. Tab and Enter straight after Enter, while the last words
     // are still written down, make the report with every word said in it.
-    // The speech model is slow, so the last words only come with the stop.
+    // The stop is held on its way to the Go side, so the last words only
+    // come once Tab and Enter are pressed.
     name: "Tab and Enter right after a dictation make the report with every word said",
     steps: [
       ["bugs"],
       ["write", "It froze.", "end"],
       ["attach", 1],
-      ["speech", 1500],
       ["dictate", "enter, then tab and enter"],
       ["report made", 1, "It froze. *"],
-      ["speech", 0],
     ],
   },
   {
@@ -2928,15 +2925,15 @@ export const sequences = [
   {
     // Plan row 2.181. Tim added a video and its clip timeline stayed bare
     // until its first clip came, where the waveform used to come within
-    // seconds, measured on its own. The episode is heard slowly, so the
+    // seconds, measured on its own. The speech is held, so the
     // search is still hearing it when the waveform has to be there.
     name: "a video just added shows its waveform before its first clip",
     steps: [
-      ["speech", 3000],
+      ["speech", "hold"],
       ["add", 120],
       ["waveform"],
       ["cards", 0],
-      ["speech", 0],
+      ["speech", "go"],
       ["wait for", "Search"],
       ["cards", 1],
     ],
@@ -2947,12 +2944,12 @@ export const sequences = [
     // clip timeline showed a minute.
     name: "a video shorter than a clip is its own clip, with rulers that fit it",
     steps: [
-      // Heard slowly, so the rulers are looked at with no clip yet, the
+      // Held, so the rulers are looked at with no clip yet, the
       // way Tim saw them once the search had failed.
-      ["speech", 3000],
+      ["speech", "hold"],
       ["add", 15],
       ["rulers fit", 15],
-      ["speech", 0],
+      ["speech", "go"],
       ["wait for", "Search"],
       ["cards", 1],
       ["whole clip", 15],
@@ -3625,19 +3622,19 @@ export const sequences = [
     // carried on, never removed, since Cancel on the Activity page went.
     name: "a clip made by hand that stopped can be removed, and put back first",
     steps: [
-      ["speech", 3000],
+      ["speech", "hold"],
       ["add", 120],
       ["hand stopped"],
       ["remove stopped", "put back"],
       ["remove stopped", "for good"],
-      ["speech", 0],
+      ["speech", "go"],
       ["restart"],
       ["no hand card"],
     ],
   },
   {
     // Issue #444: Tim searched windows heard in part already, and the fill
-    // of the transcription started well past nothing. The speech is slow,
+    // of the transcription started well past nothing. The speech is held,
     // so a search is stopped part way through its window and carried on.
     name: "Continue fills the transcription from nothing over what is left to hear",
     steps: [
@@ -3649,7 +3646,7 @@ export const sequences = [
       ["heard part", [0.2, 120]],
       ["cancel held"],
       ["fills from nothing", 120],
-      ["speech", 0],
+      ["speech", "go"],
     ],
   },
   {
@@ -4030,7 +4027,7 @@ export const sequences = [
     // video just added and has not come to the model yet.
     name: "a model is not changed or removed while a search still hears",
     steps: [
-      ["speech", 3000],
+      ["speech", "hold"],
       ["add", 120],
       ["wait for", "Cancel"],
       ["settings"],
@@ -4239,7 +4236,7 @@ export const sequences = [
     // Relaunch can be pressed again by itself.
     name: "Relaunch waits while a search runs, and the search goes on",
     steps: [
-      ["speech", 3000],
+      ["speech", "hold"],
       ["add", 120],
       ["wait for", "Cancel"],
       ["updates", { from: "main", list: "main,pr-20" }],
@@ -4249,7 +4246,7 @@ export const sequences = [
       ["status", "A newer build is ready", "Relaunch once the search is done"],
       ["relaunch", "waits"],
       ["hearing"],
-      ["speech", 0],
+      ["speech", "go"],
       ["relaunch", "ready"],
       ["status", "A newer build is ready", "Relaunch to finish updating"],
     ],
@@ -4986,6 +4983,9 @@ for (const seq of toWalk) {
   // The second the video added with "add cameras" switches camera at.
   let cameraSwitch = null;
   const kept = {};
+  // Whether the walk holds the speech model, see ["speech", "hold"], so
+  // what is heard is only what the walk lets through.
+  let speechHeld = false;
   // The models the settings name, at "settings", and the episode that was
   // on screen before them.
   let named = null;
@@ -7722,7 +7722,8 @@ for (const seq of toWalk) {
         await watch.step("head", s);
         break;
       case "speech":
-        await control(url, arg === "wordless" ? "/speech?wordless=1" : `/speech?ms=${arg}`);
+        await control(url, { wordless: "/speech?wordless=1", hold: "/speech?hold" }[arg] ?? "/speech?go");
+        if (arg !== "wordless") speechHeld = arg === "hold";
         break;
       case "hold":
         await hold(page, arg);
@@ -10065,6 +10066,8 @@ for (const seq of toWalk) {
         );
         const saves = new Set();
         for (let seen = from; seen < from + times; ) {
+          // With the speech held, a piece more is heard for each news.
+          if (speechHeld) await control(url, "/speech?step=1");
           seen = await nextNews(page, seen);
           const status = await ask(page, "Episode", path).catch(() => null);
           saves.add(JSON.stringify(status?.heard ?? null));
@@ -10489,7 +10492,12 @@ for (const seq of toWalk) {
         // saved transcript holds a sentence, or as many as asked for.
         const path = await episodeOn(page);
         const least = arg ?? 1;
-        for (let seen = await news(page); ((await ask(page, "Sentences", path)) ?? []).length < least; ) seen = await nextNews(page, seen);
+        // With the speech held, it is let through a piece at a time, and
+        // each is saved.
+        for (let seen = await news(page); ((await ask(page, "Sentences", path)) ?? []).length < least; ) {
+          if (speechHeld) await onePiece(page, url, path, { save: true });
+          else seen = await nextNews(page, seen);
+        }
         // And the app has read how far the saved transcript reaches since,
         // which it reads again on its own while the work hears, so the
         // cards it reads are those sentences too.
@@ -12568,6 +12576,13 @@ for (const seq of toWalk) {
           break;
         }
         await cancel.click();
+        // The clip waits on the piece it is hearing, which is held, so
+        // Cancel ends it once that piece is let through.
+        if (speechHeld) {
+          await settle(page);
+          const going = async () => ["running", "queued"].includes((await ask(page, "Jobs")).find((j) => j.id === handJob)?.state);
+          while (await going()) await onePiece(page, url, path);
+        }
         await pageUntil(page, (k) => document.querySelector(`li[data-key^="${k}/"].stopped .title`)?.textContent.trim() === "Stopped. Click Continue", handJob);
         await watch.step("wait", s);
         break;
@@ -12731,7 +12746,8 @@ for (const seq of toWalk) {
           wrong = `I at ${at} s, where nothing is heard yet, asked for no clip`;
           break;
         }
-        await control(url, "/speech?ms=0");
+        await control(url, "/speech?go");
+        speechHeld = false;
         // Until the Go side says the clip asked for has ended, and then the
         // frame the card shows it in.
         let job;
@@ -13108,7 +13124,8 @@ for (const seq of toWalk) {
         await watch.step("add", s);
         break;
       case "words again":
-        await control(url, "/speech?ms=0&from=0");
+        await control(url, "/speech?go&from=0");
+        speechHeld = false;
         break;
       case "updates": {
         const q = new URLSearchParams({
@@ -14749,13 +14766,15 @@ function glideOf(marks, src) {
 // heard, its step or its state. Whatever hears next hears it, the search
 // or the video heard by itself. A hearing called off between two pieces
 // changes its state without hearing one, and the piece is left for the
-// next, so a walk allows for a piece more than it counted.
-async function onePiece(page, url, path) {
+// next, so a walk allows for a piece more than it counted. With save, what
+// is heard so far is saved once the piece is heard, which the bridge
+// otherwise only does once the hearing ends.
+async function onePiece(page, url, path, { save = false } = {}) {
   const now = async () =>
     JSON.stringify((await ask(page, "Jobs")).filter((j) => j.episode === path).map((j) => [j.id, j.state, j.step, j.progress?.covered]));
   const before = await now();
   let seen = await news(page);
-  await control(url, "/speech?step=1");
+  await control(url, save ? "/speech?step=1&save" : "/speech?step=1");
   while ((await now()) === before) seen = await nextNews(page, seen);
 }
 

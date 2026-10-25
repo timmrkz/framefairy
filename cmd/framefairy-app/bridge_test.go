@@ -446,19 +446,18 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 			answer(w, nil, nil)
 			return
 		}
-		if q.Get("ms") == "hold" {
+		if q.Has("hold") {
 			b.words.hold()
 			answer(w, nil, nil)
 			return
 		}
 		if n, err := strconv.Atoi(q.Get("step")); err == nil {
+			b.words.save.Store(q.Has("save"))
 			b.words.step(min(max(n, 0), 100))
 			answer(w, nil, nil)
 			return
 		}
 		b.words.release()
-		ms, _ := strconv.Atoi(q.Get("ms"))
-		b.words.pace.Store(int64(min(max(ms, 0), 5000)))
 		if from, err := strconv.Atoi(q.Get("from")); err == nil && from >= 0 {
 			b.words.from(from)
 		}
@@ -548,16 +547,17 @@ type prose struct {
 	mu sync.Mutex
 	// next is the word it says next, counted on through proseText.
 	next int
-	// pace is how long it takes over each piece of audio it hears, in
-	// milliseconds, so a walk can see a transcript grow, and cancel it.
-	pace atomic.Int64
 	// wordless hears no word at all, the way a video with no speech is
 	// heard, so a walk can make a clip by hand that fails. Not the
 	// bridge's silent, which is the microphone's.
 	wordless atomic.Bool
+	// save has what is heard so far saved once the next piece is heard,
+	// asked for with a step, see saves. Otherwise a transcript is saved
+	// only once it is all heard, never by the clock.
+	save atomic.Bool
 	// held keeps it from hearing anything more, so a walk can look at a
-	// transcript part way that stays where it is. The next pace or a reset
-	// lets it go on. steps is how many pieces it may still hear while it
+	// transcript part way that stays where it is, or press something
+	// while it hears. /speech?go or a reset lets it go on. steps is how many pieces it may still hear while it
 	// is held, so a walk can let the hearing on one piece at a time.
 	// hearing counts the pieces it is hearing now.
 	gate    sync.Mutex
@@ -565,6 +565,10 @@ type prose struct {
 	held    bool
 	steps   int
 	hearing int
+	// closing lets every piece through while the app closes, so a piece
+	// the walk holds ends the way a piece being heard ends as the app
+	// quits. It stays held after.
+	closing bool
 }
 
 func (p *prose) cond() *sync.Cond {
@@ -603,6 +607,21 @@ func (p *prose) step(n int) {
 	p.cond().Broadcast()
 }
 
+// whileClosing lets every piece through for as long as close takes, and
+// hands back what it said.
+func (p *prose) whileClosing(close func() bool) bool {
+	p.gate.Lock()
+	p.closing = true
+	p.cond().Broadcast()
+	p.gate.Unlock()
+	defer func() {
+		p.gate.Lock()
+		p.closing = false
+		p.gate.Unlock()
+	}()
+	return close()
+}
+
 var proseText = strings.Fields(`Ich war vielleicht sechs Jahre alt, als mich auf dem Schulhof
 irgendein Typ geschubst hat. Mein Arm ist dabei zersprungen, so hat es sich
 jedenfalls angefühlt. Meine Mutter hat mich abgeholt und wir sind sofort ins
@@ -613,10 +632,10 @@ ich. Und eigentlich erinnere ich mich an die Lüge besser als an den Arm.`)
 
 func (p *prose) Recognize(samples []float32, rate int) []engine.Token {
 	p.gate.Lock()
-	for p.held && p.steps == 0 {
+	for p.held && p.steps == 0 && !p.closing {
 		p.cond().Wait()
 	}
-	if p.held {
+	if p.held && !p.closing {
 		p.steps--
 	}
 	p.hearing++
@@ -627,7 +646,6 @@ func (p *prose) Recognize(samples []float32, rate int) []engine.Token {
 		p.cond().Broadcast()
 		p.gate.Unlock()
 	}()
-	time.Sleep(time.Duration(p.pace.Load()) * time.Millisecond) //nolint:forbidigo // the pace a walk asked for, so it sees a transcript grow. The walk waits on the app's signals, not on this
 	if p.wordless.Load() {
 		return nil
 	}
@@ -653,6 +671,10 @@ func (p *prose) Recognize(samples []float32, rate int) []engine.Token {
 }
 
 func (*prose) Close() {}
+
+// saves says whether what is heard so far is saved now, the engine's
+// SaveHeard: once after a step that asked for it.
+func (p *prose) saves() bool { return p.save.Swap(false) }
 
 // at is the word it says next.
 func (p *prose) at() int {
@@ -852,6 +874,7 @@ func openBridge(t *testing.T) *bridge {
 	words := &prose{}
 	fakes := func(e *engine.Engine, o *engine.Options) {
 		e.OpenRecognizer = func(string) (engine.Recognizer, error) { return words, nil }
+		e.SaveHeard = words.saves
 		o.LLMURL = d.model.server.URL
 		o.Width, o.Height = 360, 640
 		o.Preset = "ultrafast"
@@ -896,8 +919,9 @@ func openBridge(t *testing.T) *bridge {
 	engine.UseFontFolders(installed, []string{"/Library/Fonts"})
 	t.Cleanup(func() { engine.UseFontFolders(nil, nil) })
 	// Dictate on Report a Problem records two seconds of a hum, then a
-	// pause and a second and a half more, over and over, as fast as it
-	// would be said, which the stand-in hears as words: what came before a
+	// pause and a second and a half more, over and over, a tenth of a
+	// second each time the app reads how loud it is, which it does as
+	// often as a tenth goes by. The stand-in hears it as words: what came before a
 	// pause is settled while the recording runs, and there is more to be
 	// heard until the recording stops, or until a walk has the person
 	// fall silent, see /microphone. A busy runner reached a click into
@@ -908,8 +932,9 @@ func openBridge(t *testing.T) *bridge {
 	// since the stand-in hears new words each time, and nothing was said
 	// after the new line.
 	silent := &atomic.Bool{}
+	d.measured = make(chan struct{}, 1)
 	openMicrophone = func() microphone {
-		return &playingMicrophone{samples: tone(2), live: true, more: func() []float32 {
+		return &playingMicrophone{samples: tone(2), paced: d.measured, more: func() []float32 {
 			if silent.Load() {
 				return nil
 			}
@@ -1393,7 +1418,7 @@ func (b *bridge) pickSound() (string, error) {
 // done. What a walk read off the screen before it asked is a moment older,
 // and a search the model answers at once can end in that moment.
 func (b *bridge) reopen() ([]Job, error) {
-	if !b.d.svc.jobs.shutDown() {
+	if !b.words.whileClosing(b.d.svc.jobs.shutDown) {
 		return nil, fmt.Errorf("the app did not stop its work in time")
 	}
 	closed := b.d.svc.jobs.list()
@@ -1421,8 +1446,8 @@ func (b *bridge) reset() error {
 	b.d.svc.CancelListening()
 	b.silent.Store(false)
 	b.words.release()
-	b.words.pace.Store(0)
 	b.words.wordless.Store(false)
+	b.words.save.Store(false)
 	b.d.model.hangs(false)
 	b.d.model.fails(false)
 	b.mu.Lock()

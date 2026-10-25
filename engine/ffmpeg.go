@@ -93,6 +93,12 @@ type Engine struct {
 	// it, which keeps the native speech library out of this package.
 	OpenRecognizer func(modelDir string) (Recognizer, error)
 
+	// SaveHeard, when set, says after each piece of audio heard whether a
+	// long transcription saves what it has so far, in place of the clock,
+	// see checkpoint. A walk sets it through its stand-in speech model, so
+	// it decides when a transcript is saved, on any machine.
+	SaveHeard func() bool
+
 	// WantEncoder names the video encoder instead of picking one, for a
 	// machine whose ffmpeg is unusual and for comparing two on one clip.
 	WantEncoder string

@@ -52,6 +52,10 @@ type desk struct {
 	// app, 0 for as long as in the app.
 	quiet time.Duration
 	most  int
+	// measured hears each time the app tells the window how loud the
+	// microphone is, when set, so the bridge's microphone hands over its
+	// next tenth of a second then, at the pace the app reads it.
+	measured chan struct{}
 	// The report windows Bugs made and brought forward, the window the
 	// app would have made, and the pictures its open box hands over
 	// next, see bugs.go.
@@ -100,7 +104,15 @@ func (d *desk) start(st *store) {
 	d.svc.jobs = newQueue(st, func(u JobUpdate) { d.bus.send("job", u) },
 		func(episode string) { d.bus.send("episode", episode) })
 	d.svc.listening.say = func(x Dictation) { d.bus.send("dictation", x) }
-	d.svc.listening.loud = func(n Loudness) { d.bus.send("loudness", n) }
+	d.svc.listening.loud = func(n Loudness) {
+		d.bus.send("loudness", n)
+		if d.measured != nil {
+			select {
+			case d.measured <- struct{}{}:
+			default:
+			}
+		}
+	}
 	d.svc.listening.quiet = d.quiet
 	d.svc.listening.most = d.most
 	d.svc.report = newReporting(st.files, filepath.Join(st.dir, "report"))

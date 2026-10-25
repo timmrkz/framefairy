@@ -550,7 +550,11 @@ func (e *Engine) transcribe(ctx context.Context, path string, window Window,
 		raw = append(raw, p.words...)
 		covered := p.at + float64(p.samples)/SampleRate
 		heardTo = covered
-		if save != nil && time.Since(lastSave) >= e.checkpoint() {
+		due := time.Since(lastSave) >= e.checkpoint()
+		if e.SaveHeard != nil {
+			due = e.SaveHeard()
+		}
+		if save != nil && due {
 			lastSave = time.Now()
 			keep(covered)
 		}
