@@ -419,8 +419,8 @@
 //   ["dictating"]      the microphone still listens, its button says Stop
 //   ["microphone moves"]
 //                      while it listens, the microphone grows with the hum
-//                      for three seconds, smoothly and in its place, falls
-//                      back like a level meter's needle, and is drawn white
+//                      smoothly and in its place, falls back in its pause
+//                      like a level meter's needle, and is drawn white
 //   ["report on", on]  Report and Clear can be pressed, or with false are
 //                      off, as they are with nothing to report
 //   ["clear", how]     presses Clear, and the box over the page asks
@@ -8438,16 +8438,17 @@ async function walkSequence(seq, shared = null) {
       case "microphone moves": {
         // While it listens, the microphone moves with the voice it hears,
         // so a person knows they are heard. Watched here once rather than
-        // in every dictate step, since it takes three seconds of the hum,
-        // issue #543.
+        // in every dictate step, since it takes seconds of the hum, issue
+        // #543.
         const now = await page.locator("button.dictate").getAttribute("aria-label");
         if (now !== "Stop") {
           wrong = `the microphone button says ${now}, so there is nothing listening to watch`;
           break;
         }
-        // It moves enough to be seen, smoothly, and in its place. For
-        // three seconds of the hum and its pauses, every frame, the size
-        // it is drawn at, its middle and the size of its own box. A
+        // It moves enough to be seen, smoothly, and in its place. From
+        // the hum through its pause until the hum is heard again, every
+        // frame, the size it is drawn at, its middle and the size of its
+        // own box, so the walk sees it grow and fall back. A
         // microphone 16 px at rest grows by at least six tenths of that
         // for every step of loudness: by a third it grew 3 px for a voice
         // talking, and Tim could hardly see it. Its box keeps one size
@@ -8473,7 +8474,9 @@ async function walkSequence(seq, shared = null) {
                 writes.push({ t: document.timeline.currentTime, w: icon.getBoundingClientRect().width });
               });
               wrote.observe(b, { subtree: true, attributes: true, attributeFilter: ["style"] });
-              const start = performance.now();
+              // The pause is a loudness of nothing, and the hum after it
+              // ends the watch, or the recording ending does.
+              let paused = false;
               const step = (now) => {
                 const icon = b.querySelector("svg");
                 const r = icon.getBoundingClientRect();
@@ -8486,7 +8489,10 @@ async function walkSequence(seq, shared = null) {
                   loud: parseFloat(b.dataset.loud),
                   size: Number(icon.getAttribute("width")),
                 });
-                if (now - start < 3000) requestAnimationFrame(step);
+                const loud = parseFloat(b.dataset.loud);
+                paused ||= loud === 0;
+                const over = (paused && loud > 0) || b.getAttribute("aria-label") !== "Stop";
+                if (!over) requestAnimationFrame(step);
                 else {
                   wrote.disconnect();
                   done({ xs, writes });
