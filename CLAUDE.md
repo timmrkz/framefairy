@@ -602,29 +602,30 @@ messages, pull request text, code comments and chat replies.
   the test written for the change and the tests of the package it is in,
   with `make interface` for `frontend/`: seconds, and what was worked on
   is then known to work when Tim tries it. Then push, so he is not
-  waiting. Nothing more runs in the session, no `make changed`, no
-  `make walks` and no `make test`. The walks run in CI, and a single walk
-  runs alone in the session only when it is needed to write or fix that
-  walk. CI runs
-  every test the change reaches, on machines sized for it, and gives its
-  answer before a cloud session would, whose four cores take half an
-  hour for the same and whose walks hang under that load, #508. A session
+  waiting. Nothing more runs in the session, no `make walks` and no
+  `make test`. The walks run in CI, and a single walk runs alone in the
+  session only when it is needed to write or fix that walk. CI runs every
+  test, on machines sized for it, and gives its answer before a cloud
+  session would, whose four cores take half an hour for the same and
+  whose walks hang under that load, #508. A session
   hears how CI went by the events of its pull request, see Watch a pull
   request above. A failing check names the test and what it printed, by
   `scripts/test-failures.sh`, so that test is run alone, fixed and
   pushed, and the reply says which update to take. Every reply says
   whether CI passed on the last commit. Only a commit known to be broken,
   a change half made, is held back, and the reply says it is not ready to
-  try. On a pull request CI runs what the branch changed against main and
-  only that: the Go tests of the packages that changed and every package
-  that imports them, on both systems, their fuzz targets, `make interface`
-  for `frontend/`, `make walks` for the interface and for whatever reaches
-  the app, the build for the Makefile and the scripts, the rules tests
-  for the rules, nothing for docs. `sh scripts/changed.sh --plan` says
-  which, and runs nothing. A push to main runs everything. `make changed`
-  runs the same on a machine of one's own and `make test` all of it, for
-  a deep run by hand, never as a step a session takes before saying a
-  pull request is ready.
+  try.
+- **One way to test, everywhere.** `make test` is every test there is,
+  and CI runs exactly that on every pull request and every push to main,
+  each part on machines of its own, each job one make command: `make
+  lint`, `make interface`, `make unit`, `make fuzz`, `make walks`, `make
+  outside`. A job holds nothing but that command and what its machine
+  needs around it, the checkout, Go and Node, the caches. A check is
+  added to a make target, never as a step of its own in a workflow, so
+  the same command runs it on a Mac, in a cloud session and in CI.
+  Nothing picks tests by what a change touched, a pull request runs what
+  main runs, and only a pull request of docs alone runs nothing. See
+  [docs/BUILD.md](docs/BUILD.md#one-way-to-test).
 - **Tests stay off the disk.** A test is about our code, not the drive
   under it. The engine, a project and the app's store hold an `afero.Fs`,
   see `engine/files.go`: the programs hand them the real disk, a test
@@ -755,7 +756,7 @@ the skills listed last show their name without what they are for.
   tools, run `bash scripts/cloud-setup.sh` and read `/tmp/framefairy-setup-*.log`.
   The background build takes about seven minutes, and it is done when
   `/tmp/framefairy-decoder.log` ends in `decoder ready`. `make unit`,
-  `walks`, `changed` and `test` wait for it, so the decoder's tests do not
+  `walks` and `test` wait for it, so the decoder's tests do not
   skip only because they came first. When it failed, they say so, and
   `make ffmpeg frames` builds it by hand.
 - Push a change once its own tests pass, and let CI run the rest, see the
@@ -770,13 +771,8 @@ the skills listed last show their name without what they are for.
   on Linux and on macOS, where the build has to be clean of warnings, and
   fuzzes on Linux, and drives the interface against the real Go side, see
   [docs/TESTING.md](docs/TESTING.md). It is twelve jobs at once rather than one after another, so
-  the answer comes back in the time the slowest takes. On a pull request a
-  first job reads which paths changed, by `.github/ci-filters.yml`, and a
-  job with nothing to do never starts a machine, and the Go jobs test
-  and fuzz only what `sh scripts/changed.sh --plan` picks. A push to main
-  narrows nothing. `make test` runs the lot, and `make unit`, `make fuzz`,
-  `make interface` and `make walks` are the four parts of it, see
-  [docs/BUILD.md](docs/BUILD.md).
+  the answer comes back in the time the slowest takes. Every job runs one
+  part of `make test`, see One way to test above.
 
 ## Open work
 

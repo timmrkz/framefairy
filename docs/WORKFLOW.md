@@ -73,7 +73,7 @@ and still be cached, and new sessions can be stopped while it runs. The
 SessionStart hook in `.claude/settings.json` builds them in the background
 as each session starts, see
 [`scripts/cloud-decoder.sh`](../scripts/cloud-decoder.sh), and the
-targets that run the decoder, `make unit`, `walks`, `changed` and `test`,
+targets that run the decoder, `make unit`, `walks` and `test`,
 wait for it, so a session can run the decoder's tests and a walk of its
 own too. It also installs the engineering skills from two plugins, Go skills
 from `samber/cc-skills-golang` and general ones from `addyosmani/agent-skills`,
@@ -159,27 +159,27 @@ names nothing of ours. This is where its words meet this repository.
 
 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs on every pull
 request and every push to `main`, as twelve jobs at the same time, so the
-answer comes back in the time the slowest takes:
+answer comes back in the time the slowest takes. Each job runs one make
+command, the same one you run on your Mac, so CI and `make test` check
+the same thing, see [One way to test](BUILD.md#one-way-to-test):
 
 - **interface:** `make interface`, the type check and the interface's own
   tests.
-- **build:** the rules that decide what runs, then `make` on Linux, which
-  proves the programs still link with the interface built into them.
+- **build:** `make` on Linux, which proves the programs still link with
+  the interface built into them, then `make lint`.
 - **linux:** the Go tests under the race detector, `make unit`, including
-  the tests that render, on three machines with every third test each.
+  the tests that render, on three machines, `UNITSHARD=1/3` to `3/3`.
 - **walks:** the interface in Chromium against the real Go side,
-  `make walks`, on three machines with every third run each.
+  `make walks`, on four machines with a quarter of the runs each.
 - **fuzz:** `make fuzz` on Linux, going on from the fuzz cache main left.
-- **macos:** the Go tests against our own ffmpeg, without the race
-  detector, which Linux runs.
+- **macos:** `make unit` against our own ffmpeg, which on a Mac leaves
+  out the race detector, which Linux runs.
 - **outside:** `make` on a Mac, which fails if the build prints any
   warning, then the app opened by macOS from a link, see
   [TESTING.md](TESTING.md#from-outside-the-app).
 
-On a pull request a first job reads which files changed, and a job the
-change gives nothing to do never starts, see
-[What runs for a change](BUILD.md#what-runs-for-a-change). A push to
-`main` narrows nothing.
+A pull request runs what `main` runs. Only one that changes nothing but
+docs runs nothing.
 
 ### When main moves
 

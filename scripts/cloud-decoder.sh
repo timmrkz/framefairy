@@ -52,4 +52,4 @@ nohup setsid bash -c '
 	fi
 	make frames && echo "decoder ready" || echo "decoder failed"
 ' _ "$repo" "$ffmpeg_done" >"$log" 2>&1 </dev/null &
-echo "Building ffmpeg and the episode's decoder in the background, see $log. make unit, walks, changed and test wait for it."
+echo "Building ffmpeg and the episode's decoder in the background, see $log. make unit, walks and test wait for it."

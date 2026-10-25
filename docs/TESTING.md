@@ -947,13 +947,9 @@ since #501, so a broken test video is said where it is found. See
 No test waits on the clock in
 [BUILD.md](BUILD.md#no-test-waits-on-the-clock).
 
-`make changed` runs it whenever the interface changed, the preview's own
-stand-in aside, or a package the app reaches, the engine among them. CI
-runs it in the job `walks`, the only one with Chromium, which comes in
-the CI image it runs in, see [The CI image](BUILD.md#the-ci-image). A pull
-request starts that job for the same files as the build, and one that
-changed only docs does not start it at all, see
-[What runs for a change](BUILD.md#what-runs-for-a-change).
+CI runs it in the jobs `walks`, the only ones with Chromium, which comes
+in the CI image they run in, see [The CI image](BUILD.md#the-ci-image), on
+every pull request but one of docs alone.
 
 A walk that breaks a rule leaves a picture of the app at that moment in
 `/tmp/walk-<seed>.png`.
@@ -1216,6 +1212,11 @@ starts one with the first line it writes, and it never ends, so a test in
 a bubble that reads the app's log opens it outside the bubble and writes
 its first line there, `bubbleLog` in
 `cmd/framefairy-app/listen_test.go`.
+
+The skill's "run only what a change reaches" is Go's own test cache here,
+not a script of ours: CI runs every test on every pull request, and a
+package the change does not reach says `(cached)`, see
+[One way to test](BUILD.md#one-way-to-test).
 
 What CI holds of the skill's rules today: golangci-lint's `forbidigo` in
 `make lint` for the clock, for a context with a deadline and for a check

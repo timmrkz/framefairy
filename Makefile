@@ -142,7 +142,7 @@ APP_LDFLAGS := $(LDFLAGS) -X main.buildVersion=$(BUILD_VERSION) -X main.buildCha
 
 PROGRAMS := $(BIN)/framefairy$(EXE) $(BIN)/framefairy-app$(EXE) $(BIN)/framefairy-train$(EXE)
 
-.PHONY: frames all run app install update-key dispenser changed icon motion ffmpeg llama tools-archive notices hyphenation deps tools-beside test unit fuzz interface walks lint golangci-lint outside outside-allowed check tools models speechbench clean help toolchain modules $(PROGRAMS)
+.PHONY: frames all run app install update-key dispenser icon motion ffmpeg llama tools-archive notices hyphenation deps tools-beside test unit fuzz interface walks lint golangci-lint outside outside-allowed check tools models speechbench clean help toolchain modules $(PROGRAMS)
 
 all: deps toolchain frames $(PROGRAMS) tools-beside
 	@echo "Ready: $(PROGRAMS)"
@@ -349,7 +349,7 @@ $(FRAMES): $(FRAMES_SRC) $(wildcard $(STAMPS)/ffmpeg/built) | modules
 # for that build here, before they look for it. Without the wait, a test
 # run in the first minutes skips the decoder's tests and still says ok.
 ifeq ($(CLAUDE_CODE_REMOTE),true)
-ifneq ($(filter changed unit walks test,$(MAKECMDGOALS)),)
+ifneq ($(filter unit walks test,$(MAKECMDGOALS)),)
 $(shell bash scripts/cloud-decoder.sh wait >&2)
 endif
 endif

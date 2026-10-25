@@ -5,12 +5,19 @@
 # needs around it: the checkout, Go and Node, the caches and the image.
 # So what CI checks is what make test checks anywhere else.
 #
-# The one exception: a pull request that changes only docs runs nothing,
-# see the job changes. A skipped job counts as passed.
+# The one exception: a pull request that changes nothing but docs runs
+# nothing, by paths-ignore below. No branch rule requires a check, so
+# nothing waits on a run that never comes.
 name: CI
 
 on:
   pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - 'LICENSE'
+      - '.vscode/**'
+      - '.claude/**'
   push:
     branches: [main]
 
@@ -41,37 +48,9 @@ env:
   OUTSIDETIMEOUT: 2m
 
 jobs:
-  # Whether a pull request changed anything but docs. A push to main
-  # always has. The action asks GitHub for the files the pull request
-  # changed, which takes reading pull requests.
-  changes:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    permissions:
-      contents: read
-      pull-requests: read
-    outputs:
-      code: ${{ github.event_name != 'pull_request' || steps.filter.outputs.code == 'true' }}
-    steps:
-      - id: filter
-        if: github.event_name == 'pull_request'
-        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
-        with:
-          predicate-quantifier: some-with-excludes
-          filters: |
-            code:
-              - '**'
-              - '!docs/**'
-              - '!**/*.md'
-              - '!LICENSE'
-              - '!.vscode/**'
-              - '!.claude/**'
-
   # First back, by a long way, and the one most changes touch. It needs Node
   # and nothing else: no Go, no system libraries, no build.
   interface:
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -90,8 +69,7 @@ jobs:
   # which reads the build's Go cache. In the CI image, so the build waits
   # on no mirror.
   build:
-    needs: [changes, image]
-    if: needs.changes.outputs.code == 'true'
+    needs: image
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -149,16 +127,10 @@ jobs:
   # saves nothing: a cache a pull request writes is its own, and the
   # upload would cost every run.
   #
-  # The name has no matrix in it. A job its if skips is never split into
-  # its machines, so a name made from the matrix showed as written, #476.
-  # GitHub adds the matrix's values to a name without one.
-  #
   # In the CI image, see ci-image.yml, as the walks are and for the same
   # reasons, so no machine waits on the Ubuntu mirror.
   linux:
-    needs: [changes, image]
-    if: needs.changes.outputs.code == 'true'
-    name: linux
+    needs: image
     strategy:
       fail-fast: false
       matrix:
@@ -247,8 +219,6 @@ jobs:
   # The machine the build, the walks and the Linux Go jobs run on, see
   # .github/workflows/ci-image.yml, which finds it or builds it.
   image:
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
     permissions:
       contents: read
       packages: write
@@ -267,10 +237,6 @@ jobs:
   # quarters, too close to five. More walkers on a machine of four cores
   # finish no sooner and break walks that wait on the clock.
   #
-  # The name has no matrix in it, for the reason above the job linux, so
-  # the machines are walks (1/4) to walks (4/4) when they run, and one
-  # walks when they are skipped.
-  #
   # In the container as root, which is how GitHub runs one, with the IPC
   # of the machine, as Playwright says to for Chromium, whose shared memory
   # would not fit the 64 MB a container has, and with an init process,
@@ -281,9 +247,7 @@ jobs:
   # folder it was built in there. The next one is built in the image, and
   # then the mount can go, here and in linux.
   walks:
-    needs: [changes, image]
-    if: needs.changes.outputs.code == 'true'
-    name: walks
+    needs: image
     strategy:
       fail-fast: false
       matrix:
@@ -407,8 +371,7 @@ jobs:
   # too, because the two share the cache, which keeps a path by where it
   # lies, see the walks: v2 since they moved there together.
   fuzz:
-    needs: [changes, image]
-    if: needs.changes.outputs.code == 'true'
+    needs: image
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -465,8 +428,6 @@ jobs:
   # tested. The build with no warnings allowed is in the job outside,
   # which builds the app anyway.
   macos:
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -533,8 +494,6 @@ jobs:
   # build the Mac has to pass, so the app is built once on a Mac in CI
   # rather than twice.
   outside:
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
     runs-on: macos-latest
     # The app is opened by macOS and nothing ends it but the test. A run
     # that hangs stops here, not at GitHub's six hours.
