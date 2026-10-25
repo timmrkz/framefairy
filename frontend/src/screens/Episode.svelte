@@ -321,6 +321,11 @@
   const wholeWork = $derived(jobs.transcribing(path));
   const isTranscribing = $derived(!!hearing);
   const busy = $derived(searching || starting);
+  // A search that found its clips is over, and the window it moved on to
+  // is on its way from the Go side. The search's frame stays where it is
+  // until then, so the range picker never shows the window back where the
+  // search was, between the search and the next, see load.
+  let movingOn = $state(false);
   // What the search is doing right now, in the step's own words, see
   // lib/steps.ts.
   const doing = $derived(working ? stepLine(working).what : "");
@@ -1300,13 +1305,15 @@
     return moved;
   }
 
-  async function refreshRoom() {
+  // keep is false when another window is on its way, see load, so the
+  // window still drawn is not fitted and written back over it.
+  async function refreshRoom(keep = true) {
     try {
       roomView = await api.room(path);
     } catch {
       roomView = null;
     }
-    keepWindow();
+    if (keep) keepWindow();
   }
 
   // The window the workspace opens with: the video's window, which the
@@ -1432,7 +1439,12 @@
     }
   }
 
-  async function load() {
+  // moved is the window a search that ended moved on to, asked for with
+  // the rest. It is drawn with the clips the search found, and the window
+  // still drawn is not fitted to the new room and written back over it,
+  // found by the fourth review of #458.
+  async function load(moved?: Promise<KeptWindow | null>) {
+    const was = path;
     try {
       const ticket = statusRead.send();
       const now = await api.episode(path);
@@ -1442,12 +1454,17 @@
       const found = !source && !status.missing;
       if (found) source = await api.source(path);
       if (!status.missing) await refreshCoverage();
-      if (!status.missing) await refreshRoom();
+      if (!status.missing) await refreshRoom(!moved);
       if (found && source) await openWindow();
+      const next = moved ? await moved.catch(() => null) : null;
       await refreshClips();
+      movingOn = false;
+      if (next && path === was) drawWindow(next);
       keepRemovedTrue();
     } catch (err) {
       oops(errorText(err));
+    } finally {
+      movingOn = false;
     }
   }
 
@@ -3026,14 +3043,18 @@
     searchRan = "";
     untrack(() => jobs.answered(path, "clips"));
     onchange();
-    load().then(() => {
+    // The window walks on from where the search ended, as long as it was,
+    // which the Go side did before the search said it was done. Asked for
+    // with the rest and drawn with the clips found, so the window does not
+    // move one answer after the first clip is picked.
+    const moved = ended?.state === "done" ? api.chosenWindow(path) : undefined;
+    moved?.catch(() => {});
+    movingOn = !!moved;
+    load(moved).then(() => {
       if (ended?.state !== "done") {
         listedBefore = null;
         return;
       }
-      // The window walks on from where the search ended, as long as it
-      // was, which the Go side did before the search said it was done.
-      void openWindow();
       // The earliest clip it found, unless something else has been picked
       // since the search chose one, which is where the hand is now.
       showFirstFound(true);
@@ -3232,7 +3253,7 @@
     {duration}
     {from}
     {to}
-    shown={busy && !stopping}
+    shown={(busy || movingOn) && !stopping}
     resumes={!!stopped}
     {marks}
     {selected}

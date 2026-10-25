@@ -44,6 +44,13 @@ func (s *FrameFairy) Search(path string, req engine.PlanRequest, click string) J
 	job := s.jobs.addSteps(path, engine.JobSearch, jobLabel(engine.JobSearch, false), true, func(j *Job) {
 		j.Record, j.From, j.To, j.Count, j.Min, j.click = engine.SearchID, req.From, req.To, req.Count, req.Min, click
 	}, func(ctx context.Context, p *engine.Project, turn engine.Turn) (string, error) {
+		// Its window is the video's window, written here, in the search's
+		// own work and so before windowOn below, never after it. Written
+		// once the job was queued, a search that found its clips at once
+		// could move the window on first and then have it written back,
+		// the fourth review of #458. Not where the job is prepared, which
+		// holds the queue, taken after windowMu everywhere else.
+		s.searchesWindow(path, req)
 		// The model loads while the episode is still being heard, so the
 		// search has nothing to wait for once it comes to finding.
 		// A window to the end of the episode, To 0, is never heard before
@@ -89,11 +96,6 @@ func (s *FrameFairy) Search(path string, req engine.PlanRequest, click string) J
 		}
 		return result, err
 	})
-	// The search the press asked for, not one that already ran, which
-	// asking again gives back.
-	if job.From == req.From && job.To == req.To {
-		s.searchesWindow(path, req)
-	}
 	return job
 }
 

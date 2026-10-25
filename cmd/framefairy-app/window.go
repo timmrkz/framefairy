@@ -57,21 +57,46 @@ func (s *FrameFairy) videoWindow(ctx context.Context, path string) (KeptWindow, 
 
 // placedWindow is where the app puts a video's window, see placeWindow,
 // from what was searched of it, its settings and what one search can read
-// of it, at the rate the video speaks at, or at the rate any speech does
-// where nothing is heard yet.
+// of it, see windowReach.
 func (s *FrameFairy) placedWindow(path string, duration float64) KeptWindow {
 	opts := s.store.Settings().options()
-	p := s.projectWith(path, opts)
-	most := 0.0
-	if room := engine.SearchRoom(p.Files, opts, p.LogsDir()); room.Chars > 0 {
-		var lines []engine.LineWeight
-		if t, err := s.transcript(p); err == nil {
-			lines = engine.WeighLines(t)
-		}
-		most = math.Floor(float64(room.Chars) / engine.RateOf(lines))
-	}
 	passes := engine.SearchPasses(plansOf(s.store.files, path), duration)
-	return placeWindow(passes, duration, opts.Min, most)
+	return placeWindow(passes, duration, opts.Min, s.windowReach(path, duration))
+}
+
+// windowReach is the longest window one search can read wherever it is
+// drawn, the reach the range picker fits every window to, see
+// engine.Reach, from the same room as Room gives the workspace. 0 is no
+// limit. It was once the room at the video's average rate, longer than the
+// range picker's wherever speech is uneven, so the workspace cut every
+// window placed here again and wrote it back off the step, found by the
+// fourth review of #458.
+func (s *FrameFairy) windowReach(path string, duration float64) float64 {
+	opts := s.store.Settings().options()
+	p := s.projectWith(path, opts)
+	room := engine.SearchRoom(p.Files, opts, p.LogsDir())
+	if room.Chars <= 0 {
+		return 0
+	}
+	var lines []engine.LineWeight
+	var heard [][2]float64
+	rate := engine.SpokenChars
+	if t, err := s.transcript(p); err == nil {
+		lines = engine.WeighLines(t)
+		heard = t.Heard
+		rate = engine.RateOf(lines)
+	}
+	return engine.NewReach(room.Chars, lines, heard, rate, duration).Anywhere()
+}
+
+// lengthWithin is a window's length cut to most, what one search can
+// read, on a whole number of steps and no shorter than least, or most
+// where that is shorter still. most 0 is no limit.
+func lengthWithin(size, most, step, least float64) float64 {
+	if most > 0 && most < size {
+		return math.Max(math.Floor(most/step)*step, math.Min(least, most))
+	}
+	return size
 }
 
 // placeWindow is where the fewest searches have been, earliest first, as
@@ -84,9 +109,7 @@ func placeWindow(passes []engine.Pass, duration, shortest, most float64) KeptWin
 	least := math.Min(math.Max(shortest, 10), duration)
 	size := engine.SuggestedWindow(duration)
 	step := engine.PlaceStep(duration)
-	if most > 0 && most < size {
-		size = math.Max(math.Floor(most/step)*step, math.Min(least, most))
-	}
+	size = lengthWithin(size, most, step, least)
 	next := engine.NextWindow(passes, duration, size, least)
 	placed := engine.OnStep(next, next.End-next.Start, duration, step, least)
 	length := math.Max(math.Round(size/step)*step, step)
@@ -119,7 +142,9 @@ func (s *FrameFairy) searchesWindow(path string, req engine.PlanRequest) {
 
 // windowOn moves the window on after a search found its clips: from
 // where it ended, as long as the window was made, see
-// engine.FollowingWindow. It is done before the search says it is done,
+// engine.FollowingWindow, and no longer than one search can read now,
+// which the first search of a video measures from its real speech. It is
+// done before the search says it is done,
 // so the workspace reads the window moved on when it hears that.
 func (s *FrameFairy) windowOn(path string, req engine.PlanRequest) {
 	info, err := s.probe(context.Background(), path)
@@ -137,6 +162,7 @@ func (s *FrameFairy) windowOn(path string, req engine.PlanRequest) {
 		length = kept.Length
 	}
 	least := math.Min(math.Max(s.store.Settings().Min, 10), info.Duration)
+	length = lengthWithin(length, s.windowReach(path, info.Duration), engine.PlaceStep(info.Duration), least)
 	next := engine.FollowingWindow(ended, length, info.Duration, least)
 	w := KeptWindow{From: next.Start, To: next.End, Length: math.Max(length, next.End-next.Start)}
 	if !w.ok() {

@@ -353,6 +353,12 @@
 //                      "to" or "from" triangle or its "bar", by this share
 //                      of the track's width, and remembers the episode's
 //                      last search and where the window was left
+//   ["walks on with the clips"]
+//                      lets the speech held go, and watches every frame
+//                      until the clips the search found show: in the first
+//                      frame they show, the window is already past where
+//                      it was, and once all is still, the window drawn is
+//                      the one the Go side keeps
 //   ["searched moved"] the episode's newest search is a new one, not the
 //                      search there was at "move window", and it searched
 //                      the window where "move window" left it
@@ -3045,6 +3051,18 @@ export const sequences = [
       ["speech", "go"],
       ["wait for", "Search"],
       ["cards", 1],
+    ],
+  },
+  {
+    // The fourth review of #458. A search that found its clips moved the
+    // window on one answer after its first clip was picked, a step of its
+    // own at the end of a search, and the window still drawn could be
+    // written back over the one the Go side moved on.
+    name: "a search that found its clips moves the window on in the frame they show",
+    steps: [
+      ["speech", "hold"],
+      ["add", 1200],
+      ["walks on with the clips"],
     ],
   },
   {
@@ -10409,6 +10427,50 @@ async function walkSequence(seq, shared = null) {
         }
         movedOff = { search: searches[searches.length - 1]?.id ?? "", window: after };
         await watch.step("move window", s);
+        break;
+      }
+      case "walks on with the clips": {
+        const path = await episodeOn(page);
+        const search = (await ask(page, "Jobs")).filter((j) => j.episode === path && j.kind === "search").pop();
+        await page.evaluate(() => {
+          const pane = () => [...document.querySelectorAll("aside")].find((a) => a.querySelector(".listhead"));
+          const from = () => Number(document.querySelector(".aim .tip.top.from")?.getAttribute("aria-valuenow") ?? -1);
+          window.__walksOn = new Promise((done) => {
+            const seen = [];
+            const frame = () => {
+              seen.push({ cards: pane()?.querySelectorAll("ol li[data-key]").length ?? 0, from: from() });
+              if (seen.filter((f) => f.cards > 0 && f.from >= 0).length >= 30) return done(seen);
+              requestAnimationFrame(frame);
+            };
+            requestAnimationFrame(frame);
+          });
+        });
+        await control(url, "/speech?go");
+        speechHeld = false;
+        const seen = await page.evaluate(() => window.__walksOn);
+        // The first frame with the window at rest, the search's frame gone.
+        const rest = seen.find((f) => f.from >= 0);
+        if (!search || !(search.to > 0)) {
+          wrong = `there was no search with a window when the speech went on: ${JSON.stringify(search)}`;
+          break;
+        }
+        if (rest.from < search.to - 0.5) {
+          wrong = `the window was drawn at ${rest.from} s after the search of ${search.from ?? 0}–${search.to} s ended, before it moved on`;
+          break;
+        }
+        if (rest.cards === 0) {
+          wrong = "the window moved on before the clips the search found showed";
+          break;
+        }
+        await settle(page);
+        const kept = await ask(page, "ChosenWindow", path);
+        const drawn = await page.evaluate(() => {
+          const n = (sel) => Number(document.querySelector(`.aim .tip.top.${sel}`)?.getAttribute("aria-valuenow"));
+          return { from: n("from"), to: n("to") };
+        });
+        if (!kept || Math.abs(kept.from - drawn.from) > 0.5 || Math.abs(kept.to - drawn.to) > 0.5) {
+          wrong = `the window drawn is ${drawn.from}–${drawn.to} s, the one kept ${JSON.stringify(kept)}`;
+        }
         break;
       }
       case "searched moved": {
