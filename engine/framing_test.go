@@ -202,7 +202,7 @@ func TestASystemDecoderThatWillNotEndIsLeftBehind(t *testing.T) {
 	leave, stop := leaving, stopProcess
 	gone := make(chan time.Time)
 	close(gone)
-	leaving = func() <-chan time.Time { return gone }
+	leaving = func(time.Duration) <-chan time.Time { return gone }
 	var mu sync.Mutex
 	var left []*os.Process
 	stopProcess = func(p *os.Process) error {

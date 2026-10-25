@@ -167,6 +167,13 @@ func TestTheServerLogIsKeptBeforeTheLogsFolderExists(t *testing.T) {
 func TestAServerThatWillNotStopIsKilledAtOnce(t *testing.T) {
 	noteIn(t)
 	t.Setenv("FRAMEFAIRY_STUBBORN_SERVER", "1")
+	// stopGrace is up the moment it is asked about. Not parallel: leaving
+	// is a package variable, and t.Setenv rules it out too.
+	was := leaving
+	up := make(chan time.Time)
+	close(up)
+	leaving = func(time.Duration) <-chan time.Time { return up }
+	t.Cleanup(func() { leaving = was })
 	model := filepath.Join(t.TempDir(), "model.gguf")
 	if err := os.WriteFile(model, nil, 0o644); err != nil {
 		t.Fatal(err)
@@ -177,8 +184,8 @@ func TestAServerThatWillNotStopIsKilledAtOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A server that is never killed hangs here until go test's -timeout.
-	// It is killed once stopGrace is up, which runs on the real clock, the
-	// kind of wait #510 is about.
+	// It is killed once stopGrace is up, at once here, rather than after
+	// half a second of the clock.
 	stop()
 }
 

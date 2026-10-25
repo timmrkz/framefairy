@@ -924,7 +924,7 @@ func openBridge(t *testing.T) *bridge {
 	// pause and a second and a half more, over and over, a tenth of a
 	// second each time the app reads how loud it is. That is still a
 	// tenth for every 100 ms of real time, on the app's own timer for its
-	// level meter rather than one of the stand-in's, see #510. The
+	// level meter rather than one of the stand-in's, see #551. The
 	// stand-in hears it as words: what came before a
 	// pause is settled while the recording runs, and there is more to be
 	// heard until the recording stops, or until a walk has the person

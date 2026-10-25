@@ -230,9 +230,10 @@ func runBytes(ctx context.Context, cwd string, name string, args ...string) ([]b
 // search that waited for it waited for good.
 var leaveAfter = 5 * time.Second
 
-// leaving is the wait for a stopped program to end, leaveAfter of the
-// clock unless a test hands in one of its own.
-var leaving = func() <-chan time.Time { return time.After(leaveAfter) }
+// leaving is the wait for a program that was asked to stop to end,
+// leaveAfter for ffmpeg and stopGrace for llama-server, time.After unless
+// a test hands in a wait of its own.
+var leaving = time.After
 
 // leftBehind is what is said of a program that was left behind.
 const leftBehind = "did not end when it was stopped, so it was left behind"
@@ -268,7 +269,7 @@ func finish(ctx context.Context, cmd *exec.Cmd, outs ...*cutWriter) (left bool, 
 	select {
 	case err := <-finished:
 		return false, err
-	case <-leaving():
+	case <-leaving(leaveAfter):
 	}
 	for _, out := range outs {
 		out.cut()
@@ -404,7 +405,7 @@ func (e *Engine) runFFmpegWatched(ctx context.Context, args []string, label stri
 loop:
 	for {
 		if gone == nil && ctx.Err() != nil {
-			gone, stopping = leaving(), nil
+			gone, stopping = leaving(leaveAfter), nil
 		}
 		said := false
 		select {
