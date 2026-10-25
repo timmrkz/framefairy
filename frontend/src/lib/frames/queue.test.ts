@@ -531,6 +531,8 @@ describe("sound handed to the sound card late", () => {
     inside.out = {};
     inside.c0 = 1;
     inside.m0 = 0;
+    // The whole episode straight on, with no end for the sound to stop at.
+    Object.defineProperty(q, "program", { get: () => ({ end: Infinity }) });
     const hand = (out: number) => inside.schedule({ out, length: 100, data: [new Float32Array(100)] });
     return { q, card, hand, started };
   }
@@ -559,6 +561,31 @@ describe("sound handed to the sound card late", () => {
       [1200, 1230],
       [1300, 1450],
     ]);
+  });
+
+  // The record that lets a walk set late sound aside also says whether
+  // anything else made it late: a stretch thrown away before it played,
+  // or the same sound handed over twice, which a press of L must never
+  // do. Either would make the sound after it late on any machine.
+  test("says when sound was handed over twice", () => {
+    const { q, card, hand } = late();
+    card.currentTime = 1;
+    hand(0);
+    hand(100);
+    expect(q.stats.soundTwice).toBe(0);
+    hand(50);
+    expect(q.stats.soundTwice).toBe(1);
+  });
+
+  test("says when sound was thrown away before it played", () => {
+    const { q, card, hand } = late();
+    card.currentTime = 1;
+    hand(0);
+    hand(100);
+    card.currentTime = 1.15;
+    (q as unknown as { stopPlay(): void }).stopPlay();
+    // The first stretch had played, the second had not.
+    expect(q.stats.soundThrown).toBe(1);
   });
 
   test("keeps the last 1000", () => {

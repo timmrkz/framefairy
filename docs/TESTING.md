@@ -724,9 +724,14 @@ and the walk sets aside only that. A page too busy to hand the sound
 card its sound in time leaves it playing nothing until the sound comes,
 which starts and ends with a click. The frame queue counts every
 stretch it scheduled late, with the sound card's frames it left quiet,
-`lateSoundAt` in its stats, and the walk of the loop switched off near
-the end takes a click there for the machine's, and says how many it
-set aside. Any other click fails it, issue #466.
+`lateSoundAt` in its stats. The walk of the loop switched off near the
+end takes a click for the machine's only at either end of a silence it
+heard, samples of nothing at all, that lies where the queue says it was
+late, and says how many it set aside. Any other click fails it. So that
+the app's own mistakes cannot hide there, the queue also counts sound
+it took off the sound card before it had played, `soundThrown`, and
+sound it handed over twice, `soundTwice`, and the presses of L must
+leave both at nought, issue #466.
 
 ### `speed.mjs`: how quickly the video preview follows the keys
 

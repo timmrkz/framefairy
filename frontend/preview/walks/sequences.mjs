@@ -740,10 +740,11 @@
 //                      off and the play ends ahead of the sound card
 //   ["stopped at its end"]
 //                      since "loop off near the end", the presses of L
-//                      started no play over, the sound did not click but
-//                      where the frame queue says it handed the sound card
-//                      its sound late, nothing was heard after the clip's
-//                      end, the play
+//                      started no play over, threw no sound away and
+//                      handed none over twice, the sound did not click but
+//                      at the ends of a silence where the frame queue says
+//                      it handed the sound card its sound late, nothing
+//                      was heard after the clip's end, the play
 //                      stopped within 400 ms of the playhead reaching it,
 //                      and no frame drawn from then on is from before the
 //                      last second of the clip, so nothing of the clip's
@@ -6586,7 +6587,14 @@ for (const seq of toWalk) {
         // playUntil, once the app has settled on the press.
         await settle(page);
         await playUntil(page, { most: 0.3 });
-        const starts = await page.evaluate(() => window.__frameQueue.stats.starts);
+        // What the play had started, thrown away and handed over twice
+        // before the presses of L, see the frame queue's stats.
+        const counts = () =>
+          page.evaluate(() => {
+            const { starts, soundThrown, soundTwice } = window.__frameQueue.stats;
+            return { starts, thrown: soundThrown, twice: soundTwice };
+          });
+        const before = await counts();
         await page.keyboard.press("l");
         await playUntil(page, { past: end - arg });
         await page.evaluate(() => {
@@ -6607,6 +6615,7 @@ for (const seq of toWalk) {
           await page.keyboard.press("l");
           await playUntil(page, { most: 0.12 });
         }
+        const pressed = await counts();
         // Until the play stops at the end, or has gone on by what was left
         // of the clip and eight seconds more, and then until the queue
         // holds the sound card, see end in lib/frames/queue.ts: whatever
@@ -6648,7 +6657,7 @@ for (const seq of toWalk) {
             heard: window.__heard.map((h) => ({ frame: h.frame, data: Array.from(h.data) })),
           };
         });
-        loopEnd = { end, fps: await rate(page), starts: q.starts - starts, ...q };
+        loopEnd = { end, fps: await rate(page), ...q, starts: q.starts - before.starts, thrown: pressed.thrown - before.thrown, twice: pressed.twice - before.twice };
         await settle(page);
         break;
       }
@@ -9833,11 +9842,23 @@ for (const seq of toWalk) {
         // sound in time, and the sound card plays nothing until it comes,
         // which starts and ends with a click. The app counts each such
         // stretch with where it should have started and where it did, see
-        // schedule in lib/frames/queue.ts, so a click there is the
-        // machine's and not the loop's, issue #466. The sound card renders
-        // a quantum of 128 frames at a time, so where a stretch starts is
-        // known to within one.
-        const lateHere = (f) => late.some(([a, b]) => f >= a - 128 && f <= b + 128);
+        // schedule in lib/frames/queue.ts, so a click at either end of a
+        // silence heard there is the machine's and not the loop's, issue
+        // #466. Where the sound card took up the sound again is read off
+        // the silence itself, since it can be a while after the moment
+        // the page asked. The page's counts are within a quantum of 128
+        // frames of the sound card's. The presses of L are known to have
+        // thrown no sound away and handed none over twice, below, so
+        // nothing they did made the sound late.
+        const silences = [];
+        for (let k = 0; k < xs.length; k++) {
+          if (xs[k][1] !== 0) continue;
+          const from = k;
+          while (k + 1 < xs.length && xs[k + 1][1] === 0 && xs[k + 1][0] === xs[k][0] + 1) k++;
+          const [a, b] = [xs[from][0], xs[k][0]];
+          if (b - a >= 64 && late.some(([p, q]) => a <= q + 128 && b >= p - 128)) silences.push([a, b]);
+        }
+        const lateHere = (f) => silences.some(([a, b]) => f >= a - 1 && f <= b + 2);
         let clicks = 0;
         let firstClick = null;
         let after = 0;
@@ -9856,8 +9877,10 @@ for (const seq of toWalk) {
             firstClick ??= ((f - endFrame) / sr) * 1000;
           }
         }
-        if (starved) console.log(`      ${starved} clicks where the page handed the sound card its sound late, ${late.length} stretches late`);
+        if (starved) console.log(`      ${starved} clicks where the page handed the sound card its sound late, ${silences.length} silences heard`);
         if (loopEnd.starts) wrong = `the play started over ${loopEnd.starts} times while L was pressed`;
+        else if (loopEnd.thrown) wrong = `the presses of L took ${loopEnd.thrown} stretches of sound off the sound card before they had played`;
+        else if (loopEnd.twice) wrong = `the presses of L handed the sound card ${loopEnd.twice} stretches of sound it had already been handed`;
         else if (!(height > 0.01)) wrong = `the sound card was handed nothing to hear, ${xs.length} samples`;
         else if (clicks) wrong = `the sound clicked ${clicks} times, the first ${(-firstClick).toFixed(0)} ms before the end`;
         else if (after) wrong = `${after} samples of sound were heard after the clip's end`;
@@ -12446,7 +12469,7 @@ for (const seq of toWalk) {
           const folds = [];
           let found;
           let ended;
-          const look = () => seen.push({ there: row.isConnected, top: under.getBoundingClientRect().top, height: row.isConnected ? row.getBoundingClientRect().height : 0 });
+          const look = (step) => seen.push({ step, there: row.isConnected, top: under.getBoundingClientRect().top, height: row.isConnected ? row.getBoundingClientRect().height : 0 });
           window.__fold = { seen, look, height: row.getBoundingClientRect().height, gap, row, left: null, held: new Promise((r) => (found = r)), ended: new Promise((r) => (ended = r)) };
           look();
           // Svelte takes the row out when its animation says it has
@@ -12496,7 +12519,7 @@ for (const seq of toWalk) {
               const end = fold.effect.getComputedTiming().endTime;
               for (let i = 1; i <= 20; i++) {
                 fold.currentTime = (end * i) / 20;
-                window.__fold.look();
+                window.__fold.look(i);
               }
               fold.finish();
             }
@@ -12517,15 +12540,14 @@ for (const seq of toWalk) {
         // The space goes with the row: at every step of the fold, the card
         // under it has risen by as much of the row and the space after it
         // as the row has folded.
-        const folding = seen.filter((f) => f.there && f.height > 0.5 && f.height < height - 0.5);
-        const off = folding
-          .map((f, i) => ({ i, by: tops[0] - f.top - (height + gap) * (1 - f.height / height) }))
-          .find((f) => Math.abs(f.by) > 1);
+        const steps = seen.filter((f) => f.step);
+        const off = steps.map((f) => ({ i: f.step, by: tops[0] - f.top - (height + gap) * (1 - f.height / height) })).find((f) => Math.abs(f.by) > 1);
         if (!left) wrong = "the removed row was never seen leaving the list";
         else if (!left.folded) wrong = "the removed row left the list with no fold";
         else if (!left.finished) wrong = "the removed row left the list before its fold had finished";
-        else if (folding.length < 15) wrong = `the removed row was seen folding at ${folding.length} of the 20 steps of its fold, not at least 15`;
-        else if (off) wrong = `the space under the removed row did not fold with it: ${Math.abs(off.by).toFixed(1)} px ${off.by < 0 ? "short of" : "past"} where the card under it stands at step ${off.i + 1} of the fold`;
+        else if (steps.length !== 20) wrong = `the removed row's fold was stepped through ${steps.length} times, not 20`;
+        else if (!steps.every((f) => f.there)) wrong = `the removed row left the list at step ${steps.find((f) => !f.there).step} of its fold, not after it`;
+        else if (off) wrong = `the space under the removed row did not fold with it: ${Math.abs(off.by).toFixed(1)} px ${off.by < 0 ? "short of" : "past"} where the card under it stands at step ${off.i} of the fold`;
         else if (Math.abs(jump) > 0.5) wrong = `the card under the removed row jumped ${jump.toFixed(1)} px in the moment the row left the list`;
         else if (Math.abs(rose - (height + gap)) > 1) wrong = `the card under the removed row rose ${rose.toFixed(1)} px, not the row's ${height} and the ${gap} after it`;
         else if (back >= 0) wrong = `the card under the removed row went back down ${(tops[back] - tops[back - 1]).toFixed(1)} px at step ${back}`;

@@ -101,6 +101,12 @@ export type Stats = {
   // play of several minutes on a machine too busy to keep up.
   lateSound: number;
   lateSoundAt: [number, number][];
+  // Stretches taken off the sound card before they had played to their
+  // end, by a play that stopped or started over, and stretches handed to
+  // it over sound it had already been handed. A press of L does neither,
+  // so a walk that sets late sound aside knows it was not L's, issue #466.
+  soundThrown: number;
+  soundTwice: number;
   // The longest a frame a gesture put the playhead on waited for what lies
   // over it, milliseconds, see dress.
   dressWait: number;
@@ -534,6 +540,8 @@ export class FrameQueue {
     late: 0,
     lateSound: 0,
     lateSoundAt: [],
+    soundThrown: 0,
+    soundTwice: 0,
     dressWait: 0,
     bare: 0,
     waitedForDress: 0,
@@ -632,6 +640,9 @@ export class FrameQueue {
   // What is on the sound card, with the sound card's time each stretch
   // ends at by itself, see clip.
   private sources = new Map<AudioBufferSourceNode, number>();
+  // Where the sound handed to the sound card in this play reaches, in its
+  // seconds.
+  private handedTo = -Infinity;
   private pending: Chunk | null = null;
   private unscheduled: Chunk[] = [];
   private soundRun: AudioRun | null = null;
@@ -1521,13 +1532,19 @@ export class FrameQueue {
     this.ticket++;
     cancelAnimationFrame(this.frameRequest);
     clearTimeout(this.suspendTimer);
-    for (const src of this.sources.keys()) {
+    // A stretch stops where the program ends, see clip, so one stopped
+    // after that threw nothing away.
+    const now = this.sources.size ? this.audio.currentTime : 0;
+    const ends = this.c0 !== null && Number.isFinite(this.program.end) ? this.c0 + (Math.round(this.program.end * this.sampleRate) - this.m0) / this.sampleRate : Infinity;
+    for (const [src, end] of this.sources) {
+      if (Math.min(end, ends) > now) this.stats.soundThrown++;
       try {
         src.stop();
       } catch {}
       src.disconnect();
     }
     this.sources.clear();
+    this.handedTo = -Infinity;
     for (const s of this.slots) this.release(s);
     this.soundDecoder?.restart();
     this.soundFed = [];
@@ -2170,6 +2187,8 @@ export class FrameQueue {
     src.buffer = buffer;
     src.connect(this.out);
     const when = this.c0 + (c.out - this.m0) / rate;
+    if (when < this.handedTo - 1 / rate) this.stats.soundTwice++;
+    this.handedTo = Math.max(this.handedTo, when + c.length / rate);
     const now = this.audio.currentTime;
     if (when < now) {
       this.stats.lateSound++;
