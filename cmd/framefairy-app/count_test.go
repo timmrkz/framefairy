@@ -57,3 +57,49 @@ func TestARefusedSearchKeepsItsWindow(t *testing.T) {
 		t.Fatalf("Continue asked for %.0f to %.0f, not the window that was refused", again.From, again.To)
 	}
 }
+
+// A Continue of a search that was called off once its clips were written
+// has nothing left to write, and says how many the search it carries on
+// had written, so its row does not say Nothing new found. Read from the
+// plan, so it is true after the app was closed and opened again. Tim's
+// report of 25 October, 21.40.
+//
+// On the real disk: the record and the plan lie beside an episode ffmpeg
+// made and reads.
+func TestAContinueCountsTheClipsOfTheSearchItCarriesOn(t *testing.T) {
+	d := open(t)
+	ep := d.add("a", minutes5)
+	d.idle(ep)
+	var found Job
+	for _, j := range d.svc.Jobs() {
+		if j.Episode == ep && j.Kind == engine.JobSearch {
+			found = j
+		}
+	}
+	if found.State != JobDone || found.Written == 0 {
+		t.Fatalf("the first search ended %s with %d clips, and this test needs one that wrote clips", found.State, found.Written)
+	}
+	// Called off after it wrote them, the way Cancel leaves its record.
+	stopped := engine.JobRecord{ID: engine.SearchID, Kind: engine.JobSearch, From: found.From, To: found.To,
+		Count: found.Count, Min: found.Min, Max: 30, Pass: 1, Step: engine.StepStopped, Asked: time.Now()}
+	if err := engine.WriteJob(disk, ep, stopped); err != nil {
+		t.Fatal(err)
+	}
+	d.close()
+	d.reopen()
+	o := d.outcome(ep)
+	if !o.stopped {
+		t.Fatalf("opened again, the search says %+v, not stopped", o)
+	}
+	j, _ := d.svc.jobs.find(ep, "search")
+	again := d.svc.Continue(j.ID, "")
+	if again.Carried != found.Written {
+		t.Fatalf("Continue carries on a search that wrote %d clips and says %d", found.Written, again.Carried)
+	}
+	d.idle(ep)
+	for _, j := range d.svc.Jobs() {
+		if j.ID == again.ID && j.Written+j.Carried == 0 {
+			t.Fatalf("the search carried on ended %s and says it found nothing", j.State)
+		}
+	}
+}

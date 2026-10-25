@@ -26,6 +26,11 @@ import (
 // pressed after it stops it even if the Cancel reaches the Go side first,
 // see StopClipWork. The Go side's own searches have none.
 func (s *FrameFairy) Search(path string, req engine.PlanRequest, click string) Job {
+	return s.search(path, req, click, 0)
+}
+
+// search is Search, carrying on a search that had written carried clips.
+func (s *FrameFairy) search(path string, req engine.PlanRequest, click string, carried int) Job {
 	if !s.store.Known(path) {
 		return s.jobs.refuse(path, engine.JobSearch, jobLabel(engine.JobSearch, false), notInLibrary, func(j *Job) {
 			j.From, j.To, j.Count, j.Min = req.From, req.To, req.Count, req.Min
@@ -43,6 +48,7 @@ func (s *FrameFairy) Search(path string, req engine.PlanRequest, click string) J
 	s.jobs.settle(path, engine.JobSearch, "")
 	job := s.jobs.addSteps(path, engine.JobSearch, jobLabel(engine.JobSearch, false), true, func(j *Job) {
 		j.Record, j.From, j.To, j.Count, j.Min, j.click = engine.SearchID, req.From, req.To, req.Count, req.Min, click
+		j.Carried = carried
 	}, func(ctx context.Context, p *engine.Project, turn engine.Turn) (string, error) {
 		// Its window is the video's window, written here, in the search's
 		// own work and so before windowOn below, never after it. Written
@@ -117,10 +123,12 @@ func (s *FrameFairy) Continue(id, click string) Job {
 	path := stopped.Episode
 	if stopped.Kind == engine.JobSearch {
 		req := engine.PlanRequest{From: stopped.From, To: stopped.To}
+		carried := 0
 		// A search that was refused wrote no record, and the one on disk
 		// is an older search's, about another window.
 		if rec := engine.ReadSearch(s.store.files, path); rec != nil && stopped.Record != "" {
 			req = rec.Request()
+			carried = s.planned(path, *rec)
 		}
 		if req.Count == 0 {
 			set := s.store.Settings()
@@ -133,7 +141,7 @@ func (s *FrameFairy) Continue(id, click string) Job {
 			}
 			req.Count = set.targetFor(window)
 		}
-		return s.Search(path, req, click)
+		return s.search(path, req, click, carried)
 	}
 	var carry *engine.JobRecord
 	for _, rec := range engine.ReadJobs(s.store.files, path) {
@@ -151,6 +159,20 @@ func (s *FrameFairy) Continue(id, click string) Job {
 		return s.Transcribe(path)
 	}
 	return s.render(path, carry.Render(), carry)
+}
+
+// planned is how many clips the search a record is of has written to its
+// plan, read from the plan, so it is true after the app was closed too.
+func (s *FrameFairy) planned(path string, rec engine.JobRecord) int {
+	duration := rec.To
+	if info, err := s.probe(context.Background(), path); err == nil {
+		duration = info.Duration
+	}
+	view, err := engine.ReadPlan(s.store.files, filepath.Join(engine.WorkDir(path), "logs", rec.PlanName(duration)))
+	if err != nil {
+		return 0
+	}
+	return len(view.Clips)
 }
 
 // render queues a render, carrying on the one the record is of, if any.

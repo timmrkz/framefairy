@@ -1136,7 +1136,10 @@
   const foundNothing = $derived.by(() => {
     if (busy || stopped) return null;
     const last = jobs.forEpisode(path).findLast((j) => j.kind === "search");
-    if (last?.state !== "done" || (last.written ?? 0) > 0) return null;
+    // A Continue counts what the search it carries on wrote: one called
+    // off once its clips were written had nothing left to write, and its
+    // row said Nothing new found, Tim's report of 25 October, 21.40.
+    if (last?.state !== "done" || (last.written ?? 0) + (last.carried ?? 0) > 0) return null;
     const job = last.id;
     if (told[job] === 0) return null;
     const fades = {

@@ -80,6 +80,12 @@ type Job struct {
 	// as Underway, so a clip is never counted both as written and as on
 	// the way, or as neither.
 	Written int `json:"written,omitempty"`
+	// Carried is, for a search that carries on one that stopped, how many
+	// clips the search it carries on had written to its plan, so a
+	// Continue with nothing left to write ends as the search that found
+	// them and not as one that found nothing, Tim's report of 25 October,
+	// 21.40.
+	Carried int `json:"carried,omitempty"`
 	// Count is how many clips a search was asked for. The clip list holds
 	// that many rows open, whatever the workspace would ask for now: the
 	// first search of an episode is asked for by the Go side, and a number

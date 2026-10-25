@@ -513,6 +513,9 @@ export interface Job {
   // one event, so the two always add up.
   underway?: Underway[];
   written?: number;
+  // For a search that carries on one that stopped, how many clips that
+  // one had written, so it did not find nothing.
+  carried?: number;
   // How many clips a search was asked for, and how short they may be.
   count?: number;
   min?: number;
