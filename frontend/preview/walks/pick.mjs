@@ -199,6 +199,8 @@ export async function pick(files, { base, map, root = top }) {
       for (const q of await now()) if (takes(q, names)) runs.add(sequence(q.name));
       continue;
     }
+    // A test of the harness is Vitest's, run by make interface, no walk.
+    if (inWalks && inWalks.endsWith(".test.mjs")) continue;
     if (inWalks && !inWalks.includes("/") && inWalks.endsWith(".mjs")) {
       const text = existsSync(join(root, file)) ? readFileSync(join(root, file), "utf8") : (before(root, base, file) ?? "");
       if (inWalks !== "walk.mjs" && text.includes(`from "./walk.mjs"`)) {

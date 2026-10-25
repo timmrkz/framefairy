@@ -13,6 +13,11 @@ set -eu
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 fail=0
 
+# make hands the variables it was called with to what it runs, so make
+# lint PART=lint in CI would plan every case below for that part alone.
+# Each case says what it needs itself.
+unset PART SHARD EVERYTHING BASE WALKMAP UNITSKIP
+
 # plan FILES: what changed.sh would run for these files, one line each,
 # on one line.
 plan() {

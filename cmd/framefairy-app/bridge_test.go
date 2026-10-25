@@ -1969,7 +1969,8 @@ func walkScripts(t *testing.T, dir string) []string {
 	}
 	var out []string
 	for _, e := range entries {
-		if !strings.HasSuffix(e.Name(), ".mjs") || e.Name() == "walk.mjs" {
+		// A .test.mjs is Vitest's, and make interface runs it.
+		if !strings.HasSuffix(e.Name(), ".mjs") || strings.HasSuffix(e.Name(), ".test.mjs") || e.Name() == "walk.mjs" {
 			continue
 		}
 		body, err := os.ReadFile(filepath.Join(dir, e.Name()))

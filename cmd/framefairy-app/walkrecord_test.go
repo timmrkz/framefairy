@@ -97,6 +97,9 @@ type walkerRecord struct {
 
 // walker starts the record of a walker on the bridge at url, and gives
 // the environment its pages are told where to write in.
+//
+// On the real disk: the walker's pages are a browser of their own, which
+// writes what they ran into this folder.
 func (rc *recorder) walker(url string) (*walkerRecord, []string, error) {
 	n := int(rc.walkers.Add(1))
 	work := filepath.Join(rc.dir, fmt.Sprintf("walker-%d", n))
@@ -121,6 +124,8 @@ func (w *walkerRecord) cover(dir string) error {
 }
 
 // begin forgets what the bridge ran before the run.
+//
+// On the real disk: the pages wrote what they ran there, see walker.
 func (w *walkerRecord) begin() error {
 	_ = os.Remove(w.js)
 	return w.cover("")
@@ -128,6 +133,9 @@ func (w *walkerRecord) begin() error {
 
 // end keeps what the run went through as run id, the Go side's lines with
 // the interface's.
+//
+// On the real disk: the bridge, a program of its own, writes its counts
+// there for go tool covdata to read.
 func (w *walkerRecord) end(id string) error {
 	counts := filepath.Join(w.work, "go")
 	_ = os.RemoveAll(counts)
@@ -181,6 +189,9 @@ func (w *walkerRecord) end(id string) error {
 	return nil
 }
 
+// writeJSON writes v into file.
+//
+// On the real disk: make walkmap reads the record after the test is gone.
 func writeJSON(file string, v any) error {
 	body, err := json.Marshal(v)
 	if err != nil {

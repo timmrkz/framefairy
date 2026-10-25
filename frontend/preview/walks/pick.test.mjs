@@ -117,8 +117,9 @@ describe("a walk file picks the runs it changes", () => {
     expect(await changedTo({ [`${walks}/common/steps.mjs`]: changed })).toBe("all");
   });
 
-  test("a walk takes itself, the times take nothing and the bridge takes every run", async () => {
+  test("a walk takes itself, the times and a test of the harness take nothing and the bridge takes every run", async () => {
     expect(await changedTo({ [`${walks}/timeline.mjs`]: `import { walk } from "./walk.mjs";\nwalk();\n` })).toEqual(["script timeline.mjs"]);
+    expect(await changedTo({ [`${walks}/pick.test.mjs`]: `const s = 'import { walk } from "./walk.mjs";';\n` })).toEqual([]);
     expect(await changedTo({ [`${walks}/walk-times.tsv`]: "  4\tsequences.mjs SEQUENCE=one clicks\n" })).toEqual([]);
     expect(await changedTo({ [`${walks}/bridge.mjs`]: "export const a = 2;\n" })).toBe("all");
   });
