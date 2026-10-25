@@ -161,11 +161,14 @@ for CI alike. A run is a sequence by its name, or a walk like
 | a style sheet, a file only a worker runs, the bridge in `cmd/framefairy-app`, the runner, the rules, `package.json` | every run |
 
 The map is what each run went through, line by line, of Go and of the
-interface. `make walks WALKRECORD=folder` records it: the bridge is
-built with Go's coverage, `-cover -covermode=atomic`, and asked through
-its `/cover` what it ran after every run, and every page counts what it
-runs through Chromium's coverage, read back to our lines through the
-build's source maps. `make walkmap` makes the records of every machine
+interface. `make walks WALKRECORD=folder` records it: the test is built
+with Go's coverage, `-cover -coverpkg=./...`, and every run has a bridge
+of its own, which writes what it counted as it ends, its own start
+included, since Go reads no counts of a test binary while it runs. Every
+page counts what it runs through Chromium's coverage, read back to our
+lines through the build's source maps, a worker's among them. A run the
+map does not know, like one added since the night it was recorded, is
+walked whenever the map picks, and a map of no runs is no map. `make walkmap` makes the records of every machine
 into one map, `.build/walkmap.json`. The nightly walks record it on main
 and keep it in the Actions cache, and CI's first job takes the newest,
 see `walks-nightly.yml` in [CI](#ci). A change is compared with the commit the

@@ -1246,10 +1246,10 @@ a bubble that reads the app's log opens it outside the bubble and writes
 its first line there, `bubbleLog` in
 `cmd/framefairy-app/listen_test.go`.
 
-The skill's "run only what a change reaches" is Go's own test cache here,
-not a script of ours: CI runs every test on every pull request, and a
-package the change does not reach says `(cached)`, see
-[One way to test](BUILD.md#one-way-to-test).
+The skill's "run only what a change reaches" is `make changed` here, one
+script for every machine, `scripts/changed.sh`: a pull request runs the
+packages, parts and walks its change reaches, and main runs all of them,
+see [One way to test](BUILD.md#one-way-to-test).
 
 What CI holds of the skill's rules today: golangci-lint's `forbidigo` in
 `make lint` for the clock, for a context with a deadline and for a check

@@ -2,16 +2,12 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"cmp"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime/coverage"
 	"slices"
 	"strconv"
 	"strings"
@@ -22,30 +18,17 @@ import (
 // The map of what each run of the walks goes through, which picks the
 // walks a change to the interface or the Go side needs, see
 // frontend/preview/walks/walkmap.mjs. make walks WALKRECORD=folder records
-// it: the bridge is built with Go's coverage, and each run writes down the
+// it: the test is built with Go's coverage, and each run writes down the
 // lines of Go its bridge ran and the lines of the interface its pages ran.
 // make walkmap makes the map from what the runs wrote. It is recorded at
 // night, see walks-nightly.yml.
-
-// coverHandler is the bridge's /cover: the counts of what the Go side ran
-// since it was last asked, written into the folder the body names and
-// begun again, or with no folder only begun again. Only a bridge built
-// with -cover has counts, and one without answers why.
-func coverHandler(w http.ResponseWriter, r *http.Request) {
-	dir, err := io.ReadAll(r.Body)
-	if err == nil && len(dir) > 0 {
-		err = coverage.WriteMetaDir(string(dir))
-		if err == nil {
-			err = coverage.WriteCountersDir(string(dir))
-		}
-	}
-	if err == nil {
-		err = coverage.ClearCounters()
-	}
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
-}
+//
+// A recorded run has a bridge of its own, which writes what it counted
+// when it ends, with -test.gocoverdir. Go's runtime/coverage cannot read
+// the counts of a test binary while it runs, it answers that the program
+// was built with no -cover until the binary ends. And a bridge of its own
+// counts what the run made it do from its start, the bridge's own start
+// and what runs only once included.
 
 // recorder writes what each run went through into its folder: a file of
 // its own for every run, under runs/, and what code there is at all, once
@@ -68,6 +51,9 @@ func newRecorder(t *testing.T) *recorder {
 	if dir == "" {
 		return nil
 	}
+	if testing.CoverMode() == "" {
+		t.Fatal("recording the walks needs the test built with -cover, which make walks WALKRECORD= does")
+	}
 	goTool, err := exec.LookPath("go")
 	if err != nil {
 		t.Fatal("recording the walks needs go for go tool covdata")
@@ -83,70 +69,60 @@ func newRecorder(t *testing.T) *recorder {
 	return &recorder{dir: dir, module: strings.TrimSpace(module), goTool: goTool}
 }
 
-// walkerRecord is one walker's: its bridge, and the folder its runs write
-// into before what they wrote is kept.
+// walkerRecord is one walker's: the folder its runs write into before
+// what they wrote is kept.
 type walkerRecord struct {
-	rec    *recorder
-	n      int
-	url    string
-	work   string
-	js     string
-	known  bool
-	client http.Client
+	rec   *recorder
+	n     int
+	work  string
+	js    string
+	known bool
 }
 
-// walker starts the record of a walker on the bridge at url, and gives
-// the environment its pages are told where to write in.
-//
-// On the real disk: the walker's pages are a browser of their own, which
-// writes what they ran into this folder.
-func (rc *recorder) walker(url string) (*walkerRecord, []string, error) {
+// walker starts the record of a walker, or gives nil when nothing is
+// recorded.
+func (rc *recorder) walker() *walkerRecord {
+	if rc == nil {
+		return nil
+	}
 	n := int(rc.walkers.Add(1))
 	work := filepath.Join(rc.dir, fmt.Sprintf("walker-%d", n))
-	if err := os.MkdirAll(work, 0o755); err != nil {
-		return nil, nil, err
-	}
-	w := &walkerRecord{rec: rc, n: n, url: url, work: work, js: filepath.Join(work, "js.json")}
-	return w, []string{"WALKCOVER=" + w.js}, nil
+	return &walkerRecord{rec: rc, n: n, work: work, js: filepath.Join(work, "js.json")}
 }
 
-func (w *walkerRecord) cover(dir string) error {
-	res, err := w.client.Post(w.url+"cover", "text/plain", strings.NewReader(dir))
-	if err != nil {
-		return err
+// env is what the walker's pages are told, where to write what they ran.
+func (w *walkerRecord) env() []string {
+	if w == nil {
+		return nil
 	}
-	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		said, _ := io.ReadAll(res.Body)
-		return fmt.Errorf("the bridge counts nothing it runs: %s", bytes.TrimSpace(said))
-	}
-	return nil
+	return []string{"WALKCOVER=" + w.js}
 }
 
-// begin forgets what the bridge ran before the run.
+func (w *walkerRecord) counts() string { return filepath.Join(w.work, "go") }
+
+// begin empties the walker's folder for the next run, and gives the flags
+// its bridge writes its counts into it with.
 //
-// On the real disk: the pages wrote what they ran there, see walker.
-func (w *walkerRecord) begin() error {
-	_ = os.Remove(w.js)
-	return w.cover("")
+// On the real disk: the run's pages and its bridge are programs of their
+// own, which write what they ran there.
+func (w *walkerRecord) begin() ([]string, error) {
+	if err := os.RemoveAll(w.work); err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(w.counts(), 0o755); err != nil {
+		return nil, err
+	}
+	return []string{"-test.gocoverdir=" + w.counts()}, nil
 }
 
 // end keeps what the run went through as run id, the Go side's lines with
-// the interface's.
+// the interface's, once its bridge has ended.
 //
-// On the real disk: the bridge, a program of its own, writes its counts
-// there for go tool covdata to read.
+// On the real disk: the bridge wrote its counts there for go tool covdata
+// to read.
 func (w *walkerRecord) end(id string) error {
-	counts := filepath.Join(w.work, "go")
-	_ = os.RemoveAll(counts)
-	if err := os.MkdirAll(counts, 0o755); err != nil {
-		return err
-	}
-	if err := w.cover(counts); err != nil {
-		return err
-	}
-	text := counts + ".txt"
-	if out, err := exec.Command(w.rec.goTool, "tool", "covdata", "textfmt", "-i="+counts, "-o="+text).CombinedOutput(); err != nil {
+	text := filepath.Join(w.work, "go.txt")
+	if out, err := exec.Command(w.rec.goTool, "tool", "covdata", "textfmt", "-i="+w.counts(), "-o="+text).CombinedOutput(); err != nil {
 		return fmt.Errorf("go tool covdata: %v\n%s", err, out)
 	}
 	profile, err := os.ReadFile(text)
@@ -154,6 +130,9 @@ func (w *walkerRecord) end(id string) error {
 		return err
 	}
 	ran, known := goLines(string(profile), w.rec.module)
+	if len(known) == 0 {
+		return fmt.Errorf("the bridge counted nothing it ran")
+	}
 	page := struct {
 		Ran    map[string][][2]int `json:"ran"`
 		Known  map[string][][2]int `json:"known"`
@@ -184,8 +163,6 @@ func (w *walkerRecord) end(id string) error {
 		}
 		w.known = true
 	}
-	_ = os.RemoveAll(counts)
-	_ = os.Remove(text)
 	return nil
 }
 

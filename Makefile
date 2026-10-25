@@ -528,8 +528,10 @@ WALKTIMES ?=
 # writes for what a change needs, see frontend/preview/walks/pick.mjs.
 WALKPICK ?=
 # WALKRECORD names a folder each run writes what it went through into, the
-# lines of Go and of the interface, with the bridge built with Go's
-# coverage, which make walkmap makes the map of the walks from. It is
+# lines of Go and of the interface, with the test built with Go's
+# coverage and a bridge for every run, which make walkmap makes the map of
+# the walks from. A walk that fails is recorded and fails nothing, a run
+# that records nothing fails the test. It is
 # recorded at night, see .github/workflows/walks-nightly.yml.
 WALKRECORD ?=
 # STILL=none walks every sequence with the app's motion, see moving in
@@ -545,7 +547,7 @@ WALKTIMEOUT ?= 30m
 WALKVIDEOS ?= $(CURDIR)/.build/walk-videos
 walks: toolchain modules frontend/node_modules/.package-lock.json $(FRESH_FRAMES)
 	@cd frontend && $(NPM) exec -- vite build --config preview/bridge.config.ts --logLevel error
-	@FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" FRAMEFAIRY_WALKS=1 FRAMEFAIRY_WALK_VIDEOS='$(WALKVIDEOS)' WALKS='$(WALKS)' STEPS='$(STEPS)' WALKERS='$(WALKERS)' WALKSHARD='$(WALKSHARD)' WALKPICK='$(WALKPICK)' WALKRECORD='$(WALKRECORD)' WALKTIMES='$(WALKTIMES)' STILL='$(STILL)' $(GO) test -count=1 -ldflags '$(LDFLAGS)' $(if $(WALKRECORD),-cover -covermode=atomic -coverpkg=./...) -timeout $(WALKTIMEOUT) -run '^TestWalks$$' ./cmd/framefairy-app
+	@FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" FRAMEFAIRY_WALKS=1 FRAMEFAIRY_WALK_VIDEOS='$(WALKVIDEOS)' WALKS='$(WALKS)' STEPS='$(STEPS)' WALKERS='$(WALKERS)' WALKSHARD='$(WALKSHARD)' WALKPICK='$(WALKPICK)' WALKRECORD='$(WALKRECORD)' WALKTIMES='$(WALKTIMES)' STILL='$(STILL)' $(GO) test -count=1 -ldflags '$(LDFLAGS)' $(if $(WALKRECORD),-cover -coverpkg=./...) -timeout $(WALKTIMEOUT) -run '^TestWalks$$' ./cmd/framefairy-app
 
 # The map of what each run of the walks went through, made from what make
 # walks WALKRECORD=folder wrote, there or in folders under it, one for each

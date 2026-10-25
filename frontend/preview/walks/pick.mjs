@@ -154,6 +154,34 @@ async function sequencesNow(root) {
 }
 
 const sequence = (name) => `sequence ${name}`;
+
+// Every run there is now: each sequence and each walk script.
+async function runsNow(root) {
+  const out = (await sequencesNow(root)).map((q) => sequence(q.name));
+  for (const f of readdirSync(join(root, walks))) {
+    if (!f.endsWith(".mjs") || f.endsWith(".test.mjs") || f === "walk.mjs") continue;
+    if (readFileSync(join(root, walks, f), "utf8").includes(`from "./walk.mjs"`)) out.push(`script ${f}`);
+  }
+  return out;
+}
+
+// Whether a changed line of a Svelte file's style is a :global rule,
+// which reaches every component, not only its own.
+function global(root, base, file) {
+  try {
+    return /^[+-].*:global/m.test(git(root, "diff", "-U0", "--no-renames", base, "--", file));
+  } catch {
+    return true;
+  }
+}
+
+// Whether another folder's steps import the steps of folder.
+const importedElsewhere = (root, folder) =>
+  foldersOf(root).some((f) => {
+    const file = join(root, walks, f, "steps.mjs");
+    return f !== folder && existsSync(file) && readFileSync(file, "utf8").includes(`"../${folder}/steps.mjs"`);
+  });
+
 const takes = (q, names) => q.steps.some(([s]) => names.has(s));
 
 // The runs files need, or "all".
@@ -163,6 +191,7 @@ export async function pick(files, { base, map, root = top }) {
   let sequences = null;
   const now = async () => (sequences ??= await sequencesNow(root));
   const folders = foldersOf(root);
+  let mapped = false;
   for (const file of files) {
     if (all) break;
     const inWalks = file.startsWith(`${walks}/`) ? file.slice(walks.length + 1) : null;
@@ -189,7 +218,8 @@ export async function pick(files, { base, map, root = top }) {
       const b = stepsAt(text, changed.now);
       const names = new Set([...a.names, ...b.names]);
       if (a.outside || b.outside) {
-        if (folder === "common") {
+        // A helper is its folder's, unless another folder imports it.
+        if (folder === "common" || importedElsewhere(root, folder)) {
           all = true;
           break;
         }
@@ -199,8 +229,9 @@ export async function pick(files, { base, map, root = top }) {
       for (const q of await now()) if (takes(q, names)) runs.add(sequence(q.name));
       continue;
     }
-    // A test of the harness is Vitest's, run by make interface, no walk.
-    if (inWalks && inWalks.endsWith(".test.mjs")) continue;
+    // A test of the harness is Vitest's, run by make interface, no walk,
+    // and so is what picks the walks, which walks nothing itself.
+    if (inWalks && (inWalks.endsWith(".test.mjs") || inWalks === "pick.mjs" || inWalks === "walkmap.mjs")) continue;
     if (inWalks && !inWalks.includes("/") && inWalks.endsWith(".mjs")) {
       const text = existsSync(join(root, file)) ? readFileSync(join(root, file), "utf8") : (before(root, base, file) ?? "");
       if (inWalks !== "walk.mjs" && text.includes(`from "./walk.mjs"`)) {
@@ -208,16 +239,28 @@ export async function pick(files, { base, map, root = top }) {
         continue;
       }
     }
+    if (file.endsWith(".svelte") && global(root, base, file)) {
+      all = true;
+      break;
+    }
     // The interface and the Go side, by what each run went through.
     const byMap = map && pickByMap(map, file, root);
     if (byMap) {
       if (byMap === "all") all = true;
       else for (const r of byMap) runs.add(r);
+      mapped = true;
       continue;
     }
     all = true;
   }
-  return all ? "all" : [...runs].sort();
+  if (all) return "all";
+  // A run the map does not know went through nothing it can tell, like
+  // one added since the night it was recorded, so it is walked.
+  if (mapped) {
+    const known = new Set(map.runs);
+    for (const r of await runsNow(root)) if (!known.has(r)) runs.add(r);
+  }
+  return [...runs].sort();
 }
 
 // How long each run takes, by walk-times.tsv, its seeds together.

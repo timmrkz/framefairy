@@ -4,12 +4,12 @@
 // On the real disk: the picker asks git what changed, and git reads a
 // checkout.
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { pick, stepsOf } from "./pick.mjs";
-import { buildMap, linesRan, pickByMap, toSpans } from "./walkmap.mjs";
+import { buildMap, bundleOf, linesRan, pickByMap, readMap, toSpans } from "./walkmap.mjs";
 
 const walks = "frontend/preview/walks";
 let roots = [];
@@ -112,6 +112,16 @@ describe("a walk file picks the runs it changes", () => {
     expect(await changedTo({ [`${walks}/clips/steps.mjs`]: changed })).toEqual(["sequence one clicks", "sequence one looks", "sequence one sees"]);
   });
 
+  test("a helper another folder imports takes every run", async () => {
+    const { root, base } = checkout({
+      ...folder,
+      [`${walks}/videos/sequences.mjs`]: sequences([{ name: "two adds", steps: [["add"]] }]),
+      [`${walks}/videos/steps.mjs`]: `import { helper } from "../clips/steps.mjs";\nexport const steps = {\n  // ["add"]\n  async add() {\n    helper();\n  },\n};\n`,
+    });
+    write(root, { [`${walks}/clips/steps.mjs`]: steps.replace("return 1", "return 2") });
+    expect(await pick([`${walks}/clips/steps.mjs`], { base, map: null, root })).toBe("all");
+  });
+
   test("a helper of common/ takes every run", async () => {
     const changed = folder[`${walks}/common/steps.mjs`].replace("shared() {}", "shared() { return 1; }");
     expect(await changedTo({ [`${walks}/common/steps.mjs`]: changed })).toBe("all");
@@ -124,8 +134,45 @@ describe("a walk file picks the runs it changes", () => {
     expect(await changedTo({ [`${walks}/bridge.mjs`]: "export const a = 2;\n" })).toBe("all");
   });
 
-  test("the interface with no map takes every run", async () => {
+  test("the interface with no map takes every run, and so does a map of no runs", async () => {
     expect(await changedTo({ "frontend/src/lib/a.ts": "export const a = 1;\n" })).toBe("all");
+    const dir = mkdtempSync(join(tmpdir(), "walkmap-empty-"));
+    roots.push(dir);
+    writeFileSync(join(dir, "map.json"), JSON.stringify({ version: 1, commit: "abc", runs: [], sets: [], lines: {}, bundle: [] }));
+    expect(readMap(join(dir, "map.json"))).toBeNull();
+  });
+
+  test("with a map, a run the map does not know is walked too, like one added since it was recorded", async () => {
+    const { root, base } = checkout({ ...folder, "frontend/src/lib/a.ts": "export const a = 1;\n" });
+    write(root, { "frontend/src/lib/a.ts": "export const a = 2;\n" });
+    const map = {
+      version: 1,
+      commit: base,
+      here: true,
+      runs: ["sequence one clicks", "sequence one sees", "sequence one looks", "script timeline.mjs"],
+      sets: [[0]],
+      lines: { "frontend/src/lib/a.ts": [[1, 1, 0]] },
+      bundled: new Set(["frontend/src/lib/a.ts"]),
+    };
+    expect(await pick(["frontend/src/lib/a.ts"], { base, map, root })).toEqual(["sequence one clicks", "sequence one waits"]);
+  });
+
+  test("a :global style takes every run, and what picks the walks takes none", async () => {
+    const { root, base } = checkout({ ...folder, "frontend/src/lib/App.svelte": "<style>\n  p { color: red; }\n</style>\n" });
+    write(root, { "frontend/src/lib/App.svelte": "<style>\n  :global(p) { color: red; }\n</style>\n" });
+    const map = {
+      version: 1,
+      commit: base,
+      here: true,
+      runs: ["sequence one clicks", "sequence one sees", "sequence one looks", "sequence one waits", "script timeline.mjs"],
+      sets: [[0]],
+      lines: { "frontend/src/lib/App.svelte": [[1, 3, 0]] },
+      bundled: new Set(["frontend/src/lib/App.svelte"]),
+    };
+    expect(await pick(["frontend/src/lib/App.svelte"], { base, map, root })).toBe("all");
+    write(root, { "frontend/src/lib/App.svelte": "<style>\n  p { color: blue; }\n</style>\n" });
+    expect(await pick(["frontend/src/lib/App.svelte"], { base, map, root })).toEqual(["sequence one clicks"]);
+    expect(await changedTo({ [`${walks}/pick.mjs`]: "export const a = 1;\n", [`${walks}/walkmap.mjs`]: "export const b = 1;\n" })).toEqual([]);
   });
 });
 
@@ -136,6 +183,22 @@ test("the steps of a file are found from the comment over each to its end", () =
     ["see", 10, 15],
   ]);
   expect(aliases).toEqual([{ name: "look", of: "see", line: 17 }]);
+});
+
+// The picker finds a step by the shape it is written in, so every step
+// there is has to be found that way, or a change to it would walk none
+// of the sequences that take it.
+test("every step of the walks is found where the picker looks for it", async () => {
+  const here = import.meta.dirname;
+  const dirs = readdirSync(here).filter((d) => existsSync(join(here, d, "steps.mjs")));
+  expect(dirs.length).toBeGreaterThan(1);
+  for (const d of dirs) {
+    const file = join(here, d, "steps.mjs");
+    const { steps: real } = await import(file);
+    const { spans, aliases } = stepsOf(readFileSync(file, "utf8"));
+    const found = [...spans.map((x) => x.name), ...aliases.map((x) => x.name)].sort();
+    expect(found, d).toEqual(Object.keys(real).sort());
+  }
 });
 
 describe("the map picks the runs that ran a line that changed", () => {
@@ -263,6 +326,12 @@ describe("what a run's pages ran is read by the lines of our files", () => {
       ]),
     };
     writeFileSync(join(dist, "assets", "index.js.map"), JSON.stringify(map));
+    // A worker's map, which Vite writes naming its sources from the
+    // build's folder, not the map's.
+    writeFileSync(join(dist, "assets", "pull.worker.js.map"), JSON.stringify({ version: 3, sources: ["../../src/lib/w.ts"], mappings: "" }));
+    mkdirSync(join(root, "frontend/src/lib"), { recursive: true });
+    for (const f of ["a.ts", "b.ts", "w.ts"]) writeFileSync(join(root, "frontend/src/lib", f), "");
+    expect(bundleOf(dist, root)).toEqual(["frontend/src/lib/a.ts", "frontend/src/lib/b.ts", "frontend/src/lib/w.ts"]);
     // V8's ranges: the script ran, a ran, b did not.
     const at = (text) => source.indexOf(text);
     const entries = [

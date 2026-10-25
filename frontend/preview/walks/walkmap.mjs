@@ -17,7 +17,7 @@
 //   bundle  every file of the interface the walks' build holds, those
 //           only a worker runs among them, which the recording cannot see
 import { execFileSync } from "node:child_process";
-import { readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -28,7 +28,8 @@ const git = (root, ...args) => execFileSync("git", args, { cwd: root, encoding: 
 export function readMap(file) {
   try {
     const map = JSON.parse(readFileSync(file, "utf8"));
-    if (map.version !== 1 || !map.commit || !Array.isArray(map.runs)) return null;
+    // A map of no runs knows nothing, and would pick nothing.
+    if (map.version !== 1 || !map.commit || !Array.isArray(map.runs) || map.runs.length === 0) return null;
     map.bundled = new Set(map.bundle ?? []);
     return map;
   } catch {
@@ -202,10 +203,16 @@ export function decodeMappings(mappings) {
 // The interface's own files a source map names, from root, the top of
 // the repository, by their place in its sources, and null for a file of a
 // package or of the preview.
+//
+// A source is named from the map's folder, as source maps say, except in
+// the maps of Vite's workers, which name it from the folder above, the
+// build's own. So it is the first of the two where the file is.
 function sourcesOf(map, mapFile, root) {
-  const base = join(dirname(mapFile), map.sourceRoot ?? "");
+  const bases = [dirname(mapFile), dirname(dirname(mapFile))].map((d) => join(d, map.sourceRoot ?? ""));
   return map.sources.map((s) => {
-    const file = relative(root, resolve(base, s)).split(sep).join("/");
+    const at = bases.map((b) => resolve(b, s)).find((f) => existsSync(f));
+    if (!at) return null;
+    const file = relative(root, at).split(sep).join("/");
     return file.startsWith("frontend/src/") && !file.includes("/node_modules/") ? file : null;
   });
 }
@@ -361,6 +368,10 @@ if (process.argv[1] === fileURLToPath(import.meta.url) && process.argv[2] === "b
   const [, , , dir, out] = process.argv;
   const commit = git(top, "rev-parse", "HEAD").trim();
   const map = buildMap(dir, commit);
+  if (map.runs.length === 0) {
+    console.error(`no run of the walks was recorded in ${dir}, so there is no map`);
+    process.exit(1);
+  }
   writeFileSync(out, JSON.stringify(map));
   const files = Object.keys(map.lines);
   console.log(

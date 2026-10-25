@@ -94,8 +94,9 @@ jobs:
           exit "$status"
 
   # The walks as ci.yml walks them, recording what each run went through,
-  # see WALKRECORD in the Makefile. The bridge built with Go's coverage
-  # and the counting in every page make each run slower than in CI.
+  # see WALKRECORD in the Makefile. A bridge for every run, built with
+  # Go's coverage, and the counting in every page make each run slower
+  # than in CI.
   record:
     needs: image
     strategy:
@@ -150,9 +151,10 @@ jobs:
           restore-keys: walk-videos-${{ strategy.job-index }}-${{ needs.image.outputs.ref }}-${{ hashFiles('cmd/framefairy-app/walkvideos_test.go') }}-
       # A run that fails is recorded all the same: what it ran until then
       # is what it goes through, and the failure is the walks' to report,
-      # not the map's.
+      # not the map's. A run that records nothing fails the job, and with
+      # it the map, so no map that knows less than it says is kept.
       - name: Sequences and walks, recorded
-        run: make walks WALKRECORD="$PWD/.build/walk-record" WALKSHARD=${{ matrix.shard }} WALKTIMEOUT=25m || true
+        run: make walks WALKRECORD="$PWD/.build/walk-record" WALKSHARD=${{ matrix.shard }} WALKTIMEOUT=25m
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: walk-record-${{ strategy.job-index }}
