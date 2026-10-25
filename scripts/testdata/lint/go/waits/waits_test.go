@@ -1,6 +1,7 @@
 package waits
 
 import (
+	"context"
 	"testing"
 	"time"
 )
@@ -13,4 +14,12 @@ func TestWaits(t *testing.T) {
 	time.NewTimer(time.Second).Stop()
 	time.NewTicker(time.Second).Stop()
 	time.AfterFunc(time.Second, func() {}).Stop()
+	// A context with a deadline is a timer by another name.
+	_, cancel := context.WithTimeout(context.Background(), time.Second)
+	cancel()
+	_, cancel = context.WithDeadline(context.Background(), time.Now().Add(time.Second))
+	cancel()
+	// So is a check on how long something took.
+	_ = time.Since(time.Now()) > time.Second
+	_ = time.Until(time.Now()) < 0
 }

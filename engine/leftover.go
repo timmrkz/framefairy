@@ -54,6 +54,10 @@ var (
 		}
 		return filepath.Join(home, ".framefairy", "llama-servers")
 	}
+	// interrupt asks a server left behind to stop. Tests hear through it
+	// which servers were asked, so a server that must be left alone is
+	// proven never asked, rather than seen still running a moment later.
+	interrupt = func(proc *os.Process) error { return proc.Signal(os.Interrupt) }
 )
 
 // noteFile is the note of the server with this process number.
@@ -142,7 +146,7 @@ func stopServer(n serverNote) bool {
 	if err != nil {
 		return false
 	}
-	_ = proc.Signal(os.Interrupt)
+	_ = interrupt(proc)
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		if !isThatServer(n) {

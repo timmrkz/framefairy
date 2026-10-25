@@ -16,12 +16,12 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 	"unicode/utf8"
 
 	"github.com/spf13/afero"
@@ -71,20 +71,28 @@ func TestBugsOpensOneReportWindow(t *testing.T) {
 }
 
 // Two quick clicks on Bugs are two calls at once, each on a goroutine of
-// its own, and still make one window. Found in the review of #217.
+// its own, and still make one window. Found in the review of #217. The
+// second click comes while the first is still making its window, which
+// waits until that click has had its answer.
 func TestTwoQuickClicksOnBugsMakeOneWindow(t *testing.T) {
 	r := newReporting(afero.NewMemMapFs(), "/config/report")
 	var made atomic.Int32
+	making, second := make(chan struct{}), make(chan struct{})
 	r.make = func(closed func()) (func(), func()) {
-		made.Add(1)
-		time.Sleep(20 * time.Millisecond)
+		if made.Add(1) == 1 {
+			close(making)
+			<-second
+		}
 		return func() {}, closed
 	}
 	s := &FrameFairy{report: r}
 	var wg sync.WaitGroup
-	for range 2 {
-		wg.Go(func() { s.OpenReport("bugs") })
-	}
+	wg.Go(func() { s.OpenReport("bugs") })
+	<-making
+	wg.Go(func() {
+		s.OpenReport("bugs")
+		close(second)
+	})
 	wg.Wait()
 	if n := made.Load(); n != 1 {
 		t.Fatalf("two quick clicks on Bugs made %d windows", n)
@@ -146,12 +154,9 @@ func TestNothingWaitsOnAPictureBeingDecoded(t *testing.T) {
 		_ = s.SaveReportText("words")
 		close(asked)
 	}()
-	select {
-	case <-asked:
-	case <-time.After(2 * time.Second):
-		close(hold)
-		t.Fatal("the draft waited on a picture being decoded")
-	}
+	// A draft that waits on the decode never answers, and go test's own
+	// timeout ends the test and shows where it hung.
+	<-asked
 	close(hold)
 	if d := <-done; len(d.Pictures) != 1 || d.Text != "words" {
 		t.Fatalf("after the decode the draft is %+v", d)
@@ -573,7 +578,8 @@ func TestTheDraftFromSeveralAtOnce(t *testing.T) {
 		n := open.Add(1)
 		for m := most.Load(); n > m && !most.CompareAndSwap(m, n); m = most.Load() {
 		}
-		time.Sleep(time.Millisecond)
+		// Others get their turn while this one is made.
+		runtime.Gosched()
 		var once sync.Once
 		return func() {}, func() { once.Do(func() { open.Add(-1); closed() }) }
 	}

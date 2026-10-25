@@ -6,7 +6,6 @@ import (
 	"io"
 	"math"
 	"testing"
-	"time"
 )
 
 func TestShowinfoTime(t *testing.T) {
@@ -71,6 +70,7 @@ func TestPreviewFramesFromAMoment(t *testing.T) {
 }
 
 // A reader that has enough stops ffmpeg, and hears its own reason back.
+// One that went on would hand the reader a fourth frame.
 //
 // On the real disk: ffmpeg reads the episode.
 func TestPreviewFramesStopsWhenTheReaderDoes(t *testing.T) {
@@ -78,7 +78,6 @@ func TestPreviewFramesStopsWhenTheReaderDoes(t *testing.T) {
 	e := NewEngine(NewLog(io.Discard, false, false), disk)
 	enough := errors.New("enough")
 	n := 0
-	began := time.Now()
 	err := e.PreviewFrames(context.Background(), path, 0, 64, 36, func(float64, []byte) error {
 		n++
 		if n == 3 {
@@ -88,9 +87,6 @@ func TestPreviewFramesStopsWhenTheReaderDoes(t *testing.T) {
 	})
 	if !errors.Is(err, enough) || n != 3 {
 		t.Fatalf("got %v after %d frames", err, n)
-	}
-	if time.Since(began) > 10*time.Second {
-		t.Errorf("stopping took %s", time.Since(began))
 	}
 }
 

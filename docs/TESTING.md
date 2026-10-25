@@ -701,11 +701,22 @@ draw make no jump, issue #442. That the row leaves the list only once
 its fold has finished is heard from the fold's own animation, which says
 so before Svelte takes the row out. A fold the screen drew no frame of
 is tried again on a new clip, up to three times.
-A bounce the screen drew too few frames of to judge, fewer than three or
-none for 90 ms, is stepped onto again, up to three times. A bounce drawn
-on every other frame fails with "bounced on 8 of the 15 frames the screen
-drew while it lasted", where the seven frames asked for before let it
-pass.
+
+Where how many frames the screen draws decides what a walk can see, the
+walk gives the app its frames or its time instead. The bounce after a
+word step is drawn on frames the walk hands the caption layers, one a
+sixtieth of a second after the other, `frames` on `CaptionLayers` in
+`lib/frames/captions.ts`, and the pills are read off the screen after
+each: its 220 ms are 15 frames on any machine, and the one nearest its
+peak is within 0.2 % of it. On the screen's own frames a busy machine
+drew two and missed the peak, issues #328, #329 and #460. A frame whose
+captions a walk holds back waits for them as long as they take, by a
+wait the walk hands the frame queue, `dressWait` in
+`lib/frames/queue.ts`, where on the browser's clock the walk's own steps
+used up the 600 ms it waits, issue #468. And a glide read while it plays
+goes on until the video preview has shown ten frames or come to the next
+keyframe, not for two seconds, in which a busy machine showed two, issue
+#464.
 
 ### `speed.mjs`: how quickly the video preview follows the keys
 
@@ -1012,8 +1023,31 @@ in front comes from `lsappinfo`, which needs no permission a runner does
 not have. The app's log goes to `~/Library/Logs/FrameFairy-outside.log`
 as well, and the test shows it when a check fails.
 
+No check waits on the clock, the same as every other test. Each waits to
+be told:
+
+- **The app is up.** The test listens on 127.0.0.1:47291, and the probe
+  says hello there once it listens. Starting the app waits for that.
+- **Something changed.** The probe counts changes: a link handed over,
+  what the app tells the page, its window coming to the front or going
+  to the back, and what the page shows, which the page tells it once a
+  frame at most from a `MutationObserver` the probe puts there.
+  `GET /state?after=N` answers once the count is past N, and a check asks
+  again after each change until what it waits for holds.
+- **The app is gone.** `GET /gone` answers at once and holds the answer
+  open for as long as the app runs, so quitting waits for that answer to
+  end with the process.
+- **The letter is there.** After a checkout the test presses Deliver on
+  the dispenser's dev page, which answers once Paddle's webhook is
+  answered, and the letter goes out while it is.
+
+A check that never holds is ended by `go test -timeout` in `make
+outside`, and what the app had each time it changed is in the log.
+
 The job stops after 30 minutes, so an app that hangs does not hold a Mac
-for GitHub's six hours.
+for GitHub's six hours. Each check waits on what the app says, with no
+limit of its own, so a check whose signal never comes is ended by go
+test after `OUTSIDETIMEOUT`, 2m in CI, which prints every goroutine.
 
 `make outside` builds the app as `make` does, then once more with the
 probe into `.build/outside`, so `bin/` never has it, and builds the
@@ -1095,19 +1129,24 @@ What the code takes from outside, so a test can drive it:
 
 | What | Handed in as | Where |
 | --- | --- | --- |
-| the time of day | `now func() time.Time` | `signer.WithClock` in `licence/signer/signer.go`, `Now` in `licence/dispenser/engine.go` |
-| timers inside goroutines | `testing/synctest` around the test | the lint fixture `scripts/testdata/lint/go/signals`, and the dictation tests in `cmd/framefairy-app/listen_test.go` |
+| the time of day | `now func() time.Time` | `signer.WithClock` in `licence/signer/signer.go`, `Now` in `licence/dispenser/engine.go`, `now` on the app, which times an edit, in `cmd/framefairy-app/main.go` |
+| timers inside goroutines | `testing/synctest` around the test | the lint fixture `scripts/testdata/lint/go/signals`, the dictation tests in `cmd/framefairy-app/listen_test.go`, `TestOnlyAFewDecodersNobodyHoldsStandRunning` in `cmd/framefairy-app/frames_test.go`, and the tests of a health check and of a model that keeps talking in `engine/local_test.go`, which ask llama-server through `neverAnswers` and `streamFrom`, transports with no network |
 | the disk | `afero.Fs` | `engine/files.go`, the project and the app's store |
 | random numbers | `io.Reader` | `signer.WithRandom` |
 | the model, the recogniser | an interface with a fake | the fake recogniser and fake llama-server in `engine/project_test.go` |
 | a program we run | its path | ffmpeg and the decoder through `FRAMEFAIRY_FRAMES` |
-| the end of work | a callback the caller gives, a channel closed at every change, a channel closed when the work ends, or a `sync.WaitGroup` | `emit` in `newQueue`, and `until` on `queue.changed`, `cmd/framefairy-app/jobs.go`, `changed` on the updates in `cmd/framefairy-app/updates.go`, `done` of a measuring in `cmd/framefairy-app/levels.go`, `Arrived` in `updates/fetch.go`, `clearing` in `cmd/framefairy-app/main.go` |
+| asking another program to stop | a function | `interrupt` in `engine/leftover.go`, which a test wraps to hear which servers left behind were asked |
+| a lock that has to wait | `lockWaits(path)`, called as the plan lock starts to wait for another holder | `engine/edit.go` and `engine/filelock_unix.go`, waited on through `waitsOn` in `engine/files_test.go`, which `engine/edit_test.go` uses too |
+| the end of work | a callback the caller gives, a channel closed at every change, a channel closed when the work ends, or a `sync.WaitGroup` | `emit` in `newQueue`, and `until` on `queue.changed`, `cmd/framefairy-app/jobs.go`, `changed` on the updates in `cmd/framefairy-app/updates.go`, `done` of a measuring in `cmd/framefairy-app/levels.go`, `Arrived` in `updates/fetch.go`, `clearing` in `cmd/framefairy-app/main.go`, `news` on the model host in `engine/modelhost.go`, waited on by `untilHost`, `cursors` on the episode's decoder in `engine/episodeframes.go`, waited on by `untilCursors`. A stand-in program says it is up on its output, or ends once it has said what the test reads, as in `engine/leftover_test.go` and `engine/local_test.go` |
 
 The fake clocks: `testing/synctest` in Go, whose `time.Sleep` line says
 `//nolint:forbidigo // synctest bubble`, Vitest's fake timers in the
 interface tests, as `frontend/src/lib/frames/captions.test.ts` does, and
 Playwright's clock in the walks, through `fakeClock`, `holdClock`,
-`runClock` and `letClockGo` in `walks/bridge.mjs`. The end-to-end tests
+`runClock` and `letClockGo` in `walks/bridge.mjs`. In a bubble,
+`synctest.Wait` tells a test that every goroutine of the bubble waits, as
+the asks at once for a transcript in `cmd/framefairy-app/kept_test.go`
+use it. The end-to-end tests
 are the walks, against the real Go side through the bridge, and the
 rules every walk checks after every step are in `walks/rules.mjs`.
 
@@ -1119,10 +1158,16 @@ its first line there, `bubbleLog` in
 `cmd/framefairy-app/listen_test.go`.
 
 What CI holds of the skill's rules today: golangci-lint's `forbidigo` in
-`make lint` and ESLint in `make interface` for the clock in a test, with
-the old breaks in `frontend/eslint-suppressions.json` and `--new-from-rev`
-for Go, the race detector on every Go test, and `internal/offdisk` for a
-test on the real disk. What it does not hold yet, skipped tests, polls
-with a deadline, mutation testing and a check a pull request cannot
-weaken, is #475. What is left of waits on the clock is #394, in the Go
-tests.
+`make lint` for the clock, for a context with a deadline and for a check
+on how long something took in a Go test, over the whole tree with no old
+breaks let through and the checks from outside the app read the way they
+build, on a Mac with the outside tag, `-timeout` from `OUTSIDETIMEOUT`
+in `make outside`, 2m in CI, ESLint in `make
+interface` for the clock in a walk or an interface test, with the old
+breaks in `frontend/eslint-suppressions.json`, the race detector on every
+Go test, `internal/offdisk` for a test on the real disk, and `-timeout`
+from `UNITTIMEOUT` in `make unit`, 4m in CI, which ends a test whose signal
+never comes. What it does not hold yet, skipped tests, polls with a
+deadline that use no clock call, mutation testing and a check a pull
+request cannot weaken, is #475. The product's own timers set short and
+left to run on the real clock are #510.

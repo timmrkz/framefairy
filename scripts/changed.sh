@@ -389,7 +389,7 @@ if [ -n "$affected" ]; then
 	# the Makefile.
 	path=$PATH
 	PATH=${TOOLS_FIRST:-$PATH}
-	$GO test -race -ldflags "${LDFLAGS:-}" $affected
+	$GO test -race -timeout "${UNITTIMEOUT:-10m}" -ldflags "${LDFLAGS:-}" $affected
 	targets=$(fuzz_targets)
 	if [ -n "$targets" ]; then
 		GO=$GO FUZZTIME=$FUZZTIME FUZZTARGETS="$targets" sh scripts/fuzz.sh

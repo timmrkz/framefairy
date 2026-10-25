@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"framefairy/engine"
+	"framefairy/internal/wake"
 )
 
 // lanes hands out turns in the queue's lanes, one job at a time in each, in
@@ -43,7 +44,7 @@ type lanes struct {
 	mu      sync.Mutex
 	held    map[string]*holder
 	asks    []*ask
-	changed wake
+	changed wake.Wake
 }
 
 // A turn is either plain, or a step of a search: hearing, which gives way,
@@ -84,7 +85,7 @@ func newLanes() *lanes {
 
 // wakeLocked tells everyone waiting that something changed. l.mu is held.
 func (l *lanes) wakeLocked() {
-	l.changed.wakeLocked()
+	l.changed.WakeLocked()
 }
 
 // enqueue asks for a turn now, so the turn keeps its place from this
@@ -153,7 +154,7 @@ func (l *lanes) wait(ctx context.Context, a *ask) (context.Context, func(), erro
 		if hearing := l.held[a.lane]; hearing != nil && givesWay(hearing.kind, a.kind) {
 			told = l.takeBackLocked(hearing, told)
 		}
-		changed := l.changed.waitLocked()
+		changed := l.changed.WaitLocked()
 		l.mu.Unlock()
 		tell(told)
 		told = nil

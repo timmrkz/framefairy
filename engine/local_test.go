@@ -14,6 +14,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/spf13/afero"
@@ -131,7 +132,9 @@ func TestTheServerLogIsKeptBeforeTheLogsFolderExists(t *testing.T) {
 	}
 	dir := t.TempDir()
 	server := filepath.Join(dir, "llama-server")
-	script := "#!/bin/sh\necho \"buffer size stand-in $*\"\nexec sleep 30\n"
+	// It says what it was started with and ends, so the start is over
+	// once it has said it.
+	script := "#!/bin/sh\necho \"buffer size stand-in $*\"\n"
 	if err := standin.Write(server, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -142,25 +145,11 @@ func TestTheServerLogIsKeptBeforeTheLogsFolderExists(t *testing.T) {
 	logDir := filepath.Join(dir, "episode.framefairy", "logs")
 	logFile := filepath.Join(logDir, "llm-server.log")
 
-	// The stand-in never answers, so the start is given up once its
-	// output has been seen, or after ten seconds.
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		e := NewEngine(NewLog(io.Discard, false, false), disk)
-		_, _, _ = e.startServer(ctx, LocalModel{Server: server, Model: model}, 16384, logDir)
-	}()
-	var body []byte
-	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); {
-		if body, _ = os.ReadFile(logFile); strings.Contains(string(body), "buffer size") {
-			break
-		}
-		time.Sleep(50 * time.Millisecond)
+	e := NewEngine(NewLog(io.Discard, false, false), disk)
+	if _, _, err := e.startServer(context.Background(), LocalModel{Server: server, Model: model}, 16384, logDir); err == nil {
+		t.Fatal("a server that ended while it loaded was taken for loaded")
 	}
-	cancel()
-	<-done
+	body, _ := os.ReadFile(logFile)
 	if !strings.Contains(string(body), "buffer size") {
 		t.Fatalf("no server output in %s, got %q", logFile, body)
 	}
@@ -187,11 +176,10 @@ func TestAServerThatWillNotStopIsKilledAtOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	began := time.Now()
+	// A server that is never killed hangs here until go test's -timeout.
+	// It is killed once stopGrace is up, which runs on the real clock, the
+	// kind of wait #510 is about.
 	stop()
-	if took := time.Since(began); took > 2*time.Second {
-		t.Errorf("stopping a server that ignores the interrupt took %s", took)
-	}
 }
 
 // The name of a model is enough on the command line. A bare file name that
@@ -248,36 +236,47 @@ func TestAComputeErrorSaysTheMemoryRanOut(t *testing.T) {
 // its health no longer than healthWait, and not a moment once the load is
 // cancelled. Without a limit, a load that hung there outlived Cancel and
 // quitting.
+//
+// It runs in a bubble, with healthWait as the app has it, on the bubble's
+// clock. Changes localClient, which the whole package shares, so it does
+// not run in parallel.
 func TestAHealthCheckThatGetsNoAnswerGivesUp(t *testing.T) {
-	release := make(chan struct{})
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		select {
-		case <-release:
-		case <-r.Context().Done():
+	synctest.Test(t, func(t *testing.T) {
+		was := localClient
+		localClient = &http.Client{Transport: neverAnswers{}}
+		defer func() { localClient = was }()
+
+		began := time.Now()
+		if healthy(context.Background(), "http://llama-server") {
+			t.Error("a server that never answered was taken for ready")
 		}
-	}))
-	t.Cleanup(server.Close)
-	t.Cleanup(func() { close(release) })
-	was := healthWait
-	healthWait = 200 * time.Millisecond
-	t.Cleanup(func() { healthWait = was })
+		if took := time.Since(began); took != healthWait { //nolint:forbidigo // synctest bubble
+			t.Errorf("a look at a server that never answers took %s on the bubble's clock, want %s", took, healthWait)
+		}
 
-	began := time.Now()
-	if healthy(context.Background(), server.URL) {
-		t.Error("a server that never answered was taken for ready")
-	}
-	if took := time.Since(began); took > 2*time.Second {
-		t.Errorf("a look at a server that never answers took %s", took)
-	}
+		ctx, cancel := context.WithCancel(context.Background())
+		looked := make(chan bool)
+		began = time.Now()
+		go func() { looked <- healthy(ctx, "http://llama-server") }()
+		// Cancelled while it waits for the answer, not before it asks.
+		synctest.Wait()
+		cancel()
+		if <-looked {
+			t.Error("a server that never answered was taken for ready once the load was cancelled")
+		}
+		if took := time.Since(began); took != 0 { //nolint:forbidigo // synctest bubble
+			t.Errorf("a cancelled look waited %s on the bubble's clock, want none", took)
+		}
+	})
+}
 
-	healthWait = time.Minute
-	ctx, cancel := context.WithCancel(context.Background())
-	time.AfterFunc(100*time.Millisecond, cancel)
-	began = time.Now()
-	healthy(ctx, server.URL)
-	if took := time.Since(began); took > 2*time.Second {
-		t.Errorf("a cancelled load waited %s for an answer", took)
-	}
+// neverAnswers takes every request and answers none, until the request is
+// called off. No network, so it runs in a bubble.
+type neverAnswers struct{}
+
+func (neverAnswers) RoundTrip(r *http.Request) (*http.Response, error) {
+	<-r.Context().Done()
+	return nil, r.Context().Err()
 }
 
 // A llama-server the app starts answers only to the app: it is handed a
@@ -291,7 +290,9 @@ func TestTheServerIsHandedAKeyOfItsOwn(t *testing.T) {
 	}
 	dir := t.TempDir()
 	server := filepath.Join(dir, "llama-server")
-	script := "#!/bin/sh\necho \"key=$LLAMA_API_KEY args=$*\"\nexec sleep 30\n"
+	// It says what it was handed and ends, so the start is over once it
+	// has said it.
+	script := "#!/bin/sh\necho \"key=$LLAMA_API_KEY args=$*\"\n"
 	if err := standin.Write(server, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -301,24 +302,9 @@ func TestTheServerIsHandedAKeyOfItsOwn(t *testing.T) {
 	}
 	launch := func(name string) string {
 		logDir := filepath.Join(dir, name)
-		logFile := filepath.Join(logDir, "llm-server.log")
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-		done := make(chan struct{})
-		go func() {
-			defer close(done)
-			e := NewEngine(NewLog(io.Discard, false, false), disk)
-			_, _, _ = e.startServer(ctx, LocalModel{Server: server, Model: model}, 16384, logDir)
-		}()
-		var body []byte
-		for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); {
-			if body, _ = os.ReadFile(logFile); strings.Contains(string(body), "args=") {
-				break
-			}
-			time.Sleep(50 * time.Millisecond)
-		}
-		cancel()
-		<-done
+		e := NewEngine(NewLog(io.Discard, false, false), disk)
+		_, _, _ = e.startServer(context.Background(), LocalModel{Server: server, Model: model}, 16384, logDir)
+		body, _ := os.ReadFile(filepath.Join(logDir, "llm-server.log"))
 		return string(body)
 	}
 	keyOf := func(out string) string {
@@ -404,7 +390,7 @@ func TestALocalModelThatStopsAnsweringIsGivenUpOn(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "stopped answering") {
 		t.Fatalf("err = %v", err)
 	}
-	if took := time.Since(began); took > 5*time.Second {
+	if took := time.Since(began); took > 5*time.Second { //nolint:forbidigo // a product timer shortened on the real clock, left for #510
 		t.Errorf("a model that stopped answering was waited on for %s", took)
 	}
 	if stopped.Load() != 1 {
@@ -427,30 +413,65 @@ func TestASlowMachineIsNotTakenForAStalledModel(t *testing.T) {
 
 // A server that takes longer than localStall to answer, but says something
 // all the while, is not a server that stopped answering.
+//
+// It runs in a bubble, with localStall as the app has it, on the bubble's
+// clock. Changes localClient, which the whole package shares, so it does
+// not run in parallel.
 func TestALocalModelThatKeepsTalkingIsWaitedFor(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("content-type", "text/event-stream")
-		for done := 0; done < 100; done += 10 {
-			fmt.Fprintf(w, `data: {"choices":[],"prompt_progress":{"total":100,"cache":0,"processed":%d}}`+"\n\n", done)
-			w.(http.Flusher).Flush()
-			time.Sleep(50 * time.Millisecond)
-		}
-		writeLocalStream(w, `{"clips":[]}`, 4)
-	}))
-	t.Cleanup(server.Close)
-	stalled := localStall
-	localStall = 200 * time.Millisecond
-	t.Cleanup(func() { localStall = stalled })
+	synctest.Test(t, func(t *testing.T) {
+		was := localClient
+		localClient = &http.Client{Transport: streamFrom(func(w http.ResponseWriter) {
+			// Ten lines, each half of localStall after the one before, five
+			// times localStall in all.
+			for done := 0; done < 100; done += 10 {
+				fmt.Fprintf(w, `data: {"choices":[],"prompt_progress":{"total":100,"cache":0,"processed":%d}}`+"\n\n", done)
+				time.Sleep(localStall / 2) //nolint:forbidigo // synctest bubble
+			}
+			writeLocalStream(w, `{"clips":[]}`, 4)
+		})}
+		defer func() { localClient = was }()
 
-	answer, err := quietEngine().CallLocal(context.Background(), LocalModel{URL: server.URL},
-		linesRecipe, "Transcript:", 40, 12, 1000, "", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if answer.Content != `{"clips":[]}` {
-		t.Errorf("answer %q", answer.Content)
-	}
+		began := time.Now()
+		answer, err := quietEngine().CallLocal(context.Background(), LocalModel{URL: "http://llama-server"},
+			linesRecipe, "Transcript:", 40, 12, 1000, "", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if answer.Content != `{"clips":[]}` {
+			t.Errorf("answer %q", answer.Content)
+		}
+		if took := time.Since(began); took != 5*localStall { //nolint:forbidigo // synctest bubble
+			t.Errorf("the answer took %s on the bubble's clock, want %s", took, 5*localStall)
+		}
+	})
 }
+
+// streamFrom answers every request with what write writes, as it writes
+// it, the way llama-server streams an answer. A request called off ends
+// what is read, as a closed connection does. No network, so it runs in a
+// bubble.
+type streamFrom func(w http.ResponseWriter)
+
+func (write streamFrom) RoundTrip(r *http.Request) (*http.Response, error) {
+	read, w := io.Pipe()
+	stop := context.AfterFunc(r.Context(), func() { w.CloseWithError(r.Context().Err()) })
+	go func() {
+		defer stop()
+		write(pipeWriter{w, http.Header{}})
+		w.Close()
+	}()
+	return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"text/event-stream"}},
+		Body: read, Request: r}, nil
+}
+
+// pipeWriter is a ResponseWriter over a pipe, for streamFrom.
+type pipeWriter struct {
+	*io.PipeWriter
+	header http.Header
+}
+
+func (w pipeWriter) Header() http.Header { return w.header }
+func (w pipeWriter) WriteHeader(int)     {}
 
 // The time a model took to load is told in its parts, from the lines
 // llama-server writes as it begins each, so the part to make shorter is

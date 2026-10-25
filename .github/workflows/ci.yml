@@ -42,8 +42,16 @@ concurrency:
 # goes on as if there were no cache, where it would wait ten. Restoring the
 # walks' system packages once took 2 min 22 s on one runner and 3 s on the
 # others, which put the job at seven minutes.
+#
+# A Go test waits on signals, never on the clock, so one whose signal never
+# comes hangs. go test ends it after UNITTIMEOUT and prints every
+# goroutine, see make unit, well before a job's five minutes are up. The
+# checks from outside the app wait on the app the same way, and go test
+# ends them after OUTSIDETIMEOUT, see make outside.
 env:
   SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
+  UNITTIMEOUT: 4m
+  OUTSIDETIMEOUT: 2m
 
 jobs:
   # Which jobs a pull request needs, see .github/ci-filters.yml. A push to
@@ -58,6 +66,7 @@ jobs:
       pull-requests: read
     outputs:
       app: ${{ github.event_name != 'pull_request' || steps.filter.outputs.app == 'true' }}
+      mac: ${{ github.event_name != 'pull_request' || steps.filter.outputs.mac == 'true' }}
       go: ${{ github.event_name != 'pull_request' || steps.filter.outputs.go == 'true' }}
       interface: ${{ github.event_name != 'pull_request' || steps.filter.outputs.interface == 'true' }}
       workflows: ${{ github.event_name != 'pull_request' || steps.filter.outputs.workflows == 'true' }}
@@ -653,7 +662,7 @@ jobs:
   # rather than twice.
   outside:
     needs: changes
-    if: needs.changes.outputs.app == 'true'
+    if: needs.changes.outputs.mac == 'true'
     runs-on: macos-latest
     # The app is opened by macOS and nothing ends it but the test. A run
     # that hangs stops here, not at GitHub's six hours.

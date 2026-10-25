@@ -260,8 +260,13 @@ func TestTheEpisodesOpenedLastComeNewestFirst(t *testing.T) {
 	if got := s.Opened(1); fmt.Sprint(got) != fmt.Sprint([]string{eps[1]}) {
 		t.Errorf("after opening b got %v", got)
 	}
-	time.Sleep(5 * time.Millisecond)
+	// c's file is written after b was opened, and its clock says an hour
+	// later still.
 	if err := s.ChooseClip(eps[2], "clips/y"); err != nil {
+		t.Fatal(err)
+	}
+	later := time.Now().Add(time.Hour)
+	if err := s.store.files.Chtimes(filepath.Join(engine.WorkDir(eps[2]), chosenFile), later, later); err != nil {
 		t.Fatal(err)
 	}
 	if got := s.Opened(1); fmt.Sprint(got) != fmt.Sprint([]string{eps[1]}) {

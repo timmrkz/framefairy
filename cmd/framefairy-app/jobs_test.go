@@ -82,7 +82,7 @@ func TestTheQueueTakesEverythingAtOnce(t *testing.T) {
 
 	// Nothing may be left running: every job was asked to stop. A job
 	// that never stops hangs the test until go test's own -timeout.
-	q.until(func(jobs []*Job) bool { return !slices.ContainsFunc(jobs, (*Job).going) }, nil)
+	q.untilNoneGoing()
 	if events.Load() == 0 {
 		t.Error("the interface was told nothing")
 	}
@@ -166,7 +166,7 @@ func TestTheQueueGoesOnTheMomentAJobStops(t *testing.T) {
 			if !wait() {
 				t.Errorf("%s: the job did not stop", what)
 			}
-			if got := time.Since(start); got != stopping {
+			if got := time.Since(start); got != stopping { //nolint:forbidigo // synctest bubble
 				t.Errorf("%s took %v for a job that stopped in %v", what, got, stopping)
 			}
 		}
@@ -192,7 +192,7 @@ func TestTheQueueGoesOnTheMomentAJobStops(t *testing.T) {
 		if q.shutDown() {
 			t.Error("quitting said a job stopped that never did")
 		}
-		if got := time.Since(start); got != stopWait {
+		if got := time.Since(start); got != stopWait { //nolint:forbidigo // synctest bubble
 			t.Errorf("quitting gave up after %v, want stopWait, %v", got, stopWait)
 		}
 		close(release)
@@ -336,7 +336,7 @@ func TestALaneSurvivesAPanicAroundAJob(t *testing.T) {
 
 	// A lane that died leaves the job behind it queued, and the test hangs
 	// until go test's own -timeout, which shows every goroutine.
-	q.until(func(jobs []*Job) bool { return !slices.ContainsFunc(jobs, (*Job).going) }, nil)
+	q.untilNoneGoing()
 	for _, j := range []Job{first, second, third} {
 		got, ok := q.find(j.Episode, j.Kind)
 		if !ok || got.State != JobDone {
@@ -613,6 +613,12 @@ func (n *jobNews) until(done func(map[string]Job) bool) {
 	for !done(n.jobs) {
 		n.change.Wait()
 	}
+}
+
+// untilNoneGoing waits until no job of the queue is queued or running, on
+// the queue's own news of every change, see until.
+func (q *queue) untilNoneGoing() {
+	q.until(func(jobs []*Job) bool { return !slices.ContainsFunc(jobs, (*Job).going) }, nil)
 }
 
 // Whatever order the news reaches the window in, the snapshot of a job

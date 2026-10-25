@@ -240,7 +240,8 @@ lane, and a removal deletes that folder next. On Windows a folder with
 an open file in it cannot be deleted. So a job is waited for until its
 goroutine is done, `alive` in `cmd/framefairy-app/jobs.go`, and the queue
 tells whoever waits of every change, see `until` there and `wake` in
-`wake.go`, which the lanes use too. A job that will not stop is given
+`internal/wake`, which the lanes, the updates, the engine's model host
+and the episode's decoder use too. A job that will not stop is given
 `stopWait`, 15 s, and then the removal says so and deletes nothing, and
 the app quits anyway. The waits used to look at the list every 20, 50 or
 100 ms, so each took up to that much longer than the work, #394.
@@ -536,8 +537,9 @@ The tests in `jobs_test.go`, `lanes_test.go`, `remove_test.go`,
 never wait on the clock. They wait on `until`, with no time limit, on a job's
 news, on the fake clock of a `testing/synctest` bubble, or on `clearing`,
 which is done once clearing a video let go has returned, and a job that
-never ends is left to `go test`'s own `-timeout`. What is left of waits
-on the clock in the other Go tests is #394.
+never ends is left to `go test`'s own `-timeout`, `UNITTIMEOUT` in `make
+unit`. No other Go test waits on the clock either since #394, and
+`make lint` holds every one to it.
 `TestTheQueueGoesOnTheMomentAJobStops` holds that each wait of the app
 goes on the moment its job stops, and that a job that will not stop is
 given `stopWait` and no more. `TestAWaitForJobsGoesOnOnlyOnceTheirWorkIsDone`

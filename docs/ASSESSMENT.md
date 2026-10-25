@@ -337,7 +337,7 @@ facade the app goes around, and three files too big to hold in one's head.
     300 ms for a 200 ms job. Poll with a deadline instead. **Fixed** in #58.
     The advice was wrong: a poll with a deadline waits on the clock too.
     A test hears the event that says the job ended, see the testing skill
-    in `.claude/skills/testing/`. What is left of such polls is #394.
+    in `.claude/skills/testing/`. #394 took the last of such polls out.
 38. When our ffmpeg build fails, `tools.sh:104` unlinks the user's Homebrew
     ffmpeg and installs the tap's, a change to the machine nobody would
     expect. **Fixed** in #58.

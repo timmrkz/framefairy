@@ -455,18 +455,27 @@ describe("the bounce after a word step", () => {
     return asked;
   }
 
-  // The screen's frames, one at a time, at the moment given.
-  function screen() {
+  // The screen's frames, one at a time, at the moment given. Handed in,
+  // they are the layers' frames, the way a walk gives them, and the
+  // browser's are never asked for.
+  function screen(handed = false) {
     let waiting: [number, FrameRequestCallback][] = [];
     let n = 0;
-    vi.stubGlobal("requestAnimationFrame", (f: FrameRequestCallback) => {
+    const next = (f: FrameRequestCallback) => {
       waiting.push([++n, f]);
       return n;
-    });
-    vi.stubGlobal("cancelAnimationFrame", (id: number) => {
+    };
+    const cancel = (id: number) => {
       waiting = waiting.filter(([k]) => k !== id);
-    });
+    };
+    const never = () => {
+      throw new Error("the browser's frames were asked for, where frames were handed in");
+    };
+    vi.stubGlobal("requestAnimationFrame", handed ? never : next);
+    vi.stubGlobal("cancelAnimationFrame", handed ? never : cancel);
     return {
+      next,
+      cancel,
       frame(ms: number) {
         const now = waiting;
         waiting = [];
@@ -484,17 +493,23 @@ describe("the bounce after a word step", () => {
   // the short's frames. Then he found the bounce laggy, the short's frames
   // of the pop played at 25 a second, and wanted it the same for every
   // word, a word of one frame too.
-  it("bounces the word a word step lands on at the screen's rate, and shows only the frame after any other step", async () => {
+  // A walk hands in frames of its own, so a busy machine cannot draw the
+  // bounce on too few to see, issue #460: the bounce is the same on them.
+  it.each([
+    ["the browser's frames", false],
+    ["frames handed in", true],
+  ])("bounces the word a word step lands on at the screen's rate, and shows only the frame after any other step, on %s", async (_, handed) => {
     let lit = 0;
     let scale = "1.0000";
     const asked = goSide(
       () => lit,
       () => scale,
     );
-    const s = screen();
+    const s = screen(handed);
     let paused = true;
     let came = 0;
     const layers = new CaptionLayers(() => came++, { paused: () => paused });
+    if (handed) layers.frames = s;
     // Until every answer asked for has come, the Go side here answering
     // each at once.
     const flush = () => layers.taken(asked.length);

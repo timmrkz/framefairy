@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"framefairy/internal/framewire"
+	"framefairy/internal/wake"
 )
 
 // DecoderSaid, when set, hears every line an episode's decoder writes on
@@ -70,6 +71,10 @@ type EpisodeFrames struct {
 	// The cursors kept for the next stream, of picture and of sound: a
 	// cursor reads one stream of the file and stays that kind.
 	idle [2][]uint32
+	// cursors wakes whoever waits whenever a cursor is made, kept or taken,
+	// so a test goes on when that happens rather than after a guess at the
+	// time. Only the tests wait on it.
+	cursors wake.Wake
 	// Where each kept cursor of picture stands: the grid and size it read
 	// on and the last frame it handed over. A cursor that warmed, failed
 	// or was closed has none.
@@ -181,6 +186,7 @@ func (f *EpisodeFrames) warm(gone chan struct{}) {
 			delete(f.answers, id)
 			if rec.Kind == framewire.Opened && len(f.idle[kind]) < cursorsKept[kind] {
 				f.idle[kind] = append(f.idle[kind], id)
+				f.cursors.WakeLocked()
 			} else {
 				_ = f.send(gone, "close %d", id)
 			}
@@ -223,6 +229,7 @@ func (f *EpisodeFrames) start() error {
 	f.cmd, f.in, f.gone = cmd, in, make(chan struct{})
 	f.idle, f.answers, f.nextID = [2][]uint32{}, map[uint32]chan framewire.Record{}, 0
 	f.placed, f.finishing = map[uint32]place{}, map[uint32]place{}
+	f.cursors.WakeLocked()
 	gone := f.gone
 	f.warm(gone)
 	// What the decoder says on its error stream, read to its end before
@@ -384,6 +391,7 @@ func (f *EpisodeFrames) take(kind int, want *place) (uint32, chan framewire.Reco
 		f.nextID++
 		id = f.nextID
 	}
+	f.cursors.WakeLocked()
 	delete(f.placed, id)
 	// Room for the open's answer, a batch and the record that ends it, so
 	// the reader never waits on a stream that has stopped reading.
@@ -436,6 +444,7 @@ func (f *EpisodeFrames) give(id uint32, kind int, failed bool, at *place) {
 		_ = f.send(f.gone, "close %d", old)
 	}
 	f.idle[kind] = append(f.idle[kind], id)
+	f.cursors.WakeLocked()
 	if at != nil && at.frame >= 0 {
 		f.placed[id] = *at
 	}
@@ -707,6 +716,7 @@ func (f *EpisodeFrames) Captions(ctx context.Context, captions framewire.Caption
 	if c == nil || c.gone != f.gone {
 		f.nextID++
 		c = &captionsCursor{id: f.nextID, ch: make(chan framewire.Record, 2), gone: f.gone}
+		f.cursors.WakeLocked()
 		f.answers[c.id] = c.ch
 		f.captions = c
 	}

@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/wailsapp/wails/v3/pkg/updater"
 
+	"framefairy/internal/wake"
 	"framefairy/updates"
 )
 
@@ -160,7 +162,7 @@ func (cs *channelServer) publicKey() string {
 // what it has sent so far. The states are sent from the updating's own
 // goroutines, so they are read through sent, under the same lock. It is a
 // build made on the Mac, with nothing in updates.json.
-func newTestUpdating(t *testing.T, cs *channelServer, busy bool) (*updating, func() []UpdateState) {
+func newTestUpdating(t *testing.T, cs *channelServer, busy bool) (*updating, func(until func([]UpdateState) bool) []UpdateState) {
 	t.Helper()
 	return testUpdating(t, cs, busy, "", "")
 }
@@ -168,10 +170,11 @@ func newTestUpdating(t *testing.T, cs *channelServer, busy bool) (*updating, fun
 // testUpdating is newTestUpdating for a build from the channel own, or
 // made on the Mac when own is empty, with stored in updates.json, picked
 // by a run before.
-func testUpdating(t *testing.T, cs *channelServer, busy bool, own, stored string) (*updating, func() []UpdateState) {
+func testUpdating(t *testing.T, cs *channelServer, busy bool, own, stored string) (*updating, func(until func([]UpdateState) bool) []UpdateState) {
 	t.Helper()
 	var mu sync.Mutex
 	var sent []UpdateState
+	var told wake.Wake
 	picked := stored
 	c := &updating{
 		own:  own,
@@ -179,6 +182,7 @@ func testUpdating(t *testing.T, cs *channelServer, busy bool, own, stored string
 		emit: func(s UpdateState) {
 			mu.Lock()
 			sent = append(sent, s)
+			told.WakeLocked()
 			mu.Unlock()
 		},
 		load: func() string {
@@ -204,10 +208,21 @@ func testUpdating(t *testing.T, cs *channelServer, busy bool, own, stored string
 	}
 	// Nothing it started goes on into the next test.
 	t.Cleanup(c.shutDown)
-	return c, func() []UpdateState {
-		mu.Lock()
-		defer mu.Unlock()
-		return append([]UpdateState(nil), sent...)
+	// What the interface was told, at once with nil, or once until holds
+	// for it. A change wakes whoever waits on the state before it tells
+	// the interface, so waitFor can see a state the interface has yet to
+	// hear of.
+	return c, func(until func([]UpdateState) bool) []UpdateState {
+		for {
+			mu.Lock()
+			if until == nil || until(sent) {
+				defer mu.Unlock()
+				return append([]UpdateState(nil), sent...)
+			}
+			ch := told.WaitLocked()
+			mu.Unlock()
+			<-ch
+		}
 	}
 }
 
@@ -222,7 +237,7 @@ func waitFor(t *testing.T, c *updating, what string, ok func(UpdateState) bool) 
 		// Taken before the look, so a change between the look and the
 		// wait still ends the wait.
 		c.mu.Lock()
-		changed := c.changed.waitLocked()
+		changed := c.changed.WaitLocked()
 		c.mu.Unlock()
 		if s := c.State(); ok(s) {
 			return s
@@ -297,8 +312,12 @@ func TestPickingAChannelFetchesItsBuild(t *testing.T) {
 	if s.Written != s.Total || s.Total == 0 {
 		t.Errorf("the fill ended at %d of %d", s.Written, s.Total)
 	}
+	// The interface hears of ready just after the state is.
+	told := sent(func(all []UpdateState) bool {
+		return slices.ContainsFunc(all, func(st UpdateState) bool { return st.Phase == "ready" })
+	})
 	var phases []string
-	for _, st := range sent() {
+	for _, st := range told {
 		if st.Phase != "" && (len(phases) == 0 || phases[len(phases)-1] != st.Phase) {
 			phases = append(phases, st.Phase)
 		}
@@ -594,7 +613,7 @@ func TestAPickStopsTheDownloadBefore(t *testing.T) {
 	})
 
 	_ = c.Follow("pr-20")
-	after := len(sent())
+	after := len(sent(nil))
 	// At once, before any check has answered.
 	if s := c.State(); s.Picked != "pr-20" || s.Phase != "checking" || s.Next != "" || s.Follows != "pr-20" {
 		t.Errorf("right after the pick: %+v", s)
@@ -605,7 +624,7 @@ func TestAPickStopsTheDownloadBefore(t *testing.T) {
 	if s.Follows != "pr-20" || s.Problem != "" {
 		t.Errorf("%+v", s)
 	}
-	for _, st := range sent()[after:] {
+	for _, st := range sent(nil)[after:] {
 		if st.Next == "0.3.0-main.5" || st.Phase == "failed" {
 			t.Errorf("after the pick the screen was told %+v", st)
 		}

@@ -179,7 +179,12 @@ func lockFile(fsys afero.Fs, path string) func() {
 	}
 	held, _ := fileLocks.LoadOrStore(key, &sync.Mutex{})
 	mu := held.(*sync.Mutex)
-	mu.Lock()
+	if !mu.TryLock() {
+		if lockWaits != nil {
+			lockWaits(key.path)
+		}
+		mu.Lock()
+	}
 	release := func() {}
 	if OnDisk(fsys) {
 		release = lockAcrossProcesses(key.path)
@@ -189,6 +194,11 @@ func lockFile(fsys afero.Fs, path string) func() {
 		mu.Unlock()
 	}
 }
+
+// lockWaits is told the path of a lock that an edit found held, before the
+// edit waits for it. Only tests set it, so they hear that an edit waits
+// rather than see it not finish for a while.
+var lockWaits func(path string)
 
 // errUnchanged is what a change to a plan says when it changes nothing,
 // so the plan is not written and keeps its revision.

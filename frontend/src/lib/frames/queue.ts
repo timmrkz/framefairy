@@ -1348,6 +1348,16 @@ export class FrameQueue {
     coming(frame: number): void;
     ready?(frame: number): Promise<void> | null;
   } | null = null;
+  // Starts the wait of a frame for what lies over it, see dress, and says
+  // how to call it off: late is told once DRESS_WAIT has passed on the
+  // browser's clock. A walk hands in a wait that it ends itself, so a
+  // frame whose captions it holds back waits for them on any machine,
+  // where the walk's own steps on a busy one used up the 600 ms, issue
+  // #468.
+  dressWait: (late: () => void) => () => void = (late) => {
+    const timer = setTimeout(late, DRESS_WAIT);
+    return () => clearTimeout(timer);
+  };
 
   // The frame on screen, see screen.ts. Fresh when it is put up for the
   // newest gesture, see over.
@@ -1378,10 +1388,10 @@ export class FrameQueue {
     const ticket = this.ticket;
     const asked = performance.now();
     this.stats.waitedForDress++;
-    let timer = 0;
-    const late = new Promise<"late">((done) => (timer = window.setTimeout(() => done("late"), DRESS_WAIT)));
+    let stop = () => {};
+    const late = new Promise<"late">((done) => (stop = this.dressWait(() => done("late"))));
     return Promise.race([came.then(() => "came" as const), late]).then((how) => {
-      clearTimeout(timer);
+      stop();
       const wanted = ticket === this.ticket && !this.closed;
       if (how === "late" && wanted) {
         this.stats.bare++;
