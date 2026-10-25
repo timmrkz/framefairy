@@ -4407,20 +4407,6 @@ function railMark() {
   return `dot, ${colour}`;
 }
 
-// Until the app's log has been written up to now: a line of the walk's own
-// goes to the console, which the app writes to its log in order with
-// every line said before it, see said.ts, and the call that writes it is
-// waited for. The log is written a quarter of a second after a line, by a
-// timer settle leaves alone, since it changes nothing on screen.
-function loggedUpTo(page) {
-  return page.evaluate(() => {
-    const mark = `walk: logged up to ${window.__calls.length}`;
-    const written = window.__nextCall(window.__calls.length, (c) => c.name === "Said" && c.args[0].some((l) => l.text === mark));
-    console.warn(mark);
-    return written;
-  });
-}
-
 // Until the interface has made a call of name since the call numbered
 // after, counted from 0, seen as the call is made, before it is answered.
 function nextCall(page, name, after) {

@@ -125,10 +125,11 @@ export function workspaces(): string {
 
 // How long an act may take to reach the screen before it is said, in ms.
 // A tenth of a second is where a click starts to feel slow, and Tim felt
-// the app take a moment to answer. So each act says how long it took from the hand to
-// the first frame drawn after it, and how much of that the window was
-// still busy with something else before it heard the act at all, which
-// tells work in the window from work it waits on. Plan row 2.242.
+// the app take a moment to answer. So each act says how long it took
+// from the hand to the first frame drawn after it, and how much of that
+// the window was still busy with something else before it heard the act
+// at all, which tells work in the window from work it waits on. Plan row
+// 2.242.
 const SLOWLY = 150;
 
 function shown(what: string, e: Event) {
@@ -207,12 +208,6 @@ export function listen() {
   window.addEventListener("error", (e) => said(`uncaught: ${text([e.error ?? e.message])}`, { level: "error" }));
   window.addEventListener("unhandledrejection", (e) => said(`unhandled: ${text([e.reason])}`, { level: "error" }));
   said(`window: started, ${navigator.userAgent}, ${window.devicePixelRatio}x, ${innerWidth}x${innerHeight}, WebGPU ${"gpu" in navigator ? "there" : "not there"}`, { level: "info" });
-  // A timer here once said every time the window stood still, four times
-  // a second for as long as the app was open. Of the 88 lines it wrote in
-  // Tim's reports from 14 to 25 October, 84 were WebKit holding the timer
-  // of an app behind another to once a second, and none was ever used. A
-  // window busy too long is felt as a click or a key slow to answer, which
-  // shown() says, so the timer went, #541.
   document.addEventListener("visibilitychange", () => {
     said(`window: ${document.hidden ? "hidden" : "shown"}`);
   });
