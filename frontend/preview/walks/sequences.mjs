@@ -7381,9 +7381,15 @@ for (const seq of toWalk) {
                 })(),
               };
             });
-          for (let seen = await news(page); !(await framed()).frame; ) seen = await nextNews(page, seen);
+          // It hears once the Go side says so. Queued first, for as long as
+          // a busy machine takes, its frame is on hold and sheds nothing.
+          const hears = async () =>
+            (await ask(page, "Jobs")).some((j) => j.episode === source && j.kind === "transcribe" && j.state === "running" && j.step === "hearing");
+          for (let seen = await news(page); !(await hears()); ) seen = await nextNews(page, seen);
+          await settle(page);
           const look = await framed();
-          if (!look.motes) wrong = `while the whole video is transcribed, its frame on the range picker sheds no motes`;
+          if (!look.frame) wrong = `while the whole video is transcribed, the range picker frames no part of it`;
+          else if (!look.motes) wrong = `while the whole video is transcribed, its frame on the range picker sheds no motes`;
           else if (!look.dots) wrong = `while the whole video is transcribed, the part it works on shows no dots under its frame`;
           break;
         }
