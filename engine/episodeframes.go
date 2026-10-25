@@ -587,6 +587,7 @@ func (f *EpisodeFrames) stream(ctx context.Context, kind int, want *place, open 
 				case rec := <-ch:
 					stood(rec)
 					pending = rec.Kind == framewire.Frame || rec.Kind == framewire.Opened
+					failed = failed || rec.Kind == framewire.Failed || rec.Kind == framewire.Hung
 				case <-gone:
 					f.mu.Lock()
 					f.done(id, gone)
@@ -641,6 +642,41 @@ func (f *EpisodeFrames) stream(ctx context.Context, kind int, want *place, open 
 				pending, failed = false, true
 				finish()
 				return errors.New(string(rec.Body))
+			case framewire.Hung:
+				// The decoder gave up on the cursor and decodes on the
+				// processor from now on: a new cursor goes on from the
+				// frame after the last one handed over, issue #553.
+				if at == nil {
+					pending, failed = false, true
+					finish()
+					return errors.New("the video's decoder hung")
+				}
+				from := want.frame
+				if at.frame >= 0 {
+					from = at.frame + 1
+				}
+				if from >= at.grid.Count {
+					pending = false
+					f.mu.Lock()
+					delete(f.answers, id)
+					f.mu.Unlock()
+					return nil
+				}
+				f.mu.Lock()
+				delete(f.answers, id)
+				f.nextID++
+				id = f.nextID
+				ch = make(chan framewire.Record, ahead+3)
+				f.answers[id] = ch
+				f.cursors.WakeLocked()
+				err := f.send(gone, "%s", framewire.OpenRequest(id, from, at.w, at.h, at.grid, false))
+				if err == nil {
+					err = f.send(gone, "%s", next(id))
+				}
+				f.mu.Unlock()
+				if err != nil {
+					return f.refused(ctx, gone, err)
+				}
 			}
 		case <-ctx.Done():
 			finish()
