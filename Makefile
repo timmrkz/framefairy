@@ -33,8 +33,8 @@
 #                   hyph-utf8 and the German word list. Then make notices
 #   make changed    what this branch changed against main, and only that:
 #                   the tests of the Go packages it reaches, the interface,
-#                   the build, what CI runs on a pull request. On a
-#                   machine of one's own, a cloud session leaves it to CI
+#                   the build, what CI runs on a pull request. For a run
+#                   on your own machine. A cloud session leaves it to CI
 #   make test       all tests: unit, fuzz, interface, walks and lint
 #   make unit       the Go tests, under the race detector
 #   make fuzz       the fuzz targets, FUZZTIME executions each
@@ -479,8 +479,9 @@ fuzz: toolchain modules
 WALKS ?= 3
 STEPS ?=
 WALKERS ?=
-# WALK walks only the runs it names: WALK='a short' the sequence of that
-# name, WALK=timeline.mjs every seed of that walk. It is how a session
+# WALK walks only the runs it names: the sequence of that
+# name exactly, and otherwise every run whose name holds it, like
+# WALK=timeline.mjs for every seed of that walk. It is how a session
 # walks the walk it wrote and leaves the rest to CI, issue #542.
 WALK ?=
 # One share of the runs, like 1/3, which is how CI spreads them over three

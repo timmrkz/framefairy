@@ -189,10 +189,11 @@ Start with [README.md](README.md). In short:
   subscription is how a session learns how its pull request stands, never
   a test run of its own, see the tests rule below. Act on each event at
   once: a failing CI run is still your work, so is a conflict, so is a
-  review comment. Check on GitHub that it merges right after opening it,
-  because a branch can be in conflict from its first push. But never set
-  up a recurring check, never poll, and never write a message that says
-  nothing happened. Tim comes back when he is ready.
+  review comment. When the subscription says another agent already holds
+  the pull request's events, none reach this session, so say so to Tim
+  rather than wait on them. But never set up a recurring check, never
+  poll, and never write a message that says nothing happened. Tim comes
+  back when he is ready.
 - **Every pull request is reviewed by an agent, without being asked.**
   When the session that owns the pull request has done all the work it
   set out to do, it asks a dedicated review agent to review the pull

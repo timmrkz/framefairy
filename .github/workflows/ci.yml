@@ -157,10 +157,17 @@ jobs:
           sh scripts/plan-frozen.sh
       # And, when a workflow changed, that every action is pinned to a
       # commit with its full version beside it, so a bump says which
-      # release it moves to. Nothing else can change a pin.
+      # release it moves to. Nothing else can change a pin. And that every
+      # workflow still reads as YAML, which make changed in a session once
+      # checked, #542: most of them run only on main, at night or by hand,
+      # so a broken one would be seen only after the merge.
       - name: Check the action pins
         if: needs.changes.outputs.workflows == 'true'
-        run: sh scripts/pins.sh
+        run: |
+          sh scripts/pins.sh
+          for w in .github/workflows/*.yml; do
+            python3 -c 'import sys, yaml; yaml.safe_load(open(sys.argv[1]))' "$w"
+          done
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod

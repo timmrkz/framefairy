@@ -1419,6 +1419,9 @@ func TestWalks(t *testing.T) {
 		if runs = runsNamed(runs, name, want); len(runs) == 0 {
 			t.Fatalf("WALK=%q names no run, see walk-times.tsv for their names", want)
 		}
+		for _, r := range runs {
+			t.Logf("WALK=%q walks %s", want, name(r))
+		}
 	}
 	runs = shareOf(t, runs, name, times, os.Getenv("WALKSHARD"))
 	if len(runs) == 0 {
