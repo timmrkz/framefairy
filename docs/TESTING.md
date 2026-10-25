@@ -781,6 +781,15 @@ them, most of them a few seconds long, so no bridge is left with a long
 run once the others are done. Each sequence opens the app afresh with
 `/reset`, so it walks the same alone as after the one before it.
 
+Every walker hands its sequences to one node of its own, `sequences.mjs
+--serve`, which reads the name of the next sequence from its input and
+says how it went in a line of its own, and keeps one Chromium for all of
+them. Each sequence still opens a page in a context of its own, so it
+keeps nothing a sequence before it kept. Starting node, Playwright and
+Chromium for every sequence was 1.45 s and 1.2 s of CPU each time, 220
+times, issue #526. A sequence that throws ends its node, and the next
+sequence starts a new one, so nothing a throw left behind walks on.
+
 A video a walk adds is made by ffmpeg the first time it is asked for and
 kept, by what it was asked for and by the sum of what makes it, the
 source of `bridge_test.go` and the version of ffmpeg, see `walkVideos`.

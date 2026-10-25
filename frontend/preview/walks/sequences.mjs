@@ -1251,7 +1251,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
-import { open, chosen, shown, engineState, handles, timeline, inside, middle, high, drag } from "./bridge.mjs";
+import { open, newBrowser, chosen, shown, engineState, handles, timeline, inside, middle, high, drag } from "./bridge.mjs";
 import { clipList, control, pressHead, fromSidebar, sidebarStill, settle, ask, episodeOn, shortFrames, shortSound } from "./bridge.mjs";
 import { xOf, seekTo, cropFrame, sameLook, sayLook, readShort, loudness, filmedOnScreen, preview } from "./bridge.mjs";
 import { recordFrames, addHEVC, overlay, cropPixels, shortFramesFrom, slowDown, noDeadlines, BITS, nextPaint, news, nextNews, caughtUp } from "./bridge.mjs";
@@ -4960,6 +4960,37 @@ if (only === "--names") {
   console.log(names.join("\n"));
   process.exit(0);
 }
+// --serve walks one sequence after another in one browser, each named on
+// a line of its own on standard input as JSON, for TestWalks to hand one
+// walker its sequences without starting node, Playwright and Chromium
+// again for each, 1.45 s and 1.2 s of CPU a sequence, issue #526. Each
+// still starts with /reset and pages of its own, so it walks the same as
+// alone. What it prints ends in a line of its own that starts with
+// walked, see walkedLine, then "ok" or "FAIL", or "threw" when it threw
+// and this node ends, so a sequence after it starts in a new one.
+if (only === "--serve") {
+  const { createInterface } = await import("node:readline");
+  const browser = await newBrowser();
+  for await (const line of createInterface({ input: process.stdin })) {
+    const name = JSON.parse(line);
+    const seq = sequences.find((q) => q.name === name);
+    if (!seq) {
+      console.log(`no sequence is called ${line}`);
+      await said("FAIL");
+      continue;
+    }
+    try {
+      await said((await walkSequence(seq, browser)) ? "FAIL" : "ok");
+    } catch (e) {
+      console.log(e?.stack ?? String(e));
+      await said("threw");
+      process.exit(1);
+    }
+  }
+  await browser.close();
+  process.exit(0);
+}
+
 const exact = process.env.SEQUENCE;
 const toWalk = sequences.filter((q) => (exact ? q.name === exact : q.name.includes(only)));
 if (exact && !toWalk.length) {
@@ -4967,9 +4998,21 @@ if (exact && !toWalk.length) {
   process.exit(1);
 }
 
-for (const seq of toWalk) {
+for (const seq of toWalk) if (await walkSequence(seq)) failures++;
+process.exit(failures ? 1 : 0);
+
+// The line --serve ends what a sequence printed with, walkedLine in
+// TestWalks, once everything it printed, on both outputs, is out.
+async function said(how) {
+  await new Promise((done) => process.stderr.write("", done));
+  await new Promise((done) => process.stdout.write(`\u001ewalked ${how}\n`, done));
+}
+
+// Walks one sequence and says whether it failed, in a browser of its own
+// or in browser, whose pages it closes again.
+async function walkSequence(seq, shared = null) {
   const began = performance.now();
-  const opened = await open(url);
+  const opened = await open(url, { browser: shared });
   const { browser, errors } = opened;
   // The page the steps act on: the app's window, or the report window
   // once Bugs opened it. The watch keeps to the app's window.
@@ -14528,13 +14571,11 @@ for (const seq of toWalk) {
   const failed = wrong ?? (watch.failed && `broke: ${watch.failed.rule}\n${watch.failed.detail}`);
   const took = ((performance.now() - began) / 1000).toFixed(1).padStart(5);
   console.log(`${failed ? "FAIL" : "ok  "}  ${took} s  ${seq.name}`);
-  if (failed) {
-    failures++;
-    console.log(`      after ${done.join(", ")}\n      ${failed.replaceAll("\n", "\n      ")}`);
-  }
-  await browser.close();
+  if (failed) console.log(`      after ${done.join(", ")}\n      ${failed.replaceAll("\n", "\n      ")}`);
+  if (shared) await Promise.all(shared.contexts().map((c) => c.close()));
+  else await browser.close();
+  return Boolean(failed);
 }
-process.exit(failures ? 1 : 0);
 
 // Reads, on every frame the browser paints, the pill libass drew off the
 // canvas and the frames the caption box puts round words: the lit word's,

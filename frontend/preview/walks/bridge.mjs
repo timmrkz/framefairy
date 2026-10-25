@@ -101,23 +101,31 @@ export function noDeadlines(page) {
   page.setDefaultTimeout(0);
 }
 
+// A browser for the walks to open the interface in. WebGPU on, which
+// headless Chromium on Linux only gives when asked, for the step that
+// checks what the GPU draws, ["screen light"]. The video preview itself
+// draws on a 2D canvas here, __flatScreen, because headless Chromium gives
+// nothing back from a WebGPU canvas, and the walks read the frame on
+// screen from the canvas. See screen.ts.
+export function newBrowser() {
+  return launch(["--enable-unsafe-webgpu"]);
+}
+
 // The interface on the bridge, in the episode's workspace with its clip
 // chosen and the keyboard on the page. viewport is the size of the page,
 // scale its device pixels to a CSS pixel, 2 for a Mac's screen, and again
 // opens another page on the episode as it is now, beside the first, in
-// its browser.
-export async function open(url, { viewport = { width: 1500, height: 1000 }, scale = 1, again = null } = {}) {
+// its browser. browser is a browser to open it in rather than one of its
+// own, see newBrowser.
+export async function open(url, { viewport = { width: 1500, height: 1000 }, scale = 1, again = null, browser: given = null } = {}) {
   // The episode the way the bridge found it, whatever the walk before did.
   if (!again) {
     const reset = await fetch(new URL("/reset", url), { method: "POST" });
     if (!reset.ok) throw new Error(`the bridge did not reset: ${await reset.text()}`);
   }
-  // WebGPU on, which headless Chromium on Linux only gives when asked, for
-  // the step that checks what the GPU draws, ["screen light"]. The video
-  // preview itself draws on a 2D canvas here, __flatScreen, because
-  // headless Chromium gives nothing back from a WebGPU canvas, and the
-  // walks read the frame on screen from the canvas. See screen.ts.
-  const browser = again ?? (await launch(["--enable-unsafe-webgpu"]));
+  const browser = again ?? given ?? (await newBrowser());
+  // A page of its own in a context of its own, which browser.newPage
+  // makes, so nothing a page before it kept is there.
   const page = await browser.newPage({ viewport, deviceScaleFactor: scale });
   noDeadlines(page);
   await page.addInitScript(() => {

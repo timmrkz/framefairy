@@ -1555,6 +1555,8 @@ func TestWalks(t *testing.T) {
 	type walkRun struct {
 		script string
 		env    []string
+		// sequence is the sequence the run walks, if it is one.
+		sequence string
 	}
 	// The name a run is logged and timed under.
 	name := func(r walkRun) string {
@@ -1570,14 +1572,14 @@ func TestWalks(t *testing.T) {
 	// Every walk in the folder, each for the same seeds.
 	for seed := 1; seed <= walksWanted; seed++ {
 		for _, script := range walkScripts(t, walks) {
-			runs = append(runs, walkRun{script, append([]string{fmt.Sprintf("SEED=%d", seed)}, steps...)})
+			runs = append(runs, walkRun{script: script, env: append([]string{fmt.Sprintf("SEED=%d", seed)}, steps...)})
 		}
 		// Playback again on an episode whose picture the Go side decodes,
 		// HEVC in 10-bit colour, which Chromium cannot.
-		runs = append(runs, walkRun{"playback.mjs", append([]string{fmt.Sprintf("SEED=%d", seed), "HEVC=1"}, steps...)})
+		runs = append(runs, walkRun{script: "playback.mjs", env: append([]string{fmt.Sprintf("SEED=%d", seed), "HEVC=1"}, steps...)})
 	}
 	for _, name := range sequenceNames(t, node, walks) {
-		runs = append(runs, walkRun{"sequences.mjs", []string{"SEQUENCE=" + name}})
+		runs = append(runs, walkRun{script: "sequences.mjs", env: []string{"SEQUENCE=" + name}, sequence: name})
 	}
 
 	// One share of the runs when CI spreads them over machines,
@@ -1641,6 +1643,11 @@ func TestWalks(t *testing.T) {
 				t.Error(err)
 				return
 			}
+			env := append(os.Environ(), "BRIDGE_URL="+url)
+			// The walker's sequences, walked one after another by one
+			// node, see sequencer.
+			seqs := &sequencer{run: []string{node, filepath.Join(walks, "sequences.mjs"), "--serve"}, dir: walks, env: env}
+			defer seqs.stop(ctx)
 			for r := range todo {
 				if ctx.Err() != nil {
 					unwalked.Add(1)
@@ -1649,8 +1656,12 @@ func TestWalks(t *testing.T) {
 				fmt.Fprintf(os.Stderr, "walking %s\n", name(r))
 				began := time.Now()
 				var out bytes.Buffer
-				err := walk(ctx, node, []string{filepath.Join(walks, r.script)}, walks,
-					append(append(os.Environ(), "BRIDGE_URL="+url), r.env...), &out)
+				var err error
+				if r.sequence != "" {
+					err = seqs.walk(ctx, r.sequence, &out)
+				} else {
+					err = walk(ctx, node, []string{filepath.Join(walks, r.script)}, walks, append(env, r.env...), &out)
+				}
 				seconds := time.Since(began).Seconds()
 				tookMu.Lock()
 				took[name(r)] = seconds
@@ -1763,6 +1774,71 @@ func TestAWalkThatHangsIsStoppedWithWhatItSaid(t *testing.T) {
 	}
 }
 
+// A walker's sequences are walked by one node, one after another, and
+// each says how it went: passed, failed, or threw, which ends the node, so
+// the next starts in a new one. A node that ends before its sequence is
+// walked, or that is still walking when the test's time runs out, fails
+// that sequence, with what it printed, and the next starts in a new one.
+// A shell stands in for node, saying what sequences.mjs --serve says.
+func TestAWalkersSequencesAreWalkedByOneNode(t *testing.T) {
+	serve := `while read -r name; do
+		echo "$name in $$"
+		case "$name" in
+		'"fails"') printf '\036walked FAIL\n' ;;
+		'"throws"') printf '\036walked threw\n'; exit 1 ;;
+		'"ends"') exit 0 ;;
+		'"hangs"') echo halfway; exec tail -f /dev/null ;;
+		*) printf '\036walked ok\n' ;;
+		esac
+	done`
+	s := &sequencer{run: []string{"sh", "-c", serve}}
+	defer s.stop(context.Background())
+	walked := func(name string) (string, error) {
+		t.Helper()
+		var out bytes.Buffer
+		err := s.walk(context.Background(), name, &out)
+		said, in, _ := strings.Cut(strings.TrimSpace(out.String()), " in ")
+		if said != `"`+name+`"` {
+			t.Errorf("walking %s printed %q", name, out.String())
+		}
+		return in, err
+	}
+	first, err := walked("passes")
+	if err != nil {
+		t.Fatalf("a sequence that passed gives %v", err)
+	}
+	if node, err := walked("fails"); err == nil || node != first {
+		t.Errorf("a sequence that failed after one that passed gives %v in node %s, want a failure in node %s", err, node, first)
+	}
+	if node, err := walked("throws"); err == nil || node != first {
+		t.Errorf("a sequence that threw gives %v in node %s, want a failure in node %s", err, node, first)
+	}
+	second, err := walked("passes")
+	if err != nil || second == first {
+		t.Errorf("the sequence after one that threw gives %v in node %s, want it passed in a new node", err, second)
+	}
+	if _, err := walked("ends"); err == nil {
+		t.Error("a sequence whose node ended before it was walked passed")
+	}
+	if third, err := walked("passes"); err != nil || third == second {
+		t.Errorf("the sequence after a node that ended gives %v in node %s, want it passed in a new node", err, third)
+	}
+
+	ctx, stop := context.WithCancel(context.Background())
+	defer stop()
+	out := &saying{what: "halfway", said: make(chan struct{})}
+	go func() {
+		<-out.said
+		stop()
+	}()
+	if err := s.walk(ctx, "hangs", out); err == nil || !strings.Contains(err.Error(), "time ran out") {
+		t.Errorf("a sequence that hangs ends with %v, want that its time ran out", err)
+	}
+	if _, err := walked("passes"); err != nil {
+		t.Errorf("the sequence after one that hung gives %v", err)
+	}
+}
+
 // saying keeps what is written to it and closes said once it holds what.
 // The buffer is a field, not embedded, since a bytes.Buffer's ReadFrom
 // would read the walk's output past Write.
@@ -1802,6 +1878,138 @@ func walk(ctx context.Context, name string, args []string, dir string, env []str
 		return errors.New("it had not ended when the test's time ran out, and was stopped")
 	}
 	return err
+}
+
+// sequencer is one node that walks sequence after sequence on one bridge,
+// in one browser, sequences.mjs --serve. A node of its own for each, as
+// the walks still have, started node, imported Playwright and launched
+// Chromium again every time: 1.45 s and 1.2 s of CPU a sequence, of 205,
+// issue #526. Each sequence still starts with /reset and pages of its
+// own. A sequence that threw ends the node, and the next starts a new
+// one.
+type sequencer struct {
+	// run is the program that walks them and what it is handed, in dir
+	// and with env.
+	run []string
+	dir string
+	env []string
+	cmd *exec.Cmd
+	in  io.WriteCloser
+	// lines is what the node prints, a line at a time, closed when it
+	// has ended.
+	lines chan string
+}
+
+// walkedLine starts the line the node ends what a sequence printed with,
+// followed by how it went, see said in sequences.mjs.
+const walkedLine = "\x1ewalked "
+
+// walk walks the sequence name and writes what it printed to out. It
+// fails when the sequence failed, and when it threw or had not ended
+// when ctx did, the node is stopped.
+func (s *sequencer) walk(ctx context.Context, name string, out io.Writer) error {
+	if s.cmd == nil {
+		if err := s.start(); err != nil {
+			return err
+		}
+	}
+	line, _ := json.Marshal(name)
+	if _, err := s.in.Write(append(line, '\n')); err != nil {
+		s.kill()
+		return err
+	}
+	for {
+		select {
+		case l, ok := <-s.lines:
+			if !ok {
+				s.cmd = nil
+				return errors.New("its node ended before it had walked")
+			}
+			how, ended := strings.CutPrefix(l, walkedLine)
+			if !ended {
+				fmt.Fprintln(out, l)
+				continue
+			}
+			switch how {
+			case "ok":
+				return nil
+			case "threw":
+				s.stop(ctx)
+				return errors.New("it threw, and its node ended")
+			}
+			return errors.New("it failed")
+		case <-ctx.Done():
+			s.kill()
+			return errors.New("it had not ended when the test's time ran out, and was stopped")
+		}
+	}
+}
+
+func (s *sequencer) start() error {
+	cmd := exec.Command(s.run[0], s.run[1:]...)
+	cmd.Dir, cmd.Env = s.dir, s.env
+	in, err := cmd.StdinPipe()
+	if err != nil {
+		return err
+	}
+	said, says := io.Pipe()
+	cmd.Stdout, cmd.Stderr = says, says
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	lines := make(chan string)
+	go func() {
+		read := bufio.NewScanner(said)
+		read.Buffer(nil, 1<<24)
+		for read.Scan() {
+			lines <- read.Text()
+		}
+		close(lines)
+		// What it says after the reading stopped, a line too long, is
+		// let go of, so it never waits to be heard.
+		_, _ = io.Copy(io.Discard, said)
+	}()
+	go func() {
+		_ = cmd.Wait()
+		_ = says.Close()
+	}()
+	s.cmd, s.in, s.lines = cmd, in, lines
+	return nil
+}
+
+// stop has the node end, if one runs, by telling it there is nothing
+// more to walk, so it closes its browser itself. It is killed if that has
+// not happened when ctx ends.
+func (s *sequencer) stop(ctx context.Context) {
+	if s.cmd == nil {
+		return
+	}
+	_ = s.in.Close()
+	for {
+		select {
+		case _, ok := <-s.lines:
+			if !ok {
+				s.cmd = nil
+				return
+			}
+		case <-ctx.Done():
+			s.kill()
+			return
+		}
+	}
+}
+
+// kill ends the node at once, if one runs, and lets go of what it still
+// says.
+func (s *sequencer) kill() {
+	if s.cmd == nil {
+		return
+	}
+	_ = s.in.Close()
+	_ = s.cmd.Process.Kill()
+	for range s.lines {
+	}
+	s.cmd = nil
 }
 
 // walkScripts are the walks in the folder: every script that walks with
