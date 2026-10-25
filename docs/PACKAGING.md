@@ -738,4 +738,12 @@ nothing.
   signing service, so it is a subscription rather than a one-off.
 - **Whether a customer build records training data**, and whether that is a
   setting. Phase 5.7.
+- **WebKit's own settings.** The app reaches two settings of WebKit that
+  are not Apple's public API, both in `cmd/framefairy-app/refresh_darwin.go`:
+  `_features` with `_setEnabled:forFeature:`, which lets the page update at
+  the screen's own rate, and `_setWindowOcclusionDetectionEnabled:`, which
+  keeps a covered app drawn, #536. Each is asked for by name, and the log
+  says when a WebKit no longer has it. That is fine for a build signed and
+  notarised outside the App Store. The App Store refuses an app that calls
+  WebKit's own API.
 - **The licence key.** Last of all, as it always was.

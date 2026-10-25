@@ -251,6 +251,8 @@ func main() {
 	})
 	svc.chrome = watchChrome(app, svc.window, "app")
 	freeRefresh(svc.window)
+	keepDrawing(svc.window)
+	watchSight(svc.window)
 	// Only in the build the checks from outside the app use, see
 	// probe_outside.go.
 	startProbe(svc)
