@@ -729,6 +729,8 @@ type bridge struct {
 	mu    sync.Mutex
 	picks []string
 	made  int
+	// videos are the videos made for walks before, see /pick.
+	videos *made
 	// holds is how long the next call of a name waits before it reaches
 	// the service, the way a busy machine delivers it late, see /hold.
 	holds map[string]time.Duration
@@ -932,8 +934,11 @@ func openBridge(t *testing.T) *bridge {
 	}
 	showReport = func(string) error { return nil }
 	b := &bridge{t: t, d: d, words: words, silent: silent, first: filepath.Join(d.home, "erste-erinnerung.mp4"), kept: t.TempDir(),
-		holds: map[string]time.Duration{}, holdsLeft: map[string]int{}, gates: map[string]chan struct{}{}, fails: map[string]string{}}
-	if err := makeEpisode(b.first, 120, 0, false); err != nil {
+		holds: map[string]time.Duration{}, holdsLeft: map[string]int{}, gates: map[string]chan struct{}{}, fails: map[string]string{},
+		videos: walkVideos(t)}
+	if err := b.videos.copy(b.first, pickedAs("120", "", "0", "", false, 0), func(path string) error {
+		return makeEpisode(path, 120, 0, false)
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if added, err := d.svc.addEpisodes([]string{b.first}); err != nil || len(added) != 1 {
@@ -1219,15 +1224,17 @@ func (b *bridge) pick(seconds, rate, switchAt, timing string, hevc, namesake, bo
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return "", err
 	}
-	if height > 0 {
-		err = makeCameraEpisode(path, n, height, hevc)
-	} else if rate != "" && timing == "turned" {
-		err = makeTurnedEpisode(path, n, rate)
-	} else if rate != "" {
-		err = makeFilmedEpisode(path, n, rate, timing)
-	} else {
-		err = makeEpisode(path, n, at, hevc)
-	}
+	err = b.videos.copy(path, pickedAs(strconv.Itoa(n), rate, strconv.FormatFloat(at, 'g', -1, 64), timing, hevc, height), func(path string) error {
+		switch {
+		case height > 0:
+			return makeCameraEpisode(path, n, height, hevc)
+		case rate != "" && timing == "turned":
+			return makeTurnedEpisode(path, n, rate)
+		case rate != "":
+			return makeFilmedEpisode(path, n, rate, timing)
+		}
+		return makeEpisode(path, n, at, hevc)
+	})
 	if err != nil {
 		return "", err
 	}
@@ -1242,6 +1249,13 @@ func (b *bridge) pick(seconds, rate, switchAt, timing string, hevc, namesake, bo
 		b.mu.Unlock()
 	}
 	return path, nil
+}
+
+// pickedAs is what a video was asked for, the way videos keeps it: every
+// value pick makes a video from, and nothing it does not, so two picks
+// that make the same video find the same one.
+func pickedAs(seconds, rate, switchAt, timing string, hevc bool, height int) string {
+	return fmt.Sprintf("seconds=%s rate=%s switch=%s timing=%s hevc=%t height=%d", seconds, rate, switchAt, timing, hevc, height)
 }
 
 // pickPicture makes a picture of w by h pixels in the bridge's home, a
@@ -1599,6 +1613,18 @@ func TestWalks(t *testing.T) {
 	}
 	var unwalked atomic.Int32
 
+	// The videos the bridges make, kept for the next walk that asks for
+	// the same, see walkVideos. Those another recipe made go first.
+	//
+	// On the real disk: the bridges are programs of their own, which share the folder.
+	kept := os.Getenv("FRAMEFAIRY_WALK_VIDEOS")
+	if kept == "" {
+		kept = t.TempDir()
+	}
+	if err := (&made{fs: afero.NewOsFs(), dir: kept, recipe: videoRecipe()}).prune(); err != nil {
+		t.Fatal(err)
+	}
+
 	walkers := min(envNumber("WALKERS", runtime.NumCPU()*3/2), len(runs))
 	todo := make(chan walkRun, len(runs))
 	for _, r := range runs {
@@ -1610,7 +1636,7 @@ func TestWalks(t *testing.T) {
 	var wg sync.WaitGroup
 	for range walkers {
 		wg.Go(func() {
-			url, err := startBridge(t)
+			url, err := startBridge(t, kept)
 			if err != nil {
 				t.Error(err)
 				return
@@ -1668,10 +1694,12 @@ func TestWalks(t *testing.T) {
 }
 
 // startBridge starts TestBridge in a process of its own, on a free port,
-// and gives back where it answers. It is stopped when the test ends.
-func startBridge(t *testing.T) (string, error) {
+// keeping the videos it makes in the folder videos, and gives back where
+// it answers. It is stopped when the test ends.
+func startBridge(t *testing.T, videos string) (string, error) {
 	cmd := exec.Command(os.Args[0], "-test.run", "^TestBridge$", "-test.timeout", "0")
-	cmd.Env = append(os.Environ(), "FRAMEFAIRY_BRIDGE=127.0.0.1:0", "FRAMEFAIRY_BRIDGE_WALKER=1", "FRAMEFAIRY_WALKS=")
+	cmd.Env = append(os.Environ(), "FRAMEFAIRY_BRIDGE=127.0.0.1:0", "FRAMEFAIRY_BRIDGE_WALKER=1", "FRAMEFAIRY_WALKS=",
+		"FRAMEFAIRY_WALK_VIDEOS="+videos)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return "", err

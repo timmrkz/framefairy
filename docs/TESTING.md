@@ -781,6 +781,16 @@ them, most of them a few seconds long, so no bridge is left with a long
 run once the others are done. Each sequence opens the app afresh with
 `/reset`, so it walks the same alone as after the one before it.
 
+A video a walk adds is made by ffmpeg the first time it is asked for and
+kept, by what it was asked for and by the sum of what makes it, the
+source of `bridge_test.go` and the version of ffmpeg, see `walkVideos`.
+Every bridge of a run keeps them in one folder, `.build/walk-videos` or
+`WALKVIDEOS`, and CI keeps each share's folder between runs, so a walk
+that adds the same video again gets a copy. ffmpeg makes the same bytes
+from the same arguments, so the copy is the video it would have made.
+Made on every add, the 54 videos the sequences added took 100 s, and the
+one of ten minutes 9 s every time, issue #527.
+
 Measured on four cores, the cloud's and CI's, with the 3 seeds: the
 sequences were once one run, and took twelve minutes on one bridge while
 the other three had finished the fifteen walks in four and waited. Handed
