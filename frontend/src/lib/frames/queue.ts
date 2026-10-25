@@ -93,8 +93,14 @@ export type Stats = {
   // Grid points whose frame was not there in time, so the frame before
   // stayed.
   late: number;
-  // Stretches of sound scheduled after their time had come.
+  // Stretches of sound scheduled after their time had come, and where the
+  // sound card played nothing for them: its frames from where each should
+  // have started to where it did start, or to its own end when it came too
+  // late to start at all, the stretches that follow on one another as one.
+  // A walk tells that from a click, issue #466. The last 1000 are kept, a
+  // play of several minutes on a machine too busy to keep up.
   lateSound: number;
+  lateSoundAt: [number, number][];
   // The longest a frame a gesture put the playhead on waited for what lies
   // over it, milliseconds, see dress.
   dressWait: number;
@@ -527,6 +533,7 @@ export class FrameQueue {
     drawn: 0,
     late: 0,
     lateSound: 0,
+    lateSoundAt: [],
     dressWait: 0,
     bare: 0,
     waitedForDress: 0,
@@ -2166,6 +2173,11 @@ export class FrameQueue {
     const now = this.audio.currentTime;
     if (when < now) {
       this.stats.lateSound++;
+      const quiet: [number, number] = [Math.round(when * rate), Math.round(Math.min(now, when + c.length / rate) * rate)];
+      const last = this.stats.lateSoundAt.at(-1);
+      if (last && Math.abs(quiet[0] - last[1]) <= 1) last[1] = quiet[1];
+      else this.stats.lateSoundAt.push(quiet);
+      if (this.stats.lateSoundAt.length > 1000) this.stats.lateSoundAt.shift();
       const skip = now - when;
       if (skip < c.length / rate) src.start(now, skip);
     } else {

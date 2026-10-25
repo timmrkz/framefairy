@@ -693,14 +693,9 @@ printed, and every walk writes `walking`, `walked` or `failed` with its
 name to stderr as it starts and ends, so a walk that hung is named,
 issue #443. And a check counts what the app drew against the frames the
 screen drew, not against a number: a bounce is drawn on every frame the
-screen drew while it lasted, the crop frame of a glide stands in a place
-of its own on every frame the play showed, and the card under a removed
-row has risen, in every frame the row folds, by as much of the row and
-the space after it as the row has folded, so frames the screen did not
-draw make no jump, issue #442. That the row leaves the list only once
-its fold has finished is heard from the fold's own animation, which says
-so before Svelte takes the row out. A fold the screen drew no frame of
-is tried again on a new clip, up to three times.
+screen drew while it lasted, and the crop frame of a glide stands in a
+place of its own on every frame the play showed, so frames the screen
+did not draw make no jump, issue #442.
 
 Where how many frames the screen draws decides what a walk can see, the
 walk gives the app its frames or its time instead. The bounce after a
@@ -716,7 +711,22 @@ wait the walk hands the frame queue, `dressWait` in
 used up the 600 ms it waits, issue #468. And a glide read while it plays
 goes on until the video preview has shown ten frames or come to the next
 keyframe, not for two seconds, in which a busy machine showed two, issue
-#464.
+#464. The fold of a removed row is held as Svelte makes it and stepped
+through by hand, in twenty steps, and at each the card under the row
+has to have risen by as much of the row and the space after it as the
+row has folded. That the row leaves the list only once its fold has
+finished is heard from the fold's own animation, which says so before
+Svelte takes the row out. On the screen's own frames a busy machine drew
+none of the fold's 200 ms, issues #442 and #469.
+
+Where the machine itself spoils what a walk checks, the app says where,
+and the walk sets aside only that. A page too busy to hand the sound
+card its sound in time leaves it playing nothing until the sound comes,
+which starts and ends with a click. The frame queue counts every
+stretch it scheduled late, with the sound card's frames it left quiet,
+`lateSoundAt` in its stats, and the walk of the loop switched off near
+the end takes a click there for the machine's, and says how many it
+set aside. Any other click fails it, issue #466.
 
 ### `speed.mjs`: how quickly the video preview follows the keys
 

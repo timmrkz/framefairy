@@ -740,8 +740,10 @@
 //                      off and the play ends ahead of the sound card
 //   ["stopped at its end"]
 //                      since "loop off near the end", the presses of L
-//                      started no play over, the sound did not click,
-//                      nothing was heard after the clip's end, the play
+//                      started no play over, the sound did not click but
+//                      where the frame queue says it handed the sound card
+//                      its sound late, nothing was heard after the clip's
+//                      end, the play
 //                      stopped within 400 ms of the playhead reaching it,
 //                      and no frame drawn from then on is from before the
 //                      last second of the clip, so nothing of the clip's
@@ -6642,6 +6644,7 @@ for (const seq of toWalk) {
             m0: q.m0,
             rate: q.audio.sampleRate,
             programEnd: q.program.end,
+            late: q.stats.lateSoundAt,
             heard: window.__heard.map((h) => ({ frame: h.frame, data: Array.from(h.data) })),
           };
         });
@@ -9820,15 +9823,25 @@ for (const seq of toWalk) {
         // thousandths of its height, and a stop or a restart jumps by a
         // good part of it. The sound card's time of the program's end is
         // where the sound ends, and after it nothing.
-        const { heard, c0, m0, rate: sr, programEnd } = loopEnd;
+        const { heard, c0, m0, rate: sr, programEnd, late } = loopEnd;
         const xs = [];
         for (const h of heard) for (let k = 0; k < h.data.length; k++) xs.push([h.frame + k, h.data[k]]);
         const endFrame = Math.round((c0 + (Math.round(programEnd * sr) - m0) / sr) * sr);
         let height = 0;
         for (const [f, x] of xs) if (f < endFrame) height = Math.max(height, Math.abs(x));
+        // A busy machine can keep the page from handing the sound card its
+        // sound in time, and the sound card plays nothing until it comes,
+        // which starts and ends with a click. The app counts each such
+        // stretch with where it should have started and where it did, see
+        // schedule in lib/frames/queue.ts, so a click there is the
+        // machine's and not the loop's, issue #466. The sound card renders
+        // a quantum of 128 frames at a time, so where a stretch starts is
+        // known to within one.
+        const lateHere = (f) => late.some(([a, b]) => f >= a - 128 && f <= b + 128);
         let clicks = 0;
         let firstClick = null;
         let after = 0;
+        let starved = 0;
         for (let k = 2; k < xs.length; k++) {
           const [f, x] = xs[k];
           if (f >= endFrame + 2) {
@@ -9836,11 +9849,14 @@ for (const seq of toWalk) {
             continue;
           }
           if (xs[k - 1][0] !== f - 1 || xs[k - 2][0] !== f - 2) continue;
-          if (Math.abs(x - 2 * xs[k - 1][1] + xs[k - 2][1]) > 0.03 * height) {
+          if (Math.abs(x - 2 * xs[k - 1][1] + xs[k - 2][1]) <= 0.03 * height) continue;
+          if (lateHere(f)) starved++;
+          else {
             clicks++;
             firstClick ??= ((f - endFrame) / sr) * 1000;
           }
         }
+        if (starved) console.log(`      ${starved} clicks where the page handed the sound card its sound late, ${late.length} stretches late`);
         if (loopEnd.starts) wrong = `the play started over ${loopEnd.starts} times while L was pressed`;
         else if (!(height > 0.01)) wrong = `the sound card was handed nothing to hear, ${xs.length} samples`;
         else if (clicks) wrong = `the sound clicked ${clicks} times, the first ${(-firstClick).toFixed(0)} ms before the end`;

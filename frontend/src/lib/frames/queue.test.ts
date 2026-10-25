@@ -502,3 +502,74 @@ describe("a frame waiting for its captions", () => {
     expect(q.stats.bare).toBe(1);
   });
 });
+
+describe("sound handed to the sound card late", () => {
+  // A queue playing on a sound card whose clock the test sets, at 1000
+  // frames a second so a frame is a millisecond, with the play's clock
+  // started at 1 s. Each stretch is 100 frames, and what the sound card
+  // was told is kept.
+  function late() {
+    const q = new FrameQueue(
+      canvas(),
+      "/episode.mp4",
+      movieOf({ duration: 120, width: 2, height: 2, grid: { origin: 0, start: 0, num: 25, den: 1, count: 3000 } }),
+    );
+    const started: [number, number][] = [];
+    const card = {
+      currentTime: 0,
+      sampleRate: 1000,
+      createBuffer: () => ({ copyToChannel() {} }),
+      createBufferSource: () => ({
+        connect() {},
+        disconnect() {},
+        stop() {},
+        start: (when: number, skip = 0) => started.push([when, skip]),
+      }),
+    };
+    const inside = q as unknown as { audio: unknown; out: unknown; c0: number; m0: number; schedule(c: unknown): void };
+    inside.audio = card;
+    inside.out = {};
+    inside.c0 = 1;
+    inside.m0 = 0;
+    const hand = (out: number) => inside.schedule({ out, length: 100, data: [new Float32Array(100)] });
+    return { q, card, hand, started };
+  }
+
+  // A busy machine kept the page from handing the sound card its sound
+  // in time, and the sound card played nothing until it came. A walk
+  // tells that silence from a click by where the queue says it is, issue
+  // #466.
+  test("says where the sound card played nothing", () => {
+    const { q, card, hand, started } = late();
+    card.currentTime = 1.05;
+    hand(100);
+    expect(started).toEqual([[1.1, 0]]);
+    card.currentTime = 1.23;
+    hand(200);
+    expect(started.at(-1)).toEqual([1.23, expect.closeTo(0.03, 9)]);
+    card.currentTime = 1.45;
+    hand(300);
+    hand(400);
+    expect(started).toHaveLength(3);
+    expect(started.at(-1)).toEqual([1.45, expect.closeTo(0.05, 9)]);
+    expect(q.stats.lateSound).toBe(3);
+    // The stretch that came too late to start and the one after it, which
+    // started late, are one quiet stretch.
+    expect(q.stats.lateSoundAt).toEqual([
+      [1200, 1230],
+      [1300, 1450],
+    ]);
+  });
+
+  test("keeps the last 1000", () => {
+    const { q, card, hand } = late();
+    // Each stretch starts half way through, so none follows on another.
+    for (let i = 0; i < 1010; i++) {
+      card.currentTime = 1 + (i * 100 + 50) / 1000;
+      hand(i * 100);
+    }
+    expect(q.stats.lateSound).toBe(1010);
+    expect(q.stats.lateSoundAt).toHaveLength(1000);
+    expect(q.stats.lateSoundAt[0]).toEqual([2000, 2050]);
+  });
+});
