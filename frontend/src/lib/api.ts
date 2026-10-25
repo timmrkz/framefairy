@@ -522,6 +522,10 @@ export interface Job {
   // A search that stopped whose window the video's window was moved off,
   // so it is set aside, see markAside in window.go.
   aside?: boolean;
+  // The whole video's transcription waits while the job is in its step, a
+  // search or a clip made by hand that hears, or a search that finds with
+  // the model on this machine, see Job.Ahead in jobs.go.
+  ahead?: boolean;
   // Grows with every change to any job. Of two snapshots of a job, the one
   // with the larger number is the later one.
   seq?: number;

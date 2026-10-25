@@ -179,9 +179,12 @@ menu's to show, Tim's call on #458:
   or by failing, and from the frame Stop transcribing is clicked. Why it
   failed is said in a toast as it fails.
 - **Transcribe the rest next** and **Continue next** in place of the two
-  above while a search or a clip made by hand transcribes the video,
-  because the speech model is theirs until they are done. The click waits
-  for them and then transcribes on to the end. The menu said Continue
+  above while a search or a clip made by hand transcribes, of this video
+  or another, because the speech model is theirs until they are done, and
+  while a search finds with the model on this machine, which the speech
+  model gives way to. The Go side says so on the job, `Ahead`, by the rule
+  its lanes keep. The click waits for them and then transcribes on to the
+  end. The menu said Continue
   transcribing then, as if nothing were transcribing, Tim's report of 25
   October, 14.33. He picked saying that the rest comes next over not
   offering it.

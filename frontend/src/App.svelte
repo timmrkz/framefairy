@@ -239,17 +239,15 @@
     );
   }
 
-  // Whether a search or a clip made by hand transcribes a video now, or
-  // waits to, so the rest of it asked for in its menu comes next.
-  function hearsFirst(path: string): boolean {
-    return jobs.list.some(
-      (j) =>
-        j.episode === path &&
-        (j.kind === "search" || j.kind === "clip") &&
-        live(j) &&
-        !jobs.stops(j) &&
-        (j.step === "hearing" || (j.step === "waiting" && j.lane === "hearing")),
-    );
+  // Whether the whole video's transcription would wait now, behind a
+  // search or a clip made by hand, so the rest of a video asked for in its
+  // menu comes next. The Go side says it on the job, by the rule its lanes
+  // keep: it waited while a search with the model on this machine found
+  // too, and the menu did not say so, found by the fourth review of #458.
+  // The lanes are the machine's, so a search of another video holds it up
+  // the same.
+  function hearsFirst(): boolean {
+    return jobs.list.some((j) => j.ahead && live(j) && !jobs.stops(j));
   }
 
   // Why a transcription failed, said in a toast with Report, whether the
@@ -864,7 +862,7 @@
               onremove={() => (removing = ep)}
               work={jobs.transcription(ep.source)}
               stopping={jobs.isStopping(ep.source, "whole")}
-              hearsFirst={hearsFirst(ep.source)}
+              hearsFirst={hearsFirst()}
               ontranscribe={() => transcribe(ep)}
               onstoptranscribe={() => {
                 const work = jobs.transcribing(ep.source);

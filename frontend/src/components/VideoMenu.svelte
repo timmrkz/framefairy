@@ -101,7 +101,8 @@
     // and whether Stop transcribing was pressed while it still runs.
     work: Job | undefined;
     stopping: boolean;
-    // Whether a search or a clip made by hand transcribes the video now.
+    // Whether the whole video's transcription would wait now, behind a
+    // search or a clip made by hand that transcribes or finds.
     hearsFirst: boolean;
     ontranscribe: () => void;
     onstoptranscribe: () => void;
@@ -499,7 +500,7 @@
                   title={words === "stop"
                     ? "Stop transcribing. What is transcribed stays, and it can be carried on"
                     : hearsFirst
-                      ? `${words === "continue" ? "Carry on transcribing" : "Transcribe the rest of the video"} once the search or the clip transcribing it now is done`
+                      ? `${words === "continue" ? "Carry on transcribing" : "Transcribe the rest of the video"} once the search or the clip ahead of it is done`
                       : words === "continue"
                         ? "Carry on transcribing from where it stopped"
                         : "Transcribe the whole video, so its transcript can be exported"}
