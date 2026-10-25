@@ -209,7 +209,9 @@ func TestMeasureLevelsGoesWhereTheClipTimelineLooks(t *testing.T) {
 	t.Parallel()
 	source := sweep(t, "300")
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
-	e.levelsEvery = 50 * time.Millisecond
+	// The measuring writes and asks where the clip timeline looks every
+	// 20 reads of the sound, whatever the clock says.
+	e.levelsReads = 20
 	e.FFmpeg = "ffmpeg"
 
 	// The playhead near the end when the episode is added, and then moved
@@ -284,7 +286,8 @@ func TestMeasureLevelsCarriesOn(t *testing.T) {
 	t.Parallel()
 	source := sweep(t, "120")
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
-	e.levelsEvery = 20 * time.Millisecond
+	// Every 20 reads, see above.
+	e.levelsReads = 20
 	e.FFmpeg = "ffmpeg"
 	// Cut off at the first write, which is part of what the clip timeline
 	// shows and on from there.
@@ -298,7 +301,7 @@ func TestMeasureLevelsCarriesOn(t *testing.T) {
 		}); err == nil {
 		t.Fatal("a measuring cut off said it finished")
 	}
-	e.levelsEvery = 0
+	e.levelsReads = 0
 	had := ReadLevels(disk, source)
 	if had.Done || len(had.Parts) != 1 || had.Parts[0][0] != int(60/FrameSeconds) {
 		t.Fatalf("cut off with %v, done %v", partSeconds(had.Parts), had.Done)

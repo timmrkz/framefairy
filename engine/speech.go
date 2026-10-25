@@ -250,7 +250,7 @@ func download(ctx context.Context, log *Log, url string, expect int64, path, wha
 	if have > 0 {
 		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", have))
 	}
-	res, err := http.DefaultClient.Do(req)
+	res, err := downloadClient.Do(req)
 	if err != nil {
 		if e := stalled(nil); e != nil {
 			return "", e
@@ -329,6 +329,11 @@ func download(ctx context.Context, log *Log, url string, expect int64, path, wha
 func downloadRoom(expect int64) int64 {
 	return max(expect/100, 1<<20)
 }
+
+// downloadClient is what the models are downloaded through. A test hands
+// it a transport with no network, so it can run in a testing/synctest
+// bubble.
+var downloadClient = http.DefaultClient
 
 // downloadStall is how long a download may go without a byte before it is
 // taken for dead. Long enough for a server that is slow to begin, short

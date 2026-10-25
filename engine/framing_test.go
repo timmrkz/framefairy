@@ -141,47 +141,16 @@ func TestHwaccelsIn(t *testing.T) {
 	}
 }
 
-// stuckFFmpeg is an ffmpeg that never finishes when it decodes through the
-// system's decoder, and, if always is set, never finishes at all. When it
-// does finish it reports one camera switch, at 5 s into what it read.
-//
-// On the real disk: the stand-in ffmpeg is a program that is run.
-func stuckFFmpeg(t *testing.T, always bool) string {
-	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("the stand-in is a shell script")
-	}
-	hang := `case " $* " in *" -hwaccel "*) exec sleep 600 ;; esac`
-	if always {
-		hang = "exec sleep 600"
-	}
-	path := filepath.Join(t.TempDir(), "ffmpeg")
-	script := "#!/bin/sh\n" + hang + "\n" +
-		"echo '[Parsed_showinfo_2 @ 0x0] n:   0 pts:  125 pts_time:5      duration:1' >&2\n"
-	if err := standin.Write(path, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	return path
-}
-
 // A system decoder that never gives the one frame framing first asks it
 // for is ended, and the framing goes on with the processor decoding. On
 // CI's virtual Mac VideoToolbox hung there four times between 10 and 13
 // October, and the search waited on it until the test run was killed at
 // ten minutes, in TestNewAndCancelInEitherOrder and the engine's tests
-// alike. Not parallel: it shortens frameLimit, a package variable.
+// alike. Not parallel: stuckFFmpeg sets timeLimit, a package variable.
 func TestFramingGoesOnWhenTheSystemDecoderHangs(t *testing.T) {
-	was := frameLimit
-	frameLimit = 300 * time.Millisecond
-	t.Cleanup(func() { frameLimit = was })
-
 	e := NewEngine(NewLog(io.Discard, false, false), afero.NewMemMapFs())
 	e.FFmpeg = stuckFFmpeg(t, false)
-	began := time.Now()
 	used := e.decoderUsed(context.Background(), "episode.mp4", 10.2)
-	if took := time.Since(began); took > 5*time.Second { //nolint:forbidigo // a product timer shortened on the real clock, left for #510
-		t.Errorf("asking which decoder is used took %s", took)
-	}
 	if used != "the processor" {
 		t.Errorf("the decoder used is %q, want the processor", used)
 	}
@@ -189,13 +158,12 @@ func TestFramingGoesOnWhenTheSystemDecoderHangs(t *testing.T) {
 		t.Error("the system's decoder is still used after it hung")
 	}
 
-	// A frame pulled on its own is ended the same way.
+	// A frame pulled on its own is ended the same way. One that is not
+	// ends the test at go test's -timeout.
 	e = NewEngine(NewLog(io.Discard, false, false), afero.NewMemMapFs())
 	e.FFmpeg = stuckFFmpeg(t, false)
-	began = time.Now()
-	e.sampleGray(context.Background(), "episode.mp4", 10, 0.1, FaceWidth, FaceHeight, 1)
-	if took := time.Since(began); took > 5*time.Second { //nolint:forbidigo // a product timer shortened on the real clock, left for #510
-		t.Errorf("pulling one frame took %s", took)
+	if got := e.sampleGray(context.Background(), "episode.mp4", 10, 0.1, FaceWidth, FaceHeight, 1); len(got) != 0 {
+		t.Errorf("a frame pulled with a system decoder that hangs gave %d frames from a stand-in that has none", len(got))
 	}
 }
 
@@ -203,12 +171,8 @@ func TestFramingGoesOnWhenTheSystemDecoderHangs(t *testing.T) {
 // ended, and the frames are read again with the processor decoding. The
 // first macOS test run with ffmpeg 7.1.5 had one hang there for six
 // minutes, and nothing ended it: the search would have waited for good.
-// Not parallel: it shortens spanLimit, a package variable.
+// Not parallel: stuckFFmpeg sets timeLimit, a package variable.
 func TestReadingFramesThatHangsIsEnded(t *testing.T) {
-	was := spanLimit
-	spanLimit = func(float64) time.Duration { return 300 * time.Millisecond }
-	t.Cleanup(func() { spanLimit = was })
-
 	e := NewEngine(NewLog(io.Discard, false, false), afero.NewMemMapFs())
 	e.FFmpeg = stuckFFmpeg(t, false)
 	if _, err := e.readSpan(context.Background(), "episode.mp4", 10, 20); err != nil {
@@ -231,13 +195,14 @@ func TestReadingFramesThatHangsIsEnded(t *testing.T) {
 // #201, the ffmpeg of the probe was stopped after its fifteen seconds and
 // went on sitting in the system's decoder, and the test waited on it for
 // eight minutes, until the run was killed. Here the stop does nothing, as
-// it did there. Not parallel: it shortens frameLimit, spanLimit and
-// leaveAfter and stands in for stopProcess, package variables.
+// it did there. Not parallel: it stands in for leaving and stopProcess,
+// and stuckFFmpeg sets timeLimit, package variables. A program stopped is
+// left behind at once, rather than after leaveAfter of the clock.
 func TestASystemDecoderThatWillNotEndIsLeftBehind(t *testing.T) {
-	limits, spans, leave, stop := frameLimit, spanLimit, leaveAfter, stopProcess
-	frameLimit = 300 * time.Millisecond
-	spanLimit = func(float64) time.Duration { return 300 * time.Millisecond }
-	leaveAfter = 300 * time.Millisecond
+	leave, stop := leaving, stopProcess
+	gone := make(chan time.Time)
+	close(gone)
+	leaving = func() <-chan time.Time { return gone }
 	var mu sync.Mutex
 	var left []*os.Process
 	stopProcess = func(p *os.Process) error {
@@ -247,7 +212,7 @@ func TestASystemDecoderThatWillNotEndIsLeftBehind(t *testing.T) {
 		return nil
 	}
 	t.Cleanup(func() {
-		frameLimit, spanLimit, leaveAfter, stopProcess = limits, spans, leave, stop
+		leaving, stopProcess = leave, stop
 		mu.Lock()
 		defer mu.Unlock()
 		for _, p := range left {
@@ -258,11 +223,7 @@ func TestASystemDecoderThatWillNotEndIsLeftBehind(t *testing.T) {
 	var said bytes.Buffer
 	e := NewEngine(NewLog(&said, false, false), afero.NewMemMapFs())
 	e.FFmpeg = stuckFFmpeg(t, false)
-	began := time.Now()
 	used := e.decoderUsed(context.Background(), "episode.mp4", 10.2)
-	if took := time.Since(began); took > 5*time.Second { //nolint:forbidigo // a product timer shortened on the real clock, left for #510
-		t.Errorf("asking which decoder is used took %s", took)
-	}
 	if used != "the processor" || !e.softDecode.Load() {
 		t.Errorf("the decoder used is %q, want the processor from now on", used)
 	}
@@ -274,22 +235,14 @@ func TestASystemDecoderThatWillNotEndIsLeftBehind(t *testing.T) {
 	// decodes it, are left the same way.
 	e = NewEngine(NewLog(io.Discard, false, false), afero.NewMemMapFs())
 	e.FFmpeg = stuckFFmpeg(t, true)
-	began = time.Now()
 	if got := e.sampleGray(context.Background(), "episode.mp4", 10, 0.1, FaceWidth, FaceHeight, 1); len(got) != 0 {
 		t.Errorf("an ffmpeg left behind gave %d frames", len(got))
-	}
-	if took := time.Since(began); took > 5*time.Second { //nolint:forbidigo // a product timer shortened on the real clock, left for #510
-		t.Errorf("pulling one frame took %s", took)
 	}
 	said.Reset()
 	e = NewEngine(NewLog(&said, false, false), afero.NewMemMapFs())
 	e.FFmpeg = stuckFFmpeg(t, true)
-	began = time.Now()
 	if frames, err := e.readSpan(context.Background(), "episode.mp4", 10, 20); err != nil || len(frames) != 0 {
 		t.Errorf("an ffmpeg left behind while it reads the frames: %d frames, %v", len(frames), err)
-	}
-	if took := time.Since(began); took > 5*time.Second { //nolint:forbidigo // a product timer shortened on the real clock, left for #510
-		t.Errorf("reading the frames took %s", took)
 	}
 	if !strings.Contains(said.String(), "did not end") {
 		t.Errorf("the log does not say ffmpeg was left behind: %q", said.String())
