@@ -7501,6 +7501,10 @@ for (const seq of toWalk) {
               behind: !!part?.classList.contains("behind"),
               breathes: !!part && getComputedStyle(part).animationName === "breath",
               motes: part?.querySelectorAll(".mote").length ?? 0,
+              // What it wore, said when it does not breathe.
+              wore: part
+                ? `${part.className}, animation ${getComputedStyle(part).animationName} ${getComputedStyle(part).animationPlayState}, in ${document.querySelectorAll(".part").length} parts, ${[...document.querySelectorAll(".part")].map((p) => p.className).join(" and ")}`
+                : "",
             };
           });
         if (arg === "behind") {
@@ -7521,7 +7525,7 @@ for (const seq of toWalk) {
             const seen = await partNow();
             if (!seen.part) return `${what}, the whole video's frame is gone`;
             if (!seen.behind) return `${what}, the whole video waits its turn and its frame is not dimmed`;
-            if (!seen.breathes) return `${what}, the whole video's frame stopped breathing`;
+            if (!seen.breathes) return `${what}, the whole video's frame stopped breathing: ${seen.wore}`;
             if (seen.motes) return `${what}, the whole video's frame sheds ${seen.motes} motes`;
             return "";
           };
