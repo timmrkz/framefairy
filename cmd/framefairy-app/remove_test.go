@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -210,6 +209,7 @@ func TestNothingStartsOnAnEpisodeBeingRemoved(t *testing.T) {
 	s, source, _ := anEpisodeWithWork(t)
 	stop := make(chan struct{})
 	var asked atomic.Int64
+	asking := make(chan struct{})
 	var wg sync.WaitGroup
 	for range 8 {
 		wg.Add(1)
@@ -231,15 +231,15 @@ func TestNothingStartsOnAnEpisodeBeingRemoved(t *testing.T) {
 				}
 				s.Search(source, engine.PlanRequest{To: 10, Count: 1, Min: 5}, "")
 				s.jobs.list()
-				asked.Add(1)
+				if asked.Add(1) == 16 {
+					close(asking)
+				}
 			}
 		}()
 	}
-	// The removal starts once every goroutine is asking, not after a
-	// guess at how long they take to get going.
-	for asked.Load() < 16 {
-		runtime.Gosched()
-	}
+	// The removal starts once the goroutines have asked 16 times between
+	// them, not after a guess at how long they take to get going.
+	<-asking
 	err := s.RemoveEpisode(source, true)
 	close(stop)
 	wg.Wait()

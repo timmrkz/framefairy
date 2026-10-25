@@ -86,7 +86,7 @@ and nothing else. `make INSTALL=0` does the same by hand.
 | `make hyphenation` | writes the patterns in `engine/hyphenation/` again, which break a word too long for a caption line: hyph-utf8's for 20 languages and the German joints, built from the Trennmuster team's word list, each from the commit `scripts/hyphenation.sh` pins. It needs `patgen`, from `texlive-binaries` on Linux or `texlive` on macOS, takes about five minutes and is only for when a pin moves. Run `make notices` after it. See [ENGINE.md](ENGINE.md) |
 | `make changed` | what the branch changed against main, and only that. The check that follows every push, see [Checking a change](#checking-a-change) |
 | `make test` | everything below: `unit`, `fuzz`, `interface`, `walks` and `lint` |
-| `make unit` | every Go test under the race detector, the fuzz seeds included. `RACE=` runs without the race detector and `UNITSKIP` leaves packages out, which CI's Mac does. `UNITFLAGS` adds one flag for go test, like `-run`, which is how CI spreads the tests over machines. `UNITPKGS` names the packages, `./...` unless it says, and when it names none no test runs |
+| `make unit` | every Go test under the race detector, the fuzz seeds included. `RACE=` runs without the race detector and `UNITSKIP` leaves packages out, which CI's Mac does. `UNITFLAGS` adds one flag for go test, like `-run`, which is how CI spreads the tests over machines. `UNITPKGS` names the packages, `./...` unless it says, and when it names none no test runs. `UNITTIMEOUT` is how long one package's tests may take before go test ends them and prints every goroutine, Go's own 10m unless it says, and 4m in CI: a test waits on signals, so one whose signal never comes hangs until then |
 | `make fuzz` | every fuzz target, `FUZZTIME` executions each, looking for new cases. `FUZZTARGETS` names some, `FUZZSHARD=1/3` takes a third |
 | `make interface` | a type check of the interface, its own tests, and ESLint, which refuses a new wait on the clock in a walk or an interface test, see [No test waits on the clock](#no-test-waits-on-the-clock). Needs only Node |
 | `make walks` | the interface in Chromium against the real Go side: the sequences of the cases found by hand, and every walk for seeds 1 to `WALKS`, 3 unless set, each as long as it says unless `STEPS` is set, half as many again at once as the machine has cores unless `WALKERS` is set, each sequence a run of its own, stopped after `WALKTIMEOUT`, 30m unless set. Needs Node, ffmpeg and Playwright's Chromium. See [TESTING.md](TESTING.md) |
@@ -277,13 +277,17 @@ test to the part about the clock, each with that one rule:
 
 - golangci-lint, `make lint`, with only forbidigo, and only on test files,
   see `.golangci.yml`. It refuses `time.Sleep`, `time.After`, `time.Tick`,
-  `time.NewTimer`, `time.NewTicker` and `time.AfterFunc`, by type, so
-  `time` under another name is caught too. `time.Second` and the other
-  durations are fine. It runs with `--new-from-rev`, against `HEAD^1` in
-  CI, which checks a pull request out as a merge commit on main, and
-  against where the branch left `origin/main` here, so a line main already
-  has passes and a new or changed one fails. The waits from before are
-  #394. The version is the one the Makefile pins, 2.14.0, which make
+  `time.NewTimer`, `time.NewTicker` and `time.AfterFunc`, and a context
+  with a deadline, `context.WithTimeout` and `context.WithDeadline`, and a
+  check on how long something took, `time.Since` and `time.Until`, by
+  type, so `time` under another name is caught too. `time.Second` and the
+  other durations are fine. It runs over the whole tree, so a line main
+  already has fails the same as a new one, and a second run reads
+  `internal/outside` as `GOOS=darwin` with the outside tag, the only way
+  it builds. The few lines that keep the
+  real clock on purpose say why on the line, with
+  `//nolint:forbidigo // why`, and the issue when there is one. The
+  version is the one the Makefile pins, 2.14.0, which make
   fetches into `.build/` from the release and checks against the
   release's checksums, the first time and unless `INSTALL=0`. An older
   one refuses a module that says go 1.27, and the 2.5.0 a cloud session

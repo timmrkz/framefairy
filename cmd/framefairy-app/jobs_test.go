@@ -166,7 +166,7 @@ func TestTheQueueGoesOnTheMomentAJobStops(t *testing.T) {
 			if !wait() {
 				t.Errorf("%s: the job did not stop", what)
 			}
-			if got := time.Since(start); got != stopping {
+			if got := time.Since(start); got != stopping { //nolint:forbidigo // synctest bubble
 				t.Errorf("%s took %v for a job that stopped in %v", what, got, stopping)
 			}
 		}
@@ -192,7 +192,7 @@ func TestTheQueueGoesOnTheMomentAJobStops(t *testing.T) {
 		if q.shutDown() {
 			t.Error("quitting said a job stopped that never did")
 		}
-		if got := time.Since(start); got != stopWait {
+		if got := time.Since(start); got != stopWait { //nolint:forbidigo // synctest bubble
 			t.Errorf("quitting gave up after %v, want stopWait, %v", got, stopWait)
 		}
 		close(release)

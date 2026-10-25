@@ -79,19 +79,39 @@ func TestOtherAnswersAreNotTriedAgain(t *testing.T) {
 	}
 }
 
+// The check is called off by the very answer that sends it to wait an
+// hour, so what is called off is the wait, and the error it gives is the
+// list's own. A wait that did not hear the cancel would hold the test for
+// the hour, and go test's -timeout would end it.
 func TestACheckCalledOffStopsWaiting(t *testing.T) {
 	t.Parallel()
-	srv, _ := flaky(t, nil, http.StatusNotFound, 1000)
-	src := &Source{URL: srv.URL, Client: srv.Client(), Retries: []time.Duration{time.Hour}}
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	start := time.Now()
-	if _, err := src.Fetch(ctx); err == nil {
-		t.Error("no error")
+	missing := &missingThenOff{cancel: cancel}
+	src := &Source{URL: "https://example.com/channels.json", Client: &http.Client{Transport: missing}, Retries: []time.Duration{time.Hour}}
+	_, err := src.Fetch(ctx)
+	if err == nil || err.Error() != "the channel list answered 404 Not Found" {
+		t.Errorf("got %v, not the list's 404 from the wait", err)
 	}
-	if waited := time.Since(start); waited > 5*time.Second {
-		t.Errorf("waited %v", waited)
+	if n := missing.asked.Load(); n != 1 {
+		t.Errorf("asked %d times, want 1", n)
 	}
+}
+
+// missingThenOff answers every ask with 404 and calls the check off as it
+// answers, before the check has begun to wait.
+type missingThenOff struct {
+	cancel context.CancelFunc
+	asked  atomic.Int32
+}
+
+func (m *missingThenOff) RoundTrip(r *http.Request) (*http.Response, error) {
+	m.asked.Add(1)
+	m.cancel()
+	return &http.Response{
+		StatusCode: http.StatusNotFound, Status: "404 Not Found",
+		Header: http.Header{}, Body: http.NoBody, Request: r,
+	}, nil
 }
 
 // Several checks at once, while the list is missing and after it is back.
@@ -226,17 +246,15 @@ func TestACopyBeingReplacedIsNoGap(t *testing.T) {
 	r, srv := serveRelease(t)
 	r.set("/channels-b.json", writtenList(t, key, "0.3.0-main.1", time.Now().UTC()))
 	src := copiesOf(srv)
+	// A wait would be an hour, so a check that waited never ends, and go
+	// test's -timeout says so.
 	src.Retries = []time.Duration{time.Hour}
-	start := time.Now()
 	got, err := src.Fetch(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got.Channels[0].Version != "0.3.0-main.1" {
 		t.Errorf("got %+v", got.Channels)
-	}
-	if waited := time.Since(start); waited > 5*time.Second {
-		t.Errorf("waited %v", waited)
 	}
 	if n := r.asks("/channels.json"); n != 0 {
 		t.Errorf("the list itself was asked for %d times", n)

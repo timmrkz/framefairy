@@ -179,7 +179,7 @@ func TestFramingGoesOnWhenTheSystemDecoderHangs(t *testing.T) {
 	e.FFmpeg = stuckFFmpeg(t, false)
 	began := time.Now()
 	used := e.decoderUsed(context.Background(), "episode.mp4", 10.2)
-	if took := time.Since(began); took > 5*time.Second {
+	if took := time.Since(began); took > 5*time.Second { //nolint:forbidigo // a product timer shortened on the real clock, left for #510
 		t.Errorf("asking which decoder is used took %s", took)
 	}
 	if used != "the processor" {
@@ -194,7 +194,7 @@ func TestFramingGoesOnWhenTheSystemDecoderHangs(t *testing.T) {
 	e.FFmpeg = stuckFFmpeg(t, false)
 	began = time.Now()
 	e.sampleGray(context.Background(), "episode.mp4", 10, 0.1, FaceWidth, FaceHeight, 1)
-	if took := time.Since(began); took > 5*time.Second {
+	if took := time.Since(began); took > 5*time.Second { //nolint:forbidigo // a product timer shortened on the real clock, left for #510
 		t.Errorf("pulling one frame took %s", took)
 	}
 }
@@ -260,7 +260,7 @@ func TestASystemDecoderThatWillNotEndIsLeftBehind(t *testing.T) {
 	e.FFmpeg = stuckFFmpeg(t, false)
 	began := time.Now()
 	used := e.decoderUsed(context.Background(), "episode.mp4", 10.2)
-	if took := time.Since(began); took > 5*time.Second {
+	if took := time.Since(began); took > 5*time.Second { //nolint:forbidigo // a product timer shortened on the real clock, left for #510
 		t.Errorf("asking which decoder is used took %s", took)
 	}
 	if used != "the processor" || !e.softDecode.Load() {
@@ -278,7 +278,7 @@ func TestASystemDecoderThatWillNotEndIsLeftBehind(t *testing.T) {
 	if got := e.sampleGray(context.Background(), "episode.mp4", 10, 0.1, FaceWidth, FaceHeight, 1); len(got) != 0 {
 		t.Errorf("an ffmpeg left behind gave %d frames", len(got))
 	}
-	if took := time.Since(began); took > 5*time.Second {
+	if took := time.Since(began); took > 5*time.Second { //nolint:forbidigo // a product timer shortened on the real clock, left for #510
 		t.Errorf("pulling one frame took %s", took)
 	}
 	said.Reset()
@@ -288,7 +288,7 @@ func TestASystemDecoderThatWillNotEndIsLeftBehind(t *testing.T) {
 	if frames, err := e.readSpan(context.Background(), "episode.mp4", 10, 20); err != nil || len(frames) != 0 {
 		t.Errorf("an ffmpeg left behind while it reads the frames: %d frames, %v", len(frames), err)
 	}
-	if took := time.Since(began); took > 5*time.Second {
+	if took := time.Since(began); took > 5*time.Second { //nolint:forbidigo // a product timer shortened on the real clock, left for #510
 		t.Errorf("reading the frames took %s", took)
 	}
 	if !strings.Contains(said.String(), "did not end") {
