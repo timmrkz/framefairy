@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -655,36 +656,30 @@ func TestTheJudgedContextCoversTheFirstSearch(t *testing.T) {
 // what came kept to carry on from. Without it, a connection that went
 // quiet without closing held the download until Cancel was pressed.
 //
+// It runs in a bubble, with downloadStall as the app has it, on the
+// bubble's clock. Changes downloadClient, which the whole package shares,
+// so it does not run in parallel.
+//
 // On the real disk: a model is downloaded to the folder llama-server loads it from.
 func TestADownloadThatStopsArrivingGivesUp(t *testing.T) {
-	release := make(chan struct{})
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Length", "1000")
-		w.Write(make([]byte, 100))
-		w.(http.Flusher).Flush()
-		select {
-		case <-release:
-		case <-r.Context().Done():
-		}
-	}))
-	t.Cleanup(server.Close)
-	t.Cleanup(func() { close(release) })
-	was := downloadStall
-	downloadStall = 300 * time.Millisecond
-	t.Cleanup(func() { downloadStall = was })
-
 	path := filepath.Join(t.TempDir(), "model.part")
-	began := time.Now()
-	_, err := download(context.Background(), NewLog(io.Discard, false, false), server.URL, 1000, path, "the model")
-	if err == nil {
-		t.Fatal("a download that stopped arriving finished")
-	}
-	if took := time.Since(began); took > 5*time.Second { //nolint:forbidigo // a product timer shortened on the real clock, left for #510
-		t.Errorf("giving up took %s", took)
-	}
-	if !strings.Contains(err.Error(), "stopped arriving") {
-		t.Errorf("the reason given: %v", err)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		was := downloadClient
+		downloadClient = &http.Client{Transport: stopsAfter(make([]byte, 100))}
+		t.Cleanup(func() { downloadClient = was })
+
+		began := time.Now()
+		_, err := download(context.Background(), NewLog(io.Discard, false, false), "http://models", 1000, path, "the model")
+		if err == nil {
+			t.Fatal("a download that stopped arriving finished")
+		}
+		if took := time.Since(began); took != downloadStall { //nolint:forbidigo // synctest bubble
+			t.Errorf("giving up took %s on the bubble's clock, want %s", took, downloadStall)
+		}
+		if !strings.Contains(err.Error(), "stopped arriving") {
+			t.Errorf("the reason given: %v", err)
+		}
+	})
 	if info, err := os.Stat(path); err != nil || info.Size() != 100 {
 		t.Errorf("what came was not kept to carry on from: %v", err)
 	}

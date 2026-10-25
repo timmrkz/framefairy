@@ -105,19 +105,22 @@ type Engine struct {
 	// use, so it is looked up and reported once.
 	decoders sync.Map
 
-	// checkpointEvery and levelsEvery are how often a transcription and the
-	// loudness measure save what they have, when not the defaults. A test
-	// sets them on its own engine, so it can still run beside the others,
-	// where a package variable made every test that changed it wait.
+	// checkpointEvery is how often a transcription saves what it has, and
+	// levelsReads how many reads of the sound apart the loudness measure
+	// saves what it has, in place of levelsDefault of the clock, when not
+	// the defaults. A test sets them on its own engine, so it can still
+	// run beside the others, where a package variable made every test that
+	// changed it wait.
 	checkpointEvery time.Duration
-	levelsEvery     time.Duration
+	levelsReads     int
 	// system is the system whose encoders a render reaches for, see
 	// encoderOrderFor, this one unless a test says otherwise, so the order
 	// of a Mac can be run on any machine.
 	system string
-	// stall is how long a render may go without a frame before its
-	// encoder is given up, encoderStall unless a test says otherwise.
-	stall time.Duration
+	// stuck, when set, says a render has stopped making frames, and its
+	// encoder is given up then as well as after encoderStall of the
+	// clock. A test sets it, so it waits for no stall of the clock.
+	stuck <-chan struct{}
 
 	// ahead lets the transcript be read into the local model ahead of
 	// the search this engine runs, until the search asks, see
@@ -224,8 +227,13 @@ func runBytes(ctx context.Context, cwd string, name string, args ...string) ([]b
 // is left behind. A killed program ends at once, unless it is inside the
 // system and the system will not let it go: ffmpeg in VideoToolbox on CI's
 // virtual Mac went on for eight minutes after it was killed, and the
-// search that waited for it waited for good. Tests make it shorter.
+// search that waited for it waited for good.
 var leaveAfter = 5 * time.Second
+
+// leaving is the wait for a program that was asked to stop to end,
+// leaveAfter for ffmpeg and stopGrace for llama-server, time.After unless
+// a test hands in a wait of its own.
+var leaving = time.After
 
 // leftBehind is what is said of a program that was left behind.
 const leftBehind = "did not end when it was stopped, so it was left behind"
@@ -258,12 +266,10 @@ func finish(ctx context.Context, cmd *exec.Cmd, outs ...*cutWriter) (left bool, 
 		return false, err
 	case <-ctx.Done():
 	}
-	gone := time.NewTimer(leaveAfter)
-	defer gone.Stop()
 	select {
 	case err := <-finished:
 		return false, err
-	case <-gone.C:
+	case <-leaving(leaveAfter):
 	}
 	for _, out := range outs {
 		out.cut()
@@ -387,17 +393,26 @@ func (e *Engine) runFFmpegWatched(ctx context.Context, args []string, label stri
 	defer ticker.Stop()
 	lastMove, lastDone, warned := time.Now(), -1.0, false
 	var waitErr error
-	// gone runs from the moment ffmpeg is stopped, see leaveAfter.
+	// gone runs from the moment ffmpeg is stopped, see leaveAfter, and
+	// stopping is heard at once rather than on the next tick.
 	var gone <-chan time.Time
+	stopping := ctx.Done()
+	var stuck <-chan struct{}
+	if stall > 0 {
+		stuck = e.stuck
+	}
 	left := false
 loop:
 	for {
 		if gone == nil && ctx.Err() != nil {
-			leave := time.NewTimer(leaveAfter)
-			defer leave.Stop()
-			gone = leave.C
+			gone, stopping = leaving(leaveAfter), nil
 		}
+		said := false
 		select {
+		case <-stopping:
+			continue
+		case <-stuck:
+			said = true
 		case waitErr = <-finished:
 			break loop
 		case <-gone:
@@ -415,9 +430,11 @@ loop:
 		}
 		done := parseProgress(progressPath)
 		elapsed := time.Since(started).Seconds()
-		if done > lastDone {
+		// A render said to be stuck has not moved, whatever its progress
+		// says last, and is stopped the way a stall of the clock is.
+		if done > lastDone && !said {
 			lastDone, lastMove, warned = done, time.Now(), false
-		} else if stall > 0 && !stalled && time.Since(lastMove) > stall {
+		} else if stall > 0 && !stalled && (said || time.Since(lastMove) > stall) {
 			e.Log.Warn("%s has not advanced for %s, so it is stopped", label, stall)
 			stalled = true
 			stop()

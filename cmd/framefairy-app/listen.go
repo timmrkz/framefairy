@@ -69,6 +69,11 @@ type listening struct {
 	every time.Duration
 	quiet time.Duration
 	most  int
+	// still, when set, says when the quiet is over, in place of quiet of
+	// the clock: a recording stops by itself for want of words the pass
+	// after it says so. The bridge sets it, so a walk does not wait the
+	// quiet out, see bridge_test.go.
+	still <-chan struct{}
 	// running is every goroutine a recording started, which goes on for a
 	// moment after the recording ends and may still write a line to the
 	// log. A test waits on it before it lets go of what they use.
@@ -398,7 +403,16 @@ func (l *listening) write(r *recording, dir string, every, quiet time.Duration) 
 		// so Stop pressed meanwhile waits for it rather than finding
 		// nothing.
 		why := ""
-		if time.Since(worded) > quiet {
+		hushed := time.Since(worded) > quiet
+		if l.still != nil {
+			select {
+			case <-l.still:
+				hushed = true
+			default:
+				hushed = false
+			}
+		}
+		if hushed {
 			why = fmt.Sprintf("stopped listening after %s without a word", minutes(quiet))
 		} else if r.full.Load() {
 			why = fmt.Sprintf("stopped listening after %s, the longest a recording can be", minutes(time.Duration(r.most)*time.Second/engine.SampleRate))

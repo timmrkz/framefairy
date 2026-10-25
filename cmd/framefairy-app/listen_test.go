@@ -101,7 +101,6 @@ func listenTo(t *testing.T, samples []float32) *FrameFairy {
 		openMicrophone = was
 	})
 	f := &FrameFairy{}
-	f.listening.every = 10 * time.Millisecond
 	// A recording still being written down when the test ends wrote its
 	// last lines into a log whose folder was being removed, and on the
 	// Mac the removal then found the folder not empty, issue #441. So
@@ -130,36 +129,39 @@ func bubbleLog(t *testing.T) func() []map[string]any {
 // words, never what they were, under the act that started it. Plan row
 // 2.189.
 func TestWhatIsSaidIsWrittenDown(t *testing.T) {
-	f, read := listenWith(t, tone(3))
-	// Its lines carry the act that started it, not the one after it.
-	first, next := "a1", "a2"
-	theLog.act.Store(&first)
-	id, err := f.Listen()
-	if err != nil {
-		t.Fatal(err)
-	}
-	theLog.act.Store(&next)
-	if again, err := f.Listen(); err != nil || again != id {
-		t.Errorf("a second Listen while one records gives %d, %v, want %d", again, err, id)
-	}
-	d, err := f.StopListening()
-	if err != nil {
-		t.Fatal(err)
-	}
-	// The stand-in hears a word every 0.6 s.
-	if text := strings.Join(d.Said, " "); text != "wort wort wort wort wort" || d.Recording != id {
-		t.Errorf("recording %d written down as %q", d.Recording, text)
-	}
-	lines := read()
-	has(t, find(lines, "the recording was written down"), map[string]any{"from": "listen", "seconds": 3, "words": 5, "act": "a1", "recording": id})
-	for _, l := range lines {
-		if strings.Contains(l["msg"].(string), "wort") {
-			t.Errorf("the log holds what was said: %v", l)
+	read := bubbleLog(t)
+	synctest.Test(t, func(t *testing.T) {
+		f := listenTo(t, tone(3))
+		// Its lines carry the act that started it, not the one after it.
+		first, next := "a1", "a2"
+		theLog.act.Store(&first)
+		id, err := f.Listen()
+		if err != nil {
+			t.Fatal(err)
 		}
-	}
-	if d, err := f.StopListening(); len(d.Said) != 0 || err != nil {
-		t.Errorf("stopping with nothing recording gives %q, %v", d.Said, err)
-	}
+		theLog.act.Store(&next)
+		if again, err := f.Listen(); err != nil || again != id {
+			t.Errorf("a second Listen while one records gives %d, %v, want %d", again, err, id)
+		}
+		d, err := f.StopListening()
+		if err != nil {
+			t.Fatal(err)
+		}
+		// The stand-in hears a word every 0.6 s.
+		if text := strings.Join(d.Said, " "); text != "wort wort wort wort wort" || d.Recording != id {
+			t.Errorf("recording %d written down as %q", d.Recording, text)
+		}
+		lines := read()
+		has(t, find(lines, "the recording was written down"), map[string]any{"from": "listen", "seconds": 3, "words": 5, "act": "a1", "recording": id})
+		for _, l := range lines {
+			if strings.Contains(l["msg"].(string), "wort") {
+				t.Errorf("the log holds what was said: %v", l)
+			}
+		}
+		if d, err := f.StopListening(); len(d.Said) != 0 || err != nil {
+			t.Errorf("stopping with nothing recording gives %q, %v", d.Said, err)
+		}
+	})
 }
 
 // A microphone the app may not use gives nothing but zeros on a Mac, and
@@ -169,22 +171,25 @@ func TestWhatIsSaidIsWrittenDown(t *testing.T) {
 //
 // On the real disk: a speech model is a folder the speech library loads.
 func TestListeningSaysWhyNothingWasWrittenDown(t *testing.T) {
-	f, _ := listenWith(t, make([]float32, 2*engine.SampleRate))
-	if _, err := f.Listen(); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.StopListening(); err == nil || !strings.Contains(err.Error(), "heard nothing") {
-		t.Errorf("silence gives %v, want that the microphone heard nothing", err)
-	}
+	bubbleLog(t)
+	synctest.Test(t, func(t *testing.T) {
+		f := listenTo(t, make([]float32, 2*engine.SampleRate))
+		if _, err := f.Listen(); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.StopListening(); err == nil || !strings.Contains(err.Error(), "heard nothing") {
+			t.Errorf("silence gives %v, want that the microphone heard nothing", err)
+		}
 
-	standIns.Store(nil)
-	started := false
-	openMicrophone = func() microphone { started = true; return &playingMicrophone{} }
-	f = &FrameFairy{store: memoryStore()}
-	f.store.settings.ASRModel = t.TempDir()
-	if _, err := f.Listen(); err != errNoSpeechModel || started {
-		t.Errorf("without a speech model Listen gives %v and the microphone started %v", err, started)
-	}
+		standIns.Store(nil)
+		started := false
+		openMicrophone = func() microphone { started = true; return &playingMicrophone{} }
+		f = &FrameFairy{store: memoryStore()}
+		f.store.settings.ASRModel = t.TempDir()
+		if _, err := f.Listen(); err != errNoSpeechModel || started {
+			t.Errorf("without a speech model Listen gives %v and the microphone started %v", err, started)
+		}
+	})
 }
 
 // The settings name no speech model folder until somebody types one in,
@@ -226,32 +231,35 @@ func (brokenMicrophone) stop()                       {}
 // calls without waiting: every recording ends with words or nothing, never
 // a hang, a panic or a race. Plan row 2.189.
 func TestListeningAtOnce(t *testing.T) {
-	f, _ := listenWith(t, tone(1))
-	// Some recordings stop by themselves while they are stopped or
-	// dropped.
-	f.listening.quiet = 30 * time.Millisecond
-	var wg sync.WaitGroup
-	for range 8 {
-		wg.Go(func() {
-			for i := range 10 {
-				_, _ = f.Listen()
-				if i%3 == 0 {
-					f.CancelListening()
-					continue
+	bubbleLog(t)
+	synctest.Test(t, func(t *testing.T) {
+		f := listenTo(t, tone(1))
+		// Some recordings stop by themselves while they are stopped or
+		// dropped.
+		f.listening.quiet = 30 * time.Millisecond
+		var wg sync.WaitGroup
+		for range 8 {
+			wg.Go(func() {
+				for i := range 10 {
+					_, _ = f.Listen()
+					if i%3 == 0 {
+						f.CancelListening()
+						continue
+					}
+					if d, err := f.StopListening(); err != nil || (len(d.Said) > 0 && !strings.HasPrefix(d.Said[0], "wort")) {
+						t.Errorf("gave %q, %v", d.Said, err)
+					}
 				}
-				if d, err := f.StopListening(); err != nil || (len(d.Said) > 0 && !strings.HasPrefix(d.Said[0], "wort")) {
-					t.Errorf("gave %q, %v", d.Said, err)
-				}
-			}
-		})
-	}
-	wg.Wait()
-	f.listening.mu.Lock()
-	left := f.listening.now
-	f.listening.mu.Unlock()
-	if left != nil {
-		t.Errorf("recording %d was left running", left.id)
-	}
+			})
+		}
+		wg.Wait()
+		f.listening.mu.Lock()
+		left := f.listening.now
+		f.listening.mu.Unlock()
+		if left != nil {
+			t.Errorf("recording %d was left running", left.id)
+		}
+	})
 }
 
 // talkingMicrophone hands over what the test says into it, when it says it.
@@ -324,85 +332,92 @@ func awaitTold(t *testing.T, told chan Dictation, ok func(Dictation) bool) Dicta
 // Stopping gives every piece, the last included. Tim asked for it.
 // Plan row 2.189.
 func TestWordsAppearWhileTheyAreSaid(t *testing.T) {
-	f, mic, told := dictating(t)
-	mic.say(tone(2))
-	d := awaitTold(t, told, func(d Dictation) bool { return d.Hearing != "" })
-	if len(d.Said) != 0 || d.Hearing != "wort wort wort" {
-		t.Errorf("while talking the window was told %q settled and %q heard", d.Said, d.Hearing)
-	}
-	// A pause ends the thought, and the next one is heard on its own.
-	mic.say(hush(1), tone(1.3))
-	d = awaitTold(t, told, func(d Dictation) bool { return len(d.Said) == 1 && d.Hearing != "" })
-	// The stand-in hears a word every 0.6 s, the pause's first half too.
-	if d.Said[0] != "wort wort wort wort" {
-		t.Errorf("settled %q", d.Said)
-	}
-	mic.say(tone(1))
-	stopped, err := f.StopListening()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(stopped.Said) != 2 || stopped.Said[0] != "wort wort wort wort" || !strings.HasPrefix(stopped.Said[1], "wort wort wort") {
-		t.Errorf("stopping gave %q", stopped.Said)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		f, mic, told := dictating(t)
+		mic.say(tone(2))
+		d := awaitTold(t, told, func(d Dictation) bool { return d.Hearing != "" })
+		if len(d.Said) != 0 || d.Hearing != "wort wort wort" {
+			t.Errorf("while talking the window was told %q settled and %q heard", d.Said, d.Hearing)
+		}
+		// A pause ends the thought, and the next one is heard on its own.
+		mic.say(hush(1), tone(1.3))
+		d = awaitTold(t, told, func(d Dictation) bool { return len(d.Said) == 1 && d.Hearing != "" })
+		// The stand-in hears a word every 0.6 s, the pause's first half too.
+		if d.Said[0] != "wort wort wort wort" {
+			t.Errorf("settled %q", d.Said)
+		}
+		mic.say(tone(1))
+		stopped, err := f.StopListening()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(stopped.Said) != 2 || stopped.Said[0] != "wort wort wort wort" || !strings.HasPrefix(stopped.Said[1], "wort wort wort") {
+			t.Errorf("stopping gave %q", stopped.Said)
+		}
+	})
 }
 
 // Dropping a recording drops what was said: the recording ends at once, the window is
 // told nothing more about it, and nothing is left to stop. Plan row 2.189.
 func TestDroppingARecording(t *testing.T) {
-	f, mic, told := dictating(t)
-	mic.say(tone(2))
-	awaitTold(t, told, func(d Dictation) bool { return d.Hearing != "" })
-	f.listening.mu.Lock()
-	r := f.listening.now
-	f.listening.mu.Unlock()
-	f.CancelListening()
-	mic.say(tone(2))
-	// The window is told only from the goroutine that writes the words
-	// down, which closes over when it ends. Once it has, what it said
-	// before it heard of the drop is all there will be. Waiting 100 ms
-	// missed whatever came later than that. Writing the words down that
-	// goes on after the drop is ended by go test's -timeout.
-	<-r.over
-	// What was on its way as the recording was dropped.
-	for len(told) > 0 {
-		<-told
-	}
-	mic.say(tone(1))
-	if len(told) != 0 {
-		t.Errorf("the window was told %v after the recording was dropped", <-told)
-	}
-	if d, err := f.StopListening(); len(d.Said) != 0 || err != nil {
-		t.Errorf("stopping after dropping gave %q, %v", d.Said, err)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		f, mic, told := dictating(t)
+		mic.say(tone(2))
+		awaitTold(t, told, func(d Dictation) bool { return d.Hearing != "" })
+		f.listening.mu.Lock()
+		r := f.listening.now
+		f.listening.mu.Unlock()
+		f.CancelListening()
+		mic.say(tone(2))
+		// The window is told only from the goroutine that writes the words
+		// down, which closes over when it ends. Once it has, what it said
+		// before it heard of the drop is all there will be. Waiting 100 ms
+		// missed whatever came later than that. Writing the words down that
+		// goes on after the drop is ended by go test's -timeout.
+		<-r.over
+		// What was on its way as the recording was dropped.
+		for len(told) > 0 {
+			<-told
+		}
+		mic.say(tone(1))
+		if len(told) != 0 {
+			t.Errorf("the window was told %v after the recording was dropped", <-told)
+		}
+		if d, err := f.StopListening(); len(d.Said) != 0 || err != nil {
+			t.Errorf("stopping after dropping gave %q, %v", d.Said, err)
+		}
+	})
 }
 
 // A speech model that cannot load ends the recording while the person is
 // still talking, and says why, rather than letting them talk on for
 // nothing. Plan row 2.189.
 func TestListeningSaysAtOnceWhenTheSpeechModelFails(t *testing.T) {
-	f, _ := listenWith(t, tone(1))
-	broken := &speech{}
-	broken.breaks(errors.New("the file is damaged"))
-	fakes := func(e *engine.Engine, o *engine.Options) { e.OpenRecognizer = broken.open }
-	standIns.Store(&fakes)
-	told := make(chan Dictation, 10)
-	f.listening.say = func(d Dictation) { told <- d }
-	if _, err := f.Listen(); err != nil {
-		t.Fatal(err)
-	}
-	d := awaitTold(t, told, func(d Dictation) bool { return d.Error != "" })
-	if !strings.Contains(d.Error, "the file is damaged") {
-		t.Errorf("told %q", d.Error)
-	}
-	again, err := f.Listen()
-	if err != nil {
-		t.Fatalf("listening again after the model failed: %v", err)
-	}
-	d = awaitTold(t, told, func(d Dictation) bool { return d.Recording == again && d.Error != "" })
-	if !strings.Contains(d.Error, "the file is damaged") {
-		t.Errorf("told the second time %q", d.Error)
-	}
+	bubbleLog(t)
+	synctest.Test(t, func(t *testing.T) {
+		f := listenTo(t, tone(1))
+		broken := &speech{}
+		broken.breaks(errors.New("the file is damaged"))
+		fakes := func(e *engine.Engine, o *engine.Options) { e.OpenRecognizer = broken.open }
+		standIns.Store(&fakes)
+		told := make(chan Dictation, 10)
+		f.listening.say = func(d Dictation) { told <- d }
+		if _, err := f.Listen(); err != nil {
+			t.Fatal(err)
+		}
+		d := awaitTold(t, told, func(d Dictation) bool { return d.Error != "" })
+		if !strings.Contains(d.Error, "the file is damaged") {
+			t.Errorf("told %q", d.Error)
+		}
+		again, err := f.Listen()
+		if err != nil {
+			t.Fatalf("listening again after the model failed: %v", err)
+		}
+		d = awaitTold(t, told, func(d Dictation) bool { return d.Recording == again && d.Error != "" })
+		if !strings.Contains(d.Error, "the file is damaged") {
+			t.Errorf("told the second time %q", d.Error)
+		}
+	})
 }
 
 // sentences stands in for a speech model that writes what it is given as
@@ -430,28 +445,30 @@ func (sentences) Close() {}
 // it no full stop and the words after it no capital. Tim got "there
 // should be some text. written right in front of me." Plan row 2.189.
 func TestAPauseIsNoFullStop(t *testing.T) {
-	f, mic, told := dictating(t)
-	fakes := func(e *engine.Engine, o *engine.Options) {
-		e.OpenRecognizer = func(string) (engine.Recognizer, error) { return sentences{}, nil }
-	}
-	standIns.Store(&fakes)
-	f.CancelListening()
-	if _, err := f.Listen(); err != nil {
-		t.Fatal(err)
-	}
-	mic.say(tone(2), hush(1), tone(1.3))
-	d := awaitTold(t, told, func(d Dictation) bool { return len(d.Said) == 1 })
-	if d.Said[0] != "Wort wort wort wort" {
-		t.Errorf("the words before the pause were written down as %q", d.Said[0])
-	}
-	mic.say(tone(1))
-	stopped, err := f.StopListening()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(stopped.Said) != 2 || !strings.HasPrefix(stopped.Said[1], "wort ") || !strings.HasSuffix(stopped.Said[1], "wort.") {
-		t.Errorf("stopping gave %q, want the second piece to go on the sentence and end it", stopped.Said)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		f, mic, told := dictating(t)
+		fakes := func(e *engine.Engine, o *engine.Options) {
+			e.OpenRecognizer = func(string) (engine.Recognizer, error) { return sentences{}, nil }
+		}
+		standIns.Store(&fakes)
+		f.CancelListening()
+		if _, err := f.Listen(); err != nil {
+			t.Fatal(err)
+		}
+		mic.say(tone(2), hush(1), tone(1.3))
+		d := awaitTold(t, told, func(d Dictation) bool { return len(d.Said) == 1 })
+		if d.Said[0] != "Wort wort wort wort" {
+			t.Errorf("the words before the pause were written down as %q", d.Said[0])
+		}
+		mic.say(tone(1))
+		stopped, err := f.StopListening()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(stopped.Said) != 2 || !strings.HasPrefix(stopped.Said[1], "wort ") || !strings.HasSuffix(stopped.Said[1], "wort.") {
+			t.Errorf("stopping gave %q, want the second piece to go on the sentence and end it", stopped.Said)
+		}
+	})
 }
 
 // voices stands in for a speech model that hears a word in every 0.6 s
@@ -547,15 +564,17 @@ func room(t *testing.T, mic *talkingMicrophone) {
 // listening and hearing nothing, which is what Tim found after ten
 // minutes. Stop pressed after that gives the same, once. Plan row 2.189.
 //
-// The bubble's clock is fake, so the quiet of 300 ms passes the moment
-// everything waits on it, on any machine.
+// The bubble's clock is fake, so the quiet passes the moment everything
+// waits on it, on any machine. It is three passes long rather than two
+// minutes, which the room fills with 6000 pieces of its noise and took
+// over a second.
 func TestListeningStopsByItself(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		// The longest a recording can be is short too, so a quiet stop
 		// that is broken fails at once, on the wrong reason, rather than
 		// after ten minutes of the bubble's clock.
 		f, mic, told := dictatingTo(t, &voices{}, func(l *listening) {
-			l.quiet = 300 * time.Millisecond
+			l.quiet = 3 * listenEvery
 			l.most = 30 * engine.SampleRate
 		})
 		mic.say(tone(1.2))
@@ -588,12 +607,12 @@ func TestListeningStopsByItself(t *testing.T) {
 // written down waits for it and gives every word, rather than nothing.
 // The review of #190 found the last piece lost that way. Plan row 2.189.
 //
-// In the bubble the quiet of 300 ms passes on a fake clock, and
+// In the bubble the quiet of two minutes passes on a fake clock, and
 // synctest.Wait says when Stop is waiting for the words.
 func TestStopWhileItStopsByItself(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		v := &voices{}
-		f, mic, told := dictatingTo(t, v, func(l *listening) { l.quiet = 300 * time.Millisecond })
+		f, mic, told := dictatingTo(t, v)
 		mic.say(tone(1.2))
 		awaitTold(t, told, func(d Dictation) bool { return d.Hearing != "" })
 		// No more sound comes, so the next pass is the last one, once the
@@ -629,15 +648,17 @@ func TestStopWhileItStopsByItself(t *testing.T) {
 // talked for minutes, and once it hears the room the window is told that
 // too. The review of #190 asked for it. Plan row 2.189.
 func TestAMicrophoneThatHearsNothingIsSaidAtOnce(t *testing.T) {
-	f, mic, told := dictatingTo(t, &voices{})
-	defer f.CancelListening()
-	mic.say(make([]float32, listenUnheard+engine.SampleRate/10))
-	d := awaitTold(t, told, func(d Dictation) bool { return d.Unheard != "" })
-	if !strings.Contains(d.Unheard, "heard nothing") {
-		t.Errorf("told %q", d.Unheard)
-	}
-	mic.say(tone(1))
-	awaitTold(t, told, func(d Dictation) bool { return d.Unheard == "" })
+	synctest.Test(t, func(t *testing.T) {
+		f, mic, told := dictatingTo(t, &voices{})
+		defer f.CancelListening()
+		mic.say(make([]float32, listenUnheard+engine.SampleRate/10))
+		d := awaitTold(t, told, func(d Dictation) bool { return d.Unheard != "" })
+		if !strings.Contains(d.Unheard, "heard nothing") {
+			t.Errorf("told %q", d.Unheard)
+		}
+		mic.say(tone(1))
+		awaitTold(t, told, func(d Dictation) bool { return d.Unheard == "" })
+	})
 }
 
 // A click in the words still being heard settles them there and then,
@@ -645,23 +666,25 @@ func TestAMicrophoneThatHearsNothingIsSaidAtOnce(t *testing.T) {
 // corrected while the person talks on, and what follows is heard from
 // where they ended. Tim could not click into them. Plan row 2.189.
 func TestClickingWhatIsHeardSettlesIt(t *testing.T) {
-	f, mic, told := dictatingTo(t, &voices{})
-	mic.say(tone(2))
-	d := awaitTold(t, told, func(d Dictation) bool { return d.Hearing == "wort wort wort" })
-	f.SettleListening(d.Recording, 0, d.Hearing)
-	d = awaitTold(t, told, func(d Dictation) bool { return d.Asked == 1 })
-	if strings.Join(d.Said, "|") != "wort wort wort" || d.Hearing != "" {
-		t.Errorf("after the click the window was told %q settled and %q heard", d.Said, d.Hearing)
-	}
-	mic.say(tone(1.4))
-	awaitTold(t, told, func(d Dictation) bool { return d.Hearing != "" })
-	stopped, err := f.StopListening()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Join(stopped.Said, "|") != "wort wort wort|wort wort" {
-		t.Errorf("stopping gave %q, want what followed the click alone after it", stopped.Said)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		f, mic, told := dictatingTo(t, &voices{})
+		mic.say(tone(2))
+		d := awaitTold(t, told, func(d Dictation) bool { return d.Hearing == "wort wort wort" })
+		f.SettleListening(d.Recording, 0, d.Hearing)
+		d = awaitTold(t, told, func(d Dictation) bool { return d.Asked == 1 })
+		if strings.Join(d.Said, "|") != "wort wort wort" || d.Hearing != "" {
+			t.Errorf("after the click the window was told %q settled and %q heard", d.Said, d.Hearing)
+		}
+		mic.say(tone(1.4))
+		awaitTold(t, told, func(d Dictation) bool { return d.Hearing != "" })
+		stopped, err := f.StopListening()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Join(stopped.Said, "|") != "wort wort wort|wort wort" {
+			t.Errorf("stopping gave %q, want what followed the click alone after it", stopped.Said)
+		}
+	})
 }
 
 // The words the window settles may have been settled in part on the Go
@@ -669,20 +692,22 @@ func TestClickingWhatIsHeardSettlesIt(t *testing.T) {
 // place of that one, which it holds, so nothing is written twice.
 // Plan row 2.189.
 func TestClickingWhatWasHeardBeforeAPause(t *testing.T) {
-	f, mic, told := dictatingTo(t, &voices{})
-	mic.say(tone(2))
-	shown := awaitTold(t, told, func(d Dictation) bool { return d.Hearing == "wort wort wort" })
-	mic.say(hush(1), tone(1.3))
-	awaitTold(t, told, func(d Dictation) bool { return len(d.Said) == 1 })
-	f.SettleListening(shown.Recording, 0, shown.Hearing)
-	awaitTold(t, told, func(d Dictation) bool { return d.Asked == 1 })
-	stopped, err := f.StopListening()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Join(stopped.Said, "|") != "wort wort wort|wort wort" {
-		t.Errorf("stopping gave %q", stopped.Said)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		f, mic, told := dictatingTo(t, &voices{})
+		mic.say(tone(2))
+		shown := awaitTold(t, told, func(d Dictation) bool { return d.Hearing == "wort wort wort" })
+		mic.say(hush(1), tone(1.3))
+		awaitTold(t, told, func(d Dictation) bool { return len(d.Said) == 1 })
+		f.SettleListening(shown.Recording, 0, shown.Hearing)
+		awaitTold(t, told, func(d Dictation) bool { return d.Asked == 1 })
+		stopped, err := f.StopListening()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Join(stopped.Said, "|") != "wort wort wort|wort wort" {
+			t.Errorf("stopping gave %q", stopped.Said)
+		}
+	})
 }
 
 // A machine whose speech model is slower than the words should appear is
@@ -691,16 +716,16 @@ func TestClickingWhatWasHeardBeforeAPause(t *testing.T) {
 // machine shows why the words fell behind. The review of #190 asked for
 // it. Plan row 2.189.
 //
-// Each pass takes 30 ms of the fake clock of a testing/synctest bubble, and
-// a pass is asked for every 10 ms, so the speech model is slower than the
-// words on any machine, and by exactly as much.
+// Each pass takes three times listenEvery on the fake clock of a
+// testing/synctest bubble, so the speech model is slower than the words on
+// any machine, and by exactly as much.
 func TestASlowSpeechModelIsSaidOnce(t *testing.T) {
 	read := bubbleLog(t)
 	synctest.Test(t, func(t *testing.T) {
 		f := listenTo(t, nil)
 		mic := &talkingMicrophone{}
 		openMicrophone = func() microphone { return mic }
-		v := &voices{slow: 30 * time.Millisecond}
+		v := &voices{slow: 3 * listenEvery}
 		fakes := func(e *engine.Engine, o *engine.Options) {
 			e.OpenRecognizer = func(string) (engine.Recognizer, error) { return v, nil }
 		}
@@ -712,7 +737,7 @@ func TestASlowSpeechModelIsSaidOnce(t *testing.T) {
 		// next.
 		for range 5 {
 			mic.say(tone(0.3))
-			time.Sleep(40 * time.Millisecond) //nolint:forbidigo // synctest bubble
+			time.Sleep(4 * listenEvery) //nolint:forbidigo // synctest bubble
 		}
 		if _, err := f.StopListening(); err != nil {
 			t.Fatal(err)
@@ -729,7 +754,7 @@ func TestASlowSpeechModelIsSaidOnce(t *testing.T) {
 		t.Errorf("a slow speech model was said %d times", slow)
 	}
 	written := find(lines, "the recording was written down")
-	if written == nil || written["passes"].(float64) < 2 || written["slowest"].(float64) < 30 {
+	if written == nil || written["passes"].(float64) < 2 || written["slowest"].(float64) < float64((3*listenEvery).Milliseconds()) {
 		t.Errorf("the recording was written down as %v", written)
 	}
 }
@@ -779,28 +804,31 @@ func TestTheMicrophoneSaysHowLoud(t *testing.T) {
 // next window took it up again with every word he had said. Plan row
 // 2.244.
 func TestClosingTheReportWindowDropsTheRecording(t *testing.T) {
-	f, read := listenWith(t, tone(30))
-	f.report = newReporting(afero.NewMemMapFs(), "/config/report")
-	f.report.stop = f.CancelListening
-	f.report.make = func(closed func()) (func(), func()) { return func() {}, closed }
-	f.OpenReport("bugs")
-	first, err := f.Listen()
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.report.closeWindow("window")
-	if find(read(), "the recording was dropped") == nil {
-		t.Fatal("the window closed and the recording ran on")
-	}
-	f.OpenReport("bugs")
-	next, err := f.Listen()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if next == first {
-		t.Fatalf("the next window took up recording %d again", first)
-	}
-	f.CancelListening()
+	read := bubbleLog(t)
+	synctest.Test(t, func(t *testing.T) {
+		f := listenTo(t, tone(30))
+		f.report = newReporting(afero.NewMemMapFs(), "/config/report")
+		f.report.stop = f.CancelListening
+		f.report.make = func(closed func()) (func(), func()) { return func() {}, closed }
+		f.OpenReport("bugs")
+		first, err := f.Listen()
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.report.closeWindow("window")
+		if find(read(), "the recording was dropped") == nil {
+			t.Fatal("the window closed and the recording ran on")
+		}
+		f.OpenReport("bugs")
+		next, err := f.Listen()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if next == first {
+			t.Fatalf("the next window took up recording %d again", first)
+		}
+		f.CancelListening()
+	})
 }
 
 // A recording nobody spoke into is written down as nothing, though the
@@ -808,32 +836,35 @@ func TestClosingTheReportWindowDropsTheRecording(t *testing.T) {
 // Stop a few times in a row, said nothing, and was given "yeah yeah".
 // Plan row 2.244.
 func TestNobodySpeakingIsWrittenDownAsNothing(t *testing.T) {
-	room := tone(3)
-	for i := range room {
-		room[i] /= 30
-	}
-	f, read := listenWith(t, room)
-	if _, err := f.Listen(); err != nil {
-		t.Fatal(err)
-	}
-	f.listening.mu.Lock()
-	r := f.listening.now
-	f.listening.mu.Unlock()
-	// Stopping stops the microphone before what was said is written
-	// down, and the stand-in hands over all it has before it stops, so the
-	// whole room is heard however busy the machine is. It was once given
-	// 200 ms to play it all.
-	d, err := f.StopListening()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if heard := len(r.recorded()); heard != len(room) {
-		t.Fatalf("%d samples of the room were heard, want all %d", heard, len(room))
-	}
-	if len(d.Said) != 0 {
-		t.Fatalf("the hum of a room was written down as %q", d.Said)
-	}
-	if find(read(), "nobody spoke, so nothing was written down") == nil {
-		t.Fatal("the log does not say nobody spoke")
-	}
+	read := bubbleLog(t)
+	synctest.Test(t, func(t *testing.T) {
+		room := tone(3)
+		for i := range room {
+			room[i] /= 30
+		}
+		f := listenTo(t, room)
+		if _, err := f.Listen(); err != nil {
+			t.Fatal(err)
+		}
+		f.listening.mu.Lock()
+		r := f.listening.now
+		f.listening.mu.Unlock()
+		// Stopping stops the microphone before what was said is written
+		// down, and the stand-in hands over all it has before it stops, so the
+		// whole room is heard however busy the machine is. It was once given
+		// 200 ms to play it all.
+		d, err := f.StopListening()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if heard := len(r.recorded()); heard != len(room) {
+			t.Fatalf("%d samples of the room were heard, want all %d", heard, len(room))
+		}
+		if len(d.Said) != 0 {
+			t.Fatalf("the hum of a room was written down as %q", d.Said)
+		}
+		if find(read(), "nobody spoke, so nothing was written down") == nil {
+			t.Fatal("the log does not say nobody spoke")
+		}
+	})
 }

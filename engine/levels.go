@@ -48,17 +48,9 @@ const levelsVersion = 2
 
 // levelsDefault is how often the frames measured so far are written, so
 // the waveform grows while the measuring runs, and how often the measuring
-// asks where the clip timeline is looking, unless the engine says
-// otherwise, see Engine.levelsEvery.
+// asks where the clip timeline is looking, unless the engine counts reads
+// instead, see Engine.levelsReads.
 const levelsDefault = 500 * time.Millisecond
-
-// levelsStep is how often this engine's measuring writes and asks.
-func (e *Engine) levelsStep() time.Duration {
-	if e.levelsEvery > 0 {
-		return e.levelsEvery
-	}
-	return levelsDefault
-}
 
 // levelsFile is what logs/levels.json holds. The frames are in
 // logs/levels.frames, written before it, so a reader never sees a part the
@@ -469,14 +461,15 @@ func soundSeek(from, picture float64) (seek, lead float64) {
 }
 
 // readLevels turns 16 kHz mono float samples into a frame every 10 ms and
-// hands each to put, which says whether to go on. Every levelsEvery it asks
-// tick, which says the same. It says whether it reached the end.
+// hands each to put, which says whether to go on. Every levelsDefault, or
+// every levelsReads reads, it asks tick, which says the same. It says
+// whether it reached the end.
 func (e *Engine) readLevels(ctx context.Context, r io.Reader, put func(float32) bool,
 	tick func() bool) (bool, error) {
 	frame := make([]float32, 0, frameSamples)
 	buf := make([]byte, frameSamples*4*200)
 	carry := []byte{}
-	last := time.Now()
+	last, reads := time.Now(), 0
 	for {
 		if ctx.Err() != nil {
 			return false, ctx.Err()
@@ -505,7 +498,12 @@ func (e *Engine) readLevels(ctx context.Context, r io.Reader, put func(float32) 
 		if err != nil {
 			return false, err
 		}
-		if time.Since(last) >= e.levelsStep() {
+		reads++
+		due := time.Since(last) >= levelsDefault
+		if e.levelsReads > 0 {
+			due = reads%e.levelsReads == 0
+		}
+		if due {
 			last = time.Now()
 			if !tick() {
 				return false, nil

@@ -2907,7 +2907,8 @@ export const sequences = [
     // Plan row 2.189. Tim talked past the longest a recording can be and
     // lost what he said after it, with nothing to say why. A recording
     // nobody talks into stops by itself, keeps every word as Stop would,
-    // and says why under the field. The bridge's waits 8 s.
+    // and says why under the field. The bridge says the quiet is over
+    // once the person has fallen silent, rather than after two minutes.
     name: "Dictation nobody talks into stops by itself and keeps what was said",
     steps: [
       ["bugs"],
