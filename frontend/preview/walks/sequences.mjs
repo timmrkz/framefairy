@@ -2483,8 +2483,7 @@ export const sequences = [
       ["dictate", "start"],
       ["caret at words"],
       // The last words take a while to write down, the way they do on a
-      // Mac after a long sentence.
-      ["hold", "StopListening"],
+      // Mac after a long sentence: the step holds them back while it looks.
       ["dictate", "escape, the cursor stays"],
     ],
   },
@@ -7323,8 +7322,8 @@ for (const seq of toWalk) {
           if (pressFirst !== undefined) {
             // A press in the menu beside the field takes the focus from it
             // and gives it to nothing, which is what WebKit does with a
-            // button pressed. The first save the Go side hears of, if one
-            // was made, waits half a second, so a later one is heard first.
+            // button pressed. The first save the Go side hears of is held
+            // until the colour is picked, so a later one is heard first.
             await hold(page, "SetLabel");
             const box = await menu.locator(".label").boundingBox();
             await page.mouse.click(box.x + 3, box.y + 3);
@@ -8766,17 +8765,18 @@ for (const seq of toWalk) {
           await pageUntil(page, () => /without a word/.test(document.querySelector(".words")?.textContent ?? ""));
         } else {
           await page.locator(".telling").focus();
-          // The last words are held back until Tab is pressed, so Tab
-          // comes while they are written down on any machine.
-          const late = arg === "enter, then tab and enter" || arg === "enter, then tab";
+          // The last words are held back until the walk has looked, so
+          // Tab, or the look at the cursor, comes while they are written
+          // down on any machine.
+          const tab = arg === "enter, then tab and enter" || arg === "enter, then tab";
+          const late = tab || arg === "escape, the cursor stays";
           if (late) await control(url, "/hold?call=StopListening&gate=shut");
           await page.keyboard.press(arg === "enter" ? "Enter" : "Escape");
           if (arg === "escape, then enter") await page.keyboard.press("Enter");
-          if (late) {
+          if (tab) {
             await page.keyboard.press("Tab");
             if (arg === "enter, then tab and enter") await page.keyboard.press("Enter");
             const writing = await button.getAttribute("aria-label");
-            await control(url, "/hold?call=StopListening&gate=open");
             if (writing !== "Writing") wrong = `the button says ${writing} after Tab, not Writing, so Tab came after the words were written`;
           }
           // While the last words are written down, the cursor is still
@@ -8786,6 +8786,7 @@ for (const seq of toWalk) {
             if (c.writing !== "Writing") wrong = `the button says ${c.writing} right after Escape, not Writing, so there was nothing to look at`;
             else if (!c.ours) wrong = "the cursor left the end of the words while they were written down";
           }
+          if (late) await control(url, "/hold?call=StopListening&gate=open");
         }
         await letHeld(page);
         await pageUntil(page, () => document.querySelector("button.dictate")?.getAttribute("aria-label") === "Dictate");

@@ -75,7 +75,10 @@ func TestPathClosedWhileHearing(t *testing.T) {
 	in, let := d.speech.hold()
 	ep := d.add("ep", minutes5)
 	<-in
-	j, _ := d.svc.jobs.find(ep, "search")
+	j, ok := d.svc.jobs.find(ep, "search")
+	if !ok {
+		t.Fatalf("no search hears the video: %+v", d.svc.jobs.list())
+	}
 	d.closeWhileIn(j, let)
 	heardBefore, _ := d.heard(ep)
 	given := d.speech.seconds()

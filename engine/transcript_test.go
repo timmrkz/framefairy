@@ -532,11 +532,10 @@ func TestSaveHeardDecidesWhenATranscriptionSaves(t *testing.T) {
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	// The clock alone would save after every piece.
 	e.checkpointEvery = time.Nanosecond
-	e.SaveHeard = func() bool { return asked.Add(1) == 2 }
 	e.OpenRecognizer = func(string) (Recognizer, error) {
-		return watchingRecognizer{fakeRecognizer{&calls}, func() {
+		return savingRecognizer{watchingRecognizer{fakeRecognizer{&calls}, func() {
 			seen = append(seen, Status(disk, source, model, nil).Covered)
-		}}, nil
+		}}, func() bool { return asked.Add(1) == 2 }}, nil
 	}
 	base := DefaultOptions()
 	base.ASRModel = model
@@ -558,6 +557,15 @@ func TestSaveHeardDecidesWhenATranscriptionSaves(t *testing.T) {
 		}
 	}
 }
+
+// savingRecognizer says when what is heard so far is saved, the way the
+// walks' stand-in does.
+type savingRecognizer struct {
+	watchingRecognizer
+	saves func() bool
+}
+
+func (r savingRecognizer) SaveHeard() bool { return r.saves() }
 
 // Issue #444: Tim searched windows heard in part already, and the fill of
 // the transcription started well past 0. What a hearing says of how far it

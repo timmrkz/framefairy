@@ -165,9 +165,11 @@ export async function hold(page, name) {
 }
 
 // Lets every call held on the page go on to the Go side. The next settle
-// waits for them to come back.
+// waits for them to come back. A hold no call came for held nothing, so
+// what the walk did while it held tested nothing, and the walk fails.
 export async function letHeld(page) {
-  await page.evaluate(() => window.__letHeld?.());
+  const empty = (await page.evaluate(() => window.__letHeld?.())) ?? [];
+  if (empty.length) throw new Error(`a hold of ${empty.join(", ")} held nothing: no such call was made while it held`);
 }
 
 // Gives a page Playwright's own fake clock, once, in place of the app's
@@ -774,7 +776,8 @@ export async function clipList(page) {
 
 // Asks the bridge itself for something a walk needs and the interface
 // cannot do: a file for the Add button's box, the model holding or
-// failing its answers, the speech model's pace, the app opened again.
+// failing its answers, the speech model held or let on, the app opened
+// again.
 export async function control(url, path) {
   const answer = await fetch(new URL(path, url), { method: "POST" });
   if (!answer.ok) throw new Error(`the bridge said no to ${path}: ${await answer.text()}`);

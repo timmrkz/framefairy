@@ -488,6 +488,10 @@ func (e *Engine) transcribe(ctx context.Context, path string, window Window,
 	// the order it was said: a piece that is done early waits for the ones
 	// before it, so the transcript and every save of it only ever reach as
 	// far as all of it has been heard.
+	// A recogniser that says when what is heard so far is saved, the
+	// walks' stand-in, is asked after each piece in place of the clock, so
+	// a walk decides when a transcript is saved, on any machine.
+	saves, _ := rec.(interface{ SaveHeard() bool })
 	copies := 1
 	if many, ok := rec.(interface{ Copies() int }); ok {
 		copies = max(many.Copies(), 1)
@@ -551,8 +555,8 @@ func (e *Engine) transcribe(ctx context.Context, path string, window Window,
 		covered := p.at + float64(p.samples)/SampleRate
 		heardTo = covered
 		due := time.Since(lastSave) >= e.checkpoint()
-		if e.SaveHeard != nil {
-			due = e.SaveHeard()
+		if saves != nil {
+			due = saves.SaveHeard()
 		}
 		if save != nil && due {
 			lastSave = time.Now()

@@ -552,13 +552,14 @@ type prose struct {
 	// bridge's silent, which is the microphone's.
 	wordless atomic.Bool
 	// save has what is heard so far saved once the next piece is heard,
-	// asked for with a step, see saves. Otherwise a transcript is saved
-	// only once it is all heard, never by the clock.
+	// asked for with a step, see SaveHeard. Otherwise a transcript is
+	// saved only once it is all heard, never by the clock.
 	save atomic.Bool
 	// held keeps it from hearing anything more, so a walk can look at a
 	// transcript part way that stays where it is, or press something
-	// while it hears. /speech?go or a reset lets it go on. steps is how many pieces it may still hear while it
-	// is held, so a walk can let the hearing on one piece at a time.
+	// while it hears. /speech?go or a reset lets it go on. steps is how
+	// many pieces it may still hear while it is held, so a walk can let
+	// the hearing on one piece at a time.
 	// hearing counts the pieces it is hearing now.
 	gate    sync.Mutex
 	turn    *sync.Cond
@@ -672,9 +673,9 @@ func (p *prose) Recognize(samples []float32, rate int) []engine.Token {
 
 func (*prose) Close() {}
 
-// saves says whether what is heard so far is saved now, the engine's
-// SaveHeard: once after a step that asked for it.
-func (p *prose) saves() bool { return p.save.Swap(false) }
+// SaveHeard says whether what is heard so far is saved now, which the
+// engine asks in place of its clock: once after a step that asked for it.
+func (p *prose) SaveHeard() bool { return p.save.Swap(false) }
 
 // at is the word it says next.
 func (p *prose) at() int {
@@ -874,7 +875,6 @@ func openBridge(t *testing.T) *bridge {
 	words := &prose{}
 	fakes := func(e *engine.Engine, o *engine.Options) {
 		e.OpenRecognizer = func(string) (engine.Recognizer, error) { return words, nil }
-		e.SaveHeard = words.saves
 		o.LLMURL = d.model.server.URL
 		o.Width, o.Height = 360, 640
 		o.Preset = "ultrafast"
@@ -920,8 +920,10 @@ func openBridge(t *testing.T) *bridge {
 	t.Cleanup(func() { engine.UseFontFolders(nil, nil) })
 	// Dictate on Report a Problem records two seconds of a hum, then a
 	// pause and a second and a half more, over and over, a tenth of a
-	// second each time the app reads how loud it is, which it does as
-	// often as a tenth goes by. The stand-in hears it as words: what came before a
+	// second each time the app reads how loud it is. That is still a
+	// tenth for every 100 ms of real time, on the app's own timer for its
+	// level meter rather than one of the stand-in's, see #510. The
+	// stand-in hears it as words: what came before a
 	// pause is settled while the recording runs, and there is more to be
 	// heard until the recording stops, or until a walk has the person
 	// fall silent, see /microphone. A busy runner reached a click into

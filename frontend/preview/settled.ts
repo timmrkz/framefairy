@@ -61,9 +61,11 @@ export function callOut(name: string): () => void {
 };
 
 // Lets every call held go on to the Go side, and counts them as out again,
-// so the walk's next settle waits for them to come back.
+// so the walk's next settle waits for them to come back. Hands back the
+// names of the holds no call came for, which held nothing.
 (window as any).__letHeld = async () => {
   const names = new Set([...holdNext.keys(), ...[...held].map((c) => c.name)]);
+  const empty = [...holdNext].filter(([, n]) => n > 0).map(([name]) => name);
   holdNext.clear();
   for (const c of held) {
     if (!c.counted) {
@@ -72,6 +74,7 @@ export function callOut(name: string): () => void {
     }
   }
   for (const name of names) await fetch(`/hold?call=${encodeURIComponent(name)}&gate=open`);
+  return empty;
 };
 const soon = new Set<unknown>();
 let faked = false;
