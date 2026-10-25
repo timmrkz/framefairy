@@ -7499,7 +7499,13 @@ for (const seq of toWalk) {
             return {
               part: !!part,
               behind: !!part?.classList.contains("behind"),
-              breathes: !!part && getComputedStyle(part).animationName === "breath",
+              // A walk that asks for less motion sees the breath left out,
+              // as the app leaves it out on a Mac set that way, see
+              // .waiting in app.css, so there the frame only has to wear it.
+              breathes:
+                !!part &&
+                part.classList.contains("waiting") &&
+                getComputedStyle(part).animationName === (matchMedia("(prefers-reduced-motion: reduce)").matches ? "none" : "breath"),
               motes: part?.querySelectorAll(".mote").length ?? 0,
               // What it wore, said when it does not breathe.
               wore: part
