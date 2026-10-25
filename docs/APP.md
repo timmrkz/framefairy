@@ -3387,8 +3387,7 @@ speech model took, never what they were, see [LOGGING.md](LOGGING.md).
   - `jobs`: each search, render and install starting and ending, with
     how it ended and how long it took.
   - `window`: the window's warnings and errors and anything thrown and
-    not caught, every time the window stood still for more than
-    400 ms while the app was in front, the space bar with where the keyboard was and which
+    not caught, the window going hidden and shown, the space bar with where the keyboard was and which
     workspace could hear it, where a swipe or a pinch on the clip
     timeline took the view, calls to the Go side that failed, took
     longer than half a second or came more than 60 in a second, which
