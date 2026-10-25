@@ -475,6 +475,9 @@ type cursor struct {
 	// Closed when the decoder is made to hang, see hangAfter, which says
 	// at once what chipHang says on the clock.
 	hangs chan struct{}
+	// When the call into the decoder the cursor is in began, counted from
+	// started and one more, or 0 while it is in none, see inDecoder.
+	calling atomic.Int64
 
 	v       *video
 	pkt     *astiav.Packet
@@ -564,20 +567,41 @@ func (c *cursor) run() {
 	c.free()
 }
 
-// chipHang is how long one piece of a cursor's work may take on the
-// graphics chip: an open, which seeks and decodes up to the frame asked
-// for, or a batch of the frames after it. Either takes a second at most
-// on the chip, the first open with it. On CI's virtual Mac the chip
-// stopped once in the middle of a stream and never went on, and the
-// video preview with it, issue #553. ffmpeg's calls cannot be called
-// off, so the work is left where it hangs.
+// chipHang is how long one call into the decoder may take on the
+// graphics chip: a packet handed in, a frame taken out or brought off the
+// chip. Each takes milliseconds, a frame of 4K too. On CI's virtual Mac
+// the chip stopped once in the middle of a stream and never went on, and
+// the video preview with it, issue #553. ffmpeg's calls cannot be called
+// off, so the work is left where it hangs. Reading the file is not
+// watched, so a slow disk or a file still coming down from iCloud is no
+// hang, and neither is a long seek, which is many calls.
 const chipHang = 10 * time.Second
 
+// started is what the calls into the decoder are timed from, on the
+// clock that only goes forward.
+var started = time.Now()
+
+// inDecoder makes one call into the decoder, noting when it began, so
+// watch can tell a chip that hangs from work that is only long.
+func (c *cursor) inDecoder(call func() error) error {
+	c.calling.Store(int64(time.Since(started)) + 1)
+	defer c.calling.Store(0)
+	return call()
+}
+
+// stuck tells whether the cursor has been in one call into the decoder
+// for chipHang or more.
+func (c *cursor) stuck() bool {
+	at := c.calling.Load()
+	return at != 0 && time.Since(started)-time.Duration(at-1) >= chipHang
+}
+
 // watch runs one piece of the cursor's work and tells whether the cursor
-// goes on. On the graphics chip it gives up on the cursor once the work
-// has taken chipHang: the stream is told the cursor hung, and every
-// decoder from then on decodes on the processor. On the processor
-// nothing is watched, since work there is as slow as the machine is.
+// goes on. On the graphics chip it gives up on the cursor once one call
+// into the decoder has taken chipHang: the stream is told the cursor
+// hung, and every decoder from then on decodes on the processor. On the
+// processor nothing is watched, since work there is as slow as the
+// machine is.
 func (c *cursor) watch(job func()) bool {
 	onChip := !c.sound && c.d.chip() != nil
 	if !onChip && hangAfter == 0 {
@@ -589,20 +613,24 @@ func (c *cursor) watch(job func()) bool {
 		defer close(done)
 		job()
 	}()
-	var limit <-chan time.Time
+	var tick <-chan time.Time
 	if onChip {
-		t := time.NewTimer(chipHang)
+		t := time.NewTicker(chipHang / 4)
 		defer t.Stop()
-		limit = t.C
+		tick = t.C
 	}
-	select {
-	case <-done:
-		return true
-	case <-limit:
-	case <-c.hangs:
+	for hung := false; !hung; {
+		select {
+		case <-done:
+			return true
+		case <-tick:
+			hung = c.stuck()
+		case <-c.hangs:
+			hung = true
+		}
 	}
 	c.d.chipHung.Store(true)
-	warn("cursor %d, picture: the decoder made no frame for %s, gives it up and decodes on the processor from now on",
+	warn("cursor %d, picture: one call into the decoder took %s or more, gives it up and decodes on the processor from now on",
 		c.id, chipHang)
 	c.d.answer(framewire.Record{Cursor: c.id, Kind: framewire.Hung})
 	return false
@@ -1066,7 +1094,7 @@ func (c *cursor) seekBack(landed float64) error {
 func (c *cursor) decode() (float64, error) {
 	tb := c.v.stream.TimeBase().Float64()
 	for {
-		err := c.v.dec.ReceiveFrame(c.decoded)
+		err := c.inDecoder(func() error { return c.v.dec.ReceiveFrame(c.decoded) })
 		switch {
 		case err == nil:
 			// Its moment is ffmpeg's best guess, as the ffmpeg program
@@ -1203,7 +1231,7 @@ func (c *cursor) feed() error {
 			err := c.v.fc.ReadFrame(p)
 			if errors.Is(err, astiav.ErrEof) {
 				c.sentEOF = true
-				return c.v.dec.SendPacket(nil)
+				return c.inDecoder(func() error { return c.v.dec.SendPacket(nil) })
 			}
 			if err != nil {
 				return c.withSaid(fmt.Errorf("the video could not be read: %w", err))
@@ -1226,7 +1254,7 @@ func (c *cursor) feed() error {
 		if !c.sound {
 			c.skipBefore(p)
 		}
-		err := c.v.dec.SendPacket(p)
+		err := c.inDecoder(func() error { return c.v.dec.SendPacket(p) })
 		p.Unref()
 		if err != nil && !errors.Is(err, astiav.ErrEagain) {
 			return c.withSaid(fmt.Errorf("the picture could not be decoded: %w", err))
@@ -1270,7 +1298,7 @@ func (c *cursor) bringOut() error {
 	if c.decoded.PixelFormat() != astiav.PixelFormatVideotoolbox {
 		return nil
 	}
-	err := c.decoded.TransferHardwareData(c.brought)
+	err := c.inDecoder(func() error { return c.decoded.TransferHardwareData(c.brought) })
 	if err == nil {
 		err = copyFrameProps(c.brought, c.decoded)
 	}

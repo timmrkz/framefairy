@@ -79,8 +79,8 @@ func TestTheVideoPreviewGoesOnWhenTheGraphicsChipFails(t *testing.T) {
 // The video preview goes on when the decoder hangs for good, as the
 // graphics chip did on CI's virtual Mac while it streamed the recording
 // cut off by a crash, issue #553: the stream waited on it until the test
-// run was killed. The decoder is made to hang on the third packet of one
-// cursor, says so at once, gives the cursor up and decodes on the
+// run was killed. The decoder is made to hang on one packet of one cursor,
+// says so at once, gives the cursor up and decodes on the
 // processor from then on, and the stream goes on from a new cursor at the
 // frame after the last one it had. The frames are checked as in
 // TestTheVideoPreviewShowsTheFramesOfTheShort, so none is lost or doubled
@@ -95,12 +95,18 @@ func TestTheVideoPreviewGoesOnWhenTheDecoderHangs(t *testing.T) {
 	}
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	e.FFmpeg, e.FFprobe = "ffmpeg", "ffprobe"
+	// On the 3rd packet the decoder hangs in the open, before the stream
+	// has a frame, and on the 12th in the middle of a stream, after the
+	// first frames were handed over, so the new cursor goes on from the
+	// frame after the last one.
 	for _, c := range timesCases {
 		if c.name == "even_mp4" || c.name == "crashed_mkv" {
-			t.Run(c.name, func(t *testing.T) {
-				t.Parallel()
-				previewShowsTheShort(t, e, program, c, "FRAMEFAIRY_FRAMES_HANG_AFTER=3")
-			})
+			for _, after := range []string{"3", "12"} {
+				t.Run(c.name+"/"+after, func(t *testing.T) {
+					t.Parallel()
+					previewShowsTheShort(t, e, program, c, "FRAMEFAIRY_FRAMES_HANG_AFTER="+after)
+				})
+			}
 		}
 	}
 }
@@ -237,6 +243,11 @@ func previewShowsTheShort(t *testing.T, e *Engine, program string, c timesCase, 
 	}
 	if hanging && gaveUp != 1 {
 		t.Errorf("the decoder gave up on %d cursors, made to hang once", gaveUp)
+	}
+	// Nothing made to hang, nothing is given up, on CI's Mac too, where
+	// the chip decodes.
+	if !hanging && gaveUp != 0 {
+		t.Errorf("the decoder gave up on %d cursors, made to hang in none", gaveUp)
 	}
 	// A fallback must not hide a chip that never decodes: on a Mac the
 	// chip decodes H.264.

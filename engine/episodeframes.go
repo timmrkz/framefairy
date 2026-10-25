@@ -645,7 +645,12 @@ func (f *EpisodeFrames) stream(ctx context.Context, kind int, want *place, open 
 			case framewire.Hung:
 				// The decoder gave up on the cursor and decodes on the
 				// processor from now on: a new cursor goes on from the
-				// frame after the last one handed over, issue #553.
+				// frame after the last one handed over, issue #553. The
+				// one that hung is closed, so the decoder drops what is
+				// still asked of it.
+				f.mu.Lock()
+				_ = f.send(gone, "close %d", id)
+				f.mu.Unlock()
 				if at == nil {
 					pending, failed = false, true
 					finish()
