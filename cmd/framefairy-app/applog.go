@@ -35,7 +35,7 @@ import (
 // zerolog writes the lines, one JSON object each, and lumberjack keeps the
 // file to its size. Nothing here does either job itself.
 //
-//	{"level":"warn","time":"2026-10-10T22:41:07.512+02:00","run":"9f3a01","from":"window","msg":"stood still for 812 ms"}
+//	{"level":"warn","time":"2026-10-10T22:41:07.512+02:00","run":"9f3a01","from":"window","msg":"calls: Library took 208 ms"}
 //
 // Every line from debug up is always written, so the steps that led to a
 // fault are there when it happens. What keeps the disk free is the cap

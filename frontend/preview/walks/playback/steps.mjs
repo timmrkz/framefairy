@@ -1278,34 +1278,6 @@ export const steps = {
     await settle(page);
     await settled();
   },
-  // ["stands still", away]
-  //                    holds the window up for 900 ms, after it was told the
-  //                    app went behind another when away is true, and reads
-  //                    whether the log was told the window stood still: it
-  //                    must be, unless the app was away
-  async "stands still"(walk, arg) {
-    const { page } = walk;
-    const before = await page.evaluate(() => window.__calls.length);
-    await page.evaluate((away) => {
-      if (away) window.dispatchEvent(new Event("blur"));
-      const until = performance.now() + 900;
-      while (performance.now() < until);
-    }, arg);
-    await settle(page);
-    if (arg) await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-    await loggedUpTo(page);
-    const lines = await page.evaluate(
-      (n) =>
-        window.__calls
-          .slice(n)
-          .filter((c) => c.name === "Said")
-          .flatMap((c) => c.args[0].map((l) => l.text)),
-      before,
-    );
-    const stood = lines.some((l) => l.startsWith("window: stood still"));
-    if (arg && stood) walk.wrong = `the log said the window stood still while the app was behind another: ${lines.join(" | ")}`;
-    if (!arg && !stood) walk.wrong = `the window stood still for 900 ms in front and the log did not say so: ${lines.join(" | ")}`;
-  },
   // ["as previewed", rate]
   //                    the short Render wrote, read back from disk, has
   //                    this frame rate and as many frames as the clip's
@@ -1821,20 +1793,6 @@ export const steps = {
 // Steps that take the same body as the step they are walked by.
 steps["only the video"] = steps["the clip shown"];
 steps["glides"] = steps["glides while playing"];
-
-// Until the app's log has been written up to now: a line of the walk's own
-// goes to the console, which the app writes to its log in order with
-// every line said before it, see said.ts, and the call that writes it is
-// waited for. The log is written a quarter of a second after a line, by a
-// timer settle leaves alone, since it changes nothing on screen.
-function loggedUpTo(page) {
-  return page.evaluate(() => {
-    const mark = `walk: logged up to ${window.__calls.length}`;
-    const written = window.__nextCall(window.__calls.length, (c) => c.name === "Said" && c.args[0].some((l) => l.text === mark));
-    console.warn(mark);
-    return written;
-  });
-}
 
 // What is wrong with the short Render wrote, against the video preview, or
 // null. The frame of the short that stands for a moment is the frame of

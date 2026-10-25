@@ -15,6 +15,8 @@ export default [
     steps: [
       ["bugs"],
       ["write", "It froze.", 2],
+      ["dictate", "start"],
+      ["microphone moves"],
       ["dictate", "button"],
       ["report reads", "It * froze."],
       ["undo"],

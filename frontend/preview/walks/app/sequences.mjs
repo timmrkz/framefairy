@@ -76,18 +76,6 @@ export default [
     steps: [["mission control"]],
   },
   {
-    // WebKit lets the timers of an app that is not in front fire once a
-    // second at most, and the log said the window stood still every time
-    // the app came back to the front: 262 lines in two days of Tim's
-    // report, none while he worked. A window held up in front is still
-    // said. Plan row 2.242.
-    name: "the log says the window stood still only while the app is in front",
-    steps: [
-      ["stands still", true],
-      ["stands still", false],
-    ],
-  },
-  {
     // Tim chose another model in the settings while a search ran, and
     // nothing stopped him. What a search uses stays as it is until it is
     // done, and once it is, it can be changed again.

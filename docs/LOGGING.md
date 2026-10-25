@@ -143,7 +143,7 @@ guesswork.
 | Level | What it is for |
 | --- | --- |
 | `error` | something failed: a decoder that stopped, ffmpeg's errors, a call that failed, an exception in the window |
-| `warn` | something went wrong and the app carried on: the window stood still, a play that has not started after 3 s, a call slower than 150 ms, an act that took over 150 ms to reach the screen, an edit of the clips that took over 100 ms |
+| `warn` | something went wrong and the app carried on: a play that has not started after 3 s, a call slower than 150 ms, an act that took over 150 ms to reach the screen, an edit of the clips that took over 100 ms |
 | `info` | the acts, the app starting, a video opening, a job starting and ending |
 | `debug` | the steps between: a stream opened, a first frame, the sound card's state, a decoder held and let go |
 | `trace` | lines that come with every frame or every pull |
@@ -170,10 +170,10 @@ work the window waited on. A call to the Go side slower than 150 ms is a
 100 ms is an `edits` line, `an edit of the clips was slow`, with where its
 time went in ms: `waited` for the edit before it of the same video,
 `before` reading the files as they were, `edit` the edit itself with its
-writes to the disk, and `after` reading them again. A window that
-stood still over 400 ms is said only while the app is in front, because
-WebKit fires the timers of an app behind another once a second at most,
-and that is not the app standing still. Plan row 2.242.
+writes to the disk, and `after` reading them again. Plan row 2.242.
+There is no line for a window that stood still with nothing pressed: a
+timer that looked for it four times a second wrote almost nothing but
+WebKit holding an app behind another to once a second, #541.
 
 When the app goes out of sight and comes back is a `window` line too,
 `the app went out of sight` and `the app came back into sight` with

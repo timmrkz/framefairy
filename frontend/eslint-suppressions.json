@@ -34,12 +34,12 @@
   },
   "preview/walks/playback/steps.mjs": {
     "no-restricted-properties": {
-      "count": 6
+      "count": 4
     }
   },
   "preview/walks/report/steps.mjs": {
     "no-restricted-properties": {
-      "count": 3
+      "count": 2
     }
   },
   "preview/walks/sequences.mjs": {

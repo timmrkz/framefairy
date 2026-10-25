@@ -224,7 +224,7 @@ export const moving = new Set([
   "step onto words and see them pop",
   "step frame by frame and see nothing pop",
   "refused",
-  "dictate",
+  "microphone moves",
 ]);
 
 // STILL=none walks every sequence with the motion, for a failure that

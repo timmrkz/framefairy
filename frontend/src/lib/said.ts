@@ -6,7 +6,7 @@
 // It says enough that a fault is found by reading it, not by asking the
 // person to try again: every step a video takes from its workspace opening
 // to its first frame and its play, every call to the Go side that fails or
-// is slow, every time the window stood still, and what the space bar met.
+// is slow, every act slow to reach the screen, and what the space bar met.
 // Each line has its level and, where there is one, the video it is about,
 // see docs/LOGGING.md.
 
@@ -123,17 +123,13 @@ export function workspaces(): string {
     .join(", ");
 }
 
-// How long the window may stand still before it is said, in ms: a timer
-// that should fire every quarter of a second came this much late.
-const STOOD = 400;
-
 // How long an act may take to reach the screen before it is said, in ms.
 // A tenth of a second is where a click starts to feel slow, and Tim felt
-// the app take a moment to answer while nothing stood still long enough
-// to be said above. So each act says how long it took from the hand to
-// the first frame drawn after it, and how much of that the window was
-// still busy with something else before it heard the act at all, which
-// tells work in the window from work it waits on. Plan row 2.242.
+// the app take a moment to answer. So each act says how long it took
+// from the hand to the first frame drawn after it, and how much of that
+// the window was still busy with something else before it heard the act
+// at all, which tells work in the window from work it waits on. Plan row
+// 2.242.
 const SLOWLY = 150;
 
 function shown(what: string, e: Event) {
@@ -175,8 +171,8 @@ function pressed(e: KeyboardEvent): string {
 }
 
 // The console's warnings and errors, and whatever is thrown and not
-// caught, go to the log as well as where they went. So does every time the
-// window stood still, and what the space bar met. Every click and every
+// caught, go to the log as well as where they went. So does the window
+// going hidden and shown, and what the space bar met. Every click and every
 // key that is not typing is an act.
 export function listen() {
   window.addEventListener(
@@ -212,34 +208,8 @@ export function listen() {
   window.addEventListener("error", (e) => said(`uncaught: ${text([e.error ?? e.message])}`, { level: "error" }));
   window.addEventListener("unhandledrejection", (e) => said(`unhandled: ${text([e.reason])}`, { level: "error" }));
   said(`window: started, ${navigator.userAgent}, ${window.devicePixelRatio}x, ${innerWidth}x${innerHeight}, WebGPU ${"gpu" in navigator ? "there" : "not there"}`, { level: "info" });
-  // A window that stands still is a window doing something too long: the
-  // timer comes late by as much. But WebKit lets the timers of an app that
-  // is not in front fire once a second at most, so a timer late while the
-  // app was behind another, or on its way back to the front, says nothing
-  // about the app. Every one of the 262 lines of two days in Tim's report
-  // was that, and none came while he worked. Plan row 2.242.
-  let tick = performance.now();
-  let away = document.hidden || !document.hasFocus();
-  const leave = () => {
-    away = true;
-  };
-  const back = () => {
-    tick = performance.now();
-    away = document.hidden || !document.hasFocus();
-  };
-  window.addEventListener("blur", leave);
-  window.addEventListener("focus", back);
-  setInterval(() => {
-    const now = performance.now();
-    const late = now - tick - 250;
-    tick = now;
-    if (away) return back();
-    if (late > STOOD) said(`window: stood still for ${Math.round(late)} ms`, { level: "warn" });
-  }, 250);
   document.addEventListener("visibilitychange", () => {
     said(`window: ${document.hidden ? "hidden" : "shown"}`);
-    if (document.hidden) leave();
-    else back();
   });
   // The space bar, before anything takes it: where the keyboard was, and
   // which workspace could have heard it.
