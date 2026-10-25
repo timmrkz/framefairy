@@ -360,6 +360,11 @@
 //                      frame they show, the window is already past where
 //                      it was, and once all is still, the window drawn is
 //                      the one the Go side keeps
+//   ["dots begin at the window"]
+//                      once a search heard its window and the window moved
+//                      on, the part not transcribed yet begins where the
+//                      window now begins, and its first column of dots
+//                      stands at that edge, with no room left over there
 //   ["searched moved"] the episode's newest search is a new one, not the
 //                      search there was at "move window", and it searched
 //                      the window where "move window" left it
@@ -3066,6 +3071,19 @@ export const sequences = [
       ["speech", "hold"],
       ["add", 1200],
       ["walks on with the clips"],
+    ],
+  },
+  {
+    // Tim's report of 25 October, 21.40: the window moved on to where the
+    // search had transcribed to, and the dots after it began a few pixels
+    // right of its edge, because they were laid from the end of the
+    // video and the room left over fell at the window.
+    name: "the dots after a search's window begin at the window it moves on to",
+    steps: [
+      ["speech", "hold"],
+      ["add", 1200],
+      ["walks on with the clips"],
+      ["dots begin at the window"],
     ],
   },
   {
@@ -10476,6 +10494,38 @@ async function walkSequence(seq, shared = null) {
         }
         break;
       }
+      case "dots begin at the window": {
+        const path = await episodeOn(page);
+        await settle(page);
+        const from = await page.evaluate(() => Number(document.querySelector(".aim .tip.top.from")?.getAttribute("aria-valuenow") ?? -1));
+        const heard = (await ask(page, "Episode", path))?.heard ?? [];
+        const reach = heard.find(([a]) => a <= 0.5)?.[1] ?? 0;
+        if (Math.abs(reach - from) > 0.5) {
+          wrong = `the window begins at ${from} s and the transcript reaches ${reach} s, so no part begins where the window does`;
+          break;
+        }
+        // The part that begins at the window's edge, and how far in from
+        // that edge its first column of dots stands.
+        const part = await page.evaluate(() => {
+          const pitch = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--dot-pitch"));
+          const track = document.querySelector(".track").getBoundingClientRect();
+          const parts = [...document.querySelectorAll(".track .unheard")].map((u) => {
+            const r = u.getBoundingClientRect();
+            const b = getComputedStyle(u, "::before");
+            return { at: r.left - track.left, width: r.width, in: parseFloat(b.left), out: parseFloat(b.right), worked: u.classList.contains("worked") };
+          });
+          return { pitch, parts, track: track.width };
+        });
+        const first = part.parts.find((p) => p.at > 1);
+        if (!first) {
+          wrong = `no part not transcribed yet after the window's edge: ${JSON.stringify(part)}`;
+          break;
+        }
+        if (first.in !== 0)
+          wrong = `the first column of dots after the window stands ${first.in} px in from the window's edge, not at it: ${JSON.stringify(first)}, dots ${part.pitch} px apart`;
+        else if (first.out < 0 || first.out >= part.pitch) wrong = `the dots after the window are not whole columns: ${JSON.stringify(first)}`;
+        break;
+      }
       case "searched moved": {
         const path = await episodeOn(page);
         const last = (await ask(page, "Jobs")).filter((j) => j.episode === path && j.kind === "search").pop();
@@ -11989,9 +12039,9 @@ async function walkSequence(seq, shared = null) {
             const track = document.querySelector(".track");
             const pad = parseFloat(getComputedStyle(track).borderLeftWidth);
             const columns = [...track.querySelectorAll(".unheard")].map((u) => {
-              // A part the work is hearing into has its dots laid from its
-              // right edge, up to its left edge, see the walk of the parts
-              // giving way. What it is once the work stops is read with
+              // A part the work is hearing into has its dots laid from
+              // where its hearing stops, up to its left edge, see the walk
+              // of the parts giving way. What it is once the work stops is read with
               // that taken off.
               const giving = u.classList.contains("giving");
               const g = getComputedStyle(u, "::before");
@@ -12111,14 +12161,17 @@ async function walkSequence(seq, shared = null) {
             wrong = `the dots of a part on the range picker leave a row or a column clear round them: ${JSON.stringify(grid.columns)}`;
           // Centred, the same either side, found by Tim, who measured it.
           // A part the work heard into keeps its dots where they stood,
-          // laid from its right edge, so none jumps sideways as the work
-          // stops, Tim's report of 24 October.
-          else if (grid.columns.some((c) => (c.worked ? c.sides[1] !== 0 : c.sides[0] !== c.sides[1])))
-            wrong = `the dots of a part on the range picker are not centred in it, or laid from its right edge once the work heard into it: ${JSON.stringify(grid.columns.map((c) => [c.worked, c.sides]))}, worked and left and right`;
+          // whole columns laid from where its hearing stops, so none jumps
+          // sideways as the work stops, Tim's report of 24 October, see
+          // the walk of the dots after a search's window.
+          else if (grid.columns.some((c) => !c.worked && c.sides[0] !== c.sides[1]))
+            wrong = `the dots of a part on the range picker are not centred in it: ${JSON.stringify(grid.columns.map((c) => [c.worked, c.sides]))}, worked and left and right`;
+          // While the work hears into a part, its edge wipes the dots, so
+          // they reach its left edge, and end on a whole column.
+          else if (grid.columns.some((c) => c.laid && (c.laid[0] !== 0 || !(c.laid[1] >= 0 && c.laid[1] < grid.pitch) || !/px$/.test(c.laid[2]))))
+            wrong = `the dots of a part the work hears into do not reach its left edge as whole columns: ${JSON.stringify(grid.columns.map((c) => c.laid))}`;
           // And the foot row a pixel up from the range picker's foot,
           // where it looked clutched to it, found by Tim.
-          else if (grid.columns.some((c) => c.laid && (c.laid[0] !== 0 || c.laid[1] !== 0 || !/^(right|100%)/.test(c.laid[2]))))
-            wrong = `the dots of a part the work hears into are not laid from its right edge to its left: ${JSON.stringify(grid.columns.map((c) => c.laid))}`;
           else if (grid.columns.some((c) => c.foot !== "calc(100% - 1px)"))
             wrong = `the foot row of dots on the range picker is not lifted a pixel: ${grid.columns.map((c) => c.foot).join(", ")}`;
         }

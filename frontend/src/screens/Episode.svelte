@@ -3272,6 +3272,7 @@
     unheardLit={saying ? unheardLit : -1}
     unheardOn={saying ? unheardOn : -1}
     giving={givingAt}
+    givingTo={transcribing && transcribing.to ? transcribing.to : -1}
     part={wholePart}
     partWaiting={!wholeHearing}
     partKey={wholeWork?.id ?? ""}
