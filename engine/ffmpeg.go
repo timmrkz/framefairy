@@ -430,13 +430,11 @@ loop:
 		}
 		done := parseProgress(progressPath)
 		elapsed := time.Since(started).Seconds()
-		if said && !stalled {
-			e.Log.Warn("%s has stopped making frames, so it is stopped", label)
-			stalled = true
-			stop()
-		} else if done > lastDone {
+		// A render said to be stuck has not moved, whatever its progress
+		// says last, and is stopped the way a stall of the clock is.
+		if done > lastDone && !said {
 			lastDone, lastMove, warned = done, time.Now(), false
-		} else if stall > 0 && !stalled && time.Since(lastMove) > stall {
+		} else if stall > 0 && !stalled && (said || time.Since(lastMove) > stall) {
 			e.Log.Warn("%s has not advanced for %s, so it is stopped", label, stall)
 			stalled = true
 			stop()

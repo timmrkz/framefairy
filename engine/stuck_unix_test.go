@@ -17,7 +17,8 @@ import (
 // does finish it reports one camera switch, at 5 s into what it read.
 //
 // The time limit of whatever it runs for ends the moment it says it
-// hangs, see timeLimit, so a test waits on no limit of the clock. Not
+// hangs, see timeLimit, so a test waits on no limit of the clock. A hang
+// with no limit of timeLimit to end fails the test. Not
 // parallel: timeLimit is a package variable.
 //
 // On the real disk: the stand-in ffmpeg is a program that is run.
@@ -39,10 +40,13 @@ func stuckFFmpeg(t *testing.T, always bool) string {
 		for range hangs {
 			mu.Lock()
 			end := last
+			last = nil
 			mu.Unlock()
-			if end != nil {
-				end()
+			if end == nil {
+				t.Error("ffmpeg hangs with no time limit of timeLimit to end it, so it waits on the clock")
+				continue
 			}
+			end()
 		}
 	}()
 	hang := `case " $* " in *" -hwaccel "*) echo hangs > '` + pipe + `'; exec sleep 600 ;; esac`

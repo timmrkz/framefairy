@@ -35,6 +35,9 @@ func Hangs(t testing.TB) (pipe string, hangs <-chan struct{}) {
 			if lines.Text() == over {
 				return
 			}
+			if lines.Text() == "" {
+				continue
+			}
 			select {
 			case said <- struct{}{}:
 			default:
@@ -45,12 +48,13 @@ func Hangs(t testing.TB) (pipe string, hangs <-chan struct{}) {
 	// does not end a read under way, and the test waited on it until go
 	// test's -timeout. The reading is told through the pipe instead.
 	t.Cleanup(func() {
-		_, _ = f.WriteString(over + "\n")
+		_, _ = f.WriteString("\n" + over + "\n")
 		<-read
 		f.Close()
 	})
 	return pipe, said
 }
 
-// over is the line that ends the reading, one no stand-in writes.
+// over is the line that ends the reading, one no stand-in writes. It is
+// written on a line of its own, after whatever a stand-in left unended.
 const over = "\x00 the test is over"

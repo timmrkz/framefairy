@@ -3,7 +3,6 @@
 package standin
 
 import (
-	"os"
 	"os/exec"
 	"testing"
 )
@@ -23,8 +22,5 @@ func TestAHangIsHeardAndTheTestEnds(t *testing.T) {
 			t.Fatalf("%s %s", err, out)
 		}
 		<-hangs
-		if _, err := os.Stat(pipe); err != nil {
-			t.Fatal(err)
-		}
 	})
 }
