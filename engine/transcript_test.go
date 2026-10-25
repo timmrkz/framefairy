@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -512,6 +513,59 @@ func TestEveryChunkSaysHowFarTheAudioHasBeenHeard(t *testing.T) {
 		t.Errorf("the last moment reported is %v, the episode is 70 s", last)
 	}
 }
+
+// What says when a transcription saves decides it, not the clock: a walk
+// that holds the bridge's speech model lets it hear a piece at a time, far
+// quicker than the seconds between two saves, and still sees a transcript
+// saved part way, on any machine.
+//
+// On the real disk: ffmpeg reads the episode the speech model hears.
+func TestSaveHeardDecidesWhenATranscriptionSaves(t *testing.T) {
+	t.Parallel()
+	source := testEpisode(t, "70")
+
+	model := t.TempDir()
+	var calls int32
+	// How far the saved transcript reached as each piece was heard.
+	var seen []float64
+	var asked atomic.Int32
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	// The clock alone would save after every piece.
+	e.checkpointEvery = time.Nanosecond
+	e.OpenRecognizer = func(string) (Recognizer, error) {
+		return savingRecognizer{watchingRecognizer{fakeRecognizer{&calls}, func() {
+			seen = append(seen, Status(disk, source, model, nil).Covered)
+		}}, func() bool { return asked.Add(1) == 2 }}, nil
+	}
+	base := DefaultOptions()
+	base.ASRModel = model
+	p := NewProject(e, source, base)
+	if err := p.Transcribe(context.Background()); err != nil {
+		t.Fatalf("%v %s", err, p.LastError())
+	}
+
+	if len(seen) < 3 {
+		t.Fatalf("a 70 s episode was heard in %d pieces, too few to save between", len(seen))
+	}
+	if seen[0] != 0 || seen[1] != 0 {
+		t.Errorf("the transcript was saved before the second piece was heard: %v", seen)
+	}
+	for _, c := range seen[2:] {
+		if c <= 0 || c != seen[2] {
+			t.Errorf("saved after the second piece only, the transcript reached %v as the pieces were heard", seen)
+			break
+		}
+	}
+}
+
+// savingRecognizer says when what is heard so far is saved, the way the
+// walks' stand-in does.
+type savingRecognizer struct {
+	watchingRecognizer
+	saves func() bool
+}
+
+func (r savingRecognizer) SaveHeard() bool { return r.saves() }
 
 // Issue #444: Tim searched windows heard in part already, and the fill of
 // the transcription started well past 0. What a hearing says of how far it

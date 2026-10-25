@@ -72,10 +72,14 @@ func TestPathAVideoMovedAwayKeepsItsClips(t *testing.T) {
 
 func TestPathClosedWhileHearing(t *testing.T) {
 	d := open(t)
-	hearing := d.speech.hearing()
+	in, let := d.speech.hold()
 	ep := d.add("ep", minutes5)
-	<-hearing
-	d.close()
+	<-in
+	j, ok := d.svc.jobs.find(ep, "search")
+	if !ok {
+		t.Fatalf("no search hears the video: %+v", d.svc.jobs.list())
+	}
+	d.closeWhileIn(j, let)
 	heardBefore, _ := d.heard(ep)
 	given := d.speech.seconds()
 
@@ -151,10 +155,11 @@ func TestPathClosedWhileFinding(t *testing.T) {
 
 func TestPathCancelWhileHearing(t *testing.T) {
 	d := open(t)
-	hearing := d.speech.hearing()
+	in, let := d.speech.hold()
 	ep := d.add("ep", minutes5)
-	<-hearing
+	<-in
 	d.cancel(ep)
+	let()
 	d.idle(ep)
 	// Called off, it says so where its clips would be, with Continue, the
 	// way a search cut off by the app closing does. It used to say

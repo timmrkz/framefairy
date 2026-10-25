@@ -131,9 +131,9 @@ each with a POST:
 | `/report-made` | the names of the files in the last report on the bridge's Desktop, and with `?file=what-happened.txt` what that file in it holds |
 | `/pick-sound` | makes a new file of twelve seconds of a tone and no picture, for the Add button's box to hand over next, so a walk sees Add leave it out with the reason |
 | `/model?hang=1&fail=0` | the language model holds its answers until the search is stopped, or fails, or with both off answers. Told to answer again, it answers what it held too, the way a slow model answers in the end, so a search that was asked while it held does not find for good and keep every video added after it from being transcribed |
-| `/speech?ms=N` | the speech model takes N milliseconds over each piece of audio, so a transcript grows slowly enough to be seen and cancelled. With `&from=0` it says its sentences again from the first word, so a video added next is heard with the words of the bridge's episode and its clip has the same name |
+| `/speech?hold`, `/speech?step=N`, `/speech?go` | `hold` stops the speech model hearing, once the pieces it is hearing are heard, so a transcript stays where it is while a walk looks at it, cancels it or presses something during it. `step=N` lets N pieces more be heard while it is held, and a walk waits on the news of the work, not for the step. With `&save` what is heard so far is saved once the next piece is heard: the app saves a long transcription every 8 s of real time, and the bridge saves it part way only then, through `SaveHeard`, which the engine asks the speech model in place of its clock, so a walk sees a transcript saved part way on any machine. `go` lets it hear on by itself. Closing the app with `/reopen` lets every piece through while the app closes, the way a piece being heard ends as it quits, and the speech stays held after. With `&from=0` it says its sentences again from the first word, so a video added next is heard with the words of the bridge's episode and its clip has the same name |
 | `/chrome?bar=30&left=12&right=72` | the app's window as macOS lays it out, in points: the title bar's height and where its buttons start and end. It goes through what the Go side does with an answer from macOS and is told to the page the way a resize is. Until it is asked, and again after `/reset`, the title bar is the one every other system draws |
-| `/hold?call=Search&ms=N&times=K&fail=why` | the next call of that name, or the next K, waits N milliseconds before it reaches the Go side, the way a busy machine delivers it late, so a walk can press something while the Go side has not heard of the call yet. With `fail` it fails with that reason instead of reaching the Go side, the way a full disk refuses a save. With `gate=shut` every call of that name waits until `gate=open`, whatever `times` says, so a walk lets it through once what it waits to see has happened, on any machine. `/reset` opens every gate |
+| `/hold?call=Search&gate=shut&times=K&fail=why` | with `gate=shut`, the calls of that name wait before they reach the Go side until `gate=open`, every one of them, or the next K with `times`, the way a busy machine delivers them late, so a walk can press something and look while the Go side has not heard of the call yet, and lets it through once it has looked, on any machine. A walk holds a call with `hold` in `walks/bridge.mjs` and lets it go with `letHeld`: the page sets the held call aside, so `settle` waits for everything else meanwhile, and the watch lets go of whatever is still held before it compares the screen with the engine. With `fail` the next call fails with that reason instead of reaching the Go side, the way a full disk refuses a save. `/reset` opens every gate |
 | `/updates?from=main&stored=pr-143&list=main,pr-143` | gives the app's Updates page the app's own updating and Wails' updater, reading a channel list the bridge serves on this machine: a build from the channel `from`, or made on the Mac without it, with `stored` picked by a build before it, and the channels of `list`, each with a newer build that downloads in a moment. Until it is asked, and again after `/reset`, the Updates page's calls are answered with nothing like the rest. Relaunch always is |
 | `/reopen` | closes the app and opens it again, the way quitting and starting it does: the work stops and how it ended is read back. It answers with the jobs as the app left them, once nothing ran any more |
 | `/reset` | the app as it was once its first episode was searched: the models answer quickly, every episode a walk added is gone, the work folder and the settings are what they were, the speech stand-in goes on from the word it had come to then, and the app is opened again on them. So a video a walk adds is heard with the same words, however many walks came before it |
@@ -320,20 +320,21 @@ app's the day 2.121 made it a state.
 ### `searching.mjs`: from a new video to its clips, and a search
 
 The gestures: adding a video with Add, Search, Cancel, Continue, the model
-holding its answers, failing or answering again, the speech slow or
-quick, the app closed and opened again, another episode opened, and a
-wait. With the speech quick and the model answering, adding a video waits
-for its first clips. With the speech slow the walk goes on while the
-video is transcribed, so the next steps land in the middle of it. The
-wait goes on for one to four of the engine's reports of its work, a job
-event each, or not at all when nothing runs that would report: no more
+holding its answers, failing or answering again, the speech held or
+hearing on by itself, the app closed and opened again, another episode opened, and a
+wait. With the speech hearing on by itself and the model answering,
+adding a video waits for its first clips. With the speech held the walk
+goes on while the video is transcribed, so the next steps land in the
+middle of it, and the wait lets the speech hear a piece for each report.
+The wait goes on for one to four of the engine's reports of its work, a
+job event each, or not at all when nothing runs that would report: no more
 jobs run than the bridge's model holds answers for, `/model-holding`,
 whatever step a held search is in. It never waits on the clock. The
 rules, besides every walk's:
 
 | Rule | |
 | --- | --- |
-| A new video gets its first clips with no click | while the models answer and the speech is quick, judged once its first search has ended and nothing of the video runs, by the engine's reports. Broken too when nothing of the engine runs, the app has caught up, and the video has no search |
+| A new video gets its first clips with no click | while the models answer and the speech hears on by itself, judged once its first search has ended and nothing of the video runs, by the engine's reports. Broken too when nothing of the engine runs, the app has caught up, and the video has no search |
 | Cancel shows at once: in the frame after the click the head no longer says Cancel, or a row says Stopping | held to a press of the button while it said Cancel |
 | The clip list says what the engine's jobs do: Cancel while a search runs, Continue with "Stopped", "Interrupted" or "Failed. Click Continue" after one that stopped, Search otherwise | the engine is asked, and the screen read once the app has heard everything the engine told it until then and settled, `caughtUp`. Asked again while the engine's work moves on in between, up to 24 looks, and broken the first time it stood still and the two disagree |
 | No row speaks of a failure the engine did not have | |
@@ -475,8 +476,8 @@ than the frame before or after, see [CAPTIONS.md](CAPTIONS.md#the-tests).
 For the settings: `settings` opens them from the sidebar and `episode`
 the episode again, `pick model` opens the list of what finds clips and
 picks another model if it opens, `remove model` presses the bin of the
-language model or of the speech model, and `speech` slows the speech
-model down. Then `refused`, the card shook and no list and no box opened
+language model or of the speech model, and `speech` holds the speech
+model. Then `refused`, the card shook and no list and no box opened
 and the settings name the models they named, `asks`, the box asking
 whether to remove opened, `changed`, the settings name another model,
 and `hearing`, a search still hears. For Report a Problem: `bugs`
@@ -514,7 +515,10 @@ click would land in other words than the ones it read, `report reads`,
 the field reads so, with `*` for whatever the speech model heard, and
 `report as before`, it reads what it did then. The bridge's microphone
 plays two seconds of a hum, then a pause and a second and a half more,
-over and over, as fast as they would be said, so pieces are settled
+over and over, a tenth of a second each time the app reads how loud
+it is. That is still a tenth for every 100 ms of real time, as fast as
+it would be said, on the app's own timer for its level meter rather than
+a clock of the stand-in's, see #510, and pieces are settled
 while it listens and there is more to hear until it stops. With `ends`
 the person falls silent once the phrase they are on is said, through
 `/microphone?silent=1`. A recording there stops by itself after 8 s

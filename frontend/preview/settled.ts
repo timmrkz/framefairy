@@ -27,17 +27,55 @@ const logOnly = new Set(["Said", "Acted"]);
 let out = 0;
 let back = 0;
 
+// A call a walk holds on the Go side until it lets it go, see __hold, is
+// set aside: it is not out, so the walk can settle on everything else
+// while it is held. holdNext is how many calls of a name from now on are
+// held, and held the calls set aside.
+const holdNext = new Map<string, number>();
+const held = new Set<{ name: string; counted: boolean }>();
+
 // A call of the app's to the Go side is out, by its name: what is handed
 // back says it came back, answered or failed.
 export function callOut(name: string): () => void {
   if (logOnly.has(name)) return () => {};
-  out++;
+  const call = { name, counted: true };
+  const next = holdNext.get(name) ?? 0;
+  if (next > 0) {
+    holdNext.set(name, next - 1);
+    call.counted = false;
+    held.add(call);
+  } else out++;
   return () => {
-    out--;
+    if (call.counted) out--;
+    held.delete(call);
     back++;
     wake();
   };
 }
+
+// Holds the next call of a name on the Go side until __letHeld, the way a
+// busy machine delivers it late, see /hold in bridge_test.go.
+(window as any).__hold = async (name: string) => {
+  holdNext.set(name, (holdNext.get(name) ?? 0) + 1);
+  await fetch(`/hold?call=${encodeURIComponent(name)}&gate=shut&times=${holdNext.get(name)}`);
+};
+
+// Lets every call held go on to the Go side, and counts them as out again,
+// so the walk's next settle waits for them to come back. Hands back the
+// names of the holds no call came for, which held nothing.
+(window as any).__letHeld = async () => {
+  const names = new Set([...holdNext.keys(), ...[...held].map((c) => c.name)]);
+  const empty = [...holdNext].filter(([, n]) => n > 0).map(([name]) => name);
+  holdNext.clear();
+  for (const c of held) {
+    if (!c.counted) {
+      c.counted = true;
+      out++;
+    }
+  }
+  for (const name of names) await fetch(`/hold?call=${encodeURIComponent(name)}&gate=open`);
+  return empty;
+};
 const soon = new Set<unknown>();
 let faked = false;
 let woken: (() => void)[] = [];

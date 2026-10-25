@@ -165,6 +165,24 @@ export async function settle(page) {
   await page.evaluate((held) => window.__settled(held), Boolean(page.__held));
 }
 
+// Holds the next call of a name the page makes on the Go side until
+// letHeld, the way a busy machine delivers it late. settle does not wait
+// for it while it is held, so a walk can look at what the app shows
+// meanwhile. A step that holds a call lets it go before it is done, and
+// the watch lets go of whatever is still held before it compares the
+// screen with the engine, see Watch.step.
+export async function hold(page, name) {
+  await page.evaluate((name) => window.__hold(name), name);
+}
+
+// Lets every call held on the page go on to the Go side. The next settle
+// waits for them to come back. A hold no call came for held nothing, so
+// what the walk did while it held tested nothing, and the walk fails.
+export async function letHeld(page) {
+  const empty = (await page.evaluate(() => window.__letHeld?.())) ?? [];
+  if (empty.length) throw new Error(`a hold of ${empty.join(", ")} held nothing: no such call was made while it held`);
+}
+
 // Gives a page Playwright's own fake clock, once, in place of the app's
 // timers, frames and performance.now. The walk's own waits keep the real
 // frames, kept on window.__real before the fake clock comes, and again on
@@ -788,7 +806,8 @@ export async function clipList(page) {
 
 // Asks the bridge itself for something a walk needs and the interface
 // cannot do: a file for the Add button's box, the model holding or
-// failing its answers, the speech model's pace, the app opened again.
+// failing its answers, the speech model held or let on, the app opened
+// again.
 export async function control(url, path) {
   const answer = await fetch(new URL(path, url), { method: "POST" });
   if (!answer.ok) throw new Error(`the bridge said no to ${path}: ${await answer.text()}`);

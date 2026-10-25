@@ -57,6 +57,10 @@ type desk struct {
 	// app, 0 for as long as in the app.
 	quiet time.Duration
 	most  int
+	// measured hears each time the app tells the window how loud the
+	// microphone is, when set, so the bridge's microphone hands over its
+	// next tenth of a second then, at the pace the app reads it.
+	measured chan struct{}
 	// The report windows Bugs made and brought forward, the window the
 	// app would have made, and the pictures its open box hands over
 	// next, see bugs.go.
@@ -105,7 +109,15 @@ func (d *desk) start(st *store) {
 	d.svc.jobs = newQueue(st, func(u JobUpdate) { d.bus.send("job", u) },
 		func(episode string) { d.bus.send("episode", episode) })
 	d.svc.listening.say = func(x Dictation) { d.bus.send("dictation", x) }
-	d.svc.listening.loud = func(n Loudness) { d.bus.send("loudness", n) }
+	d.svc.listening.loud = func(n Loudness) {
+		d.bus.send("loudness", n)
+		if d.measured != nil {
+			select {
+			case d.measured <- struct{}{}:
+			default:
+			}
+		}
+	}
 	d.svc.listening.quiet = d.quiet
 	d.svc.listening.most = d.most
 	d.svc.report = newReporting(st.files, filepath.Join(st.dir, "report"))
@@ -385,6 +397,21 @@ func (d *desk) close() {
 	}
 }
 
+// closeWhileIn closes the app while j hears a piece the speech model
+// holds, see speech.hold, and lets the piece end once j is called off, the
+// way a real model finishes the piece it is in after the app asked it to
+// stop.
+func (d *desk) closeWhileIn(j Job, let func()) {
+	d.t.Helper()
+	shut := make(chan bool, 1)
+	go func() { shut <- d.svc.jobs.shutDown() }()
+	<-j.ctx.Done()
+	let()
+	if !<-shut {
+		d.t.Fatal("the app did not stop its work in time")
+	}
+}
+
 // copied is what the app last put on the clipboard, nothing before.
 func (d *desk) copied() string {
 	if p := d.clipboard.Load(); p != nil {
@@ -481,13 +508,14 @@ func (d *desk) failedRender(path string) string {
 }
 
 // speech is the stand-in speech model. It hears a word every 0.6 seconds,
-// takes a moment over every chunk so a test can close the app while it
-// hears, and counts the seconds of audio it was given, so a test can tell
-// whether anything was heard twice.
+// holds a piece for as long as a test says, so the test can close the app
+// or press Cancel while it hears, and counts the seconds of audio it was
+// given, so a test can tell whether anything was heard twice.
 type speech struct {
 	mu      sync.Mutex
 	broken  error
 	started chan struct{}
+	gate    chan struct{}
 	samples atomic.Int64
 }
 
@@ -506,6 +534,18 @@ func (s *speech) hearing() <-chan struct{} {
 	defer s.mu.Unlock()
 	s.started = make(chan struct{})
 	return s.started
+}
+
+// hold holds the next piece the speech model is given until let is
+// called, the way a real model is inside one call that takes no stop. in
+// is closed once that piece is in.
+func (s *speech) hold() (in <-chan struct{}, let func()) {
+	in = s.hearing()
+	gate := make(chan struct{})
+	s.mu.Lock()
+	s.gate = gate
+	s.mu.Unlock()
+	return in, sync.OnceFunc(func() { close(gate) })
 }
 
 func (s *speech) open(string) (engine.Recognizer, error) {
@@ -529,8 +569,12 @@ func (s *speech) Recognize(samples []float32, rate int) []engine.Token {
 		close(s.started)
 		s.started = nil
 	}
+	gate := s.gate
+	s.gate = nil
 	s.mu.Unlock()
-	time.Sleep(40 * time.Millisecond) //nolint:forbidigo // the stand-in speech model takes its time on the real clock, left for #510
+	if gate != nil {
+		<-gate
+	}
 	length := float64(len(samples)) / float64(rate)
 	var tokens []engine.Token
 	for at := 0.1; at+0.35 < length; at += 0.6 {

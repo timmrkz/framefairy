@@ -113,8 +113,9 @@
 //                      drags an edge by px, lets go, and at once, with
 //                      nothing waited for, drags it again by again. With
 //                      late, the last place of the first drag is a frame
-//                      further on and answered so many milliseconds late,
-//                      so the edge is taken again before that answer is in
+//                      further on and its answer is held until the edge
+//                      has been taken again and dragged. A call held by
+//                      ["hold"] before it comes back then too
 //   ["edge then track", which]
 //                      clicks an edge and at once presses the track near
 //                      its right end: the playhead stands where the track
@@ -303,19 +304,19 @@
 //                      the window where "move window" left it
 //   ["head"]           presses the clip list's head button, Search, Cancel or
 //                      Continue
-//   ["hold", call, ms] the next call of this name waits so many
-//                      milliseconds before it reaches the Go side, the way
-//                      a busy machine delivers it late
+//   ["hold", call]     the next call of this name waits before it reaches
+//                      the Go side, the way a busy machine delivers it
+//                      late, until the next step has looked at what the
+//                      app shows meanwhile
 //   ["search and cancel"] presses Search, and Cancel in the first frame the head
 //                      says it, and every frame from Search to that press the
 //                      head says Cancel and takes the click, never greyed
 //                      out
 //   ["restart"]        closes the app and opens it again on the episode
-//   ["speech", ms]     the speech model takes so many milliseconds over
-//                      each piece of audio, so a video added is heard
-//                      slowly enough to do something while it is.
-//                      ["speech", "hold"] stops it hearing, and the steps
-//                      that say so let it on one piece at a time.
+//   ["speech", "hold"] stops the speech model hearing, so a video added
+//                      is heard only as far as the walk lets it, and the
+//                      steps that say so let it on one piece at a time.
+//                      ["speech", "go"] lets it hear on by itself.
 //                      ["speech", "wordless"] hears no word at all, the way
 //                      a video with no speech is heard
 //   ["settings"]       opens the settings from the sidebar, and remembers
@@ -822,8 +823,8 @@
 //                      again and sees the cards with nothing said of it
 //   ["heard some"]     waits until the engine has a sentence of the video
 //                      on screen, or n with ["heard some", n], asking again each time the work says how
-//                      far it heard. ["speech", "hold"] after it lets the
-//                      piece of audio being heard then land
+//                      far it heard. With the speech held it lets a piece
+//                      of audio through at a time, and stops between two
 //   ["font list"]      the Font list hangs on the field's left edge with
 //                      its corners, every row is as tall as the field and
 //                      square, nothing stands between the search field and
@@ -1257,7 +1258,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameS
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
 import { open, newBrowser, chosen, shown, engineState, handles, timeline, inside, middle, high, drag } from "./bridge.mjs";
-import { clipList, control, pressHead, fromSidebar, sidebarStill, settle, ask, episodeOn, shortFrames, shortSound } from "./bridge.mjs";
+import { clipList, control, pressHead, fromSidebar, sidebarStill, settle, hold, letHeld, ask, episodeOn, shortFrames, shortSound } from "./bridge.mjs";
 import { xOf, seekTo, cropFrame, sameLook, sayLook, readShort, loudness, filmedOnScreen, preview } from "./bridge.mjs";
 import { recordFrames, addHEVC, overlay, cropPixels, shortFramesFrom, slowDown, noDeadlines, BITS, nextPaint, news, nextNews, caughtUp } from "./bridge.mjs";
 import { fakeClock, holdClock, runClock, letClockGo, realFrames, foldsDone, shownOnPlayhead, clickOnTrack, pressOnTrack, playUntil, pageUntil, seenUntil } from "./bridge.mjs";
@@ -1670,14 +1671,13 @@ export const sequences = [
     // range picker.
     name: "a search of what was said shows the parts not transcribed yet",
     steps: [
-      // Heard slowly, and held once some of it is, so part of it is still
-      // to come while the search looks.
-      ["speech", 1500],
-      ["add", 600],
-      ["heard some"],
+      // Held, and let through a piece at a time until some of it is
+      // heard, so part of it is still to come while the search looks.
       ["speech", "hold"],
+      ["add", 600],
+      ["heard some", 12],
       ["search said", ["*", 1]],
-      ["speech", 0],
+      ["speech", "go"],
     ],
   },
   {
@@ -1686,7 +1686,7 @@ export const sequences = [
     // it. Then a click on that card lit the part. The speech model is
     // held, so the part stays where it is.
     name: "Shift and the arrows walk onto a part not transcribed yet and off it",
-    steps: [["speech", 1500], ["add", 600], ["heard some"], ["speech", "hold"], ["walk over a part"], ["speech", 0]],
+    steps: [["speech", "hold"], ["add", 600], ["heard some"], ["walk over a part"], ["speech", "go"]],
   },
   {
     // Found by Tim on 20 October: the edge of a clip's card in the
@@ -1709,7 +1709,7 @@ export const sequences = [
     // walked to with the keys lit nothing on the range picker, where the
     // hand on its card lit it there. Whatever is lit is lit one way.
     name: "the hand and the keys light a card of the transcript and a part not transcribed yet the same",
-    steps: [["speech", 1500], ["add", 600], ["heard some", 3], ["speech", "hold"], ["one light", "said"], ["speech", 0]],
+    steps: [["speech", "hold"], ["add", 600], ["heard some", 3], ["one light", "said"], ["speech", "go"]],
   },
   {
     // Found by Tim on 20 October: the clip chosen with the keys had its
@@ -1731,7 +1731,7 @@ export const sequences = [
     // not transcribed yet gave way in thirds of it, each time the
     // transcript was saved. They give way as the work hears.
     name: "the parts not transcribed yet give way as the work hears",
-    steps: [["speech", 1500], ["add", 600], ["heard some"], ["parts give way"], ["speech", 0]],
+    steps: [["speech", "hold"], ["add", 600], ["heard some"], ["parts give way"], ["speech", "go"]],
   },
   {
     // Found by Tim on #349: the Style list of one style lay over the Size
@@ -2116,11 +2116,11 @@ export const sequences = [
     name: "an edge taken again while the drag before it saves goes with the hand",
     steps: [
       ["cut at", 0.5],
-      ["hold", "Reshape", 3000],
+      ["hold", "Reshape"],
       ["drag edge twice", "cut from", -30, -30],
       ["kept up", "cut from"],
       ["followed", "cut from"],
-      ["hold", "Reshape", 3000],
+      ["hold", "Reshape"],
       ["drag edge twice", "end", -30, -30],
       ["kept up", "end"],
       ["followed", "end"],
@@ -2131,14 +2131,13 @@ export const sequences = [
     // the edge that came late put the playhead back on the edge.
     name: "a press on the track straight after a click on an edge keeps the playhead there",
     steps: [
-      // The engine is slow to answer, the way it can be on a long
-      // episode, so an answer to the click comes after the press.
+      // The click once asked the engine where the edge went, and on a
+      // long episode its answer came after the press. A click that does
+      // not move the edge asks the Go side nothing now, so there is no
+      // answer to hold, and the walk holds the playhead to the press.
       ["cut at", 0.5],
-      ["hold", "Shape", 300],
       ["edge then track", "cut from"],
-      ["hold", "Shape", 300],
       ["edge then track", "end"],
-      ["hold", "Shape", 300],
       ["edge then track", "start"],
     ],
   },
@@ -2488,8 +2487,7 @@ export const sequences = [
       ["dictate", "start"],
       ["caret at words"],
       // The last words take a while to write down, the way they do on a
-      // Mac after a long sentence.
-      ["hold", "StopListening", 1500],
+      // Mac after a long sentence: the step holds them back while it looks.
       ["dictate", "escape, the cursor stays"],
     ],
   },
@@ -2632,16 +2630,15 @@ export const sequences = [
   {
     // Issue #404. Tab and Enter straight after Enter, while the last words
     // are still written down, make the report with every word said in it.
-    // The speech model is slow, so the last words only come with the stop.
+    // The stop is held on its way to the Go side, so the last words only
+    // come once Tab and Enter are pressed.
     name: "Tab and Enter right after a dictation make the report with every word said",
     steps: [
       ["bugs"],
       ["write", "It froze.", "end"],
       ["attach", 1],
-      ["speech", 1500],
       ["dictate", "enter, then tab and enter"],
       ["report made", 1, "It froze. *"],
-      ["speech", 0],
     ],
   },
   {
@@ -2931,15 +2928,15 @@ export const sequences = [
   {
     // Plan row 2.181. Tim added a video and its clip timeline stayed bare
     // until its first clip came, where the waveform used to come within
-    // seconds, measured on its own. The episode is heard slowly, so the
+    // seconds, measured on its own. The speech is held, so the
     // search is still hearing it when the waveform has to be there.
     name: "a video just added shows its waveform before its first clip",
     steps: [
-      ["speech", 3000],
+      ["speech", "hold"],
       ["add", 120],
       ["waveform"],
       ["cards", 0],
-      ["speech", 0],
+      ["speech", "go"],
       ["wait for", "Search"],
       ["cards", 1],
     ],
@@ -2950,12 +2947,12 @@ export const sequences = [
     // clip timeline showed a minute.
     name: "a video shorter than a clip is its own clip, with rulers that fit it",
     steps: [
-      // Heard slowly, so the rulers are looked at with no clip yet, the
+      // Held, so the rulers are looked at with no clip yet, the
       // way Tim saw them once the search had failed.
-      ["speech", 3000],
+      ["speech", "hold"],
       ["add", 15],
       ["rulers fit", 15],
-      ["speech", 0],
+      ["speech", "go"],
       ["wait for", "Search"],
       ["cards", 1],
       ["whole clip", 15],
@@ -3104,7 +3101,7 @@ export const sequences = [
     // Stopped with Continue where its clips would have been.
     name: "Cancel pressed at once after Search stops the search before it starts",
     steps: [
-      ["hold", "Search", 1500],
+      ["hold", "Search"],
       ["search and cancel"],
       ["wait for", "Continue"],
       ["row", "Stopped. Click Continue"],
@@ -3312,7 +3309,7 @@ export const sequences = [
       ["cards", 1],
       ["cut at", 0.5],
       ["cuts", 1],
-      ["hold", "RotatePart", 1000],
+      ["hold", "RotatePart"],
       ["rotate at", 0.75],
       ["turned", [0, 90]],
       ["render"],
@@ -3408,7 +3405,7 @@ export const sequences = [
       ["add", 30, "25"],
       ["wait for", "Search"],
       ["cards", 1],
-      ["hold", "SetCropMark", 1000],
+      ["hold", "SetCropMark"],
       ["keyframe at", 0.2],
       ["keyframe at", 0.8],
       ["drag crop", 400],
@@ -3628,19 +3625,19 @@ export const sequences = [
     // carried on, never removed, since Cancel on the Activity page went.
     name: "a clip made by hand that stopped can be removed, and put back first",
     steps: [
-      ["speech", 3000],
+      ["speech", "hold"],
       ["add", 120],
       ["hand stopped"],
       ["remove stopped", "put back"],
       ["remove stopped", "for good"],
-      ["speech", 0],
+      ["speech", "go"],
       ["restart"],
       ["no hand card"],
     ],
   },
   {
     // Issue #444: Tim searched windows heard in part already, and the fill
-    // of the transcription started well past nothing. The speech is slow,
+    // of the transcription started well past nothing. The speech is held,
     // so a search is stopped part way through its window and carried on.
     name: "Continue fills the transcription from nothing over what is left to hear",
     steps: [
@@ -3652,7 +3649,7 @@ export const sequences = [
       ["heard part", [0.2, 120]],
       ["cancel held"],
       ["fills from nothing", 120],
-      ["speech", 0],
+      ["speech", "go"],
     ],
   },
   {
@@ -4033,7 +4030,7 @@ export const sequences = [
     // video just added and has not come to the model yet.
     name: "a model is not changed or removed while a search still hears",
     steps: [
-      ["speech", 3000],
+      ["speech", "hold"],
       ["add", 120],
       ["wait for", "Cancel"],
       ["settings"],
@@ -4242,7 +4239,7 @@ export const sequences = [
     // Relaunch can be pressed again by itself.
     name: "Relaunch waits while a search runs, and the search goes on",
     steps: [
-      ["speech", 3000],
+      ["speech", "hold"],
       ["add", 120],
       ["wait for", "Cancel"],
       ["updates", { from: "main", list: "main,pr-20" }],
@@ -4252,7 +4249,7 @@ export const sequences = [
       ["status", "A newer build is ready", "Relaunch once the search is done"],
       ["relaunch", "waits"],
       ["hearing"],
-      ["speech", 0],
+      ["speech", "go"],
       ["relaunch", "ready"],
       ["status", "A newer build is ready", "Relaunch to finish updating"],
     ],
@@ -5075,6 +5072,9 @@ async function walkSequence(seq, shared = null) {
   // The second the video added with "add cameras" switches camera at.
   let cameraSwitch = null;
   const kept = {};
+  // Whether the walk holds the speech model, see ["speech", "hold"], so
+  // what is heard is only what the walk lets through.
+  let speechHeld = false;
   // The models the settings name, at "settings", and the episode that was
   // on screen before them.
   let named = null;
@@ -6431,7 +6431,7 @@ async function walkSequence(seq, shared = null) {
           break;
         }
         if (late) {
-          await control(url, `/hold?call=Shape&ms=${late}`);
+          await hold(page, "Shape");
           await page.mouse.move(took, y);
         }
         await page.mouse.up();
@@ -6446,11 +6446,14 @@ async function walkSequence(seq, shared = null) {
           await page.mouse.move(took + (again * i) / 10, y);
           await nextPaint(page);
         }
-        // The hand stays down until the app has settled on the drag, so a
-        // busy machine slow to answer it is waited for, and an edge that
-        // waits for the save before it moves is seen standing.
+        // The hand stays down until the app has settled on the drag, with
+        // the call held still on its way, so an edge that waits for it
+        // before it moves is seen standing. Then the call held comes back,
+        // late, while the hand is still down.
         await settle(page);
         movedHeld = await page.evaluate(() => new Set(window.__edgeSeen.map((t) => t.toFixed(3))).size > 1);
+        await letHeld(page);
+        await settle(page);
         await page.mouse.up();
         await watch.step("drag edge twice", s);
         await page.evaluate(() => (window.__followWatch = false));
@@ -7418,13 +7421,17 @@ async function walkSequence(seq, shared = null) {
           if (pressFirst !== undefined) {
             // A press in the menu beside the field takes the focus from it
             // and gives it to nothing, which is what WebKit does with a
-            // button pressed. The first save the Go side hears of, if one
-            // was made, waits half a second, so a later one is heard first.
-            await control(url, "/hold?call=SetLabel&ms=500");
+            // button pressed. The first save the Go side hears of is held
+            // until the colour is picked, so a later one is heard first.
+            await hold(page, "SetLabel");
             const box = await menu.locator(".label").boundingBox();
             await page.mouse.click(box.x + 3, box.y + 3);
           }
           await menu.locator(`button[aria-label="${colour}"]`).click();
+          if (pressFirst !== undefined) {
+            await settle(page);
+            await letHeld(page);
+          }
           if (how.endsWith(", then Return")) {
             // WebKit gives a pressed button no focus, so the focus is on
             // the menu itself. A key pressed there shows the keyboard's
@@ -7813,10 +7820,11 @@ async function walkSequence(seq, shared = null) {
         await watch.step("head", s);
         break;
       case "speech":
-        await control(url, arg === "wordless" ? "/speech?wordless=1" : `/speech?ms=${arg}`);
+        await control(url, { wordless: "/speech?wordless=1", hold: "/speech?hold" }[arg] ?? "/speech?go");
+        if (arg !== "wordless") speechHeld = arg === "hold";
         break;
       case "hold":
-        await control(url, `/hold?call=${arg[0]}&ms=${arg[1]}`);
+        await hold(page, arg);
         break;
       case "search and cancel": {
         const seen = await page.evaluate(
@@ -7848,6 +7856,9 @@ async function walkSequence(seq, shared = null) {
           wrong = `the head said Cancel greyed out for ${greyed} of ${seen.frames.length} frames after Search, so a press there did nothing`;
         else if (seen.after !== "Cancelling") wrong = `Cancel pressed, the head said ${seen.after}, not Cancelling`;
         console.log(`      Cancel pressed ${seen.frames.length} frames after Search, ${greyed} of them greyed out`);
+        // Cancel has reached the Go side before the search held on its way
+        // there, which the watch lets go of.
+        await settle(page);
         await watch.step("head", s);
         break;
       }
@@ -8853,17 +8864,18 @@ async function walkSequence(seq, shared = null) {
           await pageUntil(page, () => /without a word/.test(document.querySelector(".words")?.textContent ?? ""));
         } else {
           await page.locator(".telling").focus();
-          // The last words are held back until Tab is pressed, so Tab
-          // comes while they are written down on any machine.
-          const late = arg === "enter, then tab and enter" || arg === "enter, then tab";
+          // The last words are held back until the walk has looked, so
+          // Tab, or the look at the cursor, comes while they are written
+          // down on any machine.
+          const tab = arg === "enter, then tab and enter" || arg === "enter, then tab";
+          const late = tab || arg === "escape, the cursor stays";
           if (late) await control(url, "/hold?call=StopListening&gate=shut");
           await page.keyboard.press(arg === "enter" ? "Enter" : "Escape");
           if (arg === "escape, then enter") await page.keyboard.press("Enter");
-          if (late) {
+          if (tab) {
             await page.keyboard.press("Tab");
             if (arg === "enter, then tab and enter") await page.keyboard.press("Enter");
             const writing = await button.getAttribute("aria-label");
-            await control(url, "/hold?call=StopListening&gate=open");
             if (writing !== "Writing") wrong = `the button says ${writing} after Tab, not Writing, so Tab came after the words were written`;
           }
           // While the last words are written down, the cursor is still
@@ -8873,7 +8885,9 @@ async function walkSequence(seq, shared = null) {
             if (c.writing !== "Writing") wrong = `the button says ${c.writing} right after Escape, not Writing, so there was nothing to look at`;
             else if (!c.ours) wrong = "the cursor left the end of the words while they were written down";
           }
+          if (late) await control(url, "/hold?call=StopListening&gate=open");
         }
+        await letHeld(page);
         await pageUntil(page, () => document.querySelector("button.dictate")?.getAttribute("aria-label") === "Dictate");
         if (await page.locator(".telling .dictated").count()) wrong = "what was being said is still grey in the report";
         // Tab put the focus on Report while the last words were written
@@ -10179,6 +10193,8 @@ async function walkSequence(seq, shared = null) {
         );
         const saves = new Set();
         for (let seen = from; seen < from + times; ) {
+          // With the speech held, a piece more is heard for each news.
+          if (speechHeld) await control(url, "/speech?step=1");
           seen = await nextNews(page, seen);
           const status = await ask(page, "Episode", path).catch(() => null);
           saves.add(JSON.stringify(status?.heard ?? null));
@@ -10603,7 +10619,12 @@ async function walkSequence(seq, shared = null) {
         // saved transcript holds a sentence, or as many as asked for.
         const path = await episodeOn(page);
         const least = arg ?? 1;
-        for (let seen = await news(page); ((await ask(page, "Sentences", path)) ?? []).length < least; ) seen = await nextNews(page, seen);
+        // With the speech held, it is let through a piece at a time, and
+        // each is saved.
+        for (let seen = await news(page); ((await ask(page, "Sentences", path)) ?? []).length < least; ) {
+          if (speechHeld) await onePiece(page, url, path, { save: true });
+          else seen = await nextNews(page, seen);
+        }
         // And the app has read how far the saved transcript reaches since,
         // which it reads again on its own while the work hears, so the
         // cards it reads are those sentences too.
@@ -12702,6 +12723,13 @@ async function walkSequence(seq, shared = null) {
           break;
         }
         await cancel.click();
+        // The clip waits on the piece it is hearing, which is held, so
+        // Cancel ends it once that piece is let through.
+        if (speechHeld) {
+          await settle(page);
+          const going = async () => ["running", "queued"].includes((await ask(page, "Jobs")).find((j) => j.id === handJob)?.state);
+          while (await going()) await onePiece(page, url, path);
+        }
         await pageUntil(page, (k) => document.querySelector(`li[data-key^="${k}/"].stopped .title`)?.textContent.trim() === "Stopped. Click Continue", handJob);
         await watch.step("wait", s);
         break;
@@ -12865,7 +12893,8 @@ async function walkSequence(seq, shared = null) {
           wrong = `I at ${at} s, where nothing is heard yet, asked for no clip`;
           break;
         }
-        await control(url, "/speech?ms=0");
+        await control(url, "/speech?go");
+        speechHeld = false;
         // Until the Go side says the clip asked for has ended, and then the
         // frame the card shows it in.
         let job;
@@ -13242,7 +13271,8 @@ async function walkSequence(seq, shared = null) {
         await watch.step("add", s);
         break;
       case "words again":
-        await control(url, "/speech?ms=0&from=0");
+        await control(url, "/speech?go&from=0");
+        speechHeld = false;
         break;
       case "updates": {
         const q = new URLSearchParams({
@@ -14880,13 +14910,15 @@ function glideOf(marks, src) {
 // heard, its step or its state. Whatever hears next hears it, the search
 // or the video heard by itself. A hearing called off between two pieces
 // changes its state without hearing one, and the piece is left for the
-// next, so a walk allows for a piece more than it counted.
-async function onePiece(page, url, path) {
+// next, so a walk allows for a piece more than it counted. With save, what
+// is heard so far is saved once the piece is heard, which the bridge
+// otherwise only does once the hearing ends.
+async function onePiece(page, url, path, { save = false } = {}) {
   const now = async () =>
     JSON.stringify((await ask(page, "Jobs")).filter((j) => j.episode === path).map((j) => [j.id, j.state, j.step, j.progress?.covered]));
   const before = await now();
   let seen = await news(page);
-  await control(url, "/speech?step=1");
+  await control(url, save ? "/speech?step=1&save" : "/speech?step=1");
   while ((await now()) === before) seen = await nextNews(page, seen);
 }
 
