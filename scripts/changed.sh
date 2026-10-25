@@ -1,5 +1,6 @@
 #!/bin/sh
-# Checks what this branch changed, and only that, before a push.
+# Checks what this branch changed, and only that. CI runs what --plan
+# names on a pull request, and a cloud session leaves it to CI, #542.
 #
 #   make changed              what the branch changed against origin/main,
 #                             committed or not

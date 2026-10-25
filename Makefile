@@ -33,7 +33,8 @@
 #                   hyph-utf8 and the German word list. Then make notices
 #   make changed    what this branch changed against main, and only that:
 #                   the tests of the Go packages it reaches, the interface,
-#                   the build, before every push
+#                   the build, what CI runs on a pull request. On a
+#                   machine of one's own, a cloud session leaves it to CI
 #   make test       all tests: unit, fuzz, interface, walks and lint
 #   make unit       the Go tests, under the race detector
 #   make fuzz       the fuzz targets, FUZZTIME executions each

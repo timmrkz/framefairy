@@ -183,11 +183,16 @@ Start with [README.md](README.md). In short:
      settings should stay and the card should shake.
   2. Merge #23 when it looks right.
 - **Watch a pull request, quietly.** Subscribe to its events the moment it
-  is opened or taken over, so a conflict, a CI run and a review reach the
-  session by themselves, and act on them: a failing CI run is still your
-  work, so is a review comment. But never set up a recurring check, never
-  poll, and never write a message that says nothing happened. Tim comes
-  back when he is ready.
+  is opened or taken over, so everything that needs the session reaches it
+  by itself: a CI run that fails or passes, a review, a comment, and the
+  Main moved comment that says main no longer merges into it. That
+  subscription is how a session learns how its pull request stands, never
+  a test run of its own, see the tests rule below. Act on each event at
+  once: a failing CI run is still your work, so is a conflict, so is a
+  review comment. Check on GitHub that it merges right after opening it,
+  because a branch can be in conflict from its first push. But never set
+  up a recurring check, never poll, and never write a message that says
+  nothing happened. Tim comes back when he is ready.
 - **Every pull request is reviewed by an agent, without being asked.**
   When the session that owns the pull request has done all the work it
   set out to do, it asks a dedicated review agent to review the pull
@@ -210,8 +215,8 @@ Start with [README.md](README.md). In short:
   - The session reports on each finding by its number: what changed, or
     why nothing did. "Addressed the review" is no report.
   - Until then, every reply says whether the agent's review is back and
-    how many findings are open, the way it says whether `make changed`
-    has passed.
+    how many findings are open, the way it says whether CI passed on
+    the last commit.
 - **Ready means reviewed, mergeable and green.** Before a reply says a
   pull request is ready to try or to merge, the agent's review is back
   and every finding is handled, and GitHub says it merges into main and
@@ -241,8 +246,8 @@ Start with [README.md](README.md). In short:
   A pull request is never left unable to merge while it waits for
   him to test it, because that is a pull request CI does not run on. The
   resolution is new code, so it is pushed the way a change of your own
-  is, its own tests first and `make changed` after, see the tests rule
-  below. Read this file again after the merge, because main may have
+  is, the tests of what it touches first and CI after, see the tests
+  rule below. Read this file again after the merge, because main may have
   changed it. See [docs/WORKFLOW.md](docs/WORKFLOW.md).
 
 ## Writing rules
@@ -592,25 +597,32 @@ messages, pull request text, code comments and chat replies.
 - **Tests** need no model and no network. Use the fake recogniser and the
   fake llama-server in `engine/project_test.go`. Tests that render skip
   without ffmpeg. **A change of your own is pushed as soon as the tests
-  of what it fixes pass, and `make changed` runs after the push.** Before
-  the push, run the test written for the change and the tests of the file
-  or package it is in, with the type check for `frontend/`: seconds, and
-  what was worked on is then known to work when Tim tries it. Then push,
-  so he is not waiting, and run `make changed` for the rest. When it
-  fails, the fix is the next push, and the reply says which update to
-  take. Every reply says whether `make changed` has passed yet. Only a
-  commit known to be broken, a change half made, is held back, and the
-  reply says it is not ready to try. `make changed` checks what
-  the branch changed against main and only that: the Go tests of the
-  packages that changed and every package that imports them, the fuzz
-  targets that go through a changed file, `make interface` for `frontend/`,
-  `make walks` for the interface and for whatever reaches the app, the build for the Makefile and
-  the scripts, the rules tests for the rules, nothing for docs. A change
-  to one package is checked in seconds rather than the ten minutes of
-  everything, and a change that reaches everything, `go.mod` or the
-  engine, still runs what it reaches. `make test` runs all of it, for a
-  deep run by hand. On a pull request CI tests and fuzzes the same Go
-  packages, on both systems, and a push to main runs everything.
+  of what it changed pass, and CI checks the rest.** Before the push, run
+  the test written for the change and the tests of the package it is in,
+  `make interface` for `frontend/`, and a walk or a sequence that was
+  written or changed alone, `make walks WALK='its name'`: seconds to a
+  minute, and what was worked on is then known to work when Tim tries it.
+  Then push, so he is not waiting. Nothing more runs in the session, no
+  `make changed`, no `make walks` of them all and no `make test`: CI runs
+  every test the change reaches, on machines sized for it, and gives its
+  answer before a cloud session would, whose four cores take half an
+  hour for the same and whose walks hang under that load, #508. A session
+  hears how CI went by the events of its pull request, see Watch a pull
+  request above. A failing check names the test and what it printed, by
+  `scripts/test-failures.sh`, so that test is run alone, fixed and
+  pushed, and the reply says which update to take. Every reply says
+  whether CI passed on the last commit. Only a commit known to be broken,
+  a change half made, is held back, and the reply says it is not ready to
+  try. On a pull request CI runs what the branch changed against main and
+  only that: the Go tests of the packages that changed and every package
+  that imports them, on both systems, their fuzz targets, `make interface`
+  for `frontend/`, `make walks` for the interface and for whatever reaches
+  the app, the build for the Makefile and the scripts, the rules tests
+  for the rules, nothing for docs. `sh scripts/changed.sh --plan` says
+  which, and runs nothing. A push to main runs everything. `make changed`
+  runs the same on a machine of one's own and `make test` all of it, for
+  a deep run by hand, never as a step a session takes before saying a
+  pull request is ready.
 - **Tests stay off the disk.** A test is about our code, not the drive
   under it. The engine, a project and the app's store hold an `afero.Fs`,
   see `engine/files.go`: the programs hand them the real disk, a test
@@ -740,13 +752,13 @@ the skills listed last show their name without what they are for.
 - If `go version` does not show 1.27 or `make check` reports missing build
   tools, run `bash scripts/cloud-setup.sh` and read `/tmp/framefairy-setup-*.log`.
   The background build takes about seven minutes, and it is done when
-  `/tmp/framefairy-decoder.log` ends in `decoder ready`. `make changed`,
-  `unit`, `walks` and `test` wait for it, so the decoder's tests do not
+  `/tmp/framefairy-decoder.log` ends in `decoder ready`. `make unit`,
+  `walks`, `changed` and `test` wait for it, so the decoder's tests do not
   skip only because they came first. When it failed, they say so, and
   `make ffmpeg frames` builds it by hand.
-- Push a change once its own tests pass, then run `make changed`, and it
-  must pass, see the tests rule above. Waiting minutes on tests before a push is Tim
-  waiting. `make changed` builds when it is not sure what a file reaches.
+- Push a change once its own tests pass, and let CI run the rest, see the
+  tests rule above. Waiting minutes on tests before a push is Tim
+  waiting, and so is a session that reruns what CI has already passed.
 - The app cannot be started there, so there is no way to look at the
   window. Interface work goes through the skill in
   `.claude/skills/interface/`, which has the preview harness in
@@ -759,9 +771,8 @@ the skills listed last show their name without what they are for.
   the answer comes back in the time the slowest takes. On a pull request a
   first job reads which paths changed, by `.github/ci-filters.yml`, and a
   job with nothing to do never starts a machine, and the Go jobs test
-  and fuzz only what `make changed` picks. A push to main narrows
-  nothing. `make changed` runs what a branch
-  reaches, `make test` runs the lot, and `make unit`, `make fuzz`,
+  and fuzz only what `sh scripts/changed.sh --plan` picks. A push to main
+  narrows nothing. `make test` runs the lot, and `make unit`, `make fuzz`,
   `make interface` and `make walks` are the four parts of it, see
   [docs/BUILD.md](docs/BUILD.md).
 
