@@ -143,19 +143,58 @@ func TestABiggerSearchStartsTheModelAgain(t *testing.T) {
 	release(0)
 }
 
-// A model loaded ahead and never asked for goes by itself.
+// idleWait is the wait a model nobody holds is kept for, in a test's
+// hand: it hears how long the wait is, and ends it with up.
+type idleWait struct {
+	mu   sync.Mutex
+	keep time.Duration
+	gone func()
+}
+
+// idleInHand puts in an idleFor whose waits the test ends. Not parallel:
+// idleFor is a package variable.
+func idleInHand(t *testing.T) *idleWait {
+	w := &idleWait{}
+	was := idleFor
+	idleFor = func(keep time.Duration, gone func()) func() bool {
+		w.mu.Lock()
+		defer w.mu.Unlock()
+		w.keep, w.gone = keep, gone
+		return func() bool { return true }
+	}
+	t.Cleanup(func() { idleFor = was })
+	return w
+}
+
+func (w *idleWait) kept() time.Duration {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.keep
+}
+
+// up ends the last wait as its minutes would, with host.mu not held.
+func (w *idleWait) up() {
+	w.mu.Lock()
+	gone := w.gone
+	w.mu.Unlock()
+	gone()
+}
+
+// A model loaded ahead and never asked for stays for warmKeep and then
+// goes by itself. Not parallel: idleFor is a package variable.
 func TestAWarmModelNobodyUsesGoes(t *testing.T) {
 	s := useStandIn(t)
+	idle := idleInHand(t)
 	_, release, err := quietEngine().holdModel(context.Background(), gemma, 32768, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	release(warmKeep)
-	host.mu.Lock()
-	// The minutes are up now. That the model stays for them first is the
-	// product's own timer, a test for #510.
-	host.model.idle.Reset(0)
-	host.mu.Unlock()
+	if kept := idle.kept(); kept != warmKeep || s.running.Load() != 1 {
+		t.Fatalf("a model nobody uses is kept for %s, and %d run until then, want %s and one", kept, s.running.Load(), warmKeep)
+	}
+	// The minutes are up now.
+	idle.up()
 	// Should it stay, the test hangs here until go test's -timeout.
 	untilHost(func() bool { return s.running.Load() == 0 })
 }
@@ -640,6 +679,7 @@ func TestKeepingTheModelLoadedSmallerLoadsNothing(t *testing.T) {
 // stays when those minutes are up. It used to be stopped by its timer.
 func TestAModelKeptAfterItWasLetGoOfStays(t *testing.T) {
 	s := useStandIn(t)
+	idle := idleInHand(t)
 	e := quietEngine()
 	ctx := context.Background()
 	_, release, err := e.warmModel(ctx, gemma, 32768, "")
@@ -651,9 +691,9 @@ func TestAModelKeptAfterItWasLetGoOfStays(t *testing.T) {
 	decided := make(chan struct{})
 	host.mu.Lock()
 	host.idled = func() { close(decided) }
-	// The minutes are up now.
-	host.model.idle.Reset(0)
 	host.mu.Unlock()
+	// The minutes are up now.
+	idle.up()
 	t.Cleanup(func() {
 		host.mu.Lock()
 		host.idled = nil

@@ -32,7 +32,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/spf13/afero"
 
@@ -52,10 +51,11 @@ type desk struct {
 	// bus carries what the Go side tells the interface, when a browser
 	// is listening, see bridge_test.go.
 	bus *bus
-	// quiet is how long a recording nobody talks into goes on, and most
-	// the longest a recording is, in samples, in every opening of the
-	// app, 0 for as long as in the app.
-	quiet time.Duration
+	// still says when a recording nobody talks into has been quiet long
+	// enough, when set, see listening.still, and most is the longest a
+	// recording is, in samples, in every opening of the app, 0 for as
+	// long as in the app.
+	still chan struct{}
 	most  int
 	// measured hears each time the app tells the window how loud the
 	// microphone is, when set, so the bridge's microphone hands over its
@@ -121,7 +121,7 @@ func (d *desk) start(st *store) {
 			}
 		}
 	}
-	d.svc.listening.quiet = d.quiet
+	d.svc.listening.still = d.still
 	d.svc.listening.most = d.most
 	d.svc.report = newReporting(st.files, filepath.Join(st.dir, "report"))
 	// The clipboard is the desk's, so a walk can read what was copied.

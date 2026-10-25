@@ -167,6 +167,13 @@ func TestTheServerLogIsKeptBeforeTheLogsFolderExists(t *testing.T) {
 func TestAServerThatWillNotStopIsKilledAtOnce(t *testing.T) {
 	noteIn(t)
 	t.Setenv("FRAMEFAIRY_STUBBORN_SERVER", "1")
+	// stopGrace is up the moment it is asked about. Not parallel: leaving
+	// is a package variable, and t.Setenv rules it out too.
+	was := leaving
+	up := make(chan time.Time)
+	close(up)
+	leaving = func(time.Duration) <-chan time.Time { return up }
+	t.Cleanup(func() { leaving = was })
 	model := filepath.Join(t.TempDir(), "model.gguf")
 	if err := os.WriteFile(model, nil, 0o644); err != nil {
 		t.Fatal(err)
@@ -177,8 +184,8 @@ func TestAServerThatWillNotStopIsKilledAtOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A server that is never killed hangs here until go test's -timeout.
-	// It is killed once stopGrace is up, which runs on the real clock, the
-	// kind of wait #510 is about.
+	// It is killed once stopGrace is up, at once here, rather than after
+	// half a second of the clock.
 	stop()
 }
 
@@ -359,43 +366,59 @@ func TestTheKeyGoesOnlyToItsServer(t *testing.T) {
 // A llama-server that stops answering partway is given up on, and the
 // server is stopped even when the search asked to keep it, so the next
 // search loads one that works. Before, the search waited for good and held
-// every video's transcription up behind it (2.224). Changes localStall and
-// launch, which the whole package shares, so it does not run in parallel.
+// every video's transcription up behind it (2.224).
+//
+// It runs in a bubble, with localStall as the app has it, on the bubble's
+// clock. Changes localClient and launch, which the whole package shares,
+// so it does not run in parallel.
 func TestALocalModelThatStopsAnsweringIsGivenUpOn(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("content-type", "text/event-stream")
-		fmt.Fprint(w, `data: {"choices":[],"prompt_progress":{"total":100,"cache":0,"processed":50}}`+"\n\n")
-		w.(http.Flusher).Flush()
-		<-r.Context().Done()
-	}))
-	t.Cleanup(server.Close)
-	stalled := localStall
-	localStall = 300 * time.Millisecond
-	t.Cleanup(func() { localStall = stalled })
-	var stopped atomic.Int32
-	was := launch
-	launch = func(_ *Engine, _ context.Context, _ LocalModel, _ int, _ string) (string, func(), error) {
-		var once sync.Once
-		return server.URL, func() { once.Do(func() { stopped.Add(1) }) }, nil
-	}
-	t.Cleanup(func() {
+	synctest.Test(t, func(t *testing.T) {
+		client := localClient
+		localClient = &http.Client{Transport: stopsAfter(`data: {"choices":[],"prompt_progress":{"total":100,"cache":0,"processed":50}}` + "\n\n")}
+		var stopped atomic.Int32
+		was := launch
+		launch = func(_ *Engine, _ context.Context, _ LocalModel, _ int, _ string) (string, func(), error) {
+			var once sync.Once
+			return "http://llama-server", func() { once.Do(func() { stopped.Add(1) }) }, nil
+		}
+		t.Cleanup(func() {
+			StopModels()
+			launch, localClient = was, client
+		})
 		StopModels()
-		launch = was
-	})
-	StopModels()
 
-	began := time.Now()
-	_, err := quietEngine().CallLocal(context.Background(), LocalModel{Model: "stalls.gguf", Keep: time.Hour},
-		linesRecipe, "Transcript:", 40, 12, 1000, "", nil)
-	if err == nil || !strings.Contains(err.Error(), "stopped answering") {
-		t.Fatalf("err = %v", err)
-	}
-	if took := time.Since(began); took > 5*time.Second { //nolint:forbidigo // a product timer shortened on the real clock, left for #510
-		t.Errorf("a model that stopped answering was waited on for %s", took)
-	}
-	if stopped.Load() != 1 {
-		t.Errorf("the server that stopped answering was stopped %d times, want once", stopped.Load())
-	}
+		began := time.Now()
+		_, err := quietEngine().CallLocal(context.Background(), LocalModel{Model: "stalls.gguf", Keep: time.Hour},
+			linesRecipe, "Transcript:", 40, 12, 1000, "", nil)
+		if err == nil || !strings.Contains(err.Error(), "stopped answering") {
+			t.Fatalf("err = %v", err)
+		}
+		if took := time.Since(began); took != localStall { //nolint:forbidigo // synctest bubble
+			t.Errorf("a model that stopped answering was given up on after %s on the bubble's clock, want %s", took, localStall)
+		}
+		if stopped.Load() != 1 {
+			t.Errorf("the server that stopped answering was stopped %d times, want once", stopped.Load())
+		}
+	})
+}
+
+// stopsAfter answers every request with first and then nothing more, until
+// the request is called off, the way a server that stopped answering
+// keeps its connection open. No network and no goroutine, so it runs in a
+// bubble.
+type stopsAfter string
+
+func (first stopsAfter) RoundTrip(r *http.Request) (*http.Response, error) {
+	return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"text/event-stream"}},
+		Body: io.NopCloser(io.MultiReader(strings.NewReader(string(first)), calledOff{r.Context()})), Request: r}, nil
+}
+
+// calledOff is a body that brings nothing until its request is called off.
+type calledOff struct{ ctx context.Context }
+
+func (c calledOff) Read([]byte) (int, error) {
+	<-c.ctx.Done()
+	return 0, c.ctx.Err()
 }
 
 // A machine that reads the prompt slowly is not taken for a stalled

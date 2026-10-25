@@ -362,7 +362,7 @@ func TestACommitStillToBeBuiltIsSaid(t *testing.T) {
 	c, _ := newTestUpdating(t, cs, false)
 	cleanStaged(t, c)
 	// Nothing looks again by itself while the test runs.
-	c.next = func(UpdateState) time.Duration { return time.Hour }
+	c.after = never
 	_ = c.Follow("pr-20")
 	// The check below is the test's own only once the pick's has ended.
 	s := waitDone(t, c, "ready", func(s UpdateState) bool { return s.Phase == "ready" })
@@ -387,7 +387,7 @@ func TestAPullRequestInConflictIsListedAndSaysSo(t *testing.T) {
 	cs.publish(t, [3]string{"main", "0.3.0-main.4", "main"}, [3]string{"pr-20", "0.3.0-pr20.9", "twenty"})
 	c, _ := newTestUpdating(t, cs, false)
 	cleanStaged(t, c)
-	c.next = func(UpdateState) time.Duration { return time.Hour }
+	c.after = never
 	_ = c.Follow("pr-20")
 	s := waitDone(t, c, "ready", func(s UpdateState) bool { return s.Phase == "ready" })
 	if s.Next != "0.3.0-pr20.9" {
@@ -400,6 +400,17 @@ func TestAPullRequestInConflictIsListedAndSaysSo(t *testing.T) {
 	if !said["pr-20"] || said["main"] {
 		t.Errorf("the channels say %v, want pr-20 in conflict and main not", said)
 	}
+}
+
+// never is a wait between two looks that does not end, so a test looks
+// only when it asks to.
+func never(UpdateState) <-chan time.Time { return nil }
+
+// lookNow is a wait that is already over.
+func lookNow() <-chan time.Time {
+	over := make(chan time.Time, 1)
+	over <- time.Time{}
+	return over
 }
 
 // While a commit is being built the app looks every twenty seconds, so the
@@ -806,7 +817,7 @@ func TestAPickAsACheckEndsIsLookedFor(t *testing.T) {
 	c.src.Cache = t.TempDir()
 	cleanStaged(t, c)
 	// Nothing looks again by itself while the test runs.
-	c.next = func(UpdateState) time.Duration { return time.Hour }
+	c.after = never
 	decided, goOn := make(chan struct{}), make(chan struct{})
 	var once sync.Once
 	c.ended = func() {
@@ -861,7 +872,7 @@ func TestCheckReadsTheListAtOnce(t *testing.T) {
 	c, _ := newTestUpdating(t, cs, false)
 	c.src.Cache = t.TempDir()
 	cleanStaged(t, c)
-	c.next = func(UpdateState) time.Duration { return time.Hour }
+	c.after = never
 	_ = c.Follow("main")
 	waitFor(t, c, "downloading main", func(s UpdateState) bool { return s.Phase == "downloading" })
 	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"}, [3]string{"pr-21", "0.3.0-pr21.1", "twenty-one"})
@@ -926,7 +937,7 @@ func TestANewerBuildReplacesTheOneReady(t *testing.T) {
 	}
 	// Nothing looks again by itself while the test runs, and every check
 	// below is the test's own: each waits for the one before to end.
-	c.next = func(UpdateState) time.Duration { return time.Hour }
+	c.after = never
 	_ = c.Follow("main")
 	waitDone(t, c, "ready", func(s UpdateState) bool { return s.Phase == "ready" && s.Next == "0.3.0-main.5" })
 	first, says := quit()
@@ -988,10 +999,13 @@ func TestARegularLookReplacesTheBuildReady(t *testing.T) {
 	cs.publish(t, [3]string{"main", "0.3.0-main.5", "five"})
 	c, _ := newTestUpdating(t, cs, false)
 	cleanStaged(t, c)
-	c.next = func(UpdateState) time.Duration { return 20 * time.Millisecond }
+	// The test says when the wait between two looks is over.
+	looks := make(chan time.Time)
+	c.after = func(UpdateState) <-chan time.Time { return looks }
 	_ = c.Follow("main")
 	waitFor(t, c, "ready with main.5", func(s UpdateState) bool { return s.Phase == "ready" && s.Next == "0.3.0-main.5" })
 	cs.publish(t, [3]string{"main", "0.3.0-main.6", "six"})
+	looks <- time.Time{}
 	waitFor(t, c, "ready with main.6", func(s UpdateState) bool { return s.Phase == "ready" && s.Next == "0.3.0-main.6" })
 }
 
@@ -1089,20 +1103,19 @@ func TestABuildMadeOnTheMacStartsOutFollowingNothing(t *testing.T) {
 	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"}, [3]string{"pr-143", "0.3.0-pr143.2", "pr"})
 	c, _ := testUpdating(t, cs, false, "", "pr-143")
 	cleanStaged(t, c)
-	// Each look ends by asking how long to wait for the next one. The
-	// first three are answered with no wait. The fourth closes looked and
-	// is answered with an hour, so the loop waits longer than any test
-	// runs, until shutDown.
+	// Each look ends by asking for the wait before the next one. The
+	// first three waits are over at once. The fourth closes looked and
+	// never ends, so the loop waits until shutDown.
 	var looks atomic.Int32
 	looked := make(chan struct{})
-	c.next = func(UpdateState) time.Duration {
+	c.after = func(UpdateState) <-chan time.Time {
 		switch n := looks.Add(1); {
 		case n < 4:
-			return 0
+			return lookNow()
 		case n == 4:
 			close(looked)
 		}
-		return time.Hour
+		return nil
 	}
 	c.start()
 	c.check()
@@ -1177,7 +1190,7 @@ func TestShuttingDownEndsTheLooks(t *testing.T) {
 	c, _ := newTestUpdating(t, cs, false)
 	c.src.Cache = t.TempDir()
 	cleanStaged(t, c)
-	c.next = func(UpdateState) time.Duration { return 0 }
+	c.after = func(UpdateState) <-chan time.Time { return lookNow() }
 	var ends atomic.Int32
 	c.ended = func() { ends.Add(1) }
 	_ = c.Follow("main")

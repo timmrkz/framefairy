@@ -36,6 +36,13 @@ import (
 // weights from the disk again when it is next asked.
 // ---------------------------------------------------------------------------
 
+// idleFor starts the wait a model nobody holds is kept for, which runs
+// gone at its end, and gives what calls the wait off. It is time.AfterFunc
+// unless a test takes the wait in hand itself.
+var idleFor = func(keep time.Duration, gone func()) (callOff func() bool) {
+	return time.AfterFunc(keep, gone).Stop
+}
+
 // warmKeep is how long a model loaded ahead of a search waits for it.
 const warmKeep = 5 * time.Minute
 
@@ -58,7 +65,7 @@ type hostedModel struct {
 	// ready is closed when the server has loaded the model, or failed to.
 	ready chan struct{}
 	users int
-	idle  *time.Timer
+	idle  func() bool
 	// giveWay calls off the transcript being read ahead of a search, see
 	// holdIdle, nil when none is.
 	giveWay context.CancelCauseFunc
@@ -169,7 +176,7 @@ func holdIdle(model string, size int, giveWay context.CancelCauseFunc) (string, 
 	h.users++
 	h.giveWay = giveWay
 	if h.idle != nil {
-		h.idle.Stop()
+		h.idle()
 		h.idle = nil
 	}
 	return h.url, func(keep time.Duration) {
@@ -214,7 +221,7 @@ func (e *Engine) hold(ctx context.Context, m LocalModel, size int, logDir string
 			h.users++
 			host.news.WakeLocked()
 			if h.idle != nil {
-				h.idle.Stop()
+				h.idle()
 				h.idle = nil
 			}
 			host.mu.Unlock()
@@ -351,7 +358,7 @@ func (h *hostedModel) let(keep time.Duration, search bool) {
 		host.model = nil
 		return
 	}
-	h.idle = time.AfterFunc(keep, func() {
+	h.idle = idleFor(keep, func() {
 		host.mu.Lock()
 		defer host.mu.Unlock()
 		if host.model == h && h.users == 0 && host.kept != h.model {
@@ -378,7 +385,7 @@ func (h *hostedModel) unsaveLocked() {
 func (h *hostedModel) shutLocked() {
 	h.unsaveLocked()
 	if h.idle != nil {
-		h.idle.Stop()
+		h.idle()
 		h.idle = nil
 	}
 	if h.stop != nil {

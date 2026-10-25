@@ -523,12 +523,14 @@ plays two seconds of a hum, then a pause and a second and a half more,
 over and over, a tenth of a second each time the app reads how loud
 it is. That is still a tenth for every 100 ms of real time, as fast as
 it would be said, on the app's own timer for its level meter rather than
-a clock of the stand-in's, see #510, and pieces are settled
+a clock of the stand-in's, see #551, and pieces are settled
 while it listens and there is more to hear until it stops. With `ends`
 the person falls silent once the phrase they are on is said, through
-`/microphone?silent=1`. A recording there stops by itself after 8 s
-without a word and after a minute at most, so a walk that waits for
-words fails rather than hangs. `field` clicks a field by its selector
+`/microphone?silent=1`. A recording there stops by itself for want of
+words as soon as that phrase is said, since the bridge says the quiet is
+over then, `listening.still`, rather than after the app's two minutes,
+which `TestListeningStopsByItself` proves. It stops after a minute at
+most, so a walk that waits for words fails rather than hangs. `field` clicks a field by its selector
 and types, and `field reads` says what it holds. `escape lets go` clicks a
 control or field, presses Escape and sees nothing left open, nothing
 holding the keyboard and no ring. For a clip of two cameras: `add cameras`, a video filmed by two cameras,
@@ -1195,6 +1197,12 @@ What the code takes from outside, so a test can drive it:
 | What | Handed in as | Where |
 | --- | --- | --- |
 | the time of day | `now func() time.Time` | `signer.WithClock` in `licence/signer/signer.go`, `Now` in `licence/dispenser/engine.go`, `now` on the app, which times an edit, in `cmd/framefairy-app/main.go` |
+| a wait the app sets between two things it does, where a bubble does not fit | a function that gives the channel the wait ends on | `after` on the updates in `cmd/framefairy-app/updates.go`, which a test hands the looks in through, see `TestARegularLookReplacesTheBuildReady`, `leaving` in `engine/ffmpeg.go`, how long ffmpeg or llama-server has to end once it is asked to stop, and `idleFor` in `engine/modelhost.go`, how long a model nobody holds is kept |
+| a time limit on another program | a function that gives the context the limit ends | `timeLimit` in `engine/analysis.go`, which `stuckFFmpeg` in `engine/stuck_unix_test.go` ends the moment its ffmpeg says through a named pipe that it hangs |
+| another program saying it hangs | a channel | `standin.Hangs` in `internal/standin/hangs_unix.go`, a named pipe a stand-in writes `hangs` into. It is heard as `stuck` on the engine, a render that has stopped making frames, in `engine/ffmpeg.go`, and as `frameLate` on the app, a video whose first frame is late, in `cmd/framefairy-app/library.go` |
+| the end of the quiet of a recording | a channel | `still` on the listening in `cmd/framefairy-app/listen.go`, which the bridge's microphone says once the person in a walk has fallen silent |
+| how often work that reads from another program saves | a count of reads | `levelsReads` on the engine, `engine/levels.go`, in place of `levelsDefault` of the clock |
+| the network | an `http.Client` with a transport of the test's | `localClient` in `engine/local.go`, `downloadClient` in `engine/speech.go`, with `neverAnswers`, `streamFrom` and `stopsAfter` in `engine/local_test.go`, so the stall of a model or a download is waited for in a bubble |
 | timers inside goroutines | `testing/synctest` around the test | the lint fixture `scripts/testdata/lint/go/signals`, the dictation tests in `cmd/framefairy-app/listen_test.go`, `TestOnlyAFewDecodersNobodyHoldsStandRunning` in `cmd/framefairy-app/frames_test.go`, and the tests of a health check and of a model that keeps talking in `engine/local_test.go`, which ask llama-server through `neverAnswers` and `streamFrom`, transports with no network |
 | the disk | `afero.Fs` | `engine/files.go`, the project and the app's store |
 | random numbers | `io.Reader` | `signer.WithRandom` |
@@ -1234,5 +1242,4 @@ Go test, `internal/offdisk` for a test on the real disk, and `-timeout`
 from `UNITTIMEOUT` in `make unit`, 4m in CI, which ends a test whose signal
 never comes. What it does not hold yet, skipped tests, polls with a
 deadline that use no clock call, mutation testing and a check a pull
-request cannot weaken, is #475. The product's own timers set short and
-left to run on the real clock are #510.
+request cannot weaken, is #475.

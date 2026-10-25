@@ -365,9 +365,6 @@ func (e *Engine) stallFor(encoder Encoder, light framewire.Light) time.Duration 
 	if at < 0 || at == len(order)-1 {
 		return 0
 	}
-	if e.stall > 0 {
-		return e.stall
-	}
 	return encoderStall
 }
 
