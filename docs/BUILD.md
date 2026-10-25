@@ -266,6 +266,13 @@ since the Mac's disk takes names in either case and `/var` is a link there.
 A crash fails the run and leaves the input as an artifact called
 `crashers`.
 
+`.github/workflows/walks-nightly.yml` walks every sequence with the app's
+motion, `make walks STILL=none`, at night on main and by hand, in the
+same four shares and the CI image as the walks in `ci.yml`. On a pull
+request a sequence asks for less motion unless it looks at motion, see
+Where they run in [TESTING.md](TESTING.md#where-they-run), and this is
+the run that sees a step that looks at motion and was left out.
+
 A failing input is written to `engine/testdata/fuzz/`. Keep it, it is the
 test case for the bug, and it becomes a seed for every later run.
 
@@ -579,7 +586,7 @@ because `scripts/changed.sh` reads the image as the machine every test
 runs on.
 
 `.github/workflows/ci-image.yml`, which `ci.yml` calls as the job
-`image`, and `fuzz-nightly.yml` and `security.yml` call too, names the image by a sum of
+`image`, and `fuzz-nightly.yml`, `walks-nightly.yml` and `security.yml` call too, names the image by a sum of
 the Dockerfile, of `scripts/ci-packages.sh` and of the Playwright
 version, as `ghcr.io/timmrkz/framefairy-ci:<sum>`. When the registry has
 that tag, the job is done in seconds, and when it does not, which is

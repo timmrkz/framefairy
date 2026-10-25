@@ -793,13 +793,16 @@ run once the others are done. Each sequence opens the app afresh with
 `/reset`, so it walks the same alone as after the one before it.
 
 Every walker hands its sequences to one node of its own, `sequences.mjs
---serve`, which reads the name of the next sequence from its input and
-says how it went in a line of its own, and keeps one Chromium for all of
-them. Each sequence still opens a page in a context of its own, so it
+--serve`, which reads the name of the next sequence from its input,
+says `walking` in a line of its own as it begins and how it went in
+another as it ends, and keeps one Chromium for all of them. Each sequence still opens a page in a context of its own, so it
 keeps nothing a sequence before it kept. Starting node, Playwright and
 Chromium for every sequence was 1.45 s and 1.2 s of CPU each time, 220
 times, issue #526. A sequence that throws ends its node, and the next
-sequence starts a new one, so nothing a throw left behind walks on.
+sequence starts a new one, so nothing a throw left behind walks on. What
+the node said before `walking` belongs to no sequence, so the sequence
+it was handed fails with it, and a node that ends between the two lines
+fails the sequence it was walking, never the one after.
 
 A sequence asks the system for less motion, the way a person can in the
 Mac's settings, unless one of its steps looks at how the app moves: the
@@ -813,14 +816,17 @@ those steps and every random walk keep the motion, so the app is still
 walked the way it moves on Tim's Mac. A new step that looks at motion
 goes into `moving`, or it passes without ever seeing what it checks, and
 `--names` fails on a name in `moving` that is no step. `make walks
-STILL=none` walks every sequence with the motion.
+STILL=none` walks every sequence with the motion, and
+`walks-nightly.yml` does so on main every night, so a step that looks at
+motion and was left out of `moving` fails there.
 
 A video a walk adds is made by ffmpeg the first time it is asked for and
 kept, by what it was asked for and by the sum of what makes it, the
-source of `bridge_test.go` and the version of ffmpeg, see `walkVideos`.
-Every bridge of a run keeps them in one folder, `.build/walk-videos` or
-`WALKVIDEOS`, and CI keeps each share's folder between runs, so a walk
-that adds the same video again gets a copy. ffmpeg makes the same bytes
+source of `walkvideos_test.go`, which holds every function that makes
+one, and the version of ffmpeg, see `walkVideos`. Every bridge of a run
+keeps them in one folder, `.build/walk-videos` or `WALKVIDEOS`, and CI
+keeps each share's folder between runs, saved again whenever a run made
+a video more, so a walk that adds the same video again gets a copy. ffmpeg makes the same bytes
 from the same arguments, so the copy is the video it would have made.
 Made on every add, the 54 videos the sequences added took 100 s, and the
 one of ten minutes 9 s every time, issue #527.

@@ -5000,13 +5000,16 @@ if (only === "--names") {
 // walker its sequences without starting node, Playwright and Chromium
 // again for each, 1.45 s and 1.2 s of CPU a sequence, issue #526. Each
 // still starts with /reset and pages of its own, so it walks the same as
-// alone. What it prints ends in a line of its own that starts with
-// walked, see walkedLine, then "ok" or "FAIL", or "threw" when it threw
-// and this node ends, so a sequence after it starts in a new one.
+// alone. What a sequence prints begins with a line of its own, walking,
+// see walkingLine, so what the node says between two sequences is told
+// from either. It ends in a line that starts with walked, see walkedLine,
+// then "ok" or "FAIL", or "threw" when it threw and this node ends, so a
+// sequence after it starts in a new one.
 if (only === "--serve") {
   const { createInterface } = await import("node:readline");
   const browser = await newBrowser();
   for await (const line of createInterface({ input: process.stdin })) {
+    await mark("walking");
     const name = JSON.parse(line);
     const seq = sequences.find((q) => q.name === name);
     if (!seq) {
@@ -5039,8 +5042,14 @@ process.exit(failures ? 1 : 0);
 // The line --serve ends what a sequence printed with, walkedLine in
 // TestWalks, once everything it printed, on both outputs, is out.
 async function said(how) {
+  await mark(`walked ${how}`);
+}
+
+// A line of --serve's own, after everything printed before it, on both
+// outputs.
+async function mark(what) {
   await new Promise((done) => process.stderr.write("", done));
-  await new Promise((done) => process.stdout.write(`\u001ewalked ${how}\n`, done));
+  await new Promise((done) => process.stdout.write(`\u001e${what}\n`, done));
 }
 
 // Walks one sequence and says whether it failed, in a browser of its own
@@ -7666,7 +7675,7 @@ async function walkSequence(seq, shared = null) {
         // made taller until the crop is as tall as the short.
         const tall = Number(execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries",
           "stream=height", "-of", "csv=p=0", short]).toString().trim());
-        const sized = (await open(url, { viewport: { width: 2400, height: 1000 }, again: page.context().browser() })).page;
+        const sized = (await open(url, { viewport: { width: 2400, height: 1000 }, again: page.context().browser(), still: still(seq) })).page;
         const canvasTall = () => sized.evaluate(() => document.querySelector(".screen canvas").height);
         for (let i = 0, high = 1000; i < 12 && (await canvasTall()) !== tall; i++) {
           high += Math.round((tall - (await canvasTall())) * 1.4) || Math.sign(tall - (await canvasTall()));

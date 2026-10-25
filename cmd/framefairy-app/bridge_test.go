@@ -961,201 +961,6 @@ func workOf(video string) string {
 	return strings.TrimSuffix(video, filepath.Ext(video)) + ".framefairy"
 }
 
-// makeEpisode makes a video of this many seconds. VP9 and Opus rather than
-// the path tests' MPEG-4 and AAC, because the Chromium a walk drives is
-// built without the proprietary codecs and would not play it at all. The
-// picture says which frame it is, the recipe of the harness's own episodes
-// in frontend/preview/open.mjs: a strip along its top, 12 pixels high, is
-// the frame number in ten bars of 32 pixels, the highest bit on the left,
-// light for one and dark for nought, so a walk reads back from the video
-// preview's canvas the frame on screen, see recordFrames in
-// walks/bridge.mjs. Below it is a grey that grows lighter. The strip is
-// thin so that no two frames differ by a camera switch, which a half of
-// bars did every 16 frames, and the search then split its clip into
-// pieces at every one. The bars are worked out on a picture one pixel a
-// bit and made large without smoothing.
-//
-// With a switch, at a moment on a frame, the episode is two cameras
-// instead, see twoCameras. With hevc its picture is HEVC with 10-bit
-// colour, which WebKit says it decodes and then fails on, and which the
-// Chromium a walk drives cannot decode at all: the Go side decodes it, see
-// frames.go. Its GOPs are open, the way x265 writes them and DaVinci
-// Resolve wrote Tim's start.mp4: a key frame every twelve frames, the last
-// of a run of four, so the three frames shown before it are decoded after
-// it. With a key frame every ten, every run of four ended on the frame
-// before a key frame, and no frame led up to one. Plan row 2.186.
-func makeEpisode(path string, seconds int, switchAt float64, hevc bool) error {
-	d := strconv.Itoa(seconds)
-	below, sound := "[1]geq=lum='30+180*T/"+d+"':cb=128:cr=128,scale=320:168:flags=neighbor[g]", "220"
-	size, rate, heard := "2x2", "100k", []string{"libopus", "-b:a", "24k"}
-	if switchAt > 0 {
-		// A chequerboard takes more to keep sharp than a grey. The sound
-		// is plain samples, chosen when a render read each piece's sound
-		// from where the piece starts: Opus needs 80 ms decoded ahead of
-		// a seek, so every piece started a little quiet, and a walk
-		// listening for a dip heard that. A render now reads the sound a
-		// fifth of a second early, soundLead, which
-		// TestEveryPieceIsHeardFromItsFirstMoment in engine/preroll_test.go
-		// holds, so Opus would do here too. It has not been changed back.
-		below, sound, size, rate = twoCameras(int(math.Round(switchAt*5))), "440", "320x168", "300k"
-		heard = []string{"pcm_s16le"}
-	}
-	args := []string{"-loglevel", "error", "-y",
-		"-f", "lavfi", "-i", "color=c=black:s=10x2:r=5:d=" + d,
-		"-f", "lavfi", "-i", "color=c=black:s=" + size + ":r=5:d=" + d,
-		"-f", "lavfi", "-i", "sine=f=" + sound + ":sample_rate=48000:d=" + d,
-		"-filter_complex",
-		"[0]geq=lum='if(bitand(N\\,pow(2\\,9-X))\\,220\\,30)':cb=128:cr=128,scale=320:12:flags=neighbor[b];" +
-			below + ";[b][g]vstack,format=yuv420p[v]",
-		"-map", "[v]", "-map", "2",
-		"-shortest"}
-	if hevc {
-		args = append(args, "-c:v", "libx265", "-preset", "ultrafast", "-pix_fmt", "yuv420p10le", "-tag:v", "hvc1",
-			"-x265-params", "bframes=3:keyint=12:log-level=error")
-	} else {
-		args = append(args, "-c:v", "libvpx-vp9", "-b:v", rate, "-deadline", "realtime", "-cpu-used", "8", "-g", "10")
-	}
-	args = append(args, "-c:a")
-	out, err := exec.Command("ffmpeg", append(append(args, heard...), path)...).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("making %s: %s %s", filepath.Base(path), err, out)
-	}
-	return nil
-}
-
-// makeCameraEpisode makes a video the size a camera or an export has, 1920
-// by 1080 or, with height 2160, 3840 by 2160, at 25 frames a second, with a
-// key frame every two seconds and three B-frames between the others, in
-// H.264 or with hevc in HEVC with 10-bit colour and open GOPs. Its picture
-// moves all over, so every frame costs the decoder what a real one does. It
-// is for timing how quickly the video preview follows the keys, see
-// walks/speed.mjs, which a picture of 320 by 180 cannot say anything about.
-// Its frames carry no number.
-func makeCameraEpisode(path string, seconds, height int, hevc bool) error {
-	d := strconv.Itoa(seconds)
-	size := fmt.Sprintf("%dx%d", height*16/9, height)
-	args := []string{"-loglevel", "error", "-y",
-		"-f", "lavfi", "-i", "testsrc2=s=" + size + ":r=25:d=" + d,
-		"-f", "lavfi", "-i", "sine=f=220:sample_rate=48000:d=" + d,
-		"-map", "0", "-map", "1", "-shortest"}
-	if hevc {
-		args = append(args, "-c:v", "libx265", "-preset", "ultrafast", "-pix_fmt", "yuv420p10le", "-tag:v", "hvc1",
-			"-x265-params", "keyint=50:bframes=3:open-gop=1:log-level=error")
-	} else {
-		args = append(args, "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p", "-g", "50", "-bf", "3")
-	}
-	out, err := exec.Command("ffmpeg", append(args, "-c:a", "libopus", "-b:a", "64k", path)...).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("making %s: %s %s", filepath.Base(path), err, out)
-	}
-	return nil
-}
-
-// twoCameras is the picture below the strip of an episode filmed by two
-// cameras, the first up to the frame it switches on and the second from
-// it. Each looks at a subject, a chequerboard, on its own side of the
-// picture, the first on the left and the second on the right, so the
-// search frames each shot on its own subject and the two crops differ.
-// Around the subject is a plain backdrop, dark grey for the first camera
-// and a light red for the second, so a short tells the shots apart by
-// their colour, and a shot framed by the other's crop shows only its
-// backdrop. The switch changes the whole picture at once, which is what
-// the search reads as a camera switch.
-func twoCameras(frame int) string {
-	n := strconv.Itoa(frame)
-	checks := "if(mod(floor(X/4)+floor(Y/4)\\,2)\\,235\\,20)"
-	return "[1]geq=lum='if(lt(N\\," + n + ")\\," +
-		"if(between(X\\,20\\,99)\\," + checks + "\\,60)\\," +
-		"if(between(X\\,220\\,299)\\," + checks + "\\,170))'" +
-		":cb=128:cr='if(lt(N\\," + n + ")\\,128\\,180)'[g]"
-}
-
-// filmedBits is how many bits the frame number of a filmed episode has, so
-// it says the number of every frame up to 2048, more than a minute at
-// 29.97 fps. Its bands are bandHeight pixels high each, of a picture 180
-// high. The walks read them back with the same numbers, see shortFrames in
-// walks/bridge.mjs.
-const filmedBits, bandHeight = 11, 4
-
-// makeFilmedEpisode makes a video of this many seconds at the frame rate a
-// camera records at, rate as ffmpeg takes it, 30000/1001 for 29.97 fps, so
-// a walk can render a clip of it and read the short back. Its picture says
-// which frame it is in a way the render keeps: a short is a narrow part of
-// the picture made larger, so bars side by side would be cut away. The
-// frame number is bands one above the other across the whole width, the
-// highest bit at the top, each bandHeight pixels high, light for one and
-// dark for nought, and whatever part of the width the crop keeps holds
-// every band. They take 44 of the picture's 180 pixels, a quarter, and
-// light and dark are only 100 apart, so no two frames differ by a camera
-// switch, see makeEpisode: bands of 220 and 30 made six of them in 45
-// seconds. They are worked out two pixels a bit, since a picture is an even
-// number of pixels high. Below them is the grey that grows lighter. The
-// sound is a steady tone, so padded silence at a cut can be heard.
-//
-// The frames come at the rate, unless timing says otherwise: "uneven" is
-// a phone's frames, each 0, 8 or 16 ms late in ticks of 1/600 s, and
-// "late" is a picture that starts a quarter of a second after the sound,
-// between two of its frames, by an edit list. Either way each frame keeps
-// its number.
-func makeFilmedEpisode(path string, seconds int, rate, timing string) error {
-	d := strconv.Itoa(seconds)
-	bands := filmedBits * bandHeight
-	shift, keep := "", []string{}
-	switch timing {
-	case "uneven":
-		shift = fmt.Sprintf(",settb=1/600,setpts='(N/(%s)+0.008*mod(N\\,3))/TB'", rate)
-		keep = []string{"-fps_mode", "passthrough", "-enc_time_base", "1/600", "-video_track_timescale", "600"}
-	case "late":
-		// On a clock of 1/90000 s, so the picture starts a true quarter
-		// second in, 7.49 frames at 29.97 a second. On the rate's own
-		// clock the quarter second came out a whole 7 frames, 0.233 s,
-		// on the grid of the file's start, where frames counted from the
-		// file and from the picture are the same frames and a mistake
-		// between the two could not be seen.
-		shift = ",settb=1/90000,setpts=PTS+0.25/TB"
-		keep = []string{"-fps_mode", "passthrough", "-enc_time_base", "1/90000", "-video_track_timescale", "90000"}
-	}
-	args := []string{"-loglevel", "error", "-y",
-		"-f", "lavfi", "-i", fmt.Sprintf("color=c=black:s=2x%d:r=%s:d=%s", 2*filmedBits, rate, d),
-		"-f", "lavfi", "-i", fmt.Sprintf("color=c=black:s=2x2:r=%s:d=%s", rate, d),
-		"-f", "lavfi", "-i", "sine=f=440:sample_rate=48000:d=" + d,
-		"-filter_complex",
-		fmt.Sprintf("[0]geq=lum='if(bitand(N\\,pow(2\\,%d-floor(Y/2)))\\,160\\,60)':cb=128:cr=128,scale=320:%d:flags=neighbor[b];", filmedBits-1, bands) +
-			fmt.Sprintf("[1]geq=lum='30+180*T/%s':cb=128:cr=128,scale=320:%d:flags=neighbor[g];", d, 180-bands) +
-			"[b][g]vstack,format=yuv420p" + shift + "[v]",
-		"-map", "[v]", "-map", "2"}
-	args = append(args, keep...)
-	out, err := exec.Command("ffmpeg", append(args,
-		"-shortest", "-c:v", "libvpx-vp9", "-crf", "30", "-b:v", "0", "-deadline", "realtime", "-cpu-used", "8",
-		"-g", "15", "-c:a", "libopus", "-b:a", "64k", path)...).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("making %s: %s %s", filepath.Base(path), err, out)
-	}
-	return nil
-}
-
-// makeTurnedEpisode is a filmed episode the way a phone that recorded it
-// upright stores it: the picture lying on its side and a display matrix
-// that says to turn it a quarter to the right to stand it up. Standing up,
-// the frame number's bands run down its right side, and rotated a quarter
-// to the left in the app they run across its top again, where a short of
-// it is read. Plan row 3.25.
-//
-// On the real disk: ffmpeg makes the episode and turns it.
-func makeTurnedEpisode(path string, seconds int, rate string) error {
-	lying := path + ".lying.mp4"
-	defer os.Remove(lying)
-	if err := makeFilmedEpisode(lying, seconds, rate, ""); err != nil {
-		return err
-	}
-	out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-display_rotation", "270",
-		"-i", lying, "-c", "copy", path).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("turning %s: %s %s", filepath.Base(path), err, out)
-	}
-	return nil
-}
-
 // intoMatroska copies a video's streams into Matroska beside it, under
 // the same name ending in .mkv, and removes the MP4. A picture that starts
 // late by an edit list starts late by its first timestamp there.
@@ -1225,15 +1030,7 @@ func (b *bridge) pick(seconds, rate, switchAt, timing string, hevc, namesake, bo
 		return "", err
 	}
 	err = b.videos.copy(path, pickedAs(strconv.Itoa(n), rate, strconv.FormatFloat(at, 'g', -1, 64), timing, hevc, height), func(path string) error {
-		switch {
-		case height > 0:
-			return makeCameraEpisode(path, n, height, hevc)
-		case rate != "" && timing == "turned":
-			return makeTurnedEpisode(path, n, rate)
-		case rate != "":
-			return makeFilmedEpisode(path, n, rate, timing)
-		}
-		return makeEpisode(path, n, at, hevc)
+		return makePicked(path, n, rate, at, timing, hevc, height)
 	})
 	if err != nil {
 		return "", err
@@ -1249,13 +1046,6 @@ func (b *bridge) pick(seconds, rate, switchAt, timing string, hevc, namesake, bo
 		b.mu.Unlock()
 	}
 	return path, nil
-}
-
-// pickedAs is what a video was asked for, the way videos keeps it: every
-// value pick makes a video from, and nothing it does not, so two picks
-// that make the same video find the same one.
-func pickedAs(seconds, rate, switchAt, timing string, hevc bool, height int) string {
-	return fmt.Sprintf("seconds=%s rate=%s switch=%s timing=%s hevc=%t height=%d", seconds, rate, switchAt, timing, hevc, height)
 }
 
 // pickPicture makes a picture of w by h pixels in the bridge's home, a
@@ -1786,16 +1576,20 @@ func TestAWalkThatHangsIsStoppedWithWhatItSaid(t *testing.T) {
 // A shell stands in for node, saying what sequences.mjs --serve says.
 func TestAWalkersSequencesAreWalkedByOneNode(t *testing.T) {
 	serve := `while read -r name; do
+		printf '\036walking\n'
 		echo "$name in $$"
 		case "$name" in
 		'"fails"') printf '\036walked FAIL\n' ;;
 		'"throws"') printf '\036walked threw\n'; exit 1 ;;
 		'"ends"') exit 0 ;;
-		'"hangs"') echo halfway; exec tail -f /dev/null ;;
+		'"passes, and its node ends"') printf '\036walked ok\n'; echo "a late error"; exit 1 ;;
+		'"hangs"') sleep 1000 & echo "halfway, $! holds the output"; exec tail -f /dev/null ;;
 		*) printf '\036walked ok\n' ;;
 		esac
 	done`
-	s := &sequencer{run: []string{"sh", "-c", serve}}
+	// The node's child that holds its output, killed with nothing else,
+	// lingers no longer than it takes to see that it is let go of.
+	s := &sequencer{run: []string{"sh", "-c", serve}, linger: time.Millisecond}
 	defer s.stop(context.Background())
 	walked := func(name string) (string, error) {
 		t.Helper()
@@ -1824,19 +1618,43 @@ func TestAWalkersSequencesAreWalkedByOneNode(t *testing.T) {
 	if _, err := walked("ends"); err == nil {
 		t.Error("a sequence whose node ended before it was walked passed")
 	}
-	if third, err := walked("passes"); err != nil || third == second {
+	third, err := walked("passes")
+	if err != nil || third == second {
 		t.Errorf("the sequence after a node that ended gives %v in node %s, want it passed in a new node", err, third)
+	}
+	if _, err := walked("passes, and its node ends"); err != nil {
+		t.Errorf("a sequence that passed before its node ended gives %v", err)
+	}
+	// The node ended after it, so the next sequence was never begun: it
+	// says so, with what the node said on its way out, and blames the
+	// node, not itself.
+	var late bytes.Buffer
+	err = s.walk(context.Background(), "passes", &late)
+	if err == nil || !strings.Contains(err.Error(), `after passes, and its node ends, before this one began`) {
+		t.Errorf("a sequence after its node ended gives %v, want that the node ended after the one before it", err)
+	}
+	if !strings.Contains(late.String(), "before it began, its node said: a late error") {
+		t.Errorf("a sequence after its node ended printed %q, want what the node said before it began", late.String())
+	}
+	if fourth, err := walked("passes"); err != nil || fourth == third {
+		t.Errorf("the sequence after that gives %v in node %s, want it passed in a new node", err, fourth)
 	}
 
 	ctx, stop := context.WithCancel(context.Background())
 	defer stop()
-	out := &saying{what: "halfway", said: make(chan struct{})}
+	out := &saying{what: "holds the output", said: make(chan struct{})}
 	go func() {
 		<-out.said
 		stop()
 	}()
 	if err := s.walk(ctx, "hangs", out); err == nil || !strings.Contains(err.Error(), "time ran out") {
 		t.Errorf("a sequence that hangs ends with %v, want that its time ran out", err)
+	}
+	var child int
+	if _, err := fmt.Sscanf(out.buf.String()[strings.Index(out.buf.String(), "halfway, "):], "halfway, %d holds", &child); err == nil {
+		if p, err := os.FindProcess(child); err == nil {
+			_ = p.Kill()
+		}
 	}
 	if _, err := walked("passes"); err != nil {
 		t.Errorf("the sequence after one that hung gives %v", err)
@@ -1874,9 +1692,7 @@ func walk(ctx context.Context, name string, args []string, dir string, env []str
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir, cmd.Env = dir, env
 	cmd.Stdout, cmd.Stderr = out, out
-	// The browser a stopped walk started may hold its output open, and
-	// its output is not worth waiting for.
-	cmd.WaitDelay = 5 * time.Second
+	cmd.WaitDelay = walkLinger
 	err := cmd.Run()
 	if err != nil && ctx.Err() != nil {
 		return errors.New("it had not ended when the test's time ran out, and was stopped")
@@ -1897,16 +1713,28 @@ type sequencer struct {
 	run []string
 	dir string
 	env []string
-	cmd *exec.Cmd
-	in  io.WriteCloser
+	// linger is how long a node that ended may hold its output open,
+	// walkLinger unless set.
+	linger time.Duration
+	cmd    *exec.Cmd
+	in     io.WriteCloser
 	// lines is what the node prints, a line at a time, closed when it
 	// has ended.
 	lines chan string
+	// last is the sequence the node walked last, which a node that ends
+	// between two sequences is told by.
+	last string
 }
 
-// walkedLine starts the line the node ends what a sequence printed with,
-// followed by how it went, see said in sequences.mjs.
-const walkedLine = "\x1ewalked "
+// walkLinger is how long a walk's node that ended may hold its output
+// open. The browser a stopped walk started may hold it open, and what it
+// says then is not worth waiting for.
+const walkLinger = 5 * time.Second
+
+// walkingLine is the line the node begins what a sequence prints with,
+// and walkedLine starts the line it ends it with, followed by how it
+// went, see mark in sequences.mjs.
+const walkingLine, walkedLine = "\x1ewalking", "\x1ewalked "
 
 // walk walks the sequence name and writes what it printed to out. It
 // fails when the sequence failed, and when it threw or had not ended
@@ -1917,20 +1745,43 @@ func (s *sequencer) walk(ctx context.Context, name string, out io.Writer) error 
 			return err
 		}
 	}
-	line, _ := json.Marshal(name)
-	if _, err := s.in.Write(append(line, '\n')); err != nil {
+	// A node that ended after the sequence before this one, or never
+	// began, is said to have, so this sequence is not blamed for it.
+	gone := func() error {
 		s.kill()
-		return err
+		if s.last == "" {
+			return errors.New("its node ended before it began")
+		}
+		return fmt.Errorf("its node ended after %s, before this one began", s.last)
 	}
+	last := s.last
+	s.last = name
+	line, _ := json.Marshal(name)
+	// A node that has ended refuses the name. What it said on its way out
+	// is still to be read, so that is left to the reading below, which
+	// then hears it has ended.
+	_, _ = s.in.Write(append(line, '\n'))
+	begun := false
 	for {
 		select {
 		case l, ok := <-s.lines:
 			if !ok {
-				s.cmd = nil
+				if !begun {
+					s.last = last
+					return gone()
+				}
+				s.kill()
 				return errors.New("its node ended before it had walked")
+			}
+			if l == walkingLine {
+				begun = true
+				continue
 			}
 			how, ended := strings.CutPrefix(l, walkedLine)
 			if !ended {
+				if !begun {
+					l = "before it began, its node said: " + l
+				}
 				fmt.Fprintln(out, l)
 				continue
 			}
@@ -1952,6 +1803,7 @@ func (s *sequencer) walk(ctx context.Context, name string, out io.Writer) error 
 func (s *sequencer) start() error {
 	cmd := exec.Command(s.run[0], s.run[1:]...)
 	cmd.Dir, cmd.Env = s.dir, s.env
+	cmd.WaitDelay = cmp.Or(s.linger, walkLinger)
 	in, err := cmd.StdinPipe()
 	if err != nil {
 		return err
@@ -1977,7 +1829,7 @@ func (s *sequencer) start() error {
 		_ = cmd.Wait()
 		_ = says.Close()
 	}()
-	s.cmd, s.in, s.lines = cmd, in, lines
+	s.cmd, s.in, s.lines, s.last = cmd, in, lines, ""
 	return nil
 }
 
