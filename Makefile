@@ -454,7 +454,8 @@ changed:
 # the same on every machine. RACE= and UNITSKIP= say otherwise.
 #
 # UNITSHARD=1/3 runs a third of the tests, by the first letters of their
-# names, which is how CI spreads them over three machines. The patterns
+# names, which is how CI spreads them over three machines, and 1/1 all of
+# them, for a change that needs one machine. The patterns
 # never change, because Go keys its test cache on them, and -skip takes
 # exactly what the two -run leave. The engine's tests whose names start
 # with A are a third of all the time, so they are split by their second
@@ -474,14 +475,16 @@ RACE ?= -race
 UNITSKIP ?=
 endif
 UNITSHARD ?=
-ifeq ($(UNITSHARD),1/3)
+ifeq ($(UNITSHARD),1/1)
+UNITFLAGS ?=
+else ifeq ($(UNITSHARD),1/3)
 UNITFLAGS ?= -run=^Test(A[^S-Z]|[B-O])
 else ifeq ($(UNITSHARD),2/3)
 UNITFLAGS ?= -run=^Test(A[S-Z]|[P-S])
 else ifeq ($(UNITSHARD),3/3)
 UNITFLAGS ?= -skip=^Test(A[^S-Z]|[B-O])|^Test(A[S-Z]|[P-S])
 else ifneq ($(UNITSHARD),)
-$(error UNITSHARD is 1/3, 2/3 or 3/3, not $(UNITSHARD))
+$(error UNITSHARD is 1/1, 1/3, 2/3 or 3/3, not $(UNITSHARD))
 endif
 UNITFLAGS ?=
 UNITPKGS ?= ./...
@@ -518,6 +521,9 @@ WALKERS ?=
 # walk-times.tsv. WALKTIMES=1 writes what the runs took into that file.
 WALKSHARD ?=
 WALKTIMES ?=
+# WALKPICK names a file of the runs to walk, one a line, which make changed
+# writes for what a change needs, see frontend/preview/walks/pick.mjs.
+WALKPICK ?=
 # STILL=none walks every sequence with the app's motion, see moving in
 # frontend/preview/walks/sequences.mjs.
 STILL ?=
@@ -531,7 +537,7 @@ WALKTIMEOUT ?= 30m
 WALKVIDEOS ?= $(CURDIR)/.build/walk-videos
 walks: toolchain modules frontend/node_modules/.package-lock.json $(FRESH_FRAMES)
 	@cd frontend && $(NPM) exec -- vite build --config preview/bridge.config.ts --logLevel error
-	@FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" FRAMEFAIRY_WALKS=1 FRAMEFAIRY_WALK_VIDEOS='$(WALKVIDEOS)' WALKS='$(WALKS)' STEPS='$(STEPS)' WALKERS='$(WALKERS)' WALKSHARD='$(WALKSHARD)' WALKTIMES='$(WALKTIMES)' STILL='$(STILL)' $(GO) test -count=1 -ldflags '$(LDFLAGS)' -timeout $(WALKTIMEOUT) -run '^TestWalks$$' ./cmd/framefairy-app
+	@FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" FRAMEFAIRY_WALKS=1 FRAMEFAIRY_WALK_VIDEOS='$(WALKVIDEOS)' WALKS='$(WALKS)' STEPS='$(STEPS)' WALKERS='$(WALKERS)' WALKSHARD='$(WALKSHARD)' WALKPICK='$(WALKPICK)' WALKTIMES='$(WALKTIMES)' STILL='$(STILL)' $(GO) test -count=1 -ldflags '$(LDFLAGS)' -timeout $(WALKTIMEOUT) -run '^TestWalks$$' ./cmd/framefairy-app
 
 # The checks from outside the app: a link that opens it, closed or open,
 # handed to macOS the way a browser does, with the local dispenser running

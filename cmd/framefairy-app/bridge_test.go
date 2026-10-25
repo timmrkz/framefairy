@@ -1400,6 +1400,16 @@ func TestWalks(t *testing.T) {
 	for _, name := range sequenceNames(t, node, walks) {
 		runs = append(runs, walkRun{script: "sequences.mjs", env: []string{"SEQUENCE=" + name}, sequence: name})
 	}
+	// WALKPICK names a file of the runs a change needs, one a line, which
+	// make changed hands over, see frontend/preview/walks/pick.mjs. The
+	// rest are left out.
+	if file := os.Getenv("WALKPICK"); file != "" {
+		picked, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		runs = pickedRuns(runs, string(picked), func(r walkRun) string { return walkID(r.script, r.sequence) })
+	}
 
 	// One share of the runs when CI spreads them over machines,
 	// WALKSHARD=1/2, each share as long as the others by the times the
@@ -1525,6 +1535,32 @@ func TestWalks(t *testing.T) {
 			t.Error(err)
 		}
 	}
+}
+
+// walkID is a run the way pick.mjs names it: a sequence by its name, a walk
+// by its script, whatever its seed.
+func walkID(script, sequence string) string {
+	if sequence != "" {
+		return "sequence " + sequence
+	}
+	return "script " + script
+}
+
+// pickedRuns are the runs of all that picked names, one a line.
+func pickedRuns[T any](all []T, picked string, id func(T) string) []T {
+	want := map[string]bool{}
+	for line := range strings.Lines(picked) {
+		if line = strings.TrimSpace(line); line != "" {
+			want[line] = true
+		}
+	}
+	var out []T
+	for _, r := range all {
+		if want[id(r)] {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // startBridge starts TestBridge in a process of its own, on a free port,
@@ -2108,6 +2144,18 @@ func TestTheSharesOfTheWalksTakeAsLongAsEachOther(t *testing.T) {
 	whole := shareOf(t, all, same, took, "")
 	if whole[0] != "long 0" {
 		t.Errorf("with no share, the first run is %s, not the longest", whole[0])
+	}
+}
+
+// Only the runs picked are walked, a walk for every seed it has.
+func TestOnlyTheRunsPickedAreWalked(t *testing.T) {
+	t.Parallel()
+	type run struct{ script, sequence string }
+	all := []run{{"timeline.mjs", ""}, {"timeline.mjs", ""}, {"playback.mjs", ""}, {"sequences.mjs", "one"}, {"sequences.mjs", "two"}}
+	got := pickedRuns(all, "script timeline.mjs\nsequence two\n\n", func(r run) string { return walkID(r.script, r.sequence) })
+	want := []run{{"timeline.mjs", ""}, {"timeline.mjs", ""}, {"sequences.mjs", "two"}}
+	if !slices.Equal(got, want) {
+		t.Errorf("picked %v, want %v", got, want)
 	}
 }
 
