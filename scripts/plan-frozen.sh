@@ -36,7 +36,7 @@ if ! git show "$base:$plan" 2>/dev/null | grep -qF "$marker"; then
 	exit 0
 fi
 
-# The working tree, so make changed sees an edit that is not committed.
+# The working tree, so make lint sees an edit that is not committed.
 if git diff --quiet "$base" -- "$plan"; then
 	echo "ok  	$plan is unchanged"
 	exit 0

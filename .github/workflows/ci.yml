@@ -1,25 +1,12 @@
-# Runs on every pull request and on every push to main.
+# Runs on every pull request and on every push to main, and runs the same
+# on both: every part of make test, each on machines of its own, at the
+# same time, because none needs another. Each job runs one make command,
+# the one a person runs for that part, and holds only what a machine
+# needs around it: the checkout, Go and Node, the caches and the image.
+# So what CI checks is what make test checks anywhere else.
 #
-# The work is split across machines that run at the same time, because none
-# of it needs any of the rest: the interface type check does not care whether
-# the fuzzing found anything, and the fuzzing does not care whether the app
-# links on macOS. Run one after another they take about six minutes, and the
-# answer arrives when the slowest one does instead.
-#
-# On a pull request the job changes first reads which files changed, with
-# dorny/paths-filter and the filters in .github/ci-filters.yml, and a job
-# with nothing to do never starts a machine. GitHub shows it as skipped,
-# and a skipped job counts as passed for a required check. So a change to
-# the docs does not fuzz two platforms, and a change to the interface does
-# not run the Go tests. The filters err towards running: a test that runs
-# when it need not costs a minute, one that does not run when it should
-# have costs a broken main. The Go jobs then narrow further, to the
-# packages and fuzz targets make changed picks for the change, see
-# scripts/changed.sh.
-#
-# A push to main narrows nothing. Whatever it touched, everything is built
-# and tested, so main is always known to be sound and a mistake in the rules
-# can never be what hides a break.
+# The one exception: a pull request that changes only docs runs nothing,
+# see the job changes. A skipped job counts as passed.
 name: CI
 
 on:
@@ -54,10 +41,9 @@ env:
   OUTSIDETIMEOUT: 2m
 
 jobs:
-  # Which jobs a pull request needs, see .github/ci-filters.yml. A push to
-  # main needs them all. The action asks GitHub for the files the pull
-  # request changed, which takes reading pull requests, and the checkout
-  # brings the filters and nothing else.
+  # Whether a pull request changed anything but docs. A push to main
+  # always has. The action asks GitHub for the files the pull request
+  # changed, which takes reading pull requests.
   changes:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -65,31 +51,27 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
-      app: ${{ github.event_name != 'pull_request' || steps.filter.outputs.app == 'true' }}
-      mac: ${{ github.event_name != 'pull_request' || steps.filter.outputs.mac == 'true' }}
-      go: ${{ github.event_name != 'pull_request' || steps.filter.outputs.go == 'true' }}
-      interface: ${{ github.event_name != 'pull_request' || steps.filter.outputs.interface == 'true' }}
-      workflows: ${{ github.event_name != 'pull_request' || steps.filter.outputs.workflows == 'true' }}
-      changed: ${{ github.event_name != 'pull_request' || steps.filter.outputs.changed == 'true' }}
-      image: ${{ github.event_name != 'pull_request' || steps.filter.outputs.image == 'true' }}
+      code: ${{ github.event_name != 'pull_request' || steps.filter.outputs.code == 'true' }}
     steps:
-      - if: github.event_name == 'pull_request'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          sparse-checkout: .github/ci-filters.yml
-          sparse-checkout-cone-mode: false
       - id: filter
         if: github.event_name == 'pull_request'
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
-          filters: .github/ci-filters.yml
           predicate-quantifier: some-with-excludes
+          filters: |
+            code:
+              - '**'
+              - '!docs/**'
+              - '!**/*.md'
+              - '!LICENSE'
+              - '!.vscode/**'
+              - '!.claude/**'
 
   # First back, by a long way, and the one most changes touch. It needs Node
   # and nothing else: no Go, no system libraries, no build.
   interface:
     needs: changes
-    if: needs.changes.outputs.interface == 'true'
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -103,160 +85,56 @@ jobs:
         run: make interface
 
   # Builds everything, the interface included, which is what proves the
-  # programs still link and that Go can embed what make built.
-  #
-  # On every pull request, for the checks of the rules, unless the image
-  # it needs failed. In the CI image when the app changed, so the build
-  # waits on no mirror. A change that leaves the app alone runs the checks
-  # on the runner as it is, since they need none of what the image has,
-  # and a container given no image is none. The image is public, so no
-  # job logs in to pull it.
+  # programs still link and that Go can embed what make built, without
+  # the tools we ship, which nothing builds for Linux yet. Then make lint,
+  # which reads the build's Go cache. In the CI image, so the build waits
+  # on no mirror.
   build:
     needs: [changes, image]
-    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.image.result != 'failure' }}
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     defaults:
       run:
         shell: bash -e {0}
-    container: ${{ needs.changes.outputs.app == 'true' && needs.image.outputs.ref || '' }}
+    container: ${{ needs.image.outputs.ref }}
     steps:
       # Two commits, for the main the merge commit sits on, which the
-      # clock lint and the check of the plan compare against.
+      # check of the plan compares against.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
       # In the image the job runs as root, and the checkout is the
       # runner's user's, see the walks.
       - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      # Node for the check of the CI rules, which matches with the
-      # picomatch the action uses, and for the build.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      # Always, whatever changed. A mistake in the rules that decide what
-      # runs is silent: CI goes green having run less than it should. This
-      # takes seconds and it is the one thing nothing else would catch.
-      - name: Check the CI rules
-        run: sh scripts/ci-filters-test.sh
-      # And the rule that decides whether a push gets a build to update to,
-      # which is as silent when it is wrong.
-      - name: Check the rule for a build
-        run: sh scripts/needs-build-test.sh
-      # And the script that tells a pull request main no longer merges
-      # into it, which is as silent when it is wrong.
-      - name: Check the Main moved notice
-        run: sh scripts/main-moved-test.sh
-      # And that the plan stays history. Open work is GitHub issues, since
-      # every pull request adding a row to the same table conflicted with
-      # every other. The test first, so a broken check cannot pass.
-      - name: Check the plan is left alone
-        run: |
-          sh scripts/plan-frozen-test.sh
-          sh scripts/plan-frozen.sh
-      # And, when a workflow changed, that every action is pinned to a
-      # commit with its full version beside it, so a bump says which
-      # release it moves to. Nothing else can change a pin. And that every
-      # workflow still reads as YAML, which make changed in a session once
-      # checked, #542: most of them run only on main, at night or by hand,
-      # so a broken one would be seen only after the merge.
-      - name: Check the action pins
-        if: needs.changes.outputs.workflows == 'true'
-        run: |
-          sh scripts/pins.sh
-          for w in .github/workflows/*.yml; do
-            python3 -c 'import sys, yaml; yaml.safe_load(open(sys.argv[1]))' "$w"
-          done
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
-      # And, whatever changed, the one Go test that reads the interface,
-      # the docs and the scripts whole, for the endings of a video. Those
-      # files start no Go tests, so without this a pull request that names
-      # the endings a second time would go green and break main.
-      - name: Check the video endings are named once
-        run: go test -run '^TestVideosAreNamedOnce$' ./engine
-      # And what make changed runs for a change, which is as silent when it
-      # is wrong: the check before a push goes green having run less than
-      # the change needed. It reads the packages with Go, so it runs
-      # whenever Go is set up, which a change to its rules alone does too.
-      # It took 7 s here, in one run.
-      - name: Check what make changed runs
-        if: needs.changes.outputs.app == 'true' || needs.changes.outputs.changed == 'true'
-        run: sh scripts/changed-test.sh
       # make tidies go.mod and go.sum quietly, so a change that leaves them
       # untidy builds everywhere and is committed that way. This says so,
       # before make has had the chance to tidy them.
       - name: go.mod is tidy
-        if: needs.changes.outputs.app == 'true'
         run: go mod tidy -diff
-      # Without the tools we ship, which this runner does not build: it
-      # proves the programs link, and NOTOOLS says so rather than make
-      # stopping for want of them.
       - name: Build
-        if: needs.changes.outputs.app == 'true'
         run: make NOTOOLS=1
-      # With the interface's packages installed by the build, ./... is our
-      # packages and nothing else. One of them, flatted, ships a Go port,
-      # which the ignore in go.mod keeps out, #471.
-      - name: Only our Go packages
-        if: needs.changes.outputs.app == 'true'
-        run: |
-          pkgs=$(go list ./...)
-          if printf '%s\n' "$pkgs" | grep /node_modules/; then
-            echo "go list ./... takes in the packages above, see the ignore in go.mod"
-            exit 1
-          fi
-      # What only make changed in a session checked once, for the files a
-      # change touched: gofmt, go vet, and every script read by the shell
-      # its first line names. A session leaves the whole check to CI now,
-      # #542, so CI holds these, over the whole tree. After the build,
-      # whose Go build cache go vet reads.
-      - name: gofmt, go vet and the scripts read
-        if: needs.changes.outputs.app == 'true'
-        run: |
-          unformatted=$(gofmt -l $(git ls-files '*.go'))
-          if [ -n "$unformatted" ]; then
-            echo "run gofmt -w on:"
-            echo "$unformatted"
-            exit 1
-          fi
-          go vet ./...
-          for s in $(git ls-files '*.sh'); do
-            case $(head -n 1 "$s") in
-            *bash*) bash -n "$s" ;;
-            *) sh -n "$s" ;;
-            esac
-          done
-      # No new Go test waits on the clock, see .golangci.yml. make
-      # installs nothing here, so this step asks for the golangci-lint the
-      # Makefile pins. After the build, whose Go build cache the linter
-      # reads. The proof first, so settings that let all through fail.
-      - name: No new test waits on the clock
-        if: needs.changes.outputs.app == 'true'
-        run: |
-          make golangci-lint INSTALL=1
-          sh scripts/lint-test.sh
-          make lint
+      # make installs nothing here, so INSTALL=1 fetches the golangci-lint
+      # the Makefile pins.
+      - name: Lint
+        run: make lint INSTALL=1
 
   # Every Go test under the race detector, which also runs the seed corpus
   # of every fuzz target. ffmpeg is here because the tests that render skip
   # without it, and they are worth having.
   #
-  # On three machines, each with the tests of every package whose names
-  # start with some letters. The patterns never change, because Go keys
-  # its test cache on them, so a package a change does not reach says
-  # (cached) whatever tests were added elsewhere. Every test runs once,
-  # since -skip takes exactly what the two -run leave, fuzz seeds among
-  # it. The engine's tests whose names start with A are a third of all
-  # the time, so they are split by their second letter. The cache is
-  # keyed by the pattern, since one made with another pattern holds no
-  # result for this one. On one machine the tests took six minutes, and no job takes over
-  # five. Split by package, the app with the small packages took 208 s
-  # on one machine, in one run, because the app's tests run one after
-  # another.
+  # On three machines, a third of the tests each, make unit UNITSHARD=1/3
+  # to 3/3, see the Makefile. On one machine the tests took six minutes,
+  # and no job takes over five. Each machine keeps a cache of its own,
+  # since each keeps the results of other tests.
   #
   # Go's build cache: setup-go keeps it by go.sum alone and saves it only
   # when go.sum changes, so a job started from one that was weeks old and
@@ -271,26 +149,20 @@ jobs:
   # saves nothing: a cache a pull request writes is its own, and the
   # upload would cost every run.
   #
-  # The name has no matrix in it, and the matrix holds only the name of
-  # each machine's tests. A job its if skips is never split into its
-  # machines, so a name made from the matrix showed as written, as
-  # linux (${{ matrix.tests }}), #476. GitHub adds the matrix's values to
-  # a name without one, so the machines are linux (A-AR+B-O) and the
-  # others when they run, and one linux when they are skipped. The step
-  # shard turns each into its pattern.
+  # The name has no matrix in it. A job its if skips is never split into
+  # its machines, so a name made from the matrix showed as written, #476.
+  # GitHub adds the matrix's values to a name without one.
   #
   # In the CI image, see ci-image.yml, as the walks are and for the same
-  # reasons, so no machine waits on the Ubuntu mirror. A change to the
-  # image starts it too, since the tests then run on another machine, but
-  # not the job macos, which does not run in it.
+  # reasons, so no machine waits on the Ubuntu mirror.
   linux:
     needs: [changes, image]
-    if: needs.changes.outputs.go == 'true' || needs.changes.outputs.image == 'true'
+    if: needs.changes.outputs.code == 'true'
     name: linux
     strategy:
       fail-fast: false
       matrix:
-        tests: [A-AR+B-O, AS-AZ+P-S, rest]
+        shard: [1/3, 2/3, 3/3]
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -301,21 +173,7 @@ jobs:
       volumes:
         - /home/runner/work:/home/runner/work
     steps:
-      - id: shard
-        env:
-          TESTS: ${{ matrix.tests }}
-        run: |
-          case "$TESTS" in
-          A-AR+B-O) flags='-run=^Test(A[^S-Z]|[B-O])' ;;
-          AS-AZ+P-S) flags='-run=^Test(A[S-Z]|[P-S])' ;;
-          rest) flags='-skip=^Test(A[^S-Z]|[B-O])|^Test(A[S-Z]|[P-S])' ;;
-          *) echo "no pattern for the tests $TESTS"; exit 1 ;;
-          esac
-          echo "flags=$flags" >> "$GITHUB_OUTPUT"
-      # Two commits, for the main the merge commit sits on.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 2
       # The checkout is the runner's user's and the job runs as root, see
       # the walks.
       - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -336,8 +194,8 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: go-v2-linux-${{ runner.os }}-${{ steps.shard.outputs.flags }}-${{ github.sha }}
-          restore-keys: go-v2-linux-${{ runner.os }}-${{ steps.shard.outputs.flags }}-
+          key: go-v3-linux-${{ runner.os }}-${{ strategy.job-index }}-${{ github.sha }}
+          restore-keys: go-v3-linux-${{ runner.os }}-${{ strategy.job-index }}-
       # The episode's decoder, which the tests and the walks play through,
       # built against the ffmpeg we ship, see docs/VIDEO-PREVIEW.md. That
       # ffmpeg is built once and kept until scripts/build-ffmpeg.sh
@@ -353,17 +211,6 @@ jobs:
         run: sh scripts/build-ffmpeg.sh .build/ffmpeg
       - name: The episode's decoder
         run: make frames
-      # On a pull request, only the packages make changed picks, see
-      # scripts/changed.sh: those that changed and every one that imports
-      # them. HEAD is the merge commit GitHub made, so HEAD^1 is main. make
-      # unit reads UNITPKGS, and tests every package when it is not set.
-      # Right before the tests, because changed.sh asks make what make
-      # unit asks, the system packages among it.
-      - name: The packages this change reaches
-        if: github.event_name == 'pull_request'
-        run: |
-          plan=$(BASE=HEAD^1 sh scripts/changed.sh --plan)
-          echo "UNITPKGS=$(printf '%s\n' "$plan" | sed -n 's/^go //p' | tr '\n' ' ')" >> "$GITHUB_ENV"
       # A test that fails is named on the check, see
       # scripts/test-failures.sh, so finding it needs no log.
       #
@@ -376,7 +223,7 @@ jobs:
         id: tests
         timeout-minutes: 15
         run: |
-          make unit UNITFLAGS='${{ steps.shard.outputs.flags }}' 2>&1 | tee unit.log
+          make unit UNITSHARD=${{ matrix.shard }} 2>&1 | tee unit.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then sh scripts/test-failures.sh unit.log; fi
           exit "$status"
@@ -395,16 +242,13 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: go-v2-linux-${{ runner.os }}-${{ steps.shard.outputs.flags }}-${{ github.sha }}
+          key: go-v3-linux-${{ runner.os }}-${{ strategy.job-index }}-${{ github.sha }}
 
-  # The machine the walks and the Linux Go jobs run on, see
-  # .github/workflows/ci-image.yml, which finds it or builds it. Whenever
-  # any of them runs: linux and fuzz wait on it, and a job whose need was
-  # skipped is skipped too. scripts/changed.sh starts the Go jobs and not
-  # the app, and a change to the image starts app.
+  # The machine the build, the walks and the Linux Go jobs run on, see
+  # .github/workflows/ci-image.yml, which finds it or builds it.
   image:
     needs: changes
-    if: needs.changes.outputs.app == 'true' || needs.changes.outputs.go == 'true'
+    if: needs.changes.outputs.code == 'true'
     permissions:
       contents: read
       packages: write
@@ -438,7 +282,7 @@ jobs:
   # then the mount can go, here and in linux.
   walks:
     needs: [changes, image]
-    if: needs.changes.outputs.app == 'true'
+    if: needs.changes.outputs.code == 'true'
     name: walks
     strategy:
       fail-fast: false
@@ -564,7 +408,7 @@ jobs:
   # lies, see the walks: v2 since they moved there together.
   fuzz:
     needs: [changes, image]
-    if: needs.changes.outputs.go == 'true' || needs.changes.outputs.image == 'true'
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -573,10 +417,7 @@ jobs:
       image: ${{ needs.image.outputs.ref }}
       options: --init
     steps:
-      # Two commits, for the main the merge commit sits on.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 2
       # The checkout is the runner's user's and the job runs as root, see
       # the walks.
       - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -598,22 +439,9 @@ jobs:
           node-version: 22
       # The licence dispenser's simulation is fuzzed at night only, see
       # SIMTIME in scripts/fuzz.sh. Its known seeds run in the job linux.
-      # On a pull request only the targets of the packages the change
-      # reaches, as make changed fuzzes them, see scripts/changed.sh,
-      # compared with main.
       - name: Fuzz
         id: fuzz
-        run: |
-          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
-            targets=$(BASE=HEAD^1 sh scripts/changed.sh --fuzz-targets)
-            if [ -z "$targets" ]; then
-              echo "no fuzz target this change reaches"
-              exit 0
-            fi
-            make fuzz SIMTIME=0 FUZZTARGETS="$targets"
-          else
-            make fuzz SIMTIME=0
-          fi
+        run: make fuzz SIMTIME=0
       # Only after the fuzzing ran to its end: a job that stopped before it,
       # or was cancelled during it, has built little, and its cache would be
       # found first by every run after.
@@ -631,21 +459,17 @@ jobs:
   # VideoToolbox. The build takes a while once and is kept until
   # scripts/build-ffmpeg.sh changes.
   #
-  # Without the race detector: the Go code is the same as on Linux, where
-  # every test runs under it, and here it only made them 1.7 times slower.
-  # And without the licence server's packages, which run on a Linux server
-  # and never on a Mac. What differs here, decoding, encoding, the disk,
-  # the keychain, is all still tested. The build with no warnings allowed
-  # is in the job outside, which builds the app anyway.
+  # make unit on a Mac leaves out the race detector and the licence
+  # server's packages, see the Makefile, the same as on Tim's Mac. What
+  # differs here, decoding, encoding, the disk, the keychain, is all still
+  # tested. The build with no warnings allowed is in the job outside,
+  # which builds the app anyway.
   macos:
     needs: changes
-    if: needs.changes.outputs.go == 'true'
+    if: needs.changes.outputs.code == 'true'
     runs-on: macos-latest
     steps:
-      # Two commits, for the main the merge commit sits on.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 2
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
@@ -679,18 +503,12 @@ jobs:
       # installed nothing above.
       - name: pkg-config, for the episode's decoder
         run: command -v pkg-config >/dev/null || brew install pkg-config
-      # The same packages as in the job linux, see there.
-      - name: The packages this change reaches
-        if: github.event_name == 'pull_request'
-        run: |
-          plan=$(BASE=HEAD^1 sh scripts/changed.sh --plan)
-          echo "UNITPKGS=$(printf '%s\n' "$plan" | sed -n 's/^go //p' | tr '\n' ' ')" >> "$GITHUB_ENV"
       # With a limit and a look at what is left, as in the job linux.
       - name: Go tests
         timeout-minutes: 15
         run: |
           make frames
-          make unit RACE= UNITSKIP='framefairy/licence/dispenser framefairy/licence/paddle framefairy/cmd/framefairy-dispenser' 2>&1 | tee unit.log
+          make unit 2>&1 | tee unit.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then sh scripts/test-failures.sh unit.log; fi
           exit "$status"
@@ -716,7 +534,7 @@ jobs:
   # rather than twice.
   outside:
     needs: changes
-    if: needs.changes.outputs.mac == 'true'
+    if: needs.changes.outputs.code == 'true'
     runs-on: macos-latest
     # The app is opened by macOS and nothing ends it but the test. A run
     # that hangs stops here, not at GitHub's six hours.

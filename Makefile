@@ -31,16 +31,16 @@
 #   make hyphenation
 #                   write the caption hyphenation patterns again, from
 #                   hyph-utf8 and the German word list. Then make notices
-#   make changed    what this branch changed against main, and only that:
-#                   the tests of the Go packages it reaches, the interface,
-#                   the build, what CI runs on a pull request. For a run
-#                   on your own machine. A cloud session leaves it to CI
-#   make test       all tests: unit, fuzz, interface, walks and lint
-#   make unit       the Go tests, under the race detector
+#   make test       all tests: lint, interface, unit, fuzz and walks. CI
+#                   runs the same, each part on a machine of its own
+#   make lint       gofmt, go vet, that no Go test waits on the clock, the
+#                   scripts read by their shell, the action pins and the
+#                   tests of the repository's own rules
+#   make unit       the Go tests, under the race detector except on a Mac.
+#                   UNITSHARD=1/3 runs a third of them, as CI does
 #   make fuzz       the fuzz targets, FUZZTIME executions each
 #   make interface  the interface type check, its own tests, and that no
 #                   walk or interface test waits on the clock
-#   make lint       that no new Go test waits on the clock, by golangci-lint
 #   make walks      the interface against the real Go side, in Chromium:
 #                   the sequences, and every walk WALKS times, each of
 #                   its own length unless STEPS says, WALKERS at once,
@@ -408,18 +408,10 @@ hyphenation:
 motion: frontend/node_modules/.package-lock.json
 	@cd frontend && npx vite --config preview/motion.config.ts
 
-# Everything, in the order that puts the quickest answer first. The three
-# stand alone as well, because they do not need each other and CI runs them
-# on three machines at once: waiting for the fuzzing to finish before the
-# interface is type checked is waiting for nothing.
-# The check before a push: what the branch changed, worked out file by
-# file, and only that. See scripts/changed.sh for what each kind of file
-# runs. CI runs the same Go packages and fuzz targets on a pull request,
-# and everything on main.
-changed: $(FRESH_FRAMES)
-	@FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" TOOLS_FIRST='$(TOOLS_FIRST)' GO='$(GO)' MAKE='$(MAKE)' LDFLAGS='$(LDFLAGS)' FUZZTIME='$(FUZZTIME)' sh scripts/changed.sh
-
-test: unit fuzz interface walks lint
+# Everything, the quickest answer first. Each part stands alone as well,
+# because none needs another, and CI runs each on machines of its own,
+# with the same command: what CI runs is what make test runs here.
+test: lint interface unit fuzz walks
 
 # The tests run with the race detector, because the app is a queue of jobs
 # on their own goroutines and a window asking them things from another, and
@@ -429,26 +421,41 @@ test: unit fuzz interface walks lint
 # only runs make unit still covers every case anyone has found so far. What
 # it does not do is look for new ones.
 #
-# RACE= runs them without the race detector, which the Mac does: the Go
-# code is the same as on Linux, where it runs with it, and it makes the
-# tests 1.7 times slower.
+# On a Mac without the race detector: the Go code is the same as on
+# Linux, where it runs with it, and it makes the tests 1.7 times slower.
+# And without the licence server's packages, which run on a Linux server
+# and never on a customer's Mac. RACE= and UNITSKIP= say otherwise.
 #
-# UNITSKIP names packages to leave out. The Mac leaves out the licence
-# server's, which runs on a Linux server and never on a customer's Mac.
-# UNITFLAGS is one more flag for go test, like -run or -skip, passed as
-# it is, so a pattern needs no quoting. It is how CI spreads the tests
-# over machines, see the job linux in ci.yml.
+# UNITSHARD=1/3 runs a third of the tests, by the first letters of their
+# names, which is how CI spreads them over three machines. The patterns
+# never change, because Go keys its test cache on them, and -skip takes
+# exactly what the two -run leave. The engine's tests whose names start
+# with A are a third of all the time, so they are split by their second
+# letter. UNITFLAGS is one more flag for go test, passed as it is.
 #
-# UNITPKGS names the packages to test, every one unless it says. On a pull
-# request CI names the ones make changed picks, see the job linux in
-# ci.yml, and when that is none, no test runs.
+# UNITPKGS names the packages to test, every one unless it says.
 #
 # UNITTIMEOUT is how long one package's tests may take before go test
 # ends them and prints every goroutine. A test waits on signals and never
 # on the clock, so one whose signal never comes hangs until then. Go's own
 # ten minutes here, and CI sets 4m, under its five-minute jobs.
+ifeq ($(UNAME),Darwin)
+RACE ?=
+UNITSKIP ?= framefairy/licence/dispenser framefairy/licence/paddle framefairy/cmd/framefairy-dispenser
+else
 RACE ?= -race
 UNITSKIP ?=
+endif
+UNITSHARD ?=
+ifeq ($(UNITSHARD),1/3)
+UNITFLAGS ?= -run=^Test(A[^S-Z]|[B-O])
+else ifeq ($(UNITSHARD),2/3)
+UNITFLAGS ?= -run=^Test(A[S-Z]|[P-S])
+else ifeq ($(UNITSHARD),3/3)
+UNITFLAGS ?= -skip=^Test(A[^S-Z]|[B-O])|^Test(A[S-Z]|[P-S])
+else ifneq ($(UNITSHARD),)
+$(error UNITSHARD is 1/3, 2/3 or 3/3, not $(UNITSHARD))
+endif
 UNITFLAGS ?=
 UNITPKGS ?= ./...
 UNITTIMEOUT ?= 10m
@@ -545,16 +552,37 @@ interface:
 		printf 'ok  \tinterface waits on no clock\n'; \
 	fi
 
-# No Go test waits on the clock, see .golangci.yml, over the whole tree:
-# a line main already has fails the same as a new one. The checks from
+# Everything that reads the code without running it, over the whole tree,
+# the same here and in CI. gofmt and go vet. That ./... is our packages
+# and nothing the interface's packages carry, #471. That no Go test waits
+# on the clock, see .golangci.yml, with the proof that the linters catch
+# it first, so settings that let all through fail. The checks from
 # outside the app build only on a Mac with the outside tag, so they are
-# read a second time the way they build.
+# read a second time the way they build. Every script read by the shell
+# its first line names. The action pins. And the tests of the
+# repository's own rules: the rule for a build, the Main moved notice,
+# and that the plan stays history.
 GOLANGCI_LINT_VERSION := 2.14.0
 GOLANGCI_LINT := $(STAMPS)/golangci-lint-$(GOLANGCI_LINT_VERSION)/golangci-lint
-lint: toolchain modules golangci-lint
+lint: toolchain modules golangci-lint frontend/node_modules/.package-lock.json
+	@out=$$(gofmt -l $$(git ls-files '*.go')); [ -z "$$out" ] || { echo "gofmt -w these:"; echo "$$out"; exit 1; }
+	@printf 'ok  \tgofmt\n'
+	@$(GO) vet ./...
+	@printf 'ok  \tgo vet\n'
+	@! $(GO) list ./... | grep /node_modules/ || { echo "go list ./... takes in the packages above, see the ignore in go.mod"; exit 1; }
+	@sh scripts/lint-test.sh
 	@out=$$($(GOLANGCI_LINT) run ./... 2>&1) || { echo "$$out"; exit 1; }
 	@out=$$(GOOS=darwin $(GOLANGCI_LINT) run --build-tags outside ./internal/outside/ 2>&1) || { echo "$$out"; exit 1; }
 	@printf 'ok  \tGo tests wait on no clock\n'
+	@for s in $$(git ls-files '*.sh'); do \
+		case $$(head -n 1 "$$s") in *bash*) bash -n "$$s" ;; *) sh -n "$$s" ;; esac || exit 1; \
+	done
+	@printf 'ok  \tscripts read\n'
+	@sh scripts/pins.sh
+	@sh scripts/needs-build-test.sh
+	@sh scripts/main-moved-test.sh
+	@sh scripts/plan-frozen-test.sh
+	@sh scripts/plan-frozen.sh
 
 # The release golangci-lint builds and checks against its own checksums,
 # as its install.sh does. Not install.sh itself, which asks github.com's
