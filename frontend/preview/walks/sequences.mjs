@@ -254,10 +254,11 @@
 //                      at once.
 //                      "next", while the video's first search
 //                      transcribes its window with the speech held,
-//                      needs Transcribe the rest next, clicks it, needs
+//                      needs Transcribe the rest, clicks it, needs
 //                      the rest to wait and the menu to say Stop
-//                      transcribing, stops it and does the same with
-//                      Continue next, then lets the speech go and needs
+//                      transcribing the rest, stops it, needs Transcribe
+//                      the rest again and does the same, then lets the
+//                      speech go and needs
 //                      Export transcript once the video is transcribed
 //                      to its end.
 //                      "continue" waits the same way for the stopped
@@ -1505,7 +1506,8 @@ export const sequences = [
   },
   {
     // Tim's pick on #458: while a search transcribes its window, the
-    // video's menu says the rest of it comes next, and it does.
+    // video's menu offers the rest of it, which comes next, and stopping
+    // the rest leaves the search alone, his report of 21.40.
     name: "the rest of a video asked for while its search transcribes is transcribed next",
     steps: [["speech", "hold"], ["add", 1500], ["wait for", "Cancel"], ["transcript", "next"]],
   },
@@ -7391,11 +7393,13 @@ async function walkSequence(seq, shared = null) {
             want,
           );
         if (arg === "next") {
-          // While its first search transcribes its window, the menu says
-          // the rest comes next, and so it does: the click waits for the
+          // While its first search transcribes its window, the menu is
+          // about the rest of the video, and the click waits for the
           // search and then transcribes to the end. It said Continue
           // transcribing, as if nothing were transcribing, Tim's report of
-          // 25 October, 14.33, and his pick on #458.
+          // 25 October, 14.33, and his pick on #458, then Continue next
+          // and Stop transcribing, which said nothing to him, his report
+          // of 21.40.
           const reopen = async () => {
             await row.hover();
             await row.locator("button.more").click();
@@ -7410,9 +7414,9 @@ async function walkSequence(seq, shared = null) {
             break;
           }
           const transcription = async () => (await ask(page, "Jobs")).findLast((j) => j.episode === source && j.kind === "transcribe");
-          for (const [want, title] of [
-            ["Transcribe the rest next", "once the search"],
-            ["Continue next", "once the search"],
+          for (const [want, title, last] of [
+            ["Transcribe the rest", "once the search", false],
+            ["Transcribe the rest", "once the search", true],
           ]) {
             const said = await says();
             const told = await page.evaluate(() => document.querySelector(".video-menu .item")?.title ?? "");
@@ -7437,15 +7441,21 @@ async function walkSequence(seq, shared = null) {
               break;
             }
             await reopen();
-            if ((await says()) !== "Stop transcribing") {
-              wrong = `after ${want}, the menu says ${JSON.stringify(await says())}, not Stop transcribing`;
+            const stop = await page.evaluate(() => document.querySelector(".video-menu .item")?.title ?? "");
+            if ((await says()) !== "Stop transcribing the rest" || !stop.includes("still transcribes what it needs")) {
+              wrong = `after ${want}, the menu says ${JSON.stringify(await says())}, ${JSON.stringify(stop)}, not Stop transcribing the rest`;
               break;
             }
-            if (want === "Continue next") break;
-            // Stopped while it waits, the menu offers to carry it on next.
-            await pick("Stop transcribing");
+            if (last) break;
+            // Stopped while it waits, the menu offers the rest again.
+            await pick("Stop transcribing the rest");
             for (let seen = await news(page); ["running", "queued"].includes((await transcription())?.state); ) seen = await nextNews(page, seen);
             await settle(page);
+            // The rest is stopped, and what the search transcribes is not.
+            if (!(await searchHears())) {
+              wrong = "Stop transcribing the rest stopped the search transcribing its own window too";
+              break;
+            }
             await reopen();
           }
           if (wrong) break;

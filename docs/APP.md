@@ -178,16 +178,18 @@ menu's to show, Tim's call on #458:
 - **Continue transcribing** once it stopped, by hand, by the app closing
   or by failing, and from the frame Stop transcribing is clicked. Why it
   failed is said in a toast as it fails.
-- **Transcribe the rest next** and **Continue next** in place of the two
-  above while a search or a clip made by hand transcribes, of this video
-  or another, because the speech model is theirs until they are done, and
-  while a search finds with the model on this machine, which the speech
-  model gives way to. The Go side says so on the job, `Ahead`, by the rule
-  its lanes keep. The click waits for them and then transcribes on to the
-  end. The menu said Continue
+- **Transcribe the rest** in place of Transcribe whole video and Continue
+  transcribing, and **Stop transcribing the rest** in place of Stop
+  transcribing, while a search or a clip made by hand transcribes, of this video or another, because
+  the speech model is theirs until they are done, and while a search
+  finds with the model on this machine, which the speech model gives way
+  to. The Go side says so on the job, `Ahead`, by the rule its lanes
+  keep. The click waits for them and then transcribes on to the end, and
+  a stop leaves their own transcribing alone. The menu said Continue
   transcribing then, as if nothing were transcribing, Tim's report of 25
-  October, 14.33. He picked saying that the rest comes next over not
-  offering it.
+  October, 14.33, and he picked saying that the rest comes next over not
+  offering it. Continue next and a plain Stop transcribing said nothing
+  to him, his report of 21.40.
 - **Export transcript** once the transcript reaches the end. It hangs its
   formats on the right of the menu, the way Export To does in Pages, and
   a format opens the system's save box on "<video> transcript" with the

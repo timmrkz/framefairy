@@ -29,10 +29,13 @@
   // runs, Continue transcribing once it stopped, by hand or by the app
   // closing, and Export transcript once it is all there. While a search or
   // a clip made by hand transcribes the video, the speech model is theirs,
-  // so the first two say the rest comes next, Transcribe the rest next
-  // and Continue next, and the click waits for them, then goes on to the
-  // end. It said Continue transcribing, as if nothing were transcribing,
-  // Tim's report of 25 October, 14.33, and his pick. Each is an
+  // and the row is about the rest of the video, which they do not
+  // transcribe: Transcribe the rest, whether it was started before or
+  // not, and the click waits for them, then goes on to the end, and Stop
+  // transcribing the rest, which leaves their own transcribing alone. It
+  // said Continue transcribing, as if nothing were transcribing, Tim's
+  // report of 25 October, 14.33, and his pick, then Continue next and Stop
+  // transcribing, which said nothing to him, his report of 21.40. Each is an
   // action, which closes the menu the way a menu item does on the Mac.
   // How far the work has come is not the menu's to show: the range picker
   // frames the part it works on and the video's dot pulses, Tim's calls
@@ -498,9 +501,11 @@
                   class="item"
                   disabled={ep.missing}
                   title={words === "stop"
-                    ? "Stop transcribing. What is transcribed stays, and it can be carried on"
+                    ? hearsFirst
+                      ? "Stop transcribing the rest of the video. The search or the clip ahead of it still transcribes what it needs, and what is transcribed stays"
+                      : "Stop transcribing. What is transcribed stays, and it can be carried on"
                     : hearsFirst
-                      ? `${words === "continue" ? "Carry on transcribing" : "Transcribe the rest of the video"} once the search or the clip ahead of it is done`
+                      ? "Transcribe the rest of the video once the search or the clip ahead of it is done"
                       : words === "continue"
                         ? "Carry on transcribing from where it stopped"
                         : "Transcribe the whole video, so its transcript can be exported"}
@@ -512,14 +517,14 @@
                   }}
                 >
                   <Icon name="transcript" />
-                  {words === "stop"
-                    ? "Stop transcribing"
-                    : words === "continue"
-                      ? hearsFirst
-                        ? "Continue next"
-                        : "Continue transcribing"
-                      : hearsFirst
-                        ? "Transcribe the rest next"
+                  {hearsFirst
+                    ? words === "stop"
+                      ? "Stop transcribing the rest"
+                      : "Transcribe the rest"
+                    : words === "stop"
+                      ? "Stop transcribing"
+                      : words === "continue"
+                        ? "Continue transcribing"
                         : "Transcribe whole video"}
                 </button>
               {/if}
