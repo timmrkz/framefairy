@@ -36,46 +36,50 @@ type sightChange struct {
 
 // seen takes one answer, whether the window is in sight at that moment,
 // and says what changed. An answer that changes nothing says so, since
-// macOS tells the window both on being covered and on being hidden.
+// macOS tells the window both on being covered and on being hidden. The
+// first answer is only said when the app starts out of sight: an app that
+// starts in sight has come back from nowhere.
 func (s *sight) seen(visible bool, at time.Time) (sightChange, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.known && s.away == !visible {
+	first := !s.known
+	if !first && s.away == !visible {
 		return sightChange{}, false
 	}
 	change := sightChange{back: visible}
-	if visible && s.known {
+	if visible && !first {
 		change.away = at.Sub(s.since)
 	}
 	s.known = true
 	s.away = !visible
 	s.since = at
-	return change, true
+	return change, !(first && visible)
 }
 
 // watchSight logs the app's window going out of sight and coming back.
 // macOS tells it on the window's occlusion state, which Wails hands on as
-// the window shown and hidden.
+// the window shown and hidden. Wails runs each listener on a goroutine of
+// its own, so a hide and a show close together can arrive in either
+// order: every event asks the window where it stands now instead of
+// taking the event's word for it.
 func watchSight(window *application.WebviewWindow) {
 	if window == nil {
 		return
 	}
 	s := &sight{}
-	at := func(kind events.WindowEventType, visible bool) {
-		window.OnWindowEvent(kind, func(*application.WindowEvent) {
-			change, ok := s.seen(visible, time.Now())
-			if !ok {
-				return
-			}
-			if !change.back {
-				theLog.line(zerolog.DebugLevel, "window").Msg("the app went out of sight")
-				return
-			}
-			theLog.line(zerolog.DebugLevel, "window").Int64("away_ms", change.away.Milliseconds()).Msg("the app came back into sight")
-		})
+	tell := func(*application.WindowEvent) {
+		change, ok := s.seen(window.IsVisible(), time.Now())
+		if !ok {
+			return
+		}
+		if !change.back {
+			theLog.line(zerolog.DebugLevel, "window").Msg("the app went out of sight")
+			return
+		}
+		theLog.line(zerolog.DebugLevel, "window").Int64("away_ms", change.away.Milliseconds()).Msg("the app came back into sight")
 	}
-	at(events.Mac.WindowHide, false)
-	at(events.Mac.WindowShow, true)
+	window.OnWindowEvent(events.Mac.WindowHide, tell)
+	window.OnWindowEvent(events.Mac.WindowShow, tell)
 }
 
 // What came of asking the web view to keep its page drawn while the app's
@@ -89,13 +93,11 @@ const (
 
 // keepDrawing asks WebKit to keep the page of the app's window drawn
 // while the window is covered. WebKit on the Mac counts a covered window
-// as a hidden page: it stops drawing it and, after a while, lets go of
-// what it drew. Mission Control then uncovers the window and WebKit draws
-// it again while it is shown, and until it has, the window's own colour
-// shows where the page was. That is the most likely cause of the flicker
-// Tim saw, #536, and this build is the test of it. A page that is still
-// asks for no frames, so an app kept drawn behind other apps costs
-// nothing while nothing in it moves.
+// as a hidden page and stops drawing it, and Mission Control uncovering it
+// may then show the window before WebKit has drawn it again. That is the
+// likeliest cause of the flicker Tim saw, not proven, and this build is
+// the test of it, #536. What it costs while a covered app is busy is still
+// to be measured before it stays.
 //
 // It is done once the page is up, and again whenever it is loaded anew.
 func keepDrawing(window *application.WebviewWindow) {
@@ -117,10 +119,10 @@ func drawingSaid(done int) (zerolog.Level, string) {
 	case drawingKept:
 		return zerolog.InfoLevel, "the page stays drawn while the app is covered"
 	case drawingNotDropped:
-		return zerolog.DebugLevel, "the page stays drawn while the app is covered, as this system's web view does by itself"
+		return zerolog.DebugLevel, "the page is left as this system's web view draws a covered window"
 	case drawingNoSetting:
-		return zerolog.WarnLevel, "the page is let go of while the app is covered: this WebKit has no setting to keep it"
+		return zerolog.WarnLevel, "the page is hidden while the app is covered: this WebKit has no setting to keep it"
 	default:
-		return zerolog.WarnLevel, "the page is let go of while the app is covered: the app's window has no web view to set"
+		return zerolog.WarnLevel, "the page is hidden while the app is covered: the app's window has no web view to set"
 	}
 }

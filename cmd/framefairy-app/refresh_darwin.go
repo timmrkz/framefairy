@@ -18,12 +18,14 @@ struct refreshOut {
 	long most;
 };
 
-static WKWebView *refreshWebView(NSView *view) {
+// webViewIn finds the web view of the app's window, for both of WebKit's
+// own settings in this file.
+static WKWebView *webViewIn(NSView *view) {
 	if ([view isKindOfClass:[WKWebView class]]) {
 		return (WKWebView *)view;
 	}
 	for (NSView *sub in [view subviews]) {
-		WKWebView *found = refreshWebView(sub);
+		WKWebView *found = webViewIn(sub);
 		if (found != nil) {
 			return found;
 		}
@@ -56,7 +58,7 @@ static struct refreshOut refreshFree(void *nsWindow) {
 		return out;
 	}
 	out.most = (long)[[window screen] maximumFramesPerSecond];
-	WKWebView *view = refreshWebView([window contentView]);
+	WKWebView *view = webViewIn([window contentView]);
 	if (view == nil) {
 		return out;
 	}
@@ -81,6 +83,33 @@ static struct refreshOut refreshFree(void *nsWindow) {
 	}
 	return out;
 }
+
+// drawingKeep tells the web view of the app's window not to count the
+// window as hidden when other windows cover it, see keepDrawing in
+// sight.go. The setting is _windowOcclusionDetectionEnabled, a property of
+// WKWebView in WebKit's own header, WKWebViewPrivate.h, not Apple's public
+// API. WebKit then asks only whether the window is on screen at all, so a
+// minimised or hidden app is still a hidden page, and one on another Space
+// is not.
+//
+// It answers 0 with no web view in the window, 1 where WebKit has no such
+// setting, and 2 once it is set.
+static int drawingKeep(void *nsWindow) {
+	NSWindow *window = (NSWindow *)nsWindow;
+	if (window == nil) {
+		return 0;
+	}
+	WKWebView *view = webViewIn([window contentView]);
+	if (view == nil) {
+		return 0;
+	}
+	SEL set = NSSelectorFromString(@"_setWindowOcclusionDetectionEnabled:");
+	if (![view respondsToSelector:set]) {
+		return 1;
+	}
+	((void (*)(id, SEL, BOOL))objc_msgSend)(view, set, NO);
+	return 2;
+}
 */
 import "C"
 
@@ -94,4 +123,14 @@ func refreshFree(window unsafe.Pointer) refreshRaw {
 	}
 	out := C.refreshFree(window)
 	return refreshRaw{done: int(out.done), most: int(out.most)}
+}
+
+// drawingKeep keeps the page of the app's window drawn while it is
+// covered. It must be called on the main thread, which is what the caller
+// sees to.
+func drawingKeep(window unsafe.Pointer) int {
+	if window == nil {
+		return drawingNoWebView
+	}
+	return int(C.drawingKeep(window))
 }

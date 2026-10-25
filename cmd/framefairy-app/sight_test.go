@@ -11,7 +11,8 @@ import (
 
 // A glance in Mission Control at an app covered for a minute is two lines
 // in the log, out of sight and back after a minute, and macOS telling the
-// window the same twice is one, #536.
+// window the same twice is one. An app that starts in sight says nothing,
+// since it came back from nowhere, #536.
 func TestTheLogSaysHowLongTheAppWasOutOfSight(t *testing.T) {
 	start := time.Date(2026, 10, 25, 13, 47, 46, 0, time.UTC)
 	steps := []struct {
@@ -21,7 +22,7 @@ func TestTheLogSaysHowLongTheAppWasOutOfSight(t *testing.T) {
 		back    bool
 		away    time.Duration
 	}{
-		{true, 0, true, true, 0},
+		{true, 0, false, false, 0},
 		{false, 2 * time.Second, true, false, 0},
 		{false, 3 * time.Second, false, false, 0},
 		{true, 72 * time.Second, true, true, 70 * time.Second},
@@ -51,7 +52,7 @@ func TestTheLogSaysWhetherThePageStaysDrawnWhileCovered(t *testing.T) {
 		says  string
 	}{
 		{drawingKept, zerolog.InfoLevel, "stays drawn while the app is covered"},
-		{drawingNotDropped, zerolog.DebugLevel, "as this system's web view does by itself"},
+		{drawingNotDropped, zerolog.DebugLevel, "as this system's web view draws a covered window"},
 		{drawingNoSetting, zerolog.WarnLevel, "no setting to keep it"},
 		{drawingNoWebView, zerolog.WarnLevel, "no web view to set"},
 	}
@@ -63,9 +64,9 @@ func TestTheLogSaysWhetherThePageStaysDrawnWhileCovered(t *testing.T) {
 	}
 }
 
-// Away from the Mac nothing lets go of a covered page, and a window that
-// is not there yet is no fault.
-func TestOnlyTheMacLetsGoOfACoveredPage(t *testing.T) {
+// Away from the Mac the page is left as the system draws it, and a window
+// that is not there yet is no fault.
+func TestOnlyTheMacIsToldToKeepACoveredPageDrawn(t *testing.T) {
 	got := drawingKeep(nil)
 	want := drawingNotDropped
 	if runtime.GOOS == "darwin" {
