@@ -9,6 +9,8 @@ package main
 #import <Cocoa/Cocoa.h>
 #import <WebKit/WebKit.h>
 #import <objc/message.h>
+#include <libproc.h>
+#include <mach/mach_time.h>
 
 struct refreshOut {
 	// What came of it: 0 no web view in the window, 1 WebKit has no such
@@ -18,12 +20,14 @@ struct refreshOut {
 	long most;
 };
 
-static WKWebView *refreshWebView(NSView *view) {
+// webViewIn finds the web view of the app's window, for both of WebKit's
+// own settings in this file.
+static WKWebView *webViewIn(NSView *view) {
 	if ([view isKindOfClass:[WKWebView class]]) {
 		return (WKWebView *)view;
 	}
 	for (NSView *sub in [view subviews]) {
-		WKWebView *found = refreshWebView(sub);
+		WKWebView *found = webViewIn(sub);
 		if (found != nil) {
 			return found;
 		}
@@ -56,7 +60,7 @@ static struct refreshOut refreshFree(void *nsWindow) {
 		return out;
 	}
 	out.most = (long)[[window screen] maximumFramesPerSecond];
-	WKWebView *view = refreshWebView([window contentView]);
+	WKWebView *view = webViewIn([window contentView]);
 	if (view == nil) {
 		return out;
 	}
@@ -81,6 +85,79 @@ static struct refreshOut refreshFree(void *nsWindow) {
 	}
 	return out;
 }
+
+// drawingKeep tells the web view of the app's window not to count the
+// window as hidden when other windows cover it, see keepDrawing in
+// sight.go. The setting is _windowOcclusionDetectionEnabled, a property of
+// WKWebView in WebKit's own header, WKWebViewPrivate.h, not Apple's public
+// API. WebKit then asks only whether the window is on screen at all, so a
+// minimised or hidden app is still a hidden page, and one on another Space
+// is not.
+//
+// It answers 0 with no web view in the window, 1 where WebKit has no such
+// setting, and 2 once it is set.
+static int drawingKeep(void *nsWindow) {
+	NSWindow *window = (NSWindow *)nsWindow;
+	if (window == nil) {
+		return 0;
+	}
+	WKWebView *view = webViewIn([window contentView]);
+	if (view == nil) {
+		return 0;
+	}
+	SEL set = NSSelectorFromString(@"_setWindowOcclusionDetectionEnabled:");
+	if (![view respondsToSelector:set]) {
+		return 1;
+	}
+	((void (*)(id, SEL, BOOL))objc_msgSend)(view, set, NO);
+	return 2;
+}
+
+// The processor time WebKit's own processes for the app's window have
+// used since they started, in ms: the web process that runs the page and
+// lays it out, and the GPU process that draws it. -1 where WebKit does not
+// say which process it is, or the system does not answer.
+struct webCPUOut {
+	double web;
+	double gpu;
+};
+
+static double webCPUOf(WKWebView *view, NSString *name) {
+	SEL get = NSSelectorFromString(name);
+	if (![view respondsToSelector:get]) {
+		return -1;
+	}
+	pid_t pid = ((pid_t (*)(id, SEL))objc_msgSend)(view, get);
+	if (pid <= 0) {
+		return -1;
+	}
+	struct rusage_info_v2 use;
+	if (proc_pid_rusage(pid, RUSAGE_INFO_V2, (rusage_info_t *)&use) != 0) {
+		return -1;
+	}
+	// On Apple silicon the times are in ticks of the machine's clock, not
+	// in nanoseconds.
+	mach_timebase_info_data_t base;
+	mach_timebase_info(&base);
+	return (double)(use.ri_user_time + use.ri_system_time) * base.numer / base.denom / 1e6;
+}
+
+// webCPU asks for both. _webProcessIdentifier and _gpuProcessIdentifier
+// are WebKit's own, like the settings above.
+static struct webCPUOut webCPU(void *nsWindow) {
+	struct webCPUOut out = {-1, -1};
+	NSWindow *window = (NSWindow *)nsWindow;
+	if (window == nil) {
+		return out;
+	}
+	WKWebView *view = webViewIn([window contentView]);
+	if (view == nil) {
+		return out;
+	}
+	out.web = webCPUOf(view, @"_webProcessIdentifier");
+	out.gpu = webCPUOf(view, @"_gpuProcessIdentifier");
+	return out;
+}
 */
 import "C"
 
@@ -94,4 +171,25 @@ func refreshFree(window unsafe.Pointer) refreshRaw {
 	}
 	out := C.refreshFree(window)
 	return refreshRaw{done: int(out.done), most: int(out.most)}
+}
+
+// drawingKeep keeps the page of the app's window drawn while it is
+// covered. It must be called on the main thread, which is what the caller
+// sees to.
+func drawingKeep(window unsafe.Pointer) int {
+	if window == nil {
+		return drawingNoWebView
+	}
+	return int(C.drawingKeep(window))
+}
+
+// webCPU is the processor time WebKit's processes for the window have used
+// so far. It must be called on the main thread, which is what the caller
+// sees to.
+func webCPU(window unsafe.Pointer) cpuUse {
+	if window == nil {
+		return cpuUse{web: -1, gpu: -1}
+	}
+	out := C.webCPU(window)
+	return cpuUse{web: float64(out.web), gpu: float64(out.gpu)}
 }
