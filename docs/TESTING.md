@@ -502,11 +502,16 @@ each of two files dropped one after the other, the newer on top, and
 `toast closed` presses the cross of the top one. `write` types into its
 field and puts the cursor so many characters in, `dictate` presses
 Dictate, sees it say Stop in the same frame, the words appear grey while
-it listens and the microphone move with the hum, then ends it with Stop,
+it listens and the microphone hear the hum, then ends it with Stop,
 Enter or Escape, or with `ends` lets it stop by itself and say why, or
 with `start` only starts it, with `hearing` waits for more to be said
 and settled, so it is kept however the recording ends, and with
-`settled` waits for the words before the pause, `click heard` clicks
+`settled` waits for the words before the pause, `microphone moves`
+watches the microphone while it listens, from the hum through its pause
+until the hum comes back: it grows with the voice, keeps its box and its
+middle, falls back no faster than a level meter's needle and is drawn
+white. It runs in one walk, not in every `dictate`, because each watch
+takes seconds of the hum, see #543. `click heard` clicks
 into the first word still being heard and sees it settled with the
 cursor in it, with what the Go side tells the window held back from
 reading the word to the click, `window.__pauseEvents` in
