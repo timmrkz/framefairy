@@ -251,6 +251,14 @@
 //                      ends the dots are where they were at the click.
 //                      Opened again the menu says Continue transcribing
 //                      at once.
+//                      "next", while the video's first search
+//                      transcribes its window with the speech held,
+//                      needs Transcribe the rest next, clicks it, needs
+//                      the rest to wait and the menu to say Stop
+//                      transcribing, stops it and does the same with
+//                      Continue next, then lets the speech go and needs
+//                      Export transcript once the video is transcribed
+//                      to its end.
 //                      "continue" waits the same way for the stopped
 //                      work to end, needs the frame gone and the dots
 //                      back, and clicks Continue transcribing, which
@@ -1484,6 +1492,12 @@ export const sequences = [
       ["transcript", "stop at the end"],
       ["transcript", "Text"],
     ],
+  },
+  {
+    // Tim's pick on #458: while a search transcribes its window, the
+    // video's menu says the rest of it comes next, and it does.
+    name: "the rest of a video asked for while its search transcribes is transcribed next",
+    steps: [["speech", "hold"], ["add", 1500], ["wait for", "Cancel"], ["transcript", "next"]],
   },
   {
     name: "a word corrected in one clip reads as it was heard in another clip over it",
@@ -7281,6 +7295,85 @@ for (const seq of toWalk) {
               }),
             want,
           );
+        if (arg === "next") {
+          // While its first search transcribes its window, the menu says
+          // the rest comes next, and so it does: the click waits for the
+          // search and then transcribes to the end. It said Continue
+          // transcribing, as if nothing were transcribing, Tim's report of
+          // 25 October, 14.33, and his pick on #458.
+          const reopen = async () => {
+            await row.hover();
+            await row.locator("button.more").click();
+            await menu.waitFor();
+          };
+          const searchHears = async () => {
+            const j = (await ask(page, "Jobs")).findLast((j) => j.episode === source && j.kind === "search");
+            return j?.state === "running" && (j.step === "hearing" || j.lane === "hearing");
+          };
+          if (!(await searchHears())) {
+            wrong = "the first search is not transcribing its window, and this step is about the menu while it does";
+            break;
+          }
+          const transcription = async () => (await ask(page, "Jobs")).findLast((j) => j.episode === source && j.kind === "transcribe");
+          for (const [want, title] of [
+            ["Transcribe the rest next", "once the search"],
+            ["Continue next", "once the search"],
+          ]) {
+            const said = await says();
+            const told = await page.evaluate(() => document.querySelector(".video-menu .item")?.title ?? "");
+            if (said !== want || !told.includes(title)) {
+              wrong = `while the search transcribes, the menu says ${JSON.stringify(said)}, ${JSON.stringify(told)}, not ${want}`;
+              break;
+            }
+            const after = await pick(want);
+            if (after.open) {
+              wrong = `the menu stayed open after ${want} was clicked`;
+              break;
+            }
+            for (let seen = await news(page); (await transcription())?.state !== "running" && (await transcription())?.state !== "queued"; ) seen = await nextNews(page, seen);
+            await settle(page);
+            if (!(await searchHears())) {
+              wrong = `after ${want}, the search no longer transcribes its window`;
+              break;
+            }
+            const whole = await transcription();
+            if (whole.step === "hearing") {
+              wrong = `after ${want}, the rest of the video is transcribed beside the search, not next`;
+              break;
+            }
+            await reopen();
+            if ((await says()) !== "Stop transcribing") {
+              wrong = `after ${want}, the menu says ${JSON.stringify(await says())}, not Stop transcribing`;
+              break;
+            }
+            if (want === "Continue next") break;
+            // Stopped while it waits, the menu offers to carry it on next.
+            await pick("Stop transcribing");
+            for (let seen = await news(page); ["running", "queued"].includes((await transcription())?.state); ) seen = await nextNews(page, seen);
+            await settle(page);
+            await reopen();
+          }
+          if (wrong) break;
+          await page.keyboard.press("Escape");
+          await menu.waitFor({ state: "detached" });
+          // The search is let on, and the rest of the video after it.
+          await control(url, "/speech?ms=0");
+          const done = async () => (await ask(page, "Library")).find((e) => e.source === source)?.transcribed;
+          for (let seen = await news(page); !(await done()); ) {
+            const j = await transcription();
+            if (j && !["running", "queued"].includes(j.state) && !(await done())) {
+              wrong = `the rest of the video asked for next ended ${j.state}, with the video not transcribed to its end`;
+              break;
+            }
+            seen = await nextNews(page, seen);
+          }
+          if (wrong) break;
+          await settle(page);
+          await reopen();
+          if ((await says()) !== "Export transcript") wrong = `the video transcribed to its end, the menu says ${JSON.stringify(await says())}, not Export transcript`;
+          await page.keyboard.press("Escape");
+          break;
+        }
         if (arg === "transcribe" || arg === "continue") {
           const want = arg === "transcribe" ? "Transcribe whole video" : "Continue transcribing";
           // Nothing runs for the video first, its first search and the

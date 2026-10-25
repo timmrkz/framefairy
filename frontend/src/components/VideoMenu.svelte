@@ -27,7 +27,12 @@
   // can be done with them now, issue #432: Transcribe whole video while
   // the transcript has not reached the end, Stop transcribing while that
   // runs, Continue transcribing once it stopped, by hand or by the app
-  // closing, and Export transcript once it is all there. Each is an
+  // closing, and Export transcript once it is all there. While a search or
+  // a clip made by hand transcribes the video, the speech model is theirs,
+  // so the first two say the rest comes next, Transcribe the rest next
+  // and Continue next, and the click waits for them, then goes on to the
+  // end. It said Continue transcribing, as if nothing were transcribing,
+  // Tim's report of 25 October, 14.33, and his pick. Each is an
   // action, which closes the menu the way a menu item does on the Mac.
   // How far the work has come is not the menu's to show: the range picker
   // frames the part it works on and the video's dot pulses, Tim's calls
@@ -64,6 +69,7 @@
     onremove,
     work,
     stopping,
+    hearsFirst,
     ontranscribe,
     onstoptranscribe,
     onexport,
@@ -95,6 +101,8 @@
     // and whether Stop transcribing was pressed while it still runs.
     work: Job | undefined;
     stopping: boolean;
+    // Whether a search or a clip made by hand transcribes the video now.
+    hearsFirst: boolean;
     ontranscribe: () => void;
     onstoptranscribe: () => void;
     onexport: (format: TranscriptFormat) => void;
@@ -490,9 +498,11 @@
                   disabled={ep.missing}
                   title={words === "stop"
                     ? "Stop transcribing. What is transcribed stays, and it can be carried on"
-                    : words === "continue"
-                      ? "Carry on transcribing from where it stopped"
-                      : "Transcribe the whole video, so its transcript can be exported"}
+                    : hearsFirst
+                      ? `${words === "continue" ? "Carry on transcribing" : "Transcribe the rest of the video"} once the search or the clip transcribing it now is done`
+                      : words === "continue"
+                        ? "Carry on transcribing from where it stopped"
+                        : "Transcribe the whole video, so its transcript can be exported"}
                   onclick={() => {
                     const stop = words === "stop";
                     close();
@@ -501,7 +511,15 @@
                   }}
                 >
                   <Icon name="transcript" />
-                  {words === "stop" ? "Stop transcribing" : words === "continue" ? "Continue transcribing" : "Transcribe whole video"}
+                  {words === "stop"
+                    ? "Stop transcribing"
+                    : words === "continue"
+                      ? hearsFirst
+                        ? "Continue next"
+                        : "Continue transcribing"
+                      : hearsFirst
+                        ? "Transcribe the rest next"
+                        : "Transcribe whole video"}
                 </button>
               {/if}
               <button

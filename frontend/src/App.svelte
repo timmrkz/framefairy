@@ -239,6 +239,19 @@
     );
   }
 
+  // Whether a search or a clip made by hand transcribes a video now, or
+  // waits to, so the rest of it asked for in its menu comes next.
+  function hearsFirst(path: string): boolean {
+    return jobs.list.some(
+      (j) =>
+        j.episode === path &&
+        (j.kind === "search" || j.kind === "clip") &&
+        live(j) &&
+        !jobs.stops(j) &&
+        (j.step === "hearing" || (j.step === "waiting" && j.lane === "hearing")),
+    );
+  }
+
   // Why a transcription failed, said in a toast with Report, whether the
   // job failed as it ran or was refused as it was asked for.
   function sayFailed(j: Job) {
@@ -851,6 +864,7 @@
               onremove={() => (removing = ep)}
               work={jobs.transcription(ep.source)}
               stopping={jobs.isStopping(ep.source, "whole")}
+              hearsFirst={hearsFirst(ep.source)}
               ontranscribe={() => transcribe(ep)}
               onstoptranscribe={() => {
                 const work = jobs.transcribing(ep.source);
