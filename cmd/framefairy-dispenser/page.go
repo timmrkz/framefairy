@@ -313,6 +313,13 @@ func (d *dev) do(ctx context.Context, action string, f url.Values) (answer, erro
 		}
 		d.mu.Unlock()
 		return done("Switched")
+	case "deliver":
+		// Paddle's webhooks that are due go out now and are answered
+		// before this answers. No button has it: the checks from outside
+		// the app press it after a checkout, so the letter is there when
+		// they look, see internal/outside.
+		d.shop.Deliver(ctx)
+		return done("Paddle sent its webhooks")
 	case "adjust":
 		if err := d.shop.Adjust(get("ref"), get("do")); err != nil {
 			return answer{}, err

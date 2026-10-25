@@ -1,11 +1,9 @@
 package main
 
 import (
-	"context"
 	"os"
 	"os/exec"
 	"testing"
-	"time"
 )
 
 // A copy of the test binary started the way Wails' updater starts its
@@ -14,17 +12,11 @@ import (
 // in it could start further copies, see TestMain.
 func TestAnUpdaterHelperCopyOfTheTestsLeavesAtOnce(t *testing.T) {
 	t.Parallel()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, os.Args[0], "-test.v")
+	// Asked for one quick test of its own, a copy that runs tests says so
+	// at once and ends, and starts no copy of its own.
+	cmd := exec.Command(os.Args[0], "-test.v", "-test.run=^TestOnlyAKeyIsEverKept$")
 	cmd.Env = append(os.Environ(), updaterHelper+"=1")
-	// A copy that runs the tests starts ffmpeg, which keeps its output
-	// open after the copy is stopped. Wait no longer than a second for it.
-	cmd.WaitDelay = time.Second
 	out, err := cmd.CombinedOutput()
-	if ctx.Err() != nil {
-		t.Fatalf("the helper copy was still running after 10 s: %s", out)
-	}
 	if err != nil {
 		t.Fatalf("the helper copy failed: %v: %s", err, out)
 	}

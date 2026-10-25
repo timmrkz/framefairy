@@ -103,11 +103,9 @@ func TestARenderGoesOnWhenTheEncoderHangs(t *testing.T) {
 
 	clip := info.OnFrames(Clip{ID: "01", Slug: "hung", Segments: []Segment{{Start: 0.5, End: 2.5}}})
 	rs := RenderSettings{OutW: 90, OutH: 160, CRF: 30, Preset: "ultrafast", AudioBitrate: "96k", ScaleUp: true}
-	// Without the limit the render waits on the stand-in's ten minutes,
-	// so it is given one of its own to fail in rather than the test run's.
-	within, cancel := context.WithTimeout(ctx, time.Minute)
-	defer cancel()
-	short, err := e.RenderClip(within, clip, source, info, filepath.Join(dir, "out"), nil, rs, nil,
+	// A render that never gives up on the stand-in waits its ten minutes,
+	// and go test's -timeout ends it first, see make unit.
+	short, err := e.RenderClip(ctx, clip, source, info, filepath.Join(dir, "out"), nil, rs, nil,
 		filepath.Join(dir, "captions"), false)
 	if err != nil {
 		said, _ := os.ReadFile(calls + ".said")

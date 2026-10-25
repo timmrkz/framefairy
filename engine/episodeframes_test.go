@@ -18,7 +18,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"framefairy/internal/ffmpegtest"
 	"framefairy/internal/framewire"
@@ -128,10 +127,17 @@ func TestTheEpisodesDecoderDecodesAJumpNoFurtherThanItMust(t *testing.T) {
 	defer dec.Close()
 	var mu sync.Mutex
 	var lines []string
+	// said has a value once the decoder has said more since it was last
+	// read.
+	said := make(chan struct{}, 1)
 	dec.heard = func(_ slog.Level, line string) {
 		mu.Lock()
 		lines = append(lines, line)
 		mu.Unlock()
+		select {
+		case said <- struct{}{}:
+		default:
+		}
 	}
 
 	collect := func(run func(got func(float64, []byte) error) error) (ats []float64, frames [][]byte) {
@@ -190,17 +196,20 @@ func TestTheEpisodesDecoderDecodesAJumpNoFurtherThanItMust(t *testing.T) {
 	// frames it decoded on the way to the first one handed over.
 	opened := regexp.MustCompile(`picture: (opened the file|moved|went on), at frame \d+, [\d.]+ s, for 160x90`)
 	first := regexp.MustCompile(`picture: first frame (\d+) .*, (\d+) decoded`)
-	type said struct {
+	type jumped struct {
 		how     string
 		decoded int
 	}
-	var heard []said
-	for range 100 {
+	// The decoder says what it did after it handed the frames over, so
+	// the test reads on each time it says more. A decoder that never says
+	// it is go test's -timeout to end.
+	var heard []jumped
+	for {
 		mu.Lock()
 		heard = heard[:0]
 		for _, line := range lines {
 			if m := opened.FindStringSubmatch(line); m != nil {
-				heard = append(heard, said{how: m[1], decoded: -1})
+				heard = append(heard, jumped{how: m[1], decoded: -1})
 			} else if m := first.FindStringSubmatch(line); m != nil && len(heard) > 0 {
 				heard[len(heard)-1].decoded, _ = strconv.Atoi(m[2])
 			}
@@ -209,7 +218,7 @@ func TestTheEpisodesDecoderDecodesAJumpNoFurtherThanItMust(t *testing.T) {
 		if len(heard) == len(jumps) && heard[len(heard)-1].decoded >= 0 {
 			break
 		}
-		time.Sleep(20 * time.Millisecond)
+		<-said
 	}
 	if len(heard) != len(jumps) {
 		t.Fatalf("the decoder said %d jumps, want %d: %v", len(heard), len(jumps), heard)
@@ -443,19 +452,9 @@ func TestTheEpisodesDecoderIsReadyBeforeTheFirstFrame(t *testing.T) {
 	if err := dec.Ready(); err != nil {
 		t.Fatal(err)
 	}
-	until := time.Now().Add(10 * time.Second)
-	for {
-		dec.mu.Lock()
-		kept := len(dec.idle[pictureCursor])
-		dec.mu.Unlock()
-		if kept == cursorsKept[pictureCursor] {
-			break
-		}
-		if time.Now().After(until) {
-			t.Fatalf("%d cursors open after ten seconds, want %d", kept, cursorsKept[pictureCursor])
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	// The cursors open while nothing is asked. Should they never, the
+	// test hangs here until go test's -timeout.
+	untilCursors(dec, func() bool { return len(dec.idle[pictureCursor]) == cursorsKept[pictureCursor] })
 	times := NewPreviewTimes()
 	err := dec.Stream(WithPreviewTimes(context.Background(), times), gridOf(t, path), 1.5, 160, 90, false, nil, func(float64, []byte) error { return errStop })
 	if !errors.Is(err, errStop) {
@@ -564,16 +563,8 @@ func TestTheEpisodesDecoderTakesStreamsFromEverywhereAtOnce(t *testing.T) {
 			}
 		})
 	}
-	done := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(done)
-	}()
-	select {
-	case <-done:
-	case <-time.After(60 * time.Second):
-		t.Fatal("streams still running after a minute")
-	}
+	// Streams that never end are go test's -timeout to end.
+	wg.Wait()
 }
 
 // The files people bring, H.264 and HEVC with 10-bit colour, come through
@@ -1219,36 +1210,49 @@ func TestADecoderThatStopsAtOnceSaysWhyToAStreamThatAskedMeanwhile(t *testing.T)
 		t.Fatal(err)
 	}
 	<-waited
-	cursor := func() uint32 {
-		dec.mu.Lock()
-		defer dec.mu.Unlock()
-		return dec.nextID
-	}
-	before := cursor()
+	dec.mu.Lock()
+	before := dec.nextID
+	dec.mu.Unlock()
 	asked := make(chan error, 1)
 	go func() {
 		asked <- dec.Stream(context.Background(), framewire.Grid{Num: 1, Den: 1, Count: 1}, 0, 64, 36, false, nil,
 			func(float64, []byte) error { return nil })
 	}()
 	var err error
-	tick := time.NewTicker(time.Millisecond)
-	defer tick.Stop()
 wait:
 	for {
+		dec.mu.Lock()
+		took := dec.nextID != before
+		taken := dec.cursors.WaitLocked()
+		dec.mu.Unlock()
+		if took {
+			// It took a cursor and asked: the end goes on.
+			close(release)
+			err = <-asked
+			break
+		}
 		select {
 		case err = <-asked:
 			// It gave up without waiting for the reason.
 			break wait
-		case <-tick.C:
-			if cursor() != before {
-				// It took a cursor and asked: the end goes on.
-				close(release)
-				err = <-asked
-				break wait
-			}
+		case <-taken:
 		}
 	}
 	if err == nil || !strings.Contains(err.Error(), "has no picture") {
 		t.Errorf("the stream said %v, want the decoder's reason, that the file has no picture", err)
+	}
+}
+
+// untilCursors goes on once ok says yes, and asks it again each time the
+// decoder's cursors change, never on the clock. ok is asked with dec.mu
+// held.
+func untilCursors(dec *EpisodeFrames, ok func() bool) {
+	dec.mu.Lock()
+	defer dec.mu.Unlock()
+	for !ok() {
+		changed := dec.cursors.WaitLocked()
+		dec.mu.Unlock()
+		<-changed
+		dec.mu.Lock()
 	}
 }

@@ -20,6 +20,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/updater"
 
 	"framefairy/engine"
+	"framefairy/internal/wake"
 	"framefairy/updates"
 )
 
@@ -160,7 +161,7 @@ type updating struct {
 	// changed tells whoever waits on the state of every change to it, of
 	// a check asked for while one runs, and of a check that has ended, see
 	// wake. Only the tests wait on it.
-	changed wake
+	changed wake.Wake
 	// ended is told when a check has decided it is done, before it has
 	// returned. Nil but in the tests, which hold a check there.
 	ended    func()
@@ -395,7 +396,7 @@ func (c *updating) change(f func(*UpdateState)) {
 	f(&c.state)
 	c.state.settle()
 	c.lastSent = time.Now()
-	c.changed.wakeLocked()
+	c.changed.WakeLocked()
 	c.mu.Unlock()
 	if c.emit != nil {
 		c.emit(c.State())
@@ -424,7 +425,7 @@ func (c *updating) seen(l updates.List) {
 		c.state.Gone = updates.Followed(c.state.Picked, c.own)
 	}
 	c.state.settle()
-	c.changed.wakeLocked()
+	c.changed.WakeLocked()
 }
 
 // newerEntry says in the log that the followed channel's own entry was of
@@ -453,7 +454,7 @@ func (c *updating) progress(written, total int64) {
 		return
 	}
 	c.state.Written, c.state.Total = written, total
-	c.changed.wakeLocked()
+	c.changed.WakeLocked()
 	due := time.Since(c.lastSent) > 200*time.Millisecond || written == total
 	c.mu.Unlock()
 	if due {
@@ -589,7 +590,7 @@ func (c *updating) check() {
 	}
 	if c.checking {
 		c.again = true
-		c.changed.wakeLocked()
+		c.changed.WakeLocked()
 		c.mu.Unlock()
 		return
 	}
@@ -603,7 +604,7 @@ func (c *updating) check() {
 		again := c.again && !c.halted
 		c.again = false
 		c.checking = again
-		c.changed.wakeLocked()
+		c.changed.WakeLocked()
 		c.mu.Unlock()
 		if !again {
 			if c.ended != nil {

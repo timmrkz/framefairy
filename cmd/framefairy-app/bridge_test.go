@@ -146,7 +146,7 @@ func callHandler(svc func() *FrameFairy, own map[string]func() (any, error),
 		name := call.Name[strings.LastIndex(call.Name, ".")+1:]
 		wait, gate, fails := held(name)
 		if wait > 0 {
-			time.Sleep(wait)
+			time.Sleep(wait) //nolint:forbidigo // a slow call a walk asked for, so it sees what the app shows meanwhile. The walk waits on the app's signals, not on this
 		}
 		if gate != nil {
 			select {
@@ -664,7 +664,7 @@ func (p *prose) Recognize(samples []float32, rate int) []engine.Token {
 		p.cond().Broadcast()
 		p.gate.Unlock()
 	}()
-	time.Sleep(time.Duration(p.pace.Load()) * time.Millisecond)
+	time.Sleep(time.Duration(p.pace.Load()) * time.Millisecond) //nolint:forbidigo // the pace a walk asked for, so it sees a transcript grow. The walk waits on the app's signals, not on this
 	if p.wordless.Load() {
 		return nil
 	}
@@ -1630,7 +1630,7 @@ func TestWalks(t *testing.T) {
 	ctx := context.Background()
 	if end, ok := t.Deadline(); ok {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithDeadline(ctx, end.Add(-walkGrace))
+		ctx, cancel = context.WithDeadline(ctx, end.Add(-walkGrace)) //nolint:forbidigo // reports the walks still running before go test's -timeout ends them, #443
 		defer cancel()
 	}
 	var unwalked atomic.Int32
@@ -1661,7 +1661,7 @@ func TestWalks(t *testing.T) {
 				var out bytes.Buffer
 				err := walk(ctx, node, []string{filepath.Join(walks, r.script)}, walks,
 					append(append(os.Environ(), "BRIDGE_URL="+url), r.env...), &out)
-				seconds := time.Since(began).Seconds()
+				seconds := time.Since(began).Seconds() //nolint:forbidigo // the seconds a walk took, reported, never waited on
 				tookMu.Lock()
 				took[name(r)] = seconds
 				tookMu.Unlock()

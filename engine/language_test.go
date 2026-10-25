@@ -679,7 +679,7 @@ func TestADownloadThatStopsArrivingGivesUp(t *testing.T) {
 	if err == nil {
 		t.Fatal("a download that stopped arriving finished")
 	}
-	if took := time.Since(began); took > 5*time.Second {
+	if took := time.Since(began); took > 5*time.Second { //nolint:forbidigo // a product timer shortened on the real clock, left for #510
 		t.Errorf("giving up took %s", took)
 	}
 	if !strings.Contains(err.Error(), "stopped arriving") {

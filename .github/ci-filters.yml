@@ -12,7 +12,7 @@
 # scripts/ci-filters-test.sh checks it, and reads it line by line: a
 # name and a colon, then one quoted pattern to a line.
 
-# The jobs build, walks and outside: the app as a whole. Never a reason
+# The jobs build and walks: the app as a whole. Never a reason
 # to start a job, in every filter below: the docs, and the rules that no
 # job runs but their own check, which the job build runs whatever
 # changed. So does the Go test that reads the docs, the scripts and the
@@ -25,6 +25,19 @@ app:
   - '!.vscode/**'
   - '!.claude/**'
   - '!scripts/{main-moved,needs-build,plan-frozen,changed}{,-test}.sh'
+
+# The job outside: the app as a whole on a Mac, so app less the CI image
+# and the script that fills it, which no Mac ever runs in. Issue #484: a
+# change to the image alone started a Mac it never reached.
+mac:
+  - '**'
+  - '!docs/**'
+  - '!**/*.md'
+  - '!LICENSE'
+  - '!.vscode/**'
+  - '!.claude/**'
+  - '!scripts/{main-moved,needs-build,plan-frozen,changed}{,-test}.sh'
+  - '!{.github/ci-image/**,scripts/ci-packages.sh}'
 
 # The jobs linux, fuzz and macos: the Go tests. No Go test builds the
 # interface, so only the files of it a Go test reads count, like api.ts,
