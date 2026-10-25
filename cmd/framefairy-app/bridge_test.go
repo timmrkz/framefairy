@@ -127,11 +127,11 @@ func (b *bus) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 //
 // svc is the service now: a restart of the app is a new one. own are the
 // calls the bridge answers itself, a box from the system among them. held
-// says how long a call of a name waits before it reaches the service, the
-// gate it waits behind until the gate opens, and the reason it fails with
-// instead of reaching it, if it does, see /hold.
+// says the gate a call of a name waits behind until the walk opens it,
+// and the reason it fails with instead of reaching it, if it does, see
+// /hold.
 func callHandler(svc func() *FrameFairy, own map[string]func() (any, error),
-	held func(name string) (time.Duration, <-chan struct{}, string)) http.Handler {
+	held func(name string) (<-chan struct{}, string)) http.Handler {
 	contextType := reflect.TypeFor[context.Context]()
 	errorType := reflect.TypeFor[error]()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -144,10 +144,7 @@ func callHandler(svc func() *FrameFairy, own map[string]func() (any, error),
 			return
 		}
 		name := call.Name[strings.LastIndex(call.Name, ".")+1:]
-		wait, gate, fails := held(name)
-		if wait > 0 {
-			time.Sleep(wait) //nolint:forbidigo // a slow call a walk asked for, so it sees what the app shows meanwhile. The walk waits on the app's signals, not on this
-		}
+		gate, fails := held(name)
 		if gate != nil {
 			select {
 			case <-gate:
@@ -482,19 +479,20 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 	})
 	mux.HandleFunc("/hold", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
-		ms, _ := strconv.Atoi(q.Get("ms"))
+		// times is how many calls of the name from now on the gate is for,
+		// every call when it is not given.
 		times, err := strconv.Atoi(q.Get("times"))
 		if err != nil {
-			times = 1
+			times = -1
 		}
 		b.mu.Lock()
-		b.holds[q.Get("call")] = time.Duration(min(max(ms, 0), 10000)) * time.Millisecond
-		b.holdsLeft[q.Get("call")] = min(max(times, 0), 100)
-		switch gate, shut := b.gates[q.Get("call")]; {
+		switch g, shut := b.gates[q.Get("call")]; {
 		case q.Get("gate") == "shut" && !shut:
-			b.gates[q.Get("call")] = make(chan struct{})
+			b.gates[q.Get("call")] = &gate{open: make(chan struct{}), left: min(times, 100)}
+		case q.Get("gate") == "shut":
+			g.left = min(times, 100)
 		case q.Get("gate") == "open" && shut:
-			close(gate)
+			close(g.open)
 			delete(b.gates, q.Get("call"))
 		}
 		if reason := q.Get("fail"); reason != "" {
@@ -729,18 +727,15 @@ type bridge struct {
 	mu    sync.Mutex
 	picks []string
 	made  int
-	// holds is how long the next call of a name waits before it reaches
-	// the service, the way a busy machine delivers it late, see /hold.
-	holds map[string]time.Duration
-	// holdsLeft is how many calls of a name the hold is still for.
-	holdsLeft map[string]int
-	// gates are shut for every call of a name, which waits until the walk
-	// opens it, see /hold. A walk that holds a call by a time proves only
-	// that the time was long enough on that machine. Each call waiting
-	// holds one of the browser's six connections to the bridge, and the
-	// events hold another, so a walk shuts a gate only on a call the page
-	// makes a few of at a time, like Captions.
-	gates map[string]chan struct{}
+	// gates are shut for the calls of a name, every one or the next so
+	// many, which wait until the walk opens it, the way a busy machine
+	// delivers them late, see /hold. A walk that holds a call by a time
+	// proves only that the time was long enough on that machine, so it
+	// holds it until it has looked. Each call waiting holds one of the
+	// browser's six connections to the bridge, and the events hold
+	// another, so a walk shuts a gate for every call only on a call the
+	// page makes a few of at a time, like Captions.
+	gates map[string]*gate
 	// fails is the reason the next call of a name fails with instead of
 	// reaching the service, the way a full disk answers a save, see /hold.
 	fails map[string]string
@@ -823,20 +818,28 @@ func (b *bridge) updatesAs(from, stored string, list, conflict []string, offline
 	return nil
 }
 
-// held is how long a call of this name waits before it reaches the
-// service, the gate it waits behind, and the reason it fails with instead,
-// if it does. A hold is for the next call of the name, or the next so
-// many, and a gate for every call until it opens, see /hold.
-func (b *bridge) held(name string) (time.Duration, <-chan struct{}, string) {
+// gate holds the calls of a name until a walk opens it: every call when
+// left is below nought, or the next left of them.
+type gate struct {
+	open chan struct{}
+	left int
+}
+
+// held is the gate a call of this name waits behind, and the reason it
+// fails with instead, if it does, see /hold.
+func (b *bridge) held(name string) (<-chan struct{}, string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	wait, gate, fails := b.holds[name], b.gates[name], b.fails[name]
-	if b.holdsLeft[name]--; b.holdsLeft[name] <= 0 {
-		delete(b.holds, name)
-		delete(b.holdsLeft, name)
-	}
+	fails := b.fails[name]
 	delete(b.fails, name)
-	return wait, gate, fails
+	g := b.gates[name]
+	if g == nil || g.left == 0 {
+		return nil, fails
+	}
+	if g.left > 0 {
+		g.left--
+	}
+	return g.open, fails
 }
 
 // openBridge opens a desk whose Go side tells a browser what it does, with
@@ -932,7 +935,7 @@ func openBridge(t *testing.T) *bridge {
 	}
 	showReport = func(string) error { return nil }
 	b := &bridge{t: t, d: d, words: words, silent: silent, first: filepath.Join(d.home, "erste-erinnerung.mp4"), kept: t.TempDir(),
-		holds: map[string]time.Duration{}, holdsLeft: map[string]int{}, gates: map[string]chan struct{}{}, fails: map[string]string{}}
+		gates: map[string]*gate{}, fails: map[string]string{}}
 	if err := makeEpisode(b.first, 120, 0, false); err != nil {
 		t.Fatal(err)
 	}
@@ -1424,9 +1427,8 @@ func (b *bridge) reset() error {
 	b.d.model.fails(false)
 	b.mu.Lock()
 	b.picks = nil
-	clear(b.holds)
-	for _, gate := range b.gates {
-		close(gate)
+	for _, g := range b.gates {
+		close(g.open)
 	}
 	clear(b.gates)
 	clear(b.fails)

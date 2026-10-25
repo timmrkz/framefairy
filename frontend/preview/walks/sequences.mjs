@@ -113,8 +113,9 @@
 //                      drags an edge by px, lets go, and at once, with
 //                      nothing waited for, drags it again by again. With
 //                      late, the last place of the first drag is a frame
-//                      further on and answered so many milliseconds late,
-//                      so the edge is taken again before that answer is in
+//                      further on and its answer is held until the edge
+//                      has been taken again and dragged. A call held by
+//                      ["hold"] before it comes back then too
 //   ["edge then track", which]
 //                      clicks an edge and at once presses the track near
 //                      its right end: the playhead stands where the track
@@ -303,9 +304,10 @@
 //                      the window where "move window" left it
 //   ["head"]           presses the clip list's head button, Search, Cancel or
 //                      Continue
-//   ["hold", call, ms] the next call of this name waits so many
-//                      milliseconds before it reaches the Go side, the way
-//                      a busy machine delivers it late
+//   ["hold", call]     the next call of this name waits before it reaches
+//                      the Go side, the way a busy machine delivers it
+//                      late, until the next step has looked at what the
+//                      app shows meanwhile
 //   ["search and cancel"] presses Search, and Cancel in the first frame the head
 //                      says it, and every frame from Search to that press the
 //                      head says Cancel and takes the click, never greyed
@@ -1253,7 +1255,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameS
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
 import { open, chosen, shown, engineState, handles, timeline, inside, middle, high, drag } from "./bridge.mjs";
-import { clipList, control, pressHead, fromSidebar, sidebarStill, settle, ask, episodeOn, shortFrames, shortSound } from "./bridge.mjs";
+import { clipList, control, pressHead, fromSidebar, sidebarStill, settle, hold, letHeld, ask, episodeOn, shortFrames, shortSound } from "./bridge.mjs";
 import { xOf, seekTo, cropFrame, sameLook, sayLook, readShort, loudness, filmedOnScreen, preview } from "./bridge.mjs";
 import { recordFrames, addHEVC, overlay, cropPixels, shortFramesFrom, slowDown, noDeadlines, BITS, nextPaint, news, nextNews, caughtUp } from "./bridge.mjs";
 import { fakeClock, holdClock, runClock, letClockGo, realFrames, foldsDone, shownOnPlayhead, clickOnTrack, playUntil, pageUntil, seenUntil } from "./bridge.mjs";
@@ -2112,11 +2114,11 @@ export const sequences = [
     name: "an edge taken again while the drag before it saves goes with the hand",
     steps: [
       ["cut at", 0.5],
-      ["hold", "Reshape", 3000],
+      ["hold", "Reshape"],
       ["drag edge twice", "cut from", -30, -30],
       ["kept up", "cut from"],
       ["followed", "cut from"],
-      ["hold", "Reshape", 3000],
+      ["hold", "Reshape"],
       ["drag edge twice", "end", -30, -30],
       ["kept up", "end"],
       ["followed", "end"],
@@ -2127,14 +2129,13 @@ export const sequences = [
     // the edge that came late put the playhead back on the edge.
     name: "a press on the track straight after a click on an edge keeps the playhead there",
     steps: [
-      // The engine is slow to answer, the way it can be on a long
-      // episode, so an answer to the click comes after the press.
+      // The click once asked the engine where the edge went, and on a
+      // long episode its answer came after the press. A click that does
+      // not move the edge asks the Go side nothing now, so there is no
+      // answer to hold, and the walk holds the playhead to the press.
       ["cut at", 0.5],
-      ["hold", "Shape", 300],
       ["edge then track", "cut from"],
-      ["hold", "Shape", 300],
       ["edge then track", "end"],
-      ["hold", "Shape", 300],
       ["edge then track", "start"],
     ],
   },
@@ -2485,7 +2486,7 @@ export const sequences = [
       ["caret at words"],
       // The last words take a while to write down, the way they do on a
       // Mac after a long sentence.
-      ["hold", "StopListening", 1500],
+      ["hold", "StopListening"],
       ["dictate", "escape, the cursor stays"],
     ],
   },
@@ -3100,7 +3101,7 @@ export const sequences = [
     // Stopped with Continue where its clips would have been.
     name: "Cancel pressed at once after Search stops the search before it starts",
     steps: [
-      ["hold", "Search", 1500],
+      ["hold", "Search"],
       ["search and cancel"],
       ["wait for", "Continue"],
       ["row", "Stopped. Click Continue"],
@@ -3308,7 +3309,7 @@ export const sequences = [
       ["cards", 1],
       ["cut at", 0.5],
       ["cuts", 1],
-      ["hold", "RotatePart", 1000],
+      ["hold", "RotatePart"],
       ["rotate at", 0.75],
       ["turned", [0, 90]],
       ["render"],
@@ -3404,7 +3405,7 @@ export const sequences = [
       ["add", 30, "25"],
       ["wait for", "Search"],
       ["cards", 1],
-      ["hold", "SetCropMark", 1000],
+      ["hold", "SetCropMark"],
       ["keyframe at", 0.2],
       ["keyframe at", 0.8],
       ["drag crop", 400],
@@ -6341,7 +6342,7 @@ for (const seq of toWalk) {
           break;
         }
         if (late) {
-          await control(url, `/hold?call=Shape&ms=${late}`);
+          await hold(page, "Shape");
           await page.mouse.move(took, y);
         }
         await page.mouse.up();
@@ -6356,11 +6357,14 @@ for (const seq of toWalk) {
           await page.mouse.move(took + (again * i) / 10, y);
           await nextPaint(page);
         }
-        // The hand stays down until the app has settled on the drag, so a
-        // busy machine slow to answer it is waited for, and an edge that
-        // waits for the save before it moves is seen standing.
+        // The hand stays down until the app has settled on the drag, with
+        // the call held still on its way, so an edge that waits for it
+        // before it moves is seen standing. Then the call held comes back,
+        // late, while the hand is still down.
         await settle(page);
         movedHeld = await page.evaluate(() => new Set(window.__edgeSeen.map((t) => t.toFixed(3))).size > 1);
+        await letHeld(page);
+        await settle(page);
         await page.mouse.up();
         await watch.step("drag edge twice", s);
         await page.evaluate(() => (window.__followWatch = false));
@@ -7321,11 +7325,15 @@ for (const seq of toWalk) {
             // and gives it to nothing, which is what WebKit does with a
             // button pressed. The first save the Go side hears of, if one
             // was made, waits half a second, so a later one is heard first.
-            await control(url, "/hold?call=SetLabel&ms=500");
+            await hold(page, "SetLabel");
             const box = await menu.locator(".label").boundingBox();
             await page.mouse.click(box.x + 3, box.y + 3);
           }
           await menu.locator(`button[aria-label="${colour}"]`).click();
+          if (pressFirst !== undefined) {
+            await settle(page);
+            await letHeld(page);
+          }
           if (how.endsWith(", then Return")) {
             // WebKit gives a pressed button no focus, so the focus is on
             // the menu itself. A key pressed there shows the keyboard's
@@ -7717,7 +7725,7 @@ for (const seq of toWalk) {
         await control(url, arg === "wordless" ? "/speech?wordless=1" : `/speech?ms=${arg}`);
         break;
       case "hold":
-        await control(url, `/hold?call=${arg[0]}&ms=${arg[1]}`);
+        await hold(page, arg);
         break;
       case "search and cancel": {
         const seen = await page.evaluate(
@@ -7749,6 +7757,9 @@ for (const seq of toWalk) {
           wrong = `the head said Cancel greyed out for ${greyed} of ${seen.frames.length} frames after Search, so a press there did nothing`;
         else if (seen.after !== "Cancelling") wrong = `Cancel pressed, the head said ${seen.after}, not Cancelling`;
         console.log(`      Cancel pressed ${seen.frames.length} frames after Search, ${greyed} of them greyed out`);
+        // Cancel has reached the Go side before the search held on its way
+        // there, which the watch lets go of.
+        await settle(page);
         await watch.step("head", s);
         break;
       }
@@ -8775,6 +8786,7 @@ for (const seq of toWalk) {
             else if (!c.ours) wrong = "the cursor left the end of the words while they were written down";
           }
         }
+        await letHeld(page);
         await pageUntil(page, () => document.querySelector("button.dictate")?.getAttribute("aria-label") === "Dictate");
         if (await page.locator(".telling .dictated").count()) wrong = "what was being said is still grey in the report";
         // Tab put the focus on Report while the last words were written
