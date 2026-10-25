@@ -1663,9 +1663,13 @@ func TestWalks(t *testing.T) {
 					err = walk(ctx, node, []string{filepath.Join(walks, r.script)}, walks, append(env, r.env...), &out)
 				}
 				seconds := time.Since(began).Seconds() //nolint:forbidigo // the seconds a walk took, reported, never waited on
-				tookMu.Lock()
-				took[name(r)] = seconds
-				tookMu.Unlock()
+				// A run the test's time stopped says nothing of how long it
+				// takes, so walk-times.tsv keeps the time it had for it.
+				if err == nil || ctx.Err() == nil {
+					tookMu.Lock()
+					took[name(r)] = seconds
+					tookMu.Unlock()
+				}
 				what := fmt.Sprintf("%s (%.0f s)", name(r), seconds)
 				if err != nil {
 					// A walk that was stopped says what it printed at once
