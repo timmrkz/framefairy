@@ -112,14 +112,67 @@ speech model it fetches itself, and it asks once how clips should be found.
 
 ## One way to test
 
-`make test` runs every test there is, and CI runs the same on every pull
-request and every push to main: each part on machines of its own, each
-job one make command, the one written in the table above. So a test run
-here is the test CI runs, with the same command and the same flags, on
-Linux and on a Mac alike. Nothing picks tests by what a change touched:
-a pull request runs what main runs, and main's runs show every job under
-five minutes with all of it. Only a pull request that changes nothing
-but docs runs nothing, see [CI](#ci).
+`make test` runs every test there is, and `make changed` the tests a
+change needs: the parts of `make test` it reaches, and of each part only
+what it reaches. `scripts/changed.sh` is the one place that decides it,
+for `make changed` on any machine and for every CI job on a pull
+request, so a change is checked the same way everywhere. A push to main
+runs all of `make test`, `EVERYTHING=1`, and what is long runs at night.
+
+What a change reaches, part by part:
+
+| Part | Runs for | What runs of it |
+| --- | --- | --- |
+| `lint` | a Go file, a script, a workflow, the linters' settings, the Makefile, `docs/GUI-PLAN.md` | all of `make lint`, gofmt and go vet among it |
+| `interface` | anything under `frontend/` | all of `make interface` |
+| `unit` | a Go package | the packages that changed, every package that imports them however far down, and those whose tests read a file that changed |
+| `fuzz` | a Go package | the fuzz targets of those packages |
+| `walks` | the interface, the walks, anything the app's Go side is built from | the runs that go through what changed, see [Which walks a change runs](#which-walks-a-change-runs) |
+| `build` | anything that ships | `make`, which on a Mac may print no warning |
+| `outside` | anything that ships, on a Mac in CI | `make outside` |
+
+A file the script knows nothing about reaches the build, so a file
+nobody thought of is checked rather than skipped. The Makefile and
+`ci.yml` decide how every part runs, so they reach everything. Every
+rule has its case in `scripts/changed-test.sh`, which `make lint` runs.
+
+`make changed PART=unit SHARD=1/3` runs one part, or one share of it,
+which is what each CI job runs. `sh scripts/changed.sh --plan` says what
+each part would run and runs nothing. `--parts` names the parts with
+work and `--shares` how many machines the unit tests and the walks need,
+which is what CI's first job asks, see [CI](#ci).
+
+### Which walks a change runs
+
+`frontend/preview/walks/pick.mjs` picks them, for `make changed` and
+for CI alike. A run is a sequence by its name, or a walk like
+`timeline.mjs` with all its seeds.
+
+| What changed | The runs it takes |
+| --- | --- |
+| a sequence in a folder's `sequences.mjs` | that sequence, when its steps changed, and none for a comment |
+| a step in a folder's `steps.mjs` | the sequences that take that step, under every name it has |
+| a helper in a folder's `steps.mjs` | the sequences that take a step of that file, and every sequence for `common/steps.mjs` |
+| a walk, like `timeline.mjs` | that walk |
+| `walk-times.tsv` | none |
+| a line of the interface or of the Go side the app is built from | the runs that ran that line, by the map below |
+| a line no run ran, a style, a type, an import | the runs that ran a line of that file |
+| a declaration in Go, a constant or a type | the runs that ran a line of its package |
+| a style sheet, a file only a worker runs, the bridge in `cmd/framefairy-app`, the runner, the rules, `package.json` | every run |
+
+The map is what each run went through, line by line, of Go and of the
+interface. `make walks WALKRECORD=folder` records it: the bridge is
+built with Go's coverage, `-cover -covermode=atomic`, and asked through
+its `/cover` what it ran after every run, and every page counts what it
+runs through Chromium's coverage, read back to our lines through the
+build's source maps. `make walkmap` makes the records of every machine
+into one map, `.build/walkmap.json`. The nightly walks record it on main
+and keep it in the Actions cache, and CI's first job takes the newest,
+see `walks-nightly.yml` in [CI](#ci). A change is compared with the commit the
+map was recorded on, so its lines are the lines the map knows. With no
+map, or with its commit gone, a change to the interface or the Go side
+takes every run, which is also what a machine with no map, a Mac or a
+cloud session, runs.
 
 A cloud session runs the tests of what it changed before a push and
 leaves the rest to CI, see the tests rule in CLAUDE.md.
@@ -231,7 +284,11 @@ motion, `make walks STILL=none`, at night on main and by hand, in the
 same four shares and the CI image as the walks in `ci.yml`. On a pull
 request a sequence asks for less motion unless it looks at motion, see
 Where they run in [TESTING.md](TESTING.md#where-they-run), and this is
-the run that sees a step that looks at motion and was left out.
+the run that sees a step that looks at motion and was left out. The
+same workflow records the map of the walks: every run walked as `ci.yml`
+walks it, `make walks WALKRECORD=` on four machines, then `make walkmap`,
+kept in the Actions cache as `walkmap-v1-` and the commit, see
+[Which walks a change runs](#which-walks-a-change-runs).
 
 A failing input is written to `engine/testdata/fuzz/`. Keep it, it is the
 test case for the bug, and it becomes a seed for every later run.
@@ -297,22 +354,26 @@ out.
 ## CI
 
 `.github/workflows/ci.yml` runs on every pull request and on every push to
-main, and runs the same on both. It is twelve jobs on twelve machines, all
-at once, because none of them needs any of the rest, after
+main. Its first job, `plan`, asks `scripts/changed.sh` which parts the
+change reaches, on Linux and on a Mac, and how many machines the unit
+tests and the walks need, and every other job starts only when its part
+has work. A push to main runs every part whole, on every machine. The
+jobs run all at once, because none of them needs any of the rest, after
 `image`, which the jobs in the CI image wait for. Each job runs one make
-command, the one a person runs for that part, see
+command, `make changed` for its part, the one a person runs, see
 [One way to test](#one-way-to-test):
 
 | Job | Machine | What it runs |
 | --- | --- | --- |
-| `interface` | Linux | `make interface`, ESLint among it. Needs only Node, so it is first back by a long way |
-| `build` | Linux, in the CI image | a check that `go.mod` is tidy, which `make` would fix quietly, then `make NOTOOLS=1`. The programs and the interface, which is what proves they still link, without the tools we ship, which nothing builds for Linux yet. Then `make lint` |
-| `linux (1/3)` to `linux (3/3)` | Linux, in the CI image | `make unit UNITSHARD=1/3` to `3/3`, a third of the tests each by the first letters of their names. On one machine they took six minutes |
+| `plan` | Linux | `make changed MODE=parts` and `MODE=shares`, with the newest map of the walks. Starts nothing itself |
+| `interface` | Linux | `make changed PART=interface`, ESLint among it. Needs only Node, so it is first back by a long way |
+| `build` | Linux, in the CI image | `make changed PART="lint build"`: `make lint`, then `make NOTOOLS=1`, the programs and the interface, which is what proves they still link, without the tools we ship, which nothing builds for Linux yet. In CI `make` fails on a `go.mod` that is not tidy, where it would tidy it elsewhere |
+| `linux (1/3)` to `linux (3/3)` | Linux, in the CI image | `make changed PART=unit SHARD=1/3` to `3/3`, a third of the tests each by the first letters of their names, for a change that reaches the engine or the app. On one machine those took six minutes. Any other change takes one machine, `SHARD=1/1` |
 | `image` | Linux | the CI image `build`, `linux`, `fuzz` and the walks run in, see [The CI image](#the-ci-image), by `.github/workflows/ci-image.yml`, which the nightly fuzzing and the security check call too. Asks the registry whether the image for this commit's recipe is there, and builds and pushes it only when it is not |
-| `walks (1/4)` to `walks (4/4)` | Linux, in the CI image | `make walks WALKSHARD=1/4` to `4/4` with `WALKTIMEOUT=8m`, a quarter of the runs each by how long they took last, so a run that hangs is named in minutes. On three machines each job took four and three quarter minutes |
-| `fuzz` | Linux, in the CI image | `make fuzz SIMTIME=0`, from the fuzz cache main left, see [Tests](#tests) |
-| `macos` | macOS | the ffmpeg we ship, built by its script and kept until the script changes, then `make unit` against it, which on a Mac leaves out the race detector, which Linux runs, and the licence server's packages, which never run on a Mac |
-| `outside` | macOS | the ffmpeg and the llama-server we ship, then `make` with no warnings allowed, then `make outside`: a keychain of its own, then the app opened by macOS from an Unlock link, closed and open, with the local dispenser beside it, see [TESTING.md](TESTING.md#from-outside-the-app). Stopped after 30 minutes |
+| `walks (1/4)` to `walks (4/4)` | Linux, in the CI image | `make changed PART=walks SHARD=1/4` to `4/4` with `WALKTIMEOUT=8m`, a share of the runs picked each by how long they took last, so a run that hangs is named in minutes. As many machines of the four as the runs picked fill, by `walk-times.tsv`. For every run, on three machines each job took four and three quarter minutes |
+| `fuzz` | Linux, in the CI image | `make changed PART=fuzz SIMTIME=0`, from the fuzz cache main left, see [Tests](#tests) |
+| `macos` | macOS | the ffmpeg we ship, built by its script and kept until the script changes, then `make changed PART=unit` against it, which on a Mac leaves out the race detector, which Linux runs, and the licence server's packages, which never run on a Mac |
+| `outside` | macOS | the ffmpeg and the llama-server we ship, then `make changed PART="build outside"`, `make` with no warnings allowed, then `make outside`: a keychain of its own, then the app opened by macOS from an Unlock link, closed and open, with the local dispenser beside it, see [TESTING.md](TESTING.md#from-outside-the-app). Stopped after 30 minutes |
 
 `linux`, `walks` and `macos` start from Go's build cache as main left it
 after its last push, one cache for each job and for each machine of
@@ -353,7 +414,7 @@ tests with the small packages took 208 s on one machine, in one run,
 because the app's tests run one after another, while the engine's run
 side by side.
 
-Nothing is left out to make it quick. Every test runs on Linux under the
+Nothing a change reaches is left out to make it quick. Every test runs on Linux under the
 race detector, with the same `FUZZTIME`, and every test of what runs on a
 Mac runs on a Mac too. The account runs five Mac jobs at once for every
 branch together, so a push takes two, `macos` and `outside`, and the app is
@@ -363,8 +424,8 @@ explore. The others read text and numbers, which Go reads the same on
 both. The known inputs of every target run on a Mac in `make unit`.
 
 A pull request that changes nothing but docs, any `.md`, `LICENSE`,
-`.vscode/` or `.claude/`, starts no run at all, by `paths-ignore` in
-`ci.yml`. No branch rule requires a check today. The
+`.vscode/` or `.claude/`, reaches no part, so after `plan` it starts no
+machine. No branch rule requires a check today. The
 Updates page does not read CI at all: it follows the builds of
 `builds.yml`, see [UPDATES.md](UPDATES.md).
 

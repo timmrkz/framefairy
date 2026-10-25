@@ -530,7 +530,7 @@ WALKPICK ?=
 # WALKRECORD names a folder each run writes what it went through into, the
 # lines of Go and of the interface, with the bridge built with Go's
 # coverage, which make walkmap makes the map of the walks from. It is
-# recorded at night, see .github/workflows/walkmap.yml.
+# recorded at night, see .github/workflows/walks-nightly.yml.
 WALKRECORD ?=
 # STILL=none walks every sequence with the app's motion, see moving in
 # frontend/preview/walks/sequences.mjs.

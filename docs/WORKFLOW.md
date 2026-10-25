@@ -158,28 +158,34 @@ names nothing of ours. This is where its words meet this repository.
 ## CI
 
 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs on every pull
-request and every push to `main`, as twelve jobs at the same time, so the
-answer comes back in the time the slowest takes. Each job runs one make
-command, the same one you run on your Mac, so CI and `make test` check
+request and every push to `main`, as up to twelve jobs at the same time,
+so the answer comes back in the time the slowest takes. A first job,
+**plan**, asks `scripts/changed.sh` which parts the change reaches, and
+only those start. Each job runs one make command, `make changed` for its
+part, the same one you run on your Mac, so CI and `make changed` check
 the same thing, see [One way to test](BUILD.md#one-way-to-test):
 
 - **interface:** `make interface`, the type check and the interface's own
   tests.
-- **build:** `make` on Linux, which proves the programs still link with
-  the interface built into them, then `make lint`.
+- **build:** `make lint`, then `make` on Linux, which proves the programs
+  still link with the interface built into them.
 - **linux:** the Go tests under the race detector, `make unit`, including
-  the tests that render, on three machines, `UNITSHARD=1/3` to `3/3`.
+  the tests that render, of the packages the change reaches, on three
+  machines for the engine or the app, `UNITSHARD=1/3` to `3/3`, and on
+  one for the rest.
 - **walks:** the interface in Chromium against the real Go side,
-  `make walks`, on four machines with a quarter of the runs each.
-- **fuzz:** `make fuzz` on Linux, going on from the fuzz cache main left.
+  `make walks`, only the runs that go through what changed, on as many
+  of four machines as they fill.
+- **fuzz:** `make fuzz` on Linux, the targets of the packages the change
+  reaches, going on from the fuzz cache main left.
 - **macos:** `make unit` against our own ffmpeg, which on a Mac leaves
   out the race detector, which Linux runs.
 - **outside:** `make` on a Mac, which fails if the build prints any
   warning, then the app opened by macOS from a link, see
   [TESTING.md](TESTING.md#from-outside-the-app).
 
-A pull request runs what `main` runs. Only one that changes nothing but
-docs runs nothing.
+A push to `main` runs every part whole. A pull request of docs alone
+reaches no part, so it starts no machine after **plan**.
 
 ### When main moves
 

@@ -1,6 +1,6 @@
 // The map of what every run of the walks went through: for each line of
 // the interface and of the Go side, which runs ran it. It is recorded
-// from every run at night, see walkmap.yml, and pick.mjs reads it, so a
+// from every run at night, see walks-nightly.yml, and pick.mjs reads it, so a
 // change to a few lines runs the walks that go through them and no
 // others. See docs/TESTING.md.
 //

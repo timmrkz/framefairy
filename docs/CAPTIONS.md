@@ -449,7 +449,7 @@ before, with the keyboard's frame already round the next, which Tim saw on
   circle of its radius, within half a pixel. The corners before ran 49.5
   pixels from their centre for a radius of 40.
 - The walk "the video preview shows the short's captions, frame for
-  frame" in `frontend/preview/walks/captions/`, against the real Go
+  frame" in `frontend/preview/walks/clips/`, against the real Go
   side: it renders a short, makes the video preview as large as the short,
   steps to the start and the middle of a dozen words, and holds what the
   canvas shows to that frame of the short. The right frame differs by

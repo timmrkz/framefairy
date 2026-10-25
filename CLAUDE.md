@@ -616,15 +616,21 @@ messages, pull request text, code comments and chat replies.
   a change half made, is held back, and the reply says it is not ready to
   try.
 - **One way to test, everywhere.** `make test` is every test there is,
-  and CI runs exactly that on every pull request and every push to main,
-  each part on machines of its own, each job one make command: `make
-  lint`, `make interface`, `make unit`, `make fuzz`, `make walks`, `make
-  outside`. A job holds nothing but that command and what its machine
-  needs around it, the checkout, Go and Node, the caches. A check is
-  added to a make target, never as a step of its own in a workflow, so
-  the same command runs it on a Mac, in a cloud session and in CI.
-  Nothing picks tests by what a change touched, a pull request runs what
-  main runs, and only a pull request of docs alone runs nothing. See
+  and `make changed` the tests a change needs, picked by one script,
+  `scripts/changed.sh`, the same on a Mac, in a cloud session and in CI.
+  A pull request runs only what its change reaches, a push to main runs
+  all of `make test`, and what is long runs at night. Every CI job is one
+  command, `make changed PART=` its part with `SHARD=` its share, and a
+  first job asks the same script which parts have work and how many
+  machines each needs, so a job with nothing to do starts no machine. Of
+  the walks, a change runs only the runs that go through it: a changed
+  sequence or step by its name, a line of the interface or of the Go
+  side by the map of what each run ran, recorded every night, see
+  `frontend/preview/walks/pick.mjs`. A job holds nothing but that
+  command and what its machine needs around it, the checkout, Go and
+  Node, the caches. A check is added to a make target, never as a step
+  of its own in a workflow, and the rule for what reaches it is added to
+  `scripts/changed.sh`, with its case in `scripts/changed-test.sh`. See
   [docs/BUILD.md](docs/BUILD.md#one-way-to-test).
 - **Tests stay off the disk.** A test is about our code, not the drive
   under it. The engine, a project and the app's store hold an `afero.Fs`,
@@ -770,9 +776,10 @@ the skills listed last show their name without what they are for.
 - Work on a branch, open a pull request, and let CI run. CI builds and tests
   on Linux and on macOS, where the build has to be clean of warnings, and
   fuzzes on Linux, and drives the interface against the real Go side, see
-  [docs/TESTING.md](docs/TESTING.md). It is twelve jobs at once rather than one after another, so
-  the answer comes back in the time the slowest takes. Every job runs one
-  part of `make test`, see One way to test above.
+  [docs/TESTING.md](docs/TESTING.md). It is up to twelve jobs at once rather than one after
+  another, so the answer comes back in the time the slowest takes. Every
+  job runs `make changed` for one part of `make test`, see One way to
+  test above.
 
 ## Open work
 

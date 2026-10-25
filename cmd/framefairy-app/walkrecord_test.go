@@ -25,7 +25,7 @@ import (
 // it: the bridge is built with Go's coverage, and each run writes down the
 // lines of Go its bridge ran and the lines of the interface its pages ran.
 // make walkmap makes the map from what the runs wrote. It is recorded at
-// night, see walkmap.yml.
+// night, see walks-nightly.yml.
 
 // coverHandler is the bridge's /cover: the counts of what the Go side ran
 // since it was last asked, written into the folder the body names and
