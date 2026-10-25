@@ -231,6 +231,56 @@ func TestATurnTakenBackSaysItWaitsAtOnce(t *testing.T) {
 	})
 }
 
+// A search asks to find while it still holds the hearing lane, and the
+// lane is let go once the ask has its place. Hearing then waits while the
+// search waits to find, as it waits while one finds, so the whole video
+// waiting to hear never has a turn between a search's hearing and its
+// finding. It had one, and its frame on the range picker lit up and went
+// dim again, Tim's report of 25 October, 14.33.
+func TestASearchHandsHearingOnToFinding(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		q := newQueue(nil, func(JobUpdate) {}, func(string) {})
+		local := engine.Options{Planner: "local"}
+		search := q.turn(&Job{Kind: engine.JobSearch}, local)
+		_, heard, err := search(context.Background(), engine.StepHearing)
+		if err != nil {
+			t.Fatal(err)
+		}
+		whole := make(chan func(), 1)
+		go func() {
+			if _, release, err := q.turn(&Job{Kind: engine.JobTranscribe}, local)(t.Context(), engine.StepHearing); err == nil {
+				whole <- release
+			}
+		}()
+		waits(t, whole, "the whole video while the search hears")
+
+		// The lane of finding is busy, so the search waits to find.
+		_, busy := given(t, q.lanes, LaneFinding, plainTurn)
+		found := make(chan func(), 1)
+		go func() {
+			if _, release, err := search(t.Context(), "finding"); err == nil {
+				found <- release
+			}
+		}()
+		waits(t, found, "the search while the lane of finding is busy")
+		// It let go of hearing, which a model being installed may have, but
+		// the whole video may not.
+		install, _ := waiting(t, q.lanes, LaneHearing, plainTurn)
+		comes(t, install, "a model being installed, once the search asked to find,")()
+		waits(t, whole, "the whole video while the search waits to find")
+
+		busy()
+		finds := comes(t, found, "the search")
+		waits(t, whole, "the whole video while the search finds")
+		// The engine lets go of hearing once finding is given, and that is
+		// nothing now.
+		heard()
+		waits(t, whole, "the whole video while the search finds")
+		finds()
+		comes(t, whole, "the whole video")()
+	})
+}
+
 // A clip made by hand hears first: it takes the lane back from a search
 // that hears, goes ahead of a search waiting to hear, and does not wait for
 // a search that finds. Clips made by hand hear in the order asked.

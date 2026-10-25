@@ -18,7 +18,9 @@ import (
 // memory and the same graphics chip, and each is slower for sharing them.
 // So a search that comes to finding takes the hearing lane back from a
 // search that hears, which saves what it heard and waits for its turn
-// again, and hearing waits for as long as a search finds. Work that is
+// again, and hearing waits for as long as a search finds, or waits to.
+// A search asks to find before it lets go of hearing, see engine.Turn, so
+// nothing hears between its hearing and its finding. Work that is
 // not a step of a search, a model being installed or a transcription asked
 // for by itself, is neither taken back nor held up. A search whose
 // language model is in the cloud shares nothing with the speech model, so
@@ -103,14 +105,19 @@ func (l *lanes) take(ctx context.Context, lane string, kind turnKind) (context.C
 	return l.wait(ctx, l.enqueue(lane, kind))
 }
 
-// takeTold takes a turn the way take does. asked is said to when the turn
-// has to wait, after the turn it takes back, if it takes one, was told.
-// Once the turn is taken back itself, told is said to before whoever took
-// it back is said to or has its turn. Both are said to outside the lanes'
-// lock, so they may do as they like.
-func (l *lanes) takeTold(ctx context.Context, lane string, kind turnKind, asked, told func()) (context.Context, func(), error) {
+// takeTold takes a turn the way take does. letGo lets go of the turn the
+// job held before, once this ask has its place, so whatever waits for that
+// lane sees the ask, see engine.Turn. asked is said to when the turn has
+// to wait, after the turn it takes back, if it takes one, was told. Once
+// the turn is taken back itself, told is said to before whoever took it
+// back is said to or has its turn. All three are said to outside the
+// lanes' lock, so they may do as they like.
+func (l *lanes) takeTold(ctx context.Context, lane string, kind turnKind, letGo, asked, told func()) (context.Context, func(), error) {
 	a := l.enqueue(lane, kind)
 	a.asked, a.told = asked, told
+	if letGo != nil {
+		letGo()
+	}
 	return l.wait(ctx, a)
 }
 
@@ -202,8 +209,8 @@ func (l *lanes) wait(ctx context.Context, a *ask) (context.Context, func(), erro
 
 // mayLocked says whether an ask may have its turn now: its lane is free,
 // nobody asked for that lane before it, and it is not a search hearing
-// while a search finds. A clip made by hand that hears goes ahead of a
-// search that asked to hear before it. l.mu is held.
+// while a search finds or waits to. A clip made by hand that hears goes
+// ahead of a search that asked to hear before it. l.mu is held.
 func (l *lanes) mayLocked(a *ask) bool {
 	if l.held[a.lane] != nil {
 		return false
@@ -214,6 +221,9 @@ func (l *lanes) mayLocked(a *ask) bool {
 		}
 		for _, other := range l.asks {
 			if other.lane == a.lane && givesWay(a.kind, other.kind) {
+				return false
+			}
+			if other.lane == LaneFinding && other.kind == findingTurn {
 				return false
 			}
 		}

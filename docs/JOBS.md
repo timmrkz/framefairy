@@ -129,7 +129,13 @@ before the job that took it says anything, so the whole video goes on
 hold on the range picker as Search is pressed. What the speech model is
 still hearing then is waited for and let go, not saved, in
 `engine/audio.go`, so what was shown as heard is what is kept, and the
-work carries on from there. Work that is not a step of a search, a model
+work carries on from there. Hearing waits while a search waits to find
+too, and a search asks to find while it still holds the lane of hearing,
+letting it go once its ask is in line, see `engine.Turn`. It let go
+first, and the whole video waiting behind it heard for a moment in
+between, its frame lit up and went dim again, Tim's report of 25
+October, 14.33. A clip made by hand asks to place its crop the same way.
+Work that is not a step of a search, a model
 being installed, is neither taken back nor held up. Nor is a search whose language model is in
 the cloud: it shares nothing with the speech model, so hearing goes on
 beside it, and a video added while it waits for its answer is heard at

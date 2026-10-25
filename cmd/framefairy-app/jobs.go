@@ -381,6 +381,9 @@ func (q *queue) addSteps(episode, kind, label string, once bool, prepare func(*J
 // both not this one, issue #276.
 func (q *queue) turn(job *Job, opts engine.Options) engine.Turn {
 	onThisMachine := opts.Planner != "api" && opts.LLMURL == ""
+	// The turn the job holds, let go of once it has asked for its next,
+	// see engine.Turn. The engine asks for a job's turns one after another.
+	var holding func()
 	return func(ctx context.Context, step string) (context.Context, func(), error) {
 		lane, kind := laneOfStep(job.Kind, step, onThisMachine)
 		// Which lane a step waits for and whether its model is on this
@@ -407,13 +410,16 @@ func (q *queue) turn(job *Job, opts engine.Options) engine.Turn {
 				}
 			})
 		}
-		stepCtx, release, err := q.lanes.takeTold(ctx, lane, kind, waits, func() {
+		letGo := holding
+		holding = nil
+		stepCtx, release, err := q.lanes.takeTold(ctx, lane, kind, letGo, waits, func() {
 			taken.Store(true)
 			waits()
 		})
 		if err != nil {
 			return nil, nil, err
 		}
+		holding = release
 		q.update(job, func(j *Job) {
 			if !taken.Load() {
 				j.Step, j.Lane, j.Progress = step, lane, nil

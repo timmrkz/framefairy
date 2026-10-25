@@ -638,9 +638,11 @@ func TestAHearingThatLosesItsTurnCountsOnFromWhereItWas(t *testing.T) {
 		mu.Unlock()
 		return c, cancel, nil
 	}
-	if err := p.hear(context.Background(), turn, Window{0, 70}); err != nil {
+	letGo, err := p.hear(context.Background(), turn, Window{0, 70})
+	if err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
+	letGo()
 
 	mu.Lock()
 	defer mu.Unlock()

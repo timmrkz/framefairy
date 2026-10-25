@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -52,7 +53,8 @@ func TestASearchHearsItsWindowAndFindsItsClips(t *testing.T) {
 		if rec := ReadSearch(disk, p.Source); rec == nil || rec.Step != StepWaiting {
 			t.Errorf("waiting for %s, the record says %+v", step, rec)
 		}
-		return ctx, func() {}, nil
+		var once sync.Once
+		return ctx, func() { once.Do(func() { turns = append(turns, "let go of "+step) }) }, nil
 	}
 	plan, err := p.Search(context.Background(), PlanRequest{From: 5, To: 25, Count: 1, Min: 5}, turn)
 	if err != nil {
@@ -61,8 +63,12 @@ func TestASearchHearsItsWindowAndFindsItsClips(t *testing.T) {
 	if filepath.Base(plan) != "clips-5-25.json" || *asked != 1 {
 		t.Errorf("plan %s, the model asked %d times", plan, *asked)
 	}
-	if strings.Join(turns, " ") != "hearing finding" {
-		t.Errorf("turns asked for: %v", turns)
+	// Finding is asked for before hearing is let go, so nothing that waits
+	// to hear takes the lane in between. Let go first, the whole video had
+	// its turn for a moment and its frame lit up, Tim's report of 25
+	// October, 14.33.
+	if strings.Join(turns, ", ") != "hearing, finding, let go of hearing, let go of finding" {
+		t.Errorf("turns asked for and let go of: %v", turns)
 	}
 	// Heard the window and nothing else.
 	if parts := HeardParts(disk, p.Source, p.Base.ASRModel); len(parts) != 1 || parts[0] != [2]float64{5, 25} {
@@ -98,7 +104,7 @@ func TestASearchHearsItsWindowAndFindsItsClips(t *testing.T) {
 	if _, clips, err := LoadClips(disk, again); err != nil || len(clips) != 0 {
 		t.Errorf("a window with nothing new: %v, %d clip(s)", err, len(clips))
 	}
-	if strings.Join(turns, " ") != "finding" {
+	if strings.Join(turns, ", ") != "finding, let go of finding" {
 		t.Errorf("a window already heard asked for %v", turns)
 	}
 }
