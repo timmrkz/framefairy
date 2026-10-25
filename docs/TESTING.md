@@ -701,11 +701,22 @@ draw make no jump, issue #442. That the row leaves the list only once
 its fold has finished is heard from the fold's own animation, which says
 so before Svelte takes the row out. A fold the screen drew no frame of
 is tried again on a new clip, up to three times.
-A bounce the screen drew too few frames of to judge, fewer than three or
-none for 90 ms, is stepped onto again, up to three times. A bounce drawn
-on every other frame fails with "bounced on 8 of the 15 frames the screen
-drew while it lasted", where the seven frames asked for before let it
-pass.
+
+Where how many frames the screen draws decides what a walk can see, the
+walk gives the app its frames or its time instead. The bounce after a
+word step is drawn on frames the walk hands the caption layers, one a
+sixtieth of a second after the other, `frames` on `CaptionLayers` in
+`lib/frames/captions.ts`, and the pills are read off the screen after
+each: its 220 ms are 15 frames on any machine, and the one nearest its
+peak is within 0.2 % of it. On the screen's own frames a busy machine
+drew two and missed the peak, issues #328, #329 and #460. A frame whose
+captions a walk holds back waits for them as long as they take, by a
+wait the walk hands the frame queue, `dressWait` in
+`lib/frames/queue.ts`, where on the browser's clock the walk's own steps
+used up the 600 ms it waits, issue #468. And a glide read while it plays
+goes on until the video preview has shown ten frames or come to the next
+keyframe, not for two seconds, in which a busy machine showed two, issue
+#464.
 
 ### `speed.mjs`: how quickly the video preview follows the keys
 

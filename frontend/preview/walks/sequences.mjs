@@ -270,9 +270,8 @@
 //                      every animation frame from the click reads the crop
 //                      frame and the canvas: the picture, the crop frame and
 //                      the captions over it change once, together, issue
-//                      #383. A click whose captions the app says did not
-//                      come in the 600 ms a frame waits is taken again on
-//                      another new clip, up to three times
+//                      #383. The frames wait for their captions as long as
+//                      they take, so a busy machine cannot make them late
 //   ["wake on a caption"]
 //                      puts the playhead on a clip that starts on a
 //                      caption, adds another video and goes back to the
@@ -1234,11 +1233,13 @@
 //                      render does
 //   ["glides while playing"]
 //                      plays from two fifths of the way from the first
-//                      keyframe to the next for two seconds and
-//                      reads the frame on the canvas and the crop frame on
-//                      every animation frame: on each, the crop frame
-//                      stands where the glide puts it for that frame, and
-//                      in a place of its own on every frame shown, not once
+//                      keyframe to the next until the video preview has
+//                      shown ten frames of the episode, or the play has
+//                      come to the next keyframe, and reads the frame on
+//                      the canvas and the crop frame on every animation
+//                      frame: on each, the crop frame stands where the
+//                      glide puts it for that frame, and in a place of its
+//                      own on every frame shown, not once
 //   ["fits"]           the list's trigger is as wide as the channel it
 //                      names, with no room kept for a longer one
 //   ["at once", head]  in the frame after the pick, the list said the
@@ -13624,46 +13625,68 @@ for (const seq of toWalk) {
         let popped = 0;
         // The most a pop grew.
         let grew = 1;
+        // The bounce is drawn on frames the walk gives it, one at a time,
+        // each a sixtieth of a second after the one before, see Frames in
+        // lib/frames/captions.ts. On the screen's own, a machine so busy
+        // that it drew two frames in the 220 ms of a bounce, or none round
+        // its peak, showed a bounce cut short, issues #328, #329 and #460,
+        // and the step was taken again up to three times in the hope of
+        // more frames. Given its frames, a bounce is drawn on the same
+        // frames on any machine, and the pills are read off the screen
+        // after each.
+        await page.evaluate(() => {
+          const given = { waiting: new Map(), n: 0, asked: null };
+          given.next = (draw) => {
+            given.waiting.set(++given.n, draw);
+            const asked = given.asked;
+            given.asked = null;
+            asked?.();
+            return given.n;
+          };
+          given.cancel = (id) => given.waiting.delete(id);
+          window.__bounceFrames = given;
+          window.__screenFrames = window.__captionLayers.frames;
+          window.__captionLayers.frames = given;
+        });
         // One step with key, watched: whether a pop started, the frames
-        // read, and how many frames of the screen the bounce was drawn on.
+        // read, and how many frames the bounce was drawn on.
         const stepWatched = async (key) => {
           const count = await page.evaluate(() => window.__captionLayers?.stats.popped ?? 0);
           const drawn = await page.evaluate(() => window.__captionLayers?.stats.bounced ?? 0);
           const stop = await watchPills(page);
           await page.keyboard.press(key);
-          // The pop, if one starts, and its end. A pop starts when the new
-          // frame is drawn with its own layer, so once that frame is up and
-          // the layers rest, a bounce that was to start has started and
-          // ended.
+          // A pop starts when the new frame is drawn with its own layer, so
+          // once that frame is up, a bounce that was to start has started.
           await settle(page);
           await shownOnPlayhead(page, { captions: true });
-          await page.evaluate(() => window.__captionLayers?.rested());
           const started = await page.evaluate((n) => (window.__captionLayers?.stats.popped ?? 0) > n, count);
+          // Its parts come from the Go side, and then it asks for its first
+          // frame, or they did not come and the layers rest. Then it is
+          // given its frames until it asks for no more, each read on the
+          // screen's next frame, which watchPills reads first: the pills
+          // are read once for each frame given.
+          await page.evaluate(async () => {
+            const given = window.__bounceFrames;
+            const real = window.__real?.frame ?? requestAnimationFrame;
+            if (!given.waiting.size) await Promise.race([new Promise((done) => (given.asked = done)), window.__captionLayers.rested()]);
+            given.asked = null;
+            for (let now = 0; given.waiting.size; now += 1000 / 60) {
+              const draws = [...given.waiting.values()];
+              given.waiting.clear();
+              for (const draw of draws) draw(now);
+              await new Promise((done) => real(done));
+            }
+          });
+          await page.evaluate(() => window.__captionLayers?.rested());
           await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
           const frames = await stop();
           const bounced = (await page.evaluate(() => window.__captionLayers?.stats.bounced ?? 0)) - drawn;
-          // The longest the screen went without a frame while the bounce
-          // was drawn, from the first frame it was drawn on to the last.
-          const on = frames.filter((f, i) => i > 0 && f.bounced > frames[i - 1].bounced);
-          const gap = Math.max(0, ...on.slice(1).map((f, i) => f.t - on[i].t));
-          return { started, frames, bounced, gap };
+          return { started, frames, bounced };
         };
         // arg steps to the right, then as many back to the first word.
         for (let k = 0; k < 2 * arg && !wrong; k++) {
           const key = k < arg ? "Shift+ArrowRight" : "Shift+ArrowLeft";
-          let { started, frames, bounced, gap } = await stepWatched(key);
-          // The bounce lasts 220 ms and is drawn on every frame the screen
-          // draws while it lasts, so on a machine so busy that the screen
-          // drew fewer than three frames in that time, or none for 90 ms,
-          // there is no bounce to see, only the machine. Issues #328 and
-          // #329: a busy runner drew two, and one drew none round the
-          // peak. Then the step is taken again, off the word and back onto
-          // it, up to three times, and a bounce that is not there is not
-          // there any of the four times.
-          for (let again = 0; started && (bounced < 3 || gap > 90) && again < 3; again++) {
-            await stepWatched(key === "Shift+ArrowRight" ? "Shift+ArrowLeft" : "Shift+ArrowRight");
-            ({ started, frames, bounced, gap } = await stepWatched(key));
-          }
+          const { started, frames, bounced } = await stepWatched(key);
           const off = frames.find((f) => framesOffPill(f, "keyed"));
           const last = frames[frames.length - 1];
           if (off) {
@@ -13685,12 +13708,6 @@ for (const seq of toWalk) {
           if (!started) continue;
           popped++;
           grew = Math.max(grew, most / least);
-          // The frames of the screen from the first the bounce was drawn
-          // on to the last, read off the count of bounce paints on each,
-          // and those of them it was not drawn on.
-          const paints = frames.map((f, i) => (i > 0 ? f.bounced - frames[i - 1].bounced : 0));
-          const span = paints.slice(paints.findIndex((d) => d > 0), paints.findLastIndex((d) => d > 0) + 1);
-          const skipped = span.filter((d) => d === 0).length;
           // The word and its pill grow together, to 115 % of rest, from
           // the word's first frame, where the step lands, at rest, and
           // back to rest, however briefly the short lights it, every word
@@ -13699,25 +13716,18 @@ for (const seq of toWalk) {
           // one frame, and then a word of one frame stop at its peak.
           // On the screen's frames, one scale each: Tim found the bounce
           // laggy when it was the short's frames of the pop, 25 a second.
-          // How many frames the screen draws in a fifth of a second is the
-          // machine's, 13 on a quiet one and 2 on a busy runner, so a word
-          // holds that the bounce was drawn on every frame the screen drew
-          // while it lasted, which no machine changes, and on three at the
-          // least, on the way up, its peak and on the way down. Before, the
-          // whole walk held that a bounce was drawn over 7 frames, which
-          // a busy machine broke, issues #328 and #329. That every frame
-          // gets its own scale is held by "the bounce after a word step"
-          // in captions.test.ts. So too the peak: with fewer frames one may
-          // land a little off it, 12.7 % of 15 on a machine running six
-          // walks at once, and 8 % of "er" when a busy runner drew no frame
-          // for over 100 ms round its peak, so a word holds that it popped
-          // by 5 %, against the 1 % Tim saw, and the whole walk that some
-          // pop reached the peak.
-          if (bounced < 3) {
-            wrong = `"${last.keyed.text}" bounced over only ${bounced} frames of the screen, four times`;
-          } else if (skipped > 0) {
-            wrong = `"${last.keyed.text}" bounced on ${span.length - skipped} of the ${span.length} frames the screen drew while it lasted`;
-          } else if (most < least * 1.05) {
+          // The walk gives the bounce a frame every sixtieth of a second,
+          // so it is drawn on 15 frames on any machine, from its start to
+          // the first frame past its 220 ms, the one nearest its peak
+          // within 0.2 % of it, and every one of them is read off the
+          // screen. A busy machine drew
+          // two before, and missed the peak, issues #328, #329 and #460.
+          // That every frame gets its own scale is held by "the bounce
+          // after a word step" in captions.test.ts. A word holds that its
+          // pill grew by 12 % of the 15 %, its edges read to a whole pixel.
+          if (bounced !== 15) {
+            wrong = `"${last.keyed.text}" bounced on ${bounced} frames given it a sixtieth of a second apart, where its 220 ms take 15`;
+          } else if (most < least * 1.12) {
             wrong = `"${last.keyed.text}" popped, but its pill grew only from ${least.toFixed(1)} to ${most.toFixed(1)} px`;
           } else if (Math.abs(widths[0] - least) > 1.5 || Math.abs(last.pill.w - least) > 1.5) {
             wrong = `"${last.keyed.text}" popped from a pill ${widths[0].toFixed(1)} px wide to one ${last.pill.w.toFixed(1)} px wide, not from rest, ${least.toFixed(1)} px, back to rest`;
@@ -13744,6 +13754,10 @@ for (const seq of toWalk) {
             }
           }
         }
+        // The screen's own frames back for the bounce.
+        await page.evaluate(() => {
+          window.__captionLayers.frames = window.__screenFrames;
+        });
         console.log(`    ${report.join(", ")}`);
         if (!wrong && popped < 2 * arg) wrong = `only ${popped} of ${2 * arg} steps onto a word popped it`;
         else if (!wrong && grew < 1.14) wrong = `no pop grew by more than ${((grew - 1) * 100).toFixed(0)} %`;
@@ -14291,38 +14305,69 @@ for (const seq of toWalk) {
         // The play starts from the frame on the video preview, so it is
         // started once that is the playhead's frame.
         await shownOnPlayhead(page);
-        await page.evaluate(() => {
+        // The play is read on every animation frame, and paused by the
+        // page itself once the video preview has shown ten frames of the
+        // episode or the play has come to the next keyframe, where the
+        // glide ends. How many frames the video preview shows in a second
+        // is the machine's: a busy one showed two in two seconds of play,
+        // issue #464, and six, issue #320. So the play goes on until the
+        // frames are there, not for a time, and only a play that came to
+        // the next keyframe on fewer than three frames fails.
+        const end = b.at;
+        await page.evaluate((end) => {
           window.__glide = [];
-          const read = () => {
-            const el = document.querySelector(".screen");
-            window.__glide.push({ k: window.__filmed(), crop: Number(el.dataset.crop) });
-            if (window.__glide.length < 2000) window.__glideRaf = requestAnimationFrame(read);
-          };
-          window.__glideRaf = requestAnimationFrame(read);
-        });
+          window.__glideNever = false;
+          window.__glideStarted = false;
+          window.__glideRead = new Promise((done) => {
+            const shown = new Set();
+            const read = () => {
+              const el = document.querySelector(".screen");
+              const k = window.__filmed();
+              const playing = !document.querySelector('button[aria-label="Play"]');
+              window.__glide.push({ k, crop: Number(el.dataset.crop) });
+              if (k >= 0) shown.add(k);
+              window.__glideStarted ||= playing;
+              const ended = window.__glideNever || (window.__glideStarted && (!playing || shown.size >= 10 || Number(el.dataset.playhead) >= end));
+              if (!ended) {
+                requestAnimationFrame(read);
+                return;
+              }
+              if (playing) {
+                const key = { key: " ", code: "Space", bubbles: true, cancelable: true };
+                document.body.dispatchEvent(new KeyboardEvent("keydown", key));
+                document.body.dispatchEvent(new KeyboardEvent("keyup", key));
+              }
+              done();
+            };
+            requestAnimationFrame(read);
+          });
+        }, end);
         await page.keyboard.press(" ");
-        // Two seconds of the episode, read off the playhead.
+        // A space bar that started no play ends the reading, once the app
+        // has settled on the press.
         await settle(page);
-        await playUntil(page, { most: 2 });
-        await page.keyboard.press(" ");
-        const seen = await page.evaluate(() => {
-          cancelAnimationFrame(window.__glideRaf);
-          return window.__glide;
+        const played = await page.evaluate(() => {
+          const playing = !document.querySelector('button[aria-label="Play"]');
+          if (!playing && !window.__glideStarted) window.__glideNever = true;
+          return !window.__glideNever;
         });
+        const seen = await page.evaluate(() => window.__glideRead.then(() => window.__glide));
+        if (!played) {
+          wrong = "the space bar started no play";
+          break;
+        }
         await settle(page);
         const off = seen.filter((r) => r.k >= 0 && r.crop !== glide(r.k));
         const places = new Set(seen.filter((r) => r.k >= 0).map((r) => r.crop));
         // The frames of the episode the video preview showed, each with a
-        // place of its own on the glide. How many it shows in two seconds
-        // is the machine's: a busy one showed six, issue #320. So the crop
-        // frame stands in as many places as frames were shown, and the
-        // play showed at least three, where it stood in ten or more before.
+        // place of its own on the glide: the crop frame stands in as many
+        // places as frames were shown.
         const shown = new Set(seen.filter((r) => r.k >= 0).map((r) => r.k));
         const apart = new Set([...shown].map((k) => glide(k)));
         if (off.length) {
           wrong = `while playing, ${off.length} of ${seen.length} frames had the crop frame off the glide, the first frame ${off[0].k} at ${off[0].crop} for ${glide(off[0].k)}`;
         } else if (shown.size < 3) {
-          wrong = `while playing for two seconds, the video preview showed ${shown.size} frames`;
+          wrong = `while playing up to the next keyframe, the video preview showed ${shown.size} frames`;
         } else if (places.size < apart.size) {
           wrong = `while playing, the crop frame stood in ${places.size} places over ${shown.size} frames, where the glide has ${apart.size}`;
         }
@@ -14968,7 +15013,7 @@ async function pickCards(page, n) {
   if (typeof clips === "string") return clips;
   const path = await episodeOn(page);
   await canLook(page);
-  // Where the new clips are made, the last ones for a click taken again.
+  // Where the new clips are made.
   // Each gives a clip with a caption at its start, so its captions can be
   // seen to come, and one that starts where no other clip does, which
   // could put up the very picture on screen, so nothing would change
@@ -15021,9 +15066,23 @@ async function pickCards(page, n) {
   page.on("request", asked);
   page.on("requestfinished", answered);
   page.on("requestfailed", failed);
+  // A frame put up for a click waits for its captions as long as they
+  // take: the walk hands the video preview a wait that never runs out, see
+  // dressWait in lib/frames/queue.ts. On the browser's clock it runs out
+  // after 600 ms, and on a busy machine the walk's own steps between the
+  // frame starting to wait and the gate opening used most of it, and
+  // libass drawing a layer once took 590 ms, so the frame came without
+  // its captions and they came after it, issue #468. The click was then
+  // taken again on another new clip, up to three times. That the frame
+  // does not wait for good, but 600 ms of the browser's clock, is held by
+  // "a frame waiting for its captions" in queue.test.ts.
+  await page.evaluate(() => {
+    window.__dressWait = window.__frameQueue.dressWait;
+    window.__frameQueue.dressWait = () => () => {};
+  });
   const late = [];
   const clicks = [];
-  for (let i = 0, again = 0; i < n; i++) {
+  for (let i = 0; i < n; i++) {
     const held = i % 2 === 1;
     let key;
     if (held) {
@@ -15055,7 +15114,7 @@ async function pickCards(page, n) {
     }
     const clicked = Date.now();
     clicks.push(clicked);
-    const { bare, waitedForDress } = await page.evaluate(() => window.__frameQueue.stats);
+    const { waitedForDress } = await page.evaluate(() => window.__frameQueue.stats);
     const clicking = clickCard(page, key, null);
     if (held) {
       // The frame of the clip waits for what lies over it, dress in
@@ -15074,18 +15133,6 @@ async function pickCards(page, n) {
       await control(url, "/hold?call=Captions&gate=open");
     }
     const { looks } = await clicking;
-    // A frame put up without its captions, which did not come in the 600
-    // ms it waits, is the machine and not the app: libass took 590 ms to
-    // draw one layer once in make changed, beside three other walkers,
-    // where it takes 15 here alone. The app says so, stats.bare, and the
-    // click is taken again on another new clip, up to three times, so
-    // captions that never come in time fail all four.
-    if (held && again < 3 && fresh.length && (await page.evaluate((was) => window.__frameQueue.stats.bare > was, bare))) {
-      console.log(`        card ${i + 1}: its captions did not come in 600 ms on this busy machine, again on another new clip`);
-      again++;
-      i--;
-      continue;
-    }
     const first = looks[0];
     const last = looks[looks.length - 1];
     const changes = changesOf(looks);
@@ -15107,6 +15154,9 @@ async function pickCards(page, n) {
     else if (first.canvas === last.canvas && first.crop === last.crop) problems.push(`${card}: the video preview shows what it showed before`);
     else console.log(`        ${card}: one change, ${say(changes[0])}`);
   }
+  await page.evaluate(() => {
+    window.__frameQueue.dressWait = window.__dressWait;
+  });
   // The log is written a quarter of a second after it is said, said.ts,
   // so what is told of the last click may be short of its last lines.
   page.off("request", asked);

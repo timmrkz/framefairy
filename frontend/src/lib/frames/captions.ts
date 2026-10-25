@@ -412,6 +412,19 @@ function calm(): boolean {
 // whether it is paused.
 export type Still = { paused(): boolean };
 
+// The frames of the screen a bounce is drawn on, by the clock of each,
+// the browser's own unless handed in. A walk hands in frames it gives
+// itself one at a time, so a bounce is drawn on the same frames at the
+// same moments on any machine, and a busy one cannot draw it on too few
+// to see, issue #460.
+export type Frames = { next(draw: (now: number) => void): number; cancel(id: number): void };
+const screenFrames: Frames = {
+  next: (draw) => requestAnimationFrame(draw),
+  cancel: (id) => {
+    if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(id);
+  },
+};
+
 // How the layers say in the app's log that one was given up on, see
 // lib/said.ts, which the tests leave out.
 export type Tell = (text: string, video: string) => void;
@@ -450,6 +463,8 @@ export class CaptionLayers {
   // drawn with that was not its own yet, how many words bounced, and how
   // many times the screen drew a bounce.
   readonly stats = { asked: 0, late: 0, popped: 0, bounced: 0 };
+  // The frames a bounce is drawn on, see Frames.
+  frames: Frames = screenFrames;
   // The word lifted out of the frame paused on, and the frame on screen
   // when a word step asked for a bounce, which the next frame other than it
   // bounces on. Null when the last step was no word step.
@@ -762,19 +777,19 @@ export class CaptionLayers {
         lift.scale = bounceScale(now - lift.start, lift.bounce!);
         lift.done = now - lift.start >= lift.bounce!.length;
         if (lift.done) lift.scale = 1;
-        else lift.tick = requestAnimationFrame(step);
+        else lift.tick = this.frames.next(step);
         this.stats.bounced++;
         this.drawAgain();
         if (lift.done) this.more();
       };
-      lift.tick = requestAnimationFrame(step);
+      lift.tick = this.frames.next(step);
     }).finally(() => this.took(2));
   }
 
   // The word put back, by a move to another frame, a play, or another ask.
   private drop() {
     if (!this.lift) return;
-    if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(this.lift.tick);
+    this.frames.cancel(this.lift.tick);
     this.lift.off.abort();
     this.lift = null;
   }
