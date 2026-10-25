@@ -31,8 +31,12 @@
 #   make hyphenation
 #                   write the caption hyphenation patterns again, from
 #                   hyph-utf8 and the German word list. Then make notices
+#   make changed    the tests of what this branch changed against main,
+#                   and only those. PART=unit runs one part of it, and
+#                   SHARD=1/3 a share of that part, which is what every
+#                   CI job on a pull request runs
 #   make test       all tests: lint, interface, unit, fuzz and walks. CI
-#                   runs the same, each part on a machine of its own
+#                   runs the same on main, each part on a machine of its own
 #   make lint       gofmt, go vet, that no Go test waits on the clock, the
 #                   scripts read by their shell, the action pins and the
 #                   tests of the repository's own rules
@@ -142,7 +146,7 @@ APP_LDFLAGS := $(LDFLAGS) -X main.buildVersion=$(BUILD_VERSION) -X main.buildCha
 
 PROGRAMS := $(BIN)/framefairy$(EXE) $(BIN)/framefairy-app$(EXE) $(BIN)/framefairy-train$(EXE)
 
-.PHONY: frames all run app install update-key dispenser icon motion ffmpeg llama tools-archive notices hyphenation deps tools-beside test unit fuzz interface walks lint golangci-lint outside outside-allowed check tools models speechbench clean help toolchain modules $(PROGRAMS)
+.PHONY: frames all run app install update-key dispenser icon motion ffmpeg llama tools-archive notices hyphenation deps tools-beside changed test unit fuzz interface walks lint golangci-lint outside outside-allowed check tools models speechbench clean help toolchain modules $(PROGRAMS)
 
 all: deps toolchain frames $(PROGRAMS) tools-beside
 	@echo "Ready: $(PROGRAMS)"
@@ -200,14 +204,20 @@ toolchain:
 # The project's own Go packages. Checked by content on every run, because
 # copied files keep old timestamps and would fool a time-based check.
 # go.sum is rewritten to match go.mod, and the downloads are only shown when
-# something fails.
+# something fails. A build runner changes no file of the checkout, so in
+# CI an untidy go.mod or go.sum fails instead, where a machine of one's
+# own would tidy it quietly and it would be committed that way.
 modules:
 	@mkdir -p $(STAMPS)
 ifeq ($(TIDY),1)
 	@sum=$$(cat go.mod go.sum 2>/dev/null | cksum); \
 	if [ "$$sum" != "$$(cat $(STAMPS)/modules 2>/dev/null)" ]; then \
-		echo "Resolving Go modules"; \
-		out=$$($(GO) mod tidy 2>&1) || { echo "$$out"; exit 1; }; \
+		if [ -n '$(CI)' ]; then \
+			out=$$($(GO) mod tidy -diff 2>&1) || { echo "go.mod and go.sum are not tidy, run go mod tidy:"; echo "$$out"; exit 1; }; \
+		else \
+			echo "Resolving Go modules"; \
+			out=$$($(GO) mod tidy 2>&1) || { echo "$$out"; exit 1; }; \
+		fi; \
 		cat go.mod go.sum | cksum > $(STAMPS)/modules; \
 	fi
 endif
@@ -349,7 +359,7 @@ $(FRAMES): $(FRAMES_SRC) $(wildcard $(STAMPS)/ffmpeg/built) | modules
 # for that build here, before they look for it. Without the wait, a test
 # run in the first minutes skips the decoder's tests and still says ok.
 ifeq ($(CLAUDE_CODE_REMOTE),true)
-ifneq ($(filter unit walks test,$(MAKECMDGOALS)),)
+ifneq ($(filter changed unit walks test,$(MAKECMDGOALS)),)
 $(shell bash scripts/cloud-decoder.sh wait >&2)
 endif
 endif
@@ -409,9 +419,25 @@ motion: frontend/node_modules/.package-lock.json
 	@cd frontend && npx vite --config preview/motion.config.ts
 
 # Everything, the quickest answer first. Each part stands alone as well,
-# because none needs another, and CI runs each on machines of its own,
-# with the same command: what CI runs is what make test runs here.
+# because none needs another, and CI runs each on machines of its own on
+# a push to main.
 test: lint interface unit fuzz walks
+
+# The same parts, for what this branch changed and only that, worked out
+# file by file by scripts/changed.sh, which says what each kind of file
+# reaches. Every CI job on a pull request runs this for its own part, so
+# what CI runs for a change is what this runs here. PART names the parts,
+# like PART=unit or PART="lint build", and SHARD one share of unit or
+# walks. EVERYTHING=1 takes every part whole, which is a push to main.
+#
+# MODE=parts names the parts with work and runs nothing, which is how CI's
+# first job knows which jobs to start, and UNAME=Darwin asks the same for
+# a Mac. MODE=plan says what each part would run.
+PART ?=
+SHARD ?=
+MODE ?=
+changed:
+	@PART='$(PART)' SHARD='$(SHARD)' OS='$(UNAME)' UNITSKIP='$(UNITSKIP)' GO='$(GO)' MAKE='$(MAKE)' sh scripts/changed.sh $(if $(MODE),--$(MODE))
 
 # The tests run with the race detector, because the app is a queue of jobs
 # on their own goroutines and a window asking them things from another, and
@@ -424,7 +450,8 @@ test: lint interface unit fuzz walks
 # On a Mac without the race detector: the Go code is the same as on
 # Linux, where it runs with it, and it makes the tests 1.7 times slower.
 # And without the licence server's packages, which run on a Linux server
-# and never on a customer's Mac. RACE= and UNITSKIP= say otherwise.
+# and never on a customer's Mac, nor the read of the workflows, which is
+# the same on every machine. RACE= and UNITSKIP= say otherwise.
 #
 # UNITSHARD=1/3 runs a third of the tests, by the first letters of their
 # names, which is how CI spreads them over three machines. The patterns
@@ -441,7 +468,7 @@ test: lint interface unit fuzz walks
 # ten minutes here, and CI sets 4m, under its five-minute jobs.
 ifeq ($(UNAME),Darwin)
 RACE ?=
-UNITSKIP ?= framefairy/licence/dispenser framefairy/licence/paddle framefairy/cmd/framefairy-dispenser
+UNITSKIP ?= framefairy/licence/dispenser framefairy/licence/paddle framefairy/cmd/framefairy-dispenser framefairy/internal/workflows
 else
 RACE ?= -race
 UNITSKIP ?=
@@ -560,8 +587,8 @@ interface:
 # outside the app build only on a Mac with the outside tag, so they are
 # read a second time the way they build. Every script read by the shell
 # its first line names. The action pins. And the tests of the
-# repository's own rules: the rule for a build, the Main moved notice,
-# and that the plan stays history.
+# repository's own rules: what a change reaches, the rule for a build,
+# the Main moved notice, and that the plan stays history.
 GOLANGCI_LINT_VERSION := 2.14.0
 GOLANGCI_LINT := $(STAMPS)/golangci-lint-$(GOLANGCI_LINT_VERSION)/golangci-lint
 lint: toolchain modules golangci-lint frontend/node_modules/.package-lock.json
@@ -579,6 +606,7 @@ lint: toolchain modules golangci-lint frontend/node_modules/.package-lock.json
 	done
 	@printf 'ok  \tscripts read\n'
 	@sh scripts/pins.sh
+	@sh scripts/changed-test.sh
 	@sh scripts/needs-build-test.sh
 	@sh scripts/main-moved-test.sh
 	@sh scripts/plan-frozen-test.sh
