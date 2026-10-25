@@ -9,7 +9,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { basename } from "node:path";
 import { ask, control, cropPixels, engineState, episodeOn, fromSidebar, handles, high, news, nextNews, nextPaint, open, pageUntil, playUntil, seekTo, settle, shortFramesFrom, shown, shownOnPlayhead, xOf } from "../bridge.mjs";
-import { canLook, clickCard, clickedFromAhead, rate, restAhead, shortOf, shotClips, url } from "../common/steps.mjs";
+import { canLook, clickCard, clickedFromAhead, rate, restAhead, shortOf, shotClips, still, url } from "../common/steps.mjs";
 import { describe } from "../rules.mjs";
 
 export const steps = {

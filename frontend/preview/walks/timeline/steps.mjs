@@ -930,7 +930,7 @@ export const steps = {
       }
       return { wrong, drawn: read.lines > 0 && shown.length > 0 };
     };
-    ({ wrong } = await seenUntil(page, url, look, (r) => !r.wrong || r.drawn));
+    ({ wrong: walk.wrong } = await seenUntil(page, url, look, (r) => !r.wrong || r.drawn));
   },
   // ["made on the clip"]
   //                    since "make while playing", the clip made was the

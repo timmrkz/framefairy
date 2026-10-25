@@ -207,6 +207,32 @@ export async function shortOf(page, at) {
 
 export const url = process.env.BRIDGE_URL ?? "http://127.0.0.1:8123/";
 
+// The steps that look at how the app moves: the caption blocks and the
+// typed word that pop, the bounce over a paused frame, the word that grows
+// as it is opened, the card that shakes and the microphone that grows as
+// it hears. A sequence with none of them asks for less motion, which the
+// app honours by leaving out what it animates, so the settle waits for
+// none of it: the pops and the info marks' fade were 179 s of the 1976 s
+// all runs took on main. A sequence with one of them, and every random
+// walk, walks the app the way it moves on Tim's Mac. A new step that looks
+// at motion goes in here, or it passes without ever seeing what it checks.
+export const moving = new Set([
+  "count pops",
+  "pops",
+  "pill pops",
+  "grow",
+  "step onto words and see them pop",
+  "step frame by frame and see nothing pop",
+  "refused",
+  "dictate",
+]);
+
+// STILL=none walks every sequence with the motion, for a failure that
+// might hide behind it.
+export function still(seq) {
+  return process.env.STILL !== "none" && !seq.steps.some(([what]) => moving.has(what));
+}
+
 // Holds files over the app and drops them, the way the runtime reports a
 // drag from Finder, its start and where it is, and a drop, see wails-bridge.ts, somewhere left of the
 // middle and below it, over whatever the page has there. Says what was

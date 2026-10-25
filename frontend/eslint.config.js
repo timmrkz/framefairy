@@ -1,7 +1,10 @@
-// ESLint holds one rule here and nothing else: a test waits on a signal,
-// never on the clock, see CLAUDE.md. It reads the walks, the probes in
-// preview/ and preview/frames/, and the interface's own tests, and has no
-// rule about style.
+// ESLint holds one rule here, a test waits on a signal, never on the
+// clock, see CLAUDE.md, and in the walks and the probes one more: no name
+// is used that nothing declares or imports. The walks are split over a
+// folder for each part of the app, and a step that uses what it does not
+// import would otherwise fail only once a walk reaches it. It reads the
+// walks, the probes in preview/ and preview/frames/, and the interface's
+// own tests, and has no rule about style.
 //
 // What waited on the clock before the rule was enforced is listed in
 // eslint-suppressions.json, file by file and rule by rule, so only a new
@@ -14,6 +17,7 @@
 // not touched by any rule below.
 import playwright from "eslint-plugin-playwright";
 import typescript from "@typescript-eslint/parser";
+import globals from "globals";
 
 const why = "A test waits on a signal, never on the clock. See CLAUDE.md and docs/TESTING.md.";
 
@@ -47,10 +51,12 @@ const clock = {
 export default [
   {
     files: ["preview/walks/**/*.mjs", "preview/*.mjs", "preview/frames/*.mjs"],
-    languageOptions: { ecmaVersion: "latest", sourceType: "module" },
+    // Node's names, and the page's, for what a walk hands the page to run.
+    languageOptions: { ecmaVersion: "latest", sourceType: "module", globals: { ...globals.node, ...globals.browser } },
     plugins: { playwright },
     rules: {
       ...clock,
+      "no-undef": "error",
       "playwright/no-wait-for-timeout": "error",
       // The plugin knows a page by its name, page or frame. A walk that
       // drives a second window calls it main, so any other waitForTimeout
