@@ -96,7 +96,7 @@ whatever version the machine came with.
    batch numbers of the old plan in [GUI-PLAN.md](GUI-PLAN.md).
 2. **Claude works** on a new branch. It reads `CLAUDE.md` first, which holds
    the project's rules and your preferences. It runs the tests of what it
-   changed, and the one walk it wrote, pushes, and opens a pull request, so
+   changed, pushes, and opens a pull request, so
    you can try the change at once. It runs nothing more: CI checks
    everything the branch reaches, and the session hears how that went from
    the pull request's events and pushes a fix when it fails. Once all the work is

@@ -479,11 +479,6 @@ fuzz: toolchain modules
 WALKS ?= 3
 STEPS ?=
 WALKERS ?=
-# WALK walks only the runs it names: the sequence of that
-# name exactly, and otherwise every run whose name holds it, like
-# WALK=timeline.mjs for every seed of that walk. It is how a session
-# walks the walk it wrote and leaves the rest to CI, issue #542.
-WALK ?=
 # One share of the runs, like 1/3, which is how CI spreads them over three
 # machines, each share as long as the others by frontend/preview/walks/
 # walk-times.tsv. WALKTIMES=1 writes what the runs took into that file.
@@ -502,7 +497,7 @@ WALKTIMEOUT ?= 30m
 WALKVIDEOS ?= $(CURDIR)/.build/walk-videos
 walks: toolchain modules frontend/node_modules/.package-lock.json $(FRESH_FRAMES)
 	@cd frontend && $(NPM) exec -- vite build --config preview/bridge.config.ts --logLevel error
-	@FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" FRAMEFAIRY_WALKS=1 FRAMEFAIRY_WALK_VIDEOS='$(WALKVIDEOS)' WALK='$(WALK)' WALKS='$(WALKS)' STEPS='$(STEPS)' WALKERS='$(WALKERS)' WALKSHARD='$(WALKSHARD)' WALKTIMES='$(WALKTIMES)' STILL='$(STILL)' $(GO) test -count=1 -ldflags '$(LDFLAGS)' -timeout $(WALKTIMEOUT) -run '^TestWalks$$' ./cmd/framefairy-app
+	@FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" FRAMEFAIRY_WALKS=1 FRAMEFAIRY_WALK_VIDEOS='$(WALKVIDEOS)' WALKS='$(WALKS)' STEPS='$(STEPS)' WALKERS='$(WALKERS)' WALKSHARD='$(WALKSHARD)' WALKTIMES='$(WALKTIMES)' STILL='$(STILL)' $(GO) test -count=1 -ldflags '$(LDFLAGS)' -timeout $(WALKTIMEOUT) -run '^TestWalks$$' ./cmd/framefairy-app
 
 # The checks from outside the app: a link that opens it, closed or open,
 # handed to macOS the way a browser does, with the local dispenser running

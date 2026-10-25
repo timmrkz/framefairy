@@ -411,11 +411,7 @@ down and the engine's jobs beside it.
 
     BRIDGE_URL=http://127.0.0.1:8123/ node frontend/preview/walks/sequences.mjs [part of a name]
 
-`make walks WALK='its name'` walks one sequence against a bridge of its
-own with nothing to start by hand, and `WALK=timeline.mjs` every seed of
-one walk, which is how a session walks the one it wrote and leaves the
-rest to CI. Run by hand, `SEQUENCE` walks the one sequence of that name
-and no other, and
+`SEQUENCE` walks the one sequence of that name and no other, and
 `--names` lists them all, one name a line, which is how `make walks`
 hands them out, see Where they run. It fails when two sequences or two
 steps have one name, because the steps are cases of one `switch`, which

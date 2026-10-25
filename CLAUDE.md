@@ -600,11 +600,10 @@ messages, pull request text, code comments and chat replies.
   without ffmpeg. **A change of your own is pushed as soon as the tests
   of what it changed pass, and CI checks the rest.** Before the push, run
   the test written for the change and the tests of the package it is in,
-  `make interface` for `frontend/`, and a walk or a sequence that was
-  written or changed alone, `make walks WALK='its name'`: seconds to a
-  minute, and what was worked on is then known to work when Tim tries it.
-  Then push, so he is not waiting. Nothing more runs in the session, no
-  `make changed`, no `make walks` of them all and no `make test`: CI runs
+  with `make interface` for `frontend/`: seconds, and what was worked on
+  is then known to work when Tim tries it. Then push, so he is not
+  waiting. Nothing more runs in the session, no `make changed`, no
+  `make walks` and no `make test`: the walks of a change run in CI. CI runs
   every test the change reaches, on machines sized for it, and gives its
   answer before a cloud session would, whose four cores take half an
   hour for the same and whose walks hang under that load, #508. A session
