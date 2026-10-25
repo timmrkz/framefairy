@@ -790,6 +790,20 @@ Chromium for every sequence was 1.45 s and 1.2 s of CPU each time, 220
 times, issue #526. A sequence that throws ends its node, and the next
 sequence starts a new one, so nothing a throw left behind walks on.
 
+A sequence asks the system for less motion, the way a person can in the
+Mac's settings, unless one of its steps looks at how the app moves: the
+caption blocks and the typed word that pop, the bounce over a paused
+frame, the word that grows as it is opened, the card that shakes and the
+microphone that grows as it hears, `moving` in `sequences.mjs`. The app
+then leaves out what it animates, the info marks' fade and the pops
+among it, so the settle waits for none of it. On main those two were
+179 s of the 1976 s all runs took one after another. The sequences with
+those steps and every random walk keep the motion, so the app is still
+walked the way it moves on Tim's Mac. A new step that looks at motion
+goes into `moving`, or it passes without ever seeing what it checks, and
+`--names` fails on a name in `moving` that is no step. `make walks
+STILL=none` walks every sequence with the motion.
+
 A video a walk adds is made by ffmpeg the first time it is asked for and
 kept, by what it was asked for and by the sum of what makes it, the
 source of `bridge_test.go` and the version of ffmpeg, see `walkVideos`.

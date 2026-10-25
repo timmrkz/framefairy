@@ -117,7 +117,7 @@ export function newBrowser() {
 // opens another page on the episode as it is now, beside the first, in
 // its browser. browser is a browser to open it in rather than one of its
 // own, see newBrowser.
-export async function open(url, { viewport = { width: 1500, height: 1000 }, scale = 1, again = null, browser: given = null } = {}) {
+export async function open(url, { viewport = { width: 1500, height: 1000 }, scale = 1, again = null, browser: given = null, still = false } = {}) {
   // The episode the way the bridge found it, whatever the walk before did.
   if (!again) {
     const reset = await fetch(new URL("/reset", url), { method: "POST" });
@@ -126,7 +126,10 @@ export async function open(url, { viewport = { width: 1500, height: 1000 }, scal
   const browser = again ?? given ?? (await newBrowser());
   // A page of its own in a context of its own, which browser.newPage
   // makes, so nothing a page before it kept is there.
-  const page = await browser.newPage({ viewport, deviceScaleFactor: scale });
+  // A page still asks the system for less motion, the way a person can
+  // in the Mac's settings, so the app leaves out what it animates and
+  // the walk does not wait for it, see still in sequences.mjs.
+  const page = await browser.newPage({ viewport, deviceScaleFactor: scale, reducedMotion: still ? "reduce" : "no-preference" });
   noDeadlines(page);
   await page.addInitScript(() => {
     window.__flatScreen = true;
@@ -391,11 +394,30 @@ export const high = (t) => t.y + t.h * 0.2;
 // away from the new one, as a hand that misses by a little does, so the
 // click is one on its own however soon it comes.
 export async function clickOnTrack(page, x, y) {
+  await notTwice(page, x, y);
+  await page.mouse.click(x, y);
+}
+
+// The hand taking hold of something on the clip timeline at x, y, the
+// press of a drag, never the second of a double-click either: a keyframe
+// put on the spot just clicked is taken hold of where that click was, and
+// a double-click on a keyframe removes it. The walk used to be half a
+// second apart there only because it waited on the app's animations.
+export async function pressOnTrack(page, x, y) {
+  await notTwice(page, x, y);
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+}
+
+// Lands the hand eight pixels beside the last spot pressed on the clip
+// timeline first, when x is within six pixels of it, see clickOnTrack.
+// The clip timeline measures only along itself, so a press under or over
+// the last one at the same x is a double-click too.
+async function notTwice(page, x, y) {
   const last = page.__pressed;
-  if (last && Math.abs(last.x - x) < 6 && Math.abs(last.y - y) < 6) {
+  if (last && Math.abs(last.x - x) < 6) {
     await page.mouse.click(last.x + (x < last.x ? 8 : -8), y);
   }
-  await page.mouse.click(x, y);
   page.__pressed = { x, y };
 }
 

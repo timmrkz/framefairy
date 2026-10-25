@@ -1255,7 +1255,7 @@ import { open, newBrowser, chosen, shown, engineState, handles, timeline, inside
 import { clipList, control, pressHead, fromSidebar, sidebarStill, settle, ask, episodeOn, shortFrames, shortSound } from "./bridge.mjs";
 import { xOf, seekTo, cropFrame, sameLook, sayLook, readShort, loudness, filmedOnScreen, preview } from "./bridge.mjs";
 import { recordFrames, addHEVC, overlay, cropPixels, shortFramesFrom, slowDown, noDeadlines, BITS, nextPaint, news, nextNews, caughtUp } from "./bridge.mjs";
-import { fakeClock, holdClock, runClock, letClockGo, realFrames, foldsDone, shownOnPlayhead, clickOnTrack, playUntil, pageUntil, seenUntil } from "./bridge.mjs";
+import { fakeClock, holdClock, runClock, letClockGo, realFrames, foldsDone, shownOnPlayhead, clickOnTrack, pressOnTrack, playUntil, pageUntil, seenUntil } from "./bridge.mjs";
 import { Watch, same, describe, overlaid } from "./rules.mjs";
 
 // The video's work folder, see WorkDir in engine/run.go.
@@ -4932,6 +4932,32 @@ function shortProblem(entry, short, fps, cutsWanted) {
 }
 
 const url = process.env.BRIDGE_URL ?? "http://127.0.0.1:8123/";
+// The steps that look at how the app moves: the caption blocks and the
+// typed word that pop, the bounce over a paused frame, the word that grows
+// as it is opened, the card that shakes and the microphone that grows as
+// it hears. A sequence with none of them asks for less motion, which the
+// app honours by leaving out what it animates, so the settle waits for
+// none of it: the pops and the info marks' fade were 179 s of the 1976 s
+// all runs took on main. A sequence with one of them, and every random
+// walk, walks the app the way it moves on Tim's Mac. A new step that looks
+// at motion goes in here, or it passes without ever seeing what it checks.
+const moving = new Set([
+  "count pops",
+  "pops",
+  "pill pops",
+  "grow",
+  "step onto words and see them pop",
+  "step frame by frame and see nothing pop",
+  "refused",
+  "dictate",
+]);
+
+// STILL=none walks every sequence with the motion, for a failure that
+// might hide behind it.
+function still(seq) {
+  return process.env.STILL !== "none" && !seq.steps.some(([what]) => moving.has(what));
+}
+
 const only = process.argv[2] ?? "";
 let failures = 0;
 
@@ -4957,9 +4983,17 @@ if (only === "--names") {
     console.log(`two steps are called ${JSON.stringify(stepTwice[0])}`);
     process.exit(1);
   }
+  // A step renamed and left in moving by its old name would be walked
+  // still, and check motion it never sees.
+  const noStep = [...moving].filter((n) => !steps.includes(n));
+  if (noStep.length) {
+    console.log(`moving names ${JSON.stringify(noStep[0])}, which is no step`);
+    process.exit(1);
+  }
   console.log(names.join("\n"));
   process.exit(0);
 }
+
 // --serve walks one sequence after another in one browser, each named on
 // a line of its own on standard input as JSON, for TestWalks to hand one
 // walker its sequences without starting node, Playwright and Chromium
@@ -5012,7 +5046,7 @@ async function said(how) {
 // or in browser, whose pages it closes again.
 async function walkSequence(seq, shared = null) {
   const began = performance.now();
-  const opened = await open(url, { browser: shared });
+  const opened = await open(url, { browser: shared, still: still(seq) });
   const { browser, errors } = opened;
   // The page the steps act on: the app's window, or the report window
   // once Bugs opened it. The watch keeps to the app's window.
@@ -14084,8 +14118,7 @@ async function walkSequence(seq, shared = null) {
         const y = dot.y + dot.height / 2;
         const x = dot.x + dot.width / 2;
         const to = arg === "end" ? g.end.x + g.end.w + 60 : g.start.x - 60;
-        await page.mouse.move(x, y);
-        await page.mouse.down();
+        await pressOnTrack(page, x, y);
         const held = [];
         for (let i = 1; i <= 12; i++) {
           await page.mouse.move(x + ((to - x) * i) / 12, y);
