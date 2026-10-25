@@ -32,15 +32,25 @@ func Hangs(t testing.TB) (pipe string, hangs <-chan struct{}) {
 		defer close(read)
 		defer close(said)
 		for lines := bufio.NewScanner(f); lines.Scan(); {
+			if lines.Text() == over {
+				return
+			}
 			select {
 			case said <- struct{}{}:
 			default:
 			}
 		}
 	}()
+	// On macOS a named pipe is read without the poller, so closing it
+	// does not end a read under way, and the test waited on it until go
+	// test's -timeout. The reading is told through the pipe instead.
 	t.Cleanup(func() {
-		f.Close()
+		_, _ = f.WriteString(over + "\n")
 		<-read
+		f.Close()
 	})
 	return pipe, said
 }
+
+// over is the line that ends the reading, one no stand-in writes.
+const over = "\x00 the test is over"
