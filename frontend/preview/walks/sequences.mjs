@@ -417,6 +417,10 @@
 //                      drawn: "Report", "the field" or "picture i", from 1
 //   ["shift tab", to]  the same with Shift+Tab
 //   ["dictating"]      the microphone still listens, its button says Stop
+//   ["microphone moves"]
+//                      while it listens, the microphone grows with the hum
+//                      smoothly and in its place, falls back in its pause
+//                      like a level meter's needle, and is drawn white
 //   ["report on", on]  Report and Clear can be pressed, or with false are
 //                      off, as they are with nothing to report
 //   ["clear", how]     presses Clear, and the box over the page asks
@@ -2262,6 +2266,8 @@ export const sequences = [
     steps: [
       ["bugs"],
       ["write", "It froze.", 2],
+      ["dictate", "start"],
+      ["microphone moves"],
       ["dictate", "button"],
       ["report reads", "It * froze."],
       ["undo"],
@@ -4951,7 +4957,7 @@ const moving = new Set([
   "step onto words and see them pop",
   "step frame by frame and see nothing pop",
   "refused",
-  "dictate",
+  "microphone moves",
 ]);
 
 // STILL=none walks every sequence with the motion, for a failure that
@@ -8429,6 +8435,141 @@ async function walkSequence(seq, shared = null) {
         await letClockGo(page);
         break;
       }
+      case "microphone moves": {
+        // While it listens, the microphone moves with the voice it hears,
+        // so a person knows they are heard. Watched here once rather than
+        // in every dictate step, since it takes seconds of the hum, issue
+        // #543.
+        const now = await page.locator("button.dictate").getAttribute("aria-label");
+        if (now !== "Stop") {
+          wrong = `the microphone button says ${now}, so there is nothing listening to watch`;
+          break;
+        }
+        // It moves enough to be seen, smoothly, and in its place. From
+        // the hum through its pause until the hum is heard again, every
+        // frame, the size it is drawn at, its middle and the size of its
+        // own box, so the walk sees it grow and fall back. A
+        // microphone 16 px at rest grows by at least six tenths of that
+        // for every step of loudness: by a third it grew 3 px for a voice
+        // talking, and Tim could hardly see it. Its box keeps one size
+        // and its middle keeps still: a size that changed snapped to
+        // whole pixels and shook on Tim's Mac. It falls back no faster
+        // than a level meter's needle, a third of a second for the whole
+        // way: jumping to every reading shook too.
+        const { xs: track, writes } = await page.evaluate(
+          () =>
+            new Promise((done) => {
+              const b = document.querySelector("button.dictate");
+              const xs = [];
+              // Every size the app writes, at the time of the frame it
+              // wrote it in, so each step is matched with the time it
+              // went by. Read on the walk's own frames, a step showed one
+              // frame late once the walk's frame came before the app's,
+              // and was set against the gap after it: a step of 100 ms
+              // after a long frame, seen across a short one, read six
+              // times too fast on a busy machine, issue #354.
+              const writes = [];
+              const wrote = new MutationObserver(() => {
+                const icon = b.querySelector("svg");
+                writes.push({ t: document.timeline.currentTime, w: icon.getBoundingClientRect().width });
+              });
+              wrote.observe(b, { subtree: true, attributes: true, attributeFilter: ["style"] });
+              // The pause is a loudness of nothing, and the hum after it
+              // ends the watch, or the recording ending does.
+              let paused = false;
+              const step = (now) => {
+                const icon = b.querySelector("svg");
+                const r = icon.getBoundingClientRect();
+                xs.push({
+                  t: now,
+                  w: r.width,
+                  x: r.left + r.width / 2,
+                  y: r.top + r.height / 2,
+                  box: getComputedStyle(icon).width,
+                  loud: parseFloat(b.dataset.loud),
+                  size: Number(icon.getAttribute("width")),
+                });
+                const loud = parseFloat(b.dataset.loud);
+                paused ||= loud === 0;
+                const over = (paused && loud > 0) || b.getAttribute("aria-label") !== "Stop";
+                if (!over) requestAnimationFrame(step);
+                else {
+                  wrote.disconnect();
+                  done({ xs, writes });
+                }
+              };
+              requestAnimationFrame(step);
+            }),
+        );
+        const widest = Math.max(...track.map((f) => f.w));
+        const loudest = Math.max(...track.map((f) => f.loud));
+        const boxes = [...new Set(track.map((f) => f.box))];
+        const drift = Math.max(...track.map((f) => Math.hypot(f.x - track[0].x, f.y - track[0].y)));
+        // The sizes the app wrote are the sizes drawn, or the fall is
+        // timed from nothing and passes whatever it does.
+        const written = writes.map((f) => f.w);
+        const narrowest = Math.min(...track.map((f) => f.w));
+        if (writes.length < 2 || Math.abs(Math.max(...written) - widest) > 0.5 || Math.abs(Math.min(...written) - narrowest) > 0.5) {
+          wrong = `the walk saw ${writes.length} sizes written for a microphone drawn from ${narrowest.toFixed(1)} to ${widest.toFixed(1)} px, so it cannot time its fall`;
+          break;
+        }
+        let fastest = 0;
+        for (let k = 1; k < writes.length; k++) {
+          const dt = writes[k].t - writes[k - 1].t;
+          if (dt > 0) fastest = Math.max(fastest, (writes[k - 1].w - writes[k].w) / track[0].size / dt);
+        }
+        if (widest < 16 * (1 + 0.6 * loudest) - 0.5) {
+          wrong = `the microphone hardly grew with the voice, ${widest.toFixed(1)} px wide at most at a loudness of ${loudest}`;
+          break;
+        }
+        if (boxes.length > 1) {
+          wrong = `the microphone changes the size of its box as it grows, ${boxes.join(", ")}, which snaps to whole pixels and shakes`;
+          break;
+        }
+        if (drift > 0.5) {
+          wrong = `the middle of the microphone moved by ${drift.toFixed(2)} px as it grew`;
+          break;
+        }
+        if (fastest > 0.003) {
+          wrong = `the microphone fell back by ${(fastest * 1000).toFixed(1)} of its size a second, faster than a level meter's needle`;
+          break;
+        }
+        // It is drawn white, like every icon in the app, as the paperclip
+        // beside it is, and so stands out from its button by at least 3
+        // to 1. Tim saw the accent dark on dark, and the lit shade of it
+        // matched nothing in the app.
+        const look = await page.evaluate(() => {
+          const b = document.querySelector("button.dictate");
+          const icon = b.querySelector("svg");
+          const clip = document.querySelector("button.attach svg");
+          // A colour mixed from the accent comes back as color(srgb ...),
+          // its channels from 0 to 1.
+          const rgb = (c) => {
+            const v = c.match(/[\d.]+/g).map(Number);
+            return c.startsWith("color(") ? [...v.slice(0, 3).map((x) => x * 255), ...v.slice(3, 4)] : v.slice(0, 4);
+          };
+          const luminance = ([r, g, b]) => {
+            const l = (v) => ((v /= 255) <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+            return 0.2126 * l(r) + 0.7152 * l(g) + 0.0722 * l(b);
+          };
+          let back = null;
+          for (let e = b; e && !back; e = e.parentElement) {
+            const c = rgb(getComputedStyle(e).backgroundColor);
+            if (c.length < 4 || c[3] > 0) back = c;
+          }
+          const [hi, lo] = [luminance(rgb(getComputedStyle(icon).color)), luminance(back ?? [0, 0, 0])].sort((x, y) => y - x);
+          return { colour: getComputedStyle(icon).color, clip: getComputedStyle(clip).color, contrast: (hi + 0.05) / (lo + 0.05) };
+        });
+        if (look.colour !== look.clip) {
+          wrong = `the microphone is drawn ${look.colour} while it listens, not white like the paperclip, ${look.clip}`;
+          break;
+        }
+        if (look.contrast < 3) {
+          wrong = `the microphone stands out from its button by only ${look.contrast.toFixed(2)} to 1 while it listens`;
+          break;
+        }
+        break;
+      }
       case "dictating": {
         const now = await page.locator("button.dictate").getAttribute("aria-label");
         if (now !== "Stop") wrong = `the microphone button says ${now}, so the dictation stopped`;
@@ -8727,123 +8868,6 @@ async function walkSequence(seq, shared = null) {
         // The microphone moves with the voice it hears, so a person knows
         // they are heard. The bridge's microphone plays a tone.
         await pageUntil(page, () => parseFloat(document.querySelector("button.dictate")?.dataset.loud) > 0.3);
-        // And it moves enough to be seen, smoothly, and in its place. For
-        // three seconds of the hum and its pauses, every frame, the size
-        // it is drawn at, its middle and the size of its own box. A
-        // microphone 16 px at rest grows by at least six tenths of that
-        // for every step of loudness: by a third it grew 3 px for a voice
-        // talking, and Tim could hardly see it. Its box keeps one size
-        // and its middle keeps still: a size that changed snapped to
-        // whole pixels and shook on Tim's Mac. It falls back no faster
-        // than a level meter's needle, a third of a second for the whole
-        // way: jumping to every reading shook too.
-        const { xs: track, writes } = await page.evaluate(
-          () =>
-            new Promise((done) => {
-              const b = document.querySelector("button.dictate");
-              const xs = [];
-              // Every size the app writes, at the time of the frame it
-              // wrote it in, so each step is matched with the time it
-              // went by. Read on the walk's own frames, a step showed one
-              // frame late once the walk's frame came before the app's,
-              // and was set against the gap after it: a step of 100 ms
-              // after a long frame, seen across a short one, read six
-              // times too fast on a busy machine, issue #354.
-              const writes = [];
-              const wrote = new MutationObserver(() => {
-                const icon = b.querySelector("svg");
-                writes.push({ t: document.timeline.currentTime, w: icon.getBoundingClientRect().width });
-              });
-              wrote.observe(b, { subtree: true, attributes: true, attributeFilter: ["style"] });
-              const start = performance.now();
-              const step = (now) => {
-                const icon = b.querySelector("svg");
-                const r = icon.getBoundingClientRect();
-                xs.push({
-                  t: now,
-                  w: r.width,
-                  x: r.left + r.width / 2,
-                  y: r.top + r.height / 2,
-                  box: getComputedStyle(icon).width,
-                  loud: parseFloat(b.dataset.loud),
-                  size: Number(icon.getAttribute("width")),
-                });
-                if (now - start < 3000) requestAnimationFrame(step);
-                else {
-                  wrote.disconnect();
-                  done({ xs, writes });
-                }
-              };
-              requestAnimationFrame(step);
-            }),
-        );
-        const widest = Math.max(...track.map((f) => f.w));
-        const loudest = Math.max(...track.map((f) => f.loud));
-        const boxes = [...new Set(track.map((f) => f.box))];
-        const drift = Math.max(...track.map((f) => Math.hypot(f.x - track[0].x, f.y - track[0].y)));
-        // The sizes the app wrote are the sizes drawn, or the fall is
-        // timed from nothing and passes whatever it does.
-        const written = writes.map((f) => f.w);
-        const narrowest = Math.min(...track.map((f) => f.w));
-        if (writes.length < 2 || Math.abs(Math.max(...written) - widest) > 0.5 || Math.abs(Math.min(...written) - narrowest) > 0.5) {
-          wrong = `the walk saw ${writes.length} sizes written for a microphone drawn from ${narrowest.toFixed(1)} to ${widest.toFixed(1)} px, so it cannot time its fall`;
-          break;
-        }
-        let fastest = 0;
-        for (let k = 1; k < writes.length; k++) {
-          const dt = writes[k].t - writes[k - 1].t;
-          if (dt > 0) fastest = Math.max(fastest, (writes[k - 1].w - writes[k].w) / track[0].size / dt);
-        }
-        if (widest < 16 * (1 + 0.6 * loudest) - 0.5) {
-          wrong = `the microphone hardly grew with the voice, ${widest.toFixed(1)} px wide at most at a loudness of ${loudest}`;
-          break;
-        }
-        if (boxes.length > 1) {
-          wrong = `the microphone changes the size of its box as it grows, ${boxes.join(", ")}, which snaps to whole pixels and shakes`;
-          break;
-        }
-        if (drift > 0.5) {
-          wrong = `the middle of the microphone moved by ${drift.toFixed(2)} px as it grew`;
-          break;
-        }
-        if (fastest > 0.003) {
-          wrong = `the microphone fell back by ${(fastest * 1000).toFixed(1)} of its size a second, faster than a level meter's needle`;
-          break;
-        }
-        // It is drawn white, like every icon in the app, as the paperclip
-        // beside it is, and so stands out from its button by at least 3
-        // to 1. Tim saw the accent dark on dark, and the lit shade of it
-        // matched nothing in the app.
-        const look = await page.evaluate(() => {
-          const b = document.querySelector("button.dictate");
-          const icon = b.querySelector("svg");
-          const clip = document.querySelector("button.attach svg");
-          // A colour mixed from the accent comes back as color(srgb ...),
-          // its channels from 0 to 1.
-          const rgb = (c) => {
-            const v = c.match(/[\d.]+/g).map(Number);
-            return c.startsWith("color(") ? [...v.slice(0, 3).map((x) => x * 255), ...v.slice(3, 4)] : v.slice(0, 4);
-          };
-          const luminance = ([r, g, b]) => {
-            const l = (v) => ((v /= 255) <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
-            return 0.2126 * l(r) + 0.7152 * l(g) + 0.0722 * l(b);
-          };
-          let back = null;
-          for (let e = b; e && !back; e = e.parentElement) {
-            const c = rgb(getComputedStyle(e).backgroundColor);
-            if (c.length < 4 || c[3] > 0) back = c;
-          }
-          const [hi, lo] = [luminance(rgb(getComputedStyle(icon).color)), luminance(back ?? [0, 0, 0])].sort((x, y) => y - x);
-          return { colour: getComputedStyle(icon).color, clip: getComputedStyle(clip).color, contrast: (hi + 0.05) / (lo + 0.05) };
-        });
-        if (look.colour !== look.clip) {
-          wrong = `the microphone is drawn ${look.colour} while it listens, not white like the paperclip, ${look.clip}`;
-          break;
-        }
-        if (look.contrast < 3) {
-          wrong = `the microphone stands out from its button by only ${look.contrast.toFixed(2)} to 1 while it listens`;
-          break;
-        }
         // Two notes going up say the microphone is open, while it is.
         const up = await page.evaluate(() => window.__notes.slice(-2));
         if (up.length < 2 || !up.every((n) => n.open) || up[0].f >= up[1].f) {
