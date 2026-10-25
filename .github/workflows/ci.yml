@@ -202,6 +202,27 @@ jobs:
             echo "go list ./... takes in the packages above, see the ignore in go.mod"
             exit 1
           fi
+      # What only make changed in a session checked once, for the files a
+      # change touched: gofmt, go vet, and every script read by the shell
+      # its first line names. A session leaves the whole check to CI now,
+      # #542, so CI holds these, over the whole tree. After the build,
+      # whose Go build cache go vet reads.
+      - name: gofmt, go vet and the scripts read
+        if: needs.changes.outputs.app == 'true'
+        run: |
+          unformatted=$(gofmt -l $(git ls-files '*.go'))
+          if [ -n "$unformatted" ]; then
+            echo "run gofmt -w on:"
+            echo "$unformatted"
+            exit 1
+          fi
+          go vet ./...
+          for s in $(git ls-files '*.sh'); do
+            case $(head -n 1 "$s") in
+            *bash*) bash -n "$s" ;;
+            *) sh -n "$s" ;;
+            esac
+          done
       # No new Go test waits on the clock, see .golangci.yml. make
       # installs nothing here, so this step asks for the golangci-lint the
       # Makefile pins. After the build, whose Go build cache the linter

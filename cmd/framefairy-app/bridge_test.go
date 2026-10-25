@@ -1413,7 +1413,14 @@ func TestWalks(t *testing.T) {
 	}
 	times := readWalkTimes(string(before))
 	all := runs
-	runs = shareOf(t, all, name, times, os.Getenv("WALKSHARD"))
+	// WALK walks only the runs it names, so a session walks the walk or
+	// the sequence it wrote and leaves the rest to CI, #542.
+	if want := os.Getenv("WALK"); want != "" {
+		if runs = runsNamed(runs, name, want); len(runs) == 0 {
+			t.Fatalf("WALK=%q names no run, see walk-times.tsv for their names", want)
+		}
+	}
+	runs = shareOf(t, runs, name, times, os.Getenv("WALKSHARD"))
 	if len(runs) == 0 {
 		t.Skip("this share has no runs")
 	}
@@ -1993,6 +2000,26 @@ func shareOf[T any](t *testing.T, all []T, name func(T) string, took map[string]
 	return mine
 }
 
+// runsNamed is the runs WALK names: the one run of that name, or the one
+// sequence, and otherwise every run whose name holds it, like
+// timeline.mjs for every seed of that walk.
+func runsNamed[T any](all []T, name func(T) string, want string) []T {
+	var exact, part []T
+	for _, x := range all {
+		n := name(x)
+		switch {
+		case n == want || n == "sequences.mjs SEQUENCE="+want:
+			exact = append(exact, x)
+		case strings.Contains(n, want):
+			part = append(part, x)
+		}
+	}
+	if len(exact) > 0 {
+		return exact
+	}
+	return part
+}
+
 // readWalkTimes reads walk-times.tsv: whole seconds, a tab and the name
 // of the run, one run to a line. A line it cannot read is left out.
 func readWalkTimes(file string) map[string]float64 {
@@ -2041,6 +2068,28 @@ func envNumber(name string, otherwise int) int {
 		return n
 	}
 	return otherwise
+}
+
+// WALK picks one sequence by its name even when another name holds it,
+// every seed of a walk by its script, and nothing for a name no run has.
+func TestWalkPicksTheRunsItNames(t *testing.T) {
+	all := []string{"timeline.mjs SEED=1", "timeline.mjs SEED=2", "playback.mjs SEED=1 HEVC=1", "sequences.mjs SEQUENCE=a short", "sequences.mjs SEQUENCE=a short with a cut"}
+	same := func(x string) string { return x }
+	for _, c := range []struct {
+		want string
+		got  []string
+	}{
+		{"a short", []string{"sequences.mjs SEQUENCE=a short"}},
+		{"with a cut", []string{"sequences.mjs SEQUENCE=a short with a cut"}},
+		{"timeline.mjs", []string{"timeline.mjs SEED=1", "timeline.mjs SEED=2"}},
+		{"timeline.mjs SEED=2", []string{"timeline.mjs SEED=2"}},
+		{"HEVC", []string{"playback.mjs SEED=1 HEVC=1"}},
+		{"no such walk", nil},
+	} {
+		if got := runsNamed(all, same, c.want); !slices.Equal(got, c.got) {
+			t.Errorf("WALK=%q walks %q, want %q", c.want, got, c.got)
+		}
+	}
 }
 
 // Split two ways or three, the shares of the walks hold every run once,
