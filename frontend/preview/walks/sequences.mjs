@@ -632,15 +632,16 @@
 //                      row's time has to run down and close it
 //   ["row folds"]      presses the bin of a clip with another clip's card
 //                      under it, takes the hand to the clip timeline, and
-//                      reads where the card under it stands on every
-//                      animation frame while the removed row runs down and
-//                      closes. The card has to rise by the row and the
-//                      space after it, never go back down, and in every
-//                      frame the row folds have risen by as much of both
-//                      as the row has folded. The row has to leave the
-//                      list only once its fold has finished. When the
-//                      screen drew no frame of the fold, it makes another
-//                      clip and tries again, up to three times
+//                      runs the removed row's time down. The row's fold is
+//                      held as it starts and stepped through by hand in
+//                      twenty steps, and where the card under it stands is
+//                      read at each, in the moment the row leaves and on
+//                      the ten frames after. The card has to rise by the
+//                      row and the space after it, never go back down, not
+//                      move as the row leaves, and at every step have
+//                      risen by as much of both as the row has folded. The
+//                      row has to leave the list only once its fold has
+//                      finished
 //   ["thumbnail"]      presses T, which makes the frame under the playhead
 //                      a thumbnail of the clip, and waits for the clip to
 //                      have one more
@@ -12400,11 +12401,6 @@ for (const seq of toWalk) {
         break;
       }
       case "row folds": {
-        // A fold the screen drew no frame of cannot be judged, which only a
-        // busy machine does. Then another clip is made and its row removed
-        // and judged, up to three in all, the way a bounce is stepped onto
-        // again. The steps that do it are put after this one.
-        const tries = arg ?? 1;
         const bins = page.locator("aside ol li:has(+ li) button.drop");
         if (!(await bins.count())) {
           wrong = "no clip in the clip list has a card under it";
@@ -12419,11 +12415,12 @@ for (const seq of toWalk) {
         await page.mouse.down();
         await page.mouse.up();
         await page.waitForSelector("aside ol li:not([inert]) .gone");
-        // Every frame from here, until the row has been gone a while: the
-        // browser's own frames, which go on while the app's time is held.
-        // And the fold itself: every animation the row is given, and
-        // whether the last had finished in the moment the row left the
-        // list, told by the list changing, not by a frame.
+        // The fold runs on the browser's own time, which the held clock
+        // does not hold, and a busy machine may draw no frame of it at
+        // all, #469. So the fold is held where it starts the moment it is
+        // made and stepped through by hand below, each step read off the
+        // page, and the row and the card under it are read again in the
+        // moment the row leaves the list and on the frames after.
         await page.evaluate(() => {
           const frame = window.__real?.frame ?? ((f) => requestAnimationFrame(f));
           const row = document.querySelector("aside ol li:not([inert]) .gone").closest("li");
@@ -12431,38 +12428,65 @@ for (const seq of toWalk) {
           const gap = parseFloat(getComputedStyle(row.parentElement).rowGap);
           const seen = [];
           const folds = [];
+          let found;
           let ended;
-          window.__fold = { seen, height: row.getBoundingClientRect().height, gap, row, left: null, ended: new Promise((r) => (ended = r)) };
+          const look = () => seen.push({ there: row.isConnected, top: under.getBoundingClientRect().top, height: row.isConnected ? row.getBoundingClientRect().height : 0 });
+          window.__fold = { seen, look, height: row.getBoundingClientRect().height, gap, row, left: null, held: new Promise((r) => (found = r)), ended: new Promise((r) => (ended = r)) };
+          look();
           // Svelte takes the row out when its animation says it has
           // finished, and cancels it as it does, so whether it had is
           // heard before Svelte hears it: a listener added here, as the
           // animation is made, comes before the one Svelte sets after.
+          // Svelte first makes an animation of no length and makes the
+          // fold when that ends, so the fold is the one with a length.
           row.animate = function (...args) {
             const fold = Element.prototype.animate.apply(this, args);
             const last = { finished: false };
             fold.addEventListener("finish", () => (last.finished = true));
             folds.push(last);
+            if (fold.effect.getComputedTiming().duration > 0) {
+              fold.pause();
+              found(fold);
+            }
             return fold;
           };
+          // The moment the row leaves, read before the browser draws it,
+          // then ten frames more, to see that nothing moves after.
           new MutationObserver((_, watching) => {
             if (row.isConnected) return;
             watching.disconnect();
             window.__fold.left = { folded: folds.length > 0, finished: !!folds.at(-1)?.finished };
+            found(null);
+            let frames = 10;
+            const after = () => {
+              look();
+              if (--frames) frame(after);
+              else ended();
+            };
+            after();
           }).observe(row.parentElement, { childList: true });
-          const look = () => {
-            seen.push({ there: row.isConnected, top: under.getBoundingClientRect().top, height: row.isConnected ? row.getBoundingClientRect().height : 0 });
-            if (row.isConnected || seen.filter((f) => !f.there).length < 30) frame(look);
-            else ended();
-          };
-          frame(look);
         });
         const line = await page.locator(".clip-timeline").boundingBox();
         await page.mouse.move(line.x + line.width / 2, line.y + line.height / 2, { steps: 8 });
         await runClock(page, (removeTime + 0.5) * 1000);
-        // Its time has run out, so it is on its way out, or out already,
-        // and the watch ends thirty frames after it left.
+        // Its time has run out, so it is on its way out, or out already.
         const going = await page.evaluate(() => !window.__fold.row.isConnected || window.__fold.row.inert);
-        if (going) await page.evaluate(() => window.__fold.ended);
+        if (going) {
+          // Twenty steps from where the fold starts to where it ends, each
+          // read as the page stands then, and then the fold is let finish.
+          await page.evaluate(async () => {
+            const fold = await window.__fold.held;
+            if (fold) {
+              const end = fold.effect.getComputedTiming().endTime;
+              for (let i = 1; i <= 20; i++) {
+                fold.currentTime = (end * i) / 20;
+                window.__fold.look();
+              }
+              fold.finish();
+            }
+            await window.__fold.ended;
+          });
+        }
         await letClockGo(page);
         if (!going) {
           wrong = "the removed row was still in the list after its time";
@@ -12472,13 +12496,11 @@ for (const seq of toWalk) {
         const tops = seen.map((f) => f.top);
         const rose = tops[0] - tops[tops.length - 1];
         const back = tops.findIndex((t, i) => i && t > tops[i - 1] + 0.5);
-        // The space goes with the row: in every frame the row is still
-        // there, the card under it has risen by as much of the row and the
-        // space after it as the row has folded. Judged frame by frame, not
-        // by the step at the end, since a busy machine that draws no frame
-        // for a while makes that step as large as the fold it missed,
-        // issue #442. That the row stays until its fold is over is told
-        // by the fold's own animation instead.
+        const leaving = seen.findIndex((f) => !f.there);
+        const jump = leaving > 0 ? tops[leaving - 1] - tops[leaving] : 0;
+        // The space goes with the row: at every step of the fold, the card
+        // under it has risen by as much of the row and the space after it
+        // as the row has folded.
         const folding = seen.filter((f) => f.there && f.height > 0.5 && f.height < height - 0.5);
         const off = folding
           .map((f, i) => ({ i, by: tops[0] - f.top - (height + gap) * (1 - f.height / height) }))
@@ -12486,11 +12508,11 @@ for (const seq of toWalk) {
         if (!left) wrong = "the removed row was never seen leaving the list";
         else if (!left.folded) wrong = "the removed row left the list with no fold";
         else if (!left.finished) wrong = "the removed row left the list before its fold had finished";
+        else if (folding.length < 15) wrong = `the removed row was seen folding at ${folding.length} of the 20 steps of its fold, not at least 15`;
+        else if (off) wrong = `the space under the removed row did not fold with it: ${Math.abs(off.by).toFixed(1)} px ${off.by < 0 ? "short of" : "past"} where the card under it stands at step ${off.i + 1} of the fold`;
+        else if (Math.abs(jump) > 0.5) wrong = `the card under the removed row jumped ${jump.toFixed(1)} px in the moment the row left the list`;
         else if (Math.abs(rose - (height + gap)) > 1) wrong = `the card under the removed row rose ${rose.toFixed(1)} px, not the row's ${height} and the ${gap} after it`;
-        else if (back >= 0) wrong = `the card under the removed row went back down ${(tops[back] - tops[back - 1]).toFixed(1)} px on frame ${back}`;
-        else if (!folding.length && tries < 3) steps.splice(at + 1, 0, ["trim", "start", 300], ["make while paused", "i"], [what, tries + 1]);
-        else if (!folding.length) wrong = `the screen drew no frame while the row folded, ${tries} rows in a row, so how it folds cannot be judged`;
-        else if (off) wrong = `the space under the removed row did not fold with it: ${Math.abs(off.by).toFixed(1)} px ${off.by < 0 ? "short of" : "past"} where the card under it stands on frame ${off.i + 1} of the fold`;
+        else if (back >= 0) wrong = `the card under the removed row went back down ${(tops[back] - tops[back - 1]).toFixed(1)} px at step ${back}`;
         await watch.step("row folds", s);
         break;
       }
