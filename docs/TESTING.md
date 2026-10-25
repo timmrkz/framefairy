@@ -131,9 +131,9 @@ each with a POST:
 | `/report-made` | the names of the files in the last report on the bridge's Desktop, and with `?file=what-happened.txt` what that file in it holds |
 | `/pick-sound` | makes a new file of twelve seconds of a tone and no picture, for the Add button's box to hand over next, so a walk sees Add leave it out with the reason |
 | `/model?hang=1&fail=0` | the language model holds its answers until the search is stopped, or fails, or with both off answers. Told to answer again, it answers what it held too, the way a slow model answers in the end, so a search that was asked while it held does not find for good and keep every video added after it from being transcribed |
-| `/speech?ms=N` | the speech model takes N milliseconds over each piece of audio, so a transcript grows slowly enough to be seen and cancelled. With `&from=0` it says its sentences again from the first word, so a video added next is heard with the words of the bridge's episode and its clip has the same name |
+| `/speech?hold`, `/speech?step=N`, `/speech?go` | `hold` stops the speech model hearing, once the pieces it is hearing are heard, so a transcript stays where it is while a walk looks at it, cancels it or presses something during it. `step=N` lets N pieces more be heard while it is held, and a walk waits on the news of the work, not for the step. With `&save` what is heard so far is saved once the next piece is heard: the app saves a long transcription every 8 s of real time, and the bridge saves it part way only then, through `SaveHeard`, which the engine asks the speech model in place of its clock, so a walk sees a transcript saved part way on any machine. `go` lets it hear on by itself. Closing the app with `/reopen` lets every piece through while the app closes, the way a piece being heard ends as it quits, and the speech stays held after. With `&from=0` it says its sentences again from the first word, so a video added next is heard with the words of the bridge's episode and its clip has the same name |
 | `/chrome?bar=30&left=12&right=72` | the app's window as macOS lays it out, in points: the title bar's height and where its buttons start and end. It goes through what the Go side does with an answer from macOS and is told to the page the way a resize is. Until it is asked, and again after `/reset`, the title bar is the one every other system draws |
-| `/hold?call=Search&ms=N&times=K&fail=why` | the next call of that name, or the next K, waits N milliseconds before it reaches the Go side, the way a busy machine delivers it late, so a walk can press something while the Go side has not heard of the call yet. With `fail` it fails with that reason instead of reaching the Go side, the way a full disk refuses a save. With `gate=shut` every call of that name waits until `gate=open`, whatever `times` says, so a walk lets it through once what it waits to see has happened, on any machine. `/reset` opens every gate |
+| `/hold?call=Search&gate=shut&times=K&fail=why` | with `gate=shut`, the calls of that name wait before they reach the Go side until `gate=open`, every one of them, or the next K with `times`, the way a busy machine delivers them late, so a walk can press something and look while the Go side has not heard of the call yet, and lets it through once it has looked, on any machine. A walk holds a call with `hold` in `walks/bridge.mjs` and lets it go with `letHeld`: the page sets the held call aside, so `settle` waits for everything else meanwhile, and the watch lets go of whatever is still held before it compares the screen with the engine. With `fail` the next call fails with that reason instead of reaching the Go side, the way a full disk refuses a save. `/reset` opens every gate |
 | `/updates?from=main&stored=pr-143&list=main,pr-143` | gives the app's Updates page the app's own updating and Wails' updater, reading a channel list the bridge serves on this machine: a build from the channel `from`, or made on the Mac without it, with `stored` picked by a build before it, and the channels of `list`, each with a newer build that downloads in a moment. Until it is asked, and again after `/reset`, the Updates page's calls are answered with nothing like the rest. Relaunch always is |
 | `/reopen` | closes the app and opens it again, the way quitting and starting it does: the work stops and how it ended is read back. It answers with the jobs as the app left them, once nothing ran any more |
 | `/reset` | the app as it was once its first episode was searched: the models answer quickly, every episode a walk added is gone, the work folder and the settings are what they were, the speech stand-in goes on from the word it had come to then, and the app is opened again on them. So a video a walk adds is heard with the same words, however many walks came before it |
@@ -320,20 +320,21 @@ app's the day 2.121 made it a state.
 ### `searching.mjs`: from a new video to its clips, and a search
 
 The gestures: adding a video with Add, Search, Cancel, Continue, the model
-holding its answers, failing or answering again, the speech slow or
-quick, the app closed and opened again, another episode opened, and a
-wait. With the speech quick and the model answering, adding a video waits
-for its first clips. With the speech slow the walk goes on while the
-video is transcribed, so the next steps land in the middle of it. The
-wait goes on for one to four of the engine's reports of its work, a job
-event each, or not at all when nothing runs that would report: no more
+holding its answers, failing or answering again, the speech held or
+hearing on by itself, the app closed and opened again, another episode opened, and a
+wait. With the speech hearing on by itself and the model answering,
+adding a video waits for its first clips. With the speech held the walk
+goes on while the video is transcribed, so the next steps land in the
+middle of it, and the wait lets the speech hear a piece for each report.
+The wait goes on for one to four of the engine's reports of its work, a
+job event each, or not at all when nothing runs that would report: no more
 jobs run than the bridge's model holds answers for, `/model-holding`,
 whatever step a held search is in. It never waits on the clock. The
 rules, besides every walk's:
 
 | Rule | |
 | --- | --- |
-| A new video gets its first clips with no click | while the models answer and the speech is quick, judged once its first search has ended and nothing of the video runs, by the engine's reports. Broken too when nothing of the engine runs, the app has caught up, and the video has no search |
+| A new video gets its first clips with no click | while the models answer and the speech hears on by itself, judged once its first search has ended and nothing of the video runs, by the engine's reports. Broken too when nothing of the engine runs, the app has caught up, and the video has no search |
 | Cancel shows at once: in the frame after the click the head no longer says Cancel, or a row says Stopping | held to a press of the button while it said Cancel |
 | The clip list says what the engine's jobs do: Cancel while a search runs, Continue with "Stopped", "Interrupted" or "Failed. Click Continue" after one that stopped, Search otherwise | the engine is asked, and the screen read once the app has heard everything the engine told it until then and settled, `caughtUp`. Asked again while the engine's work moves on in between, up to 24 looks, and broken the first time it stood still and the two disagree |
 | No row speaks of a failure the engine did not have | |
@@ -475,8 +476,8 @@ than the frame before or after, see [CAPTIONS.md](CAPTIONS.md#the-tests).
 For the settings: `settings` opens them from the sidebar and `episode`
 the episode again, `pick model` opens the list of what finds clips and
 picks another model if it opens, `remove model` presses the bin of the
-language model or of the speech model, and `speech` slows the speech
-model down. Then `refused`, the card shook and no list and no box opened
+language model or of the speech model, and `speech` holds the speech
+model. Then `refused`, the card shook and no list and no box opened
 and the settings name the models they named, `asks`, the box asking
 whether to remove opened, `changed`, the settings name another model,
 and `hearing`, a search still hears. For Report a Problem: `bugs`
@@ -514,7 +515,10 @@ click would land in other words than the ones it read, `report reads`,
 the field reads so, with `*` for whatever the speech model heard, and
 `report as before`, it reads what it did then. The bridge's microphone
 plays two seconds of a hum, then a pause and a second and a half more,
-over and over, as fast as they would be said, so pieces are settled
+over and over, a tenth of a second each time the app reads how loud
+it is. That is still a tenth for every 100 ms of real time, as fast as
+it would be said, on the app's own timer for its level meter rather than
+a clock of the stand-in's, see #510, and pieces are settled
 while it listens and there is more to hear until it stops. With `ends`
 the person falls silent once the phrase they are on is said, through
 `/microphone?silent=1`. A recording there stops by itself after 8 s
@@ -693,14 +697,9 @@ printed, and every walk writes `walking`, `walked` or `failed` with its
 name to stderr as it starts and ends, so a walk that hung is named,
 issue #443. And a check counts what the app drew against the frames the
 screen drew, not against a number: a bounce is drawn on every frame the
-screen drew while it lasted, the crop frame of a glide stands in a place
-of its own on every frame the play showed, and the card under a removed
-row has risen, in every frame the row folds, by as much of the row and
-the space after it as the row has folded, so frames the screen did not
-draw make no jump, issue #442. That the row leaves the list only once
-its fold has finished is heard from the fold's own animation, which says
-so before Svelte takes the row out. A fold the screen drew no frame of
-is tried again on a new clip, up to three times.
+screen drew while it lasted, and the crop frame of a glide stands in a
+place of its own on every frame the play showed, so frames the screen
+did not draw make no jump, issue #442.
 
 Where how many frames the screen draws decides what a walk can see, the
 walk gives the app its frames or its time instead. The bounce after a
@@ -716,7 +715,27 @@ wait the walk hands the frame queue, `dressWait` in
 used up the 600 ms it waits, issue #468. And a glide read while it plays
 goes on until the video preview has shown ten frames or come to the next
 keyframe, not for two seconds, in which a busy machine showed two, issue
-#464.
+#464. The fold of a removed row is held as Svelte makes it and stepped
+through by hand, in twenty steps, and at each the card under the row
+has to have risen by as much of the row and the space after it as the
+row has folded. That the row leaves the list only once its fold has
+finished is heard from the fold's own animation, which says so before
+Svelte takes the row out. On the screen's own frames a busy machine drew
+none of the fold's 200 ms, issues #442 and #469.
+
+Where the machine itself spoils what a walk checks, the app says where,
+and the walk sets aside only that. A page too busy to hand the sound
+card its sound in time leaves it playing nothing until the sound comes,
+which starts and ends with a click. The frame queue counts every
+stretch it scheduled late, with the sound card's frames it left quiet,
+`lateSoundAt` in its stats. The walk of the loop switched off near the
+end takes a click for the machine's only at either end of a silence it
+heard, samples of nothing at all, that lies where the queue says it was
+late, and says how many it set aside. Any other click fails it. So that
+the app's own mistakes cannot hide there, the queue also counts sound
+it took off the sound card before it had played, `soundThrown`, and
+sound it handed over twice, `soundTwice`, and the presses of L must
+leave both at nought, issue #466.
 
 ### `speed.mjs`: how quickly the video preview follows the keys
 
@@ -792,6 +811,45 @@ them, most of them a few seconds long, so no bridge is left with a long
 run once the others are done. Each sequence opens the app afresh with
 `/reset`, so it walks the same alone as after the one before it.
 
+Every walker hands its sequences to one node of its own, `sequences.mjs
+--serve`, which reads the name of the next sequence from its input,
+says `walking` in a line of its own as it begins and how it went in
+another as it ends, and keeps one Chromium for all of them. Each sequence still opens a page in a context of its own, so it
+keeps nothing a sequence before it kept. Starting node, Playwright and
+Chromium for every sequence was 1.45 s and 1.2 s of CPU each time, 220
+times, issue #526. A sequence that throws ends its node, and the next
+sequence starts a new one, so nothing a throw left behind walks on. What
+the node said before `walking` belongs to no sequence, so the sequence
+it was handed fails with it, and a node that ends between the two lines
+fails the sequence it was walking, never the one after.
+
+A sequence asks the system for less motion, the way a person can in the
+Mac's settings, unless one of its steps looks at how the app moves: the
+caption blocks and the typed word that pop, the bounce over a paused
+frame, the word that grows as it is opened, the card that shakes and the
+microphone that grows as it hears, `moving` in `sequences.mjs`. The app
+then leaves out what it animates, the info marks' fade and the pops
+among it, so the settle waits for none of it. On main those two were
+179 s of the 1976 s all runs took one after another. The sequences with
+those steps and every random walk keep the motion, so the app is still
+walked the way it moves on Tim's Mac. A new step that looks at motion
+goes into `moving`, or it passes without ever seeing what it checks, and
+`--names` fails on a name in `moving` that is no step. `make walks
+STILL=none` walks every sequence with the motion, and
+`walks-nightly.yml` does so on main every night, so a step that looks at
+motion and was left out of `moving` fails there.
+
+A video a walk adds is made by ffmpeg the first time it is asked for and
+kept, by what it was asked for and by the sum of what makes it, the
+source of `walkvideos_test.go`, which holds every function that makes
+one, and the version of ffmpeg, see `walkVideos`. Every bridge of a run
+keeps them in one folder, `.build/walk-videos` or `WALKVIDEOS`, and CI
+keeps each share's folder between runs, saved again whenever a run made
+a video more, so a walk that adds the same video again gets a copy. ffmpeg makes the same bytes
+from the same arguments, so the copy is the video it would have made.
+Made on every add, the 54 videos the sequences added took 100 s, and the
+one of ten minutes 9 s every time, issue #527.
+
 Measured on four cores, the cloud's and CI's, with the 3 seeds: the
 sequences were once one run, and took twelve minutes on one bridge while
 the other three had finished the fifteen walks in four and waited. Handed
@@ -816,7 +874,9 @@ each share starts its longest runs first, so no bridge is left with a
 minute of work after the others are done. Every third run, as it was,
 left one machine a minute behind. A run the file does not know counts as
 the median. `make walks WALKTIMES=1` writes the file again from the times
-of that run, best on the whole set on a quiet machine. On three machines
+of that run, best on the whole set on a quiet machine, and keeps the time
+it had for a run that the test's time stopped, since how long a run that
+hung was stopped after says nothing of how long it takes. On three machines
 each job still took four and three quarter minutes, setup included. More
 bridges on a machine do not help: on four cores eight bridges finished a
 share no sooner than six and broke three walks that wait on the clock.

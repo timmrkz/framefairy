@@ -20,14 +20,14 @@ import (
 
 // playingMicrophone stands in for the microphone: it hands over its
 // samples a tenth of a second at a time, from a goroutine of its own the
-// way the system's does. Live, it hands them over as fast as they would
-// be said, until it is stopped. Otherwise it hands over all of them at
-// once, before it can be stopped. Live and with more, what is said after
+// way the system's does. Live, it hands over a tenth each time paced says
+// so, until it is stopped. Otherwise it hands over all of them at once,
+// before it can be stopped. Live and with more, what is said after
 // samples is asked of it once they are handed over, and again after that,
 // until it gives nothing: a person who talks on.
 type playingMicrophone struct {
 	samples []float32
-	live    bool
+	paced   <-chan struct{}
 	more    func() []float32
 	stopped chan struct{}
 	done    chan struct{}
@@ -39,11 +39,11 @@ func (m *playingMicrophone) start(heard func([]float32)) error {
 		defer close(m.done)
 		for samples := m.samples; len(samples) > 0; samples = m.next() {
 			for at := 0; at < len(samples); at += engine.SampleRate / 10 {
-				if m.live {
+				if m.paced != nil {
 					select {
 					case <-m.stopped:
 						return
-					case <-time.After(100 * time.Millisecond): //nolint:forbidigo // the live microphone the walks talk into, at the speed of speech. No test waits on it
+					case <-m.paced:
 					}
 				}
 				heard(samples[at:min(at+engine.SampleRate/10, len(samples))])
@@ -58,7 +58,7 @@ func (m *playingMicrophone) start(heard func([]float32)) error {
 // or when the microphone is not live, which would hand it all over at once
 // and never be stopped.
 func (m *playingMicrophone) next() []float32 {
-	if m.more == nil || !m.live {
+	if m.more == nil || m.paced == nil {
 		return nil
 	}
 	return m.more()

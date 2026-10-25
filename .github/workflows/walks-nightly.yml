@@ -1,0 +1,87 @@
+# Every sequence walked with the app's motion, once a night on main, so a
+# pull request does not wait for it. See Where they run in
+# docs/TESTING.md.
+#
+# The walks in ci.yml walk a sequence asking for less motion unless one of
+# its steps looks at how the app moves, the steps named in moving in
+# frontend/preview/walks/sequences.mjs. A new step that looks at motion and
+# is not named there passes without ever seeing what it checks. Walked with
+# the motion it does see it, so a step left out of moving fails here.
+name: Nightly walks with motion
+
+on:
+  schedule:
+    - cron: "47 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/ci-image.yml
+
+  # The same as the walks in ci.yml, with STILL=none.
+  walks:
+    needs: image
+    name: walks
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1/4, 2/4, 3/4, 4/4]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash -e {0}
+    container:
+      image: ${{ needs.image.outputs.ref }}
+      options: --init --ipc=host
+      volumes:
+        - /home/runner/work:/home/runner/work
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The checkout is the runner's user's and the job runs as root, see
+      # the walks in ci.yml.
+      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-v2-walks-${{ runner.os }}-${{ github.sha }}
+          restore-keys: go-v2-walks-${{ runner.os }}-
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - id: ffmpeg
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .build/ffmpeg
+          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}
+      - name: The ffmpeg we ship
+        if: steps.ffmpeg.outputs.cache-hit != 'true'
+        run: sh scripts/build-ffmpeg.sh .build/ffmpeg
+      - name: The episode's decoder
+        run: make frames
+      # The videos the walks in ci.yml kept for this share, only read.
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .build/walk-videos
+          key: walk-videos-${{ strategy.job-index }}-${{ needs.image.outputs.ref }}-${{ hashFiles('cmd/framefairy-app/walkvideos_test.go') }}-
+          restore-keys: walk-videos-${{ strategy.job-index }}-${{ needs.image.outputs.ref }}-${{ hashFiles('cmd/framefairy-app/walkvideos_test.go') }}-
+      - name: Sequences and walks with motion
+        run: |
+          make walks STILL=none WALKSHARD=${{ matrix.shard }} WALKTIMEOUT=12m 2>&1 | tee walks.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then sh scripts/test-failures.sh walks.log; fi
+          exit "$status"

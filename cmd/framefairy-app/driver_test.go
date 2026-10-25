@@ -15,9 +15,12 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -30,6 +33,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/spf13/afero"
 
 	"framefairy/engine"
 	"framefairy/internal/ffmpegtest"
@@ -52,6 +57,10 @@ type desk struct {
 	// app, 0 for as long as in the app.
 	quiet time.Duration
 	most  int
+	// measured hears each time the app tells the window how loud the
+	// microphone is, when set, so the bridge's microphone hands over its
+	// next tenth of a second then, at the pace the app reads it.
+	measured chan struct{}
 	// The report windows Bugs made and brought forward, the window the
 	// app would have made, and the pictures its open box hands over
 	// next, see bugs.go.
@@ -103,7 +112,15 @@ func (d *desk) start(st *store) {
 	d.svc.jobs = newQueue(st, func(u JobUpdate) { d.bus.send("job", u) },
 		func(episode string) { d.bus.send("episode", episode) })
 	d.svc.listening.say = func(x Dictation) { d.bus.send("dictation", x) }
-	d.svc.listening.loud = func(n Loudness) { d.bus.send("loudness", n) }
+	d.svc.listening.loud = func(n Loudness) {
+		d.bus.send("loudness", n)
+		if d.measured != nil {
+			select {
+			case d.measured <- struct{}{}:
+			default:
+			}
+		}
+	}
 	d.svc.listening.quiet = d.quiet
 	d.svc.listening.most = d.most
 	d.svc.report = newReporting(st.files, filepath.Join(st.dir, "report"))
@@ -175,42 +192,119 @@ func (d *desk) episode(name string, seconds string) string {
 // their own that TestMain takes away at the end.
 var videos = &made{files: map[string]string{}}
 
+// made keeps the videos tests make, so each is made once and copied
+// where a test needs it, because making one takes seconds. In a folder
+// of its own, made when the first video is, or in dir. With a recipe, the
+// sum of what makes them, the folder may be shared between programs and
+// kept between runs: a video is found there by the recipe and what it
+// was asked for, so a bridge finds a video another bridge made, and a
+// change to the recipe makes them all anew, see walkVideos.
 type made struct {
-	mu    sync.Mutex
-	dir   string
-	files map[string]string
-	tone  int
+	mu     sync.Mutex
+	fs     afero.Fs
+	dir    string
+	recipe string
+	files  map[string]string
+	tone   int
 }
 
 // On the real disk: ffmpeg makes the video.
 func (m *made) make(name, seconds string) (string, error) {
+	return m.video(name+"-"+seconds, ".mp4", func(path string) error {
+		m.tone++
+		// Five frames a second of grey and a 16 kHz tone: what the speech
+		// model hears and what a render cuts, and nothing that takes long
+		// to make.
+		out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
+			"-f", "lavfi", "-i", "color=c=gray:s=320x180:r=5:d="+seconds,
+			"-f", "lavfi", "-i", "sine=f="+strconv.Itoa(200+20*m.tone)+":sample_rate=16000:d="+seconds,
+			"-shortest", "-c:v", "mpeg4", "-g", "50", "-c:a", "aac", "-b:a", "32k", path).CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("making the video: %s %s", err, out)
+		}
+		return nil
+	})
+}
+
+// video gives where the video asked for as what is kept, ending in ext,
+// made by build the first time it is asked for. A video that failed to be
+// made is not kept.
+//
+// On the real disk: the folder is made where no fs is given, and a program writes the video.
+func (m *made) video(what, ext string, build func(path string) error) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	key := name + "-" + seconds
-	if path, ok := m.files[key]; ok {
+	if path, ok := m.files[what]; ok {
 		return path, nil
 	}
+	if m.fs == nil {
+		m.fs = afero.NewOsFs()
+	}
 	if m.dir == "" {
-		dir, err := os.MkdirTemp("", "framefairy-videos-")
+		dir, err := afero.TempDir(m.fs, "", "framefairy-videos-")
 		if err != nil {
 			return "", err
 		}
 		m.dir = dir
 	}
-	m.tone++
-	path := filepath.Join(m.dir, key+".mp4")
-	// Five frames a second of grey and a 16 kHz tone: what the speech
-	// model hears and what a render cuts, and nothing that takes long to
-	// make.
-	out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
-		"-f", "lavfi", "-i", "color=c=gray:s=320x180:r=5:d="+seconds,
-		"-f", "lavfi", "-i", "sine=f="+strconv.Itoa(200+20*m.tone)+":sample_rate=16000:d="+seconds,
-		"-shortest", "-c:v", "mpeg4", "-g", "50", "-c:a", "aac", "-b:a", "32k", path).CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("making the video: %s %s", err, out)
+	if m.files == nil {
+		m.files = map[string]string{}
 	}
-	m.files[key] = path
+	if m.recipe == "" {
+		path := filepath.Join(m.dir, what+ext)
+		if err := build(path); err != nil {
+			return "", err
+		}
+		m.files[what] = path
+		return path, nil
+	}
+	sum := sha256.Sum256([]byte(m.recipe + "\n" + what))
+	path := filepath.Join(m.dir, m.recipe+"-"+hex.EncodeToString(sum[:8])+ext)
+	if _, err := m.fs.Stat(path); err == nil {
+		m.files[what] = path
+		return path, nil
+	}
+	// Made under a name of its own and then renamed, so a program beside
+	// this one that asks for the same video finds it whole or not at all.
+	if err := m.fs.MkdirAll(m.dir, 0o755); err != nil {
+		return "", err
+	}
+	making, err := afero.TempFile(m.fs, m.dir, ".making-*"+ext)
+	if err != nil {
+		return "", err
+	}
+	_ = making.Close()
+	if err := build(making.Name()); err != nil {
+		_ = m.fs.Remove(making.Name())
+		return "", err
+	}
+	if err := m.fs.Rename(making.Name(), path); err != nil {
+		return "", err
+	}
+	m.files[what] = path
 	return path, nil
+}
+
+// prune removes from the folder what a recipe other than this one made,
+// so it holds only what can still be found.
+func (m *made) prune() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	entries, err := afero.ReadDir(m.fs, m.dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if !strings.HasPrefix(e.Name(), m.recipe+"-") {
+			if err := m.fs.RemoveAll(filepath.Join(m.dir, e.Name())); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // updaterHelper is what Wails' updater sets in the copy of the app's own
@@ -318,6 +412,21 @@ func (d *desk) close() {
 	}
 }
 
+// closeWhileIn closes the app while j hears a piece the speech model
+// holds, see speech.hold, and lets the piece end once j is called off, the
+// way a real model finishes the piece it is in after the app asked it to
+// stop.
+func (d *desk) closeWhileIn(j Job, let func()) {
+	d.t.Helper()
+	shut := make(chan bool, 1)
+	go func() { shut <- d.svc.jobs.shutDown() }()
+	<-j.ctx.Done()
+	let()
+	if !<-shut {
+		d.t.Fatal("the app did not stop its work in time")
+	}
+}
+
 // copied is what the app last put on the clipboard, nothing before.
 func (d *desk) copied() string {
 	if p := d.clipboard.Load(); p != nil {
@@ -414,15 +523,16 @@ func (d *desk) failedRender(path string) string {
 }
 
 // speech is the stand-in speech model. It hears a word every 0.6 seconds,
-// takes a moment over every chunk so a test can close the app while it
-// hears, and counts the seconds of audio it was given, so a test can tell
-// whether anything was heard twice.
+// holds a piece for as long as a test says, so the test can close the app
+// or press Cancel while it hears, and counts the seconds of audio it was
+// given, so a test can tell whether anything was heard twice.
 type speech struct {
 	mu      sync.Mutex
 	broken  error
 	started chan struct{}
 	// skip is how many pieces are heard before started is closed.
 	skip    int
+	gate    chan struct{}
 	samples atomic.Int64
 }
 
@@ -452,6 +562,24 @@ func (s *speech) hearingAfter(heard int) <-chan struct{} {
 	return s.started
 }
 
+// hold holds the next piece the speech model is given until let is
+// called, the way a real model is inside one call that takes no stop. in
+// is closed once that piece is in.
+func (s *speech) hold() (in <-chan struct{}, let func()) {
+	return s.holdAfter(0)
+}
+
+// holdAfter holds the piece after heard pieces, which are heard to their
+// end, so a test about what a stop keeps has something heard to keep.
+func (s *speech) holdAfter(heard int) (in <-chan struct{}, let func()) {
+	in = s.hearingAfter(heard)
+	gate := make(chan struct{})
+	s.mu.Lock()
+	s.gate = gate
+	s.mu.Unlock()
+	return in, sync.OnceFunc(func() { close(gate) })
+}
+
 func (s *speech) open(string) (engine.Recognizer, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -469,15 +597,20 @@ func (s *speech) seconds() float64 {
 func (s *speech) Recognize(samples []float32, rate int) []engine.Token {
 	s.samples.Add(int64(len(samples)))
 	s.mu.Lock()
-	switch {
-	case s.started != nil && s.skip > 0:
+	var gate chan struct{}
+	if s.started != nil && s.skip > 0 {
 		s.skip--
-	case s.started != nil:
-		close(s.started)
-		s.started = nil
+	} else {
+		if s.started != nil {
+			close(s.started)
+			s.started = nil
+		}
+		gate, s.gate = s.gate, nil
 	}
 	s.mu.Unlock()
-	time.Sleep(40 * time.Millisecond) //nolint:forbidigo // the stand-in speech model takes its time on the real clock, left for #510
+	if gate != nil {
+		<-gate
+	}
 	length := float64(len(samples)) / float64(rate)
 	var tokens []engine.Token
 	for at := 0.1; at+0.35 < length; at += 0.6 {

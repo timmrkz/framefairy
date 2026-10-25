@@ -113,8 +113,9 @@
 //                      drags an edge by px, lets go, and at once, with
 //                      nothing waited for, drags it again by again. With
 //                      late, the last place of the first drag is a frame
-//                      further on and answered so many milliseconds late,
-//                      so the edge is taken again before that answer is in
+//                      further on and its answer is held until the edge
+//                      has been taken again and dragged. A call held by
+//                      ["hold"] before it comes back then too
 //   ["edge then track", which]
 //                      clicks an edge and at once presses the track near
 //                      its right end: the playhead stands where the track
@@ -357,19 +358,19 @@
 //                      the window where "move window" left it
 //   ["head"]           presses the clip list's head button, Search, Cancel or
 //                      Continue
-//   ["hold", call, ms] the next call of this name waits so many
-//                      milliseconds before it reaches the Go side, the way
-//                      a busy machine delivers it late
+//   ["hold", call]     the next call of this name waits before it reaches
+//                      the Go side, the way a busy machine delivers it
+//                      late, until the next step has looked at what the
+//                      app shows meanwhile
 //   ["search and cancel"] presses Search, and Cancel in the first frame the head
 //                      says it, and every frame from Search to that press the
 //                      head says Cancel and takes the click, never greyed
 //                      out
 //   ["restart"]        closes the app and opens it again on the episode
-//   ["speech", ms]     the speech model takes so many milliseconds over
-//                      each piece of audio, so a video added is heard
-//                      slowly enough to do something while it is.
-//                      ["speech", "hold"] stops it hearing, and the steps
-//                      that say so let it on one piece at a time.
+//   ["speech", "hold"] stops the speech model hearing, so a video added
+//                      is heard only as far as the walk lets it, and the
+//                      steps that say so let it on one piece at a time.
+//                      ["speech", "go"] lets it hear on by itself.
 //                      ["speech", "wordless"] hears no word at all, the way
 //                      a video with no speech is heard
 //   ["settings"]       opens the settings from the sidebar, and remembers
@@ -686,15 +687,16 @@
 //                      row's time has to run down and close it
 //   ["row folds"]      presses the bin of a clip with another clip's card
 //                      under it, takes the hand to the clip timeline, and
-//                      reads where the card under it stands on every
-//                      animation frame while the removed row runs down and
-//                      closes. The card has to rise by the row and the
-//                      space after it, never go back down, and in every
-//                      frame the row folds have risen by as much of both
-//                      as the row has folded. The row has to leave the
-//                      list only once its fold has finished. When the
-//                      screen drew no frame of the fold, it makes another
-//                      clip and tries again, up to three times
+//                      runs the removed row's time down. The row's fold is
+//                      held as it starts and stepped through by hand in
+//                      twenty steps, and where the card under it stands is
+//                      read at each, in the moment the row leaves and on
+//                      the ten frames after. The card has to rise by the
+//                      row and the space after it, never go back down, not
+//                      move as the row leaves, and at every step have
+//                      risen by as much of both as the row has folded. The
+//                      row has to leave the list only once its fold has
+//                      finished
 //   ["thumbnail"]      presses T, which makes the frame under the playhead
 //                      a thumbnail of the clip, and waits for the clip to
 //                      have one more
@@ -793,8 +795,11 @@
 //                      off and the play ends ahead of the sound card
 //   ["stopped at its end"]
 //                      since "loop off near the end", the presses of L
-//                      started no play over, the sound did not click,
-//                      nothing was heard after the clip's end, the play
+//                      started no play over, threw no sound away and
+//                      handed none over twice, the sound did not click but
+//                      at the ends of a silence where the frame queue says
+//                      it handed the sound card its sound late, nothing
+//                      was heard after the clip's end, the play
 //                      stopped within 400 ms of the playhead reaching it,
 //                      and no frame drawn from then on is from before the
 //                      last second of the clip, so nothing of the clip's
@@ -872,8 +877,8 @@
 //                      again and sees the cards with nothing said of it
 //   ["heard some"]     waits until the engine has a sentence of the video
 //                      on screen, or n with ["heard some", n], asking again each time the work says how
-//                      far it heard. ["speech", "hold"] after it lets the
-//                      piece of audio being heard then land
+//                      far it heard. With the speech held it lets a piece
+//                      of audio through at a time, and stops between two
 //   ["font list"]      the Font list hangs on the field's left edge with
 //                      its corners, every row is as tall as the field and
 //                      square, nothing stands between the search field and
@@ -1308,11 +1313,11 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
-import { open, chosen, shown, engineState, handles, timeline, inside, middle, high, drag } from "./bridge.mjs";
-import { clipList, control, pressHead, fromSidebar, sidebarStill, settle, ask, episodeOn, shortFrames, shortSound } from "./bridge.mjs";
+import { open, newBrowser, chosen, shown, engineState, handles, timeline, inside, middle, high, drag } from "./bridge.mjs";
+import { clipList, control, pressHead, fromSidebar, sidebarStill, settle, hold, letHeld, ask, episodeOn, shortFrames, shortSound } from "./bridge.mjs";
 import { xOf, seekTo, cropFrame, sameLook, sayLook, readShort, loudness, filmedOnScreen, preview } from "./bridge.mjs";
 import { recordFrames, addHEVC, overlay, cropPixels, shortFramesFrom, slowDown, noDeadlines, BITS, nextPaint, news, nextNews, caughtUp } from "./bridge.mjs";
-import { fakeClock, holdClock, runClock, letClockGo, realFrames, foldsDone, shownOnPlayhead, clickOnTrack, playUntil, pageUntil, seenUntil } from "./bridge.mjs";
+import { fakeClock, holdClock, runClock, letClockGo, realFrames, foldsDone, shownOnPlayhead, clickOnTrack, pressOnTrack, playUntil, pageUntil, seenUntil } from "./bridge.mjs";
 import { Watch, same, describe, overlaid } from "./rules.mjs";
 
 // The video's work folder, see WorkDir in engine/run.go.
@@ -1479,7 +1484,7 @@ export const sequences = [
       // Its first search hears the first of its two windows and ends, so
       // half of it is still to come when Transcribe whole video is
       // clicked, and the click holds the speech so it stays to come.
-      ["speech", 0],
+      ["speech", "go"],
       ["add", 1500],
       ["transcript", "transcribe"],
       // A search started meanwhile puts it on hold, and cancelled gives
@@ -1487,7 +1492,7 @@ export const sequences = [
       ["transcript", "behind"],
       // Stopped and carried on, each said in the frame of the click.
       ["transcript", "stop"],
-      ["speech", 0],
+      ["speech", "go"],
       ["transcript", "continue"],
       ["transcript", "stop at the end"],
       ["transcript", "Text"],
@@ -1772,14 +1777,13 @@ export const sequences = [
     // range picker.
     name: "a search of what was said shows the parts not transcribed yet",
     steps: [
-      // Heard slowly, and held once some of it is, so part of it is still
-      // to come while the search looks.
-      ["speech", 1500],
-      ["add", 600],
-      ["heard some"],
+      // Held, and let through a piece at a time until some of it is
+      // heard, so part of it is still to come while the search looks.
       ["speech", "hold"],
+      ["add", 600],
+      ["heard some", 12],
       ["search said", ["*", 1]],
-      ["speech", 0],
+      ["speech", "go"],
     ],
   },
   {
@@ -1788,7 +1792,7 @@ export const sequences = [
     // it. Then a click on that card lit the part. The speech model is
     // held, so the part stays where it is.
     name: "Shift and the arrows walk onto a part not transcribed yet and off it",
-    steps: [["speech", 1500], ["add", 600], ["heard some"], ["speech", "hold"], ["walk over a part"], ["speech", 0]],
+    steps: [["speech", "hold"], ["add", 600], ["heard some"], ["walk over a part"], ["speech", "go"]],
   },
   {
     // Found by Tim on 20 October: the edge of a clip's card in the
@@ -1811,7 +1815,7 @@ export const sequences = [
     // walked to with the keys lit nothing on the range picker, where the
     // hand on its card lit it there. Whatever is lit is lit one way.
     name: "the hand and the keys light a card of the transcript and a part not transcribed yet the same",
-    steps: [["speech", 1500], ["add", 600], ["heard some", 3], ["speech", "hold"], ["one light", "said"], ["speech", 0]],
+    steps: [["speech", "hold"], ["add", 600], ["heard some", 3], ["one light", "said"], ["speech", "go"]],
   },
   {
     // Found by Tim on 20 October: the clip chosen with the keys had its
@@ -1833,7 +1837,7 @@ export const sequences = [
     // not transcribed yet gave way in thirds of it, each time the
     // transcript was saved. They give way as the work hears.
     name: "the parts not transcribed yet give way as the work hears",
-    steps: [["speech", 1500], ["add", 600], ["heard some"], ["parts give way"], ["speech", 0]],
+    steps: [["speech", "hold"], ["add", 600], ["heard some"], ["parts give way"], ["speech", "go"]],
   },
   {
     // Found by Tim on #349: the Style list of one style lay over the Size
@@ -2218,11 +2222,11 @@ export const sequences = [
     name: "an edge taken again while the drag before it saves goes with the hand",
     steps: [
       ["cut at", 0.5],
-      ["hold", "Reshape", 3000],
+      ["hold", "Reshape"],
       ["drag edge twice", "cut from", -30, -30],
       ["kept up", "cut from"],
       ["followed", "cut from"],
-      ["hold", "Reshape", 3000],
+      ["hold", "Reshape"],
       ["drag edge twice", "end", -30, -30],
       ["kept up", "end"],
       ["followed", "end"],
@@ -2233,14 +2237,13 @@ export const sequences = [
     // the edge that came late put the playhead back on the edge.
     name: "a press on the track straight after a click on an edge keeps the playhead there",
     steps: [
-      // The engine is slow to answer, the way it can be on a long
-      // episode, so an answer to the click comes after the press.
+      // The click once asked the engine where the edge went, and on a
+      // long episode its answer came after the press. A click that does
+      // not move the edge asks the Go side nothing now, so there is no
+      // answer to hold, and the walk holds the playhead to the press.
       ["cut at", 0.5],
-      ["hold", "Shape", 300],
       ["edge then track", "cut from"],
-      ["hold", "Shape", 300],
       ["edge then track", "end"],
-      ["hold", "Shape", 300],
       ["edge then track", "start"],
     ],
   },
@@ -2590,8 +2593,7 @@ export const sequences = [
       ["dictate", "start"],
       ["caret at words"],
       // The last words take a while to write down, the way they do on a
-      // Mac after a long sentence.
-      ["hold", "StopListening", 1500],
+      // Mac after a long sentence: the step holds them back while it looks.
       ["dictate", "escape, the cursor stays"],
     ],
   },
@@ -2734,16 +2736,15 @@ export const sequences = [
   {
     // Issue #404. Tab and Enter straight after Enter, while the last words
     // are still written down, make the report with every word said in it.
-    // The speech model is slow, so the last words only come with the stop.
+    // The stop is held on its way to the Go side, so the last words only
+    // come once Tab and Enter are pressed.
     name: "Tab and Enter right after a dictation make the report with every word said",
     steps: [
       ["bugs"],
       ["write", "It froze.", "end"],
       ["attach", 1],
-      ["speech", 1500],
       ["dictate", "enter, then tab and enter"],
       ["report made", 1, "It froze. *"],
-      ["speech", 0],
     ],
   },
   {
@@ -3033,15 +3034,15 @@ export const sequences = [
   {
     // Plan row 2.181. Tim added a video and its clip timeline stayed bare
     // until its first clip came, where the waveform used to come within
-    // seconds, measured on its own. The episode is heard slowly, so the
+    // seconds, measured on its own. The speech is held, so the
     // search is still hearing it when the waveform has to be there.
     name: "a video just added shows its waveform before its first clip",
     steps: [
-      ["speech", 3000],
+      ["speech", "hold"],
       ["add", 120],
       ["waveform"],
       ["cards", 0],
-      ["speech", 0],
+      ["speech", "go"],
       ["wait for", "Search"],
       ["cards", 1],
     ],
@@ -3052,12 +3053,12 @@ export const sequences = [
     // clip timeline showed a minute.
     name: "a video shorter than a clip is its own clip, with rulers that fit it",
     steps: [
-      // Heard slowly, so the rulers are looked at with no clip yet, the
+      // Held, so the rulers are looked at with no clip yet, the
       // way Tim saw them once the search had failed.
-      ["speech", 3000],
+      ["speech", "hold"],
       ["add", 15],
       ["rulers fit", 15],
-      ["speech", 0],
+      ["speech", "go"],
       ["wait for", "Search"],
       ["cards", 1],
       ["whole clip", 15],
@@ -3167,7 +3168,7 @@ export const sequences = [
       ["speech", "hold"],
       ["add, the window read late", 1503],
       ["cancel fades"],
-      ["speech", 0],
+      ["speech", "go"],
       ["wait for", "Continue"],
       ["row", "Stopped. Click Continue"],
     ],
@@ -3224,7 +3225,7 @@ export const sequences = [
     // Stopped with Continue where its clips would have been.
     name: "Cancel pressed at once after Search stops the search before it starts",
     steps: [
-      ["hold", "Search", 1500],
+      ["hold", "Search"],
       ["search and cancel"],
       ["wait for", "Continue"],
       ["row", "Stopped. Click Continue"],
@@ -3432,7 +3433,7 @@ export const sequences = [
       ["cards", 1],
       ["cut at", 0.5],
       ["cuts", 1],
-      ["hold", "RotatePart", 1000],
+      ["hold", "RotatePart"],
       ["rotate at", 0.75],
       ["turned", [0, 90]],
       ["render"],
@@ -3528,7 +3529,7 @@ export const sequences = [
       ["add", 30, "25"],
       ["wait for", "Search"],
       ["cards", 1],
-      ["hold", "SetCropMark", 1000],
+      ["hold", "SetCropMark"],
       ["keyframe at", 0.2],
       ["keyframe at", 0.8],
       ["drag crop", 400],
@@ -3748,19 +3749,19 @@ export const sequences = [
     // carried on, never removed, since Cancel on the Activity page went.
     name: "a clip made by hand that stopped can be removed, and put back first",
     steps: [
-      ["speech", 3000],
+      ["speech", "hold"],
       ["add", 120],
       ["hand stopped"],
       ["remove stopped", "put back"],
       ["remove stopped", "for good"],
-      ["speech", 0],
+      ["speech", "go"],
       ["restart"],
       ["no hand card"],
     ],
   },
   {
     // Issue #444: Tim searched windows heard in part already, and the fill
-    // of the transcription started well past nothing. The speech is slow,
+    // of the transcription started well past nothing. The speech is held,
     // so a search is stopped part way through its window and carried on.
     name: "Continue fills the transcription from nothing over what is left to hear",
     steps: [
@@ -3772,7 +3773,7 @@ export const sequences = [
       ["heard part", [0.2, 120]],
       ["cancel held"],
       ["fills from nothing", 120],
-      ["speech", 0],
+      ["speech", "go"],
     ],
   },
   {
@@ -4153,7 +4154,7 @@ export const sequences = [
     // video just added and has not come to the model yet.
     name: "a model is not changed or removed while a search still hears",
     steps: [
-      ["speech", 3000],
+      ["speech", "hold"],
       ["add", 120],
       ["wait for", "Cancel"],
       ["settings"],
@@ -4362,7 +4363,7 @@ export const sequences = [
     // Relaunch can be pressed again by itself.
     name: "Relaunch waits while a search runs, and the search goes on",
     steps: [
-      ["speech", 3000],
+      ["speech", "hold"],
       ["add", 120],
       ["wait for", "Cancel"],
       ["updates", { from: "main", list: "main,pr-20" }],
@@ -4372,7 +4373,7 @@ export const sequences = [
       ["status", "A newer build is ready", "Relaunch once the search is done"],
       ["relaunch", "waits"],
       ["hearing"],
-      ["speech", 0],
+      ["speech", "go"],
       ["relaunch", "ready"],
       ["status", "A newer build is ready", "Relaunch to finish updating"],
     ],
@@ -5074,6 +5075,32 @@ function shortProblem(entry, short, fps, cutsWanted) {
 }
 
 const url = process.env.BRIDGE_URL ?? "http://127.0.0.1:8123/";
+// The steps that look at how the app moves: the caption blocks and the
+// typed word that pop, the bounce over a paused frame, the word that grows
+// as it is opened, the card that shakes and the microphone that grows as
+// it hears. A sequence with none of them asks for less motion, which the
+// app honours by leaving out what it animates, so the settle waits for
+// none of it: the pops and the info marks' fade were 179 s of the 1976 s
+// all runs took on main. A sequence with one of them, and every random
+// walk, walks the app the way it moves on Tim's Mac. A new step that looks
+// at motion goes in here, or it passes without ever seeing what it checks.
+const moving = new Set([
+  "count pops",
+  "pops",
+  "pill pops",
+  "grow",
+  "step onto words and see them pop",
+  "step frame by frame and see nothing pop",
+  "refused",
+  "dictate",
+]);
+
+// STILL=none walks every sequence with the motion, for a failure that
+// might hide behind it.
+function still(seq) {
+  return process.env.STILL !== "none" && !seq.steps.some(([what]) => moving.has(what));
+}
+
 const only = process.argv[2] ?? "";
 let failures = 0;
 
@@ -5099,9 +5126,51 @@ if (only === "--names") {
     console.log(`two steps are called ${JSON.stringify(stepTwice[0])}`);
     process.exit(1);
   }
+  // A step renamed and left in moving by its old name would be walked
+  // still, and check motion it never sees.
+  const noStep = [...moving].filter((n) => !steps.includes(n));
+  if (noStep.length) {
+    console.log(`moving names ${JSON.stringify(noStep[0])}, which is no step`);
+    process.exit(1);
+  }
   console.log(names.join("\n"));
   process.exit(0);
 }
+
+// --serve walks one sequence after another in one browser, each named on
+// a line of its own on standard input as JSON, for TestWalks to hand one
+// walker its sequences without starting node, Playwright and Chromium
+// again for each, 1.45 s and 1.2 s of CPU a sequence, issue #526. Each
+// still starts with /reset and pages of its own, so it walks the same as
+// alone. What a sequence prints begins with a line of its own, walking,
+// see walkingLine, so what the node says between two sequences is told
+// from either. It ends in a line that starts with walked, see walkedLine,
+// then "ok" or "FAIL", or "threw" when it threw and this node ends, so a
+// sequence after it starts in a new one.
+if (only === "--serve") {
+  const { createInterface } = await import("node:readline");
+  const browser = await newBrowser();
+  for await (const line of createInterface({ input: process.stdin })) {
+    await mark("walking");
+    const name = JSON.parse(line);
+    const seq = sequences.find((q) => q.name === name);
+    if (!seq) {
+      console.log(`no sequence is called ${line}`);
+      await said("FAIL");
+      continue;
+    }
+    try {
+      await said((await walkSequence(seq, browser)) ? "FAIL" : "ok");
+    } catch (e) {
+      console.log(e?.stack ?? String(e));
+      await said("threw");
+      process.exit(1);
+    }
+  }
+  await browser.close();
+  process.exit(0);
+}
+
 const exact = process.env.SEQUENCE;
 const toWalk = sequences.filter((q) => (exact ? q.name === exact : q.name.includes(only)));
 if (exact && !toWalk.length) {
@@ -5109,9 +5178,27 @@ if (exact && !toWalk.length) {
   process.exit(1);
 }
 
-for (const seq of toWalk) {
+for (const seq of toWalk) if (await walkSequence(seq)) failures++;
+process.exit(failures ? 1 : 0);
+
+// The line --serve ends what a sequence printed with, walkedLine in
+// TestWalks, once everything it printed, on both outputs, is out.
+async function said(how) {
+  await mark(`walked ${how}`);
+}
+
+// A line of --serve's own, after everything printed before it, on both
+// outputs.
+async function mark(what) {
+  await new Promise((done) => process.stderr.write("", done));
+  await new Promise((done) => process.stdout.write(`\u001e${what}\n`, done));
+}
+
+// Walks one sequence and says whether it failed, in a browser of its own
+// or in browser, whose pages it closes again.
+async function walkSequence(seq, shared = null) {
   const began = performance.now();
-  const opened = await open(url);
+  const opened = await open(url, { browser: shared, still: still(seq) });
   const { browser, errors } = opened;
   // The page the steps act on: the app's window, or the report window
   // once Bugs opened it. The watch keeps to the app's window.
@@ -5126,6 +5213,9 @@ for (const seq of toWalk) {
   // The second the video added with "add cameras" switches camera at.
   let cameraSwitch = null;
   const kept = {};
+  // Whether the walk holds the speech model, see ["speech", "hold"], so
+  // what is heard is only what the walk lets through.
+  let speechHeld = false;
   // The models the settings name, at "settings", and the episode that was
   // on screen before them.
   let named = null;
@@ -6482,7 +6572,7 @@ for (const seq of toWalk) {
           break;
         }
         if (late) {
-          await control(url, `/hold?call=Shape&ms=${late}`);
+          await hold(page, "Shape");
           await page.mouse.move(took, y);
         }
         await page.mouse.up();
@@ -6497,11 +6587,14 @@ for (const seq of toWalk) {
           await page.mouse.move(took + (again * i) / 10, y);
           await nextPaint(page);
         }
-        // The hand stays down until the app has settled on the drag, so a
-        // busy machine slow to answer it is waited for, and an edge that
-        // waits for the save before it moves is seen standing.
+        // The hand stays down until the app has settled on the drag, with
+        // the call held still on its way, so an edge that waits for it
+        // before it moves is seen standing. Then the call held comes back,
+        // late, while the hand is still down.
         await settle(page);
         movedHeld = await page.evaluate(() => new Set(window.__edgeSeen.map((t) => t.toFixed(3))).size > 1);
+        await letHeld(page);
+        await settle(page);
         await page.mouse.up();
         await watch.step("drag edge twice", s);
         await page.evaluate(() => (window.__followWatch = false));
@@ -6724,7 +6817,14 @@ for (const seq of toWalk) {
         // playUntil, once the app has settled on the press.
         await settle(page);
         await playUntil(page, { most: 0.3 });
-        const starts = await page.evaluate(() => window.__frameQueue.stats.starts);
+        // What the play had started, thrown away and handed over twice
+        // before the presses of L, see the frame queue's stats.
+        const counts = () =>
+          page.evaluate(() => {
+            const { starts, soundThrown, soundTwice } = window.__frameQueue.stats;
+            return { starts, thrown: soundThrown, twice: soundTwice };
+          });
+        const before = await counts();
         await page.keyboard.press("l");
         await playUntil(page, { past: end - arg });
         await page.evaluate(() => {
@@ -6745,6 +6845,7 @@ for (const seq of toWalk) {
           await page.keyboard.press("l");
           await playUntil(page, { most: 0.12 });
         }
+        const pressed = await counts();
         // Until the play stops at the end, or has gone on by what was left
         // of the clip and eight seconds more, and then until the queue
         // holds the sound card, see end in lib/frames/queue.ts: whatever
@@ -6782,10 +6883,11 @@ for (const seq of toWalk) {
             m0: q.m0,
             rate: q.audio.sampleRate,
             programEnd: q.program.end,
+            late: q.stats.lateSoundAt,
             heard: window.__heard.map((h) => ({ frame: h.frame, data: Array.from(h.data) })),
           };
         });
-        loopEnd = { end, fps: await rate(page), starts: q.starts - starts, ...q };
+        loopEnd = { end, fps: await rate(page), ...q, starts: q.starts - before.starts, thrown: pressed.thrown - before.thrown, twice: pressed.twice - before.twice };
         await settle(page);
         break;
       }
@@ -7357,7 +7459,7 @@ for (const seq of toWalk) {
           await page.keyboard.press("Escape");
           await menu.waitFor({ state: "detached" });
           // The search is let on, and the rest of the video after it.
-          await control(url, "/speech?ms=0");
+          await control(url, "/speech?go");
           const done = async () => (await ask(page, "Library")).find((e) => e.source === source)?.transcribed;
           for (let seen = await news(page); !(await done()); ) {
             const j = await transcription();
@@ -7386,7 +7488,7 @@ for (const seq of toWalk) {
           await menu.waitFor({ state: "detached" });
           const runs = async () => (await ask(page, "Jobs")).some((j) => j.episode === source && (j.state === "running" || j.state === "queued"));
           for (let seen = await news(page); await runs(); ) seen = await nextNews(page, seen);
-          await control(url, "/speech?ms=hold");
+          await control(url, "/speech?hold");
           await settle(page);
           if (await page.locator("aside li:has(button.episode.current) .dot.busy").count()) {
             wrong = "the video's dot pulses with nothing running";
@@ -7441,15 +7543,17 @@ for (const seq of toWalk) {
           await row.hover();
           await row.locator("button.more").click();
           await menu.waitFor();
-          // The Go side answers late, the way a busy machine does, so the
-          // dot pulses for the click and not for the job's first news.
-          await control(url, "/hold?call=Transcribe&ms=1500");
+          // The Go side answers only once the frame of the click is read,
+          // the way a busy machine answers late, so the dot pulses for the
+          // click and not for the job's first news.
+          await control(url, "/hold?call=Transcribe&gate=shut&times=1");
           const after = await pick(want);
           await settle(page);
           if (after.said !== want) wrong = `the menu says ${JSON.stringify(after.said)}, not ${want}`;
           else if (after.open) wrong = `the menu stayed open after ${want} was clicked`;
           else if (!after.busy) wrong = `the frame after ${want} was clicked, the video's dot does not say that work runs`;
           else if (after.number) wrong = `after ${want} was clicked, the video's row shows a number`;
+          await control(url, "/hold?call=Transcribe&gate=open");
           if (wrong) {
             await page.keyboard.press("Escape");
             break;
@@ -7521,11 +7625,10 @@ for (const seq of toWalk) {
           // nothing up, found by the second review of #458. Here the
           // model is local, so a search that finds takes the hearing, and
           // so does a clip made by hand over a part not heard yet. The
-          // speech takes its time, so the whole video's piece ends and it
-          // can give the hearing away.
+          // speech stays held, and is let on a piece at a time, so the
+          // whole video's piece ends and it can give the hearing away.
           await page.keyboard.press("Escape");
           await menu.waitFor({ state: "detached" });
-          await control(url, "/speech?ms=1500");
           const onHold = async (what) => {
             await stepIs("waiting");
             const seen = await partNow();
@@ -7551,7 +7654,7 @@ for (const seq of toWalk) {
           // answer, so the search keeps finding, and a piece waits in the
           // speech as Search is clicked.
           await control(url, "/model?hang=1");
-          await control(url, "/speech?ms=hold%20one");
+          await control(url, "/speech?hold=one");
           const dotsBefore = await page.evaluate(() => window.dotsNow());
           await page.locator(".listhead button.search").click();
           // The Go side says the whole video waits before it says the
@@ -7575,13 +7678,15 @@ for (const seq of toWalk) {
           for (let seen = await news(page); !(await hears()); ) seen = await nextNews(page, seen);
           await settle(page);
           const dotsAfter = await page.evaluate(() => window.dotsNow());
-          await control(url, "/speech?ms=1500");
           if (dotsAfter !== dotsBefore) {
             wrong = `the whole video went on hold for a search, and its dots moved on from ${dotsBefore} to ${dotsAfter}`;
             break;
           }
+          // Cancelled, the search's piece waiting in the speech is heard to
+          // its end, and the whole video's next piece waits there in turn.
           const searching = async () => (await ask(page, "Jobs")).some((j) => j.episode === source && j.kind === "search" && (j.state === "running" || j.state === "queued"));
           await page.locator(".listhead button.search").click();
+          await control(url, "/speech?step=1");
           for (let seen = await news(page); await searching(); ) seen = await nextNews(page, seen);
           await control(url, "/model");
           wrong = await back("the search cancelled");
@@ -7594,11 +7699,14 @@ for (const seq of toWalk) {
           await page.keyboard.press("i");
           wrong = await onHold("a clip made by hand hearing");
           if (wrong) break;
+          // The clip's part is let on a piece at a time until the clip is
+          // made.
           const making = async () => (await ask(page, "Jobs")).some((j) => j.episode === source && j.kind === "clip" && (j.state === "running" || j.state === "queued"));
-          for (let seen = await news(page); await making(); ) seen = await nextNews(page, seen);
+          for (let seen = await news(page); await making(); ) {
+            await control(url, "/speech?step=1");
+            seen = await nextNews(page, seen);
+          }
           wrong = await back("the clip made by hand");
-          if (wrong) break;
-          await control(url, "/speech?ms=hold");
           break;
         }
         if (arg === "stop at the end") {
@@ -7626,7 +7734,7 @@ for (const seq of toWalk) {
             await nextNews(page, seen);
           }
           if (wrong) break;
-          await control(url, "/speech?ms=hold%20one");
+          await control(url, "/speech?hold=one");
           await row.hover();
           await row.locator("button.more").click();
           await menu.waitFor();
@@ -7637,7 +7745,7 @@ for (const seq of toWalk) {
             break;
           }
           const read = await news(page, "episode");
-          await control(url, "/speech?ms=0");
+          await control(url, "/speech?go");
           await nextNews(page, read, "episode");
           const runs = async () => (await ask(page, "Jobs")).some((j) => j.episode === source && j.kind === "transcribe" && (j.state === "running" || j.state === "queued"));
           for (let seen = await news(page); await runs(); ) seen = await nextNews(page, seen);
@@ -7650,11 +7758,11 @@ for (const seq of toWalk) {
           // The search before was cancelled, and the dots follow the whole
           // video again: they stood still under it until the next search,
           // found on #458. Twenty reports of the work, counted, are many
-          // pieces of the audio.
-          await control(url, "/speech?ms=1500");
+          // pieces of the audio, let on one at a time.
           const before = await page.evaluate(() => window.dotsNow());
           let moved = false;
           for (let seen = await news(page), n = 0; !moved && n < 20; n++) {
+            await control(url, "/speech?step=1");
             seen = await nextNews(page, seen);
             moved = (await page.evaluate(() => window.dotsNow())) !== before;
           }
@@ -7665,7 +7773,7 @@ for (const seq of toWalk) {
           }
           // Then held with a piece of the audio in it, so the press comes
           // while that piece is being heard, the way Tim pressed it.
-          await control(url, "/speech?ms=hold%20one");
+          await control(url, "/speech?hold=one");
           await settle(page);
           const held = await page.evaluate(() => window.dotsNow());
           const after = await pick("Stop transcribing");
@@ -7697,7 +7805,7 @@ for (const seq of toWalk) {
           // shrinking after the frame had gone, Tim's report of 23
           // October.
           const read = await news(page, "episode");
-          await control(url, "/speech?ms=0");
+          await control(url, "/speech?go");
           await nextNews(page, read, "episode");
           const runs = async () => (await ask(page, "Jobs")).some((j) => j.episode === source && j.kind === "transcribe" && (j.state === "running" || j.state === "queued"));
           for (let seen = await news(page); await runs(); ) seen = await nextNews(page, seen);
@@ -8039,13 +8147,17 @@ for (const seq of toWalk) {
           if (pressFirst !== undefined) {
             // A press in the menu beside the field takes the focus from it
             // and gives it to nothing, which is what WebKit does with a
-            // button pressed. The first save the Go side hears of, if one
-            // was made, waits half a second, so a later one is heard first.
-            await control(url, "/hold?call=SetLabel&ms=500");
+            // button pressed. The first save the Go side hears of is held
+            // until the colour is picked, so a later one is heard first.
+            await hold(page, "SetLabel");
             const box = await menu.locator(".label").boundingBox();
             await page.mouse.click(box.x + 3, box.y + 3);
           }
           await menu.locator(`button[aria-label="${colour}"]`).click();
+          if (pressFirst !== undefined) {
+            await settle(page);
+            await letHeld(page);
+          }
           if (how.endsWith(", then Return")) {
             // WebKit gives a pressed button no focus, so the focus is on
             // the menu itself. A key pressed there shows the keyboard's
@@ -8309,7 +8421,7 @@ for (const seq of toWalk) {
         // made taller until the crop is as tall as the short.
         const tall = Number(execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries",
           "stream=height", "-of", "csv=p=0", short]).toString().trim());
-        const sized = (await open(url, { viewport: { width: 2400, height: 1000 }, again: page.context().browser() })).page;
+        const sized = (await open(url, { viewport: { width: 2400, height: 1000 }, again: page.context().browser(), still: still(seq) })).page;
         const canvasTall = () => sized.evaluate(() => document.querySelector(".screen canvas").height);
         for (let i = 0, high = 1000; i < 12 && (await canvasTall()) !== tall; i++) {
           high += Math.round((tall - (await canvasTall())) * 1.4) || Math.sign(tall - (await canvasTall()));
@@ -8465,7 +8577,8 @@ for (const seq of toWalk) {
         break;
       }
       case "speech":
-        await control(url, arg === "wordless" ? "/speech?wordless=1" : `/speech?ms=${arg}`);
+        await control(url, { wordless: "/speech?wordless=1", hold: "/speech?hold" }[arg] ?? "/speech?go");
+        if (arg !== "wordless") speechHeld = arg === "hold";
         break;
       case "add, the window read late": {
         // A video added whose workspace hears that no window was kept for
@@ -8489,7 +8602,7 @@ for (const seq of toWalk) {
         break;
       }
       case "hold":
-        await control(url, `/hold?call=${arg[0]}&ms=${arg[1]}`);
+        await hold(page, arg);
         break;
       case "search and cancel": {
         const seen = await page.evaluate(
@@ -8521,6 +8634,9 @@ for (const seq of toWalk) {
           wrong = `the head said Cancel greyed out for ${greyed} of ${seen.frames.length} frames after Search, so a press there did nothing`;
         else if (seen.after !== "Cancelling") wrong = `Cancel pressed, the head said ${seen.after}, not Cancelling`;
         console.log(`      Cancel pressed ${seen.frames.length} frames after Search, ${greyed} of them greyed out`);
+        // Cancel has reached the Go side before the search held on its way
+        // there, which the watch lets go of.
+        await settle(page);
         await watch.step("head", s);
         break;
       }
@@ -9526,17 +9642,18 @@ for (const seq of toWalk) {
           await pageUntil(page, () => /without a word/.test(document.querySelector(".words")?.textContent ?? ""));
         } else {
           await page.locator(".telling").focus();
-          // The last words are held back until Tab is pressed, so Tab
-          // comes while they are written down on any machine.
-          const late = arg === "enter, then tab and enter" || arg === "enter, then tab";
+          // The last words are held back until the walk has looked, so
+          // Tab, or the look at the cursor, comes while they are written
+          // down on any machine.
+          const tab = arg === "enter, then tab and enter" || arg === "enter, then tab";
+          const late = tab || arg === "escape, the cursor stays";
           if (late) await control(url, "/hold?call=StopListening&gate=shut");
           await page.keyboard.press(arg === "enter" ? "Enter" : "Escape");
           if (arg === "escape, then enter") await page.keyboard.press("Enter");
-          if (late) {
+          if (tab) {
             await page.keyboard.press("Tab");
             if (arg === "enter, then tab and enter") await page.keyboard.press("Enter");
             const writing = await button.getAttribute("aria-label");
-            await control(url, "/hold?call=StopListening&gate=open");
             if (writing !== "Writing") wrong = `the button says ${writing} after Tab, not Writing, so Tab came after the words were written`;
           }
           // While the last words are written down, the cursor is still
@@ -9546,7 +9663,9 @@ for (const seq of toWalk) {
             if (c.writing !== "Writing") wrong = `the button says ${c.writing} right after Escape, not Writing, so there was nothing to look at`;
             else if (!c.ours) wrong = "the cursor left the end of the words while they were written down";
           }
+          if (late) await control(url, "/hold?call=StopListening&gate=open");
         }
+        await letHeld(page);
         await pageUntil(page, () => document.querySelector("button.dictate")?.getAttribute("aria-label") === "Dictate");
         if (await page.locator(".telling .dictated").count()) wrong = "what was being said is still grey in the report";
         // Tab put the focus on Report while the last words were written
@@ -10591,15 +10710,37 @@ for (const seq of toWalk) {
         // thousandths of its height, and a stop or a restart jumps by a
         // good part of it. The sound card's time of the program's end is
         // where the sound ends, and after it nothing.
-        const { heard, c0, m0, rate: sr, programEnd } = loopEnd;
+        const { heard, c0, m0, rate: sr, programEnd, late } = loopEnd;
         const xs = [];
         for (const h of heard) for (let k = 0; k < h.data.length; k++) xs.push([h.frame + k, h.data[k]]);
         const endFrame = Math.round((c0 + (Math.round(programEnd * sr) - m0) / sr) * sr);
         let height = 0;
         for (const [f, x] of xs) if (f < endFrame) height = Math.max(height, Math.abs(x));
+        // A busy machine can keep the page from handing the sound card its
+        // sound in time, and the sound card plays nothing until it comes,
+        // which starts and ends with a click. The app counts each such
+        // stretch with where it should have started and where it did, see
+        // schedule in lib/frames/queue.ts, so a click at either end of a
+        // silence heard there is the machine's and not the loop's, issue
+        // #466. Where the sound card took up the sound again is read off
+        // the silence itself, since it can be a while after the moment
+        // the page asked. The page's counts are within a quantum of 128
+        // frames of the sound card's. The presses of L are known to have
+        // thrown no sound away and handed none over twice, below, so
+        // nothing they did made the sound late.
+        const silences = [];
+        for (let k = 0; k < xs.length; k++) {
+          if (xs[k][1] !== 0) continue;
+          const from = k;
+          while (k + 1 < xs.length && xs[k + 1][1] === 0 && xs[k + 1][0] === xs[k][0] + 1) k++;
+          const [a, b] = [xs[from][0], xs[k][0]];
+          if (b - a >= 64 && late.some(([p, q]) => a <= q + 128 && b >= p - 128)) silences.push([a, b]);
+        }
+        const lateHere = (f) => silences.some(([a, b]) => f >= a - 1 && f <= b + 2);
         let clicks = 0;
         let firstClick = null;
         let after = 0;
+        let starved = 0;
         for (let k = 2; k < xs.length; k++) {
           const [f, x] = xs[k];
           if (f >= endFrame + 2) {
@@ -10607,12 +10748,17 @@ for (const seq of toWalk) {
             continue;
           }
           if (xs[k - 1][0] !== f - 1 || xs[k - 2][0] !== f - 2) continue;
-          if (Math.abs(x - 2 * xs[k - 1][1] + xs[k - 2][1]) > 0.03 * height) {
+          if (Math.abs(x - 2 * xs[k - 1][1] + xs[k - 2][1]) <= 0.03 * height) continue;
+          if (lateHere(f)) starved++;
+          else {
             clicks++;
             firstClick ??= ((f - endFrame) / sr) * 1000;
           }
         }
+        if (starved) console.log(`      ${starved} clicks where the page handed the sound card its sound late, ${silences.length} silences heard`);
         if (loopEnd.starts) wrong = `the play started over ${loopEnd.starts} times while L was pressed`;
+        else if (loopEnd.thrown) wrong = `the presses of L took ${loopEnd.thrown} stretches of sound off the sound card before they had played`;
+        else if (loopEnd.twice) wrong = `the presses of L handed the sound card ${loopEnd.twice} stretches of sound it had already been handed`;
         else if (!(height > 0.01)) wrong = `the sound card was handed nothing to hear, ${xs.length} samples`;
         else if (clicks) wrong = `the sound clicked ${clicks} times, the first ${(-firstClick).toFixed(0)} ms before the end`;
         else if (after) wrong = `${after} samples of sound were heard after the clip's end`;
@@ -10825,6 +10971,8 @@ for (const seq of toWalk) {
         );
         const saves = new Set();
         for (let seen = from; seen < from + times; ) {
+          // With the speech held, a piece more is heard for each news.
+          if (speechHeld) await control(url, "/speech?step=1");
           seen = await nextNews(page, seen);
           const status = await ask(page, "Episode", path).catch(() => null);
           saves.add(JSON.stringify(status?.heard ?? null));
@@ -11251,7 +11399,12 @@ for (const seq of toWalk) {
         // saved transcript holds a sentence, or as many as asked for.
         const path = await episodeOn(page);
         const least = arg ?? 1;
-        for (let seen = await news(page); ((await ask(page, "Sentences", path)) ?? []).length < least; ) seen = await nextNews(page, seen);
+        // With the speech held, it is let through a piece at a time, and
+        // each is saved.
+        for (let seen = await news(page); ((await ask(page, "Sentences", path)) ?? []).length < least; ) {
+          if (speechHeld) await onePiece(page, url, path, { save: true });
+          else seen = await nextNews(page, seen);
+        }
         // And the app has read how far the saved transcript reaches since,
         // which it reads again on its own while the work hears, so the
         // cards it reads are those sentences too.
@@ -13186,11 +13339,6 @@ for (const seq of toWalk) {
         break;
       }
       case "row folds": {
-        // A fold the screen drew no frame of cannot be judged, which only a
-        // busy machine does. Then another clip is made and its row removed
-        // and judged, up to three in all, the way a bounce is stepped onto
-        // again. The steps that do it are put after this one.
-        const tries = arg ?? 1;
         const bins = page.locator("aside ol li:has(+ li) button.drop");
         if (!(await bins.count())) {
           wrong = "no clip in the clip list has a card under it";
@@ -13205,11 +13353,12 @@ for (const seq of toWalk) {
         await page.mouse.down();
         await page.mouse.up();
         await page.waitForSelector("aside ol li:not([inert]) .gone");
-        // Every frame from here, until the row has been gone a while: the
-        // browser's own frames, which go on while the app's time is held.
-        // And the fold itself: every animation the row is given, and
-        // whether the last had finished in the moment the row left the
-        // list, told by the list changing, not by a frame.
+        // The fold runs on the browser's own time, which the held clock
+        // does not hold, and a busy machine may draw no frame of it at
+        // all, #469. So the fold is held where it starts the moment it is
+        // made and stepped through by hand below, each step read off the
+        // page, and the row and the card under it are read again in the
+        // moment the row leaves the list and on the frames after.
         await page.evaluate(() => {
           const frame = window.__real?.frame ?? ((f) => requestAnimationFrame(f));
           const row = document.querySelector("aside ol li:not([inert]) .gone").closest("li");
@@ -13217,38 +13366,65 @@ for (const seq of toWalk) {
           const gap = parseFloat(getComputedStyle(row.parentElement).rowGap);
           const seen = [];
           const folds = [];
+          let found;
           let ended;
-          window.__fold = { seen, height: row.getBoundingClientRect().height, gap, row, left: null, ended: new Promise((r) => (ended = r)) };
+          const look = (step) => seen.push({ step, there: row.isConnected, top: under.getBoundingClientRect().top, height: row.isConnected ? row.getBoundingClientRect().height : 0 });
+          window.__fold = { seen, look, height: row.getBoundingClientRect().height, gap, row, left: null, held: new Promise((r) => (found = r)), ended: new Promise((r) => (ended = r)) };
+          look();
           // Svelte takes the row out when its animation says it has
           // finished, and cancels it as it does, so whether it had is
           // heard before Svelte hears it: a listener added here, as the
           // animation is made, comes before the one Svelte sets after.
+          // Svelte first makes an animation of no length and makes the
+          // fold when that ends, so the fold is the one with a length.
           row.animate = function (...args) {
             const fold = Element.prototype.animate.apply(this, args);
             const last = { finished: false };
             fold.addEventListener("finish", () => (last.finished = true));
             folds.push(last);
+            if (fold.effect.getComputedTiming().duration > 0) {
+              fold.pause();
+              found(fold);
+            }
             return fold;
           };
+          // The moment the row leaves, read before the browser draws it,
+          // then ten frames more, to see that nothing moves after.
           new MutationObserver((_, watching) => {
             if (row.isConnected) return;
             watching.disconnect();
             window.__fold.left = { folded: folds.length > 0, finished: !!folds.at(-1)?.finished };
+            found(null);
+            let frames = 10;
+            const after = () => {
+              look();
+              if (--frames) frame(after);
+              else ended();
+            };
+            after();
           }).observe(row.parentElement, { childList: true });
-          const look = () => {
-            seen.push({ there: row.isConnected, top: under.getBoundingClientRect().top, height: row.isConnected ? row.getBoundingClientRect().height : 0 });
-            if (row.isConnected || seen.filter((f) => !f.there).length < 30) frame(look);
-            else ended();
-          };
-          frame(look);
         });
         const line = await page.locator(".clip-timeline").boundingBox();
         await page.mouse.move(line.x + line.width / 2, line.y + line.height / 2, { steps: 8 });
         await runClock(page, (removeTime + 0.5) * 1000);
-        // Its time has run out, so it is on its way out, or out already,
-        // and the watch ends thirty frames after it left.
+        // Its time has run out, so it is on its way out, or out already.
         const going = await page.evaluate(() => !window.__fold.row.isConnected || window.__fold.row.inert);
-        if (going) await page.evaluate(() => window.__fold.ended);
+        if (going) {
+          // Twenty steps from where the fold starts to where it ends, each
+          // read as the page stands then, and then the fold is let finish.
+          await page.evaluate(async () => {
+            const fold = await window.__fold.held;
+            if (fold) {
+              const end = fold.effect.getComputedTiming().endTime;
+              for (let i = 1; i <= 20; i++) {
+                fold.currentTime = (end * i) / 20;
+                window.__fold.look(i);
+              }
+              fold.finish();
+            }
+            await window.__fold.ended;
+          });
+        }
         await letClockGo(page);
         if (!going) {
           wrong = "the removed row was still in the list after its time";
@@ -13258,25 +13434,22 @@ for (const seq of toWalk) {
         const tops = seen.map((f) => f.top);
         const rose = tops[0] - tops[tops.length - 1];
         const back = tops.findIndex((t, i) => i && t > tops[i - 1] + 0.5);
-        // The space goes with the row: in every frame the row is still
-        // there, the card under it has risen by as much of the row and the
-        // space after it as the row has folded. Judged frame by frame, not
-        // by the step at the end, since a busy machine that draws no frame
-        // for a while makes that step as large as the fold it missed,
-        // issue #442. That the row stays until its fold is over is told
-        // by the fold's own animation instead.
-        const folding = seen.filter((f) => f.there && f.height > 0.5 && f.height < height - 0.5);
-        const off = folding
-          .map((f, i) => ({ i, by: tops[0] - f.top - (height + gap) * (1 - f.height / height) }))
-          .find((f) => Math.abs(f.by) > 1);
+        const leaving = seen.findIndex((f) => !f.there);
+        const jump = leaving > 0 ? tops[leaving - 1] - tops[leaving] : 0;
+        // The space goes with the row: at every step of the fold, the card
+        // under it has risen by as much of the row and the space after it
+        // as the row has folded.
+        const steps = seen.filter((f) => f.step);
+        const off = steps.map((f) => ({ i: f.step, by: tops[0] - f.top - (height + gap) * (1 - f.height / height) })).find((f) => Math.abs(f.by) > 1);
         if (!left) wrong = "the removed row was never seen leaving the list";
         else if (!left.folded) wrong = "the removed row left the list with no fold";
         else if (!left.finished) wrong = "the removed row left the list before its fold had finished";
+        else if (steps.length !== 20) wrong = `the removed row's fold was stepped through ${steps.length} times, not 20`;
+        else if (!steps.every((f) => f.there)) wrong = `the removed row left the list at step ${steps.find((f) => !f.there).step} of its fold, not after it`;
+        else if (off) wrong = `the space under the removed row did not fold with it: ${Math.abs(off.by).toFixed(1)} px ${off.by < 0 ? "short of" : "past"} where the card under it stands at step ${off.i} of the fold`;
+        else if (Math.abs(jump) > 0.5) wrong = `the card under the removed row jumped ${jump.toFixed(1)} px in the moment the row left the list`;
         else if (Math.abs(rose - (height + gap)) > 1) wrong = `the card under the removed row rose ${rose.toFixed(1)} px, not the row's ${height} and the ${gap} after it`;
-        else if (back >= 0) wrong = `the card under the removed row went back down ${(tops[back] - tops[back - 1]).toFixed(1)} px on frame ${back}`;
-        else if (!folding.length && tries < 3) steps.splice(at + 1, 0, ["trim", "start", 300], ["make while paused", "i"], [what, tries + 1]);
-        else if (!folding.length) wrong = `the screen drew no frame while the row folded, ${tries} rows in a row, so how it folds cannot be judged`;
-        else if (off) wrong = `the space under the removed row did not fold with it: ${Math.abs(off.by).toFixed(1)} px ${off.by < 0 ? "short of" : "past"} where the card under it stands on frame ${off.i + 1} of the fold`;
+        else if (back >= 0) wrong = `the card under the removed row went back down ${(tops[back] - tops[back - 1]).toFixed(1)} px at step ${back}`;
         await watch.step("row folds", s);
         break;
       }
@@ -13342,6 +13515,13 @@ for (const seq of toWalk) {
           break;
         }
         await cancel.click();
+        // The clip waits on the piece it is hearing, which is held, so
+        // Cancel ends it once that piece is let through.
+        if (speechHeld) {
+          await settle(page);
+          const going = async () => ["running", "queued"].includes((await ask(page, "Jobs")).find((j) => j.id === handJob)?.state);
+          while (await going()) await onePiece(page, url, path);
+        }
         await pageUntil(page, (k) => document.querySelector(`li[data-key^="${k}/"].stopped .title`)?.textContent.trim() === "Stopped. Click Continue", handJob);
         await watch.step("wait", s);
         break;
@@ -13522,7 +13702,8 @@ for (const seq of toWalk) {
           wrong = `I at ${at} s, where nothing is heard yet, asked for no clip`;
           break;
         }
-        await control(url, "/speech?ms=0");
+        await control(url, "/speech?go");
+        speechHeld = false;
         // Until the Go side says the clip asked for has ended, and then the
         // frame the card shows it in.
         let job;
@@ -13899,7 +14080,8 @@ for (const seq of toWalk) {
         await watch.step("add", s);
         break;
       case "words again":
-        await control(url, "/speech?ms=0&from=0");
+        await control(url, "/speech?go&from=0");
+        speechHeld = false;
         break;
       case "updates": {
         const q = new URLSearchParams({
@@ -14858,8 +15040,7 @@ for (const seq of toWalk) {
         const y = dot.y + dot.height / 2;
         const x = dot.x + dot.width / 2;
         const to = arg === "end" ? g.end.x + g.end.w + 60 : g.start.x - 60;
-        await page.mouse.move(x, y);
-        await page.mouse.down();
+        await pressOnTrack(page, x, y);
         const held = [];
         for (let i = 1; i <= 12; i++) {
           await page.mouse.move(x + ((to - x) * i) / 12, y);
@@ -15376,13 +15557,11 @@ for (const seq of toWalk) {
   const failed = wrong ?? (watch.failed && `broke: ${watch.failed.rule}\n${watch.failed.detail}`);
   const took = ((performance.now() - began) / 1000).toFixed(1).padStart(5);
   console.log(`${failed ? "FAIL" : "ok  "}  ${took} s  ${seq.name}`);
-  if (failed) {
-    failures++;
-    console.log(`      after ${done.join(", ")}\n      ${failed.replaceAll("\n", "\n      ")}`);
-  }
-  await browser.close();
+  if (failed) console.log(`      after ${done.join(", ")}\n      ${failed.replaceAll("\n", "\n      ")}`);
+  if (shared) await Promise.all(shared.contexts().map((c) => c.close()));
+  else await browser.close();
+  return Boolean(failed);
 }
-process.exit(failures ? 1 : 0);
 
 // Reads, on every frame the browser paints, the pill libass drew off the
 // canvas and the frames the caption box puts round words: the lit word's,
@@ -15540,13 +15719,15 @@ function glideOf(marks, src) {
 // heard, its step or its state. Whatever hears next hears it, the search
 // or the video heard by itself. A hearing called off between two pieces
 // changes its state without hearing one, and the piece is left for the
-// next, so a walk allows for a piece more than it counted.
-async function onePiece(page, url, path) {
+// next, so a walk allows for a piece more than it counted. With save, what
+// is heard so far is saved once the piece is heard, which the bridge
+// otherwise only does once the hearing ends.
+async function onePiece(page, url, path, { save = false } = {}) {
   const now = async () =>
     JSON.stringify((await ask(page, "Jobs")).filter((j) => j.episode === path).map((j) => [j.id, j.state, j.step, j.progress?.covered]));
   const before = await now();
   let seen = await news(page);
-  await control(url, "/speech?step=1");
+  await control(url, save ? "/speech?step=1&save" : "/speech?step=1");
   while ((await now()) === before) seen = await nextNews(page, seen);
 }
 

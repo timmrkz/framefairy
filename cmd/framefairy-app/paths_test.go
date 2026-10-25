@@ -72,10 +72,14 @@ func TestPathAVideoMovedAwayKeepsItsClips(t *testing.T) {
 
 func TestPathClosedWhileHearing(t *testing.T) {
 	d := open(t)
-	hearing := d.speech.hearingAfter(1)
+	in, let := d.speech.holdAfter(1)
 	ep := d.add("ep", minutes5)
-	<-hearing
-	d.close()
+	<-in
+	j, ok := d.svc.jobs.find(ep, "search")
+	if !ok {
+		t.Fatalf("no search hears the video: %+v", d.svc.jobs.list())
+	}
+	d.closeWhileIn(j, let)
 	heardBefore, _ := d.heard(ep)
 	given := d.speech.seconds()
 
@@ -151,10 +155,11 @@ func TestPathClosedWhileFinding(t *testing.T) {
 
 func TestPathCancelWhileHearing(t *testing.T) {
 	d := open(t)
-	hearing := d.speech.hearingAfter(1)
+	in, let := d.speech.holdAfter(1)
 	ep := d.add("ep", minutes5)
-	<-hearing
+	<-in
 	d.cancel(ep)
+	let()
 	d.idle(ep)
 	// Called off, it says so where its clips would be, with Continue, the
 	// way a search cut off by the app closing does. It used to say
@@ -193,10 +198,11 @@ func TestPathCancelWhileHearing(t *testing.T) {
 // On the real disk: ffmpeg reads the episode the search hears.
 func TestPathAVideoRemovedAndAddedAgainSaysOnlyWhatItsFolderHolds(t *testing.T) {
 	d := open(t)
-	hearing := d.speech.hearingAfter(1)
+	in, let := d.speech.holdAfter(1)
 	ep := d.add("ep", minutes5)
-	<-hearing
+	<-in
 	d.cancel(ep)
+	let()
 	d.idle(ep)
 	if o := d.outcome(ep); !o.stopped {
 		t.Fatalf("a search called off says %+v", o)
@@ -574,9 +580,11 @@ func TestPathATargetStaysWithItsWindow(t *testing.T) {
 func TestPathAVideoHasOneWindow(t *testing.T) {
 	// Not side by side: open sets HOME for the whole process.
 	d := open(t)
-	hearing := d.speech.hearingAfter(1)
+	in, let := d.speech.holdAfter(1)
+	// A check that fails before Cancel lets the piece go too.
+	t.Cleanup(let)
 	ep := d.add("ep", "1200")
-	<-hearing
+	<-in
 	j, ok := d.svc.jobs.find(ep, "search")
 	if !ok {
 		t.Fatal("the video just added was not searched")
@@ -589,6 +597,7 @@ func TestPathAVideoHasOneWindow(t *testing.T) {
 		t.Errorf("the first search is of %v to %v, the video's window %v to %v", j.From, j.To, w.From, w.To)
 	}
 	d.cancel(ep)
+	let()
 	d.idle(ep)
 	if o := d.outcome(ep); !o.stopped {
 		t.Fatalf("cancelled, the search says %+v", o)
