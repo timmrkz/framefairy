@@ -530,7 +530,7 @@ func (s *speech) Recognize(samples []float32, rate int) []engine.Token {
 		s.started = nil
 	}
 	s.mu.Unlock()
-	time.Sleep(40 * time.Millisecond)
+	time.Sleep(40 * time.Millisecond) //nolint:forbidigo // the stand-in speech model takes its time on the real clock, left for #510
 	length := float64(len(samples)) / float64(rate)
 	var tokens []engine.Token
 	for at := 0.1; at+0.35 < length; at += 0.6 {

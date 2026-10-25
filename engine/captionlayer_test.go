@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"framefairy/internal/ffmpegtest"
@@ -620,56 +621,60 @@ func TestWritingCaptionsNeverMakesTheWorkFolder(t *testing.T) {
 // first, and every other got its "context canceled" with its own still
 // live, answered 500, found by the second review 20 times out of 20. And
 // a request called off while it waits stops waiting.
+//
+// It runs in a bubble, so the test knows when every request waits.
 func TestACaptionFileOutlivesTheRequestThatAskedFirst(t *testing.T) {
 	t.Parallel()
-	c := newTrackCache()
-	started, release := make(chan struct{}), make(chan struct{})
-	build := func(ctx context.Context) (previewFile, error) {
-		close(started)
-		<-release
-		return previewFile{file: "a.ass"}, ctx.Err()
-	}
-	// A request that comes after the file is made makes it again, since no
-	// file of that name is there, and gets it as well.
-	again := func(ctx context.Context) (previewFile, error) { return previewFile{file: "a.ass"}, ctx.Err() }
+	synctest.Test(t, func(t *testing.T) {
+		c := newTrackCache()
+		started, release := make(chan struct{}), make(chan struct{})
+		build := func(ctx context.Context) (previewFile, error) {
+			close(started)
+			<-release
+			return previewFile{file: "a.ass"}, ctx.Err()
+		}
+		// A request that comes after the file is made makes it again, since no
+		// file of that name is there, and gets it as well.
+		again := func(ctx context.Context) (previewFile, error) { return previewFile{file: "a.ass"}, ctx.Err() }
 
-	first, cancelFirst := context.WithCancel(context.Background())
-	firstDone := make(chan error, 1)
-	go func() {
-		_, err := c.once(first, "k", build)
-		firstDone <- err
-	}()
-	<-started
-	type answer struct {
-		made previewFile
-		err  error
-	}
-	other := make(chan answer, 1)
-	go func() {
-		made, err := c.once(context.Background(), "k", again)
-		other <- answer{made, err}
-	}()
-	leaving, cancelLeaving := context.WithCancel(context.Background())
-	leftDone := make(chan error, 1)
-	go func() {
-		_, err := c.once(leaving, "k", again)
-		leftDone <- err
-	}()
+		first, cancelFirst := context.WithCancel(context.Background())
+		firstDone := make(chan error, 1)
+		go func() {
+			_, err := c.once(first, "k", build)
+			firstDone <- err
+		}()
+		<-started
+		type answer struct {
+			made previewFile
+			err  error
+		}
+		other := make(chan answer, 1)
+		go func() {
+			made, err := c.once(context.Background(), "k", again)
+			other <- answer{made, err}
+		}()
+		leaving, cancelLeaving := context.WithCancel(context.Background())
+		leftDone := make(chan error, 1)
+		go func() {
+			_, err := c.once(leaving, "k", again)
+			leftDone <- err
+		}()
 
-	cancelFirst()
-	if err := <-firstDone; !errors.Is(err, context.Canceled) {
-		t.Errorf("the request called off gave %v", err)
-	}
-	cancelLeaving()
-	if err := <-leftDone; !errors.Is(err, context.Canceled) {
-		t.Errorf("a waiting request called off gave %v", err)
-	}
-	// The others wait while the file is made, which takes a moment.
-	time.Sleep(20 * time.Millisecond)
-	close(release)
-	if got := <-other; got.err != nil || got.made.file != "a.ass" {
-		t.Errorf("a live request waiting for the file got %q, %v", got.made.file, got.err)
-	}
+		cancelFirst()
+		if err := <-firstDone; !errors.Is(err, context.Canceled) {
+			t.Errorf("the request called off gave %v", err)
+		}
+		cancelLeaving()
+		if err := <-leftDone; !errors.Is(err, context.Canceled) {
+			t.Errorf("a waiting request called off gave %v", err)
+		}
+		// The live request waits for the file being made.
+		synctest.Wait()
+		close(release)
+		if got := <-other; got.err != nil || got.made.file != "a.ass" {
+			t.Errorf("a live request waiting for the file got %q, %v", got.made.file, got.err)
+		}
+	})
 }
 
 // The first caption file written into a folder in a run removes what an

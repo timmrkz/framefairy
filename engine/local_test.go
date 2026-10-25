@@ -250,7 +250,7 @@ func TestAHealthCheckThatGetsNoAnswerGivesUp(t *testing.T) {
 		if healthy(context.Background(), "http://llama-server") {
 			t.Error("a server that never answered was taken for ready")
 		}
-		if took := time.Since(began); took != healthWait {
+		if took := time.Since(began); took != healthWait { //nolint:forbidigo // synctest bubble
 			t.Errorf("a look at a server that never answers took %s on the bubble's clock, want %s", took, healthWait)
 		}
 
@@ -264,7 +264,7 @@ func TestAHealthCheckThatGetsNoAnswerGivesUp(t *testing.T) {
 		if <-looked {
 			t.Error("a server that never answered was taken for ready once the load was cancelled")
 		}
-		if took := time.Since(began); took != 0 {
+		if took := time.Since(began); took != 0 { //nolint:forbidigo // synctest bubble
 			t.Errorf("a cancelled look waited %s on the bubble's clock, want none", took)
 		}
 	})
@@ -390,7 +390,7 @@ func TestALocalModelThatStopsAnsweringIsGivenUpOn(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "stopped answering") {
 		t.Fatalf("err = %v", err)
 	}
-	if took := time.Since(began); took > 5*time.Second {
+	if took := time.Since(began); took > 5*time.Second { //nolint:forbidigo // a product timer shortened on the real clock, left for #510
 		t.Errorf("a model that stopped answering was waited on for %s", took)
 	}
 	if stopped.Load() != 1 {
@@ -440,7 +440,7 @@ func TestALocalModelThatKeepsTalkingIsWaitedFor(t *testing.T) {
 		if answer.Content != `{"clips":[]}` {
 			t.Errorf("answer %q", answer.Content)
 		}
-		if took := time.Since(began); took != 5*localStall {
+		if took := time.Since(began); took != 5*localStall { //nolint:forbidigo // synctest bubble
 			t.Errorf("the answer took %s on the bubble's clock, want %s", took, 5*localStall)
 		}
 	})

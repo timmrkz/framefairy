@@ -12,7 +12,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/spf13/afero"
 )
@@ -1045,23 +1044,24 @@ func TestAnEditWaitsForAnotherProgram(t *testing.T) {
 		t.Fatalf("the other program said %q, %v", line, err)
 	}
 
+	waits := waitsOn(t, disk, path)
 	got := make(chan struct{})
 	go func() {
 		release := lockFile(disk, path)
 		release()
 		close(got)
 	}()
+	// An edit that does not wait for the other program never says so, and
+	// hangs here until go test's -timeout.
+	<-waits
 	select {
 	case <-got:
 		t.Fatal("the lock was taken while another program held it")
-	case <-time.After(300 * time.Millisecond):
+	default:
 	}
 	stdin.Close()
-	select {
-	case <-got:
-	case <-time.After(5 * time.Second):
-		t.Fatal("the lock was not taken once the other program let go")
-	}
+	// One that is never let in hangs here.
+	<-got
 }
 
 // captionWords is the text of every word of a laid out caption, in order.

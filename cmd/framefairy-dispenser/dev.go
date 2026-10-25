@@ -215,15 +215,13 @@ func (d *dev) Tick(ctx context.Context) {
 	}
 }
 
-// run ticks every second until ctx ends.
-func (d *dev) run(ctx context.Context) {
-	t := time.NewTicker(time.Second)
-	defer t.Stop()
+// run ticks each time ticks says so until ctx ends.
+func (d *dev) run(ctx context.Context, ticks <-chan time.Time) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-t.C:
+		case <-ticks:
 			d.Tick(ctx)
 		}
 	}

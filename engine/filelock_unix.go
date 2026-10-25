@@ -3,6 +3,7 @@
 package engine
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -26,7 +27,15 @@ func lockAcrossProcesses(path string) (release func()) {
 	if err != nil {
 		return func() {}
 	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+	err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+	if errors.Is(err, syscall.EWOULDBLOCK) {
+		// Another program holds it, and the edit waits.
+		if lockWaits != nil {
+			lockWaits(path)
+		}
+		err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX)
+	}
+	if err != nil {
 		f.Close()
 		return func() {}
 	}

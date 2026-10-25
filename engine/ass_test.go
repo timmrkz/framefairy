@@ -8,7 +8,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/spf13/afero"
 
@@ -241,11 +240,16 @@ func TestAWordBreaksWhereTheLanguageAllows(t *testing.T) {
 	// took the better part of a minute: the patterns look at every piece
 	// of what they are given, and every point of the word was measured for
 	// every line. The fuzzer found it, as a hang.
+	// Counted in texts measured, not in seconds: a line is measured up to
+	// the first break that does not fit, so the work grows with the word.
 	huge := strings.Repeat("abcdefghijklmnopqrstuvwxyzäöü", 100)
-	began := time.Now()
-	pieces := breakWord(huge, room, de)
-	if took := time.Since(began); took > 5*time.Second {
-		t.Errorf("a word of %d letters took %s to break", runeLen(huge), took)
+	measured := 0
+	counted := room
+	counted.measured = &measured
+	pieces := breakWord(huge, counted, de)
+	t.Logf("%d measures for %d letters", measured, runeLen(huge))
+	if most := 4 * runeLen(huge); measured > most {
+		t.Errorf("a word of %d letters took %d measures to break, more than %d", runeLen(huge), measured, most)
 	}
 	if len(pieces) < 2 || strings.Join(pieces, "") == "" {
 		t.Errorf("a word of %d letters broke into %d pieces", runeLen(huge), len(pieces))

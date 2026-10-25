@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { movieOf } from "./movie";
 import { FrameQueue, GoSound, GoSoundStream, SOUND_CHUNK, soundChunks, type Shown } from "./queue";
 
@@ -428,5 +428,77 @@ describe("the picture standing still", () => {
       if (how === "closed") q.close();
       expect(q.standing, how).toBe(true);
     }
+  });
+});
+
+describe("a frame waiting for its captions", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // A paused queue with a video, whose frame a gesture put the playhead on
+  // waits for what lies over it, see dress. The captions come when the
+  // test says, or never, and the wait ends when the test says, or after
+  // the 600 ms of the browser's clock, which the test moves.
+  function waiting() {
+    const q = new FrameQueue(
+      canvas(),
+      "/episode.mp4",
+      movieOf({ duration: 120, width: 2, height: 2, grid: { origin: 0, start: 0, num: 25, den: 1, count: 3000 } }),
+    );
+    const inside = q as unknown as { video: unknown; dress(rank: number): Promise<boolean> | null };
+    inside.video = { width: 2, height: 2, samples: { pts: [0, 1, 2], order: [0, 1, 2], timescale: 25 } };
+    let came = () => {};
+    q.over = {
+      at: () => null,
+      coming() {},
+      ready: () => new Promise<void>((done) => (came = done)),
+    };
+    const said: string[] = [];
+    q.trace = (line) => said.push(line);
+    return { q, dress: () => inside.dress(1)!, came: () => came(), said };
+  }
+
+  // A clip clicked whose captions never come still shows its picture: Tim
+  // saw a picture stand still while its captions were slow, issue #383,
+  // and a picture that stands still is worse than captions a moment late.
+  test("is put up without them once its wait runs out", async () => {
+    const { q, dress, said } = waiting();
+    let late = () => {};
+    q.dressWait = (l) => {
+      late = l;
+      return () => {};
+    };
+    const wanted = dress();
+    expect(q.stats.waitedForDress).toBe(1);
+    late();
+    expect(await wanted).toBe(true);
+    expect(q.stats.bare).toBe(1);
+    expect(said.some((l) => l.includes("did not come"))).toBe(true);
+  });
+
+  test("is put up with them when they come first, and its wait is called off", async () => {
+    const { q, dress, came } = waiting();
+    let calledOff = 0;
+    q.dressWait = () => () => calledOff++;
+    const wanted = dress();
+    came();
+    expect(await wanted).toBe(true);
+    expect(q.stats.bare).toBe(0);
+    expect(calledOff).toBe(1);
+  });
+
+  test("waits 600 ms of the browser's clock unless a wait is handed in", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const { q, dress } = waiting();
+    const wanted = dress();
+    let ended = false;
+    void wanted.then(() => (ended = true));
+    await vi.advanceTimersByTimeAsync(599);
+    expect(ended).toBe(false);
+    expect(q.stats.bare).toBe(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(ended).toBe(true);
+    expect(q.stats.bare).toBe(1);
   });
 });

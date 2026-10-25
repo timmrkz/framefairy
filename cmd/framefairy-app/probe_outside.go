@@ -22,12 +22,19 @@ import (
 	"time"
 
 	"framefairy/engine"
+	"framefairy/internal/wake"
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
 )
 
 // probeAddr is where the probe listens. Fixed, because the test cannot
 // hand an app that macOS starts anything to read a port from.
 const probeAddr = "127.0.0.1:47290"
+
+// probeHello is where the test listens to hear that the probe is up, so
+// a test that started the app waits for that rather than asking until it
+// answers. readyAt in internal/outside.
+const probeHello = "http://127.0.0.1:47291/ready"
 
 // An app macOS starts has nowhere to print to, so this build writes its
 // log to a file as well, from the first line on. The test shows it when a
@@ -52,6 +59,10 @@ func init() {
 // app's own address, which the page can always reach.
 const probePage = "/__outside/page"
 
+// probeChanged is the route the page tells the probe on that what it
+// shows has changed, see watchScript.
+const probeChanged = "/__outside/changed"
+
 // PageView is what the settings show, read out of the page itself.
 type PageView struct {
 	// Settings is whether the settings are on screen: the Licence card is.
@@ -72,6 +83,9 @@ type PageView struct {
 
 // ProbeState is everything the probe says about the app.
 type ProbeState struct {
+	// Version counts the changes the probe has heard of, in the app and in
+	// the page. GET /state?after=N answers once it is past N.
+	Version int `json:"version"`
 	// Links is how many framefairy:// links the app was handed.
 	Links   int          `json:"links"`
 	Licence LicenceState `json:"licence"`
@@ -105,6 +119,10 @@ type probe struct {
 	links   int
 	seq     int
 	waiting map[int]chan json.RawMessage
+	// version counts the changes, and changed tells whoever waits for the
+	// next one.
+	version int
+	changed wake.Wake
 }
 
 var theProbe = &probe{waiting: map[int]chan json.RawMessage{}}
@@ -114,6 +132,33 @@ func probeLink() {
 	theProbe.mu.Lock()
 	theProbe.links++
 	theProbe.mu.Unlock()
+	theProbe.bump()
+}
+
+// bump says that something the probe answers about may have changed.
+func (p *probe) bump() {
+	p.mu.Lock()
+	p.version++
+	p.changed.WakeLocked()
+	p.mu.Unlock()
+}
+
+// after waits until the version is past n, or the ask is gone.
+func (p *probe) after(r *http.Request, n int) {
+	for {
+		p.mu.Lock()
+		if p.version > n {
+			p.mu.Unlock()
+			return
+		}
+		ch := p.changed.WaitLocked()
+		p.mu.Unlock()
+		select {
+		case <-ch:
+		case <-r.Context().Done():
+			return
+		}
+	}
 }
 
 // probeMiddleware takes the page's answers to what the probe asked it,
@@ -122,6 +167,11 @@ func probeMiddleware(next application.Middleware) application.Middleware {
 	return func(h http.Handler) http.Handler {
 		inner := next(h)
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == probeChanged {
+				theProbe.bump()
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
 			if r.URL.Path != probePage {
 				inner.ServeHTTP(w, r)
 				return
@@ -155,8 +205,18 @@ func startProbe(svc *FrameFairy) {
 		log.Printf("outside probe: %v", err)
 		return
 	}
+	// What the app tells the page, the windows it opens and closes, and
+	// whether it is in front, are the changes the app makes by itself.
+	// The page says when what it shows changes, see watchScript.
+	for _, name := range []string{"job", "episode", "licence-link", "report-window", "quit", "updates"} {
+		svc.app.Event.On(name, func(*application.CustomEvent) { theProbe.bump() })
+	}
+	for _, e := range []events.WindowEventType{events.Common.WindowFocus, events.Common.WindowLostFocus, events.Common.WindowRuntimeReady} {
+		svc.window.OnWindowEvent(e, func(*application.WindowEvent) { theProbe.bump() })
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /state", theProbe.state)
+	mux.HandleFunc("GET /gone", theProbe.gone)
 	mux.HandleFunc("POST /click", theProbe.click)
 	mux.HandleFunc("POST /quit", theProbe.quit)
 	mux.HandleFunc("POST /close", theProbe.close)
@@ -165,10 +225,37 @@ func startProbe(svc *FrameFairy) {
 	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() { _ = srv.Serve(ln) }()
 	log.Printf("outside probe on %s", probeAddr)
+	// The test is told the probe is up. Nobody listening is a test that
+	// does not wait for it.
+	go func() {
+		if resp, err := http.Post(probeHello, "text/plain", nil); err == nil {
+			resp.Body.Close()
+		}
+	}()
 }
 
-func (p *probe) state(w http.ResponseWriter, _ *http.Request) {
-	s := ProbeState{Licence: p.svc.Licence(), Searches: []SearchView{}, Windows: []string{}}
+// gone answers at once and then holds the answer open for as long as the
+// app runs, so the test hears the app go the moment it goes: its
+// connection ends with the process.
+func (p *probe) gone(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
+	<-r.Context().Done()
+}
+
+// state says what the app has: GET /state at once, GET /state?after=N once
+// the version is past N. The version is read before anything else, so a
+// change while the rest is read is a version the next ask waits past.
+func (p *probe) state(w http.ResponseWriter, r *http.Request) {
+	if n, err := strconv.Atoi(r.URL.Query().Get("after")); err == nil {
+		p.after(r, n)
+	}
+	p.mu.Lock()
+	version := p.version
+	p.mu.Unlock()
+	s := ProbeState{Version: version, Licence: p.svc.Licence(), Searches: []SearchView{}, Windows: []string{}}
 	if p.svc.app != nil {
 		for _, w := range p.svc.app.Window.GetAll() {
 			// The app's own window has no name of its own, Wails calls
@@ -192,7 +279,7 @@ func (p *probe) state(w http.ResponseWriter, _ *http.Request) {
 	if p.svc.window != nil {
 		s.Focused = p.svc.window.IsFocused()
 	}
-	answer, err := p.ask(pageScript)
+	answer, err := p.ask(watchScript + pageScript)
 	if err == nil {
 		err = json.Unmarshal(answer, &s.Page)
 	}
@@ -232,6 +319,26 @@ func (p *probe) ask(script string) (json.RawMessage, error) {
 		return nil, errors.New("the page did not answer")
 	}
 }
+
+// watchScript is put before pageScript: the first time the page is read
+// after it loaded, it starts telling the probe whenever what it shows
+// changes, once a frame at most. A field's value set from the code is no
+// change the page sees, so the words typed in it are told as well.
+var watchScript = fmt.Sprintf(`(() => {
+  if (window.__outsideWatching) return;
+  window.__outsideWatching = true;
+  let told = false;
+  const tell = () => {
+    if (told) return;
+    told = true;
+    requestAnimationFrame(() => {
+      told = false;
+      fetch(%q, { method: "POST" });
+    });
+  };
+  new MutationObserver(tell).observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
+  document.addEventListener("input", tell, true);
+})(), `, probeChanged)
 
 // pageScript reads the Licence row, found by the head of its group. Its
 // field is there only while a key is asked for, and reads as empty when
