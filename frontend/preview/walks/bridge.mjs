@@ -101,24 +101,35 @@ export function noDeadlines(page) {
   page.setDefaultTimeout(0);
 }
 
+// A browser for the walks to open the interface in. WebGPU on, which
+// headless Chromium on Linux only gives when asked, for the step that
+// checks what the GPU draws, ["screen light"]. The video preview itself
+// draws on a 2D canvas here, __flatScreen, because headless Chromium gives
+// nothing back from a WebGPU canvas, and the walks read the frame on
+// screen from the canvas. See screen.ts.
+export function newBrowser() {
+  return launch(["--enable-unsafe-webgpu"]);
+}
+
 // The interface on the bridge, in the episode's workspace with its clip
 // chosen and the keyboard on the page. viewport is the size of the page,
 // scale its device pixels to a CSS pixel, 2 for a Mac's screen, and again
 // opens another page on the episode as it is now, beside the first, in
-// its browser.
-export async function open(url, { viewport = { width: 1500, height: 1000 }, scale = 1, again = null } = {}) {
+// its browser. browser is a browser to open it in rather than one of its
+// own, see newBrowser.
+export async function open(url, { viewport = { width: 1500, height: 1000 }, scale = 1, again = null, browser: given = null, still = false } = {}) {
   // The episode the way the bridge found it, whatever the walk before did.
   if (!again) {
     const reset = await fetch(new URL("/reset", url), { method: "POST" });
     if (!reset.ok) throw new Error(`the bridge did not reset: ${await reset.text()}`);
   }
-  // WebGPU on, which headless Chromium on Linux only gives when asked, for
-  // the step that checks what the GPU draws, ["screen light"]. The video
-  // preview itself draws on a 2D canvas here, __flatScreen, because
-  // headless Chromium gives nothing back from a WebGPU canvas, and the
-  // walks read the frame on screen from the canvas. See screen.ts.
-  const browser = again ?? (await launch(["--enable-unsafe-webgpu"]));
-  const page = await browser.newPage({ viewport, deviceScaleFactor: scale });
+  const browser = again ?? given ?? (await newBrowser());
+  // A page of its own in a context of its own, which browser.newPage
+  // makes, so nothing a page before it kept is there.
+  // A page still asks the system for less motion, the way a person can
+  // in the Mac's settings, so the app leaves out what it animates and
+  // the walk does not wait for it, see still in sequences.mjs.
+  const page = await browser.newPage({ viewport, deviceScaleFactor: scale, reducedMotion: still ? "reduce" : "no-preference" });
   noDeadlines(page);
   await page.addInitScript(() => {
     window.__flatScreen = true;
@@ -383,11 +394,30 @@ export const high = (t) => t.y + t.h * 0.2;
 // away from the new one, as a hand that misses by a little does, so the
 // click is one on its own however soon it comes.
 export async function clickOnTrack(page, x, y) {
+  await notTwice(page, x, y);
+  await page.mouse.click(x, y);
+}
+
+// The hand taking hold of something on the clip timeline at x, y, the
+// press of a drag, never the second of a double-click either: a keyframe
+// put on the spot just clicked is taken hold of where that click was, and
+// a double-click on a keyframe removes it. The walk used to be half a
+// second apart there only because it waited on the app's animations.
+export async function pressOnTrack(page, x, y) {
+  await notTwice(page, x, y);
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+}
+
+// Lands the hand eight pixels beside the last spot pressed on the clip
+// timeline first, when x is within six pixels of it, see clickOnTrack.
+// The clip timeline measures only along itself, so a press under or over
+// the last one at the same x is a double-click too.
+async function notTwice(page, x, y) {
   const last = page.__pressed;
-  if (last && Math.abs(last.x - x) < 6 && Math.abs(last.y - y) < 6) {
+  if (last && Math.abs(last.x - x) < 6) {
     await page.mouse.click(last.x + (x < last.x ? 8 : -8), y);
   }
-  await page.mouse.click(x, y);
   page.__pressed = { x, y };
 }
 
@@ -980,11 +1010,11 @@ export async function cropFrame(page) {
     s.height = canvas.height;
     const t = s.getContext("2d", { willReadFrequently: true });
     t.drawImage(canvas, x0, 0, x1 - x0, canvas.height, 0, 0, x1 - x0, canvas.height);
-    const pixels = t.getImageData(0, 0, x1 - x0, canvas.height).data;
-    return { left, width, w: x1 - x0, h: canvas.height, pixels: [...pixels] };
+    const { data } = t.getImageData(0, 0, x1 - x0, canvas.height);
+    return { left, width, w: x1 - x0, h: canvas.height, pixels: new Uint8Array(data.buffer).toBase64() };
   });
   if (!got) return null;
-  return { left: got.left, width: got.width, look: lookOf(got.pixels, got.w, got.h) };
+  return { left: got.left, width: got.width, look: lookOf(bytes(got.pixels), got.w, got.h) };
 }
 
 // A short read back from disk with ffmpeg: every frame, small, as what it
@@ -1092,7 +1122,7 @@ export function shortSound(path) {
 // crop's, source, as the video preview works it out, and its pixels, red,
 // green, blue and alpha, row after row. Null while there is no crop.
 export async function cropPixels(page, source) {
-  return page.evaluate(({ width, cropWidth }) => {
+  const got = await page.evaluate(({ width, cropWidth }) => {
     const left = Number(document.querySelector(".screen").dataset.crop);
     const canvas = document.querySelector(".screen canvas");
     if (!Number.isFinite(left) || !canvas?.width) return null;
@@ -1106,8 +1136,18 @@ export async function cropPixels(page, source) {
     s.height = h;
     const t = s.getContext("2d", { willReadFrequently: true });
     t.drawImage(canvas, x, 0, w, h, 0, 0, w, h);
-    return { x, w, h, pixels: [...t.getImageData(0, 0, w, h).data] };
+    const { data } = t.getImageData(0, 0, w, h);
+    return { x, w, h, pixels: new Uint8Array(data.buffer).toBase64() };
   }, source);
+  return got && { ...got, pixels: bytes(got.pixels) };
+}
+
+// The pixels a page read off a canvas, which it hands over as base64
+// text. As an array of numbers, [...data], each is a number in the JSON
+// both sides write and read, and a picture the size of a short took most
+// of the 64 s of the longest sequence, issue #525.
+function bytes(base64) {
+  return Buffer.from(base64, "base64");
 }
 
 // One frame of a short read back from disk with ffmpeg, the nth from

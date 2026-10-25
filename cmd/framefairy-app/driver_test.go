@@ -15,9 +15,12 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -30,6 +33,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/spf13/afero"
 
 	"framefairy/engine"
 	"framefairy/internal/ffmpegtest"
@@ -160,42 +165,119 @@ func (d *desk) episode(name string, seconds string) string {
 // their own that TestMain takes away at the end.
 var videos = &made{files: map[string]string{}}
 
+// made keeps the videos tests make, so each is made once and copied
+// where a test needs it, because making one takes seconds. In a folder
+// of its own, made when the first video is, or in dir. With a recipe, the
+// sum of what makes them, the folder may be shared between programs and
+// kept between runs: a video is found there by the recipe and what it
+// was asked for, so a bridge finds a video another bridge made, and a
+// change to the recipe makes them all anew, see walkVideos.
 type made struct {
-	mu    sync.Mutex
-	dir   string
-	files map[string]string
-	tone  int
+	mu     sync.Mutex
+	fs     afero.Fs
+	dir    string
+	recipe string
+	files  map[string]string
+	tone   int
 }
 
 // On the real disk: ffmpeg makes the video.
 func (m *made) make(name, seconds string) (string, error) {
+	return m.video(name+"-"+seconds, ".mp4", func(path string) error {
+		m.tone++
+		// Five frames a second of grey and a 16 kHz tone: what the speech
+		// model hears and what a render cuts, and nothing that takes long
+		// to make.
+		out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
+			"-f", "lavfi", "-i", "color=c=gray:s=320x180:r=5:d="+seconds,
+			"-f", "lavfi", "-i", "sine=f="+strconv.Itoa(200+20*m.tone)+":sample_rate=16000:d="+seconds,
+			"-shortest", "-c:v", "mpeg4", "-g", "50", "-c:a", "aac", "-b:a", "32k", path).CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("making the video: %s %s", err, out)
+		}
+		return nil
+	})
+}
+
+// video gives where the video asked for as what is kept, ending in ext,
+// made by build the first time it is asked for. A video that failed to be
+// made is not kept.
+//
+// On the real disk: the folder is made where no fs is given, and a program writes the video.
+func (m *made) video(what, ext string, build func(path string) error) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	key := name + "-" + seconds
-	if path, ok := m.files[key]; ok {
+	if path, ok := m.files[what]; ok {
 		return path, nil
 	}
+	if m.fs == nil {
+		m.fs = afero.NewOsFs()
+	}
 	if m.dir == "" {
-		dir, err := os.MkdirTemp("", "framefairy-videos-")
+		dir, err := afero.TempDir(m.fs, "", "framefairy-videos-")
 		if err != nil {
 			return "", err
 		}
 		m.dir = dir
 	}
-	m.tone++
-	path := filepath.Join(m.dir, key+".mp4")
-	// Five frames a second of grey and a 16 kHz tone: what the speech
-	// model hears and what a render cuts, and nothing that takes long to
-	// make.
-	out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
-		"-f", "lavfi", "-i", "color=c=gray:s=320x180:r=5:d="+seconds,
-		"-f", "lavfi", "-i", "sine=f="+strconv.Itoa(200+20*m.tone)+":sample_rate=16000:d="+seconds,
-		"-shortest", "-c:v", "mpeg4", "-g", "50", "-c:a", "aac", "-b:a", "32k", path).CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("making the video: %s %s", err, out)
+	if m.files == nil {
+		m.files = map[string]string{}
 	}
-	m.files[key] = path
+	if m.recipe == "" {
+		path := filepath.Join(m.dir, what+ext)
+		if err := build(path); err != nil {
+			return "", err
+		}
+		m.files[what] = path
+		return path, nil
+	}
+	sum := sha256.Sum256([]byte(m.recipe + "\n" + what))
+	path := filepath.Join(m.dir, m.recipe+"-"+hex.EncodeToString(sum[:8])+ext)
+	if _, err := m.fs.Stat(path); err == nil {
+		m.files[what] = path
+		return path, nil
+	}
+	// Made under a name of its own and then renamed, so a program beside
+	// this one that asks for the same video finds it whole or not at all.
+	if err := m.fs.MkdirAll(m.dir, 0o755); err != nil {
+		return "", err
+	}
+	making, err := afero.TempFile(m.fs, m.dir, ".making-*"+ext)
+	if err != nil {
+		return "", err
+	}
+	_ = making.Close()
+	if err := build(making.Name()); err != nil {
+		_ = m.fs.Remove(making.Name())
+		return "", err
+	}
+	if err := m.fs.Rename(making.Name(), path); err != nil {
+		return "", err
+	}
+	m.files[what] = path
 	return path, nil
+}
+
+// prune removes from the folder what a recipe other than this one made,
+// so it holds only what can still be found.
+func (m *made) prune() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	entries, err := afero.ReadDir(m.fs, m.dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if !strings.HasPrefix(e.Name(), m.recipe+"-") {
+			if err := m.fs.RemoveAll(filepath.Join(m.dir, e.Name())); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // updaterHelper is what Wails' updater sets in the copy of the app's own

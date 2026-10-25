@@ -89,7 +89,7 @@ and nothing else. `make INSTALL=0` does the same by hand.
 | `make unit` | every Go test under the race detector, the fuzz seeds included. `RACE=` runs without the race detector and `UNITSKIP` leaves packages out, which CI's Mac does. `UNITFLAGS` adds one flag for go test, like `-run`, which is how CI spreads the tests over machines. `UNITPKGS` names the packages, `./...` unless it says, and when it names none no test runs. `UNITTIMEOUT` is how long one package's tests may take before go test ends them and prints every goroutine, Go's own 10m unless it says, and 4m in CI: a test waits on signals, so one whose signal never comes hangs until then |
 | `make fuzz` | every fuzz target, `FUZZTIME` executions each, looking for new cases. `FUZZTARGETS` names some, `FUZZSHARD=1/3` takes a third |
 | `make interface` | a type check of the interface, its own tests, and ESLint, which refuses a new wait on the clock in a walk or an interface test, see [No test waits on the clock](#no-test-waits-on-the-clock). Needs only Node |
-| `make walks` | the interface in Chromium against the real Go side: the sequences of the cases found by hand, and every walk for seeds 1 to `WALKS`, 3 unless set, each as long as it says unless `STEPS` is set, half as many again at once as the machine has cores unless `WALKERS` is set, each sequence a run of its own, stopped after `WALKTIMEOUT`, 30m unless set. Needs Node, ffmpeg and Playwright's Chromium. See [TESTING.md](TESTING.md) |
+| `make walks` | the interface in Chromium against the real Go side: the sequences of the cases found by hand, and every walk for seeds 1 to `WALKS`, 3 unless set, each as long as it says unless `STEPS` is set, half as many again at once as the machine has cores unless `WALKERS` is set, each sequence a run of its own and the sequences of a walker walked by one node, each with less motion unless it looks at motion or `STILL=none` is set, stopped after `WALKTIMEOUT`, 30m unless set. Needs Node, ffmpeg and Playwright's Chromium. See [TESTING.md](TESTING.md) |
 | `make lint` | golangci-lint, which refuses a new wait on the clock in a Go test, see [No test waits on the clock](#no-test-waits-on-the-clock). It fetches the version the Makefile pins into `.build/` the first time, unless `INSTALL=0` |
 | `make check` | what this machine has and what it still needs, with the command for each |
 | `make tools` | the installing part of `make` and nothing else. macOS: Homebrew does Go, Node.js and what builds ffmpeg and llama.cpp. Elsewhere it points to [INSTALL.md](INSTALL.md) |
@@ -265,6 +265,13 @@ targets about paths, `FuzzSafeChild` and `FuzzKnownStaysInTheLibrary`,
 since the Mac's disk takes names in either case and `/var` is a link there.
 A crash fails the run and leaves the input as an artifact called
 `crashers`.
+
+`.github/workflows/walks-nightly.yml` walks every sequence with the app's
+motion, `make walks STILL=none`, at night on main and by hand, in the
+same four shares and the CI image as the walks in `ci.yml`. On a pull
+request a sequence asks for less motion unless it looks at motion, see
+Where they run in [TESTING.md](TESTING.md#where-they-run), and this is
+the run that sees a step that looks at motion and was left out.
 
 A failing input is written to `engine/testdata/fuzz/`. Keep it, it is the
 test case for the bug, and it becomes a seed for every later run.
@@ -579,7 +586,7 @@ because `scripts/changed.sh` reads the image as the machine every test
 runs on.
 
 `.github/workflows/ci-image.yml`, which `ci.yml` calls as the job
-`image`, and `fuzz-nightly.yml` and `security.yml` call too, names the image by a sum of
+`image`, and `fuzz-nightly.yml`, `walks-nightly.yml` and `security.yml` call too, names the image by a sum of
 the Dockerfile, of `scripts/ci-packages.sh` and of the Playwright
 version, as `ghcr.io/timmrkz/framefairy-ci:<sum>`. When the registry has
 that tag, the job is done in seconds, and when it does not, which is

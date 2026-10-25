@@ -1256,11 +1256,11 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
-import { open, chosen, shown, engineState, handles, timeline, inside, middle, high, drag } from "./bridge.mjs";
+import { open, newBrowser, chosen, shown, engineState, handles, timeline, inside, middle, high, drag } from "./bridge.mjs";
 import { clipList, control, pressHead, fromSidebar, sidebarStill, settle, ask, episodeOn, shortFrames, shortSound } from "./bridge.mjs";
 import { xOf, seekTo, cropFrame, sameLook, sayLook, readShort, loudness, filmedOnScreen, preview } from "./bridge.mjs";
 import { recordFrames, addHEVC, overlay, cropPixels, shortFramesFrom, slowDown, noDeadlines, BITS, nextPaint, news, nextNews, caughtUp } from "./bridge.mjs";
-import { fakeClock, holdClock, runClock, letClockGo, realFrames, foldsDone, shownOnPlayhead, clickOnTrack, playUntil, pageUntil, seenUntil } from "./bridge.mjs";
+import { fakeClock, holdClock, runClock, letClockGo, realFrames, foldsDone, shownOnPlayhead, clickOnTrack, pressOnTrack, playUntil, pageUntil, seenUntil } from "./bridge.mjs";
 import { Watch, same, describe, overlaid } from "./rules.mjs";
 
 // The video's work folder, see WorkDir in engine/run.go.
@@ -4937,6 +4937,32 @@ function shortProblem(entry, short, fps, cutsWanted) {
 }
 
 const url = process.env.BRIDGE_URL ?? "http://127.0.0.1:8123/";
+// The steps that look at how the app moves: the caption blocks and the
+// typed word that pop, the bounce over a paused frame, the word that grows
+// as it is opened, the card that shakes and the microphone that grows as
+// it hears. A sequence with none of them asks for less motion, which the
+// app honours by leaving out what it animates, so the settle waits for
+// none of it: the pops and the info marks' fade were 179 s of the 1976 s
+// all runs took on main. A sequence with one of them, and every random
+// walk, walks the app the way it moves on Tim's Mac. A new step that looks
+// at motion goes in here, or it passes without ever seeing what it checks.
+const moving = new Set([
+  "count pops",
+  "pops",
+  "pill pops",
+  "grow",
+  "step onto words and see them pop",
+  "step frame by frame and see nothing pop",
+  "refused",
+  "dictate",
+]);
+
+// STILL=none walks every sequence with the motion, for a failure that
+// might hide behind it.
+function still(seq) {
+  return process.env.STILL !== "none" && !seq.steps.some(([what]) => moving.has(what));
+}
+
 const only = process.argv[2] ?? "";
 let failures = 0;
 
@@ -4962,9 +4988,51 @@ if (only === "--names") {
     console.log(`two steps are called ${JSON.stringify(stepTwice[0])}`);
     process.exit(1);
   }
+  // A step renamed and left in moving by its old name would be walked
+  // still, and check motion it never sees.
+  const noStep = [...moving].filter((n) => !steps.includes(n));
+  if (noStep.length) {
+    console.log(`moving names ${JSON.stringify(noStep[0])}, which is no step`);
+    process.exit(1);
+  }
   console.log(names.join("\n"));
   process.exit(0);
 }
+
+// --serve walks one sequence after another in one browser, each named on
+// a line of its own on standard input as JSON, for TestWalks to hand one
+// walker its sequences without starting node, Playwright and Chromium
+// again for each, 1.45 s and 1.2 s of CPU a sequence, issue #526. Each
+// still starts with /reset and pages of its own, so it walks the same as
+// alone. What a sequence prints begins with a line of its own, walking,
+// see walkingLine, so what the node says between two sequences is told
+// from either. It ends in a line that starts with walked, see walkedLine,
+// then "ok" or "FAIL", or "threw" when it threw and this node ends, so a
+// sequence after it starts in a new one.
+if (only === "--serve") {
+  const { createInterface } = await import("node:readline");
+  const browser = await newBrowser();
+  for await (const line of createInterface({ input: process.stdin })) {
+    await mark("walking");
+    const name = JSON.parse(line);
+    const seq = sequences.find((q) => q.name === name);
+    if (!seq) {
+      console.log(`no sequence is called ${line}`);
+      await said("FAIL");
+      continue;
+    }
+    try {
+      await said((await walkSequence(seq, browser)) ? "FAIL" : "ok");
+    } catch (e) {
+      console.log(e?.stack ?? String(e));
+      await said("threw");
+      process.exit(1);
+    }
+  }
+  await browser.close();
+  process.exit(0);
+}
+
 const exact = process.env.SEQUENCE;
 const toWalk = sequences.filter((q) => (exact ? q.name === exact : q.name.includes(only)));
 if (exact && !toWalk.length) {
@@ -4972,9 +5040,27 @@ if (exact && !toWalk.length) {
   process.exit(1);
 }
 
-for (const seq of toWalk) {
+for (const seq of toWalk) if (await walkSequence(seq)) failures++;
+process.exit(failures ? 1 : 0);
+
+// The line --serve ends what a sequence printed with, walkedLine in
+// TestWalks, once everything it printed, on both outputs, is out.
+async function said(how) {
+  await mark(`walked ${how}`);
+}
+
+// A line of --serve's own, after everything printed before it, on both
+// outputs.
+async function mark(what) {
+  await new Promise((done) => process.stderr.write("", done));
+  await new Promise((done) => process.stdout.write(`\u001e${what}\n`, done));
+}
+
+// Walks one sequence and says whether it failed, in a browser of its own
+// or in browser, whose pages it closes again.
+async function walkSequence(seq, shared = null) {
   const began = performance.now();
-  const opened = await open(url);
+  const opened = await open(url, { browser: shared, still: still(seq) });
   const { browser, errors } = opened;
   // The page the steps act on: the app's window, or the report window
   // once Bugs opened it. The watch keeps to the app's window.
@@ -7602,7 +7688,7 @@ for (const seq of toWalk) {
         // made taller until the crop is as tall as the short.
         const tall = Number(execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries",
           "stream=height", "-of", "csv=p=0", short]).toString().trim());
-        const sized = (await open(url, { viewport: { width: 2400, height: 1000 }, again: page.context().browser() })).page;
+        const sized = (await open(url, { viewport: { width: 2400, height: 1000 }, again: page.context().browser(), still: still(seq) })).page;
         const canvasTall = () => sized.evaluate(() => document.querySelector(".screen canvas").height);
         for (let i = 0, high = 1000; i < 12 && (await canvasTall()) !== tall; i++) {
           high += Math.round((tall - (await canvasTall())) * 1.4) || Math.sign(tall - (await canvasTall()));
@@ -14115,8 +14201,7 @@ for (const seq of toWalk) {
         const y = dot.y + dot.height / 2;
         const x = dot.x + dot.width / 2;
         const to = arg === "end" ? g.end.x + g.end.w + 60 : g.start.x - 60;
-        await page.mouse.move(x, y);
-        await page.mouse.down();
+        await pressOnTrack(page, x, y);
         const held = [];
         for (let i = 1; i <= 12; i++) {
           await page.mouse.move(x + ((to - x) * i) / 12, y);
@@ -14633,13 +14718,11 @@ for (const seq of toWalk) {
   const failed = wrong ?? (watch.failed && `broke: ${watch.failed.rule}\n${watch.failed.detail}`);
   const took = ((performance.now() - began) / 1000).toFixed(1).padStart(5);
   console.log(`${failed ? "FAIL" : "ok  "}  ${took} s  ${seq.name}`);
-  if (failed) {
-    failures++;
-    console.log(`      after ${done.join(", ")}\n      ${failed.replaceAll("\n", "\n      ")}`);
-  }
-  await browser.close();
+  if (failed) console.log(`      after ${done.join(", ")}\n      ${failed.replaceAll("\n", "\n      ")}`);
+  if (shared) await Promise.all(shared.contexts().map((c) => c.close()));
+  else await browser.close();
+  return Boolean(failed);
 }
-process.exit(failures ? 1 : 0);
 
 // Reads, on every frame the browser paints, the pill libass drew off the
 // canvas and the frames the caption box puts round words: the lit word's,
