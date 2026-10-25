@@ -7543,17 +7543,18 @@ async function walkSequence(seq, shared = null) {
           await row.hover();
           await row.locator("button.more").click();
           await menu.waitFor();
-          // The Go side answers only once the frame of the click is read,
-          // the way a busy machine answers late, so the dot pulses for the
-          // click and not for the job's first news.
-          await control(url, "/hold?call=Transcribe&gate=shut&times=1");
+          // The call reaches the Go side only once the frame of the click
+          // is read, the way a busy machine answers late, so the dot pulses
+          // for the click and not for the job's first news. Held on the
+          // page, so settle does not wait for it.
+          await hold(page, "Transcribe");
           const after = await pick(want);
           await settle(page);
           if (after.said !== want) wrong = `the menu says ${JSON.stringify(after.said)}, not ${want}`;
           else if (after.open) wrong = `the menu stayed open after ${want} was clicked`;
           else if (!after.busy) wrong = `the frame after ${want} was clicked, the video's dot does not say that work runs`;
           else if (after.number) wrong = `after ${want} was clicked, the video's row shows a number`;
-          await control(url, "/hold?call=Transcribe&gate=open");
+          if (after.said === want) await letHeld(page);
           if (wrong) {
             await page.keyboard.press("Escape");
             break;
