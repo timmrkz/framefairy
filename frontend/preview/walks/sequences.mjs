@@ -13337,12 +13337,15 @@ for (const seq of toWalk) {
         // Tim's report of 25 October: the row said Window 0:00 to 30:00
         // under Transcribing, over a window transcribed half already. It
         // says how much of the window is transcribed, from what was heard
-        // before Continue, the way the row of the stopped search did.
+        // before Continue, the way the row of the stopped search did, or
+        // how long it has left once it can say.
         const said = await page.evaluate(() => window.__said);
         const span = clockOf(to - from);
         const secondsOf = (c) => c.split(":").reduce((t, n) => t * 60 + Number(n), 0);
-        const off = said.find((line) => !new RegExp(`^\\d+:\\d\\d of ${span} transcribed$`).test(line ?? ""));
+        const counts = (line) => new RegExp(`^\\d+:\\d\\d of ${span} transcribed$`).test(line ?? "");
+        const off = said.find((line) => !counts(line) && !/^About \d+:\d\d left$/.test(line ?? ""));
         if (off !== undefined) wrong = `under Transcribing the row said ${JSON.stringify(off)}, not how much of the ${span} of its window is transcribed: ${JSON.stringify(said)}`;
+        else if (!counts(said[0])) wrong = `under Transcribing the row said ${JSON.stringify(said[0])} at first, not how much of the ${span} of its window is transcribed: ${JSON.stringify(said)}`;
         else if (!(secondsOf(said[0].split(" ")[0]) >= Math.floor(heard))) wrong = `under Transcribing the row said ${JSON.stringify(said[0])} at first, less than the ${Math.round(heard)} s heard before Continue`;
         break;
       }

@@ -744,13 +744,15 @@
       return { what: heardWindow ? "Finding clips" : "Transcribing", left, fraction, now: true };
     }
     const line = stepLine(working);
-    // While it hears, or waits to, the row says how much of its window is
-    // transcribed, as it grows, in the words the row of a search that
-    // stopped uses. It said the whole window, Window 0:00 to 30:00, over a
-    // window transcribed half already, Tim's report of 25 October.
+    // While it hears, or waits to, and cannot say how long it has left, the
+    // row says how much of its window is transcribed, as it grows, in the
+    // words the row of a search that stopped uses. It said the whole
+    // window, Window 0:00 to 30:00, over a window transcribed half already,
+    // Tim's report of 25 October.
     const start = working.from ?? 0;
     const end = working.to && working.to > 0 ? working.to : duration;
-    const left = working.lane === "hearing" && end > start ? transcribedIn(heard, start, end) : line.left || windowText;
+    const hears = working.lane === "hearing" && end > start;
+    const left = line.left || (hears ? transcribedIn(heard, start, end) : windowText);
     // Cancel pressed: the row says so in the same frame, and stands still
     // where it got to, until the search has saved what it did and says it
     // stopped. It went on saying Transcribing for a second after the click.
