@@ -175,6 +175,11 @@ stood still over 400 ms is said only while the app is in front, because
 WebKit fires the timers of an app behind another once a second at most,
 and that is not the app standing still. Plan row 2.242.
 
+When the app goes out of sight and comes back is a `window` line too,
+`the app went out of sight` and `the app came back into sight` with
+`away_ms`, from what macOS tells the window, so a glance in Mission
+Control at a covered app is two lines a second or two apart, #536.
+
 ```sh
 # what took long enough to be felt
 jq -c 'select(.msg | test("reach the screen|took [0-9]+ ms|was slow"))' app.log

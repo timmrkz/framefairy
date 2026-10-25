@@ -459,6 +459,17 @@ moment the page says it is hidden, and while no frame comes a timer goes on
 feeding it, since a timer behind another window may run only once a second.
 The picture catches up with the first frame.
 
+WebKit counts a window that other windows cover as a hidden page, and
+after a while it lets go of what it drew. Mission Control then showed the
+app while WebKit drew it again, and part of it flickered, #536. The app's
+web view is told to keep its page drawn while it is covered, `keepDrawing`
+in `cmd/framefairy-app/sight.go`, so a covered app goes on drawing, and
+the page is hidden only when the app is minimised, on another Space or
+hidden. A page that is still asks for no frames, so a covered app costs
+nothing while nothing in it moves. The log says each time the app goes
+out of sight and comes back, with how long it was away, see
+[LOGGING.md](LOGGING.md).
+
 A clip played from a playhead that stands in one of its cuts plays from
 where that cut ends, see `playFrom` in `lib/playhead.ts`: the queue is
 given the clip's pieces and a seek to the end of the cut before it plays,
