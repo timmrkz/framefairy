@@ -116,11 +116,13 @@ else
 	} | sort -u)
 fi
 
-# Go and the modules first, the same check make does before it builds,
-# so a go.mod that changed is resolved before anything reads it. What
-# they say goes to stderr, so the plan on stdout stays the plan.
+# The modules first, the same check make does before it builds, so a
+# go.mod that changed is resolved before anything reads it. Only Go is
+# needed to know which packages import which, not the C compiler and the
+# libraries the build checks for, which CI's first job does not have.
+# What it says goes to stderr, so the plan on stdout stays the plan.
 if [ "$need_go" = 1 ] && [ -z "${CHANGED+x}" ]; then
-	$MAKE -s --no-print-directory toolchain modules >&2
+	$MAKE -s --no-print-directory modules >&2
 fi
 
 module=""
