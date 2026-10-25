@@ -1144,8 +1144,9 @@ container and outside it.
   the testing skill in `.claude/skills/testing/` says: it never waits on
   the clock, and it checks what Tim saw.
 - `make interface`, which is the type check and the interface's own tests.
-- No walks in the session: CI walks them all on four machines and its
-  result is the walk's proof, see CLAUDE.md.
+- The walks run in CI, on four machines, and its result is the walk's
+  proof, see CLAUDE.md. A single walk runs alone in the session only
+  when it is needed to write or fix that walk.
 - Build the preview, and the motion bench if the change touches any of the
   five ways work in hand is shown.
 - Push once those pass, and let CI run the rest. Its events say how it

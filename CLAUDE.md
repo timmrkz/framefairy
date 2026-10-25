@@ -603,7 +603,9 @@ messages, pull request text, code comments and chat replies.
   with `make interface` for `frontend/`: seconds, and what was worked on
   is then known to work when Tim tries it. Then push, so he is not
   waiting. Nothing more runs in the session, no `make changed`, no
-  `make walks` and no `make test`: the walks of a change run in CI. CI runs
+  `make walks` and no `make test`. The walks run in CI, and a single walk
+  runs alone in the session only when it is needed to write or fix that
+  walk. CI runs
   every test the change reaches, on machines sized for it, and gives its
   answer before a cloud session would, whose four cores take half an
   hour for the same and whose walks hang under that load, #508. A session
