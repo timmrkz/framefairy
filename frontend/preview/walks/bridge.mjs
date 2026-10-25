@@ -980,11 +980,11 @@ export async function cropFrame(page) {
     s.height = canvas.height;
     const t = s.getContext("2d", { willReadFrequently: true });
     t.drawImage(canvas, x0, 0, x1 - x0, canvas.height, 0, 0, x1 - x0, canvas.height);
-    const pixels = t.getImageData(0, 0, x1 - x0, canvas.height).data;
-    return { left, width, w: x1 - x0, h: canvas.height, pixels: [...pixels] };
+    const { data } = t.getImageData(0, 0, x1 - x0, canvas.height);
+    return { left, width, w: x1 - x0, h: canvas.height, pixels: new Uint8Array(data.buffer).toBase64() };
   });
   if (!got) return null;
-  return { left: got.left, width: got.width, look: lookOf(got.pixels, got.w, got.h) };
+  return { left: got.left, width: got.width, look: lookOf(bytes(got.pixels), got.w, got.h) };
 }
 
 // A short read back from disk with ffmpeg: every frame, small, as what it
@@ -1092,7 +1092,7 @@ export function shortSound(path) {
 // crop's, source, as the video preview works it out, and its pixels, red,
 // green, blue and alpha, row after row. Null while there is no crop.
 export async function cropPixels(page, source) {
-  return page.evaluate(({ width, cropWidth }) => {
+  const got = await page.evaluate(({ width, cropWidth }) => {
     const left = Number(document.querySelector(".screen").dataset.crop);
     const canvas = document.querySelector(".screen canvas");
     if (!Number.isFinite(left) || !canvas?.width) return null;
@@ -1106,8 +1106,18 @@ export async function cropPixels(page, source) {
     s.height = h;
     const t = s.getContext("2d", { willReadFrequently: true });
     t.drawImage(canvas, x, 0, w, h, 0, 0, w, h);
-    return { x, w, h, pixels: [...t.getImageData(0, 0, w, h).data] };
+    const { data } = t.getImageData(0, 0, w, h);
+    return { x, w, h, pixels: new Uint8Array(data.buffer).toBase64() };
   }, source);
+  return got && { ...got, pixels: bytes(got.pixels) };
+}
+
+// The pixels a page read off a canvas, which it hands over as base64
+// text. As an array of numbers, [...data], each is a number in the JSON
+// both sides write and read, and a picture the size of a short took most
+// of the 64 s of the longest sequence, issue #525.
+function bytes(base64) {
+  return Buffer.from(base64, "base64");
 }
 
 // One frame of a short read back from disk with ffmpeg, the nth from
