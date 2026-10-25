@@ -571,7 +571,7 @@ because it runs by hand, takes half an hour anyway and holds up nothing.
 run in a container, the CI image, built from
 `.github/ci-image/Dockerfile`: Ubuntu 24.04, the runners' own system,
 with every package `scripts/ci-packages.sh` installs for the Go side,
-ffmpeg, meson, ninja, nasm and patchelf beside them, and the headless
+ffmpeg, meson, ninja, nasm, patchelf and python3-yaml beside them, and the headless
 Chromium of the Playwright version in `frontend/package-lock.json` with
 the libraries and fonts it needs. Go and Node are not in it: setup-go
 and setup-node bring them as in every other job.
