@@ -7,7 +7,6 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/spf13/afero"
 
@@ -72,8 +71,11 @@ func TestAddTakesAVideoWhoseFirstFrameIsLate(t *testing.T) {
 	}
 	d := open(t)
 	good := d.episode("spaet", "6")
+	// It says when it hangs, and Add takes the first frame to be late
+	// then, rather than after 30 s of the clock.
+	pipe, hangs := standin.Hangs(t)
 	hung := filepath.Join(t.TempDir(), "framefairy-frames")
-	if err := standin.Write(hung, []byte("#!/bin/sh\nexec cat >/dev/null\n"), 0o755); err != nil {
+	if err := standin.Write(hung, []byte("#!/bin/sh\necho hangs > '"+pipe+"'\nexec cat >/dev/null\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("FRAMEFAIRY_FRAMES", hung)
@@ -87,7 +89,7 @@ func TestAddTakesAVideoWhoseFirstFrameIsLate(t *testing.T) {
 			dec.Close()
 		}
 	})
-	d.svc.firstFrame = time.Second
+	d.svc.frameLate = hangs
 	added, err := d.svc.addEpisodes([]string{good})
 	if err != nil {
 		t.Fatalf("Add said %v", err)

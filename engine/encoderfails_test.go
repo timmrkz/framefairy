@@ -39,7 +39,7 @@ func TestARenderGoesOnWhenTheEncoderFails(t *testing.T) {
 	var log bytes.Buffer
 	e.Log = NewLog(&log, false, false)
 	calls := filepath.Join(dir, "calls")
-	e.FFmpeg = failingMediaEngine(t, e.FFmpeg, calls, onMac, false)
+	e.FFmpeg = failingMediaEngine(t, e.FFmpeg, calls, onMac, "")
 	// The encoder Preflight found for this system is let go, so the
 	// render reaches for the Mac's.
 	e.system, e.encoder = "darwin", Encoder{}
@@ -96,10 +96,12 @@ func TestARenderGoesOnWhenTheEncoderHangs(t *testing.T) {
 	var log bytes.Buffer
 	e.Log = NewLog(&log, false, false)
 	calls := filepath.Join(dir, "calls")
-	e.FFmpeg = failingMediaEngine(t, e.FFmpeg, calls, onMac, true)
+	// The media engine says when it hangs, and the render takes it to
+	// have stopped making frames then, rather than after a minute.
+	pipe, hangs := standin.Hangs(t)
+	e.FFmpeg = failingMediaEngine(t, e.FFmpeg, calls, onMac, pipe)
+	e.stuck = hangs
 	e.system, e.encoder = "darwin", Encoder{}
-	// A minute is the real limit. The test waits two seconds of it.
-	e.stall = 2 * time.Second
 
 	clip := info.OnFrames(Clip{ID: "01", Slug: "hung", Segments: []Segment{{Start: 0.5, End: 2.5}}})
 	rs := RenderSettings{OutW: 90, OutH: 160, CRF: 30, Preset: "ultrafast", AudioBitrate: "96k", ScaleUp: true}
@@ -119,7 +121,7 @@ func TestARenderGoesOnWhenTheEncoderHangs(t *testing.T) {
 		renders[0] != "media engine" || renders[1] != "processor" {
 		t.Errorf("the renders were %q, not one on the media engine and one on the processor", renders)
 	}
-	if said := log.String(); !strings.Contains(said, "h264_videotoolbox made no frame for 2s") {
+	if said := log.String(); !strings.Contains(said, "h264_videotoolbox made no frame for "+encoderStall.String()) {
 		t.Errorf("the log does not say the media engine stopped making frames:\n%s", said)
 	}
 }
@@ -203,13 +205,14 @@ func encodingEngineOn(t *testing.T, goos string, encoders ...string) *Engine {
 // failingMediaEngine is a stand-in for ffmpeg at real that lists
 // VideoToolbox's encoders and fails every render that does not ask for the
 // processor, the way the media engine fails, and writes which it was to
-// calls. With hang, it fails the other way the media engine has: it makes
-// no frame, says nothing and never ends. A render on the processor goes
+// calls. With hangs, it fails the other way the media engine has: it
+// makes no frame and never ends, and says so only into that named pipe,
+// see standin.Hangs. A render on the processor goes
 // to real, as it is on a Mac and with libx264 for Apple's encoder
 // elsewhere.
 //
 // On the real disk: the stand-in ffmpeg is a program that is run.
-func failingMediaEngine(t *testing.T, real, calls string, onMac, hang bool) string {
+func failingMediaEngine(t *testing.T, real, calls string, onMac bool, hangs string) string {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("the stand-in is a shell script")
@@ -221,8 +224,8 @@ func failingMediaEngine(t *testing.T, real, calls string, onMac, hang bool) stri
 	fail := `echo '[h264_videotoolbox @ 0x6000013c] Error encoding frame: -12912' >&2
   echo '[vost#0:0/h264_videotoolbox @ 0x6000013d] Error submitting video frame to the encoder' >&2
   exit 187`
-	if hang {
-		fail = `exec sleep 600`
+	if hangs != "" {
+		fail = `echo hangs > '` + hangs + `'; exec sleep 600`
 	}
 	script := `#!/bin/sh
 real='` + real + `'

@@ -200,9 +200,11 @@ type updating struct {
 	// once the app is gone.
 	leaving bool
 	// looking is set once the loop that looks now and then has started,
-	// see loop. next is how long it waits between two looks.
+	// see loop. after is the wait between two looks, which ends when the
+	// channel it gives says so, nextCheck from now unless a test hands
+	// the looks in itself.
 	looking bool
-	next    func(UpdateState) time.Duration
+	after   func(UpdateState) <-chan time.Time
 	// life ends with shutDown, and every check runs under it. halted is
 	// set then, under c.mu, so no check and no loop starts after it, and
 	// running counts the checks and the loop that are still going, which
@@ -278,8 +280,8 @@ func (c *updating) setUp(u *updater.Updater, keyText string, src *updates.Source
 	if c.own != "" {
 		c.state.Picked = c.load()
 	}
-	if c.next == nil {
-		c.next = nextCheck
+	if c.after == nil {
+		c.after = func(s UpdateState) <-chan time.Time { return time.After(nextCheck(s)) }
 	}
 	key, err := updates.PublicKey(keyText)
 	switch {
@@ -357,7 +359,7 @@ func (c *updating) loop() bool {
 			select {
 			case <-c.life.Done():
 				return
-			case <-time.After(c.next(c.State())):
+			case <-c.after(c.State()):
 			}
 		}
 	}()

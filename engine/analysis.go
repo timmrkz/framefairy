@@ -52,7 +52,7 @@ func (e *Engine) decoderUsed(ctx context.Context, path string, at float64) strin
 	if flags := e.decodeFlags(); flags != nil {
 		args := append([]string{"-hide_banner", "-loglevel", "verbose"}, flags...)
 		args = append(args, "-ss", fixed(at, 3), "-i", path, "-an", "-frames:v", "1", "-f", "null", "-")
-		probeCtx, cancel := context.WithTimeout(ctx, frameLimit)
+		probeCtx, cancel := timeLimit(ctx, frameLimit)
 		said := run(probeCtx, "", e.FFmpeg, args...)
 		cancel()
 		if ctx.Err() != nil {
@@ -141,12 +141,18 @@ func decoderIn(stderr string) string {
 
 // frameLimit is how long decoding a single frame may take before the
 // system's decoder is taken to have stopped working: far past the second
-// an honest decode takes, of any file. Tests make it shorter.
+// an honest decode takes, of any file.
 var frameLimit = 15 * time.Second
+
+// timeLimit ends work that has run out of its time limit, see frameLimit
+// and spanLimit. It is context.WithTimeout unless a test ends the work
+// itself, once the stand-in for ffmpeg says it hangs, so no test waits
+// for a limit on the real clock.
+var timeLimit = context.WithTimeout
 
 // spanLimit is how long reading the frames of a span of so many seconds
 // may take before it is ended: a minute, and four times the span on top,
-// where an honest run takes a few seconds. Tests make it shorter.
+// where an honest run takes a few seconds.
 var spanLimit = func(span float64) time.Duration {
 	return time.Minute + time.Duration(4*span*float64(time.Second))
 }
@@ -183,7 +189,7 @@ func (e *Engine) readSpan(ctx context.Context, path string, start, end float64) 
 		args := append([]string{"-hide_banner"}, flags...)
 		args = append(args, "-ss", fixed(from, 3), "-to", fixed(end+0.5, 3), "-i", path, "-an",
 			"-vf", grey, "-fps_mode", "passthrough", "-f", "rawvideo", "pipe:1")
-		readCtx, cancel := context.WithTimeout(ctx, limit)
+		readCtx, cancel := timeLimit(ctx, limit)
 		defer cancel()
 		code, stderr := e.runFFmpegTo(readCtx, args, "reading frames for the crop", end-start+1.0, "", &raw)
 		timedOut = ctx.Err() == nil && readCtx.Err() != nil
@@ -253,7 +259,7 @@ func (e *Engine) sampleGray(ctx context.Context, path string, start, duration fl
 			"-frames:v", strconv.Itoa(frames), "-f", "rawvideo", "-")
 		// A system decoder that hangs gives nothing, and is gone round
 		// below like one that failed.
-		pullCtx, cancel := context.WithTimeout(ctx, time.Duration(frames)*frameLimit)
+		pullCtx, cancel := timeLimit(ctx, time.Duration(frames)*frameLimit)
 		defer cancel()
 		raw, _ := runBytes(pullCtx, "", e.FFmpeg, args...)
 		return raw
