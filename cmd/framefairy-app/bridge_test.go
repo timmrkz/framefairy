@@ -935,11 +935,26 @@ func openBridge(t *testing.T) *bridge {
 	// last words shown as being heard were then written down as none,
 	// since the stand-in hears new words each time, and nothing was said
 	// after the new line.
+	//
+	// Once the person has fallen silent and the phrase they were on is
+	// said, the quiet is over at once, d.still, rather than after the two
+	// minutes of the app's clock. That a recording waits its two minutes
+	// is TestListeningStopsByItself's to prove.
 	silent := &atomic.Bool{}
 	d.measured = make(chan struct{}, 1)
+	d.still = make(chan struct{}, 1)
 	openMicrophone = func() microphone {
+		// A quiet left over from a recording before is not this one's.
+		select {
+		case <-d.still:
+		default:
+		}
 		return &playingMicrophone{samples: tone(2), paced: d.measured, more: func() []float32 {
 			if silent.Load() {
+				select {
+				case d.still <- struct{}{}:
+				default:
+				}
 				return nil
 			}
 			return slices.Concat(hush(1), tone(1.5))
@@ -948,9 +963,6 @@ func openBridge(t *testing.T) *bridge {
 	// The desk is started again with a bus, before anything is in it.
 	d.svc.jobs.shutDown()
 	d.bus = newBus()
-	// A recording nobody talks into stops by itself after 8 s rather than
-	// 2 minutes, long after every sequence that stops it by hand.
-	d.quiet = 8 * time.Second
 	// The bridge's microphone talks for as long as a recording runs, so
 	// one also stops after a minute, long after every sequence has heard
 	// what it waits for, and a walk waiting for more words ends there.

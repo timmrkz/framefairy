@@ -376,9 +376,11 @@ type FrameFairy struct {
 	link *LicenceLink
 	// clipboard stands in for the system's in tests, see copyText.
 	clipboard func(string) bool
-	// firstFrame is how long Add waits for a video's first frame,
-	// firstFrameWait unless a test says otherwise, see undecodable.
-	firstFrame time.Duration
+	// frameLate, when set, says a video's first frame is late, and Add
+	// takes the video without it then as well as after firstFrameWait of
+	// the clock, see undecodable. A test sets it, so it waits for no
+	// limit of the clock.
+	frameLate <-chan struct{}
 	// now is the time of day an edit is timed by, time.Now unless a test
 	// hands in a clock it moves, see clock.
 	now func() time.Time

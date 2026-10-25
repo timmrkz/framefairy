@@ -87,7 +87,7 @@ func (s *FrameFairy) addEpisodes(videos []string) ([]string, error) {
 	// nothing to show, and the render nothing to cut.
 	var take, refused []string
 	for _, v := range videos {
-		if why := undecodable(v, s.firstFrame); why != "" {
+		if why := undecodable(v, s.frameLate); why != "" {
 			refused = append(refused, fmt.Sprintf("the picture of %s cannot be decoded, %s", filepath.Base(v), why))
 			continue
 		}
@@ -116,8 +116,8 @@ const firstFrameWait = 30 * time.Second
 // undecodable says why the picture of a video cannot be decoded, or ""
 // where it can: the episode's decoder is asked for its first frame. That
 // decoder is the one the video preview reads from when the episode opens,
-// so asking costs no start of it later. It waits wait for the frame, or
-// firstFrameWait where that is zero.
+// so asking costs no start of it later. It waits firstFrameWait for the
+// frame, or until late says it is late.
 //
 // Only the decoder's own words leave a video out. A frame that does not
 // come in time says nothing about the file, only about the machine: on
@@ -125,7 +125,7 @@ const firstFrameWait = 30 * time.Second
 // out as "context deadline exceeded" after 30 s, which would have told a
 // person their video could not be decoded. Such a video is taken, and
 // the video preview shows how its decoder does.
-func undecodable(video string, wait time.Duration) string {
+func undecodable(video string, late <-chan struct{}) string {
 	abs, err := filepath.Abs(video)
 	if err != nil {
 		return err.Error()
@@ -134,11 +134,18 @@ func undecodable(video string, wait time.Duration) string {
 	if err != nil {
 		return strings.TrimSuffix(err.Error(), ".")
 	}
-	if wait <= 0 {
-		wait = firstFrameWait
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), wait)
+	asked := time.Now()
+	ctx, cancel := context.WithTimeout(context.Background(), firstFrameWait)
 	defer cancel()
+	if late != nil {
+		go func() {
+			select {
+			case <-late:
+				cancel()
+			case <-ctx.Done():
+			}
+		}()
+	}
 	// On the grid of its short, or on one of a single frame where the
 	// probe finds none, so a file with no picture is refused in the
 	// decoder's own words.
@@ -156,7 +163,7 @@ func undecodable(video string, wait time.Duration) string {
 	case frames > 0:
 		return ""
 	case ctx.Err() != nil:
-		theLog.line(zerolog.WarnLevel, "files").Str("video", filepath.Base(abs)).Dur("waited", wait).
+		theLog.line(zerolog.WarnLevel, "files").Str("video", filepath.Base(abs)).Dur("waited", time.Since(asked)).
 			Msg("no first frame came in time, so the video is taken without one")
 		return ""
 	case err == nil:
