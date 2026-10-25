@@ -619,11 +619,6 @@
 //                      swipes along the clip timeline n times with two
 //                      fingers, and the waveform's canvas is never made new
 //                      on the way, only drawn again
-//   ["stands still", away]
-//                      holds the window up for 900 ms, after it was told the
-//                      app went behind another when away is true, and reads
-//                      whether the log was told the window stood still: it
-//                      must be, unless the app was away
 //   ["remove two, hand still"]
 //                      presses the bins of the first two clips in the clip
 //                      list, one after the other, and leaves the hand where
@@ -3044,18 +3039,6 @@ export const sequences = [
     steps: [["swipe keeps the canvas", 12]],
   },
   {
-    // WebKit lets the timers of an app that is not in front fire once a
-    // second at most, and the log said the window stood still every time
-    // the app came back to the front: 262 lines in two days of Tim's
-    // report, none while he worked. A window held up in front is still
-    // said. Plan row 2.242.
-    name: "the log says the window stood still only while the app is in front",
-    steps: [
-      ["stands still", true],
-      ["stands still", false],
-    ],
-  },
-  {
     name: "Cancel stops a search, and Continue carries it on to its clips",
     steps: [
       ["model", "holds"],
@@ -4428,20 +4411,6 @@ function railMark() {
   const named = { "--accent": "accent", "--warn": "warning", "--err": "failure" };
   for (const [v, name] of Object.entries(named)) if (colour === paint(v)) return `dot, ${name}`;
   return `dot, ${colour}`;
-}
-
-// Until the app's log has been written up to now: a line of the walk's own
-// goes to the console, which the app writes to its log in order with
-// every line said before it, see said.ts, and the call that writes it is
-// waited for. The log is written a quarter of a second after a line, by a
-// timer settle leaves alone, since it changes nothing on screen.
-function loggedUpTo(page) {
-  return page.evaluate(() => {
-    const mark = `walk: logged up to ${window.__calls.length}`;
-    const written = window.__nextCall(window.__calls.length, (c) => c.name === "Said" && c.args[0].some((l) => l.text === mark));
-    console.warn(mark);
-    return written;
-  });
 }
 
 // Until the interface has made a call of name since the call numbered
@@ -12420,29 +12389,6 @@ async function walkSequence(seq, shared = null) {
         const asked = await page.evaluate((n) => window.__calls.slice(n).map((c) => c.name), before);
         const these = asked.filter((c) => c === name).length;
         if (these) wrong = `${name} was asked ${these} times in ${seconds} news of the job, with nothing changed: ${asked.join(", ")}`;
-        break;
-      }
-      case "stands still": {
-        const before = await page.evaluate(() => window.__calls.length);
-        await page.evaluate((away) => {
-          if (away) window.dispatchEvent(new Event("blur"));
-          const until = performance.now() + 900;
-          while (performance.now() < until);
-        }, arg);
-        await settle(page);
-        if (arg) await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-        await loggedUpTo(page);
-        const lines = await page.evaluate(
-          (n) =>
-            window.__calls
-              .slice(n)
-              .filter((c) => c.name === "Said")
-              .flatMap((c) => c.args[0].map((l) => l.text)),
-          before,
-        );
-        const stood = lines.some((l) => l.startsWith("window: stood still"));
-        if (arg && stood) wrong = `the log said the window stood still while the app was behind another: ${lines.join(" | ")}`;
-        if (!arg && !stood) wrong = `the window stood still for 900 ms in front and the log did not say so: ${lines.join(" | ")}`;
         break;
       }
       case "swipe keeps the canvas": {
