@@ -213,7 +213,7 @@ class Stream {
           this.end(got.error);
           return;
         }
-        this.take(got);
+        this.take(got, skip > 0 ? from : -Infinity);
         if (keyNow) this.keyCame(got);
       }
     } finally {
@@ -249,7 +249,11 @@ class Stream {
     } else this.end("");
   }
 
-  private take(got: Got) {
+  // A frame asked for while a pull was on its way that skipped to from
+  // never comes from that pull: the Go side let every frame before from
+  // go unmade.
+  private take(got: Got, from = -Infinity) {
+    const before = this.position;
     if (!this.gave && got.frames.length) {
       this.owner.opened(performance.now() - this.asked, got.times, this.key);
       queueMicrotask(() => this.owner.unpark());
@@ -261,13 +265,19 @@ class Stream {
       this.owner.keep(rank, frame);
     }
     // Everything waited for that this stream has reached, as it came or as
-    // the frame before it when the file has none there.
+    // the frame before it when the file has none there. One the pull
+    // skipped is asked again, of another stream: handed the frame before
+    // it, the video preview showed that frame and said it showed this one,
+    // issue #358.
     const still: Waiter[] = [];
+    const skipped: Waiter[] = [];
     for (const w of this.waiting) {
-      if (w.rank <= this.position) w.done(this.owner.nearest(w.rank));
-      else still.push(w);
+      if (w.rank > this.position) still.push(w);
+      else if (w.rank > before && w.rank < from && !this.owner.has(w.rank)) skipped.push(w);
+      else w.done(this.owner.nearest(w.rank));
     }
     this.waiting = still;
+    for (const w of skipped) this.owner.route(w);
     if (!this.handWaits) this.owner.aheadNow();
   }
 
@@ -518,7 +528,7 @@ export class AppFrames {
   }
 
   // Whether the frame of a rank is kept at the size frames are read at.
-  private has(rank: number): boolean {
+  has(rank: number): boolean {
     const f = this.kept.get(rank);
     const { width, height } = this.size();
     return !!f && f.width === width && f.height === height;
