@@ -134,3 +134,72 @@ function frames(size: () => { width: number; height: number }) {
   const picture = (rank: number, w: number, h: number) => new Picture(new Uint8Array(w * h * 4), w, h, rank * 40000);
   return { app, picture };
 }
+
+// A stream on a Go side the test answers by hand: each pull waits until
+// the test hands it the ranks it brings, each frame's first byte its rank.
+function goSide() {
+  vi.stubGlobal("fetch", (url: string) =>
+    Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ id: `s${url.length}` }), text: () => Promise.resolve("") }),
+  );
+  const { app } = frames(() => ({ width: 4, height: 2 }));
+  app.paused = () => false;
+  const asked: { url: string; give: (ranks: number[]) => void }[] = [];
+  const came: (() => void)[] = [];
+  (app as unknown as { puller: unknown }).puller = {
+    pull: (url: string) =>
+      new Promise((done) => {
+        asked.push({
+          url,
+          give: (ranks) =>
+            done({
+              status: 200,
+              end: false,
+              error: "",
+              closed: false,
+              times: "",
+              light: "",
+              spare: [],
+              frames: ranks.map((r) => ({ at: r / 25, frame: new Picture(new Uint8Array(4 * 2 * 4).fill(r), 4, 2, r * 40000) })),
+            }),
+        });
+        for (const c of came.splice(0)) c();
+      }),
+    close() {},
+  };
+  // Settles once the Go side has been asked n times in all.
+  const pulls = (n: number) =>
+    new Promise<void>((done) => {
+      const look = () => (asked.length >= n ? done() : came.push(look));
+      look();
+    });
+  const rankOf = async (p: Promise<Picture | null>) => (await p)?.data?.[0] ?? null;
+  return { app, asked, pulls, rankOf };
+}
+
+describe("a stream asked for a frame while a pull is on its way", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  // The pull on its way skips to a frame further on, so the frame asked
+  // for in between never comes from it. It was handed the frame before
+  // it that was kept instead, under its own rank, and the video preview
+  // showed the frame before the one it said, issue #358.
+  test("still gets its own frame when the pull skips past it", async () => {
+    const { app, asked, pulls, rankOf } = goSide();
+    const ten = app.frame(10, 0);
+    await pulls(1);
+    asked[0].give([10]);
+    expect(await rankOf(ten)).toBe(10);
+    const twenty = app.frame(20, 0);
+    await pulls(2);
+    expect(asked[1].url).toContain("skip=");
+    const fourteen = app.frame(14, 0);
+    asked[1].give([19, 20]);
+    expect(await rankOf(twenty)).toBe(20);
+    // Either the frame comes as it is, or it is asked of the Go side again.
+    const first = await Promise.race([rankOf(fourteen), pulls(3).then(() => "asked again")]);
+    expect(first).toBe("asked again");
+    asked[2].give([14]);
+    expect(await rankOf(fourteen)).toBe(14);
+    app.close();
+  });
+});

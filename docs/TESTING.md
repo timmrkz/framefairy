@@ -697,14 +697,9 @@ printed, and every walk writes `walking`, `walked` or `failed` with its
 name to stderr as it starts and ends, so a walk that hung is named,
 issue #443. And a check counts what the app drew against the frames the
 screen drew, not against a number: a bounce is drawn on every frame the
-screen drew while it lasted, the crop frame of a glide stands in a place
-of its own on every frame the play showed, and the card under a removed
-row has risen, in every frame the row folds, by as much of the row and
-the space after it as the row has folded, so frames the screen did not
-draw make no jump, issue #442. That the row leaves the list only once
-its fold has finished is heard from the fold's own animation, which says
-so before Svelte takes the row out. A fold the screen drew no frame of
-is tried again on a new clip, up to three times.
+screen drew while it lasted, and the crop frame of a glide stands in a
+place of its own on every frame the play showed, so frames the screen
+did not draw make no jump, issue #442.
 
 Where how many frames the screen draws decides what a walk can see, the
 walk gives the app its frames or its time instead. The bounce after a
@@ -720,7 +715,27 @@ wait the walk hands the frame queue, `dressWait` in
 used up the 600 ms it waits, issue #468. And a glide read while it plays
 goes on until the video preview has shown ten frames or come to the next
 keyframe, not for two seconds, in which a busy machine showed two, issue
-#464.
+#464. The fold of a removed row is held as Svelte makes it and stepped
+through by hand, in twenty steps, and at each the card under the row
+has to have risen by as much of the row and the space after it as the
+row has folded. That the row leaves the list only once its fold has
+finished is heard from the fold's own animation, which says so before
+Svelte takes the row out. On the screen's own frames a busy machine drew
+none of the fold's 200 ms, issues #442 and #469.
+
+Where the machine itself spoils what a walk checks, the app says where,
+and the walk sets aside only that. A page too busy to hand the sound
+card its sound in time leaves it playing nothing until the sound comes,
+which starts and ends with a click. The frame queue counts every
+stretch it scheduled late, with the sound card's frames it left quiet,
+`lateSoundAt` in its stats. The walk of the loop switched off near the
+end takes a click for the machine's only at either end of a silence it
+heard, samples of nothing at all, that lies where the queue says it was
+late, and says how many it set aside. Any other click fails it. So that
+the app's own mistakes cannot hide there, the queue also counts sound
+it took off the sound card before it had played, `soundThrown`, and
+sound it handed over twice, `soundTwice`, and the presses of L must
+leave both at nought, issue #466.
 
 ### `speed.mjs`: how quickly the video preview follows the keys
 
@@ -796,6 +811,45 @@ them, most of them a few seconds long, so no bridge is left with a long
 run once the others are done. Each sequence opens the app afresh with
 `/reset`, so it walks the same alone as after the one before it.
 
+Every walker hands its sequences to one node of its own, `sequences.mjs
+--serve`, which reads the name of the next sequence from its input,
+says `walking` in a line of its own as it begins and how it went in
+another as it ends, and keeps one Chromium for all of them. Each sequence still opens a page in a context of its own, so it
+keeps nothing a sequence before it kept. Starting node, Playwright and
+Chromium for every sequence was 1.45 s and 1.2 s of CPU each time, 220
+times, issue #526. A sequence that throws ends its node, and the next
+sequence starts a new one, so nothing a throw left behind walks on. What
+the node said before `walking` belongs to no sequence, so the sequence
+it was handed fails with it, and a node that ends between the two lines
+fails the sequence it was walking, never the one after.
+
+A sequence asks the system for less motion, the way a person can in the
+Mac's settings, unless one of its steps looks at how the app moves: the
+caption blocks and the typed word that pop, the bounce over a paused
+frame, the word that grows as it is opened, the card that shakes and the
+microphone that grows as it hears, `moving` in `sequences.mjs`. The app
+then leaves out what it animates, the info marks' fade and the pops
+among it, so the settle waits for none of it. On main those two were
+179 s of the 1976 s all runs took one after another. The sequences with
+those steps and every random walk keep the motion, so the app is still
+walked the way it moves on Tim's Mac. A new step that looks at motion
+goes into `moving`, or it passes without ever seeing what it checks, and
+`--names` fails on a name in `moving` that is no step. `make walks
+STILL=none` walks every sequence with the motion, and
+`walks-nightly.yml` does so on main every night, so a step that looks at
+motion and was left out of `moving` fails there.
+
+A video a walk adds is made by ffmpeg the first time it is asked for and
+kept, by what it was asked for and by the sum of what makes it, the
+source of `walkvideos_test.go`, which holds every function that makes
+one, and the version of ffmpeg, see `walkVideos`. Every bridge of a run
+keeps them in one folder, `.build/walk-videos` or `WALKVIDEOS`, and CI
+keeps each share's folder between runs, saved again whenever a run made
+a video more, so a walk that adds the same video again gets a copy. ffmpeg makes the same bytes
+from the same arguments, so the copy is the video it would have made.
+Made on every add, the 54 videos the sequences added took 100 s, and the
+one of ten minutes 9 s every time, issue #527.
+
 Measured on four cores, the cloud's and CI's, with the 3 seeds: the
 sequences were once one run, and took twelve minutes on one bridge while
 the other three had finished the fifteen walks in four and waited. Handed
@@ -820,7 +874,9 @@ each share starts its longest runs first, so no bridge is left with a
 minute of work after the others are done. Every third run, as it was,
 left one machine a minute behind. A run the file does not know counts as
 the median. `make walks WALKTIMES=1` writes the file again from the times
-of that run, best on the whole set on a quiet machine. On three machines
+of that run, best on the whole set on a quiet machine, and keeps the time
+it had for a run that the test's time stopped, since how long a run that
+hung was stopped after says nothing of how long it takes. On three machines
 each job still took four and three quarter minutes, setup included. More
 bridges on a machine do not help: on four cores eight bridges finished a
 share no sooner than six and broke three walks that wait on the clock.

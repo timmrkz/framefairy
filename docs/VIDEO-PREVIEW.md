@@ -222,7 +222,11 @@ closed for standing unused.
   jump forward in an open stream brings
   the frame before it too, for the arrow to the left. The decoder is told
   the moment before which nothing is wanted, `next` with a skip, so the
-  frames a jump passes are decoded but never scaled. While the playhead
+  frames a jump passes are decoded but never scaled. A frame asked of
+  the stream while such a read is on its way, somewhere in what it
+  skips, never comes from it, so it is asked of another stream. It was
+  handed the frame before it, and the video preview showed that frame
+  and said it showed the one asked for, issue #358. While the playhead
   is dragged, each place it passes shows its frame alone and cues no
   play, `FrameQueue.grip`, and the play is cued where the hand lets go.
   A place the hand moves to that needs a stream of its own opens it with

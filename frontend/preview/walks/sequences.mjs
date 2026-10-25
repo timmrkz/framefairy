@@ -633,15 +633,16 @@
 //                      row's time has to run down and close it
 //   ["row folds"]      presses the bin of a clip with another clip's card
 //                      under it, takes the hand to the clip timeline, and
-//                      reads where the card under it stands on every
-//                      animation frame while the removed row runs down and
-//                      closes. The card has to rise by the row and the
-//                      space after it, never go back down, and in every
-//                      frame the row folds have risen by as much of both
-//                      as the row has folded. The row has to leave the
-//                      list only once its fold has finished. When the
-//                      screen drew no frame of the fold, it makes another
-//                      clip and tries again, up to three times
+//                      runs the removed row's time down. The row's fold is
+//                      held as it starts and stepped through by hand in
+//                      twenty steps, and where the card under it stands is
+//                      read at each, in the moment the row leaves and on
+//                      the ten frames after. The card has to rise by the
+//                      row and the space after it, never go back down, not
+//                      move as the row leaves, and at every step have
+//                      risen by as much of both as the row has folded. The
+//                      row has to leave the list only once its fold has
+//                      finished
 //   ["thumbnail"]      presses T, which makes the frame under the playhead
 //                      a thumbnail of the clip, and waits for the clip to
 //                      have one more
@@ -740,8 +741,11 @@
 //                      off and the play ends ahead of the sound card
 //   ["stopped at its end"]
 //                      since "loop off near the end", the presses of L
-//                      started no play over, the sound did not click,
-//                      nothing was heard after the clip's end, the play
+//                      started no play over, threw no sound away and
+//                      handed none over twice, the sound did not click but
+//                      at the ends of a silence where the frame queue says
+//                      it handed the sound card its sound late, nothing
+//                      was heard after the clip's end, the play
 //                      stopped within 400 ms of the playhead reaching it,
 //                      and no frame drawn from then on is from before the
 //                      last second of the clip, so nothing of the clip's
@@ -1253,11 +1257,11 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
-import { open, chosen, shown, engineState, handles, timeline, inside, middle, high, drag } from "./bridge.mjs";
+import { open, newBrowser, chosen, shown, engineState, handles, timeline, inside, middle, high, drag } from "./bridge.mjs";
 import { clipList, control, pressHead, fromSidebar, sidebarStill, settle, hold, letHeld, ask, episodeOn, shortFrames, shortSound } from "./bridge.mjs";
 import { xOf, seekTo, cropFrame, sameLook, sayLook, readShort, loudness, filmedOnScreen, preview } from "./bridge.mjs";
 import { recordFrames, addHEVC, overlay, cropPixels, shortFramesFrom, slowDown, noDeadlines, BITS, nextPaint, news, nextNews, caughtUp } from "./bridge.mjs";
-import { fakeClock, holdClock, runClock, letClockGo, realFrames, foldsDone, shownOnPlayhead, clickOnTrack, playUntil, pageUntil, seenUntil } from "./bridge.mjs";
+import { fakeClock, holdClock, runClock, letClockGo, realFrames, foldsDone, shownOnPlayhead, clickOnTrack, pressOnTrack, playUntil, pageUntil, seenUntil } from "./bridge.mjs";
 import { Watch, same, describe, overlaid } from "./rules.mjs";
 
 // The video's work folder, see WorkDir in engine/run.go.
@@ -4930,6 +4934,32 @@ function shortProblem(entry, short, fps, cutsWanted) {
 }
 
 const url = process.env.BRIDGE_URL ?? "http://127.0.0.1:8123/";
+// The steps that look at how the app moves: the caption blocks and the
+// typed word that pop, the bounce over a paused frame, the word that grows
+// as it is opened, the card that shakes and the microphone that grows as
+// it hears. A sequence with none of them asks for less motion, which the
+// app honours by leaving out what it animates, so the settle waits for
+// none of it: the pops and the info marks' fade were 179 s of the 1976 s
+// all runs took on main. A sequence with one of them, and every random
+// walk, walks the app the way it moves on Tim's Mac. A new step that looks
+// at motion goes in here, or it passes without ever seeing what it checks.
+const moving = new Set([
+  "count pops",
+  "pops",
+  "pill pops",
+  "grow",
+  "step onto words and see them pop",
+  "step frame by frame and see nothing pop",
+  "refused",
+  "dictate",
+]);
+
+// STILL=none walks every sequence with the motion, for a failure that
+// might hide behind it.
+function still(seq) {
+  return process.env.STILL !== "none" && !seq.steps.some(([what]) => moving.has(what));
+}
+
 const only = process.argv[2] ?? "";
 let failures = 0;
 
@@ -4955,9 +4985,51 @@ if (only === "--names") {
     console.log(`two steps are called ${JSON.stringify(stepTwice[0])}`);
     process.exit(1);
   }
+  // A step renamed and left in moving by its old name would be walked
+  // still, and check motion it never sees.
+  const noStep = [...moving].filter((n) => !steps.includes(n));
+  if (noStep.length) {
+    console.log(`moving names ${JSON.stringify(noStep[0])}, which is no step`);
+    process.exit(1);
+  }
   console.log(names.join("\n"));
   process.exit(0);
 }
+
+// --serve walks one sequence after another in one browser, each named on
+// a line of its own on standard input as JSON, for TestWalks to hand one
+// walker its sequences without starting node, Playwright and Chromium
+// again for each, 1.45 s and 1.2 s of CPU a sequence, issue #526. Each
+// still starts with /reset and pages of its own, so it walks the same as
+// alone. What a sequence prints begins with a line of its own, walking,
+// see walkingLine, so what the node says between two sequences is told
+// from either. It ends in a line that starts with walked, see walkedLine,
+// then "ok" or "FAIL", or "threw" when it threw and this node ends, so a
+// sequence after it starts in a new one.
+if (only === "--serve") {
+  const { createInterface } = await import("node:readline");
+  const browser = await newBrowser();
+  for await (const line of createInterface({ input: process.stdin })) {
+    await mark("walking");
+    const name = JSON.parse(line);
+    const seq = sequences.find((q) => q.name === name);
+    if (!seq) {
+      console.log(`no sequence is called ${line}`);
+      await said("FAIL");
+      continue;
+    }
+    try {
+      await said((await walkSequence(seq, browser)) ? "FAIL" : "ok");
+    } catch (e) {
+      console.log(e?.stack ?? String(e));
+      await said("threw");
+      process.exit(1);
+    }
+  }
+  await browser.close();
+  process.exit(0);
+}
+
 const exact = process.env.SEQUENCE;
 const toWalk = sequences.filter((q) => (exact ? q.name === exact : q.name.includes(only)));
 if (exact && !toWalk.length) {
@@ -4965,9 +5037,27 @@ if (exact && !toWalk.length) {
   process.exit(1);
 }
 
-for (const seq of toWalk) {
+for (const seq of toWalk) if (await walkSequence(seq)) failures++;
+process.exit(failures ? 1 : 0);
+
+// The line --serve ends what a sequence printed with, walkedLine in
+// TestWalks, once everything it printed, on both outputs, is out.
+async function said(how) {
+  await mark(`walked ${how}`);
+}
+
+// A line of --serve's own, after everything printed before it, on both
+// outputs.
+async function mark(what) {
+  await new Promise((done) => process.stderr.write("", done));
+  await new Promise((done) => process.stdout.write(`\u001e${what}\n`, done));
+}
+
+// Walks one sequence and says whether it failed, in a browser of its own
+// or in browser, whose pages it closes again.
+async function walkSequence(seq, shared = null) {
   const began = performance.now();
-  const opened = await open(url);
+  const opened = await open(url, { browser: shared, still: still(seq) });
   const { browser, errors } = opened;
   // The page the steps act on: the app's window, or the report window
   // once Bugs opened it. The watch keeps to the app's window.
@@ -6586,7 +6676,14 @@ for (const seq of toWalk) {
         // playUntil, once the app has settled on the press.
         await settle(page);
         await playUntil(page, { most: 0.3 });
-        const starts = await page.evaluate(() => window.__frameQueue.stats.starts);
+        // What the play had started, thrown away and handed over twice
+        // before the presses of L, see the frame queue's stats.
+        const counts = () =>
+          page.evaluate(() => {
+            const { starts, soundThrown, soundTwice } = window.__frameQueue.stats;
+            return { starts, thrown: soundThrown, twice: soundTwice };
+          });
+        const before = await counts();
         await page.keyboard.press("l");
         await playUntil(page, { past: end - arg });
         await page.evaluate(() => {
@@ -6607,6 +6704,7 @@ for (const seq of toWalk) {
           await page.keyboard.press("l");
           await playUntil(page, { most: 0.12 });
         }
+        const pressed = await counts();
         // Until the play stops at the end, or has gone on by what was left
         // of the clip and eight seconds more, and then until the queue
         // holds the sound card, see end in lib/frames/queue.ts: whatever
@@ -6644,10 +6742,11 @@ for (const seq of toWalk) {
             m0: q.m0,
             rate: q.audio.sampleRate,
             programEnd: q.program.end,
+            late: q.stats.lateSoundAt,
             heard: window.__heard.map((h) => ({ frame: h.frame, data: Array.from(h.data) })),
           };
         });
-        loopEnd = { end, fps: await rate(page), starts: q.starts - starts, ...q };
+        loopEnd = { end, fps: await rate(page), ...q, starts: q.starts - before.starts, thrown: pressed.thrown - before.thrown, twice: pressed.twice - before.twice };
         await settle(page);
         break;
       }
@@ -7596,7 +7695,7 @@ for (const seq of toWalk) {
         // made taller until the crop is as tall as the short.
         const tall = Number(execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries",
           "stream=height", "-of", "csv=p=0", short]).toString().trim());
-        const sized = (await open(url, { viewport: { width: 2400, height: 1000 }, again: page.context().browser() })).page;
+        const sized = (await open(url, { viewport: { width: 2400, height: 1000 }, again: page.context().browser(), still: still(seq) })).page;
         const canvasTall = () => sized.evaluate(() => document.querySelector(".screen canvas").height);
         for (let i = 0, high = 1000; i < 12 && (await canvasTall()) !== tall; i++) {
           high += Math.round((tall - (await canvasTall())) * 1.4) || Math.sign(tall - (await canvasTall()));
@@ -9833,15 +9932,37 @@ for (const seq of toWalk) {
         // thousandths of its height, and a stop or a restart jumps by a
         // good part of it. The sound card's time of the program's end is
         // where the sound ends, and after it nothing.
-        const { heard, c0, m0, rate: sr, programEnd } = loopEnd;
+        const { heard, c0, m0, rate: sr, programEnd, late } = loopEnd;
         const xs = [];
         for (const h of heard) for (let k = 0; k < h.data.length; k++) xs.push([h.frame + k, h.data[k]]);
         const endFrame = Math.round((c0 + (Math.round(programEnd * sr) - m0) / sr) * sr);
         let height = 0;
         for (const [f, x] of xs) if (f < endFrame) height = Math.max(height, Math.abs(x));
+        // A busy machine can keep the page from handing the sound card its
+        // sound in time, and the sound card plays nothing until it comes,
+        // which starts and ends with a click. The app counts each such
+        // stretch with where it should have started and where it did, see
+        // schedule in lib/frames/queue.ts, so a click at either end of a
+        // silence heard there is the machine's and not the loop's, issue
+        // #466. Where the sound card took up the sound again is read off
+        // the silence itself, since it can be a while after the moment
+        // the page asked. The page's counts are within a quantum of 128
+        // frames of the sound card's. The presses of L are known to have
+        // thrown no sound away and handed none over twice, below, so
+        // nothing they did made the sound late.
+        const silences = [];
+        for (let k = 0; k < xs.length; k++) {
+          if (xs[k][1] !== 0) continue;
+          const from = k;
+          while (k + 1 < xs.length && xs[k + 1][1] === 0 && xs[k + 1][0] === xs[k][0] + 1) k++;
+          const [a, b] = [xs[from][0], xs[k][0]];
+          if (b - a >= 64 && late.some(([p, q]) => a <= q + 128 && b >= p - 128)) silences.push([a, b]);
+        }
+        const lateHere = (f) => silences.some(([a, b]) => f >= a - 1 && f <= b + 2);
         let clicks = 0;
         let firstClick = null;
         let after = 0;
+        let starved = 0;
         for (let k = 2; k < xs.length; k++) {
           const [f, x] = xs[k];
           if (f >= endFrame + 2) {
@@ -9849,12 +9970,17 @@ for (const seq of toWalk) {
             continue;
           }
           if (xs[k - 1][0] !== f - 1 || xs[k - 2][0] !== f - 2) continue;
-          if (Math.abs(x - 2 * xs[k - 1][1] + xs[k - 2][1]) > 0.03 * height) {
+          if (Math.abs(x - 2 * xs[k - 1][1] + xs[k - 2][1]) <= 0.03 * height) continue;
+          if (lateHere(f)) starved++;
+          else {
             clicks++;
             firstClick ??= ((f - endFrame) / sr) * 1000;
           }
         }
+        if (starved) console.log(`      ${starved} clicks where the page handed the sound card its sound late, ${silences.length} silences heard`);
         if (loopEnd.starts) wrong = `the play started over ${loopEnd.starts} times while L was pressed`;
+        else if (loopEnd.thrown) wrong = `the presses of L took ${loopEnd.thrown} stretches of sound off the sound card before they had played`;
+        else if (loopEnd.twice) wrong = `the presses of L handed the sound card ${loopEnd.twice} stretches of sound it had already been handed`;
         else if (!(height > 0.01)) wrong = `the sound card was handed nothing to hear, ${xs.length} samples`;
         else if (clicks) wrong = `the sound clicked ${clicks} times, the first ${(-firstClick).toFixed(0)} ms before the end`;
         else if (after) wrong = `${after} samples of sound were heard after the clip's end`;
@@ -12421,11 +12547,6 @@ for (const seq of toWalk) {
         break;
       }
       case "row folds": {
-        // A fold the screen drew no frame of cannot be judged, which only a
-        // busy machine does. Then another clip is made and its row removed
-        // and judged, up to three in all, the way a bounce is stepped onto
-        // again. The steps that do it are put after this one.
-        const tries = arg ?? 1;
         const bins = page.locator("aside ol li:has(+ li) button.drop");
         if (!(await bins.count())) {
           wrong = "no clip in the clip list has a card under it";
@@ -12440,11 +12561,12 @@ for (const seq of toWalk) {
         await page.mouse.down();
         await page.mouse.up();
         await page.waitForSelector("aside ol li:not([inert]) .gone");
-        // Every frame from here, until the row has been gone a while: the
-        // browser's own frames, which go on while the app's time is held.
-        // And the fold itself: every animation the row is given, and
-        // whether the last had finished in the moment the row left the
-        // list, told by the list changing, not by a frame.
+        // The fold runs on the browser's own time, which the held clock
+        // does not hold, and a busy machine may draw no frame of it at
+        // all, #469. So the fold is held where it starts the moment it is
+        // made and stepped through by hand below, each step read off the
+        // page, and the row and the card under it are read again in the
+        // moment the row leaves the list and on the frames after.
         await page.evaluate(() => {
           const frame = window.__real?.frame ?? ((f) => requestAnimationFrame(f));
           const row = document.querySelector("aside ol li:not([inert]) .gone").closest("li");
@@ -12452,38 +12574,65 @@ for (const seq of toWalk) {
           const gap = parseFloat(getComputedStyle(row.parentElement).rowGap);
           const seen = [];
           const folds = [];
+          let found;
           let ended;
-          window.__fold = { seen, height: row.getBoundingClientRect().height, gap, row, left: null, ended: new Promise((r) => (ended = r)) };
+          const look = (step) => seen.push({ step, there: row.isConnected, top: under.getBoundingClientRect().top, height: row.isConnected ? row.getBoundingClientRect().height : 0 });
+          window.__fold = { seen, look, height: row.getBoundingClientRect().height, gap, row, left: null, held: new Promise((r) => (found = r)), ended: new Promise((r) => (ended = r)) };
+          look();
           // Svelte takes the row out when its animation says it has
           // finished, and cancels it as it does, so whether it had is
           // heard before Svelte hears it: a listener added here, as the
           // animation is made, comes before the one Svelte sets after.
+          // Svelte first makes an animation of no length and makes the
+          // fold when that ends, so the fold is the one with a length.
           row.animate = function (...args) {
             const fold = Element.prototype.animate.apply(this, args);
             const last = { finished: false };
             fold.addEventListener("finish", () => (last.finished = true));
             folds.push(last);
+            if (fold.effect.getComputedTiming().duration > 0) {
+              fold.pause();
+              found(fold);
+            }
             return fold;
           };
+          // The moment the row leaves, read before the browser draws it,
+          // then ten frames more, to see that nothing moves after.
           new MutationObserver((_, watching) => {
             if (row.isConnected) return;
             watching.disconnect();
             window.__fold.left = { folded: folds.length > 0, finished: !!folds.at(-1)?.finished };
+            found(null);
+            let frames = 10;
+            const after = () => {
+              look();
+              if (--frames) frame(after);
+              else ended();
+            };
+            after();
           }).observe(row.parentElement, { childList: true });
-          const look = () => {
-            seen.push({ there: row.isConnected, top: under.getBoundingClientRect().top, height: row.isConnected ? row.getBoundingClientRect().height : 0 });
-            if (row.isConnected || seen.filter((f) => !f.there).length < 30) frame(look);
-            else ended();
-          };
-          frame(look);
         });
         const line = await page.locator(".clip-timeline").boundingBox();
         await page.mouse.move(line.x + line.width / 2, line.y + line.height / 2, { steps: 8 });
         await runClock(page, (removeTime + 0.5) * 1000);
-        // Its time has run out, so it is on its way out, or out already,
-        // and the watch ends thirty frames after it left.
+        // Its time has run out, so it is on its way out, or out already.
         const going = await page.evaluate(() => !window.__fold.row.isConnected || window.__fold.row.inert);
-        if (going) await page.evaluate(() => window.__fold.ended);
+        if (going) {
+          // Twenty steps from where the fold starts to where it ends, each
+          // read as the page stands then, and then the fold is let finish.
+          await page.evaluate(async () => {
+            const fold = await window.__fold.held;
+            if (fold) {
+              const end = fold.effect.getComputedTiming().endTime;
+              for (let i = 1; i <= 20; i++) {
+                fold.currentTime = (end * i) / 20;
+                window.__fold.look(i);
+              }
+              fold.finish();
+            }
+            await window.__fold.ended;
+          });
+        }
         await letClockGo(page);
         if (!going) {
           wrong = "the removed row was still in the list after its time";
@@ -12493,25 +12642,22 @@ for (const seq of toWalk) {
         const tops = seen.map((f) => f.top);
         const rose = tops[0] - tops[tops.length - 1];
         const back = tops.findIndex((t, i) => i && t > tops[i - 1] + 0.5);
-        // The space goes with the row: in every frame the row is still
-        // there, the card under it has risen by as much of the row and the
-        // space after it as the row has folded. Judged frame by frame, not
-        // by the step at the end, since a busy machine that draws no frame
-        // for a while makes that step as large as the fold it missed,
-        // issue #442. That the row stays until its fold is over is told
-        // by the fold's own animation instead.
-        const folding = seen.filter((f) => f.there && f.height > 0.5 && f.height < height - 0.5);
-        const off = folding
-          .map((f, i) => ({ i, by: tops[0] - f.top - (height + gap) * (1 - f.height / height) }))
-          .find((f) => Math.abs(f.by) > 1);
+        const leaving = seen.findIndex((f) => !f.there);
+        const jump = leaving > 0 ? tops[leaving - 1] - tops[leaving] : 0;
+        // The space goes with the row: at every step of the fold, the card
+        // under it has risen by as much of the row and the space after it
+        // as the row has folded.
+        const steps = seen.filter((f) => f.step);
+        const off = steps.map((f) => ({ i: f.step, by: tops[0] - f.top - (height + gap) * (1 - f.height / height) })).find((f) => Math.abs(f.by) > 1);
         if (!left) wrong = "the removed row was never seen leaving the list";
         else if (!left.folded) wrong = "the removed row left the list with no fold";
         else if (!left.finished) wrong = "the removed row left the list before its fold had finished";
+        else if (steps.length !== 20) wrong = `the removed row's fold was stepped through ${steps.length} times, not 20`;
+        else if (!steps.every((f) => f.there)) wrong = `the removed row left the list at step ${steps.find((f) => !f.there).step} of its fold, not after it`;
+        else if (off) wrong = `the space under the removed row did not fold with it: ${Math.abs(off.by).toFixed(1)} px ${off.by < 0 ? "short of" : "past"} where the card under it stands at step ${off.i} of the fold`;
+        else if (Math.abs(jump) > 0.5) wrong = `the card under the removed row jumped ${jump.toFixed(1)} px in the moment the row left the list`;
         else if (Math.abs(rose - (height + gap)) > 1) wrong = `the card under the removed row rose ${rose.toFixed(1)} px, not the row's ${height} and the ${gap} after it`;
-        else if (back >= 0) wrong = `the card under the removed row went back down ${(tops[back] - tops[back - 1]).toFixed(1)} px on frame ${back}`;
-        else if (!folding.length && tries < 3) steps.splice(at + 1, 0, ["trim", "start", 300], ["make while paused", "i"], [what, tries + 1]);
-        else if (!folding.length) wrong = `the screen drew no frame while the row folded, ${tries} rows in a row, so how it folds cannot be judged`;
-        else if (off) wrong = `the space under the removed row did not fold with it: ${Math.abs(off.by).toFixed(1)} px ${off.by < 0 ? "short of" : "past"} where the card under it stands on frame ${off.i + 1} of the fold`;
+        else if (back >= 0) wrong = `the card under the removed row went back down ${(tops[back] - tops[back - 1]).toFixed(1)} px at step ${back}`;
         await watch.step("row folds", s);
         break;
       }
@@ -14085,8 +14231,7 @@ for (const seq of toWalk) {
         const y = dot.y + dot.height / 2;
         const x = dot.x + dot.width / 2;
         const to = arg === "end" ? g.end.x + g.end.w + 60 : g.start.x - 60;
-        await page.mouse.move(x, y);
-        await page.mouse.down();
+        await pressOnTrack(page, x, y);
         const held = [];
         for (let i = 1; i <= 12; i++) {
           await page.mouse.move(x + ((to - x) * i) / 12, y);
@@ -14603,13 +14748,11 @@ for (const seq of toWalk) {
   const failed = wrong ?? (watch.failed && `broke: ${watch.failed.rule}\n${watch.failed.detail}`);
   const took = ((performance.now() - began) / 1000).toFixed(1).padStart(5);
   console.log(`${failed ? "FAIL" : "ok  "}  ${took} s  ${seq.name}`);
-  if (failed) {
-    failures++;
-    console.log(`      after ${done.join(", ")}\n      ${failed.replaceAll("\n", "\n      ")}`);
-  }
-  await browser.close();
+  if (failed) console.log(`      after ${done.join(", ")}\n      ${failed.replaceAll("\n", "\n      ")}`);
+  if (shared) await Promise.all(shared.contexts().map((c) => c.close()));
+  else await browser.close();
+  return Boolean(failed);
 }
-process.exit(failures ? 1 : 0);
 
 // Reads, on every frame the browser paints, the pill libass drew off the
 // canvas and the frames the caption box puts round words: the lit word's,

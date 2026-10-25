@@ -79,6 +79,9 @@ class Stream {
   private placed = 0;
   // Opened for a frame read ahead of the hand, see AppFrames.ahead.
   aheadOnly = false;
+  // While a pull that skips is on its way, the rank it skips to: the Go
+  // side lets every frame before it go unmade, see reaches.
+  private skipping = -Infinity;
 
   // With key, the stream hands over the key frame its decoding starts
   // from first, and then goes on to first, see AppFrames.route.
@@ -124,9 +127,12 @@ class Stream {
   }
 
   // Whether this stream is the quickest way to the frame: it has not passed
-  // it and is not too far behind it.
+  // it, is not too far behind it, and no pull on its way skips over it. A
+  // frame skipped over never came, and once the pull was in it was handed
+  // the frame before it, so the video preview showed that frame and said
+  // it showed this one, issue #358.
   reaches(rank: number): boolean {
-    if (this.ended || rank <= this.position || rank < this.first) return false;
+    if (this.ended || rank <= this.position || rank < this.first || rank < this.skipping) return false;
     return this.owner.ptsOf(rank) - this.owner.ptsOf(Math.max(this.position, this.first)) <= REACH;
   }
 
@@ -175,7 +181,9 @@ class Stream {
         const n = keyNow ? 1 : Math.min(16, Math.max(1, highest - Math.max(this.position, from - 1)));
         const q = new URLSearchParams({ id, n: String(n) });
         if (skip > 0) q.set("skip", skip.toFixed(6));
+        this.skipping = skip > 0 ? from : -Infinity;
         const got = await this.owner.puller.pull(`/frames/read?${q}`, this.width, this.height);
+        this.skipping = -Infinity;
         // Closed here while the pull was on its way: what it waited for has
         // gone to another stream already.
         if (this.ended) {
