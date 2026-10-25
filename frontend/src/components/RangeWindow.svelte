@@ -960,7 +960,7 @@
     --side: 0px;
     left: 0;
     right: mod(calc(var(--to) - var(--grid)), var(--dot-pitch));
-    background-position: mod(calc(var(--grid) - var(--at)), var(--dot-pitch)) bottom 1px;
+    background-position: left mod(calc(var(--grid) - var(--at)), var(--dot-pitch)) bottom 1px;
   }
 
   .unheard.lit::before {
