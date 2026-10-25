@@ -30,13 +30,15 @@ FROM ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f57
 # side, GTK and WebKit, and what the walks and the tests use beside it:
 # ffmpeg, which makes the bridge's episode, meson, ninja and nasm, which
 # build the ffmpeg we ship when its cache is missed, and patchelf, which
-# make looks for before it builds. The package lists go after, and so
-# does the script's setting for the downloads, which a job never makes.
+# make looks for before it builds, and python3-yaml, which the job build
+# reads every workflow with when one changed, #542. The package lists go
+# after, and so does the script's setting for the downloads, which a job
+# never makes.
 ENV LANG=C.UTF-8
 RUN --mount=type=bind,source=scripts/ci-packages.sh,target=/tmp/ci-packages.sh \
 	sh /tmp/ci-packages.sh \
 		build-essential ca-certificates curl git procps xz-utils zstd \
-		ffmpeg meson ninja-build nasm patchelf && \
+		ffmpeg meson ninja-build nasm patchelf python3-yaml && \
 	rm -rf /etc/apt/apt.conf.d/99ci-retries /var/lib/apt/lists/*
 
 # Chromium for the Playwright the interface pins, with the libraries and
