@@ -414,12 +414,35 @@ down and the engine's jobs beside it.
 `SEQUENCE` walks the one sequence of that name and no other, and
 `--names` lists them all, one name a line, which is how `make walks`
 hands them out, see Where they run. It fails when two sequences or two
-steps have one name, because the steps are cases of one `switch`, which
-takes the first of a name and never reaches the second.
+steps have one name, because a step is found by its name and only one
+of the two would ever be walked.
+
+The sequences and their steps are kept in a folder for each part of the
+app, beside `sequences.mjs`, which walks them:
+
+| Folder | What its sequences are about |
+| --- | --- |
+| `captions/` | the caption box and the captions drawn over the video preview: words, blocks, pills, fonts and styles |
+| `timeline/` | the clip timeline: edges, cuts, trims, marks, keyframes and the playhead under the hand |
+| `playback/` | the video preview: playing, looping, the frames it shows and the crop frame |
+| `clips/` | the clip list: cards, clips made, removed and put back, and the shorts rendered from them |
+| `search/` | searching: the rows of a search, the window, the language model and the speech model |
+| `videos/` | the videos in the sidebar: added, dropped, labelled and gone from the disk |
+| `report/` | Report a Problem, the toasts and dictation |
+| `app/` | the app as a whole: its size, its menus, the settings and the Updates page |
+| `common/` | no sequences, the steps every folder takes: keys, buttons, fields, undo and redo, marks |
+
+Each folder has its `sequences.mjs`, the sequences as data, and its
+`steps.mjs`, every step said above it, with the helpers only those steps
+use. A step is a function of the walk so far, its argument, what the
+caption box showed before it and its own name. The walk is what
+`walkSequence` holds, the page, the marks and what went wrong so far,
+read and written by name. A sequence of any folder can take any step,
+and a new sequence goes in the folder of the part of the app it is
+about.
 
 A sequence is a named list of steps and of what has to come of them,
-written as data at the top of the file, so a case found by hand is kept
-as it was found. The steps are the walk's gestures by name, `frame` a
+written as data, so a case found by hand is kept as it was found. The steps are the walk's gestures by name, `frame` a
 word, `click` it, `press` a key, `type`, `undo`, `redo`, `mark` the
 engine's captions and pieces under a label, and on the clip timeline
 `cut at` a share of the clip, `join` a cut, `swipe after click`, a

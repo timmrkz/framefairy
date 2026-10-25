@@ -46,7 +46,7 @@ const clock = {
 
 export default [
   {
-    files: ["preview/walks/*.mjs", "preview/*.mjs", "preview/frames/*.mjs"],
+    files: ["preview/walks/**/*.mjs", "preview/*.mjs", "preview/frames/*.mjs"],
     languageOptions: { ecmaVersion: "latest", sourceType: "module" },
     plugins: { playwright },
     rules: {

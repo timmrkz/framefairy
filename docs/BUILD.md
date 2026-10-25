@@ -263,7 +263,7 @@ test to the part about the clock, each with that one rule:
   `eslint-plugin-playwright`'s `no-wait-for-timeout`, and `waitForTimeout`
   on a window of another name, `setTimeout`, `setInterval`, `Date.now`,
   `performance.now` and Node's timers by import, a `timeout` or `polling`
-  handed to a wait, in the walks, `frontend/preview/walks/*.mjs`, and the
+  handed to a wait, in the walks, `frontend/preview/walks/**/*.mjs`, and the
   probes, `frontend/preview/*.mjs` and `frontend/preview/frames/*.mjs`,
   and the same with `vi.waitFor` and `vi.waitUntil` in
   `frontend/src/**/*.test.ts`. What is left is counted in

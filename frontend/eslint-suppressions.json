@@ -14,17 +14,55 @@
       "count": 2
     }
   },
-  "preview/walks/sequences.mjs": {
+  "preview/walks/captions/steps.mjs": {
     "no-restricted-globals": {
-      "count": 2
+      "count": 1
     },
     "no-restricted-properties": {
-      "count": 25
+      "count": 2
+    }
+  },
+  "preview/walks/clips/steps.mjs": {
+    "no-restricted-properties": {
+      "count": 6
+    }
+  },
+  "preview/walks/common/steps.mjs": {
+    "no-restricted-properties": {
+      "count": 2
+    }
+  },
+  "preview/walks/playback/steps.mjs": {
+    "no-restricted-properties": {
+      "count": 6
+    }
+  },
+  "preview/walks/report/steps.mjs": {
+    "no-restricted-properties": {
+      "count": 3
+    }
+  },
+  "preview/walks/sequences.mjs": {
+    "no-restricted-properties": {
+      "count": 2
     }
   },
   "preview/walks/speed.mjs": {
     "no-restricted-properties": {
       "count": 3
+    }
+  },
+  "preview/walks/timeline/steps.mjs": {
+    "no-restricted-globals": {
+      "count": 1
+    },
+    "no-restricted-properties": {
+      "count": 3
+    }
+  },
+  "preview/walks/videos/steps.mjs": {
+    "no-restricted-properties": {
+      "count": 1
     }
   }
 }
