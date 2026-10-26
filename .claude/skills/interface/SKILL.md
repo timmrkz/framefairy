@@ -1144,12 +1144,14 @@ container and outside it.
   the testing skill in `.claude/skills/testing/` says: it never waits on
   the clock, and it checks what Tim saw.
 - `make interface`, which is the type check and the interface's own tests.
+- The walks run in CI, on four machines, and its result is the walk's
+  proof, see CLAUDE.md. A single walk runs alone in the session only
+  when it is needed to write or fix that walk.
 - Build the preview, and the motion bench if the change touches any of the
   five ways work in hand is shown.
-- Push once those pass, then `make changed`, which runs what the change
-  reaches and no more, see CLAUDE.md. A change only to `frontend/` runs
-  no Go test, and no line of CSS can move one. Waiting on tests a change
-  cannot reach is Tim waiting.
+- Push once those pass, and let CI run the rest. Its events say how it
+  went. A session that runs every walk again in the cloud is Tim waiting
+  on an answer CI already gave.
 - Say what to look at and what should happen, in the app, in the order
   Tim would do it. He is the one who can see it.
 - Name what you could not verify. A fix reported as certain and found

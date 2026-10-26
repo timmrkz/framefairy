@@ -4,7 +4,7 @@
 #
 # The walks in ci.yml walk a sequence asking for less motion unless one of
 # its steps looks at how the app moves, the steps named in moving in
-# frontend/preview/walks/sequences.mjs. A new step that looks at motion and
+# frontend/preview/walks/common/steps.mjs. A new step that looks at motion and
 # is not named there passes without ever seeing what it checks. Walked with
 # the motion it does see it, so a step left out of moving fails here.
 name: Nightly walks with motion

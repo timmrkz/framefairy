@@ -13,6 +13,11 @@ set -eu
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 fail=0
 
+# make hands the variables it was called with to what it runs, so make
+# lint PART=lint in CI would plan every case below for that part alone.
+# Each case says what it needs itself.
+unset PART SHARD EVERYTHING BASE UNITSKIP
+
 # plan FILES: what changed.sh would run for these files, one line each,
 # on one line.
 plan() {
@@ -65,29 +70,51 @@ is() {
 	fi
 }
 
-# Docs change nothing that runs.
-is "README.md docs/APP.md CLAUDE.md .claude/skills/interface/SKILL.md" ""
+# mac FILES WANT: the parts a Mac in CI runs for these files are exactly
+# these.
+mac() {
+	got=$(CHANGED=$1 OS=Darwin CI=1 UNITSKIP="framefairy/licence/dispenser framefairy/licence/paddle framefairy/cmd/framefairy-dispenser framefairy/internal/workflows framefairy/internal/naming" sh "$here/changed.sh" --parts 2>/dev/null)
+	if [ "$got" = "$2" ]; then
+		printf 'ok  \t%-44s Mac = %s\n' "$1" "${2:-nothing}"
+	else
+		printf 'FAIL\t%-44s wanted on a Mac "%s", got "%s"\n' "$1" "$2" "$got"
+		fail=1
+	fi
+}
 
-# The interface on its own is the interface and the walks, and no Go at
-# all. The preview's stand-in is not under the walks, which run against
-# the bridge, but the bridge is.
-is "frontend/src/App.svelte" "interface walks"
-is "frontend/preview/wails-stub.ts" "interface"
+# A doc runs only the test that reads the docs for how the video endings
+# are named, internal/naming, and on a Mac not even that. A doc that test
+# does not read runs nothing.
+is "README.md docs/APP.md CLAUDE.md .claude/skills/interface/SKILL.md" "unit go framefairy/internal/naming"
+mac "README.md docs/APP.md CLAUDE.md" ""
+is ".claude/skills/interface/SKILL.md LICENSE" ""
+
+# The interface on its own is the interface, the walks and the build, and
+# of the Go tests only the one that reads its source for the video
+# endings. The preview and the walk harness reach the walks too. Neither
+# ships, so neither builds, and a walk alone starts no Mac (#521).
+# Whatever reaches the walks walks every run, and the times they took
+# reach none.
+is "frontend/src/App.svelte" "interface unit go framefairy/internal/naming walks build"
+is "frontend/preview/wails-stub.ts" "interface walks"
 is "frontend/preview/walks/words.mjs" "interface walks"
+is "frontend/preview/walks/walk-times.tsv" "interface"
 is "frontend/preview/wails-bridge.ts" "interface walks"
 is "frontend/preview/settled.ts" "interface walks"
 is "frontend/preview/standing.ts" "interface walks"
+mac "frontend/preview/walks/words.mjs" "interface walks"
+mac "frontend/src/App.svelte" "interface walks build outside"
 
 # Except the files of the interface a Go test reads, which are that test's
 # package too. A file a Go test only names in a comment is not one of them.
-has "frontend/src/lib/api.ts" "interface" "go framefairy/cmd/framefairy-app" "walks"
+has "frontend/src/lib/api.ts" "interface" "unit" "go framefairy/cmd/framefairy-app" "walks"
 has "frontend/src/lib/suggest.cases.json" "interface" "go framefairy/engine"
-is "frontend/src/lib/flow.ts" "interface walks"
+is "frontend/src/lib/flow.ts" "interface unit go framefairy/internal/naming walks build"
 
 # A package reaches every package that imports it, and only those.
 has "updates/updates.go" "go framefairy/updates" "go framefairy/cmd/framefairy-app" \
-	"go framefairy/cmd/framefairy-release"
-lacks "updates/updates.go" "go framefairy/engine" "build" "interface"
+	"go framefairy/cmd/framefairy-release" "build"
+lacks "updates/updates.go" "go framefairy/engine" "interface"
 # A package only the release tool reaches is not under the walks.
 lacks "cmd/framefairy-release/main.go" "walks"
 
@@ -97,25 +124,28 @@ has "engine/edit.go" "go framefairy/engine" "go framefairy/cmd/framefairy" \
 	"go framefairy/cmd/framefairy-app" "go framefairy/cmd/framefairy-train" "walks"
 
 # A package at the top of the tree reaches only itself.
-is "cmd/framefairy-release/main.go" "go framefairy/cmd/framefairy-release"
+is "cmd/framefairy-release/main.go" "lint unit go framefairy/cmd/framefairy-release go framefairy/internal/naming build"
 
 # What a package keeps beside its code belongs to it: a seed in testdata,
-# a file it embeds.
-has "engine/testdata/fuzz/FuzzValidatePlan/seed" "go framefairy/engine"
-is "cmd/framefairy-app/update-key.txt" "go framefairy/cmd/framefairy-app walks"
+# a file it embeds. A seed is no part of a program, so it builds nothing.
+is "engine/testdata/fuzz/FuzzValidatePlan/seed" "$(CHANGED=engine/edit.go sh "$here/changed.sh" --plan 2>/dev/null | grep -vx 'lint' | grep -vx build | tr '\n' ' ' | sed 's/ $//')"
+has "cmd/framefairy-app/update-key.txt" "unit" "go framefairy/cmd/framefairy-app" "walks" "build"
+lacks "cmd/framefairy-app/update-key.txt" "lint"
 
 # A changed test reaches the check that tests stay off the disk, which
 # reads every test file and imports none of them. Code alone does not.
 has "train/export_test.go" "go framefairy/train" "go framefairy/internal/offdisk"
 lacks "train/export.go" "go framefairy/internal/offdisk"
+# A test is no part of a program, so it builds nothing and opens no app.
+lacks "train/export_test.go" "build" "outside"
 
-# A changed test is linted for waits on the clock, and code is not. The
-# linters' settings and their proof run the proof.
+# Go code and tests are linted, and the linters' settings and their proof
+# run the lint.
 has "train/export_test.go" "lint"
-lacks "train/export.go" "lint"
-is ".golangci.yml" "lint lint-rules"
-is "scripts/testdata/lint/walks/waits.mjs" "lint lint-rules"
-is "frontend/eslint-suppressions.json" "interface lint-rules"
+has "train/export.go" "lint"
+is ".golangci.yml" "lint"
+is "scripts/testdata/lint/walks/waits.mjs" "lint unit go framefairy/internal/naming"
+is "frontend/eslint-suppressions.json" "lint interface"
 
 # Tests that run the decoder as a program do not import it, so what
 # builds it reaches them by FRAMEFAIRY_FRAMES.
@@ -132,56 +162,82 @@ lacks "engine/rotate.go" "go framefairy/internal/ffmpegtest"
 # The notices test counts the hyphenation files by a path it builds.
 has "engine/hyphenation/hyph-de.head.txt" "go framefairy/engine" "go framefairy/notices"
 
-# The scripts the Go jobs run decide how they run, like the Makefile.
-has "scripts/fuzz.sh" "build" "go framefairy/engine" "go framefairy/updates"
-has "scripts/ci-packages.sh" "build" "go framefairy/engine" "go framefairy/updates"
-# So does the CI image, which every Linux job runs in, the walks among them.
+# The fuzzing script decides how the Go tests run, like the Makefile.
+has "scripts/fuzz.sh" "lint" "go framefairy/engine" "go framefairy/updates" "fuzz FuzzParse"
+# So does the CI image, which every Linux job runs in, the walks among
+# them. No Mac runs in it.
 has ".github/ci-image/Dockerfile" "build" "go framefairy/engine" "go framefairy/updates" "walks"
+has "scripts/ci-packages.sh" "build" "go framefairy/engine" "walks"
+mac ".github/ci-image/Dockerfile" ""
 
 # The fuzz targets are those of the packages a change reaches, all of them.
-fuzz=$(CHANGED=updates/source.go sh "$here/changed.sh" --fuzz-targets 2>/dev/null)
+fuzz=$(plan updates/source.go | tr ' ' '\n' | grep '^Fuzz' | tr '\n' ' ' | sed 's/ $//')
 if [ "$fuzz" = "FuzzKeyFromLink FuzzKnownStaysInTheLibrary FuzzParse" ]; then
 	printf 'ok  \t%-44s fuzz %s\n' "updates/source.go" "$fuzz"
 else
 	printf 'FAIL\t%-44s wanted the targets of updates and the app, got: %s\n' "updates/source.go" "$fuzz"
 	fail=1
 fi
+# A package with no fuzz target fuzzes nothing, rather than every target.
+lacks "cmd/framefairy-release/main.go" "fuzz"
 
 # The modules are every package.
 has "go.sum" "go framefairy/engine" "go framefairy/updates" "go framefairy/train"
 
-# How the project is built is the build. The Makefile and the CI
-# workflow also decide how the Go tests run, so they are every package.
-has "Makefile" "build" "go framefairy/engine" "go framefairy/updates"
-has ".github/workflows/ci.yml" "go framefairy/engine" "go framefairy/updates"
-lacks ".github/workflows/builds.yml" "go framefairy/engine"
-has "scripts/build-ffmpeg.sh" "build" "script scripts/build-ffmpeg.sh"
+# The Makefile and the CI workflow decide how every part runs, so they
+# are every part and every package.
+has "Makefile" "lint" "interface" "unit" "fuzz" "walks" "build" "go framefairy/engine" "go framefairy/updates"
+has ".github/workflows/ci.yml" "lint" "interface" "walks" "build" "go framefairy/engine" "go framefairy/updates"
+# So do the scripts every CI job runs, and the image's workflow reaches
+# what the image does.
+for f in scripts/changed.sh scripts/test-failures.sh scripts/leftovers.sh; do
+	has "$f" "lint" "interface" "unit" "walks" "build" "go framefairy/engine"
+done
+has ".github/workflows/ci-image.yml" "build" "go framefairy/engine" "walks"
+# Another workflow is read by the workflows' own test and the lint, which
+# holds the pins and the rules for builds and the Main moved notice, and
+# no Mac reads it.
+is ".github/workflows/builds.yml" "lint unit go framefairy/internal/workflows"
+is ".github/workflows/main-moved.yml" "lint unit go framefairy/internal/workflows"
+mac ".github/workflows/builds.yml" "lint"
+has "scripts/build-ffmpeg.sh" "build" "lint"
 # Except for the Go test that reads it: the notices test checks the
 # versions the build scripts pin.
 has "scripts/build-ffmpeg.sh" "go framefairy/notices"
 has "scripts/build-llama.sh" "go framefairy/notices"
 
-# The rules test their own rules.
-has "scripts/ci-filters-test.sh" "rules"
-is ".github/ci-filters.yml" "rules"
-has ".github/workflows/ci.yml" "rules" "workflow .github/workflows/ci.yml"
-has "scripts/changed.sh" "changed-rules"
-is ".github/workflows/builds.yml" "build-rules workflow .github/workflows/builds.yml"
-is ".github/workflows/publish.yml" "build-rules workflow .github/workflows/publish.yml"
-is "scripts/needs-build.sh" "build-rules script scripts/needs-build.sh"
-is "scripts/main-moved.sh" "moved-rules script scripts/main-moved.sh"
-is ".github/workflows/main-moved.yml" "moved-rules workflow .github/workflows/main-moved.yml"
-is "scripts/plan-frozen.sh" "plan-rules script scripts/plan-frozen.sh"
+# The rules are tested in make lint.
+is "scripts/needs-build.sh" "lint unit go framefairy/internal/naming"
+is "scripts/main-moved.sh" "lint unit go framefairy/internal/naming"
+is "scripts/plan-frozen.sh" "lint unit go framefairy/internal/naming"
 
-# The plan is history, so a change to it runs the check that says so,
-# while every other doc runs nothing.
-is "docs/GUI-PLAN.md" "plan-rules"
+# The plan is history, so a change to it runs the check that says so.
+is "docs/GUI-PLAN.md" "lint unit go framefairy/internal/naming"
 
 # A file nobody thought of builds, rather than being passed over.
 is "build/icon.png" "build"
+mac "build/icon.png" "build outside"
 
 # A mix runs everything it touches.
 has "frontend/src/App.svelte updates/source.go docs/UPDATES.md" "interface" "go framefairy/updates"
+
+# A part asked for alone is that part and nothing else, and the
+# interface alone needs no Go.
+got=$(CHANGED="frontend/src/App.svelte updates/source.go" PART=interface GO=false sh "$here/changed.sh" --parts 2>/dev/null) || got="failed"
+if [ "$got" = interface ]; then
+	printf 'ok  \t%-44s %s\n' "PART=interface, with no Go" "interface"
+else
+	printf 'FAIL\t%-44s wanted interface, got: %s\n' "PART=interface, with no Go" "$got"
+	fail=1
+fi
+# On a push to main every part runs whole.
+got=$(EVERYTHING=1 sh "$here/changed.sh" --parts 2>/dev/null)
+if [ "$got" = "lint interface unit fuzz walks build" ]; then
+	printf 'ok  \t%-44s %s\n' "EVERYTHING=1" "$got"
+else
+	printf 'FAIL\t%-44s wanted every part, got: %s\n' "EVERYTHING=1" "$got"
+	fail=1
+fi
 
 # Two cases that need a real checkout, made in a worktree of its own
 # with this changed.sh in it. A file moved out of a package is seen at
@@ -197,8 +253,8 @@ if git -C "$root" worktree add -q --detach "$wt" HEAD 2>/dev/null; then
 	git -C "$wt" mv updates/cache_test.go updates/sub/cache_test.go
 	printf 'package train_test\n\nimport _ "framefairy/licence"\n' >"$wt/train/outside_test.go"
 	echo "// changed" >>"$wt/licence/licence.go"
-	# MAKE=true: changed.sh asks make for the toolchain first, which the
-	# job build runs this before it installs, and a plan needs none of it.
+	# MAKE=true: changed.sh asks make for the modules first, and a plan
+	# needs none of it.
 	got=$(cd "$wt" && MAKE=true BASE=HEAD sh scripts/changed.sh --plan 2>/dev/null | tr '\n' ' ')
 	git -C "$root" worktree remove --force "$wt"
 	case " $got " in

@@ -414,12 +414,35 @@ down and the engine's jobs beside it.
 `SEQUENCE` walks the one sequence of that name and no other, and
 `--names` lists them all, one name a line, which is how `make walks`
 hands them out, see Where they run. It fails when two sequences or two
-steps have one name, because the steps are cases of one `switch`, which
-takes the first of a name and never reaches the second.
+steps have one name, because a step is found by its name and only one
+of the two would ever be walked.
+
+The sequences and their steps are kept in a folder for each part of the
+app, beside `sequences.mjs`, which walks them:
+
+| Folder | What its sequences are about |
+| --- | --- |
+| `captions/` | the caption box and the captions drawn over the video preview: words, blocks, pills, fonts and styles |
+| `timeline/` | the clip timeline: edges, cuts, trims, marks, keyframes and the playhead under the hand |
+| `playback/` | the video preview: playing, looping, the frames it shows and the crop frame |
+| `clips/` | the clip list: cards, clips made, removed and put back, and the shorts rendered from them |
+| `search/` | searching: the rows of a search, the window, the language model and the speech model |
+| `videos/` | the videos in the sidebar: added, dropped, labelled and gone from the disk |
+| `report/` | Report a Problem, the toasts and dictation |
+| `app/` | the app as a whole: its size, its menus, the settings and the Updates page |
+| `common/` | no sequences, the steps every folder takes: keys, buttons, fields, undo and redo, marks |
+
+Each folder has its `sequences.mjs`, the sequences as data, and its
+`steps.mjs`, every step said above it, with the helpers only those steps
+use. A step is a function of the walk so far, its argument, what the
+caption box showed before it and its own name. The walk is what
+`walkSequence` holds, the page, the marks and what went wrong so far,
+read and written by name. A sequence of any folder can take any step,
+and a new sequence goes in the folder of the part of the app it is
+about.
 
 A sequence is a named list of steps and of what has to come of them,
-written as data at the top of the file, so a case found by hand is kept
-as it was found. The steps are the walk's gestures by name, `frame` a
+written as data, so a case found by hand is kept as it was found. The steps are the walk's gestures by name, `frame` a
 word, `click` it, `press` a key, `type`, `undo`, `redo`, `mark` the
 engine's captions and pieces under a label, and on the clip timeline
 `cut at` a share of the clip, `join` a cut, `swipe after click`, a
@@ -834,7 +857,7 @@ A sequence asks the system for less motion, the way a person can in the
 Mac's settings, unless one of its steps looks at how the app moves: the
 caption blocks and the typed word that pop, the bounce over a paused
 frame, the word that grows as it is opened, the card that shakes and the
-microphone that grows as it hears, `moving` in `sequences.mjs`. The app
+microphone that grows as it hears, `moving` in `common/steps.mjs`. The app
 then leaves out what it animates, the info marks' fade and the pops
 among it, so the settle waits for none of it. On main those two were
 179 s of the 1976 s all runs took one after another. The sequences with
@@ -869,7 +892,8 @@ at 122 of its frames in the video preview, takes a little over a minute,
 so however many bridges run, the set takes at least that.
 
 CI splits the set over four machines, `make walks WALKSHARD=1/4` to
-`4/4`, walks and sequences alike. Five and a half minutes on one machine,
+`4/4`, walks and sequences alike, every run whatever the change, see
+[Why the walks run whole](BUILD.md#why-the-walks-run-whole). Five and a half minutes on one machine,
 after two of setting up, made a job of seven and a half, and on two
 machines each job still took six with a cold build cache. No job may take
 over five.
@@ -954,13 +978,9 @@ since #501, so a broken test video is said where it is found. See
 No test waits on the clock in
 [BUILD.md](BUILD.md#no-test-waits-on-the-clock).
 
-`make changed` runs it whenever the interface changed, the preview's own
-stand-in aside, or a package the app reaches, the engine among them. CI
-runs it in the job `walks`, the only one with Chromium, which comes in
-the CI image it runs in, see [The CI image](BUILD.md#the-ci-image). A pull
-request starts that job for the same files as the build, and one that
-changed only docs does not start it at all, see
-[What runs for a change](BUILD.md#what-runs-for-a-change).
+CI runs it in the jobs `walks`, the only ones with Chromium, which comes
+in the CI image they run in, see [The CI image](BUILD.md#the-ci-image), on
+every pull request but one of docs alone.
 
 A walk that breaks a rule leaves a picture of the app at that moment in
 `/tmp/walk-<seed>.png`.
@@ -1229,6 +1249,11 @@ starts one with the first line it writes, and it never ends, so a test in
 a bubble that reads the app's log opens it outside the bubble and writes
 its first line there, `bubbleLog` in
 `cmd/framefairy-app/listen_test.go`.
+
+The skill's "run only what a change reaches" is `make changed` here, one
+script for every machine, `scripts/changed.sh`: a pull request runs the
+packages, parts and walks its change reaches, and main runs all of them,
+see [One way to test](BUILD.md#one-way-to-test).
 
 What CI holds of the skill's rules today: golangci-lint's `forbidigo` in
 `make lint` for the clock, for a context with a deadline and for a check
