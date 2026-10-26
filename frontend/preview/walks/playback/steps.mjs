@@ -8,7 +8,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { addHEVC, ask, chosen, cropFrame, drag, engineState, episodeOn, filmedOnScreen, fromSidebar, handles, high, loudness, middle, news, nextNews, nextPaint, playUntil, preview, readShort, recordFrames, sameLook, sayLook, seekTo, settle, shortFrames, shownOnPlayhead, xOf } from "../bridge.mjs";
 import { nextCall, onePiece, pieceCount, rate, restAhead, shortOf, url } from "../common/steps.mjs";
-import { overlaid } from "../rules.mjs";
+import { overlaid, stillFrame } from "../rules.mjs";
 
 export const steps = {
   // ["read ahead", key] rests until what the video preview reads ahead is
@@ -1026,38 +1026,21 @@ export const steps = {
     // canvas is the one asked for while paused. After the app was
     // resized that frame is asked for again at the new size, over a
     // fetch the settle does not count, so it is read once the frame
-    // queue says the picture stands, the way stillBlurred in rules.mjs
-    // reads it. On a busy machine it was read before it came, issue #538.
-    const got = await page.evaluate(
-      (held) =>
-        window.__standing(held).then((stands) => {
-          if (!stands) return { held: true };
-          const q = window.__frameQueue;
-          const c = document.querySelector(".screen canvas");
-          const f = q?.picture();
-          const v = q?.video;
-          const first = window.__appFrames?.stats.first ?? "";
-          return f && v && c ? { frame: [f.width, f.height], canvas: [c.width, c.height], file: [v.width, v.height], first } : null;
-        }),
-      Boolean(page.__held),
-    );
-    if (got?.held) throw new Error("the picture was read for its size under a held clock before it stood, see stillBlurred");
+    // queue says the picture stands, see stillFrame in rules.mjs. On a
+    // busy machine it was read before it came, issue #538.
+    const got = await stillFrame(page);
     if (!got) {
       walk.wrong = "the video preview has no frame on its canvas";
       return;
     }
-    const [cw, ch] = got.canvas;
-    const [vw, vh] = got.file;
-    const scale = Math.min(1, cw / vw, ch / vh);
-    const even = (n) => Math.max(2, Math.round(n / 2) * 2);
-    const want = [even(vw * scale), even(vh * scale)];
-    if (got.frame[0] !== want[0] || got.frame[1] !== want[1]) {
-      walk.wrong = `the frame on the video preview is ${got.frame.join(" by ")}, decoded for a canvas of another size: the canvas is ${got.canvas.join(" by ")} and the file ${got.file.join(" by ")}, so it should be ${want.join(" by ")}`;
-    } else if (arg === "opened" && got.first !== want.join("x")) {
+    const { frame, canvas, file, want, first } = got;
+    if (frame[0] !== want[0] || frame[1] !== want[1]) {
+      walk.wrong = `the frame on the video preview is ${frame.join(" by ")}, decoded for a canvas of another size: the canvas is ${canvas.join(" by ")} and the file ${file.join(" by ")}, so it should be ${want.join(" by ")}`;
+    } else if (arg === "opened" && first !== want.join("x")) {
       // Nothing has resized the app since it opened, so the first
       // frame it asked for was asked at this size too, not at the size
       // of a canvas the stylesheet had not laid out yet and then again.
-      walk.wrong = `the first frame was asked for at ${got.first}, before the canvas had its size, and only then at ${want.join("x")}`;
+      walk.wrong = `the first frame was asked for at ${first}, before the canvas had its size, and only then at ${want.join("x")}`;
     }
   },
   // ["only the video", "across cuts"], ["the clip shown", "across cuts"]
