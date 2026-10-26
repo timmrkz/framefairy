@@ -16,6 +16,7 @@ func TestRecordsComeBackAsWritten(t *testing.T) {
 		{Cursor: 5, Kind: End},
 		{Cursor: 7, Kind: Failed, Body: []byte("no decoder")},
 		{Cursor: 2, Kind: Opened, Body: []byte("file")},
+		{Cursor: 4, Kind: Hung},
 	}
 	for _, r := range in {
 		if err := Write(&b, r); err != nil {

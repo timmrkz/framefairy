@@ -758,7 +758,31 @@ export const steps = {
       // lit, and 41 for the canvas before 2.211, which drew none and
       // left the captions to the browser.
       if (d.mean > 3.6) {
-        walk.wrong = `at ${landed.toFixed(2)} s the captions in the video preview differ from frame ${n} of the short by ${d.mean.toFixed(2)} on average and ${d.most} at most, where the captions are`;
+        // Issue #547: this failed once on CI and never here. What the
+        // video preview had up says which way it went wrong: the
+        // frame it showed, how its captions came, and the frame of
+        // the short nearby it looks most like, another moment's
+        // captions or none at all.
+        const had = await sized.evaluate(() => {
+          const l = window.__captionLayers;
+          const screen = document.querySelector(".screen");
+          return {
+            pictured: window.__pictured(),
+            busy: l?.busy,
+            late: l?.late,
+            popping: l?.popping,
+            stats: l ? { ...l.stats } : null,
+            lost: Number(screen?.dataset.captionsLost ?? 0),
+          };
+        });
+        const from = Math.max(0, n - 3);
+        const around = shortFramesFrom(short, from, n + 3, got.w, got.h)
+          .map((f, i) => [from + i, f.length === want.length ? captionDiff(got.pixels, f, got.w, got.h).mean : Infinity])
+          .sort((a, b) => a[1] - b[1]);
+        walk.wrong =
+          `at ${landed.toFixed(2)} s the captions in the video preview differ from frame ${n} of the short by ${d.mean.toFixed(2)} on average and ${d.most} at most, where the captions are. ` +
+          `It showed frame ${had.pictured} of the video, the caption layers were ${had.busy ? "busy" : "at rest"}${had.late ? ", late" : ""}${had.popping ? ", popping" : ""}, ${had.lost} layers lost, ` +
+          `${JSON.stringify(had.stats)}, and it looks most like frame ${around[0][0]} of the short, by ${around[0][1].toFixed(2)}`;
         break;
       }
       // The frames of the short either side, where their captions are

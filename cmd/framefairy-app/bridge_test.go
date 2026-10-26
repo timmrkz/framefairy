@@ -1307,8 +1307,30 @@ func (b *bridge) reset() error {
 	}
 	// After the work has stopped, so nothing hears on past it.
 	b.words.from(b.said)
+	freshDecoders()
 	b.d.reopen()
 	return nil
+}
+
+// freshDecoders closes the streams and the episode's decoders the walk
+// before left. A decoder keeps its cursors where that walk left them, and
+// a jump of the next walk then went on from one of them rather than
+// seek, so what a walk saw depended on the walks before it: a drag that
+// should have shown its key frame showed none, issue #552. The next
+// stream starts a decoder again, with its cursors warmed as the app's
+// first are. A hold the walk before took is kept, so its release finds it.
+func freshDecoders() {
+	p := openPreviews
+	p.mu.Lock()
+	streams, decoders := p.open, p.decoders
+	p.open, p.decoders = nil, nil
+	p.mu.Unlock()
+	for _, s := range streams {
+		s.stop()
+	}
+	for _, d := range decoders {
+		d.Close()
+	}
 }
 
 // bridgeDist is where the interface built for the bridge is.
