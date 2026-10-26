@@ -973,22 +973,29 @@
 
   /* Its edges, a dashed line down each side, so where it begins and ends
      is plain wherever its dots fall, Tim's report of 26 October, 12.27.
-     They are the dashes of a card of what was said, in the grey of a
-     card's edge, a dash beside each row of dots: tiles of the dots' pitch
-     laid from the same foot. None along the top or the foot, where the
-     range picker's own border is, and none where the part meets the start
-     or the end of the video, which the border marks. Under the hand they
-     go into the grey, the way a card's do. */
+     A dash beside each row of dots: tiles of the dots' pitch laid from
+     the same foot. They are as strong as the dots beside them, in their
+     colour, --halftone-ink, and with their fade, so none stands in the
+     top third: in the grey of a card's edge they were too bright, Tim's
+     report of 26 October, 14.22. None along the top or the foot, where
+     the range picker's own border is, and none where the part meets the
+     start or the end of the video, which the border marks. Under the
+     hand they go into the grey, the way a card's do. */
   .unheard::after {
     content: "";
     position: absolute;
     inset: 0;
-    border-left: 1px solid var(--ink-3);
-    border-right: 1px solid var(--ink-3);
-    mask-image: var(--halftone-dash-y);
-    mask-size: 100% var(--dot-pitch);
-    mask-repeat: repeat-y;
-    mask-position: 0 calc(100% - 1px);
+    border-left: 1px solid var(--halftone-ink);
+    border-right: 1px solid var(--halftone-ink);
+    mask-image: var(--halftone-dash-y), var(--halftone-fade);
+    mask-size:
+      100% var(--dot-pitch),
+      100% 100%;
+    mask-repeat: repeat-y, no-repeat;
+    mask-position:
+      0 calc(100% - 1px),
+      0 0;
+    mask-composite: intersect;
     pointer-events: none;
   }
 

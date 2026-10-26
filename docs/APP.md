@@ -181,7 +181,11 @@ menu's to show, Tim's call on #458:
 It and the work on the video's clips go one at a time, Tim's report of 26
 October, 12.27. A search or a clip made by hand of the video stops its
 transcription, the way Stop transcribing does, and it does not start
-again by itself once they are done. While they run, Transcribe video
+again by itself once they are done. The stop shows on the press, in the
+menu, the video's dot and the range picker, though the transcription
+ends only once the speech model has heard the piece it is in: the menu
+said Stop transcribing for three and a half seconds after Search, Tim's
+report of 26 October, 14.22. While they run, Transcribe video
 cannot be clicked, and its title says to transcribe once the search is
 done. The menu once offered Continue transcribing, Transcribe the rest
 and Stop transcribing the rest, for a transcription that waited behind a
@@ -2293,10 +2297,12 @@ found is a place in the video, and I and O make a clip there.
   exactly the span of the dots, so every dash stands over a column of
   dots or beside a row. The dashes the browser
   drew went their own way round the dots, found by Tim. On the range
-  picker a part's left and right edges are dashed, in the grey of a
-  card's edge, a dash beside each row of its dots, so where a part not
-  transcribed begins and ends is seen even where its dots thin out, Tim's
-  report of 26 October, 12.27. The range picker's own border is the edge
+  picker a part's left and right edges are dashed, a dash beside each row
+  of its dots, so where a part not transcribed begins and ends is seen
+  even where its dots thin out, Tim's report of 26 October, 12.27. The
+  dashes are in the dots' colour, `--halftone-ink`, with their fade, so
+  each is as strong as the row beside it: in the grey of a card's edge
+  they were too bright, his report of 14.22. The range picker's own border is the edge
   of a part at the start or the end of the video, and its top and foot.
   Its dots cover the whole part, to its foot and its sides,
   as whole columns centred in the part, the same space on either side,

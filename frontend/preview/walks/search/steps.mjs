@@ -1927,12 +1927,15 @@ export const steps = {
           // Its dashed edges: which sides, in what, and laid how.
           edges: [e.borderLeftStyle, e.borderRightStyle, e.borderTopStyle, e.borderBottomStyle],
           colour: e.borderLeftColor,
+          // The first layer of its mask is the dashes, the second the
+          // fade of the dots beside them.
           dashes: [e.maskImage.startsWith("repeating-linear-gradient"), e.maskSize, e.maskRepeat, e.maskPositionY ?? e.webkitMaskPositionY],
+          fade: [e.maskImage.split(", linear-gradient")[1] !== undefined, b.maskImage.startsWith("linear-gradient"), e.maskComposite],
           rows: [b.height, e.height, b.backgroundPositionY],
         };
       });
       const probe = document.createElement("div");
-      probe.style.color = "var(--ink-3)";
+      probe.style.color = "var(--halftone-ink)";
       document.body.append(probe);
       const grey = getComputedStyle(probe).color;
       probe.remove();
@@ -1946,13 +1949,22 @@ export const steps = {
     if (first.in !== 0)
       walk.wrong = `the first column of dots after the window stands ${first.in} px in from the window's edge, not at it: ${JSON.stringify(first)}, dots ${part.pitch} px apart`;
     else if (first.out < 0 || first.out >= part.pitch) walk.wrong = `the dots after the window are not whole columns: ${JSON.stringify(first)}`;
-    // Its edge is dashed, in the grey of a card's edge, a dash beside
-    // each row of dots, the way the cards of what was said are, and it
-    // runs to the end of the video, where the range picker's border is
-    // its edge. Tim's report of 26 October, 12.27.
+    // Its edge is dashed, a dash beside each row of dots, and it runs to
+    // the end of the video, where the range picker's border is its edge,
+    // Tim's report of 26 October, 12.27. The dashes are as strong as the
+    // dots, in their colour and with their fade: in the grey of a card's
+    // edge they were too bright, his report of 14.22.
     else if (first.edges.join(" ") !== "solid none none none" || first.colour !== part.grey)
-      walk.wrong = `the part not transcribed yet after the window has edges ${first.edges.join(", ")} in ${first.colour}, not a dashed line down its left edge in ${part.grey}`;
-    else if (!first.dashes[0] || first.dashes[1] !== `100% ${part.pitch}px` || first.dashes[2] !== "repeat-y" || first.rows[0] !== first.rows[1] || first.dashes[3] !== first.rows[2])
+      walk.wrong = `the part not transcribed yet after the window has edges ${first.edges.join(", ")} in ${first.colour}, not a dashed line down its left edge in the dots' ${part.grey}`;
+    else if (!first.fade[0] || !first.fade[1] || !first.fade[2].startsWith("intersect"))
+      walk.wrong = `the dashes down the edge of a part do not fade the way its dots do: ${JSON.stringify(first.fade)}`;
+    else if (
+      !first.dashes[0] ||
+      !first.dashes[1].startsWith(`100% ${part.pitch}px,`) ||
+      !first.dashes[2].startsWith("repeat-y,") ||
+      first.rows[0] !== first.rows[1] ||
+      !first.dashes[3].startsWith(`${first.rows[2]},`)
+    )
       walk.wrong = `the dashes down the edge of a part do not stand beside its rows of dots: dashes ${JSON.stringify(first.dashes)}, dots ${JSON.stringify(first.rows)}`;
     return;
   },

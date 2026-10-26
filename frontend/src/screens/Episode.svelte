@@ -1782,6 +1782,7 @@
   async function makeClip(backward: boolean) {
     if (duration <= 0) return;
     pressed = backward ? "out" : "in";
+    jobs.clipsAsked(path);
     try {
       const job = await api.makeClip(path, time, backward);
       jobs.apply(job);

@@ -72,7 +72,8 @@
      beside a row of dots. Dashes the browser drew went their own way,
      found by Tim. */
   --dot-pitch: 6px;
-  --halftone: radial-gradient(circle, color-mix(in srgb, var(--ink-3) 70%, transparent) 1.2px, transparent 1.7px);
+  --halftone-ink: color-mix(in srgb, var(--ink-3) 70%, transparent);
+  --halftone: radial-gradient(circle, var(--halftone-ink) 1.2px, transparent 1.7px);
   --halftone-lit: radial-gradient(circle, color-mix(in srgb, var(--line) 70%, transparent) 1.2px, transparent 1.7px);
   --halftone-fade: linear-gradient(transparent 30%, #000);
   --halftone-dash-x: repeating-linear-gradient(

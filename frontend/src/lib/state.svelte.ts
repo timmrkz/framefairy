@@ -54,11 +54,24 @@ export class JobStore {
     return (["whole", "clips"] as const).some((w) => doing(w, j) && this.isStopping(j.episode, w));
   }
 
-  // A start pressed. It is a new press, so a stop before it is over.
+  // A start pressed. It is a new press, so a stop before it is over. The
+  // work on the clips stops the video's transcription, see clipsAsked.
   press(path: string, work: Work) {
     const k = key(path, work);
     if (!this.starting.includes(k)) this.starting = [...this.starting, k];
     if (this.stopping.includes(k)) this.stopping = this.stopping.filter((s) => s !== k);
+    if (work === "clips") this.clipsAsked(path);
+  }
+
+  // Work on the video's clips asked for, a search or a clip made by hand.
+  // The Go side stops the video's transcription for it, stopTranscribing
+  // in export.go, and the transcription ends once the speech model has
+  // heard the piece it is in, seconds later. So the stop is said on the
+  // press, the way Stop transcribing says it: the menu said Stop
+  // transcribing for three and a half seconds after Search, Tim's report
+  // of 26 October, 14.22.
+  clipsAsked(path: string) {
+    if (this.isStarting(path, "whole") || this.list.some((j) => j.episode === path && live(j) && doing("whole", j))) this.stop(path, "whole");
   }
 
   // The Go side answered the start, with its job or with a refusal.

@@ -669,10 +669,11 @@ export const steps = {
   //                    runs, the range picker frames the part it works
   //                    on, breathing with the motes, over that part's
   //                    dots. "search stops it" clicks Search in the head
-  //                    with the model holding its answer: the whole
-  //                    video's transcription stops, its frame goes, and
-  //                    the menu says Transcribe video and cannot be
-  //                    clicked while the search runs. Once the search is
+  //                    with the model holding its answer and a piece of
+  //                    the audio held in the speech: while the whole
+  //                    video's transcription still ends, its frame is
+  //                    going and the menu says Transcribe video and
+  //                    cannot be clicked, and so while the search runs. Once the search is
   //                    cancelled the transcription stays stopped and the
   //                    menu can be clicked again. "stop" needs Stop
   //                    transcribing and clicks it while a piece is being
@@ -954,7 +955,29 @@ export const steps = {
       await menu.waitFor({ state: "detached" });
       await control(url, "/model?hang=1");
       const going = async () => ["running", "queued"].includes((await transcription())?.state);
+      // Held with a piece of the audio in it, so the transcription is
+      // still ending while the menu is read. It said Stop transcribing
+      // until the transcription had ended, three and a half seconds on
+      // Tim's Mac, his report of 26 October, 14.22.
+      await control(url, "/speech?hold=one");
+      await settle(page);
       await page.locator(".listhead button.search").click();
+      await reopen();
+      const ending = await item();
+      await page.keyboard.press("Escape");
+      await menu.waitFor({ state: "detached" });
+      if (!(await going())) {
+        walk.wrong = "the transcription ended before the menu was read, and this step is about the menu while it ends";
+        return;
+      }
+      if (ending.said !== "Transcribe video" || !ending.off) {
+        walk.wrong = `Search pressed while the whole video is transcribed, the menu says ${JSON.stringify(ending)} until the transcription has ended, not Transcribe video that cannot be clicked`;
+        return;
+      }
+      if (await page.locator(".part:not(.going) .window.frame.locked").count()) {
+        walk.wrong = "Search pressed while the whole video is transcribed, the range picker frames its part as work in hand until the transcription has ended";
+        return;
+      }
       // The speech is held, so the piece being heard is let on, one at
       // a time, until the transcription has stopped between two.
       for (let seen = await news(page), n = 0; (await going()) && n < 20; n++) {

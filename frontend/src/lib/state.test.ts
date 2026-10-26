@@ -71,6 +71,35 @@ describe("a stop pressed for a video's work", () => {
   });
 });
 
+// A search or a clip made by hand stops the video's transcription on the
+// Go side, which ends once the speech model has heard its piece. The menu
+// said Stop transcribing for three and a half seconds after Search, Tim's
+// report of 26 October, 14.22.
+describe("the work on the clips asked for", () => {
+  test("stops the video's transcription on the press, until it ends", () => {
+    const jobs = new JobStore();
+    jobs.apply(job("running", 1, "transcribe", "t"));
+    jobs.press("/v.mp4", "clips");
+    expect(jobs.isStopping("/v.mp4", "whole")).toBe(true);
+    expect(jobs.stops(job("running", 2, "transcribe", "t"))).toBe(true);
+    jobs.apply(job("running", 1, "search", "s"));
+    jobs.answered("/v.mp4", "clips");
+    expect(jobs.isStopping("/v.mp4", "whole")).toBe(true);
+    jobs.apply(job("interrupted", 2, "transcribe", "t"));
+    expect(jobs.isStopping("/v.mp4", "whole")).toBe(false);
+    expect(jobs.isStopping("/v.mp4", "clips")).toBe(false);
+  });
+
+  test("stops a transcription asked for and not answered yet, and nothing when none runs", () => {
+    const jobs = new JobStore();
+    jobs.clipsAsked("/v.mp4");
+    expect(jobs.stopping).toEqual([]);
+    jobs.press("/v.mp4", "whole");
+    jobs.clipsAsked("/v.mp4");
+    expect(jobs.isStopping("/v.mp4", "whole")).toBe(true);
+  });
+});
+
 // A transcription settled, because the video left the library or Continue
 // started the next one, is nothing for the menu to carry on. Tim removed a
 // video, added the same file again, and its menu offered Continue
