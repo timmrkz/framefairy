@@ -167,6 +167,17 @@ read_by_tests() {
 	done
 }
 
+# names_videos adds the test of how the video endings are named, which
+# reads the docs and the source of these folders, see internal/naming.
+names_videos() {
+	[ "$need_go" = 1 ] || return 0
+	case $1 in
+	README.md | CLAUDE.md | docs/* | engine/* | asr/* | train/* | cmd/* | frontend/src/* | scripts/*)
+		gopkgs="$gopkgs $module/internal/naming"
+		;;
+	esac
+}
+
 # runs_the_decoder adds the package of every Go test that runs the
 # episode's decoder as a program, through FRAMEFAIRY_FRAMES. They do not
 # import it, so the imports never lead to them.
@@ -201,6 +212,7 @@ everything() {
 [ "${EVERYTHING:-}" = 1 ] && everything
 
 for file in $changed; do
+	names_videos "$file"
 	case $file in
 	# The plan is history, and the check that keeps it so is in make
 	# lint.
@@ -222,14 +234,11 @@ for file in $changed; do
 		;;
 	# How long each run of the walks took, which only shares them out.
 	frontend/preview/walks/walk-times.tsv) interface=1 ;;
-	# The walk harness: what the walks run, and none of it ships.
-	frontend/preview/walks/* | frontend/preview/wails-bridge.ts | frontend/preview/settled.ts | frontend/preview/standing.ts | frontend/preview/bridge.config.ts | frontend/preview/vite.config.ts)
-		interface=1
-		walks=1
-		read_by_tests "$file"
-		;;
+	# The preview and the walk harness: what the walks are built from and
+	# run, and none of it ships.
 	frontend/preview/*)
 		interface=1
+		walks=1
 		read_by_tests "$file"
 		;;
 	frontend/*)
@@ -243,10 +252,12 @@ for file in $changed; do
 		lint=1
 		ships
 		;;
-	Makefile | .github/workflows/ci.yml) everything ;;
+	# What defines CI's jobs, and the scripts every job runs, decide
+	# how every part runs.
+	Makefile | .github/workflows/ci.yml | scripts/changed.sh | scripts/test-failures.sh | scripts/leftovers.sh) everything ;;
 	# The machine every Linux job runs in, so every part that runs there.
 	# No Mac runs in it, so a Mac has nothing to check.
-	.github/ci-image/* | scripts/ci-packages.sh)
+	.github/ci-image/* | .github/workflows/ci-image.yml | scripts/ci-packages.sh)
 		if [ "$OS" != Darwin ]; then
 			everything
 			interface=0
@@ -260,7 +271,7 @@ for file in $changed; do
 		;;
 	# The rules of the repository, which make lint tests, and this
 	# script and its test among them.
-	scripts/changed.sh | scripts/changed-test.sh | scripts/needs-build.sh | scripts/needs-build-test.sh | scripts/main-moved.sh | scripts/main-moved-test.sh | scripts/plan-frozen.sh | scripts/plan-frozen-test.sh | scripts/pins.sh) lint=1 ;;
+	scripts/changed-test.sh | scripts/needs-build.sh | scripts/needs-build-test.sh | scripts/main-moved.sh | scripts/main-moved-test.sh | scripts/plan-frozen.sh | scripts/plan-frozen-test.sh | scripts/pins.sh) lint=1 ;;
 	*.sh)
 		lint=1
 		ships

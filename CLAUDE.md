@@ -603,9 +603,8 @@ messages, pull request text, code comments and chat replies.
   with `make interface` for `frontend/`: seconds, and what was worked on
   is then known to work when Tim tries it. Then push, so he is not
   waiting. Nothing more runs in the session, no `make walks`, no `make
-  changed` of the walks and no `make test`. A session has no map of the
-  walks, so `make changed` there walks every run an interface change
-  could reach. The walks run in CI, and a single walk runs alone in the
+  changed` of the walks and no `make test`. A change that reaches the
+  walks walks every run, which is CI's work. The walks run in CI, and a single walk runs alone in the
   session only when it is needed to write or fix that walk. CI runs the
   tests a change reaches, on machines sized for it, and gives its answer before a cloud
   session would, whose four cores take half an hour for the same and
@@ -626,7 +625,8 @@ messages, pull request text, code comments and chat replies.
   first job asks the same script which parts have work and how many
   machines each needs, so a job with nothing to do starts no machine. A
   part is reached by the kind of file that changed, Go, the interface,
-  a script, a workflow, and a doc reaches none. Within a part only Go
+  a script, a workflow, and a doc only the test that reads the docs,
+  `internal/naming`. Within a part only Go
   is picked finer, by the packages that import what changed, and the
   walks run whole. A job holds nothing but that
   command and what its machine needs around it, the checkout, Go and

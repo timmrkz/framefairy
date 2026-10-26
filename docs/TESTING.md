@@ -857,7 +857,7 @@ A sequence asks the system for less motion, the way a person can in the
 Mac's settings, unless one of its steps looks at how the app moves: the
 caption blocks and the typed word that pop, the bounce over a paused
 frame, the word that grows as it is opened, the card that shakes and the
-microphone that grows as it hears, `moving` in `sequences.mjs`. The app
+microphone that grows as it hears, `moving` in `common/steps.mjs`. The app
 then leaves out what it animates, the info marks' fade and the pops
 among it, so the settle waits for none of it. On main those two were
 179 s of the 1976 s all runs took one after another. The sequences with

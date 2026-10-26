@@ -450,8 +450,8 @@ changed:
 # On a Mac without the race detector: the Go code is the same as on
 # Linux, where it runs with it, and it makes the tests 1.7 times slower.
 # And without the licence server's packages, which run on a Linux server
-# and never on a customer's Mac, nor the read of the workflows, which is
-# the same on every machine. RACE= and UNITSKIP= say otherwise.
+# and never on a customer's Mac, nor the read of the workflows and of how
+# the video endings are named, which are the same on every machine. RACE= and UNITSKIP= say otherwise.
 #
 # UNITSHARD=1/3 runs a third of the tests, by the first letters of their
 # names, which is how CI spreads them over three machines, and 1/1 all of
@@ -469,7 +469,7 @@ changed:
 # ten minutes here, and CI sets 4m, under its five-minute jobs.
 ifeq ($(UNAME),Darwin)
 RACE ?=
-UNITSKIP ?= framefairy/licence/dispenser framefairy/licence/paddle framefairy/cmd/framefairy-dispenser framefairy/internal/workflows
+UNITSKIP ?= framefairy/licence/dispenser framefairy/licence/paddle framefairy/cmd/framefairy-dispenser framefairy/internal/workflows framefairy/internal/naming
 else
 RACE ?= -race
 UNITSKIP ?=
@@ -522,7 +522,7 @@ WALKERS ?=
 WALKSHARD ?=
 WALKTIMES ?=
 # STILL=none walks every sequence with the app's motion, see moving in
-# frontend/preview/walks/sequences.mjs.
+# frontend/preview/walks/common/steps.mjs.
 STILL ?=
 # How long the runs may take before go test stops them. TestWalks stops
 # what still runs a minute before and names it with what it printed. CI

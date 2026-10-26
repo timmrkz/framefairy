@@ -185,7 +185,8 @@ the same thing, see [One way to test](BUILD.md#one-way-to-test):
   [TESTING.md](TESTING.md#from-outside-the-app).
 
 A push to `main` runs every part whole. A pull request of docs alone
-reaches no part, so it starts no machine after **plan**.
+reaches only the test that reads the docs, `internal/naming`, on one
+Linux machine.
 
 ### When main moves
 

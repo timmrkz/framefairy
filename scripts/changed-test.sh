@@ -73,7 +73,7 @@ is() {
 # mac FILES WANT: the parts a Mac in CI runs for these files are exactly
 # these.
 mac() {
-	got=$(CHANGED=$1 OS=Darwin CI=1 UNITSKIP="framefairy/licence/dispenser framefairy/licence/paddle framefairy/cmd/framefairy-dispenser framefairy/internal/workflows" sh "$here/changed.sh" --parts 2>/dev/null)
+	got=$(CHANGED=$1 OS=Darwin CI=1 UNITSKIP="framefairy/licence/dispenser framefairy/licence/paddle framefairy/cmd/framefairy-dispenser framefairy/internal/workflows framefairy/internal/naming" sh "$here/changed.sh" --parts 2>/dev/null)
 	if [ "$got" = "$2" ]; then
 		printf 'ok  \t%-44s Mac = %s\n' "$1" "${2:-nothing}"
 	else
@@ -82,16 +82,21 @@ mac() {
 	fi
 }
 
-# Docs change nothing that runs.
-is "README.md docs/APP.md CLAUDE.md .claude/skills/interface/SKILL.md" ""
+# A doc runs only the test that reads the docs for how the video endings
+# are named, internal/naming, and on a Mac not even that. A doc that test
+# does not read runs nothing.
+is "README.md docs/APP.md CLAUDE.md .claude/skills/interface/SKILL.md" "unit go framefairy/internal/naming"
+mac "README.md docs/APP.md CLAUDE.md" ""
+is ".claude/skills/interface/SKILL.md LICENSE" ""
 
 # The interface on its own is the interface, the walks and the build, and
-# no Go at all. The preview's stand-in is not under the walks, which run
-# against the bridge, but the bridge is. Neither ships, so neither builds,
-# and a walk alone starts no Mac (#521). Whatever reaches the walks walks
-# every run, and the times they took reach none.
-is "frontend/src/App.svelte" "interface walks build"
-is "frontend/preview/wails-stub.ts" "interface"
+# of the Go tests only the one that reads its source for the video
+# endings. The preview and the walk harness reach the walks too. Neither
+# ships, so neither builds, and a walk alone starts no Mac (#521).
+# Whatever reaches the walks walks every run, and the times they took
+# reach none.
+is "frontend/src/App.svelte" "interface unit go framefairy/internal/naming walks build"
+is "frontend/preview/wails-stub.ts" "interface walks"
 is "frontend/preview/walks/words.mjs" "interface walks"
 is "frontend/preview/walks/walk-times.tsv" "interface"
 is "frontend/preview/wails-bridge.ts" "interface walks"
@@ -104,7 +109,7 @@ mac "frontend/src/App.svelte" "interface walks build outside"
 # package too. A file a Go test only names in a comment is not one of them.
 has "frontend/src/lib/api.ts" "interface" "unit" "go framefairy/cmd/framefairy-app" "walks"
 has "frontend/src/lib/suggest.cases.json" "interface" "go framefairy/engine"
-is "frontend/src/lib/flow.ts" "interface walks build"
+is "frontend/src/lib/flow.ts" "interface unit go framefairy/internal/naming walks build"
 
 # A package reaches every package that imports it, and only those.
 has "updates/updates.go" "go framefairy/updates" "go framefairy/cmd/framefairy-app" \
@@ -119,7 +124,7 @@ has "engine/edit.go" "go framefairy/engine" "go framefairy/cmd/framefairy" \
 	"go framefairy/cmd/framefairy-app" "go framefairy/cmd/framefairy-train" "walks"
 
 # A package at the top of the tree reaches only itself.
-is "cmd/framefairy-release/main.go" "lint unit go framefairy/cmd/framefairy-release build"
+is "cmd/framefairy-release/main.go" "lint unit go framefairy/cmd/framefairy-release go framefairy/internal/naming build"
 
 # What a package keeps beside its code belongs to it: a seed in testdata,
 # a file it embeds. A seed is no part of a program, so it builds nothing.
@@ -139,7 +144,7 @@ lacks "train/export_test.go" "build" "outside"
 has "train/export_test.go" "lint"
 has "train/export.go" "lint"
 is ".golangci.yml" "lint"
-is "scripts/testdata/lint/walks/waits.mjs" "lint"
+is "scripts/testdata/lint/walks/waits.mjs" "lint unit go framefairy/internal/naming"
 is "frontend/eslint-suppressions.json" "lint interface"
 
 # Tests that run the decoder as a program do not import it, so what
@@ -183,6 +188,12 @@ has "go.sum" "go framefairy/engine" "go framefairy/updates" "go framefairy/train
 # are every part and every package.
 has "Makefile" "lint" "interface" "unit" "fuzz" "walks" "build" "go framefairy/engine" "go framefairy/updates"
 has ".github/workflows/ci.yml" "lint" "interface" "walks" "build" "go framefairy/engine" "go framefairy/updates"
+# So do the scripts every CI job runs, and the image's workflow reaches
+# what the image does.
+for f in scripts/changed.sh scripts/test-failures.sh scripts/leftovers.sh; do
+	has "$f" "lint" "interface" "unit" "walks" "build" "go framefairy/engine"
+done
+has ".github/workflows/ci-image.yml" "build" "go framefairy/engine" "walks"
 # Another workflow is read by the workflows' own test and the lint, which
 # holds the pins and the rules for builds and the Main moved notice, and
 # no Mac reads it.
@@ -196,14 +207,12 @@ has "scripts/build-ffmpeg.sh" "go framefairy/notices"
 has "scripts/build-llama.sh" "go framefairy/notices"
 
 # The rules are tested in make lint.
-is "scripts/changed.sh" "lint"
-is "scripts/needs-build.sh" "lint"
-is "scripts/main-moved.sh" "lint"
-is "scripts/plan-frozen.sh" "lint"
+is "scripts/needs-build.sh" "lint unit go framefairy/internal/naming"
+is "scripts/main-moved.sh" "lint unit go framefairy/internal/naming"
+is "scripts/plan-frozen.sh" "lint unit go framefairy/internal/naming"
 
-# The plan is history, so a change to it runs the check that says so,
-# while every other doc runs nothing.
-is "docs/GUI-PLAN.md" "lint"
+# The plan is history, so a change to it runs the check that says so.
+is "docs/GUI-PLAN.md" "lint unit go framefairy/internal/naming"
 
 # A file nobody thought of builds, rather than being passed over.
 is "build/icon.png" "build"

@@ -35,10 +35,8 @@ import { steps as reportSteps } from "./report/steps.mjs";
 import { steps as appSteps } from "./app/steps.mjs";
 import { steps as commonSteps } from "./common/steps.mjs";
 
-// Every sequence, each with the folder it is kept in, in the order of
-// the folders.
-const folders = { captions, timeline, playback, clips, search, videos, report, app };
-export const sequences = Object.entries(folders).flatMap(([area, list]) => list.map((q) => ({ ...q, area })));
+// Every sequence, in the order of the folders they are kept in.
+export const sequences = [captions, timeline, playback, clips, search, videos, report, app].flat();
 
 // Every step by its name, from every folder. A name in two folders would
 // walk whichever came last, so it is named by --names and fails.
