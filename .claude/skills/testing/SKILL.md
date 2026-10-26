@@ -434,19 +434,20 @@ thought of. Find that order with these, in this order:
 
 1. **Read what the failure left.** The runner keeps a trace of a
    test that failed, and keeps it in CI with the run. Playwright's
-   trace has every action, the console, the network, a film of the
-   screen and, where a project pays for them, snapshots of the page
-   before and after each action. Read what the project records before
+   trace has every action, the console, the network and, where a
+   project pays for them, a film of the screen and snapshots of the
+   page before and after each action. Read what the project records before
    looking for what it left out. The race detector has its
    report, and `go test -timeout` prints every goroutine. Most flakes are
    explained there, without running anything. Where the runner keeps
-   no trace of a failure yet, that is the first thing to fix. Where a
-   trace costs every run too much time, record it only for the tests
-   that have failed at random, in one list that names the issue for
-   each. A test that fails at random with nothing to read is then not
-   chased on the spot: it gets an issue and a line in that list, and
-   the work goes on. Its next failure comes with its trace, and the
-   change that fixes it takes its line out.
+   no trace of a failure yet, that is the first thing to fix. A trace
+   is several records of different cost. The calls, the console and
+   the network are text the runner already has, and cost next to
+   nothing. A film of the screen or a snapshot of the page costs every
+   run real time. Keep the cheap records on for every test, and turn
+   the costly ones on only for the tests whose trace showed they are
+   needed, in one list that names the issue for each. The change that
+   fixes the test takes its line out.
 2. **Read the code for the order it assumes.** Name the event the test
    waits for and where the code sends it. Ask whether the test could
    read before it, and whether the event could come before the test
