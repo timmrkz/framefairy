@@ -843,9 +843,9 @@ it hang, #508.
    every call of the walk with when it began and ended, what the page
    logged and threw, every request with its timing and a film of the
    screen. It leaves out Playwright's snapshots of the page before and
-   after each call: eight sequences took 45 % longer with them in a
-   cloud session, and the film 17 %, which would put a walks job in CI
-   over its five minutes. In CI a
+   after each call: eight sequences took 41 % longer with them in a
+   cloud session, and the film 15 %, and with both a walks job in CI
+   went over its five minutes. In CI a
    walks job that failed keeps the folder with the run as
    `walk-traces-0` to `walk-traces-3`, one for each share, for 14 days.
    A session finds it with the GitHub tools,
@@ -889,15 +889,26 @@ liked the answer hid an order: the rules read the clip on screen up to
 twenty times while a search changed it, which `settledScreen` now reads
 in the one moment the app settled. `holdClock` asked Playwright again
 when the moment it had read was already past, and now goes on with the
-clock Playwright has held by then. Three loops stay, because each is a
-gesture a person makes or what a step is about: the playback step that
-puts the playhead inside a frame scrolls and clicks again, at most six
-and four times, as a hand aims again after a near miss of a pixel or
-two, deleting a video's folder from outside goes on until the folder
-is gone while the app writes into it, as a person deletes again when
-Finder says it is not empty, and `firstSearch` and the steps that hear
-a search through read the jobs again on each piece of news, which is a
-wait on a signal, not a retry.
+clock Playwright has held by then. Four kinds of loop stay, because each
+is a gesture a person makes, a wait on a signal, or a comparison with a
+state that moved:
+
+- The steps that aim the playhead inside a frame or under a word scroll
+  and click again, at most six and four times, in `playback/steps.mjs`
+  and `captions/steps.mjs`, as a hand aims again after a near miss of a
+  pixel or two.
+- Deleting a video's folder from outside goes on until the folder is
+  gone while the app writes into it, as a person deletes again when
+  Finder says it is not empty.
+- `firstSearch` and the steps that hear a search through read the jobs
+  again on each piece of news, which is a wait on a signal.
+- `agree` in `searching.mjs` compares the clip list with the engine's
+  jobs, and compares again when the engine told the app something new in
+  between, up to 24 looks. It is no retry: a disagreement at a state that
+  did not move is a broken rule at the first look, and one that stands
+  through all 24 looks is a broken rule too. What it looks again for is
+  that the engine's work moved on between the two reads, so the
+  expectation it compared was of the moment before.
 
 ### Where they run
 

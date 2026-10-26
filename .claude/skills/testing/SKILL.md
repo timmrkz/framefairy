@@ -422,8 +422,10 @@ thought of. Find that order with these, in this order:
 
 1. **Read what the failure left.** The runner keeps a trace of every
    test that failed, and keeps it in CI with the run. Playwright's
-   trace has every action, the page before and after it, the console,
-   the network and a film of the screen. The race detector has its
+   trace has every action, the console, the network, a film of the
+   screen and, where a project pays for them, snapshots of the page
+   before and after each action. Read what the project records before
+   looking for what it left out. The race detector has its
    report, and `go test -timeout` prints every goroutine. Most flakes are
    explained there, without running anything. Where the runner keeps
    no trace of a failure yet, that is the first thing to fix.
@@ -459,8 +461,11 @@ No test retries. A loop that reads or acts again until the answer
 suits it is a retry, wherever it is written, and it hides the very
 order this section is about. What is left is a gesture that corrects
 itself the way a person does, a hand that aims again after a near
-miss, or a check of a product's own retries, and the test says so
-where it does.
+miss, a check of a product's own retries, or a comparison the test
+makes again because the state it compared has moved on since, and
+never because the same state gave an answer it did not like. Each one
+says so where it is, and the project's own list of them is complete,
+so the next reader does not have to judge each loop again.
 
 ### Red and hanging checks
 

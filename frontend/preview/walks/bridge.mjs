@@ -145,9 +145,9 @@ export function traceAs(name) {
 async function traced(page) {
   const context = page.context();
   // The page as it was before and after every call, snapshots, made
-  // eight sequences take 45 % longer in a cloud session, and would put a
-  // walks job in CI over its five minutes. The film of the screen, 17 %
-  // longer, is kept.
+  // eight sequences take 41 % longer in a cloud session, and put a walks
+  // job in CI over its five minutes. The film of the screen, 15 % longer,
+  // is kept.
   await context.tracing.start({ screenshots: true, snapshots: false, title: tracedAs });
   tracing.add(context);
   context.on("close", () => tracing.delete(context));
@@ -297,12 +297,24 @@ export async function fakeClock(page) {
 export async function holdClock(page) {
   await fakeClock(page);
   try {
-    await page.clock.pauseAt(await page.evaluate(() => Date.now()));
+    await page.clock.pauseAt(await pageNow(page));
   } catch (e) {
     if (!String(e?.message).includes("fast-forward to the past")) throw e;
+    // That the clock is held after the error is Playwright's own order of
+    // doing things, so it is checked rather than trusted: over two of the
+    // real frames the app's time must not move. An upgrade that held the
+    // clock after it moved it would let the app's time run on, and every
+    // walk that holds the clock would go quietly back to racing it.
+    const at = await pageNow(page);
+    await page.evaluate(() => new Promise((done) => window.__real.frame(() => window.__real.frame(done))));
+    const after = await pageNow(page);
+    if (after !== at) throw new Error(`pauseAt did not hold the clock: it went from ${at} to ${after}`);
   }
   page.__held = true;
 }
+
+// What the app's time is now, the one place a walk reads it.
+const pageNow = (page) => page.evaluate(() => Date.now());
 
 // Runs the app's held time on by ms, every timer and frame on the way
 // firing in turn, and holds it again there.
@@ -365,40 +377,54 @@ export async function sidebarStill(page) {
   });
 }
 
-// Which episode is on screen: the one the sidebar marks as the current
-// one, by its path in the library. Not the last one the interface asked
-// the clips of: a video just added asks for them only later, and a walk
-// then held its clip list to the episode before.
-export async function episodeOn(page) {
-  const name = await page.evaluate(
-    () => document.querySelector("aside button.episode.current .name")?.textContent ?? null,
-  );
-  if (!name) return null;
-  const named = (await ask(page, "Library")).filter((e) => e.name === name).map((e) => e.source);
+// What the app marks as current, read in the page: the name of the
+// episode the sidebar marks, the clips the interface has asked for,
+// newest first, and the key of the card the clip list marks. The one
+// reader of it, so episodeOn, chosen and settledScreen all read the same
+// screen the same way.
+function readChosen() {
+  return {
+    name: document.querySelector("aside button.episode.current .name")?.textContent ?? null,
+    asked: [...window.__calls].reverse().filter((c) => c.name === "Clips").map((c) => c.args[0]),
+    key: document.querySelector("aside ol li[data-key] button.pick.current")?.closest("li")?.dataset.key ?? null,
+  };
+}
+
+// The episode a reading of readChosen is of, by its path in the library.
+async function chosenPath(page, seen) {
+  if (!seen.name) return null;
+  const named = (await ask(page, "Library")).filter((e) => e.name === seen.name).map((e) => e.source);
   if (named.length < 2) return named[0] ?? null;
   // Two episodes of one file name, from two folders, look the same in the
   // sidebar, so they are told apart by the one whose clips the app asked
   // for last: the one on screen, once its clip list has come, which a
   // walk waits for before it asks.
-  return page.evaluate(
-    (paths) => [...window.__calls].reverse().find((c) => c.name === "Clips" && paths.includes(c.args[0]))?.args[0] ?? null,
-    named,
-  );
+  return seen.asked.find((p) => named.includes(p)) ?? null;
+}
+
+// The clip a reading of readChosen is of, by its plan and id as the
+// engine names them.
+async function chosenClip(page, seen) {
+  const path = await chosenPath(page, seen);
+  if (!path || !seen.key) return null;
+  const entry = (await ask(page, "Clips", path)).find((c) => c.key === seen.key);
+  return entry ? { path, plan: entry.plan, clip: entry.id } : null;
+}
+
+// Which episode is on screen: the one the sidebar marks as the current
+// one, by its path in the library. Not the last one the interface asked
+// the clips of: a video just added asks for them only later, and a walk
+// then held its clip list to the episode before.
+export async function episodeOn(page) {
+  return chosenPath(page, await page.evaluate(readChosen));
 }
 
 // Which clip is on screen: the card the clip list marks as the current
-// one, in the episode on screen, by its plan and id as the engine names
-// them. Not the last captions asked for: an episode just opened shows its
-// clip before that, and a walk then held the clip on screen to another
-// episode's.
+// one, in the episode on screen. Not the last captions asked for: an
+// episode just opened shows its clip before that, and a walk then held
+// the clip on screen to another episode's.
 export async function chosen(page) {
-  const path = await episodeOn(page);
-  const key = await page.evaluate(
-    () => document.querySelector("aside ol li[data-key] button.pick.current")?.closest("li")?.dataset.key ?? null,
-  );
-  if (!path || !key) return null;
-  const entry = (await ask(page, "Clips", path)).find((c) => c.key === key);
-  return entry ? { path, plan: entry.plan, clip: entry.id } : null;
+  return chosenClip(page, await page.evaluate(readChosen));
 }
 
 // What the engine says about the clip on screen, asked directly: its
@@ -469,27 +495,14 @@ function readShown() {
 // and the clip timeline was held to the clip before.
 export async function settledScreen(page) {
   const seen = await page.evaluate(
-    async ([held, words, track]) => {
+    async ([held, marked, words, track]) => {
+      const run = (src) => new Function(`return (${src})`)()();
       await window.__settled(held);
-      return {
-        name: document.querySelector("aside button.episode.current .name")?.textContent ?? null,
-        asked: [...window.__calls].reverse().filter((c) => c.name === "Clips").map((c) => c.args[0]),
-        key: document.querySelector("aside ol li[data-key] button.pick.current")?.closest("li")?.dataset.key ?? null,
-        now: new Function(`return (${words})`)()(),
-        drawn: new Function(`return (${track})`)()(),
-      };
+      return { ...run(marked), now: run(words), drawn: run(track) };
     },
-    [Boolean(page.__held), readShown.toString(), readTimeline.toString()],
+    [Boolean(page.__held), readChosen.toString(), readShown.toString(), readTimeline.toString()],
   );
-  const { name, asked, key, now, drawn } = seen;
-  if (!name || !key) return { at: null, now, drawn };
-  // The episode by its name, and of two of one name the one whose clips
-  // the app asked for last, as episodeOn tells them apart.
-  const named = (await ask(page, "Library")).filter((e) => e.name === name).map((e) => e.source);
-  const path = named.length < 2 ? named[0] : asked.find((p) => named.includes(p));
-  if (!path) return { at: null, now, drawn };
-  const entry = (await ask(page, "Clips", path)).find((c) => c.key === key);
-  return { at: entry ? { path, plan: entry.plan, clip: entry.id } : null, now, drawn };
+  return { at: await chosenClip(page, seen), now: seen.now, drawn: seen.drawn };
 }
 
 // Where everything a hand can take hold of on the clip timeline is on

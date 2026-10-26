@@ -143,6 +143,17 @@ async function mark(what) {
 // Walks one sequence and says whether it failed, in a browser of its own
 // or in browser, whose pages it closes again.
 async function walkSequence(seq, shared = null) {
+  // Whatever ends the sequence keeps its trace: opening the video, a step
+  // that throws, reading the screen between two steps.
+  try {
+    return await walkingSequence(seq, shared);
+  } catch (e) {
+    await keepTraces();
+    throw e;
+  }
+}
+
+async function walkingSequence(seq, shared) {
   const began = performance.now();
   traceAs(seq.name);
   const opened = await open(url, { browser: shared, still: still(seq) });
@@ -492,14 +503,7 @@ async function walkSequence(seq, shared = null) {
     const s = await shown(page);
     const step = everyStep[what];
     if (!step) throw new Error(`no step called ${what}`);
-    // A step that throws ends the sequence, and its node, with the
-    // traces kept first.
-    try {
-      await step(walk, arg, s, what);
-    } catch (e) {
-      await keepTraces();
-      throw e;
-    }
+    await step(walk, arg, s, what);
   }
   const failed = wrong ?? (watch.failed && `broke: ${watch.failed.rule}\n${watch.failed.detail}`);
   const took = ((performance.now() - began) / 1000).toFixed(1).padStart(5);
