@@ -28,8 +28,8 @@ walk below proves the fix."
 
 <!--
 The tests that ensure it, and that they fail on main and pass here.
-The walks, the measurements before and after, and whether make changed
-passed. What could not be checked here, like WebKit on a Mac, is said.
+The walks, the measurements before and after, and whether CI passed on
+the last commit. What could not be checked here, like WebKit on a Mac, is said.
 -->
 
 ## How to test

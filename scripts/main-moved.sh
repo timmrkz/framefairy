@@ -93,7 +93,7 @@ gh pr list --base main --state open --limit 100 \
 		body=$(printf '%s\n\n%s\n\n%s\n\n%s' \
 			"main is at $short, $subject. It no longer merges into this branch at $head. These files conflict:" \
 			"$list" \
-			"Merge main into this branch, resolve them, read CLAUDE.md again, because main may have changed the rules, then run the tests of what the resolution touches, push, and run \`make changed\` after the push." \
+			"Merge main into this branch, resolve them, read CLAUDE.md again, because main may have changed the rules, then run the tests of what the resolution touches, push, and let CI run the rest." \
 			"$mark")
 		gh pr comment "$number" --body "$body"
 	done

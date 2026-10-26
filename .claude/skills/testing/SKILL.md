@@ -570,8 +570,11 @@ never a scanner of our own:
   a command by hand.
 - **CI is the proof that counts.** Push once the tests of the change
   pass, and let CI run the rest. A local run never holds back work CI
-  has already proven. A failing run on your pull request is your work,
-  and you hear of it by its event.
+  has already proven, and an agent never runs the whole suite again on
+  its own machine after the push: CI runs it on the machines it was
+  sized for and answers first. A failing run on your pull request is
+  your work, and you hear of it by its event, so the agent subscribes
+  to its pull request's events as it opens it.
 
 ## 13. Review and handing over
 

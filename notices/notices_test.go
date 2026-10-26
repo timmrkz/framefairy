@@ -71,8 +71,6 @@ func TestEveryNoticeIsWhole(t *testing.T) {
 // On the real disk: what is read is the repository's own build scripts and go.mod.
 func TestTheToolsNoticesAreForTheVersionsBuilt(t *testing.T) {
 	list := all(t)
-	// The scripts are named by their whole path, so make changed finds
-	// this test when either of them changes, see scripts/changed.sh.
 	pinned := func(key, script string) string {
 		body, err := os.ReadFile(script)
 		if err != nil {

@@ -8,8 +8,8 @@ Code locally, and no zip files change hands.
 
 ```
 you describe a task at claude.ai/code
-  → Claude works on a branch in the cloud, tests the change, pushes, runs make changed
-  → a pull request opens, CI builds and tests it on Linux and macOS
+  → Claude works on a branch in the cloud, runs the tests of the change, pushes
+  → a pull request opens, CI builds and tests all it reaches on Linux and macOS
   → you review and merge
   → in the app: Updates, following main
 ```
@@ -73,8 +73,9 @@ and still be cached, and new sessions can be stopped while it runs. The
 SessionStart hook in `.claude/settings.json` builds them in the background
 as each session starts, see
 [`scripts/cloud-decoder.sh`](../scripts/cloud-decoder.sh), and the
-targets that run the decoder, `make changed`, `unit`, `walks` and `test`,
-wait for it, so the decoder's tests and the walks run in a session too. It also installs the engineering skills from two plugins, Go skills
+targets that run the decoder, `make unit`, `walks` and `test`,
+wait for it, so a session can run the decoder's tests and a walk of its
+own too. It also installs the engineering skills from two plugins, Go skills
 from `samber/cc-skills-golang` and general ones from `addyosmani/agent-skills`,
 because plugins added on claude.ai do not reach cloud sessions. Each is pinned
 to a commit in `SKILL_SOURCES` at the top of the script, so a new version is
@@ -95,9 +96,10 @@ whatever version the machine came with.
    batch numbers of the old plan in [GUI-PLAN.md](GUI-PLAN.md).
 2. **Claude works** on a new branch. It reads `CLAUDE.md` first, which holds
    the project's rules and your preferences. It runs the tests of what it
-   changed, pushes, and opens a pull request, so you can try the change at
-   once. Then it runs `make changed`, which checks everything the branch
-   reaches, and pushes a fix if that finds anything. Once all the work is
+   changed, pushes, and opens a pull request, so
+   you can try the change at once. It runs nothing more: CI checks
+   everything the branch reaches, and the session hears how that went from
+   the pull request's events and pushes a fix when it fails. Once all the work is
    done, it asks a review agent that did none of it to review the pull
    request, posts the findings and answers each one before it says the
    pull request is ready, see CLAUDE.md. You can
@@ -156,28 +158,35 @@ names nothing of ours. This is where its words meet this repository.
 ## CI
 
 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs on every pull
-request and every push to `main`, as twelve jobs at the same time, so the
-answer comes back in the time the slowest takes:
+request and every push to `main`, as up to twelve jobs at the same time,
+so the answer comes back in the time the slowest takes. A first job,
+**plan**, asks `scripts/changed.sh` which parts the change reaches, and
+only those start. Each job runs one make command, `make changed` for its
+part, the same one you run on your Mac, so CI and `make changed` check
+the same thing, see [One way to test](BUILD.md#one-way-to-test):
 
 - **interface:** `make interface`, the type check and the interface's own
   tests.
-- **build:** the rules that decide what runs, then `make` on Linux, which
-  proves the programs still link with the interface built into them.
+- **build:** `make lint`, then `make` on Linux, which proves the programs
+  still link with the interface built into them.
 - **linux:** the Go tests under the race detector, `make unit`, including
-  the tests that render, on three machines with every third test each.
+  the tests that render, of the packages the change reaches, on three
+  machines for the engine or the app, `UNITSHARD=1/3` to `3/3`, and on
+  one for the rest.
 - **walks:** the interface in Chromium against the real Go side,
-  `make walks`, on three machines with every third run each.
-- **fuzz:** `make fuzz` on Linux, going on from the fuzz cache main left.
-- **macos:** the Go tests against our own ffmpeg, without the race
-  detector, which Linux runs.
+  `make walks`, every run, on four machines, for a change to the
+  interface, the walks or the Go side of the app.
+- **fuzz:** `make fuzz` on Linux, the targets of the packages the change
+  reaches, going on from the fuzz cache main left.
+- **macos:** `make unit` against our own ffmpeg, which on a Mac leaves
+  out the race detector, which Linux runs.
 - **outside:** `make` on a Mac, which fails if the build prints any
   warning, then the app opened by macOS from a link, see
   [TESTING.md](TESTING.md#from-outside-the-app).
 
-On a pull request a first job reads which files changed, and a job the
-change gives nothing to do never starts, see
-[What runs for a change](BUILD.md#what-runs-for-a-change). A push to
-`main` narrows nothing.
+A push to `main` runs every part whole. A pull request of docs alone
+reaches only the test that reads the docs, `internal/naming`, on one
+Linux machine.
 
 ### When main moves
 
@@ -212,7 +221,7 @@ without asking, resolves the conflict, reads `CLAUDE.md` again and pushes,
 because GitHub runs no CI on a pull request that conflicts with `main`.
 The merge is tested like a change of the session's own, because resolving
 it writes new code: the tests of what the resolution touches before the
-push, and `make changed` after it.
+push, and CI after it.
 Reading `CLAUDE.md` again is in the comment on purpose: a session reads it
 once when it starts, so a rule that lands on `main` while the session runs
 would otherwise reach it only in its next session. The workflow itself never

@@ -1,66 +1,114 @@
 #!/bin/sh
-# Checks what this branch changed, and only that, before a push.
+# What a change reaches, and only that. This is the one place that
+# decides it, for make changed on any machine and for every CI job on a
+# pull request, so a change is checked the same way everywhere.
 #
-#   make changed              what the branch changed against origin/main,
-#                             committed or not
-#   sh scripts/changed.sh --plan
-#                             say what would run, and run nothing
-#   sh scripts/changed.sh --fuzz-targets
-#                             name the fuzz targets a change reaches, and
-#                             run nothing
+#   make changed                  every part the branch reaches against
+#                                 origin/main, committed or not
+#   make changed PART=unit SHARD=1/3
+#                                 one part, or one share of it, which is
+#                                 what each CI job runs
+#   sh scripts/changed.sh --parts name the parts with work, one line, and
+#                                 run nothing. CI's first job asks this,
+#                                 so a job with nothing to do never
+#                                 starts a machine
+#   sh scripts/changed.sh --plan  say what each part would run, and run
+#                                 nothing
+#   sh scripts/changed.sh --shares
+#                                 how many machines the unit tests need,
+#                                 as the list CI's matrix takes,
+#                                 unit=["1/3","2/3","3/3"]
 #
-# make test runs everything, which is ten minutes, most of it the engine's
-# tests under the race detector and ten thousand executions of every fuzz
-# target. Nearly every change reaches a small part of that. This works out
-# which part, the way .github/ci-filters.yml does for CI, and runs it:
+# The parts are the parts of make test, and each runs through its own
+# make target, so what runs here is what that target runs:
 #
-#   Go code         gofmt on the files, then go vet and the tests under the
-#                   race detector for the packages that changed and every
-#                   package that imports them, and their fuzz targets,
-#                   see fuzz_targets. go.mod or go.sum is every package
-#                   and every target. A changed test also runs the
-#                   tests of internal/offdisk and internal/ffmpegtest,
-#                   which read every test file, and make lint, which
-#                   reads them for waits on the clock. The decoder and
-#                   scripts/build-ffmpeg.sh reach the tests that run the
-#                   decoder, and the hyphenation files reach notices.
-#   frontend/       make interface
-#   the linters' settings and scripts/lint-test.sh
-#                   that test, which proves them
-#   Makefile, a script, a workflow
-#                   what that file is for: make for the build, the rules
-#                   tests for the rules, a read by its own shell for a
-#                   script, a read of the YAML for a workflow. The
-#                   Makefile and ci.yml decide how the Go tests run, so
-#                   they are every package and every target too
-#   docs            nothing, but docs/GUI-PLAN.md runs the check that it
-#                   is history and left alone, scripts/plan-frozen.sh
+#   lint       make lint, the whole tree read without running it, for a
+#              Go file, a script, a workflow, the Makefile, the linters'
+#              settings and docs/GUI-PLAN.md
+#   interface  make interface, for anything under frontend/
+#   unit       make unit, for the packages that changed and every
+#              package that imports them, however far down, and the
+#              packages whose tests read a file that changed
+#   fuzz       make fuzz, for the fuzz targets of those packages
+#   walks      make walks, every run, for the interface the app shows,
+#              the walks themselves and anything that reaches the app's
+#              Go side
+#   build      make, for anything that ships. On a Mac the build may
+#              print no warning
+#   outside    make outside, on a Mac in CI, for anything that ships
 #
-# Anything it does not know runs the build, so a file nobody thought of is
-# checked rather than skipped. On a pull request CI runs the Go packages
-# --plan names and fuzzes those --fuzz-targets names, comparing with main,
-# see ci.yml. A push to main still runs everything.
+# A file it knows nothing about reaches the build, so a file nobody
+# thought of is checked rather than skipped. The Makefile and ci.yml
+# decide how every part runs, so they reach everything, every package
+# and every fuzz target.
 #
-# BASE= names another commit to compare with. CHANGED= hands it the list of
-# files instead of asking git, which is how scripts/changed-test.sh checks
-# the rules.
+# EVERYTHING=1 takes every part, every package and every target, which is
+# what a push to main runs. BASE= names the commit to compare with, which
+# on a pull request in CI is the main its merge commit sits on. CHANGED=
+# hands it the list of files instead of asking git, which is how
+# scripts/changed-test.sh checks the rules. OS=Darwin asks what a Mac
+# would run, which is how CI's first job knows whether to start one, and
+# UNITSKIP names the packages make unit leaves out there. make changed
+# passes both.
 set -eu
 
 GO=${GO:-go}
 MAKE=${MAKE:-make}
-FUZZTIME=${FUZZTIME:-10000x}
-plan_only=0
-[ "${1:-}" = "--plan" ] && plan_only=1
+PART=${PART:-}
+SHARD=${SHARD:-}
+OS=${OS:-$(uname -s 2>/dev/null || echo unknown)}
+mode=run
+case ${1:-} in
+--plan) mode=plan ;;
+--parts) mode=parts ;;
+--shares) mode=shares ;;
+"") ;;
+*)
+	echo "changed.sh: --plan, --parts, --shares or nothing, not $1" >&2
+	exit 2
+	;;
+esac
+
+all_parts="lint interface unit fuzz walks build outside"
+for p in $PART; do
+	case " $all_parts " in *" $p "*) ;; *)
+		echo "changed.sh: PART is one or more of $all_parts, not $p" >&2
+		exit 2
+		;;
+	esac
+done
+if [ -n "$SHARD" ]; then
+	case $PART in unit | walks) ;; *)
+		echo "changed.sh: SHARD takes one part, unit or walks, not \"$PART\"" >&2
+		exit 2
+		;;
+	esac
+fi
+
+# wanted PART: this run is asked for that part.
+wanted() {
+	[ -z "$PART" ] && return 0
+	case " $PART " in *" $1 "*) return 0 ;; esac
+	return 1
+}
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$root"
 
 say() { echo "$*" >&2; }
 
+# The interface needs no Go, and its job has none, so only a run that
+# asks for nothing but the interface goes without it.
+need_go=1
+[ "$PART" = interface ] && need_go=0
+
 # What changed: the branch's commits since it left main, what is changed
 # and not committed, and new files git does not know yet.
+base=""
 if [ -n "${CHANGED+x}" ]; then
 	changed=$CHANGED
+elif [ "${EVERYTHING:-}" = 1 ]; then
+	changed=""
 else
 	base=${BASE:-}
 	if [ -z "$base" ]; then
@@ -74,25 +122,28 @@ else
 	} | sort -u)
 fi
 
-if [ -z "$changed" ]; then
-	say "nothing changed against main, so nothing runs"
-	exit 0
+# The modules first, the same check make does before it builds, so a
+# go.mod that changed is resolved before anything reads it. Only Go is
+# needed to know which packages import which, not the C compiler and the
+# libraries the build checks for, which CI's first job does not have.
+# What it says goes to stderr, so the plan on stdout stays the plan.
+if [ "$need_go" = 1 ] && [ -z "${CHANGED+x}" ]; then
+	$MAKE -s --no-print-directory modules >&2
 fi
 
-# Go and the modules first, the same check make does before it builds,
-# so a go.mod that changed is resolved before anything reads it. What
-# they say goes to stderr, so a tool that is missing is named, and the
-# plan on stdout stays the plan.
-[ -z "${CHANGED+x}" ] && $MAKE -s --no-print-directory toolchain modules >&2
-
-# Every package of the module, as a directory relative to the top.
-module=$($GO list -m)
-packages=$($GO list -f '{{.Dir}}' ./... | sed "s|^$root/\{0,1\}||; s|^$|.|")
+module=""
+packages=""
+if [ "$need_go" = 1 ]; then
+	module=$($GO list -m)
+	# Every package of the module, as a directory relative to the top.
+	packages=$($GO list -f '{{.Dir}}' ./... | sed "s|^$root/\{0,1\}||; s|^$|.|")
+fi
 
 # The package a file belongs to: the nearest directory above it that is
 # a package. A file in testdata/, or one a package embeds, belongs to the
 # package it sits in.
 package_of() {
+	[ "$need_go" = 1 ] || return 0
 	dir=$(dirname -- "$1")
 	while :; do
 		if printf '%s\n' "$packages" | grep -qxF "$dir"; then
@@ -110,15 +161,28 @@ package_of() {
 # by, "../frontend/..." in quotes, so a file a test only names in a
 # comment does not count.
 read_by_tests() {
+	[ "$need_go" = 1 ] || return 0
 	for t in $(grep -rlF --include='*_test.go' --exclude-dir=node_modules --exclude-dir=.build --exclude-dir=.git -- "../$1\"" . 2>/dev/null); do
 		gopkgs="$gopkgs $(package_of "${t#./}")"
 	done
+}
+
+# names_videos adds the test of how the video endings are named, which
+# reads the docs and the source of these folders, see internal/naming.
+names_videos() {
+	[ "$need_go" = 1 ] || return 0
+	case $1 in
+	README.md | CLAUDE.md | docs/* | engine/* | asr/* | train/* | cmd/* | frontend/src/* | scripts/*)
+		gopkgs="$gopkgs $module/internal/naming"
+		;;
+	esac
 }
 
 # runs_the_decoder adds the package of every Go test that runs the
 # episode's decoder as a program, through FRAMEFAIRY_FRAMES. They do not
 # import it, so the imports never lead to them.
 runs_the_decoder() {
+	[ "$need_go" = 1 ] || return 0
 	for t in $(grep -rlF --include='*_test.go' --exclude-dir=node_modules --exclude-dir=.build --exclude-dir=.git FRAMEFAIRY_FRAMES . 2>/dev/null); do
 		gopkgs="$gopkgs $(package_of "${t#./}")"
 	done
@@ -126,143 +190,140 @@ runs_the_decoder() {
 
 gopkgs=""
 alone=""
-gofiles=""
 all_go=0
+lint=0
 interface=0
 walks=0
 build=0
-rules=0
-changed_rules=0
-build_rules=0
-moved_rules=0
-plan_rules=0
-lint=0
-lint_rules=0
-workflows=""
-shells=""
+
+# ships: what the app or a program is made of, so the build and, on a
+# Mac, the app opened from outside.
+ships() { build=1; }
+
+# everything: a file that decides how every part runs.
+everything() {
+	all_go=1
+	lint=1
+	interface=1
+	walks=1
+	build=1
+}
+
+[ "${EVERYTHING:-}" = 1 ] && everything
 
 for file in $changed; do
+	names_videos "$file"
 	case $file in
-	# The plan is history, and the check that keeps it so runs on it.
-	docs/GUI-PLAN.md) plan_rules=1 ;;
+	# The plan is history, and the check that keeps it so is in make
+	# lint.
+	docs/GUI-PLAN.md) lint=1 ;;
 	*.md | docs/* | LICENSE | .claude/* | .vscode/*) ;;
 	# The linters that keep tests off the clock, and the test that proves
 	# them. make interface runs ESLint, and the packages are ESLint's too.
-	.golangci.yml | scripts/lint-test.sh | scripts/testdata/lint/*)
-		lint=1
-		lint_rules=1
-		;;
+	.golangci.yml | scripts/lint-test.sh | scripts/testdata/lint/*) lint=1 ;;
 	frontend/eslint.config.js | frontend/eslint-suppressions.json)
 		interface=1
-		lint_rules=1
+		lint=1
 		;;
 	frontend/package.json | frontend/package-lock.json)
 		interface=1
 		walks=1
-		lint_rules=1
+		lint=1
+		ships
 		read_by_tests "$file"
 		;;
-	frontend/preview/walks/* | frontend/preview/wails-bridge.ts | frontend/preview/settled.ts | frontend/preview/standing.ts | frontend/preview/bridge.config.ts | frontend/preview/vite.config.ts)
-		interface=1
-		walks=1
-		read_by_tests "$file"
-		;;
+	# How long each run of the walks took, which only shares them out.
+	frontend/preview/walks/walk-times.tsv) interface=1 ;;
+	# The preview and the walk harness: what the walks are built from and
+	# run, and none of it ships.
 	frontend/preview/*)
 		interface=1
+		walks=1
 		read_by_tests "$file"
 		;;
 	frontend/*)
 		interface=1
 		walks=1
+		ships
 		read_by_tests "$file"
 		;;
-	go.mod | go.sum) all_go=1 ;;
-	# make unit and the job linux decide how the Go tests run, the
-	# flags, the PATH and the shards, so a change to either runs them all.
-	Makefile)
-		build=1
+	go.mod | go.sum)
 		all_go=1
+		lint=1
+		ships
 		;;
-	.github/ci-filters.yml) rules=1 ;;
-	scripts/ci-filters-test.sh)
-		rules=1
-		shells="$shells $file"
+	# What defines CI's jobs, and the scripts every job runs, decide
+	# how every part runs.
+	Makefile | .github/workflows/ci.yml | scripts/changed.sh | scripts/test-failures.sh | scripts/leftovers.sh) everything ;;
+	# The machine every Linux job runs in, so every part that runs there.
+	# No Mac runs in it, so a Mac has nothing to check.
+	.github/ci-image/* | .github/workflows/ci-image.yml | scripts/ci-packages.sh)
+		if [ "$OS" != Darwin ]; then
+			everything
+			interface=0
+		fi
 		;;
-	scripts/changed.sh | scripts/changed-test.sh)
-		changed_rules=1
-		shells="$shells $file"
-		;;
-	scripts/needs-build.sh | scripts/needs-build-test.sh)
-		build_rules=1
-		shells="$shells $file"
-		;;
-	scripts/main-moved.sh | scripts/main-moved-test.sh)
-		moved_rules=1
-		shells="$shells $file"
-		;;
-	scripts/plan-frozen.sh | scripts/plan-frozen-test.sh)
-		plan_rules=1
-		shells="$shells $file"
-		;;
-	# The Go jobs run these, so they decide how the tests run and what
-	# is fuzzed, like the Makefile.
-	scripts/fuzz.sh | scripts/ci-packages.sh)
-		shells="$shells $file"
-		build=1
+	# make unit and make fuzz run these, so they decide how the Go tests
+	# run, like the Makefile.
+	scripts/fuzz.sh)
 		all_go=1
+		lint=1
 		;;
+	# The rules of the repository, which make lint tests, and this
+	# script and its test among them.
+	scripts/changed-test.sh | scripts/needs-build.sh | scripts/needs-build-test.sh | scripts/main-moved.sh | scripts/main-moved-test.sh | scripts/plan-frozen.sh | scripts/plan-frozen-test.sh | scripts/pins.sh) lint=1 ;;
 	*.sh)
-		shells="$shells $file"
-		build=1
+		lint=1
+		ships
 		# The notices test reads the build scripts for the versions they
-		# pin, and a raised version passed here and failed in CI.
+		# pin, and a raised version once passed here and failed in CI.
 		read_by_tests "$file"
 		# The decoder is built against the ffmpeg this builds.
-		[ "$file" = scripts/build-ffmpeg.sh ] && runs_the_decoder
+		if [ "$file" = scripts/build-ffmpeg.sh ]; then
+			runs_the_decoder
+			walks=1
+		fi
 		;;
+	# Every workflow is read by internal/workflows, and its pins and the
+	# rules for builds and the Main moved notice are in make lint.
 	.github/workflows/*)
-		workflows="$workflows $file"
-		# The CI workflow runs the rules, so a change to it runs them too,
-		# and the builds and publish workflows are what the rule for a
-		# build is for.
-		case $file in
-		*/ci.yml)
-			rules=1
-			all_go=1
-			;;
-		*/builds.yml | */publish.yml) build_rules=1 ;;
-		*/main-moved.yml) moved_rules=1 ;;
-		esac
-		;;
-	# Every Linux job of CI runs in the CI image, so a change to it is a
-	# change to the machine every test runs on.
-	.github/ci-image/*)
-		build=1
-		all_go=1
+		lint=1
+		[ "$need_go" = 1 ] && gopkgs="$gopkgs $module/internal/workflows"
 		;;
 	.github/*) ;;
 	*)
 		pkg=$(package_of "$file")
 		if [ -n "$pkg" ]; then
 			gopkgs="$gopkgs $pkg"
-			case $file in *.go) [ -f "$file" ] && gofiles="$gofiles $file" ;; esac
 			case $file in
 			# internal/offdisk and internal/ffmpegtest have a test that
 			# reads every test file, so a changed test is what reaches
-			# them, and make lint too. Their own tests and no more: the
-			# engine's tests import ffmpegtest, and a changed test is no
-			# change to it.
+			# them. Their own tests and no more: the engine's tests
+			# import ffmpegtest, and a changed test is no change to it.
 			*_test.go)
-				alone="$alone $module/internal/offdisk $module/internal/ffmpegtest"
 				lint=1
+				alone="$alone $module/internal/offdisk $module/internal/ffmpegtest"
 				;;
-			cmd/framefairy-frames/*) runs_the_decoder ;;
+			*/testdata/*) ;;
+			*.go)
+				lint=1
+				ships
+				;;
+			*) ships ;;
+			esac
+			case $file in
+			cmd/framefairy-frames/*_test.go) ;;
+			# Every frame the walks show comes from the decoder.
+			cmd/framefairy-frames/*)
+				runs_the_decoder
+				walks=1
+				;;
+			esac
 			# The notices test counts these by a path it builds, which
 			# read_by_tests cannot find.
-			engine/hyphenation/*) gopkgs="$gopkgs $module/notices" ;;
-			esac
-		else
-			build=1
+			case $file in engine/hyphenation/*) gopkgs="$gopkgs $module/notices" ;; esac
+		elif [ "$need_go" = 1 ]; then
+			ships
 		fi
 		;;
 	esac
@@ -271,79 +332,45 @@ done
 # The packages a change reaches: the ones that changed and every package
 # whose code or tests import them, however far down.
 affected=""
-if [ "$all_go" = 1 ]; then
-	affected=$($GO list ./...)
-elif [ -n "$gopkgs" ]; then
-	gopkgs=$(printf '%s\n' $gopkgs | sort -u)
-	affected=$($GO list -test -f '{{.ImportPath}} {{join .Deps " "}}' ./... |
-		while read -r pkg deps; do
-			# A test variant reads "p [p.test]" and p.test is its binary.
-			# Each pattern opens with "(" because the bash 3.2 of macOS
-			# reads a lone ")" inside $( ) as its end.
-			case $pkg in (*.test) continue ;; esac
-			pkg=${pkg%% *}
-			# An external test package, x_test, is tested as x.
-			pkg=${pkg%_test}
-			for c in $gopkgs; do
-				case " $pkg $deps " in (*" $c "*)
-					echo "$pkg"
-					break
-					;;
-				esac
-			done
-		done | sort -u)
+if [ "$need_go" = 1 ]; then
+	if [ "$all_go" = 1 ]; then
+		affected=$($GO list ./...)
+	elif [ -n "$gopkgs" ]; then
+		gopkgs=$(printf '%s\n' $gopkgs | sort -u)
+		affected=$($GO list -test -f '{{.ImportPath}} {{join .Deps " "}}' ./... |
+			while read -r pkg deps; do
+				# A test variant reads "p [p.test]" and p.test is its binary.
+				# Each pattern opens with "(" because the bash 3.2 of macOS
+				# reads a lone ")" inside $( ) as its end.
+				case $pkg in (*.test) continue ;; esac
+				pkg=${pkg%% *}
+				# An external test package, x_test, is tested as x.
+				pkg=${pkg%_test}
+				for c in $gopkgs; do
+					case " $pkg $deps " in (*" $c "*)
+						echo "$pkg"
+						break
+						;;
+					esac
+				done
+			done | sort -u)
+	fi
+	[ -n "$alone" ] && affected=$(printf '%s\n' $affected $alone | sort -u)
+	# What make unit leaves out on this machine, see UNITSKIP in the
+	# Makefile, so a change only to those starts no machine for them.
+	for s in ${UNITSKIP:-}; do
+		affected=$(printf '%s\n' $affected | grep -vxF "$s" || true)
+	done
 fi
-[ -n "$alone" ] && affected=$(printf '%s\n' $affected $alone | sort -u)
 
-# What will run, said first, so a run that is less than expected is seen
-# before it is trusted.
 # The walks drive the interface against the app's Go side, so whatever
 # reaches the app reaches them, the engine among it.
+app=0
 for p in $affected; do
-	[ "$p" = "$module/cmd/framefairy-app" ] && walks=1
+	[ "$p" = "$module/cmd/framefairy-app" ] && app=1
 done
-
-[ -n "$gofiles" ] && say "gofmt:     $(echo $gofiles)"
-if [ -n "$affected" ]; then
-	short=""
-	for p in $affected; do
-		case $p in "$module") p=. ;; "$module"/*) p=${p#"$module"/} ;; esac
-		short="$short $p"
-	done
-	say "go test:  $short"
-fi
-[ "$interface" = 1 ] && say "interface: make interface"
-[ "$walks" = 1 ] && say "walks:     make walks"
-[ "$build" = 1 ] && say "build:     make"
-[ "$rules" = 1 ] && say "rules:     scripts/ci-filters-test.sh"
-[ "$changed_rules" = 1 ] && say "rules:     scripts/changed-test.sh"
-[ "$build_rules" = 1 ] && say "rules:     scripts/needs-build-test.sh"
-[ "$moved_rules" = 1 ] && say "rules:     scripts/main-moved-test.sh"
-[ "$plan_rules" = 1 ] && say "rules:     scripts/plan-frozen-test.sh, scripts/plan-frozen.sh"
-[ "$lint" = 1 ] && say "lint:      make lint"
-[ "$lint_rules" = 1 ] && say "rules:     scripts/lint-test.sh"
-[ -n "$shells" ] && say "scripts:   read by the shell each names$shells"
-[ -n "$workflows" ] && say "workflows:$workflows"
-if [ -z "$gofiles$affected$shells$workflows" ] && [ "$interface$walks$build$rules$changed_rules$build_rules$moved_rules$plan_rules$lint$lint_rules" = 0000000000 ]; then
-	say "only docs changed, so nothing runs"
-fi
-
-if [ "$plan_only" = 1 ]; then
-	# One word per line for the tests: what kind, then what.
-	for p in $affected; do echo "go $p"; done
-	[ "$interface" = 1 ] && echo interface
-	[ "$walks" = 1 ] && echo walks
-	[ "$build" = 1 ] && echo build
-	[ "$rules" = 1 ] && echo rules
-	[ "$changed_rules" = 1 ] && echo changed-rules
-	[ "$build_rules" = 1 ] && echo build-rules
-	[ "$moved_rules" = 1 ] && echo moved-rules
-	[ "$plan_rules" = 1 ] && echo plan-rules
-	[ "$lint" = 1 ] && echo lint
-	[ "$lint_rules" = 1 ] && echo lint-rules
-	for s in $shells; do echo "script $s"; done
-	for w in $workflows; do echo "workflow $w"; done
-	exit 0
+if [ "$app" = 1 ]; then
+	walks=1
 fi
 
 # The fuzz targets of the packages a change reaches, by name on one line.
@@ -351,97 +378,129 @@ fi
 # went through a changed file. For a change to engine/clips.go that took
 # 122 s, where fuzzing every target of those packages took 46 s, so a
 # package that is tested is fuzzed whole.
-fuzz_targets() {
-	all=$(sh scripts/fuzz.sh --list)
-	targets=""
+targets=""
+if [ -n "$affected" ]; then
+	list=$(sh scripts/fuzz.sh --list)
 	for pkg in $affected; do
 		dir=${pkg#"$module"}
 		dir=${dir#/}
 		[ -z "$dir" ] && dir=.
-		targets="$targets $(printf '%s\n' "$all" | awk -v d="./$dir" '$1 == d { print $2 }')"
+		targets="$targets $(printf '%s\n' "$list" | awk -v d="./$dir" '$1 == d { print $2 }')"
 	done
-	echo $targets
-}
+	targets=$(echo $targets)
+fi
 
-# --fuzz-targets says them and stops, which is how CI hands them to make
-# fuzz on a pull request.
-if [ "${1:-}" = "--fuzz-targets" ]; then
-	targets=$(fuzz_targets)
-	echo "$targets"
+# The parts with work, in the order make changed runs them: the quickest
+# answer first. Away from a Mac nothing opens the app from outside, and
+# on one it runs only in CI, see make outside.
+parts=""
+[ "$lint" = 1 ] && parts="$parts lint"
+[ "$interface" = 1 ] && parts="$parts interface"
+[ -n "$affected" ] && parts="$parts unit"
+[ -n "$targets" ] && parts="$parts fuzz"
+[ "$walks" = 1 ] && parts="$parts walks"
+[ "$build" = 1 ] && parts="$parts build"
+[ "$build" = 1 ] && [ "$OS" = Darwin ] && [ -n "${CI:-}" ] && parts="$parts outside"
+ran=""
+for p in $parts; do wanted "$p" && ran="$ran $p"; done
+ran=${ran# }
+
+if [ "$mode" = parts ]; then
+	echo "$ran"
 	exit 0
 fi
 
-if [ -n "$gofiles" ]; then
-	unformatted=$(gofmt -l $gofiles)
-	if [ -n "$unformatted" ]; then
-		echo "FAIL	gofmt, run gofmt -w on:"
-		echo "$unformatted"
-		exit 1
-	fi
-	printf 'ok  \tgofmt\n'
+# The machines the unit tests need: three for the engine or the app,
+# whose tests are most of the time, and one for anything else.
+if [ "$mode" = shares ]; then
+	unit=1
+	for a in $affected; do
+		case $a in "$module/engine" | "$module/cmd/framefairy-app") unit=3 ;; esac
+	done
+	list() {
+		out=""
+		i=1
+		while [ "$i" -le "$1" ]; do
+			out="$out,\"$i/$1\""
+			i=$((i + 1))
+		done
+		echo "[${out#,}]"
+	}
+	echo "unit=$(list $unit)"
+	exit 0
 fi
 
-if [ -n "$affected" ]; then
-	$GO vet $affected
-	printf 'ok  \tgo vet\n'
-	# The same flags and the same PATH make unit passes, so a test here is
-	# the test there. The walks below keep the PATH they came with, see
-	# the Makefile.
-	path=$PATH
-	PATH=${TOOLS_FIRST:-$PATH}
-	$GO test -race -timeout "${UNITTIMEOUT:-10m}" -ldflags "${LDFLAGS:-}" $affected
-	targets=$(fuzz_targets)
-	if [ -n "$targets" ]; then
-		GO=$GO FUZZTIME=$FUZZTIME FUZZTARGETS="$targets" sh scripts/fuzz.sh
+# What will run, said first, so a run that is less than expected is seen
+# before it is trusted.
+if [ -z "$ran" ]; then
+	if [ -z "$changed" ] && [ "${EVERYTHING:-}" != 1 ]; then
+		say "nothing changed against main, so nothing runs"
+	else
+		say "nothing here for ${PART:-any part}, so nothing runs"
 	fi
-	PATH=$path
 fi
-
-[ "$interface" = 1 ] && $MAKE -s --no-print-directory interface
-[ "$lint" = 1 ] && $MAKE -s --no-print-directory lint
-[ "$walks" = 1 ] && $MAKE -s --no-print-directory walks
-
-# A script is read by the shell its first line names, so a bash script is not
-# failed for being bash. One the branch removed has nothing to read.
-for s in $shells; do
-	[ -f "$s" ] || continue
-	case $(head -n 1 "$s") in
-	*bash*) bash -n "$s" ;;
-	*) sh -n "$s" ;;
+for p in $ran; do
+	case $p in
+	unit)
+		short=""
+		for a in $affected; do
+			case $a in "$module") a=. ;; "$module"/*) a=${a#"$module"/} ;; esac
+			short="$short $a"
+		done
+		say "unit:     $short"
+		;;
+	fuzz) say "fuzz:      $targets" ;;
+	*) say "$p" ;;
 	esac
 done
-[ -n "$shells" ] && printf 'ok  \tscripts read\n'
 
-for w in $workflows; do
-	if [ -f "$w" ] && command -v python3 >/dev/null 2>&1 &&
-		python3 -c 'import yaml' 2>/dev/null; then
-		python3 -c 'import sys, yaml; yaml.safe_load(open(sys.argv[1]))' "$w"
-		printf 'ok  \t%s reads\n' "$w"
-	fi
+if [ "$mode" = plan ]; then
+	# One word per line for the tests: the part, then what of it.
+	for p in $ran; do
+		echo "$p"
+		case $p in
+		unit) for a in $affected; do echo "go $a"; done ;;
+		fuzz) for t in $targets; do echo "fuzz $t"; done ;;
+		esac
+	done
+	exit 0
+fi
+
+# Each part through its own make target. A push to main tests ./..., the
+# same packages by the same name the targets take by default.
+pkgs=$affected
+[ "${EVERYTHING:-}" = 1 ] && pkgs=./...
+[ "${EVERYTHING:-}" = 1 ] && targets=""
+for p in $ran; do
+	case $p in
+	lint) $MAKE -s --no-print-directory lint ;;
+	interface) $MAKE -s --no-print-directory interface ;;
+	unit) $MAKE -s --no-print-directory unit UNITPKGS="$pkgs" UNITSHARD="$SHARD" ;;
+	fuzz) $MAKE -s --no-print-directory fuzz FUZZTARGETS="$targets" ;;
+	walks) $MAKE -s --no-print-directory walks WALKSHARD="$SHARD" ;;
+	build)
+		# Away from a Mac nothing builds the tools we ship, and make
+		# stops without them, so there the build proves the programs
+		# build and says it goes without. On a Mac it builds them, and
+		# a warning from clang or the linker fails it.
+		if [ "$OS" = Darwin ]; then
+			log=$(mktemp)
+			status=0
+			$MAKE -s --no-print-directory 2>&1 | tee "$log" || status=1
+			# tee hides make's own status, so a failed build is read
+			# from what it printed as well.
+			if [ "$status" = 0 ] && grep -iE "warning|deprecated" "$log" >/dev/null; then
+				grep -iE "warning|deprecated" "$log"
+				echo "FAIL	the build printed warnings, see above"
+				status=1
+			fi
+			rm -f "$log"
+			[ "$status" = 0 ] || exit 1
+		else
+			$MAKE -s --no-print-directory NOTOOLS=1
+		fi
+		;;
+	outside) $MAKE -s --no-print-directory outside ;;
+	esac
 done
-
-[ -n "$workflows" ] && sh scripts/pins.sh
-[ "$rules" = 1 ] && sh scripts/ci-filters-test.sh
-[ "$changed_rules" = 1 ] && sh scripts/changed-test.sh
-[ "$build_rules" = 1 ] && sh scripts/needs-build-test.sh
-[ "$moved_rules" = 1 ] && sh scripts/main-moved-test.sh
-if [ "$lint_rules" = 1 ]; then
-	$MAKE -s --no-print-directory golangci-lint frontend/node_modules/.package-lock.json
-	sh scripts/lint-test.sh
-fi
-if [ "$plan_rules" = 1 ]; then
-	sh scripts/plan-frozen-test.sh
-	sh scripts/plan-frozen.sh ${base:-}
-fi
-# Away from a Mac nothing builds the tools we ship, and make stops without
-# them, so there the build proves the programs build and says it goes
-# without, the way CI's Linux job does. On a Mac make builds them.
-if [ "$build" = 1 ]; then
-	if [ "$(uname -s 2>/dev/null)" = Darwin ]; then
-		$MAKE -s --no-print-directory
-	else
-		$MAKE -s --no-print-directory NOTOOLS=1
-	fi
-fi
-
 exit 0
