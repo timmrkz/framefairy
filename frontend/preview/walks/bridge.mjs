@@ -96,9 +96,26 @@ export async function slowDown(page) {
 // No action and no wait of Playwright's on page gives up after a time of
 // its own, 30 s unless set: a wait that never ends is ended by the
 // -timeout of make walks, which says which walk it was and what it said
-// last. Every page a walk opens goes through it, the report window too.
+// last, and what it waited on last, see waitsOn. Every page a walk opens
+// goes through it, the report window too, and what the page says it
+// waits on is passed on, see preview/waits.ts.
 export function noDeadlines(page) {
   page.setDefaultTimeout(0);
+  if (!process.env.WALK_WAITS) return;
+  page.on("console", (m) => {
+    const said = m.text();
+    if (said.startsWith(WAITS)) process.stdout.write(`${said}\n`);
+  });
+}
+
+// Says what the walk waits on now, on a line of its own that the walks
+// in bridge_test.go keep back and say only when the test's time stopped
+// the walk, issue #556. The waits in the page say more, the calls still
+// out or why the picture does not stand, see preview/waits.ts. Only with
+// WALK_WAITS, which TestWalks sets, so a walk run by hand prints none.
+const WAITS = "\x1ewaits ";
+export function waitsOn(what) {
+  if (process.env.WALK_WAITS) process.stdout.write(`${WAITS}${what}\n`);
 }
 
 // A browser for the walks to open the interface in. WebGPU on, which
@@ -162,6 +179,7 @@ export async function open(url, { viewport = { width: 1500, height: 1000 }, scal
 // moment. The page answers when the last of them ends, __settled in
 // preview/settled.ts, and the walk only waits for that answer.
 export async function settle(page) {
+  waitsOn("the app to settle");
   await page.evaluate((held) => window.__settled(held), Boolean(page.__held));
 }
 
@@ -442,6 +460,7 @@ async function notTwice(page, x, y) {
 // Waits for the page to draw n frames, so whatever the walk did last has
 // reached the screen however busy the machine is.
 export async function nextPaint(page, n = 1) {
+  waitsOn(`the page to draw ${n} frames`);
   await page.evaluate(
     (n) =>
       new Promise((r) => {
@@ -872,6 +891,7 @@ export async function fromSidebar(page, click) {
 // the step the walk printed last. seenUntil is the same wait for a read
 // the walk makes itself.
 export function pageUntil(page, fn, arg) {
+  waitsOn(`the page to change until ${String(fn).slice(0, 200)}`);
   return page.evaluate(
     ([source, arg]) =>
       new Promise((done) => {

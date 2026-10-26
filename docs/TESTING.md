@@ -725,7 +725,14 @@ share takes about two and a half, issue #461. A minute before it,
 `TestWalks` stops every walk still running and fails it with what it
 printed, and every walk writes `walking`, `walked` or `failed` with its
 name to stderr as it starts and ends, so a walk that hung is named,
-issue #443. And a check counts what the app drew against the frames the
+issue #443. It also says what it waited for when it was stopped. With
+`WALK_WAITS`, which `TestWalks` sets, every wait says what it waits on
+as it goes, `waitsOn` in `walks/bridge.mjs` and `preview/waits.ts`, on a
+line `TestWalks` keeps back: the calls still out and the app's timers
+for a settle, why the frame queue does not stand for a picture that has
+to, see `notStanding` in `lib/frames/queue.ts`. A stopped walk says the
+last of them, so the next hang names the signal that never came, issue
+#556. And a check counts what the app drew against the frames the
 screen drew, not against a number: a bounce is drawn on every frame the
 screen drew while it lasted, and the crop frame of a glide stands in a
 place of its own on every frame the play showed, so frames the screen

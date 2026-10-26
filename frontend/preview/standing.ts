@@ -9,8 +9,11 @@
 // the app's time is held, see holdClock in walks/bridge.mjs, and the
 // queue cannot come to stand by itself, so it answers false at once
 // instead of waiting for good. A walk that reads the picture once it
-// stands reads it in a then of this, so nothing comes between.
-type Queue = { standing: boolean; listen(fn: () => void): () => void };
+// stands reads it in a then of this, so nothing comes between. While it
+// waits it says why the queue does not stand, see waits.ts.
+import { waitsOn } from "./waits";
+
+type Queue = { standing: boolean; notStanding?: string; listen(fn: () => void): () => void };
 
 (window as any).__standing = (held = false) =>
   new Promise<boolean>((done) => {
@@ -24,7 +27,10 @@ type Queue = { standing: boolean; listen(fn: () => void): () => void };
         q = now;
         off = q ? q.listen(again) : () => {};
       }
-      if (q && !q.standing && !held) return;
+      if (q && !q.standing && !held) {
+        waitsOn(`the picture to stand: ${q.notStanding ?? "the frame queue has not said why"}`);
+        return;
+      }
       off();
       o.disconnect();
       done(!q || q.standing);

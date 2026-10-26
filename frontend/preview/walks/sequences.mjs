@@ -14,7 +14,7 @@
 // The episode is the bridge's, so the words are the sentences its speech
 // stand-in says: "Ich war vielleicht sechs Jahre alt, als mich auf dem
 // Schulhof irgendein Typ geschubst hat."
-import { chosen, newBrowser, open, settle, shown, shownOnPlayhead } from "./bridge.mjs";
+import { chosen, newBrowser, open, settle, shown, shownOnPlayhead, waitsOn } from "./bridge.mjs";
 import { moving, still, url } from "./common/steps.mjs";
 import { Watch } from "./rules.mjs";
 import captions from "./captions/sequences.mjs";
@@ -487,6 +487,7 @@ async function walkSequence(seq, shared = null) {
     // Each step is said as it begins, so a step that waits for good is
     // named when the -timeout of make walks stops the sequence.
     console.log(`      ${done.at(-1)}`);
+    waitsOn("nothing yet in this step");
     const s = await shown(page);
     const step = everyStep[what];
     if (!step) throw new Error(`no step called ${what}`);

@@ -833,6 +833,15 @@ export class FrameQueue {
     return this.sharpened === `${this.shown.rank} ${width} ${height}`;
   }
 
+  // Why the picture does not stand yet, in words, for a walk stopped while
+  // it waited for it, see preview/standing.ts.
+  get notStanding(): string {
+    if (this.standing) return "";
+    if (this.toldFor !== this.ticket) return `the frame queue is ${this.state} and its newest seek or cue, ${this.ticket}, has not said how it went, the last that did was ${this.toldFor}`;
+    const { width, height } = this.previewSize();
+    return `frame ${this.shown!.rank} is up at ${this.shown!.frame.width}x${this.shown!.frame.height} and not yet asked for again at the canvas's ${width}x${height}`;
+  }
+
   private get program(): Program {
     if (!this.movie) return new Program([], false);
     this.built ??= new Program(this.wanted.pieces ?? [{ start: 0, end: this.movie.duration }], this.wanted.loop);
