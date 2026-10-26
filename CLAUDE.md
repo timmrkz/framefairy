@@ -592,14 +592,19 @@ messages, pull request text, code comments and chat replies.
   `testing/synctest` bubble, whose line says
   `//nolint:forbidigo // synctest bubble`.
 - **A test that fails now and then is explained, not loaded.** Its
-  trace comes first: a walk that fails, throws or hangs keeps a
-  Playwright trace, in CI too. Then the order it assumes, read in the
-  code, then that one order made to happen on purpose, a call held, the
-  clock stepped, then the orders tried by a tool, the race detector or
+  trace comes first. A trace makes a walk slower, so only the walks
+  `frontend/preview/walks/traced.mjs` names record one: a walk that
+  fails at random with no trace gets an issue and a line there, pushed
+  to the pull request it failed on, and its next failure in CI keeps a
+  Playwright trace. Then the order it assumes, read in the code, then
+  that one order made to happen on purpose, a call held, the clock
+  stepped, then the orders tried by a tool, the race detector or
   fast-check's scheduler. Loading the machine with busy loops comes
-  last. No test retries, in the runner or in a loop of its own. See
-  section 7 of the testing skill and Finding why a walk failed in
-  [docs/TESTING.md](docs/TESTING.md).
+  last. See section 7 of the testing skill and Finding why a walk failed
+  in [docs/TESTING.md](docs/TESTING.md).
+- **No test retries**, in the runner or in a loop of its own. A test
+  that passes on its second try is a failing test. See section 1 of the
+  testing skill.
 - **A fix to the interface comes with a walk** that does what Tim did and
   checks what he saw, so the fix is proven against the real Go side and
   Tim does not have to try it by hand to know it holds. See

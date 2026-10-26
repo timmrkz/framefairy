@@ -19,7 +19,10 @@ export async function begin({ steps: usual = 60 } = {}) {
   const url = process.env.BRIDGE_URL ?? "http://127.0.0.1:8123/";
   const seed = Number(process.env.SEED ?? Math.floor(Math.random() * 1e6));
   const steps = Number(process.env.STEPS || usual);
-  traceAs(`${basename(process.argv[1])} SEED=${seed}${process.env.HEVC ? " HEVC=1" : ""}`);
+  // Traced when traced.mjs names the walk's file, or its file and seed.
+  const file = basename(process.argv[1]);
+  const title = `${file} SEED=${seed}${process.env.HEVC ? " HEVC=1" : ""}`;
+  traceAs(title, [file, title]);
   // Opening the video, adding the HEVC one and reading the clip on screen
   // can throw before the walk's first step, and that is as worth a trace
   // as any step is, so everything after the page is open keeps one.

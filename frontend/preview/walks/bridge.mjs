@@ -5,6 +5,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { chromium } from "playwright";
+import { traced as tracedList } from "./traced.mjs";
 
 // The Chromium the pinned Playwright was made for. CI's image holds only
 // its headless shell, which a headless launch finds by itself, so there
@@ -123,26 +124,37 @@ export async function newBrowser() {
   return browser;
 }
 
-// WALKTRACES names a folder, and every page a walk opens is recorded in a
-// Playwright trace: each call of the walk's with when it began and
-// ended, what the page logged and threw, every request to the Go side
-// with its timing, and a film of the screen. A walk that
-// passed throws its traces away. One that failed, threw or was stopped
-// keeps them in the folder, one file for each page it had open, and says
-// where, so a walk that failed once in CI comes with what happened in
-// it, and nobody has to make it fail again to see. See Finding why a walk
-// failed in docs/TESTING.md. make walks sets it.
+// WALKTRACES names a folder, and every page a traced walk opens is
+// recorded in a Playwright trace: each call of the walk's with when it
+// began and ended, what the page logged and threw, every request to the
+// Go side with its timing, and a film of the screen. A walk that passed
+// throws its traces away. One that failed, threw or was stopped keeps
+// them in the folder, one file for each page it had open, and says
+// where, so a walk that failed in CI comes with what happened in it, and
+// nobody has to make it fail again to see. A walk is traced when
+// traced.mjs names it, or every walk is with TRACE=all, and none with
+// TRACE=none. See Finding why a walk failed in docs/TESTING.md. make
+// walks sets both.
 const traces = process.env.WALKTRACES;
+const tracingWhich = process.env.TRACE || "listed";
+if (!["listed", "all", "none"].includes(tracingWhich)) {
+  throw new Error(`TRACE is listed, all or none, not ${JSON.stringify(tracingWhich)}`);
+}
 const tracing = new Set();
 let tracedAs = "walk";
+let tracingNow = false;
 
 // The name the traces a walk keeps are filed under, its sequence or its
-// script and seed.
-export function traceAs(name) {
-  tracedAs = name;
+// script and seed, and whether it is traced: names are what traced.mjs
+// knows it by, its sequence's name, or its script and its script with
+// the seed.
+export function traceAs(title, names = [title]) {
+  tracedAs = title;
+  tracingNow = Boolean(traces) && (tracingWhich === "all" || (tracingWhich === "listed" && names.some((n) => n in tracedList)));
 }
 
 async function traced(page) {
+  if (!tracingNow) return;
   const context = page.context();
   // The page as it was before and after every call, snapshots, made
   // eight sequences take 41 % longer in a cloud session, and put a walks
@@ -157,7 +169,7 @@ async function traced(page) {
 // the walk prints it, so the trace reads step by step. Ends the group the
 // step before left open.
 export async function traceStep(page, name) {
-  if (!traces) return;
+  if (!tracing.has(page.context())) return;
   const { tracing: t } = page.context();
   if (page.__traceStep) await t.groupEnd();
   page.__traceStep = true;
@@ -168,7 +180,7 @@ export async function traceStep(page, name) {
 // Pages closed before were let go of, as a walk lets go of a report
 // window once it is done with it.
 export async function keepTraces() {
-  if (!traces) return;
+  if (!tracing.size) return;
   mkdirSync(traces, { recursive: true });
   const file = tracedAs.replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "").slice(0, 100);
   let n = 0;

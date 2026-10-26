@@ -61,6 +61,18 @@ to use them, and what to push for where they are missing.
   section 12. Where CI has none yet, break the code by hand once and see
   the test fail, and push for the tool. The same holds when an existing
   test is rewritten: the rewrite must still fail where the old one did.
+- **No retries.** A test passes on its first try or it has failed. A
+  retry, a runner's retry setting, a rerun in CI or a loop that reads or
+  acts again until the answer suits it, wherever it is written, lets a
+  test pass with the code broken, and hides the very order a flaky test
+  is about. A runner's retry setting stays at zero. What is left is a
+  gesture that corrects itself the way a person does, a hand that aims
+  again after a near miss, a check of a product's own retries, or a
+  comparison the test makes again because the state it compared has
+  moved on since, never because the same state gave an answer it did
+  not like. Each one says so where it is, and the project keeps a
+  complete list of them, so the next reader does not have to judge each
+  loop again.
 - **Not every line earns a test.** Glue that only passes values on, code
   a library already tests, a log line's wording: leave them. Spend tests
   where a mistake would reach a person.
@@ -420,7 +432,7 @@ step had finished, or waited for a signal that had already gone by, or
 the code under test met the two halves of its work in an order nobody
 thought of. Find that order with these, in this order:
 
-1. **Read what the failure left.** The runner keeps a trace of every
+1. **Read what the failure left.** The runner keeps a trace of a
    test that failed, and keeps it in CI with the run. Playwright's
    trace has every action, the console, the network, a film of the
    screen and, where a project pays for them, snapshots of the page
@@ -428,7 +440,13 @@ thought of. Find that order with these, in this order:
    looking for what it left out. The race detector has its
    report, and `go test -timeout` prints every goroutine. Most flakes are
    explained there, without running anything. Where the runner keeps
-   no trace of a failure yet, that is the first thing to fix.
+   no trace of a failure yet, that is the first thing to fix. Where a
+   trace costs every run too much time, record it only for the tests
+   that have failed at random, in one list that names the issue for
+   each. A test that fails at random with nothing to read is then not
+   chased on the spot: it gets an issue and a line in that list, and
+   the work goes on. Its next failure comes with its trace, and the
+   change that fixes it takes its line out.
 2. **Read the code for the order it assumes.** Name the event the test
    waits for and where the code sends it. Ask whether the test could
    read before it, and whether the event could come before the test
@@ -456,16 +474,6 @@ thought of. Find that order with these, in this order:
 Debug logs added to see the order are step 1 done late: the trace
 should already hold them. A log line that would have explained the
 failure belongs in the trace or the product's logs for good.
-
-No test retries. A loop that reads or acts again until the answer
-suits it is a retry, wherever it is written, and it hides the very
-order this section is about. What is left is a gesture that corrects
-itself the way a person does, a hand that aims again after a near
-miss, a check of a product's own retries, or a comparison the test
-makes again because the state it compared has moved on since, and
-never because the same state gave an answer it did not like. Each one
-says so where it is, and the project's own list of them is complete,
-so the next reader does not have to judge each loop again.
 
 ### Red and hanging checks
 
@@ -574,8 +582,6 @@ A test is code we keep. It must still be right and readable in a year.
 - **The whole product, the way a person uses it.** An end-to-end test
   goes from one part of the product to another, as a person does. A test
   of one component is no replacement for it.
-- **No retries.** A test that passes on its second try is a failing test.
-  A runner's retry setting stays at zero.
 - **A test only proves what its fixture contains.** Make fixtures the way
   real inputs are: the encodings, sizes and odd shapes that come in from
   outside. Know what a fixture hides: a video at a low frame rate hides
@@ -676,7 +682,7 @@ wrong, and this skill wins:
 | sleep a few seconds for a service to start | a guess about time | the service says it is ready, and the test hears it |
 | a test's own timeout on `time.After` or a timer | a guess about time, and it hides where it hung | the test runner's own timeout |
 | `networkidle`, wait for the page to be quiet | quiet is a guess about time | the event the page sends when the step is done |
-| retry a flaky test, in the runner, in CI or in a loop in the test | a test that passes on its second try is failing | find the cause, section 7 |
+| retry a flaky test, in the runner, in CI or in a loop in the test | a test that passes on its second try is failing | no retries, section 1, and find the cause, section 7 |
 | load the machine to make a flaky test fail | it changes every timing at once and proves nothing when it passes | the trace, then the one order held on purpose, section 7 |
 | turn the test cache off to be safe | every run pays for every test | keep the cache, section 8 |
 | a coverage number as the bar | coverage is not verification | what matters verified, and mutation testing, section 1 |

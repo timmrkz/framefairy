@@ -831,23 +831,27 @@ machine with busy loops beside a walk comes last, if at all: it took
 many runs to show anything, it never showed #358, and the walks beside
 it hang, #508.
 
-1. **The trace.** `make walks` records a Playwright trace of every page
-   a walk or a sequence opens, into `WALKTRACES`, `.build/walk-traces`
-   unless set, `WALKTRACES=` for none. A walk that passed throws its
-   traces away. One that failed or threw keeps them, one zip for each
-   page it had open, the report window too, and prints `trace:` with
-   the path under its failure. One that hung is stopped by `TestWalks`
-   with an interrupt instead of a kill, so it keeps the traces of the
-   step it hung in, see `keepTraces` in `walks/bridge.mjs`. Each step is
-   a group in the trace, named the way the walk prints it. A trace holds
-   every call of the walk with when it began and ended, what the page
-   logged and threw, every request with its timing and a film of the
-   screen. It leaves out Playwright's snapshots of the page before and
-   after each call: eight sequences took 41 % longer with them in a
-   cloud session, and the film 15 %, and with both a walks job in CI
-   went over its five minutes. In CI a
-   walks job that failed keeps the folder with the run as
-   `walk-traces-0` to `walk-traces-3`, one for each share, for 14 days.
+1. **The trace.** A walk or a sequence that `walks/traced.mjs` names
+   records a Playwright trace of every page it opens, into
+   `WALKTRACES`, `.build/walk-traces` unless set. The others record
+   none, because a trace makes a walk slower: about a fifth with the
+   film of the screen, measured in CI on #558. `make walks TRACE=all`
+   traces every walk and sequence for that run, and `TRACE=none` none.
+   A traced walk that passed throws its traces away. One that failed or
+   threw keeps them, one zip for each page it had open, the report
+   window too, and prints `trace:` with the path under its failure. One
+   that hung is stopped by `TestWalks` with an interrupt instead of a
+   kill, so it keeps the traces of the step it hung in, see
+   `keepTraces` in `walks/bridge.mjs`. Each step is a group in the
+   trace, named the way the walk prints it. A trace holds every call of
+   the walk with when it began and ended, what the page logged and
+   threw, every request with its timing and a film of the screen. It
+   leaves out Playwright's snapshots of the page before and after each
+   call: eight sequences took 41 % longer with them in a cloud session,
+   and the film 15 %, and with both a walks job in CI went over its
+   five minutes. In CI a walks job that failed keeps the folder with the
+   run as `walk-traces-0` to `walk-traces-3`, one for each share, for
+   14 days.
    A session finds it with the GitHub tools,
    `list_workflow_run_artifacts` for the run and
    `download_workflow_run_artifact`, which gives a link to the zip. A
@@ -884,14 +888,29 @@ it hang, #508.
    above.
 6. **The machine under load,** last.
 
-No walk retries. A step that read or did something again until it
-liked the answer hid an order: the rules read the clip on screen up to
-twenty times while a search changed it, which `settledScreen` now reads
-in the one moment the app settled. `holdClock` asked Playwright again
-when the moment it had read was already past, and now goes on with the
-clock Playwright has held by then. Four kinds of loop stay, because each
-is a gesture a person makes, a wait on a signal, or a comparison with a
-state that moved:
+A walk that fails now and then with no trace to read is not chased on
+the spot. It gets an issue of its own, with what was seen and where, and
+a line in `walks/traced.mjs` with the issue's number, pushed to the pull
+request whose CI it failed on, and the work on that pull request goes
+on. The line is the one change a pull request carries that is not its
+own, because without it the next failure is as blind as this one. The
+next time it fails in CI, its trace is with the run, and that is when it
+is worth a session: step 1 above has something to read. The pull request
+that fixes it takes its line out again with `Fixes #N`. `sequences.mjs
+--names`, which every run of `make walks` asks first, fails on a line
+that names no walk or sequence, so a walk renamed or removed does not
+leave a line that records nothing.
+
+### No walk retries
+
+No walk retries, see section 1 of the testing skill. A step that read or
+did something again until it liked the answer hid an order: the rules
+read the clip on screen up to twenty times while a search changed it,
+which `settledScreen` now reads in the one moment the app settled.
+`holdClock` asked Playwright again when the moment it had read was
+already past, and now goes on with the clock Playwright has held by
+then. Four kinds of loop stay, because each is a gesture a person makes,
+a wait on a signal, or a comparison with a state that moved:
 
 - The steps that aim the playhead inside a frame or under a word scroll
   and click again, at most six and four times, in `playback/steps.mjs`

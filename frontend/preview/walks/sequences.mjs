@@ -16,6 +16,10 @@
 // Schulhof irgendein Typ geschubst hat."
 import { chosen, keepTraces, newBrowser, open, settle, shown, shownOnPlayhead, traceAs, traceStep } from "./bridge.mjs";
 import { moving, still, url } from "./common/steps.mjs";
+import { traced } from "./traced.mjs";
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Watch } from "./rules.mjs";
 import captions from "./captions/sequences.mjs";
 import timeline from "./timeline/sequences.mjs";
@@ -76,6 +80,15 @@ if (only === "--names") {
   const noStep = [...moving].filter((n) => !everyStep[n]);
   if (noStep.length) {
     console.log(`moving names ${JSON.stringify(noStep[0])}, which is no step`);
+    process.exit(1);
+  }
+  // A walk renamed or removed and left in traced.mjs by its old name
+  // would quietly record nothing when it fails next. A walk is named by
+  // its file, alone or with what follows it, its seed.
+  const here = dirname(fileURLToPath(import.meta.url));
+  const noWalk = Object.keys(traced).filter((n) => !names.includes(n) && !existsSync(join(here, n.split(" ")[0])));
+  if (noWalk.length) {
+    console.log(`traced.mjs names ${JSON.stringify(noWalk[0])}, which is no walk or sequence`);
     process.exit(1);
   }
   console.log(names.join("\n"));
