@@ -283,19 +283,21 @@ export async function fakeClock(page) {
 //
 // Playwright holds the clock only at a moment it is told, and the app's
 // time runs on between reading the moment and holding it there, so now
-// and then the moment read is already past and Playwright says so. It is
-// read again then: the next reading is not behind.
+// and then the moment read is already past and Playwright says so. It
+// has held the clock by then, where the app's time had got to, since
+// pauseAt holds it before it moves it on, see pauseAt in the clock
+// Playwright puts in the page, and that moment is as good as the one
+// read. Seen with Playwright 1.64.1: after "Cannot fast-forward to the
+// past" the page's Date.now stood still. It was read again before, and
+// the next reading was not behind.
 export async function holdClock(page) {
   await fakeClock(page);
-  for (;;) {
-    try {
-      await page.clock.pauseAt(await page.evaluate(() => Date.now()));
-      page.__held = true;
-      return;
-    } catch (e) {
-      if (!String(e?.message).includes("fast-forward to the past")) throw e;
-    }
+  try {
+    await page.clock.pauseAt(await page.evaluate(() => Date.now()));
+  } catch (e) {
+    if (!String(e?.message).includes("fast-forward to the past")) throw e;
   }
+  page.__held = true;
 }
 
 // Runs the app's held time on by ms, every timer and frame on the way
@@ -417,39 +419,73 @@ export async function engineState(page, at) {
 // What the clip timeline shows: where the clip starts and ends and where
 // each cut is, on the episode's clock, read off its handles.
 export async function timeline(page) {
-  return page.evaluate(() => {
-    const value = (el) => Number(el?.getAttribute("aria-valuenow"));
-    const box = document.querySelector(".clip-timeline");
-    const start = box?.querySelector('[aria-label="Clip start"]');
-    if (!start) return null;
-    const cuts = [];
-    for (const edge of box.querySelectorAll(".cutedge")) {
-      const hit = /cut (\d+) (starts|ends)/.exec(edge.getAttribute("aria-label") ?? "");
-      if (!hit) continue;
-      const i = Number(hit[1]) - 1;
-      cuts[i] ??= {};
-      cuts[i][hit[2] === "starts" ? "from" : "to"] = value(edge);
-    }
-    return {
-      start: value(start),
-      end: value(box.querySelector('[aria-label="Clip end"]')),
-      cuts: cuts.filter(Boolean),
-    };
-  });
+  return page.evaluate(readTimeline);
+}
+function readTimeline() {
+  const value = (el) => Number(el?.getAttribute("aria-valuenow"));
+  const box = document.querySelector(".clip-timeline");
+  const start = box?.querySelector('[aria-label="Clip start"]');
+  if (!start) return null;
+  const cuts = [];
+  for (const edge of box.querySelectorAll(".cutedge")) {
+    const hit = /cut (\d+) (starts|ends)/.exec(edge.getAttribute("aria-label") ?? "");
+    if (!hit) continue;
+    const i = Number(hit[1]) - 1;
+    cuts[i] ??= {};
+    cuts[i][hit[2] === "starts" ? "from" : "to"] = value(edge);
+  }
+  return {
+    start: value(start),
+    end: value(box.querySelector('[aria-label="Clip end"]')),
+    cuts: cuts.filter(Boolean),
+  };
 }
 
 // What the caption box shows: each word, the moment it stands for, and
 // the word of the episode it is.
 export async function shown(page) {
-  return page.evaluate(() =>
-    [...document.querySelectorAll(".captions .word")].map((w) => ({
-      text: w.textContent,
-      at: Number(w.dataset.at),
-      to: Number(w.dataset.to),
-      keyed: w.classList.contains("keyed"),
-      focused: document.activeElement === w,
-    })),
+  return page.evaluate(readShown);
+}
+function readShown() {
+  return [...document.querySelectorAll(".captions .word")].map((w) => ({
+    text: w.textContent,
+    at: Number(w.dataset.at),
+    to: Number(w.dataset.to),
+    keyed: w.classList.contains("keyed"),
+    focused: document.activeElement === w,
+  }));
+}
+
+// What the screen shows once the app has settled, read in the moment it
+// settled: the clip on screen, see chosen, the caption box, see shown,
+// and the clip timeline, see timeline. All of it is read in the one turn
+// of the page in which the settle answers, so nothing of the app runs
+// between the reads. Read one call at a time, a search that landed a
+// clip between two of them changed the clip on screen under the walk,
+// and the clip timeline was held to the clip before.
+export async function settledScreen(page) {
+  const seen = await page.evaluate(
+    async ([held, words, track]) => {
+      await window.__settled(held);
+      return {
+        name: document.querySelector("aside button.episode.current .name")?.textContent ?? null,
+        asked: [...window.__calls].reverse().filter((c) => c.name === "Clips").map((c) => c.args[0]),
+        key: document.querySelector("aside ol li[data-key] button.pick.current")?.closest("li")?.dataset.key ?? null,
+        now: new Function(`return (${words})`)()(),
+        drawn: new Function(`return (${track})`)()(),
+      };
+    },
+    [Boolean(page.__held), readShown.toString(), readTimeline.toString()],
   );
+  const { name, asked, key, now, drawn } = seen;
+  if (!name || !key) return { at: null, now, drawn };
+  // The episode by its name, and of two of one name the one whose clips
+  // the app asked for last, as episodeOn tells them apart.
+  const named = (await ask(page, "Library")).filter((e) => e.name === name).map((e) => e.source);
+  const path = named.length < 2 ? named[0] : asked.find((p) => named.includes(p));
+  if (!path) return { at: null, now, drawn };
+  const entry = (await ask(page, "Clips", path)).find((c) => c.key === key);
+  return { at: entry ? { path, plan: entry.plan, clip: entry.id } : null, now, drawn };
 }
 
 // Where everything a hand can take hold of on the clip timeline is on
