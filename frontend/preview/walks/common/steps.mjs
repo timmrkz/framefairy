@@ -102,6 +102,16 @@ export const steps = {
     await page.evaluate((m) => window.__menu(m), what);
     await watch.step(what, s, page);
   },
+  // ["undo then redo"] the menu bar's Undo and, before anything Undo
+  //                    asked of the Go side is answered, Redo
+  async "undo then redo"(walk, arg, s) {
+    const { page, watch } = walk;
+    await page.evaluate(() => {
+      window.__menu("undo");
+      window.__menu("redo");
+    });
+    await watch.step("undo then redo", s, page);
+  },
   // ["reset", edge]    double-clicks the clip's edge, which puts it back
   //                    where the clip was found
   async reset(walk, arg, s) {
