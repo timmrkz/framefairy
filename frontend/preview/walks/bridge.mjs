@@ -124,9 +124,9 @@ export async function newBrowser() {
 }
 
 // WALKTRACES names a folder, and every page a walk opens is recorded in a
-// Playwright trace: each call of the walk's with the page as it was
-// before and after it, what the page logged and threw, every request to
-// the Go side with its timing, and a film of the screen. A walk that
+// Playwright trace: each call of the walk's with when it began and
+// ended, what the page logged and threw, every request to the Go side
+// with its timing, and a film of the screen. A walk that
 // passed throws its traces away. One that failed, threw or was stopped
 // keeps them in the folder, one file for each page it had open, and says
 // where, so a walk that failed once in CI comes with what happened in
@@ -144,7 +144,11 @@ export function traceAs(name) {
 
 async function traced(page) {
   const context = page.context();
-  await context.tracing.start({ screenshots: true, snapshots: true, title: tracedAs });
+  // The page as it was before and after every call, snapshots, made
+  // eight sequences take 45 % longer in a cloud session, and would put a
+  // walks job in CI over its five minutes. The film of the screen, 17 %
+  // longer, is kept.
+  await context.tracing.start({ screenshots: true, snapshots: false, title: tracedAs });
   tracing.add(context);
   context.on("close", () => tracing.delete(context));
 }

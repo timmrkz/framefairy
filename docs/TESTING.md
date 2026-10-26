@@ -839,7 +839,13 @@ it hang, #508.
    the path under its failure. One that hung is stopped by `TestWalks`
    with an interrupt instead of a kill, so it keeps the traces of the
    step it hung in, see `keepTraces` in `walks/bridge.mjs`. Each step is
-   a group in the trace, named the way the walk prints it. In CI a
+   a group in the trace, named the way the walk prints it. A trace holds
+   every call of the walk with when it began and ended, what the page
+   logged and threw, every request with its timing and a film of the
+   screen. It leaves out Playwright's snapshots of the page before and
+   after each call: eight sequences took 45 % longer with them in a
+   cloud session, and the film 17 %, which would put a walks job in CI
+   over its five minutes. In CI a
    walks job that failed keeps the folder with the run as
    `walk-traces-0` to `walk-traces-3`, one for each share, for 14 days.
    A session finds it with the GitHub tools,
@@ -848,8 +854,8 @@ it hang, #508.
    person opens a trace at trace.playwright.dev, which reads it in the
    browser and sends it nowhere, or with `npx playwright show-trace`. A
    session with no window reads it unpacked: `trace.trace` holds every
-   call of the walk, before and after, with what the page logged and
-   threw, one JSON object a line, `trace.network` every request to the
+   call of the walk, with what the page logged and threw, one JSON
+   object a line, `trace.network` every request to the
    Go side with its timing, and `resources/` the screenshots, which the
    Read tool shows.
 2. **The order the walk assumes.** What the step waits for, `settle`,
