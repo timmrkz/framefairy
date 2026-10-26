@@ -1454,6 +1454,18 @@ func TestWalks(t *testing.T) {
 	var tookMu sync.Mutex
 	took := map[string]float64{}
 
+	// The traces of the runs that fail, see keepTraces in walks/bridge.mjs.
+	// Those a run before kept are let go of, so the folder holds this
+	// run's and no other.
+	if dir := os.Getenv("WALKTRACES"); dir != "" {
+		old, _ := filepath.Glob(filepath.Join(dir, "*.zip"))
+		for _, f := range old {
+			if err := os.Remove(f); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
 	// A walk waits on signals, so one whose signal never comes runs until
 	// go test's -timeout ends the whole binary, and that prints neither
 	// which walk it was nor anything the runs said through t. So the runs
@@ -1623,6 +1635,23 @@ func TestAWalkThatHangsIsStoppedWithWhatItSaid(t *testing.T) {
 	if !strings.Contains(out.String(), "halfway") {
 		t.Errorf("what the walk printed before it was stopped is %q", out.String())
 	}
+	// A walk is stopped with an interrupt, and what it says on its way
+	// out, where it kept its traces, is kept too. A walk on its own
+	// answers it at once, and one that records traces once they are kept.
+	ctx, stop = context.WithCancel(context.Background())
+	defer stop()
+	out = &saying{what: "halfway", said: make(chan struct{})}
+	go func() {
+		<-out.said
+		stop()
+	}()
+	err = walk(ctx, "sh", []string{"-c", `trap 'kill $!; echo "trace: kept"; exit 1' INT; echo halfway; tail -f /dev/null >/dev/null & wait`}, "", nil, out)
+	if err == nil || !strings.Contains(err.Error(), "time ran out") {
+		t.Errorf("a walk that hangs and keeps its traces ends with %v, want that its time ran out", err)
+	}
+	if !strings.Contains(out.String(), "trace: kept") {
+		t.Errorf("what a walk that was stopped said on its way out is not kept: %q", out.String())
+	}
 	if err := walk(context.Background(), "sh", []string{"-c", "echo done"}, "", nil, io.Discard); err != nil {
 		t.Errorf("a walk that ends gives %v", err)
 	}
@@ -1647,6 +1676,7 @@ func TestAWalkersSequencesAreWalkedByOneNode(t *testing.T) {
 		'"ends"') exit 0 ;;
 		'"passes, and its node ends"') printf '\036walked ok\n'; echo "a late error"; exit 1 ;;
 		'"hangs"') sleep 1000 & echo "halfway, $! holds the output"; exec tail -f /dev/null ;;
+		'"hangs, and keeps its traces"') trap 'kill $!; echo "trace: kept"; exit 1' INT; echo halfway; tail -f /dev/null >/dev/null & wait ;;
 		*) printf '\036walked ok\n' ;;
 		esac
 	done`
@@ -1722,6 +1752,25 @@ func TestAWalkersSequencesAreWalkedByOneNode(t *testing.T) {
 	if _, err := walked("passes"); err != nil {
 		t.Errorf("the sequence after one that hung gives %v", err)
 	}
+
+	// A node is stopped with an interrupt, and what it says on its way
+	// out, where it kept the traces of the sequence it hung in, is kept.
+	ctx, stop = context.WithCancel(context.Background())
+	defer stop()
+	out = &saying{what: "halfway", said: make(chan struct{})}
+	go func() {
+		<-out.said
+		stop()
+	}()
+	if err := s.walk(ctx, "hangs, and keeps its traces", out); err == nil || !strings.Contains(err.Error(), "time ran out") {
+		t.Errorf("a sequence that hangs and keeps its traces ends with %v, want that its time ran out", err)
+	}
+	if !strings.Contains(out.String(), "trace: kept") {
+		t.Errorf("what a node that was stopped said on its way out is not kept: %q", out.String())
+	}
+	if _, err := walked("passes"); err != nil {
+		t.Errorf("the sequence after one that was stopped gives %v", err)
+	}
 }
 
 // saying keeps what is written to it and closes said once it holds what.
@@ -1755,7 +1804,11 @@ func walk(ctx context.Context, name string, args []string, dir string, env []str
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir, cmd.Env = dir, env
 	cmd.Stdout, cmd.Stderr = out, out
-	cmd.WaitDelay = walkLinger
+	// Stopped with an interrupt, which a walk that records traces answers
+	// by keeping them, see keepTraces in walks/bridge.mjs, and killed if
+	// it has not ended after walkStopping.
+	cmd.Cancel = func() error { return cmd.Process.Signal(os.Interrupt) }
+	cmd.WaitDelay = walkStopping
 	err := cmd.Run()
 	if err != nil && ctx.Err() != nil {
 		return errors.New("it had not ended when the test's time ran out, and was stopped")
@@ -1793,6 +1846,10 @@ type sequencer struct {
 // open. The browser a stopped walk started may hold it open, and what it
 // says then is not worth waiting for.
 const walkLinger = 5 * time.Second
+
+// walkStopping is how long a walk that was interrupted has to keep its
+// traces and end before it is killed.
+const walkStopping = 30 * time.Second
 
 // walkingLine is the line the node begins what a sequence prints with,
 // and walkedLine starts the line it ends it with, followed by how it
@@ -1857,7 +1914,7 @@ func (s *sequencer) walk(ctx context.Context, name string, out io.Writer) error 
 			}
 			return errors.New("it failed")
 		case <-ctx.Done():
-			s.kill()
+			s.interrupt(out)
 			return errors.New("it had not ended when the test's time ran out, and was stopped")
 		}
 	}
@@ -1912,6 +1969,34 @@ func (s *sequencer) stop(ctx context.Context) {
 				return
 			}
 		case <-ctx.Done():
+			s.kill()
+			return
+		}
+	}
+}
+
+// interrupt has the node end, if one runs, with an interrupt, which a
+// node that records traces answers by keeping those of the sequence it
+// hung in, see keepTraces in walks/bridge.mjs. What it says on its way
+// out, where the traces are, is written to out. It is killed if it has
+// not ended after walkStopping.
+func (s *sequencer) interrupt(out io.Writer) {
+	if s.cmd == nil {
+		return
+	}
+	_ = s.cmd.Process.Signal(os.Interrupt)
+	stopping := time.NewTimer(walkStopping) //nolint:forbidigo // a node that does not end when it is interrupted is killed, and only the clock says when
+	defer stopping.Stop()
+	for {
+		select {
+		case l, ok := <-s.lines:
+			if !ok {
+				_ = s.in.Close()
+				s.cmd = nil
+				return
+			}
+			fmt.Fprintln(out, l)
+		case <-stopping.C:
 			s.kill()
 			return
 		}

@@ -2,7 +2,7 @@
 // its clip chosen, a way to wait until the app has settled, and the
 // engine's own answer to compare the screen with. See docs/TESTING.md.
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { chromium } from "playwright";
 
@@ -45,8 +45,11 @@ function fallbackBrowser() {
 }
 let fellBack;
 async function launch(args) {
+  // An interrupt is the walk's own to answer, see keepTraces, not
+  // Playwright's, which would close the browser under the traces.
+  const options = { args, handleSIGINT: !traces };
   try {
-    return await chromium.launch({ args });
+    return await chromium.launch(options);
   } catch (e) {
     const exe = String(e?.message).includes("Executable doesn't exist") && fallbackBrowser();
     if (!exe) throw e;
@@ -54,7 +57,7 @@ async function launch(args) {
       fellBack = exe;
       console.error(`walking on ${exe}, since the Chromium of this Playwright is not installed`);
     }
-    return chromium.launch({ executablePath: exe, args });
+    return chromium.launch({ ...options, executablePath: exe });
   }
 }
 
@@ -107,8 +110,81 @@ export function noDeadlines(page) {
 // draws on a 2D canvas here, __flatScreen, because headless Chromium gives
 // nothing back from a WebGPU canvas, and the walks read the frame on
 // screen from the canvas. See screen.ts.
-export function newBrowser() {
-  return launch(["--enable-unsafe-webgpu"]);
+export async function newBrowser() {
+  const browser = await launch(["--enable-unsafe-webgpu"]);
+  if (traces) {
+    const plain = browser.newPage.bind(browser);
+    browser.newPage = async (options) => {
+      const page = await plain(options);
+      await traced(page);
+      return page;
+    };
+  }
+  return browser;
+}
+
+// WALKTRACES names a folder, and every page a walk opens is recorded in a
+// Playwright trace: each call of the walk's with the page as it was
+// before and after it, what the page logged and threw, every request to
+// the Go side with its timing, and a film of the screen. A walk that
+// passed throws its traces away. One that failed, threw or was stopped
+// keeps them in the folder, one file for each page it had open, and says
+// where, so a walk that failed once in CI comes with what happened in
+// it, and nobody has to make it fail again to see. See Finding why a walk
+// failed in docs/TESTING.md. make walks sets it.
+const traces = process.env.WALKTRACES;
+const tracing = new Set();
+let tracedAs = "walk";
+
+// The name the traces a walk keeps are filed under, its sequence or its
+// script and seed.
+export function traceAs(name) {
+  tracedAs = name;
+}
+
+async function traced(page) {
+  const context = page.context();
+  await context.tracing.start({ screenshots: true, snapshots: true, title: tracedAs });
+  tracing.add(context);
+  context.on("close", () => tracing.delete(context));
+}
+
+// Each step of a walk as a group of its own in the trace, named the way
+// the walk prints it, so the trace reads step by step. Ends the group the
+// step before left open.
+export async function traceStep(page, name) {
+  if (!traces) return;
+  const { tracing: t } = page.context();
+  if (page.__traceStep) await t.groupEnd();
+  page.__traceStep = true;
+  await t.group(name);
+}
+
+// Keeps the traces of every page still open and says where they are.
+// Pages closed before were let go of, as a walk lets go of a report
+// window once it is done with it.
+export async function keepTraces() {
+  if (!traces) return;
+  mkdirSync(traces, { recursive: true });
+  const file = tracedAs.replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "").slice(0, 100);
+  let n = 0;
+  for (const context of [...tracing]) {
+    tracing.delete(context);
+    const path = join(traces, `${file}${n++ ? `-${n}` : ""}.zip`);
+    await context.tracing.stop({ path });
+    console.log(`trace: ${path}`);
+  }
+}
+
+// A walk stopped from outside, because it hung until the time of make
+// walks ran out, keeps its traces on the way out: the step it hung in
+// is the one a trace is wanted for most. TestWalks stops it with an
+// interrupt and waits for it to end.
+if (traces) {
+  process.once("SIGINT", async () => {
+    await keepTraces();
+    process.exit(1);
+  });
 }
 
 // The interface on the bridge, in the episode's workspace with its clip

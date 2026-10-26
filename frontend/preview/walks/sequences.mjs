@@ -14,7 +14,7 @@
 // The episode is the bridge's, so the words are the sentences its speech
 // stand-in says: "Ich war vielleicht sechs Jahre alt, als mich auf dem
 // Schulhof irgendein Typ geschubst hat."
-import { chosen, newBrowser, open, settle, shown, shownOnPlayhead } from "./bridge.mjs";
+import { chosen, keepTraces, newBrowser, open, settle, shown, shownOnPlayhead, traceAs, traceStep } from "./bridge.mjs";
 import { moving, still, url } from "./common/steps.mjs";
 import { Watch } from "./rules.mjs";
 import captions from "./captions/sequences.mjs";
@@ -144,6 +144,7 @@ async function mark(what) {
 // or in browser, whose pages it closes again.
 async function walkSequence(seq, shared = null) {
   const began = performance.now();
+  traceAs(seq.name);
   const opened = await open(url, { browser: shared, still: still(seq) });
   const { browser, errors } = opened;
   // The page the steps act on: the app's window, or the report window
@@ -487,15 +488,24 @@ async function walkSequence(seq, shared = null) {
     // Each step is said as it begins, so a step that waits for good is
     // named when the -timeout of make walks stops the sequence.
     console.log(`      ${done.at(-1)}`);
+    await traceStep(main, done.at(-1));
     const s = await shown(page);
     const step = everyStep[what];
     if (!step) throw new Error(`no step called ${what}`);
-    await step(walk, arg, s, what);
+    // A step that throws ends the sequence, and its node, with the
+    // traces kept first.
+    try {
+      await step(walk, arg, s, what);
+    } catch (e) {
+      await keepTraces();
+      throw e;
+    }
   }
   const failed = wrong ?? (watch.failed && `broke: ${watch.failed.rule}\n${watch.failed.detail}`);
   const took = ((performance.now() - began) / 1000).toFixed(1).padStart(5);
   console.log(`${failed ? "FAIL" : "ok  "}  ${took} s  ${seq.name}`);
   if (failed) console.log(`      after ${done.join(", ")}\n      ${failed.replaceAll("\n", "\n      ")}`);
+  if (failed) await keepTraces();
   if (shared) await Promise.all(shared.contexts().map((c) => c.close()));
   else await browser.close();
   return Boolean(failed);

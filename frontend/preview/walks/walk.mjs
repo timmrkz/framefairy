@@ -8,7 +8,8 @@
 // episode whose picture is HEVC with 10-bit colour instead of the bridge's
 // own, added and searched first: the Chromium a walk drives cannot decode
 // it, so every frame of it comes from the Go side, see lib/frames/app.ts.
-import { random, open, chosen, shown, addHEVC } from "./bridge.mjs";
+import { basename } from "node:path";
+import { random, open, chosen, shown, addHEVC, traceAs, traceStep, keepTraces } from "./bridge.mjs";
 import { Watch } from "./rules.mjs";
 
 // The page on the bridge, the seed's random numbers, and the watch. A walk
@@ -18,6 +19,7 @@ export async function begin({ steps: usual = 60 } = {}) {
   const url = process.env.BRIDGE_URL ?? "http://127.0.0.1:8123/";
   const seed = Number(process.env.SEED ?? Math.floor(Math.random() * 1e6));
   const steps = Number(process.env.STEPS || usual);
+  traceAs(`${basename(process.argv[1])} SEED=${seed}${process.env.HEVC ? " HEVC=1" : ""}`);
   const { browser, page, errors } = await open(url);
   if (process.env.HEVC) await addHEVC(url, page);
   const watch = new Watch(page, await chosen(page), errors);
@@ -54,6 +56,7 @@ export async function walk(w, gestures, { look = shown, show, first = [] } = {})
       const box = await shown(page);
       const { g, args } = firsts[step - 1] ?? { g: rng.weighted(gestures.filter((g) => g.when(seen))), args: [] };
       console.log(`seed ${seed}, step ${step}: ${g.name}`);
+      await traceStep(page, `step ${step}: ${g.name}`);
       if (!g.when(seen)) {
         watch.broke("a gesture made first can be made", `step ${step}, ${g.name}`);
         break;
@@ -78,6 +81,7 @@ export async function walk(w, gestures, { look = shown, show, first = [] } = {})
     console.log(`\nbroke: ${failed.rule}\n${failed.detail}`);
     await page.screenshot({ path: `/tmp/walk-${seed}.png` });
     console.log(`picture: /tmp/walk-${seed}.png`);
+    await keepTraces();
   }
   await w.browser.close();
   process.exit(failed ? 1 : 0);
