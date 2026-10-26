@@ -21,14 +21,10 @@
 // timeline gliding to its view, not the shimmer over a place waiting to
 // be filled, which moves for good.
 import "./standing";
-import { waitsOn } from "./waits";
 
 const SOON = 1000;
 const logOnly = new Set(["Said", "Acted"]);
-// The calls out, each by its name, which a walk stopped while it waited
-// says, see waits.ts.
-type Call = { name: string; counted: boolean };
-const out = new Set<Call>();
+let out = 0;
 let back = 0;
 
 // A call a walk holds on the Go side until it lets it go, see __hold, is
@@ -36,21 +32,21 @@ let back = 0;
 // while it is held. holdNext is how many calls of a name from now on are
 // held, and held the calls set aside.
 const holdNext = new Map<string, number>();
-const held = new Set<Call>();
+const held = new Set<{ name: string; counted: boolean }>();
 
 // A call of the app's to the Go side is out, by its name: what is handed
 // back says it came back, answered or failed.
 export function callOut(name: string): () => void {
   if (logOnly.has(name)) return () => {};
-  const call: Call = { name, counted: true };
+  const call = { name, counted: true };
   const next = holdNext.get(name) ?? 0;
   if (next > 0) {
     holdNext.set(name, next - 1);
     call.counted = false;
     held.add(call);
-  } else out.add(call);
+  } else out++;
   return () => {
-    out.delete(call);
+    if (call.counted) out--;
     held.delete(call);
     back++;
     wake();
@@ -74,7 +70,7 @@ export function callOut(name: string): () => void {
   for (const c of held) {
     if (!c.counted) {
       c.counted = true;
-      out.add(c);
+      out++;
     }
   }
   for (const name of names) await fetch(`/hold?call=${encodeURIComponent(name)}&gate=open`);
@@ -139,21 +135,17 @@ const moving = () =>
 (window as any).__settled = (held: boolean) =>
   new Promise<void>((done) => {
     const frame: (fn: () => void) => void = (window as any).__real?.frame ?? requestAnimationFrame;
-    const busy = () => out.size > 0 || (!held && soon.size > 0);
+    const busy = () => out > 0 || (!held && soon.size > 0);
     const look = () => {
       if (busy()) {
-        const calls = [...out].map((c) => c.name);
-        waitsOn(`the app to settle: ${calls.length ? `the calls ${calls.join(", ")} are out` : "no call is out"}, and ${held ? "its timers are held" : soon.size ? `${soon.size} of its timers fire within a second` : "none of its timers fires within a second"}`);
         woken.push(look);
         return;
       }
       const going = moving();
       if (going.length) {
-        waitsOn(`the app to settle: ${going.length} things move on the page, ${going.map((a) => (a as CSSAnimation).animationName || a.id || "unnamed").join(", ")}`);
         Promise.all(going.map((a) => a.finished.catch(() => {}))).then(look);
         return;
       }
-      waitsOn("the app to settle: two of the browser's frames to go by");
       const seen = back;
       frame(() => frame(() => (back === seen && !busy() && !moving().length ? done() : look())));
     };

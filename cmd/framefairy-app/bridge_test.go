@@ -1496,9 +1496,7 @@ func TestWalks(t *testing.T) {
 				t.Error(err)
 				return
 			}
-			// WALK_WAITS has a walk say what it waits on, kept back
-			// unless its time runs out, see stopped.
-			env := append(os.Environ(), "BRIDGE_URL="+url, "WALK_WAITS=1")
+			env := append(os.Environ(), "BRIDGE_URL="+url)
 			// The walker's sequences, walked one after another by one
 			// node, see sequencer.
 			seqs := &sequencer{run: []string{node, filepath.Join(walks, "sequences.mjs"), "--serve"}, dir: walks, env: env}
@@ -1607,7 +1605,7 @@ func startBridge(t *testing.T, videos string) (string, error) {
 
 // A walk that hangs is stopped when the test's time runs out, and what it
 // printed until then is kept, so the report says which walk it was and
-// how far it got, issue #443, and what it waited on last, issue #556.
+// how far it got, issue #443.
 func TestAWalkThatHangsIsStoppedWithWhatItSaid(t *testing.T) {
 	ctx, stop := context.WithCancel(context.Background())
 	defer stop()
@@ -1618,12 +1616,12 @@ func TestAWalkThatHangsIsStoppedWithWhatItSaid(t *testing.T) {
 	}()
 	// tail -f waits for more forever, the way a walk waits on a signal
 	// that never comes.
-	err := walk(ctx, "sh", []string{"-c", `printf '\036waits a frame\n\036waits the app to settle: the calls Undo are out\n'; echo halfway; exec tail -f /dev/null`}, "", nil, out)
-	if err == nil || !strings.Contains(err.Error(), "time ran out") || !strings.HasSuffix(err.Error(), "while it waited for the app to settle: the calls Undo are out") {
-		t.Errorf("a walk that hangs ends with %v, want that its time ran out while it waited for the calls out", err)
+	err := walk(ctx, "sh", []string{"-c", "echo halfway; exec tail -f /dev/null"}, "", nil, out)
+	if err == nil || !strings.Contains(err.Error(), "time ran out") {
+		t.Errorf("a walk that hangs ends with %v, want that its time ran out", err)
 	}
-	if out.String() != "halfway\n" {
-		t.Errorf("what the walk printed before it was stopped is %q, want only what it said, not its waits", out.String())
+	if !strings.Contains(out.String(), "halfway") {
+		t.Errorf("what the walk printed before it was stopped is %q", out.String())
 	}
 	if err := walk(context.Background(), "sh", []string{"-c", "echo done"}, "", nil, io.Discard); err != nil {
 		t.Errorf("a walk that ends gives %v", err)
@@ -1648,7 +1646,7 @@ func TestAWalkersSequencesAreWalkedByOneNode(t *testing.T) {
 		'"throws"') printf '\036walked threw\n'; exit 1 ;;
 		'"ends"') exit 0 ;;
 		'"passes, and its node ends"') printf '\036walked ok\n'; echo "a late error"; exit 1 ;;
-		'"hangs"') printf '\036waits the picture to stand\n'; sleep 1000 & echo "halfway, $! holds the output"; exec tail -f /dev/null ;;
+		'"hangs"') sleep 1000 & echo "halfway, $! holds the output"; exec tail -f /dev/null ;;
 		*) printf '\036walked ok\n' ;;
 		esac
 	done`
@@ -1712,11 +1710,8 @@ func TestAWalkersSequencesAreWalkedByOneNode(t *testing.T) {
 		<-out.said
 		stop()
 	}()
-	if err := s.walk(ctx, "hangs", out); err == nil || !strings.Contains(err.Error(), "time ran out") || !strings.HasSuffix(err.Error(), "while it waited for the picture to stand") {
-		t.Errorf("a sequence that hangs ends with %v, want that its time ran out while it waited for the picture to stand", err)
-	}
-	if strings.Contains(out.String(), "waits") {
-		t.Errorf("a sequence that hangs printed %q, want its waits kept back", out.String())
+	if err := s.walk(ctx, "hangs", out); err == nil || !strings.Contains(err.Error(), "time ran out") {
+		t.Errorf("a sequence that hangs ends with %v, want that its time ran out", err)
 	}
 	var child int
 	if _, err := fmt.Sscanf(out.buf.String()[strings.Index(out.buf.String(), "halfway, "):], "halfway, %d holds", &child); err == nil {
@@ -1754,63 +1749,18 @@ func (s *saying) String() string { return s.buf.String() }
 const walkGrace = time.Minute
 
 // walk runs one walk, name with args in dir, and writes what it prints to
-// out. One still running when ctx ends is stopped, and says so, with what
-// it waited on last, and what it printed until then is in out.
+// out. One still running when ctx ends is stopped, and says so, and what
+// it printed until then is in out.
 func walk(ctx context.Context, name string, args []string, dir string, env []string, out io.Writer) error {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir, cmd.Env = dir, env
-	w := &waitsKept{out: out}
-	cmd.Stdout, cmd.Stderr = w, w
+	cmd.Stdout, cmd.Stderr = out, out
 	cmd.WaitDelay = walkLinger
 	err := cmd.Run()
-	w.flush()
 	if err != nil && ctx.Err() != nil {
-		return stopped(w.waits)
-	}
-	return err
-}
-
-// waitsLine starts the line a walk says what it waits on with, see
-// waitsOn in walks/bridge.mjs and preview/waits.ts.
-const waitsLine = "\x1ewaits "
-
-// stopped is the error of a walk the test's time stopped, with what it
-// waited on last. A walk waits on signals and has no deadline of its
-// own, so one that never ends waits for a signal that never comes, and
-// this names it, issue #556.
-func stopped(waits string) error {
-	if waits == "" {
 		return errors.New("it had not ended when the test's time ran out, and was stopped")
 	}
-	return fmt.Errorf("it had not ended when the test's time ran out, and was stopped while it waited for %s", waits)
-}
-
-// waitsKept passes on to out what a walk prints, a line at a time, but
-// for the lines that say what it waits on, of which it keeps the last.
-type waitsKept struct {
-	out   io.Writer
-	line  []byte
-	waits string
-}
-
-func (w *waitsKept) Write(p []byte) (int, error) {
-	for _, b := range p {
-		w.line = append(w.line, b)
-		if b == '\n' {
-			w.flush()
-		}
-	}
-	return len(p), nil
-}
-
-// flush passes on or keeps the line so far.
-func (w *waitsKept) flush() {
-	if what, ok := strings.CutPrefix(strings.TrimSuffix(string(w.line), "\n"), waitsLine); ok {
-		w.waits = what
-	} else if len(w.line) > 0 {
-		_, _ = w.out.Write(w.line)
-	}
-	w.line = w.line[:0]
+	return err
 }
 
 // sequencer is one node that walks sequence after sequence on one bridge,
@@ -1875,7 +1825,6 @@ func (s *sequencer) walk(ctx context.Context, name string, out io.Writer) error 
 	// then hears it has ended.
 	_, _ = s.in.Write(append(line, '\n'))
 	begun := false
-	waits := ""
 	for {
 		select {
 		case l, ok := <-s.lines:
@@ -1889,10 +1838,6 @@ func (s *sequencer) walk(ctx context.Context, name string, out io.Writer) error 
 			}
 			if l == walkingLine {
 				begun = true
-				continue
-			}
-			if what, ok := strings.CutPrefix(l, waitsLine); ok {
-				waits = what
 				continue
 			}
 			how, ended := strings.CutPrefix(l, walkedLine)
@@ -1913,7 +1858,7 @@ func (s *sequencer) walk(ctx context.Context, name string, out io.Writer) error 
 			return errors.New("it failed")
 		case <-ctx.Done():
 			s.kill()
-			return stopped(waits)
+			return errors.New("it had not ended when the test's time ran out, and was stopped")
 		}
 	}
 }
