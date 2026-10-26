@@ -42,7 +42,7 @@ func TestTheVideoPreviewShowsTheFramesOfTheShort(t *testing.T) {
 	for _, c := range timesCases {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			previewShowsTheShort(t, e, program, c, false)
+			previewShowsTheShort(t, e, program, c, "")
 		})
 	}
 }
@@ -70,16 +70,51 @@ func TestTheVideoPreviewGoesOnWhenTheGraphicsChipFails(t *testing.T) {
 		if c.name == "obs_mkv" || c.name == "mpegts" {
 			t.Run(c.name, func(t *testing.T) {
 				t.Parallel()
-				previewShowsTheShort(t, e, program, c, true)
+				previewShowsTheShort(t, e, program, c, "FRAMEFAIRY_FRAMES_FAIL_AFTER=3")
 			})
 		}
 	}
 }
 
+// The video preview goes on when the decoder hangs for good, as the
+// graphics chip did on CI's virtual Mac while it streamed the recording
+// cut off by a crash, issue #553: the stream waited on it until the test
+// run was killed. The decoder is made to hang on one packet of one cursor,
+// says so at once, gives the cursor up and decodes on the
+// processor from then on, and the stream goes on from a new cursor at the
+// frame after the last one it had. The frames are checked as in
+// TestTheVideoPreviewShowsTheFramesOfTheShort, so none is lost or doubled
+// on the way.
+//
+// On the real disk: the frames decoder reads the episode.
+func TestTheVideoPreviewGoesOnWhenTheDecoderHangs(t *testing.T) {
+	ffmpegtest.Need(t)
+	program := os.Getenv("FRAMEFAIRY_FRAMES")
+	if program == "" {
+		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
+	}
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e.FFmpeg, e.FFprobe = "ffmpeg", "ffprobe"
+	// On the 3rd packet the decoder hangs in the open, before the stream
+	// has a frame, and on the 12th in the middle of a stream, after the
+	// first frames were handed over, so the new cursor goes on from the
+	// frame after the last one.
+	for _, c := range timesCases {
+		if c.name == "even_mp4" || c.name == "crashed_mkv" {
+			for _, after := range []string{"3", "12"} {
+				t.Run(c.name+"/"+after, func(t *testing.T) {
+					t.Parallel()
+					previewShowsTheShort(t, e, program, c, "FRAMEFAIRY_FRAMES_HANG_AFTER="+after)
+				})
+			}
+		}
+	}
+}
+
 // previewShowsTheShort is TestTheVideoPreviewShowsTheFramesOfTheShort on
-// the episode of one case, with the decoder made to fail in every open
-// where failing says so.
-func previewShowsTheShort(t *testing.T, e *Engine, program string, c timesCase, failing bool) {
+// the episode of one case, with the decoder made to fail in every open or
+// to hang once where made says so.
+func previewShowsTheShort(t *testing.T, e *Engine, program string, c timesCase, made string) {
 	t.Helper()
 	source := timesEpisode(t, c)
 	info, err := e.Probe(context.Background(), source)
@@ -117,8 +152,9 @@ func previewShowsTheShort(t *testing.T, e *Engine, program string, c timesCase, 
 		heard = append(heard, line)
 		heardMu.Unlock()
 	}
-	if failing {
-		dec.env = []string{"FRAMEFAIRY_FRAMES_FAIL_AFTER=3"}
+	failing, hanging := strings.Contains(made, "FAIL_AFTER"), strings.Contains(made, "HANG_AFTER")
+	if made != "" {
+		dec.env = []string{made}
 	}
 	streams := 0
 	const w, h = 64, 36
@@ -190,16 +226,28 @@ func previewShowsTheShort(t *testing.T, e *Engine, program string, c timesCase, 
 	dec.Close()
 	heardMu.Lock()
 	defer heardMu.Unlock()
-	fellBack, onChip := 0, false
+	fellBack, gaveUp, onChip := 0, 0, false
 	for _, line := range heard {
 		if strings.Contains(line, "decodes on the processor for the rest of this open") {
 			fellBack++
+			t.Logf("%s", line)
+		}
+		if strings.Contains(line, "gives it up and decodes on the processor from now on") {
+			gaveUp++
 			t.Logf("%s", line)
 		}
 		onChip = onChip || strings.Contains(line, "decodes on the graphics chip")
 	}
 	if failing && fellBack < streams {
 		t.Errorf("the decoder went on with the processor %d times in %d streams, made to fail in each", fellBack, streams)
+	}
+	if hanging && gaveUp != 1 {
+		t.Errorf("the decoder gave up on %d cursors, made to hang once", gaveUp)
+	}
+	// Nothing made to hang, nothing is given up, on CI's Mac too, where
+	// the chip decodes.
+	if !hanging && gaveUp != 0 {
+		t.Errorf("the decoder gave up on %d cursors, made to hang in none", gaveUp)
 	}
 	// A fallback must not hide a chip that never decodes: on a Mac the
 	// chip decodes H.264.

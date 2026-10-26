@@ -54,6 +54,10 @@ const (
 	// moved a cursor that had them. A cursor of picture adds its Light
 	// after a space: "file hlg", " pq".
 	Opened
+	// The cursor's decoder hung, and the decoder gave up on it: nothing
+	// more comes from it. A cursor opened after it decodes on the
+	// processor, so the stream goes on from a new one.
+	Hung
 )
 
 // HeaderSize is the size of a record's header: the cursor, 4 bytes, what
@@ -205,7 +209,7 @@ func Read(r io.Reader) (Record, error) {
 	if size > MaxBody {
 		return Record{}, fmt.Errorf("a record of %d bytes is larger than any frame", size)
 	}
-	if rec.Kind > Opened {
+	if rec.Kind > Hung {
 		return Record{}, errors.New("a record of a kind nobody writes")
 	}
 	rec.Body = make([]byte, size)
