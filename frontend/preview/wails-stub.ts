@@ -1452,12 +1452,31 @@ const Answers = {
         return Promise.resolve();
       // Kept across a reload, the way the Go side keeps it across a
       // restart, so a probe can reload the page and see it come back.
+      // Where nothing is kept, the window the Go side places: the first
+      // half hour nobody searched, on its step, see window.go.
       case "ChosenWindow":
+      case "PlaceWindow": {
+        let kept = null;
         try {
-          return Promise.resolve(JSON.parse(sessionStorage.getItem("__window") ?? "null"));
+          kept = method === "PlaceWindow" ? null : JSON.parse(sessionStorage.getItem("__window") ?? "null");
         } catch {
-          return Promise.resolve(null);
+          kept = null;
         }
+        if (kept) return Promise.resolve(kept);
+        const from = fresh && found.length ? 1800 : 0;
+        const placed = { from, to: Math.min(from + 1800, 14423), length: 1800 };
+        try {
+          const was = JSON.parse(sessionStorage.getItem("__window") ?? "null");
+          sessionStorage.setItem("__window", JSON.stringify(placed));
+          if (method === "PlaceWindow" && JSON.stringify(was) !== JSON.stringify(placed)) {
+            ((window as any).__windowSteps ??= []).push([was, placed]);
+            (window as any).__windowRedo = [];
+          }
+        } catch {
+          /* nothing to keep it in */
+        }
+        return Promise.resolve(placed);
+      }
       case "ChooseWindow": {
         const now = { from: args[1], to: args[2], length: args[3] };
         let was = null;

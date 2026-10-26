@@ -143,6 +143,10 @@ export interface Check {
   sha256?: string;
 }
 
+// The formats Export transcript saves in, see transcriptFormats in
+// cmd/framefairy-app/export.go.
+export type TranscriptFormat = "text" | "srt";
+
 export interface PlanSummary {
   path: string;
   name: string;
@@ -379,7 +383,7 @@ export interface CaptionsView {
   pieces?: { start: number; end: number }[];
 }
 
-// The window as it was left on the range picker, see chosenWindow.
+// The window of a video, see chosenWindow.
 export interface KeptWindow {
   from: number;
   to: number;
@@ -482,7 +486,7 @@ export interface Underway {
 export interface Job {
   id: string;
   episode: string;
-  kind: "search" | "render" | "clip" | "model" | "llm";
+  kind: "search" | "render" | "clip" | "transcribe" | "model" | "llm";
   label: string;
   state: JobState;
   error?: string;
@@ -509,12 +513,18 @@ export interface Job {
   // one event, so the two always add up.
   underway?: Underway[];
   written?: number;
+  // For a search that carries on one that stopped, how many clips that
+  // one had written, so it did not find nothing.
+  carried?: number;
   // How many clips a search was asked for, and how short they may be.
   count?: number;
   min?: number;
   // The answer is read to its end: every clip still to come is in
   // underway, so no row is held open for one the model did not name.
   whole?: boolean;
+  // A search that stopped whose window the video's window was moved off,
+  // so it is set aside, see markAside in window.go.
+  aside?: boolean;
   // Grows with every change to any job. Of two snapshots of a job, the one
   // with the larger number is the later one.
   seq?: number;
@@ -715,13 +725,18 @@ export const api = {
   opened: (n: number) => call<string[]>("Opened", n),
   openEpisode: (path: string) => call<void>("OpenEpisode", path),
   chooseClip: (path: string, key: string) => call<void>("ChooseClip", path, key),
-  // The window an episode's range picker was left with, so opening it
-  // again, after a restart too, opens on the same one. length is how long
-  // it was made, longer than it is when the end of the episode cut it.
+  // The window of a video, which the Go side owns: as it was left, after
+  // a restart too, and where there is none, the one the app places. Every
+  // search starts on it, and one that found its clips moves it on. length
+  // is how long it was made, longer than it is when the end of the
+  // episode cut it. null while the video cannot be read.
   chosenWindow: (path: string) => call<KeptWindow | null>("ChosenWindow", path),
-  // byHand makes it a step that undo takes back, as a drag or a
-  // double-click on the window's marks is. A window the app moved on by
-  // itself is not.
+  // The window put back where the app places it, a double-click on its
+  // marks, as a step undo takes back.
+  placeWindow: (path: string) => call<KeptWindow | null>("PlaceWindow", path),
+  // The window as a hand moved it, or as the workspace fitted it to what
+  // a search can read. byHand makes it a step that undo takes back, as a
+  // drag is.
   chooseWindow: (path: string, from: number, to: number, length: number, byHand: boolean) =>
     call<void>("ChooseWindow", path, from, to, length, byHand),
   getSettings: () => call<Settings>("GetSettings"),
@@ -820,6 +835,14 @@ export const api = {
   // Continue: carries on a search or a render that stopped. click as for
   // search, "" where no Cancel can follow it.
   continueJob: (id: string, click: string) => call<Job>("Continue", id, click),
+  // Transcribe whole video in a video's menu: hears it to its end, with no
+  // search after. Asked again while it runs, it gives the job that runs.
+  transcribe: (path: string) => call<Job>("Transcribe", path),
+  // Export transcript: the words of the whole video with every correction
+  // made in a clip's caption box, as text or as subtitles, saved where the
+  // system's save box says. Gives where, or "" when the box was cancelled.
+  exportTranscript: (path: string, format: TranscriptFormat) =>
+    call<string>("ExportTranscript", path, format),
   // Cancel at the head of the clip list: stops all the work on the clips
   // of an episode, and the search the press named click asked for, even
   // one the Go side has not heard of yet. It needs no answer to anything

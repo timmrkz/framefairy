@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -51,7 +53,8 @@ func TestASearchHearsItsWindowAndFindsItsClips(t *testing.T) {
 		if rec := ReadSearch(disk, p.Source); rec == nil || rec.Step != StepWaiting {
 			t.Errorf("waiting for %s, the record says %+v", step, rec)
 		}
-		return ctx, func() {}, nil
+		var once sync.Once
+		return ctx, func() { once.Do(func() { turns = append(turns, "let go of "+step) }) }, nil
 	}
 	plan, err := p.Search(context.Background(), PlanRequest{From: 5, To: 25, Count: 1, Min: 5}, turn)
 	if err != nil {
@@ -60,8 +63,12 @@ func TestASearchHearsItsWindowAndFindsItsClips(t *testing.T) {
 	if filepath.Base(plan) != "clips-5-25.json" || *asked != 1 {
 		t.Errorf("plan %s, the model asked %d times", plan, *asked)
 	}
-	if strings.Join(turns, " ") != "hearing finding" {
-		t.Errorf("turns asked for: %v", turns)
+	// Finding is asked for before hearing is let go, so nothing that waits
+	// to hear takes the lane in between. Let go first, the whole video had
+	// its turn for a moment and its frame lit up, Tim's report of 25
+	// October, 14.33.
+	if strings.Join(turns, ", ") != "hearing, finding, let go of hearing, let go of finding" {
+		t.Errorf("turns asked for and let go of: %v", turns)
 	}
 	// Heard the window and nothing else.
 	if parts := HeardParts(disk, p.Source, p.Base.ASRModel); len(parts) != 1 || parts[0] != [2]float64{5, 25} {
@@ -97,7 +104,7 @@ func TestASearchHearsItsWindowAndFindsItsClips(t *testing.T) {
 	if _, clips, err := LoadClips(disk, again); err != nil || len(clips) != 0 {
 		t.Errorf("a window with nothing new: %v, %d clip(s)", err, len(clips))
 	}
-	if strings.Join(turns, " ") != "finding" {
+	if strings.Join(turns, ", ") != "finding, let go of finding" {
 		t.Errorf("a window already heard asked for %v", turns)
 	}
 }
@@ -116,15 +123,19 @@ func TestASearchOfTheWholeEpisodeFinishesTheTranscript(t *testing.T) {
 	}
 }
 
-// stops is a speech model that stops the search the moment it is given
-// audio, the way the app closing does.
+// stops is a speech model that stops the search the way the app closing
+// does. It stops the work as it is given its second piece, so the first is
+// heard to its end and kept: a piece still being heard at the stop is let
+// go.
 type stops struct {
 	cancel context.CancelFunc
 	fakeRecognizer
 }
 
 func (s stops) Recognize(samples []float32, rate int) []Token {
-	s.cancel()
+	if atomic.LoadInt32(s.calls) > 0 {
+		s.cancel()
+	}
 	return s.fakeRecognizer.Recognize(samples, rate)
 }
 
@@ -282,6 +293,7 @@ func TestARecordThatIsNotOneIsNoRecord(t *testing.T) {
 	good := []JobRecord{
 		{ID: SearchID, Kind: JobSearch, To: 60, Count: 12, Min: 20, Max: 30, Step: StepHearing},
 		{ID: "render-1", Kind: JobRender, Plan: filepath.Join(logs, "clips-0-60.json"), Step: StepRendering},
+		{ID: TranscribeID, Kind: JobTranscribe, Step: StepHearing},
 	}
 	for _, r := range good {
 		if err := WriteJob(fsys, source, r); err != nil {
@@ -298,6 +310,7 @@ func TestARecordThatIsNotOneIsNoRecord(t *testing.T) {
 		"Other.json":     `{"id": "Other", "kind": "search", "step": "hearing"}`,
 		"other.json":     `{"id": "other", "kind": "search", "step": "hearing"}`,
 		"render-7.json":  `not json`,
+		"render-11.json": `{"id": "render-11", "kind": "transcribe", "step": "hearing"}`,
 		"render-8.json":  `{"id": "render-8", "kind": "upload", "step": "waiting"}`,
 		"render-9.json":  `{"id": "render-9", "kind": "render", "step": "done"}`,
 		"timings.jsonl":  `{"kind": "search"}`,
@@ -309,13 +322,13 @@ func TestARecordThatIsNotOneIsNoRecord(t *testing.T) {
 		}
 	}
 	got := ReadJobs(fsys, source)
-	if len(got) != 2 || got[0].ID != SearchID || got[1].ID != "render-1" {
+	if len(got) != 3 || got[0].ID != SearchID || got[1].ID != "render-1" || got[2].ID != TranscribeID {
 		t.Errorf("read %+v", got)
 	}
 	if err := WriteJob(fsys, source, JobRecord{ID: "../out", Kind: JobRender}); err == nil {
 		t.Error("a record written outside the jobs folder")
 	}
-	if err := RemoveJob(fsys, source, "render-1"); err != nil || len(ReadJobs(fsys, source)) != 1 {
+	if err := RemoveJob(fsys, source, "render-1"); err != nil || len(ReadJobs(fsys, source)) != 2 {
 		t.Errorf("removed: %v, %d left", err, len(ReadJobs(fsys, source)))
 	}
 }
@@ -620,5 +633,44 @@ func TestASearchCutOffBeforeItBeginsIsInterrupted(t *testing.T) {
 		if !rec.Interrupted() || rec.From != req.From || rec.To != req.To || rec.Count != req.Count {
 			t.Errorf("%+v: the record says %+v", req, rec)
 		}
+	}
+}
+
+// Transcribe whole video hears what no search heard, to the end of the
+// episode, and finds nothing: it takes turns to hear and no other, and
+// leaves no record once it is done.
+//
+// On the real disk: ffmpeg reads the episode the transcription hears.
+func TestATranscriptionHearsTheWholeEpisodeAndNothingElse(t *testing.T) {
+	t.Parallel()
+	p, asked := searchProject(t, nil)
+	if _, err := p.Search(context.Background(), PlanRequest{From: 5, To: 15, Count: 1, Min: 5}, nil); err != nil {
+		t.Fatalf("%v %s", err, p.LastError())
+	}
+	plans := p.Plans()
+	var turns []string
+	turn := func(ctx context.Context, step string) (context.Context, func(), error) {
+		turns = append(turns, step)
+		if rec := ReadJobs(disk, p.Source); len(rec) != 1 || rec[0].ID != TranscribeID || rec[0].Step != StepWaiting {
+			t.Errorf("waiting for %s, the records say %+v", step, rec)
+		}
+		return ctx, func() {}, nil
+	}
+	if err := p.TranscribeJob(context.Background(), turn); err != nil {
+		t.Fatalf("%v %s", err, p.LastError())
+	}
+	if _, done := Coverage(disk, p.Source, p.Base.ASRModel); !done {
+		t.Errorf("the transcript was not finished, heard %v", HeardParts(disk, p.Source, p.Base.ASRModel))
+	}
+	if strings.Join(turns, " ") != "hearing" || *asked != 1 || len(p.Plans()) != len(plans) {
+		t.Errorf("turns %v, the model asked %d times, plans %v then %v", turns, *asked, plans, p.Plans())
+	}
+	if rec := ReadJobs(disk, p.Source); len(rec) != 0 {
+		t.Errorf("a finished transcription keeps %+v", rec)
+	}
+	// Heard to the end, there is nothing left to wait for.
+	turns = nil
+	if err := p.TranscribeJob(context.Background(), turn); err != nil || len(turns) != 0 {
+		t.Errorf("again: %v, turns %v", err, turns)
 	}
 }

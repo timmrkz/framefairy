@@ -8,7 +8,7 @@
   // Laid over a short episode searched whole, the window hid every clip
   // just found, and a frame round it read as the same window, so nothing
   // of the mark lies over the track but the tips. It says where Search looks
-  // next, which the app decides, see nextWindow in lib/flow.ts, or where
+  // next, which the Go side decides, see window.go, or where
   // Continue carries on a search that stopped. Moved off that, the search
   // is set aside and Search starts afresh where it is, see aside in
   // Episode.svelte. A triangle
@@ -17,7 +17,8 @@
   // turns into the window, and back into the mark when they are. Nothing
   // on the range picker says what has been searched: any part can be
   // searched, as often as anyone likes.
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
+  import { fade } from "svelte/transition";
   import { clock } from "../lib/api";
   import { gridStep } from "../lib/flow";
   import { hoverClip } from "../lib/hover";
@@ -43,7 +44,6 @@
     locked = false,
     onmove,
     onreset,
-    grid = $bindable(0),
     least = 0,
     leastSays = "",
     most = Infinity,
@@ -53,10 +53,15 @@
     unheardLit = -1,
     unheardOn = -1,
     giving = -1,
+    givingTo = -1,
+    part = null,
+    partWaiting = false,
+    partKey = "",
     onhoverunheard,
   }: {
     duration: number;
-    // The window of the search in hand, drawn while shown.
+    // The window of the search in hand, drawn while shown, and fading out
+    // from the frame it no longer is: Cancel pressed, or its search ended.
     from?: number;
     to?: number;
     shown?: boolean;
@@ -93,9 +98,6 @@
     // A double-click on the outline, which puts the window back where the
     // app would have it.
     onreset?: () => void;
-    // The round step an edge lands on, see gridStep, 0 until the track has
-    // been measured.
-    grid?: number;
     // The shortest the window may be, with room for the clips asked for,
     // and the longest, as much as the model reads at once, each with what
     // it is in words, said on the handle that runs into it.
@@ -106,8 +108,11 @@
     // A search stands stopped on the window, so the mark is where Continue
     // carries it on rather than where Search looks.
     resumes?: boolean;
-    // The parts of the video not heard yet, drawn while what was said is
-    // searched, because that search cannot look there.
+    // The parts of the video not transcribed yet, always, so where a search
+    // has to transcribe first, and how much is left to Transcribe whole
+    // video, is seen without opening the cards of what was said. Tim
+    // picked dots on what is not transcribed over dots on what is: a
+    // video transcribed to its end is a plain range picker, issue #432.
     unheard?: [number, number][];
     // The one of them whose card is under the hand, lit a step.
     unheardLit?: number;
@@ -117,8 +122,26 @@
     // gives way as the work hears, so its dots stand still while its edge
     // passes over them.
     giving?: number;
+    // Where the hearing in hand stops, or -1 for the end of the part: a
+    // search hears to the end of its window, which is where the window
+    // moves on to and where the dots left after it begin.
+    givingTo?: number;
+    // The part of the video Transcribe whole video works on, or nothing.
+    // It is framed, breathing and shedding the motes, the way the window
+    // of a search is while it hears, over the dots of that part, which
+    // still say what is not transcribed yet. Tim's pick on #458.
+    // When it goes, on Stop transcribing, everything in it stands still
+    // where it is and it fades, so nothing moves on after the press.
+    // While the work waits its turn, behind a search, a clip made by hand
+    // or anything else that has the hearing, it keeps its breath, dimmed,
+    // and sheds no motes: the work is on hold, not gone. Tim's report of
+    // 23 October. partKey names the work, so the frame of the next work
+    // is a frame of its own and never the one still fading.
+    part?: [number, number] | null;
+    partWaiting?: boolean;
+    partKey?: string;
     // The one of them under the hand here, by its place among them, or -1,
-    // so its card is lit too.
+    // so its card is lit too, while the cards are open.
     onhoverunheard?: (index: number) => void;
   } = $props();
 
@@ -160,13 +183,34 @@
   // the start did not. A window that starts or ends with the episode
   // reaches the outside of the border and takes its round corner, so it
   // lies on the range picker's own edge rather than inside it.
-  const frame = $derived.by(() => {
-    const first = from <= 0.5;
-    const last = to >= duration - 0.5;
-    const left = first ? "0px" : `(${on(from, inner)} + 1px)`;
-    const right = last ? "100cqw" : `(${on(to, inner)} + 2px)`;
+  function frameOver(a: number, b: number) {
+    const first = a <= 0.5;
+    const last = b >= duration - 0.5;
+    const left = first ? "0px" : `(${on(a, inner)} + 1px)`;
+    const right = last ? "100cqw" : `(${on(b, inner)} + 2px)`;
     return { style: `left: calc(${left}); width: max(calc(${right} - ${left}), 0px)`, first, last };
-  });
+  }
+  const frame = $derived(frameOver(from, to));
+  // Each time the search's window is shown is a frame of its own, so a
+  // search started while the frame of the last one still fades never takes
+  // that frame over, the way partKey keeps the part's apart.
+  let shownTimes = 0;
+  const shownKey = $derived(shown ? ++shownTimes : shownTimes);
+  // The part Transcribe whole video works on, framed the way the window of
+  // a search is while it hears, Tim's pick on #458.
+  const partFrame = $derived(part ? frameOver(part[0], part[1]) : null);
+  // A frame of work going, the part's or the search's window: its breath
+  // and its motes stop where they are, and it fades from however bright
+  // the breath had it. The fade is an animation of its own over the
+  // breath's, so it starts from there and does not jump to full first.
+  // Slower than a toast's, because it is a frame leaving the middle of the
+  // workspace, not a note in its corner, and Tim found both went
+  // abruptly, the part's on 23 October and the search's window on 24
+  // October.
+  function going(node: Element) {
+    node.classList.add("going");
+    return fade(node, { duration: 400 });
+  }
   onMount(() => {
     // Nothing measured while the workspace is put away, see App.svelte.
     const observer = new ResizeObserver(() => {
@@ -207,11 +251,9 @@
   // wide on the track, five minutes on a four hour episode and five seconds
   // on a six minute one. The ends of the episode win over it. The window
   // snapped this way before it was taken away, and Tim missed it.
-  // The workspace places its own windows on the same step, see onGrid in
-  // lib/flow.ts, so it is handed back to it.
-  $effect(() => {
-    grid = width > 0 && duration > 0 ? gridStep(duration, width) : 0;
-  });
+  // The Go side places the app's own windows on one of the same steps,
+  // chosen from the episode alone, see PlaceStep in engine/windows.go.
+  const grid = $derived(width > 0 && duration > 0 ? gridStep(duration, width) : 0);
 
   function round(t: number): number {
     return grid > 0 ? Math.round(t / grid) * grid : Math.round(t);
@@ -325,12 +367,40 @@
     onreset?.();
   }
 
-  // The part not transcribed yet under the hand lights its card in the
-  // list, the way a clip's mark lights its card, found by Tim. The parts
-  // take no pointer, so a press on one is a press on the track, and which
-  // is under the hand is read from where it is. A mark over a part is the
+  // The part not transcribed yet under the hand is lit, and lights its
+  // card in the list while the cards are open, the way a clip's mark
+  // lights its card, found by Tim. Lit only with the cards open, it lit
+  // one way and not the other, Tim's report of 24 October. The parts take
+  // no pointer, so a press on one is a press on the track, and which is
+  // under the hand is read from where it is. A mark over a part is the
   // mark's.
-  let unheardHere = -1;
+  let unheardHere = $state(-1);
+
+  // The parts the work has heard into, by where they end, which never
+  // moves, each with the moment its dots are laid from. Their dots stay
+  // laid from it once the work stops or waits, whole columns, so not one
+  // dot moves: centred again, they jumped sideways each time the work
+  // stopped, went on hold or carried on, Tim's report of 24 October. It is
+  // where the hearing stops, the end of a search's window, so the dots
+  // after it begin where the window moves on to, or else the end of the
+  // part: laid from the end, the room left over was at the window's left
+  // edge, and the dots started a few pixels right of it, Tim's report of
+  // 25 October, 21.40. A part nobody has heard into is centred, the way
+  // Tim measured it.
+  let worked = $state<{ end: number; grid: number }[]>([]);
+  const givingEnd = $derived(giving >= 0 ? (unheard.find(([a]) => Math.abs(a - giving) < 0.5)?.[1] ?? -1) : -1);
+  // The part the work begins to hear into, laid from its moment in the
+  // same frame, and kept from then on.
+  const fresh = $derived.by(() => {
+    if (givingEnd < 0 || untrack(() => worked).some((w) => Math.abs(w.end - givingEnd) < 0.5)) return null;
+    return { end: givingEnd, grid: givingTo > giving && givingTo < givingEnd - 0.5 ? givingTo : givingEnd };
+  });
+  $effect(() => {
+    const part = fresh;
+    if (part) untrack(() => (worked = [...worked, part]));
+  });
+  const workedOn = (b: number) =>
+    worked.find((w) => Math.abs(w.end - b) < 0.5) ?? (fresh && Math.abs(fresh.end - b) < 0.5 ? fresh : undefined);
   function hoverUnheard(event: PointerEvent) {
     const over = event.type === "pointerleave" || !track || (event.target as Element | null)?.closest?.(".clipmark") ? -1 : timeAt(event.clientX);
     const i = over < 0 ? -1 : unheard.findIndex(([a, b]) => a <= over && over < b);
@@ -369,7 +439,7 @@
      the very start or the very end it would otherwise be cut off by the
      corner. -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="over" onpointermove={unheard.length ? hoverUnheard : undefined} onpointerleave={unheard.length ? hoverUnheard : undefined}>
+<div class="over" onpointermove={unheard.length || unheardHere >= 0 ? hoverUnheard : undefined} onpointerleave={unheard.length || unheardHere >= 0 ? hoverUnheard : undefined}>
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="track asks"
@@ -382,7 +452,15 @@
   <!-- What has not been heard yet, dots under the minutes so their lines
        still show through. -->
   {#each unheard as [a, b], i (i)}
-    <div class="unheard" class:lit={i === unheardLit || i === unheardOn} class:giving={giving >= 0 && Math.abs(a - giving) < 0.5} style="--at: {on(a)}; --to: {on(b)}"></div>
+    <div
+      class="unheard"
+      class:lit={i === unheardLit || i === unheardOn || i === unheardHere}
+      class:giving={giving >= 0 && Math.abs(a - giving) < 0.5}
+      class:worked={!!workedOn(b)}
+      class:first={a < 0.5}
+      class:last={b > duration - 0.5}
+      style="--at: {on(a)}; --to: {on(b)}; --grid: {on(workedOn(b)?.grid ?? b)}"
+    ></div>
   {/each}
   <!-- Every clip is a mark, and a mark is pressed to work on its clip. -->
   {#each marks as m (m.key)}
@@ -434,27 +512,44 @@
     </Info>
   </span>
 </div>
-{#if shown}
-  <!-- Only looked at, never taken hold of: the window of a search in hand
-       is the search's, and a press on it is a press on the track. Drawn beside
-       the track rather than in it, over its border, because the track
-       clips what is inside it to its round corners and cut into the
-       window and its breath. -->
+<!-- Only looked at, never taken hold of: the window of a search in hand
+     is the search's, and a press on it is a press on the track. Drawn
+     beside the track rather than in it, over its border, because the
+     track clips what is inside it to its round corners and cut into the
+     window and its breath. The part Transcribe whole video works on is
+     drawn the same way, by the same lines, because it is the same thing:
+     work in hand on a stretch of the video. -->
+{#snippet stretch(f: { style: string; first: boolean; last: boolean }, busy: boolean, all: boolean, behind: boolean)}
   <div
     class="window frame"
-    class:waiting={locked}
-    class:locked
-    class:whole
-    class:first={frame.first}
-    class:last={frame.last}
-    style={frame.style}
+    class:waiting={busy}
+    class:locked={busy}
+    class:whole={all}
+    class:behind
+    class:first={f.first}
+    class:last={f.last}
+    style={f.style}
   >
     <!-- The motes of work in hand rise through it while its clips are
          found, the ones every control of the app sheds, with no rim and no
          fill: how far the search has come is said on the clip cards, and
          only there. -->
-    {#if locked}<Busy rim={false} />{/if}
+    {#if busy && !behind}<Busy rim={false} />{/if}
   </div>
+{/snippet}
+{#if shown}
+  {#key shownKey}
+    <div class="searched" out:going|global>
+      {@render stretch(frame, locked, whole, false)}
+    </div>
+  {/key}
+{/if}
+{#if partFrame}
+  {#key partKey}
+    <div class="part" out:going|global>
+      {@render stretch(partFrame, true, false, partWaiting)}
+    </div>
+  {/key}
 {/if}
 {#if !shown && to > from && duration > 0}
   <!-- The window at rest, marked at its four corners and not drawn over
@@ -606,6 +701,35 @@
   .window.locked.whole {
     background-color: var(--accent-wash);
     border-color: var(--accent);
+  }
+
+  /* The whole video's part while it waits its turn: the same frame
+     and breath in less of the colour, the accent at the 30 % the app
+     already has, and its wash at 30 % of its own. Half of each was too
+     little to read as on hold, Tim's report of 24 October. The breath is
+     the frame's opacity, so the dimming is done in the colours and the
+     two never fight. */
+  .window.locked.behind {
+    background-color: color-mix(in srgb, var(--accent-wash) 30%, transparent);
+    border-color: var(--accent-fill);
+  }
+
+  /* What a frame of work fades in, the part's or the search's window:
+     the same box the frames are laid out in, so the frame inside is where
+     it would be without it, and over the track the same way. */
+  .part,
+  .searched {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    pointer-events: none;
+  }
+
+  /* Going, nothing in it moves on: the breath and the motes stop where
+     they are while it fades. */
+  .going,
+  .going :global(*) {
+    animation-play-state: paused !important;
   }
 
   /* On the range picker's own edge, its round corner. */
@@ -769,7 +893,8 @@
   }
 
   /* A part not transcribed yet, dots over the track and under the
-     minutes and the clips, and nothing else, as Tim picked them. */
+     minutes and the clips, with a dashed line down each edge, as Tim
+     picked them. */
   .unheard {
     position: absolute;
     top: 0;
@@ -780,17 +905,20 @@
     pointer-events: none;
   }
 
-  /* Under the hand or the keys on its card, the grey of a lit card, with
-     the range picker's own border over it, which is the range picker's
-     and not the part's. With the border gone the range picker looked
-     broken, found by Tim. */
+  /* Under the hand, here or on its card, or the keys on its card, half
+     the grey of a lit card, with the range picker's own border over it,
+     which is the range picker's and not the part's. With the border gone
+     the range picker looked broken, found by Tim. The whole grey of a
+     card was far too strong on the range picker, Tim's report of 24
+     October. */
   .unheard.lit {
-    background: var(--ink-3);
+    background: color-mix(in srgb, var(--ink-3) 50%, transparent);
   }
 
   /* Its dots, the card's, rising from the foot, so the minutes stand
-     clear above them, and with no dashed edge, which Tim found the dots
-     did without. They fill the part as whole columns, centred, so the
+     clear above them. With no edge at all, a part whose dots began a few
+     pixels in looked as if it began there, so its sides are dashed, see
+     below, Tim's report of 26 October, 12.27. They fill the part as whole columns, centred, so the
      space from the last dot to the edge is the same on both sides and
      about half the space between two dots: a pattern that started
      wherever its grid fell looked off, and a row and a column left clear
@@ -817,15 +945,70 @@
      wipes over them, a dot at a time and smoothly. Centred, they moved
      half a pixel with every pixel of the edge and stepped back half a dot
      each time a column went, so the pattern walked back and forth, found
-     by Tim. The right edge is where something heard begins or the video
-     ends, so it never moves, and the dots are laid from it. Once the work
-     stops, the part holds still and its dots are centred again. */
+     by Tim. They are laid from --grid, a moment that never moves: where
+     the hearing stops, the end of a search's window, or the right edge,
+     where something heard begins or the video ends. Once the work stops
+     or waits, the part holds still and keeps them where they are, whole
+     columns from that moment, the room left over at the edges: centred
+     again, every dot jumped sideways, Tim's report of 24 October. Laid
+     from the right edge alone, the room left over was where the window
+     moved on to, and the dots began a few pixels right of its edge, his
+     report of 25 October, 21.40. */
+  .unheard.worked::before {
+    left: mod(calc(var(--grid) - var(--at)), var(--dot-pitch));
+    right: mod(calc(var(--to) - var(--grid)), var(--dot-pitch));
+    background-position: left 0 bottom 1px;
+  }
+
   .unheard.giving::before {
     --side: 0px;
+    left: 0;
+    right: mod(calc(var(--to) - var(--grid)), var(--dot-pitch));
+    background-position: left mod(calc(var(--grid) - var(--at)), var(--dot-pitch)) bottom 1px;
   }
 
   .unheard.lit::before {
     background-image: var(--halftone-lit);
+  }
+
+  /* Its edges, a dashed line down each side, so where it begins and ends
+     is plain wherever its dots fall, Tim's report of 26 October, 12.27.
+     A dash beside each row of dots: tiles of the dots' pitch laid from
+     the same foot. They are as strong as the dots beside them, in their
+     colour, --halftone-ink, and with their fade, so none stands in the
+     top third: in the grey of a card's edge they were too bright, Tim's
+     report of 26 October, 14.22. None along the top or the foot, where
+     the range picker's own border is, and none where the part meets the
+     start or the end of the video, which the border marks. Under the
+     hand they go into the grey, the way a card's do. */
+  .unheard::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-left: 1px solid var(--halftone-ink);
+    border-right: 1px solid var(--halftone-ink);
+    mask-image: var(--halftone-dash-y), var(--halftone-fade);
+    mask-size:
+      100% var(--dot-pitch),
+      100% 100%;
+    mask-repeat: repeat-y, no-repeat;
+    mask-position:
+      0 calc(100% - 1px),
+      0 0;
+    mask-composite: intersect;
+    pointer-events: none;
+  }
+
+  .unheard.first::after {
+    border-left: none;
+  }
+
+  .unheard.last::after {
+    border-right: none;
+  }
+
+  .unheard.lit::after {
+    border-color: transparent;
   }
 
   /* The box the playhead is drawn over, exactly the track and nothing

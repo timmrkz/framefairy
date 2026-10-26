@@ -8,7 +8,7 @@
 import { existsSync, readdirSync, realpathSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, extname, join } from "node:path";
 import { ask, caughtUp, chosen, clipList, control, engineState, episodeOn, foldsDone, fromSidebar, handles, high, holdClock, letClockGo, middle, news, nextNews, nextPaint, overlay, pageUntil, playUntil, pressHead, realFrames, recordFrames, runClock, seenUntil, settle, shortFrames, shortSound } from "../bridge.mjs";
-import { canLook, changesOf, clickCard, clickedFromAhead, clockOf, newCards, pieceCount, rate, restAhead, shortOf, shotClips, url } from "../common/steps.mjs";
+import { canLook, changesOf, clickCard, clickedFromAhead, clockOf, halfOf, newCards, pieceCount, rate, restAhead, shortOf, shotClips, url } from "../common/steps.mjs";
 
 export const steps = {
   // ["clips with", [word, n]]
@@ -457,7 +457,9 @@ export const steps = {
       else if (part.card !== keyed) walk.wrong = `the part not transcribed yet the keys are on is ${part.card} in the list, not the grey of every lit card, ${keyed}`;
       else if (part.lit.join() !== String(part.mine))
         walk.wrong = `the part not transcribed yet the keys are on lit parts ${JSON.stringify(part.lit)} on the range picker, not its own, ${part.mine}`;
-      else if (part.fill !== keyed) walk.wrong = `the part not transcribed yet lit on the range picker is ${part.fill}, not the grey of its card, ${keyed}`;
+      // On the range picker in half that grey: the whole of it was far
+      // too strong there, Tim's report of 24 October.
+      else if (!halfOf(part.fill, keyed)) walk.wrong = `the part not transcribed yet lit on the range picker is ${part.fill}, not half the grey of its card, ${keyed}`;
       return;
     }
     // A clip's card under the hand and the chosen clip's card, and the

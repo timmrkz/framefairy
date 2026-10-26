@@ -131,6 +131,8 @@
         return "the render";
       case "clip":
         return "the clip being made";
+      case "transcribe":
+        return "the transcription";
       default:
         return "the download";
     }

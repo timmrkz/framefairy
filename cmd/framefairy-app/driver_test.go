@@ -69,6 +69,9 @@ type desk struct {
 	pictures                  []string
 	// clipboard is what the app last put on the clipboard.
 	clipboard atomic.Pointer[string]
+	// exported is where the app last saved a file through the system's
+	// save box, which the desk stands in for, see start.
+	exported atomic.Pointer[string]
 }
 
 // open starts the app over a new, empty library. Adding a video asks the
@@ -125,6 +128,18 @@ func (d *desk) start(st *store) {
 	d.svc.clipboard = func(text string) bool {
 		d.clipboard.Store(&text)
 		return true
+	}
+	// The save box is the desk's: it saves on the desk's Desktop under the
+	// name the app offers, in the store's files, so a walk can read what
+	// was exported.
+	d.svc.saveBox = func(name string) (string, error) {
+		desktop := filepath.Join(d.home, "Desktop")
+		if err := st.files.MkdirAll(desktop, 0o755); err != nil {
+			return "", err
+		}
+		path := filepath.Join(desktop, name)
+		d.exported.Store(&path)
+		return path, nil
 	}
 	d.svc.report.stop = d.svc.CancelListening
 	d.svc.report.told = func(open bool) { d.bus.send("report-window", open) }
@@ -424,7 +439,7 @@ func (d *desk) copied() string {
 func (d *desk) reopen() {
 	st := openStore()
 	d.start(st)
-	d.svc.jobs.restore(st.Episodes())
+	d.svc.restoreJobs(st.Episodes())
 }
 
 // outcome is what the app says about an episode's last search where its
@@ -515,6 +530,8 @@ type speech struct {
 	mu      sync.Mutex
 	broken  error
 	started chan struct{}
+	// skip is how many pieces are heard before started is closed.
+	skip    int
 	gate    chan struct{}
 	samples atomic.Int64
 }
@@ -530,9 +547,18 @@ func (s *speech) breaks(err error) {
 // hearing gives a channel that is closed when the speech model is next
 // given audio.
 func (s *speech) hearing() <-chan struct{} {
+	return s.hearingAfter(0)
+}
+
+// hearingAfter gives a channel that is closed when the speech model is
+// given audio once more after heard pieces, so those are heard to their
+// end. A piece still being heard when the work stops is let go, so a test
+// about what a stop keeps stops it after a piece was heard.
+func (s *speech) hearingAfter(heard int) <-chan struct{} {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.started = make(chan struct{})
+	s.skip = heard
 	return s.started
 }
 
@@ -540,7 +566,13 @@ func (s *speech) hearing() <-chan struct{} {
 // called, the way a real model is inside one call that takes no stop. in
 // is closed once that piece is in.
 func (s *speech) hold() (in <-chan struct{}, let func()) {
-	in = s.hearing()
+	return s.holdAfter(0)
+}
+
+// holdAfter holds the piece after heard pieces, which are heard to their
+// end, so a test about what a stop keeps has something heard to keep.
+func (s *speech) holdAfter(heard int) (in <-chan struct{}, let func()) {
+	in = s.hearingAfter(heard)
 	gate := make(chan struct{})
 	s.mu.Lock()
 	s.gate = gate
@@ -565,12 +597,16 @@ func (s *speech) seconds() float64 {
 func (s *speech) Recognize(samples []float32, rate int) []engine.Token {
 	s.samples.Add(int64(len(samples)))
 	s.mu.Lock()
-	if s.started != nil {
-		close(s.started)
-		s.started = nil
+	var gate chan struct{}
+	if s.started != nil && s.skip > 0 {
+		s.skip--
+	} else {
+		if s.started != nil {
+			close(s.started)
+			s.started = nil
+		}
+		gate, s.gate = s.gate, nil
 	}
-	gate := s.gate
-	s.gate = nil
 	s.mu.Unlock()
 	if gate != nil {
 		<-gate

@@ -186,4 +186,55 @@ export default [
       ["file moved away"],
     ],
   },
+  {
+    // Issue #432, asked for by Tim: the transcript of the whole video is
+    // exported from its menu with the word corrected in the caption box.
+    name: "the transcript is exported with a word corrected in the caption box",
+    steps: [
+      ["frame", "Schulhof"],
+      ["click", "Schulhof"],
+      ["press", "End"],
+      ["type", "f"],
+      ["press", "Enter"],
+      ["holds", "Schulhoff"],
+      ["transcript", "Text"],
+      ["exported", "Schulhoff"],
+      ["transcript", "Escape"],
+      ["transcript", "Subtitles"],
+      ["exported", "Schulhoff"],
+      ["transcript", "click"],
+      ["transcript", "keys"],
+      ["exported", "Schulhoff"],
+    ],
+  },
+  {
+    // Issue #432: a video just added, still being heard by its first
+    // search, is transcribed to its end from its menu, stopped and carried
+    // on, and then offers its transcript.
+    name: "a video added is transcribed to its end from its menu",
+    steps: [
+      // Its first search hears the first of its two windows and ends, so
+      // half of it is still to come when Transcribe whole video is
+      // clicked, and the click holds the speech so it stays to come.
+      ["speech", "go"],
+      ["add", 1500],
+      ["transcript", "transcribe"],
+      // A search started meanwhile stops it, for good.
+      ["transcript", "search stops it"],
+      // Asked for again, stopped and asked for again, each said in the
+      // frame of the click.
+      ["transcript", "continue"],
+      ["transcript", "stop"],
+      ["speech", "go"],
+      ["transcript", "continue"],
+      ["transcript", "stop at the end"],
+      ["transcript", "Text"],
+    ],
+  },
+  {
+    // Tim's report of 26 October, 12.27: the whole video's transcription
+    // and the work on its clips go one at a time.
+    name: "Transcribe video waits until the search is done",
+    steps: [["speech", "hold"], ["add", 1500], ["wait for", "Cancel"], ["transcript", "waits for the search"]],
+  },
 ];

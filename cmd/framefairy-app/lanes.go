@@ -18,7 +18,9 @@ import (
 // memory and the same graphics chip, and each is slower for sharing them.
 // So a search that comes to finding takes the hearing lane back from a
 // search that hears, which saves what it heard and waits for its turn
-// again, and hearing waits for as long as a search finds. Work that is
+// again, and hearing waits for as long as a search finds, or waits to.
+// A search asks to find before it lets go of hearing, see engine.Turn, so
+// nothing hears between its hearing and its finding. Work that is
 // not a step of a search, a model being installed or a transcription asked
 // for by itself, is neither taken back nor held up. A search whose
 // language model is in the cloud shares nothing with the speech model, so
@@ -33,6 +35,13 @@ import (
 // finding does, and does not wait for a search that finds: a minute of
 // audio is heard in a second or two. Clips made by hand hear in the order
 // they were asked for.
+//
+// And last: the whole video heard by itself, Transcribe whole video in
+// its menu, hears only when no search and no clip needs the lane. It can
+// take an hour, and nobody waits on it the way somebody waits on a search
+// or a clip, so it goes behind every one of them that asks to hear, gives
+// the lane back to each, and waits while a search finds, like a search
+// that hears. Issue #432.
 type lanes struct {
 	mu      sync.Mutex
 	held    map[string]*holder
@@ -42,7 +51,8 @@ type lanes struct {
 
 // A turn is either plain, or a step of a search: hearing, which gives way,
 // or finding, which the hearing lane gives way to, or the hearing of a clip
-// made by hand, which everything of a search gives way to.
+// made by hand, which everything of a search gives way to, or the hearing
+// of a whole video, which gives way to all of them.
 type turnKind int
 
 const (
@@ -50,17 +60,25 @@ const (
 	hearingTurn
 	findingTurn
 	handHearingTurn
+	wholeHearingTurn
 )
 
 type holder struct {
 	kind   turnKind
 	cancel context.CancelFunc
+	// told is said to once, when the turn is taken back, and taken says
+	// it was.
+	told  func()
+	taken bool
 }
 
-// ask is a turn asked for and not yet given.
+// ask is a turn asked for and not yet given. asked is said to once, if it
+// has to wait, and told goes to its holder.
 type ask struct {
-	lane string
-	kind turnKind
+	lane  string
+	kind  turnKind
+	asked func()
+	told  func()
 }
 
 func newLanes() *lanes {
@@ -87,10 +105,45 @@ func (l *lanes) take(ctx context.Context, lane string, kind turnKind) (context.C
 	return l.wait(ctx, l.enqueue(lane, kind))
 }
 
+// takeTold takes a turn the way take does. letGo lets go of the turn the
+// job held before, once this ask has its place, so whatever waits for that
+// lane sees the ask, see engine.Turn. asked is said to when the turn has
+// to wait, after the turn it takes back, if it takes one, was told. Once
+// the turn is taken back itself, told is said to before whoever took it
+// back is said to or has its turn. All three are said to outside the
+// lanes' lock, so they may do as they like.
+func (l *lanes) takeTold(ctx context.Context, lane string, kind turnKind, letGo, asked, told func()) (context.Context, func(), error) {
+	a := l.enqueue(lane, kind)
+	a.asked, a.told = asked, told
+	if letGo != nil {
+		letGo()
+	}
+	return l.wait(ctx, a)
+}
+
+// takeBackLocked takes a turn back, and gives what it is to be told, the
+// first time only. l.mu is held.
+func (l *lanes) takeBackLocked(h *holder, told []func()) []func() {
+	h.cancel()
+	if h.taken || h.told == nil {
+		return told
+	}
+	h.taken = true
+	return append(told, h.told)
+}
+
+func tell(told []func()) {
+	for _, f := range told {
+		f()
+	}
+}
+
 // wait waits for a turn asked for, and gives the context the turn runs in,
 // which ends when the lane is taken back, and the function that lets it
 // go. It gives up when ctx ends.
 func (l *lanes) wait(ctx context.Context, a *ask) (context.Context, func(), error) {
+	var told []func()
+	asked := a.asked
 	l.mu.Lock()
 	for ctx.Err() != nil || !l.mayLocked(a) {
 		// Given up, it gives up even when the lane has just come free:
@@ -99,17 +152,23 @@ func (l *lanes) wait(ctx context.Context, a *ask) (context.Context, func(), erro
 			l.dropLocked(a)
 			l.wakeLocked()
 			l.mu.Unlock()
+			tell(told)
 			return nil, nil, ctx.Err()
 		}
 		// A clip made by hand takes the lane back from a search that
 		// hears. The search saves what it heard and asks again, behind it.
-		if a.kind == handHearingTurn {
-			if hearing := l.held[a.lane]; hearing != nil && hearing.kind == hearingTurn {
-				hearing.cancel()
-			}
+		// Both take it back from the whole video heard by itself.
+		if hearing := l.held[a.lane]; hearing != nil && givesWay(hearing.kind, a.kind) {
+			told = l.takeBackLocked(hearing, told)
 		}
 		changed := l.changed.WaitLocked()
 		l.mu.Unlock()
+		tell(told)
+		told = nil
+		if asked != nil {
+			asked()
+			asked = nil
+		}
 		select {
 		case <-ctx.Done():
 			l.mu.Lock()
@@ -123,15 +182,16 @@ func (l *lanes) wait(ctx context.Context, a *ask) (context.Context, func(), erro
 	}
 	l.dropLocked(a)
 	turnCtx, cancel := context.WithCancel(ctx)
-	h := &holder{kind: a.kind, cancel: cancel}
+	h := &holder{kind: a.kind, cancel: cancel, told: a.told}
 	l.held[a.lane] = h
 	if a.kind == findingTurn {
-		if hearing := l.held[LaneHearing]; hearing != nil && hearing.kind == hearingTurn {
-			hearing.cancel()
+		if hearing := l.held[LaneHearing]; hearing != nil && (hearing.kind == hearingTurn || hearing.kind == wholeHearingTurn) {
+			told = l.takeBackLocked(hearing, told)
 		}
 	}
 	l.wakeLocked()
 	l.mu.Unlock()
+	tell(told)
 	var once sync.Once
 	release := func() {
 		once.Do(func() {
@@ -149,18 +209,21 @@ func (l *lanes) wait(ctx context.Context, a *ask) (context.Context, func(), erro
 
 // mayLocked says whether an ask may have its turn now: its lane is free,
 // nobody asked for that lane before it, and it is not a search hearing
-// while a search finds. A clip made by hand that hears goes ahead of a
-// search that asked to hear before it. l.mu is held.
+// while a search finds or waits to. A clip made by hand that hears goes
+// ahead of a search that asked to hear before it. l.mu is held.
 func (l *lanes) mayLocked(a *ask) bool {
 	if l.held[a.lane] != nil {
 		return false
 	}
-	if a.kind == hearingTurn {
+	if a.kind == hearingTurn || a.kind == wholeHearingTurn {
 		if finding := l.held[LaneFinding]; finding != nil && finding.kind == findingTurn {
 			return false
 		}
 		for _, other := range l.asks {
-			if other.lane == a.lane && other.kind == handHearingTurn {
+			if other.lane == a.lane && givesWay(a.kind, other.kind) {
+				return false
+			}
+			if other.lane == LaneFinding && other.kind == findingTurn {
 				return false
 			}
 		}
@@ -169,11 +232,48 @@ func (l *lanes) mayLocked(a *ask) bool {
 		if earlier == a {
 			return true
 		}
-		if earlier.lane == a.lane && (a.kind != handHearingTurn || earlier.kind == handHearingTurn) {
+		if earlier.lane == a.lane && !passes(a.kind, earlier.kind) {
 			return false
 		}
 	}
 	return true
+}
+
+// givesWay says whether a turn that hears gives the hearing lane to another
+// that asks for it: a search to a clip made by hand, and the whole video
+// to everything but another whole video. A model being installed takes a
+// plain turn in the hearing lane, and it waited behind the whole video for
+// as long as that heard, up to an hour, found by the second review of
+// #458. The model the whole video hears with cannot be changed or removed
+// while it runs, see speechLocked, so installing another does it no harm.
+func givesWay(held, asks turnKind) bool {
+	switch held {
+	case hearingTurn:
+		return asks == handHearingTurn
+	case wholeHearingTurn:
+		return asks != wholeHearingTurn
+	}
+	return false
+}
+
+// passes says whether an ask goes ahead of one in the same lane asked for
+// before it: a clip made by hand goes ahead of everything but another clip,
+// and everything but another whole video goes ahead of the whole video.
+//
+// The whole video waits for every search and clip that asks to hear, so
+// whatever was asked for after it may not wait for it in turn. A model
+// being installed once did, behind it, and a search behind the install:
+// each waited on the next and none of the three ever heard. Found by
+// TestTurnsFromEverywhereAtOnce once the review of #458 put the whole
+// video in it.
+func passes(a, earlier turnKind) bool {
+	if earlier == wholeHearingTurn {
+		return a != wholeHearingTurn
+	}
+	if a == handHearingTurn {
+		return earlier != handHearingTurn
+	}
+	return false
 }
 
 func (l *lanes) dropLocked(a *ask) {
@@ -193,6 +293,9 @@ func laneOfStep(kind, step string, local bool) (string, turnKind) {
 	case "hearing":
 		if kind == engine.JobClip {
 			return LaneHearing, handHearingTurn
+		}
+		if kind == engine.JobTranscribe {
+			return LaneHearing, wholeHearingTurn
 		}
 		return LaneHearing, hearingTurn
 	case "finding":

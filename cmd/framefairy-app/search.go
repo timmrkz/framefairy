@@ -26,6 +26,11 @@ import (
 // pressed after it stops it even if the Cancel reaches the Go side first,
 // see StopClipWork. The Go side's own searches have none.
 func (s *FrameFairy) Search(path string, req engine.PlanRequest, click string) Job {
+	return s.search(path, req, click, 0)
+}
+
+// search is Search, carrying on a search that had written carried clips.
+func (s *FrameFairy) search(path string, req engine.PlanRequest, click string, carried int) Job {
 	if !s.store.Known(path) {
 		return s.jobs.refuse(path, engine.JobSearch, jobLabel(engine.JobSearch, false), notInLibrary, func(j *Job) {
 			j.From, j.To, j.Count, j.Min = req.From, req.To, req.Count, req.Min
@@ -38,12 +43,23 @@ func (s *FrameFairy) Search(path string, req engine.PlanRequest, click string) J
 			s.jobs.waitJob(j.ID)
 		}
 	}
+	// The video's transcription and the work on its clips go one at a
+	// time, see Transcribe.
+	s.stopTranscribing(path, "search")
 	// A search that stopped is taken up by this one, which writes a record
 	// of its own in its place.
 	s.jobs.settle(path, engine.JobSearch, "")
-	return s.jobs.addSteps(path, engine.JobSearch, jobLabel(engine.JobSearch, false), true, func(j *Job) {
+	job := s.jobs.addSteps(path, engine.JobSearch, jobLabel(engine.JobSearch, false), true, func(j *Job) {
 		j.Record, j.From, j.To, j.Count, j.Min, j.click = engine.SearchID, req.From, req.To, req.Count, req.Min, click
+		j.Carried = carried
 	}, func(ctx context.Context, p *engine.Project, turn engine.Turn) (string, error) {
+		// Its window is the video's window, written here, in the search's
+		// own work and so before windowOn below, never after it. Written
+		// once the job was queued, a search that found its clips at once
+		// could move the window on first and then have it written back,
+		// the fourth review of #458. Not where the job is prepared, which
+		// holds the queue, taken after windowMu everywhere else.
+		s.searchesWindow(path, req)
 		// The model loads while the episode is still being heard, so the
 		// search has nothing to wait for once it comes to finding.
 		// A window to the end of the episode, To 0, is never heard before
@@ -83,8 +99,13 @@ func (s *FrameFairy) Search(path string, req engine.PlanRequest, click string) J
 				}
 			}()
 		}
-		return p.Search(ctx, req, turn)
+		result, err := p.Search(ctx, req, turn)
+		if err == nil && ctx.Err() == nil {
+			s.windowOn(path, req)
+		}
+		return result, err
 	})
+	return job
 }
 
 // Continue carries on a search or a render that was cut off or failed,
@@ -105,10 +126,12 @@ func (s *FrameFairy) Continue(id, click string) Job {
 	path := stopped.Episode
 	if stopped.Kind == engine.JobSearch {
 		req := engine.PlanRequest{From: stopped.From, To: stopped.To}
+		carried := 0
 		// A search that was refused wrote no record, and the one on disk
 		// is an older search's, about another window.
 		if rec := engine.ReadSearch(s.store.files, path); rec != nil && stopped.Record != "" {
 			req = rec.Request()
+			carried = s.planned(path, *rec)
 		}
 		if req.Count == 0 {
 			set := s.store.Settings()
@@ -121,7 +144,7 @@ func (s *FrameFairy) Continue(id, click string) Job {
 			}
 			req.Count = set.targetFor(window)
 		}
-		return s.Search(path, req, click)
+		return s.search(path, req, click, carried)
 	}
 	var carry *engine.JobRecord
 	for _, rec := range engine.ReadJobs(s.store.files, path) {
@@ -135,7 +158,24 @@ func (s *FrameFairy) Continue(id, click string) Job {
 	if carry.Kind == engine.JobClip {
 		return s.makeClip(path, carry.Clip(), carry.ID, click)
 	}
+	if carry.Kind == engine.JobTranscribe {
+		return s.Transcribe(path)
+	}
 	return s.render(path, carry.Render(), carry)
+}
+
+// planned is how many clips the search a record is of has written to its
+// plan, read from the plan, so it is true after the app was closed too.
+func (s *FrameFairy) planned(path string, rec engine.JobRecord) int {
+	duration := rec.To
+	if info, err := s.probe(context.Background(), path); err == nil {
+		duration = info.Duration
+	}
+	view, err := engine.ReadPlan(s.store.files, filepath.Join(engine.WorkDir(path), "logs", rec.PlanName(duration)))
+	if err != nil {
+		return 0
+	}
+	return len(view.Clips)
 }
 
 // render queues a render, carrying on the one the record is of, if any.
@@ -199,6 +239,7 @@ func (s *FrameFairy) makeClip(path string, req engine.ClipRequest, carry, click 
 	if math.IsNaN(req.At) || math.IsInf(req.At, 0) || req.At < 0 || req.At > engine.MaxEpisodeSeconds {
 		return s.jobs.refuse(path, engine.JobClip, label, "there is no such moment in the video")
 	}
+	s.stopTranscribing(path, "clip made by hand")
 	id := engine.NewClipID()
 	if carry != "" {
 		id = carry
@@ -213,9 +254,9 @@ func (s *FrameFairy) makeClip(path string, req engine.ClipRequest, carry, click 
 }
 
 // firstSearch asks for the first search of an episode that has never been
-// searched, the moment it is added: its first window, see
-// engine.SuggestedWindow, and no more than the model can read at once. It
-// looks for the clips its window suggests, or for the target typed.
+// searched, the moment it is added. It searches the video's window, which
+// it places, see videoWindow, the same one the workspace draws, and looks
+// for the clips that window suggests, or for the target typed.
 func (s *FrameFairy) firstSearch(ctx context.Context, path string) {
 	if engine.EverSearched(s.store.files, path) {
 		return
@@ -224,44 +265,31 @@ func (s *FrameFairy) firstSearch(ctx context.Context, path string) {
 	if err != nil || info.Duration <= 0 {
 		return
 	}
+	w, ok := s.videoWindow(ctx, path)
+	if !ok {
+		return
+	}
 	set := s.store.Settings()
 	opts := set.options()
-	room := engine.SearchRoom(s.store.files, opts, filepath.Join(engine.WorkDir(path), "logs"))
-	req := engine.PlanRequest{Min: opts.Min, Max: opts.Max}
-	req.To = firstWindowEnd(info.Duration, room, req)
-	end := req.To
-	if end <= 0 {
-		end = info.Duration
+	req := engine.PlanRequest{From: w.From, To: w.To, Min: opts.Min, Max: opts.Max}
+	// A window to the end of the episode is To 0, which is heard to its
+	// end before it is searched.
+	if w.To >= info.Duration-0.05 {
+		req.To = 0
 	}
 	// A target typed for a window this long, or what this window suggests.
-	req.Count = set.targetFor(end)
+	req.Count = set.targetFor(w.To - w.From)
 	if req.Count == 0 {
-		req.Count = engine.SuggestedCount(end, req.Min, req.Max)
+		req.Count = engine.SuggestedCount(w.To-w.From, req.Min, req.Max)
 	}
 	s.Search(path, req, "")
-}
-
-// firstWindowEnd is where an episode's first window ends. It is what the
-// workspace would draw for it: the first of the equal windows the episode
-// is cut into, see engine.SuggestedWindow, no longer than the model can
-// read of an episode not heard yet, and no shorter than a target typed for
-// it needs. 0 is the end of the episode.
-func firstWindowEnd(duration float64, room engine.Room, req engine.PlanRequest) float64 {
-	end := math.Min(duration, engine.SuggestedWindow(duration))
-	if room.Chars > 0 {
-		end = math.Min(end, math.Floor(float64(room.Chars)/engine.RateOf(nil)))
-	}
-	end = math.Max(end, math.Min(duration, float64(req.Count)*req.Min))
-	if end >= duration-0.05 {
-		return 0
-	}
-	return end
 }
 
 // cancelSteps calls off a search or a render, or takes away the note of
 // one that stopped. A search called off says so where its work was, with
 // Continue, the same as one cut off by the app closing: what it heard stays
-// and it can be carried on. A render called off keeps the shorts it
+// and it can be carried on. The whole video being transcribed does the
+// same, its menu says Continue transcribing. A render called off keeps the shorts it
 // finished and goes, because its Render button is where it is carried on.
 // It says whether the job was one of those.
 //
@@ -287,9 +315,9 @@ func (s *FrameFairy) cancelSteps(id string) bool {
 			s.jobs.settle(j.Episode, j.Kind, j.Record)
 			return true
 		}
-		// A search or a clip says Stopped in its record as it ends, and a
-		// render forgets its record then, so nothing it writes on its way
-		// out brings it back, see runJob.
+		// A search, a clip or the whole video's transcription says Stopped
+		// in its record as it ends, and a render forgets its record then,
+		// so nothing it writes on its way out brings it back, see runJob.
 		s.jobs.stopByHand(id)
 		return true
 	}

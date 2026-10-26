@@ -639,9 +639,9 @@ export const steps = {
         const track = document.querySelector(".track");
         const pad = parseFloat(getComputedStyle(track).borderLeftWidth);
         const columns = [...track.querySelectorAll(".unheard")].map((u) => {
-          // A part the work is hearing into has its dots laid from its
-          // right edge, up to its left edge, see the walk of the parts
-          // giving way. What it is once the work stops is read with
+          // A part the work is hearing into has its dots laid from
+          // where its hearing stops, up to its left edge, see the walk
+          // of the parts giving way. What it is once the work stops is read with
           // that taken off.
           const giving = u.classList.contains("giving");
           const g = getComputedStyle(u, "::before");
@@ -660,6 +660,7 @@ export const steps = {
             foot: b.backgroundPositionY,
             fade: b.maskImage,
             laid,
+            worked: u.classList.contains("worked"),
           };
           if (giving) u.classList.add("giving");
           return at;
@@ -753,16 +754,24 @@ export const steps = {
       else if (grid.dots[2] !== grid.columns[0]?.fade)
         walk.wrong = `the dots of a card leave a row or a column clear round them: masked by ${grid.dots[2]}`;
       else if (
-        grid.columns.some((c) => c.height.some(Boolean) || !c.fade.endsWith("rgb(0, 0, 0))") || !Number.isInteger(c.columns) || c.sides.some((v) => v < 0 || v >= grid.pitch / 2))
+        grid.columns.some(
+          (c) => c.height.some(Boolean) || !c.fade.endsWith("rgb(0, 0, 0))") || !Number.isInteger(c.columns) || c.sides.some((v) => v < 0 || v >= (c.worked ? grid.pitch : grid.pitch / 2)),
+        )
       )
         walk.wrong = `the dots of a part on the range picker leave a row or a column clear round them: ${JSON.stringify(grid.columns)}`;
       // Centred, the same either side, found by Tim, who measured it.
-      else if (grid.columns.some((c) => c.sides[0] !== c.sides[1]))
-        walk.wrong = `the dots of a part on the range picker are not centred in it: ${JSON.stringify(grid.columns.map((c) => c.sides))} left and right`;
+      // A part the work heard into keeps its dots where they stood,
+      // whole columns laid from where its hearing stops, so none jumps
+      // sideways as the work stops, Tim's report of 24 October, see
+      // the walk of the dots after a search's window.
+      else if (grid.columns.some((c) => !c.worked && c.sides[0] !== c.sides[1]))
+        walk.wrong = `the dots of a part on the range picker are not centred in it: ${JSON.stringify(grid.columns.map((c) => [c.worked, c.sides]))}, worked and left and right`;
+      // While the work hears into a part, its edge wipes the dots, so
+      // they reach its left edge, and end on a whole column.
+      else if (grid.columns.some((c) => c.laid && (c.laid[0] !== 0 || !(c.laid[1] >= 0 && c.laid[1] < grid.pitch) || !/px$/.test(c.laid[2]))))
+        walk.wrong = `the dots of a part the work hears into do not reach its left edge as whole columns: ${JSON.stringify(grid.columns.map((c) => c.laid))}`;
       // And the foot row a pixel up from the range picker's foot,
       // where it looked clutched to it, found by Tim.
-      else if (grid.columns.some((c) => c.laid && (c.laid[0] !== 0 || c.laid[1] !== 0 || !/^(right|100%)/.test(c.laid[2]))))
-        walk.wrong = `the dots of a part the work hears into are not laid from its right edge to its left: ${JSON.stringify(grid.columns.map((c) => c.laid))}`;
       else if (grid.columns.some((c) => c.foot !== "calc(100% - 1px)"))
         walk.wrong = `the foot row of dots on the range picker is not lifted a pixel: ${grid.columns.map((c) => c.foot).join(", ")}`;
     }
@@ -1319,8 +1328,14 @@ export const steps = {
       said: !!document.querySelector("ol.said"),
       edges: document.querySelectorAll(".track .unheard").length,
     }));
-    if (!walk.wrong && (!back.search || back.said || back.edges))
-      walk.wrong = `Escape left ${back.said ? "the sentences" : back.edges ? "the dashed parts on the range picker" : "no Search button"}`;
+    // The parts not transcribed yet stay on the range picker after the
+    // search, as they are there before it, Tim's pick on issue #432.
+    if (!walk.wrong && (!back.search || back.said || back.edges !== gaps))
+      walk.wrong = back.said
+        ? "Escape left the sentences"
+        : !back.search
+          ? "Escape left no Search button"
+          : `after Escape the range picker shows ${back.edges} parts not transcribed yet, not the ${gaps} there are`;
     if (!walk.wrong && (await headHigh()) !== was) walk.wrong = "the head changed height after the search";
   },
   // ["asks none", name, seconds]
@@ -1432,7 +1447,9 @@ export const steps = {
   //                    Continue and lets the speech on one piece at a time
   //                    until the search has heard one, and the fill of the
   //                    row that says Transcribing starts at nothing and
-  //                    only grows, however much was heard before
+  //                    only grows, however much was heard before, while
+  //                    its words say how much of the window is
+  //                    transcribed, from what was heard before
   async "fills from nothing"(walk, arg) {
     const { page } = walk;
     // Issue #444: Tim searched windows heard in part already, and the
@@ -1453,11 +1470,14 @@ export const steps = {
     // Transcribing, from the press on, read off the fill's place.
     await page.evaluate(() => {
       window.__fills = [];
+      window.__said = [];
       const list = [...document.querySelectorAll("aside")].find((a) => a.querySelector(".listhead"));
       const look = () => {
         const li = list.querySelector("ol li.next");
         const i = li?.querySelector(".fill i");
         if (li?.querySelector(".title")?.textContent.trim() !== "Transcribing" || !i) return;
+        const said = li.querySelector(".meta")?.textContent.replace(/\s+/g, " ").trim();
+        if (window.__said.at(-1) !== said) window.__said.push(said);
         const moved = /translateX\((-?[\d.]+)%\)/.exec(i.style.transform);
         const fraction = moved ? 1 + Number(moved[1]) / 100 : NaN;
         if (window.__fills.at(-1) !== fraction) window.__fills.push(fraction);
@@ -1491,6 +1511,20 @@ export const steps = {
     if (!fills.length) walk.wrong = "the row never showed a fill while it said Transcribing";
     else if (!(fills[0] < 0.05)) walk.wrong = `the fill started at ${Math.round(fills[0] * 100)} %, not at nothing, with ${Math.round(before * 100)} % of the window heard before: ${JSON.stringify(fills)}`;
     else if (fills.some((f, n) => n > 0 && f < fills[n - 1])) walk.wrong = `the fill went back: ${JSON.stringify(fills)}`;
+    if (walk.wrong) return;
+    // Tim's report of 25 October: the row said Window 0:00 to 30:00
+    // under Transcribing, over a window transcribed half already. It
+    // says how much of the window is transcribed, from what was heard
+    // before Continue, the way the row of the stopped search did, or
+    // how long it has left once it can say.
+    const said = await page.evaluate(() => window.__said);
+    const span = clockOf(to - from);
+    const secondsOf = (c) => c.split(":").reduce((t, n) => t * 60 + Number(n), 0);
+    const counts = (line) => new RegExp(`^\\d+:\\d\\d of ${span} transcribed$`).test(line ?? "");
+    const off = said.find((line) => !counts(line) && !/^About \d+:\d\d left$/.test(line ?? ""));
+    if (off !== undefined) walk.wrong = `under Transcribing the row said ${JSON.stringify(off)}, not how much of the ${span} of its window is transcribed: ${JSON.stringify(said)}`;
+    else if (!counts(said[0])) walk.wrong = `under Transcribing the row said ${JSON.stringify(said[0])} at first, not how much of the ${span} of its window is transcribed: ${JSON.stringify(said)}`;
+    else if (!(secondsOf(said[0].split(" ")[0]) >= Math.floor(heard))) walk.wrong = `under Transcribing the row said ${JSON.stringify(said[0])} at first, less than the ${Math.round(heard)} s heard before Continue`;
   },
   // ["no mark after the end", seconds]
   //                    puts the playhead at the end of a video this long,
@@ -1770,6 +1804,169 @@ export const steps = {
     const hand = (await ask(page, "Jobs")).filter((j) => j.kind === "clip" && j.episode === path).map((j) => j.id);
     const left = await page.evaluate((ids) => [...document.querySelectorAll("li[data-key]")].filter((li) => ids.includes(li.dataset.key.split("/")[0])).length, hand);
     if (left) walk.wrong = `${left} cards of clips made by hand are in the list`;
+  },
+  // ["cancel fades"]  presses Cancel on a search, and two frames on the
+  //                    frame over its window is fading and standing still,
+  //                    with the window at rest under it
+  async "cancel fades"(walk, arg, s) {
+    const { page, watch } = walk;
+    // Cancel pressed on a search: two frames on, the frame over its
+    // window is fading and standing still, with the window at rest
+    // under it, long before the search has stopped. Tim found it
+    // dropped abruptly, his report of 24 October, 21.42.
+    const seen = await page.evaluate(
+      () =>
+        new Promise((done) => {
+          const pane = [...document.querySelectorAll("aside")].find((a) => a.querySelector(".listhead"));
+          const button = pane.querySelector(".listhead button.search");
+          const frames = () => [...document.querySelectorAll(".searched")];
+          const before = frames().filter((p) => !p.classList.contains("going")).length;
+          button.click();
+          requestAnimationFrame(() =>
+            requestAnimationFrame(() =>
+              done({
+                before,
+                going: frames().filter((p) => p.classList.contains("going")).length,
+                left: frames().filter((p) => !p.classList.contains("going")).length,
+                rest: !!document.querySelector(".aim"),
+              }),
+            ),
+          );
+        }),
+    );
+    if (seen.before !== 1) walk.wrong = `before Cancel, ${seen.before} frames over the window`;
+    else if (seen.going !== 1 || seen.left !== 0 || !seen.rest)
+      walk.wrong = `the window's frame does not fade at Cancel: ${JSON.stringify(seen)}`;
+    await watch.step("head", s);
+    return;
+  },
+  // ["walks on with the clips"]
+  //                    lets the speech held go, and watches every frame
+  //                    until the clips the search found show: in the first
+  //                    frame they show, the window is already past where
+  //                    it was, and once all is still, the window drawn is
+  //                    the one the Go side keeps
+  async "walks on with the clips"(walk, arg, s) {
+    const { page } = walk;
+    const path = await episodeOn(page);
+    const search = (await ask(page, "Jobs")).filter((j) => j.episode === path && j.kind === "search").pop();
+    await page.evaluate(() => {
+      const pane = () => [...document.querySelectorAll("aside")].find((a) => a.querySelector(".listhead"));
+      const from = () => Number(document.querySelector(".aim .tip.top.from")?.getAttribute("aria-valuenow") ?? -1);
+      window.__walksOn = new Promise((done) => {
+        const seen = [];
+        const frame = () => {
+          seen.push({ cards: pane()?.querySelectorAll("ol li[data-key]").length ?? 0, from: from() });
+          if (seen.filter((f) => f.cards > 0 && f.from >= 0).length >= 30) return done(seen);
+          requestAnimationFrame(frame);
+        };
+        requestAnimationFrame(frame);
+      });
+    });
+    await control(url, "/speech?go");
+    walk.speechHeld = false;
+    const seen = await page.evaluate(() => window.__walksOn);
+    // The first frame with the window at rest, the search's frame gone.
+    const rest = seen.find((f) => f.from >= 0);
+    if (!search || !(search.to > 0)) {
+      walk.wrong = `there was no search with a window when the speech went on: ${JSON.stringify(search)}`;
+      return;
+    }
+    if (rest.from < search.to - 0.5) {
+      walk.wrong = `the window was drawn at ${rest.from} s after the search of ${search.from ?? 0}–${search.to} s ended, before it moved on`;
+      return;
+    }
+    if (rest.cards === 0) {
+      walk.wrong = "the window moved on before the clips the search found showed";
+      return;
+    }
+    await settle(page);
+    const kept = await ask(page, "ChosenWindow", path);
+    const drawn = await page.evaluate(() => {
+      const n = (sel) => Number(document.querySelector(`.aim .tip.top.${sel}`)?.getAttribute("aria-valuenow"));
+      return { from: n("from"), to: n("to") };
+    });
+    if (!kept || Math.abs(kept.from - drawn.from) > 0.5 || Math.abs(kept.to - drawn.to) > 0.5) {
+      walk.wrong = `the window drawn is ${drawn.from}–${drawn.to} s, the one kept ${JSON.stringify(kept)}`;
+    }
+    return;
+  },
+  // ["dots begin at the window"]
+  //                    once a search heard its window and the window moved
+  //                    on, the part not transcribed yet begins where the
+  //                    window now begins, and its first column of dots
+  //                    stands at that edge, with no room left over there,
+  //                    and that edge is a dashed line in the grey of a
+  //                    card's edge, a dash beside each row of dots
+  async "dots begin at the window"(walk, arg, s) {
+    const { page } = walk;
+    const path = await episodeOn(page);
+    await settle(page);
+    const from = await page.evaluate(() => Number(document.querySelector(".aim .tip.top.from")?.getAttribute("aria-valuenow") ?? -1));
+    const heard = (await ask(page, "Episode", path))?.heard ?? [];
+    const reach = heard.find(([a]) => a <= 0.5)?.[1] ?? 0;
+    if (Math.abs(reach - from) > 0.5) {
+      walk.wrong = `the window begins at ${from} s and the transcript reaches ${reach} s, so no part begins where the window does`;
+      return;
+    }
+    // The part that begins at the window's edge, and how far in from
+    // that edge its first column of dots stands.
+    const part = await page.evaluate(() => {
+      const pitch = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--dot-pitch"));
+      const track = document.querySelector(".track").getBoundingClientRect();
+      const parts = [...document.querySelectorAll(".track .unheard")].map((u) => {
+        const r = u.getBoundingClientRect();
+        const b = getComputedStyle(u, "::before");
+        const e = getComputedStyle(u, "::after");
+        return {
+          at: r.left - track.left,
+          width: r.width,
+          in: parseFloat(b.left),
+          out: parseFloat(b.right),
+          worked: u.classList.contains("worked"),
+          // Its dashed edges: which sides, in what, and laid how.
+          edges: [e.borderLeftStyle, e.borderRightStyle, e.borderTopStyle, e.borderBottomStyle],
+          colour: e.borderLeftColor,
+          // The first layer of its mask is the dashes, the second the
+          // fade of the dots beside them.
+          dashes: [e.maskImage.startsWith("repeating-linear-gradient"), e.maskSize, e.maskRepeat, e.maskPositionY ?? e.webkitMaskPositionY],
+          fade: [e.maskImage.split(", linear-gradient")[1] !== undefined, b.maskImage.startsWith("linear-gradient"), e.maskComposite],
+          rows: [b.height, e.height, b.backgroundPositionY],
+        };
+      });
+      const probe = document.createElement("div");
+      probe.style.color = "var(--halftone-ink)";
+      document.body.append(probe);
+      const grey = getComputedStyle(probe).color;
+      probe.remove();
+      return { pitch, parts, track: track.width, grey };
+    });
+    const first = part.parts.find((p) => p.at > 1);
+    if (!first) {
+      walk.wrong = `no part not transcribed yet after the window's edge: ${JSON.stringify(part)}`;
+      return;
+    }
+    if (first.in !== 0)
+      walk.wrong = `the first column of dots after the window stands ${first.in} px in from the window's edge, not at it: ${JSON.stringify(first)}, dots ${part.pitch} px apart`;
+    else if (first.out < 0 || first.out >= part.pitch) walk.wrong = `the dots after the window are not whole columns: ${JSON.stringify(first)}`;
+    // Its edge is dashed, a dash beside each row of dots, and it runs to
+    // the end of the video, where the range picker's border is its edge,
+    // Tim's report of 26 October, 12.27. The dashes are as strong as the
+    // dots, in their colour and with their fade: in the grey of a card's
+    // edge they were too bright, his report of 14.22.
+    else if (first.edges.join(" ") !== "solid none none none" || first.colour !== part.grey)
+      walk.wrong = `the part not transcribed yet after the window has edges ${first.edges.join(", ")} in ${first.colour}, not a dashed line down its left edge in the dots' ${part.grey}`;
+    else if (!first.fade[0] || !first.fade[1] || !first.fade[2].startsWith("intersect"))
+      walk.wrong = `the dashes down the edge of a part do not fade the way its dots do: ${JSON.stringify(first.fade)}`;
+    else if (
+      !first.dashes[0] ||
+      !first.dashes[1].startsWith(`100% ${part.pitch}px,`) ||
+      !first.dashes[2].startsWith("repeat-y,") ||
+      first.rows[0] !== first.rows[1] ||
+      !first.dashes[3].startsWith(`${first.rows[2]},`)
+    )
+      walk.wrong = `the dashes down the edge of a part do not stand beside its rows of dots: dashes ${JSON.stringify(first.dashes)}, dots ${JSON.stringify(first.rows)}`;
+    return;
   },
 };
 

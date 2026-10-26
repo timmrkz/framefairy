@@ -692,9 +692,11 @@ func TestAHearingThatLosesItsTurnCountsOnFromWhereItWas(t *testing.T) {
 		mu.Unlock()
 		return c, cancel, nil
 	}
-	if err := p.hear(context.Background(), turn, Window{0, 70}); err != nil {
+	letGo, err := p.hear(context.Background(), turn, Window{0, 70})
+	if err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
+	letGo()
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -741,7 +743,7 @@ func stoppedKeepsWhatItHeard(t *testing.T, rec Recognizer) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var mu sync.Mutex
-	heard := 0.0
+	heard, stoppedAt := 0.0, 0.0
 	log := NewLog(&bytes.Buffer{}, false, false)
 	log.SetSink(func(ev Event) {
 		if ev.Kind != EventProgress || ev.Covered <= 0 {
@@ -750,7 +752,8 @@ func stoppedKeepsWhatItHeard(t *testing.T, rec Recognizer) {
 		mu.Lock()
 		defer mu.Unlock()
 		heard = ev.Covered
-		if heard > 20 {
+		if heard > 20 && stoppedAt == 0 {
+			stoppedAt = heard
 			cancel()
 		}
 	})
@@ -764,11 +767,18 @@ func stoppedKeepsWhatItHeard(t *testing.T, rec Recognizer) {
 		t.Fatal("a stopped transcription finished")
 	}
 	mu.Lock()
-	want := heard
+	want, said := stoppedAt, heard
 	mu.Unlock()
+	// What it said it heard as it was stopped is what is kept, and it
+	// says nothing more after: the copies still hearing then are let go.
+	// Taken in, they moved the range picker's edge after the stop, or
+	// were saved without being shown, Tim's report of 24 October.
 	covered, done := Coverage(disk, source, base.ASRModel)
-	if done || want <= 20 || covered < want-0.001 {
+	if done || want <= 20 || math.Abs(covered-want) > 0.001 {
 		t.Errorf("stopped after hearing %.2f s, %.2f s written down (done %v)", want, covered, done)
+	}
+	if said != want {
+		t.Errorf("stopped after hearing %.2f s, it said it heard %.2f s after", want, said)
 	}
 }
 
@@ -1119,5 +1129,34 @@ func TestAFileIsReplacedWholeOrNotAtAll(t *testing.T) {
 	}
 	if got, _ := afero.ReadFile(fsys, path); string(got) != "after" {
 		t.Errorf("the file is now %q", got)
+	}
+}
+
+// A transcript is done when nothing is left to hear by the measure hear
+// stops at, a gap too short to hold a word included. Found by the review
+// of #458: a gap of 0.05 s left between two parts was never heard, and
+// the video never read as transcribed, so Export transcript never came.
+func TestATranscriptIsDoneWhenNothingIsLeftToHear(t *testing.T) {
+	cases := []struct {
+		name  string
+		parts [][2]PyFloat
+		done  bool
+	}{
+		{"one part to the end", [][2]PyFloat{{0, 600}}, true},
+		{"a gap too short to hold a word", [][2]PyFloat{{0, 100}, {100.05, 600}}, true},
+		{"a gap with room for a word", [][2]PyFloat{{0, 100}, {100.5, 600}}, false},
+		{"short of the end by too little for a word", [][2]PyFloat{{0, 599.95}}, true},
+		{"short of the end", [][2]PyFloat{{0, 590}}, false},
+		{"from a little after the start", [][2]PyFloat{{0.05, 600}}, true},
+		{"nothing heard", nil, false},
+	}
+	for _, c := range cases {
+		file := transcriptFile{Version: transcriptVersion, End: 600, Parts: c.parts}
+		if got := file.done(); got != c.done {
+			t.Errorf("%s: done is %v", c.name, got)
+		}
+		if unheard := len(gapsIn(file.heard(), Window{0, 600})) == 0; unheard != c.done && len(c.parts) > 0 {
+			t.Errorf("%s: done says %v and what is left to hear disagrees", c.name, c.done)
+		}
 	}
 }
