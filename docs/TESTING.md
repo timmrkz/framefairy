@@ -853,8 +853,12 @@ it hang, #508.
    `walk-traces-3`, one for each share, for 14 days.
    A session finds it with the GitHub tools,
    `list_workflow_run_artifacts` for the run and
-   `download_workflow_run_artifact`, which gives a link to the zip. A
-   person opens a trace at trace.playwright.dev, which reads it in the
+   `download_workflow_run_artifact`, which gives a link to the zip. The
+   zip itself lies on a host of GitHub's under `blob.core.windows.net`,
+   which a cloud session can fetch only when its environment's network
+   allows that host, and the log of a job too unless it is read with
+   `get_job_logs`. Where it does not, the session says so, and a person
+   downloads the zip from the run's page. A person opens a trace at trace.playwright.dev, which reads it in the
    browser and sends it nowhere, or with `npx playwright show-trace`. A
    session with no window reads it unpacked: `trace.trace` holds every
    call of the walk, with what the page logged and threw, one JSON
