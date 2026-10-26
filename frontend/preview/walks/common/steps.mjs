@@ -27,19 +27,19 @@ export const steps = {
     await page.keyboard.press(arg);
     await page.keyboard.press(arg);
     await page.evaluate(() => window.__pauseEvents(false));
-    await watch.step("press", s);
+    await watch.step("press", s, page);
   },
   // ["press", key]     presses a key, as Playwright names it
   async press(walk, arg, s) {
     const { page, watch } = walk;
     await page.keyboard.press(arg);
-    await watch.step(arg === "Enter" && !s.some((w) => w.focused) ? "open" : "press", s);
+    await watch.step(arg === "Enter" && !s.some((w) => w.focused) ? "open" : "press", s, page);
   },
   // ["type", text]     types
   async type(walk, arg, s) {
     const { page, watch } = walk;
     await page.keyboard.type(arg);
-    await watch.step("type", s);
+    await watch.step("type", s, page);
   },
   // ["field", selector, text]
   //                    clicks the field selector names and types text
@@ -94,13 +94,13 @@ export const steps = {
       return String(failed);
     }, from);
     if (!said?.includes("changed since")) walk.wrong = `Undo was not refused as changed since: ${said}`;
-    await watch.step("undo", s);
+    await watch.step("undo", s, page);
   },
   // ["undo"], ["redo"] the menu bar's Undo and Redo
   async redo(walk, arg, s, what) {
     const { page, watch } = walk;
     await page.evaluate((m) => window.__menu(m), what);
-    await watch.step(what, s);
+    await watch.step(what, s, page);
   },
   // ["reset", edge]    double-clicks the clip's edge, which puts it back
   //                    where the clip was found

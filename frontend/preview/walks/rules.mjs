@@ -152,13 +152,23 @@ export class Watch {
   // After a step: kind is "undo", "redo" or "open" for those three, and s
   // is the caption box as it was before the step. Waits for the app to
   // settle, checks every rule, and hands back what is now on screen and
-  // what the engine now says.
-  async step(kind, s) {
+  // what the engine now says. acted is the page the step acted on, the
+  // report window when it is not the app's window.
+  async step(kind, s, acted = this.page) {
     const { page } = this;
     // A call a step held comes back before the screen is compared with
     // the engine, which has not heard it while it is held.
     await letHeld(page);
     await settle(page);
+    // The report window is a page of its own, with calls of its own the
+    // app's window does not count. Settled only there, an Undo of Clear
+    // in it was still putting its pictures back when the next step
+    // pressed Redo, and one came back after Redo had cleared them,
+    // issue #554.
+    if (acted !== page) {
+      await letHeld(acted);
+      await settle(acted);
+    }
     // The clip on screen, which a step that opens another episode or
     // another clip changes. Then what was before is another clip's, and
     // nothing is compared across the change. It is read before and after
