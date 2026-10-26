@@ -24,19 +24,17 @@
   // a menu opened for Show in folder leaves the video as it was.
   //
   // One row is about the words of the video, and says the one thing that
-  // can be done with them now, issue #432: Transcribe whole video while
-  // the transcript has not reached the end, Stop transcribing while that
-  // runs, Continue transcribing once it stopped, by hand or by the app
-  // closing, and Export transcript once it is all there. While a search or
-  // a clip made by hand transcribes the video, the speech model is theirs,
-  // and the row is about the rest of the video, which they do not
-  // transcribe: Transcribe the rest, whether it was started before or
-  // not, and the click waits for them, then goes on to the end, and Stop
-  // transcribing the rest, which leaves their own transcribing alone. It
-  // said Continue transcribing, as if nothing were transcribing, Tim's
-  // report of 25 October, 14.33, and his pick, then Continue next and Stop
-  // transcribing, which said nothing to him, his report of 21.40. Each is an
-  // action, which closes the menu the way a menu item does on the Mac.
+  // can be done with them now, issue #432: Transcribe video while the
+  // transcript has not reached the end, Stop transcribing while that runs,
+  // and Export transcript once it is all there. Transcribe video carries on
+  // from what is transcribed, so the row never says whether it was started
+  // before. The transcription and the work on the video's clips go one at
+  // a time: a search or a clip made by hand stops it, and while one runs
+  // Transcribe video cannot be clicked. Tim's report of 26 October, 12.27:
+  // Continue transcribing, Transcribe the rest and Stop transcribing the
+  // rest, from the work carried on behind a search by itself, were a menu
+  // nobody could read. Each is an action, which closes the menu the way a
+  // menu item does on the Mac.
   // How far the work has come is not the menu's to show: the range picker
   // frames the part it works on and the video's dot pulses, Tim's calls
   // on #458.
@@ -72,7 +70,7 @@
     onremove,
     work,
     stopping,
-    hearsFirst,
+    clipsBusy,
     ontranscribe,
     onstoptranscribe,
     onexport,
@@ -104,9 +102,9 @@
     // and whether Stop transcribing was pressed while it still runs.
     work: Job | undefined;
     stopping: boolean;
-    // Whether the whole video's transcription would wait now, behind a
-    // search or a clip made by hand that transcribes or finds.
-    hearsFirst: boolean;
+    // Whether a search or a clip made by hand of the video runs, so
+    // Transcribe video waits until it is done.
+    clipsBusy: boolean;
     ontranscribe: () => void;
     onstoptranscribe: () => void;
     onexport: (format: TranscriptFormat) => void;
@@ -114,10 +112,10 @@
 
   // What the row about the words says, see above. A video whose
   // transcript reaches its end is done, whatever job brought it there. One
-  // told to stop is as good as stopped, so the row offers to carry it on.
+  // told to stop is as good as stopped, so the row offers it again.
   const running = $derived((work?.state === "running" || work?.state === "queued") && !stopping);
   const words = $derived(
-    running ? "stop" : ep.transcribed ? "export" : work && work.state !== "done" ? "continue" : "transcribe",
+    running ? "stop" : ep.transcribed ? "export" : "transcribe",
   );
 
   // The list of formats Export transcript hangs on the right of the menu.
@@ -499,16 +497,12 @@
               {:else}
                 <button
                   class="item"
-                  disabled={ep.missing}
+                  disabled={ep.missing || (words === "transcribe" && clipsBusy)}
                   title={words === "stop"
-                    ? hearsFirst
-                      ? "Stop transcribing the rest of the video. The search or the clip ahead of it still transcribes what it needs, and what is transcribed stays"
-                      : "Stop transcribing. What is transcribed stays, and it can be carried on"
-                    : hearsFirst
-                      ? "Transcribe the rest of the video once the search or the clip ahead of it is done"
-                      : words === "continue"
-                        ? "Carry on transcribing from where it stopped"
-                        : "Transcribe the whole video, so its transcript can be exported"}
+                    ? "Stop transcribing. What is transcribed stays"
+                    : clipsBusy
+                      ? "Transcribe the video once the search is done"
+                      : "Transcribe the whole video, so its transcript can be exported"}
                   onclick={() => {
                     const stop = words === "stop";
                     close();
@@ -517,15 +511,7 @@
                   }}
                 >
                   <Icon name="transcript" />
-                  {hearsFirst
-                    ? words === "stop"
-                      ? "Stop transcribing the rest"
-                      : "Transcribe the rest"
-                    : words === "stop"
-                      ? "Stop transcribing"
-                      : words === "continue"
-                        ? "Continue transcribing"
-                        : "Transcribe whole video"}
+                  {words === "stop" ? "Stop transcribing" : "Transcribe video"}
                 </button>
               {/if}
               <button

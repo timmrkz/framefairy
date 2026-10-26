@@ -18,15 +18,26 @@ import (
 // words of a video in its menu in the sidebar, issue #432.
 
 // Transcribe hears the whole video to its end, with no search after:
-// Transcribe whole video in its menu. It is a job like a search, with a
-// record, so an app closed while it hears says so and Continue carries it
-// on, and its hearing gives way to every search and clip made by hand,
-// see lanes.go. A video has one at a time, so asking again while one runs
-// gives the one that runs.
+// Transcribe video in its menu. It is a job like a search, with a record,
+// so it carries on from what it heard when it is asked for again, and its
+// hearing gives way to the searches and clips made by hand of other
+// videos, see lanes.go. A video has one at a time, so asking again while
+// one runs gives the one that runs.
+//
+// It and the work on the video's clips go one at a time: it is refused
+// while a search or a clip made by hand of the video runs, and either of
+// those stops it, see stopTranscribing. Tim's report of 26 October, 12.27:
+// carried on behind a search by itself, the two needed a menu nobody could
+// read.
 func (s *FrameFairy) Transcribe(path string) Job {
 	label := jobLabel(engine.JobTranscribe, false)
 	if !s.store.Known(path) {
 		return s.jobs.refuse(path, engine.JobTranscribe, label, notInLibrary)
+	}
+	for _, j := range s.jobs.list() {
+		if j.Episode == path && makesClips(j.Kind) && j.going() {
+			return s.jobs.refuse(path, engine.JobTranscribe, label, errClipsFirst)
+		}
 	}
 	// One that stopped is taken up by this one, which writes the record
 	// again in its place.
@@ -36,6 +47,22 @@ func (s *FrameFairy) Transcribe(path string) Job {
 	}, func(ctx context.Context, p *engine.Project, turn engine.Turn) (string, error) {
 		return "", p.TranscribeJob(ctx, turn)
 	})
+}
+
+// errClipsFirst is Transcribe video asked for while the work on the
+// video's clips runs, which the menu does not offer.
+const errClipsFirst = "the video's clips are being found, transcribe it once that is done"
+
+// stopTranscribing stops the whole video's transcription of a video the
+// way Stop transcribing does, for a search or a clip made by hand of the
+// video asked for, see Transcribe. What it heard stays.
+func (s *FrameFairy) stopTranscribing(path, why string) {
+	for _, j := range s.jobs.list() {
+		if j.Episode == path && j.Kind == engine.JobTranscribe && j.going() {
+			theLog.jobLine(zerolog.InfoLevel, &j).Str("why", why).Msg("the whole video's transcription is stopped for the work on its clips")
+			s.CancelJob(j.ID)
+		}
+	}
 }
 
 // errNotWhole is Export transcript asked for before the video is

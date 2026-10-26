@@ -100,11 +100,6 @@ type Job struct {
 	// Aside is, for a search that stopped, that the video's window was
 	// moved off the window it was about, see markAside.
 	Aside bool `json:"aside,omitempty"`
-	// Ahead is that the whole video's transcription waits while the job is
-	// in its step, or waits for it: a search or a clip made by hand that
-	// hears, and one that finds with the model on this machine, see
-	// mayLocked. A video's menu then says the rest comes next.
-	Ahead bool `json:"ahead,omitempty"`
 	// Seq grows with every change to any job, and is set under the queue's
 	// lock, so of two snapshots of a job the later one has the larger
 	// number. News is sent after the lock is let go, so two changes made
@@ -397,7 +392,6 @@ func (q *queue) turn(job *Job, opts engine.Options) engine.Turn {
 	var holding func()
 	return func(ctx context.Context, step string) (context.Context, func(), error) {
 		lane, kind := laneOfStep(job.Kind, step, onThisMachine)
-		ahead := kind == hearingTurn || kind == handHearingTurn || kind == findingTurn
 		// Which lane a step waits for and whether its model is on this
 		// machine, so a log says why a transcription waited on a search.
 		theLog.jobLine(zerolog.DebugLevel, job).Str("step", step).Str("lane", lane).
@@ -418,7 +412,7 @@ func (q *queue) turn(job *Job, opts engine.Options) engine.Turn {
 		waits := func() {
 			q.update(job, func(j *Job) {
 				if j.turns == mine {
-					j.Step, j.Lane, j.Progress, j.Ahead = engine.StepWaiting, lane, nil, ahead
+					j.Step, j.Lane, j.Progress = engine.StepWaiting, lane, nil
 				}
 			})
 		}
@@ -434,7 +428,7 @@ func (q *queue) turn(job *Job, opts engine.Options) engine.Turn {
 		holding = release
 		q.update(job, func(j *Job) {
 			if !taken.Load() {
-				j.Step, j.Lane, j.Progress, j.Ahead = step, lane, nil, ahead
+				j.Step, j.Lane, j.Progress = step, lane, nil
 			}
 		})
 		return stepCtx, release, nil

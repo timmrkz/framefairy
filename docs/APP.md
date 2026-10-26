@@ -169,27 +169,26 @@ two things to read for one. Each is an action, which closes the menu the
 way a menu item does on the Mac. How far the work has come is not the
 menu's to show, Tim's call on #458:
 
-- **Transcribe whole video** while the transcript has not reached the
-  video's end. It hears the video to its end with no search after, a job
-  of its own, `engine.JobTranscribe`, see [JOBS.md](JOBS.md). It gives
-  way to every search and clip made by hand, which always go first.
-- **Stop transcribing** while it runs or waits its turn. What was heard
-  stays.
-- **Continue transcribing** once it stopped, by hand, by the app closing
-  or by failing, and from the frame Stop transcribing is clicked. Why it
-  failed is said in a toast as it fails.
-- **Transcribe the rest** in place of Transcribe whole video and Continue
-  transcribing, and **Stop transcribing the rest** in place of Stop
-  transcribing, while a search or a clip made by hand transcribes, of this video or another, because
-  the speech model is theirs until they are done, and while a search
-  finds with the model on this machine, which the speech model gives way
-  to. The Go side says so on the job, `Ahead`, by the rule its lanes
-  keep. The click waits for them and then transcribes on to the end, and
-  a stop leaves their own transcribing alone. The menu said Continue
-  transcribing then, as if nothing were transcribing, Tim's report of 25
-  October, 14.33, and he picked saying that the rest comes next over not
-  offering it. Continue next and a plain Stop transcribing said nothing
-  to him, his report of 21.40.
+- **Transcribe video** while the transcript has not reached the video's
+  end, whether it never started, was stopped by hand, by a search, by the
+  app closing or by failing. It hears the video to its end with no search
+  after, a job of its own, `engine.JobTranscribe`, see [JOBS.md](JOBS.md),
+  and carries on from what was heard. Why it failed is said in a toast as
+  it fails.
+- **Stop transcribing** while it runs. What was heard stays, and the menu
+  says Transcribe video again from the frame it is clicked.
+
+It and the work on the video's clips go one at a time, Tim's report of 26
+October, 12.27. A search or a clip made by hand of the video stops its
+transcription, the way Stop transcribing does, and it does not start
+again by itself once they are done. While they run, Transcribe video
+cannot be clicked, and its title says to transcribe once the search is
+done. The menu once offered Continue transcribing, Transcribe the rest
+and Stop transcribing the rest, for a transcription that waited behind a
+search and carried on after it, and nobody could read them. A search of
+another video takes the speech model for a while, see below, and the
+transcription carries on after it by itself.
+
 - **Export transcript** once the transcript reaches the end. It hangs its
   formats on the right of the menu, the way Export To does in Pages, and
   a format opens the system's save box on "<video> transcript" with the
@@ -216,10 +215,10 @@ frames the window of a search that hears, the same line, breath and
 motes, over that part's dots, which still say what is not transcribed
 yet, Tim's pick on #458. Its left edge follows the work as it hears.
 Whenever it waits its turn, behind a search
-that finds with the local model, a clip made by hand or a model being
-installed, its frame stays, in less of the colour and with no motes,
+of another video that finds with the local model, a clip made by hand of
+another video or a model being installed, its frame stays, in less of the colour and with no motes,
 still breathing, so it reads as on hold and not as gone, Tim's reports of
-23 and 24 October. It goes on hold the moment the search takes the
+23 and 24 October. It goes on hold the moment that search takes the
 hearing, so its dots stand still from Search on, and what the speech
 model was still hearing then is let go, so nothing is kept that was not
 shown and the edge does not jump when it carries on. A search with a model in the cloud holds
@@ -231,7 +230,7 @@ The dots follow the work again once other work hears, or once the video
 is transcribed to its end, which a stop on its last piece can still
 bring. The video's
 dot in the sidebar pulses the way it does for all work, from the frame
-Transcribe whole video is clicked until the frame Stop transcribing is.
+Transcribe video is clicked until the frame Stop transcribing is.
 Nothing else says how far it has come, Tim's calls on #458: a number in
 the menu, and then one in the video's row, were more to read for what
 the range picker already shows. The library is read again each
@@ -1036,8 +1035,8 @@ bubble scrolled by those eight pixels.
   control about it in the workspace but the search: **Search** starts it
   and **Cancel** stops it, and what was heard stays, so the next search
   goes on from there. Hearing the whole video is asked for in its menu in
-  the sidebar, **Transcribe whole video**, see above, and gives way to
-  every search. While another
+  the sidebar, **Transcribe video**, see above, and a search of the
+  video stops it. While another
   episode's search finds its clips, a search that hears waits and carries
   on after, because the two models want the same memory.
 - **What is not there yet says so by waiting.** The part of the clip
@@ -2294,8 +2293,12 @@ found is a place in the video, and I and O make a clip there.
   exactly the span of the dots, so every dash stands over a column of
   dots or beside a row. The dashes the browser
   drew went their own way round the dots, found by Tim. On the range
-  picker a part has no edge of its own, which Tim found the dots did
-  without, and its dots cover the whole part, to its foot and its sides,
+  picker a part's left and right edges are dashed, in the grey of a
+  card's edge, a dash beside each row of its dots, so where a part not
+  transcribed begins and ends is seen even where its dots thin out, Tim's
+  report of 26 October, 12.27. The range picker's own border is the edge
+  of a part at the start or the end of the video, and its top and foot.
+  Its dots cover the whole part, to its foot and its sides,
   as whole columns centred in the part, the same space on either side,
   and the foot row a pixel up from the range picker's foot. A row and a
   column left clear round them looked cut off, a pattern that started

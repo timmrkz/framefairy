@@ -146,9 +146,7 @@ func TestFindingInTheCloudLeavesHearingAlone(t *testing.T) {
 // the language model, so a search asking the cloud lets hearing go on and
 // one asking the model on this machine holds it up. A local model served
 // by llama-server on another machine, LLMURL, shares nothing with the
-// speech model either, issue #276. The job says whether it holds the
-// whole video up, so a video's menu says the rest comes next while it
-// finds too, found by the fourth review of #458.
+// speech model either, issue #276.
 func TestASearchTakesItsTurnByWhereItsModelIs(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		for _, c := range []struct {
@@ -162,12 +160,6 @@ func TestASearchTakesItsTurnByWhereItsModelIs(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			q.mu.Lock()
-			ahead := search.Ahead
-			q.mu.Unlock()
-			if ahead != c.holds {
-				t.Errorf("a search finding with the model %s %s says it is ahead of the whole video: %v", c.planner, c.url, ahead)
-			}
 			hearing, stop := waiting(t, q.lanes, LaneHearing, hearingTurn)
 			if c.holds {
 				waits(t, hearing, "hearing while a search with the model "+c.planner+" "+c.url+" finds")
@@ -178,20 +170,6 @@ func TestASearchTakesItsTurnByWhereItsModelIs(t *testing.T) {
 			stop()
 			cancel()
 		}
-		// A search that hears is ahead of it wherever its model is.
-		q := newQueue(nil, func(JobUpdate) {}, func(string) {})
-		search := &Job{Kind: engine.JobSearch}
-		_, heard, err := q.turn(search, engine.Options{Planner: "api"})(context.Background(), engine.StepHearing)
-		if err != nil {
-			t.Fatal(err)
-		}
-		q.mu.Lock()
-		ahead := search.Ahead
-		q.mu.Unlock()
-		if !ahead {
-			t.Error("a search that hears does not say it is ahead of the whole video")
-		}
-		heard()
 	})
 }
 
@@ -222,12 +200,6 @@ func TestATurnTakenBackSaysItWaitsAtOnce(t *testing.T) {
 		// Before the search has said it finds.
 		if got := step(whole); got != engine.StepWaiting {
 			t.Errorf("the whole video taken back by a search that finds says %q", got)
-		}
-		q.mu.Lock()
-		ahead := whole.Ahead
-		q.mu.Unlock()
-		if ahead {
-			t.Error("the whole video says it is ahead of itself")
 		}
 		heard()
 		found()

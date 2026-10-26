@@ -457,6 +457,8 @@
       class:lit={i === unheardLit || i === unheardOn || i === unheardHere}
       class:giving={giving >= 0 && Math.abs(a - giving) < 0.5}
       class:worked={!!workedOn(b)}
+      class:first={a < 0.5}
+      class:last={b > duration - 0.5}
       style="--at: {on(a)}; --to: {on(b)}; --grid: {on(workedOn(b)?.grid ?? b)}"
     ></div>
   {/each}
@@ -891,7 +893,8 @@
   }
 
   /* A part not transcribed yet, dots over the track and under the
-     minutes and the clips, and nothing else, as Tim picked them. */
+     minutes and the clips, with a dashed line down each edge, as Tim
+     picked them. */
   .unheard {
     position: absolute;
     top: 0;
@@ -913,8 +916,9 @@
   }
 
   /* Its dots, the card's, rising from the foot, so the minutes stand
-     clear above them, and with no dashed edge, which Tim found the dots
-     did without. They fill the part as whole columns, centred, so the
+     clear above them. With no edge at all, a part whose dots began a few
+     pixels in looked as if it began there, so its sides are dashed, see
+     below, Tim's report of 26 October, 12.27. They fill the part as whole columns, centred, so the
      space from the last dot to the edge is the same on both sides and
      about half the space between two dots: a pattern that started
      wherever its grid fell looked off, and a row and a column left clear
@@ -965,6 +969,39 @@
 
   .unheard.lit::before {
     background-image: var(--halftone-lit);
+  }
+
+  /* Its edges, a dashed line down each side, so where it begins and ends
+     is plain wherever its dots fall, Tim's report of 26 October, 12.27.
+     They are the dashes of a card of what was said, in the grey of a
+     card's edge, a dash beside each row of dots: tiles of the dots' pitch
+     laid from the same foot. None along the top or the foot, where the
+     range picker's own border is, and none where the part meets the start
+     or the end of the video, which the border marks. Under the hand they
+     go into the grey, the way a card's do. */
+  .unheard::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-left: 1px solid var(--ink-3);
+    border-right: 1px solid var(--ink-3);
+    mask-image: var(--halftone-dash-y);
+    mask-size: 100% var(--dot-pitch);
+    mask-repeat: repeat-y;
+    mask-position: 0 calc(100% - 1px);
+    pointer-events: none;
+  }
+
+  .unheard.first::after {
+    border-left: none;
+  }
+
+  .unheard.last::after {
+    border-right: none;
+  }
+
+  .unheard.lit::after {
+    border-color: transparent;
   }
 
   /* The box the playhead is drawn over, exactly the track and nothing

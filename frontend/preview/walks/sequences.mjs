@@ -234,36 +234,33 @@
 //                      last part not transcribed yet to light it in half
 //                      the grey of a lit card with the cards of what was
 //                      said closed, then needs the menu to say
-//                      Transcribe whole video and clicks it: in the next
+//                      Transcribe video and clicks it: in the next
 //                      frame the menu has closed and the video's dot
 //                      pulses, with no number in its row. Once the work
 //                      runs, the range picker frames the part it works
 //                      on, breathing with the motes, over that part's
-//                      dots. "behind" clicks Search in the head while a
-//                      piece waits in the speech: the Go side says the
-//                      whole video waits before the piece is heard, its
-//                      frame still breathes, dimmed and with no motes,
-//                      its dots stand still once the piece is heard, and
-//                      once the search is cancelled it sheds them again. "stop" needs Stop
+//                      dots. "search stops it" clicks Search in the head
+//                      with the model holding its answer: the whole
+//                      video's transcription stops, its frame goes, and
+//                      the menu says Transcribe video and cannot be
+//                      clicked while the search runs. Once the search is
+//                      cancelled the transcription stays stopped and the
+//                      menu can be clicked again. "stop" needs Stop
 //                      transcribing and clicks it while a piece is being
 //                      heard: in the next frame the
 //                      frame is fading, standing still, the menu has
 //                      closed, and once the speech hears on and the job
 //                      ends the dots are where they were at the click.
-//                      Opened again the menu says Continue transcribing
-//                      at once.
-//                      "next", while the video's first search
-//                      transcribes its window with the speech held,
-//                      needs Transcribe the rest, clicks it, needs
-//                      the rest to wait and the menu to say Stop
-//                      transcribing the rest, stops it, needs Transcribe
-//                      the rest again and does the same, then lets the
-//                      speech go and needs
-//                      Export transcript once the video is transcribed
-//                      to its end.
+//                      Opened again the menu says Transcribe video at
+//                      once. "waits for the search", while the video's
+//                      first search transcribes its window with the
+//                      speech held, needs Transcribe video that cannot be
+//                      clicked, says to wait for the search, then lets
+//                      the speech go and needs it to be clickable once
+//                      the search is done.
 //                      "continue" waits the same way for the stopped
 //                      work to end, needs the frame gone and the dots
-//                      back, and clicks Continue transcribing, which
+//                      back, and clicks Transcribe video again, which
 //                      pulses the dot in the next frame again. "Text" and
 //                      "Subtitles" wait, asking again each time the work
 //                      says how far it heard, until the Go side says the
@@ -364,7 +361,9 @@
 //                      once a search heard its window and the window moved
 //                      on, the part not transcribed yet begins where the
 //                      window now begins, and its first column of dots
-//                      stands at that edge, with no room left over there
+//                      stands at that edge, with no room left over there,
+//                      and that edge is a dashed line in the grey of a
+//                      card's edge, a dash beside each row of dots
 //   ["searched moved"] the episode's newest search is a new one, not the
 //                      search there was at "move window", and it searched
 //                      the window where "move window" left it
@@ -1498,10 +1497,11 @@ export const sequences = [
       ["speech", "go"],
       ["add", 1500],
       ["transcript", "transcribe"],
-      // A search started meanwhile puts it on hold, and cancelled gives
-      // it back.
-      ["transcript", "behind"],
-      // Stopped and carried on, each said in the frame of the click.
+      // A search started meanwhile stops it, for good.
+      ["transcript", "search stops it"],
+      // Asked for again, stopped and asked for again, each said in the
+      // frame of the click.
+      ["transcript", "continue"],
       ["transcript", "stop"],
       ["speech", "go"],
       ["transcript", "continue"],
@@ -1510,11 +1510,10 @@ export const sequences = [
     ],
   },
   {
-    // Tim's pick on #458: while a search transcribes its window, the
-    // video's menu offers the rest of it, which comes next, and stopping
-    // the rest leaves the search alone, his report of 21.40.
-    name: "the rest of a video asked for while its search transcribes is transcribed next",
-    steps: [["speech", "hold"], ["add", 1500], ["wait for", "Cancel"], ["transcript", "next"]],
+    // Tim's report of 26 October, 12.27: the whole video's transcription
+    // and the work on its clips go one at a time.
+    name: "Transcribe video waits until the search is done",
+    steps: [["speech", "hold"], ["add", 1500], ["wait for", "Cancel"], ["transcript", "waits for the search"]],
   },
   {
     name: "a word corrected in one clip reads as it was heard in another clip over it",
@@ -3079,7 +3078,7 @@ export const sequences = [
     // search had transcribed to, and the dots after it began a few pixels
     // right of its edge, because they were laid from the end of the
     // video and the room left over fell at the window.
-    name: "the dots after a search's window begin at the window it moves on to",
+    name: "the dots after a search's window begin at the window it moves on to, with a dashed edge",
     steps: [
       ["speech", "hold"],
       ["add", 1200],
@@ -7411,19 +7410,25 @@ async function walkSequence(seq, shared = null) {
               }),
             want,
           );
-        if (arg === "next") {
-          // While its first search transcribes its window, the menu is
-          // about the rest of the video, and the click waits for the
-          // search and then transcribes to the end. It said Continue
-          // transcribing, as if nothing were transcribing, Tim's report of
-          // 25 October, 14.33, and his pick on #458, then Continue next
-          // and Stop transcribing, which said nothing to him, his report
-          // of 21.40.
-          const reopen = async () => {
-            await row.hover();
-            await row.locator("button.more").click();
-            await menu.waitFor();
-          };
+        // The row about the words as it is now: what it says, whether it
+        // can be clicked, and what its title says.
+        const item = () =>
+          page.evaluate(() => {
+            const b = document.querySelector(".video-menu .item");
+            return { said: (b?.textContent ?? "").replace(/\s+/g, " ").trim(), off: !!b?.disabled, title: b?.title ?? "" };
+          });
+        const reopen = async () => {
+          await row.hover();
+          await row.locator("button.more").click();
+          await menu.waitFor();
+        };
+        const searching = async () => (await ask(page, "Jobs")).some((j) => j.episode === source && j.kind === "search" && (j.state === "running" || j.state === "queued"));
+        if (arg === "waits for the search") {
+          // The whole video's transcription and the work on its clips go one
+          // at a time: while its first search runs, Transcribe video cannot
+          // be clicked, and once the search is done it can. Tim's report of
+          // 26 October, 12.27: Transcribe the rest and Continue next, which
+          // waited for the search, were a menu nobody could read.
           const searchHears = async () => {
             const j = (await ask(page, "Jobs")).findLast((j) => j.episode === source && j.kind === "search");
             return j?.state === "running" && (j.step === "hearing" || j.lane === "hearing");
@@ -7432,74 +7437,24 @@ async function walkSequence(seq, shared = null) {
             wrong = "the first search is not transcribing its window, and this step is about the menu while it does";
             break;
           }
-          const transcription = async () => (await ask(page, "Jobs")).findLast((j) => j.episode === source && j.kind === "transcribe");
-          for (const [want, title, last] of [
-            ["Transcribe the rest", "once the search", false],
-            ["Transcribe the rest", "once the search", true],
-          ]) {
-            const said = await says();
-            const told = await page.evaluate(() => document.querySelector(".video-menu .item")?.title ?? "");
-            if (said !== want || !told.includes(title)) {
-              wrong = `while the search transcribes, the menu says ${JSON.stringify(said)}, ${JSON.stringify(told)}, not ${want}`;
-              break;
-            }
-            const after = await pick(want);
-            if (after.open) {
-              wrong = `the menu stayed open after ${want} was clicked`;
-              break;
-            }
-            for (let seen = await news(page); (await transcription())?.state !== "running" && (await transcription())?.state !== "queued"; ) seen = await nextNews(page, seen);
-            await settle(page);
-            if (!(await searchHears())) {
-              wrong = `after ${want}, the search no longer transcribes its window`;
-              break;
-            }
-            const whole = await transcription();
-            if (whole.step === "hearing") {
-              wrong = `after ${want}, the rest of the video is transcribed beside the search, not next`;
-              break;
-            }
-            await reopen();
-            const stop = await page.evaluate(() => document.querySelector(".video-menu .item")?.title ?? "");
-            if ((await says()) !== "Stop transcribing the rest" || !stop.includes("still transcribes what it needs")) {
-              wrong = `after ${want}, the menu says ${JSON.stringify(await says())}, ${JSON.stringify(stop)}, not Stop transcribing the rest`;
-              break;
-            }
-            if (last) break;
-            // Stopped while it waits, the menu offers the rest again.
-            await pick("Stop transcribing the rest");
-            for (let seen = await news(page); ["running", "queued"].includes((await transcription())?.state); ) seen = await nextNews(page, seen);
-            await settle(page);
-            // The rest is stopped, and what the search transcribes is not.
-            if (!(await searchHears())) {
-              wrong = "Stop transcribing the rest stopped the search transcribing its own window too";
-              break;
-            }
-            await reopen();
-          }
-          if (wrong) break;
+          const during = await item();
           await page.keyboard.press("Escape");
           await menu.waitFor({ state: "detached" });
-          // The search is let on, and the rest of the video after it.
-          await control(url, "/speech?go");
-          const done = async () => (await ask(page, "Library")).find((e) => e.source === source)?.transcribed;
-          for (let seen = await news(page); !(await done()); ) {
-            const j = await transcription();
-            if (j && !["running", "queued"].includes(j.state) && !(await done())) {
-              wrong = `the rest of the video asked for next ended ${j.state}, with the video not transcribed to its end`;
-              break;
-            }
-            seen = await nextNews(page, seen);
+          if (during.said !== "Transcribe video" || !during.off || !during.title.includes("once the search is done")) {
+            wrong = `while the search runs, the menu says ${JSON.stringify(during)}, not Transcribe video that cannot be clicked`;
+            break;
           }
-          if (wrong) break;
+          await control(url, "/speech?go");
+          for (let seen = await news(page); await searching(); ) seen = await nextNews(page, seen);
           await settle(page);
           await reopen();
-          if ((await says()) !== "Export transcript") wrong = `the video transcribed to its end, the menu says ${JSON.stringify(await says())}, not Export transcript`;
+          const after = await item();
           await page.keyboard.press("Escape");
+          if (after.said !== "Transcribe video" || after.off) wrong = `the search done, the menu says ${JSON.stringify(after)}, not Transcribe video to click`;
           break;
         }
         if (arg === "transcribe" || arg === "continue") {
-          const want = arg === "transcribe" ? "Transcribe whole video" : "Continue transcribing";
+          const want = "Transcribe video";
           // Nothing runs for the video first, its first search and the
           // work that was stopped included, so a dot that pulses in the
           // next frame pulses for the click and for nothing else. Found by
@@ -7640,96 +7595,61 @@ async function walkSequence(seq, shared = null) {
                 : "",
             };
           });
-        if (arg === "behind") {
-          // While the whole video waits its turn, its frame stays and
-          // keeps breathing, dimmed and with no motes, so it reads as on
-          // hold and not gone, Tim's report of 23 October. The look comes
-          // from its own job: a search with the model in the cloud holds
-          // nothing up, found by the second review of #458. Here the
-          // model is local, so a search that finds takes the hearing, and
-          // so does a clip made by hand over a part not heard yet. The
-          // speech stays held, and is let on a piece at a time, so the
-          // whole video's piece ends and it can give the hearing away.
+        if (arg === "search stops it") {
+          // A search asked for while the whole video is transcribed stops
+          // the transcription, and it does not start again by itself once
+          // the search is done: Transcribe video does, clicked again. While
+          // the search runs it cannot be clicked. Tim's report of 26
+          // October, 12.27. The model holds its answer, so the search keeps
+          // running until it is cancelled.
           await page.keyboard.press("Escape");
           await menu.waitFor({ state: "detached" });
-          const onHold = async (what) => {
-            await stepIs("waiting");
-            const seen = await partNow();
-            if (!seen.part) return `${what}, the whole video's frame is gone`;
-            if (!seen.behind) return `${what}, the whole video waits its turn and its frame is not dimmed`;
-            if (!seen.breathes) return `${what}, the whole video's frame stopped breathing: ${seen.wore}`;
-            if (seen.motes) return `${what}, the whole video's frame sheds ${seen.motes} motes`;
-            return "";
-          };
-          const back = async (what) => {
-            await stepIs("hearing");
-            await settle(page);
-            const seen = await partNow();
-            if (!seen.part) return `${what}, the whole video's frame is gone`;
-            if (seen.behind) return `${what}, the whole video hears and its frame stays dimmed`;
-            if (!seen.motes) return `${what}, the whole video hears and its frame sheds no motes`;
-            return "";
-          };
-          // It goes on hold the moment the search takes the hearing, while
-          // the piece it is in is still being heard, and its dots stand
-          // still from then on: they went on shrinking for two seconds
-          // after Search, Tim's report of 24 October. The model holds its
-          // answer, so the search keeps finding, and a piece waits in the
-          // speech as Search is clicked.
           await control(url, "/model?hang=1");
-          await control(url, "/speech?hold=one");
-          const dotsBefore = await page.evaluate(() => window.dotsNow());
+          const going = async () => ["running", "queued"].includes((await transcription())?.state);
           await page.locator(".listhead button.search").click();
-          // The Go side says the whole video waits before it says the
-          // search waits to hear its window or finds.
-          const asked = async () => {
-            const j = (await ask(page, "Jobs")).findLast((j) => j.episode === source && j.kind === "search");
-            return j?.lane === "hearing" || j?.step === "hearing" || j?.step === "finding";
-          };
-          for (let seen = await news(page); !(await asked()); ) seen = await nextNews(page, seen);
-          if ((await transcription())?.step !== "waiting") {
-            wrong = "a search takes the hearing while a piece is being heard, and the whole video still says it hears until the piece is done";
-            break;
-          }
-          wrong = await onHold("a search finding, the piece still being heard");
-          if (wrong) break;
-          // The piece is heard to its end and let go, the search has the
-          // hearing, and its first piece waits in the speech: the dots
-          // stand where they were at the click.
-          await control(url, "/speech?step=1");
-          const hears = async () => (await ask(page, "Jobs")).findLast((j) => j.episode === source && j.kind === "search")?.step === "hearing";
-          for (let seen = await news(page); !(await hears()); ) seen = await nextNews(page, seen);
-          await settle(page);
-          const dotsAfter = await page.evaluate(() => window.dotsNow());
-          if (dotsAfter !== dotsBefore) {
-            wrong = `the whole video went on hold for a search, and its dots moved on from ${dotsBefore} to ${dotsAfter}`;
-            break;
-          }
-          // Cancelled, the search's piece waiting in the speech is heard to
-          // its end, and the whole video's next piece waits there in turn.
-          const searching = async () => (await ask(page, "Jobs")).some((j) => j.episode === source && j.kind === "search" && (j.state === "running" || j.state === "queued"));
-          await page.locator(".listhead button.search").click();
-          await control(url, "/speech?step=1");
-          for (let seen = await news(page); await searching(); ) seen = await nextNews(page, seen);
-          await control(url, "/model");
-          wrong = await back("the search cancelled");
-          if (wrong) break;
-          // The playhead on a part not heard yet, near the end, and a clip
-          // made there by hand.
-          const track = await page.locator('[aria-label="The range picker"]').boundingBox();
-          await page.mouse.click(track.x + track.width * 0.9, track.y + track.height / 2);
-          await settle(page);
-          await page.keyboard.press("i");
-          wrong = await onHold("a clip made by hand hearing");
-          if (wrong) break;
-          // The clip's part is let on a piece at a time until the clip is
-          // made.
-          const making = async () => (await ask(page, "Jobs")).some((j) => j.episode === source && j.kind === "clip" && (j.state === "running" || j.state === "queued"));
-          for (let seen = await news(page); await making(); ) {
+          // The speech is held, so the piece being heard is let on, one at
+          // a time, until the transcription has stopped between two.
+          for (let seen = await news(page), n = 0; (await going()) && n < 20; n++) {
             await control(url, "/speech?step=1");
             seen = await nextNews(page, seen);
           }
-          wrong = await back("the clip made by hand");
+          await settle(page);
+          if ((await transcription())?.state !== "interrupted") {
+            wrong = `a search asked for while the whole video is transcribed left the transcription ${(await transcription())?.state}, not stopped`;
+            break;
+          }
+          if (await page.locator(".part:not(.going) .window.frame.locked").count()) {
+            wrong = "a search stopped the whole video, and the range picker still frames its part as work in hand";
+            break;
+          }
+          await reopen();
+          const during = await item();
+          await page.keyboard.press("Escape");
+          await menu.waitFor({ state: "detached" });
+          if (!(await searching())) {
+            wrong = "the search ended before the menu was read, and this step is about the menu while it runs";
+            break;
+          }
+          if (during.said !== "Transcribe video" || !during.off) {
+            wrong = `while the search runs, the menu says ${JSON.stringify(during)}, not Transcribe video that cannot be clicked`;
+            break;
+          }
+          // Cancelled, the search ends, and the transcription stays stopped.
+          await page.locator(".listhead button.search").click();
+          await control(url, "/model");
+          for (let seen = await news(page), n = 0; (await searching()) && n < 20; n++) {
+            await control(url, "/speech?step=1");
+            seen = await nextNews(page, seen);
+          }
+          await settle(page);
+          if (await going()) {
+            wrong = "the search ended, and the whole video's transcription started again by itself";
+            break;
+          }
+          await reopen();
+          const after = await item();
+          await page.keyboard.press("Escape");
+          if (after.said !== "Transcribe video" || after.off) wrong = `the search ended, the menu says ${JSON.stringify(after)}, not Transcribe video to click`;
           break;
         }
         if (arg === "stop at the end") {
@@ -7813,12 +7733,12 @@ async function walkSequence(seq, shared = null) {
             await page.keyboard.press("Escape");
             break;
           }
-          // At once, the menu offers to carry it on, whether the work has
-          // ended yet or not.
+          // At once, the menu offers it again, whether the work has ended
+          // yet or not.
           await row.hover();
           await row.locator("button.more").click();
           await menu.waitFor();
-          if ((await says()) !== "Continue transcribing") wrong = `the menu of a video told to stop says ${JSON.stringify(await says())}, not Continue transcribing`;
+          if ((await says()) !== "Transcribe video") wrong = `the menu of a video told to stop says ${JSON.stringify(await says())}, not Transcribe video`;
           await page.keyboard.press("Escape");
           await menu.waitFor({ state: "detached" });
           if (wrong) break;
@@ -10513,9 +10433,26 @@ async function walkSequence(seq, shared = null) {
           const parts = [...document.querySelectorAll(".track .unheard")].map((u) => {
             const r = u.getBoundingClientRect();
             const b = getComputedStyle(u, "::before");
-            return { at: r.left - track.left, width: r.width, in: parseFloat(b.left), out: parseFloat(b.right), worked: u.classList.contains("worked") };
+            const e = getComputedStyle(u, "::after");
+            return {
+              at: r.left - track.left,
+              width: r.width,
+              in: parseFloat(b.left),
+              out: parseFloat(b.right),
+              worked: u.classList.contains("worked"),
+              // Its dashed edges: which sides, in what, and laid how.
+              edges: [e.borderLeftStyle, e.borderRightStyle, e.borderTopStyle, e.borderBottomStyle],
+              colour: e.borderLeftColor,
+              dashes: [e.maskImage.startsWith("repeating-linear-gradient"), e.maskSize, e.maskRepeat, e.maskPositionY ?? e.webkitMaskPositionY],
+              rows: [b.height, e.height, b.backgroundPositionY],
+            };
           });
-          return { pitch, parts, track: track.width };
+          const probe = document.createElement("div");
+          probe.style.color = "var(--ink-3)";
+          document.body.append(probe);
+          const grey = getComputedStyle(probe).color;
+          probe.remove();
+          return { pitch, parts, track: track.width, grey };
         });
         const first = part.parts.find((p) => p.at > 1);
         if (!first) {
@@ -10525,6 +10462,14 @@ async function walkSequence(seq, shared = null) {
         if (first.in !== 0)
           wrong = `the first column of dots after the window stands ${first.in} px in from the window's edge, not at it: ${JSON.stringify(first)}, dots ${part.pitch} px apart`;
         else if (first.out < 0 || first.out >= part.pitch) wrong = `the dots after the window are not whole columns: ${JSON.stringify(first)}`;
+        // Its edge is dashed, in the grey of a card's edge, a dash beside
+        // each row of dots, the way the cards of what was said are, and it
+        // runs to the end of the video, where the range picker's border is
+        // its edge. Tim's report of 26 October, 12.27.
+        else if (first.edges.join(" ") !== "solid none none none" || first.colour !== part.grey)
+          wrong = `the part not transcribed yet after the window has edges ${first.edges.join(", ")} in ${first.colour}, not a dashed line down its left edge in ${part.grey}`;
+        else if (!first.dashes[0] || first.dashes[1] !== `100% ${part.pitch}px` || first.dashes[2] !== "repeat-y" || first.rows[0] !== first.rows[1] || first.dashes[3] !== first.rows[2])
+          wrong = `the dashes down the edge of a part do not stand beside its rows of dots: dashes ${JSON.stringify(first.dashes)}, dots ${JSON.stringify(first.rows)}`;
         break;
       }
       case "searched moved": {

@@ -64,10 +64,13 @@ anything but another whole video asked after it goes first, and
 it waits while a search finds, because it can take an hour and nobody is
 waiting on it, see `wholeHearingTurn` in `lanes.go`. Its record is
 `transcribe.json`, so an app closed while it hears says so in the
-video's menu, and Continue transcribing carries it on. Stopped with Stop
+video's menu, and Transcribe video carries it on. Stopped with Stop
 transcribing in the menu, it ends the way a search called off with Cancel
 does: its record says stopped, what it heard stays, and the menu offers
-Continue transcribing, after a restart too. A clip made
+Transcribe video again, after a restart too. A search or a clip made by
+hand of the same video stops it the same way, and it is refused while
+they run, `stopTranscribing` and `errClipsFirst` in `export.go`, Tim's
+report of 26 October, 12.27. A clip made
 by hand goes **waiting**, **hearing** where the transcript does not reach
 far enough yet, **framing**, **done**. A render goes **waiting**,
 **rendering**, **done**. Waiting is its turn behind

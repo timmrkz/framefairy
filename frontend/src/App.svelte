@@ -239,15 +239,14 @@
     );
   }
 
-  // Whether the whole video's transcription would wait now, behind a
-  // search or a clip made by hand, so the rest of a video asked for in its
-  // menu comes next. The Go side says it on the job, by the rule its lanes
-  // keep: it waited while a search with the model on this machine found
-  // too, and the menu did not say so, found by the fourth review of #458.
-  // The lanes are the machine's, so a search of another video holds it up
-  // the same.
-  function hearsFirst(): boolean {
-    return jobs.list.some((j) => j.ahead && live(j) && !jobs.stops(j));
+  // Whether a search or a clip made by hand of the video runs or is on
+  // its way, so Transcribe video waits until it is done: the two go one at
+  // a time, Tim's report of 26 October, 12.27.
+  function clipsBusy(path: string): boolean {
+    return (
+      jobs.isStarting(path, "clips") ||
+      jobs.list.some((j) => j.episode === path && (j.kind === "search" || j.kind === "clip") && live(j) && !jobs.stops(j))
+    );
   }
 
   // Why a transcription failed, said in a toast with Report, whether the
@@ -258,7 +257,7 @@
     toasts.say("transcribe whole video", why, { video: j.episode, report: true });
   }
 
-  // Transcribe whole video, and Continue transcribing, in a video's menu.
+  // Transcribe video in a video's menu.
   // The job it answers with is taken at once, so the row says Transcribing
   // without waiting for the job's first news.
   async function transcribe(ep: EpisodeStatus) {
@@ -279,7 +278,7 @@
   }
 
   // A transcription that fails says why in a toast, the way a search does,
-  // and its row says Continue transcribing. One seen failed only as the
+  // and its row says Transcribe video again. One seen failed only as the
   // app opened has said why already. Only the state and id are read, see
   // the rule on watching jobs.
   const transcribingSeen = new Set<string>();
@@ -862,7 +861,7 @@
               onremove={() => (removing = ep)}
               work={jobs.transcription(ep.source)}
               stopping={jobs.isStopping(ep.source, "whole")}
-              hearsFirst={hearsFirst()}
+              clipsBusy={clipsBusy(ep.source)}
               ontranscribe={() => transcribe(ep)}
               onstoptranscribe={() => {
                 const work = jobs.transcribing(ep.source);

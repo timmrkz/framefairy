@@ -43,6 +43,9 @@ func (s *FrameFairy) search(path string, req engine.PlanRequest, click string, c
 			s.jobs.waitJob(j.ID)
 		}
 	}
+	// The video's transcription and the work on its clips go one at a
+	// time, see Transcribe.
+	s.stopTranscribing(path, "search")
 	// A search that stopped is taken up by this one, which writes a record
 	// of its own in its place.
 	s.jobs.settle(path, engine.JobSearch, "")
@@ -236,6 +239,7 @@ func (s *FrameFairy) makeClip(path string, req engine.ClipRequest, carry, click 
 	if math.IsNaN(req.At) || math.IsInf(req.At, 0) || req.At < 0 || req.At > engine.MaxEpisodeSeconds {
 		return s.jobs.refuse(path, engine.JobClip, label, "there is no such moment in the video")
 	}
+	s.stopTranscribing(path, "clip made by hand")
 	id := engine.NewClipID()
 	if carry != "" {
 		id = carry

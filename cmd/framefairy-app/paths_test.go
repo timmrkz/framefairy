@@ -630,3 +630,46 @@ func TestPathAVideoHasOneWindow(t *testing.T) {
 		t.Errorf("after the search found its clips the window is %+v, want the next ten minutes", w)
 	}
 }
+
+// The whole video's transcription and the work on its clips go one at a
+// time, Tim's report of 26 October, 12.27. Transcribe video is refused
+// while a search runs, and a search asked for while the whole video is
+// transcribed stops it, for good: it does not carry on by itself once the
+// search is done.
+func TestPathTheWholeVideoAndASearchGoOneAtATime(t *testing.T) {
+	// Not side by side: open sets HOME for the whole process.
+	d := open(t)
+	in, let := d.speech.hold()
+	t.Cleanup(let)
+	ep := d.add("ep", "1200")
+	<-in
+	if refused := d.svc.Transcribe(ep); refused.State != JobFailed || refused.Error != errClipsFirst {
+		t.Errorf("Transcribe video asked for while the first search hears is %s: %q", refused.State, refused.Error)
+	}
+	let()
+	d.idle(ep)
+
+	in, let = d.speech.hold()
+	t.Cleanup(let)
+	whole := d.svc.Transcribe(ep)
+	if whole.State == JobFailed {
+		t.Fatalf("Transcribe video with nothing running was refused: %q", whole.Error)
+	}
+	<-in
+	d.search(ep, window{600, 1200})
+	let()
+	d.idle(ep)
+	// The transcription the search stopped, and none started after it.
+	var after []Job
+	for _, j := range d.svc.Jobs() {
+		if j.Episode == ep && j.Kind == engine.JobTranscribe && j.Seq >= whole.Seq {
+			after = append(after, j)
+		}
+	}
+	if len(after) != 1 || after[0].ID != whole.ID || after[0].State != JobInterrupted {
+		t.Fatalf("a search asked for while the whole video was transcribed left %+v, not the transcription stopped", after)
+	}
+	if o := d.outcome(ep); o.stopped || o.interrupted || o.failed != "" {
+		t.Errorf("the search that stopped the transcription says %+v", o)
+	}
+}
