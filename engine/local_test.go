@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -174,6 +175,11 @@ func TestAServerThatWillNotStopIsKilledAtOnce(t *testing.T) {
 	close(up)
 	leaving = func(time.Duration) <-chan time.Time { return up }
 	t.Cleanup(func() { leaving = was })
+	// The start ends on the server's word that it is listening, and never
+	// on a look of the clock, which here never comes, #550.
+	wasLook := lookAgain
+	lookAgain = func(time.Duration) <-chan time.Time { return nil }
+	t.Cleanup(func() { lookAgain = wasLook })
 	model := filepath.Join(t.TempDir(), "model.gguf")
 	if err := os.WriteFile(model, nil, 0o644); err != nil {
 		t.Fatal(err)
@@ -187,6 +193,44 @@ func TestAServerThatWillNotStopIsKilledAtOnce(t *testing.T) {
 	// It is killed once stopGrace is up, at once here, rather than after
 	// half a second of the clock.
 	stop()
+}
+
+// The wait for a loading server ends on its own word that it may be ready,
+// however its output is split into writes, and each such line is heard
+// once. Everything it says still reaches its log.
+func TestTheServerIsHeardSayingItIsReady(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name   string
+		writes []string
+		heard  int
+	}{
+		{"nothing of note", []string{"load_tensors: loading model tensors\n", "warming up the model\n"}, 0},
+		{"one line", []string{"main: model loaded\n"}, 1},
+		{"split over writes", []string{"main: model lo", "aded\n"}, 1},
+		{"a byte at a time", strings.Split("main: server is listening on http://127.0.0.1:1\n", ""), 1},
+		{"both lines", []string{"main: model loaded\nmain: server is listening on http://127.0.0.1:1\n"}, 2},
+		{"both, apart", []string{"main: model loaded\n", "srv init: ready\n", "main: server is listening\n"}, 2},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			var log bytes.Buffer
+			ready := make(chan struct{}, 8)
+			h := &hearReady{out: &log, ready: ready}
+			for _, w := range c.writes {
+				if n, err := h.Write([]byte(w)); n != len(w) || err != nil {
+					t.Fatalf("Write(%q) = %d, %v", w, n, err)
+				}
+			}
+			if len(ready) != c.heard {
+				t.Errorf("heard %d times, want %d", len(ready), c.heard)
+			}
+			if want := strings.Join(c.writes, ""); log.String() != want {
+				t.Errorf("the log holds %q, want %q", log.String(), want)
+			}
+		})
+	}
 }
 
 // The name of a model is enough on the command line. A bare file name that

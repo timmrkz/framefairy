@@ -5,7 +5,7 @@
 // showed before it and the step's name. A sequence of any folder can take
 // it. Below them the helpers only these steps use. See docs/TESTING.md.
 import { execFileSync } from "node:child_process";
-import { BITS, ask, caughtUp, chosen, clickOnTrack, drag, engineState, episodeOn, handles, high, hold, inside, letHeld, middle, news, nextNews, nextPaint, playUntil, pressOnTrack, preview, seenUntil, settle, shownOnPlayhead, timeline, xOf } from "../bridge.mjs";
+import { BITS, ask, caughtUp, chosen, clickOnTrack, drag, engineState, episodeOn, handles, high, hold, inside, letHeld, middle, news, nextNews, nextPaint, pageUntil, playUntil, pressOnTrack, preview, seenUntil, settle, shownOnPlayhead, timeline, xOf } from "../bridge.mjs";
 import { pieceCount, rate, url } from "../common/steps.mjs";
 
 export const steps = {
@@ -1143,6 +1143,21 @@ export const steps = {
         await settle(page);
       }
     }
+    // C puts the keyframe on the frame the video preview shows, so it is
+    // pressed once the playhead stands on the clip's frame and the video
+    // preview shows that frame, both the app's own word. settle does not
+    // count the frame on its way from the decoder, and under load C once
+    // came while the video preview still showed the clip's start, #559.
+    await pageUntil(
+      page,
+      ([want, fps, start]) => {
+        const at = Number(document.querySelector(".screen")?.dataset.playhead);
+        const begins = start + Math.floor((at - start + 0.001) * fps) / fps;
+        return Math.abs(begins - want) < 0.5 / fps;
+      },
+      [want, src.fps, src.videoStart ?? 0],
+    );
+    await shownOnPlayhead(page);
     const marks = async () => (await entry()).cropMarks ?? [];
     const before = (await marks()).length;
     const lit = () => page.evaluate(() => !!document.querySelector(".clip-timeline .cropdot.here"));
