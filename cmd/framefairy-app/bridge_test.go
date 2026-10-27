@@ -1310,6 +1310,8 @@ func (b *bridge) pickSound() (string, error) {
 // makeFresh makes the bridge's machine one the app has never run on, see
 // /fresh. The video leaves the library with its work folder kept, the
 // way Remove leaves it, and reset brings both back.
+//
+// On the real disk: the models folder is the one the app looks in for its models, in the bridge's home.
 func (b *bridge) makeFresh() error {
 	b.mu.Lock()
 	b.arrive = map[string]chan struct{}{"speech": make(chan struct{}), "clip": make(chan struct{})}
