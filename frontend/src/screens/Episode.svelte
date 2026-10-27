@@ -3372,7 +3372,7 @@
                   The face, the size and the colours for every clip of this episode:
                   the words, the box behind them and the pill behind the word being spoken. A word too long
                   for a line is hyphenated onto the next. The number beside a colour is how much of it is seen: 100 is
-                  solid, and a box at 0 leaves only the words. <b>Height</b> is how far above the bottom of the short the captions
+                  solid, and a box at 0 leaves only the words. <b>Height</b> is how far above the bottom of the clip the captions
                   sit, for every episode: drag the caption box in the video preview, or type it here.
                   With the captions any other way than they start out, the mark in this corner turns
                   anticlockwise and puts them back. Once they are back it turns clockwise instead and
@@ -3495,8 +3495,8 @@
                 class:off={!textOn}
                 aria-pressed={textOn}
                 title={textOn
-                  ? "The captions are burned into the short. Click to turn them off and render without captions"
-                  : "Off: the short is rendered without captions. Click to burn them in again"}
+                  ? "The captions are burned into the clip. Click to turn them off and render without captions"
+                  : "Off: the clip is rendered without captions. Click to burn them in again"}
                 onclick={() => setCaptionSwitch("text", !textOn)}>Text</button
               >
               <span class="field pair" class:off={!textOn}>
@@ -3937,7 +3937,7 @@
             title={thumbHere !== null
               ? "Remove the thumbnail at the playhead. T does the same"
               : inShort
-                ? "Make the frame under the playhead a thumbnail. Render writes it beside the short. T does the same"
+                ? "Make the frame under the playhead a thumbnail. Render writes it beside the clip. T does the same"
                 : "Put the playhead in the clip to make a thumbnail of the frame there"}
           >
             <Icon name={thumbHere !== null ? "thumbnail-remove" : "thumbnail-add"} />
@@ -4060,7 +4060,7 @@
               ? `Stop the render${leftOfWork ? `, ${leftOfWork}` : ""}`
               : working
                 ? "Render once the work running now is done"
-                : "Write the short, and its thumbnails beside it"}
+                : "Write the clip, and its thumbnails beside it"}
             >{#if inHand}<Busy fraction={renderingCurrent ? renderShare : -1} />{/if}{inHand
               ? renderStopping
                 ? "Cancelling"

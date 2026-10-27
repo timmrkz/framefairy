@@ -976,7 +976,7 @@
         <h1>Add a video</h1>
         <p class="muted">
           The app transcribes it on this machine, finds the moments worth clipping and renders
-          them as vertical shorts.{videoNames ? ` Any ${videoNames} works.` : ""}
+          them as vertical clips.{videoNames ? ` Any ${videoNames} works.` : ""}
         </p>
         <button class="primary" onclick={add}>Add</button>
       </div>

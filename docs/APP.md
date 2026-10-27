@@ -3013,7 +3013,7 @@ after the typing stops.
 **What is in the way is said where it is put right**, not in a list of
 its own. A missing API key is said on the row where the key goes, a
 missing llama-server under the choice of model, a missing ffmpeg under
-**Shorts**, a missing speech model on its row, which offers **Install**.
+**Clips**, a missing speech model on its row, which offers **Install**.
 A problem the page has no row for, which none of today's checks is, is
 said at the top so nothing goes unsaid. The first version had one card at
 the top listing every problem, and a person had to go from the top of the
@@ -3174,8 +3174,8 @@ check before it once it is there, what it covers and the room it takes.
 Removing the speech model means the app asks for one again the next time it
 starts, because nothing can be transcribed without it.
 
-**Shorts** says where rendered shorts go, next to each video unless a
-folder is chosen with **Choose…**, which
+**Clips** says where rendered clips go, **Save clips to**, next to each
+video unless a folder is chosen with **Choose…**, which
 opens the system's own folder dialog. **Next to video** goes back to the
 default. In a folder chosen here, each episode's shorts go into a folder
 of their own, named after the episode's file, so `Folge 12.mp4` renders
@@ -3236,18 +3236,32 @@ unchecked with the app's access to the person's folders.
 can that throws them away, which asks first.
 
 **Advanced** is closed until it is opened, like a disclosure in Finder, and
-holds the machinery: the path to the language model file, or the Claude
-model, the speech model folder and the training data folder, each a name
-on the left and a field on the right. There is no field for ffmpeg or
-llama-server any more, see **The tools are the app's own**. Empty paths use
-the same defaults as the command line. Under the paths is everything the
-check looked at, found or not, with the check's own words and **Check
-again**, though the check runs again by itself whenever a setting changes:
-which ffmpeg,
+holds the machinery: the training data folder, and with a model in the
+cloud the name of the model the API is asked, for one newer than the list,
+each a name on the left and a field on the right. There is no field for
+ffmpeg or llama-server any more, see **The tools are the app's own**, and
+none for the models: a model is chosen in its own section and spoken of
+there and nowhere else, where Tim once found the models in six places,
+the sections, their info marks, two fields here and two rows of the check.
+Empty paths use the same defaults as the command line, which keeps every
+flag. Under the paths is what the check looked at, found or not, with the
+check's own words and **Check again**, though the check runs again by
+itself whenever a setting changes: which ffmpeg, ffprobe and llama-server,
 which of the system's own video decoders it can use, VideoToolbox on a Mac
-or decoding on the processor, the caption faces the app carries inside
-itself, and which model files it found. Which decoder a file really went
-through is in the log of its search.
+or decoding on the processor, and how many caption faces there are, the
+ones the app carries inside itself and the machine's own, `6 built in,
+412 from this machine`. The names are the font list's beside the captions,
+each in its own face, and were once a wall of a few hundred here. The
+models and the keys are said in their own sections, so the check leaves
+them out here. Which decoder a file really went through is in the log of
+its search.
+
+**A path is written one way everywhere.** Inside the home folder it starts
+with `~`, `~/.framefairy/models`, and anywhere else it is written in full,
+`/Applications/Frame Fairy.app/Contents/MacOS/ffmpeg`, whatever form the
+settings file, the check or the folder dialog handed it over in, see
+`shownPath` in `frontend/src/lib/paths.ts`. Only what is shown changes,
+what is saved stays as it came.
 
 Between the paths and the check is **The app's log**, see
 [LOGGING.md](LOGGING.md): where the file in use is, how many files it has

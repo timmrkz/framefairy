@@ -12,6 +12,7 @@
   import { onMount } from "svelte";
   import { wearColour } from "../lib/colour";
   import { jobs, nav } from "../lib/state.svelte";
+  import { shownPath } from "../lib/paths";
   import {
     cloudModelIn,
     cloudValue,
@@ -69,6 +70,9 @@
   let language = $state<LanguageModel[]>([]);
   // What this machine has, in bytes, or zero where it would not say.
   let memory = $state(0);
+  // The home folder, so every path on the page is written the one way.
+  let home = $state("");
+  const shown = (path: string) => shownPath(path, home);
 
   const speechRows = $derived(speech.map((m) => speechRow(m)));
 
@@ -249,7 +253,12 @@
   let copied = $state(false);
   let copyRefused = $state("");
   let copiedTimer: ReturnType<typeof setTimeout> | undefined;
+  // The beam round the key ID rests until the hand comes to it: each
+  // time the pointer reaches it, and each copy, it comes round once.
+  // Lit all the time it read as a line standing still, 2026-10-27.
+  let beams = $state(0);
   async function copyKeyID(id: string) {
+    beams++;
     copied = true;
     copyRefused = "";
     clearTimeout(copiedTimer);
@@ -369,6 +378,7 @@
       speech = state.speech;
       language = state.language;
       memory = state.memory;
+      home = state.home ?? "";
       providers = state.providers ?? [];
       cloud = state.cloud ?? [];
       keys = state.keys ?? {};
@@ -441,12 +451,18 @@
 
   async function chooseOutput() {
     try {
-      const dir = await api.chooseFolder("Where shorts are saved");
+      const dir = await api.chooseFolder("Where clips are saved");
       if (dir && settings) settings.outputDir = dir;
     } catch (err) {
       problem = errorText(err);
     }
   }
+
+  // What the app found, under Advanced: the programs it carries and what
+  // it can use. The models and the keys are said in their own sections and
+  // only there, so a model is not spoken of in six places, 2026-10-27.
+  const saidAbove = (name: string) => ["Speech model", "Language model"].includes(name) || name.endsWith(" API key");
+  const found = $derived((checks ?? []).filter((c) => !saidAbove(c.name)));
 
   // What each check that failed is about, so it can be said in the row
   // where it is put right rather than in a list of its own at the top.
@@ -941,20 +957,20 @@
       </div>
 
       <div class="group">
-        <h2>Shorts</h2>
+        <h2>Clips</h2>
         <div class="card">
           <div class="item">
             <span class="mark" aria-hidden="true"><Icon name="folder" /></span>
             <div class="words">
-              <span class="head">Save shorts to</span>
+              <span class="head">Save clips to</span>
               <span class="small muted selectable path">
-                {settings.outputDir || "Next to each video"}
+                {settings.outputDir ? shown(settings.outputDir) : "Next to each video"}
               </span>
             </div>
             {#if settings.outputDir}
               <button
                 class="quiet"
-                title="Save each short next to its video again"
+                title="Save each clip next to its video again"
                 onclick={() => settings && (settings.outputDir = "")}>Next to video</button
               >
             {/if}
@@ -986,7 +1002,7 @@
           <div class="item">
             <div class="words">
               <span class="head">Accent colour</span>
-              <span class="small muted">What the app picks things out in. The colours of a short are set beside its captions.</span>
+              <span class="small muted">What the app picks things out in. The colours of a clip are set beside its captions.</span>
             </div>
             <Swatches
               label="Accent colour"
@@ -1032,7 +1048,8 @@
                       title="Copy the key ID, which is what support asks for"
                       aria-label={copied ? "Copied" : `Copy key ID ${part.text}`}
                       onclick={() => copyKeyID(part.text)}
-                      ><Busy motes={false} seldom /><span>{part.text}</span><Icon
+                      onpointerenter={() => beams++}
+                      >{#key beams}{#if beams > 0}<Busy motes={false} seldom once />{/if}{/key}<span>{part.text}</span><Icon
                         name={copied ? "check" : "copy"}
                         size={14}
                       /></button
@@ -1133,15 +1150,10 @@
         </button>
         {#if advanced}
           <div class="card">
-            {#if settings.planner === "local"}
-              <label class="item field">
-                <span class="words">
-                  <span class="head">Language model file</span>
-                  <span class="small muted">Chosen above, or any .gguf file.</span>
-                </span>
-                <input type="text" bind:value={settings.llmModel} placeholder="The one in use" spellcheck="false" />
-              </label>
-            {:else}
+            <!-- The models are chosen in their own sections, and said
+                 nowhere else. A model in the cloud the list does not name
+                 yet, a newer one, is the one thing named here by hand. -->
+            {#if settings.planner === "api"}
               <label class="item field">
                 <span class="words">
                   <span class="head">Model in the cloud</span>
@@ -1150,13 +1162,6 @@
                 <input type="text" bind:value={settings.apiModel} placeholder={cloud[0]?.model ?? "claude-sonnet-5"} spellcheck="false" />
               </label>
             {/if}
-            <label class="item field">
-              <span class="words">
-                <span class="head">Speech model folder</span>
-                <span class="small muted">The installed one, unless named.</span>
-              </span>
-              <input type="text" bind:value={settings.asrModel} placeholder="~/.framefairy/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8" spellcheck="false" />
-            </label>
             <label class="item field">
               <span class="words">
                 <span class="head">Training data folder</span>
@@ -1176,7 +1181,7 @@
                   <span class="small muted num">
                     {plural(appLog.files, "file", "files")}, {size(appLog.bytes) || "empty"}, {plural(appLog.lines, "line", "lines")}
                   </span>
-                  <span class="small muted selectable path">{appLog.path}</span>
+                  <span class="small muted selectable path">{shown(appLog.path)}</span>
                 {:else}
                   <span class="small muted">Nothing written yet.</span>
                 {/if}
@@ -1219,7 +1224,7 @@
                 >{#if checking}<Busy />{/if}{checking ? "Checking" : "Check again"}</button
               >
             </div>
-            {#each checks ?? [] as c (c.name)}
+            {#each found as c (c.name)}
               <div class="item found">
                 <span class="mark" class:ok={c.ok} aria-hidden="true">
                   {#if c.ok}<Icon name="check" />{:else}<span class="dot err"></span>{/if}
@@ -1229,7 +1234,7 @@
                   <span class="small selectable" class:muted={c.ok} class:error={!c.ok}>{c.detail}</span>
                   <!-- Which file, and what it is down to the byte, so it
                        can be compared with the build it came from. -->
-                  {#if c.path}<span class="small muted selectable">{c.path}</span>{/if}
+                  {#if c.path}<span class="small muted selectable">{shown(c.path)}</span>{/if}
                   {#if c.sha256}<span class="small muted selectable sum" title="SHA-256">SHA-256 {c.sha256}</span>{/if}
                 </div>
               </div>
@@ -1243,7 +1248,7 @@
   {#if clearing}
     <Confirm title="Remove the training data?" oncancel={() => (clearing = false)}>
       <p>
-        Every plan and every decision recorded so far, in <b>{training.dir}</b>, goes. The clips
+        Every plan and every decision recorded so far, in <b>{shown(training.dir)}</b>, goes. The clips
         themselves stay. This cannot be taken back.
       </p>
       {#snippet actions()}
@@ -1497,7 +1502,9 @@
     border: none;
     box-shadow: inset 0 0 0 1px var(--line);
     border-radius: 6px;
-    background: var(--ink-2);
+    /* Darker than the card it sits in, the way a key in a README sits in
+       a block of code. */
+    background: var(--ink-0);
     color: var(--muted);
     font-family: ui-monospace, "SF Mono", Menlo, monospace;
     font-size: var(--size-m);
@@ -1510,12 +1517,7 @@
   }
 
   button.key-id:hover {
-    background: var(--ink-3);
     color: var(--text);
-  }
-
-  button.key-id > :global(.beam) {
-    opacity: 0.6;
   }
 
   button.key-id.copied > :global(svg) {

@@ -100,6 +100,9 @@ type SetupState struct {
 	// opened again while one runs, picks it up rather than starting a
 	// second.
 	Installing string `json:"installing,omitempty"`
+	// Home is the person's home folder, so the interface writes every path
+	// inside it the one way, from ~, whatever form it came in.
+	Home string `json:"home"`
 }
 
 // Setup reports what is still needed. It reads, it never changes anything.
@@ -108,6 +111,7 @@ func (s *FrameFairy) Setup(ctx context.Context) SetupState {
 	dir := engine.ModelsDir()
 
 	state := SetupState{Planner: settings.Planner, Chosen: settings.Chosen}
+	state.Home, _ = os.UserHomeDir()
 	for _, m := range engine.SpeechModels() {
 		view := SpeechModelView{SpeechModel: m, Installed: m.Installed(dir)}
 		if view.Installed {
@@ -556,15 +560,7 @@ func (s *FrameFairy) CheckSetup(ctx context.Context) []Check {
 	}
 	out = append(out, decoding)
 
-	// Nothing to install: the faces are inside the program and are written
-	// out next to the captions before every render.
-	fonts := Check{Name: "Caption fonts", OK: true}
-	var names []string
-	for _, font := range engine.CaptionFonts() {
-		names = append(names, font.Name)
-	}
-	fonts.Detail = "built in: " + strings.Join(names, ", ")
-	out = append(out, fonts)
+	out = append(out, fontsCheck(engine.FontCounts()))
 
 	asrDir := opts.ASRModel
 	if asrDir == "" {
@@ -591,6 +587,16 @@ func (s *FrameFairy) CheckSetup(ctx context.Context) []Check {
 
 	out = append(out, toolCheck(ctx, "FRAMEFAIRY_LLAMA_SERVER", "llama-server"))
 	return append(out, languageCheck(opts))
+}
+
+// fontsCheck says how many faces captions can be written in. Nothing to
+// install: the faces inside the program are written out next to the
+// captions before every render, and the machine's own are read where they
+// are. The names are the font list's beside the captions, one line here
+// and never a wall of a few hundred, which is what Tim saw, 2026-10-27.
+func fontsCheck(bundled, machine int) Check {
+	return Check{Name: "Caption fonts", OK: true,
+		Detail: fmt.Sprintf("%d built in, %d from this machine", bundled, machine)}
 }
 
 // languageCheck says whether the local model that finds clips is ready,

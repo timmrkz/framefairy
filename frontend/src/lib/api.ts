@@ -673,6 +673,9 @@ export interface SetupState {
   // The job of a model install in hand, so the app, opened again while one
   // runs, picks it up rather than starting a second.
   installing?: string;
+  // The person's home folder, which every path inside it is written from,
+  // as ~, see shownPath.
+  home?: string;
 }
 
 export const api = {
