@@ -204,7 +204,10 @@ export const steps = {
       window.__scrubShown.push(Number(document.querySelector(".screen").dataset.shown));
       const q = window.__frameQueue?.stats;
       const n = (q?.keys ?? 0) - window.__scrubKeys;
-      const wentOn = (window.__appFrames?.stats.keyWentOn ?? 0) - window.__scrubWentOn;
+      // The frames the decoder read on to, without a key frame first.
+      const f = window.__appFrames?.stats;
+      const m = Math.min((f?.keyWentOn ?? 0) - window.__scrubWentOn, 16);
+      const wentOn = m > 0 ? f.wentOnRanks.slice(-m) : [];
       return { shown: window.__scrubShown, keys: n > 0 ? (q?.keysAt.slice(-n) ?? []) : [], count: n, wentOn };
     });
     if (click) {
@@ -286,8 +289,9 @@ export const steps = {
     // before, a clip card's first frame most likely. Reading on from it is
     // cheaper than the key frame, so the decoder does, and says so, and
     // no key frame comes. On a busy machine that was 1 run in 8, issue
-    // #511. The frame under the hand is still checked below.
-    const wentOnInstead = wentOn > 0 && !keys.length;
+    // #511. Only a read on to the frame under the hand stands in for the
+    // key frame, and that frame is still checked below.
+    const wentOnInstead = !keys.length && wentOn.includes(under);
     if (!wentOnInstead && !keys.some((at) => Math.abs(at - key) < 0.5 / fps)) {
       walk.wrong = `the key frame at ${key.toFixed(3)} s was not put up on the way to the frame under the hand at ${rested.at.toFixed(3)} s, the frame queue put up key frames at ${keys.map((a) => a.toFixed(3)).join(", ") || "none"} and the video preview showed ${shown.map((a) => a.toFixed(3)).join(", ")}`;
     } else if (Math.round(rested.frame * fps) !== under) {

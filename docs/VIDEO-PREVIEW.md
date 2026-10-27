@@ -265,7 +265,8 @@ closed for standing unused.
   frame asked for reads on from there instead, which is cheaper, and then
   no key frame comes: the open says it went on, and the page counts it
   apart from the key frames that came, `keyWentOn` and `keyCame` in
-  `AppFrames.stats`, issue #511.
+  `AppFrames.stats`, with the frames it read on to in `wentOnRanks`,
+  issue #511.
 - The routes the interface reads from, `/frames/open`, `/frames/sound`,
   `/frames/read` and `/frames/close`, stay as they are. The interface
   cannot tell whether a frame came from it or from the ffmpeg program.

@@ -246,6 +246,8 @@ class Stream {
     if (rank < this.first) this.owner.stats.keyCame++;
     else if (this.wentOn) {
       this.owner.stats.keyWentOn++;
+      this.owner.stats.wentOnRanks.push(rank);
+      if (this.owner.stats.wentOnRanks.length > 16) this.owner.stats.wentOnRanks.shift();
       this.owner.trace(`stream ${id.slice(0, 6)}: asked for its key frame first, the decoder read on to frame ${rank} from where a cursor stood, so no key frame came before it`);
     }
     if (rank < this.first && this.placed) this.owner.onPassing?.(rank, last.frame, this.placed, true);
@@ -366,7 +368,7 @@ export class AppFrames {
   // keyFirst counts the streams opened with their key frame first, keyCame
   // those of them that handed it over before the frame asked for, and
   // keyWentOn those whose decoder read on to that frame instead, see
-  // Stream.keyCame.
+  // Stream.keyCame, and wentOnRanks the last 16 frames they read on to.
   readonly stats = {
     streams: 0,
     continued: 0,
@@ -378,6 +380,7 @@ export class AppFrames {
     keyFirst: 0,
     keyCame: 0,
     keyWentOn: 0,
+    wentOnRanks: [] as number[],
     opens: [] as Opened[],
     first: "",
   };

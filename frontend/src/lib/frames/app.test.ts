@@ -232,6 +232,7 @@ describe("a place dragged to, opened with its key frame first", () => {
     asked[2].give([141, 142, 143, 144, 145, 146, 147, 148, 149, 150]);
     expect(await under).toBe(150);
     expect([app.stats.keyFirst, app.stats.keyCame, app.stats.keyWentOn]).toEqual([1, 1, 0]);
+    expect(app.stats.wentOnRanks).toEqual([]);
     expect(app.stats.opens.at(-1)?.on).toBe(false);
     expect(passed).toEqual([140]);
     app.close();
@@ -246,6 +247,7 @@ describe("a place dragged to, opened with its key frame first", () => {
     asked[1].give([150], "1,2,3,0,1");
     expect(await under).toBe(150);
     expect([app.stats.keyFirst, app.stats.keyCame, app.stats.keyWentOn]).toEqual([1, 0, 1]);
+    expect(app.stats.wentOnRanks).toEqual([150]);
     expect(app.stats.opens.at(-1)?.on).toBe(true);
     expect(passed).toEqual([]);
     app.close();
