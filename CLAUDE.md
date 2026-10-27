@@ -280,8 +280,13 @@ messages, pull request text, code comments and chat replies.
     order, left to right.
   - Every comparison has a change column: the difference as a share of
     the before, rounded to a whole percent, with the word that says
-    which way it went, `20 % faster`, `7 % slower`, `3 % smaller`. A
-    change under the noise of the measurement says `no change`.
+    which way it went, `20 % faster`, `7 % slower`, `3 % smaller`. The
+    change is always given as its number, never as words like `no
+    change` in its place: numbers that differ are a change a person can
+    see. How much the measurement varies goes beside it, as the spread
+    of the before measured more than once, `12 % faster, ± 8 %`, so the
+    reader sees whether the change is larger than the noise. A
+    comparison of one run each has no spread, and says so.
   - Only like is compared with like. Numbers from a cloud session and
     from CI, or from three machines and from four, go in separate tables
     or separate rows, never in columns of one row.

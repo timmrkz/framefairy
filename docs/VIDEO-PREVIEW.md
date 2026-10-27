@@ -389,7 +389,7 @@ of start.mp4 each:
 
 | Frame stood           | Before (ms) | After (ms) | Change      |
 | --------------------- | ----------: | ---------: | ----------- |
-| Shortest              |          33 |         33 | no change   |
+| Shortest              |          33 |         33 | 0 %         |
 | Longest, all but 5    |          50 |         42 | 17 % less   |
 
 The 5 that stood 6 refreshes each stood over a refresh the page missed,
