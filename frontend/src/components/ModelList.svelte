@@ -5,10 +5,11 @@
   // look the same anyway.
   //
   // No model ships with the app, so every copy fetches what it needs. The
-  // list is a card of rows, one model each, and a row says what a model is,
-  // what it costs and, where the machine has something to say about it,
-  // whether it will run here. What the model is made of is for whoever
-  // asks, in the title of its name.
+  // list is a card of rows, one model each, one line each, read like a
+  // table without its lines: the name, who made it, the memory it needs,
+  // its size and what can be done with it, each in a column of its own, so
+  // the same fact stands in the same place in every row. What the model is
+  // made of is for whoever asks, in the title of its name.
   //
   // Which model finds clips is chosen in the settings from one list of all
   // of them, so this list only installs and removes. Rows with a round mark
@@ -19,10 +20,10 @@
   // An install is work in hand like any other, so it wears what all work
   // wears, in the control it was started from: the beam round the button
   // and the fill for how far it has come, and the button says Cancel while
-  // it runs. The row does not move and does not light up as a whole. What
-  // it says under the name turns from what the model costs into how far
-  // the download has come, how fast, and how long is left, in the same one
-  // line, so the row keeps its height.
+  // it runs. The row does not move and does not light up as a whole. Its
+  // maker and memory turn into how far the download has come, and its size
+  // into how long is left, in the same columns, so the row keeps its
+  // height and its numbers stay lined up with the rows around it.
   //
   // An installed model can be removed again, to give its room back. It
   // asks first, because getting it back means fetching gigabytes again.
@@ -44,11 +45,6 @@
     // Called when an install settles, so whoever asked can read again what
     // is installed.
     onchange,
-    // Whether the one model on the list may start by itself. It may in the
-    // setup, where a single speech model is not a choice and the app does
-    // what it can do by itself. It may not where somebody has to pick, and
-    // never in the settings, where nobody asked for anything.
-    auto = false,
     // How to remove one, where models can be removed. The setup has
     // nothing to remove.
     onremove,
@@ -68,7 +64,6 @@
     kind: "model" | "llm";
     oninstall: (name: string) => Promise<Job>;
     onchange: () => void;
-    auto?: boolean;
     onremove?: (name: string) => Promise<void>;
     removeSays?: string;
     bare?: boolean;
@@ -104,21 +99,8 @@
     }
   });
 
-  // Fetching a model by itself happens once, however often this list is
-  // read again. A download that failed is offered again by hand rather
-  // than started again by the app, which would be a loop nobody could get
-  // out of.
-  let startedOne = false;
-  $effect(() => {
-    if (!auto || startedOne || running || models.length !== 1) return;
-    const only = models[0];
-    if (only.installed) return;
-    startedOne = true;
-    install(only.name);
-  });
-
   // Cancelling takes a moment to reach the download, so the button says so
-  // at once. The part that arrived stays, and the next Install carries on
+  // at once. The part that arrived stays, and the next Download carries on
   // from it.
   let cancelling = $state("");
   function cancel(job: Job) {
@@ -126,15 +108,20 @@
     api.cancelJob(job.id);
   }
 
-  // What a running install says under the name: what the download says,
-  // how far, how fast, and how long is left.
+  // What a running download says in place of its maker and memory: how
+  // far it has come, the way the size is said, so the numbers stand under
+  // the sizes of the rows around it. A step with no bytes to count, the
+  // unpacking, says what it is doing.
   function said(job: Job): string {
-    if (job.state === "queued") return "Waiting for the install before it";
+    if (job.state === "queued") return "Waiting for the download before it";
     const text = job.progress?.text ?? job.last?.text ?? "";
-    const left =
-      job.progress && job.progress.remaining > 0 ? `, ${clock(job.progress.remaining)} left` : "";
-    const line = sentence(text) || "Starting";
-    return line + left;
+    const far = /[\d.]+ [KMG]B of [\d.]+ [KMG]B/.exec(text);
+    return far ? far[0] : sentence(text) || "Starting";
+  }
+
+  // And in place of its size, how long is left.
+  function left(job: Job): string {
+    return job.progress && job.progress.remaining > 0 ? `${clock(job.progress.remaining)} left` : "";
   }
 
   const share = (job: Job) =>
@@ -168,72 +155,69 @@
 </script>
 
 {#if problem}<p class="error selectable">{problem}</p>{/if}
-<ul class:card={!bare} class:bare>
+<ul class="models" class:card={!bare} class:bare>
   {#each models as model (model.name)}
     <!-- Which row an install belongs to. The job carries the name the Go
          side gave it, which is the model's own title, so rows are matched
          on the job's name and not on what they show. -->
     {@const mine = running?.label === model.label ? running : undefined}
+    {@const failed = !mine && job && job.label === model.label && job.state === "failed"}
     <li class="item">
-      <span class="mark ok">{#if model.installed && !bare}<Icon name="check" />{/if}</span>
-      <span class="lone" title={model.about}>{@render words(model, mine)}</span>
-      {#if !model.installed}
-        {#if mine}
-          <!-- The button the install was started from carries it: the beam
-               and the fill, and the one thing to do about it. -->
+      <span class="head name" title={model.about}>{model.title}</span>
+      {#if mine}
+        <span class="small muted num wide">{said(mine)}</span>
+        <span class="small muted num size">{left(mine)}</span>
+      {:else}
+        <span class="small muted">{model.maker}</span>
+        <span class="small muted">{model.memory}</span>
+        <span class="small muted num size">{model.size}</span>
+      {/if}
+      <span class="end">
+        {#if !model.installed}
+          {#if mine}
+            <!-- The button the download was started from carries it: the
+                 beam and the fill, and the one thing to do about it. -->
+            <button
+              class="act"
+              title="Stop the download. What has arrived stays, and Download carries on from it"
+              disabled={cancelling === mine.id}
+              onclick={() => cancel(mine)}
+            >
+              <Busy fraction={share(mine)} />
+              {cancelling === mine.id ? "Cancelling" : "Cancel"}
+            </button>
+          {:else}
+            <button
+              class="act"
+              title="Download it and keep it on this machine"
+              disabled={asked === model.name || !!running}
+              onclick={() => install(model.name)}
+            >
+              {#if asked === model.name}<Busy />{/if}
+              {asked === model.name ? "Starting" : "Download"}
+            </button>
+          {/if}
+        {:else if onremove}
+          <!-- Quiet until it is reached, then the colour of what it does,
+               the way the trash can on a clip is. -->
           <button
-            class="act"
-            title="Stop the download. What has arrived stays, and Install carries on from it"
-            disabled={cancelling === mine.id}
-            onclick={() => cancel(mine)}
+            class="quiet danger bin"
+            title={locked || "Remove it from this machine, to give its room back"}
+            aria-label="Remove {model.title}"
+            aria-haspopup="dialog"
+            disabled={!!running}
+            onclick={() => (locked ? onlocked?.() : (removing = model))}
           >
-            <Busy fraction={share(mine)} />
-            {cancelling === mine.id ? "Cancelling" : "Cancel"}
-          </button>
-        {:else}
-          <button
-            class="act"
-            title="Fetch it and keep it on this machine"
-            disabled={asked === model.name || !!running}
-            onclick={() => install(model.name)}
-          >
-            {#if asked === model.name}<Busy />{/if}
-            {asked === model.name ? "Starting" : "Install"}
+            <Icon name="trash" />
           </button>
         {/if}
-      {:else if onremove}
-        <!-- Quiet until it is reached, then the colour of what it does,
-             the way the trash can on a clip is. -->
-        <button
-          class="quiet danger bin"
-          title={locked || "Remove it from this machine, to give its room back"}
-          aria-label="Remove {model.title}"
-          aria-haspopup="dialog"
-          disabled={!!running}
-          onclick={() => (locked ? onlocked?.() : (removing = model))}
-        >
-          <Icon name="trash" />
-        </button>
+      </span>
+      {#if failed}
+        <span class="small error selectable whole">{job?.error}</span>
       {/if}
     </li>
   {/each}
 </ul>
-
-{#snippet words(model: ModelRow, mine: Job | undefined)}
-  <span class="words">
-    <span class="head">{model.title}</span>
-    {#if mine}
-      <span class="small muted num">{said(mine)}</span>
-    {:else}
-      <span class="small" class:muted={!model.warn} class:warn={model.warn}>
-        {model.cost}.{model.note ? ` ${model.note}.` : ""}
-      </span>
-    {/if}
-    {#if !mine && job && job.label === model.label && job.state === "failed"}
-      <span class="small error selectable">{job.error}</span>
-    {/if}
-  </span>
-{/snippet}
 
 {#if removing}
   {@const gone = removing}
@@ -262,15 +246,66 @@
     border-top: 1px solid var(--line);
   }
 
-  /* The words of a row, which take the room the buttons leave. */
-  .lone {
-    display: flex;
-    flex: 1;
-    min-width: 0;
+  /* One grid for the whole list, and every row lays its cells on it, so
+     the maker, the memory and the size of each row stand in the columns
+     of the rows above and below, a table without its lines. The name
+     takes what the other columns leave. */
+  ul.models {
+    display: grid;
+    grid-template-columns:
+      minmax(0, 1fr) minmax(var(--maker-w), max-content) minmax(var(--memory-w), max-content)
+      minmax(var(--size-w), max-content) minmax(var(--end-w), max-content);
+    /* Each column is at least as wide as what it holds in any list of
+       models, a maker, the memory a model needs, a size and the Download
+       button, so two lists one above the other, the speech model and the
+       clip model, line up as one table too. */
+    --maker-w: 64px;
+    --memory-w: 150px;
+    --size-w: 72px;
+    --end-w: 98px;
+    column-gap: 24px;
   }
 
-  .warn {
-    color: var(--warn);
+  ul.models > li {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+    align-items: center;
+  }
+
+  .name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* How far a download has come, in the room its maker and memory had,
+     standing to the right like the sizes. It takes the room the columns
+     have and adds none, so a long line never pushes the columns of the
+     other rows about. */
+  .wide {
+    grid-column: span 2;
+    text-align: right;
+    contain: inline-size;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .size {
+    text-align: right;
+  }
+
+  /* The last column holds a button or nothing, and is as wide as the
+     widest of its buttons, so the sizes before it line up. */
+  .end {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  /* Why a download failed, on a line of its own under the row. */
+  .whole {
+    grid-column: 1 / -1;
   }
 
   .act {

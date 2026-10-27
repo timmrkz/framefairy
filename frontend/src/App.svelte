@@ -479,9 +479,11 @@
   const oops = (text: string) => toasts.say("app", text);
 
   // The first run. A new copy of the app cannot transcribe without a
-  // speech model and cannot find clips until somebody has said how, so
-  // until both are answered the setup is the whole app: no sidebar, no
-  // workspace, nothing to press that would not work.
+  // speech model and cannot find clips without a model that picks them,
+  // so until both are here the setup is the whole app: no sidebar, no
+  // workspace, nothing to press that would not work. A machine that finds
+  // clips in the cloud, chosen in the settings, needs no model of its own
+  // for that.
   //
   // Null until the Go side has answered, so the workspace never flashes up
   // for a moment before the setup covers it.
@@ -700,7 +702,10 @@
       .catch(() => {});
     api
       .setup()
-      .then((s) => (settingUp = !s.chosen || !s.hasSpeech))
+      .then(
+        (s) =>
+          (settingUp = !s.chosen || !s.hasSpeech || (s.planner === "local" && !s.hasLocalModel)),
+      )
       // A machine that cannot answer is not a machine to hold in a setup
       // screen it can never leave.
       .catch(() => (settingUp = false))
@@ -972,13 +977,18 @@
     {:else if !placed || !libraryRead}
       <!-- Where the app was left is on its way. -->
     {:else if !episodes.length}
+      <!-- The first page, and its one thing to do: one big place in the
+           middle that is both ways in, a click that opens the box to
+           choose a video and the place a dropped one lands, the way
+           apps that take a file show where it goes. The whole app takes
+           a drop all the same. -->
       <div class="welcome">
-        <h1>Add a video</h1>
-        <p class="muted">
-          The app transcribes it on this machine, finds the moments worth clipping and renders
-          them as vertical shorts.{videoNames ? ` Any ${videoNames} works.` : ""}
-        </p>
-        <button class="primary" onclick={add}>Add</button>
+        <button class="drop" onclick={add}>
+          <Icon name="plus" size={28} />
+          <span class="big">Add a video</span>
+          <span class="muted">Click to choose one, or drop it here.</span>
+          {#if videoNames}<span class="muted small">Any {videoNames} works.</span>{/if}
+        </button>
       </div>
     {:else}
       <div class="welcome">
@@ -1482,5 +1492,41 @@
   .welcome h1 {
     font-size: var(--size-xl);
     font-weight: 600;
+  }
+
+  /* As big as the first page's one thing to do should be, and drawn the
+     way a place for a file is everywhere: a dashed edge round room to
+     spare. Under the pointer it is lit the way a drop over the app is. */
+  .welcome .drop {
+    margin-top: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: min(480px, 100%);
+    height: 240px;
+    padding: var(--edge);
+    border: 2px dashed var(--line);
+    border-radius: var(--radius-m);
+    background: transparent;
+    color: var(--text);
+    white-space: normal;
+  }
+
+  .welcome .drop:hover:not(:disabled) {
+    border-color: var(--accent);
+    background: var(--accent-wash);
+    color: var(--text);
+  }
+
+  .drop .big {
+    font-size: var(--size-xl);
+    line-height: 28px;
+    font-weight: 600;
+  }
+
+  .drop .small {
+    font-size: var(--size-s);
   }
 </style>

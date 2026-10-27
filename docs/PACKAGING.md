@@ -59,12 +59,13 @@ Parakeet, and the speech model is 490 MB, which is a first-run download
 nobody has to think about.
 
 **This is built.** The first run is a setup screen, `frontend/src/screens/
-Setup.svelte`. It fetches the speech model by itself, asks the one question,
-and on the local side offers the language models with what each costs to
-fetch, what it costs in memory, and what this machine can do with it. The
-key goes in the macOS keychain. Both installers land under a part name and
-only move a whole model into place, so a cancel leaves nothing rather than
-half of something. See [APP.md](APP.md#the-first-run).
+Setup.svelte`. It downloads the speech model and a local language model side
+by side, each once the person presses Download, and offers only the language
+models this machine can hold, with what each costs to fetch and in memory.
+The cloud and its key are chosen later in the settings, where the key goes
+in the macOS keychain. Both installers land under a part name and only move
+a whole model into place, so a cancel leaves nothing rather than half of
+something. See [APP.md](APP.md#the-first-run).
 
 Two things about that list are worth writing down.
 

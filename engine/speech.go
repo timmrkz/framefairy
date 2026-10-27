@@ -36,6 +36,8 @@ type SpeechModel struct {
 	Title string `json:"title"`
 	// About is one line saying what it is for.
 	About string `json:"about"`
+	// Maker is who made it, the way a list of models says it.
+	Maker string `json:"maker"`
 	// Languages it covers, in words.
 	Languages string `json:"languages"`
 	// Download is the size of the archive in bytes, Unpacked what it costs
@@ -60,6 +62,7 @@ func SpeechModels() []SpeechModel {
 		Name:        "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8",
 		Title:       "Parakeet TDT 0.6B v3",
 		About:       "NVIDIA's recogniser, quantised. Fast on any machine and accurate on speech.",
+		Maker:       "NVIDIA",
 		Languages:   "25 European languages, German and English among them",
 		Download:    487_170_055,
 		Unpacked:    671_239_000,

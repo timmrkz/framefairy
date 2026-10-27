@@ -15,11 +15,10 @@ import (
 // What a new copy of the app needs before it can turn an episode into
 // shorts, and how far along that is.
 //
-// Two things are needed and only one of them is a question. Speech is
-// always local and there is one model, so the app says what it is about to
-// do and does it. Finding clips is a real choice between an Anthropic API
-// key and a local model, with different costs either way, so it is asked
-// once and can be changed later in the settings.
+// Two models are needed, one that hears and one that picks the clips, and
+// the first run downloads both, side by side, each once somebody presses
+// Download. Picking clips can be done in the cloud instead, with a key of
+// the person's own, which is chosen later in the settings.
 //
 // See docs/PACKAGING.md.
 

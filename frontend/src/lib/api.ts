@@ -557,6 +557,7 @@ export interface SpeechModel {
   name: string;
   title: string;
   about: string;
+  maker: string;
   languages: string;
   // What the download costs and what it costs on disk once it is there,
   // in bytes. Both are said before anything starts.
@@ -606,6 +607,12 @@ export interface ModelRow {
   about: string;
   // What it costs, as one line.
   cost: string;
+  // The columns of its row: who made it, the memory it needs where that is
+  // known, and its size, the download before it is here and the room it
+  // takes once it is.
+  maker: string;
+  memory: string;
+  size: string;
   installed: boolean;
   // Whether it is the one in use, where there is a choice. Left out where
   // there is none, and then being installed is being in use.
@@ -1165,6 +1172,9 @@ export function speechRow(m: SpeechModel): ModelRow {
     cost: m.installed
       ? `${m.languages}. ${size(m.unpacked)} on disk`
       : `${m.languages}. ${size(m.download)} to fetch, ${size(m.unpacked)} on disk`,
+    maker: m.maker,
+    memory: "",
+    size: size(m.installed ? m.unpacked : m.download),
     room: size(m.unpacked),
     installed: m.installed,
   };
@@ -1182,6 +1192,9 @@ export function languageRow(m: LanguageModel, pickable = false): ModelRow {
     cost: m.installed
       ? `By ${m.maker}. Needs ${needs} of memory`
       : `By ${m.maker}. ${size(m.download)} to fetch, needs ${needs} of memory`,
+    maker: m.maker,
+    memory: `needs ${needs} of memory`,
+    size: size(m.download),
     room: size(m.download),
     inUse: pickable ? m.inUse : undefined,
     installed: m.installed,
