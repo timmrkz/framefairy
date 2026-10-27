@@ -464,7 +464,7 @@ mark, `edge put back`, a double-click on an edge of the caption holding a
 word, and `count pops` and `pops`, how often a caption block popped
 since. What has to come of them: `box`, what
 the caption box reads, `open`, which word is open, `same`, the engine's
-clip as it was at a mark, `changed`, the clip no longer as it was at a
+clip as it was at a mark, `differs from`, the clip no longer as it was at a
 mark, so a step meant to change it did, `spans`, every caption
 appearing and going when it did at a mark, `fewer`, so many words fewer
 than at a mark and no caption fewer, `gone`, no caption holding a
