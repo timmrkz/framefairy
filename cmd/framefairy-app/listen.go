@@ -74,10 +74,26 @@ type listening struct {
 	// after it says so. The bridge sets it, so a walk does not wait the
 	// quiet out, see bridge_test.go.
 	still <-chan struct{}
+	// beats, when set, stands in for the two clocks of a recording, see
+	// listenBeats. The bridge sets it, so a walk hears a recording at its
+	// own pace rather than at the pace of the app's timers, #551.
+	beats *listenBeats
 	// running is every goroutine a recording started, which goes on for a
 	// moment after the recording ends and may still write a line to the
 	// log. A test waits on it before it lets go of what they use.
 	running sync.WaitGroup
+}
+
+// listenBeats is what a recording runs on in place of its two clocks: a
+// reading of how loud the microphone is for each value on levels, in place
+// of ten a second, and a pass of the speech model for each on passes, in
+// place of one every listenEvery. Once a reading or a pass is over it says
+// so on measured or passed, when there is room, so whoever hands the beats
+// knows the window has been told what it found, and that the next sound
+// goes into the next reading.
+type listenBeats struct {
+	levels, passes   <-chan time.Time
+	measured, passed chan<- struct{}
 }
 
 // listenQuiet is how long a recording goes on with no new words before it
@@ -385,13 +401,23 @@ func (l *listening) write(r *recording, dir string, every, quiet time.Duration) 
 	}
 	tick := time.NewTicker(every)
 	defer tick.Stop()
-	for {
+	pass := tick.C
+	if l.beats != nil {
+		pass = l.beats.passes
+	}
+	for first := true; ; first = false {
+		if !first && l.beats != nil {
+			select {
+			case l.beats.passed <- struct{}{}:
+			default:
+			}
+		}
 		select {
 		case <-r.ended:
 			settle()
 			out = l.finish(r, rec, said, settled, r.kept)
 			return
-		case <-tick.C:
+		case <-pass:
 		}
 		if settle() {
 			worded = time.Now()
@@ -481,15 +507,25 @@ func (r *recording) paced(took time.Duration, heard int, every time.Duration) {
 func (l *listening) measure(r *recording) {
 	tick := time.NewTicker(100 * time.Millisecond)
 	defer tick.Stop()
+	level := tick.C
+	if l.beats != nil {
+		level = l.beats.levels
+	}
 	for {
 		select {
 		case <-r.over:
 			return
 		case <-r.ended:
 			return
-		case <-tick.C:
+		case <-level:
 			if l.loud != nil && !r.dropped.Load() {
 				l.loud(Loudness{Recording: r.id, Level: r.loudness()})
+			}
+			if l.beats != nil {
+				select {
+				case l.beats.measured <- struct{}{}:
+				default:
+				}
 			}
 		}
 	}

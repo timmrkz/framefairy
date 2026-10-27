@@ -543,11 +543,20 @@ click would land in other words than the ones it read, `report reads`,
 the field reads so, with `*` for whatever the speech model heard, and
 `report as before`, it reads what it did then. The bridge's microphone
 plays two seconds of a hum, then a pause and a second and a half more,
-over and over, a tenth of a second each time the app reads how loud
-it is. That is still a tenth for every 100 ms of real time, as fast as
-it would be said, on the app's own timer for its level meter rather than
-a clock of the stand-in's, see #551, and pieces are settled
-while it listens and there is more to hear until it stops. With `ends`
+over and over, and pieces are settled while it listens and there is
+more to hear until it stops. It goes on only as the walk asks, never on
+the app's timers, #551: a step hands the app a tenth of a second of it,
+a reading of how loud it is and a pass of the speech model, through
+`listening.beats` in `cmd/framefairy-app/listen.go`, and nothing moves
+between steps. A walk asks with `/microphone?until=`, which takes steps
+until the app has told the window what it waits for: `hearing` until
+words are heard, `said` until more are settled, `settled` until some
+are, `ended` until the recording is over and `tenth` for one step, see
+`sound` in `cmd/framefairy-app/walksound_test.go`. `dictate` asks for
+words before it looks for them, and for something settled before it ends
+a recording, since the stand-in hears new words each time and the end
+could otherwise write down none. `microphone moves` asks for a tenth a
+frame while it watches. With `ends`
 the person falls silent once the phrase they are on is said, through
 `/microphone?silent=1`. A recording there stops by itself for want of
 words as soon as that phrase is said, since the bridge says the quiet is
@@ -1221,6 +1230,8 @@ What the code takes from outside, so a test can drive it:
 | a time limit on another program | a function that gives the context the limit ends | `timeLimit` in `engine/analysis.go`, which `stuckFFmpeg` in `engine/stuck_unix_test.go` ends the moment its ffmpeg says through a named pipe that it hangs |
 | another program saying it hangs | a channel | `standin.Hangs` in `internal/standin/hangs_unix.go`, a named pipe a stand-in writes `hangs` into. It is heard as `stuck` on the engine, a render that has stopped making frames, in `engine/ffmpeg.go`, and as `frameLate` on the app, a video whose first frame is late, in `cmd/framefairy-app/library.go` |
 | the end of the quiet of a recording | a channel | `still` on the listening in `cmd/framefairy-app/listen.go`, which the bridge's microphone says once the person in a walk has fallen silent |
+| the two clocks of a recording, its level readings and its passes | channels | `beats` on the listening in `cmd/framefairy-app/listen.go`, which the bridge hands its steps through, see `TestARecordingRunsOnTheBeatsItIsHanded` |
+| a loading llama-server saying it is up | its output | `hearReady` in `engine/local.go`, and `lookAgain`, the look every half second for a server that says nothing, which `TestAServerThatWillNotStopIsKilledAtOnce` takes away |
 | how often work that reads from another program saves | a count of reads | `levelsReads` on the engine, `engine/levels.go`, in place of `levelsDefault` of the clock |
 | the network | an `http.Client` with a transport of the test's | `localClient` in `engine/local.go`, `downloadClient` in `engine/speech.go`, with `neverAnswers`, `streamFrom` and `stopsAfter` in `engine/local_test.go`, so the stall of a model or a download is waited for in a bubble |
 | timers inside goroutines | `testing/synctest` around the test | the lint fixture `scripts/testdata/lint/go/signals`, the dictation tests in `cmd/framefairy-app/listen_test.go`, `TestOnlyAFewDecodersNobodyHoldsStandRunning` in `cmd/framefairy-app/frames_test.go`, and the tests of a health check and of a model that keeps talking in `engine/local_test.go`, which ask llama-server through `neverAnswers` and `streamFrom`, transports with no network |

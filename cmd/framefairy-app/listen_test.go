@@ -799,6 +799,57 @@ func TestTheMicrophoneSaysHowLoud(t *testing.T) {
 	})
 }
 
+// A recording handed beats from outside reads how loud the microphone is
+// on each level beat and writes down what is said on each pass beat, and
+// says once each reading and each pass is over, after it told the window
+// what it found.
+// The bridge hands them, so a walk hears a recording at its own pace,
+// #551.
+func TestARecordingRunsOnTheBeatsItIsHanded(t *testing.T) {
+	levels, passes := make(chan time.Time), make(chan time.Time)
+	measured, passed := make(chan struct{}, 1), make(chan struct{}, 1)
+	loud := make(chan float64, 10)
+	f, mic, told := dictating(t, func(l *listening) {
+		l.beats = &listenBeats{levels: levels, passes: passes, measured: measured, passed: passed}
+		l.loud = func(n Loudness) { loud <- n.Level }
+	})
+	defer f.CancelListening()
+	// Each reading says it is over once the window has been told it, and
+	// reads what was said since the one before.
+	mic.say(tone(0.1))
+	levels <- time.Time{}
+	<-measured
+	select {
+	case l := <-loud:
+		if l <= 0.5 {
+			t.Errorf("a voice was told as %v on a level beat", l)
+		}
+	default:
+		t.Error("the reading was over before the window was told how loud")
+	}
+	mic.say(hush(0.1))
+	levels <- time.Time{}
+	<-measured
+	if l := <-loud; l >= 0.2 {
+		t.Errorf("a quiet room after a voice was told as %v", l)
+	}
+	mic.say(tone(1))
+	passes <- time.Time{}
+	<-passed
+	select {
+	case d := <-told:
+		if d.Hearing == "" {
+			t.Errorf("the pass told %+v, with nothing heard", d)
+		}
+	default:
+		t.Error("the pass was over before it told the window what it heard")
+	}
+	// Each pass says so once it is over, the next one too.
+	mic.say(tone(1))
+	passes <- time.Time{}
+	<-passed
+}
+
 // A recording goes with the report window it was started in. Tim closed
 // the window with Cmd+W while he talked, the recording ran on, and the
 // next window took it up again with every word he had said. Plan row
