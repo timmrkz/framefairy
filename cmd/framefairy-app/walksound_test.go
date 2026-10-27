@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"sync"
 	"sync/atomic"
+	"testing"
 	"time"
 
 	"framefairy/engine"
@@ -90,26 +93,34 @@ func (s *sound) tell(d Dictation) {
 
 // started gives the microphone of the recording in hand once there is
 // one. A walk asks for steps right after it pressed Dictate, before the
-// app may have started the recording.
-func (s *sound) started() *bridgeMicrophone {
+// app may have started the recording, so no recording yet is no reason to
+// answer. A walk that asks when none is coming hangs until it gives up,
+// and then the request is cancelled and started gives up with it, so the
+// bridge holds nothing over into the next walk.
+func (s *sound) started(ctx context.Context) (*bridgeMicrophone, error) {
+	stop := context.AfterFunc(ctx, func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.turn.Broadcast()
+	})
+	defer stop()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for s.mic == nil || s.mic.over() {
+		if err := ctx.Err(); err != nil {
+			return nil, fmt.Errorf("no recording to take steps of: %w", err)
+		}
 		s.turn.Wait()
 	}
-	return s.mic
+	return s.mic, nil
 }
 
 // until takes steps of the recording in hand until the app has told the
 // window what want names, or the recording is over, and says how many.
 // A recording is at most a minute on the bridge, see bridge, so it ends
 // in 600 steps however it is asked.
-func (s *sound) until(want string) (int, error) {
-	m := s.started()
-	s.mu.Lock()
-	s.hearing = false
-	spoken := s.spoken
-	s.mu.Unlock()
+func (s *sound) until(ctx context.Context, want string) (int, error) {
+	var spoken int
 	reached := map[string]func() bool{
 		"hearing": func() bool { return s.hearing },
 		"said":    func() bool { return s.spoken > spoken },
@@ -120,6 +131,14 @@ func (s *sound) until(want string) (int, error) {
 	if reached == nil {
 		return 0, fmt.Errorf("no such step of a recording: %q", want)
 	}
+	m, err := s.started(ctx)
+	if err != nil {
+		return 0, err
+	}
+	s.mu.Lock()
+	s.hearing = false
+	spoken = s.spoken
+	s.mu.Unlock()
 	// Something settled may have been settled before.
 	s.mu.Lock()
 	done := want == "settled" && reached()
@@ -248,4 +267,20 @@ func (m *bridgeMicrophone) hand() bool {
 	m.heard(m.samples[:n])
 	m.samples = m.samples[n:]
 	return true
+}
+
+// A walk that asks for steps when no recording is coming gives up, and the
+// bridge gives up with it rather than wait into the next walk.
+func TestAStepWithNoRecordingGivesUpWithItsRequest(t *testing.T) {
+	s := newSound()
+	ctx, cancel := context.WithCancel(t.Context())
+	answered := make(chan error)
+	go func() {
+		_, err := s.until(ctx, "tenth")
+		answered <- err
+	}()
+	cancel()
+	if err := <-answered; !errors.Is(err, context.Canceled) {
+		t.Fatalf("a step with no recording answered %v, want it to give up with its request", err)
+	}
 }

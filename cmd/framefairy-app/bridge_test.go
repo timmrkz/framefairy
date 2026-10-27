@@ -448,7 +448,7 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 			answer(w, nil, nil)
 			return
 		}
-		steps, err := b.sound.until(q.Get("until"))
+		steps, err := b.sound.until(r.Context(), q.Get("until"))
 		answer(w, steps, err)
 	})
 	mux.HandleFunc("/speech", func(w http.ResponseWriter, r *http.Request) {
