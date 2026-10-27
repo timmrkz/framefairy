@@ -1180,9 +1180,15 @@ export async function xOf(page, at) {
 // timeline, the way a hand does, and waits until the video preview shows
 // the frame that holds it, see shownOnPlayhead. Says whether the picture
 // is that frame by the number drawn on it, at fps frames a second.
+//
+// The click is never the second of a double-click, see clickOnTrack. Two
+// moments of one short word lie a few pixels apart, and the two clicks
+// on them, under half a second apart on a quick run, cut a part out of
+// the clip: the captions walk then compared the clip with the cut to the
+// short made before it, and failed now and then, issue #560.
 export async function seekTo(page, at, fps) {
   const g = await handles(page);
-  await page.mouse.click(await xOf(page, at), high(g.track));
+  await clickOnTrack(page, await xOf(page, at), high(g.track));
   await settle(page);
   await reader(page);
   await shownOnPlayhead(page);
