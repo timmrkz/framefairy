@@ -1306,6 +1306,12 @@ func (b *bridge) reset() error {
 		return fmt.Errorf("the app did not stop its work in time")
 	}
 	b.d.svc.levels.shutDown()
+	// A caption file the video preview asked for goes on being written
+	// after the page that asked is gone, and one written into a work
+	// folder while it was removed failed the reset with "directory not
+	// empty", issue #561. The work folders go the way the app deletes
+	// one, see engine.DeleteWork.
+	defer engine.HoldPreviews(b.d.home)()
 	// A log a walk started lives in the home, which goes next.
 	theLog.close()
 	entries, err := os.ReadDir(b.d.home)
