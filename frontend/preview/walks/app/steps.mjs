@@ -315,6 +315,22 @@ export const steps = {
     await page.setViewportSize({ width: arg[0], height: arg[1] });
     await settle(page);
   },
+  // ["fits the app", [w, h]]
+  //                    makes the app w by h pixels, and the workspace fits
+  //                    it: nothing scrolls, the three columns and the clip
+  //                    panel under them reach the app's edge, a gap
+  //                    between each, with no strip of nothing anywhere,
+  //                    the video preview grows until it runs out of width
+  //                    or height, and every button and field lies whole
+  //                    inside the app and inside what clips it, unless it
+  //                    is in a list or a column that scrolls to it
+  async "fits the app"(walk, arg) {
+    const { page } = walk;
+    const [width, height] = arg;
+    await page.setViewportSize({ width, height });
+    await settle(page);
+    walk.wrong = await page.evaluate(fitProblem);
+  },
   // ["square buttons"] every button in the row under the clip timeline
   //                    that wears an icon or a key's letter is as wide as
   //                    it is tall, and as tall as every control
@@ -687,6 +703,85 @@ const workspaceParts = (page) =>
     out.app = { w: innerWidth, h: innerHeight, foot: Math.max(...rows) };
     return out;
   });
+
+// What is wrong with how the workspace fits the app at its size, or null,
+// see ["fits the app"]. In the page.
+function fitProblem() {
+  const W = innerWidth;
+  const H = innerHeight;
+  const at = `at ${W} by ${H}`;
+  const root = document.documentElement;
+  if (root.scrollWidth > W || root.scrollHeight > H) return `${at} the app scrolls, it is ${root.scrollWidth} by ${root.scrollHeight}`;
+  const token = (n) => parseFloat(getComputedStyle(root).getPropertyValue(n));
+  const [gap, edge] = [token("--gap"), token("--edge")];
+  const box = (s) => document.querySelector(s)?.getBoundingClientRect();
+  const main = box("main");
+  const stage = box(".stage");
+  const detail = box(".detail");
+  if (!main || !stage || !detail) return `${at} there is no workspace`;
+  const [settings, middle, clips] = [...document.querySelector(".stage").children].map((c) => c.getBoundingClientRect());
+  const viewer = box(".viewer");
+  const range = box(".track[aria-label='The range picker']");
+  const timeline = box(".clip-timeline");
+  if (!settings || !middle || !clips || !viewer || !range || !timeline) return `${at} a part of the workspace is missing`;
+  // Each pair is what it is and what it should be, a strip of nothing or
+  // a part pushed off the app wherever they differ.
+  const lines = {
+    "the columns' top under the bar": [stage.top, main.top + gap],
+    "the columns' right edge": [stage.right, W - edge],
+    "the clip panel's left edge": [detail.left, stage.left],
+    "the clip panel's right edge": [detail.right, W - edge],
+    "the clip panel under the columns": [detail.top, stage.bottom + gap],
+    "the clip panel's foot": [detail.bottom, H - edge],
+    "the video preview after the settings": [middle.left, settings.right + gap],
+    "the clips after the video preview": [clips.left, middle.right + gap],
+    "the clips' right edge": [clips.right, stage.right],
+    "the settings' foot": [settings.bottom, stage.bottom],
+    "the clips' foot": [clips.bottom, stage.bottom],
+    "the video preview's top": [viewer.top, stage.top],
+    "the range picker under the video preview": [range.top, viewer.bottom + gap],
+    "the range picker's foot": [range.bottom, stage.bottom],
+    "the clip timeline's left edge": [timeline.left, detail.left],
+    "the clip timeline's right edge": [timeline.right, detail.right],
+  };
+  for (const [what, [is, want]] of Object.entries(lines)) {
+    if (Math.abs(is - want) > 0.5) return `${at} ${what} is at ${is}, not ${want}`;
+  }
+  // The picture grows until it runs out of width or height, whichever
+  // comes first, and keeps its shape.
+  if (Math.abs(viewer.width - middle.width) > 0.5 && Math.abs(viewer.height - (range.top - gap - stage.top)) > 0.5) {
+    return `${at} the video preview is ${viewer.width} by ${viewer.height} in a column ${middle.width} wide with ${range.top - gap - stage.top} of height, a strip of nothing on both`;
+  }
+  // Whatever clips a button or a field, short of a list or a column that
+  // scrolls to it, holds it whole. The grips on the tracks are not among
+  // them: they stand where their moment is, and a track zoomed in shows
+  // only some of them, by design.
+  const scrolls = (e) => {
+    const o = getComputedStyle(e);
+    return /(auto|scroll)/.test(o.overflowX + o.overflowY) && (e.scrollHeight > e.clientHeight || e.scrollWidth > e.clientWidth);
+  };
+  const clipsIt = (e) => getComputedStyle(e).overflowX !== "visible" || getComputedStyle(e).overflowY !== "visible";
+  for (const c of document.querySelectorAll("main button, main input")) {
+    const b = c.getBoundingClientRect();
+    if (!b.width || !b.height || getComputedStyle(c).visibility === "hidden") continue;
+    const name = c.getAttribute("aria-label") || c.title || c.textContent.trim().slice(0, 30) || c.className;
+    let cut = null;
+    let scrolled = false;
+    for (let e = c.parentElement; e && e !== document.body; e = e.parentElement) {
+      if (scrolls(e)) {
+        scrolled = true;
+        break;
+      }
+      if (!clipsIt(e)) continue;
+      const p = e.getBoundingClientRect();
+      if (b.left < p.left - 0.5 || b.right > p.right + 0.5 || b.top < p.top - 0.5 || b.bottom > p.bottom + 0.5) cut ??= e;
+    }
+    if (scrolled) continue;
+    if (b.left < -0.5 || b.top < -0.5 || b.right > W + 0.5 || b.bottom > H + 0.5) return `${at} "${name}" lies past the app's edge, from ${b.left},${b.top} to ${b.right},${b.bottom}`;
+    if (cut) return `${at} "${name}" is cut off by the ${cut.tagName.toLowerCase()}.${cut.className.split(" ")[0]} it lies in`;
+  }
+  return null;
+}
 
 // What is wrong with the workspace as the app is dragged smaller a pixel at
 // a time, by its height and then by its width, or null.

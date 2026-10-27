@@ -260,7 +260,12 @@ closed for standing unused.
   went once the hand lets go: how far the frame on screen was from the
   playhead as the hand moved, the key frames put up, and how long the
   frame under the hand took after letting go. The decoder's own lines say
-  when an open asked for the key frame first and when it came.
+  when an open asked for the key frame first and when it came. An open
+  that finds a cursor already standing between the key frame and the
+  frame asked for reads on from there instead, which is cheaper, and then
+  no key frame comes: the open says it went on, and the page counts it
+  apart from the key frames that came, `keyWentOn` and `keyCame` in
+  `AppFrames.stats`, issue #511.
 - The routes the interface reads from, `/frames/open`, `/frames/sound`,
   `/frames/read` and `/frames/close`, stay as they are. The interface
   cannot tell whether a frame came from it or from the ffmpeg program.

@@ -126,6 +126,85 @@ export default [
     steps: [["resize"]],
   },
   {
+    // Issue #248: the app from its smallest to a large screen, a Studio
+    // Display and a Pro Display XDR at the size macOS gives them by
+    // default. The resize above holds every part to one way while the app
+    // is dragged between 960 and 1700 wide, this holds the whole of it at
+    // each size.
+    name: "the workspace fits the app from its smallest size to a large screen, nothing cut off and no strip of nothing",
+    steps: [
+      ["fits the app", [960, 640]],
+      ["fits the app", [1280, 800]],
+      ["fits the app", [1728, 1117]],
+      ["fits the app", [2560, 1440]],
+      ["fits the app", [3008, 1692]],
+    ],
+  },
+  {
+    // Issue #248: three features in one history. A crop moved, a word
+    // corrected and a font picked are taken back in turn and done again in
+    // order. The rules hold every Undo and Redo to the clip before and
+    // after its step, its crop and how its captions look with its words.
+    name: "undo takes back a crop moved, a word corrected and a font picked, in turn, and redo does them again",
+    steps: [
+      ["mark", "start"],
+      ["drag crop", 200],
+      ["changed", "start"],
+      ["mark", "cropped"],
+      ["frame", "Schulhof"],
+      ["click", "Schulhof"],
+      ["press", "End"],
+      ["type", "f"],
+      ["press", "Enter"],
+      ["holds", "Schulhoff"],
+      ["changed", "cropped"],
+      ["mark", "corrected"],
+      ["font", "Archivo Black"],
+      ["changed", "corrected"],
+      ["mark", "font"],
+      ["undo"],
+      ["same", "corrected"],
+      ["undo"],
+      ["same", "cropped"],
+      ["undo"],
+      ["same", "start"],
+      ["redo"],
+      ["same", "cropped"],
+      ["redo"],
+      ["same", "corrected"],
+      ["redo"],
+      ["same", "font"],
+    ],
+  },
+  {
+    // Issue #248: a restart with work in every state. A clip trimmed, its
+    // short rendered and a search stopped are as they were once the app
+    // opens again: the search's row with Continue, the clip's pieces on
+    // the clip timeline and its card, and the short beside it.
+    name: "a restart brings back a clip trimmed, its short and a search stopped, as they were",
+    steps: [
+      ["mark", "start"],
+      ["trim", "end", -100],
+      ["changed", "start"],
+      ["mark", "trimmed"],
+      ["render"],
+      ["rendered"],
+      ["model", "holds"],
+      ["head"],
+      ["wait for", "Cancel"],
+      ["head"],
+      ["wait for", "Continue"],
+      ["row", "Stopped. Click Continue"],
+      ["restart"],
+      ["wait for", "Continue"],
+      ["row", "Stopped. Click Continue"],
+      ["same", "trimmed"],
+      ["card says"],
+      ["rendered"],
+      ["model", "answers"],
+    ],
+  },
+  {
     // Found by Tim on #192: in a narrow app the buttons under the clip
     // timeline gave way first and stood taller than they were wide.
     name: "the buttons under the clip timeline stay square in a narrow app",

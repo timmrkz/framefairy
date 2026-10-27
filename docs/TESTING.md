@@ -208,7 +208,7 @@ nothing on the page moves for a moment, see below:
 | Taking a word out changes no other caption: every caption still there appears and goes when it did, the one the word was in only draws in at the edge the word was at, and only one whose words were all removed may go, leaving its time empty | the caption that broke where a removed word had been, the next caption's first word pulled up into the room a removed word left, and the caption before a removed caption staying up through its time, found by Tim |
 | A caption removed whole was there and is gone, its words are held to the two rules above, from its first word to its last | |
 | Moving a caption edge moves that edge and nothing else: its other edge stays, every other caption appears and goes when it did, and every word outside the caption is as it was | the caption before growing into the room a left edge was dragged in from, found by Tim |
-| Undo puts back the engine's captions from before the step it takes back, and Redo those from after it | |
+| Undo puts back the engine's clip from before the step it takes back, its captions, how they look, and its pieces with their crops, and Redo the clip from after it | a crop or a font that undo did not put back, which the rule could not see until it compared them too, issue #248 |
 | A picture that stands still, paused or cued, was decoded at the size of the video preview's canvas, no larger than the file's own, once the frame queue says the picture stands, `standing` in `lib/frames/queue.ts`, `stillBlurred` in `rules.mjs` | the first frame of every workspace decoded at the 300 by 150 of a canvas not laid out yet, blurred until a play, found by Tim, plan row 2.187 |
 
 The engine's captions are asked for directly, `Captions` through
@@ -230,7 +230,8 @@ Every walk also checks, after every step, that the clip timeline shows
 the clip the engine has: where it starts and ends and every cut, read
 off the handles' `aria-valuenow`, to a millisecond. The engine's state a
 walk compares before and after a step, for Undo and Redo, is the clip's
-pieces as well as its captions. A play goes as far into the clip as the
+pieces with their crops, keyframes and turns as well as its captions and
+how they look. A play goes as far into the clip as the
 walk asked, by the playhead, `playFor`, the same as in `words.mjs`.
 
 A walk is a script in the folder that walks with `walk.mjs`, which runs
@@ -444,7 +445,7 @@ about.
 A sequence is a named list of steps and of what has to come of them,
 written as data, so a case found by hand is kept as it was found. The steps are the walk's gestures by name, `frame` a
 word, `click` it, `press` a key, `type`, `undo`, `redo`, `mark` the
-engine's captions and pieces under a label, and on the clip timeline
+engine's clip, its captions, their look and its pieces with their crops, under a label, and on the clip timeline
 `cut at` a share of the clip, `join` a cut, `swipe after click`, a
 click a share of the way along the clip and three swipes from there
 without moving the hand, each of which has to move the clip, `trim` an edge by some
@@ -463,7 +464,8 @@ mark, `edge put back`, a double-click on an edge of the caption holding a
 word, and `count pops` and `pops`, how often a caption block popped
 since. What has to come of them: `box`, what
 the caption box reads, `open`, which word is open, `same`, the engine's
-captions and pieces as they were at a mark, `spans`, every caption
+clip as it was at a mark, `changed`, the clip no longer as it was at a
+mark, so a step meant to change it did, `spans`, every caption
 appearing and going when it did at a mark, `fewer`, so many words fewer
 than at a mark and no caption fewer, `gone`, no caption holding a
 word, `blocks`, a block on the clip timeline for every caption the engine
@@ -754,7 +756,11 @@ wait the walk hands the frame queue, `dressWait` in
 used up the 600 ms it waits, issue #468. And a glide read while it plays
 goes on until the video preview has shown ten frames or come to the next
 keyframe, not for two seconds, in which a busy machine showed two, issue
-#464. The fold of a removed row is held as Svelte makes it and stepped
+#464, on a clock the walk hands the frame queue, `playClock` in
+`lib/frames/queue.ts`, which moves on to the next frame only once the
+one before is up. So every frame of the play is shown on any machine,
+and the walk holds the play to every one, where by the sound card's
+clock a busy machine still showed two of nine, issue #534. The fold of a removed row is held as Svelte makes it and stepped
 through by hand, in twenty steps, and at each the card under the row
 has to have risen by as much of the row and the space after it as the
 row has folded. That the row leaves the list only once its fold has

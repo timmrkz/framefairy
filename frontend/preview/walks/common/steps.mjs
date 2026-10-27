@@ -184,6 +184,14 @@ export const steps = {
     const now = await engineState(page, watch.at);
     if (!same(now, marks[arg])) walk.wrong = `the captions are not what they were at "${arg}"\n${describe(marks[arg], now)}`;
   },
+  // ["changed", label] the engine's captions, their look or the pieces are
+  //                    no longer what they were at the mark, so a step
+  //                    that was meant to change the clip did
+  async changed(walk, arg) {
+    const { marks, page, watch } = walk;
+    const now = await engineState(page, watch.at);
+    if (same(now, marks[arg])) walk.wrong = `the clip is still what it was at "${arg}"\n${describe(marks[arg], now)}`;
+  },
 };
 
 // Steps that take the same body as the step they are walked by.
