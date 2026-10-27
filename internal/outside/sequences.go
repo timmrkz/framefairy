@@ -8,8 +8,9 @@ package outside
 // A step is a list, its verb first. The verbs that do something:
 //
 //   {"set up"}             makes this Mac one whose setup is done: a speech
-//                          model in place and the question how clips are
-//                          found answered. A new copy of the app holds a
+//                          model in place and clips found in the cloud,
+//                          so no model of its own is needed for them. A
+//                          new copy of the app holds a
 //                          link until its setup is done
 //   {"buy", n}             buys n seats at the local dispenser's checkout
 //                          and reads the keys out of the letter on its dev
