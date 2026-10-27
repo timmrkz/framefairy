@@ -30,21 +30,26 @@ export const steps = {
         [...document.querySelectorAll(".setup ul.models > li")].map((li) => ({
           height: li.clientHeight,
           cells: [...li.children].map((c) => c.getBoundingClientRect().left),
+          // A cell whose words are wider than it is, cut short.
+          cut: [...li.children].filter((c) => c.scrollWidth > c.clientWidth).map((c) => `${c.textContent.trim()} ${c.scrollWidth} in ${c.clientWidth}`),
         })),
       );
     const buttons = () => page.evaluate(() => [...document.querySelectorAll(".setup button.act")].map((b) => b.textContent.trim()));
     const first = await rows();
     const pressed = await buttons();
     const astray = first.find((r) => r.height !== first[0].height || r.cells.join() !== first[0].cells.join());
+    const cut = first.flatMap((r) => r.cut);
     if (pressed.some((b) => b !== "Download")) walk.wrong = `before anything is pressed the setup shows ${JSON.stringify(pressed)}, only Download`;
     else if (first.length < 2) walk.wrong = `the setup offers ${first.length} models, a speech model and a clip model at least`;
     else if (astray) walk.wrong = `a row stands out of the table: ${JSON.stringify(astray)} beside ${JSON.stringify(first[0])}`;
+    else if (cut.length) walk.wrong = `the setup cuts words short: ${JSON.stringify(cut)}`;
+    else if ((await page.locator(".setup button.act.primary").count()) !== 1) walk.wrong = "the setup lights no Download, or more than one, for the clip model it recommends";
     if (walk.wrong) return;
 
     await speech.locator("button.act", { hasText: "Download" }).click();
     await clip.locator("button.act", { hasText: "Download" }).first().click();
-    await speech.locator(".wide", { hasText: "MB of" }).waitFor();
-    await clip.locator(".wide", { hasText: "MB of" }).waitFor();
+    await speech.locator(".wide", { hasText: "B of" }).waitFor();
+    await clip.locator(".wide", { hasText: "B of" }).waitFor();
     await settle(page);
     const both = await page.evaluate(() =>
       [...document.querySelectorAll(".setup li:has(.wide)")].map((li) => ({

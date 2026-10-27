@@ -980,14 +980,17 @@
       <!-- The first page, and its one thing to do: one big place in the
            middle that is both ways in, a click that opens the box to
            choose a video and the place a dropped one lands, the way
-           apps that take a file show where it goes. The whole app takes
-           a drop all the same. -->
+           apps that take a file show where it goes, a dashed edge. What
+           it takes is said under the pointer, since help waits until it
+           is asked for. The whole app takes a drop all the same. -->
       <div class="welcome">
-        <button class="add-video" onclick={add}>
+        <button
+          class="add-video"
+          onclick={add}
+          title="Choose a video, or drop one here.{videoNames ? ` Any ${videoNames} works.` : ''}"
+        >
           <Icon name="plus" size={28} />
           <span class="big">Add a video</span>
-          <span class="muted">Click to choose one, or drop it here.</span>
-          {#if videoNames}<span class="muted small">Any {videoNames} works.</span>{/if}
         </button>
       </div>
     {:else}
@@ -1526,7 +1529,4 @@
     font-weight: 600;
   }
 
-  .add-video .small {
-    font-size: var(--size-s);
-  }
 </style>

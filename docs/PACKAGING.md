@@ -73,9 +73,10 @@ Two things about that list are worth writing down.
 machine too small for one swaps, and a model that swaps takes minutes to
 answer rather than seconds. Each entry says what it needs to run, and the
 app reads what the machine has and says whether it fits, is tight, or is
-too big. It never refuses: a machine's memory can be read wrong and it is
-not the app's place to decide, so it says what it thinks before the
-download rather than after it.
+too big. The settings never refuse one: a machine's memory can be read
+wrong and it is not the app's place to decide, so they say what they
+think before the download rather than after it. The first run offers only
+the models that fit, because a new customer has nothing to judge by.
 
 **What a model needs is worked out from how it attends, not from its
 file.** It used to be the file and a quarter more, taken from the

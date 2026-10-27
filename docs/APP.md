@@ -50,19 +50,22 @@ lines: the name, who made it, the memory it needs, its size and the button,
 each in a column of its own, so the same fact stands in the same place in
 every row. The size is the download before the model is here and the room
 it takes once it is. The clip model's card says how much memory this
-machine has, and only offers the models it can hold, see engine.Fit. A
+machine has, and only offers the models it can hold, see engine.Fit. The
+memory a model needs wears the colour of a warning when the machine has
+little more than that, and says so under the pointer. The model the app
+recommends for this machine has its Download lit, the way a box lights
+the button it expects. A
 model that does not fit would swap, and a model that swaps answers in
 minutes rather than seconds. A `.gguf` already in `~/.framefairy/models`
 is used as it is, whether the app fetched it or not.
 
-**A download is work in hand, and it looks it.** The button it was started
-from carries it, the way every control that starts work does: the beam
-round it and the fill for how far the download has come, and it reads
+**A download is work in hand, and it looks it.** The row of the model
+on its way wears the beam and the fill for how far it has come across the
+whole row, the way a clip card on its way does, and its button reads
 **Cancel** while it runs. What has arrived stays, and **Download** carries
-on from it. The row does not light up or move. Its maker and memory turn
-into how far it has come and how fast, *Fetching 1.8 GB of 5.2 GB at 42 MB
-a second*, and its size into how long is left, in the same columns, so the
-numbers stay lined up with the rows around them. They are counted in
+on from it. Its maker and memory turn into how much has arrived,
+*1.8 GB of 5.2 GB*, and its size into how long is left, in the same
+columns, so the numbers stay lined up with the rows around them. They are counted in
 thousands, the way the size is, so a model said to be 5.2 GB arrives as
 5.2 GB of 5.2 GB.
 
@@ -2988,7 +2991,7 @@ after the typing stops.
 **What is in the way is said where it is put right**, not in a list of
 its own. A missing API key is said on the row where the key goes, a
 missing llama-server under the choice of model, a missing ffmpeg under
-**Shorts**, a missing speech model on its row, which offers **Install**.
+**Shorts**, a missing speech model on its row, which offers **Download**.
 A problem the page has no row for, which none of today's checks is, is
 said at the top so nothing goes unsaid. The first version had one card at
 the top listing every problem, and a person had to go from the top of the

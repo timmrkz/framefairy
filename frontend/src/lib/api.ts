@@ -604,9 +604,8 @@ export interface ModelRow {
   // the row shows may say more, like who made it.
   label: string;
   title: string;
+  // What it is, for whoever asks: the title of its name.
   about: string;
-  // What it costs, as one line.
-  cost: string;
   // The columns of its row: who made it, the memory it needs where that is
   // known, and its size, the download before it is here and the room it
   // takes once it is.
@@ -619,10 +618,15 @@ export interface ModelRow {
   inUse?: boolean;
   // The room it takes on the disk, said when it is removed.
   room: string;
-  // A word about this model on this machine, where there is one.
+  // A word about this model on this machine, where there is one, the
+  // title of the memory it needs.
   note?: string;
-  // Whether that word is a warning rather than a fact.
+  // Whether that word is a warning rather than a fact, which the memory
+  // it needs then wears.
   warn?: boolean;
+  // Whether it is the one the app recommends for this machine, whose
+  // Download is the one lit, the way a box lights the button it expects.
+  best?: boolean;
 }
 
 // A company whose API can find clips, and a model of theirs the app offers
@@ -1159,19 +1163,14 @@ export function fitNote(
 // A model as a row of a list, in the words the setup and the settings
 // both use, so one fact is never worded two ways. What a model is made of,
 // how it was quantised and how many parameters it has, is for whoever asks:
-// it goes in the row's title, and the row itself says what it costs and
-// whether this machine can run it.
+// it goes in the row's title with the languages a speech model hears, and
+// the row itself says who made it, what it needs and how big it is.
 export function speechRow(m: SpeechModel): ModelRow {
   return {
     name: m.name,
     label: m.title,
     title: m.title,
-    about: m.about,
-    // Once it is there, the download is spent and only the room it takes
-    // is still true.
-    cost: m.installed
-      ? `${m.languages}. ${size(m.unpacked)} on disk`
-      : `${m.languages}. ${size(m.download)} to fetch, ${size(m.unpacked)} on disk`,
+    about: `${m.about} ${m.languages}.`,
     maker: m.maker,
     memory: "",
     size: size(m.installed ? m.unpacked : m.download),
@@ -1188,10 +1187,6 @@ export function languageRow(m: LanguageModel, pickable = false): ModelRow {
     label: m.title,
     title: m.title,
     about: m.about,
-    // Once it is there, the download is spent and only the memory matters.
-    cost: m.installed
-      ? `By ${m.maker}. Needs ${needs} of memory`
-      : `By ${m.maker}. ${size(m.download)} to fetch, needs ${needs} of memory`,
     maker: m.maker,
     memory: `needs ${needs} of memory`,
     size: size(m.download),
@@ -1200,6 +1195,7 @@ export function languageRow(m: LanguageModel, pickable = false): ModelRow {
     installed: m.installed,
     note,
     warn,
+    best: m.recommended,
   };
 }
 

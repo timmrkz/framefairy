@@ -271,8 +271,10 @@ func standInsSetup(s SetupState, fresh bool) SetupState {
 	s.HasServer = true
 	if fresh {
 		s.Memory = 32 << 30
+		best, hasBest := engine.RecommendedFor(s.Memory)
 		for i := range s.Language {
 			s.Language[i].Fit = string(s.Language[i].FitsIn(s.Memory))
+			s.Language[i].Recommended = hasBest && s.Language[i].Name == best.Name
 		}
 		return s
 	}
@@ -1300,13 +1302,6 @@ func (b *bridge) pickSound() (string, error) {
 	return path, nil
 }
 
-// reopen closes the app and opens it again, the way quitting and starting
-// it does: the work stops, and what it did and how it ended is read back.
-// It gives back the jobs as the app left them, once nothing ran any more,
-// so a walk knows how each ended on the engine's word: a search the
-// closing cut off says cancelled, one that finished as the app closed says
-// done. What a walk read off the screen before it asked is a moment older,
-// and a search the model answers at once can end in that moment.
 // makeFresh makes the bridge's machine one the app has never run on, see
 // /fresh. The video leaves the library with its work folder kept, the
 // way Remove leaves it, and reset brings both back.
@@ -1356,8 +1351,16 @@ func (b *bridge) arriving(ctx context.Context, log *engine.Log, kind string, siz
 	if gate == nil {
 		return fmt.Errorf("the bridge downloads nothing outside its first run")
 	}
+	// In the engine's words, see inMB there: gigabytes from a thousand
+	// megabytes up.
+	said := func(n int64) string {
+		if n >= 1e9 {
+			return fmt.Sprintf("%.1f GB", float64(n)/1e9)
+		}
+		return fmt.Sprintf("%d MB", n/1e6)
+	}
 	const rate = 120e6
-	log.ProgressOf(fmt.Sprintf("fetching %d MB of %d MB at %d MB a second", size*2/5/1e6, size/1e6, int64(rate/1e6)),
+	log.ProgressOf(fmt.Sprintf("fetching %s of %s at %s a second", said(size*2/5), said(size), said(rate)),
 		0.4, float64(size)*3/5/rate)
 	select {
 	case <-ctx.Done():
@@ -1368,6 +1371,13 @@ func (b *bridge) arriving(ctx context.Context, log *engine.Log, kind string, siz
 	return put()
 }
 
+// reopen closes the app and opens it again, the way quitting and starting
+// it does: the work stops, and what it did and how it ended is read back.
+// It gives back the jobs as the app left them, once nothing ran any more,
+// so a walk knows how each ended on the engine's word: a search the
+// closing cut off says cancelled, one that finished as the app closed says
+// done. What a walk read off the screen before it asked is a moment older,
+// and a search the model answers at once can end in that moment.
 func (b *bridge) reopen() ([]Job, error) {
 	if !b.words.whileClosing(b.d.svc.jobs.shutDown) {
 		return nil, fmt.Errorf("the app did not stop its work in time")

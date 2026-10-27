@@ -163,32 +163,35 @@
     {@const mine = running?.label === model.label ? running : undefined}
     {@const failed = !mine && job && job.label === model.label && job.state === "failed"}
     <li class="item">
+      <!-- A model on its way wears the fill the way a clip card on its way
+           does, across the whole row, the one place the work shows. -->
+      {#if mine}<Busy fraction={share(mine)} />{/if}
       <span class="head name" title={model.about}>{model.title}</span>
       {#if mine}
         <span class="small muted num wide">{said(mine)}</span>
-        <span class="small muted num size">{left(mine)}</span>
+        <span class="small muted num size cell">{left(mine)}</span>
       {:else}
-        <span class="small muted">{model.maker}</span>
-        <span class="small muted">{model.memory}</span>
-        <span class="small muted num size">{model.size}</span>
+        <span class="small muted cell">{model.maker}</span>
+        <span class="small cell" class:muted={!model.warn} class:warn={model.warn} title={model.note || undefined}
+          >{model.memory}</span
+        >
+        <span class="small muted num size cell">{model.size}</span>
       {/if}
       <span class="end">
         {#if !model.installed}
           {#if mine}
-            <!-- The button the download was started from carries it: the
-                 beam and the fill, and the one thing to do about it. -->
             <button
               class="act"
               title="Stop the download. What has arrived stays, and Download carries on from it"
               disabled={cancelling === mine.id}
               onclick={() => cancel(mine)}
             >
-              <Busy fraction={share(mine)} />
               {cancelling === mine.id ? "Cancelling" : "Cancel"}
             </button>
           {:else}
             <button
               class="act"
+              class:primary={model.best && !running}
               title="Download it and keep it on this machine"
               disabled={asked === model.name || !!running}
               onclick={() => install(model.name)}
@@ -262,7 +265,7 @@
        table, to the pixel: a column as wide as its widest word was a
        fraction of a pixel wider in one list than in the other. */
     --maker-w: 64px;
-    --memory-w: 150px;
+    --memory-w: 168px;
     --size-w: 72px;
     --end-w: 98px;
     column-gap: 24px;
@@ -275,7 +278,11 @@
     align-items: center;
   }
 
-  .name {
+  /* Every cell of a row is one line, so every row is as high as the
+     next. A word too long for its column is cut short rather than taking
+     a second line. */
+  .name,
+  .cell {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -296,6 +303,11 @@
 
   .size {
     text-align: right;
+  }
+
+  /* What a model needs, when this machine has little more than that. */
+  .warn {
+    color: var(--warn);
   }
 
   /* The last column holds a button or nothing, and is as wide as the
