@@ -841,10 +841,14 @@ it hang, #508.
    `keepTraces` in `walks/bridge.mjs`. Each step is a group in the
    trace, named the way the walk prints it. A trace holds every call of
    the walk with when it began and ended, what the page logged and
-   threw, and every request to the Go side and every event it sent.
-   The page writes those into its console itself, a line each, see
-   `goSide` in `walks/bridge.mjs`, because Playwright records the
-   network only along with the snapshots below. A film of
+   threw. Every request to the Go side is kept beside it, in a file of
+   the same name ending in `.requests.txt`, see `hearRequests` in
+   `walks/bridge.mjs`. Playwright records the network into a trace only
+   along with the snapshots below, so Node hears the requests instead.
+   Nothing of it runs in the page: a fetch wrapped in the page to log
+   each request made three playback sequences hang in CI on #558. The
+   events the Go side sends come on one request that stays open, so
+   they are not in it. A film of
    the screen is in it only for the walks `walks/filmed.mjs` names: it
    made every walks job in CI about a fifth longer when every walk had
    one, measured on #558. `make walks TRACE=film` films every walk for
@@ -865,11 +869,12 @@ it hang, #508.
    browser and sends it nowhere, or with `npx playwright show-trace`. A
    session with no window reads it unpacked: `trace.trace` holds every
    call of the walk, with what the page logged and threw, one JSON
-   object a line. Among the console lines are the requests and events,
-   `go 12 ask /call Seek [3.2]`, `go 12 answer 200` and
-   `go event {"name":"job",...}`, each with its time. `trace.network`
-   is empty, and `resources/` holds the screenshots of a filmed walk,
-   which the Read tool shows.
+   object a line, with times in milliseconds from when the trace
+   began. The `.requests.txt` beside it counts from the same start, a
+   line a request: `  1532  12  ask POST /call main.FrameFairy.Seek
+   [3.2]`, `  1540  12  answer 200` or `failed` with why.
+   `trace.network` is empty, and `resources/` holds the screenshots of
+   a filmed walk, which the Read tool shows.
 2. **The order the walk assumes.** What the step waits for, `settle`,
    `caughtUp`, `nextNews`, `pageUntil`, `__standing`, and whether what
    it reads could change after that, or come before the walk listens.

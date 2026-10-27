@@ -1495,7 +1495,8 @@ func TestWalks(t *testing.T) {
 	// run's and no other.
 	if dir := os.Getenv("WALKTRACES"); dir != "" {
 		old, _ := filepath.Glob(filepath.Join(dir, "*.zip"))
-		for _, f := range old {
+		heard, _ := filepath.Glob(filepath.Join(dir, "*.requests.txt"))
+		for _, f := range append(old, heard...) {
 			if err := os.Remove(f); err != nil {
 				t.Fatal(err)
 			}

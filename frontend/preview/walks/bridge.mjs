@@ -2,7 +2,7 @@
 // its clip chosen, a way to wait until the app has settled, and the
 // engine's own answer to compare the screen with. See docs/TESTING.md.
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { chromium } from "playwright";
 import { filmed as filmedList } from "./filmed.mjs";
@@ -127,7 +127,7 @@ export async function newBrowser() {
 // WALKTRACES names a folder, and every page a walk opens is recorded in
 // a Playwright trace: each call of the walk's with when it began and
 // ended, what the page logged and threw, and every request to the Go
-// side and every event it sent, see goSide. A walk that filmed.mjs
+// side, kept beside it, see hearRequests. A walk that filmed.mjs
 // names records a film of the screen too. A walk that passed throws its
 // traces away. One that failed, threw or was stopped keeps them in the
 // folder, one file for each page it had open, and says where, so a walk
@@ -162,49 +162,50 @@ async function traced(page) {
   // every call, snapshots, 41 % longer and a walks job in CI over its
   // five minutes, no walk has.
   await context.tracing.start({ screenshots: filmingNow, snapshots: false, title: tracedAs });
-  await page.addInitScript(goSide);
+  hearRequests(page);
   tracing.add(context);
-  context.on("close", () => tracing.delete(context));
+  context.on("close", () => {
+    tracing.delete(context);
+    requestLogs.delete(context);
+  });
 }
 
-// The page says every request to the Go side and every event it sent,
-// one line each in its console, which is in every trace. Playwright
-// records the network only with the snapshots, which no walk has, see
-// traced. A line is "go 12 ask /call Seek [3.2]" when a request goes,
-// "go 12 answer 200" or "go 12 failed ..." when it comes back, and
-// "go event job {...}" for an event. The trace puts its time beside it.
-function goSide() {
-  const plain = window.fetch.bind(window);
-  let n = 0;
-  window.fetch = async (input, init) => {
-    const url = new URL(typeof input === "string" ? input : input.url, location.href);
+// Every request the page makes, heard in Node and kept beside the
+// trace. Playwright records the network into a trace only along with
+// the snapshots, which no walk has, see traced. Nothing of this runs in
+// the page: a fetch wrapped in the page to say each request in its
+// console made three playback sequences hang in CI, so a record must not
+// touch what it records. A line is the milliseconds since the trace
+// began, the request's number and what became of it: "ask" with the
+// method and the path, the call's name and arguments for /call, "answer"
+// with the status, or "failed" with why. The events the Go side sends
+// come on one request to /events that stays open, so they are not in it.
+const requestLogs = new Map();
+function hearRequests(page) {
+  // The clock only stamps the record, nothing waits on it.
+  const clock = () => Date.now();
+  const t0 = clock();
+  const lines = [];
+  const ids = new Map();
+  const at = () => String(clock() - t0).padStart(7);
+  page.on("request", (r) => {
+    const id = ids.size + 1;
+    ids.set(r, id);
+    const url = new URL(r.url());
     let what = url.pathname + url.search;
-    if (url.pathname === "/call" && typeof init?.body === "string") {
+    if (url.pathname === "/call") {
       try {
-        const { name, args } = JSON.parse(init.body);
+        const { name, args } = JSON.parse(r.postData() ?? "");
         what = `/call ${name} ${JSON.stringify(args).slice(0, 200)}`;
       } catch {
         // Said as its path alone.
       }
     }
-    const id = ++n;
-    console.debug(`go ${id} ask ${what}`);
-    try {
-      const answer = await plain(input, init);
-      console.debug(`go ${id} answer ${answer.status}`);
-      return answer;
-    } catch (e) {
-      console.debug(`go ${id} failed ${e}`);
-      throw e;
-    }
-  };
-  const Plain = window.EventSource;
-  window.EventSource = class extends Plain {
-    constructor(...args) {
-      super(...args);
-      this.addEventListener("message", (m) => console.debug(`go event ${String(m.data).slice(0, 300)}`));
-    }
-  };
+    lines.push(`${at()}  ${id}  ask ${r.method()} ${what}`);
+  });
+  page.on("response", (r) => lines.push(`${at()}  ${ids.get(r.request())}  answer ${r.status()}`));
+  page.on("requestfailed", (r) => lines.push(`${at()}  ${ids.get(r)}  failed ${r.failure()?.errorText ?? ""}`));
+  requestLogs.set(page.context(), lines);
 }
 
 // Each step of a walk as a group of its own in the trace, named the way
@@ -231,6 +232,8 @@ export async function keepTraces() {
     const path = join(traces, `${file}${n++ ? `-${n}` : ""}.zip`);
     await context.tracing.stop({ path });
     console.log(`trace: ${path}`);
+    const lines = requestLogs.get(context);
+    if (lines) writeFileSync(path.replace(/\.zip$/, ".requests.txt"), lines.join("\n") + "\n");
   }
 }
 
