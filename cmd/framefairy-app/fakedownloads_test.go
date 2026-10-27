@@ -95,6 +95,8 @@ func TestFakeDownloadsKeepWhatArrivedForReal(t *testing.T) {
 	}
 }
 
+// On the real disk: the files the tests above link, which only a real
+// disk can do.
 func write(t *testing.T, path, body string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -105,6 +107,8 @@ func write(t *testing.T, path, body string) {
 	}
 }
 
+// On the real disk: whether two names are one file, a hard link, which
+// only a real disk has.
 func same(t *testing.T, a, b string) {
 	t.Helper()
 	ia, err := os.Stat(a)
