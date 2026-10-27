@@ -114,6 +114,40 @@ export const steps = {
       }).observe(document.body, { attributes: true, attributeFilter: ["class"], subtree: true });
     });
   },
+  // ["said once"]      Settings, Advanced opened: the section for where
+  //                    clips go says Clips, the models are said in their
+  //                    own sections and not again under Advanced, the
+  //                    caption fonts are one line of two counts, and the
+  //                    app's log, which is in the home folder, is written
+  //                    from ~
+  async "said once"(walk) {
+    const { page } = walk;
+    const disclose = page.locator("button.disclose");
+    if ((await disclose.getAttribute("aria-expanded")) !== "true") await disclose.click();
+    await page.locator(".item.found").first().waitFor();
+    await settle(page);
+    const m = await page.evaluate(() => {
+      const text = (el) => (el?.textContent ?? "").replace(/\s+/g, " ").trim();
+      const fonts = [...document.querySelectorAll(".item.found")].find((r) => text(r).startsWith("Caption fonts"));
+      const detail = fonts?.querySelector(".words > .small");
+      return {
+        heads: [...document.querySelectorAll("h2")].map(text),
+        fields: [...document.querySelectorAll("label.item.field .head")].map(text),
+        found: [...document.querySelectorAll(".item.found .words > span:first-child")].map(text),
+        fonts: text(detail),
+        fontLines: detail ? Math.round(detail.getBoundingClientRect().height / parseFloat(getComputedStyle(detail).lineHeight)) : 0,
+        log: text([...document.querySelectorAll(".card")].find((c) => text(c).includes("The app's log"))?.querySelector(".path")),
+      };
+    });
+    const problems = [];
+    if (m.heads.includes("Shorts") || !m.heads.includes("Clips")) problems.push(`the heads are ${m.heads.join(", ")}, with Shorts where Clips should be`);
+    for (const f of m.fields) if (/model/i.test(f) && f !== "Model in the cloud") problems.push(`Advanced has a field "${f}", a model said again`);
+    for (const f of m.found) if (/^(Speech model|Language model)|API key$/.test(f)) problems.push(`What the app found says "${f}" again`);
+    if (!/^\d+ built in, \d+ from this machine$/.test(m.fonts)) problems.push(`the caption fonts say "${m.fonts.slice(0, 80)}", not two counts`);
+    else if (m.fontLines !== 1) problems.push(`the caption fonts stand on ${m.fontLines} lines`);
+    if (!m.log.startsWith("~/")) problems.push(`the app's log is at "${m.log}", not written from ~`);
+    if (problems.length) walk.wrong = problems.join("\n");
+  },
   // ["acknowledgements"]
   //                    Help, Acknowledgements: every group is a head over a
   //                    card with a border, and the words of every row stand

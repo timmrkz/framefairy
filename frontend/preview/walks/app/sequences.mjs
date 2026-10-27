@@ -30,6 +30,13 @@ export default [
     ],
   },
   {
+    // Tim's report of 2026-10-27, 17:21: the settings called clips
+    // shorts, spoke of the models in six places, listed every caption
+    // font by name in one row and wrote paths three ways.
+    name: "The settings say each thing once, in one way",
+    steps: [["app log", "open"], ["settings"], ["said once"]],
+  },
+  {
     // Tim saw the names and the licences in Help, Acknowledgements sit on
     // the border of their box, with no room round them (#500). Each group
     // is now a card the way the settings draw one.
