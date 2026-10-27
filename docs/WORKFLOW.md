@@ -132,8 +132,12 @@ make run
 Several sessions can run at once, each on its own branch. Keep them to
 separate areas of the code, so the pull requests don't conflict. Each
 session works on one pull request at a time, and opens the next only
-once that one is merged or closed. Something you report that is not
-about its open pull request is logged as a GitHub issue, labelled bug,
+once that one is merged or closed. Each pull request is one
+self-contained change, the way Google's code review guide draws it, and
+what it leaves behind is cleaned up before it is merged. A small thing
+you ask for in a session's thread goes into its open pull request, as a
+commit of its own. Something that pull request did not cause, and that
+cannot be done now, is logged as a GitHub issue, labelled bug,
 feature, tests, reliability, performance or shipping, with a priority
 and a size, and taken up in turn: the highest priority first, the
 smallest and then the oldest within it, unless you reorder them.
@@ -181,7 +185,7 @@ names nothing of ours. This is where its words meet this repository.
 | the user's own words | your messages in the thread of the session, and your report files in the project files |
 | the place the project names for the review | a file in `/mnt/project-files/reviews/`, named after the pull request, never committed |
 | where instructions may come from | only you, see On GitHub, only Tim gives instructions in CLAUDE.md. Sessions write on GitHub as `timmrkz`, so a review is never posted there |
-| logged | a GitHub issue with its label, see the rule on reports in CLAUDE.md |
+| logged | a GitHub issue with its label, see Clean up now, not later, in CLAUDE.md |
 | the recent issues and pull requests in the same area | the issues and the merged pull requests on GitHub, and the history up to 16 October in [GUI-PLAN.md](GUI-PLAN.md) |
 
 ## CI

@@ -101,10 +101,30 @@ Start with [README.md](README.md). In short:
   out. A change with nothing to see in the app says so and names the
   test that proves it instead. A short Before and After is no
   replacement for any of it.
-- **One change, one pull request.** Never push the same commits into two
-  pull requests. Work that builds on an open pull request takes that pull
-  request's branch as its base, so its diff shows only its own change, or
-  it waits until the first is merged.
+- **One self-contained change per pull request**, the way Google's
+  [code review guide](https://google.github.io/eng-practices/review/developer/small-cls.html)
+  draws it. A pull request is the right size when:
+  - It makes the smallest change that addresses just one thing, usually
+    one part of a feature rather than the whole feature.
+  - It brings the tests for what it changes.
+  - Everything a reviewer needs to understand it is in the pull request,
+    its description, the code as it is, or a pull request already
+    reviewed.
+  - The app keeps working well for the people using it, and for the
+    sessions working on it, once it is merged.
+  - It is not so small that what it means is hard to see.
+
+  When in doubt, smaller. About 100 changed lines is a usual size and
+  1000 too many, and a change spread over many files counts as bigger.
+  The review agent and Tim may ask for a pull request to be split for
+  its size alone. A refactoring usually goes in a pull request of its
+  own, before the change that needs it. A small one, and small cleanups
+  like a name, a doc line or a rule the change made wrong, go in with
+  the change. Where the line falls is the judgement of the session and
+  of Tim. Work that builds on an open pull request takes its branch as
+  its base, so its diff shows only its own change, or it waits until the
+  first is merged. The same commits are never pushed into two pull
+  requests.
 - **One session, one pull request at a time.** A session works on one
   open pull request and opens the next only once that one is merged or
   closed. Two at once from one session split its attention, and Tim
@@ -116,24 +136,24 @@ Start with [README.md](README.md). In short:
   in the thread and wait until one is merged or closed. Tim can lift
   the limit by saying so in the thread of the session that would open
   it. That lifts it for that one pull request only.
-- **A report that is not about the open pull request is logged, not
-  started.** A bug Tim finds on the way, a review that points elsewhere,
-  something seen while testing: it becomes a
+- **Clean up now, not later.** What a pull request leaves behind is
+  cleaned up before it is merged, because a cleanup put off for later is
+  mostly never done. Google sends a second thing as a second small change
+  right away. A session here holds one pull request at a time, so a small
+  second thing Tim asks for in the thread goes into the open one, as a
+  commit of its own named in the description. Only a problem the pull
+  request did not cause, and that cannot be done now, is logged: a bug
+  seen while testing, a review finding that points elsewhere, a larger
+  ask. It becomes a
   [GitHub issue](https://github.com/timmrkz/framefairy/issues) of its
-  own, with what was seen, where, and who found it, linked in the
-  reply. It carries one label or more for its kind: `bug`, `feature`,
-  `tests` for tests, walks and CI, `reliability`, `performance`, or
-  `shipping` for getting the app to customers. It also carries one
-  priority, `priority/critical`, `priority/important` or
-  `priority/backlog`, and one size, `size/small`, `size/medium` or
-  `size/large`, as [docs/WORKFLOW.md](docs/WORKFLOW.md#priority-and-size)
-  defines them. Opening an issue changes no file, so it needs no push and
-  starts no CI run. The work on the open pull request carries on. Once
-  it is merged, the next piece of work is the open issue of the highest
-  priority, the smallest first and then the oldest, of those Tim opened
-  or a session opened for him, unless Tim puts them in another order. A
-  report that is about the open pull request is that pull request's
-  work, as before.
+  own, with what was seen, where, who found it and what to build, linked
+  in the reply and under Found along the way. It carries one label or
+  more for its kind: `bug`, `feature`, `tests` for tests, walks and CI,
+  `reliability`, `performance`, or `shipping` for getting the app to
+  customers. It also carries one priority, `priority/critical`,
+  `priority/important` or `priority/backlog`, and one size,
+  `size/small`, `size/medium` or `size/large`, as
+  [docs/WORKFLOW.md](docs/WORKFLOW.md#priority-and-size) defines them.
 - **Open work is GitHub issues, never rows in a file.** Every pull
   request once added its row at the end of the same table in
   [docs/GUI-PLAN.md](docs/GUI-PLAN.md), so any two of them conflicted,
@@ -143,7 +163,12 @@ Start with [README.md](README.md). In short:
   `Fixes #N` for each issue it finishes, so merging it closes them, and
   no file keeps a status. `docs/GUI-PLAN.md` is the history up to 16
   October 2026, and a pull request changes no line of it,
-  `scripts/plan-frozen.sh` fails CI when one does.
+  `scripts/plan-frozen.sh` fails CI when one does. Opening an issue
+  changes no file, so it needs no push and starts no CI run, and the
+  work on the open pull request carries on. Once that is merged, the
+  next piece of work is the open issue of the highest priority, the
+  smallest first and then the oldest, of those Tim opened or a session
+  opened for him, unless Tim puts them in another order.
 - His machine is an M2 Max with 32 GB of memory, on the latest macOS, with
   Go 1.27, Homebrew and the models in `~/.framefairy/models`. ffmpeg and
   llama-server are built by `make` and live in `bin/`, the only place the
@@ -159,8 +184,9 @@ Start with [README.md](README.md). In short:
   docs you are about to change. Verify facts about tools and versions instead
   of assuming them.
 - **Small batches.** Split larger work into batches of a few minutes each.
-  Finish, test and report after each one, with a pull request per batch or a
-  commit per batch on one branch. Never disappear into a long stretch of work.
+  Finish, test and report after each one, with a pull request per batch,
+  or a commit per batch while the batches are still one self-contained
+  change. Never disappear into a long stretch of work.
 - **Just do small things.** Small, low-risk UI changes need no discussion of
   internal choices. Discuss constraints only for security, lasting effects or
   side effects he would not expect.
@@ -216,7 +242,7 @@ Start with [README.md](README.md). In short:
     of the findings by number.
   - Each finding is then fixed, or answered with why it is wrong. Only a
     finding about something outside the pull request becomes an issue,
-    see the rule on reports above. A finding that needs Tim's choice goes
+    see Clean up now, not later, above. A finding that needs Tim's choice goes
     in his list.
   - The session reports on each finding by its number: what changed, or
     why nothing did. "Addressed the review" is no report.
