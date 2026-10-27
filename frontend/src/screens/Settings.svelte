@@ -481,10 +481,13 @@
   let choosing = $state("");
   const notHere = $derived(!!inUse && !inUse.installed);
   let fetchFailed = $state("");
-  // What a search or a clip made by hand is using, see refuseFinding.
+  // What a search, a clip made by hand or the whole video being
+  // transcribed is using, see refuseFinding and speechLocked.
   const running = (j: Job) => j.state === "running" || j.state === "queued";
   const searching = $derived(jobs.list.some((j) => j.kind === "search" && running(j)));
-  const hearing = $derived(searching || jobs.list.some((j) => j.kind === "clip" && running(j)));
+  const hearing = $derived(
+    searching || jobs.list.some((j) => (j.kind === "clip" || j.kind === "transcribe") && running(j)),
+  );
   const llmJob = $derived(jobs.list.filter((j) => j.kind === "llm").at(-1));
   const llmRunning = $derived(
     llmJob && (llmJob.state === "running" || llmJob.state === "queued") ? llmJob : undefined,

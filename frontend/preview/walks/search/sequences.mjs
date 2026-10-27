@@ -262,4 +262,47 @@ export default [
     name: "I after the last word is not offered, and says why",
     steps: [["add", 120], ["wait for", "Search"], ["no mark after the end", 120]],
   },
+  {
+    // The fourth review of #458. A search that found its clips moved the
+    // window on one answer after its first clip was picked, a step of its
+    // own at the end of a search, and the window still drawn could be
+    // written back over the one the Go side moved on.
+    name: "a search that found its clips moves the window on in the frame they show",
+    steps: [
+      ["speech", "hold"],
+      ["add", 1200],
+      ["walks on with the clips"],
+    ],
+  },
+  {
+    // Tim's report of 25 October, 21.40: the window moved on to where the
+    // search had transcribed to, and the dots after it began a few pixels
+    // right of its edge, because they were laid from the end of the
+    // video and the room left over fell at the window.
+    name: "the dots after a search's window begin at the window it moves on to, with a dashed edge",
+    steps: [
+      ["speech", "hold"],
+      ["add", 1200],
+      ["walks on with the clips"],
+      ["dots begin at the window"],
+    ],
+  },
+  {
+    // Tim's report of 24 October, 21.42. The first search of a video just
+    // added is the Go side's, with its window an even share of the video,
+    // here 751.5 s, off the range picker's step. The window placed on the
+    // step took its place, so Cancel while it heard left a search on a
+    // window that was not the one drawn: set aside, it said Search, with
+    // the sidebar's dot yellow. And the frame over the window dropped the
+    // moment the search ended, where it now fades from the press.
+    name: "Cancel while a video just added is transcribed says Stopped with Continue, and the window's frame fades",
+    steps: [
+      ["speech", "hold"],
+      ["add, the window read late", 1503],
+      ["cancel fades"],
+      ["speech", "go"],
+      ["wait for", "Continue"],
+      ["row", "Stopped. Click Continue"],
+    ],
+  },
 ];

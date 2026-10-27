@@ -551,6 +551,15 @@ func (e *Engine) transcribe(ctx context.Context, path string, window Window,
 		}()
 	}
 	advance = func(p heardPiece) {
+		// Stopped, by Stop or by a search that wants the machine, what is
+		// still being heard is let go. Taken in, it moved the range
+		// picker's edge after the stop, or it was saved without being
+		// shown and the edge jumped when the work carried on, Tim's report
+		// of 24 October. So what was said to be heard at the stop is what
+		// is kept, and a piece is heard again when the work carries on.
+		if ctx.Err() != nil {
+			return
+		}
 		raw = append(raw, p.words...)
 		covered := p.at + float64(p.samples)/SampleRate
 		heardTo = covered
@@ -639,8 +648,9 @@ func (e *Engine) transcribe(ctx context.Context, path string, window Window,
 	if reachedEnd && ctx.Err() == nil {
 		waitErr = nil
 	}
-	// What is still being heard is taken in before anything is saved or
-	// said, whichever way the reading ended.
+	// What is still being heard is waited for before anything is saved
+	// or said, whichever way the reading ended, and taken in unless the
+	// work was stopped, see advance.
 	drain()
 	if ctx.Err() != nil {
 		// Stopped, by pause or by a search that wants the machine. What was

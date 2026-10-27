@@ -61,11 +61,18 @@ const (
 	JobRender = "render"
 	// JobClip is a clip made by hand, see MakeClip.
 	JobClip = "clip"
+	// JobTranscribe is the whole episode heard to its end, with no search
+	// after, see TranscribeJob.
+	JobTranscribe = "transcribe"
 )
 
 // SearchID is the id of an episode's search. An episode has one search at
 // a time, and a new one takes the place of the last.
 const SearchID = "search"
+
+// TranscribeID is the id of an episode's transcription to its end. An
+// episode has one at a time.
+const TranscribeID = "transcribe"
 
 // JobRecord is what the work folder keeps about a job.
 type JobRecord struct {
@@ -297,9 +304,13 @@ func saneJob(source string, r *JobRecord) bool {
 		}
 	case JobRender:
 		// The plan is one of this episode's, by name and by where it is.
-		if r.ID == SearchID || filepath.Dir(r.Plan) != filepath.Join(WorkDir(source), "logs") ||
+		if r.ID == SearchID || r.ID == TranscribeID || filepath.Dir(r.Plan) != filepath.Join(WorkDir(source), "logs") ||
 			!IsPlanFile(r.Plan) || len(r.Clips) > 1000 || len(r.Done) > 1000 ||
 			r.Step == StepHearing || r.Step == StepFinding || r.Step == StepFraming {
+			return false
+		}
+	case JobTranscribe:
+		if r.ID != TranscribeID || r.Step == StepFinding || r.Step == StepFraming || r.Step == StepRendering {
 			return false
 		}
 	case JobClip:
@@ -326,6 +337,15 @@ func saneJob(source string, r *JobRecord) bool {
 // which the app may end to take the lane back before the job is over, and
 // a function that lets the lane go. nil runs every step at once, which is
 // what the command line and the tests do.
+//
+// A job that goes on from hearing to its next step asks for that step
+// while it still holds the hearing lane, and lets the lane go after, so
+// nothing that waits to hear has its turn in between. A Turn lets go of
+// the lane the job holds as soon as the ask for the next has its place,
+// and the job's own letting go is then nothing. Let go first, the whole
+// video heard for a moment between a search's hearing and its finding,
+// and its frame on the range picker lit up and went dim again, Tim's
+// report of 25 October, 14.33.
 type Turn func(ctx context.Context, step string) (context.Context, func(), error)
 
 // job keeps a running job's record.
@@ -469,10 +489,12 @@ func (p *Project) Search(ctx context.Context, req PlanRequest, turn Turn) (plan 
 	stepOf := func(ctx context.Context, step string) (context.Context, func(), error) {
 		return j.turn(ctx, turn, step)
 	}
-	if err := p.hear(ctx, stepOf, Window{req.From, end}); err != nil {
+	letGo, err := p.hear(ctx, stepOf, Window{req.From, end})
+	if err != nil {
 		return "", err
 	}
 	stepCtx, release, err := j.turn(ctx, turn, StepFinding)
+	letGo()
 	if err != nil {
 		return "", err
 	}
@@ -480,12 +502,39 @@ func (p *Project) Search(ctx context.Context, req PlanRequest, turn Turn) (plan 
 	return p.Plan(stepCtx, req)
 }
 
+// TranscribeJob hears the whole episode, from wherever the transcript has
+// not heard it yet to its end, and nothing after: Transcribe whole video in
+// a video's menu. It keeps a record like a search, so an app closed while
+// it hears says so, and carries on from what was heard. Its hearing gives
+// way to every search and clip made by hand, which the app's lanes decide.
+func (p *Project) TranscribeJob(ctx context.Context, turn Turn) (err error) {
+	j := p.startJob(JobRecord{ID: TranscribeID, Kind: JobTranscribe})
+	defer j.end(&err)
+	if ctx.Err() != nil {
+		return ErrCancelled
+	}
+	end, err := p.windowEnd(ctx, PlanRequest{})
+	if err != nil {
+		return err
+	}
+	stepOf := func(ctx context.Context, step string) (context.Context, func(), error) {
+		return j.turn(ctx, turn, step)
+	}
+	letGo, err := p.hear(ctx, stepOf, Window{0, end})
+	letGo()
+	return err
+}
+
 // hear has the one transcript hear a span of the episode, the way every job
 // that needs words has it heard: only what of the span it has not heard
 // yet, wherever that is. It takes a turn in the lane of hearing, through
-// turn, for as long as there is anything to hear.
+// turn, for as long as there is anything to hear. It gives back the
+// letting go of the last turn it heard in, still held, so the job asks for
+// its next step first, see Turn. It is nothing when the job did not have
+// to hear, and when hearing failed.
 func (p *Project) hear(ctx context.Context, turn func(context.Context, string) (context.Context, func(), error),
-	span Window) error {
+	span Window) (letGo func(), err error) {
+	nothing := func() {}
 	// What is unheard at the first turn is the whole of this hearing, so
 	// a turn after the lane was taken back counts on from where the last
 	// one got to rather than from nothing, issue #444.
@@ -498,7 +547,7 @@ func (p *Project) hear(ctx context.Context, turn func(context.Context, string) (
 	for {
 		gaps := Unheard(p.Files, p.Source, p.Base.ASRModel, span)
 		if len(gaps) == 0 {
-			return nil
+			return nothing, nil
 		}
 		if first {
 			whole := 0.0
@@ -512,13 +561,21 @@ func (p *Project) hear(ctx context.Context, turn func(context.Context, string) (
 		}
 		stepCtx, release, err := turn(ctx, StepHearing)
 		if err != nil {
-			return err
+			return nothing, err
 		}
-		// Given back in a defer, so a panic while hearing does not keep the
-		// lane taken, and every later search waiting, until a restart.
+		// Given back in a defer unless everything was heard, so a panic
+		// while hearing does not keep the lane taken, and every later
+		// search waiting, until a restart.
+		heard := false
 		err = func() error {
-			defer release()
-			return p.Hear(stepCtx, span)
+			defer func() {
+				if !heard {
+					release()
+				}
+			}()
+			err := p.Hear(stepCtx, span)
+			heard = err == nil
+			return err
 		}()
 		if errors.Is(err, ErrCancelled) && ctx.Err() == nil {
 			// The lane was taken back, by a search that finds while this
@@ -528,11 +585,13 @@ func (p *Project) hear(ctx context.Context, turn func(context.Context, string) (
 			continue
 		}
 		if err != nil {
-			return err
+			return nothing, err
 		}
 		if gaps := Unheard(p.Files, p.Source, p.Base.ASRModel, span); len(gaps) > 0 {
-			return fmt.Errorf("the transcription left %s to %s unheard", HMS(gaps[0].Start), HMS(gaps[0].End))
+			release()
+			return nothing, fmt.Errorf("the transcription left %s to %s unheard", HMS(gaps[0].Start), HMS(gaps[0].End))
 		}
+		return release, nil
 	}
 }
 

@@ -109,10 +109,13 @@ func (p *Project) MakeClip(ctx context.Context, id string, req ClipRequest, turn
 		return "", err
 	}
 	o := p.Base
-	if err := p.hear(ctx, stepOf, req.reach(o.Max, source.Duration)); err != nil {
+	letGo, err := p.hear(ctx, stepOf, req.reach(o.Max, source.Duration))
+	if err != nil {
 		return "", err
 	}
+	// Framing is asked for before hearing is let go, see Turn.
 	stepCtx, release, err := stepOf(ctx, StepFraming)
+	letGo()
 	if err != nil {
 		return "", err
 	}

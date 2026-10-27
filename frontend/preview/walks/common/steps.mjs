@@ -495,3 +495,19 @@ export async function clickedFromAhead(page, key, start, card) {
     page.off("request", asked);
   }
 }
+
+// Whether one colour is the other at half its strength, the colours as
+// getComputedStyle writes them, rgb() or color(srgb).
+export function halfOf(half, whole) {
+  const rgba = (c) => {
+    const m = (c ?? "").match(/rgba?\(([^)]*)\)/);
+    if (m) {
+      const [r, g, b, a = 1] = m[1].split(",").map(Number);
+      return [r, g, b, a];
+    }
+    const n = (c ?? "").match(/color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)(?: \/ ([\d.]+))?\)/);
+    return n ? [...n.slice(1, 4).map((v) => Math.round(Number(v) * 255)), n[4] === undefined ? 1 : Number(n[4])] : [];
+  };
+  const [h, w] = [rgba(half), rgba(whole)];
+  return h.length === 4 && w.length === 4 && h.slice(0, 3).join() === w.slice(0, 3).join() && Math.abs(h[3] - w[3] / 2) < 0.02;
+}

@@ -446,6 +446,11 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 			answer(w, nil, nil)
 			return
 		}
+		if q.Get("hold") == "one" {
+			b.words.holdOne()
+			answer(w, nil, nil)
+			return
+		}
 		if q.Has("hold") {
 			b.words.hold()
 			answer(w, nil, nil)
@@ -517,6 +522,17 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 	mux.HandleFunc("/clipboard", func(w http.ResponseWriter, r *http.Request) {
 		answer(w, b.d.copied(), nil)
 	})
+	// The file the app last saved through the save box, its name and what
+	// it holds, or nothing, see desk.start.
+	mux.HandleFunc("/exported", func(w http.ResponseWriter, r *http.Request) {
+		p := b.d.exported.Load()
+		if p == nil {
+			answer(w, nil, nil)
+			return
+		}
+		body, err := afero.ReadFile(b.d.svc.store.files, *p)
+		answer(w, map[string]string{"name": filepath.Base(*p), "text": string(body)}, err)
+	})
 	// The app's log, which the bridge keeps none of until a walk asks:
 	// with ?open=1 it starts one in the bridge's home with a few lines and
 	// an older file beside it, the way a log that has turned over once
@@ -566,6 +582,9 @@ type prose struct {
 	held    bool
 	steps   int
 	hearing int
+	// waiting counts the pieces handed to it while it is held, which the
+	// engine is part way through as far as it knows.
+	waiting int
 	// closing lets every piece through while the app closes, so a piece
 	// the walk holds ends the way a piece being heard ends as the app
 	// quits. It stays held after.
@@ -586,6 +605,17 @@ func (p *prose) hold() {
 	defer p.gate.Unlock()
 	p.held, p.steps = true, 0
 	for p.hearing > 0 {
+		p.cond().Wait()
+	}
+}
+
+// holdOne holds it and returns once a piece is waiting in it, so a walk
+// can stop the work while a piece is being heard, the way a person does.
+func (p *prose) holdOne() {
+	p.hold()
+	p.gate.Lock()
+	defer p.gate.Unlock()
+	for p.held && p.waiting == 0 {
 		p.cond().Wait()
 	}
 }
@@ -633,8 +663,13 @@ ich. Und eigentlich erinnere ich mich an die Lüge besser als an den Arm.`)
 
 func (p *prose) Recognize(samples []float32, rate int) []engine.Token {
 	p.gate.Lock()
-	for p.held && p.steps == 0 && !p.closing {
-		p.cond().Wait()
+	if p.held && p.steps == 0 && !p.closing {
+		p.waiting++
+		p.cond().Broadcast()
+		for p.held && p.steps == 0 && !p.closing {
+			p.cond().Wait()
+		}
+		p.waiting--
 	}
 	if p.held && !p.closing {
 		p.steps--
@@ -1282,6 +1317,7 @@ func (b *bridge) reset() error {
 	b.d.pictureMu.Unlock()
 	b.d.reportMade.Store(0)
 	b.d.reportFronted.Store(0)
+	b.d.exported.Store(nil)
 	if !b.d.svc.jobs.shutDown() {
 		return fmt.Errorf("the app did not stop its work in time")
 	}

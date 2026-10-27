@@ -194,7 +194,8 @@ func TestAnInstallKeepsTheModelInUse(t *testing.T) {
 // another speech model, and removing either model, are all refused, and
 // the settings stay what they were. Tim chose another model in the
 // settings while a search ran, and nothing stopped him. A clip made by
-// hand hears with the speech model, so it holds that one and nothing else.
+// hand and the whole video being transcribed hear with the speech model,
+// so they hold that one and nothing else.
 //
 // On the real disk: the engine finds the models in the home folder with os.
 func TestNothingASearchUsesChangesUnderIt(t *testing.T) {
@@ -283,6 +284,20 @@ func TestNothingASearchUsesChangesUnderIt(t *testing.T) {
 	}
 	if _, err := svc.UseLanguageModel(second.Name); err != nil {
 		t.Errorf("a clip made by hand held the language model: %v", err)
+	}
+	done()
+
+	// The whole video being transcribed hears with the speech model too,
+	// found on #458: another speech model would have written over the
+	// same transcript.
+	done = hold(engine.JobTranscribe)
+	for _, c := range hearing {
+		if err := c.do(); err == nil {
+			t.Errorf("while the whole video is transcribed, %s was not refused", c.what)
+		}
+	}
+	if _, err := svc.UseLanguageModel(first.Name); err != nil {
+		t.Errorf("the whole video being transcribed held the language model: %v", err)
 	}
 	done()
 }

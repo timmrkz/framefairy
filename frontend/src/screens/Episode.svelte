@@ -44,10 +44,7 @@
     inEpisode,
     endInEpisode,
     Newest,
-    nextWindow,
     timesIn,
-    followingWindow,
-    onGrid,
     frameAt,
     frameMiddle,
   } from "../lib/flow";
@@ -61,7 +58,7 @@
     mostClips,
     type RoomView,
   } from "../lib/room";
-  import { suggestedCount, suggestedWindow } from "../lib/suggest";
+  import { suggestedCount } from "../lib/suggest";
   import { captionColours, joinColour, splitColour } from "../lib/colour";
   import { stepLine } from "../lib/steps";
   import { Failures } from "../lib/failed";
@@ -138,9 +135,6 @@
   let clips = $state<ClipEntry[]>([]);
   let from = $state(0);
   let to = $state(0);
-  // Whether the window the workspace opens with is in from and to yet,
-  // see openWindow.
-  let windowRead = $state(false);
   // The target typed in the workspace, or 0 while it follows the window,
   // and how long the window was it was typed for. It is the target of a
   // window that long and of no other, see typed.
@@ -150,7 +144,9 @@
   let max = $state(30);
   let waiting = $state<string[]>([]);
   // A click has to show at once, long before the job it starts reports in.
-  let starting = $state(false);
+  // The store keeps the press, the same for this work as for the whole
+  // video heard from its menu.
+  const starting = $derived(jobs.isStarting(path, "clips"));
   // The press of Search or Continue the work in hand was asked for by. Cancel
   // names it, so it stops that search whether or not the Go side has heard
   // of it yet, see stopWork.
@@ -255,11 +251,9 @@
   const typed = $derived(target > 0 && Math.abs(to - from - targetWindow) < 0.5 ? target : 0);
   const leastLong = $derived(leastWindow(typed > 0 ? typed : 1, min, duration));
   const clipsAtMost = $derived(mostClips(reachAnywhere, min, 30));
-  // How long the windows of this episode are when the app chooses them, and
-  // how many clips the window drawn now suggests. The engine works out the
+  // How many clips the window drawn now suggests. The engine works out the
   // same, see engine/suggest.go. What a search looks for is the target
   // typed, or the suggestion while nothing is typed.
-  const windowSize = $derived(suggestedWindow(duration));
   const suggested = $derived(Math.min(suggestedCount(to - from, min, max), clipsAtMost));
   const count = $derived(typed > 0 ? typed : suggested);
   const shortestAtMost = $derived(longestShortest(reachAnywhere, count, 5, 180));
@@ -313,12 +307,25 @@
   const handWork = $derived(jobs.clips(path));
   const handRunning = $derived(handWork.filter((j) => j.state === "running" || j.state === "queued"));
   const handStopped = $derived(handWork.filter((j) => j.state === "interrupted" || j.state === "failed"));
-  // Whatever hears the episode now, the search or a clip made by hand, one
-  // at a time. Its progress says which part it hears and how far it has
-  // come in it.
-  const hearing = $derived(transcribing ?? handRunning.find((j) => j.step === "hearing"));
+  // The video heard to its end by itself, Transcribe whole video in its
+  // menu, while it hears.
+  const wholeHearing = $derived.by(() => {
+    const j = jobs.transcription(path);
+    return j?.state === "running" && j.step === "hearing" ? j : undefined;
+  });
+  // Whatever hears the episode now, the search, a clip made by hand or the
+  // whole video, one at a time. Its progress says which part it hears and
+  // how far it has come in it.
+  const hearing = $derived(transcribing ?? handRunning.find((j) => j.step === "hearing") ?? wholeHearing);
+  // Transcribe whole video while it runs or waits its turn.
+  const wholeWork = $derived(jobs.transcribing(path));
   const isTranscribing = $derived(!!hearing);
   const busy = $derived(searching || starting);
+  // A search that found its clips is over, and the window it moved on to
+  // is on its way from the Go side. The search's frame stays where it is
+  // until then, so the range picker never shows the window back where the
+  // search was, between the search and the next, see load.
+  let movingOn = $state(false);
   // What the search is doing right now, in the step's own words, see
   // lib/steps.ts.
   const doing = $derived(working ? stepLine(working).what : "");
@@ -327,7 +334,7 @@
       ? `${clock(working.progress.remaining)} left`
       : "",
   );
-  let stopping = $state(false);
+  const stopping = $derived(jobs.isStopping(path, "clips"));
 
   // The pane has one shape, whatever it is busy with. The head says what
   // that is, the button does the one thing there is to do about it, and
@@ -390,17 +397,10 @@
     lane.job?.progress && lane.job.progress.fraction >= 0 ? lane.job.progress.fraction : -1,
   );
 
-  // Stopping lasts until the work has stopped. A search asked for and not
-  // answered yet is work too, which the Go side will say has stopped.
-  $effect(() => {
-    if (!starting && !working && !handRunning.length) stopping = false;
-  });
-
   // Cancel: the search stops, and what it heard of the episode stays, so
   // the next search goes on from there. The edge on the range picker stops
-  // where it is, on the click: the speech model is part way through a
-  // chunk and keeps reporting until it hears the stop, and without this
-  // the edge carries on for a second or two and the click looks missed.
+  // where it is, because the engine keeps no piece heard after the stop
+  // and reports none, so what was shown is what was saved.
   // It names the episode's work and the press it came after, not a job,
   // so it takes effect the moment it is pressed: it called off the jobs it
   // knew, and between Search and the Go side's answer it knew none, so it
@@ -408,8 +408,7 @@
   // search the press asked for even if Cancel reaches it first.
   function stopWork() {
     if (!busy || stopping) return;
-    stopping = true;
-    if (isTranscribing) stoppedAt = heard;
+    jobs.stop(path, "clips");
     void api.stopClipWork(path, click);
   }
 
@@ -526,12 +525,30 @@
     if (!(duration > 0)) return [] as [number, number][];
     const out: [number, number][] = [];
     let at = 0;
-    for (const [a, b] of [...shownHeard].sort((x, y) => x[0] - y[0])) {
+    for (const [a, b] of [...heard].sort((x, y) => x[0] - y[0])) {
       if (a - at >= 1) out.push([at, a]);
       at = Math.max(at, b);
     }
     if (duration - at >= 1) out.push([at, duration]);
     return out;
+  });
+  // Stop transcribing pressed and the job not ended yet.
+  const wholeStopping = $derived(jobs.isStopping(path, "whole"));
+  // The part Transcribe whole video works on, framed on the range picker
+  // the way the window of a search is while it hears, Tim's pick on #458:
+  // the part it hears, or the one it hears next while it waits its turn.
+  // The frame goes on the press of Stop transcribing, fading, see
+  // RangeWindow. While the whole video waits its turn, behind a search, a
+  // clip made by hand or a model being installed, its frame stays, dimmed,
+  // so it is plain the work is only on hold, Tim's report of 23 October.
+  // The look comes from its own job and not from whether a search runs:
+  // a search with a model in the cloud does not hold up the hearing, found
+  // by the second review of #458.
+  const wholePart = $derived.by((): [number, number] | null => {
+    if (!wholeWork || wholeStopping) return null;
+    const edge = wholeHearing && live ? live[1] : -1;
+    const gap = (edge >= 0 && unheard.find(([a]) => Math.abs(a - edge) < 0.5)) || unheard[0];
+    return gap ?? null;
   });
   // The clip list and the cards of what was said take turns in one
   // scrolled column, so each keeps its own place: the clip list comes back
@@ -663,11 +680,13 @@
     return [p.from ?? 0, p.covered];
   });
   const heard = $derived(mark.seen(path, saved, live, restarted));
-  // Where the edge was when pause was pressed, or null while it is free to
-  // move. Held rather than followed, because what the work reports after
-  // the press is work nobody asked for any more.
-  let stoppedAt = $state<Parts | null>(null);
-  const shownHeard = $derived(stoppedAt ?? heard);
+  // Where the work hears into a part not transcribed yet, so its dots
+  // stand still under the edge. The whole video on hold still holds its
+  // part, so the dots do not shift as it waits and carries on, Tim's
+  // report of 24 October. Nothing holds the edge on a stop: the engine
+  // keeps no piece heard after it, so the edge it last reported is the
+  // edge it saved, found by the third review of #458.
+  const givingAt = $derived(live ? live[1] : wholePart && !wholeHearing ? wholePart[0] : -1);
 
   // Whether the episode has been heard to the end of the window. A search
   // of a window not heard yet hears it first, which the title of Search says.
@@ -725,18 +744,34 @@
       const fraction = heardWindow ? -1 : 0;
       // Cancel pressed before the Go side answered: the row says so at
       // once, the same as for a search that runs.
-      if (stopping) return { what: "Stopping", left: windowText, fraction, still: true, now: true };
-      return { what: heardWindow ? "Finding clips" : "Transcribing", left: windowText, fraction, now: true };
+      const left = heardWindow ? windowText : transcribedIn(heard, from, to);
+      if (stopping) return { what: "Stopping", left, fraction, still: true, now: true };
+      return { what: heardWindow ? "Finding clips" : "Transcribing", left, fraction, now: true };
     }
     const line = stepLine(working);
+    // While it hears, or waits to, and cannot say how long it has left, the
+    // row says how much of its window is transcribed, as it grows, in the
+    // words the row of a search that stopped uses. It said the whole
+    // window, Window 0:00 to 30:00, over a window transcribed half already,
+    // Tim's report of 25 October.
+    const start = working.from ?? 0;
+    const end = working.to && working.to > 0 ? working.to : duration;
+    const hears = working.lane === "hearing" && end > start;
+    const left = line.left || (hears ? transcribedIn(heard, start, end) : windowText);
     // Cancel pressed: the row says so in the same frame, and stands still
     // where it got to, until the search has saved what it did and says it
     // stopped. It went on saying Transcribing for a second after the click.
     if (stopping) {
-      return { what: "Stopping", left: line.left || windowText, fraction: line.fraction, still: true, now: true };
+      return { what: "Stopping", left, fraction: line.fraction, still: true, now: true };
     }
-    return { ...line, left: line.left || windowText };
+    return { ...line, left };
   });
+
+  // How much of a window the parts given cover, as the rows of a search
+  // say it.
+  function transcribedIn(parts: Parts, start: number, end: number): string {
+    return `${clock(heardIn(parts, start, end))} of ${clock(end - start)} transcribed`;
+  }
 
   // What the row says, held long enough to be read. The engine reports
   // twice a second and a search goes through its steps faster than anyone
@@ -878,7 +913,7 @@
       return {
         ...span,
         what,
-        left: `${clock(heardIn(saved, start, end))} of ${clock(end - start)} transcribed`,
+        left: transcribedIn(saved, start, end),
         full: `${window}. ${how} while the window was transcribed for it. Continue transcribes the rest of it and then finds the clips`,
       };
     }
@@ -895,16 +930,10 @@
   // starts afresh in the window as it is now. Moved back, by hand or with
   // Undo, Continue carries the search on as before. Tim cancelled a search
   // to look somewhere else and could not, because the window stood locked
-  // on the range picker until the search was carried on. It is read from
-  // where the window is, so it is the same after a restart, the window
-  // being kept, and only once the window is known: before that the
-  // workspace opening would flash Search.
-  const aside = $derived(
-    !!halted &&
-      windowRead &&
-      to > from &&
-      (Math.abs(from - halted.from) > 0.5 || Math.abs(to - halted.to) > 0.5),
-  );
+  // on the range picker until the search was carried on. The Go side says
+  // it, from the video's one window, so the row and the video's dot in the
+  // sidebar say the same, after a restart too, issue #436.
+  const aside = $derived(!!halted && !!search?.aside);
   const stopped = $derived(aside ? null : halted);
   // The row as the clip list shows it. It can be removed, issue #431: it
   // says Removed and offers the search back while its time runs down, the
@@ -1107,7 +1136,10 @@
   const foundNothing = $derived.by(() => {
     if (busy || stopped) return null;
     const last = jobs.forEpisode(path).findLast((j) => j.kind === "search");
-    if (last?.state !== "done" || (last.written ?? 0) > 0) return null;
+    // A Continue counts what the search it carries on wrote: one called
+    // off once its clips were written had nothing left to write, and its
+    // row said Nothing new found, Tim's report of 25 October, 21.40.
+    if (last?.state !== "done" || (last.written ?? 0) + (last.carried ?? 0) > 0) return null;
     const job = last.id;
     if (told[job] === 0) return null;
     const fades = {
@@ -1216,44 +1248,26 @@
     }
   }
 
-  // The window the app would choose: where the fewest searches have been,
-  // earliest first, as long as the episode's windows are, see nextWindow.
-  // The workspace opens on it, and a double-click on the window's marks
-  // puts it back there. After a search the window walks on instead, see
-  // followingWindow.
-  function moveWindowOn(byHand = false) {
-    const next = nextWindow(coverage.passes, duration, windowSize, min);
-    placeWindow(next, windowSize, byHand);
-  }
-
-  // A window the app places lands on the range picker's step, the one a
-  // drag lands on, so its edges lie on the ruler's lines like a window
-  // placed by hand, and the length it carries on with is a whole number
-  // of steps. The episode's own windows are an even share of it, 30:02 of
-  // four hours, and a window that length drifted a few seconds off the
-  // lines with every search, which shows as a pixel. See onGrid.
-  function placeWindow(w: { from: number; to: number }, size: number, byHand = false) {
-    unplaced = grid <= 0;
-    const placed = onGrid(w, w.to - w.from, duration, grid, min);
-    from = placed.from;
-    to = placed.to;
-    length = grid > 0 ? Math.max(Math.round(size / grid) * grid, grid) : size;
-    keepWindow();
-    rememberWindow(byHand);
-  }
-
-  // The step of the range picker, see gridStep, 0 until it is measured.
-  // A window the app placed before then lands on it once it is known, the
-  // first time only: a window placed by hand, or kept from before, stays
-  // where it was put.
-  let grid = $state(0);
-  let unplaced = false;
-  $effect(() => {
-    if (grid > 0 && unplaced && !busy) {
-      unplaced = false;
-      placeWindow({ from, to }, windowSize);
+  // The window put back where the app places it, a double-click on its
+  // marks. The Go side places it, as it places every window the app
+  // chooses, see chosenWindow.
+  async function placeWindowBack() {
+    try {
+      drawWindow(await api.placeWindow(path));
+    } catch (err) {
+      oops(errorText(err));
     }
-  });
+  }
+
+  // The video's window, drawn as the Go side has it. It fits what a search
+  // can do with it here, or is fitted and written back, see keepWindow.
+  function drawWindow(w: KeptWindow | null) {
+    if (!w || w.to <= w.from || duration <= 0) return;
+    from = w.from;
+    to = Math.min(w.to, duration);
+    length = Math.max(w.length, to - from);
+    keepWindow();
+  }
 
   // How long the window was made, by the app or by a hand on its marks.
   // A window cut short at the end of the episode is still this long when
@@ -1269,7 +1283,7 @@
     from = start;
     to = end;
     if (done) {
-      keepWindow();
+      fit();
       length = to - from;
       rememberWindow(true);
     }
@@ -1279,27 +1293,36 @@
   // what that is changes: the room, or the clips asked for. Not while clips
   // are being found for it, because then it is the window being searched.
   // Nor while a search stands stopped on it, because it is the window
-  // Continue carries on.
+  // Continue carries on. A window fitted is written back, so the window
+  // drawn is the video's window.
   function keepWindow() {
-    if (busy || stopped || duration <= 0 || to <= from) return;
-    const kept = fitWindow({ from, to }, reachAnywhere, leastLong, duration);
-    if (Math.abs(kept.from - from) > 0.001) from = kept.from;
-    if (Math.abs(kept.to - to) > 0.001) to = kept.to;
+    if (fit()) rememberWindow();
   }
 
-  async function refreshRoom() {
+  function fit(): boolean {
+    if (busy || stopped || duration <= 0 || to <= from) return false;
+    const kept = fitWindow({ from, to }, reachAnywhere, leastLong, duration);
+    const moved = Math.abs(kept.from - from) > 0.001 || Math.abs(kept.to - to) > 0.001;
+    if (Math.abs(kept.from - from) > 0.001) from = kept.from;
+    if (Math.abs(kept.to - to) > 0.001) to = kept.to;
+    return moved;
+  }
+
+  // keep is false when another window is on its way, see load, so the
+  // window still drawn is not fitted and written back over it.
+  async function refreshRoom(keep = true) {
     try {
       roomView = await api.room(path);
     } catch {
       roomView = null;
     }
-    keepWindow();
+    if (keep) keepWindow();
   }
 
-  // The window the workspace opens with: the one the episode was left
-  // with, after a restart too, and where there is none, the one the app
-  // would choose, see moveWindowOn. One that no longer fits the episode
-  // is not one.
+  // The window the workspace opens with: the video's window, which the
+  // Go side keeps and places, see chosenWindow. A search that runs has
+  // its window drawn when it is heard of, see followed, and it is the
+  // same window, because every search starts on the video's window.
   async function openWindow(asked: Promise<KeptWindow | null> = api.chosenWindow(path)) {
     const was = path;
     let kept: KeptWindow | null = null;
@@ -1309,28 +1332,11 @@
       kept = null;
     }
     if (path !== was) return;
-    windowRead = true;
-    if (kept && kept.to > kept.from && kept.to <= duration + 0.5) {
-      from = kept.from;
-      to = Math.min(kept.to, duration);
-      length = Math.max(kept.length, to - from);
-      keepWindow();
-      return;
-    }
-    // A search that stopped holds its window, so a workspace opened on one
-    // opens on it rather than set it aside.
-    if (halted) {
-      from = halted.from;
-      to = halted.to;
-      length = to - from;
-      return;
-    }
-    moveWindowOn();
+    drawWindow(kept);
   }
 
-  // The window is kept the moment it changes, by a hand, by a search that
-  // moved it on, or by a double-click that put it back, so it is where it
-  // was left when the episode is opened again.
+  // The window is written the moment a hand moves it, or the workspace
+  // fits it, so the Go side's window is the window drawn.
   function rememberWindow(byHand = false) {
     if (duration <= 0 || to <= from) return;
     api.chooseWindow(path, from, to, Math.max(length, to - from), byHand).catch(() => {});
@@ -1436,7 +1442,12 @@
     }
   }
 
-  async function load() {
+  // moved is the window a search that ended moved on to, asked for with
+  // the rest. It is drawn with the clips the search found, and the window
+  // still drawn is not fitted to the new room and written back over it,
+  // found by the fourth review of #458.
+  async function load(moved?: Promise<KeptWindow | null>) {
+    const was = path;
     try {
       const ticket = statusRead.send();
       const now = await api.episode(path);
@@ -1446,12 +1457,17 @@
       const found = !source && !status.missing;
       if (found) source = await api.source(path);
       if (!status.missing) await refreshCoverage();
-      if (!status.missing) await refreshRoom();
+      if (!status.missing) await refreshRoom(!moved);
       if (found && source) await openWindow();
+      const next = moved ? await moved.catch(() => null) : null;
       await refreshClips();
+      movingOn = false;
+      if (next && path === was) drawWindow(next);
       keepRemovedTrue();
     } catch (err) {
       oops(errorText(err));
+    } finally {
+      movingOn = false;
     }
   }
 
@@ -1766,6 +1782,7 @@
   async function makeClip(backward: boolean) {
     if (duration <= 0) return;
     pressed = backward ? "out" : "in";
+    jobs.clipsAsked(path);
     try {
       const job = await api.makeClip(path, time, backward);
       jobs.apply(job);
@@ -2751,9 +2768,8 @@
   // A click shows at once: the list opens its rows and the head says
   // Cancel before the job has reported in. It gives the press its name.
   function begin(): string {
-    starting = true;
+    jobs.press(path, "clips");
     click = `${Date.now()}-${++clicks}`;
-    stoppedAt = null;
     listedBefore = new Set(clips.map((c) => c.key));
     pickedBefore = selected;
     shownFirst = false;
@@ -2791,10 +2807,10 @@
     try {
       const job = await ask();
       jobs.apply(job);
-      if (job.state !== "running" && job.state !== "queued") starting = false;
     } catch (err) {
       oops(errorText(err));
-      starting = false;
+    } finally {
+      jobs.answered(path, "clips");
     }
   }
 
@@ -2889,7 +2905,7 @@
 
   // The job has reported in, so the placeholder can give way to it.
   $effect(() => {
-    if (working) starting = false;
+    if (working) untrack(() => jobs.answered(path, "clips"));
   });
 
   // The window on the range picker is the window being searched, for as
@@ -2906,11 +2922,6 @@
     if (end > start) {
       from = start;
       to = end;
-      // Where the search is, not where the app placed a window before the
-      // range picker was measured, see unplaced. And kept, so a search the
-      // app is closed on opens on its own window, see aside.
-      unplaced = false;
-      rememberWindow();
     }
     if (!listedBefore) {
       listedBefore = new Set(clips.map((c) => c.key));
@@ -2996,6 +3007,18 @@
   // While the transcript grows, the covered part of the timeline grows.
 
 
+  // And when the whole video's work ends, which no search's hearing says:
+  // the workspace kept what it read last, so stopped on its last pieces
+  // the video was heard to its end and the dots stayed, found by the
+  // second review of #458.
+  const wholeOn = $derived(!!wholeWork);
+  let wasWhole = false;
+  $effect(() => {
+    const now = wholeOn;
+    if (wasWhole && !now) untrack(() => load());
+    wasWhole = now;
+  });
+
   // How far the episode has been heard is read again when the hearing
   // stops, so the range picker's edge lands on what was saved.
   let wasTranscribing = false;
@@ -3022,20 +3045,20 @@
     if (!searchRan) return;
     const ended = jobs.list.find((j) => j.id === searchRan);
     searchRan = "";
-    starting = false;
+    untrack(() => jobs.answered(path, "clips"));
     onchange();
-    load().then(() => {
+    // The window walks on from where the search ended, as long as it was,
+    // which the Go side did before the search said it was done. Asked for
+    // with the rest and drawn with the clips found, so the window does not
+    // move one answer after the first clip is picked.
+    const moved = ended?.state === "done" ? api.chosenWindow(path) : undefined;
+    moved?.catch(() => {});
+    movingOn = !!moved;
+    load(moved).then(() => {
       if (ended?.state !== "done") {
         listedBefore = null;
         return;
       }
-      // The window walks on from where the search ended, as long as it
-      // was, and starts over at the start at the end of the episode, see
-      // followingWindow. The search's own window, which the Go side may
-      // have started by itself, not whatever the workspace held.
-      const searchedTo = ended.to && ended.to > 0 ? ended.to : duration;
-      const size = length || searchedTo - (ended.from ?? 0);
-      placeWindow(followingWindow(searchedTo, size, duration, min), size);
       // The earliest clip it found, unless something else has been picked
       // since the search chose one, which is where the hand is now.
       showFirstFound(true);
@@ -3234,7 +3257,7 @@
     {duration}
     {from}
     {to}
-    shown={busy}
+    shown={(busy || movingOn) && !stopping}
     resumes={!!stopped}
     {marks}
     {selected}
@@ -3246,14 +3269,17 @@
     onhold={(held) => player?.hold(held)}
     dimmed={!onClip}
     locked={busy}
-    unheard={saying ? unheard : []}
-    {unheardLit}
+    {unheard}
+    unheardLit={saying ? unheardLit : -1}
     unheardOn={saying ? unheardOn : -1}
-    giving={live && !stoppedAt ? live[1] : -1}
-    onhoverunheard={(i) => (unheardLit = i)}
+    giving={givingAt}
+    givingTo={transcribing && transcribing.to ? transcribing.to : -1}
+    part={wholePart}
+    partWaiting={!wholeHearing}
+    partKey={wholeWork?.id ?? ""}
+    onhoverunheard={saying ? (i) => (unheardLit = i) : undefined}
     onmove={moveWindow}
-    onreset={() => moveWindowOn(true)}
-    bind:grid
+    onreset={() => void placeWindowBack()}
     least={leastLong}
     leastSays={typed > 0 ? `room for ${typed} clips of ${min} s` : `room for a clip of ${min} s`}
     most={reachAnywhere}
