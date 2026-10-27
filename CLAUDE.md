@@ -121,14 +121,19 @@ Start with [README.md](README.md). In short:
   something seen while testing: it becomes a
   [GitHub issue](https://github.com/timmrkz/framefairy/issues) of its
   own, with what was seen, where, and who found it, linked in the
-  reply. It carries one label or more: `bug`, `feature`, `tests` for
-  tests, walks and CI, `reliability`, `performance`, or `shipping` for
-  getting the app to customers. Opening an issue changes no file, so it needs no push and
+  reply. It carries one label or more for its kind: `bug`, `feature`,
+  `tests` for tests, walks and CI, `reliability`, `performance`, or
+  `shipping` for getting the app to customers. It also carries one
+  priority, `priority/critical`, `priority/important` or
+  `priority/backlog`, and one size, `size/small`, `size/medium` or
+  `size/large`, as [docs/WORKFLOW.md](docs/WORKFLOW.md#priority-and-size)
+  defines them. Opening an issue changes no file, so it needs no push and
   starts no CI run. The work on the open pull request carries on. Once
-  it is merged, the next piece of work is the oldest open issue Tim
-  opened or a session opened for him, unless Tim puts them in another
-  order. A report that is about the open pull request is that pull
-  request's work, as before.
+  it is merged, the next piece of work is the open issue of the highest
+  priority, the smallest first and then the oldest, of those Tim opened
+  or a session opened for him, unless Tim puts them in another order. A
+  report that is about the open pull request is that pull request's
+  work, as before.
 - **Open work is GitHub issues, never rows in a file.** Every pull
   request once added its row at the end of the same table in
   [docs/GUI-PLAN.md](docs/GUI-PLAN.md), so any two of them conflicted,
@@ -809,8 +814,9 @@ the skills listed last show their name without what they are for.
 
 Open work is in the [issues](https://github.com/timmrkz/framefairy/issues).
 The batch plan up to 16 October 2026, with the decisions it was built
-on, is in [docs/GUI-PLAN.md](docs/GUI-PLAN.md). Next up, roughly in this
-order:
+on, is in [docs/GUI-PLAN.md](docs/GUI-PLAN.md). The issues for this
+long-term work carry `priority/backlog`, and this list gives their
+order. Next up, roughly in this order:
 
 - Tim's feedback from testing the current workspace
 - the video preview on one engine, ffmpeg, see
