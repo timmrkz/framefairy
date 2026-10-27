@@ -590,7 +590,13 @@ func (s *FrameFairy) CheckSetup(ctx context.Context) []Check {
 	}
 
 	out = append(out, toolCheck(ctx, "FRAMEFAIRY_LLAMA_SERVER", "llama-server"))
+	return append(out, languageCheck(opts))
+}
 
+// languageCheck says whether the local model that finds clips is ready,
+// from the settings and the models folder alone, so a test of which model
+// is in use runs none of the programs the checks above run, issue #518.
+func languageCheck(opts engine.Options) Check {
 	lm := Check{Name: "Language model"}
 	model := opts.LLMModel
 	// Said in the app's own words: the engine's are for the command line,
@@ -615,7 +621,7 @@ func (s *FrameFairy) CheckSetup(ctx context.Context) []Check {
 			lm.Detail = known.Title + " is not downloaded yet."
 		}
 	}
-	return append(out, lm)
+	return lm
 }
 
 func fileExists(path string) bool {

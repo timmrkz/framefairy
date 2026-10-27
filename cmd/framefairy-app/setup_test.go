@@ -682,3 +682,26 @@ func TestTheCheckSaysWhichToolsTheAppRuns(t *testing.T) {
 		t.Errorf("ffmpeg says no version: %+v", found["ffmpeg"])
 	}
 }
+
+// With the local model chosen, Setup ends in the language model's line,
+// which Settings reads to say what is wrong with the model. The tests of
+// which model is in use read that line alone, see languageCheck, so this
+// one holds that Setup still shows it. TestMain names the ffmpeg and
+// ffprobe of the machine, which Setup would run, so they are taken away
+// again: this test is about the last line, not the programs.
+func TestSetupEndsInTheLanguageModelsLine(t *testing.T) {
+	s := emptyMachine(t)
+	t.Setenv("FRAMEFAIRY_FFMPEG", "")
+	t.Setenv("FRAMEFAIRY_FFPROBE", "")
+	if err := s.ChoosePlanner("local"); err != nil {
+		t.Fatal(err)
+	}
+	checks := s.CheckSetup(context.Background())
+	last := checks[len(checks)-1]
+	if last.Name != "Language model" {
+		t.Fatalf("Setup ends in %q, not the language model", last.Name)
+	}
+	if last.OK || !strings.Contains(last.Detail, "None is installed") {
+		t.Errorf("an empty machine's language model: %+v", last)
+	}
+}

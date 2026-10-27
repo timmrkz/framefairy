@@ -182,6 +182,13 @@
     }
   }
 
+  // Undo of Clear puts its pictures back one call at a time, and Redo
+  // clears with a call of its own. Each waits for the one before to be
+  // answered, or a Redo pressed while Undo was still putting pictures
+  // back cleared between them, and the pictures put back after it stayed
+  // in the report with the words gone, issue #554.
+  let turn: Promise<void> = Promise.resolve();
+
   // Undo and Redo in the Edit menu. After Clear they bring everything
   // back and clear it again. Otherwise they go to the field, as on every
   // page with no workspace, or Cmd+Z in it would do nothing.
@@ -201,27 +208,38 @@
       quiet = false;
     }
     read();
-    if (how === "redo") {
-      if (saving) clearTimeout(saving);
-      saving = null;
-      pictures = pictures.filter((p) => !c.pics.some((q) => q.id === p.id));
-      try {
-        took(await api.clearReport());
-      } catch (e) {
-        oops(sentence(e));
+    const before = turn;
+    let done = () => {};
+    turn = new Promise((r) => (done = r));
+    try {
+      if (how === "redo") {
+        if (saving) clearTimeout(saving);
+        saving = null;
+        pictures = pictures.filter((p) => !c.pics.some((q) => q.id === p.id));
+        await before;
+        try {
+          took(await api.clearReport());
+        } catch (e) {
+          oops(sentence(e));
+        }
+        return;
       }
-      return;
-    }
-    pictures = [...pictures, ...c.pics].sort((a, b) => order(a.id) - order(b.id));
-    let last: ReportDraft | null = null;
-    for (const p of c.pics) {
-      try {
-        last = await api.putBackPicture(p.id);
-      } catch (e) {
-        oops(sentence(e));
+      pictures = [...pictures, ...c.pics].sort((a, b) => order(a.id) - order(b.id));
+      await before;
+      let last: ReportDraft | null = null;
+      for (const p of c.pics) {
+        try {
+          last = await api.putBackPicture(p.id);
+        } catch (e) {
+          oops(sentence(e));
+        }
       }
+      // A Redo pressed meanwhile has taken the pictures away again, and
+      // shows what its clear leaves.
+      if (last && c.undone) took(last);
+    } finally {
+      done();
     }
-    if (last) took(last);
   }
   onMount(() => onUndo(undo));
 

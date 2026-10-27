@@ -317,6 +317,29 @@ export default [
     ],
   },
   {
+    // Issue #554. Undo of Clear puts the pictures back one call at a
+    // time. A Redo pressed before they were answered cleared between
+    // them, and the second picture came back after the clear, with the
+    // words gone. The first put back is held at the Go side until Redo
+    // has been pressed, the way a busy machine delivers it late.
+    name: "Redo pressed while Undo of Clear is putting the pictures back clears them all",
+    steps: [
+      ["bugs"],
+      ["write", "It froze.", "end"],
+      ["attach", 2],
+      ["clear", "clear"],
+      ["pictures", 0],
+      ["hold", "PutBackPicture"],
+      ["undo then redo"],
+      ["report reads", ""],
+      ["pictures", 0],
+      ["close report"],
+      ["bugs"],
+      ["report reads", ""],
+      ["pictures", 0],
+    ],
+  },
+  {
     // Issue #415. Clear's undo lasts only until something else is typed,
     // attached or removed. Typing after Clear starts a new report, and
     // Cmd+Z then takes back the typing, never the pictures Clear removed.
