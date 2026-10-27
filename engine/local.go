@@ -378,20 +378,25 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 	url := fmt.Sprintf("http://127.0.0.1:%d", port)
 	cmd := exec.Command(server, args...)
 	cmd.Env = append(os.Environ(), "LLAMA_API_KEY="+key)
+	// The server says when it is up, see readyMarks, and the wait for it
+	// ends on that line rather than on the next look of a clock.
+	ready := make(chan struct{}, 1)
+	heard := &hearReady{out: io.Discard, ready: ready}
+	cmd.Stdout, cmd.Stderr = heard, heard
 	var logFile *os.File
 	if logDir != "" {
 		// The model can be loaded ahead of a search, before anything else
 		// of the episode has made its logs folder. Without the folder the
 		// log was lost, and with it the only record of what the model
-		// took from memory. llama-server writes the log itself, so it is
-		// on the disk, see files.go.
+		// took from memory. The log is llama-server's own output, so it
+		// is on the disk, see files.go.
 		if err = os.MkdirAll(logDir, 0o755); err == nil {
 			logFile, err = os.Create(filepath.Join(logDir, "llm-server.log"))
 		}
 		if err != nil {
 			e.Log.Warn("llama-server's output is not kept: %s", err)
 		} else {
-			cmd.Stdout, cmd.Stderr = logFile, logFile
+			heard.out = logFile
 		}
 	}
 	if err := cmd.Start(); err != nil {
@@ -444,6 +449,11 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 
 	started := time.Now()
 	for {
+		// A look at the server's health follows each line that says it is
+		// up, and a look every half second follows a server that says
+		// nothing, which no llama-server we know is. Waiting the half
+		// second before the first look was every stand-in server of the
+		// tests waiting for it, #550.
 		select {
 		case <-ctx.Done():
 			stop()
@@ -461,7 +471,8 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 			}
 			return "", nil, renderErr("%s stopped while loading the model (%v).%s Its output is "+
 				"in %s", server, exitErr, why, filepath.Join(logDir, "llm-server.log"))
-		case <-time.After(500 * time.Millisecond):
+		case <-ready:
+		case <-lookAgain(500 * time.Millisecond):
 		}
 		// How far the loading is, is the search's to say: it knows how long
 		// it took before.
@@ -487,6 +498,52 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 			return "", nil, renderErr("the language model did not finish loading within 10 minutes")
 		}
 	}
+}
+
+// lookAgain is the wait before the next look at a loading server that has
+// said nothing, a variable so a test can take it away and prove the
+// server's own word is enough.
+var lookAgain = time.After
+
+// readyMarks are the lines llama-server writes once it may be ready: b11430
+// says "model loaded" once the model is in memory and "server is listening"
+// once it takes requests. Either is followed by a look at its health, which
+// decides. An earlier line about its HTTP server listening while it still
+// loads is looked at too, and found not ready yet.
+var readyMarks = [][]byte{[]byte("model loaded"), []byte("server is listening")}
+
+// hearReady passes llama-server's output on to out and says on ready
+// whenever a line of it holds one of readyMarks. It keeps the end of what
+// came before, so a mark split over two writes is heard too.
+type hearReady struct {
+	out   io.Writer
+	ready chan<- struct{}
+	tail  []byte
+}
+
+func (h *hearReady) Write(p []byte) (int, error) {
+	// A log that cannot be written is no reason to stop hearing the
+	// server, nor to stop the server, which would be sent a broken pipe.
+	_, _ = h.out.Write(p)
+	seen := append(h.tail, p...)
+	// What is kept is the end a mark split over two writes may begin in,
+	// and nothing of a mark already heard, so no mark is heard twice.
+	from := len(seen)
+	for _, mark := range readyMarks {
+		from = min(from, len(seen)-len(mark)+1)
+	}
+	from = max(from, 0)
+	for _, mark := range readyMarks {
+		if at := bytes.LastIndex(seen, mark); at >= 0 {
+			from = max(from, at+len(mark))
+			select {
+			case h.ready <- struct{}{}:
+			default:
+			}
+		}
+	}
+	h.tail = append(h.tail[:0], seen[from:]...)
+	return len(p), nil
 }
 
 // healthWait is how long one look at a loading server may take. A server

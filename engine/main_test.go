@@ -3,6 +3,7 @@ package engine
 import (
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -66,7 +67,8 @@ func ownRecords(e *Engine) *Records {
 
 // stubbornServer is this test binary run as a llama-server that says it is
 // ready and ignores being asked to stop, the way a real one can hang on the
-// way out while one of its threads waits for an answer.
+// way out while one of its threads waits for an answer. It says it is
+// listening once it is, in llama-server's words.
 func stubbornServer() {
 	signal.Ignore(os.Interrupt)
 	port := ""
@@ -75,8 +77,14 @@ func stubbornServer() {
 			port = os.Args[i+1]
 		}
 	}
+	listener, err := net.Listen("tcp", "127.0.0.1:"+port)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 	http.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {})
-	_ = http.ListenAndServe("127.0.0.1:"+port, nil)
+	fmt.Printf("main: server is listening on http://127.0.0.1:%s - starting the main loop\n", port)
+	_ = http.Serve(listener, nil)
 }
 
 // holdLock is this test binary run as another program that edits a file:

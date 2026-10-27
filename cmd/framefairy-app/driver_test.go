@@ -57,10 +57,11 @@ type desk struct {
 	// long as in the app.
 	still chan struct{}
 	most  int
-	// measured hears each time the app tells the window how loud the
-	// microphone is, when set, so the bridge's microphone hands over its
-	// next tenth of a second then, at the pace the app reads it.
-	measured chan struct{}
+	// beats, when set, are the clocks of every recording, see
+	// listening.beats, and told hears each Dictation the app tells the
+	// window, so the bridge knows what a step of a recording told.
+	beats *listenBeats
+	told  func(Dictation)
 	// The report windows Bugs made and brought forward, the window the
 	// app would have made, and the pictures its open box hands over
 	// next, see bugs.go.
@@ -111,17 +112,15 @@ func (d *desk) start(st *store) {
 	d.svc = &FrameFairy{store: st}
 	d.svc.jobs = newQueue(st, func(u JobUpdate) { d.bus.send("job", u) },
 		func(episode string) { d.bus.send("episode", episode) })
-	d.svc.listening.say = func(x Dictation) { d.bus.send("dictation", x) }
-	d.svc.listening.loud = func(n Loudness) {
-		d.bus.send("loudness", n)
-		if d.measured != nil {
-			select {
-			case d.measured <- struct{}{}:
-			default:
-			}
+	d.svc.listening.say = func(x Dictation) {
+		if d.told != nil {
+			d.told(x)
 		}
+		d.bus.send("dictation", x)
 	}
+	d.svc.listening.loud = func(n Loudness) { d.bus.send("loudness", n) }
 	d.svc.listening.still = d.still
+	d.svc.listening.beats = d.beats
 	d.svc.listening.most = d.most
 	d.svc.report = newReporting(st.files, filepath.Join(st.dir, "report"))
 	// The clipboard is the desk's, so a walk can read what was copied.

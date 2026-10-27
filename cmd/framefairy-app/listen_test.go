@@ -18,17 +18,11 @@ import (
 	"framefairy/engine"
 )
 
-// playingMicrophone stands in for the microphone: it hands over its
+// playingMicrophone stands in for the microphone: it hands over all its
 // samples a tenth of a second at a time, from a goroutine of its own the
-// way the system's does. Live, it hands over a tenth each time paced says
-// so, until it is stopped. Otherwise it hands over all of them at once,
-// before it can be stopped. Live and with more, what is said after
-// samples is asked of it once they are handed over, and again after that,
-// until it gives nothing: a person who talks on.
+// way the system's does, before it can be stopped.
 type playingMicrophone struct {
 	samples []float32
-	paced   <-chan struct{}
-	more    func() []float32
 	stopped chan struct{}
 	done    chan struct{}
 }
@@ -37,31 +31,12 @@ func (m *playingMicrophone) start(heard func([]float32)) error {
 	m.stopped, m.done = make(chan struct{}), make(chan struct{})
 	go func() {
 		defer close(m.done)
-		for samples := m.samples; len(samples) > 0; samples = m.next() {
-			for at := 0; at < len(samples); at += engine.SampleRate / 10 {
-				if m.paced != nil {
-					select {
-					case <-m.stopped:
-						return
-					case <-m.paced:
-					}
-				}
-				heard(samples[at:min(at+engine.SampleRate/10, len(samples))])
-			}
+		for at := 0; at < len(m.samples); at += engine.SampleRate / 10 {
+			heard(m.samples[at:min(at+engine.SampleRate/10, len(m.samples))])
 		}
 		<-m.stopped
 	}()
 	return nil
-}
-
-// next is what is said after what was handed over, nothing without more
-// or when the microphone is not live, which would hand it all over at once
-// and never be stopped.
-func (m *playingMicrophone) next() []float32 {
-	if m.more == nil || m.paced == nil {
-		return nil
-	}
-	return m.more()
 }
 
 func (m *playingMicrophone) stop() {
@@ -797,6 +772,57 @@ func TestTheMicrophoneSaysHowLoud(t *testing.T) {
 			t.Errorf("a quiet room was told as %v", l)
 		}
 	})
+}
+
+// A recording handed beats from outside reads how loud the microphone is
+// on each level beat and writes down what is said on each pass beat, and
+// says once each reading and each pass is over, after it told the window
+// what it found.
+// The bridge hands them, so a walk hears a recording at its own pace,
+// #551.
+func TestARecordingRunsOnTheBeatsItIsHanded(t *testing.T) {
+	levels, passes := make(chan time.Time), make(chan time.Time)
+	measured, passed := make(chan struct{}, 1), make(chan struct{}, 1)
+	loud := make(chan float64, 10)
+	f, mic, told := dictating(t, func(l *listening) {
+		l.beats = &listenBeats{levels: levels, passes: passes, measured: measured, passed: passed}
+		l.loud = func(n Loudness) { loud <- n.Level }
+	})
+	defer f.CancelListening()
+	// Each reading says it is over once the window has been told it, and
+	// reads what was said since the one before.
+	mic.say(tone(0.1))
+	levels <- time.Time{}
+	<-measured
+	select {
+	case l := <-loud:
+		if l <= 0.5 {
+			t.Errorf("a voice was told as %v on a level beat", l)
+		}
+	default:
+		t.Error("the reading was over before the window was told how loud")
+	}
+	mic.say(hush(0.1))
+	levels <- time.Time{}
+	<-measured
+	if l := <-loud; l >= 0.2 {
+		t.Errorf("a quiet room after a voice was told as %v", l)
+	}
+	mic.say(tone(1))
+	passes <- time.Time{}
+	<-passed
+	select {
+	case d := <-told:
+		if d.Hearing == "" {
+			t.Errorf("the pass told %+v, with nothing heard", d)
+		}
+	default:
+		t.Error("the pass was over before it told the window what it heard")
+	}
+	// Each pass says so once it is over, the next one too.
+	mic.say(tone(1))
+	passes <- time.Time{}
+	<-passed
 }
 
 // A recording goes with the report window it was started in. Tim closed

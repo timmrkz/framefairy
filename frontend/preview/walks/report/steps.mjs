@@ -4,7 +4,7 @@
 // the step's argument, what the caption box showed before it and the step's
 // name. A sequence of any folder can take it. Below them the helpers only
 // these steps use. See docs/TESTING.md.
-import { ask, caughtUp, control, fromSidebar, letClockGo, letHeld, noDeadlines, pageUntil, runClock, seenUntil, settle, sidebarStill, slowDown } from "../bridge.mjs";
+import { ask, caughtUp, control, fromSidebar, letClockGo, letHeld, nextPaint, noDeadlines, pageUntil, runClock, seenUntil, settle, sidebarStill, slowDown } from "../bridge.mjs";
 import { dropOn, standsAt, stillStands, toastSays, toastsSay, url } from "../common/steps.mjs";
 
 export const steps = {
@@ -633,7 +633,11 @@ export const steps = {
     // whole pixels and shook on Tim's Mac. It falls back no faster
     // than a level meter's needle, a third of a second for the whole
     // way: jumping to every reading shook too.
-    const { xs: track, writes } = await page.evaluate(
+    // The recording goes on a tenth of a second a frame while the walk
+    // watches, see /microphone, so the hum, its pause and the hum after
+    // it each stand for frames on the page.
+    let watched = false;
+    const watching = page.evaluate(
       () =>
         new Promise((done) => {
           const b = document.querySelector("button.dictate");
@@ -678,6 +682,12 @@ export const steps = {
           requestAnimationFrame(step);
         }),
     );
+    void watching.then(() => (watched = true));
+    while (!watched) {
+      await control(url, "/microphone?until=tenth");
+      await nextPaint(page);
+    }
+    const { xs: track, writes } = await watching;
     const widest = Math.max(...track.map((f) => f.w));
     const loudest = Math.max(...track.map((f) => f.loud));
     const boxes = [...new Set(track.map((f) => f.box))];
@@ -869,6 +879,8 @@ export const steps = {
   async "report stays"(walk, arg, s, what) {
     const { kept, page } = walk;
     const was = await page.locator(".telling").evaluate((f) => f.innerText);
+    // The recording goes on until more words are heard, see /microphone.
+    await control(url, "/microphone?until=hearing");
     await pageUntil(page, (was) => document.querySelector(".telling").innerText !== was, was);
     await settle(page);
     const m = await page.locator(".telling").evaluate((f) => {
@@ -1038,38 +1050,40 @@ export const steps = {
       // words shown as being heard when the recording stops can be
       // written down as none, and the walk of Shift+Enter then found
       // nothing said after the new line on a busy machine, issue #424.
-      // What is settled is kept however the recording ends.
-      const more = await page.locator(".telling").evaluate(
-        (f) =>
-          new Promise((done) => {
-            const button = document.querySelector("button.dictate");
-            const settled = () => {
-              const copy = f.cloneNode(true);
-              copy.querySelector(".hearing")?.remove();
-              return copy.textContent;
-            };
-            const was = settled();
-            const look = () => {
-              const ended = button.getAttribute("aria-label") === "Dictate";
-              if (settled() === was && !ended) return;
-              seen.disconnect();
-              done(!ended);
-            };
-            const seen = new MutationObserver(look);
-            seen.observe(f, { subtree: true, childList: true, characterData: true });
-            seen.observe(button, { attributes: true, attributeFilter: ["aria-label"] });
-            look();
-          }),
+      // What is settled is kept however the recording ends. The
+      // recording goes on until the speech model has settled more of
+      // what it heard, see /microphone, and the field shows it.
+      const settled = () => {
+        const copy = document.querySelector(".telling").cloneNode(true);
+        copy.querySelector(".hearing")?.remove();
+        return copy.textContent;
+      };
+      const was = await page.evaluate(settled);
+      await control(url, "/microphone?until=said");
+      await pageUntil(
+        page,
+        (was) => {
+          const copy = document.querySelector(".telling").cloneNode(true);
+          copy.querySelector(".hearing")?.remove();
+          return copy.textContent !== was || document.querySelector("button.dictate").getAttribute("aria-label") === "Dictate";
+        },
+        was,
       );
-      if (!more) walk.wrong = "the recording stopped before anything more was said and settled";
+      if ((await page.evaluate(settled)) === was) walk.wrong = "the recording stopped before anything more was said and settled";
       return;
     }
     if (arg === "settled") {
       // The field's text grows by what was said before the pause.
+      await control(url, "/microphone?until=said");
       await pageUntil(page, (was) => document.querySelector(".telling").innerText !== was, kept.dictating);
       return;
     }
     const running = (await button.getAttribute("aria-label")) === "Stop";
+    // The recording goes on in steps that take a moment all told, and
+    // what each tells the window is sent once. A report window just
+    // opened may not be listening yet, and missed every reading of how
+    // loud the microphone was, so the walk waits until it is.
+    if (!running) await caughtUp(page, url);
     if (!running) await button.click();
     // Stop the moment it is pressed, see the rules on a click.
     const said = await button.getAttribute("aria-label");
@@ -1077,11 +1091,18 @@ export const steps = {
       walk.wrong = `Dictate says "${said}" the frame after it was pressed, not Stop`;
       return;
     }
-    // The words appear while they are heard, before anything stops.
+    // The words appear while they are heard, before anything stops. The
+    // recording goes on until the app has told words being heard, see
+    // /microphone.
+    await control(url, "/microphone?until=hearing");
     await pageUntil(page, () => document.querySelector(".telling .hearing")?.textContent.trim());
-    // The microphone moves with the voice it hears, so a person knows
-    // they are heard. The bridge's microphone plays a tone.
-    await pageUntil(page, () => parseFloat(document.querySelector("button.dictate")?.dataset.loud) > 0.3);
+    if (!running) {
+      // The microphone moves with the voice it hears, so a person knows
+      // they are heard. The bridge's microphone plays a tone, and a new
+      // recording starts with two seconds of it. One already running may
+      // stand in its pause, and stays there between steps.
+      await pageUntil(page, () => parseFloat(document.querySelector("button.dictate")?.dataset.loud) > 0.3);
+    }
     // Two notes going up say the microphone is open, while it is.
     const up = await page.evaluate(() => window.__notes.slice(-2));
     if (up.length < 2 || !up.every((n) => n.open) || up[0].f >= up[1].f) {
@@ -1094,11 +1115,18 @@ export const steps = {
       kept.dictating = await page.locator(".telling").evaluate((f) => f.innerText);
       return;
     }
+    // Something said is settled before the recording is ended, so what
+    // it ends with is more than the words last heard. The stand-in speech
+    // model hears new words each time it is asked, and words that fit
+    // what was heard so far can be followed by a word that does not, so
+    // the end could write down nothing, issue #424.
+    if (arg !== "ends") await control(url, "/microphone?until=settled");
     if (arg === "button") await button.click();
     else if (arg === "ends") {
       // Nobody presses anything, and nobody talks any more: it stops
       // by itself and says why.
       await control(url, "/microphone?silent=1");
+      await control(url, "/microphone?until=ended");
       await pageUntil(page, () => /without a word/.test(document.querySelector(".words")?.textContent ?? ""));
     } else {
       await page.locator(".telling").focus();
