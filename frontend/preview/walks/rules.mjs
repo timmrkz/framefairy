@@ -3,7 +3,7 @@
 // and the engine's answer with itself before and after, and know nothing
 // of what a correction should do, so they cannot drift into a third
 // engine. See docs/TESTING.md.
-import { letHeld, engineState, settledScreen } from "./bridge.mjs";
+import { letHeld, engineState, settle, settledScreen } from "./bridge.mjs";
 
 // The engine's captions as a list of words, and as one comparable value.
 export const words = (caps) =>
@@ -103,7 +103,20 @@ export function overlaid(samples, state, frame) {
 // held clock a picture that does not stand yet is a walk that reads it at
 // the wrong time, and fails at once.
 export async function stillBlurred(page) {
-  const said = await page.evaluate(
+  const got = await stillFrame(page);
+  if (!got || (got.state !== "paused" && got.state !== "cued")) return null;
+  if (got.frame[0] === got.want[0] && got.frame[1] === got.want[1]) return null;
+  return `the frame on the video preview is ${got.frame.join(" by ")}, the canvas is ${got.canvas.join(" by ")} and the file ${got.file.join(" by ")}, so it should be ${got.want.join(" by ")}`;
+}
+
+// The frame on the video preview once the picture stands, read in the
+// then of __standing so nothing comes between: its size, the canvas's,
+// the file's, the size it should have been decoded at, the size the
+// workspace asked its first frame at and the frame queue's state. Null
+// with no frame on the canvas. Under a held clock the picture cannot
+// come to stand by itself, so a read then is a mistake of the walk's.
+export async function stillFrame(page) {
+  const got = await page.evaluate(
     (held) =>
       window.__standing(held).then((stands) => {
         if (!stands) return { held: true };
@@ -111,17 +124,19 @@ export async function stillBlurred(page) {
         const c = document.querySelector(".screen canvas");
         const f = q?.picture();
         const v = q?.video;
-        if (!f || !v || !c || (q.state !== "paused" && q.state !== "cued")) return {};
-        const scale = Math.min(1, c.width / v.width, c.height / v.height);
-        const even = (n) => Math.max(2, Math.round(n / 2) * 2);
-        const want = [even(v.width * scale), even(v.height * scale)];
-        if (f.width === want[0] && f.height === want[1]) return {};
-        return { blurred: `the frame on the video preview is ${f.width} by ${f.height}, the canvas is ${c.width} by ${c.height} and the file ${v.width} by ${v.height}, so it should be ${want.join(" by ")}` };
+        if (!f || !v || !c) return null;
+        const first = window.__appFrames?.stats.first ?? "";
+        return { frame: [f.width, f.height], canvas: [c.width, c.height], file: [v.width, v.height], first, state: q.state };
       }),
     Boolean(page.__held),
   );
-  if (said.held) throw new Error("the picture was read for its size under a held clock before it stood, see stillBlurred");
-  return said.blurred ?? null;
+  if (got?.held) throw new Error("the picture was read for its size under a held clock before it stood, see stillFrame");
+  if (!got) return null;
+  const [cw, ch] = got.canvas;
+  const [vw, vh] = got.file;
+  const scale = Math.min(1, cw / vw, ch / vh);
+  const even = (n) => Math.max(2, Math.round(n / 2) * 2);
+  return { ...got, want: [even(vw * scale), even(vh * scale)] };
 }
 
 // Watches one page through the steps made on it.
@@ -152,12 +167,22 @@ export class Watch {
   // After a step: kind is "undo", "redo" or "open" for those three, and s
   // is the caption box as it was before the step. Waits for the app to
   // settle, checks every rule, and hands back what is now on screen and
-  // what the engine now says.
-  async step(kind, s) {
+  // what the engine now says. acted is the page the step acted on, the
+  // report window when it is not the app's window.
+  async step(kind, s, acted = this.page) {
     const { page } = this;
     // A call a step held comes back before the screen is compared with
     // the engine, which has not heard it while it is held.
     await letHeld(page);
+    // The report window is a page of its own, with calls of its own the
+    // app's window does not count. Settled only there, an Undo of Clear
+    // in it was still putting its pictures back when the next step
+    // pressed Redo, and one came back after Redo had cleared them,
+    // issue #554. The app's window settles in settledScreen below.
+    if (acted !== page) {
+      await letHeld(acted);
+      await settle(acted);
+    }
     // The clip on screen, which a step that opens another episode or
     // another clip changes. Then what was before is another clip's, and
     // nothing is compared across the change. It is read with what the

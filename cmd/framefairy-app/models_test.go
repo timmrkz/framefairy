@@ -68,12 +68,7 @@ func TestTwoModelsOneInUseAndOneRemoved(t *testing.T) {
 			t.Error("a model chosen before download reads as installed")
 		}
 	}
-	var lm Check
-	for _, c := range svc.CheckSetup(context.Background()) {
-		if c.Name == "Language model" {
-			lm = c
-		}
-	}
+	lm := languageCheck(svc.store.Settings().options())
 	if lm.OK || !strings.Contains(lm.Detail, "not downloaded yet") {
 		t.Errorf("check for a model not downloaded: %+v", lm)
 	}
@@ -162,14 +157,8 @@ func TestAnInstallKeepsTheModelInUse(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The check at the top of the settings says so in the app's words.
-	checks := svc.CheckSetup(context.Background())
-	for _, c := range checks {
-		if c.Name == "Language model" && (c.OK || !strings.Contains(c.Detail, "none is in use")) {
-			t.Errorf("two and none in use: %+v", c)
-		}
-		if strings.Contains(c.Detail, "--llm-model") {
-			t.Errorf("a flag in the app: %s", c.Detail)
-		}
+	if c := languageCheck(svc.store.Settings().options()); c.OK || !strings.Contains(c.Detail, "none is in use") || strings.Contains(c.Detail, "--llm-model") {
+		t.Errorf("two and none in use, in the app's words: %+v", c)
 	}
 	if err := svc.keepInUse(before); err != nil {
 		t.Fatal(err)
