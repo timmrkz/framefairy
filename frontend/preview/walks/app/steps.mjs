@@ -727,6 +727,10 @@ function fitProblem() {
   // Each pair is what it is and what it should be, a strip of nothing or
   // a part pushed off the app wherever they differ.
   const lines = {
+    "the columns' left edge after the rail": [stage.left, main.left + gap],
+    // The settings column reaches past its edge by its padding, see
+    // .settings in Episode.svelte, so its words start at the edge.
+    "the settings' left edge": [settings.left + parseFloat(getComputedStyle(document.querySelector(".stage").firstElementChild).paddingLeft), stage.left],
     "the columns' top under the bar": [stage.top, main.top + gap],
     "the columns' right edge": [stage.right, W - edge],
     "the clip panel's left edge": [detail.left, stage.left],
