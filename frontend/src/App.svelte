@@ -983,7 +983,7 @@
            apps that take a file show where it goes. The whole app takes
            a drop all the same. -->
       <div class="welcome">
-        <button class="drop" onclick={add}>
+        <button class="add-video" onclick={add}>
           <Icon name="plus" size={28} />
           <span class="big">Add a video</span>
           <span class="muted">Click to choose one, or drop it here.</span>
@@ -1497,7 +1497,7 @@
   /* As big as the first page's one thing to do should be, and drawn the
      way a place for a file is everywhere: a dashed edge round room to
      spare. Under the pointer it is lit the way a drop over the app is. */
-  .welcome .drop {
+  .welcome .add-video {
     margin-top: 0;
     display: flex;
     flex-direction: column;
@@ -1514,19 +1514,19 @@
     white-space: normal;
   }
 
-  .welcome .drop:hover:not(:disabled) {
+  .welcome .add-video:hover:not(:disabled) {
     border-color: var(--accent);
     background: var(--accent-wash);
     color: var(--text);
   }
 
-  .drop .big {
+  .add-video .big {
     font-size: var(--size-xl);
     line-height: 28px;
     font-weight: 600;
   }
 
-  .drop .small {
+  .add-video .small {
     font-size: var(--size-s);
   }
 </style>

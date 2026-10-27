@@ -129,9 +129,9 @@ func (b *bus) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // calls the bridge answers itself, a box from the system among them. held
 // says the gate a call of a name waits behind until the walk opens it,
 // and the reason it fails with instead of reaching it, if it does, see
-// /hold.
+// /hold. fresh says the bridge's machine is on its first run, see /fresh.
 func callHandler(svc func() *FrameFairy, own map[string]func() (any, error),
-	held func(name string) (<-chan struct{}, string)) http.Handler {
+	held func(name string) (<-chan struct{}, string), fresh func() bool) http.Handler {
 	contextType := reflect.TypeFor[context.Context]()
 	errorType := reflect.TypeFor[error]()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -172,7 +172,7 @@ func callHandler(svc func() *FrameFairy, own map[string]func() (any, error),
 			return
 		}
 		kind := method.Type()
-		if outside[name] && !(walkedUpdates[name] && svc().updates != nil) {
+		if outside[name] && !(walkedUpdates[name] && svc().updates != nil) && !(firstRun[name] && fresh()) {
 			// Answered as having nothing to say, in the shape the
 			// interface expects.
 			var answer any
@@ -213,7 +213,7 @@ func callHandler(svc func() *FrameFairy, own map[string]func() (any, error),
 		var answer any
 		if name == "Setup" || name == "CheckSetup" {
 			if name == "Setup" {
-				answer = standInsSetup(out[0].Interface().(SetupState))
+				answer = standInsSetup(out[0].Interface().(SetupState), fresh())
 			} else {
 				answer = standInsChecks(out[0].Interface().([]Check))
 			}
@@ -255,12 +255,28 @@ var outside = map[string]bool{
 // Until then they are outside like the rest. Relaunch is outside always.
 var walkedUpdates = map[string]bool{"Updates": true, "FollowChannel": true, "CheckForUpdates": true}
 
+// firstRun are the downloads of the first run, which reach the app once a
+// walk has made the bridge's machine new, see /fresh. Each then downloads
+// from the bridge's stand-in, see arriving, never the internet.
+var firstRun = map[string]bool{"InstallSpeechModel": true, "InstallLanguageModel": true}
+
 // standInsSetup is the setup as the bridge's machine has it: the real
 // answer, with the two stand-in models counted as there, since they are
 // what hears and what finds clips here. Without it the app opens on its
-// first-run screen, which the bridge is not about.
-func standInsSetup(s SetupState) SetupState {
-	s.HasSpeech, s.HasLocalModel, s.HasServer, s.Chosen, s.Ready = true, true, true, true, true
+// first-run screen, which the bridge is only about once a walk made it
+// new, see /fresh. Then the models are what the real answer says, the
+// ones the walk let arrive, and the machine is Tim's Mac, 32 GB, so the
+// models offered are the same on every machine the walk runs on.
+func standInsSetup(s SetupState, fresh bool) SetupState {
+	s.HasServer = true
+	if fresh {
+		s.Memory = 32 << 30
+		for i := range s.Language {
+			s.Language[i].Fit = string(s.Language[i].FitsIn(s.Memory))
+		}
+		return s
+	}
+	s.HasSpeech, s.HasLocalModel, s.Chosen, s.Ready = true, true, true, true
 	if len(s.Speech) > 0 {
 		s.Speech[0].Installed = true
 	}
@@ -332,7 +348,7 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 			return b.chrome, nil
 		},
 	}
-	mux.Handle("/call", callHandler(svc, own, b.held))
+	mux.Handle("/call", callHandler(svc, own, b.held, b.fresh.Load))
 	mux.Handle("/events", b.d.bus)
 	answer := func(w http.ResponseWriter, v any, err error) {
 		if err != nil {
@@ -556,6 +572,19 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 			return
 		}
 		answer(w, theLog.status(), nil)
+	})
+	// The bridge's machine on its first run: the models gone, no video in
+	// the app and nothing yet said about how clips are found, so the app
+	// opened again shows its setup. A download pressed there waits part
+	// way until the walk lets it arrive with ?arrive=speech or
+	// ?arrive=clip, see arriving. The next reset makes the machine the
+	// bridge's again.
+	mux.HandleFunc("/fresh", func(w http.ResponseWriter, r *http.Request) {
+		if kind := r.URL.Query().Get("arrive"); kind != "" {
+			answer(w, nil, b.letArrive(kind))
+			return
+		}
+		answer(w, nil, b.makeFresh())
 	})
 	mux.HandleFunc("/reopen", func(w http.ResponseWriter, r *http.Request) {
 		closed, err := b.reopen()
@@ -822,6 +851,12 @@ type bridge struct {
 	sound *sound
 	// marks counts the marks sent down the events, see /mark.
 	marks atomic.Int64
+	// fresh is the bridge's machine on its first run: no model on it and
+	// no video in the app, see /fresh.
+	fresh atomic.Bool
+	// arrive lets the download of a kind of model, "speech" or "clip",
+	// arrive, closed by the walk, see arriving.
+	arrive map[string]chan struct{}
 }
 
 // updatesAs gives the app updates the way a walk asks for them: a build
@@ -997,6 +1032,24 @@ func openBridge(t *testing.T) *bridge {
 	b := &bridge{t: t, d: d, words: words, sound: snd, first: filepath.Join(d.home, "erste-erinnerung.mp4"), kept: t.TempDir(),
 		gates: map[string]*gate{}, fails: map[string]string{},
 		videos: walkVideos(t)}
+	// What the first run downloads, once a walk made the machine new.
+	// What arrives is as much of a model as the app looks for.
+	installSpeech = func(ctx context.Context, log *engine.Log, m engine.SpeechModel, dir string) error {
+		return b.arriving(ctx, log, "speech", m.Download, func() error {
+			if err := os.MkdirAll(filepath.Join(dir, m.Name), 0o755); err != nil {
+				return err
+			}
+			return os.WriteFile(filepath.Join(dir, m.Name, "tokens.txt"), []byte("the stand-in hears\n"), 0o644)
+		})
+	}
+	installLanguage = func(ctx context.Context, log *engine.Log, m engine.LanguageModel, dir string) error {
+		return b.arriving(ctx, log, "clip", m.Download, func() error {
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				return err
+			}
+			return os.WriteFile(filepath.Join(dir, m.Name), []byte("GGUF, the stand-in finds clips"), 0o644)
+		})
+	}
 	if err := b.videos.copy(b.first, pickedAs("120", "", "0", "", false, 0), func(path string) error {
 		return makeEpisode(path, 120, 0, false)
 	}); err != nil {
@@ -1254,6 +1307,65 @@ func (b *bridge) pickSound() (string, error) {
 // closing cut off says cancelled, one that finished as the app closed says
 // done. What a walk read off the screen before it asked is a moment older,
 // and a search the model answers at once can end in that moment.
+// makeFresh makes the bridge's machine one the app has never run on, see
+// /fresh. The video leaves the library with its work folder kept, the
+// way Remove leaves it, and reset brings both back.
+func (b *bridge) makeFresh() error {
+	b.mu.Lock()
+	b.arrive = map[string]chan struct{}{"speech": make(chan struct{}), "clip": make(chan struct{})}
+	b.mu.Unlock()
+	b.fresh.Store(true)
+	if err := os.RemoveAll(engine.ModelsDir()); err != nil {
+		return err
+	}
+	if err := b.d.svc.RemoveEpisode(b.first, false); err != nil {
+		return err
+	}
+	planner := defaultSettings().Planner
+	return b.d.svc.store.UpdateSettings(func(s *Settings) {
+		s.Planner, s.Chosen, s.LLMModel = planner, false, ""
+	})
+}
+
+// letArrive lets the download of a kind of model arrive, see arriving.
+func (b *bridge) letArrive(kind string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	gate, ok := b.arrive[kind]
+	if !ok {
+		return fmt.Errorf("no download of a %q model to let arrive, the bridge is not on its first run", kind)
+	}
+	select {
+	case <-gate:
+	default:
+		close(gate)
+	}
+	return nil
+}
+
+// arriving is a download of the first run on the bridge, see /fresh. It
+// says it has fetched two fifths, in the words the engine's download
+// says it in, and holds there until the walk lets it arrive or it is
+// cancelled. Then put lays the model down the way an install leaves it.
+func (b *bridge) arriving(ctx context.Context, log *engine.Log, kind string, size int64, put func() error) error {
+	b.mu.Lock()
+	gate := b.arrive[kind]
+	b.mu.Unlock()
+	if gate == nil {
+		return fmt.Errorf("the bridge downloads nothing outside its first run")
+	}
+	const rate = 120e6
+	log.ProgressOf(fmt.Sprintf("fetching %d MB of %d MB at %d MB a second", size*2/5/1e6, size/1e6, int64(rate/1e6)),
+		0.4, float64(size)*3/5/rate)
+	select {
+	case <-ctx.Done():
+		return engine.ErrCancelled
+	case <-gate:
+	}
+	log.ClearProgress()
+	return put()
+}
+
 func (b *bridge) reopen() ([]Job, error) {
 	if !b.words.whileClosing(b.d.svc.jobs.shutDown) {
 		return nil, fmt.Errorf("the app did not stop its work in time")
@@ -1295,7 +1407,9 @@ func (b *bridge) reset() error {
 	clear(b.gates)
 	clear(b.fails)
 	b.chrome = Chrome{}
+	b.arrive = nil
 	b.mu.Unlock()
+	b.fresh.Store(false)
 	b.d.pictureMu.Lock()
 	b.d.pictures = nil
 	b.d.pictureMu.Unlock()
