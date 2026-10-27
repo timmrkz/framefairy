@@ -742,7 +742,7 @@ func (c *cursor) open(frame, w, h int, grid framewire.Grid, key bool) {
 	c.fromKey, c.keyNext = false, false
 	if !opened && !reopened && c.goOn(frame, w, h, grid) {
 		c.say(fmt.Sprintf("went on, at frame %d, %.3f s, for %dx%d, %d ms", frame, from, w, h, time.Since(c.asked).Milliseconds()))
-		c.d.answer(framewire.Record{Cursor: c.id, Kind: framewire.Opened, Body: framewire.OpenedBody(false, c.light)})
+		c.d.answer(framewire.Record{Cursor: c.id, Kind: framewire.Opened, Body: framewire.OpenedBody(framewire.WentOn, c.light)})
 		return
 	}
 	c.grid, c.rank, c.until, c.shown, c.retries, c.fromKey, c.keyNext = grid, frame, frame, nil, 0, key, false
@@ -759,7 +759,11 @@ func (c *cursor) open(frame, w, h int, grid framewire.Grid, key bool) {
 		how += ", the key frame first"
 	}
 	c.say(fmt.Sprintf("%s, at frame %d, %.3f s, for %dx%d, %d ms", how, frame, from, w, h, time.Since(c.asked).Milliseconds()))
-	c.d.answer(framewire.Record{Cursor: c.id, Kind: framewire.Opened, Body: framewire.OpenedBody(opened, c.light)})
+	reached := framewire.Sought
+	if opened {
+		reached = framewire.OpenedFile
+	}
+	c.d.answer(framewire.Record{Cursor: c.id, Kind: framewire.Opened, Body: framewire.OpenedBody(reached, c.light)})
 }
 
 // goOn takes the cursor to the frame of the grid without a seek, when that

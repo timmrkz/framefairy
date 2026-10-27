@@ -176,11 +176,17 @@ func TestTheEpisodesDecoderDecodesAJumpNoFurtherThanItMust(t *testing.T) {
 		wantAts, want := collect(func(got func(float64, []byte) error) error {
 			return e.PreviewFrames(context.Background(), path, grid.At(grid.Holding(j.from)), 160, 90, got)
 		})
+		times := NewPreviewTimes()
 		gotAts, got := collect(func(got func(float64, []byte) error) error {
-			return dec.Stream(context.Background(), grid, j.from, 160, 90, false, nil, got)
+			return dec.Stream(WithPreviewTimes(context.Background(), times), grid, j.from, 160, 90, false, nil, got)
 		})
 		if len(got) != len(want) {
 			t.Fatalf("from %.2f the decoder gave %d frames, ffmpeg %d", j.from, len(got), len(want))
+		}
+		// The stream says it went on, for the page to know no key frame
+		// comes first, issue #511.
+		if on := times.WentOn.Load(); on != (j.how == "went on") {
+			t.Errorf("the jump to %.2f s, which %s, told the page it went on: %v", j.from, j.how, on)
 		}
 		for i := range want {
 			if math.Abs(gotAts[i]-wantAts[i]) > 1e-6 {

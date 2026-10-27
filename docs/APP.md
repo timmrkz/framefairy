@@ -649,7 +649,10 @@ where its time went, in milliseconds from when it was asked for: until
 the decoder had the request, at once where it ran and after starting it
 where it did not, until it was at the place asked for, which it says
 itself, and until the first frame was out, then 1 where reaching the
-place meant opening the file and 0 where a cursor that had it was moved.
+place meant opening the file and 0 where a cursor that had it was moved,
+and last 1 where a cursor read on to the place from where it stood,
+without a seek. Such a stream hands over no key frame first, which the
+app's log says, issue #511.
 That is the header `X-Frames-Times`, which `AppFrames` keeps in
 `stats.opens`, for a probe to tell where the time of a jump went, see
 [VIDEO-PREVIEW.md](VIDEO-PREVIEW.md), Speed. A frame asked for a place the hand has left is withdrawn when

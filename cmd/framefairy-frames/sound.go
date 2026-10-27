@@ -26,7 +26,7 @@ const soundChunk = 1024
 // so many channels, the channels of one moment side by side.
 func (c *cursor) openSound(seek, from float64, rate, channels int) {
 	c.failedWhy = ""
-	opened := ""
+	opened := framewire.Sought
 	// From the file's start, the ffmpeg program does not seek at all, and
 	// a seek there loses what the file says to skip of its first packet,
 	// the 1024 samples an AAC encoder puts before the sound. A cursor that
@@ -38,7 +38,7 @@ func (c *cursor) openSound(seek, from float64, rate, channels int) {
 		c.v = nil
 	}
 	if c.v == nil {
-		opened = "file"
+		opened = framewire.OpenedFile
 		v, err := openMedia(c.d.path, astiav.MediaTypeAudio)
 		if err == nil {
 			err = v.openDecoder(nil, c.say)
@@ -84,11 +84,11 @@ func (c *cursor) openSound(seek, from float64, rate, channels int) {
 	// program reads by.
 	c.soundFrom = from
 	how := "moved"
-	if opened != "" {
+	if opened != framewire.Sought {
 		how = "opened the file"
 	}
 	c.say(fmt.Sprintf("%s, from %.3f s, seek %.3f s, at %d Hz, %d channels", how, from, seek, rate, channels))
-	c.d.answer(framewire.Record{Cursor: c.id, Kind: framewire.Opened, Body: []byte(opened)})
+	c.d.answer(framewire.Record{Cursor: c.id, Kind: framewire.Opened, Body: framewire.OpenedBody(opened, framewire.SDR)})
 }
 
 // nextSound answers up to n chunks of sound from where the cursor is.

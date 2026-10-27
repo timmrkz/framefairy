@@ -1513,13 +1513,15 @@ export const steps = {
   //                    render does
   // ["glides while playing"]
   //                    plays from two fifths of the way from the first
-  //                    keyframe to the next until the video preview has
-  //                    shown ten frames of the episode, or the play has
-  //                    come to the next keyframe, and reads the frame on
-  //                    the canvas and the crop frame on every animation
-  //                    frame: on each, the crop frame stands where the
-  //                    glide puts it for that frame, and in a place of its
-  //                    own on every frame shown, not once
+  //                    keyframe to the next, on a clock that moves on to
+  //                    the next frame only once the one before is up,
+  //                    until the video preview has shown ten frames of the
+  //                    episode, or the play has come to the next keyframe,
+  //                    and reads the frame on the canvas and the crop
+  //                    frame on every tick of the play: every frame is
+  //                    shown, none skipped, on each the crop frame stands
+  //                    where the glide puts it for that frame, and in a
+  //                    place of its own on every frame shown, not once
   async "glides while playing"(walk, arg, s, what) {
     const { page } = walk;
     const on = await chosen(page);
@@ -1570,41 +1572,57 @@ export const steps = {
     // The play starts from the frame on the video preview, so it is
     // started once that is the playhead's frame.
     await shownOnPlayhead(page);
-    // The play is read on every animation frame, and paused by the
-    // page itself once the video preview has shown ten frames of the
-    // episode or the play has come to the next keyframe, where the
-    // glide ends. How many frames the video preview shows in a second
-    // is the machine's: a busy one showed two in two seconds of play,
-    // issue #464, and six, issue #320. So the play goes on until the
-    // frames are there, not for a time, and only a play that came to
-    // the next keyframe on fewer than three frames fails.
+    // The play is read by its own clock, which the play asks on every
+    // tick before it draws, so what is on screen is what the tick before
+    // drew, with the crop frame it was told. The walk's clock stands on
+    // the next frame until it is up, see FrameQueue.playClock, so every
+    // frame of the play is shown on any machine: by the sound card's
+    // clock a busy one showed two in two seconds of play, issue #464, and
+    // two of nine, issue #534. The play is paused by the page itself once
+    // the video preview has shown ten frames of the episode or the play
+    // has come to the next keyframe, where the glide ends.
     const end = b.at;
     await page.evaluate((end) => {
+      const q = window.__frameQueue;
+      const sound = q.playClock;
       window.__glide = [];
-      window.__glideNever = false;
       window.__glideStarted = false;
-      window.__glideRead = new Promise((done) => {
+      window.__glideRead = new Promise((resolve) => {
         const shown = new Set();
-        const read = () => {
+        let over = false;
+        const done = () => {
+          if (over) return;
+          over = true;
+          q.playClock = sound;
+          resolve();
+        };
+        window.__glideDone = done;
+        q.playClock = (heard, unshown) => {
+          window.__glideStarted = true;
+          if (over) return heard;
           const el = document.querySelector(".screen");
           const k = window.__filmed();
-          const playing = !document.querySelector('button[aria-label="Play"]');
           window.__glide.push({ k, crop: Number(el.dataset.crop) });
           if (k >= 0) shown.add(k);
-          window.__glideStarted ||= playing;
-          const ended = window.__glideNever || (window.__glideStarted && (!playing || shown.size >= 10 || Number(el.dataset.playhead) >= end));
-          if (!ended) {
-            requestAnimationFrame(read);
-            return;
+          if (shown.size >= 10 || Number(el.dataset.playhead) >= end) {
+            done();
+            // Paused after the tick, not in the middle of it.
+            queueMicrotask(() => {
+              const key = { key: " ", code: "Space", bubbles: true, cancelable: true };
+              document.body.dispatchEvent(new KeyboardEvent("keydown", key));
+              document.body.dispatchEvent(new KeyboardEvent("keyup", key));
+            });
           }
-          if (playing) {
-            const key = { key: " ", code: "Space", bubbles: true, cancelable: true };
-            document.body.dispatchEvent(new KeyboardEvent("keydown", key));
-            document.body.dispatchEvent(new KeyboardEvent("keyup", key));
-          }
-          done();
+          return Math.min(heard, unshown);
         };
-        requestAnimationFrame(read);
+        // A play that stops by itself asks its clock no more: the reading
+        // ends there, with what it read.
+        const stopped = () => {
+          if (over) return;
+          if (window.__glideStarted && document.querySelector('button[aria-label="Play"]')) done();
+          else requestAnimationFrame(stopped);
+        };
+        requestAnimationFrame(stopped);
       });
     }, end);
     await page.keyboard.press(" ");
@@ -1613,8 +1631,11 @@ export const steps = {
     await settle(page);
     const played = await page.evaluate(() => {
       const playing = !document.querySelector('button[aria-label="Play"]');
-      if (!playing && !window.__glideStarted) window.__glideNever = true;
-      return !window.__glideNever;
+      if (!playing && !window.__glideStarted) {
+        window.__glideDone();
+        return false;
+      }
+      return true;
     });
     const seen = await page.evaluate(() => window.__glideRead.then(() => window.__glide));
     if (!played) {
@@ -1629,10 +1650,18 @@ export const steps = {
     // places as frames were shown.
     const shown = new Set(seen.filter((r) => r.k >= 0).map((r) => r.k));
     const apart = new Set([...shown].map((k) => glide(k)));
+    // Every frame from the first shown on, ten of them or up to the next
+    // keyframe, whichever comes first.
+    const ks = [...shown].sort((x, y) => x - y);
+    const missed = [];
+    for (let k = ks[0]; k < ks.at(-1); k++) if (!shown.has(k)) missed.push(k);
+    const want = Math.min(10, Math.floor((end + 0.001) * src.fps) - (ks[0] ?? 0));
     if (off.length) {
       walk.wrong = `while playing, ${off.length} of ${seen.length} frames had the crop frame off the glide, the first frame ${off[0].k} at ${off[0].crop} for ${glide(off[0].k)}`;
-    } else if (shown.size < 3) {
-      walk.wrong = `while playing up to the next keyframe, the video preview showed ${shown.size} frames`;
+    } else if (missed.length) {
+      walk.wrong = `while playing, the video preview showed frames ${ks[0]} to ${ks.at(-1)} without ${missed.join(", ")}`;
+    } else if (shown.size < want) {
+      walk.wrong = `while playing up to the next keyframe, the video preview showed ${shown.size} frames, want ${want}`;
     } else if (places.size < apart.size) {
       walk.wrong = `while playing, the crop frame stood in ${places.size} places over ${shown.size} frames, where the glide has ${apart.size}`;
     }

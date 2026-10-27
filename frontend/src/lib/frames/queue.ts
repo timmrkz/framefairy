@@ -1376,6 +1376,14 @@ export class FrameQueue {
     const timer = setTimeout(late, DRESS_WAIT);
     return () => clearTimeout(timer);
   };
+  // Where a play is on the program, from where the sound card says it is,
+  // heard, and where the first frame of the play not on screen yet starts,
+  // unshown, see tick. It is the sound card's clock, so a machine too slow
+  // to decode every frame in time shows fewer of them, which is right for
+  // the app. A walk that wants to see every frame of a play hands in a
+  // clock that stands on unshown until that frame is up, on any machine,
+  // where a busy one showed 2 frames of 9, issue #534.
+  playClock: (heard: number, unshown: number) => number = (heard) => heard;
 
   // The frame on screen, see screen.ts. Fresh when it is put up for the
   // newest gesture, see over.
@@ -1819,7 +1827,7 @@ export class FrameQueue {
     // Never back: the sound heard only ever moves on, and a stamp that says
     // a hair less than the last one is the clock's jitter.
     const h = this.heardOn(now);
-    const pos = Math.max(h.pos, this.reached);
+    const pos = Math.max(this.playClock(h.pos, this.unshown(plan)), this.reached);
     this.reached = pos;
     if (this.behind) this.began?.even.behind();
     else this.began?.even.tick(now, pos, h.source);
@@ -1887,6 +1895,16 @@ export class FrameQueue {
       this.idle(this.began.even, i, done);
     }
     this.loop();
+  }
+
+  // Where the first frame of the play not on screen yet starts on the
+  // program, see playClock: the frame due last, or the one after it once
+  // that is up. Past what the plan has worked out, nowhere.
+  private unshown(plan: VideoPlan): number {
+    const need = plan.need(this.k);
+    const up = !need || (this.shown?.run === need.run && this.shown.rank === need.rank);
+    const at = plan.at(up ? this.k + 1 : this.k);
+    return Number.isNaN(at) ? Infinity : at;
   }
 
   // When the page next has nothing to do after an animation frame: a

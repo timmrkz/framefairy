@@ -5,11 +5,15 @@
 // engine. See docs/TESTING.md.
 import { letHeld, engineState, settle, settledScreen } from "./bridge.mjs";
 
-// The engine's captions as a list of words, and as one comparable value.
+// The engine's captions as a list of words, and the engine's clip as one
+// comparable value: its captions, how they look, and its pieces with their
+// crops, everything of it the history takes back, see docs/APP.md, Undo
+// and redo.
 export const words = (caps) =>
   caps.captions.flatMap((c) => c.lines.flatMap((l) => l.words.map((w) => ({ ...w }))));
 export const same = (a, b) =>
   JSON.stringify(a.captions) === JSON.stringify(b.captions) &&
+  JSON.stringify(a.style) === JSON.stringify(b.style) &&
   JSON.stringify(a.segments) === JSON.stringify(b.segments);
 export const editing = (s) => s.some((w) => w.focused);
 export const keyed = (s) => s.find((w) => w.keyed);
@@ -17,8 +21,12 @@ export const keyed = (s) => s.find((w) => w.keyed);
 export function describe(a, b) {
   const line = (caps) =>
     caps.captions.map((c) => `[${c.lines.flatMap((l) => l.words.map((w) => w.text)).join(" ")}]`).join(" ");
-  const pieces = (s) => (s.segments ?? []).map((p) => `${p.start.toFixed(2)}-${p.end.toFixed(2)}`).join(" ");
-  return `before ${line(a)}\n       pieces ${pieces(a)}\nafter  ${line(b)}\n       pieces ${pieces(b)}`;
+  const pieces = (s) =>
+    (s.segments ?? [])
+      .map((p) => `${p.start.toFixed(2)}-${p.end.toFixed(2)}${p.cropX === null ? "" : ` crop ${p.cropX}`}${p.marks?.length ? ` ${p.marks.length} keyframes` : ""}${p.rotate ? ` turned ${p.rotate}` : ""}`)
+      .join(" ");
+  const look = (s) => (s.style ? `${s.style.font} ${s.style.chosenSize} ${s.style.primary} ${s.style.box}` : "none");
+  return `before ${line(a)}\n       pieces ${pieces(a)}\n       look ${look(a)}\nafter  ${line(b)}\n       pieces ${pieces(b)}\n       look ${look(b)}`;
 }
 
 // What the clip timeline should show for the engine's pieces: the first
