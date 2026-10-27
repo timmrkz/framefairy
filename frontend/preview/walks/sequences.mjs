@@ -91,7 +91,9 @@ if (only === "--names") {
   const isWalk = (n) => {
     const [, file] = n.match(/^([\w-]+\.mjs)(?: SEED=\d+(?: HEVC=1)?)?$/) ?? [];
     const path = file && file !== "walk.mjs" ? join(here, file) : "";
-    return Boolean(path) && existsSync(path) && readFileSync(path, "utf8").includes('from "./walk.mjs"');
+    // Written as a pattern, since TestWalks takes any file that holds
+    // the import itself for a walk, and this one would then be walked.
+    return Boolean(path) && existsSync(path) && /from "\.\/walk\.mjs"/.test(readFileSync(path, "utf8"));
   };
   const noWalk = Object.keys(filmed).filter((n) => !names.includes(n) && !isWalk(n));
   if (noWalk.length) {
