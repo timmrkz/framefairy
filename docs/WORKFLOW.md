@@ -134,10 +134,36 @@ separate areas of the code, so the pull requests don't conflict. Each
 session works on one pull request at a time, and opens the next only
 once that one is merged or closed. Something you report that is not
 about its open pull request is logged as a GitHub issue, labelled bug,
-feature, tests, reliability, performance or shipping, and taken up in
-turn, the oldest first unless you reorder them. Opening an issue changes
-no file, so it costs no push and no CI run, and the pull request that
-finishes it closes it with `Fixes #N`. See CLAUDE.md.
+feature, tests, reliability, performance or shipping, with a priority
+and a size, and taken up in turn: the highest priority first, the
+smallest and then the oldest within it, unless you reorder them.
+Opening an issue changes no file, so it costs no push and no CI run, and
+the pull request that finishes it closes it with `Fixes #N`. See
+CLAUDE.md.
+
+## Priority and size
+
+Every open issue carries one priority and one size, beside the labels
+for its kind. The priorities are the ones
+[Kubernetes](https://github.com/kubernetes/community/blob/master/contributors/guide/issue-triage.md)
+triages its issues by, without its split of important into soon and
+long term. The sizes are the T-shirt sizes many teams on GitHub use.
+
+| Label | What it means |
+| --- | --- |
+| `priority/critical` | Drop what you are doing. A bug a person meets in what the app is for, a broken build, a failing test, a security hole. |
+| `priority/important` | Worked on now or very soon. Every flaky or hanging test is at least this, because a test that cannot be trusted no longer verifies what it checks. So is what the first customer needs. |
+| `priority/backlog` | A nice to have nobody will get to soon: tidying what works, a test that is only slow, a feature the first release does not need. |
+| `size/small` | A few hours of work. |
+| `size/medium` | About a day, one pull request. |
+| `size/large` | More than one pull request. |
+
+Whoever opens an issue sets both, by judgement from the table, and says
+why in a few words in the last line of the issue, the way GitLab and
+Mozilla ask for. Tim moves any label he sees differently, and his label
+stands. The weekly triage labels every open issue that lacks one and
+looks again at the ones whose facts changed, a flaky test seen failing
+again for example. The table itself changes only when Tim says so.
 
 ## The review skill in this project
 
