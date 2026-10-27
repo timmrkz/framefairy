@@ -186,6 +186,13 @@ func (s *FrameFairy) Setup(ctx context.Context) SetupState {
 	return state
 }
 
+// installSpeech and installLanguage are what the setup and the settings
+// install a model with.
+var (
+	installSpeech   = engine.InstallSpeechModel
+	installLanguage = engine.InstallLanguageModel
+)
+
 // InstallSpeechModel fetches a model and unpacks it, as a job, so it wears
 // the same beam and the same fill as every other piece of work and can be
 // cancelled the same way.
@@ -201,7 +208,7 @@ func (s *FrameFairy) InstallSpeechModel(name string) Job {
 	// folder, and the interface can ask twice by being opened twice.
 	return s.jobs.addOnce("", "model", model.Title,
 		func(ctx context.Context, p *engine.Project) (string, error) {
-			return "", engine.InstallSpeechModel(ctx, p.Log(), model, engine.ModelsDir())
+			return "", installSpeech(ctx, p.Log(), model, engine.ModelsDir())
 		})
 }
 
@@ -235,7 +242,7 @@ func (s *FrameFairy) InstallLanguageModel(name string) Job {
 	// One at a time, however often it is asked for.
 	return s.jobs.addOnce("", "llm", model.Title,
 		func(ctx context.Context, p *engine.Project) (string, error) {
-			if err := engine.InstallLanguageModel(ctx, p.Log(), model, engine.ModelsDir()); err != nil {
+			if err := installLanguage(ctx, p.Log(), model, engine.ModelsDir()); err != nil {
 				return "", err
 			}
 			// The only model there is may be the one in use now.
