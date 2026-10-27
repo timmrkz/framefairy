@@ -140,7 +140,9 @@ commit of its own. Something that pull request did not cause, and that
 cannot be done now, is logged as a GitHub issue, labelled bug,
 feature, tests, reliability, performance or shipping, with a priority
 and a size, and taken up in turn: the highest priority first, the
-smallest and then the oldest within it, unless you reorder them.
+smallest and then the oldest within it, unless you reorder them. A
+test that has just failed on main, or an issue that comes with its
+trace or its log, goes before that order.
 Opening an issue changes no file, so it costs no push and no CI run, and
 the pull request that finishes it closes it with `Fixes #N`. See
 CLAUDE.md.

@@ -168,7 +168,12 @@ Start with [README.md](README.md). In short:
   work on the open pull request carries on. Once that is merged, the
   next piece of work is the open issue of the highest priority, the
   smallest first and then the oldest, of those Tim opened or a session
-  opened for him, unless Tim puts them in another order.
+  opened for him, unless Tim puts them in another order. What is
+  happening now comes before that order, because the labels lag behind
+  it: a test that has just failed on main, or an issue that comes with
+  its trace or its log, goes before an older one still waiting for its
+  next failure to show why. Following the evidence in hand gets a fix
+  done sooner. The session says which it picked and why.
 - His machine is an M2 Max with 32 GB of memory, on the latest macOS, with
   Go 1.27, Homebrew and the models in `~/.framefairy/models`. ffmpeg and
   llama-server are built by `make` and live in `bin/`, the only place the
