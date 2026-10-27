@@ -792,8 +792,9 @@ the skills listed last show their name without what they are for.
 
 Open work is in the [issues](https://github.com/timmrkz/framefairy/issues).
 The batch plan up to 16 October 2026, with the decisions it was built
-on, is in [docs/GUI-PLAN.md](docs/GUI-PLAN.md). Next up, roughly in this
-order:
+on, is in [docs/GUI-PLAN.md](docs/GUI-PLAN.md). The issues for this
+long-term work carry `priority/backlog`, and this list gives their
+order. Next up, roughly in this order:
 
 - Tim's feedback from testing the current workspace
 - the video preview on one engine, ffmpeg, see

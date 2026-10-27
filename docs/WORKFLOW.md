@@ -153,7 +153,7 @@ long term. The sizes are the T-shirt sizes many teams on GitHub use.
 | --- | --- | --- |
 | `priority/critical` | Drop what you are doing. A short comes out wrong or a person's work is lost, a broken build, a failing test, a security hole. | #266, #268 |
 | `priority/important` | Worked on now or very soon. A bug a person meets or that the code shows, and every flaky or hanging test, because a test that cannot be trusted no longer verifies what it checks. | #540, #507, #559 |
-| `priority/backlog` | A nice to have nobody will get to soon: tidying what works, a test that is only slow, a feature the first release does not need. | #267, #550, #539 |
+| `priority/backlog` | Not now. A nice to have nobody will get to soon, tidying what works, a test that is only slow, and the long-term work, like signing and the licence key, whose order Open work in CLAUDE.md gives. | #267, #550, #305 |
 | `size/small` | A short pull request in one place. | #540 |
 | `size/medium` | One pull request. | #513 |
 | `size/large` | More than one pull request. | #380 |
