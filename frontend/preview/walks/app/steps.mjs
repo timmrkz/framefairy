@@ -29,7 +29,7 @@ export const steps = {
       page.evaluate(() =>
         [...document.querySelectorAll(".setup ul.models > li")].map((li) => ({
           height: li.clientHeight,
-          cells: [...li.children].map((c) => Math.round(c.getBoundingClientRect().left)),
+          cells: [...li.children].map((c) => c.getBoundingClientRect().left),
         })),
       );
     const buttons = () => page.evaluate(() => [...document.querySelectorAll(".setup button.act")].map((b) => b.textContent.trim()));

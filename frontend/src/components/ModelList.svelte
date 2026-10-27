@@ -253,12 +253,14 @@
   ul.models {
     display: grid;
     grid-template-columns:
-      minmax(0, 1fr) minmax(var(--maker-w), max-content) minmax(var(--memory-w), max-content)
-      minmax(var(--size-w), max-content) minmax(var(--end-w), max-content);
-    /* Each column is at least as wide as what it holds in any list of
-       models, a maker, the memory a model needs, a size and the Download
-       button, so two lists one above the other, the speech model and the
-       clip model, line up as one table too. */
+      minmax(0, 1fr) var(--maker-w) var(--memory-w)
+      var(--size-w) var(--end-w);
+    /* Each column is as wide as what it holds in any list of models, a
+       maker, the memory a model needs, a size and the Download button,
+       and no wider for what one list holds. Two lists one above the
+       other, the speech model and the clip model, then line up as one
+       table, to the pixel: a column as wide as its widest word was a
+       fraction of a pixel wider in one list than in the other. */
     --maker-w: 64px;
     --memory-w: 150px;
     --size-w: 72px;
