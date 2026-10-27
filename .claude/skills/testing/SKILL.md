@@ -446,9 +446,8 @@ thought of. Find that order with these, in this order:
    of the screen or a snapshot of the page costs every run real time,
    and a runner may record the network only along with the snapshots,
    as Playwright does. Then the runner can hear each request and its
-   answer from outside the page and keep them beside the trace. Never
-   record from inside the page under test: what is wrapped there to
-   watch changes the timing it watches. Keep the cheap records on for every test, and turn
+   answer from outside the page and keep them beside the trace, which
+   adds nothing to the page under test. Keep the cheap records on for every test, and turn
    the costly ones on only for the tests whose trace showed they are
    needed, in one list that names the issue for each. The change that
    fixes the test takes its line out.

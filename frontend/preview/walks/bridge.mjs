@@ -173,9 +173,7 @@ async function traced(page) {
 // Every request the page makes, heard in Node and kept beside the
 // trace. Playwright records the network into a trace only along with
 // the snapshots, which no walk has, see traced. Nothing of this runs in
-// the page: a fetch wrapped in the page to say each request in its
-// console made three playback sequences hang in CI, so a record must not
-// touch what it records. A line is the milliseconds since the trace
+// the page, so the record adds nothing to what it records. A line is the milliseconds since the trace
 // began, the request's number and what became of it: "ask" with the
 // method and the path, the call's name and arguments for /call, "answer"
 // with the status, or "failed" with why. The events the Go side sends

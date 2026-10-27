@@ -844,9 +844,8 @@ it hang, #508.
    threw. Every request to the Go side is kept beside it, in a file of
    the same name ending in `.requests.txt`, see `hearRequests` in
    `walks/bridge.mjs`. Playwright records the network into a trace only
-   along with the snapshots below, so Node hears the requests instead.
-   Nothing of it runs in the page: a fetch wrapped in the page to log
-   each request made three playback sequences hang in CI on #558. The
+   along with the snapshots below, so Node hears the requests instead,
+   and nothing of it runs in the page. The
    events the Go side sends come on one request that stays open, so
    they are not in it. A film of
    the screen is in it only for the walks `walks/filmed.mjs` names: it
