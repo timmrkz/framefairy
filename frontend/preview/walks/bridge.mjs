@@ -2,9 +2,10 @@
 // its clip chosen, a way to wait until the app has settled, and the
 // engine's own answer to compare the screen with. See docs/TESTING.md.
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { chromium } from "playwright";
+import { filmed as filmedList } from "./filmed.mjs";
 
 // The Chromium the pinned Playwright was made for. CI's image holds only
 // its headless shell, which a headless launch finds by itself, so there
@@ -45,8 +46,11 @@ function fallbackBrowser() {
 }
 let fellBack;
 async function launch(args) {
+  // An interrupt is the walk's own to answer, see keepTraces, not
+  // Playwright's, which would close the browser under the traces.
+  const options = { args, handleSIGINT: !traces };
   try {
-    return await chromium.launch({ args });
+    return await chromium.launch(options);
   } catch (e) {
     const exe = String(e?.message).includes("Executable doesn't exist") && fallbackBrowser();
     if (!exe) throw e;
@@ -54,7 +58,7 @@ async function launch(args) {
       fellBack = exe;
       console.error(`walking on ${exe}, since the Chromium of this Playwright is not installed`);
     }
-    return chromium.launch({ executablePath: exe, args });
+    return chromium.launch({ ...options, executablePath: exe });
   }
 }
 
@@ -107,8 +111,139 @@ export function noDeadlines(page) {
 // draws on a 2D canvas here, __flatScreen, because headless Chromium gives
 // nothing back from a WebGPU canvas, and the walks read the frame on
 // screen from the canvas. See screen.ts.
-export function newBrowser() {
-  return launch(["--enable-unsafe-webgpu"]);
+export async function newBrowser() {
+  const browser = await launch(["--enable-unsafe-webgpu"]);
+  if (traces) {
+    const plain = browser.newPage.bind(browser);
+    browser.newPage = async (options) => {
+      const page = await plain(options);
+      await traced(page);
+      return page;
+    };
+  }
+  return browser;
+}
+
+// WALKTRACES names a folder, and every page a walk opens is recorded in
+// a Playwright trace: each call of the walk's with when it began and
+// ended, what the page logged and threw, and every request to the Go
+// side, kept beside it, see hearRequests. A walk that filmed.mjs
+// names records a film of the screen too. A walk that passed throws its
+// traces away. One that failed, threw or was stopped keeps them in the
+// folder, one file for each page it had open, and says where, so a walk
+// that failed in CI comes with what happened in it, and nobody has to
+// make it fail again to see. TRACE=film films every walk, and
+// TRACE=none records nothing. See Finding why a walk failed in
+// docs/TESTING.md. make walks sets both.
+const traces = process.env.WALKTRACES;
+const tracingWhich = process.env.TRACE || "light";
+if (!["light", "film", "none"].includes(tracingWhich)) {
+  throw new Error(`TRACE is light, film or none, not ${JSON.stringify(tracingWhich)}`);
+}
+const tracing = new Set();
+let tracedAs = "walk";
+let filmingNow = false;
+
+// The name the traces a walk keeps are filed under, its sequence or its
+// script and seed, and whether it is filmed: names are what filmed.mjs
+// knows it by, its sequence's name, or its script and its script with
+// the seed.
+export function traceAs(title, names = [title]) {
+  tracedAs = title;
+  filmingNow = tracingWhich === "film" || (tracingWhich === "light" && names.some((n) => n in filmedList));
+}
+
+async function traced(page) {
+  if (tracingWhich === "none") return;
+  const context = page.context();
+  // The film of the screen made eight sequences take 15 % longer in a
+  // cloud session, and every walks job in CI a fifth longer, so only the
+  // walks filmed.mjs names have it. The page as it was before and after
+  // every call, snapshots, 41 % longer and a walks job in CI over its
+  // five minutes, no walk has.
+  await context.tracing.start({ screenshots: filmingNow, snapshots: false, title: tracedAs });
+  hearRequests(page);
+  tracing.add(context);
+  context.on("close", () => {
+    tracing.delete(context);
+    requestLogs.delete(context);
+  });
+}
+
+// Every request the page makes, heard in Node and kept beside the
+// trace. Playwright records the network into a trace only along with
+// the snapshots, which no walk has, see traced. Nothing of this runs in
+// the page, so the record adds nothing to what it records. A line is the milliseconds since the trace
+// began, the request's number and what became of it: "ask" with the
+// method and the path, the call's name and arguments for /call, "answer"
+// with the status, or "failed" with why. The events the Go side sends
+// come on one request to /events that stays open, so they are not in it.
+const requestLogs = new Map();
+function hearRequests(page) {
+  // The clock only stamps the record, nothing waits on it.
+  const clock = () => Date.now();
+  const t0 = clock();
+  const lines = [];
+  const ids = new Map();
+  const at = () => String(clock() - t0).padStart(7);
+  page.on("request", (r) => {
+    const id = ids.size + 1;
+    ids.set(r, id);
+    const url = new URL(r.url());
+    let what = url.pathname + url.search;
+    if (url.pathname === "/call") {
+      try {
+        const { name, args } = JSON.parse(r.postData() ?? "");
+        what = `/call ${name} ${JSON.stringify(args).slice(0, 200)}`;
+      } catch {
+        // Said as its path alone.
+      }
+    }
+    lines.push(`${at()}  ${id}  ask ${r.method()} ${what}`);
+  });
+  page.on("response", (r) => lines.push(`${at()}  ${ids.get(r.request())}  answer ${r.status()}`));
+  page.on("requestfailed", (r) => lines.push(`${at()}  ${ids.get(r)}  failed ${r.failure()?.errorText ?? ""}`));
+  requestLogs.set(page.context(), lines);
+}
+
+// Each step of a walk as a group of its own in the trace, named the way
+// the walk prints it, so the trace reads step by step. Ends the group the
+// step before left open.
+export async function traceStep(page, name) {
+  if (!tracing.has(page.context())) return;
+  const { tracing: t } = page.context();
+  if (page.__traceStep) await t.groupEnd();
+  page.__traceStep = true;
+  await t.group(name);
+}
+
+// Keeps the traces of every page still open and says where they are.
+// Pages closed before were let go of, as a walk lets go of a report
+// window once it is done with it.
+export async function keepTraces() {
+  if (!tracing.size) return;
+  mkdirSync(traces, { recursive: true });
+  const file = tracedAs.replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "").slice(0, 100);
+  let n = 0;
+  for (const context of [...tracing]) {
+    tracing.delete(context);
+    const path = join(traces, `${file}${n++ ? `-${n}` : ""}.zip`);
+    await context.tracing.stop({ path });
+    console.log(`trace: ${path}`);
+    const lines = requestLogs.get(context);
+    if (lines) writeFileSync(path.replace(/\.zip$/, ".requests.txt"), lines.join("\n") + "\n");
+  }
+}
+
+// A walk stopped from outside, because it hung until the time of make
+// walks ran out, keeps its traces on the way out: the step it hung in
+// is the one a trace is wanted for most. TestWalks stops it with an
+// interrupt and waits for it to end.
+if (traces) {
+  process.once("SIGINT", async () => {
+    await keepTraces();
+    process.exit(1);
+  });
 }
 
 // The interface on the bridge, in the episode's workspace with its clip
@@ -207,20 +342,34 @@ export async function fakeClock(page) {
 //
 // Playwright holds the clock only at a moment it is told, and the app's
 // time runs on between reading the moment and holding it there, so now
-// and then the moment read is already past and Playwright says so. It is
-// read again then: the next reading is not behind.
+// and then the moment read is already past and Playwright says so. It
+// has held the clock by then, where the app's time had got to, since
+// pauseAt holds it before it moves it on, see pauseAt in the clock
+// Playwright puts in the page, and that moment is as good as the one
+// read. Seen with Playwright 1.64.1: after "Cannot fast-forward to the
+// past" the page's Date.now stood still. It was read again before, and
+// the next reading was not behind.
 export async function holdClock(page) {
   await fakeClock(page);
-  for (;;) {
-    try {
-      await page.clock.pauseAt(await page.evaluate(() => Date.now()));
-      page.__held = true;
-      return;
-    } catch (e) {
-      if (!String(e?.message).includes("fast-forward to the past")) throw e;
-    }
+  try {
+    await page.clock.pauseAt(await pageNow(page));
+  } catch (e) {
+    if (!String(e?.message).includes("fast-forward to the past")) throw e;
+    // That the clock is held after the error is Playwright's own order of
+    // doing things, so it is checked rather than trusted: over two of the
+    // real frames the app's time must not move. An upgrade that held the
+    // clock after it moved it would let the app's time run on, and every
+    // walk that holds the clock would go quietly back to racing it.
+    const at = await pageNow(page);
+    await page.evaluate(() => new Promise((done) => window.__real.frame(() => window.__real.frame(done))));
+    const after = await pageNow(page);
+    if (after !== at) throw new Error(`pauseAt did not hold the clock: it went from ${at} to ${after}`);
   }
+  page.__held = true;
 }
+
+// What the app's time is now, the one place a walk reads it.
+const pageNow = (page) => page.evaluate(() => Date.now());
 
 // Runs the app's held time on by ms, every timer and frame on the way
 // firing in turn, and holds it again there.
@@ -283,40 +432,54 @@ export async function sidebarStill(page) {
   });
 }
 
-// Which episode is on screen: the one the sidebar marks as the current
-// one, by its path in the library. Not the last one the interface asked
-// the clips of: a video just added asks for them only later, and a walk
-// then held its clip list to the episode before.
-export async function episodeOn(page) {
-  const name = await page.evaluate(
-    () => document.querySelector("aside button.episode.current .name")?.textContent ?? null,
-  );
-  if (!name) return null;
-  const named = (await ask(page, "Library")).filter((e) => e.name === name).map((e) => e.source);
+// What the app marks as current, read in the page: the name of the
+// episode the sidebar marks, the clips the interface has asked for,
+// newest first, and the key of the card the clip list marks. The one
+// reader of it, so episodeOn, chosen and settledScreen all read the same
+// screen the same way.
+function readChosen() {
+  return {
+    name: document.querySelector("aside button.episode.current .name")?.textContent ?? null,
+    asked: [...window.__calls].reverse().filter((c) => c.name === "Clips").map((c) => c.args[0]),
+    key: document.querySelector("aside ol li[data-key] button.pick.current")?.closest("li")?.dataset.key ?? null,
+  };
+}
+
+// The episode a reading of readChosen is of, by its path in the library.
+async function chosenPath(page, seen) {
+  if (!seen.name) return null;
+  const named = (await ask(page, "Library")).filter((e) => e.name === seen.name).map((e) => e.source);
   if (named.length < 2) return named[0] ?? null;
   // Two episodes of one file name, from two folders, look the same in the
   // sidebar, so they are told apart by the one whose clips the app asked
   // for last: the one on screen, once its clip list has come, which a
   // walk waits for before it asks.
-  return page.evaluate(
-    (paths) => [...window.__calls].reverse().find((c) => c.name === "Clips" && paths.includes(c.args[0]))?.args[0] ?? null,
-    named,
-  );
+  return seen.asked.find((p) => named.includes(p)) ?? null;
+}
+
+// The clip a reading of readChosen is of, by its plan and id as the
+// engine names them.
+async function chosenClip(page, seen) {
+  const path = await chosenPath(page, seen);
+  if (!path || !seen.key) return null;
+  const entry = (await ask(page, "Clips", path)).find((c) => c.key === seen.key);
+  return entry ? { path, plan: entry.plan, clip: entry.id } : null;
+}
+
+// Which episode is on screen: the one the sidebar marks as the current
+// one, by its path in the library. Not the last one the interface asked
+// the clips of: a video just added asks for them only later, and a walk
+// then held its clip list to the episode before.
+export async function episodeOn(page) {
+  return chosenPath(page, await page.evaluate(readChosen));
 }
 
 // Which clip is on screen: the card the clip list marks as the current
-// one, in the episode on screen, by its plan and id as the engine names
-// them. Not the last captions asked for: an episode just opened shows its
-// clip before that, and a walk then held the clip on screen to another
-// episode's.
+// one, in the episode on screen. Not the last captions asked for: an
+// episode just opened shows its clip before that, and a walk then held
+// the clip on screen to another episode's.
 export async function chosen(page) {
-  const path = await episodeOn(page);
-  const key = await page.evaluate(
-    () => document.querySelector("aside ol li[data-key] button.pick.current")?.closest("li")?.dataset.key ?? null,
-  );
-  if (!path || !key) return null;
-  const entry = (await ask(page, "Clips", path)).find((c) => c.key === key);
-  return entry ? { path, plan: entry.plan, clip: entry.id } : null;
+  return chosenClip(page, await page.evaluate(readChosen));
 }
 
 // What the engine says about the clip on screen, asked directly: its
@@ -341,39 +504,60 @@ export async function engineState(page, at) {
 // What the clip timeline shows: where the clip starts and ends and where
 // each cut is, on the episode's clock, read off its handles.
 export async function timeline(page) {
-  return page.evaluate(() => {
-    const value = (el) => Number(el?.getAttribute("aria-valuenow"));
-    const box = document.querySelector(".clip-timeline");
-    const start = box?.querySelector('[aria-label="Clip start"]');
-    if (!start) return null;
-    const cuts = [];
-    for (const edge of box.querySelectorAll(".cutedge")) {
-      const hit = /cut (\d+) (starts|ends)/.exec(edge.getAttribute("aria-label") ?? "");
-      if (!hit) continue;
-      const i = Number(hit[1]) - 1;
-      cuts[i] ??= {};
-      cuts[i][hit[2] === "starts" ? "from" : "to"] = value(edge);
-    }
-    return {
-      start: value(start),
-      end: value(box.querySelector('[aria-label="Clip end"]')),
-      cuts: cuts.filter(Boolean),
-    };
-  });
+  return page.evaluate(readTimeline);
+}
+function readTimeline() {
+  const value = (el) => Number(el?.getAttribute("aria-valuenow"));
+  const box = document.querySelector(".clip-timeline");
+  const start = box?.querySelector('[aria-label="Clip start"]');
+  if (!start) return null;
+  const cuts = [];
+  for (const edge of box.querySelectorAll(".cutedge")) {
+    const hit = /cut (\d+) (starts|ends)/.exec(edge.getAttribute("aria-label") ?? "");
+    if (!hit) continue;
+    const i = Number(hit[1]) - 1;
+    cuts[i] ??= {};
+    cuts[i][hit[2] === "starts" ? "from" : "to"] = value(edge);
+  }
+  return {
+    start: value(start),
+    end: value(box.querySelector('[aria-label="Clip end"]')),
+    cuts: cuts.filter(Boolean),
+  };
 }
 
 // What the caption box shows: each word, the moment it stands for, and
 // the word of the episode it is.
 export async function shown(page) {
-  return page.evaluate(() =>
-    [...document.querySelectorAll(".captions .word")].map((w) => ({
-      text: w.textContent,
-      at: Number(w.dataset.at),
-      to: Number(w.dataset.to),
-      keyed: w.classList.contains("keyed"),
-      focused: document.activeElement === w,
-    })),
+  return page.evaluate(readShown);
+}
+function readShown() {
+  return [...document.querySelectorAll(".captions .word")].map((w) => ({
+    text: w.textContent,
+    at: Number(w.dataset.at),
+    to: Number(w.dataset.to),
+    keyed: w.classList.contains("keyed"),
+    focused: document.activeElement === w,
+  }));
+}
+
+// What the screen shows once the app has settled, read in the moment it
+// settled: the clip on screen, see chosen, the caption box, see shown,
+// and the clip timeline, see timeline. All of it is read in the one turn
+// of the page in which the settle answers, so nothing of the app runs
+// between the reads. Read one call at a time, a search that landed a
+// clip between two of them changed the clip on screen under the walk,
+// and the clip timeline was held to the clip before.
+export async function settledScreen(page) {
+  const seen = await page.evaluate(
+    async ([held, marked, words, track]) => {
+      const run = (src) => new Function(`return (${src})`)()();
+      await window.__settled(held);
+      return { ...run(marked), now: run(words), drawn: run(track) };
+    },
+    [Boolean(page.__held), readChosen.toString(), readShown.toString(), readTimeline.toString()],
   );
+  return { at: await chosenClip(page, seen), now: seen.now, drawn: seen.drawn };
 }
 
 // Where everything a hand can take hold of on the clip timeline is on

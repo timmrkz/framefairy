@@ -14,8 +14,12 @@
 // The episode is the bridge's, so the words are the sentences its speech
 // stand-in says: "Ich war vielleicht sechs Jahre alt, als mich auf dem
 // Schulhof irgendein Typ geschubst hat."
-import { chosen, newBrowser, open, settle, shown, shownOnPlayhead } from "./bridge.mjs";
+import { chosen, keepTraces, newBrowser, open, settle, shown, shownOnPlayhead, traceAs, traceStep } from "./bridge.mjs";
 import { moving, still, url } from "./common/steps.mjs";
+import { filmed } from "./filmed.mjs";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Watch } from "./rules.mjs";
 import captions from "./captions/sequences.mjs";
 import timeline from "./timeline/sequences.mjs";
@@ -76,6 +80,24 @@ if (only === "--names") {
   const noStep = [...moving].filter((n) => !everyStep[n]);
   if (noStep.length) {
     console.log(`moving names ${JSON.stringify(noStep[0])}, which is no step`);
+    process.exit(1);
+  }
+  // A walk renamed or removed and left in filmed.mjs by its old name
+  // would quietly go unfilmed when it fails next, and so would a name
+  // written in another form than the walk prints. A walk is named by its
+  // file, one TestWalks walks because it walks with walk.mjs, alone or
+  // with its seed as the walk prints it, SEED=3 or SEED=3 HEVC=1.
+  const here = dirname(fileURLToPath(import.meta.url));
+  const isWalk = (n) => {
+    const [, file] = n.match(/^([\w-]+\.mjs)(?: SEED=\d+(?: HEVC=1)?)?$/) ?? [];
+    const path = file && file !== "walk.mjs" ? join(here, file) : "";
+    // Written as a pattern, since TestWalks takes any file that holds
+    // the import itself for a walk, and this one would then be walked.
+    return Boolean(path) && existsSync(path) && /from "\.\/walk\.mjs"/.test(readFileSync(path, "utf8"));
+  };
+  const noWalk = Object.keys(filmed).filter((n) => !names.includes(n) && !isWalk(n));
+  if (noWalk.length) {
+    console.log(`filmed.mjs names ${JSON.stringify(noWalk[0])}, which is no walk or sequence`);
     process.exit(1);
   }
   console.log(names.join("\n"));
@@ -143,7 +165,19 @@ async function mark(what) {
 // Walks one sequence and says whether it failed, in a browser of its own
 // or in browser, whose pages it closes again.
 async function walkSequence(seq, shared = null) {
+  // Whatever ends the sequence keeps its trace: opening the video, a step
+  // that throws, reading the screen between two steps.
+  try {
+    return await walkingSequence(seq, shared);
+  } catch (e) {
+    await keepTraces();
+    throw e;
+  }
+}
+
+async function walkingSequence(seq, shared) {
   const began = performance.now();
+  traceAs(seq.name);
   const opened = await open(url, { browser: shared, still: still(seq) });
   const { browser, errors } = opened;
   // The page the steps act on: the app's window, or the report window
@@ -487,6 +521,7 @@ async function walkSequence(seq, shared = null) {
     // Each step is said as it begins, so a step that waits for good is
     // named when the -timeout of make walks stops the sequence.
     console.log(`      ${done.at(-1)}`);
+    await traceStep(main, done.at(-1));
     const s = await shown(page);
     const step = everyStep[what];
     if (!step) throw new Error(`no step called ${what}`);
@@ -496,6 +531,7 @@ async function walkSequence(seq, shared = null) {
   const took = ((performance.now() - began) / 1000).toFixed(1).padStart(5);
   console.log(`${failed ? "FAIL" : "ok  "}  ${took} s  ${seq.name}`);
   if (failed) console.log(`      after ${done.join(", ")}\n      ${failed.replaceAll("\n", "\n      ")}`);
+  if (failed) await keepTraces();
   if (shared) await Promise.all(shared.contexts().map((c) => c.close()));
   else await browser.close();
   return Boolean(failed);

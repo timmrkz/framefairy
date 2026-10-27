@@ -61,6 +61,18 @@ to use them, and what to push for where they are missing.
   section 12. Where CI has none yet, break the code by hand once and see
   the test fail, and push for the tool. The same holds when an existing
   test is rewritten: the rewrite must still fail where the old one did.
+- **No retries.** A test passes on its first try or it has failed. A
+  retry, a runner's retry setting, a rerun in CI or a loop that reads or
+  acts again until the answer suits it, wherever it is written, lets a
+  test pass with the code broken, and hides the very order a flaky test
+  is about. A runner's retry setting stays at zero. What is left is a
+  gesture that corrects itself the way a person does, a hand that aims
+  again after a near miss, a check of a product's own retries, or a
+  comparison the test makes again because the state it compared has
+  moved on since, never because the same state gave an answer it did
+  not like. Each one says so where it is, and the project keeps a
+  complete list of them, so the next reader does not have to judge each
+  loop again.
 - **Not every line earns a test.** Glue that only passes values on, code
   a library already tests, a log line's wording: leave them. Spend tests
   where a mistake would reach a person.
@@ -378,8 +390,8 @@ second. A bug report is the same question.
    - Several symptoms after a run of merges often have one cause. Look
      for it before fixing each, or the fixes stack up on each other.
    - A test that fails now and then fails for a reason: find the event
-     it misses or the order it assumes. Run it many times, under the race
-     detector, on a loaded machine.
+     it misses or the order it assumes, with the tools in section 7,
+     in their order. Loading the machine comes last.
    - A vague report of instability, with no case that fails every time,
      is still a report. Look at the design, its concurrency and its order
      of events.
@@ -409,6 +421,65 @@ retry, skip, quarantine or remove a test, or change the expected value to
 what the code now says without knowing why it changed.
 
 ## 7. Flaky, red and hanging checks
+
+### Finding why a test fails now and then
+
+A test that fails now and then has met an order of events it did not
+expect. In a single-threaded language, a page, Node, Python's asyncio,
+nothing touches the same memory at once, so there is no data race to
+detect. What fails is the order: the test read the result before the
+step had finished, or waited for a signal that had already gone by, or
+the code under test met the two halves of its work in an order nobody
+thought of. Find that order with these, in this order:
+
+1. **Read what the failure left.** The runner keeps a trace of a
+   test that failed, and keeps it in CI with the run. Playwright's
+   trace has every action and the console and, where a project pays
+   for them, a film of the screen and snapshots of the page before and
+   after each action, with the network. Read what the project records before
+   looking for what it left out. The race detector has its
+   report, and `go test -timeout` prints every goroutine. Most flakes are
+   explained there, without running anything. Where the runner keeps
+   no trace of a failure yet, that is the first thing to fix. A trace
+   is several records of different cost. The calls and the console
+   are text the runner already has, and cost next to nothing. A film
+   of the screen or a snapshot of the page costs every run real time,
+   and a runner may record the network only along with the snapshots,
+   as Playwright does. Then the runner can hear each request and its
+   answer from outside the page and keep them beside the trace, which
+   adds nothing to the page under test. Keep the cheap records on for every test, and turn
+   the costly ones on only for the tests whose trace showed they are
+   needed, in one list that names the issue for each. The change that
+   fixes the test takes its line out.
+2. **Read the code for the order it assumes.** Name the event the test
+   waits for and where the code sends it. Ask whether the test could
+   read before it, and whether the event could come before the test
+   listens. Ask the same of the code under test.
+3. **Make that one order happen on purpose.** Hold the one event back
+   until the test lets it go: a request held with Playwright's
+   `page.route` or by a gate in the fake, a step of the fake clock, the
+   page's CPU throttled by the browser's own setting. A flake made to
+   fail every time is a bug with a test, and the fix is seen to work.
+4. **Try the orders systematically.** Go's race detector, and
+   `testing/synctest` for goroutines and timers. For async code in
+   JavaScript and TypeScript, fast-check's scheduler, `fc.scheduler()`
+   in a unit test, which tries the orders in which promises and events
+   can resolve, and cuts a failure down to the shortest order that
+   breaks it.
+5. **Run it again, alone, many times.** That counts how often it
+   fails, before and after a fix. It finds no cause by itself.
+6. **Load the whole machine, last.** Busy loops beside the test change
+   every timing at once, so a run that fails says nothing about which
+   order was wrong, and one that passes proves nothing. It takes many
+   runs, it breaks unrelated tests beside it, and a cloud machine under
+   load hangs. Reach for it only when nothing above has found the
+   order, and then go back to step 3 with what it showed.
+
+Debug logs added to see the order are step 1 done late: the trace
+should already hold them. A log line that would have explained the
+failure belongs in the trace or the product's logs for good.
+
+### Red and hanging checks
 
 - **Flaky tests come first.** A test that fails now and then teaches
   everyone to ignore red. Rank them by how often they failed in CI, the
@@ -515,8 +586,6 @@ A test is code we keep. It must still be right and readable in a year.
 - **The whole product, the way a person uses it.** An end-to-end test
   goes from one part of the product to another, as a person does. A test
   of one component is no replacement for it.
-- **No retries.** A test that passes on its second try is a failing test.
-  A runner's retry setting stays at zero.
 - **A test only proves what its fixture contains.** Make fixtures the way
   real inputs are: the encodings, sizes and odd shapes that come in from
   outside. Know what a fixture hides: a video at a low frame rate hides
@@ -617,7 +686,8 @@ wrong, and this skill wins:
 | sleep a few seconds for a service to start | a guess about time | the service says it is ready, and the test hears it |
 | a test's own timeout on `time.After` or a timer | a guess about time, and it hides where it hung | the test runner's own timeout |
 | `networkidle`, wait for the page to be quiet | quiet is a guess about time | the event the page sends when the step is done |
-| retry a flaky test, in the runner or in CI | a test that passes on its second try is failing | find the cause, section 6 |
+| retry a flaky test, in the runner, in CI or in a loop in the test | a test that passes on its second try is failing | no retries, section 1, and find the cause, section 7 |
+| load the machine to make a flaky test fail | it changes every timing at once and proves nothing when it passes | the trace, then the one order held on purpose, section 7 |
 | turn the test cache off to be safe | every run pays for every test | keep the cache, section 8 |
 | a coverage number as the bar | coverage is not verification | what matters verified, and mutation testing, section 1 |
 | a dependency injection container | more machinery than a constructor | plain constructor injection, section 5 |

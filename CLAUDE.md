@@ -280,8 +280,13 @@ messages, pull request text, code comments and chat replies.
     order, left to right.
   - Every comparison has a change column: the difference as a share of
     the before, rounded to a whole percent, with the word that says
-    which way it went, `20 % faster`, `7 % slower`, `3 % smaller`. A
-    change under the noise of the measurement says `no change`.
+    which way it went, `20 % faster`, `7 % slower`, `3 % smaller`. The
+    change is always given as its number, never as words like `no
+    change` in its place: numbers that differ are a change a person can
+    see. How much the measurement varies goes beside it, as the spread
+    of the before measured more than once, `12 % faster, ± 8 %`, so the
+    reader sees whether the change is larger than the noise. A
+    comparison of one run each has no spread, and says so.
   - Only like is compared with like. Numbers from a cloud session and
     from CI, or from three machines and from four, go in separate tables
     or separate rows, never in columns of one row.
@@ -591,6 +596,23 @@ messages, pull request text, code comments and chat replies.
   `page.clock`, Vitest's fake timers, and a `time.Sleep` in a
   `testing/synctest` bubble, whose line says
   `//nolint:forbidigo // synctest bubble`.
+- **A test that fails now and then is explained, not loaded.** Its trace
+  comes first: every walk that fails keeps a Playwright trace, in CI
+  too, with every call, what the app logged and every request. A film of
+  the screen makes every walk slower, so only the walks
+  `frontend/preview/walks/filmed.mjs` names have one, once their trace
+  showed it is the screen that is missing. That line is pushed to the
+  pull request the walk failed on, the one change a pull request carries
+  that is not its own, because without it the next failure shows no more
+  than this one. Then the order it assumes,
+  read in the code, then that one order made to happen on purpose, a
+  call held, the clock stepped, then the orders tried by a tool, the
+  race detector or fast-check's scheduler. Loading the machine with busy
+  loops comes last. See section 7 of the testing skill and Finding why a
+  walk failed in [docs/TESTING.md](docs/TESTING.md).
+- **No test retries**, in the runner or in a loop of its own. A test
+  that passes on its second try is a failing test. See section 1 of the
+  testing skill.
 - **A fix to the interface comes with a walk** that does what Tim did and
   checks what he saw, so the fix is proven against the real Go side and
   Tim does not have to try it by hand to know it holds. See

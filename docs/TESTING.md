@@ -822,6 +822,125 @@ headless Chromium in the cloud draws WebGPU on the processor, at about
 25 frames a second, so only a Mac's numbers say how the app plays.
 `VIEWPORT` and `SCALE` are as for `speed.mjs`.
 
+### Finding why a walk failed
+
+A walk that fails now and then has met an order of events it did not
+expect, see section 7 of the testing skill. Here is where each of its
+tools is in this repository, in the order to use them. Loading the
+machine with busy loops beside a walk comes last, if at all: it took
+many runs to show anything, it never showed #358, and the walks beside
+it hang, #508.
+
+1. **The trace.** Every walk and sequence records a Playwright trace of
+   every page it opens, into `WALKTRACES`, `.build/walk-traces` unless
+   set. A walk that passed throws its traces away. One that failed or
+   threw keeps them, one zip for each page it had open, the report
+   window too, and prints `trace:` with the path under its failure. One
+   that hung is stopped by `TestWalks` with an interrupt instead of a
+   kill, so it keeps the traces of the step it hung in, see
+   `keepTraces` in `walks/bridge.mjs`. Each step is a group in the
+   trace, named the way the walk prints it. A trace holds every call of
+   the walk with when it began and ended, what the page logged and
+   threw. Every request to the Go side is kept beside it, in a file of
+   the same name ending in `.requests.txt`, see `hearRequests` in
+   `walks/bridge.mjs`. Playwright records the network into a trace only
+   along with the snapshots below, so Node hears the requests instead,
+   and nothing of it runs in the page. The
+   events the Go side sends come on one request that stays open, so
+   they are not in it. A film of
+   the screen is in it only for the walks `walks/filmed.mjs` names: it
+   made every walks job in CI about a fifth longer when every walk had
+   one, measured on #558. `make walks TRACE=film` films every walk for
+   that run, and `TRACE=none` records no trace. Playwright's snapshots
+   of the page before and after each call no walk records: eight
+   sequences took 41 % longer with them in a cloud session, and with
+   the film a walks job in CI went over its five minutes. In CI a walks
+   job that failed keeps the folder with the run as `walk-traces-0` to
+   `walk-traces-3`, one for each share, for 14 days.
+   A session finds it with the GitHub tools,
+   `list_workflow_run_artifacts` for the run and
+   `download_workflow_run_artifact`, which gives a link to the zip. The
+   zip itself lies on a host of GitHub's under `blob.core.windows.net`,
+   which a cloud session can fetch only when its environment's network
+   allows that host, and the log of a job too unless it is read with
+   `get_job_logs`. Where it does not, the session says so, and a person
+   downloads the zip from the run's page. A person opens a trace at trace.playwright.dev, which reads it in the
+   browser and sends it nowhere, or with `npx playwright show-trace`. A
+   session with no window reads it unpacked: `trace.trace` holds every
+   call of the walk, with what the page logged and threw, one JSON
+   object a line, with times in milliseconds from when the trace
+   began. The `.requests.txt` beside it counts from the same start, a
+   line a request: `  1532  12  ask POST /call main.FrameFairy.Seek
+   [3.2]`, `  1540  12  answer 200` or `failed` with why.
+   `trace.network` is empty, and `resources/` holds the screenshots of
+   a filmed walk, which the Read tool shows.
+2. **The order the walk assumes.** What the step waits for, `settle`,
+   `caughtUp`, `nextNews`, `pageUntil`, `__standing`, and whether what
+   it reads could change after that, or come before the walk listens.
+   #538 and #554 read before the step had finished, #556 waited for a
+   signal that had gone by.
+3. **That one order, on purpose.** Hold the call the walk would race
+   with `hold` and `letHeld`, the `/hold` gate of the bridge above, and
+   look while it is held. Hold a request the bridge does not gate, a
+   frame read, with Playwright's `page.route`, the way #531 showed #358
+   with a frame read held back. Hold the app's time with `holdClock`
+   and turn it on with `runClock`. Slow the page with `SLOW=4`, the
+   browser's own CPU throttle, see Walks above. A walk that fails every
+   time this way is a test for its fix.
+4. **The orders, tried for you.** Under `make unit` every Go test runs
+   with the race detector, and `testing/synctest` holds goroutines and
+   timers. For the interface's async code, `lib/frames/app.ts` and the
+   frame queue above all, fast-check's scheduler, `fc.scheduler()`, in
+   a Vitest test tries the orders in which promises can resolve and
+   cuts a failure down to the shortest. fast-check is added to
+   `frontend/package.json` with the first test that uses it.
+5. **The walk alone, many times,** to count how often it fails before
+   and after a fix: `SEQUENCE="<name>"` with `sequences.mjs`, or one
+   seed of a walk, against one bridge opened by hand, see The bridge
+   above.
+6. **The machine under load,** last.
+
+A walk that fails now and then gets an issue of its own, with what was
+seen and where, and the trace its failure kept, and the work that was
+going on goes on. When the trace shows the order, it is fixed. When what
+is missing is what the screen looked like, the walk gets a line in
+`walks/filmed.mjs` with the issue's number, pushed to the pull request
+whose CI it failed on, and its next failure in CI comes with the film.
+The line is the one change a pull request carries that is not its own,
+because without it the next failure would show no more than this one.
+The pull request that fixes the walk takes its line out again with
+`Fixes #N`. `sequences.mjs --names`, which every run of `make walks`
+asks first, fails on a line that names no walk or sequence, so a walk
+renamed or removed does not leave a line that films nothing.
+
+### No walk retries
+
+No walk retries, see section 1 of the testing skill. A step that read or
+did something again until it liked the answer hid an order: the rules
+read the clip on screen up to twenty times while a search changed it,
+which `settledScreen` now reads in the one moment the app settled.
+`holdClock` asked Playwright again when the moment it had read was
+already past, and now goes on with the clock Playwright has held by
+then. Four kinds of loop stay, because each is a gesture a person makes,
+a wait on a signal, or a comparison with a state that moved:
+
+- The steps that aim the playhead inside a frame or under a word scroll
+  and click again, at most six and four times, in `playback/steps.mjs`
+  and `captions/steps.mjs`, as a hand aims again after a near miss of a
+  pixel or two.
+- Deleting a video's folder from outside goes on until the folder is
+  gone while the app writes into it, as a person deletes again when
+  Finder says it is not empty.
+- `firstSearch` and the steps that hear a search through read the jobs
+  again on each piece of news, which is a wait on a signal.
+- `agree` in `searching.mjs` compares the clip list with the engine's
+  jobs, and compares again when the engine told the app something new in
+  between, up to 24 looks. It is no retry: a disagreement at a state that
+  did not move is a broken rule at the first look, and one that stands
+  through all 24 looks is a broken rule too. What it looks again for is
+  that the engine's work moved on between the two reads, so the
+  expectation it compared was of the moment before.
+
 ### Where they run
 
 `make walks` runs the sequences and every walk for seeds 1 to `WALKS`, 3

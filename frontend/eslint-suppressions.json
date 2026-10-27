@@ -11,7 +11,7 @@
   },
   "preview/walks/bridge.mjs": {
     "no-restricted-properties": {
-      "count": 2
+      "count": 3
     }
   },
   "preview/walks/captions/steps.mjs": {

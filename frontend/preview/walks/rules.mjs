@@ -3,7 +3,7 @@
 // and the engine's answer with itself before and after, and know nothing
 // of what a correction should do, so they cannot drift into a third
 // engine. See docs/TESTING.md.
-import { settle, letHeld, engineState, shown, timeline, chosen } from "./bridge.mjs";
+import { letHeld, engineState, settle, settledScreen } from "./bridge.mjs";
 
 // The engine's captions as a list of words, and as one comparable value.
 export const words = (caps) =>
@@ -174,35 +174,27 @@ export class Watch {
     // A call a step held comes back before the screen is compared with
     // the engine, which has not heard it while it is held.
     await letHeld(page);
-    await settle(page);
     // The report window is a page of its own, with calls of its own the
     // app's window does not count. Settled only there, an Undo of Clear
     // in it was still putting its pictures back when the next step
     // pressed Redo, and one came back after Redo had cleared them,
-    // issue #554.
+    // issue #554. The app's window settles in settledScreen below.
     if (acted !== page) {
       await letHeld(acted);
       await settle(acted);
     }
     // The clip on screen, which a step that opens another episode or
     // another clip changes. Then what was before is another clip's, and
-    // nothing is compared across the change. It is read before and after
-    // what the screen shows of it, and read again if it changed in
-    // between: a search lands its clip without a call on its way, so the
-    // screen can change after the app has settled, and the clip timeline
-    // was then held to the clip of the episode open before. With no clip
-    // of the engine's on screen, a clip still on its way among them, there
-    // is nothing of the engine's to hold the screen to, and the clip on
-    // screen before is not it.
-    let at, now, drawn, after;
-    for (let tries = 0; ; tries++) {
-      at = await chosen(page);
-      now = await shown(page);
-      drawn = await timeline(page);
-      after = at ? await engineState(page, at) : null;
-      if (JSON.stringify(await chosen(page)) === JSON.stringify(at) || tries === 20) break;
-      await settle(page);
-    }
+    // nothing is compared across the change. It is read with what the
+    // screen shows of it in the moment the app settled, see
+    // settledScreen: a search lands its clip without a call on its way,
+    // so the screen can change after the app has settled, and a clip
+    // read a call after the clip timeline held the clip timeline to the
+    // clip before. With no clip of the engine's on screen, a clip still
+    // on its way among them, there is nothing of the engine's to hold the
+    // screen to, and the clip on screen before is not it.
+    const { at, now, drawn } = await settledScreen(page);
+    const after = at ? await engineState(page, at) : null;
     const moved = JSON.stringify(at) !== JSON.stringify(this.at);
     if (moved) {
       this.at = at;

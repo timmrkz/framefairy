@@ -48,7 +48,10 @@
 #   make walks      the interface against the real Go side, in Chromium:
 #                   the sequences, and every walk WALKS times, each of
 #                   its own length unless STEPS says, WALKERS at once,
-#                   stopped after WALKTIMEOUT, 30m unless set
+#                   stopped after WALKTIMEOUT, 30m unless set, with
+#                   a trace of each that failed in WALKTRACES, with
+#                   a film of the screen for those walks/filmed.mjs
+#                   names, or TRACE=film for all, TRACE=none for none
 #   make check      what this machine still needs to run framefairy
 #   make tools      install the missing tools and nothing else
 #   make models     download the models for the command line, which has no
@@ -532,9 +535,17 @@ WALKTIMEOUT ?= 30m
 # The videos the walks add, kept by what makes them, so each is made once
 # and not on every add, issue #527. CI keeps the folder between runs.
 WALKVIDEOS ?= $(CURDIR)/.build/walk-videos
+# A Playwright trace of a walk or sequence that failed, threw or was
+# stopped, one file for each page it had open, see Finding why a walk
+# failed in docs/TESTING.md. CI keeps the folder with a run that failed.
+# Only the walks frontend/preview/walks/filmed.mjs names have a film of
+# the screen in it, since the film makes a walk slower. TRACE=film films
+# every walk and sequence, and TRACE=none records no trace.
+WALKTRACES ?= $(CURDIR)/.build/walk-traces
+TRACE ?= light
 walks: toolchain modules frontend/node_modules/.package-lock.json $(FRESH_FRAMES)
 	@cd frontend && $(NPM) exec -- vite build --config preview/bridge.config.ts --logLevel error
-	@FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" FRAMEFAIRY_WALKS=1 FRAMEFAIRY_WALK_VIDEOS='$(WALKVIDEOS)' WALKS='$(WALKS)' STEPS='$(STEPS)' WALKERS='$(WALKERS)' WALKSHARD='$(WALKSHARD)' WALKTIMES='$(WALKTIMES)' STILL='$(STILL)' $(GO) test -count=1 -ldflags '$(LDFLAGS)' -timeout $(WALKTIMEOUT) -run '^TestWalks$$' ./cmd/framefairy-app
+	@FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" FRAMEFAIRY_WALKS=1 FRAMEFAIRY_WALK_VIDEOS='$(WALKVIDEOS)' WALKS='$(WALKS)' STEPS='$(STEPS)' WALKERS='$(WALKERS)' WALKSHARD='$(WALKSHARD)' WALKTIMES='$(WALKTIMES)' STILL='$(STILL)' WALKTRACES='$(WALKTRACES)' TRACE='$(TRACE)' $(GO) test -count=1 -ldflags '$(LDFLAGS)' -timeout $(WALKTIMEOUT) -run '^TestWalks$$' ./cmd/framefairy-app
 
 # The checks from outside the app: a link that opens it, closed or open,
 # handed to macOS the way a browser does, with the local dispenser running
