@@ -88,10 +88,10 @@ func TestTheFramesRouteStreamsAnEpisode(t *testing.T) {
 	// The first pull says where the stream's time went before its first
 	// frame, in milliseconds, and no pull after it says it again.
 	// The first stream of a decoder nobody held opens the file.
-	var started, opened2, first, file int
-	if n, _ := fmt.Sscanf(told[0], "%d,%d,%d,%d", &started, &opened2, &first, &file); n != 4 ||
-		started <= 0 || opened2 < started || first < opened2 || file != 1 {
-		t.Errorf("the first pull told %q as the stream's times, want the request had, the place reached and the first frame, in order, and the file opened", told[0])
+	var started, opened2, first, file, on int
+	if n, _ := fmt.Sscanf(told[0], "%d,%d,%d,%d,%d", &started, &opened2, &first, &file, &on); n != 5 ||
+		started <= 0 || opened2 < started || first < opened2 || file != 1 || on != 0 {
+		t.Errorf("the first pull told %q as the stream's times, want the request had, the place reached and the first frame, in order, the file opened and no cursor gone on", told[0])
 	}
 	for _, again := range told[1:] {
 		if again != "" {

@@ -20,8 +20,8 @@ export type Pulled = {
   // nobody pulled from it: no end of the episode and no failure.
   closed: boolean;
   // Where the stream's time went before its first frame, sent with its
-  // first frame: "started,opened,first" in milliseconds, see
-  // engine.PreviewTimes.
+  // first frame: "started,opened,first,file,on", milliseconds and then
+  // 1 or 0, see engine.PreviewTimes.
   times: string;
   // How the frames code their brightness, see light.ts.
   light: Light;

@@ -57,10 +57,12 @@ type Waiter = { rank: number; seq: number; done: (f: Picture | null) => void; go
 // it was asked for, for a probe to read, see docs/VIDEO-PREVIEW.md, Speed:
 // ms until the interface had it, and on the Go side until the decoder had
 // the request, until it was at the place, until the first frame was out,
-// and whether that meant opening the file or only moving a cursor. key
-// says the first frame was the key frame handed over first, issue #281,
-// so the frame asked for came later than these times say.
-export type Opened = { ms: number; started: number; opened: number; first: number; file: boolean; key: boolean };
+// and whether that meant opening the file or only moving a cursor. on says
+// the cursor read on to the place from where it stood, without a seek. key
+// says the stream was asked for the key frame first, issue #281, so the
+// frame asked for came later than these times say, unless the cursor went
+// on, which hands over no key frame, issue #511.
+export type Opened = { ms: number; started: number; opened: number; first: number; file: boolean; on: boolean; key: boolean };
 
 class Stream {
   id: Promise<string | null>;
@@ -70,6 +72,9 @@ class Stream {
   ended = false;
   // Whether it has given a frame yet.
   private gave = false;
+  // Whether the decoder read on to its first frame from where a cursor
+  // stood, rather than seek, see Opened.
+  private wentOn = false;
   // When it was asked for, to count how long its first frame took.
   private asked = performance.now();
   used = performance.now();
@@ -222,7 +227,7 @@ class Stream {
           return;
         }
         this.take(got);
-        if (keyNow) this.keyCame(got);
+        if (keyNow) this.keyCame(got, id);
       }
     } finally {
       this.pulling = false;
@@ -231,12 +236,19 @@ class Stream {
 
   // The key frame came, before the frame the hand asked for: it may be put
   // up while that one is decoded, whether the hand is still there or not,
-  // see onPassing.
-  private keyCame(got: Got) {
+  // see onPassing. A decoder that read on to the frame from a cursor
+  // standing after the key frame hands over the frame asked for first,
+  // which is cheaper, and there is no key frame to put up, issue #511.
+  private keyCame(got: Got, id: string) {
     const last = got.frames[got.frames.length - 1];
-    if (!last || !this.placed) return;
+    if (!last) return;
     const rank = rankOf(this.owner.track.samples, last.at);
-    if (rank < this.first) this.owner.onPassing?.(rank, last.frame, this.placed, true);
+    if (rank < this.first) this.owner.stats.keyCame++;
+    else if (this.wentOn) {
+      this.owner.stats.keyWentOn++;
+      this.owner.trace(`stream ${id.slice(0, 6)}: asked for its key frame first, the decoder read on to frame ${rank} from where a cursor stood, so no key frame came before it`);
+    }
+    if (rank < this.first && this.placed) this.owner.onPassing?.(rank, last.frame, this.placed, true);
   }
 
   // The first frame of a stream nobody waits on any more, read so that the
@@ -259,7 +271,7 @@ class Stream {
 
   private take(got: Got) {
     if (!this.gave && got.frames.length) {
-      this.owner.opened(performance.now() - this.asked, got.times, this.key);
+      this.wentOn = this.owner.opened(performance.now() - this.asked, got.times, this.key).on;
       queueMicrotask(() => this.owner.unpark());
     }
     for (const { at, frame } of got.frames) {
@@ -351,7 +363,10 @@ export class AppFrames {
   // keptRanks are the ranks of the frames last handed over from the kept
   // ones, for the walks. aheadLost counts the frames the hand asked for
   // that were read ahead and let go of from the kept ones before it did.
-  // keyFirst counts the streams opened with their key frame first.
+  // keyFirst counts the streams opened with their key frame first, keyCame
+  // those of them that handed it over before the frame asked for, and
+  // keyWentOn those whose decoder read on to that frame instead, see
+  // Stream.keyCame.
   readonly stats = {
     streams: 0,
     continued: 0,
@@ -361,6 +376,8 @@ export class AppFrames {
     ahead: 0,
     aheadLost: 0,
     keyFirst: 0,
+    keyCame: 0,
+    keyWentOn: 0,
     opens: [] as Opened[],
     first: "",
   };
@@ -396,10 +413,12 @@ export class AppFrames {
 
   // A stream gave its first frame: how long that took here, from asking to
   // having it, and on the Go side, see Opened.
-  opened(ms: number, times: string, key = false) {
-    const [started, open, first, file] = times.split(",").map(Number);
-    this.stats.opens.push({ ms: Math.round(ms), started: started || 0, opened: open || 0, first: first || 0, file: file === 1, key });
+  opened(ms: number, times: string, key = false): Opened {
+    const [started, open, first, file, on] = times.split(",").map(Number);
+    const o = { ms: Math.round(ms), started: started || 0, opened: open || 0, first: first || 0, file: file === 1, on: on === 1, key };
+    this.stats.opens.push(o);
     if (this.stats.opens.length > 64) this.stats.opens.shift();
+    return o;
   }
 
   ptsOf(rank: number): number {

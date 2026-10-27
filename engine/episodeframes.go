@@ -608,10 +608,14 @@ func (f *EpisodeFrames) stream(ctx context.Context, kind int, want *place, open 
 		case rec := <-ch:
 			switch rec.Kind {
 			case framewire.Opened:
-				// The cursor is at from: a file opened, or a cursor moved.
-				file, light := framewire.ReadOpened(rec.Body)
-				if times != nil && file {
+				// The cursor is at from: a file opened, a cursor moved, or
+				// a cursor read on to it.
+				how, light := framewire.ReadOpened(rec.Body)
+				if times != nil && how == framewire.OpenedFile {
 					times.File.Store(true)
+				}
+				if times != nil && how == framewire.WentOn {
+					times.WentOn.Store(true)
 				}
 				if kind == pictureCursor {
 					f.mu.Lock()

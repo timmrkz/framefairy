@@ -174,6 +174,7 @@ export const steps = {
       const screen = document.querySelector(".screen");
       window.__scrubShown = [];
       window.__scrubKeys = window.__frameQueue?.stats.keys ?? 0;
+      window.__scrubWentOn = window.__appFrames?.stats.keyWentOn ?? 0;
       // Each record's old value, and the value now once it is read, so
       // two changes before the observer runs are both kept.
       window.__scrubWatch = new MutationObserver((records) => {
@@ -203,7 +204,8 @@ export const steps = {
       window.__scrubShown.push(Number(document.querySelector(".screen").dataset.shown));
       const q = window.__frameQueue?.stats;
       const n = (q?.keys ?? 0) - window.__scrubKeys;
-      return { shown: window.__scrubShown, keys: n > 0 ? (q?.keysAt.slice(-n) ?? []) : [], count: n };
+      const wentOn = (window.__appFrames?.stats.keyWentOn ?? 0) - window.__scrubWentOn;
+      return { shown: window.__scrubShown, keys: n > 0 ? (q?.keysAt.slice(-n) ?? []) : [], count: n, wentOn };
     });
     if (click) {
       const under = Math.floor((rested.at + 0.001) * fps);
@@ -262,21 +264,31 @@ export const steps = {
   // ["keyed on the way"]
   //                    since "scrub far", the frame queue put up the key
   //                    frame the frame under the hand is decoded from,
-  //                    that one exactly, and the frame it ended on, with
-  //                    the button down and after it was let go, is the
-  //                    frame under the hand, by the number drawn on it
+  //                    that one exactly, unless the decoder said it read
+  //                    on to that frame without a seek, and the frame it
+  //                    ended on, with the button down and after it was let
+  //                    go, is the frame under the hand, by the number
+  //                    drawn on it
   async "keyed on the way"(walk) {
     if (!walk.scrubbed) {
       walk.wrong = "nothing was scrubbed";
       return;
     }
-    const { fps, shown, keys, key, rested, after } = walk.scrubbed;
+    const { fps, shown, keys, key, rested, after, wentOn } = walk.scrubbed;
     const frameOf = (at) => Math.floor((at + 0.001) * fps);
     const under = frameOf(rested.at);
     // What the frame queue put up, rather than what was painted: on a
     // busy machine the frame under the hand can come before the next
     // paint, and then the key frame is rightly never painted.
-    if (!keys.some((at) => Math.abs(at - key) < 0.5 / fps)) {
+    //
+    // A cursor of the decoder can stand between the key frame and the
+    // frame under the hand already, left there by whatever the app read
+    // before, a clip card's first frame most likely. Reading on from it is
+    // cheaper than the key frame, so the decoder does, and says so, and
+    // no key frame comes. On a busy machine that was 1 run in 8, issue
+    // #511. The frame under the hand is still checked below.
+    const wentOnInstead = wentOn > 0 && !keys.length;
+    if (!wentOnInstead && !keys.some((at) => Math.abs(at - key) < 0.5 / fps)) {
       walk.wrong = `the key frame at ${key.toFixed(3)} s was not put up on the way to the frame under the hand at ${rested.at.toFixed(3)} s, the frame queue put up key frames at ${keys.map((a) => a.toFixed(3)).join(", ") || "none"} and the video preview showed ${shown.map((a) => a.toFixed(3)).join(", ")}`;
     } else if (Math.round(rested.frame * fps) !== under) {
       walk.wrong = `with the button still down, the picture stood on frame ${Math.round(rested.frame * fps)}, not frame ${under} under the hand`;

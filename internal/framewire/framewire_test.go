@@ -39,31 +39,37 @@ func TestRecordsComeBackAsWritten(t *testing.T) {
 	}
 }
 
-// An open says whether it opened the file and the light of its picture,
-// and a decoder from before HDR, which says only "file", is read as
-// standard video.
-func TestAnOpenSaysItsLight(t *testing.T) {
+// An open says how it got to its place, whether it opened the file, sought
+// or went on, and the light of its picture. A decoder from before HDR,
+// which says only "file", is read as standard video, and a word nobody
+// writes as a seek.
+func TestAnOpenSaysHowItGotThereAndItsLight(t *testing.T) {
 	for _, c := range []struct {
-		file  bool
+		how   Reached
 		light Light
 		body  string
 	}{
-		{true, SDR, "file"},
-		{false, SDR, ""},
-		{true, HLG, "file hlg"},
-		{false, PQ, " pq"},
+		{OpenedFile, SDR, "file"},
+		{Sought, SDR, ""},
+		{WentOn, SDR, "on"},
+		{OpenedFile, HLG, "file hlg"},
+		{Sought, PQ, " pq"},
+		{WentOn, HLG, "on hlg"},
 	} {
-		body := OpenedBody(c.file, c.light)
+		body := OpenedBody(c.how, c.light)
 		if string(body) != c.body {
-			t.Errorf("an open of file %v and light %q is %q, want %q", c.file, c.light, body, c.body)
+			t.Errorf("an open that reached its place by %q with light %q is %q, want %q", c.how, c.light, body, c.body)
 		}
-		file, light := ReadOpened(body)
-		if file != c.file || light != c.light {
-			t.Errorf("%q reads as file %v and light %q", body, file, light)
+		how, light := ReadOpened(body)
+		if how != c.how || light != c.light {
+			t.Errorf("%q reads as %q and light %q", body, how, light)
 		}
 	}
 	if _, light := ReadOpened([]byte("file sunshine")); light != SDR {
 		t.Errorf("a light nobody knows reads as %q, want standard video", light)
+	}
+	if how, _ := ReadOpened([]byte("flew pq")); how != Sought {
+		t.Errorf("a way nobody knows reads as %q, want a seek", how)
 	}
 	for trc, want := range map[string]Light{"smpte2084": PQ, "arib-std-b67": HLG, "bt709": SDR, "": SDR} {
 		if got := LightOf(trc); got != want {

@@ -22,7 +22,9 @@ import (
 // is at the place asked for, and until the first frame is out. Each is in
 // milliseconds and 0 until it has happened. File says whether getting to
 // the place meant opening the file and a decoder, or only moving a cursor
-// that had them. A jump in the video preview costs all of it, and knowing
+// that had them, and WentOn whether the cursor read on from where it stood
+// without a seek, so a stream asked for its key frame first hands over
+// none, issue #511. A jump in the video preview costs all of it, and knowing
 // which part is large decides what makes it quicker, see
 // docs/VIDEO-PREVIEW.md, Speed.
 //
@@ -34,7 +36,7 @@ import (
 type PreviewTimes struct {
 	asked                  time.Time
 	Started, Opened, First atomic.Int64
-	File                   atomic.Bool
+	File, WentOn           atomic.Bool
 }
 
 // NewPreviewTimes starts counting now.

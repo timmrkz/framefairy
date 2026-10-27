@@ -493,15 +493,19 @@ func writeFrames(w http.ResponseWriter, r *http.Request, s *preview, n int, skip
 			// The first frame of a stream says where its time went, in
 			// milliseconds from when it was asked for: until the decoder
 			// had the request, until it was at the place, until the first
-			// frame was out, and then 1 where that meant opening the file
-			// and 0 where a cursor was moved, see engine.PreviewTimes.
+			// frame was out, then 1 where that meant opening the file and 0
+			// where a cursor was moved, and last 1 where the cursor read on
+			// to the place without a seek, see engine.PreviewTimes.
 			if s.times != nil && !s.told.Swap(true) {
-				file := 0
+				file, on := 0, 0
 				if s.times.File.Load() {
 					file = 1
 				}
-				w.Header().Set("X-Frames-Times", fmt.Sprintf("%d,%d,%d,%d",
-					s.times.Started.Load(), s.times.Opened.Load(), s.times.First.Load(), file))
+				if s.times.WentOn.Load() {
+					on = 1
+				}
+				w.Header().Set("X-Frames-Times", fmt.Sprintf("%d,%d,%d,%d,%d",
+					s.times.Started.Load(), s.times.Opened.Load(), s.times.First.Load(), file, on))
 			}
 			// HDR frames are 10 bits a colour in the file's own curve, and
 			// the page draws them as such, see framewire.Picture.
