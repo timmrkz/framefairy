@@ -131,8 +131,9 @@ Start with [README.md](README.md). In short:
   starts no CI run. The work on the open pull request carries on. Once
   it is merged, the next piece of work is the open issue of the highest
   priority, the smallest first and then the oldest, of those Tim opened
-  or a session opened for him, unless Tim puts them in another order. A report that is about the open pull request is that pull
-  request's work, as before.
+  or a session opened for him, unless Tim puts them in another order. A
+  report that is about the open pull request is that pull request's
+  work, as before.
 - **Open work is GitHub issues, never rows in a file.** Every pull
   request once added its row at the end of the same table in
   [docs/GUI-PLAN.md](docs/GUI-PLAN.md), so any two of them conflicted,

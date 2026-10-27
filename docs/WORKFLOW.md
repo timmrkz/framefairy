@@ -149,19 +149,22 @@ for its kind. The priorities are the ones
 triages its issues by, without its split of important into soon and
 long term. The sizes are the T-shirt sizes many teams on GitHub use.
 
-| Label | What it means |
-| --- | --- |
-| `priority/critical` | Drop what you are doing. A bug a person meets in what the app is for, a broken build, a failing test, a security hole. |
-| `priority/important` | Worked on now or very soon. Every flaky or hanging test is at least this, because a test that cannot be trusted no longer verifies what it checks. So is what the first customer needs. |
-| `priority/backlog` | A nice to have nobody will get to soon: tidying what works, a test that is only slow, a feature the first release does not need. |
-| `size/small` | A few hours of work. |
-| `size/medium` | About a day, one pull request. |
-| `size/large` | More than one pull request. |
+| Label | What it means | For example |
+| --- | --- | --- |
+| `priority/critical` | Drop what you are doing. A short comes out wrong or a person's work is lost, a broken build, a failing test, a security hole. | #266, #268 |
+| `priority/important` | Worked on now or very soon. A bug a person meets or that the code shows, and every flaky or hanging test, because a test that cannot be trusted no longer verifies what it checks. | #540, #507, #559 |
+| `priority/backlog` | A nice to have nobody will get to soon: tidying what works, a test that is only slow, a feature the first release does not need. | #267, #550, #539 |
+| `size/small` | A short pull request in one place. | #540 |
+| `size/medium` | One pull request. | #513 |
+| `size/large` | More than one pull request. | #380 |
 
-Whoever opens an issue sets both, by judgement from the table, and says
-why in a few words in the last line of the issue, the way GitLab and
-Mozilla ask for. Tim moves any label he sees differently, and his label
-stands. The weekly triage labels every open issue that lacks one and
+A failing test fails on every run, or is red on main. A flaky test
+fails on some runs and passes on others, on CI or in a session.
+
+Whoever opens an issue sets both, by judgement from the table. Tim moves
+any label he sees differently, and his label stands. Someone else who
+sees one differently says so in a comment on the issue, as Kubernetes
+asks. The weekly triage labels every open issue that lacks one and
 looks again at the ones whose facts changed, a flaky test seen failing
 again for example. The table itself changes only when Tim says so.
 
