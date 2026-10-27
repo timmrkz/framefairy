@@ -596,7 +596,10 @@ messages, pull request text, code comments and chat replies.
   too, with every call, what the app logged and every request. A film of
   the screen makes every walk slower, so only the walks
   `frontend/preview/walks/filmed.mjs` names have one, once their trace
-  showed it is the screen that is missing. Then the order it assumes,
+  showed it is the screen that is missing. That line is pushed to the
+  pull request the walk failed on, the one change a pull request carries
+  that is not its own, because without it the next failure shows no more
+  than this one. Then the order it assumes,
   read in the code, then that one order made to happen on purpose, a
   call held, the clock stepped, then the orders tried by a tool, the
   race detector or fast-check's scheduler. Loading the machine with busy

@@ -17,7 +17,7 @@
 import { chosen, keepTraces, newBrowser, open, settle, shown, shownOnPlayhead, traceAs, traceStep } from "./bridge.mjs";
 import { moving, still, url } from "./common/steps.mjs";
 import { filmed } from "./filmed.mjs";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Watch } from "./rules.mjs";
@@ -83,10 +83,17 @@ if (only === "--names") {
     process.exit(1);
   }
   // A walk renamed or removed and left in filmed.mjs by its old name
-  // would quietly go unfilmed when it fails next. A walk is named by
-  // its file, alone or with what follows it, its seed.
+  // would quietly go unfilmed when it fails next, and so would a name
+  // written in another form than the walk prints. A walk is named by its
+  // file, one TestWalks walks because it walks with walk.mjs, alone or
+  // with its seed as the walk prints it, SEED=3 or SEED=3 HEVC=1.
   const here = dirname(fileURLToPath(import.meta.url));
-  const noWalk = Object.keys(filmed).filter((n) => !names.includes(n) && !existsSync(join(here, n.split(" ")[0])));
+  const isWalk = (n) => {
+    const [, file] = n.match(/^([\w-]+\.mjs)(?: SEED=\d+(?: HEVC=1)?)?$/) ?? [];
+    const path = file && file !== "walk.mjs" ? join(here, file) : "";
+    return Boolean(path) && existsSync(path) && readFileSync(path, "utf8").includes('from "./walk.mjs"');
+  };
+  const noWalk = Object.keys(filmed).filter((n) => !names.includes(n) && !isWalk(n));
   if (noWalk.length) {
     console.log(`filmed.mjs names ${JSON.stringify(noWalk[0])}, which is no walk or sequence`);
     process.exit(1);

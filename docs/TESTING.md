@@ -841,7 +841,10 @@ it hang, #508.
    `keepTraces` in `walks/bridge.mjs`. Each step is a group in the
    trace, named the way the walk prints it. A trace holds every call of
    the walk with when it began and ended, what the page logged and
-   threw, and every request to the Go side with its timing. A film of
+   threw, and every request to the Go side and every event it sent.
+   The page writes those into its console itself, a line each, see
+   `goSide` in `walks/bridge.mjs`, because Playwright records the
+   network only along with the snapshots below. A film of
    the screen is in it only for the walks `walks/filmed.mjs` names: it
    made every walks job in CI about a fifth longer when every walk had
    one, measured on #558. `make walks TRACE=film` films every walk for
@@ -862,9 +865,11 @@ it hang, #508.
    browser and sends it nowhere, or with `npx playwright show-trace`. A
    session with no window reads it unpacked: `trace.trace` holds every
    call of the walk, with what the page logged and threw, one JSON
-   object a line, `trace.network` every request to the
-   Go side with its timing, and `resources/` the screenshots, which the
-   Read tool shows.
+   object a line. Among the console lines are the requests and events,
+   `go 12 ask /call Seek [3.2]`, `go 12 answer 200` and
+   `go event {"name":"job",...}`, each with its time. `trace.network`
+   is empty, and `resources/` holds the screenshots of a filmed walk,
+   which the Read tool shows.
 2. **The order the walk assumes.** What the step waits for, `settle`,
    `caughtUp`, `nextNews`, `pageUntil`, `__standing`, and whether what
    it reads could change after that, or come before the walk listens.

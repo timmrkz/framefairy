@@ -127,14 +127,14 @@ export async function newBrowser() {
 // WALKTRACES names a folder, and every page a walk opens is recorded in
 // a Playwright trace: each call of the walk's with when it began and
 // ended, what the page logged and threw, and every request to the Go
-// side with its timing. A walk that filmed.mjs names records a film of
-// the screen too. A walk that passed throws its traces away. One that
-// failed, threw or was stopped keeps them in the folder, one file for
-// each page it had open, and says where, so a walk that failed in CI
-// comes with what happened in it, and nobody has to make it fail again
-// to see. TRACE=film films every walk, and TRACE=none records nothing.
-// See Finding why a walk failed in docs/TESTING.md. make walks sets
-// both.
+// side and every event it sent, see goSide. A walk that filmed.mjs
+// names records a film of the screen too. A walk that passed throws its
+// traces away. One that failed, threw or was stopped keeps them in the
+// folder, one file for each page it had open, and says where, so a walk
+// that failed in CI comes with what happened in it, and nobody has to
+// make it fail again to see. TRACE=film films every walk, and
+// TRACE=none records nothing. See Finding why a walk failed in
+// docs/TESTING.md. make walks sets both.
 const traces = process.env.WALKTRACES;
 const tracingWhich = process.env.TRACE || "light";
 if (!["light", "film", "none"].includes(tracingWhich)) {
@@ -162,8 +162,49 @@ async function traced(page) {
   // every call, snapshots, 41 % longer and a walks job in CI over its
   // five minutes, no walk has.
   await context.tracing.start({ screenshots: filmingNow, snapshots: false, title: tracedAs });
+  await page.addInitScript(goSide);
   tracing.add(context);
   context.on("close", () => tracing.delete(context));
+}
+
+// The page says every request to the Go side and every event it sent,
+// one line each in its console, which is in every trace. Playwright
+// records the network only with the snapshots, which no walk has, see
+// traced. A line is "go 12 ask /call Seek [3.2]" when a request goes,
+// "go 12 answer 200" or "go 12 failed ..." when it comes back, and
+// "go event job {...}" for an event. The trace puts its time beside it.
+function goSide() {
+  const plain = window.fetch.bind(window);
+  let n = 0;
+  window.fetch = async (input, init) => {
+    const url = new URL(typeof input === "string" ? input : input.url, location.href);
+    let what = url.pathname + url.search;
+    if (url.pathname === "/call" && typeof init?.body === "string") {
+      try {
+        const { name, args } = JSON.parse(init.body);
+        what = `/call ${name} ${JSON.stringify(args).slice(0, 200)}`;
+      } catch {
+        // Said as its path alone.
+      }
+    }
+    const id = ++n;
+    console.debug(`go ${id} ask ${what}`);
+    try {
+      const answer = await plain(input, init);
+      console.debug(`go ${id} answer ${answer.status}`);
+      return answer;
+    } catch (e) {
+      console.debug(`go ${id} failed ${e}`);
+      throw e;
+    }
+  };
+  const Plain = window.EventSource;
+  window.EventSource = class extends Plain {
+    constructor(...args) {
+      super(...args);
+      this.addEventListener("message", (m) => console.debug(`go event ${String(m.data).slice(0, 300)}`));
+    }
+  };
 }
 
 // Each step of a walk as a group of its own in the trace, named the way
