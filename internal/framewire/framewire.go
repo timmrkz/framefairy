@@ -49,10 +49,9 @@ const (
 	End
 	// The cursor failed, the body says why.
 	Failed
-	// An open is done: the cursor is at its place. The body is "file" when
-	// the open had to open the file and a decoder first, and empty when it
-	// moved a cursor that had them. A cursor of picture adds its Light
-	// after a space: "file hlg", " pq".
+	// An open is done: the cursor is at its place. The body says how it
+	// got there, see Reached, and a cursor of picture adds its Light after
+	// a space: "file hlg", " pq", "on".
 	Opened
 	// The cursor's decoder hung, and the decoder gave up on it: nothing
 	// more comes from it. A cursor opened after it decodes on the
@@ -96,28 +95,45 @@ const (
 	HLG Light = "hlg"
 )
 
-// OpenedBody is the body of an Opened record: whether the open opened the
-// file, and the light of the cursor's picture.
-func OpenedBody(file bool, light Light) []byte {
-	body := ""
-	if file {
-		body = "file"
-	}
+// Reached is how an open got its cursor to the place asked for, the first
+// word of an Opened record.
+type Reached string
+
+const (
+	// The cursor had the file and a decoder, and sought.
+	Sought Reached = ""
+	// The open opened the file and a decoder first, and sought.
+	OpenedFile Reached = "file"
+	// The cursor stood before the place with no key frame between, and
+	// reads on from there without a seek. So an open with key hands over
+	// no key frame before the frame asked for, issue #511.
+	WentOn Reached = "on"
+)
+
+// OpenedBody is the body of an Opened record: how the open got there, and
+// the light of the cursor's picture.
+func OpenedBody(how Reached, light Light) []byte {
+	body := string(how)
 	if light != SDR {
 		body += " " + string(light)
 	}
 	return []byte(body)
 }
 
-// ReadOpened reads the body of an Opened record. A light it does not know
-// is standard video, which is what it was before HDR came.
-func ReadOpened(body []byte) (file bool, light Light) {
+// ReadOpened reads the body of an Opened record. A way or a light it does
+// not know is a seek of standard video, which is what an open said before
+// it said either.
+func ReadOpened(body []byte) (how Reached, light Light) {
 	word, rest, _ := strings.Cut(string(body), " ")
+	switch Reached(word) {
+	case OpenedFile, WentOn:
+		how = Reached(word)
+	}
 	switch Light(rest) {
 	case PQ, HLG:
 		light = Light(rest)
 	}
-	return word == "file", light
+	return how, light
 }
 
 // LightOf is the light of a file whose transfer tag is trc, as ffmpeg

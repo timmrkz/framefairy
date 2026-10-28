@@ -61,8 +61,18 @@ func (c Encoder) is(other Encoder) bool {
 // whether it could not start or failed on a frame, so a failure of the
 // filters or of reading the video, which another encoder would not mend,
 // is not taken for one.
+//
+// VideoToolbox can fail without a word from ffmpeg. On CI's virtual Mac a
+// render ended with nothing but "IOServiceMatchingfailed for:
+// AppleM2ScalerParavirtDriver", written by macOS itself when the media
+// engine's scaler could not be reached, issue #570. The render decodes
+// on the processor, so that line is the encoder's, and an encoder of
+// VideoToolbox that ends with it has failed too.
 func (c Encoder) failed(said string) bool {
-	return strings.Contains(said, "["+c.Name+" @ ")
+	if strings.Contains(said, "["+c.Name+" @ ") {
+		return true
+	}
+	return strings.HasSuffix(c.Name, "_videotoolbox") && strings.Contains(said, "IOServiceMatching")
 }
 
 // x264 takes the quality as it is written, because CRF is its own idea and

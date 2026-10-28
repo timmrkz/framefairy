@@ -134,7 +134,7 @@ each with a POST:
 | `/model?hang=1&fail=0` | the language model holds its answers until the search is stopped, or fails, or with both off answers. Told to answer again, it answers what it held too, the way a slow model answers in the end, so a search that was asked while it held does not find for good and keep every video added after it from being transcribed |
 | `/speech?hold`, `/speech?step=N`, `/speech?go` | `hold` stops the speech model hearing, once the pieces it is hearing are heard, so a transcript stays where it is while a walk looks at it, cancels it or presses something during it. `step=N` lets N pieces more be heard while it is held, and a walk waits on the news of the work, not for the step. With `&save` what is heard so far is saved once the next piece is heard: the app saves a long transcription every 8 s of real time, and the bridge saves it part way only then, through `SaveHeard`, which the engine asks the speech model in place of its clock, so a walk sees a transcript saved part way on any machine. `go` lets it hear on by itself. Closing the app with `/reopen` lets every piece through while the app closes, the way a piece being heard ends as it quits, and the speech stays held after. With `&from=0` it says its sentences again from the first word, so a video added next is heard with the words of the bridge's episode and its clip has the same name |
 | `/chrome?bar=30&left=12&right=72` | the app's window as macOS lays it out, in points: the title bar's height and where its buttons start and end. It goes through what the Go side does with an answer from macOS and is told to the page the way a resize is. Until it is asked, and again after `/reset`, the title bar is the one every other system draws |
-| `/hold?call=Search&gate=shut&times=K&fail=why` | with `gate=shut`, the calls of that name wait before they reach the Go side until `gate=open`, every one of them, or the next K with `times`, the way a busy machine delivers them late, so a walk can press something and look while the Go side has not heard of the call yet, and lets it through once it has looked, on any machine. A walk holds a call with `hold` in `walks/bridge.mjs` and lets it go with `letHeld`: the page sets the held call aside, so `settle` waits for everything else meanwhile, and the watch lets go of whatever is still held before it compares the screen with the engine. With `fail` the next call fails with that reason instead of reaching the Go side, the way a full disk refuses a save. `/reset` opens every gate |
+| `/hold?call=Search&gate=shut&times=K&answer=1&fail=why` | with `gate=shut`, the calls of that name wait before they reach the Go side until `gate=open`, every one of them, or the next K with `times`, the way a busy machine delivers them late, so a walk can press something and look while the Go side has not heard of the call yet, and lets it through once it has looked, on any machine. A walk holds a call with `hold` in `walks/bridge.mjs` and lets it go with `letHeld`: the page sets the held call aside, so `settle` waits for everything else meanwhile, and the watch lets go of whatever is still held before it compares the screen with the engine. With `answer=1` the call reaches the Go side at once and only its answer waits for `gate=open`, so the news of what it set going comes before it, `hold(page, name, true)`. With `fail` the next call fails with that reason instead of reaching the Go side, the way a full disk refuses a save. `/reset` opens every gate |
 | `/updates?from=main&stored=pr-143&list=main,pr-143` | gives the app's Updates page the app's own updating and Wails' updater, reading a channel list the bridge serves on this machine: a build from the channel `from`, or made on the Mac without it, with `stored` picked by a build before it, and the channels of `list`, each with a newer build that downloads in a moment. Until it is asked, and again after `/reset`, the Updates page's calls are answered with nothing like the rest. Relaunch always is |
 | `/fresh`, `/fresh?arrive=speech`, `/fresh?arrive=clip` | makes the bridge's machine one the app never ran on: no model, no video in the app and nothing said yet about how clips are found, on a machine of 32 GB like Tim's, so the setup offers the same models on every machine. A walk opens the page again to see the setup. Download there runs as a job like any other, through a stand-in that says it has fetched two fifths and holds there until `arrive` lets that kind of model arrive, so a walk sees both downloads at once for as long as it looks, on any machine. `/reset` makes the machine the bridge's again |
 | `/reopen` | closes the app and opens it again, the way quitting and starting it does: the work stops and how it ended is read back. It answers with the jobs as the app left them, once nothing ran any more |
@@ -210,7 +210,7 @@ nothing on the page moves for a moment, see below:
 | Taking a word out changes no other caption: every caption still there appears and goes when it did, the one the word was in only draws in at the edge the word was at, and only one whose words were all removed may go, leaving its time empty | the caption that broke where a removed word had been, the next caption's first word pulled up into the room a removed word left, and the caption before a removed caption staying up through its time, found by Tim |
 | A caption removed whole was there and is gone, its words are held to the two rules above, from its first word to its last | |
 | Moving a caption edge moves that edge and nothing else: its other edge stays, every other caption appears and goes when it did, and every word outside the caption is as it was | the caption before growing into the room a left edge was dragged in from, found by Tim |
-| Undo puts back the engine's captions from before the step it takes back, and Redo those from after it | |
+| Undo puts back the engine's clip from before the step it takes back, its captions, how they look, and its pieces with their crops, and Redo the clip from after it | a crop or a font that undo did not put back, which the rule could not see until it compared them too, issue #248 |
 | A picture that stands still, paused or cued, was decoded at the size of the video preview's canvas, no larger than the file's own, once the frame queue says the picture stands, `standing` in `lib/frames/queue.ts`, `stillBlurred` in `rules.mjs` | the first frame of every workspace decoded at the 300 by 150 of a canvas not laid out yet, blurred until a play, found by Tim, plan row 2.187 |
 
 The engine's captions are asked for directly, `Captions` through
@@ -232,7 +232,8 @@ Every walk also checks, after every step, that the clip timeline shows
 the clip the engine has: where it starts and ends and every cut, read
 off the handles' `aria-valuenow`, to a millisecond. The engine's state a
 walk compares before and after a step, for Undo and Redo, is the clip's
-pieces as well as its captions. A play goes as far into the clip as the
+pieces with their crops, keyframes and turns as well as its captions and
+how they look. A play goes as far into the clip as the
 walk asked, by the playhead, `playFor`, the same as in `words.mjs`.
 
 A walk is a script in the folder that walks with `walk.mjs`, which runs
@@ -446,7 +447,7 @@ about.
 A sequence is a named list of steps and of what has to come of them,
 written as data, so a case found by hand is kept as it was found. The steps are the walk's gestures by name, `frame` a
 word, `click` it, `press` a key, `type`, `undo`, `redo`, `mark` the
-engine's captions and pieces under a label, and on the clip timeline
+engine's clip, its captions, their look and its pieces with their crops, under a label, and on the clip timeline
 `cut at` a share of the clip, `join` a cut, `swipe after click`, a
 click a share of the way along the clip and three swipes from there
 without moving the hand, each of which has to move the clip, `trim` an edge by some
@@ -465,7 +466,8 @@ mark, `edge put back`, a double-click on an edge of the caption holding a
 word, and `count pops` and `pops`, how often a caption block popped
 since. What has to come of them: `box`, what
 the caption box reads, `open`, which word is open, `same`, the engine's
-captions and pieces as they were at a mark, `spans`, every caption
+clip as it was at a mark, `differs from`, the clip no longer as it was at a
+mark, so a step meant to change it did, `spans`, every caption
 appearing and going when it did at a mark, `fewer`, so many words fewer
 than at a mark and no caption fewer, `gone`, no caption holding a
 word, `blocks`, a block on the clip timeline for every caption the engine
@@ -756,7 +758,11 @@ wait the walk hands the frame queue, `dressWait` in
 used up the 600 ms it waits, issue #468. And a glide read while it plays
 goes on until the video preview has shown ten frames or come to the next
 keyframe, not for two seconds, in which a busy machine showed two, issue
-#464. The fold of a removed row is held as Svelte makes it and stepped
+#464, on a clock the walk hands the frame queue, `playClock` in
+`lib/frames/queue.ts`, which moves on to the next frame only once the
+one before is up. So every frame of the play is shown on any machine,
+and the walk holds the play to every one, where by the sound card's
+clock a busy machine still showed two of nine, issue #534. The fold of a removed row is held as Svelte makes it and stepped
 through by hand, in twenty steps, and at each the card under the row
 has to have risen by as much of the row and the space after it as the
 row has folded. That the row leaves the list only once its fold has

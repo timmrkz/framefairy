@@ -305,9 +305,11 @@ export async function settle(page) {
 // for it while it is held, so a walk can look at what the app shows
 // meanwhile. A step that holds a call lets it go before it is done, and
 // the watch lets go of whatever is still held before it compares the
-// screen with the engine, see Watch.step.
-export async function hold(page, name) {
-  await page.evaluate((name) => window.__hold(name), name);
+// screen with the engine, see Watch.step. With answer, the call reaches
+// the Go side and only its answer is held, so the news of what it set
+// going comes first.
+export async function hold(page, name, answer = false) {
+  await page.evaluate(([name, answer]) => window.__hold(name, answer), [name, answer]);
 }
 
 // Lets every call held on the page go on to the Go side. The next settle
@@ -497,7 +499,11 @@ export async function engineState(page, at) {
     };
     const [captions, clips] = await Promise.all([ask("Captions", [path, plan, clip]), ask("Clips", [path])]);
     const entry = clips.find((c) => c.plan === plan && (c.id === clip || c.basename === clip));
-    return { ...captions, segments: (entry?.segments ?? []).map((s) => ({ start: s.start, end: s.end })) };
+    // Each piece with its crop, the keyframes that glide it and its
+    // rotation, which are steps of the history as the edges are, issue
+    // #248.
+    const pieces = (entry?.segments ?? []).map((s) => ({ start: s.start, end: s.end, cropX: s.cropX ?? null, marks: s.marks ?? [], rotate: s.rotate ?? 0 }));
+    return { ...captions, segments: pieces };
   }, at);
 }
 

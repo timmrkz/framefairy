@@ -136,31 +136,34 @@ function frames(size: () => { width: number; height: number }) {
 }
 
 // A stream on a Go side the test answers by hand: each pull waits until
-// the test hands it the ranks it brings, each frame's first byte its rank.
+// the test hands it the ranks it brings, each frame's first byte its rank,
+// and the times the Go side tells with a stream's first frame.
 function goSide() {
   vi.stubGlobal("fetch", (url: string) =>
     Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ id: `s${url.length}` }), text: () => Promise.resolve("") }),
   );
   const { app } = frames(() => ({ width: 4, height: 2 }));
   app.paused = () => false;
-  const asked: { url: string; give: (ranks: number[]) => void }[] = [];
+  const asked: { url: string; give: (ranks: number[], times?: string) => void; shut: () => void }[] = [];
   const came: (() => void)[] = [];
   (app as unknown as { puller: unknown }).puller = {
     pull: (url: string) =>
       new Promise((done) => {
         asked.push({
           url,
-          give: (ranks) =>
+          give: (ranks, times = "") =>
             done({
               status: 200,
               end: false,
               error: "",
               closed: false,
-              times: "",
+              times,
               light: "",
               spare: [],
               frames: ranks.map((r) => ({ at: r / 25, frame: new Picture(new Uint8Array(4 * 2 * 4).fill(r), 4, 2, r * 40000) })),
             }),
+          // Closed on the Go side, to make room for newer streams.
+          shut: () => done({ status: 200, end: false, error: "", closed: true, times: "", light: "", spare: [], frames: [] }),
         });
         for (const c of came.splice(0)) c();
       }),
@@ -200,6 +203,100 @@ describe("a stream asked for a frame while a pull is on its way", () => {
     expect(first).toBe("asked again");
     asked[2].give([14]);
     expect(await rankOf(fourteen)).toBe(14);
+    app.close();
+  });
+});
+
+describe("a stream asked for a frame while its first frame comes for nobody", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  // A stream opened for a place the hand left reads its first frame all
+  // the same, see firstFrame. A frame asked of it meanwhile, one the
+  // stream reaches, was never pulled: pull returned at once since the
+  // stream was pulling, and the pull of the first frame returned after
+  // it. The frame never came, the cue that waited for it never said it
+  // stood, and a walk hung after a drag of an edge, issue #556.
+  test("still gets the frame asked of it meanwhile", async () => {
+    const { app, asked, pulls, rankOf } = goSide();
+    const withdrawn = new Set<{ gone?: boolean }>();
+    void app.frame(10, 0, withdrawn as never, true);
+    // The hand moves on before the stream is open, as a decoder reset
+    // withdraws what it asked.
+    for (const w of withdrawn) w.gone = true;
+    await pulls(1);
+    expect(asked[0].url).toContain("n=1");
+    const twelve = app.frame(12, 0);
+    asked[0].give([10]);
+    await pulls(2);
+    asked[1].give([12]);
+    expect(await rankOf(twelve)).toBe(12);
+    app.close();
+  });
+
+  // The same, with the stream closed on the Go side before its first
+  // frame came, the way it makes room for the newer streams of a drag.
+  // The frame asked meanwhile ended as the nearest frame there was,
+  // nothing, where a pull hands it to another stream.
+  test("still gets the frame asked of it meanwhile when the stream is closed", async () => {
+    const { app, asked, pulls, rankOf } = goSide();
+    const withdrawn = new Set<{ gone?: boolean }>();
+    void app.frame(10, 0, withdrawn as never, true);
+    for (const w of withdrawn) w.gone = true;
+    await pulls(1);
+    const twelve = app.frame(12, 0);
+    asked[0].shut();
+    await pulls(2);
+    asked[1].give([12]);
+    expect(await rankOf(twelve)).toBe(12);
+    app.close();
+  });
+});
+
+describe("a place dragged to, opened with its key frame first", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  // A press at frame 10 and a drag on to frame 150, whose stream is asked
+  // for its key frame first, in a pull of one frame.
+  async function dragged() {
+    const { app, asked, pulls, rankOf } = goSide();
+    const passed: number[] = [];
+    app.onPassing = (rank, _frame, _seq, key) => key && passed.push(rank);
+    app.grip(true);
+    // Where the press landed opens with no key frame first.
+    void app.frame(10, 0, undefined, true);
+    await pulls(1);
+    asked[0].give([10]);
+    const under = rankOf(app.frame(150, 0, undefined, true));
+    await pulls(2);
+    expect(asked[1].url).toContain("n=1");
+    return { app, asked, pulls, passed, under };
+  }
+
+  test("puts up the key frame the decoder sought, then the frame under the hand", async () => {
+    const { app, asked, pulls, passed, under } = await dragged();
+    asked[1].give([140], "1,2,3,0,0");
+    await pulls(3);
+    asked[2].give([141, 142, 143, 144, 145, 146, 147, 148, 149, 150]);
+    expect(await under).toBe(150);
+    expect([app.stats.keyFirst, app.stats.keyCame, app.stats.keyWentOn]).toEqual([1, 1, 0]);
+    expect(app.stats.wentOnRanks).toEqual([]);
+    expect(app.stats.opens.at(-1)?.on).toBe(false);
+    expect(passed).toEqual([140]);
+    app.close();
+  });
+
+  // Issue #511: the decoder reads on to the frame asked for, without a
+  // seek, when a cursor already stands between the key frame and it, and
+  // then hands over no key frame. The walk of a far drag took that for a
+  // key frame the app failed to put up.
+  test("says the decoder read on to the frame under the hand, with no key frame to put up", async () => {
+    const { app, asked, passed, under } = await dragged();
+    asked[1].give([150], "1,2,3,0,1");
+    expect(await under).toBe(150);
+    expect([app.stats.keyFirst, app.stats.keyCame, app.stats.keyWentOn]).toEqual([1, 0, 1]);
+    expect(app.stats.wentOnRanks).toEqual([150]);
+    expect(app.stats.opens.at(-1)?.on).toBe(true);
+    expect(passed).toEqual([]);
     app.close();
   });
 });
