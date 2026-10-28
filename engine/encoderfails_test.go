@@ -375,6 +375,40 @@ func TestTheProcessorEncodesWhatAShortAsks(t *testing.T) {
 	}
 }
 
+// An ffmpeg that crashes says nothing of it itself, and a render that
+// ended with one line of macOS's on CI's Mac could not say whether ffmpeg
+// had crashed, issue #570. What ffmpeg said ends with the signal that
+// ended it, so the render's failure, its log and a report say so.
+//
+// On the real disk: the stand-in ffmpeg is a program that is run.
+func TestAnFFmpegEndedByASignalSaysSo(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the stand-in is a shell script")
+	}
+	path := filepath.Join(t.TempDir(), "ffmpeg")
+	script := "#!/bin/sh\necho 'IOServiceMatchingfailed for: AppleM2ScalerParavirtDriver' >&2\nkill -ABRT $$\n"
+	if err := standin.Write(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	e := &Engine{Log: NewLog(&bytes.Buffer{}, false, false), FFmpeg: path}
+	code, said, _ := e.runFFmpegWatched(context.Background(), []string{"-i", "episode.mp4", "short.mp4"},
+		"rendering", 2, "", nil, 0)
+	if code == 0 {
+		t.Error("an ffmpeg ended by a signal ended well")
+	}
+	if !strings.HasPrefix(said, "IOServiceMatchingfailed for: AppleM2ScalerParavirtDriver\n") ||
+		!strings.Contains(said, "ffmpeg was ended by a signal: abort") {
+		t.Errorf("what ffmpeg said does not end with the signal that ended it:\n%s", said)
+	}
+	// One that ends by itself says only what it said.
+	if err := standin.Write(path, []byte("#!/bin/sh\necho 'No such file' >&2\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, said, _ := e.runFFmpegWatched(context.Background(), []string{"-i", "episode.mp4"}, "rendering", 2, "", nil, 0); said != "No such file\n" {
+		t.Errorf("an ffmpeg that failed by itself said %q", said)
+	}
+}
+
 // encoderFailure is what both tests of a failing encoder start from: an
 // engine whose ffmpeg can encode on the processor, whether it has the
 // Mac's media engine, a folder of the test's own and an episode of three

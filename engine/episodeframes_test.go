@@ -11,7 +11,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -1074,8 +1073,12 @@ func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
 		path := filepath.Join(dir, fmt.Sprintf("%d.mp4", i))
 		// The same numbers in every file, only the tags differ, so what
 		// tells two files' colours apart is what the tags say.
-		args := append([]string{"-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=25:d=1"}, f.args...)
-		if out, err := exec.Command("ffmpeg", append(args, path)...).CombinedOutput(); err != nil {
+		args := []string{"-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=25:d=1"}
+		codecs := [][]string{f.args}
+		if !software {
+			codecs = chipThenProcessor(f.args)
+		}
+		if out, err := encodeTestFile(t, args, codecs, path); err != nil {
 			if strings.Contains(f.name, "10 bits") {
 				// A virtual Mac may have no HEVC encoder that takes 10 bits.
 				t.Logf("no file %s here: %s", f.name, out)
@@ -1084,6 +1087,20 @@ func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
 			ffmpegtest.Unusable(t, "ffmpeg could not make the file %s: %s %s", f.name, err, out)
 		}
 		dec := NewEpisodeFrames(program, path)
+		// Where the decoder decoded, which it says as it opens and again
+		// when it gives the chip up.
+		var whereMu sync.Mutex
+		onChip := false
+		dec.heard = func(_ slog.Level, line string) {
+			whereMu.Lock()
+			defer whereMu.Unlock()
+			switch {
+			case strings.Contains(line, "decodes on the graphics chip"):
+				onChip = true
+			case strings.Contains(line, "decodes on the processor"):
+				onChip = false
+			}
+		}
 		var frame []byte
 		err := dec.Stream(context.Background(), gridOf(t, path), 0, w, h, false, nil, func(_ float64, data []byte) error {
 			frame = data
@@ -1091,6 +1108,9 @@ func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
 		})
 		light := dec.Light()
 		dec.Close()
+		whereMu.Lock()
+		chip := onChip
+		whereMu.Unlock()
 		if err != nil && !errors.Is(err, errStop) {
 			t.Fatalf("%s: %v", f.name, err)
 		}
@@ -1106,13 +1126,16 @@ func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
 		if light != wantLight {
 			t.Errorf("%s: the decoder says its light is %q, want %q", f.name, light, wantLight)
 		}
-		// The ffmpeg program decodes the way the decoder does: on the Mac's
-		// graphics chip where it has one, with the frame brought out as it
-		// is. On the processor as well, the way the render decodes, which
-		// is said and not held to here: on the Mac's runner the two came
-		// out up to 22 apart at the edges of colours, 0.2 % on average,
-		// which only the video preview shows and is left as it is, issue
-		// #256.
+		// The ffmpeg program decodes the way the decoder did: on the Mac's
+		// graphics chip where the decoder said it did, with the frame
+		// brought out as it is. On the processor as well, the way the
+		// render decodes, which is said and not held to here: on the Mac's
+		// runner the two came out up to 22 apart at the edges of colours,
+		// 0.2 % on average, which only the video preview shows and is left
+		// as it is, issue #256. A decoder that gave the chip up, as it
+		// does when the chip hangs, is compared with the processor, and
+		// the ffmpeg program never asks the chip that hung: it waited on
+		// it for 3m25s on CI's Mac, issue #570.
 		convert := func(hw bool) []byte {
 			t.Helper()
 			args := []string{"-loglevel", "error"}
@@ -1127,7 +1150,6 @@ func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
 			}
 			return out
 		}
-		chip := runtime.GOOS == "darwin" && has("hevc_videotoolbox")
 		want := convert(chip)
 		if chip {
 			cpu := convert(false)
