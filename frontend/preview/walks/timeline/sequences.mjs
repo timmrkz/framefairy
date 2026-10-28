@@ -528,12 +528,12 @@ export default [
   },
   {
     // Issue #277, decided by Tim: an edge moved while the clip plays
-    // changes nothing that plays, also when the clip ends up shorter
-    // than where the playhead already is. The play runs on to where the
-    // clip ended when it started, and the playhead stays there once it
-    // stops. Paused, the playhead goes with the edge, see "a cut's edges
-    // dragged take the playhead along".
-    name: "an end dragged back past the playing playhead lets the play run on to the old end",
+    // changes nothing that plays. An end dragged back past the playhead
+    // leaves the playhead outside the clip, on the video, so the play goes
+    // on as a play of the video, past where the clip ended before. Paused,
+    // the playhead goes with the edge, see "a cut's edges dragged take
+    // the playhead along".
+    name: "an end dragged back past the playing playhead plays on into the video",
     steps: [["end back past the playhead", 0.5]],
   },
   {

@@ -527,9 +527,10 @@ cut made, moved or put back, an edge trimmed or a step undone, moves no
 playhead and changes nothing that plays: the play goes on with the pieces
 it started with, and the next play, or a click, plays the clip as it is
 now. Tim's rule, #277: an edit while it plays never disturbs the play,
-also when it makes the clip shorter than where the playhead already is.
-An end dragged back past the playhead lets the play run on to where the
-clip ended when it started, and the playhead stays there once it stops.
+and an edge of the clip dragged past the playhead leaves the playhead
+outside the clip, on the video. The play then goes on as a play of the
+video, past where the clip ended and on to the episode's end, the clip
+dimmed as on the video, without a stop or a jump.
 A drag on a cut's edge used to start the play again on every step,
 which stuttered. Loop switched on or off changes only where the play
 ends, never what plays: the picture stops at that end and the sound

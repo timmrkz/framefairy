@@ -909,6 +909,47 @@ export class FrameQueue {
     return true;
   }
 
+  // The playhead was left outside the clip while the clip plays, by an
+  // edge of the clip dragged past it, so the play goes on as a play of the
+  // video, Tim's rule on #277: from the piece the playhead is in straight
+  // on to the episode's end. Up to where that piece ended nothing that
+  // plays changes, the way a loop switched changes only where the play
+  // ends, rule 6 of docs/VIDEO-PREVIEW.md: the frames and the sound of the
+  // piece are fed on in the runs they are in, and the sound does not fade
+  // out where the piece used to end. Where the play has worked out more
+  // than that piece already, the next one, the decoder's last frames, or
+  // the sound of the fade, it starts again from the playhead on the whole
+  // episode, which is a moment's stop.
+  playOn() {
+    if (this.state !== "playing" && this.state !== "starting") return;
+    const program = this.built;
+    const vplan = this.vplan;
+    const there = program && vplan && this.movie ? program.locate(this.reached) : null;
+    const vrun = there ? vplan!.lastRunOf(there.v) : null;
+    const arun = there && this.aplan ? this.aplan.lastRunOf(there.v) : null;
+    const pictureOn = !!vrun && !this.slotOf(vrun.id)?.flushing;
+    const soundOn =
+      !this.aplan ||
+      (!!arun && !this.soundDone && !this.soundRunDone.has(arun.id) && this.soundReach < this.aplan.lastPieceEnd - FADE * this.sampleRate);
+    const visit = there && pictureOn && soundOn ? program!.runOn(there.v, this.movie!.duration) : null;
+    if (!visit || !vplan!.runOn(visit) || (this.aplan && !this.aplan.runOn(visit))) {
+      this.trace(`the playhead was left outside the clip at ${this.at.toFixed(3)} s, the play starts again there on the video`);
+      this.asked = null;
+      this.want(null, false);
+      if (this.vplan) this.start(this.at);
+      return;
+    }
+    this.trace(`the playhead was left outside the clip at ${this.at.toFixed(3)} s, the play goes on as a play of the video`);
+    // Another program than any asked for, so a play of the video asked for
+    // next builds its own.
+    this.asked = null;
+    this.wanted = { pieces: null, loop: false };
+    this.wantedKey = "on";
+    for (const src of this.sources.keys()) this.clip(src);
+    this.pump();
+    this.pumpSound();
+  }
+
   // Takes a program as the one play plays, and says whether it is another
   // than the one before. Nothing is started.
   private want(pieces: Piece[] | null, loop: boolean): boolean {
@@ -1927,7 +1968,7 @@ export class FrameQueue {
 
   private end() {
     const plan = this.vplan!;
-    const last = this.program.pieces[this.program.pieces.length - 1];
+    const last = this.program.lastPiece;
     this.state = "ended";
     this.at = last ? last.end : this.at;
     this.k = plan.lastK;

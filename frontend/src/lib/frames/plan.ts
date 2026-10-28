@@ -56,6 +56,9 @@ export class Program {
   // switched while it plays changes this and nothing else, see loopOn and
   // loopOff.
   private times: number;
+  // The visit the play goes on from straight through the episode, see
+  // runOn, and nothing after it.
+  private onward: Visit | null = null;
 
   constructor(pieces: Piece[], loop: boolean) {
     this.times = loop ? Infinity : 1;
@@ -70,14 +73,33 @@ export class Program {
   }
 
   get loop(): boolean {
-    return this.times === Infinity;
+    return !this.onward && this.times === Infinity;
   }
 
   // Where the program ends, as a position on it, Infinity while it loops.
   // This is all the loop decides: a play goes on until here, whatever it
   // has worked out beyond.
   get end(): number {
+    if (this.onward) return this.onward.from + this.onward.end - this.onward.start;
     return this.times * this.length;
+  }
+
+  // The last piece it plays, the one it ends on.
+  get lastPiece(): Piece | undefined {
+    return this.onward ? { start: this.onward.start, end: this.onward.end } : this.pieces[this.pieces.length - 1];
+  }
+
+  // The playhead was left outside the clip while it plays, so the play
+  // goes on as a play of the video: the piece of visit v runs on to `end`,
+  // the episode's, nothing comes after it and the loop is off. Up to where
+  // the piece ended nothing that plays changes, the way loopOff changes
+  // only where the play ends. Says the visit as it is now. See playOn in
+  // queue.ts.
+  runOn(v: number, end: number): Visit | null {
+    const was = this.visit(v);
+    if (!was || end <= was.end) return null;
+    this.onward = { ...was, end };
+    return this.onward;
   }
 
   // The loop switched on while it plays: it goes on and on from here.
@@ -94,6 +116,7 @@ export class Program {
   // The v-th piece played, or null past the end of a program that does not
   // loop.
   visit(v: number): Visit | null {
+    if (this.onward && v >= this.onward.v) return v === this.onward.v ? this.onward : null;
     const n = this.pieces.length;
     if (!n || v < 0 || v >= this.times * n) return null;
     const cycle = Math.floor(v / n);
@@ -105,6 +128,8 @@ export class Program {
   // The visit a position is in and the moment of the episode it stands
   // for, or null at or past the end of a program that does not loop.
   locate(pos: number): { v: number; at: number } | null {
+    const on = this.onward;
+    if (on && pos >= on.from) return pos >= this.end ? null : { v: on.v, at: on.start + (pos - on.from) };
     const n = this.pieces.length;
     if (!n || this.length <= 0) return null;
     if (pos >= this.times * this.length) return null;
@@ -271,6 +296,34 @@ export class VideoPlan {
       this.add(visit);
     }
     return !this.done;
+  }
+
+  // The last run, when the visit worked out last is visit v and nothing
+  // after it, so the visit can run on, see runOn.
+  lastRunOf(v: number): Run | null {
+    const sp = this.spans[this.spans.length - 1];
+    if (!sp || sp.visit.v !== v || this.nextVisit !== v + 1) return null;
+    return this.runs[sp.run] === this.runs[this.runs.length - 1] ? this.runs[sp.run] : null;
+  }
+
+  // The visit worked out last runs on, see Program.runOn: its frames go on
+  // to its new end in the run they are in, and the decoder of that run is
+  // fed on. Says whether it could, see lastRunOf.
+  runOn(visit: Visit): boolean {
+    const run = this.lastRunOf(visit.v);
+    const sp = this.spans[this.spans.length - 1];
+    if (!run) return false;
+    const s = this.samples;
+    const was = sp.first + (sp.kLast - sp.kFirst);
+    const b = Math.max(was, rankAt(s, visit.end - this.frame));
+    for (let r = was + 1; r <= b; r++) if (s.order[r] > run.last) run.last = s.order[r];
+    sp.visit = visit;
+    sp.kLast = sp.kFirst + (b - sp.first);
+    sp.to = visit.from + (visit.end - visit.start);
+    run.kLast = sp.kLast;
+    run.lastRank = b;
+    this.nextK = sp.kLast + 1;
+    return true;
   }
 
   // Whether every visit has been worked out, so the last run is the last.
@@ -507,6 +560,36 @@ export class AudioPlan {
       this.add(visit);
     }
     return !this.done;
+  }
+
+  // The last run, when the visit worked out last is visit v and nothing
+  // after it, so the visit can run on, see runOn.
+  lastRunOf(v: number): AudioRun | null {
+    const run = this.runs[this.runs.length - 1];
+    const st = run?.stretches[run.stretches.length - 1];
+    return st && st.visit.v === v && this.nextVisit === v + 1 ? run : null;
+  }
+
+  // Where on the program, in samples, the piece of the visit worked out
+  // last ends, and so its fade out begins a FADE before.
+  get lastPieceEnd(): number {
+    const run = this.runs[this.runs.length - 1];
+    return run?.stretches[run.stretches.length - 1].pieceEnd ?? Infinity;
+  }
+
+  // The visit worked out last runs on, see Program.runOn: its sound goes on
+  // to its new end, with no fade where the piece used to end. Says whether
+  // it could, see lastRunOf.
+  runOn(visit: Visit): boolean {
+    const run = this.lastRunOf(visit.v);
+    if (!run) return false;
+    const st = run.stretches[run.stretches.length - 1];
+    const pieceEnd = Math.round((visit.from + visit.end - visit.start) * this.rate);
+    st.visit = visit;
+    st.to = st.from + (pieceEnd - st.out);
+    st.pieceEnd = pieceEnd;
+    run.last = Math.max(run.last, this.packetBefore(st.to));
+    return true;
   }
 
   private add(visit: Visit) {

@@ -72,6 +72,22 @@ describe("Program", () => {
     expect(again.at).toBeCloseTo(57.5);
     expect(l.visit(4)!.from).toBeCloseTo(l.length + 2.53);
   });
+  // #277: an edge of the clip dragged past the playhead while it plays.
+  test("run on from a piece, it goes straight on to the end it is given and stops there", () => {
+    const r = new Program(clip, true);
+    expect(r.runOn(1, 62)).toBeNull();
+    const on = r.runOn(1, 70)!;
+    expect(on).toMatchObject({ v: 1, piece: 1, start: 60.31, end: 70 });
+    expect(on.from).toBeCloseTo(2.53);
+    expect(r.loop).toBe(false);
+    expect(r.visit(0)!.end).toBe(59.53);
+    expect(r.visit(2)).toBeNull();
+    expect(r.end).toBeCloseTo(2.53 + 70 - 60.31);
+    expect(r.locate(2.53 + 5)!.v).toBe(1);
+    expect(r.locate(2.53 + 5)!.at).toBeCloseTo(65.31);
+    expect(r.locate(r.end)).toBeNull();
+    expect(r.lastPiece).toEqual({ start: 60.31, end: 70 });
+  });
 });
 
 describe("VideoPlan", () => {
@@ -179,6 +195,25 @@ describe("VideoPlan", () => {
       [1400, 1487],
       [1500, 1624],
     ]);
+  });
+
+  test("a piece run on draws on through what was a cut, in the run it is in", () => {
+    const p = new Program(clip, false);
+    const ran = new VideoPlan(video, frame, p, 0);
+    ran.extend(3);
+    const runs = ran.runs.length;
+    expect(ran.runOn(p.runOn(1, 64)!)).toBe(true);
+    ran.extend(Infinity);
+    expect(drawnBy(ran)).toEqual([...frames(57, 59.48), ...frames(60.28, 63.96)]);
+    expect(ran.runs.length).toBe(runs);
+  });
+
+  test("a piece is not run on once the visit after it is worked out", () => {
+    const p = new Program(clip, false);
+    const ahead = new VideoPlan(video, frame, p, 0);
+    ahead.extend(Infinity);
+    expect(ahead.lastRunOf(1)).toBeNull();
+    expect(ahead.runOn({ ...p.visit(1)!, end: 64 })).toBe(false);
   });
 
   test("a loop starts a run back at the first piece's key frame", () => {
@@ -394,6 +429,22 @@ describe("AudioPlan", () => {
   // packets were fed long ago, and every one fed after went to both times
   // through, the second a whole clip ahead, so the sound was taken as fed
   // that far and stopped about three seconds before the seam.
+  test("a piece run on sounds on to its new end, with no fade where it used to end", () => {
+    const p = new Program(clip, false);
+    const ran = new AudioPlan(opus, 48000, p, 0);
+    ran.extend(3);
+    expect(ran.runOn(p.runOn(1, 64)!)).toBe(true);
+    ran.extend(Infinity);
+    const st = ran.runs.flatMap((r) => r.stretches);
+    expect(st.map((s) => [s.from, s.to, s.out])).toEqual([
+      [57 * 48000, 59.53 * 48000, 0],
+      [60.31 * 48000, 60.31 * 48000 + 177120, 121440],
+    ]);
+    const was = 121440 + 89280;
+    expect(fade(was - 1, st[1].pieceOut, st[1].pieceEnd, 48000)).toBe(1);
+    expect(ran.lastPieceEnd).toBe(121440 + 177120);
+  });
+
   test("a loop back to where the run started starts a run of its own", () => {
     const looped = new AudioPlan(opus, 48000, new Program([{ start: 10, end: 20 }], true), 0);
     looped.extend(15);

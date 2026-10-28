@@ -97,18 +97,22 @@ removed. Nothing is prepared before the first play.
    clip. #152 did the same in 366 lines by splicing the new program into
    the running play, and was closed for #155, which made the case
    impossible in about 40. The one exception is loop, 2.150 and 2.183,
-   which changes only where the play ends and nothing that plays. No
-   other splice is built. Only
+   which changes only where the play ends and nothing that plays, and
+   the second, below, works the same way. No other splice is built. Only
    the space bar and a click on the clip timeline change a play. An edge
    of the clip or of a cut, dragged or clicked while it plays, moves no
    playhead and changes nothing that plays: the edit is saved and drawn
    at once, and the queue keeps the new pieces for the next play, seek
-   or click. Tim's rule, #277: that holds when the clip ends up shorter
-   than where the playhead already is. An end dragged back past it lets
-   the play run on to where the clip ended when it started, and the
-   playhead stays there once it stops. Paused, the playhead goes with
-   the edge dragged, a cut's edges too, see the clip timeline in
-   [APP.md](APP.md). An undo while it plays moves no playhead either. Tim heard
+   or click. The second exception is Tim's, #277: an edge of the clip
+   dragged past the playhead while it plays leaves the playhead outside
+   the clip, on the video, so the play goes on as a play of the video,
+   straight on to the episode's end. Like loop it changes only where the
+   play ends: the piece the playhead is in runs on, in the decoders'
+   runs it is in, and its sound does not fade out where it used to end,
+   `playOn` in `lib/frames/queue.ts`. Only where the play has worked out
+   past that piece already does it start again from the playhead, a
+   moment's stop. Paused, the playhead goes with the edge dragged, a
+   cut's edges too, see the clip timeline in [APP.md](APP.md). An undo while it plays moves no playhead either. Tim heard
    the play stutter with the hand on a cut's edge, because every step of
    the drag started the play again from the playhead.
 7. **A rule before machinery.** When a case would need new machinery in

@@ -727,20 +727,18 @@ export const steps = {
   // ["end back past the playhead", share]
   //                    plays the clip from near its end, drags the end
   //                    back to this share of the way along the clip while
-  //                    it plays, so the clip now ends before the
-  //                    playhead, and lets the play run until it stops by
-  //                    itself. The play went on as it was started, Tim's
-  //                    rule on #277: the playhead never went back and no
-  //                    older frame was drawn while it played, it ran on to
-  //                    where the clip ended before the drag, and it stays
-  //                    there once the play has stopped
+  //                    it plays, so the playhead is outside the clip, and
+  //                    lets the play run a second past where the clip
+  //                    ended before. Tim's rule on #277: the playhead is on
+  //                    the video then, and the play goes on as a play of
+  //                    the video, never stopping, never going back, no
+  //                    older frame drawn, and never started again
   async "end back past the playhead"(walk, arg, s) {
     const { page, watch } = walk;
-    const fps = await rate(page);
     const oldEnd = (await engineState(page, watch.at)).segments.at(-1).end;
-    // The play starts a fifth of the clip before its end, so it runs out
-    // by itself in a few seconds, and is still running when the hand lets
-    // go however slowly a busy machine moves it.
+    // The play starts a fifth of the clip before its end, so it is still
+    // running when the hand lets go however slowly a busy machine moves
+    // it.
     const g0 = await handles(page);
     const into = g0.start.x + g0.start.w;
     await clickOnTrack(page, into + 0.8 * (g0.end.x - into), high(g0.track));
@@ -750,6 +748,7 @@ export const steps = {
     await page.keyboard.press("Space");
     await settle(page);
     await playUntil(page, { most: 0.3 });
+    const starts = await page.evaluate(() => window.__frameQueue.stats.starts);
     await page.evaluate(() => {
       window.__played = [];
       window.__playWatch = true;
@@ -774,30 +773,28 @@ export const steps = {
     }
     await page.mouse.up();
     const [atLetGo, playingAtLetGo] = await page.evaluate(() => [Number(document.querySelector(".screen").dataset.playhead), !!document.querySelector('button[aria-label="Pause"]')]);
-    // Until the play stops by itself.
-    await playUntil(page);
+    // Until a second past the old end, or until the play stops, and paused
+    // there.
+    const ran = await playUntil(page, { past: oldEnd + 1, pause: true });
     await page.evaluate(() => (window.__playWatch = false));
     await settle(page);
     await watch.step("trim", s);
     const newEnd = (await engineState(page, watch.at)).segments.at(-1).end;
-    const played = await page.evaluate(() => window.__played ?? []);
-    const playing = played.filter(([, , p]) => p);
+    // Up to the pause at the end of the step.
+    const all = await page.evaluate(() => window.__played ?? []);
+    const paused = all.findIndex(([, , on]) => !on);
+    const played = paused < 0 ? all : all.slice(0, paused);
+    const startedAgain = (await page.evaluate(() => window.__frameQueue.stats.starts)) - starts;
     if (!playingAtLetGo) walk.wrong = `the play had ended at ${atLetGo.toFixed(3)} before the hand let go, so the walk proves nothing`;
     else if (!(newEnd < atLetGo)) walk.wrong = `the clip ends at ${newEnd.toFixed(3)}, not before the playhead at ${atLetGo.toFixed(3)} where the hand let go`;
-    else if (playing.length < 30) walk.wrong = `only ${playing.length} animation frames were read while it played`;
-    for (let i = 1; i < playing.length && !walk.wrong; i++) {
-      const [at, n] = playing[i];
-      const [at0, n0] = playing[i - 1];
+    else if (!ran.playing) walk.wrong = `the play stopped at ${ran.at.toFixed(3)}, with the clip's end moved from ${oldEnd.toFixed(3)} to ${newEnd.toFixed(3)} behind the playhead`;
+    else if (played.length < 30) walk.wrong = `only ${played.length} animation frames were read while it played`;
+    else if (startedAgain) walk.wrong = `the play started again ${startedAgain} times once the end was behind the playhead`;
+    for (let i = 1; i < played.length && !walk.wrong; i++) {
+      const [at, n] = played[i];
+      const [at0, n0] = played[i - 1];
       if (at < at0 - 1e-6) walk.wrong = `the playhead went back from ${at0.toFixed(3)} to ${at.toFixed(3)} while it played, with the end moved to ${newEnd.toFixed(3)}`;
       else if (n >= 0 && n0 >= 0 && n < n0) walk.wrong = `frame ${n} was drawn after frame ${n0} while it played`;
-    }
-    const furthest = Math.max(...playing.map(([at]) => at));
-    const rest = Number(await page.evaluate(() => document.querySelector(".screen").dataset.playhead));
-    if (!walk.wrong && furthest < oldEnd - 1.5 / fps) {
-      walk.wrong = `the play stopped at ${furthest.toFixed(3)}, before the clip's end at ${oldEnd.toFixed(3)} when it started, with the end moved to ${newEnd.toFixed(3)}`;
-    } else if (!walk.wrong && Math.abs(rest - oldEnd) > 1e-3) {
-      // A play ends with the playhead on the end of what it played.
-      walk.wrong = `the play stopped with the playhead at ${rest.toFixed(3)}, not on the clip's end at ${oldEnd.toFixed(3)} when it started, with the end moved to ${newEnd.toFixed(3)}`;
     }
   },
   // ["swipe after click", share, px]
