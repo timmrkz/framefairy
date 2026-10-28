@@ -379,15 +379,11 @@ func barNumbers(t *testing.T, path string, w, h int, flags ...string) []int {
 	t.Helper()
 	args := append([]string{"-v", "error", "-i", path}, flags...)
 	args = append(args, "-f", "rawvideo", "-pix_fmt", "gray", "-")
-	out, err := exec.Command("ffmpeg", args...).Output()
-	if err != nil {
-		t.Fatal(err)
-	}
 	var numbers []int
-	for i := 0; i+w*h <= len(out); i += w * h {
+	for _, f := range readFrames(t, exec.Command("ffmpeg", args...), w*h) {
 		n := 0
 		for b := 0; b < 8; b++ {
-			if out[i+(2*b+1)*h/16*w+w/2] > 125 {
+			if f[(2*b+1)*h/16*w+w/2] > 125 {
 				n |= 1 << (7 - b)
 			}
 		}

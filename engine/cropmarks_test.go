@@ -181,10 +181,10 @@ func TestTheRenderGlidesTheCropOverTheMarks(t *testing.T) {
 	if chain == "" {
 		t.Fatalf("the piece has no crop that glides to the pixel of the short: %s", graph)
 	}
-	out, err := exec.Command("ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=black:s=480x270:r=25:d=3",
-		"-vf", chain, "-frames:v", "65", "-f", "rawvideo", "-pix_fmt", "gray", "-").CombinedOutput()
-	if err != nil || len(out) != 65*1080*1920 {
-		t.Errorf("the glide scaled to the short gave %d bytes, not 65 frames of 1080 by 1920: %v %s", len(out), err, out[:min(len(out), 200)])
+	frames := readFrames(t, exec.Command("ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=black:s=480x270:r=25:d=3",
+		"-vf", chain, "-frames:v", "65", "-f", "rawvideo", "-pix_fmt", "gray", "-"), 1080*1920)
+	if len(frames) != 65 {
+		t.Errorf("the glide scaled to the short gave %d frames of 1080 by 1920, not 65", len(frames))
 	}
 }
 
