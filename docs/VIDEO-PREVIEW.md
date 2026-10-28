@@ -103,7 +103,12 @@ removed. Nothing is prepared before the first play.
    of the clip or of a cut, dragged or clicked while it plays, moves no
    playhead and changes nothing that plays: the edit is saved and drawn
    at once, and the queue keeps the new pieces for the next play, seek
-   or click. An undo while it plays moves no playhead either. Tim heard
+   or click. That holds when the clip ends up shorter than where the
+   playhead already is: an end dragged back past it lets the play run on
+   to where the clip ended when it started, and the playhead stays there
+   once it stops, decided by Tim on #277. Paused, the playhead goes with
+   the edge dragged, a cut's edges too, see the clip timeline in
+   [APP.md](APP.md). An undo while it plays moves no playhead either. Tim heard
    the play stutter with the hand on a cut's edge, because every step of
    the drag started the play again from the playhead.
 7. **A rule before machinery.** When a case would need new machinery in

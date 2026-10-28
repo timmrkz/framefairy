@@ -526,7 +526,10 @@ clip timeline change a play. A clip's pieces changing while it plays, a
 cut made, moved or put back, an edge trimmed or a step undone, moves no
 playhead and changes nothing that plays: the play goes on with the pieces
 it started with, and the next play, or a click, plays the clip as it is
-now. A drag on a cut's edge used to start the play again on every step,
+now. So the clip can be made shorter than where the playhead already is:
+an end dragged back past it while it plays lets the play run on to where
+the clip ended when it started, and the playhead stays there once it
+stops, decided by Tim on #277. A drag on a cut's edge used to start the play again on every step,
 which stuttered. Loop switched on or off changes only where the play
 ends, never what plays: the picture stops at that end and the sound
 stops there too, in the silence the clip fades out to, however often L

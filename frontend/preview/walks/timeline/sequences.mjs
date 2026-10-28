@@ -527,6 +527,16 @@ export default [
     ],
   },
   {
+    // Issue #277, decided by Tim: an edge moved while the clip plays
+    // changes nothing that plays, also when the clip ends up shorter
+    // than where the playhead already is. The play runs on to where the
+    // clip ended when it started, and the playhead stays there once it
+    // stops. Paused, the playhead goes with the edge, see "a cut's edges
+    // dragged take the playhead along".
+    name: "an end dragged back past the playing playhead lets the play run on to the old end",
+    steps: [["end back past the playhead", 0.5]],
+  },
+  {
     // Tim moved the crop to the side of the picture and saw the viewer's
     // rounded corner cut into the crop frame's line, and bright specks of
     // the picture in the frame's own rounded corners, where the shade
