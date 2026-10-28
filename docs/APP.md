@@ -3047,11 +3047,13 @@ somebody can click their way into, run by `make interface` and CI.
 The line under the choice says what it costs: a few cents a video and
 which company, or who made the model and the memory it needs, and that it
 is tight or too big where it is. Beside each model here in the list is its
-size, whether it is on this machine or still to fetch, and one still to
-fetch wears the cloud with the arrow down at the end of its row, where
-Finder puts the cloud of a file still in iCloud, so the one number needs no
-word to say which of the two it is. A model this machine is short of
-memory for says so beside its size. Nothing says best: the biggest model
+size, and the group it stands in says what the size is: under **On this
+machine** the room it takes, under **To download** what it would fetch, so
+the one number needs no word and no mark to say which of the two it is. A
+cloud mark on the models still to fetch, the way Finder marks a file still
+in iCloud, was tried and read as a model that runs in the cloud, under a
+group of that name. A model this machine is short of memory for says so
+beside its size. Nothing says best: the biggest model
 that fits is the one a new machine starts on, and a word for it on one row
 of the list read as a riddle. The list holds any number of models in the
 room of one control.
@@ -3171,9 +3173,12 @@ that already has two and none named, from before this was so, says so
 under the choice, and choosing one settles it.
 
 **The speech model is the same choice**, **Transcribe with**, though
-there is one speech model today, so its list holds one: its size, the
-cloud when it is still to fetch, and the line under it, who made it and
-what it hears. **Download** beside the list fetches one that is not here,
+there is one speech model today, so its list holds one: its size, in the
+group that says whether it is here, and the line under it, who made it and
+what it hears, or the folder named for it by hand before, or what the
+check found wrong with it. Choosing it in the list lets go of a folder
+named by hand. Both cards are `ModelCard.svelte`, each with its download
+in an `Install` from `lib/install.svelte.ts`, one card used twice. **Download** beside the list fetches one that is not here,
 with the same line, beam and fill as the clip model's. Removing the speech
 model, from its **Downloaded models**, means the app asks for one again
 the next time it starts, because nothing can be transcribed without it.
@@ -3181,12 +3186,12 @@ the next time it starts, because nothing can be transcribed without it.
 **Clips** says where rendered clips go, **Save clips to**, next to each
 video unless a folder is chosen with **Choose…**, which
 opens the system's own folder dialog. **Next to video** goes back to the
-default. In a folder chosen here, each episode's shorts go into a folder
-of their own, named after the episode's file, so `Folge 12.mp4` renders
-into `Shorts/Folge 12/`. A short is named after its clip's words, without
-the clip's id, `ich-merke-dass-das-immer-schwer-ist.mp4`. Wherever a short
+default. In a folder chosen here, each video's clips go into a folder
+of their own, named after the video's file, so `Folge 12.mp4` renders
+into `Clips/Folge 12/`. A rendered clip is named after its words, without
+the clip's id, `ich-merke-dass-das-immer-schwer-ist.mp4`. Wherever a clip
 goes, a name taken by a file the clip did not write gets a number, the way
-Finder gives one, `ich-merke-dass-das-immer-schwer-ist 2.mp4`. A short already rendered stays where it
+Finder gives one, `ich-merke-dass-das-immer-schwer-ist 2.mp4`. A clip already rendered stays where it
 went when the folder changes, and its clip still knows it is rendered and
 where, see **Where a short went** in
 [ENGINE.md](ENGINE.md#where-a-short-went).

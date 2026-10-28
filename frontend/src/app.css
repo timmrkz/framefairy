@@ -951,3 +951,39 @@ button:has(> .beam):disabled {
 .card .words .small {
   font-size: var(--size-s);
 }
+
+/* Not yet: what needs an answer shakes from side to side and settles,
+   the way the Mac's password field does, a few times and less each time:
+   the card of a model in the settings, and the licence key field. One
+   shake for all of them, so they never drift apart. Without motion it is
+   lit for a moment instead. */
+.shakes.shaking {
+  animation: shake 0.45s cubic-bezier(0.36, 0.07, 0.19, 0.97);
+}
+
+@keyframes shake {
+  20% {
+    transform: translateX(-8px);
+  }
+  40% {
+    transform: translateX(8px);
+  }
+  60% {
+    transform: translateX(-5px);
+  }
+  80% {
+    transform: translateX(3px);
+  }
+}
+
+@keyframes lit {
+  30% {
+    border-color: var(--warn);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shakes.shaking {
+    animation: lit 0.6s ease;
+  }
+}

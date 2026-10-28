@@ -74,16 +74,15 @@ describe("the list to choose from", () => {
 
   // Tim saw a size on the models still to fetch, none on the ones here,
   // and "best here" on one, 2026-10-27.
-  test("the models here: those that are here first, the biggest first, each saying its size", () => {
+  test("the models here first and those to download after, the biggest first, each saying its size", () => {
     const here = finderOptions(cloud, providers, language, "claude-sonnet-5").filter(
-      (o) => o.group === "On this machine",
+      (o) => o.group !== "In the cloud",
     );
-    expect(here.map((o) => o.label)).toEqual(["Big", "Small", "Huge", "Far"]);
-    expect(here.map((o) => [o.label, o.detail, o.after])).toEqual([
-      ["Big", "9.0 GB", undefined],
-      ["Small", "9.0 GB", undefined],
-      ["Huge", "9.0 GB, too big for this machine", "download"],
-      ["Far", "5.2 GB", "download"],
+    expect(here.map((o) => [o.group, o.label, o.detail])).toEqual([
+      ["On this machine", "Big", "9.0 GB"],
+      ["On this machine", "Small", "9.0 GB"],
+      ["To download", "Huge", "9.0 GB, too big for this machine"],
+      ["To download", "Far", "5.2 GB"],
     ]);
     expect(here.find((o) => o.label === "Huge")?.warn).toBe(true);
     expect(here.some((o) => /best/i.test(o.detail ?? ""))).toBe(false);

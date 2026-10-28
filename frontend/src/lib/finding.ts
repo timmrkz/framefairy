@@ -39,21 +39,20 @@ export interface FinderOption {
   label: string;
   detail?: string;
   warn?: boolean;
-  after?: string;
-  afterTitle?: string;
   group: string;
 }
 
 // The list: every company's model with the company beside it, a model
 // written in by hand as well so the list never names nothing, and then
-// the models that run here, those that are here first and the biggest
-// first. Every model here says its size, whether it is on the disk or
-// still to fetch, and one still to fetch wears the cloud with the arrow
-// down, the way Finder marks a file still in iCloud, so the one number
-// never needs a word to say which of the two it is. Only a model this
-// machine is short of memory for says so beside it. Tim found "best here"
-// on one row and a size on others, 2026-10-27, and could not tell what
-// either meant.
+// the models that run here, those on this machine and then those still to
+// download, each group the biggest first. Every model says its size, and
+// the group it stands in says whether that is the room it takes or what
+// it would fetch, so the number never needs a word or a mark to say which.
+// A cloud mark for a model still to fetch was tried, and read as a model
+// that runs in the cloud, under a group of that name. Only a model this
+// machine is short of memory for says so beside its size. Tim found "best
+// here" on one row and a size on others, 2026-10-27, and could not tell
+// what either meant. See modelGroup.
 export function finderOptions(
   cloud: CloudModel[],
   providers: Provider[],
@@ -79,12 +78,16 @@ export function finderOptions(
           label: m.title,
           detail: warn ? `${size(m.download)}, ${note.toLowerCase()}` : size(m.download),
           warn,
-          after: m.installed ? undefined : "download",
-          afterTitle: m.installed ? undefined : "Not on this machine yet. Download fetches it",
-          group: "On this machine",
+          group: modelGroup(m.installed),
         };
       }),
   ];
+}
+
+// Where a model of this machine stands in a list to choose from, the
+// speech model's as well as the clip model's: here, or still to fetch.
+export function modelGroup(installed: boolean): string {
+  return installed ? "On this machine" : "To download";
 }
 
 // Everything the line under the choice depends on.

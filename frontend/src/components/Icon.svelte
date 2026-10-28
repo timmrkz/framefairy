@@ -40,7 +40,6 @@
   import MessageSquareQuote from "@lucide/svelte/icons/message-square-quote";
   import Ellipsis from "@lucide/svelte/icons/ellipsis";
   import Share from "@lucide/svelte/icons/share";
-  import CloudDownload from "@lucide/svelte/icons/cloud-download";
   import type { Component } from "svelte";
 
   // Mark In and Mark Out are the square brackets every editor draws on
@@ -91,9 +90,6 @@
     copy: Copy,
     // macOS brings updates in with an arrow pointing down.
     update: CircleArrowDown,
-    // A model that is not on this machine yet, the cloud with the arrow
-    // down that Finder puts on a file still in iCloud.
-    download: CloudDownload,
     sort: ArrowUpDown,
     "sort-added": Clock,
     "sort-name": ArrowDownAZ,
