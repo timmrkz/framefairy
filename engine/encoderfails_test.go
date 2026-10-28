@@ -129,9 +129,13 @@ func TestARenderGoesOnWhenTheEncoderHangs(t *testing.T) {
 // Only an encoder with another after it is given a limit, and it is the
 // same for HDR. libx264, the last there is, and an encoder named by hand
 // that is not in the order are waited for, since there is nothing to go on
-// with.
+// with. The Mac's encoder on the processor is given up too, on the
+// ffmpeg we ship, which has no libx264 to go on with: the limit follows
+// the order, not the ffmpeg, so a render whose media engine cannot be
+// reached fails with the reason rather than waiting for good, issue #570.
 func TestOnlyAnEncoderWithAnotherAfterItIsGivenUp(t *testing.T) {
 	mac := encodingEngineOn(t, "darwin", "h264_videotoolbox", "hevc_videotoolbox", "libx264")
+	shipped := encodingEngineOn(t, "darwin", "h264_videotoolbox", "hevc_videotoolbox")
 	linux := encodingEngineOn(t, "linux", "libx264")
 	cases := []struct {
 		e       *Engine
@@ -143,6 +147,8 @@ func TestOnlyAnEncoderWithAnotherAfterItIsGivenUp(t *testing.T) {
 		{mac, onProcessor(videoToolbox), framewire.SDR, encoderStall},
 		{mac, x264, framewire.SDR, 0},
 		{mac, hevcVideoToolbox, framewire.PQ, encoderStall},
+		{shipped, onProcessor(videoToolbox), framewire.SDR, encoderStall},
+		{shipped, onProcessor(hevcVideoToolbox), framewire.PQ, encoderStall},
 		{mac, Encoder{Name: "h264_nvenc"}, framewire.SDR, 0},
 		{linux, x264, framewire.SDR, 0},
 	}
@@ -166,6 +172,9 @@ func TestOnlyAnEncoderThatFailedItselfIsLeft(t *testing.T) {
 	}{
 		{"[h264_videotoolbox @ 0x6000013c] Error encoding frame: -12912\n", "h264_videotoolbox -require_sw 1"},
 		{"[h264_videotoolbox @ 0x6000013c] Cannot create compression session: -12908\n", "h264_videotoolbox -require_sw 1"},
+		// All ffmpeg said when the media engine's scaler could not be
+		// reached on CI's Mac, run 40508761386, issue #570.
+		{"IOServiceMatchingfailed for: AppleM2ScalerParavirtDriver\n", "h264_videotoolbox -require_sw 1"},
 		{"[Parsed_crop_3 @ 0x6000013c] Invalid too big or non positive size\n", ""},
 		{"episode.mp4: No such file or directory\n", ""},
 	}
@@ -188,11 +197,21 @@ func TestOnlyAnEncoderThatFailedItselfIsLeft(t *testing.T) {
 	if _, ok := e.nextEncoder(ctx, x264, framewire.SDR, "[libx264 @ 0x1] broken"); ok {
 		t.Error("the last encoder of the order had one after it")
 	}
+	// macOS's own words are VideoToolbox's, and no encoder of another
+	// maker's fails by them.
+	if !x264.failed("[libx264 @ 0x1] broken") || x264.failed("IOServiceMatchingfailed for: AppleM2ScalerParavirtDriver") {
+		t.Error("libx264 is said to fail by the words of VideoToolbox, or not by its own")
+	}
 	// HDR goes on with HEVC on the processor.
 	if next, ok := encodingEngineOn(t, "darwin", "hevc_videotoolbox").nextEncoder(ctx, hevcVideoToolbox,
 		framewire.PQ, "[hevc_videotoolbox @ 0x1] Error encoding frame: -12912"); !ok ||
 		next.String() != "hevc_videotoolbox -require_sw 1" {
 		t.Errorf("after HEVC on the media engine the render goes on with %q", next.String())
+	}
+	if next, ok := encodingEngineOn(t, "darwin", "hevc_videotoolbox").nextEncoder(ctx, hevcVideoToolbox,
+		framewire.PQ, "IOServiceMatchingfailed for: AppleM2ScalerParavirtDriver"); !ok ||
+		next.String() != "hevc_videotoolbox -require_sw 1" {
+		t.Errorf("after HEVC on an unreachable media engine the render goes on with %q", next.String())
 	}
 }
 
@@ -359,6 +378,40 @@ func TestTheProcessorEncodesWhatAShortAsks(t *testing.T) {
 				t.Errorf("the short is not %s:\n%s", c.want, about)
 			}
 		})
+	}
+}
+
+// An ffmpeg that crashes says nothing of it itself, and a render that
+// ended with one line of macOS's on CI's Mac could not say whether ffmpeg
+// had crashed, issue #570. What ffmpeg said ends with the signal that
+// ended it, so the render's failure, its log and a report say so.
+//
+// On the real disk: the stand-in ffmpeg is a program that is run.
+func TestAnFFmpegEndedByASignalSaysSo(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the stand-in is a shell script")
+	}
+	path := filepath.Join(t.TempDir(), "ffmpeg")
+	script := "#!/bin/sh\necho 'IOServiceMatchingfailed for: AppleM2ScalerParavirtDriver' >&2\nkill -ABRT $$\n"
+	if err := standin.Write(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	e := &Engine{Log: NewLog(&bytes.Buffer{}, false, false), FFmpeg: path}
+	code, said, _ := e.runFFmpegWatched(context.Background(), []string{"-i", "episode.mp4", "short.mp4"},
+		"rendering", 2, "", nil, 0)
+	if code == 0 {
+		t.Error("an ffmpeg ended by a signal ended well")
+	}
+	if !strings.HasPrefix(said, "IOServiceMatchingfailed for: AppleM2ScalerParavirtDriver\n") ||
+		!strings.Contains(said, "ffmpeg was ended by a signal: abort") {
+		t.Errorf("what ffmpeg said does not end with the signal that ended it:\n%s", said)
+	}
+	// One that ends by itself says only what it said.
+	if err := standin.Write(path, []byte("#!/bin/sh\necho 'No such file' >&2\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, said, _ := e.runFFmpegWatched(context.Background(), []string{"-i", "episode.mp4"}, "rendering", 2, "", nil, 0); said != "No such file\n" {
+		t.Errorf("an ffmpeg that failed by itself said %q", said)
 	}
 }
 

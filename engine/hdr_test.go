@@ -27,14 +27,16 @@ func TestAnHDREpisodeMakesAnHDRShort(t *testing.T) {
 	if !hasEncoder(string(encoders), "libx265") && !hasEncoder(string(encoders), "hevc_videotoolbox") {
 		ffmpegtest.Unusable(t, "this ffmpeg has no encoder of HEVC in 10 bits")
 	}
-	hevc := []string{"-c:v", "libx265", "-preset", "ultrafast", "-x265-params", "log-level=error", "-pix_fmt", "yuv420p10le"}
+	// The encoders to make the episode with, the next one only when the
+	// one before failed, see encodeTestFile.
+	hevc := [][]string{{"-c:v", "libx265", "-preset", "ultrafast", "-x265-params", "log-level=error", "-pix_fmt", "yuv420p10le"}}
 	if !hasEncoder(string(encoders), "libx265") {
-		hevc = []string{"-c:v", "hevc_videotoolbox", "-profile:v", "main10", "-pix_fmt", "p010le", "-b:v", "4M"}
+		hevc = chipThenProcessor([]string{"-c:v", "hevc_videotoolbox", "-profile:v", "main10", "-pix_fmt", "p010le", "-b:v", "4M"})
 	}
-	h264 := []string{"-c:v", "mpeg4", "-q:v", "2", "-pix_fmt", "yuv420p"}
+	h264 := [][]string{{"-c:v", "mpeg4", "-q:v", "2", "-pix_fmt", "yuv420p"}}
 	for _, c := range []struct {
 		name, tags string
-		args       []string
+		codecs     [][]string
 		codec, trc string
 	}{
 		{"HLG", "color_primaries=bt2020:color_trc=arib-std-b67:colorspace=bt2020nc", hevc, "hevc", "arib-std-b67"},
@@ -43,12 +45,11 @@ func TestAnHDREpisodeMakesAnHDRShort(t *testing.T) {
 	} {
 		dir := t.TempDir()
 		source := filepath.Join(dir, "episode.mp4")
-		args := append([]string{"-loglevel", "error", "-y",
+		args := []string{"-loglevel", "error", "-y",
 			"-f", "lavfi", "-i", "testsrc2=s=640x360:r=25:d=4",
 			"-f", "lavfi", "-i", "sine=f=440:r=48000:d=4",
-			"-vf", "setparams=" + c.tags + ":range=tv"}, c.args...)
-		args = append(args, "-c:a", "aac", "-shortest", source)
-		if out, err := exec.Command(e.FFmpeg, args...).CombinedOutput(); err != nil {
+			"-vf", "setparams=" + c.tags + ":range=tv"}
+		if out, err := encodeTestFile(t, e.FFmpeg, args, c.codecs, "-c:a", "aac", "-shortest", source); err != nil {
 			ffmpegtest.Unusable(t, "%s: making the episode: %s %s", c.name, err, out)
 		}
 		info, err := e.Probe(ctx, source)
