@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"math"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -13,7 +15,7 @@ import (
 	"framefairy/internal/ffmpegtest"
 )
 
-// The pop of the word being spoken, read back from a finished short: the
+// The pop of the word being spoken, read back from the frames of a short: the
 // word and its pill grow together, by one scale around one centre, in
 // every direction, as far as popScales says on every frame, and at rest the
 // pill leaves room round its word. Tim saw #201's bounce move the pill
@@ -29,20 +31,75 @@ const roomAround = 0.10
 // from: the line sits 300 pixels over the bottom.
 const bounceTop, bounceRows = 1400, 400
 
-// shortRows renders words as the captions of a short from 0 to end of a
+// shortRows draws words as the captions of a short from 0 to end of a
 // black episode at bounceFPS, 1080x1920, and reads back rows of it from
 // top, one rgb24 frame after another. shortRowsAt does it at fps.
 //
-// On the real disk: ffmpeg renders the short and the test reads it back.
+// On the real disk: ffmpeg draws the short and the test reads it back.
 func shortRows(t *testing.T, words []Cue, end float64, top, rows int) (e *Engine, info SourceInfo, laid []LaidCaption, frames [][]byte) {
 	t.Helper()
 	return shortRowsAt(t, fmt.Sprint(bounceFPS), words, end, top, rows)
 }
 
-// shortRowsAt takes the rate as ffmpeg does, "25" or "30000/1001".
+// shortRowsAt takes the rate as ffmpeg does, "25" or "30000/1001". What
+// is checked is how libass draws the captions, so the frames are the
+// render's own graph, the caption file and the face it burns in included,
+// read straight out of it. Encoding them and decoding them again would
+// only blur the edges the checks measure, and took most of the time.
+// renderedRowsAt reads them out of a short that was rendered.
+//
+// On the real disk: ffmpeg draws the short and the test reads it back.
+func shortRowsAt(t *testing.T, rate string, words []Cue, end float64, top, rows int) (e *Engine, info SourceInfo, laid []LaidCaption, frames [][]byte) {
+	t.Helper()
+	ctx := context.Background()
+	e, source, info, clip, laid := bounceEpisode(t, rate, words, end)
+	rs := RenderSettings{OutW: shortW, OutH: shortH, ScaleUp: true}
+	dir := t.TempDir()
+	if err := e.writeASS(ctx, laid, filepath.Join(dir, "01.ass"), shortW, shortH, nil, info); err != nil {
+		t.Fatal(err)
+	}
+	if err := InstallFont(dir, ResolveStyle(nil).Font); err != nil {
+		t.Fatal(err)
+	}
+	graph, video, sound, err := e.BuildFilterGraph(ctx, clip, info, rs, "01.ass")
+	if err != nil {
+		t.Fatal(err)
+	}
+	graph += ";" + video + fmt.Sprintf("crop=%d:%d:0:%d,format=rgb24[rgb]", shortW, rows, top)
+	args := append([]string{"-hide_banner", "-loglevel", "error"}, pieceInputs(clip, source, info)...)
+	args = append(args, "-filter_complex", graph, "-map", "[rgb]", "-fps_mode", "cfr", "-r", info.FPSString(),
+		"-f", "rawvideo", "-pix_fmt", "rgb24", "-", "-map", sound, "-f", "null", os.DevNull)
+	cmd := exec.Command(e.FFmpeg, args...)
+	cmd.Dir = dir
+	return e, info, laid, readFrames(t, cmd, shortW*rows*3)
+}
+
+// renderedRowsAt is shortRowsAt read out of a short that was rendered,
+// encoded and all, and decoded again.
 //
 // On the real disk: ffmpeg renders the short and the test reads it back.
-func shortRowsAt(t *testing.T, rate string, words []Cue, end float64, top, rows int) (e *Engine, info SourceInfo, laid []LaidCaption, frames [][]byte) {
+func renderedRowsAt(t *testing.T, rate string, words []Cue, end float64, top, rows int) (e *Engine, info SourceInfo, laid []LaidCaption, frames [][]byte) {
+	t.Helper()
+	ctx := context.Background()
+	e, source, info, clip, laid := bounceEpisode(t, rate, words, end)
+	rs := RenderSettings{OutW: shortW, OutH: shortH, CRF: 12, Preset: "ultrafast", AudioBitrate: "128k", ScaleUp: true}
+	dir := t.TempDir()
+	short, err := e.RenderClip(ctx, clip, source, info, filepath.Join(dir, "out"), laid, rs, nil,
+		filepath.Join(dir, "captions"), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("ffmpeg", "-v", "error", "-i", short, "-vf",
+		fmt.Sprintf("crop=%d:%d:0:%d", shortW, rows, top),
+		"-f", "rawvideo", "-pix_fmt", "rgb24", "-")
+	return e, info, laid, readFrames(t, cmd, shortW*rows*3)
+}
+
+// bounceEpisode is a black episode at rate a little longer than end, and
+// the clip from 0 to end of it with words as its captions.
+//
+// On the real disk: ffmpeg makes the episode.
+func bounceEpisode(t *testing.T, rate string, words []Cue, end float64) (e *Engine, source string, info SourceInfo, clip Clip, laid []LaidCaption) {
 	t.Helper()
 	ctx := context.Background()
 	e = NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
@@ -52,7 +109,7 @@ func shortRowsAt(t *testing.T, rate string, words []Cue, end float64, top, rows 
 	if _, err := e.SubtitleFilter(ctx); err != nil {
 		ffmpegtest.Unusable(t, "this ffmpeg cannot burn captions in: %v", err)
 	}
-	source := filepath.Join(t.TempDir(), "episode.mp4")
+	source = filepath.Join(t.TempDir(), "episode.mp4")
 	long := math.Ceil(end) + 1
 	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
 		"-f", "lavfi", "-i", fmt.Sprintf("color=c=black:s=640x360:r=%s:d=%g", rate, long),
@@ -64,27 +121,38 @@ func shortRowsAt(t *testing.T, rate string, words []Cue, end float64, top, rows 
 	if err != nil {
 		t.Fatal(err)
 	}
-	clip := info.OnFrames(Clip{ID: "01", Slug: "bounce", Segments: []Segment{{Start: 0, End: end}}})
+	clip = info.OnFrames(Clip{ID: "01", Slug: "bounce", Segments: []Segment{{Start: 0, End: end}}})
 	laid = ClipCaptions(clip, &Transcript{Words: words, Language: "de"}, ResolveStyle(nil))
+	return e, source, info, clip, laid
+}
 
-	rs := RenderSettings{OutW: shortW, OutH: shortH, CRF: 12, Preset: "ultrafast", AudioBitrate: "128k", ScaleUp: true}
-	dir := t.TempDir()
-	short, err := e.RenderClip(ctx, clip, source, info, filepath.Join(dir, "out"), laid, rs, nil,
-		filepath.Join(dir, "captions"), false)
+// readFrames runs cmd and reads what it writes as frames of size bytes,
+// each into its own slice as it comes. Read whole into one buffer, the
+// frames were copied over and over as it grew, which the race detector
+// checks byte by byte: a few hundred megabytes for one test, and minutes
+// of the tests' time.
+func readFrames(t *testing.T, cmd *exec.Cmd, size int) (frames [][]byte) {
+	t.Helper()
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, err := exec.Command("ffmpeg", "-v", "error", "-i", short, "-vf",
-		fmt.Sprintf("crop=%d:%d:0:%d", shortW, rows, top),
-		"-f", "rawvideo", "-pix_fmt", "rgb24", "-").Output()
-	if err != nil {
+	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	size := shortW * rows * 3
-	for i := 0; i+size <= len(out); i += size {
-		frames = append(frames, out[i:i+size])
+	for {
+		f := make([]byte, size)
+		if _, err := io.ReadFull(out, f); err != nil {
+			break
+		}
+		frames = append(frames, f)
 	}
-	return e, info, laid, frames
+	if err := cmd.Wait(); err != nil {
+		t.Fatalf("%s: %v %s", cmd.Args[0], err, stderr.String())
+	}
+	return frames
 }
 
 const shortW, shortH = 1080, 1920
@@ -723,7 +791,7 @@ func TestPopScaleIsWhatLibassDrawsAbove100Fps(t *testing.T) {
 func TestWordsLitIsWhatTheShortLights(t *testing.T) {
 	t.Parallel()
 	words := []Cue{{0.30, 0.62, "Ich"}, {0.62, 0.64, "so"}, {0.64, 1.02, "war"}, {1.02, 1.50, "da"}}
-	_, info, laid, frames := shortRowsAt(t, "25", words, 1.60, bounceTop, bounceRows)
+	_, info, laid, frames := renderedRowsAt(t, "25", words, 1.60, bounceTop, bounceRows)
 	clip := info.OnFrames(Clip{ID: "01", Slug: "bounce", Segments: []Segment{{Start: 0, End: 1.60}}})
 	d := &CaptionDrawing{Laid: laid, Clip: clip}
 	lit := d.WordsLit(info)

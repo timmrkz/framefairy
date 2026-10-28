@@ -112,17 +112,7 @@ func TestTheVideoPreviewDrawsTheShortsCaptions(t *testing.T) {
 			"-f", "rawvideo", "-pix_fmt", "rgb24", "-", "-map", sound, "-f", "null", os.DevNull)
 		cmd := exec.Command(ffmpeg, args...)
 		cmd.Dir = captions
-		var stderr bytes.Buffer
-		cmd.Stderr = &stderr
-		out, err := cmd.Output()
-		if err != nil {
-			t.Fatalf("the render's graph: %v %s", err, stderr.String())
-		}
-		var all [][]byte
-		for i := 0; i+w*h*3 <= len(out); i += w * h * 3 {
-			all = append(all, out[i:i+w*h*3])
-		}
-		return all
+		return readFrames(t, cmd, w*h*3)
 	}
 	with, without := frames("01.ass"), frames("")
 	if len(with) != len(without) || len(with) < 100 {
