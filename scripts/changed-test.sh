@@ -73,7 +73,7 @@ is() {
 # mac FILES WANT: the parts a Mac in CI runs for these files are exactly
 # these.
 mac() {
-	got=$(CHANGED=$1 OS=Darwin CI=1 UNITSKIP="framefairy/licence/dispenser framefairy/licence/paddle framefairy/cmd/framefairy-dispenser framefairy/internal/workflows framefairy/internal/naming framefairy/internal/inputs" sh "$here/changed.sh" --parts 2>/dev/null)
+	got=$(CHANGED=$1 OS=Darwin CI=1 UNITSKIP="framefairy/licence/dispenser framefairy/licence/paddle framefairy/cmd/framefairy-dispenser framefairy/internal/workflows framefairy/internal/naming" sh "$here/changed.sh" --parts 2>/dev/null)
 	if [ "$got" = "$2" ]; then
 		printf 'ok  \t%-44s Mac = %s\n' "$1" "${2:-nothing}"
 	else
@@ -90,12 +90,12 @@ mac "README.md docs/APP.md CLAUDE.md" ""
 is ".claude/skills/interface/SKILL.md LICENSE" ""
 
 # The interface on its own is the interface, the walks and the build, and
-# of the Go tests only the ones that read its source, for the video
-# endings and for input the app is not given. The preview and the walk harness reach the walks too. Neither
+# of the Go tests only the one that reads its source for the video
+# endings. The preview and the walk harness reach the walks too. Neither
 # ships, so neither builds, and a walk alone starts no Mac (#521).
 # Whatever reaches the walks walks every run, and the times they took
 # reach none.
-is "frontend/src/App.svelte" "interface unit go framefairy/internal/inputs go framefairy/internal/naming walks build"
+is "frontend/src/App.svelte" "interface unit go framefairy/internal/naming walks build"
 is "frontend/preview/wails-stub.ts" "interface walks"
 is "frontend/preview/walks/words.mjs" "interface walks"
 is "frontend/preview/walks/walk-times.tsv" "interface"
@@ -109,7 +109,7 @@ mac "frontend/src/App.svelte" "interface walks build outside"
 # package too. A file a Go test only names in a comment is not one of them.
 has "frontend/src/lib/api.ts" "interface" "unit" "go framefairy/cmd/framefairy-app" "walks"
 has "frontend/src/lib/suggest.cases.json" "interface" "go framefairy/engine"
-is "frontend/src/lib/flow.ts" "interface unit go framefairy/internal/inputs go framefairy/internal/naming walks build"
+is "frontend/src/lib/flow.ts" "interface unit go framefairy/internal/naming walks build"
 
 # A package reaches every package that imports it, and only those.
 has "updates/updates.go" "go framefairy/updates" "go framefairy/cmd/framefairy-app" \
@@ -123,14 +123,12 @@ lacks "cmd/framefairy-release/main.go" "walks"
 has "engine/edit.go" "go framefairy/engine" "go framefairy/cmd/framefairy" \
 	"go framefairy/cmd/framefairy-app" "go framefairy/cmd/framefairy-train" "walks"
 
-# A package at the top of the tree reaches only itself, and the reads of
-# the source.
-is "cmd/framefairy-release/main.go" "lint unit go framefairy/cmd/framefairy-release go framefairy/internal/inputs go framefairy/internal/naming build"
+# A package at the top of the tree reaches only itself.
+is "cmd/framefairy-release/main.go" "lint unit go framefairy/cmd/framefairy-release go framefairy/internal/naming build"
 
 # What a package keeps beside its code belongs to it: a seed in testdata,
-# a file it embeds. A seed is no part of a program, so it builds nothing,
-# and it is no source the app could watch input from.
-is "engine/testdata/fuzz/FuzzValidatePlan/seed" "$(CHANGED=engine/edit.go sh "$here/changed.sh" --plan 2>/dev/null | grep -vx 'lint' | grep -vx build | grep -vx 'go framefairy/internal/inputs' | tr '\n' ' ' | sed 's/ $//')"
+# a file it embeds. A seed is no part of a program, so it builds nothing.
+is "engine/testdata/fuzz/FuzzValidatePlan/seed" "$(CHANGED=engine/edit.go sh "$here/changed.sh" --plan 2>/dev/null | grep -vx 'lint' | grep -vx build | tr '\n' ' ' | sed 's/ $//')"
 has "cmd/framefairy-app/update-key.txt" "unit" "go framefairy/cmd/framefairy-app" "walks" "build"
 lacks "cmd/framefairy-app/update-key.txt" "lint"
 

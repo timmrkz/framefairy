@@ -1,4 +1,4 @@
-# One rule and no other: a test waits on a signal, never on the clock,
+# Two rules and no other. A test waits on a signal, never on the clock,
 # see CLAUDE.md. forbidigo refuses the clock in test files only, over the
 # whole tree: a sleep, a timer or a ticker, and a context with a deadline,
 # which is a timer by another name, and a check on how long something
@@ -8,6 +8,11 @@
 # testing/synctest bubble, whose clock is fake, says
 # //nolint:forbidigo // synctest bubble. A line that keeps the real clock
 # on purpose says why on the line, and names its issue when it has one.
+#
+# And no code of ours hears keys pressed in other apps or reads what was
+# copied in them, through Wails' global shortcuts or its clipboard,
+# however the call is reached, issue #369. Putting something on the
+# clipboard is no read. See What is never signed in docs/UPDATES.md.
 version: "2"
 linters:
   default: none
@@ -25,10 +30,14 @@ linters:
         - pattern: ^time\.(Since|Until)$
           pkg: ^time$
           msg: a test counts steps, not milliseconds, see CLAUDE.md
+        - pattern: ^application\.(GlobalShortcutManager\.Register|ClipboardManager\.Text)$
+          pkg: ^github\.com/wailsapp/wails/v3/pkg/application$
+          msg: the app hears no keys pressed in other apps and reads no clipboard, see What is never signed in docs/UPDATES.md
   exclusions:
     rules:
       - path-except: _test\.go$
         linters: [forbidigo]
+        text: see CLAUDE\.md
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
