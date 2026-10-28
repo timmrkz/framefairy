@@ -191,6 +191,15 @@ export default [
     steps: [["trim", "start", 300], ["make while paused", "i"], ["row folds"]],
   },
   {
+    // The walk above hung on a busy machine, issue #508: the clip made
+    // with I was written, and its job over, before the press had its
+    // answer, and the app never chose it. What the press had set aside
+    // for the clip was looked at only when a job changed, and none
+    // changed after the answer came.
+    name: "a clip made with I is chosen when the answer to the press comes after the clip",
+    steps: [["trim", "start", 300], ["make with its answer late", "i"]],
+  },
+  {
     // Found while 2.124 was proven: from a 29.97 fps episode every piece
     // of a short had a frame too many and about 30 ms of padded silence at
     // each cut, because a piece went to ffmpeg rounded to the millisecond.

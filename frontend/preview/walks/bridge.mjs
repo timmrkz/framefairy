@@ -305,9 +305,11 @@ export async function settle(page) {
 // for it while it is held, so a walk can look at what the app shows
 // meanwhile. A step that holds a call lets it go before it is done, and
 // the watch lets go of whatever is still held before it compares the
-// screen with the engine, see Watch.step.
-export async function hold(page, name) {
-  await page.evaluate((name) => window.__hold(name), name);
+// screen with the engine, see Watch.step. With answer, the call reaches
+// the Go side and only its answer is held, so the news of what it set
+// going comes first.
+export async function hold(page, name, answer = false) {
+  await page.evaluate(([name, answer]) => window.__hold(name, answer), [name, answer]);
 }
 
 // Lets every call held on the page go on to the Go side. The next settle

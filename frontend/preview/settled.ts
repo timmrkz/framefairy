@@ -54,10 +54,13 @@ export function callOut(name: string): () => void {
 }
 
 // Holds the next call of a name on the Go side until __letHeld, the way a
-// busy machine delivers it late, see /hold in bridge_test.go.
-(window as any).__hold = async (name: string) => {
+// busy machine delivers it late, see /hold in bridge_test.go. With answer,
+// the Go side does what the call asks and only the answer is held, so its
+// news comes before it.
+(window as any).__hold = async (name: string, answer = false) => {
   holdNext.set(name, (holdNext.get(name) ?? 0) + 1);
-  await fetch(`/hold?call=${encodeURIComponent(name)}&gate=shut&times=${holdNext.get(name)}`);
+  const late = answer ? "&answer=1" : "";
+  await fetch(`/hold?call=${encodeURIComponent(name)}&gate=shut&times=${holdNext.get(name)}${late}`);
 };
 
 // Lets every call held go on to the Go side, and counts them as out again,
