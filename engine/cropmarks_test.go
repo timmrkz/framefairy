@@ -130,19 +130,16 @@ func TestTheGlideIsTheOneTheVideoPreviewWorksOut(t *testing.T) {
 func renderedLefts(t *testing.T, source SourceInfo, seg Segment, frames int) []int {
 	t.Helper()
 	filters := source.cropFilters(seg, 152, 270, 0, 480, 152, 270, "flags=lanczos", "gray16le")
-	out, err := exec.Command("ffmpeg", "-v", "error", "-f", "lavfi",
+	got := readFrames(t, exec.Command("ffmpeg", "-v", "error", "-f", "lavfi",
 		"-i", "color=black:s=480x270:r=25:d=10,format=gray16le,geq=lum=X*64",
 		"-vf", strings.Join(filters, ",")+",format=gray16le", "-frames:v", strconv.Itoa(frames),
-		"-f", "rawvideo", "-").CombinedOutput()
-	if err != nil {
-		t.Fatalf("ffmpeg would not crop by %s: %v %s", filters, err, out)
-	}
-	if len(out) != frames*152*270*2 {
-		t.Fatalf("ffmpeg gave %d bytes, not %d frames of 152 by 270", len(out), frames)
+		"-f", "rawvideo", "-"), 152*270*2)
+	if len(got) != frames {
+		t.Fatalf("ffmpeg cropping by %s gave %d frames of 152 by 270, not %d", filters, len(got), frames)
 	}
 	lefts := make([]int, frames)
-	for n := range frames {
-		lefts[n] = int(binary.LittleEndian.Uint16(out[n*152*270*2:])) / 64
+	for n, f := range got {
+		lefts[n] = int(binary.LittleEndian.Uint16(f)) / 64
 	}
 	return lefts
 }
