@@ -685,6 +685,44 @@ func TestClickingWhatWasHeardBeforeAPause(t *testing.T) {
 	})
 }
 
+// A new line typed at the end of what was said cuts the recording where
+// it was typed. What was said before it is the next piece, though the
+// speech model had not heard it yet, and what is said after it is heard
+// on its own. Tim said a lot quickly and pressed Shift+Enter, and the
+// words written down after went below the new line, issue #573.
+func TestANewLineCutsWhatWasSaidWhereItWasTyped(t *testing.T) {
+	levels, passes := make(chan time.Time), make(chan time.Time)
+	measured, passed := make(chan struct{}, 1), make(chan struct{}, 1)
+	f, mic, told := dictatingTo(t, &voices{}, func(l *listening) {
+		l.beats = &listenBeats{levels: levels, passes: passes, measured: measured, passed: passed}
+	})
+	defer f.CancelListening()
+	// Three words, and no pass of the speech model since: it is behind.
+	mic.say(tone(1.8))
+	// A second Listen gives the recording in hand.
+	recording, err := f.Listen()
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.BreakListening(recording, 0)
+	// Two words after the new line, with no pause between, so only the
+	// cut parts them.
+	mic.say(tone(1.2))
+	passes <- time.Time{}
+	<-passed
+	d := awaitTold(t, told, func(d Dictation) bool { return d.Asked == 1 })
+	if strings.Join(d.Said, "|") != "wort wort wort" {
+		t.Errorf("after the new line the window was told %q settled, want the three words said before it", d.Said)
+	}
+	stopped, err := f.StopListening()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(stopped.Said, "|") != "wort wort wort|wort wort" {
+		t.Errorf("stopping gave %q, want the words before the new line and the words after it apart", stopped.Said)
+	}
+}
+
 // A machine whose speech model is slower than the words should appear is
 // said in the log once, and the line at the end says how many passes
 // there were and how long the slowest took, so a report from a slower

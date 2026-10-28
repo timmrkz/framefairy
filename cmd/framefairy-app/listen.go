@@ -133,8 +133,9 @@ type Dictation struct {
 	// says so before the person has talked for minutes. It goes on
 	// recording, since the prompt that allows it may still be open.
 	Unheard string `json:"unheard,omitempty"`
-	// Asked is how many of the window's SettleListening calls are in
-	// Said, so it can tell an answer from before its last one.
+	// Asked is how many of the window's SettleListening and
+	// BreakListening calls are in Said, so it can tell an answer from
+	// before its last one.
 	Asked int `json:"asked"`
 }
 
@@ -186,10 +187,14 @@ type recording struct {
 }
 
 // settle is the window's ask to settle the words it shows as being heard,
-// text, as the piece after the first pieces it has.
+// text, as the piece after the first pieces it has. A new line asks for
+// a cut instead, see BreakListening: cut says so, and at is how much had
+// been recorded when it came.
 type settle struct {
 	pieces int
 	text   string
+	cut    bool
+	at     int
 }
 
 type writtenDown struct {
@@ -366,6 +371,9 @@ func (l *listening) write(r *recording, dir string, every, quiet time.Duration) 
 	}
 	defer rec.Close()
 	var said []string
+	// Where in the recording each piece of said ends, so a cut knows
+	// where the pieces the window has end.
+	var ends []int
 	settled, passed, hearing, unheard, asked := 0, 0, "", "", 0
 	worded := time.Now()
 	// The last few things told as being heard, and how far into the
@@ -386,14 +394,28 @@ func (l *listening) write(r *recording, dir string, every, quiet time.Duration) 
 		r.settles = nil
 		r.mu.Unlock()
 		for _, ask := range asks {
-			end := passed
-			for _, t := range slices.Backward(told) {
-				if t.text == ask.text {
-					end = t.end
-					break
+			n := min(ask.pieces, len(said))
+			text, end := ask.text, passed
+			if ask.cut {
+				// Everything said before the new line, written down now,
+				// however far behind the voice the passes were.
+				from := 0
+				if n > 0 {
+					from = ends[n-1]
+				}
+				end, text = max(ask.at, from), ""
+				if r.voiced.Load() && end > from {
+					text, _ = heardAround(rec, r.recorded(), from, end)
+				}
+			} else {
+				for _, t := range slices.Backward(told) {
+					if t.text == ask.text {
+						end = t.end
+						break
+					}
 				}
 			}
-			said = append(said[:min(ask.pieces, len(said))], ask.text)
+			said, ends = append(said[:n], text), append(ends[:n], end)
 			settled, hearing, told = end, "", nil
 			asked++
 		}
@@ -469,7 +491,7 @@ func (l *listening) write(r *recording, dir string, every, quiet time.Duration) 
 		changed := false
 		if cut > 0 {
 			if before != "" {
-				said = append(said, before)
+				said, ends = append(said, before), append(ends, settled+cut)
 				changed = true
 			}
 			settled += cut
@@ -670,7 +692,27 @@ func (f *FrameFairy) SettleListening(recording, pieces int, text string) {
 	r := l.now
 	if r != nil && r.id == recording && text != "" {
 		r.mu.Lock()
-		r.settles = append(r.settles, settle{pieces, strings.TrimSpace(text)})
+		r.settles = append(r.settles, settle{pieces: pieces, text: strings.TrimSpace(text)})
+		r.mu.Unlock()
+	}
+	l.mu.Unlock()
+}
+
+// BreakListening cuts the recording where it is when the person types a
+// new line at the end of what they said, after the first pieces the
+// window has. Everything recorded before the cut is the next piece,
+// however much of it the speech model has written down by then, and the
+// window puts it in front of the new line. Tim said a lot quickly and
+// pressed Shift+Enter, and the words the speech model wrote down after
+// that went below the new line, though he said them before it, issue
+// #573. A recording that is no longer in hand has nothing to cut.
+func (f *FrameFairy) BreakListening(recording, pieces int) {
+	l := &f.listening
+	l.mu.Lock()
+	r := l.now
+	if r != nil && r.id == recording {
+		r.mu.Lock()
+		r.settles = append(r.settles, settle{pieces: pieces, cut: true, at: len(r.samples)})
 		r.mu.Unlock()
 	}
 	l.mu.Unlock()

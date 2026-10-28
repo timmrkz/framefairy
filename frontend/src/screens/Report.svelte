@@ -423,6 +423,7 @@
     at.collapse(false);
     said = document.createElement("span");
     said.className = "dictated";
+    cuts.length = 0;
     mark = document.createElement("span");
     mark.className = "hearing";
     mark.contentEditable = "false";
@@ -639,7 +640,8 @@
     else if (e.inputType === "deleteContentBackward" && (settled() + mark.textContent).trim()) data = "";
     else return;
     e.preventDefault();
-    settleHeard();
+    if (data.includes("\n")) cutHeard();
+    else settleHeard();
     const before = settled();
     // A space between a word that was said and a word typed after it,
     // not before a full stop or a comma.
@@ -647,10 +649,11 @@
     // A new line, typed or pasted, goes in by hand, the way the settled
     // words do. The browser's own put it after the mark on Tim's Mac, so
     // what was said next went on the line above the cursor, or as a block
-    // of its own, which split what was said in two, issue #373.
+    // of its own, which split what was said in two, issue #373. It goes
+    // after the place a cut keeps, never into it.
     if (data.includes("\n")) {
       const last = mark.previousSibling;
-      if (last?.nodeType === Node.TEXT_NODE) (last as Text).appendData(data);
+      if (last?.nodeType === Node.TEXT_NODE && !cuts.some((c) => c.node === last)) (last as Text).appendData(data);
       else mark.before(data);
       const after = document.createRange();
       after.setStartAfter(said);
@@ -701,9 +704,42 @@
     show("");
   }
 
-  // catchUp writes in the pieces not yet in the field. Every message has
-  // all of them, so one that was missed costs nothing.
+  // cutHeard asks the Go side to cut what is being said where a new line
+  // is typed, and keeps a place for the piece the cut makes, in front of
+  // where the new line goes. Tim said a lot quickly and pressed
+  // Shift+Enter, and the words the speech model wrote down after went
+  // below the new line, though he said them before it, issue #573. What
+  // was heard so far stands in the place until the piece comes, so the
+  // new line shows at once, under it.
+  const cuts: { node: Text; piece: number }[] = [];
+  function cutHeard() {
+    if (!recording || !mark) return settleHeard();
+    const node = document.createTextNode("");
+    mark.before(node);
+    cuts.push({ node, piece: placed });
+    fill(node, mark.textContent!.trim());
+    mark.textContent = "";
+    api.breakListening(recording, placed).catch(() => {});
+    placed++;
+    asked++;
+  }
+
+  // fill writes a piece into its place, with a space from the word before.
+  function fill(node: Text, piece: string) {
+    const before = document.createRange();
+    before.selectNodeContents(said!);
+    before.setEndBefore(node);
+    node.data = (piece && /\S$/.test(before.toString()) ? " " : "") + piece;
+  }
+
+  // catchUp writes in the pieces not yet in the field, those a cut made
+  // in their places. Every message has all of them, so one that was
+  // missed costs nothing.
   function catchUp(pieces: string[]) {
+    for (const c of cuts.splice(0)) {
+      if (c.piece < pieces.length) fill(c.node, pieces[c.piece]);
+      else cuts.push(c);
+    }
     for (; placed < pieces.length; placed++) add(pieces[placed]);
   }
 
@@ -721,6 +757,7 @@
     const was = said && field.contains(said) ? said : null;
     mark?.remove();
     said = mark = null;
+    cuts.length = 0;
     if (!was) return read();
     const top = field.scrollTop;
     const at = document.createRange();

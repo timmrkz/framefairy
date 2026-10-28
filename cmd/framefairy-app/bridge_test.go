@@ -451,12 +451,19 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 	// words are told as being heard, until=said until more words heard
 	// are settled, until=settled until some are, now or before,
 	// until=ended until the recording is over, and until=tenth for one
-	// step. It answers how many steps it took.
+	// step. It answers how many steps it took. Or ahead=n hands over n
+	// tenths of a second with no pass of the speech model, the person
+	// talking faster than it writes down, and answers how many it handed.
 	mux.HandleFunc("/microphone", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		if q.Has("silent") {
 			b.sound.silent.Store(q.Get("silent") == "1")
 			answer(w, nil, nil)
+			return
+		}
+		if n, err := strconv.Atoi(q.Get("ahead")); err == nil {
+			handed, err := b.sound.ahead(r.Context(), min(max(n, 0), 100))
+			answer(w, handed, err)
 			return
 		}
 		steps, err := b.sound.until(r.Context(), q.Get("until"))

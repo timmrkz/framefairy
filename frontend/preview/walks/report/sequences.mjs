@@ -181,6 +181,23 @@ export default [
     ],
   },
   {
+    // Issue #573. Tim said a lot quickly and pressed Shift+Enter, and the
+    // words the speech model wrote down after went below the new line,
+    // though he said them before it. What is said before the new line
+    // goes above it, however far behind the speech model is.
+    name: "What is said before Shift+Enter goes above the new line, however far behind the speech model is",
+    steps: [
+      ["bugs"],
+      ["write", "It froze.", "end"],
+      ["dictate", "start"],
+      ["talk ahead", 10],
+      ["press", "Shift+Enter"],
+      ["dictate", "hearing"],
+      ["dictate", "escape"],
+      ["said before the new line"],
+    ],
+  },
+  {
     // Issue #573. Tim pressed Shift+Enter while dictating until the new
     // lines went past the foot of the field, and the field stayed where
     // it was while the cursor went on down out of view. Only the next

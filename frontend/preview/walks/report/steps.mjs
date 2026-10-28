@@ -907,6 +907,30 @@ export const steps = {
     });
     if (!c.ours || c.bar !== "1px" || c.caret !== "rgba(0, 0, 0, 0)") walk.wrong = `the cursor is not drawn after the words being said: ${JSON.stringify(c)}`;
   },
+  // ["talk ahead", n]  the person dictating says n tenths of a second
+  //                    more than the speech model has written down yet,
+  //                    and the walk keeps how many words the field shows
+  //                    after what was written before, for "said before
+  //                    the new line" (#573)
+  async "talk ahead"(walk, arg) {
+    const { kept, page } = walk;
+    const handed = await control(url, `/microphone?ahead=${arg}`);
+    if (handed !== arg) walk.wrong = `the microphone handed over ${handed} tenths of a second, not ${arg}`;
+    kept.shown = await page.locator(".telling").evaluate((f) => f.querySelector(".dictated")?.textContent.trim().split(/\s+/).filter(Boolean).length ?? 0);
+  },
+  // ["said before the new line"]
+  //                    the report's first line holds more words of what
+  //                    was said than the field showed at "talk ahead",
+  //                    since everything said before the new line goes
+  //                    above it, and the line after it holds what was
+  //                    said after (#573)
+  async "said before the new line"(walk) {
+    const { kept, page } = walk;
+    const [first, second] = (await page.locator(".telling").evaluate((f) => f.innerText)).split("\n");
+    const above = first.replace(/^It froze\.\s*/, "").split(/\s+/).filter(Boolean).length;
+    if (above <= kept.shown) walk.wrong = `the line above the new line holds ${above} words said, no more than the ${kept.shown} shown when Shift+Enter was pressed, so what was said before it went below it`;
+    else if (!second?.trim()) walk.wrong = "the line after the new line holds nothing of what was said after it";
+  },
   // ["press, the cursor in view", key, n]
   //                    presses key n times, with nothing heard by
   //                    dictation let in between, and after each press
