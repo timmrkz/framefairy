@@ -166,6 +166,9 @@ func TestOnlyAnEncoderThatFailedItselfIsLeft(t *testing.T) {
 	}{
 		{"[h264_videotoolbox @ 0x6000013c] Error encoding frame: -12912\n", "h264_videotoolbox -require_sw 1"},
 		{"[h264_videotoolbox @ 0x6000013c] Cannot create compression session: -12908\n", "h264_videotoolbox -require_sw 1"},
+		// All ffmpeg said when the media engine's scaler could not be
+		// reached on CI's Mac, run 40508761386, issue #570.
+		{"IOServiceMatchingfailed for: AppleM2ScalerParavirtDriver\n", "h264_videotoolbox -require_sw 1"},
 		{"[Parsed_crop_3 @ 0x6000013c] Invalid too big or non positive size\n", ""},
 		{"episode.mp4: No such file or directory\n", ""},
 	}
@@ -188,11 +191,21 @@ func TestOnlyAnEncoderThatFailedItselfIsLeft(t *testing.T) {
 	if _, ok := e.nextEncoder(ctx, x264, framewire.SDR, "[libx264 @ 0x1] broken"); ok {
 		t.Error("the last encoder of the order had one after it")
 	}
+	// macOS's own words are VideoToolbox's, and no encoder of another
+	// maker's fails by them.
+	if !x264.failed("[libx264 @ 0x1] broken") || x264.failed("IOServiceMatchingfailed for: AppleM2ScalerParavirtDriver") {
+		t.Error("libx264 is said to fail by the words of VideoToolbox, or not by its own")
+	}
 	// HDR goes on with HEVC on the processor.
 	if next, ok := encodingEngineOn(t, "darwin", "hevc_videotoolbox").nextEncoder(ctx, hevcVideoToolbox,
 		framewire.PQ, "[hevc_videotoolbox @ 0x1] Error encoding frame: -12912"); !ok ||
 		next.String() != "hevc_videotoolbox -require_sw 1" {
 		t.Errorf("after HEVC on the media engine the render goes on with %q", next.String())
+	}
+	if next, ok := encodingEngineOn(t, "darwin", "hevc_videotoolbox").nextEncoder(ctx, hevcVideoToolbox,
+		framewire.PQ, "IOServiceMatchingfailed for: AppleM2ScalerParavirtDriver"); !ok ||
+		next.String() != "hevc_videotoolbox -require_sw 1" {
+		t.Errorf("after HEVC on an unreachable media engine the render goes on with %q", next.String())
 	}
 }
 
