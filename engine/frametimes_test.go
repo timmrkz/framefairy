@@ -160,7 +160,7 @@ func timesEpisode(t *testing.T, c timesCase) string {
 	if c.gop > 0 {
 		codecs, sound = h264(t, c.gop), []string{"-c:a", "aac"}
 	}
-	if out, err := encodeTestFile(t, args, codecs, append(sound, "-t", seconds, source)...); err != nil {
+	if out, err := encodeTestFile(t, "ffmpeg", args, codecs, append(sound, "-t", seconds, source)...); err != nil {
 		t.Fatalf("making the test episode: %s %s", err, out)
 	}
 	if !c.cutOff {
@@ -214,7 +214,7 @@ func chipThenProcessor(chip []string) [][]string {
 	return [][]string{chip, append(slices.Clip(chip), "-require_sw", "1")}
 }
 
-// encodeTestFile has the ffmpeg on the path make a test file: args, then
+// encodeTestFile has the program, an ffmpeg, make a test file: args, then
 // the first of codecs, then rest. Each codec starts with "-c:v" and its
 // encoder. The media engine of CI's virtual Mac would not open now and
 // then, "Error retrieving the supported property dictionary err=-12903",
@@ -224,13 +224,13 @@ func chipThenProcessor(chip []string) [][]string {
 // the same encoder, and a failure of anything else fails at once.
 //
 // On the real disk: ffmpeg writes the test file.
-func encodeTestFile(t *testing.T, args []string, codecs [][]string, rest ...string) ([]byte, error) {
+func encodeTestFile(t *testing.T, program string, args []string, codecs [][]string, rest ...string) ([]byte, error) {
 	t.Helper()
 	var out []byte
 	var err error
 	for i, codec := range codecs {
 		made := append(append(slices.Clip(args), codec...), rest...)
-		out, err = exec.Command("ffmpeg", made...).CombinedOutput()
+		out, err = exec.Command(program, made...).CombinedOutput()
 		if err == nil || i == len(codecs)-1 || !(Encoder{Name: codec[1]}).failed(string(out)) {
 			return out, err
 		}

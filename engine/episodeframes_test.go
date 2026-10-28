@@ -323,21 +323,23 @@ func TestTheEpisodesDecoderHandsOverTheKeyFrameFirst(t *testing.T) {
 	if program == "" {
 		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
 	}
+	// codecs are the encoders to make the episode with, the next one
+	// only when the one before failed, see encodeTestFile.
 	type kind struct {
-		name string
-		args []string
+		name   string
+		codecs [][]string
 	}
-	kinds := []kind{{"MPEG-4", []string{"-c:v", "mpeg4", "-q:v", "3", "-g", "50", "-bf", "2"}}}
+	kinds := []kind{{"MPEG-4", [][]string{{"-c:v", "mpeg4", "-q:v", "3", "-g", "50", "-bf", "2"}}}}
 	// Our own ffmpeg on the Mac has no x265, which is GPL, and makes the
 	// HEVC with the Mac's encoder, which writes no open GOPs.
 	encoders, _ := exec.Command("ffmpeg", "-hide_banner", "-encoders").Output()
 	has := func(name string) bool { return strings.Contains(string(encoders), " "+name+" ") }
 	switch {
 	case has("libx265"):
-		kinds = append(kinds, kind{"HEVC with open GOPs", []string{"-c:v", "libx265", "-preset", "ultrafast",
-			"-x265-params", "keyint=50:min-keyint=50:scenecut=0:bframes=3:open-gop=1:log-level=error"}})
+		kinds = append(kinds, kind{"HEVC with open GOPs", [][]string{{"-c:v", "libx265", "-preset", "ultrafast",
+			"-x265-params", "keyint=50:min-keyint=50:scenecut=0:bframes=3:open-gop=1:log-level=error"}}})
 	case has("hevc_videotoolbox"):
-		kinds = append(kinds, kind{"HEVC", []string{"-c:v", "hevc_videotoolbox", "-b:v", "2M", "-g", "50", "-tag:v", "hvc1"}})
+		kinds = append(kinds, kind{"HEVC", chipThenProcessor([]string{"-c:v", "hevc_videotoolbox", "-b:v", "2M", "-g", "50", "-tag:v", "hvc1"})})
 	default:
 		// Ends only this case, so MPEG-4 still runs.
 		kinds = append(kinds, kind{"HEVC", nil})
@@ -345,13 +347,13 @@ func TestTheEpisodesDecoderHandsOverTheKeyFrameFirst(t *testing.T) {
 	for _, enc := range kinds {
 		t.Run(enc.name, func(t *testing.T) {
 			t.Parallel()
-			if enc.args == nil {
+			if enc.codecs == nil {
 				ffmpegtest.Unusable(t, "this ffmpeg has no HEVC encoder to make the episode with")
 			}
 			path := filepath.Join(t.TempDir(), "episode.mp4")
 			// Four seconds at 25 frames a second, a key frame every two.
-			args := append([]string{"-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=25:d=4"}, enc.args...)
-			if out, err := exec.Command("ffmpeg", append(args, path)...).CombinedOutput(); err != nil {
+			args := []string{"-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=25:d=4"}
+			if out, err := encodeTestFile(t, "ffmpeg", args, enc.codecs, path); err != nil {
 				ffmpegtest.Unusable(t, "ffmpeg could not make an episode: %s %s", err, out)
 			}
 			e := NewEngine(NewLog(nil, false, false), disk)
@@ -591,31 +593,33 @@ func TestTheEpisodesDecoderPlaysTheFilesPeopleBring(t *testing.T) {
 	}
 	encoders, _ := exec.Command("ffmpeg", "-hide_banner", "-encoders").Output()
 	has := func(name string) bool { return strings.Contains(string(encoders), " "+name+" ") }
+	// codecs are the encoders to make the episode with, the next one
+	// only when the one before failed, see encodeTestFile.
 	type kind struct {
-		name string
-		args []string
+		name   string
+		codecs [][]string
 	}
 	var kinds []kind
 	switch {
 	case has("h264_videotoolbox"):
-		kinds = append(kinds, kind{"H.264", []string{"-c:v", "h264_videotoolbox", "-b:v", "2M", "-g", "50"}})
+		kinds = append(kinds, kind{"H.264", chipThenProcessor([]string{"-c:v", "h264_videotoolbox", "-b:v", "2M", "-g", "50"})})
 	case has("libx264"):
-		kinds = append(kinds, kind{"H.264", []string{"-c:v", "libx264", "-preset", "ultrafast", "-g", "50"}})
+		kinds = append(kinds, kind{"H.264", [][]string{{"-c:v", "libx264", "-preset", "ultrafast", "-g", "50"}}})
 	default:
 		ffmpegtest.Unusable(t, "this ffmpeg has no H.264 encoder to make an episode with")
 	}
 	switch {
 	case has("hevc_videotoolbox"):
-		kinds = append(kinds, kind{"HEVC 10-bit", []string{"-c:v", "hevc_videotoolbox", "-profile:v", "main10", "-pix_fmt", "p010le", "-b:v", "2M", "-g", "50", "-tag:v", "hvc1"}})
+		kinds = append(kinds, kind{"HEVC 10-bit", chipThenProcessor([]string{"-c:v", "hevc_videotoolbox", "-profile:v", "main10", "-pix_fmt", "p010le", "-b:v", "2M", "-g", "50", "-tag:v", "hvc1"})})
 	case has("libx265"):
-		kinds = append(kinds, kind{"HEVC 10-bit", []string{"-c:v", "libx265", "-preset", "ultrafast", "-pix_fmt", "yuv420p10le", "-x265-params", "keyint=50:log-level=error", "-tag:v", "hvc1"}})
+		kinds = append(kinds, kind{"HEVC 10-bit", [][]string{{"-c:v", "libx265", "-preset", "ultrafast", "-pix_fmt", "yuv420p10le", "-x265-params", "keyint=50:log-level=error", "-tag:v", "hvc1"}}})
 	}
 	e := NewEngine(NewLog(nil, false, false), disk)
 	e.FFmpeg, e.FFprobe = "ffmpeg", "ffprobe"
 	for _, k := range kinds {
 		path := filepath.Join(t.TempDir(), "episode.mp4")
-		args := append([]string{"-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=640x360:r=25:d=6"}, k.args...)
-		if out, err := exec.Command("ffmpeg", append(args, path)...).CombinedOutput(); err != nil {
+		args := []string{"-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=640x360:r=25:d=6"}
+		if out, err := encodeTestFile(t, "ffmpeg", args, k.codecs, path); err != nil {
 			if k.name == "H.264" {
 				ffmpegtest.Unusable(t, "ffmpeg could not make an %s episode: %s %s", k.name, err, out)
 			}
@@ -1078,7 +1082,7 @@ func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
 		if !software {
 			codecs = chipThenProcessor(f.args)
 		}
-		if out, err := encodeTestFile(t, args, codecs, path); err != nil {
+		if out, err := encodeTestFile(t, "ffmpeg", args, codecs, path); err != nil {
 			if strings.Contains(f.name, "10 bits") {
 				// A virtual Mac may have no HEVC encoder that takes 10 bits.
 				t.Logf("no file %s here: %s", f.name, out)

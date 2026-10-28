@@ -129,9 +129,13 @@ func TestARenderGoesOnWhenTheEncoderHangs(t *testing.T) {
 // Only an encoder with another after it is given a limit, and it is the
 // same for HDR. libx264, the last there is, and an encoder named by hand
 // that is not in the order are waited for, since there is nothing to go on
-// with.
+// with. The Mac's encoder on the processor is given up too, on the
+// ffmpeg we ship, which has no libx264 to go on with: the limit follows
+// the order, not the ffmpeg, so a render whose media engine cannot be
+// reached fails with the reason rather than waiting for good, issue #570.
 func TestOnlyAnEncoderWithAnotherAfterItIsGivenUp(t *testing.T) {
 	mac := encodingEngineOn(t, "darwin", "h264_videotoolbox", "hevc_videotoolbox", "libx264")
+	shipped := encodingEngineOn(t, "darwin", "h264_videotoolbox", "hevc_videotoolbox")
 	linux := encodingEngineOn(t, "linux", "libx264")
 	cases := []struct {
 		e       *Engine
@@ -143,6 +147,8 @@ func TestOnlyAnEncoderWithAnotherAfterItIsGivenUp(t *testing.T) {
 		{mac, onProcessor(videoToolbox), framewire.SDR, encoderStall},
 		{mac, x264, framewire.SDR, 0},
 		{mac, hevcVideoToolbox, framewire.PQ, encoderStall},
+		{shipped, onProcessor(videoToolbox), framewire.SDR, encoderStall},
+		{shipped, onProcessor(hevcVideoToolbox), framewire.PQ, encoderStall},
 		{mac, Encoder{Name: "h264_nvenc"}, framewire.SDR, 0},
 		{linux, x264, framewire.SDR, 0},
 	}
