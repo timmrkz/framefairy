@@ -266,8 +266,9 @@ same four shares and the CI image as the walks in `ci.yml`. On a pull
 request a sequence asks for less motion unless it looks at motion, see
 Where they run in [TESTING.md](TESTING.md#where-they-run), and this is
 the run that sees a step that looks at motion and was left out. The
-same night every kind of test counts the lines it runs and the counts go
-to Codecov, see [Coverage](TESTING.md#coverage).
+same night the Go tests, the interface's tests and the walks count the
+lines they run on Linux, and the counts go to Codecov, see
+[Coverage](TESTING.md#coverage).
 
 A failing input is written to `engine/testdata/fuzz/`. Keep it, it is the
 test case for the bug, and it becomes a seed for every later run.

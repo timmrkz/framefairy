@@ -1345,7 +1345,7 @@ on, which belongs to the browser, the mail app, and how any of it looks.
 
 Which lines the tests run is counted once a night on main, and the
 counts go to [Codecov](https://app.codecov.io/gh/timmrkz/framefairy),
-which keeps them as one report of all the code, the Go and the
+which keeps them as one report of the code, the Go and the
 interface, file by file and line by line, with how the whole moved from
 night to night. It is the map of what no test reaches, and the way to
 see whether work on the tests lowered it. A covered line is not a
@@ -1376,9 +1376,15 @@ it runs through Playwright, `counted` in `walks/bridge.mjs`, and
 `preview/coverage.mjs` turns those counts into lcov of `frontend/src`
 by the source maps the build leaves beside each script. That is the
 only count of the components, since the interface's own tests do not
-load them. A night whose walks counted no line of the app or of any
-component fails, since every walk reaches both, and a count of nothing
-means the counting broke.
+load them. A night whose walks counted no line of the job queue,
+`cmd/framefairy-app/jobs.go`, which only a bridge runs, or no line of
+any component fails, since every walk reaches both, and a count of
+nothing means the counting broke.
+
+Everything is counted on Linux, so the files built only for the Mac,
+the `_darwin.go` files, and the tests that run only there, the Mac job
+and `make outside`, are not in the report, rather than shown as not
+run.
 
 A kind of test that failed one night sends nothing, and Codecov keeps
 its counts from the night before, carryforward, so a red night is not

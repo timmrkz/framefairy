@@ -4,9 +4,10 @@
 #
 # The same night, every test counts the lines it runs, the Go tests, the
 # interface's tests and the walks, and the counts go to Codecov, which
-# keeps them as one report of all the code and its history from night to
+# keeps them as one report of the code and its history from night to
 # night. Only here: counting makes a test slower and an upload can fail,
-# so no pull request does either. See Coverage in docs/TESTING.md.
+# so no pull request does either. It all runs on Linux, so the files
+# built only for the Mac are not in it. See Coverage in docs/TESTING.md.
 #
 # The walks in ci.yml walk a sequence asking for less motion unless one of
 # its steps looks at how the app moves, the steps named in moving in
@@ -57,13 +58,22 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # The walks here build with coverage, which is a build of its own,
+      # so they keep a cache of their own beside the one ci.yml keeps for
+      # the walks, and take that one when theirs is not there yet. Saved
+      # once for each go.sum, so a night adds no cache of its own to the
+      # ten gigabytes the repository may keep, and what changed since is
+      # built again.
+      - id: gocache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: go-v2-walks-${{ runner.os }}-${{ github.sha }}
-          restore-keys: go-v2-walks-${{ runner.os }}-
+          key: go-v2-walks-coverage-${{ runner.os }}-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            go-v2-walks-coverage-${{ runner.os }}-
+            go-v2-walks-${{ runner.os }}-
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
@@ -91,6 +101,14 @@ jobs:
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then sh scripts/test-failures.sh walks.log; fi
           exit "$status"
+      # The shares build the same, so one of them saves.
+      - if: ${{ !cancelled() && steps.gocache.outputs.cache-hit != 'true' && strategy.job-index == 0 }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-v2-walks-coverage-${{ runner.os }}-${{ hashFiles('go.sum') }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-walks-${{ strategy.job-index }}
@@ -134,15 +152,18 @@ jobs:
         with:
           node-version: 22
       # A build that counts lines is a build of its own, so it has a cache
-      # of its own, kept from one night to the next.
+      # of its own, saved once for each go.sum, see the walks above, and
+      # main's cache for the job linux until then.
       - id: gocache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: go-v3-coverage-${{ runner.os }}-${{ strategy.job-index }}-${{ github.sha }}
-          restore-keys: go-v3-coverage-${{ runner.os }}-${{ strategy.job-index }}-
+          key: go-v3-coverage-${{ runner.os }}-${{ strategy.job-index }}-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            go-v3-coverage-${{ runner.os }}-${{ strategy.job-index }}-
+            go-v3-linux-${{ runner.os }}-${{ strategy.job-index }}-
       - id: ffmpeg
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -160,13 +181,18 @@ jobs:
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then sh scripts/test-failures.sh unit.log; fi
           exit "$status"
-      - if: ${{ !cancelled() && steps.tests.outcome != 'skipped' }}
+      # Whichever way the tests ended, what they left running is named on
+      # the check and stopped, see scripts/leftovers.sh.
+      - name: Nothing left running
+        if: always()
+        run: sh scripts/leftovers.sh
+      - if: ${{ !cancelled() && steps.tests.outcome != 'skipped' && steps.gocache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: go-v3-coverage-${{ runner.os }}-${{ strategy.job-index }}-${{ github.sha }}
+          key: go-v3-coverage-${{ runner.os }}-${{ strategy.job-index }}-${{ hashFiles('go.sum') }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-unit-${{ strategy.job-index }}
@@ -195,10 +221,12 @@ jobs:
           include-hidden-files: true
 
   # The counts to Codecov, see .github/codecov.yml, signed in with
-  # GitHub's own OIDC token, so no Codecov token is kept anywhere. A kind
-  # of test whose run failed sends nothing that night, since what it
-  # counted is only part of what it reaches, and Codecov carries its last
-  # counts forward instead.
+  # GitHub's own OIDC token, so no Codecov token is kept anywhere. Each
+  # kind of test is uploaded with every file its shares left, whatever
+  # their number. A kind whose run failed sends nothing that night, since
+  # what it counted is only part of what it reaches, and Codecov carries
+  # its last counts forward instead. One upload that fails does not keep
+  # the others back.
   codecov:
     needs: [walks, unit, interface]
     if: ${{ !cancelled() }}
@@ -213,28 +241,32 @@ jobs:
         with:
           pattern: coverage-*
           path: coverage
-          merge-multiple: true
-      - if: needs.unit.result == 'success'
+      - id: files
+        run: |
+          for kind in unit interface walks; do
+            echo "$kind=$(ls coverage/coverage-$kind*/* | paste -sd, -)" >> "$GITHUB_OUTPUT"
+          done
+      - if: ${{ !cancelled() && needs.unit.result == 'success' }}
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           use_oidc: true
           disable_search: true
           fail_ci_if_error: true
           flags: go-tests
-          files: coverage/go-unit-1-of-3.txt,coverage/go-unit-2-of-3.txt,coverage/go-unit-3-of-3.txt
-      - if: needs.interface.result == 'success'
+          files: ${{ steps.files.outputs.unit }}
+      - if: ${{ !cancelled() && needs.interface.result == 'success' }}
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           use_oidc: true
           disable_search: true
           fail_ci_if_error: true
           flags: interface-tests
-          files: coverage/lcov.info
-      - if: needs.walks.result == 'success'
+          files: ${{ steps.files.outputs.interface }}
+      - if: ${{ !cancelled() && needs.walks.result == 'success' }}
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           use_oidc: true
           disable_search: true
           fail_ci_if_error: true
           flags: walks
-          files: coverage/walks-1-of-4-go.txt,coverage/walks-2-of-4-go.txt,coverage/walks-3-of-4-go.txt,coverage/walks-4-of-4-go.txt,coverage/walks-1-of-4-interface.lcov,coverage/walks-2-of-4-interface.lcov,coverage/walks-3-of-4-interface.lcov,coverage/walks-4-of-4-interface.lcov
+          files: ${{ steps.files.outputs.walks }}

@@ -11,9 +11,10 @@ export default mergeConfig(
   preview,
   defineConfig({
     resolve: { alias: { "@wailsio/runtime": resolve(here, "wails-bridge.ts") } },
-    // When the walks count the lines they run, make walks COVERAGE=, each
-    // script gets its source map beside it, which the walks read to name
-    // the line of the component a count belongs to. Hidden, so the page
+    // When the walks count the lines they run, make walks COVERAGE= sets
+    // WALKCOVERAGE to the folder they keep the counts in, and each script
+    // gets its source map beside it, which the walks read to name the
+    // line of the component a count belongs to. Hidden, so the page
     // itself is built the same as on every other run.
     build: {
       outDir: resolve(here, "dist-bridge"),
