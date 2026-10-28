@@ -1261,8 +1261,11 @@ export const steps = {
     // With the speech held, it is let through a piece at a time, and
     // each is saved.
     for (let seen = await news(page); ((await ask(page, "Sentences", path)) ?? []).length < least; ) {
-      if (walk.speechHeld) await onePiece(page, url, path, { save: true });
-      else seen = await nextNews(page, seen);
+      if (!walk.speechHeld) seen = await nextNews(page, seen);
+      else if (!(await onePiece(page, url, path, { save: true }))) {
+        walk.wrong = `the engine has ${((await ask(page, "Sentences", path)) ?? []).length} sentences of the ${least} wanted, and no work on the video is left to hear more`;
+        return;
+      }
     }
     // And the app has read how far the saved transcript reaches since,
     // which it reads again on its own while the work hears, so the
