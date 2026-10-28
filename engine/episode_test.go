@@ -1,13 +1,14 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
-	"strings"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -110,286 +111,386 @@ func TestAShortBeingWrittenIsNotCounted(t *testing.T) {
 	}
 }
 
-// A short rendered into the folder the settings name for shorts is the
-// clip's short: the clip says it is rendered and where, the episode counts
-// it, and the app may show it, see IsShort. It stays the clip's short when
-// the folder in the settings changes afterwards, and it is gone when the
-// file is, while the clip still says it was rendered. A file of the same name that another episode put in that
-// folder is not this clip's short, and neither is anything beside it, and
-// the render gives the short a number rather than write over it.
+// Where a short goes and whose it is needs no picture. ffmpeg writes the
+// short, and everything around it, the folder, the name, the note in the
+// plan, is the engine's, so the tests below lay out the files by hand
+// and ask the engine. One test, TestARenderPutsItsShortWhereItsNameSays,
+// renders for real, to prove a render goes by the same rules.
+
+// episodeWithPlan is an episode of the given file name in a folder of its
+// own, with a plan of one clip of the words wort and a picture taken at
+// 2 s, and gives the episode and its plan. Nothing is a video: where
+// shorts go is decided by names alone.
 //
-// On the real disk: ffmpeg reads the episode and writes the short.
+// On the real disk: the shorts beside it are judged by what is on the
+// disk, see IsShort.
+func episodeWithPlan(t *testing.T, name string) (source, plan string) {
+	t.Helper()
+	source = filepath.Join(ResolvePath(t.TempDir()), name+".mp4")
+	if err := os.WriteFile(source, []byte("not really a video"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(LogsDir(source), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	plan = filepath.Join(LogsDir(source), "clips.json")
+	if err := os.WriteFile(plan, []byte(`{"clips": [
+  {"id": "01", "slug": "wort", "segments": [{"start": 1, "end": 21}], "thumbnails": [2]}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return source, plan
+}
+
+// placeShort does what a render does around ffmpeg, see Run: the short of
+// clip id goes into dir under the name shortStem gives it, with a picture
+// beside it for each the clip asks for, see WriteThumbnails, and the plan
+// notes where it went. What ffmpeg would write is a few bytes.
+//
+// On the real disk: a short is a file on the disk, see IsShort.
+func placeShort(t *testing.T, plan, dir, id string) string {
+	t.Helper()
+	loaded, clips, err := LoadClips(disk, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	i := slices.IndexFunc(clips, func(c Clip) bool { return c.ID == id })
+	if i < 0 {
+		t.Fatalf("the plan has no clip %s", id)
+	}
+	stem := shortStem(dir, loaded, clips[i])
+	short := filepath.Join(dir, stem+".mp4")
+	written := []string{short}
+	for n := range clips[i].Thumbnails {
+		written = append(written, filepath.Join(dir, thumbnailName(stem, n+1)))
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range written {
+		if err := os.WriteFile(path, []byte("a short"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := recordShort(disk, plan, id, short); err != nil {
+		t.Fatal(err)
+	}
+	return short
+}
+
+// shortOfClip is what the plan says of the short of clip id.
+//
+// On the real disk: the plan is beside the shorts, which are judged by
+// what is on the disk, see shortOf.
+func shortOfClip(t *testing.T, plan, id string) ClipView {
+	t.Helper()
+	view, err := ReadPlan(disk, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range view.Clips {
+		if c.ID == id {
+			return c
+		}
+	}
+	t.Fatalf("the plan has no clip %s", id)
+	return ClipView{}
+}
+
+// The shorts go into the folder --out names, as it is. Without it they go
+// into a folder of the episode's own name in the folder the app's settings
+// name for shorts, so two episodes never meet there, and without that
+// into the episode's own work folder.
+//
+// On the real disk: the folder for shorts is judged by where it really
+// leads, see SafeChild, and on a Mac /home leads elsewhere.
+func TestTheShortsGoWhereTheSettingsSay(t *testing.T) {
+	t.Parallel()
+	source := "/home/tim/Podcast/folge.mp4"
+	shorts := ResolvePath(t.TempDir())
+	for _, c := range []struct {
+		name, out, shorts, want string
+	}{
+		{"--out", "/tmp/out", shorts, "/tmp/out"},
+		{"the folder for shorts", "", shorts, filepath.Join(shorts, "folge")},
+		{"neither", "", "", "/home/tim/Podcast/folge.framefairy/out"},
+	} {
+		got, err := shortsFolder(c.out, c.shorts, source)
+		if err != nil || got != c.want {
+			t.Errorf("%s: the shorts go to %q, %v, not %q", c.name, got, err, c.want)
+		}
+	}
+	if got, err := shortsFolder("", shorts, "/home/tim/.."); err == nil {
+		t.Errorf("an episode named .. puts its shorts in %s, outside the folder for shorts", got)
+	}
+}
+
+// A short is the clip's when the plan notes it and it is still the file
+// that was noted. The clip says so, and so does the episode, and the app
+// may show it, see IsShort. A file of the same name another episode put in
+// the folder is not the clip's, and the short gets a number rather than
+// write over it, slug 2, the way Finder numbers a copy. Nothing beside the
+// short is taken for one. A short removed by hand is no longer the clip's,
+// but the clip was rendered all the same, #384, and the episode counts it.
+//
+// On the real disk: a short is a file on the disk, see IsShort.
 func TestAShortInTheOutputFolderIsTheClipsShort(t *testing.T) {
 	t.Parallel()
-	p, _ := searchProject(t, nil)
-	plan, err := p.Search(context.Background(), PlanRequest{Count: 1, Min: 5}, nil)
-	if err != nil {
-		t.Fatalf("%v %s", err, p.LastError())
-	}
-	clip := func() ClipView {
-		t.Helper()
-		view, err := ReadPlan(disk, plan)
-		if err != nil || len(view.Clips) == 0 {
-			t.Fatalf("the plan: %v", err)
-		}
-		return view.Clips[0]
-	}
-	rendered := func() int { return Status(disk, p.Source, p.Base.ASRModel, nil).Rendered }
-	shorts := t.TempDir()
-	other := filepath.Join(ResolvePath(shorts), clip().Slug+".mp4")
-	short := filepath.Join(ResolvePath(shorts), clip().Slug+" 2.mp4")
-
+	source, plan := episodeWithPlan(t, "folge")
+	shorts := ResolvePath(t.TempDir())
+	other := filepath.Join(shorts, "wort.mp4")
 	if err := os.WriteFile(other, []byte("another episode's short"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := clip().Short; got != "" || clip().Rendered {
-		t.Errorf("a clip never rendered says it is, at %q", got)
+	rendered := func() int { return Status(disk, source, "", nil).Rendered }
+	if c := shortOfClip(t, plan, "01"); c.Short != "" || c.Rendered {
+		t.Errorf("a clip never rendered says it is, at %q", c.Short)
 	}
-	if IsShort(disk, p.Source, other) {
+	if IsShort(disk, source, other) {
 		t.Error("another episode's short is taken for this clip's")
 	}
 
-	p.Base.Out = shorts
-	if err := p.Render(context.Background(), RenderRequest{Plan: plan}); err != nil {
-		t.Fatalf("%v %s", err, p.LastError())
+	short := placeShort(t, plan, shorts, "01")
+	if want := filepath.Join(shorts, "wort 2.mp4"); short != want {
+		t.Errorf("beside another episode's wort.mp4 the short is %s, not %s", short, want)
 	}
-	if got := clip().Short; got != short {
-		t.Errorf("rendered into the folder for shorts, the clip says %q, not %q", got, short)
+	if got := shortOfClip(t, plan, "01").Short; got != short {
+		t.Errorf("the clip says its short is %q, not %q", got, short)
 	}
-	if !IsShort(disk, p.Source, short) {
+	if !IsShort(disk, source, short) {
 		t.Error("the short in the folder for shorts is not the clip's")
 	}
 	if n := rendered(); n != 1 {
 		t.Errorf("the episode counts %d shorts, not 1", n)
 	}
-
-	p.Base.Out = t.TempDir()
-	if got := clip().Short; got != short {
-		t.Errorf("after the folder in the settings changed the clip says %q, not %q", got, short)
-	}
 	beside := filepath.Join(shorts, "notes.mp4")
 	if err := os.WriteFile(beside, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if IsShort(disk, p.Source, beside) || IsShort(disk, p.Source, shorts) {
+	if IsShort(disk, source, beside) || IsShort(disk, source, shorts) || IsShort(disk, source, other) {
 		t.Error("what is beside the short is taken for one")
 	}
 
 	if err := os.Remove(short); err != nil {
 		t.Fatal(err)
 	}
-	if got := clip().Short; got != "" {
-		t.Errorf("a short removed by hand is still the clip's, at %s", got)
+	if c := shortOfClip(t, plan, "01"); c.Short != "" || !c.Rendered {
+		t.Errorf("a short removed by hand is still the clip's, at %q, or the clip no longer says it was rendered", c.Short)
 	}
-	if IsShort(disk, p.Source, short) {
+	if IsShort(disk, source, short) {
 		t.Error("a short removed by hand is still taken for the clip's")
-	}
-	// The short was uploaded and its folder cleaned up, #384: the clip was
-	// rendered all the same, and the episode still counts it.
-	if !clip().Rendered {
-		t.Error("a clip whose short was removed by hand no longer says it was rendered")
 	}
 	if n := rendered(); n != 1 {
 		t.Errorf("with its short removed by hand the episode counts %d shorts, not 1", n)
 	}
 }
 
-// shortsEpisode is an episode searched for one clip, under a file name of
-// its own, with a thumbnail on the clip.
-type shortsEpisode struct {
-	p    *Project
-	plan string
-}
+// A render again writes over the clip's own short, under the name it has,
+// and over nothing else. A name is taken by a short or by its first
+// picture alone, so no short takes another's pictures either. A short
+// written over by hand is not the file the clip wrote, so it is no longer
+// the clip's, and a render again gives the clip a name of its own.
+//
+// On the real disk: a short is a file on the disk, see IsShort.
+func TestARenderAgainWritesOverOnlyItsOwnShort(t *testing.T) {
+	t.Parallel()
+	source, plan := episodeWithPlan(t, "folge")
+	dir := ResolvePath(t.TempDir())
+	short := placeShort(t, plan, dir, "01")
+	if again := placeShort(t, plan, dir, "01"); again != short {
+		t.Errorf("rendered again, the short went to %s, not over its own at %s", again, short)
+	}
 
-// On the real disk: ffmpeg reads the episode.
-func newShortsEpisode(t *testing.T, name string) shortsEpisode {
-	t.Helper()
-	p, _ := searchProject(t, nil)
-	named := filepath.Join(filepath.Dir(p.Source), name+".mp4")
-	if err := os.Rename(p.Source, named); err != nil {
+	if err := os.WriteFile(short, []byte("written over by hand"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	p = NewProject(p.engine, named, p.Base)
-	plan, err := p.Search(context.Background(), PlanRequest{Count: 1, Min: 5}, nil)
-	if err != nil {
-		t.Fatalf("%v %s", err, p.LastError())
+	if c := shortOfClip(t, plan, "01"); c.Short != "" || !c.Rendered {
+		t.Errorf("a short written over by hand is still the clip's, at %q, or the clip no longer says it was rendered", c.Short)
 	}
-	ep := shortsEpisode{p, plan}
-	c := ep.clip(t)
-	if err := SetThumbnail(disk, plan, c.ID, -1, (c.Segments[0].Start+c.Segments[0].End)/2); err != nil {
+	if again, want := placeShort(t, plan, dir, "01"), filepath.Join(dir, "wort 2.mp4"); again != want {
+		t.Errorf("rendered again after its short was written over by hand, the short went to %s, not %s", again, want)
+	}
+	if IsShort(disk, source, short) {
+		t.Error("the file written over by hand is still taken for the clip's short")
+	}
+
+	// The short is gone and its first picture is left: the picture holds
+	// the name.
+	if err := os.Remove(filepath.Join(dir, "wort 2.mp4")); err != nil {
 		t.Fatal(err)
 	}
-	return ep
-}
-
-// On the real disk: the plan is beside the episode ffmpeg reads.
-func (ep shortsEpisode) clip(t *testing.T) ClipView {
-	t.Helper()
-	view, err := ReadPlan(disk, ep.plan)
-	if err != nil || len(view.Clips) == 0 {
-		t.Fatalf("the plan: %v", err)
-	}
-	return view.Clips[0]
-}
-
-// render renders the clip and gives the short it says it has.
-func (ep shortsEpisode) render(t *testing.T) string {
-	t.Helper()
-	if err := ep.p.Render(context.Background(), RenderRequest{Plan: ep.plan}); err != nil {
-		t.Fatalf("%v %s", err, ep.p.LastError())
-	}
-	short := ep.clip(t).Short
-	if short == "" {
-		t.Fatal("a clip just rendered says it has no short")
-	}
-	return short
-}
-
-// files are the short and its first picture as they are on disk now.
-//
-// On the real disk: the short is a file ffmpeg wrote.
-func files(t *testing.T, short string) [2]os.FileInfo {
-	t.Helper()
-	var out [2]os.FileInfo
-	for i, path := range []string{short, strings.TrimSuffix(short, ".mp4") + "-1.jpg"} {
-		info, err := os.Stat(path)
-		if err != nil {
-			t.Fatalf("%s is gone", path)
-		}
-		out[i] = info
-	}
-	return out
-}
-
-// untouched says whether the short and its picture are still the files
-// they were.
-func untouched(t *testing.T, short string, was [2]os.FileInfo) bool {
-	t.Helper()
-	now := files(t, short)
-	return os.SameFile(was[0], now[0]) && os.SameFile(was[1], now[1]) &&
-		was[0].ModTime().Equal(now[0].ModTime()) && was[1].ModTime().Equal(now[1].ModTime())
-}
-
-// neitherClaims says whether each episode leaves the other's short alone.
-//
-// On the real disk: the shorts are files ffmpeg wrote.
-func neitherClaims(t *testing.T, a, b shortsEpisode, aShort, bShort string) {
-	t.Helper()
-	if IsShort(disk, a.p.Source, bShort) {
-		t.Errorf("%s takes %s for its own", filepath.Base(a.p.Source), bShort)
-	}
-	if IsShort(disk, b.p.Source, aShort) {
-		t.Errorf("%s takes %s for its own", filepath.Base(b.p.Source), aShort)
+	if again, want := placeShort(t, plan, dir, "01"), filepath.Join(dir, "wort 3.mp4"); again != want {
+		t.Errorf("past a picture left of wort 2, the short went to %s, not %s", again, want)
 	}
 }
 
 // Two episodes that render into one folder for shorts keep a short each,
-// even when a clip of one has the same id and slug as a clip of the
-// other: each episode's shorts go into a folder of its own in it, under
-// the clip's own name. The second render leaves the first episode's short
-// and its picture as they were, and neither clip takes the other's short
-// for its own.
+// even when their clips have the same id and words, because each
+// episode's shorts go into a folder of its own name there. Two episodes of
+// the same file name share that folder, so the second short gets a
+// number. Either way, neither clip takes the other's short for its own,
+// and a render of one never writes over the other's.
 //
-// On the real disk: ffmpeg reads the episodes and writes the shorts.
+// On the real disk: a short is a file on the disk, see IsShort.
 func TestTwoEpisodesKeepTheirOwnShorts(t *testing.T) {
 	t.Parallel()
-	shorts := ResolvePath(t.TempDir())
-	first, second := newShortsEpisode(t, "erste"), newShortsEpisode(t, "zweite")
-	first.p.Base.Shorts, second.p.Base.Shorts = shorts, shorts
-	name := first.clip(t).Slug
-	if other := second.clip(t).Slug; other != name {
-		t.Fatalf("the clips are %s and %s, which never meet in one folder", name, other)
-	}
-
-	firstShort := first.render(t)
-	was := files(t, firstShort)
-	secondShort := second.render(t)
-
-	for short, want := range map[string]string{
-		firstShort:  filepath.Join(shorts, "erste", name+".mp4"),
-		secondShort: filepath.Join(shorts, "zweite", name+".mp4"),
+	for _, c := range []struct {
+		name, first, second, firstShort, secondShort string
+	}{
+		{"of other names", "erste", "zweite", "erste/wort.mp4", "zweite/wort.mp4"},
+		{"of one name", "folge", "folge", "folge/wort.mp4", "folge/wort 2.mp4"},
 	} {
-		if short != want {
-			t.Errorf("a short is at %s, not %s", short, want)
-		}
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			shorts := ResolvePath(t.TempDir())
+			type episode struct{ source, plan, short string }
+			var eps [2]episode
+			for i, name := range []string{c.first, c.second} {
+				source, plan := episodeWithPlan(t, name)
+				dir, err := shortsFolder("", shorts, source)
+				if err != nil {
+					t.Fatal(err)
+				}
+				eps[i] = episode{source, plan, placeShort(t, plan, dir, "01")}
+			}
+			for i, want := range []string{c.firstShort, c.secondShort} {
+				if want = filepath.Join(shorts, want); eps[i].short != want {
+					t.Errorf("a short is at %s, not %s", eps[i].short, want)
+				}
+			}
+			for i, ep := range eps {
+				if got := shortOfClip(t, ep.plan, "01").Short; got != ep.short {
+					t.Errorf("the clip of episode %d says its short is %q, not %q", i+1, got, ep.short)
+				}
+				if other := eps[1-i]; IsShort(disk, ep.source, other.short) {
+					t.Errorf("episode %d takes %s for its own", i+1, other.short)
+				}
+			}
+		})
 	}
-	if !untouched(t, firstShort, was) {
-		t.Errorf("the second render wrote over the first episode's short at %s", firstShort)
-	}
-	if got := first.clip(t).Short; got != firstShort {
-		t.Errorf("the first episode's clip says its short is %q, not %q", got, firstShort)
-	}
-	neitherClaims(t, first, second, firstShort, secondShort)
 }
 
-// Two episodes of the same file name share their folder in the folder for
-// shorts, so the second short of the same name gets a number the way
-// Finder gives one, and its pictures go with it. A render again writes
-// over the clip's own short, under the name it has, and nothing else.
+// Two clips of one episode with the same words, as two searches can find,
+// get a number too, and each keeps its own short when rendered again.
 //
-// On the real disk: ffmpeg reads the episodes and writes the shorts.
-func TestTwoEpisodesOfOneNameNumberTheirShorts(t *testing.T) {
+// On the real disk: a short is a file on the disk, see IsShort.
+func TestTwoClipsOfTheSameWordsAreNumbered(t *testing.T) {
 	t.Parallel()
-	shorts := ResolvePath(t.TempDir())
-	first, second := newShortsEpisode(t, "episode"), newShortsEpisode(t, "episode")
-	first.p.Base.Shorts, second.p.Base.Shorts = shorts, shorts
-	name := first.clip(t).Slug
-
-	firstShort := first.render(t)
-	was := files(t, firstShort)
-	secondShort := second.render(t)
-	if want := filepath.Join(shorts, "episode", name+" 2.mp4"); secondShort != want {
-		t.Errorf("the second short is at %s, not %s", secondShort, want)
-	}
-	if !untouched(t, firstShort, was) {
-		t.Errorf("the second render wrote over the first episode's short at %s", firstShort)
-	}
-	neitherClaims(t, first, second, firstShort, secondShort)
-
-	wasSecond := files(t, secondShort)
-	if again := second.render(t); again != secondShort {
-		t.Errorf("rendered again, the second short went to %s, not %s", again, secondShort)
-	}
-	if untouched(t, secondShort, wasSecond) {
-		t.Error("rendered again, the second short was not written again")
-	}
-	wasSecond = files(t, secondShort)
-	if again := first.render(t); again != firstShort {
-		t.Errorf("rendered again, the first short went to %s, not %s", again, firstShort)
-	}
-	if !untouched(t, secondShort, wasSecond) {
-		t.Errorf("the first episode's render again wrote over %s", secondShort)
-	}
-	neitherClaims(t, first, second, firstShort, secondShort)
-}
-
-// On the command line, --out names the folder itself, and a second
-// episode's short of the same words gets a number there. A short written
-// over by hand is no longer the clip's, because it is not the file it
-// wrote.
-//
-// On the real disk: ffmpeg reads the episodes and writes the shorts.
-func TestAShortWrittenOverIsNoLongerTheClips(t *testing.T) {
-	t.Parallel()
-	out := ResolvePath(t.TempDir())
-	first, second := newShortsEpisode(t, "erste"), newShortsEpisode(t, "zweite")
-	first.p.Base.Out, second.p.Base.Out = out, out
-	name := first.clip(t).Slug
-
-	firstShort := first.render(t)
-	secondShort := second.render(t)
-	if firstShort != filepath.Join(out, name+".mp4") || secondShort != filepath.Join(out, name+" 2.mp4") {
-		t.Errorf("with --out the shorts are %s and %s", firstShort, secondShort)
-	}
-	neitherClaims(t, first, second, firstShort, secondShort)
-	if err := os.WriteFile(firstShort, []byte("written over by hand"), 0o644); err != nil {
+	_, plan := episodeWithPlan(t, "folge")
+	if err := os.WriteFile(plan, []byte(`{"clips": [
+  {"id": "01", "slug": "wort", "segments": [{"start": 1, "end": 21}], "thumbnails": [2]},
+  {"id": "t60-01", "slug": "wort", "segments": [{"start": 1, "end": 21}], "thumbnails": [2]}]}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := first.clip(t).Short; got != "" {
-		t.Errorf("the first episode's clip takes a file written over by hand for its own, at %s", got)
+	dir := ResolvePath(t.TempDir())
+	want := []string{filepath.Join(dir, "wort.mp4"), filepath.Join(dir, "wort 2.mp4")}
+	for range 2 {
+		for i, id := range []string{"01", "t60-01"} {
+			if got := placeShort(t, plan, dir, id); got != want[i] {
+				t.Errorf("the short of clip %s is %s, not %s", id, got, want[i])
+			}
+		}
 	}
-	if !first.clip(t).Rendered {
-		t.Error("the first episode's clip, its short written over by hand, no longer says it was rendered")
+}
+
+// Noting where a short went is no edit, so an edit made before a render is
+// undone after it as it would have been without it, and the clip is still
+// rendered afterwards.
+//
+// On the real disk: a short is a file on the disk, see recordShort.
+func TestAnEditIsUndoneAfterARender(t *testing.T) {
+	t.Parallel()
+	_, plan := episodeWithPlan(t, "folge")
+	change := edited(t, disk, filepath.Dir(plan), func() error { return SetCaptionY(disk, plan, "01", 400) })
+	placeShort(t, plan, ResolvePath(t.TempDir()), "01")
+	if _, err := change.Undo(); err != nil {
+		t.Fatalf("the edit before the render cannot be undone: %v", err)
+	}
+	if c := shortOfClip(t, plan, "01"); c.CaptionYMoved {
+		t.Error("the undo left the caption where the edit put it")
+	} else if c.Short == "" {
+		t.Error("the undo took the short away from the clip")
+	}
+}
+
+// A render of a clip puts its short where the rules above say, and a
+// render again writes a new file over it. A preview rendered into the
+// same folder keeps the clip's id in its name, so it never writes over
+// the short, which stays the clip's. The one test here that renders, a
+// clip of one second.
+//
+// On the real disk: ffmpeg reads the episode and writes the shorts.
+func TestARenderPutsItsShortWhereItsNameSays(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	source := testEpisode(t, "2")
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	base := DefaultOptions()
+	base.ASRModel = t.TempDir()
+	base.Width, base.Height = 180, 320
+	base.Preset = "ultrafast"
+	base.NoCaptions = true
+	base.Out = ResolvePath(t.TempDir())
+	if err := os.MkdirAll(LogsDir(source), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	plan := filepath.Join(LogsDir(source), "clips.json")
+	if err := os.WriteFile(plan, []byte(`{"clips": [
+  {"id": "01", "slug": "wort", "segments": [{"start": 0.5, "end": 1.5}]}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetThumbnail(disk, plan, "01", -1, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(base.Out, "wort.mp4"), []byte("another episode's short"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p := NewProject(e, source, base)
+	render := func(preview bool) {
+		t.Helper()
+		if err := p.Render(ctx, RenderRequest{Plan: plan, Preview: preview}); err != nil {
+			t.Fatalf("%v %s", err, p.LastError())
+		}
+	}
+
+	render(false)
+	short := filepath.Join(base.Out, "wort 2.mp4")
+	if got := shortOfClip(t, plan, "01").Short; got != short {
+		t.Fatalf("beside another episode's wort.mp4 the clip says its short is %q, not %q", got, short)
+	}
+	if _, err := os.Stat(filepath.Join(base.Out, thumbnailName("wort 2", 1))); err != nil {
+		t.Errorf("the short's first picture is not beside it: %v", err)
+	}
+	was, err := os.Stat(short)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	render(false)
+	now, err := os.Stat(short)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if os.SameFile(was, now) && was.ModTime().Equal(now.ModTime()) {
+		t.Error("rendered again, the short was not written again")
+	}
+	if got := shortOfClip(t, plan, "01").Short; got != short {
+		t.Errorf("rendered again, the clip says its short is %q, not %q", got, short)
+	}
+
+	render(true)
+	after, err := os.Stat(short)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !os.SameFile(now, after) || !now.ModTime().Equal(after.ModTime()) {
+		t.Errorf("the preview wrote over the short at %s", short)
+	}
+	if got := shortOfClip(t, plan, "01").Short; got != short {
+		t.Errorf("after the preview the clip says its short is %q, not %q", got, short)
+	}
+	videos, err := filepath.Glob(filepath.Join(base.Out, "*.mp4"))
+	if err != nil || len(videos) != 3 {
+		t.Errorf("the folder holds %q, not the other episode's short, this one and the preview", videos)
 	}
 }
 
@@ -422,129 +523,6 @@ func TestAPlanNamesNoFileButAShort(t *testing.T) {
 		if got := shortOf(plan, c); got != want {
 			t.Errorf("a plan naming %q gives %q, not %q", name, got, want)
 		}
-	}
-}
-
-// What a render makes is no edit, so an edit made before a render is
-// undone after it as it would have been without it, and the clip is still
-// rendered afterwards.
-//
-// On the real disk: ffmpeg reads the episode and writes the short.
-func TestAnEditIsUndoneAfterARender(t *testing.T) {
-	t.Parallel()
-	p, _ := searchProject(t, nil)
-	plan, err := p.Search(context.Background(), PlanRequest{Count: 1, Min: 5}, nil)
-	if err != nil {
-		t.Fatalf("%v %s", err, p.LastError())
-	}
-	view, err := ReadPlan(disk, plan)
-	if err != nil {
-		t.Fatal(err)
-	}
-	id := view.Clips[0].ID
-	change := edited(t, disk, filepath.Dir(plan), func() error { return SetCaptionY(disk, plan, id, 400) })
-	p.Base.Out = t.TempDir()
-	if err := p.Render(context.Background(), RenderRequest{Plan: plan}); err != nil {
-		t.Fatalf("%v %s", err, p.LastError())
-	}
-	if _, err := change.Undo(); err != nil {
-		t.Fatalf("the edit before the render cannot be undone: %v", err)
-	}
-	view, err = ReadPlan(disk, plan)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if c := view.Clips[0]; c.CaptionYMoved {
-		t.Error("the undo left the caption where the edit put it")
-	} else if c.Short == "" {
-		t.Error("the undo took the short away from the clip")
-	}
-}
-
-// A short is named after its clip's words, without the id. Two clips of
-// one episode with the same words, as two searches can find, get a number
-// in the episode's own out folder and in --out alike, and a render again
-// writes each over in place.
-//
-// On the real disk: ffmpeg reads the episode and writes the shorts.
-func TestTwoClipsOfTheSameWordsAreNumbered(t *testing.T) {
-	t.Parallel()
-	for _, into := range []string{"out", "--out"} {
-		t.Run(into, func(t *testing.T) {
-			t.Parallel()
-			ep := newShortsEpisode(t, "folge")
-			out := filepath.Join(ResolvePath(WorkDir(ep.p.Source)), "out")
-			if into == "--out" {
-				out = ResolvePath(t.TempDir())
-				ep.p.Base.Out = out
-			}
-			c := ep.clip(t)
-			// The first clip again, under the id of another search.
-			if err := editPlan(disk, ep.plan, func(top *object, clips []*object) error {
-				again := newObject()
-				for _, k := range clips[0].keys {
-					again.set(k, clips[0].values[k])
-				}
-				again.set(keyID, "t60-01")
-				top.set(keyClips, append(top.values[keyClips].([]any), again))
-				return nil
-			}); err != nil {
-				t.Fatal(err)
-			}
-			want := []string{filepath.Join(out, c.Slug+".mp4"), filepath.Join(out, c.Slug+" 2.mp4")}
-			var was [][2]os.FileInfo
-			for range 2 {
-				ep.render(t)
-				view, err := ReadPlan(disk, ep.plan)
-				if err != nil || len(view.Clips) != 2 {
-					t.Fatalf("the plan: %v", err)
-				}
-				if got := []string{view.Clips[0].Short, view.Clips[1].Short}; got[0] != want[0] || got[1] != want[1] {
-					t.Fatalf("the shorts are %q, not %q", got, want)
-				}
-				for i, short := range want {
-					if was != nil && untouched(t, short, was[i]) {
-						t.Errorf("rendered again, %s was not written again", short)
-					}
-				}
-				was = [][2]os.FileInfo{files(t, want[0]), files(t, want[1])}
-			}
-		})
-	}
-}
-
-// A preview rendered into the folder --out names never writes over the
-// short there: the preview keeps the clip's id in its name and the short
-// does not. The clip still says the short is its own afterwards.
-//
-// On the real disk: ffmpeg writes the short and the preview.
-func TestAPreviewLeavesTheShortAlone(t *testing.T) {
-	t.Parallel()
-	ep := newShortsEpisode(t, "folge")
-	ep.p.Base.Out = ResolvePath(t.TempDir())
-	short := ep.render(t)
-	was := files(t, short)
-	if err := ep.p.Render(context.Background(), RenderRequest{Plan: ep.plan, Preview: true}); err != nil {
-		t.Fatalf("%v %s", err, ep.p.LastError())
-	}
-	if !untouched(t, short, was) {
-		t.Errorf("the preview wrote over the short at %s", short)
-	}
-	if got := ep.clip(t).Short; got != short {
-		t.Errorf("after the preview the clip says its short is %q, not %q", got, short)
-	}
-	entries, err := os.ReadDir(ep.p.Base.Out)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var shorts []string
-	for _, e := range entries {
-		if strings.HasSuffix(e.Name(), ".mp4") {
-			shorts = append(shorts, e.Name())
-		}
-	}
-	if len(shorts) != 2 {
-		t.Errorf("the folder holds %q, not the short and the preview beside it", shorts)
 	}
 }
 

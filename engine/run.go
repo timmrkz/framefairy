@@ -156,6 +156,22 @@ func EpisodeName(source string) string {
 	return base
 }
 
+// shortsFolder is the folder an episode's shorts are rendered into: the
+// one --out names, as it is, or a folder of the episode's own name in the
+// folder the app's settings name for shorts, so the shorts of two
+// episodes never meet there, or the out folder in the episode's work
+// folder when neither is set. Where a short goes in it is shortStem's.
+func shortsFolder(out, shorts, source string) (string, error) {
+	switch {
+	case out != "":
+		return out, nil
+	case shorts != "":
+		return SafeChild(shorts, EpisodeName(source))
+	default:
+		return filepath.Join(WorkDir(source), "out"), nil
+	}
+}
+
 func exists(fsys afero.Fs, path string) bool {
 	_, err := fsys.Stat(path)
 	return err == nil
@@ -346,16 +362,9 @@ func (e *Engine) prepare(ctx context.Context, opts Options, ask *Window) (*runne
 	}
 
 	work := WorkDir(opts.Source)
-	outDir := opts.Out
-	if outDir == "" && opts.Shorts != "" {
-		dir, err := SafeChild(opts.Shorts, EpisodeName(opts.Source))
-		if err != nil {
-			return nil, err
-		}
-		outDir = dir
-	}
-	if outDir == "" {
-		outDir = filepath.Join(work, "out")
+	outDir, err := shortsFolder(opts.Out, opts.Shorts, opts.Source)
+	if err != nil {
+		return nil, err
 	}
 	captionDir := filepath.Join(work, "captions")
 	if err := e.Files.MkdirAll(work, 0o755); err != nil {
