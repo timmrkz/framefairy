@@ -471,6 +471,13 @@ loop:
 		var exit *exec.ExitError
 		if errors.As(waitErr, &exit) {
 			code = max(exit.ExitCode(), 1)
+			// A program ended by a signal, a crash above all, says nothing
+			// of it itself. On CI's Mac a render ended with one line of
+			// macOS's and no word from ffmpeg, and nobody could tell
+			// whether it had crashed, issue #570.
+			if exit.ExitCode() < 0 {
+				stderr = append(stderr, "\nffmpeg was ended by a "+exit.Error()+"\n"...)
+			}
 		} else {
 			code = 1
 		}

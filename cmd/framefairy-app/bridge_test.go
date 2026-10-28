@@ -128,10 +128,11 @@ func (b *bus) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // svc is the service now: a restart of the app is a new one. own are the
 // calls the bridge answers itself, a box from the system among them. held
 // says the gate a call of a name waits behind until the walk opens it,
+// whether the call reaches the service first and only its answer waits,
 // and the reason it fails with instead of reaching it, if it does, see
 // /hold.
 func callHandler(svc func() *FrameFairy, own map[string]func() (any, error),
-	held func(name string) (<-chan struct{}, string)) http.Handler {
+	held func(name string) (gate <-chan struct{}, late bool, fails string)) http.Handler {
 	contextType := reflect.TypeFor[context.Context]()
 	errorType := reflect.TypeFor[error]()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -144,13 +145,17 @@ func callHandler(svc func() *FrameFairy, own map[string]func() (any, error),
 			return
 		}
 		name := call.Name[strings.LastIndex(call.Name, ".")+1:]
-		gate, fails := held(name)
-		if gate != nil {
+		gate, late, fails := held(name)
+		opened := func() bool {
 			select {
 			case <-gate:
+				return true
 			case <-r.Context().Done():
-				return
+				return false
 			}
+		}
+		if gate != nil && !late && !opened() {
+			return
 		}
 		if fails != "" {
 			http.Error(w, fails, http.StatusInternalServerError)
@@ -158,6 +163,9 @@ func callHandler(svc func() *FrameFairy, own map[string]func() (any, error),
 		}
 		if answerOwn, ok := own[name]; ok {
 			answer, err := answerOwn()
+			if gate != nil && late && !opened() {
+				return
+			}
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
@@ -206,6 +214,9 @@ func callHandler(svc func() *FrameFairy, own map[string]func() (any, error),
 			return
 		}
 		out, failed := callSafely(method, in)
+		if gate != nil && late && !opened() {
+			return
+		}
 		if failed != "" {
 			http.Error(w, failed, http.StatusInternalServerError)
 			return
@@ -496,17 +507,21 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 	mux.HandleFunc("/hold", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		// times is how many calls of the name from now on the gate is for,
-		// every call when it is not given.
+		// every call when it is not given. answer holds the answer rather
+		// than the call: the Go side does what was asked and the answer
+		// waits, the way a busy machine hands it back late, after the
+		// news of what it set going.
 		times, err := strconv.Atoi(q.Get("times"))
 		if err != nil {
 			times = -1
 		}
+		late := q.Get("answer") != ""
 		b.mu.Lock()
 		switch g, shut := b.gates[q.Get("call")]; {
 		case q.Get("gate") == "shut" && !shut:
-			b.gates[q.Get("call")] = &gate{open: make(chan struct{}), left: min(times, 100)}
+			b.gates[q.Get("call")] = &gate{open: make(chan struct{}), left: min(times, 100), late: late}
 		case q.Get("gate") == "shut":
-			g.left = min(times, 100)
+			g.left, g.late = min(times, 100), late
 		case q.Get("gate") == "open" && shut:
 			close(g.open)
 			delete(b.gates, q.Get("call"))
@@ -891,27 +906,30 @@ func (b *bridge) updatesAs(from, stored string, list, conflict []string, offline
 }
 
 // gate holds the calls of a name until a walk opens it: every call when
-// left is below nought, or the next left of them.
+// left is below nought, or the next left of them. Late, it holds their
+// answers instead.
 type gate struct {
 	open chan struct{}
 	left int
+	late bool
 }
 
-// held is the gate a call of this name waits behind, and the reason it
-// fails with instead, if it does, see /hold.
-func (b *bridge) held(name string) (<-chan struct{}, string) {
+// held is the gate a call of this name waits behind, whether only its
+// answer waits, and the reason it fails with instead, if it does, see
+// /hold.
+func (b *bridge) held(name string) (<-chan struct{}, bool, string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	fails := b.fails[name]
 	delete(b.fails, name)
 	g := b.gates[name]
 	if g == nil || g.left == 0 {
-		return nil, fails
+		return nil, false, fails
 	}
 	if g.left > 0 {
 		g.left--
 	}
-	return g.open, fails
+	return g.open, g.late, fails
 }
 
 // openBridge opens a desk whose Go side tells a browser what it does, with

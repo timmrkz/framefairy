@@ -144,7 +144,7 @@ function goSide() {
   );
   const { app } = frames(() => ({ width: 4, height: 2 }));
   app.paused = () => false;
-  const asked: { url: string; give: (ranks: number[], times?: string) => void }[] = [];
+  const asked: { url: string; give: (ranks: number[], times?: string) => void; shut: () => void }[] = [];
   const came: (() => void)[] = [];
   (app as unknown as { puller: unknown }).puller = {
     pull: (url: string) =>
@@ -162,6 +162,8 @@ function goSide() {
               spare: [],
               frames: ranks.map((r) => ({ at: r / 25, frame: new Picture(new Uint8Array(4 * 2 * 4).fill(r), 4, 2, r * 40000) })),
             }),
+          // Closed on the Go side, to make room for newer streams.
+          shut: () => done({ status: 200, end: false, error: "", closed: true, times: "", light: "", spare: [], frames: [] }),
         });
         for (const c of came.splice(0)) c();
       }),
@@ -201,6 +203,51 @@ describe("a stream asked for a frame while a pull is on its way", () => {
     expect(first).toBe("asked again");
     asked[2].give([14]);
     expect(await rankOf(fourteen)).toBe(14);
+    app.close();
+  });
+});
+
+describe("a stream asked for a frame while its first frame comes for nobody", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  // A stream opened for a place the hand left reads its first frame all
+  // the same, see firstFrame. A frame asked of it meanwhile, one the
+  // stream reaches, was never pulled: pull returned at once since the
+  // stream was pulling, and the pull of the first frame returned after
+  // it. The frame never came, the cue that waited for it never said it
+  // stood, and a walk hung after a drag of an edge, issue #556.
+  test("still gets the frame asked of it meanwhile", async () => {
+    const { app, asked, pulls, rankOf } = goSide();
+    const withdrawn = new Set<{ gone?: boolean }>();
+    void app.frame(10, 0, withdrawn as never, true);
+    // The hand moves on before the stream is open, as a decoder reset
+    // withdraws what it asked.
+    for (const w of withdrawn) w.gone = true;
+    await pulls(1);
+    expect(asked[0].url).toContain("n=1");
+    const twelve = app.frame(12, 0);
+    asked[0].give([10]);
+    await pulls(2);
+    asked[1].give([12]);
+    expect(await rankOf(twelve)).toBe(12);
+    app.close();
+  });
+
+  // The same, with the stream closed on the Go side before its first
+  // frame came, the way it makes room for the newer streams of a drag.
+  // The frame asked meanwhile ended as the nearest frame there was,
+  // nothing, where a pull hands it to another stream.
+  test("still gets the frame asked of it meanwhile when the stream is closed", async () => {
+    const { app, asked, pulls, rankOf } = goSide();
+    const withdrawn = new Set<{ gone?: boolean }>();
+    void app.frame(10, 0, withdrawn as never, true);
+    for (const w of withdrawn) w.gone = true;
+    await pulls(1);
+    const twelve = app.frame(12, 0);
+    asked[0].shut();
+    await pulls(2);
+    asked[1].give([12]);
+    expect(await rankOf(twelve)).toBe(12);
     app.close();
   });
 });

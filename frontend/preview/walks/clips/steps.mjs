@@ -7,7 +7,7 @@
 // docs/TESTING.md.
 import { existsSync, readdirSync, realpathSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, extname, join } from "node:path";
-import { ask, caughtUp, chosen, clickOnTrack, clipList, control, engineState, episodeOn, foldsDone, fromSidebar, handles, high, holdClock, letClockGo, middle, news, nextNews, nextPaint, overlay, pageUntil, playUntil, pressHead, realFrames, recordFrames, runClock, seenUntil, settle, shortFrames, shortSound } from "../bridge.mjs";
+import { ask, caughtUp, chosen, clickOnTrack, clipList, control, engineState, episodeOn, foldsDone, fromSidebar, handles, high, hold, holdClock, letClockGo, letHeld, middle, news, nextNews, nextPaint, overlay, pageUntil, playUntil, pressHead, realFrames, recordFrames, runClock, seenUntil, settle, shortFrames, shortSound } from "../bridge.mjs";
 import { canLook, changesOf, clickCard, clickedFromAhead, clockOf, halfOf, newCards, pieceCount, rate, restAhead, shortOf, shotClips, url } from "../common/steps.mjs";
 
 export const steps = {
@@ -37,9 +37,15 @@ export const steps = {
   //                    clip timeline and the video preview show on every
   //                    animation frame until the clip made is written and
   //                    chosen, and two seconds after, then pauses
+  // ["make with its answer late", key]
+  //                    the same as made while paused, with the answer to
+  //                    the press held until the clip is written and the
+  //                    app has heard so, the way a busy machine hands it
+  //                    back, and the clip made is chosen once it comes
   async "make while playing"(walk, arg, s, what) {
     const { page, watch } = walk;
     const playing = what === "make while playing";
+    const late = what === "make with its answer late";
     const g = await handles(page);
     if (g.start.x - g.track.x < 40) {
       walk.wrong = "there is no room on the clip timeline before the clip";
@@ -58,14 +64,44 @@ export const steps = {
       await settle(page);
       await playUntil(page, { most: 1.5 });
     }
+    let before, seen;
+    if (late) {
+      before = new Set((await ask(page, "Jobs")).map((j) => j.id));
+      seen = await news(page);
+      await hold(page, "MakeClip", true);
+    }
     await page.keyboard.press(arg);
+    if (late) {
+      // Until the job the press set going is over and the app has heard
+      // it, each look woken by the next news of a job.
+      for (;;) {
+        const job = (await ask(page, "Jobs")).find((j) => !before.has(j.id));
+        if (job && job.state !== "queued" && job.state !== "running") {
+          await caughtUp(page, url, [job]);
+          break;
+        }
+        seen = await nextNews(page, seen);
+      }
+      await letHeld(page);
+    }
     // Until the card chosen is a clip the engine has written, the one
     // made, which is not the one chosen before.
     const chosenCard = async () => {
       const card = (await overlay(page)).card;
       return card && card !== was && (await ask(page, "Clips", path)).some((c) => c.key === card) ? card : "";
     };
-    const written = await seenUntil(page, url, chosenCard, (card) => !!card);
+    let written;
+    if (late) {
+      // Nothing more is to come from the Go side, so once the app has
+      // done what the answer set going, the clip made is chosen or it
+      // never will be.
+      await settle(page);
+      written = await chosenCard();
+      if (!written) {
+        walk.wrong = "the clip made was written before the press had its answer, and it was never chosen";
+        return;
+      }
+    } else written = await seenUntil(page, url, chosenCard, (card) => !!card);
     // And two seconds more of the play. Paused, until the app has done
     // all the clip made set going and the picture stands, and the
     // frames drawn then: a clip dimmed after it was written is dimmed
@@ -1230,6 +1266,7 @@ export const steps = {
 
 // Steps that take the same body as the step they are walked by.
 steps["make while paused"] = steps["make while playing"];
+steps["make with its answer late"] = steps["make while playing"];
 
 // The shorts in a folder, by name, finished ones only.
 const shortsIn = (dir) => readdirSync(dir).filter((n) => n.endsWith(".mp4") && !n.endsWith(".part.mp4")).sort();

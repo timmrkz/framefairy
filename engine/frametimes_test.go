@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -155,14 +156,11 @@ func timesEpisode(t *testing.T, c timesCase) string {
 	args = append(args, "-f", "lavfi", "-i", picture,
 		"-f", "lavfi", "-i", "aevalsrc='(0.1+0.8*mod(t\\,1))*sin(2*PI*440*t)':s=48000:d="+seconds)
 	args = append(args, c.out...)
-	codec, sound := []string{"-c:v", "mpeg4", "-q:v", "2", "-g", "30"}, []string{"-c:a", "pcm_s16le"}
+	codecs, sound := [][]string{{"-c:v", "mpeg4", "-q:v", "2", "-g", "30"}}, []string{"-c:a", "pcm_s16le"}
 	if c.gop > 0 {
-		codec, sound = h264(t, c.gop), []string{"-c:a", "aac"}
+		codecs, sound = h264(t, c.gop), []string{"-c:a", "aac"}
 	}
-	args = append(args, codec...)
-	args = append(args, sound...)
-	args = append(args, "-t", seconds, source)
-	if out, err := exec.Command("ffmpeg", args...).CombinedOutput(); err != nil {
+	if out, err := encodeTestFile(t, "ffmpeg", args, codecs, append(sound, "-t", seconds, source)...); err != nil {
 		t.Fatalf("making the test episode: %s %s", err, out)
 	}
 	if !c.cutOff {
@@ -191,20 +189,54 @@ func timesEpisode(t *testing.T, c timesCase) string {
 }
 
 // h264 is how the ffmpeg on the path codes H.264 with two B-frames and a
-// key frame every gop frames. The one CI's Mac runs is the one we ship,
-// which has no libx264 and encodes H.264 on the graphics chip.
-func h264(t *testing.T, gop int) []string {
+// key frame every gop frames, best first. The one CI's Mac runs is the
+// one we ship, which has no libx264 and encodes H.264 on the graphics
+// chip, and on the processor where the chip fails, the way onProcessor
+// does for a render.
+func h264(t *testing.T, gop int) [][]string {
 	t.Helper()
 	encoders := encodersHere()
 	g := strconv.Itoa(gop)
 	switch {
 	case hasEncoder(encoders, "libx264"):
-		return []string{"-c:v", "libx264", "-bf", "2", "-g", g, "-sc_threshold", "0", "-pix_fmt", "yuv420p"}
+		return [][]string{{"-c:v", "libx264", "-bf", "2", "-g", g, "-sc_threshold", "0", "-pix_fmt", "yuv420p"}}
 	case hasEncoder(encoders, "h264_videotoolbox"):
-		return []string{"-c:v", "h264_videotoolbox", "-profile:v", "high", "-bf", "2", "-g", g, "-b:v", "4M", "-pix_fmt", "yuv420p"}
+		return chipThenProcessor([]string{"-c:v", "h264_videotoolbox", "-profile:v", "high", "-bf", "2", "-g", g, "-b:v", "4M", "-pix_fmt", "yuv420p"})
 	}
 	ffmpegtest.Unusable(t, "the ffmpeg on the path has no encoder of H.264")
 	return nil
+}
+
+// chipThenProcessor is an encoder of VideoToolbox asked of the media
+// engine, and then the same asked of the processor, the way onProcessor
+// goes on for a render.
+func chipThenProcessor(chip []string) [][]string {
+	return [][]string{chip, append(slices.Clip(chip), "-require_sw", "1")}
+}
+
+// encodeTestFile has the program, an ffmpeg, make a test file: args, then
+// the first of codecs, then rest. Each codec starts with "-c:v" and its
+// encoder. The media engine of CI's virtual Mac would not open now and
+// then, "Error retrieving the supported property dictionary err=-12903",
+// issue #570, and a test failed before it began. So the file is made with
+// the next of codecs once an encoder said it failed, by Encoder.failed,
+// the way a render goes on, see nextEncoder. It is never made again with
+// the same encoder, and a failure of anything else fails at once.
+//
+// On the real disk: ffmpeg writes the test file.
+func encodeTestFile(t *testing.T, program string, args []string, codecs [][]string, rest ...string) ([]byte, error) {
+	t.Helper()
+	var out []byte
+	var err error
+	for i, codec := range codecs {
+		made := append(append(slices.Clip(args), codec...), rest...)
+		out, err = exec.Command(program, made...).CombinedOutput()
+		if err == nil || i == len(codecs)-1 || !(Encoder{Name: codec[1]}).failed(string(out)) {
+			return out, err
+		}
+		t.Logf("%v did not make the test file, %v makes it: %s", codec, codecs[i+1], out)
+	}
+	return out, err
 }
 
 // encodersHere is the encoders of the ffmpeg on the path.
