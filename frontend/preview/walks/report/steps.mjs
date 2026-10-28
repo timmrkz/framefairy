@@ -910,26 +910,31 @@ export const steps = {
   // ["talk ahead", n]  the person dictating says n tenths of a second
   //                    more than the speech model has written down yet,
   //                    and the walk keeps how many words the field shows
-  //                    after what was written before, for "said before
-  //                    the new line" (#573)
+  //                    after what was written before, for "said
+  //                    before" (#573)
   async "talk ahead"(walk, arg) {
     const { kept, page } = walk;
     const handed = await control(url, `/microphone?ahead=${arg}`);
     if (handed !== arg) walk.wrong = `the microphone handed over ${handed} tenths of a second, not ${arg}`;
     kept.shown = await page.locator(".telling").evaluate((f) => f.querySelector(".dictated")?.textContent.trim().split(/\s+/).filter(Boolean).length ?? 0);
   },
-  // ["said before the new line"]
-  //                    the report's first line holds more words of what
-  //                    was said than the field showed at "talk ahead",
-  //                    since everything said before the new line goes
-  //                    above it, and the line after it holds what was
-  //                    said after (#573)
-  async "said before the new line"(walk) {
+  // ["said before", typed]
+  //                    what the report holds between "It froze." and
+  //                    typed, a new line or words typed at the end of what
+  //                    was said, is more words than the field showed at
+  //                    "talk ahead", since everything said before the
+  //                    typing goes in front of it, and what follows it
+  //                    holds what was said after (#573, #584)
+  async "said before"(walk, arg) {
     const { kept, page } = walk;
-    const [first, second] = (await page.locator(".telling").evaluate((f) => f.innerText)).split("\n");
-    const above = first.replace(/^It froze\.\s*/, "").split(/\s+/).filter(Boolean).length;
-    if (above <= kept.shown) walk.wrong = `the line above the new line holds ${above} words said, no more than the ${kept.shown} shown when Shift+Enter was pressed, so what was said before it went below it`;
-    else if (!second?.trim()) walk.wrong = "the line after the new line holds nothing of what was said after it";
+    const text = await page.locator(".telling").evaluate((f) => f.innerText);
+    const at = text.indexOf(arg);
+    const words = (t) => t.split(/\s+/).filter(Boolean).length;
+    const before = words(text.slice(0, Math.max(at, 0)).replace(/^It froze\.\s*/, ""));
+    const name = arg === "\n" ? "the new line" : `"${arg}"`;
+    if (at < 0) walk.wrong = `the report holds no ${name}: ${JSON.stringify(text)}`;
+    else if (before <= kept.shown) walk.wrong = `${before} words said are in front of ${name}, no more than the ${kept.shown} shown when it was typed, so what was said before it went after it`;
+    else if (!text.slice(at + arg.length).trim()) walk.wrong = `nothing of what was said after ${name} follows it`;
   },
   // ["press, the cursor in view", key, n]
   //                    presses key n times, with nothing heard by

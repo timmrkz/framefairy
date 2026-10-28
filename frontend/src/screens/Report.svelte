@@ -640,7 +640,7 @@
     else if (e.inputType === "deleteContentBackward" && (settled() + mark.textContent).trim()) data = "";
     else return;
     e.preventDefault();
-    if (data.includes("\n")) cutHeard();
+    if (data) cutHeard();
     else settleHeard();
     const before = settled();
     // A space between a word that was said and a word typed after it,
@@ -649,11 +649,10 @@
     // A new line, typed or pasted, goes in by hand, the way the settled
     // words do. The browser's own put it after the mark on Tim's Mac, so
     // what was said next went on the line above the cursor, or as a block
-    // of its own, which split what was said in two, issue #373. It goes
-    // after the place a cut keeps, never into it.
+    // of its own, which split what was said in two, issue #373.
     if (data.includes("\n")) {
       const last = mark.previousSibling;
-      if (last?.nodeType === Node.TEXT_NODE && !cuts.some((c) => c.node === last)) (last as Text).appendData(data);
+      if (last?.nodeType === Node.TEXT_NODE) (last as Text).appendData(data);
       else mark.before(data);
       const after = document.createRange();
       after.setStartAfter(said);
@@ -704,40 +703,44 @@
     show("");
   }
 
-  // cutHeard asks the Go side to cut what is being said where a new line
-  // is typed, and keeps a place for the piece the cut makes, in front of
-  // where the new line goes. Tim said a lot quickly and pressed
-  // Shift+Enter, and the words the speech model wrote down after went
-  // below the new line, though he said them before it, issue #573. What
-  // was heard so far stands in the place until the piece comes, so the
-  // new line shows at once, under it.
-  const cuts: { node: Text; piece: number }[] = [];
+  // cutHeard asks the Go side to cut what is being said where something
+  // is typed at its end, a new line, a letter or a paste, and keeps a
+  // place for the piece the cut makes, in front of what was typed. Tim
+  // said a lot quickly and pressed Shift+Enter, and the words the speech
+  // model wrote down after went below the new line, though he said them
+  // before it, issues #573 and #584. What was heard so far stands in the
+  // place until the piece comes, so what was typed shows at once, after
+  // it. The place cannot be typed in, the way the mark cannot, so a
+  // letter typed after it never goes into words that are still to be
+  // written there.
+  const cuts: { place: HTMLSpanElement; piece: number }[] = [];
   function cutHeard() {
     if (!recording || !mark) return settleHeard();
-    const node = document.createTextNode("");
-    mark.before(node);
-    cuts.push({ node, piece: placed });
-    fill(node, mark.textContent!.trim());
+    const place = document.createElement("span");
+    place.contentEditable = "false";
+    mark.before(place);
+    cuts.push({ place, piece: placed });
+    place.textContent = spaced(place, mark.textContent!.trim());
     mark.textContent = "";
     api.breakListening(recording, placed).catch(() => {});
     placed++;
     asked++;
   }
 
-  // fill writes a piece into its place, with a space from the word before.
-  function fill(node: Text, piece: string) {
+  // spaced is a piece with a space from the word before node.
+  function spaced(node: Node, piece: string): string {
     const before = document.createRange();
     before.selectNodeContents(said!);
     before.setEndBefore(node);
-    node.data = (piece && /\S$/.test(before.toString()) ? " " : "") + piece;
+    return (piece && /\S$/.test(before.toString()) ? " " : "") + piece;
   }
 
   // catchUp writes in the pieces not yet in the field, those a cut made
-  // in their places. Every message has all of them, so one that was
-  // missed costs nothing.
+  // as text in their places. Every message has all of them, so one that
+  // was missed costs nothing.
   function catchUp(pieces: string[]) {
     for (const c of cuts.splice(0)) {
-      if (c.piece < pieces.length) fill(c.node, pieces[c.piece]);
+      if (c.piece < pieces.length) c.place.replaceWith(spaced(c.place, pieces[c.piece]));
       else cuts.push(c);
     }
     for (; placed < pieces.length; placed++) add(pieces[placed]);

@@ -3404,12 +3404,14 @@ typed right at the end of what was said settles it the same way and
 becomes part of it, so what is said next goes after the typing, not in
 front of it, and pushes the cursor along again once more is heard.
 Shift+Enter there goes in the same way, as text, so what is said next
-starts on the new line, issue #373. It also cuts the recording where it
-was pressed, with `BreakListening`: everything said before it is written
-down as a piece of its own and goes above the new line, however far
-behind the voice the speech model is, and what was heard so far stands
-there until it comes. Tim said a lot quickly and pressed Shift+Enter,
-and the words written down after went below the new line, issue #573. WebKit typed a second Shift+Enter
+starts on the new line, issue #373. Whatever is typed there, a new
+line, a letter or a paste, also cuts the recording where it was typed,
+with `BreakListening`: everything said before it is written down as a
+piece of its own and goes in front of it, however far behind the voice
+the speech model is, and what was heard so far stands there until it
+comes, where nothing can be typed. Tim said a lot quickly and pressed
+Shift+Enter, and the words written down after went below the new line,
+issues #573 and #584. WebKit typed a second Shift+Enter
 after the words being heard, and the kept words with new lines in them
 became blocks of their own, which showed as an empty line at the end.
 New lines are text in the field, wherever they come from. After a key

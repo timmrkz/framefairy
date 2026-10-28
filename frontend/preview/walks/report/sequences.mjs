@@ -194,7 +194,23 @@ export default [
       ["press", "Shift+Enter"],
       ["dictate", "hearing"],
       ["dictate", "escape"],
-      ["said before the new line"],
+      ["said before", "\n"],
+    ],
+  },
+  {
+    // Issue #584. The same for words typed at the end of what was said:
+    // what was said before them goes in front of them, however far
+    // behind the speech model is, and what is said after them after.
+    name: "What is said before typing at the end of a dictation goes in front of the typing, however far behind the speech model is",
+    steps: [
+      ["bugs"],
+      ["write", "It froze.", "end"],
+      ["dictate", "start"],
+      ["talk ahead", 10],
+      ["type", "XYZ"],
+      ["dictate", "hearing"],
+      ["dictate", "escape"],
+      ["said before", "XYZ"],
     ],
   },
   {

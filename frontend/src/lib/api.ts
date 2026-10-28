@@ -713,7 +713,7 @@ export const api = {
   // Settles the words shown as being heard, text, as the piece after the
   // first pieces the window has, when the person clicks into them.
   settleListening: (recording: number, pieces: number, text: string) => call<void>("SettleListening", recording, pieces, text),
-  // Cuts what is being said where a new line is typed at its end, after
+  // Cuts what is being said where something is typed at its end, after
   // the first pieces the window has. What came before is the next piece.
   breakListening: (recording: number, pieces: number) => call<void>("BreakListening", recording, pieces),
   licences: () => call<Notice[]>("Licences"),

@@ -187,8 +187,8 @@ type recording struct {
 }
 
 // settle is the window's ask to settle the words it shows as being heard,
-// text, as the piece after the first pieces it has. A new line asks for
-// a cut instead, see BreakListening: cut says so, and at is how much had
+// text, as the piece after the first pieces it has. Typing at its end
+// asks for a cut instead, see BreakListening: cut says so, and at is how much had
 // been recorded when it came.
 type settle struct {
 	pieces int
@@ -397,7 +397,7 @@ func (l *listening) write(r *recording, dir string, every, quiet time.Duration) 
 			n := min(ask.pieces, len(said))
 			text, end := ask.text, passed
 			if ask.cut {
-				// Everything said before the new line, written down now,
+				// Everything said before the typing, written down now,
 				// however far behind the voice the passes were.
 				from := 0
 				if n > 0 {
@@ -698,14 +698,15 @@ func (f *FrameFairy) SettleListening(recording, pieces int, text string) {
 	l.mu.Unlock()
 }
 
-// BreakListening cuts the recording where it is when the person types a
-// new line at the end of what they said, after the first pieces the
-// window has. Everything recorded before the cut is the next piece,
-// however much of it the speech model has written down by then, and the
-// window puts it in front of the new line. Tim said a lot quickly and
-// pressed Shift+Enter, and the words the speech model wrote down after
-// that went below the new line, though he said them before it, issue
-// #573. A recording that is no longer in hand has nothing to cut.
+// BreakListening cuts the recording where it is when the person types at
+// the end of what they said, a new line, a letter or a paste, after the
+// first pieces the window has. Everything recorded before the cut is the
+// next piece, however much of it the speech model has written down by
+// then, and the window puts it in front of what was typed. Tim said a lot
+// quickly and pressed Shift+Enter, and the words the speech model wrote
+// down after that went below the new line, though he said them before
+// it, issues #573 and #584. A recording that is no longer in hand has
+// nothing to cut.
 func (f *FrameFairy) BreakListening(recording, pieces int) {
 	l := &f.listening
 	l.mu.Lock()
