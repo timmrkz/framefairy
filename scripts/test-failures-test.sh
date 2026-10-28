@@ -9,8 +9,9 @@
 # v1.13.0 really printed, the way make unit runs them, for a module of
 # three packages: one whose tests fail, one printing a blank line before
 # its reason, a subtest and a panic, one that runs out of time, and one
-# that does not build. Their paths are cut to /work. Each .want is the
-# errors read out of its .log, and gotest.want is what main read before
+# that does not build. Their paths are cut to /work, and they end in .txt
+# because the repository ignores every .log. Each .want is the
+# errors read out of its .txt, and gotest.want is what main read before
 # gotestsum came in.
 set -eu
 
@@ -21,7 +22,7 @@ trap 'rm -rf "$work"' EXIT
 fail=0
 
 for name in gotest gotestsum; do
-	sh "$here/test-failures.sh" "$data/$name.log" >"$work/got"
+	sh "$here/test-failures.sh" "$data/$name.txt" >"$work/got"
 	if cmp -s "$data/$name.want" "$work/got"; then
 		printf 'ok  \t%s\n' "$name"
 	else
