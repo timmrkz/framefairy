@@ -87,7 +87,7 @@ func withoutADip(t *testing.T, e *Engine, container string, encoder []string) {
 	// the third, and another cut.
 	clip := info.OnFrames(Clip{ID: "01", Slug: "opus", Segments: []Segment{
 		{Start: 1.13, End: 1.9, CropX: intPtr(0)}, {Start: 2.47, End: 3.21, CropX: intPtr(0)},
-		{Start: 3.21, End: 4.05, CropX: intPtr(280)}, {Start: 4.83, End: 5.7, CropX: intPtr(280)}}})
+		{Start: 3.21, End: 4.05, CropX: intPtr(28)}, {Start: 4.83, End: 5.7, CropX: intPtr(28)}}})
 	rs := RenderSettings{OutW: 180, OutH: 320, CRF: 18, Preset: "ultrafast", AudioBitrate: "192k", ScaleUp: true}
 	short, err := e.RenderClip(ctx, clip, source, info, filepath.Join(dir, "out"), nil, rs, nil,
 		filepath.Join(dir, "captions"), false)

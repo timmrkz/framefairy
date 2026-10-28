@@ -211,9 +211,10 @@ func TestMeasureLevelsGoesWhereTheClipTimelineLooks(t *testing.T) {
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	// The measuring writes and asks where the clip timeline looks every
 	// 2 reads of the sound, whatever the clock says. readLevels reads at
-	// most 2 s of sound at a time, so the measuring moves on at most 4 s
-	// between two looks, inside the 10 s from one view to what lies
-	// before it.
+	// most 2 s of sound at a time, its buffer of frameSamples*4*200 bytes,
+	// so the measuring from 50 s looks again by 54 s, before the sound
+	// ends at 60 s, and follows the view to 30 s rather than finishing
+	// the end first.
 	e.levelsReads = 2
 	e.FFmpeg = "ffmpeg"
 
@@ -245,8 +246,8 @@ func TestMeasureLevelsGoesWhereTheClipTimelineLooks(t *testing.T) {
 	if len(first) != 1 || first[0][0] != int(50/FrameSeconds) {
 		t.Errorf("measured first %v, want from 50 s, where the clip timeline showed", partSeconds(first))
 	}
-	if moved == nil || covers(moved, 0, 1) || covers(moved, 20, 21) {
-		t.Errorf("when the view moved to 30 s the parts were %v, want it there before the start",
+	if moved == nil || covers(moved, 0, 1) || covers(moved, 20, 21) || covers(moved, 50, 60) {
+		t.Errorf("when the view moved to 30 s the parts were %v, want it there before the start and the end",
 			partSeconds(moved))
 	}
 

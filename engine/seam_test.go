@@ -85,7 +85,7 @@ func seamless(t *testing.T, e *Engine, rate string) {
 	// The switch is at 2.6 in the episode, on the frame nearest it, about
 	// 1.6 into the short.
 	clip := info.OnFrames(Clip{ID: "01", Slug: "seam", Segments: []Segment{
-		{Start: 1, End: 2.6, CropX: intPtr(0)}, {Start: 2.6, End: 4, CropX: intPtr(280)}}})
+		{Start: 1, End: 2.6, CropX: intPtr(0)}, {Start: 2.6, End: 4, CropX: intPtr(28)}}})
 	const w, h = 180, 320
 	rs := RenderSettings{OutW: w, OutH: h, CRF: 18, Preset: "ultrafast", AudioBitrate: "192k", ScaleUp: true}
 	short, err := e.RenderClip(ctx, clip, source, info, filepath.Join(dir, "out"), nil, rs, nil,
