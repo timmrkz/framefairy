@@ -1,0 +1,7 @@
+::error title=TestFails::--- FAIL: TestFails (0.00s)%0A    a_test.go:6: a line the test printed%0A    a_test.go:7: broken on purpose
+::error title=TestBlank::--- FAIL: TestBlank (0.00s)%0A    a_test.go:12: the reason after a blank line
+::error title=TestSub::--- FAIL: TestSub (0.00s)
+::error title=TestSub/inner::    --- FAIL: TestSub/inner (0.00s)%0A        a_test.go:16: inner broke
+::error title=TestPanics::--- FAIL: TestPanics (0.00s)
+::error title=panic::panic: assignment to entry in nil map [recovered, repanicked]
+::error title=panic::panic: test timed out after 3s%0A	running tests:%0A		TestHangs (3s)

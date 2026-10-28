@@ -4,74 +4,44 @@
 # that make stopped, and finding the test means opening the log.
 #
 #   sh scripts/test-failures-test.sh
+#
+# The logs in testdata/test-failures/ are what go test and gotestsum
+# v1.13.0 really printed, the way make unit runs them, for a module of
+# three packages: one whose tests fail, one printing a blank line before
+# its reason, a subtest and a panic, one that runs out of time, and one
+# that does not build. Their paths are cut to /work. Each .want is the
+# errors read out of its .log, and gotest.want is what main read before
+# gotestsum came in.
 set -eu
 
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+data=$here/testdata/test-failures
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 fail=0
 
-# expect NAME LOG WANT: the errors read out of LOG are WANT, line for line.
-expect() {
-	name=$1
-	printf '%s' "$3" >"$work/want"
-	sh "$here/test-failures.sh" "$2" >"$work/got"
-	if cmp -s "$work/want" "$work/got"; then
+for name in gotest gotestsum; do
+	sh "$here/test-failures.sh" "$data/$name.log" >"$work/got"
+	if cmp -s "$data/$name.want" "$work/got"; then
 		printf 'ok  \t%s\n' "$name"
 	else
-		printf 'FAIL\t%s\n\twanted:\n' "$name"
-		sed 's/^/\t\t/' "$work/want"
-		printf '\tgot:\n'
-		sed 's/^/\t\t/' "$work/got"
+		printf 'FAIL\t%s\n' "$name"
+		diff "$data/$name.want" "$work/got" | sed 's/^/\t/' || true
 		fail=1
 	fi
-}
+done
 
-# go test as it prints by itself, a subtest and a panic among them.
-cat >"$work/gotest.log" <<'EOF'
---- FAIL: TestFails (0.00s)
-    fail_test.go:6: a line the test printed
-    fail_test.go:7: broken on purpose
---- FAIL: TestSub (0.00s)
-    --- FAIL: TestSub/inner (0.00s)
-        fail_test.go:11: inner broke
-FAIL
-panic: test timed out after 4m0s
-	running tests:
-		TestHangs (4m0s)
-
-goroutine 1 [running]:
-FAIL	framefairy/train	240.055s
-EOF
-expect "go test" "$work/gotest.log" '::error title=TestFails::--- FAIL: TestFails (0.00s)%0A    fail_test.go:6: a line the test printed%0A    fail_test.go:7: broken on purpose
-::error title=TestSub::--- FAIL: TestSub (0.00s)
-::error title=TestSub/inner::    --- FAIL: TestSub/inner (0.00s)%0A        fail_test.go:11: inner broke
-::error title=panic::panic: test timed out after 4m0s%0A	running tests:%0A		TestHangs (4m0s)
-'
-
-# gotestsum, as make unit runs it when SLOWEST says: the failures again at
-# the end, each with what it printed, a panic included.
-cat >"$work/gotestsum.log" <<'EOF'
-FAIL	framefairy/train	0.055s
-
-=== Failed
-=== FAIL: train TestFails (0.00s)
-    fail_test.go:6: a line the test printed
-    fail_test.go:7: broken on purpose
-
-=== FAIL: train TestPanics (0.00s)
-panic: assignment to entry in nil map [recovered, repanicked]
-
-goroutine 55 [running]:
-testing.tRunner.func1()
-	/usr/local/go/src/testing/testing.go:2126 +0x65f
-
-DONE 13 tests, 2 failures in 0.056s
-The tests that took over 5s, slowest first:
-framefairy/train TestSlow 6.2s
-EOF
-expect "gotestsum" "$work/gotestsum.log" '::error title=TestFails::=== FAIL: train TestFails (0.00s)%0A    fail_test.go:6: a line the test printed%0A    fail_test.go:7: broken on purpose
-::error title=TestPanics::=== FAIL: train TestPanics (0.00s)%0Apanic: assignment to entry in nil map [recovered, repanicked]
-'
+# The reason a test gave after a blank line is still there, and a
+# package that failed as a whole is named after it.
+for want in 'title=TestBlank::.*%0A%0A    a_test.go:12: the reason after a blank line' \
+	'title=b::=== FAIL: b  (0.00s)%0Apanic: test timed out' \
+	'title=build::=== Errors%0Ac/c_test.go:6:2: undefined: undefinedThing'; do
+	if grep -q "$want" "$data/gotestsum.want"; then
+		printf 'ok  \t%s\n' "$want"
+	else
+		printf 'FAIL\tgotestsum.want has no %s\n' "$want"
+		fail=1
+	fi
+done
 
 exit $fail

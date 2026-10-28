@@ -22,6 +22,7 @@ function title(s) { s = esc(s); gsub(/:/, "%3A", s); gsub(/,/, "%2C", s); return
 # ellipsis between when there were more: a walk that broke a rule prints
 # its steps first and the rule it broke last.
 function flush(   i, text) {
+	while (lines > 0 && line[lines] == "") lines--
 	if (name != "" && shown < 10) {
 		text = body
 		for (i = 1; i <= lines; i++) {
@@ -42,13 +43,22 @@ function flush(   i, text) {
 # Under gotestsum, which make unit runs when SLOWEST says, a failed test
 # prints no "--- FAIL" line where it failed. gotestsum names it again at
 # the end, "=== FAIL: package TestName (1.23s)", with everything it
-# printed under it up to a blank line, a panic included.
+# printed under it, blank lines and a panic included, up to the next
+# "=== " or "DONE". A package that failed as a whole, by a timeout or a
+# build that broke, has no test name there, "=== FAIL: package  (0.00s)",
+# and is named after the package. What the compiler said comes last,
+# under "=== Errors".
 /^=== FAIL: / {
 	flush()
-	name = $4; body = esc($0); block = 1
+	name = $4 ~ /^\(/ ? $3 : $4; body = esc($0); block = 1
 	next
 }
-block && /^$/ { flush(); next }
+/^=== Errors$/ {
+	flush()
+	name = "build"; body = esc($0); block = 1
+	next
+}
+/^=== / || /^DONE / { flush(); next }
 block {
 	line[++lines] = esc($0)
 	next

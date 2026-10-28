@@ -146,6 +146,8 @@ has "train/export.go" "lint"
 is ".golangci.yml" "lint"
 is "scripts/testdata/lint/walks/waits.mjs" "lint unit go framefairy/internal/naming"
 is "frontend/eslint-suppressions.json" "lint interface"
+# The failure report's test and the logs it reads run the lint.
+is "scripts/test-failures-test.sh scripts/testdata/test-failures/gotestsum.log" "lint unit go framefairy/internal/naming"
 
 # Tests that run the decoder as a program do not import it, so what
 # builds it reaches them by FRAMEFAIRY_FRAMES.
