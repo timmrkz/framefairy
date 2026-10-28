@@ -4,9 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"math"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -61,17 +59,8 @@ func shortRowsAt(t *testing.T, rate string, words []Cue, end float64, top, rows 
 	if err := InstallFont(dir, ResolveStyle(nil).Font); err != nil {
 		t.Fatal(err)
 	}
-	graph, video, sound, err := e.BuildFilterGraph(ctx, clip, info, rs, "01.ass")
-	if err != nil {
-		t.Fatal(err)
-	}
-	graph += ";" + video + fmt.Sprintf("crop=%d:%d:0:%d,format=rgb24[rgb]", shortW, rows, top)
-	args := append([]string{"-hide_banner", "-loglevel", "error"}, pieceInputs(clip, source, info)...)
-	args = append(args, "-filter_complex", graph, "-map", "[rgb]", "-fps_mode", "cfr", "-r", info.FPSString(),
-		"-f", "rawvideo", "-pix_fmt", "rgb24", "-", "-map", sound, "-f", "null", os.DevNull)
-	cmd := exec.Command(e.FFmpeg, args...)
-	cmd.Dir = dir
-	return e, info, laid, readFrames(t, cmd, shortW*rows*3)
+	return e, info, laid, graphFrames(t, e, clip, source, info, rs, dir, "01.ass",
+		fmt.Sprintf("crop=%d:%d:0:%d,", shortW, rows, top), shortW, rows)
 }
 
 // renderedRowsAt is shortRowsAt read out of a short that was rendered,
@@ -126,35 +115,6 @@ func bounceEpisode(t *testing.T, rate string, words []Cue, end float64) (e *Engi
 	return e, source, info, clip, laid
 }
 
-// readFrames runs cmd and reads what it writes as frames of size bytes,
-// each into its own slice as it comes. Read whole into one buffer, the
-// frames were copied over and over as it grew, which the race detector
-// checks byte by byte: a few hundred megabytes for one test, and minutes
-// of the tests' time.
-func readFrames(t *testing.T, cmd *exec.Cmd, size int) (frames [][]byte) {
-	t.Helper()
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := cmd.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
-	}
-	for {
-		f := make([]byte, size)
-		if _, err := io.ReadFull(out, f); err != nil {
-			break
-		}
-		frames = append(frames, f)
-	}
-	if err := cmd.Wait(); err != nil {
-		t.Fatalf("%s: %v %s", cmd.Args[0], err, stderr.String())
-	}
-	return frames
-}
-
 const shortW, shortH = 1080, 1920
 
 // pillColour is the colour of the pill behind the word being spoken.
@@ -195,7 +155,7 @@ func pillBox(f []byte, pill [3]int, rows int) (left, right, top, bottom int) {
 	return
 }
 
-// On the real disk: ffmpeg renders the short and the test reads it back.
+// On the real disk: ffmpeg draws the short's frames and the test reads them.
 func TestThePillLeavesRoomRoundItsWord(t *testing.T) {
 	t.Parallel()
 	words := []Cue{{0.20, 0.40, "Das"}, {0.50, 1.00, "respektvoll"}, {1.00, 1.40, "ist."}}
@@ -320,7 +280,7 @@ func TestThePillLeavesRoomRoundItsWord(t *testing.T) {
 // the word grew by 1 %, and on main the pill opened from smaller than the
 // word.
 //
-// On the real disk: ffmpeg renders the short and the test reads it back.
+// On the real disk: ffmpeg draws the short's frames and the test reads them.
 func TestTheWordAndItsPillPopTogether(t *testing.T) {
 	t.Parallel()
 	words := []Cue{{0.50, 1.20, "respektvoll"}}
@@ -402,7 +362,7 @@ func TestTheWordAndItsPillPopTogether(t *testing.T) {
 // the pop started where the word lit, between two frames, and its first
 // frame caught it on its way up.
 //
-// On the real disk: ffmpeg renders the short and the test reads it back.
+// On the real disk: ffmpeg draws the short's frames and the test reads them.
 func TestAWordsFirstFrameShowsItAtRest(t *testing.T) {
 	t.Parallel()
 	// It lights at 0.43 s, half a frame before the frame at 0.44 s.
@@ -436,7 +396,7 @@ func TestAWordsFirstFrameShowsItAtRest(t *testing.T) {
 // the few frames of its pop the word and its pill grow in every direction
 // and may reach over the other line, see TestTheWordAndItsPillPopTogether.
 //
-// On the real disk: ffmpeg renders the short and the test reads it back.
+// On the real disk: ffmpeg draws the short's frames and the test reads them.
 func TestThePillAtRestNeverReachesAnotherLine(t *testing.T) {
 	t.Parallel()
 	// The caption Tim saw, the tail of the g over the L.
@@ -661,7 +621,7 @@ func TestEveryPillOfALineIsOneHeightAndClearOfTheOther(t *testing.T) {
 // only at 25 and 50 fps before, where every frame starts on a whole
 // hundredth, found by the second review.
 //
-// On the real disk: ffmpeg renders the short and the test reads it back.
+// On the real disk: ffmpeg draws the short's frames and the test reads them.
 func TestEveryWordOfAShortPopsOnItsFrames(t *testing.T) {
 	t.Parallel()
 	for _, rate := range []string{"25", "30000/1001"} {
@@ -672,7 +632,7 @@ func TestEveryWordOfAShortPopsOnItsFrames(t *testing.T) {
 	}
 }
 
-// On the real disk: ffmpeg renders the short and the test reads it back.
+// On the real disk: ffmpeg draws the short's frames and the test reads them.
 func everyWordPops(t *testing.T, rate string) {
 	words := []Cue{{0.40, 0.48, "Das"}, {0.48, 0.60, "ist"}, {0.60, 0.64, "ja"},
 		{0.64, 0.76, "so"}, {0.76, 0.96, "ein"}, {0.96, 1.24, "gutes"}, {1.24, 1.64, "ja"}}
@@ -739,10 +699,10 @@ func everyWordPops(t *testing.T, rate string) {
 // At 120 fps two frames of the short can start in one hundredth of a
 // second, the caption file's step, and libass draws the second's scale on
 // both. PopScale says what libass draws on every frame all the same, read
-// back from a short: it said the first's before, on 3240 frames of 3
+// back from the short's frames: it said the first's before, on 3240 frames of 3
 // seconds of words in the second review's simulation.
 //
-// On the real disk: ffmpeg renders the short and the test reads it back.
+// On the real disk: ffmpeg draws the short's frames and the test reads them.
 func TestPopScaleIsWhatLibassDrawsAbove100Fps(t *testing.T) {
 	t.Parallel()
 	words := []Cue{{0.10, 0.30, "Das"}, {0.30, 0.42, "ist"}, {0.42, 0.70, "gut"}}
