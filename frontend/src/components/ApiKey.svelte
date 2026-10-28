@@ -123,7 +123,7 @@
     </span>
   </div>
   <input
-    class="key"
+    class="key shakes"
     class:shaking
     onanimationend={() => (shaking = false)}
     type="password"
@@ -220,39 +220,5 @@
 
   .warn {
     color: var(--warn);
-  }
-
-  /* A key refused: the field shakes from side to side and settles, the
-     way the Mac's password field does, a few times and less each time.
-     Without motion it is lit for a moment instead. */
-  .key.shaking {
-    animation: shake 0.45s cubic-bezier(0.36, 0.07, 0.19, 0.97);
-  }
-
-  @keyframes shake {
-    20% {
-      transform: translateX(-8px);
-    }
-    40% {
-      transform: translateX(8px);
-    }
-    60% {
-      transform: translateX(-5px);
-    }
-    80% {
-      transform: translateX(3px);
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .key.shaking {
-      animation: lit 0.6s ease;
-    }
-  }
-
-  @keyframes lit {
-    30% {
-      border-color: var(--warn);
-    }
   }
 </style>

@@ -667,7 +667,7 @@
           </span>
         </div>
         <div
-          class="card finding"
+          class="card finding shakes"
           class:shaking
           bind:this={findingCard}
           onanimationend={() => (shaking = false)}
@@ -801,7 +801,7 @@
             </Info>
           </span>
         </div>
-        <div class="speech" class:shaking={speechShaking} onanimationend={() => (speechShaking = false)}>
+        <div class="speech shakes" class:shaking={speechShaking} onanimationend={() => (speechShaking = false)}>
           <ModelList
             models={speechRows}
             kind="model"
@@ -920,7 +920,7 @@
             </div>
             {#if !licence.saved}
             <input
-              class="key licence-key"
+              class="key licence-key shakes"
               class:shaking={licenceShaking}
               onanimationend={() => (licenceShaking = false)}
               type="text"
@@ -1256,42 +1256,6 @@
     }
   }
 
-  /* Not yet: the card that needs an answer shakes from side to side and
-     settles, the way the Mac's password field does, a few times and less
-     each time. Without motion it is lit for a moment instead. */
-  .finding.shaking,
-  .speech.shaking {
-    animation: shake 0.45s cubic-bezier(0.36, 0.07, 0.19, 0.97);
-  }
-
-  @keyframes shake {
-    20% {
-      transform: translateX(-8px);
-    }
-    40% {
-      transform: translateX(8px);
-    }
-    60% {
-      transform: translateX(-5px);
-    }
-    80% {
-      transform: translateX(3px);
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .finding.shaking,
-    .speech.shaking {
-      animation: lit 0.6s ease;
-    }
-  }
-
-  @keyframes lit {
-    30% {
-      border-color: var(--warn);
-    }
-  }
-
   /* A line under a name is one line. It is cut short, with the whole of it
      in its title, rather than wrapped, because a line that wraps when a
      button arrives beside it moves the card. */
@@ -1376,6 +1340,7 @@
      At one width, the way a key in short is. */
   .licence-key {
     width: 220px;
+    flex: none;
     font-family: ui-monospace, "SF Mono", Menlo, monospace;
   }
 
