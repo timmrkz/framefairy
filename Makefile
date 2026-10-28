@@ -41,7 +41,8 @@
 #                   scripts read by their shell, the action pins and the
 #                   tests of the repository's own rules
 #   make unit       the Go tests, under the race detector except on a Mac.
-#                   UNITSHARD=1/3 runs a third of them, as CI does
+#                   UNITSHARD=1/3 runs a third of them, as CI does, and
+#                   SLOWEST=5s names those that took longer, as CI does
 #   make fuzz       the fuzz targets, FUZZTIME executions each
 #   make interface  the interface type check, its own tests, and that no
 #                   walk or interface test waits on the clock
@@ -471,6 +472,13 @@ changed:
 # ends them and prints every goroutine. A test waits on signals and never
 # on the clock, so one whose signal never comes hangs until then. Go's own
 # ten minutes here, and CI sets 4m, under its five-minute jobs.
+#
+# SLOWEST=5s names, after the tests, every test that took longer than
+# that, slowest first, so a slow test shows without opening anything. Off
+# unless it says, so a run prints what go test prints and nothing more, and
+# CI sets it. It runs go test through gotestsum, the tool most Go projects
+# use for this, which prints the same lines go test does and keeps every
+# test's time in UNITJSON besides, for a closer look on this machine.
 ifeq ($(UNAME),Darwin)
 RACE ?=
 UNITSKIP ?= framefairy/licence/dispenser framefairy/licence/paddle framefairy/cmd/framefairy-dispenser framefairy/internal/workflows framefairy/internal/naming framefairy/internal/inputs
@@ -493,6 +501,9 @@ endif
 UNITFLAGS ?=
 UNITPKGS ?= ./...
 UNITTIMEOUT ?= 10m
+SLOWEST ?=
+UNITJSON ?= $(STAMPS)/unit-tests.json
+GOTESTSUM := gotest.tools/gotestsum@v1.13.0
 unit: toolchain modules $(FRESH_FRAMES)
 	@pkgs='$(strip $(UNITPKGS))'; \
 	if [ -n "$$pkgs" ] && [ -n '$(UNITSKIP)' ]; then \
@@ -500,8 +511,23 @@ unit: toolchain modules $(FRESH_FRAMES)
 		pkgs=$$(printf '%s\n' "$$pkgs" | grep -vxF $(foreach p,$(UNITSKIP),-e $(p))); \
 	fi; \
 	if [ -z "$$pkgs" ]; then echo "no Go package to test"; exit 0; fi; \
+	run=; \
+	if [ -n '$(SLOWEST)' ]; then \
+		mkdir -p $(dir $(UNITJSON)) && \
+		run='$(GO) run $(GOTESTSUM) --format standard-quiet --hide-summary skipped --jsonfile $(UNITJSON) --raw-command --'; \
+	fi; \
+	status=0; \
 	PATH="$(TOOLS_FIRST)" FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" \
-		$(GO) test $(RACE) -timeout $(UNITTIMEOUT) $(if $(UNITFLAGS),'$(UNITFLAGS)') -ldflags '$(LDFLAGS)' $$pkgs
+		$$run $(GO) test $(if $(SLOWEST),-json) $(RACE) -timeout $(UNITTIMEOUT) $(if $(UNITFLAGS),'$(UNITFLAGS)') -ldflags '$(LDFLAGS)' $$pkgs || status=$$?; \
+	if [ -n '$(SLOWEST)' ]; then \
+		slow=$$($(GO) run $(GOTESTSUM) tool slowest --jsonfile $(UNITJSON) --threshold $(SLOWEST)); \
+		if [ -n "$$slow" ]; then \
+			echo "The tests that took over $(SLOWEST), slowest first:"; echo "$$slow"; \
+		else \
+			echo "No test took over $(SLOWEST)."; \
+		fi; \
+	fi; \
+	exit $$status
 
 # The fuzzing runs without the race detector: it is the same code, many more
 # times over.
@@ -625,6 +651,7 @@ lint: toolchain modules golangci-lint frontend/node_modules/.package-lock.json
 	@sh scripts/needs-build-test.sh
 	@sh scripts/main-moved-test.sh
 	@sh scripts/plan-frozen-test.sh
+	@sh scripts/test-failures-test.sh
 	@sh scripts/plan-frozen.sh
 
 # The release golangci-lint builds and checks against its own checksums,

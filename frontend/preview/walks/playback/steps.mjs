@@ -6,7 +6,7 @@
 // the helpers only these steps use. See docs/TESTING.md.
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { addHEVC, ask, chosen, cropFrame, drag, engineState, episodeOn, filmedOnScreen, fromSidebar, handles, high, loudness, middle, news, nextNews, nextPaint, playUntil, preview, readShort, recordFrames, sameLook, sayLook, seekTo, settle, shortFrames, shownOnPlayhead, xOf } from "../bridge.mjs";
+import { addHEVC, ask, chosen, clickOnTrack, cropFrame, drag, engineState, episodeOn, filmedOnScreen, fromSidebar, handles, high, loudness, middle, news, nextNews, nextPaint, playUntil, preview, readShort, recordFrames, sameLook, sayLook, seekTo, settle, shortFrames, shownOnPlayhead, xOf } from "../bridge.mjs";
 import { nextCall, onePiece, pieceCount, rate, restAhead, shortOf, url } from "../common/steps.mjs";
 import { overlaid, stillFrame } from "../rules.mjs";
 
@@ -380,7 +380,7 @@ export const steps = {
     // end the sound card has already played past.
     const end = (await engineState(page, watch.at)).segments.at(-1).end;
     const g = await handles(page);
-    await page.mouse.click(middle(g.end) - 80, high(g.track));
+    await clickOnTrack(page, middle(g.end) - 80, high(g.track));
     await settle(page);
     if (!(await page.evaluate(() => !!document.querySelector('button[aria-label="Pause"]')))) {
       await page.keyboard.press("Space");
@@ -508,7 +508,7 @@ export const steps = {
       walk.wrong = "there is no room on the clip timeline before the clip";
       return;
     }
-    await page.mouse.click(x, high(g.track));
+    await clickOnTrack(page, x, high(g.track));
     await settle(page);
     const state = await engineState(page, watch.at);
     const stop = await recordFrames(page, 1 / (await rate(page)));
@@ -1486,7 +1486,7 @@ export const steps = {
       // Half a frame in, so the click lands in the frame meant.
       const t = Math.floor(at * src.fps) / src.fps + 0.5 / src.fps;
       const g = await handles(page);
-      await page.mouse.click(await xOf(page, t), high(g.track));
+      await clickOnTrack(page, await xOf(page, t), high(g.track));
       await settle(page);
       await shownOnPlayhead(page);
       const came = await page.evaluate((fps) => window.__filmed() === Math.floor((Number(document.querySelector(".screen").dataset.playhead) + 0.001) * fps), src.fps);
@@ -1547,7 +1547,7 @@ export const steps = {
         // Half a frame in, so the click lands in the frame meant.
         const at = a.at + share * (b.at - a.at) + (share < 1 ? 0.5 / src.fps : 0);
         const g = await handles(page);
-        await page.mouse.click(await xOf(page, at), high(g.track));
+        await clickOnTrack(page, await xOf(page, at), high(g.track));
         await settle(page);
         await shownOnPlayhead(page);
         const came = await page.evaluate((fps) => {
@@ -1570,7 +1570,7 @@ export const steps = {
     }
     const g = await handles(page);
     // Two fifths of the way, where smoothstep moves the crop fastest.
-    await page.mouse.click(await xOf(page, a.at + 0.4 * (b.at - a.at) + 0.5 / src.fps), high(g.track));
+    await clickOnTrack(page, await xOf(page, a.at + 0.4 * (b.at - a.at) + 0.5 / src.fps), high(g.track));
     await settle(page);
     // The play starts from the frame on the video preview, so it is
     // started once that is the playhead's frame.
@@ -1693,7 +1693,7 @@ export const steps = {
     const problems = [];
     for (const [i, p] of (await pieces()).entries()) {
       const g = await handles(page);
-      await page.mouse.click(await xOf(page, (p.start + p.end) / 2), high(g.track));
+      await clickOnTrack(page, await xOf(page, (p.start + p.end) / 2), high(g.track));
       await settle(page);
       await shownOnPlayhead(page);
       const seen = await page.evaluate(() => {
@@ -1914,7 +1914,7 @@ async function asPreviewed(page, rate, before) {
     const tried = [];
     for (let tries = 0; tries < 4; tries++) {
       if (grips.some(([a, b]) => x > a && x < b)) break;
-      await page.mouse.click(x, high(g.track));
+      await clickOnTrack(page, x, high(g.track));
       await settle(page);
       placed = Number(await page.evaluate(() => document.querySelector(".screen").dataset.playhead));
       tried.push(placed.toFixed(4));
@@ -2016,7 +2016,7 @@ async function edgesAsRendered(page) {
       problems.push(`there is no ${e.label} to click`);
       continue;
     }
-    await page.mouse.click(grip.x + grip.width / 2, high((await handles(page)).track));
+    await clickOnTrack(page, grip.x + grip.width / 2, high((await handles(page)).track));
     await settle(page);
     // On the edge's frame, where the engine puts the playhead for an
     // edge, see edgePlayhead in engine/shape.go: the first frame of the

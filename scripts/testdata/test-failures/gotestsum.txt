@@ -1,0 +1,81 @@
+# tf/c [tf/c.test]
+c/c_test.go:6:2: undefined: undefinedThing
+FAIL	tf/a	0.007s
+FAIL	tf/c [build failed]
+FAIL	tf/b	3.009s
+
+=== Failed
+=== FAIL: a TestFails (0.00s)
+    a_test.go:6: a line the test printed
+    a_test.go:7: broken on purpose
+
+=== FAIL: a TestBlank (0.00s)
+
+    a_test.go:12: the reason after a blank line
+
+=== FAIL: a TestSub/inner (0.00s)
+    a_test.go:16: inner broke
+
+=== FAIL: a TestSub (0.00s)
+
+=== FAIL: a TestPanics (0.00s)
+panic: assignment to entry in nil map [recovered, repanicked]
+
+goroutine 23 [running]:
+testing.tRunner.func1.2({0x6b6f20, 0x6eeef0})
+	/usr/local/go/src/testing/testing.go:2123 +0x232
+testing.tRunner.func1()
+	/usr/local/go/src/testing/testing.go:2126 +0x329
+panic({0x6b6f20?, 0x6eeef0?})
+	/usr/local/go/src/runtime/panic.go:859 +0x125
+tf/a.TestPanics(0x1858d00e2b48?)
+	/work/a/a_test.go:21 +0x28
+testing.tRunner(0x1858d00e2b48, 0x6d4918)
+	/usr/local/go/src/testing/testing.go:2193 +0xea
+created by testing.(*T).Run in goroutine 1
+	/usr/local/go/src/testing/testing.go:2258 +0x4d4
+
+=== FAIL: b  (0.00s)
+panic: test timed out after 3s
+	running tests:
+		TestHangs (3s)
+
+goroutine 5 [running]:
+testing.(*M).startAlarm.func1()
+	/usr/local/go/src/testing/testing.go:2959 +0x34a
+created by time.goFunc
+	/usr/local/go/src/time/sleep.go:182 +0x2d
+
+goroutine 1 [chan receive]:
+testing.(*T).Run(0x33681874e008, {0x554f11?, 0x336818612aa0?}, 0x6d4408)
+	/usr/local/go/src/testing/testing.go:2266 +0x4f2
+testing.runTests.func1(0x33681874e008)
+	/usr/local/go/src/testing/testing.go:2742 +0x37
+testing.tRunner(0x33681874e008, 0x336818612bc8)
+	/usr/local/go/src/testing/testing.go:2193 +0xea
+testing.runTests({0x554015, 0x2}, {0x5541c0, 0x4}, 0x3368187220a8, {0x6ee6f8, 0x1, 0x1}, {0xc2b0b9fcedab8bad, 0xb2d6dfa9, ...})
+	/usr/local/go/src/testing/testing.go:2740 +0x510
+testing.(*M).Run(0x33681870c140)
+	/usr/local/go/src/testing/testing.go:2600 +0x6af
+main.main()
+	_testmain.go:46 +0x9b
+
+goroutine 19 [select (no cases)]:
+tf/b.TestHangs(0x33681874e248?)
+	/work/b/b_test.go:6 +0xf
+testing.tRunner(0x33681874e248, 0x6d4408)
+	/usr/local/go/src/testing/testing.go:2193 +0xea
+created by testing.(*T).Run in goroutine 1
+	/usr/local/go/src/testing/testing.go:2258 +0x4d4
+FAIL	tf/b	3.009s
+
+=== FAIL: b TestHangs (unknown)
+
+=== FAIL: c  (0.00s)
+FAIL	tf/c [build failed]
+
+=== Errors
+c/c_test.go:6:2: undefined: undefinedThing
+
+
+DONE 6 tests, 8 failures, 1 error in 3.036s
