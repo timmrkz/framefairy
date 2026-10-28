@@ -97,22 +97,22 @@ describe("the loop switched while playing", () => {
 
 });
 
-// A clip edge or a cut dragged while the clip plays. A running play is
-// never changed in place, rule 6 of docs/VIDEO-PREVIEW.md: it goes on with
-// the program it started with, and the next play plays the new one. It was
-// started again at every step of the hand, and Tim saw the picture, the
-// sound and the playhead stutter.
+// A clip edge or a cut dragged while the clip plays, or put back by an
+// undo. The play takes in the clip as it is now and goes on, rule 6 of
+// docs/VIDEO-PREVIEW.md. It was started again at every step of the hand,
+// and Tim saw the picture, the sound and the playhead stutter. Then it kept
+// the clip it started with, and an undo while it played was not heard.
 describe("the pieces changed while playing", () => {
   const wanted = (q: FrameQueue) => (q as unknown as { wantedKey: string }).wantedKey;
 
-  test("change nothing that plays", () => {
+  test("are taken in without starting the play again", () => {
     const { q, said } = playing(58.2);
     q.seek(58.2, [clip, false]);
     said.length = 0;
     q.setProgram([clip[0]], false);
     q.setProgram([{ start: clip[0].start, end: clip[0].end - 0.5 }], true);
     expect(said).toEqual([]);
-    expect(wanted(q)).toBe(JSON.stringify([clip, false]));
+    expect(wanted(q)).toBe(JSON.stringify([[{ start: clip[0].start, end: clip[0].end - 0.5 }], true]));
   });
 
   test("are what the next play plays", () => {
@@ -125,13 +125,15 @@ describe("the pieces changed while playing", () => {
     expect(wanted(q)).toBe(JSON.stringify([[clip[0]], false]));
   });
 
-  test("and put back as they were, change nothing either", () => {
+  // Tim's undo: the end pulled in while the clip played, then put back.
+  // The play plays the clip as it is again, to its old end.
+  test("and put back by an undo, play as they were", () => {
     const { q, said } = playing(58.2);
     q.seek(58.2, [clip, false]);
+    said.length = 0;
     q.setProgram([clip[0]], false);
     q.setProgram(clip, false);
-    said.length = 0;
-    q.seek(58.5);
+    expect(said).toEqual([]);
     expect(wanted(q)).toBe(JSON.stringify([clip, false]));
   });
 });

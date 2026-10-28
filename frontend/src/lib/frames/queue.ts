@@ -841,20 +841,24 @@ export class FrameQueue {
 
   // What play plays: the pieces of a clip, cuts jumped, or null for the
   // whole episode straight on, and whether it loops. The same program
-  // again changes nothing. A new one while playing goes on from where the
-  // playhead is, on the new pieces, and a cue made for the old one is made
-  // again.
+  // again changes nothing. A new one while playing is taken into the play
+  // ahead of the playhead, see changed, and a cue made for the old one is
+  // made again.
   setProgram(pieces: Piece[] | null, loop: boolean) {
     if (this.relooped(pieces, loop)) return;
-    // A running play is never changed in place, rule 6 of
-    // docs/VIDEO-PREVIEW.md: it plays the program it started with, and the
-    // program asked for now is what the next play plays, the space bar's
-    // or a click's on the clip timeline. A clip edge or a cut dragged
-    // while the clip played started the play over at every step, and the
-    // picture, the sound and the playhead stuttered with the hand.
     if (this.state === "playing" || this.state === "starting") {
       const copy = pieces ? pieces.map((p) => ({ start: p.start, end: p.end })) : null;
-      this.asked = JSON.stringify([copy, loop]) === this.wantedKey ? null : [pieces, loop];
+      if (JSON.stringify([copy, loop]) === this.wantedKey) {
+        this.asked = null;
+        return;
+      }
+      // The clip's pieces changed under a play of the clip are taken in,
+      // see changed. A play of the video and a play of a clip do not turn
+      // into each other here: a clip made with I or O while the video
+      // plays is the next play's, and the clip timeline says when the
+      // playhead was left outside the clip, see playOn. So is a program
+      // where the playhead is in none of the pieces now.
+      if (!pieces || !this.wanted?.pieces || this.changed(pieces, loop) === "outside") this.asked = [pieces, loop];
       return;
     }
     this.asked = null;
@@ -886,6 +890,10 @@ export class FrameQueue {
     if (this.state !== "playing" && this.state !== "starting") return false;
     const copy = pieces ? pieces.map((p) => ({ start: p.start, end: p.end })) : null;
     if (JSON.stringify([copy, !loop]) !== this.wantedKey) return false;
+    // A play cut short worked on past its end as it was, see
+    // AudioPlan.rewind, and the loop needs what follows the end, so the
+    // loop is taken in the way any change of the clip is, see changed.
+    if (this.vplan?.cutShort || this.aplan?.cutShort) return false;
     if (this.vplan && this.built) {
       if (loop) this.built.loopOn();
       else this.built.loopOff(Math.max(this.reached, this.sounded()));
@@ -907,6 +915,105 @@ export class FrameQueue {
     this.wanted = { pieces: copy, loop };
     this.wantedKey = JSON.stringify([copy, loop]);
     return true;
+  }
+
+  // The clip changed under a running play, by a drag, an undo or a redo:
+  // the play takes it in at once, ahead of the playhead, and goes on with
+  // no stop, Tim's rule on #277 and his report on it. What the play
+  // worked out holds up to the first visit the change reaches, which ends
+  // where its piece ends now, and what comes after it is worked out again
+  // from the new pieces, see Program.spliced. Nothing
+  // already played moves, so the picture and the sound go on from where
+  // they are. Only where the decoders or the sound card were already fed
+  // past where the old and the new clip part, an edit a moment ahead of
+  // the playhead, does the play start again from the playhead, a moment's
+  // stop. A clip edge or a cut dragged while the clip played used to
+  // start the play again at every step, and the picture, the sound and
+  // the playhead stuttered with the hand, so that is the one thing this
+  // never does where it can be helped.
+  //
+  // Says "outside" and changes nothing where the playhead is in none of
+  // the new pieces.
+  private changed(pieces: Piece[] | null, loop: boolean): "taken" | "outside" | "started" {
+    const copy = pieces ? pieces.map((p) => ({ start: p.start, end: p.end })) : null;
+    const vplan = this.vplan;
+    const before = this.built;
+    if (!vplan || !before || !this.movie) {
+      // Not worked out yet: the play starting builds it from what is wanted.
+      this.want(pieces, loop);
+      return "taken";
+    }
+    const there = before.locate(this.reached);
+    if (!there) return "outside";
+    const program = Program.spliced(before, there.v, there.at, copy ?? [{ start: 0, end: this.movie.duration }], loop);
+    if (!program) return "outside";
+    const visit = program.parting!;
+    const picture = vplan.rewind(program, visit, (run) => {
+      const slot = this.slotOf(run.id);
+      return !slot ? -1 : slot.flushing ? Infinity : slot.next - 1;
+    });
+    const sound = this.aplan && !this.soundDone ? this.aplan.rewind(program, visit, this.soundReach, (run) => this.soundRunDone.has(run.id)) : this.aplan ? null : () => {};
+    if (!picture || !sound) {
+      this.trace(`the clip changed ${(this.soundReach / this.sampleRate - this.reached).toFixed(3)} s ahead of the playhead at ${this.at.toFixed(3)} s, within what was fed, the play starts again there`);
+      this.want(pieces, loop);
+      this.start(this.at);
+      return "started";
+    }
+    picture();
+    sound();
+    this.built = program;
+    this.wanted = { pieces: copy, loop };
+    this.wantedKey = JSON.stringify([copy, loop]);
+    this.asked = null;
+    vplan.extend(this.reached + READ_AHEAD);
+    this.aplan?.extend(this.reached + READ_AHEAD);
+    for (const src of this.sources.keys()) this.clip(src);
+    this.fadeAtEnd();
+    this.pump();
+    this.pumpSound();
+    return "taken";
+  }
+
+  // A play cut short ends inside sound fed with no fade there, see
+  // AudioPlan.rewind, so the sound card fades it out at the end, over the
+  // fade a piece's edge has. Any other change takes that fade away. On
+  // with a play paused and played on, the fade is added after the ramp
+  // the sound comes back on, which takes away what was scheduled before.
+  private fadeAtEnd(changed = true) {
+    if (this.c0 === null || !this.aplan) return;
+    const gain = this.out.gain;
+    const now = this.audio.currentTime;
+    if (changed) {
+      gain.cancelScheduledValues(now);
+      gain.setValueAtTime(1, now);
+    }
+    const end = this.program.end;
+    if (!this.aplan.cutShort || !Number.isFinite(end)) return;
+    const at = this.c0 + (Math.round(end * this.sampleRate) - this.m0) / this.sampleRate;
+    if (at - FADE <= now + (changed ? 0 : FADE)) return;
+    gain.setValueAtTime(1, at - FADE);
+    gain.linearRampToValueAtTime(0, at);
+  }
+
+  // The playhead was left outside the clip while the clip plays, by an
+  // edge of the clip dragged past it or an undo, so the play goes on as a
+  // play of the video, Tim's rule on #277: from the piece the playhead is
+  // in straight on to the episode's end, taken in the way any change of
+  // the clip is, see changed.
+  playOn() {
+    if (this.state !== "playing" && this.state !== "starting") return;
+    this.trace(`the playhead was left outside the clip at ${this.at.toFixed(3)} s, the play goes on as a play of the video`);
+    if (this.changed(null, false) !== "outside") return;
+    // The playhead in none of the pieces of the program it plays, in a cut
+    // or past its end, which a moment of the episode never is.
+    this.want(null, false);
+    this.start(this.at);
+  }
+
+  // A program a running play took a change into is that play's alone, see
+  // Program.spliced: a new play or a paused frame builds its own.
+  private unsplice() {
+    if (this.built?.spliced) this.built = null;
   }
 
   // Takes a program as the one play plays, and says whether it is another
@@ -972,6 +1079,7 @@ export class FrameQueue {
   // preview flickered between the edge's frame and the one after the cut.
   // Found by Tim on youtube.mp4, plan row 2.270.
   private settle(at: number) {
+    this.unsplice();
     const ticket = this.ticket;
     this.ready.then(
       () => {
@@ -1096,6 +1204,7 @@ export class FrameQueue {
       this.trace(`playing on from ${this.at.toFixed(3)} s`);
       this.began = { at: this.at, drawn: this.stats.drawn, late: this.stats.late, lateSound: this.stats.lateSound, when: performance.now(), even: new Even() };
       this.ramp(1);
+      this.fadeAtEnd(false);
       this.report();
       this.loop();
       return;
@@ -1584,6 +1693,7 @@ export class FrameQueue {
   // prepared and waiting for play.
   private start(from: number, cue = false) {
     this.stopPlay();
+    this.unsplice();
     if (!cue) this.stats.starts++;
     const ticket = this.ticket;
     this.state = cue ? "cued" : "starting";
@@ -1927,7 +2037,7 @@ export class FrameQueue {
 
   private end() {
     const plan = this.vplan!;
-    const last = this.program.pieces[this.program.pieces.length - 1];
+    const last = this.program.lastPiece;
     this.state = "ended";
     this.at = last ? last.end : this.at;
     this.k = plan.lastK;
