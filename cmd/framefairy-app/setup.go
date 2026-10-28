@@ -102,6 +102,10 @@ type SetupState struct {
 	// Home is the person's home folder, so the interface writes every path
 	// the one way, in full, whatever form it came in.
 	Home string `json:"home"`
+	// ModelsDir is where the models are kept, said in the info marks of
+	// the setup and the settings, from the engine so the interface never
+	// types the folder out itself.
+	ModelsDir string `json:"modelsDir"`
 }
 
 // Setup reports what is still needed. It reads, it never changes anything.
@@ -111,6 +115,7 @@ func (s *FrameFairy) Setup(ctx context.Context) SetupState {
 
 	state := SetupState{Planner: settings.Planner, Chosen: settings.Chosen}
 	state.Home, _ = os.UserHomeDir()
+	state.ModelsDir = dir
 	for _, m := range engine.SpeechModels() {
 		view := SpeechModelView{SpeechModel: m, Installed: m.Installed(dir)}
 		if view.Installed {

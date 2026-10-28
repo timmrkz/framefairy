@@ -1078,6 +1078,7 @@ const Answers = {
           language,
           memory: 34359738368,
           home: "/Users/tim",
+          modelsDir: "/Users/tim/.framefairy/models",
           planner: fresh ? planner : "local",
           // Two companies, and a key for each or not. ?nokey is a machine
           // with none, and a fresh one has none until one is saved. ?envkey

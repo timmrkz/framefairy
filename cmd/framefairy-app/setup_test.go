@@ -480,6 +480,10 @@ func TestTheWindowIsToldWhatThisMachineCanHold(t *testing.T) {
 		if home, _ := os.UserHomeDir(); state.Home != home {
 			t.Errorf("home %q, want %q", state.Home, home)
 		}
+		// Where the models are, said in the info marks, is the engine's.
+		if state.ModelsDir != engine.ModelsDir() {
+			t.Errorf("models in %q, want %q", state.ModelsDir, engine.ModelsDir())
+		}
 	})
 
 	// A model that is there is a way of finding clips, without anybody

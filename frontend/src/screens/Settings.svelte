@@ -12,7 +12,7 @@
   import { onMount } from "svelte";
   import { wearColour } from "../lib/colour";
   import { jobs, nav } from "../lib/state.svelte";
-  import { shownPath } from "../lib/paths";
+  import { shownFolder, shownPath } from "../lib/paths";
   import {
     cloudModelIn,
     cloudValue,
@@ -77,12 +77,13 @@
   let memory = $state(0);
   // The home folder, so every path on the page is written the one way.
   let home = $state("");
+  let modelsDir = $state("");
   const shown = (path: string) => shownPath(path, home);
   // Where the models are kept, said in the info mark of each model's
   // section and nowhere else, with the slash at its end that says it is a
   // folder. Tim had it on a line under every model and found that ugly,
   // 2026-10-28.
-  const modelsFolder = $derived(`${shown("~/.framefairy/models")}/`);
+  const modelsFolder = $derived(shownFolder(modelsDir, home));
 
 
 
@@ -332,6 +333,7 @@
       language = state.language;
       memory = state.memory;
       home = state.home ?? "";
+      modelsDir = state.modelsDir ?? "";
       providers = state.providers ?? [];
       cloud = state.cloud ?? [];
       keys = state.keys ?? {};

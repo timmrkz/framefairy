@@ -3056,7 +3056,9 @@ is tight or too big where it is. Every model that runs here stands under
 the order a person reads. By the memory a model needs, tried first, put
 Qwen3 14B at 9.0 GB over Gemma 4 26B A4B at 14.4 GB. One that is downloaded has the tick in front of it, and
 one still to fetch a download arrow in grey, so what is chosen is said by
-the accent alone, the way the chosen row of any list in the app is. The
+the accent alone, the way the chosen row of any list in the app is. A
+chosen model in the cloud has no tick either, so the tick means one
+thing in that list. The
 speech model's list is the same. A group of its own, **To download**, for
 the models still to fetch, parted a list that is one kind of thing, and
 Tim asked for the one group with a mark, 2026-10-28. A cloud mark on them

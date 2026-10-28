@@ -13,3 +13,13 @@ export function shownPath(path: string, home = ""): string {
   if (sep === "/" || sep === "\\") return root + path.slice(1);
   return path;
 }
+
+// A folder the way the app shows it: a path in full, with the slash at
+// its end that says it is a folder and not a file, the way Tim asked for
+// the models folder, 2026-10-28. The slash is the one the path is written
+// with.
+export function shownFolder(path: string, home = ""): string {
+  const full = shownPath(path, home);
+  if (!full || /[\\/]$/.test(full)) return full;
+  return full + (full.includes("\\") && !full.includes("/") ? "\\" : "/");
+}

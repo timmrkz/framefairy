@@ -106,7 +106,10 @@
     // than that it is chosen: a model on this machine has the tick, one
     // still to fetch a download arrow in grey, the way Tim asked for the
     // list of models, 2026-10-28. What is chosen is then said by the
-    // accent alone, the way it is on a row with no mark.
+    // accent alone, on every row of that list: a list with a mark on any
+    // row draws no tick for the chosen one, or a chosen model in the cloud
+    // would wear the tick a downloaded model wears, meaning something
+    // else.
     options: {
       value: string;
       label: string;
@@ -140,6 +143,8 @@
   } = $props();
 
   const edge = $derived((hang ?? align) === "right" ? "end" : "start");
+  // Whether the rows say how each thing stands, see mark.
+  const marked = $derived(options.some((o) => o.mark));
 
   // How far under its field a list hangs. The fields of a column stand 8
   // apart, and a list is its rows and a border above and under them, so a
@@ -328,7 +333,7 @@
     </span>
   {:else}
     <span class="tick">
-      {#if selected}<Icon name="check" size={12} />{/if}
+      {#if selected && !marked}<Icon name="check" size={12} />{/if}
     </span>
   {/if}
   {#if option.icon}

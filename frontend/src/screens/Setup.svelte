@@ -25,6 +25,7 @@
   import { onMount } from "svelte";
   import { api, errorText, languageRow, memorySize, speechRow, type ModelRow, type SetupState } from "../lib/api";
   import { cloudModelIn, cloudValue, finderOptions, providerOf } from "../lib/finding";
+  import { shownFolder } from "../lib/paths";
   import ApiKey from "../components/ApiKey.svelte";
   import Icon from "../components/Icon.svelte";
   import Info from "../components/Info.svelte";
@@ -34,6 +35,9 @@
   let { ondone }: { ondone: () => void } = $props();
 
   let setup = $state<SetupState | null>(null);
+  // Where the models are kept, in full and ending in a slash, the way the
+  // settings say it.
+  const modelsFolder = $derived(shownFolder(setup?.modelsDir ?? "", setup?.home ?? ""));
   let problem = $state("");
 
   async function reload() {
@@ -126,7 +130,7 @@
             Every video is transcribed on this machine, word by word with the time of each word.
             Nothing about the video is sent anywhere. The model is not part of the app, so it is
             downloaded from the people who published it and kept on your machine, in
-            <b>~/.framefairy/models</b>.
+            <b>{modelsFolder}</b>.
           </Info>
         </span>
         <div class="headrow">
@@ -143,7 +147,7 @@
             A language model reads the transcript and picks the moments worth clipping. It runs on
             this machine, is free to run and needs the memory to hold it. Only the words are read.
             A model in the cloud, Anthropic's or OpenAI's, can be chosen later in the settings. A
-            model you already have in <b>~/.framefairy/models</b> is used as it is.
+            model you already have in <b>{modelsFolder}</b> is used as it is.
           </Info>
         </span>
         <div class="headrow">

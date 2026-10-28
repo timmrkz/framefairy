@@ -34,9 +34,11 @@ export default [
     // shorts, drew the speech model and the clip model two ways, offered
     // a size for some models and "best here" for one, spoke of the models
     // in six places, listed every caption font by name in one row and
-    // wrote paths three ways.
+    // wrote paths three ways. His reports of 2026-10-28 asked for the
+    // models that run here in one group, the biggest first, a tick on the
+    // downloaded ones, and the models folder in full in the info marks.
     name: "The settings say each thing once, in one way",
-    steps: [["app log", "open"], ["settings"], ["models alike"], ["said once"]],
+    steps: [["app log", "open"], ["settings"], ["models alike"], ["said once"], ["folders and ticks"]],
   },
   {
     // Tim saw the names and the licences in Help, Acknowledgements sit on

@@ -687,6 +687,8 @@ export interface SetupState {
   // The person's home folder, which a path from ~ is written out in full
   // from, see shownPath.
   home?: string;
+  // Where the models are kept, in full, as the engine has it.
+  modelsDir?: string;
 }
 
 export const api = {

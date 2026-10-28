@@ -335,6 +335,50 @@ export const steps = {
     }
     if (problems.length) walk.wrong = problems.join("\n");
   },
+  // ["folders and ticks"]
+  //                    Settings: the info mark of each model section says
+  //                    where the models are in full, ending in a slash,
+  //                    and never from ~. With a model in the cloud chosen,
+  //                    the clip model list draws a tick only on the models
+  //                    that are downloaded, so a tick means one thing.
+  //                    The next sequence's /reset puts the settings back.
+  async "folders and ticks"(walk) {
+    const { page } = walk;
+    const problems = [];
+    for (const label of ["About the clip model", "About the speech model"]) {
+      const mark = page.locator(`button.mark[aria-label="${label}"]`);
+      await page.locator(".group.asks", { has: mark }).locator("h2").hover();
+      await mark.click();
+      const said = (await page.locator(".bubble").textContent()).replace(/\s+/g, " ").trim();
+      if (said.includes("~")) problems.push(`${label} says "${said}", with a path from ~`);
+      else if (!/(^|\s)\/\S*\/\.?(\s|$)/.test(said)) problems.push(`${label} says "${said}", with no folder in full ending in a slash`);
+      await page.keyboard.press("Escape");
+      await page.locator(".bubble").waitFor({ state: "detached" });
+    }
+    const trigger = page.locator(".card.finding > .item button.pick");
+    await trigger.click();
+    await page.locator('[role="option"]', { hasText: "Claude Sonnet 5" }).click();
+    await page.locator(".card.finding > .item button.pick", { hasText: "Claude Sonnet 5" }).waitFor();
+    await settle(page);
+    await trigger.click();
+    await page.locator('[role="option"]').first().waitFor();
+    const rows = await page.evaluate(() =>
+      [...document.querySelectorAll('[role="option"]')].map((o) => ({
+        name: o.querySelector(".what")?.textContent.trim() ?? "",
+        chosen: o.hasAttribute("data-chosen"),
+        mark: o.querySelector(".tick.marked")?.getAttribute("title") ?? "",
+        tick: !!o.querySelector(".tick svg"),
+      })),
+    );
+    for (const r of rows) {
+      if (!r.mark && r.tick) problems.push(`${r.name}${r.chosen ? ", chosen," : ""} wears a tick and is no model on this machine`);
+      if (r.mark && !r.tick) problems.push(`${r.name} wears no mark`);
+    }
+    if (!rows.some((r) => r.chosen && r.name === "Claude Sonnet 5")) problems.push("Claude Sonnet 5 is not chosen after it was picked");
+    await page.keyboard.press("Escape");
+    await settle(page);
+    if (problems.length) walk.wrong = problems.join("\n");
+  },
   // ["acknowledgements"]
   //                    Help, Acknowledgements: every group is a head over a
   //                    card with a border, and the words of every row stand
