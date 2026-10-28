@@ -1315,6 +1315,7 @@
      At one width, the way a key in short is. */
   .licence-key {
     width: 220px;
+    flex: none;
     font-family: ui-monospace, "SF Mono", Menlo, monospace;
   }
 

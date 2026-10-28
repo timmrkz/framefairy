@@ -223,11 +223,14 @@ export const steps = {
     await page.locator(".card.finding").waitFor();
     await settle(page);
     walk.named = await modelsNamed(page);
-    // Every card that shakes from here on, by its classes.
+    // Every card that shakes from here on, by its classes. A card that
+    // only wears the class and runs no animation did not shake: the rule
+    // that moves it once lived beside it and was lost in a move.
     await page.evaluate(() => {
       window.__shook = [];
       new MutationObserver((changes) => {
-        for (const c of changes) if (c.target.classList?.contains("shaking")) window.__shook.push(c.target.className);
+        for (const c of changes)
+          if (c.target.classList?.contains("shaking") && getComputedStyle(c.target).animationName !== "none") window.__shook.push(c.target.className);
       }).observe(document.body, { attributes: true, attributeFilter: ["class"], subtree: true });
     });
   },
