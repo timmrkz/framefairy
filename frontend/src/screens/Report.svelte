@@ -477,13 +477,14 @@
     ours = at;
   }
 
-  // reveal keeps the cursor in view after a key, the least scroll that
-  // shows it, the way a text field keeps its own. While dictating the
-  // field puts a new line in by hand and draws the cursor itself, so the
-  // browser scrolled to neither, and Tim pressed Shift+Enter past the
-  // foot of the field and the arrow keys with the cursor out of view,
-  // issue #573. It is asked for the frame after the key, once the key
-  // has done its work, so it scrolls to where that left the cursor.
+  // reveal keeps the cursor in view after a key that moved it or typed,
+  // the least scroll that shows it, the way a text field keeps its own.
+  // While dictating the field puts a new line in by hand and draws the
+  // cursor itself, so the browser scrolled to neither, and Tim pressed
+  // Shift+Enter past the foot of the field and the arrow keys with the
+  // cursor out of view, issue #573. It is asked for the frame after the
+  // key, once the key has done its work, so it scrolls to where that left
+  // the cursor.
   function reveal() {
     if (!field?.isConnected || document.activeElement !== field) return;
     caret();
@@ -506,7 +507,22 @@
     if (box.top < top) field.scrollTop -= Math.ceil(top - box.top);
     else if (box.bottom > bottom) field.scrollTop += Math.ceil(box.bottom - bottom);
   }
-  const keyed = () => requestAnimationFrame(reveal);
+  // keyed hears a key go down in the field, and reveals the cursor once
+  // the key has moved it or typed. A key that does neither, Shift alone,
+  // Cmd+C, Enter to keep what was said, or Page Down where WebKit scrolls
+  // without moving the cursor, leaves the field where the person
+  // scrolled it to read. A new line typed while dictating leaves the
+  // selection where it was, after what was said, so typing counts by
+  // itself, by the edits the browser asks for.
+  let edits = 0;
+  function keyed() {
+    const sel = getSelection();
+    const [node, offset, typed] = [sel?.focusNode, sel?.focusOffset, edits];
+    requestAnimationFrame(() => {
+      const now = getSelection();
+      if (edits !== typed || now?.focusNode !== node || now?.focusOffset !== offset) reveal();
+    });
+  }
 
   // What has been settled so far, without what is still being heard.
   function settled(): string {
@@ -597,8 +613,10 @@
   // Enter lost what was said once the pieces were no longer in order.
   // Nothing in the field is moved while the browser types, only before,
   // with the browser's own typing called off and done again here, which
-  // keeps it one more step for Cmd+Z.
+  // keeps it one more step for Cmd+Z. Every edit is counted, so keyed
+  // knows a key typed.
   function follow(e: InputEvent) {
+    edits++;
     if (!listening || e.isComposing || !said || !mark || !field.contains(said)) return;
     const sel = getSelection();
     if (!sel?.rangeCount || !sel.isCollapsed) return;

@@ -3407,9 +3407,10 @@ Shift+Enter there goes in the same way, as text, so what is said next
 starts on the new line, issue #373. WebKit typed a second Shift+Enter
 after the words being heard, and the kept words with new lines in them
 became blocks of their own, which showed as an empty line at the end.
-New lines are text in the field, wherever they come from. After every
-key the field keeps the cursor in view, the least scroll that shows it,
-inside its padding, the way a text field does. The browser only does
+New lines are text in the field, wherever they come from. After a key
+that moves the cursor or types, the field keeps the cursor in view, the
+least scroll that shows it, inside its padding, the way a text field
+does. A key that does neither leaves the field where it was scrolled. The browser only does
 that for a cursor it moved and draws itself, and while dictating the
 field puts a new line in by hand and draws the cursor, so Shift+Enter
 past the foot of the field and the arrow keys left the cursor out of

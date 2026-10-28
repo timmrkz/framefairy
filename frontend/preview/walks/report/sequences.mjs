@@ -521,6 +521,9 @@ export default [
       ["report follows"],
       ["caret at words"],
       ["report scroll", -120],
+      // A key that neither moves the cursor nor types leaves the field
+      // where it was scrolled to, issue #573.
+      ["press", "Shift"],
       ["report stays"],
       ["report scroll", 5000],
       ["report follows"],
