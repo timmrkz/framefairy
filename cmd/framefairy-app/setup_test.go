@@ -480,18 +480,6 @@ func TestTheWindowIsToldWhatThisMachineCanHold(t *testing.T) {
 		if home, _ := os.UserHomeDir(); state.Home != home {
 			t.Errorf("home %q, want %q", state.Home, home)
 		}
-		// Every model says where it is, or would be, in full, which the
-		// settings show under each card's Downloaded models.
-		for _, m := range state.Language {
-			if want := filepath.Join(engine.ModelsDir(), m.Name); m.Path != want {
-				t.Errorf("%s is at %q, want %q", m.Title, m.Path, want)
-			}
-		}
-		for _, m := range state.Speech {
-			if want := filepath.Join(engine.ModelsDir(), m.Name); m.Path != want {
-				t.Errorf("%s is at %q, want %q", m.Title, m.Path, want)
-			}
-		}
 	})
 
 	// A model that is there is a way of finding clips, without anybody

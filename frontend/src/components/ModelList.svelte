@@ -216,9 +216,6 @@
           </button>
         {/if}
       </span>
-      {#if model.path}
-        <span class="small muted selectable path" title={model.path}>{model.path}</span>
-      {/if}
       {#if failed}
         <span class="small error selectable whole">{job?.error}</span>
       {/if}
@@ -306,15 +303,6 @@
   .end {
     display: flex;
     justify-content: flex-end;
-  }
-
-  /* Where a model is, under its name and as wide as the row without its
-     button, one line like every cell. */
-  .path {
-    grid-column: 1 / -2;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   /* Why a download failed, on a line of its own under the row. */

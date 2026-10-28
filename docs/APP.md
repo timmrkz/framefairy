@@ -3010,12 +3010,14 @@ page to the bottom to find where to fix what it said.
 **The two models are two cards of one shape**, **Speech model** and
 **Clip model**, the names the setup uses too. Each is a choice with the
 line under it, and under that **Downloaded models**, folded, the models
-of its kind on this machine with the room they take, a trash can each,
-and on a line under each where it is, in full. Tim found the two drawn
-two ways, 2026-10-27, and found **Finding clips** a poor name for the
-second. Where the models are was said under Advanced and What the app
-found until then, and he missed it once it was gone from there,
-2026-10-28.
+of its kind on this machine with the room they take and a trash can
+each. Tim found the two drawn two ways, 2026-10-27, and found **Finding
+clips** a poor name for the second. Where the models are kept is said
+once, in the info mark of each section, in full and with the slash at
+its end that says it is a folder. It was said under Advanced and What the
+app found until then, and Tim missed it once it was gone, 2026-10-28. A
+line under every model saying where it is, tried next, was clutter, and
+he asked for the info mark alone.
 
 **The clip model is one choice**, **Find clips with**, in one list: under
 **In the cloud** a model from each company the app knows, Claude Sonnet 5
@@ -3050,8 +3052,9 @@ somebody can click their way into, run by `make interface` and CI.
 The line under the choice says what it costs: a few cents a video and
 which company, or who made the model and the memory it needs, and that it
 is tight or too big where it is. Every model that runs here stands under
-**On this machine**, the one that needs the most memory first, with its
-size beside it. One that is downloaded has the tick in front of it, and
+**On this machine**, the biggest first, by the size beside it, which is
+the order a person reads. By the memory a model needs, tried first, put
+Qwen3 14B at 9.0 GB over Gemma 4 26B A4B at 14.4 GB. One that is downloaded has the tick in front of it, and
 one still to fetch a download arrow in grey, so what is chosen is said by
 the accent alone, the way the chosen row of any list in the app is. The
 speech model's list is the same. A group of its own, **To download**, for

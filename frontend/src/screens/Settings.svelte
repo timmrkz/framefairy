@@ -78,6 +78,11 @@
   // The home folder, so every path on the page is written the one way.
   let home = $state("");
   const shown = (path: string) => shownPath(path, home);
+  // Where the models are kept, said in the info mark of each model's
+  // section and nowhere else, with the slash at its end that says it is a
+  // folder. Tim had it on a line under every model and found that ugly,
+  // 2026-10-28.
+  const modelsFolder = $derived(`${shown("~/.framefairy/models")}/`);
 
 
 
@@ -503,14 +508,18 @@
   // today, so the list holds one, and Tim asked for the two to look and
   // work alike all the same, 2026-10-27.
   const speechInUse = $derived(speech.find((m) => m.installed) ?? speech[0]);
+  // The biggest first, by the size beside it, as the clip model's list.
   const speechOptions = $derived(
-    speech.map((m) => ({
-      value: m.name,
-      label: m.title,
-      detail: size(m.installed ? m.unpacked : m.download),
-      group: "On this machine",
-      mark: modelMark(m.installed),
-    })),
+    speech
+      .map((m) => ({ m, bytes: m.installed ? m.unpacked : m.download }))
+      .sort((a, b) => b.bytes - a.bytes)
+      .map(({ m, bytes }) => ({
+        value: m.name,
+        label: m.title,
+        detail: size(bytes),
+        group: "On this machine",
+        mark: modelMark(m.installed),
+      })),
   );
   const speechInstall = new Install("model", () => modelsChanged());
   function downloadSpeech() {
@@ -543,12 +552,7 @@
     if (!m.installed) return { text: `Not downloaded yet. ${size(m.download)}.`, tone: "warn", state: "warn" };
     return { text: `By ${m.maker}. ${m.languages}.`, tone: "", state: "ok" };
   });
-  // The models on this machine, folded under the choice, each saying
-  // where it is. Tim missed that once the model rows of Advanced and What
-  // the app found were gone, 2026-10-28.
-  const installedSpeech = $derived(
-    speech.filter((m) => m.installed).map((m) => ({ ...speechRow(m), path: shown(m.path) })),
-  );
+  const installedSpeech = $derived(speech.filter((m) => m.installed).map((m) => speechRow(m)));
   const installedSpeechSize = $derived(
     size(speech.filter((m) => m.installed).reduce((sum, m) => sum + m.unpacked, 0)),
   );
@@ -575,8 +579,7 @@
   const finderLine = $derived(finding);
   const finderState = $derived(finding.state);
 
-  // The models on this machine, folded under the choice, each saying
-  // where it is, as the speech models do.
+  // The models on this machine, folded under the choice.
   const installedRows = $derived(
     language
       .filter((m) => m.installed)
@@ -588,7 +591,6 @@
         note: "",
         warn: false,
         best: false,
-        path: shown(m.path),
       })),
   );
   const installedSize = $derived(
@@ -703,7 +705,7 @@
                 {memory > 0 ? memorySize(memory) : "not said how much"}. A bigger model reads the
                 transcript better and needs more of it, and the list says beside a model when this
                 machine is short of memory for it. Models are fetched from the people who made them and kept in
-                <b>~/.framefairy/models</b>.
+                <b>{modelsFolder}</b>.
               {/if}
             </Info>
           </span>
@@ -776,7 +778,7 @@
             <Info label="About the speech model" side="left">
               Every video is transcribed on this machine, word by word with the time of each
               word. Nothing about the video is sent anywhere. The model is fetched from the
-              people who published it and kept in <b>~/.framefairy/models</b>.
+              people who published it and kept in <b>{modelsFolder}</b>.
             </Info>
           </span>
         </div>

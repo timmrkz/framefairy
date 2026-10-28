@@ -567,8 +567,6 @@ export interface SpeechModel {
   // The one the app offers when nobody has chosen.
   recommended: boolean;
   installed: boolean;
-  // Where it is on this machine, or would be once downloaded, in full.
-  path: string;
 }
 
 // One model that can find clips. A model runs from memory, so what decides
@@ -586,8 +584,6 @@ export interface LanguageModel {
   needs: number;
   url: string;
   installed: boolean;
-  // Where it is, as a speech model's.
-  path: string;
   // What this machine can do with it: "fits", "tight", "too big", or
   // "unknown" where the machine would not say how much memory it has.
   fit: "fits" | "tight" | "too big" | "unknown";
@@ -631,9 +627,6 @@ export interface ModelRow {
   // Whether it is the one the app recommends for this machine, whose
   // Download is the one lit, the way a box lights the button it expects.
   best?: boolean;
-  // Where it is on this machine, said on a line under the row where the
-  // list says where its models are.
-  path?: string;
 }
 
 // A company whose API can find clips, and a model of theirs the app offers

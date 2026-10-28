@@ -45,8 +45,8 @@ export interface FinderOption {
 
 // The list: every company's model with the company beside it, a model
 // written in by hand as well so the list never names nothing, and then
-// every model that runs here under On this machine, the one that needs
-// the most memory first. Every model says its size, and wears the tick
+// every model that runs here under On this machine, the biggest first, by
+// the size beside it. Every model says its size, and wears the tick
 // once it is downloaded and a download arrow in grey until then, see
 // modelMark. Tim asked for that one group, 2026-10-28: a group of its own
 // for the models still to download parted a list that is one kind of
@@ -71,7 +71,10 @@ export function finderOptions(
       group: "In the cloud",
     })),
     ...[...language]
-      .sort((a, b) => b.needs - a.needs)
+      // By the size the row shows, which is what a person reads the order
+      // by. By the memory a model needs put a 9.0 GB model over a 14.4 GB
+      // one, and Tim saw it as out of order, 2026-10-28.
+      .sort((a, b) => b.download - a.download)
       .map((m) => {
         const { note, warn } = fitNote(m.fit);
         return {

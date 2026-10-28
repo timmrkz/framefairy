@@ -271,11 +271,12 @@ export const steps = {
   // ["models alike"]   Settings: the speech model and the clip model are
   //                    two cards of one shape, a list to choose from with
   //                    the line under it and the models on this machine
-  //                    folded under that, each saying in full where it
-  //                    is. Every model either list offers says its size
-  //                    and none says "best", and the models that run here
-  //                    stand in one group, each with the tick once it is
-  //                    downloaded and a download arrow until then
+  //                    folded under that, and no path under any of them.
+  //                    Every model either list offers says its size and
+  //                    none says "best", and the models that run here
+  //                    stand in one group, the biggest first, each with
+  //                    the tick once it is downloaded and a download
+  //                    arrow until then
   async "models alike"(walk) {
     const { page } = walk;
     const problems = [];
@@ -296,10 +297,10 @@ export const steps = {
       if ((await fold.getAttribute("aria-expanded")) !== "true") await fold.click();
       await page.locator(`${card} ul.models > li`).first().waitFor();
       const where = await page.evaluate(
-        (card) => [...document.querySelectorAll(`${card} ul.models > li`)].map((li) => li.querySelector(".path")?.textContent.trim() ?? ""),
+        (card) => [...document.querySelectorAll(`${card} ul.models > li`)].map((li) => li.textContent.replace(/\s+/g, " ").trim()).filter((t) => /\//.test(t)),
         card,
       );
-      for (const w of where) if (!w.startsWith("/")) problems.push(`a model under ${head} says it is at "${w}", not where it is in full`);
+      for (const w of where) problems.push(`a model under ${head} has a path under it: "${w}"`);
       await page.locator(`${card} > .item button.pick`).click();
       await page.locator('[role="option"]').first().waitFor();
       const rows = await page.evaluate(() =>
@@ -315,6 +316,14 @@ export const steps = {
       for (const r of rows)
         if (!["Anthropic", "OpenAI"].includes(r.detail) && (!["Downloaded", "Not downloaded yet"].includes(r.mark) || !r.drawn))
           problems.push(`${head} offers ${r.name} with no mark for whether it is downloaded`);
+      // The biggest first, by the size each row says.
+      const bytes = (d) => {
+        const [n, unit] = d.split(" ");
+        return parseFloat(n) * { KB: 1e3, MB: 1e6, GB: 1e9 }[unit.replace(/,$/, "")];
+      };
+      const sizes = rows.filter((r) => r.mark).map((r) => bytes(r.detail));
+      if (sizes.some((b, i) => i > 0 && b > sizes[i - 1]))
+        problems.push(`${head} lists ${rows.filter((r) => r.mark).map((r) => `${r.name} ${r.detail}`).join(", ")}, not the biggest first`);
       for (const r of rows) {
         if (/best/i.test(r.detail)) problems.push(`${head} offers ${r.name} as "${r.detail}"`);
         // A model in the cloud says its company, every other its size.

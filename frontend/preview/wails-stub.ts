@@ -1044,7 +1044,7 @@ const Answers = {
               const installed = !removed.includes(m.name) && (i < 2 || llmDone());
               // Chosen is chosen, downloaded or not, the way the Go side
               // reports it.
-              return { ...m, installed, inUse: used === m.name, path: `/Users/tim/.framefairy/models/${m.name}` };
+              return { ...m, installed, inUse: used === m.name };
             })
           : [
           {
@@ -1071,9 +1071,9 @@ const Answers = {
             fit: "too big",
             recommended: false,
           },
-        ].map((m) => ({ ...m, inUse: m.installed, path: `/Users/tim/.framefairy/models/${m.name}` }));
+        ].map((m) => ({ ...m, inUse: m.installed }));
         return Promise.resolve({
-          speech: [{ ...model, path: `/Users/tim/.framefairy/models/${model.name}` }],
+          speech: [model],
           hasSpeech: model.installed,
           language,
           memory: 34359738368,
