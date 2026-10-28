@@ -347,12 +347,17 @@ export const steps = {
     const problems = [];
     for (const label of ["About the clip model", "About the speech model"]) {
       const mark = page.locator(`button.mark[aria-label="${label}"]`);
-      await page.locator(".group.asks", { has: mark }).locator("h2").hover();
+      const head = page.locator(".group.asks", { has: mark }).locator("h2");
+      await head.hover();
       await mark.click();
       const said = (await page.locator(".bubble").textContent()).replace(/\s+/g, " ").trim();
       if (said.includes("~")) problems.push(`${label} says "${said}", with a path from ~`);
       else if (!/(^|\s)\/\S*\/\.?(\s|$)/.test(said)) problems.push(`${label} says "${said}", with no folder in full ending in a slash`);
+      // Escape lets go of the click, and the bubble stays up for as long
+      // as the pointer is on the mark, so the pointer goes back to the
+      // head beside it, which the bubble under the mark does not cover.
       await page.keyboard.press("Escape");
+      await head.hover();
       await page.locator(".bubble").waitFor({ state: "detached" });
     }
     const trigger = page.locator(".card.finding > .item button.pick");
