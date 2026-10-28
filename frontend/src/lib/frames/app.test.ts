@@ -205,6 +205,33 @@ describe("a stream asked for a frame while a pull is on its way", () => {
   });
 });
 
+describe("a stream asked for a frame while its first frame comes for nobody", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  // A stream opened for a place the hand left reads its first frame all
+  // the same, see firstFrame. A frame asked of it meanwhile, one the
+  // stream reaches, was never pulled: pull returned at once since the
+  // stream was pulling, and the pull of the first frame returned after
+  // it. The frame never came, the cue that waited for it never said it
+  // stood, and a walk hung after a drag of an edge, issue #556.
+  test("still gets the frame asked of it meanwhile", async () => {
+    const { app, asked, pulls, rankOf } = goSide();
+    const withdrawn = new Set<{ gone?: boolean }>();
+    void app.frame(10, 0, withdrawn as never, true);
+    // The hand moves on before the stream is open, as a decoder reset
+    // withdraws what it asked.
+    for (const w of withdrawn) w.gone = true;
+    await pulls(1);
+    expect(asked[0].url).toContain("n=1");
+    const twelve = app.frame(12, 0);
+    asked[0].give([10]);
+    await pulls(2);
+    asked[1].give([12]);
+    expect(await rankOf(twelve)).toBe(12);
+    app.close();
+  });
+});
+
 describe("a place dragged to, opened with its key frame first", () => {
   afterEach(() => vi.unstubAllGlobals());
 

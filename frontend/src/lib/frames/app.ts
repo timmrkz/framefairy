@@ -162,10 +162,15 @@ class Stream {
         for (const w of this.waiting) if (w.gone) w.done(null);
         this.waiting = this.waiting.filter((w) => !w.gone);
         if (!this.waiting.length || this.ended) {
+          if (this.ended || this.gave) return;
           // Opened for a place the hand has left: once its first frame
-          // comes it lets the newest place go, see unpark.
-          if (!this.ended && !this.gave) await this.firstFrame(id);
-          return;
+          // comes it lets the newest place go, see unpark. A frame asked
+          // of it meanwhile, the newest place among them, is pulled next:
+          // pull returned at once for it, since this one was pulling.
+          // Returned here, that frame never came, and a walk hung after
+          // a drag of an edge, issue #556.
+          await this.firstFrame(id);
+          continue;
         }
         // The frames wanted next, one run of them: a frame read ahead
         // further on is read with a skip of its own, after these, so the
