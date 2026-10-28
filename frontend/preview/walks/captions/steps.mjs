@@ -1525,28 +1525,35 @@ export const steps = {
     // a busy machine showed fewer frames, each longer, and their layers
     // came later still: 22 of 147 paints with the layer of a frame
     // before, issue #338. How many paints wait for their layer is how
-    // fast the machine is, not a rule of the app, so it is told and not
-    // judged. That every frame of a play asks for its layer ahead, the
-    // fix for issue #288, is held in captions.test.ts.
+    // fast libass answers on the machine, not a rule of the app: playing,
+    // a frame whose layer is on its way is drawn with the one before
+    // rather than none, see CaptionLayers.last, and only the first frame
+    // of a play waits for its own, see FrameQueue.dress. So it is told
+    // and not judged. That every frame of a play asks for its layer
+    // ahead, the fix for issue #288, is held in captions.test.ts.
     await page.evaluate(() => {
       const q = window.__frameQueue;
       window.__soundClock = q.playClock;
       q.playClock = (heard, unshown) => Math.min(heard, unshown);
     });
     const stop = await watchPills(page);
-    await page.evaluate(() => document.body.focus());
-    await page.keyboard.press("Space");
-    // So many seconds of the episode, read off the playhead.
-    await settle(page);
-    const played = await playUntil(page, { past: from + arg - 1e-6 });
-    if (!(played.at >= from + arg - 1e-6)) walk.wrong = `the play from ${from.toFixed(2)} stopped at ${played.at.toFixed(2)}, before it went on ${arg} s`;
-    await page.evaluate(() => {
-      window.__frameQueue.playClock = window.__soundClock;
-      if (document.querySelector('button[aria-label="Play"]')) return;
-      const key = { key: " ", code: "Space", bubbles: true, cancelable: true };
-      document.body.dispatchEvent(new KeyboardEvent("keydown", key));
-      document.body.dispatchEvent(new KeyboardEvent("keyup", key));
-    });
+    try {
+      await page.evaluate(() => document.body.focus());
+      await page.keyboard.press("Space");
+      // So many seconds of the episode, read off the playhead.
+      await settle(page);
+      const played = await playUntil(page, { past: from + arg - 1e-6 });
+      if (!(played.at >= from + arg - 1e-6)) walk.wrong = `the play from ${from.toFixed(2)} stopped at ${played.at.toFixed(2)}, before it went on ${arg} s`;
+    } finally {
+      // The sound card's clock back, however the play ended.
+      await page.evaluate(() => {
+        window.__frameQueue.playClock = window.__soundClock;
+        if (document.querySelector('button[aria-label="Play"]')) return;
+        const key = { key: " ", code: "Space", bubbles: true, cancelable: true };
+        document.body.dispatchEvent(new KeyboardEvent("keydown", key));
+        document.body.dispatchEvent(new KeyboardEvent("keyup", key));
+      });
+    }
     const frames = await stop();
     if (walk.wrong) return;
     const off = frames.find((f) => framesOffPill(f, "now"));
