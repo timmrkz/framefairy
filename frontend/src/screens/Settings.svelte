@@ -546,7 +546,6 @@
         memory: m.inUse ? "Finds the clips now" : languageRow(m).memory,
         note: "",
         warn: false,
-        best: false,
       })),
   );
   const installedSize = $derived(

@@ -210,10 +210,12 @@
      which grows as the app does. So the whole of it stands in the middle
      instead, and an app too short for it lets the cards scroll rather
      than the page. */
+  /* The space under the title is the space between the two cards, so
+     the page reads as the title and then two areas of the same kind. */
   .setup {
     display: flex;
     flex-direction: column;
-    gap: var(--gap);
+    gap: var(--edge);
     width: 100%;
     max-width: 720px;
     max-height: 100%;

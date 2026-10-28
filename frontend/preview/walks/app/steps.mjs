@@ -46,7 +46,14 @@ export const steps = {
     else if (first.length < 2) walk.wrong = `the setup offers ${first.length} models, a speech model and a clip model at least`;
     else if (astray) walk.wrong = `a row stands out of the table: ${JSON.stringify(astray)} beside ${JSON.stringify(first[0])}`;
     else if (cut.length) walk.wrong = `the setup cuts words short: ${JSON.stringify(cut)}`;
-    else if ((await page.locator(".setup button.act.primary").count()) !== 1) walk.wrong = "the setup lights no Download, or more than one, for the clip model it recommends";
+    else if (await page.locator(".setup button.act.primary").count()) walk.wrong = "the setup lights a Download over the others, where every Download is the same plain button";
+    if (walk.wrong) return;
+    // The space under the title is the space between the two cards.
+    const space = await page.evaluate(() => {
+      const [head, first, second] = [".setup header", ".setup .area", ".setup .area + .area"].map((s) => document.querySelector(s).getBoundingClientRect());
+      return { title: Math.round(first.top - head.bottom), cards: Math.round(second.top - first.bottom) };
+    });
+    if (space.title !== space.cards) walk.wrong = `the title stands ${space.title} px over the speech model and the two models ${space.cards} px apart, not the same`;
     if (walk.wrong) return;
 
     await speech.locator("button.act", { hasText: "Download" }).click();
