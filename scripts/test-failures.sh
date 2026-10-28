@@ -8,7 +8,8 @@
 #   sh scripts/test-failures.sh unit.log
 #
 # One error per failed test, with the lines the test printed under it,
-# and one per panic, with the tests that were running. At most ten, which
+# and one per panic, with the tests that were running. It reads what go
+# test prints and what gotestsum prints, see make unit. At most ten, which
 # is as many as GitHub shows for a step.
 set -eu
 
@@ -30,12 +31,26 @@ function flush(   i, text) {
 		printf "::error title=%s::%s\n", title(name), text
 		shown++
 	}
-	name = ""; body = ""; lines = 0
+	name = ""; body = ""; lines = 0; block = 0
 }
 # "--- FAIL: TestName (1.23s)", the subtests indented under their test.
 /^[ \t]*--- FAIL: / {
 	flush()
 	name = $3; body = esc($0)
+	next
+}
+# Under gotestsum, which make unit runs when SLOWEST says, a failed test
+# prints no "--- FAIL" line where it failed. gotestsum names it again at
+# the end, "=== FAIL: package TestName (1.23s)", with everything it
+# printed under it up to a blank line, a panic included.
+/^=== FAIL: / {
+	flush()
+	name = $4; body = esc($0); block = 1
+	next
+}
+block && /^$/ { flush(); next }
+block {
+	line[++lines] = esc($0)
 	next
 }
 # A panic, a test that ran out of time among them, ends the binary: the
