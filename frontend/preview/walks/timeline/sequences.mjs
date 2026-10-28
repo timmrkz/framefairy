@@ -537,6 +537,19 @@ export default [
     steps: [["end back past the playhead", 0.5]],
   },
   {
+    // Tim on #277: he pulled the end of the clip in, played it, and put
+    // the end back with Cmd+Z while it played, and the play still stopped
+    // at the end he had taken back. A play plays the clip as it is now.
+    name: "an end pulled in and undone while the clip plays plays on to the old end",
+    steps: [["end in and back", 0.75, "paused", "undo"]],
+  },
+  {
+    // The same with the end pulled in while it plays, and Redo after the
+    // Undo: the play stops at the end pulled in.
+    name: "an end pulled in while the clip plays, undone and redone, stops at the new end",
+    steps: [["end in and back", 0.75, "playing", "undo", "redo"]],
+  },
+  {
     // Tim moved the crop to the side of the picture and saw the viewer's
     // rounded corner cut into the crop frame's line, and bright specks of
     // the picture in the frame's own rounded corners, where the shade

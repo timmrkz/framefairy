@@ -51,14 +51,15 @@ export class Program {
   readonly pieces: Piece[];
   // The length of one time through.
   readonly length: number;
+  // Where each piece starts on one time through, and the length after the
+  // last.
   private offsets: number[] = [];
   // How many times through it plays, Infinity while it loops. A loop
   // switched while it plays changes this and nothing else, see loopOn and
   // loopOff.
   private times: number;
-  // The visit the play goes on from straight through the episode, see
-  // runOn, and nothing after it.
-  private onward: Visit | null = null;
+  // Where a running play took in a change of the clip, see spliced.
+  private splice: Splice | null = null;
 
   constructor(pieces: Piece[], loop: boolean) {
     this.times = loop ? Infinity : 1;
@@ -69,37 +70,60 @@ export class Program {
       this.offsets.push(at);
       at += p.end - p.start;
     }
+    this.offsets.push(at);
     this.length = at;
   }
 
+  // The program a running play goes on with once the clip changed under
+  // it, by a drag, an undo or a redo, see FrameQueue.setProgram. Visit v,
+  // the one the playhead is in at the moment `at`, ends where the piece
+  // that holds that moment ends now, and after it come the pieces after
+  // that one, round again from the first while it loops. Everything before
+  // stays where it was on the program, so the play goes on with no stop.
+  // Null where the moment is in none of the pieces: in a cut, or outside
+  // the clip.
+  static spliced(before: Program, v: number, at: number, pieces: Piece[], loop: boolean): Program | null {
+    const was = before.visit(v);
+    const p = new Program(pieces, loop);
+    const j = p.pieces.findIndex((q) => at >= q.start && at < q.end);
+    if (!was || j < 0) return null;
+    const visit = { ...was, piece: j, end: p.pieces[j].end };
+    // Spliced again at the same visit, the one before it is what stays.
+    const root = before.splice && before.splice.v === v ? before.splice.before : before;
+    p.splice = { before: root, v, visit, next: j + 1, base: visit.from + visit.end - visit.start };
+    return p;
+  }
+
+  // Whether a running play took in a change, see spliced. Such a program
+  // is only for the play under way: a new play builds its own.
+  get spliced(): boolean {
+    return this.splice !== null;
+  }
+
   get loop(): boolean {
-    return !this.onward && this.times === Infinity;
+    return this.times === Infinity;
+  }
+
+  // Where on the program one time through starts: after a splice, the
+  // place the pieces after the visit in hand would have.
+  private get shift(): number {
+    const s = this.splice;
+    return s ? s.base - this.offsets[s.next] : 0;
   }
 
   // Where the program ends, as a position on it, Infinity while it loops.
   // This is all the loop decides: a play goes on until here, whatever it
   // has worked out beyond.
   get end(): number {
-    if (this.onward) return this.onward.from + this.onward.end - this.onward.start;
-    return this.times * this.length;
+    if (this.times === Infinity) return Infinity;
+    return this.shift + this.times * this.length;
   }
 
   // The last piece it plays, the one it ends on.
   get lastPiece(): Piece | undefined {
-    return this.onward ? { start: this.onward.start, end: this.onward.end } : this.pieces[this.pieces.length - 1];
-  }
-
-  // The playhead was left outside the clip while it plays, so the play
-  // goes on as a play of the video: the piece of visit v runs on to `end`,
-  // the episode's, nothing comes after it and the loop is off. Up to where
-  // the piece ended nothing that plays changes, the way loopOff changes
-  // only where the play ends. Says the visit as it is now. See playOn in
-  // queue.ts.
-  runOn(v: number, end: number): Visit | null {
-    const was = this.visit(v);
-    if (!was || end <= was.end) return null;
-    this.onward = { ...was, end };
-    return this.onward;
+    const s = this.splice;
+    if (s && s.next >= this.pieces.length && this.times === 1) return { start: s.visit.start, end: s.visit.end };
+    return this.pieces[this.pieces.length - 1];
   }
 
   // The loop switched on while it plays: it goes on and on from here.
@@ -110,41 +134,49 @@ export class Program {
   // The loop switched off while it plays, at a position on the program: it
   // ends at the end of the time through that position is in.
   loopOff(pos: number) {
-    this.times = this.length > 0 ? Math.floor(Math.max(pos, 0) / this.length) + 1 : 1;
+    this.times = this.length > 0 ? Math.floor(Math.max(pos - this.shift, 0) / this.length) + 1 : 1;
   }
 
   // The v-th piece played, or null past the end of a program that does not
   // loop.
   visit(v: number): Visit | null {
-    if (this.onward && v >= this.onward.v) return v === this.onward.v ? this.onward : null;
+    const s = this.splice;
+    if (s && v < s.v) return s.before.visit(v);
+    if (s && v === s.v) return s.visit;
     const n = this.pieces.length;
-    if (!n || v < 0 || v >= this.times * n) return null;
-    const cycle = Math.floor(v / n);
-    const piece = v % n;
+    // Counted on through the times through from the first piece.
+    const w = s ? v - s.v - 1 + s.next : v;
+    if (!n || w < 0 || w >= this.times * n) return null;
+    const cycle = Math.floor(w / n);
+    const piece = w % n;
     const p = this.pieces[piece];
-    return { v, piece, from: cycle * this.length + this.offsets[piece], start: p.start, end: p.end };
+    return { v, piece, from: this.shift + cycle * this.length + this.offsets[piece], start: p.start, end: p.end };
   }
 
   // The visit a position is in and the moment of the episode it stands
   // for, or null at or past the end of a program that does not loop.
   locate(pos: number): { v: number; at: number } | null {
-    const on = this.onward;
-    if (on && pos >= on.from) return pos >= this.end ? null : { v: on.v, at: on.start + (pos - on.from) };
+    const s = this.splice;
+    if (s && pos < s.visit.from) return s.before.locate(pos);
+    if (s && pos < s.base) return { v: s.v, at: s.visit.start + (pos - s.visit.from) };
     const n = this.pieces.length;
     if (!n || this.length <= 0) return null;
-    if (pos >= this.times * this.length) return null;
-    const cycle = Math.floor(Math.max(pos, 0) / this.length);
-    const within = Math.max(pos - cycle * this.length, 0);
+    if (pos >= this.end) return null;
+    const rel = pos - this.shift;
+    const cycle = Math.floor(Math.max(rel, 0) / this.length);
+    const within = Math.max(rel - cycle * this.length, 0);
     let piece = 0;
     while (piece + 1 < n && this.offsets[piece + 1] <= within) piece++;
     const p = this.pieces[piece];
     const at = Math.min(p.start + (within - this.offsets[piece]), p.end);
-    return { v: cycle * n + piece, at };
+    const w = cycle * n + piece;
+    return { v: s ? s.v + 1 + w - s.next : w, at };
   }
 
-  // Where on the program a moment of the episode is. Inside a piece it is
-  // its own place. In a cut, or before the first piece, it is the start of
-  // the piece after it, and past the last piece it is the end.
+  // Where on the program a moment of the episode is, for a play that
+  // starts there. Inside a piece it is its own place. In a cut, or before
+  // the first piece, it is the start of the piece after it, and past the
+  // last piece it is the end.
   place(at: number): number {
     for (let i = 0; i < this.pieces.length; i++) {
       const p = this.pieces[i];
@@ -154,6 +186,12 @@ export class Program {
     return this.length;
   }
 }
+
+// What a running play keeps of the program it had when the clip changed
+// under it, see Program.spliced: the visits before v as they were, visit v
+// with its new end, and where on the program the pieces after it begin,
+// with next the first of them.
+type Splice = { before: Program; v: number; visit: Visit; next: number; base: number };
 
 // The key frame decoding has to start from for the frame shown rank-th:
 // the last one, in decode order, before that frame, that is not shown
@@ -190,6 +228,9 @@ export type Run = {
   // The latest frame it draws, by rank, so a piece that would have to go
   // back starts a run of its own.
   lastRank: number;
+  // Its decoder was fed past what it draws now, after the clip changed
+  // under the play, so no later piece carries it on, see rewind.
+  sealed?: boolean;
 };
 
 // One visit on the grid: its points kFirst to kLast draw the frames of
@@ -210,7 +251,7 @@ export class VideoPlan {
     readonly samples: Samples,
     // How long a frame lasts, for how far ahead a decoder starts.
     readonly frame: number,
-    readonly program: Program,
+    public program: Program,
     readonly p0: number,
   ) {
     const first = program.locate(p0);
@@ -298,32 +339,57 @@ export class VideoPlan {
     return !this.done;
   }
 
-  // The last run, when the visit worked out last is visit v and nothing
-  // after it, so the visit can run on, see runOn.
-  lastRunOf(v: number): Run | null {
-    const sp = this.spans[this.spans.length - 1];
-    if (!sp || sp.visit.v !== v || this.nextVisit !== v + 1) return null;
-    return this.runs[sp.run] === this.runs[this.runs.length - 1] ? this.runs[sp.run] : null;
-  }
-
-  // The visit worked out last runs on, see Program.runOn: its frames go on
-  // to its new end in the run they are in, and the decoder of that run is
-  // fed on. Says whether it could, see lastRunOf.
-  runOn(visit: Visit): boolean {
-    const run = this.lastRunOf(visit.v);
-    const sp = this.spans[this.spans.length - 1];
-    if (!run) return false;
+  // The clip changed under the play, see Program.spliced: the visit the
+  // playhead is in ends where its piece ends now, and what was worked out
+  // after it goes, to be worked out again from the new program. Says how,
+  // or null where the decoders were fed what no longer holds: a run
+  // after the visit's has a decoder, or the visit runs on into frames its
+  // decoder was fed past. fedTo says how far a run's decoder was fed, by
+  // decode index, -1 for none and Infinity once it was flushed.
+  rewind(program: Program, visit: Visit, fedTo: (run: Run) => number): (() => void) | null {
+    let i = this.spans.length - 1;
+    while (i >= 0 && this.spans[i].visit.v !== visit.v) i--;
+    if (i < 0) return null;
+    const sp = this.spans[i];
+    // Cut short, with nothing after the new end: what was worked out stays
+    // as it was fed, and the play ends at the program's end. A later
+    // change is weighed against it, see AudioPlan.rewind.
+    if (visit.end < sp.visit.end && !program.visit(visit.v + 1)) {
+      return () => {
+        this.program = program;
+        this.nextVisit = visit.v + 1;
+        this.done = false;
+      };
+    }
+    const run = this.runs[sp.run];
+    if (this.runs.slice(sp.run + 1).some((r) => fedTo(r) >= 0)) return null;
     const s = this.samples;
     const was = sp.first + (sp.kLast - sp.kFirst);
-    const b = Math.max(was, rankAt(s, visit.end - this.frame));
-    for (let r = was + 1; r <= b; r++) if (s.order[r] > run.last) run.last = s.order[r];
-    sp.visit = visit;
-    sp.kLast = sp.kFirst + (b - sp.first);
-    sp.to = visit.from + (visit.end - visit.start);
-    run.kLast = sp.kLast;
-    run.lastRank = b;
-    this.nextK = sp.kLast + 1;
-    return true;
+    const b = Math.max(sp.first, rankAt(s, Math.max(visit.start + (sp.from - sp.visit.from), visit.end - this.frame)));
+    // The frames it now draws that it did not, each first in decode order.
+    let needs = Infinity;
+    for (let r = was + 1; r <= b; r++) needs = Math.min(needs, s.order[r]);
+    const fed = fedTo(run);
+    if (fed > needs) return null;
+    return () => {
+      this.program = program;
+      this.spans.length = i + 1;
+      this.runs.length = sp.run + 1;
+      sp.visit = visit;
+      sp.kLast = sp.kFirst + (b - sp.first);
+      sp.to = visit.from + (visit.end - visit.start);
+      run.kLast = sp.kLast;
+      run.lastRank = b;
+      run.last = 0;
+      for (const o of this.spans) {
+        if (o.run !== run.id) continue;
+        for (let r = o.first; r <= o.first + (o.kLast - o.kFirst); r++) run.last = Math.max(run.last, s.order[r]);
+      }
+      if (fed > run.last) run.sealed = true;
+      this.nextK = sp.kLast + 1;
+      this.nextVisit = visit.v + 1;
+      this.done = false;
+    };
   }
 
   // Whether every visit has been worked out, so the last run is the last.
@@ -362,7 +428,7 @@ export class VideoPlan {
     for (let r = a; r <= b; r++) if (s.order[r] > last) last = s.order[r];
     const span: Span = { visit, run: 0, kFirst, kLast, first: a, from, to };
     const run = this.runs[this.runs.length - 1];
-    if (run && run.key <= key && key <= run.last + 1 && a >= run.lastRank) {
+    if (run && !run.sealed && run.key <= key && key <= run.last + 1 && a >= run.lastRank) {
       run.last = Math.max(run.last, last);
       run.kLast = kLast;
       run.lastRank = b;
@@ -476,6 +542,9 @@ export class AudioPlan {
   readonly runs: AudioRun[] = [];
   private nextVisit: number;
   private done = false;
+  // The program ends inside a stretch fed as it was before, with no fade
+  // at that end, see rewind.
+  cutShort = false;
   // The sound card's samples a second, the track's own.
   readonly rate: number;
   readonly preroll: number;
@@ -483,7 +552,7 @@ export class AudioPlan {
   constructor(
     readonly samples: Samples,
     rate: number,
-    readonly program: Program,
+    public program: Program,
     readonly p0: number,
     // How much before a run's first sample is fed, in seconds. Opus asks
     // for 80 ms, and AAC for one frame, so both get 100.
@@ -562,34 +631,56 @@ export class AudioPlan {
     return !this.done;
   }
 
-  // The last run, when the visit worked out last is visit v and nothing
-  // after it, so the visit can run on, see runOn.
-  lastRunOf(v: number): AudioRun | null {
-    const run = this.runs[this.runs.length - 1];
-    const st = run?.stretches[run.stretches.length - 1];
-    return st && st.visit.v === v && this.nextVisit === v + 1 ? run : null;
-  }
-
-  // Where on the program, in samples, the piece of the visit worked out
-  // last ends, and so its fade out begins a FADE before.
-  get lastPieceEnd(): number {
-    const run = this.runs[this.runs.length - 1];
-    return run?.stretches[run.stretches.length - 1].pieceEnd ?? Infinity;
-  }
-
-  // The visit worked out last runs on, see Program.runOn: its sound goes on
-  // to its new end, with no fade where the piece used to end. Says whether
-  // it could, see lastRunOf.
-  runOn(visit: Visit): boolean {
-    const run = this.lastRunOf(visit.v);
-    if (!run) return false;
-    const st = run.stretches[run.stretches.length - 1];
+  // The clip changed under the play, see Program.spliced and
+  // VideoPlan.rewind: the stretch of the visit the playhead is in ends
+  // where its piece ends now, and what was worked out after it goes. Says
+  // how, or null where the sound card was fed what no longer holds: fed to
+  // `fed` on the program, in samples, past where the two programs part,
+  // or into the fade where the stretch ended, or a stretch that runs on
+  // in a run whose decoder was flushed, see closed.
+  //
+  // A play cut short, with nothing after its new end, keeps its stretches
+  // as they are and is fed on past that end, where nothing is heard: the
+  // sound card stops it there and fades it out, see cutShort. So an end
+  // dragged in towards the playhead and put back by an undo, or dragged
+  // on past it, is weighed against what was really fed, which has no fade
+  // where the play now ends.
+  rewind(program: Program, visit: Visit, fed: number, closed: (run: AudioRun) => boolean): (() => void) | null {
+    let ri = this.runs.length - 1;
+    let si = -1;
+    for (; ri >= 0 && si < 0; ri--) {
+      const sts = this.runs[ri].stretches;
+      for (si = sts.length - 1; si >= 0 && sts[si].visit.v !== visit.v; si--);
+      if (si >= 0) break;
+    }
+    if (ri < 0) return null;
+    const run = this.runs[ri];
+    const st = run.stretches[si];
     const pieceEnd = Math.round((visit.from + visit.end - visit.start) * this.rate);
-    st.visit = visit;
-    st.to = st.from + (pieceEnd - st.out);
-    st.pieceEnd = pieceEnd;
-    run.last = Math.max(run.last, this.packetBefore(st.to));
-    return true;
+    if (pieceEnd < st.pieceEnd && !program.visit(visit.v + 1)) {
+      return () => {
+        this.program = program;
+        this.nextVisit = visit.v + 1;
+        this.done = false;
+        this.cutShort = true;
+      };
+    }
+    const parts = pieceEnd === st.pieceEnd ? st.pieceEnd : Math.min(pieceEnd, st.pieceEnd) - FADE * this.rate;
+    if (fed > parts) return null;
+    // A run whose decoder was flushed is fed no more.
+    if (pieceEnd > st.pieceEnd && closed(run)) return null;
+    return () => {
+      this.program = program;
+      run.stretches.length = si + 1;
+      this.runs.length = ri + 1;
+      st.visit = visit;
+      st.to = st.from + (pieceEnd - st.out);
+      st.pieceEnd = pieceEnd;
+      run.last = this.packetBefore(st.to);
+      this.nextVisit = visit.v + 1;
+      this.done = false;
+      this.cutShort = false;
+    };
   }
 
   private add(visit: Visit) {

@@ -797,6 +797,95 @@ export const steps = {
       else if (n >= 0 && n0 >= 0 && n < n0) walk.wrong = `frame ${n} was drawn after frame ${n0} while it played`;
     }
   },
+  // ["end in and back", share, when, ...menu]
+  //                    drags the clip's end in to this share of the way
+  //                    along the clip, while the clip plays or, paused,
+  //                    before it plays, and takes Undo, or Undo and Redo,
+  //                    from the menu bar while it plays. The play starts a
+  //                    fifth of the clip before where the end is dragged
+  //                    to. Tim on #277: the play plays the clip as it is
+  //                    now, to its old end after Undo and to the new one
+  //                    after Redo, never going back, no older frame drawn,
+  //                    and never started again
+  async "end in and back"(walk, arg, s) {
+    const { page, watch } = walk;
+    const [share, when, ...menu] = arg;
+    const was = (await engineState(page, watch.at)).segments;
+    const oldEnd = was.at(-1).end;
+    const from = was[0].start + (share - 0.2) * (oldEnd - was[0].start);
+    const record = () =>
+      page.evaluate(() => {
+        window.__played = [];
+        window.__playWatch = true;
+        const tick = () => {
+          if (!window.__playWatch) return;
+          const at = Number(document.querySelector(".screen")?.dataset.playhead);
+          const playing = !!document.querySelector('button[aria-label="Pause"]');
+          window.__played.push([at, window.__pictured ? window.__pictured() : -1, playing]);
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      });
+    const play = async () => {
+      await clickOnTrack(page, await xOf(page, from), high((await handles(page)).track));
+      await settle(page);
+      await page.evaluate(() => document.body.focus());
+      await preview(page, 0.2);
+      await page.keyboard.press("Space");
+      await settle(page);
+      await playUntil(page, { most: 0.2 });
+    };
+    const pullIn = async () => {
+      const g = await handles(page);
+      const into = g.start.x + g.start.w;
+      const to = into + share * (g.end.x - into);
+      await page.mouse.move(middle(g.end), g.end.y + g.end.h / 2);
+      await page.mouse.down();
+      for (let i = 1; i <= 3; i++) {
+        await page.mouse.move(middle(g.end) + ((to - middle(g.end)) * i) / 3, g.end.y + g.end.h / 2);
+        await nextPaint(page);
+      }
+      await page.mouse.up();
+      await settle(page);
+    };
+    if (when === "paused") await pullIn();
+    await play();
+    const starts = await page.evaluate(() => window.__frameQueue.stats.starts);
+    await record();
+    if (when === "playing") await pullIn();
+    const newEnd = (await engineState(page, watch.at)).segments.at(-1).end;
+    for (const m of menu) {
+      await page.evaluate((m) => window.__menu(m), m);
+      await settle(page);
+    }
+    const [atBack, playingAtBack] = await page.evaluate(() => [Number(document.querySelector(".screen").dataset.playhead), !!document.querySelector('button[aria-label="Pause"]')]);
+    const end = (await engineState(page, watch.at)).segments.at(-1).end;
+    const want = menu.length % 2 ? oldEnd : newEnd;
+    // The clip's play stops by itself at the clip's end, wherever that is.
+    await playUntil(page, { past: oldEnd + 1, pause: true });
+    await page.evaluate(() => (window.__playWatch = false));
+    await settle(page);
+    await watch.step("trim", s);
+    const all = await page.evaluate(() => window.__played ?? []);
+    const stopped = all.findIndex(([, , on]) => !on);
+    const played = stopped < 0 ? all : all.slice(0, stopped);
+    const reached = Math.max(...played.map(([at]) => at));
+    const frame = 1 / (await rate(page));
+    const startedAgain = (await page.evaluate(() => window.__frameQueue.stats.starts)) - starts;
+    const done = `the end was dragged from ${oldEnd.toFixed(3)} to ${newEnd.toFixed(3)} ${when === "playing" ? "while it played" : "before it played"}, then ${menu.join(" and ")}`;
+    if (!(newEnd < oldEnd - 1)) walk.wrong = `the end was dragged in only from ${oldEnd.toFixed(3)} to ${newEnd.toFixed(3)}`;
+    else if (Math.abs(end - want) > 1e-3) walk.wrong = `${done}, and the clip ends at ${end.toFixed(3)}, not ${want.toFixed(3)}`;
+    else if (!playingAtBack || !(atBack < newEnd - frame)) walk.wrong = `the play was at ${atBack.toFixed(3)}, ${playingAtBack ? "playing" : "stopped"}, after ${menu.join(" and ")}, not before the end at ${newEnd.toFixed(3)}, so the walk proves nothing`;
+    else if (played.length < 30) walk.wrong = `only ${played.length} animation frames were read while it played`;
+    else if (!(reached > want - 3 * frame && reached < want + frame)) walk.wrong = `${done}, and the play stopped at ${reached.toFixed(3)}, not at the clip's end at ${want.toFixed(3)}`;
+    else if (startedAgain) walk.wrong = `${done}, and the play started again ${startedAgain} times`;
+    for (let i = 1; i < played.length && !walk.wrong; i++) {
+      const [at, n] = played[i];
+      const [at0, n0] = played[i - 1];
+      if (at < at0 - 1e-6) walk.wrong = `the playhead went back from ${at0.toFixed(3)} to ${at.toFixed(3)} while it played`;
+      else if (n >= 0 && n0 >= 0 && n < n0) walk.wrong = `frame ${n} was drawn after frame ${n0} while it played`;
+    }
+  },
   // ["swipe after click", share, px]
   //                    clicks the clip timeline this share of the way
   //                    along the clip, which puts the playhead under the
