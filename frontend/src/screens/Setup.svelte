@@ -14,15 +14,22 @@
   //
   // A model in the cloud is not offered here. It needs a key and costs
   // money a video, so it is a choice made later in the settings, by
-  // somebody who knows they want it.
+  // somebody who knows they want it. Except on a machine that can hold no
+  // clip model at all, 8 GB of memory: there the cloud is the only way
+  // through, and the clip card offers it in place of the list, a model in
+  // the cloud and the row its key is saved in, the same row as in the
+  // settings.
   //
   // Nothing here is a box over the workspace. Until both models are here
   // there is no workspace to put a box over, so this is the whole app.
   import { onMount } from "svelte";
   import { api, errorText, languageRow, memorySize, speechRow, type ModelRow, type SetupState } from "../lib/api";
+  import { cloudModelIn, cloudValue, finderOptions, providerOf } from "../lib/finding";
+  import ApiKey from "../components/ApiKey.svelte";
   import Icon from "../components/Icon.svelte";
   import Info from "../components/Info.svelte";
   import ModelList from "../components/ModelList.svelte";
+  import Pick from "../components/Pick.svelte";
 
   let { ondone }: { ondone: () => void } = $props();
 
@@ -50,7 +57,30 @@
   // A machine that finds clips in the cloud, chosen in the settings
   // before, needs no model of its own for that.
   const cloud = $derived(!!setup?.chosen && setup.planner === "api");
-  const clipReady = $derived(!!setup?.hasLocalModel || cloud);
+  // A machine that can hold none of the models finds clips in the cloud,
+  // once a key for it is here.
+  const noneFits = $derived(!!setup && !cloud && !setup.hasLocalModel && clipRows.length === 0);
+  const clipReady = $derived(!!setup?.hasLocalModel || cloud || (noneFits && !!setup?.hasKey));
+
+  // The model in the cloud the settings name, its company, and the list to
+  // pick another from.
+  const provider = $derived(
+    setup ? providerOf(setup.apiModel, setup.cloud, setup.providers, setup.provider) : null,
+  );
+  const cloudOptions = $derived(
+    setup ? finderOptions(setup.cloud, setup.providers, [], setup.apiModel) : [],
+  );
+
+  async function chooseCloud(value: string) {
+    const model = cloudModelIn(value);
+    if (!model) return;
+    try {
+      await api.chooseCloudModel(model);
+      await reload();
+    } catch (err) {
+      problem = errorText(err);
+    }
+  }
 
   // Once both are here the setup is done, and the app takes over. The
   // answer to how clips are found is written down first, so the app
@@ -65,7 +95,7 @@
 
   async function finish(now: SetupState) {
     try {
-      if (!now.chosen) await api.choosePlanner("local");
+      if (!now.chosen) await api.choosePlanner(noneFits ? "api" : "local");
       ondone();
     } catch (err) {
       problem = errorText(err);
@@ -79,7 +109,11 @@
 <section class="setup">
   <header>
     <h1>Frame Fairy</h1>
-    <p class="muted lead">Turns a long video into vertical shorts. Two models to download first.</p>
+    <p class="muted lead">
+      Turns a long video into vertical shorts. {noneFits
+        ? "A model to download and a key to save first."
+        : "Two models to download first."}
+    </p>
   </header>
 
   {#if problem}<p class="error selectable">{problem}</p>{/if}
@@ -127,13 +161,37 @@
           <p class="muted">Clips are found in the cloud, as the settings say.</p>
         {:else if clipRows.length}
           <ModelList models={clipRows} kind="llm" oninstall={api.installLanguageModel} onchange={reload} />
-        {:else}
-          <p class="warn">None of the models fits in this machine's memory.</p>
+        {:else if provider}
+          <p class="muted">
+            None of the models fits in this machine's memory, so clips are found in the cloud, with
+            an API key of your own.
+          </p>
+          <div class="card">
+            <!-- A model is always chosen, so its row is marked ready, and
+                 its name stands in the column of the key's under it. -->
+            <div class="item">
+              <span class="mark ok" aria-hidden="true"><Icon name="check" /></span>
+              <div class="words"><span class="head">Model in the cloud</span></div>
+              <Pick
+                value={cloudValue(setup.apiModel)}
+                options={cloudOptions}
+                onpick={chooseCloud}
+                label="Model in the cloud"
+                align="right"
+              />
+            </div>
+            <ApiKey
+              {provider}
+              source={setup.keys[provider.name] ?? ""}
+              hint={setup.keyHints?.[provider.name] ?? ""}
+              onchange={reload}
+            />
+          </div>
         {/if}
         <!-- A model is the answer and llama-server is what runs it, so one
              without the other makes nothing. This is state and not
              standing help: it is here only while it is true. -->
-        {#if !setup.hasServer}
+        {#if !setup.hasServer && !noneFits && !cloud}
           <p class="warn">
             <b>llama-server</b> is what runs a model here, and it is not on this machine.
           </p>
@@ -226,6 +284,14 @@
   .ready {
     display: flex;
     color: var(--ok);
+  }
+
+  /* The list of models in the cloud is as wide as the longest name in it
+     and hangs from the card's right edge, the way it does in the
+     settings, so the name of the row keeps its room. */
+  .card :global(button.pick) {
+    width: max-content;
+    flex: none;
   }
 
 </style>

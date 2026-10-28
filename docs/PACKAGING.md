@@ -63,7 +63,9 @@ Setup.svelte`. It downloads the speech model and a local language model side
 by side, each once the person presses Download, and offers only the language
 models this machine can hold, with what each costs to fetch and in memory.
 The cloud and its key are chosen later in the settings, where the key goes
-in the macOS keychain. Both installers land under a part name and only move
+in the macOS keychain, except on a Mac that can hold no language model,
+8 GB, whose setup offers a model in the cloud and its key in place of the
+list. Both installers land under a part name and only move
 a whole model into place, so a cancel leaves nothing rather than half of
 something. See [APP.md](APP.md#the-first-run).
 
@@ -127,7 +129,7 @@ What every Mac is offered, pinned by a test:
 
 | Mac | Offered |
 | --- | --- |
-| 8 GB | nothing, the API is the way through |
+| 8 GB | nothing, the setup offers a model in the cloud and its key |
 | 16 GB | Gemma 4 12B, tight |
 | 18 and 24 GB | Gemma 4 12B |
 | 32 GB and up | Gemma 4 26B A4B |
