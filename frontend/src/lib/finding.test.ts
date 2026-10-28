@@ -20,6 +20,7 @@ function model(name: string, over: Partial<LanguageModel> = {}): LanguageModel {
     needs: 20 * 2 ** 30,
     url: "",
     installed: true,
+    path: `/Users/tim/.framefairy/models/${name}`,
     fit: "fits",
     recommended: false,
     inUse: false,
@@ -73,18 +74,20 @@ describe("the list to choose from", () => {
   });
 
   // Tim saw a size on the models still to fetch, none on the ones here,
-  // and "best here" on one, 2026-10-27.
-  test("the models here first and those to download after, the biggest first, each saying its size", () => {
+  // and "best here" on one, 2026-10-27. Then a group of their own for the
+  // models to download, 2026-10-28, where he wanted one list with a mark.
+  test("every model here in one group, the most memory first, each saying its size and whether it is downloaded", () => {
     const here = finderOptions(cloud, providers, language, "claude-sonnet-5").filter(
       (o) => o.group !== "In the cloud",
     );
-    expect(here.map((o) => [o.group, o.label, o.detail])).toEqual([
-      ["On this machine", "Big", "9.0 GB"],
-      ["On this machine", "Small", "9.0 GB"],
-      ["To download", "Huge", "9.0 GB, too big for this machine"],
-      ["To download", "Far", "5.2 GB"],
+    expect(here.map((o) => [o.group, o.label, o.detail, o.mark?.icon])).toEqual([
+      ["On this machine", "Huge", "9.0 GB, too big for this machine", "download"],
+      ["On this machine", "Big", "9.0 GB", "check"],
+      ["On this machine", "Far", "5.2 GB", "download"],
+      ["On this machine", "Small", "9.0 GB", "check"],
     ]);
     expect(here.find((o) => o.label === "Huge")?.warn).toBe(true);
+    expect(here.filter((o) => o.mark?.faint).map((o) => o.label)).toEqual(["Huge", "Far"]);
     expect(here.some((o) => /best/i.test(o.detail ?? ""))).toBe(false);
   });
 });

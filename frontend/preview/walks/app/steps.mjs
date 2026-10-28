@@ -239,7 +239,7 @@ export const steps = {
   //                    own sections and not again under Advanced, the
   //                    caption fonts are one line of two counts, and the
   //                    app's log, which is in the home folder, is written
-  //                    from ~
+  //                    in full, from /
   async "said once"(walk) {
     const { page } = walk;
     const disclose = page.locator("button.disclose");
@@ -265,14 +265,17 @@ export const steps = {
     for (const f of m.found) if (/^(Speech model|Language model)|API key$/.test(f)) problems.push(`What the app found says "${f}" again`);
     if (!/^\d+ built in, \d+ from this machine$/.test(m.fonts)) problems.push(`the caption fonts say "${m.fonts.slice(0, 80)}", not two counts`);
     else if (m.fontLines !== 1) problems.push(`the caption fonts stand on ${m.fontLines} lines`);
-    if (!m.log.startsWith("~/")) problems.push(`the app's log is at "${m.log}", not written from ~`);
+    if (!m.log.startsWith("/")) problems.push(`the app's log is at "${m.log}", not written in full`);
     if (problems.length) walk.wrong = problems.join("\n");
   },
   // ["models alike"]   Settings: the speech model and the clip model are
   //                    two cards of one shape, a list to choose from with
   //                    the line under it and the models on this machine
-  //                    folded under that, and every model either list
-  //                    offers says its size and none says "best"
+  //                    folded under that, each saying in full where it
+  //                    is. Every model either list offers says its size
+  //                    and none says "best", and the models that run here
+  //                    stand in one group, each with the tick once it is
+  //                    downloaded and a download arrow until then
   async "models alike"(walk) {
     const { page } = walk;
     const problems = [];
@@ -289,14 +292,29 @@ export const steps = {
         };
       }, card);
       if (!shape.pick || !shape.line || !shape.fold) problems.push(`${head} is not the shape of the other: ${JSON.stringify(shape)}`);
+      const fold = page.locator(`${card} > button.disclose-row`);
+      if ((await fold.getAttribute("aria-expanded")) !== "true") await fold.click();
+      await page.locator(`${card} ul.models > li`).first().waitFor();
+      const where = await page.evaluate(
+        (card) => [...document.querySelectorAll(`${card} ul.models > li`)].map((li) => li.querySelector(".path")?.textContent.trim() ?? ""),
+        card,
+      );
+      for (const w of where) if (!w.startsWith("/")) problems.push(`a model under ${head} says it is at "${w}", not where it is in full`);
       await page.locator(`${card} > .item button.pick`).click();
       await page.locator('[role="option"]').first().waitFor();
       const rows = await page.evaluate(() =>
         [...document.querySelectorAll('[role="option"]')].map((o) => ({
           name: o.querySelector(".what")?.textContent.trim() ?? "",
           detail: o.querySelector(".detail")?.textContent.trim() ?? "",
+          mark: o.querySelector(".tick.marked")?.getAttribute("title") ?? "",
+          drawn: !!o.querySelector(".tick.marked svg"),
         })),
       );
+      const groups = await page.evaluate(() => [...document.querySelectorAll(".pick-group")].map((g) => g.textContent.trim()));
+      for (const g of groups) if (!["In the cloud", "On this machine"].includes(g)) problems.push(`${head} has a group "${g}"`);
+      for (const r of rows)
+        if (!["Anthropic", "OpenAI"].includes(r.detail) && (!["Downloaded", "Not downloaded yet"].includes(r.mark) || !r.drawn))
+          problems.push(`${head} offers ${r.name} with no mark for whether it is downloaded`);
       for (const r of rows) {
         if (/best/i.test(r.detail)) problems.push(`${head} offers ${r.name} as "${r.detail}"`);
         // A model in the cloud says its company, every other its size.

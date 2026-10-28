@@ -19,7 +19,7 @@
     finderOptions as finderOptions_,
     finderStanding,
     holdsTheApp,
-    modelGroup,
+    modelMark,
     type Standing,
     type Tone,
     providerOf,
@@ -508,7 +508,8 @@
       value: m.name,
       label: m.title,
       detail: size(m.installed ? m.unpacked : m.download),
-      group: modelGroup(m.installed),
+      group: "On this machine",
+      mark: modelMark(m.installed),
     })),
   );
   const speechInstall = new Install("model", () => modelsChanged());
@@ -542,7 +543,12 @@
     if (!m.installed) return { text: `Not downloaded yet. ${size(m.download)}.`, tone: "warn", state: "warn" };
     return { text: `By ${m.maker}. ${m.languages}.`, tone: "", state: "ok" };
   });
-  const installedSpeech = $derived(speech.filter((m) => m.installed).map((m) => speechRow(m)));
+  // The models on this machine, folded under the choice, each saying
+  // where it is. Tim missed that once the model rows of Advanced and What
+  // the app found were gone, 2026-10-28.
+  const installedSpeech = $derived(
+    speech.filter((m) => m.installed).map((m) => ({ ...speechRow(m), path: shown(m.path) })),
+  );
   const installedSpeechSize = $derived(
     size(speech.filter((m) => m.installed).reduce((sum, m) => sum + m.unpacked, 0)),
   );
@@ -569,7 +575,8 @@
   const finderLine = $derived(finding);
   const finderState = $derived(finding.state);
 
-  // The models on this machine, folded under the choice.
+  // The models on this machine, folded under the choice, each saying
+  // where it is, as the speech models do.
   const installedRows = $derived(
     language
       .filter((m) => m.installed)
@@ -581,6 +588,7 @@
         note: "",
         warn: false,
         best: false,
+        path: shown(m.path),
       })),
   );
   const installedSize = $derived(
@@ -1015,7 +1023,7 @@
                 <span class="head">Training data folder</span>
                 <span class="small muted">Where the records go.</span>
               </span>
-              <input type="text" bind:value={settings.trainingDir} placeholder="~/.framefairy/training" spellcheck="false" />
+              <input type="text" bind:value={settings.trainingDir} placeholder={shown("~/.framefairy/training")} spellcheck="false" />
             </label>
           </div>
 

@@ -3010,9 +3010,12 @@ page to the bottom to find where to fix what it said.
 **The two models are two cards of one shape**, **Speech model** and
 **Clip model**, the names the setup uses too. Each is a choice with the
 line under it, and under that **Downloaded models**, folded, the models
-of its kind on this machine with the room they take and a trash can each.
-Tim found the two drawn two ways, 2026-10-27, and found **Finding clips**
-a poor name for the second.
+of its kind on this machine with the room they take, a trash can each,
+and on a line under each where it is, in full. Tim found the two drawn
+two ways, 2026-10-27, and found **Finding clips** a poor name for the
+second. Where the models are was said under Advanced and What the app
+found until then, and he missed it once it was gone from there,
+2026-10-28.
 
 **The clip model is one choice**, **Find clips with**, in one list: under
 **In the cloud** a model from each company the app knows, Claude Sonnet 5
@@ -3046,14 +3049,17 @@ somebody can click their way into, run by `make interface` and CI.
 
 The line under the choice says what it costs: a few cents a video and
 which company, or who made the model and the memory it needs, and that it
-is tight or too big where it is. Beside each model here in the list is its
-size, and the group it stands in says what the size is: under **On this
-machine** the room it takes, under **To download** what it would fetch, so
-the one number needs no word and no mark to say which of the two it is. A
-cloud mark on the models still to fetch, the way Finder marks a file still
-in iCloud, was tried and read as a model that runs in the cloud, under a
-group of that name. A model this machine is short of memory for says so
-beside its size. Nothing says best: the biggest model
+is tight or too big where it is. Every model that runs here stands under
+**On this machine**, the one that needs the most memory first, with its
+size beside it. One that is downloaded has the tick in front of it, and
+one still to fetch a download arrow in grey, so what is chosen is said by
+the accent alone, the way the chosen row of any list in the app is. The
+speech model's list is the same. A group of its own, **To download**, for
+the models still to fetch, parted a list that is one kind of thing, and
+Tim asked for the one group with a mark, 2026-10-28. A cloud mark on them
+before that, the way Finder marks a file still in iCloud, read as a model
+that runs in the cloud, under a group of that name. A model this machine
+is short of memory for says so beside its size. Nothing says best: the biggest model
 that fits is the one a new machine starts on, and a word for it on one row
 of the list read as a riddle. The list holds any number of models in the
 room of one control.
@@ -3265,12 +3271,14 @@ models and the keys are said in their own sections, so the check leaves
 them out here. Which decoder a file really went through is in the log of
 its search.
 
-**A path is written one way everywhere.** Inside the home folder it starts
-with `~`, `~/.framefairy/models`, and anywhere else it is written in full,
-`/Applications/Frame Fairy.app/Contents/MacOS/ffmpeg`, whatever form the
-settings file, the check or the folder dialog handed it over in, see
-`shownPath` in `frontend/src/lib/paths.ts`. Only what is shown changes,
-what is saved stays as it came.
+**A path is written one way everywhere**, in full, from the top of the
+disk: `/Users/tim/.framefairy/models`, `/Applications/Frame
+Fairy.app/Contents/MacOS/ffmpeg`, whatever form the settings file, the
+check or the folder dialog handed it over in, see `shownPath` in
+`frontend/src/lib/paths.ts`. A path from `~` is written out from the home
+folder. Inside the home folder from `~` and the rest in full was tried
+first, and Tim still saw two kinds of path on one page, 2026-10-28. Only
+what is shown changes, what is saved stays as it came.
 
 Between the paths and the check is **The app's log**, see
 [LOGGING.md](LOGGING.md): where the file in use is, how many files it has

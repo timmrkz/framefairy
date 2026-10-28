@@ -27,6 +27,9 @@ import (
 type SpeechModelView struct {
 	engine.SpeechModel
 	Installed bool `json:"installed"`
+	// Path is where it is on this machine, or where it would be once
+	// downloaded, in full, so the settings can say where each model is.
+	Path string `json:"path"`
 }
 
 // LanguageModelView is the same for a model that finds clips, and it says
@@ -37,6 +40,8 @@ type SpeechModelView struct {
 type LanguageModelView struct {
 	engine.LanguageModel
 	Installed bool `json:"installed"`
+	// Path is the same as a speech model's, the model file.
+	Path string `json:"path"`
 	// Fit is "fits", "tight", "too big" or "unknown". See engine.Fit.
 	Fit string `json:"fit"`
 	// Recommended marks the one to offer this machine, which is the
@@ -100,7 +105,7 @@ type SetupState struct {
 	// second.
 	Installing string `json:"installing,omitempty"`
 	// Home is the person's home folder, so the interface writes every path
-	// inside it the one way, from ~, whatever form it came in.
+	// the one way, in full, whatever form it came in.
 	Home string `json:"home"`
 }
 
@@ -112,7 +117,7 @@ func (s *FrameFairy) Setup(ctx context.Context) SetupState {
 	state := SetupState{Planner: settings.Planner, Chosen: settings.Chosen}
 	state.Home, _ = os.UserHomeDir()
 	for _, m := range engine.SpeechModels() {
-		view := SpeechModelView{SpeechModel: m, Installed: m.Installed(dir)}
+		view := SpeechModelView{SpeechModel: m, Installed: m.Installed(dir), Path: filepath.Join(dir, m.Name)}
 		if view.Installed {
 			state.HasSpeech = true
 		}
@@ -122,7 +127,7 @@ func (s *FrameFairy) Setup(ctx context.Context) SetupState {
 	best, hasBest := engine.RecommendedFor(state.Memory)
 	using := modelInUse(settings)
 	for _, m := range engine.LanguageModels() {
-		view := LanguageModelView{LanguageModel: m, Installed: m.Installed(dir),
+		view := LanguageModelView{LanguageModel: m, Installed: m.Installed(dir), Path: filepath.Join(dir, m.Name),
 			Fit:         string(m.FitsIn(state.Memory)),
 			Recommended: hasBest && m.Name == best.Name}
 		// A model chosen before it is downloaded is still the one chosen,

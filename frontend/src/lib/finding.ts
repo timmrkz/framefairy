@@ -40,19 +40,20 @@ export interface FinderOption {
   detail?: string;
   warn?: boolean;
   group: string;
+  mark?: { icon: string; title: string; faint?: boolean };
 }
 
 // The list: every company's model with the company beside it, a model
 // written in by hand as well so the list never names nothing, and then
-// the models that run here, those on this machine and then those still to
-// download, each group the biggest first. Every model says its size, and
-// the group it stands in says whether that is the room it takes or what
-// it would fetch, so the number never needs a word or a mark to say which.
-// A cloud mark for a model still to fetch was tried, and read as a model
-// that runs in the cloud, under a group of that name. Only a model this
-// machine is short of memory for says so beside its size. Tim found "best
-// here" on one row and a size on others, 2026-10-27, and could not tell
-// what either meant. See modelGroup.
+// every model that runs here under On this machine, the one that needs
+// the most memory first. Every model says its size, and wears the tick
+// once it is downloaded and a download arrow in grey until then, see
+// modelMark. Tim asked for that one group, 2026-10-28: a group of its own
+// for the models still to download parted a list that is one kind of
+// thing, and a cloud mark tried before read as a model that runs in the
+// cloud. Only a model this machine is short of memory for says so beside
+// its size, and none says "best here", which Tim could not read,
+// 2026-10-27.
 export function finderOptions(
   cloud: CloudModel[],
   providers: Provider[],
@@ -70,7 +71,7 @@ export function finderOptions(
       group: "In the cloud",
     })),
     ...[...language]
-      .sort((a, b) => Number(b.installed) - Number(a.installed) || b.needs - a.needs)
+      .sort((a, b) => b.needs - a.needs)
       .map((m) => {
         const { note, warn } = fitNote(m.fit);
         return {
@@ -78,16 +79,20 @@ export function finderOptions(
           label: m.title,
           detail: warn ? `${size(m.download)}, ${note.toLowerCase()}` : size(m.download),
           warn,
-          group: modelGroup(m.installed),
+          group: "On this machine",
+          mark: modelMark(m.installed),
         };
       }),
   ];
 }
 
-// Where a model of this machine stands in a list to choose from, the
-// speech model's as well as the clip model's: here, or still to fetch.
-export function modelGroup(installed: boolean): string {
-  return installed ? "On this machine" : "To download";
+// How a model of this machine stands in a list to choose from, the
+// speech model's as well as the clip model's: the tick once it is here,
+// and a download arrow in grey while it is still to fetch.
+export function modelMark(installed: boolean): { icon: string; title: string; faint?: boolean } {
+  return installed
+    ? { icon: "check", title: "Downloaded" }
+    : { icon: "download", title: "Not downloaded yet", faint: true };
 }
 
 // Everything the line under the choice depends on.
