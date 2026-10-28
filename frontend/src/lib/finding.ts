@@ -39,13 +39,21 @@ export interface FinderOption {
   label: string;
   detail?: string;
   warn?: boolean;
+  after?: string;
+  afterTitle?: string;
   group: string;
 }
 
 // The list: every company's model with the company beside it, a model
 // written in by hand as well so the list never names nothing, and then
 // the models that run here, those that are here first and the biggest
-// first, each with what it would cost to fetch or whether it fits.
+// first. Every model here says its size, whether it is on the disk or
+// still to fetch, and one still to fetch wears the cloud with the arrow
+// down, the way Finder marks a file still in iCloud, so the one number
+// never needs a word to say which of the two it is. Only a model this
+// machine is short of memory for says so beside it. Tim found "best here"
+// on one row and a size on others, 2026-10-27, and could not tell what
+// either meant.
 export function finderOptions(
   cloud: CloudModel[],
   providers: Provider[],
@@ -65,13 +73,14 @@ export function finderOptions(
     ...[...language]
       .sort((a, b) => Number(b.installed) - Number(a.installed) || b.needs - a.needs)
       .map((m) => {
-        const { note, warn } = fitNote(m.fit, m.recommended);
-        const fetch = m.installed ? "" : `${size(m.download)} download`;
+        const { note, warn } = fitNote(m.fit);
         return {
           value: m.name,
           label: m.title,
-          detail: warn ? note : m.recommended ? [fetch, "best here"].filter(Boolean).join(", ") : fetch,
+          detail: warn ? `${size(m.download)}, ${note.toLowerCase()}` : size(m.download),
           warn,
+          after: m.installed ? undefined : "download",
+          afterTitle: m.installed ? undefined : "Not on this machine yet. Download fetches it",
           group: "On this machine",
         };
       }),
@@ -138,9 +147,10 @@ function finderAtRest(f: FinderFacts): { text: string; tone: Tone; state: Standi
     return { text: `Not downloaded yet. ${size(f.inUse.download)}.`, tone: "warn", state: "warn" };
   }
   if (f.modelProblem) return { text: f.modelProblem, tone: "err", state: "err" };
-  const { note } = fitNote(f.inUse.fit, f.inUse.recommended);
+  // Only a warning is worth the room, the way the list says it.
+  const { note, warn } = fitNote(f.inUse.fit);
   return {
-    text: `By ${f.inUse.maker}. ${memorySize(f.inUse.needs)} of memory.${note ? ` ${note}.` : ""}`,
+    text: `By ${f.inUse.maker}. ${memorySize(f.inUse.needs)} of memory.${warn ? ` ${note}.` : ""}`,
     tone: "",
     state: f.serverMissing ? "err" : "ok",
   };

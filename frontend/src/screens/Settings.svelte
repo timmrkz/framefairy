@@ -23,6 +23,7 @@
   } from "../lib/finding";
   import {
     api,
+    clock,
     errorText,
     languageRow,
     memorySize,
@@ -74,7 +75,6 @@
   let home = $state("");
   const shown = (path: string) => shownPath(path, home);
 
-  const speechRows = $derived(speech.map((m) => speechRow(m)));
 
 
   // The companies in the cloud, the models of theirs the app offers by
@@ -582,6 +582,83 @@
     if (!llmRunning) cancelling = false;
   });
 
+  // The speech model, in the shape of the clip model: one list of the
+  // speech models, each with its size and the cloud on one still to
+  // fetch, Download beside it when the one in use is not here, and the
+  // models on this machine folded under it. There is one speech model
+  // today, so the list holds one, and Tim asked for the two to look and
+  // work alike all the same, 2026-10-27.
+  const speechInUse = $derived(speech.find((m) => m.installed) ?? speech[0]);
+  const speechOptions = $derived(
+    speech.map((m) => ({
+      value: m.name,
+      label: m.title,
+      detail: size(m.installed ? m.unpacked : m.download),
+      after: m.installed ? undefined : "download",
+      afterTitle: m.installed ? undefined : "Not on this machine yet. Download fetches it",
+    })),
+  );
+  const speechJob = $derived(jobs.list.filter((j) => j.kind === "model").at(-1));
+  const speechRunning = $derived(speechJob && running(speechJob) ? speechJob : undefined);
+  let speechStarting = $state(false);
+  let speechFailed = $state("");
+  let speechCancelling = $state(false);
+  async function downloadSpeech() {
+    if (!speechInUse || speechInUse.installed) return;
+    speechFailed = "";
+    speechStarting = true;
+    try {
+      const job = await api.installSpeechModel(speechInUse.name);
+      if (job.state === "failed") speechFailed = job.error ?? "The download did not start.";
+    } catch (err) {
+      speechFailed = errorText(err);
+    }
+    speechStarting = false;
+  }
+  async function cancelSpeech() {
+    if (!speechRunning) return;
+    speechCancelling = true;
+    try {
+      await api.cancelJob(speechRunning.id);
+    } catch (err) {
+      problem = errorText(err);
+    }
+  }
+  $effect(() => {
+    if (!speechRunning) speechCancelling = false;
+  });
+  // Read again when the download settles, the way the clip model's is.
+  let speechSettled = "";
+  $effect(() => {
+    const job = speechJob;
+    const now = job ? `${job.id}:${job.state}` : "";
+    if (now === speechSettled) return;
+    speechSettled = now;
+    if (!job || running(job)) return;
+    if (job.state === "failed") speechFailed = job.error ?? "The download stopped.";
+    modelsChanged();
+  });
+  // The one line under Transcribe with, one line in every state, like the
+  // line under Find clips with.
+  const speechLine = $derived.by((): { text: string; state: "ok" | "busy" | "warn" | "err" } => {
+    const m = speechInUse;
+    if (!m) return { text: "No speech model is offered.", state: "err" };
+    if (speechRunning || speechStarting) {
+      const p = speechRunning?.progress;
+      const done = p && p.fraction > 0 ? `${size(p.fraction * m.download)} of ${size(m.download)}` : size(m.download);
+      const left = p && p.remaining > 0 ? `, ${clock(p.remaining)} left` : "";
+      return { text: `Downloading, ${done}${left}`, state: "busy" };
+    }
+    if (speechFailed) return { text: speechFailed, state: "err" };
+    if (!m.installed) return { text: `Not downloaded yet. ${size(m.download)}.`, state: "warn" };
+    return { text: `By ${m.maker}. ${m.languages}.`, state: "ok" };
+  });
+  let speechDownloads = $state(false);
+  const installedSpeech = $derived(speech.filter((m) => m.installed).map((m) => speechRow(m)));
+  const installedSpeechSize = $derived(
+    size(speech.filter((m) => m.installed).reduce((sum, m) => sum + m.unpacked, 0)),
+  );
+
   // The one line under Find clips with. One line and never two: it is cut
   // short with the rest in its title rather than wrapped, because a line
   // that wraps when a button arrives beside it moves the whole card. So
@@ -718,9 +795,9 @@
     {#if settings}
       <div class="group asks">
         <div class="headrow">
-          <h2>Finding clips</h2>
+          <h2>Clip model</h2>
           <span class="ask">
-            <Info label="About finding clips" side="left">
+            <Info label="About the clip model" side="left">
               A language model reads the transcript and picks the moments worth clipping. A model in
               the cloud, Anthropic's or OpenAI's, works on any machine with a key of your own from
               that company, and costs a few cents a video. A model on this machine is free to run
@@ -730,8 +807,8 @@
                 <br /><br />
                 A model runs from memory, and this machine has
                 {memory > 0 ? memorySize(memory) : "not said how much"}. A bigger model reads the
-                transcript better and needs more of it, and <b>Best for this machine</b> is the
-                biggest it can hold. Models are fetched from the people who made them and kept in
+                transcript better and needs more of it, and the list says beside a model when this
+                machine is short of memory for it. Models are fetched from the people who made them and kept in
                 <b>~/.framefairy/models</b>.
               {/if}
             </Info>
@@ -932,11 +1009,12 @@
       </div>
 
       <!-- Every episode is transcribed on this machine, so the model has to
-           be on it. It is the same list as the setup, and installing one
-           here is the same job. -->
+           be on it. The card is the clip model's, row for row: the choice
+           with the line under it, and the models on this machine folded
+           under that. Installing one here is the setup's job. -->
       <div class="group asks">
         <div class="headrow">
-          <h2>Speech</h2>
+          <h2>Speech model</h2>
           <span class="ask">
             <Info label="About the speech model" side="left">
               Every video is transcribed on this machine, word by word with the time of each
@@ -945,17 +1023,85 @@
             </Info>
           </span>
         </div>
-        <div class="speech" class:shaking={speechShaking} onanimationend={() => (speechShaking = false)}>
-          <ModelList
-            models={speechRows}
-            kind="model"
-            oninstall={api.installSpeechModel}
-            onchange={modelsChanged}
-            onremove={api.removeSpeechModel}
-            removeSays="Every video is transcribed with it, so the app asks for one again the next time it starts."
-            locked={hearing ? speechLocked : ""}
-            onlocked={shakeSpeech}
-          />
+        <div class="card speech" class:shaking={speechShaking} onanimationend={() => (speechShaking = false)}>
+          <div class="item">
+            <span class="mark {speechLine.state}" aria-hidden="true">
+              {#if speechLine.state === "busy"}
+                <span class="dot busy"></span>
+              {:else if speechLine.state === "ok"}
+                <Icon name="check" />
+              {:else}
+                <Icon name="warn" />
+              {/if}
+            </span>
+            <div class="words">
+              <span class="head">Transcribe with</span>
+              <span
+                class="small line"
+                class:muted={speechLine.state === "ok" || speechLine.state === "busy"}
+                class:warn={speechLine.state === "warn"}
+                class:error={speechLine.state === "err"}
+                title={speechLine.text}>{speechLine.text}</span
+              >
+            </div>
+            {#if speechRunning}
+              <button
+                class="act"
+                title="Stop the download. What has arrived stays, and Download carries on from it"
+                disabled={speechCancelling}
+                onclick={cancelSpeech}
+              >
+                <Busy
+                  fraction={speechRunning.progress && speechRunning.progress.fraction >= 0
+                    ? speechRunning.progress.fraction
+                    : -1}
+                />
+                {speechCancelling ? "Cancelling" : "Cancel"}
+              </button>
+            {:else if speechInUse && !speechInUse.installed}
+              <button
+                class="act"
+                title="Fetch {speechInUse.title}, {size(speechInUse.download)}. It transcribes once it is here"
+                disabled={speechStarting}
+                onclick={downloadSpeech}
+                >{#if speechStarting}<Busy />{/if}{speechStarting ? "Starting" : "Download"}</button
+              >
+            {/if}
+            <Pick
+              value={speechInUse?.name ?? ""}
+              options={speechOptions}
+              label="Transcribe with"
+              align="right"
+              tone={speechLine.state === "warn" || speechLine.state === "err" ? speechLine.state : undefined}
+              disabled={!!speechRunning || speechStarting}
+              title="What hears the video and writes down every word"
+            />
+          </div>
+          {#if installedSpeech.length > 0}
+            <button class="item disclose-row" aria-expanded={speechDownloads} onclick={() => (speechDownloads = !speechDownloads)}>
+              <span class="mark" aria-hidden="true"><Icon name="folder" /></span>
+              <span class="words">
+                <span class="head">Downloaded models</span>
+                <span class="small muted">
+                  {plural(installedSpeech.length, "model", "models")} on this machine, {installedSpeechSize}.
+                </span>
+              </span>
+              <span class="chevron" class:open={speechDownloads}><Icon name="chevron" size={14} /></span>
+            </button>
+            {#if speechDownloads}
+              <ModelList
+                bare
+                models={installedSpeech}
+                kind="model"
+                oninstall={api.installSpeechModel}
+                onchange={modelsChanged}
+                onremove={api.removeSpeechModel}
+                removeSays="Every video is transcribed with it, so the app asks for one again the next time it starts."
+                locked={hearing ? speechLocked : ""}
+                onlocked={shakeSpeech}
+              />
+            {/if}
+          {/if}
         </div>
       </div>
 

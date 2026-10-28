@@ -616,12 +616,12 @@ func languageCheck(opts engine.Options) Check {
 	if model == "" {
 		switch found := engine.LocalModelFiles(engine.ModelsDir()); len(found) {
 		case 0:
-			lm.Detail = "None is installed. Install one under Finding clips, or use the Claude API."
+			lm.Detail = "None is installed. Download one under Clip model, or use a model in the cloud."
 		case 1:
 			model = found[0]
 		default:
 			lm.Detail = fmt.Sprintf("%d are installed and none is in use. Choose the one to find "+
-				"clips with under Finding clips.", len(found))
+				"clips with under Clip model.", len(found))
 		}
 	}
 	if model != "" {

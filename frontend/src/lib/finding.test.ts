@@ -72,14 +72,21 @@ describe("the list to choose from", () => {
     expect(options.find((o) => o.value === cloudValue("gpt-6-luna"))).toBeTruthy();
   });
 
-  test("the models here: those that are here first, the biggest first, each saying its cost", () => {
+  // Tim saw a size on the models still to fetch, none on the ones here,
+  // and "best here" on one, 2026-10-27.
+  test("the models here: those that are here first, the biggest first, each saying its size", () => {
     const here = finderOptions(cloud, providers, language, "claude-sonnet-5").filter(
       (o) => o.group === "On this machine",
     );
     expect(here.map((o) => o.label)).toEqual(["Big", "Small", "Huge", "Far"]);
-    expect(here.find((o) => o.label === "Big")?.detail).toBe("best here");
-    expect(here.find((o) => o.label === "Far")?.detail).toBe("5.2 GB download");
-    expect(here.find((o) => o.label === "Huge")).toMatchObject({ warn: true, detail: "Too big for this machine" });
+    expect(here.map((o) => [o.label, o.detail, o.after])).toEqual([
+      ["Big", "9.0 GB", undefined],
+      ["Small", "9.0 GB", undefined],
+      ["Huge", "9.0 GB, too big for this machine", "download"],
+      ["Far", "5.2 GB", "download"],
+    ]);
+    expect(here.find((o) => o.label === "Huge")?.warn).toBe(true);
+    expect(here.some((o) => /best/i.test(o.detail ?? ""))).toBe(false);
   });
 });
 
@@ -131,7 +138,7 @@ describe("how the choice stands", () => {
 
   test("a model that is here is ready, and says who made it and what it needs", () => {
     const s = finderStanding({ planner: "local", provider: anthropic, hasKey: false, inUse: ready });
-    expect(s).toEqual({ text: "By Google. 20 GB of memory. Best for this machine.", tone: "", state: "ok" });
+    expect(s).toEqual({ text: "By Google. 20 GB of memory.", tone: "", state: "ok" });
   });
 
   test("without llama-server it is not ready, whatever the model", () => {

@@ -221,6 +221,46 @@ export const steps = {
     if (!m.log.startsWith("~/")) problems.push(`the app's log is at "${m.log}", not written from ~`);
     if (problems.length) walk.wrong = problems.join("\n");
   },
+  // ["models alike"]   Settings: the speech model and the clip model are
+  //                    two cards of one shape, a list to choose from with
+  //                    the line under it and the models on this machine
+  //                    folded under that, and every model either list
+  //                    offers says its size and none says "best"
+  async "models alike"(walk) {
+    const { page } = walk;
+    const problems = [];
+    const cards = { "Speech model": ".card.speech", "Clip model": ".card.finding" };
+    const heads = await page.evaluate(() => [...document.querySelectorAll("h2")].map((h) => h.textContent.trim()));
+    for (const head of Object.keys(cards)) if (!heads.includes(head)) problems.push(`no head says ${head}, the heads are ${heads.join(", ")}`);
+    for (const [head, card] of Object.entries(cards)) {
+      const shape = await page.evaluate((card) => {
+        const c = document.querySelector(card);
+        return {
+          pick: !!c?.querySelector(":scope > .item button.pick"),
+          line: !!c?.querySelector(":scope > .item .words .line"),
+          fold: !!c?.querySelector(":scope > button.disclose-row"),
+        };
+      }, card);
+      if (!shape.pick || !shape.line || !shape.fold) problems.push(`${head} is not the shape of the other: ${JSON.stringify(shape)}`);
+      await page.locator(`${card} > .item button.pick`).click();
+      await page.locator('[role="option"]').first().waitFor();
+      const rows = await page.evaluate(() =>
+        [...document.querySelectorAll('[role="option"]')].map((o) => ({
+          name: o.querySelector(".what")?.textContent.trim() ?? "",
+          detail: o.querySelector(".detail")?.textContent.trim() ?? "",
+        })),
+      );
+      for (const r of rows) {
+        if (/best/i.test(r.detail)) problems.push(`${head} offers ${r.name} as "${r.detail}"`);
+        // A model in the cloud says its company, every other its size.
+        else if (!/^[\d.]+ [KMG]B\b/.test(r.detail) && !["Anthropic", "OpenAI"].includes(r.detail)) problems.push(`${head} offers ${r.name} with "${r.detail}", not its size`);
+      }
+      if (!rows.length) problems.push(`the list of ${head} offers nothing`);
+      await page.keyboard.press("Escape");
+      await settle(page);
+    }
+    if (problems.length) walk.wrong = problems.join("\n");
+  },
   // ["acknowledgements"]
   //                    Help, Acknowledgements: every group is a head over a
   //                    card with a border, and the words of every row stand
@@ -261,19 +301,16 @@ export const steps = {
     }
   },
   // ["remove model", which]
-  //                    presses the bin of the "language" model on this
-  //                    machine, under Downloaded models, or of the
-  //                    "speech" model
+  //                    presses the bin of the "language" model or of the
+  //                    "speech" model on this machine, each under the
+  //                    Downloaded models of its card
   async "remove model"(walk, arg) {
     const { page } = walk;
     await page.evaluate(() => (window.__shook = []));
-    if (arg === "language") {
-      const fold = page.locator(".card.finding button.disclose-row");
-      if ((await fold.getAttribute("aria-expanded")) !== "true") await fold.click();
-      await page.locator('.card.finding button.bin[aria-label^="Remove "]').first().click();
-    } else {
-      await page.locator('.speech button.bin[aria-label^="Remove "]').first().click();
-    }
+    const card = arg === "language" ? ".card.finding" : ".card.speech";
+    const fold = page.locator(`${card} button.disclose-row`);
+    if ((await fold.getAttribute("aria-expanded")) !== "true") await fold.click();
+    await page.locator(`${card} button.bin[aria-label^="Remove "]`).first().click();
     await settle(page);
   },
   // ["refused", card]  the gesture before it shook the "finding" or the

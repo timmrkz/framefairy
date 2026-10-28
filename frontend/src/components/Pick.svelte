@@ -101,7 +101,11 @@
     // a pop-up menu on the Mac puts a separator and a heading between kinds
     // of thing. A group is named on its first row and runs until the next.
     // A row may also be drawn in a face of its own, a font in the list of
-    // fonts, at the weight that face has.
+    // fonts, at the weight that face has. A mark after what goes with the
+    // name says something about the thing itself, the cloud of a model
+    // still to fetch, where Finder puts the cloud of a file still in
+    // iCloud, at the end of its row. Every row of a list with one keeps
+    // its room, so the words beside the names still line up.
     options: {
       value: string;
       label: string;
@@ -109,6 +113,8 @@
       warn?: boolean;
       group?: string;
       icon?: string;
+      after?: string;
+      afterTitle?: string;
       font?: string;
       weight?: number;
     }[];
@@ -176,7 +182,8 @@
   // names down the left and what goes with them down the right. Names that
   // end in one line with the trigger's only work while a name is all a row
   // holds.
-  const columns = $derived(options.some((o) => o.detail || o.group || o.icon));
+  const columns = $derived(options.some((o) => o.detail || o.group || o.icon || o.after));
+  const trailing = $derived(options.some((o) => o.after));
   // And a list hung on the left edge reads from the left, whatever the
   // trigger does, so its names start in one line with the edge.
   const fromRight = $derived(align === "right" && edge === "end" && !columns);
@@ -330,6 +337,9 @@
   >
   {#if option.detail}
     <span class="detail" class:warn={option.warn}>{option.detail}</span>
+  {/if}
+  {#if trailing}
+    <span class="after" title={option.afterTitle}>{#if option.after}<Icon name={option.after} size={14} />{/if}</span>
   {/if}
 {/snippet}
 
@@ -762,6 +772,14 @@
 
   .detail.warn {
     color: var(--warn);
+  }
+
+  .after {
+    display: flex;
+    flex: none;
+    width: 14px;
+    margin-left: 8px;
+    color: var(--muted);
   }
 
   /* The head of a group of rows, and the line above it that parts it from

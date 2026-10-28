@@ -3000,7 +3000,14 @@ said at the top so nothing goes unsaid. The first version had one card at
 the top listing every problem, and a person had to go from the top of the
 page to the bottom to find where to fix what it said.
 
-**Finding clips is one choice**, **Find clips with**, in one list: under
+**The two models are two cards of one shape**, **Speech model** and
+**Clip model**, the names the setup uses too. Each is a choice with the
+line under it, and under that **Downloaded models**, folded, the models
+of its kind on this machine with the room they take and a trash can each.
+Tim found the two drawn two ways, 2026-10-27, and found **Finding clips**
+a poor name for the second.
+
+**The clip model is one choice**, **Find clips with**, in one list: under
 **In the cloud** a model from each company the app knows, Claude Sonnet 5
 from Anthropic and GPT-6 Sol from OpenAI, with the company beside each,
 and under **On this machine** every model that runs here, the way apps that
@@ -3031,10 +3038,16 @@ in `frontend/src/lib/finding.ts`, and `finding.test.ts` walks every state
 somebody can click their way into, run by `make interface` and CI.
 
 The line under the choice says what it costs: a few cents a video and
-which company, or who made the model, the memory it needs and whether it fits.
-Beside each model in the list is what it would cost to fetch, or that it is
-the best here, or that it is too big for this machine. The list holds any
-number of models in the room of one control.
+which company, or who made the model and the memory it needs, and that it
+is tight or too big where it is. Beside each model here in the list is its
+size, whether it is on this machine or still to fetch, and one still to
+fetch wears the cloud with the arrow down at the end of its row, where
+Finder puts the cloud of a file still in iCloud, so the one number needs no
+word to say which of the two it is. A model this machine is short of
+memory for says so beside its size. Nothing says best: the biggest model
+that fits is the one a new machine starts on, and a word for it on one row
+of the list read as a riddle. The list holds any number of models in the
+room of one control.
 
 **Choosing a model chooses it**, whether it is on this machine or not.
 The settings name it, and the list ticks it. One that is not here yet
@@ -3150,10 +3163,13 @@ only one, and a download that finishes names it in the settings. A machine
 that already has two and none named, from before this was so, says so
 under the choice, and choosing one settles it.
 
-**Speech** is one model today, so it is a row rather than a choice: a
-check before it once it is there, what it covers and the room it takes.
-Removing the speech model means the app asks for one again the next time it
-starts, because nothing can be transcribed without it.
+**The speech model is the same choice**, **Transcribe with**, though
+there is one speech model today, so its list holds one: its size, the
+cloud when it is still to fetch, and the line under it, who made it and
+what it hears. **Download** beside the list fetches one that is not here,
+with the same line, beam and fill as the clip model's. Removing the speech
+model, from its **Downloaded models**, means the app asks for one again
+the next time it starts, because nothing can be transcribed without it.
 
 **Clips** says where rendered clips go, **Save clips to**, next to each
 video unless a folder is chosen with **Choose…**, which
