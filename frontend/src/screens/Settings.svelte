@@ -957,8 +957,6 @@
               >
                 <Icon name="trash" />
               </button>
-            {:else}
-              <span class="bin-room" aria-hidden="true"></span>
             {/if}
           </div>
         </div>
@@ -1200,12 +1198,6 @@
   }
 
   .act {
-    flex: none;
-  }
-
-  /* The room of the trash can, where there is nothing to remove. */
-  .bin-room {
-    width: var(--control-h);
     flex: none;
   }
 

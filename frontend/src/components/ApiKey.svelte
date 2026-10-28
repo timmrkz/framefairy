@@ -144,9 +144,9 @@
     {saving ? "Checking" : "Save key"}
   </button>
   <!-- Only a key the app keeps can be removed here. One in the environment
-       is the terminal's to take away. The trash can keeps its place without
-       one, so the field and the button do not move when a key is saved or
-       removed. -->
+       is the terminal's to take away. Without a trash can the last control
+       of the row ends at the card's edge, the way every row's does, rather
+       than before a strip of nothing kept for a trash can. -->
   {#if source === "keychain"}
     <button
       class="quiet danger bin"
@@ -158,8 +158,6 @@
     >
       <Icon name="trash" />
     </button>
-  {:else}
-    <span class="bin-room" aria-hidden="true"></span>
   {/if}
 </div>
 
@@ -185,12 +183,6 @@
      key in short beside it. */
   .key {
     width: 150px;
-    flex: none;
-  }
-
-  /* The room of the trash can, where there is nothing to remove. */
-  .bin-room {
-    width: var(--control-h);
     flex: none;
   }
 

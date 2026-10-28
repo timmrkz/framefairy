@@ -100,15 +100,17 @@ export const steps = {
     await speech.locator("li").first().waitFor();
     await settle(page);
     const seen = { lists: await clip.locator("ul.models").count(), cloud: await clip.locator("button.pick").count(), key: await clip.locator("input.key").count() };
-    // The two rows have their names in one column, each name whole.
+    // The two rows have their names in one column, each name whole, and
+    // their last controls end in one column too, at the card's edge.
     const shape = await clip.locator(".card > .item").evaluateAll((items) =>
       items.map((i) => {
         const head = i.querySelector(".head");
-        return { name: head.getBoundingClientRect().left, high: head.getBoundingClientRect().height, wide: head.scrollWidth > head.clientWidth };
+        const last = [...i.querySelectorAll("button, input")].at(-1).getBoundingClientRect().right;
+        return { name: head.getBoundingClientRect().left, high: head.getBoundingClientRect().height, wide: head.scrollWidth > head.clientWidth, end: Math.round(last) };
       }),
     );
     if (seen.lists || seen.cloud !== 1 || seen.key !== 1) walk.wrong = `on a machine no clip model fits, the clip card shows ${JSON.stringify(seen)}, not a model in the cloud and its key`;
-    else if (shape.length !== 2 || shape[0].name !== shape[1].name || shape.some((r) => r.wide || r.high !== shape[0].high)) walk.wrong = `the rows of the model in the cloud and its key stand apart: ${JSON.stringify(shape)}`;
+    else if (shape.length !== 2 || shape[0].name !== shape[1].name || shape.some((r) => r.wide || r.high !== shape[0].high || r.end !== shape[0].end)) walk.wrong = `the rows of the model in the cloud and its key stand apart: ${JSON.stringify(shape)}`;
     if (walk.wrong) return;
     await speech.locator("button.act", { hasText: "Download" }).click();
     await speech.locator("li .cell", { hasText: /B of [\d.]+ [KMG]B/ }).waitFor();
