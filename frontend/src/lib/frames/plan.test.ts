@@ -108,6 +108,21 @@ describe("Program", () => {
     expect(r.locate(2.53 + 5)!.at).toBeCloseTo(65.31);
     expect(r.lastPiece).toEqual({ start: 60.31, end: 70 });
   });
+  test("changed further on, it parts at the first visit the change reaches", () => {
+    const later = Program.spliced(p, 0, 58, [clip[0], clip[1], { start: 63.05, end: 64 }], false)!;
+    expect(later.parting).toMatchObject({ v: 2, start: 63.05, end: 64 });
+    expect(later.visit(0)).toEqual(p.visit(0));
+    expect(later.visit(1)).toEqual(p.visit(1));
+    expect(later.end).toBeCloseTo(p.end - 1);
+    // A cut moved: the piece before it ends as it did, so it parts there.
+    const cut = Program.spliced(p, 0, 58, [clip[0], { start: 60.5, end: 62.17 }, clip[2]], false)!;
+    expect(cut.parting).toMatchObject({ v: 0, end: 59.53 });
+    expect(cut.visit(1)).toMatchObject({ start: 60.5, from: p.visit(1)!.from });
+    // Nothing ahead changed, only the start behind the playhead.
+    const behind = Program.spliced(p, 1, 61, [{ start: 56, end: 59.53 }, clip[1], clip[2]], false)!;
+    expect(behind.parting!.v).toBe(2);
+    expect(behind.end).toBeCloseTo(p.end);
+  });
   test("changed twice at the same visit, it keeps what came before", () => {
     const once = Program.spliced(p, 1, 61, [clip[0], { start: 60.31, end: 62 }, clip[2]], false)!;
     const twice = Program.spliced(once, 1, 61.5, [clip[0], { start: 60.31, end: 63.5 }], false)!;
@@ -135,6 +150,7 @@ describe("VideoPlan", () => {
     for (let k = 0; k <= p.lastK; k++) out.push(shownAt(p.need(k)!.rank).toFixed(2));
     return out;
   };
+  const p0 = () => new Program(clip, false);
 
   test("draws every frame of every piece and never one from inside a cut", () => {
     expect(drawnBy(plan)).toEqual([...frames(57, 59.48), ...frames(60.28, 62.12), ...frames(63.04, 64.96)]);
@@ -268,6 +284,34 @@ describe("VideoPlan", () => {
     // Put back by an undo, the end is where the decoder was fed to anyway.
     const back = Program.spliced(short, 1, 61.2, two, false)!;
     expect(plan.rewind(back, back.visit(1)!, () => Infinity)).not.toBeNull();
+  });
+
+  test("changed further on, it keeps the runs its decoders were fed for the pieces before", () => {
+    const fed = new VideoPlan(video, frame, p0(), 0);
+    fed.extend(Infinity);
+    const last = fed.runs[fed.runs.length - 1];
+    const longer = Program.spliced(fed.program, 0, 58, [clip[0], clip[1], { start: 63.05, end: 66 }], false)!;
+    // Every decoder fed, the last only to its first frame: a change to the
+    // last piece's end holds.
+    fed.rewind(longer, longer.parting!, (r) => (r === last ? 0 : Infinity))!();
+    fed.extend(Infinity);
+    expect(drawnBy(fed)).toEqual([...frames(57, 59.48), ...frames(60.28, 62.12), ...frames(63.04, 65.96)]);
+  });
+
+  test("cut short and then looped, the loop starts where the clip now ends", () => {
+    const two = [clip[0], clip[1]];
+    const plan = new VideoPlan(video, frame, new Program(two, false), 0);
+    plan.extend(Infinity);
+    const short = Program.spliced(plan.program, 1, 61, [clip[0], { start: 60.31, end: 61.5 }], false)!;
+    plan.rewind(short, short.parting!, () => -1)!();
+    expect(plan.cutShort).toBe(true);
+    const looped = Program.spliced(short, 1, 61.2, [clip[0], { start: 60.31, end: 61.5 }], true)!;
+    plan.rewind(looped, looped.parting!, () => -1)!();
+    plan.extend(looped.length + 1);
+    expect(plan.cutShort).toBe(false);
+    const drawn: string[] = [];
+    for (let k = 0; plan.need(k) && drawn.length < frames(57, 59.48).length + frames(60.28, 61.44).length + 1; k++) drawn.push(shownAt(plan.need(k)!.rank).toFixed(2));
+    expect(drawn.slice(-2)).toEqual(["61.44", "57.00"]);
   });
 
   test("a loop starts a run back at the first piece's key frame", () => {
@@ -520,6 +564,21 @@ describe("AudioPlan", () => {
     // With something after it, a loop or another piece, the end must fade.
     const looped = Program.spliced(p, 0, 58, [{ start: 57, end: 58.5 }], true)!;
     expect(ran.rewind(looped, looped.visit(0)!, 72000 + 24000, () => false)).toBeNull();
+  });
+
+  test("changed further on, the sound fed for the pieces before it holds", () => {
+    const p = new Program(clip, false);
+    const later = Program.spliced(p, 0, 58, [clip[0], clip[1], { start: 63.05, end: 66 }], false)!;
+    // Fed past the first cut, into the second piece, a second ahead.
+    const fed = Math.round(2.8 * 48000);
+    const near = new AudioPlan(opus, 48000, p, 0);
+    near.extend(3);
+    expect(near.rewind(later, later.parting!, fed, () => false)).not.toBeNull();
+    const all = new AudioPlan(opus, 48000, p, 0);
+    all.extend(Infinity);
+    all.rewind(later, later.parting!, fed, () => false)!();
+    all.extend(Infinity);
+    expect(all.runs.flatMap((r) => r.stretches).map((s) => s.to)).toEqual([59.53 * 48000, 62.17 * 48000, 66 * 48000]);
   });
 
   test("a loop back to where the run started starts a run of its own", () => {

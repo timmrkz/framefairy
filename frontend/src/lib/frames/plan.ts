@@ -75,23 +75,43 @@ export class Program {
   }
 
   // The program a running play goes on with once the clip changed under
-  // it, by a drag, an undo or a redo, see FrameQueue.setProgram. Visit v,
-  // the one the playhead is in at the moment `at`, ends where the piece
-  // that holds that moment ends now, and after it come the pieces after
-  // that one, round again from the first while it loops. Everything before
-  // stays where it was on the program, so the play goes on with no stop.
-  // Null where the moment is in none of the pieces: in a cut, or outside
-  // the clip.
+  // it, by a drag, an undo or a redo, see FrameQueue.setProgram. It parts
+  // from the program before at the first visit, from v, the one the
+  // playhead is in at the moment `at`, on, that the new pieces change:
+  // that visit ends where its piece ends now, and after it come the
+  // pieces after that one, round again from the first while it loops. The
+  // visits before it stay as they were, so a change further on never
+  // touches what was worked out or fed for them, and the play goes on with
+  // no stop. Null where the moment is in none of the pieces: in a cut, or
+  // outside the clip.
   static spliced(before: Program, v: number, at: number, pieces: Piece[], loop: boolean): Program | null {
-    const was = before.visit(v);
+    let was = before.visit(v);
     const p = new Program(pieces, loop);
-    const j = p.pieces.findIndex((q) => at >= q.start && at < q.end);
+    const n = p.pieces.length;
+    let j = p.pieces.findIndex((q) => at >= q.start && at < q.end);
     if (!was || j < 0) return null;
+    // On while a visit ends where it did and the visit after it starts
+    // where the piece after it does now. Once round the clip is enough:
+    // past that, nothing ahead changed.
+    for (let i = 0; i <= n && was.end === p.pieces[j].end; i++) {
+      const k = j + 1 < n ? j + 1 : loop ? 0 : -1;
+      const after = before.visit(v + 1);
+      if (k < 0 || !after || after.start !== p.pieces[k].start) break;
+      v++;
+      j = k;
+      was = after;
+    }
     const visit = { ...was, piece: j, end: p.pieces[j].end };
-    // Spliced again at the same visit, the one before it is what stays.
-    const root = before.splice && before.splice.v === v ? before.splice.before : before;
+    // Spliced again no further on than before, the program before that
+    // splice holds every visit that stays.
+    const root = before.splice && before.splice.v >= v ? before.splice.before : before;
     p.splice = { before: root, v, visit, next: j + 1, base: visit.from + visit.end - visit.start };
     return p;
+  }
+
+  // The visit a splice parts at, see spliced, whose plan the play changes.
+  get parting(): Visit | null {
+    return this.splice?.visit ?? null;
   }
 
   // Whether a running play took in a change, see spliced. Such a program
@@ -246,6 +266,9 @@ export class VideoPlan {
   private nextVisit: number;
   private nextK = 0;
   private done = false;
+  // The program ends inside a span worked out as it was before, see
+  // rewind.
+  cutShort = false;
 
   constructor(
     readonly samples: Samples,
@@ -349,7 +372,7 @@ export class VideoPlan {
   rewind(program: Program, visit: Visit, fedTo: (run: Run) => number): (() => void) | null {
     let i = this.spans.length - 1;
     while (i >= 0 && this.spans[i].visit.v !== visit.v) i--;
-    if (i < 0) return null;
+    if (i < 0) return visit.v >= this.nextVisit ? this.unplanned(program) : null;
     const sp = this.spans[i];
     // Cut short, with nothing after the new end: what was worked out stays
     // as it was fed, and the play ends at the program's end. A later
@@ -359,6 +382,7 @@ export class VideoPlan {
         this.program = program;
         this.nextVisit = visit.v + 1;
         this.done = false;
+        this.cutShort = true;
       };
     }
     const run = this.runs[sp.run];
@@ -388,6 +412,16 @@ export class VideoPlan {
       if (fed > run.last) run.sealed = true;
       this.nextK = sp.kLast + 1;
       this.nextVisit = visit.v + 1;
+      this.done = false;
+      this.cutShort = false;
+    };
+  }
+
+  // The program parts where nothing is worked out yet: what is worked out
+  // holds, and the rest is worked out from the new program.
+  private unplanned(program: Program): () => void {
+    return () => {
+      this.program = program;
       this.done = false;
     };
   }
@@ -653,7 +687,13 @@ export class AudioPlan {
       for (si = sts.length - 1; si >= 0 && sts[si].visit.v !== visit.v; si--);
       if (si >= 0) break;
     }
-    if (ri < 0) return null;
+    if (ri < 0) {
+      if (visit.v < this.nextVisit) return null;
+      return () => {
+        this.program = program;
+        this.done = false;
+      };
+    }
     const run = this.runs[ri];
     const st = run.stretches[si];
     const pieceEnd = Math.round((visit.from + visit.end - visit.start) * this.rate);

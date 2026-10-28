@@ -803,16 +803,19 @@ export const steps = {
   //                    before it plays, and takes Undo, or Undo and Redo,
   //                    from the menu bar while it plays. The play starts a
   //                    fifth of the clip before where the end is dragged
-  //                    to. Tim on #277: the play plays the clip as it is
-  //                    now, to its old end after Undo and to the new one
-  //                    after Redo, never going back, no older frame drawn,
-  //                    and never started again
+  //                    to, or with when "before a cut" a second and a half
+  //                    before the first cut, where the decoders already
+  //                    work on the piece after it. Tim on #277: the play
+  //                    plays the clip as it is now, to its old end after
+  //                    Undo and to the new one after Redo, jumping every
+  //                    cut, never going back, no older frame drawn, and
+  //                    never started again
   async "end in and back"(walk, arg, s) {
     const { page, watch } = walk;
     const [share, when, ...menu] = arg;
     const was = (await engineState(page, watch.at)).segments;
     const oldEnd = was.at(-1).end;
-    const from = was[0].start + (share - 0.2) * (oldEnd - was[0].start);
+    const from = when === "before a cut" ? was[0].end - 1.5 : was[0].start + (share - 0.2) * (oldEnd - was[0].start);
     const record = () =>
       page.evaluate(() => {
         window.__played = [];
@@ -852,14 +855,15 @@ export const steps = {
     await play();
     const starts = await page.evaluate(() => window.__frameQueue.stats.starts);
     await record();
-    if (when === "playing") await pullIn();
+    if (when !== "paused") await pullIn();
     const newEnd = (await engineState(page, watch.at)).segments.at(-1).end;
     for (const m of menu) {
       await page.evaluate((m) => window.__menu(m), m);
       await settle(page);
     }
     const [atBack, playingAtBack] = await page.evaluate(() => [Number(document.querySelector(".screen").dataset.playhead), !!document.querySelector('button[aria-label="Pause"]')]);
-    const end = (await engineState(page, watch.at)).segments.at(-1).end;
+    const pieces = (await engineState(page, watch.at)).segments;
+    const end = pieces.at(-1).end;
     const want = menu.length % 2 ? oldEnd : newEnd;
     // The clip's play stops by itself at the clip's end, wherever that is.
     await playUntil(page, { past: oldEnd + 1, pause: true });
@@ -872,13 +876,82 @@ export const steps = {
     const reached = Math.max(...played.map(([at]) => at));
     const frame = 1 / (await rate(page));
     const startedAgain = (await page.evaluate(() => window.__frameQueue.stats.starts)) - starts;
-    const done = `the end was dragged from ${oldEnd.toFixed(3)} to ${newEnd.toFixed(3)} ${when === "playing" ? "while it played" : "before it played"}, then ${menu.join(" and ")}`;
+    const done = `the end was dragged from ${oldEnd.toFixed(3)} to ${newEnd.toFixed(3)} ${when === "paused" ? "before it played" : "while it played"}, then ${menu.join(" and ")}`;
     if (!(newEnd < oldEnd - 1)) walk.wrong = `the end was dragged in only from ${oldEnd.toFixed(3)} to ${newEnd.toFixed(3)}`;
     else if (Math.abs(end - want) > 1e-3) walk.wrong = `${done}, and the clip ends at ${end.toFixed(3)}, not ${want.toFixed(3)}`;
     else if (!playingAtBack || !(atBack < newEnd - frame)) walk.wrong = `the play was at ${atBack.toFixed(3)}, ${playingAtBack ? "playing" : "stopped"}, after ${menu.join(" and ")}, not before the end at ${newEnd.toFixed(3)}, so the walk proves nothing`;
     else if (played.length < 30) walk.wrong = `only ${played.length} animation frames were read while it played`;
     else if (!(reached > want - 3 * frame && reached < want + frame)) walk.wrong = `${done}, and the play stopped at ${reached.toFixed(3)}, not at the clip's end at ${want.toFixed(3)}`;
     else if (startedAgain) walk.wrong = `${done}, and the play started again ${startedAgain} times`;
+    else walk.wrong = inACut(played, pieces, frame);
+    for (let i = 1; i < played.length && !walk.wrong; i++) {
+      const [at, n] = played[i];
+      const [at0, n0] = played[i - 1];
+      if (at < at0 - 1e-6) walk.wrong = `the playhead went back from ${at0.toFixed(3)} to ${at.toFixed(3)} while it played`;
+      else if (n >= 0 && n0 >= 0 && n < n0) walk.wrong = `frame ${n} was drawn after frame ${n0} while it played`;
+    }
+  },
+  // ["menu while playing", what, share]
+  //                    plays the clip from this share of the way along it
+  //                    and takes Undo or Redo from the menu bar while it
+  //                    plays, which puts a cut back or takes it away ahead
+  //                    of the playhead. Tim on #277: the play plays the
+  //                    clip as it is now, through where the cut was after
+  //                    it is taken away and jumping it once it is put
+  //                    back, on to a second past it, never going back, no
+  //                    older frame drawn, and never started again
+  async "menu while playing"(walk, arg, s) {
+    const { page, watch } = walk;
+    const [what, share] = arg;
+    const before = (await engineState(page, watch.at)).segments;
+    const g = await handles(page);
+    const into = g.start.x + g.start.w;
+    await clickOnTrack(page, into + share * (g.end.x - into), high(g.track));
+    await settle(page);
+    await page.evaluate(() => document.body.focus());
+    await preview(page, 0.2);
+    await page.keyboard.press("Space");
+    await settle(page);
+    await playUntil(page, { most: 0.2 });
+    const starts = await page.evaluate(() => window.__frameQueue.stats.starts);
+    await page.evaluate(() => {
+      window.__played = [];
+      window.__playWatch = true;
+      const tick = () => {
+        if (!window.__playWatch) return;
+        const at = Number(document.querySelector(".screen")?.dataset.playhead);
+        const playing = !!document.querySelector('button[aria-label="Pause"]');
+        window.__played.push([at, window.__pictured ? window.__pictured() : -1, playing]);
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+    await page.evaluate((m) => window.__menu(m), what);
+    await settle(page);
+    const [atBack, playingAtBack] = await page.evaluate(() => [Number(document.querySelector(".screen").dataset.playhead), !!document.querySelector('button[aria-label="Pause"]')]);
+    const pieces = (await engineState(page, watch.at)).segments;
+    // A second past the cut, whichever side of the menu it is on.
+    const past = Math.max(...[...cutsOf(before), ...cutsOf(pieces)].map(([, b]) => b)) + 1;
+    await playUntil(page, { past, pause: true });
+    await page.evaluate(() => (window.__playWatch = false));
+    await settle(page);
+    await watch.step(what, s);
+    const all = await page.evaluate(() => window.__played ?? []);
+    const stopped = all.findIndex(([, , on]) => !on);
+    const played = stopped < 0 ? all : all.slice(0, stopped);
+    const reached = Math.max(...played.map(([at]) => at));
+    const frame = 1 / (await rate(page));
+    const startedAgain = (await page.evaluate(() => window.__frameQueue.stats.starts)) - starts;
+    // The cuts the menu took away, which the play now goes through.
+    const gone = cutsOf(before).filter(([a, b]) => !cutsOf(pieces).some(([c, d]) => c === a && d === b));
+    const ahead = Math.min(...[...cutsOf(before), ...cutsOf(pieces)].map(([a]) => a));
+    if (JSON.stringify(before) === JSON.stringify(pieces)) walk.wrong = `${what} changed nothing in the clip`;
+    else if (!playingAtBack || !(atBack < ahead - frame)) walk.wrong = `the play was at ${atBack.toFixed(3)}, ${playingAtBack ? "playing" : "stopped"}, after ${what}, not before the cut at ${ahead.toFixed(3)}, so the walk proves nothing`;
+    else if (played.length < 30) walk.wrong = `only ${played.length} animation frames were read while it played`;
+    else if (!(reached > past - 0.5)) walk.wrong = `after ${what} the play stopped at ${reached.toFixed(3)}, not past the cut`;
+    else if (startedAgain) walk.wrong = `after ${what} the play started again ${startedAgain} times`;
+    else if (gone.some(([a, b]) => !played.some(([at]) => at > a + frame && at < b - frame))) walk.wrong = `after ${what} took the cut away the play still jumped it`;
+    else walk.wrong = inACut(played, pieces, frame);
     for (let i = 1; i < played.length && !walk.wrong; i++) {
       const [at, n] = played[i];
       const [at0, n0] = played[i - 1];
@@ -1737,4 +1810,21 @@ function watchEdge(page, label) {
     };
     tick();
   }, label);
+}
+
+// The cuts between a clip's pieces, each from where a piece ends to where
+// the next starts.
+function cutsOf(pieces) {
+  return pieces.slice(1).map((p, i) => [pieces[i].end, p.start]);
+}
+
+// What is wrong when a play recorded as [playhead, frame, playing] stood
+// inside a cut of the pieces, more than a frame from its edges: it played
+// a part the clip cuts out. Nothing when it jumped every cut.
+function inACut(played, pieces, frame) {
+  for (const [a, b] of cutsOf(pieces)) {
+    const inside = played.find(([at]) => at > a + frame && at < b - frame);
+    if (inside) return `the playhead stood at ${inside[0].toFixed(3)} while it played, inside the cut from ${a.toFixed(3)} to ${b.toFixed(3)}`;
+  }
+  return null;
 }

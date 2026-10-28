@@ -105,16 +105,20 @@ removed. Nothing is prepared before the first play.
    the machinery in. Now every change of the clip while it plays, an edge
    or a cut dragged, an undo or a redo, is spliced in ahead of the
    playhead, `changed` in `lib/frames/queue.ts` and `Program.spliced` in
-   `lib/frames/plan.ts`. The piece the playhead is in runs on to where it
-   ends now, the pieces after it are the new ones, and nothing that plays
-   moves, stops or jumps. A play cut short keeps what was fed and stops
-   at the new end, the sound faded out there by the sound card, so a
-   later change, the end put back or dragged on past the playhead, is
+   `lib/frames/plan.ts`. The play keeps what it worked out up to the
+   first piece the change reaches, which runs on to where it ends now,
+   the pieces after it are the new ones, and nothing that plays moves,
+   stops or jumps. So a change further on, the clip's end with the
+   playhead a moment before a cut, touches nothing the decoders already
+   work on. A play cut short keeps what was fed and stops at the new end,
+   the sound faded out there by the sound card, so a later change, the
+   end put back, dragged on past the playhead or the loop switched on, is
    weighed against what was really fed. Only where the decoders or the
-   sound card were fed past the place the two programs part, and what
-   was fed no longer holds, does the play start again from the playhead,
-   a moment's stop: a cut moved to within a second ahead of the
-   playhead, or a run already flushed. An edge of the clip dragged past
+   sound card were fed past the place the two programs part does the play
+   start again from the playhead, a moment's stop: the next cut moved or
+   taken away within about two seconds ahead of the playhead, where the
+   piece after it is decoded already, or a run already flushed. An edge of
+   the clip dragged past
    the playhead leaves the playhead outside the clip, on the video,
    Tim's rule on #277, so the play goes on as a play of the video,
    straight on to the episode's end, `playOn`. Paused, the playhead goes

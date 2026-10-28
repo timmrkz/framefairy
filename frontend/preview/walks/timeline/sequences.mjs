@@ -550,6 +550,29 @@ export default [
     steps: [["end in and back", 0.75, "playing", "undo", "redo"]],
   },
   {
+    // Found by the review of #568: a change anywhere in the clip started
+    // the play again while the playhead was in the last two seconds
+    // before a cut, where the decoders already worked on the piece after
+    // it. The play takes in only what the change reaches.
+    name: "an end pulled in and undone while the clip plays just before a cut plays on to the old end",
+    steps: [
+      ["cut at", 0.5],
+      ["cuts", 1],
+      ["end in and back", 0.8, "before a cut", "undo"],
+    ],
+  },
+  {
+    // Tim on #277: a cut taken away by Undo while the clip plays is
+    // played through, and put back by Redo it is jumped.
+    name: "a cut undone and redone while the clip plays is played through and then jumped",
+    steps: [
+      ["cut at", 0.6],
+      ["cuts", 1],
+      ["menu while playing", "undo", 0.4],
+      ["menu while playing", "redo", 0.4],
+    ],
+  },
+  {
     // Tim moved the crop to the side of the picture and saw the viewer's
     // rounded corner cut into the crop frame's line, and bright specks of
     // the picture in the frame's own rounded corners, where the shade

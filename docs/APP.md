@@ -524,8 +524,9 @@ pause holds it. Before, the play went on from the press at once and ran
 away from the hand before a drag could start. Only the space bar and a click on the
 clip timeline change a play. A clip's pieces changing while it plays, a
 cut made, moved or put back, an edge trimmed or a step undone or redone,
-moves no playhead and never stops the play: the play goes on and plays
-the clip as it is now, from the playhead on. An end pulled in and put
+moves no playhead and stops the play only where the next cut is moved
+within about two seconds ahead of the playhead: the play goes on and
+plays the clip as it is now, from the playhead on. An end pulled in and put
 back with Cmd+Z plays on to the end put back. Tim's rule, #277: an edit
 while it plays never disturbs the play, and an edge of the clip dragged
 past the playhead leaves the playhead outside the clip, on the video. The play then goes on as a play of the

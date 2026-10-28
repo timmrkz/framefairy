@@ -890,6 +890,10 @@ export class FrameQueue {
     if (this.state !== "playing" && this.state !== "starting") return false;
     const copy = pieces ? pieces.map((p) => ({ start: p.start, end: p.end })) : null;
     if (JSON.stringify([copy, !loop]) !== this.wantedKey) return false;
+    // A play cut short worked on past its end as it was, see
+    // AudioPlan.rewind, and the loop needs what follows the end, so the
+    // loop is taken in the way any change of the clip is, see changed.
+    if (this.vplan?.cutShort || this.aplan?.cutShort) return false;
     if (this.vplan && this.built) {
       if (loop) this.built.loopOn();
       else this.built.loopOff(Math.max(this.reached, this.sounded()));
@@ -915,9 +919,10 @@ export class FrameQueue {
 
   // The clip changed under a running play, by a drag, an undo or a redo:
   // the play takes it in at once, ahead of the playhead, and goes on with
-  // no stop, Tim's rule on #277 and his report on it. The piece the
-  // playhead is in ends where it ends now, and what comes after it is
-  // worked out again from the new pieces, see Program.spliced. Nothing
+  // no stop, Tim's rule on #277 and his report on it. What the play
+  // worked out holds up to the first visit the change reaches, which ends
+  // where its piece ends now, and what comes after it is worked out again
+  // from the new pieces, see Program.spliced. Nothing
   // already played moves, so the picture and the sound go on from where
   // they are. Only where the decoders or the sound card were already fed
   // past where the old and the new clip part, an edit a moment ahead of
@@ -942,7 +947,7 @@ export class FrameQueue {
     if (!there) return "outside";
     const program = Program.spliced(before, there.v, there.at, copy ?? [{ start: 0, end: this.movie.duration }], loop);
     if (!program) return "outside";
-    const visit = program.visit(there.v)!;
+    const visit = program.parting!;
     const picture = vplan.rewind(program, visit, (run) => {
       const slot = this.slotOf(run.id);
       return !slot ? -1 : slot.flushing ? Infinity : slot.next - 1;
@@ -971,17 +976,21 @@ export class FrameQueue {
 
   // A play cut short ends inside sound fed with no fade there, see
   // AudioPlan.rewind, so the sound card fades it out at the end, over the
-  // fade a piece's edge has. Any other change takes that fade away.
-  private fadeAtEnd() {
+  // fade a piece's edge has. Any other change takes that fade away. On
+  // with a play paused and played on, the fade is added after the ramp
+  // the sound comes back on, which takes away what was scheduled before.
+  private fadeAtEnd(changed = true) {
     if (this.c0 === null || !this.aplan) return;
     const gain = this.out.gain;
     const now = this.audio.currentTime;
-    gain.cancelScheduledValues(now);
-    gain.setValueAtTime(1, now);
+    if (changed) {
+      gain.cancelScheduledValues(now);
+      gain.setValueAtTime(1, now);
+    }
     const end = this.program.end;
     if (!this.aplan.cutShort || !Number.isFinite(end)) return;
     const at = this.c0 + (Math.round(end * this.sampleRate) - this.m0) / this.sampleRate;
-    if (at - FADE <= now) return;
+    if (at - FADE <= now + (changed ? 0 : FADE)) return;
     gain.setValueAtTime(1, at - FADE);
     gain.linearRampToValueAtTime(0, at);
   }
@@ -1195,6 +1204,7 @@ export class FrameQueue {
       this.trace(`playing on from ${this.at.toFixed(3)} s`);
       this.began = { at: this.at, drawn: this.stats.drawn, late: this.stats.late, lateSound: this.stats.lateSound, when: performance.now(), even: new Even() };
       this.ramp(1);
+      this.fadeAtEnd(false);
       this.report();
       this.loop();
       return;
