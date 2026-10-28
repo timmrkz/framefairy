@@ -498,14 +498,18 @@
       box = [...at.getClientRects()].find((r) => r.height);
     }
     if (!box) return;
-    // Inside the field's padding, where its lines are at rest, so the
-    // last line is shown the way the end of the report is, and in both
-    // engines alike, whichever way each scrolled to its own cursor.
-    const pad = getComputedStyle(field);
-    const top = field.getBoundingClientRect().top + field.clientTop + parseFloat(pad.paddingTop);
-    const bottom = top - parseFloat(pad.paddingTop) + field.clientHeight - parseFloat(pad.paddingBottom);
-    if (box.top < top) field.scrollTop -= Math.ceil(top - box.top);
-    else if (box.bottom > bottom) field.scrollTop += Math.ceil(box.bottom - bottom);
+    // The whole line the cursor is on, inside the field's padding, where
+    // its lines are at rest, so the last line is shown the way the end of
+    // the report is, and in both engines alike, whichever way each
+    // scrolled to its own cursor. The cursor's own box is shorter than
+    // its line, and Tim saw the field scroll a few pixels more with the
+    // words said after a new line.
+    const style = getComputedStyle(field);
+    const [pad, foot, line] = [parseFloat(style.paddingTop), parseFloat(style.paddingBottom), parseFloat(style.lineHeight)];
+    const top = field.getBoundingClientRect().top + field.clientTop;
+    const at = pad + Math.floor((box.top + box.height / 2 - top + field.scrollTop - pad) / line) * line;
+    if (at - field.scrollTop < pad) field.scrollTop = at - pad;
+    else if (at + line - field.scrollTop > field.clientHeight - foot) field.scrollTop = at + line + foot - field.clientHeight;
   }
   // keyed hears a key go down in the field, and reveals the cursor once
   // the key has moved it or typed. A key that does neither, Shift alone,

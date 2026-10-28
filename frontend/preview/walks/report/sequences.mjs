@@ -193,6 +193,10 @@ export default [
       ["write", "One\nTwo\nThree\nFour\nFive\nSix\nSeven\nEight\nNine\nTen\nEleven\nTwelve", "end"],
       ["dictate", "start"],
       ["press, the cursor in view", ["Shift+Enter", 12]],
+      // At the end of the report, down to its padding, where the words
+      // said next leave it too. Tim saw the field scroll a few pixels
+      // with the next words after a new line.
+      ["report at end"],
       ["press, the cursor in view", ["ArrowUp", 24]],
       ["press, the cursor in view", ["ArrowDown", 24]],
       ["dictate", "escape"],
