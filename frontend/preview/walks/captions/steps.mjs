@@ -8,7 +8,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { basename } from "node:path";
-import { ask, clickOnTrack, control, cropPixels, engineState, episodeOn, fromSidebar, handles, high, news, nextNews, nextPaint, open, pageUntil, playUntil, seekTo, settle, shortFramesFrom, shown, shownOnPlayhead, xOf } from "../bridge.mjs";
+import { ask, clickOnTrack, control, cropPixels, engineState, episodeOn, fromSidebar, handles, high, news, nextNews, nextPaint, open, pageUntil, playOn, playUntil, seekTo, settle, shortFramesFrom, shown, shownOnPlayhead, xOf } from "../bridge.mjs";
 import { canLook, clickCard, clickedFromAhead, rate, restAhead, shortOf, shotClips, still, url } from "../common/steps.mjs";
 import { describe } from "../rules.mjs";
 
@@ -1542,11 +1542,7 @@ export const steps = {
     // of a play waits for its own, see FrameQueue.dress. So it is told
     // and not judged. That every frame of a play asks for its layer
     // ahead, the fix for issue #288, is held in captions.test.ts.
-    await page.evaluate(() => {
-      const q = window.__frameQueue;
-      window.__soundClock = q.playClock;
-      q.playClock = (heard, unshown) => Math.min(heard, unshown);
-    });
+    await playOn(page, "frames");
     const stop = await watchPills(page);
     try {
       await page.evaluate(() => document.body.focus());
@@ -1557,8 +1553,8 @@ export const steps = {
       if (!(played.at >= from + arg - 1e-6)) walk.wrong = `the play from ${from.toFixed(2)} stopped at ${played.at.toFixed(2)}, before it went on ${arg} s`;
     } finally {
       // The sound card's clock back, however the play ended.
+      await playOn(page, "sound");
       await page.evaluate(() => {
-        window.__frameQueue.playClock = window.__soundClock;
         if (document.querySelector('button[aria-label="Play"]')) return;
         const key = { key: " ", code: "Space", bubbles: true, cancelable: true };
         document.body.dispatchEvent(new KeyboardEvent("keydown", key));
