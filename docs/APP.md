@@ -523,10 +523,16 @@ button says Pause the whole time, and only the sound is held, the way a
 pause holds it. Before, the play went on from the press at once and ran
 away from the hand before a drag could start. Only the space bar and a click on the
 clip timeline change a play. A clip's pieces changing while it plays, a
-cut made, moved or put back, an edge trimmed or a step undone, moves no
-playhead and changes nothing that plays: the play goes on with the pieces
-it started with, and the next play, or a click, plays the clip as it is
-now. A drag on a cut's edge used to start the play again on every step,
+cut made, moved or put back, an edge trimmed or a step undone or redone,
+moves no playhead and stops the play only where the next cut is moved
+within about two seconds ahead of the playhead: the play goes on and
+plays the clip as it is now, from the playhead on. An end pulled in and put
+back with Cmd+Z plays on to the end put back. Tim's rule, #277: an edit
+while it plays never disturbs the play, and an edge of the clip dragged
+past the playhead leaves the playhead outside the clip, on the video. The play then goes on as a play of the
+video, past where the clip ended and on to the episode's end, the clip
+dimmed as on the video, without a stop or a jump.
+A drag on a cut's edge used to start the play again on every step,
 which stuttered. Loop switched on or off changes only where the play
 ends, never what plays: the picture stops at that end and the sound
 stops there too, in the silence the clip fades out to, however often L

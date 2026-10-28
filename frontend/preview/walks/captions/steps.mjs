@@ -8,7 +8,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { basename } from "node:path";
-import { ask, control, cropPixels, engineState, episodeOn, fromSidebar, handles, high, news, nextNews, nextPaint, open, pageUntil, playUntil, seekTo, settle, shortFramesFrom, shown, shownOnPlayhead, xOf } from "../bridge.mjs";
+import { ask, clickOnTrack, control, cropPixels, engineState, episodeOn, fromSidebar, handles, high, news, nextNews, nextPaint, open, pageUntil, playUntil, seekTo, settle, shortFramesFrom, shown, shownOnPlayhead, xOf } from "../bridge.mjs";
 import { canLook, clickCard, clickedFromAhead, rate, restAhead, shortOf, shotClips, still, url } from "../common/steps.mjs";
 import { describe } from "../rules.mjs";
 
@@ -670,7 +670,6 @@ export const steps = {
     }
     if ((await canvasTall()) !== tall) {
       walk.wrong = `the video preview could not be made ${tall} pixels tall, it is ${await canvasTall()}`;
-      await sized.close();
       return;
     }
     // A moment of the clip's clock in the episode, and the frame of the
@@ -711,6 +710,14 @@ export const steps = {
     for (const at of moments.slice(0, 12)) {
       if (!(await seekTo(sized, at, fps))) {
         walk.wrong = `the video preview never showed the frame at ${at.toFixed(2)}`;
+        break;
+      }
+      // The click changed nothing of the clip: two clicks a few pixels
+      // apart were once a double-click, which cut a part out, and the clip
+      // compared was no longer the one the short was made from, issue #560.
+      const now = (await engineState(page, watch.at)).segments;
+      if (JSON.stringify(now) !== JSON.stringify(pieces)) {
+        walk.wrong = `the click that put the playhead at ${at.toFixed(2)} s changed the clip, its pieces were ${JSON.stringify(pieces)} and are ${JSON.stringify(now)}`;
         break;
       }
       // Twice: the frame's own layer, then the pop it may start over
@@ -799,10 +806,14 @@ export const steps = {
         if (off.mean > d.mean + 0.5) apart++;
       }
     }
-    await sized.close();
     if (process.env.VERBOSE) console.log(`        ${report.join("\n        ")}`);
     if (!walk.wrong && apart < 4) walk.wrong = `only ${apart} frames of the short either side were told apart from the video preview, so a frame off would pass`;
     if (!walk.wrong && compared < 6) walk.wrong = `only ${compared} frames of the short were compared`;
+    // A comparison that failed leaves its page open, so its trace is kept
+    // with the walk's, see keepTraces. Closed, the trace of the page the
+    // comparison was made on went with it, and the one kept held only the
+    // render, issue #560.
+    if (!walk.wrong) await sized.close();
   },
   // ["caption edge", [edge, word]]
   //                    clicks the "start" or "end" edge of the caption
@@ -1908,7 +1919,7 @@ export const steps = {
     // then the caption still up from the click before, issue #359.
     const clickUp = async (x, y, where) => {
       const lost = await captionsLost(page);
-      await page.mouse.click(x, y);
+      await clickOnTrack(page, x, y);
       await settle(page);
       if (!(await shownOnPlayhead(page, { captions: true, lost }))) {
         walk.wrong = `after the click on ${where}, a layer of captions was given up on`;

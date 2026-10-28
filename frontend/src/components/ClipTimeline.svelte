@@ -345,11 +345,11 @@
   // with it, the same pace the playhead itself is dragged at.
   //
   // edgesWhilePlaying: an edge of the clip or of a cut, dragged or
-  // clicked while the episode plays, moves no playhead,
-  // and the play goes on with the pieces it started with, see setProgram
-  // in lib/frames/queue.ts. The edit is saved and drawn at once, and the
-  // next play plays it. Only the space bar and a click on the clip
-  // timeline change a play, rule 6 of docs/VIDEO-PREVIEW.md. Tim saw the
+  // clicked while the episode plays, moves no playhead and never stops
+  // the play: the play takes in the clip as it is now ahead of the
+  // playhead, see setProgram in lib/frames/queue.ts. The edit is saved
+  // and drawn at once. Only the space bar and a click on the clip
+  // timeline move a play, rule 6 of docs/VIDEO-PREVIEW.md. Tim saw the
   // play stutter with the hand on a cut's edge.
   let wanted = 0;
   let queued = 0;

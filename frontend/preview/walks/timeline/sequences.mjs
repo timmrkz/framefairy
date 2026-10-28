@@ -527,6 +527,52 @@ export default [
     ],
   },
   {
+    // Issue #277, decided by Tim: an edge moved while the clip plays
+    // changes nothing that plays. An end dragged back past the playhead
+    // leaves the playhead outside the clip, on the video, so the play goes
+    // on as a play of the video, past where the clip ended before. Paused,
+    // the playhead goes with the edge, see "a cut's edges dragged take
+    // the playhead along".
+    name: "an end dragged back past the playing playhead plays on into the video",
+    steps: [["end back past the playhead", 0.5]],
+  },
+  {
+    // Tim on #277: he pulled the end of the clip in, played it, and put
+    // the end back with Cmd+Z while it played, and the play still stopped
+    // at the end he had taken back. A play plays the clip as it is now.
+    name: "an end pulled in and undone while the clip plays plays on to the old end",
+    steps: [["end in and back", 0.75, "paused", "undo"]],
+  },
+  {
+    // The same with the end pulled in while it plays, and Redo after the
+    // Undo: the play stops at the end pulled in.
+    name: "an end pulled in while the clip plays, undone and redone, stops at the new end",
+    steps: [["end in and back", 0.75, "playing", "undo", "redo"]],
+  },
+  {
+    // Found by the review of #568: a change anywhere in the clip started
+    // the play again while the playhead was in the last two seconds
+    // before a cut, where the decoders already worked on the piece after
+    // it. The play takes in only what the change reaches.
+    name: "an end pulled in and undone while the clip plays just before a cut plays on to the old end",
+    steps: [
+      ["cut at", 0.5],
+      ["cuts", 1],
+      ["end in and back", 0.8, "before a cut", "undo"],
+    ],
+  },
+  {
+    // Tim on #277: a cut taken away by Undo while the clip plays is
+    // played through, and put back by Redo it is jumped.
+    name: "a cut undone and redone while the clip plays is played through and then jumped",
+    steps: [
+      ["cut at", 0.6],
+      ["cuts", 1],
+      ["menu while playing", "undo", 0.4],
+      ["menu while playing", "redo", 0.4],
+    ],
+  },
+  {
     // Tim moved the crop to the side of the picture and saw the viewer's
     // rounded corner cut into the crop frame's line, and bright specks of
     // the picture in the frame's own rounded corners, where the shade
