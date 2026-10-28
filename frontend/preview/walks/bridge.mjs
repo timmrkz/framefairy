@@ -3,7 +3,7 @@
 // engine's own answer to compare the screen with. See docs/TESTING.md.
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { chromium } from "playwright";
 import { filmed as filmedList } from "./filmed.mjs";
 
@@ -128,7 +128,7 @@ export async function newBrowser() {
 // WALKCOVERAGE names a folder, and every page a walk opens counts the
 // lines of the interface it runs, which make walks COVERAGE= turns into
 // a report on the components, see Coverage in docs/TESTING.md. The
-// counts of a page are kept when it is closed, or its browser is, in the
+// counts of a page are kept when it is closed, in the
 // folder monocart-coverage-reports gathers them in, one file for each
 // page, so the walks running side by side never write the same file.
 // Each script is named by its path alone, so the same script served by
@@ -136,6 +136,7 @@ export async function newBrowser() {
 // is the one the build left beside it, see preview/bridge.config.ts.
 const coverage = process.env.WALKCOVERAGE;
 const built = join(import.meta.dirname, "..", "dist-bridge");
+const top = resolve(import.meta.dirname, "..", "..", "..");
 function counted(browser) {
   const open = new Set();
   const keep = async (page) => {
@@ -154,7 +155,11 @@ function counted(browser) {
       if (!/^\/assets\/.+\.js$/.test(path)) continue;
       const map = join(built, `${path}.map`);
       if (!existsSync(map)) continue;
-      scripts.push({ ...entry, url: `http://bridge${path}`, sourceMap: JSON.parse(readFileSync(map, "utf8")) });
+      // Each source of the map named from the top of the repository,
+      // frontend/src/lib/api.ts, for the report and for Codecov.
+      const sourceMap = JSON.parse(readFileSync(map, "utf8"));
+      sourceMap.sources = sourceMap.sources.map((s) => relative(top, resolve(dirname(map), s)));
+      scripts.push({ ...entry, url: `http://bridge${path}`, sourceMap });
     }
     const { CoverageReport } = await import("monocart-coverage-reports");
     await new CoverageReport({ outputDir: coverage, logging: "error" }).add(scripts);
@@ -164,10 +169,18 @@ function counted(browser) {
     const page = await plain(options);
     await page.coverage.startJSCoverage({ resetOnNavigation: false });
     open.add(page);
+    // A page is closed with itself, with the context browser.newPage
+    // made for it, which is how a sequence ends, or with the browser.
     const close = page.close.bind(page);
     page.close = async (options) => {
       await keep(page);
       return close(options);
+    };
+    const context = page.context();
+    const closeContext = context.close.bind(context);
+    context.close = async (options) => {
+      await keep(page);
+      return closeContext(options);
     };
     return page;
   };

@@ -6,11 +6,10 @@
 //
 // Only the code under frontend/src is counted, by the source maps the
 // build left beside each script, so a library the bundle carries is not.
-// The paths are written from the top of the repository, the way Codecov
-// names every other file. A report that counts no line of any component
-// fails, since the walks reach every one, and a report like that means
-// the counting broke, not that the walks stopped reaching the app.
-import { existsSync, readFileSync } from "node:fs";
+// A report that counts no line of any component fails, since the walks
+// reach every one, and a report like that means the counting broke, not
+// that the walks stopped reaching the app.
+import { copyFileSync, existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { CoverageReport } from "monocart-coverage-reports";
 
@@ -18,20 +17,16 @@ const [kept, out] = process.argv.slice(2);
 if (!kept || !out) throw new Error("usage: node preview/coverage.mjs <the folder the walks kept> <the lcov file>");
 if (!existsSync(resolve(kept, ".cache"))) throw new Error(`the walks kept no counts in ${kept}`);
 
-// A path from a source map, like ../../src/lib/clips.ts, from the top of
-// the repository: frontend/src/lib/clips.ts.
-function fromTop(path) {
-  const at = path.lastIndexOf("src/");
-  return at < 0 ? path : `frontend/${path.slice(at)}`;
-}
-
 await new CoverageReport({
   outputDir: kept,
   logging: "error",
-  sourceFilter: (path) => /(^|\/)src\//.test(path) && !path.includes("node_modules"),
-  sourcePath: fromTop,
-  reports: [["lcovonly", { file: resolve(out) }]],
+  // The sources are named from the top of the repository, see counted
+  // in walks/bridge.mjs.
+  sourceFilter: (path) => path.startsWith("frontend/src/"),
+  // istanbul writes only inside the folder it reports into.
+  reports: [["lcovonly", { file: "lcov.info" }]],
 }).generate();
+copyFileSync(resolve(kept, "lcov.info"), out);
 
 // A component a line of which was run: lcov says how many lines of a
 // file were run as LH, after the file's name, SF.
