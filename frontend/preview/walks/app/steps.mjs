@@ -8,6 +8,79 @@ import { ask, chosen, control, engineState, fromSidebar, nextPaint, seekTo, seen
 import { rate, url } from "../common/steps.mjs";
 
 export const steps = {
+  // ["first run"]      makes the bridge's machine one the app never ran
+  //                    on and opens the app again: a card for each model,
+  //                    nothing downloading until Download is pressed,
+  //                    both downloading at once with their words in the
+  //                    same columns, and once both have arrived the app
+  //                    on its first page, with one big button to add a
+  //                    video and nothing pressed in between
+  async "first run"(walk) {
+    const { page } = walk;
+    await control(url, "/fresh");
+    await page.reload();
+    const card = (name) => page.locator(".setup .area", { has: page.locator("h2", { hasText: name }) });
+    const [speech, clip] = [card("Speech model"), card("Clip model")];
+    await clip.locator("li").first().waitFor();
+    await settle(page);
+    // Where each cell of every row starts, and how high the rows are
+    // inside the line between two rows, which app.css adds to a row.
+    const rows = () =>
+      page.evaluate(() =>
+        [...document.querySelectorAll(".setup ul.models > li")].map((li) => ({
+          height: li.clientHeight,
+          cells: [...li.children].map((c) => c.getBoundingClientRect().left),
+          // A cell whose words are wider than it is, cut short.
+          cut: [...li.children].filter((c) => c.scrollWidth > c.clientWidth).map((c) => `${c.textContent.trim()} ${c.scrollWidth} in ${c.clientWidth}`),
+        })),
+      );
+    const buttons = () => page.evaluate(() => [...document.querySelectorAll(".setup button.act")].map((b) => b.textContent.trim()));
+    const first = await rows();
+    const pressed = await buttons();
+    const astray = first.find((r) => r.height !== first[0].height || r.cells.join() !== first[0].cells.join());
+    const cut = first.flatMap((r) => r.cut);
+    if (pressed.some((b) => b !== "Download")) walk.wrong = `before anything is pressed the setup shows ${JSON.stringify(pressed)}, only Download`;
+    else if (first.length < 2) walk.wrong = `the setup offers ${first.length} models, a speech model and a clip model at least`;
+    else if (astray) walk.wrong = `a row stands out of the table: ${JSON.stringify(astray)} beside ${JSON.stringify(first[0])}`;
+    else if (cut.length) walk.wrong = `the setup cuts words short: ${JSON.stringify(cut)}`;
+    else if ((await page.locator(".setup button.act.primary").count()) !== 1) walk.wrong = "the setup lights no Download, or more than one, for the clip model it recommends";
+    if (walk.wrong) return;
+
+    await speech.locator("button.act", { hasText: "Download" }).click();
+    await clip.locator("button.act", { hasText: "Download" }).first().click();
+    await speech.locator(".wide", { hasText: "B of" }).waitFor();
+    await clip.locator(".wide", { hasText: "B of" }).waitFor();
+    await settle(page);
+    const both = await page.evaluate(() =>
+      [...document.querySelectorAll(".setup li:has(.wide)")].map((li) => ({
+        said: li.querySelector(".wide").getBoundingClientRect().left,
+        left: li.querySelector(".size").textContent.trim(),
+        button: li.querySelector("button.act").textContent.trim(),
+      })),
+    );
+    if (both.length !== 2 || both.some((r) => r.button !== "Cancel")) walk.wrong = `with both pressed, the setup downloads ${JSON.stringify(both)}, not both at once`;
+    else if (both.some((r) => !/^\d+:\d\d left$/.test(r.left))) walk.wrong = `a download says ${JSON.stringify(both.map((r) => r.left))} where its time left goes`;
+    else if (both[0].said !== both[1].said) walk.wrong = `what the two downloads have fetched starts at ${both[0].said} and ${both[1].said}, not in one column`;
+    if (walk.wrong) return;
+
+    await control(url, "/fresh?arrive=speech");
+    await speech.locator(".ready").waitFor();
+    await settle(page);
+    const half = { ready: await page.locator(".setup .ready").count(), setup: await page.locator(".setup").count(), buttons: await buttons() };
+    // The speech model here has no button left, the clip model on its
+    // way its Cancel, and the other clip models wait their turn.
+    if (half.setup !== 1 || half.ready !== 1 || half.buttons.filter((b) => b === "Cancel").length !== 1 || half.buttons.some((b) => b !== "Cancel" && b !== "Download")) {
+      walk.wrong = `with the speech model here and the clip model on its way, the app shows ${JSON.stringify(half)}`;
+      return;
+    }
+
+    await control(url, "/fresh?arrive=clip");
+    const add = page.locator(".welcome button.add-video");
+    await add.waitFor();
+    await settle(page);
+    const end = { setup: await page.locator(".setup").count(), videos: await page.locator("aside li", { hasText: ".mp4" }).count(), add: (await add.textContent()).trim() };
+    if (end.setup || end.videos || !end.add.startsWith("Add a video")) walk.wrong = `once both models are here, the app shows ${JSON.stringify(end)}`;
+  },
   // ["title bar"]      lays the app's window out the way macOS does on
   //                    Tim's Mac, a title bar 30 points high with its
   //                    buttons from 12 to 72 points in. macOS draws the

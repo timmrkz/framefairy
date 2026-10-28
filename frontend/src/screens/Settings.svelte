@@ -612,9 +612,12 @@
       .filter((m) => m.installed)
       .map((m) => ({
         ...languageRow(m),
-        cost: `By ${m.maker}. ${size(m.download)} on disk`,
-        note: m.inUse ? "Finds the clips now" : "",
+        // Here, what it needs is said by the one it is, and which one it
+        // is matters more.
+        memory: m.inUse ? "Finds the clips now" : languageRow(m).memory,
+        note: "",
         warn: false,
+        best: false,
       })),
   );
   const installedSize = $derived(

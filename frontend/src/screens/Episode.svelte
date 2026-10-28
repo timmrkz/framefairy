@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, tick, untrack } from "svelte";
+  import { SvelteMap } from "svelte/reactivity";
   import { fade } from "svelte/transition";
   import {
     api,
@@ -1775,7 +1776,13 @@
   // on its sentences as soon as the engine has them. When it is written,
   // the chosen card becomes the clip, if nothing else has been chosen
   // since. Any number can be asked for at once, so the buttons never wait.
-  const madeHere = new Map<string, string>();
+  //
+  // The clips made here and where they land are state the effects below
+  // follow. A job can be over before its answer comes back to the press,
+  // its news heard first on a busy machine, and with plain maps no effect
+  // looked at it again: the card on its way was chosen after it had gone,
+  // and no clip was chosen at all, issue #508.
+  const madeHere = new SvelteMap<string, string>();
   let pressed = $state<"in" | "out" | null>(null);
   const makingIn = $derived(pressed === "in" || handRunning.some((j) => !j.backward));
   const makingOut = $derived(pressed === "out" || handRunning.some((j) => !!j.backward));
@@ -1822,7 +1829,7 @@
   // nothing on the way before it says it is done, a read in between
   // brought the clip in and took the card away, and for those frames no
   // card was chosen and the clip timeline drew it dimmed.
-  const landing = new Map<string, string>();
+  const landing = new SvelteMap<string, string>();
   $effect(() => {
     const made = new Set(madeHere.values());
     for (const a of onTheWay) if (a.clip && made.has(a.key)) landing.set(a.key, a.clip);

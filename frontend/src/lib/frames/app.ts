@@ -162,10 +162,15 @@ class Stream {
         for (const w of this.waiting) if (w.gone) w.done(null);
         this.waiting = this.waiting.filter((w) => !w.gone);
         if (!this.waiting.length || this.ended) {
+          if (this.ended || this.gave) return;
           // Opened for a place the hand has left: once its first frame
-          // comes it lets the newest place go, see unpark.
-          if (!this.ended && !this.gave) await this.firstFrame(id);
-          return;
+          // comes it lets the newest place go, see unpark. A frame asked
+          // of it meanwhile, the newest place among them, is pulled next:
+          // pull returned at once for it, since this one was pulling.
+          // Returned here, that frame never came, and a walk hung after
+          // a drag of an edge, issue #556.
+          await this.firstFrame(id);
+          continue;
         }
         // The frames wanted next, one run of them: a frame read ahead
         // further on is read with a skip of its own, after these, so the
@@ -195,37 +200,7 @@ class Stream {
           for (const { frame } of got.frames) frame.close();
           return;
         }
-        if (got.status === 404 || got.closed) {
-          this.owner.trace(`stream ${id.slice(0, 6)} was ${got.closed ? "closed" : "gone"} on the Go side, ${this.waiting.length} frames go to another`);
-          // Closed on the Go side, to make room for newer streams or after
-          // standing unused. That is no failure of the decoder: what was
-          // waited for goes to a new stream.
-          this.ended = true;
-          for (const { frame } of got.frames) frame.close();
-          const again = this.waiting;
-          this.waiting = [];
-          for (const w of again) this.owner.route(w);
-          return;
-        }
-        if (got.status === 0) {
-          this.owner.trace(`stream ${id.slice(0, 6)}: the Go side did not answer a pull, ${this.gave ? "after frames" : "before any frame"}`);
-          // The Go side could not be reached at all. A stream that never
-          // gave a frame is no stream, and asking again would only ask again.
-          if (!this.gave) {
-            this.end("the app's decoder did not answer");
-            return;
-          }
-          this.ended = true;
-          const again = this.waiting;
-          this.waiting = [];
-          for (const w of again) this.owner.route(w);
-          return;
-        }
-        if (got.end && got.frames.length === 0) {
-          this.owner.trace(`stream ${id.slice(0, 6)} ended at frame ${this.position}${got.error ? `: ${got.error}` : ""}`);
-          this.end(got.error);
-          return;
-        }
+        if (this.over(got, id)) return;
         this.take(got);
         if (keyNow) this.keyCame(got, id);
       }
@@ -253,9 +228,50 @@ class Stream {
     if (rank < this.first && this.placed) this.owner.onPassing?.(rank, last.frame, this.placed, true);
   }
 
+  // Whether a pull's answer ends this stream: closed or gone on the Go
+  // side, not answered, or at the end of the file with nothing more. What
+  // still waits then goes to another stream or comes as the nearest frame.
+  private over(got: Got, id: string): boolean {
+    if (got.status === 404 || got.closed) {
+      this.owner.trace(`stream ${id.slice(0, 6)} was ${got.closed ? "closed" : "gone"} on the Go side, ${this.waiting.length} frames go to another`);
+      // Closed on the Go side, to make room for newer streams or after
+      // standing unused. That is no failure of the decoder: what was
+      // waited for goes to a new stream.
+      this.ended = true;
+      for (const { frame } of got.frames) frame.close();
+      const again = this.waiting;
+      this.waiting = [];
+      for (const w of again) this.owner.route(w);
+      return true;
+    }
+    if (got.status === 0) {
+      this.owner.trace(`stream ${id.slice(0, 6)}: the Go side did not answer a pull, ${this.gave ? "after frames" : "before any frame"}`);
+      // The Go side could not be reached at all. A stream that never
+      // gave a frame is no stream, and asking again would only ask again.
+      if (!this.gave) {
+        this.end("the app's decoder did not answer");
+        return true;
+      }
+      this.ended = true;
+      const again = this.waiting;
+      this.waiting = [];
+      for (const w of again) this.owner.route(w);
+      return true;
+    }
+    if (got.end && got.frames.length === 0) {
+      this.owner.trace(`stream ${id.slice(0, 6)} ended at frame ${this.position}${got.error ? `: ${got.error}` : ""}`);
+      this.end(got.error);
+      return true;
+    }
+    return false;
+  }
+
   // The first frame of a stream nobody waits on any more, read so that the
   // stream counts as come and the newest place asked for can go next. It
   // is put up as a place the hand passed only when it is one, see frame.
+  // A frame asked of the stream meanwhile goes where pull's would when the
+  // answer ends the stream: it ended here as the nearest frame, nothing,
+  // when the Go side had closed the stream to make room for newer ones.
   private async firstFrame(id: string) {
     const q = new URLSearchParams({ id, n: "1" });
     const got = await this.owner.puller.pull(`/frames/read?${q}`, this.width, this.height);
@@ -263,12 +279,17 @@ class Stream {
       for (const { frame } of got.frames) frame.close();
       return;
     }
-    if (got.frames.length) {
-      this.take(got);
-      const { at, frame } = got.frames[got.frames.length - 1];
-      const rank = rankOf(this.owner.track.samples, at);
-      if (this.placed) this.owner.onPassing?.(rank, frame, this.placed, this.key && rank < this.first);
-    } else this.end("");
+    if (this.over(got, id)) return;
+    // Nothing came and nothing ended: pull asks again for what waits, and
+    // with nobody waiting the stream is let go.
+    if (!got.frames.length) {
+      if (!this.waiting.length) this.end("");
+      return;
+    }
+    this.take(got);
+    const { at, frame } = got.frames[got.frames.length - 1];
+    const rank = rankOf(this.owner.track.samples, at);
+    if (this.placed) this.owner.onPassing?.(rank, frame, this.placed, this.key && rank < this.first);
   }
 
   private take(got: Got) {

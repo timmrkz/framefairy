@@ -25,78 +25,59 @@ interface come with the packaging work.
 
 ### The first run
 
-A new copy of the app on a machine with nothing on it needs two things, and
-only one of them is a question. Until both are answered the setup is the
-whole app: no sidebar, no workspace, nothing to press that would not work.
+A new copy of the app on a machine with nothing on it needs two models
+before it can make anything: a **speech model**, which hears the video, and
+a **clip model**, which reads the transcript and picks the moments. Both run
+on this machine and neither ships with the app, so both are downloads.
+Until both are here the setup is the whole app: no sidebar, no workspace,
+nothing to press that would not work.
 
-**Speech** is always local. No speech model ships with the app, so the app
-fetches one. There is one today, which is not a choice, so the app says what
-it is about to do and does it: the download starts by itself and reports how
-far it has come, with the same fill every other piece of work in the app
-wears, and **Cancel** stops it. The row says what the model is, what it
-covers, what the download costs and what it costs on disk, before anything
-starts. It is a job like any other, in the lane of hearing, and a search that
-comes to hearing waits for the model rather than failing on it.
+The setup is one page with a card for each, so both can download at the
+same time: nobody waits for the speech model before starting the clip
+model. Something a first run may need later is another card. Each card has
+the list of its models and, at its head, one mark once one of them is
+here. Nothing starts by itself, because a download of gigabytes is
+something a person agrees to. Every button that fetches a model says
+**Download**.
 
-**Finding clips** is the question. A model in the cloud, Anthropic's or
-OpenAI's with a key of your own, works on any machine and
-costs a few cents a video. A model on this machine is free to run and
-needs the memory to hold it. Either way only the words are read: the video
-and the audio never leave the machine. The answer is saved the moment it is
-given and can be changed later in the settings.
+A model in the cloud is not offered in the setup. It needs a key and costs
+money a video, so it is chosen later in the settings by somebody who wants
+it. A machine that already finds clips in the cloud, chosen there before,
+needs no clip model of its own, and its card says so.
 
-Choosing the cloud opens a choice of model, Claude Sonnet 5 or GPT-6 Sol, and a field for that company's key, which goes in the macOS keychain
-and nowhere else, never in the settings file.
+The rows of a list are one line each and read like a table without its
+lines: the name, who made it, the memory it needs, its size and the button,
+each in a column of its own, so the same fact stands in the same place in
+every row. The size is the download before the model is here and the room
+it takes once it is. The clip model's card says how much memory this
+machine has, and only offers the models it can hold, see engine.Fit. The
+memory a model needs wears the colour of a warning when the machine has
+little more than that, and says so under the pointer. The model the app
+recommends for this machine has its Download lit, the way a box lights
+the button it expects. A
+model that does not fit would swap, and a model that swaps answers in
+minutes rather than seconds. A `.gguf` already in `~/.framefairy/models`
+is used as it is, whether the app fetched it or not.
 
-Choosing **On this machine** shows the models that can be installed, each
-with its maker, what it costs to fetch, what it costs in memory to run and
-what this machine can do with it. That last part is the point of the list.
-A model runs from memory, so a machine too small for one will swap, and a
-model that swaps takes minutes to answer rather than seconds. The app reads
-how much memory the machine has and says, beside each model, **Best for
-this machine**, **Fits this machine**, **Tight on this machine** or **Too
-big for this machine**, with the machine's own figure above the list so the
-judgement can be checked. The best one is the largest model the machine
-can hold comfortably, largest by the model and not by the memory it
-takes, because the two are not the same thing: see PACKAGING.md.
-
-Nothing is hidden and nothing is refused: a model the app thinks is too big
-can still be installed, because a machine's memory can be read wrong and it
-is not the app's place to decide. A machine that will not say how much
-memory it has is offered the smallest, because that is the one most likely
-to run, and nothing else is promised.
-
-A `.gguf` already in `~/.framefairy/models` is used as it is, whether the
-app fetched it or not.
-
-**Installing is work in hand, and it looks it.** The button it was started
-from carries it, the way every control that starts work does: the beam
-round it and the fill for how far the download has come, and it reads
-**Cancel** while it runs. What has arrived stays, and **Install** carries on
-from it. The row itself does not light up or move. The line under the name
-that says what the model costs says instead how far it has come, how fast
-and how long is left, *Fetching 1.8 GB of 5.2 GB at 42 MB a second, 0:13
-left*, in the same one line, so the row keeps its height. The numbers are
-counted in thousands, the way the size to fetch is, so a model said to be
-5.2 GB arrives as 5.2 GB of 5.2 GB.
+**A download is work in hand, and it looks it.** The row of the model
+on its way wears the beam and the fill for how far it has come across the
+whole row, the way a clip card on its way does, and its button reads
+**Cancel** while it runs. What has arrived stays, and **Download** carries
+on from it. Its maker and memory turn into how much has arrived,
+*1.8 GB of 5.2 GB*, and its size into how long is left, in the same
+columns, so the numbers stay lined up with the rows around them. They are counted in
+thousands, the way the size is, so a model said to be 5.2 GB arrives as
+5.2 GB of 5.2 GB.
 
 A model is only half of the local way. `llama-server`, from llama.cpp, is
 what runs it, and a model without one is fifteen gigabytes that answer
-nothing. So the app looks for it and says so while it is missing, and it
-does not call itself ready on a machine that has the download and no way
-to open it, which it used to. It is taken the way ffmpeg is: the one
-beside the app, checked to be the file the app was built with, and no
-other, see **The tools are the app's own** below.
+nothing. So the clip model's card says so while it is missing. It is taken
+the way ffmpeg is: the one beside the app, checked to be the file the app
+was built with, and no other, see **The tools are the app's own** below.
 
-The last button is **Finish setup**, and that is all it does. Adding an
-episode has one way of being done and it is the plus in the sidebar, so a
-second way here would be a second way of doing one thing, bought for a
-click that is only ever saved once. While the speech model is still coming
-the button says so and waits, because there is nothing to be done with the
-app until it is there.
-
-A key found in the environment is not an answer to the question. The app
-never decides on somebody's behalf, so an app that has never been asked asks.
+Once both models are here the setup is over and the app opens on its first
+page, with no button to press in between. The answer to how clips are found
+is saved then, as this machine, and can be changed in the settings.
 
 ### Episodes
 
@@ -3013,7 +2994,7 @@ after the typing stops.
 **What is in the way is said where it is put right**, not in a list of
 its own. A missing API key is said on the row where the key goes, a
 missing llama-server under the choice of model, a missing ffmpeg under
-**Clips**, a missing speech model on its row, which offers **Install**.
+**Clips**, a missing speech model on its row, which offers **Download**.
 A problem the page has no row for, which none of today's checks is, is
 said at the top so nothing goes unsaid. The first version had one card at
 the top listing every problem, and a person had to go from the top of the
