@@ -20,10 +20,11 @@
   // An install is work in hand like any other, so it wears what all work
   // wears, in the control it was started from: the beam round the button
   // and the fill for how far it has come, and the button says Cancel while
-  // it runs. The row does not move and does not light up as a whole. Its
-  // maker and memory turn into how far the download has come, and its size
-  // into how long is left, in the same columns, so the row keeps its
-  // height and its numbers stay lined up with the rows around it.
+  // it runs. The row does not move and does not change its shape: its
+  // maker stays, its memory turns into how far the download has come and
+  // its size into how long is left, each in its own column and lined up
+  // the way the rest of that column is, so a row on its way reads like
+  // the rows around it.
   //
   // An installed model can be removed again, to give its room back. It
   // asks first, because getting it back means fetching gigabytes again.
@@ -108,9 +109,8 @@
     api.cancelJob(job.id);
   }
 
-  // What a running download says in place of its maker and memory: how
-  // far it has come, the way the size is said, so the numbers stand under
-  // the sizes of the rows around it. A step with no bytes to count, the
+  // What a running download says in place of the memory it needs: how
+  // far it has come, the way the size is said. A step with no bytes to count, the
   // unpacking, says what it is doing.
   function said(job: Job): string {
     if (job.state === "queued") return "Waiting for the download before it";
@@ -167,11 +167,12 @@
            does, across the whole row, the one place the work shows. -->
       {#if mine}<Busy fraction={share(mine)} />{/if}
       <span class="head name" title={model.about}>{model.title}</span>
+      <span class="small muted cell">{model.maker}</span>
       {#if mine}
-        <span class="small muted num wide">{said(mine)}</span>
+        {@const far = said(mine)}
+        <span class="small muted num cell" title={far}>{far}</span>
         <span class="small muted num size cell">{left(mine)}</span>
       {:else}
-        <span class="small muted cell">{model.maker}</span>
         <span class="small cell" class:muted={!model.warn} class:warn={model.warn} title={model.note || undefined}
           >{model.memory}</span
         >
@@ -283,19 +284,6 @@
      a second line. */
   .name,
   .cell {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  /* How far a download has come, in the room its maker and memory had,
-     standing to the right like the sizes. It takes the room the columns
-     have and adds none, so a long line never pushes the columns of the
-     other rows about. */
-  .wide {
-    grid-column: span 2;
-    text-align: right;
-    contain: inline-size;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

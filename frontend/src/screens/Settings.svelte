@@ -42,6 +42,7 @@
     type LicenceState,
     onLicenceLink,
   } from "../lib/api";
+  import ApiKey from "../components/ApiKey.svelte";
   import Confirm from "../components/Confirm.svelte";
   import Busy from "../components/Busy.svelte";
   import Icon from "../components/Icon.svelte";
@@ -87,20 +88,8 @@
   // app offers is known here at once; one written in by hand is known once
   // the settings are saved and read again.
   let providerSaid = $state("anthropic");
-  let key = $state("");
-  let savingKey = $state(false);
-  let savedKey = $state(false);
-  // Why the company refused the key just typed, said in the key's own row
-  // until it is typed again.
-  let keyRefused = $state("");
-  // The key in short, as the Go side read it without the secret, and
-  // whether the box that asks before it is removed is open.
+  // The key in short, as the Go side read it without the secret.
   let keyHints = $state<Record<string, string>>({});
-  // The field a key is typed in, and whether it is shaking off a key that
-  // was refused.
-  let keyField = $state<HTMLInputElement>();
-  let keyShaking = $state(false);
-  let removingKey = $state(false);
 
   // The model in the cloud, its company, and whether that company's key is
   // here. Which company decides whose key the row asks for.
@@ -158,50 +147,6 @@
   $effect(() => {
     if (settings?.appColour) wearColour(settings.appColour);
   });
-
-  // The Go side asks the company whether it takes the key before keeping
-  // it, so a key it refuses is found here, where it was typed.
-  async function saveKey() {
-    if (refuseFinding()) return;
-    savingKey = true;
-    keyRefused = "";
-    try {
-      await api.saveAPIKey(provider.name, key);
-      key = "";
-      savedKey = true;
-      setTimeout(() => (savedKey = false), 1800);
-    } catch (err) {
-      // The Go side's errors start small, to sit inside a sentence.
-      const said = errorText(err);
-      keyRefused = said.charAt(0).toUpperCase() + said.slice(1);
-      // The way the Mac's password fields take a wrong password: the field
-      // shakes, keeps what was typed, selected, with the keyboard in it,
-      // so the next paste replaces it. Save waits for something new.
-      savingKey = false;
-      keyShaking = false;
-      requestAnimationFrame(() => {
-        keyShaking = true;
-        keyField?.focus();
-        keyField?.select();
-      });
-    }
-    savingKey = false;
-    await Promise.all([readModels(), check()]);
-  }
-
-  // An empty key takes the saved one off the machine. It cannot be taken
-  // back, the key is not kept anywhere else, so it asks first.
-  async function removeKey() {
-    removingKey = false;
-    keyRefused = "";
-    try {
-      await api.saveAPIKey(provider.name, "");
-    } catch (err) {
-      const said = errorText(err);
-      keyRefused = said.charAt(0).toUpperCase() + said.slice(1);
-    }
-    await Promise.all([readModels(), check()]);
-  }
 
   // The licence key, kept in the keychain like an API key and never read
   // back: the Go side only says whether there is one and how it was
@@ -882,86 +827,13 @@
           </div>
 
           {#if settings.planner === "api"}
-            <!-- The key goes in the keychain the moment it is saved, not
-                 with the rest of these, because it never lands in the
-                 settings file. An app opened from Finder has no shell
-                 environment, so this is the only way to give it one. -->
-            <div class="item">
-              <span class="mark" class:ok={hasKey && !keyRefused} class:err={!!keyRefused} class:warn={!hasKey && !keyRefused} aria-hidden="true">
-                {#if hasKey && !keyRefused}<Icon name="check" />{:else}<Icon name="warn" />{/if}
-              </span>
-              <div class="words">
-                <span class="head">{provider.title} API key</span>
-                <!-- A saved key is shown in short, the way the companies
-                     list keys, and where it comes from is in the title. -->
-                <span
-                  class="small line"
-                  class:muted={hasKey && !keyRefused}
-                  class:hint={hasKey && !keyRefused && !savedKey && !!keyHints[provider.name]}
-                  class:warn={!hasKey && !keyRefused}
-                  class:error={!!keyRefused}
-                  title={keyRefused ||
-                    (keys[provider.name] === "environment"
-                      ? `From ${provider.env}`
-                      : hasKey
-                        ? "In the keychain, where only this app may read it"
-                        : undefined)}
-                >
-                  {#if keyRefused}{keyRefused}{:else if savedKey}Saved in the keychain.{:else if keyHints[
-                      provider.name
-                    ]}{keyHints[provider.name]}{:else if keys[provider.name] === "environment"}From {provider.env}.{:else if hasKey}In the keychain.{:else}None
-                    yet. Get one at <button
-                      class="link"
-                      title="Opens the page where {provider.title} makes keys"
-                      onclick={() => api.openKeysPage(provider.name).catch(() => {})}
-                      >{provider.keysAt}</button
-                    >.{/if}
-                </span>
-              </div>
-              <input
-                class="key"
-                class:shaking={keyShaking}
-                onanimationend={() => (keyShaking = false)}
-                type="password"
-                bind:this={keyField}
-                bind:value={key}
-                oninput={() => (keyRefused = "")}
-                placeholder={hasKey ? "New key" : `${provider.name === "openai" ? "sk-proj" : "sk-ant"}-...`}
-                aria-label="{provider.title} API key"
-                title="It goes in the keychain and nowhere else"
-                autocomplete="off"
-                spellcheck="false"
-                onkeydown={(e) => e.key === "Enter" && key.trim() && !keyRefused && saveKey()}
-              />
-              <!-- A key that was refused is refused again, so Save waits
-                   until the field holds something else. -->
-              <button
-                class="act"
-                disabled={savingKey || !key.trim() || !!keyRefused}
-                onclick={saveKey}
-              >
-                {#if savingKey}<Busy />{/if}
-                {savingKey ? "Checking" : "Save key"}
-              </button>
-              <!-- Only a key the app keeps can be removed here. One in the
-                   environment is the terminal's to take away. The trash can
-                   keeps its place without one, so the field and the button
-                   do not move when a key is saved or removed. -->
-              {#if keys[provider.name] === "keychain"}
-                <button
-                  class="quiet danger bin"
-                  title="Remove the key from this machine"
-                  aria-label="Remove the {provider.title} API key"
-                  aria-haspopup="dialog"
-                  disabled={savingKey}
-                  onclick={() => refuseFinding() || (removingKey = true)}
-                >
-                  <Icon name="trash" />
-                </button>
-              {:else}
-                <span class="bin-room" aria-hidden="true"></span>
-              {/if}
-            </div>
+            <ApiKey
+              {provider}
+              source={keys[provider.name] ?? ""}
+              hint={keyHints[provider.name] ?? ""}
+              refuse={refuseFinding}
+              onchange={() => Promise.all([readModels(), check()])}
+            />
           {:else}
             {#if broken("llama-server")}
               <!-- A model is the answer and llama-server is what runs it,
@@ -1433,18 +1305,6 @@
     </Confirm>
   {/if}
 
-  {#if removingKey}
-    <Confirm title="Remove the {provider.title} API key?" oncancel={() => (removingKey = false)}>
-      <p>
-        The key leaves this machine's keychain, and clips cannot be found in the cloud until a key
-        is saved again. The key itself stays valid at {provider.keysAt}.
-      </p>
-      {#snippet actions()}
-        <button onclick={() => (removingKey = false)}>Cancel</button>
-        <button class="danger" onclick={removeKey}>Remove</button>
-      {/snippet}
-    </Confirm>
-  {/if}
 </section>
 
 <style>
@@ -1494,22 +1354,10 @@
     flex: none;
   }
 
-  /* Narrow, since what is typed shows as dots, and the room goes to the
-     key in short beside it. */
-  .key {
-    width: 150px;
-    flex: none;
-  }
-
   /* The room of the trash can, where there is nothing to remove. */
   .bin-room {
     width: var(--control-h);
     flex: none;
-  }
-
-  /* A key in short reads as a key: the figures and letters at one width. */
-  .hint {
-    font-family: ui-monospace, "SF Mono", Menlo, monospace;
   }
 
   .path {
@@ -1563,8 +1411,7 @@
      settles, the way the Mac's password field does, a few times and less
      each time. Without motion it is lit for a moment instead. */
   .finding.shaking,
-  .speech.shaking,
-  .key.shaking {
+  .speech.shaking {
     animation: shake 0.45s cubic-bezier(0.36, 0.07, 0.19, 0.97);
   }
 
@@ -1585,8 +1432,7 @@
 
   @media (prefers-reduced-motion: reduce) {
     .finding.shaking,
-    .speech.shaking,
-    .key.shaking {
+    .speech.shaking {
       animation: lit 0.6s ease;
     }
   }

@@ -43,7 +43,13 @@ something a person agrees to. Every button that fetches a model says
 A model in the cloud is not offered in the setup. It needs a key and costs
 money a video, so it is chosen later in the settings by somebody who wants
 it. A machine that already finds clips in the cloud, chosen there before,
-needs no clip model of its own, and its card says so.
+needs no clip model of its own, and its card says so. A machine that can
+hold none of the clip models, one of 8 GB, has no way through without the
+cloud, so its clip card, and only its, offers a model in the cloud and the
+row its key is saved in, in place of the list. That row is the one in the
+settings, `ApiKey.svelte`, so a key is saved, refused and removed the same
+way in both. Once the speech model is here and the key is saved, the app
+finds clips in the cloud and opens on its first page.
 
 The rows of a list are one line each and read like a table without its
 lines: the name, who made it, the memory it needs, its size and the button,
@@ -63,9 +69,10 @@ is used as it is, whether the app fetched it or not.
 on its way wears the beam and the fill for how far it has come across the
 whole row, the way a clip card on its way does, and its button reads
 **Cancel** while it runs. What has arrived stays, and **Download** carries
-on from it. Its maker and memory turn into how much has arrived,
-*1.8 GB of 5.2 GB*, and its size into how long is left, in the same
-columns, so the numbers stay lined up with the rows around them. They are counted in
+on from it. The row keeps its shape: its maker stays, the memory it needs
+turns into how much has arrived, *1.8 GB of 5.2 GB*, and its size into
+how long is left, each in its own column and lined up the way the rest of
+the column is, so a row on its way reads like the rows around it. They are counted in
 thousands, the way the size is, so a model said to be 5.2 GB arrives as
 5.2 GB of 5.2 GB.
 

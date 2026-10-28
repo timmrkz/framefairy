@@ -130,9 +130,10 @@ func (b *bus) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // says the gate a call of a name waits behind until the walk opens it,
 // whether the call reaches the service first and only its answer waits,
 // and the reason it fails with instead of reaching it, if it does, see
-// /hold. fresh says the bridge's machine is on its first run, see /fresh.
+// /hold. fresh is the bridge's machine on its first run, or nil when it
+// is not on one, see /fresh.
 func callHandler(svc func() *FrameFairy, own map[string]func() (any, error),
-	held func(name string) (gate <-chan struct{}, late bool, fails string), fresh func() bool) http.Handler {
+	held func(name string) (gate <-chan struct{}, late bool, fails string), fresh func() *freshMachine) http.Handler {
 	contextType := reflect.TypeFor[context.Context]()
 	errorType := reflect.TypeFor[error]()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -180,7 +181,20 @@ func callHandler(svc func() *FrameFairy, own map[string]func() (any, error),
 			return
 		}
 		kind := method.Type()
-		if outside[name] && !(walkedUpdates[name] && svc().updates != nil) && !(firstRun[name] && fresh()) {
+		// A key saved on the first run is kept by the bridge, never the
+		// keychain, and never shown to the company it is for.
+		if m := fresh(); name == "SaveAPIKey" && m != nil {
+			var provider, key string
+			if len(call.Args) != 2 || json.Unmarshal(call.Args[0], &provider) != nil || json.Unmarshal(call.Args[1], &key) != nil {
+				http.Error(w, "SaveAPIKey takes a provider and a key", http.StatusBadRequest)
+				return
+			}
+			m.saveKey(provider, key)
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(nil)
+			return
+		}
+		if outside[name] && !(walkedUpdates[name] && svc().updates != nil) && !(firstRun[name] && fresh() != nil) {
 			// Answered as having nothing to say, in the shape the
 			// interface expects.
 			var answer any
@@ -276,17 +290,23 @@ var firstRun = map[string]bool{"InstallSpeechModel": true, "InstallLanguageModel
 // what hears and what finds clips here. Without it the app opens on its
 // first-run screen, which the bridge is only about once a walk made it
 // new, see /fresh. Then the models are what the real answer says, the
-// ones the walk let arrive, and the machine is Tim's Mac, 32 GB, so the
-// models offered are the same on every machine the walk runs on.
-func standInsSetup(s SetupState, fresh bool) SetupState {
+// ones the walk let arrive, the machine has the memory the walk gave it,
+// so the models offered are the same on every machine the walk runs on,
+// and a key is there once the walk saved one.
+func standInsSetup(s SetupState, fresh *freshMachine) SetupState {
 	s.HasServer = true
-	if fresh {
-		s.Memory = 32 << 30
+	if fresh != nil {
+		s.Memory = fresh.memory
 		best, hasBest := engine.RecommendedFor(s.Memory)
 		for i := range s.Language {
 			s.Language[i].Fit = string(s.Language[i].FitsIn(s.Memory))
 			s.Language[i].Recommended = hasBest && s.Language[i].Name == best.Name
 		}
+		s.Keys, s.KeyHints = map[string]string{}, map[string]string{}
+		for _, provider := range fresh.keyed() {
+			s.Keys[provider], s.KeyHints[provider] = "keychain", "sk-…walk"
+		}
+		s.HasKey = s.Keys[s.Provider] != ""
 		return s
 	}
 	s.HasSpeech, s.HasLocalModel, s.Chosen, s.Ready = true, true, true, true
@@ -601,7 +621,12 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 			answer(w, nil, b.letArrive(kind))
 			return
 		}
-		answer(w, nil, b.makeFresh())
+		memory, err := strconv.ParseInt(cmp.Or(r.URL.Query().Get("memory"), "32"), 10, 64)
+		if err != nil || memory <= 0 {
+			http.Error(w, "memory is a number of gigabytes", http.StatusBadRequest)
+			return
+		}
+		answer(w, nil, b.makeFresh(memory<<30))
 	})
 	mux.HandleFunc("/reopen", func(w http.ResponseWriter, r *http.Request) {
 		closed, err := b.reopen()
@@ -869,8 +894,8 @@ type bridge struct {
 	// marks counts the marks sent down the events, see /mark.
 	marks atomic.Int64
 	// fresh is the bridge's machine on its first run: no model on it and
-	// no video in the app, see /fresh.
-	fresh atomic.Bool
+	// no video in the app, see /fresh. Nil when it is not on one.
+	fresh atomic.Pointer[freshMachine]
 	// arrive lets the download of a kind of model, "speech" or "clip",
 	// arrive, closed by the walk, see arriving.
 	arrive map[string]chan struct{}
@@ -1321,15 +1346,16 @@ func (b *bridge) pickSound() (string, error) {
 }
 
 // makeFresh makes the bridge's machine one the app has never run on, see
-// /fresh. The video leaves the library with its work folder kept, the
-// way Remove leaves it, and reset brings both back.
+// /fresh, with memory bytes of memory. The video leaves the library with
+// its work folder kept, the way Remove leaves it, and reset brings both
+// back.
 //
 // On the real disk: the models folder is the one the app looks in for its models, in the bridge's home.
-func (b *bridge) makeFresh() error {
+func (b *bridge) makeFresh(memory int64) error {
 	b.mu.Lock()
 	b.arrive = map[string]chan struct{}{"speech": make(chan struct{}), "clip": make(chan struct{})}
 	b.mu.Unlock()
-	b.fresh.Store(true)
+	b.fresh.Store(&freshMachine{memory: memory})
 	if err := os.RemoveAll(engine.ModelsDir()); err != nil {
 		return err
 	}
@@ -1340,6 +1366,32 @@ func (b *bridge) makeFresh() error {
 	return b.d.svc.store.UpdateSettings(func(s *Settings) {
 		s.Planner, s.Chosen, s.LLMModel = planner, false, ""
 	})
+}
+
+// freshMachine is the bridge's machine on its first run, see /fresh: the
+// memory it has and the companies a key was saved for.
+type freshMachine struct {
+	memory int64
+	mu     sync.Mutex
+	keys   []string
+}
+
+// saveKey keeps a key for a provider the way the keychain would, or takes
+// it away when the key is empty.
+func (m *freshMachine) saveKey(provider, key string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.keys = slices.DeleteFunc(m.keys, func(p string) bool { return p == provider })
+	if strings.TrimSpace(key) != "" {
+		m.keys = append(m.keys, provider)
+	}
+}
+
+// keyed are the providers a key is kept for.
+func (m *freshMachine) keyed() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return slices.Clone(m.keys)
 }
 
 // letArrive lets the download of a kind of model arrive, see arriving.
@@ -1439,7 +1491,7 @@ func (b *bridge) reset() error {
 	b.chrome = Chrome{}
 	b.arrive = nil
 	b.mu.Unlock()
-	b.fresh.Store(false)
+	b.fresh.Store(nil)
 	b.d.pictureMu.Lock()
 	b.d.pictures = nil
 	b.d.pictureMu.Unlock()
