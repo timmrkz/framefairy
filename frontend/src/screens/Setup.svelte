@@ -153,19 +153,21 @@
         <!-- A model runs from memory, so the machine's own is said out
              loud here. A model's need is only believable next to the
              number it was judged against. -->
+        <!-- On a machine that holds none of the models, the one paragraph
+             says so and what is left: the cloud, with a key. -->
         <p class="muted">
           Reads the transcript and picks the moments.
-          {setup.memory > 0 ? ` This machine has ${memorySize(setup.memory)} of memory.` : ""}
+          {noneFits
+            ? ` ${setup.memory > 0 ? `With ${memorySize(setup.memory)} of memory, this machine` : "This machine"} is too small for a local model, so only the cloud works, with your API key.`
+            : setup.memory > 0
+              ? ` This machine has ${memorySize(setup.memory)} of memory.`
+              : ""}
         </p>
         {#if cloud}
           <p class="muted">Clips are found in the cloud, as the settings say.</p>
         {:else if clipRows.length}
           <ModelList models={clipRows} kind="llm" oninstall={api.installLanguageModel} onchange={reload} />
         {:else if provider}
-          <p class="muted">
-            None of the models fits in this machine's memory, so clips are found in the cloud, with
-            an API key of your own.
-          </p>
           <div class="card">
             <!-- A model is always chosen, so its row is marked ready, and
                  its name stands in the column of the key's under it. -->
