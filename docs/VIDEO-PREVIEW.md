@@ -89,23 +89,41 @@ removed. Nothing is prepared before the first play.
    screen is decided once, by Tim, after the test in Colour. An HDR
    episode makes an HDR short, and the video preview shows its HDR as far
    as the webview lets a canvas show it, see HDR.
-6. **A running play is never changed in place.** This is the rule from
-   #155. A play runs one program, the clip's pieces or the episode
-   straight on, from the moment it starts. A gesture that changes the
-   program stops the play and starts it again from where the hand put it,
-   or it is off while it would matter, the way I and O are off inside a
-   clip. #152 did the same in 366 lines by splicing the new program into
-   the running play, and was closed for #155, which made the case
-   impossible in about 40. The one exception is loop, 2.150 and 2.183,
-   which changes only where the play ends and nothing that plays. No
-   other splice is built. Only
-   the space bar and a click on the clip timeline change a play. An edge
-   of the clip or of a cut, dragged or clicked while it plays, moves no
-   playhead and changes nothing that plays: the edit is saved and drawn
-   at once, and the queue keeps the new pieces for the next play, seek
-   or click. An undo while it plays moves no playhead either. Tim heard
-   the play stutter with the hand on a cut's edge, because every step of
-   the drag started the play again from the playhead.
+6. **A running play takes in the clip as it is now, ahead of the
+   playhead.** #155 made a play run one program, the clip's pieces or the
+   episode straight on, from the moment it starts, and stopped the play
+   and started it again for a gesture that changed the program. #152 had
+   spliced the new program into the running play in 366 lines, and was
+   closed for it. Loop was the first exception, 2.150 and 2.183, which
+   changes only where the play ends. Then the play kept the pieces it
+   started with while an edge or a cut was dragged, because starting it
+   again at every step of the hand stuttered. Tim found the cost of that
+   on #277: he pulled the end of a clip in, played it, put the end back
+   with Cmd+Z while it played, and the play still stopped at the end he
+   had taken back. No rule of the product makes that case not happen, an
+   undo while the clip plays is an ordinary thing to do, so rule 7 lets
+   the machinery in. Now every change of the clip while it plays, an edge
+   or a cut dragged, an undo or a redo, is spliced in ahead of the
+   playhead, `changed` in `lib/frames/queue.ts` and `Program.spliced` in
+   `lib/frames/plan.ts`. The play keeps what it worked out up to the
+   first piece the change reaches, which runs on to where it ends now,
+   the pieces after it are the new ones, and nothing that plays moves,
+   stops or jumps. So a change further on, the clip's end with the
+   playhead a moment before a cut, touches nothing the decoders already
+   work on. A play cut short keeps what was fed and stops at the new end,
+   the sound faded out there by the sound card, so a later change, the
+   end put back, dragged on past the playhead or the loop switched on, is
+   weighed against what was really fed. Only where the decoders or the
+   sound card were fed past the place the two programs part does the play
+   start again from the playhead, a moment's stop: the next cut moved or
+   taken away within about two seconds ahead of the playhead, where the
+   piece after it is decoded already, or a run already flushed. An edge of
+   the clip dragged past
+   the playhead leaves the playhead outside the clip, on the video,
+   Tim's rule on #277, so the play goes on as a play of the video,
+   straight on to the episode's end, `playOn`. Paused, the playhead goes
+   with the edge dragged, a cut's edges too, see the clip timeline in
+   [APP.md](APP.md).
 7. **A rule before machinery.** When a case would need new machinery in
    the frame queue, the first question is whether a rule of the product
    makes the case not happen, as in rule 6. Machinery is built only where
