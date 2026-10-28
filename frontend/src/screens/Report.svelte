@@ -477,6 +477,37 @@
     ours = at;
   }
 
+  // reveal keeps the cursor in view after a key, the least scroll that
+  // shows it, the way a text field keeps its own. While dictating the
+  // field puts a new line in by hand and draws the cursor itself, so the
+  // browser scrolled to neither, and Tim pressed Shift+Enter past the
+  // foot of the field and the arrow keys with the cursor out of view,
+  // issue #573. It is asked for the frame after the key, once the key
+  // has done its work, so it scrolls to where that left the cursor.
+  function reveal() {
+    if (!field?.isConnected || document.activeElement !== field) return;
+    caret();
+    let box: DOMRect | undefined;
+    if (ours && mark) box = [...mark.getClientRects()].at(-1);
+    else {
+      const sel = getSelection();
+      if (!sel?.rangeCount || !field.contains(sel.focusNode)) return;
+      const at = document.createRange();
+      at.setStart(sel.focusNode!, sel.focusOffset);
+      box = [...at.getClientRects()].find((r) => r.height);
+    }
+    if (!box) return;
+    // Inside the field's padding, where its lines are at rest, so the
+    // last line is shown the way the end of the report is, and in both
+    // engines alike, whichever way each scrolled to its own cursor.
+    const pad = getComputedStyle(field);
+    const top = field.getBoundingClientRect().top + field.clientTop + parseFloat(pad.paddingTop);
+    const bottom = top - parseFloat(pad.paddingTop) + field.clientHeight - parseFloat(pad.paddingBottom);
+    if (box.top < top) field.scrollTop -= Math.ceil(top - box.top);
+    else if (box.bottom > bottom) field.scrollTop += Math.ceil(box.bottom - bottom);
+  }
+  const keyed = () => requestAnimationFrame(reveal);
+
   // What has been settled so far, without what is still being heard.
   function settled(): string {
     const at = document.createRange();
@@ -946,6 +977,7 @@
           onbeforeinput={follow}
           onpointerdown={freeze}
           onscroll={scrolled}
+          onkeydown={keyed}
           onkeyup={remember}
           onmouseup={remember}
           onblur={remember}

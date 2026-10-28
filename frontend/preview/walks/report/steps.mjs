@@ -907,6 +907,26 @@ export const steps = {
     });
     if (!c.ours || c.bar !== "1px" || c.caret !== "rgba(0, 0, 0, 0)") walk.wrong = `the cursor is not drawn after the words being said: ${JSON.stringify(c)}`;
   },
+  // ["press, the cursor in view", key, n]
+  //                    presses key n times, with nothing heard by
+  //                    dictation let in between, and after each press
+  //                    the cursor is in view in the report's field, the
+  //                    way a text field keeps it (#573)
+  async "press, the cursor in view"(walk, arg, s) {
+    const { page, watch } = walk;
+    const [key, n] = arg;
+    // Nothing heard comes in between, however busy the machine, so the
+    // field following the words cannot bring the cursor back by chance.
+    await page.evaluate(() => window.__pauseEvents(true));
+    for (let i = 1; i <= n && !walk.wrong; i++) {
+      await page.keyboard.press(key);
+      await nextPaint(page);
+      const c = await page.locator(".telling").evaluate(cursorInView);
+      if (c) walk.wrong = `after ${key} ${i} of ${n} times ${c}`;
+    }
+    await page.evaluate(() => window.__pauseEvents(false));
+    await watch.step("press", s, page);
+  },
   // ["caret elsewhere"]
   //                    clicks into the report's first line, and the field
   //                    shows its own cursor there again
@@ -1250,3 +1270,39 @@ export const steps = {
 // Steps that take the same body as the step they are walked by.
 steps["report"] = steps["report made"];
 steps["report follows"] = steps["report stays"];
+
+// cursorInView runs in the page on the report's field f, and says where
+// the cursor is when it is not in view, or nothing when it is. The cursor
+// is the one drawn after the words being said while the field draws it,
+// or the field's own where the selection is. A place on an empty line has
+// no box of its own, so a mark with no width stands in it while it is
+// measured, and the text it split is joined again after, the same node it
+// was, with the selection back where it was.
+function cursorInView(f) {
+  let box;
+  if (f.classList.contains("ours")) box = [...f.querySelector(".hearing").getClientRects()].at(-1);
+  else {
+    const sel = getSelection();
+    if (!sel.rangeCount || !sel.isCollapsed || !f.contains(sel.focusNode)) return "the cursor is not in the field";
+    const [node, offset] = [sel.focusNode, sel.focusOffset];
+    const at = document.createRange();
+    at.setStart(node, offset);
+    const stand = document.createElement("span");
+    at.insertNode(stand);
+    box = stand.getBoundingClientRect();
+    const split = node.nodeType === Node.TEXT_NODE ? stand.nextSibling : null;
+    stand.remove();
+    if (split && split !== node && split.nodeType === Node.TEXT_NODE) {
+      node.appendData(split.data);
+      split.remove();
+    }
+    sel.collapse(node, offset);
+  }
+  if (!box?.height) return "the cursor has no place on screen";
+  const field = f.getBoundingClientRect();
+  const top = field.top + f.clientTop;
+  const bottom = top + f.clientHeight;
+  if (box.top < top - 1) return `the cursor is ${Math.round(top - box.top)} px above the top of the field, scrolled to ${f.scrollTop} px`;
+  if (box.bottom > bottom + 1) return `the cursor is ${Math.round(box.bottom - bottom)} px below the foot of the field, scrolled to ${f.scrollTop} px`;
+  return "";
+}

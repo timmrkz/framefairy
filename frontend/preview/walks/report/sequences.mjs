@@ -181,6 +181,26 @@ export default [
     ],
   },
   {
+    // Issue #573. Tim pressed Shift+Enter while dictating until the new
+    // lines went past the foot of the field, and the field stayed where
+    // it was while the cursor went on down out of view. Only the next
+    // words he said brought it back. The arrow keys did the same. The
+    // field keeps the cursor in view, the way every text field does,
+    // while dictating and after.
+    name: "Shift+Enter and the arrow keys keep the cursor in view in the report",
+    steps: [
+      ["bugs"],
+      ["write", "One\nTwo\nThree\nFour\nFive\nSix\nSeven\nEight\nNine\nTen\nEleven\nTwelve", "end"],
+      ["dictate", "start"],
+      ["press, the cursor in view", ["Shift+Enter", 12]],
+      ["press, the cursor in view", ["ArrowUp", 24]],
+      ["press, the cursor in view", ["ArrowDown", 24]],
+      ["dictate", "escape"],
+      ["press, the cursor in view", ["ArrowUp", 24]],
+      ["press, the cursor in view", ["Shift+Enter", 12]],
+    ],
+  },
+  {
     // Issue #373. Tim ended a dictation on his Mac and the cursor jumped
     // while the last words were written down, to the front of the line or
     // past where the words would end, and back once they came. It stays
