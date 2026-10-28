@@ -147,7 +147,7 @@ func timesEpisode(t *testing.T, c timesCase) string {
 	source := filepath.Join(dir, c.file)
 	seconds := strconv.Itoa(max(c.seconds, 7))
 	picture := "color=c=black:s=2x8:r=30000/1001:d=" + seconds + "," +
-		"geq=lum='if(bitand(N\\,pow(2\\,7-Y))\\,220\\,30)':cb=128:cr=128,scale=640:360:flags=neighbor"
+		"geq=lum='if(bitand(N\\,pow(2\\,7-Y))\\,220\\,30)':cb=128:cr=128,scale=128:72:flags=neighbor"
 	if len(c.video) > 0 {
 		picture += "," + strings.Join(c.video, ",")
 	}
@@ -360,7 +360,7 @@ func frameHolding(t *testing.T, source string) func(at float64) int {
 		}
 	}
 	sort.Float64s(begins)
-	numbers := barNumbers(t, source, 640, 360, "-fps_mode", "passthrough")
+	numbers := barNumbers(t, source, 128, 72, "-fps_mode", "passthrough")
 	if len(numbers) != len(begins) {
 		t.Fatalf("the episode has %d frames and %d timestamps", len(numbers), len(begins))
 	}

@@ -54,7 +54,7 @@ func cutsOnWholeFrames(t *testing.T, e *Engine, rate, container string) {
 	dir := t.TempDir()
 	source := filepath.Join(dir, "episode."+container)
 	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
-		"-f", "lavfi", "-i", "color=c=black:s=640x360:r="+rate+":d=4,geq=lum='20+7*mod(N,30)':cb=128:cr=128",
+		"-f", "lavfi", "-i", "color=c=black:s=64x36:r="+rate+":d=4,geq=lum='20+7*mod(N,30)':cb=128:cr=128",
 		"-f", "lavfi", "-i", "sine=f=440:sample_rate=48000:d=4",
 		"-shortest", "-c:v", "mpeg4", "-q:v", "2", "-c:a", "pcm_s16le", source).CombinedOutput(); err != nil {
 		t.Fatalf("making the test episode: %s %s", err, out)
@@ -90,7 +90,7 @@ func cutsOnWholeFrames(t *testing.T, e *Engine, rate, container string) {
 		cuts = append(cuts, float64(len(want))*frame)
 	}
 	cuts = cuts[:len(cuts)-1]
-	levels := grayLevels(t, source, 640, 360)
+	levels := grayLevels(t, source, 64, 36)
 	if len(levels) < 30 {
 		t.Fatalf("the episode has %d frames", len(levels))
 	}

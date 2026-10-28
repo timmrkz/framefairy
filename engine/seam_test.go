@@ -73,7 +73,7 @@ func seamless(t *testing.T, e *Engine, rate string) {
 	dir := t.TempDir()
 	source := filepath.Join(dir, "episode.mov")
 	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
-		"-f", "lavfi", "-i", "color=c=black:s=640x360:r="+rate+":d=6,geq=lum='40+mod(N*6,180)':cb=128:cr=128",
+		"-f", "lavfi", "-i", "color=c=black:s=64x36:r="+rate+":d=6,geq=lum='40+mod(N*6,180)':cb=128:cr=128",
 		"-f", "lavfi", "-i", "sine=f=440:sample_rate=48000:d=6",
 		"-shortest", "-c:v", "mpeg4", "-q:v", "2", "-c:a", "pcm_s16le", source).CombinedOutput(); err != nil {
 		t.Fatalf("making the test episode: %s %s", err, out)

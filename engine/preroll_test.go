@@ -73,7 +73,7 @@ func withoutADip(t *testing.T, e *Engine, container string, encoder []string) {
 	dir := t.TempDir()
 	source := filepath.Join(dir, "episode."+container)
 	args := append([]string{"-loglevel", "error", "-y",
-		"-f", "lavfi", "-i", "color=c=black:s=640x360:r=30000/1001:d=7,geq=lum='40+mod(N*6,180)':cb=128:cr=128",
+		"-f", "lavfi", "-i", "color=c=black:s=64x36:r=30000/1001:d=7,geq=lum='40+mod(N*6,180)':cb=128:cr=128",
 		"-f", "lavfi", "-i", "sine=f=440:sample_rate=48000:d=7",
 		"-shortest", "-c:v", "mpeg4", "-q:v", "2", "-g", "1", "-b:a", "64k", "-c:a"}, encoder...)
 	if out, err := exec.Command("ffmpeg", append(args, source)...).CombinedOutput(); err != nil {
