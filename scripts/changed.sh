@@ -178,6 +178,18 @@ names_videos() {
 	esac
 }
 
+# watches_input adds the early warning that the app watches no input it
+# was not given, which reads every Go file and the interface's source,
+# see internal/inputs.
+watches_input() {
+	[ "$need_go" = 1 ] || return 0
+	case $1 in
+	*.go | frontend/src/*)
+		gopkgs="$gopkgs $module/internal/inputs"
+		;;
+	esac
+}
+
 # runs_the_decoder adds the package of every Go test that runs the
 # episode's decoder as a program, through FRAMEFAIRY_FRAMES. They do not
 # import it, so the imports never lead to them.
@@ -213,6 +225,7 @@ everything() {
 
 for file in $changed; do
 	names_videos "$file"
+	watches_input "$file"
 	case $file in
 	# The plan is history, and the check that keeps it so is in make
 	# lint.
