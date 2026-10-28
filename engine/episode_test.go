@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
-	"sync/atomic"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -119,9 +118,9 @@ func TestAShortBeingWrittenIsNotCounted(t *testing.T) {
 // renders for real, to prove a render goes by the same rules.
 
 // episodeWithPlan is an episode of the given file name in a folder of its
-// own, with a plan of one clip of the words wort, as a search leaves it,
-// and gives the episode and its plan. Nothing is a video: where shorts go
-// is decided by names alone.
+// own, with a plan of one clip of the words wort and a picture taken at
+// 2 s, and gives the episode and its plan. Nothing is a video: where
+// shorts go is decided by names alone.
 //
 // On the real disk: the shorts beside it are judged by what is on the
 // disk, see IsShort.
@@ -136,16 +135,16 @@ func episodeWithPlan(t *testing.T, name string) (source, plan string) {
 	}
 	plan = filepath.Join(LogsDir(source), "clips.json")
 	if err := os.WriteFile(plan, []byte(`{"clips": [
-  {"id": "01", "slug": "wort", "segments": [{"start": 1, "end": 21}]}]}`), 0o644); err != nil {
+  {"id": "01", "slug": "wort", "segments": [{"start": 1, "end": 21}], "thumbnails": [2]}]}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return source, plan
 }
 
 // placeShort does what a render does around ffmpeg, see Run: the short of
-// clip id goes into dir under the name shortStem gives it, with its first
-// picture beside it, and the plan notes where it went. What ffmpeg would
-// write is a few bytes, new ones every time.
+// clip id goes into dir under the name shortStem gives it, with a picture
+// beside it for each the clip asks for, see WriteThumbnails, and the plan
+// notes where it went. What ffmpeg would write is a few bytes.
 //
 // On the real disk: a short is a file on the disk, see IsShort.
 func placeShort(t *testing.T, plan, dir, id string) string {
@@ -160,12 +159,15 @@ func placeShort(t *testing.T, plan, dir, id string) string {
 	}
 	stem := shortStem(dir, loaded, clips[i])
 	short := filepath.Join(dir, stem+".mp4")
-	written := placed.Add(1)
-	for _, path := range []string{short, filepath.Join(dir, thumbnailName(stem, 1))} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, []byte("written "+strconv.FormatInt(written, 10)), 0o644); err != nil {
+	written := []string{short}
+	for n := range clips[i].Thumbnails {
+		written = append(written, filepath.Join(dir, thumbnailName(stem, n+1)))
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range written {
+		if err := os.WriteFile(path, []byte("a short"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -174,10 +176,6 @@ func placeShort(t *testing.T, plan, dir, id string) string {
 	}
 	return short
 }
-
-// placed counts the shorts placeShort wrote, so each is a file of other
-// bytes than the one before it, the way a render again writes another file.
-var placed atomic.Int64
 
 // shortOfClip is what the plan says of the short of clip id.
 //
@@ -202,21 +200,26 @@ func shortOfClip(t *testing.T, plan, id string) ClipView {
 // into a folder of the episode's own name in the folder the app's settings
 // name for shorts, so two episodes never meet there, and without that
 // into the episode's own work folder.
+//
+// On the real disk: the folder for shorts is judged by where it really
+// leads, see SafeChild, and on a Mac /home leads elsewhere.
 func TestTheShortsGoWhereTheSettingsSay(t *testing.T) {
+	t.Parallel()
 	source := "/home/tim/Podcast/folge.mp4"
+	shorts := ResolvePath(t.TempDir())
 	for _, c := range []struct {
 		name, out, shorts, want string
 	}{
-		{"--out", "/tmp/out", "/home/tim/Shorts", "/tmp/out"},
-		{"the folder for shorts", "", "/home/tim/Shorts", "/home/tim/Shorts/folge"},
-		{"neither", "", "", filepath.Join(WorkDir(source), "out")},
+		{"--out", "/tmp/out", shorts, "/tmp/out"},
+		{"the folder for shorts", "", shorts, filepath.Join(shorts, "folge")},
+		{"neither", "", "", "/home/tim/Podcast/folge.framefairy/out"},
 	} {
 		got, err := shortsFolder(c.out, c.shorts, source)
 		if err != nil || got != c.want {
 			t.Errorf("%s: the shorts go to %q, %v, not %q", c.name, got, err, c.want)
 		}
 	}
-	if got, err := shortsFolder("", "/home/tim/Shorts", "/home/tim/.."); err == nil {
+	if got, err := shortsFolder("", shorts, "/home/tim/.."); err == nil {
 		t.Errorf("an episode named .. puts its shorts in %s, outside the folder for shorts", got)
 	}
 }
@@ -374,8 +377,8 @@ func TestTwoClipsOfTheSameWordsAreNumbered(t *testing.T) {
 	t.Parallel()
 	_, plan := episodeWithPlan(t, "folge")
 	if err := os.WriteFile(plan, []byte(`{"clips": [
-  {"id": "01", "slug": "wort", "segments": [{"start": 1, "end": 21}]},
-  {"id": "t60-01", "slug": "wort", "segments": [{"start": 1, "end": 21}]}]}`), 0o644); err != nil {
+  {"id": "01", "slug": "wort", "segments": [{"start": 1, "end": 21}], "thumbnails": [2]},
+  {"id": "t60-01", "slug": "wort", "segments": [{"start": 1, "end": 21}], "thumbnails": [2]}]}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	dir := ResolvePath(t.TempDir())
