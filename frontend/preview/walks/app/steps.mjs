@@ -11,8 +11,8 @@ export const steps = {
   // ["first run"]      makes the bridge's machine one the app never ran
   //                    on and opens the app again: a card for each model,
   //                    nothing downloading until Download is pressed,
-  //                    both downloading at once with their words in the
-  //                    same columns, and once both have arrived the app
+  //                    both downloading at once, their rows the same
+  //                    shape as the rows waiting, and once both have arrived the app
   //                    on its first page, with one big button to add a
   //                    video and nothing pressed in between
   async "first run"(walk) {
@@ -24,12 +24,15 @@ export const steps = {
     await clip.locator("li").first().waitFor();
     await settle(page);
     // Where each cell of every row starts, and how high the rows are
-    // inside the line between two rows, which app.css adds to a row.
+    // inside the line between two rows, which app.css adds to a row. The
+    // fill of a row on its way is no cell.
     const rows = () =>
       page.evaluate(() =>
         [...document.querySelectorAll(".setup ul.models > li")].map((li) => ({
           height: li.clientHeight,
-          cells: [...li.children].map((c) => c.getBoundingClientRect().left),
+          busy: !!li.querySelector(":scope > .beam"),
+          cells: [...li.children].filter((c) => !c.matches(".beam")).map((c) => c.getBoundingClientRect().left),
+          said: [...li.children].filter((c) => !c.matches(".beam")).map((c) => c.textContent.trim()),
           // A cell whose words are wider than it is, cut short.
           cut: [...li.children].filter((c) => c.scrollWidth > c.clientWidth).map((c) => `${c.textContent.trim()} ${c.scrollWidth} in ${c.clientWidth}`),
         })),
@@ -48,19 +51,20 @@ export const steps = {
 
     await speech.locator("button.act", { hasText: "Download" }).click();
     await clip.locator("button.act", { hasText: "Download" }).first().click();
-    await speech.locator(".wide", { hasText: "B of" }).waitFor();
-    await clip.locator(".wide", { hasText: "B of" }).waitFor();
+    await speech.locator("li .cell", { hasText: /B of [\d.]+ [KMG]B/ }).waitFor();
+    await clip.locator("li .cell", { hasText: /B of [\d.]+ [KMG]B/ }).waitFor();
     await settle(page);
-    const both = await page.evaluate(() =>
-      [...document.querySelectorAll(".setup li:has(.wide)")].map((li) => ({
-        said: li.querySelector(".wide").getBoundingClientRect().left,
-        left: li.querySelector(".size").textContent.trim(),
-        button: li.querySelector("button.act").textContent.trim(),
-      })),
-    );
+    // A row on its way keeps the shape of the rows around it: its maker
+    // where it was, how far it has come where the memory it needs stood,
+    // the time left where its size stood, every cell starting where that
+    // column starts in every other row.
+    const during = await rows();
+    const both = during.filter((r) => r.busy).map((r) => ({ maker: r.said[1], far: r.said[2], left: r.said[3], button: r.said[4] }));
+    const shaped = during.find((r) => r.height !== first[0].height || r.cells.join() !== first[0].cells.join());
     if (both.length !== 2 || both.some((r) => r.button !== "Cancel")) walk.wrong = `with both pressed, the setup downloads ${JSON.stringify(both)}, not both at once`;
+    else if (both.some((r) => !/B of [\d.]+ [KMG]B/.test(r.far) || !r.maker)) walk.wrong = `a download says ${JSON.stringify(both)}, with its maker gone or how far it came out of its column`;
     else if (both.some((r) => !/^\d+:\d\d left$/.test(r.left))) walk.wrong = `a download says ${JSON.stringify(both.map((r) => r.left))} where its time left goes`;
-    else if (both[0].said !== both[1].said) walk.wrong = `what the two downloads have fetched starts at ${both[0].said} and ${both[1].said}, not in one column`;
+    else if (shaped) walk.wrong = `a row on its way stands out of the table: ${JSON.stringify(shaped)} beside ${JSON.stringify(first[0])}`;
     if (walk.wrong) return;
 
     await control(url, "/fresh?arrive=speech");
@@ -80,6 +84,46 @@ export const steps = {
     await settle(page);
     const end = { setup: await page.locator(".setup").count(), videos: await page.locator("aside li", { hasText: ".mp4" }).count(), add: (await add.textContent()).trim() };
     if (end.setup || end.videos || !end.add.startsWith("Add a video")) walk.wrong = `once both models are here, the app shows ${JSON.stringify(end)}`;
+  },
+  // ["first run small"] makes the bridge's machine one the app never ran
+  //                    on, with 8 GB of memory, which holds no clip
+  //                    model: the clip card offers a model in the cloud
+  //                    and its key in place of the list, and once the
+  //                    speech model is here and a key is saved the app
+  //                    is on its first page, finding clips in the cloud
+  async "first run small"(walk) {
+    const { page } = walk;
+    await control(url, "/fresh?memory=8");
+    await page.reload();
+    const card = (name) => page.locator(".setup .area", { has: page.locator("h2", { hasText: name }) });
+    const [speech, clip] = [card("Speech model"), card("Clip model")];
+    await speech.locator("li").first().waitFor();
+    await settle(page);
+    const seen = { lists: await clip.locator("ul.models").count(), cloud: await clip.locator("button.pick").count(), key: await clip.locator("input.key").count() };
+    // The two rows have their names in one column, each name whole.
+    const shape = await clip.locator(".card > .item").evaluateAll((items) =>
+      items.map((i) => {
+        const head = i.querySelector(".head");
+        return { name: head.getBoundingClientRect().left, high: head.getBoundingClientRect().height, wide: head.scrollWidth > head.clientWidth };
+      }),
+    );
+    if (seen.lists || seen.cloud !== 1 || seen.key !== 1) walk.wrong = `on a machine no clip model fits, the clip card shows ${JSON.stringify(seen)}, not a model in the cloud and its key`;
+    else if (shape.length !== 2 || shape[0].name !== shape[1].name || shape.some((r) => r.wide || r.high !== shape[0].high)) walk.wrong = `the rows of the model in the cloud and its key stand apart: ${JSON.stringify(shape)}`;
+    if (walk.wrong) return;
+    await speech.locator("button.act", { hasText: "Download" }).click();
+    await speech.locator("li .cell", { hasText: /B of [\d.]+ [KMG]B/ }).waitFor();
+    await control(url, "/fresh?arrive=speech");
+    await speech.locator(".ready").waitFor();
+    if (await page.locator(".welcome").count()) {
+      walk.wrong = "the app left the setup with the speech model here and no key to find clips with";
+      return;
+    }
+    await clip.locator("input.key").fill("sk-ant-walk");
+    await clip.locator("button.act", { hasText: "Save key" }).click();
+    const add = page.locator(".welcome button.add-video");
+    await add.waitFor();
+    const now = await ask(page, "Setup");
+    if (!now.chosen || now.planner !== "api") walk.wrong = `once the key is saved, the app finds clips with ${JSON.stringify(now.planner)}, chosen ${now.chosen}, not in the cloud`;
   },
   // ["title bar"]      lays the app's window out the way macOS does on
   //                    Tim's Mac, a title bar 30 points high with its
