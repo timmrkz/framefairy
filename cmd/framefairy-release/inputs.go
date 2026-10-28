@@ -178,13 +178,23 @@ func inputsOf(name string, data []byte) []string {
 		}
 		return found
 	}
-	var files []*macho.File
+	// Each architecture with its own bytes: the offsets inside one, like
+	// where its signature is, count from the start of its slice.
+	type arch struct {
+		f    *macho.File
+		data []byte
+	}
+	var files []arch
 	if fat, err := macho.NewFatFile(bytes.NewReader(data)); err == nil {
 		for _, a := range fat.Arches {
-			files = append(files, a.File)
+			end := uint64(a.Offset) + uint64(a.Size)
+			if end > uint64(len(data)) {
+				return []string{fmt.Sprintf("its %v part reaches past the end of the file", a.Cpu)}
+			}
+			files = append(files, arch{a.File, data[a.Offset:end]})
 		}
 	} else if f, err := macho.NewFile(bytes.NewReader(data)); err == nil {
-		files = append(files, f)
+		files = append(files, arch{f, data})
 	} else {
 		return nil
 	}
@@ -194,8 +204,8 @@ func inputsOf(name string, data []byte) []string {
 			found = append(found, "names "+n)
 		}
 	}
-	for _, f := range files {
-		found = append(found, machoInputs(path.Base(name), f, data)...)
+	for _, a := range files {
+		found = append(found, machoInputs(path.Base(name), a.f, a.data)...)
 	}
 	slices.Sort(found)
 	return slices.Compact(found)

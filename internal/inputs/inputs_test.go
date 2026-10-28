@@ -35,11 +35,12 @@ func walk(t *testing.T, each func(path string)) {
 }
 
 // Wails can register a global shortcut, which hears a key pressed in any
-// app. The app has none, and gains one only by a decision that changes
-// this test.
+// app, and read the clipboard, which holds what the person copied in any
+// app. The app does neither, and starts only by a decision that changes
+// this test. Putting a link on the clipboard, Copy Link, is no read.
 //
 // On the real disk: what this reads is the module's own source.
-func TestNoGlobalShortcut(t *testing.T) {
+func TestTheGoSideHearsNoKeysAndReadsNoClipboard(t *testing.T) {
 	fset := token.NewFileSet()
 	walk(t, func(path string) {
 		if !strings.HasSuffix(path, ".go") {
@@ -51,8 +52,15 @@ func TestNoGlobalShortcut(t *testing.T) {
 			return
 		}
 		ast.Inspect(f, func(n ast.Node) bool {
-			if s, ok := n.(*ast.SelectorExpr); ok && s.Sel.Name == "GlobalShortcut" {
+			s, ok := n.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			if s.Sel.Name == "GlobalShortcut" {
 				t.Errorf("%s registers a global shortcut, which hears keys pressed in other apps", fset.Position(s.Pos()))
+			}
+			if x, ok := s.X.(*ast.SelectorExpr); ok && x.Sel.Name == "Clipboard" && s.Sel.Name == "Text" {
+				t.Errorf("%s reads the clipboard", fset.Position(s.Pos()))
 			}
 			return true
 		})
@@ -60,13 +68,14 @@ func TestNoGlobalShortcut(t *testing.T) {
 }
 
 // The interface opens no microphone, camera or screen of its own and reads
-// no clipboard by itself. Dictate on Report a Problem records through the
+// no clipboard by itself, through the browser or through Wails' runtime,
+// whose Clipboard.Text reads the system's. Dictate on Report a Problem records through the
 // Go side, see cmd/framefairy-app/listen.go, and a paste is the person's
 // own, handed to the page by the system.
 //
 // On the real disk: what this reads is the interface's own source.
 func TestTheInterfaceTakesNoInputItIsNotGiven(t *testing.T) {
-	calls := []string{"getUserMedia", "getDisplayMedia", "clipboard.read"}
+	calls := []string{"getUserMedia", "getDisplayMedia", "clipboard.read", "Clipboard.Text"}
 	src := filepath.Join("..", "..", "frontend", "src")
 	walk(t, func(path string) {
 		if !strings.HasPrefix(path, src+string(filepath.Separator)) {

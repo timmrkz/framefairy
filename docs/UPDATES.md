@@ -382,12 +382,18 @@ it needs no Mac:
 - **Entitlements**, once the app is signed with the Developer ID: the
   microphone and nothing else.
 
+A refused build says so on the commit that was built, as a failed
+Ready to update to with the first thing found, so the pull request shows
+why its build never reached the Updates page.
+
 The signer runs from main, so the lists are main's, and a branch that
 changes them changes nothing about how its own build is judged. Each
 change to a list is a line in a pull request that says why. A test in
 `internal/inputs` warns earlier, in the pull request itself: our Go code
-registers no global shortcut, and the interface opens no microphone,
-camera or screen and reads no clipboard by itself.
+registers no global shortcut and reads no clipboard, and the interface
+opens no microphone, camera or screen and reads no clipboard by itself.
+And a change to `scripts/bundle-macos.sh` runs the signer's own test of
+the Info.plist it writes.
 
 What it cannot catch is code that hides the name it looks up, built from
 pieces while it runs. Then macOS is the wall: none of these inputs works

@@ -148,6 +148,14 @@ var app = program{
 	text:    "AudioUnit",
 }
 
+// mic is the app signed with the microphone, the one entitlement it may
+// have.
+var mic = func() program {
+	p := app
+	p.entitled = plistHead + "<key>com.apple.security.device.audio-input</key><true/>\n</dict>\n</plist>\n"
+	return p
+}()
+
 const plistHead = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -203,6 +211,13 @@ func TestWhatCouldWatchInputIsFound(t *testing.T) {
 		{"a universal program, one architecture with a tap", "framefairy-app",
 			fat(app, program{cpu: 0x01000007, links: app.links, imports: []string{"_IOHIDManagerOpen"}}),
 			[]string{"imports _IOHIDManagerOpen", "names IOHIDManagerOpen"}},
+		// Each architecture's signature is read from its own slice.
+		{"a signed universal program, the microphone entitled", "framefairy-app",
+			fat(mic, program{cpu: 0x01000007, links: app.links, entitled: mic.entitled}), nil},
+		{"a signed universal program, one architecture with the camera", "framefairy-app",
+			fat(mic, program{cpu: 0x01000007, links: app.links, entitled: plistHead +
+				"<key>com.apple.security.device.camera</key><true/>\n</dict>\n</plist>\n"}),
+			[]string{"is entitled to com.apple.security.device.camera"}},
 		{"the folders and the microphone asked for", "Frame Fairy.app/Contents/Info.plist",
 			[]byte(plistHead + "<key>NSDesktopFolderUsageDescription</key><string>x</string>\n" +
 				"<key>NSMicrophoneUsageDescription</key><string>x</string>\n" +
@@ -233,7 +248,7 @@ func TestWhatCouldWatchInputIsFound(t *testing.T) {
 //
 // On the real disk: what this reads is the script that writes Info.plist.
 func TestTheShippedInfoPlistAsksForNoInput(t *testing.T) {
-	script, err := os.ReadFile(filepath.Join("..", "..", "scripts/bundle-macos.sh"))
+	script, err := os.ReadFile("../../scripts/bundle-macos.sh")
 	if err != nil {
 		t.Fatal(err)
 	}

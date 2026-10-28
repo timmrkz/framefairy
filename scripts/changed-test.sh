@@ -207,6 +207,8 @@ has "scripts/build-ffmpeg.sh" "build" "lint"
 # versions the build scripts pin.
 has "scripts/build-ffmpeg.sh" "go framefairy/notices"
 has "scripts/build-llama.sh" "go framefairy/notices"
+# The signer reads the Info.plist the bundle script writes, issue #369.
+has "scripts/bundle-macos.sh" "go framefairy/cmd/framefairy-release"
 
 # The rules are tested in make lint.
 is "scripts/needs-build.sh" "lint unit go framefairy/internal/naming"

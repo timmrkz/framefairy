@@ -127,6 +127,7 @@ jobs:
       contents: write
       pull-requests: read
       actions: read
+      statuses: write
     outputs:
       published: ${{ steps.upload.outputs.published }}
       channel: ${{ steps.which.outputs.channel }}
@@ -247,12 +248,31 @@ jobs:
           COMMIT: ${{ steps.which.outputs.commit }}
         run: |
           mv "$BUILT" "dist/$ZIP"
-          go run ./cmd/framefairy-release sign \
+          if ! go run ./cmd/framefairy-release sign \
             -zip "dist/$ZIP" -channel "$CHANNEL" -name "$(cat dist/name.txt)" \
             -version "$VERSION" -commit "$COMMIT" \
             -url "https://github.com/$GH_REPO/releases/download/dev/$ZIP" \
-            -out "dist/channel-$CHANNEL.json"
+            -out "dist/channel-$CHANNEL.json" 2> "$RUNNER_TEMP/refused.txt"; then
+            cat "$RUNNER_TEMP/refused.txt" >&2
+            exit 1
+          fi
           ls -l dist
+
+      # This workflow runs from main, so a build it refuses fails here, on
+      # main's runs, and the pull request would only miss its Ready to
+      # update to with no reason given. The refusal goes on the commit
+      # that was built, where the pull request shows it. Issue #369.
+      - name: Say on the commit why it is not signed
+        if: failure() && steps.sign.outcome == 'failure'
+        env:
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          why=$(grep -m1 '^  ' "$RUNNER_TEMP/refused.txt" | sed 's/^ *//' || true)
+          [ -n "$why" ] || why=$(head -n 1 "$RUNNER_TEMP/refused.txt" | sed 's/^framefairy-release: //')
+          gh api "repos/$GH_REPO/statuses/$SHA" \
+            -f state=failure -f context="Ready to update to" \
+            -f description="Not signed: $(printf '%s' "$why" | cut -c1-120)" \
+            -f target_url="$GITHUB_SERVER_URL/$GH_REPO/actions/runs/$GITHUB_RUN_ID" >/dev/null
 
       - name: The release the builds live in
         if: steps.zip.outputs.ready == 'true'
