@@ -8,7 +8,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { basename } from "node:path";
-import { ask, control, cropPixels, engineState, episodeOn, fromSidebar, handles, high, news, nextNews, nextPaint, open, pageUntil, playUntil, seekTo, settle, shortFramesFrom, shown, shownOnPlayhead, xOf } from "../bridge.mjs";
+import { ask, clickOnTrack, control, cropPixels, engineState, episodeOn, fromSidebar, handles, high, news, nextNews, nextPaint, open, pageUntil, playUntil, seekTo, settle, shortFramesFrom, shown, shownOnPlayhead, xOf } from "../bridge.mjs";
 import { canLook, clickCard, clickedFromAhead, rate, restAhead, shortOf, shotClips, still, url } from "../common/steps.mjs";
 import { describe } from "../rules.mjs";
 
@@ -1919,7 +1919,7 @@ export const steps = {
     // then the caption still up from the click before, issue #359.
     const clickUp = async (x, y, where) => {
       const lost = await captionsLost(page);
-      await page.mouse.click(x, y);
+      await clickOnTrack(page, x, y);
       await settle(page);
       if (!(await shownOnPlayhead(page, { captions: true, lost }))) {
         walk.wrong = `after the click on ${where}, a layer of captions was given up on`;

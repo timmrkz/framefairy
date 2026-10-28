@@ -160,7 +160,7 @@ export const steps = {
     const to = k + 7.5 / fps;
     const click = what === "click far";
     if (click) {
-      await page.mouse.click(await xOf(page, t.start + 0.4), y);
+      await clickOnTrack(page, await xOf(page, t.start + 0.4), y);
     } else {
       await page.mouse.move(await xOf(page, t.start + 0.4), y);
       await page.mouse.down();
@@ -238,7 +238,7 @@ export const steps = {
     const fps = await rate(page);
     const t = await timeline(page);
     const g = await handles(page);
-    await page.mouse.click(await xOf(page, t.start + 0.5), high(g.track));
+    await clickOnTrack(page, await xOf(page, t.start + 0.5), high(g.track));
     await settle(page);
     await shownOnPlayhead(page);
     // Every moment the playhead stands on while it plays, from the
@@ -575,7 +575,7 @@ export const steps = {
       return;
     }
     const y = box.y + box.h / 2;
-    await page.mouse.click(middle(box), y);
+    await clickOnTrack(page, middle(box), y);
     const x = g.track.x + g.track.w * 0.9;
     await page.mouse.move(x, high(g.track));
     await page.mouse.down();
@@ -684,7 +684,7 @@ export const steps = {
     // step is about.
     const g0 = await handles(page);
     const into = g0.start.x + g0.start.w;
-    await page.mouse.click(into + 0.05 * (g0.end.x - into), high(g0.track));
+    await clickOnTrack(page, into + 0.05 * (g0.end.x - into), high(g0.track));
     await settle(page);
     await page.evaluate(() => document.body.focus());
     await preview(page, 0.2);
@@ -738,11 +738,12 @@ export const steps = {
     const { page, watch } = walk;
     const fps = await rate(page);
     const oldEnd = (await engineState(page, watch.at)).segments.at(-1).end;
-    // The play starts a short way before the end, so it runs out by
-    // itself in a few seconds.
+    // The play starts a fifth of the clip before its end, so it runs out
+    // by itself in a few seconds, and is still running when the hand lets
+    // go however slowly a busy machine moves it.
     const g0 = await handles(page);
     const into = g0.start.x + g0.start.w;
-    await clickOnTrack(page, into + 0.9 * (g0.end.x - into), high(g0.track));
+    await clickOnTrack(page, into + 0.8 * (g0.end.x - into), high(g0.track));
     await settle(page);
     await page.evaluate(() => document.body.focus());
     await preview(page, 0.2);
@@ -763,23 +764,25 @@ export const steps = {
     });
     const g = await handles(page);
     const to = into + arg * (g.end.x - into);
+    // Three moves take the end past the playhead. The steps of a drag in
+    // between are what "drag while playing" is about.
     await page.mouse.move(middle(g.end), g.end.y + g.end.h / 2);
     await page.mouse.down();
-    for (let i = 1; i <= 20; i++) {
-      await page.mouse.move(middle(g.end) + ((to - middle(g.end)) * i) / 20, g.end.y + g.end.h / 2);
+    for (let i = 1; i <= 3; i++) {
+      await page.mouse.move(middle(g.end) + ((to - middle(g.end)) * i) / 3, g.end.y + g.end.h / 2);
       await nextPaint(page);
     }
     await page.mouse.up();
-    const atLetGo = Number(await page.evaluate(() => document.querySelector(".screen").dataset.playhead));
+    const [atLetGo, playingAtLetGo] = await page.evaluate(() => [Number(document.querySelector(".screen").dataset.playhead), !!document.querySelector('button[aria-label="Pause"]')]);
     // Until the play stops by itself.
-    const stopped = await playUntil(page);
+    await playUntil(page);
     await page.evaluate(() => (window.__playWatch = false));
     await settle(page);
     await watch.step("trim", s);
     const newEnd = (await engineState(page, watch.at)).segments.at(-1).end;
     const played = await page.evaluate(() => window.__played ?? []);
     const playing = played.filter(([, , p]) => p);
-    if (stopped.playing) walk.wrong = "the play never stopped";
+    if (!playingAtLetGo) walk.wrong = `the play had ended at ${atLetGo.toFixed(3)} before the hand let go, so the walk proves nothing`;
     else if (!(newEnd < atLetGo)) walk.wrong = `the clip ends at ${newEnd.toFixed(3)}, not before the playhead at ${atLetGo.toFixed(3)} where the hand let go`;
     else if (playing.length < 30) walk.wrong = `only ${playing.length} animation frames were read while it played`;
     for (let i = 1; i < playing.length && !walk.wrong; i++) {
@@ -815,7 +818,7 @@ export const steps = {
       walk.wrong = `${share} of the way along the clip is not on the clip timeline`;
       return;
     }
-    await page.mouse.click(x, high(g.track));
+    await clickOnTrack(page, x, high(g.track));
     await settle(page);
     // The hand stays where it clicked, on the playhead now, and swipes
     // from there, the way a hand on a trackpad does after it clicks.
@@ -1224,7 +1227,7 @@ export const steps = {
     const want = arg === "last" ? pieces[pieces.length - 1].end - 1 / src.fps : pieces[0].start;
     const g = await handles(page);
     const edge = arg === "last" ? g.end : g.start;
-    await page.mouse.click(edge.x + edge.w / 2, edge.y + edge.h / 2);
+    await clickOnTrack(page, edge.x + edge.w / 2, edge.y + edge.h / 2);
     await settle(page);
     if (arg === "first") {
       for (const key of ["ArrowRight", "ArrowRight", "ArrowRight", "ArrowLeft", "ArrowLeft", "ArrowLeft"]) {
