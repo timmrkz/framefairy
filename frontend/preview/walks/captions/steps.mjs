@@ -1541,7 +1541,8 @@ export const steps = {
     // rather than none, see CaptionLayers.last, and only the first frame
     // of a play waits for its own, see FrameQueue.dress. So it is told
     // and not judged. That every frame of a play asks for its layer
-    // ahead, the fix for issue #288, is held in captions.test.ts.
+    // ahead, the fix for issue #288, is held in captions.test.ts and
+    // queue.test.ts.
     await playOn(page, "frames");
     const stop = await watchPills(page);
     try {
