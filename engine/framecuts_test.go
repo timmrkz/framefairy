@@ -175,16 +175,13 @@ func cutsOnWholeFrames(t *testing.T, e *Engine, rate, container string) {
 // grayLevels is how bright the middle of each frame of a video is.
 func grayLevels(t *testing.T, path string, w, h int) []float64 {
 	t.Helper()
-	out, err := exec.Command("ffmpeg", "-v", "error", "-i", path, "-f", "rawvideo", "-pix_fmt", "gray", "-").Output()
-	if err != nil {
-		t.Fatal(err)
-	}
+	frames := readFrames(t, exec.Command("ffmpeg", "-v", "error", "-i", path, "-f", "rawvideo", "-pix_fmt", "gray", "-"), w*h)
 	var levels []float64
-	for i := 0; i+w*h <= len(out); i += w * h {
+	for _, f := range frames {
 		sum, count := 0, 0
 		for y := h / 4; y < 3*h/4; y++ {
 			for x := w / 4; x < 3*w/4; x++ {
-				sum += int(out[i+y*w+x])
+				sum += int(f[y*w+x])
 				count++
 			}
 		}

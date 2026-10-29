@@ -130,19 +130,16 @@ func TestTheGlideIsTheOneTheVideoPreviewWorksOut(t *testing.T) {
 func renderedLefts(t *testing.T, source SourceInfo, seg Segment, frames int) []int {
 	t.Helper()
 	filters := source.cropFilters(seg, 152, 270, 0, 480, 152, 270, "flags=lanczos", "gray16le")
-	out, err := exec.Command("ffmpeg", "-v", "error", "-f", "lavfi",
+	got := readFrames(t, exec.Command("ffmpeg", "-v", "error", "-f", "lavfi",
 		"-i", "color=black:s=480x270:r=25:d=10,format=gray16le,geq=lum=X*64",
 		"-vf", strings.Join(filters, ",")+",format=gray16le", "-frames:v", strconv.Itoa(frames),
-		"-f", "rawvideo", "-").CombinedOutput()
-	if err != nil {
-		t.Fatalf("ffmpeg would not crop by %s: %v %s", filters, err, out)
-	}
-	if len(out) != frames*152*270*2 {
-		t.Fatalf("ffmpeg gave %d bytes, not %d frames of 152 by 270", len(out), frames)
+		"-f", "rawvideo", "-"), 152*270*2)
+	if len(got) != frames {
+		t.Fatalf("ffmpeg cropping by %s gave %d frames of 152 by 270, not %d", filters, len(got), frames)
 	}
 	lefts := make([]int, frames)
-	for n := range frames {
-		lefts[n] = int(binary.LittleEndian.Uint16(out[n*152*270*2:])) / 64
+	for n, f := range got {
+		lefts[n] = int(binary.LittleEndian.Uint16(f)) / 64
 	}
 	return lefts
 }
@@ -181,10 +178,10 @@ func TestTheRenderGlidesTheCropOverTheMarks(t *testing.T) {
 	if chain == "" {
 		t.Fatalf("the piece has no crop that glides to the pixel of the short: %s", graph)
 	}
-	out, err := exec.Command("ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=black:s=480x270:r=25:d=3",
-		"-vf", chain, "-frames:v", "65", "-f", "rawvideo", "-pix_fmt", "gray", "-").CombinedOutput()
-	if err != nil || len(out) != 65*1080*1920 {
-		t.Errorf("the glide scaled to the short gave %d bytes, not 65 frames of 1080 by 1920: %v %s", len(out), err, out[:min(len(out), 200)])
+	frames := readFrames(t, exec.Command("ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=black:s=480x270:r=25:d=3",
+		"-vf", chain, "-frames:v", "65", "-f", "rawvideo", "-pix_fmt", "gray", "-"), 1080*1920)
+	if len(frames) != 65 {
+		t.Errorf("the glide scaled to the short gave %d frames of 1080 by 1920, not 65", len(frames))
 	}
 }
 

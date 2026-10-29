@@ -73,16 +73,7 @@ func renderTimingEpisode(t *testing.T) string {
 // frameRGB reads every frame of a video as rgb24.
 func frameRGB(t *testing.T, path string, w, h int) [][]byte {
 	t.Helper()
-	out, err := exec.Command("ffmpeg", "-v", "error", "-i", path, "-f", "rawvideo", "-pix_fmt", "rgb24", "-").Output()
-	if err != nil {
-		t.Fatal(err)
-	}
-	size := w * h * 3
-	var frames [][]byte
-	for i := 0; i+size <= len(out); i += size {
-		frames = append(frames, out[i:i+size])
-	}
-	return frames
+	return readFrames(t, exec.Command("ffmpeg", "-v", "error", "-i", path, "-f", "rawvideo", "-pix_fmt", "rgb24", "-"), w*h*3)
 }
 
 // loudFrom is the first moment from which a short's sound is loud, read
