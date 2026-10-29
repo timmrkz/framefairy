@@ -379,7 +379,12 @@ const (
 // is still taken, and a sentence it ended still ends there. Taking a word
 // out takes out the word and changes no other caption. A caption whose
 // first or last word was taken out draws in to the words it shows, the
-// same as when its edge is dragged in over the word. Without this, removing a
+// same as when its edge is dragged in over the word, except where the
+// speech runs on into the next caption: there the caption before stays up
+// until the next one appears, as any caption does with no pause after it,
+// so nothing goes blank while someone is still talking. Tim found the
+// blocks on the clip timeline come apart where he had removed a word,
+// with the sound running on under the gap. Without this, removing a
 // word left a gap that read as a pause, so the caption ended at the word
 // before it and the rest moved on to the next one, and once the gap was
 // closed, the room it left pulled the first word of the next caption up.
@@ -535,6 +540,9 @@ func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Ca
 		// belongs to that caption: removing the first word of a caption
 		// changed when the one before it went.
 		end := math.Max(all[g.lastK].End, ClipTime(clip, allWas[g.lastK].End+captionHold))
+		// Whether the next caption follows with no pause between, so this
+		// one stays up until it appears.
+		runsOn := false
 		if i+1 < len(groups) && len(groups[i+1].words) == 0 {
 			// Before a hole it goes where the words removed with the hole
 			// begin, or after its hold when a pause comes first.
@@ -545,9 +553,14 @@ func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Ca
 				end = math.Min(end, hole.from)
 			}
 		} else if i+1 < len(groups) {
-			next := math.Min(appears(groups[i+1].first), groups[i+1].from)
+			// Where the next one appears: with its first word, or with the
+			// first it shows when that was removed, see trimStart below.
+			next := appears(groups[i+1].first)
+			if shownAt[groups[i+1].firstK] >= 0 {
+				next = math.Min(next, groups[i+1].from)
+			}
 			if allWas[groups[i+1].firstK].Start-allWas[g.lastK].End < captionPause {
-				end = next
+				end, runsOn = next, true
 			} else {
 				end = math.Min(end, next)
 			}
@@ -557,10 +570,12 @@ func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Ca
 		// A caption whose first or last word was removed is on screen for
 		// the words it shows: from its first word shown, and until a hold
 		// after its last, the way it would be had the edge been dragged
-		// in over the word. The captions beside it keep the time they had,
-		// so the room the word took stays empty. It used to stay as long
-		// as before with the word gone, and Tim found removing an edge
-		// word and dragging the edge over it ended differently.
+		// in over the word. It used to stay as long as before with the
+		// word gone, and Tim found removing an edge word and dragging the
+		// edge over it ended differently. Where the speech runs on into
+		// the next caption, the time of the word is no pause, so the
+		// caption before stays up until the next appears, whichever of
+		// the two the word was in.
 		trimStart := shownAt[g.firstK] < 0
 		trimEnd := shownAt[g.lastK] < 0
 		// The middle of the word removed next to the first word shown and
@@ -580,7 +595,7 @@ func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Ca
 			}
 			endPast = shownMiddle(all[k], length)
 		}
-		if trimEnd {
+		if trimEnd && !runsOn {
 			end = math.Min(end, math.Max(words[g.last].End, ClipTime(clip, was[g.last].End+captionHold)))
 		}
 		if rides {

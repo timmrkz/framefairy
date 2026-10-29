@@ -260,20 +260,54 @@ export const steps = {
   async others(walk, arg) {
     const { marks, page, watch } = walk;
     // Every caption but the one holding a word at a mark appears and
-    // goes when it did then.
-    const [label, text] = arg;
+    // goes when it did then. With "held", the caption before it may go
+    // later, where the one holding the word now appears: it stays up
+    // over a word removed between them while the speech runs on, #597.
+    const [label, text, held] = arg;
     const was = marks[label];
     const now = await engineState(page, watch.at);
     const mine = was.captions.find((c) => c.lines.some((l) => l.words.some((w) => w.text.includes(text))));
+    const before = held === "held" ? was.captions[was.captions.indexOf(mine) - 1] : undefined;
+    const ours = now.captions.find((d) => Math.abs(d.first - mine.first) < 1e-6);
     const span = (c) => `${c.start.toFixed(3)}-${c.end.toFixed(3)}`;
     const moved = was.captions
       .filter((c) => c !== mine)
       .filter((c) => {
         const n = now.captions.find((d) => Math.abs(d.first - c.first) < 1e-6);
+        if (n && c === before && ours) return span(n) !== span({ start: c.start, end: Math.max(c.end, ours.start) });
         return !n || span(n) !== span(c);
       });
     if (moved.length) {
       walk.wrong = `captions beside the one with "${text}" changed: ${moved.map(span).join(" ")}\nthen ${was.captions.map(span).join(" ")}\nnow  ${now.captions.map(span).join(" ")}`;
+    }
+  },
+  // ["meets", [label, word, side]]
+  //                    the block on the clip timeline of the caption
+  //                    that held the word at the mark meets the block of
+  //                    the caption before it or after it, with no more
+  //                    between them than the pixel each is drawn short of
+  //                    its time, so nothing goes blank where the speech
+  //                    runs on, #597
+  async meets(walk, arg) {
+    const { marks, page, watch } = walk;
+    const [label, text, side] = arg;
+    const i = marks[label].captions.findIndex((c) => c.lines.some((l) => l.words.some((w) => w.text.includes(text))));
+    const now = await engineState(page, watch.at);
+    const [a, b] = side === "before" ? [now.captions[i - 1], now.captions[i]] : [now.captions[i], now.captions[i + 1]];
+    if (i < 0 || !a || !b) {
+      walk.wrong = `no caption ${side} the one with "${text}"`;
+      return;
+    }
+    await settle(page);
+    const boxes = async (first) =>
+      (await page.locator(`.clip-timeline .caption[data-first="${first}"]`).evaluateAll((els) =>
+        els.map((el) => el.getBoundingClientRect()).map((r) => ({ left: r.left, right: r.right })),
+      )).sort((p, q) => p.left - q.left);
+    const ends = (await boxes(a.first)).at(-1);
+    const starts = (await boxes(b.first))[0];
+    const gap = starts && ends ? starts.left - ends.right : NaN;
+    if (!(gap <= 2.5)) {
+      walk.wrong = `the blocks of the captions at ${a.start.toFixed(3)}-${a.end.toFixed(3)} and ${b.start.toFixed(3)}-${b.end.toFixed(3)} are ${gap.toFixed(1)} px apart`;
     }
   },
   // ["holds", word]    a caption the engine has holds the word

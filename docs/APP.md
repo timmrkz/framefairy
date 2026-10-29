@@ -1207,7 +1207,9 @@ bubble scrolled by those eight pixels.
     no word of the next caption is pulled up into it, and no other caption
     moves. A caption whose first or last word it was draws in to the words
     it still shows, the same as when its edge is dragged in over the word,
-    see **Caption timing**. A caption whose
+    except where the speech runs on into the next caption, where the
+    caption before stays up until the next appears, see **Caption
+    timing**. A caption whose
     words are all removed goes and leaves its time empty, and the one
     before it goes when it did. It used to stay up through that time, so
     the block before a removed caption grew across its place on the clip
@@ -2674,7 +2676,12 @@ moved by hand, on the clip timeline.
   captions meet, the line between them has two sides: the left side is
   where the one before goes, the right side where the one after appears.
   An edge dragged in leaves a gap, and dragged out it stops at the caption
-  beside it. No other caption ever moves. Dragging the right side used to
+  beside it. No other caption ever moves, with one exception: a start
+  may be dragged back into the time the caption before holds for a word
+  removed between the two, as far as that caption's last word shown,
+  and the caption before then goes where it appears, see
+  `startFloor` in `engine/edit.go`. Tim removed a word and heard the next
+  word start earlier than its block, which he could not move there. Dragging the right side used to
   take the caption before along, so pulling a left edge in over a word
   drew the caption before into the room Tim had just cleared. Nothing
   overlaps, because the picture shows one caption at a time. An edge
@@ -2712,8 +2719,13 @@ moved by hand, on the clip timeline.
   does.** A caption whose first or last word is removed in the caption box
   draws in to the words it shows: it appears with its first word shown and
   goes a moment after its last. An edge moved in by hand stays where it
-  was put, and one moved out comes in with the word. The captions beside
-  it keep their time, so the room the word took stays empty. Before, the
+  was put, and one moved out comes in with the word. Where a pause comes
+  after the word, the room it took stays empty. Where the speech runs on
+  into the next caption, the time of the word is no pause, so the caption
+  before stays up until the next appears, whichever of the two the word
+  was in, and nothing goes blank while someone is still talking. Tim saw
+  the blocks on the clip timeline come apart where he had removed a word,
+  with the sound running on under the gap, #597. Before #189, the
   caption kept the time the word had, and the two ways of taking a word
   off its edge ended differently, which Tim found. The word typed back
   takes the edge back out to where the hand put it.

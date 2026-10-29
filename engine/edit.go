@@ -1182,6 +1182,21 @@ type captionEdge struct {
 	done    CaptionEdit
 }
 
+// startFloor is the earliest the start of a caption may be moved to, on
+// the clip's clock: where the caption before goes. Where a word between
+// the two was removed, the caption before stays up over it only because
+// the speech runs on, see Captions, so the start may be moved back over
+// that time, as far as the end of the last word the caption before
+// shows, and the caption before then goes where this one appears. Tim
+// removed a word and found the next one sounding earlier than its block,
+// and the block could not be moved there.
+func startFloor(before, c LaidCaption) float64 {
+	if !c.trimStart && !before.trimEnd || len(before.Words) == 0 {
+		return before.End
+	}
+	return min(before.End, max(before.Words[len(before.Words)-1].End, before.Start+shortestMoved))
+}
+
 // moveCaptionEdge works out what moving the edge of a caption does, the
 // one thing both ShapeCaptionTime and SetCaptionTime ask, so what is drawn
 // while the hand moves is what is saved when it lets go. The words of the
@@ -1243,8 +1258,10 @@ func moveCaptionEdge(fsys afero.Fs, planPath, clipID string, word float64, edge 
 			to = captionStop(framed, t, laid[i], edge, to)
 			at = EpisodeTime(framed, to)
 		}
-		if edge == "start" && i > 0 && to < laid[i-1].End {
-			to, at = laid[i-1].End, EpisodeTime(framed, laid[i-1].End)
+		if edge == "start" && i > 0 {
+			if floor := startFloor(laid[i-1], laid[i]); to < floor {
+				to, at = floor, EpisodeTime(framed, floor)
+			}
 		}
 		if edge == "end" && i+1 < len(laid) && to > laid[i+1].Start {
 			to, at = laid[i+1].Start, EpisodeTime(framed, laid[i+1].Start)

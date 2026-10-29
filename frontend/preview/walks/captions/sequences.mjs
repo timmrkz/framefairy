@@ -224,6 +224,26 @@ export default [
     ],
   },
   {
+    // Tim removed a word and saw the caption blocks come apart with the
+    // sound running on under the gap, #597.
+    name: "removing a caption's first word leaves no gap to the caption before while the speech runs on",
+    steps: [
+      ["mark", "start"],
+      ["meets", ["start", "Schulhof", "before"]],
+      ["remove edge word", ["first", "Schulhof"]],
+      ["meets", ["start", "Schulhof", "before"]],
+    ],
+  },
+  {
+    name: "removing a caption's last word leaves no gap to the caption after while the speech runs on",
+    steps: [
+      ["mark", "start"],
+      ["meets", ["start", "Schulhof", "after"]],
+      ["remove edge word", ["last", "Schulhof"]],
+      ["meets", ["start", "Schulhof", "after"]],
+    ],
+  },
+  {
     name: "a caption block clicked, then a word walked to, delete removes only the word",
     steps: [
       ["mark", "start"],
