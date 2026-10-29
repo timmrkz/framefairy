@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { mkdirSync, writeFileSync } from "node:fs";
 import { defineConfig, type Plugin } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
@@ -58,4 +59,17 @@ export default defineConfig({
     chunkSizeWarningLimit: 1000,
   },
   plugins: [svelte(), notices()],
+  // Which lines the interface's own tests run, counted only when asked,
+  // make interface COVERAGE=, for the nightly snapshot in Codecov, see
+  // Coverage in docs/TESTING.md. The components are counted by the walks,
+  // which are the tests that reach them. The paths are written from the
+  // top of the repository, the way Codecov names every other file.
+  test: {
+    coverage: {
+      provider: "v8",
+      include: ["src/**/*.ts"],
+      exclude: ["src/**/*.test.ts"],
+      reporter: [["lcovonly", { projectRoot: ".." }]],
+    },
+  },
 });
