@@ -933,8 +933,20 @@ export const steps = {
     const before = words(text.slice(0, Math.max(at, 0)).replace(/^It froze\.\s*/, ""));
     const name = arg === "\n" ? "the new line" : `"${arg}"`;
     if (at < 0) walk.wrong = `the report holds no ${name}: ${JSON.stringify(text)}`;
+    else if (arg !== "\n" && !/\s/.test(text[at - 1])) walk.wrong = `no space in front of ${name}: ${JSON.stringify(text)}`;
     else if (before <= kept.shown) walk.wrong = `${before} words said are in front of ${name}, no more than the ${kept.shown} shown when it was typed, so what was said before it went after it`;
     else if (!text.slice(at + arg.length).trim()) walk.wrong = `nothing of what was said after ${name} follows it`;
+  },
+  // ["words kept"]     the report holds at least the words the field
+  //                    showed at "talk ahead", after "It froze.", so no
+  //                    key took away words that were still to be written
+  //                    down (#584)
+  async "words kept"(walk) {
+    const { kept, page } = walk;
+    const text = await page.locator(".telling").evaluate((f) => f.innerText);
+    const words = text.replace(/^It froze\.\s*/, "").split(/\s+/).filter(Boolean).length;
+    if (!kept.shown) walk.wrong = "the field showed no words at talk ahead, so there was nothing to keep";
+    else if (words < kept.shown) walk.wrong = `${words} words are in the report, fewer than the ${kept.shown} shown: ${JSON.stringify(text)}`;
   },
   // ["press, the cursor in view", key, n]
   //                    presses key n times, with nothing heard by

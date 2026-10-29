@@ -201,16 +201,40 @@ export default [
     // Issue #584. The same for words typed at the end of what was said:
     // what was said before them goes in front of them, however far
     // behind the speech model is, and what is said after them after.
+    // Typed on a new line before anything said there was shown, they
+    // keep a space from the words that come in front of them.
     name: "What is said before typing at the end of a dictation goes in front of the typing, however far behind the speech model is",
     steps: [
       ["bugs"],
       ["write", "It froze.", "end"],
       ["dictate", "start"],
       ["talk ahead", 10],
+      ["press", "Shift+Enter"],
+      ["talk ahead", 10],
       ["type", "XYZ"],
       ["dictate", "hearing"],
       ["dictate", "escape"],
       ["said before", "XYZ"],
+    ],
+  },
+  {
+    // Issue #584. The words still to be written down where a letter was
+    // typed cannot be typed in, and Backspace took them all away at once,
+    // with the words the speech model had not yet written down. A key
+    // waits for them instead.
+    name: "Backspace after typing at the end of a dictation takes away no words still to be written down",
+    steps: [
+      ["bugs"],
+      ["write", "It froze.", "end"],
+      ["dictate", "start"],
+      ["talk ahead", 10],
+      ["type", "X"],
+      ["press", "Backspace"],
+      ["press", "Backspace"],
+      ["press", "Backspace"],
+      ["words kept"],
+      ["dictate", "escape"],
+      ["words kept"],
     ],
   },
   {

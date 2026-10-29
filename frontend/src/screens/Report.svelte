@@ -63,6 +63,15 @@
   let recording = 0;
   let placed = 0;
   let asked = 0;
+  // The asks to settle or cut go to the Go side one at a time, in the
+  // order they were made, and stopping waits for them. Each call runs on
+  // a goroutine of its own there, so two Shift+Enters in quick succession
+  // could arrive the other way round, and the words would land under the
+  // wrong new line.
+  let told: Promise<unknown> = Promise.resolve();
+  function ask(call: () => Promise<unknown>) {
+    told = told.then(call).catch(() => {});
+  }
   // What has been said, in the text where the cursor was, and the mark at
   // its end that draws what is still being heard. The settled words go
   // in by hand rather than as typing, so they are no steps of their own
@@ -622,6 +631,7 @@
   // knows a key typed.
   function follow(e: InputEvent) {
     edits++;
+    if (waiting(e)) return e.preventDefault();
     if (!listening || e.isComposing || !said || !mark || !field.contains(said)) return;
     const sel = getSelection();
     if (!sel?.rangeCount || !sel.isCollapsed) return;
@@ -667,7 +677,7 @@
     sel.removeAllRanges();
     sel.addRange(end);
     if (data) document.execCommand("insertText", false, data);
-    else if (before) document.execCommand("delete");
+    else if (before && !cuts.some((c) => c.place === last)) document.execCommand("delete");
   }
 
   // freeze settles the words still being heard where they are, when the
@@ -697,7 +707,8 @@
     const now = mark?.textContent!.trim();
     if (!now || !recording) return;
     add(now);
-    api.settleListening(recording, placed, now).catch(() => {});
+    const [r, n] = [recording, placed];
+    ask(() => api.settleListening(r, n, now));
     placed++;
     asked++;
     show("");
@@ -722,17 +733,52 @@
     cuts.push({ place, piece: placed });
     place.textContent = spaced(place, mark.textContent!.trim());
     mark.textContent = "";
-    api.breakListening(recording, placed).catch(() => {});
+    const [r, n] = [recording, placed];
+    ask(() => api.breakListening(r, n));
     placed++;
     asked++;
   }
 
-  // spaced is a piece with a space from the word before node.
-  function spaced(node: Node, piece: string): string {
+  // waiting says whether an edit would take away a place whose piece is
+  // still to come. The browser removes such a place whole, with one
+  // Backspace, and the words still to be written there would be lost, so
+  // the edit waits until they have come and can be edited like any.
+  // Chromium names no target ranges in this field, so where it names
+  // none, what a key takes away is found by moving the selection that
+  // far and back.
+  function waiting(e: InputEvent): boolean {
+    if (!cuts.length) return false;
+    const ranges = e.getTargetRanges().map((r) => {
+      const range = document.createRange();
+      range.setStart(r.startContainer, r.startOffset);
+      range.setEnd(r.endContainer, r.endOffset);
+      return range;
+    });
+    const sel = getSelection();
+    if (!ranges.length && sel?.rangeCount) {
+      const how = /^delete(Content|Word|SoftLine|HardLine)(Backward|Forward)$/.exec(e.inputType);
+      if (how && sel.isCollapsed) {
+        const [node, offset] = [sel.focusNode!, sel.focusOffset];
+        sel.modify("extend", how[2].toLowerCase(), how[1] === "Content" ? "character" : how[1] === "Word" ? "word" : "lineboundary");
+        ranges.push(sel.getRangeAt(0).cloneRange());
+        sel.collapse(node, offset);
+      } else ranges.push(sel.getRangeAt(0).cloneRange());
+    }
+    return ranges.some((r) => cuts.some((c) => r.intersectsNode(c.place)));
+  }
+
+  // spaced is a piece with a space from the word before node, and, once
+  // it has come, from a word typed right after it while it was still to
+  // come.
+  function spaced(node: Node, piece: string, come = false): string {
+    if (!piece) return piece;
     const before = document.createRange();
     before.selectNodeContents(said!);
     before.setEndBefore(node);
-    return (piece && /\S$/.test(before.toString()) ? " " : "") + piece;
+    const after = document.createRange();
+    after.selectNodeContents(field);
+    after.setStartAfter(node);
+    return (/\S$/.test(before.toString()) ? " " : "") + piece + (come && /^[^\s.,;:!?)\]}]/.test(after.toString()) ? " " : "");
   }
 
   // catchUp writes in the pieces not yet in the field, those a cut made
@@ -740,8 +786,8 @@
   // was missed costs nothing.
   function catchUp(pieces: string[]) {
     for (const c of cuts.splice(0)) {
-      if (c.piece < pieces.length) c.place.replaceWith(spaced(c.place, pieces[c.piece]));
-      else cuts.push(c);
+      if (c.piece >= pieces.length) cuts.push(c);
+      else if (c.place.isConnected) c.place.replaceWith(spaced(c.place, pieces[c.piece], true));
     }
     for (; placed < pieces.length; placed++) add(pieces[placed]);
   }
@@ -853,6 +899,7 @@
     recording = 0;
     placed = 0;
     asked = 0;
+    told = Promise.resolve();
     begin();
     wake();
     try {
@@ -877,6 +924,7 @@
     let written = () => {};
     writing = new Promise((done) => (written = done));
     try {
+      await told;
       // It may have stopped by itself just before, and then says why.
       const d = await api.stopListening();
       if (d.recording === recording) {

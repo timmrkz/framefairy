@@ -3409,7 +3409,11 @@ line, a letter or a paste, also cuts the recording where it was typed,
 with `BreakListening`: everything said before it is written down as a
 piece of its own and goes in front of it, however far behind the voice
 the speech model is, and what was heard so far stands there until it
-comes, where nothing can be typed. Tim said a lot quickly and pressed
+comes, where nothing can be typed, and a key that would take it away
+waits until it has come. The asks to settle and to cut go to the Go
+side one at a time, in the order they were made, and the piece keeps a
+space from a word typed after it. A cut over silence runs no pass of
+the speech model. Tim said a lot quickly and pressed
 Shift+Enter, and the words written down after went below the new line,
 issues #573 and #584. WebKit typed a second Shift+Enter
 after the words being heard, and the kept words with new lines in them
