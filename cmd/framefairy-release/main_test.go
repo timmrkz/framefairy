@@ -50,7 +50,7 @@ func release(t *testing.T) ed25519.PrivateKey {
 func signed(t *testing.T, channel, name string) string {
 	t.Helper()
 	zip := filepath.Join(t.TempDir(), "app.zip")
-	if err := os.WriteFile(zip, []byte("the app, zipped, for "+channel), 0o644); err != nil {
+	if err := os.WriteFile(zip, zipped(t, theApp(channel)), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	out := filepath.Join(t.TempDir(), channel+".json")
@@ -85,7 +85,7 @@ func TestASignedBuildIsOneTheAppTakes(t *testing.T) {
 	if err := updates.Verify(private.Public().(ed25519.PublicKey), b); err != nil {
 		t.Fatalf("the signature does not hold: %v", err)
 	}
-	sum := sha256.Sum256([]byte("the app, zipped, for main"))
+	sum := sha256.Sum256(zipped(t, theApp("main")))
 	if b.SHA256 != hex.EncodeToString(sum[:]) {
 		t.Errorf("the checksum is %s, not the zip's", b.SHA256)
 	}

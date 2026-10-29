@@ -5,7 +5,7 @@
 // showed before it and the step's name. A sequence of any folder can take
 // it. Below them the helpers only these steps use. See docs/TESTING.md.
 import { execFileSync } from "node:child_process";
-import { BITS, ask, caughtUp, chosen, clickOnTrack, drag, engineState, episodeOn, handles, high, hold, inside, letHeld, middle, news, nextNews, nextPaint, pageUntil, playUntil, pressOnTrack, preview, seenUntil, settle, shownOnPlayhead, timeline, xOf } from "../bridge.mjs";
+import { BITS, ask, caughtUp, chosen, clickOnTrack, drag, engineState, episodeOn, handles, high, hold, holdSound, inside, letHeld, middle, news, nextNews, nextPaint, pageUntil, playUntil, pressOnTrack, preview, seenUntil, settle, shownOnPlayhead, timeline, xOf } from "../bridge.mjs";
 import { pieceCount, rate, url } from "../common/steps.mjs";
 
 export const steps = {
@@ -732,13 +732,11 @@ export const steps = {
   //                    ended before. Tim's rule on #277: the playhead is on
   //                    the video then, and the play goes on as a play of
   //                    the video, never stopping, never going back, no
-  //                    older frame drawn, and never started again
+  //                    older frame drawn, and never started again. The
+  //                    playhead waits while the hand is on the end
   async "end back past the playhead"(walk, arg, s) {
     const { page, watch } = walk;
     const oldEnd = (await engineState(page, watch.at)).segments.at(-1).end;
-    // The play starts a fifth of the clip before its end, so it is still
-    // running when the hand lets go however slowly a busy machine moves
-    // it.
     const g0 = await handles(page);
     const into = g0.start.x + g0.start.w;
     await clickOnTrack(page, into + 0.8 * (g0.end.x - into), high(g0.track));
@@ -748,6 +746,12 @@ export const steps = {
     await page.keyboard.press("Space");
     await settle(page);
     await playUntil(page, { most: 0.3 });
+    // The play is a fifth of the clip from its end, and on the sound
+    // card's clock a busy runner ran it to the end before the hand let
+    // go, so the walk had nothing to prove, issue #583. The sound card is
+    // held while the hand takes the end back, as long as the machine
+    // needs, and the play goes on from there once it lets go.
+    await holdSound(page, true);
     const starts = await page.evaluate(() => window.__frameQueue.stats.starts);
     await page.evaluate(() => {
       window.__played = [];
@@ -773,6 +777,7 @@ export const steps = {
     }
     await page.mouse.up();
     const [atLetGo, playingAtLetGo] = await page.evaluate(() => [Number(document.querySelector(".screen").dataset.playhead), !!document.querySelector('button[aria-label="Pause"]')]);
+    await holdSound(page, false);
     // Until a second past the old end, or until the play stops, and paused
     // there.
     const ran = await playUntil(page, { past: oldEnd + 1, pause: true });

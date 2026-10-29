@@ -734,6 +734,25 @@ export async function playUntil(page, { past = Infinity, most = Infinity, from =
   );
 }
 
+// Which clock a play runs on, see FrameQueue.playClock. "sound" is the
+// sound card's, as the app runs without a walk. "frames" stands on each
+// frame until it is up, so every frame of a play is shown and read on
+// any machine, issue #534.
+export async function playOn(page, clock) {
+  await page.evaluate((clock) => {
+    const q = window.__frameQueue;
+    window.__soundClock ??= q.playClock;
+    q.playClock = { sound: window.__soundClock, frames: (heard, unshown) => Math.min(heard, unshown) }[clock];
+  }, clock);
+}
+
+// Holds the sound card, or lets it go. Held, a play stands where it is,
+// picture and sound together, while a walk's hand takes as long as the
+// machine needs, and let go it plays on from there, issue #583.
+export async function holdSound(page, held) {
+  await page.evaluate((held) => (held ? window.__frameQueue.audio.suspend() : window.__frameQueue.audio.resume()), held);
+}
+
 // Plays from the playhead until it has gone on by seconds of the episode,
 // or until the play has stopped by itself at the clip's end, and pauses it
 // there, see playUntil. Says false, and plays nothing, when the space bar
