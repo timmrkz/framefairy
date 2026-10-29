@@ -1492,6 +1492,10 @@ export class FrameQueue {
   // to decode every frame in time shows fewer of them, which is right for
   // the app. A walk plays on the walk's clock, which open in
   // walks/bridge.mjs asks for with window.__playClock, see onFrames.
+  // Nothing of the walk's clock runs in the app: onFrames and the holds of
+  // holdSound act only once a walk has asked for it. It lives here beside
+  // pause and maybeBegin, which hold and start the sound card too, so its
+  // tests can reach it.
   playClock: (heard: number, unshown: number, coming?: boolean) => number = (heard, unshown, coming = false) =>
     (globalThis as { __playClock?: string }).__playClock === "frames" ? this.onFrames(heard, unshown, coming) : heard;
 
@@ -2047,8 +2051,10 @@ export class FrameQueue {
   // screen is up too. A pause puts up the frame that holds the playhead,
   // see hold, which can be the one after the frame due, and the frame due
   // never came then. A frame put up before this play is of another plan,
-  // whose runs are counted from 0 again. Past what the plan has worked
-  // out, nowhere.
+  // whose runs are counted from 0 again. A frame no decoder is working on
+  // never comes, so the clock stands on it nowhere, and the play goes by
+  // the sound card's time the way it does in the app. Past what the plan
+  // has worked out, nowhere too.
   private unshown(plan: VideoPlan): { at: number; coming: boolean } {
     const s = this.shown;
     const thisPlay = this.putFor === this.ticket;
@@ -2057,11 +2063,11 @@ export class FrameQueue {
     let k = this.k;
     if (up(plan.need(k))) do k++; while (plan.need(k) && up(plan.need(k)));
     const need = plan.need(k);
+    const slot = need && this.slotOf(need.run);
+    const coming = !!slot && slot.ready.some((h) => h.rank === need.rank);
     const at = plan.at(k);
-    return {
-      at: Number.isNaN(at) ? Infinity : at,
-      coming: !!need && !!this.slotOf(need.run)?.ready.some((h) => h.rank === need.rank),
-    };
+    const onItsWay = coming || (slot?.decoder.decodeQueueSize ?? 0) > 0;
+    return { at: Number.isNaN(at) || !onItsWay ? Infinity : at, coming };
   }
 
   // When the page next has nothing to do after an animation frame: a

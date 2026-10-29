@@ -716,7 +716,9 @@ describe("the walk's clock", () => {
 
   // The play as the clock reads it: frames 0.2 s apart from 35 s, of one
   // run, with the frame of rank 102 on screen.
-  function standing(q: FrameQueue, k: number, ready: number[] = [], thisPlay = true) {
+  // asked is how many frames the run's decoder has been asked for and not
+  // given yet.
+  function standing(q: FrameQueue, k: number, ready: number[] = [], thisPlay = true, asked = 1) {
     const inside = q as unknown as {
       k: number;
       shown: unknown;
@@ -728,7 +730,7 @@ describe("the walk's clock", () => {
     inside.k = k;
     inside.putFor = thisPlay ? inside.ticket : inside.ticket - 1;
     inside.shown = { run: 0, rank: 102 };
-    inside.slots = [{ run: { id: 0 }, ready: ready.map((rank) => ({ rank })) }];
+    inside.slots = [{ run: { id: 0 }, ready: ready.map((rank) => ({ rank })), decoder: { decodeQueueSize: asked } }];
     return inside.unshown({
       need: (k: number) => (k >= 0 && k < 10 ? { run: 0, rank: 100 + k } : null),
       at: (k: number) => (k >= 0 && k < 10 ? 35 + k * 0.2 : NaN),
@@ -763,6 +765,20 @@ describe("the walk's clock", () => {
   test("stands on the frame due when the frame on screen is from before the play", () => {
     const { q } = clocked();
     expect(standing(q, 1, [], false).at).toBeCloseTo(35.2);
+  });
+
+  // A frame no decoder is working on never comes: the decoder gave
+  // nothing for it, or its run has no decoder. Stood on, the play froze
+  // with the sound card held and the walk hung, as four did once in
+  // this pull request. It goes by the sound card's time instead, the way
+  // the app plays, so the walk's own checks see what is wrong.
+  test("does not stand on a frame no decoder is working on", () => {
+    g.__playClock = "frames";
+    const { q, card } = clocked();
+    const next = standing(q, 2, [], true, 0);
+    expect(next.at).toBe(Infinity);
+    expect(q.playClock(35.7, next.at, next.coming)).toBe(35.7);
+    expect(card.held).toBe(0);
   });
 
   // A frame decoded and waiting goes up on this tick, so the sound card is
