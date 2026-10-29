@@ -51,10 +51,13 @@ Gemma 4 26B A4B as the local model, Parakeet TDT 0.6B v3 for speech.
 
 ## Where things are
 
-Start with [README.md](README.md). In short:
+Start with [README.md](README.md), and before a change with
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), which says where each kind of
+thing belongs. In short:
 
 | Part | Code | Docs |
 | --- | --- | --- |
+| where each kind of thing belongs, and what must stay true | | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 | engine | `engine/`, `asr/` | [docs/ENGINE.md](docs/ENGINE.md) |
 | command line `framefairy` | `cmd/framefairy/` | [docs/CLI.md](docs/CLI.md) |
 | desktop app `framefairy-app` | `cmd/framefairy-app/` (Go), `frontend/` (Svelte) | [docs/APP.md](docs/APP.md) |
@@ -187,7 +190,10 @@ Start with [README.md](README.md). In short:
 
 - **Think first.** Research and check before answering. Read the code and
   docs you are about to change. Verify facts about tools and versions instead
-  of assuming them.
+  of assuming them. Put the change where
+  [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) says it belongs, not where
+  the issue happens to point, and never copy what its Not to copy names.
+  A change that has no place there adds its line to it.
 - **Small batches.** Split larger work into batches of a few minutes each.
   Finish, test and report after each one, with a pull request per batch,
   or a commit per batch while the batches are still one self-contained
