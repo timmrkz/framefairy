@@ -73,7 +73,7 @@ func seamless(t *testing.T, e *Engine, rate string) {
 	dir := t.TempDir()
 	source := filepath.Join(dir, "episode.mov")
 	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
-		"-f", "lavfi", "-i", "color=c=black:s=640x360:r="+rate+":d=6,geq=lum='40+mod(N*6,180)':cb=128:cr=128",
+		"-f", "lavfi", "-i", "color=c=black:s=64x36:r="+rate+":d=6,geq=lum='40+mod(N*6,180)':cb=128:cr=128",
 		"-f", "lavfi", "-i", "sine=f=440:sample_rate=48000:d=6",
 		"-shortest", "-c:v", "mpeg4", "-q:v", "2", "-c:a", "pcm_s16le", source).CombinedOutput(); err != nil {
 		t.Fatalf("making the test episode: %s %s", err, out)
@@ -85,7 +85,7 @@ func seamless(t *testing.T, e *Engine, rate string) {
 	// The switch is at 2.6 in the episode, on the frame nearest it, about
 	// 1.6 into the short.
 	clip := info.OnFrames(Clip{ID: "01", Slug: "seam", Segments: []Segment{
-		{Start: 1, End: 2.6, CropX: intPtr(0)}, {Start: 2.6, End: 4, CropX: intPtr(280)}}})
+		{Start: 1, End: 2.6, CropX: intPtr(0)}, {Start: 2.6, End: 4, CropX: intPtr(28)}}})
 	const w, h = 180, 320
 	rs := RenderSettings{OutW: w, OutH: h, CRF: 18, Preset: "ultrafast", AudioBitrate: "192k", ScaleUp: true}
 	short, err := e.RenderClip(ctx, clip, source, info, filepath.Join(dir, "out"), nil, rs, nil,
