@@ -20,7 +20,9 @@ const rounds = Number(process.env.ROUNDS ?? 3);
 const scale = Number(process.env.SCALE ?? 2);
 const [vw, vh] = (process.env.VIEWPORT ?? "1728x1080").split("x").map(Number);
 
-const { browser, page } = await open(url, { viewport: { width: vw, height: vh }, scale });
+// On the sound card's clock, as the app plays without a walk: how evenly
+// it plays is what is timed.
+const { browser, page } = await open(url, { viewport: { width: vw, height: vh }, scale, clock: "sound" });
 try {
   if (process.env.GPU === "1") {
     await page.addInitScript(() => (window.__flatScreen = false));

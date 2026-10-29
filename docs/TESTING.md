@@ -756,11 +756,27 @@ wait the walk hands the frame queue, `dressWait` in
 used up the 600 ms it waits, issue #468. And a glide read while it plays
 goes on until the video preview has shown ten frames or come to the next
 keyframe, not for two seconds, in which a busy machine showed two, issue
-#464, on a clock the walk hands the frame queue, `playClock` in
-`lib/frames/queue.ts`, which moves on to the next frame only once the
-one before is up. So every frame of the play is shown on any machine,
-and the walk holds the play to every one, where by the sound card's
-clock a busy machine still showed two of nine, issue #534. The fold of a removed row is held as Svelte makes it and stepped
+#464.
+
+Every walk plays on the walk's clock, which `open` in `walks/bridge.mjs`
+gives every page it opens, `window.__playClock`, and `playClock` in
+`lib/frames/queue.ts` goes by. It moves on to the next frame only once
+the one before is up, and holds the sound card while it waits, so every
+frame of a play is shown on any machine and the sound stays with the
+picture. By the sound card's clock, the app's, a busy machine showed two
+frames of a glide's nine, issue #534, and a play of the captions showed
+fewer frames, each longer, issue #338. Each of those walks had a clock
+of its own, until a new walk that played was the next to fail, issue
+#588. A sequence that checks what a play does on the sound's own time
+plays on the sound card's clock instead, the way the app does: how much
+sound the sound card is handed, the loop switched off as the sound comes
+to the clip's end, and a playhead that never stands still while a hand
+drags. It asks for it by one of those steps, `soundCard` in
+`common/steps.mjs`, the way a sequence asks for motion, see Where they
+run below, and a new step of that kind goes in there. `smooth.mjs` asks
+`open` for it by name, `clock: "sound"`. A walk can also hold the sound
+card a moment by hand, `holdSound`, as the end dragged back past the
+playing playhead does while the hand drags, issue #583. The fold of a removed row is held as Svelte makes it and stepped
 through by hand, in twenty steps, and at each the card under the row
 has to have risen by as much of the row and the space after it as the
 row has folded. That the row leaves the list only once its fold has
@@ -998,7 +1014,7 @@ among it, so the settle waits for none of it. On main those two were
 those steps and every random walk keep the motion, so the app is still
 walked the way it moves on Tim's Mac. A new step that looks at motion
 goes into `moving`, or it passes without ever seeing what it checks, and
-`--names` fails on a name in `moving` that is no step. `make walks
+`--names` fails on a name in `moving` or `soundCard` that is no step. `make walks
 STILL=none` walks every sequence with the motion, and
 `walks-nightly.yml` does so on main every night, so a step that looks at
 motion and was left out of `moving` fails there.

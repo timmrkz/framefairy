@@ -632,3 +632,65 @@ describe("a frame decoded for a play", () => {
     expect(drawn).toEqual([]);
   });
 });
+
+describe("the walk's clock", () => {
+  // A sound card that only says whether it runs, and counts what it is
+  // told.
+  function clocked() {
+    const q = new FrameQueue(
+      canvas(),
+      "/episode.mp4",
+      movieOf({ duration: 120, width: 2, height: 2, grid: { origin: 0, start: 0, num: 25, den: 1, count: 3000 } }),
+    );
+    const card = { state: "running" as AudioContextState, held: 0, started: 0 };
+    q.audio = {
+      get state() {
+        return card.state;
+      },
+      suspend: async () => {
+        card.held++;
+        card.state = "suspended";
+      },
+      resume: async () => {
+        card.started++;
+        card.state = "running";
+      },
+    } as unknown as AudioContext;
+    return { q, card };
+  }
+  afterEach(() => {
+    delete g.__playClock;
+  });
+
+  test("is the sound card's when no walk asks for it", () => {
+    const { q, card } = clocked();
+    expect(q.playClock(3.2, 3.04)).toBe(3.2);
+    expect(card.held).toBe(0);
+  });
+
+  // Issue #588: standing on the frame alone left the sound running on
+  // ahead of the picture.
+  test("stands on a frame not up yet, and holds the sound card until it is", () => {
+    g.__playClock = "frames";
+    const { q, card } = clocked();
+    expect(q.playClock(3.2, 3.04)).toBe(3.04);
+    expect(q.playClock(3.21, 3.04)).toBe(3.04);
+    expect(card).toMatchObject({ state: "suspended", held: 1, started: 0 });
+    expect(q.playClock(3.21, 3.24)).toBe(3.21);
+    expect(card).toMatchObject({ state: "running", held: 1, started: 1 });
+    expect(q.playClock(3.22, 3.24)).toBe(3.22);
+    expect(card.started).toBe(1);
+  });
+
+  // A walk holds the sound card while its hand drags, issue #583, and
+  // the clock lets it go only when it held it itself.
+  test("leaves a sound card held by someone else held", () => {
+    g.__playClock = "frames";
+    const { q, card } = clocked();
+    card.state = "suspended";
+    expect(q.playClock(3.2, 3.24)).toBe(3.2);
+    expect(q.playClock(3.3, 3.24)).toBe(3.24);
+    expect(q.playClock(3.3, 3.32)).toBe(3.3);
+    expect(card).toMatchObject({ state: "suspended", held: 0, started: 0 });
+  });
+});

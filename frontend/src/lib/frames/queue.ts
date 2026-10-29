@@ -1489,10 +1489,32 @@ export class FrameQueue {
   // heard, and where the first frame of the play not on screen yet starts,
   // unshown, see tick. It is the sound card's clock, so a machine too slow
   // to decode every frame in time shows fewer of them, which is right for
-  // the app. A walk that wants to see every frame of a play hands in a
-  // clock that stands on unshown until that frame is up, on any machine,
-  // where a busy one showed 2 frames of 9, issue #534.
-  playClock: (heard: number, unshown: number) => number = (heard) => heard;
+  // the app. A walk plays on the walk's clock, which open in
+  // walks/bridge.mjs asks for with window.__playClock, see onFrames.
+  playClock: (heard: number, unshown: number) => number = (heard, unshown) =>
+    (globalThis as { __playClock?: string }).__playClock === "frames" ? this.onFrames(heard, unshown) : heard;
+
+  // The walk's clock: it stands on unshown until that frame is up, and
+  // holds the sound card meanwhile, so a walk sees every frame of a play
+  // on any machine and the sound stays with the picture. By the sound
+  // card's clock a busy machine showed 2 frames of 9, issue #534, and
+  // standing on frames alone left the sound running on ahead, so a loop
+  // switched off or a cut made while playing went by the sound's moment,
+  // not the picture's, issue #588. A play the app pauses or ends while
+  // held starts the sound card again itself, see maybeBegin.
+  private heldForFrame = false;
+  private onFrames(heard: number, unshown: number): number {
+    if (heard > unshown) {
+      if (!this.heldForFrame && this.audio.state === "running") {
+        this.heldForFrame = true;
+        void this.audio.suspend();
+      }
+      return unshown;
+    }
+    if (this.heldForFrame && this.audio.state === "suspended") void this.audio.resume();
+    this.heldForFrame = false;
+    return heard;
+  }
 
   // The frame on screen, see screen.ts. Fresh when it is put up for the
   // newest gesture, see over.
