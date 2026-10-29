@@ -81,8 +81,9 @@ jobs:
           node-version: 22
       # Everything, not only what ships: the build tools make the bundle
       # that does. Every warning fails, low ones too, but for the ones
-      # audit-ci.jsonc lets through by number, each with why, issue #579.
-      # audit-ci is IBM's, and pinned like govulncheck.
+      # audit-ci.jsonc lets through by number and path, each with why,
+      # issue #579. audit-ci is IBM's, at a version of its own, but the
+      # packages it brings come by their ranges, with no lockfile.
       - name: npm audit
         working-directory: frontend
         run: npx --yes audit-ci@7.1.0 --config audit-ci.jsonc

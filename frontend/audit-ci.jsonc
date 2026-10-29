@@ -7,7 +7,9 @@
   "allowlist": [
     // deepmerge's mergeObject() lets the prototype of what it returns be
     // poisoned, issue #579. Only the Svelte build plugin uses it, which
-    // never ships in the app, and no fixed deepmerge exists yet.
-    "GHSA-gcqx-w48m-w2h4"
+    // never ships in the app, and no fixed deepmerge exists yet. Let
+    // through by that path alone, so deepmerge brought in by anything
+    // else still fails.
+    "GHSA-gcqx-w48m-w2h4|@sveltejs/vite-plugin-svelte>deepmerge"
   ]
 }
