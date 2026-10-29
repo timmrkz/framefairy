@@ -766,8 +766,15 @@ frame. Two kinds of episode do not keep to that, and `Probe` finds both.
   as much as the sound starts before the picture, 21 ms of AAC in
   MPEG-TS, so the frames are counted from the key frame, whose time is
   known, `readFrom`, and the piece keeps its frames by its own rule.
-  MPEG-PS, .mpg and .vob, has no index either, but stamps no time on some
-  of its packets, and its frames are not read right yet, plan row 2.204.
+  MPEG-PS, .mpg and .vob, has no index either, and is read the same way,
+  #268. It also stamps no time on some of its packets, the decoder
+  working theirs out, so `uneven` lets a gap of whole frames go as long
+  as as many packets with no time fill it, where a short of it came out
+  at 30 frames a second for 29.97. A key frame with no time is shown as
+  long after it is decoded as the stream holds frames back, the most any
+  stamped frame is, and where an encoder of MPEG-2 made two key frames in
+  a row, the seek lands on the first, so `keyBefore` reads from that one.
+  A piece read from a key frame had landed a frame early there.
 - **A file that does not say how long it is.** A Matroska recording cut
   off by a crash, the way OBS leaves one, has no duration and no index,
   and the app took it for 0 seconds long, with one frame in the video

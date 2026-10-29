@@ -133,6 +133,11 @@ var timesCases = []timesCase{
 	// Its rate is not checked: the Mac's encoder stamps its frames
 	// unevenly in MPEG-TS, and the probe then makes it 30.
 	{name: "mpegts", file: "ts.ts", gop: 60},
+	// MPEG-PS, .mpg and .vob, the way a DVD or an old camcorder holds
+	// MPEG-2 and MP2. It has no index of its key frames either, and
+	// ffmpeg stamps no time on some of its packets, #268.
+	{name: "mpegps", file: "ps.mpg", rate: "30000/1001",
+		codecs: []string{"-c:v", "mpeg2video", "-q:v", "2", "-g", "15", "-c:a", "mp2"}},
 	// What OBS leaves of a Matroska recording when it crashes: no
 	// duration and no index of its key frames, plan row 2.203.
 	// Its rate is not checked, like mpegts'.
