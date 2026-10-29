@@ -3384,10 +3384,15 @@ Dictate and Stop a few times without a word and was given "yeah yeah".
 The field follows the words the
 way a terminal follows its output: they stay in view as they come, until
 the person scrolls away to read, and then the field stays where they put
-it until they scroll back to the words. The cursor stands right after
-the words while nobody has put it elsewhere, drawn there by the end of
-the words themselves, since WebKit drew it at the front of the last line
-while the words ran on. The microphone in the button grows and shrinks with the voice it
+it until they scroll back to the words, and while the cursor is
+elsewhere in the field, it is the cursor that stays in view, not the
+words. The cursor stands right after the words while nobody has put it
+elsewhere, and it is always the browser's own, in text, where the
+browser draws it and moves it from. The field drew a cursor of its own
+there once, after a part of the field that could not be typed in, and
+on Tim's Mac it looked unlike the cursor the rest of the time,
+ArrowDown found no line from there and bounced the field instead, and
+ArrowUp went to the top of the report at times. The microphone in the button grows and shrinks with the voice it
 hears, so the person sees they are heard. The Go side tells its
 loudness ten times a second, and the window follows it every frame the
 way a level meter's needle does, up at once and back down in about a
@@ -3396,8 +3401,9 @@ size, so it stays sharp and in its place, and it stays white. The
 beam stays the sign that it listens, because running work shows the beam
 on the control it was started from. What follows the last pause is still
 being heard and changes as more of it is, so it is plain text in a mark
-that cannot be typed in. A click in it, or just after it, settles it
-there and then, as it is shown, so the cursor goes where it was put and
+that the cursor can stand at the end of but nothing is typed into. A
+click in it, or just after it, or a key that moves the cursor into it,
+settles it there and then, as it is shown, so the cursor goes where it was put and
 a word can be corrected while the person talks on, and what is heard
 next follows it. The Go side is told with `SettleListening`. What is
 typed right at the end of what was said settles it the same way and
@@ -3418,14 +3424,18 @@ Shift+Enter, and the words written down after went below the new line,
 issues #573 and #584. WebKit typed a second Shift+Enter
 after the words being heard, and the kept words with new lines in them
 became blocks of their own, which showed as an empty line at the end.
-New lines are text in the field, wherever they come from. After a key
-that moves the cursor or types, the field keeps the cursor in view, the
-least scroll that shows its whole line, inside its padding, the way a
-text field does. At the end of the report that is its end, where the
-words said next leave it too. A key that does neither leaves the field where it was scrolled. The browser only does
-that for a cursor it moved and draws itself, and while dictating the
-field puts a new line in by hand and draws the cursor, so Shift+Enter
-past the foot of the field and the arrow keys left the cursor out of
+New lines are text in the field, wherever they come from. A new line at
+the end of the report shows only with something after it, so the cursor
+stands before a new line of its own there, the way WebKit keeps an empty
+last line. After a key, the field keeps the cursor in view, the least
+scroll that shows its whole line, inside its padding, the way a text
+field does. At the end of the report that is its end, where the words
+said next leave it too. Where the browser moved the cursor itself and
+left it in view, the field stays as the browser left it, so the two
+never take turns, and a key that neither moves the cursor nor types
+leaves the field where it was scrolled. The browser keeps in view only
+what it did itself, and while dictating the field puts a new line in by
+hand, so Shift+Enter past the foot of the field left the cursor out of
 view until more was said, issue #573. Typing anywhere else, wherever the arrow keys or a click
 put the cursor, is plain typing, and what is said next still goes at
 the end of what was said. What was said is one piece of the field that
@@ -3443,10 +3453,10 @@ the last piece a moment later, written in as one step Cmd+Z takes back
 and Cmd+Shift+Z brings back again. The cursor stays where the person
 has it while the last piece is written in: Tim pressed Enter at once
 after ending a dictation, for a new line, and the cursor was put back in
-front of it, issue #373. Until then the cursor stays drawn after the
-words, where it was, and the field's own cursor takes over only where a
-key or a click puts it: WebKit drew its own at the front of the line or
-past the words, and it jumped back once they came. Escape keeps it too, the way it ends
+front of it, issue #373. Until then the cursor stays after the words,
+where it was, and what is typed there goes after them and stays: WebKit
+drew the cursor at the front of the line or past the words once, and it
+jumped back once they came. Escape keeps it too, the way it ends
 Dictation on a Mac. It removed everything said once, as on claude.ai,
 and Tim lost a long report to an Escape meant for the app, with nothing
 Cmd+Z could bring back, issue #355. It also

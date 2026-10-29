@@ -92,11 +92,9 @@
   // person's.
   let following = true;
   let lastTop = -1;
-  // Whether the cursor is right after the words being said, where what is
-  // said next goes. It is drawn there by the mark, see the style, since
-  // WebKit drew it at the front of the last line on Tim's Mac while the
-  // words ran on to the right.
-  let ours = $state(false);
+  // The new line that holds the cursor on an empty last line, the way the
+  // browser keeps one, see toEnd.
+  let holder: Text | null = null;
 
   const sentence = (e: unknown) => {
     const said = e instanceof Error ? e.message : String(e);
@@ -433,6 +431,7 @@
     said = document.createElement("span");
     said.className = "dictated";
     cuts.length = 0;
+    holder = null;
     mark = document.createElement("span");
     mark.className = "hearing";
     mark.contentEditable = "false";
@@ -441,13 +440,10 @@
     // A space from the word before, where it would run into it.
     if (/\S$/.test(around(said)[0])) said.prepend(" ");
     field.focus({ preventScroll: true });
-    const after = document.createRange();
-    after.setStartAfter(said);
     getSelection()?.removeAllRanges();
-    getSelection()?.addRange(after);
+    toEnd();
     following = true;
     lastTop = -1;
-    caret();
   }
 
   // atWords says whether the words being said are in view in the field.
@@ -466,41 +462,120 @@
     following = field.scrollTop === lastTop || atWords();
   }
 
-  // caret says whether the cursor is right after the words being said,
-  // with nothing between, in the field that has the focus. It stays drawn
-  // there while the last words are written down: WebKit drew its own at
-  // the front of the line or past the words on Tim's Mac, and it jumped
-  // back once they came, issue #373. A key typed or a click meanwhile
-  // gives the field its own cursor where that put it.
-  function caret() {
+  // The words being heard are text the cursor can be in, so it is
+  // always the browser's own, drawn by it and moved by it. They were in a
+  // mark that could not be typed in, and the cursor after them sat where
+  // WebKit has no place for one: it drew none, so the field drew its own,
+  // which looked unlike it, ArrowDown there found no line and scrolled the
+  // field instead, which bounced, and ArrowUp went from the wrong place,
+  // to the top of the report at times. Tim saw all three in his report of
+  // 29 October. The mark can be typed in only while it holds words, so
+  // what is typed with the cursor right after it, while it is empty, goes
+  // before it, never into it.
+
+  // end is where what was said ends, counted in letters of the field.
+  function end(): number {
+    return count(mark!, mark!.childNodes.length);
+  }
+
+  // atEnd says whether the cursor is right after what was said, where
+  // what is said next goes, with nothing typed between.
+  function atEnd(): boolean {
     const sel = getSelection();
-    let at = false;
-    if ((listening || hearing) && said && mark && field.contains(said) && document.activeElement === field && sel?.rangeCount && sel.isCollapsed) {
-      const r = sel.getRangeAt(0);
-      const gap = document.createRange();
-      gap.setStartAfter(mark);
-      if (gap.comparePoint(r.startContainer, r.startOffset) >= 0) {
-        gap.setEnd(r.startContainer, r.startOffset);
-        at = !gap.toString();
-      }
-    }
-    ours = at;
+    if (!said || !mark || !field.contains(said) || !sel?.rangeCount || !sel.isCollapsed || !field.contains(sel.focusNode)) return false;
+    return count(sel.focusNode!, sel.focusOffset) === end();
+  }
+
+  // after says whether the cursor is after the mark rather than in front
+  // of it, where what is typed goes on from what was typed before.
+  function after(): boolean {
+    const sel = getSelection();
+    if (!mark || !sel?.rangeCount) return false;
+    if (mark.contains(sel.focusNode)) return true;
+    const from = document.createRange();
+    from.setStartAfter(mark);
+    return from.comparePoint(sel.focusNode!, sel.focusOffset) >= 0;
+  }
+
+  // toEnd puts the cursor right after what was said: at the end of the
+  // words being heard, or with none, at the front of what follows them,
+  // so it is after the mark and what is typed there is taken as typed
+  // after what was said, see follow. With nothing after them, that is a
+  // new line of its own, which also shows the last line when what was
+  // said ends with a new line, the way WebKit holds an empty last line.
+  function toEnd() {
+    const sel = getSelection();
+    if (!said || !mark || !sel) return;
+    const words = mark.lastChild;
+    if (words?.nodeType === Node.TEXT_NODE) return sel.collapse(words, (words as Text).length);
+    sel.collapse(next(), 0);
+  }
+
+  // next is the text right after what was said, a new line of its own
+  // when nothing follows it.
+  function next(): Text {
+    const after = said!.nextSibling;
+    if (after?.nodeType === Node.TEXT_NODE && (after as Text).length) return after as Text;
+    holder = document.createTextNode("\n");
+    said!.after(holder);
+    return holder;
+  }
+
+  // typingPoint is where what is typed right after what was said goes:
+  // after the last word, in front of the mark, never in it.
+  function typingPoint(): Range {
+    const at = document.createRange();
+    at.setStartBefore(mark!);
+    const last = mark!.previousSibling;
+    if (last?.nodeType === Node.TEXT_NODE) at.setStart(last, (last as Text).length);
+    return at;
+  }
+
+  // hear puts now in the mark, which can be typed in only while it holds
+  // words, and keeps the cursor after them when it was there.
+  function hear(now: string) {
+    if (!mark || mark.textContent === now) return;
+    const kept = atEnd();
+    mark.textContent = now;
+    if (now) mark.removeAttribute("contenteditable");
+    else mark.contentEditable = "false";
+    if (kept) toEnd();
+  }
+
+  // entered settles the words being heard when the cursor goes into them,
+  // by a key or by a click, so they are text like any other, and what is
+  // typed there stays, the way a click in them does, see freeze.
+  function entered() {
+    if (!listening || !recording || !said || !mark || !field.contains(said) || !mark.textContent!.trim()) return;
+    const sel = getSelection();
+    if (!sel?.rangeCount || !field.contains(sel.anchorNode) || !field.contains(sel.focusNode)) return;
+    const [to, from] = [end(), end() - mark.textContent!.length];
+    const [a, f] = [count(sel.anchorNode!, sel.anchorOffset), count(sel.focusNode!, sel.focusOffset)];
+    const inside = (n: number) => n >= from && n < to;
+    if (!inside(a) && !inside(f)) return;
+    settleHeard();
+    const [x, y] = [point(a), point(f)];
+    sel.setBaseAndExtent(x[0], x[1], y[0], y[1]);
   }
 
   // reveal keeps the cursor in view after a key that moved it or typed,
-  // the least scroll that shows it, the way a text field keeps its own.
-  // While dictating the field puts a new line in by hand and draws the
-  // cursor itself, so the browser scrolled to neither, and Tim pressed
-  // Shift+Enter past the foot of the field and the arrow keys with the
-  // cursor out of view, issue #573. It is asked for the frame after the
-  // key, once the key has done its work, so it scrolls to where that left
-  // the cursor.
-  function reveal() {
-    if (!field?.isConnected || document.activeElement !== field) return;
-    caret();
+  // and keeps the words being said in view as they come while it is
+  // after them. It scrolls the least that shows the cursor's whole line
+  // inside the field's padding, and all the way to the end on the last
+  // line, the way the end of the report is shown. After a key the
+  // browser moved the cursor for, a cursor the browser left in view
+  // stays where it is, so the field and the browser never take turns:
+  // Tim pressed ArrowDown and saw the field go a few pixels on and back.
+  // While dictating the field puts a new line in by hand, and the
+  // browser scrolls to nothing it did not do itself, issue #573. It is
+  // asked for the frame after a key, once the key has done its work, so
+  // it scrolls to where that left the cursor.
+  function reveal(browser = false) {
+    if (!field?.isConnected) return;
+    const typing = document.activeElement === field;
     let box: DOMRect | undefined;
-    if (ours && mark) box = [...mark.getClientRects()].at(-1);
-    else {
+    if (mark && field.contains(mark) && (!typing || atEnd())) box = [...mark.getClientRects()].at(-1);
+    else if (typing) {
       const sel = getSelection();
       if (!sel?.rangeCount || !field.contains(sel.focusNode)) return;
       const at = document.createRange();
@@ -508,18 +583,16 @@
       box = [...at.getClientRects()].find((r) => r.height);
     }
     if (!box) return;
-    // The whole line the cursor is on, inside the field's padding, where
-    // its lines are at rest, so the last line is shown the way the end of
-    // the report is, and in both engines alike, whichever way each
-    // scrolled to its own cursor. The cursor's own box is shorter than
-    // its line, and Tim saw the field scroll a few pixels more with the
-    // words said after a new line.
     const style = getComputedStyle(field);
     const [pad, foot, line] = [parseFloat(style.paddingTop), parseFloat(style.paddingBottom), parseFloat(style.lineHeight)];
     const top = field.getBoundingClientRect().top + field.clientTop;
-    const at = pad + Math.floor((box.top + box.height / 2 - top + field.scrollTop - pad) / line) * line;
-    if (at - field.scrollTop < pad) field.scrollTop = at - pad;
-    else if (at + line - field.scrollTop > field.clientHeight - foot) field.scrollTop = at + line + foot - field.clientHeight;
+    const [from, to] = [box.top - top + field.scrollTop, box.bottom - top + field.scrollTop];
+    if (browser && from >= field.scrollTop && to <= field.scrollTop + field.clientHeight) return;
+    const mid = (from + to) / 2;
+    const bottom = mid + line / 2 + foot > field.scrollHeight - line / 2 ? field.scrollHeight : mid + line / 2 + foot;
+    const head = Math.max(mid - line / 2 - pad, 0);
+    if (bottom > field.scrollTop + field.clientHeight) field.scrollTop = Math.round(bottom - field.clientHeight);
+    else if (head < field.scrollTop) field.scrollTop = Math.round(head);
   }
   // keyed hears a key go down in the field, and reveals the cursor once
   // the key has moved it or typed. A key that does neither, Shift alone,
@@ -529,12 +602,13 @@
   // selection where it was, after what was said, so typing counts by
   // itself, by the edits the browser asks for.
   let edits = 0;
+  let byHand = 0;
   function keyed() {
     const sel = getSelection();
-    const [node, offset, typed] = [sel?.focusNode, sel?.focusOffset, edits];
+    const [node, offset, typed, made] = [sel?.focusNode, sel?.focusOffset, edits, byHand];
     requestAnimationFrame(() => {
       const now = getSelection();
-      if (edits !== typed || now?.focusNode !== node || now?.focusOffset !== offset) reveal();
+      if (edits !== typed || now?.focusNode !== node || now?.focusOffset !== offset) reveal(byHand === made);
     });
   }
 
@@ -546,34 +620,17 @@
     return at.toString();
   }
 
-  // push keeps the cursor after the words being said when it is at their
-  // end, so what is said pushes it along, the way it does before anything
-  // is typed. Typed at the end of what was said, the cursor was left in
-  // front of the words heard next, and the next letters went in before
-  // them, issue #373.
-  function push() {
-    const sel = getSelection();
-    if (!said || !mark || !sel?.rangeCount || !sel.isCollapsed || !said.contains(sel.anchorNode)) return;
-    const gap = document.createRange();
-    gap.setStart(sel.anchorNode!, sel.anchorOffset);
-    gap.setEndBefore(mark);
-    if (gap.toString()) return;
-    const after = document.createRange();
-    after.setStartAfter(said);
-    sel.removeAllRanges();
-    sel.addRange(after);
-  }
-
   // add puts a settled piece in at the end of what has been said.
   function add(piece: string) {
     if (!said || !mark || !field.contains(said)) begin();
     if (!said || !mark) return;
-    push();
+    const kept = atEnd();
     const before = settled();
     const text = (before.trim() && !/\s$/.test(before) ? " " : "") + piece;
     const last = mark.previousSibling;
     if (last?.nodeType === Node.TEXT_NODE) (last as Text).appendData(text);
     else mark.before(text);
+    if (kept) toEnd();
   }
 
   // show draws what is still being heard after what was settled, and
@@ -581,18 +638,17 @@
   function show(now: string) {
     if ((!said || !mark || !field.contains(said)) && now) begin();
     if (!said || !mark) return;
-    const rest = space(now);
-    if (now.trim()) push();
-    // At the end of the report, down to its padding. Tim talked past the
-    // field's last line and could not see what was written down. Not
-    // while the person has scrolled away to read: then the field stays
-    // where they put it, as Tim asked.
-    if (following) {
-      if (rest.trim()) mark.scrollIntoView({ block: "nearest", inline: "nearest" });
-      else field.scrollTop = field.scrollHeight;
+    space(now);
+    // The words in view as they come, down to the padding at the end of
+    // the report. Tim talked past the field's last line and could not see
+    // what was written down. Not while the person has scrolled away to
+    // read: then the field stays where they put it, as Tim asked. Nor
+    // while the cursor is somewhere else in the field: then it is the
+    // cursor that is kept in view.
+    if (following && (document.activeElement !== field || atEnd())) {
+      reveal();
       lastTop = field.scrollTop;
     }
-    caret();
     read();
   }
 
@@ -602,7 +658,7 @@
     const rest = around(said!)[1];
     const before = settled();
     const text = (now && /\S$/.test(before) ? " " : "") + now + (/^\S/.test(rest) && (now || before.trim()) ? " " : "");
-    if (mark!.textContent !== text) mark!.textContent = text;
+    hear(text);
     return rest;
   }
 
@@ -632,24 +688,16 @@
   function follow(e: InputEvent) {
     edits++;
     if (waiting(e)) return e.preventDefault();
-    if (!listening || e.isComposing || !said || !mark || !field.contains(said)) return;
-    const sel = getSelection();
-    if (!sel?.rangeCount || !sel.isCollapsed) return;
-    const at = sel.getRangeAt(0);
     // Right after what was said and what is being heard, with nothing
     // between.
-    const gap = document.createRange();
-    gap.setStartAfter(mark);
-    if (gap.comparePoint(at.startContainer, at.startOffset) < 0) return;
-    gap.setEnd(at.startContainer, at.startOffset);
-    if (gap.toString()) return;
-    let data: string;
-    if (e.inputType === "insertText") data = e.data ?? "";
-    else if (e.inputType === "insertFromPaste") data = e.dataTransfer?.getData("text/plain") ?? "";
-    else if (e.inputType === "insertLineBreak" || e.inputType === "insertParagraph") data = "\n";
-    else if (e.inputType === "deleteContentBackward" && (settled() + mark.textContent).trim()) data = "";
-    else return;
+    if (e.isComposing || !said || !mark || !field.contains(said) || !atEnd() || !after()) return;
+    const sel = getSelection()!;
+    let data = put(e);
+    if (!listening) return hearing && data ? late(data, e) : undefined;
+    if (data === null && e.inputType === "deleteContentBackward" && (settled() + mark.textContent).trim()) data = "";
+    if (data === null) return;
     e.preventDefault();
+    byHand++;
     if (data) cutHeard();
     else settleHeard();
     const before = settled();
@@ -664,20 +712,49 @@
       const last = mark.previousSibling;
       if (last?.nodeType === Node.TEXT_NODE) (last as Text).appendData(data);
       else mark.before(data);
-      const after = document.createRange();
-      after.setStartAfter(said);
-      sel.removeAllRanges();
-      sel.addRange(after);
+      toEnd();
       return typed();
     }
-    const end = document.createRange();
-    end.setStartBefore(mark);
     const last = mark.previousSibling;
-    if (last?.nodeType === Node.TEXT_NODE) end.setStart(last, (last as Text).length);
     sel.removeAllRanges();
-    sel.addRange(end);
+    sel.addRange(typingPoint());
     if (data) document.execCommand("insertText", false, data);
     else if (before && !cuts.some((c) => c.place === last)) document.execCommand("delete");
+  }
+
+  // put is what an edit puts in, or null for one that puts nothing in.
+  function put(e: InputEvent): string | null {
+    if (e.inputType === "insertText") return e.data ?? "";
+    if (e.inputType === "insertFromPaste") return e.dataTransfer?.getData("text/plain") ?? "";
+    if (e.inputType === "insertLineBreak" || e.inputType === "insertParagraph") return "\n";
+    return null;
+  }
+
+  // late puts what is typed right after what was said, while its last
+  // words are still being written down, after the words being heard,
+  // which those words are still to take the place of, so it stays.
+  function late(data: string, e: InputEvent) {
+    e.preventDefault();
+    byHand++;
+    if (/\S$/.test(said!.textContent!) && /^[^\s.,;:!?)\]}]/.test(data)) data = " " + data;
+    const text = document.createTextNode(data);
+    mark!.after(text);
+    // A new line at the end shows with something after it, see toEnd.
+    if (data.endsWith("\n")) getSelection()?.collapse(next(), 0);
+    else getSelection()?.collapse(text, text.length);
+    typed();
+  }
+
+  // composing makes room for a letter put together from more than one
+  // key, like ä on a German keyboard, right after what was said. The
+  // browser puts it in by itself, so it is given the place a typed
+  // letter goes to, before the mark rather than in it.
+  function composing() {
+    if (!listening || !said || !mark || !field.contains(said) || !atEnd() || !after()) return;
+    cutHeard();
+    const sel = getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(typingPoint());
   }
 
   // freeze settles the words still being heard where they are, when the
@@ -732,7 +809,7 @@
     mark.before(place);
     cuts.push({ place, piece: placed });
     place.textContent = spaced(place, mark.textContent!.trim());
-    mark.textContent = "";
+    hear("");
     const [r, n] = [recording, placed];
     ask(() => api.breakListening(r, n));
     placed++;
@@ -747,7 +824,8 @@
   // none, what a key takes away is found by moving the selection that
   // far and back.
   function waiting(e: InputEvent): boolean {
-    if (!cuts.length) return false;
+    const late = !listening && hearing && !!mark?.textContent && field.contains(mark);
+    if (!cuts.length && !late) return false;
     const ranges = e.getTargetRanges().map((r) => {
       const range = document.createRange();
       range.setStart(r.startContainer, r.startOffset);
@@ -764,7 +842,15 @@
         sel.collapse(node, offset);
       } else ranges.push(sel.getRangeAt(0).cloneRange());
     }
-    return ranges.some((r) => cuts.some((c) => r.intersectsNode(c.place)));
+    // The words being heard while the last words are written down: they
+    // are still to be replaced, so nothing typed in them would stay.
+    const into = (r: Range) => {
+      if (!late) return false;
+      const [to, from] = [end(), end() - mark!.textContent!.length];
+      const [a, b] = [count(r.startContainer, r.startOffset), count(r.endContainer, r.endOffset)];
+      return a < to && (b > from || mark!.contains(r.startContainer));
+    };
+    return ranges.some((r) => into(r) || cuts.some((c) => r.intersectsNode(c.place)));
   }
 
   // spaced is a piece with a space from the word before node, and, once
@@ -804,9 +890,14 @@
   // typed next went before the new line, issue #373.
   function finish(kept: boolean) {
     const was = said && field.contains(said) ? said : null;
+    const ended = document.activeElement !== field || atEnd();
     mark?.remove();
     said = mark = null;
     cuts.length = 0;
+    // The new line that held the cursor goes, as the browser takes its own
+    // away, unless something was typed in it.
+    if (holder?.isConnected && holder.data === "\n") holder.remove();
+    holder = null;
     if (!was) return read();
     const top = field.scrollTop;
     const at = document.createRange();
@@ -853,12 +944,11 @@
       getSelection()?.setBaseAndExtent(a[0], a[1], b[0], b[1]);
     }
     // The field stays as dictating left it, with the end of the report in
-    // view, down to its padding, when what was said ends it, however the
-    // dictation was stopped. Stop on Tim's Mac left it half a line up,
-    // where Enter did not, since the browser put the cursor in view its
-    // own way.
-    field.scrollTop = after.trim() || !following ? top : field.scrollHeight;
-    ours = false;
+    // view, down to its padding, when what was said ends it and the
+    // cursor was after it, however the dictation was stopped. Stop on
+    // Tim's Mac left it half a line up, where Enter did not, since the
+    // browser put the cursor in view its own way.
+    field.scrollTop = after.trim() || !following || !ended ? top : field.scrollHeight;
     if (elsewhere?.isConnected && document.activeElement !== elsewhere) elsewhere.focus({ preventScroll: true, focusVisible: ring });
     read();
   }
@@ -884,6 +974,9 @@
       }
       unheard = d.unheard ? sentence(d.unheard) : "";
       if ((d.asked ?? 0) < asked) return;
+      // A cursor just moved into the words being heard settles them
+      // before they change under it.
+      entered();
       catchUp(d.said ?? []);
       show(d.hearing);
     }),
@@ -986,8 +1079,8 @@
   });
 
   onMount(() => {
-    document.addEventListener("selectionchange", caret);
-    return () => document.removeEventListener("selectionchange", caret);
+    document.addEventListener("selectionchange", entered);
+    return () => document.removeEventListener("selectionchange", entered);
   });
 
   // The draft from before, the window's last time open or the app's last
@@ -1073,7 +1166,6 @@
       <div class="box">
         <div
           class="telling selectable"
-          class:ours
           bind:this={field}
           contenteditable={making ? "false" : "plaintext-only"}
           aria-readonly={making}
@@ -1085,6 +1177,7 @@
           oninput={typed}
           onpaste={pasted}
           onbeforeinput={follow}
+          oncompositionstart={composing}
           onpointerdown={freeze}
           onscroll={scrolled}
           onkeydown={keyed}
@@ -1289,26 +1382,6 @@
   .telling :global(.dictated) {
     color: var(--muted);
     font-style: italic;
-  }
-
-  /* The cursor while it is right after the words being said, drawn by
-     the end of the mark, which is always where those words end, however
-     they wrap. The field's own is hidden then. It blinks the way the
-     system's does, and takes no room, so nothing moves as it goes. */
-  .telling.ours {
-    caret-color: transparent;
-  }
-
-  .telling.ours :global(.hearing) {
-    border-right: 1px solid var(--text);
-    margin-right: -1px;
-    animation: caret 1.06s steps(1) infinite;
-  }
-
-  @keyframes caret {
-    50% {
-      border-right-color: transparent;
-    }
   }
 
   .act {

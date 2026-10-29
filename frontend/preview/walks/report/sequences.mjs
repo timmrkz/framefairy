@@ -262,6 +262,52 @@ export default [
     ],
   },
   {
+    // Tim, 29 October. While dictating, the cursor after the words was one
+    // the field drew itself, unlike the one it has the rest of the time,
+    // since it sat after a part of the field that cannot be typed in,
+    // where WebKit draws none. ArrowDown there found no line to go to and
+    // scrolled the field instead, which bounced, and ArrowUp went from the
+    // wrong place, to the top of the report at times. The cursor is the
+    // field's own, in text the browser moves it from, and the keys move
+    // nothing that is not there to move, after a new line too.
+    name: "While dictating, the cursor after the words is the field's own, and ArrowDown there moves nothing",
+    steps: [
+      ["bugs"],
+      ["write", "One\nTwo\nThree\nFour\nFive\nSix\nSeven\nEight\nNine\nTen\nEleven\nTwelve", "end"],
+      ["dictate", "start"],
+      ["dictate", "hearing"],
+      ["caret at words"],
+      ["report at end"],
+      ["press at the end", ["ArrowDown", 3]],
+      ["press", "Shift+Enter"],
+      ["caret at words"],
+      ["report at end"],
+      ["press at the end", ["ArrowDown", 3]],
+      ["dictate", "hearing"],
+      ["caret at words"],
+      ["dictate", "enter"],
+    ],
+  },
+  {
+    // Tim, 29 October. Tim moved the cursor up with the arrow keys while
+    // he talked, and the field scrolled up with the cursor and back down
+    // to the words by turns, and the cursor went out of view. It is the
+    // cursor the field keeps in view: the words coming in move it only
+    // while the cursor is after them.
+    name: "Moving the cursor up while dictating keeps it in view, and the words coming in leave the field where it is",
+    steps: [
+      ["bugs"],
+      ["write", "One\nTwo\nThree\nFour\nFive\nSix\nSeven\nEight\nNine\nTen\nEleven\nTwelve\nThirteen\nFourteen\nFifteen\nSixteen", "end"],
+      ["dictate", "start"],
+      ["report follows"],
+      ["press, the cursor in view", ["ArrowUp", 14]],
+      ["field kept"],
+      ["report stays"],
+      ["cursor in view"],
+      ["dictate", "enter"],
+    ],
+  },
+  {
     // Issue #373. Tim ended a dictation on his Mac and the cursor jumped
     // while the last words were written down, to the front of the line or
     // past where the words would end, and back once they came. It stays

@@ -897,15 +897,16 @@ export const steps = {
     } else if (!m.seen) walk.wrong = "the words being said are out of view";
     else if (Math.abs(m.top - m.end) > 1) walk.wrong = `the field is at ${m.top} px, not at its end, ${m.end} px`;
   },
-  // ["caret at words"] the cursor is drawn right after the words being
-  //                    said, the field's own hidden
+  // ["caret at words"] the cursor is right after the words being said,
+  //                    the field's own, in text the browser can draw it in
+  //                    and move it from. After a part of the field that
+  //                    cannot be typed in, WebKit drew no cursor, found no
+  //                    line for ArrowDown and scrolled instead, and went
+  //                    up from the wrong place (Tim, 29 October)
   async "caret at words"(walk) {
     const { page } = walk;
-    const c = await page.locator(".telling").evaluate((f) => {
-      const mark = f.querySelector(".hearing");
-      return { ours: f.classList.contains("ours"), caret: getComputedStyle(f).caretColor, bar: mark ? getComputedStyle(mark).borderRightWidth : "" };
-    });
-    if (!c.ours || c.bar !== "1px" || c.caret !== "rgba(0, 0, 0, 0)") walk.wrong = `the cursor is not drawn after the words being said: ${JSON.stringify(c)}`;
+    const c = await page.locator(".telling").evaluate(cursorAtWords);
+    if (c) walk.wrong = c;
   },
   // ["talk ahead", n]  the person dictating says n tenths of a second
   //                    more than the speech model has written down yet,
@@ -948,6 +949,37 @@ export const steps = {
     if (!kept.shown) walk.wrong = "the field showed no words at talk ahead, so there was nothing to keep";
     else if (words < kept.shown) walk.wrong = `${words} words are in the report, fewer than the ${kept.shown} shown: ${JSON.stringify(text)}`;
   },
+  // ["press at the end", key, n]
+  //                    presses key n times with the cursor right after the
+  //                    words being said, with nothing heard let in
+  //                    between, and after each press the field has not
+  //                    moved and the cursor is still there. Tim pressed
+  //                    ArrowDown there and the field bounced (29 October)
+  async "press at the end"(walk, arg, s) {
+    const { page, watch } = walk;
+    const [key, n] = arg;
+    await page.evaluate(() => window.__pauseEvents(true));
+    const was = await page.locator(".telling").evaluate((f) => f.scrollTop);
+    for (let i = 1; i <= n && !walk.wrong; i++) {
+      await page.keyboard.press(key);
+      await nextPaint(page);
+      const c = [await page.locator(".telling").evaluate((f) => f.scrollTop), await page.locator(".telling").evaluate(cursorAtWords)];
+      if (c[0] !== was) walk.wrong = `after ${key} ${i} of ${n} times the field moved from ${was} px to ${c[0]} px`;
+      else if (c[1]) walk.wrong = `after ${key} ${i} of ${n} times ${c[1]}`;
+    }
+    await page.evaluate(() => window.__pauseEvents(false));
+    await watch.step("press", s, page);
+  },
+  // ["field kept"]     notes where the report's field is scrolled to, for
+  //                    "report stays"
+  async "field kept"(walk) {
+    walk.kept.scrolledTo = await walk.page.locator(".telling").evaluate((f) => f.scrollTop);
+  },
+  // ["cursor in view"] the cursor is in view in the report's field
+  async "cursor in view"(walk) {
+    const c = await walk.page.locator(".telling").evaluate(cursorInView);
+    if (c) walk.wrong = c;
+  },
   // ["press, the cursor in view", key, n]
   //                    presses key n times, with nothing heard by
   //                    dictation let in between, and after each press
@@ -977,8 +1009,8 @@ export const steps = {
     await page.locator(".telling").evaluate((f) => (f.scrollTop = 0));
     await page.mouse.click(box.x + 20, box.y + 12);
     await settle(page);
-    const c = await page.locator(".telling").evaluate((f) => ({ ours: f.classList.contains("ours"), caret: getComputedStyle(f).caretColor }));
-    if (c.ours || c.caret === "rgba(0, 0, 0, 0)") walk.wrong = `the field hides its cursor after a click into its first line: ${JSON.stringify(c)}`;
+    const c = await page.locator(".telling").evaluate((f) => getComputedStyle(f).caretColor);
+    if (c === "rgba(0, 0, 0, 0)") walk.wrong = "the field hides its cursor after a click into its first line";
   },
   // ["buttons fit", words]
   //                    opens Advanced where there is one, and every button
@@ -1208,9 +1240,9 @@ export const steps = {
       // While the last words are written down, the cursor is still
       // drawn after them, where they end.
       if (arg === "escape, the cursor stays") {
-        const c = await page.locator(".telling").evaluate((f) => ({ writing: document.querySelector("button.dictate")?.getAttribute("aria-label"), ours: f.classList.contains("ours") }));
+        const c = { writing: await page.locator("button.dictate").getAttribute("aria-label"), at: await page.locator(".telling").evaluate(cursorAtWords) };
         if (c.writing !== "Writing") walk.wrong = `the button says ${c.writing} right after Escape, not Writing, so there was nothing to look at`;
-        else if (!c.ours) walk.wrong = "the cursor left the end of the words while they were written down";
+        else if (c.at) walk.wrong = `while the words were written down ${c.at}`;
       }
       if (late) await control(url, "/hold?call=StopListening&gate=open");
     }
@@ -1312,33 +1344,48 @@ export const steps = {
 steps["report"] = steps["report made"];
 steps["report follows"] = steps["report stays"];
 
+// cursorAtWords runs in the page on the report's field f, and says what
+// is wrong when the cursor is not right after the words being said, the
+// field's own, in a text node, or nothing when it is.
+function cursorAtWords(f) {
+  const sel = getSelection();
+  const mark = f.querySelector(".hearing");
+  if (!mark) return "nothing is being said";
+  if (!sel.rangeCount || !sel.isCollapsed || !f.contains(sel.focusNode)) return "the cursor is not in the field";
+  const at = (node, offset) => {
+    const r = document.createRange();
+    r.selectNodeContents(f);
+    r.setEnd(node, offset);
+    return r.toString().length;
+  };
+  const [n, end] = [at(sel.focusNode, sel.focusOffset), at(mark, mark.childNodes.length)];
+  if (n !== end) return `the cursor is ${n} letters in, not after the words being said, ${end}`;
+  if (sel.focusNode.nodeType !== Node.TEXT_NODE) return `the cursor is in ${sel.focusNode.nodeName} at ${sel.focusOffset}, not in text the browser can draw it in`;
+  if (f.classList.contains("ours") || getComputedStyle(f).caretColor === "rgba(0, 0, 0, 0)") return "the field hides its own cursor and draws one of its own";
+  return "";
+}
+
 // cursorInView runs in the page on the report's field f, and says where
-// the cursor is when it is not in view, or nothing when it is. The cursor
-// is the one drawn after the words being said while the field draws it,
-// or the field's own where the selection is. A place on an empty line has
-// no box of its own, so a mark with no width stands in it while it is
-// measured, and the text it split is joined again after, the same node it
-// was, with the selection back where it was.
+// the cursor is when it is not in view, or nothing when it is. A place on
+// an empty line has no box of its own, so a mark with no width stands in
+// it while it is measured, and the text it split is joined again after,
+// the same node it was, with the selection back where it was.
 function cursorInView(f) {
-  let box;
-  if (f.classList.contains("ours")) box = [...f.querySelector(".hearing").getClientRects()].at(-1);
-  else {
-    const sel = getSelection();
-    if (!sel.rangeCount || !sel.isCollapsed || !f.contains(sel.focusNode)) return "the cursor is not in the field";
-    const [node, offset] = [sel.focusNode, sel.focusOffset];
-    const at = document.createRange();
-    at.setStart(node, offset);
-    const stand = document.createElement("span");
-    at.insertNode(stand);
-    box = stand.getBoundingClientRect();
-    const split = node.nodeType === Node.TEXT_NODE ? stand.nextSibling : null;
-    stand.remove();
-    if (split && split !== node && split.nodeType === Node.TEXT_NODE) {
-      node.appendData(split.data);
-      split.remove();
-    }
-    sel.collapse(node, offset);
+  const sel = getSelection();
+  if (!sel.rangeCount || !sel.isCollapsed || !f.contains(sel.focusNode)) return "the cursor is not in the field";
+  const [node, offset] = [sel.focusNode, sel.focusOffset];
+  const at = document.createRange();
+  at.setStart(node, offset);
+  const stand = document.createElement("span");
+  at.insertNode(stand);
+  const box = stand.getBoundingClientRect();
+  const split = node.nodeType === Node.TEXT_NODE ? stand.nextSibling : null;
+  stand.remove();
+  if (split && split !== node && split.nodeType === Node.TEXT_NODE) {
+    node.appendData(split.data);
+    split.remove();
   }
+  sel.collapse(node, offset);
   if (!box?.height) return "the cursor has no place on screen";
   const field = f.getBoundingClientRect();
   const top = field.top + f.clientTop;
