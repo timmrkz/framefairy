@@ -3430,10 +3430,14 @@ stands before a new line of its own there, the way WebKit keeps an empty
 last line. After a key, the field keeps the cursor in view, the least
 scroll that shows its whole line, inside its padding, the way a text
 field does. At the end of the report that is its end, where the words
-said next leave it too. Where the browser moved the cursor itself and
-left it in view, the field stays as the browser left it, so the two
-never take turns, and a key that neither moves the cursor nor types
-leaves the field where it was scrolled. The browser keeps in view only
+said next leave it too. ArrowUp and ArrowDown move the cursor a line in
+the app itself, and the field scrolls a line at a time with them, the
+sum in `frontend/src/lib/reveal.ts`. The browser's own scroll went a few
+pixels past the last line and back on Tim's Mac, and jumped several
+lines at a time. Where the browser moved the cursor itself and left it
+in view, the field stays as the browser left it, so the two never take
+turns, and a key that neither moves the cursor nor types leaves the
+field where it was scrolled. The browser keeps in view only
 what it did itself, and while dictating the field puts a new line in by
 hand, so Shift+Enter past the foot of the field left the cursor out of
 view until more was said, issue #573. Typing anywhere else, wherever the arrow keys or a click
@@ -3483,10 +3487,15 @@ page says where to allow it, while it goes on recording, since the
 prompt may still be open. One copy of the speech model loads while the
 person talks, with the threads of one of the copies a transcription
 uses, so a transcription beside it keeps the rest, see `asr.OpenOne`.
-About every 0.4 s it writes down again what followed the last pause,
+About every 0.4 s while somebody speaks it writes down again what
+followed the last pause,
 `engine.Settled` says where that is, and a stretch with no pause is
 settled before it is 12 s long, so words do not change far behind the
-person. It is given the 5 s before that pause
+person. It hears what was said and one pause after it, never the
+silence beyond, and is asked only when something new was said and once
+more when a whole pause follows, which settles it. While nobody speaks,
+nothing changes: it heard words in the silence and changed the words
+before them while Tim said nothing. It is given the 5 s before that pause
 too, and everything after it, and the words are told apart by when they
 start, so a pause in the middle of a sentence gives it no full stop and
 the words after it no capital. Each `dictation` event carries every

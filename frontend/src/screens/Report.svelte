@@ -21,6 +21,7 @@
   import { toasts } from "../lib/toast.svelte";
   // A line in the app's log. said is the words being dictated here.
   import { said as log } from "../lib/said";
+  import { revealed } from "../lib/reveal";
 
   // Report a Problem, in the window Bugs in the sidebar opens: what the
   // person says happened, the pictures they attach, and one button that
@@ -578,34 +579,63 @@
     else if (typing) {
       const sel = getSelection();
       if (!sel?.rangeCount || !field.contains(sel.focusNode)) return;
-      const at = document.createRange();
-      at.setStart(sel.focusNode!, sel.focusOffset);
-      box = [...at.getClientRects()].find((r) => r.height);
+      box = caretBox(sel.focusNode!, sel.focusOffset);
     }
     if (!box) return;
     const style = getComputedStyle(field);
-    const [pad, foot, line] = [parseFloat(style.paddingTop), parseFloat(style.paddingBottom), parseFloat(style.lineHeight)];
     const top = field.getBoundingClientRect().top + field.clientTop;
-    const [from, to] = [box.top - top + field.scrollTop, box.bottom - top + field.scrollTop];
-    if (browser && from >= field.scrollTop && to <= field.scrollTop + field.clientHeight) return;
-    const mid = (from + to) / 2;
-    const bottom = mid + line / 2 + foot > field.scrollHeight - line / 2 ? field.scrollHeight : mid + line / 2 + foot;
-    const head = Math.max(mid - line / 2 - pad, 0);
-    if (bottom > field.scrollTop + field.clientHeight) field.scrollTop = Math.round(bottom - field.clientHeight);
-    else if (head < field.scrollTop) field.scrollTop = Math.round(head);
+    const [over, under] = [box.top - top + field.scrollTop, box.bottom - top + field.scrollTop];
+    if (browser && over >= field.scrollTop && under <= field.scrollTop + field.clientHeight) return;
+    const at = revealed(
+      {
+        top: field.scrollTop,
+        height: field.clientHeight,
+        end: field.scrollHeight,
+        pad: parseFloat(style.paddingTop),
+        foot: parseFloat(style.paddingBottom),
+        line: parseFloat(style.lineHeight),
+      },
+      over,
+      under,
+    );
+    if (at !== field.scrollTop) field.scrollTop = at;
   }
+  // caretBox is where a cursor at offset in node stands. A place on an
+  // empty line has no box of its own, so there it is the box of the new
+  // line that follows it, which stands on that line.
+  function caretBox(node: Node, offset: number): DOMRect | undefined {
+    const at = document.createRange();
+    at.setStart(node, offset);
+    const own = [...at.getClientRects()].find((r) => r.height);
+    if (own || node.nodeType !== Node.TEXT_NODE) return own;
+    if (offset < (node as Text).length) {
+      at.setEnd(node, offset + 1);
+      return [...at.getClientRects()].find((r) => r.height);
+    }
+  }
+
   // keyed hears a key go down in the field, and reveals the cursor once
   // the key has moved it or typed. A key that does neither, Shift alone,
   // Cmd+C, Enter to keep what was said, or Page Down where WebKit scrolls
   // without moving the cursor, leaves the field where the person
   // scrolled it to read. A new line typed while dictating leaves the
   // selection where it was, after what was said, so typing counts by
-  // itself, by the edits the browser asks for.
+  // itself, by the edits the browser asks for. ArrowUp and ArrowDown
+  // move the cursor a line here, the way the browser would, and the field
+  // scrolls by reveal alone, a line at a time. The browser's own scroll after them went a few pixels past the
+  // last line and back on Tim's Mac, and jumped several lines at a time
+  // (29 October), and where the cursor had no line to go to, it scrolled
+  // the field instead, which bounced.
   let edits = 0;
   let byHand = 0;
-  function keyed() {
+  function keyed(e: KeyboardEvent) {
     const sel = getSelection();
     const [node, offset, typed, made] = [sel?.focusNode, sel?.focusOffset, edits, byHand];
+    if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !e.isComposing && !e.altKey && !e.metaKey && !e.ctrlKey) {
+      e.preventDefault();
+      byHand++;
+      if (sel?.rangeCount && field.contains(sel.focusNode)) sel.modify(e.shiftKey ? "extend" : "move", e.key === "ArrowUp" ? "backward" : "forward", "line");
+    }
     requestAnimationFrame(() => {
       const now = getSelection();
       if (edits !== typed || now?.focusNode !== node || now?.focusOffset !== offset) reveal(byHand === made);

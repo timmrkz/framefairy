@@ -289,6 +289,26 @@ export default [
     ],
   },
   {
+    // Tim, 29 October, 20.55. Moving up and down the report with the arrow
+    // keys, the field jumped several lines at a time, and at the last
+    // line went a few pixels past it and back. It scrolls a line at a
+    // time, while dictating and after, and never past its end.
+    name: "The arrow keys scroll the report a line at a time, while dictating and after",
+    steps: [
+      ["bugs"],
+      ["write", "One\nTwo\nThree\nFour\nFive\nSix\nSeven\nEight\nNine\nTen\nEleven\nTwelve\nThirteen\nFourteen\nFifteen\nSixteen\nSeventeen\nEighteen\nNineteen\nTwenty", "end"],
+      ["press, a line at a time", ["ArrowUp", 22]],
+      ["press, a line at a time", ["ArrowDown", 22]],
+      ["report at end"],
+      ["dictate", "start"],
+      ["press, a line at a time", ["ArrowUp", 24]],
+      ["press, a line at a time", ["ArrowDown", 24]],
+      ["report at end"],
+      ["press at the end", ["ArrowDown", 3]],
+      ["dictate", "enter"],
+    ],
+  },
+  {
     // Tim, 29 October. Tim moved the cursor up with the arrow keys while
     // he talked, and the field scrolled up with the cursor and back down
     // to the words by turns, and the cursor went out of view. It is the

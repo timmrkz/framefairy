@@ -970,6 +970,30 @@ export const steps = {
     await page.evaluate(() => window.__pauseEvents(false));
     await watch.step("press", s, page);
   },
+  // ["press, a line at a time", key, n]
+  //                    presses key n times, with nothing heard let in
+  //                    between, and after each press the report's field
+  //                    stayed or scrolled by a line at most, and the
+  //                    cursor is in view. On Tim's Mac the field jumped
+  //                    several lines at a time and went past its last line
+  //                    and back (29 October)
+  async "press, a line at a time"(walk, arg, s) {
+    const { page, watch } = walk;
+    const [key, n] = arg;
+    await page.evaluate(() => window.__pauseEvents(true));
+    const line = await page.locator(".telling").evaluate((f) => parseFloat(getComputedStyle(f).lineHeight));
+    for (let i = 1; i <= n && !walk.wrong; i++) {
+      const was = await page.locator(".telling").evaluate((f) => f.scrollTop);
+      await page.keyboard.press(key);
+      await nextPaint(page);
+      const [now, end] = await page.locator(".telling").evaluate((f) => [f.scrollTop, f.scrollHeight - f.clientHeight]);
+      const c = await page.locator(".telling").evaluate(cursorInView);
+      if (c) walk.wrong = `after ${key} ${i} of ${n} times ${c}`;
+      else if (Math.abs(now - was) > line) walk.wrong = `after ${key} ${i} of ${n} times the field went from ${was} px to ${now} px, more than a line of ${line} px`;
+    }
+    await page.evaluate(() => window.__pauseEvents(false));
+    await watch.step("press", s, page);
+  },
   // ["field kept"]     notes where the report's field is scrolled to, for
   //                    "report stays"
   async "field kept"(walk) {
