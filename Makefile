@@ -479,8 +479,9 @@ changed:
 # use for this, which prints the same lines go test does and keeps every
 # test's time in UNITJSON besides, for a closer look on this machine.
 # Before the tests it says in one line what machine they run on and how
-# fast it is, scripts/machine.sh, since the same tests take a fifth longer
-# on some of GitHub's Macs than on others, #592.
+# fast it is, scripts/machine.sh, and after them how fast it is again,
+# since the same tests take a fifth longer on some of GitHub's Macs than
+# on others, #592.
 ifeq ($(UNAME),Darwin)
 RACE ?=
 UNITSKIP ?= framefairy/licence/dispenser framefairy/licence/paddle framefairy/cmd/framefairy-dispenser framefairy/internal/workflows framefairy/internal/naming
@@ -535,6 +536,7 @@ unit: toolchain modules $(FRESH_FRAMES)
 		$(if $(COVERAGE),$(COVERPKG) -coverprofile='$(COVERDIR)/go-unit$(if $(UNITSHARD),-$(subst /,-of-,$(UNITSHARD))).txt') \
 		-ldflags '$(LDFLAGS)' $$pkgs || status=$$?; \
 	if [ -n '$(SLOWEST)' ]; then \
+		PATH="$(TOOLS_FIRST)" sh scripts/machine.sh after; \
 		slow=$$($(GO) run $(GOTESTSUM) tool slowest --jsonfile $(UNITJSON) --threshold $(SLOWEST)); \
 		if [ -n "$$slow" ]; then \
 			echo "The tests that took over $(SLOWEST), slowest first:"; echo "$$slow"; \
