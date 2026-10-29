@@ -34,22 +34,12 @@ made the same way, so the same is measured in the workspace. What it
 measures and how to read it is in the interface skill, under Playback and
 The frame queue.
 
-Adding a video does not run against the bridge: the bridge adds its
-episode and searches it before it serves, and answers `AddEpisodes` with
-nothing. So what the video preview shows while an episode just added is
-heard and searched is a probe on the preview,
-`frontend/preview/frames/added.mjs`, with `?growing&lagging&hear=100`:
-the first search started by the Go side, job events, twelve clips landing
-and the earliest chosen when it is over, then three clips picked. On
-every animation frame from the click that opens the episode it reads the
-playhead and the frame on the canvas from its bars, and it exits 1 when
-the first picture is not the episode's first frame with the playhead at
-0, when the picture goes black, when any frame holds neither the
-playhead nor where it was a moment before, or when a seek's frame takes
-longer than a quarter of a second. Tim saw the video preview of an episode
-just added on another frame than its first, in the days of the `<video>`
-element. The frame queue shows the first frame there, on the code of
-e8ca612 and after it. Put back to draw 7.3 seconds in, the probe fails.
+Adding a video runs against the bridge: a walk asks `/pick` for a test
+video, and the bridge hands it to the app the way a drop does,
+`walks/searching.mjs`. The probes `frames/added.mjs` and `frames/cuts.mjs`
+are older, from before the bridge could add a video. No make target or
+workflow runs them, and they have shown no picture since plan row 2.156,
+see #613.
 
 ## The bridge
 

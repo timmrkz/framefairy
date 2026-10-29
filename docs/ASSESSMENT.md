@@ -6,13 +6,17 @@ app's Go side, the interface, the build, CI and the tests. Each item says
 where, what happens, what to do and where it stands, most severe first
 within each group. Line numbers are as found and drift as the code moves.
 
-The work is done in batches, one pull request each, and the status here is
-updated in the same pull request as the fix. [ROBUSTNESS.md](ROBUSTNESS.md)
-is the older audit of the handoffs between the parts, and nothing here
-repeats it.
+This review is history. Open work lives in GitHub issues, never in this
+file. On 29 October 2026 every item was checked again against main at
+`a2d7260` by the architecture review [#603](https://github.com/timmrkz/framefairy/issues/603),
+and each status below says how it stood then. What was still open moved
+to an issue or was dropped, and no status here changes again.
+[ROBUSTNESS.md](ROBUSTNESS.md) is the older audit of the handoffs between
+the parts, and nothing here repeats it.
 
-**Status:** Open, In progress (with its pull request), Fixed, Decided (a
-choice made, with what was chosen), or For Tim (waits on a decision).
+**Status:** Fixed (with its pull request), Decided (a choice made, with
+what was chosen), Moved (to the issue that holds the open part), or
+Dropped (not worth doing now, with why).
 
 ## Overall
 
@@ -163,8 +167,8 @@ facade the app goes around, and three files too big to hold in one's head.
     workflow has a `permissions:` block, every action is pinned to the
     commit its tag named on 29 September 2026, with the tag beside it,
     and the release tag reaches the shell through `env:`. Pinned actions
-    do not update themselves. Dependabot could propose updates as pull
-    requests, which is left for Tim to decide.
+    do not update themselves, so Dependabot proposes their updates as pull
+    requests, since #80.
 14. **Writes that replace a file are not flushed.** `writeAtomic`
     (`engine/transcript.go:140`) and `replacePlan` (`engine/edit.go:236`)
     write a temporary file and rename it, but never sync it. After a power
@@ -221,7 +225,10 @@ facade the app goes around, and three files too big to hold in one's head.
     functions directly, and builds `engine.NewProject(nil, …)` seven times
     only to get paths. Such a project panics if asked to run anything. Fix:
     an episode type for paths, reads and edits, apart from the part that
-    runs work and needs an engine. **Open.**
+    runs work and needs an engine. **Moved** to #608 on 29 October 2026:
+    the seven copies are one helper now, but `NewProject(nil, …)` is still
+    there, `cmd/framefairy-app/words.go:32`, and nothing holds a video's
+    files.
 20. **A clip in a plan has five shapes.** `Clip` (`clips.go:30`), `PlanClip`
     (`plan.go:122`), the ordered object of `edit.go` and `shape.go`,
     `Plan.Raw` and `PlanEntry` (`select.go:247`), with key names written out
@@ -232,7 +239,9 @@ facade the app goes around, and three files too big to hold in one's head.
     `engine/plankeys.go`, and every read and edit of the ordered object,
     `LoadClips` included, reaches the plan by them. The tags of the
     structs that write a new plan are held to the same names by a test.
-    **Open:** one way to read and write a clip.
+    **Dropped** on 29 October 2026: one way to read and write a clip. The
+    five shapes are still there, but joining them is part of the engine
+    split Tim put on hold on 22 October.
 21. **The engine is one package of 57 files and 21,000 lines**, with 248
     exported names, 53 of the functions used nowhere outside it. Core types
     sit in unrelated files (`Engine` in `ffmpeg.go`, `Transcript` in
@@ -240,7 +249,9 @@ facade the app goes around, and three files too big to hold in one's head.
     `Token` and `Recognizer`, the wrong way round. Splitting it now would
     make import cycles. Fix, in order: unexport what nobody outside uses,
     move core types to files of their own, then a small shared package, then
-    the typesetting and the model providers. **Open.**
+    the typesetting and the model providers. **Dropped** on 29 October
+    2026: Tim put the engine split on hold on 22 October, unsure the gain
+    is worth the cost. The engine is 87 files and 34,641 lines today.
 22. **Global state keeps the engine tests serial.** `trainingDir` is set from
     inside `Run` (`run.go:140`), there is a package-level model host and
     several test hooks, and `DefaultStyle` is an exported map anyone can
@@ -256,14 +267,19 @@ facade the app goes around, and three files too big to hold in one's head.
     purpose, since one model fits in memory at a time, and `DefaultStyle`
     is read in too many places to change here. Tests that set `framing`,
     `launch`, `healthWait`, `shotLimit` or the speed file, or the
-    environment, still run one at a time.
+    environment, still run one at a time. **Moved** to #607 on 29 October
+    2026: the test seams are still package variables, now 18 of them.
+    `DefaultStyle` is written nowhere outside `engine/ass.go`, so that
+    part is dropped.
 23. **`Episode.svelte` is 3,100 lines.** Its script has 45 `$state`, 86
     `$derived` and 17 `$effect`. Most effects watch for a job to end by
     keeping the value before in a plain variable, which makes the job's
     life a state machine spread over effects, untested. Fix: the episode
     session as a runes class in `lib/`, with tests, and job endings reported
     by the job store. `ClipTimeline` gets about 30 props and `Player` about
-    22, and `showChosen` reaches into ClipList's markup by class name. **Open.**
+    22, and `showChosen` reaches into ClipList's markup by class name.
+    **Moved** to #606 on 29 October 2026. `Episode.svelte` was 4,565 lines
+    with 35 effects by then.
 24. **`cmd/framefairy-app/main.go` is 1,600 lines with 70 bindings.** The
     tests are already split by the right seams, the code is not. Fix: media,
     views, words, edits, chosen and training in files of their own,
@@ -277,7 +293,10 @@ facade the app goes around, and three files too big to hold in one's head.
     names and argument counts, not fields. Constants copied from the engine,
     the caption heights and `snapCaptionY`, the caption defaults, `Reach`
     and `fitWindow`, have no shared test. `suggest.cases.json` shows the way:
-    one file of cases both sides read. **Open.**
+    one file of cases both sides read. **Partly fixed:** `frame.cases.json`
+    and `glide.cases.json` are now read by both sides. **Moved** on 29
+    October 2026: the types and the caption defaults to #611, the rules
+    copied into the interface to #610.
 26. **Two ways of saving settings.** `SaveSettings` replaces everything and
     has to carve out `Chosen` by hand (`main.go:367-373`), while other calls
     change one field. Each new field the Go side owns needs another carve
@@ -302,7 +321,7 @@ facade the app goes around, and three files too big to hold in one's head.
     screens in the app and everything about the records in
     `framefairy-train`. **Decided:** it stays for now, as not important
     yet. It comes up again with 5.7 in GUI-PLAN.md, whether customer
-    builds record training data at all.
+    builds record training data at all, which is #304.
 30. **Sizes worked out in JavaScript.** `RangeWindow.svelte:114` measures its
     width and places everything in pixels, to land on whole pixels.
     `Player.svelte:702` does the same for the caption scale. CSS `round()`
