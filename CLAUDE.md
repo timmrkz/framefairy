@@ -57,7 +57,6 @@ thing belongs. In short:
 
 | Part | Code | Docs |
 | --- | --- | --- |
-| where each kind of thing belongs, and what must stay true | | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 | engine | `engine/`, `asr/` | [docs/ENGINE.md](docs/ENGINE.md) |
 | command line `framefairy` | `cmd/framefairy/` | [docs/CLI.md](docs/CLI.md) |
 | desktop app `framefairy-app` | `cmd/framefairy-app/` (Go), `frontend/` (Svelte) | [docs/APP.md](docs/APP.md) |
@@ -193,7 +192,8 @@ thing belongs. In short:
   of assuming them. Put the change where
   [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) says it belongs, not where
   the issue happens to point, and never copy what its Not to copy names.
-  A change that has no place there adds its line to it.
+  A change that brings a new kind of thing, a new part, a new home for
+  state or a new boundary, adds its line there.
 - **Small batches.** Split larger work into batches of a few minutes each.
   Finish, test and report after each one, with a pull request per batch,
   or a commit per batch while the batches are still one self-contained
@@ -786,7 +786,7 @@ request.
 Full specification in [docs/TRAINING.md](docs/TRAINING.md). The essentials:
 
 - The engine records every new model answer and every action on a clip in
-  `<episode>.framefairy/training/`. It stays on the machine.
+  `~/.framefairy/training/`. It stays on the machine.
 - **Never count a signal twice.** The same answer to the same prompt keeps
   its record. The export merges by prompt and by proposed clip and uses only
   the latest state. Episodes are known by content, not by file name.
