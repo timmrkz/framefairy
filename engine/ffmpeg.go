@@ -1062,12 +1062,24 @@ func (e *Engine) uneven(ctx context.Context, path string, info SourceInfo) bool 
 // frame was left out or came twice. ffprobe reads from the key frame
 // before the moment, and the end is given as a moment too: a length is
 // counted from the key frame, so a read for a piece stopped short of it.
+// A file with no index of its key frames is read from the key frame
+// keyBefore finds, since ffprobe lands between two there, see unindexed.
 // A file it cannot read is taken as even, the way it was taken before.
 func (e *Engine) unevenIn(ctx context.Context, path string, info SourceInfo, at, span float64) bool {
 	frame := float64(info.FPSDen) / float64(info.FPSNum)
 	first := info.origin + info.VideoStart
+	from := fixed(info.origin+at, 3)
+	if info.unindexed {
+		// From its first packet where there is no key frame before
+		// that: ffprobe sent to the start of the file itself lands after
+		// the first key frame in MPEG-TS.
+		from = ""
+		if key, ok := e.keyBefore(ctx, path, info, int64(math.Round(at*1e6))); ok && key > 0 {
+			from = fixed(info.origin+float64(key)/1e6, 6)
+		}
+	}
 	res := run(ctx, "", e.FFprobe, "-v", "error", "-select_streams", "v:0",
-		"-read_intervals", fixed(info.origin+at, 3)+"%"+fixed(info.origin+at+span, 3),
+		"-read_intervals", from+"%"+fixed(info.origin+at+span, 3),
 		"-show_entries", "packet=pts_time,pos,flags", "-of", "csv=p=0", path)
 	if res.Code != 0 {
 		return false
@@ -1081,10 +1093,10 @@ func (e *Engine) unevenIn(ctx context.Context, path string, info SourceInfo, at,
 			continue
 		}
 		// In a file with no index of its key frames the read lands
-		// between two, and the frames before the next key frame are
-		// missing the ones they are decoded after: in MPEG-2 with
-		// B-frames a frame was missing there, #600. So the frames are
-		// read from there.
+		// before the key frame, and the frames before it are missing the
+		// ones they are decoded after: in MPEG-2 with B-frames a frame
+		// was missing there, #600. So the frames are read from the key
+		// frame on.
 		if keyed = keyed || strings.HasPrefix(f[2], "K"); !keyed {
 			continue
 		}

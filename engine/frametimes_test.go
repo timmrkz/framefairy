@@ -134,6 +134,12 @@ var timesCases = []timesCase{
 	// Its rate is not checked: the Mac's encoder stamps its frames
 	// unevenly in MPEG-TS, and the probe then makes it 30.
 	{name: "mpegts", file: "ts.ts", gop: 60},
+	// What OBS records in MPEG-TS with its key frame every 250 frames,
+	// more than eight seconds, and frames left out under load, so most
+	// stretches Probe reads hold no key frame.
+	{name: "held_ts", file: "held.ts", rate: "30/1", seconds: 20, gop: 250,
+		video: []string{"select='not(between(n\\,160\\,169))'"},
+		out:   []string{"-fps_mode", "passthrough"}},
 	// MPEG-PS, .mpg and .vob, the way a DVD or an old camcorder holds
 	// MPEG-2 and MP2. It has no index of its key frames either, and
 	// ffmpeg stamps no time on some of its packets, #268.
