@@ -145,6 +145,71 @@ export const steps = {
     await main.mouse.move(750, 400);
     await sidebarStill(main);
   },
+  // ["leave with no move"]
+  //                    hovers the sidebar open and, while it slides open
+  //                    and after, plays what WebKit hands the app when what
+  //                    lies under a still pointer changes: the pointer
+  //                    leaving the sidebar for the workspace with no
+  //                    movement. The sidebar stays open. A real move off it
+  //                    closes it at once, and so does the pointer leaving
+  //                    the app, #540
+  async "leave with no move"(walk) {
+    const { main } = walk;
+    walk.page = main;
+    const open = () => main.evaluate(() => document.querySelector("aside")?.classList.contains("open"));
+    await main.mouse.move(750, 400);
+    await sidebarStill(main);
+    await main.evaluate(() => {
+      window.__sidebarClosed = 0;
+      let was = document.querySelector("aside").classList.contains("open");
+      new MutationObserver(() => {
+        const now = document.querySelector("aside").classList.contains("open");
+        if (was && !now) window.__sidebarClosed++;
+        was = now;
+      }).observe(document.querySelector("aside"), { attributes: true, attributeFilter: ["class"] });
+    });
+    // The leave and what follows it, as WebKit sends them: out of the
+    // sidebar into what is beside the rail, and a move with no movement
+    // there.
+    const leave = () =>
+      main.evaluate(() => {
+        const aside = document.querySelector("aside");
+        const at = { clientX: 20, clientY: 500, pointerType: "mouse", isPrimary: true, movementX: 0, movementY: 0 };
+        const beside = document.elementsFromPoint(200, 500).find((el) => !aside.contains(el)) ?? document.body;
+        aside.dispatchEvent(new PointerEvent("pointerout", { ...at, bubbles: true, relatedTarget: beside }));
+        aside.dispatchEvent(new PointerEvent("pointerleave", { ...at, relatedTarget: beside }));
+        beside.dispatchEvent(new PointerEvent("pointerover", { ...at, bubbles: true, relatedTarget: aside }));
+        beside.dispatchEvent(new PointerEvent("pointermove", { ...at, bubbles: true }));
+      });
+    await main.mouse.move(20, 500);
+    await leave();
+    await nextPaint(main);
+    await leave();
+    await sidebarStill(main);
+    await leave();
+    await sidebarStill(main);
+    const closed = await main.evaluate(() => window.__sidebarClosed);
+    if (closed || !(await open())) {
+      walk.wrong = `the sidebar opened by the pointer closed ${closed} time${closed === 1 ? "" : "s"} on a leave with no move of the pointer`;
+      return;
+    }
+    await main.mouse.move(750, 400);
+    if (await open()) {
+      walk.wrong = "the sidebar stayed open after the pointer moved off it";
+      return;
+    }
+    await sidebarStill(main);
+    await main.mouse.move(20, 500);
+    await sidebarStill(main);
+    await main.evaluate(() => {
+      const at = { clientX: 20, clientY: 500, pointerType: "mouse", isPrimary: true };
+      document.querySelector("aside").dispatchEvent(new PointerEvent("pointerleave", at));
+    });
+    if (await open()) walk.wrong = "the sidebar stayed open after the pointer left the app";
+    await sidebarStill(main);
+    await main.mouse.move(750, 400);
+    await sidebarStill(main);
+  },
   // ["bugs, the pointer gone"]
   //                    clicks Bugs with the pointer on the sidebar, and
   //                    the app's window loses the focus to the report

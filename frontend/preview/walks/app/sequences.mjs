@@ -89,6 +89,12 @@ export default [
     steps: [["mission control"]],
   },
   {
+    // Tim's logs showed the sidebar opened by the pointer closing again
+    // within 100 ms one time in three, on a leave no hand made, #540.
+    name: "The sidebar opened by the pointer stays open on a leave with no move, and closes on a real one",
+    steps: [["leave with no move"]],
+  },
+  {
     // Tim chose another model in the settings while a search ran, and
     // nothing stopped him. What a search uses stays as it is until it is
     // done, and once it is, it can be changed again.

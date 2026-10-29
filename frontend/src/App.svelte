@@ -119,7 +119,7 @@
   // app such moves only on a Mac that shows scroll bars always, see
   // trackingAreaOptions in WebKit's WebViewImpl.mm. Where the pointer was
   // at its last real move, so it opens on the way in and not again while
-  // it stays.
+  // it stays, and closes on the way out.
   let inside = false;
   let moved = false;
   function pointerMoved(e: PointerEvent) {
@@ -128,17 +128,28 @@
     moved = true;
     const now = !!aside?.contains(e.target as Node);
     const came = now && !inside;
+    const went = !now && inside;
     inside = now;
     if (holding) return;
     if (asking) {
       asking = false;
       reach(now, now ? "the pointer is on it" : "the pointer is away from it");
     } else if (came) reach(true, "the pointer moved onto it");
+    else if (went) reach(false, "the pointer moved off it");
   }
 
-  function pointerLeft() {
+  // The sidebar closes by the rule that opens it: a move of the hand that
+  // ends outside it, above, or the pointer leaving the app altogether,
+  // which is a leave to nothing. A leave to somewhere in the app with no
+  // move is no hand: WebKit sends one when what lies under a still
+  // pointer changes, and Tim's logs showed the sidebar opened by the
+  // pointer closing again within 100 ms one time in three, #540. A leave
+  // made by the hand comes with its move, which closes the sidebar in the
+  // same task.
+  function pointerLeft(e: PointerEvent) {
+    if (e.relatedTarget) return;
     inside = false;
-    reach(false, "the pointer left it");
+    reach(false, "the pointer left the app");
   }
 
   // Escape closes one thing at a time, the way a menu on the Mac does: the
