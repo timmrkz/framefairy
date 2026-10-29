@@ -152,6 +152,9 @@ func quietestBetween(frames []float32, shortest, longest float64) int {
 // sentence is not cut in two and given a full stop it never had.
 const settlePause = 60
 
+// SettleSamples is settlePause in samples.
+const SettleSamples = settlePause * frameSamples
+
 // dictateLongest is how long, in seconds, a piece being dictated may grow
 // without a pause before it is settled anyway, at its quietest moment
 // in its second half. Until then it is written down again on every pass,

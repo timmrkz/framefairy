@@ -175,7 +175,9 @@ type recording struct {
 	full atomic.Bool
 	// voiced says whether the microphone was ever as loud as a voice,
 	// listenVoice. Until it was, nobody spoke, and nothing is written down.
-	voiced atomic.Bool
+	// spokeTo is how much had been recorded when it last was, behind mu.
+	voiced  atomic.Bool
+	spokeTo int
 	// over is closed once the recording is written down or dropped.
 	over chan struct{}
 	// ended is closed when the person stops, kept says whether what they
@@ -219,6 +221,7 @@ func (r *recording) heard(samples []float32) {
 		r.peak = max(r.peak, db)
 		if db >= listenVoice {
 			r.voiced.Store(true)
+			r.spokeTo = len(r.samples)
 		}
 	}
 }
@@ -262,6 +265,14 @@ func (r *recording) line(level zerolog.Level) *zerolog.Event {
 
 // hush stops the microphone, the first time it is asked.
 func (r *recording) hush() { r.hushed.Do(r.mic.stop) }
+
+// spoken is how much had been recorded when the microphone was last as
+// loud as a voice.
+func (r *recording) spoken() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.spokeTo
+}
 
 func (r *recording) recorded() []float32 {
 	r.mu.Lock()
@@ -391,6 +402,8 @@ func (l *listening) write(r *recording, dir string, every, quiet time.Duration) 
 	// where the pieces the window has end.
 	var ends []int
 	settled, passed, hearing, unheard, asked := 0, 0, "", "", 0
+	// How much had been said at the last pass of the speech model.
+	spokenAt := 0
 	worded := time.Now()
 	// The last few things told as being heard, and how far into the
 	// recording each was heard, so words the window settles are settled
@@ -495,30 +508,34 @@ func (l *listening) write(r *recording, dir string, every, quiet time.Duration) 
 			return
 		}
 		samples := r.recorded()
-		// Nothing new since the last pass, or too little yet to be a word.
-		if len(samples)-passed < listenLeast/2 || len(samples)-settled < listenLeast {
-			continue
-		}
-		passed = len(samples)
-		// The speech model is not asked until somebody speaks.
-		cut, before, now := 0, "", ""
-		if r.voiced.Load() {
-			cut = engine.Settled(samples[settled:])
-			began := time.Now()
-			before, now = heardAround(rec, samples, settled, settled+cut)
-			r.paced(time.Since(began), len(samples)-max(settled-listenAround, 0), every)
-		}
-		changed := false
-		if cut > 0 {
-			if before != "" {
-				said, ends = append(said, before), append(ends, settled+cut)
-				changed = true
-			}
-			settled += cut
-		}
 		deaf := ""
 		if len(samples) >= listenUnheard && silent(samples) {
 			deaf = heardNothing()
+		}
+		// The speech model hears what was said and a pause after it, never
+		// the silence beyond: it heard words there, and changed the words
+		// before them, while Tim said nothing (29 October). It is asked
+		// only when something new was said, and once more when what was
+		// said is followed by a whole pause, which settles it. So while
+		// nobody speaks, nothing changes.
+		spoken := r.spoken()
+		end := min(len(samples), spoken+engine.SettleSamples)
+		paused := end == spoken+engine.SettleSamples && passed < end
+		changed, now := false, hearing
+		if r.voiced.Load() && end-settled >= listenLeast && (spoken-spokenAt >= listenLeast/2 || paused) {
+			passed, spokenAt = end, spoken
+			cut := engine.Settled(samples[settled:end])
+			began := time.Now()
+			var before string
+			before, now = heardAround(rec, samples[:end], settled, settled+cut)
+			r.paced(time.Since(began), end-max(settled-listenAround, 0), every)
+			if cut > 0 {
+				if before != "" {
+					said, ends = append(said, before), append(ends, settled+cut)
+					changed = true
+				}
+				settled += cut
+			}
 		}
 		if changed || now != hearing || deaf != unheard {
 			if changed || now != "" {
@@ -655,6 +672,9 @@ func (l *listening) finish(r *recording, rec engine.Recognizer, said []string, s
 		return writtenDown{}
 	}
 	hearing := time.Now()
+	// What was said and a pause after it, not the silence beyond, see
+	// write.
+	samples = samples[:min(len(samples), r.spoken()+engine.SettleSamples)]
 	if _, rest := heardAround(rec, samples, settled, settled); rest != "" {
 		said = append(said, rest)
 	}

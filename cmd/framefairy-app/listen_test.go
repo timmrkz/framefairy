@@ -778,6 +778,48 @@ func TestACutAfterAPauseHoldsOnlyWhatFollowedIt(t *testing.T) {
 	}
 }
 
+// Tim, 29 October: while he said nothing, words came and the words before
+// them changed. Nothing changes in a silence: what was said is settled
+// once by the pause after it, and from then on the passes ask the speech
+// model nothing and tell the window nothing, until somebody speaks again.
+func TestSilenceChangesNothing(t *testing.T) {
+	levels, passes := make(chan time.Time), make(chan time.Time)
+	measured, passed := make(chan struct{}, 1), make(chan struct{}, 1)
+	v := &voices{}
+	f, mic, told := dictatingTo(t, v, func(l *listening) {
+		l.beats = &listenBeats{levels: levels, passes: passes, measured: measured, passed: passed}
+	})
+	defer f.CancelListening()
+	pass := func() {
+		passes <- time.Time{}
+		<-passed
+	}
+	mic.say(tone(1.8))
+	pass()
+	awaitTold(t, told, func(d Dictation) bool { return d.Hearing != "" })
+	heard := v.heard.Load()
+	// Three seconds of nobody speaking, a tenth at a time, with a pass
+	// after each.
+	var news []Dictation
+	for range 30 {
+		mic.say(hush(0.1))
+		pass()
+		for len(told) > 0 {
+			news = append(news, <-told)
+		}
+	}
+	if n := v.heard.Load() - heard; n != 1 {
+		t.Errorf("thirty passes over a silence asked the speech model %d times, want 1, to settle what was said", n)
+	}
+	if len(news) != 1 || strings.Join(news[0].Said, "|") != "wort wort wort" || news[0].Hearing != "" {
+		t.Errorf("over a silence the window was told %+v, want what was said settled once", news)
+	}
+	// Speaking again is heard again.
+	mic.say(tone(1.2))
+	pass()
+	awaitTold(t, told, func(d Dictation) bool { return d.Hearing == "wort wort" })
+}
+
 // A machine whose speech model is slower than the words should appear is
 // said in the log once, and the line at the end says how many passes
 // there were and how long the slowest took, so a report from a slower
