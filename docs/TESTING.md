@@ -28,15 +28,16 @@ The frame queue the video preview plays from, `frontend/src/lib/frames/`,
 has a third page, the preview's `preview/frames/`: one canvas playing an
 episode made for it, whose picture carries its frame number and whose
 sound can be laid over the episode's own sample by sample.
-`frontend/preview/frames/cuts.mjs` plays a clip with cuts on it and checks
-every frame drawn and every sample heard. The preview's own episode is
-made the same way, so the same is measured in the workspace. What it
+`frontend/preview/frames/cuts.mjs` was written to play a clip with cuts
+on it and check every frame drawn and every sample heard, and shows no
+picture today, see below. The preview's own episode is made the same way,
+so the same is measured in the workspace. What it
 measures and how to read it is in the interface skill, under Playback and
 The frame queue.
 
 Adding a video runs against the bridge: a walk asks `/pick` for a test
-video, and the bridge hands it to the app the way a drop does,
-`walks/searching.mjs`. The probes `frames/added.mjs` and `frames/cuts.mjs`
+video, the bridge has the Add button's box hand it over, and the walk
+clicks Add, `walks/searching.mjs`. The probes `frames/added.mjs` and `frames/cuts.mjs`
 are older, from before the bridge could add a video. No make target or
 workflow runs them, and they have shown no picture since plan row 2.156,
 see #613.

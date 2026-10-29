@@ -14,9 +14,10 @@ to an issue or was dropped, and no status here changes again.
 [ROBUSTNESS.md](ROBUSTNESS.md) is the older audit of the handoffs between
 the parts, and nothing here repeats it.
 
-**Status:** Fixed (with its pull request), Decided (a choice made, with
-what was chosen), Moved (to the issue that holds the open part), or
-Dropped (not worth doing now, with why).
+**Status:** Fixed (with its pull request), Half or Partly fixed (with
+where the rest went), Decided (a choice made, with what was chosen), Moved
+(to the issue that holds the open part), or Dropped (not worth doing now,
+with why).
 
 ## Overall
 

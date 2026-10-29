@@ -1660,9 +1660,10 @@ the job, and a record gives it back after a restart.
 
 ## The code
 
-`asr/` wraps the speech recogniser. It, the macOS keychain in `engine/keys_darwin.go`
-and the frames decoder in `cmd/framefairy-frames` are the native code.
-Everything else is in `engine/`:
+`asr/` wraps the speech recogniser. The native code is there, in the
+macOS keychain of `engine/keys_darwin.go`, in the frames decoder of
+`cmd/framefairy-frames`, and in the app's `chrome_darwin.go` and
+`refresh_darwin.go`. The engine is in `engine/`:
 
 ```
   audio.go      reading the audio, word timing, loudness
@@ -1761,10 +1762,24 @@ Everything else is in `engine/`:
   hdrcolour.go  caption colours in an HDR short, at the reference white
   episodeframes.go the client of a video's frames decoder,
                 cmd/framefairy-frames, over internal/framewire
-  preview.go    frames for the video preview straight from ffmpeg, which
-                only the tests call, see #590. previewsound.go is its sound
+  preview.go    frames for the video preview straight from ffmpeg.
+                Only the tests call PreviewFrames, see #590, and the app
+                reads PreviewTimes. previewsound.go is its sound
   modelcheck.go a downloaded language model checked again before it loads
   licence.go    the licence key, kept with the API keys
   shipped_production.go says the build is the one that ships, made with
                 the production tag. shipped_other.go is every other build
+  shape.go      what a hand does to a clip on the clip timeline, and what
+                it makes of the clip, see WORDS.md
+  suggest.go    how long a window is, how many clips a search asks for
+                and how long the model may think, when nobody has said
+  room.go       how much one search can read
+  readahead.go  the transcript read ahead of a search
+  modelhost.go  the local model, kept running between the asks that want it
+  probed.go     what ffmpeg can do and what a file holds, asked once a
+                process and kept by the file's size and time
+  rotation.go   the parts of a phone video recorded on its side
+  cropmarks.go  a crop that follows keyframes put on frames of a clip
+  hyphenate.go  a caption word too wide for a line, broken the way TeX does
+  wordframes.go where the words of a caption stand, as libass draws them
 ```

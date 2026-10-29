@@ -30,9 +30,10 @@ The text after it is as written on 6 October.
 
 ## Where it stands, 29 October 2026
 
-Fixed, with its pull request. Moved, to the issue that holds what is
-open. Listed, in #603 under what was seen and not logged, for Tim to
-raise when he wants it. Dropped, with why.
+Fixed, with its pull request. Partly or mostly fixed, with where the
+rest went. Moved, to the issue that holds what is open. Listed, in #603
+under what was seen and not logged, for Tim to raise when he wants it.
+Dropped, with why. Ended, a family that stopped.
 
 | Finding | 29 October 2026 |
 | --- | --- |
@@ -48,7 +49,7 @@ raise when he wants it. Dropped, with why.
 | Bug 10, six copies of "is someone typing" | Fixed in #130 |
 | The video preview's clock | Ended in #110 |
 | Time as rounded seconds | Fixed in #148, done with frame starts rather than frame numbers |
-| ffmpeg seek and pipe | Moved to #602, reading pieces by the file's own times. #266 and #274 are its symptoms |
+| ffmpeg seek and pipe | Partly fixed: a part of the sound is cut at the frame's timestamp, see ENGINE.md. Decoding the sound once into a cache is listed. #266 and #274 are its live symptoms, and #602 is the same family for the picture of a short |
 | The interface rebuilds Go's state | Moved to #606 |
 | Tested in Chromium, shipped in WebKit | Moved to #380 |
 | One thing written twice | Partly fixed in #396 and #201. Moved: the types to #611, the preview stub to #613, the loudness to #609 |
@@ -65,21 +66,21 @@ raise when he wants it. Dropped, with why.
 | A job has two state machines | Moved to #606 |
 | Two queue paths and five ways in | Polling ended in #504, the removal wait is bounded since #337. Moved to #613 for the ways in only tests use |
 | 69 bindings with no rule for errors | Dropped: a refused start says why in its row since #130 |
-| Engine work done in the app | Overrides fixed in #201. Moved to #610 for the window. Dropped: the rendered record the command line does not write, since the training records that count come from the app |
-| Job kinds are strings | Dropped: the guards ask the engine's constants since #130 |
+| Engine work done in the app | Overrides fixed in #201. The search's plan name and warm-up decision, still in the app, moved to #610. The rendered record, written only by the app, is listed |
+| Job kinds are strings | Partly fixed in #130: the search guards ask the engine's constants. The model guards still type `"llm"` and `"model"`, `setup.go:465`, which is dropped as small, since only the app makes those jobs |
 | Go only pings, the interface guesses | Moved to #606 |
 | One pending flag per control | Moved to #606 |
 | Rules about where things land live in the interface | Caption edges fixed in #189. Moved to #610 |
 | One click, one edit | Listed, with bug 6 |
 | Objects rebuilt stand in for "something changed" | Moved to #606 |
 | The library is checked by path strings | Links refused since #130. Moved to #608 |
-| The webview has no second wall | No route serves a file's bytes since #195, so `nosniff` and `sandbox` are dropped. The CSP is listed |
+| The webview has no second wall | No route serves a file's bytes since #195, so `nosniff` and `sandbox` are dropped. The CSP, and `llmModel` and `outputDir` taken as any path from the page, are listed |
 | Environment variables choose the programs | Fixed in #130 |
 | The licence server | Nonce fixed in #146. Moved to #305 |
 | Updates, before customers get them | Moved to #306 |
 
-The order of changes at the end is as planned on 6 October. Changes 3
-and 5 are done, change 1 and 2 mostly, and the rest follow the rows
+The order of changes at the end is as planned on 6 October. Changes 3,
+4 and 5 are done, changes 1 and 2 mostly, and the rest follow the rows
 above.
 
 ## The short answer
