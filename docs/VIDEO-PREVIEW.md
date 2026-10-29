@@ -806,7 +806,10 @@ next one starts. Steps 1 and 2 went into one, #157, at Tim's wish.
    begins after it. A seek after the last key frame of such a file found
    no key before the end and showed nothing, so a jump into the last
    stretch of an MPEG-TS video stood empty. It now goes back to the last
-   key frame too, issue #287. The route that served a file's bytes to the page,
+   key frame too, issue #287. In MPEG-PS a key frame may carry no time of
+   its own, and decoded first after a seek it got one ffmpeg guessed, a
+   frame and a half early, so a seek that reaches such a key frame goes on
+   to the one before it, #268. The route that served a file's bytes to the page,
    `/media/`, is removed with the reader that used it.
    `TestTheVideoPreviewShowsTheFramesOfTheShort` holds the decoder to the
    render's rule on a phone's uneven frames, a screen recorder's left-out
