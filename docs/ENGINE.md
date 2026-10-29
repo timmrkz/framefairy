@@ -761,23 +761,34 @@ frame. Two kinds of episode do not keep to that, and `Probe` finds both.
   piece from 0.2 s showed frame 60 for every frame before it, where frame
   5 holds the moment. A render now finds the key frame shown at or before
   each piece, `keyedPieces`, from the packets of the few seconds before
-  it, and reads from just before that key frame is decoded. How ffmpeg
-  counts the frames' times after such a seek differs between builds, by
-  as much as the sound starts before the picture, 21 ms of AAC in
-  MPEG-TS, so the frames are counted from the key frame, whose time is
-  known, `readFrom`, and the piece keeps its frames by its own rule.
-  MPEG-PS, .mpg and .vob, has no index either, and is read the same way,
-  #268. It also stamps no time on some of its packets, the decoder
-  working theirs out, so `uneven` lets a gap of whole frames go as long
-  as as many packets with no time fill it, where a short of it came out
-  at 30 frames a second for 29.97. A key frame with no time is shown as
-  long after it is decoded as the stream holds frames back, the most any
-  stamped frame is, and where an encoder of MPEG-2 made two key frames in
-  a row, the seek lands on the first, so `keyBefore` reads from that one.
-  A piece read from a key frame had landed a frame early there. MPEG-2
-  with B-frames in MPEG-PS, whose key frames carry no time, is not read
-  right yet, #268, and neither is MPEG-2 with B-frames in MPEG-TS, #600,
-  or a file whose every frame is a key frame, #601.
+  it, and reads from there, `readFrom`. Such a file is read with its own
+  times, `-copyts`, `ownTimes`, and each picture and sound is counted
+  from its seek by the render itself, `onOwnClock`. Counted from the seek
+  by ffmpeg, its times differed between builds, by as much as the sound
+  starts before the picture, 21 ms of AAC in MPEG-TS, and a frame with no
+  time of its own got one ffmpeg guessed from where the decoder started.
+  Read with the file's own times, every frame after a seek has the time
+  it has when the file is played from the start, #602, so where the
+  decoder starts moves no frame. MPEG-PS, .mpg and .vob, has no index
+  either, and is read the same way, #268. It puts several frames in a
+  packet stamped with the time of the first, and ffmpeg gives the others
+  times of its guessing, and the key frames among them too in MPEG-2
+  with B-frames. So the piece is read from the key frame before the last
+  one decoded by its start, `keyBefore`, which is shown before the next
+  is decoded, however long the decoder holds it back, and a seek lands
+  on a packet that carries its own time, `stamped`. A key frame with a
+  guessed time and nothing before it had come a frame and a half early
+  in the video preview, so the episode's decoder goes to the key frame
+  before such a one too. `uneven` takes only the times the file holds,
+  lets a gap of whole frames go as long as as many frames with no time
+  fill it, and in a file with no index reads from the first key frame of
+  each stretch: the frames before it, decoded after frames it never
+  read, came half a frame off or a frame apart, and a short of a DVD, of
+  MPEG-2 with B-frames in MPEG-PS or in MPEG-TS, came out at 30 frames a
+  second for 29.97, #600. A short of a file whose every frame is a key
+  frame showed frames from four frames early, #601. Every one of these is
+  a case of `TestARenderShowsTheFrameThatHoldsEachMoment` and of
+  `TestTheVideoPreviewShowsTheFramesOfTheShort`.
 - **A file that does not say how long it is.** A Matroska recording cut
   off by a crash, the way OBS leaves one, has no duration and no index,
   and the app took it for 0 seconds long, with one frame in the video

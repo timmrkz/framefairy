@@ -908,7 +908,16 @@ func (c *cursor) keyBefore(from float64, ts int64) (int64, error) {
 		if err != nil && !ended {
 			return ts, nil
 		}
-		if !ended && (pts == astiav.NoPtsValue || dts == astiav.NoPtsValue || float64(pts)*tb <= from+1e-6) {
+		// A key frame whose packet has no time of its own, as some in
+		// MPEG-PS have none, is decoded first with a time ffmpeg guessed
+		// with nothing before it to go by, a frame and a half early in
+		// one, issue #268. So the seek goes to the key frame before it,
+		// which is shown before the next one is decoded, and the decoder
+		// has that one's frames to go by. It is taken once a key frame
+		// decoded by from was passed.
+		stamped := pts != astiav.NoPtsValue
+		passed := landed != math.MaxInt64 && float64(landed)*tb <= from+1e-6
+		if !ended && (dts == astiav.NoPtsValue || stamped && float64(pts)*tb <= from+1e-6 || !stamped && passed && dts < landed) {
 			return ts, nil
 		}
 		switch {

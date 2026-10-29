@@ -219,6 +219,9 @@ func pieceInputs(clip Clip, sourcePath string, source SourceInfo) []string {
 		abs = sourcePath
 	}
 	var args []string
+	if source.ownTimes() {
+		args = append(args, "-copyts")
+	}
 	for _, seg := range clip.Segments {
 		// -ss before -i seeks rather than decoding up to the point, and -t
 		// limits how much is read. Both are input options on purpose. The
@@ -250,37 +253,54 @@ type pieceCut struct {
 	// every frame of it, rather than from seek.
 	fromKey bool
 	// seek and read in microseconds, read nought where there is none.
+	// seekUS is where the picture's times count from, which is the seek
+	// but for a read moved back to a key frame, see readFrom.
 	seekUS, readUS int64
+	// soundSeek in microseconds, nought where there is none.
+	soundSeekUS int64
 }
 
 // readFrom is the cut with its picture read from a key frame keyedPieces
 // found before the piece, in a file with no index of its key frames: read
-// from at, just before the key frame is decoded, without dropping a frame
-// at the seek, and with the key frame put at key, both in microseconds
-// after the start of the file.
-//
-// How ffmpeg counts the frames' times after a seek in such a file is not
-// to be relied on: a picture that starts after its sound is counted from
-// the sound by one build and from the picture by another, and a seek
-// close to the start counts from the first frame. The first frame the
-// decoder gives is the key frame, whose time is known, so every frame is
-// counted from it to the cut's own seek, and the cut keeps them by its own
-// rule: from the seek on where a seek would have dropped those before it,
-// and the frame that holds its first moment where the cut reads from a
-// key frame anyway.
-func (c pieceCut) readFrom(at, key int64) pieceCut {
+// from at, in microseconds after the start of the file, without dropping
+// a frame at the seek. The frames keep the file's own times, see
+// onOwnClock, so whichever frame the decoder starts from, each is where
+// it is in the file, and the cut keeps them by its own rule: from its
+// seek on where a seek would have dropped those before it, and the frame
+// that holds its first moment where it reads from a key frame anyway.
+func (c pieceCut) readFrom(at int64) pieceCut {
 	if at > c.seekUS {
 		return c
 	}
-	shift := fmt.Sprintf("settb=1/1000000,setpts=PTS-STARTPTS%s/TB,", signedMicros(key-c.seekUS))
 	if !c.fromKey {
-		shift += "trim=start=0,"
+		c.picture = "trim=start=0," + c.picture
 	}
-	c.picture = shift + c.picture
 	c.fromKey = true
-	c.seek, c.seekUS = micros(at), at
+	c.seek = micros(at)
 	c.read, c.readUS = "", 0
 	return c
+}
+
+// onOwnClock is the cut of a file read with its own times, see ownTimes,
+// with each picture and sound counted from its seek again, the way ffmpeg
+// counts them without -copyts.
+func (s SourceInfo) onOwnClock(c pieceCut) pieceCut {
+	origin := int64(math.Round(s.origin * 1_000_000))
+	c.picture = fmt.Sprintf("settb=1/1000000,setpts=PTS%+d,", -origin-c.seekUS) + c.picture
+	c.sound = fmt.Sprintf("asetpts=PTS%s/TB,", signedMicros(-origin-c.soundSeekUS)) + c.sound
+	return c
+}
+
+// ownTimes tells whether a file is read with its own times, -copyts,
+// rather than counted from each seek by ffmpeg: a file with no index of
+// its key frames, see unindexed. ffmpeg moves the times after a seek in
+// one by the seek alone in one build and by the seek and the start of the
+// file in another, and works out the times of frames with no stamp of
+// their own from where the decoder started. Read with the file's own
+// times, every frame of a seek has the time it has when the file is
+// played from the start, #602.
+func (s SourceInfo) ownTimes() bool {
+	return s.unindexed && s.hasClock
 }
 
 // nearestFrame is the frame of the episode an edge at a moment means,
@@ -469,10 +489,13 @@ func (s SourceInfo) pieceFrames(start, end float64) (int64, int64) {
 // instead, see byTimes.
 func (s SourceInfo) cutOf(seg Segment) pieceCut {
 	cut := s.plainCut(seg)
-	if k, ok := s.keyAtOf(seg); ok {
-		return cut.readFrom(k.at, k.key)
+	if !s.ownTimes() {
+		return cut
 	}
-	return cut
+	if at, ok := s.keyAtOf(seg); ok {
+		cut = cut.readFrom(at)
+	}
+	return s.onOwnClock(cut)
 }
 
 // plainCut is cutOf without the key frame keyedPieces found.
@@ -483,7 +506,7 @@ func (s SourceInfo) plainCut(seg Segment) pieceCut {
 		lead := min(seek, soundLead)
 		return pieceCut{
 			seek: micros(seek), read: micros(read), seekUS: seek, readUS: read,
-			soundSeek: micros(seek - lead), soundRead: micros(read + lead),
+			soundSeek: micros(seek - lead), soundRead: micros(read + lead), soundSeekUS: seek - lead,
 			sound: fmt.Sprintf("atrim=start=%s,asetpts=PTS-STARTPTS", micros(lead)),
 		}
 	}
@@ -500,13 +523,14 @@ func (s SourceInfo) plainCut(seg Segment) pieceCut {
 	read := ((end-first+1)*den*1_000_000 + num - 1) / num
 	lead := s.leadOf(seek)
 	return pieceCut{
-		seek:      micros(seek),
-		read:      micros(read),
-		seekUS:    seek,
-		readUS:    read,
-		soundSeek: s.soundSeekOf(seek - lead),
-		soundRead: micros(read + lead),
-		picture:   fmt.Sprintf("trim=end_frame=%d,", end-first),
+		seek:        micros(seek),
+		read:        micros(read),
+		seekUS:      seek,
+		readUS:      read,
+		soundSeek:   s.soundSeekOf(seek - lead),
+		soundSeekUS: seek - lead,
+		soundRead:   micros(read + lead),
+		picture:     fmt.Sprintf("trim=end_frame=%d,", end-first),
 		sound: fmt.Sprintf("atrim=start=%s:end=%s,asetpts=PTS-STARTPTS",
 			micros(start(first)-seek+lead), micros(start(end)-seek+lead)),
 	}
@@ -553,11 +577,12 @@ func (s SourceInfo) byTimes(from, to, first, n int64) pieceCut {
 		start = grid + (2*first*den*1_000_000+num)/(2*num)
 	}
 	return pieceCut{
-		seek:      micros(seek),
-		seekUS:    seek,
-		soundSeek: s.soundSeekOf(seek - lead),
-		soundRead: micros(to - seek + frame + lead),
-		fromKey:   true,
+		seek:        micros(seek),
+		seekUS:      seek,
+		soundSeek:   s.soundSeekOf(seek - lead),
+		soundSeekUS: seek - lead,
+		soundRead:   micros(to - seek + frame + lead),
+		fromKey:     true,
 		picture: fmt.Sprintf("settb=1/%d,setpts=PTS%+d,fps=fps=%s:start_time=0:round=up,"+
 			"tpad=stop_mode=clone:stop_duration=%s,trim=end_frame=%d,",
 			ticks, (seek-hair)*(ticks/1_000_000)-start, s.FPSString(), micros(to-from), n),

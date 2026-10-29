@@ -36,8 +36,9 @@ import (
 // nothing moved, the way a screen recorder does, and a picture that starts
 // a quarter of a second after the sound, by an edit list in MOV and by its
 // first timestamp in Matroska. The clip's first piece starts before the
-// picture does. And from MPEG-TS, which has no index of its key frames,
-// plan row 2.200.
+// picture does. And from MPEG-TS and MPEG-PS, which have no index of
+// their key frames, with B-frames and with every frame a key frame, plan
+// row 2.200, #268, #600 and #601.
 //
 // A short of an episode whose frames keep to their rate has that rate. One
 // whose frames do not has the episode's average rate rounded to the
@@ -138,6 +139,25 @@ var timesCases = []timesCase{
 	// ffmpeg stamps no time on some of its packets, #268.
 	{name: "mpegps", file: "ps.mpg", rate: "30000/1001",
 		codecs: []string{"-c:v", "mpeg2video", "-q:v", "2", "-g", "15", "-c:a", "mp2"}},
+	// The same with two B-frames between key frames and the frames they
+	// are made from, the usual MPEG-2. The frames the B-frames are made
+	// from have no time of their own, the key frames among them.
+	{name: "mpegps_bframes", file: "bframes.mpg", rate: "30000/1001",
+		codecs: []string{"-c:v", "mpeg2video", "-q:v", "2", "-g", "15", "-bf", "2", "-c:a", "mp2"}},
+	// A DVD: MPEG-2 with B-frames and MP2 in a .vob, whose key frames
+	// have their time, #268.
+	{name: "dvd", file: "dvd.vob", rate: "30000/1001",
+		codecs: []string{"-c:v", "mpeg2video", "-q:v", "2", "-g", "18", "-bf", "2", "-c:a", "mp2", "-f", "dvd"}},
+	// MPEG-2 with B-frames in MPEG-TS, the way a TV recording or an HDV
+	// camcorder holds it, #600.
+	{name: "mpegts_bframes", file: "bframes.ts", rate: "30000/1001",
+		codecs: []string{"-c:v", "mpeg2video", "-q:v", "2", "-g", "15", "-bf", "2", "-c:a", "mp2"}},
+	// Every frame a key frame, in MPEG-TS and in MPEG-PS, so a key
+	// frame is decoded right after another, #601.
+	{name: "mpegts_intra", file: "intra.ts", rate: "30000/1001",
+		codecs: []string{"-c:v", "mpeg2video", "-q:v", "2", "-g", "1", "-c:a", "mp2"}},
+	{name: "mpegps_intra", file: "intra.mpg", rate: "30000/1001",
+		codecs: []string{"-c:v", "mpeg2video", "-q:v", "2", "-g", "1", "-c:a", "mp2"}},
 	// What OBS leaves of a Matroska recording when it crashes: no
 	// duration and no index of its key frames, plan row 2.203.
 	// Its rate is not checked, like mpegts'.

@@ -1068,14 +1068,27 @@ func (e *Engine) unevenIn(ctx context.Context, path string, info SourceInfo, at,
 	first := info.origin + info.VideoStart
 	res := run(ctx, "", e.FFprobe, "-v", "error", "-select_streams", "v:0",
 		"-read_intervals", fixed(info.origin+at, 3)+"%"+fixed(info.origin+at+span, 3),
-		"-show_entries", "packet=pts_time", "-of", "csv=p=0", path)
+		"-show_entries", "packet=pts_time,pos,flags", "-of", "csv=p=0", path)
 	if res.Code != 0 {
 		return false
 	}
 	var begins []float64
 	unstamped := 0
+	keyed := !info.unindexed
 	for _, line := range strings.Fields(res.Stdout) {
-		if t, err := strconv.ParseFloat(strings.Trim(line, ","), 64); err == nil {
+		f := strings.Split(line, ",")
+		if len(f) < 3 {
+			continue
+		}
+		// In a file with no index of its key frames the read lands
+		// between two, and the frames before the next key frame are
+		// missing the ones they are decoded after: in MPEG-2 with
+		// B-frames a frame was missing there, #600. So the frames are
+		// read from there.
+		if keyed = keyed || strings.HasPrefix(f[2], "K"); !keyed {
+			continue
+		}
+		if t, err := strconv.ParseFloat(f[0], 64); err == nil && stamped(f[1], info) {
 			begins = append(begins, t)
 		} else {
 			unstamped++
@@ -1092,9 +1105,9 @@ func (e *Engine) unevenIn(ctx context.Context, path string, info SourceInfo, at,
 			continue
 		}
 		// MPEG-PS stamps no time on some of its frames, and ffmpeg works
-		// theirs out as it decodes them, one frame after the frame before.
-		// So a gap of whole frames is filled by frames with no stamp, as
-		// long as there are as many of them, #268.
+		// theirs out as it decodes them. So a gap of whole frames is
+		// filled by frames with no stamp, as long as there are as many of
+		// them, #268.
 		gap := math.Round((t - begins[i-1]) / frame)
 		if gap < 1 || int(gap)-1 > unstamped {
 			return true
@@ -1102,6 +1115,17 @@ func (e *Engine) unevenIn(ctx context.Context, path string, info SourceInfo, at,
 		unstamped -= int(gap) - 1
 	}
 	return false
+}
+
+// stamped tells whether a packet of a file, by where ffprobe says it lies
+// in the file, came with its own time, rather than one ffmpeg worked out.
+// MPEG-PS puts several frames in a packet of its own, stamped with the
+// time of the first, and ffmpeg splits them and gives the others times of
+// its guessing and no place in the file. Right after a seek its guesses
+// were half a frame off and in the wrong order, #268. Every packet of a
+// file with an index of its key frames has its own time.
+func stamped(pos string, s SourceInfo) bool {
+	return !s.unindexed || pos != "N/A"
 }
 
 // unevenPieces is the episode with the pieces of a clip marked whose own
@@ -1149,125 +1173,107 @@ func unindexed(format string) bool {
 }
 
 // pieceKey is where a piece of a clip is read from in a file with no
-// index of its key frames, see keyBefore.
+// index of its key frames, in microseconds after the start of the file,
+// see keyBefore.
 type pieceKey struct {
 	start, end float64
-	keyRead
+	at         int64
 }
 
-// keyRead is a key frame of a file with no index of its key frames, in
-// microseconds after the start of the file: at, where a read lands just
-// before it is decoded, and key, when it is shown.
-type keyRead struct{ at, key int64 }
-
-// keyedPieces is the episode with the key frame found that each piece of
-// a clip is read from, in a file with no index of its key frames, see
-// unindexed. ffprobe reads the packets of the few seconds before the
-// piece, and further back while there is no key frame among them. A piece
+// keyedPieces is the episode with where each piece of a clip is read
+// from, in a file with no index of its key frames, see unindexed.
+// ffprobe reads the packets of the few seconds before the piece, and
+// further back while there are not two key frames among them. A piece
 // whose key frame is not found is read the way it always was.
 func (e *Engine) keyedPieces(ctx context.Context, path string, s SourceInfo, segs []Segment) SourceInfo {
-	if !s.unindexed || !s.hasClock || s.FPSNum <= 0 || s.FPSDen <= 0 {
+	if !s.ownTimes() || s.FPSNum <= 0 || s.FPSDen <= 0 {
 		return s
 	}
 	s.keyAt = nil
 	for _, seg := range segs {
 		cut := s.plainCut(seg)
-		if k, ok := e.keyBefore(ctx, path, s, cut.seekUS); ok {
-			s.keyAt = append(s.keyAt, pieceKey{seg.Start, seg.End, k})
+		if at, ok := e.keyBefore(ctx, path, s, cut.seekUS); ok {
+			s.keyAt = append(s.keyAt, pieceKey{seg.Start, seg.End, at})
 		}
 	}
 	return s
 }
 
 // keyAtOf is where keyedPieces found a piece is read from.
-func (s SourceInfo) keyAtOf(seg Segment) (keyRead, bool) {
+func (s SourceInfo) keyAtOf(seg Segment) (int64, bool) {
 	for _, k := range s.keyAt {
 		if k.start == seg.Start && k.end == seg.End {
-			return k.keyRead, true
+			return k.at, true
 		}
 	}
-	return keyRead{}, false
+	return 0, false
 }
 
-// keyBefore is the last key frame shown at or before a moment, in
-// microseconds after the start of the file, and where a read lands just
-// before it is decoded: a millisecond before its packet, so the seek,
-// which lands on the last packet stamped at or before where it is sent,
-// lands after the key frame before it. ffprobe reads the packets of the
-// few seconds before the moment, and further back while there is no key
-// frame among them. None is found where the picture has no key frame
-// before the moment at all.
-func (e *Engine) keyBefore(ctx context.Context, path string, s SourceInfo, at int64) (keyRead, bool) {
+// keyBefore is where a read lands, in microseconds after the start of
+// the file, so the decoder starts at a key frame shown at or before a
+// moment: a millisecond before the last stamped packet at or before the
+// key frame before the last one decoded by then. A frame is shown before the next key frame is decoded, so
+// that one is shown by then, however long the decoder holds frames back
+// and whether or not its packet is stamped with a time, which some in
+// MPEG-PS are not, #268. The seek lands on the last packet stamped at or
+// before where it is sent, so on that key frame or before it, and the
+// decoder starts at the first key frame from there. The frames are read
+// with the file's own times, see ownTimes, so where it starts moves no
+// frame. ffprobe reads the packets of the few seconds before the moment,
+// and further back while there are not two key frames among them. Where
+// there is one, the file is read from its start. None is found where the
+// picture has no key frame before the moment at all.
+func (e *Engine) keyBefore(ctx context.Context, path string, s SourceInfo, at int64) (int64, bool) {
 	moment := float64(at) / 1e6
 	for span := 2.0; span <= 128; span *= 2 {
 		from := max(moment-span, 0)
-		// Close to the start the file is read from its first packet, whose
-		// key frame is decoded before the file's first moment.
-		interval := "%" + fixed(s.origin+moment+frameHair, 6)
+		// Close to the start the file is read from its first packet.
+		interval := "%" + fixed(s.origin+moment, 6)
 		if from > 0 {
 			interval = fixed(s.origin+from, 6) + interval
 		}
 		res := run(ctx, "", e.FFprobe, "-v", "error", "-select_streams", "v:0",
 			"-read_intervals", interval,
-			"-show_entries", "packet=pts_time,dts_time,flags", "-of", "csv=p=0", path)
+			"-show_entries", "packet=dts_time,pos,flags", "-of", "csv=p=0", path)
 		if res.Code != 0 {
-			return keyRead{}, false
+			return 0, false
 		}
-		// Every packet read, in the order they are decoded. MPEG-PS
-		// stamps no time on some, a key frame's among them, and the
-		// decoder shows such a frame as long after it is decoded as it
-		// holds frames back: the most any stamped frame is, #268.
-		type packet struct {
-			pts, dts     float64
-			key, stamped bool
-		}
-		var packets []packet
-		held := 0.0
+		// The key frames decoded by the moment, in the order they are,
+		// each with the stamp of the last packet stamped at or before it,
+		// where a seek to it lands. Only a stamp the file holds counts, see
+		// stamped: a key frame with none is decoded by the moment once a
+		// packet after it is stamped by then, and a seek lands on a
+		// stamped packet.
+		var keys, decoded []float64
+		last := math.Inf(-1)
 		for _, line := range strings.Fields(res.Stdout) {
 			f := strings.Split(line, ",")
 			if len(f) < 3 {
 				continue
 			}
-			dts, err := strconv.ParseFloat(f[1], 64)
-			if err != nil {
-				continue
+			dts, err := strconv.ParseFloat(f[0], 64)
+			if err == nil && stamped(f[1], s) {
+				if dts-s.origin > moment {
+					break
+				}
+				last = dts - s.origin
+				decoded = keys
 			}
-			pts, err := strconv.ParseFloat(f[0], 64)
-			p := packet{pts: pts, dts: dts, key: strings.HasPrefix(f[2], "K"), stamped: err == nil}
-			if p.stamped {
-				held = max(held, pts-dts)
+			if strings.HasPrefix(f[2], "K") {
+				keys = append(keys, last)
+				if err == nil && stamped(f[1], s) {
+					decoded = keys
+				}
 			}
-			packets = append(packets, p)
 		}
-		best, found := math.Inf(-1), false
-		var decoded float64
-		for i, p := range packets {
-			// The seek lands on the packet before the key frame, which the
-			// decoder drops. Where that one is a key frame too, as an
-			// encoder of MPEG-2 can make two in a row, the decoder starts
-			// there, so a piece is read from the first of such a run.
-			if !p.key || i > 0 && packets[i-1].key {
-				continue
-			}
-			if !p.stamped {
-				p.pts = p.dts + held
-			}
-			if p.pts-s.origin > moment+frameHair || p.pts <= best {
-				continue
-			}
-			best, decoded, found = p.pts, p.dts, true
-		}
-		if found {
-			return keyRead{
-				at:  max(int64(math.Round((decoded-s.origin-frameHair)*1e6)), 0),
-				key: int64(math.Round((best - s.origin) * 1e6)),
-			}, true
+		if n := len(decoded); n >= 2 && !math.IsInf(decoded[n-2], -1) {
+			return max(int64(math.Round((decoded[n-2]-frameHair)*1e6)), 0), true
 		}
 		if from == 0 {
-			return keyRead{}, false
+			return 0, len(decoded) > 0
 		}
 	}
-	return keyRead{}, false
+	return 0, false
 }
 
 // lastMoment is where the last packet of a file ends, counted from start,
