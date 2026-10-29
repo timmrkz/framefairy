@@ -1643,9 +1643,8 @@
     return { at: firstWordOf(b.i, b.c) ?? b.from, about: "clip" };
   }
 
-  // A double-click on an edge moved by hand, or drawn in with its word,
-  // puts it back where all its words put it, the words taken out at that
-  // edge with it, see SetCaptionTime.
+  // A double-click on an edge moved by hand puts it back where all its
+  // words put it, which shows the words it hid again, see SetCaptionTime.
   function resetCaption(i: number, edge: "start" | "end") {
     const c = captions?.[i];
     if (!c || !oncaptiontime || locked) return;
@@ -2100,8 +2099,8 @@
               aria-label="When caption {b.i + 1} appears"
               aria-valuenow={b.c.start}
               title={b.c.startMoved
-                ? "When this caption appears, moved from where its words put it. Drag to move it, over a word to remove the word, and double-click to put it back with its words."
-                : "When this caption appears. Drag to move it, over a word to remove the word."}
+                ? "When this caption appears, moved from where its words put it. Drag to move it, and double-click to put it back."
+                : "When this caption appears. Drag to move it."}
               data-grip="capedge"
               data-index={b.i}
               data-edge="start"
@@ -2115,8 +2114,8 @@
               aria-label="When caption {b.i + 1} goes"
               aria-valuenow={b.c.end}
               title={b.c.endMoved
-                ? "When this caption goes, moved from where its words put it. Drag to move it, over a word to remove the word, and double-click to put it back with its words."
-                : "When this caption goes. Drag to move it, over a word to remove the word."}
+                ? "When this caption goes, moved from where its words put it. Drag to move it, and double-click to put it back."
+                : "When this caption goes. Drag to move it."}
               data-grip="capedge"
               data-index={b.i}
               data-edge="end"

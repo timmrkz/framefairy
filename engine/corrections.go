@@ -195,50 +195,8 @@ func editClipWords(fsys afero.Fs, planPath, clipID string, t *Transcript,
 		}
 		putCorrections(c, corrections)
 		putRemovedWords(c, removed)
-		for key := range removed {
-			if i, ok := t.heardIndex(key); ok && !hadRemoved[key] {
-				forgetMovedOut(c, t.HeardWords[i], key)
-			}
-		}
 		return nil
 	})
-}
-
-// forgetMovedOut lets go of a caption edge the hand had put out past a
-// heard word, once the word is removed: a start put before the word starts
-// and an end put after it ends. The caption then draws in to the words it
-// shows, as it would had the edge not been moved. An edge the hand put in
-// stays where it was put. An edge put out after the word was removed is
-// kept, since it was put where the hand wanted it with the word gone, and
-// moveCaptions keeps every edge where the hand put it, #598. key is the
-// heard word's, and an edge is kept against it, or after a slash against
-// one of the words a correction made of it, see saidKey.
-func forgetMovedOut(c *object, heard Cue, key string) {
-	times, _ := c.values[keyCaptionTimes].(*object)
-	if times == nil {
-		return
-	}
-	for _, name := range append([]string(nil), times.keys...) {
-		if base, _, _ := strings.Cut(name, "/"); base != key {
-			continue
-		}
-		edges, _ := times.values[name].(*object)
-		if edges == nil {
-			continue
-		}
-		if at, ok := toFloat(edges.values["start"]); ok && at < heard.Start-0.0005 {
-			edges.remove("start")
-		}
-		if at, ok := toFloat(edges.values["end"]); ok && at > heard.End+0.0005 {
-			edges.remove("end")
-		}
-		if len(edges.keys) == 0 {
-			times.remove(name)
-		}
-	}
-	if len(times.keys) == 0 {
-		c.remove(keyCaptionTimes)
-	}
 }
 
 // putRemovedWords keeps the words a clip does not show in its plan entry,
@@ -438,106 +396,6 @@ func dropShown(corrections map[string]string, removed RemovedWords, words []show
 		}
 	}
 	return nil
-}
-
-// trimCaption is what dragging an edge of a caption across its words does
-// to them. Dragged in, the words the edge passes leave the caption,
-// removed from the clip the way RemoveWord removes one, so pulling the
-// left edge of "one two three" past "one" reads "two three", and the right
-// edge past "three" reads "one two". Dragged back out, it brings back no
-// word: a word removed is gone, by a drag or in the caption box, and
-// comes back with undo or typed in again. Tim removed a word in the caption
-// box, dragged the start of the caption after it out to where he heard its
-// next word begin, and the word he had removed came back, #598. While the
-// hand still holds the edge, nothing is saved, so dragging back over a word
-// it passed shows the word again. Only putBack, the edge put back where
-// all its words put it, brings back the removed words it passes. A word is passed when
-// the edge crosses its middle, on the clip's clock, which is where the
-// word is drawn: a word the start of the clip cuts into is passed in the
-// part of it the clip shows. A caption keeps at least one word this way,
-// because delete removes a caption whole.
-//
-// to is where the edge is, on the clip's clock. The caption is the one
-// laid out now, with the edge where it stands. The words are changed in
-// corrections and removed, the clip's, and nothing is written. It says
-// how many words it took out and put back.
-func trimCaption(corrections map[string]string, removed RemovedWords, clip Clip, c LaidCaption, edge string,
-	to float64, putBack bool, t *Transcript) (CaptionEdit, error) {
-	if len(clip.Segments) == 0 {
-		return CaptionEdit{}, nil
-	}
-	t = t.Of(clip)
-	from := c.Start
-	if edge == "end" {
-		from = c.End
-	}
-	low, high := math.Min(from, to), math.Max(from, to)
-	in := (edge == "start") == (to > from)
-	if !in && len(c.Words) > 0 {
-		// An edge whose word was taken out may stand past the middle of
-		// that word already. Out from there, the words past the words
-		// shown are what it crosses.
-		if edge == "end" {
-			low = math.Min(low, c.Words[len(c.Words)-1].End)
-		} else {
-			high = math.Max(high, c.Words[0].Start)
-		}
-	}
-	// The words the caption was laid out from, the removed ones among them,
-	// on the clip's clock and on the episode's.
-	all, was := clipWords(clip, t.clipCaptionWords(clip))
-	length := clipLength(clip)
-	var gone, back []Cue
-	shown := 0
-	for k, w := range was {
-		if w.Start < c.Opens-0.0005 || w.Start > c.Closes+0.0005 {
-			continue
-		}
-		text, isRemoved := removedText(w.Text)
-		if !isRemoved {
-			shown++
-		}
-		mid := shownMiddle(all[k], length)
-		if mid <= low || mid >= high {
-			continue
-		}
-		switch {
-		case in && !isRemoved:
-			gone = append(gone, w)
-		case !in && putBack && isRemoved && text != "":
-			back = append(back, w)
-		}
-	}
-	if len(gone) > 0 && len(gone) == shown {
-		// The word at the other edge stays.
-		if edge == "end" {
-			gone = gone[1:]
-		} else {
-			gone = gone[:len(gone)-1]
-		}
-	}
-	for _, w := range back {
-		if heard, ok := t.HeardAt(w.Start); ok {
-			removed.forget(t, heard)
-		}
-	}
-	var words []shownWord
-	for _, w := range gone {
-		heard, ok := t.HeardAt(w.Start)
-		if !ok {
-			continue
-		}
-		part := -1
-		if len(strings.Fields(heard.Text)) > 1 {
-			part = t.PartOf(heard, w)
-		}
-		words = append(words, shownWord{heard, part})
-	}
-	work := *t
-	if err := dropShown(corrections, removed, words, &work); err != nil {
-		return CaptionEdit{}, err
-	}
-	return CaptionEdit{Removed: len(gone), Back: len(back)}, nil
 }
 
 // plainValue is an object of a plan as it is edited, which keeps its keys

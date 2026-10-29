@@ -106,9 +106,9 @@ export default [
     ],
   },
   {
-    // A drag changes when a caption is shown and brings back no word,
-    // #598: undo or typing the word in again does.
-    name: "a caption's right edge dragged in over its last word removes the word, and back out leaves it out",
+    // A drag sets when a caption is shown: the word is left out while the
+    // edge stands past it, and is still there, #598.
+    name: "a caption's right edge dragged in over its last word leaves the word out, and back out puts it back",
     steps: [
       ["mark", "start"],
       ["edge in", ["end", "Schulhof"]],
@@ -118,7 +118,7 @@ export default [
       ["same", "start"],
       ["edge in", ["end", "Schulhof"]],
       ["edge out", ["end", "Schulhof"]],
-      ["fewer", "start", 1],
+      ["fewer", "start", 0],
       ["others", ["start", "Schulhof"]],
     ],
   },
@@ -148,21 +148,22 @@ export default [
     ],
   },
   {
-    name: "a caption's left edge dragged in over its first word removes the word and leaves the caption before it alone",
+    name: "a caption's left edge dragged in over its first word leaves the word out and the caption before it alone",
     steps: [
       ["mark", "start"],
       ["edge in", ["start", "Schulhof"]],
       ["others", ["start", "Schulhof"]],
       ["gone first", ["start", "Schulhof"]],
       ["edge out", ["start", "Schulhof"]],
-      ["fewer", "start", 1],
+      ["fewer", "start", 0],
       ["others", ["start", "Schulhof"]],
     ],
   },
   {
-    // Tim removed a word and dragged the start of the caption after it
-    // out to where he heard its next word begin, and the word came back,
-    // #598.
+    // A word removed in the caption box is fixed, like a typo, and a drag
+    // only sets when the caption is shown. Tim removed a word, dragged the
+    // start of the caption after it out to where he heard its next word
+    // begin, and the word came back, #598.
     name: "a caption's first word removed stays removed when its left edge is dragged out over it",
     steps: [
       ["mark", "start"],

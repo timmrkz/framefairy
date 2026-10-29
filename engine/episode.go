@@ -993,7 +993,7 @@ func captionsView(plan Plan, clip Clip, t *Transcript, look *Look) *CaptionsView
 		item := CaptionView{Start: c.Start, End: c.End, Lines: []CaptionLineView{}}
 		if len(c.Words) > 0 {
 			item.First, item.Last = c.Opens, c.Closes
-			item.StartMoved, item.EndMoved = c.startMoved || c.trimStart, c.endMoved || c.trimEnd
+			item.StartMoved, item.EndMoved = c.startMoved, c.endMoved
 		}
 		for _, line := range c.Lines {
 			row := CaptionLineView{Words: []WordView{}}

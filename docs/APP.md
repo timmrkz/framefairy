@@ -2699,35 +2699,37 @@ moved by hand, on the clip timeline.
   caption is not up yet. Tim saw nothing to snap to there. A click on the
   start edge puts the playhead there too. The edges of a caption used to move a frame
   at a time with shift or without, found by Tim.
-- **An edge dragged over a word removes it.** Dragged in, an edge takes
-  out of its caption every word whose middle it passes, the way delete
-  removes a word, so pulling the left edge of "one two three" past "one"
+- **An edge sets when a caption is shown, and nothing else.** Dragged
+  in, an edge leaves out of its caption every word whose middle it
+  stands past, so pulling the left edge of "one two three" past "one"
   reads "two three", and the right edge past "three" reads "one two".
-  Dragged back out, it brings back no word, however the word was
-  removed: a drag changes when a caption is shown, and undo or the word
-  typed in again brings a word back. While the hand still holds the edge
-  nothing is saved, so dragging back over a word it passed shows the word
-  again. It used to bring back every removed word it passed, so Tim
-  removed a word, dragged the start of the caption after it out to where
-  he heard its next word begin, and the word came back, #598. The middle
-  is of the part of the word the clip shows, so a word the start of the
-  clip cuts into is passed in that part. The last word stays, because
-  delete removes a caption whole. Which words an edge passes and where it
-  stops is the engine's to say, `ShapeCaptionTime`: the clip timeline asks
-  it while the hand moves and draws its answer, and the caption box in the
-  video preview shows the words it leaves. When the edge is let go it is
-  saved where it was drawn, `SetCaptionTime`, with the words, and Cmd+Z
-  takes back the words and the edge in one step. The interface once kept a
-  copy of the rule, which drifted from the engine's: an edge was drawn in
-  one place and saved in another, and a word the start of the clip cut
-  into left the caption box during the drag and came back when let go.
+  The word is still said there and still in the clip, so dragged back
+  out the edge shows it again, see `moveCaptions` in `engine/lines.go`.
+  The middle is of the part of the word the clip shows, so a word the
+  start of the clip cuts into is passed in that part. The word nearest
+  the time left stays, because delete removes a caption whole. Which
+  words an edge leaves out and where it stops is the engine's to say,
+  `ShapeCaptionTime`: the clip timeline asks it while the hand moves and
+  draws its answer, and the caption box in the video preview shows the
+  words it leaves. When the edge is let go it is saved where it was
+  drawn, `SetCaptionTime`, and Cmd+Z takes the edge back. The interface
+  once kept a copy of the rule, which drifted from the engine's: an edge
+  was drawn in one place and saved in another, and a word the start of
+  the clip cut into left the caption box during the drag and came back
+  when let go.
+- **No edge brings back a word removed in the caption box.** Removing a
+  word fixes what the caption reads, like a typo, and only undo or the
+  word typed in again brings it back. A drag used to remove the words it
+  passed, and dragging back out brought back every removed word it
+  passed, however it had been removed: Tim removed a word, dragged the
+  start of the caption after it out to where he heard its next word
+  begin, and the word came back, #598.
 - **Removing a word at an edge draws the caption in, as dragging over it
   does.** A caption whose first or last word is removed in the caption box
   draws in to the words it shows: it appears with its first word shown and
-  goes a moment after its last. An edge moved in by hand stays where it
-  was put, and one moved out comes in with the word and is let go of, so
-  the word typed back is where its words put it. An edge dragged out over
-  a removed word afterwards stays where it is put. Where a pause comes
+  goes a moment after its last. An edge moved by hand stays where it was
+  put, in or out, since removing a word changes what the caption reads
+  and not when it is shown. Where a pause comes
   after the word, the room it took stays empty. Where the speech runs on
   into the next caption, the time of the word is no pause, so the caption
   before stays up until the next appears, whichever of the two the word
@@ -2736,13 +2738,13 @@ moved by hand, on the clip timeline.
   with the sound running on under the gap, #597. Before #189, the
   caption kept the time the word had, and the two ways of taking a word
   off its edge ended differently, which Tim found.
-- **A double-click puts an edge back where all its words put it**, the
-  words taken out at that edge coming back with it, whether a drag or the
-  caption box took them. It can be done to any edge moved by hand or
-  drawn in with its word, so it undoes any number of drags. It used to
-  leave the words out, which put a dragged edge only where the words left
-  put it, about where it already stood: Tim dragged a right edge in and
-  double-clicked twice, and the second time nothing moved.
+- **A double-click puts an edge moved by hand back where all its words
+  put it**, which shows the words it left out again. A word removed in
+  the caption box stays removed. It undoes any number of drags. It used to
+  leave the words a drag had taken out still out, which put a dragged
+  edge only where the words left put it, about where it already stood:
+  Tim dragged a right edge in and double-clicked twice, and the second
+  time nothing moved.
 - **The captions in the video preview follow the drag**, so what is
   seen while dragging is what is saved.
 - **A block is its caption in the short's colours**: the box colour, as

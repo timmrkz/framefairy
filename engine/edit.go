@@ -1089,10 +1089,11 @@ func SetCaptionY(fsys afero.Fs, planPath, clipID string, y float64) error {
 	})
 }
 
-// CaptionEdit is what moving an edge of a caption did to its words: how
-// many it took out and how many it put back.
+// CaptionEdit is what moving an edge of a caption did to the words it
+// shows: how many it took out of the caption and how many it put back.
+// The words stay in the clip, see moveCaptions.
 type CaptionEdit struct {
-	Removed, Back int
+	Out, Back int
 }
 
 // SetCaptionTime moves the caption that begins or ends on a word of a clip,
@@ -1109,7 +1110,7 @@ func SetCaptionTime(fsys afero.Fs, planPath, clipID string, word float64, edge s
 	toWords bool, t *Transcript, look *Look) (CaptionEdit, error) {
 	moved, err := moveCaptionEdge(fsys, planPath, clipID, word, edge, at, toWords, t, look)
 	if err != nil {
-		return moved.done, err
+		return CaptionEdit{}, err
 	}
 	key := moved.key
 	err = editPlan(fsys, planPath, func(_ *object, clips []*object) error {
@@ -1117,8 +1118,6 @@ func SetCaptionTime(fsys afero.Fs, planPath, clipID string, word float64, edge s
 		if err != nil {
 			return err
 		}
-		putCorrections(c, moved.clip.Corrections)
-		putRemovedWords(c, moved.clip.RemovedWords)
 		times, _ := c.values[keyCaptionTimes].(*object)
 		if times == nil {
 			times = newObject()
@@ -1163,7 +1162,39 @@ func SetCaptionTime(fsys afero.Fs, planPath, clipID string, word float64, edge s
 		}
 		return nil
 	})
-	return moved.done, err
+	if err != nil {
+		return CaptionEdit{}, err
+	}
+	return captionEdit(moved.was, look.drawing(moved.plan, moved.clip, t).Laid), nil
+}
+
+// captionEdit is what became of the words caption was showing, among the
+// captions laid now.
+func captionEdit(was LaidCaption, laid []LaidCaption) CaptionEdit {
+	i := slices.IndexFunc(laid, func(c LaidCaption) bool { return c.Opens == was.Opens })
+	if i < 0 {
+		return CaptionEdit{Out: len(was.Words)}
+	}
+	shown := func(c LaidCaption) map[float64]bool {
+		at := make(map[float64]bool, len(c.Words))
+		for _, w := range c.Words {
+			at[w.Start] = true
+		}
+		return at
+	}
+	before, now := shown(was), shown(laid[i])
+	var done CaptionEdit
+	for at := range before {
+		if !now[at] {
+			done.Out++
+		}
+	}
+	for at := range now {
+		if !before[at] {
+			done.Back++
+		}
+	}
+	return done
 }
 
 // captionEdge is what moving an edge of a caption makes of a clip.
@@ -1179,7 +1210,8 @@ type captionEdge struct {
 	// anew, each by the key it is kept by now.
 	key     string
 	rekeyed map[string]string
-	done    CaptionEdit
+	// was is the caption as it was laid out before the edge moved.
+	was LaidCaption
 }
 
 // startFloor is the earliest the start of a caption may be moved to, on
@@ -1202,19 +1234,22 @@ func startFloor(before, c LaidCaption) float64 {
 
 // moveCaptionEdge works out what moving the edge of a caption does, the
 // one thing both ShapeCaptionTime and SetCaptionTime ask, so what is drawn
-// while the hand moves is what is saved when it lets go. The words of the
-// caption the edge crosses go from the clip, or come back, see
-// trimCaption, in the clip it hands back.
+// while the hand moves is what is saved when it lets go. It moves when the
+// caption is shown and nothing else: the words the edge passes are not
+// shown while it stands past them, see moveCaptions, and stay in the clip,
+// so moving the edge back shows them again. A word removed in the caption
+// box is a word fixed, like a typo, and no edge brings it back. Tim
+// removed a word, dragged the start of the caption after it out to where
+// he heard its next word begin, and the word came back, #598. A drag used
+// to remove the words it passed, and a drag back put back every removed
+// word it passed, however it had been removed.
 //
-// An edge put back, at not a number, is where all its words put it: the
-// words taken out at that edge come back, by a drag or in the caption box
-// alike, so a double-click undoes any drag of it. It used to keep them
-// out, and an edge dragged in and put back stayed about where it was.
+// An edge put back, at not a number, is where all its words put it, and
+// shows every word at that edge the caption box did not remove.
 //
 // The edge stays where it is put, never past the caption beside it. Kept
 // against the caption beside it as it is now, the edge never moves another
-// caption, see moveCaptions. A word taken out by moving the edge leaves it
-// where the hand put it, the way the drag showed it.
+// caption, see moveCaptions.
 //
 // It is kept against the word rather than the caption, because captions
 // break in other places when the face or the size changes, and a word stays
@@ -1251,10 +1286,7 @@ func moveCaptionEdge(fsys afero.Fs, planPath, clipID string, word float64, edge 
 	if i < 0 {
 		return captionEdge{}, renderErr("the clip has no caption that %ss on the word at %s", edge, HMS(word))
 	}
-	out := captionEdge{plan: plan, clip: clip, at: math.NaN()}
-	// Kept the way keys are kept now, see editClipWords.
-	corrections := t.rekeyCorrections(clip.Corrections)
-	removed := t.rekeyRemoved(clip.RemovedWords)
+	out := captionEdge{plan: plan, clip: clip, at: math.NaN(), was: laid[i]}
 	if !reset {
 		to := ClipTime(framed, at)
 		if toWords {
@@ -1263,33 +1295,14 @@ func moveCaptionEdge(fsys afero.Fs, planPath, clipID string, word float64, edge 
 		}
 		if edge == "start" && i > 0 {
 			if floor := startFloor(laid[i-1], laid[i]); to < floor {
-				to, at = floor, EpisodeTime(framed, floor)
+				at = EpisodeTime(framed, floor)
 			}
 		}
 		if edge == "end" && i+1 < len(laid) && to > laid[i+1].Start {
-			to, at = laid[i+1].Start, EpisodeTime(framed, laid[i+1].Start)
+			at = EpisodeTime(framed, laid[i+1].Start)
 		}
-		out.done, err = trimCaption(corrections, removed, framed, laid[i], edge, to, false, t)
 		out.at = roundTo(at, 3)
-	} else {
-		// Put back where all its words put it, the ones taken out at that
-		// edge among them: an edge dragged out past every word there.
-		past := clipLength(framed) + 1
-		if edge == "start" {
-			past = -1
-		}
-		out.done, err = trimCaption(corrections, removed, framed, laid[i], edge, past, true, t)
 	}
-	if err != nil {
-		return captionEdge{}, err
-	}
-	if len(removed) == 0 {
-		removed = nil
-	}
-	if len(corrections) == 0 {
-		corrections = nil
-	}
-	out.clip.RemovedWords, out.clip.Corrections = removed, corrections
 	times := maps.Clone(clip.CaptionTimes)
 	if times == nil {
 		times = map[string]CaptionTime{}
