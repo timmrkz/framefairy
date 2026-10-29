@@ -195,8 +195,9 @@
     if (asking()) return;
     const c = cleared;
     if (!c || c.undone !== (how === "redo")) {
-      if (document.activeElement === field) step(how);
-      else if (typing()) document.execCommand(how);
+      // The field's own, unless another field has the focus.
+      if (document.activeElement === field || !typing()) step(how);
+      else document.execCommand(how);
       return;
     }
     c.undone = how === "undo";
@@ -363,20 +364,27 @@
 
   // show writes the dictation's text into the field where it changed, and
   // puts the selection where it is now, which was the selection before.
-  // A field scrolled to its end stays at its end as the words come at the
-  // end of the report, the way a terminal follows its output, while the
-  // cursor is at the end of what was said or the focus is somewhere else.
-  // Scrolled away to read, it stays where it was put, as Tim asked, and
-  // so it does while the person is typing somewhere else in it.
+  // The field follows the words at the end of the report the way a
+  // terminal follows its output: while its last line is in view, it
+  // scrolls the least that keeps it in view as the words come, and so it
+  // does while the cursor is at the end of what was said or the focus is
+  // somewhere else. That is where the browser leaves the field after a
+  // key at the end of a text field, so the words and the keys never take
+  // the field to two places. Scrolled away to read, it stays where it was
+  // put, as Tim asked, and so it does while the person is typing
+  // somewhere else in it.
   function show(d: Dictating, sel: Span, before: Span, end: number) {
-    const bottom = field.scrollTop + field.clientHeight >= field.scrollHeight - 1;
-    const follow = bottom && (document.activeElement !== field || (before[0] === end && before[1] === end));
+    const style = getComputedStyle(field);
+    const foot = parseFloat(style.paddingBottom);
+    const last = () => field.scrollHeight - foot - field.clientHeight;
+    const seen = last() - field.scrollTop <= parseFloat(style.lineHeight) / 2;
+    const follow = seen && (document.activeElement !== field || (before[0] === end && before[1] === end));
     if (field.value !== d.text) {
       const [a, b, put] = changed(field.value, d.text);
       field.setRangeText(put, a, b);
     }
     if (field.selectionStart !== sel[0] || field.selectionEnd !== sel[1]) field.setSelectionRange(sel[0], sel[1], field.selectionDirection);
-    if (follow && d.end === d.text.length) field.scrollTop = field.scrollHeight;
+    if (follow && d.end === d.text.length && last() > field.scrollTop) field.scrollTop = last();
   }
 
   // tell passes on to the Go side what the person did to the words still

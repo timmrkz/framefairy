@@ -375,16 +375,14 @@ export const steps = {
     if (bad.length) walk.wrong = bad.join(", ");
     else if (!(await page.locator("li.tile figure img").count())) walk.wrong = "there is no picture to fit";
   },
-  // ["report at end"]  the report's field is scrolled to its end
+  // ["report at end"]  the report's field is scrolled to its end: its last
+  //                    line is in view, the padding under it may not be,
+  //                    the way a browser leaves a text field after a key
   async "report at end"(walk) {
     const { page } = walk;
-    // The field shows the end of what is in it, down to its padding.
-    const m = await page.evaluate(() => {
-      const f = document.querySelector(".telling");
-      return [f.scrollTop, f.scrollHeight - f.clientHeight];
-    });
-    if (m[1] <= 0) walk.wrong = "the report is not long enough to scroll";
-    else if (Math.abs(m[0] - m[1]) > 1) walk.wrong = `the report is scrolled to ${m[0]} px, not to its end at ${m[1]} px`;
+    const scrolls = await page.locator(".telling").evaluate((f) => f.scrollHeight > f.clientHeight);
+    if (!scrolls) walk.wrong = "the report is not long enough to scroll";
+    else walk.wrong = await page.locator(".telling").evaluate(atEnd);
   },
   // ["toast", text]    a toast over the window says text, and with "" no
   //                    toast is there. With a list of texts, the toasts
@@ -883,10 +881,10 @@ export const steps = {
     await control(url, "/microphone?until=hearing");
     await pageUntil(page, (was) => document.querySelector(".telling").value !== was, was);
     await settle(page);
-    const m = await page.locator(".telling").evaluate((f) => ({ top: f.scrollTop, end: f.scrollHeight - f.clientHeight }));
+    const top = await page.locator(".telling").evaluate((f) => f.scrollTop);
     if (what === "report stays") {
-      if (m.top !== kept.scrolledTo) walk.wrong = `the field moved to ${m.top} px while more was said, from ${kept.scrolledTo} px where it was scrolled to`;
-    } else if (Math.abs(m.top - m.end) > 1) walk.wrong = `the field is at ${m.top} px, not at its end, ${m.end} px, where the words being said are`;
+      if (top !== kept.scrolledTo) walk.wrong = `the field moved to ${top} px while more was said, from ${kept.scrolledTo} px where it was scrolled to`;
+    } else walk.wrong = await page.locator(".telling").evaluate(atEnd);
   },
   // ["caret at words"] the cursor is right after the words being said,
   //                    at the end of the report, which they end
@@ -1359,11 +1357,24 @@ function cursorAtWords(f) {
   return "";
 }
 
+// atEnd runs in the page on the report's field f, and says where it is
+// scrolled to when its last line is not in view, or nothing when it is.
+// The padding under the last line may be scrolled away, and the browser
+// shows a line by its cursor, which is a pixel or two shorter.
+function atEnd(f) {
+  const cs = getComputedStyle(f);
+  const end = f.scrollHeight - f.clientHeight;
+  const last = end - parseFloat(cs.paddingBottom);
+  if (f.scrollTop < last - parseFloat(cs.lineHeight) / 2) return `the report is scrolled to ${f.scrollTop} px, not to its last line at ${last} px`;
+  if (f.scrollTop > end) return `the report is scrolled to ${f.scrollTop} px, past its end at ${end} px`;
+  return "";
+}
+
 // cursorInView runs in the page on the report's field f, and says where
 // the cursor is when it is not in view, or nothing when it is. A
 // textarea does not say where its cursor is, so a copy of the field's
-// text up to it is laid out the way the field lays it out, and the
-// cursor's line is where the letter after it starts.
+// text is laid out the way the field lays it out, with a mark where the
+// cursor is.
 function cursorInView(f) {
   if (document.activeElement !== f) return "the cursor is not in the field";
   if (f.selectionStart !== f.selectionEnd) return "the selection is not a cursor";
@@ -1371,15 +1382,15 @@ function cursorInView(f) {
   const copy = document.createElement("div");
   for (const p of ["fontFamily", "fontSize", "fontWeight", "fontStyle", "letterSpacing", "lineHeight", "whiteSpace", "overflowWrap", "wordBreak", "tabSize", "paddingTop", "paddingLeft", "paddingRight"]) copy.style[p] = cs[p];
   Object.assign(copy.style, { position: "absolute", visibility: "hidden", top: "0", left: "0", boxSizing: "border-box", border: "0", width: `${f.clientWidth}px` });
-  copy.textContent = f.value.slice(0, f.selectionEnd);
-  const after = document.createElement("span");
-  after.textContent = f.value.slice(f.selectionEnd) || ".";
-  copy.append(after);
+  // The cursor is as tall as the letters, not the line, so it is a
+  // letter of no width that is measured.
+  const cursor = document.createElement("span");
+  cursor.textContent = "\u200b";
+  copy.append(f.value.slice(0, f.selectionEnd), cursor, f.value.slice(f.selectionEnd));
   document.body.append(copy);
-  const top = after.offsetTop;
+  const [top, bottom] = [cursor.offsetTop, cursor.offsetTop + cursor.offsetHeight];
   copy.remove();
-  const line = parseFloat(cs.lineHeight);
   if (top < f.scrollTop - 1) return `the cursor is ${Math.round(f.scrollTop - top)} px above the top of the field, scrolled to ${f.scrollTop} px`;
-  if (top + line > f.scrollTop + f.clientHeight + 1) return `the cursor is ${Math.round(top + line - f.scrollTop - f.clientHeight)} px below the foot of the field, scrolled to ${f.scrollTop} px`;
+  if (bottom > f.scrollTop + f.clientHeight + 1) return `the cursor is ${Math.round(bottom - f.scrollTop - f.clientHeight)} px below the foot of the field, scrolled to ${f.scrollTop} px`;
   return "";
 }
