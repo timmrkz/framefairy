@@ -3,7 +3,8 @@
 # On a pull request that changes the Go modules or the interface's
 # packages, and on main every Monday: govulncheck over the Go code, which
 # reports only what the code really calls, and npm audit over the
-# interface's packages. Either failing is a red check.
+# interface's packages, through audit-ci, which lets through only the
+# warnings frontend/audit-ci.jsonc names. Either failing is a red check.
 #
 # Every Monday also scripts/upstream.sh, which compares ffmpeg, the
 # libraries it is built with, llama.cpp and the speech library with their
@@ -23,6 +24,7 @@ on:
       - go.sum
       - frontend/package.json
       - frontend/package-lock.json
+      - frontend/audit-ci.jsonc
       - .github/workflows/security.yml
 
 permissions:
@@ -78,10 +80,16 @@ jobs:
         with:
           node-version: 22
       # Everything, not only what ships: the build tools make the bundle
-      # that does.
+      # that does. Every warning fails, low ones too, but for the ones
+      # audit-ci.jsonc lets through by number and path, each with why,
+      # issue #579. audit-ci is IBM's, one of the interface's packages, so
+      # package-lock.json locks it with everything it brings. Installed
+      # without running any package's scripts, since only audit-ci runs.
       - name: npm audit
         working-directory: frontend
-        run: npm audit --audit-level=low
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx --no-install audit-ci --config audit-ci.jsonc
 
   upstream:
     if: github.event_name != 'pull_request'

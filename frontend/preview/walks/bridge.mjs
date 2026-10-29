@@ -262,6 +262,10 @@ function hearRequests(page) {
       try {
         const { name, args } = JSON.parse(r.postData() ?? "");
         what = `/call ${name} ${JSON.stringify(args).slice(0, 200)}`;
+        // What the app logged, every line whole: cut to 200 characters, a
+        // walk that hung after a play showed the play asked for and
+        // nothing of what came of it.
+        if (name === "main.FrameFairy.Said") what = [`/call ${name}`, ...(args[0] ?? []).map((l) => `    ${l.at} ${l.act ?? ""} ${l.text}`)].join("\n");
       } catch {
         // Said as its path alone.
       }
@@ -318,8 +322,13 @@ if (traces) {
 // scale its device pixels to a CSS pixel, 2 for a Mac's screen, and again
 // opens another page on the episode as it is now, beside the first, in
 // its browser. browser is a browser to open it in rather than one of its
-// own, see newBrowser.
-export async function open(url, { viewport = { width: 1500, height: 1000 }, scale = 1, again = null, browser: given = null, still = false } = {}) {
+// own, see newBrowser. clock is the clock a play runs on, see
+// preview/clock.ts: "frames", the walk's clock, stands on each frame
+// until it is up and holds the sound card meanwhile, so every frame of a
+// play is shown and read on any machine, issues #534 and #588. "sound"
+// is the sound card's, as the app runs without a walk, for what a walk
+// checks on the sound's own time, see soundCard in common/steps.mjs.
+export async function open(url, { viewport = { width: 1500, height: 1000 }, scale = 1, again = null, browser: given = null, still = false, clock = "frames" } = {}) {
   // The episode the way the bridge found it, whatever the walk before did.
   if (!again) {
     const reset = await fetch(new URL("/reset", url), { method: "POST" });
@@ -333,9 +342,10 @@ export async function open(url, { viewport = { width: 1500, height: 1000 }, scal
   // the walk does not wait for it, see still in sequences.mjs.
   const page = await browser.newPage({ viewport, deviceScaleFactor: scale, reducedMotion: still ? "reduce" : "no-preference" });
   noDeadlines(page);
-  await page.addInitScript(() => {
+  await page.addInitScript((clock) => {
     window.__flatScreen = true;
-  });
+    window.__playClock = clock;
+  }, clock);
   await slowDown(page);
   const errors = [];
   page.on("pageerror", (e) => errors.push(String(e)));
@@ -801,23 +811,13 @@ export async function playUntil(page, { past = Infinity, most = Infinity, from =
   );
 }
 
-// Which clock a play runs on, see FrameQueue.playClock. "sound" is the
-// sound card's, as the app runs without a walk. "frames" stands on each
-// frame until it is up, so every frame of a play is shown and read on
-// any machine, issue #534.
-export async function playOn(page, clock) {
-  await page.evaluate((clock) => {
-    const q = window.__frameQueue;
-    window.__soundClock ??= q.playClock;
-    q.playClock = { sound: window.__soundClock, frames: (heard, unshown) => Math.min(heard, unshown) }[clock];
-  }, clock);
-}
-
 // Holds the sound card, or lets it go. Held, a play stands where it is,
 // picture and sound together, while a walk's hand takes as long as the
-// machine needs, and let go it plays on from there, issue #583.
+// machine needs, and let go it plays on from there, issue #583, once the
+// walk's clock holds it no longer either, see holdSound in
+// preview/clock.ts.
 export async function holdSound(page, held) {
-  await page.evaluate((held) => (held ? window.__frameQueue.audio.suspend() : window.__frameQueue.audio.resume()), held);
+  await page.evaluate((held) => window.__holdSound(held), held);
 }
 
 // Plays from the playhead until it has gone on by seconds of the episode,

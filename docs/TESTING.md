@@ -758,11 +758,30 @@ wait the walk hands the frame queue, `dressWait` in
 used up the 600 ms it waits, issue #468. And a glide read while it plays
 goes on until the video preview has shown ten frames or come to the next
 keyframe, not for two seconds, in which a busy machine showed two, issue
-#464, on a clock the walk hands the frame queue, `playClock` in
-`lib/frames/queue.ts`, which moves on to the next frame only once the
-one before is up. So every frame of the play is shown on any machine,
-and the walk holds the play to every one, where by the sound card's
-clock a busy machine still showed two of nine, issue #534. The fold of a removed row is held as Svelte makes it and stepped
+#464.
+
+Every walk plays on the walk's clock, `preview/clock.ts`. The page the
+walks run on hands it to every frame queue it makes, see `FrameQueue.clock`
+in `lib/frames/queue.ts`, whose own clock is the sound card's. The app
+never builds `preview/`, so it holds no walk's clock and no switch for
+one. It moves on to the next frame only once
+the one before is up, and holds the sound card while a frame is still
+being decoded, so every frame of a play is shown on any machine and the
+sound stays with the picture. By the sound card's clock, the app's, a busy machine showed two
+frames of a glide's nine, issue #534, and a play of the captions showed
+fewer frames, each longer, issue #338. Each of those walks had a clock
+of its own, until a new walk that played was the next to fail, issue
+#588. A sequence that checks what a play does on the sound's own time
+plays on the sound card's clock instead, the way the app does: how much
+sound the sound card is handed, the loop switched off as the sound comes
+to the clip's end, and a playhead that never stands still while a hand
+drags. It asks for it by one of those steps, `soundCard` in
+`common/steps.mjs`, the way a sequence asks for motion, see Where they
+run below, and a new step of that kind goes in there. `smooth.mjs` asks
+`open` for it by name, `clock: "sound"`, which the page reads from
+`window.__playClock` before the app starts. A walk can also hold the sound
+card a moment by hand, `holdSound`, as the end dragged back past the
+playing playhead does while the hand drags, issue #583. The fold of a removed row is held as Svelte makes it and stepped
 through by hand, in twenty steps, and at each the card under the row
 has to have risen by as much of the row and the space after it as the
 row has folded. That the row leaves the list only once its fold has
@@ -860,7 +879,8 @@ it hang, #508.
    the walk with when it began and ended, what the page logged and
    threw. Every request to the Go side is kept beside it, in a file of
    the same name ending in `.requests.txt`, see `hearRequests` in
-   `walks/bridge.mjs`. Playwright records the network into a trace only
+   `walks/bridge.mjs`, with every line the app logged written whole.
+   Playwright records the network into a trace only
    along with the snapshots below, so Node hears the requests instead,
    and nothing of it runs in the page. The
    events the Go side sends come on one request that stays open, so
@@ -1000,7 +1020,7 @@ among it, so the settle waits for none of it. On main those two were
 those steps and every random walk keep the motion, so the app is still
 walked the way it moves on Tim's Mac. A new step that looks at motion
 goes into `moving`, or it passes without ever seeing what it checks, and
-`--names` fails on a name in `moving` that is no step. `make walks
+`--names` fails on a name in `moving` or `soundCard` that is no step. `make walks
 STILL=none` walks every sequence with the motion, and
 `walks-nightly.yml` does so on main every night, so a step that looks at
 motion and was left out of `moving` fails there.

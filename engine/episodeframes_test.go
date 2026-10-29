@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -44,8 +45,7 @@ func TestTheEpisodesDecoderHandsOverTheFramesFFmpegDoes(t *testing.T) {
 		"-i", "testsrc2=s=320x180:r=25:d=10", "-c:v", "mpeg4", "-q:v", "3", "-g", "50", path).CombinedOutput(); err != nil {
 		ffmpegtest.Unusable(t, "ffmpeg could not make an episode: %s %s", err, out)
 	}
-	e := NewEngine(NewLog(nil, false, false), disk)
-	e.FFmpeg, e.FFprobe = "ffmpeg", "ffprobe"
+	e := ffmpegOnTheProcessor()
 	dec := NewEpisodeFrames(program, path)
 	defer dec.Close()
 
@@ -120,8 +120,7 @@ func TestTheEpisodesDecoderDecodesAJumpNoFurtherThanItMust(t *testing.T) {
 		"-i", "testsrc2=s=320x180:r=25:d=8", "-c:v", "mpeg4", "-q:v", "3", "-g", "50", "-bf", "2", path).CombinedOutput(); err != nil {
 		ffmpegtest.Unusable(t, "ffmpeg could not make an episode: %s %s", err, out)
 	}
-	e := NewEngine(NewLog(nil, false, false), disk)
-	e.FFmpeg, e.FFprobe = "ffmpeg", "ffprobe"
+	e := ffmpegOnTheProcessor()
 	dec := NewEpisodeFrames(program, path)
 	defer dec.Close()
 	var mu sync.Mutex
@@ -261,8 +260,7 @@ func TestTheEpisodesDecoderMakesNoFrameBeforeTheSkip(t *testing.T) {
 		"-i", "testsrc2=s=320x180:r=25:d=4", "-c:v", "mpeg4", "-q:v", "3", "-g", "50", "-bf", "2", path).CombinedOutput(); err != nil {
 		ffmpegtest.Unusable(t, "ffmpeg could not make an episode: %s %s", err, out)
 	}
-	e := NewEngine(NewLog(nil, false, false), disk)
-	e.FFmpeg, e.FFprobe = "ffmpeg", "ffprobe"
+	e := ffmpegOnTheProcessor()
 	dec := NewEpisodeFrames(program, path)
 	defer dec.Close()
 	grid := gridOf(t, path)
@@ -356,18 +354,48 @@ func TestTheEpisodesDecoderHandsOverTheKeyFrameFirst(t *testing.T) {
 			if out, err := encodeTestFile(t, "ffmpeg", args, enc.codecs, path); err != nil {
 				ffmpegtest.Unusable(t, "ffmpeg could not make an episode: %s %s", err, out)
 			}
-			e := NewEngine(NewLog(nil, false, false), disk)
-			e.FFmpeg, e.FFprobe = "ffmpeg", "ffprobe"
+			e := ffmpegOnTheProcessor()
+			// How far apart on average the frames compared may be. On a
+			// Mac the episode's decoder decodes HEVC on the chip, and the
+			// ffmpeg it is compared with on the processor, issue #581.
+			// The chip's scaler and the processor's round differently, see
+			// TestTheEpisodesDecoderPlaysTheFilesPeopleBring.
+			apart := 2.0
+			if runtime.GOOS == "darwin" && strings.HasPrefix(enc.name, "HEVC") {
+				apart = 6
+			}
 			grid := gridOf(t, path)
-			ffmpegs := func(at float64) []byte {
-				var want []byte
-				if err := e.PreviewFrames(context.Background(), path, at, 160, 90, func(_ float64, data []byte) error {
-					want = data
-					return errStop
-				}); err != nil && !errors.Is(err, errStop) {
-					t.Fatal(err)
+			// Every frame of the episode as ffmpeg decodes it from the
+			// start, by its place on the grid. Read on from the start,
+			// not sought, since a seek onto a key frame with B-frames
+			// before it names the frames after it a frame late.
+			ffmpegs := make([][]byte, grid.Count)
+			if err := e.PreviewFrames(context.Background(), path, 0, 160, 90, func(at float64, data []byte) error {
+				ffmpegs[grid.Holding(at)] = data
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			// A frame of the decoder said to be at the moment at is
+			// within apart of ffmpeg's frame there, and nearer to it than
+			// to ffmpeg's frames before and after. Two frames side by side
+			// are 4 to 10 apart on average, so the chip's rounding alone
+			// would let a frame off by one pass, the review of #589.
+			same := func(what string, data []byte, at float64) {
+				t.Helper()
+				r := grid.Holding(at)
+				d := meanDiff(data, ffmpegs[r])
+				if d > apart {
+					t.Errorf("%s at %.2f s differs from ffmpeg's by %.2f on average", what, at, d)
 				}
-				return want
+				for _, n := range []int{r - 1, r + 1} {
+					if n < 0 || n >= grid.Count {
+						continue
+					}
+					if dn := meanDiff(data, ffmpegs[n]); dn <= d {
+						t.Errorf("%s at %.2f s is as near ffmpeg's frame at %.2f s, by %.2f, as its own, by %.2f", what, at, grid.At(n), dn, d)
+					}
+				}
 			}
 			// The key frames as ffprobe finds them: with B-frames the
 			// second is not shown at 2 s but a frame or so later.
@@ -427,12 +455,8 @@ func TestTheEpisodesDecoderHandsOverTheKeyFrameFirst(t *testing.T) {
 				if n := len(ats) - 2; n > 0 {
 					t.Errorf("a stream from %.1f s handed over %d frames between the key frame and the frame asked for, want none: %v", c.from, n, ats)
 				}
-				if d := meanDiff(first, ffmpegs(ats[0])); d > 2 {
-					t.Errorf("the key frame at %.1f s differs from ffmpeg's by %.2f on average", ats[0], d)
-				}
-				if d := meanDiff(at, ffmpegs(to)); d > 2 {
-					t.Errorf("the frame at %.1f s differs from ffmpeg's by %.2f on average", to, d)
-				}
+				same("the key frame", first, ats[0])
+				same("the frame", at, to)
 			}
 		})
 	}
@@ -481,14 +505,27 @@ func TestTheEpisodesDecoderIsReadyBeforeTheFirstFrame(t *testing.T) {
 
 var errStop = errors.New("enough")
 
+// ffmpegOnTheProcessor is an engine whose ffmpeg decodes on the
+// processor, for the frames a test compares the episode's decoder with.
+// On GitHub's virtual Mac a decode through VideoToolbox can hang for good,
+// issue #581, and the frames to compare with are not what these tests
+// are about.
+//
+// On the real disk: ffmpeg reads the episode the test made.
+func ffmpegOnTheProcessor() *Engine {
+	e := NewEngine(NewLog(nil, false, false), disk)
+	e.FFmpeg, e.FFprobe = "ffmpeg", "ffprobe"
+	e.softDecode.Store(true)
+	return e
+}
+
 // gridOf is the grid of an episode, the frames the episode's decoder
 // counts on, from the engine's probe.
 //
 // On the real disk: ffprobe reads the episode.
 func gridOf(t *testing.T, path string) framewire.Grid {
 	t.Helper()
-	e := NewEngine(NewLog(nil, false, false), disk)
-	e.FFmpeg, e.FFprobe = "ffmpeg", "ffprobe"
+	e := ffmpegOnTheProcessor()
 	info, err := e.Probe(context.Background(), path)
 	if err != nil {
 		t.Fatal(err)
@@ -614,8 +651,7 @@ func TestTheEpisodesDecoderPlaysTheFilesPeopleBring(t *testing.T) {
 	case has("libx265"):
 		kinds = append(kinds, kind{"HEVC 10-bit", [][]string{{"-c:v", "libx265", "-preset", "ultrafast", "-pix_fmt", "yuv420p10le", "-x265-params", "keyint=50:log-level=error", "-tag:v", "hvc1"}}})
 	}
-	e := NewEngine(NewLog(nil, false, false), disk)
-	e.FFmpeg, e.FFprobe = "ffmpeg", "ffprobe"
+	e := ffmpegOnTheProcessor()
 	for _, k := range kinds {
 		path := filepath.Join(t.TempDir(), "episode.mp4")
 		args := []string{"-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=640x360:r=25:d=6"}
@@ -698,8 +734,7 @@ func TestTheEpisodesDecoderAgreesOnAPictureThatStartsLate(t *testing.T) {
 	pictureLate, allLate := filepath.Join(dir, "picture-late.mp4"), filepath.Join(dir, "all-late.mp4")
 	mux("-itsoffset", "0.3", "-i", picture, "-i", sound, "-map", "0:v", "-map", "1:a", "-c", "copy", pictureLate)
 	mux("-itsoffset", "0.3", "-i", picture, "-itsoffset", "0.3", "-i", sound, "-map", "0:v", "-map", "1:a", "-c", "copy", allLate)
-	e := NewEngine(NewLog(nil, false, false), disk)
-	e.FFmpeg, e.FFprobe = "ffmpeg", "ffprobe"
+	e := ffmpegOnTheProcessor()
 	type frame struct {
 		at   float64
 		data []byte
@@ -906,8 +941,7 @@ func TestTheEpisodesDecoderHearsWhatFFmpegDoes(t *testing.T) {
 	plain, late := filepath.Join(dir, "plain.mp4"), filepath.Join(dir, "late.mp4")
 	mux("-i", picture, "-i", sound, "-map", "0:v", "-map", "1:a", "-c", "copy", plain)
 	mux("-itsoffset", "0.3", "-i", picture, "-i", sound, "-map", "0:v", "-map", "1:a", "-c", "copy", late)
-	e := NewEngine(NewLog(nil, false, false), disk)
-	e.FFmpeg, e.FFprobe = "ffmpeg", "ffprobe"
+	e := ffmpegOnTheProcessor()
 	collect := func(run func(got func(float64, []byte) error) error) ([]float64, []byte) {
 		var ats []float64
 		var all []byte

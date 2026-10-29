@@ -8,8 +8,8 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { basename } from "node:path";
-import { ask, clickOnTrack, control, cropPixels, engineState, episodeOn, fromSidebar, handles, high, news, nextNews, nextPaint, open, pageUntil, playOn, playUntil, seekTo, settle, shortFramesFrom, shown, shownOnPlayhead, xOf } from "../bridge.mjs";
-import { canLook, clickCard, clickedFromAhead, rate, restAhead, shortOf, shotClips, still, url } from "../common/steps.mjs";
+import { ask, clickOnTrack, control, cropPixels, engineState, episodeOn, fromSidebar, handles, high, news, nextNews, nextPaint, open, pageUntil, playUntil, seekTo, settle, shortFramesFrom, shown, shownOnPlayhead, xOf } from "../bridge.mjs";
+import { canLook, clickCard, clickedFromAhead, clock, rate, restAhead, shortOf, shotClips, still, url } from "../common/steps.mjs";
 import { describe } from "../rules.mjs";
 
 export const steps = {
@@ -661,7 +661,7 @@ export const steps = {
     // made taller until the crop is as tall as the short.
     const tall = Number(execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries",
       "stream=height", "-of", "csv=p=0", short]).toString().trim());
-    const sized = (await open(url, { viewport: { width: 2400, height: 1000 }, again: page.context().browser(), still: still(seq) })).page;
+    const sized = (await open(url, { viewport: { width: 2400, height: 1000 }, again: page.context().browser(), still: still(seq), clock: clock(seq) })).page;
     const canvasTall = () => sized.evaluate(() => document.querySelector(".screen canvas").height);
     for (let i = 0, high = 1000; i < 12 && (await canvasTall()) !== tall; i++) {
       high += Math.round((tall - (await canvasTall())) * 1.4) || Math.sign(tall - (await canvasTall()));
@@ -1530,20 +1530,13 @@ export const steps = {
       return;
     }
     await page.evaluate(() => window.__captionLayers?.rested());
-    // The walk's clock stands on the next frame until it is up, see
-    // FrameQueue.playClock, so every frame of the play is shown and read
-    // on any machine, as in the keyframe glide. By the sound card's clock
-    // a busy machine showed fewer frames, each longer, and their layers
-    // came later still: 22 of 147 paints with the layer of a frame
-    // before, issue #338. How many paints wait for their layer is how
-    // fast libass answers on the machine, not a rule of the app: playing,
-    // a frame whose layer is on its way is drawn with the one before
-    // rather than none, see CaptionLayers.last, and only the first frame
-    // of a play waits for its own, see FrameQueue.dress. So it is told
-    // and not judged. That every frame of a play asks for its layer
-    // ahead, the fix for issue #288, is held in captions.test.ts and
-    // queue.test.ts.
-    await playOn(page, "frames");
+    // How many paints wait for their layer is how fast libass answers on
+    // the machine, not a rule of the app: playing, a frame whose layer is
+    // on its way is drawn with the one before rather than none, see
+    // CaptionLayers.last, and only the first frame of a play waits for
+    // its own, see FrameQueue.dress. So it is told and not judged. That
+    // every frame of a play asks for its layer ahead, the fix for issue
+    // #288, is held in captions.test.ts and queue.test.ts.
     const stop = await watchPills(page);
     try {
       await page.evaluate(() => document.body.focus());
@@ -1553,8 +1546,7 @@ export const steps = {
       const played = await playUntil(page, { past: from + arg - 1e-6 });
       if (!(played.at >= from + arg - 1e-6)) walk.wrong = `the play from ${from.toFixed(2)} stopped at ${played.at.toFixed(2)}, before it went on ${arg} s`;
     } finally {
-      // The sound card's clock back, however the play ended.
-      await playOn(page, "sound");
+      // Paused, however the play ended.
       await page.evaluate(() => {
         if (document.querySelector('button[aria-label="Play"]')) return;
         const key = { key: " ", code: "Space", bubbles: true, cancelable: true };

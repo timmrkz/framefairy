@@ -252,6 +252,22 @@ export function still(seq) {
   return process.env.STILL !== "none" && !seq.steps.some(([what]) => moving.has(what));
 }
 
+// The steps that check what a play does on the sound's own time: how
+// much sound the sound card was handed, the loop switched off as the
+// sound comes to the clip's end, and a playhead that never stands still
+// while a hand drags. A sequence with one of them plays on the sound
+// card's clock, as the app does without a walk. Every other sequence,
+// and every random walk, plays on the walk's clock, which shows every
+// frame of a play on any machine, see open in bridge.mjs. A new step
+// that checks the sound or the time a play takes goes in here, issue
+// #588.
+export const soundCard = new Set(["heard", "loop off near the end", "loop off as the sound crosses the end", "drag while playing"]);
+
+// The clock a sequence plays on, see soundCard.
+export function clock(seq) {
+  return seq.steps.some(([what]) => soundCard.has(what)) ? "sound" : "frames";
+}
+
 // Holds files over the app and drops them, the way the runtime reports a
 // drag from Finder, its start and where it is, and a drop, see wails-bridge.ts, somewhere left of the
 // middle and below it, over whatever the page has there. Says what was

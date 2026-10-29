@@ -1575,19 +1575,18 @@ export const steps = {
     // The play starts from the frame on the video preview, so it is
     // started once that is the playhead's frame.
     await shownOnPlayhead(page);
-    // The play is read by its own clock, which the play asks on every
-    // tick before it draws, so what is on screen is what the tick before
-    // drew, with the crop frame it was told. The walk's clock stands on
-    // the next frame until it is up, see FrameQueue.playClock, so every
-    // frame of the play is shown on any machine: by the sound card's
-    // clock a busy one showed two in two seconds of play, issue #464, and
-    // two of nine, issue #534. The play is paused by the page itself once
-    // the video preview has shown ten frames of the episode or the play
-    // has come to the next keyframe, where the glide ends.
+    // The play is read on its clock, which the play asks on every tick
+    // before it draws, so what is on screen is what the tick before drew,
+    // with the crop frame it was told. The walk's clock shows every frame
+    // of the play on any machine, see open in walks/bridge.mjs: by the
+    // sound card's a busy one showed two in two seconds of play, issue
+    // #464, and two of nine, issue #534. The play is paused by the page
+    // itself once the video preview has shown ten frames of the episode
+    // or the play has come to the next keyframe, where the glide ends.
     const end = b.at;
     await page.evaluate((end) => {
       const q = window.__frameQueue;
-      const sound = q.playClock;
+      const clock = q.playClock;
       window.__glide = [];
       window.__glideStarted = false;
       window.__glideRead = new Promise((resolve) => {
@@ -1596,13 +1595,13 @@ export const steps = {
         const done = () => {
           if (over) return;
           over = true;
-          q.playClock = sound;
+          q.playClock = clock;
           resolve();
         };
         window.__glideDone = done;
-        q.playClock = (heard, unshown) => {
+        q.playClock = (heard, unshown, coming) => {
           window.__glideStarted = true;
-          if (over) return heard;
+          if (over) return clock(heard, unshown, coming);
           const el = document.querySelector(".screen");
           const k = window.__filmed();
           window.__glide.push({ k, crop: Number(el.dataset.crop) });
@@ -1616,7 +1615,7 @@ export const steps = {
               document.body.dispatchEvent(new KeyboardEvent("keyup", key));
             });
           }
-          return Math.min(heard, unshown);
+          return clock(heard, unshown, coming);
         };
         // A play that stops by itself asks its clock no more: the reading
         // ends there, with what it read.
