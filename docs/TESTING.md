@@ -770,12 +770,8 @@ of its own, until a new walk that played was the next to fail, issue
 #588. A sequence that checks what a play does on the sound's own time
 plays on the sound card's clock instead, the way the app does: how much
 sound the sound card is handed, the loop switched off as the sound comes
-to the clip's end, the picture going round a loop with the sound, and a
-playhead that never stands still while a hand drags. On the walk's clock
-the sound waits for the picture, so none of those could fail there. And
-the walk's clock stands only on a frame a decoder is working on: a frame
-that never comes goes by the sound card's time, so the walk's checks see
-it rather than the walk hanging. It asks for it by one of those steps, `soundCard` in
+to the clip's end, and a playhead that never stands still while a hand
+drags. It asks for it by one of those steps, `soundCard` in
 `common/steps.mjs`, the way a sequence asks for motion, see Where they
 run below, and a new step of that kind goes in there. `smooth.mjs` asks
 `open` for it by name, `clock: "sound"`. A walk can also hold the sound
