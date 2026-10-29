@@ -761,9 +761,9 @@ keyframe, not for two seconds, in which a busy machine showed two, issue
 Every walk plays on the walk's clock, which `open` in `walks/bridge.mjs`
 gives every page it opens, `window.__playClock`, and `playClock` in
 `lib/frames/queue.ts` goes by. It moves on to the next frame only once
-the one before is up, and holds the sound card while it waits, so every
-frame of a play is shown on any machine and the sound stays with the
-picture. By the sound card's clock, the app's, a busy machine showed two
+the one before is up, and holds the sound card while a frame is still
+being decoded, so every frame of a play is shown on any machine and the
+sound stays with the picture. By the sound card's clock, the app's, a busy machine showed two
 frames of a glide's nine, issue #534, and a play of the captions showed
 fewer frames, each longer, issue #338. Each of those walks had a clock
 of its own, until a new walk that played was the next to fail, issue

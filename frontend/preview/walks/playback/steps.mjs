@@ -1599,9 +1599,9 @@ export const steps = {
           resolve();
         };
         window.__glideDone = done;
-        q.playClock = (heard, unshown) => {
+        q.playClock = (heard, unshown, coming) => {
           window.__glideStarted = true;
-          if (over) return clock(heard, unshown);
+          if (over) return clock(heard, unshown, coming);
           const el = document.querySelector(".screen");
           const k = window.__filmed();
           window.__glide.push({ k, crop: Number(el.dataset.crop) });
@@ -1615,7 +1615,7 @@ export const steps = {
               document.body.dispatchEvent(new KeyboardEvent("keyup", key));
             });
           }
-          return clock(heard, unshown);
+          return clock(heard, unshown, coming);
         };
         // A play that stops by itself asks its clock no more: the reading
         // ends there, with what it read.

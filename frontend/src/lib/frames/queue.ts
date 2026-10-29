@@ -48,6 +48,7 @@ import {
   stillFeed,
   VideoPlan,
   type AudioRun,
+  type Need,
   type Piece,
   type Run,
 } from "./plan";
@@ -1491,8 +1492,8 @@ export class FrameQueue {
   // to decode every frame in time shows fewer of them, which is right for
   // the app. A walk plays on the walk's clock, which open in
   // walks/bridge.mjs asks for with window.__playClock, see onFrames.
-  playClock: (heard: number, unshown: number) => number = (heard, unshown) =>
-    (globalThis as { __playClock?: string }).__playClock === "frames" ? this.onFrames(heard, unshown) : heard;
+  playClock: (heard: number, unshown: number, coming?: boolean) => number = (heard, unshown, coming = false) =>
+    (globalThis as { __playClock?: string }).__playClock === "frames" ? this.onFrames(heard, unshown, coming) : heard;
 
   // The walk's clock: it stands on unshown until that frame is up, and
   // holds the sound card meanwhile, so a walk sees every frame of a play
@@ -1500,9 +1501,10 @@ export class FrameQueue {
   // card's clock a busy machine showed 2 frames of 9, issue #534, and
   // standing on frames alone left the sound running on ahead, so a loop
   // switched off or a cut made while playing went by the sound's moment,
-  // not the picture's, issue #588.
-  private onFrames(heard: number, unshown: number): number {
-    void this.holdSound("frame", heard > unshown);
+  // not the picture's, issue #588. A frame coming, decoded and waiting,
+  // goes up on this tick, so the sound card runs on for it.
+  private onFrames(heard: number, unshown: number, coming: boolean): number {
+    void this.holdSound("frame", heard > unshown && !coming);
     return Math.min(heard, unshown);
   }
 
@@ -1967,7 +1969,8 @@ export class FrameQueue {
     // Never back: the sound heard only ever moves on, and a stamp that says
     // a hair less than the last one is the clock's jitter.
     const h = this.heardOn(now);
-    const pos = Math.max(this.playClock(h.pos, this.unshown(plan)), this.reached);
+    const next = this.unshown(plan);
+    const pos = Math.max(this.playClock(h.pos, next.at, next.coming), this.reached);
     this.reached = pos;
     if (this.behind) this.began?.even.behind();
     else this.began?.even.tick(now, pos, h.source);
@@ -2038,13 +2041,27 @@ export class FrameQueue {
   }
 
   // Where the first frame of the play not on screen yet starts on the
-  // program, see playClock: the frame due last, or the one after it once
-  // that is up. Past what the plan has worked out, nowhere.
-  private unshown(plan: VideoPlan): number {
-    const need = plan.need(this.k);
-    const up = !need || (this.shown?.run === need.run && this.shown.rank === need.rank);
-    const at = plan.at(up ? this.k + 1 : this.k);
-    return Number.isNaN(at) ? Infinity : at;
+  // program, see playClock, and whether it is coming, decoded and waiting:
+  // the frame due last, or the first after the frame on screen. A run's
+  // frames only go on, so in a play a frame of the run before the one on
+  // screen is up too. A pause puts up the frame that holds the playhead,
+  // see hold, which can be the one after the frame due, and the frame due
+  // never came then. A frame put up before this play is of another plan,
+  // whose runs are counted from 0 again. Past what the plan has worked
+  // out, nowhere.
+  private unshown(plan: VideoPlan): { at: number; coming: boolean } {
+    const s = this.shown;
+    const thisPlay = this.putFor === this.ticket;
+    const up = (need: Need | null) =>
+      !need || (s?.run === need.run && (s.rank === need.rank || (thisPlay && s.rank > need.rank)));
+    let k = this.k;
+    if (up(plan.need(k))) do k++; while (plan.need(k) && up(plan.need(k)));
+    const need = plan.need(k);
+    const at = plan.at(k);
+    return {
+      at: Number.isNaN(at) ? Infinity : at,
+      coming: !!need && !!this.slotOf(need.run)?.ready.some((h) => h.rank === need.rank),
+    };
   }
 
   // When the page next has nothing to do after an animation frame: a
