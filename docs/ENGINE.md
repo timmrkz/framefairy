@@ -744,7 +744,9 @@ frame. Two kinds of episode do not keep to that, and `Probe` finds both.
   ffmpeg moves the times read after a seek back by the seek, rounded to
   the stream's ticks, a millisecond in Matroska, which moved such a frame
   a microsecond late. The moments are now counted from the grid's start,
-  and the seek is moved back onto the stream's ticks, `onTicks`.
+  and every file is read with its own times, `-copyts`, `ownTimes`, and
+  each picture and sound counted from its seek by the render itself,
+  `onOwnClock`, so nothing ffmpeg rounds moves a frame, #602.
 - **Every track starting late.** A recording cut out of a longer one, or
   one written with its start held back, has no track that starts at zero.
   ffmpeg counts from where the earliest track starts, `-ss` included, and
@@ -761,10 +763,8 @@ frame. Two kinds of episode do not keep to that, and `Probe` finds both.
   piece from 0.2 s showed frame 60 for every frame before it, where frame
   5 holds the moment. A render now finds the key frame shown at or before
   each piece, `keyedPieces`, from the packets of the few seconds before
-  it, and reads from there, `readFrom`. Such a file is read with its own
-  times, `-copyts`, `ownTimes`, and each picture and sound is counted
-  from its seek by the render itself, `onOwnClock`. Counted from the seek
-  by ffmpeg, its times differed between builds, by as much as the sound
+  it, and reads from there, `readFrom`. Counted from the seek by ffmpeg,
+  the times of such a file differed between builds, by as much as the sound
   starts before the picture, 21 ms of AAC in MPEG-TS, and a frame with no
   time of its own got one ffmpeg guessed from where the decoder started.
   Read with the file's own times, every frame after a seek has the time
@@ -781,12 +781,16 @@ frame. Two kinds of episode do not keep to that, and `Probe` finds both.
   in the video preview, so the episode's decoder goes to the key frame
   before such a one too. `uneven` takes only the times the file holds,
   lets a gap of whole frames go as long as as many frames with no time
-  fill it, and in a file with no index reads from the first key frame of
-  each stretch: the frames before it, decoded after frames it never
-  read, came half a frame off or a frame apart, and a short of a DVD, of
+  fill it, and in a file with no index reads each stretch from the key
+  frame `keyBefore` finds before it, and takes the frames from that key
+  frame on: the frames before it, decoded after frames it never read,
+  came half a frame off or a frame apart, and a short of a DVD, of
   MPEG-2 with B-frames in MPEG-PS or in MPEG-TS, came out at 30 frames a
   second for 29.97, #600. A short of a file whose every frame is a key
-  frame showed frames from four frames early, #601. Every one of these is
+  frame showed frames from four frames early, #601. Read only from the
+  first key frame inside each stretch, a .ts from OBS, a key frame every
+  250 frames, had most of its stretches unread, and its frames left out
+  went unseen. Every one of these is
   a case of `TestARenderShowsTheFrameThatHoldsEachMoment` and of
   `TestTheVideoPreviewShowsTheFramesOfTheShort`.
 - **A file that does not say how long it is.** A Matroska recording cut

@@ -292,15 +292,16 @@ func (s SourceInfo) onOwnClock(c pieceCut) pieceCut {
 }
 
 // ownTimes tells whether a file is read with its own times, -copyts,
-// rather than counted from each seek by ffmpeg: a file with no index of
-// its key frames, see unindexed. ffmpeg moves the times after a seek in
-// one by the seek alone in one build and by the seek and the start of the
-// file in another, and works out the times of frames with no stamp of
-// their own from where the decoder started. Read with the file's own
-// times, every frame of a seek has the time it has when the file is
-// played from the start, #602.
+// rather than counted from each seek by ffmpeg: every file whose clock
+// Probe read. Counted by ffmpeg, the times after a seek were moved by the
+// seek and the start of the file rounded to the stream's ticks, see
+// byTimes, and in a file with no index of its key frames, see unindexed,
+// by the seek alone in one build and by both in another, and a frame with
+// no stamp of its own got one worked out from where the decoder started.
+// Read with the file's own times, every frame of a seek has the time it
+// has when the file is played from the start, #602.
 func (s SourceInfo) ownTimes() bool {
-	return s.unindexed && s.hasClock
+	return s.hasClock
 }
 
 // nearestFrame is the frame of the episode an edge at a moment means,
@@ -560,10 +561,15 @@ func (s SourceInfo) plainCut(seg Segment) pieceCut {
 // it, #266. In the ticks of the stream, 1/600 s from a phone, the hair is
 // lost in the rounding. A rate whose ticks would not fit ffmpeg's time
 // base, like 2997/100, is moved in microseconds, and a frame exactly a
-// hair after its moment may miss it there.
+// hair after its moment may miss it there. The frames come with the
+// file's own times, see ownTimes, so they are moved by nothing ffmpeg
+// rounds: counted from the seek by ffmpeg, they were moved by the seek
+// and the start of the file rounded to the stream's ticks, a millisecond
+// in Matroska, and a frame exactly a hair after its moment came a
+// microsecond late.
 func (s SourceInfo) byTimes(from, to, first, n int64) pieceCut {
 	frame := int64(s.FPSDen) * 1_000_000 / int64(s.FPSNum)
-	seek := s.onTicks(max(0, from-frame/2))
+	seek := max(0, from-frame/2)
 	lead := s.leadOf(seek)
 	hair := int64(frameHair * 1_000_000)
 	num, den := int64(s.FPSNum), int64(s.FPSDen)
@@ -589,33 +595,6 @@ func (s SourceInfo) byTimes(from, to, first, n int64) pieceCut {
 		sound: fmt.Sprintf("atrim=start=%s:end=%s,asetpts=PTS-STARTPTS",
 			micros(from-seek+lead), micros(to-seek+lead)),
 	}
-}
-
-// onTicks is a seek moved back to where ffmpeg counts the frames after
-// it exactly. ffmpeg moves every timestamp read after a seek back by the
-// seek and the start of the file together, rounded to the ticks of the
-// picture's timestamps. In Matroska a tick is a millisecond, so a seek
-// of 0.171001 s moved a frame that begins exactly a hair after its moment
-// a microsecond later, past it, and the frame before it held the moment
-// instead, #266. A seek whose distance from the start of the file is a
-// whole number of ticks and of microseconds is moved exactly. A read from
-// the key frame before it gives the same frames from a seek up to a few
-// milliseconds earlier. One that would go before the start stays where
-// it is.
-func (s SourceInfo) onTicks(seek int64) int64 {
-	if s.tickNum <= 0 || s.tickDen <= 0 {
-		return seek
-	}
-	// The shortest step that is both: 1 ms in Matroska, 100 µs at 1/90000
-	// and 5 ms at 1/600.
-	whole := s.tickNum * 1_000_000
-	step := whole / int64(gcd(int(whole), int(s.tickDen)))
-	origin := int64(math.Round(s.origin * 1_000_000))
-	on := seek + origin - ((seek+origin)%step+step)%step - origin
-	if on < 0 {
-		return seek
-	}
-	return on
 }
 
 // leadOf is how much earlier than its picture, read from seek, a piece's
