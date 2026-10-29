@@ -61,7 +61,7 @@ raise when he wants it. Dropped, with why.
 | Every atomic write is a full flush, the loudness kept twice | Moved to #609 |
 | The x264 preset is `slow` | Dropped: a Mac encodes with VideoToolbox, and Linux has no encoder to ship until #300 |
 | Framers each take half the cores | Dropped: four framers at once is rare, and the cost is time, not a fault |
-| ENGINE.md contradicts itself on a window | Fixed with #603 |
+| ENGINE.md contradicts itself on a window | Fixed in #614 |
 | A job has two state machines | Moved to #606 |
 | Two queue paths and five ways in | Polling ended in #504, the removal wait is bounded since #337. Moved to #613 for the ways in only tests use |
 | 69 bindings with no rule for errors | Dropped: a refused start says why in its row since #130 |
