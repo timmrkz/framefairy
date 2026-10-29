@@ -262,6 +262,10 @@ function hearRequests(page) {
       try {
         const { name, args } = JSON.parse(r.postData() ?? "");
         what = `/call ${name} ${JSON.stringify(args).slice(0, 200)}`;
+        // What the app logged, every line whole: cut to 200 characters, a
+        // walk that hung after a play showed the play asked for and
+        // nothing of what came of it.
+        if (name === "main.FrameFairy.Said") what = [`/call ${name}`, ...(args[0] ?? []).map((l) => `    ${l.at} ${l.act ?? ""} ${l.text}`)].join("\n");
       } catch {
         // Said as its path alone.
       }

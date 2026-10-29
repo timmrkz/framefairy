@@ -874,7 +874,8 @@ it hang, #508.
    the walk with when it began and ended, what the page logged and
    threw. Every request to the Go side is kept beside it, in a file of
    the same name ending in `.requests.txt`, see `hearRequests` in
-   `walks/bridge.mjs`. Playwright records the network into a trace only
+   `walks/bridge.mjs`, with every line the app logged written whole.
+   Playwright records the network into a trace only
    along with the snapshots below, so Node hears the requests instead,
    and nothing of it runs in the page. The
    events the Go side sends come on one request that stays open, so
