@@ -269,7 +269,10 @@ func TestEveryVerbIsDone(t *testing.T) {
 	}
 }
 
-// setUp makes this Mac one whose setup is done, the way Tim's is.
+// setUp makes this Mac one whose setup is done: a speech model, and clips
+// found in the cloud, so the app opens on its workspace with no model of
+// its own to find clips with. A model on this Mac would be one more
+// program the app starts, which the licence is not about.
 //
 // On the real disk: the built app reads its settings and the speech model from this Mac's home folder.
 func (m *mac) setUp(_ []string) error {
@@ -288,7 +291,7 @@ func (m *mac) setUp(_ []string) error {
 	if err := os.MkdirAll(config, 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(config, "settings.json"), []byte(`{"chosen": true}`+"\n"), 0o644)
+	return os.WriteFile(filepath.Join(config, "settings.json"), []byte(`{"chosen": true, "planner": "api"}`+"\n"), 0o644)
 }
 
 var unlockLink = regexp.MustCompile(`href="framefairy://unlock\?key=([^"]+)"`)

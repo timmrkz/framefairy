@@ -300,4 +300,21 @@ export default [
       ["status", "A newer build is ready", "Relaunch to finish updating"],
     ],
   },
+  {
+    // Tim stepped through the first run on 27 October and asked for one
+    // page: a card for each model, nothing downloading until he pressed
+    // Download, both at once, rows that read as a table, and no button
+    // to press once both were here. The app then opens on its first page
+    // with one big button to add a video.
+    name: "The first run downloads both models side by side and opens on the page to add a video",
+    steps: [["first run"]],
+  },
+  {
+    // The review of the one-page setup found that a Mac of 8 GB holds no
+    // clip model, so its first run had no way through. Tim chose on 28
+    // October that such a Mac, and only such a Mac, is offered a model in
+    // the cloud and its key there.
+    name: "The first run on a Mac too small for any clip model finds clips in the cloud once a key is saved",
+    steps: [["first run small"]],
+  },
 ];

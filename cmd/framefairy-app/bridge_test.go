@@ -131,9 +131,10 @@ func (b *bus) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // says the gate a call of a name waits behind until the walk opens it,
 // whether the call reaches the service first and only its answer waits,
 // and the reason it fails with instead of reaching it, if it does, see
-// /hold.
+// /hold. fresh is the bridge's machine on its first run, or nil when it
+// is not on one, see /fresh.
 func callHandler(svc func() *FrameFairy, own map[string]func() (any, error),
-	held func(name string) (gate <-chan struct{}, late bool, fails string)) http.Handler {
+	held func(name string) (gate <-chan struct{}, late bool, fails string), fresh func() *freshMachine) http.Handler {
 	contextType := reflect.TypeFor[context.Context]()
 	errorType := reflect.TypeFor[error]()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -181,7 +182,20 @@ func callHandler(svc func() *FrameFairy, own map[string]func() (any, error),
 			return
 		}
 		kind := method.Type()
-		if outside[name] && !(walkedUpdates[name] && svc().updates != nil) {
+		// A key saved on the first run is kept by the bridge, never the
+		// keychain, and never shown to the company it is for.
+		if m := fresh(); name == "SaveAPIKey" && m != nil {
+			var provider, key string
+			if len(call.Args) != 2 || json.Unmarshal(call.Args[0], &provider) != nil || json.Unmarshal(call.Args[1], &key) != nil {
+				http.Error(w, "SaveAPIKey takes a provider and a key", http.StatusBadRequest)
+				return
+			}
+			m.saveKey(provider, key)
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(nil)
+			return
+		}
+		if outside[name] && !(walkedUpdates[name] && svc().updates != nil) && !(firstRun[name] && fresh() != nil) {
 			// Answered as having nothing to say, in the shape the
 			// interface expects.
 			var answer any
@@ -225,7 +239,7 @@ func callHandler(svc func() *FrameFairy, own map[string]func() (any, error),
 		var answer any
 		if name == "Setup" || name == "CheckSetup" {
 			if name == "Setup" {
-				answer = standInsSetup(out[0].Interface().(SetupState))
+				answer = standInsSetup(out[0].Interface().(SetupState), fresh())
 			} else {
 				answer = standInsChecks(out[0].Interface().([]Check))
 			}
@@ -267,12 +281,36 @@ var outside = map[string]bool{
 // Until then they are outside like the rest. Relaunch is outside always.
 var walkedUpdates = map[string]bool{"Updates": true, "FollowChannel": true, "CheckForUpdates": true}
 
+// firstRun are the downloads of the first run, which reach the app once a
+// walk has made the bridge's machine new, see /fresh. Each then downloads
+// from the bridge's stand-in, see arriving, never the internet.
+var firstRun = map[string]bool{"InstallSpeechModel": true, "InstallLanguageModel": true}
+
 // standInsSetup is the setup as the bridge's machine has it: the real
 // answer, with the two stand-in models counted as there, since they are
 // what hears and what finds clips here. Without it the app opens on its
-// first-run screen, which the bridge is not about.
-func standInsSetup(s SetupState) SetupState {
-	s.HasSpeech, s.HasLocalModel, s.HasServer, s.Chosen, s.Ready = true, true, true, true, true
+// first-run screen, which the bridge is only about once a walk made it
+// new, see /fresh. Then the models are what the real answer says, the
+// ones the walk let arrive, the machine has the memory the walk gave it,
+// so the models offered are the same on every machine the walk runs on,
+// and a key is there once the walk saved one.
+func standInsSetup(s SetupState, fresh *freshMachine) SetupState {
+	s.HasServer = true
+	if fresh != nil {
+		s.Memory = fresh.memory
+		best, hasBest := engine.RecommendedFor(s.Memory)
+		for i := range s.Language {
+			s.Language[i].Fit = string(s.Language[i].FitsIn(s.Memory))
+			s.Language[i].Recommended = hasBest && s.Language[i].Name == best.Name
+		}
+		s.Keys, s.KeyHints = map[string]string{}, map[string]string{}
+		for _, provider := range fresh.keyed() {
+			s.Keys[provider], s.KeyHints[provider] = "keychain", "sk-…walk"
+		}
+		s.HasKey = s.Keys[s.Provider] != ""
+		return s
+	}
+	s.HasSpeech, s.HasLocalModel, s.Chosen, s.Ready = true, true, true, true
 	if len(s.Speech) > 0 {
 		s.Speech[0].Installed = true
 	}
@@ -344,7 +382,7 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 			return b.chrome, nil
 		},
 	}
-	mux.Handle("/call", callHandler(svc, own, b.held))
+	mux.Handle("/call", callHandler(svc, own, b.held, b.fresh.Load))
 	mux.Handle("/events", b.d.bus)
 	answer := func(w http.ResponseWriter, v any, err error) {
 		if err != nil {
@@ -572,6 +610,24 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 			return
 		}
 		answer(w, theLog.status(), nil)
+	})
+	// The bridge's machine on its first run: the models gone, no video in
+	// the app and nothing yet said about how clips are found, so the app
+	// opened again shows its setup. A download pressed there waits part
+	// way until the walk lets it arrive with ?arrive=speech or
+	// ?arrive=clip, see arriving. The next reset makes the machine the
+	// bridge's again.
+	mux.HandleFunc("/fresh", func(w http.ResponseWriter, r *http.Request) {
+		if kind := r.URL.Query().Get("arrive"); kind != "" {
+			answer(w, nil, b.letArrive(kind))
+			return
+		}
+		memory, err := strconv.ParseInt(cmp.Or(r.URL.Query().Get("memory"), "32"), 10, 64)
+		if err != nil || memory <= 0 {
+			http.Error(w, "memory is a number of gigabytes", http.StatusBadRequest)
+			return
+		}
+		answer(w, nil, b.makeFresh(memory<<30))
 	})
 	mux.HandleFunc("/reopen", func(w http.ResponseWriter, r *http.Request) {
 		closed, err := b.reopen()
@@ -838,6 +894,12 @@ type bridge struct {
 	sound *sound
 	// marks counts the marks sent down the events, see /mark.
 	marks atomic.Int64
+	// fresh is the bridge's machine on its first run: no model on it and
+	// no video in the app, see /fresh. Nil when it is not on one.
+	fresh atomic.Pointer[freshMachine]
+	// arrive lets the download of a kind of model, "speech" or "clip",
+	// arrive, closed by the walk, see arriving.
+	arrive map[string]chan struct{}
 }
 
 // updatesAs gives the app updates the way a walk asks for them: a build
@@ -1016,6 +1078,24 @@ func openBridge(t *testing.T) *bridge {
 	b := &bridge{t: t, d: d, words: words, sound: snd, first: filepath.Join(d.home, "erste-erinnerung.mp4"), kept: t.TempDir(),
 		gates: map[string]*gate{}, fails: map[string]string{},
 		videos: walkVideos(t)}
+	// What the first run downloads, once a walk made the machine new.
+	// What arrives is as much of a model as the app looks for.
+	installSpeech = func(ctx context.Context, log *engine.Log, m engine.SpeechModel, dir string) error {
+		return b.arriving(ctx, log, "speech", m.Download, func() error {
+			if err := os.MkdirAll(filepath.Join(dir, m.Name), 0o755); err != nil {
+				return err
+			}
+			return os.WriteFile(filepath.Join(dir, m.Name, "tokens.txt"), []byte("the stand-in hears\n"), 0o644)
+		})
+	}
+	installLanguage = func(ctx context.Context, log *engine.Log, m engine.LanguageModel, dir string) error {
+		return b.arriving(ctx, log, "clip", m.Download, func() error {
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				return err
+			}
+			return os.WriteFile(filepath.Join(dir, m.Name), []byte("GGUF, the stand-in finds clips"), 0o644)
+		})
+	}
 	if err := b.videos.copy(b.first, pickedAs("120", "", "0", "", false, 0), func(path string) error {
 		return makeEpisode(path, 120, 0, false)
 	}); err != nil {
@@ -1266,6 +1346,102 @@ func (b *bridge) pickSound() (string, error) {
 	return path, nil
 }
 
+// makeFresh makes the bridge's machine one the app has never run on, see
+// /fresh, with memory bytes of memory. The video leaves the library with
+// its work folder kept, the way Remove leaves it, and reset brings both
+// back.
+//
+// On the real disk: the models folder is the one the app looks in for its models, in the bridge's home.
+func (b *bridge) makeFresh(memory int64) error {
+	b.mu.Lock()
+	b.arrive = map[string]chan struct{}{"speech": make(chan struct{}), "clip": make(chan struct{})}
+	b.mu.Unlock()
+	b.fresh.Store(&freshMachine{memory: memory})
+	if err := os.RemoveAll(engine.ModelsDir()); err != nil {
+		return err
+	}
+	if err := b.d.svc.RemoveEpisode(b.first, false); err != nil {
+		return err
+	}
+	planner := defaultSettings().Planner
+	return b.d.svc.store.UpdateSettings(func(s *Settings) {
+		s.Planner, s.Chosen, s.LLMModel = planner, false, ""
+	})
+}
+
+// freshMachine is the bridge's machine on its first run, see /fresh: the
+// memory it has and the companies a key was saved for.
+type freshMachine struct {
+	memory int64
+	mu     sync.Mutex
+	keys   []string
+}
+
+// saveKey keeps a key for a provider the way the keychain would, or takes
+// it away when the key is empty.
+func (m *freshMachine) saveKey(provider, key string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.keys = slices.DeleteFunc(m.keys, func(p string) bool { return p == provider })
+	if strings.TrimSpace(key) != "" {
+		m.keys = append(m.keys, provider)
+	}
+}
+
+// keyed are the providers a key is kept for.
+func (m *freshMachine) keyed() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return slices.Clone(m.keys)
+}
+
+// letArrive lets the download of a kind of model arrive, see arriving.
+func (b *bridge) letArrive(kind string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	gate, ok := b.arrive[kind]
+	if !ok {
+		return fmt.Errorf("no download of a %q model to let arrive, the bridge is not on its first run", kind)
+	}
+	select {
+	case <-gate:
+	default:
+		close(gate)
+	}
+	return nil
+}
+
+// arriving is a download of the first run on the bridge, see /fresh. It
+// says it has fetched two fifths, in the words the engine's download
+// says it in, and holds there until the walk lets it arrive or it is
+// cancelled. Then put lays the model down the way an install leaves it.
+func (b *bridge) arriving(ctx context.Context, log *engine.Log, kind string, size int64, put func() error) error {
+	b.mu.Lock()
+	gate := b.arrive[kind]
+	b.mu.Unlock()
+	if gate == nil {
+		return fmt.Errorf("the bridge downloads nothing outside its first run")
+	}
+	// In the engine's words, see inMB there: gigabytes from a thousand
+	// megabytes up.
+	said := func(n int64) string {
+		if n >= 1e9 {
+			return fmt.Sprintf("%.1f GB", float64(n)/1e9)
+		}
+		return fmt.Sprintf("%d MB", n/1e6)
+	}
+	const rate = 120e6
+	log.ProgressOf(fmt.Sprintf("fetching %s of %s at %s a second", said(size*2/5), said(size), said(rate)),
+		0.4, float64(size)*3/5/rate)
+	select {
+	case <-ctx.Done():
+		return engine.ErrCancelled
+	case <-gate:
+	}
+	log.ClearProgress()
+	return put()
+}
+
 // reopen closes the app and opens it again, the way quitting and starting
 // it does: the work stops, and what it did and how it ended is read back.
 // It gives back the jobs as the app left them, once nothing ran any more,
@@ -1314,7 +1490,9 @@ func (b *bridge) reset() error {
 	clear(b.gates)
 	clear(b.fails)
 	b.chrome = Chrome{}
+	b.arrive = nil
 	b.mu.Unlock()
+	b.fresh.Store(nil)
 	b.d.pictureMu.Lock()
 	b.d.pictures = nil
 	b.d.pictureMu.Unlock()

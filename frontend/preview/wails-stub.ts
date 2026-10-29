@@ -427,7 +427,7 @@ const modelJob = () => ({
     ? undefined
     : {
         stage: "speech model",
-        text: "fetching",
+        text: `fetching ${Math.round(487 * Math.min((Date.now() - installAt()) / 4000, 1))} MB of 487 MB at 120 MB a second`,
         fraction: Math.min((Date.now() - installAt()) / 4000, 1),
         remaining: Math.max(0, Math.round(4 - (Date.now() - installAt()) / 1000)),
       },
@@ -986,6 +986,7 @@ const Answers = {
           name: "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8",
           title: "Parakeet TDT 0.6B v3",
           about: "NVIDIA's recogniser, quantised. Fast on any machine and accurate on speech.",
+          maker: "NVIDIA",
           languages: "25 European languages, German and English among them",
           download: 487170055,
           unpacked: 671239000,
@@ -1221,6 +1222,9 @@ const Answers = {
       // ?twins is Tim's library: every episode called youtube.mp4, each in
       // a folder of its own.
       case "Library":
+        // A machine with nothing on it has no videos either, so the setup
+        // hands over to the empty first page.
+        if (location.search.includes("setup")) return Promise.resolve([]);
         if (location.search.includes("twins")) {
           const labels = (window as any).__labels ?? {};
           const twin = (source: string, extra: object) => ({ source, name: "youtube.mp4", size: 1, modified: "", missing: false, transcribed: false, covered: 900, heard: [[0, 900]], transcriptStale: false, plans: [], rendered: 0, previews: 0, work: true, everSearched: true, label: labels[source], ...extra });
