@@ -392,7 +392,8 @@ before, with the keyboard's frame already round the next, which Tim saw on
   `cmd/framefairy-frames/ink_test.go`: the layer worked out in its box is
   the layer of the whole frame, pixel for pixel.
 - `TestTheWordAndItsPillPopTogether` in `engine/bounce_test.go` reads
-  the pop back from a rendered short: on every frame the word and its
+  the pop back from the frames the render's own graph draws, before
+  they are encoded: on every frame the word and its
   pill are as large as `popScales` says, in width and in height, around
   one centre. `TestEveryWordOfAShortPopsOnItsFrames` does the same for
   every word of a 25 fps short, with words lit for 1 to 10 frames. `TestThePillLeavesRoomRoundItsWord` in the same file holds
