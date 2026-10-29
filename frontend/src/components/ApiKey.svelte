@@ -122,6 +122,23 @@
         >.{/if}
     </span>
   </div>
+  <!-- Only a key the app keeps can be removed here. One in the environment
+       is the terminal's to take away. The trash can stands before the
+       field, so the field and Save key keep their place when a key is
+       saved or removed, and the last control of the row ends at the card's
+       edge either way. -->
+  {#if source === "keychain"}
+    <button
+      class="quiet danger bin"
+      title="Remove the key from this machine"
+      aria-label="Remove the {provider.title} API key"
+      aria-haspopup="dialog"
+      disabled={saving}
+      onclick={() => refuse?.() || (removing = true)}
+    >
+      <Icon name="trash" />
+    </button>
+  {/if}
   <input
     class="key shakes"
     class:shaking
@@ -143,22 +160,6 @@
     {#if saving}<Busy />{/if}
     {saving ? "Checking" : "Save key"}
   </button>
-  <!-- Only a key the app keeps can be removed here. One in the environment
-       is the terminal's to take away. Without a trash can the last control
-       of the row ends at the card's edge, the way every row's does, rather
-       than before a strip of nothing kept for a trash can. -->
-  {#if source === "keychain"}
-    <button
-      class="quiet danger bin"
-      title="Remove the key from this machine"
-      aria-label="Remove the {provider.title} API key"
-      aria-haspopup="dialog"
-      disabled={saving}
-      onclick={() => refuse?.() || (removing = true)}
-    >
-      <Icon name="trash" />
-    </button>
-  {/if}
 </div>
 
 {#if removing}
