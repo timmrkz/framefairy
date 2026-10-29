@@ -125,8 +125,7 @@
           <Info label="About the speech model" side="right">
             Every video is transcribed on this machine, word by word with the time of each word.
             Nothing about the video is sent anywhere. The model is not part of the app, so it is
-            downloaded from the people who published it and kept on your machine, in
-            <b>~/.framefairy/models</b>.
+            downloaded once from its source onto your machine, into <b>~/.framefairy/models</b>.
           </Info>
         </span>
         <div class="headrow">
@@ -140,10 +139,16 @@
       <div class="area asks">
         <span class="ask corner">
           <Info label="About the clip model" side="right">
-            A language model reads the transcript and picks the moments worth clipping. It runs on
-            this machine, is free to run and needs the memory to hold it. Only the words are read.
-            A model in the cloud, Anthropic's or OpenAI's, can be chosen later in the settings. A
-            model you already have in <b>~/.framefairy/models</b> is used as it is.
+            {#if noneFits}
+              A language model in the cloud reads the transcript of the video and picks the moments
+              worth clipping. It sees only the transcript, never the picture or the sound. The
+              company runs it with your API key and charges for each video.
+            {:else}
+              A language model reads the transcript of the video and picks the moments worth
+              clipping. It sees only the transcript, never the picture or the sound. It runs on
+              this machine, costs nothing to run and needs the memory to hold it. A model you
+              already have in <b>~/.framefairy/models</b> is used as it is.
+            {/if}
           </Info>
         </span>
         <div class="headrow">
