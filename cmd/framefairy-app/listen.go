@@ -223,6 +223,22 @@ func (r *recording) heard(samples []float32) {
 	}
 }
 
+// spoke says whether the microphone was as loud as a voice anywhere in
+// samples, a tenth of a second at a time, the way heard measures it.
+func spoke(samples []float32) bool {
+	for at := 0; at < len(samples); at += engine.SampleRate / 10 {
+		part := samples[at:min(at+engine.SampleRate/10, len(samples))]
+		power := 0.0
+		for _, s := range part {
+			power += float64(s) * float64(s)
+		}
+		if 10*math.Log10(power/float64(len(part))+1e-20) >= listenVoice {
+			return true
+		}
+	}
+	return false
+}
+
 // listenVoice is how loud the microphone has to be, in dB, for somebody to
 // be speaking into it: 10 dB over a quiet room, see loudness. The speech
 // model hears words in a room where nobody speaks. Tim pressed Dictate and
@@ -403,9 +419,13 @@ func (l *listening) write(r *recording, dir string, every, quiet time.Duration) 
 				if n > 0 {
 					from = ends[n-1]
 				}
+				// A stretch nobody spoke in, two new lines in a row, needs no
+				// pass of the speech model, which on a slow machine would
+				// hold up the answer to every one after it.
+				samples := r.recorded()
 				end, text = max(ask.at, from), ""
-				if r.voiced.Load() && end > from {
-					text, _ = heardAround(rec, r.recorded(), from, end)
+				if spoke(samples[from:end]) {
+					text, _ = heardAround(rec, samples, from, end)
 				}
 			} else {
 				for _, t := range slices.Backward(told) {

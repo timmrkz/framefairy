@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -456,6 +457,8 @@ type voices struct {
 	// slow is how long each pass takes, nothing when zero. Only a test in
 	// a testing/synctest bubble sets it, whose clock is fake.
 	slow time.Duration
+	// heard counts the times it was asked.
+	heard atomic.Int32
 }
 
 // hold makes the next passes wait for the channel it gives to be closed,
@@ -468,6 +471,7 @@ func (v *voices) hold() (chan struct{}, chan struct{}) {
 }
 
 func (v *voices) Recognize(samples []float32, rate int) []engine.Token {
+	v.heard.Add(1)
 	v.mu.Lock()
 	held, in := v.held, v.in
 	v.mu.Unlock()
@@ -720,6 +724,57 @@ func TestANewLineCutsWhatWasSaidWhereItWasTyped(t *testing.T) {
 	}
 	if strings.Join(stopped.Said, "|") != "wort wort wort|wort wort" {
 		t.Errorf("stopping gave %q, want the words before the new line and the words after it apart", stopped.Said)
+	}
+}
+
+// A cut after a piece settled at a pause writes down only what was said
+// since that piece, and a second cut after a moment nobody spoke in makes
+// an empty piece without asking the speech model, which on a slow
+// machine would hold up every answer after it. The review of #574 found
+// the pieces' ends unread by any test.
+func TestACutAfterAPauseHoldsOnlyWhatFollowedIt(t *testing.T) {
+	levels, passes := make(chan time.Time), make(chan time.Time)
+	measured, passed := make(chan struct{}, 1), make(chan struct{}, 1)
+	v := &voices{}
+	f, mic, told := dictatingTo(t, v, func(l *listening) {
+		l.beats = &listenBeats{levels: levels, passes: passes, measured: measured, passed: passed}
+	})
+	defer f.CancelListening()
+	recording, err := f.Listen()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pass := func() {
+		passes <- time.Time{}
+		<-passed
+	}
+	// Three words and a pause, settled as a piece.
+	mic.say(tone(1.8), hush(1.2))
+	pass()
+	awaitTold(t, told, func(d Dictation) bool { return len(d.Said) == 1 })
+	// Two words and a cut, a moment of nobody speaking and a second cut,
+	// and two words more.
+	mic.say(tone(1.2))
+	f.BreakListening(recording, 1)
+	mic.say(hush(0.6))
+	f.BreakListening(recording, 2)
+	mic.say(tone(1.2))
+	heard := v.heard.Load()
+	pass()
+	d := awaitTold(t, told, func(d Dictation) bool { return d.Asked == 2 })
+	if strings.Join(d.Said, "|") != "wort wort wort|wort wort|" {
+		t.Errorf("after the two cuts the window was told %q settled", d.Said)
+	}
+	// The first cut and the pass after the cuts, nothing for the second.
+	if n := v.heard.Load() - heard; n != 2 {
+		t.Errorf("the pass with the two cuts asked the speech model %d times, want 2", n)
+	}
+	stopped, err := f.StopListening()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(stopped.Said, "|") != "wort wort wort|wort wort||wort wort" {
+		t.Errorf("stopping gave %q", stopped.Said)
 	}
 }
 
