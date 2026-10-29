@@ -76,14 +76,16 @@ type timesCase struct {
 	// not nought, with the sound in AAC. MPEG-4 Part 2 in GOPs of 30 and
 	// PCM where it is.
 	gop int
+	// The picture's codec and the sound's, from "-c:v", where they are
+	// not the ones gop picks.
+	codecs []string
 	// Written the way a recording cut off by a crash is left: as it is
 	// made, with no going back to say how long it is or where its key
 	// frames are.
 	cutOff bool
 	// A file only the video preview's test takes, see
 	// TestTheVideoPreviewShowsTheFramesOfTheShort: one whose frames keep to
-	// their rate, which TestARenderCutsOnWholeFrames renders, or one whose
-	// short is not right yet, plan row 2.201.
+	// their rate, which TestARenderCutsOnWholeFrames renders.
 	previewOnly bool
 }
 
@@ -118,11 +120,13 @@ var timesCases = []timesCase{
 	// What OBS records, the file Tim found the video preview could not
 	// read: H.264 with B-frames, so frames are decoded out of the order
 	// they are shown in, and AAC, whose priming starts the sound before
-	// the picture, in Matroska, with frames left out under load.
+	// the picture, in Matroska, with frames left out under load. Its
+	// frames begin on whole milliseconds, some exactly a hair after the
+	// moment they hold, #266.
 	{name: "obs_mkv", file: "obs.mkv", rate: "30/1",
 		video: []string{"select='not(between(n\\,40\\,49)+between(n\\,100\\,104))'"},
 		out:   []string{"-fps_mode", "passthrough"},
-		gop:   30, previewOnly: true},
+		gop:   30},
 	// MPEG-TS, which OBS also records and camcorders write, has no index
 	// of its key frames, so a seek lands between two. A key frame every
 	// two seconds puts every jump of the test inside a GOP.
@@ -131,10 +135,8 @@ var timesCases = []timesCase{
 	{name: "mpegts", file: "ts.ts", gop: 60},
 	// What OBS leaves of a Matroska recording when it crashes: no
 	// duration and no index of its key frames, plan row 2.203.
-	// Like obs_mkv a file of the video preview's test only, and its rate
-	// not checked like mpegts', since the Mac's encoder in Matroska is
-	// plan row 2.201.
-	{name: "crashed_mkv", file: "crashed.mkv", gop: 60, cutOff: true, previewOnly: true},
+	// Its rate is not checked, like mpegts'.
+	{name: "crashed_mkv", file: "crashed.mkv", gop: 60, cutOff: true},
 }
 
 // timesEpisode makes the episode of a case: its frames carry their
@@ -159,6 +161,9 @@ func timesEpisode(t *testing.T, c timesCase) string {
 	codecs, sound := [][]string{{"-c:v", "mpeg4", "-q:v", "2", "-g", "30"}}, []string{"-c:a", "pcm_s16le"}
 	if c.gop > 0 {
 		codecs, sound = h264(t, c.gop), []string{"-c:a", "aac"}
+	}
+	if len(c.codecs) > 0 {
+		codecs, sound = [][]string{c.codecs}, nil
 	}
 	if out, err := encodeTestFile(t, "ffmpeg", args, codecs, append(sound, "-t", seconds, source)...); err != nil {
 		t.Fatalf("making the test episode: %s %s", err, out)
@@ -348,19 +353,30 @@ func frameHolding(t *testing.T, source string) func(at float64) int {
 		t.Fatal(err)
 	}
 	start, _ := strconv.ParseFloat(strings.TrimSpace(string(out)), 64)
-	out, err = exec.Command("ffprobe", "-v", "error", "-select_streams", "v:0",
-		"-show_entries", "packet=pts_time", "-of", "csv=p=0", source).Output()
-	if err != nil {
-		t.Fatal(err)
-	}
+	numbers := barNumbers(t, source, 128, 72, "-fps_mode", "passthrough")
+	// MPEG-PS stamps no time on some packets, and its frames get theirs
+	// as they are decoded, all but its last, which lies after every piece.
 	var begins []float64
-	for _, field := range strings.Fields(string(out)) {
-		if v, err := strconv.ParseFloat(strings.Trim(field, ","), 64); err == nil {
-			begins = append(begins, v-start)
+	for _, entry := range []string{"packet=pts_time", "frame=best_effort_timestamp_time"} {
+		out, err = exec.Command("ffprobe", "-v", "error", "-select_streams", "v:0",
+			"-show_entries", entry, "-of", "csv=p=0", source).Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		begins = begins[:0]
+		for _, field := range strings.Fields(string(out)) {
+			if v, err := strconv.ParseFloat(strings.Trim(field, ","), 64); err == nil {
+				begins = append(begins, v-start)
+			}
+		}
+		if len(begins) == len(numbers) {
+			break
 		}
 	}
+	if strings.HasSuffix(strings.TrimRight(string(out), ",\n"), "N/A") && len(begins) == len(numbers)-1 {
+		numbers = numbers[:len(begins)]
+	}
 	sort.Float64s(begins)
-	numbers := barNumbers(t, source, 128, 72, "-fps_mode", "passthrough")
 	if len(numbers) != len(begins) {
 		t.Fatalf("the episode has %d frames and %d timestamps", len(numbers), len(begins))
 	}

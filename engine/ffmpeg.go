@@ -716,6 +716,10 @@ type SourceInfo struct {
 	// -read_intervals counts in, and whether that is known.
 	origin   float64
 	hasClock bool
+	// How long a tick of the picture's timestamps is, tickNum/tickDen
+	// seconds, its time base, 1/1000 in Matroska. Nought where ffprobe
+	// does not say.
+	tickNum, tickDen int64
 	// The pieces of a clip whose own frames come at uneven times in a
 	// file Probe found even, see unevenPieces.
 	unevenAt [][2]float64
@@ -724,6 +728,20 @@ type SourceInfo struct {
 	// is read from in such a file, see keyedPieces.
 	unindexed bool
 	keyAt     []pieceKey
+}
+
+// fraction is a positive fraction ffprobe writes as "1/1000", in lowest
+// terms, or nought for anything else.
+func fraction(v any) (num, den int64) {
+	text, _ := v.(string)
+	a, b, _ := strings.Cut(text, "/")
+	n, err1 := strconv.ParseInt(a, 10, 64)
+	d, err2 := strconv.ParseInt(b, 10, 64)
+	if err1 != nil || err2 != nil || n <= 0 || d <= 0 {
+		return 0, 0
+	}
+	g := int64(gcd(int(n), int(d)))
+	return n / g, d / g
 }
 
 // FPS is the frame rate as a number.
@@ -854,7 +872,7 @@ func (e *Engine) probe(ctx context.Context, path string) (SourceInfo, error) {
 	res := run(ctx, "", e.FFprobe, "-v", "error",
 		"-select_streams", "v:0",
 		"-show_entries",
-		"stream=width,height,r_frame_rate,avg_frame_rate,start_time,color_primaries,color_transfer,color_space",
+		"stream=width,height,r_frame_rate,avg_frame_rate,start_time,time_base,color_primaries,color_transfer,color_space",
 		"-show_entries", "stream_side_data=rotation",
 		"-show_entries", "format=duration,start_time,format_name",
 		"-of", "json", path)
@@ -944,6 +962,7 @@ func (e *Engine) probe(ctx context.Context, path string) (SourceInfo, error) {
 	info := SourceInfo{Width: width, Height: height, Turned: turned, FPSNum: num, FPSDen: den,
 		Duration: duration, VideoStart: videoStart, Colour: colour,
 		origin: first - videoStart, hasClock: hasFirst, unindexed: unindexed(format)}
+	info.tickNum, info.tickDen = fraction(stream["time_base"])
 	info.SoundRate, info.SoundChannels = e.soundOf(ctx, path)
 	info.Variable = hasFirst && e.uneven(ctx, path, info)
 	if info.Variable {

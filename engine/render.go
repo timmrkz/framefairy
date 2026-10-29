@@ -494,7 +494,7 @@ func (s SourceInfo) plainCut(seg Segment) pieceCut {
 	// picture's first frame.
 	start := func(k int64) int64 { return v0 + (2*k*den*1_000_000+num)/(2*num) }
 	if s.Variable || first < 0 || s.unevenOver(seg) {
-		return s.byTimes(start(first), start(end), end-first)
+		return s.byTimes(start(first), start(end), first-s.firstFrame(), end-first)
 	}
 	seek := max(0, v0+(2*first-1)*den*1_000_000/(2*num))
 	read := ((end-first+1)*den*1_000_000 + num - 1) / num
@@ -526,23 +526,67 @@ func (s SourceInfo) plainCut(seg Segment) pieceCut {
 // sound is cut at the two moments, as for a piece counted by frames. The
 // times are moved in microseconds, since moved in the ticks of the stream,
 // 1/600 s from a phone, the hair is lost in the rounding.
-func (s SourceInfo) byTimes(from, to, n int64) pieceCut {
+//
+// The moments are counted the way the video preview counts them, see
+// framewire.Grid: from the start of the grid, a whole microsecond, at
+// exactly one frame of the rate each, and the piece starts at frame first
+// of the grid. Those moments are not whole microseconds, 1/30 s is
+// 33333.3 of them, so the times are moved in ticks that are whole on
+// both, 1/3000000 s at 30 a second. Moved in microseconds, a piece's
+// moments came up to a microsecond early, and a frame that begins exactly
+// a hair after one, as one of Matroska's whole milliseconds can, missed
+// it, #266.
+func (s SourceInfo) byTimes(from, to, first, n int64) pieceCut {
 	frame := int64(s.FPSDen) * 1_000_000 / int64(s.FPSNum)
-	seek := max(0, from-frame/2)
+	seek := s.onTicks(max(0, from-frame/2))
 	lead := s.leadOf(seek)
 	hair := int64(frameHair * 1_000_000)
+	num, den := int64(s.FPSNum), int64(s.FPSDen)
+	ticks := 1_000_000 / int64(gcd(1_000_000, s.FPSNum)) * num
+	if ticks > math.MaxInt32 {
+		ticks = 1_000_000
+	}
+	grid := int64(math.Round(s.frameBegins(s.firstFrame()) * 1_000_000))
+	start := grid*(ticks/1_000_000) + (2*first*den*ticks+num)/(2*num)
 	return pieceCut{
 		seek:      micros(seek),
 		seekUS:    seek,
 		soundSeek: s.soundSeekOf(seek - lead),
 		soundRead: micros(to - seek + frame + lead),
 		fromKey:   true,
-		picture: fmt.Sprintf("settb=1/1000000,setpts=PTS-%s/TB,fps=fps=%s:start_time=0:round=up,"+
+		picture: fmt.Sprintf("settb=1/%d,setpts=PTS%+d,fps=fps=%s:start_time=0:round=up,"+
 			"tpad=stop_mode=clone:stop_duration=%s,trim=end_frame=%d,",
-			micros(from-seek+hair), s.FPSString(), micros(to-from), n),
+			ticks, (seek-hair)*(ticks/1_000_000)-start, s.FPSString(), micros(to-from), n),
 		sound: fmt.Sprintf("atrim=start=%s:end=%s,asetpts=PTS-STARTPTS",
 			micros(from-seek+lead), micros(to-seek+lead)),
 	}
+}
+
+// onTicks is a seek moved back to where ffmpeg counts the frames after
+// it exactly. ffmpeg moves every timestamp read after a seek back by the
+// seek and the start of the file together, rounded to the ticks of the
+// picture's timestamps. In Matroska a tick is a millisecond, so a seek
+// of 0.171001 s moved a frame that begins exactly a hair after its moment
+// a microsecond later, past it, and the frame before it held the moment
+// instead, #266. A seek whose distance from the start of the file is a
+// whole number of ticks and of microseconds is moved exactly. A read from
+// the key frame before it gives the same frames from a seek up to a few
+// milliseconds earlier. One that would go before the start stays where
+// it is.
+func (s SourceInfo) onTicks(seek int64) int64 {
+	if s.tickNum <= 0 || s.tickDen <= 0 {
+		return seek
+	}
+	// The shortest step that is both: 1 ms in Matroska, 100 µs at 1/90000
+	// and 5 ms at 1/600.
+	whole := s.tickNum * 1_000_000
+	step := whole / int64(gcd(int(whole), int(s.tickDen)))
+	origin := int64(math.Round(s.origin * 1_000_000))
+	on := seek + origin - ((seek+origin)%step+step)%step - origin
+	if on < 0 {
+		return seek
+	}
+	return on
 }
 
 // leadOf is how much earlier than its picture, read from seek, a piece's

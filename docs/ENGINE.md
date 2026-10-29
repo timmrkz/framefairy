@@ -729,13 +729,22 @@ frame. Two kinds of episode do not keep to that, and `Probe` finds both.
   picture is read from the key frame before it, and ffmpeg's `fps`
   filter, rounding up, gives every frame of the short the frame of the
   episode that holds its moment, the last one to begin at or before it.
-  The times are moved in microseconds for that, since in a phone's ticks
-  of 1/600 s the hair is lost in the rounding. The video preview shows
-  the same frames: `SourceInfo.Grid` names the frames of the short, and
-  the episode's decoder makes each of them from the file's frames by the
-  same rule, `framewire.Grid`, counted in whole microseconds as the `fps`
-  filter counts, see [VIDEO-PREVIEW.md](VIDEO-PREVIEW.md), step 5. The
-  sound is cut at the same moments as before.
+  The times are moved in ticks that are whole microseconds and whole
+  frames of the rate, 1/3000000 s at 30 a second, since in a phone's
+  ticks of 1/600 s the hair is lost in the rounding, and every moment is
+  counted from the start of the grid. The video preview shows the same
+  frames: `SourceInfo.Grid` names the frames of the short, and the
+  episode's decoder makes each of them from the file's frames by the
+  same rule, `framewire.Grid`, see [VIDEO-PREVIEW.md](VIDEO-PREVIEW.md),
+  step 5. The sound is cut at the same moments as before. A short of
+  what OBS records, whose frames begin on Matroska's whole milliseconds,
+  showed the frame before for one moment in three where a frame begins
+  exactly a hair after its moment, #266. A moment counted from its piece's
+  start, rounded to a microsecond, came up to a microsecond early. And
+  ffmpeg moves the times read after a seek back by the seek, rounded to
+  the stream's ticks, a millisecond in Matroska, which moved such a frame
+  a microsecond late. The moments are now counted from the grid's start,
+  and the seek is moved back onto the stream's ticks, `onTicks`.
 - **Every track starting late.** A recording cut out of a longer one, or
   one written with its start held back, has no track that starts at zero.
   ffmpeg counts from where the earliest track starts, `-ss` included, and
