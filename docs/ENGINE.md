@@ -237,15 +237,10 @@ an update has to read what an older version wrote. Only a new
 transcription splits the numbers.
 
 Transcribing a window that does not start at the beginning, after an
-interrupted run carried on or with `--from`, decodes from the start of the
-file and drops the samples before it, rather than asking ffmpeg to seek. A
-seek into a compressed stream lands on a packet, and what a build does with
-that packet differs: some decode and trim it, some begin at the next one, up
-to 23 ms later for AAC. Raw samples carry no timestamps, so a start that is
-out cannot be noticed afterwards, and every word from there on would be
-wrong by that much. Counting samples is exact everywhere, and audio decodes
-at a few hundred times real time, so winding forward through an hour costs
-about ten seconds.
+interrupted run carried on or with `--from`, reads its part the way every
+part is read, `audioFrom`: a seek before the input and a cut at the
+frame's timestamp, see the parts above. It no longer decodes from the
+start of the file and counts samples.
 
 ## Recipes
 
@@ -1699,8 +1694,10 @@ the job, and a record gives it back after a restart.
 
 ## The code
 
-`asr/` wraps the speech recogniser and is the only package with native code.
-Everything else is in `engine/`:
+`asr/` wraps the speech recogniser. The native code is there, in the
+macOS keychain of `engine/keys_darwin.go`, in the frames decoder of
+`cmd/framefairy-frames`, and in the app's `chrome_darwin.go` and
+`refresh_darwin.go`. The engine is in `engine/`:
 
 ```
   audio.go      reading the audio, word timing, loudness
@@ -1786,4 +1783,37 @@ Everything else is in `engine/`:
   frames.go     deleting everything made for an episode
   corrections.go what a clip corrects and removes of the words heard
   training.go   training records of plans and decisions
+  records.go    what a machine keeps of the work done on it, the training
+                records and the timings of past searches
+  transcripttext.go the corrected transcript, for Export transcript
+  sentences.go  what an episode says as cards of sentences, for reading
+  removedwords.go the words a clip does not show, kept with the clip
+  reach.go      how far a search window may reach, the same sum the
+                range picker makes
+  label.go      the few words and the colour a person gives a video
+  captionlayer.go the captions of the video preview, the short's own
+                caption file drawn by libass in the decoder
+  hdrcolour.go  caption colours in an HDR short, at the reference white
+  episodeframes.go the client of a video's frames decoder,
+                cmd/framefairy-frames, over internal/framewire
+  preview.go    frames for the video preview straight from ffmpeg.
+                Only the tests call PreviewFrames, see #590, and the app
+                reads PreviewTimes. previewsound.go is its sound
+  modelcheck.go a downloaded language model checked again before it loads
+  licence.go    the licence key, kept with the API keys
+  shipped_production.go says the build is the one that ships, made with
+                the production tag. shipped_other.go is every other build
+  shape.go      what a hand does to a clip on the clip timeline, and what
+                it makes of the clip, see WORDS.md
+  suggest.go    how long a window is, how many clips a search asks for
+                and how long the model may think, when nobody has said
+  room.go       how much one search can read
+  readahead.go  the transcript read ahead of a search
+  modelhost.go  the local model, kept running between the asks that want it
+  probed.go     what ffmpeg can do and what a file holds, asked once a
+                process and kept by the file's size and time
+  rotation.go   the parts of a phone video recorded on its side
+  cropmarks.go  a crop that follows keyframes put on frames of a clip
+  hyphenate.go  a caption word too wide for a line, broken the way TeX does
+  wordframes.go where the words of a caption stand, as libass draws them
 ```

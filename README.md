@@ -85,6 +85,7 @@ docs/
   GUI-PLAN.md         the app's build plan up to 16 October 2026, frozen,
                       open work is in the GitHub issues
   ROBUSTNESS.md       what can go wrong between the parts, and what was done
+  DESIGN-REVIEW.md    a review of the design, 6 October, and what became of it
   ASSESSMENT.md       a review of design and practice, and what became of it
   PACKAGING.md        what ships, what the user installs, which ffmpeg
   UPDATES.md          how the app updates itself, to the next release and,

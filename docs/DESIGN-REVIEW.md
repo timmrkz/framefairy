@@ -22,6 +22,67 @@ part were checked again by hand.
 
 Line numbers are as found and drift as the code moves.
 
+This review is history. Open work lives in GitHub issues, never in this
+file. On 29 October 2026 every finding was checked again against main at
+`a2d7260` by the architecture review [#603](https://github.com/timmrkz/framefairy/issues/603).
+The table below says how each stood then, and nothing here changes again.
+The text after it is as written on 6 October.
+
+## Where it stands, 29 October 2026
+
+Fixed, with its pull request. Partly or mostly fixed, with where the
+rest went. Moved, to the issue that holds what is open. Listed, in #603
+under what was seen and not logged, for Tim to raise when he wants it.
+Dropped, with why. Ended, a family that stopped.
+
+| Finding | 29 October 2026 |
+| --- | --- |
+| Bug 1, preview and short a frame apart at 29.97 fps | Fixed in #148 |
+| Bug 2, model guards on job kinds that do not exist | Fixed in #130 |
+| Bug 3, a work folder that is a link joins the library | Fixed in #130 |
+| Bug 4, a refused search sits in Finding clips | Fixed in #130 |
+| Bug 5, a render ending on another video is not noticed | Mostly fixed in #164, which keeps ten workspaces. Moved to #606 for the rest |
+| Bug 6, Put captions back is six calls and six undo steps | Listed |
+| Bug 7, the caption box's overrides are a drifted copy | Fixed in #201 |
+| Bug 8, settings writers outside the lock | Fixed in #130 |
+| Bug 9, the thank-you page gives keys for 24 hours | Fixed in #146 |
+| Bug 10, six copies of "is someone typing" | Fixed in #130 |
+| The video preview's clock | Ended in #110 |
+| Time as rounded seconds | Fixed in #148, done with frame starts rather than frame numbers |
+| ffmpeg seek and pipe | Partly fixed: a part of the sound is cut at the frame's timestamp, see ENGINE.md. Decoding the sound once into a cache is listed. #266 and #274 are its live symptoms, and #602 is the same family for the picture of a short |
+| The interface rebuilds Go's state | Moved to #606 |
+| Tested in Chromium, shipped in WebKit | Moved to #380 |
+| One thing written twice | Partly fixed in #396 and #201. Moved: the types to #611, the preview stub to #613, the loudness to #609 |
+| Which tests run, and where | Fixed in #451 and #544, with `internal/ffmpegtest`. The Linux tests on our own ffmpeg wait on #300 |
+| Contained, `--above` and `centre()` | Fixed in #228 |
+| Framing decodes every kept second twice | Fixed in #123 and #396 |
+| No episode object | Partly fixed in #123. Moved to #608 |
+| Every gesture scans the words of the whole episode | Fixed in #123 |
+| A render does its setup again for every clip | Partly fixed in #346 and #351. Moved to #609 |
+| Every atomic write is a full flush, the loudness kept twice | Moved to #609 |
+| The x264 preset is `slow` | Dropped: a Mac encodes with VideoToolbox, and Linux has no encoder to ship until #300 |
+| Framers each take half the cores | Dropped: four framers at once is rare, and the cost is time, not a fault |
+| ENGINE.md contradicts itself on a window | Fixed in #614 |
+| A job has two state machines | Moved to #606 |
+| Two queue paths and five ways in | Polling ended in #504, the removal wait is bounded since #337. Moved to #613 for the ways in only tests use |
+| 69 bindings with no rule for errors | Dropped: a refused start says why in its row since #130 |
+| Engine work done in the app | Overrides fixed in #201. The search's plan name and warm-up decision, still in the app, moved to #610. The rendered record, written only by the app, is listed |
+| Job kinds are strings | Partly fixed in #130: the search guards ask the engine's constants. The model guards still type `"llm"` and `"model"`, `setup.go:465`, which is dropped as small, since only the app makes those jobs |
+| Go only pings, the interface guesses | Moved to #606 |
+| One pending flag per control | Moved to #606 |
+| Rules about where things land live in the interface | Caption edges fixed in #189. Moved to #610 |
+| One click, one edit | Listed, with bug 6 |
+| Objects rebuilt stand in for "something changed" | Moved to #606 |
+| The library is checked by path strings | Links refused since #130. Moved to #608 |
+| The webview has no second wall | No route serves a file's bytes since #195, so `nosniff` and `sandbox` are dropped. The CSP, and `llmModel` and `outputDir` taken as any path from the page, are listed |
+| Environment variables choose the programs | Fixed in #130 |
+| The licence server | Nonce fixed in #146. Moved to #305 |
+| Updates, before customers get them | Moved to #306 |
+
+The order of changes at the end is as planned on 6 October. Changes 3,
+4 and 5 are done, changes 1 and 2 mostly, and the rest follow the rows
+above.
+
 ## The short answer
 
 Tim's hunch is right. Most of the bugs of the last month come from six

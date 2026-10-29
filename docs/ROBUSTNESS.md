@@ -10,6 +10,12 @@ Every fix here starts as a test that makes the failure happen, run under
 `go test -race` and from several goroutines at once, and fails on the code
 before the fix.
 
+This audit is history. Open work lives in GitHub issues, never in this
+file. On 29 October 2026 every item was checked again against main at
+`a2d7260` by the architecture review [#603](https://github.com/timmrkz/framefairy/issues/603).
+What had come back or was still open moved to an issue or was dropped, as
+each item says, and nothing here changes again.
+
 ## The audit
 
 Read from the code, most severe first. Each line says where, what happens and
@@ -62,7 +68,10 @@ what became of it.
    panics stops reporting, and a lane survives whatever happens around a
    job, its news included. `engine/planbuild.go`, `engine/searchclock.go`,
    `cmd/framefairy-app/jobs.go`, each with a test that crashed the test
-   program before.
+   program before. **Came back**, found on 29 October 2026: the goroutine
+   that builds the video preview's captions, new in #201, has no recover,
+   and neither do 10 of the engine's 13 goroutines and 8 of the app's 28.
+   Moved to #604, which guards every goroutine at once.
 5. **A job event lost or out of order leaves the interface stuck.** The
    queued event can arrive after the running one, events sent before the
    interface starts listening are lost, and nothing reads the job list again.
@@ -160,4 +169,8 @@ what became of it.
     goroutine wrote it, fixed in `engine/local.go`. A server that crashes after
     loading costs one search.
     A warm-up for a search that failed still loads the model. The job list,
-    the probe cache and the plan locks grow while the app is open. Open.
+    the probe cache and the plan locks grow while the app is open.
+    **Dropped** on 29 October 2026: the model now stays loaded while the app
+    is open, #434 and #440, so a warm-up costs nothing. The job list and
+    the plan locks grow only with one session's work, and the probe cache
+    holds one entry a video.
