@@ -592,7 +592,6 @@
         memory: m.inUse ? "Finds the clips now" : languageRow(m).memory,
         note: "",
         warn: false,
-        best: false,
       })),
   );
   const installedSize = $derived(
@@ -706,8 +705,8 @@
                 A model runs from memory, and this machine has
                 {memory > 0 ? memorySize(memory) : "not said how much"}. A bigger model reads the
                 transcript better and needs more of it, and the list says beside a model when this
-                machine is short of memory for it. Models are fetched from the people who made them and kept in
-                <b>{modelsFolder}</b>.
+                machine is short of memory for it. A model is downloaded once from its source onto
+                your machine, into <b>{modelsFolder}</b>.
               {/if}
             </Info>
           </span>
@@ -779,8 +778,8 @@
           <span class="ask">
             <Info label="About the speech model" side="left">
               Every video is transcribed on this machine, word by word with the time of each
-              word. Nothing about the video is sent anywhere. The model is fetched from the
-              people who published it and kept in <b>{modelsFolder}</b>.
+              word. Nothing about the video is sent anywhere. The model is downloaded once from its
+              source onto your machine, into <b>{modelsFolder}</b>.
             </Info>
           </span>
         </div>
@@ -959,8 +958,6 @@
               >
                 <Icon name="trash" />
               </button>
-            {:else}
-              <span class="bin-room" aria-hidden="true"></span>
             {/if}
           </div>
         </div>
@@ -1190,12 +1187,6 @@
   }
 
   .act {
-    flex: none;
-  }
-
-  /* The room of the trash can, where there is nothing to remove. */
-  .bin-room {
-    width: var(--control-h);
     flex: none;
   }
 

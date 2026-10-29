@@ -58,10 +58,10 @@ every row. The size is the download before the model is here and the room
 it takes once it is. The clip model's card says how much memory this
 machine has, and only offers the models it can hold, see engine.Fit. The
 memory a model needs wears the colour of a warning when the machine has
-little more than that, and says so under the pointer. The model the app
-recommends for this machine has its Download lit, the way a box lights
-the button it expects. A
-model that does not fit would swap, and a model that swaps answers in
+little more than that, and says so under the pointer. Every Download is
+the same plain button, and none is lit over the others. The model the app
+recommends for this machine says so under the pointer. A model that
+does not fit would swap, and a model that swaps answers in
 minutes rather than seconds. A `.gguf` already in `~/.framefairy/models`
 is used as it is, whether the app fetched it or not.
 

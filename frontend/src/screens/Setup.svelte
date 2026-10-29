@@ -129,8 +129,7 @@
           <Info label="About the speech model" side="right">
             Every video is transcribed on this machine, word by word with the time of each word.
             Nothing about the video is sent anywhere. The model is not part of the app, so it is
-            downloaded from the people who published it and kept on your machine, in
-            <b>{modelsFolder}</b>.
+            downloaded once from its source onto your machine, into <b>{modelsFolder}</b>.
           </Info>
         </span>
         <div class="headrow">
@@ -144,10 +143,16 @@
       <div class="area asks">
         <span class="ask corner">
           <Info label="About the clip model" side="right">
-            A language model reads the transcript and picks the moments worth clipping. It runs on
-            this machine, is free to run and needs the memory to hold it. Only the words are read.
-            A model in the cloud, Anthropic's or OpenAI's, can be chosen later in the settings. A
-            model you already have in <b>{modelsFolder}</b> is used as it is.
+            {#if noneFits}
+              A language model in the cloud reads the transcript of the video and picks the moments
+              worth clipping. It sees only the transcript, never the picture or the sound. The
+              company runs it with your API key and charges for each video.
+            {:else}
+              A language model reads the transcript of the video and picks the moments worth
+              clipping. It sees only the transcript, never the picture or the sound. It runs on
+              this machine, costs nothing to run and needs the memory to hold it. A model you
+              already have in <b>{modelsFolder}</b> is used as it is.
+            {/if}
           </Info>
         </span>
         <div class="headrow">
@@ -157,19 +162,21 @@
         <!-- A model runs from memory, so the machine's own is said out
              loud here. A model's need is only believable next to the
              number it was judged against. -->
+        <!-- On a machine that holds none of the models, the one paragraph
+             says so and what is left: the cloud, with a key. -->
         <p class="muted">
           Reads the transcript and picks the moments.
-          {setup.memory > 0 ? ` This machine has ${memorySize(setup.memory)} of memory.` : ""}
+          {noneFits
+            ? ` ${setup.memory > 0 ? `With ${memorySize(setup.memory)} of memory, this machine` : "This machine"} is too small for a local model, so only the cloud works, with your API key.`
+            : setup.memory > 0
+              ? ` This machine has ${memorySize(setup.memory)} of memory.`
+              : ""}
         </p>
         {#if cloud}
           <p class="muted">Clips are found in the cloud, as the settings say.</p>
         {:else if clipRows.length}
           <ModelList models={clipRows} kind="llm" oninstall={api.installLanguageModel} onchange={reload} />
         {:else if provider}
-          <p class="muted">
-            None of the models fits in this machine's memory, so clips are found in the cloud, with
-            an API key of your own.
-          </p>
           <div class="card">
             <!-- A model is always chosen, so its row is marked ready, and
                  its name stands in the column of the key's under it. -->
@@ -212,10 +219,12 @@
      which grows as the app does. So the whole of it stands in the middle
      instead, and an app too short for it lets the cards scroll rather
      than the page. */
+  /* The space under the title is the space between the two cards, so
+     the page reads as the title and then two areas of the same kind. */
   .setup {
     display: flex;
     flex-direction: column;
-    gap: var(--gap);
+    gap: var(--edge);
     width: 100%;
     max-width: 720px;
     max-height: 100%;

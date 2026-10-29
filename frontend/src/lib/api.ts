@@ -624,9 +624,6 @@ export interface ModelRow {
   // Whether that word is a warning rather than a fact, which the memory
   // it needs then wears.
   warn?: boolean;
-  // Whether it is the one the app recommends for this machine, whose
-  // Download is the one lit, the way a box lights the button it expects.
-  best?: boolean;
 }
 
 // A company whose API can find clips, and a model of theirs the app offers
@@ -1200,7 +1197,6 @@ export function languageRow(m: LanguageModel, pickable = false): ModelRow {
     installed: m.installed,
     note,
     warn,
-    best: m.recommended,
   };
 }
 

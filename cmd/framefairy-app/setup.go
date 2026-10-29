@@ -195,7 +195,8 @@ func (s *FrameFairy) Setup(ctx context.Context) SetupState {
 }
 
 // installSpeech and installLanguage are what the setup and the settings
-// install a model with.
+// install a model with. The bridge a walk drives stands in for them, so a
+// walk never downloads a model.
 var (
 	installSpeech   = engine.InstallSpeechModel
 	installLanguage = engine.InstallLanguageModel

@@ -46,7 +46,14 @@ export const steps = {
     else if (first.length < 2) walk.wrong = `the setup offers ${first.length} models, a speech model and a clip model at least`;
     else if (astray) walk.wrong = `a row stands out of the table: ${JSON.stringify(astray)} beside ${JSON.stringify(first[0])}`;
     else if (cut.length) walk.wrong = `the setup cuts words short: ${JSON.stringify(cut)}`;
-    else if ((await page.locator(".setup button.act.primary").count()) !== 1) walk.wrong = "the setup lights no Download, or more than one, for the clip model it recommends";
+    else if (await page.locator(".setup button.act.primary").count()) walk.wrong = "the setup lights a Download over the others, where every Download is the same plain button";
+    if (walk.wrong) return;
+    // The space under the title is the space between the two cards.
+    const space = await page.evaluate(() => {
+      const [head, first, second] = [".setup header", ".setup .area", ".setup .area + .area"].map((s) => document.querySelector(s).getBoundingClientRect());
+      return { title: Math.round(first.top - head.bottom), cards: Math.round(second.top - first.bottom) };
+    });
+    if (space.title !== space.cards) walk.wrong = `the title stands ${space.title} px over the speech model and the two models ${space.cards} px apart, not the same`;
     if (walk.wrong) return;
 
     await speech.locator("button.act", { hasText: "Download" }).click();
@@ -100,15 +107,17 @@ export const steps = {
     await speech.locator("li").first().waitFor();
     await settle(page);
     const seen = { lists: await clip.locator("ul.models").count(), cloud: await clip.locator("button.pick").count(), key: await clip.locator("input.key").count() };
-    // The two rows have their names in one column, each name whole.
+    // The two rows have their names in one column, each name whole, and
+    // their last controls end in one column too, at the card's edge.
     const shape = await clip.locator(".card > .item").evaluateAll((items) =>
       items.map((i) => {
         const head = i.querySelector(".head");
-        return { name: head.getBoundingClientRect().left, high: head.getBoundingClientRect().height, wide: head.scrollWidth > head.clientWidth };
+        const last = [...i.querySelectorAll("button, input")].at(-1).getBoundingClientRect().right;
+        return { name: head.getBoundingClientRect().left, high: head.getBoundingClientRect().height, wide: head.scrollWidth > head.clientWidth, end: Math.round(last) };
       }),
     );
     if (seen.lists || seen.cloud !== 1 || seen.key !== 1) walk.wrong = `on a machine no clip model fits, the clip card shows ${JSON.stringify(seen)}, not a model in the cloud and its key`;
-    else if (shape.length !== 2 || shape[0].name !== shape[1].name || shape.some((r) => r.wide || r.high !== shape[0].high)) walk.wrong = `the rows of the model in the cloud and its key stand apart: ${JSON.stringify(shape)}`;
+    else if (shape.length !== 2 || shape[0].name !== shape[1].name || shape.some((r) => r.wide || r.high !== shape[0].high || r.end !== shape[0].end)) walk.wrong = `the rows of the model in the cloud and its key stand apart: ${JSON.stringify(shape)}`;
     if (walk.wrong) return;
     await speech.locator("button.act", { hasText: "Download" }).click();
     await speech.locator("li .cell", { hasText: /B of [\d.]+ [KMG]B/ }).waitFor();

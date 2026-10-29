@@ -192,7 +192,6 @@
           {:else}
             <button
               class="act"
-              class:primary={model.best && !running}
               title="Download it and keep it on this machine"
               disabled={asked === model.name || !!running}
               onclick={() => install(model.name)}
