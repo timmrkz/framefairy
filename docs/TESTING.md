@@ -758,9 +758,11 @@ goes on until the video preview has shown ten frames or come to the next
 keyframe, not for two seconds, in which a busy machine showed two, issue
 #464.
 
-Every walk plays on the walk's clock, which `open` in `walks/bridge.mjs`
-gives every page it opens, `window.__playClock`, and `playClock` in
-`lib/frames/queue.ts` goes by. It moves on to the next frame only once
+Every walk plays on the walk's clock, `preview/clock.ts`. The page the
+walks run on hands it to every frame queue it makes, see `FrameQueue.clock`
+in `lib/frames/queue.ts`, whose own clock is the sound card's. The app
+never builds `preview/`, so it holds no walk's clock and no switch for
+one. It moves on to the next frame only once
 the one before is up, and holds the sound card while a frame is still
 being decoded, so every frame of a play is shown on any machine and the
 sound stays with the picture. By the sound card's clock, the app's, a busy machine showed two
@@ -774,7 +776,8 @@ to the clip's end, and a playhead that never stands still while a hand
 drags. It asks for it by one of those steps, `soundCard` in
 `common/steps.mjs`, the way a sequence asks for motion, see Where they
 run below, and a new step of that kind goes in there. `smooth.mjs` asks
-`open` for it by name, `clock: "sound"`. A walk can also hold the sound
+`open` for it by name, `clock: "sound"`, which the page reads from
+`window.__playClock` before the app starts. A walk can also hold the sound
 card a moment by hand, `holdSound`, as the end dragged back past the
 playing playhead does while the hand drags, issue #583. The fold of a removed row is held as Svelte makes it and stepped
 through by hand, in twenty steps, and at each the card under the row

@@ -4,6 +4,10 @@
 // comes as server-sent events on /events. Nothing here knows what any
 // call or event means: that is the Go side's, which is the point of it.
 import { callOut } from "./settled";
+import { install } from "./clock";
+
+// A play runs on the walk's clock here, see clock.ts.
+install();
 
 type Listener = (ev: { data: unknown }) => void;
 const listeners = new Map<string, Set<Listener>>();

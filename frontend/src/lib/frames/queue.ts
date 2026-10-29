@@ -82,6 +82,14 @@ export type Shown = {
   passing?: boolean;
 };
 
+// Where a play is on the program, see tick: from where the sound card says
+// it is, heard, and where the first frame of the play not on screen yet
+// starts, unshown, which is decoded and waiting when coming, see unshown.
+export type PlayClock = (heard: number, unshown: number, coming: boolean) => number;
+// What a clock may reach of the queue it runs: the sound card, and whether
+// a play goes on.
+export type Play = { readonly audio: AudioContext; readonly playing: boolean };
+
 export type Stats = {
   // Frames open now, and the most there ever were.
   open: number;
@@ -1486,48 +1494,16 @@ export class FrameQueue {
     const timer = setTimeout(late, DRESS_WAIT);
     return () => clearTimeout(timer);
   };
-  // Where a play is on the program, from where the sound card says it is,
-  // heard, and where the first frame of the play not on screen yet starts,
-  // unshown, see tick. It is the sound card's clock, so a machine too slow
-  // to decode every frame in time shows fewer of them, which is right for
-  // the app. A walk plays on the walk's clock, which open in
-  // walks/bridge.mjs asks for with window.__playClock, see onFrames.
-  // Nothing of the walk's clock runs in the app: onFrames and the holds of
-  // holdSound act only once a walk has asked for it. It lives here beside
-  // pause and maybeBegin, which hold and start the sound card too, so its
-  // tests can reach it.
-  playClock: (heard: number, unshown: number, coming?: boolean) => number = (heard, unshown, coming = false) =>
-    (globalThis as { __playClock?: string }).__playClock === "frames" ? this.onFrames(heard, unshown, coming) : heard;
-
-  // The walk's clock: it stands on unshown until that frame is up, and
-  // holds the sound card meanwhile, so a walk sees every frame of a play
-  // on any machine and the sound stays with the picture. By the sound
-  // card's clock a busy machine showed 2 frames of 9, issue #534, and
-  // standing on frames alone left the sound running on ahead, so a loop
-  // switched off or a cut made while playing went by the sound's moment,
-  // not the picture's, issue #588. A frame coming, decoded and waiting,
-  // goes up on this tick, so the sound card runs on for it.
-  private onFrames(heard: number, unshown: number, coming: boolean): number {
-    void this.holdSound("frame", heard > unshown && !coming);
-    return Math.min(heard, unshown);
-  }
-
-  // Who holds the sound card while a walk plays: the walk's clock for a
-  // frame not up yet, "frame", and the walk's hand while it drags,
-  // "hand", see holdSound in walks/bridge.mjs and issue #583. The sound
-  // card runs again only once nobody holds it, and only while a play
-  // goes on: a play the app pauses or ends holds it itself, and a play
-  // that starts starts it, see maybeBegin. Held again on every tick it
-  // is wanted, since the app may have started it meanwhile. Settles once
-  // the sound card has done what it was told.
-  private holders = new Set<string>();
-  holdSound(who: string, held: boolean): Promise<void> {
-    if (held) {
-      this.holders.add(who);
-      return this.audio.state === "running" ? this.audio.suspend() : Promise.resolve();
-    }
-    if (!this.holders.delete(who) || this.holders.size) return Promise.resolve();
-    return this.state === "playing" && this.audio.state === "suspended" ? this.audio.resume() : Promise.resolve();
+  // The clock this queue plays on, see PlayClock. The app's is the sound
+  // card's, so a machine too slow to decode every frame in time shows
+  // fewer of them, which is right for the app. What runs the queue hands
+  // in a clock of its own by clock, before the queue is made: the page
+  // the walks run on hands in the walk's, see preview/clock.ts, which the
+  // app never builds.
+  static clock: (play: Play) => PlayClock = () => (heard) => heard;
+  playClock: PlayClock = FrameQueue.clock(this);
+  get playing(): boolean {
+    return this.state === "playing";
   }
 
   // The frame on screen, see screen.ts. Fresh when it is put up for the

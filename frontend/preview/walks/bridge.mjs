@@ -323,7 +323,7 @@ if (traces) {
 // opens another page on the episode as it is now, beside the first, in
 // its browser. browser is a browser to open it in rather than one of its
 // own, see newBrowser. clock is the clock a play runs on, see
-// FrameQueue.playClock: "frames", the walk's clock, stands on each frame
+// preview/clock.ts: "frames", the walk's clock, stands on each frame
 // until it is up and holds the sound card meanwhile, so every frame of a
 // play is shown and read on any machine, issues #534 and #588. "sound"
 // is the sound card's, as the app runs without a walk, for what a walk
@@ -814,9 +814,10 @@ export async function playUntil(page, { past = Infinity, most = Infinity, from =
 // Holds the sound card, or lets it go. Held, a play stands where it is,
 // picture and sound together, while a walk's hand takes as long as the
 // machine needs, and let go it plays on from there, issue #583, once the
-// walk's clock holds it no longer either, see FrameQueue.holdSound.
+// walk's clock holds it no longer either, see holdSound in
+// preview/clock.ts.
 export async function holdSound(page, held) {
-  await page.evaluate((held) => window.__frameQueue.holdSound("hand", held), held);
+  await page.evaluate((held) => window.__holdSound(held), held);
 }
 
 // Plays from the playhead until it has gone on by seconds of the episode,

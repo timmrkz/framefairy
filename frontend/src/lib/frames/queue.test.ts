@@ -633,93 +633,43 @@ describe("a frame decoded for a play", () => {
   });
 });
 
-describe("the walk's clock", () => {
-  // A sound card that only says whether it runs, and counts what it is
-  // told.
-  function clocked() {
-    const q = new FrameQueue(
+describe("the clock a play runs on", () => {
+  function queue() {
+    return new FrameQueue(
       canvas(),
       "/episode.mp4",
       movieOf({ duration: 120, width: 2, height: 2, grid: { origin: 0, start: 0, num: 25, den: 1, count: 3000 } }),
     );
-    const card = { state: "running" as AudioContextState, held: 0, started: 0 };
-    q.audio = {
-      get state() {
-        return card.state;
-      },
-      suspend: async () => {
-        card.held++;
-        card.state = "suspended";
-      },
-      resume: async () => {
-        card.started++;
-        card.state = "running";
-      },
-    } as unknown as AudioContext;
-    (q as unknown as { state: string }).state = "playing";
-    return { q, card };
   }
-  afterEach(() => {
-    delete g.__playClock;
+
+  test("is the sound card's in the app", () => {
+    expect(queue().playClock(3.2, 3.04, false)).toBe(3.2);
   });
 
-  test("is the sound card's when no walk asks for it", () => {
-    const { q, card } = clocked();
-    expect(q.playClock(3.2, 3.04)).toBe(3.2);
-    expect(card.held).toBe(0);
+  // The page the walks run on hands in the walk's clock, see
+  // preview/clock.ts, and every queue made after it plays on it.
+  test("is the one handed in for every queue made after", () => {
+    const app = FrameQueue.clock;
+    const told: unknown[] = [];
+    FrameQueue.clock = (play) => (heard, unshown, coming) => {
+      told.push([play, heard, unshown, coming]);
+      return unshown;
+    };
+    try {
+      const q = queue();
+      expect(q.playClock(3.2, 3.04, true)).toBe(3.04);
+      expect(told).toEqual([[q, 3.2, 3.04, true]]);
+    } finally {
+      FrameQueue.clock = app;
+    }
+    expect(queue().playClock(3.2, 3.04, false)).toBe(3.2);
   });
 
-  // Issue #588: standing on the frame alone left the sound running on
-  // ahead of the picture.
-  test("stands on a frame not up yet, and holds the sound card until it is", () => {
-    g.__playClock = "frames";
-    const { q, card } = clocked();
-    expect(q.playClock(3.2, 3.04)).toBe(3.04);
-    expect(q.playClock(3.21, 3.04)).toBe(3.04);
-    expect(card).toMatchObject({ state: "suspended", held: 1, started: 0 });
-    expect(q.playClock(3.21, 3.24)).toBe(3.21);
-    expect(card).toMatchObject({ state: "running", held: 1, started: 1 });
-    expect(q.playClock(3.22, 3.24)).toBe(3.22);
-    expect(card.started).toBe(1);
-  });
-
-  // The app holds the sound card itself when it pauses, and the clock
-  // lets go only of a hold it made.
-  test("leaves a sound card held by someone else held", () => {
-    g.__playClock = "frames";
-    const { q, card } = clocked();
-    card.state = "suspended";
-    expect(q.playClock(3.2, 3.24)).toBe(3.2);
-    expect(card).toMatchObject({ state: "suspended", held: 0, started: 0 });
-  });
-
-  // A walk holds the sound card while its hand drags, issue #583. The
-  // review of #588 found the clock let go of the hand's hold when the
-  // frame it waited for came up during the drag.
-  test("lets the sound card go only once neither the frame nor the hand holds it", async () => {
-    g.__playClock = "frames";
-    const { q, card } = clocked();
-    expect(q.playClock(3.2, 3.04)).toBe(3.04);
-    await q.holdSound("hand", true);
-    expect(q.playClock(3.2, 3.24)).toBe(3.2);
-    expect(card).toMatchObject({ state: "suspended", started: 0 });
-    await q.holdSound("hand", false);
-    expect(card).toMatchObject({ state: "running", started: 1 });
-
-    await q.holdSound("hand", true);
-    expect(q.playClock(3.3, 3.28)).toBe(3.28);
-    expect(q.playClock(3.3, 3.32)).toBe(3.3);
-    expect(card).toMatchObject({ state: "suspended", started: 1 });
-    await q.holdSound("hand", false);
-    expect(card).toMatchObject({ state: "running", started: 2 });
-  });
-
-  // The play as the clock reads it: frames 0.2 s apart from 35 s, of one
-  // run, with the frame of rank 102 on screen.
-  // asked is how many frames the run's decoder has been asked for and not
-  // given yet.
-  function standing(q: FrameQueue, k: number, ready: number[] = [], thisPlay = true, asked = 1) {
-    const inside = q as unknown as {
+  // The play as the clock is told it: frames 0.2 s apart from 35 s, of
+  // one run, with the frame of rank 102 on screen. asked is how many
+  // frames the run's decoder has been asked for and not given yet.
+  function standing(k: number, ready: number[] = [], thisPlay = true, asked = 1) {
+    const inside = queue() as unknown as {
       k: number;
       shown: unknown;
       slots: unknown;
@@ -737,73 +687,42 @@ describe("the walk's clock", () => {
     });
   }
 
-  test("stands on the frame after the one on screen", () => {
-    const { q } = clocked();
+  test("is told of the frame after the one on screen", () => {
     for (const k of [2, 3]) {
-      const next = standing(q, k);
+      const next = standing(k);
       expect(next.at).toBeCloseTo(35.6);
       expect(next.coming).toBe(false);
     }
   });
 
   // A pause puts up the frame that holds the playhead, which can be the
-  // one after the frame the play had due, see hold. The clock stood on the
-  // frame due, which never came again since the one after it was up, and
-  // held the sound card for good: four walks hung in CI after a pause and
-  // a play on.
-  test("stands past a frame a pause put up ahead of the one due", () => {
-    g.__playClock = "frames";
-    const { q, card } = clocked();
-    const next = standing(q, 1);
-    expect(next.at).toBeCloseTo(35.6);
-    expect(q.playClock(35.3997, next.at, next.coming)).toBe(35.3997);
-    expect(card.held).toBe(0);
+  // one after the frame the play had due, see hold. The walk's clock
+  // stood on the frame due, which never came again since the one after it
+  // was up, and held the sound card for good: four walks hung in CI after
+  // a pause and a play on.
+  test("is told of the frame past one a pause put up ahead of the one due", () => {
+    expect(standing(1).at).toBeCloseTo(35.6);
   });
 
   // Each plan counts its runs from 0, so the frame on screen from before
   // this play says nothing of the frames of this one.
-  test("stands on the frame due when the frame on screen is from before the play", () => {
-    const { q } = clocked();
-    expect(standing(q, 1, [], false).at).toBeCloseTo(35.2);
+  test("is told of the frame due when the frame on screen is from before the play", () => {
+    expect(standing(1, [], false).at).toBeCloseTo(35.2);
   });
 
   // A frame no decoder is working on never comes: the decoder gave
   // nothing for it, or its run has no decoder. Stood on, the play froze
   // with the sound card held and the walk hung, as four did once in
-  // this pull request. It goes by the sound card's time instead, the way
-  // the app plays, so the walk's own checks see what is wrong.
-  test("does not stand on a frame no decoder is working on", () => {
-    g.__playClock = "frames";
-    const { q, card } = clocked();
-    const next = standing(q, 2, [], true, 0);
-    expect(next.at).toBe(Infinity);
-    expect(q.playClock(35.7, next.at, next.coming)).toBe(35.7);
-    expect(card.held).toBe(0);
+  // pull request #589. The clock is told of no frame, so a walk goes by
+  // the sound card's time the way the app plays, and its own checks see
+  // what is wrong.
+  test("is told of no frame when no decoder is working on it", () => {
+    expect(standing(2, [], true, 0).at).toBe(Infinity);
   });
 
-  // A frame decoded and waiting goes up on this tick, so the sound card is
-  // not held for it. Held for every frame, it stopped and started five
-  // times a second in the walks, and each frame stood a refresh or two
-  // longer than it lasts.
-  test("leaves the sound card running for a frame decoded and waiting", () => {
-    g.__playClock = "frames";
-    const { q, card } = clocked();
-    const next = standing(q, 2, [103]);
+  test("is told when the frame is decoded and waiting", () => {
+    const next = standing(2, [103]);
     expect(next.at).toBeCloseTo(35.6);
     expect(next.coming).toBe(true);
-    expect(q.playClock(35.61, next.at, next.coming)).toBe(next.at);
-    expect(card).toMatchObject({ state: "running", held: 0 });
-  });
-
-  // A play started again starts the sound card itself, see maybeBegin,
-  // while the clock may still count itself a holder. The next frame not
-  // up holds it again.
-  test("holds the sound card again once the app has started it", () => {
-    g.__playClock = "frames";
-    const { q, card } = clocked();
-    q.playClock(3.2, 3.04);
-    card.state = "running";
-    expect(q.playClock(3.3, 3.04)).toBe(3.04);
-    expect(card).toMatchObject({ state: "suspended", held: 2 });
   });
 });
