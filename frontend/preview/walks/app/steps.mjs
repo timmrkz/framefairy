@@ -251,6 +251,222 @@ export const steps = {
       }).observe(document.body, { attributes: true, attributeFilter: ["class"], subtree: true });
     });
   },
+  // ["said once"]      Settings, Advanced opened: the section for where
+  //                    clips go says Clips, the models are said in their
+  //                    own sections and not again under Advanced, the
+  //                    caption fonts are one line of two counts, and the
+  //                    app's log, which is in the home folder, is written
+  //                    in full, from /
+  async "said once"(walk) {
+    const { page } = walk;
+    const disclose = page.locator("button.disclose");
+    if ((await disclose.getAttribute("aria-expanded")) !== "true") await disclose.click();
+    await page.locator(".item.found").first().waitFor();
+    await settle(page);
+    const m = await page.evaluate(() => {
+      const text = (el) => (el?.textContent ?? "").replace(/\s+/g, " ").trim();
+      const fonts = [...document.querySelectorAll(".item.found")].find((r) => text(r).startsWith("Caption fonts"));
+      const detail = fonts?.querySelector(".words > .small");
+      return {
+        heads: [...document.querySelectorAll("h2")].map(text),
+        fields: [...document.querySelectorAll("label.item.field .head")].map(text),
+        found: [...document.querySelectorAll(".item.found .words > span:first-child")].map(text),
+        fonts: text(detail),
+        fontLines: detail ? Math.round(detail.getBoundingClientRect().height / parseFloat(getComputedStyle(detail).lineHeight)) : 0,
+        log: text([...document.querySelectorAll(".card")].find((c) => text(c).includes("The app's log"))?.querySelector(".path")),
+      };
+    });
+    const problems = [];
+    if (m.heads.includes("Shorts") || !m.heads.includes("Clips")) problems.push(`the heads are ${m.heads.join(", ")}, with Shorts where Clips should be`);
+    for (const f of m.fields) if (/model/i.test(f) && f !== "Model in the cloud") problems.push(`Advanced has a field "${f}", a model said again`);
+    for (const f of m.found) if (/^(Speech model|Language model)|API key$/.test(f)) problems.push(`What the app found says "${f}" again`);
+    if (!/^\d+ built in, \d+ from this machine$/.test(m.fonts)) problems.push(`the caption fonts say "${m.fonts.slice(0, 80)}", not two counts`);
+    else if (m.fontLines !== 1) problems.push(`the caption fonts stand on ${m.fontLines} lines`);
+    if (!m.log.startsWith("/")) problems.push(`the app's log is at "${m.log}", not written in full`);
+    if (problems.length) walk.wrong = problems.join("\n");
+  },
+  // ["models alike"]   Settings: the speech model and the clip model are
+  //                    two cards of one shape, a list to choose from with
+  //                    the line under it and the models on this machine
+  //                    folded under that, and no path under any of them.
+  //                    Every model either list offers says its size and
+  //                    none says "best", and the models that run here
+  //                    stand in one group, the biggest first, each with
+  //                    the tick once it is downloaded and a download
+  //                    arrow until then
+  async "models alike"(walk) {
+    const { page } = walk;
+    const problems = [];
+    const cards = { "Speech model": ".card.speech", "Clip model": ".card.finding" };
+    const heads = await page.evaluate(() => [...document.querySelectorAll("h2")].map((h) => h.textContent.trim()));
+    for (const head of Object.keys(cards)) if (!heads.includes(head)) problems.push(`no head says ${head}, the heads are ${heads.join(", ")}`);
+    for (const [head, card] of Object.entries(cards)) {
+      const shape = await page.evaluate((card) => {
+        const c = document.querySelector(card);
+        return {
+          pick: !!c?.querySelector(":scope > .item button.pick"),
+          line: !!c?.querySelector(":scope > .item .words .line"),
+          fold: !!c?.querySelector(":scope > button.disclose-row"),
+        };
+      }, card);
+      if (!shape.pick || !shape.line || !shape.fold) problems.push(`${head} is not the shape of the other: ${JSON.stringify(shape)}`);
+      const fold = page.locator(`${card} > button.disclose-row`);
+      if ((await fold.getAttribute("aria-expanded")) !== "true") await fold.click();
+      await page.locator(`${card} ul.models > li`).first().waitFor();
+      const where = await page.evaluate(
+        (card) => [...document.querySelectorAll(`${card} ul.models > li`)].map((li) => li.textContent.replace(/\s+/g, " ").trim()).filter((t) => /\//.test(t)),
+        card,
+      );
+      for (const w of where) problems.push(`a model under ${head} has a path under it: "${w}"`);
+      await page.locator(`${card} > .item button.pick`).click();
+      await page.locator('[role="option"]').first().waitFor();
+      const rows = await page.evaluate(() =>
+        [...document.querySelectorAll('[role="option"]')].map((o) => ({
+          name: o.querySelector(".what")?.textContent.trim() ?? "",
+          detail: o.querySelector(".detail")?.textContent.trim() ?? "",
+          mark: o.querySelector(".tick.marked")?.getAttribute("title") ?? "",
+          drawn: !!o.querySelector(".tick.marked svg"),
+        })),
+      );
+      const groups = await page.evaluate(() => [...document.querySelectorAll(".pick-group")].map((g) => g.textContent.trim()));
+      for (const g of groups) if (!["In the cloud", "On this machine"].includes(g)) problems.push(`${head} has a group "${g}"`);
+      for (const r of rows)
+        if (!["Anthropic", "OpenAI"].includes(r.detail) && (!["Downloaded", "Not downloaded yet"].includes(r.mark) || !r.drawn))
+          problems.push(`${head} offers ${r.name} with no mark for whether it is downloaded`);
+      // The biggest first, by the size each row says.
+      const bytes = (d) => {
+        const [n, unit] = d.split(" ");
+        return parseFloat(n) * { KB: 1e3, MB: 1e6, GB: 1e9 }[unit.replace(/,$/, "")];
+      };
+      const sizes = rows.filter((r) => r.mark).map((r) => bytes(r.detail));
+      if (sizes.some((b, i) => i > 0 && b > sizes[i - 1]))
+        problems.push(`${head} lists ${rows.filter((r) => r.mark).map((r) => `${r.name} ${r.detail}`).join(", ")}, not the biggest first`);
+      for (const r of rows) {
+        if (/best/i.test(r.detail)) problems.push(`${head} offers ${r.name} as "${r.detail}"`);
+        // A model in the cloud says its company, every other its size.
+        else if (!/^[\d.]+ [KMG]B\b/.test(r.detail) && !["Anthropic", "OpenAI"].includes(r.detail)) problems.push(`${head} offers ${r.name} with "${r.detail}", not its size`);
+      }
+      if (!rows.length) problems.push(`the list of ${head} offers nothing`);
+      await page.keyboard.press("Escape");
+      await settle(page);
+    }
+    if (problems.length) walk.wrong = problems.join("\n");
+  },
+  // ["a pick shows at once"]
+  //                    Settings: a model picked in the clip model list
+  //                    shows everywhere in the card in the frame of the
+  //                    click, before the Go side has answered: the list,
+  //                    the mark, the line under it, Download and the
+  //                    frame round the list. One not downloaded says so
+  //                    and offers Download. Twice, there and back: the
+  //                    bridge counts only the model chosen as downloaded.
+  async "a pick shows at once"(walk) {
+    const { page } = walk;
+    const problems = [];
+    const card = ".card.finding";
+    const trigger = page.locator(`${card} > .item button.pick`);
+    // What the list says, without the room it keeps for its longest name.
+    const said = page.locator(`${card} > .item button.pick .said > span:not(.room)`);
+    const isCall = (name) => (r) => {
+      if (!r.url().includes("/call")) return false;
+      try {
+        return JSON.parse(r.request().postData() ?? "{}").name?.split(".").pop() === name;
+      } catch {
+        return false;
+      }
+    };
+    const want = "Not downloaded yet";
+    for (let round = 0; round < 2; round++) {
+      const before = (await said.textContent()).trim();
+      await trigger.click();
+      await page.locator('[role="option"]').first().waitFor();
+      const name = await page.evaluate(
+        ({ want, before }) =>
+          [...document.querySelectorAll('[role="option"]')]
+            .find((o) => o.querySelector(".tick.marked")?.getAttribute("title") === want && o.querySelector(".what")?.textContent.trim() !== before)
+            ?.querySelector(".what")
+            ?.textContent.trim() ?? "",
+        { want, before },
+      );
+      if (!name) {
+        problems.push(`the clip model list offers no other model marked "${want}"`);
+        await page.keyboard.press("Escape");
+        break;
+      }
+      // The Go side's answer waits, so all that shows is the page's own.
+      await control(url, "/hold?call=UseLanguageModel&gate=shut");
+      await page.locator('[role="option"]', { hasText: name }).click();
+      const now = await page.evaluate((card) => {
+        const c = document.querySelector(card);
+        const text = (el) => (el?.textContent ?? "").replace(/\s+/g, " ").trim();
+        return {
+          picked: text(c.querySelector(":scope > .item button.pick .said > span:not(.room)")),
+          line: text(c.querySelector(":scope > .item .words .line")),
+          download: [...c.querySelectorAll(":scope > .item button.act")].some((b) => text(b) === "Download"),
+          warn: !!c.querySelector(":scope > .item .mark.warn"),
+        };
+      }, card);
+      if (now.picked !== name) problems.push(`picking ${name}, the list said ${now.picked}`);
+      if (!/^Not downloaded yet/.test(now.line) || !now.download || !now.warn)
+        problems.push(
+          `picking ${name}, not downloaded, the card still said "${now.line}", ${now.download ? "with" : "without"} Download, ${now.warn ? "with" : "without"} the warning mark, before the Go side answered`,
+        );
+      const checked = page.waitForResponse(isCall("CheckSetup"));
+      await control(url, "/hold?call=UseLanguageModel&gate=open");
+      await checked;
+      await settle(page);
+    }
+    if (problems.length) walk.wrong = problems.join("\n");
+  },
+  // ["folders and ticks"]
+  //                    Settings: the info mark of each model section says
+  //                    where the models are in full, ending in a slash,
+  //                    and never from ~. With a model in the cloud chosen,
+  //                    the clip model list draws a tick only on the models
+  //                    that are downloaded, so a tick means one thing.
+  //                    The next sequence's /reset puts the settings back.
+  async "folders and ticks"(walk) {
+    const { page } = walk;
+    const problems = [];
+    for (const label of ["About the clip model", "About the speech model"]) {
+      const mark = page.locator(`button.mark[aria-label="${label}"]`);
+      const head = page.locator(".group.asks", { has: mark }).locator("h2");
+      await head.hover();
+      await mark.click();
+      const said = (await page.locator(".bubble").textContent()).replace(/\s+/g, " ").trim();
+      if (said.includes("~")) problems.push(`${label} says "${said}", with a path from ~`);
+      else if (!/(^|\s)\/\S*\/\.?(\s|$)/.test(said)) problems.push(`${label} says "${said}", with no folder in full ending in a slash`);
+      // Escape lets go of the click, and the bubble stays up for as long
+      // as the pointer is on the mark, so the pointer goes back to the
+      // head beside it, which the bubble under the mark does not cover.
+      await page.keyboard.press("Escape");
+      await head.hover();
+      await page.locator(".bubble").waitFor({ state: "detached" });
+    }
+    const trigger = page.locator(".card.finding > .item button.pick");
+    await trigger.click();
+    await page.locator('[role="option"]', { hasText: "Claude Sonnet 5" }).click();
+    await page.locator(".card.finding > .item button.pick", { hasText: "Claude Sonnet 5" }).waitFor();
+    await settle(page);
+    await trigger.click();
+    await page.locator('[role="option"]').first().waitFor();
+    const rows = await page.evaluate(() =>
+      [...document.querySelectorAll('[role="option"]')].map((o) => ({
+        name: o.querySelector(".what")?.textContent.trim() ?? "",
+        chosen: o.hasAttribute("data-chosen"),
+        mark: o.querySelector(".tick.marked")?.getAttribute("title") ?? "",
+        tick: !!o.querySelector(".tick svg"),
+      })),
+    );
+    for (const r of rows) {
+      if (!r.mark && r.tick) problems.push(`${r.name}${r.chosen ? ", chosen," : ""} wears a tick and is no model on this machine`);
+      if (r.mark && !r.tick) problems.push(`${r.name} wears no mark`);
+    }
+    if (!rows.some((r) => r.chosen && r.name === "Claude Sonnet 5")) problems.push("Claude Sonnet 5 is not chosen after it was picked");
+    await page.keyboard.press("Escape");
+    await settle(page);
+    if (problems.length) walk.wrong = problems.join("\n");
+  },
   // ["acknowledgements"]
   //                    Help, Acknowledgements: every group is a head over a
   //                    card with a border, and the words of every row stand
@@ -291,19 +507,16 @@ export const steps = {
     }
   },
   // ["remove model", which]
-  //                    presses the bin of the "language" model on this
-  //                    machine, under Downloaded models, or of the
-  //                    "speech" model
+  //                    presses the bin of the "language" model or of the
+  //                    "speech" model on this machine, each under the
+  //                    Downloaded models of its card
   async "remove model"(walk, arg) {
     const { page } = walk;
     await page.evaluate(() => (window.__shook = []));
-    if (arg === "language") {
-      const fold = page.locator(".card.finding button.disclose-row");
-      if ((await fold.getAttribute("aria-expanded")) !== "true") await fold.click();
-      await page.locator('.card.finding button.bin[aria-label^="Remove "]').first().click();
-    } else {
-      await page.locator('.speech button.bin[aria-label^="Remove "]').first().click();
-    }
+    const card = arg === "language" ? ".card.finding" : ".card.speech";
+    const fold = page.locator(`${card} button.disclose-row`);
+    if ((await fold.getAttribute("aria-expanded")) !== "true") await fold.click();
+    await page.locator(`${card} button.bin[aria-label^="Remove "]`).first().click();
     await settle(page);
   },
   // ["refused", card]  the gesture before it shook the "finding" or the

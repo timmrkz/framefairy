@@ -108,6 +108,14 @@ func CaptionFonts() []CaptionFont {
 	return out
 }
 
+// FontCounts says how many faces captions can be written in: the ones the
+// program ships with and the machine's own. The settings say the two
+// numbers rather than every name, which the font list beside the captions
+// already shows, each in its own face.
+func FontCounts() (bundled, machine int) {
+	return len(captionFonts), len(shelf.all())
+}
+
 // Thickening is how libass draws a face at a bold, see ass_font.c in
 // libass: weight is the face's own, which a browser is to draw it at so it
 // fakes no bold of its own, and thicken is how much libass grows the

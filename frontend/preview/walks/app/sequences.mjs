@@ -30,6 +30,19 @@ export default [
     ],
   },
   {
+    // Tim's report of 2026-10-27, 17:21: the settings called clips
+    // shorts, drew the speech model and the clip model two ways, offered
+    // a size for some models and "best here" for one, spoke of the models
+    // in six places, listed every caption font by name in one row and
+    // wrote paths three ways. His reports of 2026-10-28 asked for the
+    // models that run here in one group, the biggest first, a tick on the
+    // downloaded ones, and the models folder in full in the info marks.
+    // On 2026-10-29 he saw a pick reach the card in three places one at a
+    // time.
+    name: "The settings say each thing once, in one way",
+    steps: [["app log", "open"], ["settings"], ["models alike"], ["a pick shows at once"], ["said once"], ["folders and ticks"]],
+  },
+  {
     // Tim saw the names and the licences in Help, Acknowledgements sit on
     // the border of their box, with no room round them (#500). Each group
     // is now a card the way the settings draw one.

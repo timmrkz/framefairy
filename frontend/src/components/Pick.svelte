@@ -101,7 +101,15 @@
     // a pop-up menu on the Mac puts a separator and a heading between kinds
     // of thing. A group is named on its first row and runs until the next.
     // A row may also be drawn in a face of its own, a font in the list of
-    // fonts, at the weight that face has.
+    // fonts, at the weight that face has. A row may wear a mark of its
+    // own where the tick goes, which says how the thing stands rather
+    // than that it is chosen: a model on this machine has the tick, one
+    // still to fetch a download arrow in grey, the way Tim asked for the
+    // list of models, 2026-10-28. What is chosen is then said by the
+    // accent alone, on every row of that list: a list with a mark on any
+    // row draws no tick for the chosen one, or a chosen model in the cloud
+    // would wear the tick a downloaded model wears, meaning something
+    // else.
     options: {
       value: string;
       label: string;
@@ -109,6 +117,7 @@
       warn?: boolean;
       group?: string;
       icon?: string;
+      mark?: { icon: string; title: string; faint?: boolean };
       font?: string;
       weight?: number;
     }[];
@@ -134,6 +143,8 @@
   } = $props();
 
   const edge = $derived((hang ?? align) === "right" ? "end" : "start");
+  // Whether the rows say how each thing stands, see mark.
+  const marked = $derived(options.some((o) => o.mark));
 
   // How far under its field a list hangs. The fields of a column stand 8
   // apart, and a list is its rows and a border above and under them, so a
@@ -316,9 +327,15 @@
 <!-- A row read from the left: the tick, the icon, the name and what goes
      with it. The name is drawn in its own face where it has one. -->
 {#snippet row(option: (typeof options)[number], selected: boolean)}
-  <span class="tick">
-    {#if selected}<Icon name="check" size={12} />{/if}
-  </span>
+  {#if option.mark}
+    <span class="tick marked" class:faint={option.mark.faint} title={option.mark.title}>
+      <Icon name={option.mark.icon} size={12} />
+    </span>
+  {:else}
+    <span class="tick">
+      {#if selected && !marked}<Icon name="check" size={12} />{/if}
+    </span>
+  {/if}
   {#if option.icon}
     <span class="glyph"><Icon name={option.icon} /></span>
   {/if}
@@ -704,6 +721,16 @@
     flex: none;
     width: 12px;
     color: var(--accent-lit);
+  }
+
+  /* A mark of the row's own is in the row's colour, the accent where the
+     row is chosen, and a faint one in grey. */
+  .tick.marked {
+    color: inherit;
+  }
+
+  .tick.faint {
+    color: var(--muted);
   }
 
   /* The icon a row shares with the trigger, in the colour of its name. */

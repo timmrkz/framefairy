@@ -3007,13 +3007,25 @@ after the typing stops.
 **What is in the way is said where it is put right**, not in a list of
 its own. A missing API key is said on the row where the key goes, a
 missing llama-server under the choice of model, a missing ffmpeg under
-**Shorts**, a missing speech model on its row, which offers **Download**.
+**Clips**, a missing speech model on its row, which offers **Download**.
 A problem the page has no row for, which none of today's checks is, is
 said at the top so nothing goes unsaid. The first version had one card at
 the top listing every problem, and a person had to go from the top of the
 page to the bottom to find where to fix what it said.
 
-**Finding clips is one choice**, **Find clips with**, in one list: under
+**The two models are two cards of one shape**, **Speech model** and
+**Clip model**, the names the setup uses too. Each is a choice with the
+line under it, and under that **Downloaded models**, folded, the models
+of its kind on this machine with the room they take and a trash can
+each. Tim found the two drawn two ways, 2026-10-27, and found **Finding
+clips** a poor name for the second. Where the models are kept is said
+once, in the info mark of each section, in full and with the slash at
+its end that says it is a folder. It was said under Advanced and What the
+app found until then, and Tim missed it once it was gone, 2026-10-28. A
+line under every model saying where it is, tried next, was clutter, and
+he asked for the info mark alone.
+
+**The clip model is one choice**, **Find clips with**, in one list: under
 **In the cloud** a model from each company the app knows, Claude Sonnet 5
 from Anthropic and GPT-6 Sol from OpenAI, with the company beside each,
 and under **On this machine** every model that runs here, the way apps that
@@ -3044,10 +3056,24 @@ in `frontend/src/lib/finding.ts`, and `finding.test.ts` walks every state
 somebody can click their way into, run by `make interface` and CI.
 
 The line under the choice says what it costs: a few cents a video and
-which company, or who made the model, the memory it needs and whether it fits.
-Beside each model in the list is what it would cost to fetch, or that it is
-the best here, or that it is too big for this machine. The list holds any
-number of models in the room of one control.
+which company, or who made the model and the memory it needs, and that it
+is tight or too big where it is. Every model that runs here stands under
+**On this machine**, the biggest first, by the size beside it, which is
+the order a person reads. By the memory a model needs, tried first, put
+Qwen3 14B at 9.0 GB over Gemma 4 26B A4B at 14.4 GB. One that is downloaded has the tick in front of it, and
+one still to fetch a download arrow in grey, so what is chosen is said by
+the accent alone, the way the chosen row of any list in the app is. A
+chosen model in the cloud has no tick either, so the tick means one
+thing in that list. The
+speech model's list is the same. A group of its own, **To download**, for
+the models still to fetch, parted a list that is one kind of thing, and
+Tim asked for the one group with a mark, 2026-10-28. A cloud mark on them
+before that, the way Finder marks a file still in iCloud, read as a model
+that runs in the cloud, under a group of that name. A model this machine
+is short of memory for says so beside its size. Nothing says best: the biggest model
+that fits is the one a new machine starts on, and a word for it on one row
+of the list read as a riddle. The list holds any number of models in the
+room of one control.
 
 **Choosing a model chooses it**, whether it is on this machine or not.
 The settings name it, and the list ticks it. One that is not here yet
@@ -3163,20 +3189,26 @@ only one, and a download that finishes names it in the settings. A machine
 that already has two and none named, from before this was so, says so
 under the choice, and choosing one settles it.
 
-**Speech** is one model today, so it is a row rather than a choice: a
-check before it once it is there, what it covers and the room it takes.
-Removing the speech model means the app asks for one again the next time it
-starts, because nothing can be transcribed without it.
+**The speech model is the same choice**, **Transcribe with**, though
+there is one speech model today, so its list holds one: its size, in the
+group that says whether it is here, and the line under it, who made it and
+what it hears, or the folder named for it by hand before, or what the
+check found wrong with it. Choosing it in the list lets go of a folder
+named by hand. Both cards are `ModelCard.svelte`, each with its download
+in an `Install` from `lib/install.svelte.ts`, one card used twice. **Download** beside the list fetches one that is not here,
+with the same line, beam and fill as the clip model's. Removing the speech
+model, from its **Downloaded models**, means the app asks for one again
+the next time it starts, because nothing can be transcribed without it.
 
-**Shorts** says where rendered shorts go, next to each video unless a
-folder is chosen with **Choose…**, which
+**Clips** says where rendered clips go, **Save clips to**, next to each
+video unless a folder is chosen with **Choose…**, which
 opens the system's own folder dialog. **Next to video** goes back to the
-default. In a folder chosen here, each episode's shorts go into a folder
-of their own, named after the episode's file, so `Folge 12.mp4` renders
-into `Shorts/Folge 12/`. A short is named after its clip's words, without
-the clip's id, `ich-merke-dass-das-immer-schwer-ist.mp4`. Wherever a short
+default. In a folder chosen here, each video's clips go into a folder
+of their own, named after the video's file, so `Folge 12.mp4` renders
+into `Clips/Folge 12/`. A rendered clip is named after its words, without
+the clip's id, `ich-merke-dass-das-immer-schwer-ist.mp4`. Wherever a clip
 goes, a name taken by a file the clip did not write gets a number, the way
-Finder gives one, `ich-merke-dass-das-immer-schwer-ist 2.mp4`. A short already rendered stays where it
+Finder gives one, `ich-merke-dass-das-immer-schwer-ist 2.mp4`. A clip already rendered stays where it
 went when the folder changes, and its clip still knows it is rendered and
 where, see **Where a short went** in
 [ENGINE.md](ENGINE.md#where-a-short-went).
@@ -3230,18 +3262,34 @@ unchecked with the app's access to the person's folders.
 can that throws them away, which asks first.
 
 **Advanced** is closed until it is opened, like a disclosure in Finder, and
-holds the machinery: the path to the language model file, or the Claude
-model, the speech model folder and the training data folder, each a name
-on the left and a field on the right. There is no field for ffmpeg or
-llama-server any more, see **The tools are the app's own**. Empty paths use
-the same defaults as the command line. Under the paths is everything the
-check looked at, found or not, with the check's own words and **Check
-again**, though the check runs again by itself whenever a setting changes:
-which ffmpeg,
+holds the machinery: the training data folder, and with a model in the
+cloud the name of the model the API is asked, for one newer than the list,
+each a name on the left and a field on the right. There is no field for
+ffmpeg or llama-server any more, see **The tools are the app's own**, and
+none for the models: a model is chosen in its own section and spoken of
+there and nowhere else, where Tim once found the models in six places,
+the sections, their info marks, two fields here and two rows of the check.
+Empty paths use the same defaults as the command line, which keeps every
+flag. Under the paths is what the check looked at, found or not, with the
+check's own words and **Check again**, though the check runs again by
+itself whenever a setting changes: which ffmpeg, ffprobe and llama-server,
 which of the system's own video decoders it can use, VideoToolbox on a Mac
-or decoding on the processor, the caption faces the app carries inside
-itself, and which model files it found. Which decoder a file really went
-through is in the log of its search.
+or decoding on the processor, and how many caption faces there are, the
+ones the app carries inside itself and the machine's own, `6 built in,
+412 from this machine`. The names are the font list's beside the captions,
+each in its own face, and were once a wall of a few hundred here. The
+models and the keys are said in their own sections, so the check leaves
+them out here. Which decoder a file really went through is in the log of
+its search.
+
+**A path is written one way everywhere**, in full, from the top of the
+disk: `/Users/tim/.framefairy/models`, `/Applications/Frame
+Fairy.app/Contents/MacOS/ffmpeg`, whatever form the settings file, the
+check or the folder dialog handed it over in, see `shownPath` in
+`frontend/src/lib/paths.ts`. A path from `~` is written out from the home
+folder. Inside the home folder from `~` and the rest in full was tried
+first, and Tim still saw two kinds of path on one page, 2026-10-28. Only
+what is shown changes, what is saved stays as it came.
 
 Between the paths and the check is **The app's log**, see
 [LOGGING.md](LOGGING.md): where the file in use is, how many files it has

@@ -72,13 +72,16 @@
   // special, the key ID that was bought: the comet alone comes round once,
   // springing away and easing in, only ever forward, and the rim is dark
   // for the rest of a round of nine seconds. The same beam, coming by now
-  // and then.
+  // and then. With once as well it comes round the one time and rests,
+  // so the beam answers a hand, the pointer reaching the key ID or a
+  // click copying it, and a new Busy is a new round.
   let {
     fraction = -1,
     rim = true,
     motes = true,
     still = false,
     seldom = false,
+    once = false,
     drain = 0,
     spent = 0,
     together = "",
@@ -90,6 +93,7 @@
     motes?: boolean;
     still?: boolean;
     seldom?: boolean;
+    once?: boolean;
     drain?: number;
     spent?: number;
     together?: string;
@@ -272,7 +276,7 @@
   {#if drain > 0}
     <span class="fill"><i class="run" {@attach runDown}></i></span>
   {/if}
-  {#if rim && !still && drain <= 0}<span class="ring" class:seldom></span>{/if}
+  {#if rim && !still && drain <= 0}<span class="ring" class:seldom class:once></span>{/if}
   {#if motes && !still && drain <= 0}
     {#each specks as m (m.at)}
       <i
@@ -446,6 +450,11 @@
     animation-name: once;
     animation-duration: 9s;
     animation-timing-function: linear;
+  }
+
+  .ring.seldom.once::before {
+    animation-iteration-count: 1;
+    animation-fill-mode: forwards;
   }
 
   @keyframes once {

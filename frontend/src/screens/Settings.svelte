@@ -12,16 +12,21 @@
   import { onMount } from "svelte";
   import { wearColour } from "../lib/colour";
   import { jobs, nav } from "../lib/state.svelte";
+  import { shownFolder, shownPath } from "../lib/paths";
   import {
     cloudModelIn,
     cloudValue,
     finderOptions as finderOptions_,
     finderStanding,
     holdsTheApp,
+    modelMark,
+    type Standing,
+    type Tone,
     providerOf,
   } from "../lib/finding";
   import {
     api,
+    clock,
     errorText,
     languageRow,
     memorySize,
@@ -45,9 +50,9 @@
   import Busy from "../components/Busy.svelte";
   import Icon from "../components/Icon.svelte";
   import Info from "../components/Info.svelte";
-  import ModelList from "../components/ModelList.svelte";
+  import ModelCard from "../components/ModelCard.svelte";
+  import { Install } from "../lib/install.svelte";
   import Swatches from "../components/Swatches.svelte";
-  import Pick from "../components/Pick.svelte";
 
   let settings = $state<Settings | null>(null);
   let checks = $state<Check[] | null>(null);
@@ -70,8 +75,16 @@
   let language = $state<LanguageModel[]>([]);
   // What this machine has, in bytes, or zero where it would not say.
   let memory = $state(0);
+  // The home folder, so every path on the page is written the one way.
+  let home = $state("");
+  let modelsDir = $state("");
+  const shown = (path: string) => shownPath(path, home);
+  // Where the models are kept, said in the info mark of each model's
+  // section and nowhere else, with the slash at its end that says it is a
+  // folder. Tim had it on a line under every model and found that ugly,
+  // 2026-10-28.
+  const modelsFolder = $derived(shownFolder(modelsDir, home));
 
-  const speechRows = $derived(speech.map((m) => speechRow(m)));
 
 
   // The companies in the cloud, the models of theirs the app offers by
@@ -194,7 +207,12 @@
   let copied = $state(false);
   let copyRefused = $state("");
   let copiedTimer: ReturnType<typeof setTimeout> | undefined;
+  // The beam round the key ID rests until the hand comes to it: each
+  // time the pointer reaches it, and each copy, it comes round once.
+  // Lit all the time it read as a line standing still, 2026-10-27.
+  let beams = $state(0);
   async function copyKeyID(id: string) {
+    beams++;
     copied = true;
     copyRefused = "";
     clearTimeout(copiedTimer);
@@ -314,6 +332,8 @@
       speech = state.speech;
       language = state.language;
       memory = state.memory;
+      home = state.home ?? "";
+      modelsDir = state.modelsDir ?? "";
       providers = state.providers ?? [];
       cloud = state.cloud ?? [];
       keys = state.keys ?? {};
@@ -386,12 +406,20 @@
 
   async function chooseOutput() {
     try {
-      const dir = await api.chooseFolder("Where shorts are saved");
+      const dir = await api.chooseFolder("Where clips are saved");
       if (dir && settings) settings.outputDir = dir;
     } catch (err) {
       problem = errorText(err);
     }
   }
+
+  // What the app found, under Advanced: the programs it carries and what
+  // it can use. The models and the keys are said in their own sections and
+  // only there, so a model is not spoken of in six places, 2026-10-27.
+  const saidAbove = (name: string) => ["Speech model", "Language model"].includes(name) || name.endsWith(" API key");
+  // One that failed stays, so what is wrong is said here as well as in
+  // its own section's line.
+  const found = $derived((checks ?? []).filter((c) => !(saidAbove(c.name) && c.ok)));
 
   // What each check that failed is about, so it can be said in the row
   // where it is put right rather than in a list of its own at the top.
@@ -420,12 +448,15 @@
   // looking through a list. The mark, the frame round the list and the
   // line under it all say so. Keeping the model before it in use meanwhile
   // made the list say one model while the searches ran on another.
-  const inUse = $derived(language.find((m) => m.inUse));
-  // What was just chosen, shown until the Go side's answer is read, so a
-  // click shows at once.
+  //
+  // What was just chosen is the one in use from the click on, until the
+  // Go side's answer is read, so the list, the mark, the line, Download and
+  // the frame round the list all change in the frame of the click. Only the
+  // list did once, and the rest followed one at a time as the answers came
+  // back, in three places, which Tim saw frame by frame, 2026-10-29.
   let choosing = $state("");
+  const inUse = $derived(language.find((m) => (choosing ? m.name === choosing : m.inUse)));
   const notHere = $derived(!!inUse && !inUse.installed);
-  let fetchFailed = $state("");
   // What a search, a clip made by hand or the whole video being
   // transcribed is using, see refuseFinding and speechLocked.
   const running = (j: Job) => j.state === "running" || j.state === "queued";
@@ -433,16 +464,19 @@
   const hearing = $derived(
     searching || jobs.list.some((j) => (j.kind === "clip" || j.kind === "transcribe") && running(j)),
   );
-  const llmJob = $derived(jobs.list.filter((j) => j.kind === "llm").at(-1));
-  const llmRunning = $derived(
-    llmJob && (llmJob.state === "running" || llmJob.state === "queued") ? llmJob : undefined,
-  );
-  // Download pressed and the job not reported yet.
-  let starting = $state(false);
+  // The clip model's download, and the speech model's below: one Install
+  // each, see install.svelte.ts. When one ends the models are read again:
+  // the model it fetched is already the one chosen, so being there is all
+  // that changes. One that stopped says why, in the line under the choice.
+  const llmInstall = new Install("llm", () => modelsChanged());
   // Whatever is being downloaded, even one started before this page
   // opened, is this page's to show.
   const fetchingModel = $derived(
-    llmRunning ? language.find((m) => m.title === llmRunning.label) : starting ? inUse : undefined,
+    llmInstall.running
+      ? language.find((m) => m.title === llmInstall.running?.label)
+      : llmInstall.starting
+        ? inUse
+        : undefined,
   );
 
   const finder = $derived(
@@ -453,7 +487,7 @@
 
   async function pickFinder(value: string) {
     if (!settings) return;
-    fetchFailed = "";
+    llmInstall.failed = "";
     const inCloud = cloudModelIn(value);
     if (inCloud !== null) {
       settings.planner = "api";
@@ -466,50 +500,68 @@
     choosing = "";
   }
 
-  async function download() {
-    if (!inUse || inUse.installed) return;
-    fetchFailed = "";
-    // A click shows at once: the row says it is downloading before the
-    // first job event arrives.
-    starting = true;
-    try {
-      const job = await api.installLanguageModel(inUse.name);
-      if (job.state === "failed") fetchFailed = job.error ?? "The download did not start.";
-    } catch (err) {
-      fetchFailed = errorText(err);
-    }
-    starting = false;
+  // A download of gigabytes starts when Download is pressed, never as a
+  // side effect of looking through a list.
+  function download() {
+    const m = inUse;
+    if (m && !m.installed) llmInstall.start(() => api.installLanguageModel(m.name));
   }
 
-  // When a download ends the models are read again: the model it fetched
-  // is already the one chosen, so being there is all that changes. One
-  // that stopped says why, where it was asked for. Read when the job
-  // settles, not on every job event, which arrive about once a second
-  // while it runs.
-  let settled = "";
-  $effect(() => {
-    const job = llmJob;
-    const now = job ? `${job.id}:${job.state}` : "";
-    if (now === settled) return;
-    settled = now;
-    if (!job || job.state === "running" || job.state === "queued") return;
-    if (job.state === "failed") fetchFailed = job.error ?? "The download stopped.";
-    modelsChanged();
-  });
-
-  let cancelling = $state(false);
-  async function cancelFetch() {
-    if (!llmRunning) return;
-    cancelling = true;
-    try {
-      await api.cancelJob(llmRunning.id);
-    } catch (err) {
-      problem = errorText(err);
-    }
+  // The speech model, in the shape of the clip model: one list of the
+  // speech models, each with its size in the group that says whether it
+  // is here, Download beside it when the one in use is not here, and the
+  // models on this machine folded under it. There is one speech model
+  // today, so the list holds one, and Tim asked for the two to look and
+  // work alike all the same, 2026-10-27.
+  const speechInUse = $derived(speech.find((m) => m.installed) ?? speech[0]);
+  // The biggest first, by the size beside it, as the clip model's list.
+  const speechOptions = $derived(
+    speech
+      .map((m) => ({ m, bytes: m.installed ? m.unpacked : m.download }))
+      .sort((a, b) => b.bytes - a.bytes)
+      .map(({ m, bytes }) => ({
+        value: m.name,
+        label: m.title,
+        detail: size(bytes),
+        group: "On this machine",
+        mark: modelMark(m.installed),
+      })),
+  );
+  const speechInstall = new Install("model", () => modelsChanged());
+  function downloadSpeech() {
+    const m = speechInUse;
+    if (m && !m.installed) speechInstall.start(() => api.installSpeechModel(m.name));
   }
-  $effect(() => {
-    if (!llmRunning) cancelling = false;
+  // Choosing the speech model in the list is choosing the one the app
+  // installs, so a folder named by hand in the settings before, which
+  // there is no field for any more, gives way to it.
+  function pickSpeech() {
+    if (settings) settings.asrModel = "";
+  }
+  // The one line under Transcribe with, one line in every state, like the
+  // line under Find clips with. A folder named by hand is said, and so is
+  // whatever the check found wrong with the model, where it is put right.
+  const speechLine = $derived.by((): { text: string; tone: Tone; state: Standing } => {
+    const m = speechInUse;
+    if (!m) return { text: "No speech model is offered.", tone: "err", state: "err" };
+    const job = speechInstall.running;
+    if (job || speechInstall.starting) {
+      const p = job?.progress;
+      const done = p && p.fraction > 0 ? `${size(p.fraction * m.download)} of ${size(m.download)}` : size(m.download);
+      const left = p && p.remaining > 0 ? `, ${clock(p.remaining)} left` : "";
+      return { text: `Downloading, ${done}${left}`, tone: "", state: "busy" };
+    }
+    if (speechInstall.failed) return { text: speechInstall.failed, tone: "err", state: "err" };
+    const wrong = broken("Speech model")?.detail.split("\n")[0];
+    if (wrong) return { text: wrong, tone: "err", state: "err" };
+    if (settings?.asrModel) return { text: `From ${shown(settings.asrModel)}.`, tone: "", state: "ok" };
+    if (!m.installed) return { text: `Not downloaded yet. ${size(m.download)}.`, tone: "warn", state: "warn" };
+    return { text: `By ${m.maker}. ${m.languages}.`, tone: "", state: "ok" };
   });
+  const installedSpeech = $derived(speech.filter((m) => m.installed).map((m) => speechRow(m)));
+  const installedSpeechSize = $derived(
+    size(speech.filter((m) => m.installed).reduce((sum, m) => sum + m.unpacked, 0)),
+  );
 
   // The one line under Find clips with. One line and never two: it is cut
   // short with the rest in its title rather than wrapped, because a line
@@ -523,9 +575,11 @@
       hasKey,
       inUse,
       fetching: fetchingModel,
-      progress: llmRunning?.progress,
-      failed: fetchFailed,
-      modelProblem: broken("Language model")?.detail,
+      progress: llmInstall.running?.progress,
+      failed: llmInstall.failed,
+      // The checks are read again once a choice is saved. Until then they
+      // are about the model before, and said one just chosen was missing.
+      modelProblem: choosing ? undefined : broken("Language model")?.detail,
       serverMissing: !!broken("llama-server"),
       searching,
     }),
@@ -533,9 +587,7 @@
   const finderLine = $derived(finding);
   const finderState = $derived(finding.state);
 
-  // The models on this machine, which is only about the room they take,
-  // so it stays folded until somebody wants some of it back.
-  let downloads = $state(false);
+  // The models on this machine, folded under the choice.
   const installedRows = $derived(
     language
       .filter((m) => m.installed)
@@ -646,92 +698,56 @@
     {#if settings}
       <div class="group asks">
         <div class="headrow">
-          <h2>Finding clips</h2>
+          <h2>Clip model</h2>
           <span class="ask">
-            <Info label="About finding clips" side="left">
+            <Info label="About the clip model" side="left">
               A language model reads the transcript and picks the moments worth clipping. A model in
               the cloud, Anthropic's or OpenAI's, works on any machine with a key of your own from
               that company, and costs a few cents a video. A model on this machine is free to run
-              and needs the memory to hold it. Either way the video and the audio stay
-              here: only the words are read.
+              and needs the memory to hold it. It sees only the transcript, never the picture or
+              the sound.
               {#if settings.planner === "local"}
                 <br /><br />
                 A model runs from memory, and this machine has
                 {memory > 0 ? memorySize(memory) : "not said how much"}. A bigger model reads the
-                transcript better and needs more of it, and <b>Best for this machine</b> is the
-                biggest it can hold. Models are fetched from the people who made them and kept in
-                <b>~/.framefairy/models</b>.
+                transcript better and needs more of it, and the list says beside a model when this
+                machine is short of memory for it. A model is downloaded once from its source onto
+                your machine, into <b>{modelsFolder}</b>.
               {/if}
             </Info>
           </span>
         </div>
-        <div
-          class="card finding shakes"
-          class:shaking
-          bind:this={findingCard}
-          onanimationend={() => (shaking = false)}
+        <ModelCard
+          name="finding"
+          bind:card={findingCard}
+          {shaking}
+          onshaken={() => (shaking = false)}
+          head="Find clips with"
+          line={finderLine}
+          install={llmInstall}
+          download={notHere && settings.planner === "local"
+            ? { title: `Fetch ${inUse?.title}, ${size(inUse?.download ?? 0)}. It finds clips once it is here`, onclick: download }
+            : undefined}
+          oncancel={() => llmInstall.cancel((why) => (problem = why))}
+          pick={{
+            value: finder || "Choose a model",
+            options: finderOptions,
+            onpick: pickFinder,
+            label: "Find clips with",
+            title: searching ? findingLocked : "What reads the transcript and picks the moments",
+            refuse: refuseFinding,
+          }}
+          rows={settings.planner === "local" ? installedRows : []}
+          room={installedSize}
+          list={{
+            kind: "llm",
+            oninstall: api.installLanguageModel,
+            onchange: modelsChanged,
+            onremove: api.removeLanguageModel,
+            locked: searching ? findingLocked : "",
+            onlocked: shakeFinding,
+          }}
         >
-          <!-- The one decision, and under it the rows that depend on it, in
-               the same card, the way a pop-up in the Mac's own settings
-               changes the rows beneath it. -->
-          <div class="item">
-            <span class="mark {finderState}" aria-hidden="true">
-              {#if finderState === "busy" || finderLine.using}
-                <span class="dot busy"></span>
-              {:else if finderState === "ok"}
-                <Icon name="check" />
-              {:else}
-                <Icon name="warn" />
-              {/if}
-            </span>
-            <div class="words">
-              <span class="head">Find clips with</span>
-              <span
-                class="small line"
-                class:muted={!finderLine.tone}
-                class:warn={finderLine.tone === "warn"}
-                class:error={finderLine.tone === "err"}
-                title={finderLine.text}>{finderLine.text}</span
-              >
-            </div>
-            {#if llmRunning}
-              <!-- The download carries the beam and the fill in the one
-                   control that can do something about it. -->
-              <button
-                class="act"
-                title="Stop the download. What has arrived stays, and Download carries on from it"
-                disabled={cancelling}
-                onclick={cancelFetch}
-              >
-                <Busy
-                  fraction={llmRunning.progress && llmRunning.progress.fraction >= 0
-                    ? llmRunning.progress.fraction
-                    : -1}
-                />
-                {cancelling ? "Cancelling" : "Cancel"}
-              </button>
-            {:else if notHere && settings.planner === "local"}
-              <button
-                class="act"
-                title="Fetch {inUse?.title}, {size(inUse?.download ?? 0)}. It finds clips once it is here"
-                disabled={starting}
-                onclick={download}
-                >{#if starting}<Busy />{/if}{starting ? "Starting" : "Download"}</button
-              >
-            {/if}
-            <Pick
-              value={finder || "Choose a model"}
-              options={finderOptions}
-              onpick={pickFinder}
-              label="Find clips with"
-              align="right"
-              tone={finderState === "warn" || finderState === "err" ? finderState : undefined}
-              disabled={!!llmRunning || starting}
-              refuse={refuseFinding}
-              title={searching ? findingLocked : "What reads the transcript and picks the moments"}
-            />
-          </div>
-
           {#if settings.planner === "api"}
             <ApiKey
               {provider}
@@ -740,95 +756,86 @@
               refuse={refuseFinding}
               onchange={() => Promise.all([readModels(), check()])}
             />
-          {:else}
-            {#if broken("llama-server")}
-              <!-- A model is the answer and llama-server is what runs it,
-                   so one without the other finds nothing. -->
-              <div class="item">
-                <span class="mark err" aria-hidden="true"><Icon name="warn" /></span>
-                <div class="words">
-                  <span class="head">llama-server</span>
-                  <span
-                    class="small error line"
-                    title="What runs a model on this machine is missing. Installing the app again brings it back, and until then a model in the cloud works."
-                    >Missing. Installing the app again brings it back.</span
-                  >
-                </div>
+          {:else if broken("llama-server")}
+            <!-- A model is the answer and llama-server is what runs it,
+                 so one without the other finds nothing. -->
+            <div class="item">
+              <span class="mark err" aria-hidden="true"><Icon name="warn" /></span>
+              <div class="words">
+                <span class="head">llama-server</span>
+                <span
+                  class="small error line"
+                  title="What runs a model on this machine is missing. Installing the app again brings it back, and until then a model in the cloud works."
+                  >Missing. Installing the app again brings it back.</span
+                >
               </div>
-            {/if}
-            {#if installedRows.length > 0}
-              <!-- The models on this machine, which is only about the room
-                   they take, folded until somebody wants some of it back. -->
-              <button class="item disclose-row" aria-expanded={downloads} onclick={() => (downloads = !downloads)}>
-                <span class="mark" aria-hidden="true"><Icon name="folder" /></span>
-                <span class="words">
-                  <span class="head">Downloaded models</span>
-                  <span class="small muted">
-                    {plural(installedRows.length, "model", "models")} on this machine, {installedSize}.
-                  </span>
-                </span>
-                <span class="chevron" class:open={downloads}><Icon name="chevron" size={14} /></span>
-              </button>
-              {#if downloads}
-                <ModelList
-                  bare
-                  models={installedRows}
-                  kind="llm"
-                  oninstall={api.installLanguageModel}
-                  onchange={modelsChanged}
-                  onremove={api.removeLanguageModel}
-                  locked={searching ? findingLocked : ""}
-                  onlocked={shakeFinding}
-                />
-              {/if}
-            {/if}
+            </div>
           {/if}
-        </div>
+        </ModelCard>
       </div>
 
       <!-- Every episode is transcribed on this machine, so the model has to
-           be on it. It is the same list as the setup, and installing one
-           here is the same job. -->
+           be on it. The card is the clip model's, row for row: the choice
+           with the line under it, and the models on this machine folded
+           under that. Installing one here is the setup's job. -->
       <div class="group asks">
         <div class="headrow">
-          <h2>Speech</h2>
+          <h2>Speech model</h2>
           <span class="ask">
             <Info label="About the speech model" side="left">
               Every video is transcribed on this machine, word by word with the time of each
-              word. Nothing about the video is sent anywhere. The model is fetched from the
-              people who published it and kept in <b>~/.framefairy/models</b>.
+              word. Nothing about the video is sent anywhere. The model is downloaded once from its
+              source onto your machine, into <b>{modelsFolder}</b>.
             </Info>
           </span>
         </div>
-        <div class="speech shakes" class:shaking={speechShaking} onanimationend={() => (speechShaking = false)}>
-          <ModelList
-            models={speechRows}
-            kind="model"
-            oninstall={api.installSpeechModel}
-            onchange={modelsChanged}
-            onremove={api.removeSpeechModel}
-            removeSays="Every video is transcribed with it, so the app asks for one again the next time it starts."
-            locked={hearing ? speechLocked : ""}
-            onlocked={shakeSpeech}
-          />
-        </div>
+        <ModelCard
+          name="speech"
+          shaking={speechShaking}
+          onshaken={() => (speechShaking = false)}
+          head="Transcribe with"
+          line={speechLine}
+          install={speechInstall}
+          download={speechInUse && !speechInUse.installed
+            ? { title: `Fetch ${speechInUse.title}, ${size(speechInUse.download)}. It transcribes once it is here`, onclick: downloadSpeech }
+            : undefined}
+          oncancel={() => speechInstall.cancel((why) => (problem = why))}
+          pick={{
+            value: speechInUse?.name ?? "",
+            options: speechOptions,
+            onpick: pickSpeech,
+            label: "Transcribe with",
+            title: "What hears the video and writes down every word",
+          }}
+          rows={installedSpeech}
+          room={installedSpeechSize}
+          list={{
+            kind: "model",
+            oninstall: api.installSpeechModel,
+            onchange: modelsChanged,
+            onremove: api.removeSpeechModel,
+            removeSays: "Every video is transcribed with it, so the app asks for one again the next time it starts.",
+            locked: hearing ? speechLocked : "",
+            onlocked: shakeSpeech,
+          }}
+        />
       </div>
 
       <div class="group">
-        <h2>Shorts</h2>
+        <h2>Clips</h2>
         <div class="card">
           <div class="item">
             <span class="mark" aria-hidden="true"><Icon name="folder" /></span>
             <div class="words">
-              <span class="head">Save shorts to</span>
+              <span class="head">Save clips to</span>
               <span class="small muted selectable path">
-                {settings.outputDir || "Next to each video"}
+                {settings.outputDir ? shown(settings.outputDir) : "Next to each video"}
               </span>
             </div>
             {#if settings.outputDir}
               <button
                 class="quiet"
-                title="Save each short next to its video again"
+                title="Save each clip next to its video again"
                 onclick={() => settings && (settings.outputDir = "")}>Next to video</button
               >
             {/if}
@@ -860,7 +867,7 @@
           <div class="item">
             <div class="words">
               <span class="head">Accent colour</span>
-              <span class="small muted">What the app picks things out in. The colours of a short are set beside its captions.</span>
+              <span class="small muted">What the app picks things out in. The colours of a clip are set beside its captions.</span>
             </div>
             <Swatches
               label="Accent colour"
@@ -906,7 +913,8 @@
                       title="Copy the key ID, which is what support asks for"
                       aria-label={copied ? "Copied" : `Copy key ID ${part.text}`}
                       onclick={() => copyKeyID(part.text)}
-                      ><Busy motes={false} seldom /><span>{part.text}</span><Icon
+                      onpointerenter={() => beams++}
+                      >{#key beams}{#if beams > 0}<Busy motes={false} seldom once />{/if}{/key}<span>{part.text}</span><Icon
                         name={copied ? "check" : "copy"}
                         size={14}
                       /></button
@@ -1005,15 +1013,10 @@
         </button>
         {#if advanced}
           <div class="card">
-            {#if settings.planner === "local"}
-              <label class="item field">
-                <span class="words">
-                  <span class="head">Language model file</span>
-                  <span class="small muted">Chosen above, or any .gguf file.</span>
-                </span>
-                <input type="text" bind:value={settings.llmModel} placeholder="The one in use" spellcheck="false" />
-              </label>
-            {:else}
+            <!-- The models are chosen in their own sections, and said
+                 nowhere else. A model in the cloud the list does not name
+                 yet, a newer one, is the one thing named here by hand. -->
+            {#if settings.planner === "api"}
               <label class="item field">
                 <span class="words">
                   <span class="head">Model in the cloud</span>
@@ -1024,17 +1027,10 @@
             {/if}
             <label class="item field">
               <span class="words">
-                <span class="head">Speech model folder</span>
-                <span class="small muted">The installed one, unless named.</span>
-              </span>
-              <input type="text" bind:value={settings.asrModel} placeholder="~/.framefairy/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8" spellcheck="false" />
-            </label>
-            <label class="item field">
-              <span class="words">
                 <span class="head">Training data folder</span>
                 <span class="small muted">Where the records go.</span>
               </span>
-              <input type="text" bind:value={settings.trainingDir} placeholder="~/.framefairy/training" spellcheck="false" />
+              <input type="text" bind:value={settings.trainingDir} placeholder={shown("~/.framefairy/training")} spellcheck="false" />
             </label>
           </div>
 
@@ -1048,7 +1044,7 @@
                   <span class="small muted num">
                     {plural(appLog.files, "file", "files")}, {size(appLog.bytes) || "empty"}, {plural(appLog.lines, "line", "lines")}
                   </span>
-                  <span class="small muted selectable path">{appLog.path}</span>
+                  <span class="small muted selectable path">{shown(appLog.path)}</span>
                 {:else}
                   <span class="small muted">Nothing written yet.</span>
                 {/if}
@@ -1091,7 +1087,7 @@
                 >{#if checking}<Busy />{/if}{checking ? "Checking" : "Check again"}</button
               >
             </div>
-            {#each checks ?? [] as c (c.name)}
+            {#each found as c (c.name)}
               <div class="item found">
                 <span class="mark" class:ok={c.ok} aria-hidden="true">
                   {#if c.ok}<Icon name="check" />{:else}<span class="dot err"></span>{/if}
@@ -1101,7 +1097,7 @@
                   <span class="small selectable" class:muted={c.ok} class:error={!c.ok}>{c.detail}</span>
                   <!-- Which file, and what it is down to the byte, so it
                        can be compared with the build it came from. -->
-                  {#if c.path}<span class="small muted selectable">{c.path}</span>{/if}
+                  {#if c.path}<span class="small muted selectable">{shown(c.path)}</span>{/if}
                   {#if c.sha256}<span class="small muted selectable sum" title="SHA-256">SHA-256 {c.sha256}</span>{/if}
                 </div>
               </div>
@@ -1115,7 +1111,7 @@
   {#if clearing}
     <Confirm title="Remove the training data?" oncancel={() => (clearing = false)}>
       <p>
-        Every plan and every decision recorded so far, in <b>{training.dir}</b>, goes. The clips
+        Every plan and every decision recorded so far, in <b>{shown(training.dir)}</b>, goes. The clips
         themselves stay. This cannot be taken back.
       </p>
       {#snippet actions()}
@@ -1301,7 +1297,9 @@
     border: none;
     box-shadow: inset 0 0 0 1px var(--line);
     border-radius: 6px;
-    background: var(--ink-2);
+    /* Darker than the card it sits in, the way a key in a README sits in
+       a block of code. */
+    background: var(--ink-0);
     color: var(--muted);
     font-family: ui-monospace, "SF Mono", Menlo, monospace;
     font-size: var(--size-m);
@@ -1314,12 +1312,7 @@
   }
 
   button.key-id:hover {
-    background: var(--ink-3);
     color: var(--text);
-  }
-
-  button.key-id > :global(.beam) {
-    opacity: 0.6;
   }
 
   button.key-id.copied > :global(svg) {
@@ -1333,27 +1326,6 @@
     width: 220px;
     flex: none;
     font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  }
-
-  .warn {
-    color: var(--warn);
-  }
-
-  /* A row that opens what is under it: the whole row is the button, and
-     the chevron at its end turns, the way a row in the Mac's own settings
-     leads on. */
-  .disclose-row {
-    width: 100%;
-    height: auto;
-    border: none;
-    border-radius: 0;
-    background: transparent;
-    text-align: left;
-    white-space: normal;
-  }
-
-  .disclose-row:hover:not(:disabled) {
-    background: var(--ink-2);
   }
 
   /* The list that says what finds the clips is as wide as the longest

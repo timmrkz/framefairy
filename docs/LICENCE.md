@@ -736,10 +736,14 @@ with, offline, before every render.
   step still to take. The key itself is never shown in the app. It is
   long and means nothing to a person, and the key ID is what names it,
   here, on the thank-you page and to support. A key ID is set in one
-  width on a block of its own, the way code is set in a README, in the
-  grey of a line under a name. The kept key's is a button: a click puts
-  the key ID on the clipboard, for a mail to support, and the copy mark
-  on it turns into a check for a moment. The key itself is never read
+  width on a block of its own, the way code is set in a README, on a
+  ground darker than the card and in the grey of a line under a name.
+  The kept key's is a button: a click puts the key ID on the clipboard,
+  for a mail to support, and the copy mark on it turns into a check for
+  a moment. The beam of work in hand, `Busy` with `seldom` and `once`,
+  comes round its edge once each time the pointer reaches it and once
+  with each copy, and rests otherwise, because a beam that came by every
+  nine seconds read as a line standing still. The key itself is never read
   back out of the keychain. Nothing a customer does needs it: there is no
   activation and no machine to move a licence from, so a new Mac takes
   the same Unlock in the same letter, and the lost-key page sends the

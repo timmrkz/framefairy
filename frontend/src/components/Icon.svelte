@@ -28,6 +28,7 @@
   import Check from "@lucide/svelte/icons/check";
   import Copy from "@lucide/svelte/icons/copy";
   import CircleArrowDown from "@lucide/svelte/icons/circle-arrow-down";
+  import Download from "@lucide/svelte/icons/download";
   import ArrowUpDown from "@lucide/svelte/icons/arrow-up-down";
   import Clock from "@lucide/svelte/icons/clock";
   import ArrowDownAZ from "@lucide/svelte/icons/arrow-down-a-z";
@@ -90,6 +91,9 @@
     copy: Copy,
     // macOS brings updates in with an arrow pointing down.
     update: CircleArrowDown,
+    // A model still to fetch, in a list of models: the arrow into a tray
+    // that Safari and most apps put on a download.
+    download: Download,
     sort: ArrowUpDown,
     "sort-added": Clock,
     "sort-name": ArrowDownAZ,

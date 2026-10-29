@@ -1077,6 +1077,8 @@ const Answers = {
           hasSpeech: model.installed,
           language,
           memory: 34359738368,
+          home: "/Users/tim",
+          modelsDir: "/Users/tim/.framefairy/models",
           planner: fresh ? planner : "local",
           // Two companies, and a key for each or not. ?nokey is a machine
           // with none, and a fresh one has none until one is saved. ?envkey
@@ -1520,7 +1522,7 @@ const Answers = {
           { name: "ffmpeg", ok: true, version: "8.1.3", detail: "The one this app was built with: its SHA-256 matches the one built in.", path: "/Applications/Frame Fairy.app/Contents/MacOS/ffmpeg", sha256: "e1ba46e814d383b96be780d1a7c49e1c4eecef1619615a241974dc122e2f1a2e" },
           { name: "ffprobe", ok: true, version: "8.1.3", detail: "The one this app was built with: its SHA-256 matches the one built in.", path: "/Applications/Frame Fairy.app/Contents/MacOS/ffprobe", sha256: "5b0c9e2d7a41f8836c2e0b1d94f7a6c35e8d21b0a97f4c6e3d58b2a1f0c9e7d4" },
           { name: "Video decoding", ok: true, detail: "VideoToolbox, falling back to the processor for a file it does not take. The log of a search says which one it used" },
-          { name: "Caption fonts", ok: true, detail: "built in: Inter Black, Montserrat ExtraBold" },
+          { name: "Caption fonts", ok: true, detail: "6 built in, 412 from this machine" },
           { name: "Speech model", ok: true, detail: "/Users/tim/.framefairy/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8" },
         ];
         // The same key the setup answers about: there on a machine that is
