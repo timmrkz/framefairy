@@ -3374,93 +3374,74 @@ See [LOGGING.md](LOGGING.md), `cmd/framefairy-app/report.go` and
 `cmd/framefairy-app/bugs.go`.
 
 **Dictate**, at the left of the same row, is for saying what happened
-rather than typing it, plan row 2.189, the way dictation on claude.ai
-works. Pressed, it says **Stop** and wears the beam while the app
-listens, and the words appear where the cursor was while they are said,
-grey and slanted until they are kept. Nothing is written down until the
+rather than typing it, plan row 2.189. Pressed, it says **Stop** and
+wears the beam while the app listens, and the words appear where the
+cursor was while they are said. Nothing is written down until the
 microphone has been as loud as a voice, 10 dB over a quiet room, since
 the speech model hears words in a room where nobody speaks: Tim pressed
 Dictate and Stop a few times without a word and was given "yeah yeah".
-The field follows the words the
-way a terminal follows its output: they stay in view as they come, until
-the person scrolls away to read, and then the field stays where they put
-it until they scroll back to the words, and while the cursor is
-elsewhere in the field, it is the cursor that stays in view, not the
-words. The cursor stands right after the words while nobody has put it
-elsewhere, and it is always the browser's own, in text, where the
-browser draws it and moves it from. The field drew a cursor of its own
-there once, after a part of the field that could not be typed in, and
-on Tim's Mac it looked unlike the cursor the rest of the time,
-ArrowDown found no line from there and bounced the field instead, and
-ArrowUp went to the top of the report at times. The microphone in the button grows and shrinks with the voice it
+The microphone in the button grows and shrinks with the voice it
 hears, so the person sees they are heard. The Go side tells its
 loudness ten times a second, and the window follows it every frame the
 way a level meter's needle does, up at once and back down in about a
 third of a second. It grows by a scale from a drawing at its largest
 size, so it stays sharp and in its place, and it stays white. The
 beam stays the sign that it listens, because running work shows the beam
-on the control it was started from. What follows the last pause is still
-being heard and changes as more of it is, so it is plain text in a mark
-that the cursor can stand at the end of but nothing is typed into. A
-click in it, or just after it, or a key that moves the cursor into it,
-settles it there and then, as it is shown, so the cursor goes where it was put and
-a word can be corrected while the person talks on, and what is heard
-next follows it. The Go side is told with `SettleListening`. What is
-typed right at the end of what was said settles it the same way and
-becomes part of it, so what is said next goes after the typing, not in
-front of it, and pushes the cursor along again once more is heard.
-Shift+Enter there goes in the same way, as text, so what is said next
-starts on the new line, issue #373. Whatever is typed there, a new
-line, a letter or a paste, also cuts the recording where it was typed,
-with `BreakListening`: everything said before it is written down as a
-piece of its own and goes in front of it, however far behind the voice
-the speech model is, and what was heard so far stands there until it
-comes, where nothing can be typed, and a key that would take it away
-waits until it has come. The asks to settle and to cut go to the Go
-side one at a time, in the order they were made, and the piece keeps a
-space from a word typed after it. A cut over silence runs no pass of
-the speech model. Tim said a lot quickly and pressed
-Shift+Enter, and the words written down after went below the new line,
-issues #573 and #584. WebKit typed a second Shift+Enter
-after the words being heard, and the kept words with new lines in them
-became blocks of their own, which showed as an empty line at the end.
-New lines are text in the field, wherever they come from. A new line at
-the end of the report shows only with something after it, so the cursor
-stands before a new line of its own there, the way WebKit keeps an empty
-last line. After a key, the field keeps the cursor in view, the least
-scroll that shows its whole line, inside its padding, the way a text
-field does. At the end of the report that is its end, where the words
-said next leave it too. ArrowUp and ArrowDown move the cursor a line in
-the app itself, and the field scrolls a line at a time with them, the
-sum in `frontend/src/lib/reveal.ts`. The browser's own scroll went a few
-pixels past the last line and back on Tim's Mac, and jumped several
-lines at a time. Where the browser moved the cursor itself and left it
-in view, the field stays as the browser left it, so the two never take
-turns, and a key that neither moves the cursor nor types leaves the
-field where it was scrolled. The browser keeps in view only
-what it did itself, and while dictating the field puts a new line in by
-hand, so Shift+Enter past the foot of the field left the cursor out of
-view until more was said, issue #573. Typing anywhere else, wherever the arrow keys or a click
-put the cursor, is plain typing, and what is said next still goes at
-the end of what was said. What was said is one piece of the field that
-is never split, so Stop, Enter and Escape always take all of it. It was
-split once for each time somebody typed at its end, and on Tim's Mac
-WebKit then typed the letters backwards, and Enter lost the pieces once
-they were out of order. Nothing in the field is moved while the browser
-types: typing at the end is called off and typed again into what was
-said. What
-came before a pause of 0.6 s is settled: it is text in the field, still
-grey, and can be corrected while the person talks on. Settled words are
-put in by hand rather than as typing, so Cmd+Z and Cmd+Y while talking
-undo and redo only what was typed. **Stop** or Enter keeps all of it,
-the last piece a moment later, written in as one step Cmd+Z takes back
-and Cmd+Shift+Z brings back again. The cursor stays where the person
-has it while the last piece is written in: Tim pressed Enter at once
-after ending a dictation, for a new line, and the cursor was put back in
-front of it, issue #373. Until then the cursor stays after the words,
-where it was, and what is typed there goes after them and stays: WebKit
-drew the cursor at the front of the line or past the words once, and it
-jumped back once they came. Escape keeps it too, the way it ends
+on the control it was started from.
+
+The field is a textarea. The browser draws its cursor, moves it with
+the arrow keys and scrolls it, the way every text field does, and the
+page writes the words in where they changed, with `setRangeText`. What
+a dictation does to the text is worked out in
+`frontend/src/lib/dictating.ts`, in letters and numbers, with unit tests
+beside it. The field was a `contenteditable` of the page's own making,
+so that the words being heard could be grey. It was rebuilt under the
+cursor ten times a second, and on Tim's Mac the cursor bounced at the
+last line, jumped several lines at a time, went to the top of the
+report, and was left drawn on every line it passed (29 October).
+Dictated words look like typed ones now, the way macOS Dictation shows
+them.
+
+The words after the last pause are still being heard, and change as
+more is. A click in them, or a key that moves the cursor into them,
+settles them as they stand when the next words come, so the cursor
+stays where it was put and a word can be corrected while the person
+talks on. Typing in them settles them at once. The Go side is told with
+`SettleListening`. Typing right after them, a letter, a paste or
+Shift+Enter, cuts the recording there, with `BreakListening`: everything
+said before it is written down as a piece of its own and goes in front
+of it, however far behind the voice the speech model is, and what is
+said next goes after it, issues #373, #573 and #584. What was heard
+there stands in until the piece comes, and once the person types in it,
+it is theirs and the piece does not replace it. A word typed right
+after a word that was said gets a space in front of it. The asks to
+settle and to cut go to the Go side one at a time, in the order they
+were made, and a cut over silence runs no pass of the speech model.
+Typing anywhere else is plain typing, and what is said next still goes
+where the last words went. A letter put together from more than one
+key, like ü, holds back the words that come meanwhile until it is
+done.
+
+The field follows the words the way a terminal follows its output:
+scrolled to its end, it stays at its end as words come at the end of
+the report, while the cursor is at the end of what was said or the
+focus is somewhere else. Scrolled away to read, it stays where the
+person put it, and so it does while they type somewhere else in it.
+
+The page keeps the field's undo, see `frontend/src/lib/undo.ts`. The
+browser's own took out the wrong letters once text came in that was not
+typed, and Redo put letters in twice, in Chromium and in WebKit alike.
+Words that come in move the steps after them, so Cmd+Z and Cmd+Y while
+talking undo and redo only what was typed, and go no further back than
+the start of the dictation. A run of typing is one step, and a new line
+is one of its own. **Stop** or Enter keeps all of it, the last piece a
+moment later, and everything from the start of the dictation is then
+one step that Cmd+Z takes back and Cmd+Shift+Z brings back again. The
+cursor stays where the person has it while the last piece is written
+in, and what is typed right after the words meanwhile still goes after
+them: Tim pressed Enter at once after ending a dictation, for a new
+line, and the cursor was put back in front of it, issue #373.
+Escape keeps it too, the way it ends
 Dictation on a Mac. It removed everything said once, as on claude.ai,
 and Tim lost a long report to an Escape meant for the app, with nothing
 Cmd+Z could bring back, issue #355. It also
@@ -3474,9 +3455,8 @@ heard and that it is over. macOS Dictation, Siri and the Google
 Assistant do the same, so the pair needs no learning. They are two soft
 sine notes a fifth apart, E5 and B5, made in the window with Web Audio
 rather than played from a file, see `frontend/src/lib/chime.ts`, plan
-row 2.244. The field
-is a `contenteditable` of plain text rather than a textarea, because a
-textarea cannot show some of its words grey.
+row 2.244.
+
 The app records, not the window, through malgo, see
 `cmd/framefairy-app/listen.go`: WKWebView on macOS would ask for the
 microphone in a box of its own on every launch, naming the page as

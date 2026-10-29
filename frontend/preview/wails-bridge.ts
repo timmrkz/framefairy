@@ -34,6 +34,11 @@ function listen() {
 // settles once mark n has come.
 const heard: Record<string, number> = {};
 (window as any).__heard = heard;
+// And the last thing of each name it was told, like what the speech
+// model is hearing while dictating, which the report's field does not
+// mark, see walks/report/steps.mjs.
+const last: Record<string, unknown> = {};
+(window as any).__last = last;
 let mark = 0;
 let waiting: { n: number; done: () => void }[] = [];
 (window as any).__heardMark = (n: number) =>
@@ -60,6 +65,7 @@ function had(job: { id?: string; seq?: number } | undefined) {
 }
 function tell(name: string, data: unknown) {
   heard[name] = (heard[name] ?? 0) + 1;
+  last[name] = data;
   if (name === "job") had((data as { job?: { id?: string; seq?: number } })?.job);
   if (name === "mark") {
     mark = Math.max(mark, data as number);

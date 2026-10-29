@@ -793,7 +793,7 @@ export const steps = {
     await page.locator("dialog[open]").waitFor({ state: "detached" });
     if (arg === "clear") {
       // The pictures go at once, without the moment a removed one stays.
-      const left = await page.evaluate(() => [document.querySelector(".telling").innerText.trim(), document.querySelectorAll("li.tile").length]);
+      const left = await page.evaluate(() => [document.querySelector(".telling").value.trim(), document.querySelectorAll("li.tile").length]);
       if (left[0] || left[1]) walk.wrong = `after Clear the field holds "${left[0]}" and ${left[1]} pictures`;
     }
   },
@@ -809,7 +809,7 @@ export const steps = {
   async "report made"(walk, arg, s, what) {
     const { page } = walk;
     const [want, also] = what === "report" ? [arg] : [arg].flat();
-    const written = await page.evaluate(() => document.querySelector(".telling").innerText.trim());
+    const written = await page.evaluate(() => document.querySelector(".telling").value.trim());
     if (what === "report") await page.locator("button.report").click();
     // Report closes the window once Finder has the zip, and says
     // nothing beside the buttons on the way. Tim had a line there.
@@ -846,7 +846,7 @@ export const steps = {
     // page empties the field once it is, so it is read once the app has
     // settled on the answer.
     await settle(page);
-    const left = await page.evaluate(() => [document.querySelector(".telling").innerText.trim(), document.querySelectorAll("li.tile").length]);
+    const left = await page.evaluate(() => [document.querySelector(".telling").value.trim(), document.querySelectorAll("li.tile").length]);
     if (!walk.wrong && (left[0] || left[1])) walk.wrong = `after Report the field holds "${left[0]}" and ${left[1]} pictures`;
   },
   // ["report scroll", n]
@@ -878,31 +878,18 @@ export const steps = {
   //                    "report scroll" put it
   async "report stays"(walk, arg, s, what) {
     const { kept, page } = walk;
-    const was = await page.locator(".telling").evaluate((f) => f.innerText);
+    const was = await page.locator(".telling").evaluate((f) => f.value);
     // The recording goes on until more words are heard, see /microphone.
     await control(url, "/microphone?until=hearing");
-    await pageUntil(page, (was) => document.querySelector(".telling").innerText !== was, was);
+    await pageUntil(page, (was) => document.querySelector(".telling").value !== was, was);
     await settle(page);
-    const m = await page.locator(".telling").evaluate((f) => {
-      const mark = f.querySelector(".hearing")?.getBoundingClientRect();
-      const box = f.getBoundingClientRect();
-      return {
-        top: f.scrollTop,
-        end: f.scrollHeight - f.clientHeight,
-        seen: !!mark && mark.bottom <= box.bottom + 1 && mark.top >= box.top - 1,
-      };
-    });
+    const m = await page.locator(".telling").evaluate((f) => ({ top: f.scrollTop, end: f.scrollHeight - f.clientHeight }));
     if (what === "report stays") {
       if (m.top !== kept.scrolledTo) walk.wrong = `the field moved to ${m.top} px while more was said, from ${kept.scrolledTo} px where it was scrolled to`;
-    } else if (!m.seen) walk.wrong = "the words being said are out of view";
-    else if (Math.abs(m.top - m.end) > 1) walk.wrong = `the field is at ${m.top} px, not at its end, ${m.end} px`;
+    } else if (Math.abs(m.top - m.end) > 1) walk.wrong = `the field is at ${m.top} px, not at its end, ${m.end} px, where the words being said are`;
   },
   // ["caret at words"] the cursor is right after the words being said,
-  //                    the field's own, in text the browser can draw it in
-  //                    and move it from. After a part of the field that
-  //                    cannot be typed in, WebKit drew no cursor, found no
-  //                    line for ArrowDown and scrolled instead, and went
-  //                    up from the wrong place (Tim, 29 October)
+  //                    at the end of the report, which they end
   async "caret at words"(walk) {
     const { page } = walk;
     const c = await page.locator(".telling").evaluate(cursorAtWords);
@@ -917,7 +904,8 @@ export const steps = {
     const { kept, page } = walk;
     const handed = await control(url, `/microphone?ahead=${arg}`);
     if (handed !== arg) walk.wrong = `the microphone handed over ${handed} tenths of a second, not ${arg}`;
-    kept.shown = await page.locator(".telling").evaluate((f) => f.querySelector(".dictated")?.textContent.trim().split(/\s+/).filter(Boolean).length ?? 0);
+    // Everything after "It froze." is what was said.
+    kept.shown = await page.locator(".telling").evaluate((f) => f.value.replace(/^It froze\.\s*/, "").split(/\s+/).filter(Boolean).length);
   },
   // ["said before", typed]
   //                    what the report holds between "It froze." and
@@ -928,7 +916,7 @@ export const steps = {
   //                    holds what was said after (#573, #584)
   async "said before"(walk, arg) {
     const { kept, page } = walk;
-    const text = await page.locator(".telling").evaluate((f) => f.innerText);
+    const text = await page.locator(".telling").evaluate((f) => f.value);
     const at = text.indexOf(arg);
     const words = (t) => t.split(/\s+/).filter(Boolean).length;
     const before = words(text.slice(0, Math.max(at, 0)).replace(/^It froze\.\s*/, ""));
@@ -944,7 +932,7 @@ export const steps = {
   //                    down (#584)
   async "words kept"(walk) {
     const { kept, page } = walk;
-    const text = await page.locator(".telling").evaluate((f) => f.innerText);
+    const text = await page.locator(".telling").evaluate((f) => f.value);
     const words = text.replace(/^It froze\.\s*/, "").split(/\s+/).filter(Boolean).length;
     if (!kept.shown) walk.wrong = "the field showed no words at talk ahead, so there was nothing to keep";
     else if (words < kept.shown) walk.wrong = `${words} words are in the report, fewer than the ${kept.shown} shown: ${JSON.stringify(text)}`;
@@ -1126,13 +1114,8 @@ export const steps = {
     await page.keyboard.type(text);
     await page.evaluate((n) => {
       const field = document.querySelector(".telling");
-      const at = document.createRange();
-      if (n === "end") {
-        at.selectNodeContents(field);
-        at.collapse(false);
-      } else at.setStart(field.firstChild, n);
-      getSelection().removeAllRanges();
-      getSelection().addRange(at);
+      const at = n === "end" ? field.value.length : n;
+      field.setSelectionRange(at, at);
     }, at);
     await watch.step("type", s);
   },
@@ -1170,19 +1153,20 @@ export const steps = {
       // What is settled is kept however the recording ends. The
       // recording goes on until the speech model has settled more of
       // what it heard, see /microphone, and the field shows it.
+      // What the speech model has settled, as it told the window, and
+      // that the field shows the last of it.
       const settled = () => {
-        const copy = document.querySelector(".telling").cloneNode(true);
-        copy.querySelector(".hearing")?.remove();
-        return copy.textContent;
+        const said = window.__last.dictation?.said ?? [];
+        return said.length && document.querySelector(".telling").value.includes(said.at(-1)) ? said.join(" ") : "";
       };
       const was = await page.evaluate(settled);
       await control(url, "/microphone?until=said");
       await pageUntil(
         page,
         (was) => {
-          const copy = document.querySelector(".telling").cloneNode(true);
-          copy.querySelector(".hearing")?.remove();
-          return copy.textContent !== was || document.querySelector("button.dictate").getAttribute("aria-label") === "Dictate";
+          const said = window.__last.dictation?.said ?? [];
+          const shown = said.length && document.querySelector(".telling").value.includes(said.at(-1)) ? said.join(" ") : "";
+          return shown !== was || document.querySelector("button.dictate").getAttribute("aria-label") === "Dictate";
         },
         was,
       );
@@ -1192,7 +1176,7 @@ export const steps = {
     if (arg === "settled") {
       // The field's text grows by what was said before the pause.
       await control(url, "/microphone?until=said");
-      await pageUntil(page, (was) => document.querySelector(".telling").innerText !== was, kept.dictating);
+      await pageUntil(page, (was) => document.querySelector(".telling").value !== was, kept.dictating);
       return;
     }
     const running = (await button.getAttribute("aria-label")) === "Stop";
@@ -1212,7 +1196,10 @@ export const steps = {
     // recording goes on until the app has told words being heard, see
     // /microphone.
     await control(url, "/microphone?until=hearing");
-    await pageUntil(page, () => document.querySelector(".telling .hearing")?.textContent.trim());
+    await pageUntil(page, () => {
+      const hearing = window.__last.dictation?.hearing?.trim();
+      return hearing && document.querySelector(".telling").value.includes(hearing);
+    });
     if (!running) {
       // The microphone moves with the voice it hears, so a person knows
       // they are heard. The bridge's microphone plays a tone, and a new
@@ -1229,7 +1216,7 @@ export const steps = {
     kept.notes = await page.evaluate(() => window.__notes.length);
     await watch.step("hearing", s);
     if (arg === "start") {
-      kept.dictating = await page.locator(".telling").evaluate((f) => f.innerText);
+      kept.dictating = await page.locator(".telling").evaluate((f) => f.value);
       return;
     }
     // Something said is settled before the recording is ended, so what
@@ -1272,7 +1259,6 @@ export const steps = {
     }
     await letHeld(page);
     await pageUntil(page, () => document.querySelector("button.dictate")?.getAttribute("aria-label") === "Dictate");
-    if (await page.locator(".telling .dictated").count()) walk.wrong = "what was being said is still grey in the report";
     // Tab put the focus on Report while the last words were written
     // down, and it is still there, ringed, once they are.
     if (arg === "enter, then tab") {
@@ -1289,19 +1275,12 @@ export const steps = {
     if (down.length !== 2 || down[0].f <= down[1].f) walk.wrong = `it stopped with ${JSON.stringify(down)} played, not the two notes of the stop sound`;
     await watch.step("dictate", s);
   },
-  // ["report is text"] the report's field holds text alone, its new lines
-  //                    too, and no block or line break of the browser's
-  async "report is text"(walk) {
-    const { page } = walk;
-    const inside = await page.locator(".telling").evaluate((f) => [...f.querySelectorAll("*")].map((e) => e.outerHTML));
-    if (inside.length) walk.wrong = `the report holds ${inside.join(", ")}, not text alone`;
-  },
   // ["report reads", text]
   //                    the report's field reads text, where * is
   //                    whatever the speech model heard, a word or more
   async "report reads"(walk, arg) {
     const { kept, page } = walk;
-    const have = await page.locator(".telling").evaluate((f) => f.innerText.replace(/\n$/, ""));
+    const have = await page.locator(".telling").evaluate((f) => f.value);
     const want = new RegExp(
       `^${arg
         .split("*")
@@ -1317,7 +1296,7 @@ export const steps = {
   //                    "grown"
   async "report as before"(walk, arg) {
     const { kept, page } = walk;
-    const have = await page.locator(".telling").evaluate((f) => f.innerText.replace(/\n$/, ""));
+    const have = await page.locator(".telling").evaluate((f) => f.value);
     const was = arg === "grown" ? kept.grown : kept.report;
     if (have !== was) walk.wrong = `the report reads ${JSON.stringify(have)}, not ${JSON.stringify(was)} as before`;
   },
@@ -1325,7 +1304,7 @@ export const steps = {
   //                    last "report reads", all of that and more words
   async "report grew"(walk) {
     const { kept, page } = walk;
-    const have = await page.locator(".telling").evaluate((f) => f.innerText.replace(/\n$/, ""));
+    const have = await page.locator(".telling").evaluate((f) => f.value);
     // Every word there was, in order, and words between them.
     const words = kept.report.split(/\s+/);
     let at = 0;
@@ -1369,52 +1348,38 @@ steps["report"] = steps["report made"];
 steps["report follows"] = steps["report stays"];
 
 // cursorAtWords runs in the page on the report's field f, and says what
-// is wrong when the cursor is not right after the words being said, the
-// field's own, in a text node, or nothing when it is.
+// is wrong when the cursor is not right after the words being said, at
+// the end of the report, or nothing when it is.
 function cursorAtWords(f) {
-  const sel = getSelection();
-  const mark = f.querySelector(".hearing");
-  if (!mark) return "nothing is being said";
-  if (!sel.rangeCount || !sel.isCollapsed || !f.contains(sel.focusNode)) return "the cursor is not in the field";
-  const at = (node, offset) => {
-    const r = document.createRange();
-    r.selectNodeContents(f);
-    r.setEnd(node, offset);
-    return r.toString().length;
-  };
-  const [n, end] = [at(sel.focusNode, sel.focusOffset), at(mark, mark.childNodes.length)];
-  if (n !== end) return `the cursor is ${n} letters in, not after the words being said, ${end}`;
-  if (sel.focusNode.nodeType !== Node.TEXT_NODE) return `the cursor is in ${sel.focusNode.nodeName} at ${sel.focusOffset}, not in text the browser can draw it in`;
-  if (f.classList.contains("ours") || getComputedStyle(f).caretColor === "rgba(0, 0, 0, 0)") return "the field hides its own cursor and draws one of its own";
+  const hearing = window.__last.dictation?.hearing?.trim() ?? "";
+  if (document.activeElement !== f) return "the cursor is not in the field";
+  if (f.selectionStart !== f.selectionEnd) return "the selection is not a cursor";
+  if (f.selectionEnd !== f.value.length) return `the cursor is ${f.selectionEnd} letters in, not after the words being said, ${f.value.length}`;
+  if (hearing && !f.value.trimEnd().endsWith(hearing)) return `the report ends ${JSON.stringify(f.value.slice(-40))}, not with the words being heard, ${JSON.stringify(hearing)}`;
   return "";
 }
 
 // cursorInView runs in the page on the report's field f, and says where
-// the cursor is when it is not in view, or nothing when it is. A place on
-// an empty line has no box of its own, so a mark with no width stands in
-// it while it is measured, and the text it split is joined again after,
-// the same node it was, with the selection back where it was.
+// the cursor is when it is not in view, or nothing when it is. A
+// textarea does not say where its cursor is, so a copy of the field's
+// text up to it is laid out the way the field lays it out, and the
+// cursor's line is where the letter after it starts.
 function cursorInView(f) {
-  const sel = getSelection();
-  if (!sel.rangeCount || !sel.isCollapsed || !f.contains(sel.focusNode)) return "the cursor is not in the field";
-  const [node, offset] = [sel.focusNode, sel.focusOffset];
-  const at = document.createRange();
-  at.setStart(node, offset);
-  const stand = document.createElement("span");
-  at.insertNode(stand);
-  const box = stand.getBoundingClientRect();
-  const split = node.nodeType === Node.TEXT_NODE ? stand.nextSibling : null;
-  stand.remove();
-  if (split && split !== node && split.nodeType === Node.TEXT_NODE) {
-    node.appendData(split.data);
-    split.remove();
-  }
-  sel.collapse(node, offset);
-  if (!box?.height) return "the cursor has no place on screen";
-  const field = f.getBoundingClientRect();
-  const top = field.top + f.clientTop;
-  const bottom = top + f.clientHeight;
-  if (box.top < top - 1) return `the cursor is ${Math.round(top - box.top)} px above the top of the field, scrolled to ${f.scrollTop} px`;
-  if (box.bottom > bottom + 1) return `the cursor is ${Math.round(box.bottom - bottom)} px below the foot of the field, scrolled to ${f.scrollTop} px`;
+  if (document.activeElement !== f) return "the cursor is not in the field";
+  if (f.selectionStart !== f.selectionEnd) return "the selection is not a cursor";
+  const cs = getComputedStyle(f);
+  const copy = document.createElement("div");
+  for (const p of ["fontFamily", "fontSize", "fontWeight", "fontStyle", "letterSpacing", "lineHeight", "whiteSpace", "overflowWrap", "wordBreak", "tabSize", "paddingTop", "paddingLeft", "paddingRight"]) copy.style[p] = cs[p];
+  Object.assign(copy.style, { position: "absolute", visibility: "hidden", top: "0", left: "0", boxSizing: "border-box", border: "0", width: `${f.clientWidth}px` });
+  copy.textContent = f.value.slice(0, f.selectionEnd);
+  const after = document.createElement("span");
+  after.textContent = f.value.slice(f.selectionEnd) || ".";
+  copy.append(after);
+  document.body.append(copy);
+  const top = after.offsetTop;
+  copy.remove();
+  const line = parseFloat(cs.lineHeight);
+  if (top < f.scrollTop - 1) return `the cursor is ${Math.round(f.scrollTop - top)} px above the top of the field, scrolled to ${f.scrollTop} px`;
+  if (top + line > f.scrollTop + f.clientHeight + 1) return `the cursor is ${Math.round(top + line - f.scrollTop - f.clientHeight)} px below the foot of the field, scrolled to ${f.scrollTop} px`;
   return "";
 }

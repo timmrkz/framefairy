@@ -175,7 +175,6 @@ export default [
       ["dictate", "hearing"],
       ["caret at words"],
       ["dictate", "escape"],
-      ["report is text"],
       ["type", "Next"],
       ["report reads", "It froze. *\n\n*Next"],
     ],

@@ -564,7 +564,7 @@ export const steps = {
       walk.wrong = `"${arg}" is the word lit and has no pill behind what is typed`;
   },
   // ["click heard"]    clicks into the first word still being heard and
-  //                    sees it settled there, with the cursor in it
+  //                    sees the cursor in it, where it was clicked
   async "click heard"(walk) {
     const { page } = walk;
     // Inside the first word still being heard that has three letters
@@ -575,19 +575,30 @@ export const steps = {
     // the word to the click, see __pauseEvents in wails-bridge.ts. The
     // stand-in speech model hears new words each time, and on CI
     // "erzählt," was read and "er wäre" clicked, which put the X
-    // after "er", in one run of three on a busy machine.
+    // after "er", in one run of three on a busy machine. A textarea does
+    // not say where a letter is, so a copy of its text is laid out the
+    // way it lays it out, and the letter is measured there.
     await page.evaluate(() => window.__pauseEvents(true));
     const at = await page.evaluate(() => {
-      const mark = document.querySelector(".telling .hearing");
-      const text = mark?.firstChild;
-      if (!text) return null;
-      const word = /\p{L}{3,}/u.exec(text.textContent);
+      const f = document.querySelector(".telling");
+      const heard = window.__last.dictation?.hearing?.trim() ?? "";
+      const from = heard ? f.value.lastIndexOf(heard) : -1;
+      const word = from < 0 ? null : /\p{L}{3,}/u.exec(heard);
       if (!word) return null;
-      const third = document.createRange();
-      third.setStart(text, word.index + 2);
-      third.setEnd(text, word.index + 3);
-      const r = third.getClientRects()[0];
-      return r && { x: r.left + r.width * 0.25, y: r.top + r.height / 2 };
+      const index = from + word.index + 2;
+      const cs = getComputedStyle(f);
+      const copy = document.createElement("div");
+      for (const p of ["fontFamily", "fontSize", "fontWeight", "fontStyle", "letterSpacing", "lineHeight", "whiteSpace", "overflowWrap", "wordBreak", "tabSize", "paddingTop", "paddingLeft", "paddingRight"]) copy.style[p] = cs[p];
+      Object.assign(copy.style, { position: "absolute", visibility: "hidden", top: "0", left: "0", boxSizing: "border-box", border: "0", width: `${f.clientWidth}px` });
+      copy.textContent = f.value.slice(0, index);
+      const letter = document.createElement("span");
+      letter.textContent = f.value[index];
+      copy.append(letter, f.value.slice(index + 1));
+      document.body.append(copy);
+      const [x, y, w, h] = [letter.offsetLeft, letter.offsetTop, letter.offsetWidth, letter.offsetHeight];
+      copy.remove();
+      const box = f.getBoundingClientRect();
+      return { index, x: box.left + f.clientLeft + x + w * 0.25, y: box.top + f.clientTop + y - f.scrollTop + h / 2 };
     });
     if (!at) {
       await page.evaluate(() => window.__pauseEvents(false));
@@ -595,21 +606,14 @@ export const steps = {
       return;
     }
     await page.mouse.click(at.x, at.y);
-    // Read before what waited is let through, which may be heard
-    // words that are new.
-    const where = await page.evaluate(() => {
-      const sel = getSelection();
-      const mark = document.querySelector(".telling .hearing");
-      const where = {
-        heard: mark?.textContent.trim() ?? "",
-        inMark: !!mark?.contains(sel.anchorNode),
-        inSaid: !!document.querySelector(".telling .dictated")?.contains(sel.anchorNode),
-      };
+    // Read before what waited is let through, which may be heard words
+    // that are new.
+    const sel = await page.evaluate(() => {
+      const f = document.querySelector(".telling");
       window.__pauseEvents(false);
-      return where;
+      return [f.selectionStart, f.selectionEnd];
     });
-    if (where.heard) walk.wrong = `the words clicked into are still being heard: "${where.heard}"`;
-    else if (where.inMark || !where.inSaid) walk.wrong = "the cursor is not in the words clicked into";
+    if (sel[0] !== at.index || sel[1] !== at.index) walk.wrong = `the click put the cursor at ${sel.join(" to ")}, not in the word clicked into, at ${at.index}`;
   },
   // ["cut on caption", n]
   //                    double-clicks the middle of the caption block n,
