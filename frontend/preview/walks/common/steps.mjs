@@ -254,14 +254,16 @@ export function still(seq) {
 
 // The steps that check what a play does on the sound's own time: how
 // much sound the sound card was handed, the loop switched off as the
-// sound comes to the clip's end, and a playhead that never stands still
-// while a hand drags. A sequence with one of them plays on the sound
+// sound comes to the clip's end, the picture going round a loop with the
+// sound, Tim's 2.264, and a playhead that never stands still while a
+// hand drags. On the walk's clock the sound waits for the picture, so
+// none of them could fail there. A sequence with one of them plays on the sound
 // card's clock, as the app does without a walk. Every other sequence,
 // and every random walk, plays on the walk's clock, which shows every
 // frame of a play on any machine, see open in bridge.mjs. A new step
 // that checks the sound or the time a play takes goes in here, issue
 // #588.
-export const soundCard = new Set(["heard", "loop off near the end", "loop off as the sound crosses the end", "drag while playing"]);
+export const soundCard = new Set(["heard", "loop off near the end", "loop off as the sound crosses the end", "loop through the end", "drag while playing"]);
 
 // The clock a sequence plays on, see soundCard.
 export function clock(seq) {
