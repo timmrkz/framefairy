@@ -164,6 +164,9 @@ lacks "engine/rotate.go" "go framefairy/internal/ffmpegtest"
 # The notices test counts the hyphenation files by a path it builds.
 has "engine/hyphenation/hyph-de.head.txt" "go framefairy/engine" "go framefairy/notices"
 
+# The line about the machine changes no test, so only the lint and the
+# naming test read it.
+is "scripts/machine.sh" "lint unit go framefairy/internal/naming"
 # The fuzzing script decides how the Go tests run, like the Makefile.
 has "scripts/fuzz.sh" "lint" "go framefairy/engine" "go framefairy/updates" "fuzz FuzzParse"
 # So does the CI image, which every Linux job runs in, the walks among
