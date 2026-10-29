@@ -1269,7 +1269,7 @@ func moveCaptionEdge(fsys afero.Fs, planPath, clipID string, word float64, edge 
 		if edge == "end" && i+1 < len(laid) && to > laid[i+1].Start {
 			to, at = laid[i+1].Start, EpisodeTime(framed, laid[i+1].Start)
 		}
-		out.done, err = trimCaption(corrections, removed, framed, laid[i], edge, to, t)
+		out.done, err = trimCaption(corrections, removed, framed, laid[i], edge, to, false, t)
 		out.at = roundTo(at, 3)
 	} else {
 		// Put back where all its words put it, the ones taken out at that
@@ -1278,7 +1278,7 @@ func moveCaptionEdge(fsys afero.Fs, planPath, clipID string, word float64, edge 
 		if edge == "start" {
 			past = -1
 		}
-		out.done, err = trimCaption(corrections, removed, framed, laid[i], edge, past, t)
+		out.done, err = trimCaption(corrections, removed, framed, laid[i], edge, past, true, t)
 	}
 	if err != nil {
 		return captionEdge{}, err

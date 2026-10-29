@@ -2703,7 +2703,13 @@ moved by hand, on the clip timeline.
   out of its caption every word whose middle it passes, the way delete
   removes a word, so pulling the left edge of "one two three" past "one"
   reads "two three", and the right edge past "three" reads "one two".
-  Dragged back out over a word it took, the word comes back. The middle
+  Dragged back out, it brings back no word, however the word was
+  removed: a drag changes when a caption is shown, and undo or the word
+  typed in again brings a word back. While the hand still holds the edge
+  nothing is saved, so dragging back over a word it passed shows the word
+  again. It used to bring back every removed word it passed, so Tim
+  removed a word, dragged the start of the caption after it out to where
+  he heard its next word begin, and the word came back, #598. The middle
   is of the part of the word the clip shows, so a word the start of the
   clip cuts into is passed in that part. The last word stays, because
   delete removes a caption whole. Which words an edge passes and where it
@@ -2719,7 +2725,9 @@ moved by hand, on the clip timeline.
   does.** A caption whose first or last word is removed in the caption box
   draws in to the words it shows: it appears with its first word shown and
   goes a moment after its last. An edge moved in by hand stays where it
-  was put, and one moved out comes in with the word. Where a pause comes
+  was put, and one moved out comes in with the word and is let go of, so
+  the word typed back is where its words put it. An edge dragged out over
+  a removed word afterwards stays where it is put. Where a pause comes
   after the word, the room it took stays empty. Where the speech runs on
   into the next caption, the time of the word is no pause, so the caption
   before stays up until the next appears, whichever of the two the word
@@ -2727,8 +2735,7 @@ moved by hand, on the clip timeline.
   the blocks on the clip timeline come apart where he had removed a word,
   with the sound running on under the gap, #597. Before #189, the
   caption kept the time the word had, and the two ways of taking a word
-  off its edge ended differently, which Tim found. The word typed back
-  takes the edge back out to where the hand put it.
+  off its edge ended differently, which Tim found.
 - **A double-click puts an edge back where all its words put it**, the
   words taken out at that edge coming back with it, whether a drag or the
   caption box took them. It can be done to any edge moved by hand or

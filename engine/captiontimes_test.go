@@ -230,12 +230,19 @@ func TestDraggingACaptionEdgeOverAWordRemovesIt(t *testing.T) {
 	if got := shownCaptions(t, fsys, path, tr); got[0] != "0.00-0.70 eins" || got[1] != was[1] {
 		t.Errorf("the right edge dragged over zwei: %q, was %q", got, was)
 	}
-	// Back out over it, and zwei is back, the edge where it was let go.
+	// Back out over it, and zwei stays out, the edge where it was let go:
+	// a drag brings back no word, #598. Typed back, it is there again.
 	if _, err := SetCaptionTime(fsys, path, "01", 10.6, "end", 11.05, false, tr, nil); err != nil {
 		t.Fatal(err)
 	}
-	if got := shownCaptions(t, fsys, path, tr); got[0] != "0.00-1.05 eins zwei" || got[1] != was[1] {
+	if got := shownCaptions(t, fsys, path, tr); got[0] != "0.00-1.05 eins" || got[1] != was[1] {
 		t.Errorf("the right edge dragged back over zwei: %q, was %q", got, was)
+	}
+	if err := SetWordText(fsys, path, "01", 10.6, "zwei", tr); err != nil {
+		t.Fatal(err)
+	}
+	if got := shownCaptions(t, fsys, path, tr); got[0] != "0.00-1.05 eins zwei" || got[1] != was[1] {
+		t.Errorf("zwei typed back: %q, was %q", got, was)
 	}
 	before := shownCaptions(t, fsys, path, tr)[0]
 	// The start of "drei vier" over the middle of "drei", 12.2 in the
@@ -326,8 +333,9 @@ func TestAMovedEdgeStaysWhenItsWordIsRemoved(t *testing.T) {
 
 // An edge moved out past where its words put it goes in to where the words
 // left put it when its word is removed in the caption box, the same as
-// when the edge is dragged in over the word. Typed back, the word takes
-// the edge back out.
+// when the edge is dragged in over the word. The edge is let go of with
+// the word, so typed back, the word is where its words put it, see
+// forgetMovedOut.
 func TestAnEdgeMovedOutComesInWhenItsWordIsRemoved(t *testing.T) {
 	fsys, path := editablePlanPath(t)
 	tr := editableTranscript()
@@ -352,7 +360,7 @@ func TestAnEdgeMovedOutComesInWhenItsWordIsRemoved(t *testing.T) {
 	if err := SetWordText(fsys, path, "01", 12.0, "drei", tr); err != nil {
 		t.Fatal(err)
 	}
-	if got := shownCaptions(t, fsys, path, tr); got[1] != "1.15-3.30 drei vier" {
+	if got := shownCaptions(t, fsys, path, tr); got[1] != "1.20-3.30 drei vier" {
 		t.Errorf("drei typed back: %q", got)
 	}
 }

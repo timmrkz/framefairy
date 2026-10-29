@@ -664,6 +664,29 @@ func TestADraggedStartLeavesTheGapARemovedWordDoesNot(t *testing.T) {
 	}
 }
 
+// A word removed in the caption box stays removed when the start of its
+// caption is dragged out over it: Tim removed a word and dragged the
+// caption after it to where he heard its next word begin, and the word
+// came back, #598. The start stays where it was let go.
+func TestAStartDraggedOverARemovedWordLeavesItRemoved(t *testing.T) {
+	heard := []Cue{{60, 60.2, "als"}, {60.25, 60.5, "mich"}, {60.55, 60.7, "auf"},
+		{60.75, 60.9, "dem"}, {60.95, 61.4, "Schulhof"}, {61.45, 61.9, "irgendein"},
+		{61.95, 62.2, "Typ"}, {62.25, 62.7, "geschubst"}, {62.75, 63, "hat."}}
+	fsys := afero.NewMemMapFs()
+	_, path := oneClipPlan(t, fsys, 59.9, 64)
+	tr := fromStored(append([]Cue(nil), heard...), nil, 0, 0, nil)
+	if err := SetWordText(fsys, path, "01", 62.1, "", tr); err != nil {
+		t.Fatal(err)
+	}
+	// Out past the middle of "Typ", 62.075.
+	if _, err := SetCaptionTime(fsys, path, "01", 61.95, "start", 62.0, false, tr, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.Join(shownCaptions(t, fsys, path, tr), " "), "0.00-2.10 als mich auf dem Schulhof irgendein 2.10-3.50 geschubst hat."; got != want {
+		t.Errorf("captions\n got %s\nwant %s", got, want)
+	}
+}
+
 // The start of a caption can be moved back over the time the caption
 // before holds for a word removed between them, as far as the last word
 // that caption shows, and the caption before then goes where it appears.

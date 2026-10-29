@@ -106,7 +106,9 @@ export default [
     ],
   },
   {
-    name: "a caption's right edge dragged in over its last word removes the word, and back out puts it back",
+    // A drag changes when a caption is shown and brings back no word,
+    // #598: undo or typing the word in again does.
+    name: "a caption's right edge dragged in over its last word removes the word, and back out leaves it out",
     steps: [
       ["mark", "start"],
       ["edge in", ["end", "Schulhof"]],
@@ -116,7 +118,7 @@ export default [
       ["same", "start"],
       ["edge in", ["end", "Schulhof"]],
       ["edge out", ["end", "Schulhof"]],
-      ["fewer", "start", 0],
+      ["fewer", "start", 1],
       ["others", ["start", "Schulhof"]],
     ],
   },
@@ -153,8 +155,22 @@ export default [
       ["others", ["start", "Schulhof"]],
       ["gone first", ["start", "Schulhof"]],
       ["edge out", ["start", "Schulhof"]],
-      ["fewer", "start", 0],
+      ["fewer", "start", 1],
       ["others", ["start", "Schulhof"]],
+    ],
+  },
+  {
+    // Tim removed a word and dragged the start of the caption after it
+    // out to where he heard its next word begin, and the word came back,
+    // #598.
+    name: "a caption's first word removed stays removed when its left edge is dragged out over it",
+    steps: [
+      ["mark", "start"],
+      ["remove edge word", ["first", "Schulhof"]],
+      ["fewer", "start", 1],
+      ["edge out", ["start", "Schulhof"]],
+      ["fewer", "start", 1],
+      ["meets", ["start", "Schulhof", "before"]],
     ],
   },
   {

@@ -329,12 +329,20 @@ export class Watch {
               .filter((w) => w.said === undefined || w.said < cue.first - 1e-3 || w.said > cue.last + 1e-3)
               .map((w) => `${w.text}@${w.start.toFixed(3)}-${w.end.toFixed(3)}`)
               .join(" ");
+          // A start moved out into the time the caption before held for a
+          // word removed between them takes that time: the caption before
+          // went where this one appeared, and goes where it appears now,
+          // #598.
+          const at = before.captions.indexOf(cue);
+          const moved = after.captions[at];
+          const gives = (c, k) =>
+            edge === "start" && k === at - 1 && moved && moved.start < cue.start - 1e-3 && near(before.captions[k].end, cue.start) && near(c.end, moved.start);
           const kept =
             far(before) === far(after) &&
             after.captions.length === before.captions.length &&
             after.captions.every((c, k) => {
               const b = before.captions[k];
-              if (b !== cue) return near(c.start, b.start) && near(c.end, b.end);
+              if (b !== cue) return near(c.start, b.start) && (near(c.end, b.end) || gives(c, k));
               return edge === "start" ? near(c.end, b.end) : near(c.start, b.start);
             });
           if (!kept) {
@@ -361,19 +369,23 @@ export class Watch {
         // were all removed goes and leaves its time empty. The one before
         // it used to stay up through that time, and its block on the clip
         // timeline grew across the place, which Tim read as two captions
-        // merging.
+        // merging. The one exception: where the speech runs on, the caption
+        // before one whose first word was taken out stays up until it
+        // appears, so nothing goes blank while someone talks, #597.
         if (whole && cue && after.captions.some((c) => Math.abs((c.first ?? NaN) - where) < 1e-6)) {
           this.broke("a caption removed is gone", describe(before, after));
         }
         if (whole || last.args[4] === "") {
-          const kept = after.captions.every((c) => {
+          const kept = after.captions.every((c, k) => {
             const b = before.captions.find((b) => near(b.first, c.first));
             if (!b) return false;
             const [first, final] = whole ? [NaN, NaN] : shown(b);
             const starts = near(where, first);
             const ends = near(where, final);
+            const next = after.captions[k + 1];
+            const held = !whole && next && near(b.end, before.captions.find((n) => near(n.first, next.first))?.start ?? NaN) && near(c.end, next.start);
             const startOk = starts ? c.start >= b.start - 1e-3 : near(c.start, b.start);
-            const endOk = ends ? c.end <= b.end + 1e-3 : near(c.end, b.end);
+            const endOk = ends ? c.end <= b.end + 1e-3 || held : near(c.end, b.end) || held;
             return startOk && endOk;
           });
           if (!kept) {

@@ -55,10 +55,11 @@ func TestACaptionEdgeDraggedWithShiftLandsOnAWord(t *testing.T) {
 
 // A word an edge took out is a word to land on going back, so a start
 // dragged in over a word with shift and back out lands where it started.
+// The word stays out: a drag changes when a caption is shown and brings
+// back no word, #598.
 func TestACaptionEdgeDraggedBackWithShiftLandsOnTheWordItTookOut(t *testing.T) {
 	fsys, path := editablePlanPath(t)
 	tr := editableTranscript()
-	before := shownCaptions(t, fsys, path, tr)
 	if _, err := SetCaptionTime(fsys, path, "01", 12, "start", 12.85, true, tr, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +67,7 @@ func TestACaptionEdgeDraggedBackWithShiftLandsOnTheWordItTookOut(t *testing.T) {
 	if _, err := SetCaptionTime(fsys, path, "01", 12, "start", 12.0, true, tr, nil); err != nil {
 		t.Fatal(err)
 	}
-	if got := shownCaptions(t, fsys, path, tr); !reflect.DeepEqual(got, before) {
-		t.Errorf("dragged back with shift: %q, was %q", got, before)
+	if got, want := shownCaptions(t, fsys, path, tr), []string{"0.00-1.10 eins zwei", "1.20-3.30 vier"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("dragged back with shift: %q, want %q", got, want)
 	}
 }
