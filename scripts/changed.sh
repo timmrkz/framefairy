@@ -269,6 +269,9 @@ for file in $changed; do
 		all_go=1
 		lint=1
 		;;
+	# What make unit says about the machine before the tests, which
+	# changes no test.
+	scripts/machine.sh) lint=1 ;;
 	# The rules of the repository, which make lint tests, and this
 	# script and its test among them.
 	scripts/changed-test.sh | scripts/needs-build.sh | scripts/needs-build-test.sh | scripts/main-moved.sh | scripts/main-moved-test.sh | scripts/plan-frozen.sh | scripts/plan-frozen-test.sh | scripts/test-failures-test.sh | scripts/testdata/test-failures/* | scripts/pins.sh) lint=1 ;;
