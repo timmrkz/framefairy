@@ -379,7 +379,12 @@ const (
 // is still taken, and a sentence it ended still ends there. Taking a word
 // out takes out the word and changes no other caption. A caption whose
 // first or last word was taken out draws in to the words it shows, the
-// same as when its edge is dragged in over the word. Without this, removing a
+// same as when its edge is dragged in over the word, except where the
+// speech runs on into the next caption: there the caption before stays up
+// until the next one appears, as any caption does with no pause after it,
+// so nothing goes blank while someone is still talking. Tim found the
+// blocks on the clip timeline come apart where he had removed a word,
+// with the sound running on under the gap. Without this, removing a
 // word left a gap that read as a pause, so the caption ended at the word
 // before it and the rest moved on to the next one, and once the gap was
 // closed, the room it left pulled the first word of the next caption up.
@@ -535,6 +540,9 @@ func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Ca
 		// belongs to that caption: removing the first word of a caption
 		// changed when the one before it went.
 		end := math.Max(all[g.lastK].End, ClipTime(clip, allWas[g.lastK].End+captionHold))
+		// Whether the next caption follows with no pause between, so this
+		// one stays up until it appears.
+		runsOn := false
 		if i+1 < len(groups) && len(groups[i+1].words) == 0 {
 			// Before a hole it goes where the words removed with the hole
 			// begin, or after its hold when a pause comes first.
@@ -545,9 +553,18 @@ func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Ca
 				end = math.Min(end, hole.from)
 			}
 		} else if i+1 < len(groups) {
-			next := math.Min(appears(groups[i+1].first), groups[i+1].from)
+			// Where the next one appears: with its first word, or with the
+			// first it shows when that was removed, see trimStart below.
+			// Not where its start was dragged in over the word: an edge
+			// moved by hand moves its own caption only, so this one goes
+			// where the word began and the room the hand cleared stays
+			// empty, see moveCaptions.
+			next := appears(groups[i+1].first)
+			if shownAt[groups[i+1].firstK] >= 0 {
+				next = math.Min(next, groups[i+1].from)
+			}
 			if allWas[groups[i+1].firstK].Start-allWas[g.lastK].End < captionPause {
-				end = next
+				end, runsOn = next, true
 			} else {
 				end = math.Min(end, next)
 			}
@@ -557,30 +574,15 @@ func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Ca
 		// A caption whose first or last word was removed is on screen for
 		// the words it shows: from its first word shown, and until a hold
 		// after its last, the way it would be had the edge been dragged
-		// in over the word. The captions beside it keep the time they had,
-		// so the room the word took stays empty. It used to stay as long
-		// as before with the word gone, and Tim found removing an edge
-		// word and dragging the edge over it ended differently.
+		// in over the word. It used to stay as long as before with the
+		// word gone, and Tim found removing an edge word and dragging the
+		// edge over it ended differently. Where the speech runs on into
+		// the next caption, the time of the word is no pause, so the
+		// caption before stays up until the next appears, whichever of
+		// the two the word was in.
 		trimStart := shownAt[g.firstK] < 0
 		trimEnd := shownAt[g.lastK] < 0
-		// The middle of the word removed next to the first word shown and
-		// to the last, which an edge dragged in over it has passed.
-		var startPast, endPast float64
-		if trimStart {
-			k := g.firstK
-			for shownAt[k+1] < 0 {
-				k++
-			}
-			startPast = shownMiddle(all[k], length)
-		}
-		if trimEnd {
-			k := g.lastK
-			for shownAt[k-1] < 0 {
-				k--
-			}
-			endPast = shownMiddle(all[k], length)
-		}
-		if trimEnd {
+		if trimEnd && !runsOn {
 			end = math.Min(end, math.Max(words[g.last].End, ClipTime(clip, was[g.last].End+captionHold)))
 		}
 		if rides {
@@ -589,7 +591,7 @@ func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Ca
 			out[len(out)-1] = Caption{Start: prev.Start, End: math.Max(end, prev.End),
 				Text: prev.Text + " " + text(g.words), Words: append(prev.Words, g.words...),
 				Opens: prev.Opens, Closes: allWas[g.lastK].Start,
-				trimStart: prev.trimStart, trimEnd: trimEnd, startPast: prev.startPast, endPast: endPast}
+				trimStart: prev.trimStart, trimEnd: trimEnd}
 			continue
 		}
 		if trimStart {
@@ -597,7 +599,7 @@ func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Ca
 		}
 		out = append(out, Caption{Start: start, End: end, Text: text(g.words), Words: g.words,
 			Opens: allWas[g.firstK].Start, Closes: allWas[g.lastK].Start,
-			trimStart: trimStart, trimEnd: trimEnd, startPast: startPast, endPast: endPast})
+			trimStart: trimStart, trimEnd: trimEnd})
 		lastAlone = g.alone
 	}
 	// Held a second past the end when it is on screen at the end. Constant
@@ -652,21 +654,24 @@ const shortestMoved = 0.1
 // at a time. An edge is moved no further out than the caption beside it,
 // see moveCaptionEdge, so this only ever stops an edge put back where its
 // words put it, never one put by hand, and the caption beside it keeps the
-// place it was given. A caption shown earlier used to take the one before
+// place it was given. The one exception is a start moved back into the
+// last word of the caption before in running speech, see startFloor,
+// where the caption before goes where it appears. A caption shown earlier used to take the one before
 // it along where the two met, so pulling the left edge of a caption in over
 // its first word drew the caption before it into the place Tim had
 // cleared.
 //
-// An edge whose word was removed is where its words put it, see Captions,
-// or further in where the hand put it. One the hand put in past the middle
-// of that word stays where it was put, which is where dragging it over the
-// word leaves it. A word removed in the caption box never takes the edge
-// back out to where the hand moved it, and never moves an edge the hand
-// put in from where its words put it: Tim found a caption he had
-// shortened grow back the moment he removed its last word. A plan
-// whose start was put before the end of the caption before it, which an
-// older version kept, still has it there, and the caption before goes
-// where it appears.
+// An edge put by hand sets when the caption is shown and nothing else. A
+// word whose middle it stands past is not shown in the caption, which then
+// reads "two three" with its start past "one", and shows it again once the
+// edge is moved back, since the word is still said there, #598. The last
+// word stays, the one nearest the time left, because delete removes a
+// caption whole. An edge stays where the hand put it whatever words are
+// removed, since removing a word fixes what the caption reads, not when it
+// is shown: Tim found a caption he had shortened grow back the moment he
+// removed its last word. A plan whose start was put before the end of the
+// caption before it, which an older version kept, still has it there, and
+// the caption before goes where it appears.
 func moveCaptions(clip Clip, captions []Caption) []Caption {
 	if len(clip.CaptionTimes) == 0 || len(captions) == 0 {
 		return captions
@@ -678,9 +683,6 @@ func moveCaptions(clip Clip, captions []Caption) []Caption {
 			continue
 		}
 		at := ClipTime(clip, *t.Start)
-		if out[i].trimStart && at <= out[i].startPast && at <= out[i].Start {
-			continue
-		}
 		low := 0.0
 		if i > 0 {
 			low = out[i-1].Start + shortestMoved
@@ -695,16 +697,57 @@ func moveCaptions(clip Clip, captions []Caption) []Caption {
 	for i := range out {
 		if t := clip.CaptionTimes[wordKey(out[i].Closes)]; t.End != nil {
 			at := ClipTime(clip, *t.End)
-			if !out[i].trimEnd || at < out[i].endPast || at < out[i].End {
-				out[i].End = max(at, out[i].Start+shortestMoved)
-				out[i].endMoved = true
-			}
+			out[i].End = max(at, out[i].Start+shortestMoved)
+			out[i].endMoved = true
 		}
 		if i+1 < len(out) && out[i].End > out[i+1].Start {
 			out[i].End = out[i+1].Start
 		}
 	}
+	length := clipLength(clip)
+	for i, c := range out {
+		if c.startMoved || c.endMoved {
+			out[i] = showInTime(c, length)
+		}
+	}
 	return out
+}
+
+// showInTime is caption c with only the words whose middle lies in the time
+// it is shown, by an edge moved by hand, and at least the word nearest it.
+func showInTime(c Caption, length float64) Caption {
+	away := func(w Cue) float64 {
+		mid := shownMiddle(w, length)
+		if c.startMoved && mid <= c.Start {
+			return c.Start - mid
+		}
+		if c.endMoved && mid >= c.End {
+			return mid - c.End
+		}
+		return 0
+	}
+	var words []Cue
+	near := 0
+	for k, w := range c.Words {
+		if away(w) == 0 {
+			words = append(words, w)
+		}
+		if away(w) < away(c.Words[near]) {
+			near = k
+		}
+	}
+	if len(words) == len(c.Words) {
+		return c
+	}
+	if len(words) == 0 {
+		words = []Cue{c.Words[near]}
+	}
+	parts := make([]string, len(words))
+	for k, w := range words {
+		parts[k] = w.Text
+	}
+	c.Words, c.Text = words, strings.Join(parts, " ")
+	return c
 }
 
 // EpisodeTime is the moment of the episode a moment of a clip shows.

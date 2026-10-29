@@ -562,15 +562,197 @@ func TestRemovingAWordPullsNoWordUp(t *testing.T) {
 		t.Errorf("captions\n got %s\nwant %s", got, want)
 	}
 	// A caption whose first word is removed appears with the word after,
-	// the way it does when its left edge is dragged in over the word, and
-	// the caption before it still goes when it did. Tim asked for the two
-	// to end the same.
+	// the way it does when its left edge is dragged in over the word. Tim
+	// asked for the two to end the same. The speech runs on, so the
+	// caption before stays up until it appears, see
+	// TestARemovedWordLeavesNoGapWhileTheSpeechRunsOn.
 	if err := SetWordText(fsys, path, "01", 61.5, "", tr); err != nil {
 		t.Fatal(err)
 	}
-	want = strings.Replace(want, "[1.55-2.70 irgendein Typ]", "[2.05-2.70 Typ]", 1)
+	want = strings.Replace(want, "1.55 als mich dem Schulhof] [1.55-2.70 irgendein Typ]", "2.05 als mich dem Schulhof] [2.05-2.70 Typ]", 1)
 	if got := laidOf(t, fsys, path, tr); got != want {
 		t.Errorf("captions\n got %s\nwant %s", got, want)
+	}
+}
+
+// A word removed at the edge of a caption leaves nothing blank while the
+// speech runs on: the caption before stays up until the next one appears,
+// whichever of the two the word was in. Where a pause comes after the word,
+// the caption draws in to the words it shows and the pause stays. Found by
+// Tim, who removed a word and saw the caption blocks on the clip timeline
+// come apart with the sound running on under the gap, #597.
+func TestARemovedWordLeavesNoGapWhileTheSpeechRunsOn(t *testing.T) {
+	// The clip starts at 59.9, so 61.45 in the episode is 1.55 on its
+	// clock. "irgendein" runs straight on from "Schulhof", or after a
+	// pause of 0.8 s.
+	runsOn := []Cue{{60, 60.2, "als"}, {60.25, 60.5, "mich"}, {60.55, 60.7, "auf"},
+		{60.75, 60.9, "dem"}, {60.95, 61.4, "Schulhof"}, {61.45, 61.9, "irgendein"},
+		{61.95, 62.2, "Typ"}}
+	paused := []Cue{{60, 60.2, "als"}, {60.25, 60.5, "mich"}, {60.55, 60.7, "auf"},
+		{60.75, 60.9, "dem"}, {60.95, 61.4, "Schulhof"}, {62.2, 62.65, "irgendein"},
+		{62.7, 62.95, "Typ"}}
+	for _, c := range []struct {
+		name   string
+		heard  []Cue
+		remove float64
+		want   string
+	}{
+		{"nothing removed", runsOn, 0,
+			"[0.00-1.55 als mich auf dem Schulhof] [1.55-2.70 irgendein Typ]"},
+		{"the first word of the caption after", runsOn, 61.6,
+			"[0.00-2.05 als mich auf dem Schulhof] [2.05-2.70 Typ]"},
+		{"the last word of the caption before, longer than its hold", runsOn, 61.2,
+			"[0.00-1.55 als mich auf dem] [1.55-2.70 irgendein Typ]"},
+		{"nothing removed, a pause between", paused, 0,
+			"[0.00-1.90 als mich auf dem Schulhof] [2.30-3.45 irgendein Typ]"},
+		{"the first word of the caption after a pause", paused, 62.4,
+			"[0.00-1.90 als mich auf dem Schulhof] [2.80-3.45 Typ]"},
+		{"the last word of the caption before a pause", paused, 61.2,
+			"[0.00-1.40 als mich auf dem] [2.30-3.45 irgendein Typ]"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			fsys := afero.NewMemMapFs()
+			_, path := oneClipPlan(t, fsys, 59.9, 64)
+			tr := fromStored(append([]Cue(nil), c.heard...), nil, 0, 0, nil)
+			if c.remove > 0 {
+				if err := SetWordText(fsys, path, "01", c.remove, "", tr); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if got := laidOf(t, fsys, path, tr); got != c.want {
+				t.Errorf("captions\n got %s\nwant %s", got, c.want)
+			}
+		})
+	}
+}
+
+// A start dragged in over the first word of its caption moves that
+// caption only, in speech that runs on too: the caption before keeps its
+// end and the room the hand cleared stays empty, as Tim asked in #189.
+// The same word removed in the caption box leaves no gap, #597.
+func TestADraggedStartLeavesTheGapARemovedWordDoesNot(t *testing.T) {
+	heard := []Cue{{60, 60.2, "als"}, {60.25, 60.5, "mich"}, {60.55, 60.7, "auf"},
+		{60.75, 60.9, "dem"}, {60.95, 61.4, "Schulhof"}, {61.45, 61.9, "irgendein"},
+		{61.95, 62.2, "Typ"}, {62.25, 62.7, "geschubst"}, {62.75, 63, "hat."}}
+	for _, c := range []struct {
+		name string
+		edit func(fsys afero.Fs, path string, tr *Transcript) error
+		want string
+	}{
+		{"dragged", func(fsys afero.Fs, path string, tr *Transcript) error {
+			_, err := SetCaptionTime(fsys, path, "01", 61.95, "start", 62.15, false, tr, nil)
+			return err
+		}, "0.00-2.05 als mich auf dem Schulhof irgendein 2.25-3.50 geschubst hat."},
+		{"removed", func(fsys afero.Fs, path string, tr *Transcript) error {
+			return SetWordText(fsys, path, "01", 62.1, "", tr)
+		}, "0.00-2.35 als mich auf dem Schulhof irgendein 2.35-3.50 geschubst hat."},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			fsys := afero.NewMemMapFs()
+			_, path := oneClipPlan(t, fsys, 59.9, 64)
+			tr := fromStored(append([]Cue(nil), heard...), nil, 0, 0, nil)
+			if got := strings.Join(shownCaptions(t, fsys, path, tr), " "); got != "0.00-2.05 als mich auf dem Schulhof irgendein 2.05-3.50 Typ geschubst hat." {
+				t.Fatalf("the test needs Typ first in the second caption: %s", got)
+			}
+			if err := c.edit(fsys, path, tr); err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.Join(shownCaptions(t, fsys, path, tr), " "); got != c.want {
+				t.Errorf("captions\n got %s\nwant %s", got, c.want)
+			}
+		})
+	}
+}
+
+// A word removed in the caption box stays removed when the start of its
+// caption is dragged out over it: Tim removed a word and dragged the
+// caption after it to where he heard its next word begin, and the word
+// came back, #598. The start stays where it was let go.
+func TestAStartDraggedOverARemovedWordLeavesItRemoved(t *testing.T) {
+	heard := []Cue{{60, 60.2, "als"}, {60.25, 60.5, "mich"}, {60.55, 60.7, "auf"},
+		{60.75, 60.9, "dem"}, {60.95, 61.4, "Schulhof"}, {61.45, 61.9, "irgendein"},
+		{61.95, 62.2, "Typ"}, {62.25, 62.7, "geschubst"}, {62.75, 63, "hat."}}
+	fsys := afero.NewMemMapFs()
+	_, path := oneClipPlan(t, fsys, 59.9, 64)
+	tr := fromStored(append([]Cue(nil), heard...), nil, 0, 0, nil)
+	if err := SetWordText(fsys, path, "01", 62.1, "", tr); err != nil {
+		t.Fatal(err)
+	}
+	// Out past the middle of "Typ", 62.075.
+	if _, err := SetCaptionTime(fsys, path, "01", 61.95, "start", 62.0, false, tr, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.Join(shownCaptions(t, fsys, path, tr), " "), "0.00-2.10 als mich auf dem Schulhof irgendein 2.10-3.50 geschubst hat."; got != want {
+		t.Errorf("captions\n got %s\nwant %s", got, want)
+	}
+}
+
+// The start of a caption can be moved back over the time the caption
+// before holds for a word removed between them, as far as the middle of
+// the last word that caption shows, and the caption before then goes
+// where it appears.
+// Tim removed a word and heard the next one start earlier than its block,
+// and the block stopped at the caption before, #597. At the app's size of
+// the captions "irgendein" is the last word of the first caption.
+func TestAStartMovesBackOverARemovedWord(t *testing.T) {
+	heard := []Cue{{60, 60.2, "als"}, {60.25, 60.5, "mich"}, {60.55, 60.7, "auf"},
+		{60.75, 60.9, "dem"}, {60.95, 61.4, "Schulhof"}, {61.45, 61.9, "irgendein"},
+		{61.95, 62.2, "Typ"}}
+	fsys := afero.NewMemMapFs()
+	_, path := oneClipPlan(t, fsys, 59.9, 64)
+	tr := fromStored(append([]Cue(nil), heard...), nil, 0, 0, nil)
+	if got := strings.Join(shownCaptions(t, fsys, path, tr), " "); got != "0.00-2.05 als mich auf dem Schulhof irgendein 2.05-2.70 Typ" {
+		t.Fatalf("the test needs irgendein at the end of the first caption: %s", got)
+	}
+	if err := SetWordText(fsys, path, "01", 61.6, "", tr); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.Join(shownCaptions(t, fsys, path, tr), " "), "0.00-2.05 als mich auf dem Schulhof 2.05-2.70 Typ"; got != want {
+		t.Errorf("irgendein removed\n got %s\nwant %s", got, want)
+	}
+	if _, err := SetCaptionTime(fsys, path, "01", 61.95, "start", 61.7, false, tr, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.Join(shownCaptions(t, fsys, path, tr), " "), "0.00-1.80 als mich auf dem Schulhof 1.80-2.70 Typ"; got != want {
+		t.Errorf("moved back to 61.7\n got %s\nwant %s", got, want)
+	}
+	// Over the caption before it stops in the middle of "Schulhof",
+	// 61.175, which the caption before still shows.
+	if _, err := SetCaptionTime(fsys, path, "01", 61.95, "start", 61.0, false, tr, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.Join(shownCaptions(t, fsys, path, tr), " "), "0.00-1.27 als mich auf dem Schulhof 1.27-2.70 Typ"; got != want {
+		t.Errorf("moved back to 61.0\n got %s\nwant %s", got, want)
+	}
+}
+
+// In running speech, with no word removed, the start of a caption can be
+// moved back into the last word of the caption before, as far as its
+// middle, and the caption before goes where it appears. It stopped at the
+// end of the caption before, which there is the start itself, so a word
+// heard earlier than its block could not be shown earlier at all. Found
+// by the review of #599.
+func TestAStartMovesBackIntoTheLastWordBefore(t *testing.T) {
+	heard := []Cue{{60, 60.2, "als"}, {60.25, 60.5, "mich"}, {60.55, 60.7, "auf"},
+		{60.75, 60.9, "dem"}, {60.95, 61.4, "Schulhof"}, {61.45, 61.9, "irgendein"},
+		{61.95, 62.2, "Typ"}}
+	fsys := afero.NewMemMapFs()
+	_, path := oneClipPlan(t, fsys, 59.9, 64)
+	tr := fromStored(append([]Cue(nil), heard...), nil, 0, 0, nil)
+	for _, step := range []struct {
+		at   float64
+		want string
+	}{
+		{61.7, "0.00-1.80 als mich auf dem Schulhof irgendein 1.80-2.70 Typ"},
+		// No further than the middle of "irgendein", 61.675.
+		{61.0, "0.00-1.77 als mich auf dem Schulhof irgendein 1.77-2.70 Typ"},
+	} {
+		if _, err := SetCaptionTime(fsys, path, "01", 61.95, "start", step.at, false, tr, nil); err != nil {
+			t.Fatal(err)
+		}
+		if got := strings.Join(shownCaptions(t, fsys, path, tr), " "); got != step.want {
+			t.Errorf("moved back to %.2f\n got %s\nwant %s", step.at, got, step.want)
+		}
 	}
 }
 

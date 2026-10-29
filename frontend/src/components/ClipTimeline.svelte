@@ -1298,9 +1298,12 @@
   // from what is heard, either edge is dragged. The two sides of the line
   // between two captions are two edges: the left side is where the one
   // before goes, the right side where the one after appears. An edge moves
-  // its own caption and no other: dragged in it leaves a gap, dragged out
-  // it stops at the caption beside it. Dragged in over a word it removes
-  // the word, and dragged back out over it puts it back.
+  // its own caption: dragged in it leaves a gap, dragged out it stops at
+  // the caption beside it, except that a start in running speech may go
+  // back into the last word of the caption before, see startFloor in
+  // engine/edit.go. An edge only sets when its caption shows: dragged in
+  // over a word it leaves the word out, and dragged back out shows it
+  // again. A word removed in the caption box stays removed.
   //
   // Where the edge lands and which words it crosses is the engine's to
   // say, see ShapeCaptionTime in engine/episode.go, the same way a gesture
@@ -1643,9 +1646,8 @@
     return { at: firstWordOf(b.i, b.c) ?? b.from, about: "clip" };
   }
 
-  // A double-click on an edge moved by hand, or drawn in with its word,
-  // puts it back where all its words put it, the words taken out at that
-  // edge with it, see SetCaptionTime.
+  // A double-click on an edge moved by hand puts it back where all its
+  // words put it, which shows the words it hid again, see SetCaptionTime.
   function resetCaption(i: number, edge: "start" | "end") {
     const c = captions?.[i];
     if (!c || !oncaptiontime || locked) return;
@@ -2100,8 +2102,8 @@
               aria-label="When caption {b.i + 1} appears"
               aria-valuenow={b.c.start}
               title={b.c.startMoved
-                ? "When this caption appears, moved from where its words put it. Drag to move it, over a word to remove the word, and double-click to put it back with its words."
-                : "When this caption appears. Drag to move it, over a word to remove the word."}
+                ? "When this caption appears, moved from where its words put it. Drag to move it, and double-click to put it back."
+                : "When this caption appears. Drag to move it."}
               data-grip="capedge"
               data-index={b.i}
               data-edge="start"
@@ -2115,8 +2117,8 @@
               aria-label="When caption {b.i + 1} goes"
               aria-valuenow={b.c.end}
               title={b.c.endMoved
-                ? "When this caption goes, moved from where its words put it. Drag to move it, over a word to remove the word, and double-click to put it back with its words."
-                : "When this caption goes. Drag to move it, over a word to remove the word."}
+                ? "When this caption goes, moved from where its words put it. Drag to move it, and double-click to put it back."
+                : "When this caption goes. Drag to move it."}
               data-grip="capedge"
               data-index={b.i}
               data-edge="end"
