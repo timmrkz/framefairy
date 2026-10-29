@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -354,6 +355,15 @@ func TestTheEpisodesDecoderHandsOverTheKeyFrameFirst(t *testing.T) {
 				ffmpegtest.Unusable(t, "ffmpeg could not make an episode: %s %s", err, out)
 			}
 			e := ffmpegOnTheProcessor()
+			// How far apart on average the frames compared may be. On a
+			// Mac the episode's decoder decodes HEVC on the chip, and the
+			// ffmpeg it is compared with on the processor, issue #581.
+			// The chip's scaler and the processor's round differently, see
+			// TestTheEpisodesDecoderPlaysTheFilesPeopleBring.
+			apart := 2.0
+			if runtime.GOOS == "darwin" && strings.HasPrefix(enc.name, "HEVC") {
+				apart = 6
+			}
 			grid := gridOf(t, path)
 			ffmpegs := func(at float64) []byte {
 				var want []byte
@@ -423,10 +433,10 @@ func TestTheEpisodesDecoderHandsOverTheKeyFrameFirst(t *testing.T) {
 				if n := len(ats) - 2; n > 0 {
 					t.Errorf("a stream from %.1f s handed over %d frames between the key frame and the frame asked for, want none: %v", c.from, n, ats)
 				}
-				if d := meanDiff(first, ffmpegs(ats[0])); d > 2 {
+				if d := meanDiff(first, ffmpegs(ats[0])); d > apart {
 					t.Errorf("the key frame at %.1f s differs from ffmpeg's by %.2f on average", ats[0], d)
 				}
-				if d := meanDiff(at, ffmpegs(to)); d > 2 {
+				if d := meanDiff(at, ffmpegs(to)); d > apart {
 					t.Errorf("the frame at %.1f s differs from ffmpeg's by %.2f on average", to, d)
 				}
 			}
@@ -477,14 +487,13 @@ func TestTheEpisodesDecoderIsReadyBeforeTheFirstFrame(t *testing.T) {
 
 var errStop = errors.New("enough")
 
-// gridOf is the grid of an episode, the frames the episode's decoder
-// counts on, from the engine's probe.
-//
 // ffmpegOnTheProcessor is an engine whose ffmpeg decodes on the
 // processor, for the frames a test compares the episode's decoder with.
 // On GitHub's virtual Mac a decode through VideoToolbox can hang for good,
 // issue #581, and the frames to compare with are not what these tests
 // are about.
+//
+// On the real disk: ffmpeg reads the episode the test made.
 func ffmpegOnTheProcessor() *Engine {
 	e := NewEngine(NewLog(nil, false, false), disk)
 	e.FFmpeg, e.FFprobe = "ffmpeg", "ffprobe"
@@ -492,6 +501,9 @@ func ffmpegOnTheProcessor() *Engine {
 	return e
 }
 
+// gridOf is the grid of an episode, the frames the episode's decoder
+// counts on, from the engine's probe.
+//
 // On the real disk: ffprobe reads the episode.
 func gridOf(t *testing.T, path string) framewire.Grid {
 	t.Helper()
