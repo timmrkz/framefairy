@@ -588,7 +588,9 @@ scan made once is out of date the week after.
   packages, and on main every Monday. govulncheck reports only what the
   code really calls, so a module that is listed and never compiled in, of
   which Wails brings several, is not a finding. npm audit runs through
-  audit-ci, which fails on every warning, low ones too, in what ships and
+  audit-ci, one of the interface's own packages, so
+  `frontend/package-lock.json` locks it with everything it brings and
+  Dependabot keeps it current like the rest. It fails on every warning, low ones too, in what ships and
   in the build tools, but for those `frontend/audit-ci.jsonc` lets through
   by number and by the path it comes in on, each with why: a warning with
   no fix yet in a tool that never ships, like deepmerge through the Svelte

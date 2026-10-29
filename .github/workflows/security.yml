@@ -82,11 +82,14 @@ jobs:
       # Everything, not only what ships: the build tools make the bundle
       # that does. Every warning fails, low ones too, but for the ones
       # audit-ci.jsonc lets through by number and path, each with why,
-      # issue #579. audit-ci is IBM's, at a version of its own, but the
-      # packages it brings come by their ranges, with no lockfile.
+      # issue #579. audit-ci is IBM's, one of the interface's packages, so
+      # package-lock.json locks it with everything it brings. Installed
+      # without running any package's scripts, since only audit-ci runs.
       - name: npm audit
         working-directory: frontend
-        run: npx --yes audit-ci@7.1.0 --config audit-ci.jsonc
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx --no-install audit-ci --config audit-ci.jsonc
 
   upstream:
     if: github.event_name != 'pull_request'
