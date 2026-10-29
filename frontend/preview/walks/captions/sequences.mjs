@@ -198,19 +198,25 @@ export default [
     ],
   },
   {
+    // On the caption that ends a sentence, so a pause comes after its last
+    // word. Where the speech runs on, the caption stays up until the next
+    // appears, see the walk below on the last word, #597.
     name: "removing a caption's last word draws it in like dragging its right edge over the word",
     steps: [
       ["mark", "start"],
-      ["edge in", ["end", "Schulhof"]],
+      ["edge in", ["end", "geschubst"]],
       ["mark", "dragged"],
       ["undo"],
       ["same", "start"],
-      ["remove edge word", ["last", "Schulhof"]],
-      ["drawn in", ["dragged", "Schulhof", "last"]],
-      ["others", ["start", "Schulhof"]],
+      ["remove edge word", ["last", "geschubst"]],
+      ["drawn in", ["dragged", "geschubst", "last"]],
+      ["others", ["start", "geschubst"]],
     ],
   },
   {
+    // The speech runs on into "als", so the caption before stays up
+    // until this one appears, #597, which the edge dragged in leaves
+    // alone.
     name: "removing a caption's first word draws it in like dragging its left edge over the word",
     steps: [
       ["mark", "start"],
@@ -220,7 +226,7 @@ export default [
       ["same", "start"],
       ["remove edge word", ["first", "Schulhof"]],
       ["drawn in", ["dragged", "Schulhof", "first"]],
-      ["others", ["start", "Schulhof"]],
+      ["others", ["start", "Schulhof", "held"]],
     ],
   },
   {

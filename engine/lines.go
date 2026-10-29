@@ -555,8 +555,13 @@ func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Ca
 		} else if i+1 < len(groups) {
 			// Where the next one appears: with its first word, or with the
 			// first it shows when that was removed, see trimStart below.
+			// Not where its start was dragged in over the word: an edge
+			// moved by hand moves its own caption only, so this one goes
+			// where the word began and the room the hand cleared stays
+			// empty, see moveCaptions.
 			next := appears(groups[i+1].first)
-			if shownAt[groups[i+1].firstK] >= 0 {
+			opens := allWas[groups[i+1].firstK].Start
+			if shownAt[groups[i+1].firstK] >= 0 || clip.CaptionTimes[wordKey(opens)].Start != nil {
 				next = math.Min(next, groups[i+1].from)
 			}
 			if allWas[groups[i+1].firstK].Start-allWas[g.lastK].End < captionPause {

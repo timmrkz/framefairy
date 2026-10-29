@@ -1191,7 +1191,10 @@ type captionEdge struct {
 // removed a word and found the next one sounding earlier than its block,
 // and the block could not be moved there.
 func startFloor(before, c LaidCaption) float64 {
-	if !c.trimStart && !before.trimEnd || len(before.Words) == 0 {
+	// Held only where the two meet: a start dragged in over its word
+	// leaves a gap, and the caption before keeps its own end.
+	held := (c.trimStart || before.trimEnd) && before.End >= c.Start-0.0005
+	if !held || len(before.Words) == 0 {
 		return before.End
 	}
 	return min(before.End, max(before.Words[len(before.Words)-1].End, before.Start+shortestMoved))

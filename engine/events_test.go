@@ -626,6 +626,44 @@ func TestARemovedWordLeavesNoGapWhileTheSpeechRunsOn(t *testing.T) {
 	}
 }
 
+// A start dragged in over the first word of its caption moves that
+// caption only, in speech that runs on too: the caption before keeps its
+// end and the room the hand cleared stays empty, as Tim asked in #189.
+// The same word removed in the caption box leaves no gap, #597.
+func TestADraggedStartLeavesTheGapARemovedWordDoesNot(t *testing.T) {
+	heard := []Cue{{60, 60.2, "als"}, {60.25, 60.5, "mich"}, {60.55, 60.7, "auf"},
+		{60.75, 60.9, "dem"}, {60.95, 61.4, "Schulhof"}, {61.45, 61.9, "irgendein"},
+		{61.95, 62.2, "Typ"}, {62.25, 62.7, "geschubst"}, {62.75, 63, "hat."}}
+	for _, c := range []struct {
+		name string
+		edit func(fsys afero.Fs, path string, tr *Transcript) error
+		want string
+	}{
+		{"dragged", func(fsys afero.Fs, path string, tr *Transcript) error {
+			_, err := SetCaptionTime(fsys, path, "01", 61.95, "start", 62.15, false, tr, nil)
+			return err
+		}, "0.00-2.05 als mich auf dem Schulhof irgendein 2.25-3.50 geschubst hat."},
+		{"removed", func(fsys afero.Fs, path string, tr *Transcript) error {
+			return SetWordText(fsys, path, "01", 62.1, "", tr)
+		}, "0.00-2.35 als mich auf dem Schulhof irgendein 2.35-3.50 geschubst hat."},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			fsys := afero.NewMemMapFs()
+			_, path := oneClipPlan(t, fsys, 59.9, 64)
+			tr := fromStored(append([]Cue(nil), heard...), nil, 0, 0, nil)
+			if got := strings.Join(shownCaptions(t, fsys, path, tr), " "); got != "0.00-2.05 als mich auf dem Schulhof irgendein 2.05-3.50 Typ geschubst hat." {
+				t.Fatalf("the test needs Typ first in the second caption: %s", got)
+			}
+			if err := c.edit(fsys, path, tr); err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.Join(shownCaptions(t, fsys, path, tr), " "); got != c.want {
+				t.Errorf("captions\n got %s\nwant %s", got, c.want)
+			}
+		})
+	}
+}
+
 // The start of a caption can be moved back over the time the caption
 // before holds for a word removed between them, as far as the last word
 // that caption shows, and the caption before then goes where it appears.
