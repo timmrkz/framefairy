@@ -1,0 +1,13 @@
+{
+  "$schema": "https://github.com/IBM/audit-ci/raw/main/docs/schema.json",
+  // Every warning npm audit finds fails the check, low ones too, in what
+  // ships and in the build tools that make it, but for the ones let
+  // through here by number, each with why. See docs/BUILD.md, Keeping up.
+  "low": true,
+  "allowlist": [
+    // deepmerge's mergeObject() lets the prototype of what it returns be
+    // poisoned, issue #579. Only the Svelte build plugin uses it, which
+    // never ships in the app, and no fixed deepmerge exists yet.
+    "GHSA-gcqx-w48m-w2h4"
+  ]
+}

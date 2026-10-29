@@ -587,8 +587,11 @@ scan made once is out of date the week after.
   every pull request that changes the Go modules or the interface's
   packages, and on main every Monday. govulncheck reports only what the
   code really calls, so a module that is listed and never compiled in, of
-  which Wails brings several, is not a finding. Either failing is a red
-  check.
+  which Wails brings several, is not a finding. npm audit runs through
+  audit-ci, which fails on every warning, low ones too, in what ships and
+  in the build tools, but for those `frontend/audit-ci.jsonc` lets through
+  by number, each with why: a warning with no fix yet in a tool that never
+  ships, like deepmerge in #579. Either failing is a red check.
 - **The tools we build ourselves**, which nothing else watches:
   `scripts/upstream.sh` compares ffmpeg, the four libraries it is built
   with, llama.cpp and the speech library with their newest releases, and
