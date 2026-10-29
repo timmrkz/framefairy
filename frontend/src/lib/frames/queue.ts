@@ -1500,20 +1500,28 @@ export class FrameQueue {
   // card's clock a busy machine showed 2 frames of 9, issue #534, and
   // standing on frames alone left the sound running on ahead, so a loop
   // switched off or a cut made while playing went by the sound's moment,
-  // not the picture's, issue #588. A play the app pauses or ends while
-  // held starts the sound card again itself, see maybeBegin.
-  private heldForFrame = false;
+  // not the picture's, issue #588.
   private onFrames(heard: number, unshown: number): number {
-    if (heard > unshown) {
-      if (!this.heldForFrame && this.audio.state === "running") {
-        this.heldForFrame = true;
-        void this.audio.suspend();
-      }
-      return unshown;
+    void this.holdSound("frame", heard > unshown);
+    return Math.min(heard, unshown);
+  }
+
+  // Who holds the sound card while a walk plays: the walk's clock for a
+  // frame not up yet, "frame", and the walk's hand while it drags,
+  // "hand", see holdSound in walks/bridge.mjs and issue #583. The sound
+  // card runs again only once nobody holds it, and only while a play
+  // goes on: a play the app pauses or ends holds it itself, and a play
+  // that starts starts it, see maybeBegin. Held again on every tick it
+  // is wanted, since the app may have started it meanwhile. Settles once
+  // the sound card has done what it was told.
+  private holders = new Set<string>();
+  holdSound(who: string, held: boolean): Promise<void> {
+    if (held) {
+      this.holders.add(who);
+      return this.audio.state === "running" ? this.audio.suspend() : Promise.resolve();
     }
-    if (this.heldForFrame && this.audio.state === "suspended") void this.audio.resume();
-    this.heldForFrame = false;
-    return heard;
+    if (!this.holders.delete(who) || this.holders.size) return Promise.resolve();
+    return this.state === "playing" && this.audio.state === "suspended" ? this.audio.resume() : Promise.resolve();
   }
 
   // The frame on screen, see screen.ts. Fresh when it is put up for the

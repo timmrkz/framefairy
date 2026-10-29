@@ -809,9 +809,10 @@ export async function playUntil(page, { past = Infinity, most = Infinity, from =
 
 // Holds the sound card, or lets it go. Held, a play stands where it is,
 // picture and sound together, while a walk's hand takes as long as the
-// machine needs, and let go it plays on from there, issue #583.
+// machine needs, and let go it plays on from there, issue #583, once the
+// walk's clock holds it no longer either, see FrameQueue.holdSound.
 export async function holdSound(page, held) {
-  await page.evaluate((held) => (held ? window.__frameQueue.audio.suspend() : window.__frameQueue.audio.resume()), held);
+  await page.evaluate((held) => window.__frameQueue.holdSound("hand", held), held);
 }
 
 // Plays from the playhead until it has gone on by seconds of the episode,

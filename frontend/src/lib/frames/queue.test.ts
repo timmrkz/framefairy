@@ -656,6 +656,7 @@ describe("the walk's clock", () => {
         card.state = "running";
       },
     } as unknown as AudioContext;
+    (q as unknown as { state: string }).state = "playing";
     return { q, card };
   }
   afterEach(() => {
@@ -682,15 +683,46 @@ describe("the walk's clock", () => {
     expect(card.started).toBe(1);
   });
 
-  // A walk holds the sound card while its hand drags, issue #583, and
-  // the clock lets it go only when it held it itself.
+  // The app holds the sound card itself when it pauses, and the clock
+  // lets go only of a hold it made.
   test("leaves a sound card held by someone else held", () => {
     g.__playClock = "frames";
     const { q, card } = clocked();
     card.state = "suspended";
     expect(q.playClock(3.2, 3.24)).toBe(3.2);
-    expect(q.playClock(3.3, 3.24)).toBe(3.24);
-    expect(q.playClock(3.3, 3.32)).toBe(3.3);
     expect(card).toMatchObject({ state: "suspended", held: 0, started: 0 });
+  });
+
+  // A walk holds the sound card while its hand drags, issue #583. The
+  // review of #588 found the clock let go of the hand's hold when the
+  // frame it waited for came up during the drag.
+  test("lets the sound card go only once neither the frame nor the hand holds it", async () => {
+    g.__playClock = "frames";
+    const { q, card } = clocked();
+    expect(q.playClock(3.2, 3.04)).toBe(3.04);
+    await q.holdSound("hand", true);
+    expect(q.playClock(3.2, 3.24)).toBe(3.2);
+    expect(card).toMatchObject({ state: "suspended", started: 0 });
+    await q.holdSound("hand", false);
+    expect(card).toMatchObject({ state: "running", started: 1 });
+
+    await q.holdSound("hand", true);
+    expect(q.playClock(3.3, 3.28)).toBe(3.28);
+    expect(q.playClock(3.3, 3.32)).toBe(3.3);
+    expect(card).toMatchObject({ state: "suspended", started: 1 });
+    await q.holdSound("hand", false);
+    expect(card).toMatchObject({ state: "running", started: 2 });
+  });
+
+  // A play started again starts the sound card itself, see maybeBegin,
+  // while the clock may still count itself a holder. The next frame not
+  // up holds it again.
+  test("holds the sound card again once the app has started it", () => {
+    g.__playClock = "frames";
+    const { q, card } = clocked();
+    q.playClock(3.2, 3.04);
+    card.state = "running";
+    expect(q.playClock(3.3, 3.04)).toBe(3.04);
+    expect(card).toMatchObject({ state: "suspended", held: 2 });
   });
 });
