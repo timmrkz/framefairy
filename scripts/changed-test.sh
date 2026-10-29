@@ -146,6 +146,8 @@ has "train/export.go" "lint"
 is ".golangci.yml" "lint"
 is "scripts/testdata/lint/walks/waits.mjs" "lint unit go framefairy/internal/naming"
 is "frontend/eslint-suppressions.json" "lint interface"
+# The failure report's test and the logs it reads run the lint.
+is "scripts/test-failures-test.sh scripts/testdata/test-failures/gotestsum.txt" "lint unit go framefairy/internal/naming"
 
 # Tests that run the decoder as a program do not import it, so what
 # builds it reaches them by FRAMEFAIRY_FRAMES.
@@ -205,6 +207,8 @@ has "scripts/build-ffmpeg.sh" "build" "lint"
 # versions the build scripts pin.
 has "scripts/build-ffmpeg.sh" "go framefairy/notices"
 has "scripts/build-llama.sh" "go framefairy/notices"
+# The signer reads the Info.plist the bundle script writes, issue #369.
+has "scripts/bundle-macos.sh" "go framefairy/cmd/framefairy-release"
 
 # The rules are tested in make lint.
 is "scripts/needs-build.sh" "lint unit go framefairy/internal/naming"

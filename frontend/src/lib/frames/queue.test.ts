@@ -97,22 +97,22 @@ describe("the loop switched while playing", () => {
 
 });
 
-// A clip edge or a cut dragged while the clip plays. A running play is
-// never changed in place, rule 6 of docs/VIDEO-PREVIEW.md: it goes on with
-// the program it started with, and the next play plays the new one. It was
-// started again at every step of the hand, and Tim saw the picture, the
-// sound and the playhead stutter.
+// A clip edge or a cut dragged while the clip plays, or put back by an
+// undo. The play takes in the clip as it is now and goes on, rule 6 of
+// docs/VIDEO-PREVIEW.md. It was started again at every step of the hand,
+// and Tim saw the picture, the sound and the playhead stutter. Then it kept
+// the clip it started with, and an undo while it played was not heard.
 describe("the pieces changed while playing", () => {
   const wanted = (q: FrameQueue) => (q as unknown as { wantedKey: string }).wantedKey;
 
-  test("change nothing that plays", () => {
+  test("are taken in without starting the play again", () => {
     const { q, said } = playing(58.2);
     q.seek(58.2, [clip, false]);
     said.length = 0;
     q.setProgram([clip[0]], false);
     q.setProgram([{ start: clip[0].start, end: clip[0].end - 0.5 }], true);
     expect(said).toEqual([]);
-    expect(wanted(q)).toBe(JSON.stringify([clip, false]));
+    expect(wanted(q)).toBe(JSON.stringify([[{ start: clip[0].start, end: clip[0].end - 0.5 }], true]));
   });
 
   test("are what the next play plays", () => {
@@ -125,13 +125,15 @@ describe("the pieces changed while playing", () => {
     expect(wanted(q)).toBe(JSON.stringify([[clip[0]], false]));
   });
 
-  test("and put back as they were, change nothing either", () => {
+  // Tim's undo: the end pulled in while the clip played, then put back.
+  // The play plays the clip as it is again, to its old end.
+  test("and put back by an undo, play as they were", () => {
     const { q, said } = playing(58.2);
     q.seek(58.2, [clip, false]);
+    said.length = 0;
     q.setProgram([clip[0]], false);
     q.setProgram(clip, false);
-    said.length = 0;
-    q.seek(58.5);
+    expect(said).toEqual([]);
     expect(wanted(q)).toBe(JSON.stringify([clip, false]));
   });
 });
@@ -598,5 +600,35 @@ describe("sound handed to the sound card late", () => {
     expect(q.stats.lateSound).toBe(1010);
     expect(q.stats.lateSoundAt).toHaveLength(1000);
     expect(q.stats.lateSoundAt[0]).toEqual([2000, 2050]);
+  });
+});
+
+describe("a frame decoded for a play", () => {
+  // A play asks for what lies over each frame as it comes out of the
+  // decoder, before its turn on screen, so its captions are on their way
+  // while the frames before it are shown, issue #288. The order is read,
+  // not the time it takes, so no machine is too busy for it, issue #338.
+  test("asks for what lies over it before it is shown", () => {
+    const q = new FrameQueue(
+      canvas(),
+      "/episode.mp4",
+      movieOf({ duration: 120, width: 2, height: 2, grid: { origin: 0, start: 0, num: 25, den: 1, count: 3000 } }),
+    );
+    const inside = q as unknown as { video: unknown; frameOut(slot: unknown, frame: unknown): void };
+    inside.video = { width: 2, height: 2, samples: { pts: [0, 1, 2], order: [0, 1, 2], timescale: 25 } };
+    const asked: number[] = [];
+    const drawn: number[] = [];
+    q.over = {
+      at: (frame) => {
+        drawn.push(frame);
+        return null;
+      },
+      coming: (frame) => asked.push(frame),
+    };
+    const slot = { fed: new Map([[80000, 2]]), run: { id: 1, lastRank: 2 }, firstRank: 0, coming: 1, keeper: { offer: () => true }, ready: [] as unknown[] };
+    inside.frameOut(slot, { timestamp: 80000, close() {} });
+    expect(slot.ready).toHaveLength(1);
+    expect(asked).toEqual([2 / 25]);
+    expect(drawn).toEqual([]);
   });
 });

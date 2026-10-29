@@ -265,13 +265,23 @@ export function still(seq) {
 // next, so a walk allows for a piece more than it counted. With save, what
 // is heard so far is saved once the piece is heard, which the bridge
 // otherwise only does once the hearing ends.
+// Says false, and lets nothing through, when no work on the video runs or
+// waits to: nothing would hear the piece, and nothing would change for it.
+// A search that ended by itself after the caller looked, called off
+// between two pieces, left the wait without news for good, and the walk
+// "Continue fills the transcription from nothing" ran until the test's
+// time was out, issue #487. Any work running when it looks either hears
+// the piece or ends, and either is news.
 export async function onePiece(page, url, path, { save = false } = {}) {
-  const now = async () =>
-    JSON.stringify((await ask(page, "Jobs")).filter((j) => j.episode === path).map((j) => [j.id, j.state, j.step, j.progress?.covered]));
-  const before = await now();
+  const jobs = async () => (await ask(page, "Jobs")).filter((j) => j.episode === path);
+  const of = (list) => JSON.stringify(list.map((j) => [j.id, j.state, j.step, j.progress?.covered]));
+  const first = await jobs();
+  if (!first.some((j) => j.state === "running" || j.state === "queued")) return false;
+  const before = of(first);
   let seen = await news(page);
   await control(url, save ? "/speech?step=1&save" : "/speech?step=1");
-  while ((await now()) === before) seen = await nextNews(page, seen);
+  while (of(await jobs()) === before) seen = await nextNews(page, seen);
+  return true;
 }
 
 // What the toasts over the window say, one after the other.

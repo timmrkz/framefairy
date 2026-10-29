@@ -147,7 +147,7 @@ func timesEpisode(t *testing.T, c timesCase) string {
 	source := filepath.Join(dir, c.file)
 	seconds := strconv.Itoa(max(c.seconds, 7))
 	picture := "color=c=black:s=2x8:r=30000/1001:d=" + seconds + "," +
-		"geq=lum='if(bitand(N\\,pow(2\\,7-Y))\\,220\\,30)':cb=128:cr=128,scale=640:360:flags=neighbor"
+		"geq=lum='if(bitand(N\\,pow(2\\,7-Y))\\,220\\,30)':cb=128:cr=128,scale=128:72:flags=neighbor"
 	if len(c.video) > 0 {
 		picture += "," + strings.Join(c.video, ",")
 	}
@@ -360,7 +360,7 @@ func frameHolding(t *testing.T, source string) func(at float64) int {
 		}
 	}
 	sort.Float64s(begins)
-	numbers := barNumbers(t, source, 640, 360, "-fps_mode", "passthrough")
+	numbers := barNumbers(t, source, 128, 72, "-fps_mode", "passthrough")
 	if len(numbers) != len(begins) {
 		t.Fatalf("the episode has %d frames and %d timestamps", len(numbers), len(begins))
 	}
@@ -379,15 +379,11 @@ func barNumbers(t *testing.T, path string, w, h int, flags ...string) []int {
 	t.Helper()
 	args := append([]string{"-v", "error", "-i", path}, flags...)
 	args = append(args, "-f", "rawvideo", "-pix_fmt", "gray", "-")
-	out, err := exec.Command("ffmpeg", args...).Output()
-	if err != nil {
-		t.Fatal(err)
-	}
 	var numbers []int
-	for i := 0; i+w*h <= len(out); i += w * h {
+	for _, f := range readFrames(t, exec.Command("ffmpeg", args...), w*h) {
 		n := 0
 		for b := 0; b < 8; b++ {
-			if out[i+(2*b+1)*h/16*w+w/2] > 125 {
+			if f[(2*b+1)*h/16*w+w/2] > 125 {
 				n |= 1 << (7 - b)
 			}
 		}

@@ -86,10 +86,10 @@ and nothing else. `make INSTALL=0` does the same by hand.
 | `make hyphenation` | writes the patterns in `engine/hyphenation/` again, which break a word too long for a caption line: hyph-utf8's for 20 languages and the German joints, built from the Trennmuster team's word list, each from the commit `scripts/hyphenation.sh` pins. It needs `patgen`, from `texlive-binaries` on Linux or `texlive` on macOS, takes about five minutes and is only for when a pin moves. Run `make notices` after it. See [ENGINE.md](ENGINE.md) |
 | `make test` | everything below: `lint`, `interface`, `unit`, `fuzz` and `walks`, which is what CI runs, see [One way to test](#one-way-to-test) |
 | `make lint` | everything that reads the code without running it: `gofmt`, `go vet`, that `./...` is our packages alone, golangci-lint, which refuses a new wait on the clock in a Go test, see [No test waits on the clock](#no-test-waits-on-the-clock), with `scripts/lint-test.sh`, the proof that the linters catch one, every script read by its shell, the action pins and the tests of the rules for a build, the Main moved notice and the frozen plan. It fetches the golangci-lint the Makefile pins into `.build/` the first time, unless `INSTALL=0` |
-| `make unit` | every Go test under the race detector, the fuzz seeds included. On a Mac without the race detector and without the licence server's packages, which run on a Linux server only. `RACE=` and `UNITSKIP=` say otherwise. `UNITSHARD=1/3` to `3/3` runs a third of the tests, which is how CI spreads them over three machines. `UNITFLAGS` adds one flag for go test, like `-run`. `UNITPKGS` names the packages, `./...` unless it says. `UNITTIMEOUT` is how long one package's tests may take before go test ends them and prints every goroutine, Go's own 10m unless it says, and 4m in CI: a test waits on signals, so one whose signal never comes hangs until then |
+| `make unit` | every Go test under the race detector, the fuzz seeds included. On a Mac without the race detector and without the licence server's packages, which run on a Linux server only. `RACE=` and `UNITSKIP=` say otherwise. `UNITSHARD=1/3` to `3/3` runs a third of the tests, which is how CI spreads them over three machines. `UNITFLAGS` adds one flag for go test, like `-run`. `UNITPKGS` names the packages, `./...` unless it says. `UNITTIMEOUT` is how long one package's tests may take before go test ends them and prints every goroutine, Go's own 10m unless it says, and 4m in CI: a test waits on signals, so one whose signal never comes hangs until then. `SLOWEST=5s` names after the tests every test that took longer, slowest first, and keeps every test's time in `.build/unit-tests.json` for a closer look on that machine, through [gotestsum](https://github.com/gotestyourself/gotestsum). Off unless it says, and CI sets it, so a slow test on the Mac shows in its log. `COVERAGE=` a folder counts the lines the tests run, see [Coverage](TESTING.md#coverage) |
 | `make fuzz` | every fuzz target, `FUZZTIME` executions each, looking for new cases. `FUZZTARGETS` names some, `FUZZSHARD=1/3` takes a third |
-| `make interface` | a type check of the interface, its own tests, and ESLint, which refuses a new wait on the clock in a walk or an interface test, see [No test waits on the clock](#no-test-waits-on-the-clock). Needs only Node |
-| `make walks` | the interface in Chromium against the real Go side: the sequences of the cases found by hand, and every walk for seeds 1 to `WALKS`, 3 unless set, each as long as it says unless `STEPS` is set, half as many again at once as the machine has cores unless `WALKERS` is set, each sequence a run of its own and the sequences of a walker walked by one node, each with less motion unless it looks at motion or `STILL=none` is set, stopped after `WALKTIMEOUT`, 30m unless set, each keeping a Playwright trace when it fails, with a film of the screen for those `walks/filmed.mjs` names, or for every walk with `TRACE=film`, and no trace with `TRACE=none`. Needs Node, ffmpeg and Playwright's Chromium. See [TESTING.md](TESTING.md) |
+| `make interface` | a type check of the interface, its own tests, and ESLint, which refuses a new wait on the clock in a walk or an interface test, see [No test waits on the clock](#no-test-waits-on-the-clock). Needs only Node. `COVERAGE=` a folder counts the lines its tests run |
+| `make walks` | the interface in Chromium against the real Go side: the sequences of the cases found by hand, and every walk for seeds 1 to `WALKS`, 3 unless set, each as long as it says unless `STEPS` is set, half as many again at once as the machine has cores unless `WALKERS` is set, each sequence a run of its own and the sequences of a walker walked by one node, each with less motion unless it looks at motion or `STILL=none` is set, stopped after `WALKTIMEOUT`, 30m unless set, each keeping a Playwright trace when it fails, with a film of the screen for those `walks/filmed.mjs` names, or for every walk with `TRACE=film`, and no trace with `TRACE=none`. Needs Node, ffmpeg and Playwright's Chromium. `COVERAGE=` a folder counts the lines of the app and the interface they run. See [TESTING.md](TESTING.md) |
 | `make check` | what this machine has and what it still needs, with the command for each |
 | `make tools` | the installing part of `make` and nothing else. macOS: Homebrew does Go, Node.js and what builds ffmpeg and llama.cpp. Elsewhere it points to [INSTALL.md](INSTALL.md) |
 | `make models` | downloads the speech model and the language model into `~/.framefairy/models`, for the command line, through the engine's own installers, so each is held to its pinned size and SHA-256. The app does this itself |
@@ -265,7 +265,10 @@ motion, `make walks STILL=none`, at night on main and by hand, in the
 same four shares and the CI image as the walks in `ci.yml`. On a pull
 request a sequence asks for less motion unless it looks at motion, see
 Where they run in [TESTING.md](TESTING.md#where-they-run), and this is
-the run that sees a step that looks at motion and was left out.
+the run that sees a step that looks at motion and was left out. The
+same night the Go tests, the interface's tests and the walks count the
+lines they run on Linux, and the counts go to Codecov, see
+[Coverage](TESTING.md#coverage).
 
 A failing input is written to `engine/testdata/fuzz/`. Keep it, it is the
 test case for the bug, and it becomes a seed for every later run.
@@ -363,7 +366,13 @@ close to two on a Mac, the episode's decoder included.
 When a Go test fails in `linux` or `macos`, or a walk in `walks`,
 `scripts/test-failures.sh` names it on the check, with what it printed,
 so the pull request says which test failed without anybody opening the
-log.
+log. It reads what go test prints and what gotestsum prints, and
+`scripts/test-failures-test.sh` in `make lint` holds it to both.
+
+Under the Go tests, `linux` and `macos` name every test that took over
+five seconds, slowest first, `SLOWEST` in `ci.yml`, see `make unit`. The
+Mac runs three cores where Linux runs four, and a test that is slow only
+there shows in its log without anybody running it again.
 
 The Go tests in `linux` and `macos` stop after 15 minutes. go test ends a
 package that runs over ten minutes by itself, and the tests take about

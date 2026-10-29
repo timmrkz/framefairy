@@ -8,7 +8,7 @@
     "build": "vite build --mode production",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run",
-    "lint": "eslint \"preview/walks/**/*.mjs\" \"preview/*.mjs\" \"preview/frames/*.mjs\" \"src/**/*.test.ts\""
+    "lint": "eslint \"preview/walks/**/*.mjs\" \"preview/*.mjs\" \"preview/frames/*.mjs\" \"src/**/*.ts\""
   },
   "dependencies": {
     "@lucide/svelte": "1.60.0",
@@ -19,9 +19,11 @@
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
     "@tsconfig/svelte": "^5.0.8",
     "@typescript-eslint/parser": "8.72.0",
+    "@vitest/coverage-v8": "5.0.5",
     "eslint": "10.13.0",
     "eslint-plugin-playwright": "2.12.1",
     "globals": "17.13.0",
+    "monocart-coverage-reports": "2.13.2",
     "playwright": "1.64.1",
     "svelte": "^5.57.2",
     "svelte-check": "^4.7.7",

@@ -41,7 +41,8 @@
 #                   scripts read by their shell, the action pins and the
 #                   tests of the repository's own rules
 #   make unit       the Go tests, under the race detector except on a Mac.
-#                   UNITSHARD=1/3 runs a third of them, as CI does
+#                   UNITSHARD=1/3 runs a third of them, as CI does, and
+#                   SLOWEST=5s names those that took longer, as CI does
 #   make fuzz       the fuzz targets, FUZZTIME executions each
 #   make interface  the interface type check, its own tests, and that no
 #                   walk or interface test waits on the clock
@@ -470,6 +471,13 @@ changed:
 # ends them and prints every goroutine. A test waits on signals and never
 # on the clock, so one whose signal never comes hangs until then. Go's own
 # ten minutes here, and CI sets 4m, under its five-minute jobs.
+#
+# SLOWEST=5s names, after the tests, every test that took longer than
+# that, slowest first, so a slow test shows without opening anything. Off
+# unless it says, so a run prints what go test prints and nothing more, and
+# CI sets it. It runs go test through gotestsum, the tool most Go projects
+# use for this, which prints the same lines go test does and keeps every
+# test's time in UNITJSON besides, for a closer look on this machine.
 ifeq ($(UNAME),Darwin)
 RACE ?=
 UNITSKIP ?= framefairy/licence/dispenser framefairy/licence/paddle framefairy/cmd/framefairy-dispenser framefairy/internal/workflows framefairy/internal/naming
@@ -491,7 +499,20 @@ $(error UNITSHARD is 1/1, 1/3, 2/3 or 3/3, not $(UNITSHARD))
 endif
 UNITFLAGS ?=
 UNITPKGS ?= ./...
+# COVERAGE names a folder, and make unit, make interface and make walks
+# then count the lines their tests run and write them there, for the
+# nightly snapshot in Codecov, see Coverage in docs/TESTING.md. Every Go
+# package is counted for every test, -coverpkg, so a line of the engine a
+# walk runs counts as the engine's. Empty, nothing is counted, which is
+# every run but the nightly one. A share of the tests writes its own file,
+# named by its share.
+COVERAGE ?=
+COVERDIR = $(abspath $(COVERAGE))
+COVERPKG = -coverpkg=framefairy/...
 UNITTIMEOUT ?= 10m
+SLOWEST ?=
+UNITJSON ?= $(STAMPS)/unit-tests.json
+GOTESTSUM := gotest.tools/gotestsum@v1.13.0
 unit: toolchain modules $(FRESH_FRAMES)
 	@pkgs='$(strip $(UNITPKGS))'; \
 	if [ -n "$$pkgs" ] && [ -n '$(UNITSKIP)' ]; then \
@@ -499,8 +520,25 @@ unit: toolchain modules $(FRESH_FRAMES)
 		pkgs=$$(printf '%s\n' "$$pkgs" | grep -vxF $(foreach p,$(UNITSKIP),-e $(p))); \
 	fi; \
 	if [ -z "$$pkgs" ]; then echo "no Go package to test"; exit 0; fi; \
+	$(if $(COVERAGE),mkdir -p '$(COVERDIR)' || exit $$?; )run=; \
+	if [ -n '$(SLOWEST)' ]; then \
+		mkdir -p $(dir $(UNITJSON)) && \
+		run='$(GO) run $(GOTESTSUM) --format standard-quiet --hide-summary skipped --jsonfile $(UNITJSON) --raw-command --'; \
+	fi; \
+	status=0; \
 	PATH="$(TOOLS_FIRST)" FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" \
-		$(GO) test $(RACE) -timeout $(UNITTIMEOUT) $(if $(UNITFLAGS),'$(UNITFLAGS)') -ldflags '$(LDFLAGS)' $$pkgs
+		$$run $(GO) test $(if $(SLOWEST),-json) $(RACE) -timeout $(UNITTIMEOUT) $(if $(UNITFLAGS),'$(UNITFLAGS)') \
+		$(if $(COVERAGE),$(COVERPKG) -coverprofile='$(COVERDIR)/go-unit$(if $(UNITSHARD),-$(subst /,-of-,$(UNITSHARD))).txt') \
+		-ldflags '$(LDFLAGS)' $$pkgs || status=$$?; \
+	if [ -n '$(SLOWEST)' ]; then \
+		slow=$$($(GO) run $(GOTESTSUM) tool slowest --jsonfile $(UNITJSON) --threshold $(SLOWEST)); \
+		if [ -n "$$slow" ]; then \
+			echo "The tests that took over $(SLOWEST), slowest first:"; echo "$$slow"; \
+		else \
+			echo "No test took over $(SLOWEST)."; \
+		fi; \
+	fi; \
+	exit $$status
 
 # The fuzzing runs without the race detector: it is the same code, many more
 # times over.
@@ -543,9 +581,20 @@ WALKVIDEOS ?= $(CURDIR)/.build/walk-videos
 # every walk and sequence, and TRACE=none records no trace.
 WALKTRACES ?= $(CURDIR)/.build/walk-traces
 TRACE ?= light
+# With COVERAGE, the bridge counts the Go lines the walks run and every
+# page the interface lines, see COVERAGE above make unit. A run where
+# either counted nothing fails, since every walk reaches both: no line of
+# the job queue, jobs.go, which only a bridge runs, and no line of any
+# component.
+WALKCOVER = $(COVERDIR)/walks$(if $(WALKSHARD),-$(subst /,-of-,$(WALKSHARD)))
 walks: toolchain modules frontend/node_modules/.package-lock.json $(FRESH_FRAMES)
-	@cd frontend && $(NPM) exec -- vite build --config preview/bridge.config.ts --logLevel error
-	@FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" FRAMEFAIRY_WALKS=1 FRAMEFAIRY_WALK_VIDEOS='$(WALKVIDEOS)' WALKS='$(WALKS)' STEPS='$(STEPS)' WALKERS='$(WALKERS)' WALKSHARD='$(WALKSHARD)' WALKTIMES='$(WALKTIMES)' STILL='$(STILL)' WALKTRACES='$(WALKTRACES)' TRACE='$(TRACE)' $(GO) test -count=1 -ldflags '$(LDFLAGS)' -timeout $(WALKTIMEOUT) -run '^TestWalks$$' ./cmd/framefairy-app
+	@cd frontend && $(if $(COVERAGE),WALKCOVERAGE='$(WALKCOVER)-pages') $(NPM) exec -- vite build --config preview/bridge.config.ts --logLevel error
+	@$(if $(COVERAGE),rm -rf '$(WALKCOVER)-pages' && mkdir -p '$(COVERDIR)' && )FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" FRAMEFAIRY_WALKS=1 FRAMEFAIRY_WALK_VIDEOS='$(WALKVIDEOS)' WALKS='$(WALKS)' STEPS='$(STEPS)' WALKERS='$(WALKERS)' WALKSHARD='$(WALKSHARD)' WALKTIMES='$(WALKTIMES)' STILL='$(STILL)' WALKTRACES='$(WALKTRACES)' TRACE='$(TRACE)' $(if $(COVERAGE),WALKCOVERAGE='$(WALKCOVER)-pages') $(GO) test -count=1 -ldflags '$(LDFLAGS)' -timeout $(WALKTIMEOUT) $(if $(COVERAGE),$(COVERPKG) -coverprofile='$(WALKCOVER)-go.txt') -run '^TestWalks$$' ./cmd/framefairy-app
+ifneq ($(COVERAGE),)
+	@awk -F'[ ]' '/^framefairy\/cmd\/framefairy-app\/jobs\.go:/ && $$NF > 0 { found = 1 } END { exit !found }' '$(WALKCOVER)-go.txt' || { echo "$(WALKCOVER)-go.txt counts no line of the job queue, so the bridge did not count what the walks ran"; exit 1; }
+	@printf 'ok  \tthe walks ran lines of the job queue\n'
+	@cd frontend && node preview/coverage.mjs '$(WALKCOVER)-pages' '$(WALKCOVER)-interface.lcov'
+endif
 
 # The checks from outside the app: a link that opens it, closed or open,
 # handed to macOS the way a browser does, with the local dispenser running
@@ -587,7 +636,7 @@ interface:
 		$(MAKE) -s --no-print-directory frontend/node_modules/.package-lock.json && \
 		out=$$(cd frontend && $(NPM) run --silent check 2>&1) || { echo "$$out"; exit 1; }; \
 		printf 'ok  \tinterface types\n'; \
-		out=$$(cd frontend && $(NPM) run --silent test 2>&1) || { echo "$$out"; exit 1; }; \
+		out=$$(cd frontend && $(NPM) run --silent test $(if $(COVERAGE),-- --coverage.enabled --coverage.reportsDirectory='$(COVERDIR)/interface-unit') 2>&1) || { echo "$$out"; exit 1; }; \
 		printf 'ok  \tinterface rules\n'; \
 		out=$$(cd frontend && $(NPM) run --silent lint 2>&1) || { echo "$$out"; exit 1; }; \
 		printf 'ok  \tinterface waits on no clock\n'; \
@@ -624,6 +673,7 @@ lint: toolchain modules golangci-lint frontend/node_modules/.package-lock.json
 	@sh scripts/needs-build-test.sh
 	@sh scripts/main-moved-test.sh
 	@sh scripts/plan-frozen-test.sh
+	@sh scripts/test-failures-test.sh
 	@sh scripts/plan-frozen.sh
 
 # The release golangci-lint builds and checks against its own checksums,

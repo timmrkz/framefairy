@@ -2,8 +2,8 @@
 // its clip chosen, a way to wait until the app has settled, and the
 // engine's own answer to compare the screen with. See docs/TESTING.md.
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { dirname, join, relative, resolve } from "node:path";
 import { chromium } from "playwright";
 import { filmed as filmedList } from "./filmed.mjs";
 
@@ -121,7 +121,74 @@ export async function newBrowser() {
       return page;
     };
   }
+  if (coverage) counted(browser);
   return browser;
+}
+
+// WALKCOVERAGE names a folder, and every page a walk opens counts the
+// lines of the interface it runs, which make walks COVERAGE= turns into
+// a report on the components, see Coverage in docs/TESTING.md. The
+// counts of a page are kept when it is closed, in the
+// folder monocart-coverage-reports gathers them in, one file for each
+// page, so the walks running side by side never write the same file.
+// Each script is named by its path alone, so the same script served by
+// another bridge on another port is the same script, and its source map
+// is the one the build left beside it, see preview/bridge.config.ts.
+const coverage = process.env.WALKCOVERAGE;
+const built = join(import.meta.dirname, "..", "dist-bridge");
+const top = resolve(import.meta.dirname, "..", "..", "..");
+function counted(browser) {
+  const open = new Set();
+  const keep = async (page) => {
+    if (!open.delete(page)) return;
+    let entries;
+    try {
+      entries = await page.coverage.stopJSCoverage();
+    } catch {
+      // A page that crashed has no counts to give, and its walk fails
+      // on what crashed it.
+      return;
+    }
+    const scripts = [];
+    for (const entry of entries) {
+      const path = new URL(entry.url).pathname;
+      if (!/^\/assets\/.+\.js$/.test(path)) continue;
+      const map = join(built, `${path}.map`);
+      if (!existsSync(map)) continue;
+      // Each source of the map named from the top of the repository,
+      // frontend/src/lib/api.ts, for the report and for Codecov.
+      const sourceMap = JSON.parse(readFileSync(map, "utf8"));
+      sourceMap.sources = sourceMap.sources.map((s) => relative(top, resolve(dirname(map), s)));
+      scripts.push({ ...entry, url: `http://bridge${path}`, sourceMap });
+    }
+    const { CoverageReport } = await import("monocart-coverage-reports");
+    await new CoverageReport({ outputDir: coverage, logging: "error" }).add(scripts);
+  };
+  const plain = browser.newPage.bind(browser);
+  browser.newPage = async (options) => {
+    const page = await plain(options);
+    await page.coverage.startJSCoverage({ resetOnNavigation: false });
+    open.add(page);
+    // A page is closed with itself, with the context browser.newPage
+    // made for it, which is how a sequence ends, or with the browser.
+    const close = page.close.bind(page);
+    page.close = async (options) => {
+      await keep(page);
+      return close(options);
+    };
+    const context = page.context();
+    const closeContext = context.close.bind(context);
+    context.close = async (options) => {
+      await keep(page);
+      return closeContext(options);
+    };
+    return page;
+  };
+  const close = browser.close.bind(browser);
+  browser.close = async (options) => {
+    for (const page of [...open]) await keep(page);
+    return close(options);
+  };
 }
 
 // WALKTRACES names a folder, and every page a walk opens is recorded in
@@ -734,6 +801,25 @@ export async function playUntil(page, { past = Infinity, most = Infinity, from =
   );
 }
 
+// Which clock a play runs on, see FrameQueue.playClock. "sound" is the
+// sound card's, as the app runs without a walk. "frames" stands on each
+// frame until it is up, so every frame of a play is shown and read on
+// any machine, issue #534.
+export async function playOn(page, clock) {
+  await page.evaluate((clock) => {
+    const q = window.__frameQueue;
+    window.__soundClock ??= q.playClock;
+    q.playClock = { sound: window.__soundClock, frames: (heard, unshown) => Math.min(heard, unshown) }[clock];
+  }, clock);
+}
+
+// Holds the sound card, or lets it go. Held, a play stands where it is,
+// picture and sound together, while a walk's hand takes as long as the
+// machine needs, and let go it plays on from there, issue #583.
+export async function holdSound(page, held) {
+  await page.evaluate((held) => (held ? window.__frameQueue.audio.suspend() : window.__frameQueue.audio.resume()), held);
+}
+
 // Plays from the playhead until it has gone on by seconds of the episode,
 // or until the play has stopped by itself at the clip's end, and pauses it
 // there, see playUntil. Says false, and plays nothing, when the space bar
@@ -1182,9 +1268,15 @@ export async function xOf(page, at) {
 // timeline, the way a hand does, and waits until the video preview shows
 // the frame that holds it, see shownOnPlayhead. Says whether the picture
 // is that frame by the number drawn on it, at fps frames a second.
+//
+// The click is never the second of a double-click, see clickOnTrack. Two
+// moments of one short word lie a few pixels apart, and the two clicks
+// on them, under half a second apart on a quick run, cut a part out of
+// the clip: the captions walk then compared the clip with the cut to the
+// short made before it, and failed now and then, issue #560.
 export async function seekTo(page, at, fps) {
   const g = await handles(page);
-  await page.mouse.click(await xOf(page, at), high(g.track));
+  await clickOnTrack(page, await xOf(page, at), high(g.track));
   await settle(page);
   await reader(page);
   await shownOnPlayhead(page);

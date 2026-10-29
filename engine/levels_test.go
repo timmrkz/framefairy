@@ -207,17 +207,21 @@ func sweep(t *testing.T, seconds string) string {
 // On the real disk: ffmpeg measures the episode.
 func TestMeasureLevelsGoesWhereTheClipTimelineLooks(t *testing.T) {
 	t.Parallel()
-	source := sweep(t, "300")
+	source := sweep(t, "60")
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	// The measuring writes and asks where the clip timeline looks every
-	// 20 reads of the sound, whatever the clock says.
-	e.levelsReads = 20
+	// 2 reads of the sound, whatever the clock says. readLevels reads at
+	// most 2 s of sound at a time, its buffer of frameSamples*4*200 bytes,
+	// so the measuring from 50 s looks again by 54 s, before the sound
+	// ends at 60 s, and follows the view to 30 s rather than finishing
+	// the end first.
+	e.levelsReads = 2
 	e.FFmpeg = "ffmpeg"
 
 	// The playhead near the end when the episode is added, and then moved
 	// to the middle once the first of it is on screen.
 	var mu sync.Mutex
-	view := [2]float64{250, 260}
+	view := [2]float64{50, 51}
 	focus := func() (float64, float64) {
 		mu.Lock()
 		defer mu.Unlock()
@@ -229,21 +233,21 @@ func TestMeasureLevelsGoesWhereTheClipTimelineLooks(t *testing.T) {
 		if first == nil && len(l.Parts) > 0 {
 			first = l.Parts
 			mu.Lock()
-			view = [2]float64{150, 160}
+			view = [2]float64{30, 31}
 			mu.Unlock()
 		}
-		if moved == nil && covers(l.Parts, 150, 160) {
+		if moved == nil && covers(l.Parts, 30, 31) {
 			moved = l.Parts
 		}
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(first) != 1 || first[0][0] != int(250/FrameSeconds) {
-		t.Errorf("measured first %v, want from 250 s, where the clip timeline showed", partSeconds(first))
+	if len(first) != 1 || first[0][0] != int(50/FrameSeconds) {
+		t.Errorf("measured first %v, want from 50 s, where the clip timeline showed", partSeconds(first))
 	}
-	if moved == nil || covers(moved, 0, 10) || covers(moved, 100, 110) {
-		t.Errorf("when the view moved to 150 s the parts were %v, want it there before the start",
+	if moved == nil || covers(moved, 0, 1) || covers(moved, 20, 21) || covers(moved, 50, 60) {
+		t.Errorf("when the view moved to 30 s the parts were %v, want it there before the start and the end",
 			partSeconds(moved))
 	}
 
@@ -284,16 +288,16 @@ func TestMeasureLevelsGoesWhereTheClipTimelineLooks(t *testing.T) {
 // On the real disk: ffmpeg measures the episode.
 func TestMeasureLevelsCarriesOn(t *testing.T) {
 	t.Parallel()
-	source := sweep(t, "120")
+	source := sweep(t, "30")
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
-	// Every 20 reads, see above.
-	e.levelsReads = 20
+	// Every 2 reads, see above.
+	e.levelsReads = 2
 	e.FFmpeg = "ffmpeg"
 	// Cut off at the first write, which is part of what the clip timeline
 	// shows and on from there.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	if err := e.MeasureLevels(ctx, source, func() (float64, float64) { return 60, 70 },
+	if err := e.MeasureLevels(ctx, source, func() (float64, float64) { return 15, 16 },
 		func(measured float64) {
 			if measured > 0 {
 				cancel()
@@ -303,7 +307,7 @@ func TestMeasureLevelsCarriesOn(t *testing.T) {
 	}
 	e.levelsReads = 0
 	had := ReadLevels(disk, source)
-	if had.Done || len(had.Parts) != 1 || had.Parts[0][0] != int(60/FrameSeconds) {
+	if had.Done || len(had.Parts) != 1 || had.Parts[0][0] != int(15/FrameSeconds) {
 		t.Fatalf("cut off with %v, done %v", partSeconds(had.Parts), had.Done)
 	}
 	if st := Status(disk, source, "", nil); st.MeasuredAll || st.Measured <= 0 || len(st.MeasuredParts) == 0 {

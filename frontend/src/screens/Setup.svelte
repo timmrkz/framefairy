@@ -86,6 +86,21 @@
     }
   }
 
+  // What is still to do, said under the title. A setup opened again on
+  // a machine that has its speech model says only what is missing.
+  const still = $derived(
+    noneFits
+      ? speechReady
+        ? "A key to save first."
+        : "A model to download and a key to save first."
+      : speechReady || clipReady
+        ? "A model to download first."
+        : "Two models to download first.",
+  );
+  // The clip model's mark says what is ready: in the cloud nothing was
+  // downloaded.
+  const clipSaid = $derived(cloud || noneFits ? "Ready" : "Downloaded");
+
   // Once both are here the setup is done, and the app takes over. The
   // answer to how clips are found is written down first, so the app
   // knows it is a decision and does not ask again. One already given,
@@ -113,11 +128,7 @@
 <section class="setup">
   <header>
     <h1>Frame Fairy</h1>
-    <p class="muted lead">
-      Turns a long video into vertical shorts. {noneFits
-        ? "A model to download and a key to save first."
-        : "Two models to download first."}
-    </p>
+    <p class="muted lead">Turns a long video into vertical shorts. {still}</p>
   </header>
 
   {#if problem}<p class="error selectable">{problem}</p>{/if}
@@ -157,7 +168,7 @@
         </span>
         <div class="headrow">
           <h2>Clip model</h2>
-          {#if clipReady}<span class="ready" title="Downloaded"><Icon name="check" /></span>{/if}
+          {#if clipReady}<span class="ready" title={clipSaid}><Icon name="check" /></span>{/if}
         </div>
         <!-- A model runs from memory, so the machine's own is said out
              loud here. A model's need is only believable next to the
@@ -178,10 +189,11 @@
           <ModelList models={clipRows} kind="llm" oninstall={api.installLanguageModel} onchange={reload} />
         {:else if provider}
           <div class="card">
-            <!-- A model is always chosen, so its row is marked ready, and
-                 its name stands in the column of the key's under it. -->
+            <!-- One mark for the clip model, at its head. The row keeps
+                 the room of a mark, so its name stands in the column of
+                 the key's under it. -->
             <div class="item">
-              <span class="mark ok" aria-hidden="true"><Icon name="check" /></span>
+              <span class="mark" aria-hidden="true"></span>
               <div class="words"><span class="head">Model in the cloud</span></div>
               <Pick
                 value={cloudValue(setup.apiModel)}

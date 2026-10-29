@@ -242,7 +242,7 @@ func (e *Engine) previewTrack(ctx context.Context, work string, d *CaptionDrawin
 	}
 	key := fmt.Sprintf("%s\x00%s\x00%+v\x00%s\x00%d/%d\x00%dx%d", dir, d.name(), style, source.Light(),
 		source.FPSNum, source.FPSDen, outW, outH)
-	return previewTracks.once(ctx, key, func(ctx context.Context) (previewFile, error) {
+	return previewTracks.once(ctx, work, key, func(ctx context.Context) (previewFile, error) {
 		started := time.Now()
 		track, pill, err := e.captionTrack(ctx, d.Laid, outW, outH, style, source)
 		if err != nil {
@@ -337,6 +337,8 @@ type trackCache struct {
 	files  map[string]previewFile
 	making map[string]*making
 	dirs   map[string][]string
+	// The folders being deleted, by how many hold them, see hold.
+	held map[string]int
 }
 
 // previewFile is a caption file of the video preview, and whether it
@@ -350,12 +352,14 @@ type previewFile struct {
 // meanwhile wait for.
 type making struct {
 	done chan struct{}
+	work string
 	made previewFile
 	err  error
 }
 
 func newTrackCache() *trackCache {
-	return &trackCache{files: map[string]previewFile{}, making: map[string]*making{}, dirs: map[string][]string{}}
+	return &trackCache{files: map[string]previewFile{}, making: map[string]*making{}, dirs: map[string][]string{},
+		held: map[string]int{}}
 }
 
 var previewTracks = newTrackCache()
@@ -366,15 +370,18 @@ const previewTracksKept = 256
 // ffmpeg's measurement of its words included.
 const previewTrackLimit = 10 * time.Second
 
-// once gives the file kept for key, or makes it with build, once however
-// many ask for it together. A file that went away is made again, and a
+// once gives the file kept for key, or makes it with build into the work
+// folder work, once however many ask for it together. A file that went away is made again, and a
 // failure is not kept, so the next request tries again.
 //
 // build runs in a context of its own, not of the request that came
 // first: when that one was called off, every request waiting for the same
 // file failed with its "context canceled", their own still live. Each
 // request waits only as long as its own context lets it.
-func (c *trackCache) once(ctx context.Context, key string, build func(context.Context) (previewFile, error)) (previewFile, error) {
+//
+// While work is being deleted, see hold, nothing is made in it, and the
+// request is told the folder is gone.
+func (c *trackCache) once(ctx context.Context, work, key string, build func(context.Context) (previewFile, error)) (previewFile, error) {
 	c.mu.Lock()
 	if made, ok := c.files[key]; ok {
 		c.mu.Unlock()
@@ -385,8 +392,12 @@ func (c *trackCache) once(ctx context.Context, key string, build func(context.Co
 		c.mu.Lock()
 	}
 	m, ok := c.making[key]
+	if !ok && c.holding(work) {
+		c.mu.Unlock()
+		return previewFile{}, ErrNoWorkFolder
+	}
 	if !ok {
-		m = &making{done: make(chan struct{})}
+		m = &making{done: make(chan struct{}), work: work}
 		c.making[key] = m
 		go func() {
 			bctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), previewTrackLimit)
@@ -413,6 +424,65 @@ func (c *trackCache) once(ctx context.Context, key string, build func(context.Co
 		return previewFile{}, ctx.Err()
 	}
 }
+
+// hold starts no caption file in a folder inside dir until the release it
+// gives is called, and returns once those on their way there are made or
+// have failed. A work folder is deleted only under it: a caption file
+// written into the folder while it was being deleted failed the deletion
+// with "directory not empty". The file goes on being made after the
+// request that asked for it is gone, see once, so a video removed right
+// after a word of it was deleted met one, issue #561.
+func (c *trackCache) hold(dir string) (release func()) {
+	dir = filepath.Clean(dir)
+	c.mu.Lock()
+	c.held[dir]++
+	c.mu.Unlock()
+	for {
+		c.mu.Lock()
+		var on chan struct{}
+		for _, m := range c.making {
+			if within(dir, m.work) {
+				on = m.done
+				break
+			}
+		}
+		c.mu.Unlock()
+		if on == nil {
+			break
+		}
+		<-on
+	}
+	return sync.OnceFunc(func() {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		if c.held[dir]--; c.held[dir] <= 0 {
+			delete(c.held, dir)
+		}
+	})
+}
+
+// holding says whether work is inside a folder being deleted, see hold.
+// The caller holds c.mu.
+func (c *trackCache) holding(work string) bool {
+	for dir := range c.held {
+		if within(dir, work) {
+			return true
+		}
+	}
+	return false
+}
+
+// within says whether path is dir or inside it, by name.
+func within(dir, path string) bool {
+	path = filepath.Clean(path)
+	return path == dir || strings.HasPrefix(path, dir+string(filepath.Separator))
+}
+
+// HoldPreviews writes no caption file of the video preview into a folder
+// inside dir until the release it gives is called, and returns once none
+// is being written there. DeleteWork deletes a work folder under it, and
+// whatever else deletes work folders does the same.
+func HoldPreviews(dir string) (release func()) { return previewTracks.hold(dir) }
 
 // used moves a file kept to the end of its folder's list, so the files
 // removed beyond what is kept are those used least lately, never the one

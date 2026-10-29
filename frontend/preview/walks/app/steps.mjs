@@ -77,10 +77,15 @@ export const steps = {
     await control(url, "/fresh?arrive=speech");
     await speech.locator(".ready").waitFor();
     await settle(page);
-    const half = { ready: await page.locator(".setup .ready").count(), setup: await page.locator(".setup").count(), buttons: await buttons() };
+    const half = {
+      ready: await page.locator(".setup .ready").count(),
+      setup: await page.locator(".setup").count(),
+      buttons: await buttons(),
+      lead: (await page.locator(".setup .lead").textContent()).trim(),
+    };
     // The speech model here has no button left, the clip model on its
     // way its Cancel, and the other clip models wait their turn.
-    if (half.setup !== 1 || half.ready !== 1 || half.buttons.filter((b) => b === "Cancel").length !== 1 || half.buttons.some((b) => b !== "Cancel" && b !== "Download")) {
+    if (half.setup !== 1 || half.ready !== 1 || half.buttons.filter((b) => b === "Cancel").length !== 1 || half.buttons.some((b) => b !== "Cancel" && b !== "Download") || !half.lead.endsWith("A model to download first.")) {
       walk.wrong = `with the speech model here and the clip model on its way, the app shows ${JSON.stringify(half)}`;
       return;
     }
@@ -123,10 +128,13 @@ export const steps = {
     await speech.locator("li .cell", { hasText: /B of [\d.]+ [KMG]B/ }).waitFor();
     await control(url, "/fresh?arrive=speech");
     await speech.locator(".ready").waitFor();
-    if (await page.locator(".welcome").count()) {
-      walk.wrong = "the app left the setup with the speech model here and no key to find clips with";
-      return;
-    }
+    // One mark for the clip model, at its head, and only once it is ready.
+    const marks = await clip.locator(".ready, .card > .item > .mark svg").count();
+    const lead = (await page.locator(".setup .lead").textContent()).trim();
+    if (await page.locator(".welcome").count()) walk.wrong = "the app left the setup with the speech model here and no key to find clips with";
+    else if (marks !== 1) walk.wrong = `with no key yet, the clip card shows ${marks} marks, the key's warning alone`;
+    else if (!lead.endsWith("A key to save first.")) walk.wrong = `with the speech model here, the setup says "${lead}"`;
+    if (walk.wrong) return;
     await clip.locator("input.key").fill("sk-ant-walk");
     await clip.locator("button.act", { hasText: "Save key" }).click();
     const add = page.locator(".welcome button.add-video");

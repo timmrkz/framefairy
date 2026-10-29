@@ -359,6 +359,48 @@ issued by anybody: they are made once, on Tim's Mac, with one command.
   install by hand. That is why only the release key needs the approval
   step.
 
+### What is never signed
+
+A build that could read input meant for other apps, or watch the screen
+or the camera, is refused before it is signed, so no app is ever offered
+it, issue #369. `framefairy-release sign` reads every file of the zip
+first, see `cmd/framefairy-release/inputs.go`, with Go's `debug/macho`, so
+it needs no Mac:
+
+- **Imports and names.** No program imports, or names anywhere in its
+  bytes, what taps every key, reads other apps' windows, records the
+  screen or opens the camera: `CGEventTapCreate`, `IOHIDManagerOpen`,
+  `AXIsProcessTrusted`, `CGWindowListCreateImage`, `SCStream`,
+  `AVCaptureDevice` and the rest of the list. A name in the bytes catches
+  a function looked up while the program runs, with `dlsym` or
+  `NSClassFromString`.
+- **Linked libraries.** Every program links what is on its own list and
+  nothing more. A new framework, ScreenCaptureKit or AVFoundation, or a
+  program the list does not know, fails.
+- **Info.plist** gives reasons for the four folders a video is opened
+  from and the microphone, for Dictate, and for nothing else.
+- **Entitlements**, once the app is signed with the Developer ID: the
+  microphone and nothing else.
+
+A refused build says so on the commit that was built, as a failed
+Ready to update to with the first thing found, so the pull request shows
+why its build never reached the Updates page.
+
+The signer runs from main, so the lists are main's, and a branch that
+changes them changes nothing about how its own build is judged. Each
+change to a list is a line in a pull request that says why. The linters
+warn earlier, in the pull request itself: forbidigo in `.golangci.yml`
+holds that our Go code registers no global shortcut and reads no
+clipboard through Wails, and ESLint in `frontend/eslint.config.js` that
+the interface's scripts open no microphone, camera or screen and read no
+clipboard by themselves. And a change to `scripts/bundle-macos.sh` runs the signer's own test of
+the Info.plist it writes.
+
+What it cannot catch is code that hides the name it looks up, built from
+pieces while it runs. Then macOS is the wall: none of these inputs works
+until the person allows it in System Settings. The check makes sure the
+app never asks.
+
 ### How the app knows the pull requests
 
 The channel list is one small public file, a file of the release called

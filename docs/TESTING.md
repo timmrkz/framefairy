@@ -1343,6 +1343,60 @@ open the job's log.
 What it cannot check: the browser's own question before it hands a link
 on, which belongs to the browser, the mail app, and how any of it looks.
 
+## Coverage
+
+Which lines the tests run is counted once a night on main, and the
+counts go to [Codecov](https://app.codecov.io/gh/timmrkz/framefairy),
+which keeps them as one report of the code, the Go and the
+interface, file by file and line by line, with how the whole moved from
+night to night. It is the map of what no test reaches, and the way to
+see whether work on the tests lowered it. A covered line is not a
+checked line, see section 1 of the testing skill.
+
+It runs in `walks-nightly.yml` and nowhere else. Counting makes a test
+slower and an upload to Codecov can fail or be slow, so no pull request
+counts anything or waits on Codecov, and Codecov says nothing on a pull
+request or a commit, see `.github/codecov.yml`.
+
+`COVERAGE=` a folder turns it on, for the three kinds of test, each a
+flag in Codecov:
+
+| Flag | What runs | What it writes |
+| --- | --- | --- |
+| `go-tests` | `make unit COVERAGE=`, without the race detector at night | `go-unit-<share>.txt`, Go's own profile |
+| `interface-tests` | `make interface COVERAGE=`, Vitest with `@vitest/coverage-v8`, set in `frontend/vite.config.ts` | `interface-unit/lcov.info` |
+| `walks` | `make walks COVERAGE=` | `walks-<share>-go.txt` and `walks-<share>-interface.lcov` |
+
+Every Go package is counted for every test, `-coverpkg=framefairy/...`,
+so a line of the engine that a test of the app runs counts as the
+engine's. The walks count both sides of the app. The Go side runs in a
+bridge, a process of its own started from the same test program, and
+`bridgeArgs` in `cmd/framefairy-app/bridge_test.go` hands it the folder
+`go test` gathers the counts from, so its counts are in the profile when
+the test ends. Every page a walk opens counts the lines of the interface
+it runs through Playwright, `counted` in `walks/bridge.mjs`, and
+`preview/coverage.mjs` turns those counts into lcov of `frontend/src`
+by the source maps the build leaves beside each script. That is the
+only count of the components, since the interface's own tests do not
+load them. A night whose walks counted no line of the job queue,
+`cmd/framefairy-app/jobs.go`, which only a bridge runs, or no line of
+any component fails, since every walk reaches both, and a count of
+nothing means the counting broke.
+
+Everything is counted on Linux, so the files built only for the Mac,
+the `_darwin.go` files, and the tests that run only there, the Mac job
+and `make outside`, are not in the report, rather than shown as not
+run.
+
+A kind of test that failed one night sends nothing, and Codecov keeps
+its counts from the night before, carryforward, so a red night is not
+read as the lines it would have reached going dark. Codecov is signed in
+with GitHub's own OIDC token, so there is no Codecov token to keep.
+
+To count by hand, in a cloud session or on a Mac: `make unit
+COVERAGE=.build/coverage UNITPKGS=./engine`, then `go tool cover
+-html=.build/coverage/go-unit.txt`.
+
 ## The testing skill in this project
 
 The skill in `.claude/skills/testing/` is written for any project, so it
@@ -1387,6 +1441,9 @@ starts one with the first line it writes, and it never ends, so a test in
 a bubble that reads the app's log opens it outside the bubble and writes
 its first line there, `bubbleLog` in
 `cmd/framefairy-app/listen_test.go`.
+
+The skill's "ask the coverage" is the nightly report in Codecov, see
+[Coverage](#coverage).
 
 The skill's "run only what a change reaches" is `make changed` here, one
 script for every machine, `scripts/changed.sh`: a pull request runs the

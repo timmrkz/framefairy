@@ -25,6 +25,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"image"
 	"image/color"
@@ -1502,6 +1503,12 @@ func (b *bridge) reset() error {
 		return fmt.Errorf("the app did not stop its work in time")
 	}
 	b.d.svc.levels.shutDown()
+	// A caption file the video preview asked for goes on being written
+	// after the page that asked is gone, and one written into a work
+	// folder while it was removed failed the reset with "directory not
+	// empty", issue #561. The work folders go the way the app deletes
+	// one, see engine.DeleteWork.
+	defer engine.HoldPreviews(b.d.home)()
 	// A log a walk started lives in the home, which goes next.
 	theLog.close()
 	entries, err := os.ReadDir(b.d.home)
@@ -1794,7 +1801,7 @@ func TestWalks(t *testing.T) {
 // keeping the videos it makes in the folder videos, and gives back where
 // it answers. It is stopped when the test ends.
 func startBridge(t *testing.T, videos string) (string, error) {
-	cmd := exec.Command(os.Args[0], "-test.run", "^TestBridge$", "-test.timeout", "0")
+	cmd := exec.Command(os.Args[0], bridgeArgs(flag.Lookup("test.gocoverdir").Value.String())...)
 	cmd.Env = append(os.Environ(), "FRAMEFAIRY_BRIDGE=127.0.0.1:0", "FRAMEFAIRY_BRIDGE_WALKER=1", "FRAMEFAIRY_WALKS=",
 		"FRAMEFAIRY_WALK_VIDEOS="+videos)
 	stdin, err := cmd.StdinPipe()
@@ -1830,6 +1837,20 @@ func startBridge(t *testing.T, videos string) (string, error) {
 		before = append(before, line)
 	}
 	return "", fmt.Errorf("the bridge did not start:\n%s", strings.Join(before, "\n"))
+}
+
+// bridgeArgs is how TestWalks starts a bridge. When go test counts the
+// lines the walks run, make walks COVERAGE=, it hands the test the folder
+// it gathers the counts from, coverdir, and the bridge, the same program,
+// writes its own counts there when it stops, so the lines of the app and
+// the engine the walks reach are counted. See Coverage in
+// docs/TESTING.md.
+func bridgeArgs(coverdir string) []string {
+	args := []string{"-test.run", "^TestBridge$", "-test.timeout", "0"}
+	if coverdir != "" {
+		args = append(args, "-test.gocoverdir="+coverdir)
+	}
+	return args
 }
 
 // A walk that hangs is stopped when the test's time runs out, and what it
