@@ -344,6 +344,72 @@ export const steps = {
     }
     if (problems.length) walk.wrong = problems.join("\n");
   },
+  // ["a pick shows at once"]
+  //                    Settings: a model picked in the clip model list
+  //                    shows everywhere in the card in the frame of the
+  //                    click, before the Go side has answered: the list,
+  //                    the mark, the line under it, Download and the
+  //                    frame round the list. One not downloaded says so
+  //                    and offers Download. Twice, there and back: the
+  //                    bridge counts only the model chosen as downloaded.
+  async "a pick shows at once"(walk) {
+    const { page } = walk;
+    const problems = [];
+    const card = ".card.finding";
+    const trigger = page.locator(`${card} > .item button.pick`);
+    // What the list says, without the room it keeps for its longest name.
+    const said = page.locator(`${card} > .item button.pick .said > span:not(.room)`);
+    const isCall = (name) => (r) => {
+      if (!r.url().includes("/call")) return false;
+      try {
+        return JSON.parse(r.request().postData() ?? "{}").name?.split(".").pop() === name;
+      } catch {
+        return false;
+      }
+    };
+    const want = "Not downloaded yet";
+    for (let round = 0; round < 2; round++) {
+      const before = (await said.textContent()).trim();
+      await trigger.click();
+      await page.locator('[role="option"]').first().waitFor();
+      const name = await page.evaluate(
+        ({ want, before }) =>
+          [...document.querySelectorAll('[role="option"]')]
+            .find((o) => o.querySelector(".tick.marked")?.getAttribute("title") === want && o.querySelector(".what")?.textContent.trim() !== before)
+            ?.querySelector(".what")
+            ?.textContent.trim() ?? "",
+        { want, before },
+      );
+      if (!name) {
+        problems.push(`the clip model list offers no other model marked "${want}"`);
+        await page.keyboard.press("Escape");
+        break;
+      }
+      // The Go side's answer waits, so all that shows is the page's own.
+      await control(url, "/hold?call=UseLanguageModel&gate=shut");
+      await page.locator('[role="option"]', { hasText: name }).click();
+      const now = await page.evaluate((card) => {
+        const c = document.querySelector(card);
+        const text = (el) => (el?.textContent ?? "").replace(/\s+/g, " ").trim();
+        return {
+          picked: text(c.querySelector(":scope > .item button.pick .said > span:not(.room)")),
+          line: text(c.querySelector(":scope > .item .words .line")),
+          download: [...c.querySelectorAll(":scope > .item button.act")].some((b) => text(b) === "Download"),
+          warn: !!c.querySelector(":scope > .item .mark.warn"),
+        };
+      }, card);
+      if (now.picked !== name) problems.push(`picking ${name}, the list said ${now.picked}`);
+      if (!/^Not downloaded yet/.test(now.line) || !now.download || !now.warn)
+        problems.push(
+          `picking ${name}, not downloaded, the card still said "${now.line}", ${now.download ? "with" : "without"} Download, ${now.warn ? "with" : "without"} the warning mark, before the Go side answered`,
+        );
+      const checked = page.waitForResponse(isCall("CheckSetup"));
+      await control(url, "/hold?call=UseLanguageModel&gate=open");
+      await checked;
+      await settle(page);
+    }
+    if (problems.length) walk.wrong = problems.join("\n");
+  },
   // ["folders and ticks"]
   //                    Settings: the info mark of each model section says
   //                    where the models are in full, ending in a slash,

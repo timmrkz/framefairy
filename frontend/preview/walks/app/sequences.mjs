@@ -37,8 +37,10 @@ export default [
     // wrote paths three ways. His reports of 2026-10-28 asked for the
     // models that run here in one group, the biggest first, a tick on the
     // downloaded ones, and the models folder in full in the info marks.
+    // On 2026-10-29 he saw a pick reach the card in three places one at a
+    // time.
     name: "The settings say each thing once, in one way",
-    steps: [["app log", "open"], ["settings"], ["models alike"], ["said once"], ["folders and ticks"]],
+    steps: [["app log", "open"], ["settings"], ["models alike"], ["a pick shows at once"], ["said once"], ["folders and ticks"]],
   },
   {
     // Tim saw the names and the licences in Help, Acknowledgements sit on

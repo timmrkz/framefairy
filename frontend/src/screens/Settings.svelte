@@ -448,10 +448,14 @@
   // looking through a list. The mark, the frame round the list and the
   // line under it all say so. Keeping the model before it in use meanwhile
   // made the list say one model while the searches ran on another.
-  const inUse = $derived(language.find((m) => m.inUse));
-  // What was just chosen, shown until the Go side's answer is read, so a
-  // click shows at once.
+  //
+  // What was just chosen is the one in use from the click on, until the
+  // Go side's answer is read, so the list, the mark, the line, Download and
+  // the frame round the list all change in the frame of the click. Only the
+  // list did once, and the rest followed one at a time as the answers came
+  // back, in three places, which Tim saw frame by frame, 2026-10-29.
   let choosing = $state("");
+  const inUse = $derived(language.find((m) => (choosing ? m.name === choosing : m.inUse)));
   const notHere = $derived(!!inUse && !inUse.installed);
   // What a search, a clip made by hand or the whole video being
   // transcribed is using, see refuseFinding and speechLocked.
@@ -573,7 +577,9 @@
       fetching: fetchingModel,
       progress: llmInstall.running?.progress,
       failed: llmInstall.failed,
-      modelProblem: broken("Language model")?.detail,
+      // The checks are read again once a choice is saved. Until then they
+      // are about the model before, and said one just chosen was missing.
+      modelProblem: choosing ? undefined : broken("Language model")?.detail,
       serverMissing: !!broken("llama-server"),
       searching,
     }),
@@ -698,8 +704,8 @@
               A language model reads the transcript and picks the moments worth clipping. A model in
               the cloud, Anthropic's or OpenAI's, works on any machine with a key of your own from
               that company, and costs a few cents a video. A model on this machine is free to run
-              and needs the memory to hold it. Either way the video and the audio stay
-              here: only the words are read.
+              and needs the memory to hold it. It sees only the transcript, never the picture or
+              the sound.
               {#if settings.planner === "local"}
                 <br /><br />
                 A model runs from memory, and this machine has
