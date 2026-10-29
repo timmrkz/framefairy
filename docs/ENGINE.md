@@ -774,7 +774,10 @@ frame. Two kinds of episode do not keep to that, and `Probe` finds both.
   long after it is decoded as the stream holds frames back, the most any
   stamped frame is, and where an encoder of MPEG-2 made two key frames in
   a row, the seek lands on the first, so `keyBefore` reads from that one.
-  A piece read from a key frame had landed a frame early there.
+  A piece read from a key frame had landed a frame early there. MPEG-2
+  with B-frames in MPEG-PS, whose key frames carry no time, is not read
+  right yet, #268, and neither is MPEG-2 with B-frames in MPEG-TS, #600,
+  or a file whose every frame is a key frame, #601.
 - **A file that does not say how long it is.** A Matroska recording cut
   off by a crash, the way OBS leaves one, has no duration and no index,
   and the app took it for 0 seconds long, with one frame in the video

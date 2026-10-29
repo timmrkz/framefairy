@@ -523,9 +523,7 @@ func (s SourceInfo) plainCut(seg Segment) pieceCut {
 // so every moment gets the frame that holds it. The read starts at the key
 // frame before, so the frame that holds the first moment is read however
 // long ago it began, and a frame held to the end is held on by tpad. The
-// sound is cut at the two moments, as for a piece counted by frames. The
-// times are moved in microseconds, since moved in the ticks of the stream,
-// 1/600 s from a phone, the hair is lost in the rounding.
+// sound is cut at the two moments, as for a piece counted by frames.
 //
 // The moments are counted the way the video preview counts them, see
 // framewire.Grid: from the start of the grid, a whole microsecond, at
@@ -535,7 +533,10 @@ func (s SourceInfo) plainCut(seg Segment) pieceCut {
 // both, 1/3000000 s at 30 a second. Moved in microseconds, a piece's
 // moments came up to a microsecond early, and a frame that begins exactly
 // a hair after one, as one of Matroska's whole milliseconds can, missed
-// it, #266.
+// it, #266. In the ticks of the stream, 1/600 s from a phone, the hair is
+// lost in the rounding. A rate whose ticks would not fit ffmpeg's time
+// base, like 2997/100, is moved in microseconds, and a frame exactly a
+// hair after its moment may miss it there.
 func (s SourceInfo) byTimes(from, to, first, n int64) pieceCut {
 	frame := int64(s.FPSDen) * 1_000_000 / int64(s.FPSNum)
 	seek := s.onTicks(max(0, from-frame/2))
@@ -547,7 +548,10 @@ func (s SourceInfo) byTimes(from, to, first, n int64) pieceCut {
 		ticks = 1_000_000
 	}
 	grid := int64(math.Round(s.frameBegins(s.firstFrame()) * 1_000_000))
-	start := grid*(ticks/1_000_000) + (2*first*den*ticks+num)/(2*num)
+	start := grid*(ticks/1_000_000) + first*den*(ticks/num)
+	if ticks%num != 0 {
+		start = grid + (2*first*den*1_000_000+num)/(2*num)
+	}
 	return pieceCut{
 		seek:      micros(seek),
 		seekUS:    seek,

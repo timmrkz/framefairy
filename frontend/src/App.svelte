@@ -145,9 +145,11 @@
   // pointer changes, and Tim's logs showed the sidebar opened by the
   // pointer closing again within 100 ms one time in three, #540. A leave
   // made by the hand comes with its move, which closes the sidebar in the
-  // same task.
+  // same task. A leave at a point outside the app is leaving it too,
+  // whatever WebKit names as what the pointer went to.
   function pointerLeft(e: PointerEvent) {
-    if (e.relatedTarget) return;
+    const out = e.clientX < 0 || e.clientY < 0 || e.clientX >= innerWidth || e.clientY >= innerHeight;
+    if (e.relatedTarget && !out) return;
     inside = false;
     reach(false, "the pointer left the app");
   }

@@ -152,7 +152,7 @@ export const steps = {
   //                    leaving the sidebar for the workspace with no
   //                    movement. The sidebar stays open. A real move off it
   //                    closes it at once, and so does the pointer leaving
-  //                    the app, #540
+  //                    the app, to nothing or at a point outside it, #540
   async "leave with no move"(walk) {
     const { main } = walk;
     walk.page = main;
@@ -205,7 +205,22 @@ export const steps = {
       const at = { clientX: 20, clientY: 500, pointerType: "mouse", isPrimary: true };
       document.querySelector("aside").dispatchEvent(new PointerEvent("pointerleave", at));
     });
-    if (await open()) walk.wrong = "the sidebar stayed open after the pointer left the app";
+    if (await open()) {
+      walk.wrong = "the sidebar stayed open after the pointer left the app";
+      return;
+    }
+    // The same where WebKit names the page itself as where the pointer
+    // went, at a point left of the app.
+    await sidebarStill(main);
+    await main.mouse.move(750, 400);
+    await sidebarStill(main);
+    await main.mouse.move(20, 500);
+    await sidebarStill(main);
+    await main.evaluate(() => {
+      const at = { clientX: -1, clientY: 500, pointerType: "mouse", isPrimary: true, relatedTarget: document.documentElement };
+      document.querySelector("aside").dispatchEvent(new PointerEvent("pointerleave", at));
+    });
+    if (await open()) walk.wrong = "the sidebar stayed open after the pointer left the app to its left";
     await sidebarStill(main);
     await main.mouse.move(750, 400);
     await sidebarStill(main);
