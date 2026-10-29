@@ -688,8 +688,9 @@ func TestAStartDraggedOverARemovedWordLeavesItRemoved(t *testing.T) {
 }
 
 // The start of a caption can be moved back over the time the caption
-// before holds for a word removed between them, as far as the last word
-// that caption shows, and the caption before then goes where it appears.
+// before holds for a word removed between them, as far as the middle of
+// the last word that caption shows, and the caption before then goes
+// where it appears.
 // Tim removed a word and heard the next one start earlier than its block,
 // and the block stopped at the caption before, #597. At the app's size of
 // the captions "irgendein" is the last word of the first caption.
@@ -715,12 +716,43 @@ func TestAStartMovesBackOverARemovedWord(t *testing.T) {
 	if got, want := strings.Join(shownCaptions(t, fsys, path, tr), " "), "0.00-1.80 als mich auf dem Schulhof 1.80-2.70 Typ"; got != want {
 		t.Errorf("moved back to 61.7\n got %s\nwant %s", got, want)
 	}
-	// Over the caption before it stops where "Schulhof" ends, 61.4.
+	// Over the caption before it stops in the middle of "Schulhof",
+	// 61.175, which the caption before still shows.
 	if _, err := SetCaptionTime(fsys, path, "01", 61.95, "start", 61.0, false, tr, nil); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := strings.Join(shownCaptions(t, fsys, path, tr), " "), "0.00-1.50 als mich auf dem Schulhof 1.50-2.70 Typ"; got != want {
+	if got, want := strings.Join(shownCaptions(t, fsys, path, tr), " "), "0.00-1.27 als mich auf dem Schulhof 1.27-2.70 Typ"; got != want {
 		t.Errorf("moved back to 61.0\n got %s\nwant %s", got, want)
+	}
+}
+
+// In running speech, with no word removed, the start of a caption can be
+// moved back into the last word of the caption before, as far as its
+// middle, and the caption before goes where it appears. It stopped at the
+// end of the caption before, which there is the start itself, so a word
+// heard earlier than its block could not be shown earlier at all. Found
+// by the review of #599.
+func TestAStartMovesBackIntoTheLastWordBefore(t *testing.T) {
+	heard := []Cue{{60, 60.2, "als"}, {60.25, 60.5, "mich"}, {60.55, 60.7, "auf"},
+		{60.75, 60.9, "dem"}, {60.95, 61.4, "Schulhof"}, {61.45, 61.9, "irgendein"},
+		{61.95, 62.2, "Typ"}}
+	fsys := afero.NewMemMapFs()
+	_, path := oneClipPlan(t, fsys, 59.9, 64)
+	tr := fromStored(append([]Cue(nil), heard...), nil, 0, 0, nil)
+	for _, step := range []struct {
+		at   float64
+		want string
+	}{
+		{61.7, "0.00-1.80 als mich auf dem Schulhof irgendein 1.80-2.70 Typ"},
+		// No further than the middle of "irgendein", 61.675.
+		{61.0, "0.00-1.77 als mich auf dem Schulhof irgendein 1.77-2.70 Typ"},
+	} {
+		if _, err := SetCaptionTime(fsys, path, "01", 61.95, "start", step.at, false, tr, nil); err != nil {
+			t.Fatal(err)
+		}
+		if got := strings.Join(shownCaptions(t, fsys, path, tr), " "); got != step.want {
+			t.Errorf("moved back to %.2f\n got %s\nwant %s", step.at, got, step.want)
+		}
 	}
 }
 

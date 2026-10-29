@@ -1298,9 +1298,12 @@
   // from what is heard, either edge is dragged. The two sides of the line
   // between two captions are two edges: the left side is where the one
   // before goes, the right side where the one after appears. An edge moves
-  // its own caption and no other: dragged in it leaves a gap, dragged out
-  // it stops at the caption beside it. Dragged in over a word it removes
-  // the word, and dragged back out over it puts it back.
+  // its own caption: dragged in it leaves a gap, dragged out it stops at
+  // the caption beside it, except that a start in running speech may go
+  // back into the last word of the caption before, see startFloor in
+  // engine/edit.go. An edge only sets when its caption shows: dragged in
+  // over a word it leaves the word out, and dragged back out shows it
+  // again. A word removed in the caption box stays removed.
   //
   // Where the edge lands and which words it crosses is the engine's to
   // say, see ShapeCaptionTime in engine/episode.go, the same way a gesture

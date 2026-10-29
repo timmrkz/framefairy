@@ -2676,12 +2676,14 @@ moved by hand, on the clip timeline.
   captions meet, the line between them has two sides: the left side is
   where the one before goes, the right side where the one after appears.
   An edge dragged in leaves a gap, and dragged out it stops at the caption
-  beside it. No other caption ever moves, with one exception: a start
-  may be dragged back into the time the caption before holds for a word
-  removed between the two, as far as that caption's last word shown,
-  and the caption before then goes where it appears, see
-  `startFloor` in `engine/edit.go`. Tim removed a word and heard the next
-  word start earlier than its block, which he could not move there. Dragging the right side used to
+  beside it. No other caption ever moves, with one exception: where two
+  captions meet because the speech runs on, a start may be dragged back
+  into the last word the caption before shows, as far as its middle, and
+  the caption before then goes where it appears, see `startFloor` in
+  `engine/edit.go`. A word in running speech is heard up to about one of
+  the speech model's 80 ms steps off, and Tim heard a word start earlier
+  than its block, which he could not move there. The words keep their own
+  time, so the first word still lights where it is heard. Dragging the right side used to
   take the caption before along, so pulling a left edge in over a word
   drew the caption before into the room Tim had just cleared. Nothing
   overlaps, because the picture shows one caption at a time. An edge
@@ -2723,7 +2725,10 @@ moved by hand, on the clip timeline.
   passed, and dragging back out brought back every removed word it
   passed, however it had been removed: Tim removed a word, dragged the
   start of the caption after it out to where he heard its next word
-  begin, and the word came back, #598.
+  begin, and the word came back, #598. Words a drag took out before this
+  was changed were kept as removed words, the same as the caption box
+  keeps them, so on a clip edited then they stay removed too, and undo
+  or typing them in again brings them back.
 - **Removing a word at an edge draws the caption in, as dragging over it
   does.** A caption whose first or last word is removed in the caption box
   draws in to the words it shows: it appears with its first word shown and

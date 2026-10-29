@@ -281,6 +281,20 @@ export const steps = {
       walk.wrong = `captions beside the one with "${text}" changed: ${moved.map(span).join(" ")}\nthen ${was.captions.map(span).join(" ")}\nnow  ${now.captions.map(span).join(" ")}`;
     }
   },
+  // ["earlier", [label, word]]
+  //                    the caption that held the word at the mark
+  //                    appears more than a frame earlier than it did
+  //                    then, so an edge dragged out moved it, #598
+  async earlier(walk, arg) {
+    const { marks, page, watch } = walk;
+    const [label, text] = arg;
+    const holds = (c) => c.lines.some((l) => l.words.some((w) => w.text.includes(text)));
+    const was = marks[label].captions.find(holds);
+    const now = (await engineState(page, watch.at)).captions.find(holds);
+    if (!was || !now || !(now.start < was.start - 0.034)) {
+      walk.wrong = `the caption with "${text}" appears at ${now?.start.toFixed(3)}, was ${was?.start.toFixed(3)}`;
+    }
+  },
   // ["meets", [label, word, side]]
   //                    the block on the clip timeline of the caption
   //                    that held the word at the mark meets the block of

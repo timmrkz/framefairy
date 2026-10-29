@@ -654,7 +654,9 @@ const shortestMoved = 0.1
 // at a time. An edge is moved no further out than the caption beside it,
 // see moveCaptionEdge, so this only ever stops an edge put back where its
 // words put it, never one put by hand, and the caption beside it keeps the
-// place it was given. A caption shown earlier used to take the one before
+// place it was given. The one exception is a start moved back into the
+// last word of the caption before in running speech, see startFloor,
+// where the caption before goes where it appears. A caption shown earlier used to take the one before
 // it along where the two met, so pulling the left edge of a caption in over
 // its first word drew the caption before it into the place Tim had
 // cleared.

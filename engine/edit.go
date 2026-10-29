@@ -1214,22 +1214,21 @@ type captionEdge struct {
 	was LaidCaption
 }
 
-// startFloor is the earliest the start of a caption may be moved to, on
-// the clip's clock: where the caption before goes. Where a word between
-// the two was removed, the caption before stays up over it only because
-// the speech runs on, see Captions, so the start may be moved back over
-// that time, as far as the end of the last word the caption before
-// shows, and the caption before then goes where this one appears. Tim
-// removed a word and found the next one sounding earlier than its block,
-// and the block could not be moved there.
+// startFloor is the earliest the start of caption c may be moved to, on
+// the clip's clock: the end of the caption before. Where the two meet,
+// because the speech runs on, it may go back to the middle of the last
+// word the caption before shows, where an edge passes a word, and the
+// caption before then goes where this one appears. A word is heard in
+// running speech up to about one of the recogniser's 80 ms steps off, and
+// Tim heard a word start earlier than its block, which stopped at the
+// caption before, there the start itself, and could not be moved there,
+// #597. After a pause the caption before keeps its end, as #189 has it.
 func startFloor(before, c LaidCaption) float64 {
-	// Held only where the two meet: a start dragged in over its word
-	// leaves a gap, and the caption before keeps its own end.
-	held := (c.trimStart || before.trimEnd) && before.End >= c.Start-0.0005
-	if !held || len(before.Words) == 0 {
+	if before.End < c.Start-0.0005 || len(before.Words) == 0 {
 		return before.End
 	}
-	return min(before.End, max(before.Words[len(before.Words)-1].End, before.Start+shortestMoved))
+	last := before.Words[len(before.Words)-1]
+	return min(before.End, max((last.Start+last.End)/2, before.Start+shortestMoved))
 }
 
 // moveCaptionEdge works out what moving the edge of a caption does, the
