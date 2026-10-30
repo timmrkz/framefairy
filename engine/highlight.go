@@ -7,6 +7,9 @@ import (
 	"strconv"
 	"strings"
 
+	"framefairy/engine/pynum"
+	"framefairy/engine/pytext"
+
 	"framefairy/engine/timed"
 )
 
@@ -269,7 +272,7 @@ func lineIndices(lines [][]timed.Cue) [][]int {
 // colour the app can paint with. The alpha runs backwards in ASS, 00 is
 // opaque, so it is turned around here.
 func WebColour(value string) string {
-	raw := strings.ToUpper(strings.TrimSuffix(strings.TrimPrefix(strip(value), "&H"), "&"))
+	raw := strings.ToUpper(strings.TrimSuffix(strings.TrimPrefix(pytext.Strip(value), "&H"), "&"))
 	if len(raw) < 6 || strings.TrimLeft(raw, "0123456789ABCDEF") != "" {
 		return "rgba(255, 255, 255, 1)"
 	}
@@ -285,7 +288,7 @@ func WebColour(value string) string {
 		return v
 	}
 	return fmt.Sprintf("rgba(%d, %d, %d, %s)", channel(bgr[4:6]), channel(bgr[2:4]),
-		channel(bgr[0:2]), strconv.FormatFloat(roundTo(alpha, 3), 'f', -1, 64))
+		channel(bgr[0:2]), strconv.FormatFloat(pynum.RoundTo(alpha, 3), 'f', -1, 64))
 }
 
 const hidden = `{\alpha&HFF&}`
@@ -332,13 +335,13 @@ func taggedText(words []string, lines [][]int, visible func(int) bool, shown str
 	return strings.Join(rows, `\N`)
 }
 
-func centiseconds(t float64) int { return max(0, pyround(t*100)) }
+func centiseconds(t float64) int { return max(0, pynum.Round(t*100)) }
 
 func csToASS(cs int) string {
 	return fmt.Sprintf("%d:%02d:%02d.%02d", cs/360000, cs/6000%60, cs/100%60, cs%100)
 }
 
-func num(v float64) string { return strconv.FormatFloat(roundTo(v, 2), 'f', -1, 64) }
+func num(v float64) string { return strconv.FormatFloat(pynum.RoundTo(v, 2), 'f', -1, 64) }
 
 // highlighted is the caption track with the bouncing highlight, for a
 // short of the frames of source, see popScales. It is nothing,
@@ -348,11 +351,11 @@ func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
 	width, height int, s Style, source SourceInfo) ([]byte, error) {
 	shown := shownTag(s.Primary)
 	scale := float64(height) / 1920.0
-	size := max(12, pyround(s.Size*scale))
-	outline := max(1, pyround(s.Outline*scale))
-	shadow := max(0, pyround(s.Shadow*scale))
-	marginH := pyround(s.MarginH * scale)
-	marginV := pyround(s.MarginV * scale)
+	size := max(12, pynum.Round(s.Size*scale))
+	outline := max(1, pynum.Round(s.Outline*scale))
+	shadow := max(0, pynum.Round(s.Shadow*scale))
+	marginH := pynum.Round(s.MarginH * scale)
+	marginV := pynum.Round(s.MarginV * scale)
 
 	layouts, ok := e.layWords(ctx, captions, s, width, size)
 	if !ok {
@@ -368,9 +371,9 @@ func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
 		boxAlpha = back[2:4]
 	}
 	boxFill := "&H" + back[max(0, len(back)-6):] + "&"
-	padX := float64(pyround(s.BoxPadX * scale))
-	padY := float64(pyround(s.BoxPadY * scale))
-	radius := float64(pyround(s.Radius * scale))
+	padX := float64(pynum.Round(s.BoxPadX * scale))
+	padY := float64(pynum.Round(s.BoxPadY * scale))
+	radius := float64(pynum.Round(s.Radius * scale))
 	anchor := fmt.Sprintf(`\an2\pos(%s,%s)`, num(ax), num(ay))
 
 	var events []string

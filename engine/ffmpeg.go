@@ -18,6 +18,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"framefairy/engine/pynum"
+	"framefairy/engine/pytext"
+
 	"framefairy/engine/timed"
 
 	"github.com/spf13/afero"
@@ -602,7 +605,7 @@ func (e *Engine) SubtitleFilter(ctx context.Context) (string, error) {
 			return candidate, nil
 		}
 		failures = append(failures, fmt.Sprintf("  %s\n    %s", chain,
-			runePrefix(strip(res.Stderr), 200)))
+			pytext.Prefix(pytext.Strip(res.Stderr), 200)))
 	}
 	return "", renderErr("%s", "this ffmpeg cannot burn in subtitles with any syntax I know.\n"+
 		strings.Join(failures, "\n")+
@@ -636,7 +639,7 @@ func (e *Engine) Preflight(ctx context.Context) error {
 		version := run(ctx, "", e.FFmpeg, "-version")
 		if version.Code != 0 {
 			e.Log.ClearProgress()
-			return renderErr("%s does not run: %s", e.FFmpeg, Scrub(version.Stderr, 200))
+			return renderErr("%s does not run: %s", e.FFmpeg, pytext.Scrub(version.Stderr, 200))
 		}
 		first = "ffmpeg ?"
 		if lines := strings.SplitN(version.Stdout, "\n", 2); lines[0] != "" {
@@ -864,7 +867,7 @@ func (e *Engine) probe(ctx context.Context, path string) (SourceInfo, error) {
 		if !exists(e.Files, path) {
 			return SourceInfo{}, videoGone(path)
 		}
-		return SourceInfo{}, renderErr("ffprobe failed on %s:\n%s", path, strip(res.Stderr))
+		return SourceInfo{}, renderErr("ffprobe failed on %s:\n%s", path, pytext.Strip(res.Stderr))
 	}
 	var data struct {
 		Streams []map[string]any `json:"streams"`
@@ -998,7 +1001,7 @@ func fileRotation(sideData any) int {
 	for _, item := range list {
 		entry, _ := item.(map[string]any)
 		value, ok := toFloat(entry["rotation"])
-		if !ok || !isFinite(value) {
+		if !ok || !pynum.IsFinite(value) {
 			continue
 		}
 		return framewire.Quarter(value)
@@ -1051,18 +1054,18 @@ func (e *Engine) uneven(ctx context.Context, path string, info SourceInfo) bool 
 func (e *Engine) unevenIn(ctx context.Context, path string, info SourceInfo, at, span float64) bool {
 	frame := float64(info.FPSDen) / float64(info.FPSNum)
 	first := info.origin + info.VideoStart
-	from := fixed(info.origin+at, 3)
+	from := pynum.Fixed(info.origin+at, 3)
 	if info.unindexed {
 		// From its first packet where there is no key frame before
 		// that: ffprobe sent to the start of the file itself lands after
 		// the first key frame in MPEG-TS.
 		from = ""
 		if key, ok := e.keyBefore(ctx, path, info, int64(math.Round(at*1e6))); ok && key > 0 {
-			from = fixed(info.origin+float64(key)/1e6, 6)
+			from = pynum.Fixed(info.origin+float64(key)/1e6, 6)
 		}
 	}
 	res := run(ctx, "", e.FFprobe, "-v", "error", "-select_streams", "v:0",
-		"-read_intervals", from+"%"+fixed(info.origin+at+span, 3),
+		"-read_intervals", from+"%"+pynum.Fixed(info.origin+at+span, 3),
 		"-show_entries", "packet=pts_time,pos,flags", "-of", "csv=p=0", path)
 	if res.Code != 0 {
 		return false
@@ -1223,9 +1226,9 @@ func (e *Engine) keyBefore(ctx context.Context, path string, s SourceInfo, at in
 	for span := 2.0; span <= 128; span *= 2 {
 		from := max(moment-span, 0)
 		// Close to the start the file is read from its first packet.
-		interval := "%" + fixed(s.origin+moment, 6)
+		interval := "%" + pynum.Fixed(s.origin+moment, 6)
 		if from > 0 {
-			interval = fixed(s.origin+from, 6) + interval
+			interval = pynum.Fixed(s.origin+from, 6) + interval
 		}
 		res := run(ctx, "", e.FFprobe, "-v", "error", "-select_streams", "v:0",
 			"-read_intervals", interval,

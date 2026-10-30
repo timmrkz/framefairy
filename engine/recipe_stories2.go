@@ -3,6 +3,8 @@ package engine
 import (
 	"fmt"
 	"strings"
+
+	"framefairy/engine/pynum"
 )
 
 // stories2Recipe is the brief lines asks with, with the transcript written
@@ -41,15 +43,15 @@ func init() { recipes[stories2Recipe.Name] = stories2Recipe }
 func stories2Request(lines []Line, units [][2]int, opts PlanOptions) string {
 	task := fmt.Sprintf("Find up to %d clips, the strongest first. Each runs %s to %s seconds "+
 		"once what you leave out is gone. Keep the heart and the payoff of every story whole.",
-		opts.Count, fixed(opts.MinLen, 0), fixed(opts.MaxLen, 0))
+		opts.Count, pynum.Fixed(opts.MinLen, 0), pynum.Fixed(opts.MaxLen, 0))
 	ask := []string{task,
 		fmt.Sprintf("The transcript has %d sentences, each with its number in brackets. "+
 			"Each paragraph opens with the time it starts at. Three dots mark a long pause.",
 			len(units))}
 	if rate := wordsPerSecond(lines); rate > 0 {
 		ask = append(ask, fmt.Sprintf("Speech here runs at about %s words a second, so %s to %s "+
-			"seconds is about %d to %d words.", fixed(rate, 1), fixed(opts.MinLen, 0),
-			fixed(opts.MaxLen, 0), int(rate*opts.MinLen+0.5), int(rate*opts.MaxLen+0.5)))
+			"seconds is about %d to %d words.", pynum.Fixed(rate, 1), pynum.Fixed(opts.MinLen, 0),
+			pynum.Fixed(opts.MaxLen, 0), int(rate*opts.MinLen+0.5), int(rate*opts.MaxLen+0.5)))
 	}
 	if opts.Context != "" {
 		ask = append(ask, "About the video: "+opts.Context)

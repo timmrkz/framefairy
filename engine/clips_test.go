@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 
+	"framefairy/engine/pynum"
+
 	"github.com/spf13/afero"
 )
 
@@ -157,7 +159,7 @@ func FuzzParseTime(f *testing.F) {
 		if err != nil {
 			return
 		}
-		if !isFinite(seconds) || seconds < 0 {
+		if !pynum.IsFinite(seconds) || seconds < 0 {
 			t.Fatalf("ParseTime(%q) = %v", text, seconds)
 		}
 	})
@@ -302,7 +304,7 @@ func FuzzLoadClips(f *testing.F) {
 				t.Fatalf("%s is taken for the short of %s", short, clip.Basename())
 			}
 			for _, seg := range clip.Segments {
-				if !isFinite(seg.Start) || !isFinite(seg.End) || seg.Start < 0 || seg.End <= seg.Start {
+				if !pynum.IsFinite(seg.Start) || !pynum.IsFinite(seg.End) || seg.Start < 0 || seg.End <= seg.Start {
 					t.Fatalf("segment %v-%v", seg.Start, seg.End)
 				}
 			}

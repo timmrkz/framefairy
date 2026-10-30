@@ -11,6 +11,9 @@ import (
 	"strings"
 	"time"
 
+	"framefairy/engine/pynum"
+	"framefairy/engine/pytext"
+
 	"framefairy/engine/timed"
 
 	"github.com/spf13/afero"
@@ -402,7 +405,7 @@ func (e *Engine) prepare(ctx context.Context, opts Options, ask *timed.Window) (
 		turned = fmt.Sprintf(", stood up by the file's turn of %d", source.Turned)
 	}
 	log.Info("source: %dx%d @ %s fps, %s min%s", source.Width, source.Height,
-		fixed(source.FPS(), 3), fixed(source.Duration/60, 1), turned)
+		pynum.Fixed(source.FPS(), 3), pynum.Fixed(source.Duration/60, 1), turned)
 
 	// Working a long episode in passes. Only the audio inside the window is
 	// transcribed and sent, and the plan for each window is kept in its own
@@ -722,7 +725,7 @@ func (r *runner) render(ctx context.Context, plan Plan, clips []Clip) error {
 		return err
 	}
 	if missing := ResolveStyle(style).Missing; missing != "" {
-		log.Warn("%s is not a font on this machine, the captions are drawn in %s", Scrub(missing, 64), DefaultFont)
+		log.Warn("%s is not a font on this machine, the captions are drawn in %s", pytext.Scrub(missing, 64), DefaultFont)
 	}
 
 	cropW, cropH := CropWindow(source, outW, outH)
@@ -735,7 +738,7 @@ func (r *runner) render(ctx context.Context, plan Plan, clips []Clip) error {
 			direction = "upscale"
 		}
 		log.Info("crop %dx%d -> %dx%d (%sx %s)", cropW, cropH, outW, outH,
-			fixed(factor, 2), direction)
+			pynum.Fixed(factor, 2), direction)
 	}
 
 	// Every clip that cannot be made is said on its own line as it is
@@ -787,7 +790,7 @@ func (r *runner) render(ctx context.Context, plan Plan, clips []Clip) error {
 		cueMap[clip.Basename()] = cues
 		started := time.Now()
 		log.Info("%s: %ss, %d segment(s), %d cues", clip.Basename(),
-			fixed(clip.Duration(), 1), len(clip.Segments), len(cues))
+			pynum.Fixed(clip.Duration(), 1), len(clip.Segments), len(cues))
 		// A preview, which the plan never notes, keeps the clip's id.
 		stem := clip.Basename()
 		if !opts.Preview {
@@ -831,8 +834,8 @@ func (r *runner) render(ctx context.Context, plan Plan, clips []Clip) error {
 			if info, err := os.Stat(path); err == nil {
 				size = float64(info.Size()) / 1_000_000
 			}
-			log.OK("%s  %s MB  in %ss", filepath.Base(path), fixed(size, 1),
-				fixed(time.Since(started).Seconds(), 1))
+			log.OK("%s  %s MB  in %ss", filepath.Base(path), pynum.Fixed(size, 1),
+				pynum.Fixed(time.Since(started).Seconds(), 1))
 		}
 	}
 
@@ -850,7 +853,7 @@ func (r *runner) render(ctx context.Context, plan Plan, clips []Clip) error {
 		cost := ""
 		if e.Calls.Requests > 0 {
 			cost = fmt.Sprintf(", about $%s spent across %d API call(s)",
-				fixed(e.Calls.Spent, 2), e.Calls.Requests)
+				pynum.Fixed(e.Calls.Spent, 2), e.Calls.Requests)
 		}
 		if failures > 0 {
 			log.Warn("finished with %d failure(s), %d clip(s) in %s%s", failures, made, outDir, cost)
@@ -966,7 +969,7 @@ func writeProof(fsys afero.Fs, path string, clips []Clip, cueMap map[string][]La
 	lines := []string{"Render proof", strings.Repeat("=", 60), ""}
 	for _, clip := range clips {
 		lines = append(lines, fmt.Sprintf("[%s]  %ss  %d segment(s)", clip.Basename(),
-			fixed(clip.Duration(), 1), len(clip.Segments)))
+			pynum.Fixed(clip.Duration(), 1), len(clip.Segments)))
 		if clip.Title != "" {
 			lines = append(lines, "  title: "+clip.Title)
 		}
@@ -976,7 +979,7 @@ func writeProof(fsys afero.Fs, path string, clips []Clip, cueMap map[string][]La
 				crop = fmt.Sprintf("x=%d", *seg.CropX)
 			}
 			lines = append(lines, fmt.Sprintf("  %d. %9s - %9s  (%5ss, %s)", i+1,
-				fixed(seg.Start, 3), fixed(seg.End, 3), fixed(seg.Duration(), 2), crop))
+				pynum.Fixed(seg.Start, 3), pynum.Fixed(seg.End, 3), pynum.Fixed(seg.Duration(), 2), crop))
 		}
 		if cues := cueMap[clip.Basename()]; len(cues) > 0 {
 			texts := make([]string, len(cues))

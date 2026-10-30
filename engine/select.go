@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"framefairy/engine/pytext"
 )
 
 // SystemPrompt tells the model how to choose and condense clips. It is
@@ -142,7 +144,7 @@ func jsonCandidates(text string) []jsonCandidate {
 }
 
 func stripFences(text string) string {
-	cleaned := strip(text)
+	cleaned := pytext.Strip(text)
 	if !strings.Contains(cleaned, "```") {
 		return cleaned
 	}
@@ -157,16 +159,16 @@ func stripFences(text string) string {
 	// Keep the longest fenced block, which is the payload.
 	best := blocks[0]
 	for _, b := range blocks[1:] {
-		if runeLen(b) > runeLen(best) {
+		if pytext.Len(b) > pytext.Len(best) {
 			best = b
 		}
 	}
-	trimmed := strings.TrimLeftFunc(best, isPySpace)
+	trimmed := strings.TrimLeftFunc(best, pytext.IsSpace)
 	if strings.Contains(best, "\n") && !strings.HasPrefix(trimmed, "{") &&
 		!strings.HasPrefix(trimmed, "[") {
 		best = strings.SplitN(best, "\n", 2)[1] // drop the language tag
 	}
-	return strip(best)
+	return pytext.Strip(best)
 }
 
 func parseObject(text string) (map[string]any, bool) {
@@ -219,7 +221,7 @@ func ExtractJSONObject(text, key string) (map[string]any, string, error) {
 		}
 	}
 	return nil, "", renderErr("no JSON object with a %s key could be found in the reply. "+
-		"It began: %s", pyRepr(key), pyRepr(Scrub(cleaned, 200)))
+		"It began: %s", pyRepr(key), pyRepr(pytext.Scrub(cleaned, 200)))
 }
 
 // PlanEntry is one clip as the model proposed it, after validation.
@@ -343,14 +345,14 @@ func validateEntry(clipAny any, index, lineCount int) (PlanEntry, []string, bool
 	// An answer without slugs gets them from the titles, the way a clip
 	// made by hand does. One without titles either, as middle's, is named
 	// by its first words once it is shaped, see planBuilder.named.
-	slug, title := Scrub(get("slug"), 64), Scrub(get("title"), 200)
+	slug, title := pytext.Scrub(get("slug"), 64), pytext.Scrub(get("title"), 200)
 	if slug == "" && title != "" {
 		slug = strings.ToLower(SanitiseName(title, "clip"))
 	}
 	return PlanEntry{
 		Slug:    slug,
 		Title:   title,
-		Reason:  Scrub(get("reason"), 300),
+		Reason:  pytext.Scrub(get("reason"), 300),
 		Keep:    ranges,
 		Heart:   heart,
 		Opening: opening,

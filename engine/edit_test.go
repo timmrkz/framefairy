@@ -13,6 +13,8 @@ import (
 	"sync"
 	"testing"
 
+	"framefairy/engine/pynum"
+
 	"framefairy/engine/timed"
 
 	"github.com/spf13/afero"
@@ -986,7 +988,7 @@ func TestTheWordsShownAreTheWordsTheCaptionsLight(t *testing.T) {
 	for _, c := range view.Captions {
 		for _, line := range c.Lines {
 			for _, w := range line.Words {
-				lit = append(lit, timed.Cue{Start: roundTo(10+w.Start, 3), End: roundTo(10+w.End, 3), Text: w.Text})
+				lit = append(lit, timed.Cue{Start: pynum.RoundTo(10+w.Start, 3), End: pynum.RoundTo(10+w.End, 3), Text: w.Text})
 			}
 		}
 	}
@@ -1302,7 +1304,7 @@ func TestACutsEdgeTakesThePlayheadTheWayTheClipsEdgesDo(t *testing.T) {
 				t.Fatal(err)
 			}
 			if c.want != nil {
-				if want := roundTo(c.want(shaped.Pieces), 3); math.Abs(shaped.Playhead-want) > 0.0005 {
+				if want := pynum.RoundTo(c.want(shaped.Pieces), 3); math.Abs(shaped.Playhead-want) > 0.0005 {
 					t.Errorf("the playhead is at %v, want %v, the pieces %+v", shaped.Playhead, want, shaped.Pieces)
 				}
 			}

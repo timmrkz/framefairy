@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 
+	"framefairy/engine/pynum"
+
 	"github.com/spf13/afero"
 )
 
@@ -91,7 +93,7 @@ func readCropMarks(raw any, spans []Rotation) []CropMark {
 			continue
 		}
 		at, ok := toFloat(entry[keyAt])
-		if !ok || !isFinite(at) || at < 0 || at > MaxEpisodeSeconds {
+		if !ok || !pynum.IsFinite(at) || at < 0 || at > MaxEpisodeSeconds {
 			continue
 		}
 		left, ok := toFloat(entry[keyX])
@@ -108,7 +110,7 @@ func readCropMarks(raw any, spans []Rotation) []CropMark {
 		if n, ok := toFloat(entry[keyTurn]); ok && n == math.Trunc(n) && validRotate(int(n)) {
 			turn = int(n)
 		}
-		out = append(out, CropMark{At: roundTo(at, 3), X: x - x%2, Turn: turn})
+		out = append(out, CropMark{At: pynum.RoundTo(at, 3), X: x - x%2, Turn: turn})
 	}
 	sort.Slice(out, func(a, b int) bool { return out[a].At < out[b].At })
 	if len(out) > MaxCropMarks {
@@ -192,7 +194,7 @@ func (s SourceInfo) frameHolding(at float64) int64 {
 // known.
 func (s SourceInfo) frameStartHolding(at float64) float64 {
 	if s.FPSNum <= 0 || s.FPSDen <= 0 {
-		return roundTo(at, 3)
+		return pynum.RoundTo(at, 3)
 	}
 	return s.keptAt(s.frameHolding(at))
 }
@@ -379,7 +381,7 @@ func setCropMarks(c *object, marks []CropMark) {
 	list := make([]any, len(marks))
 	for i, m := range marks {
 		o := newObject()
-		o.set(keyAt, roundTo(m.At, 3))
+		o.set(keyAt, pynum.RoundTo(m.At, 3))
 		o.set(keyX, m.X)
 		o.set(keyTurn, m.Turn)
 		list[i] = o
@@ -428,7 +430,7 @@ func SetCropMark(fsys afero.Fs, planPath, clipID string, from, to float64, x int
 	}
 	for _, at := range []float64{from, to} {
 		if math.IsNaN(at) || math.IsInf(at, 0) || at > MaxEpisodeSeconds {
-			return renderErr("a keyframe cannot be at %s", fixed(at, 3))
+			return renderErr("a keyframe cannot be at %s", pynum.Fixed(at, 3))
 		}
 	}
 	if adding && (x < 0 || x >= 1_000_000) {
@@ -523,7 +525,7 @@ func cropShown(c *object, pieces []*object, target int, at float64, frames Sourc
 func marksText(marks []CropMark) string {
 	parts := make([]string, len(marks))
 	for i, m := range marks {
-		parts[i] = fixed(m.At, 3) + "@" + strconv.Itoa(m.X)
+		parts[i] = pynum.Fixed(m.At, 3) + "@" + strconv.Itoa(m.X)
 	}
 	return strings.Join(parts, " ")
 }

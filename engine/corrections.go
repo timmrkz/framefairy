@@ -10,6 +10,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"framefairy/engine/pytext"
+
 	"framefairy/engine/timed"
 
 	"github.com/spf13/afero"
@@ -90,7 +92,7 @@ func putCorrections(c *object, corrections map[string]string) {
 
 // CleanWordText checks a corrected word.
 func CleanWordText(text string) (string, error) {
-	text = strings.Join(strings.Fields(Scrub(text, 200)), " ")
+	text = strings.Join(strings.Fields(pytext.Scrub(text, 200)), " ")
 	if text == "" {
 		return "", renderErr("a word cannot be empty")
 	}
@@ -110,7 +112,7 @@ func CleanWordText(text string) (string, error) {
 // and a word removed from the clip typed back in beside its neighbour
 // comes back in it, see putBack.
 func SetWordText(fsys afero.Fs, planPath, clipID string, at float64, text string, t *Transcript) error {
-	if strings.TrimSpace(Scrub(text, 200)) == "" {
+	if strings.TrimSpace(pytext.Scrub(text, 200)) == "" {
 		return RemoveWord(fsys, planPath, clipID, at, -1, t)
 	}
 	return editClipWords(fsys, planPath, clipID, t, func(corrections map[string]string, removed RemovedWords) error {

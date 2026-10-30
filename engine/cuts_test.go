@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"framefairy/engine/pynum"
+
 	"framefairy/engine/timed"
 
 	"github.com/spf13/afero"
@@ -296,7 +298,7 @@ func TestACutEdgeWalksAFrameAtATime(t *testing.T) {
 	at := ClipCuts(clipByID(t, fsys, path, "01"))[0]
 	want := at.From
 	for i := 0; i < 5; i++ {
-		want = roundTo(want-frame, 3)
+		want = pynum.RoundTo(want-frame, 3)
 		if err := MoveCut(fsys, path, "01", 0, want, at.To, tr, 0.1, ToFrames); err != nil {
 			t.Fatalf("step %d: %v", i, err)
 		}

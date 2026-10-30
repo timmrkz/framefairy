@@ -10,6 +10,9 @@ import (
 	"strconv"
 	"strings"
 
+	"framefairy/engine/pynum"
+	"framefairy/engine/pytext"
+
 	"framefairy/internal/framewire"
 )
 
@@ -95,7 +98,7 @@ func (e *Engine) BuildFilterGraph(ctx context.Context, clip Clip, source SourceI
 		cropY -= cropY % 2
 		if len(seg.Marks) > 0 {
 			e.Log.Detail("clip %s, piece %d at %ss: the crop glides over the marks %s",
-				clip.ID, i+1, fixed(seg.Start, 3), marksText(seg.Marks))
+				clip.ID, i+1, pynum.Fixed(seg.Start, 3), marksText(seg.Marks))
 		}
 
 		chain := []string{cut.picture + "setpts=PTS-STARTPTS"}
@@ -127,10 +130,10 @@ func (e *Engine) BuildFilterGraph(ctx context.Context, clip Clip, source SourceI
 			"aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo",
 		}
 		if i == 0 || seg.Start-clip.Segments[i-1].End > PiecesMeet {
-			achain = append(achain, fmt.Sprintf("afade=t=in:st=0:d=%s", pyFloatRepr(Fade)))
+			achain = append(achain, fmt.Sprintf("afade=t=in:st=0:d=%s", pynum.FloatRepr(Fade)))
 		}
 		if i+1 == len(clip.Segments) || clip.Segments[i+1].Start-seg.End > PiecesMeet {
-			achain = append(achain, fmt.Sprintf("afade=t=out:st=%s:d=%s", fixed(fadeOutAt, 4), pyFloatRepr(Fade)))
+			achain = append(achain, fmt.Sprintf("afade=t=out:st=%s:d=%s", pynum.Fixed(fadeOutAt, 4), pynum.FloatRepr(Fade)))
 		}
 		parts = append(parts, fmt.Sprintf("[%d:a]%s[a%d];", 2*i+1, strings.Join(achain, ","), i))
 	}
@@ -389,7 +392,7 @@ func (s SourceInfo) End() float64 {
 		return 0
 	}
 	if s.FPSNum <= 0 || s.FPSDen <= 0 {
-		return roundTo(s.Duration, 3)
+		return pynum.RoundTo(s.Duration, 3)
 	}
 	return s.keptAt(s.endFrame())
 }
@@ -416,7 +419,7 @@ func (s SourceInfo) PieceOnFrames(start, end float64) (float64, float64) {
 		if over := s.End(); over > 0 {
 			end = math.Min(end, over)
 		}
-		return roundTo(start, 3), roundTo(end, 3)
+		return pynum.RoundTo(start, 3), pynum.RoundTo(end, 3)
 	}
 	first, last := s.pieceFrames(start, end)
 	return s.keptAt(first), s.keptAt(last)
@@ -432,7 +435,7 @@ func (s SourceInfo) FrameAt(at float64) float64 {
 		if over := s.End(); over > 0 {
 			at = math.Min(at, over)
 		}
-		return roundTo(at, 3)
+		return pynum.RoundTo(at, 3)
 	}
 	k := max(s.nearestFrame(at), s.firstFrame())
 	if s.Duration > 0 {
@@ -751,7 +754,7 @@ func (e *Engine) renderShort(ctx context.Context, clip Clip, sourcePath string,
 			break
 		}
 		os.Remove(tmp)
-		tail := strip(stderr)
+		tail := pytext.Strip(stderr)
 		if len(tail) > 600 {
 			tail = tail[len(tail)-600:]
 		}
@@ -787,7 +790,7 @@ func (e *Engine) renderShort(ctx context.Context, clip Clip, sourcePath string,
 	// looks like a finished file until someone plays it.
 	check := run(ctx, "", e.FFprobe, "-v", "error", "-show_entries",
 		"format=duration", "-of", "csv=p=0", tmp)
-	written, ok := parsePyFloat(strip(check.Stdout))
+	written, ok := pynum.ParseFloat(pytext.Strip(check.Stdout))
 	if !ok {
 		os.Remove(tmp)
 		return "", renderErr("%s was written but has no readable duration", clip.Basename())
@@ -941,7 +944,7 @@ func (e *Engine) WriteThumbnails(ctx context.Context, clip Clip, short string) e
 		t := frames.thumbnailSeek(ClipTime(clip, at))
 		tmp := path + partial + ".jpg"
 		res := run(ctx, "", e.FFmpeg, "-hide_banner", "-loglevel", "error", "-y",
-			"-ss", fixed(t, 6), "-i", short, "-frames:v", "1", "-update", "1",
+			"-ss", pynum.Fixed(t, 6), "-i", short, "-frames:v", "1", "-update", "1",
 			"-vf", thumbnailColours, "-q:v", "2", tmp)
 		if ctx.Err() != nil {
 			os.Remove(tmp)
@@ -950,7 +953,7 @@ func (e *Engine) WriteThumbnails(ctx context.Context, clip Clip, short string) e
 		if res.Code != 0 {
 			os.Remove(tmp)
 			return renderErr("could not take thumbnail %d of %s at %s: %s", i+1,
-				clip.Basename(), HMS(at), tailRunes(strip(res.Stderr), 200))
+				clip.Basename(), HMS(at), tailRunes(pytext.Strip(res.Stderr), 200))
 		}
 		if info, err := os.Stat(tmp); err != nil || info.Size() == 0 {
 			os.Remove(tmp)

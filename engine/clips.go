@@ -10,6 +10,9 @@ import (
 	"strconv"
 	"strings"
 
+	"framefairy/engine/pynum"
+	"framefairy/engine/pytext"
+
 	"github.com/spf13/afero"
 )
 
@@ -101,7 +104,7 @@ func (c Clip) Duration() float64 {
 	for i, s := range c.Segments {
 		lengths[i] = s.Duration()
 	}
-	return pysum(lengths)
+	return pynum.Sum(lengths)
 }
 
 // Basename is the name of the clip's files in the episode's work folder,
@@ -202,9 +205,9 @@ func ParseTime(value any) (float64, error) {
 		}
 		seconds = f
 	default:
-		text := strip(pyStr(value))
+		text := pytext.Strip(pyStr(value))
 		if !strings.Contains(text, ":") {
-			f, ok := parsePyFloat(text)
+			f, ok := pynum.ParseFloat(text)
 			if !ok {
 				return 0, renderErr("not a time: %s", pyRepr(text))
 			}
@@ -216,7 +219,7 @@ func ParseTime(value any) (float64, error) {
 			}
 			numbers := make([]float64, 0, 3)
 			for _, p := range parts {
-				f, ok := parsePyFloat(p)
+				f, ok := pynum.ParseFloat(p)
 				if !ok {
 					return 0, renderErr("invalid timecode: %s", pyReprAny(value))
 				}
@@ -230,7 +233,7 @@ func ParseTime(value any) (float64, error) {
 	}
 	// NaN and infinity survive parsing and then compare false against
 	// everything, which would sail straight through the ordering checks.
-	if !isFinite(seconds) || seconds < 0 {
+	if !pynum.IsFinite(seconds) || seconds < 0 {
 		return 0, bad()
 	}
 	return seconds, nil
@@ -380,7 +383,7 @@ func LoadClips(fsys afero.Fs, path string) (Plan, []Clip, error) {
 			// and fail somewhere far from the cause.
 			if end <= start {
 				return Plan{}, nil, renderErr("clip %d: a segment ends at %s and starts at %s",
-					index, fixed(end, 3), fixed(start, 3))
+					index, pynum.Fixed(end, 3), pynum.Fixed(start, 3))
 			}
 			// A moment in an episode, not an arbitrary number. Anything
 			// outside this is a broken plan, and it would reach ffmpeg as a
@@ -401,7 +404,7 @@ func LoadClips(fsys afero.Fs, path string) (Plan, []Clip, error) {
 					n, ok := toInt(value)
 					if !ok || !(-1_000_000 < n && n < 1_000_000) {
 						return Plan{}, nil, renderErr("clip %d: a rotated piece has its crop at %s",
-							index, Scrub(pyReprAny(value), 40))
+							index, pytext.Scrub(pyReprAny(value), 40))
 					}
 					cropX, moved = &n, true
 				}
@@ -437,7 +440,7 @@ func LoadClips(fsys afero.Fs, path string) (Plan, []Clip, error) {
 		rejected, _ := entry[keyRejected].(bool)
 		var captionY *float64
 		if value, present := entry[keyCaptionY]; present {
-			if y, ok := toFloat(value); ok && isFinite(y) {
+			if y, ok := toFloat(value); ok && pynum.IsFinite(y) {
 				snapped := SnapCaptionY(y)
 				captionY = &snapped
 			}
@@ -453,7 +456,7 @@ func LoadClips(fsys afero.Fs, path string) (Plan, []Clip, error) {
 			Found:        readFound(entry[keyFound]),
 			ID:           SanitiseName(idText, fallback),
 			Slug:         SanitiseName(slugText, ""),
-			Title:        Scrub(titleText, 200),
+			Title:        pytext.Scrub(titleText, 200),
 			Segments:     segments,
 			Rotations:    spans,
 		})
@@ -509,11 +512,11 @@ func (s SourceInfo) Rotated(degrees int) SourceInfo {
 // ratio, which is always the case cutting 9:16 out of 16:9.
 func CropWindow(source SourceInfo, outW, outH int) (int, int) {
 	ratio := float64(outW) / float64(outH)
-	cropW := pyround(float64(source.Height) * ratio)
+	cropW := pynum.Round(float64(source.Height) * ratio)
 	cropH := source.Height
 	if cropW > source.Width {
 		cropW = source.Width
-		cropH = pyround(float64(source.Width) / ratio)
+		cropH = pynum.Round(float64(source.Width) / ratio)
 	}
 	// yuv420p needs even dimensions.
 	cropW -= cropW % 2
@@ -557,7 +560,7 @@ func readCaptionTimes(raw any) map[string]CaptionTime {
 		var t CaptionTime
 		for name, into := range map[string]**float64{"start": &t.Start, "end": &t.End} {
 			v, ok := toFloat(edges[name])
-			if ok && isFinite(v) && v >= 0 && v <= MaxEpisodeSeconds {
+			if ok && pynum.IsFinite(v) && v >= 0 && v <= MaxEpisodeSeconds {
 				*into = &v
 			}
 		}
@@ -602,12 +605,12 @@ func readThumbnails(raw any, segments []Segment) []float64 {
 			break
 		}
 		at, ok := toFloat(item)
-		if !ok || !isFinite(at) {
+		if !ok || !pynum.IsFinite(at) {
 			continue
 		}
 		// Kept to the millisecond, and judged as kept: 0.9996 in a piece
 		// that ends at 1 is 1, which is past it.
-		at = roundTo(at, 3)
+		at = pynum.RoundTo(at, 3)
 		if !insidePieces(segments, at) {
 			continue
 		}
@@ -634,10 +637,10 @@ func readFound(raw any) *[2]float64 {
 	}
 	start, ok1 := toFloat(list[0])
 	end, ok2 := toFloat(list[1])
-	if !ok1 || !ok2 || !isFinite(start) || !isFinite(end) || start < 0 || end <= start {
+	if !ok1 || !ok2 || !pynum.IsFinite(start) || !pynum.IsFinite(end) || start < 0 || end <= start {
 		return nil
 	}
-	return &[2]float64{roundTo(start, 3), roundTo(end, 3)}
+	return &[2]float64{pynum.RoundTo(start, 3), pynum.RoundTo(end, 3)}
 }
 
 // insidePieces says whether a moment of the episode is in the short.

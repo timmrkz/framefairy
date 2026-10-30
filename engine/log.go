@@ -21,6 +21,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"framefairy/engine/pynum"
 )
 
 // Version of the engine.
@@ -196,8 +198,8 @@ func (l *Log) report(label string, fraction, remaining, from, covered float64, f
 		}
 	}
 	l.showProgress(text)
-	l.send(Event{Kind: EventProgress, Text: label, Fraction: roundTo(fraction, 4),
-		Remaining: roundTo(remaining, 1), From: roundTo(from, 3), Covered: roundTo(covered, 3), Found: found})
+	l.send(Event{Kind: EventProgress, Text: label, Fraction: pynum.RoundTo(fraction, 4),
+		Remaining: pynum.RoundTo(remaining, 1), From: pynum.RoundTo(from, 3), Covered: pynum.RoundTo(covered, 3), Found: found})
 }
 
 func (l *Log) showProgress(text string) {
@@ -254,7 +256,7 @@ func (l *Log) Step(name string, fn func() error) error {
 	start := time.Now()
 	err := fn()
 	l.popStage()
-	took := roundTo(time.Since(start).Seconds(), 3)
+	took := pynum.RoundTo(time.Since(start).Seconds(), 3)
 	if err != nil {
 		l.writeLine("x", l.c("31", fmt.Sprintf("%s failed after %.1fs", name, took)), "31")
 		l.send(Event{Kind: EventStepFailed, Stage: name, Text: err.Error(),

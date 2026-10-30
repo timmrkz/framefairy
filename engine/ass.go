@@ -10,6 +10,9 @@ import (
 	"strings"
 	"sync"
 
+	"framefairy/engine/pynum"
+	"framefairy/engine/pytext"
+
 	"framefairy/engine/timed"
 
 	"framefairy/internal/framewire"
@@ -116,12 +119,12 @@ func EscapeASSText(text string) string { return assText.Replace(text) }
 var assField = strings.NewReplacer(",", " ", "{", "", "}", "", "\n", " ", "\r", " ", ":", " ")
 
 func cleanField(value any) string {
-	return runePrefix(strip(assField.Replace(pyStr(value))), 64)
+	return pytext.Prefix(pytext.Strip(assField.Replace(pyStr(value))), 64)
 }
 
 func cleanNumber(value any, fallback float64) float64 {
 	number, ok := toFloat(value)
-	if !ok || !isFinite(number) {
+	if !ok || !pynum.IsFinite(number) {
 		return fallback
 	}
 	return number
@@ -130,7 +133,7 @@ func cleanNumber(value any, fallback float64) float64 {
 // highlightColour accepts #RRGGBB, RRGGBB or an ASS colour and returns the
 // value an ASS colour tag takes.
 func highlightColour(value any, fallback string) string {
-	text := strings.ToUpper(strip(pyStr(value)))
+	text := strings.ToUpper(pytext.Strip(pyStr(value)))
 	var rgb string
 	switch {
 	case strings.HasPrefix(text, "#"):
@@ -167,7 +170,7 @@ func LooksLikeColour(value string) bool {
 // is, from 0 to 1, into the &HAABBGGRR the render takes. ASS counts the
 // alpha backwards: 00 is opaque and FF is clear.
 func AssColour(hex string, opacity float64) (string, bool) {
-	if !strings.HasPrefix(hex, "#") || len(hex) != 7 || !isHex(hex[1:]) || !isFinite(opacity) {
+	if !strings.HasPrefix(hex, "#") || len(hex) != 7 || !isHex(hex[1:]) || !pynum.IsFinite(opacity) {
 		return "", false
 	}
 	clear := int(math.Round((1 - math.Max(0, math.Min(opacity, 1))) * 255))
@@ -190,8 +193,8 @@ func isHex(text string) bool {
 }
 
 func cleanColour(value any, fallback string) string {
-	text := strip(pyStr(value))
-	if text == "" || runeLen(text) > 12 {
+	text := pytext.Strip(pyStr(value))
+	if text == "" || pytext.Len(text) > 12 {
 		return fallback
 	}
 	for _, r := range text {
@@ -272,7 +275,7 @@ func (s Style) boxColour() string {
 // &HAABBGGRR, which is how the app keeps one with an opacity. A colour
 // given as #RRGGBB, or one that is no colour at all, is solid.
 func highlightAlpha(value any) string {
-	text := strings.ToUpper(strip(pyStr(value)))
+	text := strings.ToUpper(pytext.Strip(pyStr(value)))
 	if !strings.HasPrefix(text, "&H") || highlightColour(text, "") == "" {
 		return "00"
 	}
@@ -305,7 +308,7 @@ var DefaultCaptionY = DefaultStyle["margin_v"].(float64)
 // SnapCaptionY puts a hand-placed caption line on the nearest step and
 // inside the frame.
 func SnapCaptionY(y float64) float64 {
-	if !isFinite(y) {
+	if !pynum.IsFinite(y) {
 		return DefaultStyle["margin_v"].(float64)
 	}
 	y = math.Round(y/CaptionYStep) * CaptionYStep
@@ -391,7 +394,7 @@ func wrapWords(words []string, fits func(string) bool) [][]int {
 	var current []int
 	text := ""
 	for i, w := range words {
-		candidate := strip(text + " " + w)
+		candidate := pytext.Strip(text + " " + w)
 		if len(current) > 0 && !fits(candidate) {
 			lines = append(lines, current)
 			current, text = []int{i}, w
@@ -678,7 +681,7 @@ const quarterArc = 0.5523
 // corners.
 func roundedRect(x0, y0, x1, y1, radius float64) string {
 	radius = math.Max(0, math.Min(radius, math.Min((x1-x0)/2, (y1-y0)/2)))
-	f := func(v float64) string { return fixed(v, 0) }
+	f := func(v float64) string { return pynum.Fixed(v, 0) }
 	if radius <= 0 {
 		return fmt.Sprintf("m %s %s l %s %s l %s %s l %s %s",
 			f(x0), f(y0), f(x1), f(y0), f(x1), f(y1), f(x0), f(y1))
@@ -750,11 +753,11 @@ func (e *Engine) captionTrack(ctx context.Context, laid []LaidCaption, width, he
 	// Without a pill no word is drawn apart from its caption.
 	laid = slices.DeleteFunc(slices.Clone(laid), func(c LaidCaption) bool { return c.Lift == LiftWord })
 	scale := float64(height) / 1920.0
-	size := max(12, pyround(s.Size*scale))
-	outline := max(1, pyround(s.Outline*scale))
-	shadow := max(0, pyround(s.Shadow*scale))
-	marginH := pyround(s.MarginH * scale)
-	marginV := pyround(s.MarginV * scale)
+	size := max(12, pynum.Round(s.Size*scale))
+	outline := max(1, pynum.Round(s.Outline*scale))
+	shadow := max(0, pynum.Round(s.Shadow*scale))
+	marginH := pynum.Round(s.MarginH * scale)
+	marginV := pynum.Round(s.MarginV * scale)
 
 	// The box is measured round the whole caption, the word being typed
 	// included, so it keeps its size while a word is typed. Measured from
@@ -805,9 +808,9 @@ func (e *Engine) captionTrack(ctx context.Context, laid []LaidCaption, width, he
 				SecondsToASS(c.Start), SecondsToASS(c.End), c.assText(s.Pad)))
 		}
 	} else {
-		padX := float64(pyround(s.BoxPadX * scale))
-		padY := float64(pyround(s.BoxPadY * scale))
-		radius := float64(pyround(s.Radius * scale))
+		padX := float64(pynum.Round(s.BoxPadX * scale))
+		padY := float64(pynum.Round(s.BoxPadY * scale))
+		radius := float64(pynum.Round(s.Radius * scale))
 		back := s.boxColour()
 		alpha := "80"
 		if len(back) >= 10 {

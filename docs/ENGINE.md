@@ -1760,8 +1760,9 @@ macOS keychain of `engine/keys_darwin.go`, in the frames decoder of
                 back, render. Run takes them in order for the command
                 line and returns an exit code
   log.go        the timestamped terminal log
-  util.go       counting characters, summing and rounding the same way on
-                every platform, so plans are reproducible
+  util.go       the values of a plan's JSON and a command written the way
+                the Python version did, until they move with the plan
+                file and with running programs
   events.go     the same log as structured events, for the app. Every
                 event goes to the app through one door, and that door
                 answers for what an event may carry: a share or a time
@@ -1820,5 +1821,8 @@ macOS keychain of `engine/keys_darwin.go`, in the frames decoder of
 
 `engine/timed/` is the first part of the engine in a package of its own:
 the types every part uses for a moment of a video, `Cue`, `Span`,
-`Window`, `Reading` and `FrameSeconds`. It imports nothing of the rest of
-the engine, see [ARCHITECTURE.md](ARCHITECTURE.md).
+`Window`, `Reading` and `FrameSeconds`. `engine/pynum/` and
+`engine/pytext/` round, sum and write numbers and count, cut and trim
+text the same way on every platform, as the Python version did, so plans
+are reproducible. None of them imports the rest of the engine, see
+[ARCHITECTURE.md](ARCHITECTURE.md).

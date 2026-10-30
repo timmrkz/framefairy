@@ -3,6 +3,8 @@ package engine
 import (
 	"strings"
 
+	"framefairy/engine/pytext"
+
 	"framefairy/engine/timed"
 )
 
@@ -83,7 +85,7 @@ func TranscriptSRT(t *Transcript) string {
 		start, end := 0.0, 0.0
 		flush := func() {
 			if len(words) > 0 {
-				text, _ := twoLines(Scrub(strings.Join(words, " "), maxLineChars))
+				text, _ := twoLines(pytext.Scrub(strings.Join(words, " "), maxLineChars))
 				cues = append(cues, timed.Cue{Start: start, End: end, Text: text})
 			}
 			words = words[:0]

@@ -15,6 +15,9 @@ import (
 	"sync"
 	"unicode"
 
+	"framefairy/engine/pynum"
+	"framefairy/engine/pytext"
+
 	"framefairy/engine/timed"
 
 	"github.com/spf13/afero"
@@ -145,8 +148,8 @@ func (e *Engine) newPlanBuilder(ctx context.Context, sourcePath string, source S
 		// Never more clips than were asked for are taken, so the queue
 		// never makes the reading of the answer wait.
 		queue: make(chan planJob, max(opts.Count, 1))}
-	b.stamp = PlannedWith{Count: opts.Count, Min: PyFloat(opts.MinLen),
-		Max: PyFloat(opts.MaxLen), Model: opts.Model, By: opts.By}
+	b.stamp = PlannedWith{Count: opts.Count, Min: pynum.Float(opts.MinLen),
+		Max: pynum.Float(opts.MaxLen), Model: opts.Model, By: opts.By}
 	b.prefix = opts.IDPrefix
 	b.taken = takenLines(lines, opts.Taken)
 	// A second pass over a later part of the episode must not reuse 01..04,
@@ -159,7 +162,7 @@ func (e *Engine) newPlanBuilder(ctx context.Context, sourcePath string, source S
 				b.prefix = fmt.Sprintf("t%d-%d-", int(opts.Window.Start), opts.Pass)
 			}
 		}
-		from, to := PyFloat(roundTo(opts.Window.Start, 3)), PyFloat(roundTo(opts.Window.End, 3))
+		from, to := pynum.Float(pynum.RoundTo(opts.Window.Start, 3)), pynum.Float(pynum.RoundTo(opts.Window.End, 3))
 		b.stamp.From, b.stamp.To = &from, &to
 	}
 	// A set that grows numbers on from the clips it has.
@@ -208,7 +211,7 @@ func (b *planBuilder) propose(entry PlanEntry) {
 	}
 	entry, fitted := b.shapedFitted(entry)
 	if fitted != "" {
-		b.e.Log.Info("%s %s around its heart to %ss", entry.Slug, fitted, fixed(b.seconds(entry.Keep), 1))
+		b.e.Log.Info("%s %s around its heart to %ss", entry.Slug, fitted, pynum.Fixed(b.seconds(entry.Keep), 1))
 	}
 	if b.retaken(entry) {
 		b.retakes++
@@ -546,7 +549,7 @@ func (b *planBuilder) cutDown(card int, spans []timed.Span) {
 		}
 		pieces := make([][2]float64, len(spans))
 		for k, s := range spans {
-			pieces[k] = [2]float64{roundTo(s.Start, 3), roundTo(s.End, 3)}
+			pieces[k] = [2]float64{pynum.RoundTo(s.Start, 3), pynum.RoundTo(s.End, 3)}
 		}
 		b.underway[i].Pieces = pieces
 		b.sayUnderwayLocked()
@@ -758,9 +761,9 @@ func (b *planBuilder) frame(job planJob) (PlanClip, bool, error) {
 	for k, s := range spans {
 		durations[k] = s.Duration()
 	}
-	if tight := pysum(durations); loose-tight > 0.3 {
+	if tight := pynum.Sum(durations); loose-tight > 0.3 {
 		e.Log.Detail("clip %d: %ss dropped between the %d run(s) it kept",
-			index, fixed(loose-tight, 1), len(ranges))
+			index, pynum.Fixed(loose-tight, 1), len(ranges))
 	}
 	// On the episode's frames already while the clip is on its way, so
 	// its edges do not move as it lands, see PieceOnFrames.
@@ -800,7 +803,7 @@ func (b *planBuilder) frame(job planJob) (PlanClip, bool, error) {
 	lengths := make([]float64, len(segments))
 	for k, s := range segments {
 		start, end := b.source.PieceOnFrames(s.Start, s.End)
-		seg := PlanSegment{Start: PyFloat(start), End: PyFloat(end), CropX: "center"}
+		seg := PlanSegment{Start: pynum.Float(start), End: pynum.Float(end), CropX: "center"}
 		if s.CropX != nil {
 			seg.CropX = *s.CropX
 		}
@@ -808,15 +811,15 @@ func (b *planBuilder) frame(job planJob) (PlanClip, bool, error) {
 		lengths[k] = end - start
 	}
 
-	total := pysum(lengths)
+	total := pynum.Sum(lengths)
 	flag, advice := "", ""
 	switch {
 	case !b.outside(total):
 	case total < opts.MinLen:
-		flag = fmt.Sprintf("  (well under the %ss minimum)", fixed(opts.MinLen, 0))
+		flag = fmt.Sprintf("  (well under the %ss minimum)", pynum.Fixed(opts.MinLen, 0))
 		advice = "it may be missing context. Widen it in clips.json, or re-run with --replan"
 	default:
-		flag = fmt.Sprintf("  (well over the %ss target)", fixed(opts.MaxLen, 0))
+		flag = fmt.Sprintf("  (well over the %ss target)", pynum.Fixed(opts.MaxLen, 0))
 		advice = "trim it in clips.json and re-render just that clip, or re-run with --replan"
 	}
 	removed := loose - total
@@ -824,10 +827,10 @@ func (b *planBuilder) frame(job planJob) (PlanClip, bool, error) {
 	if removed > 0.3 {
 		// Pauses, and with more than one run what lies between them, which
 		// is the model leaving something out and no dead air at all.
-		cutNote = fmt.Sprintf(", %ss cut", fixed(removed, 1))
+		cutNote = fmt.Sprintf(", %ss cut", pynum.Fixed(removed, 1))
 	}
 	e.Log.OK("%s %-26s %5ss  %d segment(s)%s%s", clip.ID, clip.Slug,
-		fixed(total, 1), len(segments), cutNote, flag)
+		pynum.Fixed(total, 1), len(segments), cutNote, flag)
 	if flag != "" {
 		e.Log.Warn("   %s: %s", clip.Slug, advice)
 	}
@@ -983,7 +986,7 @@ func firstWords(text string, limit int) string {
 		if i > 0 {
 			next = out + " " + w
 		}
-		if i > 0 && runeLen(next) > limit {
+		if i > 0 && pytext.Len(next) > limit {
 			break
 		}
 		out = next

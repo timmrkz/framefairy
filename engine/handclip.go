@@ -9,6 +9,8 @@ import (
 	"time"
 	"unicode"
 
+	"framefairy/engine/pytext"
+
 	"framefairy/engine/timed"
 )
 
@@ -247,5 +249,5 @@ func handTitle(lines []Line) string {
 	if more {
 		title += " …"
 	}
-	return Scrub(title, 200)
+	return pytext.Scrub(title, 200)
 }

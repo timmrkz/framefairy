@@ -8,6 +8,8 @@ import (
 	"io"
 	"math"
 	"os/exec"
+
+	"framefairy/engine/pytext"
 )
 
 // SoundChunk is how many sample frames, one sample of every channel each,
@@ -74,7 +76,7 @@ func (e *Engine) PreviewSound(ctx context.Context, path string, from float64, ra
 		return failed
 	}
 	if waited != nil && ctx.Err() == nil {
-		return fmt.Errorf("ffmpeg could not decode the sound: %s", Scrub(said.String(), 400))
+		return fmt.Errorf("ffmpeg could not decode the sound: %s", pytext.Scrub(said.String(), 400))
 	}
 	return nil
 }

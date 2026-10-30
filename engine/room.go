@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"framefairy/engine/pytext"
+
 	"framefairy/engine/timed"
 
 	"github.com/spf13/afero"
@@ -163,7 +165,7 @@ func SearchRoom(fsys afero.Fs, opts Options, logDir string) Room {
 // transcript, the instructions and the ask, comes off the top.
 func planRoom(fsys afero.Fs, opts PlanOptions) Room {
 	recipe := opts.recipe()
-	around := runeLen(recipe.System) + runeLen(recipe.Request(nil, nil, opts))
+	around := pytext.Len(recipe.System) + pytext.Len(recipe.Request(nil, nil, opts))
 	if opts.Local != nil {
 		// A server somebody started themselves has the context and the
 		// memory they gave it, which the engine cannot know.
@@ -249,7 +251,7 @@ func WeighLines(t *Transcript) []LineWeight {
 		// The number this line has here, and the widest it could have.
 		pad := widest - len(itoa(i+1))
 		out = append(out, LineWeight{Start: lines[i].Start(), End: lines[i].End(),
-			Chars: runeLen(row) + 1 + max(pad, 0)})
+			Chars: pytext.Len(row) + 1 + max(pad, 0)})
 	}
 	return out
 }

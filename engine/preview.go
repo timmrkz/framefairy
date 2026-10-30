@@ -14,6 +14,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"framefairy/engine/pytext"
+
 	"framefairy/internal/framewire"
 )
 
@@ -269,5 +271,5 @@ func (t *tail) add(line string) {
 }
 
 func (t *tail) String() string {
-	return Scrub(strings.Join(t.lines, " "), 400)
+	return pytext.Scrub(strings.Join(t.lines, " "), 400)
 }

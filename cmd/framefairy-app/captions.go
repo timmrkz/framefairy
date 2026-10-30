@@ -15,6 +15,8 @@ import (
 	"sync"
 	"time"
 
+	"framefairy/engine/pytext"
+
 	"github.com/rs/zerolog"
 
 	"framefairy/engine"
@@ -138,7 +140,7 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 	height, _ := strconv.Atoi(q.Get("h"))
 	part := q.Get("part")
 	if part != "" && part != engine.LiftWord && part != engine.LiftRest {
-		err = fmt.Errorf("part is %q", engine.Scrub(part, 20))
+		err = fmt.Errorf("part is %q", pytext.Scrub(part, 20))
 	}
 	// The word being typed in the caption box, which libass leaves out.
 	typing := engine.CaptionShowing{Caption: -1, Word: -1}
@@ -281,7 +283,7 @@ func captionDrafts(get func(string) string) (map[string]any, error) {
 		}
 		colour, ok := engine.AssColour(hex, opacity)
 		if !ok {
-			return nil, fmt.Errorf("%s is not a colour", engine.Scrub(hex, 20))
+			return nil, fmt.Errorf("%s is not a colour", pytext.Scrub(hex, 20))
 		}
 		drafts[c.key] = colour
 	}

@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"math"
 
+	"framefairy/engine/pynum"
+	"framefairy/engine/pytext"
+
 	"framefairy/engine/timed"
 
 	"github.com/spf13/afero"
@@ -129,7 +132,7 @@ func Reshape(fsys afero.Fs, rec *Records, planPath, clipID string, g Gesture, t 
 func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) (
 	pieceChange, float64, error) {
 	t = t.Of(clip)
-	if !isFinite(g.From) || !isFinite(g.To) {
+	if !pynum.IsFinite(g.From) || !pynum.IsFinite(g.To) {
 		return nil, -1, renderErr("a gesture has to say where, in numbers")
 	}
 	if len(clip.Segments) == 0 {
@@ -179,12 +182,12 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 			}
 			if end-start > MaxClipSpan {
 				return nil, -1, renderErr("a clip can span at most %s minutes of the video",
-					fixed(MaxClipSpan/60, 0))
+					pynum.Fixed(MaxClipSpan/60, 0))
 			}
 		default:
-			return nil, -1, renderErr("a clip has a start and an end, not %s", Scrub(g.Edge, 20))
+			return nil, -1, renderErr("a clip has a start and an end, not %s", pytext.Scrub(g.Edge, 20))
 		}
-		start, end = roundTo(math.Max(0, start), 3), roundTo(end, 3)
+		start, end = pynum.RoundTo(math.Max(0, start), 3), pynum.RoundTo(end, 3)
 		playhead := -1.0
 		if g.Edge != "both" {
 			playhead = g.edgePlayhead(start, end, g.Edge == "start")
@@ -197,7 +200,7 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 		from, to := math.Min(g.From, g.To), math.Max(g.From, g.To)
 		switch {
 		case g.Kind == "restore":
-			from, to = roundTo(math.Max(0, from), 3), roundTo(to, 3)
+			from, to = pynum.RoundTo(math.Max(0, from), 3), pynum.RoundTo(to, 3)
 		case g.ToWords:
 			from, to = snapCut(stops(from, to), nil, from, to, keepPause)
 		default:
@@ -265,9 +268,9 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 			from = math.Min(math.Max(from, low), high-least)
 			to = math.Max(math.Min(to, high), from+least)
 		default:
-			return nil, -1, renderErr("a cut has a from and a to edge, not %s", Scrub(g.Edge, 20))
+			return nil, -1, renderErr("a cut has a from and a to edge, not %s", pytext.Scrub(g.Edge, 20))
 		}
-		from, to = roundTo(from, 3), roundTo(to, 3)
+		from, to = pynum.RoundTo(from, 3), pynum.RoundTo(to, 3)
 		// The playhead goes with the edge moved, the way it goes with an
 		// edge of the clip: the left edge of a cut ends the piece before
 		// it, as the clip's end ends the clip, and the right edge starts
@@ -319,10 +322,10 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 					return append(out, pieces[i+2:]...), nil
 				}
 			}
-			return nil, renderErr("there is no cut at %s", fixed(at, 2))
+			return nil, renderErr("there is no cut at %s", pynum.Fixed(at, 2))
 		}, -1, nil
 	}
-	return nil, -1, renderErr("there is no gesture called %s", Scrub(g.Kind, 20))
+	return nil, -1, renderErr("there is no gesture called %s", pytext.Scrub(g.Kind, 20))
 }
 
 // onFrame puts a moment on the start of the frame it means, the only place
@@ -370,7 +373,7 @@ func captionsGo(plan Plan, clip Clip, t *Transcript) []float64 {
 		at := EpisodeTime(clip, c.End)
 		for _, p := range clip.Segments {
 			if at > p.Start && at < p.End {
-				ends = append(ends, roundTo(at, 3))
+				ends = append(ends, pynum.RoundTo(at, 3))
 				break
 			}
 		}
@@ -487,7 +490,7 @@ func (g Gesture) cutOnFrames(clip Clip, from, to float64) (float64, float64, boo
 	if b-a < MinCut-1e-9 {
 		return 0, 0, false
 	}
-	return roundTo(a, 3), roundTo(b, 3), true
+	return pynum.RoundTo(a, 3), pynum.RoundTo(b, 3), true
 }
 
 // trimPieces gives a clip's pieces with its first and last edge moved.
@@ -539,7 +542,7 @@ func trimPieces(pieces []*object, spans []Rotation, start, end float64) ([]*obje
 // like the first piece as filmed, and partedAtTurns parts it where a turn
 // starts or ends inside it.
 func framedBack(from, to float64, pieces []*object, spans []Rotation) []*object {
-	from, to = roundTo(from, 3), roundTo(to, 3)
+	from, to = pynum.RoundTo(from, 3), pynum.RoundTo(to, 3)
 	if to <= from || len(pieces) == 0 {
 		return nil
 	}

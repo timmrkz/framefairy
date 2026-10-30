@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"framefairy/engine/pynum"
+
 	"framefairy/engine/timed"
 
 	"github.com/spf13/afero"
@@ -78,7 +80,7 @@ func TestTranscriptionResumes(t *testing.T) {
 			early = append(early, w)
 		}
 	}
-	file.Parts, file.Words = [][2]PyFloat{{0, PyFloat(cut)}}, storedWords(early)
+	file.Parts, file.Words = [][2]pynum.Float{{0, pynum.Float(cut)}}, storedWords(early)
 	if err := writeTranscript(disk, path, file, frames); err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +144,7 @@ func storedTranscript(t *testing.T, words []timed.Cue, frames []float32, to floa
 		end = to + 10
 	}
 	file := transcriptFile{Version: transcriptVersion, Source: stamp, Model: "modell",
-		Mean: PyFloat(-30), Parts: [][2]PyFloat{{0, PyFloat(to)}}, End: PyFloat(end),
+		Mean: pynum.Float(-30), Parts: [][2]pynum.Float{{0, pynum.Float(to)}}, End: pynum.Float(end),
 		Words: storedWords(words)}
 	if err := writeTranscript(fsys, path, file, frames); err != nil {
 		t.Fatal(err)
@@ -325,7 +327,7 @@ func FuzzReadTranscriptFile(f *testing.F) {
 			t.Fatalf("%d frames out of %d bytes", len(framesRead), len(raw))
 		}
 		for i, w := range words {
-			if !isFinite(w.Start) || !isFinite(w.End) {
+			if !pynum.IsFinite(w.Start) || !pynum.IsFinite(w.End) {
 				t.Fatalf("word %d is timed %v-%v", i, w.Start, w.End)
 			}
 		}
@@ -821,7 +823,7 @@ func TestCarryingOnFromFilesOutOfStep(t *testing.T) {
 			early = append(early, w)
 		}
 	}
-	file.Parts, file.Words = [][2]PyFloat{{0, 40}}, storedWords(early)
+	file.Parts, file.Words = [][2]pynum.Float{{0, 40}}, storedWords(early)
 	if err := writeTranscript(disk, path, file, frames[:2000]); err != nil {
 		t.Fatal(err)
 	}
@@ -1141,15 +1143,15 @@ func TestAFileIsReplacedWholeOrNotAtAll(t *testing.T) {
 func TestATranscriptIsDoneWhenNothingIsLeftToHear(t *testing.T) {
 	cases := []struct {
 		name  string
-		parts [][2]PyFloat
+		parts [][2]pynum.Float
 		done  bool
 	}{
-		{"one part to the end", [][2]PyFloat{{0, 600}}, true},
-		{"a gap too short to hold a word", [][2]PyFloat{{0, 100}, {100.05, 600}}, true},
-		{"a gap with room for a word", [][2]PyFloat{{0, 100}, {100.5, 600}}, false},
-		{"short of the end by too little for a word", [][2]PyFloat{{0, 599.95}}, true},
-		{"short of the end", [][2]PyFloat{{0, 590}}, false},
-		{"from a little after the start", [][2]PyFloat{{0.05, 600}}, true},
+		{"one part to the end", [][2]pynum.Float{{0, 600}}, true},
+		{"a gap too short to hold a word", [][2]pynum.Float{{0, 100}, {100.05, 600}}, true},
+		{"a gap with room for a word", [][2]pynum.Float{{0, 100}, {100.5, 600}}, false},
+		{"short of the end by too little for a word", [][2]pynum.Float{{0, 599.95}}, true},
+		{"short of the end", [][2]pynum.Float{{0, 590}}, false},
+		{"from a little after the start", [][2]pynum.Float{{0.05, 600}}, true},
 		{"nothing heard", nil, false},
 	}
 	for _, c := range cases {

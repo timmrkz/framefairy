@@ -15,6 +15,9 @@ import (
 	"strings"
 	"sync"
 
+	"framefairy/engine/pynum"
+	"framefairy/engine/pytext"
+
 	"framefairy/engine/timed"
 
 	"github.com/spf13/afero"
@@ -462,7 +465,7 @@ func SnapStart(words []timed.Cue, at, keepPause float64) float64 {
 	if best > 0 {
 		edge = math.Max(edge, words[best-1].End)
 	}
-	return roundTo(math.Max(0, edge), 3)
+	return pynum.RoundTo(math.Max(0, edge), 3)
 }
 
 // SnapEnd is where a clip ending at the word nearest to at ends: a little
@@ -489,7 +492,7 @@ func SnapEnd(words []timed.Cue, goes []float64, at, keepPause float64) float64 {
 			edge, near = g, math.Abs(g-at)
 		}
 	}
-	return roundTo(edge, 3)
+	return pynum.RoundTo(edge, 3)
 }
 
 // inPause says whether at is in the air between two words, more than
@@ -656,7 +659,7 @@ func ClipCuts(c Clip) []Cut {
 	for i := 1; i < len(c.Segments); i++ {
 		from, to := c.Segments[i-1].End, c.Segments[i].Start
 		if to > from {
-			cuts = append(cuts, Cut{roundTo(from, 3), roundTo(to, 3)})
+			cuts = append(cuts, Cut{pynum.RoundTo(from, 3), pynum.RoundTo(to, 3)})
 		}
 	}
 	return cuts
@@ -668,7 +671,7 @@ func pieceSpan(pieces []*object) float64 {
 	for i, seg := range pieces {
 		lengths[i] = number(seg.values[keyEnd]) - number(seg.values[keyStart])
 	}
-	return pysum(lengths)
+	return pynum.Sum(lengths)
 }
 
 // pieceChange is what a gesture does to a clip's pieces. It is handed the
@@ -704,7 +707,7 @@ func editPieces(fsys afero.Fs, rec *Records, planPath, clipID string, change pie
 			start, err1 := ParseTime(before[0].values[keyStart])
 			end, err2 := ParseTime(before[len(before)-1].values[keyEnd])
 			if err1 == nil && err2 == nil && end > start {
-				c.set(keyFound, []any{roundTo(start, 3), roundTo(end, 3)})
+				c.set(keyFound, []any{pynum.RoundTo(start, 3), pynum.RoundTo(end, 3)})
 			}
 		}
 		kept := make([]any, len(out))
@@ -740,7 +743,7 @@ func checkedPieces(change pieceChange, pieces []*object, spans []Rotation, frame
 		return nil, renderErr("a clip can hold at most %d pieces", MaxSegments)
 	}
 	if span := pieceSpan(out); span < MinClip {
-		return nil, renderErr("a clip needs at least one second, that would leave %s", fixed(span, 2))
+		return nil, renderErr("a clip needs at least one second, that would leave %s", pynum.Fixed(span, 2))
 	}
 	return out, nil
 }
@@ -891,7 +894,7 @@ func snapCut(words []timed.Cue, goes []float64, from, to, keepPause float64) (fl
 	if !math.IsInf(after, 1) {
 		end = math.Max(after-keepPause, swallowedTo)
 	}
-	return roundTo(math.Max(0, start), 3), roundTo(end, 3)
+	return pynum.RoundTo(math.Max(0, start), 3), pynum.RoundTo(end, 3)
 }
 
 // applyCut takes a part out of a set of pieces. A piece the cut straddles
@@ -910,12 +913,12 @@ func applyCut(pieces []*object, from, to float64) []*object {
 		}
 		if from > start {
 			head := copyObject(seg)
-			head.set(keyEnd, roundTo(from, 3))
+			head.set(keyEnd, pynum.RoundTo(from, 3))
 			out = append(out, head)
 		}
 		if to < end {
 			tail := copyObject(seg)
-			tail.set(keyStart, roundTo(to, 3))
+			tail.set(keyStart, pynum.RoundTo(to, 3))
 			out = append(out, tail)
 		}
 	}
@@ -1022,12 +1025,12 @@ func SetCaptionStyle(fsys afero.Fs, planPath string, values map[string]any) erro
 		switch key {
 		case "font":
 			if text, ok := value.(string); !ok || text != checked.Font {
-				return renderErr("%s cannot be used as a caption font", Scrub(pyStr(value), 40))
+				return renderErr("%s cannot be used as a caption font", pytext.Scrub(pyStr(value), 40))
 			}
 		case "size":
 			if size, ok := toFloat(value); !ok || size != checked.Size {
 				return renderErr("%s is not a caption size between 8 and 400",
-					Scrub(pyStr(value), 40))
+					pytext.Scrub(pyStr(value), 40))
 			}
 		case "highlight_colour":
 			// The pill behind the word being spoken, as #RRGGBB, or as
@@ -1035,7 +1038,7 @@ func SetCaptionStyle(fsys afero.Fs, planPath string, values map[string]any) erro
 			text, ok := value.(string)
 			hex := ok && len(text) == 7 && strings.HasPrefix(text, "#") && isHex(text[1:])
 			if !hex && (!ok || !isAssColour(text)) {
-				return renderErr("%s is not a highlight colour", Scrub(pyStr(value), 40))
+				return renderErr("%s is not a highlight colour", pytext.Scrub(pyStr(value), 40))
 			}
 		case "highlight", "text", "box":
 			// The word being spoken on its pill, or the words alone. The
@@ -1043,7 +1046,7 @@ func SetCaptionStyle(fsys afero.Fs, planPath string, values map[string]any) erro
 			// number, so that is what is written.
 			on, ok := value.(bool)
 			if !ok {
-				return renderErr("%s is neither on nor off", Scrub(pyStr(value), 40))
+				return renderErr("%s is neither on nor off", pytext.Scrub(pyStr(value), 40))
 			}
 			values[key] = 0.0
 			if on {
@@ -1054,10 +1057,10 @@ func SetCaptionStyle(fsys afero.Fs, planPath string, values map[string]any) erro
 			// way the render takes them, &HAABBGGRR.
 			text, ok := value.(string)
 			if !ok || !isAssColour(text) {
-				return renderErr("%s is not a caption colour", Scrub(pyStr(value), 40))
+				return renderErr("%s is not a caption colour", pytext.Scrub(pyStr(value), 40))
 			}
 		default:
-			return renderErr("the caption setting %s cannot be changed here", Scrub(key, 40))
+			return renderErr("the caption setting %s cannot be changed here", pytext.Scrub(key, 40))
 		}
 	}
 	return editPlan(fsys, planPath, func(top *object, _ []*object) error {
@@ -1078,7 +1081,7 @@ func SetCaptionStyle(fsys afero.Fs, planPath string, values map[string]any) erro
 // bottom of a 1080x1920 frame. It lands on the nearest step and stays
 // inside the frame, so captions across an episode line up.
 func SetCaptionY(fsys afero.Fs, planPath, clipID string, y float64) error {
-	if !isFinite(y) {
+	if !pynum.IsFinite(y) {
 		return renderErr("the captions cannot sit at %v", y)
 	}
 	return editPlan(fsys, planPath, func(_ *object, clips []*object) error {
@@ -1259,11 +1262,11 @@ func startFloor(before, c LaidCaption) float64 {
 func moveCaptionEdge(fsys afero.Fs, planPath, clipID string, word float64, edge string,
 	at float64, toWords bool, t *Transcript, look *Look) (captionEdge, error) {
 	if edge != "start" && edge != "end" {
-		return captionEdge{}, renderErr("a caption has a start and an end, not %s", Scrub(edge, 20))
+		return captionEdge{}, renderErr("a caption has a start and an end, not %s", pytext.Scrub(edge, 20))
 	}
 	reset := math.IsNaN(at)
 	if !reset && (math.IsInf(at, 0) || at < 0 || at > MaxEpisodeSeconds) {
-		return captionEdge{}, renderErr("a caption cannot be moved to %s", fixed(at, 3))
+		return captionEdge{}, renderErr("a caption cannot be moved to %s", pynum.Fixed(at, 3))
 	}
 	plan, clip, err := planClip(fsys, planPath, clipID)
 	if err != nil {
@@ -1302,7 +1305,7 @@ func moveCaptionEdge(fsys afero.Fs, planPath, clipID string, word float64, edge 
 		if edge == "end" && i+1 < len(laid) && to > laid[i+1].Start {
 			at = EpisodeTime(framed, laid[i+1].Start)
 		}
-		out.at = roundTo(at, 3)
+		out.at = pynum.RoundTo(at, 3)
 	}
 	times := maps.Clone(clip.CaptionTimes)
 	if times == nil {
@@ -1384,7 +1387,7 @@ func SetThumbnail(fsys afero.Fs, planPath, clipID string, from, to float64) erro
 	}
 	for _, at := range []float64{from, to} {
 		if math.IsNaN(at) || math.IsInf(at, 0) || at > MaxEpisodeSeconds {
-			return renderErr("a thumbnail cannot be at %s", fixed(at, 3))
+			return renderErr("a thumbnail cannot be at %s", pynum.Fixed(at, 3))
 		}
 	}
 	ms := func(at float64) int64 { return int64(math.Round(at * 1000)) }
@@ -1428,7 +1431,7 @@ func SetThumbnail(fsys afero.Fs, planPath, clipID string, from, to float64) erro
 			if len(readThumbnails(kept, pieces)) >= MaxThumbnails {
 				return renderErr("a clip can have %d thumbnails", MaxThumbnails)
 			}
-			kept = append(kept, roundTo(to, 3))
+			kept = append(kept, pynum.RoundTo(to, 3))
 		}
 		sort.SliceStable(kept, func(a, b int) bool { return number(kept[a]) < number(kept[b]) })
 		if len(kept) == 0 {

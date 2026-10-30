@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 
+	"framefairy/engine/pynum"
+
 	"framefairy/engine/timed"
 )
 
@@ -18,7 +20,7 @@ func SecondsToSRT(t float64) string {
 	if t < 0 {
 		t = 0
 	}
-	total := pyround(t * 1000)
+	total := pynum.Round(t * 1000)
 	hours, rem := total/3_600_000, total%3_600_000
 	minutes, rem := rem/60_000, rem%60_000
 	seconds, ms := rem/1000, rem%1000
@@ -30,7 +32,7 @@ func SecondsToASS(t float64) string {
 	if t < 0 {
 		t = 0
 	}
-	total := pyround(t * 100)
+	total := pynum.Round(t * 100)
 	hours, rem := total/360_000, total%360_000
 	minutes, rem := rem/6_000, rem%6_000
 	seconds, cs := rem/100, rem%100

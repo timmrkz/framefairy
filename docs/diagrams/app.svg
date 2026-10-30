@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 792" width="760" height="792" role="img" aria-label="The app in layers: each part uses only the parts under it">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 820" width="760" height="820" role="img" aria-label="The app in layers: each part uses only the parts under it">
 <style>
 .t{font:600 15px -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;fill:#1f2328}
 .n{font:600 13px -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;fill:#1f2328}
@@ -18,11 +18,11 @@
 .box,.dash{stroke:#5d6570}.tint{fill:#1c2128;stroke:#5d6570}
 .chip{fill:#212830;stroke:#3d444d}.ax{stroke:#7d8590}.ah{fill:#7d8590}}
 </style>
-<rect class="bg" width="760" height="792" rx="12"/>
+<rect class="bg" width="760" height="820" rx="12"/>
 <text class="t" x="24" y="30">The app in layers: each part uses only the parts under it</text>
 <text class="q" x="24" y="50">may use</text>
-<path class="ax" d="M40 60V762"/>
-<path class="ah" d="M35 758L40 768L45 758z"/>
+<path class="ax" d="M40 60V790"/>
+<path class="ah" d="M35 786L40 796L45 786z"/>
 <rect class="box" x="64" y="56" width="437" height="118" rx="8"/>
 <text class="n" x="76" y="78">the interface</text>
 <text class="p" x="76" y="96">frontend/</text>
@@ -65,7 +65,7 @@
 <rect class="box" x="523" y="296" width="213" height="54" rx="8"/>
 <text class="n" x="535" y="318">licences of parts</text>
 <text class="p" x="535" y="336">notices/</text>
-<rect class="box" x="64" y="366" width="672" height="106" rx="8"/>
+<rect class="box" x="64" y="366" width="672" height="134" rx="8"/>
 <text class="n" x="76" y="388">the engine</text>
 <text class="p" x="76" y="406">engine/</text>
 <text class="q" x="76" y="422">reached through engine.Project</text>
@@ -83,28 +83,32 @@
 <text class="c" x="434" y="447">training records</text>
 <rect class="chip" x="555" y="432" width="96" height="22" rx="6"/>
 <text class="c" x="563" y="447">engine/timed</text>
-<rect class="box" x="64" y="488" width="672" height="70" rx="8"/>
-<text class="n" x="76" y="510">the frames decoder</text>
-<text class="p" x="76" y="528">cmd/framefairy-frames/</text>
-<text class="q" x="76" y="544">a program of its own, which the engine starts for each video</text>
-<rect class="box" x="64" y="574" width="672" height="90" rx="8"/>
-<text class="n" x="76" y="596">small libraries</text>
-<text class="p" x="76" y="614">licence/, internal/wake/, internal/framewire/</text>
-<rect class="chip" x="76" y="624" width="103" height="22" rx="6"/>
-<text class="c" x="84" y="639">a licence key</text>
-<rect class="chip" x="185" y="624" width="143" height="22" rx="6"/>
-<text class="c" x="193" y="639">waiting on a change</text>
-<rect class="chip" x="333" y="624" width="169" height="22" rx="6"/>
-<text class="c" x="341" y="639">the wire to the decoder</text>
-<rect class="tint" x="64" y="680" width="672" height="88" rx="8"/>
-<text class="n" x="76" y="702">at the edge</text>
-<text class="q" x="76" y="718">programs and files the Go code starts and reads</text>
-<rect class="chip" x="76" y="728" width="56" height="22" rx="6"/>
-<text class="c" x="84" y="743">ffmpeg</text>
-<rect class="chip" x="138" y="728" width="96" height="22" rx="6"/>
-<text class="c" x="146" y="743">llama-server</text>
-<rect class="chip" x="240" y="728" width="83" height="22" rx="6"/>
-<text class="c" x="248" y="743">the models</text>
-<rect class="chip" x="329" y="728" width="123" height="22" rx="6"/>
-<text class="c" x="337" y="743">the work folders</text>
+<rect class="chip" x="76" y="460" width="96" height="22" rx="6"/>
+<text class="c" x="84" y="475">engine/pynum</text>
+<rect class="chip" x="178" y="460" width="103" height="22" rx="6"/>
+<text class="c" x="186" y="475">engine/pytext</text>
+<rect class="box" x="64" y="516" width="672" height="70" rx="8"/>
+<text class="n" x="76" y="538">the frames decoder</text>
+<text class="p" x="76" y="556">cmd/framefairy-frames/</text>
+<text class="q" x="76" y="572">a program of its own, which the engine starts for each video</text>
+<rect class="box" x="64" y="602" width="672" height="90" rx="8"/>
+<text class="n" x="76" y="624">small libraries</text>
+<text class="p" x="76" y="642">licence/, internal/wake/, internal/framewire/</text>
+<rect class="chip" x="76" y="652" width="103" height="22" rx="6"/>
+<text class="c" x="84" y="667">a licence key</text>
+<rect class="chip" x="185" y="652" width="143" height="22" rx="6"/>
+<text class="c" x="193" y="667">waiting on a change</text>
+<rect class="chip" x="333" y="652" width="169" height="22" rx="6"/>
+<text class="c" x="341" y="667">the wire to the decoder</text>
+<rect class="tint" x="64" y="708" width="672" height="88" rx="8"/>
+<text class="n" x="76" y="730">at the edge</text>
+<text class="q" x="76" y="746">programs and files the Go code starts and reads</text>
+<rect class="chip" x="76" y="756" width="56" height="22" rx="6"/>
+<text class="c" x="84" y="771">ffmpeg</text>
+<rect class="chip" x="138" y="756" width="96" height="22" rx="6"/>
+<text class="c" x="146" y="771">llama-server</text>
+<rect class="chip" x="240" y="756" width="83" height="22" rx="6"/>
+<text class="c" x="248" y="771">the models</text>
+<rect class="chip" x="329" y="756" width="123" height="22" rx="6"/>
+<text class="c" x="337" y="771">the work folders</text>
 </svg>

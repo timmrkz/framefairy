@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 
+	"framefairy/engine/pytext"
+
 	"framefairy/engine/timed"
 )
 
@@ -57,7 +59,7 @@ func Sentences(t *Transcript, cuts []float64) []SentenceView {
 			texts[i] = c.Text
 		}
 		out = append(out, SentenceView{Start: card[0].Start, End: card[len(card)-1].End,
-			Text: Scrub(strings.Join(texts, " "), maxLineChars)})
+			Text: pytext.Scrub(strings.Join(texts, " "), maxLineChars)})
 		card = card[:0:0]
 	}
 	middle := func(c timed.Cue) float64 { return (c.Start + c.End) / 2 }
@@ -201,7 +203,7 @@ func captionCard(c ClipSaid, caption CaptionView) (SentenceView, bool) {
 	start := EpisodeTime(c.Clip, words[0].Start)
 	end := episodeEnd(c.Clip, words[len(words)-1].End)
 	return SentenceView{Start: start, End: max(end, start), Clip: c.Key,
-		Text: Scrub(strings.Join(texts, " "), maxLineChars)}, true
+		Text: pytext.Scrub(strings.Join(texts, " "), maxLineChars)}, true
 }
 
 // episodeEnd is the moment of the episode a moment of a clip ends on: the

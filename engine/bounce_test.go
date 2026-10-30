@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"framefairy/engine/pynum"
+
 	"framefairy/engine/timed"
 
 	"framefairy/internal/ffmpegtest"
@@ -217,7 +219,7 @@ func TestThePillLeavesRoomRoundItsWord(t *testing.T) {
 				t.Errorf("%s: no word inside the pill on frame %d", name, k)
 				continue
 			}
-			want := roomAround*float64(pyround(style.Size)) - 1
+			want := roomAround*float64(pynum.Round(style.Size)) - 1
 			sides := map[string]int{"left of": il - l, "right of": r - ir, "above": it - top, "below": bottom - ib}
 			for side, px := range sides {
 				least = min(least, px)
@@ -412,7 +414,7 @@ func TestThePillAtRestNeverReachesAnotherLine(t *testing.T) {
 		t.Fatalf("the words should make one caption of two lines, the second from Leute, not %+v", laid)
 	}
 	style := ResolveStyle(nil)
-	size := float64(pyround(style.Size))
+	size := float64(pynum.Round(style.Size))
 	pill := pillColour(t, style)
 
 	// lines are the rows each line of letters stands in, top to bottom. A
@@ -523,7 +525,7 @@ func TestEveryPillOfALineIsOneHeightAndClearOfTheOther(t *testing.T) {
 		ffmpegtest.Unusable(t, "this ffmpeg cannot draw captions: %v", err)
 	}
 	style := ResolveStyle(nil)
-	size := pyround(style.Size)
+	size := pynum.Round(style.Size)
 	clear := math.Round(float64(size) * lineClear)
 	for _, second := range []string{"Leute", "Ägypten", ""} {
 		words := []timed.Cue{

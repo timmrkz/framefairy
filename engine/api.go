@@ -15,6 +15,9 @@ import (
 	"strings"
 	"time"
 
+	"framefairy/engine/pynum"
+	"framefairy/engine/pytext"
+
 	"github.com/spf13/afero"
 )
 
@@ -79,7 +82,7 @@ func money(model string, tokensIn, tokensOut int) string {
 	if !facts.Priced {
 		return "cost unknown for this model"
 	}
-	return "approx $" + fixed(float64(float64(tokensIn)/1e6*facts.PriceIn)+
+	return "approx $" + pynum.Fixed(float64(float64(tokensIn)/1e6*facts.PriceIn)+
 		float64(float64(tokensOut)/1e6*facts.PriceOut), 3)
 }
 
@@ -249,8 +252,8 @@ func (e *Engine) post(ctx context.Context, p Provider, build func(prefill bool) 
 				return nil, nil, saidErr("%s did not answer within 10 minutes. Try again in a few minutes.", p.Title)
 			}
 			if attempt < maxAttempts {
-				e.Log.Warn("network error (%s), retrying in %ss", Scrub(err.Error(), 80),
-					fixed(delay, 0))
+				e.Log.Warn("network error (%s), retrying in %ss", pytext.Scrub(err.Error(), 80),
+					pynum.Fixed(delay, 0))
 				if err := sleepCtx(ctx, time.Duration(delay*float64(time.Second))); err != nil {
 					return nil, nil, err
 				}
@@ -286,13 +289,13 @@ func (e *Engine) post(ctx context.Context, p Provider, build func(prefill bool) 
 					return nil, nil, busyErr(p, refused.message)
 				}
 				if fromServer {
-					return nil, nil, saidErr("%s stopped with an error: %s", p.Title, sentence(Scrub(refused.message, 400)))
+					return nil, nil, saidErr("%s stopped with an error: %s", p.Title, sentence(pytext.Scrub(refused.message, 400)))
 				}
 				return nil, nil, saidErr("The answer from %s broke off. Try again. The system said: %s",
-					p.Title, Scrub(err.Error(), 200))
+					p.Title, pytext.Scrub(err.Error(), 200))
 			}
-			e.Log.Warn("the API's answer broke off (%s), retrying in %ss", Scrub(err.Error(), 80),
-				fixed(delay, 0))
+			e.Log.Warn("the API's answer broke off (%s), retrying in %ss", pytext.Scrub(err.Error(), 80),
+				pynum.Fixed(delay, 0))
 			if err := sleepCtx(ctx, time.Duration(delay*float64(time.Second))); err != nil {
 				return nil, nil, err
 			}
@@ -310,8 +313,8 @@ func (e *Engine) post(ctx context.Context, p Provider, build func(prefill bool) 
 				return nil, nil, ctx.Err()
 			}
 			if attempt < maxAttempts {
-				e.Log.Warn("network error (%s), retrying in %ss", Scrub(readErr.Error(), 80),
-					fixed(delay, 0))
+				e.Log.Warn("network error (%s), retrying in %ss", pytext.Scrub(readErr.Error(), 80),
+					pynum.Fixed(delay, 0))
 				if err := sleepCtx(ctx, time.Duration(delay*float64(time.Second))); err != nil {
 					return nil, nil, err
 				}
@@ -341,7 +344,7 @@ func (e *Engine) post(ctx context.Context, p Provider, build func(prefill bool) 
 					wait = min(float64(n), 60)
 				}
 				e.Log.Warn("API returned %d, retrying in %ss (attempt %d of %d)",
-					code, fixed(wait, 0), attempt, maxAttempts)
+					code, pynum.Fixed(wait, 0), attempt, maxAttempts)
 				if err := sleepCtx(ctx, time.Duration(wait*float64(time.Second))); err != nil {
 					return nil, nil, err
 				}
@@ -351,7 +354,7 @@ func (e *Engine) post(ctx context.Context, p Provider, build func(prefill bool) 
 			if code == http.StatusUnauthorized {
 				// The provider's own words are kept in logDir, above, and
 				// in the detail lines, and the person is told what to do.
-				e.Log.Detail("the API returned 401: %s", Scrub(detail, 400))
+				e.Log.Detail("the API returned 401: %s", pytext.Scrub(detail, 400))
 				return nil, nil, refusedKey(p, source)
 			}
 			return nil, nil, apiRefused(p, code, detail)
@@ -379,7 +382,7 @@ func (e *Engine) post(ctx context.Context, p Provider, build func(prefill bool) 
 			if message == "" {
 				message = "unknown"
 			}
-			return nil, nil, renderErr("the API reported an error: %s", Scrub(message, 400))
+			return nil, nil, renderErr("the API reported an error: %s", pytext.Scrub(message, 400))
 		}
 		return &data, body, nil
 	}
@@ -507,7 +510,7 @@ func (e *Engine) reportUsage(data *apiReply, seconds float64, model string) {
 		stop = "?"
 	}
 	e.Log.Info("model replied in %ss  in %s tok%s  out %s tok  stop=%s  %s",
-		fixed(seconds, 1), commas(in), cachedNote, commas(out), stop, money(model, in, out))
+		pynum.Fixed(seconds, 1), commas(in), cachedNote, commas(out), stop, money(model, in, out))
 }
 
 func replyText(data *apiReply) string {
@@ -652,7 +655,7 @@ func (e *Engine) CallAPI(ctx context.Context, prompt, model string, maxTokens in
 		}
 	}
 	e.Log.Detail("POST %s model=%s max_tokens=%d prompt=%s chars", p.URL, model,
-		maxTokens, commas(runeLen(prompt)))
+		maxTokens, commas(pytext.Len(prompt)))
 	listen.part(partReading)
 	started := time.Now()
 	data, _, err := e.post(ctx, p, build, logDir, tag, true, heard)
@@ -660,10 +663,10 @@ func (e *Engine) CallAPI(ctx context.Context, prompt, model string, maxTokens in
 		return "", err
 	}
 	e.reportUsage(data, time.Since(started).Seconds(), model)
-	recordUsage(e.Files, logDir, runeLen(prompt), data, tag)
+	recordUsage(e.Files, logDir, pytext.Len(prompt), data, tag)
 
 	text := replyText(data)
-	if strip(text) == "" {
+	if pytext.Strip(text) == "" {
 		kindSet := map[string]bool{}
 		for _, block := range data.Content {
 			kind := block.Type
@@ -766,12 +769,12 @@ func (e *Engine) RepairJSON(ctx context.Context, broken, model, logDir string) (
 		e.Prefill = false
 	}
 	build := func(prefill bool) ([]byte, error) {
-		return bodyFor(p, model, min(8000, runeLen(broken)/2+2000), repairSystem,
-			Scrub(broken, 60000), prefill, false)
+		return bodyFor(p, model, min(8000, pytext.Len(broken)/2+2000), repairSystem,
+			pytext.Scrub(broken, 60000), prefill, false)
 	}
 	e.Calls.Requests++
 	e.Log.Info("asking for a repair of %s characters (the transcript is not resent)",
-		commas(runeLen(broken)))
+		commas(pytext.Len(broken)))
 	started := time.Now()
 	data, _, err := e.post(ctx, p, build, logDir, "repair", false, nil)
 	if err != nil {
@@ -806,7 +809,7 @@ func apiRefused(p Provider, code int, body string) error {
 
 // busyErr is a company that asked to be asked later on every try.
 func busyErr(p Provider, message string) error {
-	if message = sentence(Scrub(message, 300)); message != "" {
+	if message = sentence(pytext.Scrub(message, 300)); message != "" {
 		message = " " + p.Title + " said: " + message
 	}
 	return saidErr("%s is busy and did not answer after %d tries. Try again in a few minutes.%s",
@@ -816,7 +819,7 @@ func busyErr(p Provider, message string) error {
 // unreachable is a company the call never got to, after every try.
 func unreachable(p Provider, err error) error {
 	return saidErr("Could not reach %s. Check the internet connection, then try again. The system said: %s",
-		p.Title, Scrub(err.Error(), 200))
+		p.Title, pytext.Scrub(err.Error(), 200))
 }
 
 // providerMessage is the message for people in a company's error, the
@@ -831,7 +834,7 @@ func providerMessage(body string) string {
 	if json.Unmarshal([]byte(body), &reply) != nil {
 		return ""
 	}
-	return sentence(Scrub(reply.Error.Message, 300))
+	return sentence(pytext.Scrub(reply.Error.Message, 300))
 }
 
 // sentence is text ending on a full stop, or nothing when there is none.
