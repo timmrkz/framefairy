@@ -467,6 +467,108 @@ export const steps = {
     await settle(page);
     if (problems.length) walk.wrong = problems.join("\n");
   },
+  // ["info marks"]     every info mark on screen, and the icon in it,
+  //                    stands on a whole pixel up and down, and a mark in the corner of an area,
+  //                    the video preview, the range picker and the clip
+  //                    timeline, is painted as far from the top of the
+  //                    area as from its right, read off a screenshot
+  async "info marks"(walk) {
+    const { page } = walk;
+    const marks = await page.evaluate(() =>
+      [...document.querySelectorAll(".ask")].flatMap((ask, i) => {
+        const host = ask.offsetParent;
+        const h = host.getBoundingClientRect();
+        const cs = getComputedStyle(host);
+        // Only a mark on the page in front: the workspace stays behind the
+        // settings, its marks laid out where nobody sees them.
+        const b = ask.getBoundingClientRect();
+        if (!host.contains(document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2))) return [];
+        return {
+          i,
+          name: ask.querySelector("button").getAttribute("aria-label"),
+          tops: [b.top, ask.querySelector("svg").getBoundingClientRect().top],
+          corner: ask.classList.contains("corner"),
+          // The inside of the area's border, where the mark is put.
+          inTop: h.top + parseFloat(cs.borderTopWidth),
+          inRight: h.right - parseFloat(cs.borderRightWidth),
+        };
+      }),
+    );
+    if (!marks.length) {
+      walk.wrong = "no info mark on screen";
+      return;
+    }
+    // The mark and the icon in it. Either between two pixels is painted
+    // from a whole one, away from where it was laid out.
+    for (const m of marks) {
+      const half = m.tops.find((t) => Math.abs(t - Math.round(t)) > 0.01);
+      if (half !== undefined) {
+        walk.wrong = `the info mark "${m.name}" or its icon stands at ${half} px, between two pixels`;
+        return;
+      }
+    }
+    // The corner, taken with the mark shown and hidden. What changed is
+    // the mark's ink, whatever the area draws under it, a waveform or a
+    // picture. Shown at once, without its fade, and as it was after.
+    const shot = async (i, clip, opacity) => {
+      await page.evaluate(
+        ({ i, opacity }) => {
+          const ask = document.querySelectorAll(".ask")[i];
+          ask.style.transition = "none";
+          ask.style.opacity = opacity;
+        },
+        { i, opacity },
+      );
+      await nextPaint(page, 2);
+      return (await page.screenshot({ clip })).toString("base64");
+    };
+    for (const m of marks) {
+      if (!m.corner) continue;
+      const { i } = m;
+      const clip = { x: Math.floor(m.inRight) - 24, y: Math.floor(m.inTop), width: 24, height: 24 };
+      const shown = await shot(i, clip, "1");
+      const hidden = await shot(i, clip, "0");
+      await page.evaluate((i) => document.querySelectorAll(".ask")[i].removeAttribute("style"), i);
+      const ink = await page.evaluate(
+        async ([a, b]) => {
+          const read = async (data) => {
+            const img = new Image();
+            img.src = `data:image/png;base64,${data}`;
+            await img.decode();
+            const c = document.createElement("canvas");
+            c.width = img.width;
+            c.height = img.height;
+            const g = c.getContext("2d", { willReadFrequently: true });
+            g.drawImage(img, 0, 0);
+            return { w: c.width, h: c.height, d: g.getImageData(0, 0, c.width, c.height).data };
+          };
+          const [on, off] = [await read(a), await read(b)];
+          let top = null;
+          let right = null;
+          for (let y = 0; y < on.h; y++) {
+            for (let x = 0; x < on.w; x++) {
+              const k = (y * on.w + x) * 4;
+              if (Math.abs(on.d[k + 1] - off.d[k + 1]) < 60) continue;
+              top ??= y;
+              right = Math.max(right ?? 0, x);
+            }
+          }
+          return top === null ? null : { top, right };
+        },
+        [shown, hidden],
+      );
+      if (!ink) {
+        walk.wrong = `the info mark "${m.name}" painted nothing in the corner of its area`;
+        return;
+      }
+      const top = ink.top + clip.y - m.inTop;
+      const right = m.inRight - (clip.x + ink.right + 1);
+      if (Math.abs(top - right) > 0.5) {
+        walk.wrong = `the info mark "${m.name}" is painted ${top} px from the top of its area and ${right} px from its right`;
+        return;
+      }
+    }
+  },
   // ["acknowledgements"]
   //                    Help, Acknowledgements: every group is a head over a
   //                    card with a border, and the words of every row stand
