@@ -174,7 +174,7 @@ jobs:
             tag="pr$number"
           fi
           # The engine's version at the commit built, read and not run.
-          engine=$(gh api "repos/$GH_REPO/contents/engine/log.go?ref=$SHA" \
+          engine=$(gh api "repos/$GH_REPO/contents/engine/doc.go?ref=$SHA" \
             -H 'Accept: application/vnd.github.raw' |
             awk -F'"' '/^const Version = /{ print $2; exit }')
           if ! printf '%s' "$engine" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
