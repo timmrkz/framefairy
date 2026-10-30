@@ -39,6 +39,16 @@ const heard: Record<string, number> = {};
 // mark, see walks/report/steps.mjs.
 const last: Record<string, unknown> = {};
 (window as any).__last = last;
+// A field's text written by the page changes no node, so a walk waiting
+// for it with a MutationObserver did not wake when the report's field
+// took in dictated words, and hung once nothing else on the page changed
+// (30 October). The field says so with an event, written, that pageUntil
+// in walks/bridge.mjs listens to.
+const write = HTMLTextAreaElement.prototype.setRangeText as (this: HTMLTextAreaElement, ...a: unknown[]) => void;
+HTMLTextAreaElement.prototype.setRangeText = function (this: HTMLTextAreaElement, ...a: unknown[]) {
+  write.apply(this, a);
+  this.dispatchEvent(new Event("written", { bubbles: true }));
+} as typeof HTMLTextAreaElement.prototype.setRangeText;
 let mark = 0;
 let waiting: { n: number; done: () => void }[] = [];
 (window as any).__heardMark = (n: number) =>
