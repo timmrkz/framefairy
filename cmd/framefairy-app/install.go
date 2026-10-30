@@ -53,7 +53,7 @@ func installIfAsked() {
 		log.SetOutput(f)
 	}
 	if err := installWhenGone(target, from, pid, gone); err != nil {
-		log.Printf("install on quit: %v", err)
+		log.Printf("install on quit: %v", err) //nolint:forbidigo // this step runs before the app's log is open, into a file of its own
 		os.Exit(1)
 	}
 	_ = os.Remove(logPath)

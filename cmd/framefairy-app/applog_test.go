@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -569,13 +570,15 @@ func TestCaptionLayersAreSaidOnceAStretch(t *testing.T) {
 	}
 }
 
-// What the engine says while it draws the video preview's captions goes
-// into the app's log under the video: that the words could not be
-// measured and the caption file has no pill above all, which went nowhere
-// before, found by the second review.
-func TestThePreviewsEngineWritesIntoTheAppsLog(t *testing.T) {
+// What an engine the app makes outside a job says goes into the app's log
+// under the part and the video: that the words could not be measured and
+// the caption file has no pill above all, which went nowhere before,
+// found by the second review. The engines that read the frames, measure
+// the loudness, probe a video, keep the model, check the setup and read a
+// recording wrote to nothing too, issue #605.
+func TestAnEngineOutsideAJobWritesIntoTheAppsLog(t *testing.T) {
 	_, read := testLog(t)
-	log := previewLog("/videos/start.mp4")
+	log := engineLog("captions", "/videos/start.mp4")
 	log.Detail("could not measure the caption words, the highlight is off for this clip")
 	log.Warn("the caption file of the video preview has no pill, the words could not be measured")
 	log.Progress("measuring")
@@ -585,6 +588,32 @@ func TestThePreviewsEngineWritesIntoTheAppsLog(t *testing.T) {
 	if find(lines, "measuring") != nil {
 		t.Error("the engine's progress was written")
 	}
+
+	engineLog("setup", "").Error("ffprobe is missing")
+	line := find(read(), "ffprobe is missing")
+	has(t, line, map[string]any{"level": "error", "from": "setup"})
+	if _, ok := line["video"]; ok {
+		t.Errorf("a line about no video names one, %v", line)
+	}
+}
+
+// What a library or net/http says through the standard library's log
+// goes into the app's log as a warning. It went to the standard error,
+// which nobody reads on a Mac app opened from Finder, issue #605.
+//
+// Not parallel: it points the process's standard log at the app's log.
+// On the real disk: lumberjack writes the log and knows only the disk.
+func TestTheStandardLogWritesIntoTheAppsLog(t *testing.T) {
+	_, read := testLog(t)
+	t.Cleanup(func() {
+		log.SetOutput(os.Stderr)
+		log.SetFlags(log.LstdFlags)
+	})
+	theLog.takeStandardLog()
+	log.Printf("http: TLS handshake error from %s", "127.0.0.1")
+	has(t, find(read(), "http: TLS handshake error"), map[string]any{
+		"level": "warn", "from": "app", "msg": "http: TLS handshake error from 127.0.0.1",
+	})
 }
 
 // A panic Wails catches goes into the app's log with its stack, and the

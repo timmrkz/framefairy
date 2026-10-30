@@ -7,6 +7,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/spf13/afero"
+
 	"framefairy/engine"
 	"framefairy/internal/ffmpegtest"
 )
@@ -70,6 +72,32 @@ func measured(t *testing.T, s *FrameFairy, path string) {
 	if _, done := engine.LevelsReach(disk, path); !done {
 		t.Fatalf("%s was never measured", filepath.Base(path))
 	}
+}
+
+// A measuring that fails or panics says so in the app's log, under the
+// video. Both went to the standard error, which nobody reads on a Mac
+// app opened from Finder, issue #605. A video that is not there makes it
+// fail, and a notice that panics makes it panic.
+//
+// On the real disk: lumberjack writes the log and knows only the disk.
+func TestAMeasuringThatGoesWrongIsInTheAppsLog(t *testing.T) {
+	_, read := testLog(t)
+	m := newMeasuring(afero.NewMemMapFs(), func(string) { panic("a waveform nobody drew before") })
+	t.Cleanup(m.shutDown)
+	path := "/home/tim/videos/gone.mp4"
+	m.start(path)
+	m.mu.Lock()
+	run := m.running[path]
+	m.mu.Unlock()
+	if run == nil {
+		t.Fatal("the measuring did not start")
+	}
+	<-run.done
+	lines := read()
+	has(t, find(lines, "the loudness could not be measured"), map[string]any{"level": "warn", "from": "levels", "video": "gone.mp4"})
+	has(t, find(lines, "measuring the loudness stopped unexpectedly"), map[string]any{
+		"level": "error", "from": "levels", "video": "gone.mp4", "msg": "measuring the loudness stopped unexpectedly: a waveform nobody drew before",
+	})
 }
 
 // An episode has a waveform before anything has heard a word of it: asking

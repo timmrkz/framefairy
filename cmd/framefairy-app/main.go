@@ -6,10 +6,10 @@ import (
 	"bytes"
 	"embed"
 	"errors"
+	"fmt"
 	"image"
 	"io"
 	"io/fs"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -273,7 +273,7 @@ func main() {
 	// A llama-server the last run left behind, because it crashed or was
 	// killed, is stopped before this run loads a model of its own.
 	if engine.StopLeftoverServer() {
-		log.Printf("stopped a llama-server the last run of the app left behind")
+		theLog.line(zerolog.InfoLevel, "model").Msg("stopped a llama-server the last run of the app left behind")
 	}
 	go svc.keeping.run(st)
 	svc.keeping.ask()
@@ -281,7 +281,9 @@ func main() {
 	err := app.Run()
 	quit()
 	if err != nil {
-		log.Fatal(err)
+		theLog.line(zerolog.ErrorLevel, "app").Err(err).Msg("the app stopped")
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
 }
 

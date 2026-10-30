@@ -2,7 +2,8 @@
 # Proves the linters that keep tests off the clock, see CLAUDE.md: each
 # fails on its fixture that waits on the clock, naming the rule, and
 # passes the one that waits on a signal or on a clock the test controls.
-# And the rules that the app takes no input it is not given, issue #369.
+# And the rules that the app takes no input it is not given, issue #369,
+# and that no code of ours writes to the standard log, issue #605.
 # The fixtures are in scripts/testdata/lint, where go, the walks and the
 # real lint runs do not look.
 #
@@ -34,6 +35,7 @@ expect 1 "forbidigo: 10" "a Go test that waits on the clock, on a deadline or on
 expect 1 "forbidigo: 1" "a Go test behind the outside tag that waits on the clock fails" "cd '$fix/go' && GOOS=darwin '$golangci' run --config '$root/.golangci.yml' --build-tags outside ./outside/..."
 expect 0 "0 issues" "a Go test on signals or a synctest bubble passes" "$go ./signals/..."
 expect 1 "forbidigo: 3" "Go code that hears other apps' keys or reads the clipboard through Wails fails, however it reaches it" "$go ./inputs/..."
+expect 1 "forbidigo: 3" "Go code that writes to the standard library's log fails, and its test passes" "$go ./stdlog/..."
 
 # Read as if they were a walk and a test of the interface, so the config's
 # own paths decide which rules hold.

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"log/slog"
 	"net/http"
 	"os"
@@ -214,6 +215,40 @@ func (s *FrameFairy) RemoveAppLog() (LogStatus, error) {
 	return theLog.status(), nil
 }
 
+// engineLog is the log of an engine the app makes outside a job, which
+// writes into the app's log under from and the video, when there is one:
+// a warning or an error at its level, every other line at debug, and no
+// progress. The engines that draw the captions, read the frames, measure
+// the loudness, probe a video, keep the model, check the setup and read a
+// recording all wrote to nothing before, so what the engine warned about
+// there never reached the log a report sends, issue #605. A caption file
+// without its pill was kept for the rest of a run with nothing to say why.
+func engineLog(from, path string) *engine.Log {
+	log := engine.NewLog(io.Discard, false, false)
+	video := ""
+	if path != "" {
+		video = filepath.Base(path)
+	}
+	log.SetSink(func(ev engine.Event) {
+		level := zerolog.DebugLevel
+		switch ev.Kind {
+		case engine.EventWarn:
+			level = zerolog.WarnLevel
+		case engine.EventError:
+			level = zerolog.ErrorLevel
+		case engine.EventInfo, engine.EventOK, engine.EventDetail:
+		default:
+			return
+		}
+		line := theLog.line(level, from)
+		if video != "" {
+			line = line.Str("video", video)
+		}
+		line.Msg(ev.Text)
+	})
+	return log
+}
+
 // wailsPanicked writes a panic Wails caught into the app's log, with its
 // stack, see the PanicHandler in main.
 func wailsPanicked(d *application.PanicDetails) {
@@ -339,10 +374,29 @@ func (l *appLog) slog(from string, least zerolog.Level) *slog.Logger {
 // its build, so what follows is known to be from that build.
 func (l *appLog) started() {
 	l.open(appLogPath())
+	l.takeStandardLog()
 	l.line(zerolog.InfoLevel, "app").Str("build", runningVersion()).Str("os", runtime.GOOS).Str("arch", runtime.GOARCH).Msg("started")
 	engine.DecoderSaid = func(video string, level slog.Level, line string) {
 		l.line(fromSlog(level), "decoder").Str("video", filepath.Base(video)).Msg(line)
 	}
+}
+
+// takeStandardLog writes what is said through the standard library's log,
+// by a library or by net/http, into the app's log as a warning. It went
+// to the standard error, which nobody reads on a Mac app opened from
+// Finder, issue #605. Our own code logs through theLog, see the lint in
+// .golangci.yml.
+func (l *appLog) takeStandardLog() {
+	log.SetFlags(0)
+	log.SetOutput(standardLines{l})
+}
+
+// standardLines is the standard library's log, a line at a time.
+type standardLines struct{ l *appLog }
+
+func (s standardLines) Write(p []byte) (int, error) {
+	s.l.line(zerolog.WarnLevel, "app").Msg(strings.TrimRight(string(p), "\n"))
+	return len(p), nil
 }
 
 // fromSlog is the level of a line the engine said in log/slog's terms.

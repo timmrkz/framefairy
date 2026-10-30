@@ -88,7 +88,17 @@ brings only itself into the build, since the two modules it needs are in
 it already, and it has a trace level below debug for lines that come
 with every frame. Since 1.35 it also takes slog's lines. Wails, the
 library that runs the app's window, logs through slog, and its lines go
-into the same file that way.
+into the same file that way. A panic Wails catches is an `error` line
+from `wails` with its `stack`, and the app goes on.
+
+What a library or net/http says through Go's standard log is a `warn`
+line from `app`, since nobody reads the standard error of a Mac app
+opened from Finder. Our own code never writes there, which the lint in
+`.golangci.yml` holds. An engine the app makes outside a job, to draw
+captions, read frames, measure the loudness, probe a video, keep the
+model, check the setup or read a recording, writes through `engineLog`:
+its warnings and errors at their level, the rest at `debug`, under its
+part and the video.
 
 ## What a line holds
 
@@ -104,7 +114,7 @@ than read with the eye:
 | `time` | the moment, to the millisecond, with the Mac's offset from UTC |
 | `level` | `error`, `warn`, `info`, `debug` or `trace` |
 | `run` | one start of the app, so a restart is seen and two runs never mix |
-| `from` | the part that wrote it: `app`, `window`, `files`, `decoder`, `jobs`, `edits`, `updates`, `wails` |
+| `from` | the part that wrote it: `app`, `window`, `files`, `decoder`, `jobs`, `edits`, `updates`, `levels`, `model`, `setup`, `report`, `captions`, `wails` |
 | `video` | the video it is about, by file name, where there is one |
 | `act` | what the person did that led to it, see below |
 | `msg` | what happened, in words |

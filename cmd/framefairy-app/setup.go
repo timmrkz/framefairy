@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -543,7 +542,7 @@ func (s *FrameFairy) CheckSetup(ctx context.Context) []Check {
 	opts := set.options()
 	var out []Check
 
-	e := engine.NewEngine(engine.NewLog(io.Discard, false, false), s.store.files)
+	e := engine.NewEngine(engineLog("setup", ""), s.store.files)
 	ff := toolCheck(ctx, "FRAMEFAIRY_FFMPEG", "ffmpeg")
 	probe := toolCheck(ctx, "FRAMEFAIRY_FFPROBE", "ffprobe")
 	// The file is right and it has to work too: an encoder this machine

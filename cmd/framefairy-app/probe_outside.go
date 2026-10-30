@@ -202,7 +202,7 @@ func startProbe(svc *FrameFairy) {
 	theProbe.svc = svc
 	ln, err := net.Listen("tcp", probeAddr)
 	if err != nil {
-		log.Printf("outside probe: %v", err)
+		log.Printf("outside probe: %v", err) //nolint:forbidigo // the probe of the checks from outside writes beside its own output
 		return
 	}
 	// What the app tells the page, the windows it opens and closes, and
@@ -224,7 +224,7 @@ func startProbe(svc *FrameFairy) {
 	mux.HandleFunc("POST /search", theProbe.search)
 	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() { _ = srv.Serve(ln) }()
-	log.Printf("outside probe on %s", probeAddr)
+	log.Printf("outside probe on %s", probeAddr) //nolint:forbidigo // the probe of the checks from outside writes beside its own output
 	// The test is told the probe is up. Nobody listening is a test that
 	// does not wait for it.
 	go func() {
