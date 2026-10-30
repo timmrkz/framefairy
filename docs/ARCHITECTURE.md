@@ -7,9 +7,10 @@ shape is [matklad's ARCHITECTURE.md](https://matklad.github.io/2021/02/06/ARCHIT
 short and only about what rarely changes.
 
 A line is added only for a new kind of thing: a new part, a new home for
-state, a new boundary. A pull request that closes an issue this file
-names rewrites the rows that name it and removes its line under Not to
-copy. `internal/naming` checks that every path the file names exists.
+state, a new boundary. Such a change is simulated five times first, see
+Changing the architecture at the end. A pull request that closes an
+issue this file names rewrites the rows that name it and removes its
+line under Not to copy. `internal/naming` checks that every path the file names exists.
 
 ## Bird's eye view
 
@@ -19,18 +20,7 @@ goes. A rule about a video belongs as low as it can go, in the engine,
 where both front ends reach it. A rule found higher up, in the app or the
 interface, is in the wrong place.
 
-```
-  1  the interface        frontend/                      the command line
-            |  the bindings, events, /frames             cmd/framefairy/
-  2  the app's Go side    cmd/framefairy-app/                  |
-            |                                                  |
-            +------------------------+-------------------------+
-                                     |   both hand in the speech model, asr/
-  3  the engine           engine/, reached through engine.Project
-            |
-  4  at the edge          work folders, models, ffmpeg, llama-server,
-                          the frames decoder cmd/framefairy-frames/
-```
+![The app in layers: each part uses only the parts under it](diagrams/app.svg)
 
 Inside the engine, a video goes through the same steps in both front
 ends: it is heard into a transcript, searched into a plan of clips,
@@ -39,26 +29,52 @@ one path through the layers: the interface asks, a binding passes it on,
 the engine works out the answer and saves it through `editPlan`, and Go
 tells the interface what changed.
 
+### Each part, one level down
+
+The three parts with packages or folders of their own, drawn the same
+way. Inside the engine and inside the app's Go side the groups are files
+of one package, so nothing holds them apart yet.
+
+![The engine today: one package, over engine/timed](diagrams/engine.svg)
+
+![The app's Go side: one package main, over the engine](diagrams/app-go.svg)
+
+![The interface: the app over screens, components and lib](diagrams/interface.svg)
+
+The drawings are plain SVG in `docs/diagrams/`, a box a `rect` with its
+texts and a chip a small `rect` with its text, and they follow the
+reader's light or dark theme, on a background of their own. A change
+that moves a box changes its drawing in the same pull request.
+`internal/naming` checks that every path a drawing names exists, written
+from the top of the repository, and that every drawing shown here is
+there.
+
 ## Code map
 
-One row for each box above, in the same order.
+One row for each box of the top drawing that holds code, from the top,
+with the boxes one level down under it.
 
 | Layer | Code | Owns | Never holds |
 | --- | --- | --- | --- |
-| 1 the interface | `frontend/src/screens/`, `frontend/src/components/` | layout and wiring | logic worth a test, which goes in `frontend/src/lib/` |
+| 1 the interface | `frontend/src/App.svelte`, started by `frontend/src/main.ts` | the sidebar and which screen shows | a screen's own layout |
+| 1 | `frontend/src/screens/`, `frontend/src/components/` | layout and wiring | logic worth a test, which goes in `frontend/src/lib/` |
 | 1 | `frontend/src/lib/` | what the interface keeps and works out, tested with Vitest. `frontend/src/lib/frames/` is the frame queue the video preview plays from | a rule of the engine, except the few held to Go by a shared `.cases.json` |
-| 1 | `frontend/preview/` | the walks in `frontend/preview/walks/`, which do what a person does against the real Go side, and the harness they run in | |
 | 1 the command line | `cmd/framefairy/` | flags into `engine.Run`, and exit codes | a rule of its own |
 | 2 the app's Go side | `cmd/framefairy-app/` | the bindings, the job queue and its lanes, the library and the settings, updates, the log | a rule of the engine. A binding asks the engine and passes the answer on |
-| 2 | `updates/`, `notices/` | finding, checking and fetching a newer build, and the licences of what the app is made of | |
-| 2 | `asr/` | the speech recogniser. It implements `engine.Recognizer`, and each front end hands it to the engine | |
-| 3 the engine | `engine/` | every rule about a video: words, clips, edges, windows, captions, crops, rendering, the models, the files of a work folder | anything about the screen, a binding or a click |
-| 3 | `engine/timed/` | the types every part of the engine uses for a moment of a video: a piece of text with its times, a span, a window, a loudness reading, the 10 ms grid of the sound | a function or a rule, and a type only one part uses |
-| 3 | `engine.Project` | the steps one video takes, the same for both front ends | a second way to run a step |
-| 3 | `licence/`, `internal/wake/` | small libraries under the engine: the format of a licence key, and how a waiter hears that something changed | |
-| 4 at the edge | `cmd/framefairy-frames/`, `internal/framewire/` | the decoder that turns a video into the frames, sound and captions of the video preview, and the wire to it | anything but decoding. It is a child process |
+| 3 | `asr/` | the speech recogniser. It implements `engine.Recognizer`, and each front end hands it to the engine | |
+| 3 | `updates/`, `notices/` | finding, checking and fetching a newer build, and the licences of what the app is made of | |
+| 4 the engine | `engine/` | every rule about a video: words, clips, edges, windows, captions, crops, rendering, the models, the files of a work folder, the training records | anything about the screen, a binding or a click |
+| 4 | `engine.Project` | the steps one video takes, the same for both front ends | a second way to run a step |
+| 4 | `engine/timed/` | the types every part of the engine uses for a moment of a video: a piece of text with its times, a span, a window, a loudness reading, the 10 ms grid of the sound | a function or a rule, and a type only one part uses |
+| 5 the frames decoder | `cmd/framefairy-frames/` | turning a video into the frames, sound and captions of the video preview. The engine starts one for each video | anything but decoding. It is a child process |
+| 6 small libraries | `licence/`, `internal/wake/`, `internal/framewire/` | the format of a licence key, how a waiter hears that something changed, and the wire between the engine and the decoder | |
 
-Outside the picture, not shipped in the app: `train/` and
+Layer 7, at the edge, holds no code of ours: ffmpeg, llama-server, the
+models and the work folders.
+
+Outside the picture, not shipped in the app: `frontend/preview/` holds
+the walks, in `frontend/preview/walks/`, which do what a person does
+against the real Go side, and the harness they run in. `train/` and
 `cmd/framefairy-train/` read the training records, `cmd/framefairy-release/`
 and `licence/signer/` sign builds and keys, `licence/dispenser/` is the
 licence server, and the rest of `internal/` holds the checks and
@@ -170,3 +186,33 @@ copies what it finds nearby, so these are not the pattern for new code.
 - A new `engine.NewEngine` for each job or probe, #607.
 - The effects in `frontend/src/screens/Episode.svelte` that compare an
   old value with a new one to notice that work ended, #606.
+
+## Changing the architecture
+
+A change to how the code is organised or designed is worked through five
+times before any code, and the five converge on one. It is a change that
+decides something this file records: a package, a layer, a home for
+state or a boundary added, removed, split or joined, or a type moved
+between packages. Rewording a row is not one. Carrying out a design a
+decision record already holds is not one either, it names that record.
+When in doubt, do the five.
+
+1. **Five simulations.** Each is a candidate design from a principle of
+   its own, worked through on the code as it is, as if it were built: the
+   layers it gives, what moves where, the names that would cross each new
+   boundary, counted from the code and not guessed, the next likely
+   changes and what they would touch, and the cost in files and pull
+   requests. Five variations of one idea are one simulation. Five
+   principles make a good start: who may know about whom, what changes
+   together, where state lives, what runs together, and what a test has
+   to build.
+2. **They converge.** What comes back in most of them is kept, what only
+   one needs is dropped or kept for a reason that is said. The final
+   candidate is drawn as layers, each using only the ones under it, the
+   way `docs/diagrams/` draws them.
+3. **It is written down** as a decision record in `docs/decisions/`,
+   pushed with the first code of the change, see
+   [decisions/README.md](decisions/README.md). A change made over several
+   pull requests has one record, in the first, and the others name it.
+4. **The review agent gets the record** and reasons through the five
+   itself before it reads the verdict, see the review skill.
