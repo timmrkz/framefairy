@@ -50,6 +50,7 @@ const lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks
 type state struct {
 	Version int `json:"version"`
 	Links   int `json:"links"`
+	Seconds int `json:"seconds"`
 	Licence struct {
 		Saved   bool   `json:"saved"`
 		About   string `json:"about"`
@@ -233,6 +234,7 @@ var done = map[string]func(m *mac, args []string) error{
 		return nil
 	},
 	"start":           (*mac).start,
+	"start again":     (*mac).startAgain,
 	"add video":       (*mac).addVideo,
 	"search and quit": (*mac).searchAndQuit,
 	"search ends": func(m *mac, _ []string) error {
@@ -441,6 +443,23 @@ func (m *mac) start(_ []string) error {
 	}
 	<-m.up
 	return nil
+}
+
+// startAgain starts a second copy of the app while it runs, the way
+// another build opened from Finder does. open waits until that copy has
+// ended, which it does once it has handed over: a copy that kept running
+// is one this step never gets past. Then it waits until the copy that runs
+// has heard from it.
+func (m *mac) startAgain(_ []string) error {
+	s, err := ask(-1)
+	if err != nil {
+		return fmt.Errorf("the app is not running: %v", err)
+	}
+	want := s.Seconds + 1
+	if out, err := exec.Command("open", "-n", "-W", m.app).CombinedOutput(); err != nil {
+		return fmt.Errorf("open -n: %v: %s", err, out)
+	}
+	return until(func(s state) bool { return s.Seconds >= want })
 }
 
 // addVideo makes a video of a test picture and a tone, with the ffmpeg the

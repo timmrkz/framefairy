@@ -169,6 +169,16 @@ func main() {
 		Mac: application.MacOptions{
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
 		},
+		// One copy of the app at a time. Two each held the library in
+		// memory and wrote it whole, so the last to save won, and both
+		// started work on the same video. A second copy, the app opened
+		// while make run runs or another build opened from Finder, hands
+		// over to the one that runs and ends here, in application.New.
+		// What it did before this line only read. #612.
+		SingleInstance: &application.SingleInstanceOptions{
+			UniqueID:               bundleID,
+			OnSecondInstanceLaunch: func(d application.SecondInstanceData) { svc.secondLaunch(d.Args) },
+		},
 		OnShutdown: quit,
 		ShouldQuit: leave.shouldQuit,
 		// What Wails says goes into the app's log. Its debug lines are one
@@ -280,6 +290,32 @@ func main() {
 	quit()
 	if err != nil {
 		log.Fatal(err)
+	}
+}
+
+// bundleID is the app's on macOS, CFBundleIdentifier in
+// scripts/bundle-macos.sh. It also names the one copy of the app that
+// runs, see SingleInstance above.
+const bundleID = "com.framefairy.app"
+
+// secondLaunch is a second copy of the app, started while this one runs,
+// which handed over what it was started with and ended. This copy comes
+// to the front, the way a Mac app does when it is opened again, and takes
+// a framefairy:// link the other was started by, the one way macOS starts
+// the app with something to open.
+func (s *FrameFairy) secondLaunch(args []string) {
+	probeSecondLaunch()
+	links := 0
+	for _, a := range args {
+		if scheme, _, ok := strings.Cut(a, "://"); ok && strings.EqualFold(scheme, "framefairy") {
+			links++
+			s.openedWith(a)
+		}
+	}
+	theLog.line(zerolog.InfoLevel, "app").Int("links", links).Msg("a second copy of the app was started and handed over to this one")
+	if links == 0 && s.window != nil {
+		s.window.Show()
+		s.window.Focus()
 	}
 }
 

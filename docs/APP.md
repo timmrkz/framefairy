@@ -358,6 +358,21 @@ moved away, keeps its place and says File not found until it is back, see
 `deletedOutside` in `settings.go`. With no folder beside it there is nothing to
 keep or to throw away, so the box says so and offers one **Remove**.
 
+The settings, the library and each video's `chosen.json` are read by every
+build Tim moves between on the Updates page, older ones too. Each is read
+into its struct with the keys the build does not know kept beside it and
+written back as they were, so an older build never erases what a newer one
+saved, see `appfiles.go`. Only the settings the app retired on purpose are
+dropped, `retiredSettings`. A file that is there and cannot be read, from a
+later build that changed its shape or edited by hand, is logged, and before
+the app first writes it again it is set aside beside it, as
+`library.json.unreadable-20261030-194500` say, never written over with
+nothing. And only one copy of the app runs at a time: a second one, opened
+while make run runs or from another build in Finder, hands a link it was
+opened by to the one that runs, which comes to the front, and ends. Two
+copies each held the library and wrote it whole, so the last to save won.
+#612.
+
 Anything that cannot be taken back asks in that same box, and nothing else
 does. Its buttons read left to right from the safest answer to the one that
 cannot be taken back: **Cancel**, then what is recommended, then what is

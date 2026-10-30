@@ -12,3 +12,5 @@ func probeMiddleware(next application.Middleware) application.Middleware { retur
 func startProbe(*FrameFairy) {}
 
 func probeLink() {}
+
+func probeSecondLaunch() {}

@@ -229,3 +229,22 @@ func FuzzKeyFromLink(f *testing.F) {
 		}
 	})
 }
+
+// A second copy of the app started by an Unlock link hands the link to
+// the copy that runs, which takes it as if macOS had handed it over.
+func TestALinkASecondCopyWasStartedByIsTaken(t *testing.T) {
+	kc := useFakeKeychain(t)
+	k := testKey(t, 1)
+	s := &FrameFairy{}
+	s.secondLaunch([]string{"/Applications/Frame Fairy.app/Contents/MacOS/framefairy-app", "-psn_0_12345", "FrameFairy://unlock?key=" + k})
+	if kc.key != k {
+		t.Fatalf("kept %q", kc.key)
+	}
+	if got := s.TakeLicenceLink(); got.What != "unlocked" {
+		t.Fatalf("took %+v", got)
+	}
+	s.secondLaunch([]string{"/Applications/Frame Fairy.app/Contents/MacOS/framefairy-app"})
+	if s.Licence().Waiting {
+		t.Error("a second copy with no link handed one over")
+	}
+}

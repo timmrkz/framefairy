@@ -87,7 +87,9 @@ type ProbeState struct {
 	// the page. GET /state?after=N answers once it is past N.
 	Version int `json:"version"`
 	// Links is how many framefairy:// links the app was handed.
-	Links   int          `json:"links"`
+	Links int `json:"links"`
+	// Seconds is how many second copies of the app handed over to it.
+	Seconds int          `json:"seconds"`
 	Licence LicenceState `json:"licence"`
 	// Focused is whether the app's window is the one in front.
 	Focused bool     `json:"focused"`
@@ -117,6 +119,7 @@ type probe struct {
 
 	mu      sync.Mutex
 	links   int
+	seconds int
 	seq     int
 	waiting map[int]chan json.RawMessage
 	// version counts the changes, and changed tells whoever waits for the
@@ -131,6 +134,15 @@ var theProbe = &probe{waiting: map[int]chan json.RawMessage{}}
 func probeLink() {
 	theProbe.mu.Lock()
 	theProbe.links++
+	theProbe.mu.Unlock()
+	theProbe.bump()
+}
+
+// probeSecondLaunch counts a second copy of the app that handed over to
+// this one.
+func probeSecondLaunch() {
+	theProbe.mu.Lock()
+	theProbe.seconds++
 	theProbe.mu.Unlock()
 	theProbe.bump()
 }
@@ -275,6 +287,7 @@ func (p *probe) state(w http.ResponseWriter, r *http.Request) {
 	}
 	p.mu.Lock()
 	s.Links = p.links
+	s.Seconds = p.seconds
 	p.mu.Unlock()
 	if p.svc.window != nil {
 		s.Focused = p.svc.window.IsFocused()

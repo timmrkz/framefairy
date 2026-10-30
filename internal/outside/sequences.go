@@ -28,6 +28,10 @@ package outside
 //   {"click", words}       presses the button on screen that says this
 //   {"start"}              starts the app the way the Dock does, and waits
 //                          until it answers
+//   {"start again"}        starts a second copy of the app while it runs,
+//                          the way another build opened from Finder does,
+//                          and waits until that copy has ended and the
+//                          one that runs has heard from it
 //   {"add video", seconds} makes a video so many seconds long and adds it,
 //                          the way Add does once a file is picked. Its first
 //                          search starts by itself
@@ -155,6 +159,21 @@ var sequences = []sequence{
 			{"quit"},
 		},
 	},
+	{
+		// #612. Two copies of the app each held the library in memory and
+		// wrote it whole, so the last to save won, and both started work
+		// on the same video. A second copy hands over to the one that
+		// runs and ends, and the one that runs comes to the front.
+		name: "a second copy of the app hands over to the one that runs",
+		steps: []step{
+			{"set up"},
+			{"start"},
+			{"bring forward", "Calculator"},
+			{"start again"},
+			{"front", "Frame Fairy"},
+			{"windows", "app"},
+		},
+	},
 }
 
 // verbs is every verb a step can start with, and how many words may follow
@@ -175,6 +194,7 @@ var verbs = map[string][2]int{
 	"saved":           {1, 1},
 	"waiting":         {1, 1},
 	"start":           {0, 0},
+	"start again":     {0, 0},
 	"add video":       {1, 1},
 	"search ends":     {0, 0},
 	"search and quit": {2, 2},
