@@ -1776,16 +1776,18 @@ bubble scrolled by those eight pixels.
         playhead just put at a clip's start is outside it, so the keys
         walked the transcript instead and the first press after picking a
         clip landed wherever the word before the clip happened to be.
-    - **The number keys go that far into the clip**, the way they do in a
-      video on YouTube: 0 puts the playhead at the clip's start, 5 half way
-      and 9 at 90 %, playing or paused, and the play goes on from there.
+    - **Each number key puts the playhead that many tenths into the
+      clip**, the way the number keys do in a video on YouTube: 0 at the
+      clip's start, 5 half way and 9 at 90 %, playing or paused, and the
+      play goes on from there.
       There is no key for the end, which is one click on the end edge. The
       share is of the clip as it plays, its cuts taken out, so it is the
       share of the short and never lands in a cut. The jump is about the
       clip, so a playhead on the video comes onto it, the way picking the
       clip does. With no clip chosen, or a field being typed in, the keys
       do nothing here, so a 5 typed in a word stays a 5. Top row and number
-      pad alike, read from the key's own name, `percentKey` in
+      pad alike, read from the key's own name, and with shift too, which a
+      French or Belgian keyboard needs for its digits, `percentKey` in
       `Episode.svelte` and `shareOf` in `lib/flow.ts`. Issue #539.
     - Drag an edge to trim. The edge lands on the frame, the same as the
       edge of a cut, and shift puts it on the nearest word instead, the way

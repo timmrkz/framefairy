@@ -1457,6 +1457,9 @@ export const steps = {
   //                    taken out, never in a cut, on the clip and not
   //                    dimmed, and playing or paused as it was. Playing,
   //                    the play goes on from there
+  // ["share", key, "past the cut"]
+  //                    the same, and the playhead lands after the clip's
+  //                    first cut
   // ["share", key, "from the video"]
   //                    the same, after a click on the clip timeline
   //                    before the clip, which dims it: the key brings the
@@ -1524,16 +1527,26 @@ export const steps = {
         window.__sharedTo ??= Number(screen.dataset.playhead);
         look.disconnect();
       });
-      window.addEventListener("keydown", () => look.observe(screen, { attributes: true, attributeFilter: ["data-playhead"] }), { capture: true, once: true });
+      const listen = () => look.observe(screen, { attributes: true, attributeFilter: ["data-playhead"] });
+      window.addEventListener("keydown", listen, { capture: true, once: true });
+      // Let go of once the step has read it, moved or not, so a later
+      // play is never read as this key's.
+      window.__sharedDone = () => {
+        look.disconnect();
+        window.removeEventListener("keydown", listen, { capture: true });
+      };
     });
     await page.keyboard.press(key);
     await settle(page);
-    const to = (await page.evaluate(() => window.__sharedTo)) ?? was.at;
+    const to = (await page.evaluate(() => (window.__sharedDone(), window.__sharedTo))) ?? was.at;
     const now = await place();
     const inCut = pieces.some((p, i) => i > 0 && to >= pieces[i - 1].end && to < p.start);
     if (Math.abs(to - want) > 1e-6) {
       walk.wrong = `${key} put the playhead at ${to.toFixed(3)} s, not ${want.toFixed(3)} s, ${Number(key) * 10} % of the clip's ${kept.toFixed(3)} s kept`;
     } else if (inCut) walk.wrong = `${key} put the playhead at ${to.toFixed(3)} s, inside a cut`;
+    else if (how === "past the cut" && !(pieces.length > 1 && to >= pieces[1].start)) {
+      walk.wrong = `${key} put the playhead at ${to.toFixed(3)} s, not past the cut that ends at ${pieces[1]?.start.toFixed(3)} s`;
+    }
     else if (now.video) walk.wrong = `${key} left the clip dimmed, with the playhead on the video`;
     else if (now.playing !== was.playing) walk.wrong = `${key} ${was.playing ? "stopped the play" : "started a play"}`;
     if (walk.wrong || !was.playing) {
