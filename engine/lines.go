@@ -783,6 +783,14 @@ func ClipTime(clip Clip, at float64) float64 {
 	return offset
 }
 
+// ShareTime is the moment of the episode a share of a clip shows. The
+// share is of the clip as it plays, its cuts taken out, which is the share
+// of its short, so 0.5 is where the short is half way and never in a cut.
+// The number keys put the playhead there, issue #539.
+func ShareTime(clip Clip, share float64) float64 {
+	return EpisodeTime(clip, share*clipLength(clip))
+}
+
 // SaidWord is the word being said at a moment of a clip, on the episode's
 // clock, out of the words the clip says.
 func SaidWord(clip Clip, words []timed.Cue, at float64) (timed.Cue, bool) {

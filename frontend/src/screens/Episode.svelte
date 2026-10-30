@@ -63,7 +63,7 @@
   import { captionColours, joinColour, splitColour } from "../lib/colour";
   import { stepLine } from "../lib/steps";
   import { Failures } from "../lib/failed";
-  import { asleep, asking, keysElsewhere, typing } from "../lib/keys";
+  import { asleep, asking, keysElsewhere, typing, workspaceKey } from "../lib/keys";
   import {
     secondThoughts,
     setAside,
@@ -1922,9 +1922,7 @@
   function inOutKey(event: KeyboardEvent) {
     const out = event.key === "o" || event.key === "O";
     if (!out && event.key !== "i" && event.key !== "I") return;
-    if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
-    if (event.defaultPrevented || event.repeat) return;
-    if (keysElsewhere() || asleep(root)) return;
+    if (!workspaceKey(event, root)) return;
     if (inClip || (out ? noOut : noIn)) return;
     event.preventDefault();
     void makeClip(out);
@@ -1934,12 +1932,7 @@
   // thumbnail's and I and O make a clip.
   function loopKey(event: KeyboardEvent) {
     if (event.key !== "l" && event.key !== "L") return;
-    if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
-    if (event.defaultPrevented || event.repeat) return;
-    const on = document.activeElement as HTMLElement | null;
-    const tag = on?.tagName;
-    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || on?.isContentEditable) return;
-    if (document.querySelector("dialog[open]") || asleep(root)) return;
+    if (!workspaceKey(event, root)) return;
     if (!current) return;
     event.preventDefault();
     looping = !looping;
@@ -1947,9 +1940,7 @@
 
   function rotateKey(event: KeyboardEvent) {
     if (event.key !== "r" && event.key !== "R") return;
-    if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
-    if (event.defaultPrevented || event.repeat) return;
-    if (keysElsewhere() || asleep(root)) return;
+    if (!workspaceKey(event, root)) return;
     if (!current) return;
     event.preventDefault();
     void rotatePart();
@@ -1959,19 +1950,46 @@
   // there, the keyframe button's key, the way T is the thumbnail's.
   function cropMarkKey(event: KeyboardEvent) {
     if (event.key !== "c" && event.key !== "C") return;
-    if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
-    if (event.defaultPrevented || event.repeat) return;
-    if (keysElsewhere() || asleep(root)) return;
+    if (!workspaceKey(event, root)) return;
     if (!current) return;
     event.preventDefault();
     toggleCropMark();
   }
 
+  // Each number key puts the playhead that many tenths into the chosen
+  // clip, the way the number keys do in a video on YouTube: 0 at its
+  // start, 5 half way, 9 at 90 %. Where that is, the engine says, of the
+  // clip as it plays, so a key never lands in a cut, see engine.ShareTime.
+  // The jump is about the clip, so a playhead on the video comes onto it,
+  // and a play goes on from there. Read from event.key, so the number pad
+  // and the top row are the same, and shift is let through for the
+  // keyboards whose digits need it, French and Belgian. On the others
+  // shift and a digit is a sign, which is no digit. A key pressed before
+  // the answer to the one before is the one that counts. Issue #539.
+  const shares = new Newest();
+
+  async function percentKey(event: KeyboardEvent) {
+    if (!/^[0-9]$/.test(event.key)) return;
+    if (!workspaceKey(event, root, true)) return;
+    const clip = current;
+    if (!clip) return;
+    event.preventDefault();
+    const n = Number(event.key);
+    const ticket = shares.send();
+    try {
+      const at = await api.shareOfClip(path, clip.plan, clip.id, n / 10);
+      if (!shares.keep(ticket) || current?.key !== clip.key) return;
+      seekTo(at, "clip");
+      said(`keys: ${n} put the playhead at ${n * 10} % of the clip`);
+    } catch (err) {
+      shares.keep(ticket);
+      oops(errorText(err));
+    }
+  }
+
   function thumbnailKey(event: KeyboardEvent) {
     if (event.key !== "t" && event.key !== "T") return;
-    if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
-    if (event.defaultPrevented || event.repeat) return;
-    if (keysElsewhere() || asleep(root)) return;
+    if (!workspaceKey(event, root)) return;
     if (!current) return;
     event.preventDefault();
     toggleThumbnail();
@@ -3186,6 +3204,7 @@
     window.addEventListener("keydown", cropMarkKey);
     window.addEventListener("keydown", rotateKey);
     window.addEventListener("keydown", loopKey);
+    window.addEventListener("keydown", percentKey);
     window.addEventListener("keydown", inOutKey);
     window.addEventListener("keydown", sayKey);
     window.addEventListener("focusin", sayElsewhere);
@@ -3199,6 +3218,7 @@
       window.removeEventListener("keydown", cropMarkKey);
       window.removeEventListener("keydown", rotateKey);
       window.removeEventListener("keydown", loopKey);
+      window.removeEventListener("keydown", percentKey);
       window.removeEventListener("keydown", inOutKey);
     };
   });
