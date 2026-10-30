@@ -3391,14 +3391,7 @@ on the control it was started from.
 
 The field is a textarea. The browser draws its cursor and moves it with
 the arrow keys, the way every text field does, and the page writes the
-words in where they changed. In the field with the cursor it writes
-them as typing does, with `execCommand("insertText")`, and puts the
-selection back where it was, by way of another place, so the browser
-has no cursor of its own to show and scrolls nothing. Anywhere else it
-uses `setRangeText`, which in WebKit makes the field's whole text anew,
-and a cursor drawn in the text that went was left on screen: Tim held
-the arrow keys while he dictated and saw cursors on several lines (30
-October). What
+words in where they changed, with `setRangeText`. What
 a dictation does to the text is worked out in
 `frontend/src/lib/dictating.ts`, in letters and numbers, with unit tests
 beside it. The field was a `contenteditable` of the page's own making,
@@ -3440,7 +3433,13 @@ the field jumped several lines at a time on Tim's Mac and then shifted
 again as the next words came, and other engines put it at the very edge,
 with the padding hidden (30 October). Where the cursor is drawn is
 measured in a copy of the text laid out like the field's,
-`frontend/src/lib/caret.ts`.
+`frontend/src/lib/caret.ts`. Whenever the page scrolls the field, it
+has WebKit draw the cursor again, by giving it the same colour said
+another way. WebKit draws the cursor again only where its place on the
+screen changed (`recomputeCaretRect` in its `FrameSelection.cpp`), and
+a cursor that moves a line while the field scrolls that same line keeps
+its place: the old one stayed drawn on the line it left, and Tim saw
+cursors on every line the field scrolled past (30 October).
 
 The field follows the words the way a terminal follows its output:
 while its end is in view, it stays at its end as words come at the end

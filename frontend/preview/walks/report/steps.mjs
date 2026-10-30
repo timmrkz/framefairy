@@ -900,6 +900,7 @@ export const steps = {
   //                    "report scroll" put it
   async "report stays"(walk, arg, s, what) {
     const { kept, page } = walk;
+    await watchRedraw(page);
     if (what === "report follows, a line further") {
       // A few words more may still fit on the last line, which the field
       // shows whether it follows or not. Thirty rounds of words make
@@ -912,7 +913,7 @@ export const steps = {
       }
       await settle(page);
       if ((await page.locator(".telling").evaluate((f) => f.scrollHeight)) <= tall) walk.wrong = "the report grew no longer while more was said";
-      else walk.wrong = await page.locator(".telling").evaluate(atEnd);
+      else walk.wrong = (await page.locator(".telling").evaluate(atEnd)) || (await redrawMissed(page));
       return;
     }
     const was = await page.locator(".telling").evaluate((f) => f.value);
@@ -923,7 +924,7 @@ export const steps = {
     const top = await page.locator(".telling").evaluate((f) => f.scrollTop);
     if (what === "report stays") {
       if (top !== kept.scrolledTo) walk.wrong = `the field moved to ${top} px while more was said, from ${kept.scrolledTo} px where it was scrolled to`;
-    } else walk.wrong = await page.locator(".telling").evaluate(atEnd);
+    } else walk.wrong = (await page.locator(".telling").evaluate(atEnd)) || (await redrawMissed(page));
   },
   // ["caret at words"] the cursor is right after the words being said,
   //                    at the end of the report, which they end
@@ -1443,10 +1444,44 @@ async function pressed(page, key) {
     window.addEventListener("keydown", note);
     window.addEventListener("input", note);
   });
+  await watchRedraw(page);
   await page.keyboard.press(key);
   await nextPaint(page);
   const [left, now] = await page.locator(".telling").evaluate((f) => [window.__pageScrolled, f.scrollTop]);
-  return left === now ? "" : `the browser scrolled the field from ${left} px, where the page left it, to ${now} px`;
+  if (left !== now) return `the browser scrolled the field from ${left} px, where the page left it, to ${now} px`;
+  return await redrawMissed(page);
+}
+
+// watchRedraw notes, from here, each frame the report's field scrolled in
+// without the page having WebKit draw it again, for redrawMissed. WebKit
+// draws the cursor again only where its place on the screen changed, so
+// a cursor that moves a line while the field scrolls that line stays
+// drawn on the line it left. Tim saw such cursors on his Mac, which a
+// walk in Chromium cannot see, so the walk checks the page asked: the
+// field's caret-color changes in every frame the field scrolls in.
+async function watchRedraw(page) {
+  await page.locator(".telling").evaluate((f) => {
+    window.__redraw ??= (() => {
+      const w = { asked: false, missed: [] };
+      new MutationObserver(() => (w.asked = true)).observe(f, { attributes: true, attributeFilter: ["style"] });
+      f.addEventListener("scroll", () => {
+        if (w.on && !w.asked) w.missed.push(f.scrollTop);
+        w.asked = false;
+      });
+      return w;
+    })();
+    Object.assign(window.__redraw, { on: true, asked: false, missed: [] });
+  });
+}
+
+// redrawMissed says in which frames since watchRedraw the report's field
+// scrolled with its cursor left as it was drawn, or nothing.
+async function redrawMissed(page) {
+  const missed = await page.evaluate(() => {
+    window.__redraw.on = false;
+    return window.__redraw.missed;
+  });
+  return missed.length ? `the page scrolled the field to ${missed.join(", ")} px and left the cursor drawn where it was, so on a Mac it stays on the line it left` : "";
 }
 
 // cursorInView runs in the page on the report's field f, and says where

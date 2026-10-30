@@ -399,9 +399,28 @@
     const line = parseFloat(cs.lineHeight);
     const [over, under] = caretBox(field, at);
     const f = { top, height: field.clientHeight, end: field.scrollHeight, pad: parseFloat(cs.paddingTop), foot: parseFloat(cs.paddingBottom), line };
-    const to = revealed(f, over + lines * line, under + lines * line);
-    if (to !== field.scrollTop) field.scrollTop = to;
+    scroll(revealed(f, over + lines * line, under + lines * line));
   }
+
+  // scroll puts the field's top at top, and has WebKit draw the cursor
+  // again. WebKit draws it again only where its place on the screen
+  // changed (recomputeCaretRect in WebKit's FrameSelection.cpp). An arrow
+  // key at the edge, or words that start a new line, move the cursor a
+  // line while the page scrolls the field by the same line, so its place
+  // stays: the cursor stayed drawn on the line it left, and the new one
+  // was drawn only as it blinked. Tim saw cursors left on the lines the
+  // field scrolled past (30 October). The cursor's colour said another
+  // way, auto or the text's colour, which are the same colour here, has
+  // the field drawn again. Once a frame, since twice would be no change.
+  function scroll(top: number) {
+    if (top === field.scrollTop) return;
+    field.scrollTop = top;
+    if (redrawing) return;
+    redrawing = true;
+    field.style.caretColor = field.style.caretColor ? "" : "currentcolor";
+    requestAnimationFrame(() => (redrawing = false));
+  }
+  let redrawing = false;
 
   // show writes the dictation's text into the field where it changed, and
   // puts the selection where it is now, which was the selection before.
@@ -414,48 +433,13 @@
   function show(d: Dictating, sel: Span) {
     const cs = getComputedStyle(field);
     const follow = field.scrollHeight - field.clientHeight - field.scrollTop <= parseFloat(cs.paddingBottom) + parseFloat(cs.lineHeight) / 2;
-    const dir = field.selectionDirection;
-    const top = field.scrollTop;
-    if (field.value !== d.text) write(...changed(field.value, d.text));
-    if (inPlace === "keys" || field.selectionStart !== sel[0] || field.selectionEnd !== sel[1]) {
-      // A selection set to where it already is changes nothing, and the
-      // browser would then show the cursor after the words it wrote,
-      // scrolled to the middle of the field on a Mac, as typing does. One
-      // set somewhere else first is the page's, which scrolls nothing.
-      if (inPlace === "keys") field.setSelectionRange(sel[0] ? 0 : field.value.length, sel[0] ? 0 : field.value.length);
-      field.setSelectionRange(sel[0], sel[1], dir);
+    if (field.value !== d.text) {
+      const [a, b, put] = changed(field.value, d.text);
+      field.setRangeText(put, a, b);
     }
-    // Chromium scrolls to an edit as it makes it, WebKit when it paints.
-    if (inPlace) field.scrollTop = top;
-    inPlace = "";
+    if (field.selectionStart !== sel[0] || field.selectionEnd !== sel[1]) field.setSelectionRange(sel[0], sel[1], field.selectionDirection);
     if (follow && d.end === d.text.length) reveal(d.end);
   }
-
-  // write puts put where the letters from a to b are. In the field with
-  // the cursor, it is an edit like typing, which changes the text where it
-  // changed. setRangeText makes the whole text anew, in WebKit too, and a
-  // cursor drawn in the text that went is not cleared once it moved
-  // (nodeWillBeRemoved in WebKit's FrameSelection.cpp): Tim held the
-  // arrow keys while he dictated and saw cursors left on several lines
-  // (30 October). Typing never left one.
-  function write(a: number, b: number, put: string) {
-    if (document.activeElement === field && !composing) {
-      const want = field.value.slice(0, a) + put + field.value.slice(b);
-      inPlace = "keys";
-      field.setSelectionRange(a, b);
-      if (put ? document.execCommand("insertText", false, put) : a === b || document.execCommand("delete")) {
-        if (field.value === want) return;
-      }
-      field.value = want;
-      return;
-    }
-    field.setRangeText(put, a, b);
-  }
-
-  // What the page is writing into the field: "keys" while it writes as
-  // typing does, which the field hears as input of its own and which is
-  // not the person's.
-  let inPlace: "" | "keys" = "";
 
   // tell passes on to the Go side what the person did to the words still
   // being heard, and what it says until it has taken that in is passed
@@ -500,7 +484,6 @@
   // typed right after a word that was said gets a space in front of it,
   // as the letter is typed, so the two are one step.
   function editing(e: InputEvent) {
-    if (inPlace) return;
     held = field.scrollTop;
     if (e.inputType === "historyUndo" || e.inputType === "historyRedo") {
       e.preventDefault();
@@ -518,7 +501,6 @@
   // hand is told of it. The cursor's line is put in view from where the
   // field was before the edit, whatever the browser did to it meanwhile.
   function typed() {
-    if (inPlace) return;
     unclear();
     const was = dictation?.text ?? what;
     const [a, b, put] = edit(was, field.value, field.selectionEnd);
