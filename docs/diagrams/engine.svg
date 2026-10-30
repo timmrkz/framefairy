@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 446" width="760" height="446" role="img" aria-label="The engine today: one package, over engine/timed">
+<style>
+.t{font:600 15px -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;fill:#1f2328}
+.n{font:600 13px -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;fill:#1f2328}
+.p{font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fill:#59636e}
+.q{font:11.5px -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;fill:#59636e}
+.c{font:11.5px -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;fill:#1f2328}
+.box{fill:none;stroke:#b6bcc4;stroke-width:1.25}
+.dash{fill:none;stroke:#b6bcc4;stroke-width:1.25;stroke-dasharray:4 4}
+.tint{fill:#f1f3f5;stroke:#b6bcc4;stroke-width:1.25}
+.chip{fill:#f6f8fa;stroke:#d1d9e0;stroke-width:1}
+.ax{stroke:#8c959f;stroke-width:1.25;fill:none}
+.ah{fill:#8c959f}
+@media (prefers-color-scheme:dark){
+.t,.n,.c{fill:#f0f6fc}.p,.q{fill:#9198a1}
+.box,.dash{stroke:#5d6570}.tint{fill:#1c2128;stroke:#5d6570}
+.chip{fill:#212830;stroke:#3d444d}.ax{stroke:#7d8590}.ah{fill:#7d8590}}
+</style>
+<text class="t" x="24" y="30">The engine today: one package, over engine/timed</text>
+<text class="q" x="24" y="50">may use</text>
+<path class="ax" d="M40 60V416"/>
+<path class="ah" d="M35 412L40 422L45 412z"/>
+<rect class="box" x="64" y="56" width="672" height="190" rx="8"/>
+<text class="n" x="76" y="78">engine</text>
+<text class="p" x="76" y="96">engine/</text>
+<text class="q" x="76" y="112">one package: any file may use any other, so its areas are not layers yet</text>
+<rect class="chip" x="76" y="122" width="216" height="22" rx="6"/>
+<text class="c" x="84" y="137">run: Run, Project, views, jobs</text>
+<rect class="chip" x="298" y="122" width="223" height="22" rx="6"/>
+<text class="c" x="306" y="137">search: plans, recipes, answers</text>
+<rect class="chip" x="527" y="122" width="189" height="22" rx="6"/>
+<text class="c" x="535" y="137">models: cloud, local, keys</text>
+<rect class="chip" x="76" y="150" width="303" height="22" rx="6"/>
+<text class="c" x="84" y="165">clips: the plan file, edits, undo, gestures</text>
+<rect class="chip" x="385" y="150" width="249" height="22" rx="6"/>
+<text class="c" x="393" y="165">captions: lines, the drawing, fonts</text>
+<rect class="chip" x="76" y="178" width="229" height="22" rx="6"/>
+<text class="c" x="84" y="193">framing: crops, faces, rotations</text>
+<rect class="chip" x="311" y="178" width="56" height="22" rx="6"/>
+<text class="c" x="319" y="193">render</text>
+<rect class="chip" x="373" y="178" width="289" height="22" rx="6"/>
+<text class="c" x="381" y="193">media: ffmpeg, probes, the decoder client</text>
+<rect class="chip" x="76" y="206" width="269" height="22" rx="6"/>
+<text class="c" x="84" y="221">speech: hearing, the transcript, words</text>
+<rect class="chip" x="351" y="206" width="183" height="22" rx="6"/>
+<text class="c" x="359" y="221">base: numbers, log, files</text>
+<rect class="box" x="64" y="262" width="672" height="90" rx="8"/>
+<text class="n" x="76" y="284">the types for a moment of a video</text>
+<text class="p" x="76" y="302">engine/timed/</text>
+<rect class="chip" x="76" y="312" width="36" height="22" rx="6"/>
+<text class="c" x="84" y="327">Cue</text>
+<rect class="chip" x="118" y="312" width="43" height="22" rx="6"/>
+<text class="c" x="126" y="327">Span</text>
+<rect class="chip" x="167" y="312" width="56" height="22" rx="6"/>
+<text class="c" x="175" y="327">Window</text>
+<rect class="chip" x="229" y="312" width="63" height="22" rx="6"/>
+<text class="c" x="237" y="327">Reading</text>
+<rect class="chip" x="297" y="312" width="96" height="22" rx="6"/>
+<text class="c" x="305" y="327">FrameSeconds</text>
+<rect class="box" x="64" y="368" width="213" height="54" rx="8"/>
+<text class="n" x="76" y="390">a licence key</text>
+<text class="p" x="76" y="408">licence/</text>
+<rect class="box" x="293" y="368" width="213" height="54" rx="8"/>
+<text class="n" x="305" y="390">waiting on a change</text>
+<text class="p" x="305" y="408">internal/wake/</text>
+<rect class="box" x="523" y="368" width="213" height="54" rx="8"/>
+<text class="n" x="535" y="390">the wire to the decoder</text>
+<text class="p" x="535" y="408">internal/framewire/</text>
+</svg>

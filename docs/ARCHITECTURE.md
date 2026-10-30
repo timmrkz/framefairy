@@ -20,18 +20,7 @@ goes. A rule about a video belongs as low as it can go, in the engine,
 where both front ends reach it. A rule found higher up, in the app or the
 interface, is in the wrong place.
 
-```
-  1  the interface        frontend/                      the command line
-            |  the bindings, events, /frames             cmd/framefairy/
-  2  the app's Go side    cmd/framefairy-app/                  |
-            |                                                  |
-            +------------------------+-------------------------+
-                                     |   both hand in the speech model, asr/
-  3  the engine           engine/, reached through engine.Project
-            |
-  4  at the edge          work folders, models, ffmpeg, llama-server,
-                          the frames decoder cmd/framefairy-frames/
-```
+![The app in layers: each part uses only the parts under it](diagrams/app.svg)
 
 Inside the engine, a video goes through the same steps in both front
 ends: it is heard into a transcript, searched into a plan of clips,
@@ -40,9 +29,27 @@ one path through the layers: the interface asks, a binding passes it on,
 the engine works out the answer and saves it through `editPlan`, and Go
 tells the interface what changed.
 
+### Each part, one level down
+
+The three parts with packages or folders of their own, drawn the same
+way. Inside the engine and inside the app's Go side the groups are files
+of one package, so nothing holds them apart yet.
+
+![The engine today: one package, over engine/timed](diagrams/engine.svg)
+
+![The app's Go side: one package main, over the engine](diagrams/app-go.svg)
+
+![The interface: screens use components, both use lib](diagrams/interface.svg)
+
+The drawings are plain SVG in `docs/diagrams/`, a box a `rect` with its
+texts and a chip a small `rect` with its text, and they follow the
+reader's light or dark theme. A change that moves a box changes its
+drawing in the same pull request, and `internal/naming` checks that
+every path a drawing names exists.
+
 ## Code map
 
-One row for each box above, in the same order.
+One row for each box of the drawings, from the top.
 
 | Layer | Code | Owns | Never holds |
 | --- | --- | --- | --- |
@@ -193,7 +200,8 @@ When in doubt, do the five.
    to build.
 2. **They converge.** What comes back in most of them is kept, what only
    one needs is dropped or kept for a reason that is said. The final
-   candidate is drawn as layers, each using only the ones under it.
+   candidate is drawn as layers, each using only the ones under it, the
+   way `docs/diagrams/` draws them.
 3. **It is written down** as a decision record in `docs/decisions/`,
    pushed with the first code of the change, see
    [decisions/README.md](decisions/README.md). A change made over several
