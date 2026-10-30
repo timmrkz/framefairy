@@ -291,8 +291,7 @@ func usageError(msg string) error {
 	return fmt.Errorf("%s\nframefairy: error: %s", usageLine, msg)
 }
 
-// parseArgs follows argparse's rules, so every command that worked with the
-// Python version works here. Options and the source may come in any order,
+// parseArgs keeps every command that ever worked working. Options and the source may come in any order,
 // values may be joined with "=", and a unique prefix of an option is enough.
 func parseArgs(argv []string) (parsed, error) {
 	p := parsed{opts: engine.DefaultOptions()}

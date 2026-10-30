@@ -14,9 +14,11 @@ import (
 	"strings"
 	"time"
 
-	"framefairy/engine/timed"
-
 	"github.com/spf13/afero"
+
+	"framefairy/engine/num"
+	"framefairy/engine/runes"
+	"framefairy/engine/timed"
 )
 
 // SummariseLines reports what the transcript looks like before any token is
@@ -37,9 +39,9 @@ func (e *Engine) SummariseLines(t *Transcript, lines []Line, window timed.Window
 	}
 	covered := math.Max(window.End-window.Start, 1.0)
 	e.Log.Info("%s words in %s speech lines, %s pauses below %s dB, %s lines carrying a delivery note",
-		commas(len(t.Words)), commas(len(lines)), commas(pauses), fixed(t.Floor, 0), commas(marked))
+		commas(len(t.Words)), commas(len(lines)), commas(pauses), num.Fixed(t.Floor, 0), commas(marked))
 	e.Log.Detail("%s min of words in %s min of audio",
-		fixed(pysum(talking)/60, 1), fixed(covered/60, 1))
+		num.Fixed(num.Sum(talking)/60, 1), num.Fixed(covered/60, 1))
 }
 
 // PlanOptions are the choices that shape a plan.
@@ -104,8 +106,8 @@ type PlanOptions struct {
 // ByHand is the clip set made with I and O, see PlanOptions.By.
 const ByHand = "hand"
 
-// The plan as written to disk. Field order matches the Python version, so a
-// plan reads the same whichever version wrote it.
+// The plan as written to disk. Field order never changes, so a plan reads
+// the same whichever version of the app wrote it.
 
 // PlanFile is a complete clips.json.
 type PlanFile struct {
@@ -118,12 +120,12 @@ type PlanFile struct {
 // PlannedWith stamps the settings a plan was made under, so a later run can
 // notice that a reused plan was made differently.
 type PlannedWith struct {
-	Count int      `json:"count"`
-	Min   PyFloat  `json:"min"`
-	Max   PyFloat  `json:"max"`
-	Model string   `json:"model"`
-	From  *PyFloat `json:"from"`
-	To    *PyFloat `json:"to"`
+	Count int        `json:"count"`
+	Min   num.Float  `json:"min"`
+	Max   num.Float  `json:"max"`
+	Model string     `json:"model"`
+	From  *num.Float `json:"from"`
+	To    *num.Float `json:"to"`
 	// By is who proposed the clips, see PlanOptions.By.
 	By string `json:"by,omitempty"`
 }
@@ -141,13 +143,13 @@ type PlanClip struct {
 // PlanSegment is one segment in clips.json. CropX holds a pixel offset or
 // the word "center".
 type PlanSegment struct {
-	Start PyFloat `json:"start"`
-	End   PyFloat `json:"end"`
-	CropX any     `json:"crop_x"`
+	Start num.Float `json:"start"`
+	End   num.Float `json:"end"`
+	CropX any       `json:"crop_x"`
 }
 
-// MarshalPlan writes a plan the way Python's json.dumps(indent=2,
-// ensure_ascii=False) does.
+// MarshalPlan writes a plan indented by two spaces, with every character
+// as itself rather than escaped, the way every plan so far was written.
 func MarshalPlan(plan any) ([]byte, error) {
 	var buf bytes.Buffer
 	encoder := json.NewEncoder(&buf)
@@ -321,7 +323,7 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 		if opts.Local != nil {
 			budget = opts.Local.Think
 		}
-		clock := newSearchClock(e.Log, e.Records, opts.Model, opts.Local != nil, runeLen(prompt), opts.Count, budget)
+		clock := newSearchClock(e.Log, e.Records, opts.Model, opts.Local != nil, runes.Len(prompt), opts.Count, budget)
 		// Set before the clock runs, so nothing reads it while it is set.
 		clock.now.NoFit = !build.fits
 		go clock.run()
@@ -360,7 +362,7 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 	if !haveReply {
 		// These checks only matter when a request is actually going to be
 		// sent. A cached run costs nothing.
-		estimate, outEstimate, measured := estimateUsage(e.Files, opts.LogDir, runeLen(prompt), "plan")
+		estimate, outEstimate, measured := estimateUsage(e.Files, opts.LogDir, runes.Len(prompt), "plan")
 		facts := FactsFor(opts.Model)
 		sourceNote := "estimated"
 		if measured {
@@ -371,9 +373,9 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 		if facts.Priced {
 			likely = float64(float64(estimate)/1e6*facts.PriceIn) +
 				float64(float64(outEstimate)/1e6*facts.PriceOut)
-			costNote = ", roughly $" + fixed(likely, 2)
+			costNote = ", roughly $" + num.Fixed(likely, 2)
 		}
-		e.Log.Info("transcript: %s lines, %s characters", commas(len(lines)), commas(runeLen(prompt)))
+		e.Log.Info("transcript: %s lines, %s characters", commas(len(lines)), commas(runes.Len(prompt)))
 		e.Log.Info("expecting about %s tokens in and %s out (%s)%s",
 			commas(estimate), commas(outEstimate), sourceNote, costNote)
 		if !measured {
@@ -390,7 +392,7 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 		}
 		if facts.Priced && likely > opts.Budget {
 			return nil, renderErr("this call would cost about $%s, over your $%s limit. "+
-				"Raise it with --budget if that is fine.", fixed(likely, 2), fixed(opts.Budget, 2))
+				"Raise it with --budget if that is fine.", num.Fixed(likely, 2), num.Fixed(opts.Budget, 2))
 		}
 
 		err := e.Log.Step("choosing and condensing", func() error {
@@ -655,14 +657,14 @@ func saveFit(fsys afero.Fs, cachePath, key, fit string, how *localAnswer) {
 func windowFits(fsys afero.Fs, lines []Line, opts PlanOptions) error {
 	room := planRoom(fsys, opts)
 	recipe := opts.recipe()
-	have := runeLen(recipe.Request(lines, recipe.units(lines), opts)) - runeLen(recipe.Request(nil, nil, opts))
+	have := runes.Len(recipe.Request(lines, recipe.units(lines), opts)) - runes.Len(recipe.Request(nil, nil, opts))
 	if have <= room.Chars {
 		return nil
 	}
 	if room.By == "budget" {
 		return renderErr("the transcript of this window is %s characters, and a search within "+
 			"the $%s budget reads at most %s. Choose a shorter window, or raise the budget with --budget.",
-			commas(have), fixed(opts.Budget, 2), commas(room.Chars))
+			commas(have), num.Fixed(opts.Budget, 2), commas(room.Chars))
 	}
 	name := opts.Model
 	if opts.Local != nil && opts.Local.Model != "" {

@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 474" width="760" height="474" role="img" aria-label="The engine today: one package, over engine/timed">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 608" width="760" height="608" role="img" aria-label="The engine today: one package, over its small ones">
 <style>
 .t{font:600 15px -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;fill:#1f2328}
 .n{font:600 13px -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;fill:#1f2328}
@@ -18,11 +18,11 @@
 .box,.dash{stroke:#5d6570}.tint{fill:#1c2128;stroke:#5d6570}
 .chip{fill:#212830;stroke:#3d444d}.ax{stroke:#7d8590}.ah{fill:#7d8590}}
 </style>
-<rect class="bg" width="760" height="474" rx="12"/>
-<text class="t" x="24" y="30">The engine today: one package, over engine/timed</text>
+<rect class="bg" width="760" height="608" rx="12"/>
+<text class="t" x="24" y="30">The engine today: one package, over its small ones</text>
 <text class="q" x="24" y="50">may use</text>
-<path class="ax" d="M40 60V444"/>
-<path class="ah" d="M35 440L40 450L45 440z"/>
+<path class="ax" d="M40 60V578"/>
+<path class="ah" d="M35 574L40 584L45 574z"/>
 <rect class="box" x="64" y="56" width="672" height="218" rx="8"/>
 <text class="n" x="76" y="78">engine</text>
 <text class="p" x="76" y="96">engine/</text>
@@ -47,28 +47,64 @@
 <text class="c" x="84" y="221">speech: hearing, the transcript, words</text>
 <rect class="chip" x="351" y="206" width="309" height="22" rx="6"/>
 <text class="c" x="359" y="221">training: the records of answers and actions</text>
-<rect class="chip" x="76" y="234" width="183" height="22" rx="6"/>
-<text class="c" x="84" y="249">base: numbers, log, files</text>
+<rect class="chip" x="76" y="234" width="123" height="22" rx="6"/>
+<text class="c" x="84" y="249">base: log, files</text>
 <rect class="box" x="64" y="290" width="672" height="90" rx="8"/>
-<text class="n" x="76" y="312">the types for a moment of a video</text>
-<text class="p" x="76" y="330">engine/timed/</text>
-<rect class="chip" x="76" y="340" width="36" height="22" rx="6"/>
-<text class="c" x="84" y="355">Cue</text>
-<rect class="chip" x="118" y="340" width="43" height="22" rx="6"/>
-<text class="c" x="126" y="355">Span</text>
-<rect class="chip" x="167" y="340" width="56" height="22" rx="6"/>
-<text class="c" x="175" y="355">Window</text>
-<rect class="chip" x="229" y="340" width="63" height="22" rx="6"/>
-<text class="c" x="237" y="355">Reading</text>
-<rect class="chip" x="297" y="340" width="96" height="22" rx="6"/>
-<text class="c" x="305" y="355">FrameSeconds</text>
-<rect class="box" x="64" y="396" width="213" height="54" rx="8"/>
-<text class="n" x="76" y="418">a licence key</text>
-<text class="p" x="76" y="436">licence/</text>
-<rect class="box" x="293" y="396" width="213" height="54" rx="8"/>
-<text class="n" x="305" y="418">waiting on a change</text>
-<text class="p" x="305" y="436">internal/wake/</text>
-<rect class="box" x="523" y="396" width="213" height="54" rx="8"/>
-<text class="n" x="535" y="418">the wire to the decoder</text>
-<text class="p" x="535" y="436">internal/framewire/</text>
+<text class="n" x="76" y="312">numbers, the same on every platform</text>
+<text class="p" x="76" y="330">engine/num/</text>
+<rect class="chip" x="76" y="340" width="49" height="22" rx="6"/>
+<text class="c" x="84" y="355">Round</text>
+<rect class="chip" x="131" y="340" width="63" height="22" rx="6"/>
+<text class="c" x="139" y="355">RoundTo</text>
+<rect class="chip" x="200" y="340" width="49" height="22" rx="6"/>
+<text class="c" x="208" y="355">Fixed</text>
+<rect class="chip" x="255" y="340" width="36" height="22" rx="6"/>
+<text class="c" x="263" y="355">Sum</text>
+<rect class="chip" x="297" y="340" width="49" height="22" rx="6"/>
+<text class="c" x="305" y="355">Float</text>
+<rect class="chip" x="353" y="340" width="56" height="22" rx="6"/>
+<text class="c" x="361" y="355">Format</text>
+<rect class="chip" x="415" y="340" width="49" height="22" rx="6"/>
+<text class="c" x="423" y="355">Parse</text>
+<rect class="chip" x="470" y="340" width="63" height="22" rx="6"/>
+<text class="c" x="478" y="355">AsFloat</text>
+<rect class="chip" x="539" y="340" width="49" height="22" rx="6"/>
+<text class="c" x="547" y="355">AsInt</text>
+<rect class="box" x="64" y="396" width="328" height="118" rx="8"/>
+<text class="n" x="76" y="418">text, by its characters</text>
+<text class="p" x="76" y="436">engine/runes/</text>
+<rect class="chip" x="76" y="446" width="36" height="22" rx="6"/>
+<text class="c" x="84" y="461">Len</text>
+<rect class="chip" x="118" y="446" width="56" height="22" rx="6"/>
+<text class="c" x="126" y="461">Prefix</text>
+<rect class="chip" x="180" y="446" width="43" height="22" rx="6"/>
+<text class="c" x="188" y="461">Trim</text>
+<rect class="chip" x="229" y="446" width="56" height="22" rx="6"/>
+<text class="c" x="237" y="461">Fields</text>
+<rect class="chip" x="291" y="446" width="49" height="22" rx="6"/>
+<text class="c" x="299" y="461">Scrub</text>
+<rect class="chip" x="76" y="474" width="49" height="22" rx="6"/>
+<text class="c" x="84" y="489">Quote</text>
+<rect class="box" x="408" y="396" width="328" height="118" rx="8"/>
+<text class="n" x="420" y="418">a moment of a video</text>
+<text class="p" x="420" y="436">engine/timed/</text>
+<rect class="chip" x="420" y="446" width="36" height="22" rx="6"/>
+<text class="c" x="428" y="461">Cue</text>
+<rect class="chip" x="462" y="446" width="43" height="22" rx="6"/>
+<text class="c" x="470" y="461">Span</text>
+<rect class="chip" x="511" y="446" width="56" height="22" rx="6"/>
+<text class="c" x="519" y="461">Window</text>
+<rect class="chip" x="573" y="446" width="63" height="22" rx="6"/>
+<text class="c" x="581" y="461">Reading</text>
+<rect class="chip" x="420" y="474" width="96" height="22" rx="6"/>
+<text class="c" x="428" y="489">FrameSeconds</text>
+<rect class="box" x="64" y="530" width="213" height="54" rx="8"/>
+<text class="n" x="76" y="552">a licence key</text>
+<text class="p" x="76" y="570">licence/</text>
+<rect class="box" x="293" y="530" width="213" height="54" rx="8"/>
+<text class="n" x="305" y="552">waiting on a change</text>
+<text class="p" x="305" y="570">internal/wake/</text>
+<rect class="box" x="523" y="530" width="213" height="54" rx="8"/>
+<text class="n" x="535" y="552">the wire to the decoder</text>
+<text class="p" x="535" y="570">internal/framewire/</text>
 </svg>

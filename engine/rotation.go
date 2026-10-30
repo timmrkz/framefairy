@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"math"
 	"sort"
+
+	"framefairy/engine/num"
+	"framefairy/engine/runes"
 )
 
 // A phone turned while it records keeps writing the picture the way it
@@ -61,22 +64,22 @@ func readRotations(value any) ([]Rotation, error) {
 		if v, present := entry[keyFrom]; present && v != nil {
 			t, err := ParseTime(v)
 			if err != nil || t < 0 || t > MaxEpisodeSeconds {
-				return nil, fmt.Errorf("a rotation starts at %s, which is no moment of a video", Scrub(pyReprAny(v), 40))
+				return nil, fmt.Errorf("a rotation starts at %s, which is no moment of a video", runes.Scrub(quoteValue(v), 40))
 			}
 			r.From = t
 		}
 		if v, present := entry[keyTo]; present && v != nil {
 			t, err := ParseTime(v)
 			if err != nil || t < 0 || t > MaxEpisodeSeconds {
-				return nil, fmt.Errorf("a rotation ends at %s, which is no moment of a video", Scrub(pyReprAny(v), 40))
+				return nil, fmt.Errorf("a rotation ends at %s, which is no moment of a video", runes.Scrub(quoteValue(v), 40))
 			}
 			r.To = t
 		}
 		deg, present := entry[keyDeg]
-		f, isNumber := toFloat(deg)
+		f, isNumber := num.AsFloat(deg)
 		_, isText := deg.(string)
 		if !present || isText || !isNumber || f != math.Trunc(f) || !validRotate(int(f)) || f == 0 {
-			return nil, fmt.Errorf("a stretch is rotated by %s, which is not 90, 180 or 270", Scrub(pyReprAny(deg), 40))
+			return nil, fmt.Errorf("a stretch is rotated by %s, which is not 90, 180 or 270", runes.Scrub(quoteValue(deg), 40))
 		}
 		r.Deg = int(f)
 		if r.To <= r.From {
@@ -121,10 +124,10 @@ func setRotations(c *object, spans []Rotation) {
 	for i, r := range spans {
 		o := newObject()
 		if !math.IsInf(r.From, -1) {
-			o.set(keyFrom, roundTo(r.From, 3))
+			o.set(keyFrom, num.RoundTo(r.From, 3))
 		}
 		if !math.IsInf(r.To, 1) {
-			o.set(keyTo, roundTo(r.To, 3))
+			o.set(keyTo, num.RoundTo(r.To, 3))
 		}
 		o.set(keyDeg, r.Deg)
 		list[i] = o
@@ -201,9 +204,9 @@ func partedAtTurns(pieces []*object, spans []Rotation) []*object {
 				continue
 			}
 			before := copyObject(rest)
-			before.set(keyEnd, roundTo(t, 3))
+			before.set(keyEnd, num.RoundTo(t, 3))
 			after := copyObject(rest)
-			after.set(keyStart, roundTo(t, 3))
+			after.set(keyStart, num.RoundTo(t, 3))
 			if rotationOf(after, spans) != rotationOf(before, spans) {
 				after.remove(keyCropXTurned)
 				for _, other := range pieces {

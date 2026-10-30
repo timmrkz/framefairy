@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"framefairy/engine/runes"
 	"framefairy/engine/timed"
 )
 
@@ -261,8 +262,8 @@ func TestCaptionsBreakAtWidth(t *testing.T) {
 	captions := Captions(clip, ws, 38, nil)
 	said := 0
 	for _, c := range captions {
-		if runeLen(c.Text) > 38 {
-			t.Errorf("caption %q is %d characters", c.Text, runeLen(c.Text))
+		if runes.Len(c.Text) > 38 {
+			t.Errorf("caption %q is %d characters", c.Text, runes.Len(c.Text))
 		}
 		said += strings.Count(c.Text, "Zielgruppe")
 	}

@@ -6,6 +6,8 @@ import (
 	"errors"
 	"io"
 	"strings"
+
+	"framefairy/engine/runes"
 )
 
 // ---------------------------------------------------------------------------
@@ -378,7 +380,7 @@ func readOpenAIReply(body []byte) (*apiReply, error) {
 	reply := apiReply{Type: "message"}
 	text, err := reply.take(&chunk)
 	if err != nil {
-		return nil, renderErr("the API reported an error: %s", Scrub(err.Error(), 400))
+		return nil, renderErr("the API reported an error: %s", runes.Scrub(err.Error(), 400))
 	}
 	reply.blocks(text)
 	return &reply, nil
@@ -446,7 +448,7 @@ func readLocalStream(r io.Reader, listen *Listener) (*localAnswer, error) {
 			return renderErr("the local model sent a piece of its answer that is not JSON")
 		}
 		if chunk.Error != nil {
-			return renderErr("the local model reported an error: %s", Scrub(chunk.Error.Message, 400))
+			return renderErr("the local model reported an error: %s", runes.Scrub(chunk.Error.Message, 400))
 		}
 		if p := chunk.Progress; p != nil {
 			// What was already in the cache from an earlier request is not

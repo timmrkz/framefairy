@@ -13,6 +13,7 @@ import (
 	"sync"
 	"testing"
 
+	"framefairy/engine/runes"
 	"framefairy/engine/timed"
 )
 
@@ -235,7 +236,7 @@ func TestAComparisonReportsEveryRecipe(t *testing.T) {
 		// Each recipe keeps what it asked and what came back, and the
 		// next one does not write over it.
 		prompt, err := os.ReadFile(filepath.Join(dir, "prompt.txt"))
-		if err != nil || runeLen(string(prompt)) != run.PromptChars {
+		if err != nil || runes.Len(string(prompt)) != run.PromptChars {
 			t.Errorf("%s kept no prompt of its own: %v", run.Recipe, err)
 		}
 		if _, err := os.Stat(filepath.Join(dir, "reply.json")); err != nil {
@@ -331,7 +332,7 @@ func TestASideKeepsThePromptItWroteThoughItLooksUnchanged(t *testing.T) {
 			t.Errorf("%s kept no prompt, though its search wrote one", run.Recipe)
 		}
 		kept, err := os.ReadFile(filepath.Join(WorkDir(source), "experiments", run.Recipe, "prompt.txt"))
-		if err != nil || runeLen(string(kept)) != run.PromptChars {
+		if err != nil || runes.Len(string(kept)) != run.PromptChars {
 			t.Errorf("%s kept no copy of its prompt: %v", run.Recipe, err)
 		}
 		if run.Plan == "" {

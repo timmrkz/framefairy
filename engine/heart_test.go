@@ -13,6 +13,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+
+	"framefairy/engine/runes"
 )
 
 // spoken makes lines of whole sentences, each lasting the seconds given,
@@ -232,9 +234,9 @@ func TestAComparisonCountsEveryAsk(t *testing.T) {
 	var widths []int
 	for _, line := range strings.Split(string(body), "\n") {
 		if strings.HasPrefix(line, "| Recipe | Clips | Asks") {
-			widths = append(widths, runeLen(line))
+			widths = append(widths, runes.Len(line))
 		} else if len(widths) > 0 && len(widths) < 4 && strings.HasPrefix(line, "|") {
-			widths = append(widths, runeLen(line))
+			widths = append(widths, runes.Len(line))
 		}
 	}
 	if len(widths) != 4 || widths[1] != widths[0] || widths[2] != widths[0] || widths[3] != widths[0] {

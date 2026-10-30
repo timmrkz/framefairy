@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/spf13/afero"
+
+	"framefairy/engine/num"
 )
 
 // edited runs an edit between two snapshots of the episode and gives what
@@ -400,7 +402,7 @@ func TestASearchLandsWhileItsPlanIsEditedUndoneAndRemoved(t *testing.T) {
 				<-read
 			}
 			clip := PlanClip{ID: fmt.Sprintf("s%02d", i), Slug: "neu",
-				Segments: []PlanSegment{{Start: PyFloat(40 + 3*i), End: PyFloat(42 + 3*i)}}}
+				Segments: []PlanSegment{{Start: num.Float(40 + 3*i), End: num.Float(42 + 3*i)}}}
 			if err := appendClip(fsys, path, clip); err != nil {
 				t.Errorf("landing %s: %v", clip.ID, err)
 			}

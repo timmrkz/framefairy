@@ -6,6 +6,8 @@ import (
 	"math"
 	"sync"
 	"time"
+
+	"framefairy/engine/num"
 )
 
 // EventKind says what an event reports.
@@ -160,7 +162,7 @@ func (l *Log) send(ev Event) {
 	}
 	now := time.Now()
 	ev.Time = now
-	ev.Elapsed = roundTo(now.Sub(l.t0).Seconds(), 3)
+	ev.Elapsed = num.RoundTo(now.Sub(l.t0).Seconds(), 3)
 	if ev.Stage == "" {
 		ev.Stage = l.currentStage()
 	}

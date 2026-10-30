@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"framefairy/engine/runes"
 	"framefairy/internal/framewire"
 )
 
@@ -269,5 +270,5 @@ func (t *tail) add(line string) {
 }
 
 func (t *tail) String() string {
-	return Scrub(strings.Join(t.lines, " "), 400)
+	return runes.Scrub(strings.Join(t.lines, " "), 400)
 }

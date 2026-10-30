@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"framefairy/engine/num"
+	"framefairy/engine/runes"
 	"framefairy/engine/timed"
 )
 
@@ -313,7 +315,7 @@ func (p *Project) readHeard(ctx context.Context, heard heardWindow, local LocalM
 	}
 	took := time.Since(started)
 	p.engine.Log.Detail("the model read %s tokens of the transcript ahead of the search in %ss, and holds %s",
-		commas(read), fixed(took.Seconds(), 1), commas(len(settled)))
+		commas(read), num.Fixed(took.Seconds(), 1), commas(len(settled)))
 	return aheadRead{url: url, tokens: settled, read: read, took: took, rewritten: rewritten}, nil
 }
 
@@ -416,7 +418,7 @@ func serverCall(ctx context.Context, url, path string, ask, answer any, limit ti
 		return err
 	}
 	if response.StatusCode != http.StatusOK {
-		return fmt.Errorf("%s answered %s", path, Scrub(refusal(response.StatusCode, raw), 200))
+		return fmt.Errorf("%s answered %s", path, runes.Scrub(refusal(response.StatusCode, raw), 200))
 	}
 	return json.Unmarshal(raw, answer)
 }

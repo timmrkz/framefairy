@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"text/template"
+
+	"framefairy/engine/num"
 )
 
 // ---------------------------------------------------------------------------
@@ -84,8 +86,8 @@ func promptSystem(name string) string {
 func prompt(name string, lines []Line, transcript string, opts PlanOptions) string {
 	_, request := promptParts(name)
 	t := template.Must(template.New(name).Option("missingkey=error").Parse(request))
-	data := promptData{Count: opts.Count, Lines: len(lines), Min: fixed(opts.MinLen, 0),
-		Max: fixed(opts.MaxLen, 0), Transcript: transcript, Context: opts.Context}
+	data := promptData{Count: opts.Count, Lines: len(lines), Min: num.Fixed(opts.MinLen, 0),
+		Max: num.Fixed(opts.MaxLen, 0), Transcript: transcript, Context: opts.Context}
 	if taken := takenLines(lines, opts.Taken); len(taken) > 0 {
 		data.Taken, data.TakenLines = takenSentence(taken), "lines "+takenNames(taken)
 		if len(taken) == 1 && taken[0][0] == taken[0][1] {

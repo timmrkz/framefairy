@@ -9,10 +9,11 @@ import (
 	"strings"
 	"testing"
 
-	"framefairy/engine/timed"
-
 	"github.com/spf13/afero"
 
+	"framefairy/engine/num"
+	"framefairy/engine/runes"
+	"framefairy/engine/timed"
 	"framefairy/internal/ffmpegtest"
 )
 
@@ -249,12 +250,12 @@ func TestAWordBreaksWhereTheLanguageAllows(t *testing.T) {
 	counted := room
 	counted.measured = &measured
 	pieces := breakWord(huge, counted, de)
-	t.Logf("%d measures for %d letters", measured, runeLen(huge))
-	if most := 4 * runeLen(huge); measured > most {
-		t.Errorf("a word of %d letters took %d measures to break, more than %d", runeLen(huge), measured, most)
+	t.Logf("%d measures for %d letters", measured, runes.Len(huge))
+	if most := 4 * runes.Len(huge); measured > most {
+		t.Errorf("a word of %d letters took %d measures to break, more than %d", runes.Len(huge), measured, most)
 	}
 	if len(pieces) < 2 || strings.Join(pieces, "") == "" {
-		t.Errorf("a word of %d letters broke into %d pieces", runeLen(huge), len(pieces))
+		t.Errorf("a word of %d letters broke into %d pieces", runes.Len(huge), len(pieces))
 	}
 	for _, piece := range pieces {
 		if !room.fits(piece) {
@@ -309,7 +310,7 @@ func TestTheCaptionsSayWhatLanguageTheyAreIn(t *testing.T) {
 		"Nous avons commencé avec l'entretien des plantes et ensuite nous avons vu que cela marchait":          "fr",
 	} {
 		var words []timed.Cue
-		for i, w := range fields(text) {
+		for i, w := range runes.Fields(text) {
 			words = append(words, timed.Cue{Start: float64(i), End: float64(i) + 1, Text: w})
 		}
 		if got := wordsLanguage(words); got != want {
@@ -463,7 +464,7 @@ func FuzzWriteASS(f *testing.F) {
 	f.Add("[Events]\nDialogue: 0,0:00:00.00,0:00:01.00,Caption,,0,0,0,,x", 0.0, 1.0)
 	f.Add(strings.Repeat("ü", 300), 0.0, 90000.0)
 	f.Fuzz(func(t *testing.T, text string, start, end float64) {
-		if !isFinite(start) || !isFinite(end) || start < 0 || end < start || end > 100_000 {
+		if !num.IsFinite(start) || !num.IsFinite(end) || start < 0 || end < start || end > 100_000 {
 			t.Skip()
 		}
 		body := captionTrackOf(t, []Caption{{Start: start, End: end, Text: text}})
@@ -513,10 +514,10 @@ func FuzzResolveStyle(f *testing.F) {
 			"font": font, "highlight_colour": highlight, "primary": primary,
 			"size": size, "wrap_chars": wrap,
 		})
-		if strings.ContainsAny(s.Font, ",{}\n\r:") || runeLen(s.Font) > 64 || s.Font == "" {
+		if strings.ContainsAny(s.Font, ",{}\n\r:") || runes.Len(s.Font) > 64 || s.Font == "" {
 			t.Fatalf("font %q", s.Font)
 		}
-		if s.Size < 8 || s.Size > 400 || !isFinite(s.Size) {
+		if s.Size < 8 || s.Size > 400 || !num.IsFinite(s.Size) {
 			t.Fatalf("size %v", s.Size)
 		}
 		if s.WrapChars < 8 || s.WrapChars > 200 {

@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"framefairy/engine/num"
+	"framefairy/engine/runes"
 	"framefairy/engine/timed"
 )
 
@@ -103,7 +105,7 @@ func (t *Transcript) Levels() []timed.Reading {
 			power += math.Pow(10, float64(db)/10)
 		}
 		level := 10 * math.Log10(power/10+1e-20)
-		out = append(out, timed.Reading{At: roundTo(t.Start+float64(i)*timed.FrameSeconds, 2), Level: level})
+		out = append(out, timed.Reading{At: num.RoundTo(t.Start+float64(i)*timed.FrameSeconds, 2), Level: level})
 	}
 	return out
 }
@@ -222,7 +224,7 @@ func TokensToWords(tokens []Token, offset float64) []timed.Cue {
 		text := token.Text
 		start := offset + token.Start
 		end := start + max(token.Duration, 0)
-		trimmed := strip(text)
+		trimmed := runes.Trim(text)
 		if trimmed == "" {
 			spaced = spaced || text != ""
 			continue
@@ -380,7 +382,7 @@ func SnapWords(words []timed.Cue, frames []float32, start, floor float64) []time
 			end = math.Min(end, next)
 		}
 		end = math.Max(end, begin+0.05)
-		out = append(out, timed.Cue{Start: roundTo(begin, 3), End: roundTo(end, 3), Text: w.Text})
+		out = append(out, timed.Cue{Start: num.RoundTo(begin, 3), End: num.RoundTo(end, 3), Text: w.Text})
 	}
 	return out
 }
@@ -667,7 +669,7 @@ func (e *Engine) transcribe(ctx context.Context, path string, window timed.Windo
 	if waitErr != nil || err != nil {
 		e.Log.ClearProgress()
 		return nil, renderErr("could not read the audio of %s:\n%s", path,
-			tailRunes(strip(stderr.String()), 400))
+			tailRunes(runes.Trim(stderr.String()), 400))
 	}
 	if float64(len(pending))/SampleRate >= 0.2 {
 		recognise(pending, chunkStart)
@@ -687,6 +689,6 @@ func (e *Engine) transcribe(ctx context.Context, path string, window timed.Windo
 	sort.SliceStable(raw, func(i, j int) bool { return raw[i].Start < raw[j].Start })
 	t.hear(raw)
 	e.Log.Detail("mean level %s dB, treating below %s dB as silence",
-		fixed(t.Mean, 1), fixed(t.Floor, 0))
+		num.Fixed(t.Mean, 1), num.Fixed(t.Floor, 0))
 	return t, nil
 }

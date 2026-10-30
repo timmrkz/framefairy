@@ -9,10 +9,11 @@ import (
 	"sync"
 	"unicode"
 
-	"framefairy/engine/timed"
-
 	"github.com/abadojack/whatlanggo"
 	"github.com/speedata/hyphenation"
+
+	"framefairy/engine/runes"
+	"framefairy/engine/timed"
 )
 
 // A caption word too wide for a line is broken the way TeX breaks it:
@@ -196,7 +197,7 @@ func (r captionRoom) width(text string) float64 {
 	if width, ok := TextWidth(r.font, text, r.size); ok {
 		return width
 	}
-	return float64(runeLen(text)) * r.room / float64(max(r.wrapChars, 1))
+	return float64(runes.Len(text)) * r.room / float64(max(r.wrapChars, 1))
 }
 
 func (r captionRoom) fits(text string) bool { return r.width(text) <= r.room }
@@ -380,13 +381,13 @@ func hyphenate(words []timed.Cue, r captionRoom, h *hyphenator) []timed.Cue {
 		}
 		total := 0
 		for _, part := range parts {
-			total += runeLen(strings.TrimSuffix(part, "-"))
+			total += runes.Len(strings.TrimSuffix(part, "-"))
 		}
 		at, span := w.Start, w.End-w.Start
 		for k, part := range parts {
 			end := w.End
 			if k < len(parts)-1 {
-				end = at + span*float64(runeLen(strings.TrimSuffix(part, "-")))/float64(max(total, 1))
+				end = at + span*float64(runes.Len(strings.TrimSuffix(part, "-")))/float64(max(total, 1))
 			}
 			out = append(out, timed.Cue{Start: at, End: end, Text: part})
 			at = end

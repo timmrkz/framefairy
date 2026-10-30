@@ -9,6 +9,7 @@ import (
 	"time"
 	"unicode"
 
+	"framefairy/engine/runes"
 	"framefairy/engine/timed"
 )
 
@@ -247,5 +248,5 @@ func handTitle(lines []Line) string {
 	if more {
 		title += " …"
 	}
-	return Scrub(title, 200)
+	return runes.Scrub(title, 200)
 }

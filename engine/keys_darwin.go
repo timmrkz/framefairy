@@ -126,6 +126,8 @@ import (
 	"context"
 	"fmt"
 	"unsafe"
+
+	"framefairy/engine/runes"
 )
 
 // keychainKeys keeps keys in the keychain through the Security framework,
@@ -222,10 +224,10 @@ func (securityKeys) hint(string) string { return "" }
 
 func (securityKeys) get(ctx context.Context, item string) (string, bool) {
 	res, _ := keychain(ctx, "find-generic-password", "-a", keyAccount, "-s", item, "-w")
-	if res.Code != 0 || strip(res.Stdout) == "" {
+	if res.Code != 0 || runes.Trim(res.Stdout) == "" {
 		return "", false
 	}
-	return strip(res.Stdout), true
+	return runes.Trim(res.Stdout), true
 }
 
 func (securityKeys) set(string, string, string) error { return errNoKeychain }
