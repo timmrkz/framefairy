@@ -39,34 +39,42 @@ of one package, so nothing holds them apart yet.
 
 ![The app's Go side: one package main, over the engine](diagrams/app-go.svg)
 
-![The interface: screens use components, both use lib](diagrams/interface.svg)
+![The interface: the app over screens, components and lib](diagrams/interface.svg)
 
 The drawings are plain SVG in `docs/diagrams/`, a box a `rect` with its
 texts and a chip a small `rect` with its text, and they follow the
-reader's light or dark theme. A change that moves a box changes its
-drawing in the same pull request, and `internal/naming` checks that
-every path a drawing names exists.
+reader's light or dark theme, on a background of their own. A change
+that moves a box changes its drawing in the same pull request.
+`internal/naming` checks that every path a drawing names exists, written
+from the top of the repository, and that every drawing shown here is
+there.
 
 ## Code map
 
-One row for each box of the drawings, from the top.
+One row for each box of the top drawing that holds code, from the top,
+with the boxes one level down under it.
 
 | Layer | Code | Owns | Never holds |
 | --- | --- | --- | --- |
-| 1 the interface | `frontend/src/screens/`, `frontend/src/components/` | layout and wiring | logic worth a test, which goes in `frontend/src/lib/` |
+| 1 the interface | `frontend/src/App.svelte`, started by `frontend/src/main.ts` | the sidebar and which screen shows | a screen's own layout |
+| 1 | `frontend/src/screens/`, `frontend/src/components/` | layout and wiring | logic worth a test, which goes in `frontend/src/lib/` |
 | 1 | `frontend/src/lib/` | what the interface keeps and works out, tested with Vitest. `frontend/src/lib/frames/` is the frame queue the video preview plays from | a rule of the engine, except the few held to Go by a shared `.cases.json` |
-| 1 | `frontend/preview/` | the walks in `frontend/preview/walks/`, which do what a person does against the real Go side, and the harness they run in | |
 | 1 the command line | `cmd/framefairy/` | flags into `engine.Run`, and exit codes | a rule of its own |
 | 2 the app's Go side | `cmd/framefairy-app/` | the bindings, the job queue and its lanes, the library and the settings, updates, the log | a rule of the engine. A binding asks the engine and passes the answer on |
-| 2 | `updates/`, `notices/` | finding, checking and fetching a newer build, and the licences of what the app is made of | |
-| 2 | `asr/` | the speech recogniser. It implements `engine.Recognizer`, and each front end hands it to the engine | |
-| 3 the engine | `engine/` | every rule about a video: words, clips, edges, windows, captions, crops, rendering, the models, the files of a work folder | anything about the screen, a binding or a click |
-| 3 | `engine/timed/` | the types every part of the engine uses for a moment of a video: a piece of text with its times, a span, a window, a loudness reading, the 10 ms grid of the sound | a function or a rule, and a type only one part uses |
-| 3 | `engine.Project` | the steps one video takes, the same for both front ends | a second way to run a step |
-| 3 | `licence/`, `internal/wake/` | small libraries under the engine: the format of a licence key, and how a waiter hears that something changed | |
-| 4 at the edge | `cmd/framefairy-frames/`, `internal/framewire/` | the decoder that turns a video into the frames, sound and captions of the video preview, and the wire to it | anything but decoding. It is a child process |
+| 3 | `asr/` | the speech recogniser. It implements `engine.Recognizer`, and each front end hands it to the engine | |
+| 3 | `updates/`, `notices/` | finding, checking and fetching a newer build, and the licences of what the app is made of | |
+| 4 the engine | `engine/` | every rule about a video: words, clips, edges, windows, captions, crops, rendering, the models, the files of a work folder, the training records | anything about the screen, a binding or a click |
+| 4 | `engine.Project` | the steps one video takes, the same for both front ends | a second way to run a step |
+| 4 | `engine/timed/` | the types every part of the engine uses for a moment of a video: a piece of text with its times, a span, a window, a loudness reading, the 10 ms grid of the sound | a function or a rule, and a type only one part uses |
+| 5 the frames decoder | `cmd/framefairy-frames/` | turning a video into the frames, sound and captions of the video preview. The engine starts one for each video | anything but decoding. It is a child process |
+| 6 small libraries | `licence/`, `internal/wake/`, `internal/framewire/` | the format of a licence key, how a waiter hears that something changed, and the wire between the engine and the decoder | |
 
-Outside the picture, not shipped in the app: `train/` and
+Layer 7, at the edge, holds no code of ours: ffmpeg, llama-server, the
+models and the work folders.
+
+Outside the picture, not shipped in the app: `frontend/preview/` holds
+the walks, in `frontend/preview/walks/`, which do what a person does
+against the real Go side, and the harness they run in. `train/` and
 `cmd/framefairy-train/` read the training records, `cmd/framefairy-release/`
 and `licence/signer/` sign builds and keys, `licence/dispenser/` is the
 licence server, and the rest of `internal/` holds the checks and

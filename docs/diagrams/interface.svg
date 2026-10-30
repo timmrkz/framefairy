@@ -1,10 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 506" width="760" height="506" role="img" aria-label="The interface: screens use components, both use lib">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 628" width="760" height="628" role="img" aria-label="The interface: the app over screens, components and lib">
 <style>
 .t{font:600 15px -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;fill:#1f2328}
 .n{font:600 13px -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;fill:#1f2328}
 .p{font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fill:#59636e}
 .q{font:11.5px -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;fill:#59636e}
 .c{font:11.5px -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;fill:#1f2328}
+.bg{fill:#ffffff}
 .box{fill:none;stroke:#b6bcc4;stroke-width:1.25}
 .dash{fill:none;stroke:#b6bcc4;stroke-width:1.25;stroke-dasharray:4 4}
 .tint{fill:#f1f3f5;stroke:#b6bcc4;stroke-width:1.25}
@@ -12,68 +13,78 @@
 .ax{stroke:#8c959f;stroke-width:1.25;fill:none}
 .ah{fill:#8c959f}
 @media (prefers-color-scheme:dark){
+.bg{fill:#0d1117}
 .t,.n,.c{fill:#f0f6fc}.p,.q{fill:#9198a1}
 .box,.dash{stroke:#5d6570}.tint{fill:#1c2128;stroke:#5d6570}
 .chip{fill:#212830;stroke:#3d444d}.ax{stroke:#7d8590}.ah{fill:#7d8590}}
 </style>
-<text class="t" x="24" y="30">The interface: screens use components, both use lib</text>
+<rect class="bg" width="760" height="628" rx="12"/>
+<text class="t" x="24" y="30">The interface: the app over screens, components and lib</text>
 <text class="q" x="24" y="50">may use</text>
-<path class="ax" d="M40 60V476"/>
-<path class="ah" d="M35 472L40 482L45 472z"/>
-<rect class="box" x="64" y="56" width="672" height="90" rx="8"/>
-<text class="n" x="76" y="78">screens</text>
-<text class="p" x="76" y="96">frontend/src/screens/</text>
-<rect class="chip" x="76" y="106" width="63" height="22" rx="6"/>
-<text class="c" x="84" y="121">Episode</text>
-<rect class="chip" x="145" y="106" width="69" height="22" rx="6"/>
-<text class="c" x="153" y="121">Settings</text>
-<rect class="chip" x="220" y="106" width="49" height="22" rx="6"/>
-<text class="c" x="228" y="121">Setup</text>
-<rect class="chip" x="275" y="106" width="63" height="22" rx="6"/>
-<text class="c" x="283" y="121">Updates</text>
-<rect class="chip" x="344" y="106" width="56" height="22" rx="6"/>
-<text class="c" x="352" y="121">Report</text>
-<rect class="chip" x="406" y="106" width="96" height="22" rx="6"/>
-<text class="c" x="414" y="121">ReportWindow</text>
-<rect class="chip" x="508" y="106" width="123" height="22" rx="6"/>
-<text class="c" x="516" y="121">Acknowledgements</text>
-<rect class="box" x="64" y="162" width="672" height="118" rx="8"/>
-<text class="n" x="76" y="184">components</text>
-<text class="p" x="76" y="202">frontend/src/components/</text>
-<rect class="chip" x="76" y="212" width="56" height="22" rx="6"/>
-<text class="c" x="84" y="227">Player</text>
-<rect class="chip" x="138" y="212" width="96" height="22" rx="6"/>
-<text class="c" x="146" y="227">ClipTimeline</text>
-<rect class="chip" x="240" y="212" width="89" height="22" rx="6"/>
-<text class="c" x="248" y="227">RangeWindow</text>
-<rect class="chip" x="335" y="212" width="69" height="22" rx="6"/>
-<text class="c" x="343" y="227">ClipList</text>
-<rect class="chip" x="411" y="212" width="43" height="22" rx="6"/>
-<text class="c" x="419" y="227">Pick</text>
-<rect class="chip" x="459" y="212" width="63" height="22" rx="6"/>
-<text class="c" x="467" y="227">Confirm</text>
-<rect class="chip" x="528" y="212" width="56" height="22" rx="6"/>
-<text class="c" x="536" y="227">Toasts</text>
-<rect class="chip" x="590" y="212" width="43" height="22" rx="6"/>
-<text class="c" x="598" y="227">Busy</text>
-<rect class="chip" x="639" y="212" width="76" height="22" rx="6"/>
-<text class="c" x="647" y="227">VideoMenu</text>
-<rect class="chip" x="76" y="240" width="76" height="22" rx="6"/>
-<text class="c" x="84" y="255">ModelList</text>
-<rect class="chip" x="158" y="240" width="89" height="22" rx="6"/>
-<text class="c" x="166" y="255">and 11 more</text>
-<rect class="box" x="64" y="296" width="672" height="118" rx="8"/>
-<text class="n" x="76" y="318">what the interface keeps and works out</text>
-<text class="p" x="76" y="336">frontend/src/lib/</text>
-<rect class="chip" x="76" y="346" width="209" height="22" rx="6"/>
-<text class="c" x="84" y="361">stores: state, toast, updates</text>
-<rect class="chip" x="291" y="346" width="176" height="22" rx="6"/>
-<text class="c" x="299" y="361">api.ts: every call to Go</text>
-<rect class="chip" x="474" y="346" width="176" height="22" rx="6"/>
-<text class="c" x="482" y="361">frames/: the frame queue</text>
-<rect class="chip" x="76" y="374" width="343" height="22" rx="6"/>
-<text class="c" x="84" y="389">rules worth a test: playhead, scrub, glide, ruler</text>
-<rect class="tint" x="64" y="430" width="672" height="52" rx="8"/>
-<text class="n" x="76" y="452">the app&#x27;s Go side</text>
-<text class="q" x="76" y="468">reached through the bindings, its events and /frames</text>
+<path class="ax" d="M40 60V598"/>
+<path class="ah" d="M35 594L40 604L45 594z"/>
+<rect class="box" x="64" y="56" width="672" height="106" rx="8"/>
+<text class="n" x="76" y="78">the app</text>
+<text class="p" x="76" y="96">frontend/src/App.svelte</text>
+<text class="q" x="76" y="112">started by main.ts</text>
+<rect class="chip" x="76" y="122" width="89" height="22" rx="6"/>
+<text class="c" x="84" y="137">the sidebar</text>
+<rect class="chip" x="171" y="122" width="136" height="22" rx="6"/>
+<text class="c" x="179" y="137">which screen shows</text>
+<rect class="box" x="64" y="178" width="672" height="90" rx="8"/>
+<text class="n" x="76" y="200">screens</text>
+<text class="p" x="76" y="218">frontend/src/screens/</text>
+<rect class="chip" x="76" y="228" width="63" height="22" rx="6"/>
+<text class="c" x="84" y="243">Episode</text>
+<rect class="chip" x="145" y="228" width="69" height="22" rx="6"/>
+<text class="c" x="153" y="243">Settings</text>
+<rect class="chip" x="220" y="228" width="49" height="22" rx="6"/>
+<text class="c" x="228" y="243">Setup</text>
+<rect class="chip" x="275" y="228" width="63" height="22" rx="6"/>
+<text class="c" x="283" y="243">Updates</text>
+<rect class="chip" x="344" y="228" width="56" height="22" rx="6"/>
+<text class="c" x="352" y="243">Report</text>
+<rect class="chip" x="406" y="228" width="96" height="22" rx="6"/>
+<text class="c" x="414" y="243">ReportWindow</text>
+<rect class="chip" x="508" y="228" width="123" height="22" rx="6"/>
+<text class="c" x="516" y="243">Acknowledgements</text>
+<rect class="box" x="64" y="284" width="672" height="118" rx="8"/>
+<text class="n" x="76" y="306">components</text>
+<text class="p" x="76" y="324">frontend/src/components/</text>
+<rect class="chip" x="76" y="334" width="56" height="22" rx="6"/>
+<text class="c" x="84" y="349">Player</text>
+<rect class="chip" x="138" y="334" width="96" height="22" rx="6"/>
+<text class="c" x="146" y="349">ClipTimeline</text>
+<rect class="chip" x="240" y="334" width="89" height="22" rx="6"/>
+<text class="c" x="248" y="349">RangeWindow</text>
+<rect class="chip" x="335" y="334" width="69" height="22" rx="6"/>
+<text class="c" x="343" y="349">ClipList</text>
+<rect class="chip" x="411" y="334" width="43" height="22" rx="6"/>
+<text class="c" x="419" y="349">Pick</text>
+<rect class="chip" x="459" y="334" width="63" height="22" rx="6"/>
+<text class="c" x="467" y="349">Confirm</text>
+<rect class="chip" x="528" y="334" width="56" height="22" rx="6"/>
+<text class="c" x="536" y="349">Toasts</text>
+<rect class="chip" x="590" y="334" width="43" height="22" rx="6"/>
+<text class="c" x="598" y="349">Busy</text>
+<rect class="chip" x="639" y="334" width="76" height="22" rx="6"/>
+<text class="c" x="647" y="349">VideoMenu</text>
+<rect class="chip" x="76" y="362" width="76" height="22" rx="6"/>
+<text class="c" x="84" y="377">ModelList</text>
+<rect class="chip" x="158" y="362" width="89" height="22" rx="6"/>
+<text class="c" x="166" y="377">and 11 more</text>
+<rect class="box" x="64" y="418" width="672" height="118" rx="8"/>
+<text class="n" x="76" y="440">what the interface keeps and works out</text>
+<text class="p" x="76" y="458">frontend/src/lib/</text>
+<rect class="chip" x="76" y="468" width="209" height="22" rx="6"/>
+<text class="c" x="84" y="483">stores: state, toast, updates</text>
+<rect class="chip" x="291" y="468" width="176" height="22" rx="6"/>
+<text class="c" x="299" y="483">api.ts: every call to Go</text>
+<rect class="chip" x="474" y="468" width="169" height="22" rx="6"/>
+<text class="c" x="482" y="483">frames: the frame queue</text>
+<rect class="chip" x="76" y="496" width="343" height="22" rx="6"/>
+<text class="c" x="84" y="511">rules worth a test: playhead, scrub, glide, ruler</text>
+<rect class="tint" x="64" y="552" width="672" height="52" rx="8"/>
+<text class="n" x="76" y="574">the app&#x27;s Go side</text>
+<text class="q" x="76" y="590">reached through the bindings, its events and /frames</text>
 </svg>

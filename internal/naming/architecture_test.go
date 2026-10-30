@@ -13,7 +13,8 @@ import (
 // backticks that names a folder or a file of the repository has to exist.
 // A name with no folder in it, like `api.ts`, and a placeholder, like
 // `<video>.framefairy/` or `~/.framefairy/`, are not paths of the
-// repository. The diagrams in fenced blocks are read as pictures.
+// repository. A drawing it shows, `![...](diagrams/app.svg)`, has to be
+// there too, or the reader sees a broken picture where the layers were.
 //
 // On the real disk: what is read is the repository's own source.
 func TestTheArchitectureNamesWhatIsThere(t *testing.T) {
@@ -23,7 +24,7 @@ func TestTheArchitectureNamesWhatIsThere(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	text := regexp.MustCompile("(?s)```.*?```").ReplaceAllString(string(doc), "")
+	text := string(doc)
 	named := regexp.MustCompile("`([^`<~ ]+/[^`< ]*)`").FindAllStringSubmatch(text, -1)
 	if len(named) == 0 {
 		t.Fatal("docs/ARCHITECTURE.md names no path, so this test reads it wrong")
@@ -37,12 +38,23 @@ func TestTheArchitectureNamesWhatIsThere(t *testing.T) {
 			t.Errorf("docs/ARCHITECTURE.md names %s, which is not in the repository", path)
 		}
 	}
+	shown := regexp.MustCompile(`!\[[^\]]*\]\(([^)]+)\)`).FindAllStringSubmatch(text, -1)
+	if len(shown) == 0 {
+		t.Fatal("docs/ARCHITECTURE.md shows no drawing, so this test reads it wrong")
+	}
+	for _, m := range shown {
+		if _, err := os.Stat(filepath.Join(root, "docs", filepath.FromSlash(m[1]))); err != nil {
+			t.Errorf("docs/ARCHITECTURE.md shows docs/%s, which is not in the repository", m[1])
+		}
+	}
 }
 
 // The drawings in docs/diagrams/ are the bird's eye view a person reads
 // first, so a folder they name that has moved sends them to the wrong
-// place. Every word of a drawing's text that starts with a folder at the
-// top of the repository and has a slash in it has to exist.
+// place. Every word of a drawing's text with a slash in it is a path from
+// the top of the repository and has to exist, so a folder renamed at the
+// top fails here too. A drawing names a folder inside a box without a
+// slash, `frames`, never as `frames/`.
 //
 // On the real disk: what is read is the repository's own source.
 func TestTheDrawingsNameWhatIsThere(t *testing.T) {
@@ -55,14 +67,6 @@ func TestTheDrawingsNameWhatIsThere(t *testing.T) {
 	if len(drawings) == 0 {
 		t.Fatal("docs/diagrams/ has no drawing, so this test reads the wrong folder")
 	}
-	tops, err := os.ReadDir(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	top := map[string]bool{}
-	for _, e := range tops {
-		top[e.Name()] = e.IsDir()
-	}
 	texts := regexp.MustCompile(`<text[^>]*>([^<]*)</text>`)
 	paths := regexp.MustCompile(`[a-z][a-z0-9_.-]*/[A-Za-z0-9_./-]*`)
 	checked := 0
@@ -73,9 +77,6 @@ func TestTheDrawingsNameWhatIsThere(t *testing.T) {
 		}
 		for _, m := range texts.FindAllStringSubmatch(string(svg), -1) {
 			for _, path := range paths.FindAllString(m[1], -1) {
-				if !top[strings.SplitN(path, "/", 2)[0]] {
-					continue
-				}
 				checked++
 				if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(path))); err != nil {
 					t.Errorf("%s names %s, which is not in the repository", filepath.Base(name), path)
