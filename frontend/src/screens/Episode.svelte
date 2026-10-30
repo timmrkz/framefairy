@@ -44,6 +44,7 @@
     type Parts,
     inEpisode,
     endInEpisode,
+    shareOf,
     Newest,
     timesIn,
     frameAt,
@@ -1967,6 +1968,25 @@
     toggleCropMark();
   }
 
+  // The number keys put the playhead that far into the chosen clip, the
+  // way they do in a video on YouTube: 0 at its start, 5 half way, 9 at
+  // 90 %. Of the clip as it plays, its cuts taken out, so a key never
+  // lands in a cut. The jump is about the clip, so a playhead on the video
+  // comes onto it, and a play goes on from there. Read from event.key, so
+  // the number pad and every layout are the same. Issue #539.
+  function percentKey(event: KeyboardEvent) {
+    if (!/^[0-9]$/.test(event.key)) return;
+    if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+    if (event.defaultPrevented || event.repeat) return;
+    if (keysElsewhere() || asleep(root)) return;
+    const pieces = shownClip?.segments;
+    if (!current || !pieces?.length) return;
+    event.preventDefault();
+    const n = Number(event.key);
+    seekTo(shareOf(pieces, n / 10), "clip");
+    said(`keys: ${n} put the playhead at ${n * 10} % of the clip`);
+  }
+
   function thumbnailKey(event: KeyboardEvent) {
     if (event.key !== "t" && event.key !== "T") return;
     if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
@@ -3186,6 +3206,7 @@
     window.addEventListener("keydown", cropMarkKey);
     window.addEventListener("keydown", rotateKey);
     window.addEventListener("keydown", loopKey);
+    window.addEventListener("keydown", percentKey);
     window.addEventListener("keydown", inOutKey);
     window.addEventListener("keydown", sayKey);
     window.addEventListener("focusin", sayElsewhere);
@@ -3199,6 +3220,7 @@
       window.removeEventListener("keydown", cropMarkKey);
       window.removeEventListener("keydown", rotateKey);
       window.removeEventListener("keydown", loopKey);
+      window.removeEventListener("keydown", percentKey);
       window.removeEventListener("keydown", inOutKey);
     };
   });

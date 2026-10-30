@@ -217,6 +217,15 @@ export function inEpisode(pieces: Piece[], at: number): number {
   return last ? last.end : at;
 }
 
+// Where a share of a clip falls in the episode, 0.5 where its short is
+// half way through. The share is of the clip as it plays, its pieces with
+// the cuts taken out, so it never lands in a cut, where the clip never
+// plays. The number keys put the playhead there, issue #539.
+export function shareOf(pieces: Piece[], share: number): number {
+  const kept = pieces.reduce((sum, p) => sum + p.end - p.start, 0);
+  return inEpisode(pieces, share * kept);
+}
+
 // Which word of the episode a word of a caption is: where it starts in the
 // episode, to the millisecond. A word is known by this and never by when it
 // starts on the clip's clock, because that clock is the clip with its cuts
