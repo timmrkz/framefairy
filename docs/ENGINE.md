@@ -1819,6 +1819,6 @@ macOS keychain of `engine/keys_darwin.go`, in the frames decoder of
 ```
 
 `engine/timed/` is the first part of the engine in a package of its own:
-the words every part uses for a moment of a video, `Cue`, `Span`,
+the types every part uses for a moment of a video, `Cue`, `Span`,
 `Window`, `Reading` and `FrameSeconds`. It imports nothing of the rest of
 the engine, see [ARCHITECTURE.md](ARCHITECTURE.md).

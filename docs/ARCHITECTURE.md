@@ -53,7 +53,7 @@ One row for each box above, in the same order.
 | 2 | `updates/`, `notices/` | finding, checking and fetching a newer build, and the licences of what the app is made of | |
 | 2 | `asr/` | the speech recogniser. It implements `engine.Recognizer`, and each front end hands it to the engine | |
 | 3 the engine | `engine/` | every rule about a video: words, clips, edges, windows, captions, crops, rendering, the models, the files of a work folder | anything about the screen, a binding or a click |
-| 3 | `engine/timed/` | the words every part of the engine uses for a moment of a video: a word or caption with its times, a span, a window, a loudness reading, the 10 ms grid of the sound | anything that imports the rest of the engine, which Go refuses as a cycle. The first part of the engine in a package of its own, so the others can follow |
+| 3 | `engine/timed/` | the types every part of the engine uses for a moment of a video: a piece of text with its times, a span, a window, a loudness reading, the 10 ms grid of the sound | a function or a rule, and a type only one part uses |
 | 3 | `engine.Project` | the steps one video takes, the same for both front ends | a second way to run a step |
 | 3 | `licence/`, `internal/wake/` | small libraries under the engine: the format of a licence key, and how a waiter hears that something changed | |
 | 4 at the edge | `cmd/framefairy-frames/`, `internal/framewire/` | the decoder that turns a video into the frames, sound and captions of the video preview, and the wire to it | anything but decoding. It is a child process |

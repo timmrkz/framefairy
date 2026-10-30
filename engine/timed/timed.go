@@ -1,5 +1,5 @@
-// Package timed holds the words every part of the engine uses for a
-// moment of a video: a word or caption with its times, a span of time, a
+// Package timed holds the types every part of the engine uses for a
+// moment of a video: a piece of text with its times, a span of time, a
 // window of the video and a loudness reading. It imports nothing of the
 // engine, so every part of it can use them, see docs/ARCHITECTURE.md.
 package timed

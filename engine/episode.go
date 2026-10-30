@@ -641,8 +641,8 @@ func recordOf(plan Plan, c Clip) (shortRecord, bool) {
 	folder, _ := rec[keyFolder].(string)
 	name, _ := rec[keyName].(string)
 	size, sized := wholeNumber(rec[keySize])
-	modified, timed := wholeNumber(rec[keyModified])
-	if filepath.IsAbs(folder) && ownName(c, name) && sized && timed {
+	modified, stamped := wholeNumber(rec[keyModified])
+	if filepath.IsAbs(folder) && ownName(c, name) && sized && stamped {
 		return shortRecord{folder: folder, name: name, size: size, modified: modified}, true
 	}
 	return shortRecord{}, false

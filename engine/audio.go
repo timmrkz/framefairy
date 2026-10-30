@@ -42,7 +42,7 @@ type Recognizer interface {
 // SampleRate is what the recogniser is fed.
 const SampleRate = 16000
 
-const frameSamples = SampleRate / 100
+const frameSamples = int(SampleRate * timed.FrameSeconds)
 
 // pauseFrames is the shortest quiet, in frames, that counts as a pause when
 // placing a word.
