@@ -35,6 +35,26 @@ export function asleep(here: Element | null | undefined): boolean {
   return !here || !here.isConnected || !!here.closest("[inert]");
 }
 
+// A key pressed alone: no Cmd, Ctrl or Alt, and not a key held down
+// repeating. Shift only where withShift says so: a French or Belgian
+// keyboard gives its digits only with shift, and a Mac has no number pad.
+export function pressedAlone(
+  event: Pick<KeyboardEvent, "metaKey" | "ctrlKey" | "altKey" | "shiftKey" | "repeat">,
+  withShift = false,
+): boolean {
+  if (event.metaKey || event.ctrlKey || event.altKey || event.repeat) return false;
+  return withShift || !event.shiftKey;
+}
+
+// A key of the workspace's own, the one key a button stands for, L for
+// loop, C for a keyframe, a number key for a share of the clip: pressed
+// alone, not taken already, not a field's or the box's, and the workspace
+// here is the one in front. Six keys said this each in their own four
+// lines, and one of them, L, in other words again.
+export function workspaceKey(event: KeyboardEvent, here: Element | null | undefined, withShift = false): boolean {
+  return pressedAlone(event, withShift) && !event.defaultPrevented && !keysElsewhere() && !asleep(here);
+}
+
 // Escape lets go of the field being typed in, the way it closes a list,
 // so the ring goes and the workspace has its keys again. What is typed
 // stays, as it does when the field is clicked away from: a report lost
