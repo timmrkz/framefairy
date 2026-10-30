@@ -1527,16 +1527,15 @@ export const steps = {
       }
     }
     const was = await place();
-    // Where the key puts the playhead, read as the page first draws it
-    // after the key and before a play can take it on. A playhead already
-    // there changes nothing, and stays where it was.
+    // Every place the page draws the playhead after the key, among them
+    // the one the key put it in. The key asks the engine first, so a play
+    // goes on a little meanwhile, and the place it is put in is not
+    // always the first. A playhead already there changes nothing, and
+    // stays where it was.
     await page.evaluate(() => {
       const screen = document.querySelector(".screen");
-      window.__sharedTo = null;
-      const look = new MutationObserver(() => {
-        window.__sharedTo ??= Number(screen.dataset.playhead);
-        look.disconnect();
-      });
+      window.__sharedTo = [];
+      const look = new MutationObserver(() => window.__sharedTo.push(Number(screen.dataset.playhead)));
       const listen = () => look.observe(screen, { attributes: true, attributeFilter: ["data-playhead"] });
       window.addEventListener("keydown", listen, { capture: true, once: true });
       // Let go of once the step has read it, moved or not, so a later
@@ -1548,7 +1547,8 @@ export const steps = {
     });
     await page.keyboard.press(key);
     await settle(page);
-    const to = (await page.evaluate(() => (window.__sharedDone(), window.__sharedTo))) ?? was.at;
+    const drawn = await page.evaluate(() => (window.__sharedDone(), window.__sharedTo));
+    const to = drawn.find((at) => Math.abs(at - want) <= 1e-6) ?? drawn[0] ?? was.at;
     const now = await place();
     const inCut = pieces.some((p, i) => i > 0 && to >= pieces[i - 1].end && to < p.start);
     if (Math.abs(to - want) > 1e-6) {

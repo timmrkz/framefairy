@@ -44,7 +44,6 @@
     type Parts,
     inEpisode,
     endInEpisode,
-    shareOf,
     Newest,
     timesIn,
     frameAt,
@@ -1959,22 +1958,33 @@
 
   // Each number key puts the playhead that many tenths into the chosen
   // clip, the way the number keys do in a video on YouTube: 0 at its
-  // start, 5 half way, 9 at 90 %. Of the clip as it plays, its cuts taken
-  // out, so a key never lands in a cut. The jump is about the clip, so a
-  // playhead on the video comes onto it, and a play goes on from there.
-  // Read from event.key, so the number pad and the top row are the same,
-  // and shift is let through for the keyboards whose digits need it,
-  // French and Belgian. On the others shift and a digit is a sign, which
-  // is no digit. Issue #539.
-  function percentKey(event: KeyboardEvent) {
+  // start, 5 half way, 9 at 90 %. Where that is, the engine says, of the
+  // clip as it plays, so a key never lands in a cut, see engine.ShareTime.
+  // The jump is about the clip, so a playhead on the video comes onto it,
+  // and a play goes on from there. Read from event.key, so the number pad
+  // and the top row are the same, and shift is let through for the
+  // keyboards whose digits need it, French and Belgian. On the others
+  // shift and a digit is a sign, which is no digit. A key pressed before
+  // the answer to the one before is the one that counts. Issue #539.
+  const shares = new Newest();
+
+  async function percentKey(event: KeyboardEvent) {
     if (!/^[0-9]$/.test(event.key)) return;
     if (!workspaceKey(event, root, true)) return;
-    const pieces = shownClip?.segments;
-    if (!current || !pieces?.length) return;
+    const clip = current;
+    if (!clip) return;
     event.preventDefault();
     const n = Number(event.key);
-    seekTo(shareOf(pieces, n / 10), "clip");
-    said(`keys: ${n} put the playhead at ${n * 10} % of the clip`);
+    const ticket = shares.send();
+    try {
+      const at = await api.shareOfClip(path, clip.plan, clip.id, n / 10);
+      if (!shares.keep(ticket) || current?.key !== clip.key) return;
+      seekTo(at, "clip");
+      said(`keys: ${n} put the playhead at ${n * 10} % of the clip`);
+    } catch (err) {
+      shares.keep(ticket);
+      oops(errorText(err));
+    }
   }
 
   function thumbnailKey(event: KeyboardEvent) {

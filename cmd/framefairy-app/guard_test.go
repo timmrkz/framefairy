@@ -107,6 +107,9 @@ func TestNothingOutsideTheLibraryIsTouched(t *testing.T) {
 	if _, err := svc.Captions(other, elsewhere, "01"); err == nil {
 		t.Error("Captions answered for a file that is not in the library")
 	}
+	if _, err := svc.ShareOfClip(other, elsewhere, "01", 0.5); err == nil {
+		t.Error("ShareOfClip answered for a file that is not in the library")
+	}
 	if _, err := svc.SetLabel(other, "Ben", "#942192"); err == nil {
 		t.Error("SetLabel wrote a label for a file that is not in the library")
 	}
@@ -372,6 +375,7 @@ func TestAPlanIsOnlyEditedWithItsOwnEpisode(t *testing.T) {
 		_, errs["Shape"] = svc.Shape(mine, wrong, "01", g)
 		_, errs["Reshape"] = svc.Reshape(ctx, mine, wrong, "01", g, [2]float64{})
 		_, errs["Captions"] = svc.Captions(mine, wrong, "01")
+		_, errs["ShareOfClip"] = svc.ShareOfClip(mine, wrong, "01", 0.5)
 		for name, err := range errs {
 			if err == nil {
 				t.Errorf("%s took %s for a plan of %s", name, wrong, mine)

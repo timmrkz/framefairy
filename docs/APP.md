@@ -1788,7 +1788,9 @@ bubble scrolled by those eight pixels.
       do nothing here, so a 5 typed in a word stays a 5. Top row and number
       pad alike, read from the key's own name, and with shift too, which a
       French or Belgian keyboard needs for its digits, `percentKey` in
-      `Episode.svelte` and `shareOf` in `lib/flow.ts`. Issue #539.
+      `Episode.svelte`, which asks the engine where the share lands,
+      `engine.ShareTime`, the way every rule about a video is the engine's.
+      Issue #539.
     - Drag an edge to trim. The edge lands on the frame, the same as the
       edge of a cut, and shift puts it on the nearest word instead, the way
       the render cuts a clip the engine proposes, and then on the frame

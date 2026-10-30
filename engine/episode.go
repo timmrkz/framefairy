@@ -850,6 +850,16 @@ func ClipCaptionsView(fsys afero.Fs, planPath, clipID string, t *Transcript, loo
 	return captionsView(plan, clip, t, look), nil
 }
 
+// ClipShareTime is the moment of the episode a share of one clip shows,
+// see ShareTime.
+func ClipShareTime(fsys afero.Fs, planPath, clipID string, share float64) (float64, error) {
+	_, clip, err := planClip(fsys, planPath, clipID)
+	if err != nil {
+		return 0, err
+	}
+	return ShareTime(clip, share), nil
+}
+
 // ShapedView is what a gesture makes of a clip, with the captions the clip
 // would have, for the clip timeline and the video preview while the hand
 // moves. Nothing is written.

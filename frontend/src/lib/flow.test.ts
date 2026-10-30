@@ -13,7 +13,6 @@ import {
   gridStep,
   insideClip,
   inEpisode,
-  shareOf,
   endInEpisode,
   inClip,
   wordInEpisode,
@@ -235,20 +234,6 @@ describe("endInEpisode", () => {
   test("stops at the end of the clip, and gives the time back with no pieces", () => {
     expect(endInEpisode(two, 99)).toBe(20);
     expect(endInEpisode([], 7)).toBe(7);
-  });
-});
-
-describe("shareOf", () => {
-  // The clip's own clock adds up its pieces, and a share of it lands in
-  // the episode past every cut before it.
-  test.each([
-    ["no cut", [{ start: 10, end: 20 }], [[0, 10], [0.5, 15], [0.9, 19]]],
-    // Half way is the first moment after the cut, never inside it.
-    ["one cut in the middle", [{ start: 10, end: 14 }, { start: 16, end: 20 }], [[0, 10], [0.3, 12.4], [0.5, 16], [0.9, 19.2]]],
-    ["a cut at the start", [{ start: 13, end: 20 }], [[0, 13], [0.5, 16.5], [0.9, 19.3]]],
-    ["a cut at the end", [{ start: 10, end: 14 }, { start: 16, end: 17 }], [[0, 10], [0.5, 12.5], [0.9, 16.5]]],
-  ] as [string, Piece[], [number, number][]][])("%s", (_, pieces, shares) => {
-    for (const [share, at] of shares) expect(shareOf(pieces, share)).toBeCloseTo(at, 9);
   });
 });
 
