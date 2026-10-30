@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"path/filepath"
+	"runtime/debug"
 	"sort"
 	"sync"
 
@@ -213,8 +214,8 @@ func warmSize(model string, seconds float64, maxTokens int) int {
 	return localContextFor(model, chars, maxTokens)
 }
 
-// WarmModel loads the local model for a search of req that has not
-// started yet, so the search finds it loaded, and has it read the
+// warmModel loads the local model for a search of req while it hears
+// its window, so the search finds it loaded, and has it read the
 // transcript of the window as it is heard, so the search finds most of
 // its prompt read, see readahead.go. It blocks while the window is heard,
 // and returns with what was read once all of it is heard, ctx ends, a
@@ -224,7 +225,7 @@ func warmSize(model string, seconds float64, maxTokens int) int {
 // API, or a server that is already running, there is nothing to load and
 // nothing is read ahead, and with another model in use it waits for
 // nothing: the search loads its own when it gets its turn.
-func (p *Project) WarmModel(ctx context.Context, req PlanRequest) (ReadAhead, error) {
+func (p *Project) warmModel(ctx context.Context, req PlanRequest) (ReadAhead, error) {
 	opts := p.Base
 	if opts.Planner != "local" || opts.LLMURL != "" {
 		return ReadAhead{}, nil
@@ -236,7 +237,30 @@ func (p *Project) WarmModel(ctx context.Context, req PlanRequest) (ReadAhead, er
 	return p.warm(ctx, req, *local)
 }
 
-// warm is WarmModel with the model found.
+// readsAhead says whether a search of window loads the model while it
+// hears, see warmAhead: only when some of the window is still to be
+// heard. A window heard already goes straight to finding, which loads
+// the model itself.
+func (p *Project) readsAhead(window timed.Window) bool {
+	return len(Unheard(p.Files, p.Source, p.Base.ASRModel, window)) > 0
+}
+
+// warmAhead is warmModel beside the search of req, which Search starts
+// on a goroutine of its own as it hears the window. That goroutine is out
+// of reach of the recover that guards the job, so a panic in it is
+// caught here, and the search goes on and loads the model itself.
+func (p *Project) warmAhead(ctx context.Context, req PlanRequest) {
+	defer func() {
+		if caught := recover(); caught != nil {
+			p.engine.Log.Detail("reading ahead of the search stopped unexpectedly: %v\n%s", caught, debug.Stack())
+		}
+	}()
+	if _, err := p.warmModel(ctx, req); err != nil && ctx.Err() == nil {
+		p.engine.Log.Detail("the model could not be loaded ahead of the search: %s", err)
+	}
+}
+
+// warm is warmModel with the model found.
 func (p *Project) warm(ctx context.Context, req PlanRequest, local LocalModel) (ReadAhead, error) {
 	size := warmSize(local.Model, req.To-req.From, p.Base.MaxTokens)
 	_, release, err := p.engine.warmModel(ctx, local, size, p.LogsDir())

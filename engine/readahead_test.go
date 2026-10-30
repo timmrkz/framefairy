@@ -506,7 +506,7 @@ func TestNothingIsReadAheadIntoARunningServer(t *testing.T) {
 	base := DefaultOptions()
 	base.Planner, base.LLMURL = "local", server.URL
 	p := NewProject(NewEngine(NewLog(io.Discard, false, false), files), "/videos/running.mp4", base)
-	ahead, err := p.WarmModel(context.Background(), PlanRequest{From: 0, To: 60, Count: 1, Pass: 1})
+	ahead, err := p.warmModel(context.Background(), PlanRequest{From: 0, To: 60, Count: 1, Pass: 1})
 	if err != nil || ahead != (ReadAhead{}) {
 		t.Errorf("warming a running server read %+v and said %v", ahead, err)
 	}
@@ -532,5 +532,27 @@ func TestOnlyARequestThatStartsWithTheTranscriptIsReadAhead(t *testing.T) {
 		if got := readsAhead(lines, PlanOptions{Recipe: recipe, Count: 1, MinLen: 20, MaxLen: 30}); got != want {
 			t.Errorf("the %s recipe is read ahead: %v, want %v", recipe, got, want)
 		}
+	}
+}
+
+// A search loads the model while it hears only when some of its window
+// is still to be heard. A window heard already goes straight to finding.
+// It is the engine's to decide, so every search does the same, #610.
+func TestASearchReadsAheadOnlyOfAWindowStillToBeHeard(t *testing.T) {
+	v := videoReadAhead(t, afero.NewMemMapFs(), t.Name())
+	window := timed.Window{Start: 0, End: 60}
+	if !v.p.readsAhead(window) {
+		t.Error("a window nothing of which is heard is not read ahead")
+	}
+	v.hear(0, 40)
+	if !v.p.readsAhead(window) {
+		t.Error("a window heard to 40 s of 60 is not read ahead")
+	}
+	v.hear(40, 60)
+	if v.p.readsAhead(window) {
+		t.Error("a window heard whole is read ahead")
+	}
+	if !v.p.readsAhead(timed.Window{Start: 30, End: 90}) {
+		t.Error("a window reaching past what is heard is not read ahead")
 	}
 }

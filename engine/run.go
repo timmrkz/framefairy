@@ -99,12 +99,16 @@ type Options struct {
 	MarginV         *int
 	RefreshCaptions bool
 	// ExactPlan never falls back to another plan file when the one for this
-	// window is missing, it makes the plan instead. The app sets it, the
-	// command line does not.
+	// window is missing, it makes the plan instead. The app sets it, and
+	// the command line with --next.
 	ExactPlan bool
 	// Pass is which search of the window this is, see PassName. 0 and 1
 	// are the first.
 	Pass int
+	// Next searches the window the app would place on the episode now,
+	// where the fewest searches have been, as the next pass over it, see
+	// Project.PlaceWindow. --from and --to name a window by hand instead.
+	Next bool
 	// Taken are the parts of the episode clips were proposed for already.
 	// The model is told to leave them, see PlanOptions.Taken.
 	Taken []timed.Window
@@ -231,6 +235,14 @@ func (e *Engine) execute(ctx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
+	if opts.Next {
+		if ask != nil {
+			return errors.New("--next places the window itself, so it takes no --from or --to")
+		}
+		if ask, opts, err = e.nextSearch(ctx, opts); err != nil {
+			return err
+		}
+	}
 	r, err := e.prepare(ctx, opts, ask)
 	if err != nil {
 		return err
@@ -307,6 +319,38 @@ func askedWith(opts Options) PlanOptions {
 		KeepPause: opts.KeepPause, Pass: opts.Pass, Taken: opts.Taken, Listed: opts.Listed,
 		Recipe: opts.Recipe, Switches: opts.Switches,
 	}
+}
+
+// nextSearch is the window --next asks for and the options its search
+// runs with: the window the app would place on the episode now, from what
+// was searched of it and what one search can read of what is heard, see
+// Project.PlaceWindow, and the next pass over it, told what the passes
+// before it proposed, the way a search in the app is.
+func (e *Engine) nextSearch(ctx context.Context, opts Options) (*timed.Window, Options, error) {
+	source, err := e.Probe(ctx, opts.Source)
+	if err != nil {
+		return nil, opts, err
+	}
+	if source.Duration <= 0 {
+		return nil, opts, fmt.Errorf("%s reports no duration, so there is no audio to work with", opts.Source)
+	}
+	p := NewProject(e, opts.Source, opts)
+	heard, err := p.Transcript()
+	if err != nil {
+		heard = nil
+	}
+	placed := p.PlaceWindow(p.RoomAndLines(heard), source.Duration)
+	req := PlanRequest{From: placed.Start, To: placed.End}
+	if opts.Pass, err = p.nextPass(ctx, req); err != nil {
+		return nil, opts, err
+	}
+	// The first pass over a whole episode is nil, the way the app names
+	// its plan, and the plan is made rather than another one taken.
+	window := searchWindow(req.From, req.To, opts.Pass, source.Duration)
+	opts.ExactPlan = true
+	opts.Taken, opts.Listed, opts.Removed = p.proposed(PlanFor(p.WorkDir(), opts.folder(), opts.Experiment,
+		PassName(window, opts.Pass)))
+	return window, opts, nil
 }
 
 // askedWindow is the window --from and --to ask for: nil when neither is

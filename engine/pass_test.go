@@ -159,7 +159,7 @@ func TestPassNames(t *testing.T) {
 		}
 	}
 	rec := JobRecord{Pass: 2}
-	if got := rec.PlanName(360); got != "clips-0-360-2.json" {
+	if got := rec.planName(360); got != "clips-0-360-2.json" {
 		t.Errorf("a second pass of a whole episode is %s", got)
 	}
 	// A record names the plan its search wrote: the whole episode asked
@@ -172,7 +172,7 @@ func TestPassNames(t *testing.T) {
 		{JobRecord{To: 360}, "clips.json"},
 		{JobRecord{From: 9.9996, To: 39.9996}, "clips-10-40.json"},
 	} {
-		if got := c.rec.PlanName(360); got != c.want {
+		if got := c.rec.planName(360); got != c.want {
 			t.Errorf("the record %+v names %s, want %s", c.rec, got, c.want)
 		}
 	}
@@ -188,5 +188,38 @@ func TestTakenLines(t *testing.T) {
 	if s := takenSentence([][2]int{{2, 3}, {7, 7}, {9, 12}}); s !=
 		"Lines 2-3, 7 and 9-12 are in clips already. Find other moments, and keep none of those lines." {
 		t.Errorf("sentence: %s", s)
+	}
+}
+
+// --next searches the window the app would place, the whole of a video
+// this short, and run again it searches the same window as a second pass
+// of its own, told which line is a clip already, the way Search does in
+// the app. Asked with --from too, it says it places the window itself.
+//
+// On the real disk: ffmpeg reads the episode the run hears.
+func TestTheCommandLineSearchesTheWindowTheAppWouldPlace(t *testing.T) {
+	t.Parallel()
+	server, asked := answering(t, clipAnswer(1), clipAnswer(1, 2))
+	p := passProject(t, server.URL)
+	opts := p.Base
+	opts.Next, opts.PlanOnly, opts.Count, opts.Min, opts.Max = true, true, 1, 1, 30
+	for run := 1; run <= 2; run++ {
+		if code := p.engine.Run(context.Background(), opts); code != 0 {
+			t.Fatalf("run %d ended with %d", run, code)
+		}
+	}
+	for _, name := range []string{"clips.json", "clips-0-40-2.json"} {
+		if !exists(disk, filepath.Join(p.LogsDir(), name)) {
+			t.Errorf("no plan %s after two runs", name)
+		}
+	}
+	prompts := asked()
+	if len(prompts) != 2 || !strings.Contains(prompts[1], "none of them in line 1.") {
+		t.Errorf("the second run was not told which line is taken, asked %d times", len(prompts))
+	}
+
+	opts.From = "10"
+	if err := p.engine.execute(context.Background(), opts); err == nil || !strings.Contains(err.Error(), "--next") {
+		t.Errorf("--next with --from: %v", err)
 	}
 }

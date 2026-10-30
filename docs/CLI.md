@@ -111,6 +111,7 @@ nothing left to refresh.
 | `--min 20` | 20 s | shortest acceptable clip |
 | `--max 30` | 30 s | target ceiling. A clip that runs a little over is fine |
 | `--from 1:00:00 --to 2:00:00` | whole episode | only work on this part of it, see below |
+| `--next` | off | search the window the app would place next, see below |
 | `--max-pause 2.0` | off | a pause longer than this is always cut, even inside a run the model kept. Meant for recording faults |
 | `--keep-pause 0.10` | 0.10 s | air left on each side of a cut |
 | `--silence-db -42` | measured | what counts as silence. Taken from the audio when not given |
@@ -195,6 +196,18 @@ transcript and plan file, and clip ids start with the window start in seconds
 (`t3600-01`), so passes accumulate in `out/`. A later run without `--from`
 and `--to` finds a single existing plan on its own, and asks which one to use
 when there are several.
+
+`--next` searches the window the app would place on the episode now, by
+the same rule: where the fewest searches have been, earliest first, as
+long as the episode's windows are and no longer than the model reads at
+once, see `Project.PlaceWindow` in [ENGINE.md](ENGINE.md). A window searched before is searched
+again as a pass of its own, `clips-0-1800-2.json`, and the model is told
+which moments are clips already. So running it again and again walks the
+episode the way Search in the app does. It takes no `--from` or `--to`.
+
+```
+framefairy episode.mp4 --next --plan-only
+```
 
 A window is sent to the model in one request, and never split behind your
 back. So a window longer than the model reads at once is refused before

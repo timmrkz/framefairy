@@ -214,7 +214,7 @@ func (s *FrameFairy) ArrivingCaptions(jobID string, n int) (*engine.CaptionsView
 		if !s.store.Known(j.Episode) {
 			return nil, errNotInLibrary
 		}
-		logs := filepath.Join(engine.WorkDir(j.Episode), "logs")
+		logs := engine.LogsDir(j.Episode)
 		plan := filepath.Join(logs, engine.HandPlanName)
 		if j.Kind == engine.JobSearch {
 			// The search's own record says which pass of its window it
@@ -227,7 +227,7 @@ func (s *FrameFairy) ArrivingCaptions(jobID string, n int) (*engine.CaptionsView
 			if info, err := s.probe(context.Background(), j.Episode); err == nil {
 				duration = info.Duration
 			}
-			plan = filepath.Join(logs, rec.PlanName(duration))
+			plan = rec.PlanPath(j.Episode, duration)
 		}
 		for _, u := range j.Underway {
 			if u.N == n {
