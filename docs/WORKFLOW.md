@@ -190,6 +190,7 @@ names nothing of ours. This is where its words meet this repository.
 | logged | a GitHub issue with its label, see Clean up now, not later, in CLAUDE.md |
 | the recent issues and pull requests in the same area | the issues and the merged pull requests on GitHub, and the history up to 16 October in [GUI-PLAN.md](GUI-PLAN.md) |
 | a change to the design, with its candidates | an architectural change, with its decision record in `docs/decisions/` and its five candidates, see Changing the architecture in [ARCHITECTURE.md](ARCHITECTURE.md#changing-the-architecture) |
+| the architecture as the project writes it | [ARCHITECTURE.md](ARCHITECTURE.md): the bird's eye view and its drawings in `docs/diagrams/`, the code map, Where does it go, the invariants, the boundaries and Not to copy. Every brief names it |
 | in the right place, in the part that owns the idea | where [ARCHITECTURE.md](ARCHITECTURE.md) says it belongs: the layer of the bird's eye view, the row of Where does it go, the invariants. A change that copies what Not to copy names, or has no place in the file and adds none, is a finding |
 
 ## CI

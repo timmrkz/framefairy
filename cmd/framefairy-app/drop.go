@@ -2,7 +2,9 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
+	"runtime/debug"
 	"slices"
 	"strings"
 
@@ -27,7 +29,19 @@ type Added struct {
 // takeFiles adds the videos among files given to the app, through
 // addEpisodes, and leaves out anything else with the reason. Add and a
 // drop both come here, so they decide the same things the same way.
-func (s *FrameFairy) takeFiles(how string, files []string) Added {
+//
+// It reads videos nobody has checked, and a drop runs it on a goroutine
+// of its own, see main, where a panic ended the whole app, issue #604. A
+// panic is now the error of what was given, which the window shows as it
+// shows any file left out, for Add and a drop alike.
+func (s *FrameFairy) takeFiles(how string, files []string) (out Added) {
+	defer func() {
+		if caught := recover(); caught != nil {
+			theLog.line(zerolog.ErrorLevel, "app").Str("how", how).Str("stack", string(debug.Stack())).
+				Msgf("adding the files stopped unexpectedly: %v", caught)
+			out = Added{Added: []string{}, Error: fmt.Sprintf("the files could not be added, %v", caught)}
+		}
+	}()
 	names := make([]string, len(files))
 	for i, f := range files {
 		names[i] = filepath.Base(f)
@@ -43,7 +57,7 @@ func (s *FrameFairy) takeFiles(how string, files []string) Added {
 		}
 	}
 	added, err := s.addEpisodes(videos)
-	out := Added{Added: added}
+	out = Added{Added: added}
 	if out.Added == nil {
 		out.Added = []string{}
 	}

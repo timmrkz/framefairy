@@ -252,7 +252,8 @@ func (p *Project) readsAhead(window timed.Window) bool {
 func (p *Project) warmAhead(ctx context.Context, req PlanRequest) {
 	defer func() {
 		if caught := recover(); caught != nil {
-			p.engine.Log.Detail("reading ahead of the search stopped unexpectedly: %v\n%s", caught, debug.Stack())
+			p.engine.Log.Warn("reading ahead of the search stopped unexpectedly: %v", caught)
+			p.engine.Log.Detail("%s", debug.Stack())
 		}
 	}()
 	if _, err := p.warmModel(ctx, req); err != nil && ctx.Err() == nil {

@@ -149,3 +149,23 @@ func TestDropsAtOnce(t *testing.T) {
 		}
 	}
 }
+
+// A drop whose adding panics says so as the drop's error, which the
+// window shows as it shows a file left out, and the stack is in the app's
+// log. The drop is a goroutine of its own, and a panic in it ended the
+// whole app, issue #604. A service with no library makes the adding
+// panic, the shortest way there is to one.
+//
+// On the real disk: lumberjack writes the log and knows only the disk.
+func TestADropThatPanicsSaysWhyNotTheAppGoing(t *testing.T) {
+	_, read := testLog(t)
+	got := (&FrameFairy{}).dropFiles([]string{"/home/tim/notes.txt"})
+	if len(got.Added) != 0 || !strings.HasPrefix(got.Error, "the files could not be added, ") || strings.Contains(got.Error, "\n") {
+		t.Errorf("the drop that panicked gave %+v, want its reason in one line", got)
+	}
+	line := find(read(), "adding the files stopped unexpectedly")
+	has(t, line, map[string]any{"level": "error", "from": "app", "how": "drop"})
+	if stack, _ := line["stack"].(string); !strings.Contains(stack, "goroutine") {
+		t.Errorf("the app's log holds no stack of the panic, %v", line)
+	}
+}

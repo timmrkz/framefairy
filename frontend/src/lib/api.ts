@@ -824,6 +824,11 @@ export const api = {
   // line so far, so the range picker knows how far a window may reach.
   room: (path: string) => call<RoomView>("Room", path),
   captions: (path: string, plan: string, clip: string) => call<CaptionsView>("Captions", path, plan, clip),
+  // The moment of the episode a share of a clip shows, the share of the
+  // clip as it plays, its cuts taken out. The number keys put the playhead
+  // there, see engine.ShareTime.
+  shareOfClip: (path: string, plan: string, clip: string, share: number) =>
+    call<number>("ShareOfClip", path, plan, clip, share),
   // The captions of a clip on its way, laid out as they will be once it is
   // written, or null until its job knows what it keeps.
   arrivingCaptions: (job: string, n: number) =>

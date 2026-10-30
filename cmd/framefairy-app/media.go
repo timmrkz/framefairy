@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"sync"
 
@@ -87,7 +86,7 @@ func (p *probed) probe(ctx context.Context, path string) (engine.SourceInfo, err
 	}
 	// ffprobe reads the episode, and the stamp above is taken from the
 	// same disk.
-	e := engine.NewEngine(engine.NewLog(io.Discard, false, false), afero.NewOsFs())
+	e := engine.NewEngine(engineLog("files", path), afero.NewOsFs())
 	info, err := e.Probe(ctx, path)
 	if err == nil && stamp != "" {
 		p.mu.Lock()

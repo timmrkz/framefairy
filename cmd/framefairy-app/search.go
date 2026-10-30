@@ -2,8 +2,8 @@ package main
 
 import (
 	"context"
-	"log"
 	"math"
+	"path/filepath"
 
 	"github.com/rs/zerolog"
 
@@ -284,6 +284,6 @@ func (s *FrameFairy) cancelSteps(id string) bool {
 
 func (s *FrameFairy) forgetRecord(path, record string) {
 	if err := engine.RemoveJob(s.store.files, path, record); err != nil {
-		log.Printf("could not clear the record of %s: %v", path, err)
+		theLog.line(zerolog.WarnLevel, "jobs").Str("video", filepath.Base(path)).Str("record", record).Err(err).Msg("the record could not be cleared")
 	}
 }

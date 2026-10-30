@@ -345,6 +345,30 @@ func TestALaneSurvivesAPanicAroundAJob(t *testing.T) {
 	}
 }
 
+// A job whose work panics fails with the one line its toast shows, and
+// the stack is in the app's log only. The job's error held the whole
+// stack, and the toast showed a screen of Go, issue #604.
+//
+// On the real disk: lumberjack writes the log and knows only the disk.
+func TestAJobThatPanicsSaysWhyInOneLine(t *testing.T) {
+	_, read := testLog(t)
+	st := memoryStore()
+	q := newQueue(st, func(JobUpdate) {}, func(string) {})
+	job := q.add("/eps/a.mp4", "render", "Render", func(context.Context, *engine.Project) (string, error) {
+		panic("a clip nobody framed before")
+	})
+	q.untilNoneGoing()
+	got, _ := q.find(job.Episode, job.Kind)
+	if got.State != JobFailed || got.Error != "Render stopped unexpectedly: a clip nobody framed before" {
+		t.Errorf("the job ended %q with %q, want it failed with one line", got.State, got.Error)
+	}
+	line := find(read(), "the job stopped unexpectedly")
+	has(t, line, map[string]any{"level": "error", "msg": "the job stopped unexpectedly: a clip nobody framed before"})
+	if stack, _ := line["stack"].(string); !strings.Contains(stack, "goroutine") {
+		t.Errorf("the app's log holds no stack of the panic, %v", line)
+	}
+}
+
 // Quitting stops every job, running and queued, and nothing new starts.
 func TestQuittingStopsEveryJob(t *testing.T) {
 	q := newQueue(memoryStore(), func(JobUpdate) {}, func(string) {})

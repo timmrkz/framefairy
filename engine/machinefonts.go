@@ -245,7 +245,7 @@ func findFaces(fsys afero.Fs, dirs []string) []machineFace {
 				return nil
 			}
 			defer file.Close()
-			for _, face := range readSfntFaces(file, info.Size()) {
+			for _, face := range readSafely(file, info.Size()) {
 				key := strings.ToLower(face.name)
 				if seen[key] {
 					continue
@@ -268,6 +268,21 @@ func findFaces(fsys afero.Fs, dirs []string) []machineFace {
 		return strings.Compare(strings.ToLower(a.font.Name), strings.ToLower(b.font.Name))
 	})
 	return faces
+}
+
+// readSafely reads the faces of a font file, and none of one whose reading
+// panics. Every font on the machine is read as the app starts, on a
+// goroutine nothing recovers, so one font the reader trips on would end
+// the app at every start, before Report a Problem could be reached, issue
+// #604. A font left out is a font the Font list does not offer, the way a
+// file that cannot be read is.
+func readSafely(r io.ReaderAt, size int64) (faces []sfntFace) {
+	defer func() {
+		if recover() != nil {
+			faces = nil
+		}
+	}()
+	return readSfntFaces(r, size)
 }
 
 // sfntFace is what one face of a font file says about itself.

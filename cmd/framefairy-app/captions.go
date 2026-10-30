@@ -5,11 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"math"
 	"net/http"
 	"path/filepath"
-	"runtime/debug"
 	"slices"
 	"strconv"
 	"sync"
@@ -117,15 +115,9 @@ func (t *tracks) used(track string) {
 }
 
 // serveCaptions answers /frames/captions. The engine's caption code runs
-// here outside a job, so a panic in it fails the request, not the app.
+// here outside a job, so a panic in it fails the request, not the app,
+// see mediaMiddleware.
 func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Request) {
-	defer func() {
-		if v := recover(); v != nil {
-			theLog.line(zerolog.ErrorLevel, "captions").Str("panic", fmt.Sprint(v)).Str("stack", string(debug.Stack())).
-				Msg("drawing the captions failed")
-			http.Error(w, "the captions could not be drawn", http.StatusInternalServerError)
-		}
-	}()
 	q := r.URL.Query()
 	path := q.Get("path")
 	kept, ok := captionTracks.get(q.Get("track"))
@@ -166,7 +158,7 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 		if err == nil {
 			// The short's size as the render takes it, which is what the
 			// caption file is laid out at.
-			e := engine.NewEngine(previewLog(path), st.files)
+			e := engine.NewEngine(engineLog("captions", path), st.files)
 			o := jobOptions(st, e)
 			drawing := kept.drawing.Typing(typing).Lifted(part)
 			var l engine.CaptionLayer
@@ -226,13 +218,6 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 // words of a view, so the caption box frames the word libass drew. Like
 // the captions, it runs outside a job, so a panic fails the request.
 func (p *previews) serveWordFrames(st *store, w http.ResponseWriter, r *http.Request) {
-	defer func() {
-		if v := recover(); v != nil {
-			theLog.line(zerolog.ErrorLevel, "captions").Str("panic", fmt.Sprint(v)).Str("stack", string(debug.Stack())).
-				Msg("placing the caption words failed")
-			http.Error(w, "the caption words could not be placed", http.StatusInternalServerError)
-		}
-	}()
 	q := r.URL.Query()
 	path := q.Get("path")
 	kept, ok := captionTracks.get(q.Get("track"))
@@ -255,7 +240,7 @@ func (p *previews) serveWordFrames(st *store, w http.ResponseWriter, r *http.Req
 		}
 		return
 	}
-	e := engine.NewEngine(previewLog(path), st.files)
+	e := engine.NewEngine(engineLog("captions", path), st.files)
 	frames := e.PreviewWordFrames(ctx, kept.drawing, drafts, source, jobOptions(st, e).RenderSettings())
 	if frames == nil {
 		frames = [][]engine.WordFrame{}
@@ -297,31 +282,6 @@ func captionDrafts(get func(string) string) (map[string]any, error) {
 		drafts["margin_v"] = engine.SnapCaptionY(y)
 	}
 	return drafts, nil
-}
-
-// previewLog is the log of the engine that draws the video preview's
-// captions, which writes into the app's log under the video: that the
-// words could not be measured and the caption file has no pill, that a
-// caption file was made and how long it took. It went nowhere before, and
-// a caption file without its pill was then kept for the rest of the run
-// with nothing to say why.
-func previewLog(path string) *engine.Log {
-	log := engine.NewLog(io.Discard, false, false)
-	video := filepath.Base(path)
-	log.SetSink(func(ev engine.Event) {
-		level := zerolog.DebugLevel
-		switch ev.Kind {
-		case engine.EventWarn:
-			level = zerolog.WarnLevel
-		case engine.EventError:
-			level = zerolog.ErrorLevel
-		case engine.EventInfo, engine.EventOK, engine.EventDetail:
-		default:
-			return
-		}
-		theLog.line(level, "captions").Str("video", video).Msg(ev.Text)
-	})
-	return log
 }
 
 // layerTally counts the caption layers drawn for each video and those

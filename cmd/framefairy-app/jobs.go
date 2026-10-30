@@ -1100,10 +1100,14 @@ var standIns atomic.Pointer[func(*engine.Engine, *engine.Options)]
 // run does the work of a job and turns a panic into a job that failed. A
 // desktop app that dies takes the interface, the other lane and whatever
 // was being transcribed with it, and one bad episode is not worth that.
+// The job's error is the line its toast shows, and the stack goes to the
+// app's log only: a toast that held the whole stack was a screen of Go
+// nobody could read, issue #604.
 func run(ctx context.Context, job *Job, project *engine.Project, turn engine.Turn) (result string, err error) {
 	defer func() {
 		if caught := recover(); caught != nil {
-			err = fmt.Errorf("%s stopped unexpectedly: %v\n%s", job.Label, caught, debug.Stack())
+			theLog.jobLine(zerolog.ErrorLevel, job).Str("stack", string(debug.Stack())).Msgf("the job stopped unexpectedly: %v", caught)
+			err = fmt.Errorf("%s stopped unexpectedly: %v", job.Label, caught)
 		}
 	}()
 	if job.steps != nil {

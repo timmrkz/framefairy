@@ -603,6 +603,17 @@ func (f *EpisodeFrames) stream(ctx context.Context, kind int, want *place, open 
 			f.mu.Unlock()
 		}()
 	}
+	// A panic on the way, in got above all, ends this stream and goes on
+	// up, to the recover of whoever runs it. The cursor is finished first:
+	// left as it was, the records still coming for it filled its channel,
+	// and the decoder's reader then waited on it for good, with every
+	// stream of the video behind it, issue #604.
+	defer func() {
+		if caught := recover(); caught != nil {
+			finish()
+			panic(caught)
+		}
+	}()
 	for {
 		select {
 		case rec := <-ch:

@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"io"
 	"path/filepath"
 	"time"
 
@@ -60,14 +59,9 @@ func (k *keeping) keep(st *store, said string) string {
 				Msg("keeping the model loaded stopped unexpectedly")
 		}
 	}()
-	log := engine.NewLog(io.Discard, false, false)
-	log.SetSink(func(ev engine.Event) {
-		// The engine says how long the load took and its parts.
-		if ev.Kind == engine.EventInfo {
-			theLog.line(zerolog.InfoLevel, "model").Msg(ev.Text)
-		}
-	})
-	e := engine.NewEngine(log, st.files)
+	// The engine says how long the load took and its parts, and what
+	// went wrong on the way.
+	e := engine.NewEngine(engineLog("model", ""), st.files)
 	opts := jobOptions(st, e)
 	started := time.Now()
 	loaded, err := e.KeepModel(context.Background(), opts, filepath.Dir(appLogPath()))

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -480,7 +479,7 @@ func (c *updating) refreshList() {
 		return
 	}
 	if _, err := c.src.Fetch(context.Background()); err != nil {
-		log.Printf("update channels: %v", err)
+		theLog.line(zerolog.WarnLevel, "updates").Err(err).Msg("the channels could not be read")
 		return
 	}
 	c.change(func(*UpdateState) {})
@@ -562,7 +561,7 @@ func (c *updating) checkNow() {
 	c.mu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	if _, err := c.src.Fetch(ctx); err != nil {
-		log.Printf("update channels: %v", err)
+		theLog.line(zerolog.WarnLevel, "updates").Err(err).Msg("the channels could not be read")
 	} else {
 		c.change(func(*UpdateState) {})
 	}
@@ -644,7 +643,6 @@ func (c *updating) checkOnce() {
 		if ctx.Err() == context.Canceled {
 			return
 		}
-		log.Printf("update check: %v", err)
 		theLog.line(zerolog.WarnLevel, "updates").Str("channel", updates.Followed(c.picked(), c.own)).Err(err).Msg("the check failed")
 		mine(func(s *UpdateState) {
 			if s.Phase != "ready" {
@@ -696,7 +694,6 @@ func (c *updating) checkOnce() {
 		if ctx.Err() == context.Canceled {
 			return
 		}
-		log.Printf("update download: %v", err)
 		theLog.line(zerolog.WarnLevel, "updates").Str("channel", rel.Channel).Str("build", rel.Version).Err(err).Msg("the download failed")
 		// The newer build did not come whole, and the one that is ready
 		// still is. The next look tries again.
@@ -730,8 +727,8 @@ func (c *updating) checkOnce() {
 	})
 	unstage(gone)
 	if gone != w {
-		log.Printf("update ready: %s, %s", rel.Version, w.DownloadedPath())
-		theLog.line(zerolog.InfoLevel, "updates").Str("channel", rel.Channel).Str("build", rel.Version).Msg("the build is ready for Relaunch")
+		theLog.line(zerolog.InfoLevel, "updates").Str("channel", rel.Channel).Str("build", rel.Version).Str("file", w.DownloadedPath()).
+			Msg("the build is ready for Relaunch")
 	}
 }
 
@@ -838,7 +835,7 @@ func (c *updating) Restart() error {
 	if c.idle != nil {
 		var ok bool
 		if reopen, ok = c.idle(); !ok {
-			log.Printf("relaunch refused: work is still running")
+			theLog.line(zerolog.InfoLevel, "updates").Msg("Relaunch waits, work is still running")
 			return errors.New("work is still running. Relaunch when it is done")
 		}
 	}
@@ -898,10 +895,10 @@ func (c *updating) installOnQuit() {
 		return
 	}
 	if err := c.install(target, staged); err != nil {
-		log.Printf("install on quit: %v", err)
+		theLog.line(zerolog.ErrorLevel, "updates").Err(err).Msg("the build could not be put in place on the way out")
 		return
 	}
-	log.Printf("install on quit: %s goes in place of %s once the app has quit", staged, target)
+	theLog.line(zerolog.InfoLevel, "updates").Str("build", staged).Str("app", target).Msg("the build goes in place of the app once it has quit")
 }
 
 // plainUpdateError takes the updater's prefixes off an error, which say

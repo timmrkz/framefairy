@@ -1919,7 +1919,8 @@
       <Info label="What the clip timeline is" side="right">
         The video up close. Click or drag to move the playhead, swipe with two fingers to travel
         and pinch to zoom. The arrow keys step a frame, with shift a word, and shift with up or
-        down goes to the next clip.<br /><br />
+        down goes to the next clip. Each number key puts the playhead that many tenths into the clip,
+        5 half way and 0 at its start.<br /><br />
         Drag a clip edge to trim it and double-click it to put it back where the clip was found.
         Double-click in the clip to cut a part out, drag its edges to
         size it and double-click it to remove it. Shift puts the edges of a clip or a cut on whole

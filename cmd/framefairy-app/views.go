@@ -140,6 +140,16 @@ func (s *FrameFairy) Captions(path, planPath, clipID string) (*engine.CaptionsVi
 	return view, err
 }
 
+// ShareOfClip gives the moment of the episode a share of a clip shows, the
+// share of the clip as it plays, see engine.ShareTime. The number keys put
+// the playhead there.
+func (s *FrameFairy) ShareOfClip(path, planPath, clipID string, share float64) (float64, error) {
+	if !s.store.PlanOf(path, planPath) {
+		return 0, errNotInLibrary
+	}
+	return engine.ClipShareTime(s.store.files, planPath, clipID, share)
+}
+
 // captionLook is how the captions of the clips of planPath of the episode
 // at path are made, the way a render job makes them: in the style the
 // job's options put on the plan, on the episode's frames, see

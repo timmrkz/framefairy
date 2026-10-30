@@ -71,7 +71,8 @@ what became of it.
    program before. **Came back**, found on 29 October 2026: the goroutine
    that builds the video preview's captions, new in #201, has no recover,
    and neither do 10 of the engine's 13 goroutines and 8 of the app's 28.
-   Moved to #604, which guards every goroutine at once.
+   Moved to #604, which guards each goroutine that reads what nobody
+   checked.
 5. **A job event lost or out of order leaves the interface stuck.** The
    queued event can arrive after the running one, events sent before the
    interface starts listening are lost, and nothing reads the job list again.

@@ -3,11 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
-	"io"
-	"log"
+	"path/filepath"
+	"runtime/debug"
 	"sync"
 	"time"
 
+	"github.com/rs/zerolog"
 	"github.com/spf13/afero"
 
 	"framefairy/engine"
@@ -83,7 +84,8 @@ func (m *measuring) run(ctx context.Context, path string, run *measure) {
 		// A measuring that goes wrong ends itself, not the app, and the
 		// waveform stays as the transcription measures it.
 		if r := recover(); r != nil {
-			log.Printf("measuring the loudness of %s: %v", path, r)
+			theLog.line(zerolog.ErrorLevel, "levels").Str("video", filepath.Base(path)).Str("stack", string(debug.Stack())).
+				Msgf("measuring the loudness stopped unexpectedly: %v", r)
 		}
 		m.mu.Lock()
 		if m.running[path] == run {
@@ -99,7 +101,7 @@ func (m *measuring) run(ctx context.Context, path string, run *measure) {
 	case <-ctx.Done():
 		return
 	}
-	e := engine.NewEngine(engine.NewLog(io.Discard, false, false), m.files)
+	e := engine.NewEngine(engineLog("levels", path), m.files)
 	// The interface is told twice a second at most, which is as often as
 	// the engine writes what it has.
 	var told time.Time
@@ -110,7 +112,7 @@ func (m *measuring) run(ctx context.Context, path string, run *measure) {
 		}
 	})
 	if err != nil && ctx.Err() == nil {
-		log.Printf("measuring the loudness of %s: %v", path, err)
+		theLog.line(zerolog.WarnLevel, "levels").Str("video", filepath.Base(path)).Err(err).Msg("the loudness could not be measured")
 	}
 	m.notify(path)
 }

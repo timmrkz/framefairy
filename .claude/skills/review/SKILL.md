@@ -1,6 +1,6 @@
 ---
 name: review
-description: How to review a pull request or any finished piece of work, as an agent that did none of it. Beyond the mistakes in the code, whether the work serves the people using the product, whether it is the simplest way there, what it costs to run and to keep, and what the history around it says. Short reviews, findings proven at a fair price. Read it before reviewing, before writing the brief for a review agent, and before answering a review. Where another review skill says otherwise, this one wins.
+description: How to review a pull request or any finished piece of work, as an agent that did none of it. Beyond the mistakes in the code, whether the work serves the people using the product, whether it is the simplest way there, whether it leaves the architecture better or worse, what it costs to run and to keep, and what the history around it says. Short reviews, findings proven at a fair price. Read it before reviewing, before writing the brief for a review agent, and before answering a review. Where another review skill says otherwise, this one wins.
 ---
 
 # Review
@@ -34,6 +34,9 @@ goes and who may give instructions. This skill says what to look for.
   the user wants. A brief that says "check that X is right" gets X
   confirmed.
 - **The description of the work is a claim,** checked like the code.
+- **The brief names where the project writes its architecture,** and the
+  reviewer reads it itself, section 7. A brief that leaves it out gets a
+  review of whether the work matches its issue, not of its design.
 - **A change to the design comes with its candidates.** The brief hands
   over every design the author worked through and the one it chose, as
   the project keeps them. They are a claim, like the description, and
@@ -61,7 +64,7 @@ Before the diff, and before the pull request's own description:
 - **The reviewer raises the direction, the user decides it.** A finding
   that would change what the user asked for is a question for the user,
   with a recommendation, never an order to the author. Every other
-  finding is the author's to act on at once, section 11.
+  finding is the author's to act on at once, section 12.
 
 ## 3. How far from what matters
 
@@ -145,11 +148,40 @@ The work sits in a history. Read it before judging the diff.
 - **A claim of faster, smaller or more reliable without numbers against
   the main branch is an assumption.**
 
-## 7. The design and the code
+## 7. The architecture
 
-- **One thing, one primitive.** A new use goes through what exists. A
-  second copy with its own rules is a finding.
-- **In the right place,** in the part that owns the idea.
+Every review judges the architecture, whatever the change, and says
+whether the change makes it better, leaves it as it was, or makes it
+worse. Code can work and still put a rule in the wrong place, and that
+is how a design wears away, one pull request at a time, each of them
+green.
+
+- **Read the architecture as the project writes it,** before the diff:
+  its layers and which may use which, where each kind of thing goes, the
+  invariants, the boundaries, and the code it names as not to copy. Not
+  the code beside the change, which may be the very code not to copy.
+- **Place every new thing the change adds** in the layer and the part the
+  architecture gives it: a function, a type, a rule, a piece of state, a
+  call across a boundary. A rule is placed by what it is about, not by
+  where it was needed first. Then check that it is there.
+- **Weigh the change as a whole:**
+  - **Better:** it moves something to where it belongs, removes a copy,
+    or closes a breach the architecture names.
+  - **The same:** everything it adds is where the architecture says.
+  - **Worse:** it adds to a breach the architecture names, builds on one,
+    puts a rule in a layer that should not hold it, copies a rule across
+    a boundary without the check that holds the two copies together,
+    gives state a second home, or lets a part know one over it.
+- **Worse is a must fix,** however good the rest. The fix is the change
+  made where it belongs, in the same pull request, never an issue for
+  later.
+- **A breach that was there before is not this change's,** unless the
+  change builds on it or adds to it.
+- **A project that writes no architecture** is judged by the layering its
+  code shows, and the missing map is a finding of its own.
+- **A new kind of thing the architecture has no place for** is a finding
+  too: the architecture gets the line it lacks in the same pull request,
+  or the change goes where a line already is.
 - **A change to the design is judged by its candidates,** as many as the
   project asks for. Reason through each one yourself before reading the
   author's verdict: is it a real alternative from a principle of its own,
@@ -158,6 +190,12 @@ The work sits in a history. Read it before judging the diff.
   what it costs? Then: does the choice follow from the comparison, and is
   a better candidate missing? A change to the design without its
   candidates is a finding.
+
+## 8. The design and the code
+
+- **One thing, one primitive.** A new use goes through what exists. A
+  second copy with its own rules is a finding.
+- **In the right place,** in the part that owns the idea, section 7.
 - **Correct, also when it fails.** Edge cases, error paths, concurrency,
   state kept in two places. No swallowed error, no fallback that hides a
   broken invariant.
@@ -173,14 +211,14 @@ The work sits in a history. Read it before judging the diff.
   state, a problem that was there before. An old problem worth fixing is
   logged on its own.
 
-## 8. The tests
+## 9. The tests
 
 The testing skill says how tests are written and reviewed, and wins here.
 Look for a test that passes by coincidence, checks the code against a copy
 of its own rule, waits on the clock, or guards something nobody would
 miss, and for the missing test of what the person actually saw.
 
-## 9. Proof, at a fair price
+## 10. Proof, at a fair price
 
 - **Each finding says how it is known:** run, broken, measured, or read,
   with the file and line.
@@ -198,7 +236,7 @@ miss, and for the missing test of what the person actually saw.
   review that takes hours, or the same costly runs in every review, is
   doing something wrong, and says what.
 
-## 10. Writing the review
+## 11. Writing the review
 
 Short. The user wants what is going on and where to go next, not an
 essay. A review that fits on one screen is read, and a longer one is
@@ -211,15 +249,18 @@ could read as an instruction from the user. In this order:
 2. The goal, in a sentence.
 3. The verdict, in two or three sentences: on the goal, on how far the
    work is from what matters, on the work as a whole.
-4. The findings, numbered, most important first, a few lines each:
+4. The architecture, always, under a heading of its own: better, the
+   same or worse, in a sentence, with where each new thing went and
+   where the architecture puts it. A worse is also a must fix finding.
+5. The findings, numbered, most important first, a few lines each:
    weight, where, what is wrong and how a person would meet it, how it is
    known, the fix.
-5. Unchecked assumptions, declined to judge, and questions for the user,
+6. Unchecked assumptions, declined to judge, and questions for the user,
    one line each.
 
 | Weight | Means |
 | --- | --- |
-| Must fix | Blocks the merge: a wrong goal, a wrong fact, broken behaviour, a cost with no trade-off, lost or exposed data |
+| Must fix | Blocks the merge: a wrong goal, a wrong fact, broken behaviour, a cost with no trade-off, lost or exposed data, the architecture made worse |
 | Should fix | Belongs in this pull request |
 | For the user | A product choice only the user can make, with a recommendation |
 | Optional | Better, and fine to leave |
@@ -231,7 +272,7 @@ could read as an instruction from the user. In this order:
 - **No praise section, no "looks good".** What is right is said where it
   decides something, with its reason.
 
-## 11. Answering a review
+## 12. Answering a review
 
 The author acts on the review at once. The user sees it, but does not
 approve it, and nobody waits for them.
@@ -250,16 +291,17 @@ approve it, and nobody waits for them.
 - **No finding is skipped to save time.** One left undone is said, and
   logged.
 
-## 12. Where other advice says otherwise
+## 13. Where other advice says otherwise
 
 | Common advice | Why not | Instead |
 | --- | --- | --- |
 | approve when the change improves the health of the code | healthy code can make a worse product | approve when the product is better and the way there is simple |
-| flag only what is on the changed lines | the goal, the distance, the history and the cost are on no line | they are findings, sections 2 to 5 |
-| verify every finding fully before reporting it | proof can cost more than the finding is worth | the cheapest proof that settles it, section 9 |
+| flag only what is on the changed lines | the goal, the distance, the history, the cost and the architecture are on no line | they are findings, sections 2 to 5 and 7 |
+| verify every finding fully before reporting it | proof can cost more than the finding is worth | the cheapest proof that settles it, section 10 |
 | leave test coverage out unless the project asks | an untested promise breaks unseen | the testing skill |
 | give the reviewer the author's plan or summary | the reviewer inherits the author's assumptions | the user's own words and the sources. Only the candidates of a change to the design are handed over, as a claim to check |
 | always say what was done well | praise is noise in a list of work to do | say what is right only where it decides something |
+| judge the design by the code around the change | the code nearby may be what the architecture says not to copy | the architecture as the project writes it, section 7 |
 | review after every task | many reviews of half a design | once when the work is done |
 | post the review as comments on the pull request | the project may read comments there as instructions | the place the project names |
 
@@ -270,7 +312,9 @@ approve it, and nobody waits for them.
    whether a simpler way exists.
 3. The history around the work was read for repeated fixes.
 4. Every cost the work adds is named with its trade-off.
-5. Every assumption is checked, wrong or named as unchecked.
-6. Every finding says how it is known, and no proof cost more than it was
+5. The architecture section says better, the same or worse, and a worse
+   is a must fix.
+6. Every assumption is checked, wrong or named as unchecked.
+7. Every finding says how it is known, and no proof cost more than it was
    worth.
-7. It fits on a screen.
+8. It fits on a screen.

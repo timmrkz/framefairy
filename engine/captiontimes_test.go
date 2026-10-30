@@ -33,6 +33,30 @@ func moved(start, end *float64) CaptionTime { return CaptionTime{Start: start, E
 
 func at(v float64) *float64 { return &v }
 
+// A share of a clip is a share of the clip as it plays, its cuts taken
+// out, and lands in the episode past every cut before it. Issue #539.
+func TestAShareOfAClipLandsPastItsCuts(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		pieces []Segment
+		shares [][2]float64
+	}{
+		{"no cut", []Segment{{Start: 10, End: 20}}, [][2]float64{{0, 10}, {0.5, 15}, {0.9, 19}}},
+		// Half way is the first moment after the cut, never inside it.
+		{"one cut in the middle", []Segment{{Start: 10, End: 14}, {Start: 16, End: 20}},
+			[][2]float64{{0, 10}, {0.3, 12.4}, {0.5, 16}, {0.9, 19.2}}},
+		{"a cut at the start", []Segment{{Start: 13, End: 20}}, [][2]float64{{0, 13}, {0.5, 16.5}, {0.9, 19.3}}},
+		{"a cut at the end", []Segment{{Start: 10, End: 14}, {Start: 16, End: 17}},
+			[][2]float64{{0, 10}, {0.5, 12.5}, {0.9, 16.5}}},
+	} {
+		for _, sh := range c.shares {
+			if got := ShareTime(Clip{Segments: c.pieces}, sh[0]); !near(got, sh[1]) {
+				t.Errorf("%s: %.1f of the clip is %.3f in the episode, want %.1f", c.name, sh[0], got, sh[1])
+			}
+		}
+	}
+}
+
 func TestTheClocksOfAClipAndItsEpisodeMeet(t *testing.T) {
 	clip := timedClip()
 	for _, c := range []struct{ clip, episode float64 }{{0, 10}, {2.5, 12.5}, {3, 20}, {4.2, 21.2}} {
