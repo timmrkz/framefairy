@@ -50,7 +50,7 @@ export default [
     // pixel in and was painted from the pixel below and to the right,
     // and the mark of a settings head stood half a pixel down.
     name: "An info mark stands on whole pixels, as far from the top of its corner as from the side",
-    steps: [["info marks"], ["settings"], ["info marks"]],
+    steps: [["info marks", 3], ["settings"], ["info marks"]],
   },
   {
     // Tim saw the names and the licences in Help, Acknowledgements sit on

@@ -471,8 +471,9 @@ export const steps = {
   //                    stands on a whole pixel up and down, and a mark in the corner of an area,
   //                    the video preview, the range picker and the clip
   //                    timeline, is painted as far from the top of the
-  //                    area as from its right, read off a screenshot
-  async "info marks"(walk) {
+  //                    area as from its right, read off a screenshot.
+  //                    corners is how many such marks are on screen
+  async "info marks"(walk, corners = 0) {
     const { page } = walk;
     const marks = await page.evaluate(() =>
       [...document.querySelectorAll(".ask")].flatMap((ask, i) => {
@@ -496,6 +497,11 @@ export const steps = {
     );
     if (!marks.length) {
       walk.wrong = "no info mark on screen";
+      return;
+    }
+    const cornered = marks.filter((m) => m.corner).map((m) => m.name);
+    if (cornered.length !== corners) {
+      walk.wrong = `${cornered.length} info marks in a corner on screen, not ${corners}: ${cornered.join(", ")}`;
       return;
     }
     // The mark and the icon in it. Either between two pixels is painted
