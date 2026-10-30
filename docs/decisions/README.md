@@ -1,15 +1,20 @@
 # Decision records
 
 One file for each architectural change, written before its code and
-merged with it, see Changing the architecture in
-[ARCHITECTURE.md](../ARCHITECTURE.md#changing-the-architecture). A record
-is never changed after its pull request is merged. A later decision that
-undoes it is a record of its own, which names the one it replaces.
+pushed with the first of it, see Changing the architecture in
+[ARCHITECTURE.md](../ARCHITECTURE.md#changing-the-architecture). A change
+made over several pull requests has one record, in the first, and the
+others name it. A record is not rewritten after its pull request is
+merged. A later decision that undoes it is a record of its own, which
+names the one it replaces, and the old record gains one line at its top,
+Replaced by, with a link to the new one.
 
 The shape is Michael Nygard's
 [architecture decision record](https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions),
 with the five simulations in the middle. A file is named by the date and
-what it decides, `2026-10-30-numbers-and-text-in-a-package.md`, and holds:
+what it decides, `2026-10-30-numbers-and-text-in-a-package.md`, not by a
+number, because two pull requests open at once would take the same
+number. It holds:
 
 - **The problem**, in the words of the person who asked, and what was
   measured on the code as it is.

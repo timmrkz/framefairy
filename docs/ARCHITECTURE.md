@@ -8,9 +8,9 @@ short and only about what rarely changes.
 
 A line is added only for a new kind of thing: a new part, a new home for
 state, a new boundary. Such a change is simulated five times first, see
-Changing the architecture at the end. A pull request that closes an issue this file
-names rewrites the rows that name it and removes its line under Not to
-copy. `internal/naming` checks that every path the file names exists.
+Changing the architecture at the end. A pull request that closes an
+issue this file names rewrites the rows that name it and removes its
+line under Not to copy. `internal/naming` checks that every path the file names exists.
 
 ## Bird's eye view
 
@@ -176,24 +176,27 @@ copies what it finds nearby, so these are not the pattern for new code.
 
 A change to how the code is organised or designed is worked through five
 times before any code, and the five converge on one. It is a change that
-adds a line to this file or changes one: a package, a layer, a home for
+decides something this file records: a package, a layer, a home for
 state or a boundary added, removed, split or joined, or a type moved
-between them.
+between packages. Rewording a row is not one. Carrying out a design a
+decision record already holds is not one either, it names that record.
+When in doubt, do the five.
 
 1. **Five simulations.** Each is a candidate design from a principle of
    its own, worked through on the code as it is, as if it were built: the
    layers it gives, what moves where, the names that would cross each new
-   boundary, counted with the type checker, the next likely changes and
-   what they would touch, and the cost in files and pull requests. Five
-   variations of one idea are one simulation. The principles that served
-   the bird's eye view are a good start: who may know about whom, what
-   changes together, where state lives, what runs together, and what a
-   test has to build.
+   boundary, counted from the code and not guessed, the next likely
+   changes and what they would touch, and the cost in files and pull
+   requests. Five variations of one idea are one simulation. Five
+   principles make a good start: who may know about whom, what changes
+   together, where state lives, what runs together, and what a test has
+   to build.
 2. **They converge.** What comes back in most of them is kept, what only
    one needs is dropped or kept for a reason that is said. The final
    candidate is drawn as layers, each using only the ones under it.
-3. **It is written down** as a decision record in `docs/decisions/`, in
-   the pull request that makes the change, see
-   [decisions/README.md](decisions/README.md).
+3. **It is written down** as a decision record in `docs/decisions/`,
+   pushed with the first code of the change, see
+   [decisions/README.md](decisions/README.md). A change made over several
+   pull requests has one record, in the first, and the others name it.
 4. **The review agent gets the record** and reasons through the five
    itself before it reads the verdict, see the review skill.
