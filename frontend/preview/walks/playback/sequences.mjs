@@ -353,10 +353,12 @@ export default [
     // so with a cut before the middle 5 lands past the cut. The cut is a
     // third of the way along, where it lies before the middle of what is
     // kept as long as it is under two fifths of the clip however wide the
-    // app. A playhead on the video comes onto the clip, and a 5 typed in
+    // app. A playhead on the video comes onto the clip, from a click
+    // before it, where the start trimmed in leaves room, and a 5 typed in
     // a word stays there.
     name: "the number keys put the playhead that many tenths into the clip, past its cut, playing or paused",
     steps: [
+      ["trim", "start", 300],
       ["cut at", 0.3],
       ["cuts", 1],
       ["share", "5", "past the cut"],
@@ -368,8 +370,6 @@ export default [
       ["share", "9"],
       ["share", "5", "from the video"],
       ["share", "0"],
-      ["click", "war"],
-      ["press", "End"],
       ["share", "5", "in a word"],
     ],
   },

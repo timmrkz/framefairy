@@ -1465,8 +1465,11 @@ export const steps = {
   //                    before the clip, which dims it: the key brings the
   //                    playhead onto the clip and lights it
   // ["share", key, "in a word"]
-  //                    with a word of the caption box open, the key is a
-  //                    letter of the word and the playhead stays put
+  //                    steps to the next word with shift and the right
+  //                    arrow, opens the first word of the caption box at
+  //                    its end,
+  //                    and the key is a letter of the word and the
+  //                    playhead stays put
   // Issue #539.
   async share(walk, arg, s) {
     const { page, watch } = walk;
@@ -1494,6 +1497,13 @@ export const steps = {
       }
     }
     if (how === "in a word") {
+      // Shift and the right arrow put the playhead in the next word, so
+      // the caption box has words to open.
+      await page.keyboard.press("Shift+ArrowRight");
+      await watch.step("press", s, page);
+      await page.locator(".captions .word").first().click();
+      await watch.step("click", s);
+      await page.keyboard.press("End");
       const before = await place();
       await page.keyboard.press(key);
       await watch.step("type", s, page);
