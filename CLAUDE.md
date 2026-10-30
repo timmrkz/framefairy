@@ -249,8 +249,13 @@ thing belongs. In short:
   request. That agent is a new one that did none of the work, and it
   reviews the way the [review skill](.claude/skills/review/SKILL.md)
   says: whether the work serves the people using the app first, then the
-  code. Its brief carries Tim's own messages, the issue and the goals
-  under The project above, never the session's summary of them. For an
+  architecture, then the code. Every review has an architecture section
+  that says whether the change leaves
+  [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) better, the same or
+  worse, and a change that makes it worse is fixed in the same pull
+  request before it is merged. Its brief carries Tim's own messages, the
+  issue, the goals under The project above and the path of
+  `docs/ARCHITECTURE.md`, never the session's summary of them. For an
   architectural change it carries the decision record too, with its five
   candidates, for the agent to reason through itself. It
   comes once, not after every push and not after the first. A review
