@@ -1452,6 +1452,102 @@ export const steps = {
     else if (bottom > got.thumbs[0])
       walk.wrong = `the rotate icon, ${top.toFixed(1)} to ${bottom.toFixed(1)} px, reaches into the thumbnails' row, from ${got.thumbs[0].toFixed(1)} px`;
   },
+  // ["share", key]     presses a number key and sees the playhead put that
+  //                    many tenths into the clip as it plays, its cuts
+  //                    taken out, never in a cut, on the clip and not
+  //                    dimmed, and playing or paused as it was. Playing,
+  //                    the play goes on from there
+  // ["share", key, "from the video"]
+  //                    the same, after a click on the clip timeline
+  //                    before the clip, which dims it: the key brings the
+  //                    playhead onto the clip and lights it
+  // ["share", key, "in a word"]
+  //                    with a word of the caption box open, the key is a
+  //                    letter of the word and the playhead stays put
+  // Issue #539.
+  async share(walk, arg, s) {
+    const { page, watch } = walk;
+    const [key, how] = Array.isArray(arg) ? arg : [arg];
+    const place = () =>
+      page.evaluate(() => {
+        const chosen = document.querySelector(".clip-timeline .chosen");
+        return {
+          at: Number(document.querySelector(".screen").dataset.playhead),
+          playing: !!document.querySelector('button[aria-label="Pause"]'),
+          video: !chosen || chosen.classList.contains("dim"),
+        };
+      });
+    if (how === "from the video") {
+      const g = await handles(page);
+      if (g.start.x - g.track.x < 40) {
+        walk.wrong = "there is no room on the clip timeline before the clip";
+        return;
+      }
+      await clickOnTrack(page, (g.track.x + g.start.x) / 2, high(g.track));
+      await settle(page);
+      if (!(await place()).video) {
+        walk.wrong = "a click on the clip timeline before the clip left the clip lit";
+        return;
+      }
+    }
+    if (how === "in a word") {
+      const before = await place();
+      await page.keyboard.press(key);
+      await watch.step("type", s, page);
+      const open = await page.evaluate(() => document.activeElement?.closest?.(".captions .word")?.textContent ?? null);
+      const after = await place();
+      if (open === null) walk.wrong = `no word of the caption box was open when ${key} was pressed`;
+      else if (!open.endsWith(key)) walk.wrong = `${key} pressed in the word left it reading "${open}"`;
+      else if (after.at !== before.at) walk.wrong = `${key} pressed in the word "${open}" moved the playhead from ${before.at} to ${after.at}`;
+      return;
+    }
+    const pieces = (await engineState(page, watch.at)).segments;
+    const kept = pieces.reduce((sum, p) => sum + p.end - p.start, 0);
+    // The clip's own clock walked back to the video's, the same as
+    // inEpisode in lib/flow.ts. A moment exactly where a piece ends is the
+    // start of the piece after, past the cut.
+    let want = pieces.at(-1).end;
+    for (let left = (Number(key) / 10) * kept, i = 0; i < pieces.length; left -= pieces[i].end - pieces[i].start, i++) {
+      if (left < pieces[i].end - pieces[i].start) {
+        want = pieces[i].start + left;
+        break;
+      }
+    }
+    const was = await place();
+    // Where the key puts the playhead, read as the page first draws it
+    // after the key and before a play can take it on. A playhead already
+    // there changes nothing, and stays where it was.
+    await page.evaluate(() => {
+      const screen = document.querySelector(".screen");
+      window.__sharedTo = null;
+      const look = new MutationObserver(() => {
+        window.__sharedTo ??= Number(screen.dataset.playhead);
+        look.disconnect();
+      });
+      window.addEventListener("keydown", () => look.observe(screen, { attributes: true, attributeFilter: ["data-playhead"] }), { capture: true, once: true });
+    });
+    await page.keyboard.press(key);
+    await settle(page);
+    const to = (await page.evaluate(() => window.__sharedTo)) ?? was.at;
+    const now = await place();
+    const inCut = pieces.some((p, i) => i > 0 && to >= pieces[i - 1].end && to < p.start);
+    if (Math.abs(to - want) > 1e-6) {
+      walk.wrong = `${key} put the playhead at ${to.toFixed(3)} s, not ${want.toFixed(3)} s, ${Number(key) * 10} % of the clip's ${kept.toFixed(3)} s kept`;
+    } else if (inCut) walk.wrong = `${key} put the playhead at ${to.toFixed(3)} s, inside a cut`;
+    else if (now.video) walk.wrong = `${key} left the clip dimmed, with the playhead on the video`;
+    else if (now.playing !== was.playing) walk.wrong = `${key} ${was.playing ? "stopped the play" : "started a play"}`;
+    if (walk.wrong || !was.playing) {
+      await watch.step("press", s, page);
+      return;
+    }
+    // Playing, the play goes on from where the key put it, a little way,
+    // and is paused there.
+    const ran = await playUntil(page, { from: to, most: 0.3, pause: true });
+    await settle(page);
+    if (!(ran.gone > 0)) walk.wrong = `the play did not go on after ${key}, the playhead stood at ${ran.at.toFixed(3)} s`;
+    else if (ran.at < to) walk.wrong = `the play went back from ${to.toFixed(3)} s to ${ran.at.toFixed(3)} s after ${key}`;
+    await watch.step("press", s, page);
+  },
   // ["glides across the cut"]
   //                    with the playhead put on a frame between the clip's
   //                    first keyframe and its first cut, and on one between

@@ -346,4 +346,28 @@ export default [
       ["frame whole", "turned"],
     ],
   },
+  {
+    // Issue #539, Tim's ask: the number keys jump inside the chosen clip
+    // the way they do in a video on YouTube, 0 to its start, 5 half way,
+    // 9 to 90 %, playing or paused. Half way is of the clip as it plays,
+    // so with a cut across the middle 5 lands past the cut. A playhead on
+    // the video comes onto the clip, and a 5 typed in a word stays there.
+    name: "the number keys put the playhead that far into the clip, past its cut, playing or paused",
+    steps: [
+      ["cut at", 0.45],
+      ["cuts", 1],
+      ["share", "5"],
+      ["share", "9"],
+      ["share", "0"],
+      ["press", "Space"],
+      ["share", "5"],
+      ["press", "Space"],
+      ["share", "9"],
+      ["share", "5", "from the video"],
+      ["share", "0"],
+      ["click", "war"],
+      ["press", "End"],
+      ["share", "5", "in a word"],
+    ],
+  },
 ];
