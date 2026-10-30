@@ -753,9 +753,7 @@ input[type="password"] {
    panel opened from another is over it at once. Since bits-ui 2.20.1 the
    box says z-index auto in its own style for that frame, and a style on
    the element wins over a rule unless the rule is important. */
-.panel {
-  z-index: 60;
-}
+.panel,
 [data-bits-floating-content-wrapper] {
   z-index: 60 !important;
 }
