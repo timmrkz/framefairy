@@ -92,7 +92,7 @@ waiting for the day the two disagree.
 | the library and the settings | the app's config folder | the app's Go side |
 | the models, notes about running servers, the training records | `~/.framefairy/` | the engine |
 | what runs now | the job queue, in memory | the app's Go side |
-| what is on screen | the interface's stores, and a video's in its `EpisodeSession`, `frontend/src/lib/session.svelte.ts` | from what Go sends. Today `Episode.svelte` also works out a video's state from what changed, see Not to copy |
+| what is on screen | the interface's stores. Once #606 is built, a video's in its `EpisodeSession`, `frontend/src/lib/session.svelte.ts` | from what Go sends. Today `Episode.svelte` also works out a video's state from what changed, see Not to copy |
 
 ## The programs that run
 
@@ -194,9 +194,11 @@ copies what it finds nearby, so these are not the pattern for new code.
 - The transcript cache in `cmd/framefairy-app/words.go`, #608.
 - A new `engine.NewEngine` for each job or probe, #607.
 - The effects in `frontend/src/screens/Episode.svelte` that compare an
-  old value with a new one to notice that a search started, and the
-  tickets and polls that keep its reads in order, #606. Work that moves
-  on is said by `EpisodeSession`, see the decision record
+  old value with a new one to notice that a search started, `followed`
+  and `searchSeen`, and the tickets and polls that keep its reads in
+  order, #606. Work that moves on or fails is said by `EpisodeSession`,
+  and by `JobStore.watch` for what is not one video's, see the decision
+  record
   [2026-10-30-a-videos-state-in-one-session.md](decisions/2026-10-30-a-videos-state-in-one-session.md).
 
 ## Changing the architecture

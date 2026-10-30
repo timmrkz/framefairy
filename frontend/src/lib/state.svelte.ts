@@ -2,6 +2,7 @@
 import { untrack } from "svelte";
 import { api, onJob, type Job, type Lane } from "./api";
 import { mergeJob } from "./flow";
+import { said } from "./said";
 import type { EpisodeOrder } from "./order";
 
 // How often the list is read again while anything runs. The events keep it
@@ -45,9 +46,21 @@ export class JobStore {
     const next = mergeJob(this.list, job);
     if (next) this.list = next;
     this.settle();
-    // Heard outside any effect that applied it, so what a watcher reads
-    // does not make that effect run again.
-    if (next) untrack(() => this.watchers.forEach((watch) => watch(before, job)));
+    if (next) untrack(() => this.tell(before, job));
+  }
+
+  // Heard outside any effect that applied it, so what a watcher reads
+  // does not make that effect run again. A watcher that goes wrong is said
+  // in the app's log and stops nothing else: not the watchers after it,
+  // which are the other workspaces, and not the rest of a list being read.
+  private tell(before: Job | undefined, after: Job) {
+    for (const watch of this.watchers) {
+      try {
+        watch(before, after);
+      } catch (err) {
+        said(`jobs: what the job ${after.id} moved on to could not be shown: ${err}`, { level: "error", video: after.episode });
+      }
+    }
   }
 
   // Hears every snapshot kept from now on, until the function it returns

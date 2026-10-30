@@ -13,11 +13,14 @@ and sends it as one snapshot", so the workspace stops guessing from pings.
 
 Measured on main at 127fbef:
 
-- `Episode.svelte` is 4,585 lines with 35 effects. Five of them notice
-  that work moved on by keeping a value from before in a plain variable
-  and comparing it with the next: `foundHeard`, `wasWhole`,
-  `wasTranscribing`, `searchRan`, and the renders in `waiting`. Two more
-  notice that a search started, `followed` and `searchSeen`.
+- `Episode.svelte` is 4,585 lines with 35 effects. Seven of them notice
+  that work moved on by keeping a value from before and comparing it
+  with the next: `foundHeard`, `wasWhole`, `wasTranscribing`,
+  `searchRan`, the renders in `waiting`, the clips made by hand in
+  `madeHere`, and the failures, through `Failures` in `lib/failed.ts`.
+  Two more notice that a search started, `followed` and `searchSeen`.
+  `App.svelte` has one more, `transcribingSeen`, for Transcribe whole
+  video failing.
 - The clip list is read again from 11 places, `refreshClips`, and the
   whole video from 7, `load`. Three tickets, `Newest`, keep the answers
   to those reads in order, and `OnTheWay` and `unread` keep the clips
@@ -57,8 +60,9 @@ A job's life is told where its news lands. The job store already applies
 every snapshot of a job, in order, and drops an older one. It hands
 each snapshot it keeps on, with the one it replaced, and a session per
 open video says what moved: a clip written, the hearing over, the search
-over, the whole video heard, a render over. No change on the Go side.
-One pull request moves the five effects. The polls and the tickets stay,
+over, the whole video heard, a clip made by hand or a render over, a
+failure. No change on the Go side. One pull request moves the eight
+effects. The polls and the tickets stay,
 because the workspace still has to guess what to read again.
 
 ### 3. Where state lives
@@ -125,9 +129,13 @@ In four slices, each a pull request:
 
 1. `EpisodeSession` in `frontend/src/lib/session.svelte.ts`, which hears
    every snapshot the job store keeps through `JobStore.watch` and says
-   the moves of the video's work. The five effects that noticed work
-   moving on become its five moves, unchanged in what they do. This
-   pull request.
+   the moves of the video's work. The seven effects of `Episode.svelte`
+   that noticed work moving on become its seven moves, unchanged in what
+   they do, and `lib/failed.ts` goes. Work asked for here, a clip made by
+   hand or a render, is told to the session with `asked`, which says it
+   at once when it was over before its answer came. `transcribingSeen`
+   in `App.svelte` is about every video, not one, so it hears
+   `JobStore.watch` itself. This pull request.
 2. A `Job` holds its `engine.JobRecord`, and each state says one thing.
    Go only.
 3. Go sends a video's state as one snapshot with a revision, coalesced,
@@ -144,9 +152,12 @@ In four slices, each a pull request:
 - It buys a workspace that shows what Go says instead of working it out,
   so a new kind of work is a field and a move, not an effect, a ticket
   and a counter.
-- Slice 1 already changes one thing: the session hears every snapshot,
-  so a search that ends and another that starts in the same batch of
-  news are two searches, where the effect saw one.
+- Slice 1 changes one thing the session itself does: it hears every
+  snapshot, so a search that ends after the next has begun is said to be
+  over, where the effect followed only the newest search. The workspace
+  cannot get there today, because Search waits while a search runs and
+  Go starts only a video's first search by itself. Should that change,
+  what the workspace does then is decided with it.
 - It was wrong if the snapshot of a video with many clips is too large
   to send four times a second, which slice 3 measures before it sends
   it, or if a component needs a value from before that the session does

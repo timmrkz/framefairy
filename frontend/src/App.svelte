@@ -292,16 +292,13 @@
 
   // A transcription that fails says why in a toast, the way a search does,
   // and its row says Transcribe video again. One seen failed only as the
-  // app opened has said why already. Only the state and id are read, see
-  // the rule on watching jobs.
-  const transcribingSeen = new Set<string>();
-  $effect(() => {
-    for (const j of jobs.list) {
-      if (j.kind !== "transcribe") continue;
-      if (live(j)) transcribingSeen.add(j.id);
-      else if (transcribingSeen.delete(j.id) && j.state === "failed") sayFailed(j);
-    }
-  });
+  // app opened has said why already. Heard as the store keeps each
+  // snapshot, like the moves of a video's session, issue #606.
+  onMount(() =>
+    jobs.watch((before, after) => {
+      if (after.kind === "transcribe" && before && live(before) && after.state === "failed") sayFailed(after);
+    }),
+  );
 
   // Export transcript: the save box is the system's, so nothing is said
   // here but a failure.

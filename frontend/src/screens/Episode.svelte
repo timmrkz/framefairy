@@ -63,7 +63,6 @@
   import { suggestedCount } from "../lib/suggest";
   import { captionColours, joinColour, splitColour } from "../lib/colour";
   import { stepLine } from "../lib/steps";
-  import { Failures } from "../lib/failed";
   import { asleep, asking, keysElsewhere, typing, workspaceKey } from "../lib/keys";
   import {
     secondThoughts,
@@ -264,23 +263,6 @@
   // clips comes from it, and the workspace decides nothing about when a
   // search starts or stops. It is undefined when there is nothing to say.
   const search = $derived(jobs.search(path));
-  // A search that fails while the app is open says why in a toast, with
-  // Report for what the person cannot put right alone, and so does a clip
-  // made by hand with I or O, see lib/failed.ts. Its row or card goes on
-  // saying Failed with Continue, after a restart too, and never why, issue
-  // #450. Only the jobs' states and ids are read, see the rule on watching
-  // jobs.
-  const failures = new Failures<Job>((job) => {
-    const what = job.kind === "clip" ? "clip made by hand" : "search";
-    const why = untrack(() => reasonOf(job.error, what));
-    tell(`${what} failed: ${why}`);
-    toasts.say(where(), why, { video: path, report: true });
-  });
-  $effect(() => {
-    for (const job of jobs.forEpisode(path)) {
-      if (job.kind === "search" || job.kind === "clip") failures.seen(job);
-    }
-  });
   const searching = $derived(!!search && (search.state === "running" || search.state === "queued"));
   const working = $derived(searching ? search : undefined);
   // The search while it hears the episode. Its progress says how far the
@@ -1374,9 +1356,8 @@
   // Plan row 2.242. Every other read is for an edit of the clips or of
   // their captions, and takes them all as new, so the captions of the clip
   // on screen are read again with them.
-  async function refreshClips(found = false) {
+  async function refreshClips(found = false, written = lastSearch?.written ?? 0) {
     const ticket = listed.send();
-    const written = lastSearch?.written ?? 0;
     try {
       const list = (await api.clips(path)) ?? [];
       if (listed.keep(ticket)) {
@@ -1781,7 +1762,8 @@
   // follow. A job can be over before its answer comes back to the press,
   // its news heard first on a busy machine, and with plain maps no effect
   // looked at it again: the card on its way was chosen after it had gone,
-  // and no clip was chosen at all, issue #508.
+  // and no clip was chosen at all, issue #508. That a clip made here is
+  // written is said by the session, see made.
   const madeHere = new SvelteMap<string, string>();
   let pressed = $state<"in" | "out" | null>(null);
   const makingIn = $derived(pressed === "in" || handRunning.some((j) => !j.backward));
@@ -1793,14 +1775,17 @@
     try {
       const job = await api.makeClip(path, time, backward);
       jobs.apply(job);
-      // Asked for here, so a failure says why in a toast however soon it
-      // comes, the store's news of it before this answer too.
       const now = jobs.list.find((j) => j.id === job.id) ?? job;
-      failures.asked(now);
-      if (now.state === "failed") return;
       const key = `${job.id}/1`;
-      madeHere.set(job.id, key);
-      selected = key;
+      if (now.state !== "failed") {
+        madeHere.set(job.id, key);
+        selected = key;
+      }
+      // Asked for here, so a failure says why in a toast however soon it
+      // comes, the store's news of it before this answer too, and a clip
+      // already written lands at once, see made.
+      session.asked(now);
+      if (now.state === "failed") return;
       await tick();
       showChosen();
     } catch (err) {
@@ -1809,17 +1794,6 @@
       pressed = null;
     }
   }
-  $effect(() => {
-    for (const job of jobs.forEpisode(path)) {
-      const before = madeHere.get(job.id);
-      if (before === undefined || job.state === "running" || job.state === "queued") continue;
-      madeHere.delete(job.id);
-      const key = job.result;
-      if (job.state !== "done" || !key) continue;
-      landing.set(before, key);
-      void refreshClips();
-    }
-  });
   // A clip made here, by its key on its way, and the key it is written
   // under, from the moment its card says it, which is before it is
   // written, or else from its job's result. The chosen card becomes the
@@ -2955,7 +2929,7 @@
   async function render(clip: ClipEntry) {
     renderAsked = clip.key;
     try {
-      session.rendering(await api.render(path, { Plan: clip.plan, Clips: [clip.id], Preview: false }));
+      session.asked(await api.render(path, { Plan: clip.plan, Clips: [clip.id], Preview: false }));
     } catch (err) {
       renderAsked = "";
       oops(errorText(err));
@@ -3027,9 +3001,22 @@
   // the moment the workspace is on the page, as the effects did.
   let session: EpisodeSession;
   const moves: WorkMoves = {
+    // A search that fails while the app is open says why in a toast, with
+    // Report for what the person cannot put right alone, and so does a
+    // clip made by hand with I or O. Its row or card goes on saying Failed
+    // with Continue, after a restart too, and never why, issue #450.
+    failed: (job) => {
+      const what = job.kind === "clip" ? "clip made by hand" : "search";
+      const why = reasonOf(job.error, what);
+      tell(`${what} failed: ${why}`);
+      toasts.say(where(), why, { video: path, report: true });
+    },
     // A search says how many clips it has written each time one lands, and
     // the list is read again then, rather than on the next tick of a timer.
-    wrote: () => refreshClips(true).then(() => showFirstFound()),
+    // The read counts what this search has written, from its own news, not
+    // from the search the list last counted rows for, which an effect
+    // follows and may not have caught up with yet.
+    wrote: (search) => refreshClips(true, search.written ?? 0).then(() => showFirstFound()),
     // And when the whole video's work ends, which no search's hearing says:
     // the workspace kept what it read last, so stopped on its last pieces
     // the video was heard to its end and the dots stayed, found by the
@@ -3072,6 +3059,17 @@
         }
         listedBefore = null;
       });
+    },
+    // A clip made here is written: its card becomes the clip, under the
+    // key it is written under.
+    made: (job) => {
+      const before = madeHere.get(job.id);
+      if (before === undefined) return;
+      madeHere.delete(job.id);
+      const key = job.result;
+      if (job.state !== "done" || !key) return;
+      landing.set(before, key);
+      void refreshClips();
     },
     // A render this workspace started: the list shows what was rendered,
     // and a render that failed says why over the workspace.
