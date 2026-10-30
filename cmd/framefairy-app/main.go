@@ -173,6 +173,10 @@ func main() {
 		// for every request the window makes, which the log has its own
 		// lines for, see logged.
 		Logger: theLog.slog("wails", zerolog.InfoLevel),
+		// A panic Wails catches, in a window's event, a file dropped or a
+		// request of the window, goes into the app's log and the app goes
+		// on. Without a handler of ours Wails ends the app, issue #604.
+		PanicHandler: wailsPanicked,
 	})
 	svc.app = app
 	svc.leave = leave

@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/rs/zerolog"
 	"github.com/spf13/afero"
+	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"framefairy/engine"
 )
@@ -583,6 +585,18 @@ func TestThePreviewsEngineWritesIntoTheAppsLog(t *testing.T) {
 	if find(lines, "measuring") != nil {
 		t.Error("the engine's progress was written")
 	}
+}
+
+// A panic Wails catches goes into the app's log with its stack, and the
+// app goes on. Wails' own handler ended the app, issue #604.
+//
+// On the real disk: lumberjack writes the log and knows only the disk.
+func TestAPanicWailsCatchesIsInTheAppsLog(t *testing.T) {
+	_, read := testLog(t)
+	wailsPanicked(&application.PanicDetails{Error: errors.New("a window event nobody handled before"), FullStackTrace: "goroutine 1 [running]:"})
+	has(t, find(read(), "stopped unexpectedly"), map[string]any{
+		"level": "error", "from": "wails", "msg": "stopped unexpectedly: a window event nobody handled before", "stack": "goroutine 1 [running]:",
+	})
 }
 
 // Settings, Advanced shows the app's log, its files with the older ones,

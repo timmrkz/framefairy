@@ -81,8 +81,10 @@ waiting for the day the two disagree.
 ## The programs that run
 
 One app process holds the interface in the webview, WebKit on a Mac, and
-the Go side, with the speech model in the same process. A panic anywhere
-in the Go side ends all of it. The engine starts the children that do a
+the Go side, with the speech model in the same process. A panic on a
+goroutine nothing recovers ends all of it. Wails recovers its own
+callbacks and the app's `PanicHandler` logs them, so what can end the
+app is a goroutine of ours. The engine starts the children that do a
 video's work: one frames decoder for each video in the video preview,
 ffmpeg and ffprobe for a render, a measure or a probe, and llama-server
 for the local model, kept loaded. The app's Go side starts a few of its
@@ -100,7 +102,7 @@ What to do today, and what changes once the issue named is built.
 | keep something between two jobs, a cache or a fact about the machine | today the caches that outlive a job are package variables, the way `engine/probed.go` keeps the probes. A new one says why in its pull request, and never comes from a new `Engine` made only to get it. #607 moves them all onto one object a program keeps |
 | read a file of a video | through the `afero.Fs` the code was given, with `engine.SafeChildIn` for a path in a work folder. Not `os`. Once #608 is built, through the video's `Episode` |
 | change a plan | `editPlan` in `engine/edit.go` |
-| start a goroutine that runs code which can panic, like layout of words a person typed | a deferred recover that turns a panic into that work's error and logs the stack, as `engine/planbuild.go` does. #604 adds it where it is missing |
+| start a goroutine that runs code which can panic, like layout of words a person typed | a deferred recover that turns a panic into that work's error and logs the stack, as `engine/planbuild.go` does. A goroutine that only waits, counts or hands on gets none |
 | say that something went wrong | an error that keeps its kind with `%w`, returned to the caller. The app turns it into a row or a toast, and logs through `theLog`, never `log.Printf` |
 | add a call between the interface and Go | a method on `*FrameFairy` in the file of its kind in `cmd/framefairy-app/`, and its call in `frontend/src/lib/api.ts`. `bindings_test.go` checks the name and the arguments |
 | give the interface a new type or field | the Go struct and its interface in `frontend/src/lib/api.ts` in the same change. Once #611 is built, generated from the Go struct |
@@ -129,7 +131,8 @@ which reads this file.
 5. Go owns a video's state, and the interface shows it. Held by the
    review, and by its design once #606 is built.
 6. A job that goes wrong fails itself, not the app. Held by the recover
-   around every job, and around the goroutines #604 names once it is built.
+   around every job, and around each goroutine that reads what nobody
+   checked: a caption file, a stream of the video preview, a drop.
 7. Nothing is learned twice. What outlives a job is kept, not worked out
    again for each job. Held by the review, and by the design once #607
    is built.

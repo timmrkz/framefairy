@@ -2,7 +2,9 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
+	"runtime/debug"
 	"slices"
 	"strings"
 
@@ -76,8 +78,21 @@ func (s *FrameFairy) takeFiles(how string, files []string) Added {
 }
 
 // dropFiles takes files dropped anywhere on the app, the way Add takes
-// the ones picked in its box.
-func (s *FrameFairy) dropFiles(files []string) Added { return s.takeFiles("drop", files) }
+// the ones picked in its box. It runs on a goroutine of its own, see
+// main, out of reach of the recover Wails keeps around Add, and it reads
+// videos nobody has checked. A panic in it ended the whole app, issue
+// #604. Now it is the drop's error, which the window shows as it shows
+// any file left out.
+func (s *FrameFairy) dropFiles(files []string) (out Added) {
+	defer func() {
+		if caught := recover(); caught != nil {
+			theLog.line(zerolog.ErrorLevel, "app").Str("how", "drop").Str("stack", string(debug.Stack())).
+				Msgf("adding the files stopped unexpectedly: %v", caught)
+			out = Added{Added: []string{}, Error: fmt.Sprintf("the files could not be added, %v", caught)}
+		}
+	}()
+	return s.takeFiles("drop", files)
+}
 
 // notVideos says that files cannot be added because they are not
 // videos, by name. "Left out" said what the app did and not what it

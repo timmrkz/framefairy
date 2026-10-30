@@ -421,3 +421,16 @@ func gridOf(t *testing.T, path string) string {
 	}
 	return framewire.GridText(info.Grid())
 }
+
+// A stream of the video preview that panics fails with the reason, the
+// way a stream whose ffmpeg failed does, and the page asks another. It
+// runs on a goroutine of its own, and a panic in it ended the whole app,
+// issue #604.
+func TestAStreamThatPanicsFailsItselfNotTheApp(t *testing.T) {
+	err := streamSafely(context.Background(), func(context.Context, func(float64, []byte) error) error {
+		panic("a frame nobody read before")
+	}, func(float64, []byte) error { return nil })
+	if err == nil || err.Error() != "the stream stopped unexpectedly: a frame nobody read before" {
+		t.Errorf("the stream that panicked gave %v", err)
+	}
+}

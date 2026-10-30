@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+	"github.com/wailsapp/wails/v3/pkg/application"
 	"gopkg.in/natefinch/lumberjack.v2"
 
 	"framefairy/engine"
@@ -211,6 +212,12 @@ func (s *FrameFairy) RemoveAppLog() (LogStatus, error) {
 	}
 	line.Msg("the app's log was removed")
 	return theLog.status(), nil
+}
+
+// wailsPanicked writes a panic Wails caught into the app's log, with its
+// stack, see the PanicHandler in main.
+func wailsPanicked(d *application.PanicDetails) {
+	theLog.line(zerolog.ErrorLevel, "wails").Str("stack", d.FullStackTrace).Msgf("stopped unexpectedly: %v", d.Error)
 }
 
 // byLevel sends the trace lines to memory and every other line to the file.
