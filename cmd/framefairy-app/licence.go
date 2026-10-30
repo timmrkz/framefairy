@@ -2,9 +2,10 @@ package main
 
 import (
 	"errors"
-	"log"
 	"net/url"
 	"strings"
+
+	"github.com/rs/zerolog"
 
 	"framefairy/engine"
 	"framefairy/licence"
@@ -107,7 +108,7 @@ func (s *FrameFairy) TakeLicenceLink() LicenceLink {
 func (s *FrameFairy) openedWith(raw string) {
 	k, err := keyFromLink(raw)
 	if err != nil {
-		log.Printf("a link the app does not take: %v", err)
+		theLog.line(zerolog.InfoLevel, "app").Err(err).Msg("a link the app does not take")
 		return
 	}
 	l := linkOutcome(k, testKeys())

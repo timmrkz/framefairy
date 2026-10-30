@@ -421,3 +421,39 @@ func gridOf(t *testing.T, path string) string {
 	}
 	return framewire.GridText(info.Grid())
 }
+
+// A stream of the video preview that panics fails with the reason, the
+// way a stream whose ffmpeg failed does, and the page asks another. It
+// runs on a goroutine of its own, and a panic in it ended the whole app,
+// issue #604.
+func TestAStreamThatPanicsFailsItselfNotTheApp(t *testing.T) {
+	// Reaping already, so no reaper of its own outlives the test.
+	p := &previews{reaping: true}
+	id := p.start("frames", nil, nil, nil, func(context.Context, func(float64, []byte) error) error {
+		panic("a frame nobody read before")
+	})
+	s := p.get(id)
+	<-s.done
+	if s.err == nil || s.err.Error() != "the stream stopped unexpectedly: a frame nobody read before" {
+		t.Errorf("the stream that panicked gave %v", s.err)
+	}
+}
+
+// A request of the window that panics is answered with the reason, and
+// the app goes on. Wails serves each on a goroutine with no recover, so a
+// panic in a frame, a sound or a caption ended the whole app, issue #604.
+// A request with no library to look in makes it panic, the shortest way
+// there is to one.
+func TestARequestThatPanicsFailsItselfNotTheApp(t *testing.T) {
+	_, read := testLog(t)
+	w := httptest.NewRecorder()
+	mediaMiddleware(nil)(nil).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/frames/open?path=/home/tim/start.mp4", nil))
+	if w.Code != http.StatusInternalServerError || !strings.HasPrefix(w.Body.String(), "the request stopped unexpectedly: ") {
+		t.Errorf("the request that panicked was answered %d, %q", w.Code, w.Body.String())
+	}
+	line := find(read(), "the window's request stopped unexpectedly")
+	has(t, line, map[string]any{"level": "error", "from": "files", "path": "/frames/open"})
+	if stack, _ := line["stack"].(string); !strings.Contains(stack, "goroutine") {
+		t.Errorf("the app's log holds no stack of the panic, %v", line)
+	}
+}

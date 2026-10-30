@@ -6,14 +6,15 @@ import (
 	"bytes"
 	"embed"
 	"errors"
+	"fmt"
 	"image"
 	"io"
 	"io/fs"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -173,6 +174,12 @@ func main() {
 		// for every request the window makes, which the log has its own
 		// lines for, see logged.
 		Logger: theLog.slog("wails", zerolog.InfoLevel),
+		// A panic Wails catches, in a window's event, an event of the app
+		// or a call from the window, goes into the app's log and the app
+		// goes on. Without a handler of ours Wails ends the app, issue
+		// #604. The window's requests for frames, sound and fonts Wails
+		// does not recover, see mediaMiddleware.
+		PanicHandler: wailsPanicked,
 	})
 	svc.app = app
 	svc.leave = leave
@@ -269,7 +276,7 @@ func main() {
 	// A llama-server the last run left behind, because it crashed or was
 	// killed, is stopped before this run loads a model of its own.
 	if engine.StopLeftoverServer() {
-		log.Printf("stopped a llama-server the last run of the app left behind")
+		theLog.line(zerolog.InfoLevel, "model").Msg("stopped a llama-server the last run of the app left behind")
 	}
 	go svc.keeping.run(st)
 	svc.keeping.ask()
@@ -277,7 +284,9 @@ func main() {
 	err := app.Run()
 	quit()
 	if err != nil {
-		log.Fatal(err)
+		theLog.line(zerolog.ErrorLevel, "app").Err(err).Msg("the app stopped")
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
 }
 
@@ -289,6 +298,17 @@ func main() {
 func mediaMiddleware(st *store) application.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Wails serves each request on a goroutine of its own with no
+			// recover, and a frame, a sound, a caption or a font is our
+			// code over a video or a word nobody checked. A panic in one
+			// ended the whole app. Now it fails that request, issue #604.
+			defer func() {
+				if caught := recover(); caught != nil {
+					theLog.line(zerolog.ErrorLevel, "files").Str("path", r.URL.Path).Str("stack", string(debug.Stack())).
+						Msgf("the window's request stopped unexpectedly: %v", caught)
+					http.Error(w, fmt.Sprintf("the request stopped unexpectedly: %v", caught), http.StatusInternalServerError)
+				}
+			}()
 			if r.URL.Path == "/font" {
 				// The interface writes the word being typed in the same face
 				// as the render: one built into the program, or the copy of

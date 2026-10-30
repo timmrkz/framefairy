@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"os/exec"
@@ -594,6 +595,59 @@ func TestWritingCaptionsNeverMakesTheWorkFolder(t *testing.T) {
 	}
 }
 
+// quiet is the log of the tests that make caption files by hand.
+var quiet = NewLog(io.Discard, false, false)
+
+// A caption file whose layout panics fails the requests waiting for it,
+// with one line that says why, the stack in the log, and the next request
+// tries again. The goroutine that made it had no recover, so a panic in
+// the layout of a word a person typed ended the whole app, and this test
+// with it, issue #604.
+//
+// It runs in a bubble, so the test knows when both requests wait.
+func TestACaptionFileThatPanicsFailsItsRequestsNotTheApp(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		c := newTrackCache()
+		var said []Event
+		log := NewLog(io.Discard, false, false)
+		log.SetSink(func(ev Event) { said = append(said, ev) })
+		release := make(chan struct{})
+		panics := func(context.Context) (previewFile, error) {
+			<-release
+			panic("a word nobody laid out before")
+		}
+		errs := make(chan error, 2)
+		for range 2 {
+			go func() {
+				_, err := c.once(context.Background(), log, "/w", "k", panics)
+				errs <- err
+			}()
+		}
+		synctest.Wait()
+		close(release)
+		for range 2 {
+			err := <-errs
+			if err == nil || !strings.Contains(err.Error(), "a word nobody laid out before") || strings.Contains(err.Error(), "\n") {
+				t.Errorf("a request waiting for the file that panicked got %v, want one line with the reason", err)
+			}
+		}
+		var stack bool
+		for _, ev := range said {
+			stack = stack || ev.Kind == EventDetail && strings.Contains(ev.Text, "goroutine")
+		}
+		if !stack {
+			t.Errorf("the stack of the panic is not in the log, which said %v", said)
+		}
+		made, err := c.once(context.Background(), log, "/w", "k", func(context.Context) (previewFile, error) {
+			return previewFile{file: "a.ass"}, nil
+		})
+		if err != nil || made.file != "a.ass" {
+			t.Errorf("the request after the panic got %q, %v, want the file made again", made.file, err)
+		}
+	})
+}
+
 // A request of the video preview that is called off while it makes a
 // caption file leaves the others that wait for the same file their
 // answer. The file was made in the context of the request that came
@@ -619,7 +673,7 @@ func TestACaptionFileOutlivesTheRequestThatAskedFirst(t *testing.T) {
 		first, cancelFirst := context.WithCancel(context.Background())
 		firstDone := make(chan error, 1)
 		go func() {
-			_, err := c.once(first, "/w", "k", build)
+			_, err := c.once(first, quiet, "/w", "k", build)
 			firstDone <- err
 		}()
 		<-started
@@ -629,13 +683,13 @@ func TestACaptionFileOutlivesTheRequestThatAskedFirst(t *testing.T) {
 		}
 		other := make(chan answer, 1)
 		go func() {
-			made, err := c.once(context.Background(), "/w", "k", again)
+			made, err := c.once(context.Background(), quiet, "/w", "k", again)
 			other <- answer{made, err}
 		}()
 		leaving, cancelLeaving := context.WithCancel(context.Background())
 		leftDone := make(chan error, 1)
 		go func() {
-			_, err := c.once(leaving, "/w", "k", again)
+			_, err := c.once(leaving, quiet, "/w", "k", again)
 			leftDone <- err
 		}()
 
@@ -672,7 +726,7 @@ func TestAWorkFolderIsDeletedOnceItsCaptionFileIsWritten(t *testing.T) {
 		file := filepath.Join(work, PreviewCaptionsFolder, "a.ass")
 		started, release := make(chan struct{}), make(chan struct{})
 		go func() {
-			_, _ = previewTracks.once(context.Background(), work, file, func(context.Context) (previewFile, error) {
+			_, _ = previewTracks.once(context.Background(), quiet, work, file, func(context.Context) (previewFile, error) {
 				close(started)
 				<-release
 				return previewFile{file: file}, afero.WriteFile(fsys, file, []byte("[Script Info]"), 0o644)
@@ -711,7 +765,7 @@ func TestNoCaptionFileIsStartedInAFolderBeingDeleted(t *testing.T) {
 	}
 	release := c.hold("/videos/a.framefairy")
 	for _, work := range []string{"/videos/a.framefairy", "/videos/a.framefairy/"} {
-		if _, err := c.once(context.Background(), work, work+"\x00held", build); !errors.Is(err, ErrNoWorkFolder) {
+		if _, err := c.once(context.Background(), quiet, work, work+"\x00held", build); !errors.Is(err, ErrNoWorkFolder) {
 			t.Errorf("a caption file in %s while it is deleted gave %v", work, err)
 		}
 	}
@@ -719,13 +773,13 @@ func TestNoCaptionFileIsStartedInAFolderBeingDeleted(t *testing.T) {
 		t.Errorf("%d caption files were made in a folder being deleted", built)
 	}
 	for i, work := range []string{"/videos/b.framefairy", "/videos/a.framefairy2"} {
-		if _, err := c.once(context.Background(), work, fmt.Sprint(i), build); err != nil {
+		if _, err := c.once(context.Background(), quiet, work, fmt.Sprint(i), build); err != nil {
 			t.Errorf("a caption file in %s beside the folder being deleted gave %v", work, err)
 		}
 	}
 	release()
 	release()
-	if _, err := c.once(context.Background(), "/videos/a.framefairy", "after", build); err != nil {
+	if _, err := c.once(context.Background(), quiet, "/videos/a.framefairy", "after", build); err != nil {
 		t.Errorf("a caption file in the folder once it was let go gave %v", err)
 	}
 	if built != 3 {

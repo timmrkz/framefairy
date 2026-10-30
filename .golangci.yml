@@ -1,4 +1,4 @@
-# Two rules and no other. A test waits on a signal, never on the clock,
+# Three rules and no other. A test waits on a signal, never on the clock,
 # see CLAUDE.md. forbidigo refuses the clock in test files only, over the
 # whole tree: a sleep, a timer or a ticker, and a context with a deadline,
 # which is a timer by another name, and a check on how long something
@@ -13,6 +13,10 @@
 # copied in them, through Wails' global shortcuts or its clipboard,
 # however the call is reached, issue #369. Putting something on the
 # clipboard is no read. See What is never signed in docs/UPDATES.md.
+#
+# And no code of ours writes to the standard library's log, outside the
+# tests: the app logs through theLog and everything else through the
+# engine's Log, the ones that reach the log a report sends, issue #605.
 version: "2"
 linters:
   default: none
@@ -33,11 +37,17 @@ linters:
         - pattern: ^application\.(GlobalShortcutManager\.Register|ClipboardManager\.Text)$
           pkg: ^github\.com/wailsapp/wails/v3/pkg/application$
           msg: the app hears no keys pressed in other apps and reads no clipboard, see What is never signed in docs/UPDATES.md
+        - pattern: ^log\.(Print|Printf|Println|Fatal|Fatalf|Fatalln|Panic|Panicf|Panicln)$
+          pkg: ^log$
+          msg: "our code logs through theLog in the app and through the engine's Log everywhere else, which reach the log a report sends, issue #605"
   exclusions:
     rules:
       - path-except: _test\.go$
         linters: [forbidigo]
         text: see CLAUDE\.md
+      - path: _test\.go$
+        linters: [forbidigo]
+        text: "issue #605"
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0

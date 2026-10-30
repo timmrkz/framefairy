@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -102,7 +101,7 @@ func (g handed) recording(reader string) (ReportPicture, []byte, []byte, error) 
 	if err := os.WriteFile(in, g.data, 0o600); err != nil {
 		return ReportPicture{}, nil, nil, errors.New("could not be kept")
 	}
-	e := engine.NewEngine(engine.NewLog(io.Discard, false, false), afero.NewOsFs())
+	e := engine.NewEngine(engineLog("report", ""), afero.NewOsFs())
 	if e.FFmpeg == "" || e.FFprobe == "" {
 		return ReportPicture{}, nil, nil, errors.New("needs ffmpeg, which the app is missing")
 	}

@@ -8,11 +8,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"math"
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -175,7 +175,7 @@ func (p *previews) serveOpen(st *store, w http.ResponseWriter, r *http.Request) 
 	if err != nil || math.IsNaN(from) || math.IsInf(from, 0) || from < 0 {
 		from = 0
 	}
-	e := engine.NewEngine(engine.NewLog(io.Discard, false, false), st.files)
+	e := engine.NewEngine(engineLog("files", path), st.files)
 	var run func(ctx context.Context, got func(at float64, data []byte) error) error
 	var times *engine.PreviewTimes
 	var light func() framewire.Light
@@ -277,7 +277,7 @@ func (p *previews) start(kind string, times *engine.PreviewTimes, light func() f
 	p.mu.Unlock()
 	go func() {
 		defer close(s.done)
-		err := run(ctx, func(at float64, frame []byte) error {
+		err := streamSafely(ctx, run, func(at float64, frame []byte) error {
 			// A frame is handed over in a buffer of its own, see
 			// engine.PreviewFrames, and kept as it is. Sound comes in one
 			// buffer read into again and again, so it is copied.
@@ -302,6 +302,23 @@ func (p *previews) start(kind string, times *engine.PreviewTimes, light func() f
 		s.err = err
 	}()
 	return id
+}
+
+// streamSafely runs a stream and turns a panic into the stream's error.
+// A stream reads a video nobody has checked, on a goroutine of its own
+// that outlives the request that started it, so the recover around that
+// request, see mediaMiddleware, does not reach it, and a panic in it
+// ended the whole app, issue #604. The page asks another stream, as it does for one that
+// failed.
+func streamSafely(ctx context.Context, run func(ctx context.Context, got func(at float64, data []byte) error) error,
+	got func(at float64, data []byte) error) (err error) {
+	defer func() {
+		if caught := recover(); caught != nil {
+			theLog.line(zerolog.ErrorLevel, "files").Str("stack", string(debug.Stack())).Msgf("the stream stopped unexpectedly: %v", caught)
+			err = fmt.Errorf("the stream stopped unexpectedly: %v", caught)
+		}
+	}()
+	return run(ctx, got)
 }
 
 func (p *previews) get(id string) *preview {

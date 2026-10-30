@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"sync"
@@ -242,7 +243,7 @@ func (e *Engine) previewTrack(ctx context.Context, work string, d *CaptionDrawin
 	}
 	key := fmt.Sprintf("%s\x00%s\x00%+v\x00%s\x00%d/%d\x00%dx%d", dir, d.name(), style, source.Light(),
 		source.FPSNum, source.FPSDen, outW, outH)
-	return previewTracks.once(ctx, work, key, func(ctx context.Context) (previewFile, error) {
+	return previewTracks.once(ctx, e.Log, work, key, func(ctx context.Context) (previewFile, error) {
 		started := time.Now()
 		track, pill, err := e.captionTrack(ctx, d.Laid, outW, outH, style, source)
 		if err != nil {
@@ -381,7 +382,12 @@ const previewTrackLimit = 10 * time.Second
 //
 // While work is being deleted, see hold, nothing is made in it, and the
 // request is told the folder is gone.
-func (c *trackCache) once(ctx context.Context, work, key string, build func(context.Context) (previewFile, error)) (previewFile, error) {
+//
+// build lays out words a person typed, on a goroutine that outlives the
+// request, out of reach of the recover that guards it. A panic in it
+// ended the whole app, issue #604. Now it fails the requests waiting for
+// the file, the stack goes to log, and the next request tries again.
+func (c *trackCache) once(ctx context.Context, log *Log, work, key string, build func(context.Context) (previewFile, error)) (previewFile, error) {
 	c.mu.Lock()
 	if made, ok := c.files[key]; ok {
 		c.mu.Unlock()
@@ -402,7 +408,7 @@ func (c *trackCache) once(ctx context.Context, work, key string, build func(cont
 		go func() {
 			bctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), previewTrackLimit)
 			defer cancel()
-			made, err := build(bctx)
+			made, err := buildSafely(bctx, log, build)
 			c.mu.Lock()
 			m.made, m.err = made, err
 			delete(c.making, key)
@@ -423,6 +429,18 @@ func (c *trackCache) once(ctx context.Context, work, key string, build func(cont
 	case <-ctx.Done():
 		return previewFile{}, ctx.Err()
 	}
+}
+
+// buildSafely builds, and turns a panic into the build's error, see once.
+func buildSafely(ctx context.Context, log *Log, build func(context.Context) (previewFile, error)) (made previewFile, err error) {
+	defer func() {
+		if caught := recover(); caught != nil {
+			log.Error("the caption file of the video preview could not be made: %v", caught)
+			log.Detail("%s", debug.Stack())
+			made, err = previewFile{}, fmt.Errorf("the captions could not be laid out: %v", caught)
+		}
+	}()
+	return build(ctx)
 }
 
 // hold starts no caption file in a folder inside dir until the release it
