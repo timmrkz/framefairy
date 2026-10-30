@@ -36,6 +36,7 @@
     onLevels,
   } from "../lib/api";
   import { jobs } from "../lib/state.svelte";
+  import { EpisodeSession, type WorkMoves } from "../lib/session.svelte";
   import {
     Heard,
     covers,
@@ -143,7 +144,6 @@
   let targetWindow = $state(0);
   let min = $state(20);
   let max = $state(30);
-  let waiting = $state<string[]>([]);
   // A click has to show at once, long before the job it starts reports in.
   // The store keeps the press, the same for this work as for the whole
   // video heard from its menu.
@@ -2839,17 +2839,6 @@
     }
   }
 
-  // A search says how many clips it has written each time one lands, and
-  // the list is read again then, rather than on the next tick of a timer.
-  // The effect runs on every job event, so it only acts on a change.
-  let foundHeard = 0;
-  $effect(() => {
-    const found = working?.written ?? 0;
-    if (found === foundHeard) return;
-    foundHeard = found;
-    if (found > 0) refreshClips(true).then(() => showFirstFound());
-  });
-
   // Undo and Redo, from the Edit menu and its keys. A field being typed in,
   // a word in the caption box or a number beside the clip, has an undo of
   // its own for the text in it, and keeps it: the key goes to the field
@@ -2966,8 +2955,7 @@
   async function render(clip: ClipEntry) {
     renderAsked = clip.key;
     try {
-      const job = await api.render(path, { Plan: clip.plan, Clips: [clip.id], Preview: false });
-      waiting = [...waiting, job.id];
+      session.rendering(await api.render(path, { Plan: clip.plan, Clips: [clip.id], Preview: false }));
     } catch (err) {
       renderAsked = "";
       oops(errorText(err));
@@ -3032,87 +3020,71 @@
   // While the transcript grows, the covered part of the timeline grows.
 
 
-  // And when the whole video's work ends, which no search's hearing says:
-  // the workspace kept what it read last, so stopped on its last pieces
-  // the video was heard to its end and the dots stayed, found by the
-  // second review of #458.
-  const wholeOn = $derived(!!wholeWork);
-  let wasWhole = false;
-  $effect(() => {
-    const now = wholeOn;
-    if (wasWhole && !now) untrack(() => load());
-    wasWhole = now;
-  });
-
-  // How far the episode has been heard is read again when the hearing
-  // stops, so the range picker's edge lands on what was saved.
-  let wasTranscribing = false;
-  $effect(() => {
-    const now = !!transcribing;
-    if (wasTranscribing && !now) {
+  // How the workspace meets the video's work moving on. The session says
+  // each move once, as the job store keeps the snapshot that makes it,
+  // see lib/session.svelte.ts. Each was an effect here that kept the value
+  // from before and compared it with the next, issue #606. It hears from
+  // the moment the workspace is on the page, as the effects did.
+  let session: EpisodeSession;
+  const moves: WorkMoves = {
+    // A search says how many clips it has written each time one lands, and
+    // the list is read again then, rather than on the next tick of a timer.
+    wrote: () => refreshClips(true).then(() => showFirstFound()),
+    // And when the whole video's work ends, which no search's hearing says:
+    // the workspace kept what it read last, so stopped on its last pieces
+    // the video was heard to its end and the dots stayed, found by the
+    // second review of #458.
+    transcribed: () => load(),
+    // How far the episode has been heard is read again when the hearing
+    // stops, so the range picker's edge lands on what was saved.
+    heard: () => {
       onchange();
       load();
-    }
-    wasTranscribing = now;
-  });
-
-  // A search that ends: the list shows what it found, and the window moves
-  // on. How it ended otherwise is said by the search itself, in the row its
-  // next clip would have appeared in. Watched by whether one runs, not by
-  // the job, which is replaced on every report.
-  let searchRan = "";
-  $effect(() => {
-    const id = working?.id ?? "";
-    if (id) {
-      searchRan = id;
-      return;
-    }
-    if (!searchRan) return;
-    const ended = jobs.list.find((j) => j.id === searchRan);
-    searchRan = "";
-    untrack(() => jobs.answered(path, "clips"));
-    onchange();
-    // The window walks on from where the search ended, as long as it was,
-    // which the Go side did before the search said it was done. Asked for
-    // with the rest and drawn with the clips found, so the window does not
-    // move one answer after the first clip is picked.
-    const moved = ended?.state === "done" ? api.chosenWindow(path) : undefined;
-    moved?.catch(() => {});
-    movingOn = !!moved;
-    load(moved).then(() => {
-      if (ended?.state !== "done") {
+    },
+    // A search that ends: the list shows what it found, and the window
+    // moves on. How it ended otherwise is said by the search itself, in the
+    // row its next clip would have appeared in.
+    searched: (ended) => {
+      jobs.answered(path, "clips");
+      onchange();
+      // The window walks on from where the search ended, as long as it
+      // was, which the Go side did before the search said it was done.
+      // Asked for with the rest and drawn with the clips found, so the
+      // window does not move one answer after the first clip is picked.
+      const moved = ended.state === "done" ? api.chosenWindow(path) : undefined;
+      moved?.catch(() => {});
+      movingOn = !!moved;
+      load(moved).then(() => {
+        if (ended.state !== "done") {
+          listedBefore = null;
+          return;
+        }
+        // The earliest clip it found, unless something else has been
+        // picked since the search chose one, which is where the hand is
+        // now.
+        showFirstFound(true);
+        // A window searched again comes back under the names it had, so
+        // nothing in the list is new. Its first clip, as long as nobody
+        // has picked another.
+        if (!shownFirst && selected === pickedBefore && paused && ended.result) {
+          const first = clips.find((c) => c.plan === ended.result);
+          if (first) select(first.key);
+        }
         listedBefore = null;
-        return;
-      }
-      // The earliest clip it found, unless something else has been picked
-      // since the search chose one, which is where the hand is now.
-      showFirstFound(true);
-      // A window searched again comes back under the names it had, so
-      // nothing in the list is new. Its first clip, as long as nobody has
-      // picked another.
-      if (!shownFirst && selected === pickedBefore && paused && ended.result) {
-        const first = clips.find((c) => c.plan === ended.result);
-        if (first) select(first.key);
-      }
-      listedBefore = null;
-    });
-  });
-
-  // Finished renders this screen started: the list shows what was
-  // rendered, and a render that failed says why over the workspace.
-  $effect(() => {
-    if (!waiting.length) return;
-    const finished = jobs.list.filter(
-      (j) => waiting.includes(j.id) && j.state !== "queued" && j.state !== "running",
-    );
-    if (!finished.length) return;
-    waiting = waiting.filter((id) => !finished.some((j) => j.id === id));
-    onchange();
-    load().then(() => {
-      for (const job of finished) {
+      });
+    },
+    // A render this workspace started: the list shows what was rendered,
+    // and a render that failed says why over the workspace.
+    rendered: (job) => {
+      onchange();
+      load().then(() => {
         if (job.state === "failed") oops(job.error ?? "The render failed.");
-      }
-    });
+      });
+    },
+  };
+  onMount(() => {
+    session = new EpisodeSession(path, jobs, moves);
+    return () => session.close();
   });
 
   // Playing moves nothing. An editor's timeline follows its playhead while

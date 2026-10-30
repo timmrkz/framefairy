@@ -92,7 +92,7 @@ waiting for the day the two disagree.
 | the library and the settings | the app's config folder | the app's Go side |
 | the models, notes about running servers, the training records | `~/.framefairy/` | the engine |
 | what runs now | the job queue, in memory | the app's Go side |
-| what is on screen | the interface's stores | from what Go sends. Today `Episode.svelte` also works out a video's state from what changed, see Not to copy |
+| what is on screen | the interface's stores, and a video's in its `EpisodeSession`, `frontend/src/lib/session.svelte.ts` | from what Go sends. Today `Episode.svelte` also works out a video's state from what changed, see Not to copy |
 
 ## The programs that run
 
@@ -116,6 +116,7 @@ What to do today, and what changes once the issue named is built.
 | I need to | It goes |
 | --- | --- |
 | decide where an edge, a word or a window lands | the engine: `engine/shape.go` for a gesture, `engine.Project` for a window. The interface asks and draws the answer |
+| do something in the workspace when a video's work moves on | a move of `EpisodeSession` in `frontend/src/lib/session.svelte.ts`, never an effect that keeps the value from before |
 | show the interface a new fact about a video | a field on what the workspace already reads for the video, its status or its clip views, never a new event of its own or a poll. Once #606 is built, on the snapshot Go sends |
 | keep something between two jobs, a cache or a fact about the machine | today the caches that outlive a job are package variables, the way `engine/probed.go` keeps the probes. A new one says why in its pull request, and never comes from a new `Engine` made only to get it. #607 moves them all onto one object a program keeps |
 | read a file of a video | through the `afero.Fs` the code was given, with `engine.SafeChildIn` for a path in a work folder. Not `os`. Once #608 is built, through the video's `Episode` |
@@ -193,7 +194,10 @@ copies what it finds nearby, so these are not the pattern for new code.
 - The transcript cache in `cmd/framefairy-app/words.go`, #608.
 - A new `engine.NewEngine` for each job or probe, #607.
 - The effects in `frontend/src/screens/Episode.svelte` that compare an
-  old value with a new one to notice that work ended, #606.
+  old value with a new one to notice that a search started, and the
+  tickets and polls that keep its reads in order, #606. Work that moves
+  on is said by `EpisodeSession`, see the decision record
+  [2026-10-30-a-videos-state-in-one-session.md](decisions/2026-10-30-a-videos-state-in-one-session.md).
 
 ## Changing the architecture
 

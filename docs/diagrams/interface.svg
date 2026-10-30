@@ -76,12 +76,12 @@
 <rect class="box" x="64" y="418" width="672" height="118" rx="8"/>
 <text class="n" x="76" y="440">what the interface keeps and works out</text>
 <text class="p" x="76" y="458">frontend/src/lib/</text>
-<rect class="chip" x="76" y="468" width="209" height="22" rx="6"/>
-<text class="c" x="84" y="483">stores: state, toast, updates</text>
-<rect class="chip" x="291" y="468" width="176" height="22" rx="6"/>
-<text class="c" x="299" y="483">api.ts: every call to Go</text>
-<rect class="chip" x="474" y="468" width="169" height="22" rx="6"/>
-<text class="c" x="482" y="483">frames: the frame queue</text>
+<rect class="chip" x="76" y="468" width="279" height="22" rx="6"/>
+<text class="c" x="84" y="483">stores: state, session, toast, updates</text>
+<rect class="chip" x="361" y="468" width="176" height="22" rx="6"/>
+<text class="c" x="369" y="483">api.ts: every call to Go</text>
+<rect class="chip" x="543" y="468" width="169" height="22" rx="6"/>
+<text class="c" x="551" y="483">frames: the frame queue</text>
 <rect class="chip" x="76" y="496" width="343" height="22" rx="6"/>
 <text class="c" x="84" y="511">rules worth a test: playhead, scrub, glide, ruler</text>
 <rect class="tint" x="64" y="552" width="672" height="52" rx="8"/>

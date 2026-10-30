@@ -1,4 +1,5 @@
 // Shared state: the job list, kept current from the Go side's events.
+import { untrack } from "svelte";
 import { api, onJob, type Job, type Lane } from "./api";
 import { mergeJob } from "./flow";
 import type { EpisodeOrder } from "./order";
@@ -34,11 +35,26 @@ export class JobStore {
   starting = $state<string[]>([]);
   stopping = $state<string[]>([]);
 
+  // Who hears each snapshot the list keeps, with the one it replaced, see
+  // EpisodeSession in lib/session.svelte.ts.
+  private watchers = new Set<(before: Job | undefined, after: Job) => void>();
+
   // A snapshot of a job, kept unless the list already has a later one.
   apply(job: Job) {
+    const before = this.list.find((j) => j.id === job.id);
     const next = mergeJob(this.list, job);
     if (next) this.list = next;
     this.settle();
+    // Heard outside any effect that applied it, so what a watcher reads
+    // does not make that effect run again.
+    if (next) untrack(() => this.watchers.forEach((watch) => watch(before, job)));
+  }
+
+  // Hears every snapshot kept from now on, until the function it returns
+  // is called.
+  watch(fn: (before: Job | undefined, after: Job) => void): () => void {
+    this.watchers.add(fn);
+    return () => this.watchers.delete(fn);
   }
 
   isStarting(path: string, work: Work): boolean {
