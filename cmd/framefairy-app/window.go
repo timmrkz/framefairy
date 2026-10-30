@@ -55,65 +55,27 @@ func (s *FrameFairy) videoWindow(ctx context.Context, path string) (KeptWindow, 
 	return w, true
 }
 
-// placedWindow is where the app puts a video's window, see placeWindow,
-// from what was searched of it, its settings and what one search can read
-// of it, see windowReach.
+// placedWindow is where the app puts a video's window, see
+// engine.Project.PlaceWindow.
 func (s *FrameFairy) placedWindow(path string, duration float64) KeptWindow {
-	opts := s.store.Settings().options()
-	passes := engine.SearchPasses(plansOf(s.store.files, path), duration)
-	return placeWindow(passes, duration, opts.Min, s.windowReach(path, duration))
+	p := s.project(path)
+	return keptOf(p.PlaceWindow(s.roomAndLines(p), duration))
 }
 
-// windowReach is the longest window one search can read wherever it is
-// drawn, the reach the range picker fits every window to, see
-// engine.Reach, from the same room as Room gives the workspace. 0 is no
-// limit. It was once the room at the video's average rate, longer than the
-// range picker's wherever speech is uneven, so the workspace cut every
-// window placed here again and wrote it back off the step, found by the
-// fourth review of #458.
-func (s *FrameFairy) windowReach(path string, duration float64) float64 {
-	opts := s.store.Settings().options()
-	p := s.projectWith(path, opts)
-	room := engine.SearchRoom(p.Files, opts, p.LogsDir())
-	if room.Chars <= 0 {
-		return 0
+// roomAndLines is what one search of the project's video can read, from
+// the transcript as far as it is heard, the same Room sends the range
+// picker. A transcript that cannot be read is nothing heard yet.
+func (s *FrameFairy) roomAndLines(p *engine.Project) engine.RoomAndLines {
+	t, err := s.transcript(p)
+	if err != nil {
+		t = nil
 	}
-	var lines []engine.LineWeight
-	var heard [][2]float64
-	rate := engine.SpokenChars
-	if t, err := s.transcript(p); err == nil {
-		lines = engine.WeighLines(t)
-		heard = t.Heard
-		rate = engine.RateOf(lines)
-	}
-	return engine.NewReach(room.Chars, lines, heard, rate, duration).Anywhere()
+	return p.RoomAndLines(t)
 }
 
-// lengthWithin is a window's length cut to most, what one search can
-// read, on a whole number of steps and no shorter than least, or most
-// where that is shorter still. most 0 is no limit.
-func lengthWithin(size, most, step, least float64) float64 {
-	if most > 0 && most < size {
-		return math.Max(math.Floor(most/step)*step, math.Min(least, most))
-	}
-	return size
-}
-
-// placeWindow is where the fewest searches have been, earliest first, as
-// long as the video's windows are, see engine.NextWindow, no longer than
-// most, what one search can read, and no shorter than one clip of
-// shortest, on a round step, see engine.OnStep. Its length is a whole
-// number of steps, and is what the window walks on with. most 0 is no
-// limit.
-func placeWindow(passes []engine.Pass, duration, shortest, most float64) KeptWindow {
-	least := math.Min(math.Max(shortest, 10), duration)
-	size := engine.SuggestedWindow(duration)
-	step := engine.PlaceStep(duration)
-	size = lengthWithin(size, most, step, least)
-	next := engine.NextWindow(passes, duration, size, least)
-	placed := engine.OnStep(next, next.End-next.Start, duration, step, least)
-	length := math.Max(math.Round(size/step)*step, step)
-	return KeptWindow{From: placed.Start, To: placed.End, Length: math.Max(length, placed.End-placed.Start)}
+// keptOf is a window the engine placed as the app keeps it.
+func keptOf(w engine.PlacedWindow) KeptWindow {
+	return KeptWindow{From: w.Start, To: w.End, Length: w.Length}
 }
 
 // searchesWindow makes the window of a search the video's window, as it
@@ -140,31 +102,24 @@ func (s *FrameFairy) searchesWindow(path string, req engine.PlanRequest) {
 	_ = changeChosen(s.store.files, path, func(c *chosen) { c.Window = &w })
 }
 
-// windowOn moves the window on after a search found its clips: from
-// where it ended, as long as the window was made, see
-// engine.FollowingWindow, and no longer than one search can read now,
-// which the first search of a video measures from its real speech. It is
-// done before the search says it is done,
-// so the workspace reads the window moved on when it hears that.
+// windowOn moves the window on after a search found its clips, as long
+// as the window was made and no longer than one search can read now,
+// which the first search of a video measures from its real speech, see
+// engine.Project.WindowAfter. It is done before the search says it is
+// done, so the workspace reads the window moved on when it hears that.
 func (s *FrameFairy) windowOn(path string, req engine.PlanRequest) {
 	info, err := s.probe(context.Background(), path)
 	if err != nil || info.Duration <= 0 {
 		return
 	}
-	ended := req.To
-	if ended <= 0 {
-		ended = info.Duration
-	}
 	windowMu.Lock()
 	defer windowMu.Unlock()
-	length := ended - req.From
-	if kept := readChosen(s.store.files, path).Window; kept != nil && kept.Length > 0 {
+	length := 0.0
+	if kept := readChosen(s.store.files, path).Window; kept != nil {
 		length = kept.Length
 	}
-	least := math.Min(math.Max(s.store.Settings().Min, 10), info.Duration)
-	length = lengthWithin(length, s.windowReach(path, info.Duration), engine.PlaceStep(info.Duration), least)
-	next := engine.FollowingWindow(ended, length, info.Duration, least)
-	w := KeptWindow{From: next.Start, To: next.End, Length: math.Max(length, next.End-next.Start)}
+	p := s.project(path)
+	w := keptOf(p.WindowAfter(s.roomAndLines(p), req, length, info.Duration))
 	if !w.ok() {
 		return
 	}

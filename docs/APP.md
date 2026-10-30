@@ -1555,7 +1555,8 @@ bubble scrolled by those eight pixels.
       episode it starts over at the start. The last window may be cut
       short by the end of the episode, and the one after it, at the
       start, is as long as the window was made again.
-      **A video has one window**, and the Go side owns it, see
+      **A video has one window**. The engine places it, see
+      `engine.Project.PlaceWindow`, and the Go side keeps it, see
       `cmd/framefairy-app/window.go`. It is kept beside the clip last
       worked on in `chosen.json`, so the workspace opens on it again,
       after a restart too. A video that has none gets the window where

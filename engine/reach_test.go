@@ -18,7 +18,7 @@ func reachOf(chars int, heardTo, rate, duration float64) *Reach {
 	if heardTo > 0 {
 		heard = [][2]float64{{0, heardTo}}
 	}
-	return NewReach(chars, lines, heard, rate, duration)
+	return NewReach(RoomAndLines{Room: Room{Chars: chars}, Lines: lines, Heard: heard, Rate: rate}, duration)
 }
 
 func TestAWindowWeighsWhatTheRangePickerWeighs(t *testing.T) {
@@ -37,7 +37,7 @@ func TestAWindowWeighsWhatTheRangePickerWeighs(t *testing.T) {
 	if got := reachOf(1e9, 400, 25, 400).Anywhere(); got != 400 {
 		t.Errorf("a room that holds the video reaches %v, not all 400", got)
 	}
-	if got := NewReach(0, nil, nil, 20, 400).Anywhere(); got != 400 {
+	if got := NewReach(RoomAndLines{Rate: 20}, 400).Anywhere(); got != 400 {
 		t.Errorf("no room yet reaches %v, not all 400", got)
 	}
 }
@@ -88,7 +88,7 @@ func TestAnywhereFitsEverywhereAndNoMore(t *testing.T) {
 		if heardTo > 0 {
 			heard = [][2]float64{{0, heardTo}}
 		}
-		r := NewReach(200+random.IntN(20000), lines, heard, random.Float64()*40, duration)
+		r := NewReach(RoomAndLines{Room: Room{Chars: 200 + random.IntN(20000)}, Lines: lines, Heard: heard, Rate: random.Float64() * 40}, duration)
 		reach := r.Anywhere()
 		if reach >= duration {
 			continue
