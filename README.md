@@ -80,6 +80,7 @@ docs/
   INSTALL.md          tools and models, for every part
   CLI.md              the command line: running it, all flags
   APP.md              the app: using it, how it is built
+  ARCHITECTURE.md     where each kind of thing belongs, and what must stay true
   ENGINE.md           how the engine works
   TRAINING.md         training records and the training tool
   GUI-PLAN.md         the app's build plan up to 16 October 2026, frozen,

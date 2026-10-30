@@ -51,7 +51,9 @@ Gemma 4 26B A4B as the local model, Parakeet TDT 0.6B v3 for speech.
 
 ## Where things are
 
-Start with [README.md](README.md). In short:
+Start with [README.md](README.md), and before a change with
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), which says where each kind of
+thing belongs. In short:
 
 | Part | Code | Docs |
 | --- | --- | --- |
@@ -187,7 +189,11 @@ Start with [README.md](README.md). In short:
 
 - **Think first.** Research and check before answering. Read the code and
   docs you are about to change. Verify facts about tools and versions instead
-  of assuming them.
+  of assuming them. Put the change where
+  [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) says it belongs, not where
+  the issue happens to point, and never copy what its Not to copy names.
+  A change that brings a new kind of thing, a new part, a new home for
+  state or a new boundary, adds its line there.
 - **Small batches.** Split larger work into batches of a few minutes each.
   Finish, test and report after each one, with a pull request per batch,
   or a commit per batch while the batches are still one self-contained
@@ -780,7 +786,7 @@ request.
 Full specification in [docs/TRAINING.md](docs/TRAINING.md). The essentials:
 
 - The engine records every new model answer and every action on a clip in
-  `<episode>.framefairy/training/`. It stays on the machine.
+  `~/.framefairy/training/`. It stays on the machine.
 - **Never count a signal twice.** The same answer to the same prompt keeps
   its record. The export merges by prompt and by proposed clip and uses only
   the latest state. Episodes are known by content, not by file name.
