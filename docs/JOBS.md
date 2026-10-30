@@ -230,9 +230,10 @@ a failed one a job that `failed`, with its reason. Adding a video asks for
 its first search, of the video's window, which the Go side places then:
 the first of the windows the video is cut into, see
 `engine.SuggestedWindow`, on a round step, and no longer than the model
-can read at once, see `videoWindow` in `cmd/framefairy-app/window.go`.
-Every search starts on the video's window, and one that found its clips
-moves the window on before it says it is done. Cancel on a search that runs marks its
+can read at once, see `engine.Project.PlaceWindow`, kept by
+`videoWindow` in `cmd/framefairy-app/window.go`. Every search starts on
+the video's window, and one that found its clips moves the window on
+before it says it is done, see `engine.Project.WindowAfter`. Cancel on a search that runs marks its
 record stopped as it ends. A new search takes the record of one that
 stopped away. A render or a clip made by hand that stopped has only
 Continue, see row 2.169 in [GUI-PLAN.md](GUI-PLAN.md). Search on an episode waits for a search that

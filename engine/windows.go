@@ -163,3 +163,100 @@ func OnStep(w timed.Window, length, duration, step, least float64) timed.Window 
 	}
 	return timed.Window{Start: from, End: to}
 }
+
+// PlacedWindow is a window the engine placed on a video, and Length is
+// how long it was made, which the window keeps as it walks on. The last
+// window of a video is cut at its end and is shorter than its length.
+type PlacedWindow struct {
+	timed.Window
+	Length float64
+}
+
+// PlaceWindow is where a video's window goes when nobody has drawn it:
+// where the fewest searches have been, earliest first, as long as the
+// video's windows are, see NextWindow, no longer than most, what one
+// search can read, and no shorter than one clip of shortest, on a round
+// step, see OnStep. Its length is a whole number of steps, and is what
+// the window walks on with. most 0 is no limit.
+func PlaceWindow(passes []Pass, duration, shortest, most float64) PlacedWindow {
+	least := leastWindowFor(shortest, duration)
+	size := SuggestedWindow(duration)
+	step := PlaceStep(duration)
+	size = lengthWithin(size, most, step, least)
+	next := NextWindow(passes, duration, size, least)
+	placed := OnStep(next, next.End-next.Start, duration, step, least)
+	length := math.Max(math.Round(size/step)*step, step)
+	return PlacedWindow{Window: placed, Length: math.Max(length, placed.End-placed.Start)}
+}
+
+// MoveWindowOn is where a window length long goes after a search that
+// ended at ended found its clips, see FollowingWindow, no longer than
+// most, what one search can read now, and no shorter than one clip of
+// shortest. most 0 is no limit.
+func MoveWindowOn(ended, length, duration, shortest, most float64) PlacedWindow {
+	least := leastWindowFor(shortest, duration)
+	length = lengthWithin(length, most, PlaceStep(duration), least)
+	next := FollowingWindow(ended, length, duration, least)
+	return PlacedWindow{Window: next, Length: math.Max(length, next.End-next.Start)}
+}
+
+// leastWindowFor is the shortest window worth a search, one clip of
+// shortest and never under ten seconds, or the whole of a shorter video.
+func leastWindowFor(shortest, duration float64) float64 {
+	return math.Min(math.Max(shortest, 10), duration)
+}
+
+// lengthWithin is a window's length cut to most, what one search can
+// read, on a whole number of steps and no shorter than least, or most
+// where that is shorter still. most 0 is no limit.
+func lengthWithin(size, most, step, least float64) float64 {
+	if most > 0 && most < size {
+		return math.Max(math.Floor(most/step)*step, math.Min(least, most))
+	}
+	return size
+}
+
+// WindowReach is the longest window one search of the video can read
+// wherever it is drawn, with the project's settings and what has been
+// heard of it, the reach the range picker fits every window to, see
+// Reach. 0 is no limit. It was once the room at the video's average
+// rate, longer than the range picker's wherever speech is uneven, so the
+// workspace cut every window placed with it again, found by the fourth
+// review of #458.
+func (p *Project) WindowReach(duration float64) float64 {
+	room := SearchRoom(p.Files, p.Base, p.LogsDir())
+	if room.Chars <= 0 {
+		return 0
+	}
+	var lines []LineWeight
+	var heard [][2]float64
+	rate := SpokenChars
+	if t, err := p.Transcript(); err == nil {
+		lines = WeighLines(t)
+		heard = t.Heard
+		rate = RateOf(lines)
+	}
+	return NewReach(room.Chars, lines, heard, rate, duration).Anywhere()
+}
+
+// PlaceWindow is where the project's video of duration seconds gets its
+// window when nobody has drawn one, from what was searched of it, its
+// settings and what one search can read of it, see PlaceWindow.
+func (p *Project) PlaceWindow(duration float64) PlacedWindow {
+	passes := SearchPasses(PlanSummaries(p.Files, p.LogsDir()), duration)
+	return PlaceWindow(passes, duration, p.Base.Min, p.WindowReach(duration))
+}
+
+// WindowAfter is where the window goes after the search req found its
+// clips, from where it ended and length long, the length the window was
+// made, or the search's own where that is 0, see MoveWindowOn.
+func (p *Project) WindowAfter(req PlanRequest, length, duration float64) PlacedWindow {
+	ended := req.To
+	if ended <= 0 {
+		ended = duration
+	}
+	if length <= 0 {
+		length = ended - req.From
+	}
+	return MoveWindowOn(ended, length, duration, p.Base.Min, p.WindowReach(duration))
+}
