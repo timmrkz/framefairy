@@ -11,7 +11,7 @@ import (
 // picker works out from Room, where speech is uneven too, so the
 // workspace has nothing to cut and write back. The two were once worked
 // out apart and disagreed, the fourth review of #458, and both now come
-// from engine.SearchReach.
+// from engine.RoomAndLines.
 func TestThePlacedWindowFitsTheRoomTheRangePickerReads(t *testing.T) {
 	svc, eps := memoryLibrary(t, "ep.mp4")
 	source := eps[0]
@@ -31,7 +31,7 @@ func TestThePlacedWindowFitsTheRoomTheRangePickerReads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reach := engine.NewReach(room.Chars, room.Lines, room.Heard, room.Rate, duration).Anywhere()
+	reach := engine.RoomAndLines{Room: engine.Room{Chars: room.Chars}, Lines: room.Lines, Heard: room.Heard, Rate: room.Rate}.Longest(duration)
 	if reach >= engine.SuggestedWindow(duration) {
 		t.Fatalf("one search reads %v s, no less than a window, so this proves nothing", reach)
 	}

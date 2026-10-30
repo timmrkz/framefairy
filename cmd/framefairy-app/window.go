@@ -58,7 +58,19 @@ func (s *FrameFairy) videoWindow(ctx context.Context, path string) (KeptWindow, 
 // placedWindow is where the app puts a video's window, see
 // engine.Project.PlaceWindow.
 func (s *FrameFairy) placedWindow(path string, duration float64) KeptWindow {
-	return keptOf(s.projectWith(path, s.store.Settings().options()).PlaceWindow(duration))
+	p := s.project(path)
+	return keptOf(p.PlaceWindow(s.roomAndLines(p), duration))
+}
+
+// roomAndLines is what one search of the project's video can read, from
+// the transcript as far as it is heard, the same Room sends the range
+// picker. A transcript that cannot be read is nothing heard yet.
+func (s *FrameFairy) roomAndLines(p *engine.Project) engine.RoomAndLines {
+	t, err := s.transcript(p)
+	if err != nil {
+		t = nil
+	}
+	return p.RoomAndLines(t)
 }
 
 // keptOf is a window the engine placed as the app keeps it.
@@ -106,8 +118,8 @@ func (s *FrameFairy) windowOn(path string, req engine.PlanRequest) {
 	if kept := readChosen(s.store.files, path).Window; kept != nil {
 		length = kept.Length
 	}
-	p := s.projectWith(path, s.store.Settings().options())
-	w := keptOf(p.WindowAfter(req, length, info.Duration))
+	p := s.project(path)
+	w := keptOf(p.WindowAfter(s.roomAndLines(p), req, length, info.Duration))
 	if !w.ok() {
 		return
 	}

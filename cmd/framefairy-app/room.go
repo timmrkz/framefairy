@@ -24,7 +24,7 @@ type RoomView struct {
 
 // Room says what a search on this episode can read, with the settings as
 // they are now. Before the first transcription there are no lines, which
-// is an answer and not a failure. It is the engine's SearchReach, which
+// is an answer and not a failure. It is the engine's RoomAndLines, which
 // the window the engine places is fitted to as well.
 func (s *FrameFairy) Room(path string) (RoomView, error) {
 	if !s.store.Known(path) {
@@ -38,7 +38,7 @@ func (s *FrameFairy) Room(path string) (RoomView, error) {
 	case err != nil:
 		return RoomView{}, err
 	}
-	r := p.SearchReach(t)
+	r := p.RoomAndLines(t)
 	out := RoomView{Chars: r.Chars, By: r.By, Lines: r.Lines, Heard: r.Heard, Rate: r.Rate}
 	if out.Lines == nil {
 		out.Lines = []engine.LineWeight{}

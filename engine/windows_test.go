@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"io"
 	"path/filepath"
 	"testing"
 
@@ -178,7 +179,7 @@ func TestAPlacedWindowFitsTheRangePickersReach(t *testing.T) {
 	}
 	const chars = 30000
 	average := chars / RateOf(lines)
-	reach := NewReach(chars, lines, [][2]float64{{0, duration}}, RateOf(lines), duration).Anywhere()
+	reach := RoomAndLines{Room: Room{Chars: chars}, Lines: lines, Heard: [][2]float64{{0, duration}}, Rate: RateOf(lines)}.Longest(duration)
 	if reach >= average {
 		t.Fatalf("the reach %v is not shorter than the room at the average rate %v, so this proves nothing", reach, average)
 	}
@@ -215,29 +216,35 @@ func TestTheWindowMovesOnAsLongAsItWasMade(t *testing.T) {
 
 // A project places its video's window from the plans in its work folder,
 // past what was searched, and moves it on after a search the same way,
+// no longer than the room it is given, the one the range picker reads,
 // so both front ends ask one place where a search reads, #610.
 func TestAProjectPlacesItsWindowPastWhatWasSearched(t *testing.T) {
 	fsys := afero.NewMemMapFs()
-	p := NewProject(nil, "/home/tim/ep.mp4", DefaultOptions())
-	p.Files = fsys
+	p := NewProject(NewEngine(NewLog(io.Discard, false, false), fsys), "/home/tim/ep.mp4", DefaultOptions())
 	if err := afero.WriteFile(fsys, filepath.Join(p.LogsDir(), "clips-0-1800.json"), []byte(aRealisticPlan(3)), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	const duration = 3600.0
-	reach := p.windowReach(duration)
-	if reach != 0 && reach < 900 {
-		t.Fatalf("one search reads %v s with the default settings and no transcript, too little to prove anything", reach)
-	}
+	roomy := RoomAndLines{Room: Room{Chars: 1e6}, Rate: SpokenChars}
 	want := PlacedWindow{timed.Window{Start: 1800, End: 2700}, 900}
-	if got := p.PlaceWindow(duration); got != want {
+	if got := p.PlaceWindow(roomy, duration); got != want {
 		t.Errorf("placed %+v, want the quarter hour after the half hour searched, %+v", got, want)
 	}
-	after := p.WindowAfter(PlanRequest{From: 1800, To: 2700}, 900, duration)
+	after := p.WindowAfter(roomy, PlanRequest{From: 1800, To: 2700}, 900, duration)
 	if want := (PlacedWindow{timed.Window{Start: 2700, End: 3600}, 900}); after != want {
 		t.Errorf("after the search %+v, want %+v", after, want)
 	}
-	toEnd := p.WindowAfter(PlanRequest{From: 2700}, 0, duration)
+	toEnd := p.WindowAfter(roomy, PlanRequest{From: 2700}, 0, duration)
 	if want := (PlacedWindow{timed.Window{Start: 0, End: 900}, 900}); toEnd != want {
 		t.Errorf("after a search to the end %+v, want the start again, %+v", toEnd, want)
+	}
+
+	// Room for ten minutes of speech, and nothing heard yet.
+	tight := RoomAndLines{Room: Room{Chars: 600 * SpokenChars}, Rate: SpokenChars}
+	if got, want := p.PlaceWindow(tight, duration), (PlacedWindow{timed.Window{Start: 1800, End: 2400}, 600}); got != want {
+		t.Errorf("placed %+v in room for ten minutes, want %+v", got, want)
+	}
+	if got, want := p.WindowAfter(tight, PlanRequest{From: 1800, To: 2700}, 900, duration), (PlacedWindow{timed.Window{Start: 2700, End: 3300}, 600}); got != want {
+		t.Errorf("moved on to %+v in room for ten minutes, want %+v", got, want)
 	}
 }
