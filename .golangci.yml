@@ -1,4 +1,4 @@
-# Two rules and no other. A test waits on a signal, never on the clock,
+# Three rules and no other. A test waits on a signal, never on the clock,
 # see CLAUDE.md. forbidigo refuses the clock in test files only, over the
 # whole tree: a sleep, a timer or a ticker, and a context with a deadline,
 # which is a timer by another name, and a check on how long something
@@ -15,8 +15,8 @@
 # clipboard is no read. See What is never signed in docs/UPDATES.md.
 #
 # And no code of ours writes to the standard library's log, outside the
-# tests: the app logs through theLog and the engine through its Log, the
-# ones that reach the log a report sends, issue #605.
+# tests: the app logs through theLog and everything else through the
+# engine's Log, the ones that reach the log a report sends, issue #605.
 version: "2"
 linters:
   default: none
@@ -39,7 +39,7 @@ linters:
           msg: the app hears no keys pressed in other apps and reads no clipboard, see What is never signed in docs/UPDATES.md
         - pattern: ^log\.(Print|Printf|Println|Fatal|Fatalf|Fatalln|Panic|Panicf|Panicln)$
           pkg: ^log$
-          msg: "the app logs through theLog and the engine through its Log, which reach the log a report sends, issue #605"
+          msg: "our code logs through theLog in the app and through the engine's Log everywhere else, which reach the log a report sends, issue #605"
   exclusions:
     rules:
       - path-except: _test\.go$
