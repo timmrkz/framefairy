@@ -4,6 +4,7 @@
 package runes
 
 import (
+	"fmt"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -112,4 +113,13 @@ func QuoteList(items []string) string {
 		quoted[i] = "'" + item + "'"
 	}
 	return "[" + strings.Join(quoted, ", ") + "]"
+}
+
+// Format only formats when there are arguments, so a message that happens
+// to contain a percent sign is written as it is.
+func Format(format string, a ...any) string {
+	if len(a) == 0 {
+		return format
+	}
+	return fmt.Sprintf(format, a...)
 }

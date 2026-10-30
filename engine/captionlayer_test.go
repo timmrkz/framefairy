@@ -17,12 +17,12 @@ import (
 	"testing/synctest"
 	"time"
 
-	"framefairy/engine/timed"
+	"github.com/spf13/afero"
 
+	"framefairy/engine/runlog"
+	"framefairy/engine/timed"
 	"framefairy/internal/ffmpegtest"
 	"framefairy/internal/framewire"
-
-	"github.com/spf13/afero"
 )
 
 // The captions the episode's decoder draws for the video preview are the
@@ -50,7 +50,7 @@ func TestTheVideoPreviewDrawsTheShortsCaptions(t *testing.T) {
 		ffmpegtest.Unusable(t, "the ffmpeg built beside the decoder is not at %s", ffmpeg)
 	}
 	ctx := context.Background()
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	e.FFmpeg, e.FFprobe = ffmpeg, filepath.Join(filepath.Dir(ffmpeg), "ffprobe")
 	if _, err := e.SubtitleFilter(ctx); err != nil {
 		t.Fatalf("the built ffmpeg cannot burn captions in: %v", err)
@@ -235,7 +235,7 @@ func TestOneCaptionFileIsMadeOnceForManyAtOnce(t *testing.T) {
 	t.Parallel()
 	ffmpegtest.Need(t)
 	ctx := context.Background()
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	clip := Clip{ID: "01", Slug: "once", Segments: []Segment{{Start: 0, End: 2}}}
 	tr := &Transcript{Words: []timed.Cue{{Start: 0.2, End: 0.6, Text: "Das"}, {Start: 0.6, End: 1.2, Text: "respektvoll"}, {Start: 1.2, End: 1.5, Text: "ist."}}, Language: "de"}
 	view := captionsView(Plan{}, clip, tr, nil)
@@ -290,7 +290,7 @@ func TestTheVideoPreviewDrawsTheCaptionsSmallerAsTheShortWouldShowThem(t *testin
 		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
 	}
 	ctx := context.Background()
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	words := []timed.Cue{{Start: 0.20, End: 0.40, Text: "Das"}, {Start: 0.50, End: 1.00, Text: "respektvoll"}, {Start: 1.00, End: 1.30, Text: "ist."}}
 	clip := Clip{ID: "01", Slug: "small", Segments: []Segment{{Start: 0, End: 1.4}}}
 	laid := ClipCaptions(clip, &Transcript{Words: words, Language: "de"}, ResolveStyle(nil))
@@ -410,7 +410,7 @@ func TestTheWordBeingTypedIsLeftOutInItsPlace(t *testing.T) {
 	t.Parallel()
 	ffmpegtest.Need(t)
 	ctx := context.Background()
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	clip := Clip{ID: "01", Slug: "typing", Segments: []Segment{{Start: 0, End: 2}}}
 	tr := &Transcript{Words: []timed.Cue{{Start: 0.2, End: 0.6, Text: "Das"}, {Start: 0.6, End: 1.2, Text: "respektvoll"}, {Start: 1.2, End: 1.5, Text: "ist."}}, Language: "de"}
 	for _, style := range []map[string]any{nil, {"highlight": false}} {
@@ -484,7 +484,7 @@ func TestTheWordLiftedOutAndTheRestAreTheCaptionAtRest(t *testing.T) {
 	}
 	t.Parallel()
 	ctx := context.Background()
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	e.FFmpeg, e.FFprobe = ffmpeg, filepath.Join(filepath.Dir(ffmpeg), "ffprobe")
 	dir := t.TempDir()
 	source := filepath.Join(dir, "episode.mkv")
@@ -543,7 +543,7 @@ func TestACaptionFileIsNeverWrittenIntoAWorkFolderThatIsGone(t *testing.T) {
 	t.Parallel()
 	ffmpegtest.Need(t)
 	ctx := context.Background()
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	clip := Clip{ID: "01", Slug: "gone", Segments: []Segment{{Start: 0, End: 2}}}
 	tr := &Transcript{Words: []timed.Cue{{Start: 0.2, End: 0.6, Text: "Das"}, {Start: 0.6, End: 1.2, Text: "respektvoll"}, {Start: 1.2, End: 1.5, Text: "ist."}}, Language: "de"}
 	d := captionsView(Plan{}, clip, tr, nil).Drawing()
@@ -596,7 +596,7 @@ func TestWritingCaptionsNeverMakesTheWorkFolder(t *testing.T) {
 }
 
 // quiet is the log of the tests that make caption files by hand.
-var quiet = NewLog(io.Discard, false, false)
+var quiet = runlog.New(io.Discard, false, false)
 
 // A caption file whose layout panics fails the requests waiting for it,
 // with one line that says why, the stack in the log, and the next request
@@ -609,9 +609,9 @@ func TestACaptionFileThatPanicsFailsItsRequestsNotTheApp(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		c := newTrackCache()
-		var said []Event
-		log := NewLog(io.Discard, false, false)
-		log.SetSink(func(ev Event) { said = append(said, ev) })
+		var said []runlog.Event
+		log := runlog.New(io.Discard, false, false)
+		log.SetSink(func(ev runlog.Event) { said = append(said, ev) })
 		release := make(chan struct{})
 		panics := func(context.Context) (previewFile, error) {
 			<-release
@@ -634,7 +634,7 @@ func TestACaptionFileThatPanicsFailsItsRequestsNotTheApp(t *testing.T) {
 		}
 		var stack bool
 		for _, ev := range said {
-			stack = stack || ev.Kind == EventDetail && strings.Contains(ev.Text, "goroutine")
+			stack = stack || ev.Kind == runlog.EventDetail && strings.Contains(ev.Text, "goroutine")
 		}
 		if !stack {
 			t.Errorf("the stack of the panic is not in the log, which said %v", said)

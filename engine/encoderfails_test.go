@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"framefairy/engine/runlog"
 	"framefairy/internal/ffmpegtest"
 	"framefairy/internal/framewire"
 	"framefairy/internal/standin"
@@ -37,7 +38,7 @@ func TestARenderGoesOnWhenTheEncoderFails(t *testing.T) {
 	e, onMac, dir, source, info := encoderFailure(t)
 
 	var log bytes.Buffer
-	e.Log = NewLog(&log, false, false)
+	e.Log = runlog.New(&log, false, false)
 	calls := filepath.Join(dir, "calls")
 	e.FFmpeg = failingMediaEngine(t, e.FFmpeg, calls, onMac, "")
 	// The encoder Preflight found for this system is let go, so the
@@ -94,7 +95,7 @@ func TestARenderGoesOnWhenTheEncoderHangs(t *testing.T) {
 	e, onMac, dir, source, info := encoderFailure(t)
 
 	var log bytes.Buffer
-	e.Log = NewLog(&log, false, false)
+	e.Log = runlog.New(&log, false, false)
 	calls := filepath.Join(dir, "calls")
 	// The media engine says when it hangs, and the render takes it to
 	// have stopped making frames then, rather than after a minute.
@@ -344,7 +345,7 @@ func TestTheProcessorEncodesWhatAShortAsks(t *testing.T) {
 	}
 	t.Parallel()
 	ctx := context.Background()
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	if err := e.Preflight(ctx); err != nil {
 		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}
@@ -396,7 +397,7 @@ func TestAnFFmpegEndedByASignalSaysSo(t *testing.T) {
 	if err := standin.Write(path, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	e := &Engine{Log: NewLog(&bytes.Buffer{}, false, false), FFmpeg: path}
+	e := &Engine{Log: runlog.New(&bytes.Buffer{}, false, false), FFmpeg: path}
 	code, said, _ := e.runFFmpegWatched(context.Background(), []string{"-i", "episode.mp4", "short.mp4"},
 		"rendering", 2, "", nil, 0)
 	if code == 0 {
@@ -424,7 +425,7 @@ func TestAnFFmpegEndedByASignalSaysSo(t *testing.T) {
 func encoderFailure(t *testing.T) (e *Engine, onMac bool, dir, source string, info SourceInfo) {
 	t.Helper()
 	ctx := context.Background()
-	e = NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e = NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	if err := e.Preflight(ctx); err != nil {
 		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}

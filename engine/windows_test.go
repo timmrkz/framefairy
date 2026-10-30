@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/afero"
 
+	"framefairy/engine/runlog"
 	"framefairy/engine/timed"
 )
 
@@ -220,7 +221,7 @@ func TestTheWindowMovesOnAsLongAsItWasMade(t *testing.T) {
 // so both front ends ask one place where a search reads, #610.
 func TestAProjectPlacesItsWindowPastWhatWasSearched(t *testing.T) {
 	fsys := afero.NewMemMapFs()
-	p := NewProject(NewEngine(NewLog(io.Discard, false, false), fsys), "/home/tim/ep.mp4", DefaultOptions())
+	p := NewProject(NewEngine(runlog.New(io.Discard, false, false), fsys), "/home/tim/ep.mp4", DefaultOptions())
 	if err := afero.WriteFile(fsys, filepath.Join(p.LogsDir(), "clips-0-1800.json"), []byte(aRealisticPlan(3)), 0o644); err != nil {
 		t.Fatal(err)
 	}

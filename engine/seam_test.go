@@ -14,6 +14,7 @@ import (
 
 	"github.com/spf13/afero"
 
+	"framefairy/engine/runlog"
 	"framefairy/internal/ffmpegtest"
 )
 
@@ -25,7 +26,7 @@ import (
 // at the clip's two ends and at every gap between pieces, never where one
 // piece runs straight into the next.
 func TestTheRenderFadesOnlyWhereSomethingIsCut(t *testing.T) {
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), afero.NewMemMapFs())
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), afero.NewMemMapFs())
 	clip := Clip{Segments: []Segment{{Start: 1, End: 2.6}, {Start: 2.6, End: 4}, {Start: 5, End: 6}}}
 	graph, _, _, err := e.BuildFilterGraph(context.Background(), clip,
 		SourceInfo{Width: 1920, Height: 1080, FPSNum: 25, FPSDen: 1},
@@ -57,7 +58,7 @@ func TestTheRenderFadesOnlyWhereSomethingIsCut(t *testing.T) {
 // On the real disk: ffmpeg reads the episode and writes the short.
 func TestTwoShotsThatMeetRenderWithoutASeam(t *testing.T) {
 	t.Parallel()
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	if err := e.Preflight(context.Background()); err != nil {
 		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}

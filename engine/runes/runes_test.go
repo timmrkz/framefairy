@@ -77,3 +77,9 @@ func FuzzScrub(f *testing.F) {
 		}
 	})
 }
+
+func TestFormatFillsItsArguments(t *testing.T) {
+	if got := Format("%d%% of %s", 40, "the video"); got != "40% of the video" {
+		t.Errorf("Format = %q, want %q", got, "40% of the video")
+	}
+}

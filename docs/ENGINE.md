@@ -1759,15 +1759,9 @@ macOS keychain of `engine/keys_darwin.go`, in the frames decoder of
   run.go        a run in its steps: prepare, hear, plan, read the plan
                 back, render. Run takes them in order for the command
                 line and returns an exit code
-  log.go        the timestamped terminal log
+  doc.go        what the engine is, and its version
   util.go       a command quoted for printing, until it moves with
                 running programs
-  events.go     the same log as structured events, for the app. Every
-                event goes to the app through one door, and that door
-                answers for what an event may carry: a share or a time
-                that is not a number becomes Unknown, because JSON
-                cannot say NaN and an event nobody can encode is a job
-                the app stops hearing about altogether
   project.go    one episode driven step by step, as the app does it:
                 the same steps as Run, with the window as numbers
   episode.go    status, waveform, silences and plan views for the app,
@@ -1823,5 +1817,10 @@ the types every part uses for a moment of a video, `Cue`, `Span`,
 `Window`, `Reading` and `FrameSeconds`. `engine/num/` rounds, sums,
 reads and writes numbers the same way on every platform, so plans are
 reproducible, and `engine/runes/` counts, cuts, trims and quotes text by
-its characters. None of them imports the rest of the engine, see
-[ARCHITECTURE.md](ARCHITECTURE.md).
+its characters. `engine/runlog/` is the log of a run: the timestamped
+terminal log, and the same log as events for the app. Every event goes
+to the app through one door, the `Sink`, and that door answers for what
+an event may carry: a share or a time that is not a number becomes
+`runlog.Unknown`, because JSON cannot say NaN and an event nobody can
+encode is a job the app stops hearing about altogether. None of them
+imports the rest of the engine, see [ARCHITECTURE.md](ARCHITECTURE.md).

@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"framefairy/engine/runlog"
 )
 
 // The speech models somebody can install, and installing one.
@@ -116,7 +118,7 @@ func SpeechModelReady(dir string) bool {
 // under a part name, the unpacking goes to a folder of its own, and only a
 // complete model is moved into place, so a machine that loses power or a
 // person who presses cancel is left with no model rather than half of one.
-func InstallSpeechModel(ctx context.Context, log *Log, m SpeechModel, dir string) error {
+func InstallSpeechModel(ctx context.Context, log *runlog.Log, m SpeechModel, dir string) error {
 	if dir == "" {
 		dir = ModelsDir()
 	}
@@ -213,7 +215,7 @@ func InstallSpeechModel(ctx context.Context, log *Log, m SpeechModel, dir string
 // come when the server does not say, to know a download that stopped early
 // from one that finished, and to stop one that goes on past it, see
 // downloadRoom. what is the name to say it by.
-func download(ctx context.Context, log *Log, url string, expect int64, path, what string) (string, error) {
+func download(ctx context.Context, log *runlog.Log, url string, expect int64, path, what string) (string, error) {
 	have := int64(0)
 	if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
 		have = info.Size()
@@ -374,7 +376,7 @@ func hashInto(sum io.Writer, path string, n int64) error {
 //
 // done starts at what was already there, so a download carrying on shows
 // how far the file has come rather than how far this attempt has.
-func copyWithProgress(ctx context.Context, log *Log, dst io.Writer, src io.Reader,
+func copyWithProgress(ctx context.Context, log *runlog.Log, dst io.Writer, src io.Reader,
 	already, total int64, what string) (int64, error) {
 	buf := make([]byte, 256*1024)
 	done := already
@@ -396,7 +398,7 @@ func copyWithProgress(ctx context.Context, log *Log, dst io.Writer, src io.Reade
 			last = time.Now()
 			if total > 0 {
 				share := float64(done) / float64(total)
-				left := Unknown
+				left := runlog.Unknown
 				// How fast it arrives is said too: a download that has
 				// slowed to a crawl is the one thing a person can do
 				// something about, by moving closer to the router.

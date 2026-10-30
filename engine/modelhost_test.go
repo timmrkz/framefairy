@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/spf13/afero"
+
+	"framefairy/engine/runlog"
 )
 
 // standIn replaces llama-server for a test: it counts the servers started
@@ -89,7 +91,7 @@ func useStandIn(t *testing.T) *standIn {
 }
 
 func quietEngine() *Engine {
-	return NewEngine(NewLog(io.Discard, false, false), afero.NewMemMapFs())
+	return NewEngine(runlog.New(io.Discard, false, false), afero.NewMemMapFs())
 }
 
 var gemma = LocalModel{Model: "gemma"}

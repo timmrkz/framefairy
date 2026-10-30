@@ -13,6 +13,7 @@ import (
 	"sync"
 	"testing"
 
+	"framefairy/engine/runlog"
 	"framefairy/internal/ffmpegtest"
 )
 
@@ -37,7 +38,7 @@ func TestTheVideoPreviewShowsTheFramesOfTheShort(t *testing.T) {
 	if program == "" {
 		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
 	}
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	e.FFmpeg, e.FFprobe = "ffmpeg", "ffprobe"
 	for _, c := range timesCases {
 		t.Run(c.name, func(t *testing.T) {
@@ -64,7 +65,7 @@ func TestTheVideoPreviewGoesOnWhenTheGraphicsChipFails(t *testing.T) {
 	if program == "" {
 		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
 	}
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	e.FFmpeg, e.FFprobe = "ffmpeg", "ffprobe"
 	for _, c := range timesCases {
 		if c.name == "obs_mkv" || c.name == "mpegts" {
@@ -93,7 +94,7 @@ func TestTheVideoPreviewGoesOnWhenTheDecoderHangs(t *testing.T) {
 	if program == "" {
 		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
 	}
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	e.FFmpeg, e.FFprobe = "ffmpeg", "ffprobe"
 	// On the 3rd packet the decoder hangs in the open, before the stream
 	// has a frame, and on the 12th in the middle of a stream, after the

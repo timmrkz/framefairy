@@ -829,23 +829,23 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 	// long it took. All of it at that speed is what it would have taken.
 	fresh := ""
 	if t := answer.Timings; t != nil && t.PromptN > 0 && t.PromptN < answer.PromptTokens {
-		fresh = fmt.Sprintf(", %s of them new in %ss", commas(t.PromptN), num.Fixed(t.PromptMS/1000, 1))
+		fresh = fmt.Sprintf(", %s of them new in %ss", num.Thousands(t.PromptN), num.Fixed(t.PromptMS/1000, 1))
 	}
 	e.Log.Info("local model answered in %ss  read %s tok%s at %s tok/s  wrote %s tok at %s tok/s",
 		num.Fixed(time.Since(started).Seconds(), 1),
-		commas(answer.PromptTokens), fresh, num.Fixed(reading, 0),
-		commas(answer.Written), num.Fixed(writing, 1))
+		num.Thousands(answer.PromptTokens), fresh, num.Fixed(reading, 0),
+		num.Thousands(answer.Written), num.Fixed(writing, 1))
 	if answer.Reasoning > 0 {
 		e.Log.Detail("the model thought for %s characters before it answered",
-			commas(answer.Reasoning))
+			num.Thousands(answer.Reasoning))
 	}
 	switch {
 	case answer.FinishReason == "length" && r.Plain != nil:
 		e.Log.Warn("the model went on writing after its answer and was stopped at %s tokens",
-			commas(maxTokens))
+			num.Thousands(maxTokens))
 	case answer.FinishReason == "length":
 		e.Log.Warn("the answer hit the %s token ceiling. Raise --max-tokens if clips are missing.",
-			commas(maxTokens))
+			num.Thousands(maxTokens))
 	}
 	return answer, nil
 }

@@ -1,23 +1,9 @@
-// Package engine turns a long-form podcast master into vertical short-form
-// clips, organised so that a command-line front end and a graphical one can
-// both drive it.
-//
-// The stages, in the order a run goes through them:
-//
-//  1. audio      transcribe on the machine, time every word, measure loudness
-//  2. lines      group words into the numbered lines the model reads
-//  3. selection  the model chooses the moments and condenses them
-//  4. analysis   framing, derived from the footage
-//  5. captions   captions made of the same words, written as srt and ass
-//  6. render     build the ffmpeg filter graph and run it
-//
-// A note on arm64, which is what Apple Silicon runs. The Go compiler may fuse
-// a multiplication and an addition into one instruction there, and a fused
-// result can round differently from the two steps one after the other,
-// which is how every file so far was computed. An explicit float64() conversion prevents the fusion, which is
-// why some products in this package are wrapped in one that looks redundant.
-// The numbers themselves are rounded and written by engine/num.
-package engine
+// Package runlog is the log of a run: timestamped lines in the terminal,
+// a progress line one piece of work can hold, steps that say how long
+// they took, and every line and every progress as an event for the app,
+// through one Sink. It knows nothing of the engine above it, see
+// docs/ARCHITECTURE.md.
+package runlog
 
 import (
 	"fmt"
@@ -30,10 +16,8 @@ import (
 	"time"
 
 	"framefairy/engine/num"
+	"framefairy/engine/runes"
 )
-
-// Version of the engine.
-const Version = "0.3.0"
 
 // Log writes timestamped output. Every line carries wall clock and elapsed
 // time, so a stalled step is obvious and a slow one can be measured after the
@@ -59,9 +43,9 @@ type Log struct {
 	held atomic.Bool
 }
 
-// NewLog makes a logger writing to w. Colour is only used when w is a
+// New makes a logger writing to w. Colour is only used when w is a
 // terminal and the environment does not ask for plain output.
-func NewLog(w io.Writer, colour, verbose bool) *Log {
+func New(w io.Writer, colour, verbose bool) *Log {
 	tty := isTerminal(w)
 	return &Log{
 		out: w,
@@ -114,28 +98,28 @@ func (l *Log) emit(kind EventKind, marker, text, colour string, tinted bool) {
 
 // Info is an ordinary line.
 func (l *Log) Info(format string, a ...any) {
-	l.emit(EventInfo, "·", sprintf(format, a...), "0", false)
+	l.emit(EventInfo, "·", runes.Format(format, a...), "0", false)
 }
 
 // OK marks something that finished well.
 func (l *Log) OK(format string, a ...any) {
-	l.emit(EventOK, "+", sprintf(format, a...), "32", false)
+	l.emit(EventOK, "+", runes.Format(format, a...), "32", false)
 }
 
 // Warn is something the operator should read.
 func (l *Log) Warn(format string, a ...any) {
-	l.emit(EventWarn, "!", sprintf(format, a...), "33", true)
+	l.emit(EventWarn, "!", runes.Format(format, a...), "33", true)
 }
 
 // Error is a failure.
 func (l *Log) Error(format string, a ...any) {
-	l.emit(EventError, "x", sprintf(format, a...), "31", true)
+	l.emit(EventError, "x", runes.Format(format, a...), "31", true)
 }
 
 // Detail is only shown with --verbose. Use it for anything you would want in
 // a bug report but not in the normal run. A sink gets it either way.
 func (l *Log) Detail(format string, a ...any) {
-	text := sprintf(format, a...)
+	text := runes.Format(format, a...)
 	if !l.verbose {
 		l.send(Event{Kind: EventDetail, Text: text, Fraction: Unknown, Remaining: Unknown})
 		return
@@ -288,33 +272,4 @@ func (l *Log) writeLine(marker, shown, colour string) {
 	defer l.mu.Unlock()
 	l.clearProgressLocked()
 	fmt.Fprintf(l.out, "%s  %s %s\n", l.stamp(), l.c(colour, marker), shown)
-}
-
-// sprintf only formats when there are arguments, so a message that happens to
-// contain a percent sign is printed as written.
-func sprintf(format string, a ...any) string {
-	if len(a) == 0 {
-		return format
-	}
-	return fmt.Sprintf(format, a...)
-}
-
-// commas formats an integer with thousands separators.
-func commas(n int) string {
-	negative := n < 0
-	if negative {
-		n = -n
-	}
-	digits := fmt.Sprintf("%d", n)
-	var b strings.Builder
-	for i, ch := range digits {
-		if i > 0 && (len(digits)-i)%3 == 0 {
-			b.WriteByte(',')
-		}
-		b.WriteRune(ch)
-	}
-	if negative {
-		return "-" + b.String()
-	}
-	return b.String()
 }
