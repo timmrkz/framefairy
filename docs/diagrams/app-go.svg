@@ -56,10 +56,8 @@
 <text class="q" x="76" y="416">reached through engine.Project</text>
 <rect class="chip" x="76" y="426" width="96" height="22" rx="6"/>
 <text class="c" x="84" y="441">engine/timed</text>
-<rect class="chip" x="178" y="426" width="96" height="22" rx="6"/>
-<text class="c" x="186" y="441">engine/pynum</text>
-<rect class="chip" x="280" y="426" width="103" height="22" rx="6"/>
-<text class="c" x="288" y="441">engine/pytext</text>
+<rect class="chip" x="178" y="426" width="103" height="22" rx="6"/>
+<text class="c" x="186" y="441">engine/pytext</text>
 <rect class="box" x="64" y="482" width="672" height="54" rx="8"/>
 <text class="n" x="76" y="504">small libraries</text>
 <text class="p" x="76" y="522">licence/, internal/wake/, internal/framewire/</text>

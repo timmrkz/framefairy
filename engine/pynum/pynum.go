@@ -5,7 +5,7 @@
 // imports nothing of the engine but pytext, see docs/ARCHITECTURE.md.
 //
 // Where it differs from Python, on purpose: FloatRepr writes no exponent,
-// where Python writes 1e+16, and ParseFloat and IntOf take an underscore
+// where Python writes 1e+16 or 1e-05, and ParseFloat and IntOf take an underscore
 // anywhere and the four separators \x1c to \x1f as space, where Python
 // raises. No plan, transcript or probe holds such a number, and a change
 // would change how every file written so far reads.
