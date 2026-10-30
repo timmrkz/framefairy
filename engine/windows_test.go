@@ -155,7 +155,7 @@ func TestTheFirstWindowFollowsTheVideo(t *testing.T) {
 		{"a quarter of an hour too", 900, 0, PlacedWindow{timed.Window{Start: 0, End: 900}, 900}},
 		{"no longer than a search reads", 3600, 700, PlacedWindow{timed.Window{Start: 0, End: 690}, 690}},
 	} {
-		if got := PlaceWindow(SearchPasses(nil, c.duration), c.duration, 20, c.most); got != c.want {
+		if got := placeWindow(SearchPasses(nil, c.duration), c.duration, 20, c.most); got != c.want {
 			t.Errorf("%s: %+v, want %+v", c.name, got, c.want)
 		}
 	}
@@ -182,7 +182,7 @@ func TestAPlacedWindowFitsTheRangePickersReach(t *testing.T) {
 	if reach >= average {
 		t.Fatalf("the reach %v is not shorter than the room at the average rate %v, so this proves nothing", reach, average)
 	}
-	got := PlaceWindow(SearchPasses(nil, duration), duration, 20, reach)
+	got := placeWindow(SearchPasses(nil, duration), duration, 20, reach)
 	step := PlaceStep(duration)
 	if got.End-got.Start > reach || got.Length > reach {
 		t.Errorf("the window %+v is longer than the reach %v", got, reach)
@@ -207,7 +207,7 @@ func TestTheWindowMovesOnAsLongAsItWasMade(t *testing.T) {
 		{"the last one is cut, its length kept", 3000, 900, 3600, 0, PlacedWindow{timed.Window{Start: 3000, End: 3600}, 900}},
 		{"cut to what a search reads, on the step", 900, 900, 3600, 700, PlacedWindow{timed.Window{Start: 900, End: 1590}, 690}},
 	} {
-		if got := MoveWindowOn(c.ended, c.length, c.duration, 20, c.most); got != c.want {
+		if got := moveWindowOn(c.ended, c.length, c.duration, 20, c.most); got != c.want {
 			t.Errorf("%s: %+v, want %+v", c.name, got, c.want)
 		}
 	}
@@ -224,7 +224,7 @@ func TestAProjectPlacesItsWindowPastWhatWasSearched(t *testing.T) {
 		t.Fatal(err)
 	}
 	const duration = 3600.0
-	reach := p.WindowReach(duration)
+	reach := p.windowReach(duration)
 	if reach != 0 && reach < 900 {
 		t.Fatalf("one search reads %v s with the default settings and no transcript, too little to prove anything", reach)
 	}

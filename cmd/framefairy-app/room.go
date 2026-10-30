@@ -24,27 +24,27 @@ type RoomView struct {
 
 // Room says what a search on this episode can read, with the settings as
 // they are now. Before the first transcription there are no lines, which
-// is an answer and not a failure.
+// is an answer and not a failure. It is the engine's SearchReach, which
+// the window the engine places is fitted to as well.
 func (s *FrameFairy) Room(path string) (RoomView, error) {
 	if !s.store.Known(path) {
 		return RoomView{}, errNotInLibrary
 	}
-	opts := s.store.Settings().options()
-	p := s.projectWith(path, opts)
-	room := engine.SearchRoom(p.Files, opts, p.LogsDir())
-	out := RoomView{Chars: room.Chars, By: room.By, Lines: []engine.LineWeight{},
-		Heard: [][2]float64{}, Rate: engine.SpokenChars}
+	p := s.project(path)
 	t, err := s.transcript(p)
-	if errors.Is(err, engine.ErrNoTranscript) {
-		return out, nil
-	}
-	if err != nil {
+	switch {
+	case errors.Is(err, engine.ErrNoTranscript):
+		t = nil
+	case err != nil:
 		return RoomView{}, err
 	}
-	out.Lines = engine.WeighLines(t)
-	if t.Heard != nil {
-		out.Heard = t.Heard
+	r := p.SearchReach(t)
+	out := RoomView{Chars: r.Chars, By: r.By, Lines: r.Lines, Heard: r.Heard, Rate: r.Rate}
+	if out.Lines == nil {
+		out.Lines = []engine.LineWeight{}
 	}
-	out.Rate = engine.RateOf(out.Lines)
+	if out.Heard == nil {
+		out.Heard = [][2]float64{}
+	}
 	return out, nil
 }

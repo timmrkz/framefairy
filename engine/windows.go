@@ -172,13 +172,13 @@ type PlacedWindow struct {
 	Length float64
 }
 
-// PlaceWindow is where a video's window goes when nobody has drawn it:
+// placeWindow is where a video's window goes when nobody has drawn it:
 // where the fewest searches have been, earliest first, as long as the
 // video's windows are, see NextWindow, no longer than most, what one
 // search can read, and no shorter than one clip of shortest, on a round
 // step, see OnStep. Its length is a whole number of steps, and is what
 // the window walks on with. most 0 is no limit.
-func PlaceWindow(passes []Pass, duration, shortest, most float64) PlacedWindow {
+func placeWindow(passes []Pass, duration, shortest, most float64) PlacedWindow {
 	least := leastWindowFor(shortest, duration)
 	size := SuggestedWindow(duration)
 	step := PlaceStep(duration)
@@ -189,11 +189,11 @@ func PlaceWindow(passes []Pass, duration, shortest, most float64) PlacedWindow {
 	return PlacedWindow{Window: placed, Length: math.Max(length, placed.End-placed.Start)}
 }
 
-// MoveWindowOn is where a window length long goes after a search that
+// moveWindowOn is where a window length long goes after a search that
 // ended at ended found its clips, see FollowingWindow, no longer than
 // most, what one search can read now, and no shorter than one clip of
 // shortest. most 0 is no limit.
-func MoveWindowOn(ended, length, duration, shortest, most float64) PlacedWindow {
+func moveWindowOn(ended, length, duration, shortest, most float64) PlacedWindow {
 	least := leastWindowFor(shortest, duration)
 	length = lengthWithin(length, most, PlaceStep(duration), least)
 	next := FollowingWindow(ended, length, duration, least)
@@ -216,40 +216,66 @@ func lengthWithin(size, most, step, least float64) float64 {
 	return size
 }
 
-// WindowReach is the longest window one search of the video can read
-// wherever it is drawn, with the project's settings and what has been
-// heard of it, the reach the range picker fits every window to, see
-// Reach. 0 is no limit. It was once the room at the video's average
-// rate, longer than the range picker's wherever speech is uneven, so the
-// workspace cut every window placed with it again, found by the fourth
-// review of #458.
-func (p *Project) WindowReach(duration float64) float64 {
-	room := SearchRoom(p.Files, p.Base, p.LogsDir())
-	if room.Chars <= 0 {
+// SearchReach is what one search of a video can read: the room its
+// settings give, and the weight of every line heard so far, with what a
+// second weighs where nothing is heard yet. The range picker fits every
+// window a hand draws to it, see Reach in frontend/src/lib/room.ts, and
+// the window the engine places is fitted to it too, see Longest. Both
+// take it from here, so the two cannot drift apart: the app once placed
+// windows by the room at the video's average rate, longer than the
+// range picker's wherever speech is uneven, and the workspace cut every
+// one of them again, found by the fourth review of #458.
+type SearchReach struct {
+	Room
+	Lines []LineWeight
+	// Heard are the parts the transcript has heard, from and to, silence
+	// included. Outside them a second weighs Rate.
+	Heard [][2]float64
+	Rate  float64
+}
+
+// SearchReach is what one search of the project's video can read with its
+// settings, over t, what has been heard of it, nil before anything is.
+func (p *Project) SearchReach(t *Transcript) SearchReach {
+	r := SearchReach{Room: SearchRoom(p.Files, p.Base, p.LogsDir()), Rate: SpokenChars}
+	if t != nil {
+		r.Lines = WeighLines(t)
+		r.Heard = t.Heard
+		r.Rate = RateOf(r.Lines)
+	}
+	return r
+}
+
+// Longest is the longest window of a video of duration seconds one
+// search can read wherever it is drawn. 0 is no limit.
+func (r SearchReach) Longest(duration float64) float64 {
+	if r.Chars <= 0 {
 		return 0
 	}
-	var lines []LineWeight
-	var heard [][2]float64
-	rate := SpokenChars
-	if t, err := p.Transcript(); err == nil {
-		lines = WeighLines(t)
-		heard = t.Heard
-		rate = RateOf(lines)
+	return NewReach(r.Chars, r.Lines, r.Heard, r.Rate, duration).Anywhere()
+}
+
+// windowReach is the longest window one search of the project's video
+// can read wherever it is drawn, with what has been heard of it so far.
+func (p *Project) windowReach(duration float64) float64 {
+	t, err := p.Transcript()
+	if err != nil {
+		t = nil
 	}
-	return NewReach(room.Chars, lines, heard, rate, duration).Anywhere()
+	return p.SearchReach(t).Longest(duration)
 }
 
 // PlaceWindow is where the project's video of duration seconds gets its
 // window when nobody has drawn one, from what was searched of it, its
-// settings and what one search can read of it, see PlaceWindow.
+// settings and what one search can read of it, see placeWindow.
 func (p *Project) PlaceWindow(duration float64) PlacedWindow {
 	passes := SearchPasses(PlanSummaries(p.Files, p.LogsDir()), duration)
-	return PlaceWindow(passes, duration, p.Base.Min, p.WindowReach(duration))
+	return placeWindow(passes, duration, p.Base.Min, p.windowReach(duration))
 }
 
 // WindowAfter is where the window goes after the search req found its
 // clips, from where it ended and length long, the length the window was
-// made, or the search's own where that is 0, see MoveWindowOn.
+// made, or the search's own where that is 0, see moveWindowOn.
 func (p *Project) WindowAfter(req PlanRequest, length, duration float64) PlacedWindow {
 	ended := req.To
 	if ended <= 0 {
@@ -258,5 +284,5 @@ func (p *Project) WindowAfter(req PlanRequest, length, duration float64) PlacedW
 	if length <= 0 {
 		length = ended - req.From
 	}
-	return MoveWindowOn(ended, length, duration, p.Base.Min, p.WindowReach(duration))
+	return moveWindowOn(ended, length, duration, p.Base.Min, p.windowReach(duration))
 }
