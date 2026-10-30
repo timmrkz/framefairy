@@ -307,8 +307,8 @@ func (p *previews) start(kind string, times *engine.PreviewTimes, light func() f
 // streamSafely runs a stream and turns a panic into the stream's error.
 // A stream reads a video nobody has checked, on a goroutine of its own
 // that outlives the request that started it, so the recover around that
-// request does not reach it, and a panic in it ended the whole app,
-// issue #604. The page asks another stream, as it does for one that
+// request, see mediaMiddleware, does not reach it, and a panic in it
+// ended the whole app, issue #604. The page asks another stream, as it does for one that
 // failed.
 func streamSafely(ctx context.Context, run func(ctx context.Context, got func(at float64, data []byte) error) error,
 	got func(at float64, data []byte) error) (err error) {

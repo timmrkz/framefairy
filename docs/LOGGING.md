@@ -97,8 +97,8 @@ opened from Finder. Our own code never writes there, which the lint in
 `.golangci.yml` holds. An engine the app makes outside a job, to draw
 captions, read frames, measure the loudness, probe a video, keep the
 model, check the setup or read a recording, writes through `engineLog`:
-its warnings and errors at their level, the rest at `debug`, under its
-part and the video.
+each line at its level, a detail at `debug`, under its part and the
+video.
 
 ## What a line holds
 
@@ -227,7 +227,11 @@ so their lines are counted, not written one by one. Their part is
   is asked again only after 5 s, so a drag is not one ffprobe and one
   warning a step.
 - A panic while drawing the captions or placing their words is an
-  `error` with its stack.
+  `error` with its stack, `the window's request stopped unexpectedly`,
+  as is a panic in any request for frames, sound or fonts. A panic while
+  the caption file is laid out, which outlives the request, is an
+  `error` from `captions`, and the engine's stack follows it as a `debug`
+  line.
 
 ## Reading a report
 

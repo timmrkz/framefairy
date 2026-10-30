@@ -1242,6 +1242,52 @@ func colours(frame []byte) []int {
 	return out
 }
 
+// A stream that panics as it is handed a frame leaves the decoder to the
+// streams after it. The cursor was left as it was, the records still
+// coming for it filled its channel, and the decoder's reader waited on it
+// for good, so the video preview of that video stood still once the app
+// went on after the panic, issue #604. Here the next stream would hang
+// until go test's own -timeout.
+//
+// On the real disk: ffmpeg makes the episode and the frames decoder reads it.
+func TestAStreamThatPanicsLeavesTheDecoderToTheNext(t *testing.T) {
+	ffmpegtest.Need(t)
+	program := os.Getenv("FRAMEFAIRY_FRAMES")
+	if program == "" {
+		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
+	}
+	path := filepath.Join(t.TempDir(), "episode.mp4")
+	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi",
+		"-i", "testsrc2=s=320x180:r=25:d=4", "-c:v", "mpeg4", "-q:v", "3", "-g", "25", path).CombinedOutput(); err != nil {
+		ffmpegtest.Unusable(t, "ffmpeg could not make an episode: %s %s", err, out)
+	}
+	dec := NewEpisodeFrames(program, path)
+	defer dec.Close()
+	grid := gridOf(t, path)
+	panicked := func() (caught any) {
+		defer func() { caught = recover() }()
+		_ = dec.Stream(context.Background(), grid, 0, 160, 90, false, nil, func(float64, []byte) error {
+			panic("a frame nobody read before")
+		})
+		return nil
+	}()
+	if panicked == nil {
+		t.Fatal("the stream did not panic")
+	}
+	// More frames than the decoder hands over in one batch, so the next
+	// stream needs the reader to go on.
+	n, want := 0, 2*ahead
+	err := dec.Stream(context.Background(), grid, 0, 160, 90, false, nil, func(float64, []byte) error {
+		if n++; n == want {
+			return errStop
+		}
+		return nil
+	})
+	if !errors.Is(err, errStop) {
+		t.Errorf("the stream after the panic had %d frames and ended with %v, want %d", n, err, want)
+	}
+}
+
 // A decoder that stops at once, the way it does for a file with no
 // picture, says why it stopped to a stream that asked while it was
 // stopping. Wait shuts its input before the reason is known, and a stream

@@ -217,8 +217,7 @@ func (s *FrameFairy) RemoveAppLog() (LogStatus, error) {
 
 // engineLog is the log of an engine the app makes outside a job, which
 // writes into the app's log under from and the video, when there is one:
-// a warning or an error at its level, every other line at debug, and no
-// progress. The engines that draw the captions, read the frames, measure
+// a line at its level, a detail at debug, and no progress. The engines that draw the captions, read the frames, measure
 // the loudness, probe a video, keep the model, check the setup and read a
 // recording all wrote to nothing before, so what the engine warned about
 // there never reached the log a report sends, issue #605. A caption file
@@ -230,13 +229,16 @@ func engineLog(from, path string) *engine.Log {
 		video = filepath.Base(path)
 	}
 	log.SetSink(func(ev engine.Event) {
-		level := zerolog.DebugLevel
+		var level zerolog.Level
 		switch ev.Kind {
 		case engine.EventWarn:
 			level = zerolog.WarnLevel
 		case engine.EventError:
 			level = zerolog.ErrorLevel
-		case engine.EventInfo, engine.EventOK, engine.EventDetail:
+		case engine.EventInfo, engine.EventOK:
+			level = zerolog.InfoLevel
+		case engine.EventDetail:
+			level = zerolog.DebugLevel
 		default:
 			return
 		}
@@ -382,13 +384,15 @@ func (l *appLog) started() {
 }
 
 // takeStandardLog writes what is said through the standard library's log,
-// by a library or by net/http, into the app's log as a warning. It went
-// to the standard error, which nobody reads on a Mac app opened from
-// Finder, issue #605. Our own code logs through theLog, see the lint in
-// .golangci.yml.
+// by a library or by net/http, into the app's log as a warning, and where
+// it went before, the standard error or the file the checks from outside
+// read, see probe_outside.go. Only the standard error had it, which
+// nobody reads on a Mac app opened from Finder, issue #605. Our own code
+// logs through theLog, see the lint in .golangci.yml.
 func (l *appLog) takeStandardLog() {
+	// The app's log has a field for the moment.
 	log.SetFlags(0)
-	log.SetOutput(standardLines{l})
+	log.SetOutput(io.MultiWriter(log.Writer(), standardLines{l}))
 }
 
 // standardLines is the standard library's log, a line at a time.

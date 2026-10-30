@@ -102,6 +102,39 @@ func fontNames(fonts []CaptionFont) []string {
 	return out
 }
 
+// A font file the reader trips on is left out, and the fonts beside it
+// are offered. Every font on the machine is read as the app starts, on a
+// goroutine nothing recovers, so one such file ended the app at every
+// start, issue #604. A file whose reading panics stands in for it.
+func TestAFontThatPanicsIsLeftOut(t *testing.T) {
+	t.Parallel()
+	fsys := afero.NewMemMapFs()
+	for name, data := range map[string][]byte{"Good.ttf": namedFace(t, "Anton", "Test Good"), "Bad.ttf": []byte("trips the reader")} {
+		if err := afero.WriteFile(fsys, filepath.Join("/fonts", name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	faces := findFaces(tripping{fsys}, []string{"/fonts"})
+	if len(faces) != 1 || faces[0].font.Name != "Test Good" {
+		t.Errorf("found %v, want the good font alone", faces)
+	}
+}
+
+// tripping is a disk whose file Bad.ttf panics when it is read.
+type tripping struct{ afero.Fs }
+
+func (t tripping) Open(name string) (afero.File, error) {
+	f, err := t.Fs.Open(name)
+	if err != nil || filepath.Base(name) != "Bad.ttf" {
+		return f, err
+	}
+	return trippingFile{f}, nil
+}
+
+type trippingFile struct{ afero.File }
+
+func (trippingFile) ReadAt([]byte, int64) (int, error) { panic("a font nobody read before") }
+
 func TestTheMachinesFontsAreOfferedAfterOurs(t *testing.T) {
 	narrow := namedFace(t, "Anton", "Test Narrow")
 	onShelf(t,

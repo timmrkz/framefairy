@@ -435,7 +435,7 @@ func (c *trackCache) once(ctx context.Context, log *Log, work, key string, build
 func buildSafely(ctx context.Context, log *Log, build func(context.Context) (previewFile, error)) (made previewFile, err error) {
 	defer func() {
 		if caught := recover(); caught != nil {
-			log.Warn("the caption file of the video preview could not be made: %v", caught)
+			log.Error("the caption file of the video preview could not be made: %v", caught)
 			log.Detail("%s", debug.Stack())
 			made, err = previewFile{}, fmt.Errorf("the captions could not be laid out: %v", caught)
 		}

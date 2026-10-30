@@ -82,9 +82,11 @@ waiting for the day the two disagree.
 
 One app process holds the interface in the webview, WebKit on a Mac, and
 the Go side, with the speech model in the same process. A panic on a
-goroutine nothing recovers ends all of it. Wails recovers its own
-callbacks and the app's `PanicHandler` logs them, so what can end the
-app is a goroutine of ours. The engine starts the children that do a
+goroutine nothing recovers ends all of it. Wails recovers its
+callbacks, a window's event, an event of the app, a call from the
+window, and the app's `PanicHandler` logs them. It does not recover the
+window's requests for frames, sound, captions and fonts, which
+`mediaMiddleware` does. The engine starts the children that do a
 video's work: one frames decoder for each video in the video preview,
 ffmpeg and ffprobe for a render, a measure or a probe, and llama-server
 for the local model, kept loaded. The app's Go side starts a few of its
@@ -103,6 +105,7 @@ What to do today, and what changes once the issue named is built.
 | read a file of a video | through the `afero.Fs` the code was given, with `engine.SafeChildIn` for a path in a work folder. Not `os`. Once #608 is built, through the video's `Episode` |
 | change a plan | `editPlan` in `engine/edit.go` |
 | start a goroutine that runs code which can panic, like layout of words a person typed | a deferred recover that turns a panic into that work's error and logs the stack, as `engine/planbuild.go` does. A goroutine that only waits, counts or hands on gets none |
+| make an engine outside a job, for the video preview, a probe or a check | `engineLog(part, video)` in `cmd/framefairy-app/applog.go`, so what it says reaches the app's log. Never `io.Discard` |
 | say that something went wrong | an error that keeps its kind with `%w`, returned to the caller. The app turns it into a row or a toast, and logs through `theLog`, never `log.Printf` |
 | add a call between the interface and Go | a method on `*FrameFairy` in the file of its kind in `cmd/framefairy-app/`, and its call in `frontend/src/lib/api.ts`. `bindings_test.go` checks the name and the arguments |
 | give the interface a new type or field | the Go struct and its interface in `frontend/src/lib/api.ts` in the same change. Once #611 is built, generated from the Go struct |

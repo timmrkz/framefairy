@@ -8,7 +8,6 @@ import (
 	"math"
 	"net/http"
 	"path/filepath"
-	"runtime/debug"
 	"slices"
 	"strconv"
 	"sync"
@@ -116,15 +115,9 @@ func (t *tracks) used(track string) {
 }
 
 // serveCaptions answers /frames/captions. The engine's caption code runs
-// here outside a job, so a panic in it fails the request, not the app.
+// here outside a job, so a panic in it fails the request, not the app,
+// see mediaMiddleware.
 func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Request) {
-	defer func() {
-		if v := recover(); v != nil {
-			theLog.line(zerolog.ErrorLevel, "captions").Str("panic", fmt.Sprint(v)).Str("stack", string(debug.Stack())).
-				Msg("drawing the captions failed")
-			http.Error(w, "the captions could not be drawn", http.StatusInternalServerError)
-		}
-	}()
 	q := r.URL.Query()
 	path := q.Get("path")
 	kept, ok := captionTracks.get(q.Get("track"))
@@ -225,13 +218,6 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 // words of a view, so the caption box frames the word libass drew. Like
 // the captions, it runs outside a job, so a panic fails the request.
 func (p *previews) serveWordFrames(st *store, w http.ResponseWriter, r *http.Request) {
-	defer func() {
-		if v := recover(); v != nil {
-			theLog.line(zerolog.ErrorLevel, "captions").Str("panic", fmt.Sprint(v)).Str("stack", string(debug.Stack())).
-				Msg("placing the caption words failed")
-			http.Error(w, "the caption words could not be placed", http.StatusInternalServerError)
-		}
-	}()
 	q := r.URL.Query()
 	path := q.Get("path")
 	kept, ok := captionTracks.get(q.Get("track"))
