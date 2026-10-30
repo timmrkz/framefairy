@@ -467,51 +467,41 @@ export const steps = {
     await settle(page);
     if (problems.length) walk.wrong = problems.join("\n");
   },
-  // ["info marks"]     every info mark on screen, and the icon in it,
-  //                    stands on a whole pixel up and down, and a mark in the corner of an area,
-  //                    the video preview, the range picker and the clip
-  //                    timeline, is painted as far from the top of the
-  //                    area as from its right, read off a screenshot.
-  //                    corners is how many such marks are on screen
-  async "info marks"(walk, corners = 0) {
+  // ["info marks", names]
+  //                    every info mark on screen, and the icon in it,
+  //                    stands on a whole pixel up and down, and the marks
+  //                    of names, each in the top right corner of an area
+  //                    or of a group in the settings, are painted as far
+  //                    from its top as from its right, read off a
+  //                    screenshot
+  async "info marks"(walk, names) {
     const { page } = walk;
     const marks = await page.evaluate(() =>
       [...document.querySelectorAll(".ask")].flatMap((ask, i) => {
-        const host = ask.offsetParent;
-        const h = host.getBoundingClientRect();
-        const cs = getComputedStyle(host);
         // Only a mark on the page in front: the workspace stays behind the
         // settings, its marks laid out where nobody sees them.
         const b = ask.getBoundingClientRect();
-        if (!host.contains(document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2))) return [];
+        if (!ask.offsetParent.contains(document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2))) return [];
+        // The corner it explains: the inside of the area's border, or the
+        // head of a group in the settings, which is the group's top right.
+        const area = ask.classList.contains("corner") ? ask.offsetParent : ask.closest(".headrow");
+        const h = area?.getBoundingClientRect();
+        const cs = area && getComputedStyle(area);
         return {
           i,
           name: ask.querySelector("button").getAttribute("aria-label"),
           tops: [b.top, ask.querySelector("svg").getBoundingClientRect().top],
-          corner: ask.classList.contains("corner"),
-          // The inside of the area's border, where the mark is put.
-          inTop: h.top + parseFloat(cs.borderTopWidth),
-          inRight: h.right - parseFloat(cs.borderRightWidth),
+          inTop: area ? h.top + parseFloat(cs.borderTopWidth) : null,
+          inRight: area ? h.right - parseFloat(cs.borderRightWidth) : null,
         };
       }),
     );
-    if (!marks.length) {
-      walk.wrong = "no info mark on screen";
-      return;
-    }
-    const cornered = marks.filter((m) => m.corner).map((m) => m.name);
-    if (cornered.length !== corners) {
-      walk.wrong = `${cornered.length} info marks in a corner on screen, not ${corners}: ${cornered.join(", ")}`;
-      return;
-    }
+    const problems = [];
     // The mark and the icon in it. Either between two pixels is painted
     // from a whole one, away from where it was laid out.
     for (const m of marks) {
       const half = m.tops.find((t) => Math.abs(t - Math.round(t)) > 0.01);
-      if (half !== undefined) {
-        walk.wrong = `the info mark "${m.name}" or its icon stands at ${half} px, between two pixels`;
-        return;
-      }
+      if (half !== undefined) problems.push(`the info mark "${m.name}" or its icon stands at ${half} px, between two pixels`);
     }
     // The corner, taken with the mark shown and hidden. What changed is
     // the mark's ink, whatever the area draws under it, a waveform or a
@@ -528,8 +518,12 @@ export const steps = {
       await nextPaint(page, 2);
       return (await page.screenshot({ clip })).toString("base64");
     };
-    for (const m of marks) {
-      if (!m.corner) continue;
+    for (const name of names) {
+      const m = marks.find((m) => m.name === name);
+      if (!m || m.inTop === null) {
+        problems.push(`the info mark "${name}" is not in a corner on screen`);
+        continue;
+      }
       const { i } = m;
       const clip = { x: Math.floor(m.inRight) - 24, y: Math.floor(m.inTop), width: 24, height: 24 };
       const shown = await shot(i, clip, "1");
@@ -564,16 +558,14 @@ export const steps = {
         [shown, hidden],
       );
       if (!ink) {
-        walk.wrong = `the info mark "${m.name}" painted nothing in the corner of its area`;
-        return;
+        problems.push(`the info mark "${name}" painted nothing in its corner`);
+        continue;
       }
       const top = ink.top + clip.y - m.inTop;
       const right = m.inRight - (clip.x + ink.right + 1);
-      if (Math.abs(top - right) > 0.5) {
-        walk.wrong = `the info mark "${m.name}" is painted ${top} px from the top of its area and ${right} px from its right`;
-        return;
-      }
+      if (Math.abs(top - right) > 0.5) problems.push(`the info mark "${name}" is painted ${top} px from the top of its corner and ${right} px from its right`);
     }
+    if (problems.length) walk.wrong = problems.join("\n");
   },
   // ["acknowledgements"]
   //                    Help, Acknowledgements: every group is a head over a
