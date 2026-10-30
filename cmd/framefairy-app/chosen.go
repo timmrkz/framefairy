@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"math"
 	"sort"
@@ -23,13 +22,18 @@ const chosenFile = "chosen.json"
 
 // chosen is the whole of that file. A struct rather than a bare string so
 // a later version can keep more without the older one choking on it, which
-// is how the window came to be kept beside the clip.
+// is how the window came to be kept beside the clip. What a later version
+// keeps that this one does not know is in kept, and written back with it.
 type chosen struct {
 	Clip   string      `json:"clip"`
 	Window *KeptWindow `json:"window,omitempty"`
 	// Opened is when the episode was last put on screen by a person, in
 	// Unix milliseconds, see OpenEpisode.
 	Opened int64 `json:"opened,omitempty"`
+	kept   unknownKeys
+	// unread is why the file could not be read, when it was there and
+	// could not be, so it is set aside before it is written over.
+	unread string
 }
 
 // KeptWindow is the window as it was left: where it starts and ends, and
@@ -64,8 +68,12 @@ func readChosen(files afero.Fs, path string) chosen {
 		return held
 	}
 	data, err := afero.ReadFile(files, file)
-	if err != nil || json.Unmarshal(data, &held) != nil {
-		return chosen{}
+	if err != nil {
+		return held
+	}
+	held.kept, err = readKeeping(data, &held)
+	if err != nil {
+		return chosen{unread: err.Error()}
 	}
 	if !looksLikeClipKey(held.Clip) {
 		held.Clip = ""
@@ -91,9 +99,12 @@ func changeChosen(files afero.Fs, path string, change func(*chosen)) error {
 	if err != nil {
 		return err
 	}
-	body, err := json.Marshal(held)
+	body, err := writeKeeping(held, held.kept)
 	if err != nil {
 		return err
+	}
+	if held.unread != "" {
+		setAside(files, file, held.unread, time.Now())
 	}
 	return engine.WriteAtomic(files, file, body)
 }

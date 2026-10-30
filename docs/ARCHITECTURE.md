@@ -153,7 +153,9 @@ other side relies on, and the pull request says so.
 - `engine.Project`, the steps a front end may take.
 - The files of a work folder and of the config folder, which an older
   and a newer build both read, `chosen.json` and the settings among
-  them, see #612.
+  them. A file the app writes whole keeps the keys it does not know,
+  see `cmd/framefairy-app/appfiles.go`, and a new shape goes under a new
+  name, because an older build sets aside a file it cannot read.
 - `internal/framewire`, between the decoder and the engine.
 - The update feed and the licence key, which the builds of customers
   read.

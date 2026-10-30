@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rs/zerolog"
 	"github.com/spf13/afero"
 
 	"framefairy/engine"
@@ -24,7 +25,8 @@ import (
 // There is no ffmpeg and no llama-server here. They were paths the
 // settings could name, and the app ran whatever they named: the app's own
 // tools are the only ones it runs now, see engine.FindTool. A settings file
-// that still names one has it read past and dropped on the next save.
+// that still names one has it read past and dropped on the next save, see
+// retiredSettings. Every other key this build does not know is kept.
 type Settings struct {
 	LLMModel string `json:"llmModel"`
 	ASRModel string `json:"asrModel"`
@@ -64,6 +66,12 @@ type Settings struct {
 	// on the first run instead of guessing on the customer's behalf.
 	Chosen bool `json:"chosen"`
 }
+
+// retiredSettings are the keys of the settings an earlier build wrote and
+// this one drops on purpose, where every other key it does not know is
+// written back, see readKeeping: the paths of an ffmpeg and a
+// llama-server, and count, which Target took the place of.
+var retiredSettings = []string{"ffmpeg", "llmServer", "count"}
 
 // defaultColour is what both the app and the word highlight start out as.
 // One colour, so an app that has never been touched looks of a piece with
@@ -138,6 +146,12 @@ type store struct {
 	records  *engine.Records
 	settings Settings
 	episodes []string
+	// kept are the keys of the settings file this build does not know,
+	// which a newer build wrote, written back with every save.
+	kept unknownKeys
+	// unread are the files of the store that were there and could not be
+	// read as it opened, each set aside before the store first writes it.
+	unread map[string]string
 	// changed is told when the settings change. It is told under the
 	// store's lock, so it only takes note.
 	changed func()
@@ -154,8 +168,12 @@ func openStore() *store {
 // openStoreIn is the store whose settings and library are in dir, with
 // everything read and written through files.
 func openStoreIn(files afero.Fs, dir string) *store {
-	s := &store{dir: dir, files: files, records: engine.NewRecords(files, "", ""), settings: defaultSettings()}
-	s.load("settings.json", &s.settings)
+	s := &store{dir: dir, files: files, records: engine.NewRecords(files, "", ""), settings: defaultSettings(),
+		unread: map[string]string{}}
+	s.kept = s.load("settings.json", &s.settings)
+	for _, k := range retiredSettings {
+		delete(s.kept, k)
+	}
 	s.load("library.json", &s.episodes)
 	s.settings.tidy()
 	s.apply(s.settings)
@@ -163,24 +181,53 @@ func openStoreIn(files afero.Fs, dir string) *store {
 	return s
 }
 
-func (s *store) load(name string, into any) {
+// load reads a file of the store into into, and gives back the keys of
+// it that into does not name. A file that is not there leaves into as it
+// is. So does one that is there and cannot be read, because a later build
+// changed its shape or it was edited by hand, but that is logged, and the
+// file is set aside before the store first writes over it. It used to be
+// read past: the library started empty, the next Add saved only the new
+// video, and every other video was gone from the sidebar for good.
+func (s *store) load(name string, into any) unknownKeys {
 	data, err := afero.ReadFile(s.files, filepath.Join(s.dir, name))
-	if err == nil {
-		_ = json.Unmarshal(data, into)
+	if err != nil {
+		return nil
 	}
+	kept, err := readKeeping(data, into)
+	if err != nil {
+		s.unread[name] = err.Error()
+		theLog.line(zerolog.ErrorLevel, "library").Str("file", name).Err(err).
+			Msg("a file of the app's own cannot be read, so the app starts without what it holds")
+		return nil
+	}
+	return kept
 }
 
 // save writes a file of the store whole and flushed, the way the engine
-// writes its own, so a crash never leaves the library half written.
+// writes its own, so a crash never leaves the library half written. The
+// settings carry the keys this build does not know with them.
 func (s *store) save(name string, value any) error {
 	if err := s.files.MkdirAll(s.dir, 0o755); err != nil {
 		return err
 	}
-	body, err := json.MarshalIndent(value, "", "  ")
+	var kept unknownKeys
+	if name == "settings.json" {
+		kept = s.kept
+	}
+	body, err := writeKeeping(value, kept)
 	if err != nil {
 		return err
 	}
-	return engine.WriteAtomic(s.files, filepath.Join(s.dir, name), body)
+	var indented bytes.Buffer
+	if err := json.Indent(&indented, body, "", "  "); err != nil {
+		return err
+	}
+	path := filepath.Join(s.dir, name)
+	if why, ok := s.unread[name]; ok {
+		setAside(s.files, path, why, time.Now())
+		delete(s.unread, name)
+	}
+	return engine.WriteAtomic(s.files, path, indented.Bytes())
 }
 
 func (s *store) Settings() Settings {

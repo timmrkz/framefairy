@@ -68,6 +68,9 @@ func main() {
 	// Their folders are read once now, so the Font list opens at once.
 	engine.UseMachineFonts()
 	go engine.RefreshFonts()
+	// The log is open before the store, which says in it when a file of
+	// its own cannot be read.
+	theLog.started()
 	st := openStore()
 
 	var app *application.App
@@ -81,7 +84,6 @@ func main() {
 			app.Event.Emit("episode", episode)
 		}
 	}
-	theLog.started()
 	svc := &FrameFairy{store: st, keeping: newKeeping()}
 	// The model is kept loaded while the app is open, and kept again
 	// when the settings change it or a search ends, see keep.go. It is
