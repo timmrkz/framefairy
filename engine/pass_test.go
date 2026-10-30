@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"framefairy/engine/timed"
 )
 
 // answering answers like llama-server with the answers given, one a
@@ -142,15 +144,15 @@ func TestASearchCarriedOnKeepsItsPass(t *testing.T) {
 // end, so its plan says which.
 func TestPassNames(t *testing.T) {
 	for _, c := range []struct {
-		window *Window
+		window *timed.Window
 		pass   int
 		want   string
 	}{
 		{nil, 0, "clips.json"},
 		{nil, 1, "clips.json"},
-		{&Window{10, 30}, 1, "clips-10-30.json"},
-		{&Window{10, 30}, 3, "clips-10-30-3.json"},
-		{&Window{0, 360}, 2, "clips-0-360-2.json"},
+		{&timed.Window{Start: 10, End: 30}, 1, "clips-10-30.json"},
+		{&timed.Window{Start: 10, End: 30}, 3, "clips-10-30-3.json"},
+		{&timed.Window{Start: 0, End: 360}, 2, "clips-0-360-2.json"},
 	} {
 		if got := PassName(c.window, c.pass); got != c.want || !IsPlanFile(got) {
 			t.Errorf("PassName(%v, %d) = %s, want %s", c.window, c.pass, got, c.want)
@@ -177,9 +179,9 @@ func TestPassNames(t *testing.T) {
 }
 
 func TestTakenLines(t *testing.T) {
-	line := func(from, to float64) Line { return Line{Cues: []Cue{{Start: from, End: to}}} }
+	line := func(from, to float64) Line { return Line{Cues: []timed.Cue{{Start: from, End: to}}} }
 	lines := []Line{line(0, 2), line(2, 4), line(4, 6), line(6, 8), line(8, 10)}
-	got := takenLines(lines, []Window{{1.5, 6}, {9.5, 12}})
+	got := takenLines(lines, []timed.Window{{Start: 1.5, End: 6}, {Start: 9.5, End: 12}})
 	if fmt.Sprint(got) != "[[2 3]]" {
 		t.Errorf("taken lines: %v", got)
 	}

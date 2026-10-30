@@ -5,6 +5,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
+
+	"framefairy/engine/timed"
 )
 
 // SentenceView is one card of what an episode says, for reading the
@@ -45,7 +47,7 @@ func Sentences(t *Transcript, cuts []float64) []SentenceView {
 	cuts = slices.Sorted(slices.Values(cuts))
 	lines := BuildLines(t.Words, nil, nil)
 	out := make([]SentenceView, 0, len(lines)/2+1)
-	var card []Cue
+	var card []timed.Cue
 	end := func() {
 		if len(card) == 0 {
 			return
@@ -58,9 +60,9 @@ func Sentences(t *Transcript, cuts []float64) []SentenceView {
 			Text: Scrub(strings.Join(texts, " "), maxLineChars)})
 		card = card[:0:0]
 	}
-	middle := func(c Cue) float64 { return (c.Start + c.End) / 2 }
+	middle := func(c timed.Cue) float64 { return (c.Start + c.End) / 2 }
 	// Whether a cut falls between two words one after the other.
-	cutBetween := func(a, b Cue) bool {
+	cutBetween := func(a, b timed.Cue) bool {
 		i := sort.SearchFloat64s(cuts, middle(a))
 		for i < len(cuts) && cuts[i] <= middle(a) {
 			i++
@@ -131,13 +133,13 @@ func SaidCards(t *Transcript, clips []ClipSaid) []SentenceView {
 	}
 	// What the clips say is theirs, a word only some of whose sound a
 	// piece holds among it, see Said.
-	said := map[Cue]bool{}
+	said := map[timed.Cue]bool{}
 	for _, c := range clips {
 		for _, w := range Said(c.Clip, t.Words) {
 			said[w] = true
 		}
 	}
-	rest := &Transcript{Words: slices.DeleteFunc(slices.Clone(t.Words), func(w Cue) bool { return said[w] })}
+	rest := &Transcript{Words: slices.DeleteFunc(slices.Clone(t.Words), func(w timed.Cue) bool { return said[w] })}
 	out := Sentences(rest, cuts)
 	for _, c := range clips {
 		for _, caption := range c.Captions {

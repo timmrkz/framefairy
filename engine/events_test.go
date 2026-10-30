@@ -12,6 +12,8 @@ import (
 	"sync"
 	"testing"
 
+	"framefairy/engine/timed"
+
 	"github.com/spf13/afero"
 )
 
@@ -318,7 +320,7 @@ func TestDiffClip(t *testing.T) {
 
 func TestTrimClipSnapsToWords(t *testing.T) {
 	fsys := afero.NewMemMapFs()
-	words := []Cue{{10, 10.5, "eins"}, {10.6, 11, "zwei"}, {12, 12.4, "drei"}, {13, 13.5, "vier"}, {14, 14.5, "fünf"}}
+	words := []timed.Cue{{Start: 10, End: 10.5, Text: "eins"}, {Start: 10.6, End: 11, Text: "zwei"}, {Start: 12, End: 12.4, Text: "drei"}, {Start: 13, End: 13.5, Text: "vier"}, {Start: 14, End: 14.5, Text: "fünf"}}
 	tr := &Transcript{Words: words}
 	path := filepath.Join(memDir(t, fsys), "clips.json")
 	plan := `{"source": "ep.mp4", "clips": [{"id": "01", "slug": "x", "segments": [` +
@@ -360,7 +362,7 @@ func TestTrimClipSnapsToWords(t *testing.T) {
 // taking a breath off the end of a clip needs. The checks still hold.
 func TestTrimClipToFramesStaysWhereItWasPut(t *testing.T) {
 	fsys := afero.NewMemMapFs()
-	words := []Cue{{10, 10.5, "eins"}, {10.6, 11, "zwei"}, {12, 12.4, "drei"}, {13, 13.5, "vier"}}
+	words := []timed.Cue{{Start: 10, End: 10.5, Text: "eins"}, {Start: 10.6, End: 11, Text: "zwei"}, {Start: 12, End: 12.4, Text: "drei"}, {Start: 13, End: 13.5, Text: "vier"}}
 	tr := &Transcript{Words: words}
 	path := filepath.Join(memDir(t, fsys), "clips.json")
 	plan := `{"source": "ep.mp4", "clips": [{"id": "01", "slug": "x", "segments": [` +
@@ -395,9 +397,9 @@ func TestTrimClipToFramesStaysWhereItWasPut(t *testing.T) {
 
 func TestTouchingRunsCutOnlyThePause(t *testing.T) {
 	lines := []Line{
-		{Cues: []Cue{{10, 11, "a"}}},
-		{Cues: []Cue{{12, 13, "b"}}},
-		{Cues: []Cue{{13.1, 14, "c"}}},
+		{Cues: []timed.Cue{{Start: 10, End: 11, Text: "a"}}},
+		{Cues: []timed.Cue{{Start: 12, End: 13, Text: "b"}}},
+		{Cues: []timed.Cue{{Start: 13.1, End: 14, Text: "c"}}},
 	}
 	segs := SegmentsFromRanges([][2]int{{1, 1}, {2, 3}}, lines, 0.1, nil)
 	if len(segs) != 2 || segs[0].End != 11.1 || segs[1].Start != 11.9 {
@@ -425,8 +427,8 @@ func TestWordCorrections(t *testing.T) {
 	dir := memDir(t, fsys)
 	logs := filepath.Join(dir, "ep.framefairy", "logs")
 	_ = fsys.MkdirAll(logs, 0o755)
-	words := []Cue{{10, 10.5, "Tipfeler"}, {10.6, 11, "zwei"}, {12, 12.4, "drei"}}
-	tr := fromStored(append([]Cue(nil), words...), nil, 0, 0, nil)
+	words := []timed.Cue{{Start: 10, End: 10.5, Text: "Tipfeler"}, {Start: 10.6, End: 11, Text: "zwei"}, {Start: 12, End: 12.4, Text: "drei"}}
+	tr := fromStored(append([]timed.Cue(nil), words...), nil, 0, 0, nil)
 	plan := `{"clips": [{"id": "01", "slug": "a", "segments": [{"start": 9.9, "end": 11.1}]},` +
 		` {"id": "02", "slug": "b", "segments": [{"start": 11.9, "end": 12.5}]}]}`
 	path := filepath.Join(logs, "clips.json")
@@ -465,8 +467,8 @@ func TestWordCorrections(t *testing.T) {
 func TestAWordCorrectedToNothingIsRemovedFromItsClip(t *testing.T) {
 	fsys := afero.NewMemMapFs()
 	_, path := oneClipPlan(t, fsys, 9.9, 12.5)
-	words := []Cue{{10, 10.5, "äh"}, {10.6, 11, "zwei"}, {12, 12.4, "drei"}}
-	tr := fromStored(append([]Cue(nil), words...), nil, 0, 0, nil)
+	words := []timed.Cue{{Start: 10, End: 10.5, Text: "äh"}, {Start: 10.6, End: 11, Text: "zwei"}, {Start: 12, End: 12.4, Text: "drei"}}
+	tr := fromStored(append([]timed.Cue(nil), words...), nil, 0, 0, nil)
 
 	if err := SetWordText(fsys, path, "01", 10.2, "  ", tr); err != nil {
 		t.Fatal(err)
@@ -500,9 +502,9 @@ func TestAWordCorrectedToNothingIsRemovedFromItsClip(t *testing.T) {
 // after went on to the next caption, with nothing on screen between.
 func TestRemovingAWordLeavesItsCaptionWhole(t *testing.T) {
 	fsys := afero.NewMemMapFs()
-	heard := []Cue{{60, 60.4, "wurde"}, {60.45, 61, "irgendein"}, {61.05, 61.4, "Typ"},
-		{61.45, 62.1, "auf"}, {62.15, 62.4, "dem"}, {62.45, 63, "Schulhof."},
-		{64, 64.4, "Und"}, {64.45, 64.9, "dann"}}
+	heard := []timed.Cue{{Start: 60, End: 60.4, Text: "wurde"}, {Start: 60.45, End: 61, Text: "irgendein"}, {Start: 61.05, End: 61.4, Text: "Typ"},
+		{Start: 61.45, End: 62.1, Text: "auf"}, {Start: 62.15, End: 62.4, Text: "dem"}, {Start: 62.45, End: 63, Text: "Schulhof."},
+		{Start: 64, End: 64.4, Text: "Und"}, {Start: 64.45, End: 64.9, Text: "dann"}}
 	_, path := oneClipPlan(t, fsys, 59.9, 65)
 	style := ResolveStyle(nil)
 	laid := func(tr *Transcript) string {
@@ -516,7 +518,7 @@ func TestRemovingAWordLeavesItsCaptionWhole(t *testing.T) {
 		}
 		return strings.Join(out, " ")
 	}
-	tr := fromStored(append([]Cue(nil), heard...), nil, 0, 0, nil)
+	tr := fromStored(append([]timed.Cue(nil), heard...), nil, 0, 0, nil)
 	before := laid(tr)
 	if err := SetWordText(fsys, path, "01", 61.7, "", tr); err != nil {
 		t.Fatal(err)
@@ -545,11 +547,11 @@ func laidOf(t *testing.T, fsys afero.Fs, path string, tr *Transcript) string {
 // caption after.
 func TestRemovingAWordPullsNoWordUp(t *testing.T) {
 	fsys := afero.NewMemMapFs()
-	heard := []Cue{{60, 60.2, "als"}, {60.25, 60.5, "mich"}, {60.55, 60.7, "auf"},
-		{60.75, 60.9, "dem"}, {60.95, 61.4, "Schulhof"}, {61.45, 61.9, "irgendein"},
-		{61.95, 62.2, "Typ"}}
+	heard := []timed.Cue{{Start: 60, End: 60.2, Text: "als"}, {Start: 60.25, End: 60.5, Text: "mich"}, {Start: 60.55, End: 60.7, Text: "auf"},
+		{Start: 60.75, End: 60.9, Text: "dem"}, {Start: 60.95, End: 61.4, Text: "Schulhof"}, {Start: 61.45, End: 61.9, Text: "irgendein"},
+		{Start: 61.95, End: 62.2, Text: "Typ"}}
 	_, path := oneClipPlan(t, fsys, 59.9, 63)
-	tr := fromStored(append([]Cue(nil), heard...), nil, 0, 0, nil)
+	tr := fromStored(append([]timed.Cue(nil), heard...), nil, 0, 0, nil)
 	before := laidOf(t, fsys, path, tr)
 	if !strings.Contains(before, "Schulhof]") {
 		t.Fatalf("the test needs a break after Schulhof: %s", before)
@@ -585,15 +587,15 @@ func TestARemovedWordLeavesNoGapWhileTheSpeechRunsOn(t *testing.T) {
 	// The clip starts at 59.9, so 61.45 in the episode is 1.55 on its
 	// clock. "irgendein" runs straight on from "Schulhof", or after a
 	// pause of 0.8 s.
-	runsOn := []Cue{{60, 60.2, "als"}, {60.25, 60.5, "mich"}, {60.55, 60.7, "auf"},
-		{60.75, 60.9, "dem"}, {60.95, 61.4, "Schulhof"}, {61.45, 61.9, "irgendein"},
-		{61.95, 62.2, "Typ"}}
-	paused := []Cue{{60, 60.2, "als"}, {60.25, 60.5, "mich"}, {60.55, 60.7, "auf"},
-		{60.75, 60.9, "dem"}, {60.95, 61.4, "Schulhof"}, {62.2, 62.65, "irgendein"},
-		{62.7, 62.95, "Typ"}}
+	runsOn := []timed.Cue{{Start: 60, End: 60.2, Text: "als"}, {Start: 60.25, End: 60.5, Text: "mich"}, {Start: 60.55, End: 60.7, Text: "auf"},
+		{Start: 60.75, End: 60.9, Text: "dem"}, {Start: 60.95, End: 61.4, Text: "Schulhof"}, {Start: 61.45, End: 61.9, Text: "irgendein"},
+		{Start: 61.95, End: 62.2, Text: "Typ"}}
+	paused := []timed.Cue{{Start: 60, End: 60.2, Text: "als"}, {Start: 60.25, End: 60.5, Text: "mich"}, {Start: 60.55, End: 60.7, Text: "auf"},
+		{Start: 60.75, End: 60.9, Text: "dem"}, {Start: 60.95, End: 61.4, Text: "Schulhof"}, {Start: 62.2, End: 62.65, Text: "irgendein"},
+		{Start: 62.7, End: 62.95, Text: "Typ"}}
 	for _, c := range []struct {
 		name   string
-		heard  []Cue
+		heard  []timed.Cue
 		remove float64
 		want   string
 	}{
@@ -613,7 +615,7 @@ func TestARemovedWordLeavesNoGapWhileTheSpeechRunsOn(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			fsys := afero.NewMemMapFs()
 			_, path := oneClipPlan(t, fsys, 59.9, 64)
-			tr := fromStored(append([]Cue(nil), c.heard...), nil, 0, 0, nil)
+			tr := fromStored(append([]timed.Cue(nil), c.heard...), nil, 0, 0, nil)
 			if c.remove > 0 {
 				if err := SetWordText(fsys, path, "01", c.remove, "", tr); err != nil {
 					t.Fatal(err)
@@ -631,9 +633,9 @@ func TestARemovedWordLeavesNoGapWhileTheSpeechRunsOn(t *testing.T) {
 // end and the room the hand cleared stays empty, as Tim asked in #189.
 // The same word removed in the caption box leaves no gap, #597.
 func TestADraggedStartLeavesTheGapARemovedWordDoesNot(t *testing.T) {
-	heard := []Cue{{60, 60.2, "als"}, {60.25, 60.5, "mich"}, {60.55, 60.7, "auf"},
-		{60.75, 60.9, "dem"}, {60.95, 61.4, "Schulhof"}, {61.45, 61.9, "irgendein"},
-		{61.95, 62.2, "Typ"}, {62.25, 62.7, "geschubst"}, {62.75, 63, "hat."}}
+	heard := []timed.Cue{{Start: 60, End: 60.2, Text: "als"}, {Start: 60.25, End: 60.5, Text: "mich"}, {Start: 60.55, End: 60.7, Text: "auf"},
+		{Start: 60.75, End: 60.9, Text: "dem"}, {Start: 60.95, End: 61.4, Text: "Schulhof"}, {Start: 61.45, End: 61.9, Text: "irgendein"},
+		{Start: 61.95, End: 62.2, Text: "Typ"}, {Start: 62.25, End: 62.7, Text: "geschubst"}, {Start: 62.75, End: 63, Text: "hat."}}
 	for _, c := range []struct {
 		name string
 		edit func(fsys afero.Fs, path string, tr *Transcript) error
@@ -650,7 +652,7 @@ func TestADraggedStartLeavesTheGapARemovedWordDoesNot(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			fsys := afero.NewMemMapFs()
 			_, path := oneClipPlan(t, fsys, 59.9, 64)
-			tr := fromStored(append([]Cue(nil), heard...), nil, 0, 0, nil)
+			tr := fromStored(append([]timed.Cue(nil), heard...), nil, 0, 0, nil)
 			if got := strings.Join(shownCaptions(t, fsys, path, tr), " "); got != "0.00-2.05 als mich auf dem Schulhof irgendein 2.05-3.50 Typ geschubst hat." {
 				t.Fatalf("the test needs Typ first in the second caption: %s", got)
 			}
@@ -669,12 +671,12 @@ func TestADraggedStartLeavesTheGapARemovedWordDoesNot(t *testing.T) {
 // caption after it to where he heard its next word begin, and the word
 // came back, #598. The start stays where it was let go.
 func TestAStartDraggedOverARemovedWordLeavesItRemoved(t *testing.T) {
-	heard := []Cue{{60, 60.2, "als"}, {60.25, 60.5, "mich"}, {60.55, 60.7, "auf"},
-		{60.75, 60.9, "dem"}, {60.95, 61.4, "Schulhof"}, {61.45, 61.9, "irgendein"},
-		{61.95, 62.2, "Typ"}, {62.25, 62.7, "geschubst"}, {62.75, 63, "hat."}}
+	heard := []timed.Cue{{Start: 60, End: 60.2, Text: "als"}, {Start: 60.25, End: 60.5, Text: "mich"}, {Start: 60.55, End: 60.7, Text: "auf"},
+		{Start: 60.75, End: 60.9, Text: "dem"}, {Start: 60.95, End: 61.4, Text: "Schulhof"}, {Start: 61.45, End: 61.9, Text: "irgendein"},
+		{Start: 61.95, End: 62.2, Text: "Typ"}, {Start: 62.25, End: 62.7, Text: "geschubst"}, {Start: 62.75, End: 63, Text: "hat."}}
 	fsys := afero.NewMemMapFs()
 	_, path := oneClipPlan(t, fsys, 59.9, 64)
-	tr := fromStored(append([]Cue(nil), heard...), nil, 0, 0, nil)
+	tr := fromStored(append([]timed.Cue(nil), heard...), nil, 0, 0, nil)
 	if err := SetWordText(fsys, path, "01", 62.1, "", tr); err != nil {
 		t.Fatal(err)
 	}
@@ -695,12 +697,12 @@ func TestAStartDraggedOverARemovedWordLeavesItRemoved(t *testing.T) {
 // and the block stopped at the caption before, #597. At the app's size of
 // the captions "irgendein" is the last word of the first caption.
 func TestAStartMovesBackOverARemovedWord(t *testing.T) {
-	heard := []Cue{{60, 60.2, "als"}, {60.25, 60.5, "mich"}, {60.55, 60.7, "auf"},
-		{60.75, 60.9, "dem"}, {60.95, 61.4, "Schulhof"}, {61.45, 61.9, "irgendein"},
-		{61.95, 62.2, "Typ"}}
+	heard := []timed.Cue{{Start: 60, End: 60.2, Text: "als"}, {Start: 60.25, End: 60.5, Text: "mich"}, {Start: 60.55, End: 60.7, Text: "auf"},
+		{Start: 60.75, End: 60.9, Text: "dem"}, {Start: 60.95, End: 61.4, Text: "Schulhof"}, {Start: 61.45, End: 61.9, Text: "irgendein"},
+		{Start: 61.95, End: 62.2, Text: "Typ"}}
 	fsys := afero.NewMemMapFs()
 	_, path := oneClipPlan(t, fsys, 59.9, 64)
-	tr := fromStored(append([]Cue(nil), heard...), nil, 0, 0, nil)
+	tr := fromStored(append([]timed.Cue(nil), heard...), nil, 0, 0, nil)
 	if got := strings.Join(shownCaptions(t, fsys, path, tr), " "); got != "0.00-2.05 als mich auf dem Schulhof irgendein 2.05-2.70 Typ" {
 		t.Fatalf("the test needs irgendein at the end of the first caption: %s", got)
 	}
@@ -733,12 +735,12 @@ func TestAStartMovesBackOverARemovedWord(t *testing.T) {
 // heard earlier than its block could not be shown earlier at all. Found
 // by the review of #599.
 func TestAStartMovesBackIntoTheLastWordBefore(t *testing.T) {
-	heard := []Cue{{60, 60.2, "als"}, {60.25, 60.5, "mich"}, {60.55, 60.7, "auf"},
-		{60.75, 60.9, "dem"}, {60.95, 61.4, "Schulhof"}, {61.45, 61.9, "irgendein"},
-		{61.95, 62.2, "Typ"}}
+	heard := []timed.Cue{{Start: 60, End: 60.2, Text: "als"}, {Start: 60.25, End: 60.5, Text: "mich"}, {Start: 60.55, End: 60.7, Text: "auf"},
+		{Start: 60.75, End: 60.9, Text: "dem"}, {Start: 60.95, End: 61.4, Text: "Schulhof"}, {Start: 61.45, End: 61.9, Text: "irgendein"},
+		{Start: 61.95, End: 62.2, Text: "Typ"}}
 	fsys := afero.NewMemMapFs()
 	_, path := oneClipPlan(t, fsys, 59.9, 64)
-	tr := fromStored(append([]Cue(nil), heard...), nil, 0, 0, nil)
+	tr := fromStored(append([]timed.Cue(nil), heard...), nil, 0, 0, nil)
 	for _, step := range []struct {
 		at   float64
 		want string
@@ -762,11 +764,11 @@ func TestAStartMovesBackIntoTheLastWordBefore(t *testing.T) {
 // overflowed.
 func TestARemovedWordKeepsTheRoomItHad(t *testing.T) {
 	fsys := afero.NewMemMapFs()
-	heard := []Cue{{60, 60.2, "als"}, {60.25, 60.5, "mich"}, {60.55, 61.2, "vielleicht"},
-		{61.25, 61.4, "dem"}, {61.45, 61.9, "Schulhof"}, {61.95, 62.4, "irgendein"},
-		{62.45, 62.7, "Typ"}}
+	heard := []timed.Cue{{Start: 60, End: 60.2, Text: "als"}, {Start: 60.25, End: 60.5, Text: "mich"}, {Start: 60.55, End: 61.2, Text: "vielleicht"},
+		{Start: 61.25, End: 61.4, Text: "dem"}, {Start: 61.45, End: 61.9, Text: "Schulhof"}, {Start: 61.95, End: 62.4, Text: "irgendein"},
+		{Start: 62.45, End: 62.7, Text: "Typ"}}
 	_, path := oneClipPlan(t, fsys, 59.9, 63)
-	tr := fromStored(append([]Cue(nil), heard...), nil, 0, 0, nil)
+	tr := fromStored(append([]timed.Cue(nil), heard...), nil, 0, 0, nil)
 	if err := SetWordText(fsys, path, "01", 60.8, "auf", tr); err != nil {
 		t.Fatal(err)
 	}
@@ -779,7 +781,7 @@ func TestARemovedWordKeepsTheRoomItHad(t *testing.T) {
 		t.Errorf("captions\n got %s\nwant %s", got, want)
 	}
 	// And read again from what was heard, the same.
-	again := fromStored(append([]Cue(nil), heard...), nil, 0, 0, nil)
+	again := fromStored(append([]timed.Cue(nil), heard...), nil, 0, 0, nil)
 	if got := laidOf(t, fsys, path, again); got != want {
 		t.Errorf("read again\n got %s\nwant %s", got, want)
 	}
@@ -796,7 +798,7 @@ func TestARemovedWordKeepsTheRoomItHad(t *testing.T) {
 // where it was heard, the same as an undo would put it: its own time, so
 // it is lit while it is said, and no correction left on either word.
 func TestAWordTypedBackGoesWhereItWasHeard(t *testing.T) {
-	heard := []Cue{{10, 10.4, "weil"}, {10.5, 10.8, "das"}, {11, 11.4, "ein"}, {11.5, 12, "echtes"}}
+	heard := []timed.Cue{{Start: 10, End: 10.4, Text: "weil"}, {Start: 10.5, End: 10.8, Text: "das"}, {Start: 11, End: 11.4, Text: "ein"}, {Start: 11.5, End: 12, Text: "echtes"}}
 	for _, c := range []struct {
 		name    string
 		remove  []float64
@@ -816,7 +818,7 @@ func TestAWordTypedBackGoesWhereItWasHeard(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			fsys := afero.NewMemMapFs()
 			_, path := oneClipPlan(t, fsys, 9.9, 12.1)
-			tr := fromStored(append([]Cue(nil), heard...), nil, 0, 0, nil)
+			tr := fromStored(append([]timed.Cue(nil), heard...), nil, 0, 0, nil)
 			for _, at := range c.remove {
 				if err := SetWordText(fsys, path, "01", at, "", tr); err != nil {
 					t.Fatal(err)
@@ -849,7 +851,7 @@ func TestAWordTypedBackGoesWhereItWasHeard(t *testing.T) {
 // back, makes a heard word of two words. Each says which of the two it is,
 // so the caption box can correct or remove one without the other.
 func TestTheWordsOfOneCorrectionSayWhichTheyAre(t *testing.T) {
-	tr := fromStored([]Cue{{10, 10.4, "weil"}, {10.5, 10.8, "das"}, {11, 11.4, "ein"}}, nil, 0, 0, nil)
+	tr := fromStored([]timed.Cue{{Start: 10, End: 10.4, Text: "weil"}, {Start: 10.5, End: 10.8, Text: "das"}, {Start: 11, End: 11.4, Text: "ein"}}, nil, 0, 0, nil)
 	clip := Clip{Segments: []Segment{{Start: 9.9, End: 11.5}}, RemovedWords: RemovedWords{wordKey(11): true},
 		Corrections: map[string]string{wordKey(10): "weil es"}}
 	view := captionsView(Plan{}, clip, tr, nil)
@@ -880,7 +882,7 @@ func TestTheWordsOfOneCorrectionSayWhichTheyAre(t *testing.T) {
 // and highlight them one by one.
 func TestACorrectedWordCanHoldSeveralWords(t *testing.T) {
 	clip := Clip{Segments: []Segment{{Start: 10, End: 12}}}
-	tr := fromStored([]Cue{{10, 10.8, "Und"}, {11, 11.4, "ja"}}, nil, 0, 0, nil)
+	tr := fromStored([]timed.Cue{{Start: 10, End: 10.8, Text: "Und"}, {Start: 11, End: 11.4, Text: "ja"}}, nil, 0, 0, nil)
 	tr.Correct(map[string]string{wordKey(10): "Und da"})
 	got := ClipWords(clip, tr.Words)
 	if len(got) != 3 {
@@ -904,7 +906,7 @@ func TestACorrectedWordCanHoldSeveralWords(t *testing.T) {
 		t.Errorf("the word heard is %+v", heard)
 	}
 	// One word stays one word, whatever it holds.
-	if same := splitWord(Cue{1, 2, "Und"}); len(same) != 1 || same[0].End != 2 {
+	if same := splitWord(timed.Cue{Start: 1, End: 2, Text: "Und"}); len(same) != 1 || same[0].End != 2 {
 		t.Errorf("a single word changed: %v", same)
 	}
 }
@@ -917,7 +919,7 @@ func TestACorrectedWordCanHoldSeveralWords(t *testing.T) {
 // gone when he came back to them.
 func TestEveryWordTypedIntoAShortWordIsShown(t *testing.T) {
 	clip := Clip{Segments: []Segment{{Start: 10, End: 12}}}
-	tr := fromStored([]Cue{{10, 10.4, "hat"}, {10.4, 10.48, "er"}, {10.48, 10.8, "mich"}}, nil, 0, 0, nil)
+	tr := fromStored([]timed.Cue{{Start: 10, End: 10.4, Text: "hat"}, {Start: 10.4, End: 10.48, Text: "er"}, {Start: 10.48, End: 10.8, Text: "mich"}}, nil, 0, 0, nil)
 	tr.Correct(map[string]string{wordKey(10.4): "er hat es dann"})
 	captions := Captions(clip, tr.Words, 40, nil)
 	var said []string
@@ -952,8 +954,8 @@ func TestEveryWordTypedIntoAShortWordIsShown(t *testing.T) {
 func TestAnAddedWordReachesTheCaptions(t *testing.T) {
 	fsys, logs := afero.NewMemMapFs(), "/home/tim/ep.framefairy/logs"
 
-	words := []Cue{{10, 10.4, "mach"}, {10.5, 11.1, "was"}, {11.2, 11.6, "nicht"}}
-	tr := fromStored(append([]Cue(nil), words...), nil, 0, 0, nil)
+	words := []timed.Cue{{Start: 10, End: 10.4, Text: "mach"}, {Start: 10.5, End: 11.1, Text: "was"}, {Start: 11.2, End: 11.6, Text: "nicht"}}
+	tr := fromStored(append([]timed.Cue(nil), words...), nil, 0, 0, nil)
 	plan := `{"clips": [{"id": "01", "slug": "a", "segments": [{"start": 9.9, "end": 11.8}]}]}`
 	path := filepath.Join(logs, "clips.json")
 	_ = afero.WriteFile(fsys, path, []byte(plan), 0o644)
@@ -966,8 +968,8 @@ func TestAnAddedWordReachesTheCaptions(t *testing.T) {
 		}
 		return Captions(clips[0], tr.Of(clips[0]).Words, 40, nil)
 	}
-	said := func() []Cue {
-		var out []Cue
+	said := func() []timed.Cue {
+		var out []timed.Cue
 		for _, c := range captions() {
 			out = append(out, c.Words...)
 		}

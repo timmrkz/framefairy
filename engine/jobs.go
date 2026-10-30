@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"framefairy/engine/timed"
+
 	"github.com/spf13/afero"
 )
 
@@ -489,7 +491,7 @@ func (p *Project) Search(ctx context.Context, req PlanRequest, turn Turn) (plan 
 	stepOf := func(ctx context.Context, step string) (context.Context, func(), error) {
 		return j.turn(ctx, turn, step)
 	}
-	letGo, err := p.hear(ctx, stepOf, Window{req.From, end})
+	letGo, err := p.hear(ctx, stepOf, timed.Window{Start: req.From, End: end})
 	if err != nil {
 		return "", err
 	}
@@ -520,7 +522,7 @@ func (p *Project) TranscribeJob(ctx context.Context, turn Turn) (err error) {
 	stepOf := func(ctx context.Context, step string) (context.Context, func(), error) {
 		return j.turn(ctx, turn, step)
 	}
-	letGo, err := p.hear(ctx, stepOf, Window{0, end})
+	letGo, err := p.hear(ctx, stepOf, timed.Window{Start: 0, End: end})
 	letGo()
 	return err
 }
@@ -533,7 +535,7 @@ func (p *Project) TranscribeJob(ctx context.Context, turn Turn) (err error) {
 // its next step first, see Turn. It is nothing when the job did not have
 // to hear, and when hearing failed.
 func (p *Project) hear(ctx context.Context, turn func(context.Context, string) (context.Context, func(), error),
-	span Window) (letGo func(), err error) {
+	span timed.Window) (letGo func(), err error) {
 	nothing := func() {}
 	// What is unheard at the first turn is the whole of this hearing, so
 	// a turn after the lane was taken back counts on from where the last

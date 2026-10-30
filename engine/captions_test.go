@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"framefairy/engine/timed"
 )
 
 // Times as the caption and transcript files the program writes spell them.
@@ -34,7 +36,7 @@ func TestCaptionTimesRoundTrip(t *testing.T) {
 // program.
 func TestWriteSRTWritesTheCues(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "words.srt")
-	cues := []Cue{{0, 1.234, "Erste Zeile"}, {1.5, 3, "Zweite, mit Komma"}}
+	cues := []timed.Cue{{Start: 0, End: 1.234, Text: "Erste Zeile"}, {Start: 1.5, End: 3, Text: "Zweite, mit Komma"}}
 	if err := WriteSRT(cues, path); err != nil {
 		t.Fatal(err)
 	}

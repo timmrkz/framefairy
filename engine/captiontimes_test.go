@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"framefairy/engine/timed"
+
 	"github.com/spf13/afero"
 )
 
@@ -19,11 +21,11 @@ func timedClip() Clip {
 }
 
 // timedWords are the words of the episode timedClip says.
-func timedWords() []Cue {
-	return []Cue{
-		{10.1, 10.4, "Als"}, {10.4, 10.7, "Kind"}, {10.7, 11.2, "stand"},
-		{11.2, 11.5, "ich"}, {11.5, 12.0, "dort."},
-		{20.2, 20.6, "Und"}, {20.6, 21.4, "dann"},
+func timedWords() []timed.Cue {
+	return []timed.Cue{
+		{Start: 10.1, End: 10.4, Text: "Als"}, {Start: 10.4, End: 10.7, Text: "Kind"}, {Start: 10.7, End: 11.2, Text: "stand"},
+		{Start: 11.2, End: 11.5, Text: "ich"}, {Start: 11.5, End: 12.0, Text: "dort."},
+		{Start: 20.2, End: 20.6, Text: "Und"}, {Start: 20.6, End: 21.4, Text: "dann"},
 	}
 }
 
@@ -82,8 +84,8 @@ func TestACaptionIsShownEarlier(t *testing.T) {
 // where the two met. It used to take it along.
 func TestACaptionShownLaterLeavesTheOneBeforeAlone(t *testing.T) {
 	clip := timedClip()
-	words := []Cue{{10.1, 10.4, "Als"}, {10.4, 10.7, "Kind"}, {10.7, 11.0, "stand."},
-		{11.0, 11.3, "Und"}, {11.3, 11.6, "dann"}, {11.6, 12.0, "ich."}}
+	words := []timed.Cue{{Start: 10.1, End: 10.4, Text: "Als"}, {Start: 10.4, End: 10.7, Text: "Kind"}, {Start: 10.7, End: 11.0, Text: "stand."},
+		{Start: 11.0, End: 11.3, Text: "Und"}, {Start: 11.3, End: 11.6, Text: "dann"}, {Start: 11.6, End: 12.0, Text: "ich."}}
 	natural := Captions(clip, words, 12, nil)
 	if len(natural) < 2 || !near(natural[0].End, natural[1].Start) {
 		t.Fatalf("two captions that meet were wanted: %+v", natural)

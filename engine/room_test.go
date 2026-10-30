@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"framefairy/engine/timed"
+
 	"github.com/spf13/afero"
 )
 
@@ -106,10 +108,10 @@ func TestTheRoomOfTheAPIIsTheContextOrTheBudget(t *testing.T) {
 // A transcript of n lines, each a sentence said over three seconds with a
 // pause after it, so every line is a line of its own.
 func talk(n int) *Transcript {
-	var words []Cue
+	var words []timed.Cue
 	for i := range n {
 		at := float64(i) * 4
-		words = append(words, Cue{at, at + 1.4, "Ich"}, Cue{at + 1.5, at + 3, fmt.Sprintf("erzähle %d.", i)})
+		words = append(words, timed.Cue{Start: at, End: at + 1.4, Text: "Ich"}, timed.Cue{Start: at + 1.5, End: at + 3, Text: fmt.Sprintf("erzähle %d.", i)})
 	}
 	return &Transcript{Words: words}
 }
@@ -134,14 +136,14 @@ func TestAWindowTheModelCannotReadIsRefusedBeforeAnythingIsSent(t *testing.T) {
 }
 
 func TestAWindowHoldsItsClipsAtTheirShortest(t *testing.T) {
-	half := Window{0, 1800}
+	half := timed.Window{Start: 0, End: 1800}
 	if !Holds(half, 12, 20) || !Holds(half, 90, 20) || Holds(half, 91, 20) {
 		t.Error("half an hour holds 90 clips of 20 seconds and no more")
 	}
-	if !Holds(Window{10, 30}, 2, 10) {
+	if !Holds(timed.Window{Start: 10, End: 30}, 2, 10) {
 		t.Error("a window exactly as long as its clips holds them")
 	}
-	if Holds(Window{10, 30}, 2, 10.5) {
+	if Holds(timed.Window{Start: 10, End: 30}, 2, 10.5) {
 		t.Error("a window a second short holds them")
 	}
 }

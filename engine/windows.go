@@ -3,6 +3,8 @@ package engine
 import (
 	"math"
 	"sort"
+
+	"framefairy/engine/timed"
 )
 
 // Where the model has already looked. A search covers the window it was
@@ -12,13 +14,13 @@ import (
 // can be searched, as often as anyone likes.
 
 // MergeWindows puts windows in order and joins the ones that touch.
-func MergeWindows(in []Window) []Window {
+func MergeWindows(in []timed.Window) []timed.Window {
 	if len(in) == 0 {
 		return nil
 	}
-	sorted := append([]Window(nil), in...)
+	sorted := append([]timed.Window(nil), in...)
 	sort.Slice(sorted, func(a, b int) bool { return sorted[a].Start < sorted[b].Start })
-	out := []Window{sorted[0]}
+	out := []timed.Window{sorted[0]}
 	for _, w := range sorted[1:] {
 		last := len(out) - 1
 		if w.Start <= out[last].End {
@@ -32,7 +34,7 @@ func MergeWindows(in []Window) []Window {
 
 // Pass is a part of an episode and how many searches have read it.
 type Pass struct {
-	Window
+	timed.Window
 	Times int
 }
 
@@ -69,7 +71,7 @@ func SearchPasses(plans []PlanSummary, duration float64) []Pass {
 			if n := len(out); n > 0 && out[n-1].Times == times {
 				out[n-1].End = e.at
 			} else {
-				out = append(out, Pass{Window{at, e.at}, times})
+				out = append(out, Pass{timed.Window{Start: at, End: e.at}, times})
 			}
 			at = e.at
 		}
@@ -85,7 +87,7 @@ func SearchPasses(plans []PlanSummary, duration float64) []Pass {
 // over at the start, and so on, so Search always does the same thing and
 // never runs out. A part shorter than least, too short to hold a clip, is
 // passed over.
-func NextWindow(passes []Pass, duration, size, least float64) Window {
+func NextWindow(passes []Pass, duration, size, least float64) timed.Window {
 	var room *Pass
 	for i, p := range passes {
 		if p.End-p.Start < math.Max(least, 0.5) {
@@ -96,7 +98,7 @@ func NextWindow(passes []Pass, duration, size, least float64) Window {
 		}
 	}
 	if room == nil {
-		return Window{0, duration}
+		return timed.Window{Start: 0, End: duration}
 	}
 	// A part only a little longer than a window is taken whole, rather
 	// than leaving a scrap behind that is too short to search.
@@ -104,7 +106,7 @@ func NextWindow(passes []Pass, duration, size, least float64) Window {
 	if span > size*1.5 {
 		span = size
 	}
-	return Window{room.Start, room.Start + span}
+	return timed.Window{Start: room.Start, End: room.Start + span}
 }
 
 // FollowingWindow is where the window goes after a search found its
@@ -115,12 +117,12 @@ func NextWindow(passes []Pass, duration, size, least float64) Window {
 // again. At the end of the episode it starts over at the start, and a
 // scrap at the end shorter than least, too short for a clip, is passed
 // over the same way.
-func FollowingWindow(ended, length, duration, least float64) Window {
+func FollowingWindow(ended, length, duration, least float64) timed.Window {
 	from := ended
 	if duration-from < math.Max(least, 0.5) {
 		from = 0
 	}
-	return Window{from, math.Min(from+math.Max(length, 0), duration)}
+	return timed.Window{Start: from, End: math.Min(from+math.Max(length, 0), duration)}
 }
 
 // placeSteps are the round steps a window the app places lands on, the
@@ -152,12 +154,12 @@ func PlaceStep(duration float64) float64 {
 // behind. The episode's own windows are an even share of it, 30:02 of a
 // little over four hours, and a window that long lay a few seconds off
 // the range picker's lines, which shows as a pixel.
-func OnStep(w Window, length, duration, step, least float64) Window {
+func OnStep(w timed.Window, length, duration, step, least float64) timed.Window {
 	from := math.Min(math.Max(math.Round(w.Start/step)*step, 0), duration)
 	size := math.Max(math.Round(length/step)*step, step)
 	to := math.Min(from+size, duration)
 	if duration-to < math.Max(least, step) {
 		to = duration
 	}
-	return Window{from, to}
+	return timed.Window{Start: from, End: to}
 }

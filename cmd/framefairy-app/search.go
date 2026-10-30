@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"runtime/debug"
 
+	"framefairy/engine/timed"
+
 	"github.com/rs/zerolog"
 
 	"framefairy/engine"
@@ -73,7 +75,7 @@ func (s *FrameFairy) search(path string, req engine.PlanRequest, click string, c
 			_, done := engine.Coverage(s.store.files, p.Source, model)
 			unheard = !done
 		default:
-			unheard = len(engine.Unheard(s.store.files, p.Source, model, engine.Window{Start: req.From, End: req.To})) > 0
+			unheard = len(engine.Unheard(s.store.files, p.Source, model, timed.Window{Start: req.From, End: req.To})) > 0
 		}
 		// It also reads the transcript of the window as it is heard, so
 		// the search finds most of its prompt read.

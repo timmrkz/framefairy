@@ -18,6 +18,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"framefairy/engine/timed"
+
 	"github.com/spf13/afero"
 
 	"framefairy/internal/framewire"
@@ -568,7 +570,7 @@ func (e *Engine) SubtitleFilter(ctx context.Context) (string, error) {
 	// would call back into this function and never return.
 	name := "00_probe-name.ass"
 	if err := e.WriteASS(ctx, []LaidCaption{{Caption: Caption{Start: 0, End: 1, Text: "probe",
-		Words: []Cue{{0, 1, "probe"}}}, Lines: [][]Cue{{{0, 1, "probe"}}}}}, filepath.Join(tmp, name),
+		Words: []timed.Cue{{Start: 0, End: 1, Text: "probe"}}}, Lines: [][]timed.Cue{{{Start: 0, End: 1, Text: "probe"}}}}}, filepath.Join(tmp, name),
 		320, 180, map[string]any{"radius": 0.0, "highlight": 0.0}); err != nil {
 		return "", err
 	}

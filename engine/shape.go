@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 
+	"framefairy/engine/timed"
+
 	"github.com/spf13/afero"
 )
 
@@ -135,7 +137,7 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 	}
 	// The words an edge lands on are the words the captions show, halves
 	// of a hyphenated word and all, see ShowWords.
-	stops := func(from, to float64) []Cue {
+	stops := func(from, to float64) []timed.Cue {
 		s := ResolveStyle(captionStyle(plan, clip))
 		return ShowWords(t.WordsBetween(from-60, to+60), s, t.Language)
 	}
@@ -144,7 +146,7 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 	switch g.Kind {
 	case "trim":
 		start, end := first, last
-		var words []Cue
+		var words []timed.Cue
 		var goes []float64
 		if g.ToWords {
 			words = stops(math.Min(g.From, first), math.Max(g.To, last))
@@ -225,7 +227,7 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 			return nil, -1, renderErr("this clip has no cut number %d", i+1)
 		}
 		from, to := g.From, g.To
-		var words []Cue
+		var words []timed.Cue
 		if g.ToWords {
 			words = stops(from, to)
 			// Where the captions go is read with this cut left out, the
@@ -340,14 +342,14 @@ func (g Gesture) frame() float64 {
 
 // landStart and landEnd are where a clip's first and last edge land: on the
 // nearest word, a little before or after it, or on the frame.
-func (g Gesture) landStart(words []Cue, at, keepPause float64) float64 {
+func (g Gesture) landStart(words []timed.Cue, at, keepPause float64) float64 {
 	if g.ToWords {
 		return SnapStart(words, at, keepPause)
 	}
 	return math.Max(0, g.onFrame(at))
 }
 
-func (g Gesture) landEnd(words []Cue, goes []float64, at, keepPause float64) float64 {
+func (g Gesture) landEnd(words []timed.Cue, goes []float64, at, keepPause float64) float64 {
 	if g.ToWords {
 		return SnapEnd(words, goes, at, keepPause)
 	}

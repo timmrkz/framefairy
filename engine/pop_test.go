@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"framefairy/engine/timed"
+
 	"framefairy/internal/ffmpegtest"
 )
 
@@ -73,7 +75,7 @@ func TestPopScaleIsThePillOnTheFrame(t *testing.T) {
 	source := SourceInfo{FPSNum: 30, FPSDen: 1, Duration: 60}
 	d := &CaptionDrawing{
 		Laid: []LaidCaption{
-			{Caption: Caption{Start: 0, End: 2, Words: []Cue{{0.5, 1.21, "Ich"}, {1.21, 2, "war"}}}},
+			{Caption: Caption{Start: 0, End: 2, Words: []timed.Cue{{Start: 0.5, End: 1.21, Text: "Ich"}, {Start: 1.21, End: 2, Text: "war"}}}},
 		},
 		Clip: Clip{Segments: []Segment{{Start: 10, End: 12}}},
 	}
@@ -100,7 +102,7 @@ func TestThePillAndItsWordLieOverTheLine(t *testing.T) {
 	ffmpegtest.Need(t)
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	clip := Clip{ID: "01", Slug: "over", Segments: []Segment{{Start: 0, End: 2}}}
-	tr := &Transcript{Words: []Cue{{0.2, 0.6, "Das"}, {0.6, 1.2, "respektvoll"}, {1.2, 1.5, "ist."}}, Language: "de"}
+	tr := &Transcript{Words: []timed.Cue{{Start: 0.2, End: 0.6, Text: "Das"}, {Start: 0.6, End: 1.2, Text: "respektvoll"}, {Start: 1.2, End: 1.5, Text: "ist."}}, Language: "de"}
 	d := captionsView(Plan{}, clip, tr, nil).Drawing()
 	track, err := e.CaptionTrack(context.Background(), d.Laid, 540, 960, d.Style, SourceInfo{})
 	if err != nil {

@@ -5,6 +5,8 @@ import (
 	"math"
 	"sort"
 	"strings"
+
+	"framefairy/engine/timed"
 )
 
 // ---------------------------------------------------------------------------
@@ -20,7 +22,7 @@ import (
 type Line struct {
 	Index int
 	// Cues are the line's words.
-	Cues      []Cue
+	Cues      []timed.Cue
 	GapBefore float64
 	// Level is dB relative to the speaker's usual level.
 	Level float64
@@ -79,18 +81,18 @@ func LineBreakPause(maxPause *float64) float64 {
 // end or comma inside it if there is one. A pause between two lines is the
 // only kind of pause the model can choose to keep or drop, so a --max-pause
 // also becomes the pause that ends a line.
-func BuildLines(words []Cue, levels []Reading, maxPause *float64) []Line {
+func BuildLines(words []timed.Cue, levels []timed.Reading, maxPause *float64) []Line {
 	breakAt := splitPause
 	if maxPause != nil {
 		breakAt = *maxPause
 	}
-	var groups [][]Cue
+	var groups [][]timed.Cue
 	for _, word := range words {
 		if strip(word.Text) == "" {
 			continue
 		}
 		if len(groups) == 0 {
-			groups = append(groups, []Cue{word})
+			groups = append(groups, []timed.Cue{word})
 			continue
 		}
 		current := groups[len(groups)-1]
@@ -98,9 +100,9 @@ func BuildLines(words []Cue, levels []Reading, maxPause *float64) []Line {
 		length := previous.End - current[0].Start
 		switch {
 		case word.Start-previous.End >= breakAt:
-			groups = append(groups, []Cue{word})
+			groups = append(groups, []timed.Cue{word})
 		case endsSentence(previous.Text) && length >= sentenceLine:
-			groups = append(groups, []Cue{word})
+			groups = append(groups, []timed.Cue{word})
 		case word.End-current[0].Start > maxLineSeconds:
 			split := len(current)
 			for k := len(current) - 1; k >= 1; k-- {
@@ -117,8 +119,8 @@ func BuildLines(words []Cue, levels []Reading, maxPause *float64) []Line {
 					}
 				}
 			}
-			head := append([]Cue(nil), current[:split]...)
-			tail := append(append([]Cue(nil), current[split:]...), word)
+			head := append([]timed.Cue(nil), current[:split]...)
+			tail := append(append([]timed.Cue(nil), current[split:]...), word)
 			groups[len(groups)-1] = head
 			groups = append(groups, tail)
 		default:
@@ -141,7 +143,7 @@ func BuildLines(words []Cue, levels []Reading, maxPause *float64) []Line {
 
 // measureLevels sets each line's loudness relative to the speaker's usual
 // level.
-func measureLevels(lines []Line, envelope []Reading) {
+func measureLevels(lines []Line, envelope []timed.Reading) {
 	if len(envelope) == 0 || len(lines) == 0 {
 		return
 	}
@@ -277,7 +279,7 @@ func SegmentsFromRanges(ranges [][2]int, lines []Line, keepPause float64,
 	ceiling *float64) []Segment {
 	var segments []Segment
 	for _, pair := range ranges {
-		var runWords []Cue
+		var runWords []timed.Cue
 		for number := pair[0]; number <= pair[1]; number++ {
 			runWords = append(runWords, lines[number-1].Cues...)
 		}
@@ -293,11 +295,11 @@ func SegmentsFromRanges(ranges [][2]int, lines []Line, keepPause float64,
 			after = lines[pair[1]].Start()
 		}
 		sort.SliceStable(runWords, func(i, j int) bool { return runWords[i].Start < runWords[j].Start })
-		pieces := []Span{{runWords[0].Start, runWords[0].End}}
+		pieces := []timed.Span{{Start: runWords[0].Start, End: runWords[0].End}}
 		for i := 1; i < len(runWords); i++ {
 			gap := runWords[i].Start - runWords[i-1].End
 			if ceiling != nil && gap > *ceiling {
-				pieces = append(pieces, Span{runWords[i].Start, runWords[i].End})
+				pieces = append(pieces, timed.Span{Start: runWords[i].Start, End: runWords[i].End})
 			} else {
 				pieces[len(pieces)-1].End = runWords[i].End
 			}
@@ -388,11 +390,11 @@ const (
 // word left a gap that read as a pause, so the caption ended at the word
 // before it and the rest moved on to the next one, and once the gap was
 // closed, the room it left pulled the first word of the next caption up.
-func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Caption {
+func Captions(clip Clip, said []timed.Cue, maxChars int, alone func(string) bool) []Caption {
 	said = nearClip(clip, said)
 	all, allWas := clipWords(clip, said)
 	// The words shown, and the same words on the episode's clock.
-	var words, was []Cue
+	var words, was []timed.Cue
 	// For each of all the words, what it takes on a line, and where it is
 	// among the words shown, or -1 for a word removed.
 	laid := make([]string, len(all))
@@ -409,7 +411,7 @@ func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Ca
 		return nil
 	}
 	type group struct {
-		words []Cue
+		words []timed.Cue
 		alone bool
 		// Where its first and last word are in the words shown.
 		first, last int
@@ -421,7 +423,7 @@ func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Ca
 		firstK, lastK int
 	}
 	var groups []group
-	text := func(ws []Cue) string {
+	text := func(ws []timed.Cue) string {
 		parts := make([]string, len(ws))
 		for i, w := range ws {
 			parts[i] = w.Text
@@ -624,7 +626,7 @@ func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Ca
 // a clip of length seconds shows. A word keeps its own time past the edges
 // of the clip, see clipWords, so a word the start of a clip cuts into is
 // passed in the part of it the clip shows.
-func shownMiddle(w Cue, length float64) float64 {
+func shownMiddle(w timed.Cue, length float64) float64 {
 	return (math.Max(w.Start, 0) + math.Min(w.End, length)) / 2
 }
 
@@ -716,7 +718,7 @@ func moveCaptions(clip Clip, captions []Caption) []Caption {
 // showInTime is caption c with only the words whose middle lies in the time
 // it is shown, by an edge moved by hand, and at least the word nearest it.
 func showInTime(c Caption, length float64) Caption {
-	away := func(w Cue) float64 {
+	away := func(w timed.Cue) float64 {
 		mid := shownMiddle(w, length)
 		if c.startMoved && mid <= c.Start {
 			return c.Start - mid
@@ -726,7 +728,7 @@ func showInTime(c Caption, length float64) Caption {
 		}
 		return 0
 	}
-	var words []Cue
+	var words []timed.Cue
 	near := 0
 	for k, w := range c.Words {
 		if away(w) == 0 {
@@ -740,7 +742,7 @@ func showInTime(c Caption, length float64) Caption {
 		return c
 	}
 	if len(words) == 0 {
-		words = []Cue{c.Words[near]}
+		words = []timed.Cue{c.Words[near]}
 	}
 	parts := make([]string, len(words))
 	for k, w := range words {
@@ -783,9 +785,9 @@ func ClipTime(clip Clip, at float64) float64 {
 
 // SaidWord is the word being said at a moment of a clip, on the episode's
 // clock, out of the words the clip says.
-func SaidWord(clip Clip, words []Cue, at float64) (Cue, bool) {
+func SaidWord(clip Clip, words []timed.Cue, at float64) (timed.Cue, bool) {
 	when := EpisodeTime(clip, at)
-	near, off := Cue{}, math.Inf(1)
+	near, off := timed.Cue{}, math.Inf(1)
 	for _, w := range words {
 		if when >= w.Start && when < w.End {
 			return w, true

@@ -10,6 +10,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"framefairy/engine/timed"
+
 	"github.com/spf13/afero"
 )
 
@@ -151,7 +153,7 @@ func RemoveWord(fsys afero.Fs, planPath, clipID string, at float64, part int, t 
 // them, or a word as it was heard, is the heard word removed from the
 // clip, which keeps its room. t is the clip's words, a copy of its own to
 // change, and heard is one of its heard words.
-func dropWords(corrections map[string]string, removed RemovedWords, heard Cue, parts map[int]bool,
+func dropWords(corrections map[string]string, removed RemovedWords, heard timed.Cue, parts map[int]bool,
 	t *Transcript) error {
 	if removed.removesHeard(t, heard) {
 		return nil
@@ -262,7 +264,7 @@ func correctWord(corrections map[string]string, removed RemovedWords, at float64
 // Each removed word takes one word, the nearest first. Words typed beyond
 // the removed ones there are go to the farthest of them, which is the
 // word they were typed beside.
-func putBack(heard []Cue, i int, text string, removed func(j int) bool) map[int]string {
+func putBack(heard []timed.Cue, i int, text string, removed func(j int) bool) map[int]string {
 	put := map[int]string{i: text}
 	was, now := strings.Fields(heard[i].Text), strings.Fields(text)
 	if len(was) == 0 || len(now) <= len(was) {
@@ -359,7 +361,7 @@ func RemoveCaption(fsys afero.Fs, planPath, clipID string, first float64, t *Tra
 // and which of the words a correction made of it it is, counted from
 // nought, or all of it below nought.
 type shownWord struct {
-	heard Cue
+	heard timed.Cue
 	part  int
 }
 

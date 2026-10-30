@@ -8,18 +8,20 @@ import (
 	"strings"
 	"testing"
 
+	"framefairy/engine/timed"
+
 	"github.com/spf13/afero"
 )
 
 // The transcript reads as sentences: a pause inside one does not split
 // it, a full stop ends it, and every word is in exactly one of them.
 func TestTheTranscriptReadsAsSentences(t *testing.T) {
-	var words []Cue
+	var words []timed.Cue
 	at := 0.0
 	say := func(gap float64, texts ...string) {
 		at += gap
 		for _, w := range texts {
-			words = append(words, Cue{Start: at, End: at + 0.3, Text: w})
+			words = append(words, timed.Cue{Start: at, End: at + 0.3, Text: w})
 			at += 0.4
 		}
 	}
@@ -52,14 +54,14 @@ func TestTheTranscriptReadsAsSentences(t *testing.T) {
 // A long sentence is read in cards of a few seconds, ended at its lines,
 // and never one longer than cardSecondsMost, found by Tim.
 func TestALongSentenceReadsInShortCards(t *testing.T) {
-	var words []Cue
+	var words []timed.Cue
 	at := 0.0
 	for i := range 60 {
 		text := fmt.Sprintf("w%d", i)
 		if i%8 == 7 {
 			text += ","
 		}
-		words = append(words, Cue{Start: at, End: at + 0.3, Text: text})
+		words = append(words, timed.Cue{Start: at, End: at + 0.3, Text: text})
 		at += 0.4
 		// A pause after every twelve words ends a line.
 		if i%12 == 11 {
@@ -87,9 +89,9 @@ func TestALongSentenceReadsInShortCards(t *testing.T) {
 // clip or all out of it, found by Tim. A word is on the side its middle
 // is on.
 func TestACardIsCutAtTheEdgesOfAClip(t *testing.T) {
-	var words []Cue
+	var words []timed.Cue
 	for i, w := range strings.Fields("Und dieser Regenschirm ist zersprungen. Also hat sich einfach zerlegt, ne?") {
-		words = append(words, Cue{Start: float64(i) * 0.4, End: float64(i)*0.4 + 0.3, Text: w})
+		words = append(words, timed.Cue{Start: float64(i) * 0.4, End: float64(i)*0.4 + 0.3, Text: w})
 	}
 	// The clip keeps from between Regenschirm and ist, and the next from
 	// a little before the middle of einfach, which is in it.
@@ -111,7 +113,7 @@ func TestACardIsCutAtTheEdgesOfAClip(t *testing.T) {
 // Tim, who corrected a word of a clip and read it uncorrected in the list.
 func TestTheCardsOfAClipAreItsCaptions(t *testing.T) {
 	fsys, path := editablePlanPath(t)
-	words := append(editableTranscript().Words, Cue{Start: 30, End: 30.4, Text: "Und"}, Cue{Start: 30.5, End: 30.9, Text: "dann."})
+	words := append(editableTranscript().Words, timed.Cue{Start: 30, End: 30.4, Text: "Und"}, timed.Cue{Start: 30.5, End: 30.9, Text: "dann."})
 	tr := fromStored(words, nil, 0, 0, nil)
 	if err := SetWordText(fsys, path, "01", 12, "Dreimal", tr); err != nil {
 		t.Fatal(err)
@@ -134,8 +136,8 @@ func TestTheCardsOfAClipAreItsCaptions(t *testing.T) {
 // between the clip's cards, and in none of its captions.
 func TestWordsCutOutOfAClipAreACardOfTheirOwn(t *testing.T) {
 	fsys, path := editablePlanPath(t)
-	words := append(editableTranscript().Words, Cue{Start: 11.3, End: 11.6, Text: "ähm"})
-	slices.SortFunc(words, func(a, b Cue) int { return cmp.Compare(a.Start, b.Start) })
+	words := append(editableTranscript().Words, timed.Cue{Start: 11.3, End: 11.6, Text: "ähm"})
+	slices.SortFunc(words, func(a, b timed.Cue) int { return cmp.Compare(a.Start, b.Start) })
 	tr := fromStored(words, nil, 0, 0, nil)
 	summary, err := summaryOf(fsys, path)
 	if err != nil {

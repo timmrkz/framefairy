@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"framefairy/engine/timed"
 )
 
 // underwayLog is a log that keeps every list of clips on the way it is
@@ -259,10 +261,10 @@ func TestWhatThePlayheadProposes(t *testing.T) {
 	for i, text := range texts {
 		start := float64(i) * 5
 		words := strings.Fields(text)
-		var cues []Cue
+		var cues []timed.Cue
 		for k, w := range words {
 			at := start + float64(k)*(4.5/float64(len(words)))
-			cues = append(cues, Cue{at, at + 4.5/float64(len(words)), w})
+			cues = append(cues, timed.Cue{Start: at, End: at + 4.5/float64(len(words)), Text: w})
 		}
 		lines = append(lines, Line{Index: i + 1, Cues: cues})
 	}

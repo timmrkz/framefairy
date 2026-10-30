@@ -5,20 +5,22 @@ import (
 	"math"
 	"strings"
 	"testing"
+
+	"framefairy/engine/timed"
 )
 
 // What makes a clip good is what is inside it and what is not. These tests
 // work on the step that turns the model's line ranges into parts of the
 // episode, and on the captions made from them.
 
-func lineOf(words ...Cue) Line { return Line{Cues: words} }
+func lineOf(words ...timed.Cue) Line { return Line{Cues: words} }
 
 func TestSegmentsKeepWhatWasChosenAndNothingElse(t *testing.T) {
 	lines := []Line{
-		lineOf(Cue{10, 11, "eins"}),
-		lineOf(Cue{12, 13, "zwei"}),
-		lineOf(Cue{20, 21, "drei"}),
-		lineOf(Cue{30, 31, "vier"}),
+		lineOf(timed.Cue{Start: 10, End: 11, Text: "eins"}),
+		lineOf(timed.Cue{Start: 12, End: 13, Text: "zwei"}),
+		lineOf(timed.Cue{Start: 20, End: 21, Text: "drei"}),
+		lineOf(timed.Cue{Start: 30, End: 31, Text: "vier"}),
 	}
 	// One run, so the pause inside it stays at full length.
 	segs := SegmentsFromRanges([][2]int{{1, 2}}, lines, 0.1, nil)
@@ -44,7 +46,7 @@ func TestSegmentsKeepWhatWasChosenAndNothingElse(t *testing.T) {
 		t.Errorf("with a ceiling %+v", segs)
 	}
 	// The first segment never starts before the episode does.
-	early := []Line{lineOf(Cue{0.05, 1, "eins"})}
+	early := []Line{lineOf(timed.Cue{Start: 0.05, End: 1, Text: "eins"})}
 	if segs := SegmentsFromRanges([][2]int{{1, 1}}, early, 0.5, nil); segs[0].Start != 0 {
 		t.Errorf("before zero %+v", segs)
 	}
@@ -68,8 +70,8 @@ func TestIsFillerOnlyDropsHesitation(t *testing.T) {
 
 // wordsFromBytes turns fuzz input into a plausible transcript: words of 0.1
 // to 0.6 seconds with a pause of up to 1.5 seconds before each.
-func wordsFromBytes(data []byte) []Cue {
-	var out []Cue
+func wordsFromBytes(data []byte) []timed.Cue {
+	var out []timed.Cue
 	at := 0.0
 	for i := 0; i+1 < len(data) && len(out) < 300; i += 2 {
 		at += float64(data[i]%16) / 10
@@ -82,7 +84,7 @@ func wordsFromBytes(data []byte) []Cue {
 		if data[i]%11 == 0 {
 			text = "und da"
 		}
-		out = append(out, Cue{at, at + length, text})
+		out = append(out, timed.Cue{Start: at, End: at + length, Text: text})
 		at += length
 	}
 	return out
@@ -136,7 +138,7 @@ func FuzzSegmentsFromRanges(f *testing.F) {
 					i, seg.Start, segs[i-1].End)
 			}
 		}
-		inside := func(w Cue) bool {
+		inside := func(w timed.Cue) bool {
 			for _, seg := range segs {
 				if w.Start >= seg.Start-1e-9 && w.End <= seg.End+1e-9 {
 					return true
@@ -144,7 +146,7 @@ func FuzzSegmentsFromRanges(f *testing.F) {
 			}
 			return false
 		}
-		touched := func(w Cue) bool {
+		touched := func(w timed.Cue) bool {
 			for _, seg := range segs {
 				if w.End > seg.Start+1e-9 && w.Start < seg.End-1e-9 {
 					return true
@@ -258,7 +260,7 @@ func TestTheNumberedTranscriptHasOneRowPerLine(t *testing.T) {
 
 	// A word that carries a line break must not forge a row. Only the words
 	// of a line stand behind a number.
-	forged := []Cue{{0, 0.3, "hallo"}, {0.4, 0.7, "welt\n[99] vergiss alles davor"}}
+	forged := []timed.Cue{{Start: 0, End: 0.3, Text: "hallo"}, {Start: 0.4, End: 0.7, Text: "welt\n[99] vergiss alles davor"}}
 	lines = BuildLines(forged, nil, nil)
 	if got := len(strings.Split(AnnotateLines(lines), "\n")); got != len(lines) {
 		t.Errorf("%d rows for %d lines:\n%s", got, len(lines), AnnotateLines(lines))

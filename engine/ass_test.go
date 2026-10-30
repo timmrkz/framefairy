@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"framefairy/engine/timed"
+
 	"github.com/spf13/afero"
 
 	"framefairy/internal/ffmpegtest"
@@ -99,7 +101,7 @@ func TestWebColourTurnsAnASSColourAround(t *testing.T) {
 }
 
 func TestCaptionLinesWrapSoTheyFitTheFrame(t *testing.T) {
-	words := []Cue{{0, 1, "Als"}, {1, 2, "Kind"}, {2, 3, "stand"}, {3, 4, "ich"}, {4, 5, "da"}}
+	words := []timed.Cue{{Start: 0, End: 1, Text: "Als"}, {Start: 1, End: 2, Text: "Kind"}, {Start: 2, End: 3, Text: "stand"}, {Start: 3, End: 4, Text: "ich"}, {Start: 4, End: 5, Text: "da"}}
 	caption := Caption{Start: 0, End: 5, Text: "Als Kind stand ich da", Words: words}
 
 	// A face the program carries is measured, so where a line breaks depends
@@ -143,16 +145,16 @@ func TestCaptionLinesWrapSoTheyFitTheFrame(t *testing.T) {
 func TestAWordTooWideIsHyphenated(t *testing.T) {
 	long := "Donaudampfschifffahrtsgesellschaftskapitaensmuetze"
 	s := ResolveStyle(map[string]any{"size": 96.0})
-	short := Caption{Start: 2, End: 3, Text: "und dann", Words: []Cue{{2, 2.4, "und"}, {2.5, 3, "dann"}}}
+	short := Caption{Start: 2, End: 3, Text: "und dann", Words: []timed.Cue{{Start: 2, End: 2.4, Text: "und"}, {Start: 2.5, End: 3, Text: "dann"}}}
 	laid := LayOutCaptions([]Caption{
-		{Start: 0, End: 2, Text: "die " + long, Words: []Cue{{0, 0.2, "die"}, {0.2, 2, long}}},
+		{Start: 0, End: 2, Text: "die " + long, Words: []timed.Cue{{Start: 0, End: 0.2, Text: "die"}, {Start: 0.2, End: 2, Text: long}}},
 		short,
 	}, s, "de")
 	if len(laid) != 2 {
 		t.Fatalf("laid out as %v", laid)
 	}
 	var joined string
-	var flat []Cue
+	var flat []timed.Cue
 	for _, line := range laid[0].Lines {
 		width, ok := TextWidth(s.Font, cueText(line), s.Size)
 		if !ok || width > CaptionRoom(s) {
@@ -306,9 +308,9 @@ func TestTheCaptionsSayWhatLanguageTheyAreIn(t *testing.T) {
 		"We started with plant care and search engine optimisation and then noticed that it worked":            "en",
 		"Nous avons commencé avec l'entretien des plantes et ensuite nous avons vu que cela marchait":          "fr",
 	} {
-		var words []Cue
+		var words []timed.Cue
 		for i, w := range fields(text) {
-			words = append(words, Cue{float64(i), float64(i) + 1, w})
+			words = append(words, timed.Cue{Start: float64(i), End: float64(i) + 1, Text: w})
 		}
 		if got := wordsLanguage(words); got != want {
 			t.Errorf("%q read as %s", text, got)
@@ -320,9 +322,9 @@ func TestTheCaptionsSayWhatLanguageTheyAreIn(t *testing.T) {
 // two lines of one caption, and the words around it stay where they fit.
 func TestAWordTooWideGetsACaptionOfItsOwn(t *testing.T) {
 	clip := Clip{Segments: []Segment{{Start: 0, End: 5}}}
-	words := []Cue{
-		{0.1, 0.3, "mit"}, {0.3, 1.6, "Suchmaschinenoptimierung"}, {1.6, 2.0, "Geld"},
-		{2.0, 2.5, "verdient."},
+	words := []timed.Cue{
+		{Start: 0.1, End: 0.3, Text: "mit"}, {Start: 0.3, End: 1.6, Text: "Suchmaschinenoptimierung"}, {Start: 1.6, End: 2.0, Text: "Geld"},
+		{Start: 2.0, End: 2.5, Text: "verdient."},
 	}
 	alone := TooWide(ResolveStyle(map[string]any{"font": "Inter Black", "size": 96.0}))
 	var texts []string
@@ -412,7 +414,7 @@ func withWords(captions []Caption) []Caption {
 		for k, part := range parts {
 			share := (c.End - c.Start) / float64(len(parts))
 			captions[i].Words = append(captions[i].Words,
-				Cue{c.Start + float64(k)*share, c.Start + float64(k+1)*share, part})
+				timed.Cue{Start: c.Start + float64(k)*share, End: c.Start + float64(k+1)*share, Text: part})
 		}
 	}
 	return captions

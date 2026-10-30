@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"framefairy/engine/timed"
+
 	"github.com/spf13/afero"
 
 	"framefairy/internal/ffmpegtest"
@@ -243,7 +245,7 @@ func TestMeasureLevelsGoesWhereTheClipTimelineLooks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(first) != 1 || first[0][0] != int(50/FrameSeconds) {
+	if len(first) != 1 || first[0][0] != int(50/timed.FrameSeconds) {
 		t.Errorf("measured first %v, want from 50 s, where the clip timeline showed", partSeconds(first))
 	}
 	if moved == nil || covers(moved, 0, 1) || covers(moved, 20, 21) || covers(moved, 50, 60) {
@@ -276,7 +278,7 @@ func TestMeasureLevelsGoesWhereTheClipTimelineLooks(t *testing.T) {
 		t.Errorf("frames differ by up to %.2f dB between the two", worst)
 		for i := range whole.Frames {
 			if d := math.Abs(float64(whole.Frames[i] - jumped.Frames[i])); d > 0.3 {
-				t.Logf("frame %d (%.2f s): %.2f from the start, %.2f jumped", i, float64(i)*FrameSeconds, whole.Frames[i], jumped.Frames[i])
+				t.Logf("frame %d (%.2f s): %.2f from the start, %.2f jumped", i, float64(i)*timed.FrameSeconds, whole.Frames[i], jumped.Frames[i])
 			}
 		}
 	}
@@ -307,7 +309,7 @@ func TestMeasureLevelsCarriesOn(t *testing.T) {
 	}
 	e.levelsReads = 0
 	had := ReadLevels(disk, source)
-	if had.Done || len(had.Parts) != 1 || had.Parts[0][0] != int(15/FrameSeconds) {
+	if had.Done || len(had.Parts) != 1 || had.Parts[0][0] != int(15/timed.FrameSeconds) {
 		t.Fatalf("cut off with %v, done %v", partSeconds(had.Parts), had.Done)
 	}
 	if st := Status(disk, source, "", nil); st.MeasuredAll || st.Measured <= 0 || len(st.MeasuredParts) == 0 {
@@ -334,7 +336,7 @@ func TestMeasureLevelsCarriesOn(t *testing.T) {
 // then the start.
 func TestWhereToMeasureNext(t *testing.T) {
 	st := &levelState{end: -1}
-	at := func(s float64) int { return int(s / FrameSeconds) }
+	at := func(s float64) int { return int(s / timed.FrameSeconds) }
 	for n := at(10); n < at(20); n++ {
 		st.put(n, -20)
 	}
@@ -365,7 +367,7 @@ func TestWhereToMeasureNext(t *testing.T) {
 
 func covers(parts [][2]int, from, to float64) bool {
 	for _, p := range parts {
-		if float64(p[0])*FrameSeconds <= from && float64(p[1])*FrameSeconds >= to {
+		if float64(p[0])*timed.FrameSeconds <= from && float64(p[1])*timed.FrameSeconds >= to {
 			return true
 		}
 	}
@@ -399,7 +401,7 @@ func TestLevelsOverATranscript(t *testing.T) {
 func TestAMeasuringLeavesOnlyForAView(t *testing.T) {
 	st := &levelState{end: -1}
 	view := func() (float64, float64) { return 10, 20 }
-	start := int(10 / FrameSeconds)
+	start := int(10 / timed.FrameSeconds)
 	if st.leave(start, view) {
 		t.Error("a measuring at the start of the view left it")
 	}
@@ -409,13 +411,13 @@ func TestAMeasuringLeavesOnlyForAView(t *testing.T) {
 	if st.leave(max(start-levelsLead, start), view) {
 		t.Error("a measuring still in the part it throws away left for where it was going")
 	}
-	if !st.leave(int(50/FrameSeconds), view) {
+	if !st.leave(int(50/timed.FrameSeconds), view) {
 		t.Error("a measuring elsewhere stayed while the view had nothing")
 	}
-	for n := start; n < int(20/FrameSeconds); n++ {
+	for n := start; n < int(20/timed.FrameSeconds); n++ {
 		st.put(n, -20)
 	}
-	if st.leave(int(50/FrameSeconds), view) {
+	if st.leave(int(50/timed.FrameSeconds), view) {
 		t.Error("a measuring left for a view measured already")
 	}
 }

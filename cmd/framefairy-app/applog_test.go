@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	"framefairy/engine/timed"
+
 	"github.com/rs/zerolog"
 	"github.com/spf13/afero"
 
@@ -445,7 +447,7 @@ func heardEpisode(t *testing.T, svc *FrameFairy, path string, seconds float64, w
 	if err := afero.WriteFile(p.Files, filepath.Join(p.LogsDir(), engine.TranscriptName(nil)), body, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	frames := make([]byte, 4*int(seconds/engine.FrameSeconds))
+	frames := make([]byte, 4*int(seconds/timed.FrameSeconds))
 	if err := afero.WriteFile(p.Files, filepath.Join(p.LogsDir(), "words.frames"), frames, 0o644); err != nil {
 		t.Fatal(err)
 	}

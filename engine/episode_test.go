@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"testing"
 
+	"framefairy/engine/timed"
+
 	"github.com/spf13/afero"
 )
 
@@ -545,7 +547,7 @@ func TestWhatIsSaidIsWhereAClipMadeByHandCanBe(t *testing.T) {
 		}
 	}
 	floor := -50.0
-	heard := fromStored([]Cue{{0.6, 1.8, "Es"}, {1.8, 3.6, "war."}}, frames, 0, -40, &floor)
+	heard := fromStored([]timed.Cue{{Start: 0.6, End: 1.8, Text: "Es"}, {Start: 1.8, End: 3.6, Text: "war."}}, frames, 0, -40, &floor)
 	lines := BuildLines(heard.Words, heard.Levels(), nil)
 	said := saidOf(lines)
 	if said == nil || said[0] <= 0.6 || said[1] >= 3.6 {

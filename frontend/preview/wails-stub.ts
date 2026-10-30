@@ -1800,7 +1800,7 @@ const Answers = {
         const known = (t: number) => t <= heardTo || parts.some(([a, b]) => t >= a && t < b);
         // Loudness is measured every ten milliseconds and no finer, and
         // a bucket is the loudest measurement that falls in it. That is
-        // engine.FrameSeconds and Transcript.Peaks, and the stub has to do
+        // timed.FrameSeconds and Transcript.Peaks, and the stub has to do
         // the same or it cannot be zoomed in past the measurement, which
         // is the one place the waveform looked like a display with too few
         // pixels. It used to answer with exactly as many smooth values as

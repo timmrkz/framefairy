@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"framefairy/engine/timed"
 )
 
 // The prompt files of one message fill in: the transcript and the count
@@ -270,7 +272,7 @@ func TestEveryPromptAsksWhatTestdataSays(t *testing.T) {
 	base := PlanOptions{Count: 6, MinLen: 20, MaxLen: 30}
 	with := base
 	with.Context = "Ein Podcast über erste Erinnerungen."
-	with.Taken = []Window{{Start: 0, End: 1.1}}
+	with.Taken = []timed.Window{{Start: 0, End: 1.1}}
 	fromFiles := []Recipe{linesRecipe, heartRecipe, heartOpeningRecipe, heartLeanRecipe, pointsRecipe, middleRecipe}
 	if files, err := promptFiles.ReadDir("prompts"); err != nil || len(files) != len(fromFiles) {
 		t.Fatalf("%d prompt files, %d of them held to what they ask: %v", len(files), len(fromFiles), err)

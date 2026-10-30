@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"framefairy/engine/timed"
+
 	"github.com/spf13/afero"
 )
 
@@ -19,10 +21,10 @@ const captionPlan = `{
 
 // captionHeard says two sentences with a pause between, so the clip has a
 // caption for each.
-func captionHeard() []Cue {
-	return []Cue{{60, 60.4, "Da"}, {60.45, 61, "stand"}, {61.05, 61.4, "ein"},
-		{61.45, 62.1, "Typ"}, {62.15, 62.4, "auf"}, {62.45, 63, "Schulhof."},
-		{64.2, 64.6, "Und"}, {64.65, 65.1, "dann"}, {65.15, 65.6, "kam"}}
+func captionHeard() []timed.Cue {
+	return []timed.Cue{{Start: 60, End: 60.4, Text: "Da"}, {Start: 60.45, End: 61, Text: "stand"}, {Start: 61.05, End: 61.4, Text: "ein"},
+		{Start: 61.45, End: 62.1, Text: "Typ"}, {Start: 62.15, End: 62.4, Text: "auf"}, {Start: 62.45, End: 63, Text: "Schulhof."},
+		{Start: 64.2, End: 64.6, Text: "Und"}, {Start: 64.65, End: 65.1, Text: "dann"}, {Start: 65.15, End: 65.6, Text: "kam"}}
 }
 
 func captionPlanPath(t *testing.T) (afero.Fs, string) {
@@ -100,10 +102,10 @@ func TestRemovingACaptionThatIsNotThereIsRefused(t *testing.T) {
 // grew across the place, which read as the two merging. Found by Tim.
 func TestRemovingAnyCaptionLeavesTheOthersAsTheyWere(t *testing.T) {
 	text := "Ich habe ihn dort geschlagen und dann habe ich so Judostyle den Arm hochgerissen und dieser Regenschirm ist zersprungen."
-	var heard []Cue
+	var heard []timed.Cue
 	at := 60.0
 	for _, w := range strings.Fields(text) {
-		heard = append(heard, Cue{at, at + 0.3, w})
+		heard = append(heard, timed.Cue{Start: at, End: at + 0.3, Text: w})
 		at += 0.35
 	}
 	tr := fromStored(heard, nil, 0, 0, nil)

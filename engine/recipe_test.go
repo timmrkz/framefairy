@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"framefairy/engine/timed"
 )
 
 // The default recipe is middle with the pauses marked, Tim's choice of
@@ -87,10 +89,10 @@ func TestSentencesThatFollowEachOtherAreOneRun(t *testing.T) {
 }
 
 func speech(start, gap float64, words ...string) Line {
-	var cues []Cue
+	var cues []timed.Cue
 	at := start
 	for _, w := range words {
-		cues = append(cues, Cue{Start: at, End: at + 0.3, Text: w})
+		cues = append(cues, timed.Cue{Start: at, End: at + 0.3, Text: w})
 		at += 0.4
 	}
 	return Line{Cues: cues, GapBefore: gap}

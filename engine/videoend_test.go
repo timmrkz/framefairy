@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"framefairy/engine/timed"
+
 	"github.com/spf13/afero"
 )
 
@@ -14,8 +16,8 @@ const nearTheEndPlan = `{"source": "ep.mp4", "clips": [{"id": "01", "slug": "x",
 
 var (
 	nearTheEnd      = SourceInfo{FPSNum: 25, FPSDen: 1, Duration: 21.52}
-	nearTheEndWords = fromStored([]Cue{
-		{10, 10.5, "eins"}, {12, 13.8, "zwei"}, {19.2, 20.8, "drei"}, {21.1, 21.45, "vier"},
+	nearTheEndWords = fromStored([]timed.Cue{
+		{Start: 10, End: 10.5, Text: "eins"}, {Start: 12, End: 13.8, Text: "zwei"}, {Start: 19.2, End: 20.8, Text: "drei"}, {Start: 21.1, End: 21.45, Text: "vier"},
 	}, nil, 0, 0, nil)
 )
 
