@@ -97,22 +97,22 @@ describe("the loop switched while playing", () => {
 
 });
 
-// A clip edge or a cut dragged while the clip plays. A running play is
-// never changed in place, rule 6 of docs/VIDEO-PREVIEW.md: it goes on with
-// the program it started with, and the next play plays the new one. It was
-// started again at every step of the hand, and Tim saw the picture, the
-// sound and the playhead stutter.
+// A clip edge or a cut dragged while the clip plays, or put back by an
+// undo. The play takes in the clip as it is now and goes on, rule 6 of
+// docs/VIDEO-PREVIEW.md. It was started again at every step of the hand,
+// and Tim saw the picture, the sound and the playhead stutter. Then it kept
+// the clip it started with, and an undo while it played was not heard.
 describe("the pieces changed while playing", () => {
   const wanted = (q: FrameQueue) => (q as unknown as { wantedKey: string }).wantedKey;
 
-  test("change nothing that plays", () => {
+  test("are taken in without starting the play again", () => {
     const { q, said } = playing(58.2);
     q.seek(58.2, [clip, false]);
     said.length = 0;
     q.setProgram([clip[0]], false);
     q.setProgram([{ start: clip[0].start, end: clip[0].end - 0.5 }], true);
     expect(said).toEqual([]);
-    expect(wanted(q)).toBe(JSON.stringify([clip, false]));
+    expect(wanted(q)).toBe(JSON.stringify([[{ start: clip[0].start, end: clip[0].end - 0.5 }], true]));
   });
 
   test("are what the next play plays", () => {
@@ -125,13 +125,15 @@ describe("the pieces changed while playing", () => {
     expect(wanted(q)).toBe(JSON.stringify([[clip[0]], false]));
   });
 
-  test("and put back as they were, change nothing either", () => {
+  // Tim's undo: the end pulled in while the clip played, then put back.
+  // The play plays the clip as it is again, to its old end.
+  test("and put back by an undo, play as they were", () => {
     const { q, said } = playing(58.2);
     q.seek(58.2, [clip, false]);
+    said.length = 0;
     q.setProgram([clip[0]], false);
     q.setProgram(clip, false);
-    said.length = 0;
-    q.seek(58.5);
+    expect(said).toEqual([]);
     expect(wanted(q)).toBe(JSON.stringify([clip, false]));
   });
 });
@@ -598,5 +600,129 @@ describe("sound handed to the sound card late", () => {
     expect(q.stats.lateSound).toBe(1010);
     expect(q.stats.lateSoundAt).toHaveLength(1000);
     expect(q.stats.lateSoundAt[0]).toEqual([2000, 2050]);
+  });
+});
+
+describe("a frame decoded for a play", () => {
+  // A play asks for what lies over each frame as it comes out of the
+  // decoder, before its turn on screen, so its captions are on their way
+  // while the frames before it are shown, issue #288. The order is read,
+  // not the time it takes, so no machine is too busy for it, issue #338.
+  test("asks for what lies over it before it is shown", () => {
+    const q = new FrameQueue(
+      canvas(),
+      "/episode.mp4",
+      movieOf({ duration: 120, width: 2, height: 2, grid: { origin: 0, start: 0, num: 25, den: 1, count: 3000 } }),
+    );
+    const inside = q as unknown as { video: unknown; frameOut(slot: unknown, frame: unknown): void };
+    inside.video = { width: 2, height: 2, samples: { pts: [0, 1, 2], order: [0, 1, 2], timescale: 25 } };
+    const asked: number[] = [];
+    const drawn: number[] = [];
+    q.over = {
+      at: (frame) => {
+        drawn.push(frame);
+        return null;
+      },
+      coming: (frame) => asked.push(frame),
+    };
+    const slot = { fed: new Map([[80000, 2]]), run: { id: 1, lastRank: 2 }, firstRank: 0, coming: 1, keeper: { offer: () => true }, ready: [] as unknown[] };
+    inside.frameOut(slot, { timestamp: 80000, close() {} });
+    expect(slot.ready).toHaveLength(1);
+    expect(asked).toEqual([2 / 25]);
+    expect(drawn).toEqual([]);
+  });
+});
+
+describe("the clock a play runs on", () => {
+  function queue() {
+    return new FrameQueue(
+      canvas(),
+      "/episode.mp4",
+      movieOf({ duration: 120, width: 2, height: 2, grid: { origin: 0, start: 0, num: 25, den: 1, count: 3000 } }),
+    );
+  }
+
+  test("is the sound card's in the app", () => {
+    expect(queue().playClock(3.2, 3.04, false)).toBe(3.2);
+  });
+
+  // The page the walks run on hands in the walk's clock, see
+  // preview/clock.ts, and every queue made after it plays on it.
+  test("is the one handed in for every queue made after", () => {
+    const app = FrameQueue.clock;
+    const told: unknown[] = [];
+    FrameQueue.clock = (play) => (heard, unshown, coming) => {
+      told.push([play, heard, unshown, coming]);
+      return unshown;
+    };
+    try {
+      const q = queue();
+      expect(q.playClock(3.2, 3.04, true)).toBe(3.04);
+      expect(told).toEqual([[q, 3.2, 3.04, true]]);
+    } finally {
+      FrameQueue.clock = app;
+    }
+    expect(queue().playClock(3.2, 3.04, false)).toBe(3.2);
+  });
+
+  // The play as the clock is told it: frames 0.2 s apart from 35 s, of
+  // one run, with the frame of rank 102 on screen. asked is how many
+  // frames the run's decoder has been asked for and not given yet.
+  function standing(k: number, ready: number[] = [], thisPlay = true, asked = 1) {
+    const inside = queue() as unknown as {
+      k: number;
+      shown: unknown;
+      slots: unknown;
+      putFor: number;
+      ticket: number;
+      unshown(plan: unknown): { at: number; coming: boolean };
+    };
+    inside.k = k;
+    inside.putFor = thisPlay ? inside.ticket : inside.ticket - 1;
+    inside.shown = { run: 0, rank: 102 };
+    inside.slots = [{ run: { id: 0 }, ready: ready.map((rank) => ({ rank })), decoder: { decodeQueueSize: asked } }];
+    return inside.unshown({
+      need: (k: number) => (k >= 0 && k < 10 ? { run: 0, rank: 100 + k } : null),
+      at: (k: number) => (k >= 0 && k < 10 ? 35 + k * 0.2 : NaN),
+    });
+  }
+
+  test("is told of the frame after the one on screen", () => {
+    for (const k of [2, 3]) {
+      const next = standing(k);
+      expect(next.at).toBeCloseTo(35.6);
+      expect(next.coming).toBe(false);
+    }
+  });
+
+  // A pause puts up the frame that holds the playhead, which can be the
+  // one after the frame the play had due, see hold. The walk's clock
+  // stood on the frame due, which never came again since the one after it
+  // was up, and held the sound card for good: four walks hung in CI after
+  // a pause and a play on.
+  test("is told of the frame past one a pause put up ahead of the one due", () => {
+    expect(standing(1).at).toBeCloseTo(35.6);
+  });
+
+  // Each plan counts its runs from 0, so the frame on screen from before
+  // this play says nothing of the frames of this one.
+  test("is told of the frame due when the frame on screen is from before the play", () => {
+    expect(standing(1, [], false).at).toBeCloseTo(35.2);
+  });
+
+  // A frame no decoder is working on never comes: the decoder gave
+  // nothing for it, or its run has no decoder. Stood on, the play froze
+  // with the sound card held and the walk hung, as four did once in
+  // pull request #589. The clock is told of no frame, so a walk goes by
+  // the sound card's time the way the app plays, and its own checks see
+  // what is wrong.
+  test("is told of no frame when no decoder is working on it", () => {
+    expect(standing(2, [], true, 0).at).toBe(Infinity);
+  });
+
+  test("is told when the frame is decoded and waiting", () => {
+    const next = standing(2, [103]);
+    expect(next.at).toBeCloseTo(35.6);
+    expect(next.coming).toBe(true);
   });
 });

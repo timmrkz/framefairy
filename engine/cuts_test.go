@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"framefairy/engine/timed"
+
 	"github.com/spf13/afero"
 )
 
@@ -34,10 +36,10 @@ const cutsPlan = `{
 }`
 
 func cutsTranscript() *Transcript {
-	return &Transcript{Words: []Cue{
-		{10, 10.5, "eins"}, {11, 11.5, "zwei"}, {14, 14.5, "drei"}, {15.2, 15.8, "vier"},
-		{20.1, 20.6, "fünf"}, {20.7, 21, "sechs"},
-		{24.1, 24.6, "sieben"}, {25, 25.6, "acht"},
+	return &Transcript{Words: []timed.Cue{
+		{Start: 10, End: 10.5, Text: "eins"}, {Start: 11, End: 11.5, Text: "zwei"}, {Start: 14, End: 14.5, Text: "drei"}, {Start: 15.2, End: 15.8, Text: "vier"},
+		{Start: 20.1, End: 20.6, Text: "fünf"}, {Start: 20.7, End: 21, Text: "sechs"},
+		{Start: 24.1, End: 24.6, Text: "sieben"}, {Start: 25, End: 25.6, Text: "acht"},
 	}}
 }
 
@@ -318,7 +320,7 @@ func TestACutThatSwallowsAPieceDropsIt(t *testing.T) {
 	fsys, path := writePlanAt(t, `{"clips": [{"id": "01", "segments": [
       {"start": 10.0, "end": 11.0}, {"start": 12.0, "end": 13.0},
       {"start": 14.0, "end": 16.0}], "words": []}]}`)
-	tr := &Transcript{Words: []Cue{{10, 10.8, "eins"}, {14.2, 15.8, "zwei"}}}
+	tr := &Transcript{Words: []timed.Cue{{Start: 10, End: 10.8, Text: "eins"}, {Start: 14.2, End: 15.8, Text: "zwei"}}}
 	if err := CutClip(fsys, path, "01", 11.5, 13.5, tr, 0.1, ToWords); err != nil {
 		t.Fatal(err)
 	}
@@ -560,9 +562,9 @@ func lastDecision(t *testing.T, records *Records) DecisionRecord {
 // The transcript for the fixture. The words sit either side of the model's
 // cut and inside the second piece, so a cut can be made where it made none.
 func trainingTranscript() *Transcript {
-	return &Transcript{Words: []Cue{
-		{10.1, 11.8, "eins"},
-		{14.1, 15.0, "zwei"}, {17.0, 18.0, "drei"}, {18.2, 19.8, "vier"},
+	return &Transcript{Words: []timed.Cue{
+		{Start: 10.1, End: 11.8, Text: "eins"},
+		{Start: 14.1, End: 15.0, Text: "zwei"}, {Start: 17.0, End: 18.0, Text: "drei"}, {Start: 18.2, End: 19.8, Text: "vier"},
 	}}
 }
 
@@ -682,8 +684,8 @@ func TestCuttingByHandIsRecordedAsTrainingData(t *testing.T) {
 // would show it twice.
 func TestAWordACutPartsIsCaptionedOnce(t *testing.T) {
 	clip := Clip{Segments: []Segment{{Start: 10, End: 14.2}, {Start: 14.35, End: 16}}}
-	said := []Cue{{13, 13.5, "zwei"}, {14, 14.5, "drei"}, {15, 15.5, "vier"}}
-	var drei []Cue
+	said := []timed.Cue{{Start: 13, End: 13.5, Text: "zwei"}, {Start: 14, End: 14.5, Text: "drei"}, {Start: 15, End: 15.5, Text: "vier"}}
+	var drei []timed.Cue
 	for _, w := range ClipWords(clip, said) {
 		if w.Text == "drei" {
 			drei = append(drei, w)
@@ -699,11 +701,11 @@ func TestAWordACutPartsIsCaptionedOnce(t *testing.T) {
 // of the word as it is said, not of the part of it an edge left, so the
 // second half stays where it is heard wherever the clip starts.
 func TestTheHalvesOfAWordStayPutAsAnEdgeMoves(t *testing.T) {
-	word := Cue{Start: 10, End: 12, Text: "sweet-grundschulliebe."}
+	word := timed.Cue{Start: 10, End: 12, Text: "sweet-grundschulliebe."}
 	var at []float64
 	for _, edge := range []float64{9.5, 10.5, 11.2} {
 		clip := Clip{Segments: []Segment{{Start: edge, End: 14}}}
-		words := ClipWords(clip, []Cue{word})
+		words := ClipWords(clip, []timed.Cue{word})
 		if len(words) != 1 {
 			t.Fatalf("edge %v gives %+v", edge, words)
 		}

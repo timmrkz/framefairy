@@ -59,12 +59,15 @@ Parakeet, and the speech model is 490 MB, which is a first-run download
 nobody has to think about.
 
 **This is built.** The first run is a setup screen, `frontend/src/screens/
-Setup.svelte`. It fetches the speech model by itself, asks the one question,
-and on the local side offers the language models with what each costs to
-fetch, what it costs in memory, and what this machine can do with it. The
-key goes in the macOS keychain. Both installers land under a part name and
-only move a whole model into place, so a cancel leaves nothing rather than
-half of something. See [APP.md](APP.md#the-first-run).
+Setup.svelte`. It downloads the speech model and a local language model side
+by side, each once the person presses Download, and offers only the language
+models this machine can hold, with what each costs to fetch and in memory.
+The cloud and its key are chosen later in the settings, where the key goes
+in the macOS keychain, except on a Mac that can hold no language model,
+8 GB, whose setup offers a model in the cloud and its key in place of the
+list. Both installers land under a part name and only move
+a whole model into place, so a cancel leaves nothing rather than half of
+something. See [APP.md](APP.md#the-first-run).
 
 Two things about that list are worth writing down.
 
@@ -72,9 +75,10 @@ Two things about that list are worth writing down.
 machine too small for one swaps, and a model that swaps takes minutes to
 answer rather than seconds. Each entry says what it needs to run, and the
 app reads what the machine has and says whether it fits, is tight, or is
-too big. It never refuses: a machine's memory can be read wrong and it is
-not the app's place to decide, so it says what it thinks before the
-download rather than after it.
+too big. The settings never refuse one: a machine's memory can be read
+wrong and it is not the app's place to decide, so they say what they
+think before the download rather than after it. The first run offers only
+the models that fit, because a new customer has nothing to judge by.
 
 **What a model needs is worked out from how it attends, not from its
 file.** It used to be the file and a quarter more, taken from the
@@ -125,7 +129,7 @@ What every Mac is offered, pinned by a test:
 
 | Mac | Offered |
 | --- | --- |
-| 8 GB | nothing, the API is the way through |
+| 8 GB | nothing, the setup offers a model in the cloud and its key |
 | 16 GB | Gemma 4 12B, tight |
 | 18 and 24 GB | Gemma 4 12B |
 | 32 GB and up | Gemma 4 26B A4B |

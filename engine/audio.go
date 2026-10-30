@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"framefairy/engine/timed"
 )
 
 // ---------------------------------------------------------------------------
@@ -40,10 +42,7 @@ type Recognizer interface {
 // SampleRate is what the recogniser is fed.
 const SampleRate = 16000
 
-// FrameSeconds is the resolution of the loudness measurement.
-const FrameSeconds = 0.01
-
-const frameSamples = SampleRate / 100
+const frameSamples = int(SampleRate * timed.FrameSeconds)
 
 // pauseFrames is the shortest quiet, in frames, that counts as a pause when
 // placing a word.
@@ -62,18 +61,18 @@ type Transcript struct {
 	// Words is what the episode says, see engine/words.go: the words on
 	// the episode clock, snapped to the sound. It is the one list of them.
 	// Of gives a clip's, with its own corrections applied and split.
-	Words []Cue
+	Words []timed.Cue
 	// RawWords are the words as the recogniser timed them, which is what
 	// is stored.
-	RawWords []Cue
+	RawWords []timed.Cue
 	// HeardWords are the recogniser's words snapped to the sound, not
 	// split: one for each word the recogniser heard, which is what a
 	// correction is kept against. In a clip's words, see Of, they carry
 	// its corrections.
-	HeardWords []Cue
+	HeardWords []timed.Cue
 	// Language is what the words are in, as ISO 639-1, read off them once.
 	Language string
-	snapped  []Cue
+	snapped  []timed.Cue
 	// keys are what each heard word is kept by, the millisecond the
 	// recogniser heard it start, and byKey finds a heard word by its key,
 	// see heardIndex.
@@ -96,15 +95,15 @@ type Transcript struct {
 
 // Levels are the loudness readings the transcript annotations use, one per
 // tenth of a second.
-func (t *Transcript) Levels() []Reading {
-	var out []Reading
+func (t *Transcript) Levels() []timed.Reading {
+	var out []timed.Reading
 	for i := 0; i+10 <= len(t.Frames); i += 10 {
 		power := 0.0
 		for _, db := range t.Frames[i : i+10] {
 			power += math.Pow(10, float64(db)/10)
 		}
 		level := 10 * math.Log10(power/10+1e-20)
-		out = append(out, Reading{roundTo(t.Start+float64(i)*FrameSeconds, 2), level})
+		out = append(out, timed.Reading{At: roundTo(t.Start+float64(i)*timed.FrameSeconds, 2), Level: level})
 	}
 	return out
 }
@@ -126,10 +125,10 @@ func quietestCut(frames []float32) int {
 // quietestBetween is quietestCut between any two lengths, in seconds.
 func quietestBetween(frames []float32, shortest, longest float64) int {
 	const window = 30
-	low := int(shortest / FrameSeconds)
-	high := min(int(longest/FrameSeconds), len(frames)) - window
+	low := int(shortest / timed.FrameSeconds)
+	high := min(int(longest/timed.FrameSeconds), len(frames)) - window
 	if high <= low {
-		return min(int(longest/FrameSeconds), len(frames))
+		return min(int(longest/timed.FrameSeconds), len(frames))
 	}
 	best, bestAt := math.Inf(1), low
 	running := 0.0
@@ -219,8 +218,8 @@ func Settled(samples []float32) int {
 // A token that is only a space starts the word after it. The speech model
 // has no digit that starts a word, so a number comes as a lone space and
 // then its digits, and without the space "dass 5000" is "dass5000".
-func TokensToWords(tokens []Token, offset float64) []Cue {
-	var words []Cue
+func TokensToWords(tokens []Token, offset float64) []timed.Cue {
+	var words []timed.Cue
 	spaced := false
 	for _, token := range tokens {
 		text := token.Text
@@ -241,7 +240,7 @@ func TokensToWords(tokens []Token, offset float64) []Cue {
 			}
 			continue
 		}
-		words = append(words, Cue{start, end, trimmed})
+		words = append(words, timed.Cue{Start: start, End: end, Text: trimmed})
 	}
 	return words
 }
@@ -274,17 +273,17 @@ const holdOn = 0.4
 // into a pause is pulled back to where the sound stopped, and an end that
 // stops while the sound goes on follows it to where it stops, when it
 // stops before the next word.
-func SnapWords(words []Cue, frames []float32, start, floor float64) []Cue {
+func SnapWords(words []timed.Cue, frames []float32, start, floor float64) []timed.Cue {
 	if len(frames) == 0 {
 		return words
 	}
 	loud := func(f int) bool { return f >= 0 && f < len(frames) && float64(frames[f]) > floor }
 	frameAt := func(t float64) int {
-		return max(0, min(len(frames)-1, int(math.Floor((t-start)/FrameSeconds+1e-9))))
+		return max(0, min(len(frames)-1, int(math.Floor((t-start)/timed.FrameSeconds+1e-9))))
 	}
-	timeAt := func(f int) float64 { return start + float64(f)*FrameSeconds }
+	timeAt := func(f int) float64 { return start + float64(f)*timed.FrameSeconds }
 
-	out := make([]Cue, 0, len(words))
+	out := make([]timed.Cue, 0, len(words))
 	for i, w := range words {
 		low := start
 		if len(out) > 0 {
@@ -384,7 +383,7 @@ func SnapWords(words []Cue, frames []float32, start, floor float64) []Cue {
 			end = math.Min(end, next)
 		}
 		end = math.Max(end, begin+0.05)
-		out = append(out, Cue{roundTo(begin, 3), roundTo(end, 3), w.Text})
+		out = append(out, timed.Cue{Start: roundTo(begin, 3), End: roundTo(end, 3), Text: w.Text})
 	}
 	return out
 }
@@ -398,7 +397,7 @@ func NoiseFloor(mean float64) float64 {
 }
 
 // Transcribe reads the audio once and returns the words with their timings.
-func (e *Engine) Transcribe(ctx context.Context, path string, window Window,
+func (e *Engine) Transcribe(ctx context.Context, path string, window timed.Window,
 	rec Recognizer, silenceDB *float64) (*Transcript, error) {
 	return e.transcribe(ctx, path, window, rec, silenceDB, nil, hearingShare{window, 0, window.End - window.Start})
 }
@@ -418,7 +417,7 @@ func (e *Engine) checkpoint() time.Duration {
 
 // checkpoint receives the words and loudness frames of everything up to
 // covered, which always falls on a chunk boundary.
-type checkpoint func(raw []Cue, frames []float32, covered float64)
+type checkpoint func(raw []timed.Cue, frames []float32, covered float64)
 
 // hearingShare is the part of the episode a reading of the audio is for,
 // which is less than it reads, see hearingPad, how much of the hearing was
@@ -426,17 +425,17 @@ type checkpoint func(raw []Cue, frames []float32, covered float64)
 // audio, so what shows how far it has come reads the parts as one piece of
 // work.
 type hearingShare struct {
-	part          Window
+	part          timed.Window
 	before, total float64
 }
 
 // transcribe hears a window of the episode, which starts on a frame. It
 // reads the audio from there the way the loudness does, see audioFrom, and
 // stops reading at the window's end.
-func (e *Engine) transcribe(ctx context.Context, path string, window Window,
+func (e *Engine) transcribe(ctx context.Context, path string, window timed.Window,
 	rec Recognizer, silenceDB *float64, save checkpoint, share hearingShare) (*Transcript, error) {
-	first := int(math.Round(window.Start / FrameSeconds))
-	window.Start = float64(first) * FrameSeconds
+	first := int(math.Round(window.Start / timed.FrameSeconds))
+	window.Start = float64(first) * timed.FrameSeconds
 	args := audioFrom(path, first, e.pictureStart(ctx, path))
 	e.Log.Detail("ffmpeg %s", strings.Join(args, " "))
 	// Its own context, so stopping at the end of the window can end ffmpeg
@@ -457,7 +456,7 @@ func (e *Engine) transcribe(ctx context.Context, path string, window Window,
 
 	t := &Transcript{Start: window.Start}
 	var pending []float32
-	var raw []Cue
+	var raw []timed.Cue
 	chunkStart := window.Start
 	started := time.Now()
 	sumSquares, count := 0.0, 0
@@ -467,8 +466,8 @@ func (e *Engine) transcribe(ctx context.Context, path string, window Window,
 	// How far the audio has been heard and how far of it is written down.
 	heardTo, savedTo := window.Start, window.Start
 	keep := func(covered float64) {
-		frames := int(math.Round((covered - window.Start) / FrameSeconds))
-		words := append([]Cue(nil), raw...)
+		frames := int(math.Round((covered - window.Start) / timed.FrameSeconds))
+		words := append([]timed.Cue(nil), raw...)
 		sort.SliceStable(words, func(i, j int) bool { return words[i].Start < words[j].Start })
 		save(words, append([]float32(nil), t.Frames[:min(frames, len(t.Frames))]...), covered)
 		savedTo = covered
@@ -477,7 +476,7 @@ func (e *Engine) transcribe(ctx context.Context, path string, window Window,
 	type heardPiece struct {
 		at      float64
 		samples int
-		words   []Cue
+		words   []timed.Cue
 		// A copy that panicked, handed back so the job fails the way it
 		// does when the one copy panics, rather than taking the app down
 		// from a goroutine of its own.
@@ -617,7 +616,7 @@ func (e *Engine) transcribe(ctx context.Context, path string, window Window,
 
 		// Loudness frames for everything that has arrived and is not yet
 		// measured. Frames are kept for the whole window.
-		measuredUpTo := int(math.Round((chunkStart-window.Start)/FrameSeconds)) * frameSamples
+		measuredUpTo := int(math.Round((chunkStart-window.Start)/timed.FrameSeconds)) * frameSamples
 		for len(t.Frames)*frameSamples+frameSamples <= measuredUpTo+len(pending) {
 			offset := len(t.Frames)*frameSamples - measuredUpTo
 			frame := pending[offset : offset+frameSamples]
@@ -629,7 +628,7 @@ func (e *Engine) transcribe(ctx context.Context, path string, window Window,
 		}
 
 		for float64(len(pending))/SampleRate >= chunkMax {
-			first := int(math.Round((chunkStart - window.Start) / FrameSeconds))
+			first := int(math.Round((chunkStart - window.Start) / timed.FrameSeconds))
 			cut := quietestCut(t.Frames[first:]) * frameSamples
 			recognise(pending[:cut], chunkStart)
 			pending = append([]float32(nil), pending[cut:]...)

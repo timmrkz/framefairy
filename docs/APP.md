@@ -25,78 +25,66 @@ interface come with the packaging work.
 
 ### The first run
 
-A new copy of the app on a machine with nothing on it needs two things, and
-only one of them is a question. Until both are answered the setup is the
-whole app: no sidebar, no workspace, nothing to press that would not work.
+A new copy of the app on a machine with nothing on it needs two models
+before it can make anything: a **speech model**, which hears the video, and
+a **clip model**, which reads the transcript and picks the moments. Both run
+on this machine and neither ships with the app, so both are downloads.
+Until both are here the setup is the whole app: no sidebar, no workspace,
+nothing to press that would not work.
 
-**Speech** is always local. No speech model ships with the app, so the app
-fetches one. There is one today, which is not a choice, so the app says what
-it is about to do and does it: the download starts by itself and reports how
-far it has come, with the same fill every other piece of work in the app
-wears, and **Cancel** stops it. The row says what the model is, what it
-covers, what the download costs and what it costs on disk, before anything
-starts. It is a job like any other, in the lane of hearing, and a search that
-comes to hearing waits for the model rather than failing on it.
+The setup is one page with a card for each, so both can download at the
+same time: nobody waits for the speech model before starting the clip
+model. Something a first run may need later is another card. Each card has
+the list of its models and, at its head, one mark once one of them is
+here. Nothing starts by itself, because a download of gigabytes is
+something a person agrees to. Every button that fetches a model says
+**Download**.
 
-**Finding clips** is the question. A model in the cloud, Anthropic's or
-OpenAI's with a key of your own, works on any machine and
-costs a few cents a video. A model on this machine is free to run and
-needs the memory to hold it. Either way only the words are read: the video
-and the audio never leave the machine. The answer is saved the moment it is
-given and can be changed later in the settings.
+A model in the cloud is not offered in the setup. It needs a key and costs
+money a video, so it is chosen later in the settings by somebody who wants
+it. A machine that already finds clips in the cloud, chosen there before,
+needs no clip model of its own, and its card says so. A machine that can
+hold none of the clip models, one of 8 GB, has no way through without the
+cloud, so its clip card, and only its, offers a model in the cloud and the
+row its key is saved in, in place of the list. That row is the one in the
+settings, `ApiKey.svelte`, so a key is saved, refused and removed the same
+way in both. Once the speech model is here and the key is saved, the app
+finds clips in the cloud and opens on its first page.
 
-Choosing the cloud opens a choice of model, Claude Sonnet 5 or GPT-6 Sol, and a field for that company's key, which goes in the macOS keychain
-and nowhere else, never in the settings file.
+The rows of a list are one line each and read like a table without its
+lines: the name, who made it, the memory it needs, its size and the button,
+each in a column of its own, so the same fact stands in the same place in
+every row. The size is the download before the model is here and the room
+it takes once it is. The clip model's card says how much memory this
+machine has, and only offers the models it can hold, see engine.Fit. The
+memory a model needs wears the colour of a warning when the machine has
+little more than that, and says so under the pointer. Every Download is
+the same plain button, and none is lit over the others. The model the app
+recommends for this machine says so under the pointer. A model that
+does not fit would swap, and a model that swaps answers in
+minutes rather than seconds. A `.gguf` already in `~/.framefairy/models`
+is used as it is, whether the app fetched it or not.
 
-Choosing **On this machine** shows the models that can be installed, each
-with its maker, what it costs to fetch, what it costs in memory to run and
-what this machine can do with it. That last part is the point of the list.
-A model runs from memory, so a machine too small for one will swap, and a
-model that swaps takes minutes to answer rather than seconds. The app reads
-how much memory the machine has and says, beside each model, **Best for
-this machine**, **Fits this machine**, **Tight on this machine** or **Too
-big for this machine**, with the machine's own figure above the list so the
-judgement can be checked. The best one is the largest model the machine
-can hold comfortably, largest by the model and not by the memory it
-takes, because the two are not the same thing: see PACKAGING.md.
-
-Nothing is hidden and nothing is refused: a model the app thinks is too big
-can still be installed, because a machine's memory can be read wrong and it
-is not the app's place to decide. A machine that will not say how much
-memory it has is offered the smallest, because that is the one most likely
-to run, and nothing else is promised.
-
-A `.gguf` already in `~/.framefairy/models` is used as it is, whether the
-app fetched it or not.
-
-**Installing is work in hand, and it looks it.** The button it was started
-from carries it, the way every control that starts work does: the beam
-round it and the fill for how far the download has come, and it reads
-**Cancel** while it runs. What has arrived stays, and **Install** carries on
-from it. The row itself does not light up or move. The line under the name
-that says what the model costs says instead how far it has come, how fast
-and how long is left, *Fetching 1.8 GB of 5.2 GB at 42 MB a second, 0:13
-left*, in the same one line, so the row keeps its height. The numbers are
-counted in thousands, the way the size to fetch is, so a model said to be
-5.2 GB arrives as 5.2 GB of 5.2 GB.
+**A download is work in hand, and it looks it.** The row of the model
+on its way wears the beam and the fill for how far it has come across the
+whole row, the way a clip card on its way does, and its button reads
+**Cancel** while it runs. What has arrived stays, and **Download** carries
+on from it. The row keeps its shape: its maker stays, the memory it needs
+turns into how much has arrived, *1.8 GB of 5.2 GB*, and its size into
+how long is left, each in its own column and lined up the way the rest of
+the column is, so a row on its way reads like the rows around it. They are counted in
+thousands, the way the size is, so a model said to be 5.2 GB arrives as
+5.2 GB of 5.2 GB.
 
 A model is only half of the local way. `llama-server`, from llama.cpp, is
 what runs it, and a model without one is fifteen gigabytes that answer
-nothing. So the app looks for it and says so while it is missing, and it
-does not call itself ready on a machine that has the download and no way
-to open it, which it used to. It is taken the way ffmpeg is: the one
-beside the app, checked to be the file the app was built with, and no
-other, see **The tools are the app's own** below.
+nothing. So the clip model's card says so while it is missing. It is taken
+the way ffmpeg is: the one beside the app, checked to be the file the app
+was built with, and no other, see **The tools are the app's own** below.
 
-The last button is **Finish setup**, and that is all it does. Adding an
-episode has one way of being done and it is the plus in the sidebar, so a
-second way here would be a second way of doing one thing, bought for a
-click that is only ever saved once. While the speech model is still coming
-the button says so and waits, because there is nothing to be done with the
-app until it is there.
-
-A key found in the environment is not an answer to the question. The app
-never decides on somebody's behalf, so an app that has never been asked asks.
+Once both models are here the setup is over and the app opens on its first
+page, with no button to press in between. The answer to how clips are found
+is saved then, as this machine, and can be changed in the settings.
 
 ### Episodes
 
@@ -523,10 +511,16 @@ button says Pause the whole time, and only the sound is held, the way a
 pause holds it. Before, the play went on from the press at once and ran
 away from the hand before a drag could start. Only the space bar and a click on the
 clip timeline change a play. A clip's pieces changing while it plays, a
-cut made, moved or put back, an edge trimmed or a step undone, moves no
-playhead and changes nothing that plays: the play goes on with the pieces
-it started with, and the next play, or a click, plays the clip as it is
-now. A drag on a cut's edge used to start the play again on every step,
+cut made, moved or put back, an edge trimmed or a step undone or redone,
+moves no playhead and stops the play only where the next cut is moved
+within about two seconds ahead of the playhead: the play goes on and
+plays the clip as it is now, from the playhead on. An end pulled in and put
+back with Cmd+Z plays on to the end put back. Tim's rule, #277: an edit
+while it plays never disturbs the play, and an edge of the clip dragged
+past the playhead leaves the playhead outside the clip, on the video. The play then goes on as a play of the
+video, past where the clip ended and on to the episode's end, the clip
+dimmed as on the video, without a stop or a jump.
+A drag on a cut's edge used to start the play again on every step,
 which stuttered. Loop switched on or off changes only where the play
 ends, never what plays: the picture stops at that end and the sound
 stops there too, in the silence the clip fades out to, however often L
@@ -1213,7 +1207,9 @@ bubble scrolled by those eight pixels.
     no word of the next caption is pulled up into it, and no other caption
     moves. A caption whose first or last word it was draws in to the words
     it still shows, the same as when its edge is dragged in over the word,
-    see **Caption timing**. A caption whose
+    except where the speech runs on into the next caption, where the
+    caption before stays up until the next appears, see **Caption
+    timing**. A caption whose
     words are all removed goes and leaves its time empty, and the one
     before it goes when it did. It used to stay up through that time, so
     the block before a removed caption grew across its place on the clip
@@ -1559,7 +1555,8 @@ bubble scrolled by those eight pixels.
       episode it starts over at the start. The last window may be cut
       short by the end of the episode, and the one after it, at the
       start, is as long as the window was made again.
-      **A video has one window**, and the Go side owns it, see
+      **A video has one window**. The engine places it, see
+      `engine.Project.PlaceWindow`, and the Go side keeps it, see
       `cmd/framefairy-app/window.go`. It is kept beside the clip last
       worked on in `chosen.json`, so the workspace opens on it again,
       after a restart too. A video that has none gets the window where
@@ -1780,6 +1777,21 @@ bubble scrolled by those eight pixels.
         playhead just put at a clip's start is outside it, so the keys
         walked the transcript instead and the first press after picking a
         clip landed wherever the word before the clip happened to be.
+    - **Each number key puts the playhead that many tenths into the
+      clip**, the way the number keys do in a video on YouTube: 0 at the
+      clip's start, 5 half way and 9 at 90 %, playing or paused, and the
+      play goes on from there.
+      There is no key for the end, which is one click on the end edge. The
+      share is of the clip as it plays, its cuts taken out, so it is the
+      share of the short and never lands in a cut. The jump is about the
+      clip, so a playhead on the video comes onto it, the way picking the
+      clip does. With no clip chosen, or a field being typed in, the keys
+      do nothing here, so a 5 typed in a word stays a 5. Top row and number
+      pad alike, read from the key's own name, and with shift too, which a
+      French or Belgian keyboard needs for its digits, `percentKey` in
+      `Episode.svelte`, which asks the engine where the share lands,
+      `engine.ShareTime`, the way every rule about a video is the engine's.
+      Issue #539.
     - Drag an edge to trim. The edge lands on the frame, the same as the
       edge of a cut, and shift puts it on the nearest word instead, the way
       the render cuts a clip the engine proposes, and then on the frame
@@ -2680,7 +2692,14 @@ moved by hand, on the clip timeline.
   captions meet, the line between them has two sides: the left side is
   where the one before goes, the right side where the one after appears.
   An edge dragged in leaves a gap, and dragged out it stops at the caption
-  beside it. No other caption ever moves. Dragging the right side used to
+  beside it. No other caption ever moves, with one exception: where two
+  captions meet because the speech runs on, a start may be dragged back
+  into the last word the caption before shows, as far as its middle, and
+  the caption before then goes where it appears, see `startFloor` in
+  `engine/edit.go`. A word in running speech is heard up to about one of
+  the speech model's 80 ms steps off, and Tim heard a word start earlier
+  than its block, which he could not move there. The words keep their own
+  time, so the first word still lights where it is heard. Dragging the right side used to
   take the caption before along, so pulling a left edge in over a word
   drew the caption before into the room Tim had just cleared. Nothing
   overlaps, because the picture shows one caption at a time. An edge
@@ -2698,38 +2717,55 @@ moved by hand, on the clip timeline.
   caption is not up yet. Tim saw nothing to snap to there. A click on the
   start edge puts the playhead there too. The edges of a caption used to move a frame
   at a time with shift or without, found by Tim.
-- **An edge dragged over a word removes it.** Dragged in, an edge takes
-  out of its caption every word whose middle it passes, the way delete
-  removes a word, so pulling the left edge of "one two three" past "one"
+- **An edge sets when a caption is shown, and nothing else.** Dragged
+  in, an edge leaves out of its caption every word whose middle it
+  stands past, so pulling the left edge of "one two three" past "one"
   reads "two three", and the right edge past "three" reads "one two".
-  Dragged back out over a word it took, the word comes back. The middle
-  is of the part of the word the clip shows, so a word the start of the
-  clip cuts into is passed in that part. The last word stays, because
-  delete removes a caption whole. Which words an edge passes and where it
-  stops is the engine's to say, `ShapeCaptionTime`: the clip timeline asks
-  it while the hand moves and draws its answer, and the caption box in the
-  video preview shows the words it leaves. When the edge is let go it is
-  saved where it was drawn, `SetCaptionTime`, with the words, and Cmd+Z
-  takes back the words and the edge in one step. The interface once kept a
-  copy of the rule, which drifted from the engine's: an edge was drawn in
-  one place and saved in another, and a word the start of the clip cut
-  into left the caption box during the drag and came back when let go.
+  The word is still said there and still in the clip, so dragged back
+  out the edge shows it again, see `moveCaptions` in `engine/lines.go`.
+  The middle is of the part of the word the clip shows, so a word the
+  start of the clip cuts into is passed in that part. The word nearest
+  the time left stays, because delete removes a caption whole. Which
+  words an edge leaves out and where it stops is the engine's to say,
+  `ShapeCaptionTime`: the clip timeline asks it while the hand moves and
+  draws its answer, and the caption box in the video preview shows the
+  words it leaves. When the edge is let go it is saved where it was
+  drawn, `SetCaptionTime`, and Cmd+Z takes the edge back. The interface
+  once kept a copy of the rule, which drifted from the engine's: an edge
+  was drawn in one place and saved in another, and a word the start of
+  the clip cut into left the caption box during the drag and came back
+  when let go.
+- **No edge brings back a word removed in the caption box.** Removing a
+  word fixes what the caption reads, like a typo, and only undo or the
+  word typed in again brings it back. A drag used to remove the words it
+  passed, and dragging back out brought back every removed word it
+  passed, however it had been removed: Tim removed a word, dragged the
+  start of the caption after it out to where he heard its next word
+  begin, and the word came back, #598. Words a drag took out before this
+  was changed were kept as removed words, the same as the caption box
+  keeps them, so on a clip edited then they stay removed too, and undo
+  or typing them in again brings them back.
 - **Removing a word at an edge draws the caption in, as dragging over it
   does.** A caption whose first or last word is removed in the caption box
   draws in to the words it shows: it appears with its first word shown and
-  goes a moment after its last. An edge moved in by hand stays where it
-  was put, and one moved out comes in with the word. The captions beside
-  it keep their time, so the room the word took stays empty. Before, the
+  goes a moment after its last. An edge moved by hand stays where it was
+  put, in or out, since removing a word changes what the caption reads
+  and not when it is shown. Where a pause comes
+  after the word, the room it took stays empty. Where the speech runs on
+  into the next caption, the time of the word is no pause, so the caption
+  before stays up until the next appears, whichever of the two the word
+  was in, and nothing goes blank while someone is still talking. Tim saw
+  the blocks on the clip timeline come apart where he had removed a word,
+  with the sound running on under the gap, #597. Before #189, the
   caption kept the time the word had, and the two ways of taking a word
-  off its edge ended differently, which Tim found. The word typed back
-  takes the edge back out to where the hand put it.
-- **A double-click puts an edge back where all its words put it**, the
-  words taken out at that edge coming back with it, whether a drag or the
-  caption box took them. It can be done to any edge moved by hand or
-  drawn in with its word, so it undoes any number of drags. It used to
-  leave the words out, which put a dragged edge only where the words left
-  put it, about where it already stood: Tim dragged a right edge in and
-  double-clicked twice, and the second time nothing moved.
+  off its edge ended differently, which Tim found.
+- **A double-click puts an edge moved by hand back where all its words
+  put it**, which shows the words it left out again. A word removed in
+  the caption box stays removed. It undoes any number of drags. It used to
+  leave the words a drag had taken out still out, which put a dragged
+  edge only where the words left put it, about where it already stood:
+  Tim dragged a right edge in and double-clicked twice, and the second
+  time nothing moved.
 - **The captions in the video preview follow the drag**, so what is
   seen while dragging is what is saved.
 - **A block is its caption in the short's colours**: the box colour, as
@@ -3013,13 +3049,25 @@ after the typing stops.
 **What is in the way is said where it is put right**, not in a list of
 its own. A missing API key is said on the row where the key goes, a
 missing llama-server under the choice of model, a missing ffmpeg under
-**Shorts**, a missing speech model on its row, which offers **Install**.
+**Clips**, a missing speech model on its row, which offers **Download**.
 A problem the page has no row for, which none of today's checks is, is
 said at the top so nothing goes unsaid. The first version had one card at
 the top listing every problem, and a person had to go from the top of the
 page to the bottom to find where to fix what it said.
 
-**Finding clips is one choice**, **Find clips with**, in one list: under
+**The two models are two cards of one shape**, **Speech model** and
+**Clip model**, the names the setup uses too. Each is a choice with the
+line under it, and under that **Downloaded models**, folded, the models
+of its kind on this machine with the room they take and a trash can
+each. Tim found the two drawn two ways, 2026-10-27, and found **Finding
+clips** a poor name for the second. Where the models are kept is said
+once, in the info mark of each section, in full and with the slash at
+its end that says it is a folder. It was said under Advanced and What the
+app found until then, and Tim missed it once it was gone, 2026-10-28. A
+line under every model saying where it is, tried next, was clutter, and
+he asked for the info mark alone.
+
+**The clip model is one choice**, **Find clips with**, in one list: under
 **In the cloud** a model from each company the app knows, Claude Sonnet 5
 from Anthropic and GPT-6 Sol from OpenAI, with the company beside each,
 and under **On this machine** every model that runs here, the way apps that
@@ -3050,10 +3098,24 @@ in `frontend/src/lib/finding.ts`, and `finding.test.ts` walks every state
 somebody can click their way into, run by `make interface` and CI.
 
 The line under the choice says what it costs: a few cents a video and
-which company, or who made the model, the memory it needs and whether it fits.
-Beside each model in the list is what it would cost to fetch, or that it is
-the best here, or that it is too big for this machine. The list holds any
-number of models in the room of one control.
+which company, or who made the model and the memory it needs, and that it
+is tight or too big where it is. Every model that runs here stands under
+**On this machine**, the biggest first, by the size beside it, which is
+the order a person reads. By the memory a model needs, tried first, put
+Qwen3 14B at 9.0 GB over Gemma 4 26B A4B at 14.4 GB. One that is downloaded has the tick in front of it, and
+one still to fetch a download arrow in grey, so what is chosen is said by
+the accent alone, the way the chosen row of any list in the app is. A
+chosen model in the cloud has no tick either, so the tick means one
+thing in that list. The
+speech model's list is the same. A group of its own, **To download**, for
+the models still to fetch, parted a list that is one kind of thing, and
+Tim asked for the one group with a mark, 2026-10-28. A cloud mark on them
+before that, the way Finder marks a file still in iCloud, read as a model
+that runs in the cloud, under a group of that name. A model this machine
+is short of memory for says so beside its size. Nothing says best: the biggest model
+that fits is the one a new machine starts on, and a word for it on one row
+of the list read as a riddle. The list holds any number of models in the
+room of one control.
 
 **Choosing a model chooses it**, whether it is on this machine or not.
 The settings name it, and the list ticks it. One that is not here yet
@@ -3169,20 +3231,26 @@ only one, and a download that finishes names it in the settings. A machine
 that already has two and none named, from before this was so, says so
 under the choice, and choosing one settles it.
 
-**Speech** is one model today, so it is a row rather than a choice: a
-check before it once it is there, what it covers and the room it takes.
-Removing the speech model means the app asks for one again the next time it
-starts, because nothing can be transcribed without it.
+**The speech model is the same choice**, **Transcribe with**, though
+there is one speech model today, so its list holds one: its size, in the
+group that says whether it is here, and the line under it, who made it and
+what it hears, or the folder named for it by hand before, or what the
+check found wrong with it. Choosing it in the list lets go of a folder
+named by hand. Both cards are `ModelCard.svelte`, each with its download
+in an `Install` from `lib/install.svelte.ts`, one card used twice. **Download** beside the list fetches one that is not here,
+with the same line, beam and fill as the clip model's. Removing the speech
+model, from its **Downloaded models**, means the app asks for one again
+the next time it starts, because nothing can be transcribed without it.
 
-**Shorts** says where rendered shorts go, next to each video unless a
-folder is chosen with **Choose…**, which
+**Clips** says where rendered clips go, **Save clips to**, next to each
+video unless a folder is chosen with **Choose…**, which
 opens the system's own folder dialog. **Next to video** goes back to the
-default. In a folder chosen here, each episode's shorts go into a folder
-of their own, named after the episode's file, so `Folge 12.mp4` renders
-into `Shorts/Folge 12/`. A short is named after its clip's words, without
-the clip's id, `ich-merke-dass-das-immer-schwer-ist.mp4`. Wherever a short
+default. In a folder chosen here, each video's clips go into a folder
+of their own, named after the video's file, so `Folge 12.mp4` renders
+into `Clips/Folge 12/`. A rendered clip is named after its words, without
+the clip's id, `ich-merke-dass-das-immer-schwer-ist.mp4`. Wherever a clip
 goes, a name taken by a file the clip did not write gets a number, the way
-Finder gives one, `ich-merke-dass-das-immer-schwer-ist 2.mp4`. A short already rendered stays where it
+Finder gives one, `ich-merke-dass-das-immer-schwer-ist 2.mp4`. A clip already rendered stays where it
 went when the folder changes, and its clip still knows it is rendered and
 where, see **Where a short went** in
 [ENGINE.md](ENGINE.md#where-a-short-went).
@@ -3236,18 +3304,34 @@ unchecked with the app's access to the person's folders.
 can that throws them away, which asks first.
 
 **Advanced** is closed until it is opened, like a disclosure in Finder, and
-holds the machinery: the path to the language model file, or the Claude
-model, the speech model folder and the training data folder, each a name
-on the left and a field on the right. There is no field for ffmpeg or
-llama-server any more, see **The tools are the app's own**. Empty paths use
-the same defaults as the command line. Under the paths is everything the
-check looked at, found or not, with the check's own words and **Check
-again**, though the check runs again by itself whenever a setting changes:
-which ffmpeg,
+holds the machinery: the training data folder, and with a model in the
+cloud the name of the model the API is asked, for one newer than the list,
+each a name on the left and a field on the right. There is no field for
+ffmpeg or llama-server any more, see **The tools are the app's own**, and
+none for the models: a model is chosen in its own section and spoken of
+there and nowhere else, where Tim once found the models in six places,
+the sections, their info marks, two fields here and two rows of the check.
+Empty paths use the same defaults as the command line, which keeps every
+flag. Under the paths is what the check looked at, found or not, with the
+check's own words and **Check again**, though the check runs again by
+itself whenever a setting changes: which ffmpeg, ffprobe and llama-server,
 which of the system's own video decoders it can use, VideoToolbox on a Mac
-or decoding on the processor, the caption faces the app carries inside
-itself, and which model files it found. Which decoder a file really went
-through is in the log of its search.
+or decoding on the processor, and how many caption faces there are, the
+ones the app carries inside itself and the machine's own, `6 built in,
+412 from this machine`. The names are the font list's beside the captions,
+each in its own face, and were once a wall of a few hundred here. The
+models and the keys are said in their own sections, so the check leaves
+them out here. Which decoder a file really went through is in the log of
+its search.
+
+**A path is written one way everywhere**, in full, from the top of the
+disk: `/Users/tim/.framefairy/models`, `/Applications/Frame
+Fairy.app/Contents/MacOS/ffmpeg`, whatever form the settings file, the
+check or the folder dialog handed it over in, see `shownPath` in
+`frontend/src/lib/paths.ts`. A path from `~` is written out from the home
+folder. Inside the home folder from `~` and the rest in full was tried
+first, and Tim still saw two kinds of path on one page, 2026-10-28. Only
+what is shown changes, what is saved stays as it came.
 
 Between the paths and the check is **The app's log**, see
 [LOGGING.md](LOGGING.md): where the file in use is, how many files it has

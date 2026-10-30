@@ -327,6 +327,11 @@ nothing more than a field, a parameter or an option:
 | the end of work | a channel, callback or event the caller gives |
 
 - The program hands in the real thing. A test hands in one it drives.
+- What a test hands in lives with the tests and is handed in by the
+  tests' own setup. The product keeps only the seam and the real thing
+  as its default, never the test's double or a flag, setting or global
+  that picks between the two. A switch can be set wrong in a build, and
+  then a customer runs the test's clock.
 - Plain constructor injection, the simplest form. No container library.
 - A new piece of code that keeps time, reads a file, calls a service or
   does work on its own thread takes these from outside from the start.

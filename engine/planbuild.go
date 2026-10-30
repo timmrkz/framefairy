@@ -15,6 +15,8 @@ import (
 	"sync"
 	"unicode"
 
+	"framefairy/engine/timed"
+
 	"github.com/spf13/afero"
 )
 
@@ -388,7 +390,7 @@ func sameMomentAs(entries []PlanEntry, entry PlanEntry) (PlanEntry, bool) {
 // takenLines are the runs of lines, numbered from 1 the way the model
 // reads them, that lie mostly inside the parts given: more than half of a
 // line's time.
-func takenLines(lines []Line, parts []Window) [][2]int {
+func takenLines(lines []Line, parts []timed.Window) [][2]int {
 	var out [][2]int
 	if len(parts) == 0 {
 		return nil
@@ -535,7 +537,7 @@ func (b *planBuilder) answerWhole() {
 
 // cutDown says what a clip on the way keeps, once its pauses are cut and
 // before its crop is placed, which is the slow part.
-func (b *planBuilder) cutDown(card int, spans []Span) {
+func (b *planBuilder) cutDown(card int, spans []timed.Span) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	for i := range b.underway {
@@ -739,7 +741,7 @@ func (b *planBuilder) frame(job planJob) (PlanClip, bool, error) {
 		return PlanClip{}, false, nil
 	}
 
-	var chosen []Cue
+	var chosen []timed.Cue
 	for _, pair := range ranges {
 		for number := pair[0]; number <= pair[1]; number++ {
 			chosen = append(chosen, lines[number-1].Cues...)
@@ -762,10 +764,10 @@ func (b *planBuilder) frame(job planJob) (PlanClip, bool, error) {
 	}
 	// On the episode's frames already while the clip is on its way, so
 	// its edges do not move as it lands, see PieceOnFrames.
-	tightSpans := make([]Span, len(spans))
+	tightSpans := make([]timed.Span, len(spans))
 	for k, s := range spans {
 		start, end := b.source.PieceOnFrames(s.Start, s.End)
-		tightSpans[k] = Span{start, end}
+		tightSpans[k] = timed.Span{Start: start, End: end}
 	}
 	b.cutDown(job.card, tightSpans)
 

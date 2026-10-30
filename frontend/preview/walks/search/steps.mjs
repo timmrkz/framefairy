@@ -1393,7 +1393,7 @@ export const steps = {
     if (walk.speechHeld) {
       await settle(page);
       const going = async () => ["running", "queued"].includes((await ask(page, "Jobs")).find((j) => j.id === walk.handJob)?.state);
-      while (await going()) await onePiece(page, url, path);
+      while ((await going()) && (await onePiece(page, url, path)));
     }
     await pageUntil(page, (k) => document.querySelector(`li[data-key^="${k}/"].stopped .title`)?.textContent.trim() === "Stopped. Click Continue", walk.handJob);
     await watch.step("wait", s);
@@ -1414,7 +1414,11 @@ export const steps = {
       const said = (await ask(page, "Jobs")).filter((j) => j.episode === path).map((j) => j.progress?.covered ?? 0);
       return Math.max(saved, ...said);
     };
-    while ((await heardOf()) < share * seconds) await onePiece(page, url, path);
+    while ((await heardOf()) < share * seconds) {
+      if (await onePiece(page, url, path)) continue;
+      walk.wrong = `the video was heard as far as ${(await heardOf()).toFixed(1)} s, short of ${(share * seconds).toFixed(1)} s, and no work on it was left to hear more`;
+      return;
+    }
   },
   // ["cancel held"]    with the speech held, presses Cancel at the head of
   //                    the clip list and lets the piece being heard land,
@@ -1436,7 +1440,7 @@ export const steps = {
       const job = (await ask(page, "Jobs")).findLast((j) => j.episode === path && j.kind === "search");
       return job?.state === "running" || job?.state === "queued";
     };
-    while (await running()) await onePiece(page, url, path);
+    while ((await running()) && (await onePiece(page, url, path)));
     await settle(page);
     const head = await page.evaluate(() => document.querySelector(".listhead button.search")?.textContent.replace(/\s+/g, " ").trim());
     if (head !== "Continue") walk.wrong = `after Cancel the head says ${head}, not Continue`;

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 
+	"framefairy/engine/timed"
+
 	"framefairy/internal/ffmpegtest"
 )
 
@@ -35,11 +37,11 @@ const renderTimingFPS = 25
 // renderTimingWords are what the test episode says, on its own clock. The
 // first three are in the first piece of the two-piece clip, the next two
 // after its cut, and the last six one in each piece of the six-piece clip.
-var renderTimingWords = []Cue{
-	{1.20, 1.60, "Eins"}, {1.60, 2.10, "zwei"}, {2.10, 2.60, "drei."},
-	{6.30, 6.80, "vier"}, {6.80, 7.40, "fünf."},
-	{10.10, 10.45, "sechs"}, {13.10, 13.45, "sieben"}, {16.10, 16.45, "acht"},
-	{19.10, 19.45, "neun"}, {22.10, 22.45, "zehn"}, {25.10, 25.45, "elf."},
+var renderTimingWords = []timed.Cue{
+	{Start: 1.20, End: 1.60, Text: "Eins"}, {Start: 1.60, End: 2.10, Text: "zwei"}, {Start: 2.10, End: 2.60, Text: "drei."},
+	{Start: 6.30, End: 6.80, Text: "vier"}, {Start: 6.80, End: 7.40, Text: "fünf."},
+	{Start: 10.10, End: 10.45, Text: "sechs"}, {Start: 13.10, End: 13.45, Text: "sieben"}, {Start: 16.10, End: 16.45, Text: "acht"},
+	{Start: 19.10, End: 19.45, Text: "neun"}, {Start: 22.10, End: 22.45, Text: "zehn"}, {Start: 25.10, End: 25.45, Text: "elf."},
 }
 
 // renderTimingEpisode is made once for every test that reads it, see
@@ -73,16 +75,7 @@ func renderTimingEpisode(t *testing.T) string {
 // frameRGB reads every frame of a video as rgb24.
 func frameRGB(t *testing.T, path string, w, h int) [][]byte {
 	t.Helper()
-	out, err := exec.Command("ffmpeg", "-v", "error", "-i", path, "-f", "rawvideo", "-pix_fmt", "rgb24", "-").Output()
-	if err != nil {
-		t.Fatal(err)
-	}
-	size := w * h * 3
-	var frames [][]byte
-	for i := 0; i+size <= len(out); i += size {
-		frames = append(frames, out[i:i+size])
-	}
-	return frames
+	return readFrames(t, exec.Command("ffmpeg", "-v", "error", "-i", path, "-f", "rawvideo", "-pix_fmt", "rgb24", "-"), w*h*3)
 }
 
 // loudFrom is the first moment from which a short's sound is loud, read
@@ -293,7 +286,7 @@ func checkRenderTiming(t *testing.T, clip Clip) {
 func TestOnFramesPutsEveryEdgeOnAFrame(t *testing.T) {
 	at25 := SourceInfo{FPSNum: 25, FPSDen: 1}
 	got := at25.OnFrames(Clip{Segments: []Segment{{Start: 1.00, End: 4.03}, {Start: 6.01, End: 6.02}, {Start: 7.019, End: 9.5}}})
-	want := []Span{{1.00, 4.04}, {6.00, 6.04}, {7.00, 9.52}}
+	want := []timed.Span{{Start: 1.00, End: 4.04}, {Start: 6.00, End: 6.04}, {Start: 7.00, End: 9.52}}
 	for i, w := range want {
 		if !near(got.Segments[i].Start, w.Start) || !near(got.Segments[i].End, w.End) {
 			t.Errorf("piece %d is %+v, want %+v", i, got.Segments[i], w)

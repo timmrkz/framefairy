@@ -10,10 +10,12 @@ import (
 	"strings"
 	"testing"
 
+	"framefairy/engine/timed"
+
 	"framefairy/internal/ffmpegtest"
 )
 
-// The pop of the word being spoken, read back from a finished short: the
+// The pop of the word being spoken, read back from the frames of a short: the
 // word and its pill grow together, by one scale around one centre, in
 // every direction, as far as popScales says on every frame, and at rest the
 // pill leaves room round its word. Tim saw #201's bounce move the pill
@@ -29,20 +31,66 @@ const roomAround = 0.10
 // from: the line sits 300 pixels over the bottom.
 const bounceTop, bounceRows = 1400, 400
 
-// shortRows renders words as the captions of a short from 0 to end of a
+// shortRows draws words as the captions of a short from 0 to end of a
 // black episode at bounceFPS, 1080x1920, and reads back rows of it from
 // top, one rgb24 frame after another. shortRowsAt does it at fps.
 //
-// On the real disk: ffmpeg renders the short and the test reads it back.
-func shortRows(t *testing.T, words []Cue, end float64, top, rows int) (e *Engine, info SourceInfo, laid []LaidCaption, frames [][]byte) {
+// On the real disk: ffmpeg draws the short and the test reads it back.
+func shortRows(t *testing.T, words []timed.Cue, end float64, top, rows int) (e *Engine, info SourceInfo, laid []LaidCaption, frames [][]byte) {
 	t.Helper()
 	return shortRowsAt(t, fmt.Sprint(bounceFPS), words, end, top, rows)
 }
 
-// shortRowsAt takes the rate as ffmpeg does, "25" or "30000/1001".
+// shortRowsAt takes the rate as ffmpeg does, "25" or "30000/1001". What
+// is checked is how libass draws the captions, so the frames are the
+// render's own graph, the caption file and the face it burns in included,
+// read straight out of it. Encoding them and decoding them again would
+// only blur the edges the checks measure, and took most of the time.
+// renderedRowsAt reads them out of a short that was rendered.
+//
+// On the real disk: ffmpeg draws the short and the test reads it back.
+func shortRowsAt(t *testing.T, rate string, words []timed.Cue, end float64, top, rows int) (e *Engine, info SourceInfo, laid []LaidCaption, frames [][]byte) {
+	t.Helper()
+	ctx := context.Background()
+	e, source, info, clip, laid := bounceEpisode(t, rate, words, end)
+	rs := RenderSettings{OutW: shortW, OutH: shortH, ScaleUp: true}
+	dir := t.TempDir()
+	if err := e.writeASS(ctx, laid, filepath.Join(dir, "01.ass"), shortW, shortH, nil, info); err != nil {
+		t.Fatal(err)
+	}
+	if err := InstallFont(dir, ResolveStyle(nil).Font); err != nil {
+		t.Fatal(err)
+	}
+	return e, info, laid, graphFrames(t, e, clip, source, info, rs, dir, "01.ass",
+		fmt.Sprintf("crop=%d:%d:0:%d,", shortW, rows, top), shortW, rows)
+}
+
+// renderedRowsAt is shortRowsAt read out of a short that was rendered,
+// encoded and all, and decoded again.
 //
 // On the real disk: ffmpeg renders the short and the test reads it back.
-func shortRowsAt(t *testing.T, rate string, words []Cue, end float64, top, rows int) (e *Engine, info SourceInfo, laid []LaidCaption, frames [][]byte) {
+func renderedRowsAt(t *testing.T, rate string, words []timed.Cue, end float64, top, rows int) (e *Engine, info SourceInfo, laid []LaidCaption, frames [][]byte) {
+	t.Helper()
+	ctx := context.Background()
+	e, source, info, clip, laid := bounceEpisode(t, rate, words, end)
+	rs := RenderSettings{OutW: shortW, OutH: shortH, CRF: 12, Preset: "ultrafast", AudioBitrate: "128k", ScaleUp: true}
+	dir := t.TempDir()
+	short, err := e.RenderClip(ctx, clip, source, info, filepath.Join(dir, "out"), laid, rs, nil,
+		filepath.Join(dir, "captions"), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("ffmpeg", "-v", "error", "-i", short, "-vf",
+		fmt.Sprintf("crop=%d:%d:0:%d", shortW, rows, top),
+		"-f", "rawvideo", "-pix_fmt", "rgb24", "-")
+	return e, info, laid, readFrames(t, cmd, shortW*rows*3)
+}
+
+// bounceEpisode is a black episode at rate a little longer than end, and
+// the clip from 0 to end of it with words as its captions.
+//
+// On the real disk: ffmpeg makes the episode.
+func bounceEpisode(t *testing.T, rate string, words []timed.Cue, end float64) (e *Engine, source string, info SourceInfo, clip Clip, laid []LaidCaption) {
 	t.Helper()
 	ctx := context.Background()
 	e = NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
@@ -52,7 +100,7 @@ func shortRowsAt(t *testing.T, rate string, words []Cue, end float64, top, rows 
 	if _, err := e.SubtitleFilter(ctx); err != nil {
 		ffmpegtest.Unusable(t, "this ffmpeg cannot burn captions in: %v", err)
 	}
-	source := filepath.Join(t.TempDir(), "episode.mp4")
+	source = filepath.Join(t.TempDir(), "episode.mp4")
 	long := math.Ceil(end) + 1
 	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
 		"-f", "lavfi", "-i", fmt.Sprintf("color=c=black:s=640x360:r=%s:d=%g", rate, long),
@@ -64,27 +112,9 @@ func shortRowsAt(t *testing.T, rate string, words []Cue, end float64, top, rows 
 	if err != nil {
 		t.Fatal(err)
 	}
-	clip := info.OnFrames(Clip{ID: "01", Slug: "bounce", Segments: []Segment{{Start: 0, End: end}}})
+	clip = info.OnFrames(Clip{ID: "01", Slug: "bounce", Segments: []Segment{{Start: 0, End: end}}})
 	laid = ClipCaptions(clip, &Transcript{Words: words, Language: "de"}, ResolveStyle(nil))
-
-	rs := RenderSettings{OutW: shortW, OutH: shortH, CRF: 12, Preset: "ultrafast", AudioBitrate: "128k", ScaleUp: true}
-	dir := t.TempDir()
-	short, err := e.RenderClip(ctx, clip, source, info, filepath.Join(dir, "out"), laid, rs, nil,
-		filepath.Join(dir, "captions"), false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	out, err := exec.Command("ffmpeg", "-v", "error", "-i", short, "-vf",
-		fmt.Sprintf("crop=%d:%d:0:%d", shortW, rows, top),
-		"-f", "rawvideo", "-pix_fmt", "rgb24", "-").Output()
-	if err != nil {
-		t.Fatal(err)
-	}
-	size := shortW * rows * 3
-	for i := 0; i+size <= len(out); i += size {
-		frames = append(frames, out[i:i+size])
-	}
-	return e, info, laid, frames
+	return e, source, info, clip, laid
 }
 
 const shortW, shortH = 1080, 1920
@@ -127,10 +157,10 @@ func pillBox(f []byte, pill [3]int, rows int) (left, right, top, bottom int) {
 	return
 }
 
-// On the real disk: ffmpeg renders the short and the test reads it back.
+// On the real disk: ffmpeg draws the short's frames and the test reads them.
 func TestThePillLeavesRoomRoundItsWord(t *testing.T) {
 	t.Parallel()
-	words := []Cue{{0.20, 0.40, "Das"}, {0.50, 1.00, "respektvoll"}, {1.00, 1.40, "ist."}}
+	words := []timed.Cue{{Start: 0.20, End: 0.40, Text: "Das"}, {Start: 0.50, End: 1.00, Text: "respektvoll"}, {Start: 1.00, End: 1.40, Text: "ist."}}
 	e, info, laid, frames := shortRows(t, words, 1.6, bounceTop, bounceRows)
 	if len(laid) != 1 || len(laid[0].Lines) != 1 {
 		t.Fatalf("the words should make one caption of one line, not %+v", laid)
@@ -252,10 +282,10 @@ func TestThePillLeavesRoomRoundItsWord(t *testing.T) {
 // the word grew by 1 %, and on main the pill opened from smaller than the
 // word.
 //
-// On the real disk: ffmpeg renders the short and the test reads it back.
+// On the real disk: ffmpeg draws the short's frames and the test reads them.
 func TestTheWordAndItsPillPopTogether(t *testing.T) {
 	t.Parallel()
-	words := []Cue{{0.50, 1.20, "respektvoll"}}
+	words := []timed.Cue{{Start: 0.50, End: 1.20, Text: "respektvoll"}}
 	_, _, laid, frames := shortRows(t, words, 1.4, bounceTop, bounceRows)
 	if len(laid) != 1 || len(laid[0].Words) != 1 {
 		t.Fatalf("the word should make one caption, not %+v", laid)
@@ -334,11 +364,11 @@ func TestTheWordAndItsPillPopTogether(t *testing.T) {
 // the pop started where the word lit, between two frames, and its first
 // frame caught it on its way up.
 //
-// On the real disk: ffmpeg renders the short and the test reads it back.
+// On the real disk: ffmpeg draws the short's frames and the test reads them.
 func TestAWordsFirstFrameShowsItAtRest(t *testing.T) {
 	t.Parallel()
 	// It lights at 0.43 s, half a frame before the frame at 0.44 s.
-	words := []Cue{{0.43, 1.13, "respektvoll"}}
+	words := []timed.Cue{{Start: 0.43, End: 1.13, Text: "respektvoll"}}
 	_, _, _, frames := shortRows(t, words, 1.4, bounceTop, bounceRows)
 	const first, rest = 22, 45
 	if len(frames) <= rest {
@@ -368,13 +398,13 @@ func TestAWordsFirstFrameShowsItAtRest(t *testing.T) {
 // the few frames of its pop the word and its pill grow in every direction
 // and may reach over the other line, see TestTheWordAndItsPillPopTogether.
 //
-// On the real disk: ffmpeg renders the short and the test reads it back.
+// On the real disk: ffmpeg draws the short's frames and the test reads them.
 func TestThePillAtRestNeverReachesAnotherLine(t *testing.T) {
 	t.Parallel()
 	// The caption Tim saw, the tail of the g over the L.
-	words := []Cue{
-		{0.10, 0.40, "Ganz"}, {0.40, 0.80, "wichtig."}, {0.80, 1.00, "So."}, {1.00, 1.30, "Für"},
-		{1.30, 1.80, "Leute"}, {1.80, 2.10, "ist"}, {2.10, 2.40, "es"},
+	words := []timed.Cue{
+		{Start: 0.10, End: 0.40, Text: "Ganz"}, {Start: 0.40, End: 0.80, Text: "wichtig."}, {Start: 0.80, End: 1.00, Text: "So."}, {Start: 1.00, End: 1.30, Text: "Für"},
+		{Start: 1.30, End: 1.80, Text: "Leute"}, {Start: 1.80, End: 2.10, Text: "ist"}, {Start: 2.10, End: 2.40, Text: "es"},
 	}
 	const top, rows = 1150, 650
 	_, _, laid, frames := shortRows(t, words, 2.6, top, rows)
@@ -496,14 +526,14 @@ func TestEveryPillOfALineIsOneHeightAndClearOfTheOther(t *testing.T) {
 	size := pyround(style.Size)
 	clear := math.Round(float64(size) * lineClear)
 	for _, second := range []string{"Leute", "Ägypten", ""} {
-		words := []Cue{
-			{0.10, 0.40, "Ganz"}, {0.40, 0.80, "wichtig."}, {0.80, 1.00, "So."}, {1.00, 1.30, "Für"},
-			{1.30, 1.80, second}, {1.80, 2.10, "ist"}, {2.10, 2.40, "es"},
+		words := []timed.Cue{
+			{Start: 0.10, End: 0.40, Text: "Ganz"}, {Start: 0.40, End: 0.80, Text: "wichtig."}, {Start: 0.80, End: 1.00, Text: "So."}, {Start: 1.00, End: 1.30, Text: "Für"},
+			{Start: 1.30, End: 1.80, Text: second}, {Start: 1.80, End: 2.10, Text: "ist"}, {Start: 2.10, End: 2.40, Text: "es"},
 		}
 		if second == "" {
 			second = "Regenschirm."
-			words = []Cue{{0.10, 0.40, "so'n"}, {0.40, 0.80, "Typen"}, {0.80, 1.00, "mit"}, {1.00, 1.20, "so"},
-				{1.20, 1.50, "einem"}, {1.50, 2.40, "Regenschirm."}}
+			words = []timed.Cue{{Start: 0.10, End: 0.40, Text: "so'n"}, {Start: 0.40, End: 0.80, Text: "Typen"}, {Start: 0.80, End: 1.00, Text: "mit"}, {Start: 1.00, End: 1.20, Text: "so"},
+				{Start: 1.20, End: 1.50, Text: "einem"}, {Start: 1.50, End: 2.40, Text: "Regenschirm."}}
 		}
 		clip := Clip{ID: "01", Segments: []Segment{{Start: 0, End: 2.6}}}
 		laid := ClipCaptions(clip, &Transcript{Words: words, Language: "de"}, style)
@@ -593,7 +623,7 @@ func TestEveryPillOfALineIsOneHeightAndClearOfTheOther(t *testing.T) {
 // only at 25 and 50 fps before, where every frame starts on a whole
 // hundredth, found by the second review.
 //
-// On the real disk: ffmpeg renders the short and the test reads it back.
+// On the real disk: ffmpeg draws the short's frames and the test reads them.
 func TestEveryWordOfAShortPopsOnItsFrames(t *testing.T) {
 	t.Parallel()
 	for _, rate := range []string{"25", "30000/1001"} {
@@ -604,10 +634,10 @@ func TestEveryWordOfAShortPopsOnItsFrames(t *testing.T) {
 	}
 }
 
-// On the real disk: ffmpeg renders the short and the test reads it back.
+// On the real disk: ffmpeg draws the short's frames and the test reads them.
 func everyWordPops(t *testing.T, rate string) {
-	words := []Cue{{0.40, 0.48, "Das"}, {0.48, 0.60, "ist"}, {0.60, 0.64, "ja"},
-		{0.64, 0.76, "so"}, {0.76, 0.96, "ein"}, {0.96, 1.24, "gutes"}, {1.24, 1.64, "ja"}}
+	words := []timed.Cue{{Start: 0.40, End: 0.48, Text: "Das"}, {Start: 0.48, End: 0.60, Text: "ist"}, {Start: 0.60, End: 0.64, Text: "ja"},
+		{Start: 0.64, End: 0.76, Text: "so"}, {Start: 0.76, End: 0.96, Text: "ein"}, {Start: 0.96, End: 1.24, Text: "gutes"}, {Start: 1.24, End: 1.64, Text: "ja"}}
 	_, info, _, frames := shortRowsAt(t, rate, words, 1.64, bounceTop, bounceRows)
 	fps := float64(info.FPSNum) / float64(info.FPSDen)
 	pill := pillColour(t, ResolveStyle(nil))
@@ -671,13 +701,13 @@ func everyWordPops(t *testing.T, rate string) {
 // At 120 fps two frames of the short can start in one hundredth of a
 // second, the caption file's step, and libass draws the second's scale on
 // both. PopScale says what libass draws on every frame all the same, read
-// back from a short: it said the first's before, on 3240 frames of 3
+// back from the short's frames: it said the first's before, on 3240 frames of 3
 // seconds of words in the second review's simulation.
 //
-// On the real disk: ffmpeg renders the short and the test reads it back.
+// On the real disk: ffmpeg draws the short's frames and the test reads them.
 func TestPopScaleIsWhatLibassDrawsAbove100Fps(t *testing.T) {
 	t.Parallel()
-	words := []Cue{{0.10, 0.30, "Das"}, {0.30, 0.42, "ist"}, {0.42, 0.70, "gut"}}
+	words := []timed.Cue{{Start: 0.10, End: 0.30, Text: "Das"}, {Start: 0.30, End: 0.42, Text: "ist"}, {Start: 0.42, End: 0.70, Text: "gut"}}
 	_, info, laid, frames := shortRowsAt(t, "120", words, 0.70, bounceTop, bounceRows)
 	d := &CaptionDrawing{Laid: laid, Clip: info.OnFrames(Clip{ID: "01", Slug: "bounce", Segments: []Segment{{Start: 0, End: 0.70}}})}
 	pill := pillColour(t, ResolveStyle(nil))
@@ -722,8 +752,8 @@ func TestPopScaleIsWhatLibassDrawsAbove100Fps(t *testing.T) {
 // On the real disk: ffmpeg renders the short and the test reads it back.
 func TestWordsLitIsWhatTheShortLights(t *testing.T) {
 	t.Parallel()
-	words := []Cue{{0.30, 0.62, "Ich"}, {0.62, 0.64, "so"}, {0.64, 1.02, "war"}, {1.02, 1.50, "da"}}
-	_, info, laid, frames := shortRowsAt(t, "25", words, 1.60, bounceTop, bounceRows)
+	words := []timed.Cue{{Start: 0.30, End: 0.62, Text: "Ich"}, {Start: 0.62, End: 0.64, Text: "so"}, {Start: 0.64, End: 1.02, Text: "war"}, {Start: 1.02, End: 1.50, Text: "da"}}
+	_, info, laid, frames := renderedRowsAt(t, "25", words, 1.60, bounceTop, bounceRows)
 	clip := info.OnFrames(Clip{ID: "01", Slug: "bounce", Segments: []Segment{{Start: 0, End: 1.60}}})
 	d := &CaptionDrawing{Laid: laid, Clip: clip}
 	lit := d.WordsLit(info)

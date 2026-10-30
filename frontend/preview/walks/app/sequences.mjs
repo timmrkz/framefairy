@@ -30,6 +30,19 @@ export default [
     ],
   },
   {
+    // Tim's report of 2026-10-27, 17:21: the settings called clips
+    // shorts, drew the speech model and the clip model two ways, offered
+    // a size for some models and "best here" for one, spoke of the models
+    // in six places, listed every caption font by name in one row and
+    // wrote paths three ways. His reports of 2026-10-28 asked for the
+    // models that run here in one group, the biggest first, a tick on the
+    // downloaded ones, and the models folder in full in the info marks.
+    // On 2026-10-29 he saw a pick reach the card in three places one at a
+    // time.
+    name: "The settings say each thing once, in one way",
+    steps: [["app log", "open"], ["settings"], ["models alike"], ["a pick shows at once"], ["said once"], ["folders and ticks"]],
+  },
+  {
     // Tim saw the names and the licences in Help, Acknowledgements sit on
     // the border of their box, with no room round them (#500). Each group
     // is now a card the way the settings draw one.
@@ -74,6 +87,12 @@ export default [
     // back into the app.
     name: "The sidebar stays shut under a pointer that does not move, and while the app is not in front",
     steps: [["mission control"]],
+  },
+  {
+    // Tim's logs showed the sidebar opened by the pointer closing again
+    // within 100 ms one time in three, on a leave no hand made, #540.
+    name: "The sidebar opened by the pointer stays open on a leave with no move, and closes on a real one",
+    steps: [["leave with no move"]],
   },
   {
     // Tim chose another model in the settings while a search ran, and
@@ -299,5 +318,22 @@ export default [
       ["relaunch", "ready"],
       ["status", "A newer build is ready", "Relaunch to finish updating"],
     ],
+  },
+  {
+    // Tim stepped through the first run on 27 October and asked for one
+    // page: a card for each model, nothing downloading until he pressed
+    // Download, both at once, rows that read as a table, and no button
+    // to press once both were here. The app then opens on its first page
+    // with one big button to add a video.
+    name: "The first run downloads both models side by side and opens on the page to add a video",
+    steps: [["first run"]],
+  },
+  {
+    // The review of the one-page setup found that a Mac of 8 GB holds no
+    // clip model, so its first run had no way through. Tim chose on 28
+    // October that such a Mac, and only such a Mac, is offered a model in
+    // the cloud and its key there.
+    name: "The first run on a Mac too small for any clip model finds clips in the cloud once a key is saved",
+    steps: [["first run small"]],
   },
 ];

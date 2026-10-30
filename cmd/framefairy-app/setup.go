@@ -15,11 +15,10 @@ import (
 // What a new copy of the app needs before it can turn an episode into
 // shorts, and how far along that is.
 //
-// Two things are needed and only one of them is a question. Speech is
-// always local and there is one model, so the app says what it is about to
-// do and does it. Finding clips is a real choice between an Anthropic API
-// key and a local model, with different costs either way, so it is asked
-// once and can be changed later in the settings.
+// Two models are needed, one that hears and one that picks the clips, and
+// the first run downloads both, side by side, each once somebody presses
+// Download. Picking clips can be done in the cloud instead, with a key of
+// the person's own, which is chosen later in the settings.
 //
 // See docs/PACKAGING.md.
 
@@ -100,6 +99,13 @@ type SetupState struct {
 	// opened again while one runs, picks it up rather than starting a
 	// second.
 	Installing string `json:"installing,omitempty"`
+	// Home is the person's home folder, so the interface writes every path
+	// the one way, in full, whatever form it came in.
+	Home string `json:"home"`
+	// ModelsDir is where the models are kept, said in the info marks of
+	// the setup and the settings, from the engine so the interface never
+	// types the folder out itself.
+	ModelsDir string `json:"modelsDir"`
 }
 
 // Setup reports what is still needed. It reads, it never changes anything.
@@ -108,6 +114,8 @@ func (s *FrameFairy) Setup(ctx context.Context) SetupState {
 	dir := engine.ModelsDir()
 
 	state := SetupState{Planner: settings.Planner, Chosen: settings.Chosen}
+	state.Home, _ = os.UserHomeDir()
+	state.ModelsDir = dir
 	for _, m := range engine.SpeechModels() {
 		view := SpeechModelView{SpeechModel: m, Installed: m.Installed(dir)}
 		if view.Installed {
@@ -186,6 +194,14 @@ func (s *FrameFairy) Setup(ctx context.Context) SetupState {
 	return state
 }
 
+// installSpeech and installLanguage are what the setup and the settings
+// install a model with. The bridge a walk drives stands in for them, so a
+// walk never downloads a model.
+var (
+	installSpeech   = engine.InstallSpeechModel
+	installLanguage = engine.InstallLanguageModel
+)
+
 // InstallSpeechModel fetches a model and unpacks it, as a job, so it wears
 // the same beam and the same fill as every other piece of work and can be
 // cancelled the same way.
@@ -201,7 +217,7 @@ func (s *FrameFairy) InstallSpeechModel(name string) Job {
 	// folder, and the interface can ask twice by being opened twice.
 	return s.jobs.addOnce("", "model", model.Title,
 		func(ctx context.Context, p *engine.Project) (string, error) {
-			return "", engine.InstallSpeechModel(ctx, p.Log(), model, engine.ModelsDir())
+			return "", installSpeech(ctx, p.Log(), model, engine.ModelsDir())
 		})
 }
 
@@ -235,7 +251,7 @@ func (s *FrameFairy) InstallLanguageModel(name string) Job {
 	// One at a time, however often it is asked for.
 	return s.jobs.addOnce("", "llm", model.Title,
 		func(ctx context.Context, p *engine.Project) (string, error) {
-			if err := engine.InstallLanguageModel(ctx, p.Log(), model, engine.ModelsDir()); err != nil {
+			if err := installLanguage(ctx, p.Log(), model, engine.ModelsDir()); err != nil {
 				return "", err
 			}
 			// The only model there is may be the one in use now.
@@ -556,15 +572,7 @@ func (s *FrameFairy) CheckSetup(ctx context.Context) []Check {
 	}
 	out = append(out, decoding)
 
-	// Nothing to install: the faces are inside the program and are written
-	// out next to the captions before every render.
-	fonts := Check{Name: "Caption fonts", OK: true}
-	var names []string
-	for _, font := range engine.CaptionFonts() {
-		names = append(names, font.Name)
-	}
-	fonts.Detail = "built in: " + strings.Join(names, ", ")
-	out = append(out, fonts)
+	out = append(out, fontsCheck(engine.FontCounts()))
 
 	asrDir := opts.ASRModel
 	if asrDir == "" {
@@ -593,6 +601,16 @@ func (s *FrameFairy) CheckSetup(ctx context.Context) []Check {
 	return append(out, languageCheck(opts))
 }
 
+// fontsCheck says how many faces captions can be written in. Nothing to
+// install: the faces inside the program are written out next to the
+// captions before every render, and the machine's own are read where they
+// are. The names are the font list's beside the captions, one line here
+// and never a wall of a few hundred, which is what Tim saw, 2026-10-27.
+func fontsCheck(bundled, machine int) Check {
+	return Check{Name: "Caption fonts", OK: true,
+		Detail: fmt.Sprintf("%d built in, %d from this machine", bundled, machine)}
+}
+
 // languageCheck says whether the local model that finds clips is ready,
 // from the settings and the models folder alone, so a test of which model
 // is in use runs none of the programs the checks above run, issue #518.
@@ -604,12 +622,12 @@ func languageCheck(opts engine.Options) Check {
 	if model == "" {
 		switch found := engine.LocalModelFiles(engine.ModelsDir()); len(found) {
 		case 0:
-			lm.Detail = "None is installed. Install one under Finding clips, or use the Claude API."
+			lm.Detail = "None is installed. Download one under Clip model, or use a model in the cloud."
 		case 1:
 			model = found[0]
 		default:
 			lm.Detail = fmt.Sprintf("%d are installed and none is in use. Choose the one to find "+
-				"clips with under Finding clips.", len(found))
+				"clips with under Clip model.", len(found))
 		}
 	}
 	if model != "" {

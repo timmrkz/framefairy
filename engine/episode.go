@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"framefairy/engine/timed"
+
 	"github.com/spf13/afero"
 )
 
@@ -67,7 +69,7 @@ type PlanSummary struct {
 
 // Over is the part of the episode the clip set was made over, see
 // madeOver.
-func (s PlanSummary) Over(duration float64) Window {
+func (s PlanSummary) Over(duration float64) timed.Window {
 	return madeOver(s.From, s.To, s.To > s.From, s.By, duration)
 }
 
@@ -340,7 +342,7 @@ func SavedTranscript(fsys afero.Fs, source, logsDir, modelDir string, silenceDB 
 
 // Duration of the transcript in seconds.
 func (t *Transcript) Duration() float64 {
-	return float64(len(t.Frames)) * FrameSeconds
+	return float64(len(t.Frames)) * timed.FrameSeconds
 }
 
 // Peaks gives the loudest reading in each of buckets equal parts of a
@@ -356,7 +358,7 @@ func (t *Transcript) Duration() float64 {
 // no finer.
 func (t *Transcript) Peaks(from, to float64, buckets int) []float32 {
 	if to > from {
-		buckets = min(buckets, max(int(math.Ceil((to-from)/FrameSeconds)), 1))
+		buckets = min(buckets, max(int(math.Ceil((to-from)/timed.FrameSeconds)), 1))
 	}
 	out := make([]float32, max(buckets, 0))
 	if buckets <= 0 || to <= from {
@@ -364,14 +366,14 @@ func (t *Transcript) Peaks(from, to float64, buckets int) []float32 {
 	}
 	step := (to - from) / float64(buckets)
 	for i := range out {
-		first := int(math.Floor((from + float64(i)*step - t.Start) / FrameSeconds))
+		first := int(math.Floor((from + float64(i)*step - t.Start) / timed.FrameSeconds))
 		// A hair off the end before rounding up. A bucket exactly one
 		// reading wide works out to a boundary like 7.000000000000001, and
 		// rounding that up takes in the reading after it: every part came
 		// back as the louder of itself and its neighbour, which fattens a
 		// waveform and fills in the dips between words. The hair is far
 		// smaller than any real boundary and far larger than the error.
-		last := int(math.Ceil((from+float64(i+1)*step-t.Start)/FrameSeconds - 1e-9))
+		last := int(math.Ceil((from+float64(i+1)*step-t.Start)/timed.FrameSeconds - 1e-9))
 		peak := float32(-90)
 		if last <= 0 || first >= len(t.Frames) {
 			out[i] = peak
@@ -388,14 +390,14 @@ func (t *Transcript) Peaks(from, to float64, buckets int) []float32 {
 
 // Silences are the parts quieter than the floor that last at least
 // minimum seconds. Dragging a cut snaps to them.
-func (t *Transcript) Silences(minimum float64) []Span {
-	var out []Span
+func (t *Transcript) Silences(minimum float64) []timed.Span {
+	var out []timed.Span
 	floor := float32(t.Floor)
 	start := -1
 	flush := func(end int) {
-		if start >= 0 && float64(end-start)*FrameSeconds >= minimum {
-			out = append(out, Span{t.Start + float64(start)*FrameSeconds,
-				t.Start + float64(end)*FrameSeconds})
+		if start >= 0 && float64(end-start)*timed.FrameSeconds >= minimum {
+			out = append(out, timed.Span{Start: t.Start + float64(start)*timed.FrameSeconds,
+				End: t.Start + float64(end)*timed.FrameSeconds})
 		}
 		start = -1
 	}
@@ -413,9 +415,9 @@ func (t *Transcript) Silences(minimum float64) []Span {
 }
 
 // WordsBetween are the words that lie inside a part.
-func (t *Transcript) WordsBetween(from, to float64) []Cue {
+func (t *Transcript) WordsBetween(from, to float64) []timed.Cue {
 	first := sort.Search(len(t.Words), func(i int) bool { return t.Words[i].End > from })
-	var out []Cue
+	var out []timed.Cue
 	for _, w := range t.Words[first:] {
 		if w.Start >= to {
 			break
@@ -639,8 +641,8 @@ func recordOf(plan Plan, c Clip) (shortRecord, bool) {
 	folder, _ := rec[keyFolder].(string)
 	name, _ := rec[keyName].(string)
 	size, sized := wholeNumber(rec[keySize])
-	modified, timed := wholeNumber(rec[keyModified])
-	if filepath.IsAbs(folder) && ownName(c, name) && sized && timed {
+	modified, stamped := wholeNumber(rec[keyModified])
+	if filepath.IsAbs(folder) && ownName(c, name) && sized && stamped {
 		return shortRecord{folder: folder, name: name, size: size, modified: modified}, true
 	}
 	return shortRecord{}, false
@@ -848,6 +850,16 @@ func ClipCaptionsView(fsys afero.Fs, planPath, clipID string, t *Transcript, loo
 	return captionsView(plan, clip, t, look), nil
 }
 
+// ClipShareTime is the moment of the episode a share of one clip shows,
+// see ShareTime.
+func ClipShareTime(fsys afero.Fs, planPath, clipID string, share float64) (float64, error) {
+	_, clip, err := planClip(fsys, planPath, clipID)
+	if err != nil {
+		return 0, err
+	}
+	return ShareTime(clip, share), nil
+}
+
 // ShapedView is what a gesture makes of a clip, with the captions the clip
 // would have, for the clip timeline and the video preview while the hand
 // moves. Nothing is written.
@@ -993,7 +1005,7 @@ func captionsView(plan Plan, clip Clip, t *Transcript, look *Look) *CaptionsView
 		item := CaptionView{Start: c.Start, End: c.End, Lines: []CaptionLineView{}}
 		if len(c.Words) > 0 {
 			item.First, item.Last = c.Opens, c.Closes
-			item.StartMoved, item.EndMoved = c.startMoved || c.trimStart, c.endMoved || c.trimEnd
+			item.StartMoved, item.EndMoved = c.startMoved, c.endMoved
 		}
 		for _, line := range c.Lines {
 			row := CaptionLineView{Words: []WordView{}}

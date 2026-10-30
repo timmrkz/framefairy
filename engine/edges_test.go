@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"framefairy/engine/timed"
 )
 
 // said makes lines from text, each spoken over the seconds given after the
@@ -16,9 +18,9 @@ func said(parts ...any) []Line {
 		at += gap
 		words := strings.Fields(text)
 		step := seconds / float64(len(words))
-		var cues []Cue
+		var cues []timed.Cue
 		for k, w := range words {
-			cues = append(cues, Cue{Start: at + float64(k)*step, End: at + float64(k+1)*step, Text: w})
+			cues = append(cues, timed.Cue{Start: at + float64(k)*step, End: at + float64(k+1)*step, Text: w})
 		}
 		at += seconds
 		lines = append(lines, Line{Index: len(lines) + 1, Cues: cues, GapBefore: gap})

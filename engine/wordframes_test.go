@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"framefairy/engine/timed"
+
 	"framefairy/internal/ffmpegtest"
 )
 
@@ -19,8 +21,8 @@ import (
 // a few frames before the pill did, on #201.
 func TestShowingAtIsWhatTheCaptionFileShows(t *testing.T) {
 	laid := []LaidCaption{
-		{Caption: Caption{Start: 1.004, End: 2.5, Words: []Cue{{1.004, 1.3, "Ach"}, {1.3, 1.296, "doch."}, {1.8, 2.5, "Ja"}}}},
-		{Caption: Caption{Start: 2.5, End: 4, Words: []Cue{{2.6, 3, "das"}, {3, 4, "war"}}}},
+		{Caption: Caption{Start: 1.004, End: 2.5, Words: []timed.Cue{{Start: 1.004, End: 1.3, Text: "Ach"}, {Start: 1.3, End: 1.296, Text: "doch."}, {Start: 1.8, End: 2.5, Text: "Ja"}}}},
+		{Caption: Caption{Start: 2.5, End: 4, Words: []timed.Cue{{Start: 2.6, End: 3, Text: "das"}, {Start: 3, End: 4, Text: "war"}}}},
 	}
 	for _, c := range []struct {
 		ms           int64
@@ -108,8 +110,8 @@ func TestWordsLitIsWhatEachFrameShows(t *testing.T) {
 	source := SourceInfo{FPSNum: 25, FPSDen: 1, Duration: 60}
 	d := &CaptionDrawing{
 		Laid: []LaidCaption{
-			{Caption: Caption{Start: 0, End: 1.5, Words: []Cue{{0, 0.3, "Ich"}, {0.33, 0.6, "war"}, {0.61, 1.0, "vielleicht"}, {1.03, 1.5, "sechs"}}}},
-			{Caption: Caption{Start: 1.5, End: 3.1, Words: []Cue{{1.5, 1.9, "Jahre"}, {1.9, 2.35, "alt,"}, {2.41, 2.43, "als"}, {2.43, 3.1, "ich"}}}},
+			{Caption: Caption{Start: 0, End: 1.5, Words: []timed.Cue{{Start: 0, End: 0.3, Text: "Ich"}, {Start: 0.33, End: 0.6, Text: "war"}, {Start: 0.61, End: 1.0, Text: "vielleicht"}, {Start: 1.03, End: 1.5, Text: "sechs"}}}},
+			{Caption: Caption{Start: 1.5, End: 3.1, Words: []timed.Cue{{Start: 1.5, End: 1.9, Text: "Jahre"}, {Start: 1.9, End: 2.35, Text: "alt,"}, {Start: 2.41, End: 2.43, Text: "als"}, {Start: 2.43, End: 3.1, Text: "ich"}}}},
 		},
 		Clip: Clip{Segments: []Segment{{Start: 10.023, End: 11.513}, {Start: 20.258, End: 21.9}}},
 	}
@@ -175,12 +177,12 @@ func TestTheBoxStandsEvenlyRoundItsPills(t *testing.T) {
 		ffmpegtest.Unusable(t, "this ffmpeg cannot burn captions in: %v", err)
 	}
 	caption := func(start float64, texts ...string) LaidCaption {
-		var words []Cue
+		var words []timed.Cue
 		for i, text := range texts {
-			words = append(words, Cue{start + float64(i)*0.5, start + float64(i+1)*0.5, text})
+			words = append(words, timed.Cue{Start: start + float64(i)*0.5, End: start + float64(i+1)*0.5, Text: text})
 		}
 		return LaidCaption{Caption: Caption{Start: start, End: start + float64(len(texts))*0.5, Words: words},
-			Lines: [][]Cue{words}}
+			Lines: [][]timed.Cue{words}}
 	}
 	laid := []LaidCaption{caption(0, "Und"), caption(2, "jung"), caption(4, "so", "einem")}
 	track, err := e.CaptionTrack(ctx, laid, shortW, shortH, nil, SourceInfo{})

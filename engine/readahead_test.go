@@ -13,6 +13,8 @@ import (
 	"sync"
 	"testing"
 
+	"framefairy/engine/timed"
+
 	"github.com/spf13/afero"
 )
 
@@ -155,8 +157,8 @@ func (f *fakeReader) serve(w http.ResponseWriter, r *http.Request) {
 // a word every half second, a sentence of six, and a pause of a second
 // and a bit after each, with the loudness of every frame, loud in a word
 // and quiet between.
-func spokenPart(from, to float64) ([]Cue, []float32) {
-	var words []Cue
+func spokenPart(from, to float64) ([]timed.Cue, []float32) {
+	var words []timed.Cue
 	at := 0.1
 	for n := 1; at < 120; n++ {
 		text := fmt.Sprintf("wort%d", n)
@@ -164,17 +166,17 @@ func spokenPart(from, to float64) ([]Cue, []float32) {
 			text += "."
 		}
 		if at >= from && at+0.35 <= to {
-			words = append(words, Cue{at, at + 0.35, text})
+			words = append(words, timed.Cue{Start: at, End: at + 0.35, Text: text})
 		}
 		at += 0.5
 		if n%6 == 0 {
 			at += 1.3
 		}
 	}
-	frames := make([]float32, int((to-from)/FrameSeconds+0.5))
+	frames := make([]float32, int((to-from)/timed.FrameSeconds+0.5))
 	for i := range frames {
 		frames[i] = -80
-		t := from + (float64(i)+0.5)*FrameSeconds
+		t := from + (float64(i)+0.5)*timed.FrameSeconds
 		for _, w := range words {
 			if t >= w.Start && t < w.End {
 				frames[i] = -20
@@ -195,7 +197,7 @@ type readAheadOf struct {
 	stamp sourceStamp
 	// speak is what is heard of a part, spokenPart unless a test says
 	// otherwise.
-	speak func(from, to float64) ([]Cue, []float32)
+	speak func(from, to float64) ([]timed.Cue, []float32)
 }
 
 // hostedFake has the model this program loads be fake, so what is read
@@ -242,7 +244,7 @@ func videoReadAhead(t *testing.T, files afero.Fs, name string) *readAheadOf {
 func (v *readAheadOf) hear(from, to float64) {
 	v.t.Helper()
 	words, frames := v.speak(from, to)
-	if err := addHeard(v.files, v.path, v.stamp, "parakeet", 120, Window{from, to}, words, frames,
+	if err := addHeard(v.files, v.path, v.stamp, "parakeet", 120, timed.Window{Start: from, End: to}, words, frames,
 		from); err != nil {
 		v.t.Fatal(err)
 	}
@@ -267,7 +269,7 @@ func (v *readAheadOf) warm(ctx context.Context, req PlanRequest) <-chan ReadAhea
 // runner.plan asks. The fake turns the ask down once it has it.
 func (v *readAheadOf) ask(ctx context.Context, req PlanRequest) error {
 	v.t.Helper()
-	window := inMilliseconds(&Window{req.From, req.To})
+	window := inMilliseconds(&timed.Window{Start: req.From, End: req.To})
 	opts, _ := v.p.planOptions(req, window)
 	opts = opts.forSpan(*window)
 	e := v.p.engine
@@ -351,7 +353,7 @@ func TestALineReadBeforeAndWrittenOutAgainIsReadAgain(t *testing.T) {
 	fake := &fakeReader{reads: make(chan []int, 16), asks: make(chan fakeAsk, 4)}
 	hostedFake(t, fake)
 	v := videoReadAhead(t, afero.NewMemMapFs(), t.Name())
-	v.speak = func(from, to float64) ([]Cue, []float32) {
+	v.speak = func(from, to float64) ([]timed.Cue, []float32) {
 		words, frames := spokenPart(from, to)
 		if from < 20 {
 			// Loud, in a room with a hum, and the word after each pause

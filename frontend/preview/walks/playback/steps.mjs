@@ -6,7 +6,7 @@
 // the helpers only these steps use. See docs/TESTING.md.
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { addHEVC, ask, chosen, cropFrame, drag, engineState, episodeOn, filmedOnScreen, fromSidebar, handles, high, loudness, middle, news, nextNews, nextPaint, playUntil, preview, readShort, recordFrames, sameLook, sayLook, seekTo, settle, shortFrames, shownOnPlayhead, xOf } from "../bridge.mjs";
+import { addHEVC, ask, chosen, clickOnTrack, cropFrame, drag, engineState, episodeOn, filmedOnScreen, fromSidebar, handles, high, loudness, middle, news, nextNews, nextPaint, playUntil, preview, readShort, recordFrames, sameLook, sayLook, seekTo, settle, shortFrames, shownOnPlayhead, xOf } from "../bridge.mjs";
 import { nextCall, onePiece, pieceCount, rate, restAhead, shortOf, url } from "../common/steps.mjs";
 import { overlaid, stillFrame } from "../rules.mjs";
 
@@ -380,7 +380,7 @@ export const steps = {
     // end the sound card has already played past.
     const end = (await engineState(page, watch.at)).segments.at(-1).end;
     const g = await handles(page);
-    await page.mouse.click(middle(g.end) - 80, high(g.track));
+    await clickOnTrack(page, middle(g.end) - 80, high(g.track));
     await settle(page);
     if (!(await page.evaluate(() => !!document.querySelector('button[aria-label="Pause"]')))) {
       await page.keyboard.press("Space");
@@ -508,7 +508,7 @@ export const steps = {
       walk.wrong = "there is no room on the clip timeline before the clip";
       return;
     }
-    await page.mouse.click(x, high(g.track));
+    await clickOnTrack(page, x, high(g.track));
     await settle(page);
     const state = await engineState(page, watch.at);
     const stop = await recordFrames(page, 1 / (await rate(page)));
@@ -1261,8 +1261,11 @@ export const steps = {
     // With the speech held, it is let through a piece at a time, and
     // each is saved.
     for (let seen = await news(page); ((await ask(page, "Sentences", path)) ?? []).length < least; ) {
-      if (walk.speechHeld) await onePiece(page, url, path, { save: true });
-      else seen = await nextNews(page, seen);
+      if (!walk.speechHeld) seen = await nextNews(page, seen);
+      else if (!(await onePiece(page, url, path, { save: true }))) {
+        walk.wrong = `the engine has ${((await ask(page, "Sentences", path)) ?? []).length} sentences of the ${least} wanted, and no work on the video is left to hear more`;
+        return;
+      }
     }
     // And the app has read how far the saved transcript reaches since,
     // which it reads again on its own while the work hears, so the
@@ -1449,6 +1452,127 @@ export const steps = {
     else if (bottom > got.thumbs[0])
       walk.wrong = `the rotate icon, ${top.toFixed(1)} to ${bottom.toFixed(1)} px, reaches into the thumbnails' row, from ${got.thumbs[0].toFixed(1)} px`;
   },
+  // ["share", key]     presses a number key and sees the playhead put that
+  //                    many tenths into the clip as it plays, its cuts
+  //                    taken out, never in a cut, on the clip and not
+  //                    dimmed, and playing or paused as it was. Playing,
+  //                    the play goes on from there
+  // ["share", key, "past the cut"]
+  //                    the same, and the playhead lands after the clip's
+  //                    first cut
+  // ["share", key, "from the video"]
+  //                    the same, after a click on the clip timeline
+  //                    before the clip, which dims it: the key brings the
+  //                    playhead onto the clip and lights it
+  // ["share", key, "in a word"]
+  //                    steps to the next word with shift and the right
+  //                    arrow, opens the first word of the caption box at
+  //                    its end,
+  //                    and the key is a letter of the word and the
+  //                    playhead stays put
+  // Issue #539.
+  async share(walk, arg, s) {
+    const { page, watch } = walk;
+    const [key, how] = Array.isArray(arg) ? arg : [arg];
+    const place = () =>
+      page.evaluate(() => {
+        const chosen = document.querySelector(".clip-timeline .chosen");
+        return {
+          at: Number(document.querySelector(".screen").dataset.playhead),
+          playing: !!document.querySelector('button[aria-label="Pause"]'),
+          video: !chosen || chosen.classList.contains("dim"),
+        };
+      });
+    if (how === "from the video") {
+      const g = await handles(page);
+      if (g.start.x - g.track.x < 40) {
+        walk.wrong = "there is no room on the clip timeline before the clip";
+        return;
+      }
+      await clickOnTrack(page, (g.track.x + g.start.x) / 2, high(g.track));
+      await settle(page);
+      if (!(await place()).video) {
+        walk.wrong = "a click on the clip timeline before the clip left the clip lit";
+        return;
+      }
+    }
+    if (how === "in a word") {
+      // Shift and the right arrow put the playhead in the next word, so
+      // the caption box has words to open.
+      await page.keyboard.press("Shift+ArrowRight");
+      await watch.step("press", s, page);
+      await page.locator(".captions .word").first().click();
+      await watch.step("click", s);
+      await page.keyboard.press("End");
+      const before = await place();
+      await page.keyboard.press(key);
+      await watch.step("type", s, page);
+      const open = await page.evaluate(() => document.activeElement?.closest?.(".captions .word")?.textContent ?? null);
+      const after = await place();
+      if (open === null) walk.wrong = `no word of the caption box was open when ${key} was pressed`;
+      else if (!open.endsWith(key)) walk.wrong = `${key} pressed in the word left it reading "${open}"`;
+      else if (after.at !== before.at) walk.wrong = `${key} pressed in the word "${open}" moved the playhead from ${before.at} to ${after.at}`;
+      return;
+    }
+    const pieces = (await engineState(page, watch.at)).segments;
+    const kept = pieces.reduce((sum, p) => sum + p.end - p.start, 0);
+    // Where the key has to land, from what the issue says it means: the
+    // moment with that many tenths of the clip's kept time before it, its
+    // cuts taken out, worked out here and not taken from the app, the way
+    // engine.ShareTime should answer. A moment exactly where a piece ends
+    // is the start of the piece after, past the cut.
+    let want = pieces.at(-1).end;
+    for (let left = (Number(key) / 10) * kept, i = 0; i < pieces.length; left -= pieces[i].end - pieces[i].start, i++) {
+      if (left < pieces[i].end - pieces[i].start) {
+        want = pieces[i].start + left;
+        break;
+      }
+    }
+    const was = await place();
+    // Every place the page draws the playhead after the key, among them
+    // the one the key put it in. The key asks the engine first, so a play
+    // goes on a little meanwhile, and the place it is put in is not
+    // always the first. A playhead already there changes nothing, and
+    // stays where it was.
+    await page.evaluate(() => {
+      const screen = document.querySelector(".screen");
+      window.__sharedTo = [];
+      const look = new MutationObserver(() => window.__sharedTo.push(Number(screen.dataset.playhead)));
+      const listen = () => look.observe(screen, { attributes: true, attributeFilter: ["data-playhead"] });
+      window.addEventListener("keydown", listen, { capture: true, once: true });
+      // Let go of once the step has read it, moved or not, so a later
+      // play is never read as this key's.
+      window.__sharedDone = () => {
+        look.disconnect();
+        window.removeEventListener("keydown", listen, { capture: true });
+      };
+    });
+    await page.keyboard.press(key);
+    await settle(page);
+    const drawn = await page.evaluate(() => (window.__sharedDone(), window.__sharedTo));
+    const to = drawn.find((at) => Math.abs(at - want) <= 1e-6) ?? drawn[0] ?? was.at;
+    const now = await place();
+    const inCut = pieces.some((p, i) => i > 0 && to >= pieces[i - 1].end && to < p.start);
+    if (Math.abs(to - want) > 1e-6) {
+      walk.wrong = `${key} put the playhead at ${to.toFixed(3)} s, not ${want.toFixed(3)} s, ${Number(key) * 10} % of the clip's ${kept.toFixed(3)} s kept`;
+    } else if (inCut) walk.wrong = `${key} put the playhead at ${to.toFixed(3)} s, inside a cut`;
+    else if (how === "past the cut" && !(pieces.length > 1 && to >= pieces[1].start)) {
+      walk.wrong = `${key} put the playhead at ${to.toFixed(3)} s, not past the cut that ends at ${pieces[1]?.start.toFixed(3)} s`;
+    }
+    else if (now.video) walk.wrong = `${key} left the clip dimmed, with the playhead on the video`;
+    else if (now.playing !== was.playing) walk.wrong = `${key} ${was.playing ? "stopped the play" : "started a play"}`;
+    if (walk.wrong || !was.playing) {
+      await watch.step("press", s, page);
+      return;
+    }
+    // Playing, the play goes on from where the key put it, a little way,
+    // and is paused there.
+    const ran = await playUntil(page, { from: to, most: 0.3, pause: true });
+    await settle(page);
+    if (!(ran.gone > 0)) walk.wrong = `the play did not go on after ${key}, the playhead stood at ${ran.at.toFixed(3)} s`;
+    else if (ran.at < to) walk.wrong = `the play went back from ${to.toFixed(3)} s to ${ran.at.toFixed(3)} s after ${key}`;
+    await watch.step("press", s, page);
+  },
   // ["glides across the cut"]
   //                    with the playhead put on a frame between the clip's
   //                    first keyframe and its first cut, and on one between
@@ -1483,7 +1607,7 @@ export const steps = {
       // Half a frame in, so the click lands in the frame meant.
       const t = Math.floor(at * src.fps) / src.fps + 0.5 / src.fps;
       const g = await handles(page);
-      await page.mouse.click(await xOf(page, t), high(g.track));
+      await clickOnTrack(page, await xOf(page, t), high(g.track));
       await settle(page);
       await shownOnPlayhead(page);
       const came = await page.evaluate((fps) => window.__filmed() === Math.floor((Number(document.querySelector(".screen").dataset.playhead) + 0.001) * fps), src.fps);
@@ -1544,7 +1668,7 @@ export const steps = {
         // Half a frame in, so the click lands in the frame meant.
         const at = a.at + share * (b.at - a.at) + (share < 1 ? 0.5 / src.fps : 0);
         const g = await handles(page);
-        await page.mouse.click(await xOf(page, at), high(g.track));
+        await clickOnTrack(page, await xOf(page, at), high(g.track));
         await settle(page);
         await shownOnPlayhead(page);
         const came = await page.evaluate((fps) => {
@@ -1567,24 +1691,23 @@ export const steps = {
     }
     const g = await handles(page);
     // Two fifths of the way, where smoothstep moves the crop fastest.
-    await page.mouse.click(await xOf(page, a.at + 0.4 * (b.at - a.at) + 0.5 / src.fps), high(g.track));
+    await clickOnTrack(page, await xOf(page, a.at + 0.4 * (b.at - a.at) + 0.5 / src.fps), high(g.track));
     await settle(page);
     // The play starts from the frame on the video preview, so it is
     // started once that is the playhead's frame.
     await shownOnPlayhead(page);
-    // The play is read by its own clock, which the play asks on every
-    // tick before it draws, so what is on screen is what the tick before
-    // drew, with the crop frame it was told. The walk's clock stands on
-    // the next frame until it is up, see FrameQueue.playClock, so every
-    // frame of the play is shown on any machine: by the sound card's
-    // clock a busy one showed two in two seconds of play, issue #464, and
-    // two of nine, issue #534. The play is paused by the page itself once
-    // the video preview has shown ten frames of the episode or the play
-    // has come to the next keyframe, where the glide ends.
+    // The play is read on its clock, which the play asks on every tick
+    // before it draws, so what is on screen is what the tick before drew,
+    // with the crop frame it was told. The walk's clock shows every frame
+    // of the play on any machine, see open in walks/bridge.mjs: by the
+    // sound card's a busy one showed two in two seconds of play, issue
+    // #464, and two of nine, issue #534. The play is paused by the page
+    // itself once the video preview has shown ten frames of the episode
+    // or the play has come to the next keyframe, where the glide ends.
     const end = b.at;
     await page.evaluate((end) => {
       const q = window.__frameQueue;
-      const sound = q.playClock;
+      const clock = q.playClock;
       window.__glide = [];
       window.__glideStarted = false;
       window.__glideRead = new Promise((resolve) => {
@@ -1593,13 +1716,13 @@ export const steps = {
         const done = () => {
           if (over) return;
           over = true;
-          q.playClock = sound;
+          q.playClock = clock;
           resolve();
         };
         window.__glideDone = done;
-        q.playClock = (heard, unshown) => {
+        q.playClock = (heard, unshown, coming) => {
           window.__glideStarted = true;
-          if (over) return heard;
+          if (over) return clock(heard, unshown, coming);
           const el = document.querySelector(".screen");
           const k = window.__filmed();
           window.__glide.push({ k, crop: Number(el.dataset.crop) });
@@ -1613,7 +1736,7 @@ export const steps = {
               document.body.dispatchEvent(new KeyboardEvent("keyup", key));
             });
           }
-          return Math.min(heard, unshown);
+          return clock(heard, unshown, coming);
         };
         // A play that stops by itself asks its clock no more: the reading
         // ends there, with what it read.
@@ -1690,7 +1813,7 @@ export const steps = {
     const problems = [];
     for (const [i, p] of (await pieces()).entries()) {
       const g = await handles(page);
-      await page.mouse.click(await xOf(page, (p.start + p.end) / 2), high(g.track));
+      await clickOnTrack(page, await xOf(page, (p.start + p.end) / 2), high(g.track));
       await settle(page);
       await shownOnPlayhead(page);
       const seen = await page.evaluate(() => {
@@ -1911,7 +2034,7 @@ async function asPreviewed(page, rate, before) {
     const tried = [];
     for (let tries = 0; tries < 4; tries++) {
       if (grips.some(([a, b]) => x > a && x < b)) break;
-      await page.mouse.click(x, high(g.track));
+      await clickOnTrack(page, x, high(g.track));
       await settle(page);
       placed = Number(await page.evaluate(() => document.querySelector(".screen").dataset.playhead));
       tried.push(placed.toFixed(4));
@@ -2013,7 +2136,7 @@ async function edgesAsRendered(page) {
       problems.push(`there is no ${e.label} to click`);
       continue;
     }
-    await page.mouse.click(grip.x + grip.width / 2, high((await handles(page)).track));
+    await clickOnTrack(page, grip.x + grip.width / 2, high((await handles(page)).track));
     await settle(page);
     // On the edge's frame, where the engine puts the playhead for an
     // edge, see edgePlayhead in engine/shape.go: the first frame of the

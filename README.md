@@ -80,11 +80,14 @@ docs/
   INSTALL.md          tools and models, for every part
   CLI.md              the command line: running it, all flags
   APP.md              the app: using it, how it is built
+  ARCHITECTURE.md     where each kind of thing belongs, and what must stay true
+  decisions/          each architectural change, its five simulations and its choice
   ENGINE.md           how the engine works
   TRAINING.md         training records and the training tool
   GUI-PLAN.md         the app's build plan up to 16 October 2026, frozen,
                       open work is in the GitHub issues
   ROBUSTNESS.md       what can go wrong between the parts, and what was done
+  DESIGN-REVIEW.md    a review of the design, 6 October, and what became of it
   ASSESSMENT.md       a review of design and practice, and what became of it
   PACKAGING.md        what ships, what the user installs, which ffmpeg
   UPDATES.md          how the app updates itself, to the next release and,

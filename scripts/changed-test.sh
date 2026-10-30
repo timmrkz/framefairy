@@ -146,6 +146,8 @@ has "train/export.go" "lint"
 is ".golangci.yml" "lint"
 is "scripts/testdata/lint/walks/waits.mjs" "lint unit go framefairy/internal/naming"
 is "frontend/eslint-suppressions.json" "lint interface"
+# The failure report's test and the logs it reads run the lint.
+is "scripts/test-failures-test.sh scripts/testdata/test-failures/gotestsum.txt" "lint unit go framefairy/internal/naming"
 
 # Tests that run the decoder as a program do not import it, so what
 # builds it reaches them by FRAMEFAIRY_FRAMES.
@@ -162,6 +164,9 @@ lacks "engine/rotate.go" "go framefairy/internal/ffmpegtest"
 # The notices test counts the hyphenation files by a path it builds.
 has "engine/hyphenation/hyph-de.head.txt" "go framefairy/engine" "go framefairy/notices"
 
+# The line about the machine changes no test, so only the lint and the
+# naming test read it.
+is "scripts/machine.sh" "lint unit go framefairy/internal/naming"
 # The fuzzing script decides how the Go tests run, like the Makefile.
 has "scripts/fuzz.sh" "lint" "go framefairy/engine" "go framefairy/updates" "fuzz FuzzParse"
 # So does the CI image, which every Linux job runs in, the walks among
@@ -205,6 +210,8 @@ has "scripts/build-ffmpeg.sh" "build" "lint"
 # versions the build scripts pin.
 has "scripts/build-ffmpeg.sh" "go framefairy/notices"
 has "scripts/build-llama.sh" "go framefairy/notices"
+# The signer reads the Info.plist the bundle script writes, issue #369.
+has "scripts/bundle-macos.sh" "go framefairy/cmd/framefairy-release"
 
 # The rules are tested in make lint.
 is "scripts/needs-build.sh" "lint unit go framefairy/internal/naming"

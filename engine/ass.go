@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 
+	"framefairy/engine/timed"
+
 	"framefairy/internal/framewire"
 )
 
@@ -324,7 +326,7 @@ func CaptionRoom(s Style) float64 {
 // LaidCaption is a caption with the lines it is drawn in.
 type LaidCaption struct {
 	Caption
-	Lines [][]Cue
+	Lines [][]timed.Cue
 	// Hidden are the words, counted across the lines from nought, drawn
 	// with no ink and in their place, with their pill: the word being
 	// typed in the caption box, which the browser draws there while
@@ -367,14 +369,14 @@ func LayOutCaptions(captions []Caption, s Style, language string) []LaidCaption 
 	return laid
 }
 
-func captionLines(c Caption, r captionRoom) [][]Cue {
+func captionLines(c Caption, r captionRoom) [][]timed.Cue {
 	words := make([]string, len(c.Words))
 	for i, w := range c.Words {
 		words[i] = w.Text
 	}
-	var out [][]Cue
+	var out [][]timed.Cue
 	for _, line := range wrapWords(words, r.fits) {
-		row := make([]Cue, 0, len(line))
+		row := make([]timed.Cue, 0, len(line))
 		for _, at := range line {
 			row = append(row, c.Words[at])
 		}
@@ -404,7 +406,7 @@ func wrapWords(words []string, fits func(string) bool) [][]int {
 	return lines
 }
 
-func cueText(line []Cue) string {
+func cueText(line []timed.Cue) string {
 	parts := make([]string, len(line))
 	for i, c := range line {
 		parts[i] = c.Text

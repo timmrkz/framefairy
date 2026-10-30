@@ -52,9 +52,11 @@ describe("which company a model in the cloud belongs to", () => {
 
 describe("the list to choose from", () => {
   const language = [
-    model("small", { title: "Small", needs: 10 * 2 ** 30 }),
-    model("big", { title: "Big", recommended: true }),
+    model("small", { title: "Small", needs: 10 * 2 ** 30, download: 7.0e9 }),
+    model("big", { title: "Big", recommended: true, download: 14.4e9 }),
     model("far", { title: "Far", installed: false, download: 5.2e9 }),
+    // Needs the most memory and is not the biggest download, the way
+    // Qwen3 14B against Gemma 4 26B A4B is.
     model("huge", { title: "Huge", installed: false, fit: "too big", needs: 40 * 2 ** 30 }),
   ];
 
@@ -72,14 +74,24 @@ describe("the list to choose from", () => {
     expect(options.find((o) => o.value === cloudValue("gpt-6-luna"))).toBeTruthy();
   });
 
-  test("the models here: those that are here first, the biggest first, each saying its cost", () => {
+  // Tim saw a size on the models still to fetch, none on the ones here,
+  // and "best here" on one, 2026-10-27. Then a group of their own for the
+  // models to download, 2026-10-28, where he wanted one list with a mark.
+  test("every model here in one group, the biggest first, each saying its size and whether it is downloaded", () => {
     const here = finderOptions(cloud, providers, language, "claude-sonnet-5").filter(
-      (o) => o.group === "On this machine",
+      (o) => o.group !== "In the cloud",
     );
-    expect(here.map((o) => o.label)).toEqual(["Big", "Small", "Huge", "Far"]);
-    expect(here.find((o) => o.label === "Big")?.detail).toBe("best here");
-    expect(here.find((o) => o.label === "Far")?.detail).toBe("5.2 GB download");
-    expect(here.find((o) => o.label === "Huge")).toMatchObject({ warn: true, detail: "Too big for this machine" });
+    // By the size the row shows, not the memory the model needs: Tim saw
+    // 9.0 GB over 14.4 GB as out of order, 2026-10-28.
+    expect(here.map((o) => [o.group, o.label, o.detail, o.mark?.icon])).toEqual([
+      ["On this machine", "Big", "14.4 GB", "check"],
+      ["On this machine", "Huge", "9.0 GB, too big for this machine", "download"],
+      ["On this machine", "Small", "7.0 GB", "check"],
+      ["On this machine", "Far", "5.2 GB", "download"],
+    ]);
+    expect(here.find((o) => o.label === "Huge")?.warn).toBe(true);
+    expect(here.filter((o) => o.mark?.faint).map((o) => o.label)).toEqual(["Huge", "Far"]);
+    expect(here.some((o) => /best/i.test(o.detail ?? ""))).toBe(false);
   });
 });
 
@@ -131,7 +143,7 @@ describe("how the choice stands", () => {
 
   test("a model that is here is ready, and says who made it and what it needs", () => {
     const s = finderStanding({ planner: "local", provider: anthropic, hasKey: false, inUse: ready });
-    expect(s).toEqual({ text: "By Google. 20 GB of memory. Best for this machine.", tone: "", state: "ok" });
+    expect(s).toEqual({ text: "By Google. 20 GB of memory.", tone: "", state: "ok" });
   });
 
   test("without llama-server it is not ready, whatever the model", () => {

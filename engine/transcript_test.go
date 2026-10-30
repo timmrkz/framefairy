@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"framefairy/engine/timed"
+
 	"github.com/spf13/afero"
 
 	"framefairy/internal/ffmpegtest"
@@ -70,7 +72,7 @@ func TestTranscriptionResumes(t *testing.T) {
 		t.Fatal("cannot read the transcript")
 	}
 	cut := 20.0
-	var early []Cue
+	var early []timed.Cue
 	for _, w := range words {
 		if w.End <= cut {
 			early = append(early, w)
@@ -88,7 +90,7 @@ func TestTranscriptionResumes(t *testing.T) {
 	}
 
 	// A plan inside the covered part needs no more transcription.
-	sliced, ok := sliceTranscript(disk, path, stamp, filepath.Base(base.ASRModel), Window{5, 15}, nil)
+	sliced, ok := sliceTranscript(disk, path, stamp, filepath.Base(base.ASRModel), timed.Window{Start: 5, End: 15}, nil)
 	if !ok || len(sliced.Words) == 0 {
 		t.Fatalf("slice of a partial transcript failed")
 	}
@@ -119,7 +121,7 @@ func TestTranscriptionResumes(t *testing.T) {
 
 // storedTranscript writes a whole-episode transcript next to a stand-in
 // episode file and gives back both paths.
-func storedTranscript(t *testing.T, words []Cue, frames []float32, to float64,
+func storedTranscript(t *testing.T, words []timed.Cue, frames []float32, to float64,
 	partial bool) (afero.Fs, string, string) {
 	t.Helper()
 	fsys := afero.NewMemMapFs()
@@ -151,7 +153,7 @@ func storedTranscript(t *testing.T, words []Cue, frames []float32, to float64,
 // A transcript from before numbers stood apart is still the episode's
 // transcript. Reading it as stale took the waveform off the clip timeline.
 func TestAnOlderTranscriptIsStillRead(t *testing.T) {
-	words := []Cue{{0.5, 1.2, "Hallo"}, {1.3, 2, "am15."}}
+	words := []timed.Cue{{Start: 0.5, End: 1.2, Text: "Hallo"}, {Start: 1.3, End: 2, Text: "am15."}}
 	fsys, source, path := storedTranscript(t, words, make([]float32, 300), 3, false)
 	stamp, err := stampOf(fsys, source)
 	if err != nil {
@@ -176,7 +178,7 @@ func TestAnOlderTranscriptIsStillRead(t *testing.T) {
 	// part it heard, up to where carrying on would have started, without
 	// the word it left to be heard again.
 	file := transcriptFile{Version: 2, Source: stamp, Model: "modell", To: 3, Resume: 2.5,
-		Partial: true, Mean: -30, Words: storedWords(append(words, Cue{2.6, 2.9, "noch"}))}
+		Partial: true, Mean: -30, Words: storedWords(append(words, timed.Cue{Start: 2.6, End: 2.9, Text: "noch"}))}
 	if err := writeTranscript(fsys, path, file, make([]float32, 300)); err != nil {
 		t.Fatal(err)
 	}
@@ -190,7 +192,7 @@ func TestTranscriptNames(t *testing.T) {
 	if got := TranscriptName(nil); got != "words.json" {
 		t.Errorf("whole episode: %s", got)
 	}
-	if got := TranscriptName(&Window{65.4, 130}); got != "words-65-130.json" {
+	if got := TranscriptName(&timed.Window{Start: 65.4, End: 130}); got != "words-65-130.json" {
 		t.Errorf("window: %s", got)
 	}
 	if got := framesPath("/a/logs/words-65-130.json"); got != "/a/logs/words-65-130.frames" {
@@ -211,8 +213,8 @@ func TestTranscriptNames(t *testing.T) {
 }
 
 func TestTheCacheOnlyServesItsOwnEpisode(t *testing.T) {
-	words := []Cue{{0.1, 0.5, "eins"}, {1, 1.4, "zwei"}, {2, 2.4, "drei"}}
-	fsys, source, path := storedTranscript(t, words, frames(3, Span{0, 3}), 3, false)
+	words := []timed.Cue{{Start: 0.1, End: 0.5, Text: "eins"}, {Start: 1, End: 1.4, Text: "zwei"}, {Start: 2, End: 2.4, Text: "drei"}}
+	fsys, source, path := storedTranscript(t, words, frames(3, timed.Span{Start: 0, End: 3}), 3, false)
 	stamp, err := stampOf(fsys, source)
 	if err != nil {
 		t.Fatal(err)
@@ -248,8 +250,8 @@ func TestTheCacheOnlyServesItsOwnEpisode(t *testing.T) {
 }
 
 func TestCoverageAndSlicing(t *testing.T) {
-	words := []Cue{{0.1, 0.5, "eins"}, {1, 1.4, "zwei"}, {2, 2.4, "drei"}, {2.5, 2.9, "vier"}}
-	sound := frames(3, Span{0, 3})
+	words := []timed.Cue{{Start: 0.1, End: 0.5, Text: "eins"}, {Start: 1, End: 1.4, Text: "zwei"}, {Start: 2, End: 2.4, Text: "drei"}, {Start: 2.5, End: 2.9, Text: "vier"}}
+	sound := frames(3, timed.Span{Start: 0, End: 3})
 	fsys, source, path := storedTranscript(t, words, sound, 3, false)
 	model := "/home/tim/.framefairy/models/modell"
 	if got, done := Coverage(fsys, source, model); got != 3 || !done {
@@ -259,7 +261,7 @@ func TestCoverageAndSlicing(t *testing.T) {
 
 	// A window inside the transcript is cut out of it, with the noise floor
 	// of the whole episode and the words that fit entirely inside.
-	sliced, ok := sliceTranscript(fsys, path, stamp, "modell", Window{1, 2.5}, nil)
+	sliced, ok := sliceTranscript(fsys, path, stamp, "modell", timed.Window{Start: 1, End: 2.5}, nil)
 	if !ok {
 		t.Fatal("slicing failed")
 	}
@@ -270,10 +272,10 @@ func TestCoverageAndSlicing(t *testing.T) {
 		t.Errorf("slice starts at %v with %d frames", sliced.Start, len(sliced.Frames))
 	}
 	// A window past the end is not served, and neither is an empty one.
-	if _, ok := sliceTranscript(fsys, path, stamp, "modell", Window{1, 9}, nil); ok {
+	if _, ok := sliceTranscript(fsys, path, stamp, "modell", timed.Window{Start: 1, End: 9}, nil); ok {
 		t.Errorf("a window past the end was served")
 	}
-	if _, ok := sliceTranscript(fsys, path, stamp, "modell", Window{2, 2}, nil); ok {
+	if _, ok := sliceTranscript(fsys, path, stamp, "modell", timed.Window{Start: 2, End: 2}, nil); ok {
 		t.Errorf("an empty window was served")
 	}
 
@@ -284,7 +286,7 @@ func TestCoverageAndSlicing(t *testing.T) {
 		t.Errorf("partial coverage %v %v", got, done)
 	}
 	partialStamp, _ := stampOf(partialFS, partialSource)
-	if _, ok := sliceTranscript(partialFS, partialPath, partialStamp, "modell", Window{0, 3}, nil); ok {
+	if _, ok := sliceTranscript(partialFS, partialPath, partialStamp, "modell", timed.Window{Start: 0, End: 3}, nil); ok {
 		t.Errorf("a window past what was heard was served")
 	}
 }
@@ -370,11 +372,11 @@ func TestAPartOfAudioLinesUpWithTheWholeEpisode(t *testing.T) {
 	rec := fakeRecognizer{&calls}
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 
-	whole, err := e.Transcribe(context.Background(), source, Window{0, 12}, rec, nil)
+	whole, err := e.Transcribe(context.Background(), source, timed.Window{Start: 0, End: 12}, rec, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	part, err := e.Transcribe(context.Background(), source, Window{4, 12}, rec, nil)
+	part, err := e.Transcribe(context.Background(), source, timed.Window{Start: 4, End: 12}, rec, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -600,10 +602,10 @@ func TestHearingAWindowHeardInPartFillsFromZero(t *testing.T) {
 	base := DefaultOptions()
 	base.ASRModel = t.TempDir()
 	p := NewProject(e, source, base)
-	if err := p.Hear(context.Background(), Window{0, 35}); err != nil {
+	if err := p.Hear(context.Background(), timed.Window{Start: 0, End: 35}); err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
-	gaps := Unheard(disk, source, base.ASRModel, Window{0, 70})
+	gaps := Unheard(disk, source, base.ASRModel, timed.Window{Start: 0, End: 70})
 	if len(gaps) != 1 {
 		t.Fatalf("after hearing the first half, what is left is %v, not one part", gaps)
 	}
@@ -611,7 +613,7 @@ func TestHearingAWindowHeardInPartFillsFromZero(t *testing.T) {
 	mu.Lock()
 	listening = true
 	mu.Unlock()
-	if err := p.Hear(context.Background(), Window{0, 70}); err != nil {
+	if err := p.Hear(context.Background(), timed.Window{Start: 0, End: 70}); err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
 
@@ -692,7 +694,7 @@ func TestAHearingThatLosesItsTurnCountsOnFromWhereItWas(t *testing.T) {
 		mu.Unlock()
 		return c, cancel, nil
 	}
-	letGo, err := p.hear(context.Background(), turn, Window{0, 70})
+	letGo, err := p.hear(context.Background(), turn, timed.Window{Start: 0, End: 70})
 	if err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
@@ -813,7 +815,7 @@ func TestCarryingOnFromFilesOutOfStep(t *testing.T) {
 		t.Fatal("cannot read the transcript")
 	}
 	// The words say 40 s, the loudness only 20 s.
-	var early []Cue
+	var early []timed.Cue
 	for _, w := range words {
 		if w.End <= 40 {
 			early = append(early, w)
@@ -1014,7 +1016,7 @@ func TestPartsMeetWithEveryWordOnce(t *testing.T) {
 	p := NewProject(e, source, base)
 	ctx := context.Background()
 
-	if err := p.Hear(ctx, Window{4.1, 6.1}); err != nil {
+	if err := p.Hear(ctx, timed.Window{Start: 4.1, End: 6.1}); err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
 	if parts := HeardParts(disk, source, base.ASRModel); len(parts) != 1 || parts[0] != [2]float64{4.1, 6.1} {
@@ -1027,19 +1029,19 @@ func TestPartsMeetWithEveryWordOnce(t *testing.T) {
 	if covered, done := Coverage(disk, source, base.ASRModel); covered != 0 || done {
 		t.Errorf("a part in the middle reads as heard from the start to %v", covered)
 	}
-	if err := p.Hear(ctx, Window{0, 3}); err != nil {
+	if err := p.Hear(ctx, timed.Window{Start: 0, End: 3}); err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
 	if parts := HeardParts(disk, source, base.ASRModel); len(parts) != 2 {
 		t.Fatalf("heard %v", parts)
 	}
-	if gaps := Unheard(disk, source, base.ASRModel, Window{0, 12}); len(gaps) != 2 ||
-		gaps[0] != (Window{3, 4.1}) || gaps[1] != (Window{6.1, 12}) {
+	if gaps := Unheard(disk, source, base.ASRModel, timed.Window{Start: 0, End: 12}); len(gaps) != 2 ||
+		gaps[0] != (timed.Window{Start: 3, End: 4.1}) || gaps[1] != (timed.Window{Start: 6.1, End: 12}) {
 		t.Errorf("unheard %v", gaps)
 	}
 	// What is heard already is not heard again.
 	heard = 0
-	if err := p.Hear(ctx, Window{0.5, 5}); err != nil {
+	if err := p.Hear(ctx, timed.Window{Start: 0.5, End: 5}); err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
 	if want := 1.1 + 2*hearingPad; math.Abs(heard-want) > 0.05 {
@@ -1078,7 +1080,7 @@ func TestTwoHearingsOfOnePartAtOnce(t *testing.T) {
 	base.ASRModel = t.TempDir()
 	var wg sync.WaitGroup
 	errs := make([]error, 3)
-	for i, span := range []Window{{2, 8}, {2, 8}, {5, 12}} {
+	for i, span := range []timed.Window{{Start: 2, End: 8}, {Start: 2, End: 8}, {Start: 5, End: 12}} {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -1155,7 +1157,7 @@ func TestATranscriptIsDoneWhenNothingIsLeftToHear(t *testing.T) {
 		if got := file.done(); got != c.done {
 			t.Errorf("%s: done is %v", c.name, got)
 		}
-		if unheard := len(gapsIn(file.heard(), Window{0, 600})) == 0; unheard != c.done && len(c.parts) > 0 {
+		if unheard := len(gapsIn(file.heard(), timed.Window{Start: 0, End: 600})) == 0; unheard != c.done && len(c.parts) > 0 {
 			t.Errorf("%s: done says %v and what is left to hear disagrees", c.name, c.done)
 		}
 	}

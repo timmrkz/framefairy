@@ -3,6 +3,8 @@ package engine
 import (
 	"maps"
 	"slices"
+
+	"framefairy/engine/timed"
 )
 
 // The words a clip does not show. Removing a word or a caption is done to
@@ -76,7 +78,7 @@ func (r RemovedWords) clone() RemovedWords {
 
 // hides says whether a word said is made from a heard word the clip does
 // not show.
-func (r RemovedWords) hides(t *Transcript, w Cue) bool {
+func (r RemovedWords) hides(t *Transcript, w timed.Cue) bool {
 	if len(r) == 0 {
 		return false
 	}
@@ -93,16 +95,16 @@ func (r RemovedWords) hides(t *Transcript, w Cue) bool {
 // are all kept the way they are now, see editClipWords.
 
 // take removes a heard word from the clip.
-func (r RemovedWords) take(t *Transcript, heard Cue) {
+func (r RemovedWords) take(t *Transcript, heard timed.Cue) {
 	r[t.keyOf(heard)] = true
 }
 
 // forget shows a heard word in the clip again.
-func (r RemovedWords) forget(t *Transcript, heard Cue) {
+func (r RemovedWords) forget(t *Transcript, heard timed.Cue) {
 	delete(r, t.keyOf(heard))
 }
 
 // removesHeard says whether the clip removes a heard word.
-func (r RemovedWords) removesHeard(t *Transcript, heard Cue) bool {
+func (r RemovedWords) removesHeard(t *Transcript, heard timed.Cue) bool {
 	return r[t.keyOf(heard)]
 }

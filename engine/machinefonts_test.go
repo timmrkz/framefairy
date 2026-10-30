@@ -470,3 +470,20 @@ func TestTheShelfIsReadFromSeveralAtOnce(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+// The settings count the faces rather than name them, the ones the
+// program carries and the machine's own, each counted once. Tim saw a few
+// hundred names in one row, 2026-10-27.
+func TestTheFacesAreCountedByWhereTheyComeFrom(t *testing.T) {
+	onShelf(t, map[string][]byte{
+		"Narrow.ttf": namedFace(t, "Anton", "Test Narrow"),
+		"Pair.ttc":   collection(tinyFace("Tiny", 400), tinyFace("Tiny Heavy", 900)),
+	})
+	bundled, machine := FontCounts()
+	if bundled != len(captionFonts) || machine != 3 {
+		t.Errorf("counted %d built in and %d from the machine, want %d and 3", bundled, machine, len(captionFonts))
+	}
+	if all := len(CaptionFonts()); bundled+machine != all {
+		t.Errorf("counted %d in all, the list offers %d", bundled+machine, all)
+	}
+}

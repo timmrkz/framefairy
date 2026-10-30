@@ -14,18 +14,14 @@ import (
 	"strings"
 	"time"
 
+	"framefairy/engine/timed"
+
 	"github.com/spf13/afero"
 )
 
-// Window is the part of the episode a run works on, in seconds.
-type Window struct {
-	Start float64
-	End   float64
-}
-
 // SummariseLines reports what the transcript looks like before any token is
 // spent.
-func (e *Engine) SummariseLines(t *Transcript, lines []Line, window Window) {
+func (e *Engine) SummariseLines(t *Transcript, lines []Line, window timed.Window) {
 	pauses, marked := 0, 0
 	for _, line := range lines {
 		if line.GapBefore >= splitPause {
@@ -57,7 +53,7 @@ type PlanOptions struct {
 	MaxTokens  int
 	Budget     float64
 	LogDir     string
-	Window     *Window
+	Window     *timed.Window
 	MaxPause   *float64
 	KeepPause  float64
 	Fresh      bool
@@ -95,12 +91,12 @@ type PlanOptions struct {
 	// by an earlier search or by hand. The lines inside them are named to
 	// the model as lines to leave, and a clip that is mostly those lines
 	// all the same is left out, see takenLines.
-	Taken []Window
+	Taken []timed.Window
 	// Listed are the parts of Taken whose clips are still in the list,
 	// not removed. An episode shorter than a clip has one moment only, so
 	// any clip of it in the list is its clip, and it is made again once
 	// that was removed, see wholeClip.
-	Listed []Window
+	Listed []timed.Window
 	// wrote hears what the search wrote, see searchWrote.
 	wrote *searchWrote
 }
@@ -573,7 +569,7 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 			proposed[c.ID] = append(proposed[c.ID], [2]float64{float64(seg.Start), float64(seg.End)})
 		}
 	}
-	span := Window{0, source.Duration}
+	span := timed.Window{Start: 0, End: source.Duration}
 	if opts.Window != nil {
 		span = *opts.Window
 	}

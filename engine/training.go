@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"framefairy/engine/timed"
+
 	"github.com/spf13/afero"
 )
 
@@ -619,7 +621,7 @@ func (e *Engine) planIDFor(opts PlanOptions, replyKey string, fresh bool) string
 // first clip lands and passed in here as planned. A decision about a clip
 // is only recorded against a plan with an id, and one made while the search
 // was running would otherwise be lost.
-func (e *Engine) recordPlan(opts PlanOptions, sourcePath string, window Window, lines []Line,
+func (e *Engine) recordPlan(opts PlanOptions, sourcePath string, window timed.Window, lines []Line,
 	prompt, replyKey string, fresh bool, entries []PlanEntry, ids []string,
 	segments map[string][][2]float64, planned string) string {
 	if opts.LogDir == "" || !opts.Record || e.Records == nil {

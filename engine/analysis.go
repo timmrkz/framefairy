@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"framefairy/engine/timed"
 )
 
 func tailRunes(s string, n int) string {
@@ -402,7 +404,7 @@ func BestWindow(profile []float64, window int) (float64, float64) {
 	return left, (bestSum - typical) / bestSum
 }
 
-type timed struct {
+type position struct {
 	at    float64
 	value float64
 }
@@ -413,8 +415,8 @@ type timed struct {
 // subject is a person and their face is the thing a viewer looks at. Detail
 // is the fallback for frames where no face is detected, which keeps the tool
 // working on footage of something that is not a person.
-func (e *Engine) samplePositions(ctx context.Context, path string, parts []Span, read []grayFrame,
-	source SourceInfo, cropW int) []timed {
+func (e *Engine) samplePositions(ctx context.Context, path string, parts []timed.Span, read []grayFrame,
+	source SourceInfo, cropW int) []position {
 	whole := 0.0
 	for _, p := range parts {
 		whole += math.Max(p.End-p.Start, 0.05)
@@ -466,7 +468,7 @@ func (e *Engine) samplePositions(ctx context.Context, path string, parts []Span,
 	if detector != nil {
 		centres, found = detector.faceCentres(frames, FaceWidth, FaceHeight, faceWorkers())
 	}
-	var faces, details []timed
+	var faces, details []position
 	for index, frame := range frames {
 		if len(frame) < FaceWidth*FaceHeight {
 			continue
@@ -475,7 +477,7 @@ func (e *Engine) samplePositions(ctx context.Context, path string, parts []Span,
 
 		if detector != nil {
 			if centre, ok := centres[index], found[index]; ok {
-				faces = append(faces, timed{when,
+				faces = append(faces, position{when,
 					math.Max(0, math.Min((centre-float64(windowSmall)/2)*scale, limit))})
 				continue
 			}
@@ -483,7 +485,7 @@ func (e *Engine) samplePositions(ctx context.Context, path string, parts []Span,
 		profile := DetailProfile(frame, FaceWidth, FaceHeight)
 		left, confidence := BestWindow(profile, windowSmall)
 		if confidence >= 0.04 {
-			details = append(details, timed{when, math.Max(0, math.Min(left*scale, limit))})
+			details = append(details, position{when, math.Max(0, math.Min(left*scale, limit))})
 		}
 	}
 
@@ -508,7 +510,7 @@ func (e *Engine) samplePositions(ctx context.Context, path string, parts []Span,
 // A still frame with the subject slightly off centre beats a frame that
 // slides around behind them. The median keeps a handful of bad measurements
 // from pulling the result.
-func settledCrop(samples []timed) (float64, bool) {
+func settledCrop(samples []position) (float64, bool) {
 	if len(samples) == 0 {
 		return 0, false
 	}
@@ -531,17 +533,17 @@ func settledCrop(samples []timed) (float64, bool) {
 // found never showed, #396.
 //
 // Only what the clip keeps is decoded, each kept span once.
-func (e *Engine) ClipSegments(ctx context.Context, path string, spans []Span,
+func (e *Engine) ClipSegments(ctx context.Context, path string, spans []timed.Span,
 	source SourceInfo, cropW int, work *cropWork) ([]Segment, error) {
 	if len(spans) == 0 {
 		return nil, nil
 	}
-	ordered := append([]Span(nil), spans...)
+	ordered := append([]timed.Span(nil), spans...)
 	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].Start < ordered[j].Start })
 	work.start(ordered)
 	e.decoderUsed(ctx, path, ordered[0].Start)
 
-	var kept []Span
+	var kept []timed.Span
 	var read []grayFrame
 	for _, span := range ordered {
 		if span.End-span.Start < 0.25 {

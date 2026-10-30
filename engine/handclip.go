@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"framefairy/engine/timed"
 )
 
 // ---------------------------------------------------------------------------
@@ -42,14 +44,14 @@ func NewClipID() string {
 // the playhead the way the clip grows, and on both sides the line the
 // playhead stands in and a sentence's reach from it, where the clip's
 // edges are put.
-func (r ClipRequest) reach(longest, duration float64) Window {
+func (r ClipRequest) reach(longest, duration float64) timed.Window {
 	before, after := 2*sentenceReach, 2*sentenceReach
 	if r.Backward {
 		before += longest
 	} else {
 		after += longest
 	}
-	return Window{max(0, r.At-before), min(duration, r.At+after)}
+	return timed.Window{Start: max(0, r.At-before), End: min(duration, r.At+after)}
 }
 
 // MakeClip makes a clip at a moment as a job, with a record, so it is cut

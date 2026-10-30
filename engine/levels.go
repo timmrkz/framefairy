@@ -15,6 +15,8 @@ import (
 	"strings"
 	"time"
 
+	"framefairy/engine/timed"
+
 	"github.com/spf13/afero"
 )
 
@@ -84,7 +86,7 @@ type Levels struct {
 }
 
 // To is how far the furthest part measured reaches, in seconds.
-func (l Levels) To() float64 { return float64(len(l.Frames)) * FrameSeconds }
+func (l Levels) To() float64 { return float64(len(l.Frames)) * timed.FrameSeconds }
 
 // Seconds are the parts measured, in seconds.
 func (l Levels) Seconds() [][2]float64 { return partSeconds(l.Parts) }
@@ -92,7 +94,7 @@ func (l Levels) Seconds() [][2]float64 { return partSeconds(l.Parts) }
 func partSeconds(parts [][2]int) [][2]float64 {
 	out := make([][2]float64, len(parts))
 	for i, p := range parts {
-		out[i] = [2]float64{roundTo(float64(p[0])*FrameSeconds, 2), roundTo(float64(p[1])*FrameSeconds, 2)}
+		out[i] = [2]float64{roundTo(float64(p[0])*timed.FrameSeconds, 2), roundTo(float64(p[1])*timed.FrameSeconds, 2)}
 	}
 	return out
 }
@@ -107,7 +109,7 @@ func (l Levels) Over(t *Transcript) *Transcript {
 	if t == nil || l.Done {
 		return &Transcript{Frames: l.Frames}
 	}
-	at := int(math.Round(t.Start / FrameSeconds))
+	at := int(math.Round(t.Start / timed.FrameSeconds))
 	frames := make([]float32, max(len(l.Frames), at+len(t.Frames)))
 	for i := range frames {
 		frames[i] = -90
@@ -231,8 +233,8 @@ func (s *levelState) gap(from, to int) (int, bool) {
 // next is where to measure next, for a clip timeline showing from to to:
 // the first gap in what it shows, then on from there, then from the start.
 func (s *levelState) next(from, to float64) (int, bool) {
-	first := int(math.Floor(from / FrameSeconds))
-	last := int(math.Ceil(to / FrameSeconds))
+	first := int(math.Floor(from / timed.FrameSeconds))
+	last := int(math.Ceil(to / timed.FrameSeconds))
 	if last > first {
 		if n, ok := s.gap(first, math.MaxInt); ok {
 			return n, true
@@ -243,7 +245,7 @@ func (s *levelState) next(from, to float64) (int, bool) {
 
 // shown says whether a frame is in what the clip timeline shows.
 func shown(n int, from, to float64) bool {
-	return to > from && float64(n)*FrameSeconds >= from-FrameSeconds && float64(n)*FrameSeconds < to
+	return to > from && float64(n)*timed.FrameSeconds >= from-timed.FrameSeconds && float64(n)*timed.FrameSeconds < to
 }
 
 // leave says whether a measuring at frame at goes elsewhere: when the clip
@@ -273,7 +275,7 @@ func (s *levelState) measured() float64 {
 	for _, p := range s.parts() {
 		total += p[1] - p[0]
 	}
-	return float64(total) * FrameSeconds
+	return float64(total) * timed.FrameSeconds
 }
 
 func (s *levelState) done() bool {
@@ -406,13 +408,13 @@ func (e *Engine) measureFrom(ctx context.Context, source string, st *levelState,
 // levelsLead is how many frames before where it starts a reading decodes
 // and throws away, soundLead in frames. The conversion only compiles while
 // soundLead is a whole number of frames.
-const levelsLead = int(soundLead / (FrameSeconds * 1_000_000))
+const levelsLead = int(soundLead / (timed.FrameSeconds * 1_000_000))
 
 // audioFrom is how ffmpeg reads the episode's audio as 16 kHz mono samples
 // from frame start on, for the loudness and for the transcription alike,
 // see soundFrom.
 func audioFrom(source string, start int, picture float64) []string {
-	return soundFrom(source, float64(start)*FrameSeconds, picture, SampleRate, 1)
+	return soundFrom(source, float64(start)*timed.FrameSeconds, picture, SampleRate, 1)
 }
 
 // soundFrom is how ffmpeg reads the episode's sound from a moment on, in

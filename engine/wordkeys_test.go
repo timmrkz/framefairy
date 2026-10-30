@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"framefairy/engine/timed"
+
 	"github.com/spf13/afero"
 )
 
@@ -14,7 +16,7 @@ import (
 func keyedFrames() (frames []float32, start float64) {
 	start = 59.0
 	for i := range 800 {
-		at := start + float64(i)*FrameSeconds
+		at := start + float64(i)*timed.FrameSeconds
 		level := float32(-70)
 		for _, w := range captionHeard() {
 			if at >= w.Start && at < w.End {
@@ -55,14 +57,14 @@ func clipSays(t *testing.T, fsys afero.Fs, path string, tr *Transcript) string {
 // word said. Plan row 2.254.
 func TestWordFixesHoldWhenTheSilenceSettingChanges(t *testing.T) {
 	loud, quiet := keyedTranscript(-50), keyedTranscript(-40)
-	typ := func(tr *Transcript) Cue {
+	typ := func(tr *Transcript) timed.Cue {
 		for _, w := range tr.HeardWords {
 			if w.Text == "Typ" {
 				return w
 			}
 		}
 		t.Fatal("no Typ")
-		return Cue{}
+		return timed.Cue{}
 	}
 	if typ(loud).Start == typ(quiet).Start {
 		t.Fatalf("the test needs the setting to move a word, Typ starts at %.3f with both", typ(loud).Start)
@@ -124,7 +126,7 @@ func TestWordFixesFromBeforeAreReadAndKeptAnew(t *testing.T) {
 	}
 }
 
-func slicesIndex(words []Cue, text string) int {
+func slicesIndex(words []timed.Cue, text string) int {
 	for i, w := range words {
 		if w.Text == text {
 			return i
@@ -146,7 +148,7 @@ func framesLoud(loud func(at float64) bool) (frames []float32, start float64) {
 	start = 59.0
 	for i := range 500 {
 		level := float32(-70)
-		if loud(start + float64(i)*FrameSeconds) {
+		if loud(start + float64(i)*timed.FrameSeconds) {
 			level = -20
 		}
 		frames = append(frames, level)
@@ -177,8 +179,8 @@ func TestTwoWordsHeardAtOnceKeepTheirOwnFixes(t *testing.T) {
 	t.Parallel()
 	floor := -40.0
 	frames, start := framesLoud(func(float64) bool { return true })
-	tr := fromStored([]Cue{{60.0, 60.4, "Und"}, {61.0, 61.0, "dass"}, {61.0, 61.3, "5000"},
-		{61.4, 61.8, "Leute"}, {62.0, 62.4, "kamen"}}, frames, start, -20, &floor)
+	tr := fromStored([]timed.Cue{{Start: 60.0, End: 60.4, Text: "Und"}, {Start: 61.0, End: 61.0, Text: "dass"}, {Start: 61.0, End: 61.3, Text: "5000"},
+		{Start: 61.4, End: 61.8, Text: "Leute"}, {Start: 62.0, End: 62.4, Text: "kamen"}}, frames, start, -20, &floor)
 	at := func(text string) float64 { return tr.HeardWords[slicesIndex(tr.HeardWords, text)].Start }
 	fsys, path := clipPlan(t, "")
 	if err := SetWordText(fsys, path, "01", at("dass"), "das", tr); err != nil {
@@ -208,8 +210,8 @@ func TestAFixFromBeforeStaysOnItsOwnWord(t *testing.T) {
 	frames, start := framesLoud(func(at float64) bool {
 		return (at >= 60.0 && at < 60.4) || (at >= 61.2 && at < 61.5) || (at >= 62.0 && at < 62.4)
 	})
-	tr := fromStored([]Cue{{60.0, 60.4, "Und"}, {61.0, 61.08, "ja"}, {61.2, 61.5, "Typ"},
-		{62.0, 62.4, "kamen"}}, frames, start, -20, &floor)
+	tr := fromStored([]timed.Cue{{Start: 60.0, End: 60.4, Text: "Und"}, {Start: 61.0, End: 61.08, Text: "ja"}, {Start: 61.2, End: 61.5, Text: "Typ"},
+		{Start: 62.0, End: 62.4, Text: "kamen"}}, frames, start, -20, &floor)
 	ja := tr.HeardWords[slicesIndex(tr.HeardWords, "ja")]
 	if wordKey(ja.Start) != "61200" {
 		t.Fatalf("the test needs ja moved to where Typ was heard, it starts at %.3f", ja.Start)
@@ -240,7 +242,7 @@ func edgeTranscript(silenceDB float64) *Transcript {
 	start := 59.0
 	var frames []float32
 	for i := range 800 {
-		at := start + float64(i)*FrameSeconds
+		at := start + float64(i)*timed.FrameSeconds
 		level := float32(-70)
 		for _, w := range captionHeard() {
 			if at >= w.Start && at < w.End {

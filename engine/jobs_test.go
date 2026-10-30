@@ -13,6 +13,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"framefairy/engine/timed"
+
 	"github.com/spf13/afero"
 
 	"framefairy/internal/standin"
@@ -479,7 +481,7 @@ func TestASearchOfALaterWindowHearsOnlyWhatIsNew(t *testing.T) {
 	if seconds > 10+2*hearingPad+0.1 {
 		t.Errorf("a window from 20 to 30 heard %.1f s", seconds)
 	}
-	if gaps := Unheard(disk, p.Source, p.Base.ASRModel, Window{0, 30}); len(gaps) != 1 || gaps[0] != (Window{15, 20}) {
+	if gaps := Unheard(disk, p.Source, p.Base.ASRModel, timed.Window{Start: 0, End: 30}); len(gaps) != 1 || gaps[0] != (timed.Window{Start: 15, End: 20}) {
 		t.Errorf("unheard %v, want only what no search asked for", gaps)
 	}
 	t.Logf("heard %.1f s, then %.1f s, time left said %v", first, seconds, lefts)

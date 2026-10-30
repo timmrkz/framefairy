@@ -6,6 +6,8 @@ import (
 	"math"
 	"strconv"
 	"strings"
+
+	"framefairy/engine/timed"
 )
 
 // Caption is one caption on a clip's timeline, with the words it is made of.
@@ -15,7 +17,7 @@ type Caption struct {
 	Start float64
 	End   float64
 	Text  string
-	Words []Cue
+	Words []timed.Cue
 	// Opens and Closes are when the first and the last word it was laid
 	// out from start in the episode, a word removed among them. They are
 	// the words its edges are kept against, see CaptionTimes, and they stay
@@ -24,16 +26,14 @@ type Caption struct {
 	Opens, Closes float64
 	// trimStart and trimEnd say the word it opens or closes on was
 	// removed, so that edge is where the words shown put it, unless the
-	// hand put it in past the middle of the word removed there, which is
-	// at startPast or endPast on the clip's clock, see moveCaptions.
+	// hand put it elsewhere, see moveCaptions.
 	trimStart, trimEnd bool
-	startPast, endPast float64
 	// startMoved and endMoved say the edge is where it was put by hand.
 	startMoved, endMoved bool
 }
 
 // Cue is the caption without its words.
-func (c Caption) Cue() Cue { return Cue{c.Start, c.End, c.Text} }
+func (c Caption) Cue() timed.Cue { return timed.Cue{Start: c.Start, End: c.End, Text: c.Text} }
 
 // ---------------------------------------------------------------------------
 // The bouncing highlight
@@ -253,7 +253,7 @@ func lineBlocks(rows int, text string) []string {
 
 // lineIndices turns laid out lines back into the word numbers they hold,
 // which is what the tagging below works with.
-func lineIndices(lines [][]Cue) [][]int {
+func lineIndices(lines [][]timed.Cue) [][]int {
 	out := make([][]int, len(lines))
 	at := 0
 	for i, line := range lines {

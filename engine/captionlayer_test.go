@@ -16,8 +16,12 @@ import (
 	"testing/synctest"
 	"time"
 
+	"framefairy/engine/timed"
+
 	"framefairy/internal/ffmpegtest"
 	"framefairy/internal/framewire"
+
+	"github.com/spf13/afero"
 )
 
 // The captions the episode's decoder draws for the video preview are the
@@ -66,8 +70,8 @@ func TestTheVideoPreviewDrawsTheShortsCaptions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	words := []Cue{{0.20, 0.40, "Das"}, {0.50, 1.00, "respektvoll"}, {1.00, 1.30, "ist."},
-		{2.00, 2.30, "Und"}, {2.30, 2.70, "dann?"}}
+	words := []timed.Cue{{Start: 0.20, End: 0.40, Text: "Das"}, {Start: 0.50, End: 1.00, Text: "respektvoll"}, {Start: 1.00, End: 1.30, Text: "ist."},
+		{Start: 2.00, End: 2.30, Text: "Und"}, {Start: 2.30, End: 2.70, Text: "dann?"}}
 	// Two pieces with a cut between them, so the short's clock is not the
 	// episode's.
 	clip := info.OnFrames(Clip{ID: "01", Slug: "layer",
@@ -95,32 +99,7 @@ func TestTheVideoPreviewDrawsTheShortsCaptions(t *testing.T) {
 	// own graph.
 	frames := func(assName string) [][]byte {
 		t.Helper()
-		graph, video, sound, err := e.BuildFilterGraph(ctx, clip, info, rs, assName)
-		if err != nil {
-			t.Fatal(err)
-		}
-		args := append([]string{"-hide_banner", "-loglevel", "error"}, pieceInputs(clip, source, info)...)
-		// Read back with the colours worked out at every pixel and rounded
-		// exactly, the same on every machine. The converter ffmpeg picks by
-		// itself takes each colour from its quarter of the pixels as it
-		// stands, and works otherwise on an Apple chip than on Linux, which
-		// put the captions a tenth of a step further apart there.
-		graph += ";" + video + "scale=flags=accurate_rnd+full_chroma_int+bitexact,format=rgb24[rgb]"
-		args = append(args, "-filter_complex", graph, "-map", "[rgb]", "-fps_mode", "cfr", "-r", info.FPSString(),
-			"-f", "rawvideo", "-pix_fmt", "rgb24", "-", "-map", sound, "-f", "null", os.DevNull)
-		cmd := exec.Command(ffmpeg, args...)
-		cmd.Dir = captions
-		var stderr bytes.Buffer
-		cmd.Stderr = &stderr
-		out, err := cmd.Output()
-		if err != nil {
-			t.Fatalf("the render's graph: %v %s", err, stderr.String())
-		}
-		var all [][]byte
-		for i := 0; i+w*h*3 <= len(out); i += w * h * 3 {
-			all = append(all, out[i:i+w*h*3])
-		}
-		return all
+		return graphFrames(t, e, clip, source, info, rs, captions, assName, "", w, h)
 	}
 	with, without := frames("01.ass"), frames("")
 	if len(with) != len(without) || len(with) < 100 {
@@ -227,7 +206,7 @@ func over(picture []byte, width int, l framewire.Layer) []byte {
 // was made from the drawing formatted as Go formats it, which gives a
 // pointer's address, so every view of the same captions had a new one.
 func TestACaptionTrackIsNamedByWhatItIs(t *testing.T) {
-	words := []Cue{{0.2, 0.6, "Das"}, {0.6, 1.2, "respektvoll"}, {1.2, 1.5, "ist."}}
+	words := []timed.Cue{{Start: 0.2, End: 0.6, Text: "Das"}, {Start: 0.6, End: 1.2, Text: "respektvoll"}, {Start: 1.2, End: 1.5, Text: "ist."}}
 	view := func(said string) string {
 		x, y := 120, 0.4
 		clip := Clip{ID: "01", Slug: "name", CaptionY: &y,
@@ -257,7 +236,7 @@ func TestOneCaptionFileIsMadeOnceForManyAtOnce(t *testing.T) {
 	ctx := context.Background()
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	clip := Clip{ID: "01", Slug: "once", Segments: []Segment{{Start: 0, End: 2}}}
-	tr := &Transcript{Words: []Cue{{0.2, 0.6, "Das"}, {0.6, 1.2, "respektvoll"}, {1.2, 1.5, "ist."}}, Language: "de"}
+	tr := &Transcript{Words: []timed.Cue{{Start: 0.2, End: 0.6, Text: "Das"}, {Start: 0.6, End: 1.2, Text: "respektvoll"}, {Start: 1.2, End: 1.5, Text: "ist."}}, Language: "de"}
 	view := captionsView(Plan{}, clip, tr, nil)
 	d := view.Drawing()
 	want, err := e.CaptionTrack(ctx, d.Laid, 540, 960, d.Style, SourceInfo{})
@@ -311,7 +290,7 @@ func TestTheVideoPreviewDrawsTheCaptionsSmallerAsTheShortWouldShowThem(t *testin
 	}
 	ctx := context.Background()
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
-	words := []Cue{{0.20, 0.40, "Das"}, {0.50, 1.00, "respektvoll"}, {1.00, 1.30, "ist."}}
+	words := []timed.Cue{{Start: 0.20, End: 0.40, Text: "Das"}, {Start: 0.50, End: 1.00, Text: "respektvoll"}, {Start: 1.00, End: 1.30, Text: "ist."}}
 	clip := Clip{ID: "01", Slug: "small", Segments: []Segment{{Start: 0, End: 1.4}}}
 	laid := ClipCaptions(clip, &Transcript{Words: words, Language: "de"}, ResolveStyle(nil))
 	const W, H, by = 1080, 1920, 3
@@ -432,7 +411,7 @@ func TestTheWordBeingTypedIsLeftOutInItsPlace(t *testing.T) {
 	ctx := context.Background()
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	clip := Clip{ID: "01", Slug: "typing", Segments: []Segment{{Start: 0, End: 2}}}
-	tr := &Transcript{Words: []Cue{{0.2, 0.6, "Das"}, {0.6, 1.2, "respektvoll"}, {1.2, 1.5, "ist."}}, Language: "de"}
+	tr := &Transcript{Words: []timed.Cue{{Start: 0.2, End: 0.6, Text: "Das"}, {Start: 0.6, End: 1.2, Text: "respektvoll"}, {Start: 1.2, End: 1.5, Text: "ist."}}, Language: "de"}
 	for _, style := range []map[string]any{nil, {"highlight": false}} {
 		view := captionsView(Plan{}, clip, tr, nil)
 		d := view.Drawing()
@@ -517,7 +496,7 @@ func TestTheWordLiftedOutAndTheRestAreTheCaptionAtRest(t *testing.T) {
 		t.Fatal(err)
 	}
 	clip := info.OnFrames(Clip{ID: "01", Slug: "lift", Segments: []Segment{{Start: 0, End: 2.5}}})
-	tr := &Transcript{Words: []Cue{{0.2, 0.6, "Das"}, {0.6, 1.6, "respektvoll"}, {1.6, 2.0, "ist."}}, Language: "de"}
+	tr := &Transcript{Words: []timed.Cue{{Start: 0.2, End: 0.6, Text: "Das"}, {Start: 0.6, End: 1.6, Text: "respektvoll"}, {Start: 1.6, End: 2.0, Text: "ist."}}, Language: "de"}
 	d := captionsView(Plan{}, clip, tr, nil).Drawing()
 	dec := NewEpisodeFrames(program, source)
 	defer dec.Close()
@@ -565,7 +544,7 @@ func TestACaptionFileIsNeverWrittenIntoAWorkFolderThatIsGone(t *testing.T) {
 	ctx := context.Background()
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	clip := Clip{ID: "01", Slug: "gone", Segments: []Segment{{Start: 0, End: 2}}}
-	tr := &Transcript{Words: []Cue{{0.2, 0.6, "Das"}, {0.6, 1.2, "respektvoll"}, {1.2, 1.5, "ist."}}, Language: "de"}
+	tr := &Transcript{Words: []timed.Cue{{Start: 0.2, End: 0.6, Text: "Das"}, {Start: 0.6, End: 1.2, Text: "respektvoll"}, {Start: 1.2, End: 1.5, Text: "ist."}}, Language: "de"}
 	d := captionsView(Plan{}, clip, tr, nil).Drawing()
 	work := filepath.Join(t.TempDir(), "folge.framefairy")
 	_, err := e.previewTrack(ctx, work, d, d.Style, ResolveStyle(d.Style).Font, SourceInfo{}, 540, 960)
@@ -640,7 +619,7 @@ func TestACaptionFileOutlivesTheRequestThatAskedFirst(t *testing.T) {
 		first, cancelFirst := context.WithCancel(context.Background())
 		firstDone := make(chan error, 1)
 		go func() {
-			_, err := c.once(first, "k", build)
+			_, err := c.once(first, "/w", "k", build)
 			firstDone <- err
 		}()
 		<-started
@@ -650,13 +629,13 @@ func TestACaptionFileOutlivesTheRequestThatAskedFirst(t *testing.T) {
 		}
 		other := make(chan answer, 1)
 		go func() {
-			made, err := c.once(context.Background(), "k", again)
+			made, err := c.once(context.Background(), "/w", "k", again)
 			other <- answer{made, err}
 		}()
 		leaving, cancelLeaving := context.WithCancel(context.Background())
 		leftDone := make(chan error, 1)
 		go func() {
-			_, err := c.once(leaving, "k", again)
+			_, err := c.once(leaving, "/w", "k", again)
 			leftDone <- err
 		}()
 
@@ -675,6 +654,83 @@ func TestACaptionFileOutlivesTheRequestThatAskedFirst(t *testing.T) {
 			t.Errorf("a live request waiting for the file got %q, %v", got.made.file, got.err)
 		}
 	})
+}
+
+// A video removed with its folder right after a word of it was deleted
+// is deleted only once the caption file the video preview asked for is
+// written: the file goes on being made after the request that asked for
+// it is gone, and written into the folder while it was deleted it failed
+// the deletion with "directory not empty", or was left behind in it.
+// Found as the bridge's reset failing in CI, issue #561.
+//
+// It runs in a bubble, so the test knows when the deletion waits.
+func TestAWorkFolderIsDeletedOnceItsCaptionFileIsWritten(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		fsys, source := afero.NewMemMapFs(), "/held/deleted-while-captioned.mp4"
+		work := WorkDir(source)
+		file := filepath.Join(work, PreviewCaptionsFolder, "a.ass")
+		started, release := make(chan struct{}), make(chan struct{})
+		go func() {
+			_, _ = previewTracks.once(context.Background(), work, file, func(context.Context) (previewFile, error) {
+				close(started)
+				<-release
+				return previewFile{file: file}, afero.WriteFile(fsys, file, []byte("[Script Info]"), 0o644)
+			})
+		}()
+		<-started
+		deleted := make(chan error, 1)
+		go func() { deleted <- DeleteWork(fsys, source) }()
+		synctest.Wait()
+		select {
+		case err := <-deleted:
+			t.Fatalf("the folder was deleted while its caption file was being written, %v", err)
+		default:
+		}
+		close(release)
+		if err := <-deleted; err != nil {
+			t.Fatal(err)
+		}
+		if exists(fsys, work) {
+			t.Errorf("the caption file written while the folder went is still there")
+		}
+	})
+}
+
+// While a folder is being deleted no caption file is started inside it,
+// and the request is told the folder is gone, as it is when the folder
+// was deleted outside the app. Every other folder makes its files, and
+// the folder's own again once it is let go.
+func TestNoCaptionFileIsStartedInAFolderBeingDeleted(t *testing.T) {
+	t.Parallel()
+	c := newTrackCache()
+	built := 0
+	build := func(context.Context) (previewFile, error) {
+		built++
+		return previewFile{file: "x.ass"}, nil
+	}
+	release := c.hold("/videos/a.framefairy")
+	for _, work := range []string{"/videos/a.framefairy", "/videos/a.framefairy/"} {
+		if _, err := c.once(context.Background(), work, work+"\x00held", build); !errors.Is(err, ErrNoWorkFolder) {
+			t.Errorf("a caption file in %s while it is deleted gave %v", work, err)
+		}
+	}
+	if built != 0 {
+		t.Errorf("%d caption files were made in a folder being deleted", built)
+	}
+	for i, work := range []string{"/videos/b.framefairy", "/videos/a.framefairy2"} {
+		if _, err := c.once(context.Background(), work, fmt.Sprint(i), build); err != nil {
+			t.Errorf("a caption file in %s beside the folder being deleted gave %v", work, err)
+		}
+	}
+	release()
+	release()
+	if _, err := c.once(context.Background(), "/videos/a.framefairy", "after", build); err != nil {
+		t.Errorf("a caption file in the folder once it was let go gave %v", err)
+	}
+	if built != 3 {
+		t.Errorf("made %d caption files, want 3", built)
+	}
 }
 
 // The first caption file written into a folder in a run removes what an

@@ -28,28 +28,19 @@ The frame queue the video preview plays from, `frontend/src/lib/frames/`,
 has a third page, the preview's `preview/frames/`: one canvas playing an
 episode made for it, whose picture carries its frame number and whose
 sound can be laid over the episode's own sample by sample.
-`frontend/preview/frames/cuts.mjs` plays a clip with cuts on it and checks
-every frame drawn and every sample heard. The preview's own episode is
-made the same way, so the same is measured in the workspace. What it
+`frontend/preview/frames/cuts.mjs` was written to play a clip with cuts
+on it and check every frame drawn and every sample heard, and shows no
+picture today, see below. The preview's own episode is made the same way,
+so the same is measured in the workspace. What it
 measures and how to read it is in the interface skill, under Playback and
 The frame queue.
 
-Adding a video does not run against the bridge: the bridge adds its
-episode and searches it before it serves, and answers `AddEpisodes` with
-nothing. So what the video preview shows while an episode just added is
-heard and searched is a probe on the preview,
-`frontend/preview/frames/added.mjs`, with `?growing&lagging&hear=100`:
-the first search started by the Go side, job events, twelve clips landing
-and the earliest chosen when it is over, then three clips picked. On
-every animation frame from the click that opens the episode it reads the
-playhead and the frame on the canvas from its bars, and it exits 1 when
-the first picture is not the episode's first frame with the playhead at
-0, when the picture goes black, when any frame holds neither the
-playhead nor where it was a moment before, or when a seek's frame takes
-longer than a quarter of a second. Tim saw the video preview of an episode
-just added on another frame than its first, in the days of the `<video>`
-element. The frame queue shows the first frame there, on the code of
-e8ca612 and after it. Put back to draw 7.3 seconds in, the probe fails.
+Adding a video runs against the bridge: a walk asks `/pick` for a test
+video, the bridge has the Add button's box hand it over, and the walk
+clicks Add, `walks/searching.mjs`. The probes `frames/added.mjs` and `frames/cuts.mjs`
+are older, from before the bridge could add a video. No make target or
+workflow runs them, and they have shown no picture since plan row 2.156,
+see #613.
 
 ## The bridge
 
@@ -114,7 +105,8 @@ Calls that reach beyond the work folder are answered by the bridge with
 nothing: the network, the keychain, a box from the system, another app.
 So nothing a walk presses downloads a model or installs a build. The setup
 counts the two stand-ins as installed, so the app opens on its episodes
-rather than on its first-run screen.
+rather than on its first-run screen, until a walk asks for that screen
+with `/fresh`.
 
 The Add button asks the system for files, and the system's box is the
 bridge: it hands over what a walk picked, or nothing, the way the box
@@ -135,6 +127,7 @@ each with a POST:
 | `/chrome?bar=30&left=12&right=72` | the app's window as macOS lays it out, in points: the title bar's height and where its buttons start and end. It goes through what the Go side does with an answer from macOS and is told to the page the way a resize is. Until it is asked, and again after `/reset`, the title bar is the one every other system draws |
 | `/hold?call=Search&gate=shut&times=K&answer=1&fail=why` | with `gate=shut`, the calls of that name wait before they reach the Go side until `gate=open`, every one of them, or the next K with `times`, the way a busy machine delivers them late, so a walk can press something and look while the Go side has not heard of the call yet, and lets it through once it has looked, on any machine. A walk holds a call with `hold` in `walks/bridge.mjs` and lets it go with `letHeld`: the page sets the held call aside, so `settle` waits for everything else meanwhile, and the watch lets go of whatever is still held before it compares the screen with the engine. With `answer=1` the call reaches the Go side at once and only its answer waits for `gate=open`, so the news of what it set going comes before it, `hold(page, name, true)`. With `fail` the next call fails with that reason instead of reaching the Go side, the way a full disk refuses a save. `/reset` opens every gate |
 | `/updates?from=main&stored=pr-143&list=main,pr-143` | gives the app's Updates page the app's own updating and Wails' updater, reading a channel list the bridge serves on this machine: a build from the channel `from`, or made on the Mac without it, with `stored` picked by a build before it, and the channels of `list`, each with a newer build that downloads in a moment. Until it is asked, and again after `/reset`, the Updates page's calls are answered with nothing like the rest. Relaunch always is |
+| `/fresh`, `/fresh?memory=8`, `/fresh?arrive=speech`, `/fresh?arrive=clip` | makes the bridge's machine one the app never ran on: no model, no video in the app and nothing said yet about how clips are found, on a machine of 32 GB like Tim's, or of the gigabytes `memory` gives, so the setup offers the same models on every machine. A key saved there is kept by the bridge, never the keychain, and counted as there. A walk opens the page again to see the setup. Download there runs as a job like any other, through a stand-in that says it has fetched two fifths and holds there until `arrive` lets that kind of model arrive, so a walk sees both downloads at once for as long as it looks, on any machine. `/reset` makes the machine the bridge's again |
 | `/reopen` | closes the app and opens it again, the way quitting and starting it does: the work stops and how it ended is read back. It answers with the jobs as the app left them, once nothing ran any more |
 | `/reset` | the app as it was once its first episode was searched: the models answer quickly, every episode a walk added is gone, the work folder and the settings are what they were, the speech stand-in goes on from the word it had come to then, the episode's decoders the walk before left are closed, and the app is opened again on them. So a video a walk adds is heard with the same words, however many walks came before it, and a walk that moves the playhead far starts from no decoder rather than one left where the walk before stopped, which let a drag go on without a key frame, issue #552 |
 
@@ -756,11 +749,30 @@ wait the walk hands the frame queue, `dressWait` in
 used up the 600 ms it waits, issue #468. And a glide read while it plays
 goes on until the video preview has shown ten frames or come to the next
 keyframe, not for two seconds, in which a busy machine showed two, issue
-#464, on a clock the walk hands the frame queue, `playClock` in
-`lib/frames/queue.ts`, which moves on to the next frame only once the
-one before is up. So every frame of the play is shown on any machine,
-and the walk holds the play to every one, where by the sound card's
-clock a busy machine still showed two of nine, issue #534. The fold of a removed row is held as Svelte makes it and stepped
+#464.
+
+Every walk plays on the walk's clock, `preview/clock.ts`. The page the
+walks run on hands it to every frame queue it makes, see `FrameQueue.clock`
+in `lib/frames/queue.ts`, whose own clock is the sound card's. The app
+never builds `preview/`, so it holds no walk's clock and no switch for
+one. It moves on to the next frame only once
+the one before is up, and holds the sound card while a frame is still
+being decoded, so every frame of a play is shown on any machine and the
+sound stays with the picture. By the sound card's clock, the app's, a busy machine showed two
+frames of a glide's nine, issue #534, and a play of the captions showed
+fewer frames, each longer, issue #338. Each of those walks had a clock
+of its own, until a new walk that played was the next to fail, issue
+#588. A sequence that checks what a play does on the sound's own time
+plays on the sound card's clock instead, the way the app does: how much
+sound the sound card is handed, the loop switched off as the sound comes
+to the clip's end, and a playhead that never stands still while a hand
+drags. It asks for it by one of those steps, `soundCard` in
+`common/steps.mjs`, the way a sequence asks for motion, see Where they
+run below, and a new step of that kind goes in there. `smooth.mjs` asks
+`open` for it by name, `clock: "sound"`, which the page reads from
+`window.__playClock` before the app starts. A walk can also hold the sound
+card a moment by hand, `holdSound`, as the end dragged back past the
+playing playhead does while the hand drags, issue #583. The fold of a removed row is held as Svelte makes it and stepped
 through by hand, in twenty steps, and at each the card under the row
 has to have risen by as much of the row and the space after it as the
 row has folded. That the row leaves the list only once its fold has
@@ -858,7 +870,8 @@ it hang, #508.
    the walk with when it began and ended, what the page logged and
    threw. Every request to the Go side is kept beside it, in a file of
    the same name ending in `.requests.txt`, see `hearRequests` in
-   `walks/bridge.mjs`. Playwright records the network into a trace only
+   `walks/bridge.mjs`, with every line the app logged written whole.
+   Playwright records the network into a trace only
    along with the snapshots below, so Node hears the requests instead,
    and nothing of it runs in the page. The
    events the Go side sends come on one request that stays open, so
@@ -998,7 +1011,7 @@ among it, so the settle waits for none of it. On main those two were
 those steps and every random walk keep the motion, so the app is still
 walked the way it moves on Tim's Mac. A new step that looks at motion
 goes into `moving`, or it passes without ever seeing what it checks, and
-`--names` fails on a name in `moving` that is no step. `make walks
+`--names` fails on a name in `moving` or `soundCard` that is no step. `make walks
 STILL=none` walks every sequence with the motion, and
 `walks-nightly.yml` does so on main every night, so a step that looks at
 motion and was left out of `moving` fails there.
@@ -1341,6 +1354,64 @@ open the job's log.
 What it cannot check: the browser's own question before it hands a link
 on, which belongs to the browser, the mail app, and how any of it looks.
 
+## Coverage
+
+Which lines the tests run is counted once a night on main, and the
+counts go to [Codecov](https://app.codecov.io/gh/timmrkz/framefairy),
+which keeps them as one report of the code, the Go and the
+interface, file by file and line by line, with how the whole moved from
+night to night. It is the map of what no test reaches, and the way to
+see whether work on the tests lowered it. A covered line is not a
+checked line, see section 1 of the testing skill.
+
+It runs in `walks-nightly.yml` and nowhere else. Counting makes a test
+slower and an upload to Codecov can fail or be slow, so no pull request
+counts anything or waits on Codecov, and Codecov says nothing on a pull
+request or a commit, see `.github/codecov.yml`.
+
+`COVERAGE=` a folder turns it on, for the three kinds of test, each a
+flag in Codecov:
+
+| Flag | What runs | What it writes |
+| --- | --- | --- |
+| `go-tests` | `make unit COVERAGE=`, without the race detector at night | `go-unit-<share>.txt`, Go's own profile |
+| `interface-tests` | `make interface COVERAGE=`, Vitest with `@vitest/coverage-v8`, set in `frontend/vite.config.ts` | `interface-unit/lcov.info` |
+| `walks` | `make walks COVERAGE=` | `walks-<share>-go.txt` and `walks-<share>-interface.lcov` |
+
+Every Go package is counted for every test, `-coverpkg=framefairy/...`,
+so a line of the engine that a test of the app runs counts as the
+engine's. The walks count both sides of the app. The Go side runs in a
+bridge, a process of its own started from the same test program, and
+`bridgeArgs` in `cmd/framefairy-app/bridge_test.go` hands it the folder
+`go test` gathers the counts from, so its counts are in the profile when
+the test ends. Every page a walk opens counts the lines of the interface
+it runs through Playwright, `counted` in `walks/bridge.mjs`, and
+`preview/coverage.mjs` turns those counts into lcov of `frontend/src`
+by the source maps the build leaves beside each script. Both go through
+`preview/counts.mjs`, the one place that calls
+monocart-coverage-reports, and `preview/counts.test.mjs` runs those
+calls in `make interface`, so a new version of the package is checked
+on its own pull request, not first by a night on main. That is the
+only count of the components, since the interface's own tests do not
+load them. A night whose walks counted no line of the job queue,
+`cmd/framefairy-app/jobs.go`, which only a bridge runs, or no line of
+any component fails, since every walk reaches both, and a count of
+nothing means the counting broke.
+
+Everything is counted on Linux, so the files built only for the Mac,
+the `_darwin.go` files, and the tests that run only there, the Mac job
+and `make outside`, are not in the report, rather than shown as not
+run.
+
+A kind of test that failed one night sends nothing, and Codecov keeps
+its counts from the night before, carryforward, so a red night is not
+read as the lines it would have reached going dark. Codecov is signed in
+with GitHub's own OIDC token, so there is no Codecov token to keep.
+
+To count by hand, in a cloud session or on a Mac: `make unit
+COVERAGE=.build/coverage UNITPKGS=./engine`, then `go tool cover
+-html=.build/coverage/go-unit.txt`.
+
 ## The testing skill in this project
 
 The skill in `.claude/skills/testing/` is written for any project, so it
@@ -1385,6 +1456,9 @@ starts one with the first line it writes, and it never ends, so a test in
 a bubble that reads the app's log opens it outside the bubble and writes
 its first line there, `bubbleLog` in
 `cmd/framefairy-app/listen_test.go`.
+
+The skill's "ask the coverage" is the nightly report in Codecov, see
+[Coverage](#coverage).
 
 The skill's "run only what a change reaches" is `make changed` here, one
 script for every machine, `scripts/changed.sh`: a pull request runs the

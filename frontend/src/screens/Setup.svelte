@@ -1,20 +1,32 @@
 <script lang="ts">
   // The first run. A new copy of the app on a machine with nothing on it
-  // needs two things, and only one of them is a question.
+  // needs two models before it can make anything: one that hears the
+  // video and one that picks the clips. Both run on this machine, so both
+  // are downloads, and the setup is one page with a card for each.
   //
-  // Speech is always local and there is one model today, so the app says
-  // what it is about to do and does it. Finding clips is a real choice
-  // between an Anthropic API key and a local model, with different costs
-  // either way, so it is asked once here and can be changed later in the
+  // Each card has its own Download, and both can run at once: a person
+  // who starts the speech model does not wait for it to finish before
+  // starting the clip model. Nothing starts by itself, because a download
+  // of gigabytes is something somebody agrees to. Once both are here the
+  // setup is over and the app opens on its first page, with nothing to
+  // press in between. What else a first run may one day need is another
+  // card here.
+  //
+  // A model in the cloud is not offered here. It needs a key and costs
+  // money a video, so it is a choice made later in the settings, by
+  // somebody who knows they want it. Except on a machine that can hold no
+  // clip model at all, 8 GB of memory: there the cloud is the only way
+  // through, and the clip card offers it in place of the list, a model in
+  // the cloud and the row its key is saved in, the same row as in the
   // settings.
   //
-  // Nothing here is a box over the workspace. Until the question is
-  // answered there is no workspace to put a box over, so this is the
-  // whole app.
+  // Nothing here is a box over the workspace. Until both models are here
+  // there is no workspace to put a box over, so this is the whole app.
   import { onMount } from "svelte";
   import { api, errorText, languageRow, memorySize, speechRow, type ModelRow, type SetupState } from "../lib/api";
-  import { jobs } from "../lib/state.svelte";
-  import Busy from "../components/Busy.svelte";
+  import { cloudModelIn, cloudValue, finderOptions, providerOf } from "../lib/finding";
+  import { shownFolder } from "../lib/paths";
+  import ApiKey from "../components/ApiKey.svelte";
   import Icon from "../components/Icon.svelte";
   import Info from "../components/Info.svelte";
   import ModelList from "../components/ModelList.svelte";
@@ -23,17 +35,10 @@
   let { ondone }: { ondone: () => void } = $props();
 
   let setup = $state<SetupState | null>(null);
-  let mac = $state(true);
+  // Where the models are kept, in full and ending in a slash, the way the
+  // settings say it.
+  const modelsFolder = $derived(shownFolder(setup?.modelsDir ?? "", setup?.home ?? ""));
   let problem = $state("");
-  let step = $state(0);
-
-  const names = ["Speech", "Finding clips"];
-
-  // The typed key, and whether it is on its way to the keychain. It is
-  // never read back: the Go side only ever says whether one can be found.
-  let key = $state("");
-  let saving = $state(false);
-  let savedKey = $state(false);
 
   async function reload() {
     try {
@@ -43,278 +48,197 @@
     }
   }
 
-  // The rows the two lists draw, in the same words as the settings.
+  // The rows the two lists draw, in the same words as the settings. A
+  // model this machine cannot hold in its memory is not offered: it would
+  // be gigabytes that answer in minutes rather than seconds.
   const speechRows = $derived<ModelRow[]>((setup?.speech ?? []).map((m) => speechRow(m)));
-  const languageRows = $derived<ModelRow[]>((setup?.language ?? []).map((m) => languageRow(m)));
-
-  // Whether the speech model is still coming. The job list is shared, so
-  // the last step reads it for itself rather than being told.
-  const job = $derived(jobs.list.filter((j) => j.kind === "model").at(-1));
-  const installing = $derived(
-    job && (job.state === "running" || job.state === "queued") ? job : undefined,
+  const clipRows = $derived<ModelRow[]>(
+    (setup?.language ?? []).filter((m) => m.fit !== "too big").map((m) => languageRow(m)),
   );
 
-  async function choose(planner: "local" | "api") {
-    problem = "";
-    try {
-      await api.choosePlanner(planner);
-    } catch (err) {
-      problem = errorText(err);
-    }
-    await reload();
-  }
+  // One mark for each kind of model, at its head, once one is here.
+  const speechReady = $derived(!!setup?.hasSpeech);
+  // A machine that finds clips in the cloud, chosen in the settings
+  // before, needs no model of its own for that.
+  const cloud = $derived(!!setup?.chosen && setup.planner === "api");
+  // A machine that can hold none of the models finds clips in the cloud,
+  // once a key for it is here.
+  const noneFits = $derived(!!setup && !cloud && !setup.hasLocalModel && clipRows.length === 0);
+  const clipReady = $derived(!!setup?.hasLocalModel || cloud || (noneFits && !!setup?.hasKey));
 
-  // The model in the cloud and its company. The company decides whose key
-  // is asked for, and each company's key is kept apart.
-  const setupProvider = $derived(
-    setup?.providers.find((p) => p.name === setup?.provider) ?? {
-      name: "anthropic",
-      title: "Anthropic",
-      env: "ANTHROPIC_API_KEY",
-      keysAt: "platform.claude.com",
-    },
+  // The model in the cloud the settings name, its company, and the list to
+  // pick another from.
+  const provider = $derived(
+    setup ? providerOf(setup.apiModel, setup.cloud, setup.providers, setup.provider) : null,
   );
   const cloudOptions = $derived(
-    (setup?.cloud ?? []).map((m) => ({
-      value: m.model,
-      label: m.title,
-      detail: setup?.providers.find((p) => p.name === m.provider)?.title ?? "",
-    })),
+    setup ? finderOptions(setup.cloud, setup.providers, [], setup.apiModel) : [],
   );
 
-  async function chooseCloud(model: string) {
-    problem = "";
+  async function chooseCloud(value: string) {
+    const model = cloudModelIn(value);
+    if (!model) return;
     try {
       await api.chooseCloudModel(model);
+      await reload();
     } catch (err) {
       problem = errorText(err);
     }
-    await reload();
   }
 
-  async function saveKey() {
-    saving = true;
-    problem = "";
-    try {
-      await api.saveAPIKey(setupProvider.name, key);
-      key = "";
-      savedKey = true;
-      setTimeout(() => (savedKey = false), 1800);
-    } catch (err) {
-      problem = errorText(err);
-    }
-    saving = false;
-    await reload();
-  }
-
-  // The way out, and the whole of it. It finishes the setup and hands over
-  // to the app, which has one way of adding an episode. Opening the file
-  // dialog from here as well would be a second way of doing one thing,
-  // bought for a click that is only ever saved once.
-  function finish() {
-    ondone();
-  }
-
-  // While the model is still coming there is nothing to be done with the
-  // app, so the last button waits and shows how far it has got. It is
-  // never a wall: an install that stopped leaves the button free, and the
-  // row says what happened and offers to try again.
-  const waiting = $derived(!!installing);
-  const fraction = $derived(
-    installing?.progress && installing.progress.fraction >= 0 ? installing.progress.fraction : -1,
+  // What is still to do, said under the title. A setup opened again on
+  // a machine that has its speech model says only what is missing.
+  const still = $derived(
+    noneFits
+      ? speechReady
+        ? "A key to save first."
+        : "A model to download and a key to save first."
+      : speechReady || clipReady
+        ? "A model to download first."
+        : "Two models to download first.",
   );
+  // The clip model's mark says what is ready: in the cloud nothing was
+  // downloaded.
+  const clipSaid = $derived(cloud || noneFits ? "Ready" : "Downloaded");
 
-  onMount(async () => {
-    api
-      .platform()
-      .then((p) => (mac = p === "darwin"))
-      .catch(() => {});
-    await reload();
+  // Once both are here the setup is done, and the app takes over. The
+  // answer to how clips are found is written down first, so the app
+  // knows it is a decision and does not ask again. One already given,
+  // the cloud chosen in the settings before, is left as it is.
+  let finishing = false;
+  $effect(() => {
+    if (!setup || finishing || !speechReady || !clipReady) return;
+    finishing = true;
+    finish(setup);
   });
+
+  async function finish(now: SetupState) {
+    try {
+      if (!now.chosen) await api.choosePlanner(noneFits ? "api" : "local");
+      ondone();
+    } catch (err) {
+      problem = errorText(err);
+      finishing = false;
+    }
+  }
+
+  onMount(reload);
 </script>
 
 <section class="setup">
   <header>
     <h1>Frame Fairy</h1>
-    <p class="muted lead">
-      Turns a long video into vertical shorts. Two things to set up first.
-    </p>
+    <p class="muted lead">Turns a long video into vertical shorts. {still}</p>
   </header>
-
-  <!-- Where you are, and nothing you press: going back is the button in
-       the foot, and one thing is done in one way. -->
-  <ol class="steps" aria-label="Setup">
-    {#each names as name, i (name)}
-      <li class:here={i === step} class:past={i < step}>
-        <span class="mark num">{i + 1}</span>
-        <span>{name}</span>
-      </li>
-    {/each}
-  </ol>
 
   {#if problem}<p class="error selectable">{problem}</p>{/if}
 
   {#if setup}
     <div class="stage">
-      {#if step === 0}
-        <div class="area asks">
-          <span class="ask corner">
-            <Info label="About the speech model" side="right">
-              Every video is transcribed on this machine, word by word with the time of each
-              word. Nothing about the video is sent anywhere. The model is not part of the app,
-              so the first time it is fetched from the people who published it and kept on your
-              machine, in <b>~/.framefairy/models</b>.
-            </Info>
-          </span>
-          <h2>Speech</h2>
-          <p class="muted">Every video is transcribed on this machine.</p>
-          <ModelList
-            models={speechRows}
-            kind="model"
-            oninstall={api.installSpeechModel}
-            onchange={reload}
-            auto
-          />
+      <div class="area asks">
+        <span class="ask corner">
+          <Info label="About the speech model" side="right">
+            Every video is transcribed on this machine, word by word with the time of each word.
+            Nothing about the video is sent anywhere. The model is not part of the app, so it is
+            downloaded once from its source onto your machine, into <b>{modelsFolder}</b>.
+          </Info>
+        </span>
+        <div class="headrow">
+          <h2>Speech model</h2>
+          {#if speechReady}<span class="ready" title="Downloaded"><Icon name="check" /></span>{/if}
         </div>
-      {:else}
-        <div class="area asks">
-          <span class="ask corner">
-            <Info label="About finding clips" side="right">
-              A language model reads the transcript and picks the moments worth clipping. A model
-              in the cloud, Anthropic's or OpenAI's, works on any machine with a key of your own
-              from that company, and costs a few cents a video. A model on this machine is free
-              to run and needs the memory to hold it. Either way the video and the
-              audio stay here: only the words are read.
-            </Info>
-          </span>
-          <h2>Finding clips</h2>
-          <p class="muted">A language model reads the transcript and picks the moments.</p>
-          <ul class="ways">
-            <li class:on={setup.chosen && setup.planner === "api"}>
-              <button class="pick" onclick={() => choose("api")}>
-                <span class="title">In the cloud</span>
-                <span class="muted about">Anthropic or OpenAI. Works on any machine. A few cents a video.</span>
-              </button>
-              {#if setup.chosen && setup.planner === "api"}
-                <div class="more">
-                  <!-- Which company's model, and so whose key. -->
-                  <div class="row">
-                    <span class="muted grow">Model</span>
-                    <Pick
-                      value={setup.apiModel}
-                      options={cloudOptions}
-                      onpick={chooseCloud}
-                      label="Model in the cloud"
-                      align="right"
-                    />
-                  </div>
-                  {#if setup.hasKey}
-                    <p class="done row"><Icon name="check" />The {setupProvider.title} key is in place.</p>
-                  {:else if !mac}
-                    <p class="warn">
-                      This machine has no keychain, so the key comes from
-                      <b>{setupProvider.env}</b> in the environment the app starts in.
-                    </p>
-                  {/if}
-                  {#if mac}
-                    <div class="row">
-                      <input
-                        type="password"
-                        bind:value={key}
-                        placeholder={setup.hasKey
-                          ? "Replace the key"
-                          : `${setupProvider.title} key from ${setupProvider.keysAt}`}
-                        aria-label="{setupProvider.title} API key"
-                        autocomplete="off"
-                        spellcheck="false"
-                      />
-                      <button class="act" disabled={saving || !key.trim()} onclick={saveKey}>
-                        {#if saving}<Busy />{/if}
-                        {saving ? "Saving" : "Save"}
-                      </button>
-                    </div>
-                    <p class="muted small">
-                      {savedKey ? "Saved." : "It goes in the keychain and nowhere else."}
-                    </p>
-                  {/if}
-                </div>
-              {/if}
-            </li>
-            <li class:on={setup.chosen && setup.planner === "local"}>
-              <button class="pick" onclick={() => choose("local")}>
-                <span class="title">On this machine</span>
-                <span class="muted about">Free to run. Needs the memory to hold the model.</span>
-              </button>
-              {#if setup.chosen && setup.planner === "local"}
-                <div class="more">
-                  <!-- A model runs from memory, so the machine's own is
-                       said out loud here. A model called too big is only
-                       believable next to the number it was judged
-                       against. -->
-                  <p class="muted small">
-                    {setup.memory > 0
-                      ? `This machine has ${memorySize(setup.memory)} of memory.`
-                      : "This machine did not say how much memory it has."}
-                  </p>
-                  <ModelList
-                    models={languageRows}
-                    kind="llm"
-                    oninstall={api.installLanguageModel}
-                    onchange={reload}
-                  />
-                  <p class="muted small">
-                    A model you already have in <b>~/.framefairy/models</b> is used as it is.
-                  </p>
-                  <!-- A model is the answer and llama-server is what runs
-                       it, so one without the other makes nothing. This is
-                       state and not standing help: it is here only while
-                       it is true, and it names the way that does work. -->
-                  {#if !setup.hasServer}
-                    <p class="warn">
-                      <b>llama-server</b> is what runs a model here, and it is not on this machine.
-                      Until it is, the Claude API is the way that works.
-                    </p>
-                  {/if}
-                </div>
-              {/if}
-            </li>
-          </ul>
-        </div>
-      {/if}
-    </div>
+        <p class="muted">Every video is transcribed on this machine.</p>
+        <ModelList models={speechRows} kind="model" oninstall={api.installSpeechModel} onchange={reload} />
+      </div>
 
-    <footer class="row">
-      <button class="act" disabled={step === 0} onclick={() => (step = step - 1)}>Back</button>
-      <span class="grow"></span>
-      {#if step === 0}
-        <button class="primary go" onclick={() => (step = 1)}>Continue</button>
-      {:else}
-        <button
-          class="primary go"
-          disabled={waiting || !setup.chosen}
-          onclick={finish}
-        >
-          {#if waiting}<Busy {fraction} />{/if}
-          {waiting ? "Fetching the speech model" : "Finish setup"}
-        </button>
-      {/if}
-    </footer>
+      <div class="area asks">
+        <span class="ask corner">
+          <Info label="About the clip model" side="right">
+            {#if noneFits}
+              A language model in the cloud reads the transcript of the video and picks the moments
+              worth clipping. It sees only the transcript, never the picture or the sound. The
+              company runs it with your API key and charges for each video.
+            {:else}
+              A language model reads the transcript of the video and picks the moments worth
+              clipping. It sees only the transcript, never the picture or the sound. It runs on
+              this machine, costs nothing to run and needs the memory to hold it. A model you
+              already have in <b>{modelsFolder}</b> is used as it is.
+            {/if}
+          </Info>
+        </span>
+        <div class="headrow">
+          <h2>Clip model</h2>
+          {#if clipReady}<span class="ready" title={clipSaid}><Icon name="check" /></span>{/if}
+        </div>
+        <!-- A model runs from memory, so the machine's own is said out
+             loud here. A model's need is only believable next to the
+             number it was judged against. -->
+        <!-- On a machine that holds none of the models, the one paragraph
+             says so and what is left: the cloud, with a key. -->
+        <p class="muted">
+          Reads the transcript and picks the moments.
+          {noneFits
+            ? ` ${setup.memory > 0 ? `With ${memorySize(setup.memory)} of memory, this machine` : "This machine"} is too small for a local model, so only the cloud works, with your API key.`
+            : setup.memory > 0
+              ? ` This machine has ${memorySize(setup.memory)} of memory.`
+              : ""}
+        </p>
+        {#if cloud}
+          <p class="muted">Clips are found in the cloud, as the settings say.</p>
+        {:else if clipRows.length}
+          <ModelList models={clipRows} kind="llm" oninstall={api.installLanguageModel} onchange={reload} />
+        {:else if provider}
+          <div class="card">
+            <!-- One mark for the clip model, at its head. The row keeps
+                 the room of a mark, so its name stands in the column of
+                 the key's under it. -->
+            <div class="item">
+              <span class="mark" aria-hidden="true"></span>
+              <div class="words"><span class="head">Model in the cloud</span></div>
+              <Pick
+                value={cloudValue(setup.apiModel)}
+                options={cloudOptions}
+                onpick={chooseCloud}
+                label="Model in the cloud"
+                align="right"
+              />
+            </div>
+            <ApiKey
+              {provider}
+              source={setup.keys[provider.name] ?? ""}
+              hint={setup.keyHints?.[provider.name] ?? ""}
+              onchange={reload}
+            />
+          </div>
+        {/if}
+        <!-- A model is the answer and llama-server is what runs it, so one
+             without the other makes nothing. This is state and not
+             standing help: it is here only while it is true. -->
+        {#if !setup.hasServer && !noneFits && !cloud}
+          <p class="warn">
+            <b>llama-server</b> is what runs a model here, and it is not on this machine.
+          </p>
+        {/if}
+      </div>
+    </div>
   {/if}
 </section>
 
 <style>
   /* One column in the middle of the app, and only as tall as what is in
      it. The setup is a few lines and two cards: a column stretched to the
-     height of the app would be a strip of nothing between the last card
-     and the foot, which grows as the app does. So the whole of it stands
-     in the middle instead, and an app too short for it lets the step
-     scroll rather than the page. */
+     height of the app would be a strip of nothing under the last card,
+     which grows as the app does. So the whole of it stands in the middle
+     instead, and an app too short for it lets the cards scroll rather
+     than the page. */
+  /* The space under the title is the space between the two cards, so
+     the page reads as the title and then two areas of the same kind. */
   .setup {
     display: flex;
     flex-direction: column;
-    gap: var(--gap);
+    gap: var(--edge);
     width: 100%;
-    max-width: 640px;
+    max-width: 720px;
     max-height: 100%;
     margin: auto;
     padding: var(--edge);
@@ -353,54 +277,15 @@
     line-height: 20px;
   }
 
-  /* Where you are. Two marks and their names, the numbers in the same
-     tabular figures as every other number in the app. */
-  .steps {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    gap: var(--gap);
-    color: var(--muted);
-  }
-
-  .steps li {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    height: 24px;
-  }
-
-  .mark {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    border: 1px solid var(--line);
-    font-size: var(--size-s);
-  }
-
-  .steps li.here {
-    color: var(--text);
-  }
-
-  .steps li.here .mark {
-    border-color: var(--accent);
-    background: var(--accent-wash);
-  }
-
-  .steps li.past .mark {
-    border-color: var(--accent);
-  }
-
-  /* The step is as tall as what is in it, and gives way first when the
-     app is too short for the whole setup. */
+  /* The cards are as tall as what is in them, and give way first when
+     the app is too short for the whole setup. */
   .stage {
     flex: 0 1 auto;
     min-height: 0;
     overflow: auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--edge);
   }
 
   .area {
@@ -410,89 +295,28 @@
     gap: 8px;
   }
 
-  ul {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .ways li {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    padding: 12px;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-m);
-    background: var(--ink-1);
-  }
-
-  /* The same background a selected row wears everywhere else in the app. */
-  .ways li.on {
-    border-color: var(--accent);
-    background: var(--ink-3);
-  }
-
-  .title {
-    font-weight: 600;
-  }
-
-  .grow {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .about {
-    font-size: var(--size-m);
-  }
-
-  .small {
-    font-size: var(--size-s);
-  }
-
-  .done {
-    color: var(--ok);
-    gap: 6px;
-  }
-
   .warn {
     color: var(--warn);
   }
 
-  /* A way of finding clips is picked by pressing the whole card, so the
-     hit area is the thing it stands for rather than a small circle beside
-     it. It is a button with nothing of a button about it. */
-  .pick {
+  /* The head of a card, and the one mark that says its model is here. */
+  .headrow {
     display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 4px;
-    width: 100%;
-    height: auto;
-    padding: 0;
-    border: none;
-    background: transparent;
-    text-align: left;
-    white-space: normal;
+    align-items: center;
+    gap: 8px;
   }
 
-  .pick:hover:not(:disabled) {
-    background: transparent;
-    color: var(--text);
-  }
-
-  .more {
+  .ready {
     display: flex;
-    flex-direction: column;
-    gap: 6px;
-    padding-top: 2px;
+    color: var(--ok);
   }
 
-  footer {
+  /* The list of models in the cloud is as wide as the longest name in it
+     and hangs from the card's right edge, the way it does in the
+     settings, so the name of the row keeps its room. */
+  .card :global(button.pick) {
+    width: max-content;
     flex: none;
-    border-top: 1px solid var(--line);
-    padding-top: var(--gap);
   }
+
 </style>

@@ -476,6 +476,14 @@ func TestTheWindowIsToldWhatThisMachineCanHold(t *testing.T) {
 		if state.Memory < 0 {
 			t.Errorf("memory %d", state.Memory)
 		}
+		// A path the settings file keeps from ~ is shown from it, in full.
+		if home, _ := os.UserHomeDir(); state.Home != home {
+			t.Errorf("home %q, want %q", state.Home, home)
+		}
+		// Where the models are, said in the info marks, is the engine's.
+		if state.ModelsDir != engine.ModelsDir() {
+			t.Errorf("models in %q, want %q", state.ModelsDir, engine.ModelsDir())
+		}
 	})
 
 	// A model that is there is a way of finding clips, without anybody
@@ -703,5 +711,14 @@ func TestSetupEndsInTheLanguageModelsLine(t *testing.T) {
 	}
 	if last.OK || !strings.Contains(last.Detail, "None is installed") {
 		t.Errorf("an empty machine's language model: %+v", last)
+	}
+}
+
+// The caption fonts are counted, never named one by one. Tim saw a few
+// hundred names in one row of the settings, 2026-10-27.
+func TestTheCaptionFontsAreCounted(t *testing.T) {
+	c := fontsCheck(6, 412)
+	if !c.OK || c.Name != "Caption fonts" || c.Detail != "6 built in, 412 from this machine" {
+		t.Errorf("the fonts row says %+v", c)
 	}
 }

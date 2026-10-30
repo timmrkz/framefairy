@@ -40,12 +40,20 @@ export interface FinderOption {
   detail?: string;
   warn?: boolean;
   group: string;
+  mark?: { icon: string; title: string; faint?: boolean };
 }
 
 // The list: every company's model with the company beside it, a model
 // written in by hand as well so the list never names nothing, and then
-// the models that run here, those that are here first and the biggest
-// first, each with what it would cost to fetch or whether it fits.
+// every model that runs here under On this machine, the biggest first, by
+// the size beside it. Every model says its size, and wears the tick
+// once it is downloaded and a download arrow in grey until then, see
+// modelMark. Tim asked for that one group, 2026-10-28: a group of its own
+// for the models still to download parted a list that is one kind of
+// thing, and a cloud mark tried before read as a model that runs in the
+// cloud. Only a model this machine is short of memory for says so beside
+// its size, and none says "best here", which Tim could not read,
+// 2026-10-27.
 export function finderOptions(
   cloud: CloudModel[],
   providers: Provider[],
@@ -63,19 +71,31 @@ export function finderOptions(
       group: "In the cloud",
     })),
     ...[...language]
-      .sort((a, b) => Number(b.installed) - Number(a.installed) || b.needs - a.needs)
+      // By the size the row shows, which is what a person reads the order
+      // by. By the memory a model needs put a 9.0 GB model over a 14.4 GB
+      // one, and Tim saw it as out of order, 2026-10-28.
+      .sort((a, b) => b.download - a.download)
       .map((m) => {
-        const { note, warn } = fitNote(m.fit, m.recommended);
-        const fetch = m.installed ? "" : `${size(m.download)} download`;
+        const { note, warn } = fitNote(m.fit);
         return {
           value: m.name,
           label: m.title,
-          detail: warn ? note : m.recommended ? [fetch, "best here"].filter(Boolean).join(", ") : fetch,
+          detail: warn ? `${size(m.download)}, ${note.toLowerCase()}` : size(m.download),
           warn,
           group: "On this machine",
+          mark: modelMark(m.installed),
         };
       }),
   ];
+}
+
+// How a model of this machine stands in a list to choose from, the
+// speech model's as well as the clip model's: the tick once it is here,
+// and a download arrow in grey while it is still to fetch.
+export function modelMark(installed: boolean): { icon: string; title: string; faint?: boolean } {
+  return installed
+    ? { icon: "check", title: "Downloaded" }
+    : { icon: "download", title: "Not downloaded yet", faint: true };
 }
 
 // Everything the line under the choice depends on.
@@ -138,9 +158,10 @@ function finderAtRest(f: FinderFacts): { text: string; tone: Tone; state: Standi
     return { text: `Not downloaded yet. ${size(f.inUse.download)}.`, tone: "warn", state: "warn" };
   }
   if (f.modelProblem) return { text: f.modelProblem, tone: "err", state: "err" };
-  const { note } = fitNote(f.inUse.fit, f.inUse.recommended);
+  // Only a warning is worth the room, the way the list says it.
+  const { note, warn } = fitNote(f.inUse.fit);
   return {
-    text: `By ${f.inUse.maker}. ${memorySize(f.inUse.needs)} of memory.${note ? ` ${note}.` : ""}`,
+    text: `By ${f.inUse.maker}. ${memorySize(f.inUse.needs)} of memory.${warn ? ` ${note}.` : ""}`,
     tone: "",
     state: f.serverMissing ? "err" : "ok",
   };

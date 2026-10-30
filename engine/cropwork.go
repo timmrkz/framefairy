@@ -3,6 +3,8 @@ package engine
 import (
 	"sync"
 	"time"
+
+	"framefairy/engine/timed"
 )
 
 // ---------------------------------------------------------------------------
@@ -40,7 +42,7 @@ type cropWork struct {
 func newCropWork() *cropWork { return &cropWork{} }
 
 // start is the work known: spans are what the clip keeps.
-func (w *cropWork) start(spans []Span) {
+func (w *cropWork) start(spans []timed.Span) {
 	if w == nil {
 		return
 	}

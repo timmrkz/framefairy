@@ -38,6 +38,10 @@ concurrency:
 # checks from outside the app wait on the app the same way, and go test
 # ends them after OUTSIDETIMEOUT, see make outside.
 #
+# SLOWEST names, under the Go tests of every job, the tests that took
+# longer, so a slow test on any machine, the Mac above all, shows without
+# a second run. See make unit.
+#
 # What a change is: on a pull request, what its merge commit changed
 # against the main it sits on, its first parent, which is why every
 # checkout fetches two commits.
@@ -47,6 +51,7 @@ env:
   SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
   UNITTIMEOUT: 4m
   OUTSIDETIMEOUT: 2m
+  SLOWEST: 5s
 
 jobs:
   # The parts with work, for the Linux jobs and for the Mac jobs, each a

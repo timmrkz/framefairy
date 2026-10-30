@@ -9,6 +9,8 @@ import (
 	"sort"
 	"sync"
 
+	"framefairy/engine/timed"
+
 	"github.com/spf13/afero"
 )
 
@@ -92,17 +94,17 @@ func (p *Project) step(ctx context.Context, do func() error) error {
 // Transcribe makes sure the whole episode has a transcript. It is cached, so
 // calling it again costs nothing.
 func (p *Project) Transcribe(ctx context.Context) error {
-	return p.Hear(ctx, Window{})
+	return p.Hear(ctx, timed.Window{})
 }
 
 // Hear makes sure the transcript has heard a window of the episode, and has
 // it hear what of the window it has not. A window with no end is the whole
 // episode.
-func (p *Project) Hear(ctx context.Context, span Window) error {
+func (p *Project) Hear(ctx context.Context, span timed.Window) error {
 	opts := p.Base
 	opts.TranscribeOnly = true
 	opts.From, opts.To = "", ""
-	var ask *Window
+	var ask *timed.Window
 	if span.End > 0 {
 		ask = inMilliseconds(&span)
 	}
@@ -117,11 +119,11 @@ func (p *Project) Hear(ctx context.Context, span Window) error {
 
 // inMilliseconds is a window with its edges on the millisecond, the way a
 // plan and a transcript name a window.
-func inMilliseconds(w *Window) *Window {
+func inMilliseconds(w *timed.Window) *timed.Window {
 	if w == nil {
 		return nil
 	}
-	return &Window{toMillisecond(w.Start), toMillisecond(w.End)}
+	return &timed.Window{Start: toMillisecond(w.Start), End: toMillisecond(w.End)}
 }
 
 // PlanRequest is what the app asks the planner for.
@@ -171,7 +173,7 @@ func (p *Project) Plan(ctx context.Context, req PlanRequest) (string, error) {
 // planOptions are the options a search of req runs with in window, which
 // is in milliseconds and nil for the whole episode, and the name of the
 // plan it writes.
-func (p *Project) planOptions(req PlanRequest, window *Window) (Options, string) {
+func (p *Project) planOptions(req PlanRequest, window *timed.Window) (Options, string) {
 	opts := p.Base
 	opts.PlanOnly = true
 	opts.Replan = req.Replan
@@ -250,7 +252,7 @@ func (p *Project) warm(ctx context.Context, req PlanRequest, local LocalModel) (
 
 // PlanName is the plan file for a window, or for the whole episode when
 // window is nil.
-func PlanName(window *Window) string {
+func PlanName(window *timed.Window) string {
 	if window == nil {
 		return "clips.json"
 	}
@@ -262,7 +264,7 @@ func PlanName(window *Window) string {
 // made before there were passes are the first pass of their windows. A
 // later pass is always of a window, the whole episode too, so its name
 // says which.
-func PassName(window *Window, pass int) string {
+func PassName(window *timed.Window, pass int) string {
 	if pass <= 1 || window == nil {
 		return PlanName(window)
 	}
@@ -272,7 +274,7 @@ func PassName(window *Window, pass int) string {
 // planWindow is the window a request is for, or nil for the whole
 // episode. A later pass over the whole episode is a window from its start
 // to its end, see PassName.
-func (p *Project) planWindow(ctx context.Context, req PlanRequest) (*Window, error) {
+func (p *Project) planWindow(ctx context.Context, req PlanRequest) (*timed.Window, error) {
 	if req.From <= 0 && req.To <= 0 && req.Pass <= 1 {
 		return nil, nil
 	}
@@ -295,7 +297,7 @@ func (p *Project) planWindow(ctx context.Context, req PlanRequest) (*Window, err
 // to Run, which names the plan from that. Named from an edge as asked, a
 // hair under a whole second, the plan a search answered with was a second
 // off the plan Run wrote.
-func searchWindow(from, to float64, pass int, duration float64) *Window {
+func searchWindow(from, to float64, pass int, duration float64) *timed.Window {
 	if from <= 0 && to <= 0 && pass <= 1 {
 		return nil
 	}
@@ -304,7 +306,7 @@ func searchWindow(from, to float64, pass int, duration float64) *Window {
 		to = duration
 	}
 	if pass > 1 || from > 0.0005 || to < duration-0.0005 {
-		return &Window{from, to}
+		return &timed.Window{Start: from, End: to}
 	}
 	return nil
 }
@@ -332,7 +334,7 @@ func (p *Project) nextPass(ctx context.Context, req PlanRequest) (int, error) {
 // clip that was removed counts too: it was proposed, and turned down.
 // listed is the same for the clips still in the list, the ones not removed,
 // and removed names the clips that were.
-func (p *Project) proposed(except string) (taken, listed []Window, removed []ClipRef) {
+func (p *Project) proposed(except string) (taken, listed []timed.Window, removed []ClipRef) {
 	for _, plan := range p.Plans() {
 		if plan == except || !IsPlanFile(plan) {
 			continue
@@ -347,9 +349,9 @@ func (p *Project) proposed(except string) (taken, listed []Window, removed []Cli
 			}
 			for _, seg := range c.Segments {
 				if seg.End > seg.Start {
-					taken = append(taken, Window{seg.Start, seg.End})
+					taken = append(taken, timed.Window{Start: seg.Start, End: seg.End})
 					if !c.Rejected {
-						listed = append(listed, Window{seg.Start, seg.End})
+						listed = append(listed, timed.Window{Start: seg.Start, End: seg.End})
 					}
 				}
 			}

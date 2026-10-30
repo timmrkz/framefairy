@@ -237,15 +237,10 @@ an update has to read what an older version wrote. Only a new
 transcription splits the numbers.
 
 Transcribing a window that does not start at the beginning, after an
-interrupted run carried on or with `--from`, decodes from the start of the
-file and drops the samples before it, rather than asking ffmpeg to seek. A
-seek into a compressed stream lands on a packet, and what a build does with
-that packet differs: some decode and trim it, some begin at the next one, up
-to 23 ms later for AAC. Raw samples carry no timestamps, so a start that is
-out cannot be noticed afterwards, and every word from there on would be
-wrong by that much. Counting samples is exact everywhere, and audio decodes
-at a few hundred times real time, so winding forward through an hour costs
-about ten seconds.
+interrupted run carried on or with `--from`, reads its part the way every
+part is read, `audioFrom`: a seek before the input and a cut at the
+frame's timestamp, see the parts above. It no longer decodes from the
+start of the file and counts samples.
 
 ## Recipes
 
@@ -729,13 +724,24 @@ frame. Two kinds of episode do not keep to that, and `Probe` finds both.
   picture is read from the key frame before it, and ffmpeg's `fps`
   filter, rounding up, gives every frame of the short the frame of the
   episode that holds its moment, the last one to begin at or before it.
-  The times are moved in microseconds for that, since in a phone's ticks
-  of 1/600 s the hair is lost in the rounding. The video preview shows
-  the same frames: `SourceInfo.Grid` names the frames of the short, and
-  the episode's decoder makes each of them from the file's frames by the
-  same rule, `framewire.Grid`, counted in whole microseconds as the `fps`
-  filter counts, see [VIDEO-PREVIEW.md](VIDEO-PREVIEW.md), step 5. The
-  sound is cut at the same moments as before.
+  The times are moved in ticks that are whole microseconds and whole
+  frames of the rate, 1/3000000 s at 30 a second, since in a phone's
+  ticks of 1/600 s the hair is lost in the rounding, and every moment is
+  counted from the start of the grid. The video preview shows the same
+  frames: `SourceInfo.Grid` names the frames of the short, and the
+  episode's decoder makes each of them from the file's frames by the
+  same rule, `framewire.Grid`, see [VIDEO-PREVIEW.md](VIDEO-PREVIEW.md),
+  step 5. The sound is cut at the same moments as before. A short of
+  what OBS records, whose frames begin on Matroska's whole milliseconds,
+  showed the frame before for one moment in three where a frame begins
+  exactly a hair after its moment, #266. A moment counted from its piece's
+  start, rounded to a microsecond, came up to a microsecond early. And
+  ffmpeg moves the times read after a seek back by the seek, rounded to
+  the stream's ticks, a millisecond in Matroska, which moved such a frame
+  a microsecond late. The moments are now counted from the grid's start,
+  and every file is read with its own times, `-copyts`, `ownTimes`, and
+  each picture and sound counted from its seek by the render itself,
+  `onOwnClock`, so nothing ffmpeg rounds moves a frame, #602.
 - **Every track starting late.** A recording cut out of a longer one, or
   one written with its start held back, has no track that starts at zero.
   ffmpeg counts from where the earliest track starts, `-ss` included, and
@@ -752,13 +758,36 @@ frame. Two kinds of episode do not keep to that, and `Probe` finds both.
   piece from 0.2 s showed frame 60 for every frame before it, where frame
   5 holds the moment. A render now finds the key frame shown at or before
   each piece, `keyedPieces`, from the packets of the few seconds before
-  it, and reads from just before that key frame is decoded. How ffmpeg
-  counts the frames' times after such a seek differs between builds, by
-  as much as the sound starts before the picture, 21 ms of AAC in
-  MPEG-TS, so the frames are counted from the key frame, whose time is
-  known, `readFrom`, and the piece keeps its frames by its own rule.
-  MPEG-PS, .mpg and .vob, has no index either, but stamps no time on some
-  of its packets, and its frames are not read right yet, plan row 2.204.
+  it, and reads from there, `readFrom`. Counted from the seek by ffmpeg,
+  the times of such a file differed between builds, by as much as the sound
+  starts before the picture, 21 ms of AAC in MPEG-TS, and a frame with no
+  time of its own got one ffmpeg guessed from where the decoder started.
+  Read with the file's own times, every frame after a seek has the time
+  it has when the file is played from the start, #602, so where the
+  decoder starts moves no frame. MPEG-PS, .mpg and .vob, has no index
+  either, and is read the same way, #268. It puts several frames in a
+  packet stamped with the time of the first, and ffmpeg gives the others
+  times of its guessing, and the key frames among them too in MPEG-2
+  with B-frames. So the piece is read from the key frame before the last
+  one decoded by its start, `keyBefore`, which is shown before the next
+  is decoded, however long the decoder holds it back, and a seek lands
+  on a packet that carries its own time, `stamped`. A key frame with a
+  guessed time and nothing before it had come a frame and a half early
+  in the video preview, so the episode's decoder goes to the key frame
+  before such a one too. `uneven` takes only the times the file holds,
+  lets a gap of whole frames go as long as as many frames with no time
+  fill it, and in a file with no index reads each stretch from the key
+  frame `keyBefore` finds before it, and takes the frames from that key
+  frame on: the frames before it, decoded after frames it never read,
+  came half a frame off or a frame apart, and a short of a DVD, of
+  MPEG-2 with B-frames in MPEG-PS or in MPEG-TS, came out at 30 frames a
+  second for 29.97, #600. A short of a file whose every frame is a key
+  frame showed frames from four frames early, #601. Read only from the
+  first key frame inside each stretch, a .ts from OBS, a key frame every
+  250 frames, had most of its stretches unread, and its frames left out
+  went unseen. Every one of these is
+  a case of `TestARenderShowsTheFrameThatHoldsEachMoment` and of
+  `TestTheVideoPreviewShowsTheFramesOfTheShort`.
 - **A file that does not say how long it is.** A Matroska recording cut
   off by a crash, the way OBS leaves one, has no duration and no index,
   and the app took it for 0 seconds long, with one frame in the video
@@ -1665,8 +1694,10 @@ the job, and a record gives it back after a restart.
 
 ## The code
 
-`asr/` wraps the speech recogniser and is the only package with native code.
-Everything else is in `engine/`:
+`asr/` wraps the speech recogniser. The native code is there, in the
+macOS keychain of `engine/keys_darwin.go`, in the frames decoder of
+`cmd/framefairy-frames`, and in the app's `chrome_darwin.go` and
+`refresh_darwin.go`. The engine is in `engine/`:
 
 ```
   audio.go      reading the audio, word timing, loudness
@@ -1752,4 +1783,42 @@ Everything else is in `engine/`:
   frames.go     deleting everything made for an episode
   corrections.go what a clip corrects and removes of the words heard
   training.go   training records of plans and decisions
+  records.go    what a machine keeps of the work done on it, the training
+                records and the timings of past searches
+  transcripttext.go the corrected transcript, for Export transcript
+  sentences.go  what an episode says as cards of sentences, for reading
+  removedwords.go the words a clip does not show, kept with the clip
+  reach.go      how far a search window may reach, the same sum the
+                range picker makes
+  label.go      the few words and the colour a person gives a video
+  captionlayer.go the captions of the video preview, the short's own
+                caption file drawn by libass in the decoder
+  hdrcolour.go  caption colours in an HDR short, at the reference white
+  episodeframes.go the client of a video's frames decoder,
+                cmd/framefairy-frames, over internal/framewire
+  preview.go    frames for the video preview straight from ffmpeg.
+                Only the tests call PreviewFrames, see #590, and the app
+                reads PreviewTimes. previewsound.go is its sound
+  modelcheck.go a downloaded language model checked again before it loads
+  licence.go    the licence key, kept with the API keys
+  shipped_production.go says the build is the one that ships, made with
+                the production tag. shipped_other.go is every other build
+  shape.go      what a hand does to a clip on the clip timeline, and what
+                it makes of the clip, see WORDS.md
+  suggest.go    how long a window is, how many clips a search asks for
+                and how long the model may think, when nobody has said
+  room.go       how much one search can read
+  readahead.go  the transcript read ahead of a search
+  modelhost.go  the local model, kept running between the asks that want it
+  probed.go     what ffmpeg can do and what a file holds, asked once a
+                process and kept by the file's size and time
+  rotation.go   the parts of a phone video recorded on its side
+  cropmarks.go  a crop that follows keyframes put on frames of a clip
+  hyphenate.go  a caption word too wide for a line, broken the way TeX does
+  wordframes.go where the words of a caption stand, as libass draws them
 ```
+
+`engine/timed/` is the first part of the engine in a package of its own:
+the types every part uses for a moment of a video, `Cue`, `Span`,
+`Window`, `Reading` and `FrameSeconds`. It imports nothing of the rest of
+the engine, see [ARCHITECTURE.md](ARCHITECTURE.md).

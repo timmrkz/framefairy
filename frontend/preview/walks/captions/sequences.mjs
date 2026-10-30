@@ -106,7 +106,9 @@ export default [
     ],
   },
   {
-    name: "a caption's right edge dragged in over its last word removes the word, and back out puts it back",
+    // A drag sets when a caption is shown: the word is left out while the
+    // edge stands past it, and is still there, #598.
+    name: "a caption's right edge dragged in over its last word leaves the word out, and back out puts it back",
     steps: [
       ["mark", "start"],
       ["edge in", ["end", "Schulhof"]],
@@ -146,7 +148,7 @@ export default [
     ],
   },
   {
-    name: "a caption's left edge dragged in over its first word removes the word and leaves the caption before it alone",
+    name: "a caption's left edge dragged in over its first word leaves the word out and the caption before it alone",
     steps: [
       ["mark", "start"],
       ["edge in", ["start", "Schulhof"]],
@@ -155,6 +157,23 @@ export default [
       ["edge out", ["start", "Schulhof"]],
       ["fewer", "start", 0],
       ["others", ["start", "Schulhof"]],
+    ],
+  },
+  {
+    // A word removed in the caption box is fixed, like a typo, and a drag
+    // only sets when the caption is shown. Tim removed a word, dragged the
+    // start of the caption after it out to where he heard its next word
+    // begin, and the word came back, #598.
+    name: "a caption's first word removed stays removed when its left edge is dragged out over it",
+    steps: [
+      ["mark", "start"],
+      ["remove edge word", ["first", "Schulhof"]],
+      ["fewer", "start", 1],
+      ["mark", "removed"],
+      ["edge out", ["start", "Schulhof"]],
+      ["earlier", ["removed", "Schulhof"]],
+      ["fewer", "start", 1],
+      ["meets", ["start", "Schulhof", "before"]],
     ],
   },
   {
@@ -198,19 +217,25 @@ export default [
     ],
   },
   {
+    // On the caption that ends a sentence, so a pause comes after its last
+    // word. Where the speech runs on, the caption stays up until the next
+    // appears, see the walk below on the last word, #597.
     name: "removing a caption's last word draws it in like dragging its right edge over the word",
     steps: [
       ["mark", "start"],
-      ["edge in", ["end", "Schulhof"]],
+      ["edge in", ["end", "geschubst"]],
       ["mark", "dragged"],
       ["undo"],
       ["same", "start"],
-      ["remove edge word", ["last", "Schulhof"]],
-      ["drawn in", ["dragged", "Schulhof", "last"]],
-      ["others", ["start", "Schulhof"]],
+      ["remove edge word", ["last", "geschubst"]],
+      ["drawn in", ["dragged", "geschubst", "last"]],
+      ["others", ["start", "geschubst"]],
     ],
   },
   {
+    // The speech runs on into "als", so the caption before stays up
+    // until this one appears, #597, which the edge dragged in leaves
+    // alone.
     name: "removing a caption's first word draws it in like dragging its left edge over the word",
     steps: [
       ["mark", "start"],
@@ -220,7 +245,27 @@ export default [
       ["same", "start"],
       ["remove edge word", ["first", "Schulhof"]],
       ["drawn in", ["dragged", "Schulhof", "first"]],
-      ["others", ["start", "Schulhof"]],
+      ["others", ["start", "Schulhof", "held"]],
+    ],
+  },
+  {
+    // Tim removed a word and saw the caption blocks come apart with the
+    // sound running on under the gap, #597.
+    name: "removing a caption's first word leaves no gap to the caption before while the speech runs on",
+    steps: [
+      ["mark", "start"],
+      ["meets", ["start", "Schulhof", "before"]],
+      ["remove edge word", ["first", "Schulhof"]],
+      ["meets", ["start", "Schulhof", "before"]],
+    ],
+  },
+  {
+    name: "removing a caption's last word leaves no gap to the caption after while the speech runs on",
+    steps: [
+      ["mark", "start"],
+      ["meets", ["start", "Schulhof", "after"]],
+      ["remove edge word", ["last", "Schulhof"]],
+      ["meets", ["start", "Schulhof", "after"]],
     ],
   },
   {

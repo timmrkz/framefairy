@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"framefairy/engine/timed"
+
 	"github.com/spf13/afero"
 )
 
@@ -105,10 +107,10 @@ type Options struct {
 	Pass int
 	// Taken are the parts of the episode clips were proposed for already.
 	// The model is told to leave them, see PlanOptions.Taken.
-	Taken []Window
+	Taken []timed.Window
 	// Listed are the parts of Taken whose clips are not removed, see
 	// PlanOptions.Listed.
-	Listed []Window
+	Listed []timed.Window
 	// Removed are the clips of the episode that were removed. An episode
 	// shorter than a clip whose clip is made again has them taken out of
 	// their plans, see DropRemoved.
@@ -156,6 +158,22 @@ func EpisodeName(source string) string {
 	return base
 }
 
+// shortsFolder is the folder an episode's shorts are rendered into: the
+// one --out names, as it is, or a folder of the episode's own name in the
+// folder the app's settings name for shorts, so the shorts of two
+// episodes never meet there, or the out folder in the episode's work
+// folder when neither is set. Where a short goes in it is shortStem's.
+func shortsFolder(out, shorts, source string) (string, error) {
+	switch {
+	case out != "":
+		return out, nil
+	case shorts != "":
+		return SafeChild(shorts, EpisodeName(source))
+	default:
+		return filepath.Join(WorkDir(source), "out"), nil
+	}
+}
+
 func exists(fsys afero.Fs, path string) bool {
 	_, err := fsys.Stat(path)
 	return err == nil
@@ -198,8 +216,8 @@ type runner struct {
 	rs                          RenderSettings
 	// window is the part of the episode asked for, nil for all of it, and
 	// span is that part or the whole episode.
-	window *Window
-	span   Window
+	window *timed.Window
+	span   timed.Window
 	// planPath is the plan this run reads or writes.
 	planPath   string
 	experiment bool
@@ -268,7 +286,7 @@ func (r *runner) finish(ctx context.Context, plan Plan, clips []Clip) error {
 // forSpan is the options for a window of the episode: how many clips to
 // look for and how long to think follow the window, unless they were
 // given. See suggest.go.
-func (opts Options) forSpan(span Window) Options {
+func (opts Options) forSpan(span timed.Window) Options {
 	if opts.Count == 0 {
 		opts.Count = SuggestedCount(span.End-span.Start, opts.Min, opts.Max)
 	}
@@ -293,11 +311,11 @@ func askedWith(opts Options) PlanOptions {
 
 // askedWindow is the window --from and --to ask for: nil when neither is
 // given, and an end at infinity when only the start is.
-func askedWindow(opts Options) (*Window, error) {
+func askedWindow(opts Options) (*timed.Window, error) {
 	if opts.From == "" && opts.To == "" {
 		return nil, nil
 	}
-	ask := &Window{0, math.Inf(1)}
+	ask := &timed.Window{Start: 0, End: math.Inf(1)}
 	var err error
 	if opts.From != "" {
 		if ask.Start, err = ParseTime(opts.From); err != nil {
@@ -315,7 +333,7 @@ func askedWindow(opts Options) (*Window, error) {
 // prepare checks what a run is asked for, finds the episode and the part
 // of it asked for, ask, nil for all of it, and the plan the run reads or
 // writes. An end at infinity is the end of the episode.
-func (e *Engine) prepare(ctx context.Context, opts Options, ask *Window) (*runner, error) {
+func (e *Engine) prepare(ctx context.Context, opts Options, ask *timed.Window) (*runner, error) {
 	log := e.Log
 	e.Prefill = opts.Prefill
 	e.UseTools(opts.FFmpeg, opts.FFprobe)
@@ -346,16 +364,9 @@ func (e *Engine) prepare(ctx context.Context, opts Options, ask *Window) (*runne
 	}
 
 	work := WorkDir(opts.Source)
-	outDir := opts.Out
-	if outDir == "" && opts.Shorts != "" {
-		dir, err := SafeChild(opts.Shorts, EpisodeName(opts.Source))
-		if err != nil {
-			return nil, err
-		}
-		outDir = dir
-	}
-	if outDir == "" {
-		outDir = filepath.Join(work, "out")
+	outDir, err := shortsFolder(opts.Out, opts.Shorts, opts.Source)
+	if err != nil {
+		return nil, err
 	}
 	captionDir := filepath.Join(work, "captions")
 	if err := e.Files.MkdirAll(work, 0o755); err != nil {
@@ -396,8 +407,8 @@ func (e *Engine) prepare(ctx context.Context, opts Options, ask *Window) (*runne
 	// Working a long episode in passes. Only the audio inside the window is
 	// transcribed and sent, and the plan for each window is kept in its own
 	// file so the passes accumulate instead of overwriting each other.
-	var window *Window
-	span := Window{0, source.Duration}
+	var window *timed.Window
+	span := timed.Window{Start: 0, End: source.Duration}
 	if ask != nil {
 		startAt, endAt := ask.Start, ask.End
 		if math.IsInf(endAt, 1) {
@@ -409,7 +420,7 @@ func (e *Engine) prepare(ctx context.Context, opts Options, ask *Window) (*runne
 		if endAt <= startAt {
 			return nil, errors.New("the end of the window must be later than its start, and its start inside the video")
 		}
-		window = &Window{startAt, endAt}
+		window = &timed.Window{Start: startAt, End: endAt}
 		span = *window
 		log.Info("window %s to %s", HMS(startAt), HMS(endAt))
 	}

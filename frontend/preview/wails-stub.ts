@@ -427,7 +427,7 @@ const modelJob = () => ({
     ? undefined
     : {
         stage: "speech model",
-        text: "fetching",
+        text: `fetching ${Math.round(487 * Math.min((Date.now() - installAt()) / 4000, 1))} MB of 487 MB at 120 MB a second`,
         fraction: Math.min((Date.now() - installAt()) / 4000, 1),
         remaining: Math.max(0, Math.round(4 - (Date.now() - installAt()) / 1000)),
       },
@@ -987,6 +987,7 @@ const Answers = {
           name: "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8",
           title: "Parakeet TDT 0.6B v3",
           about: "NVIDIA's recogniser, quantised. Fast on any machine and accurate on speech.",
+          maker: "NVIDIA",
           languages: "25 European languages, German and English among them",
           download: 487170055,
           unpacked: 671239000,
@@ -1077,6 +1078,8 @@ const Answers = {
           hasSpeech: model.installed,
           language,
           memory: 34359738368,
+          home: "/Users/tim",
+          modelsDir: "/Users/tim/.framefairy/models",
           planner: fresh ? planner : "local",
           // Two companies, and a key for each or not. ?nokey is a machine
           // with none, and a fresh one has none until one is saved. ?envkey
@@ -1222,6 +1225,9 @@ const Answers = {
       // ?twins is Tim's library: every episode called youtube.mp4, each in
       // a folder of its own.
       case "Library":
+        // A machine with nothing on it has no videos either, so the setup
+        // hands over to the empty first page.
+        if (location.search.includes("setup")) return Promise.resolve([]);
         if (location.search.includes("twins")) {
           const labels = (window as any).__labels ?? {};
           const twin = (source: string, extra: object) => ({ source, name: "youtube.mp4", size: 1, modified: "", missing: false, transcribed: false, covered: 900, heard: [[0, 900]], transcriptStale: false, plans: [], rendered: 0, previews: 0, work: true, everSearched: true, label: labels[source], ...extra });
@@ -1517,7 +1523,7 @@ const Answers = {
           { name: "ffmpeg", ok: true, version: "8.1.3", detail: "The one this app was built with: its SHA-256 matches the one built in.", path: "/Applications/Frame Fairy.app/Contents/MacOS/ffmpeg", sha256: "e1ba46e814d383b96be780d1a7c49e1c4eecef1619615a241974dc122e2f1a2e" },
           { name: "ffprobe", ok: true, version: "8.1.3", detail: "The one this app was built with: its SHA-256 matches the one built in.", path: "/Applications/Frame Fairy.app/Contents/MacOS/ffprobe", sha256: "5b0c9e2d7a41f8836c2e0b1d94f7a6c35e8d21b0a97f4c6e3d58b2a1f0c9e7d4" },
           { name: "Video decoding", ok: true, detail: "VideoToolbox, falling back to the processor for a file it does not take. The log of a search says which one it used" },
-          { name: "Caption fonts", ok: true, detail: "built in: Inter Black, Montserrat ExtraBold" },
+          { name: "Caption fonts", ok: true, detail: "6 built in, 412 from this machine" },
           { name: "Speech model", ok: true, detail: "/Users/tim/.framefairy/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8" },
         ];
         // The same key the setup answers about: there on a machine that is
@@ -1795,7 +1801,7 @@ const Answers = {
         const known = (t: number) => t <= heardTo || parts.some(([a, b]) => t >= a && t < b);
         // Loudness is measured every ten milliseconds and no finer, and
         // a bucket is the loudest measurement that falls in it. That is
-        // engine.FrameSeconds and Transcript.Peaks, and the stub has to do
+        // timed.FrameSeconds and Transcript.Peaks, and the stub has to do
         // the same or it cannot be zoomed in past the measurement, which
         // is the one place the waveform looked like a display with too few
         // pixels. It used to answer with exactly as many smooth values as

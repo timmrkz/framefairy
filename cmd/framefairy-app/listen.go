@@ -13,6 +13,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"framefairy/engine/timed"
+
 	"github.com/gen2brain/malgo"
 	"github.com/rs/zerolog"
 
@@ -628,7 +630,7 @@ func heardAround(rec engine.Recognizer, samples []float32, settled, cut int) (be
 	const slack = 0.05
 	start := float64(settled-from)/engine.SampleRate - slack
 	end := float64(cut-from) / engine.SampleRate
-	var first, second []engine.Cue
+	var first, second []timed.Cue
 	// At most about 17 s, the longest a piece grows before it is settled
 	// and listenAround with it, which the speech model takes in one go.
 	for _, w := range engine.TokensToWords(rec.Recognize(samples[from:], engine.SampleRate), 0) {
@@ -644,7 +646,7 @@ func heardAround(rec engine.Recognizer, samples []float32, settled, cut int) (be
 }
 
 // joined is words as one text.
-func joined(words []engine.Cue) string {
+func joined(words []timed.Cue) string {
 	texts := make([]string, len(words))
 	for i, w := range words {
 		texts[i] = w.Text

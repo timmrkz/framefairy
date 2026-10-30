@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"framefairy/engine/timed"
 )
 
 // The words an episode says, see docs/WORDS.md. There is one list of them,
@@ -19,7 +21,7 @@ import (
 
 // hear makes the words from what the recogniser heard, moved onto the
 // sound, with no corrections yet.
-func (t *Transcript) hear(raw []Cue) {
+func (t *Transcript) hear(raw []timed.Cue) {
 	t.RawWords = raw
 	t.snapped = SnapWords(raw, t.Frames, t.Start, t.Floor)
 	t.keys, t.byKey = nil, nil
@@ -64,8 +66,8 @@ func (t *Transcript) Correct(corrections map[string]string) {
 			fixes[i] = text
 		}
 	}
-	heard := make([]Cue, 0, len(t.snapped))
-	words := make([]Cue, 0, len(t.snapped))
+	heard := make([]timed.Cue, 0, len(t.snapped))
+	words := make([]timed.Cue, 0, len(t.snapped))
 	for i, w := range t.snapped {
 		if text, ok := fixes[i]; ok {
 			w.Text = text
@@ -130,7 +132,7 @@ func (t *Transcript) correctFew(corrections map[string]string) bool {
 	}
 	slices.SortFunc(fixes, func(a, b fix) int { return cmp.Compare(a.i, b.i) })
 	heard := slices.Clone(t.HeardWords)
-	words := make([]Cue, 0, len(t.Words)+len(fixes))
+	words := make([]timed.Cue, 0, len(t.Words)+len(fixes))
 	from := 0
 	for _, f := range fixes {
 		was := t.HeardWords[f.i]
@@ -274,7 +276,7 @@ func (t *Transcript) saidAt(key string) (float64, bool) {
 
 // saidOf is where the words a heard word says begin in Words, and how many
 // there are, see splitWord.
-func (t *Transcript) saidOf(heard Cue) (first, n int) {
+func (t *Transcript) saidOf(heard timed.Cue) (first, n int) {
 	if strings.TrimSpace(heard.Text) == "" {
 		return 0, 0
 	}
@@ -350,7 +352,7 @@ func (t *Transcript) rekeyCaptionTimes(times map[string]CaptionTime) map[string]
 }
 
 // keyOf is the key of a heard word, one of HeardWords.
-func (t *Transcript) keyOf(heard Cue) string {
+func (t *Transcript) keyOf(heard timed.Cue) string {
 	i := sort.Search(len(t.snapped), func(i int) bool { return t.snapped[i].Start >= heard.Start-0.0005 })
 	if i < len(t.snapped) && math.Abs(t.snapped[i].Start-heard.Start) < 0.0005 {
 		return t.keyAt(i)
@@ -399,7 +401,7 @@ func (t *Transcript) rekeyRemoved(removed RemovedWords) RemovedWords {
 // A clip's captions were made from every word of the episode, copied
 // whenever a word had been removed: 1 MB for every pointer move on an
 // edge of a clip of an episode of four hours.
-func (t *Transcript) captionWordsIn(removed RemovedWords, from, to float64) []Cue {
+func (t *Transcript) captionWordsIn(removed RemovedWords, from, to float64) []timed.Cue {
 	out := between(t.Words, from, to)
 	if len(removed) == 0 {
 		return out
@@ -410,7 +412,7 @@ func (t *Transcript) captionWordsIn(removed RemovedWords, from, to float64) []Cu
 			continue
 		}
 		if !copied {
-			out, copied = append([]Cue(nil), out...), true
+			out, copied = append([]timed.Cue(nil), out...), true
 		}
 		out[i].Text = removedMark + w.Text
 	}
@@ -419,7 +421,7 @@ func (t *Transcript) captionWordsIn(removed RemovedWords, from, to float64) []Cu
 
 // clipCaptionWords is captionWordsIn for a clip, the words its captions
 // can need.
-func (t *Transcript) clipCaptionWords(clip Clip) []Cue {
+func (t *Transcript) clipCaptionWords(clip Clip) []timed.Cue {
 	t = t.Of(clip)
 	if len(clip.Segments) == 0 {
 		return t.captionWordsIn(clip.RemovedWords, math.Inf(-1), math.Inf(1))
@@ -430,7 +432,7 @@ func (t *Transcript) clipCaptionWords(clip Clip) []Cue {
 
 // between is the words, in the order they were said, that touch from to
 // to: the first that ends after from up to the first that starts at to.
-func between(words []Cue, from, to float64) []Cue {
+func between(words []timed.Cue, from, to float64) []timed.Cue {
 	i := sort.Search(len(words), func(i int) bool { return words[i].End > from })
 	j := i + sort.Search(len(words)-i, func(k int) bool { return words[i+k].Start >= to })
 	return words[i:j]
@@ -444,7 +446,7 @@ const captionReach = 1.0
 // nearClip is the part of the words, in the order they were said, that a
 // clip's captions can need. Captions read every word of the episode, and
 // looked each caption's words up among all of them, twice a caption.
-func nearClip(clip Clip, words []Cue) []Cue {
+func nearClip(clip Clip, words []timed.Cue) []timed.Cue {
 	if len(clip.Segments) == 0 {
 		return words
 	}
@@ -457,23 +459,23 @@ func nearClip(clip Clip, words []Cue) []Cue {
 // is shared out by how long the words are. The audio is not read again: the
 // highlight only has to run over the words inside the part they were said
 // in.
-func splitWord(word Cue) []Cue {
+func splitWord(word timed.Cue) []timed.Cue {
 	parts := strings.Fields(word.Text)
 	if len(parts) < 2 {
-		return []Cue{word}
+		return []timed.Cue{word}
 	}
 	total := 0
 	for _, part := range parts {
 		total += utf8.RuneCountInString(part)
 	}
-	out := make([]Cue, 0, len(parts))
+	out := make([]timed.Cue, 0, len(parts))
 	at, span := word.Start, word.End-word.Start
 	for i, part := range parts {
 		end := word.End
 		if i < len(parts)-1 {
 			end = at + span*float64(utf8.RuneCountInString(part))/float64(total)
 		}
-		out = append(out, Cue{at, end, part})
+		out = append(out, timed.Cue{Start: at, End: end, Text: part})
 		at = end
 	}
 	return out
@@ -483,19 +485,19 @@ func splitWord(word Cue) []Cue {
 // correction is kept against, with its correction. A word a correction
 // split in two, or the captions hyphenated, is one word here, so correcting
 // either half corrects the word.
-func (t *Transcript) HeardAt(at float64) (Cue, bool) {
+func (t *Transcript) HeardAt(at float64) (timed.Cue, bool) {
 	i := sort.Search(len(t.HeardWords), func(i int) bool { return t.HeardWords[i].End > at })
 	if i < len(t.HeardWords) && at >= t.HeardWords[i].Start-0.0015 {
 		return t.HeardWords[i], true
 	}
-	return Cue{}, false
+	return timed.Cue{}, false
 }
 
 // PartOf is which of the words a correction made of a heard word a word
 // is, counted from nought: the words before it that the same heard word
 // made. The words a heard word makes start inside it, one after the
 // other, see splitWord.
-func (t *Transcript) PartOf(heard, word Cue) int {
+func (t *Transcript) PartOf(heard, word timed.Cue) int {
 	from := sort.Search(len(t.Words), func(i int) bool { return t.Words[i].Start >= heard.Start-0.0015 })
 	to := sort.Search(len(t.Words), func(i int) bool { return t.Words[i].Start >= word.Start-0.0005 })
 	return max(to-from, 0)
@@ -507,13 +509,13 @@ func (t *Transcript) PartOf(heard, word Cue) int {
 // it says is read off the episode's words whenever it is needed, so a
 // correction or a change to how words are timed reaches every clip at
 // once.
-func Said(clip Clip, words []Cue) []Cue {
+func Said(clip Clip, words []timed.Cue) []timed.Cue {
 	if len(clip.Segments) == 0 {
 		return nil
 	}
 	from, to := clip.Segments[0].Start, clip.Segments[len(clip.Segments)-1].End
 	first := sort.Search(len(words), func(i int) bool { return words[i].End > from })
-	var out []Cue
+	var out []timed.Cue
 	for _, w := range words[first:] {
 		if w.Start >= to {
 			break
@@ -540,7 +542,7 @@ func Said(clip Clip, words []Cue) []Cue {
 // word a cut parts is captioned once, in the piece that holds the most of
 // it. It used to have to lie wholly inside a piece, so a word the clip
 // said had no caption until the edge had passed its first sound.
-func ClipWords(clip Clip, words []Cue) []Cue {
+func ClipWords(clip Clip, words []timed.Cue) []timed.Cue {
 	out, _ := clipWords(clip, words)
 	return out
 }
@@ -548,8 +550,8 @@ func ClipWords(clip Clip, words []Cue) []Cue {
 // clipWords is ClipWords with, beside each word on the clip's clock, the
 // same word on the episode's, which is where its pauses are measured: a cut
 // shortens a pause on the clip's clock and leaves the episode's alone.
-func clipWords(clip Clip, words []Cue) ([]Cue, []Cue) {
-	type pair struct{ at, was Cue }
+func clipWords(clip Clip, words []timed.Cue) ([]timed.Cue, []timed.Cue) {
+	type pair struct{ at, was timed.Cue }
 	var pairs []pair
 	offsets := make([]float64, len(clip.Segments))
 	sum := 0.0
@@ -586,12 +588,12 @@ func clipWords(clip Clip, words []Cue) ([]Cue, []Cue) {
 		if best < len(clip.Segments)-1 {
 			end = math.Min(end, segment.End)
 		}
-		pairs = append(pairs, pair{Cue{offsets[best] + (start - segment.Start),
-			offsets[best] + (end - segment.Start), word.Text}, word})
+		pairs = append(pairs, pair{timed.Cue{Start: offsets[best] + (start - segment.Start),
+			End: offsets[best] + (end - segment.Start), Text: word.Text}, word})
 	}
 	sort.SliceStable(pairs, func(i, j int) bool { return pairs[i].at.Start < pairs[j].at.Start })
-	out := make([]Cue, len(pairs))
-	was := make([]Cue, len(pairs))
+	out := make([]timed.Cue, len(pairs))
+	was := make([]timed.Cue, len(pairs))
 	for i, p := range pairs {
 		out[i], was[i] = p.at, p.was
 	}
@@ -616,7 +618,7 @@ const wordTouch = 0.02
 // made several shares its time out among them, so a short word typed into
 // a word two frames long gets less than a frame. The captions left such a
 // word out, and the frames it stood in showed none.
-func HoldsWord(start, end float64, w Cue) bool {
+func HoldsWord(start, end float64, w timed.Cue) bool {
 	held := math.Min(end, w.End) - math.Max(start, w.Start)
 	return held > wordTouch || (held > 0 && w.Start >= start && w.End <= end)
 }

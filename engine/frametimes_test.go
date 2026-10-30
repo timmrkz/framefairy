@@ -36,8 +36,9 @@ import (
 // nothing moved, the way a screen recorder does, and a picture that starts
 // a quarter of a second after the sound, by an edit list in MOV and by its
 // first timestamp in Matroska. The clip's first piece starts before the
-// picture does. And from MPEG-TS, which has no index of its key frames,
-// plan row 2.200.
+// picture does. And from MPEG-TS and MPEG-PS, which have no index of
+// their key frames, with B-frames and with every frame a key frame, plan
+// row 2.200, #268, #600 and #601.
 //
 // A short of an episode whose frames keep to their rate has that rate. One
 // whose frames do not has the episode's average rate rounded to the
@@ -76,14 +77,16 @@ type timesCase struct {
 	// not nought, with the sound in AAC. MPEG-4 Part 2 in GOPs of 30 and
 	// PCM where it is.
 	gop int
+	// The picture's codec and the sound's, from "-c:v", where they are
+	// not the ones gop picks.
+	codecs []string
 	// Written the way a recording cut off by a crash is left: as it is
 	// made, with no going back to say how long it is or where its key
 	// frames are.
 	cutOff bool
 	// A file only the video preview's test takes, see
 	// TestTheVideoPreviewShowsTheFramesOfTheShort: one whose frames keep to
-	// their rate, which TestARenderCutsOnWholeFrames renders, or one whose
-	// short is not right yet, plan row 2.201.
+	// their rate, which TestARenderCutsOnWholeFrames renders.
 	previewOnly bool
 }
 
@@ -118,23 +121,53 @@ var timesCases = []timesCase{
 	// What OBS records, the file Tim found the video preview could not
 	// read: H.264 with B-frames, so frames are decoded out of the order
 	// they are shown in, and AAC, whose priming starts the sound before
-	// the picture, in Matroska, with frames left out under load.
+	// the picture, in Matroska, with frames left out under load. Its
+	// frames begin on whole milliseconds, some exactly a hair after the
+	// moment they hold, #266.
 	{name: "obs_mkv", file: "obs.mkv", rate: "30/1",
 		video: []string{"select='not(between(n\\,40\\,49)+between(n\\,100\\,104))'"},
 		out:   []string{"-fps_mode", "passthrough"},
-		gop:   30, previewOnly: true},
+		gop:   30},
 	// MPEG-TS, which OBS also records and camcorders write, has no index
 	// of its key frames, so a seek lands between two. A key frame every
 	// two seconds puts every jump of the test inside a GOP.
 	// Its rate is not checked: the Mac's encoder stamps its frames
 	// unevenly in MPEG-TS, and the probe then makes it 30.
 	{name: "mpegts", file: "ts.ts", gop: 60},
+	// What OBS records in MPEG-TS with its key frame every 250 frames,
+	// more than eight seconds, and frames left out under load, so most
+	// stretches Probe reads hold no key frame.
+	{name: "held_ts", file: "held.ts", rate: "30/1", seconds: 20, gop: 250,
+		video: []string{"select='not(between(n\\,160\\,169))'"},
+		out:   []string{"-fps_mode", "passthrough"}},
+	// MPEG-PS, .mpg and .vob, the way a DVD or an old camcorder holds
+	// MPEG-2 and MP2. It has no index of its key frames either, and
+	// ffmpeg stamps no time on some of its packets, #268.
+	{name: "mpegps", file: "ps.mpg", rate: "30000/1001",
+		codecs: []string{"-c:v", "mpeg2video", "-q:v", "2", "-g", "15", "-c:a", "mp2"}},
+	// The same with two B-frames between key frames and the frames they
+	// are made from, the usual MPEG-2. The frames the B-frames are made
+	// from have no time of their own, the key frames among them.
+	{name: "mpegps_bframes", file: "bframes.mpg", rate: "30000/1001",
+		codecs: []string{"-c:v", "mpeg2video", "-q:v", "2", "-g", "15", "-bf", "2", "-c:a", "mp2"}},
+	// A DVD: MPEG-2 with B-frames and MP2 in a .vob, whose key frames
+	// have their time, #268.
+	{name: "dvd", file: "dvd.vob", rate: "30000/1001",
+		codecs: []string{"-c:v", "mpeg2video", "-q:v", "2", "-g", "18", "-bf", "2", "-c:a", "mp2", "-f", "dvd"}},
+	// MPEG-2 with B-frames in MPEG-TS, the way a TV recording or an HDV
+	// camcorder holds it, #600.
+	{name: "mpegts_bframes", file: "bframes.ts", rate: "30000/1001",
+		codecs: []string{"-c:v", "mpeg2video", "-q:v", "2", "-g", "15", "-bf", "2", "-c:a", "mp2"}},
+	// Every frame a key frame, in MPEG-TS and in MPEG-PS, so a key
+	// frame is decoded right after another, #601.
+	{name: "mpegts_intra", file: "intra.ts", rate: "30000/1001",
+		codecs: []string{"-c:v", "mpeg2video", "-q:v", "2", "-g", "1", "-c:a", "mp2"}},
+	{name: "mpegps_intra", file: "intra.mpg", rate: "30000/1001",
+		codecs: []string{"-c:v", "mpeg2video", "-q:v", "2", "-g", "1", "-c:a", "mp2"}},
 	// What OBS leaves of a Matroska recording when it crashes: no
 	// duration and no index of its key frames, plan row 2.203.
-	// Like obs_mkv a file of the video preview's test only, and its rate
-	// not checked like mpegts', since the Mac's encoder in Matroska is
-	// plan row 2.201.
-	{name: "crashed_mkv", file: "crashed.mkv", gop: 60, cutOff: true, previewOnly: true},
+	// Its rate is not checked, like mpegts'.
+	{name: "crashed_mkv", file: "crashed.mkv", gop: 60, cutOff: true},
 }
 
 // timesEpisode makes the episode of a case: its frames carry their
@@ -147,7 +180,7 @@ func timesEpisode(t *testing.T, c timesCase) string {
 	source := filepath.Join(dir, c.file)
 	seconds := strconv.Itoa(max(c.seconds, 7))
 	picture := "color=c=black:s=2x8:r=30000/1001:d=" + seconds + "," +
-		"geq=lum='if(bitand(N\\,pow(2\\,7-Y))\\,220\\,30)':cb=128:cr=128,scale=640:360:flags=neighbor"
+		"geq=lum='if(bitand(N\\,pow(2\\,7-Y))\\,220\\,30)':cb=128:cr=128,scale=128:72:flags=neighbor"
 	if len(c.video) > 0 {
 		picture += "," + strings.Join(c.video, ",")
 	}
@@ -159,6 +192,9 @@ func timesEpisode(t *testing.T, c timesCase) string {
 	codecs, sound := [][]string{{"-c:v", "mpeg4", "-q:v", "2", "-g", "30"}}, []string{"-c:a", "pcm_s16le"}
 	if c.gop > 0 {
 		codecs, sound = h264(t, c.gop), []string{"-c:a", "aac"}
+	}
+	if len(c.codecs) > 0 {
+		codecs, sound = [][]string{c.codecs}, nil
 	}
 	if out, err := encodeTestFile(t, "ffmpeg", args, codecs, append(sound, "-t", seconds, source)...); err != nil {
 		t.Fatalf("making the test episode: %s %s", err, out)
@@ -348,19 +384,30 @@ func frameHolding(t *testing.T, source string) func(at float64) int {
 		t.Fatal(err)
 	}
 	start, _ := strconv.ParseFloat(strings.TrimSpace(string(out)), 64)
-	out, err = exec.Command("ffprobe", "-v", "error", "-select_streams", "v:0",
-		"-show_entries", "packet=pts_time", "-of", "csv=p=0", source).Output()
-	if err != nil {
-		t.Fatal(err)
-	}
+	numbers := barNumbers(t, source, 128, 72, "-fps_mode", "passthrough")
+	// MPEG-PS stamps no time on some packets, and its frames get theirs
+	// as they are decoded, all but its last, which lies after every piece.
 	var begins []float64
-	for _, field := range strings.Fields(string(out)) {
-		if v, err := strconv.ParseFloat(strings.Trim(field, ","), 64); err == nil {
-			begins = append(begins, v-start)
+	for _, entry := range []string{"packet=pts_time", "frame=best_effort_timestamp_time"} {
+		out, err = exec.Command("ffprobe", "-v", "error", "-select_streams", "v:0",
+			"-show_entries", entry, "-of", "csv=p=0", source).Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		begins = begins[:0]
+		for _, field := range strings.Fields(string(out)) {
+			if v, err := strconv.ParseFloat(strings.Trim(field, ","), 64); err == nil {
+				begins = append(begins, v-start)
+			}
+		}
+		if len(begins) == len(numbers) {
+			break
 		}
 	}
+	if strings.HasSuffix(strings.TrimRight(string(out), ",\n"), "N/A") && len(begins) == len(numbers)-1 {
+		numbers = numbers[:len(begins)]
+	}
 	sort.Float64s(begins)
-	numbers := barNumbers(t, source, 640, 360, "-fps_mode", "passthrough")
 	if len(numbers) != len(begins) {
 		t.Fatalf("the episode has %d frames and %d timestamps", len(numbers), len(begins))
 	}
@@ -379,15 +426,11 @@ func barNumbers(t *testing.T, path string, w, h int, flags ...string) []int {
 	t.Helper()
 	args := append([]string{"-v", "error", "-i", path}, flags...)
 	args = append(args, "-f", "rawvideo", "-pix_fmt", "gray", "-")
-	out, err := exec.Command("ffmpeg", args...).Output()
-	if err != nil {
-		t.Fatal(err)
-	}
 	var numbers []int
-	for i := 0; i+w*h <= len(out); i += w * h {
+	for _, f := range readFrames(t, exec.Command("ffmpeg", args...), w*h) {
 		n := 0
 		for b := 0; b < 8; b++ {
-			if out[i+(2*b+1)*h/16*w+w/2] > 125 {
+			if f[(2*b+1)*h/16*w+w/2] > 125 {
 				n |= 1 << (7 - b)
 			}
 		}

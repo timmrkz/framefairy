@@ -13,6 +13,8 @@ import (
 	"sync"
 	"testing"
 
+	"framefairy/engine/timed"
+
 	"github.com/spf13/afero"
 )
 
@@ -38,9 +40,9 @@ const editablePlan = `{
 // editableTranscript is the episode behind editablePlan, made the way a
 // transcript is read, so a word of it can be corrected.
 func editableTranscript() *Transcript {
-	return fromStored([]Cue{
-		{10, 10.5, "eins"}, {10.6, 11, "zwei"}, {12, 12.4, "drei"}, {13, 13.5, "vier"},
-		{20.1, 20.6, "fünf"}, {21, 21.5, "sechs"},
+	return fromStored([]timed.Cue{
+		{Start: 10, End: 10.5, Text: "eins"}, {Start: 10.6, End: 11, Text: "zwei"}, {Start: 12, End: 12.4, Text: "drei"}, {Start: 13, End: 13.5, Text: "vier"},
+		{Start: 20.1, End: 20.6, Text: "fünf"}, {Start: 21, End: 21.5, Text: "sechs"},
 	}, nil, 0, 0, nil)
 }
 
@@ -970,7 +972,7 @@ func TestTheWordsShownAreTheWordsTheCaptionsLight(t *testing.T) {
 	long := "Donaudampfschifffahrtsgesellschaftskapitänsmütze"
 	fsys, path := writePlanAt(t, `{"source": "ep.mp4", "clips": [{"id": "01", "slug": "x",
 	  "segments": [{"start": 10.0, "end": 14.0}], "corrections": {"12500": "Und da"}}]}`)
-	tr := fromStored([]Cue{{10.2, 12.2, long}, {12.5, 13.0, "Und"}}, nil, 0, 0, nil)
+	tr := fromStored([]timed.Cue{{Start: 10.2, End: 12.2, Text: long}, {Start: 12.5, End: 13.0, Text: "Und"}}, nil, 0, 0, nil)
 	loaded, clip, err := planClip(fsys, path, "01")
 	if err != nil {
 		t.Fatal(err)
@@ -980,11 +982,11 @@ func TestTheWordsShownAreTheWordsTheCaptionsLight(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var lit []Cue
+	var lit []timed.Cue
 	for _, c := range view.Captions {
 		for _, line := range c.Lines {
 			for _, w := range line.Words {
-				lit = append(lit, Cue{roundTo(10+w.Start, 3), roundTo(10+w.End, 3), w.Text})
+				lit = append(lit, timed.Cue{Start: roundTo(10+w.Start, 3), End: roundTo(10+w.End, 3), Text: w.Text})
 			}
 		}
 	}
@@ -1266,7 +1268,7 @@ func TestACutsEdgeTakesThePlayheadTheWayTheClipsEdgesDo(t *testing.T) {
 		// The playhead, from the pieces the gesture leaves, and the word it
 		// has to be in on words.
 		want func(p []PieceView) float64
-		word *Cue
+		word *timed.Cue
 	}{
 		{"the left edge on frames", Gesture{Kind: "move", Edge: "from", From: 20.61, To: 24},
 			func(p []PieceView) float64 { return p[0].End - frame }, nil},

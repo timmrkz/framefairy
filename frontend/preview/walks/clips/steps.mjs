@@ -7,7 +7,7 @@
 // docs/TESTING.md.
 import { existsSync, readdirSync, realpathSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, extname, join } from "node:path";
-import { ask, caughtUp, chosen, clipList, control, engineState, episodeOn, foldsDone, fromSidebar, handles, high, hold, holdClock, letClockGo, letHeld, middle, news, nextNews, nextPaint, overlay, pageUntil, playUntil, pressHead, realFrames, recordFrames, runClock, seenUntil, settle, shortFrames, shortSound } from "../bridge.mjs";
+import { ask, caughtUp, chosen, clickOnTrack, clipList, control, engineState, episodeOn, foldsDone, fromSidebar, handles, high, hold, holdClock, letClockGo, letHeld, middle, news, nextNews, nextPaint, overlay, pageUntil, playUntil, pressHead, realFrames, recordFrames, runClock, seenUntil, settle, shortFrames, shortSound } from "../bridge.mjs";
 import { canLook, changesOf, clickCard, clickedFromAhead, clockOf, halfOf, newCards, pieceCount, rate, restAhead, shortOf, shotClips, url } from "../common/steps.mjs";
 
 export const steps = {
@@ -51,7 +51,7 @@ export const steps = {
       walk.wrong = "there is no room on the clip timeline before the clip";
       return;
     }
-    await page.mouse.click((g.track.x + g.start.x) / 2, high(g.track));
+    await clickOnTrack(page, (g.track.x + g.start.x) / 2, high(g.track));
     await settle(page);
     const path = await episodeOn(page);
     const was = (await overlay(page)).card;

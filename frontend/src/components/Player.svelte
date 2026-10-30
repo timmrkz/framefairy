@@ -407,6 +407,22 @@
     onClip = place !== "video";
   });
 
+  // An edge of the clip dragged past the playhead while the clip plays
+  // leaves the playhead outside the clip, on the video, so the play goes
+  // on as a play of the video, through to the episode's end. Tim's rule on
+  // #277: making the clip shorter than where the playhead is says the
+  // playhead is no longer in it.
+  $effect(() => {
+    const now = pieces;
+    untrack(() => {
+      if (paused || !playedClip || !clip || !queue || !now.length) return;
+      if (placeOf(now, clip.key, time, 1 / oneFrame, undefined, source.videoStart ?? 0).place !== "video") return;
+      playedClip = false;
+      placed = onVideo;
+      queue.playOn();
+    });
+  });
+
   // The queue plays what the place says, and a clip whose pieces change
   // while it plays, a cut made, moved or put back, or loop switched on or
   // off, goes on from the playhead on what it is now. The same program

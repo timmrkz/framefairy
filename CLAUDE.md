@@ -51,7 +51,9 @@ Gemma 4 26B A4B as the local model, Parakeet TDT 0.6B v3 for speech.
 
 ## Where things are
 
-Start with [README.md](README.md). In short:
+Start with [README.md](README.md), and before a change with
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), which says where each kind of
+thing belongs. In short:
 
 | Part | Code | Docs |
 | --- | --- | --- |
@@ -168,7 +170,12 @@ Start with [README.md](README.md). In short:
   work on the open pull request carries on. Once that is merged, the
   next piece of work is the open issue of the highest priority, the
   smallest first and then the oldest, of those Tim opened or a session
-  opened for him, unless Tim puts them in another order.
+  opened for him, unless Tim puts them in another order. What is
+  happening now comes before that order, because the labels lag behind
+  it: a test that has just failed on main, or an issue that comes with
+  its trace or its log, goes before an older one still waiting for its
+  next failure to show why. Following the evidence in hand gets a fix
+  done sooner. The session says which it picked and why.
 - His machine is an M2 Max with 32 GB of memory, on the latest macOS, with
   Go 1.27, Homebrew and the models in `~/.framefairy/models`. ffmpeg and
   llama-server are built by `make` and live in `bin/`, the only place the
@@ -182,7 +189,18 @@ Start with [README.md](README.md). In short:
 
 - **Think first.** Research and check before answering. Read the code and
   docs you are about to change. Verify facts about tools and versions instead
-  of assuming them.
+  of assuming them. Put the change where
+  [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) says it belongs, not where
+  the issue happens to point, and never copy what its Not to copy names.
+  A change that brings a new kind of thing, a new part, a new home for
+  state or a new boundary, adds its line there.
+- **An architectural change is simulated five times first.** A change to
+  how the code is organised or designed, one that adds its line to
+  ARCHITECTURE.md or changes one, is worked through as five candidate
+  designs, each from a principle of its own, before the code. They
+  converge on one, and all of it is written as a decision record in
+  `docs/decisions/`. See Changing the architecture in
+  [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#changing-the-architecture).
 - **Small batches.** Split larger work into batches of a few minutes each.
   Finish, test and report after each one, with a pull request per batch,
   or a commit per batch while the batches are still one self-contained
@@ -231,8 +249,15 @@ Start with [README.md](README.md). In short:
   request. That agent is a new one that did none of the work, and it
   reviews the way the [review skill](.claude/skills/review/SKILL.md)
   says: whether the work serves the people using the app first, then the
-  code. Its brief carries Tim's own messages, the issue and the goals
-  under The project above, never the session's summary of them. It
+  architecture, then the code. Every review has an architecture section
+  that says whether the change leaves
+  [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) better, the same or
+  worse, and a change that makes it worse is fixed in the same pull
+  request before it is merged. Its brief carries Tim's own messages, the
+  issue, the goals under The project above and the path of
+  `docs/ARCHITECTURE.md`, never the session's summary of them. For an
+  architectural change it carries the decision record too, with its five
+  candidates, for the agent to reason through itself. It
   comes once, not after every push and not after the first. A review
   after later rounds of work is Tim's to ask for.
   - The agent writes its review to a file outside the checkout. It is
@@ -775,7 +800,7 @@ request.
 Full specification in [docs/TRAINING.md](docs/TRAINING.md). The essentials:
 
 - The engine records every new model answer and every action on a clip in
-  `<episode>.framefairy/training/`. It stays on the machine.
+  `~/.framefairy/training/`. It stays on the machine.
 - **Never count a signal twice.** The same answer to the same prompt keeps
   its record. The export merges by prompt and by proposed clip and uses only
   the latest state. Episodes are known by content, not by file name.

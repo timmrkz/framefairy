@@ -1,0 +1,29 @@
+# Codecov keeps the coverage of main, one snapshot a night from
+# walks-nightly.yml, and its history. It says nothing anywhere else: no
+# check, no status and no comment on a pull request or a commit, since
+# no pull request sends it anything. See Coverage in docs/TESTING.md.
+codecov:
+  require_ci_to_pass: false
+coverage:
+  status:
+    project: off
+    patch: off
+comment: false
+github_checks:
+  annotations: false
+
+# One flag for each kind of test. A kind whose run failed one night sends
+# nothing, and Codecov keeps its counts from the night before rather than
+# reading every line it reaches as not run.
+flags:
+  go-tests:
+    carryforward: true
+  interface-tests:
+    carryforward: true
+  walks:
+    carryforward: true
+
+# Go names a file by its package, framefairy/engine/clips.go, and the
+# repository by its folder, engine/clips.go.
+fixes:
+  - "framefairy/::"

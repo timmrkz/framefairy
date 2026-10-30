@@ -10,6 +10,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"framefairy/engine/timed"
+
 	"github.com/spf13/afero"
 )
 
@@ -151,7 +153,7 @@ func RemoveWord(fsys afero.Fs, planPath, clipID string, at float64, part int, t 
 // them, or a word as it was heard, is the heard word removed from the
 // clip, which keeps its room. t is the clip's words, a copy of its own to
 // change, and heard is one of its heard words.
-func dropWords(corrections map[string]string, removed RemovedWords, heard Cue, parts map[int]bool,
+func dropWords(corrections map[string]string, removed RemovedWords, heard timed.Cue, parts map[int]bool,
 	t *Transcript) error {
 	if removed.removesHeard(t, heard) {
 		return nil
@@ -262,7 +264,7 @@ func correctWord(corrections map[string]string, removed RemovedWords, at float64
 // Each removed word takes one word, the nearest first. Words typed beyond
 // the removed ones there are go to the farthest of them, which is the
 // word they were typed beside.
-func putBack(heard []Cue, i int, text string, removed func(j int) bool) map[int]string {
+func putBack(heard []timed.Cue, i int, text string, removed func(j int) bool) map[int]string {
 	put := map[int]string{i: text}
 	was, now := strings.Fields(heard[i].Text), strings.Fields(text)
 	if len(was) == 0 || len(now) <= len(was) {
@@ -359,7 +361,7 @@ func RemoveCaption(fsys afero.Fs, planPath, clipID string, first float64, t *Tra
 // and which of the words a correction made of it it is, counted from
 // nought, or all of it below nought.
 type shownWord struct {
-	heard Cue
+	heard timed.Cue
 	part  int
 }
 
@@ -396,100 +398,6 @@ func dropShown(corrections map[string]string, removed RemovedWords, words []show
 		}
 	}
 	return nil
-}
-
-// trimCaption is what dragging an edge of a caption across its words does
-// to them. Dragged in, the words the edge passes leave the caption,
-// removed from the clip the way RemoveWord removes one, so pulling the
-// left edge of "one two three" past "one" reads "two three", and the right
-// edge past "three" reads "one two". Dragged back out, the words of the
-// caption removed before that it passes come back. A word is passed when
-// the edge crosses its middle, on the clip's clock, which is where the
-// word is drawn: a word the start of the clip cuts into is passed in the
-// part of it the clip shows. A caption keeps at least one word this way,
-// because delete removes a caption whole.
-//
-// to is where the edge is, on the clip's clock. The caption is the one
-// laid out now, with the edge where it stands. The words are changed in
-// corrections and removed, the clip's, and nothing is written. It says
-// how many words it took out and put back.
-func trimCaption(corrections map[string]string, removed RemovedWords, clip Clip, c LaidCaption, edge string,
-	to float64, t *Transcript) (CaptionEdit, error) {
-	if len(clip.Segments) == 0 {
-		return CaptionEdit{}, nil
-	}
-	t = t.Of(clip)
-	from := c.Start
-	if edge == "end" {
-		from = c.End
-	}
-	low, high := math.Min(from, to), math.Max(from, to)
-	in := (edge == "start") == (to > from)
-	if !in && len(c.Words) > 0 {
-		// An edge whose word was taken out may stand past the middle of
-		// that word already. Out from there, the words past the words
-		// shown are what it crosses.
-		if edge == "end" {
-			low = math.Min(low, c.Words[len(c.Words)-1].End)
-		} else {
-			high = math.Max(high, c.Words[0].Start)
-		}
-	}
-	// The words the caption was laid out from, the removed ones among them,
-	// on the clip's clock and on the episode's.
-	all, was := clipWords(clip, t.clipCaptionWords(clip))
-	length := clipLength(clip)
-	var gone, back []Cue
-	shown := 0
-	for k, w := range was {
-		if w.Start < c.Opens-0.0005 || w.Start > c.Closes+0.0005 {
-			continue
-		}
-		text, isRemoved := removedText(w.Text)
-		if !isRemoved {
-			shown++
-		}
-		mid := shownMiddle(all[k], length)
-		if mid <= low || mid >= high {
-			continue
-		}
-		switch {
-		case in && !isRemoved:
-			gone = append(gone, w)
-		case !in && isRemoved && text != "":
-			back = append(back, w)
-		}
-	}
-	if len(gone) > 0 && len(gone) == shown {
-		// The word at the other edge stays.
-		if edge == "end" {
-			gone = gone[1:]
-		} else {
-			gone = gone[:len(gone)-1]
-		}
-	}
-	for _, w := range back {
-		if heard, ok := t.HeardAt(w.Start); ok {
-			removed.forget(t, heard)
-		}
-	}
-	var words []shownWord
-	for _, w := range gone {
-		heard, ok := t.HeardAt(w.Start)
-		if !ok {
-			continue
-		}
-		part := -1
-		if len(strings.Fields(heard.Text)) > 1 {
-			part = t.PartOf(heard, w)
-		}
-		words = append(words, shownWord{heard, part})
-	}
-	work := *t
-	if err := dropShown(corrections, removed, words, &work); err != nil {
-		return CaptionEdit{}, err
-	}
-	return CaptionEdit{Removed: len(gone), Back: len(back)}, nil
 }
 
 // plainValue is an object of a plan as it is edited, which keeps its keys

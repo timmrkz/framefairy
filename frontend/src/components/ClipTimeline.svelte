@@ -345,11 +345,11 @@
   // with it, the same pace the playhead itself is dragged at.
   //
   // edgesWhilePlaying: an edge of the clip or of a cut, dragged or
-  // clicked while the episode plays, moves no playhead,
-  // and the play goes on with the pieces it started with, see setProgram
-  // in lib/frames/queue.ts. The edit is saved and drawn at once, and the
-  // next play plays it. Only the space bar and a click on the clip
-  // timeline change a play, rule 6 of docs/VIDEO-PREVIEW.md. Tim saw the
+  // clicked while the episode plays, moves no playhead and never stops
+  // the play: the play takes in the clip as it is now ahead of the
+  // playhead, see setProgram in lib/frames/queue.ts. The edit is saved
+  // and drawn at once. Only the space bar and a click on the clip
+  // timeline move a play, rule 6 of docs/VIDEO-PREVIEW.md. Tim saw the
   // play stutter with the hand on a cut's edge.
   let wanted = 0;
   let queued = 0;
@@ -1298,9 +1298,12 @@
   // from what is heard, either edge is dragged. The two sides of the line
   // between two captions are two edges: the left side is where the one
   // before goes, the right side where the one after appears. An edge moves
-  // its own caption and no other: dragged in it leaves a gap, dragged out
-  // it stops at the caption beside it. Dragged in over a word it removes
-  // the word, and dragged back out over it puts it back.
+  // its own caption: dragged in it leaves a gap, dragged out it stops at
+  // the caption beside it, except that a start in running speech may go
+  // back into the last word of the caption before, see startFloor in
+  // engine/edit.go. An edge only sets when its caption shows: dragged in
+  // over a word it leaves the word out, and dragged back out shows it
+  // again. A word removed in the caption box stays removed.
   //
   // Where the edge lands and which words it crosses is the engine's to
   // say, see ShapeCaptionTime in engine/episode.go, the same way a gesture
@@ -1643,9 +1646,8 @@
     return { at: firstWordOf(b.i, b.c) ?? b.from, about: "clip" };
   }
 
-  // A double-click on an edge moved by hand, or drawn in with its word,
-  // puts it back where all its words put it, the words taken out at that
-  // edge with it, see SetCaptionTime.
+  // A double-click on an edge moved by hand puts it back where all its
+  // words put it, which shows the words it hid again, see SetCaptionTime.
   function resetCaption(i: number, edge: "start" | "end") {
     const c = captions?.[i];
     if (!c || !oncaptiontime || locked) return;
@@ -1917,7 +1919,8 @@
       <Info label="What the clip timeline is" side="right">
         The video up close. Click or drag to move the playhead, swipe with two fingers to travel
         and pinch to zoom. The arrow keys step a frame, with shift a word, and shift with up or
-        down goes to the next clip.<br /><br />
+        down goes to the next clip. Each number key puts the playhead that many tenths into the clip,
+        5 half way and 0 at its start.<br /><br />
         Drag a clip edge to trim it and double-click it to put it back where the clip was found.
         Double-click in the clip to cut a part out, drag its edges to
         size it and double-click it to remove it. Shift puts the edges of a clip or a cut on whole
@@ -2100,8 +2103,8 @@
               aria-label="When caption {b.i + 1} appears"
               aria-valuenow={b.c.start}
               title={b.c.startMoved
-                ? "When this caption appears, moved from where its words put it. Drag to move it, over a word to remove the word, and double-click to put it back with its words."
-                : "When this caption appears. Drag to move it, over a word to remove the word."}
+                ? "When this caption appears, moved from where its words put it. Drag to move it, and double-click to put it back."
+                : "When this caption appears. Drag to move it."}
               data-grip="capedge"
               data-index={b.i}
               data-edge="start"
@@ -2115,8 +2118,8 @@
               aria-label="When caption {b.i + 1} goes"
               aria-valuenow={b.c.end}
               title={b.c.endMoved
-                ? "When this caption goes, moved from where its words put it. Drag to move it, over a word to remove the word, and double-click to put it back with its words."
-                : "When this caption goes. Drag to move it, over a word to remove the word."}
+                ? "When this caption goes, moved from where its words put it. Drag to move it, and double-click to put it back."
+                : "When this caption goes. Drag to move it."}
               data-grip="capedge"
               data-index={b.i}
               data-edge="end"

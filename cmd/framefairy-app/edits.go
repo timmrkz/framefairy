@@ -330,7 +330,7 @@ func (s *FrameFairy) SetCaptionTime(ctx context.Context, path, plan, clipID stri
 	} else {
 		line = line.Float64("at", at).Bool("words", toWords)
 	}
-	line.Int("out", done.Removed).Int("back", done.Back).Msg("a caption edge was moved")
+	line.Int("out", done.Out).Int("back", done.Back).Msg("a caption edge was moved")
 	if err != nil {
 		return ClipEntry{}, err
 	}
