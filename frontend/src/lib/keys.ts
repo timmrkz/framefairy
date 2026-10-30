@@ -37,7 +37,7 @@ export function asleep(here: Element | null | undefined): boolean {
 
 // A key pressed alone: no Cmd, Ctrl or Alt, and not a key held down
 // repeating. Shift only where withShift says so: a French or Belgian
-// keyboard gives its digits only with shift, and a Mac has no number pad.
+// keyboard gives its digits only with shift, and a MacBook has no number pad.
 export function pressedAlone(
   event: Pick<KeyboardEvent, "metaKey" | "ctrlKey" | "altKey" | "shiftKey" | "repeat">,
   withShift = false,

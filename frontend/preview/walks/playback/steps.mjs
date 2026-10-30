@@ -1516,9 +1516,11 @@ export const steps = {
     }
     const pieces = (await engineState(page, watch.at)).segments;
     const kept = pieces.reduce((sum, p) => sum + p.end - p.start, 0);
-    // The clip's own clock walked back to the video's, the same as
-    // inEpisode in lib/flow.ts. A moment exactly where a piece ends is the
-    // start of the piece after, past the cut.
+    // Where the key has to land, from what the issue says it means: the
+    // moment with that many tenths of the clip's kept time before it, its
+    // cuts taken out, worked out here and not taken from the app, the way
+    // engine.ShareTime should answer. A moment exactly where a piece ends
+    // is the start of the piece after, past the cut.
     let want = pieces.at(-1).end;
     for (let left = (Number(key) / 10) * kept, i = 0; i < pieces.length; left -= pieces[i].end - pieces[i].start, i++) {
       if (left < pieces[i].end - pieces[i].start) {

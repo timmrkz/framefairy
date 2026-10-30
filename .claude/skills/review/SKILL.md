@@ -174,10 +174,11 @@ green.
     gives state a second home, or lets a part know one over it.
 - **Worse is a must fix,** however good the rest. The fix is the change
   made where it belongs, in the same pull request, never an issue for
-  later. Only the user can let in a change that makes the architecture
-  worse, and only by saying so for that change.
+  later.
 - **A breach that was there before is not this change's,** unless the
   change builds on it or adds to it.
+- **A project that writes no architecture** is judged by the layering its
+  code shows, and the missing map is a finding of its own.
 - **A new kind of thing the architecture has no place for** is a finding
   too: the architecture gets the line it lacks in the same pull request,
   or the change goes where a line already is.
