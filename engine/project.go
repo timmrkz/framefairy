@@ -178,7 +178,6 @@ func (p *Project) planOptions(req PlanRequest, window *timed.Window) (Options, s
 	opts := p.Base
 	opts.PlanOnly = true
 	opts.Replan = req.Replan
-	opts.ExactPlan = true
 	opts.From, opts.To, opts.ClipsPath = "", "", ""
 	if req.Count > 0 {
 		opts.Count = req.Count
@@ -189,11 +188,18 @@ func (p *Project) planOptions(req PlanRequest, window *timed.Window) (Options, s
 	if req.Max > 0 {
 		opts.Max = req.Max
 	}
-	name := PassName(window, req.Pass)
-	opts.Pass = max(req.Pass, 1)
-	// Every search is told what the searches before it proposed, so a
-	// window searched again brings other moments rather than the same
-	// ones, see Taken.
+	return p.asPass(opts, window, req.Pass)
+}
+
+// asPass is opts for the search that is pass over window, nil for the
+// whole episode, and the name of the plan it writes: that plan and no
+// other, and told what the searches before it proposed, so a window
+// searched again brings other moments rather than the same ones, see
+// Taken. A search in the app and --next on the command line both take it.
+func (p *Project) asPass(opts Options, window *timed.Window, pass int) (Options, string) {
+	name := PassName(window, pass)
+	opts.ExactPlan = true
+	opts.Pass = max(pass, 1)
 	opts.Taken, opts.Listed, opts.Removed = p.proposed(PlanFor(p.WorkDir(), opts.folder(), opts.Experiment, name))
 	return opts, name
 }
@@ -257,7 +263,7 @@ func (p *Project) warmAhead(ctx context.Context, req PlanRequest) {
 		}
 	}()
 	if _, err := p.warmModel(ctx, req); err != nil && ctx.Err() == nil {
-		p.engine.Log.Detail("the model could not be loaded ahead of the search: %s", err)
+		p.engine.Log.Warn("the model could not be loaded ahead of the search: %s", err)
 	}
 }
 

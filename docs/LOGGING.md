@@ -58,7 +58,9 @@ names a screenshot, since that is the name a person sees on the Desktop.
 It never holds the video, its transcript or its captions. That leaves
 out the jobs folder of a video too, since what a search sent the model
 is the video's words. A search's start and end, and why it failed, are
-in the log. Paths under the
+in the log, and so is every warning a job gives as it goes, a `warn`
+line of `jobs` with the job's own words: a clip that could not be
+framed, or a model that could not be loaded ahead of a search. Paths under the
 home folder are written as `~`, so the Mac's user name does not travel.
 The customer sees what is in it before sending: Finder shows the zip, and
 the zip holds plain text and the pictures they attached.

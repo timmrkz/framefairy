@@ -194,7 +194,8 @@ func TestTakenLines(t *testing.T) {
 // --next searches the window the app would place, the whole of a video
 // this short, and run again it searches the same window as a second pass
 // of its own, told which line is a clip already, the way Search does in
-// the app. Asked with --from too, it says it places the window itself.
+// the app. Asked with --from or --clips too, it says it places the window
+// itself.
 //
 // On the real disk: ffmpeg reads the episode the run hears.
 func TestTheCommandLineSearchesTheWindowTheAppWouldPlace(t *testing.T) {
@@ -218,8 +219,39 @@ func TestTheCommandLineSearchesTheWindowTheAppWouldPlace(t *testing.T) {
 		t.Errorf("the second run was not told which line is taken, asked %d times", len(prompts))
 	}
 
-	opts.From = "10"
-	if err := p.engine.execute(context.Background(), opts); err == nil || !strings.Contains(err.Error(), "--next") {
-		t.Errorf("--next with --from: %v", err)
+	for _, set := range []func(*Options){
+		func(o *Options) { o.From = "10" },
+		func(o *Options) { o.ClipsPath = filepath.Join(t.TempDir(), "clips.json") },
+	} {
+		bad := opts
+		set(&bad)
+		if err := p.engine.execute(context.Background(), bad); err == nil || !strings.Contains(err.Error(), "--next") {
+			t.Errorf("--next with --from or --clips: %v", err)
+		}
+	}
+}
+
+// A video searched in part is searched on where it was not, the way the
+// app places its next window.
+//
+// On the real disk: ffmpeg reads the episode, and the plans are written
+// beside it.
+func TestTheCommandLineSearchesOnWhereTheVideoWasNotSearched(t *testing.T) {
+	t.Parallel()
+	server, _ := answering(t, clipAnswer(1))
+	p := passProject(t, server.URL)
+	opts := p.Base
+	opts.PlanOnly, opts.Count, opts.Min, opts.Max = true, 1, 1, 30
+	first := opts
+	first.From, first.To = "0", "20"
+	if code := p.engine.Run(context.Background(), first); code != 0 {
+		t.Fatalf("the search of 0 to 20 ended with %d", code)
+	}
+	opts.Next = true
+	if code := p.engine.Run(context.Background(), opts); code != 0 {
+		t.Fatalf("the search with --next ended with %d", code)
+	}
+	if !exists(disk, filepath.Join(p.LogsDir(), "clips-20-40.json")) {
+		t.Error("--next after a search of 0 to 20 did not search 20 to 40")
 	}
 }

@@ -1496,8 +1496,8 @@ asked for while its transcript is still being heard, so while it grows,
 the model loaded ahead is given what of the window's transcript is
 settled to read, every time a part heard is written, and keeps it, in
 `engine/readahead.go`. `Project.Search` starts it by itself, beside its
-hearing, whenever some of its window is still to be heard. It was once
-the app's to decide, beside the search, #610. The search then reads only the rest. What is read
+hearing, whenever some of its window is still to be heard. The search
+then reads only the rest. What is read
 is the start of the search's own prompt, token for token: the transcript
 is written out by the search's request, `searchRequest`, from every line
 heard but the last, which may still grow, laid out by llama-server with

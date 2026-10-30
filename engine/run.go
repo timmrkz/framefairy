@@ -236,8 +236,8 @@ func (e *Engine) execute(ctx context.Context, opts Options) error {
 		return err
 	}
 	if opts.Next {
-		if ask != nil {
-			return errors.New("--next places the window itself, so it takes no --from or --to")
+		if ask != nil || opts.ClipsPath != "" {
+			return errors.New("--next places the window itself and searches it, so it takes no --from, --to or --clips")
 		}
 		if ask, opts, err = e.nextSearch(ctx, opts); err != nil {
 			return err
@@ -341,15 +341,15 @@ func (e *Engine) nextSearch(ctx context.Context, opts Options) (*timed.Window, O
 	}
 	placed := p.PlaceWindow(p.RoomAndLines(heard), source.Duration)
 	req := PlanRequest{From: placed.Start, To: placed.End}
-	if opts.Pass, err = p.nextPass(ctx, req); err != nil {
+	if req.Pass, err = p.nextPass(ctx, req); err != nil {
 		return nil, opts, err
 	}
-	// The first pass over a whole episode is nil, the way the app names
-	// its plan, and the plan is made rather than another one taken.
-	window := searchWindow(req.From, req.To, opts.Pass, source.Duration)
-	opts.ExactPlan = true
-	opts.Taken, opts.Listed, opts.Removed = p.proposed(PlanFor(p.WorkDir(), opts.folder(), opts.Experiment,
-		PassName(window, opts.Pass)))
+	window, err := p.planWindow(ctx, req)
+	if err != nil {
+		return nil, opts, err
+	}
+	window = inMilliseconds(window)
+	opts, _ = p.asPass(opts, window, req.Pass)
 	return window, opts, nil
 }
 
