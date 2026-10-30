@@ -750,10 +750,12 @@ input[type="password"] {
    picker lay under the video's menu it opened from, and a click on its
    shade landed on Remove, issue #401. So the box lies over the app from
    its first frame, at the panel's own z-index, one rule for both, and a
-   panel opened from another is over it at once. */
+   panel opened from another is over it at once. Since bits-ui 2.20.1 the
+   box says z-index auto in its own style for that frame, and a style on
+   the element wins over a rule unless the rule is important. */
 .panel,
 [data-bits-floating-content-wrapper] {
-  z-index: 60;
+  z-index: 60 !important;
 }
 
 /* A video's label: its words in a pill of its own colour, the way Finder

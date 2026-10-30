@@ -1387,7 +1387,11 @@ bridge, a process of its own started from the same test program, and
 the test ends. Every page a walk opens counts the lines of the interface
 it runs through Playwright, `counted` in `walks/bridge.mjs`, and
 `preview/coverage.mjs` turns those counts into lcov of `frontend/src`
-by the source maps the build leaves beside each script. That is the
+by the source maps the build leaves beside each script. Both go through
+`preview/counts.mjs`, the one place that calls
+monocart-coverage-reports, and `preview/counts.test.mjs` runs those
+calls in `make interface`, so a new version of the package is checked
+on its own pull request, not first by a night on main. That is the
 only count of the components, since the interface's own tests do not
 load them. A night whose walks counted no line of the job queue,
 `cmd/framefairy-app/jobs.go`, which only a bridge runs, or no line of
