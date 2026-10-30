@@ -13,10 +13,10 @@
 //
 // A note on arm64, which is what Apple Silicon runs. The Go compiler may fuse
 // a multiplication and an addition into one instruction there, and a fused
-// result can round differently from Python, which computes them one after
-// the other. An explicit float64() conversion prevents the fusion, which is
+// result can round differently from the two steps one after the other,
+// which is how every file so far was computed. An explicit float64() conversion prevents the fusion, which is
 // why some products in this package are wrapped in one that looks redundant.
-// The numbers themselves are rounded and written by engine/pynum.
+// The numbers themselves are rounded and written by engine/num.
 package engine
 
 import (
@@ -29,7 +29,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"framefairy/engine/pynum"
+	"framefairy/engine/num"
 )
 
 // Version of the engine.
@@ -205,8 +205,8 @@ func (l *Log) report(label string, fraction, remaining, from, covered float64, f
 		}
 	}
 	l.showProgress(text)
-	l.send(Event{Kind: EventProgress, Text: label, Fraction: pynum.RoundTo(fraction, 4),
-		Remaining: pynum.RoundTo(remaining, 1), From: pynum.RoundTo(from, 3), Covered: pynum.RoundTo(covered, 3), Found: found})
+	l.send(Event{Kind: EventProgress, Text: label, Fraction: num.RoundTo(fraction, 4),
+		Remaining: num.RoundTo(remaining, 1), From: num.RoundTo(from, 3), Covered: num.RoundTo(covered, 3), Found: found})
 }
 
 func (l *Log) showProgress(text string) {
@@ -263,7 +263,7 @@ func (l *Log) Step(name string, fn func() error) error {
 	start := time.Now()
 	err := fn()
 	l.popStage()
-	took := pynum.RoundTo(time.Since(start).Seconds(), 3)
+	took := num.RoundTo(time.Since(start).Seconds(), 3)
 	if err != nil {
 		l.writeLine("x", l.c("31", fmt.Sprintf("%s failed after %.1fs", name, took)), "31")
 		l.send(Event{Kind: EventStepFailed, Stage: name, Text: err.Error(),

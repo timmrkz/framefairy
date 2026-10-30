@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"framefairy/engine/pytext"
+	"framefairy/engine/runes"
 )
 
 // The language models somebody can install, and installing one.
@@ -366,7 +366,7 @@ func MachineMemory() int64 {
 	case "darwin":
 		res := run(context.Background(), "", "sysctl", "-n", "hw.memsize")
 		if res.Code == 0 {
-			if n, err := strconv.ParseInt(pytext.Strip(res.Stdout), 10, 64); err == nil {
+			if n, err := strconv.ParseInt(runes.Trim(res.Stdout), 10, 64); err == nil {
 				return n
 			}
 		}

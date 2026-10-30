@@ -1,8 +1,7 @@
-// Package pytext counts, cuts and trims text the way the Python version of
-// the engine did, characters rather than bytes and Python's whitespace, and
-// scrubs text from outside before it is printed or stored. It imports
-// nothing of the engine, see docs/ARCHITECTURE.md.
-package pytext
+// Package runes counts, cuts, trims and quotes text by its characters
+// rather than its bytes, and scrubs text from outside before it is printed
+// or stored. It imports nothing of the engine, see docs/ARCHITECTURE.md.
+package runes
 
 import (
 	"strings"
@@ -10,11 +9,11 @@ import (
 	"unicode/utf8"
 )
 
-// Len is Python's len() on a str. Go's len() counts bytes, which would
+// Len counts the characters of s. Go's len() counts bytes, which would
 // treat every umlaut as two characters and move caption breaks.
 func Len(s string) int { return utf8.RuneCountInString(s) }
 
-// Prefix is Python's s[:n].
+// Prefix is the first n characters of s.
 func Prefix(s string, n int) string {
 	if n <= 0 {
 		return ""
@@ -29,11 +28,12 @@ func Prefix(s string, n int) string {
 	return s
 }
 
-// Fields is Python's str.split() with no argument.
+// Fields splits s around each run of space, as IsSpace takes it.
 func Fields(s string) []string { return strings.FieldsFunc(s, IsSpace) }
 
-// IsSpace is what Python's str.split() and str.strip() take for
-// whitespace, which has four separators Go's unicode.IsSpace does not.
+// IsSpace is Unicode's white space and the four separators \x1c to \x1f,
+// which Go's unicode.IsSpace leaves out. Every file written so far was
+// split and trimmed with them.
 func IsSpace(r rune) bool {
 	switch r {
 	case '\x1c', '\x1d', '\x1e', '\x1f':
@@ -42,11 +42,10 @@ func IsSpace(r rune) bool {
 	return unicode.IsSpace(r)
 }
 
-// Strip is Python's str.strip() with no argument.
-func Strip(s string) string { return strings.TrimFunc(s, IsSpace) }
+// Trim removes the space around s, as IsSpace takes it.
+func Trim(s string) string { return strings.TrimFunc(s, IsSpace) }
 
-// IsControl matches the characters the Python version removed with _CONTROL:
-// C0 and C1 controls other than tab, newline and carriage return, zero width
+// IsControl matches the characters Scrub removes: C0 and C1 controls other than tab, newline and carriage return, zero width
 // and bidi marks, line and paragraph separators, bidi embeddings, overrides
 // and isolates, and the zero width no-break space.
 func IsControl(r rune) bool {
@@ -92,8 +91,9 @@ func Scrub(text string, limit int) string {
 	return Prefix(cleaned, limit)
 }
 
-// Repr formats a string the way Python's repr() usually does.
-func Repr(s string) string {
+// Quote puts s in single quotes, or in double quotes when it holds a
+// single quote and no double one, for a prompt or a message.
+func Quote(s string) string {
 	quote := "'"
 	if strings.Contains(s, "'") && !strings.Contains(s, "\"") {
 		quote = "\""
@@ -105,8 +105,8 @@ func Repr(s string) string {
 	return quote + s + quote
 }
 
-// ListRepr formats a list of strings the way Python prints one.
-func ListRepr(items []string) string {
+// QuoteList writes items in square brackets, each in single quotes.
+func QuoteList(items []string) string {
 	quoted := make([]string, len(items))
 	for i, item := range items {
 		quoted[i] = "'" + item + "'"

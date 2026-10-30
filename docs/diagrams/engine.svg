@@ -50,8 +50,8 @@
 <rect class="chip" x="76" y="234" width="123" height="22" rx="6"/>
 <text class="c" x="84" y="249">base: log, files</text>
 <rect class="box" x="64" y="290" width="672" height="90" rx="8"/>
-<text class="n" x="76" y="312">numbers the Python way</text>
-<text class="p" x="76" y="330">engine/pynum/</text>
+<text class="n" x="76" y="312">numbers, the same on every platform</text>
+<text class="p" x="76" y="330">engine/num/</text>
 <rect class="chip" x="76" y="340" width="49" height="22" rx="6"/>
 <text class="c" x="84" y="355">Round</text>
 <rect class="chip" x="131" y="340" width="63" height="22" rx="6"/>
@@ -62,27 +62,29 @@
 <text class="c" x="263" y="355">Sum</text>
 <rect class="chip" x="297" y="340" width="49" height="22" rx="6"/>
 <text class="c" x="305" y="355">Float</text>
-<rect class="chip" x="353" y="340" width="63" height="22" rx="6"/>
-<text class="c" x="361" y="355">FloatOf</text>
-<rect class="chip" x="421" y="340" width="49" height="22" rx="6"/>
-<text class="c" x="429" y="355">IntOf</text>
-<rect class="chip" x="477" y="340" width="36" height="22" rx="6"/>
-<text class="c" x="485" y="355">Str</text>
+<rect class="chip" x="353" y="340" width="56" height="22" rx="6"/>
+<text class="c" x="361" y="355">Format</text>
+<rect class="chip" x="415" y="340" width="49" height="22" rx="6"/>
+<text class="c" x="423" y="355">Parse</text>
+<rect class="chip" x="470" y="340" width="63" height="22" rx="6"/>
+<text class="c" x="478" y="355">AsFloat</text>
+<rect class="chip" x="539" y="340" width="49" height="22" rx="6"/>
+<text class="c" x="547" y="355">AsInt</text>
 <rect class="box" x="64" y="396" width="328" height="118" rx="8"/>
-<text class="n" x="76" y="418">text the Python way</text>
-<text class="p" x="76" y="436">engine/pytext/</text>
+<text class="n" x="76" y="418">text, by its characters</text>
+<text class="p" x="76" y="436">engine/runes/</text>
 <rect class="chip" x="76" y="446" width="36" height="22" rx="6"/>
 <text class="c" x="84" y="461">Len</text>
 <rect class="chip" x="118" y="446" width="56" height="22" rx="6"/>
 <text class="c" x="126" y="461">Prefix</text>
-<rect class="chip" x="180" y="446" width="49" height="22" rx="6"/>
-<text class="c" x="188" y="461">Strip</text>
-<rect class="chip" x="235" y="446" width="56" height="22" rx="6"/>
-<text class="c" x="243" y="461">Fields</text>
-<rect class="chip" x="297" y="446" width="49" height="22" rx="6"/>
-<text class="c" x="305" y="461">Scrub</text>
-<rect class="chip" x="76" y="474" width="43" height="22" rx="6"/>
-<text class="c" x="84" y="489">Repr</text>
+<rect class="chip" x="180" y="446" width="43" height="22" rx="6"/>
+<text class="c" x="188" y="461">Trim</text>
+<rect class="chip" x="229" y="446" width="56" height="22" rx="6"/>
+<text class="c" x="237" y="461">Fields</text>
+<rect class="chip" x="291" y="446" width="49" height="22" rx="6"/>
+<text class="c" x="299" y="461">Scrub</text>
+<rect class="chip" x="76" y="474" width="49" height="22" rx="6"/>
+<text class="c" x="84" y="489">Quote</text>
 <rect class="box" x="408" y="396" width="328" height="118" rx="8"/>
 <text class="n" x="420" y="418">a moment of a video</text>
 <text class="p" x="420" y="436">engine/timed/</text>

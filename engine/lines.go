@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	"framefairy/engine/pynum"
-	"framefairy/engine/pytext"
+	"framefairy/engine/num"
+	"framefairy/engine/runes"
 	"framefairy/engine/timed"
 )
 
@@ -54,7 +54,7 @@ func (l Line) Text() string {
 	for i, c := range l.Cues {
 		parts[i] = c.Text
 	}
-	return pytext.Scrub(strings.Join(parts, " "), maxLineChars)
+	return runes.Scrub(strings.Join(parts, " "), maxLineChars)
 }
 
 // Line breaks.
@@ -90,7 +90,7 @@ func BuildLines(words []timed.Cue, levels []timed.Reading, maxPause *float64) []
 	}
 	var groups [][]timed.Cue
 	for _, word := range words {
-		if pytext.Strip(word.Text) == "" {
+		if runes.Trim(word.Text) == "" {
 			continue
 		}
 		if len(groups) == 0 {
@@ -174,14 +174,14 @@ func measureLevels(lines []Line, envelope []timed.Reading) {
 			}
 		}
 		if len(inside) > 0 {
-			raw[i] = pynum.Sum(inside) / float64(len(inside))
+			raw[i] = num.Sum(inside) / float64(len(inside))
 		} else {
 			raw[i] = math.NaN()
 		}
 	}
 	var usable []float64
 	for _, v := range raw {
-		if pynum.IsFinite(v) {
+		if num.IsFinite(v) {
 			usable = append(usable, v)
 		}
 	}
@@ -191,7 +191,7 @@ func measureLevels(lines []Line, envelope []timed.Reading) {
 	sort.Float64s(usable)
 	middle := usable[len(usable)/2]
 	for i := range lines {
-		if pynum.IsFinite(raw[i]) {
+		if num.IsFinite(raw[i]) {
 			lines[i].Level = raw[i] - middle
 		} else {
 			lines[i].Level = 0
@@ -207,14 +207,14 @@ func AnnotateLines(lines []Line) string {
 	for i, line := range lines {
 		var marks []string
 		if line.GapBefore >= pauseFloor {
-			marks = append(marks, "pause "+pynum.Fixed(line.GapBefore, 1)+"s")
+			marks = append(marks, "pause "+num.Fixed(line.GapBefore, 1)+"s")
 		}
 		if line.Level <= quietAt {
 			marks = append(marks, "quieter")
 		} else if line.Level >= loudAt {
 			marks = append(marks, "louder")
 		}
-		prefix := fmt.Sprintf("[%d] %ss", line.Index, pynum.Fixed(line.Duration(), 1))
+		prefix := fmt.Sprintf("[%d] %ss", line.Index, num.Fixed(line.Duration(), 1))
 		if len(marks) > 0 {
 			prefix += " (" + strings.Join(marks, ", ") + ")"
 		}
@@ -248,12 +248,12 @@ const fillerPunctuation = ",.!?;:"
 // IsFiller is true for a line with nothing in it but hesitation.
 func IsFiller(text string) bool {
 	var words []string
-	for _, w := range pytext.Fields(text) {
+	for _, w := range runes.Fields(text) {
 		if w = strings.ToLower(strings.Trim(w, fillerPunctuation)); w != "" {
 			words = append(words, w)
 		}
 	}
-	if len(words) == 0 || pytext.Len(strings.Join(words, " ")) > 24 {
+	if len(words) == 0 || runes.Len(strings.Join(words, " ")) > 24 {
 		return false
 	}
 	for _, w := range words {
@@ -342,7 +342,7 @@ func clipLength(clip Clip) float64 {
 	for i, s := range clip.Segments {
 		lengths[i] = s.End - s.Start
 	}
-	return pynum.Sum(lengths)
+	return num.Sum(lengths)
 }
 
 // Caption timing.
@@ -475,14 +475,14 @@ func Captions(clip Clip, said []timed.Cue, maxChars int, alone func(string) bool
 			closeGroup(true)
 			continue
 		}
-		if len(current) > 0 && pytext.Len(line(append(current[:len(current):len(current)], k))) > maxChars {
+		if len(current) > 0 && runes.Len(line(append(current[:len(current):len(current)], k))) > maxChars {
 			closeGroup(false)
 		}
 		current = append(current, k)
 		last := k == len(all)-1
 		pauseNext := !last && allWas[k+1].Start-allWas[k].End >= captionPause
 		sentence := endsWithBreak(laid[k]) &&
-			float64(pytext.Len(line(current))) >= float64(maxChars)*0.55
+			float64(runes.Len(line(current))) >= float64(maxChars)*0.55
 		if last || pauseNext || sentence {
 			closeGroup(false)
 		}

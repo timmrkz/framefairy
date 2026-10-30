@@ -1,4 +1,4 @@
-# Numbers and text the Python way get packages of their own
+# Numbers and text get packages of their own
 
 Step 1 of splitting the engine into packages, after `engine/timed`
 (#621). Decided on 30 October 2026, in the pull request that makes it.
@@ -11,19 +11,20 @@ on this order on 30 October. The first part to stand alone, framing,
 cannot move while it uses helpers that live in the engine.
 
 The helpers in `engine/util.go` are that first obstacle. Measured on
-main at b22df65 with the type checker, over the files of `engine/`:
+main at b22df65 with the type checker, over the files of `engine/`, by
+the names they had then:
 
 | Helper | Uses | Areas that use it |
 | --- | ---: | ---: |
 | `fixed`, a number with n decimals | 104 | 9 |
-| `roundTo`, Python's round(x, n) | 71 | 9 |
+| `roundTo`, a number rounded to n decimals | 71 | 9 |
 | `Scrub`, text made safe to print and store | 52 | 8 |
-| `PyFloat`, a float written to JSON as Python writes it | 31 | 2 |
-| `runeLen`, Python's len() on a str | 28 | 5 |
-| `pyround`, Python's round(x) | 25 | 3 |
+| `PyFloat`, a float written to JSON with its decimal point | 31 | 2 |
+| `runeLen`, the characters of a text counted | 28 | 5 |
+| `pyround`, a number rounded, halves to even | 25 | 3 |
 | `toFloat`, `toInt`, a number read from a JSON value | 39 | 7 |
-| `pyStr`, `pyRepr`, `pyListRepr`, a value written as Python's str or repr | 38 | 5 |
-| `strip`, `fields`, `isPySpace`, Python's whitespace | 26 | 8 |
+| `pyStr`, `pyRepr`, `pyListRepr`, a value written for a prompt or a message | 38 | 5 |
+| `strip`, `fields`, `isPySpace`, space with four separators more than Go's | 26 | 8 |
 | `isFinite`, `pysum`, `parsePyFloat`, `pyFloatRepr`, `runePrefix` | 35 | 6 |
 | `shellQuote`, a command written for a shell | 4 | 3 |
 
@@ -41,8 +42,7 @@ values into the prompt and the log. None of them belongs to one file.
 ### 1. One package of numbers and text
 
 All of `util.go` but `shellQuote` becomes one package at the bottom of
-the engine, named for what it is, the Python version's behaviour, under
-every area. It exports 20 names. One package is the least to learn and
+the engine, under every area. It exports 20 names. One package is the least to learn and
 holds no edge inside it. But a reader looking for how a float is written
 finds the scrubbing of a model's text beside it, and an area that only
 counts characters imports the rounding too. Go's own library keeps the
@@ -58,7 +58,7 @@ one), text (`runeLen`, `runePrefix`, `strip`, `fields`, `isPySpace`,
 `Scrub`, `pyRepr`, `pyListRepr`), and the shell (`shellQuote`). Three
 groups: numbers and text to the bottom now, the shell with running
 programs in step 3. One edge joins the first two: `parsePyFloat` and
-`toInt` trim with Python's whitespace, so numbers sit over text.
+`toInt` trim with the text's own idea of space, so numbers sit over text.
 
 ### 3. Where state lives
 
@@ -76,8 +76,8 @@ Four helpers are one line over the standard library: `runeLen` is
 64)`, `pyround` is `int(math.RoundToEven(x))`, `isFinite` is two `math`
 calls. Inlining them removes 173 uses from any package. But `fixed`
 alone is 104 places where a short name would become a long call, and the
-names say why they exist: the Python version counted characters, not
-bytes, and rounded halves to even. Inlining hides that reason at every
+names say why they exist: the files count characters, not bytes, and
+round halves to even. Inlining hides that reason at every
 call. It is worth it for none of them, and it groups nothing.
 
 ### 5. What a test has to build, and where a library lives
@@ -88,7 +88,7 @@ Framing, step 6, has to build without the engine. It uses `fixed`,
 those must sit under framing by then, the JSON values too. A small
 library could go under `internal/`, beside `internal/wake`, where
 nothing outside the module can import it. But these helpers answer to
-the engine's files, written the Python way, and nothing but the engine
+the engine's files and how they were always written, and nothing but the engine
 and the app's Go side uses them. Under `engine/` they say whose they
 are. A test of the helpers builds nothing else, so each package's tests
 run in milliseconds alone.
@@ -101,7 +101,7 @@ run in milliseconds alone.
 - Numbers and text are two packages, numbers over text: 2, and 1 by what
   it gives up. 3 and 5 do not choose.
 - Under `engine/`, not `internal/`: 5.
-- The names stay short and say they follow Python: 1 and 4.
+- The names stay short and say why the helpers exist: 1 and 4.
 - `shellQuote` goes with running programs in step 3: 2.
 
 Only simulation 4 inlines, and only 1 keeps one package. The choice of
@@ -112,25 +112,32 @@ cost a reader.
 
 Two packages at the bottom of the engine, beside `engine/timed`:
 
-- `engine/pynum`, numbers rounded, summed, read and written the way the
-  Python version did: `Round`, `RoundTo`, `Fixed`, `Sum`, `IsFinite`,
-  `Float`, `FloatRepr`, `ParseFloat`, and for JSON values `FloatOf`,
-  `IntOf` and `Str`.
-- `engine/pytext`, text counted, cut, trimmed and quoted the way the
-  Python version did, and scrubbed before it is printed or stored:
-  `Len`, `Prefix`, `Strip`, `Fields`, `IsSpace`, `IsControl`, `Scrub`,
-  `Repr`, `ListRepr`.
+- `engine/num`, numbers rounded, summed, read and written the same on
+  every platform: `Round`, `RoundTo`, `Fixed`, `Sum`, `IsFinite`,
+  `Float`, `Format`, `Parse`, and for JSON values `AsFloat`, `AsInt`
+  and `FormatValue`.
+- `engine/runes`, text counted, cut, trimmed and quoted by its
+  characters, and scrubbed before it is printed or stored: `Len`,
+  `Prefix`, `Trim`, `Fields`, `IsSpace`, `IsControl`, `Scrub`, `Quote`,
+  `QuoteList`.
 
-`shellQuote` stays in `engine/util.go` until step 3. `pynum` and
-`pytext` were checked as names: neither is used for anything else in the
-engine, where `num` and `text` are common local names.
+`shellQuote` stays in `engine/util.go` until step 3.
+
+The names are Go's, after Tim's word on 30 October: no name in Go code
+borrows another language's, because the code is not emulating one. A
+name says what the function does, `Trim` and `Quote`, the way the
+standard library names its own. `text` was the first name for the second
+package, but over a hundred locals in the engine are called `text`, and
+the package would hide behind each of them, so it is `runes`, Go's own
+word for a character. The one function of the engine called `num` became
+`tagNumber`, which says what it writes.
 
 The layers, each using only the ones under it:
 
 ```
 engine          every area, still one package
-engine/pynum    numbers the Python way
-engine/pytext   text the Python way
+engine/num      numbers
+engine/runes    text, by its characters
                 engine/timed beside them, using neither
 ```
 
@@ -140,5 +147,5 @@ engine/pytext   text the Python way
   files, done by the type checker like #621.
 - It buys the first obstacle to framing cleared whole, and an area's
   numbers and text now come from one place it can see.
-- It was wrong if a later step has to reach back into `pynum` or
-  `pytext` for something only one area uses, or has to split them again.
+- It was wrong if a later step has to reach back into `num` or
+  `runes` for something only one area uses, or has to split them again.

@@ -10,7 +10,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"framefairy/engine"
-	"framefairy/engine/pytext"
+	"framefairy/engine/runes"
 )
 
 // editLevel is the level of a line about an edit: a warning for one that
@@ -136,21 +136,21 @@ func (s *FrameFairy) SetCaptionColours(ctx context.Context, path, plan, text str
 	if text != "" {
 		colour, ok := engine.AssColour(text, textOpacity)
 		if !ok {
-			return fmt.Errorf("%s is not a colour", pytext.Scrub(text, 20))
+			return fmt.Errorf("%s is not a colour", runes.Scrub(text, 20))
 		}
 		values["primary"] = colour
 	}
 	if box != "" {
 		colour, ok := engine.AssColour(box, boxOpacity)
 		if !ok {
-			return fmt.Errorf("%s is not a colour", pytext.Scrub(box, 20))
+			return fmt.Errorf("%s is not a colour", runes.Scrub(box, 20))
 		}
 		values["back_colour"] = colour
 	}
 	if highlight != "" {
 		colour, ok := engine.AssColour(highlight, highlightOpacity)
 		if !ok {
-			return fmt.Errorf("%s is not a colour", pytext.Scrub(highlight, 20))
+			return fmt.Errorf("%s is not a colour", runes.Scrub(highlight, 20))
 		}
 		values["highlight_colour"] = colour
 	}

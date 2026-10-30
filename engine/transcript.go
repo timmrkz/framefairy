@@ -14,7 +14,7 @@ import (
 
 	"github.com/spf13/afero"
 
-	"framefairy/engine/pynum"
+	"framefairy/engine/num"
 	"framefairy/engine/timed"
 )
 
@@ -46,9 +46,9 @@ type transcriptFile struct {
 	Version int         `json:"version"`
 	Source  sourceStamp `json:"source"`
 	Model   string      `json:"model"`
-	From    pynum.Float `json:"from"`
-	To      pynum.Float `json:"to"`
-	Mean    pynum.Float `json:"mean"`
+	From    num.Float   `json:"from"`
+	To      num.Float   `json:"to"`
+	Mean    num.Float   `json:"mean"`
 	// Partial marks a transcription still in progress, or stopped before
 	// the end. To is then how far it got.
 	Partial bool `json:"partial,omitempty"`
@@ -56,13 +56,13 @@ type transcriptFile struct {
 	// transcription stopped at the end of a window leaves out the word that
 	// ran across it, and hears it whole when it carries on from here.
 	// Versions 1 and 2 only.
-	Resume pynum.Float `json:"resume,omitempty"`
+	Resume num.Float `json:"resume,omitempty"`
 	// Parts are what is heard, in seconds, in order and apart, and End how
 	// long the audio is. Version 3: From, To, Partial and Resume say
 	// nothing there, see heard.
-	Parts [][2]pynum.Float `json:"parts,omitempty"`
-	End   pynum.Float      `json:"end,omitempty"`
-	Words [][3]any         `json:"words"`
+	Parts [][2]num.Float `json:"parts,omitempty"`
+	End   num.Float      `json:"end,omitempty"`
+	Words [][3]any       `json:"words"`
 }
 
 // heard is what the file has heard, in seconds, in order and apart. An
@@ -211,7 +211,7 @@ func meanOfFrames(frames []float32) float64 {
 func storedWords(words []timed.Cue) [][3]any {
 	out := make([][3]any, len(words))
 	for i, w := range words {
-		out[i] = [3]any{pynum.Float(pynum.RoundTo(w.Start, 3)), pynum.Float(pynum.RoundTo(w.End, 3)), w.Text}
+		out[i] = [3]any{num.Float(num.RoundTo(w.Start, 3)), num.Float(num.RoundTo(w.End, 3)), w.Text}
 	}
 	return out
 }
@@ -352,23 +352,23 @@ func readTranscriptFile(fsys afero.Fs, path string, stamp sourceStamp, model str
 	// the frames do not reach is heard again.
 	reach := float64(file.From) + float64(len(frames))*timed.FrameSeconds
 	if last > reach+0.005 {
-		var within [][2]pynum.Float
+		var within [][2]num.Float
 		for _, p := range parts {
 			if p[0] < reach {
-				within = append(within, [2]pynum.Float{pynum.Float(p[0]), pynum.Float(min(p[1], reach))})
+				within = append(within, [2]num.Float{num.Float(p[0]), num.Float(min(p[1], reach))})
 			}
 		}
 		if file.Version >= 3 {
 			file.Parts = within
 		} else {
-			file.To, file.Partial = pynum.Float(reach), true
+			file.To, file.Partial = num.Float(reach), true
 		}
 		parts = file.heard()
 	}
 	var words []timed.Cue
 	for _, item := range file.Words {
-		low, ok1 := pynum.FloatOf(item[0])
-		high, ok2 := pynum.FloatOf(item[1])
+		low, ok1 := num.AsFloat(item[0])
+		high, ok2 := num.AsFloat(item[1])
 		text, ok3 := item[2].(string)
 		if !ok1 || !ok2 || !ok3 {
 			return file, nil, nil, false
@@ -516,8 +516,8 @@ func (e *Engine) loadTranscript(ctx context.Context, source string, window timed
 			before += gap.End - gap.Start
 		}
 		e.Log.Info("%s words from %s min of audio, %sx real time",
-			commas(words), pynum.Fixed(todo/60, 1),
-			pynum.Fixed(todo/math.Max(time.Since(started).Seconds(), 0.001), 1))
+			commas(words), num.Fixed(todo/60, 1),
+			num.Fixed(todo/math.Max(time.Since(started).Seconds(), 0.001), 1))
 		return nil
 	})
 	if err != nil {
@@ -599,14 +599,14 @@ func addHeard(fsys afero.Fs, path string, stamp sourceStamp, model string, durat
 			}
 		}
 		for _, w := range raw {
-			w = timed.Cue{Start: pynum.RoundTo(w.Start, 3), End: pynum.RoundTo(w.End, 3), Text: w.Text}
+			w = timed.Cue{Start: num.RoundTo(w.Start, 3), End: num.RoundTo(w.End, 3), Text: w.Text}
 			if w.Start >= lo && w.Start < hi {
 				words = append(words, w)
 			}
 		}
 	}
 	sort.SliceStable(words, func(i, j int) bool { return words[i].Start < words[j].Start })
-	parts = joinParts(append(parts, [2]float64{pynum.RoundTo(part.Start, 3), pynum.RoundTo(part.End, 3)}))
+	parts = joinParts(append(parts, [2]float64{num.RoundTo(part.Start, 3), num.RoundTo(part.End, 3)}))
 
 	var heard []float32
 	for n, f := range all {
@@ -614,13 +614,13 @@ func addHeard(fsys afero.Fs, path string, stamp sourceStamp, model string, durat
 			heard = append(heard, f)
 		}
 	}
-	stored := make([][2]pynum.Float, len(parts))
+	stored := make([][2]num.Float, len(parts))
 	for i, p := range parts {
-		stored[i] = [2]pynum.Float{pynum.Float(p[0]), pynum.Float(p[1])}
+		stored[i] = [2]num.Float{num.Float(p[0]), num.Float(p[1])}
 	}
-	end := pynum.Float(pynum.RoundTo(duration, 3))
+	end := num.Float(num.RoundTo(duration, 3))
 	err := writeTranscript(fsys, path, transcriptFile{Version: transcriptVersion, Source: stamp, Model: model,
-		To: end, Mean: pynum.Float(pynum.RoundTo(meanOfFrames(heard), 3)), Parts: stored, End: end,
+		To: end, Mean: num.Float(num.RoundTo(meanOfFrames(heard), 3)), Parts: stored, End: end,
 		Words: storedWords(words)}, all)
 	if err == nil {
 		transcriptGrew(path)

@@ -4,7 +4,7 @@ import (
 	"context"
 	"math"
 
-	"framefairy/engine/pynum"
+	"framefairy/engine/num"
 	"framefairy/internal/framewire"
 )
 
@@ -277,14 +277,14 @@ func (e *Engine) WordFrames(ctx context.Context, laid []LaidCaption, width, heig
 	overrides map[string]any, light framewire.Light) [][]WordFrame {
 	s := ResolveStyle(overrides).inLight(light)
 	scale := float64(height) / 1920.0
-	size := max(12, pynum.Round(s.Size*scale))
+	size := max(12, num.Round(s.Size*scale))
 	layouts, ok := e.layWords(ctx, laid, s, width, size)
 	if !ok {
 		return nil
 	}
 	ax := float64(width) / 2
-	ay := float64(height - pynum.Round(s.MarginV*scale))
-	radius := float64(pynum.Round(s.Radius * scale))
+	ay := float64(height - num.Round(s.MarginV*scale))
+	radius := float64(num.Round(s.Radius * scale))
 	out := make([][]WordFrame, len(layouts))
 	for i, l := range layouts {
 		out[i] = make([]WordFrame, len(l.words))

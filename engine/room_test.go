@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/afero"
 
-	"framefairy/engine/pytext"
+	"framefairy/engine/runes"
 	"framefairy/engine/timed"
 )
 
@@ -53,7 +53,7 @@ func TestTheRoomOfALocalModelIsItsContextLessTheAnswer(t *testing.T) {
 	machine(t, 128<<30)
 	// What the default recipe sends around the transcript comes off it.
 	r, _ := RecipeNamed("")
-	around := pytext.Len(r.System) + pytext.Len(r.Request(nil, nil, PlanOptions{Count: 12, MinLen: 20, MaxLen: 30}))
+	around := runes.Len(r.System) + runes.Len(r.Request(nil, nil, PlanOptions{Count: 12, MinLen: 20, MaxLen: 30}))
 	for model, tokens := range map[string]int{
 		"gemma-4-26B_q4_0-it.gguf": 262144 - 16384 - 2048,
 		"Qwen3-14B-Q4_K_M.gguf":    40960 - 16384 - 2048,
@@ -163,7 +163,7 @@ func TestTheWeightOfAWindowIsNeverLessThanWhatItSends(t *testing.T) {
 	}
 	for _, span := range [][2]int{{0, 1200}, {0, 9}, {3, 12}, {95, 105}, {990, 1200}, {500, 501}} {
 		part := BuildLines(tr.Words[span[0]*2:span[1]*2], nil, nil)
-		sent := pytext.Len(r.Transcript(part, PlanOptions{}))
+		sent := runes.Len(r.Transcript(part, PlanOptions{}))
 		counted := 0
 		for _, w := range weights[span[0]:span[1]] {
 			counted += w.Chars

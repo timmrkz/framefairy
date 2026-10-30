@@ -9,7 +9,7 @@ import (
 
 	"github.com/spf13/afero"
 
-	"framefairy/engine/pynum"
+	"framefairy/engine/num"
 )
 
 // A crop that follows, plan row 3.26. A person puts keyframes on frames
@@ -92,11 +92,11 @@ func readCropMarks(raw any, spans []Rotation) []CropMark {
 		if atText || xText {
 			continue
 		}
-		at, ok := pynum.FloatOf(entry[keyAt])
-		if !ok || !pynum.IsFinite(at) || at < 0 || at > MaxEpisodeSeconds {
+		at, ok := num.AsFloat(entry[keyAt])
+		if !ok || !num.IsFinite(at) || at < 0 || at > MaxEpisodeSeconds {
 			continue
 		}
-		left, ok := pynum.FloatOf(entry[keyX])
+		left, ok := num.AsFloat(entry[keyX])
 		if !ok || left != math.Trunc(left) || left < 0 || left >= 1_000_000 {
 			continue
 		}
@@ -107,10 +107,10 @@ func readCropMarks(raw any, spans []Rotation) []CropMark {
 		}
 		seen[key] = true
 		turn := RotationAt(spans, at)
-		if n, ok := pynum.FloatOf(entry[keyTurn]); ok && n == math.Trunc(n) && validRotate(int(n)) {
+		if n, ok := num.AsFloat(entry[keyTurn]); ok && n == math.Trunc(n) && validRotate(int(n)) {
 			turn = int(n)
 		}
-		out = append(out, CropMark{At: pynum.RoundTo(at, 3), X: x - x%2, Turn: turn})
+		out = append(out, CropMark{At: num.RoundTo(at, 3), X: x - x%2, Turn: turn})
 	}
 	sort.Slice(out, func(a, b int) bool { return out[a].At < out[b].At })
 	if len(out) > MaxCropMarks {
@@ -194,7 +194,7 @@ func (s SourceInfo) frameHolding(at float64) int64 {
 // known.
 func (s SourceInfo) frameStartHolding(at float64) float64 {
 	if s.FPSNum <= 0 || s.FPSDen <= 0 {
-		return pynum.RoundTo(at, 3)
+		return num.RoundTo(at, 3)
 	}
 	return s.keptAt(s.frameHolding(at))
 }
@@ -381,7 +381,7 @@ func setCropMarks(c *object, marks []CropMark) {
 	list := make([]any, len(marks))
 	for i, m := range marks {
 		o := newObject()
-		o.set(keyAt, pynum.RoundTo(m.At, 3))
+		o.set(keyAt, num.RoundTo(m.At, 3))
 		o.set(keyX, m.X)
 		o.set(keyTurn, m.Turn)
 		list[i] = o
@@ -430,7 +430,7 @@ func SetCropMark(fsys afero.Fs, planPath, clipID string, from, to float64, x int
 	}
 	for _, at := range []float64{from, to} {
 		if math.IsNaN(at) || math.IsInf(at, 0) || at > MaxEpisodeSeconds {
-			return renderErr("a keyframe cannot be at %s", pynum.Fixed(at, 3))
+			return renderErr("a keyframe cannot be at %s", num.Fixed(at, 3))
 		}
 	}
 	if adding && (x < 0 || x >= 1_000_000) {
@@ -514,7 +514,7 @@ func cropShown(c *object, pieces []*object, target int, at float64, frames Sourc
 	if rotationOf(pieces[target], spans) != 0 {
 		key = keyCropXTurned
 	}
-	if n, ok := pynum.IntOf(pieces[target].values[key]); ok {
+	if n, ok := num.AsInt(pieces[target].values[key]); ok {
 		return &n
 	}
 	return nil
@@ -525,7 +525,7 @@ func cropShown(c *object, pieces []*object, target int, at float64, frames Sourc
 func marksText(marks []CropMark) string {
 	parts := make([]string, len(marks))
 	for i, m := range marks {
-		parts[i] = pynum.Fixed(m.At, 3) + "@" + strconv.Itoa(m.X)
+		parts[i] = num.Fixed(m.At, 3) + "@" + strconv.Itoa(m.X)
 	}
 	return strings.Join(parts, " ")
 }

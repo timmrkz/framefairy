@@ -16,7 +16,7 @@ import (
 
 	"github.com/spf13/afero"
 
-	"framefairy/engine/pynum"
+	"framefairy/engine/num"
 	"framefairy/engine/timed"
 )
 
@@ -314,7 +314,7 @@ func lineSpans(lines []Line) [][][2]float64 {
 	for i, l := range lines {
 		spans := make([][2]float64, len(l.Cues))
 		for k, w := range l.Cues {
-			spans[k] = [2]float64{pynum.RoundTo(w.Start, 3), pynum.RoundTo(w.End, 3)}
+			spans[k] = [2]float64{num.RoundTo(w.Start, 3), num.RoundTo(w.End, 3)}
 		}
 		out[i] = spans
 	}
@@ -517,8 +517,8 @@ func DiffClip(proposal, final [][2]float64, proposedLines, finalLines [][2]int) 
 	if len(proposal) == 0 || len(final) == 0 {
 		return c
 	}
-	c.StartShift = pynum.RoundTo(final[0][0]-proposal[0][0], 3)
-	c.EndShift = pynum.RoundTo(final[len(final)-1][1]-proposal[len(proposal)-1][1], 3)
+	c.StartShift = num.RoundTo(final[0][0]-proposal[0][0], 3)
+	c.EndShift = num.RoundTo(final[len(final)-1][1]-proposal[len(proposal)-1][1], 3)
 	from := max(final[0][0], proposal[0][0])
 	to := min(final[len(final)-1][1], proposal[len(proposal)-1][1])
 	before, after := cutsOf(proposal), cutsOf(final)
@@ -581,7 +581,7 @@ func RecordDecision(fsys afero.Fs, rec *Records, planPath, clipID, event string,
 	case DecisionKept, DecisionEdited, DecisionPublished, DecisionRendered:
 		final := &FinalRecord{}
 		for _, s := range clip.Segments {
-			final.Segments = append(final.Segments, [2]float64{pynum.RoundTo(s.Start, 3), pynum.RoundTo(s.End, 3)})
+			final.Segments = append(final.Segments, [2]float64{num.RoundTo(s.Start, 3), num.RoundTo(s.End, 3)})
 		}
 		if planned, ok := rec.loadPlanRecord(planID); ok {
 			final.Lines = LinesForSegments(planned.Lines, final.Segments)
@@ -655,7 +655,7 @@ func (e *Engine) recordPlan(opts PlanOptions, sourcePath string, window timed.Wi
 		Engine: Version, PromptVersion: recipe.Version,
 		Episode: RecordEpisode{File: filepath.Base(sourcePath), Key: EpisodeKey(e.Files, sourcePath),
 			Transcript: wordsHash(lines),
-			Window:     [2]float64{pynum.RoundTo(window.Start, 3), pynum.RoundTo(window.End, 3)}},
+			Window:     [2]float64{num.RoundTo(window.Start, 3), num.RoundTo(window.End, 3)}},
 		Planner:  RecordPlanner{Kind: kind, Model: model},
 		Settings: RecordSettings{Count: opts.Count, Min: opts.MinLen, Max: opts.MaxLen},
 		ReplyKey: replyKey, ExampleKey: ExampleKeyOf(prompt),

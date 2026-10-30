@@ -21,7 +21,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"framefairy/engine"
-	"framefairy/engine/pytext"
+	"framefairy/engine/runes"
 	"framefairy/internal/framewire"
 )
 
@@ -526,7 +526,7 @@ func writeFrames(w http.ResponseWriter, r *http.Request, s *preview, n int, skip
 				// at the end of the episode: the page asks another stream.
 				w.Header().Set("X-Frames-Closed", "1")
 			} else if s.err != nil {
-				w.Header().Set("X-Frames-Error", pytext.Scrub(s.err.Error(), 300))
+				w.Header().Set("X-Frames-Error", runes.Scrub(s.err.Error(), 300))
 			}
 			w.WriteHeader(http.StatusOK)
 			return

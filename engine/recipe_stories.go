@@ -5,7 +5,7 @@ import (
 	"math"
 	"strings"
 
-	"framefairy/engine/pynum"
+	"framefairy/engine/num"
 )
 
 // storiesRecipe asks for stories rather than for lines. The model is told
@@ -119,7 +119,7 @@ func storiesRequest(lines []Line, units [][2]int, opts PlanOptions) string {
 	ask := []string{
 		fmt.Sprintf("Find up to %d clips in the transcript below, the strongest first.", opts.Count),
 		fmt.Sprintf("Each clip runs %s to %s seconds once the sentences you leave out are gone.",
-			pynum.Fixed(opts.MinLen, 0), pynum.Fixed(opts.MaxLen, 0)),
+			num.Fixed(opts.MinLen, 0), num.Fixed(opts.MaxLen, 0)),
 		fmt.Sprintf("The transcript has %d sentences, each with its number in brackets. "+
 			"Each paragraph opens with the time it starts at, so you can tell how long "+
 			"a stretch runs. Three dots mark a long pause.", len(units)),
@@ -129,8 +129,8 @@ func storiesRequest(lines []Line, units [][2]int, opts PlanOptions) string {
 	// said in words, at the rate this speaker talks.
 	if rate := wordsPerSecond(lines); rate > 0 {
 		ask = append(ask, fmt.Sprintf("Speech here runs at about %s words a second, so %s to %s "+
-			"seconds is about %d to %d words.", pynum.Fixed(rate, 1), pynum.Fixed(opts.MinLen, 0),
-			pynum.Fixed(opts.MaxLen, 0), int(math.Round(rate*opts.MinLen)), int(math.Round(rate*opts.MaxLen))))
+			"seconds is about %d to %d words.", num.Fixed(rate, 1), num.Fixed(opts.MinLen, 0),
+			num.Fixed(opts.MaxLen, 0), int(math.Round(rate*opts.MinLen)), int(math.Round(rate*opts.MaxLen))))
 	}
 	if opts.Context != "" {
 		ask = append(ask, "About the video: "+opts.Context)

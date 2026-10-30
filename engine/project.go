@@ -11,7 +11,7 @@ import (
 
 	"github.com/spf13/afero"
 
-	"framefairy/engine/pytext"
+	"framefairy/engine/runes"
 	"framefairy/engine/timed"
 )
 
@@ -210,7 +210,7 @@ func warmSize(model string, seconds float64, maxTokens int) int {
 	if seconds <= 0 {
 		seconds = 3600
 	}
-	chars := int(max(seconds, 60)*warmChars) + pytext.Len(SystemPrompt)
+	chars := int(max(seconds, 60)*warmChars) + runes.Len(SystemPrompt)
 	return localContextFor(model, chars, maxTokens)
 }
 

@@ -1,4 +1,4 @@
-package pynum
+package num
 
 import (
 	"encoding/json"
@@ -6,14 +6,13 @@ import (
 	"testing"
 )
 
-// Each case is what Python 3.12 answers, so a plan written by the Python
-// version reads and rounds the same here. Where the two differ on purpose,
-// the package comment says so, and no case tests it.
+// Each case is how the files written so far round, sum, read and write
+// their numbers, so they read the same here.
 
 func TestRoundTakesHalvesToEven(t *testing.T) {
 	for x, want := range map[float64]int{0.5: 0, 1.5: 2, 2.5: 2, -0.5: 0, -1.5: -2, 2.4: 2, 2.6: 3} {
 		if got := Round(x); got != want {
-			t.Errorf("Round(%v) = %d, Python says %d", x, got, want)
+			t.Errorf("Round(%v) = %d, want %d", x, got, want)
 		}
 	}
 }
@@ -32,7 +31,7 @@ func TestRoundToKeepsNDecimals(t *testing.T) {
 	}
 	for _, c := range cases {
 		if got := RoundTo(c.x, c.n); got != c.want {
-			t.Errorf("RoundTo(%v, %d) = %v, Python says %v", c.x, c.n, got, c.want)
+			t.Errorf("RoundTo(%v, %d) = %v, want %v", c.x, c.n, got, c.want)
 		}
 	}
 	if got := RoundTo(math.Inf(1), 2); !math.IsInf(got, 1) {
@@ -40,21 +39,20 @@ func TestRoundToKeepsNDecimals(t *testing.T) {
 	}
 }
 
-func TestSumCompensatesLikePython(t *testing.T) {
-	// Left to right this is 0.0. Python 3.12's sum([1.0, 1e-16, -1.0])
-	// gives 1e-16 back.
+func TestSumCompensatesForWhatIsLost(t *testing.T) {
+	// Left to right this is 0.0. The compensation gives 1e-16 back.
 	if got := Sum([]float64{1, 1e-16, -1}); got != 1e-16 {
-		t.Errorf("Sum = %v, Python says 1e-16", got)
+		t.Errorf("Sum = %v, want 1e-16", got)
 	}
 	if got := Sum([]float64{0.1, 0.2, 0.3}); got != 0.6 {
-		t.Errorf("Sum = %v, Python says 0.6", got)
+		t.Errorf("Sum = %v, want 0.6", got)
 	}
 }
 
-func TestFloatsAreWrittenAsPythonWritesThem(t *testing.T) {
+func TestFloatsAreWrittenWithAPointAndNoExponent(t *testing.T) {
 	for x, want := range map[float64]string{1: "1.0", 0.1: "0.1", -2.5: "-2.5", 1e15: "1000000000000000.0"} {
-		if got := FloatRepr(x); got != want {
-			t.Errorf("FloatRepr(%v) = %s, want %s", x, got, want)
+		if got := Format(x); got != want {
+			t.Errorf("Format(%v) = %s, want %s", x, got, want)
 		}
 	}
 	got, err := json.Marshal([]Float{1, 0.25, Float(math.NaN())})
@@ -69,19 +67,19 @@ func TestFloatsAreWrittenAsPythonWritesThem(t *testing.T) {
 	}
 }
 
-func TestParseFloatReadsWhatPythonReads(t *testing.T) {
+func TestParseReadsNumbersInText(t *testing.T) {
 	for text, want := range map[string]float64{" 1.5\n": 1.5, "1_000": 1000, "-Infinity": math.Inf(-1)} {
-		got, ok := ParseFloat(text)
+		got, ok := Parse(text)
 		if !ok || got != want {
-			t.Errorf("ParseFloat(%q) = %v, %v, want %v", text, got, ok, want)
+			t.Errorf("Parse(%q) = %v, %v, want %v", text, got, ok, want)
 		}
 	}
-	if got, ok := ParseFloat("nan"); !ok || !math.IsNaN(got) {
-		t.Errorf("ParseFloat(nan) = %v, %v, want NaN", got, ok)
+	if got, ok := Parse("nan"); !ok || !math.IsNaN(got) {
+		t.Errorf("Parse(nan) = %v, %v, want NaN", got, ok)
 	}
 	for _, text := range []string{"", "1,5", "one"} {
-		if _, ok := ParseFloat(text); ok {
-			t.Errorf("ParseFloat(%q) read a number where Python raises", text)
+		if _, ok := Parse(text); ok {
+			t.Errorf("Parse(%q) read a number where there is none", text)
 		}
 	}
 	if IsFinite(math.Inf(1)) || IsFinite(math.NaN()) || !IsFinite(0) {
@@ -89,25 +87,25 @@ func TestParseFloatReadsWhatPythonReads(t *testing.T) {
 	}
 }
 
-func TestJSONValuesReadAndWriteAsPythonDoes(t *testing.T) {
+func TestJSONValuesAreReadAndWritten(t *testing.T) {
 	for v, want := range map[any]float64{2.5: 2.5, 3: 3, true: 1, " 4.5 ": 4.5, json.Number("6.25"): 6.25} {
-		if got, ok := FloatOf(v); !ok || got != want {
-			t.Errorf("FloatOf(%#v) = %v, %v, Python's float() says %v", v, got, ok, want)
+		if got, ok := AsFloat(v); !ok || got != want {
+			t.Errorf("AsFloat(%#v) = %v, %v, want %v", v, got, ok, want)
 		}
 	}
 	for v, want := range map[any]int{2.9: 2, -2.9: -2, 7: 7, false: 0, " 12 ": 12, json.Number("8"): 8} {
-		if got, ok := IntOf(v); !ok || got != want {
-			t.Errorf("IntOf(%#v) = %v, %v, Python's int() says %v", v, got, ok, want)
+		if got, ok := AsInt(v); !ok || got != want {
+			t.Errorf("AsInt(%#v) = %v, %v, want %v", v, got, ok, want)
 		}
 	}
 	for _, v := range []any{nil, "x", "2.5", math.NaN(), []any{1}} {
-		if _, ok := IntOf(v); ok {
-			t.Errorf("IntOf(%#v) read a number where Python raises", v)
+		if _, ok := AsInt(v); ok {
+			t.Errorf("AsInt(%#v) read a number where there is none", v)
 		}
 	}
 	for v, want := range map[any]string{nil: "None", true: "True", 1.0: "1.0", 2.5: "2.5", 3: "3", "word": "word"} {
-		if got := Str(v); got != want {
-			t.Errorf("Str(%#v) = %q, Python's str() says %q", v, got, want)
+		if got := FormatValue(v); got != want {
+			t.Errorf("FormatValue(%#v) = %q, want %q", v, got, want)
 		}
 	}
 }

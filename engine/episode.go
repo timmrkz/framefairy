@@ -13,8 +13,8 @@ import (
 
 	"github.com/spf13/afero"
 
-	"framefairy/engine/pynum"
-	"framefairy/engine/pytext"
+	"framefairy/engine/num"
+	"framefairy/engine/runes"
 	"framefairy/engine/timed"
 )
 
@@ -245,10 +245,10 @@ func summaryOf(fsys afero.Fs, m string) (PlanSummary, error) {
 	s := PlanSummary{Path: m, Name: filepath.Base(m), Clips: len(clips),
 		Modified: info.ModTime(), plan: plan, clips: clips}
 	made := plan.PlannedWith()
-	if v, ok := pynum.FloatOf(made[keyFrom]); ok {
+	if v, ok := num.AsFloat(made[keyFrom]); ok {
 		s.From = v
 	}
-	if v, ok := pynum.FloatOf(made[keyTo]); ok {
+	if v, ok := num.AsFloat(made[keyTo]); ok {
 		s.To = v
 	}
 	if v, ok := made["model"].(string); ok {
@@ -541,7 +541,7 @@ func (s PlanSummary) View() *PlanView {
 			fallback := twoDigits(i + 1)
 			id := fallback
 			if value, present := entry[keyID]; present {
-				id = pynum.Str(value)
+				id = num.FormatValue(value)
 			}
 			extras[SanitiseName(id, fallback)] = entry
 		}
@@ -549,7 +549,7 @@ func (s PlanSummary) View() *PlanView {
 	work := filepath.Dir(filepath.Dir(path))
 	for _, c := range clips {
 		v := ClipView{ID: c.ID, Slug: c.Slug, Basename: c.Basename(), Title: c.Title,
-			Duration: pynum.RoundTo(c.Duration(), 3), Start: c.Segments[0].Start,
+			Duration: num.RoundTo(c.Duration(), 3), Start: c.Segments[0].Start,
 			End: c.Segments[len(c.Segments)-1].End, Rejected: c.Rejected,
 			CaptionYMoved: c.CaptionY != nil, Thumbnails: c.Thumbnails}
 		if v.Thumbnails == nil {
@@ -564,7 +564,7 @@ func (s PlanSummary) View() *PlanView {
 		}
 		if extra := extras[c.ID]; extra != nil {
 			if reason, ok := extra[keyReason].(string); ok {
-				v.Reason = pytext.Scrub(reason, 300)
+				v.Reason = runes.Scrub(reason, 300)
 			}
 		}
 		v.CropMarks = cropMarkViews(c.CropMarks)
@@ -899,7 +899,7 @@ func planClip(fsys afero.Fs, planPath, clipID string) (Plan, Clip, error) {
 			return plan, c, nil
 		}
 	}
-	return Plan{}, Clip{}, fmt.Errorf("no clip %s in %s", pytext.Scrub(clipID, 60), filepath.Base(planPath))
+	return Plan{}, Clip{}, fmt.Errorf("no clip %s in %s", runes.Scrub(clipID, 60), filepath.Base(planPath))
 }
 
 // Look is how the captions of a clip are made: the caption style the
@@ -1002,13 +1002,13 @@ func captionsView(plan Plan, clip Clip, t *Transcript, look *Look) *CaptionsView
 		for _, line := range c.Lines {
 			row := CaptionLineView{Words: []WordView{}}
 			for _, w := range line {
-				word := WordView{Start: w.Start, End: w.End, Text: pytext.Scrub(w.Text, 200)}
+				word := WordView{Start: w.Start, End: w.End, Text: runes.Scrub(w.Text, 200)}
 				// The word of the episode it stands for, the one a correction
 				// in the caption box is kept against, and all of it.
 				if at, ok := SaidWord(clip, said, (w.Start+w.End)/2); ok {
 					if heard, ok := t.HeardAt(at.Start); ok {
 						start := heard.Start
-						word.Said, word.Whole = &start, pytext.Scrub(heard.Text, 200)
+						word.Said, word.Whole = &start, runes.Scrub(heard.Text, 200)
 						if len(strings.Fields(heard.Text)) > 1 {
 							part := t.PartOf(heard, at)
 							word.Part = &part

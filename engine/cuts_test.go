@@ -9,7 +9,7 @@ import (
 
 	"github.com/spf13/afero"
 
-	"framefairy/engine/pynum"
+	"framefairy/engine/num"
 	"framefairy/engine/timed"
 )
 
@@ -297,7 +297,7 @@ func TestACutEdgeWalksAFrameAtATime(t *testing.T) {
 	at := ClipCuts(clipByID(t, fsys, path, "01"))[0]
 	want := at.From
 	for i := 0; i < 5; i++ {
-		want = pynum.RoundTo(want-frame, 3)
+		want = num.RoundTo(want-frame, 3)
 		if err := MoveCut(fsys, path, "01", 0, want, at.To, tr, 0.1, ToFrames); err != nil {
 			t.Fatalf("step %d: %v", i, err)
 		}
@@ -467,7 +467,7 @@ func TestACutRaisesTheRevision(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		n, _ := pynum.IntOf(plan.Raw["revision"])
+		n, _ := num.AsInt(plan.Raw["revision"])
 		return n
 	}
 	tr := cutsTranscript()

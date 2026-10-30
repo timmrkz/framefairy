@@ -1,15 +1,10 @@
-// Package pynum rounds, sums, reads and writes numbers the way the Python
-// version of the engine did: compensated float sums, halves rounded to
-// even, and a float always written with a decimal point. They give the
-// same answer on every platform, which keeps plans reproducible. It
-// imports nothing of the engine but pytext, see docs/ARCHITECTURE.md.
-//
-// Where it differs from Python, on purpose: FloatRepr writes no exponent,
-// where Python writes 1e+16 or 1e-05, and ParseFloat and IntOf take an underscore
-// anywhere and the four separators \x1c to \x1f as space, where Python
-// raises. No plan, transcript or probe holds such a number, and a change
-// would change how every file written so far reads.
-package pynum
+// Package num rounds, sums, reads and writes the numbers of a video's
+// files: compensated float sums, halves rounded to even, and a float
+// always written with a decimal point and never with an exponent. They
+// give the same answer on every platform, which keeps plans reproducible,
+// and they read every file written so far the same way. It imports
+// nothing of the engine but runes, see docs/ARCHITECTURE.md.
+package num
 
 import (
 	"encoding/json"
@@ -17,12 +12,11 @@ import (
 	"strconv"
 	"strings"
 
-	"framefairy/engine/pytext"
+	"framefairy/engine/runes"
 )
 
-// Sum is Python's sum() over floats. Since 3.12 it uses Neumaier's
-// compensated summation rather than adding left to right, and the difference
-// is enough to change a tie.
+// Sum adds with Neumaier's compensated summation rather than left to
+// right, and the difference is enough to change a tie.
 func Sum(values []float64) float64 {
 	total, c := 0.0, 0.0
 	for _, x := range values {
@@ -40,10 +34,10 @@ func Sum(values []float64) float64 {
 	return total
 }
 
-// Round is Python's round(x), which rounds halves to even.
+// Round rounds to the nearest whole number, halves to even.
 func Round(x float64) int { return int(math.RoundToEven(x)) }
 
-// RoundTo is Python's round(x, n): the nearest value with n decimals.
+// RoundTo is the nearest value with n decimals, halves to even.
 func RoundTo(x float64, n int) float64 {
 	if math.IsNaN(x) || math.IsInf(x, 0) {
 		return x
@@ -55,14 +49,15 @@ func RoundTo(x float64, n int) float64 {
 	return v
 }
 
-// Fixed formats like Python's f"{x:.Nf}".
+// Fixed writes x with exactly n decimals.
 func Fixed(x float64, n int) string { return strconv.FormatFloat(x, 'f', n, 64) }
 
 // IsFinite says whether x is neither NaN nor infinite.
 func IsFinite(x float64) bool { return !math.IsNaN(x) && !math.IsInf(x, 0) }
 
-// FloatRepr is Python's repr() of a float.
-func FloatRepr(x float64) string {
+// Format writes x in the fewest digits that read back as x, always with
+// a decimal point and never with an exponent, and nan, inf and -inf.
+func Format(x float64) string {
 	switch {
 	case math.IsNaN(x):
 		return "nan"
@@ -78,10 +73,11 @@ func FloatRepr(x float64) string {
 	return s
 }
 
-// ParseFloat is Python's float() on a str. The second result is false
-// where Python would raise.
-func ParseFloat(text string) (float64, bool) {
-	t := strings.ReplaceAll(pytext.Strip(text), "_", "")
+// Parse reads a number from text, with space around it, underscores
+// between its digits, and inf, infinity and nan in any case. The second
+// result is false when the text holds no number.
+func Parse(text string) (float64, bool) {
+	t := strings.ReplaceAll(runes.Trim(text), "_", "")
 	switch strings.ToLower(t) {
 	case "inf", "+inf", "infinity", "+infinity":
 		return math.Inf(1), true
@@ -97,8 +93,8 @@ func ParseFloat(text string) (float64, bool) {
 	return f, true
 }
 
-// Float marshals to JSON the way Python writes a float, always with a
-// decimal point, so a plan written by either version reads the same.
+// Float marshals to JSON the way Format writes it, always with a decimal
+// point, so every plan written so far reads the same.
 type Float float64
 
 // MarshalJSON implements json.Marshaler.
@@ -107,11 +103,13 @@ func (f Float) MarshalJSON() ([]byte, error) {
 	if !IsFinite(x) {
 		return []byte("null"), nil
 	}
-	return []byte(FloatRepr(x)), nil
+	return []byte(Format(x)), nil
 }
 
-// Str is Python's str() for values that came out of JSON.
-func Str(v any) string {
+// FormatValue writes a value that came out of JSON for a prompt or a
+// message: nil as None and a boolean as True or False, as the prompts
+// have always read them.
+func FormatValue(v any) string {
 	switch x := v.(type) {
 	case nil:
 		return "None"
@@ -125,7 +123,7 @@ func Str(v any) string {
 	case json.Number:
 		return x.String()
 	case float64:
-		return FloatRepr(x)
+		return Format(x)
 	case int:
 		return strconv.Itoa(x)
 	}
@@ -136,9 +134,10 @@ func Str(v any) string {
 	return string(raw)
 }
 
-// FloatOf is Python's float() for values that came out of JSON. The second
-// result is false where Python would raise.
-func FloatOf(v any) (float64, bool) {
+// AsFloat reads a number from a value that came out of JSON: a number, a
+// boolean as 1 or 0, or text that Parse reads. The second result is false
+// for anything else.
+func AsFloat(v any) (float64, bool) {
 	switch x := v.(type) {
 	case float64:
 		return x, true
@@ -153,14 +152,14 @@ func FloatOf(v any) (float64, bool) {
 		f, err := strconv.ParseFloat(x.String(), 64)
 		return f, err == nil
 	case string:
-		return ParseFloat(x)
+		return Parse(x)
 	}
 	return 0, false
 }
 
-// IntOf is Python's int() for values that came out of JSON. A float is
-// truncated, a string must hold a whole number.
-func IntOf(v any) (int, bool) {
+// AsInt reads a whole number from a value that came out of JSON. A float
+// is truncated, a boolean is 1 or 0, and text must hold a whole number.
+func AsInt(v any) (int, bool) {
 	switch x := v.(type) {
 	case float64:
 		if math.IsNaN(x) || math.IsInf(x, 0) {
@@ -184,7 +183,7 @@ func IntOf(v any) (int, bool) {
 		}
 		return int(f), true
 	case string:
-		n, err := strconv.Atoi(strings.ReplaceAll(pytext.Strip(x), "_", ""))
+		n, err := strconv.Atoi(strings.ReplaceAll(runes.Trim(x), "_", ""))
 		return n, err == nil
 	}
 	return 0, false

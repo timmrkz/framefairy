@@ -5,9 +5,10 @@ import (
 	"unicode"
 )
 
-// shellQuote is Python's shlex.quote, used when printing commands. The
-// numbers and text it once sat beside are in engine/pynum and
-// engine/pytext, and it moves with running programs, see
+// shellQuote puts s in single quotes unless it holds only letters, digits
+// and the characters a shell leaves alone, for printing a command. The
+// numbers and text it once sat beside are in engine/num and engine/runes,
+// and it moves with running programs, see
 // docs/decisions/2026-10-30-numbers-and-text-in-packages.md.
 func shellQuote(s string) string {
 	if s == "" {

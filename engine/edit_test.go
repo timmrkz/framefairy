@@ -15,7 +15,7 @@ import (
 
 	"github.com/spf13/afero"
 
-	"framefairy/engine/pynum"
+	"framefairy/engine/num"
 	"framefairy/engine/timed"
 )
 
@@ -101,7 +101,7 @@ func TestEveryEditRaisesTheRevision(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		n, _ := pynum.IntOf(plan.Raw["revision"])
+		n, _ := num.AsInt(plan.Raw["revision"])
 		return n
 	}
 	if revision() != 0 {
@@ -587,7 +587,7 @@ func FuzzPlanEdits(f *testing.F) {
 			if plan.Raw["custom"] == nil || plan.Raw["plan_id"] != "p1" {
 				t.Fatalf("step %d lost a field the loader does not know", i/3)
 			}
-			revision, _ := pynum.IntOf(plan.Raw["revision"])
+			revision, _ := num.AsInt(plan.Raw["revision"])
 			if revision < lastRevision {
 				t.Fatalf("the revision went backwards, %d after %d", revision, lastRevision)
 			}
@@ -987,7 +987,7 @@ func TestTheWordsShownAreTheWordsTheCaptionsLight(t *testing.T) {
 	for _, c := range view.Captions {
 		for _, line := range c.Lines {
 			for _, w := range line.Words {
-				lit = append(lit, timed.Cue{Start: pynum.RoundTo(10+w.Start, 3), End: pynum.RoundTo(10+w.End, 3), Text: w.Text})
+				lit = append(lit, timed.Cue{Start: num.RoundTo(10+w.Start, 3), End: num.RoundTo(10+w.End, 3), Text: w.Text})
 			}
 		}
 	}
@@ -1303,7 +1303,7 @@ func TestACutsEdgeTakesThePlayheadTheWayTheClipsEdgesDo(t *testing.T) {
 				t.Fatal(err)
 			}
 			if c.want != nil {
-				if want := pynum.RoundTo(c.want(shaped.Pieces), 3); math.Abs(shaped.Playhead-want) > 0.0005 {
+				if want := num.RoundTo(c.want(shaped.Pieces), 3); math.Abs(shaped.Playhead-want) > 0.0005 {
 					t.Errorf("the playhead is at %v, want %v, the pieces %+v", shaped.Playhead, want, shaped.Pieces)
 				}
 			}

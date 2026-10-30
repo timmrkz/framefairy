@@ -15,7 +15,7 @@ import (
 
 	"github.com/spf13/afero"
 
-	"framefairy/engine/pynum"
+	"framefairy/engine/num"
 )
 
 // A clip plan is written by a model, read back by both front ends and edited
@@ -159,7 +159,7 @@ func FuzzParseTime(f *testing.F) {
 		if err != nil {
 			return
 		}
-		if !pynum.IsFinite(seconds) || seconds < 0 {
+		if !num.IsFinite(seconds) || seconds < 0 {
 			t.Fatalf("ParseTime(%q) = %v", text, seconds)
 		}
 	})
@@ -304,7 +304,7 @@ func FuzzLoadClips(f *testing.F) {
 				t.Fatalf("%s is taken for the short of %s", short, clip.Basename())
 			}
 			for _, seg := range clip.Segments {
-				if !pynum.IsFinite(seg.Start) || !pynum.IsFinite(seg.End) || seg.Start < 0 || seg.End <= seg.Start {
+				if !num.IsFinite(seg.Start) || !num.IsFinite(seg.End) || seg.Start < 0 || seg.End <= seg.Start {
 					t.Fatalf("segment %v-%v", seg.Start, seg.End)
 				}
 			}

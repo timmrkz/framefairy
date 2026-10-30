@@ -1,4 +1,4 @@
-package pytext
+package runes
 
 import (
 	"slices"
@@ -9,22 +9,22 @@ import (
 
 func TestTextIsCountedInCharacters(t *testing.T) {
 	if got := Len("Grüße"); got != 5 {
-		t.Errorf("Len(Grüße) = %d, Python says 5", got)
+		t.Errorf("Len(Grüße) = %d, want 5", got)
 	}
 	for n, want := range map[int]string{-1: "", 0: "", 2: "Gr", 3: "Grü", 9: "Grüße"} {
 		if got := Prefix("Grüße", n); got != want {
-			t.Errorf("Prefix(Grüße, %d) = %q, Python says %q", n, got, want)
+			t.Errorf("Prefix(Grüße, %d) = %q, want %q", n, got, want)
 		}
 	}
 }
 
-func TestWhitespaceIsPythons(t *testing.T) {
-	// \x1c to \x1f are whitespace to Python and not to Go.
-	if got := Strip("\x1c a b \x1f\n"); got != "a b" {
-		t.Errorf("Strip = %q, Python says %q", got, "a b")
+func TestTheFourSeparatorsAreSpace(t *testing.T) {
+	// \x1c to \x1f are space here and not to Go's unicode.IsSpace.
+	if got := Trim("\x1c a b \x1f\n"); got != "a b" {
+		t.Errorf("Trim = %q, want %q", got, "a b")
 	}
 	if got := Fields("a\x1db c"); !slices.Equal(got, []string{"a", "b", "c"}) {
-		t.Errorf("Fields = %q, Python says [a b c]", got)
+		t.Errorf("Fields = %q, want [a b c]", got)
 	}
 }
 
@@ -46,20 +46,20 @@ func TestScrubLeavesOnlyPrintableText(t *testing.T) {
 	}
 }
 
-func TestReprQuotesAsPythonDoes(t *testing.T) {
+func TestQuotePicksTheQuoteTheTextLacks(t *testing.T) {
 	for in, want := range map[string]string{"plain": "'plain'", "it's": `"it's"`, `a\b`: `'a\\b'`, `say "hi"`: `'say "hi"'`} {
-		if got := Repr(in); got != want {
-			t.Errorf("Repr(%q) = %s, Python says %s", in, got, want)
+		if got := Quote(in); got != want {
+			t.Errorf("Quote(%q) = %s, want %s", in, got, want)
 		}
 	}
-	if got := ListRepr([]string{"a", "b"}); got != "['a', 'b']" {
-		t.Errorf("ListRepr = %s, Python says ['a', 'b']", got)
+	if got := QuoteList([]string{"a", "b"}); got != "['a', 'b']" {
+		t.Errorf("QuoteList = %s, want ['a', 'b']", got)
 	}
 }
 
 // Scrub reads what a model or the network sent, so it is fuzzed: whatever
 // comes in, what comes out is valid, free of controls, on one line and no
-// longer than asked. A cut may end on a space, as Python's [:limit] does.
+// longer than asked. A cut may end on a space.
 func FuzzScrub(f *testing.F) {
 	for _, seed := range []string{"", "a b", "\x1b[31mred", "‮⁦x", "\xff\xfe", "line break"} {
 		f.Add(seed, 8)

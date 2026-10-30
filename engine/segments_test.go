@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"framefairy/engine/pynum"
+	"framefairy/engine/num"
 	"framefairy/engine/timed"
 )
 
@@ -291,7 +291,7 @@ func FuzzBuildLines(f *testing.F) {
 			if len(line.Cues) == 0 {
 				t.Fatalf("line %d has no words", i+1)
 			}
-			if line.GapBefore < 0 || !pynum.IsFinite(line.GapBefore) {
+			if line.GapBefore < 0 || !num.IsFinite(line.GapBefore) {
 				t.Fatalf("line %d follows a pause of %v", i+1, line.GapBefore)
 			}
 			if line.Start() < previousEnd {

@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"framefairy/engine/pynum"
-	"framefairy/engine/pytext"
+	"framefairy/engine/num"
+	"framefairy/engine/runes"
 	"framefairy/engine/timed"
 )
 
@@ -271,7 +271,7 @@ func lineIndices(lines [][]timed.Cue) [][]int {
 // colour the app can paint with. The alpha runs backwards in ASS, 00 is
 // opaque, so it is turned around here.
 func WebColour(value string) string {
-	raw := strings.ToUpper(strings.TrimSuffix(strings.TrimPrefix(pytext.Strip(value), "&H"), "&"))
+	raw := strings.ToUpper(strings.TrimSuffix(strings.TrimPrefix(runes.Trim(value), "&H"), "&"))
 	if len(raw) < 6 || strings.TrimLeft(raw, "0123456789ABCDEF") != "" {
 		return "rgba(255, 255, 255, 1)"
 	}
@@ -287,7 +287,7 @@ func WebColour(value string) string {
 		return v
 	}
 	return fmt.Sprintf("rgba(%d, %d, %d, %s)", channel(bgr[4:6]), channel(bgr[2:4]),
-		channel(bgr[0:2]), strconv.FormatFloat(pynum.RoundTo(alpha, 3), 'f', -1, 64))
+		channel(bgr[0:2]), strconv.FormatFloat(num.RoundTo(alpha, 3), 'f', -1, 64))
 }
 
 const hidden = `{\alpha&HFF&}`
@@ -334,13 +334,15 @@ func taggedText(words []string, lines [][]int, visible func(int) bool, shown str
 	return strings.Join(rows, `\N`)
 }
 
-func centiseconds(t float64) int { return max(0, pynum.Round(t*100)) }
+func centiseconds(t float64) int { return max(0, num.Round(t*100)) }
 
 func csToASS(cs int) string {
 	return fmt.Sprintf("%d:%02d:%02d.%02d", cs/360000, cs/6000%60, cs/100%60, cs%100)
 }
 
-func num(v float64) string { return strconv.FormatFloat(pynum.RoundTo(v, 2), 'f', -1, 64) }
+// tagNumber writes v for a tag of the caption file, to two decimals and
+// no more digits than it needs.
+func tagNumber(v float64) string { return strconv.FormatFloat(num.RoundTo(v, 2), 'f', -1, 64) }
 
 // highlighted is the caption track with the bouncing highlight, for a
 // short of the frames of source, see popScales. It is nothing,
@@ -350,11 +352,11 @@ func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
 	width, height int, s Style, source SourceInfo) ([]byte, error) {
 	shown := shownTag(s.Primary)
 	scale := float64(height) / 1920.0
-	size := max(12, pynum.Round(s.Size*scale))
-	outline := max(1, pynum.Round(s.Outline*scale))
-	shadow := max(0, pynum.Round(s.Shadow*scale))
-	marginH := pynum.Round(s.MarginH * scale)
-	marginV := pynum.Round(s.MarginV * scale)
+	size := max(12, num.Round(s.Size*scale))
+	outline := max(1, num.Round(s.Outline*scale))
+	shadow := max(0, num.Round(s.Shadow*scale))
+	marginH := num.Round(s.MarginH * scale)
+	marginV := num.Round(s.MarginV * scale)
 
 	layouts, ok := e.layWords(ctx, captions, s, width, size)
 	if !ok {
@@ -370,10 +372,10 @@ func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
 		boxAlpha = back[2:4]
 	}
 	boxFill := "&H" + back[max(0, len(back)-6):] + "&"
-	padX := float64(pynum.Round(s.BoxPadX * scale))
-	padY := float64(pynum.Round(s.BoxPadY * scale))
-	radius := float64(pynum.Round(s.Radius * scale))
-	anchor := fmt.Sprintf(`\an2\pos(%s,%s)`, num(ax), num(ay))
+	padX := float64(num.Round(s.BoxPadX * scale))
+	padY := float64(num.Round(s.BoxPadY * scale))
+	radius := float64(num.Round(s.Radius * scale))
+	anchor := fmt.Sprintf(`\an2\pos(%s,%s)`, tagNumber(ax), tagNumber(ay))
 
 	var events []string
 	add := func(layer, from, to int, style, text string) {
@@ -452,11 +454,11 @@ func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
 			// keep its centre still.
 			only := taggedText(L.words, L.lines, func(j int) bool { return j == k && !c.Hidden[j] }, shown)
 			at := func(scale float64, from, to int) {
-				x, y := num(ax+(1-scale)*(cx-ax)), num(ay+(1-scale)*(cy-ay))
+				x, y := tagNumber(ax+(1-scale)*(cx-ax)), tagNumber(ay+(1-scale)*(cy-ay))
 				add(3, from, to, "Box", fmt.Sprintf(`{\an5\pos(%s,%s)\p1\1c%s\1a&H%s&\bord0\shad0\fscx%s\fscy%s}%s{\p0}`,
-					num(cx), num(cy), s.HighlightColour, alphaOrSolid(s.HighlightAlpha), num(scale*100), num(scale*100), pill))
+					tagNumber(cx), tagNumber(cy), s.HighlightColour, alphaOrSolid(s.HighlightAlpha), tagNumber(scale*100), tagNumber(scale*100), pill))
 				add(4, from, to, "Caption", fmt.Sprintf(`{\an2\pos(%s,%s)\fscx%s\fscy%s}%s`,
-					x, y, num(scale*100), num(scale*100), only))
+					x, y, tagNumber(scale*100), tagNumber(scale*100), only))
 			}
 			// Each frame of the pop holds its scale from the hundredth its
 			// frame starts in to the hundredth the next starts in, so the

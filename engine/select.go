@@ -6,8 +6,8 @@ import (
 	"slices"
 	"strings"
 
-	"framefairy/engine/pynum"
-	"framefairy/engine/pytext"
+	"framefairy/engine/num"
+	"framefairy/engine/runes"
 )
 
 // SystemPrompt tells the model how to choose and condense clips. It is
@@ -145,7 +145,7 @@ func jsonCandidates(text string) []jsonCandidate {
 }
 
 func stripFences(text string) string {
-	cleaned := pytext.Strip(text)
+	cleaned := runes.Trim(text)
 	if !strings.Contains(cleaned, "```") {
 		return cleaned
 	}
@@ -160,16 +160,16 @@ func stripFences(text string) string {
 	// Keep the longest fenced block, which is the payload.
 	best := blocks[0]
 	for _, b := range blocks[1:] {
-		if pytext.Len(b) > pytext.Len(best) {
+		if runes.Len(b) > runes.Len(best) {
 			best = b
 		}
 	}
-	trimmed := strings.TrimLeftFunc(best, pytext.IsSpace)
+	trimmed := strings.TrimLeftFunc(best, runes.IsSpace)
 	if strings.Contains(best, "\n") && !strings.HasPrefix(trimmed, "{") &&
 		!strings.HasPrefix(trimmed, "[") {
 		best = strings.SplitN(best, "\n", 2)[1] // drop the language tag
 	}
-	return pytext.Strip(best)
+	return runes.Trim(best)
 }
 
 func parseObject(text string) (map[string]any, bool) {
@@ -222,7 +222,7 @@ func ExtractJSONObject(text, key string) (map[string]any, string, error) {
 		}
 	}
 	return nil, "", renderErr("no JSON object with a %s key could be found in the reply. "+
-		"It began: %s", pytext.Repr(key), pytext.Repr(pytext.Scrub(cleaned, 200)))
+		"It began: %s", runes.Quote(key), runes.Quote(runes.Scrub(cleaned, 200)))
 }
 
 // PlanEntry is one clip as the model proposed it, after validation.
@@ -275,8 +275,8 @@ func validateEntry(clipAny any, index, lineCount int) (PlanEntry, []string, bool
 			problems = append(problems, fmt.Sprintf("clip %d: a keep range is not a pair", index))
 			continue
 		}
-		first, ok1 := pynum.IntOf(item[0])
-		last, ok2 := pynum.IntOf(item[1])
+		first, ok1 := num.AsInt(item[0])
+		last, ok2 := num.AsInt(item[1])
 		if !ok1 || !ok2 {
 			problems = append(problems, fmt.Sprintf("clip %d: a keep range is not numeric", index))
 			continue
@@ -310,8 +310,8 @@ func validateEntry(clipAny any, index, lineCount int) (PlanEntry, []string, bool
 		var first, last int
 		ok1, ok2 := false, false
 		if ok && len(pair) == 2 {
-			first, ok1 = pynum.IntOf(pair[0])
-			last, ok2 = pynum.IntOf(pair[1])
+			first, ok1 = num.AsInt(pair[0])
+			last, ok2 = num.AsInt(pair[1])
 		}
 		switch {
 		case !ok1 || !ok2:
@@ -325,7 +325,7 @@ func validateEntry(clipAny any, index, lineCount int) (PlanEntry, []string, bool
 	}
 	opening := 0
 	if openingAny, present := clip["opening"]; present {
-		n, ok := pynum.IntOf(openingAny)
+		n, ok := num.AsInt(openingAny)
 		switch {
 		case !ok:
 			problems = append(problems, fmt.Sprintf("clip %d: its opening is not a number", index))
@@ -341,19 +341,19 @@ func validateEntry(clipAny any, index, lineCount int) (PlanEntry, []string, bool
 		if !present {
 			return ""
 		}
-		return pynum.Str(value)
+		return num.FormatValue(value)
 	}
 	// An answer without slugs gets them from the titles, the way a clip
 	// made by hand does. One without titles either, as middle's, is named
 	// by its first words once it is shaped, see planBuilder.named.
-	slug, title := pytext.Scrub(get("slug"), 64), pytext.Scrub(get("title"), 200)
+	slug, title := runes.Scrub(get("slug"), 64), runes.Scrub(get("title"), 200)
 	if slug == "" && title != "" {
 		slug = strings.ToLower(SanitiseName(title, "clip"))
 	}
 	return PlanEntry{
 		Slug:    slug,
 		Title:   title,
-		Reason:  pytext.Scrub(get("reason"), 300),
+		Reason:  runes.Scrub(get("reason"), 300),
 		Keep:    ranges,
 		Heart:   heart,
 		Opening: opening,
@@ -365,7 +365,7 @@ func validateEntry(clipAny any, index, lineCount int) (PlanEntry, []string, bool
 func fromPoints(clip map[string]any, index, lineCount int) (map[string]any, string) {
 	var n [3]int
 	for i, key := range []string{"start", "payoff", "end"} {
-		v, ok := pynum.IntOf(clip[key])
+		v, ok := num.AsInt(clip[key])
 		if !ok || v < 1 || v > lineCount {
 			return nil, fmt.Sprintf("clip %d: its %s is not a line from 1 to %d", index, key, lineCount)
 		}
@@ -397,7 +397,7 @@ func fromPoints(clip map[string]any, index, lineCount int) (map[string]any, stri
 func fromMiddle(clip map[string]any, index, lineCount int) (map[string]any, string) {
 	var n [3]int
 	for i, key := range []string{"start", "middle", "end"} {
-		v, ok := pynum.IntOf(clip[key])
+		v, ok := num.AsInt(clip[key])
 		if !ok || v < 1 || v > lineCount {
 			return nil, fmt.Sprintf("clip %d: its %s is not a line from 1 to %d", index, key, lineCount)
 		}
@@ -451,7 +451,7 @@ func readEntry(clipAny any, index int, units [][2]int) (PlanEntry, []string, boo
 func uniqueSlug(seen map[string]bool, entry *PlanEntry, position int) string {
 	problem := ""
 	if entry.Slug != "" && seen[entry.Slug] {
-		problem = fmt.Sprintf("clip %d: slug %s was already used", position, pytext.Repr(entry.Slug))
+		problem = fmt.Sprintf("clip %d: slug %s was already used", position, runes.Quote(entry.Slug))
 		entry.Slug = fmt.Sprintf("%s-%d", entry.Slug, position)
 	}
 	seen[entry.Slug] = true

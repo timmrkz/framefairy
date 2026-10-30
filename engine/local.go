@@ -22,8 +22,8 @@ import (
 
 	"github.com/spf13/afero"
 
-	"framefairy/engine/pynum"
-	"framefairy/engine/pytext"
+	"framefairy/engine/num"
+	"framefairy/engine/runes"
 )
 
 // ---------------------------------------------------------------------------
@@ -486,13 +486,13 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 			var parts []string
 			if logFile != nil {
 				for _, p := range loadPhases(logFile.Name(), took) {
-					parts = append(parts, pynum.Fixed(p.seconds, 1)+"s "+p.name)
+					parts = append(parts, num.Fixed(p.seconds, 1)+"s "+p.name)
 				}
 			}
 			if len(parts) > 0 {
-				e.Log.Info("model loaded in %ss: %s", pynum.Fixed(took, 1), strings.Join(parts, ", "))
+				e.Log.Info("model loaded in %ss: %s", num.Fixed(took, 1), strings.Join(parts, ", "))
 			} else {
-				e.Log.Info("model loaded in %ss", pynum.Fixed(took, 1))
+				e.Log.Info("model loaded in %ss", num.Fixed(took, 1))
 			}
 			return url, stop, nil
 		}
@@ -624,7 +624,7 @@ func loadPhases(logPath string, took float64) []loadPhase {
 }
 
 func serverStamp(line string) (float64, bool) {
-	words := pytext.Fields(line)
+	words := runes.Fields(line)
 	if len(words) == 0 {
 		return 0, false
 	}
@@ -713,7 +713,7 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 		chars := 0
 		for _, message := range messages {
 			if message.Role != "system" {
-				chars += pytext.Len(message.Content)
+				chars += runes.Len(message.Content)
 			}
 		}
 		size := localContextFor(m.Model, chars, maxTokens)
@@ -766,12 +766,12 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 	authorize(request, url)
 	gaveUp := func() error {
 		return renderErr("the local model stopped answering: nothing came from it for %s seconds, "+
-			"so it was stopped. Press Continue to start it afresh.", pynum.Fixed(localStall.Seconds(), 0))
+			"so it was stopped. Press Continue to start it afresh.", num.Fixed(localStall.Seconds(), 0))
 	}
 	watch := watchStall(localStall, func() {
 		stalled.Store(true)
 		e.Log.Warn("the local model sent nothing for %s seconds, so it is given up on",
-			pynum.Fixed(localStall.Seconds(), 0))
+			num.Fixed(localStall.Seconds(), 0))
 		stop()
 	})
 	defer watch.Stop()
@@ -785,7 +785,7 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return nil, renderErr("the local model did not answer: %s", pytext.Scrub(err.Error(), 200))
+		return nil, renderErr("the local model did not answer: %s", runes.Scrub(err.Error(), 200))
 	}
 	defer response.Body.Close()
 	watch.Reset(localStall)
@@ -802,9 +802,9 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 		if strings.Contains(message, "Compute error") {
 			return nil, renderErr("the local model ran out of memory while it worked, llama-server "+
 				"says %q. Another program using the graphics memory, another language model above "+
-				"all, is the usual cause. Close it and search again.", pytext.Scrub(message, 100))
+				"all, is the usual cause. Close it and search again.", runes.Scrub(message, 100))
 		}
-		return nil, renderErr("the local model reported an error: %s", pytext.Scrub(message, 400))
+		return nil, renderErr("the local model reported an error: %s", runes.Scrub(message, 400))
 	}
 	answer, err := readLocalStream(watch.reader(response.Body), listen)
 	if err != nil {
@@ -816,7 +816,7 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 		}
 		return nil, err
 	}
-	if pytext.Strip(answer.Content) == "" {
+	if runes.Trim(answer.Content) == "" {
 		return nil, renderErr("the local model returned no answer")
 	}
 	reading, writing := 0.0, 0.0
@@ -829,12 +829,12 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 	// long it took. All of it at that speed is what it would have taken.
 	fresh := ""
 	if t := answer.Timings; t != nil && t.PromptN > 0 && t.PromptN < answer.PromptTokens {
-		fresh = fmt.Sprintf(", %s of them new in %ss", commas(t.PromptN), pynum.Fixed(t.PromptMS/1000, 1))
+		fresh = fmt.Sprintf(", %s of them new in %ss", commas(t.PromptN), num.Fixed(t.PromptMS/1000, 1))
 	}
 	e.Log.Info("local model answered in %ss  read %s tok%s at %s tok/s  wrote %s tok at %s tok/s",
-		pynum.Fixed(time.Since(started).Seconds(), 1),
-		commas(answer.PromptTokens), fresh, pynum.Fixed(reading, 0),
-		commas(answer.Written), pynum.Fixed(writing, 1))
+		num.Fixed(time.Since(started).Seconds(), 1),
+		commas(answer.PromptTokens), fresh, num.Fixed(reading, 0),
+		commas(answer.Written), num.Fixed(writing, 1))
 	if answer.Reasoning > 0 {
 		e.Log.Detail("the model thought for %s characters before it answered",
 			commas(answer.Reasoning))

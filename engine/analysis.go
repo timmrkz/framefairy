@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"framefairy/engine/pynum"
-	"framefairy/engine/pytext"
+	"framefairy/engine/num"
+	"framefairy/engine/runes"
 	"framefairy/engine/timed"
 )
 
@@ -55,7 +55,7 @@ func (e *Engine) decoderUsed(ctx context.Context, path string, at float64) strin
 	used := "the processor"
 	if flags := e.decodeFlags(); flags != nil {
 		args := append([]string{"-hide_banner", "-loglevel", "verbose"}, flags...)
-		args = append(args, "-ss", pynum.Fixed(at, 3), "-i", path, "-an", "-frames:v", "1", "-f", "null", "-")
+		args = append(args, "-ss", num.Fixed(at, 3), "-i", path, "-an", "-frames:v", "1", "-f", "null", "-")
 		probeCtx, cancel := timeLimit(ctx, frameLimit)
 		said := run(probeCtx, "", e.FFmpeg, args...)
 		cancel()
@@ -104,7 +104,7 @@ func hwaccelsIn(out string) []string {
 		switch {
 		case strings.HasPrefix(line, "Hardware acceleration methods"):
 			listed = true
-		case listed && line != "" && pytext.Len(line) <= 20 && !strings.ContainsAny(line, " :"):
+		case listed && line != "" && runes.Len(line) <= 20 && !strings.ContainsAny(line, " :"):
 			names = append(names, line)
 		}
 	}
@@ -123,7 +123,7 @@ func DecoderName(name string) string {
 	case "cuda":
 		return "CUDA"
 	}
-	return pytext.Scrub(name, 20)
+	return runes.Scrub(name, 20)
 }
 
 // decoderIn reads the decoder from what ffmpeg says with -loglevel verbose.
@@ -136,7 +136,7 @@ func decoderIn(stderr string) string {
 	if at < 0 {
 		return "the processor"
 	}
-	words := pytext.Fields(stderr[at+len(marker):])
+	words := runes.Fields(stderr[at+len(marker):])
 	if len(words) == 0 {
 		return "the processor"
 	}
@@ -180,8 +180,8 @@ func (e *Engine) readSpan(ctx context.Context, path string, start, end float64) 
 	grey := fmt.Sprintf("trim=start=%s:end=%s,"+
 		"select='isnan(prev_selected_t)+gte(t-prev_selected_t,%s)+gte(t,%s)*lt(prev_t,%s)',"+
 		"scale=%d:%d,format=gray,showinfo@frames",
-		pynum.Fixed(start-from, 6), pynum.Fixed(end-from, 6), pynum.Fixed(frameStep-0.001, 3),
-		pynum.Fixed(last, 6), pynum.Fixed(last, 6), FaceWidth, FaceHeight)
+		num.Fixed(start-from, 6), num.Fixed(end-from, 6), num.Fixed(frameStep-0.001, 3),
+		num.Fixed(last, 6), num.Fixed(last, 6), FaceWidth, FaceHeight)
 	// A read that runs out of time is ended. ffmpeg has hung here once,
 	// decoding through the system's decoder, and a search waited on it for
 	// good. It takes seconds, so the limit is far past any honest run.
@@ -191,7 +191,7 @@ func (e *Engine) readSpan(ctx context.Context, path string, start, end float64) 
 	read := func(flags []string) (int, string) {
 		raw.Reset()
 		args := append([]string{"-hide_banner"}, flags...)
-		args = append(args, "-ss", pynum.Fixed(from, 3), "-to", pynum.Fixed(end+0.5, 3), "-i", path, "-an",
+		args = append(args, "-ss", num.Fixed(from, 3), "-to", num.Fixed(end+0.5, 3), "-i", path, "-an",
 			"-vf", grey, "-fps_mode", "passthrough", "-f", "rawvideo", "pipe:1")
 		readCtx, cancel := timeLimit(ctx, limit)
 		defer cancel()
@@ -224,18 +224,18 @@ func (e *Engine) readSpan(ctx context.Context, path string, start, end float64) 
 		return nil, nil
 	}
 	if code != 0 {
-		return nil, renderErr("reading frames for the crop failed:\n%s", tailRunes(pytext.Strip(stderr), 400))
+		return nil, renderErr("reading frames for the crop failed:\n%s", tailRunes(runes.Trim(stderr), 400))
 	}
 	var times []float64
 	for _, line := range strings.Split(stderr, "\n") {
 		if !strings.Contains(line, "showinfo@frames") || !strings.Contains(line, "pts_time:") {
 			continue
 		}
-		words := pytext.Fields(strings.SplitN(line, "pts_time:", 2)[1])
+		words := runes.Fields(strings.SplitN(line, "pts_time:", 2)[1])
 		if len(words) == 0 {
 			continue
 		}
-		if value, ok := pynum.ParseFloat(words[0]); ok {
+		if value, ok := num.Parse(words[0]); ok {
 			times = append(times, from+value)
 		}
 	}
@@ -258,8 +258,8 @@ func (e *Engine) sampleGray(ctx context.Context, path string, start, duration fl
 	pull := func(flags []string) []byte {
 		args := append([]string{"-hide_banner", "-loglevel", "error"}, flags...)
 		args = append(args,
-			"-ss", pynum.Fixed(start, 3), "-t", pynum.Fixed(duration, 3), "-i", path,
-			"-vf", fmt.Sprintf("fps=%s,scale=%d:%d,format=gray", pynum.Fixed(rate, 4), width, height),
+			"-ss", num.Fixed(start, 3), "-t", num.Fixed(duration, 3), "-i", path,
+			"-vf", fmt.Sprintf("fps=%s,scale=%d:%d,format=gray", num.Fixed(rate, 4), width, height),
 			"-frames:v", strconv.Itoa(frames), "-f", "rawvideo", "-")
 		// A system decoder that hangs gives nothing, and is gone round
 		// below like one that failed.
@@ -329,7 +329,7 @@ func DetailProfile(frame []byte, width, height int) []float64 {
 	for col := 0; col < width; col++ {
 		low := max(0, col-2)
 		high := min(width, col+3)
-		smoothed[col] = pynum.Sum(profile[low:high]) / float64(high-low)
+		smoothed[col] = num.Sum(profile[low:high]) / float64(high-low)
 	}
 	return smoothed
 }
@@ -364,7 +364,7 @@ func BestWindow(profile []float64, window int) (float64, float64) {
 		weighted[i] = math.Pow(v, sharpness)
 	}
 
-	running := pynum.Sum(weighted[:window])
+	running := num.Sum(weighted[:window])
 	bestSum, bestAt := running, 0
 	sums := []float64{running}
 	for left := 1; left < width-window+1; left++ {
@@ -383,7 +383,7 @@ func BestWindow(profile []float64, window int) (float64, float64) {
 		low := int(left)
 		high := min(width, int(left)+window)
 		section := weighted[low:high]
-		mass := pynum.Sum(section)
+		mass := num.Sum(section)
 		if mass <= 0 {
 			break
 		}
@@ -391,7 +391,7 @@ func BestWindow(profile []float64, window int) (float64, float64) {
 		for i, v := range section {
 			moments[i] = float64(i) * v
 		}
-		centre := float64(low) + pynum.Sum(moments)/mass
+		centre := float64(low) + num.Sum(moments)/mass
 		target := math.Max(0, math.Min(centre-float64(window)/2, float64(width-window)))
 		if math.Abs(target-left) < 0.4 {
 			left = target
@@ -462,7 +462,7 @@ func (e *Engine) samplePositions(ctx context.Context, path string, parts []timed
 	}
 	scale := float64(source.Width) / FaceWidth
 	limit := float64(source.Width - cropW)
-	windowSmall := max(1, pynum.Round(float64(cropW)/float64(source.Width)*FaceWidth))
+	windowSmall := max(1, num.Round(float64(cropW)/float64(source.Width)*FaceWidth))
 
 	detector := e.faceDetector()
 	var centres []float64
@@ -498,12 +498,12 @@ func (e *Engine) samplePositions(ctx context.Context, path string, parts []timed
 	// and the other is discarded rather than averaged in.
 	if len(faces) >= max(2, len(frames)/5) {
 		e.Log.Detail("clip at %ss: framed on a face (%d/%d frames)",
-			pynum.Fixed(start, 1), len(faces), len(frames))
+			num.Fixed(start, 1), len(faces), len(frames))
 		return faces
 	}
 	if len(faces) > 0 {
 		e.Log.Detail("clip at %ss: only %d face detections, falling back to "+
-			"detail for the whole clip", pynum.Fixed(start, 1), len(faces))
+			"detail for the whole clip", num.Fixed(start, 1), len(faces))
 	}
 	return details
 }

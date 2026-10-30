@@ -5,7 +5,7 @@ import (
 	"math"
 	"strings"
 
-	"framefairy/engine/pynum"
+	"framefairy/engine/num"
 )
 
 // ---------------------------------------------------------------------------
@@ -52,7 +52,7 @@ func (b *planBuilder) fitRequest(held []PlanEntry) string {
 	if unit == "" {
 		unit = "line"
 	}
-	lo, hi := pynum.Fixed(b.opts.MinLen, 0), pynum.Fixed(b.opts.MaxLen, 0)
+	lo, hi := num.Fixed(b.opts.MinLen, 0), num.Fixed(b.opts.MaxLen, 0)
 	var out strings.Builder
 	if recipe.Edit {
 		fmt.Fprintf(&out, "Now the edit. These are your clips as they are cut, measured once what "+
@@ -66,19 +66,19 @@ func (b *planBuilder) fitRequest(held []PlanEntry) string {
 		off := ""
 		switch {
 		case seconds > b.opts.MaxLen:
-			off = fmt.Sprintf(", %s over the %s second maximum", pynum.Fixed(seconds-b.opts.MaxLen, 0), hi)
+			off = fmt.Sprintf(", %s over the %s second maximum", num.Fixed(seconds-b.opts.MaxLen, 0), hi)
 		case seconds < b.opts.MinLen:
-			off = fmt.Sprintf(", %s under the %s second minimum", pynum.Fixed(b.opts.MinLen-seconds, 0), lo)
+			off = fmt.Sprintf(", %s under the %s second minimum", num.Fixed(b.opts.MinLen-seconds, 0), lo)
 		}
 		keep := toUnits(entry.Keep, b.units)
 		fmt.Fprintf(&out, "- %q runs %s seconds%s. It keeps %s.\n", entry.Slug,
-			pynum.Fixed(seconds, 0), off, jsonRuns(keep))
+			num.Fixed(seconds, 0), off, jsonRuns(keep))
 		first, last := keep[0][0], keep[len(keep)-1][1]
 		var around []string
 		for n := max(first-fitAround, 1); n <= min(last+fitAround, len(b.units)); n++ {
 			u := b.units[n-1]
 			around = append(around, fmt.Sprintf("[%d] %s", n,
-				pynum.Fixed(b.seconds([][2]int{{u[0] + 1, u[1] + 1}}), 1)))
+				num.Fixed(b.seconds([][2]int{{u[0] + 1, u[1] + 1}}), 1)))
 		}
 		fmt.Fprintf(&out, "  Seconds of each %s around it: %s\n", unit, strings.Join(around, " "))
 	}
@@ -185,14 +185,14 @@ func (b *planBuilder) fit(ask func(request string, count int) (string, error)) {
 			switch {
 			case repeats || !better:
 				b.e.Log.Detail("%s kept as it was: asked again, it came back at %ss",
-					entry.Slug, pynum.Fixed(now, 1))
+					entry.Slug, num.Fixed(now, 1))
 			case fmt.Sprint(found.Keep) == fmt.Sprint(entry.Keep):
 				b.e.Log.Detail("%s kept as it was", entry.Slug)
 			default:
 				chosen.Keep = found.Keep
 				b.e.Log.Info("%s %s, %s rather than %s, %ss rather than %ss", entry.Slug, done,
 					jsonRuns(toUnits(found.Keep, b.units)), jsonRuns(toUnits(entry.Keep, b.units)),
-					pynum.Fixed(now, 1), pynum.Fixed(was, 1))
+					num.Fixed(now, 1), num.Fixed(was, 1))
 			}
 		}
 		if b.closed {

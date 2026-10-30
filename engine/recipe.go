@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"framefairy/engine/pytext"
+	"framefairy/engine/runes"
 )
 
 // ---------------------------------------------------------------------------
@@ -95,7 +95,7 @@ func RecipeNamed(name string) (Recipe, error) {
 	r, ok := recipes[name]
 	if !ok {
 		return Recipe{}, renderErr("there is no recipe called %s. There are: %s.",
-			pytext.Repr(name), strings.Join(RecipeNames(), ", "))
+			runes.Quote(name), strings.Join(RecipeNames(), ", "))
 	}
 	return r, nil
 }
