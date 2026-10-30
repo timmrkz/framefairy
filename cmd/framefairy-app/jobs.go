@@ -74,7 +74,7 @@ type Job struct {
 	At       float64 `json:"at,omitempty"`
 	Backward bool    `json:"backward,omitempty"`
 	// Underway is every clip the job has on the way, proposed and not
-	// written yet, whoever proposed it, see engine.Underway. The clip list
+	// written yet, whoever proposed it, see runlog.Underway. The clip list
 	// shows each in its place until it is written.
 	Underway []runlog.Underway `json:"underway,omitempty"`
 	// Written is how many clips the job has written, from the same event

@@ -141,7 +141,7 @@ which reads this file.
    nothing from `cmd/`, which Go refuses anyway, nor from `asr/`, and
    `engine/runlog/`, `engine/timed/`, `engine/num/` and `engine/runes/`
    nothing of the rest of the engine. Among them `engine/runlog/` uses
-   the other two, `engine/num/` uses `engine/runes/`, and none uses one
+   `engine/num/` and `engine/runes/`, `engine/num/` uses `engine/runes/`, and none uses one
    above it. Held by Go's imports, which refuse a cycle, and by the
    review for the rest.
 2. One engine, two front ends. A rule lives once, in the engine. Held by

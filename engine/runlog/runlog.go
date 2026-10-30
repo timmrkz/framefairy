@@ -203,7 +203,6 @@ func (l *Log) showProgress(text string) {
 	l.progressOpen = true
 }
 
-// ClearProgress removes a progress line if one is showing. A sink is told
 // Underway says which clips the work has on the way, all of them, each
 // time that changes, how many it has written, and whether the list is
 // whole: every clip still to come is on it. The two go in one event,
@@ -216,6 +215,7 @@ func (l *Log) Underway(list []Underway, written int, whole bool) {
 		Whole: whole})
 }
 
+// ClearProgress removes a progress line if one is showing. A sink is told
 // that nothing is in progress any more. While the line is held, it is not
 // this work's to clear: ffmpeg reading the frames of one clip cleared a
 // search's line every time it finished, and the search's fill

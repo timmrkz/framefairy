@@ -30,6 +30,15 @@ it. Two front ends read the log: the command line writes it to the
 terminal, and the app hears its events through the `Sink` and writes
 them to its own log with zerolog.
 
+Fourteen names cross the new boundary, counted with the type checker
+over the whole module once it is moved: `New` 144 times, `Unknown` 31,
+`Event` 29, `Log` 20, `Underway` 19, eight of the event kinds 24
+together, and `JSONLines` once. All of them but `Underway` say how work
+is going, and nothing about what the work is. `Underway` is a clip on
+its way, and it is part of the engine's own interface: `JobRecord.Underway`
+returns it and `ArrivingCaptionsView` takes it, so the app now names it
+as `runlog.Underway`.
+
 ## Five simulations
 
 ### 1. Who may know about whom
@@ -54,6 +63,12 @@ shape and its sender stay in one package, and a feature that adds a
 field touches that package and its job, as it touched two files of one
 package before.
 
+`Underway` is the one name of the event that is about clips. It stays
+with the event because an event carries it, and it holds only what the
+app draws, where a clip lies, its step, its pieces and its key, as plain
+values, no rule about them. The engine fills it in and reads it back.
+Moving it up into the engine would be the same cycle again.
+
 ### 3. Where state lives
 
 A `Log` holds the state of one run's output: whether a progress line is
@@ -72,9 +87,22 @@ of work holds, the steps with their durations, or the clips on the way:
 the log of a run is a progress report, not only a logger. Rewriting it
 on slog would change what the terminal and the app show, which is no
 part of moving it. The name `log` is taken twice over: by the standard
-library, and by over seventy locals and parameters in the engine called
-`log`, behind which a package of that name would hide. So the package is
-named for what it is, the log of a run.
+library, and by 41 locals and parameters in the engine called `log`, 17
+of them outside its tests, behind which a package of that name would
+hide. So the package is named for what it is, the log of a run.
+
+Go has a second way out: the log stays in the engine, and framing takes
+a small interface of the calls it makes, a step, a progress line and a
+warning, which the engine's `Log` already satisfies. That is how Go
+usually lets a package use something without importing it, and it moves
+nothing. But framing holds the progress line too and needs `Unknown`, a
+constant no interface carries, and every later area that leaves the
+engine, transcribing, searching, rendering, would declare the same
+interface again with its own few calls, five copies of one thing
+drifting apart. And it leaves the log's state where the engine can reach
+it. An interface is the right tool where a caller needs one method of
+something big. Here every area needs the same handful, so the handful
+gets a package.
 
 ### 5. What a test has to build
 
@@ -94,6 +122,8 @@ edits, and the small recorder of events they share.
   and text and other areas use them: 1.
 - `Version` and the package comment stay in the engine: 1.
 - Not rewritten on slog or zerolog, and not named `log`: 4.
+- Not an interface in each area that leaves the engine, which would be
+  copied once per area: 4.
 
 No simulation argued for leaving the log in the engine.
 
