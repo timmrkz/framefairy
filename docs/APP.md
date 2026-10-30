@@ -3389,9 +3389,9 @@ size, so it stays sharp and in its place, and it stays white. The
 beam stays the sign that it listens, because running work shows the beam
 on the control it was started from.
 
-The field is a textarea. The browser draws its cursor, moves it with
-the arrow keys and scrolls it, the way every text field does, and the
-page writes the words in where they changed, with `setRangeText`. What
+The field is a textarea. The browser draws its cursor and moves it with
+the arrow keys, the way every text field does, and the page writes the
+words in where they changed, with `setRangeText`. What
 a dictation does to the text is worked out in
 `frontend/src/lib/dictating.ts`, in letters and numbers, with unit tests
 beside it. The field was a `contenteditable` of the page's own making,
@@ -3422,11 +3422,29 @@ where the last words went. A letter put together from more than one
 key, like ü, holds back the words that come meanwhile until it is
 done.
 
+The page scrolls the field, by one rule, `frontend/src/lib/reveal.ts`:
+the least scroll that shows the cursor's whole line with the padding
+round it, and at the last line the padding under it too. An arrow key
+puts the line it goes to in view as it is pressed, and an edit puts the
+cursor's line in view from where the field was before it, so the browser
+finds the cursor in view and never scrolls the field itself. WebKit on a
+Mac puts a cursor that went out of view in the middle of the field, so
+the field jumped several lines at a time on Tim's Mac and then shifted
+again as the next words came, and other engines put it at the very edge,
+with the padding hidden (30 October). Where the cursor is drawn is
+measured in a copy of the text laid out like the field's,
+`frontend/src/lib/caret.ts`.
+
 The field follows the words the way a terminal follows its output:
 scrolled to its end, it stays at its end as words come at the end of
 the report, while the cursor is at the end of what was said or the
 focus is somewhere else. Scrolled away to read, it stays where the
 person put it, and so it does while they type somewhere else in it.
+When a dictation ends or the pictures from Attach are in, and the focus
+is on nothing, it goes back to the field, the way a Mac app gives it
+back when a panel closes. A button takes no focus from the mouse in
+WebKit, so Attach left it on nothing, and Tab and the arrow keys did
+nothing after.
 
 The page keeps the field's undo, see `frontend/src/lib/undo.ts`. The
 browser's own took out the wrong letters once text came in that was not

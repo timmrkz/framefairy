@@ -244,11 +244,27 @@ export const steps = {
   },
   // ["attach", n]      presses the paperclip with n pictures waiting in
   //                    the open box
-  async attach(walk, arg) {
+  // ["attach, as on a Mac", n]
+  //                    the same, with a click that leaves the focus on
+  //                    nothing, as WebKit on a Mac does: a button takes no
+  //                    focus from the mouse there, and Chromium gives it
+  //                    one
+  async attach(walk, arg, s, what) {
     const { page } = walk;
     const before = await page.locator("li.tile").count();
     walk.standing = await standsAt(page);
     for (let i = 0; i < arg; i++) await fetch(new URL("/pick-picture", url));
+    if (what === "attach, as on a Mac")
+      await page.locator("button.attach").evaluate((b) =>
+        b.addEventListener(
+          "mousedown",
+          (e) => {
+            e.preventDefault();
+            document.activeElement?.blur();
+          },
+          { once: true },
+        ),
+      );
     await page.locator("button.attach").click();
     await pageUntil(page, (n) => document.querySelectorAll("li.tile").length >= n || !!document.querySelector(".toast"), before + arg);
     await settle(page);
@@ -375,9 +391,10 @@ export const steps = {
     if (bad.length) walk.wrong = bad.join(", ");
     else if (!(await page.locator("li.tile figure img").count())) walk.wrong = "there is no picture to fit";
   },
-  // ["report at end"]  the report's field is scrolled to its end: its last
-  //                    line is in view, the padding under it may not be,
-  //                    the way a browser leaves a text field after a key
+  // ["report at end"]  the report's field is scrolled to its end, the
+  //                    padding under its last line in view as the padding
+  //                    over its first is at the top. Tim saw none under
+  //                    it (30 October)
   async "report at end"(walk) {
     const { page } = walk;
     const scrolls = await page.locator(".telling").evaluate((f) => f.scrollHeight > f.clientHeight);
@@ -947,10 +964,10 @@ export const steps = {
     await page.evaluate(() => window.__pauseEvents(true));
     const was = await page.locator(".telling").evaluate((f) => f.scrollTop);
     for (let i = 1; i <= n && !walk.wrong; i++) {
-      await page.keyboard.press(key);
-      await nextPaint(page);
+      const by = await pressed(page, key);
       const c = [await page.locator(".telling").evaluate((f) => f.scrollTop), await page.locator(".telling").evaluate(cursorAtWords)];
-      if (c[0] !== was) walk.wrong = `after ${key} ${i} of ${n} times the field moved from ${was} px to ${c[0]} px`;
+      if (by) walk.wrong = `after ${key} ${i} of ${n} times ${by}`;
+      else if (c[0] !== was) walk.wrong = `after ${key} ${i} of ${n} times the field moved from ${was} px to ${c[0]} px`;
       else if (c[1]) walk.wrong = `after ${key} ${i} of ${n} times ${c[1]}`;
     }
     await page.evaluate(() => window.__pauseEvents(false));
@@ -959,10 +976,11 @@ export const steps = {
   // ["press, a line at a time", key, n]
   //                    presses key n times, with nothing heard let in
   //                    between, and after each press the report's field
-  //                    stayed or scrolled by a line at most, and the
-  //                    cursor is in view. On Tim's Mac the field jumped
-  //                    several lines at a time and went past its last line
-  //                    and back (29 October)
+  //                    stayed or scrolled by a line at most, the page
+  //                    scrolled it and not the browser, and the cursor is
+  //                    in view. On Tim's Mac the field jumped several
+  //                    lines at a time and went past its last line and
+  //                    back (29 and 30 October)
   async "press, a line at a time"(walk, arg, s) {
     const { page, watch } = walk;
     const [key, n] = arg;
@@ -970,11 +988,11 @@ export const steps = {
     const line = await page.locator(".telling").evaluate((f) => parseFloat(getComputedStyle(f).lineHeight));
     for (let i = 1; i <= n && !walk.wrong; i++) {
       const was = await page.locator(".telling").evaluate((f) => f.scrollTop);
-      await page.keyboard.press(key);
-      await nextPaint(page);
-      const [now, end] = await page.locator(".telling").evaluate((f) => [f.scrollTop, f.scrollHeight - f.clientHeight]);
+      const by = await pressed(page, key);
+      const now = await page.locator(".telling").evaluate((f) => f.scrollTop);
       const c = await page.locator(".telling").evaluate(cursorInView);
-      if (c) walk.wrong = `after ${key} ${i} of ${n} times ${c}`;
+      if (by) walk.wrong = `after ${key} ${i} of ${n} times ${by}`;
+      else if (c) walk.wrong = `after ${key} ${i} of ${n} times ${c}`;
       else if (Math.abs(now - was) > line) walk.wrong = `after ${key} ${i} of ${n} times the field went from ${was} px to ${now} px, more than a line of ${line} px`;
     }
     await page.evaluate(() => window.__pauseEvents(false));
@@ -994,7 +1012,8 @@ export const steps = {
   //                    presses key n times, with nothing heard by
   //                    dictation let in between, and after each press
   //                    the cursor is in view in the report's field, the
-  //                    way a text field keeps it (#573)
+  //                    way a text field keeps it, and the page scrolled
+  //                    it there and not the browser (#573)
   async "press, the cursor in view"(walk, arg, s) {
     const { page, watch } = walk;
     const [key, n] = arg;
@@ -1002,10 +1021,10 @@ export const steps = {
     // field following the words cannot bring the cursor back by chance.
     await page.evaluate(() => window.__pauseEvents(true));
     for (let i = 1; i <= n && !walk.wrong; i++) {
-      await page.keyboard.press(key);
-      await nextPaint(page);
+      const by = await pressed(page, key);
       const c = await page.locator(".telling").evaluate(cursorInView);
-      if (c) walk.wrong = `after ${key} ${i} of ${n} times ${c}`;
+      if (by) walk.wrong = `after ${key} ${i} of ${n} times ${by}`;
+      else if (c) walk.wrong = `after ${key} ${i} of ${n} times ${c}`;
     }
     await page.evaluate(() => window.__pauseEvents(false));
     await watch.step("press", s, page);
@@ -1344,6 +1363,7 @@ export const steps = {
 // Steps that take the same body as the step they are walked by.
 steps["report"] = steps["report made"];
 steps["report follows"] = steps["report stays"];
+steps["attach, as on a Mac"] = steps.attach;
 
 // cursorAtWords runs in the page on the report's field f, and says what
 // is wrong when the cursor is not right after the words being said, at
@@ -1358,16 +1378,35 @@ function cursorAtWords(f) {
 }
 
 // atEnd runs in the page on the report's field f, and says where it is
-// scrolled to when its last line is not in view, or nothing when it is.
-// The padding under the last line may be scrolled away, and the browser
-// shows a line by its cursor, which is a pixel or two shorter.
+// scrolled to when it is not at its end, the padding under its last line
+// included, or nothing when it is. A pixel short is the end on a screen
+// whose pixels are not whole ones.
 function atEnd(f) {
-  const cs = getComputedStyle(f);
   const end = f.scrollHeight - f.clientHeight;
-  const last = end - parseFloat(cs.paddingBottom);
-  if (f.scrollTop < last - parseFloat(cs.lineHeight) / 2) return `the report is scrolled to ${f.scrollTop} px, not to its last line at ${last} px`;
-  if (f.scrollTop > end) return `the report is scrolled to ${f.scrollTop} px, past its end at ${end} px`;
+  if (Math.abs(f.scrollTop - end) > 1) return `the report is scrolled to ${f.scrollTop} px, not to its end at ${end} px with the padding under its last line`;
   return "";
+}
+
+// pressed presses key in page and says what is wrong when the browser
+// scrolled the report's field itself after the page had put the cursor's
+// line in view, or nothing when it did not. The page scrolls the field
+// as the key comes and after the edit it makes, and the browser then
+// finds the cursor in view and has nothing to do. Where it does scroll,
+// WebKit on a Mac puts the cursor in the middle of the field, which is
+// the jump of several lines Tim saw, and Chromium at its very edge.
+async function pressed(page, key) {
+  await page.evaluate(() => {
+    if (window.__pageScrolled !== undefined) return;
+    const f = document.querySelector(".telling");
+    const note = () => (window.__pageScrolled = f.scrollTop);
+    note();
+    window.addEventListener("keydown", note);
+    window.addEventListener("input", note);
+  });
+  await page.keyboard.press(key);
+  await nextPaint(page);
+  const [left, now] = await page.locator(".telling").evaluate((f) => [window.__pageScrolled, f.scrollTop]);
+  return left === now ? "" : `the browser scrolled the field from ${left} px, where the page left it, to ${now} px`;
 }
 
 // cursorInView runs in the page on the report's field f, and says where

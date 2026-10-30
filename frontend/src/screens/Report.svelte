@@ -24,6 +24,8 @@
   import { said as log } from "../lib/said";
   import { changed, Dictating, edit, type Ask, type Span } from "../lib/dictating";
   import { Undo } from "../lib/undo";
+  import { caretBox, landing } from "../lib/caret";
+  import { revealed } from "../lib/reveal";
 
   // Report a Problem, in the window Bugs in the sidebar opens: what the
   // person says happened, the pictures they attach, and one button that
@@ -263,7 +265,19 @@
       oops(sentence(e));
     } finally {
       attaching = false;
+      home();
     }
+  }
+
+  // home gives the focus back to the field when nothing has it, the way
+  // a Mac app gives it back to where it was when a panel closes. A
+  // button pressed with the mouse takes none in WebKit, so Attach left it
+  // on nothing, and with it the keys: Tim attached a recording while he
+  // dictated, ended with Escape, and Tab and the arrows did nothing (30
+  // October).
+  function home() {
+    const at = document.activeElement;
+    if (!at || at === document.body) field.focus({ preventScroll: true });
   }
 
   function removePicture(p: ReportPicture) {
@@ -362,29 +376,43 @@
   // The selection in the field, from where it starts to where it ends.
   const selection = (): Span => [field.selectionStart, field.selectionEnd];
 
+  // The end of the selection that moves, where the cursor is drawn.
+  const head = () => (field.selectionDirection === "backward" ? field.selectionStart : field.selectionEnd);
+
+  // reveal scrolls the field the least that shows the line of letter at,
+  // or lines lines under it, with the padding round it, from where the
+  // field was at top, see lib/reveal.ts. The page does it before the
+  // browser would, after an edit in the same task, so the browser finds
+  // the cursor in view and scrolls nothing itself: WebKit on a Mac puts a
+  // cursor out of view in the middle of the field.
+  function reveal(at: number, top = field.scrollTop, lines = 0) {
+    const cs = getComputedStyle(field);
+    const line = parseFloat(cs.lineHeight);
+    const [over, under] = caretBox(field, at);
+    const f = { top, height: field.clientHeight, end: field.scrollHeight, pad: parseFloat(cs.paddingTop), foot: parseFloat(cs.paddingBottom), line };
+    const to = revealed(f, over + lines * line, under + lines * line);
+    if (to !== field.scrollTop) field.scrollTop = to;
+  }
+
   // show writes the dictation's text into the field where it changed, and
   // puts the selection where it is now, which was the selection before.
-  // The field follows the words at the end of the report the way a
-  // terminal follows its output: while its last line is in view, it
-  // scrolls the least that keeps it in view as the words come, and so it
-  // does while the cursor is at the end of what was said or the focus is
-  // somewhere else. That is where the browser leaves the field after a
-  // key at the end of a text field, so the words and the keys never take
-  // the field to two places. Scrolled away to read, it stays where it was
-  // put, as Tim asked, and so it does while the person is typing
-  // somewhere else in it.
+  // Neither scrolls the field. The field follows the words at the end of
+  // the report the way a terminal follows its output: while its last line
+  // is in view, it keeps it in view as the words come, with the padding
+  // under it, and so it does while the cursor is at the end of what was
+  // said or the focus is somewhere else. Scrolled away to read, it stays
+  // where it was put, as Tim asked, and so it does while the person is
+  // typing somewhere else in it.
   function show(d: Dictating, sel: Span, before: Span, end: number) {
-    const style = getComputedStyle(field);
-    const foot = parseFloat(style.paddingBottom);
-    const last = () => field.scrollHeight - foot - field.clientHeight;
-    const seen = last() - field.scrollTop <= parseFloat(style.lineHeight) / 2;
+    const cs = getComputedStyle(field);
+    const seen = field.scrollHeight - field.clientHeight - field.scrollTop <= parseFloat(cs.paddingBottom) + parseFloat(cs.lineHeight) / 2;
     const follow = seen && (document.activeElement !== field || (before[0] === end && before[1] === end));
     if (field.value !== d.text) {
       const [a, b, put] = changed(field.value, d.text);
       field.setRangeText(put, a, b);
     }
     if (field.selectionStart !== sel[0] || field.selectionEnd !== sel[1]) field.setSelectionRange(sel[0], sel[1], field.selectionDirection);
-    if (follow && d.end === d.text.length && last() > field.scrollTop) field.scrollTop = last();
+    if (follow && d.end === d.text.length) reveal(d.end);
   }
 
   // tell passes on to the Go side what the person did to the words still
@@ -431,6 +459,7 @@
   // typed right after a word that was said gets a space in front of it,
   // as the letter is typed, so the two are one step.
   function editing(e: InputEvent) {
+    held = field.scrollTop;
     if (e.inputType === "historyUndo" || e.inputType === "historyRedo") {
       e.preventDefault();
       return void undo(e.inputType === "historyUndo" ? "undo" : "redo");
@@ -444,14 +473,31 @@
 
   // typed follows an edit the person made, which the browser has made in
   // the field. It is a step of the field's undo, and the dictation in
-  // hand is told of it.
+  // hand is told of it. The cursor's line is put in view from where the
+  // field was before the edit, whatever the browser did to it meanwhile.
   function typed() {
     unclear();
     const was = dictation?.text ?? what;
     const [a, b, put] = edit(was, field.value, field.selectionEnd);
     steps.did(a, b, was.slice(a, b), put);
     follow(a, b, put);
+    reveal(head(), held ?? field.scrollTop);
+    held = null;
     read();
+  }
+
+  // Where the field was scrolled to before the edit the browser is about
+  // to make, which may scroll it.
+  let held: number | null = null;
+
+  // moving puts the line an arrow key takes the cursor to in view before
+  // the browser moves it there, so the browser has no need to scroll. It
+  // scrolled the field a line at a time on Linux and by half the field on
+  // Tim's Mac, see lib/reveal.ts.
+  function moving(e: KeyboardEvent) {
+    if (e.isComposing || composing) return;
+    const to = landing(field.value, field.selectionStart, field.selectionEnd, field.selectionDirection === "backward", e);
+    if (to) reveal(to[0], field.scrollTop, to[1]);
   }
 
   // follow tells the dictation in hand of a change in the field, made by
@@ -470,6 +516,7 @@
     if (!c) return;
     field.setRangeText(c[2], c[0], c[1], "end");
     follow(...c);
+    reveal(field.selectionEnd);
     read();
   }
 
@@ -486,6 +533,7 @@
     const end = d.end;
     show(d, d.hear(said, "", before, true), before, end);
     steps.end(began, d.text);
+    home();
     read();
   }
 
@@ -710,6 +758,7 @@
           spellcheck="true"
           oninput={typed}
           onbeforeinput={editing}
+          onkeydown={moving}
           oncompositionstart={() => (composing = true)}
           oncompositionend={composed}
           onpaste={pasted}

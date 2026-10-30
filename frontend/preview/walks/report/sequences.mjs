@@ -411,6 +411,23 @@ export default [
     ],
   },
   {
+    // Tim, 30 October. He attached a recording while dictating and ended
+    // the dictation with Escape. Attach had left the focus on nothing, so
+    // Tab and the arrow keys did nothing after. The focus goes back to the
+    // field once the pictures are in, and Tab goes on to Report.
+    name: "After Attach while dictating, the field has the focus again and Tab goes to Report",
+    steps: [
+      ["bugs"],
+      ["write", "It froze.", "end"],
+      ["dictate", "start"],
+      ["attach, as on a Mac", 1],
+      ["cursor in view"],
+      ["dictate", "escape"],
+      ["cursor in view"],
+      ["tab", "Report"],
+    ],
+  },
+  {
     // Issue #415. On an empty report Tab still went to Report, lit, with
     // nothing to send. Report and Clear are off until there is something.
     name: "Report and Clear are off with nothing to report",
