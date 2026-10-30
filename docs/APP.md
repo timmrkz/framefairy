@@ -3508,8 +3508,9 @@ done.
 
 The page scrolls the field, by one rule, `frontend/src/lib/reveal.ts`:
 the least scroll that shows the cursor's whole line with the padding
-round it, and at the last line the padding under it too. An arrow key
-puts the line it goes to in view as it is pressed, and an edit puts the
+round it, and at the last line the padding under it too. An arrow key,
+or Ctrl+N, Ctrl+P, Ctrl+F and Ctrl+B, which move the same way in every
+Mac text field, puts the line it goes to in view as it is pressed, and an edit puts the
 cursor's line in view from where the field was before it, so the browser
 finds the cursor in view and never scrolls the field itself. WebKit on a
 Mac puts a cursor that went out of view in the middle of the field, so
@@ -3529,7 +3530,9 @@ The field follows the words the way a terminal follows its output:
 while its end is in view, it stays at its end as words come at the end
 of the report, wherever the cursor is. Scrolled away, by the wheel or by
 a key that takes the cursor up past the top, it stays where it was put,
-as Tim asked (30 October). Pressing Dictate, Stop or Attach with the
+as Tim asked (30 October). Words said in the middle of the report keep
+the cursor that goes with them in view, while it was in view, as they
+push it down. Pressing Dictate, Stop or Attach with the
 mouse leaves the focus in the field: in WebKit the press took it to
 nothing and the page gave it back, so the field's ring flashed. When a
 dictation ends or the pictures from Attach are in, and the focus is on

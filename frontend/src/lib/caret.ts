@@ -51,10 +51,15 @@ export type Key = { key: string; shiftKey: boolean; altKey: boolean; metaKey: bo
 // from start to end and back when it runs backwards: a letter, and a
 // line up or down from it, or null for a key that moves no cursor. The
 // keys are the Mac's: Cmd with an arrow goes to the end of the line or
-// the text, Option to the word or the paragraph. A key the page does not
-// know, it leaves to the browser.
+// the text, Option to the word or the paragraph, and Ctrl+N, Ctrl+P,
+// Ctrl+F and Ctrl+B are the arrows down, up, right and left. A key the
+// page does not know, it leaves to the browser.
 export function landing(text: string, start: number, end: number, back: boolean, k: Key): [number, number] | null {
-  if (k.ctrlKey) return null;
+  if (k.ctrlKey) {
+    const as = ({ n: "ArrowDown", p: "ArrowUp", f: "ArrowRight", b: "ArrowLeft" } as Record<string, string>)[k.key];
+    if (!as || k.shiftKey || k.altKey || k.metaKey) return null;
+    return landing(text, start, end, back, { ...k, key: as, ctrlKey: false });
+  }
   const up = k.key === "ArrowUp" || k.key === "ArrowLeft";
   // Shift moves the end of the selection that moves, and without Shift a
   // selection collapses to the side the key goes to.

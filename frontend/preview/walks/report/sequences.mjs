@@ -344,6 +344,23 @@ export default [
     ],
   },
   {
+    // Third review of #574. Dictating into the middle of a long report,
+    // with the cursor on the last line the field shows, the words and the
+    // cursor went out of view under its foot: only words at the end of
+    // the report were followed. A cursor that goes with the words stays
+    // in view, as it did on main.
+    name: "Dictating in the middle of a long report keeps the cursor in view",
+    steps: [
+      ["bugs"],
+      ["write", "One\nTwo\nThree\nFour\nFive\nSix\nSeven\nEight\nNine\nTen\nEleven\nTwelve\nThirteen\nFourteen\nFifteen\nSixteen\nSeventeen\nEighteen\nNineteen\nTwenty\nTwenty-one\nTwenty-two\nTwenty-three\nTwenty-four\nTwenty-five", "end"],
+      ["press, the cursor in view", ["ArrowUp", 13]],
+      ["press, the cursor in view", ["ArrowDown", 9]],
+      ["dictate", "start"],
+      ["talk, the cursor in view", 2],
+      ["dictate", "enter"],
+    ],
+  },
+  {
     // Tim, 30 October, 20.54. Pressing the microphone to start and to
     // stop, the field's focus ring went out and came back. The focus
     // stays in the field.

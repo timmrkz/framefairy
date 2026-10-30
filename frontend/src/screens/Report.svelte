@@ -395,11 +395,17 @@
   // the cursor in view and scrolls nothing itself: WebKit on a Mac puts a
   // cursor out of view in the middle of the field.
   function reveal(at: number, top = field.scrollTop, lines = 0) {
+    scroll(place(at, top, lines));
+  }
+
+  // place is where reveal would put the field's top, and top itself when
+  // that line is in view already.
+  function place(at: number, top = field.scrollTop, lines = 0): number {
     const cs = getComputedStyle(field);
     const line = parseFloat(cs.lineHeight);
     const [over, under] = caretBox(field, at);
     const f = { top, height: field.clientHeight, end: field.scrollHeight, pad: parseFloat(cs.paddingTop), foot: parseFloat(cs.paddingBottom), line };
-    scroll(revealed(f, over + lines * line, under + lines * line));
+    return revealed(f, over + lines * line, under + lines * line);
   }
 
   // scroll puts the field's top at top, and has WebKit draw the cursor
@@ -429,16 +435,22 @@
   // is in view, it keeps it in view as the words come, with the padding
   // under it, wherever the cursor is. Scrolled up, by the wheel or by a
   // key that takes the cursor up past the top, it stays where it was put,
-  // as Tim asked (30 October).
+  // as Tim asked (30 October). Words said in the middle of the report
+  // keep a cursor that goes with them in view, while it was in view.
+  // setRangeText forgets which way a selection runs, so it is read first.
   function show(d: Dictating, sel: Span) {
     const cs = getComputedStyle(field);
     const follow = field.scrollHeight - field.clientHeight - field.scrollTop <= parseFloat(cs.paddingBottom) + parseFloat(cs.lineHeight) / 2;
+    const top = field.scrollTop;
+    const seen = place(head()) === top;
+    const dir = field.selectionDirection;
     if (field.value !== d.text) {
       const [a, b, put] = changed(field.value, d.text);
       field.setRangeText(put, a, b);
     }
-    if (field.selectionStart !== sel[0] || field.selectionEnd !== sel[1]) field.setSelectionRange(sel[0], sel[1], field.selectionDirection);
+    if (field.selectionStart !== sel[0] || field.selectionEnd !== sel[1] || field.selectionDirection !== dir) field.setSelectionRange(sel[0], sel[1], dir);
     if (follow && d.end === d.text.length) reveal(d.end);
+    else if (seen && sel[0] === d.end && sel[1] === d.end) reveal(d.end, top);
   }
 
   // tell passes on to the Go side what the person did to the words still

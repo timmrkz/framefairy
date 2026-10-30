@@ -5,6 +5,7 @@
 // call or event means: that is the Go side's, which is the point of it.
 import { callOut } from "./settled";
 import { install } from "./clock";
+import { caretBox } from "../src/lib/caret";
 
 // A play runs on the walk's clock here, see clock.ts.
 install();
@@ -43,6 +44,9 @@ const heard: Record<string, number> = {};
 // mark, see walks/report/steps.mjs.
 const last: Record<string, unknown> = {};
 (window as any).__last = last;
+// Where the report's field draws its cursor, measured the one way the
+// page measures it, for the walks, see walks/report/steps.mjs.
+(window as any).__caretBox = caretBox;
 // A field's text written by the page changes no node, so a walk waiting
 // for it with a MutationObserver did not wake when the report's field
 // took in dictated words, and hung once nothing else on the page changed

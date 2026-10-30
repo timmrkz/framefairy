@@ -40,6 +40,14 @@ describe("where a key takes the cursor", () => {
     expect(landing(text, 2, 12, false, key("ArrowRight"))).toEqual([12, 0]);
   });
 
+  test("Ctrl+N, Ctrl+P, Ctrl+F and Ctrl+B move like the arrows, as in every Mac text field", () => {
+    expect(landing(text, 10, 10, false, key("n", { ctrlKey: true }))).toEqual([10, 1]);
+    expect(landing(text, 10, 10, false, key("p", { ctrlKey: true }))).toEqual([10, -1]);
+    expect(landing(text, 7, 7, false, key("f", { ctrlKey: true }))).toEqual([8, 0]);
+    expect(landing(text, 7, 7, false, key("b", { ctrlKey: true }))).toEqual([6, 0]);
+    expect(landing(text, 7, 7, false, key("a", { ctrlKey: true }))).toBeNull();
+  });
+
   test("a key that moves no cursor is left to the browser", () => {
     expect(landing(text, 3, 3, false, key("a"))).toBeNull();
     expect(landing(text, 3, 3, false, key("PageDown"))).toBeNull();

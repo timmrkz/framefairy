@@ -1006,6 +1006,35 @@ export const steps = {
       if (top !== kept.scrolledTo) walk.wrong = `the field moved to ${top} px while more was said, from ${kept.scrolledTo} px where it was scrolled to`;
     } else walk.wrong = (await page.locator(".telling").evaluate(atEnd)) || (await redrawMissed(page));
   },
+  // ["talk, the cursor in view", n]
+  //                    more is said until the cursor that goes with the
+  //                    words has gone n lines down, and after each word
+  //                    that comes the cursor is in view. The field had to
+  //                    scroll for it, or the step proves nothing. Words
+  //                    said in the middle of a long report went out of
+  //                    view under the foot of the field (third review of
+  //                    #574)
+  async "talk, the cursor in view"(walk, arg) {
+    const { page } = walk;
+    const at = () => page.locator(".telling").evaluate((f) => [window.__caretBox(f, f.selectionEnd)[0], f.scrollTop, parseFloat(getComputedStyle(f).lineHeight)]);
+    const [from, top, line] = await at();
+    // A round of the stand-in speech model's words is a few words, so a
+    // line takes a few rounds, and thirty rounds a line is more than any
+    // width needs.
+    for (let i = 0; i < 30 * arg && !walk.wrong; i++) {
+      if ((await at())[0] >= from + arg * line) break;
+      const was = await page.locator(".telling").evaluate((f) => f.value);
+      await control(url, "/microphone?until=hearing");
+      await pageUntil(page, (was) => document.querySelector(".telling").value !== was, was);
+      await settle(page);
+      const c = await page.locator(".telling").evaluate(cursorInView);
+      if (c) walk.wrong = `after ${i + 1} rounds of words ${c}`;
+    }
+    if (walk.wrong) return;
+    const [to, now] = await at();
+    if (to < from + arg * line) walk.wrong = `the cursor went down ${to - from} px while more was said, not ${arg} lines`;
+    else if (now <= top) walk.wrong = `the field stayed at ${now} px, so the cursor never came near its foot`;
+  },
   // ["caret at words"] the cursor is right after the words being said,
   //                    at the end of the report, which they end
   async "caret at words"(walk) {
@@ -1566,24 +1595,14 @@ async function redrawMissed(page) {
 
 // cursorInView runs in the page on the report's field f, and says where
 // the cursor is when it is not in view, or nothing when it is. A
-// textarea does not say where its cursor is, so a copy of the field's
-// text is laid out the way the field lays it out, with a mark where the
-// cursor is.
+// textarea does not say where its cursor is, so it is measured the one
+// way the page measures it, caretBox in lib/caret.ts, which the page
+// scrolls by too. The check that the browser scrolled nothing after the
+// page, in pressed, does not rest on it.
 function cursorInView(f) {
   if (document.activeElement !== f) return "the cursor is not in the field";
   if (f.selectionStart !== f.selectionEnd) return "the selection is not a cursor";
-  const cs = getComputedStyle(f);
-  const copy = document.createElement("div");
-  for (const p of ["fontFamily", "fontSize", "fontWeight", "fontStyle", "letterSpacing", "lineHeight", "whiteSpace", "overflowWrap", "wordBreak", "tabSize", "paddingTop", "paddingLeft", "paddingRight"]) copy.style[p] = cs[p];
-  Object.assign(copy.style, { position: "absolute", visibility: "hidden", top: "0", left: "0", boxSizing: "border-box", border: "0", width: `${f.clientWidth}px` });
-  // The cursor is as tall as the letters, not the line, so it is a
-  // letter of no width that is measured.
-  const cursor = document.createElement("span");
-  cursor.textContent = "\u200b";
-  copy.append(f.value.slice(0, f.selectionEnd), cursor, f.value.slice(f.selectionEnd));
-  document.body.append(copy);
-  const [top, bottom] = [cursor.offsetTop, cursor.offsetTop + cursor.offsetHeight];
-  copy.remove();
+  const [top, bottom] = window.__caretBox(f, f.selectionEnd);
   if (top < f.scrollTop - 1) return `the cursor is ${Math.round(f.scrollTop - top)} px above the top of the field, scrolled to ${f.scrollTop} px`;
   if (bottom > f.scrollTop + f.clientHeight + 1) return `the cursor is ${Math.round(bottom - f.scrollTop - f.clientHeight)} px below the foot of the field, scrolled to ${f.scrollTop} px`;
   return "";
