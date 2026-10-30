@@ -194,6 +194,13 @@ thing belongs. In short:
   the issue happens to point, and never copy what its Not to copy names.
   A change that brings a new kind of thing, a new part, a new home for
   state or a new boundary, adds its line there.
+- **An architectural change is simulated five times first.** A change to
+  how the code is organised or designed, one that adds its line to
+  ARCHITECTURE.md or changes one, is worked through as five candidate
+  designs, each from a principle of its own, before the code. They
+  converge on one, and all of it is written as a decision record in
+  `docs/decisions/`. See Changing the architecture in
+  [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#changing-the-architecture).
 - **Small batches.** Split larger work into batches of a few minutes each.
   Finish, test and report after each one, with a pull request per batch,
   or a commit per batch while the batches are still one self-contained
@@ -243,7 +250,9 @@ thing belongs. In short:
   reviews the way the [review skill](.claude/skills/review/SKILL.md)
   says: whether the work serves the people using the app first, then the
   code. Its brief carries Tim's own messages, the issue and the goals
-  under The project above, never the session's summary of them. It
+  under The project above, never the session's summary of them. For an
+  architectural change it carries the decision record too, with its five
+  candidates, for the agent to reason through itself. It
   comes once, not after every push and not after the first. A review
   after later rounds of work is Tim's to ask for.
   - The agent writes its review to a file outside the checkout. It is
