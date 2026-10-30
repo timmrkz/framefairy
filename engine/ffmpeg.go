@@ -18,13 +18,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"framefairy/engine/pynum"
-	"framefairy/engine/pytext"
-
-	"framefairy/engine/timed"
-
 	"github.com/spf13/afero"
 
+	"framefairy/engine/pynum"
+	"framefairy/engine/pytext"
+	"framefairy/engine/timed"
 	"framefairy/internal/framewire"
 )
 
@@ -785,11 +783,11 @@ func gcd(a, b int) int {
 // from the start of the file, the earliest of its streams, so that is
 // where the picture's start is measured from.
 func videoStartOf(stream, format map[string]any) float64 {
-	first, ok := toFloat(stream["start_time"])
+	first, ok := pynum.FloatOf(stream["start_time"])
 	if !ok {
 		return 0
 	}
-	if from, ok := toFloat(format["start_time"]); ok && first-from > 1e-6 {
+	if from, ok := pynum.FloatOf(format["start_time"]); ok && first-from > 1e-6 {
 		return first - from
 	}
 	return 0
@@ -916,11 +914,11 @@ func (e *Engine) probe(ctx context.Context, path string) (SourceInfo, error) {
 	duration := 0.0
 	if raw, ok := data.Format["duration"]; ok {
 		// Some containers report N/A, and the range check just skips then.
-		if d, ok := toFloat(raw); ok {
+		if d, ok := pynum.FloatOf(raw); ok {
 			duration = d
 		}
 	}
-	formatStart, _ := toFloat(data.Format["start_time"])
+	formatStart, _ := pynum.FloatOf(data.Format["start_time"])
 	if duration <= 0 {
 		// A Matroska file whose writing was cut off, the way OBS leaves a
 		// recording when it crashes, has no duration and no index. It is
@@ -929,8 +927,8 @@ func (e *Engine) probe(ctx context.Context, path string) (SourceInfo, error) {
 	}
 	format, _ := data.Format["format_name"].(string)
 
-	width, okW := toInt(stream["width"])
-	height, okH := toInt(stream["height"])
+	width, okW := pynum.IntOf(stream["width"])
+	height, okH := pynum.IntOf(stream["height"])
 	if _, present := stream["width"]; !present || !okW {
 		return SourceInfo{}, renderErr("%s reports no video dimensions", path)
 	}
@@ -945,7 +943,7 @@ func (e *Engine) probe(ctx context.Context, path string) (SourceInfo, error) {
 		width, height = height, width
 	}
 	videoStart := videoStartOf(stream, data.Format)
-	first, hasFirst := toFloat(stream["start_time"])
+	first, hasFirst := pynum.FloatOf(stream["start_time"])
 	info := SourceInfo{Width: width, Height: height, Turned: turned, FPSNum: num, FPSDen: den,
 		Duration: duration, VideoStart: videoStart, Colour: colour,
 		origin: first - videoStart, hasClock: hasFirst, unindexed: unindexed(format)}
@@ -985,8 +983,8 @@ func (e *Engine) soundOf(ctx context.Context, path string) (rate, channels int) 
 	if decoder.Decode(&data) != nil || len(data.Streams) == 0 {
 		return 0, 0
 	}
-	rate, ok1 := toInt(data.Streams[0]["sample_rate"])
-	channels, ok2 := toInt(data.Streams[0]["channels"])
+	rate, ok1 := pynum.IntOf(data.Streams[0]["sample_rate"])
+	channels, ok2 := pynum.IntOf(data.Streams[0]["channels"])
 	if !ok1 || !ok2 || rate <= 0 || channels <= 0 {
 		return 0, 0
 	}
@@ -1000,7 +998,7 @@ func fileRotation(sideData any) int {
 	list, _ := sideData.([]any)
 	for _, item := range list {
 		entry, _ := item.(map[string]any)
-		value, ok := toFloat(entry["rotation"])
+		value, ok := pynum.FloatOf(entry["rotation"])
 		if !ok || !pynum.IsFinite(value) {
 			continue
 		}

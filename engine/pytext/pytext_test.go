@@ -46,6 +46,17 @@ func TestScrubLeavesOnlyPrintableText(t *testing.T) {
 	}
 }
 
+func TestReprQuotesAsPythonDoes(t *testing.T) {
+	for in, want := range map[string]string{"plain": "'plain'", "it's": `"it's"`, `a\b`: `'a\\b'`, `say "hi"`: `'say "hi"'`} {
+		if got := Repr(in); got != want {
+			t.Errorf("Repr(%q) = %s, Python says %s", in, got, want)
+		}
+	}
+	if got := ListRepr([]string{"a", "b"}); got != "['a', 'b']" {
+		t.Errorf("ListRepr = %s, Python says ['a', 'b']", got)
+	}
+}
+
 // Scrub reads what a model or the network sent, so it is fuzzed: whatever
 // comes in, what comes out is valid, free of controls, on one line and no
 // longer than asked. A cut may end on a space, as Python's [:limit] does.

@@ -7,11 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"framefairy/engine/pynum"
-
-	"framefairy/engine/timed"
-
 	"github.com/spf13/afero"
+
+	"framefairy/engine/pynum"
+	"framefairy/engine/timed"
 )
 
 // A clip is a set of kept parts, so every cut is a gap between two of
@@ -468,7 +467,7 @@ func TestACutRaisesTheRevision(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		n, _ := toInt(plan.Raw["revision"])
+		n, _ := pynum.IntOf(plan.Raw["revision"])
 		return n
 	}
 	tr := cutsTranscript()

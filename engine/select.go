@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"framefairy/engine/pynum"
 	"framefairy/engine/pytext"
 )
 
@@ -221,7 +222,7 @@ func ExtractJSONObject(text, key string) (map[string]any, string, error) {
 		}
 	}
 	return nil, "", renderErr("no JSON object with a %s key could be found in the reply. "+
-		"It began: %s", pyRepr(key), pyRepr(pytext.Scrub(cleaned, 200)))
+		"It began: %s", pytext.Repr(key), pytext.Repr(pytext.Scrub(cleaned, 200)))
 }
 
 // PlanEntry is one clip as the model proposed it, after validation.
@@ -274,8 +275,8 @@ func validateEntry(clipAny any, index, lineCount int) (PlanEntry, []string, bool
 			problems = append(problems, fmt.Sprintf("clip %d: a keep range is not a pair", index))
 			continue
 		}
-		first, ok1 := toInt(item[0])
-		last, ok2 := toInt(item[1])
+		first, ok1 := pynum.IntOf(item[0])
+		last, ok2 := pynum.IntOf(item[1])
 		if !ok1 || !ok2 {
 			problems = append(problems, fmt.Sprintf("clip %d: a keep range is not numeric", index))
 			continue
@@ -309,8 +310,8 @@ func validateEntry(clipAny any, index, lineCount int) (PlanEntry, []string, bool
 		var first, last int
 		ok1, ok2 := false, false
 		if ok && len(pair) == 2 {
-			first, ok1 = toInt(pair[0])
-			last, ok2 = toInt(pair[1])
+			first, ok1 = pynum.IntOf(pair[0])
+			last, ok2 = pynum.IntOf(pair[1])
 		}
 		switch {
 		case !ok1 || !ok2:
@@ -324,7 +325,7 @@ func validateEntry(clipAny any, index, lineCount int) (PlanEntry, []string, bool
 	}
 	opening := 0
 	if openingAny, present := clip["opening"]; present {
-		n, ok := toInt(openingAny)
+		n, ok := pynum.IntOf(openingAny)
 		switch {
 		case !ok:
 			problems = append(problems, fmt.Sprintf("clip %d: its opening is not a number", index))
@@ -340,7 +341,7 @@ func validateEntry(clipAny any, index, lineCount int) (PlanEntry, []string, bool
 		if !present {
 			return ""
 		}
-		return pyStr(value)
+		return pynum.Str(value)
 	}
 	// An answer without slugs gets them from the titles, the way a clip
 	// made by hand does. One without titles either, as middle's, is named
@@ -364,7 +365,7 @@ func validateEntry(clipAny any, index, lineCount int) (PlanEntry, []string, bool
 func fromPoints(clip map[string]any, index, lineCount int) (map[string]any, string) {
 	var n [3]int
 	for i, key := range []string{"start", "payoff", "end"} {
-		v, ok := toInt(clip[key])
+		v, ok := pynum.IntOf(clip[key])
 		if !ok || v < 1 || v > lineCount {
 			return nil, fmt.Sprintf("clip %d: its %s is not a line from 1 to %d", index, key, lineCount)
 		}
@@ -396,7 +397,7 @@ func fromPoints(clip map[string]any, index, lineCount int) (map[string]any, stri
 func fromMiddle(clip map[string]any, index, lineCount int) (map[string]any, string) {
 	var n [3]int
 	for i, key := range []string{"start", "middle", "end"} {
-		v, ok := toInt(clip[key])
+		v, ok := pynum.IntOf(clip[key])
 		if !ok || v < 1 || v > lineCount {
 			return nil, fmt.Sprintf("clip %d: its %s is not a line from 1 to %d", index, key, lineCount)
 		}
@@ -450,7 +451,7 @@ func readEntry(clipAny any, index int, units [][2]int) (PlanEntry, []string, boo
 func uniqueSlug(seen map[string]bool, entry *PlanEntry, position int) string {
 	problem := ""
 	if entry.Slug != "" && seen[entry.Slug] {
-		problem = fmt.Sprintf("clip %d: slug %s was already used", position, pyRepr(entry.Slug))
+		problem = fmt.Sprintf("clip %d: slug %s was already used", position, pytext.Repr(entry.Slug))
 		entry.Slug = fmt.Sprintf("%s-%d", entry.Slug, position)
 	}
 	seen[entry.Slug] = true

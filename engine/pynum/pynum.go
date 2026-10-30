@@ -4,14 +4,15 @@
 // same answer on every platform, which keeps plans reproducible. It
 // imports nothing of the engine but pytext, see docs/ARCHITECTURE.md.
 //
-// A note on arm64, which is what Apple Silicon runs. The Go compiler may fuse
-// a multiplication and an addition into one instruction there, and a fused
-// result can round differently from Python, which computes them one after
-// the other. An explicit float64() conversion prevents the fusion, which is
-// why some products in the engine are wrapped in one that looks redundant.
+// Where it differs from Python, on purpose: FloatRepr writes no exponent,
+// where Python writes 1e+16, and ParseFloat and IntOf take an underscore
+// anywhere and the four separators \x1c to \x1f as space, where Python
+// raises. No plan, transcript or probe holds such a number, and a change
+// would change how every file written so far reads.
 package pynum
 
 import (
+	"encoding/json"
 	"math"
 	"strconv"
 	"strings"
@@ -107,4 +108,84 @@ func (f Float) MarshalJSON() ([]byte, error) {
 		return []byte("null"), nil
 	}
 	return []byte(FloatRepr(x)), nil
+}
+
+// Str is Python's str() for values that came out of JSON.
+func Str(v any) string {
+	switch x := v.(type) {
+	case nil:
+		return "None"
+	case string:
+		return x
+	case bool:
+		if x {
+			return "True"
+		}
+		return "False"
+	case json.Number:
+		return x.String()
+	case float64:
+		return FloatRepr(x)
+	case int:
+		return strconv.Itoa(x)
+	}
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return ""
+	}
+	return string(raw)
+}
+
+// FloatOf is Python's float() for values that came out of JSON. The second
+// result is false where Python would raise.
+func FloatOf(v any) (float64, bool) {
+	switch x := v.(type) {
+	case float64:
+		return x, true
+	case int:
+		return float64(x), true
+	case bool:
+		if x {
+			return 1, true
+		}
+		return 0, true
+	case json.Number:
+		f, err := strconv.ParseFloat(x.String(), 64)
+		return f, err == nil
+	case string:
+		return ParseFloat(x)
+	}
+	return 0, false
+}
+
+// IntOf is Python's int() for values that came out of JSON. A float is
+// truncated, a string must hold a whole number.
+func IntOf(v any) (int, bool) {
+	switch x := v.(type) {
+	case float64:
+		if math.IsNaN(x) || math.IsInf(x, 0) {
+			return 0, false
+		}
+		return int(x), true
+	case int:
+		return x, true
+	case bool:
+		if x {
+			return 1, true
+		}
+		return 0, true
+	case json.Number:
+		if n, err := strconv.Atoi(x.String()); err == nil {
+			return n, true
+		}
+		f, err := strconv.ParseFloat(x.String(), 64)
+		if err != nil || math.IsNaN(f) || math.IsInf(f, 0) {
+			return 0, false
+		}
+		return int(f), true
+	case string:
+		n, err := strconv.Atoi(strings.ReplaceAll(pytext.Strip(x), "_", ""))
+		return n, err == nil
+	}
+	return 0, false
 }

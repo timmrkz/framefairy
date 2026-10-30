@@ -5,11 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	"framefairy/engine/pynum"
-
-	"framefairy/engine/timed"
-
 	"github.com/spf13/afero"
+
+	"framefairy/engine/pynum"
+	"framefairy/engine/timed"
 )
 
 // keyedFrames is the loudness of captionHeard, with a soft stretch before

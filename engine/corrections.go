@@ -10,11 +10,10 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"framefairy/engine/pytext"
-
-	"framefairy/engine/timed"
-
 	"github.com/spf13/afero"
+
+	"framefairy/engine/pytext"
+	"framefairy/engine/timed"
 )
 
 // Word corrections are kept with the clip they are typed in, in its plan

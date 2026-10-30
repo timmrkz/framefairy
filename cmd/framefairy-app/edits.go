@@ -7,11 +7,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"framefairy/engine/pytext"
-
 	"github.com/rs/zerolog"
 
 	"framefairy/engine"
+	"framefairy/engine/pytext"
 )
 
 // editLevel is the level of a line about an edit: a warning for one that

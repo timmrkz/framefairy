@@ -15,11 +15,10 @@ import (
 	"sync"
 	"time"
 
-	"framefairy/engine/pytext"
-
 	"github.com/rs/zerolog"
 
 	"framefairy/engine"
+	"framefairy/engine/pytext"
 	"framefairy/internal/framewire"
 )
 

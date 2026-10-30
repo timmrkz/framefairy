@@ -14,12 +14,10 @@ import (
 	"testing"
 	"time"
 
-	"framefairy/engine/pynum"
-
-	"framefairy/engine/timed"
-
 	"github.com/spf13/afero"
 
+	"framefairy/engine/pynum"
+	"framefairy/engine/timed"
 	"framefairy/internal/ffmpegtest"
 )
 

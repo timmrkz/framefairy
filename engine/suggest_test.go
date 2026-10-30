@@ -10,6 +10,8 @@ import (
 	"os"
 	"sync"
 	"testing"
+
+	"framefairy/engine/pynum"
 )
 
 // suggestCases are the cases the engine and the workspace are both held
@@ -129,7 +131,7 @@ func TestASearchTakesWhatItsWindowSuggests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := toFloat(plan.PlannedWith()["count"]); int(got) != SuggestedCount(30, 5, 10) {
+	if got, _ := pynum.FloatOf(plan.PlannedWith()["count"]); int(got) != SuggestedCount(30, 5, 10) {
 		t.Errorf("the plan asked for %v clips", plan.PlannedWith()["count"])
 	}
 	mu.Lock()

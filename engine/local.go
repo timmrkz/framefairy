@@ -20,10 +20,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/spf13/afero"
+
 	"framefairy/engine/pynum"
 	"framefairy/engine/pytext"
-
-	"github.com/spf13/afero"
 )
 
 // ---------------------------------------------------------------------------

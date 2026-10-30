@@ -12,11 +12,10 @@ import (
 	"sync"
 	"time"
 
-	"framefairy/engine/pynum"
-
-	"framefairy/engine/timed"
-
 	"github.com/spf13/afero"
+
+	"framefairy/engine/pynum"
+	"framefairy/engine/timed"
 )
 
 // transcriptVersion changes whenever the stored transcript changes meaning,
@@ -368,8 +367,8 @@ func readTranscriptFile(fsys afero.Fs, path string, stamp sourceStamp, model str
 	}
 	var words []timed.Cue
 	for _, item := range file.Words {
-		low, ok1 := toFloat(item[0])
-		high, ok2 := toFloat(item[1])
+		low, ok1 := pynum.FloatOf(item[0])
+		high, ok2 := pynum.FloatOf(item[1])
 		text, ok3 := item[2].(string)
 		if !ok1 || !ok2 || !ok3 {
 			return file, nil, nil, false

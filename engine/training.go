@@ -14,11 +14,10 @@ import (
 	"strings"
 	"time"
 
-	"framefairy/engine/pynum"
-
-	"framefairy/engine/timed"
-
 	"github.com/spf13/afero"
+
+	"framefairy/engine/pynum"
+	"framefairy/engine/timed"
 )
 
 // Training data is recorded in one folder for every episode, so the clip

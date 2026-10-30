@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"framefairy/engine/pytext"
 )
 
 // ---------------------------------------------------------------------------
@@ -93,7 +95,7 @@ func RecipeNamed(name string) (Recipe, error) {
 	r, ok := recipes[name]
 	if !ok {
 		return Recipe{}, renderErr("there is no recipe called %s. There are: %s.",
-			pyRepr(name), strings.Join(RecipeNames(), ", "))
+			pytext.Repr(name), strings.Join(RecipeNames(), ", "))
 	}
 	return r, nil
 }

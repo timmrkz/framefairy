@@ -5,11 +5,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"framefairy/engine/pytext"
-
-	"framefairy/engine/timed"
-
 	"github.com/spf13/afero"
+
+	"framefairy/engine/pytext"
+	"framefairy/engine/timed"
 )
 
 // ---------------------------------------------------------------------------

@@ -76,7 +76,7 @@ func readRotations(value any) ([]Rotation, error) {
 			r.To = t
 		}
 		deg, present := entry[keyDeg]
-		f, isNumber := toFloat(deg)
+		f, isNumber := pynum.FloatOf(deg)
 		_, isText := deg.(string)
 		if !present || isText || !isNumber || f != math.Trunc(f) || !validRotate(int(f)) || f == 0 {
 			return nil, fmt.Errorf("a stretch is rotated by %s, which is not 90, 180 or 270", pytext.Scrub(pyReprAny(deg), 40))

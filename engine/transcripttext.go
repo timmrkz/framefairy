@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"framefairy/engine/pytext"
-
 	"framefairy/engine/timed"
 )
 

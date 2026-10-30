@@ -13,12 +13,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/spf13/afero"
+
 	"framefairy/engine/pynum"
 	"framefairy/engine/pytext"
-
 	"framefairy/engine/timed"
-
-	"github.com/spf13/afero"
 )
 
 // ---------------------------------------------------------------------------
@@ -88,7 +87,7 @@ func ParseVariant(name string) (Variant, error) {
 		f, err := strconv.ParseFloat(temperature, 64)
 		if err != nil || f < 0 || f > 2 || math.IsNaN(f) {
 			return Variant{}, renderErr("%s: after the ~ goes the temperature, from 0 to 2, "+
-				"for instance stories~0.3", pyRepr(name))
+				"for instance stories~0.3", pytext.Repr(name))
 		}
 		t = &f
 	}
@@ -105,11 +104,11 @@ func ParseVariant(name string) (Variant, error) {
 	if hasSwitches {
 		if !r.Switchable {
 			return Variant{}, renderErr("%s: %s takes no switches. heart-lean, points and middle do, "+
-				"as in middle+times", pyRepr(name), recipe)
+				"as in middle+times", pytext.Repr(name), recipe)
 		}
 		sw, err := ParseSwitches(switches)
 		if err != nil {
-			return Variant{}, renderErr("%s: %s", pyRepr(name), err)
+			return Variant{}, renderErr("%s: %s", pytext.Repr(name), err)
 		}
 		v.Switches = sw
 	}
@@ -117,7 +116,7 @@ func ParseVariant(name string) (Variant, error) {
 		n, err := strconv.Atoi(think)
 		if err != nil || n < -1 {
 			return Variant{}, renderErr("%s: after the @ goes how many tokens the model may think, "+
-				"for instance stories@1024, or -1 for no limit", pyRepr(name))
+				"for instance stories@1024, or -1 for no limit", pytext.Repr(name))
 		}
 		v.Think = &n
 	}

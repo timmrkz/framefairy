@@ -7,7 +7,8 @@ import (
 )
 
 // Each case is what Python 3.12 answers, so a plan written by the Python
-// version reads and rounds the same here.
+// version reads and rounds the same here. Where the two differ on purpose,
+// the package comment says so, and no case tests it.
 
 func TestRoundTakesHalvesToEven(t *testing.T) {
 	for x, want := range map[float64]int{0.5: 0, 1.5: 2, 2.5: 2, -0.5: 0, -1.5: -2, 2.4: 2, 2.6: 3} {
@@ -40,7 +41,8 @@ func TestRoundToKeepsNDecimals(t *testing.T) {
 }
 
 func TestSumCompensatesLikePython(t *testing.T) {
-	// Left to right this is 0.0. Python 3.12's sum() gives 1e-16 back.
+	// Left to right this is 0.0. Python 3.12's sum([1.0, 1e-16, -1.0])
+	// gives 1e-16 back.
 	if got := Sum([]float64{1, 1e-16, -1}); got != 1e-16 {
 		t.Errorf("Sum = %v, Python says 1e-16", got)
 	}
@@ -50,7 +52,7 @@ func TestSumCompensatesLikePython(t *testing.T) {
 }
 
 func TestFloatsAreWrittenAsPythonWritesThem(t *testing.T) {
-	for x, want := range map[float64]string{1: "1.0", 0.1: "0.1", -2.5: "-2.5", 1e21: "1000000000000000000000.0"} {
+	for x, want := range map[float64]string{1: "1.0", 0.1: "0.1", -2.5: "-2.5", 1e15: "1000000000000000.0"} {
 		if got := FloatRepr(x); got != want {
 			t.Errorf("FloatRepr(%v) = %s, want %s", x, got, want)
 		}
@@ -68,7 +70,7 @@ func TestFloatsAreWrittenAsPythonWritesThem(t *testing.T) {
 }
 
 func TestParseFloatReadsWhatPythonReads(t *testing.T) {
-	for text, want := range map[string]float64{" 1.5\n": 1.5, "1_000": 1000, "-Infinity": math.Inf(-1), "\x1c2\x1f": 2} {
+	for text, want := range map[string]float64{" 1.5\n": 1.5, "1_000": 1000, "-Infinity": math.Inf(-1)} {
 		got, ok := ParseFloat(text)
 		if !ok || got != want {
 			t.Errorf("ParseFloat(%q) = %v, %v, want %v", text, got, ok, want)
@@ -84,5 +86,28 @@ func TestParseFloatReadsWhatPythonReads(t *testing.T) {
 	}
 	if IsFinite(math.Inf(1)) || IsFinite(math.NaN()) || !IsFinite(0) {
 		t.Error("IsFinite is wrong for inf, NaN or 0")
+	}
+}
+
+func TestJSONValuesReadAndWriteAsPythonDoes(t *testing.T) {
+	for v, want := range map[any]float64{2.5: 2.5, 3: 3, true: 1, " 4.5 ": 4.5, json.Number("6.25"): 6.25} {
+		if got, ok := FloatOf(v); !ok || got != want {
+			t.Errorf("FloatOf(%#v) = %v, %v, Python's float() says %v", v, got, ok, want)
+		}
+	}
+	for v, want := range map[any]int{2.9: 2, -2.9: -2, 7: 7, false: 0, " 12 ": 12, json.Number("8"): 8} {
+		if got, ok := IntOf(v); !ok || got != want {
+			t.Errorf("IntOf(%#v) = %v, %v, Python's int() says %v", v, got, ok, want)
+		}
+	}
+	for _, v := range []any{nil, "x", "2.5", math.NaN(), []any{1}} {
+		if _, ok := IntOf(v); ok {
+			t.Errorf("IntOf(%#v) read a number where Python raises", v)
+		}
+	}
+	for v, want := range map[any]string{nil: "None", true: "True", 1.0: "1.0", 2.5: "2.5", 3: "3", "word": "word"} {
+		if got := Str(v); got != want {
+			t.Errorf("Str(%#v) = %q, Python's str() says %q", v, got, want)
+		}
 	}
 }

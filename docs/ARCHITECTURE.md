@@ -35,7 +35,7 @@ The three parts with packages or folders of their own, drawn the same
 way. Inside the engine and inside the app's Go side the groups are files
 of one package, so nothing holds them apart yet.
 
-![The engine today: one package, over three small ones](diagrams/engine.svg)
+![The engine today: one package, over its small ones](diagrams/engine.svg)
 
 ![The app's Go side: one package main, over the engine](diagrams/app-go.svg)
 
@@ -66,7 +66,7 @@ with the boxes one level down under it.
 | 4 the engine | `engine/` | every rule about a video: words, clips, edges, windows, captions, crops, rendering, the models, the files of a work folder, the training records | anything about the screen, a binding or a click |
 | 4 | `engine.Project` | the steps one video takes, the same for both front ends | a second way to run a step |
 | 4 | `engine/timed/` | the types every part of the engine uses for a moment of a video: a piece of text with its times, a span, a window, a loudness reading, the 10 ms grid of the sound | a function or a rule, and a type only one part uses |
-| 4 | `engine/pynum/`, `engine/pytext/` | numbers rounded, summed, read and written, and text counted, cut and trimmed, the way the Python version did, and text from outside scrubbed before it is printed or stored | a rule of a feature, and a value of a plan file, which goes with the plan file |
+| 4 | `engine/pynum/` over `engine/pytext/` | numbers rounded, summed, read and written, and text counted, cut, trimmed and quoted, the way the Python version did, from JSON values too, and text from outside scrubbed before it is printed or stored | a rule of a feature, and anything about a file of a video |
 | 5 the frames decoder | `cmd/framefairy-frames/` | turning a video into the frames, sound and captions of the video preview. The engine starts one for each video | anything but decoding. It is a child process |
 | 6 small libraries | `licence/`, `internal/wake/`, `internal/framewire/` | the format of a licence key, how a waiter hears that something changed, and the wire between the engine and the decoder | |
 
@@ -135,7 +135,9 @@ which reads this file.
 1. The engine knows nothing of the layers over it. `engine/` imports
    nothing from `cmd/`, which Go refuses anyway, nor from `asr/`, and
    `engine/timed/`, `engine/pynum/` and `engine/pytext/` nothing of the
-   rest of the engine. Held by Go's imports.
+   rest of the engine, and `engine/pytext/` not even `engine/pynum/`,
+   which uses it. Held by Go's imports, which refuse a cycle, and by the
+   review for the rest.
 2. One engine, two front ends. A rule lives once, in the engine. Held by
    the review.
 3. One word model. What a video says is `Transcript.Words`, and what a

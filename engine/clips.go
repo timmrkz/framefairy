@@ -10,10 +10,10 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/spf13/afero"
+
 	"framefairy/engine/pynum"
 	"framefairy/engine/pytext"
-
-	"github.com/spf13/afero"
 )
 
 // Segment is one continuous part of the source that ends up in a clip.
@@ -185,7 +185,7 @@ func SafeChildIn(fsys afero.Fs, base, name string) (string, error) {
 	rel, err := filepath.Rel(root, joined)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) ||
 		filepath.IsAbs(rel) {
-		return "", renderErr("refusing to write outside %s: %s", base, pyRepr(name))
+		return "", renderErr("refusing to write outside %s: %s", base, pytext.Repr(name))
 	}
 	return joined, nil
 }
@@ -199,17 +199,17 @@ func ParseTime(value any) (float64, error) {
 	case bool, nil:
 		return 0, bad()
 	case float64, int, json.Number:
-		f, ok := toFloat(v)
+		f, ok := pynum.FloatOf(v)
 		if !ok {
 			return 0, bad()
 		}
 		seconds = f
 	default:
-		text := pytext.Strip(pyStr(value))
+		text := pytext.Strip(pynum.Str(value))
 		if !strings.Contains(text, ":") {
 			f, ok := pynum.ParseFloat(text)
 			if !ok {
-				return 0, renderErr("not a time: %s", pyRepr(text))
+				return 0, renderErr("not a time: %s", pytext.Repr(text))
 			}
 			seconds = f
 		} else {
@@ -241,9 +241,9 @@ func ParseTime(value any) (float64, error) {
 
 func pyReprAny(v any) string {
 	if s, ok := v.(string); ok {
-		return pyRepr(s)
+		return pytext.Repr(s)
 	}
-	return pyStr(v)
+	return pynum.Str(v)
 }
 
 // MaxSegments keeps the filter graph, which travels as a single command line
@@ -352,7 +352,7 @@ func LoadClips(fsys afero.Fs, path string) (Plan, []Clip, error) {
 				text, isText := value.(string)
 				lowered := strings.ToLower(text)
 				if !(isText && (lowered == "center" || lowered == "centre" || lowered == "auto")) {
-					n, ok := toInt(value)
+					n, ok := pynum.IntOf(value)
 					if !ok {
 						return Plan{}, nil, fmt.Errorf("invalid crop_x: %s", pyReprAny(value))
 					}
@@ -401,7 +401,7 @@ func LoadClips(fsys afero.Fs, path string) (Plan, []Clip, error) {
 			if rotate != 0 {
 				cropX, moved = nil, false
 				if value, present := seg[keyCropXTurned]; present && value != nil {
-					n, ok := toInt(value)
+					n, ok := pynum.IntOf(value)
 					if !ok || !(-1_000_000 < n && n < 1_000_000) {
 						return Plan{}, nil, renderErr("clip %d: a rotated piece has its crop at %s",
 							index, pytext.Scrub(pyReprAny(value), 40))
@@ -427,20 +427,20 @@ func LoadClips(fsys afero.Fs, path string) (Plan, []Clip, error) {
 		idValue, present := entry[keyID]
 		idText := fallback
 		if present {
-			idText = pyStr(idValue)
+			idText = pynum.Str(idValue)
 		}
 		slugText := ""
 		if value, present := entry[keySlug]; present {
-			slugText = pyStr(value)
+			slugText = pynum.Str(value)
 		}
 		titleText := ""
 		if value, present := entry[keyTitle]; present {
-			titleText = pyStr(value)
+			titleText = pynum.Str(value)
 		}
 		rejected, _ := entry[keyRejected].(bool)
 		var captionY *float64
 		if value, present := entry[keyCaptionY]; present {
-			if y, ok := toFloat(value); ok && pynum.IsFinite(y) {
+			if y, ok := pynum.FloatOf(value); ok && pynum.IsFinite(y) {
 				snapped := SnapCaptionY(y)
 				captionY = &snapped
 			}
@@ -469,7 +469,7 @@ func LoadClips(fsys afero.Fs, path string) (Plan, []Clip, error) {
 	for i, clip := range clips {
 		if first, dup := named[clip.ID]; dup {
 			return Plan{}, nil, renderErr("clips %d and %d are both called %s, "+
-				"and an edit names the clip it belongs to", first, i+1, pyRepr(clip.ID))
+				"and an edit names the clip it belongs to", first, i+1, pytext.Repr(clip.ID))
 		}
 		named[clip.ID] = i + 1
 	}
@@ -481,7 +481,7 @@ func LoadClips(fsys afero.Fs, path string) (Plan, []Clip, error) {
 	for i, clip := range clips {
 		if first, dup := seen[clip.Basename()]; dup {
 			return Plan{}, nil, renderErr("clips %d and %d both resolve to the name %s, "+
-				"which would overwrite one output", first, i+1, pyRepr(clip.Basename()))
+				"which would overwrite one output", first, i+1, pytext.Repr(clip.Basename()))
 		}
 		seen[clip.Basename()] = i + 1
 	}
@@ -559,7 +559,7 @@ func readCaptionTimes(raw any) map[string]CaptionTime {
 		}
 		var t CaptionTime
 		for name, into := range map[string]**float64{"start": &t.Start, "end": &t.End} {
-			v, ok := toFloat(edges[name])
+			v, ok := pynum.FloatOf(edges[name])
 			if ok && pynum.IsFinite(v) && v >= 0 && v <= MaxEpisodeSeconds {
 				*into = &v
 			}
@@ -604,7 +604,7 @@ func readThumbnails(raw any, segments []Segment) []float64 {
 		if i >= 4*MaxThumbnails {
 			break
 		}
-		at, ok := toFloat(item)
+		at, ok := pynum.FloatOf(item)
 		if !ok || !pynum.IsFinite(at) {
 			continue
 		}
@@ -635,8 +635,8 @@ func readFound(raw any) *[2]float64 {
 	if !ok || len(list) != 2 {
 		return nil
 	}
-	start, ok1 := toFloat(list[0])
-	end, ok2 := toFloat(list[1])
+	start, ok1 := pynum.FloatOf(list[0])
+	end, ok2 := pynum.FloatOf(list[1])
 	if !ok1 || !ok2 || !pynum.IsFinite(start) || !pynum.IsFinite(end) || start < 0 || end <= start {
 		return nil
 	}

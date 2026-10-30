@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"strings"
 
-	"framefairy/engine/pynum"
-
 	"github.com/spf13/afero"
+
+	"framefairy/engine/pynum"
 )
 
 // A crop that follows, plan row 3.26. A person puts keyframes on frames
@@ -92,11 +92,11 @@ func readCropMarks(raw any, spans []Rotation) []CropMark {
 		if atText || xText {
 			continue
 		}
-		at, ok := toFloat(entry[keyAt])
+		at, ok := pynum.FloatOf(entry[keyAt])
 		if !ok || !pynum.IsFinite(at) || at < 0 || at > MaxEpisodeSeconds {
 			continue
 		}
-		left, ok := toFloat(entry[keyX])
+		left, ok := pynum.FloatOf(entry[keyX])
 		if !ok || left != math.Trunc(left) || left < 0 || left >= 1_000_000 {
 			continue
 		}
@@ -107,7 +107,7 @@ func readCropMarks(raw any, spans []Rotation) []CropMark {
 		}
 		seen[key] = true
 		turn := RotationAt(spans, at)
-		if n, ok := toFloat(entry[keyTurn]); ok && n == math.Trunc(n) && validRotate(int(n)) {
+		if n, ok := pynum.FloatOf(entry[keyTurn]); ok && n == math.Trunc(n) && validRotate(int(n)) {
 			turn = int(n)
 		}
 		out = append(out, CropMark{At: pynum.RoundTo(at, 3), X: x - x%2, Turn: turn})
@@ -514,7 +514,7 @@ func cropShown(c *object, pieces []*object, target int, at float64, frames Sourc
 	if rotationOf(pieces[target], spans) != 0 {
 		key = keyCropXTurned
 	}
-	if n, ok := toInt(pieces[target].values[key]); ok {
+	if n, ok := pynum.IntOf(pieces[target].values[key]); ok {
 		return &n
 	}
 	return nil

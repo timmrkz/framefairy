@@ -13,11 +13,10 @@ import (
 	"sync"
 	"testing"
 
-	"framefairy/engine/pynum"
-
-	"framefairy/engine/timed"
-
 	"github.com/spf13/afero"
+
+	"framefairy/engine/pynum"
+	"framefairy/engine/timed"
 )
 
 // Every edit the app makes goes through editPlan, and the app has no save
@@ -102,7 +101,7 @@ func TestEveryEditRaisesTheRevision(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		n, _ := toInt(plan.Raw["revision"])
+		n, _ := pynum.IntOf(plan.Raw["revision"])
 		return n
 	}
 	if revision() != 0 {
@@ -588,7 +587,7 @@ func FuzzPlanEdits(f *testing.F) {
 			if plan.Raw["custom"] == nil || plan.Raw["plan_id"] != "p1" {
 				t.Fatalf("step %d lost a field the loader does not know", i/3)
 			}
-			revision, _ := toInt(plan.Raw["revision"])
+			revision, _ := pynum.IntOf(plan.Raw["revision"])
 			if revision < lastRevision {
 				t.Fatalf("the revision went backwards, %d after %d", revision, lastRevision)
 			}

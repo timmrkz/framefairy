@@ -13,9 +13,9 @@ import (
 	"strings"
 	"testing"
 
-	"framefairy/engine/pynum"
-
 	"github.com/spf13/afero"
+
+	"framefairy/engine/pynum"
 )
 
 // A clip plan is written by a model, read back by both front ends and edited

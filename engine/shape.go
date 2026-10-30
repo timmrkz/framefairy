@@ -4,12 +4,11 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/spf13/afero"
+
 	"framefairy/engine/pynum"
 	"framefairy/engine/pytext"
-
 	"framefairy/engine/timed"
-
-	"github.com/spf13/afero"
 )
 
 // What a hand does to a clip on the clip timeline, and what it makes of the

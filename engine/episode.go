@@ -11,12 +11,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/afero"
+
 	"framefairy/engine/pynum"
 	"framefairy/engine/pytext"
-
 	"framefairy/engine/timed"
-
-	"github.com/spf13/afero"
 )
 
 // VideoExtensions are the files the app takes as videos: what Add's box
@@ -246,10 +245,10 @@ func summaryOf(fsys afero.Fs, m string) (PlanSummary, error) {
 	s := PlanSummary{Path: m, Name: filepath.Base(m), Clips: len(clips),
 		Modified: info.ModTime(), plan: plan, clips: clips}
 	made := plan.PlannedWith()
-	if v, ok := toFloat(made[keyFrom]); ok {
+	if v, ok := pynum.FloatOf(made[keyFrom]); ok {
 		s.From = v
 	}
-	if v, ok := toFloat(made[keyTo]); ok {
+	if v, ok := pynum.FloatOf(made[keyTo]); ok {
 		s.To = v
 	}
 	if v, ok := made["model"].(string); ok {
@@ -542,7 +541,7 @@ func (s PlanSummary) View() *PlanView {
 			fallback := twoDigits(i + 1)
 			id := fallback
 			if value, present := entry[keyID]; present {
-				id = pyStr(value)
+				id = pynum.Str(value)
 			}
 			extras[SanitiseName(id, fallback)] = entry
 		}

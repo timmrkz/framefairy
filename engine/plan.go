@@ -14,12 +14,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/afero"
+
 	"framefairy/engine/pynum"
 	"framefairy/engine/pytext"
-
 	"framefairy/engine/timed"
-
-	"github.com/spf13/afero"
 )
 
 // SummariseLines reports what the transcript looks like before any token is

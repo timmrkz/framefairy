@@ -11,12 +11,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/afero"
+
 	"framefairy/engine/pynum"
 	"framefairy/engine/pytext"
-
 	"framefairy/engine/timed"
-
-	"github.com/spf13/afero"
 )
 
 // Options are everything a run can be told. The command line fills these in,
@@ -641,8 +640,8 @@ func (r *runner) clips(plannedNow bool) (Plan, []Clip, error) {
 			value float64
 		}{{"count", float64(opts.Count)}, {"min", opts.Min}, {"max", opts.Max}} {
 			if raw, present := made[check.name]; present {
-				if was, ok := toFloat(raw); !ok || was != check.value {
-					shown := pyStr(raw)
+				if was, ok := pynum.FloatOf(raw); !ok || was != check.value {
+					shown := pynum.Str(raw)
 					if ok {
 						shown = trimFloat(was)
 					}
@@ -651,8 +650,8 @@ func (r *runner) clips(plannedNow bool) (Plan, []Clip, error) {
 				}
 			}
 		}
-		if model, present := made["model"]; present && model != nil && pyStr(model) != plannerName(opts) {
-			differs = append(differs, fmt.Sprintf("model was %s, now %s", pyStr(model), plannerName(opts)))
+		if model, present := made["model"]; present && model != nil && pynum.Str(model) != plannerName(opts) {
+			differs = append(differs, fmt.Sprintf("model was %s, now %s", pynum.Str(model), plannerName(opts)))
 		}
 		if len(differs) > 0 {
 			log.Warn("the saved plan was made with different settings:")
@@ -715,7 +714,7 @@ func (r *runner) render(ctx context.Context, plan Plan, clips []Clip) error {
 				names = append(names, name)
 			}
 			sort.Strings(names)
-			return fmt.Errorf("no clip matched %s", pyListRepr(names))
+			return fmt.Errorf("no clip matched %s", pytext.ListRepr(names))
 		}
 		clips = picked
 	}

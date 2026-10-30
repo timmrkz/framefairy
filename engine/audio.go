@@ -14,7 +14,6 @@ import (
 
 	"framefairy/engine/pynum"
 	"framefairy/engine/pytext"
-
 	"framefairy/engine/timed"
 )
 

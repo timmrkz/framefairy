@@ -12,9 +12,7 @@ import (
 
 	"framefairy/engine/pynum"
 	"framefairy/engine/pytext"
-
 	"framefairy/engine/timed"
-
 	"framefairy/internal/framewire"
 )
 
@@ -119,11 +117,11 @@ func EscapeASSText(text string) string { return assText.Replace(text) }
 var assField = strings.NewReplacer(",", " ", "{", "", "}", "", "\n", " ", "\r", " ", ":", " ")
 
 func cleanField(value any) string {
-	return pytext.Prefix(pytext.Strip(assField.Replace(pyStr(value))), 64)
+	return pytext.Prefix(pytext.Strip(assField.Replace(pynum.Str(value))), 64)
 }
 
 func cleanNumber(value any, fallback float64) float64 {
-	number, ok := toFloat(value)
+	number, ok := pynum.FloatOf(value)
 	if !ok || !pynum.IsFinite(number) {
 		return fallback
 	}
@@ -133,7 +131,7 @@ func cleanNumber(value any, fallback float64) float64 {
 // highlightColour accepts #RRGGBB, RRGGBB or an ASS colour and returns the
 // value an ASS colour tag takes.
 func highlightColour(value any, fallback string) string {
-	text := strings.ToUpper(pytext.Strip(pyStr(value)))
+	text := strings.ToUpper(pytext.Strip(pynum.Str(value)))
 	var rgb string
 	switch {
 	case strings.HasPrefix(text, "#"):
@@ -193,7 +191,7 @@ func isHex(text string) bool {
 }
 
 func cleanColour(value any, fallback string) string {
-	text := pytext.Strip(pyStr(value))
+	text := pytext.Strip(pynum.Str(value))
 	if text == "" || pytext.Len(text) > 12 {
 		return fallback
 	}
@@ -275,7 +273,7 @@ func (s Style) boxColour() string {
 // &HAABBGGRR, which is how the app keeps one with an opacity. A colour
 // given as #RRGGBB, or one that is no colour at all, is solid.
 func highlightAlpha(value any) string {
-	text := strings.ToUpper(pytext.Strip(pyStr(value)))
+	text := strings.ToUpper(pytext.Strip(pynum.Str(value)))
 	if !strings.HasPrefix(text, "&H") || highlightColour(text, "") == "" {
 		return "00"
 	}

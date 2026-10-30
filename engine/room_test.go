@@ -5,11 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	"framefairy/engine/pytext"
-
-	"framefairy/engine/timed"
-
 	"github.com/spf13/afero"
+
+	"framefairy/engine/pytext"
+	"framefairy/engine/timed"
 )
 
 func TestLocalContextIsWhatTheMakerPublishes(t *testing.T) {

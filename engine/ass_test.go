@@ -9,13 +9,11 @@ import (
 	"strings"
 	"testing"
 
-	"framefairy/engine/pynum"
-	"framefairy/engine/pytext"
-
-	"framefairy/engine/timed"
-
 	"github.com/spf13/afero"
 
+	"framefairy/engine/pynum"
+	"framefairy/engine/pytext"
+	"framefairy/engine/timed"
 	"framefairy/internal/ffmpegtest"
 )
 

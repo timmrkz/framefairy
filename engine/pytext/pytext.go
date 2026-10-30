@@ -91,3 +91,25 @@ func Scrub(text string, limit int) string {
 	cleaned = strings.Join(Fields(cleaned), " ")
 	return Prefix(cleaned, limit)
 }
+
+// Repr formats a string the way Python's repr() usually does.
+func Repr(s string) string {
+	quote := "'"
+	if strings.Contains(s, "'") && !strings.Contains(s, "\"") {
+		quote = "\""
+	}
+	s = strings.ReplaceAll(s, "\\", "\\\\")
+	if quote == "'" {
+		s = strings.ReplaceAll(s, "'", "\\'")
+	}
+	return quote + s + quote
+}
+
+// ListRepr formats a list of strings the way Python prints one.
+func ListRepr(items []string) string {
+	quoted := make([]string, len(items))
+	for i, item := range items {
+		quoted[i] = "'" + item + "'"
+	}
+	return "[" + strings.Join(quoted, ", ") + "]"
+}

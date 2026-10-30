@@ -10,6 +10,13 @@
 //  4. analysis   framing, derived from the footage
 //  5. captions   captions made of the same words, written as srt and ass
 //  6. render     build the ffmpeg filter graph and run it
+//
+// A note on arm64, which is what Apple Silicon runs. The Go compiler may fuse
+// a multiplication and an addition into one instruction there, and a fused
+// result can round differently from Python, which computes them one after
+// the other. An explicit float64() conversion prevents the fusion, which is
+// why some products in this package are wrapped in one that looks redundant.
+// The numbers themselves are rounded and written by engine/pynum.
 package engine
 
 import (

@@ -10,7 +10,6 @@ import (
 	"unicode"
 
 	"framefairy/engine/pytext"
-
 	"framefairy/engine/timed"
 )
 

@@ -15,10 +15,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/afero"
+
 	"framefairy/engine/pynum"
 	"framefairy/engine/pytext"
-
-	"github.com/spf13/afero"
 )
 
 // The addresses this tool contacts are the providers' in provider.go,
@@ -682,7 +682,7 @@ func (e *Engine) CallAPI(ctx context.Context, prompt, model string, maxTokens in
 		sort.Strings(kinds)
 		kindText := "none"
 		if len(kinds) > 0 {
-			kindText = pyListRepr(kinds)
+			kindText = pytext.ListRepr(kinds)
 		}
 		stop := data.StopReason
 		if stop == "" {

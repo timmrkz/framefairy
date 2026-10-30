@@ -15,12 +15,11 @@ import (
 	"sync"
 	"unicode"
 
+	"github.com/spf13/afero"
+
 	"framefairy/engine/pynum"
 	"framefairy/engine/pytext"
-
 	"framefairy/engine/timed"
-
-	"github.com/spf13/afero"
 )
 
 // ---------------------------------------------------------------------------

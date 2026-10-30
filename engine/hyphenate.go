@@ -9,12 +9,11 @@ import (
 	"sync"
 	"unicode"
 
-	"framefairy/engine/pytext"
-
-	"framefairy/engine/timed"
-
 	"github.com/abadojack/whatlanggo"
 	"github.com/speedata/hyphenation"
+
+	"framefairy/engine/pytext"
+	"framefairy/engine/timed"
 )
 
 // A caption word too wide for a line is broken the way TeX breaks it:

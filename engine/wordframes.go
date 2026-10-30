@@ -5,7 +5,6 @@ import (
 	"math"
 
 	"framefairy/engine/pynum"
-
 	"framefairy/internal/framewire"
 )
 

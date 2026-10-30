@@ -15,12 +15,11 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/spf13/afero"
+
 	"framefairy/engine/pynum"
 	"framefairy/engine/pytext"
-
 	"framefairy/engine/timed"
-
-	"github.com/spf13/afero"
 )
 
 // object is a JSON object that remembers its key order, so an edit made by
@@ -245,7 +244,7 @@ func editPlanLocked(fsys afero.Fs, path string, change func(top *object, clips [
 	}
 	revision := 0
 	if raw, ok := top.get(keyRevision); ok {
-		revision, _ = toInt(raw)
+		revision, _ = pynum.IntOf(raw)
 	}
 	top.set(keyRevision, revision+1)
 
@@ -327,7 +326,7 @@ func appendClipLocked(fsys afero.Fs, path string, clip PlanClip) error {
 			fallback := twoDigits(i + 1)
 			text := fallback
 			if raw, ok := c.get(keyID); ok {
-				text = pyStr(raw)
+				text = pynum.Str(raw)
 			}
 			if SanitiseName(text, fallback) == clip.ID {
 				// Already there, which a search that was asked again
@@ -373,7 +372,7 @@ func findClip(clips []*object, id string) (*object, error) {
 		fallback := twoDigits(i + 1)
 		text := fallback
 		if raw, ok := c.get(keyID); ok {
-			text = pyStr(raw)
+			text = pynum.Str(raw)
 		}
 		if SanitiseName(text, fallback) == id {
 			return c, nil
@@ -445,7 +444,7 @@ func DropRemoved(fsys afero.Fs, planPath, clipID string) error {
 }
 
 func number(v any) float64 {
-	f, _ := toFloat(v)
+	f, _ := pynum.FloatOf(v)
 	return f
 }
 
@@ -1025,12 +1024,12 @@ func SetCaptionStyle(fsys afero.Fs, planPath string, values map[string]any) erro
 		switch key {
 		case "font":
 			if text, ok := value.(string); !ok || text != checked.Font {
-				return renderErr("%s cannot be used as a caption font", pytext.Scrub(pyStr(value), 40))
+				return renderErr("%s cannot be used as a caption font", pytext.Scrub(pynum.Str(value), 40))
 			}
 		case "size":
-			if size, ok := toFloat(value); !ok || size != checked.Size {
+			if size, ok := pynum.FloatOf(value); !ok || size != checked.Size {
 				return renderErr("%s is not a caption size between 8 and 400",
-					pytext.Scrub(pyStr(value), 40))
+					pytext.Scrub(pynum.Str(value), 40))
 			}
 		case "highlight_colour":
 			// The pill behind the word being spoken, as #RRGGBB, or as
@@ -1038,7 +1037,7 @@ func SetCaptionStyle(fsys afero.Fs, planPath string, values map[string]any) erro
 			text, ok := value.(string)
 			hex := ok && len(text) == 7 && strings.HasPrefix(text, "#") && isHex(text[1:])
 			if !hex && (!ok || !isAssColour(text)) {
-				return renderErr("%s is not a highlight colour", pytext.Scrub(pyStr(value), 40))
+				return renderErr("%s is not a highlight colour", pytext.Scrub(pynum.Str(value), 40))
 			}
 		case "highlight", "text", "box":
 			// The word being spoken on its pill, or the words alone. The
@@ -1046,7 +1045,7 @@ func SetCaptionStyle(fsys afero.Fs, planPath string, values map[string]any) erro
 			// number, so that is what is written.
 			on, ok := value.(bool)
 			if !ok {
-				return renderErr("%s is neither on nor off", pytext.Scrub(pyStr(value), 40))
+				return renderErr("%s is neither on nor off", pytext.Scrub(pynum.Str(value), 40))
 			}
 			values[key] = 0.0
 			if on {
@@ -1057,7 +1056,7 @@ func SetCaptionStyle(fsys afero.Fs, planPath string, values map[string]any) erro
 			// way the render takes them, &HAABBGGRR.
 			text, ok := value.(string)
 			if !ok || !isAssColour(text) {
-				return renderErr("%s is not a caption colour", pytext.Scrub(pyStr(value), 40))
+				return renderErr("%s is not a caption colour", pytext.Scrub(pynum.Str(value), 40))
 			}
 		default:
 			return renderErr("the caption setting %s cannot be changed here", pytext.Scrub(key, 40))
