@@ -128,8 +128,8 @@ export async function newBrowser() {
 // WALKCOVERAGE names a folder, and every page a walk opens counts the
 // lines of the interface it runs, which make walks COVERAGE= turns into
 // a report on the components, see Coverage in docs/TESTING.md. The
-// counts of a page are kept when it is closed, in the
-// folder monocart-coverage-reports gathers them in, one file for each
+// counts of a page are kept when it is closed, by keep in counts.mjs, in
+// the folder monocart-coverage-reports gathers them in, one file for each
 // page, so the walks running side by side never write the same file.
 // Each script is named by its path alone, so the same script served by
 // another bridge on another port is the same script, and its source map
@@ -161,8 +161,8 @@ function counted(browser) {
       sourceMap.sources = sourceMap.sources.map((s) => relative(top, resolve(dirname(map), s)));
       scripts.push({ ...entry, url: `http://bridge${path}`, sourceMap });
     }
-    const { CoverageReport } = await import("monocart-coverage-reports");
-    await new CoverageReport({ outputDir: coverage, logging: "error" }).add(scripts);
+    const { keep: keepCounts } = await import("../counts.mjs");
+    await keepCounts(coverage, scripts);
   };
   const plain = browser.newPage.bind(browser);
   browser.newPage = async (options) => {
