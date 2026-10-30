@@ -1817,3 +1817,8 @@ macOS keychain of `engine/keys_darwin.go`, in the frames decoder of
   hyphenate.go  a caption word too wide for a line, broken the way TeX does
   wordframes.go where the words of a caption stand, as libass draws them
 ```
+
+`engine/timed/` is the first part of the engine in a package of its own:
+the words every part uses for a moment of a video, `Cue`, `Span`,
+`Window`, `Reading` and `FrameSeconds`. It imports nothing of the rest of
+the engine, see [ARCHITECTURE.md](ARCHITECTURE.md).

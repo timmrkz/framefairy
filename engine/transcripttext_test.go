@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"framefairy/engine/timed"
 )
 
 // The transcript exported is what the video says with the corrections of
@@ -12,7 +14,7 @@ import (
 // still said, so it stays.
 func TestTheExportedTranscriptReadsEveryClipsCorrections(t *testing.T) {
 	t.Parallel()
-	heard := []Cue{
+	heard := []timed.Cue{
 		{Start: 0.0, End: 0.3, Text: "Ich"},
 		{Start: 0.4, End: 0.7, Text: "war"},
 		{Start: 0.8, End: 1.1, Text: "drei"},
@@ -48,14 +50,14 @@ func TestTheExportedTranscriptReadsEveryClipsCorrections(t *testing.T) {
 // has run long enough ends at the next sentence. No words is no text.
 func TestTheExportedTranscriptIsInParagraphs(t *testing.T) {
 	t.Parallel()
-	var words []Cue
+	var words []timed.Cue
 	at := 0.0
 	for i := range 40 {
 		text := "eins"
 		if i%4 == 3 {
 			text = "Satz."
 		}
-		words = append(words, Cue{Start: at, End: at + 0.3, Text: text})
+		words = append(words, timed.Cue{Start: at, End: at + 0.3, Text: text})
 		at += 1.4
 	}
 	got := TranscriptText(&Transcript{Words: words})
@@ -74,14 +76,14 @@ func TestTheExportedTranscriptIsInParagraphs(t *testing.T) {
 // word is in one subtitle, in order.
 func TestTheExportedSubtitlesAreShort(t *testing.T) {
 	t.Parallel()
-	var words []Cue
+	var words []timed.Cue
 	at := 0.0
 	for i := range 60 {
 		text := "Erinnerung"
 		if i%15 == 14 {
 			text = "Ende."
 		}
-		words = append(words, Cue{Start: at, End: at + 0.3, Text: text})
+		words = append(words, timed.Cue{Start: at, End: at + 0.3, Text: text})
 		at += 0.35
 	}
 	srt := TranscriptSRT(&Transcript{Words: words})
@@ -115,7 +117,7 @@ func TestTheExportedSubtitlesAreShort(t *testing.T) {
 	// Found by the review of #458, nothing here looked at the times.
 	words = words[:0]
 	for i := range 40 {
-		words = append(words, Cue{Start: float64(i) * 1.2, End: float64(i)*1.2 + 1, Text: "ja"})
+		words = append(words, timed.Cue{Start: float64(i) * 1.2, End: float64(i)*1.2 + 1, Text: "ja"})
 	}
 	srt = TranscriptSRT(&Transcript{Words: words})
 	blocks = strings.Split(strings.TrimSpace(srt), "\n\n")

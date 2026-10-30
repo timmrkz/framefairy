@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"framefairy/engine/timed"
+
 	"framefairy/internal/ffmpegtest"
 )
 
@@ -83,7 +85,7 @@ func TestSoundResumedBeforeALatePictureIsTheSoundThere(t *testing.T) {
 		want := whole[start*SampleRate/100:]
 		if lag := shift(got, want); lag != 0 || len(got) != len(want) {
 			t.Errorf("read from %.2f s: %d samples where %d are left, %d samples out of step, %.1f ms",
-				float64(start)*FrameSeconds, len(got), len(want), lag, float64(lag)*1000/SampleRate)
+				float64(start)*timed.FrameSeconds, len(got), len(want), lag, float64(lag)*1000/SampleRate)
 		}
 	}
 }

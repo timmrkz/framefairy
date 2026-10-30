@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"framefairy/engine/timed"
+
 	"github.com/spf13/afero"
 )
 
@@ -57,7 +59,7 @@ func captionsOf(v *CaptionsView) []string {
 // readAgain is the transcript as the app reads it after an edit, from
 // what was heard. Nothing beside it is read: what an edit does to words is
 // kept in the clip.
-func readAgain(_ afero.Fs, _ string, heard []Cue) *Transcript {
+func readAgain(_ afero.Fs, _ string, heard []timed.Cue) *Transcript {
 	return fromStored(heard, nil, 0, 0, nil)
 }
 
@@ -252,11 +254,11 @@ func shownWordsOf(t *testing.T, fsys afero.Fs, path, id string, tr *Transcript) 
 
 // longHeard is n words heard one after the other, a third of a second
 // each, about four hours for 40,000.
-func longHeard(n int) []Cue {
-	heard := make([]Cue, n)
+func longHeard(n int) []timed.Cue {
+	heard := make([]timed.Cue, n)
 	for i := range heard {
 		at := float64(i) / 3
-		heard[i] = Cue{Start: at, End: at + 0.3, Text: fmt.Sprintf("wort%d", i)}
+		heard[i] = timed.Cue{Start: at, End: at + 0.3, Text: fmt.Sprintf("wort%d", i)}
 	}
 	return heard
 }

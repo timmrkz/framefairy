@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 
+	"framefairy/engine/timed"
+
 	"github.com/spf13/afero"
 )
 
@@ -446,7 +448,7 @@ func number(v any) float64 {
 
 // SnapStart is where a clip starting at the word nearest to at begins: a
 // little before the word, never reaching back into the word before it.
-func SnapStart(words []Cue, at, keepPause float64) float64 {
+func SnapStart(words []timed.Cue, at, keepPause float64) float64 {
 	if len(words) == 0 {
 		return at
 	}
@@ -467,7 +469,7 @@ func SnapStart(words []Cue, at, keepPause float64) float64 {
 // after the word, never reaching into the word after it. Where a caption
 // goes, one of goes, is a place to end too, when it is nearer than the word
 // and in the pause after it.
-func SnapEnd(words []Cue, goes []float64, at, keepPause float64) float64 {
+func SnapEnd(words []timed.Cue, goes []float64, at, keepPause float64) float64 {
 	if len(words) == 0 {
 		return at
 	}
@@ -492,7 +494,7 @@ func SnapEnd(words []Cue, goes []float64, at, keepPause float64) float64 {
 
 // inPause says whether at is in the air between two words, more than
 // keepPause after the one before and before the next begins.
-func inPause(words []Cue, at, keepPause float64) bool {
+func inPause(words []timed.Cue, at, keepPause float64) bool {
 	i := sort.Search(len(words), func(j int) bool { return words[j].End > at }) - 1
 	if i < 0 || at <= words[i].End+keepPause {
 		return false
@@ -855,7 +857,7 @@ func piecesOnFrames(pieces []*object, frames SourceInfo) ([]*object, error) {
 // Its left edge stops where a caption goes too, one of goes, when that is
 // in the pause before it: a caption stays up a little after its last word,
 // and the cut then begins where its block ends rather than inside it.
-func snapCut(words []Cue, goes []float64, from, to, keepPause float64) (float64, float64) {
+func snapCut(words []timed.Cue, goes []float64, from, to, keepPause float64) (float64, float64) {
 	// What the cut touches goes with it.
 	swallowedFrom, swallowedTo := math.Inf(1), math.Inf(-1)
 	for _, w := range words {
@@ -1538,14 +1540,14 @@ var planNameRe = regexp.MustCompile(`^clips(-\d+-\d+(-\d+)?|-hand)?\.json$`)
 // window was made over that window, and one without a window over the
 // whole episode. The clips made by hand were made over no part of it,
 // since no model read anything for them.
-func madeOver(from, to float64, windowed bool, by string, duration float64) Window {
+func madeOver(from, to float64, windowed bool, by string, duration float64) timed.Window {
 	switch {
 	case by == ByHand:
-		return Window{}
+		return timed.Window{}
 	case windowed:
-		return Window{from, to}
+		return timed.Window{Start: from, End: to}
 	case duration > 0:
-		return Window{0, duration}
+		return timed.Window{Start: 0, End: duration}
 	}
-	return Window{0, math.Inf(1)}
+	return timed.Window{Start: 0, End: math.Inf(1)}
 }

@@ -5,27 +5,9 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"framefairy/engine/timed"
 )
-
-// Cue is a timed piece of text: one word, or one caption made of words, with
-// its start and end in seconds.
-type Cue struct {
-	Start float64
-	End   float64
-	Text  string
-}
-
-// Span runs from Start to End, in seconds.
-type Span struct {
-	Start float64
-	End   float64
-}
-
-// Reading is one loudness measurement, in dB, at a point in time.
-type Reading struct {
-	At    float64
-	Level float64
-}
 
 // --------------------------------------------------------------------------
 // time formats
@@ -73,12 +55,12 @@ func endsSentence(s string) bool {
 }
 
 // WriteSRT writes cues as an srt file.
-func WriteSRT(cues []Cue, path string) error {
+func WriteSRT(cues []timed.Cue, path string) error {
 	return os.WriteFile(path, []byte(SRT(cues)), 0o644)
 }
 
 // SRT is cues as the text of an srt file.
-func SRT(cues []Cue) string {
+func SRT(cues []timed.Cue) string {
 	var lines []string
 	for i, cue := range cues {
 		lines = append(lines, strconv.Itoa(i+1),

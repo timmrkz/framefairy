@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"framefairy/engine/timed"
 )
 
 // ---------------------------------------------------------------------------
@@ -211,7 +213,7 @@ func (p *Project) heardSoFar(req PlanRequest) (heardWindow, bool) {
 		return heardWindow{}, false
 	}
 	window := inMilliseconds(searchWindow(req.From, req.To, req.Pass, duration))
-	span := Window{0, duration}
+	span := timed.Window{Start: 0, End: duration}
 	if window != nil {
 		span = *window
 	}
@@ -229,7 +231,7 @@ func (p *Project) heardSoFar(req PlanRequest) (heardWindow, bool) {
 		return heardWindow{}, false
 	}
 	t, ok := sliceTranscript(p.Files, filepath.Join(p.LogsDir(), TranscriptName(nil)), stamp,
-		filepath.Base(filepath.Clean(speechModel(opts))), Window{span.Start, gaps[0].Start}, opts.SilenceDB)
+		filepath.Base(filepath.Clean(speechModel(opts))), timed.Window{Start: span.Start, End: gaps[0].Start}, opts.SilenceDB)
 	if !ok {
 		return heardWindow{}, false
 	}

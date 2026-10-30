@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"framefairy/engine/timed"
+
 	"github.com/spf13/afero"
 )
 
@@ -21,9 +23,9 @@ const shotsPlan = `{"clips": [{"id": "01", "segments": [
   {"start": 12.8, "end": 16.0, "crop_x": 900}]}]}`
 
 func shotsTranscript() *Transcript {
-	return &Transcript{Words: []Cue{
-		{9.8, 10.3, "eins"}, {11, 11.5, "zwei"}, {12.2, 12.6, "drei"},
-		{13.0, 13.4, "vier"}, {14, 14.5, "fünf"}, {15.2, 15.7, "sechs"},
+	return &Transcript{Words: []timed.Cue{
+		{Start: 9.8, End: 10.3, Text: "eins"}, {Start: 11, End: 11.5, Text: "zwei"}, {Start: 12.2, End: 12.6, Text: "drei"},
+		{Start: 13.0, End: 13.4, Text: "vier"}, {Start: 14, End: 14.5, Text: "fünf"}, {Start: 15.2, End: 15.7, Text: "sechs"},
 	}}
 }
 

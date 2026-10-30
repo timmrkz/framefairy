@@ -9,6 +9,8 @@ import (
 	"sync"
 	"unicode"
 
+	"framefairy/engine/timed"
+
 	"github.com/abadojack/whatlanggo"
 	"github.com/speedata/hyphenation"
 )
@@ -158,7 +160,7 @@ var spokenLanguages = map[whatlanggo.Lang]bool{
 // wordsLanguage says which language words are in, as ISO 639-1. An
 // episode is read once, off its first few thousand words, which is plenty
 // to tell and quick enough to do every time a transcript is read.
-func wordsLanguage(words []Cue) string {
+func wordsLanguage(words []timed.Cue) string {
 	var text strings.Builder
 	for i, w := range words {
 		if i == 3000 {
@@ -349,11 +351,11 @@ func breakPoints(runes []rune, h *hyphenator, joints bool) []int {
 // word's time by its letters. It is the one place a word is split for
 // showing, used by the captions and by the clip timeline, so the halves the
 // highlight lights are the halves an edge dragged with shift stops at.
-func ShowWords(words []Cue, s Style, language string) []Cue {
+func ShowWords(words []timed.Cue, s Style, language string) []timed.Cue {
 	return showWords(words, roomFor(s), language)
 }
 
-func showWords(words []Cue, r captionRoom, language string) []Cue {
+func showWords(words []timed.Cue, r captionRoom, language string) []timed.Cue {
 	for _, w := range words {
 		if !r.fits(w.Text) {
 			return hyphenate(words, r, hyphenatorFor(language))
@@ -366,15 +368,15 @@ func showWords(words []Cue, r captionRoom, language string) []Cue {
 // The span the word was spoken in is shared out by how long the pieces
 // are, the way splitWord shares out a word corrected into two. The
 // words given are never changed, a split gives back a new list.
-func hyphenate(words []Cue, r captionRoom, h *hyphenator) []Cue {
-	var out []Cue
+func hyphenate(words []timed.Cue, r captionRoom, h *hyphenator) []timed.Cue {
+	var out []timed.Cue
 	for i, w := range words {
 		parts := breakWord(w.Text, r, h)
 		if len(parts) < 2 && out == nil {
 			continue
 		}
 		if out == nil {
-			out = append(make([]Cue, 0, len(words)+1), words[:i]...)
+			out = append(make([]timed.Cue, 0, len(words)+1), words[:i]...)
 		}
 		total := 0
 		for _, part := range parts {
@@ -386,7 +388,7 @@ func hyphenate(words []Cue, r captionRoom, h *hyphenator) []Cue {
 			if k < len(parts)-1 {
 				end = at + span*float64(runeLen(strings.TrimSuffix(part, "-")))/float64(max(total, 1))
 			}
-			out = append(out, Cue{at, end, part})
+			out = append(out, timed.Cue{Start: at, End: end, Text: part})
 			at = end
 		}
 	}

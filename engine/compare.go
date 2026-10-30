@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"framefairy/engine/timed"
+
 	"github.com/spf13/afero"
 )
 
@@ -312,7 +314,7 @@ func localUse(body []byte) (use modelUse) {
 
 // foundClips reads a plan the way the engine does, and writes each clip
 // out as it is heard, in the episode's words.
-func foundClips(fsys afero.Fs, path string, words []Cue) []FoundClip {
+func foundClips(fsys afero.Fs, path string, words []timed.Cue) []FoundClip {
 	plan, clips, err := LoadClips(fsys, path)
 	if err != nil {
 		return nil

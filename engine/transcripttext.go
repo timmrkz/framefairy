@@ -2,6 +2,8 @@ package engine
 
 import (
 	"strings"
+
+	"framefairy/engine/timed"
 )
 
 // CorrectedTranscript is what the episode says, with every word corrected
@@ -75,14 +77,14 @@ const (
 // subtitles that fit in two lines of subtitleChars and run at most
 // subtitleSeconds. No words gives no text.
 func TranscriptSRT(t *Transcript) string {
-	var cues []Cue
+	var cues []timed.Cue
 	for _, line := range BuildLines(t.Words, nil, nil) {
 		var words []string
 		start, end := 0.0, 0.0
 		flush := func() {
 			if len(words) > 0 {
 				text, _ := twoLines(Scrub(strings.Join(words, " "), maxLineChars))
-				cues = append(cues, Cue{Start: start, End: end, Text: text})
+				cues = append(cues, timed.Cue{Start: start, End: end, Text: text})
 			}
 			words = words[:0]
 		}

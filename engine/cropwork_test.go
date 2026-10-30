@@ -3,6 +3,8 @@ package engine
 import (
 	"testing"
 	"time"
+
+	"framefairy/engine/timed"
 )
 
 // Placing the crop of a clip fills from start to end: the share only
@@ -18,7 +20,7 @@ func TestPlacingTheCropSaysHowFarItIs(t *testing.T) {
 		t.Errorf("before the work is known, share %v", f)
 	}
 	// Two pieces of 10 seconds: 40 seconds of work, scanned and sampled.
-	w.start([]Span{{0, 10}, {20, 30}})
+	w.start([]timed.Span{{Start: 0, End: 10}, {Start: 20, End: 30}})
 	began := w.began
 	last := -1.0
 	check := func(what string, at time.Duration, most float64) {

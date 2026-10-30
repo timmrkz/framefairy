@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"framefairy/engine/timed"
+
 	"github.com/spf13/afero"
 )
 
@@ -94,7 +96,7 @@ func (f transcriptFile) done() bool {
 	// word, left between two parts, was never heard, and the video was
 	// never done.
 	end := float64(f.End)
-	return end > 0 && len(parts) > 0 && len(gapsIn(parts, Window{0, end})) == 0
+	return end > 0 && len(parts) > 0 && len(gapsIn(parts, timed.Window{Start: 0, End: end})) == 0
 }
 
 func stampOf(fsys afero.Fs, path string) (sourceStamp, error) {
@@ -107,7 +109,7 @@ func stampOf(fsys afero.Fs, path string) (sourceStamp, error) {
 }
 
 // TranscriptName is the cache file for a window of the episode.
-func TranscriptName(window *Window) string {
+func TranscriptName(window *timed.Window) string {
 	if window == nil {
 		return "words.json"
 	}
@@ -205,7 +207,7 @@ func meanOfFrames(frames []float32) float64 {
 	return 10 * math.Log10(power/float64(len(frames))+1e-20)
 }
 
-func storedWords(words []Cue) [][3]any {
+func storedWords(words []timed.Cue) [][3]any {
 	out := make([][3]any, len(words))
 	for i, w := range words {
 		out[i] = [3]any{PyFloat(roundTo(w.Start, 3)), PyFloat(roundTo(w.End, 3)), w.Text}
@@ -241,7 +243,7 @@ func HeardParts(fsys afero.Fs, source, asrModelDir string) [][2]float64 {
 
 // Unheard is what of a span of the episode its transcript has not heard
 // yet, in order. A gap too short to hold a word is left.
-func Unheard(fsys afero.Fs, source, asrModelDir string, span Window) []Window {
+func Unheard(fsys afero.Fs, source, asrModelDir string, span timed.Window) []timed.Window {
 	return gapsIn(HeardParts(fsys, source, asrModelDir), span)
 }
 
@@ -249,20 +251,20 @@ func Unheard(fsys afero.Fs, source, asrModelDir string, span Window) []Window {
 // seconds. Anything shorter holds no word.
 const shortestGap = 0.1
 
-func gapsIn(parts [][2]float64, span Window) []Window {
-	var gaps []Window
+func gapsIn(parts [][2]float64, span timed.Window) []timed.Window {
+	var gaps []timed.Window
 	at := span.Start
 	for _, p := range parts {
 		if p[1] <= at || p[0] >= span.End {
 			continue
 		}
 		if p[0] > at {
-			gaps = append(gaps, Window{at, p[0]})
+			gaps = append(gaps, timed.Window{Start: at, End: p[0]})
 		}
 		at = max(at, p[1])
 	}
 	if at < span.End {
-		gaps = append(gaps, Window{at, span.End})
+		gaps = append(gaps, timed.Window{Start: at, End: span.End})
 	}
 	out := gaps[:0]
 	for _, g := range gaps {
@@ -275,7 +277,7 @@ func gapsIn(parts [][2]float64, span Window) []Window {
 
 // readEpisodeTranscript reads an episode's transcript, heard or not, for
 // the speech model in asrModelDir, the default one when that is empty.
-func readEpisodeTranscript(fsys afero.Fs, source, asrModelDir string) (transcriptFile, []Cue, []float32, bool) {
+func readEpisodeTranscript(fsys afero.Fs, source, asrModelDir string) (transcriptFile, []timed.Cue, []float32, bool) {
 	stamp, err := stampOf(fsys, source)
 	if err != nil {
 		return transcriptFile{}, nil, nil, false
@@ -290,28 +292,28 @@ func readEpisodeTranscript(fsys afero.Fs, source, asrModelDir string) (transcrip
 // sliceTranscript cuts a window out of the episode's transcript, so no part
 // of the audio is ever heard twice. It has to have heard all of the window.
 // The noise floor stays the one measured over all that was heard.
-func sliceTranscript(fsys afero.Fs, path string, stamp sourceStamp, model string, window Window,
+func sliceTranscript(fsys afero.Fs, path string, stamp sourceStamp, model string, window timed.Window,
 	silenceDB *float64) (*Transcript, bool) {
 	file, words, frames, ok := readTranscriptFile(fsys, path, stamp, model)
 	if !ok || len(gapsIn(file.heard(), window)) > 0 {
 		return nil, false
 	}
-	first := max(0, int(math.Round((window.Start-float64(file.From))/FrameSeconds)))
-	last := min(len(frames), int(math.Round((window.End-float64(file.From))/FrameSeconds)))
+	first := max(0, int(math.Round((window.Start-float64(file.From))/timed.FrameSeconds)))
+	last := min(len(frames), int(math.Round((window.End-float64(file.From))/timed.FrameSeconds)))
 	if first >= last {
 		return nil, false
 	}
-	var inside []Cue
+	var inside []timed.Cue
 	for _, w := range words {
 		if w.Start >= window.Start && w.End <= window.End {
 			inside = append(inside, w)
 		}
 	}
-	start := float64(file.From) + float64(first)*FrameSeconds
+	start := float64(file.From) + float64(first)*timed.FrameSeconds
 	return fromStored(inside, frames[first:last], start, float64(file.Mean), silenceDB), true
 }
 
-func readTranscriptFile(fsys afero.Fs, path string, stamp sourceStamp, model string) (transcriptFile, []Cue,
+func readTranscriptFile(fsys afero.Fs, path string, stamp sourceStamp, model string) (transcriptFile, []timed.Cue,
 	[]float32, bool) {
 	var file transcriptFile
 	data, err := afero.ReadFile(fsys, path)
@@ -347,7 +349,7 @@ func readTranscriptFile(fsys afero.Fs, path string, stamp sourceStamp, model str
 	// files written one after the other, so a machine that stops in
 	// between, or a copy made by hand, can leave them out of step. What
 	// the frames do not reach is heard again.
-	reach := float64(file.From) + float64(len(frames))*FrameSeconds
+	reach := float64(file.From) + float64(len(frames))*timed.FrameSeconds
 	if last > reach+0.005 {
 		var within [][2]PyFloat
 		for _, p := range parts {
@@ -362,7 +364,7 @@ func readTranscriptFile(fsys afero.Fs, path string, stamp sourceStamp, model str
 		}
 		parts = file.heard()
 	}
-	var words []Cue
+	var words []timed.Cue
 	for _, item := range file.Words {
 		low, ok1 := toFloat(item[0])
 		high, ok2 := toFloat(item[1])
@@ -374,7 +376,7 @@ func readTranscriptFile(fsys afero.Fs, path string, stamp sourceStamp, model str
 		// where a search waited kept words up to where it stopped, and the
 		// word across that edge is heard again, whole.
 		if inParts(parts, low) {
-			words = append(words, Cue{low, high, text})
+			words = append(words, timed.Cue{Start: low, End: high, Text: text})
 		}
 	}
 	return file, words, frames, true
@@ -392,7 +394,7 @@ func inParts(parts [][2]float64, at float64) bool {
 	return len(parts) > 0 && at < 0.005 && parts[0][0] <= 0.005
 }
 
-func fromStored(words []Cue, frames []float32, start, mean float64, silenceDB *float64) *Transcript {
+func fromStored(words []timed.Cue, frames []float32, start, mean float64, silenceDB *float64) *Transcript {
 	t := &Transcript{Frames: frames, Start: start, Mean: mean}
 	t.Floor = NoiseFloor(mean)
 	if silenceDB != nil {
@@ -431,7 +433,7 @@ const hearingPad = 3.0
 // window the transcript has not heard yet is heard first and added to it,
 // so no part of the audio is ever heard twice. The transcript is one file
 // for the whole episode, whatever parts of it were heard, see TranscriptName.
-func (e *Engine) LoadTranscript(ctx context.Context, source string, window Window, duration float64,
+func (e *Engine) LoadTranscript(ctx context.Context, source string, window timed.Window, duration float64,
 	logsDir, modelDir string, silenceDB *float64) (*Transcript, error) {
 	t, err := e.loadTranscript(ctx, source, window, duration, logsDir, modelDir, silenceDB)
 	if err != nil {
@@ -440,7 +442,7 @@ func (e *Engine) LoadTranscript(ctx context.Context, source string, window Windo
 	return t, nil
 }
 
-func (e *Engine) loadTranscript(ctx context.Context, source string, window Window, duration float64,
+func (e *Engine) loadTranscript(ctx context.Context, source string, window timed.Window, duration float64,
 	logsDir, modelDir string, silenceDB *float64) (*Transcript, error) {
 	stamp, err := stampOf(e.Files, source)
 	if err != nil {
@@ -459,8 +461,8 @@ func (e *Engine) loadTranscript(ctx context.Context, source string, window Windo
 		return nil, err
 	}
 	// On frames, outward, so what is heard lines up with the loudness.
-	span := Window{math.Floor(window.Start/FrameSeconds+1e-6) * FrameSeconds,
-		math.Min(math.Ceil(window.End/FrameSeconds-1e-6)*FrameSeconds, duration)}
+	span := timed.Window{Start: math.Floor(window.Start/timed.FrameSeconds+1e-6) * timed.FrameSeconds,
+		End: math.Min(math.Ceil(window.End/timed.FrameSeconds-1e-6)*timed.FrameSeconds, duration)}
 	file, _, _, ok := readTranscriptFile(e.Files, path, stamp, model)
 	var had [][2]float64
 	if ok {
@@ -491,13 +493,13 @@ func (e *Engine) loadTranscript(ctx context.Context, source string, window Windo
 		e.mu.Unlock()
 		words, before := 0, whole-todo
 		for _, gap := range gaps {
-			read := Window{math.Max(0, gap.Start-hearingPad), math.Min(duration, gap.End+hearingPad)}
-			read.Start = math.Floor(read.Start/FrameSeconds+1e-6) * FrameSeconds
-			save := func(raw []Cue, frames []float32, covered float64) {
+			read := timed.Window{Start: math.Max(0, gap.Start-hearingPad), End: math.Min(duration, gap.End+hearingPad)}
+			read.Start = math.Floor(read.Start/timed.FrameSeconds+1e-6) * timed.FrameSeconds
+			save := func(raw []timed.Cue, frames []float32, covered float64) {
 				if covered <= gap.Start {
 					return
 				}
-				part := Window{gap.Start, math.Min(covered, gap.End)}
+				part := timed.Window{Start: gap.Start, End: math.Min(covered, gap.End)}
 				if err := addHeard(e.Files, path, stamp, model, duration, part, raw, frames, read.Start); err != nil {
 					e.Log.Detail("could not save the transcript so far: %s", err)
 				}
@@ -537,8 +539,8 @@ func (e *Engine) loadTranscript(ctx context.Context, source string, window Windo
 // part it starts in. The same word heard twice can start a few hundredths
 // apart, so a word of the new part that starts within a tenth of a second
 // of the neighbour's word across the join is that word again, and left out.
-func addHeard(fsys afero.Fs, path string, stamp sourceStamp, model string, duration float64, part Window,
-	raw []Cue, frames []float32, read float64) error {
+func addHeard(fsys afero.Fs, path string, stamp sourceStamp, model string, duration float64, part timed.Window,
+	raw []timed.Cue, frames []float32, read float64) error {
 	defer lockFile(fsys, path)()
 	file, had, hadFrames, ok := readTranscriptFile(fsys, path, stamp, model)
 	var parts [][2]float64
@@ -549,24 +551,24 @@ func addHeard(fsys afero.Fs, path string, stamp sourceStamp, model string, durat
 	}
 	// The frames, from the start of the episode, with what is not heard
 	// yet at -90.
-	all := make([]float32, max(int(math.Round(duration/FrameSeconds)), len(hadFrames)))
+	all := make([]float32, max(int(math.Round(duration/timed.FrameSeconds)), len(hadFrames)))
 	for i := range all {
 		all[i] = -90
 	}
-	heardFrame := func(n int) bool { return inParts(parts, (float64(n)+0.5)*FrameSeconds) }
+	heardFrame := func(n int) bool { return inParts(parts, (float64(n)+0.5)*timed.FrameSeconds) }
 	for n, f := range hadFrames {
 		if heardFrame(n) {
 			all[n] = f
 		}
 	}
-	first := int(math.Round(read / FrameSeconds))
+	first := int(math.Round(read / timed.FrameSeconds))
 	for i, f := range frames {
 		if n := first + i; n < len(all) && !heardFrame(n) {
 			all[n] = f
 		}
 	}
 
-	words := append([]Cue(nil), had...)
+	words := append([]timed.Cue(nil), had...)
 	for _, gap := range gapsIn(parts, part) {
 		lo, hi := gap.Start, gap.End
 		if lo <= 0.005 {
@@ -596,7 +598,7 @@ func addHeard(fsys afero.Fs, path string, stamp sourceStamp, model string, durat
 			}
 		}
 		for _, w := range raw {
-			w = Cue{roundTo(w.Start, 3), roundTo(w.End, 3), w.Text}
+			w = timed.Cue{Start: roundTo(w.Start, 3), End: roundTo(w.End, 3), Text: w.Text}
 			if w.Start >= lo && w.Start < hi {
 				words = append(words, w)
 			}
@@ -607,7 +609,7 @@ func addHeard(fsys afero.Fs, path string, stamp sourceStamp, model string, durat
 
 	var heard []float32
 	for n, f := range all {
-		if heardFrame(n) || inParts(parts, (float64(n)+0.5)*FrameSeconds) {
+		if heardFrame(n) || inParts(parts, (float64(n)+0.5)*timed.FrameSeconds) {
 			heard = append(heard, f)
 		}
 	}

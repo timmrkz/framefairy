@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"framefairy/engine/timed"
 )
 
 // sideBySide is a recogniser with several copies, the way asr.Pool is,
@@ -218,7 +220,7 @@ func TestHearingSideBySideHearsExactlyItsPart(t *testing.T) {
 	base := DefaultOptions()
 	base.ASRModel = t.TempDir()
 	p := NewProject(e, source, base)
-	part := Window{10, 51.37}
+	part := timed.Window{Start: 10, End: 51.37}
 	if err := p.Hear(context.Background(), part); err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}

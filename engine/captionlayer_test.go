@@ -16,6 +16,8 @@ import (
 	"testing/synctest"
 	"time"
 
+	"framefairy/engine/timed"
+
 	"framefairy/internal/ffmpegtest"
 	"framefairy/internal/framewire"
 
@@ -68,8 +70,8 @@ func TestTheVideoPreviewDrawsTheShortsCaptions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	words := []Cue{{0.20, 0.40, "Das"}, {0.50, 1.00, "respektvoll"}, {1.00, 1.30, "ist."},
-		{2.00, 2.30, "Und"}, {2.30, 2.70, "dann?"}}
+	words := []timed.Cue{{Start: 0.20, End: 0.40, Text: "Das"}, {Start: 0.50, End: 1.00, Text: "respektvoll"}, {Start: 1.00, End: 1.30, Text: "ist."},
+		{Start: 2.00, End: 2.30, Text: "Und"}, {Start: 2.30, End: 2.70, Text: "dann?"}}
 	// Two pieces with a cut between them, so the short's clock is not the
 	// episode's.
 	clip := info.OnFrames(Clip{ID: "01", Slug: "layer",
@@ -204,7 +206,7 @@ func over(picture []byte, width int, l framewire.Layer) []byte {
 // was made from the drawing formatted as Go formats it, which gives a
 // pointer's address, so every view of the same captions had a new one.
 func TestACaptionTrackIsNamedByWhatItIs(t *testing.T) {
-	words := []Cue{{0.2, 0.6, "Das"}, {0.6, 1.2, "respektvoll"}, {1.2, 1.5, "ist."}}
+	words := []timed.Cue{{Start: 0.2, End: 0.6, Text: "Das"}, {Start: 0.6, End: 1.2, Text: "respektvoll"}, {Start: 1.2, End: 1.5, Text: "ist."}}
 	view := func(said string) string {
 		x, y := 120, 0.4
 		clip := Clip{ID: "01", Slug: "name", CaptionY: &y,
@@ -234,7 +236,7 @@ func TestOneCaptionFileIsMadeOnceForManyAtOnce(t *testing.T) {
 	ctx := context.Background()
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	clip := Clip{ID: "01", Slug: "once", Segments: []Segment{{Start: 0, End: 2}}}
-	tr := &Transcript{Words: []Cue{{0.2, 0.6, "Das"}, {0.6, 1.2, "respektvoll"}, {1.2, 1.5, "ist."}}, Language: "de"}
+	tr := &Transcript{Words: []timed.Cue{{Start: 0.2, End: 0.6, Text: "Das"}, {Start: 0.6, End: 1.2, Text: "respektvoll"}, {Start: 1.2, End: 1.5, Text: "ist."}}, Language: "de"}
 	view := captionsView(Plan{}, clip, tr, nil)
 	d := view.Drawing()
 	want, err := e.CaptionTrack(ctx, d.Laid, 540, 960, d.Style, SourceInfo{})
@@ -288,7 +290,7 @@ func TestTheVideoPreviewDrawsTheCaptionsSmallerAsTheShortWouldShowThem(t *testin
 	}
 	ctx := context.Background()
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
-	words := []Cue{{0.20, 0.40, "Das"}, {0.50, 1.00, "respektvoll"}, {1.00, 1.30, "ist."}}
+	words := []timed.Cue{{Start: 0.20, End: 0.40, Text: "Das"}, {Start: 0.50, End: 1.00, Text: "respektvoll"}, {Start: 1.00, End: 1.30, Text: "ist."}}
 	clip := Clip{ID: "01", Slug: "small", Segments: []Segment{{Start: 0, End: 1.4}}}
 	laid := ClipCaptions(clip, &Transcript{Words: words, Language: "de"}, ResolveStyle(nil))
 	const W, H, by = 1080, 1920, 3
@@ -409,7 +411,7 @@ func TestTheWordBeingTypedIsLeftOutInItsPlace(t *testing.T) {
 	ctx := context.Background()
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	clip := Clip{ID: "01", Slug: "typing", Segments: []Segment{{Start: 0, End: 2}}}
-	tr := &Transcript{Words: []Cue{{0.2, 0.6, "Das"}, {0.6, 1.2, "respektvoll"}, {1.2, 1.5, "ist."}}, Language: "de"}
+	tr := &Transcript{Words: []timed.Cue{{Start: 0.2, End: 0.6, Text: "Das"}, {Start: 0.6, End: 1.2, Text: "respektvoll"}, {Start: 1.2, End: 1.5, Text: "ist."}}, Language: "de"}
 	for _, style := range []map[string]any{nil, {"highlight": false}} {
 		view := captionsView(Plan{}, clip, tr, nil)
 		d := view.Drawing()
@@ -494,7 +496,7 @@ func TestTheWordLiftedOutAndTheRestAreTheCaptionAtRest(t *testing.T) {
 		t.Fatal(err)
 	}
 	clip := info.OnFrames(Clip{ID: "01", Slug: "lift", Segments: []Segment{{Start: 0, End: 2.5}}})
-	tr := &Transcript{Words: []Cue{{0.2, 0.6, "Das"}, {0.6, 1.6, "respektvoll"}, {1.6, 2.0, "ist."}}, Language: "de"}
+	tr := &Transcript{Words: []timed.Cue{{Start: 0.2, End: 0.6, Text: "Das"}, {Start: 0.6, End: 1.6, Text: "respektvoll"}, {Start: 1.6, End: 2.0, Text: "ist."}}, Language: "de"}
 	d := captionsView(Plan{}, clip, tr, nil).Drawing()
 	dec := NewEpisodeFrames(program, source)
 	defer dec.Close()
@@ -542,7 +544,7 @@ func TestACaptionFileIsNeverWrittenIntoAWorkFolderThatIsGone(t *testing.T) {
 	ctx := context.Background()
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	clip := Clip{ID: "01", Slug: "gone", Segments: []Segment{{Start: 0, End: 2}}}
-	tr := &Transcript{Words: []Cue{{0.2, 0.6, "Das"}, {0.6, 1.2, "respektvoll"}, {1.2, 1.5, "ist."}}, Language: "de"}
+	tr := &Transcript{Words: []timed.Cue{{Start: 0.2, End: 0.6, Text: "Das"}, {Start: 0.6, End: 1.2, Text: "respektvoll"}, {Start: 1.2, End: 1.5, Text: "ist."}}, Language: "de"}
 	d := captionsView(Plan{}, clip, tr, nil).Drawing()
 	work := filepath.Join(t.TempDir(), "folge.framefairy")
 	_, err := e.previewTrack(ctx, work, d, d.Style, ResolveStyle(d.Style).Font, SourceInfo{}, 540, 960)

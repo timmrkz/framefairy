@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"framefairy/engine/timed"
+
 	"github.com/spf13/afero"
 )
 
@@ -212,7 +214,7 @@ func charsFor(tokens int, perToken float64, around int) int {
 // needs them to in order to find as many as it was asked for is asking for
 // more than the window has in it. A hundredth of a second is let go, so a
 // window drawn on a round step is not refused over rounding.
-func Holds(w Window, count int, least float64) bool {
+func Holds(w timed.Window, count int, least float64) bool {
 	return float64(count)*least <= w.End-w.Start+0.01
 }
 

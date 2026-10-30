@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"framefairy/engine/timed"
+
 	"github.com/spf13/afero"
 
 	"framefairy/internal/ffmpegtest"
@@ -57,7 +59,7 @@ func TestAClipHasOneCropAcrossCameraSwitches(t *testing.T) {
 	ctx := context.Background()
 
 	// Out of the first camera and back on the second: one crop for both.
-	segments, err := e.ClipSegments(ctx, path, []Span{{2, 8}, {12, 18}}, source, 202, nil)
+	segments, err := e.ClipSegments(ctx, path, []timed.Span{{Start: 2, End: 8}, {Start: 12, End: 18}}, source, 202, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +69,7 @@ func TestAClipHasOneCropAcrossCameraSwitches(t *testing.T) {
 	}
 
 	// A kept span with a switch inside it stays one piece.
-	segments, err = e.ClipSegments(ctx, path, []Span{{7, 13}}, source, 202, nil)
+	segments, err = e.ClipSegments(ctx, path, []timed.Span{{Start: 7, End: 13}}, source, 202, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +103,7 @@ func TestFramingDecodesOnTheProcessorWhenTheSystemWillNot(t *testing.T) {
 	}
 	e := framingEngine()
 	e.FFmpeg = refusing
-	segments, err := e.ClipSegments(context.Background(), path, []Span{{7, 13}}, source, 202, nil)
+	segments, err := e.ClipSegments(context.Background(), path, []timed.Span{{Start: 7, End: 13}}, source, 202, nil)
 	if err != nil {
 		t.Fatalf("framing failed instead of going round: %v", err)
 	}
