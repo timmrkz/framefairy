@@ -34,6 +34,9 @@ goes and who may give instructions. This skill says what to look for.
   the user wants. A brief that says "check that X is right" gets X
   confirmed.
 - **The description of the work is a claim,** checked like the code.
+- **A change to the design comes with its candidates.** The brief hands
+  over every design the author worked through and the one it chose, as
+  the project keeps them, section 7.
 
 ## 2. The goal first
 
@@ -146,6 +149,14 @@ The work sits in a history. Read it before judging the diff.
 - **One thing, one primitive.** A new use goes through what exists. A
   second copy with its own rules is a finding.
 - **In the right place,** in the part that owns the idea.
+- **A change to the design is judged by its candidates,** as many as the
+  project asks for. Reason through each one yourself before reading the
+  author's verdict: is it a real alternative from a principle of its own,
+  not a straw man or a variation of the winner? Is it worked through on
+  the code as it is, with what moves, what crosses each new boundary and
+  what it costs? Then: does the choice follow from the comparison, and is
+  a better candidate missing? A change to the design without its
+  candidates is a finding.
 - **Correct, also when it fails.** Edge cases, error paths, concurrency,
   state kept in two places. No swallowed error, no fallback that hides a
   broken invariant.
