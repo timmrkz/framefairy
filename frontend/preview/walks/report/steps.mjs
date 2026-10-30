@@ -254,11 +254,15 @@ export const steps = {
     const before = await page.locator("li.tile").count();
     walk.standing = await standsAt(page);
     for (let i = 0; i < arg; i++) await fetch(new URL("/pick-picture", url));
+    // After the page has heard the press, the way the browser's own
+    // handling comes after it, so a press the page keeps from taking the
+    // focus takes none here either.
     if (what === "attach, as on a Mac")
-      await page.locator("button.attach").evaluate((b) =>
-        b.addEventListener(
+      await page.evaluate(() =>
+        window.addEventListener(
           "mousedown",
           (e) => {
+            if (e.defaultPrevented) return;
             e.preventDefault();
             document.activeElement?.blur();
           },
@@ -889,10 +893,28 @@ export const steps = {
   // ["report follows"] more is said, and the field follows it: the words
   //                    being said are in view, at its end when they end
   //                    the report
+  // ["report follows, a line further"]
+  //                    the same, with so much more said that the report
+  //                    is a line longer
   // ["report stays"]   more is said, and the field stays where the last
   //                    "report scroll" put it
   async "report stays"(walk, arg, s, what) {
     const { kept, page } = walk;
+    if (what === "report follows, a line further") {
+      // A few words more may still fit on the last line, which the field
+      // shows whether it follows or not. Thirty rounds of words make
+      // more than a line on any width.
+      const tall = await page.locator(".telling").evaluate((f) => f.scrollHeight);
+      for (let i = 0; i < 30 && (await page.locator(".telling").evaluate((f) => f.scrollHeight)) <= tall; i++) {
+        const was = await page.locator(".telling").evaluate((f) => f.value);
+        await control(url, "/microphone?until=hearing");
+        await pageUntil(page, (was) => document.querySelector(".telling").value !== was, was);
+      }
+      await settle(page);
+      if ((await page.locator(".telling").evaluate((f) => f.scrollHeight)) <= tall) walk.wrong = "the report grew no longer while more was said";
+      else walk.wrong = await page.locator(".telling").evaluate(atEnd);
+      return;
+    }
     const was = await page.locator(".telling").evaluate((f) => f.value);
     // The recording goes on until more words are heard, see /microphone.
     await control(url, "/microphone?until=hearing");
@@ -1002,6 +1024,23 @@ export const steps = {
   //                    "report stays"
   async "field kept"(walk) {
     walk.kept.scrolledTo = await walk.page.locator(".telling").evaluate((f) => f.scrollTop);
+  },
+  // ["watch the focus"]
+  //                    counts each time the focus leaves the report's
+  //                    field from here, for "focus stayed"
+  async "watch the focus"(walk) {
+    await walk.page.locator(".telling").evaluate((f) => {
+      window.__left = 0;
+      f.addEventListener("focusout", () => window.__left++);
+    });
+  },
+  // ["focus stayed"]   the focus never left the report's field since
+  //                    "watch the focus", so its ring did not go out and
+  //                    come back. Tim saw it flash at each press of the
+  //                    microphone (30 October)
+  async "focus stayed"(walk) {
+    const left = await walk.page.evaluate(() => window.__left);
+    if (left) walk.wrong = `the focus left the report's field ${left} times`;
   },
   // ["cursor in view"] the cursor is in view in the report's field
   async "cursor in view"(walk) {
@@ -1363,6 +1402,7 @@ export const steps = {
 // Steps that take the same body as the step they are walked by.
 steps["report"] = steps["report made"];
 steps["report follows"] = steps["report stays"];
+steps["report follows, a line further"] = steps["report stays"];
 steps["attach, as on a Mac"] = steps.attach;
 
 // cursorAtWords runs in the page on the report's field f, and says what

@@ -269,6 +269,15 @@
     }
   }
 
+  // stay keeps the focus in the field when Dictate or Attach is pressed
+  // with the mouse. WebKit takes it from the field to nothing and the page
+  // gave it back, so the field's ring went out and came back: Tim saw it
+  // flash at every press of the microphone (30 October). Chromium gives
+  // the button the focus instead. The keyboard still reaches both.
+  function stay(e: MouseEvent) {
+    if (document.activeElement === field) e.preventDefault();
+  }
+
   // home gives the focus back to the field when nothing has it, the way
   // a Mac app gives it back to where it was when a panel closes. A
   // button pressed with the mouse takes none in WebKit, so Attach left it
@@ -399,21 +408,54 @@
   // Neither scrolls the field. The field follows the words at the end of
   // the report the way a terminal follows its output: while its last line
   // is in view, it keeps it in view as the words come, with the padding
-  // under it, and so it does while the cursor is at the end of what was
-  // said or the focus is somewhere else. Scrolled away to read, it stays
-  // where it was put, as Tim asked, and so it does while the person is
-  // typing somewhere else in it.
-  function show(d: Dictating, sel: Span, before: Span, end: number) {
+  // under it, wherever the cursor is. Scrolled up, by the wheel or by a
+  // key that takes the cursor up past the top, it stays where it was put,
+  // as Tim asked (30 October).
+  function show(d: Dictating, sel: Span) {
     const cs = getComputedStyle(field);
-    const seen = field.scrollHeight - field.clientHeight - field.scrollTop <= parseFloat(cs.paddingBottom) + parseFloat(cs.lineHeight) / 2;
-    const follow = seen && (document.activeElement !== field || (before[0] === end && before[1] === end));
-    if (field.value !== d.text) {
-      const [a, b, put] = changed(field.value, d.text);
-      field.setRangeText(put, a, b);
+    const follow = field.scrollHeight - field.clientHeight - field.scrollTop <= parseFloat(cs.paddingBottom) + parseFloat(cs.lineHeight) / 2;
+    const dir = field.selectionDirection;
+    const top = field.scrollTop;
+    if (field.value !== d.text) write(...changed(field.value, d.text));
+    if (inPlace === "keys" || field.selectionStart !== sel[0] || field.selectionEnd !== sel[1]) {
+      // A selection set to where it already is changes nothing, and the
+      // browser would then show the cursor after the words it wrote,
+      // scrolled to the middle of the field on a Mac, as typing does. One
+      // set somewhere else first is the page's, which scrolls nothing.
+      if (inPlace === "keys") field.setSelectionRange(sel[0] ? 0 : field.value.length, sel[0] ? 0 : field.value.length);
+      field.setSelectionRange(sel[0], sel[1], dir);
     }
-    if (field.selectionStart !== sel[0] || field.selectionEnd !== sel[1]) field.setSelectionRange(sel[0], sel[1], field.selectionDirection);
+    // Chromium scrolls to an edit as it makes it, WebKit when it paints.
+    if (inPlace) field.scrollTop = top;
+    inPlace = "";
     if (follow && d.end === d.text.length) reveal(d.end);
   }
+
+  // write puts put where the letters from a to b are. In the field with
+  // the cursor, it is an edit like typing, which changes the text where it
+  // changed. setRangeText makes the whole text anew, in WebKit too, and a
+  // cursor drawn in the text that went is not cleared once it moved
+  // (nodeWillBeRemoved in WebKit's FrameSelection.cpp): Tim held the
+  // arrow keys while he dictated and saw cursors left on several lines
+  // (30 October). Typing never left one.
+  function write(a: number, b: number, put: string) {
+    if (document.activeElement === field && !composing) {
+      const want = field.value.slice(0, a) + put + field.value.slice(b);
+      inPlace = "keys";
+      field.setSelectionRange(a, b);
+      if (put ? document.execCommand("insertText", false, put) : a === b || document.execCommand("delete")) {
+        if (field.value === want) return;
+      }
+      field.value = want;
+      return;
+    }
+    field.setRangeText(put, a, b);
+  }
+
+  // What the page is writing into the field: "keys" while it writes as
+  // typing does, which the field hears as input of its own and which is
+  // not the person's.
+  let inPlace: "" | "keys" = "";
 
   // tell passes on to the Go side what the person did to the words still
   // being heard, and what it says until it has taken that in is passed
@@ -438,10 +480,9 @@
     pieces = m.said ?? [];
     const before = selection();
     if (d.inside(before)) return tell(d.settle());
-    const end = d.end;
     const sel = d.hear(pieces, m.hearing, before);
     for (const [a, b, n] of d.moves.splice(0)) steps.moved(a, b, n);
-    show(d, sel, before, end);
+    show(d, sel);
     read();
   }
 
@@ -459,6 +500,7 @@
   // typed right after a word that was said gets a space in front of it,
   // as the letter is typed, so the two are one step.
   function editing(e: InputEvent) {
+    if (inPlace) return;
     held = field.scrollTop;
     if (e.inputType === "historyUndo" || e.inputType === "historyRedo") {
       e.preventDefault();
@@ -476,6 +518,7 @@
   // hand is told of it. The cursor's line is put in view from where the
   // field was before the edit, whatever the browser did to it meanwhile.
   function typed() {
+    if (inPlace) return;
     unclear();
     const was = dictation?.text ?? what;
     const [a, b, put] = edit(was, field.value, field.selectionEnd);
@@ -529,9 +572,7 @@
     dictation = null;
     waited = null;
     if (!d) return read();
-    const before = selection();
-    const end = d.end;
-    show(d, d.hear(said, "", before, true), before, end);
+    show(d, d.hear(said, "", selection(), true));
     steps.end(began, d.text);
     home();
     read();
@@ -771,6 +812,7 @@
            Dictate, Stop or Writing, for the keyboard and a screen reader. -->
       <button
         class="act square dictate"
+        onmousedown={stay}
         class:listening
         onclick={dictate}
         disabled={hearing || making}
@@ -787,6 +829,7 @@
       </button>
       <button
         class="act square attach"
+        onmousedown={stay}
         onclick={attach}
         disabled={attaching || making}
         aria-label="Attach screenshots or recordings"

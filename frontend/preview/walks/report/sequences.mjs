@@ -327,6 +327,37 @@ export default [
     ],
   },
   {
+    // Tim, 30 October, 20.54. Moving the cursor up a line while he
+    // talked stopped the field following the words, though its end was
+    // still in view. It follows them while its end is in view, wherever
+    // the cursor is, the way a terminal follows its output.
+    name: "While dictating, the field follows the words while its end is in view, wherever the cursor is",
+    steps: [
+      ["bugs"],
+      ["write", "One\nTwo\nThree\nFour\nFive\nSix\nSeven\nEight\nNine\nTen\nEleven\nTwelve\nThirteen\nFourteen\nFifteen\nSixteen", "end"],
+      ["dictate", "start"],
+      ["report follows"],
+      ["press, the cursor in view", ["ArrowUp", 2]],
+      ["report at end"],
+      ["report follows, a line further"],
+      ["dictate", "enter"],
+    ],
+  },
+  {
+    // Tim, 30 October, 20.54. Pressing the microphone to start and to
+    // stop, the field's focus ring went out and came back. The focus
+    // stays in the field.
+    name: "Pressing Dictate and Stop with the mouse leaves the focus in the field",
+    steps: [
+      ["bugs"],
+      ["write", "It froze.", "end"],
+      ["watch the focus"],
+      ["dictate", "button"],
+      ["focus stayed"],
+      ["cursor in view"],
+    ],
+  },
+  {
     // Issue #373. Tim ended a dictation on his Mac and the cursor jumped
     // while the last words were written down, to the front of the line or
     // past where the words would end, and back once they came. It stays

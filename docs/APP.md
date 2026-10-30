@@ -3391,7 +3391,14 @@ on the control it was started from.
 
 The field is a textarea. The browser draws its cursor and moves it with
 the arrow keys, the way every text field does, and the page writes the
-words in where they changed, with `setRangeText`. What
+words in where they changed. In the field with the cursor it writes
+them as typing does, with `execCommand("insertText")`, and puts the
+selection back where it was, by way of another place, so the browser
+has no cursor of its own to show and scrolls nothing. Anywhere else it
+uses `setRangeText`, which in WebKit makes the field's whole text anew,
+and a cursor drawn in the text that went was left on screen: Tim held
+the arrow keys while he dictated and saw cursors on several lines (30
+October). What
 a dictation does to the text is worked out in
 `frontend/src/lib/dictating.ts`, in letters and numbers, with unit tests
 beside it. The field was a `contenteditable` of the page's own making,
@@ -3436,15 +3443,16 @@ measured in a copy of the text laid out like the field's,
 `frontend/src/lib/caret.ts`.
 
 The field follows the words the way a terminal follows its output:
-scrolled to its end, it stays at its end as words come at the end of
-the report, while the cursor is at the end of what was said or the
-focus is somewhere else. Scrolled away to read, it stays where the
-person put it, and so it does while they type somewhere else in it.
-When a dictation ends or the pictures from Attach are in, and the focus
-is on nothing, it goes back to the field, the way a Mac app gives it
-back when a panel closes. A button takes no focus from the mouse in
-WebKit, so Attach left it on nothing, and Tab and the arrow keys did
-nothing after.
+while its end is in view, it stays at its end as words come at the end
+of the report, wherever the cursor is. Scrolled away, by the wheel or by
+a key that takes the cursor up past the top, it stays where it was put,
+as Tim asked (30 October). Pressing Dictate, Stop or Attach with the
+mouse leaves the focus in the field: in WebKit the press took it to
+nothing and the page gave it back, so the field's ring flashed. When a
+dictation ends or the pictures from Attach are in, and the focus is on
+nothing all the same, it goes back to the field, the way a Mac app
+gives it back when a panel closes. Attach once left it on nothing, and
+Tab and the arrow keys did nothing after.
 
 The page keeps the field's undo, see `frontend/src/lib/undo.ts`. The
 browser's own took out the wrong letters once text came in that was not
