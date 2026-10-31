@@ -695,12 +695,12 @@ export async function pressOnTrack(page, x, y) {
 }
 
 // Lands the hand eight pixels beside the last spot pressed on the clip
-// timeline first, when x is within six pixels of it, see clickOnTrack.
-// The clip timeline measures only along itself, so a press under or over
-// the last one at the same x is a double-click too.
+// timeline first, when x and y are both within six pixels of it, see
+// clickOnTrack. A press over or under the last one is no double-click,
+// #535.
 async function notTwice(page, x, y) {
   const last = page.__pressed;
-  if (last && Math.abs(last.x - x) < 6) {
+  if (last && Math.abs(last.x - x) < 6 && Math.abs(last.y - y) < 6) {
     await page.mouse.click(last.x + (x < last.x ? 8 : -8), y);
   }
   page.__pressed = { x, y };

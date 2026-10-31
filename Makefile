@@ -260,7 +260,7 @@ $(UI_BUILT): $(UI_SOURCES)
 $(BIN)/framefairy$(EXE): modules
 	@echo "Building $@"
 	@sums=$$(sh scripts/tool-sums.sh $(STAMPS)) && \
-		$(GO) build -trimpath -ldflags "$(LDFLAGS) -X framefairy/engine.toolSums=$$sums" -o $@ ./cmd/framefairy
+		$(GO) build -trimpath -ldflags "$(LDFLAGS) -X framefairy/engine/tool.sums=$$sums" -o $@ ./cmd/framefairy
 	@sh scripts/carry-libs.sh $@ $(BIN)/lib
 
 # The licence of every Go module the programs compile on this system and
@@ -275,7 +275,7 @@ $(LICENCES_BUILT): go.mod go.sum $(UI_BUILT)
 $(BIN)/framefairy-app$(EXE): modules $(UI_BUILT) $(LICENCES_BUILT) frames
 	@echo "Building $@"
 	@sums=$$(sh scripts/tool-sums.sh $(STAMPS)) && \
-		$(GO) build -trimpath -tags production -ldflags "$(APP_LDFLAGS) -X framefairy/engine.toolSums=$$sums" -o $@ ./cmd/framefairy-app
+		$(GO) build -trimpath -tags production -ldflags "$(APP_LDFLAGS) -X framefairy/engine/tool.sums=$$sums" -o $@ ./cmd/framefairy-app
 	@sh scripts/carry-libs.sh $@ $(BIN)/lib
 
 $(BIN)/framefairy-train$(EXE): modules
@@ -618,7 +618,7 @@ outside: outside-allowed all
 	@cp -R $(BIN)/. $(OUTSIDE)/ && rm -rf "$(OUTSIDE)/Frame Fairy.app"
 	@echo "Building $(OUTSIDE)/framefairy-app with the probe"
 	@sums=$$(sh scripts/tool-sums.sh $(STAMPS)) && \
-		$(GO) build -trimpath -tags 'production outside' -ldflags "$(APP_LDFLAGS) -X framefairy/engine.toolSums=$$sums" -o $(OUTSIDE)/framefairy-app ./cmd/framefairy-app
+		$(GO) build -trimpath -tags 'production outside' -ldflags "$(APP_LDFLAGS) -X framefairy/engine/tool.sums=$$sums" -o $(OUTSIDE)/framefairy-app ./cmd/framefairy-app
 	@sh scripts/carry-libs.sh $(OUTSIDE)/framefairy-app $(OUTSIDE)/lib
 	@sh scripts/bundle-macos.sh $(OUTSIDE) $(OUTSIDE)
 	@$(GO) build -o $(OUTSIDE)/framefairy-dispenser ./cmd/framefairy-dispenser

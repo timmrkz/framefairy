@@ -2,12 +2,8 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"math"
 	"path/filepath"
-	"runtime/debug"
-
-	"framefairy/engine/timed"
 
 	"github.com/rs/zerolog"
 
@@ -61,45 +57,6 @@ func (s *FrameFairy) search(path string, req engine.PlanRequest, click string, c
 		// the fourth review of #458. Not where the job is prepared, which
 		// holds the queue, taken after windowMu everywhere else.
 		s.searchesWindow(path, req)
-		// The model loads while the episode is still being heard, so the
-		// search has nothing to wait for once it comes to finding.
-		// A window to the end of the episode, To 0, is never heard before
-		// the transcript is finished.
-		model := s.store.Settings().ASRModel
-		unheard := false
-		switch {
-		case ctx.Err() != nil:
-			// Called off before it started, it loads nothing.
-		case req.To <= 0:
-			_, done := engine.Coverage(s.store.files, p.Source, model)
-			unheard = !done
-		default:
-			unheard = len(engine.Unheard(s.store.files, p.Source, model, timed.Window{Start: req.From, End: req.To})) > 0
-		}
-		// It also reads the transcript of the window as it is heard, so
-		// the search finds most of its prompt read.
-		if unheard {
-			go func() {
-				video := filepath.Base(path)
-				defer func() {
-					if v := recover(); v != nil {
-						theLog.line(zerolog.ErrorLevel, "jobs").Str("video", video).Str("panic", fmt.Sprint(v)).
-							Str("stack", string(debug.Stack())).Msg("reading ahead of the search stopped unexpectedly")
-					}
-				}()
-				ahead, err := p.WarmModel(ctx, req)
-				switch {
-				case err != nil && ctx.Err() == nil:
-					theLog.line(zerolog.WarnLevel, "jobs").Str("video", video).Err(err).
-						Msg("the model could not be loaded ahead of the search")
-				case ahead.Reads > 0:
-					theLog.line(zerolog.InfoLevel, "jobs").Str("video", video).Int("reads", ahead.Reads).
-						Int("tokens", ahead.Tokens).Int("read", ahead.Read).Int("rewritten", ahead.Rewritten).
-						Int("ms", int(ahead.Seconds*1000)).
-						Msg("the model read the transcript ahead of the search")
-				}
-			}()
-		}
 		result, err := p.Search(ctx, req, turn)
 		if err == nil && ctx.Err() == nil {
 			s.windowOn(path, req)
@@ -172,7 +129,7 @@ func (s *FrameFairy) planned(path string, rec engine.JobRecord) int {
 	if info, err := s.probe(context.Background(), path); err == nil {
 		duration = info.Duration
 	}
-	view, err := engine.ReadPlan(s.store.files, filepath.Join(engine.WorkDir(path), "logs", rec.PlanName(duration)))
+	view, err := engine.ReadPlan(s.store.files, rec.PlanPath(path, duration))
 	if err != nil {
 		return 0
 	}

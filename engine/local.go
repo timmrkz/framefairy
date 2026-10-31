@@ -24,6 +24,7 @@ import (
 
 	"framefairy/engine/num"
 	"framefairy/engine/runes"
+	"framefairy/engine/tool"
 )
 
 // ---------------------------------------------------------------------------
@@ -69,10 +70,10 @@ const thinkEnough = "\n\nThat is enough thinking. Time to write the answer.\n"
 
 // LlamaServerPath decides which llama-server to run, the same way ffmpeg is
 // decided: the one named in the environment, or else the one beside the
-// program, checked. See FindTool in tools.go. Empty when there is none
+// program, checked. See tool.Find. Empty when there is none
 // that may run, and FindLlamaServer says why.
 func LlamaServerPath() string {
-	return ToolPath("FRAMEFAIRY_LLAMA_SERVER", "llama-server")
+	return tool.Path("FRAMEFAIRY_LLAMA_SERVER", "llama-server")
 }
 
 // serverToRun is the llama-server an ask runs: the one named on the command
@@ -90,7 +91,7 @@ func serverToRun(named string) (string, error) {
 
 // FindLlamaServer is LlamaServerPath with the reason when there is none.
 func FindLlamaServer() (string, error) {
-	return FindTool("FRAMEFAIRY_LLAMA_SERVER", "llama-server")
+	return tool.Find("FRAMEFAIRY_LLAMA_SERVER", "llama-server")
 }
 
 // HasLlamaServer says whether a llama-server can be run at all. The setup
@@ -429,7 +430,7 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 			_ = cmd.Process.Signal(os.Interrupt)
 			select {
 			case <-exited:
-			case <-leaving(stopGrace):
+			case <-e.Runner.Leaving(stopGrace):
 				// llama-server can hang on the way out after an interrupt:
 				// it joins the threads of its HTTP server, and one still
 				// waiting on an answer it will never give keeps it there.

@@ -60,6 +60,8 @@
 <text class="c" x="193" y="441">engine/timed</text>
 <rect class="chip" x="287" y="426" width="96" height="22" rx="6"/>
 <text class="c" x="295" y="441">engine/runes</text>
+<rect class="chip" x="389" y="426" width="89" height="22" rx="6"/>
+<text class="c" x="397" y="441">engine/tool</text>
 <rect class="box" x="64" y="482" width="672" height="54" rx="8"/>
 <text class="n" x="76" y="504">small libraries</text>
 <text class="p" x="76" y="522">licence/, internal/wake/, internal/framewire/</text>

@@ -35,7 +35,7 @@ the folder, copy the new files in and run `make` again.
    pinned SHA-256 or commit on every build, never reused from a folder
    unpacked before, and the SHA-256 of each finished tool is built into the
    programs, which run a tool only when it matches, see
-   `scripts/tool-sums.sh` and `FindTool` in `engine/tools.go`.
+   `scripts/tool-sums.sh` and `Find` in `engine/tool/find.go`.
    `NOTOOLS=1` builds the programs without them, for a runner that only
    proves the programs link, and those programs then run no tool.
 3. Checks for Go 1.27 or newer and a C compiler, and stops with the install

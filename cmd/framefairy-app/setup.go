@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"framefairy/engine"
+	"framefairy/engine/tool"
 )
 
 // What a new copy of the app needs before it can turn an episode into
@@ -523,7 +524,7 @@ type Check struct {
 // the app, so a file changed since it last ran is seen here, not only
 // when it is next refused.
 func toolCheck(ctx context.Context, env, name string) Check {
-	s := engine.InspectTool(ctx, env, name)
+	s := tool.Inspect(ctx, env, name)
 	c := Check{Name: name, Version: s.Version, Path: s.Path, SHA256: s.SHA256}
 	switch {
 	case s.Err != nil:

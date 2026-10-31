@@ -1,6 +1,6 @@
 //go:build !production
 
-package engine
+package tool
 
 // shipped says this is the app as it is built to ship, see
 // shipped_production.go.

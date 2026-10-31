@@ -22,6 +22,7 @@ import (
 
 	"framefairy/engine"
 	"framefairy/engine/runes"
+	"framefairy/engine/tool"
 	"framefairy/internal/framewire"
 )
 
@@ -425,7 +426,7 @@ func (p *previews) spare() {
 // without it says so the way it says a missing ffmpeg: there is no second
 // way to the frames.
 func (p *previews) decoder(path string) (*engine.EpisodeFrames, error) {
-	program, err := engine.FindTool("FRAMEFAIRY_FRAMES", "framefairy-frames")
+	program, err := tool.Find("FRAMEFAIRY_FRAMES", "framefairy-frames")
 	if err != nil {
 		return nil, err
 	}

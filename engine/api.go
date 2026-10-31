@@ -19,6 +19,7 @@ import (
 
 	"framefairy/engine/num"
 	"framefairy/engine/runes"
+	"framefairy/engine/tool"
 )
 
 // The addresses this tool contacts are the providers' in provider.go,
@@ -140,10 +141,10 @@ const keychainWait = 2 * time.Minute
 // keychain runs one security command, bounded. It says whether the command
 // answered at all, because a keychain that was given up on is a different
 // thing from a keychain that said no.
-func keychain(ctx context.Context, args ...string) (result, bool) {
+func keychain(ctx context.Context, args ...string) (tool.Result, bool) {
 	ctx, cancel := context.WithTimeout(ctx, keychainWait)
 	defer cancel()
-	res := run(ctx, "", "security", args...)
+	res := tool.Runner{}.Run(ctx, "", "security", args...)
 	return res, ctx.Err() == nil
 }
 

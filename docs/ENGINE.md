@@ -559,8 +559,9 @@ the removed ones too, and asked for other moments, see version 4 in
 those all the same is left out and said in the log, the same measure as a
 moment given twice. A pass that brings nothing new writes a plan with no
 clips, so it still counts as a pass. `SearchPasses` cuts the episode into
-parts by how many searches have read them, and the app's Search goes where the
-fewest have been, earliest first. A plan
+parts by how many searches have read them, and `Project.PlaceWindow` puts the
+next window where the fewest have been, earliest first, for the app's Search
+and for `--next` on the command line alike. A plan
 carries the window it was made over in `planned_with`. No part of an
 episode is ever taken or given back: any window can be searched, as often
 as anyone likes, and a clip goes the way every clip goes, removed from its
@@ -1193,8 +1194,8 @@ video on VideoToolbox` or `on the processor`. A single frame has 15 s,
 `frameLimit`, there and wherever framing pulls one frame: VideoToolbox
 has given none and said nothing on a virtual Mac, and a system decoder
 that misses the limit is gone round on the processor from then on. An
-ffmpeg that is stopped has five seconds to end, `leaveAfter` in
-`engine/ffmpeg.go`, and one that is still there after them is left
+ffmpeg that is stopped has five seconds to end, `LeaveAfter` in
+`engine/tool/run.go`, and one that is still there after them is left
 behind, with a warning that says so, and the search goes on without it.
 On the same Mac an ffmpeg went on in VideoToolbox for eight minutes after
 it was killed, and the search waited on it until the test run was ended. The crop
@@ -1494,7 +1495,9 @@ the prompt is mostly the transcript. The first search of a new video is
 asked for while its transcript is still being heard, so while it grows,
 the model loaded ahead is given what of the window's transcript is
 settled to read, every time a part heard is written, and keeps it, in
-`engine/readahead.go`. The search then reads only the rest. What is read
+`engine/readahead.go`. `Project.Search` starts it by itself, beside its
+hearing, whenever some of its window is still to be heard. The search
+then reads only the rest. What is read
 is the start of the search's own prompt, token for token: the transcript
 is written out by the search's request, `searchRequest`, from every line
 heard but the last, which may still grow, laid out by llama-server with
@@ -1746,11 +1749,12 @@ macOS keychain of `engine/keys_darwin.go`, in the frames decoder of
   ass.go        the burned-in caption track and its measured boxes
   render.go     filter graph and ffmpeg command per clip
   encode.go     which encoder writes the H.264 in a finished short
-  ffmpeg.go     running ffmpeg, preflight checks, probing
+  ffmpeg.go     ffmpeg watched as it goes, preflight checks, probing
   files.go      the file system the files of an episode are read and
                 written through, the real disk in the programs and memory
                 in the tests, and what stays on the disk whatever it is
-  tools.go      where a bundled ffmpeg or llama-server is looked for first
+  tools.go      an ffmpeg and an ffprobe that were chosen, and ffprobe
+                looked for beside the ffmpeg
   api.go        the APIs in the cloud, costs and usage
   provider.go   the companies in the cloud, Anthropic and OpenAI, their
                 addresses, keys and the models the app offers by name
@@ -1760,8 +1764,6 @@ macOS keychain of `engine/keys_darwin.go`, in the frames decoder of
                 back, render. Run takes them in order for the command
                 line and returns an exit code
   doc.go        what the engine is, and its version
-  util.go       a command quoted for printing, until it moves with
-                running programs
   project.go    one episode driven step by step, as the app does it:
                 the same steps as Run, with the window as numbers
   episode.go    status, waveform, silences and plan views for the app,
@@ -1821,5 +1823,11 @@ terminal log, and the same log as events for the app. Every event goes
 to the app through one door, the `Sink`, and that door answers for what
 an event may carry: a share or a time that is not a number becomes
 `runlog.Unknown`, because JSON cannot say NaN and an event nobody can
-encode is a job the app stops hearing about altogether. None of them
-imports the rest of the engine, see [ARCHITECTURE.md](ARCHITECTURE.md).
+encode is a job the app stops hearing about altogether. `engine/tool/`
+finds, checks and runs the programs the engine calls: our own ffmpeg,
+ffprobe and llama-server beside the program, each only once its
+SHA-256 matches the one `make` built in, and a `Runner` that runs a
+program as an argument list and stops it once its work is called off.
+How it stops one is the runner's `Stop` and `Leave`, so a test sets its
+own on its own engine. None of them imports the rest of the engine, see
+[ARCHITECTURE.md](ARCHITECTURE.md).

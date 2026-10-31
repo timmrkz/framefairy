@@ -28,6 +28,8 @@ func TestTheCommandLineIsReadTheWayItAlwaysWas(t *testing.T) {
 			func(p parsed) bool { return p.opts.SilenceDB != nil && *p.opts.SilenceDB == -50 }},
 		{"a timecode", []string{"--from", "1:00:00", "--to", "1:30:00", "ep.mp4"},
 			func(p parsed) bool { return p.opts.From == "1:00:00" && p.opts.To == "1:30:00" }},
+		{"the window the app would place next", []string{"--next", "ep.mp4"},
+			func(p parsed) bool { return p.opts.Next && p.opts.From == "" && p.opts.To == "" }},
 		{"everything after -- is the source", []string{"--", "-odd-name.mp4"},
 			func(p parsed) bool { return p.opts.Source == "-odd-name.mp4" }},
 		{"both spellings of colour", []string{"--no-color", "ep.mp4"},
