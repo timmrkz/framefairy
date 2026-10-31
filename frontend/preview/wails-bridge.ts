@@ -5,6 +5,7 @@
 // call or event means: that is the Go side's, which is the point of it.
 import { callOut } from "./settled";
 import { install } from "./clock";
+import { caretBox } from "../src/lib/caret";
 
 // A play runs on the walk's clock here, see clock.ts.
 install();
@@ -38,6 +39,24 @@ function listen() {
 // settles once mark n has come.
 const heard: Record<string, number> = {};
 (window as any).__heard = heard;
+// And the last thing of each name it was told, like what the speech
+// model is hearing while dictating, which the report's field does not
+// mark, see walks/report/steps.mjs.
+const last: Record<string, unknown> = {};
+(window as any).__last = last;
+// Where the report's field draws its cursor, measured the one way the
+// page measures it, for the walks, see walks/report/steps.mjs.
+(window as any).__caretBox = caretBox;
+// A field's text written by the page changes no node, so a walk waiting
+// for it with a MutationObserver did not wake when the report's field
+// took in dictated words, and hung once nothing else on the page changed
+// (30 October). The field says so with an event, written, that pageUntil
+// in walks/bridge.mjs listens to.
+const write = HTMLTextAreaElement.prototype.setRangeText as (this: HTMLTextAreaElement, ...a: unknown[]) => void;
+HTMLTextAreaElement.prototype.setRangeText = function (this: HTMLTextAreaElement, ...a: unknown[]) {
+  write.apply(this, a);
+  this.dispatchEvent(new Event("written", { bubbles: true }));
+} as typeof HTMLTextAreaElement.prototype.setRangeText;
 let mark = 0;
 let waiting: { n: number; done: () => void }[] = [];
 (window as any).__heardMark = (n: number) =>
@@ -64,6 +83,7 @@ function had(job: { id?: string; seq?: number } | undefined) {
 }
 function tell(name: string, data: unknown) {
   heard[name] = (heard[name] ?? 0) + 1;
+  last[name] = data;
   if (name === "job") had((data as { job?: { id?: string; seq?: number } })?.job);
   if (name === "mark") {
     mark = Math.max(mark, data as number);

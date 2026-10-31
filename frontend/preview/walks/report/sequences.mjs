@@ -175,9 +175,203 @@ export default [
       ["dictate", "hearing"],
       ["caret at words"],
       ["dictate", "escape"],
-      ["report is text"],
       ["type", "Next"],
       ["report reads", "It froze. *\n\n*Next"],
+    ],
+  },
+  {
+    // Issue #573. Tim said a lot quickly and pressed Shift+Enter, and the
+    // words the speech model wrote down after went below the new line,
+    // though he said them before it. What is said before the new line
+    // goes above it, however far behind the speech model is.
+    name: "What is said before Shift+Enter goes above the new line, however far behind the speech model is",
+    steps: [
+      ["bugs"],
+      ["write", "It froze.", "end"],
+      ["dictate", "start"],
+      ["talk ahead", 10],
+      ["press", "Shift+Enter"],
+      ["dictate", "hearing"],
+      ["dictate", "escape"],
+      ["said before", "\n"],
+    ],
+  },
+  {
+    // Issue #584. The same for words typed at the end of what was said:
+    // what was said before them goes in front of them, however far
+    // behind the speech model is, and what is said after them after.
+    // Typed on a new line before anything said there was shown, they
+    // keep a space from the words that come in front of them.
+    name: "What is said before typing at the end of a dictation goes in front of the typing, however far behind the speech model is",
+    steps: [
+      ["bugs"],
+      ["write", "It froze.", "end"],
+      ["dictate", "start"],
+      ["talk ahead", 10],
+      ["press", "Shift+Enter"],
+      ["talk ahead", 10],
+      ["type", "XYZ"],
+      ["dictate", "hearing"],
+      ["dictate", "escape"],
+      ["said before", "XYZ"],
+    ],
+  },
+  {
+    // Issue #584. The words still to be written down where a letter was
+    // typed cannot be typed in, and Backspace took them all away at once,
+    // with the words the speech model had not yet written down. A key
+    // waits for them instead.
+    name: "Backspace after typing at the end of a dictation takes away no words still to be written down",
+    steps: [
+      ["bugs"],
+      ["write", "It froze.", "end"],
+      ["dictate", "start"],
+      ["talk ahead", 10],
+      ["type", "X"],
+      ["press", "Backspace"],
+      ["press", "Backspace"],
+      ["press", "Backspace"],
+      ["words kept"],
+      ["dictate", "escape"],
+      ["words kept"],
+    ],
+  },
+  {
+    // Issue #573. Tim pressed Shift+Enter while dictating until the new
+    // lines went past the foot of the field, and the field stayed where
+    // it was while the cursor went on down out of view. Only the next
+    // words he said brought it back. The arrow keys did the same. The
+    // field keeps the cursor in view, the way every text field does,
+    // while dictating and after.
+    name: "Shift+Enter and the arrow keys keep the cursor in view in the report",
+    steps: [
+      ["bugs"],
+      ["write", "One\nTwo\nThree\nFour\nFive\nSix\nSeven\nEight\nNine\nTen\nEleven\nTwelve", "end"],
+      ["dictate", "start"],
+      ["press, the cursor in view", ["Shift+Enter", 12]],
+      // At the end of the report, down to its padding, where the words
+      // said next leave it too. Tim saw the field scroll a few pixels
+      // with the next words after a new line.
+      ["report at end"],
+      ["press, the cursor in view", ["ArrowUp", 24]],
+      ["press, the cursor in view", ["ArrowDown", 24]],
+      ["dictate", "escape"],
+      ["press, the cursor in view", ["ArrowUp", 24]],
+      ["press, the cursor in view", ["Shift+Enter", 12]],
+    ],
+  },
+  {
+    // Tim, 29 October. While dictating, the cursor after the words was one
+    // the field drew itself, unlike the one it has the rest of the time,
+    // since it sat after a part of the field that cannot be typed in,
+    // where WebKit draws none. ArrowDown there found no line to go to and
+    // scrolled the field instead, which bounced, and ArrowUp went from the
+    // wrong place, to the top of the report at times. The cursor is the
+    // field's own, in text the browser moves it from, and the keys move
+    // nothing that is not there to move, after a new line too.
+    name: "While dictating, the cursor after the words is the field's own, and ArrowDown there moves nothing",
+    steps: [
+      ["bugs"],
+      ["write", "One\nTwo\nThree\nFour\nFive\nSix\nSeven\nEight\nNine\nTen\nEleven\nTwelve", "end"],
+      ["dictate", "start"],
+      ["dictate", "hearing"],
+      ["caret at words"],
+      ["report at end"],
+      ["press at the end", ["ArrowDown", 3]],
+      ["press", "Shift+Enter"],
+      ["caret at words"],
+      ["report at end"],
+      ["press at the end", ["ArrowDown", 3]],
+      ["dictate", "hearing"],
+      ["caret at words"],
+      ["dictate", "enter"],
+    ],
+  },
+  {
+    // Tim, 29 October, 20.55. Moving up and down the report with the arrow
+    // keys, the field jumped several lines at a time, and at the last
+    // line went a few pixels past it and back. It scrolls a line at a
+    // time, while dictating and after, and never past its end.
+    name: "The arrow keys scroll the report a line at a time, while dictating and after",
+    steps: [
+      ["bugs"],
+      ["write", "One\nTwo\nThree\nFour\nFive\nSix\nSeven\nEight\nNine\nTen\nEleven\nTwelve\nThirteen\nFourteen\nFifteen\nSixteen\nSeventeen\nEighteen\nNineteen\nTwenty", "end"],
+      ["press, a line at a time", ["ArrowUp", 22]],
+      ["press, a line at a time", ["ArrowDown", 22]],
+      ["report at end"],
+      ["dictate", "start"],
+      ["press, a line at a time", ["ArrowUp", 24]],
+      ["press, a line at a time", ["ArrowDown", 24]],
+      ["report at end"],
+      ["press at the end", ["ArrowDown", 3]],
+      ["dictate", "enter"],
+    ],
+  },
+  {
+    // Tim, 29 October. Tim moved the cursor up with the arrow keys while
+    // he talked, and the field scrolled up with the cursor and back down
+    // to the words by turns, and the cursor went out of view. It is the
+    // cursor the field keeps in view: the words coming in move it only
+    // while the cursor is after them.
+    name: "Moving the cursor up while dictating keeps it in view, and the words coming in leave the field where it is",
+    steps: [
+      ["bugs"],
+      ["write", "One\nTwo\nThree\nFour\nFive\nSix\nSeven\nEight\nNine\nTen\nEleven\nTwelve\nThirteen\nFourteen\nFifteen\nSixteen", "end"],
+      ["dictate", "start"],
+      ["report follows"],
+      ["press, the cursor in view", ["ArrowUp", 14]],
+      ["field kept"],
+      ["report stays"],
+      ["cursor in view"],
+      ["dictate", "enter"],
+    ],
+  },
+  {
+    // Tim, 30 October, 20.54. Moving the cursor up a line while he
+    // talked stopped the field following the words, though its end was
+    // still in view. It follows them while its end is in view, wherever
+    // the cursor is, the way a terminal follows its output.
+    name: "While dictating, the field follows the words while its end is in view, wherever the cursor is",
+    steps: [
+      ["bugs"],
+      ["write", "One\nTwo\nThree\nFour\nFive\nSix\nSeven\nEight\nNine\nTen\nEleven\nTwelve\nThirteen\nFourteen\nFifteen\nSixteen", "end"],
+      ["dictate", "start"],
+      ["report follows"],
+      ["press, the cursor in view", ["ArrowUp", 2]],
+      ["report at end"],
+      ["report follows, a line further"],
+      ["dictate", "enter"],
+    ],
+  },
+  {
+    // Third review of #574. Dictating into the middle of a long report,
+    // with the cursor on the last line the field shows, the words and the
+    // cursor went out of view under its foot: only words at the end of
+    // the report were followed. A cursor that goes with the words stays
+    // in view, as it did on main.
+    name: "Dictating in the middle of a long report keeps the cursor in view",
+    steps: [
+      ["bugs"],
+      ["write", "One\nTwo\nThree\nFour\nFive\nSix\nSeven\nEight\nNine\nTen\nEleven\nTwelve\nThirteen\nFourteen\nFifteen\nSixteen\nSeventeen\nEighteen\nNineteen\nTwenty\nTwenty-one\nTwenty-two\nTwenty-three\nTwenty-four\nTwenty-five", "end"],
+      ["press, the cursor in view", ["ArrowUp", 13]],
+      ["press, the cursor in view", ["ArrowDown", 9]],
+      ["dictate", "start"],
+      ["talk, the cursor in view", 2],
+      ["dictate", "enter"],
+    ],
+  },
+  {
+    // Tim, 30 October, 20.54. Pressing the microphone to start and to
+    // stop, the field's focus ring went out and came back. The focus
+    // stays in the field.
+    name: "Pressing Dictate and Stop with the mouse leaves the focus in the field",
+    steps: [
+      ["bugs"],
+      ["write", "It froze.", "end"],
+      ["watch the focus"],
+      ["dictate", "button"],
+      ["focus stayed"],
+      ["cursor in view"],
     ],
   },
   {
@@ -262,6 +456,23 @@ export default [
       ["dictating"],
       ["dictate", "enter"],
       ["report reads", "It froze. *"],
+    ],
+  },
+  {
+    // Tim, 30 October. He attached a recording while dictating and ended
+    // the dictation with Escape. Attach had left the focus on nothing, so
+    // Tab and the arrow keys did nothing after. The focus goes back to the
+    // field once the pictures are in, and Tab goes on to Report.
+    name: "After Attach while dictating, the field has the focus again and Tab goes to Report",
+    steps: [
+      ["bugs"],
+      ["write", "It froze.", "end"],
+      ["dictate", "start"],
+      ["attach, as on a Mac", 1],
+      ["cursor in view"],
+      ["dictate", "escape"],
+      ["cursor in view"],
+      ["tab", "Report"],
     ],
   },
   {
@@ -501,6 +712,9 @@ export default [
       ["report follows"],
       ["caret at words"],
       ["report scroll", -120],
+      // A key that neither moves the cursor nor types leaves the field
+      // where it was scrolled to, issue #573.
+      ["press", "Shift"],
       ["report stays"],
       ["report scroll", 5000],
       ["report follows"],

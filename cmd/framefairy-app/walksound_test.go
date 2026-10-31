@@ -164,6 +164,47 @@ func (s *sound) until(ctx context.Context, want string) (int, error) {
 // once the pass is over, so what it told the window has been told. It
 // says false once the recording is over.
 func (s *sound) step(m *bridgeMicrophone) bool {
+	if !s.read(m) {
+		return false
+	}
+	select {
+	case <-s.passed:
+	default:
+	}
+	select {
+	case s.passes <- time.Time{}:
+	case <-m.stopped:
+		return false
+	}
+	select {
+	case <-s.passed:
+		return true
+	case <-m.stopped:
+		return false
+	}
+}
+
+// ahead hands the app n tenths of a second the microphone hears, each
+// with its reading of how loud it is, and no pass of the speech model,
+// the way a person talks faster than the speech model writes it down on
+// a busy machine, #573. It says how many it handed.
+func (s *sound) ahead(ctx context.Context, n int) (int, error) {
+	m, err := s.started(ctx)
+	if err != nil {
+		return 0, err
+	}
+	for i := range n {
+		if !s.read(m) {
+			return i, nil
+		}
+	}
+	return n, nil
+}
+
+// read hands the app the next tenth of a second and a reading of how
+// loud it is, and returns once the reading is over. It says false once
+// the recording is over.
+func (s *sound) read(m *bridgeMicrophone) bool {
 	if !m.hand() {
 		return false
 	}
@@ -181,20 +222,6 @@ func (s *sound) step(m *bridgeMicrophone) bool {
 	}
 	select {
 	case <-s.measured:
-	case <-m.stopped:
-		return false
-	}
-	select {
-	case <-s.passed:
-	default:
-	}
-	select {
-	case s.passes <- time.Time{}:
-	case <-m.stopped:
-		return false
-	}
-	select {
-	case <-s.passed:
 		return true
 	case <-m.stopped:
 		return false

@@ -165,7 +165,7 @@ export const steps = {
         // The field is written in, and WebKit rings it however the
         // focus came. Anything else the page moved the focus to rings
         // on a Mac only when the page asked.
-        asked: !!e?.isContentEditable || (window.__focusAsked?.on === e && window.__focusAsked.ring),
+        asked: !!e?.isContentEditable || e?.tagName === "TEXTAREA" || (window.__focusAsked?.on === e && window.__focusAsked.ring),
       };
     });
     if (on.name !== arg) walk.wrong = `${what === "tab" ? "Tab" : "Shift+Tab"} put the focus on ${on.name}, not ${arg}`;

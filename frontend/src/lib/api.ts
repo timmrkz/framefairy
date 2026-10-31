@@ -726,6 +726,9 @@ export const api = {
   // Settles the words shown as being heard, text, as the piece after the
   // first pieces the window has, when the person clicks into them.
   settleListening: (recording: number, pieces: number, text: string) => call<void>("SettleListening", recording, pieces, text),
+  // Cuts what is being said where something is typed at its end, after
+  // the first pieces the window has. What came before is the next piece.
+  breakListening: (recording: number, pieces: number) => call<void>("BreakListening", recording, pieces),
   licences: () => call<Notice[]>("Licences"),
   licenceText: (name: string) => call<string>("LicenceText", name),
   // Where macOS put the title bar and its buttons, in whole CSS pixels, or
@@ -1059,7 +1062,7 @@ export interface Dictation {
   ended?: string;
   // Why the microphone hears nothing, while it goes on recording.
   unheard?: string;
-  // How many settleListening calls said holds.
+  // How many settleListening and breakListening calls said holds.
   asked: number;
 }
 
