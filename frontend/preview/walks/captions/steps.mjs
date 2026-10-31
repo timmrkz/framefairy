@@ -519,6 +519,39 @@ export const steps = {
     // which left a dark line between the two.
     else if (!state.outline.startsWith("none")) walk.wrong = `"${arg}" typed has a focus ring round its pill, ${state.outline}`;
   },
+  // ["lit together", word]
+  //                    steps the playhead a frame at a time with → until
+  //                    the word is lit, within 40 frames, and sees it lit
+  //                    with the word beside it: the caption box lights
+  //                    both, and libass draws its pill behind both
+  async "lit together"(walk, arg, s) {
+    const { letters, page, settled, watch } = walk;
+    // Read at once, never waited for: the playhead goes on past the
+    // caption the word is in when the word is lit on no frame.
+    const isLit = () => page.$$eval(".captions .word.now", (all, w) => all.some((e) => e.textContent === w), arg);
+    await settled();
+    for (let i = 0; i < 40 && !(await isLit()); i++) {
+      await page.keyboard.press("ArrowRight");
+      await settled();
+    }
+    await watch.step("press", s);
+    if (!(await isLit())) {
+      walk.wrong = `"${arg}" is lit on none of the 40 frames after the playhead`;
+      return;
+    }
+    const lit = await page.$$eval(".captions .word.now", (all) =>
+      all.map((e) => {
+        const r = e.getBoundingClientRect();
+        return { text: e.textContent, left: r.left + 2, top: r.top + 2, width: r.width - 4, height: r.height - 4 };
+      }),
+    );
+    const behind = [];
+    for (const w of lit) behind.push((await letters(w))?.pill ?? "");
+    console.log(`    lit together: ${lit.map((w, i) => `"${w.text}" on ${behind[i] || "nothing"}`).join(", ")}`);
+    if (lit.length < 2) walk.wrong = `"${arg}" is lit alone, on a frame of its own or with no word beside it`;
+    else if (behind.some((c) => !c || c !== behind[0]))
+      walk.wrong = `libass draws no one pill behind the words lit: ${lit.map((w, i) => `"${w.text}" on ${behind[i] || "nothing"}`).join(", ")}`;
+  },
   // ["grow", word]     walks the playhead with Shift and → until the word
   //                    is lit and a frame on with →, into its pop, clicks
   //                    the word, types after it and leaves it with Escape,

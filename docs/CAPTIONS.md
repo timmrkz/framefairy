@@ -98,9 +98,14 @@ alone on its frames before it. A word with no frame before the first
 word of its caption that has one is lit on that word's first frame, with
 it. `litRuns` in `engine/wordframes.go` says which words are lit
 together and when, and the caption file, `ShowingAt`, `WordsLit` and
-`PopScale` all read it, so the caption box frames every word of the pill.
-`X-Caption-Showing` says the first and the last of them, "<caption>
-<word> <last>". Several words typed into a word a frame or two long were
+`PopScale` all read it. `X-Caption-Showing` says the first and the last
+of them, "<caption> <word> <last>", and the caption box lights every
+word from the one to the other, each frame growing in the pop round the
+middle of the whole pill, as libass grows it, see `litMiddle` in
+`Player.svelte`. The walk "a word too short for a frame of its own is
+lit with the word on the frame it shares" types " Q Schulhofgeschichten"
+into "war", steps frame by frame onto "Q", and sees it lit with the
+words beside it on one pill libass drew. Several words typed into a word a frame or two long were
 lit on no frame before, so they were never seen lit, #280. Tim asked
 that how many words go into so little time stays the person's choice,
 so their times are not stretched, the words share the frame.

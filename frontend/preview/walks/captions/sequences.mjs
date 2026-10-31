@@ -470,6 +470,22 @@ export default [
     ],
   },
   {
+    // #280: words typed into a word a frame or two long were lit on no
+    // frame, so they were never seen lit. "Q" gets 12 ms of "war", so it
+    // has no frame of its own, and it is lit on the frame it shares with
+    // the word lit there, in one pill round both.
+    name: "a word too short for a frame of its own is lit with the word on the frame it shares",
+    steps: [
+      ["click", "war"],
+      ["press", "End"],
+      ["type", " Q Schulhofgeschichten"],
+      ["press", "Enter"],
+      ["captions drawn"],
+      ["holds", "Q"],
+      ["lit together", "Q"],
+    ],
+  },
+  {
     // Found by Tim on #201: several words typed into one and saved with
     // Enter left the picture with no captions, and corrections made
     // before were gone when he went back. A word typed into a short word

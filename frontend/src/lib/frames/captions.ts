@@ -61,18 +61,19 @@ export function bounceScale(t: number, b: Bounce): number {
 }
 
 // What a layer shows: the caption, by its place among the captions of the
-// view, and the word of it being spoken, counted across its lines, each
-// -1 for none, as the Go side says it in the header X-Caption-Showing, see
-// engine.CaptionShowing. The caption box over the video preview shows the
+// view, and the words of it lit, word to last, counted across its lines,
+// each -1 for none, as the Go side says it in the header X-Caption-Showing,
+// see engine.CaptionShowing. It is one word but where words too short for
+// a frame of their own are lit together, #280. The caption box over the video preview shows the
 // caption and the word the layer on screen shows, so the frame round a word
 // is never a frame ahead of the pill under it. It followed the playhead,
 // which runs ahead of the frame on screen while the episode plays, and Tim
 // saw the frame go to the next caption a few frames before the pill did.
-export type Showing = { caption: number; word: number };
+export type Showing = { caption: number; word: number; last: number };
 
 export function readShowing(header: string | null): Showing | undefined {
-  const [caption, word] = (header ?? "").split(" ").map(Number);
-  return Number.isInteger(caption) && Number.isInteger(word) ? { caption, word } : undefined;
+  const [caption, word, last] = (header ?? "").split(" ").map(Number);
+  return [caption, word, last].every(Number.isInteger) ? { caption, word, last } : undefined;
 }
 
 // How large the pill is drawn, from the header X-Caption-Scale, at rest
