@@ -516,7 +516,7 @@ func (e *Engine) loadTranscript(ctx context.Context, source string, window timed
 			before += gap.End - gap.Start
 		}
 		e.Log.Info("%s words from %s min of audio, %sx real time",
-			commas(words), num.Fixed(todo/60, 1),
+			num.Thousands(words), num.Fixed(todo/60, 1),
 			num.Fixed(todo/math.Max(time.Since(started).Seconds(), 0.001), 1))
 		return nil
 	})

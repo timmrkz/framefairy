@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"framefairy/engine/runlog"
 	"framefairy/engine/timed"
 )
 
@@ -127,7 +128,7 @@ func TestHearingSideBySideWritesTheSameTranscript(t *testing.T) {
 	base.ASRModel = t.TempDir()
 
 	var calls int32
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	e.checkpointEvery = time.Nanosecond
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&calls}, nil }
 	one := NewProject(e, source, base)
@@ -215,7 +216,7 @@ func TestHearingSideBySideHearsExactlyItsPart(t *testing.T) {
 	source := testEpisode(t, "70")
 	heard := 0.0
 	copies := &sideBySide{inner: straddlingRecognizer{&heard}, copies: 3}
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return copies, nil }
 	base := DefaultOptions()
 	base.ASRModel = t.TempDir()
@@ -271,7 +272,7 @@ func TestACopyThatPanicsFailsTheTranscription(t *testing.T) {
 	source := testEpisode(t, "70")
 	var calls int32
 	copies := &sideBySide{inner: fakeRecognizer{&calls}, copies: 3, fail: 2}
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return copies, nil }
 	base := DefaultOptions()
 	base.ASRModel = t.TempDir()

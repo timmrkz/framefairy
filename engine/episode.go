@@ -15,6 +15,7 @@ import (
 
 	"framefairy/engine/num"
 	"framefairy/engine/runes"
+	"framefairy/engine/runlog"
 	"framefairy/engine/timed"
 )
 
@@ -957,7 +958,7 @@ func ClipDrawing(style map[string]any, clip Clip, t *Transcript, source SourceIn
 // pieces the plan builder says it keeps and the words said in them, laid
 // out the way a written clip's are, in the style of the clip set it goes
 // into. It is nil until the builder has them.
-func ArrivingCaptionsView(fsys afero.Fs, planPath string, u Underway, t *Transcript,
+func ArrivingCaptionsView(fsys afero.Fs, planPath string, u runlog.Underway, t *Transcript,
 	look *Look) *CaptionsView {
 	if len(u.Pieces) == 0 {
 		return nil

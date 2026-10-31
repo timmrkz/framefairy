@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"framefairy/engine/timed"
-
 	"github.com/spf13/afero"
 
+	"framefairy/engine/runlog"
+	"framefairy/engine/timed"
 	"framefairy/internal/ffmpegtest"
 )
 
@@ -30,7 +30,7 @@ func TestLevelsAreTheTranscriptionsFrames(t *testing.T) {
 	}
 	var raw bytes.Buffer
 	binary.Write(&raw, binary.LittleEndian, samples)
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), afero.NewMemMapFs())
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), afero.NewMemMapFs())
 	var frames []float32
 	end, err := e.readLevels(context.Background(), &raw, func(f float32) bool {
 		frames = append(frames, f)
@@ -75,7 +75,7 @@ func TestMeasureLevelsOfAnEpisode(t *testing.T) {
 	if got := ReadLevels(disk, source); len(got.Frames) != 0 || got.Done {
 		t.Fatal("levels out of nowhere")
 	}
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	e.FFmpeg = "ffmpeg"
 
 	var stop atomic.Bool
@@ -144,7 +144,7 @@ func TestMeasureLevelsStops(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v: %s", err, out)
 	}
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	e.FFmpeg = "ffmpeg"
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -171,7 +171,7 @@ func TestLevelsReachAgreesWithTheFrames(t *testing.T) {
 	if parts, done := LevelsReach(disk, source); len(parts) != 0 || done {
 		t.Fatalf("an episode never measured has %v, done %v", parts, done)
 	}
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	e.FFmpeg = "ffmpeg"
 	if err := e.MeasureLevels(context.Background(), source, nil, nil); err != nil {
 		t.Fatal(err)
@@ -210,7 +210,7 @@ func sweep(t *testing.T, seconds string) string {
 func TestMeasureLevelsGoesWhereTheClipTimelineLooks(t *testing.T) {
 	t.Parallel()
 	source := sweep(t, "60")
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	// The measuring writes and asks where the clip timeline looks every
 	// 2 reads of the sound, whatever the clock says. readLevels reads at
 	// most 2 s of sound at a time, its buffer of frameSamples*4*200 bytes,
@@ -291,7 +291,7 @@ func TestMeasureLevelsGoesWhereTheClipTimelineLooks(t *testing.T) {
 func TestMeasureLevelsCarriesOn(t *testing.T) {
 	t.Parallel()
 	source := sweep(t, "30")
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	// Every 2 reads, see above.
 	e.levelsReads = 2
 	e.FFmpeg = "ffmpeg"

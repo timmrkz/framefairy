@@ -13,10 +13,10 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"framefairy/engine/timed"
-
 	"github.com/spf13/afero"
 
+	"framefairy/engine/runlog"
+	"framefairy/engine/timed"
 	"framefairy/internal/standin"
 )
 
@@ -30,7 +30,7 @@ func searchProject(t *testing.T, rec func(string) (Recognizer, error)) (*Project
 	var asked int32
 	server := fakeModel(t, &asked)
 	t.Cleanup(server.Close)
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	var heard int32
 	if rec == nil {
 		rec = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
@@ -469,8 +469,8 @@ func TestASearchOfALaterWindowHearsOnlyWhatIsNew(t *testing.T) {
 		t.Errorf("the first window of 15 s heard %.1f s", first)
 	}
 	var lefts []float64
-	p.engine.Log.SetSink(func(ev Event) {
-		if ev.Kind == EventProgress && ev.Stage == "" && ev.Covered > 0 {
+	p.engine.Log.SetSink(func(ev runlog.Event) {
+		if ev.Kind == runlog.EventProgress && ev.Stage == "" && ev.Covered > 0 {
 			lefts = append(lefts, ev.Remaining)
 		}
 	})

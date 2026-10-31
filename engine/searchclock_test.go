@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/spf13/afero"
+
+	"framefairy/engine/runlog"
 )
 
 // speedRecords are records of a test's own, in memory, with no timings
@@ -36,7 +38,7 @@ func clockFor(past searchSpeed) *searchClock {
 
 func TestASearchWithNothingToGoOnSaysNoShare(t *testing.T) {
 	f, r := searchProgress(searchNow{Part: partReading, Chars: 30000, Count: 12, Local: true}, searchSpeed{}, false)
-	if f != Unknown || r != Unknown {
+	if f != runlog.Unknown || r != runlog.Unknown {
 		t.Errorf("share %v, left %v", f, r)
 	}
 }
@@ -54,7 +56,7 @@ func TestTheShareOnlyGrows(t *testing.T) {
 		if f < last-1e-9 {
 			t.Errorf("%s: share went back from %.4f to %.4f", what, last, f)
 		}
-		if f < 0 || f > 0.99 || (r < 0 && r != Unknown) {
+		if f < 0 || f > 0.99 || (r < 0 && r != runlog.Unknown) {
 			t.Errorf("%s: share %.4f, left %.1f", what, f, r)
 		}
 		last = f
@@ -316,10 +318,10 @@ func TestASearchSaysHowFarItIs(t *testing.T) {
 	defer server.Close()
 
 	var mu sync.Mutex
-	var progress []Event
-	log := NewLog(&bytes.Buffer{}, false, false)
-	log.SetSink(func(ev Event) {
-		if ev.Kind == EventProgress {
+	var progress []runlog.Event
+	log := runlog.New(&bytes.Buffer{}, false, false)
+	log.SetSink(func(ev runlog.Event) {
+		if ev.Kind == runlog.EventProgress {
 			mu.Lock()
 			progress = append(progress, ev)
 			mu.Unlock()
@@ -338,7 +340,7 @@ func TestASearchSaysHowFarItIs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	search := func(from float64) []Event {
+	search := func(from float64) []runlog.Event {
 		t.Helper()
 		mu.Lock()
 		progress = nil
@@ -348,14 +350,14 @@ func TestASearchSaysHowFarItIs(t *testing.T) {
 		}
 		mu.Lock()
 		defer mu.Unlock()
-		return append([]Event(nil), progress...)
+		return append([]runlog.Event(nil), progress...)
 	}
 
-	says := func(events []Event) {
+	says := func(events []runlog.Event) {
 		t.Helper()
 		shared := false
 		for _, ev := range events {
-			if ev.Fraction != Unknown {
+			if ev.Fraction != runlog.Unknown {
 				shared = true
 				if ev.Fraction < 0 || ev.Fraction > 0.99 {
 					t.Errorf("share %v", ev.Fraction)
@@ -416,7 +418,7 @@ func TestTimeLeftDoesNotStandStillPastTheEstimate(t *testing.T) {
 	}
 	for _, at := range []float64{45, 60, 120} {
 		now.InPart = at
-		if _, left := searchProgress(now, past, true); left != Unknown {
+		if _, left := searchProgress(now, past, true); left != runlog.Unknown {
 			t.Errorf("%.0f seconds into a fitting of 40, with nothing given again, says %.1f "+
 				"seconds left", at, left)
 		}
@@ -485,7 +487,7 @@ func TestTheTailIsKeptPerClip(t *testing.T) {
 // keeps how long a clip took to fit and to frame after the answer.
 func TestTheClockCountsTheFittingAndKeepsItPerClip(t *testing.T) {
 	r := speedRecords()
-	c := newSearchClock(NewLog(&bytes.Buffer{}, false, false), r, "gemma", true, 30000, 6, -1)
+	c := newSearchClock(runlog.New(&bytes.Buffer{}, false, false), r, "gemma", true, 30000, 6, -1)
 	c.now.Framers = 4
 	c.enter(partReading)
 	c.enter(partWriting)

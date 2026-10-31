@@ -16,6 +16,8 @@ import (
 	"testing"
 	"testing/synctest"
 	"time"
+
+	"framefairy/engine/runlog"
 )
 
 // A model file as far as anything here is concerned: the four bytes that
@@ -238,7 +240,7 @@ func TestInstallingALanguageModel(t *testing.T) {
 		if m.Installed(dir) {
 			t.Fatal("said it was there before anything happened")
 		}
-		if err := InstallLanguageModel(context.Background(), NewLog(os.Stderr, false, false), m, dir); err != nil {
+		if err := InstallLanguageModel(context.Background(), runlog.New(os.Stderr, false, false), m, dir); err != nil {
 			t.Fatal(err)
 		}
 		if !m.Installed(dir) {
@@ -252,7 +254,7 @@ func TestInstallingALanguageModel(t *testing.T) {
 			t.Errorf("%d things in the models folder, wanted the model and nothing else", len(left))
 		}
 		// And again is not a second download.
-		if err := InstallLanguageModel(context.Background(), NewLog(os.Stderr, false, false), m, dir); err != nil {
+		if err := InstallLanguageModel(context.Background(), runlog.New(os.Stderr, false, false), m, dir); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -267,7 +269,7 @@ func TestInstallingALanguageModel(t *testing.T) {
 		})
 		dir := t.TempDir()
 		m := LanguageModel{Name: "test.gguf", Title: "Test", URL: lying.URL, Download: 35, Needs: 1}
-		err := InstallLanguageModel(context.Background(), NewLog(os.Stderr, false, false), m, dir)
+		err := InstallLanguageModel(context.Background(), runlog.New(os.Stderr, false, false), m, dir)
 		if err == nil {
 			t.Fatal("took a web page for a model")
 		}
@@ -281,7 +283,7 @@ func TestInstallingALanguageModel(t *testing.T) {
 		m := LanguageModel{Name: "test.gguf", Title: "Test", URL: whole.URL,
 			Download: int64(len(body)), Needs: 1,
 			SHA256: "0000000000000000000000000000000000000000000000000000000000000000"}
-		if err := InstallLanguageModel(context.Background(), NewLog(os.Stderr, false, false), m, dir); err == nil {
+		if err := InstallLanguageModel(context.Background(), runlog.New(os.Stderr, false, false), m, dir); err == nil {
 			t.Fatal("took a model that is not the one expected")
 		}
 		if left, _ := os.ReadDir(dir); len(left) != 0 {
@@ -295,7 +297,7 @@ func TestInstallingALanguageModel(t *testing.T) {
 		})
 		dir := t.TempDir()
 		m := LanguageModel{Name: "test.gguf", Title: "Test", URL: gone.URL, Download: 10, Needs: 1}
-		if err := InstallLanguageModel(context.Background(), NewLog(os.Stderr, false, false), m, dir); err == nil {
+		if err := InstallLanguageModel(context.Background(), runlog.New(os.Stderr, false, false), m, dir); err == nil {
 			t.Fatal("a 404 was taken for a model")
 		}
 		if left, _ := os.ReadDir(dir); len(left) != 0 {
@@ -328,7 +330,7 @@ func TestInstallingALanguageModel(t *testing.T) {
 				}
 			}
 		}()
-		if err := InstallLanguageModel(ctx, NewLog(os.Stderr, false, false), m, dir); err == nil {
+		if err := InstallLanguageModel(ctx, runlog.New(os.Stderr, false, false), m, dir); err == nil {
 			t.Fatal("a cancelled download reported success")
 		}
 		stop()
@@ -393,7 +395,7 @@ func TestADownloadCarriesOnWhereItStopped(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := InstallLanguageModel(context.Background(), NewLog(os.Stderr, false, false), m, dir); err != nil {
+	if err := InstallLanguageModel(context.Background(), runlog.New(os.Stderr, false, false), m, dir); err != nil {
 		t.Fatal(err)
 	}
 	if !m.Installed(dir) {
@@ -437,7 +439,7 @@ func TestAServerThatWillNotResumeStillWorks(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "test.gguf.part"), body[:1000], 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := InstallLanguageModel(context.Background(), NewLog(os.Stderr, false, false), m, dir); err != nil {
+	if err := InstallLanguageModel(context.Background(), runlog.New(os.Stderr, false, false), m, dir); err != nil {
 		t.Fatal(err)
 	}
 	got, err := os.ReadFile(filepath.Join(dir, "test.gguf"))
@@ -465,7 +467,7 @@ func TestWrongBytesAreNotCarriedOnFrom(t *testing.T) {
 	m := LanguageModel{Name: "test.gguf", Title: "Test", URL: server.URL,
 		Download: int64(len(body)), Needs: 1,
 		SHA256: "0000000000000000000000000000000000000000000000000000000000000000"}
-	if err := InstallLanguageModel(context.Background(), NewLog(os.Stderr, false, false), m, dir); err == nil {
+	if err := InstallLanguageModel(context.Background(), runlog.New(os.Stderr, false, false), m, dir); err == nil {
 		t.Fatal("took a model that is not the one expected")
 	}
 	if _, err := os.Stat(filepath.Join(dir, "test.gguf.part")); err == nil {
@@ -669,7 +671,7 @@ func TestADownloadThatStopsArrivingGivesUp(t *testing.T) {
 		t.Cleanup(func() { downloadClient = was })
 
 		began := time.Now()
-		_, err := download(context.Background(), NewLog(io.Discard, false, false), "http://models", 1000, path, "the model")
+		_, err := download(context.Background(), runlog.New(io.Discard, false, false), "http://models", 1000, path, "the model")
 		if err == nil {
 			t.Fatal("a download that stopped arriving finished")
 		}
@@ -722,7 +724,7 @@ func TestADownloadNeverGrowsPastItsSize(t *testing.T) {
 			dir := t.TempDir()
 			m := LanguageModel{Name: "test.gguf", Title: "Test", URL: server.URL,
 				Download: int64(len(body)), Needs: 1, SHA256: sum}
-			err := InstallLanguageModel(context.Background(), NewLog(io.Discard, false, false), m, dir)
+			err := InstallLanguageModel(context.Background(), runlog.New(io.Discard, false, false), m, dir)
 			if err == nil {
 				t.Fatal("a download bigger than the model was taken")
 			}

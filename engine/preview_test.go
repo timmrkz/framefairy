@@ -6,6 +6,8 @@ import (
 	"io"
 	"math"
 	"testing"
+
+	"framefairy/engine/runlog"
 )
 
 func TestShowinfoTime(t *testing.T) {
@@ -34,7 +36,7 @@ func TestShowinfoTime(t *testing.T) {
 func TestFFmpegFramesFromAMoment(t *testing.T) {
 	t.Parallel()
 	path := testEpisode(t, "6")
-	info, err := NewEngine(NewLog(io.Discard, false, false), disk).Probe(context.Background(), path)
+	info, err := NewEngine(runlog.New(io.Discard, false, false), disk).Probe(context.Background(), path)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -6,6 +6,8 @@ import (
 	"math"
 	"sync"
 	"testing"
+
+	"framefairy/engine/runlog"
 )
 
 // Every event the app is told about is encoded as JSON, and JSON has no
@@ -30,15 +32,15 @@ func TestAnEventTheWindowCannotBeToldAboutIsNeverSent(t *testing.T) {
 		{"a second of the episode that is not a second",
 			0.5, 10, math.NaN()},
 		{"nothing known yet, which is the ordinary case",
-			Unknown, Unknown, 0},
+			runlog.Unknown, runlog.Unknown, 0},
 		{"an ordinary report",
 			0.42, 91, 1200},
 	}
 	for _, c := range cases {
-		var got []Event
+		var got []runlog.Event
 		var mu sync.Mutex
-		l := NewLog(io.Discard, false, false)
-		l.SetSink(func(ev Event) {
+		l := runlog.New(io.Discard, false, false)
+		l.SetSink(func(ev runlog.Event) {
 			mu.Lock()
 			got = append(got, ev)
 			mu.Unlock()
@@ -61,16 +63,16 @@ func TestAShareIsAShareOrIsNotKnown(t *testing.T) {
 	}{
 		{0, 0}, {0.5, 0.5}, {1, 1},
 		{1.4, 1}, {-3, 0},
-		{math.NaN(), Unknown},
-		{math.Inf(1), Unknown},
-		{math.Inf(-1), Unknown},
-		{Unknown, Unknown},
+		{math.NaN(), runlog.Unknown},
+		{math.Inf(1), runlog.Unknown},
+		{math.Inf(-1), runlog.Unknown},
+		{runlog.Unknown, runlog.Unknown},
 	}
 	for _, c := range cases {
-		var got Event
-		l := NewLog(io.Discard, false, false)
-		l.SetSink(func(ev Event) { got = ev })
-		l.ProgressOf("working", c.in, Unknown)
+		var got runlog.Event
+		l := runlog.New(io.Discard, false, false)
+		l.SetSink(func(ev runlog.Event) { got = ev })
+		l.ProgressOf("working", c.in, runlog.Unknown)
 		if got.Fraction != c.want {
 			t.Errorf("a share of %v became %v, wanted %v", c.in, got.Fraction, c.want)
 		}
@@ -82,8 +84,8 @@ func TestAShareIsAShareOrIsNotKnown(t *testing.T) {
 // checks every event that leaves it.
 func TestNothingThatLeavesTheLogCanFailToEncode(t *testing.T) {
 	var bad int
-	l := NewLog(io.Discard, false, false)
-	l.SetSink(func(ev Event) {
+	l := runlog.New(io.Discard, false, false)
+	l.SetSink(func(ev runlog.Event) {
 		if _, err := json.Marshal(ev); err != nil {
 			bad++
 			t.Errorf("an event could not be encoded: %v", err)

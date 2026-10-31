@@ -188,7 +188,7 @@ jobs:
         # works the version out again by the same rule, so what the app
         # says it is and what the list says it is are one.
         run: |
-          engine=$(awk -F'"' '/^const Version = /{ print $2; exit }' engine/log.go)
+          engine=$(awk -F'"' '/^const Version = /{ print $2; exit }' engine/doc.go)
           short=$(echo "$SHA" | cut -c1-7)
           if [ -n "$NUMBER" ]; then
             channel="pr-$NUMBER"

@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"framefairy/engine/runlog"
 	"framefairy/engine/timed"
 )
 
@@ -12,11 +13,11 @@ import (
 // past the piece in hand, and is never full while there is work left.
 func TestPlacingTheCropSaysHowFarItIs(t *testing.T) {
 	var none *cropWork
-	if f, left := none.share(time.Now()); f != Unknown || left != Unknown {
+	if f, left := none.share(time.Now()); f != runlog.Unknown || left != runlog.Unknown {
 		t.Errorf("no work, share %v left %v", f, left)
 	}
 	w := newCropWork()
-	if f, _ := w.share(time.Now()); f != Unknown {
+	if f, _ := w.share(time.Now()); f != runlog.Unknown {
 		t.Errorf("before the work is known, share %v", f)
 	}
 	// Two pieces of 10 seconds: 40 seconds of work, scanned and sampled.
