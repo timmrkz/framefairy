@@ -230,17 +230,17 @@ jobs:
         with:
           path: .build/llama
           key: llama-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-llama.sh') }}
+      # What builds them, at the versions requirements.txt pins, see
+      # scripts/build-tools.sh. With both from the cache, only pkg-config,
+      # with which the episode's decoder finds ffmpeg's libraries.
       - name: What building them needs
-        if: steps.needs.outputs.run == 'true' && (steps.ffmpeg.outputs.cache-hit != 'true' || steps.llama.outputs.cache-hit != 'true')
-        run: brew install meson ninja pkg-config nasm cmake
+        if: steps.needs.outputs.run == 'true'
+        run: |
+          sh scripts/build-tools.sh .build/tools ${{ (steps.ffmpeg.outputs.cache-hit == 'true' && steps.llama.outputs.cache-hit == 'true') && 'pkgconf' || '' }}
+          echo "$PWD/.build/tools/bin" >> "$GITHUB_PATH"
       - name: The ffmpeg we ship
         if: steps.needs.outputs.run == 'true' && steps.ffmpeg.outputs.cache-hit != 'true'
         run: sh scripts/build-ffmpeg.sh .build/ffmpeg
-      # The episode's decoder is built against that ffmpeg's libraries,
-      # which pkg-config finds, also when the ffmpeg came from the cache.
-      - name: pkg-config, for the episode's decoder
-        if: steps.needs.outputs.run == 'true'
-        run: command -v pkg-config >/dev/null || brew install pkg-config
       - name: The llama-server we ship
         if: steps.needs.outputs.run == 'true' && steps.llama.outputs.cache-hit != 'true'
         run: sh scripts/build-llama.sh .build/llama

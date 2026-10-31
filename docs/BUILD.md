@@ -13,8 +13,12 @@ the folder, copy the new files in and run `make` again.
 ## What make does
 
 1. Installs what this machine is missing. On macOS that is Homebrew doing
-   Go, Node.js and the few tools that build ffmpeg and llama.cpp. Elsewhere
-   it says what to install, because those need administrator rights.
+   Go, Node.js and a Python of 3.10 or newer, and
+   `scripts/build-tools.sh` putting the few tools that build ffmpeg and
+   llama.cpp, cmake, meson, ninja and pkg-config, in `.build/tools` at the
+   versions `requirements.txt` pins, the same ones CI's Macs build with.
+   Elsewhere it says what to install, because those need administrator
+   rights.
 2. Builds the two programs framefairy ships beside itself, if they are not
    there yet or their build script has changed since, which is what
    raising a pin is: ffmpeg and llama-server. Several minutes, once for
@@ -91,7 +95,7 @@ and nothing else. `make INSTALL=0` does the same by hand.
 | `make interface` | a type check of the interface, its own tests, and ESLint, which refuses a new wait on the clock in a walk or an interface test, see [No test waits on the clock](#no-test-waits-on-the-clock). Needs only Node. `COVERAGE=` a folder counts the lines its tests run |
 | `make walks` | the interface in Chromium against the real Go side: the sequences of the cases found by hand, and every walk for seeds 1 to `WALKS`, 3 unless set, each as long as it says unless `STEPS` is set, half as many again at once as the machine has cores unless `WALKERS` is set, each sequence a run of its own and the sequences of a walker walked by one node, each with less motion unless it looks at motion or `STILL=none` is set, stopped after `WALKTIMEOUT`, 30m unless set, each keeping a Playwright trace when it fails, with a film of the screen for those `walks/filmed.mjs` names, or for every walk with `TRACE=film`, and no trace with `TRACE=none`. Needs Node, ffmpeg and Playwright's Chromium. `COVERAGE=` a folder counts the lines of the app and the interface they run. See [TESTING.md](TESTING.md) |
 | `make check` | what this machine has and what it still needs, with the command for each |
-| `make tools` | the installing part of `make` and nothing else. macOS: Homebrew does Go, Node.js and what builds ffmpeg and llama.cpp. Elsewhere it points to [INSTALL.md](INSTALL.md) |
+| `make tools` | the installing part of `make` and nothing else. macOS: Homebrew does Go, Node.js and Python, and `scripts/build-tools.sh` what builds ffmpeg and llama.cpp. Elsewhere it points to [INSTALL.md](INSTALL.md) |
 | `make models` | downloads the speech model and the language model into `~/.framefairy/models`, for the command line, through the engine's own installers, so each is held to its pinned size and SHA-256. The app does this itself |
 | `make speechbench AUDIO=episode.mp4` | how fast the speech model hears on this machine, on the processor and through CoreML, with 4 and 8 threads, in pieces of 15 and 30 s, one or two at a time, over three minutes of the episode, and how many words each way changes. Takes a few minutes. `ARGS="-seconds 60"` passes more, see [Measuring the speech model](#measuring-the-speech-model) |
 | `make clean` | removes `bin/`, `.build/`, `frontend/node_modules/` and the preview builds |
@@ -617,8 +621,13 @@ scan made once is out of date the week after.
   image's packages come from Ubuntu's archive as it stood at the moment
   `SNAPSHOT` in `scripts/ci-packages.sh` names, through Ubuntu's snapshot
   service, so the same Dockerfile builds the same image on any day. The
-  Python packages CI installs are in `requirements.txt`, each with the
-  hashes of its files, and Dependabot moves them.
+  Python packages CI and make install are in `requirements.txt`, each
+  with the hashes of its files, and Dependabot moves them: pyarrow for the
+  speech benchmark, and cmake, meson, ninja and pkg-config, which build
+  ffmpeg and llama-server on a Mac. Homebrew installs only its newest
+  version, so those came from it as they were on the day, and now
+  `scripts/build-tools.sh` puts them in an environment of their own.
+  nasm went with Homebrew: only ffmpeg's Intel code needs it.
 - **GitHub's own alerts**, once switched on in the settings: Dependabot
   alerts, secret scanning with push protection, and private vulnerability
   reporting, so somebody who finds a hole has a place to say so.

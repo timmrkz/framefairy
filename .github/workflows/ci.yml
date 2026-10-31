@@ -512,20 +512,21 @@ jobs:
         with:
           path: .build/ffmpeg
           key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}
+      # What builds the ffmpeg we ship, at the versions requirements.txt
+      # pins, see scripts/build-tools.sh. With the ffmpeg from the cache,
+      # only pkg-config, with which the episode's decoder finds its
+      # libraries.
+      - name: What builds them
+        run: |
+          sh scripts/build-tools.sh .build/tools ${{ steps.ffmpeg.outputs.cache-hit == 'true' && 'pkgconf' || '' }}
+          echo "$PWD/.build/tools/bin" >> "$GITHUB_PATH"
       - name: The ffmpeg we ship
         if: steps.ffmpeg.outputs.cache-hit != 'true'
-        run: |
-          brew install meson ninja pkg-config nasm cmake
-          sh scripts/build-ffmpeg.sh .build/ffmpeg
+        run: sh scripts/build-ffmpeg.sh .build/ffmpeg
       - name: ffmpeg on the path, for the tests
         run: |
           .build/ffmpeg/bin/ffmpeg -hide_banner -encoders | grep videotoolbox
           echo "$PWD/.build/ffmpeg/bin" >> "$GITHUB_PATH"
-      # The episode's decoder is built against that ffmpeg's libraries,
-      # which pkg-config finds. A runner whose ffmpeg came from the cache
-      # installed nothing above.
-      - name: pkg-config, for the episode's decoder
-        run: command -v pkg-config >/dev/null || brew install pkg-config
       # With a limit and a look at what is left, as in the job linux.
       - name: Go tests
         timeout-minutes: 15
@@ -582,23 +583,22 @@ jobs:
         with:
           path: .build/ffmpeg
           key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}
-      - name: The ffmpeg we ship
-        if: steps.ffmpeg.outputs.cache-hit != 'true'
-        run: |
-          brew install meson ninja pkg-config nasm cmake
-          sh scripts/build-ffmpeg.sh .build/ffmpeg
-      - name: pkg-config, for the episode's decoder
-        run: command -v pkg-config >/dev/null || brew install pkg-config
       - id: llama
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .build/llama
           key: llama-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-llama.sh') }}
+      # As in the job macos, with cmake too when the llama-server is built.
+      - name: What builds them
+        run: |
+          sh scripts/build-tools.sh .build/tools ${{ (steps.ffmpeg.outputs.cache-hit == 'true' && steps.llama.outputs.cache-hit == 'true') && 'pkgconf' || '' }}
+          echo "$PWD/.build/tools/bin" >> "$GITHUB_PATH"
+      - name: The ffmpeg we ship
+        if: steps.ffmpeg.outputs.cache-hit != 'true'
+        run: sh scripts/build-ffmpeg.sh .build/ffmpeg
       - name: The llama-server we ship
         if: steps.llama.outputs.cache-hit != 'true'
-        run: |
-          brew install cmake
-          sh scripts/build-llama.sh .build/llama
+        run: sh scripts/build-llama.sh .build/llama
       # Unlock writes the key to the default keychain. A locked one puts a
       # box on screen that nobody here can answer, so this one is made
       # unlocked, never locks again and becomes the default.

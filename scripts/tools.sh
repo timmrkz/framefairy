@@ -2,7 +2,7 @@
 # Everything this machine needs to build and run framefairy, installed
 # where it is missing.
 #
-#   scripts/tools.sh [FFMPEG_DIR] [LLAMA_DIR]
+#   scripts/tools.sh [FFMPEG_DIR] [LLAMA_DIR] [TOOLS_DIR]
 #
 # make calls this on every build, so it has to cost nothing when there is
 # nothing to do: every check below is a command -v or a file test, and no
@@ -18,6 +18,7 @@ set -e
 SYSTEM=$(uname -s 2>/dev/null)
 FFMPEG_DIR=${1:-.build/ffmpeg}
 LLAMA_DIR=${2:-.build/llama}
+TOOLS_DIR=${3:-.build/tools}
 
 if [ "$SYSTEM" != Darwin ]; then
 	# Nothing to say when nothing is missing, because make calls this every
@@ -35,20 +36,18 @@ missing=""
 want() { command -v "$1" >/dev/null 2>&1 || missing="$missing $2"; }
 want go go
 want npm node
-# What building our own ffmpeg needs. harfbuzz is built with meson, and
-# ffmpeg assembles its own x86 code with nasm.
-if [ ! -x "$FFMPEG_DIR/bin/ffmpeg" ]; then
-	want meson meson
-	want ninja ninja
-	want pkg-config pkg-config
-	want nasm nasm
-fi
-# And what building our own llama-server needs. llama.cpp itself is not
-# installed from Homebrew any more: a customer has no Homebrew, so the
-# llama-server that has to work is the one we build and ship, and the way
-# to find out whether it works is to run that one every day.
-if [ ! -x "$LLAMA_DIR/bin/llama-server" ]; then
-	want cmake cmake
+# What building our own ffmpeg and llama-server needs, meson, ninja,
+# pkg-config and cmake, comes from requirements.txt at the versions it
+# pins, see scripts/build-tools.sh, and not from Homebrew, which has only
+# its newest, #591. Their environment needs a Python of 3.10 or newer, and
+# the one macOS brings is 3.9. llama.cpp itself is not installed from
+# Homebrew any more: a customer has no Homebrew, so the llama-server that
+# has to work is the one we build and ship, and the way to find out
+# whether it works is to run that one every day.
+builds=0
+if [ ! -x "$FFMPEG_DIR/bin/ffmpeg" ] || [ ! -x "$LLAMA_DIR/bin/llama-server" ]; then
+	builds=1
+	python3 -c 'import sys; sys.exit(sys.version_info < (3, 10))' 2>/dev/null || missing="$missing python"
 fi
 
 if [ -n "$missing" ]; then
@@ -116,5 +115,14 @@ build_tool() {
 	echo "The $name build did not work, and no other is used. Try it again with: make $target"
 	exit 1
 }
+if [ "$builds" = 1 ]; then
+	# Homebrew's Python goes before the one macOS brings.
+	PATH="$(brew --prefix 2>/dev/null || echo /opt/homebrew)/bin:$PATH" sh scripts/build-tools.sh "$TOOLS_DIR"
+	case $TOOLS_DIR in
+	/*) PATH="$TOOLS_DIR/bin:$PATH" ;;
+	*) PATH="$PWD/$TOOLS_DIR/bin:$PATH" ;;
+	esac
+	export PATH
+fi
 build_tool ffmpeg "$FFMPEG_DIR" scripts/build-ffmpeg.sh ffmpeg
 build_tool llama-server "$LLAMA_DIR" scripts/build-llama.sh llama

@@ -162,7 +162,7 @@ all: deps toolchain frames $(PROGRAMS) tools-beside
 # or a file test.
 deps:
 ifeq ($(INSTALL),1)
-	@sh scripts/tools.sh $(STAMPS)/ffmpeg $(STAMPS)/llama
+	@sh scripts/tools.sh $(STAMPS)/ffmpeg $(STAMPS)/llama $(STAMPS)/tools
 endif
 
 # Our own ffmpeg and llama-server go beside the programs, which is the only
@@ -354,7 +354,7 @@ $(FRAMES): $(FRAMES_SRC) $(wildcard $(STAMPS)/ffmpeg/built) | modules
 	fi
 	@echo "Building the episode's decoder, framefairy-frames"
 	@mkdir -p $(dir $(FRAMES))
-	@PKG_CONFIG="$(CURDIR)/scripts/pkg-config-static.sh" \
+	@PATH="$(CURDIR)/$(STAMPS)/tools/bin:$$PATH" PKG_CONFIG="$(CURDIR)/scripts/pkg-config-static.sh" \
 		PKG_CONFIG_PATH="$(CURDIR)/$(STAMPS)/ffmpeg/lib/pkgconfig:$(CURDIR)/$(STAMPS)/ffmpeg/deps/lib/pkgconfig" \
 		CGO_ENABLED=1 CGO_CFLAGS="$${CGO_CFLAGS:--O2} -Wno-unused-result" $(GO) build -trimpath -tags ffmpeglibs -ldflags "$(FRAMES_LDFLAGS)" -o $(FRAMES) ./cmd/framefairy-frames
 
@@ -703,7 +703,7 @@ check:
 	@sh scripts/check.sh || true
 
 tools:
-	@sh scripts/tools.sh $(STAMPS)/ffmpeg $(STAMPS)/llama
+	@sh scripts/tools.sh $(STAMPS)/ffmpeg $(STAMPS)/llama $(STAMPS)/tools
 
 models: toolchain modules
 	@$(GO) run ./scripts/models
