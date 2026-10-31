@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -985,7 +986,7 @@ func TestStopTranscribingKeepsTheRecordOfTheJobThatCarriesOn(t *testing.T) {
 	started := make(chan struct{})
 	transcribe := func(letGo chan struct{}) Job {
 		return svc.jobs.addSteps(ep, engine.JobTranscribe, "Transcribe whole video", true, func(j *Job) {
-			j.Record = engine.TranscribeID
+			j.JobRecord.ID = engine.TranscribeID
 		}, func(ctx context.Context, p *engine.Project, turn engine.Turn) (string, error) {
 			rec := engine.JobRecord{ID: engine.TranscribeID, Kind: engine.JobTranscribe, Step: engine.StepHearing}
 			if err := engine.WriteJob(svc.store.files, ep, rec); err != nil {
@@ -1034,5 +1035,45 @@ func TestStopTranscribingKeepsTheRecordOfTheJobThatCarriesOn(t *testing.T) {
 	}
 	if rec, ok := record(); !ok || rec.Step != engine.StepStopped {
 		t.Errorf("after Stop transcribing the record is %+v, there %v", rec, ok)
+	}
+}
+
+// A job holds its record instead of copying it field by field, issue
+// #606, and still reaches the window with every field the window reads,
+// under the names it reads them by. A search cut off as the app closed,
+// read back from its record, is the case with the most of them: its id
+// must be the job's and not the record's, or Continue and Cancel name a
+// job the queue does not have, and its window and its numbers must come
+// across, or its row says nothing of what it was searching.
+func TestAJobReachesTheWindowWithEverythingItsRecordSays(t *testing.T) {
+	s, eps := memoryLibrary(t, "talk.mp4")
+	var sent []JobUpdate
+	s.jobs = newQueue(s.store, func(u JobUpdate) { sent = append(sent, u) }, func(string) {})
+	rec := engine.JobRecord{ID: engine.SearchID, Kind: engine.JobSearch, From: 60, To: 240, Count: 3,
+		Min: 20, Step: engine.StepFinding, Asked: time.Date(2026, 10, 31, 9, 0, 0, 0, time.UTC)}
+	if err := engine.WriteJob(s.store.files, eps[0], rec); err != nil {
+		t.Fatal(err)
+	}
+	s.jobs.restore(eps)
+	if len(sent) != 1 {
+		t.Fatalf("%d jobs were sent, want the one search", len(sent))
+	}
+	raw, err := json.Marshal(sent[0].Job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{
+		"id": "job-1", "episode": eps[0], "kind": "search", "label": "Find clips", "state": "interrupted",
+		"step": "finding", "from": 60.0, "to": 240.0, "count": 3.0, "min": 20.0, "lane": "finding",
+		"queued": "2026-10-31T09:00:00Z",
+	}
+	for key, value := range want {
+		if got[key] != value {
+			t.Errorf("%s is %v, want %v, in %s", key, got[key], value, raw)
+		}
 	}
 }

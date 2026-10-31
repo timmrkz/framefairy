@@ -499,9 +499,8 @@ export interface Job {
   progress?: EngineEvent;
   queued: string;
   lane: Lane;
-  // Where a search or a render is, and the record it keeps.
+  // Where a search or a render is.
   step?: JobStep;
-  record?: string;
   // The window of a search. To is 0 for the end of the episode.
   from?: number;
   to?: number;
