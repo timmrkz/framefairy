@@ -88,7 +88,7 @@ func (c *cursor) openSound(seek, from float64, rate, channels int) {
 		how = "opened the file"
 	}
 	c.say(fmt.Sprintf("%s, from %.3f s, seek %.3f s, at %d Hz, %d channels", how, from, seek, rate, channels))
-	c.d.answer(framewire.Record{Cursor: c.id, Kind: framewire.Opened, Body: framewire.OpenedBody(opened, framewire.SDR)})
+	c.answer(framewire.Record{Cursor: c.id, Kind: framewire.Opened, Body: framewire.OpenedBody(opened, framewire.SDR)})
 }
 
 // nextSound answers up to n chunks of sound from where the cursor is.
@@ -115,12 +115,12 @@ func (c *cursor) nextSound(n int) {
 			c.pcm = append(c.pcm[:0], c.pcm[k:]...)
 			at := c.soundFrom + float64(c.chunks*soundChunk)/float64(c.rate)
 			c.chunks++
-			c.d.answer(framewire.Record{Cursor: c.id, Kind: framewire.Frame, At: at, Body: body})
+			c.answer(framewire.Record{Cursor: c.id, Kind: framewire.Frame, At: at, Body: body})
 			sent++
 			continue
 		}
 		if c.soundEnded {
-			c.d.answer(framewire.Record{Cursor: c.id, Kind: framewire.End})
+			c.answer(framewire.Record{Cursor: c.id, Kind: framewire.End})
 			return
 		}
 		c.read = true
@@ -135,7 +135,7 @@ func (c *cursor) nextSound(n int) {
 		}
 		c.pcm = append(c.pcm, data...)
 	}
-	c.d.answer(framewire.Record{Cursor: c.id, Kind: framewire.Done})
+	c.answer(framewire.Record{Cursor: c.id, Kind: framewire.Done})
 }
 
 // soundFrame is the next stretch of samples out of the chain.

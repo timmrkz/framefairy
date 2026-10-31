@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -213,6 +214,20 @@ func TestASearchThatFailsSaysWhy(t *testing.T) {
 		}
 		if last := rec.Steps[len(rec.Steps)-1]; last.Step != StepFailed || last.To == nil {
 			t.Errorf("the last step: %+v", last)
+		}
+	})
+	t.Run("with no speech model", func(t *testing.T) {
+		p, _ := searchProject(t, func(dir string) (Recognizer, error) {
+			return nil, fmt.Errorf("%w: the speech model folder %s is missing [tokens.txt]", ErrNoSpeechModel, dir)
+		})
+		if _, err := p.Search(context.Background(), PlanRequest{To: 20, Count: 1, Min: 5}, nil); err == nil {
+			t.Fatal("no error")
+		}
+		// The row of the search says it in words, with the settings as
+		// the way on, issue #411.
+		want := "The speech model is not on this computer. Download it in the settings, under Speech model."
+		if rec := ReadSearch(disk, p.Source); rec == nil || rec.Error != want {
+			t.Errorf("the record: %+v", rec)
 		}
 	})
 	t.Run("while it finds", func(t *testing.T) {

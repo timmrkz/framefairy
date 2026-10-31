@@ -91,3 +91,33 @@ func (l *leaving) closing() {
 	l.windowGone = true
 	l.mu.Unlock()
 }
+
+// stopAll stops everything the app started, on the way out, after the
+// models: the jobs, and with them any ffmpeg they run, the measuring of
+// loudness, and a build that is ready goes in place.
+//
+// A video let go because its folder was deleted outside the app has what
+// was written back into the folder deleted once its jobs have ended, on a
+// goroutine of its own, see clearLetGo. The app waits for that delete
+// before it goes. Quitting in the middle of it left part of a work folder
+// that no video in the library points to, and the video added again found
+// it and was not marked new, issue #507. The jobs are what a delete waits
+// for, so it is waited for only when they stopped in time. When they did
+// not, each delete gives up after stopWait of its own, and quitting is
+// not held that much longer.
+//
+// The models stay in main, engine.CloseModels, before this: they are the
+// engine's for the whole process until #647, and a test that quits must
+// not close the models of every other test.
+func (s *FrameFairy) stopAll() {
+	// A WaitGroup takes no new work while it is waited for, so a video let
+	// go from here on is cleared where it is let go.
+	s.clearMu.Lock()
+	s.quitting = true
+	s.clearMu.Unlock()
+	if s.jobs.shutDown() {
+		s.clearing.Wait()
+	}
+	s.levels.shutDown()
+	s.updates.installOnQuit()
+}

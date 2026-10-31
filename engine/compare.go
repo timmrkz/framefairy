@@ -182,9 +182,10 @@ func (e *Engine) Compare(ctx context.Context, opts Options, names []string) ([]R
 		run := RecipeRun{Recipe: name, Seconds: time.Since(began).Seconds()}
 		if err != nil {
 			if !errors.Is(err, ErrCancelled) {
-				e.Log.Error("%s", err)
+				e.Log.Error("%s", ForCommandLine(err))
 			}
-			run.Failed = err.Error()
+			// A comparison is the command line's, so it says a failure its way.
+			run.Failed = ForCommandLine(err)
 		}
 		files := wrote.files()
 		e.Log.Detail("the %s search wrote the prompt %q, the answer %q and the plan %q",

@@ -86,10 +86,14 @@ func TestTooLittleMemorySaysWhatToDo(t *testing.T) {
 	if first != "not enough memory" || !errors.Is(err, ErrNoRoom) {
 		t.Errorf("first sentence %q", first)
 	}
-	for _, want := range []string{"needs about 17.9 GB and 9.5 GB are free", "process 4534", "kill 4534"} {
+	for _, want := range []string{"needs about 17.9 GB and 9.5 GB are free", "process 4534"} {
 		if !strings.Contains(said, want) {
 			t.Errorf("no %q in %q", want, said)
 		}
+	}
+	// The command line can stop it, the app's person is told no command.
+	if line := ForCommandLine(err); !strings.Contains(line, "kill 4534") || strings.Contains(said, "kill") {
+		t.Errorf("the app says %q and the command line %q", said, line)
 	}
 	if said := tooLittleMemory(2e9, 1e9, nil).Error(); !strings.Contains(said, "Quit other programs") {
 		t.Errorf("without a server: %q", said)
@@ -124,7 +128,7 @@ func TestASearchThatCannotLoadItsModelFailsBeforeListening(t *testing.T) {
 	base.ASRModel = t.TempDir()
 	p := NewProject(e, source, base)
 	_, err := p.Search(context.Background(), PlanRequest{To: 40, Count: 1}, nil)
-	if !errors.Is(err, ErrNoRoom) || !strings.Contains(err.Error(), "kill 4534") {
+	if !errors.Is(err, ErrNoRoom) || !strings.Contains(err.Error(), "process 4534") {
 		t.Fatalf("the search ended on %v", err)
 	}
 	if n := atomic.LoadInt32(&heard); n != 0 {

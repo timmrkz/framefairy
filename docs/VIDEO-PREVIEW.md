@@ -174,20 +174,26 @@ closed for standing unused.
   ffmpeg's program skips the frame, neither of which keeps the frames
   of the short. `FRAMEFAIRY_FRAMES_FAIL_AFTER=n` makes the decoder fail
   on the n-th packet of every open, for the tests, on any system. When
-  the chip hangs instead, and one call into the decoder, a packet handed
-  in, a frame taken out or brought off the chip, has taken 10 s, where
-  it takes milliseconds, the decoder gives that cursor up and decodes on the processor from
-  then on, every cursor at its next open too. ffmpeg's calls cannot be
-  called off, so the work is left where it hangs. Reading the file is
-  not timed, so a slow disk or a file still coming down from iCloud is
-  no hang, and neither is a long seek, which is many short calls. The
-  stream hears that
+  the chip hangs instead, and a cursor on the chip has worked for 10 s
+  without reading the file or answering the engine, where a frame
+  takes milliseconds, the decoder gives that cursor up and decodes on
+  the processor from then on, every cursor at its next open too.
+  ffmpeg's calls cannot be called off, so the work is left where it
+  hangs. Every stretch of the work is timed and only the waits are
+  left out: reading the file, so a slow disk or a file still coming
+  down from iCloud is no hang, and neither is a long seek, which reads
+  all the way, and answering the engine. The stream hears that
   the cursor hung and goes on from a new cursor at the frame after the
   last one it had. Before, the video preview stood still for good, as
   the chip did on CI's virtual Mac in the middle of a stream, issue
-  #553. `FRAMEFAIRY_FRAMES_HANG_AFTER=n` makes the decoder hang once on
-  the n-th packet a cursor of picture sends, and say so at once, so a
-  test waits for no 10 s of the clock. A stream the
+  #553. Only the calls known to reach the chip were timed then, and on
+  CI's virtual Mac every cursor of picture stood two minutes in its
+  first open, which none of them was, issue #638.
+  `FRAMEFAIRY_FRAMES_HANG_AFTER=n` makes the decoder hang once on
+  the n-th packet a cursor of picture sends, and `open` in every open
+  until a cursor is given up. Either says so at once, so a test waits
+  for no 10 s of the clock, and counts only outside a wait, as on the
+  clock. A stream the
   Go side opens takes a cursor that a stream before it has finished with
   and only seeks it, so a jump starts no program and reads no index. Up
   to three are kept, and they are opened on the file as the decoder

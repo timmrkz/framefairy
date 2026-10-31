@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"os"
 	"os/exec"
@@ -512,6 +513,10 @@ func TestTheEpisodesDecoderStandsAPhoneVideoUp(t *testing.T) {
 			return ffmpegFrames(t.Context(), phone, grid.At(grid.Holding(0.5)), w, h, got)
 		})
 		dec := NewEpisodeFrames(program, phone)
+		// What the decoder says is in the test's log as it says it, so a
+		// run that hangs here shows how far each cursor came, issue #638.
+		dec.heard = func(_ slog.Level, line string) { t.Logf("%s, the decoder: %s", name, line) }
+		t.Cleanup(dec.Close)
 		frame := first(func(got func(float64, []byte) error) error {
 			return dec.Stream(context.Background(), grid, 0.5, w, h, false, nil, got)
 		})
