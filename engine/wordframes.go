@@ -202,7 +202,14 @@ func (s SourceInfo) litRuns(c LaidCaption, start, end int) []litRun {
 		}
 	}
 	if waiting >= 0 && (len(runs) == 0 || !share(len(begins)-1, int64(end)*10-1, end)) {
-		runs = append(runs, litRun{waiting, len(begins) - 1, begins[waiting], end})
+		// No word of the caption has a frame of its own. They are lit
+		// together on the frame showing when the first of them begins,
+		// when that frame shows the caption.
+		from := begins[waiting]
+		if m := g.shortMoment(g.frameOf(int64(from) * 10)); m >= int64(start)*10 {
+			from = int(m / 10)
+		}
+		runs = append(runs, litRun{waiting, len(begins) - 1, from, end})
 	}
 	return runs
 }

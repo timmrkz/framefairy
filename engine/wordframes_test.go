@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"math"
+	"math/rand/v2"
 	"strconv"
 	"strings"
 	"testing"
@@ -136,6 +137,133 @@ func TestWordsTooShortForAFrameAreLitTogether(t *testing.T) {
 		if got := lit[0][k]; math.Abs(got[0]-w[0]) > 1e-6 || math.Abs(got[1]-w[1]) > 1e-6 {
 			t.Errorf("at 200 frames a second %q is lit from %.3f to %.3f s, not from %.3f to %.3f",
 				quick.Laid[0].Words[k].Text, got[0], got[1], w[0], w[1])
+		}
+	}
+}
+
+// Whatever captions an edit leaves, a caption edge dragged, a word typed
+// into another, a word removed, the engine lays the words out again and
+// lights them by the one rule, litRuns, so the rule is held here over many
+// made-up captions at many frame rates: words said in less than a frame or
+// in no time at all, at the start, in the middle and at the end of a
+// caption, captions that start before their first word, and clips that
+// start off the frames' grid. Tim asked how we know words that share a
+// frame work in every such case, #280.
+//
+// On every frame of the clip, the word whose time it is, the last begun,
+// is lit, and any other word lit with it has no frame of its own, so
+// words are lit together only where they cannot each have a frame. Every
+// word of a caption the short shows is lit on a frame, and the pill is
+// never grown past its peak.
+func TestEveryWordOfACaptionShownIsLitOnAFrame(t *testing.T) {
+	t.Parallel()
+	rates := [][2]int{{24000, 1001}, {24, 1}, {25, 1}, {30000, 1001}, {30, 1}, {50, 1}, {60000, 1001}, {60, 1}, {120, 1}, {240, 1}}
+	for seed := uint64(1); seed <= 400; seed++ {
+		random := rand.New(rand.NewPCG(seed, 280))
+		rate := rates[random.IntN(len(rates))]
+		source := SourceInfo{FPSNum: rate[0], FPSDen: rate[1], Duration: 600}
+		var laid []LaidCaption
+		at := random.Float64() * 0.5
+		for range 6 {
+			start := at
+			if random.IntN(3) == 0 {
+				at += random.Float64() * 0.1
+			}
+			var words []timed.Cue
+			for w := range 1 + random.IntN(7) {
+				lasts := 0.05 + random.Float64()*0.5
+				switch random.IntN(4) {
+				case 0:
+					lasts = 0
+				case 1:
+					lasts = random.Float64() * 0.04
+				}
+				words = append(words, timed.Cue{Start: at, End: at + lasts, Text: strconv.Itoa(w)})
+				at += lasts
+			}
+			at += random.Float64() * 0.3
+			laid = append(laid, LaidCaption{Caption: Caption{Start: start, End: at, Words: words}})
+		}
+		from := 10 + random.Float64()
+		d := &CaptionDrawing{Laid: laid, Clip: Clip{Segments: []Segment{{Start: from, End: from + at + 0.5}}}}
+		lit := d.WordsLit(source)
+
+		// The moment libass draws each frame of the short at, and where
+		// that frame is in the episode.
+		var moments []int64
+		var kept []float64
+		for _, seg := range d.Clip.Segments {
+			first, end := source.pieceFrames(seg.Start, seg.End)
+			for n := first; n < end; n++ {
+				moments = append(moments, source.shortMoment(int64(len(moments))))
+				kept = append(kept, source.keptAt(n))
+			}
+		}
+		// When each word begins and ends as the caption file says it, in
+		// hundredths: from its start, never before the word before it,
+		// inside its caption.
+		type said struct{ begins, ends []int }
+		times := make([]said, len(laid))
+		for i, c := range laid {
+			start, end := centiseconds(c.Start), centiseconds(c.End)
+			b := make([]int, len(c.Words))
+			for k, w := range c.Words {
+				b[k] = min(max(centiseconds(w.Start), start), end)
+				if k > 0 {
+					b[k] = max(b[k], b[k-1])
+				}
+			}
+			e := make([]int, len(b))
+			for k := range b {
+				e[k] = end
+				if k+1 < len(b) {
+					e[k] = b[k+1]
+				}
+			}
+			times[i] = said{b, e}
+		}
+		ownFrame := func(i, k int) bool {
+			for _, m := range moments {
+				if int64(times[i].begins[k])*10 <= m && m < int64(times[i].ends[k])*10 {
+					return true
+				}
+			}
+			return false
+		}
+		shown := make([]bool, len(laid))
+		for j, m := range moments {
+			on := ShowingAt(laid, source, m)
+			if on.Caption < 0 {
+				continue
+			}
+			shown[on.Caption] = true
+			begun := -1
+			for k, b := range times[on.Caption].begins {
+				if int64(b)*10 <= m {
+					begun = k
+				}
+			}
+			if begun >= 0 && (on.Word < 0 || begun < on.Word || begun > on.Last) {
+				t.Fatalf("seed %d, %d/%d fps, frame %d at %d ms: word %d of caption %d has begun, and words %d to %d are lit",
+					seed, rate[0], rate[1], j, m, begun, on.Caption, on.Word, on.Last)
+			}
+			for k := max(on.Word, 0); k <= on.Last; k++ {
+				if k != begun && ownFrame(on.Caption, k) {
+					t.Fatalf("seed %d, %d/%d fps, frame %d at %d ms: word %d of caption %d has frames of its own and is lit with word %d",
+						seed, rate[0], rate[1], j, m, k, on.Caption, begun)
+				}
+			}
+			if scale := d.PopScale(source, kept[j]); scale < 1 || scale > popPeak+1e-9 {
+				t.Fatalf("seed %d, frame %d: the pill is drawn at %.3f", seed, j, scale)
+			}
+		}
+		for i := range laid {
+			for k := range laid[i].Words {
+				if shown[i] && lit[i][k][0] < 0 {
+					t.Fatalf("seed %d, %d/%d fps: word %d of caption %d, said from %d to %d hundredths, is lit on no frame of the %d its caption is shown on",
+						seed, rate[0], rate[1], k, i, times[i].begins[k], times[i].ends[k], len(moments))
+				}
+			}
 		}
 	}
 }
