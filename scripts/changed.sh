@@ -255,6 +255,8 @@ for file in $changed; do
 	# What defines CI's jobs, and the scripts every job runs, decide
 	# how every part runs.
 	Makefile | .github/workflows/ci.yml | scripts/changed.sh | scripts/test-failures.sh | scripts/leftovers.sh) everything ;;
+	# The Node every job builds the interface with and runs the walks on.
+	.node-version) everything ;;
 	# The machine every Linux job runs in, so every part that runs there.
 	# No Mac runs in it, so a Mac has nothing to check.
 	.github/ci-image/* | .github/workflows/ci-image.yml | scripts/ci-packages.sh)

@@ -193,6 +193,8 @@ has "go.sum" "go framefairy/engine" "go framefairy/updates" "go framefairy/train
 # are every part and every package.
 has "Makefile" "lint" "interface" "unit" "fuzz" "walks" "build" "go framefairy/engine" "go framefairy/updates"
 has ".github/workflows/ci.yml" "lint" "interface" "walks" "build" "go framefairy/engine" "go framefairy/updates"
+# So does the Node every job takes, the one pin in .node-version.
+has ".node-version" "lint" "interface" "unit" "walks" "build" "go framefairy/engine"
 # So do the scripts every CI job runs, and the image's workflow reaches
 # what the image does.
 for f in scripts/changed.sh scripts/test-failures.sh scripts/leftovers.sh; do

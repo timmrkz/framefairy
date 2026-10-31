@@ -47,7 +47,7 @@ jobs:
             | tar xj -C "$RUNNER_TEMP/model"
       - name: A recorded talk
         run: |
-          python3 -m pip install --quiet --break-system-packages pyarrow || python3 -m pip install --quiet pyarrow
+          python3 -m pip install --quiet --require-hashes --break-system-packages -r requirements.txt || python3 -m pip install --quiet --require-hashes -r requirements.txt
           curl -sSL -o "$RUNNER_TEMP/talks.parquet" \
             https://huggingface.co/datasets/distil-whisper/tedlium-long-form/resolve/main/data/validation-00000-of-00001-9ed099229d0cbe10.parquet
           python3 -c "

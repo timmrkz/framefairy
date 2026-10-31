@@ -569,9 +569,9 @@ What the app is made of and did not write is watched four ways, because a
 scan made once is out of date the week after.
 
 - **Dependabot**, `.github/dependabot.yml`, opens a pull request once a
-  week when a Go module, a package of the interface or an action has a
-  newer version, and when the two images the CI image starts from have
-  a newer build. Minor and patch versions come together, one pull request
+  week when a Go module, a package of the interface, an action or a
+  Python package in `requirements.txt` has a newer version, and when the
+  Ubuntu image the CI image starts from has a newer build. Minor and patch versions come together, one pull request
   for the Go modules and one for the interface, and a new major version
   comes in a pull request of its own, so a major that breaks the build
   holds back nothing else. The actions come in one pull request, majors
@@ -599,13 +599,26 @@ scan made once is out of date the week after.
   by number and by the path it comes in on, each with why: a warning with
   no fix yet in a tool that never ships, like deepmerge through the Svelte
   build plugin in #579. Either failing is a red check.
-- **The tools we build ourselves**, which nothing else watches:
-  `scripts/upstream.sh` compares ffmpeg, the four libraries it is built
-  with, llama.cpp and the speech library with their newest releases, and
+- **The tools we build ourselves**, and the pins Dependabot cannot move,
+  which nothing else watches: `scripts/upstream.sh` compares ffmpeg, the
+  four libraries it is built with, llama.cpp, the speech library and Node
+  with their newest releases, and says when the snapshot of Ubuntu the CI
+  image's packages come from is a month old, and
   the same workflow keeps one issue open while anything is behind and
   closes it once everything is current. llama.cpp makes a build a day, so
   it counts only once it is a month behind. ffmpeg is the one that matters
   most: it reads a video somebody else made.
+- **One pin for each tool CI installs**, #591. Node is `.node-version`,
+  which every `setup-node` reads with `node-version-file` and the CI
+  image's `node:` tag repeats. Dependabot cannot move a `.node-version`,
+  so it leaves the image's Node alone too, `scripts/upstream.sh` says
+  when a newer Node of the same major is out, and `scripts/pins.sh` fails
+  when the two differ or a workflow names a Node of its own. The CI
+  image's packages come from Ubuntu's archive as it stood at the moment
+  `SNAPSHOT` in `scripts/ci-packages.sh` names, through Ubuntu's snapshot
+  service, so the same Dockerfile builds the same image on any day. The
+  Python packages CI installs are in `requirements.txt`, each with the
+  hashes of its files, and Dependabot moves them.
 - **GitHub's own alerts**, once switched on in the settings: Dependabot
   alerts, secret scanning with push protection, and private vulnerability
   reporting, so somebody who finds a hole has a place to say so.

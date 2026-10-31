@@ -12,9 +12,12 @@
 # every week and keeps one issue open while anything is behind.
 #
 # llama.cpp makes a build a day, so it counts as behind only once it is
-# LLAMA_SLACK builds back, about a month.
+# LLAMA_SLACK builds back, about a month. Node and the snapshot of Ubuntu
+# the CI image's packages come from are here too, since Dependabot moves
+# neither, #591.
 set -e
 LLAMA_SLACK=${LLAMA_SLACK:-30}
+SNAPSHOT_SLACK=${SNAPSHOT_SLACK:-30}
 behind_only=0
 [ "${1:-}" = "--behind" ] && behind_only=1
 
@@ -34,6 +37,8 @@ fribidi=$(pinned FRIBIDI_VERSION scripts/build-ffmpeg.sh)
 harfbuzz=$(pinned HARFBUZZ_VERSION scripts/build-ffmpeg.sh)
 libass=$(pinned LIBASS_VERSION scripts/build-ffmpeg.sh)
 llama=$(pinned LLAMA_VERSION scripts/build-llama.sh)
+node=$(cat .node-version)
+snapshot=$(pinned SNAPSHOT scripts/ci-packages.sh)
 sherpa=$(awk '/k2-fsa\/sherpa-onnx-go /{ print $2; exit }' go.mod | sed 's/^v//')
 
 out=""
@@ -64,6 +69,19 @@ check fribidi "$fribidi" "$(newest https://github.com/fribidi/fribidi '^v[0-9]+(
 check harfbuzz "$harfbuzz" "$(newest https://github.com/harfbuzz/harfbuzz '^[0-9]+(\.[0-9]+)+$' '^')"
 check libass "$libass" "$(newest https://github.com/libass/libass '^[0-9]+(\.[0-9]+)+$' '^')"
 check sherpa "$sherpa" "$(newest https://github.com/k2-fsa/sherpa-onnx '^v[0-9]+(\.[0-9]+)+$' '^v')"
+# Node within its major, the long-term support line the interface is
+# built on. A new major is a choice of its own, not a fix to catch up on.
+check node "$node" "$(newest https://github.com/nodejs/node "^v${node%%.*}\\.[0-9]+\\.[0-9]+\$" '^v')"
+# The CI image's packages, from Ubuntu's archive as it stood on a day,
+# behind once that day is SNAPSHOT_SLACK days ago, about a month. Counted
+# in days of a 31-day month, which is near enough for a month.
+days() { echo "$1" | awk '{ print substr($0, 1, 4) * 372 + substr($0, 5, 2) * 31 + substr($0, 7, 2) }'; }
+today=$(date -u +%Y%m%d)
+if [ "$(($(days "$today") - $(days "$snapshot")))" -ge "$SNAPSHOT_SLACK" ]; then
+	row apt "${snapshot%%T*}" "$today" 1
+else
+	row apt "${snapshot%%T*}" "$today" 0
+fi
 latest=$(newest https://github.com/ggml-org/llama.cpp '^b[0-9]+$' '^b')
 if [ -n "$latest" ] && [ "$((latest - ${llama#b}))" -ge "$LLAMA_SLACK" ]; then
 	row llama.cpp "$llama" "b$latest" 1

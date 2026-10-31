@@ -7,8 +7,8 @@
 # warnings frontend/audit-ci.jsonc names. Either failing is a red check.
 #
 # Every Monday also scripts/upstream.sh, which compares ffmpeg, the
-# libraries it is built with, llama.cpp and the speech library with their
-# newest releases. While anything is behind, one issue says so and is kept
+# libraries it is built with, llama.cpp, the speech library and Node with
+# their newest releases, and the CI image's Ubuntu snapshot with today. While anything is behind, one issue says so and is kept
 # up to date, and it is closed once everything is current. An issue is
 # what reaches Tim: GitHub tells whoever watches the repository.
 # See docs/BUILD.md, Keeping up.
@@ -78,7 +78,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: .node-version
       # Everything, not only what ships: the build tools make the bundle
       # that does. Every warning fails, low ones too, but for the ones
       # audit-ci.jsonc lets through by number and path, each with why,
@@ -113,7 +113,7 @@ jobs:
             exit 0
           fi
           body=$(printf '%s\n\n%s\n\n%s\n' \
-            "These are behind their newest release upstream, as of $(date -u +%Y-%m-%d). What reads a video somebody else made needs its fixes, so raise each pin in its build script, run make, and render a short before merging." \
+            "These are behind their newest release upstream, as of $(date -u +%Y-%m-%d). What reads a video somebody else made needs its fixes, so raise each pin where it is set, run make, and render a short before merging." \
             "$table" \
             "Written by .github/workflows/security.yml, and closed by it once everything is current.")
           if [ -n "$open" ]; then

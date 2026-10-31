@@ -13,6 +13,14 @@
 # library arriving at 100 kB a second.
 set -eu
 
+# Every package comes from Ubuntu's archive as it stood at this moment,
+# Ubuntu's snapshot service, so the same file builds the same image
+# whatever day it is built, #591. The base image's digest in the
+# Dockerfile pins what Ubuntu installed, this pins what is added to it,
+# and scripts/upstream.sh says when it is a month old, so the security
+# fixes since come in by moving it.
+SNAPSHOT=20261030T000000Z
+
 # man-db rebuilds its index after every install that brings a manual page,
 # and nobody reads a manual page in CI. It is most of the time apt spends
 # after the downloads.
@@ -23,6 +31,14 @@ printf '%s\n' \
 	'Acquire::Retries "3";' \
 	'Acquire::http::Timeout "20";' \
 	>/etc/apt/apt.conf.d/99ci-retries
+# The snapshot is reached over https, and the base image has no
+# certificates to check it with, so they alone come from the day's
+# archive first.
+apt-get -q update
+apt-get -q install -y --no-install-recommends ca-certificates
+# Kept in the image, so Playwright's install of its libraries after this
+# takes them from the same snapshot.
+printf 'APT::Snapshot "%s";\n' "$SNAPSHOT" >/etc/apt/apt.conf.d/99ci-snapshot
 apt-get -q update
 apt-get -q install -y --no-install-recommends \
 	pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libsoup-3.0-dev "$@"

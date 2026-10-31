@@ -98,7 +98,7 @@ jobs:
           fetch-depth: 2
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: .node-version
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       # ESLint among it, see frontend/eslint.config.js.
@@ -126,7 +126,7 @@ jobs:
       - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: .node-version
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -197,7 +197,7 @@ jobs:
       # no Node, which a runner has.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: .node-version
       # Go's build cache, kept by main after every push, see above the job
       # linux. v2 since the job runs in the image, see the walks.
       - id: gocache
@@ -333,7 +333,7 @@ jobs:
           restore-keys: go-v2-walks-${{ runner.os }}-
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: .node-version
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       # The episode's decoder, which the tests and the walks play through,
@@ -457,7 +457,7 @@ jobs:
       # no Node, which a runner has.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: .node-version
       # The licence dispenser's simulation is fuzzed at night only, see
       # SIMTIME in scripts/fuzz.sh. Its known seeds run in the job linux.
       - name: Fuzz
@@ -572,7 +572,7 @@ jobs:
           cache: true
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: .node-version
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       # The same ffmpeg and llama-server as the job macos, from the same
