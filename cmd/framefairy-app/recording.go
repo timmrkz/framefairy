@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -18,6 +17,7 @@ import (
 	"github.com/spf13/afero"
 
 	"framefairy/engine"
+	"framefairy/engine/tool"
 )
 
 // Screen recordings in Report a Problem, issue #326. A walk through a
@@ -107,7 +107,7 @@ func (g handed) recording(reader string) (ReportPicture, []byte, []byte, error) 
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), recordingTime)
 	defer cancel()
-	pic, err := probeRecording(ctx, e.FFprobe, reader, in)
+	pic, err := probeRecording(ctx, e.Runner, e.FFprobe, reader, in)
 	if err != nil {
 		return ReportPicture{}, nil, nil, err
 	}
@@ -115,11 +115,11 @@ func (g handed) recording(reader string) (ReportPicture, []byte, []byte, error) 
 		return ReportPicture{}, nil, nil, errors.New("is too large a picture")
 	}
 	decoding()
-	ending, film, err := copyRecording(ctx, e.FFmpeg, reader, in, filepath.Join(dir, "copy"), g.name)
+	ending, film, err := copyRecording(ctx, e.Runner, e.FFmpeg, reader, in, filepath.Join(dir, "copy"), g.name)
 	if err != nil {
 		return ReportPicture{}, nil, nil, err
 	}
-	still, err := stillOf(ctx, e.FFmpeg, filepath.Join(dir, "copy."+ending), filepath.Join(dir, "still.png"))
+	still, err := stillOf(ctx, e.Runner, e.FFmpeg, filepath.Join(dir, "copy."+ending), filepath.Join(dir, "still.png"))
 	if err != nil {
 		return ReportPicture{}, nil, nil, err
 	}
@@ -129,8 +129,8 @@ func (g handed) recording(reader string) (ReportPicture, []byte, []byte, error) 
 
 // probeRecording reads the size and length of a recording, as reader and
 // nothing else, and turns away a file with no picture in it.
-func probeRecording(ctx context.Context, ffprobe, reader, path string) (ReportPicture, error) {
-	out, err := exec.CommandContext(ctx, ffprobe, "-v", "error", "-protocol_whitelist", "file",
+func probeRecording(ctx context.Context, run tool.Runner, ffprobe, reader, path string) (ReportPicture, error) {
+	out, err := run.Command(ctx, ffprobe, "-v", "error", "-protocol_whitelist", "file",
 		"-f", reader, "-select_streams", "v:0",
 		"-show_entries", "stream=width,height:stream_side_data=rotation:format=duration",
 		"-of", "json", path).Output()
@@ -173,7 +173,7 @@ func probeRecording(ctx context.Context, ffprobe, reader, path string) (ReportPi
 // chapters, no tracks of data. It keeps the ending the file had when the
 // copy can be made under it, and otherwise the ending every recording of
 // that kind can be kept under. It gives the ending and the copy.
-func copyRecording(ctx context.Context, ffmpeg, reader, in, out, name string) (string, []byte, error) {
+func copyRecording(ctx context.Context, run tool.Runner, ffmpeg, reader, in, out, name string) (string, []byte, error) {
 	had := strings.ToLower(strings.TrimPrefix(filepath.Ext(name), "."))
 	type kind struct{ ending, writer string }
 	var tries []kind
@@ -201,7 +201,7 @@ func copyRecording(ctx context.Context, ffmpeg, reader, in, out, name string) (s
 		}
 		args = append(args, "-f", k.writer, "-y", path)
 		var err error
-		said, err = exec.CommandContext(ctx, ffmpeg, args...).CombinedOutput()
+		said, err = run.Command(ctx, ffmpeg, args...).CombinedOutput()
 		if err == nil {
 			if film, err := os.ReadFile(path); err == nil && len(film) > 0 {
 				return k.ending, film, nil
@@ -216,8 +216,8 @@ func copyRecording(ctx context.Context, ffmpeg, reader, in, out, name string) (s
 
 // stillOf takes the first frame of a recording as a PNG, at most
 // stillWidth wide, turned the way the recording asks.
-func stillOf(ctx context.Context, ffmpeg, in, out string) ([]byte, error) {
-	said, err := exec.CommandContext(ctx, ffmpeg, "-nostdin", "-v", "error", "-protocol_whitelist", "file",
+func stillOf(ctx context.Context, run tool.Runner, ffmpeg, in, out string) ([]byte, error) {
+	said, err := run.Command(ctx, ffmpeg, "-nostdin", "-v", "error", "-protocol_whitelist", "file",
 		"-i", in, "-frames:v", "1", "-vf", fmt.Sprintf("scale='min(iw,%d)':-1", stillWidth),
 		"-pix_fmt", "rgb24", "-f", "image2", "-c:v", "png", "-y", out).CombinedOutput()
 	still, rerr := os.ReadFile(out)

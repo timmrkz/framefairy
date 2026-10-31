@@ -47,7 +47,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks" "$APP/Contents/Resourc
 cp "$BINDIR/$EXE" "$APP/Contents/MacOS/$EXE"
 
 # The tools we ship, beside the program, which is the only place
-# engine/tools.go takes them from. A bundle without one is not made: the
+# engine/tool/find.go takes them from. A bundle without one is not made: the
 # app would have no ffmpeg or no llama-server at all, since it runs no
 # other. It used to be made anyway, with a line saying it would look on
 # the search path, which on a customer's Mac has none of them.

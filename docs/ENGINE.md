@@ -1194,8 +1194,8 @@ video on VideoToolbox` or `on the processor`. A single frame has 15 s,
 `frameLimit`, there and wherever framing pulls one frame: VideoToolbox
 has given none and said nothing on a virtual Mac, and a system decoder
 that misses the limit is gone round on the processor from then on. An
-ffmpeg that is stopped has five seconds to end, `leaveAfter` in
-`engine/ffmpeg.go`, and one that is still there after them is left
+ffmpeg that is stopped has five seconds to end, `LeaveAfter` in
+`engine/tool/run.go`, and one that is still there after them is left
 behind, with a warning that says so, and the search goes on without it.
 On the same Mac an ffmpeg went on in VideoToolbox for eight minutes after
 it was killed, and the search waited on it until the test run was ended. The crop
@@ -1749,11 +1749,12 @@ macOS keychain of `engine/keys_darwin.go`, in the frames decoder of
   ass.go        the burned-in caption track and its measured boxes
   render.go     filter graph and ffmpeg command per clip
   encode.go     which encoder writes the H.264 in a finished short
-  ffmpeg.go     running ffmpeg, preflight checks, probing
+  ffmpeg.go     ffmpeg watched as it goes, preflight checks, probing
   files.go      the file system the files of an episode are read and
                 written through, the real disk in the programs and memory
                 in the tests, and what stays on the disk whatever it is
-  tools.go      where a bundled ffmpeg or llama-server is looked for first
+  tools.go      an ffmpeg and an ffprobe that were chosen, and ffprobe
+                looked for beside the ffmpeg
   api.go        the APIs in the cloud, costs and usage
   provider.go   the companies in the cloud, Anthropic and OpenAI, their
                 addresses, keys and the models the app offers by name
@@ -1763,8 +1764,6 @@ macOS keychain of `engine/keys_darwin.go`, in the frames decoder of
                 back, render. Run takes them in order for the command
                 line and returns an exit code
   doc.go        what the engine is, and its version
-  util.go       a command quoted for printing, until it moves with
-                running programs
   project.go    one episode driven step by step, as the app does it:
                 the same steps as Run, with the window as numbers
   episode.go    status, waveform, silences and plan views for the app,
@@ -1825,5 +1824,11 @@ terminal log, and the same log as events for the app. Every event goes
 to the app through one door, the `Sink`, and that door answers for what
 an event may carry: a share or a time that is not a number becomes
 `runlog.Unknown`, because JSON cannot say NaN and an event nobody can
-encode is a job the app stops hearing about altogether. None of them
-imports the rest of the engine, see [ARCHITECTURE.md](ARCHITECTURE.md).
+encode is a job the app stops hearing about altogether. `engine/tool/`
+finds, checks and runs the programs the engine calls: our own ffmpeg,
+ffprobe and llama-server beside the program, each only once its
+SHA-256 matches the one `make` built in, and a `Runner` that runs a
+program as an argument list and stops it once its work is called off.
+How it stops one is the runner's `Stop` and `Leave`, so a test sets its
+own on its own engine. None of them imports the rest of the engine, see
+[ARCHITECTURE.md](ARCHITECTURE.md).

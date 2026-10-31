@@ -89,6 +89,8 @@
 <text class="c" x="186" y="475">engine/num</text>
 <rect class="chip" x="267" y="460" width="96" height="22" rx="6"/>
 <text class="c" x="275" y="475">engine/runes</text>
+<rect class="chip" x="369" y="460" width="89" height="22" rx="6"/>
+<text class="c" x="377" y="475">engine/tool</text>
 <rect class="box" x="64" y="516" width="672" height="70" rx="8"/>
 <text class="n" x="76" y="538">the frames decoder</text>
 <text class="p" x="76" y="556">cmd/framefairy-frames/</text>

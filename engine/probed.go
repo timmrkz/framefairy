@@ -6,12 +6,13 @@ import (
 	"path/filepath"
 	"slices"
 	"sync"
+	"time"
 )
 
 // What ffmpeg says it can do, and what ffprobe says a file holds, stays
 // true for as long as the binary and the file stay as they were. So it is
 // asked once a process and kept by the file's size and time, the way
-// checkTool keeps the tools it has checked, and asked again the moment
+// engine/tool keeps the tools it has checked, and asked again the moment
 // either changes. Every engine shares it, and there are many: the app
 // makes one for every job, every caption it draws and every video it
 // reads, and a render once asked ffprobe the same questions about the
@@ -22,7 +23,8 @@ import (
 // engine's Files, because that is where ffmpeg and ffprobe read it.
 type fileStamp struct {
 	path string
-	toolStamp
+	size int64
+	mod  time.Time
 }
 
 // diskStampOf is the stamp of the file at path, a bare program name looked up
@@ -46,7 +48,7 @@ func diskStampOf(path string) (fileStamp, bool) {
 	if err != nil || !info.Mode().IsRegular() {
 		return fileStamp{}, false
 	}
-	return fileStamp{abs, toolStamp{info.Size(), info.ModTime()}}, true
+	return fileStamp{abs, info.Size(), info.ModTime()}, true
 }
 
 // probeKey is one question about one file: what kind of answer, the

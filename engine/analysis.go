@@ -13,6 +13,7 @@ import (
 	"framefairy/engine/num"
 	"framefairy/engine/runes"
 	"framefairy/engine/timed"
+	"framefairy/engine/tool"
 )
 
 func tailRunes(s string, n int) string {
@@ -57,7 +58,7 @@ func (e *Engine) decoderUsed(ctx context.Context, path string, at float64) strin
 		args := append([]string{"-hide_banner", "-loglevel", "verbose"}, flags...)
 		args = append(args, "-ss", num.Fixed(at, 3), "-i", path, "-an", "-frames:v", "1", "-f", "null", "-")
 		probeCtx, cancel := timeLimit(ctx, frameLimit)
-		said := run(probeCtx, "", e.FFmpeg, args...)
+		said := e.Runner.Run(probeCtx, "", e.FFmpeg, args...)
 		cancel()
 		if ctx.Err() != nil {
 			return ""
@@ -68,11 +69,11 @@ func (e *Engine) decoderUsed(ctx context.Context, path string, at float64) strin
 			// has stopped working. VideoToolbox on CI's virtual Mac did,
 			// and the framing waited on it until the test run was killed.
 			// One that went on even once it was stopped, as it did on the
-			// same Mac, is left behind, see leaveAfter.
+			// same Mac, is left behind, see tool.LeaveAfter.
 			e.softDecode.Store(true)
 			if said.Left {
 				e.Log.Warn("the system's video decoder gave no frame in %s and %s, decoding on the processor from now on",
-					frameLimit, leftBehind)
+					frameLimit, tool.LeftBehind)
 			} else {
 				e.Log.Warn("the system's video decoder gave no frame in %s, decoding on the processor from now on", frameLimit)
 			}
@@ -89,7 +90,7 @@ func (e *Engine) decoderUsed(ctx context.Context, path string, at float64) strin
 // decoding to, as ffmpeg -hwaccels names them. Whether a file really goes
 // through one is decided per file, and is in the log of the search.
 func (e *Engine) SystemDecoders(ctx context.Context) []string {
-	said := run(ctx, "", e.FFmpeg, "-hide_banner", "-hwaccels")
+	said := e.Runner.Run(ctx, "", e.FFmpeg, "-hide_banner", "-hwaccels")
 	if said.Code != 0 {
 		return nil
 	}
@@ -265,7 +266,7 @@ func (e *Engine) sampleGray(ctx context.Context, path string, start, duration fl
 		// below like one that failed.
 		pullCtx, cancel := timeLimit(ctx, time.Duration(frames)*frameLimit)
 		defer cancel()
-		raw, _ := runBytes(pullCtx, "", e.FFmpeg, args...)
+		raw, _ := e.Runner.Bytes(pullCtx, "", e.FFmpeg, args...)
 		return raw
 	}
 	flags := e.decodeFlags()

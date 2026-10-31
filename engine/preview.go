@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"os/exec"
 	"runtime"
 	"strconv"
 	"strings"
@@ -154,7 +153,7 @@ func (e *Engine) previewFrames(ctx context.Context, path string, from float64, w
 		"-map", "0:v:0", "-an", "-sn", "-dn",
 		"-vf", scale,
 		"-fps_mode", "passthrough", "-f", "rawvideo", "pipe:1")
-	cmd := exec.CommandContext(ctx, e.FFmpeg, args...)
+	cmd := e.Runner.Command(ctx, e.FFmpeg, args...)
 	out, err := cmd.StdoutPipe()
 	if err != nil {
 		return err

@@ -67,6 +67,7 @@ with the boxes one level down under it.
 | 4 | `engine.Project` | the steps one video takes, the same for both front ends | a second way to run a step |
 | 4 | `engine/timed/` | the types every part of the engine uses for a moment of a video: a piece of text with its times, a span, a window, a loudness reading, the 10 ms grid of the sound | a function or a rule, and a type only one part uses |
 | 4 | `engine/runlog/` | the log of a run: timestamped lines in the terminal, the progress line one piece of work can hold, steps with how long they took, and every line and progress as an event, which reaches the app through one `Sink` | a rule of a feature. A job says what happens and the log says it |
+| 4 | `engine/tool/` | finding our own ffmpeg, ffprobe and llama-server, each checked against the sum `make` built in, and running a program as an argument list, stopped once its work is called off, with how it stops held on a `Runner` | anything about a video, and a cache or a seam as a package variable |
 | 4 | `engine/num/` over `engine/runes/` | numbers rounded, summed, read and written the same on every platform, from JSON values too, and text counted, cut, trimmed and quoted by its characters, and scrubbed when it comes from outside | a rule of a feature, and anything about a file of a video |
 | 5 the frames decoder | `cmd/framefairy-frames/` | turning a video into the frames, sound and captions of the video preview. The engine starts one for each video | anything but decoding. It is a child process |
 | 6 small libraries | `licence/`, `internal/wake/`, `internal/framewire/` | the format of a licence key, how a waiter hears that something changed, and the wire between the engine and the decoder | |
@@ -139,10 +140,11 @@ which reads this file.
 
 1. The engine knows nothing of the layers over it. `engine/` imports
    nothing from `cmd/`, which Go refuses anyway, nor from `asr/`, and
-   `engine/runlog/`, `engine/timed/`, `engine/num/` and `engine/runes/`
-   nothing of the rest of the engine. Among them `engine/runlog/` uses
-   `engine/num/` and `engine/runes/`, `engine/num/` uses `engine/runes/`, and none uses one
-   above it. Held by Go's imports, which refuse a cycle, and by the
+   `engine/runlog/`, `engine/tool/`, `engine/timed/`, `engine/num/` and
+   `engine/runes/` nothing of the rest of the engine. Among them
+   `engine/runlog/` uses `engine/num/` and `engine/runes/`, `engine/num/`
+   uses `engine/runes/`, `engine/tool/` uses none of them, and none uses
+   one above it. Held by Go's imports, which refuse a cycle, and by the
    review for the rest.
 2. One engine, two front ends. A rule lives once, in the engine. Held by
    the review.
@@ -195,6 +197,9 @@ copies what it finds nearby, so these are not the pattern for new code.
   `frontend/src/lib/rotate.ts` and `frontend/src/lib/room.ts`, #610.
 - The transcript cache in `cmd/framefairy-app/words.go`, #608.
 - A new `engine.NewEngine` for each job or probe, #607.
+- The tools already checked, `checked` in `engine/tool/find.go`, a cache
+  as a package variable, and the sums `make` builds in, `sums` beside it,
+  which four tests set for the whole process, #607.
 - The effects in `frontend/src/screens/Episode.svelte` that compare an
   old value with a new one to notice that work ended, #606.
 

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"os/exec"
 
 	"framefairy/engine/runes"
 )
@@ -40,7 +39,7 @@ func (e *Engine) PreviewSound(ctx context.Context, path string, from float64, ra
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, e.FFmpeg, soundFrom(path, from, e.pictureStart(ctx, path), rate, channels)...)
+	cmd := e.Runner.Command(ctx, e.FFmpeg, soundFrom(path, from, e.pictureStart(ctx, path), rate, channels)...)
 	out, err := cmd.StdoutPipe()
 	if err != nil {
 		return err
