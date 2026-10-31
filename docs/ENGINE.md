@@ -1337,6 +1337,16 @@ search says them as they are, without "planning failed" in front, since
 the first sentence is what the row of the search shows, the same as
 "not enough memory".
 
+**A missing model says the way on of each front end,** issue #411. A
+speech model that is not there, no clip model or several with none
+chosen, llama-server stopped by the system while it loads, and a model
+that does not fit beside another llama-server: in the app the way on is
+the settings, where the models are downloaded and chosen, and on the
+command line a command or a flag. The engine makes these with
+`twoWays`, which keeps both, `Error` says the app's and `ForCommandLine`
+the command line's, which `Run` prints. The app's words never name a
+command or a flag, which its person has nowhere to type.
+
 The command line reads the environment first and the keychain after. The
 app turns that round with `PreferSavedKeys` as it starts, so the key saved
 in its settings is the one used, and a key left in a terminal's

@@ -436,7 +436,7 @@ func (e *Engine) loadTranscript(ctx context.Context, source string, window timed
 		rec, err := e.OpenRecognizer(modelDir)
 		e.Log.ClearProgress()
 		if err != nil {
-			return fmt.Errorf("%w\n%s", err, ModelHelp(modelDir))
+			return noSpeechModel(modelDir, err)
 		}
 		defer rec.Close()
 		started := time.Now()
@@ -634,7 +634,18 @@ func joinParts(parts [][2]float64) [][2]float64 {
 	return out
 }
 
-// ModelHelp says how to get the speech model.
+// noSpeechModel is the speech model in dir that would not open, err. One
+// that is not there says so with the way to get it: the settings in the
+// app, a download and --asr-model on the command line.
+func noSpeechModel(dir string, err error) error {
+	if SpeechModelReady(dir) {
+		return err
+	}
+	return twoWays(true, "The speech model is not on this computer. Download it in the settings, under Speech model.",
+		fmt.Sprintf("%v\n%s", err, ModelHelp(dir)))
+}
+
+// ModelHelp says how to get the speech model on the command line.
 func ModelHelp(dir string) string {
 	parent := filepath.Dir(dir)
 	return "  Download it once with:\n" +

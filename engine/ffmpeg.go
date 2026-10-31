@@ -34,9 +34,32 @@ import (
 type RenderError struct {
 	Msg  string
 	Said bool
+	// CommandLine is Msg as the command line says it, where the way on
+	// differs: a command to run or a flag to pass there, the settings in
+	// the app, which downloads and chooses the models. Empty, both say Msg.
+	// Issue #411.
+	CommandLine string
 }
 
 func (e *RenderError) Error() string { return e.Msg }
+
+// twoWays is a failure whose way on is the settings in the app, app, and
+// a command or a flag on the command line, commandLine. said is as for
+// RenderError.
+func twoWays(said bool, app, commandLine string) error {
+	return &RenderError{Msg: app, Said: said, CommandLine: commandLine}
+}
+
+// ForCommandLine is err the way the command line says it: a failure with
+// a way on of its own there says that one, in place of the app's.
+func ForCommandLine(err error) string {
+	said := err.Error()
+	var r *RenderError
+	if errors.As(err, &r) && r.CommandLine != "" {
+		return strings.Replace(said, r.Msg, r.CommandLine, 1)
+	}
+	return said
+}
 
 func renderErr(format string, a ...any) error {
 	return &RenderError{Msg: runes.Format(format, a...)}
