@@ -31,7 +31,8 @@ func TestAVideoEndsWhereItsPictureEnds(t *testing.T) {
 		frames         int
 		length, slack  float64
 	}{
-		// One second of picture at 25 frames a second, two of sound.
+		// One second of picture at 25 frames a second, two of sound, in
+		// MPEG-4 Part 2, which the ffmpeg we ship encodes on every machine.
 		{name: "sound_longer.mp4", picture: "1", sound: "2", frames: 25, length: 1},
 		// Matroska keeps the picture's length in a tag of its own. AAC
 		// starts the file 23 ms before the picture, so the picture
@@ -48,7 +49,7 @@ func TestAVideoEndsWhereItsPictureEnds(t *testing.T) {
 			if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
 				"-f", "lavfi", "-i", "testsrc=size=64x36:rate=25:duration="+c.picture,
 				"-f", "lavfi", "-i", "sine=duration="+c.sound,
-				"-c:v", "libx264", "-c:a", "aac", path).CombinedOutput(); err != nil {
+				"-c:v", "mpeg4", "-c:a", "aac", path).CombinedOutput(); err != nil {
 				ffmpegtest.Unusable(t, "ffmpeg cannot make the video: %v %s", err, out)
 			}
 			info, err := e.Probe(context.Background(), path)
