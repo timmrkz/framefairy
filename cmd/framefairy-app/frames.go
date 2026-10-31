@@ -22,6 +22,7 @@ import (
 
 	"framefairy/engine"
 	"framefairy/engine/runes"
+	"framefairy/engine/tool"
 	"framefairy/internal/framewire"
 )
 
@@ -280,7 +281,7 @@ func (p *previews) start(kind string, times *engine.PreviewTimes, light func() f
 		defer close(s.done)
 		err := streamSafely(ctx, run, func(at float64, frame []byte) error {
 			// A frame is handed over in a buffer of its own, see
-			// engine.PreviewFrames, and kept as it is. Sound comes in one
+			// engine.EpisodeFrames.Stream, and kept as it is. Sound comes in one
 			// buffer read into again and again, so it is copied.
 			if kind == "sound" {
 				frame = append([]byte(nil), frame...)
@@ -425,7 +426,7 @@ func (p *previews) spare() {
 // without it says so the way it says a missing ffmpeg: there is no second
 // way to the frames.
 func (p *previews) decoder(path string) (*engine.EpisodeFrames, error) {
-	program, err := engine.FindTool("FRAMEFAIRY_FRAMES", "framefairy-frames")
+	program, err := tool.Find("FRAMEFAIRY_FRAMES", "framefairy-frames")
 	if err != nil {
 		return nil, err
 	}

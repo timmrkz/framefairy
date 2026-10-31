@@ -65,7 +65,7 @@ trap finish EXIT
 for tool in cmake git; do
 	command -v "$tool" >/dev/null 2>&1 || {
 		echo "build-llama.sh: $tool is needed and is not on this machine." >&2
-		echo "On macOS: brew install $tool. Elsewhere see docs/INSTALL.md." >&2
+		echo "On macOS: make tools, or make llama. Elsewhere see docs/INSTALL.md." >&2
 		exit 1
 	}
 done

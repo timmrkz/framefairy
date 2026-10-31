@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"framefairy/engine/runlog"
 	"framefairy/internal/framewire"
 )
 
@@ -387,7 +388,7 @@ const previewTrackLimit = 10 * time.Second
 // request, out of reach of the recover that guards it. A panic in it
 // ended the whole app, issue #604. Now it fails the requests waiting for
 // the file, the stack goes to log, and the next request tries again.
-func (c *trackCache) once(ctx context.Context, log *Log, work, key string, build func(context.Context) (previewFile, error)) (previewFile, error) {
+func (c *trackCache) once(ctx context.Context, log *runlog.Log, work, key string, build func(context.Context) (previewFile, error)) (previewFile, error) {
 	c.mu.Lock()
 	if made, ok := c.files[key]; ok {
 		c.mu.Unlock()
@@ -432,7 +433,7 @@ func (c *trackCache) once(ctx context.Context, log *Log, work, key string, build
 }
 
 // buildSafely builds, and turns a panic into the build's error, see once.
-func buildSafely(ctx context.Context, log *Log, build func(context.Context) (previewFile, error)) (made previewFile, err error) {
+func buildSafely(ctx context.Context, log *runlog.Log, build func(context.Context) (previewFile, error)) (made previewFile, err error) {
 	defer func() {
 		if caught := recover(); caught != nil {
 			log.Error("the caption file of the video preview could not be made: %v", caught)

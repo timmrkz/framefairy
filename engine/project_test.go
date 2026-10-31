@@ -16,6 +16,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"framefairy/engine/runlog"
 	"framefairy/internal/ffmpegtest"
 )
 
@@ -144,7 +145,7 @@ func TestProjectSteps(t *testing.T) {
 	defer server.Close()
 
 	rec := &recorder{}
-	log := NewLog(&bytes.Buffer{}, false, false)
+	log := runlog.New(&bytes.Buffer{}, false, false)
 	log.SetSink(rec.sink)
 	e := NewEngine(log, disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
@@ -312,7 +313,7 @@ func TestProjectSteps(t *testing.T) {
 
 	sawRenderProgress := false
 	for _, ev := range rec.events {
-		if ev.Kind == EventProgress && ev.Fraction > 0 {
+		if ev.Kind == runlog.EventProgress && ev.Fraction > 0 {
 			sawRenderProgress = true
 		}
 	}
@@ -343,7 +344,7 @@ func TestProjectSteps(t *testing.T) {
 func TestProjectReportsErrors(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "2")
-	log := NewLog(&bytes.Buffer{}, false, false)
+	log := runlog.New(&bytes.Buffer{}, false, false)
 	e := NewEngine(log, disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) {
 		return nil, errors.New("no model here")
@@ -375,7 +376,7 @@ func TestAFailedStepSaysWhatWentWrong(t *testing.T) {
 	source := testEpisode(t, "20")
 	broken := errors.New("the speech model is broken")
 	var logged bytes.Buffer
-	e := NewEngine(NewLog(&logged, false, false), disk)
+	e := NewEngine(runlog.New(&logged, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return nil, broken }
 	base := DefaultOptions()
 	base.ASRModel = t.TempDir()

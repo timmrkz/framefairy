@@ -9,6 +9,8 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+
+	"framefairy/engine/tool"
 )
 
 // ---------------------------------------------------------------------------
@@ -39,7 +41,7 @@ var freeMemory = FreeMemory
 func FreeMemory() int64 {
 	switch runtime.GOOS {
 	case "darwin":
-		res := run(context.Background(), "", "vm_stat")
+		res := tool.Runner{}.Run(context.Background(), "", "vm_stat")
 		if res.Code != 0 {
 			return 0
 		}
@@ -173,7 +175,7 @@ var otherServers = func() []string {
 	if runtime.GOOS == "windows" {
 		return nil
 	}
-	res := run(context.Background(), "", "ps", "-axo", "pid=,comm=")
+	res := tool.Runner{}.Run(context.Background(), "", "ps", "-axo", "pid=,comm=")
 	if res.Code != 0 {
 		return nil
 	}

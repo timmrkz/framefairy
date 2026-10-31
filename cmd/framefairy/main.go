@@ -23,6 +23,7 @@ import (
 
 	"framefairy/asr"
 	"framefairy/engine"
+	"framefairy/engine/runlog"
 )
 
 type kind int
@@ -107,6 +108,9 @@ func specs() []flagSpec {
 			func(o *engine.Options, v string) error { o.From = v; return nil }},
 		{[]string{"--to"}, kString, "END_AT", "only consider the episode up to this point",
 			func(o *engine.Options, v string) error { o.To = v; return nil }},
+		{[]string{"--next"}, kBool, "", "search the window the app would place next, where the " +
+			"fewest searches have been, as another pass when it was searched before. Takes no --from or --to",
+			func(o *engine.Options, _ string) error { o.Next = true; return nil }},
 		{[]string{"--max-pause"}, kFloat, "MAX_PAUSE", "cut any silence longer than this even when " +
 			"the model chose to keep it. Off by default, because which pauses survive is the model's call",
 			floatValue("--max-pause", func(o *engine.Options, v float64) { o.MaxPause = &v })},
@@ -433,7 +437,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	log := engine.NewLog(os.Stdout, !p.plain, p.verbose)
+	log := runlog.New(os.Stdout, !p.plain, p.verbose)
 	e := engine.NewEngine(log, afero.NewOsFs())
 	// The one folder the records go in, for the whole run, the way the app
 	// keeps it from its settings.
@@ -446,7 +450,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "cannot write %s: %s\n", p.events, err)
 			os.Exit(1)
 		}
-		log.SetSink(engine.JSONLines(events))
+		log.SetSink(runlog.JSONLines(events))
 	}
 	// A llama-server a run left behind, because it was killed or its
 	// terminal closed, holds a model in memory, and a model loaded beside it

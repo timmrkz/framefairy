@@ -24,6 +24,7 @@ import (
 	"gopkg.in/natefinch/lumberjack.v2"
 
 	"framefairy/engine"
+	"framefairy/engine/runlog"
 )
 
 // The app's own log: what the app did, the window's errors and every step
@@ -222,22 +223,22 @@ func (s *FrameFairy) RemoveAppLog() (LogStatus, error) {
 // recording all wrote to nothing before, so what the engine warned about
 // there never reached the log a report sends, issue #605. A caption file
 // without its pill was kept for the rest of a run with nothing to say why.
-func engineLog(from, path string) *engine.Log {
-	log := engine.NewLog(io.Discard, false, false)
+func engineLog(from, path string) *runlog.Log {
+	log := runlog.New(io.Discard, false, false)
 	video := ""
 	if path != "" {
 		video = filepath.Base(path)
 	}
-	log.SetSink(func(ev engine.Event) {
+	log.SetSink(func(ev runlog.Event) {
 		var level zerolog.Level
 		switch ev.Kind {
-		case engine.EventWarn:
+		case runlog.EventWarn:
 			level = zerolog.WarnLevel
-		case engine.EventError:
+		case runlog.EventError:
 			level = zerolog.ErrorLevel
-		case engine.EventInfo, engine.EventOK:
+		case runlog.EventInfo, runlog.EventOK:
 			level = zerolog.InfoLevel
-		case engine.EventDetail:
+		case runlog.EventDetail:
 			level = zerolog.DebugLevel
 		default:
 			return

@@ -387,10 +387,10 @@ func compareReport(opts Options, runs []RecipeRun) string {
 		}
 		thought := orNone(u.Thought)
 		if u.Thought == 0 && u.ThoughtChars > 0 {
-			thought = "about " + commas(u.ThoughtChars*10/25)
+			thought = "about " + num.Thousands(u.ThoughtChars*10/25)
 		}
 		costs = append(costs, []string{r.Recipe, strconv.Itoa(len(r.Clips)), orNone(u.Asks),
-			num.Fixed(r.Seconds, 0), seconds(u.Seconds), seconds(u.Reading), commas(r.PromptChars),
+			num.Fixed(r.Seconds, 0), seconds(u.Seconds), seconds(u.Reading), num.Thousands(r.PromptChars),
 			orNone(u.Read), orNone(u.ReadAnew), thought, orNone(u.Written)})
 	}
 	b.WriteString(alignedTable(costs))
@@ -419,7 +419,7 @@ func compareReport(opts Options, runs []RecipeRun) string {
 			recipe, _ := RecipeNamed(v.Recipe)
 			b.WriteString(recipe.About)
 			if v.Think != nil {
-				fmt.Fprintf(&b, ", thinking at most %s tokens", commas(*v.Think))
+				fmt.Fprintf(&b, ", thinking at most %s tokens", num.Thousands(*v.Think))
 			}
 			if v.Temperature != nil {
 				fmt.Fprintf(&b, ", at a temperature of %s", trimFloat(*v.Temperature))
@@ -584,5 +584,5 @@ func orNone(n int) string {
 	if n == 0 {
 		return "-"
 	}
-	return commas(n)
+	return num.Thousands(n)
 }

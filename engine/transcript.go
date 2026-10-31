@@ -16,6 +16,7 @@ import (
 
 	"framefairy/engine/num"
 	"framefairy/engine/timed"
+	"framefairy/engine/tool"
 )
 
 // transcriptVersion changes whenever the stored transcript changes meaning,
@@ -408,7 +409,7 @@ func fromStored(words []timed.Cue, frames []float32, start, mean float64, silenc
 // DefaultModelDir is where the speech model is looked for unless told
 // otherwise.
 func DefaultModelDir() string {
-	if dir := named("FRAMEFAIRY_ASR_MODEL"); dir != "" {
+	if dir := tool.Named("FRAMEFAIRY_ASR_MODEL"); dir != "" {
 		return dir
 	}
 	home, err := os.UserHomeDir()
@@ -516,7 +517,7 @@ func (e *Engine) loadTranscript(ctx context.Context, source string, window timed
 			before += gap.End - gap.Start
 		}
 		e.Log.Info("%s words from %s min of audio, %sx real time",
-			commas(words), num.Fixed(todo/60, 1),
+			num.Thousands(words), num.Fixed(todo/60, 1),
 			num.Fixed(todo/math.Max(time.Since(started).Seconds(), 0.001), 1))
 		return nil
 	})
@@ -685,10 +686,10 @@ func joinParts(parts [][2]float64) [][2]float64 {
 func ModelHelp(dir string) string {
 	parent := filepath.Dir(dir)
 	return "  Download it once with:\n" +
-		"    mkdir -p " + shellQuote(parent) + "\n" +
+		"    mkdir -p " + tool.ShellQuote(parent) + "\n" +
 		"    curl -L -o /tmp/" + ModelName + ".tar.bz2 \\\n" +
 		"      https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/" + ModelName + ".tar.bz2\n" +
-		"    tar -xjf /tmp/" + ModelName + ".tar.bz2 -C " + shellQuote(parent) + "\n" +
+		"    tar -xjf /tmp/" + ModelName + ".tar.bz2 -C " + tool.ShellQuote(parent) + "\n" +
 		"  or point --asr-model at a folder that has it."
 }
 

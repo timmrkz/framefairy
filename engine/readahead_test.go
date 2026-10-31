@@ -8,14 +8,17 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
-	"framefairy/engine/timed"
-
 	"github.com/spf13/afero"
+
+	"framefairy/engine/runlog"
+	"framefairy/engine/timed"
 )
 
 // fakeReader is a llama-server in miniature that lays a prompt out and
@@ -227,7 +230,7 @@ func videoReadAhead(t *testing.T, files afero.Fs, name string) *readAheadOf {
 	if err := afero.WriteFile(files, source, []byte("the video"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	e := NewEngine(NewLog(io.Discard, false, false), files)
+	e := NewEngine(runlog.New(io.Discard, false, false), files)
 	base := DefaultOptions()
 	base.Planner, base.LLMModel, base.ASRModel = "local", "/models/gemma.gguf", "/models/parakeet"
 	p := NewProject(e, source, base)
@@ -505,8 +508,8 @@ func TestNothingIsReadAheadIntoARunningServer(t *testing.T) {
 	}
 	base := DefaultOptions()
 	base.Planner, base.LLMURL = "local", server.URL
-	p := NewProject(NewEngine(NewLog(io.Discard, false, false), files), "/videos/running.mp4", base)
-	ahead, err := p.WarmModel(context.Background(), PlanRequest{From: 0, To: 60, Count: 1, Pass: 1})
+	p := NewProject(NewEngine(runlog.New(io.Discard, false, false), files), "/videos/running.mp4", base)
+	ahead, err := p.warmModel(context.Background(), PlanRequest{From: 0, To: 60, Count: 1, Pass: 1})
 	if err != nil || ahead != (ReadAhead{}) {
 		t.Errorf("warming a running server read %+v and said %v", ahead, err)
 	}
@@ -533,4 +536,83 @@ func TestOnlyARequestThatStartsWithTheTranscriptIsReadAhead(t *testing.T) {
 			t.Errorf("the %s recipe is read ahead: %v, want %v", recipe, got, want)
 		}
 	}
+}
+
+// A search loads the model while it hears only when some of its window
+// is still to be heard. A window heard already goes straight to finding.
+// It is the engine's to decide, so every search does the same, #610.
+func TestASearchReadsAheadOnlyOfAWindowStillToBeHeard(t *testing.T) {
+	v := videoReadAhead(t, afero.NewMemMapFs(), t.Name())
+	window := timed.Window{Start: 0, End: 60}
+	if !v.p.readsAhead(window) {
+		t.Error("a window nothing of which is heard is not read ahead")
+	}
+	v.hear(0, 40)
+	if !v.p.readsAhead(window) {
+		t.Error("a window heard to 40 s of 60 is not read ahead")
+	}
+	v.hear(40, 60)
+	if v.p.readsAhead(window) {
+		t.Error("a window heard whole is read ahead")
+	}
+	if !v.p.readsAhead(timed.Window{Start: 30, End: 90}) {
+		t.Error("a window reaching past what is heard is not read ahead")
+	}
+}
+
+// heldRecognizer hears nothing until it is let go, so a test sees what a
+// search does while its window is still being heard.
+type heldRecognizer struct {
+	fakeRecognizer
+	letGo <-chan struct{}
+}
+
+func (r heldRecognizer) Recognize(samples []float32, rate int) []Token {
+	<-r.letGo
+	return r.fakeRecognizer.Recognize(samples, rate)
+}
+
+// A search of a window still to be heard loads the model while it hears,
+// with no front end asking for it, so the app and the command line both
+// find the model loaded once the window is heard, #610. The model loads
+// here before anything is heard, which only the read ahead can do. A
+// search that did not read ahead loads it after hearing, and the test
+// waits until go test ends it.
+//
+// On the real disk: ffmpeg reads the episode, and the model has to be a
+// file that can be read for the search to load it.
+func TestASearchOfAWindowStillToBeHeardLoadsTheModelAsItHears(t *testing.T) {
+	fake := &fakeReader{reads: make(chan []int, 16), asks: make(chan fakeAsk, 4)}
+	hostedFake(t, fake)
+	hosted := launch
+	loaded := make(chan struct{}, 4)
+	launch = func(e *Engine, ctx context.Context, m LocalModel, size int, logDir string) (string, func(), error) {
+		loaded <- struct{}{}
+		return hosted(e, ctx, m, size, logDir)
+	}
+	t.Cleanup(func() { launch = hosted })
+
+	p := passProject(t, "")
+	letGo := make(chan struct{})
+	var heard int32
+	p.engine.OpenRecognizer = func(string) (Recognizer, error) {
+		return heldRecognizer{fakeRecognizer{&heard}, letGo}, nil
+	}
+	model := filepath.Join(t.TempDir(), "model.gguf")
+	if err := os.WriteFile(model, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p.Base.Planner, p.Base.LLMModel, p.Base.LLMServer = "local", model, os.Args[0]
+
+	searched := make(chan error, 1)
+	go func() {
+		_, err := p.Search(context.Background(), PlanRequest{From: 0, To: 40, Count: 1, Min: 1, Max: 30}, nil)
+		searched <- err
+	}()
+	<-loaded
+	if n := atomic.LoadInt32(&heard); n != 0 {
+		t.Errorf("the model loaded after %d parts were heard, not while the first was", n)
+	}
+	close(letGo)
+	<-searched
 }

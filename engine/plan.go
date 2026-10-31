@@ -39,7 +39,7 @@ func (e *Engine) SummariseLines(t *Transcript, lines []Line, window timed.Window
 	}
 	covered := math.Max(window.End-window.Start, 1.0)
 	e.Log.Info("%s words in %s speech lines, %s pauses below %s dB, %s lines carrying a delivery note",
-		commas(len(t.Words)), commas(len(lines)), commas(pauses), num.Fixed(t.Floor, 0), commas(marked))
+		num.Thousands(len(t.Words)), num.Thousands(len(lines)), num.Thousands(pauses), num.Fixed(t.Floor, 0), num.Thousands(marked))
 	e.Log.Detail("%s min of words in %s min of audio",
 		num.Fixed(num.Sum(talking)/60, 1), num.Fixed(covered/60, 1))
 }
@@ -375,9 +375,9 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 				float64(float64(outEstimate)/1e6*facts.PriceOut)
 			costNote = ", roughly $" + num.Fixed(likely, 2)
 		}
-		e.Log.Info("transcript: %s lines, %s characters", commas(len(lines)), commas(runes.Len(prompt)))
+		e.Log.Info("transcript: %s lines, %s characters", num.Thousands(len(lines)), num.Thousands(runes.Len(prompt)))
 		e.Log.Info("expecting about %s tokens in and %s out (%s)%s",
-			commas(estimate), commas(outEstimate), sourceNote, costNote)
+			num.Thousands(estimate), num.Thousands(outEstimate), sourceNote, costNote)
 		if !measured {
 			e.Log.Detail("most of the output is the model thinking before it answers, " +
 				"which is billed as output")
@@ -388,7 +388,7 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 		// wallet.
 		if opts.MaxTokens > facts.MaxOutput {
 			return nil, renderErr("--max-tokens %s is above %s's limit of %s output tokens.",
-				commas(opts.MaxTokens), opts.Model, commas(facts.MaxOutput))
+				num.Thousands(opts.MaxTokens), opts.Model, num.Thousands(facts.MaxOutput))
 		}
 		if facts.Priced && likely > opts.Budget {
 			return nil, renderErr("this call would cost about $%s, over your $%s limit. "+
@@ -664,14 +664,14 @@ func windowFits(fsys afero.Fs, lines []Line, opts PlanOptions) error {
 	if room.By == "budget" {
 		return renderErr("the transcript of this window is %s characters, and a search within "+
 			"the $%s budget reads at most %s. Choose a shorter window, or raise the budget with --budget.",
-			commas(have), num.Fixed(opts.Budget, 2), commas(room.Chars))
+			num.Thousands(have), num.Fixed(opts.Budget, 2), num.Thousands(room.Chars))
 	}
 	name := opts.Model
 	if opts.Local != nil && opts.Local.Model != "" {
 		name = filepath.Base(opts.Local.Model)
 	}
 	return renderErr("the transcript of this window is %s characters, and %s reads at most %s "+
-		"at once. Choose a shorter window.", commas(have), name, commas(room.Chars))
+		"at once. Choose a shorter window.", num.Thousands(have), name, num.Thousands(room.Chars))
 }
 
 // wholeClip is the one clip of an episode shorter than a clip at its

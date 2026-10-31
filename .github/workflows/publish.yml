@@ -173,10 +173,18 @@ jobs:
             name="#$number $title"
             tag="pr$number"
           fi
-          # The engine's version at the commit built, read and not run.
-          engine=$(gh api "repos/$GH_REPO/contents/engine/log.go?ref=$SHA" \
-            -H 'Accept: application/vnd.github.raw' |
-            awk -F'"' '/^const Version = /{ print $2; exit }')
+          # The engine's version at the commit built, read and not run. It
+          # is in engine/doc.go, and in engine/log.go on a branch made
+          # before the log of a run got a package of its own. This workflow
+          # runs from main for every branch, so it reads both until no open
+          # pull request is that old.
+          engine=
+          for file in engine/doc.go engine/log.go; do
+            engine=$(gh api "repos/$GH_REPO/contents/$file?ref=$SHA" \
+              -H 'Accept: application/vnd.github.raw' 2>/dev/null |
+              awk -F'"' '/^const Version = /{ print $2; exit }')
+            if [ -n "$engine" ]; then break; fi
+          done
           if ! printf '%s' "$engine" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
             echo "::error::The engine's version at $SHA is not a version: $engine"
             exit 1

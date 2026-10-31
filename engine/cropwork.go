@@ -4,6 +4,7 @@ import (
 	"sync"
 	"time"
 
+	"framefairy/engine/runlog"
 	"framefairy/engine/timed"
 )
 
@@ -81,12 +82,12 @@ func (w *cropWork) partDone() {
 // Unknown for both until the work is known.
 func (w *cropWork) share(now time.Time) (float64, float64) {
 	if w == nil {
-		return Unknown, Unknown
+		return runlog.Unknown, runlog.Unknown
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.whole <= 0 {
-		return Unknown, Unknown
+		return runlog.Unknown, runlog.Unknown
 	}
 	speed := firstSpeed
 	if took := w.partAt.Sub(w.began).Seconds(); w.done > 0 && took > 0 {
@@ -103,7 +104,7 @@ func (w *cropWork) share(now time.Time) (float64, float64) {
 // report says how far the work is, about four times a second, until stop
 // is closed. It holds the progress line meanwhile, so the scans inside it
 // do not show their own progress or clear it.
-func (w *cropWork) report(log *Log, stop <-chan struct{}) {
+func (w *cropWork) report(log *runlog.Log, stop <-chan struct{}) {
 	log.HoldProgress(true)
 	defer log.HoldProgress(false)
 	ticker := time.NewTicker(250 * time.Millisecond)
@@ -113,7 +114,7 @@ func (w *cropWork) report(log *Log, stop <-chan struct{}) {
 		case <-stop:
 			return
 		case now := <-ticker.C:
-			if fraction, left := w.share(now); fraction != Unknown {
+			if fraction, left := w.share(now); fraction != runlog.Unknown {
 				log.ProgressFound("placing the crop", fraction, left, 0)
 			}
 		}

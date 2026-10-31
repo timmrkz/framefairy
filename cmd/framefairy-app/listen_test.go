@@ -507,11 +507,11 @@ func dictatingTo(t *testing.T, v *voices, set ...func(*listening)) (*FrameFairy,
 		e.OpenRecognizer = func(string) (engine.Recognizer, error) { return v, nil }
 	}
 	standIns.Store(&fakes)
-	// The recording dropped here goes on for a moment, and with beats set
-	// it reads the same passes as the next one. Its last select found its
-	// end and the test's first pass both ready, took the pass and said
-	// passed, so the next recording never heard it and the test waited
-	// for words until go test ended it, on the macOS job of #633.
+	// The recording dictating started is dropped and over before the
+	// next one starts. Both read the same beats, and one that was still
+	// loading the speech model could take the test's pass in its last
+	// select and say it passed, so the new one never heard it and the
+	// test waited for good, in the macos job of #634.
 	f.CancelListening()
 	f.listening.running.Wait()
 	if _, err := f.Listen(); err != nil {

@@ -133,13 +133,21 @@
     height: 20px;
   }
 
+  /* The icon is 15 pixels in a box of 20, so centred it stood 2.5 pixels
+     in, between two pixels. The browser paints an icon from a whole
+     pixel, so it showed half a pixel lower and half a pixel further right
+     than it was laid out, and Tim saw the mark in the corner of the video
+     preview, the range picker and the clip timeline a pixel further from
+     the top than from the side. So it stands on whole pixels, 3 in from
+     the top and 3 in from the right, as far from either edge of the
+     corner it explains. Up and down that is where it was painted before. */
   .mark {
     display: flex;
-    align-items: center;
-    justify-content: center;
+    align-items: flex-start;
+    justify-content: flex-start;
     width: 20px;
     height: 20px;
-    padding: 0;
+    padding: 3px 3px 2px 2px;
     border: none;
     border-radius: 50%;
     background: transparent;

@@ -43,6 +43,21 @@ export default [
     steps: [["app log", "open"], ["settings"], ["models alike"], ["a pick shows at once"], ["said once"], ["folders and ticks"]],
   },
   {
+    // Tim's report of 30 October, 21:54: the info marks in the corners
+    // of the clip timeline, the video preview and the range picker stood
+    // a pixel further from the top than from the side, and he asked for
+    // the ones in the settings to be checked too. The icon stood half a
+    // pixel in and was painted from the pixel below and to the right.
+    // The mark of a settings head stood half a pixel down, and a pixel
+    // nearer the side of its group than its top.
+    name: "An info mark stands on whole pixels, as far from the top of its corner as from the side",
+    steps: [
+      ["info marks", ["What you can do with the picture", "What the range picker is", "What the clip timeline is"]],
+      ["settings"],
+      ["info marks", ["About the clip model", "About the speech model", "About the licence"]],
+    ],
+  },
+  {
     // Tim saw the names and the licences in Help, Acknowledgements sit on
     // the border of their box, with no room round them (#500). Each group
     // is now a card the way the settings draw one.

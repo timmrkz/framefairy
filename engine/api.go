@@ -19,6 +19,7 @@ import (
 
 	"framefairy/engine/num"
 	"framefairy/engine/runes"
+	"framefairy/engine/tool"
 )
 
 // The addresses this tool contacts are the providers' in provider.go,
@@ -140,10 +141,10 @@ const keychainWait = 2 * time.Minute
 // keychain runs one security command, bounded. It says whether the command
 // answered at all, because a keychain that was given up on is a different
 // thing from a keychain that said no.
-func keychain(ctx context.Context, args ...string) (result, bool) {
+func keychain(ctx context.Context, args ...string) (tool.Result, bool) {
 	ctx, cancel := context.WithTimeout(ctx, keychainWait)
 	defer cancel()
-	res := run(ctx, "", "security", args...)
+	res := tool.Runner{}.Run(ctx, "", "security", args...)
 	return res, ctx.Err() == nil
 }
 
@@ -503,14 +504,14 @@ func (e *Engine) reportUsage(data *apiReply, seconds float64, model string) {
 	}
 	cachedNote := ""
 	if cached != 0 {
-		cachedNote = fmt.Sprintf(" (%s cached)", commas(cached))
+		cachedNote = fmt.Sprintf(" (%s cached)", num.Thousands(cached))
 	}
 	stop := data.StopReason
 	if stop == "" {
 		stop = "?"
 	}
 	e.Log.Info("model replied in %ss  in %s tok%s  out %s tok  stop=%s  %s",
-		num.Fixed(seconds, 1), commas(in), cachedNote, commas(out), stop, money(model, in, out))
+		num.Fixed(seconds, 1), num.Thousands(in), cachedNote, num.Thousands(out), stop, money(model, in, out))
 }
 
 func replyText(data *apiReply) string {
@@ -655,7 +656,7 @@ func (e *Engine) CallAPI(ctx context.Context, prompt, model string, maxTokens in
 		}
 	}
 	e.Log.Detail("POST %s model=%s max_tokens=%d prompt=%s chars", p.URL, model,
-		maxTokens, commas(runes.Len(prompt)))
+		maxTokens, num.Thousands(runes.Len(prompt)))
 	listen.part(partReading)
 	started := time.Now()
 	data, _, err := e.post(ctx, p, build, logDir, tag, true, heard)
@@ -697,7 +698,7 @@ func (e *Engine) CallAPI(ctx context.Context, prompt, model string, maxTokens in
 	if data.StopReason == "max_tokens" {
 		e.Log.Warn("the reply hit the %s token ceiling and was cut off. Trying to "+
 			"salvage the complete clips from it. Raise --max-tokens or lower --count "+
-			"if that is not enough.", commas(maxTokens))
+			"if that is not enough.", num.Thousands(maxTokens))
 	}
 	if e.Prefill {
 		return "{" + text, nil
@@ -755,7 +756,7 @@ func (e *Engine) CallAPIWithHeadroom(ctx context.Context, prompt, model string,
 		return "", err
 	}
 	e.Log.Warn("the model used the whole %s token ceiling thinking and never "+
-		"answered. Asking again with %s.", commas(maxTokens), commas(headroom))
+		"answered. Asking again with %s.", num.Thousands(maxTokens), num.Thousands(headroom))
 	return e.CallAPI(ctx, prompt, model, headroom, logDir, tag, system, listen)
 }
 
@@ -774,7 +775,7 @@ func (e *Engine) RepairJSON(ctx context.Context, broken, model, logDir string) (
 	}
 	e.Calls.Requests++
 	e.Log.Info("asking for a repair of %s characters (the transcript is not resent)",
-		commas(runes.Len(broken)))
+		num.Thousands(runes.Len(broken)))
 	started := time.Now()
 	data, _, err := e.post(ctx, p, build, logDir, "repair", false, nil)
 	if err != nil {

@@ -13,8 +13,15 @@ the folder, copy the new files in and run `make` again.
 ## What make does
 
 1. Installs what this machine is missing. On macOS that is Homebrew doing
-   Go, Node.js and the few tools that build ffmpeg and llama.cpp. Elsewhere
-   it says what to install, because those need administrator rights.
+   Go, Node.js and a Python of 3.10 or newer, and
+   `scripts/build-tools.sh` putting the few tools that build ffmpeg and
+   llama.cpp, cmake, meson, ninja and pkg-config, in `.build/tools` at the
+   versions `requirements.txt` pins as each build starts, `make ffmpeg`
+   and `make llama` too. CI's Macs build with the same, and their caches
+   of ffmpeg and llama-server are keyed on those pins, so a newer tool
+   builds them again.
+   Elsewhere it says what to install, because those need administrator
+   rights.
 2. Builds the two programs framefairy ships beside itself, if they are not
    there yet or their build script has changed since, which is what
    raising a pin is: ffmpeg and llama-server. Several minutes, once for
@@ -28,7 +35,7 @@ the folder, copy the new files in and run `make` again.
    pinned SHA-256 or commit on every build, never reused from a folder
    unpacked before, and the SHA-256 of each finished tool is built into the
    programs, which run a tool only when it matches, see
-   `scripts/tool-sums.sh` and `FindTool` in `engine/tools.go`.
+   `scripts/tool-sums.sh` and `Find` in `engine/tool/find.go`.
    `NOTOOLS=1` builds the programs without them, for a runner that only
    proves the programs link, and those programs then run no tool.
 3. Checks for Go 1.27 or newer and a C compiler, and stops with the install
@@ -91,7 +98,7 @@ and nothing else. `make INSTALL=0` does the same by hand.
 | `make interface` | a type check of the interface, its own tests, and ESLint, which refuses a new wait on the clock in a walk or an interface test, see [No test waits on the clock](#no-test-waits-on-the-clock). Needs only Node. `COVERAGE=` a folder counts the lines its tests run |
 | `make walks` | the interface in Chromium against the real Go side: the sequences of the cases found by hand, and every walk for seeds 1 to `WALKS`, 3 unless set, each as long as it says unless `STEPS` is set, half as many again at once as the machine has cores unless `WALKERS` is set, each sequence a run of its own and the sequences of a walker walked by one node, each with less motion unless it looks at motion or `STILL=none` is set, stopped after `WALKTIMEOUT`, 30m unless set, each keeping a Playwright trace when it fails, with a film of the screen for those `walks/filmed.mjs` names, or for every walk with `TRACE=film`, and no trace with `TRACE=none`. Needs Node, ffmpeg and Playwright's Chromium. `COVERAGE=` a folder counts the lines of the app and the interface they run. See [TESTING.md](TESTING.md) |
 | `make check` | what this machine has and what it still needs, with the command for each |
-| `make tools` | the installing part of `make` and nothing else. macOS: Homebrew does Go, Node.js and what builds ffmpeg and llama.cpp. Elsewhere it points to [INSTALL.md](INSTALL.md) |
+| `make tools` | the installing part of `make` and nothing else. macOS: Homebrew does Go, Node.js and Python, and `scripts/build-tools.sh` what builds ffmpeg and llama.cpp. Elsewhere it points to [INSTALL.md](INSTALL.md) |
 | `make models` | downloads the speech model and the language model into `~/.framefairy/models`, for the command line, through the engine's own installers, so each is held to its pinned size and SHA-256. The app does this itself |
 | `make speechbench AUDIO=episode.mp4` | how fast the speech model hears on this machine, on the processor and through CoreML, with 4 and 8 threads, in pieces of 15 and 30 s, one or two at a time, over three minutes of the episode, and how many words each way changes. Takes a few minutes. `ARGS="-seconds 60"` passes more, see [Measuring the speech model](#measuring-the-speech-model) |
 | `make clean` | removes `bin/`, `.build/`, `frontend/node_modules/` and the preview builds |
@@ -573,9 +580,9 @@ What the app is made of and did not write is watched four ways, because a
 scan made once is out of date the week after.
 
 - **Dependabot**, `.github/dependabot.yml`, opens a pull request once a
-  week when a Go module, a package of the interface or an action has a
-  newer version, and when the two images the CI image starts from have
-  a newer build. Minor and patch versions come together, one pull request
+  week when a Go module, a package of the interface, an action or a
+  Python package in `requirements.txt` has a newer version, and when the
+  Ubuntu image the CI image starts from has a newer build. Minor and patch versions come together, one pull request
   for the Go modules and one for the interface, and a new major version
   comes in a pull request of its own, so a major that breaks the build
   holds back nothing else. The actions come in one pull request, majors
@@ -603,13 +610,31 @@ scan made once is out of date the week after.
   by number and by the path it comes in on, each with why: a warning with
   no fix yet in a tool that never ships, like deepmerge through the Svelte
   build plugin in #579. Either failing is a red check.
-- **The tools we build ourselves**, which nothing else watches:
-  `scripts/upstream.sh` compares ffmpeg, the four libraries it is built
-  with, llama.cpp and the speech library with their newest releases, and
+- **The tools we build ourselves**, and the pins Dependabot cannot move,
+  which nothing else watches: `scripts/upstream.sh` compares ffmpeg, the
+  four libraries it is built with, llama.cpp, the speech library and Node
+  with their newest releases, and says when the snapshot of Ubuntu the CI
+  image's packages come from is a month old, and
   the same workflow keeps one issue open while anything is behind and
   closes it once everything is current. llama.cpp makes a build a day, so
   it counts only once it is a month behind. ffmpeg is the one that matters
   most: it reads a video somebody else made.
+- **One pin for each tool CI installs**, #591. Node is `.node-version`,
+  which every `setup-node` reads with `node-version-file` and the CI
+  image's `node:` tag repeats. Dependabot cannot move a `.node-version`,
+  so it leaves the image's Node alone too, `scripts/upstream.sh` says
+  when a newer Node of the same major is out, and `scripts/pins.sh` fails
+  when the two differ or a workflow names a Node of its own. The CI
+  image's packages come from Ubuntu's archive as it stood at the moment
+  `SNAPSHOT` in `scripts/ci-packages.sh` names, through Ubuntu's snapshot
+  service, so the same Dockerfile builds the same image on any day. The
+  Python packages CI and make install are in `requirements.txt`, each
+  with the hashes of its files, and Dependabot moves them: pyarrow for the
+  speech benchmark, and cmake, meson, ninja and pkg-config, which build
+  ffmpeg and llama-server on a Mac. Homebrew installs only its newest
+  version, so those came from it as they were on the day, and now
+  `scripts/build-tools.sh` puts them in an environment of their own.
+  nasm went with Homebrew: only ffmpeg's Intel code needs it.
 - **GitHub's own alerts**, once switched on in the settings: Dependabot
   alerts, secret scanning with push protection, and private vulnerability
   reporting, so somebody who finds a hole has a place to say so.

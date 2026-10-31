@@ -81,12 +81,16 @@
 <text class="c" x="312" y="447">the work folder</text>
 <rect class="chip" x="426" y="432" width="123" height="22" rx="6"/>
 <text class="c" x="434" y="447">training records</text>
-<rect class="chip" x="555" y="432" width="96" height="22" rx="6"/>
-<text class="c" x="563" y="447">engine/timed</text>
-<rect class="chip" x="76" y="460" width="83" height="22" rx="6"/>
-<text class="c" x="84" y="475">engine/num</text>
-<rect class="chip" x="165" y="460" width="96" height="22" rx="6"/>
-<text class="c" x="173" y="475">engine/runes</text>
+<rect class="chip" x="555" y="432" width="103" height="22" rx="6"/>
+<text class="c" x="563" y="447">engine/runlog</text>
+<rect class="chip" x="76" y="460" width="96" height="22" rx="6"/>
+<text class="c" x="84" y="475">engine/timed</text>
+<rect class="chip" x="178" y="460" width="83" height="22" rx="6"/>
+<text class="c" x="186" y="475">engine/num</text>
+<rect class="chip" x="267" y="460" width="96" height="22" rx="6"/>
+<text class="c" x="275" y="475">engine/runes</text>
+<rect class="chip" x="369" y="460" width="89" height="22" rx="6"/>
+<text class="c" x="377" y="475">engine/tool</text>
 <rect class="box" x="64" y="516" width="672" height="70" rx="8"/>
 <text class="n" x="76" y="538">the frames decoder</text>
 <text class="p" x="76" y="556">cmd/framefairy-frames/</text>

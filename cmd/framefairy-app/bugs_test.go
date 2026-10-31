@@ -721,3 +721,80 @@ func TestAToastsReportButtonWritesItsWordsInTheReport(t *testing.T) {
 		t.Fatalf("the draft was written behind the open window's back: %q", d.Text)
 	}
 }
+
+// heldWrite holds a write of the draft at its first step, making the
+// folder, until free is closed, and says at when it is there. The rest of
+// the write reads the report's files again, so an end that does not wait
+// for the lock is a race the race detector names on every run. written is
+// set once the draft is moved onto its name, the last step.
+type heldWrite struct {
+	afero.Fs
+	at, free chan struct{}
+	once     sync.Once
+	written  atomic.Bool
+}
+
+func (h *heldWrite) MkdirAll(path string, perm os.FileMode) error {
+	h.once.Do(func() {
+		close(h.at)
+		<-h.free
+	})
+	return h.Fs.MkdirAll(path, perm)
+}
+
+func (h *heldWrite) Rename(from, to string) error {
+	err := h.Fs.Rename(from, to)
+	h.written.Store(true)
+	return err
+}
+
+// The bridge ends the report of the app a walk ran before it removes the
+// config folder: a save the page sent as the walk ended, held here as it
+// makes the folder, is let finish,
+// whole, and a save after it writes nothing, so no file is made in the
+// folder while it is removed and no draft lands in the next walk's.
+// Issue #632, where a draft written during the reset failed it with
+// "directory not empty".
+func TestAnEndedReportWritesNothingMore(t *testing.T) {
+	files := afero.NewMemMapFs()
+	held := &heldWrite{Fs: files, at: make(chan struct{}), free: make(chan struct{})}
+	r := newReporting(held, "/config/report")
+	s := &FrameFairy{report: r}
+
+	saved := make(chan error, 1)
+	go func() { saved <- s.SaveReportText("typed as the walk ended") }()
+	<-held.at
+	ended := make(chan bool, 1)
+	go func() {
+		endReport(r)
+		ended <- held.written.Load()
+	}()
+	close(held.free)
+	if err := <-saved; err != nil {
+		t.Fatalf("the save in hand failed: %v", err)
+	}
+	if written := <-ended; !written {
+		t.Fatal("the report ended while a save was still writing its draft")
+	}
+
+	if err := s.SaveReportText("a save that waited on the lock"); err == nil {
+		t.Fatal("a save after the report ended said it was kept")
+	}
+	if d := s.AttachPasted("shot.png", base64.StdEncoding.EncodeToString(pngOf(t, 4, 4))); len(d.Pictures) != 0 {
+		t.Fatalf("a picture pasted after the report ended was kept: %+v", d.Pictures)
+	}
+	names, err := afero.ReadDir(files, "/config/report")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(names) != 1 || names[0].Name() != "draft.json" {
+		var got []string
+		for _, n := range names {
+			got = append(got, n.Name())
+		}
+		t.Fatalf("the report's folder holds %v, want only draft.json", got)
+	}
+	if again := newReporting(files, "/config/report"); (&FrameFairy{report: again}).ReportDraft().Text != "typed as the walk ended" {
+		t.Fatal("the save in hand was not kept whole")
+	}
+}

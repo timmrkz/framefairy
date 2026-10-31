@@ -9,32 +9,33 @@ import (
 	"sync"
 	"testing"
 
+	"framefairy/engine/runlog"
 	"framefairy/engine/timed"
 )
 
 // underwayLog is a log that keeps every list of clips on the way it is
 // told, in order.
-func underwayLog() (*Log, func() [][]Underway) {
+func underwayLog() (*runlog.Log, func() [][]runlog.Underway) {
 	var mu sync.Mutex
-	var told [][]Underway
-	log := NewLog(&bytes.Buffer{}, false, false)
-	log.SetSink(func(ev Event) {
-		if ev.Kind != EventUnderway {
+	var told [][]runlog.Underway
+	log := runlog.New(&bytes.Buffer{}, false, false)
+	log.SetSink(func(ev runlog.Event) {
+		if ev.Kind != runlog.EventUnderway {
 			return
 		}
 		mu.Lock()
 		defer mu.Unlock()
-		told = append(told, append([]Underway(nil), ev.Underway...))
+		told = append(told, append([]runlog.Underway(nil), ev.Underway...))
 	})
-	return log, func() [][]Underway {
+	return log, func() [][]runlog.Underway {
 		mu.Lock()
 		defer mu.Unlock()
-		return append([][]Underway(nil), told...)
+		return append([][]runlog.Underway(nil), told...)
 	}
 }
 
 // On the real disk: ffmpeg reads the episode, and the project works beside it.
-func handProject(t *testing.T, source string, log *Log) *Project {
+func handProject(t *testing.T, source string, log *runlog.Log) *Project {
 	t.Helper()
 	var heard int32
 	e := NewEngine(log, disk)
@@ -132,7 +133,7 @@ func TestAClipMadeByHand(t *testing.T) {
 	}
 	// Before its crop is placed it says what it keeps, and its captions are
 	// laid out from that the way the written clip's are.
-	var cut *Underway
+	var cut *runlog.Underway
 	for _, list := range lists {
 		if len(list) == 1 && len(list[0].Pieces) > 0 {
 			cut = &list[0]

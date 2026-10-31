@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"framefairy/engine/runes"
+	"framefairy/engine/runlog"
 )
 
 // spoken makes lines of whole sentences, each lasting the seconds given,
@@ -163,7 +164,7 @@ func TestTheHeartRecipeAsksOnce(t *testing.T) {
 	}))
 	defer server.Close()
 	var heard int32
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	base := DefaultOptions()
 	base.LLMURL = server.URL
@@ -206,7 +207,7 @@ func TestAComparisonCountsEveryAsk(t *testing.T) {
 	}))
 	defer server.Close()
 	var heard int32
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	opts := DefaultOptions()
 	opts.Source = source
@@ -371,7 +372,7 @@ func TestEverySideOfAComparisonHasItsOwnServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	var heard int32
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	opts := DefaultOptions()
 	opts.Source = source

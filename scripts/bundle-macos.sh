@@ -34,9 +34,9 @@ fi
 # The version lives in one place and is read from it, so a bundle can never
 # claim a version the program does not.
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-VERSION=$(awk -F'"' '/^const Version = /{ print $2; exit }' "$ROOT/engine/log.go")
+VERSION=$(awk -F'"' '/^const Version = /{ print $2; exit }' "$ROOT/engine/doc.go")
 [ -n "$VERSION" ] || {
-	echo "bundle-macos.sh: cannot read the version out of engine/log.go" >&2
+	echo "bundle-macos.sh: cannot read the version out of engine/doc.go" >&2
 	exit 1
 }
 
@@ -47,7 +47,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks" "$APP/Contents/Resourc
 cp "$BINDIR/$EXE" "$APP/Contents/MacOS/$EXE"
 
 # The tools we ship, beside the program, which is the only place
-# engine/tools.go takes them from. A bundle without one is not made: the
+# engine/tool/find.go takes them from. A bundle without one is not made: the
 # app would have no ffmpeg or no llama-server at all, since it runs no
 # other. It used to be made anyway, with a line saying it would look on
 # the search path, which on a customer's Mac has none of them.

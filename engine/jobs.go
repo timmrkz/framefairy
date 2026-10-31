@@ -14,9 +14,10 @@ import (
 	"strings"
 	"time"
 
-	"framefairy/engine/timed"
-
 	"github.com/spf13/afero"
+
+	"framefairy/engine/runlog"
+	"framefairy/engine/timed"
 )
 
 // ---------------------------------------------------------------------------
@@ -126,10 +127,16 @@ func (r JobRecord) Request() PlanRequest {
 		Pass: r.Pass}
 }
 
-// PlanName is the plan file a search writes, see PassName, for an episode
-// duration seconds long.
-func (r JobRecord) PlanName(duration float64) string {
+// planName is the name of the plan file a search writes, see PassName,
+// for an episode duration seconds long.
+func (r JobRecord) planName(duration float64) string {
 	return PassName(searchWindow(r.From, r.To, r.Pass, duration), r.Pass)
+}
+
+// PlanPath is the plan the search of this record writes, for the episode
+// at source, duration seconds long.
+func (r JobRecord) PlanPath(source string, duration float64) string {
+	return filepath.Join(LogsDir(source), r.planName(duration))
 }
 
 // Clip is what a clip made by hand asks for.
@@ -141,11 +148,11 @@ func (r JobRecord) Clip() ClipRequest {
 // read back from its record shows its clip where it would have appeared.
 // Only a clip made by hand has one: a search's clips on the way are either
 // in its plan or not proposed yet.
-func (r JobRecord) Underway() []Underway {
+func (r JobRecord) Underway() []runlog.Underway {
 	if r.Kind != JobClip {
 		return nil
 	}
-	return []Underway{{N: 1, Start: r.At, End: r.At, Step: r.Step}}
+	return []runlog.Underway{{N: 1, Start: r.At, End: r.At, Step: r.Step}}
 }
 
 // Render is what a render asks for, less the clips it has finished.
@@ -487,6 +494,12 @@ func (p *Project) Search(ctx context.Context, req PlanRequest, turn Turn) (plan 
 	// its window, which can take minutes, see roomBeforeSearch.
 	if err := roomBeforeSearch(p.Base, end-req.From); err != nil {
 		return "", err
+	}
+	// The model loads while the window is still being heard, and reads
+	// the transcript of it as it is heard, so the search has nothing to
+	// wait for once it comes to finding and finds most of its prompt read.
+	if p.readsAhead(timed.Window{Start: req.From, End: end}) {
+		go p.warmAhead(ctx, req)
 	}
 	stepOf := func(ctx context.Context, step string) (context.Context, func(), error) {
 		return j.turn(ctx, turn, step)

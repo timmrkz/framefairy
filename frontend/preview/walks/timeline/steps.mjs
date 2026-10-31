@@ -1559,6 +1559,37 @@ export const steps = {
     if (count(now) !== count(was) - 1) walk.wrong = `a double-click left the clip ${count(now)} ${arg} marks, not ${count(was) - 1}`;
     else if (now.segments.length !== was.segments.length) walk.wrong = `a double-click on the ${arg} mark cut the clip`;
   },
+  // ["press under, then on the keyframe"]
+  //                    presses the track high over the waveform at the
+  //                    first keyframe's x and then, at once, the keyframe's
+  //                    diamond on the top rule over it: two presses at one x
+  //                    but far apart in height are no double-click, so the
+  //                    engine still has the keyframe and no cut more, #535
+  async "press under, then on the keyframe"(walk, _arg, s) {
+    const { page, watch } = walk;
+    const on = await chosen(page);
+    const entry = async () => (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
+    const was = await entry();
+    const dot = await page.locator(".clip-timeline .cropdot").first().boundingBox();
+    if (!dot) {
+      walk.wrong = "the clip timeline shows no keyframe";
+      return;
+    }
+    const x = dot.x + dot.width / 2;
+    const y = high((await handles(page)).track);
+    if (y - (dot.y + dot.height / 2) < 12) walk.wrong = `the track is pressed ${y - (dot.y + dot.height / 2)} px under the keyframe, too near to tell`;
+    // Pressed one after the other with nothing between, well inside the
+    // half second of a double-click, so on main the second press removed
+    // the keyframe.
+    await clickOnTrack(page, x, y);
+    await clickOnTrack(page, x, dot.y + dot.height / 2);
+    await watch.step("press", s);
+    await settle(page);
+    const now = await entry();
+    const marks = (c) => (c?.cropMarks ?? []).length;
+    if (marks(now) !== marks(was)) walk.wrong = `a press under the keyframe and then on it left the clip ${marks(now)} keyframes, not ${marks(was)}`;
+    else if (now.segments.length !== was.segments.length) walk.wrong = "a press under the keyframe and then on it cut the clip";
+  },
   // ["on the playhead", n]
   //                    n marks are lit by the playhead, a thumbnail or a
   //                    keyframe on its frame, and each stands centred on

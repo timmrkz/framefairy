@@ -20,6 +20,7 @@ import (
 
 	"github.com/spf13/afero"
 
+	"framefairy/engine/runlog"
 	"framefairy/internal/standin"
 )
 
@@ -66,7 +67,7 @@ func TestCallLocalWithRunningServer(t *testing.T) {
 	}))
 	defer server.Close()
 
-	e := NewEngine(NewLog(io.Discard, false, false), afero.NewMemMapFs())
+	e := NewEngine(runlog.New(io.Discard, false, false), afero.NewMemMapFs())
 	var heard strings.Builder
 	answer, err := e.CallLocal(context.Background(), LocalModel{URL: server.URL, Think: 2048}, linesRecipe, "Transcript:", 40, 12, 1000, "",
 		&Listener{Text: func(p string) { heard.WriteString(p) }})
@@ -99,7 +100,7 @@ func TestCallLocalReportsServerErrors(t *testing.T) {
 		io.WriteString(w, `{"error":{"message":"the request exceeds the available context size"}}`)
 	}))
 	defer server.Close()
-	e := NewEngine(NewLog(io.Discard, false, false), afero.NewMemMapFs())
+	e := NewEngine(runlog.New(io.Discard, false, false), afero.NewMemMapFs())
 	_, err := e.CallLocal(context.Background(), LocalModel{URL: server.URL}, linesRecipe, "x", 1, 1, 10, "", nil)
 	if err == nil || !strings.Contains(err.Error(), "context size") {
 		t.Errorf("err = %v", err)
@@ -146,7 +147,7 @@ func TestTheServerLogIsKeptBeforeTheLogsFolderExists(t *testing.T) {
 	logDir := filepath.Join(dir, "episode.framefairy", "logs")
 	logFile := filepath.Join(logDir, "llm-server.log")
 
-	e := NewEngine(NewLog(io.Discard, false, false), disk)
+	e := NewEngine(runlog.New(io.Discard, false, false), disk)
 	if _, _, err := e.startServer(context.Background(), LocalModel{Server: server, Model: model}, 16384, logDir); err == nil {
 		t.Fatal("a server that ended while it loaded was taken for loaded")
 	}
@@ -168,13 +169,11 @@ func TestTheServerLogIsKeptBeforeTheLogsFolderExists(t *testing.T) {
 func TestAServerThatWillNotStopIsKilledAtOnce(t *testing.T) {
 	noteIn(t)
 	t.Setenv("FRAMEFAIRY_STUBBORN_SERVER", "1")
-	// stopGrace is up the moment it is asked about. Not parallel: leaving
-	// is a package variable, and t.Setenv rules it out too.
-	was := leaving
+	// stopGrace is up the moment it is asked about, on the engine's own
+	// runner. Not parallel: lookAgain is a package variable, and t.Setenv
+	// rules it out too.
 	up := make(chan time.Time)
 	close(up)
-	leaving = func(time.Duration) <-chan time.Time { return up }
-	t.Cleanup(func() { leaving = was })
 	// The start ends on the server's word that it is listening, and never
 	// on a look of the clock, which here never comes, #550.
 	wasLook := lookAgain
@@ -184,7 +183,8 @@ func TestAServerThatWillNotStopIsKilledAtOnce(t *testing.T) {
 	if err := os.WriteFile(model, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	e := NewEngine(NewLog(io.Discard, false, false), disk)
+	e := NewEngine(runlog.New(io.Discard, false, false), disk)
+	e.Runner.Leave = func(time.Duration) <-chan time.Time { return up }
 	_, stop, err := e.startServer(context.Background(), LocalModel{Server: os.Args[0], Model: model}, 4096, "")
 	if err != nil {
 		t.Fatal(err)
@@ -274,7 +274,7 @@ func TestAComputeErrorSaysTheMemoryRanOut(t *testing.T) {
 		fmt.Fprint(w, `{"error":{"code":500,"message":"Compute error.","type":"server_error"}}`)
 	}))
 	defer server.Close()
-	e := NewEngine(NewLog(io.Discard, false, false), afero.NewMemMapFs())
+	e := NewEngine(runlog.New(io.Discard, false, false), afero.NewMemMapFs())
 	_, err := e.CallLocal(context.Background(), LocalModel{URL: server.URL}, linesRecipe, "Transcript:",
 		40, 12, 1000, "", nil)
 	if err == nil || !strings.Contains(err.Error(), "ran out of memory") ||
@@ -353,7 +353,7 @@ func TestTheServerIsHandedAKeyOfItsOwn(t *testing.T) {
 	}
 	launch := func(name string) string {
 		logDir := filepath.Join(dir, name)
-		e := NewEngine(NewLog(io.Discard, false, false), disk)
+		e := NewEngine(runlog.New(io.Discard, false, false), disk)
 		_, _, _ = e.startServer(context.Background(), LocalModel{Server: server, Model: model}, 16384, logDir)
 		body, _ := os.ReadFile(filepath.Join(logDir, "llm-server.log"))
 		return string(body)

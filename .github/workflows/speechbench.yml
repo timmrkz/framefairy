@@ -47,10 +47,10 @@ jobs:
             | tar xj -C "$RUNNER_TEMP/model"
       - name: A recorded talk
         run: |
-          python3 -m pip install --quiet --break-system-packages pyarrow || python3 -m pip install --quiet pyarrow
+          sh scripts/build-tools.sh "$RUNNER_TEMP/python" pyarrow
           curl -sSL -o "$RUNNER_TEMP/talks.parquet" \
             https://huggingface.co/datasets/distil-whisper/tedlium-long-form/resolve/main/data/validation-00000-of-00001-9ed099229d0cbe10.parquet
-          python3 -c "
+          "$RUNNER_TEMP/python/bin/python" -c "
           import pyarrow.parquet as pq, os
           t = pq.read_table(os.environ['RUNNER_TEMP'] + '/talks.parquet')
           open(os.environ['RUNNER_TEMP'] + '/talk.wav', 'wb').write(t.slice(1, 1).to_pylist()[0]['audio']['bytes'])

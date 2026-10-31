@@ -13,8 +13,8 @@ import (
 	"strings"
 	"testing"
 
+	"framefairy/engine/runlog"
 	"framefairy/engine/timed"
-
 	"framefairy/internal/ffmpegtest"
 )
 
@@ -165,7 +165,7 @@ func TestTheShortKeepsItsCaptionsOnTheirWordsAcrossCuts(t *testing.T) {
 func checkRenderTiming(t *testing.T, clip Clip) {
 	t.Helper()
 	ctx := context.Background()
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	if err := e.Preflight(ctx); err != nil {
 		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}

@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/afero"
 
+	"framefairy/engine/runlog"
 	"framefairy/internal/ffmpegtest"
 )
 
@@ -351,7 +352,7 @@ func TestInstallFontCopiesAMachineFace(t *testing.T) {
 // On the real disk: ffmpeg reads the copy.
 func TestAMachineFaceReachesLibass(t *testing.T) {
 	onShelf(t, map[string][]byte{"Narrow.ttf": namedFace(t, "Anton", "Test Narrow")})
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	if err := e.Preflight(context.Background()); err != nil {
 		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}

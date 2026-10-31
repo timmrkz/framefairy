@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"framefairy/engine/num"
+	"framefairy/engine/runlog"
 	"framefairy/engine/timed"
 	"framefairy/internal/ffmpegtest"
 )
@@ -93,7 +94,7 @@ func renderedRowsAt(t *testing.T, rate string, words []timed.Cue, end float64, t
 func bounceEpisode(t *testing.T, rate string, words []timed.Cue, end float64) (e *Engine, source string, info SourceInfo, clip Clip, laid []LaidCaption) {
 	t.Helper()
 	ctx := context.Background()
-	e = NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e = NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	if err := e.Preflight(ctx); err != nil {
 		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}
@@ -515,7 +516,7 @@ func TestThePillAtRestNeverReachesAnotherLine(t *testing.T) {
 func TestEveryPillOfALineIsOneHeightAndClearOfTheOther(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	if err := e.Preflight(ctx); err != nil {
 		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}

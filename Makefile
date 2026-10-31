@@ -261,7 +261,7 @@ $(UI_BUILT): $(UI_SOURCES)
 $(BIN)/framefairy$(EXE): modules
 	@echo "Building $@"
 	@sums=$$(sh scripts/tool-sums.sh $(STAMPS)) && \
-		$(GO) build -trimpath -ldflags "$(LDFLAGS) -X framefairy/engine.toolSums=$$sums" -o $@ ./cmd/framefairy
+		$(GO) build -trimpath -ldflags "$(LDFLAGS) -X framefairy/engine/tool.sums=$$sums" -o $@ ./cmd/framefairy
 	@sh scripts/carry-libs.sh $@ $(BIN)/lib
 
 # The licence of every Go module the programs compile on this system and
@@ -276,7 +276,7 @@ $(LICENCES_BUILT): go.mod go.sum $(UI_BUILT)
 $(BIN)/framefairy-app$(EXE): modules $(UI_BUILT) $(LICENCES_BUILT) frames
 	@echo "Building $@"
 	@sums=$$(sh scripts/tool-sums.sh $(STAMPS)) && \
-		$(GO) build -trimpath -tags production -ldflags "$(APP_LDFLAGS) -X framefairy/engine.toolSums=$$sums" -o $@ ./cmd/framefairy-app
+		$(GO) build -trimpath -tags production -ldflags "$(APP_LDFLAGS) -X framefairy/engine/tool.sums=$$sums" -o $@ ./cmd/framefairy-app
 	@sh scripts/carry-libs.sh $@ $(BIN)/lib
 
 $(BIN)/framefairy-train$(EXE): modules
@@ -355,7 +355,7 @@ $(FRAMES): $(FRAMES_SRC) $(wildcard $(STAMPS)/ffmpeg/built) | modules
 	fi
 	@echo "Building the episode's decoder, framefairy-frames"
 	@mkdir -p $(dir $(FRAMES))
-	@PKG_CONFIG="$(CURDIR)/scripts/pkg-config-static.sh" \
+	@PATH="$(CURDIR)/$(STAMPS)/tools/bin:$$PATH" PKG_CONFIG="$(CURDIR)/scripts/pkg-config-static.sh" \
 		PKG_CONFIG_PATH="$(CURDIR)/$(STAMPS)/ffmpeg/lib/pkgconfig:$(CURDIR)/$(STAMPS)/ffmpeg/deps/lib/pkgconfig" \
 		CGO_ENABLED=1 CGO_CFLAGS="$${CGO_CFLAGS:--O2} -Wno-unused-result" $(GO) build -trimpath -tags ffmpeglibs -ldflags "$(FRAMES_LDFLAGS)" -o $(FRAMES) ./cmd/framefairy-frames
 
@@ -381,7 +381,7 @@ FRESH_FRAMES := $(if $(and $(wildcard $(FRAMES)),$(wildcard $(STAMPS)/ffmpeg/lib
 # there, for when the last one went wrong.
 ffmpeg:
 	@rm -rf $(STAMPS)/ffmpeg
-	@sh scripts/build-ffmpeg.sh $(STAMPS)/ffmpeg
+	@sh scripts/build-tools.sh --then sh scripts/build-ffmpeg.sh $(STAMPS)/ffmpeg
 	@cksum scripts/build-ffmpeg.sh | cut -d' ' -f1 >$(STAMPS)/ffmpeg/built
 
 # The llama-server we ship, so choosing a local model is not an instruction
@@ -390,7 +390,7 @@ ffmpeg:
 # whatever is there.
 llama:
 	@rm -rf $(STAMPS)/llama
-	@sh scripts/build-llama.sh $(STAMPS)/llama
+	@sh scripts/build-tools.sh --then sh scripts/build-llama.sh $(STAMPS)/llama
 	@cksum scripts/build-llama.sh | cut -d' ' -f1 >$(STAMPS)/llama/built
 
 # Both of them in one archive, with a manifest that says what each one is
@@ -625,7 +625,7 @@ outside: outside-allowed all
 	@cp -R $(BIN)/. $(OUTSIDE)/ && rm -rf "$(OUTSIDE)/Frame Fairy.app"
 	@echo "Building $(OUTSIDE)/framefairy-app with the probe"
 	@sums=$$(sh scripts/tool-sums.sh $(STAMPS)) && \
-		$(GO) build -trimpath -tags 'production outside' -ldflags "$(APP_LDFLAGS) -X framefairy/engine.toolSums=$$sums" -o $(OUTSIDE)/framefairy-app ./cmd/framefairy-app
+		$(GO) build -trimpath -tags 'production outside' -ldflags "$(APP_LDFLAGS) -X framefairy/engine/tool.sums=$$sums" -o $(OUTSIDE)/framefairy-app ./cmd/framefairy-app
 	@sh scripts/carry-libs.sh $(OUTSIDE)/framefairy-app $(OUTSIDE)/lib
 	@sh scripts/bundle-macos.sh $(OUTSIDE) $(OUTSIDE)
 	@$(GO) build -o $(OUTSIDE)/framefairy-dispenser ./cmd/framefairy-dispenser

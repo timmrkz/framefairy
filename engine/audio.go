@@ -7,7 +7,6 @@ import (
 	"errors"
 	"io"
 	"math"
-	"os/exec"
 	"sort"
 	"strings"
 	"time"
@@ -444,7 +443,7 @@ func (e *Engine) transcribe(ctx context.Context, path string, window timed.Windo
 	// without the job being stopped.
 	reading, stopReading := context.WithCancel(ctx)
 	defer stopReading()
-	cmd := exec.CommandContext(reading, e.FFmpeg, args...)
+	cmd := e.Runner.Command(reading, e.FFmpeg, args...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err

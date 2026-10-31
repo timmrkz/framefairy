@@ -1,6 +1,6 @@
 #!/bin/sh
 # Checks that every action a workflow uses is pinned to a commit, with the
-# full version that commit is beside it.
+# full version that commit is beside it, and that Node is pinned once.
 #
 #   sh scripts/pins.sh
 #
@@ -29,6 +29,29 @@ done
 
 if [ "$fail" = 1 ]; then
 	echo "      pin each to a commit and name its full version, like @<commit> # v7.0.2" >&2
+	exit 1
+fi
+
+# Node is pinned once, in .node-version: every setup-node reads it, and
+# the CI image lends the same Node to Playwright's install. Dependabot
+# cannot move a .node-version, so scripts/upstream.sh watches it, and the
+# image's node is left out of Dependabot so the two move together, #591.
+node=$(cat "$here/../.node-version")
+if ! printf '%s\n' "$node" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+	echo "FAIL: .node-version holds \"$node\", want a full version like 22.23.4" >&2
+	exit 1
+fi
+loose=$(grep -nE '^[[:space:]]*node-version:' "$here"/../.github/workflows/*.yml || true)
+if [ -n "$loose" ]; then
+	echo "$loose" | while IFS= read -r line; do
+		echo "FAIL: ${line#"$here"/../.github/workflows/}" >&2
+	done
+	echo "      take Node from the one pin, with node-version-file: .node-version" >&2
+	exit 1
+fi
+image=$(sed -nE 's/^FROM node:([0-9.]+)-.*/\1/p' "$here/../.github/ci-image/Dockerfile")
+if [ "$image" != "$node" ]; then
+	echo "FAIL: the CI image lends Node $image, and .node-version says $node" >&2
 	exit 1
 fi
 printf 'ok  \taction pins\n'
