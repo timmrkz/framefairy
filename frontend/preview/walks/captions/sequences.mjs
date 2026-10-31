@@ -489,6 +489,25 @@ export default [
     ],
   },
   {
+    // #280: the walks' video says "dem", "es" and "Mein" faster than a
+    // frame, see quick in bridge_test.go, so every caption walk meets
+    // words that share a frame, at the end, in the middle and at the start
+    // of a caption. This holds it: each is lit with the word beside it,
+    // and a step back goes on from there.
+    name: "the walks' video has words that share a frame at the end, in the middle and at the start of a caption",
+    steps: [
+      ["frame", "auf"],
+      ["lit together", "dem"],
+      ["steps back", 1],
+      ["frame", "geschubst"],
+      ["lit together", "Mein"],
+      ["steps back", 1],
+      ["frame", "so"],
+      ["lit together", "es"],
+      ["steps back", 1],
+    ],
+  },
+  {
     // Found by Tim on #201: several words typed into one and saved with
     // Enter left the picture with no captions, and corrections made
     // before were gone when he went back. A word typed into a short word

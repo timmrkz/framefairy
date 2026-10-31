@@ -753,6 +753,15 @@ verstaucht. Ich habe trotzdem eine Woche lang einen Verband getragen und
 allen erzählt, er wäre gebrochen. Das war meine erste richtige Lüge, glaube
 ich. Und eigentlich erinnere ich mich an die Lüge besser als an den Arm.`)
 
+// quick are words said in a hundredth of a second and straight into the
+// word after, the way words typed into one short word are: too short for a
+// frame of their own, so each is lit on the frame it shares with the
+// words beside it, #280. "Mein" starts a caption, "es" is in the middle of
+// one and "dem" ends the one before "Schulhof", so the caption walks meet
+// words that share a frame wherever they go: edges dragged, words typed
+// and removed, blocks clicked, Shift and the arrows.
+var quick = map[string]bool{"Mein": true, "es": true, "dem": true}
+
 func (p *prose) Recognize(samples []float32, rate int) []engine.Token {
 	p.gate.Lock()
 	if p.held && p.steps == 0 && !p.closing {
@@ -784,13 +793,16 @@ func (p *prose) Recognize(samples []float32, rate int) []engine.Token {
 	for at := 0.1; ; {
 		word := proseText[p.next%len(proseText)]
 		// Longer words take longer to say.
-		lasts := 0.12 + 0.05*float64(len([]rune(word)))
+		lasts, after := 0.12+0.05*float64(len([]rune(word))), 0.08
+		if quick[word] {
+			lasts, after = 0.01, 0
+		}
 		if at+lasts > length-0.05 {
 			break
 		}
 		tokens = append(tokens, engine.Token{Text: " " + word, Start: at, Duration: lasts})
 		p.next++
-		at += lasts + 0.08
+		at += lasts + after
 		if strings.HasSuffix(word, ".") {
 			at += 0.9
 		}
