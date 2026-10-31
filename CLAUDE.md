@@ -65,6 +65,7 @@ thing belongs. In short:
 | interface tests | `frontend/preview/`, `cmd/framefairy-app/bridge_test.go` | [docs/TESTING.md](docs/TESTING.md) |
 | how every test is written | `*_test.go`, `*.test.ts`, `frontend/preview/walks/` | [the testing skill](.claude/skills/testing/SKILL.md), and where it meets this repository in [docs/TESTING.md](docs/TESTING.md#the-testing-skill-in-this-project) |
 | how a pull request is reviewed | | [the review skill](.claude/skills/review/SKILL.md), and where it meets this repository in [docs/WORKFLOW.md](docs/WORKFLOW.md#the-review-skill-in-this-project) |
+| how the issues are looked over, and problems that come back | | [docs/TRIAGE.md](docs/TRIAGE.md) |
 | shipping | not yet | [docs/PACKAGING.md](docs/PACKAGING.md) |
 | open work | | [issues](https://github.com/timmrkz/framefairy/issues), and the history in [docs/GUI-PLAN.md](docs/GUI-PLAN.md) |
 
@@ -158,10 +159,10 @@ thing belongs. In short:
   [docs/WORKFLOW.md](docs/WORKFLOW.md#priority-and-size) defines them.
   Before it is logged, the closed issues are searched as well as the
   open ones. One whose cause was seen before goes under that cause's
-  `problem` issue, and work on it is work on that cause, see
-  [Problems that come back](docs/WORKFLOW.md#problems-that-come-back).
-  How the issues are looked over every week is
-  [Triage](docs/WORKFLOW.md#triage) there.
+  `problem` issue, and work on it is work on that cause. Every fix
+  takes the cause away, never only its symptom. See
+  [docs/TRIAGE.md](docs/TRIAGE.md), which also says how the issues are
+  looked over every week.
 - **Open work is GitHub issues, never rows in a file.** Every pull
   request once added its row at the end of the same table in
   [docs/GUI-PLAN.md](docs/GUI-PLAN.md), so any two of them conflicted,
@@ -183,7 +184,7 @@ thing belongs. In short:
   next failure to show why. Following the evidence in hand gets a fix
   done sooner. An incident under an open `problem` issue is taken up
   as its problem, see
-  [Problems that come back](docs/WORKFLOW.md#problems-that-come-back).
+  [Problems that come back](docs/TRIAGE.md#problems-that-come-back).
   The session says which it picked and why.
 - His machine is an M2 Max with 32 GB of memory, on the latest macOS, with
   Go 1.27, Homebrew and the models in `~/.framefairy/models`. ffmpeg and
