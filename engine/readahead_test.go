@@ -15,9 +15,10 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"framefairy/engine/timed"
-
 	"github.com/spf13/afero"
+
+	"framefairy/engine/runlog"
+	"framefairy/engine/timed"
 )
 
 // fakeReader is a llama-server in miniature that lays a prompt out and
@@ -229,7 +230,7 @@ func videoReadAhead(t *testing.T, files afero.Fs, name string) *readAheadOf {
 	if err := afero.WriteFile(files, source, []byte("the video"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	e := NewEngine(NewLog(io.Discard, false, false), files)
+	e := NewEngine(runlog.New(io.Discard, false, false), files)
 	base := DefaultOptions()
 	base.Planner, base.LLMModel, base.ASRModel = "local", "/models/gemma.gguf", "/models/parakeet"
 	p := NewProject(e, source, base)
@@ -507,7 +508,7 @@ func TestNothingIsReadAheadIntoARunningServer(t *testing.T) {
 	}
 	base := DefaultOptions()
 	base.Planner, base.LLMURL = "local", server.URL
-	p := NewProject(NewEngine(NewLog(io.Discard, false, false), files), "/videos/running.mp4", base)
+	p := NewProject(NewEngine(runlog.New(io.Discard, false, false), files), "/videos/running.mp4", base)
 	ahead, err := p.warmModel(context.Background(), PlanRequest{From: 0, To: 60, Count: 1, Pass: 1})
 	if err != nil || ahead != (ReadAhead{}) {
 		t.Errorf("warming a running server read %+v and said %v", ahead, err)

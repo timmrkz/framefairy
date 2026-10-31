@@ -19,6 +19,7 @@ import (
 	"os/signal"
 
 	"framefairy/engine"
+	"framefairy/engine/runlog"
 )
 
 // language is the model fetched for the command line, the one the app
@@ -28,7 +29,7 @@ const language = "gemma-4-26B_q4_0-it.gguf"
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	log := engine.NewLog(os.Stderr, true, false)
+	log := runlog.New(os.Stderr, true, false)
 	if err := fetch(ctx, log); err != nil {
 		fmt.Fprintln(os.Stderr, "models:", err)
 		os.Exit(1)
@@ -36,7 +37,7 @@ func main() {
 	fmt.Println("Models are in", engine.ModelsDir())
 }
 
-func fetch(ctx context.Context, log *engine.Log) error {
+func fetch(ctx context.Context, log *runlog.Log) error {
 	for _, m := range engine.SpeechModels() {
 		if !m.Recommended {
 			continue

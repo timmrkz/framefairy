@@ -19,6 +19,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"framefairy/engine/runlog"
 	"framefairy/internal/ffmpegtest"
 	"framefairy/internal/framewire"
 	"framefairy/internal/standin"
@@ -513,7 +514,7 @@ var errStop = errors.New("enough")
 //
 // On the real disk: ffmpeg reads the episode the test made.
 func ffmpegOnTheProcessor() *Engine {
-	e := NewEngine(NewLog(nil, false, false), disk)
+	e := NewEngine(runlog.New(nil, false, false), disk)
 	e.FFmpeg, e.FFprobe = "ffmpeg", "ffprobe"
 	e.softDecode.Store(true)
 	return e

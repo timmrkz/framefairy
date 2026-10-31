@@ -10,6 +10,9 @@ import (
 	"os"
 	"sync"
 	"testing"
+
+	"framefairy/engine/num"
+	"framefairy/engine/runlog"
 )
 
 // suggestCases are the cases the engine and the workspace are both held
@@ -111,7 +114,7 @@ func TestASearchTakesWhatItsWindowSuggests(t *testing.T) {
 	}))
 	defer server.Close()
 
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	base := DefaultOptions()
 	if base.Count != 0 || base.Think != ThinkForWindow {
@@ -129,7 +132,7 @@ func TestASearchTakesWhatItsWindowSuggests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := toFloat(plan.PlannedWith()["count"]); int(got) != SuggestedCount(30, 5, 10) {
+	if got, _ := num.AsFloat(plan.PlannedWith()["count"]); int(got) != SuggestedCount(30, 5, 10) {
 		t.Errorf("the plan asked for %v clips", plan.PlannedWith()["count"])
 	}
 	mu.Lock()

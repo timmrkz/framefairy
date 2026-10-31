@@ -1,4 +1,4 @@
-package engine
+package runlog
 
 import (
 	"encoding/json"
@@ -6,6 +6,8 @@ import (
 	"math"
 	"sync"
 	"time"
+
+	"framefairy/engine/num"
 )
 
 // EventKind says what an event reports.
@@ -46,13 +48,13 @@ type Underway struct {
 	End   float64 `json:"end"`
 	// Title is what it is called, once that is known.
 	Title string `json:"title,omitempty"`
-	// Step is what is being done to it: StepWaiting, StepHearing or
-	// StepFraming.
+	// Step is what is being done to it: engine.StepWaiting,
+	// engine.StepHearing or engine.StepFraming.
 	Step string `json:"step"`
 	// Pieces are what of it is kept, from and to, once its pauses are cut,
 	// which is before its crop is placed. The app draws them and lays the
 	// captions of the words said in them out while the crop is placed, see
-	// ArrivingCaptionsView, so the clip is built in front of the person
+	// engine.ArrivingCaptionsView, so the clip is built in front of the person
 	// rather than appearing whole.
 	Pieces [][2]float64 `json:"pieces,omitempty"`
 	// Clip is the key it will have in the clip list once it is written,
@@ -160,7 +162,7 @@ func (l *Log) send(ev Event) {
 	}
 	now := time.Now()
 	ev.Time = now
-	ev.Elapsed = roundTo(now.Sub(l.t0).Seconds(), 3)
+	ev.Elapsed = num.RoundTo(now.Sub(l.t0).Seconds(), 3)
 	if ev.Stage == "" {
 		ev.Stage = l.currentStage()
 	}

@@ -5,10 +5,12 @@ import (
 	"path/filepath"
 
 	"github.com/spf13/afero"
+
+	"framefairy/engine/runlog"
 )
 
 // Log is the log the project's steps write to.
-func (p *Project) Log() *Log { return p.engine.Log }
+func (p *Project) Log() *runlog.Log { return p.engine.Log }
 
 // Engine is the engine the project's steps run on.
 func (p *Project) Engine() *Engine { return p.engine }

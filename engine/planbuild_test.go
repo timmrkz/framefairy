@@ -16,6 +16,8 @@ import (
 	"testing/synctest"
 
 	"github.com/spf13/afero"
+
+	"framefairy/engine/runlog"
 )
 
 // pausedModel answers like llama-server with two stories, as middle
@@ -54,7 +56,7 @@ func searching(t *testing.T, letGo <-chan struct{}) (*Project, string) {
 	server := pausedModel(t, letGo)
 	t.Cleanup(server.Close)
 	var heard int32
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	base := DefaultOptions()
 	base.LLMURL = server.URL
@@ -76,7 +78,7 @@ func searching(t *testing.T, letGo <-chan struct{}) (*Project, string) {
 func landed(t *testing.T, p *Project, path string, n int) []Clip {
 	t.Helper()
 	said := make(chan struct{}, 1)
-	p.engine.Log.SetSink(func(Event) {
+	p.engine.Log.SetSink(func(runlog.Event) {
 		select {
 		case said <- struct{}{}:
 		default:
@@ -235,13 +237,13 @@ func TestAClipThatPanicsWhileFramedIsLeftOut(t *testing.T) {
 // clock, as often as the app has it.
 func TestAClockThatPanicsStopsQuietly(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		log := NewLog(&bytes.Buffer{}, false, false)
+		log := runlog.New(&bytes.Buffer{}, false, false)
 		c := newSearchClock(log, nil, "gemma", true, 1000, 12, 2048)
 		c.mu.Lock()
 		c.now.Part = "reading"
 		c.mu.Unlock()
-		log.SetSink(func(ev Event) {
-			if ev.Kind == EventProgress {
+		log.SetSink(func(ev runlog.Event) {
+			if ev.Kind == runlog.EventProgress {
 				panic("the window went away")
 			}
 		})
@@ -253,7 +255,12 @@ func TestAClockThatPanicsStopsQuietly(t *testing.T) {
 		// A clock that neither reports nor stops hangs here, and the bubble
 		// says so at once.
 		<-done
-		if log.held.Load() {
+		// A held line ignores ClearProgress, so an idle event says it was
+		// let go.
+		var idle bool
+		log.SetSink(func(ev runlog.Event) { idle = idle || ev.Kind == runlog.EventIdle })
+		log.ClearProgress()
+		if !idle {
 			t.Error("the clock stopped and left the progress line held")
 		}
 	})
@@ -293,7 +300,7 @@ func TestAMomentGivenTwiceIsKeptOnce(t *testing.T) {
 	defer server.Close()
 	var heard int32
 	var said bytes.Buffer
-	e := NewEngine(NewLog(&said, false, false), disk)
+	e := NewEngine(runlog.New(&said, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	base := DefaultOptions()
 	base.LLMURL = server.URL
@@ -334,11 +341,11 @@ func TestAWrittenClipIsCountedAsItLeavesTheWay(t *testing.T) {
 	written, most := 0, 0
 	var problems []string
 	named := map[string]bool{}
-	p.engine.Log.SetSink(func(ev Event) {
+	p.engine.Log.SetSink(func(ev runlog.Event) {
 		mu.Lock()
 		defer mu.Unlock()
 		switch {
-		case ev.Kind == EventUnderway:
+		case ev.Kind == runlog.EventUnderway:
 			if ev.Found < written {
 				problems = append(problems, fmt.Sprintf("written went back from %d to %d", written, ev.Found))
 			}
@@ -347,7 +354,7 @@ func TestAWrittenClipIsCountedAsItLeavesTheWay(t *testing.T) {
 			for _, u := range ev.Underway {
 				named[u.Clip] = true
 			}
-		case ev.Kind == EventProgress && ev.Found > written:
+		case ev.Kind == runlog.EventProgress && ev.Found > written:
 			problems = append(problems, fmt.Sprintf("found %d while the clips on the way had counted %d",
 				ev.Found, written))
 		}

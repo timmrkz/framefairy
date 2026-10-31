@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"framefairy/engine/num"
+	"framefairy/engine/runes"
 	"framefairy/engine/timed"
 )
 
@@ -304,7 +306,7 @@ func (p *Project) readHeard(ctx context.Context, heard heardWindow, local LocalM
 	if rewritten {
 		p.engine.Log.Detail("the transcript heard so far is written out differently from token %s of %s on, "+
 			"so the model reads it again from there, or from the start where it kept no copy of what it "+
-			"read before that token", commas(same), commas(len(held)))
+			"read before that token", num.Thousands(same), num.Thousands(len(held)))
 	}
 	started := time.Now()
 	read, err := readTokens(reading, url, settled)
@@ -313,7 +315,7 @@ func (p *Project) readHeard(ctx context.Context, heard heardWindow, local LocalM
 	}
 	took := time.Since(started)
 	p.engine.Log.Detail("the model read %s tokens of the transcript ahead of the search in %ss, and holds %s",
-		commas(read), fixed(took.Seconds(), 1), commas(len(settled)))
+		num.Thousands(read), num.Fixed(took.Seconds(), 1), num.Thousands(len(settled)))
 	return aheadRead{url: url, tokens: settled, read: read, took: took, rewritten: rewritten}, nil
 }
 
@@ -416,7 +418,7 @@ func serverCall(ctx context.Context, url, path string, ask, answer any, limit ti
 		return err
 	}
 	if response.StatusCode != http.StatusOK {
-		return fmt.Errorf("%s answered %s", path, Scrub(refusal(response.StatusCode, raw), 200))
+		return fmt.Errorf("%s answered %s", path, runes.Scrub(refusal(response.StatusCode, raw), 200))
 	}
 	return json.Unmarshal(raw, answer)
 }

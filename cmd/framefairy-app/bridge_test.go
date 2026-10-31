@@ -56,6 +56,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/updater"
 
 	"framefairy/engine"
+	"framefairy/engine/runlog"
 	"framefairy/updates"
 )
 
@@ -490,12 +491,19 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 	// words are told as being heard, until=said until more words heard
 	// are settled, until=settled until some are, now or before,
 	// until=ended until the recording is over, and until=tenth for one
-	// step. It answers how many steps it took.
+	// step. It answers how many steps it took. Or ahead=n hands over n
+	// tenths of a second with no pass of the speech model, the person
+	// talking faster than it writes down, and answers how many it handed.
 	mux.HandleFunc("/microphone", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		if q.Has("silent") {
 			b.sound.silent.Store(q.Get("silent") == "1")
 			answer(w, nil, nil)
+			return
+		}
+		if n, err := strconv.Atoi(q.Get("ahead")); err == nil {
+			handed, err := b.sound.ahead(r.Context(), min(max(n, 0), 100))
+			answer(w, handed, err)
 			return
 		}
 		steps, err := b.sound.until(r.Context(), q.Get("until"))
@@ -1080,7 +1088,7 @@ func openBridge(t *testing.T) *bridge {
 		videos: walkVideos(t)}
 	// What the first run downloads, once a walk made the machine new.
 	// What arrives is as much of a model as the app looks for.
-	installSpeech = func(ctx context.Context, log *engine.Log, m engine.SpeechModel, dir string) error {
+	installSpeech = func(ctx context.Context, log *runlog.Log, m engine.SpeechModel, dir string) error {
 		return b.arriving(ctx, log, "speech", m.Download, func() error {
 			if err := os.MkdirAll(filepath.Join(dir, m.Name), 0o755); err != nil {
 				return err
@@ -1088,7 +1096,7 @@ func openBridge(t *testing.T) *bridge {
 			return os.WriteFile(filepath.Join(dir, m.Name, "tokens.txt"), []byte("the stand-in hears\n"), 0o644)
 		})
 	}
-	installLanguage = func(ctx context.Context, log *engine.Log, m engine.LanguageModel, dir string) error {
+	installLanguage = func(ctx context.Context, log *runlog.Log, m engine.LanguageModel, dir string) error {
 		return b.arriving(ctx, log, "clip", m.Download, func() error {
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				return err
@@ -1415,7 +1423,7 @@ func (b *bridge) letArrive(kind string) error {
 // says it has fetched two fifths, in the words the engine's download
 // says it in, and holds there until the walk lets it arrive or it is
 // cancelled. Then put lays the model down the way an install leaves it.
-func (b *bridge) arriving(ctx context.Context, log *engine.Log, kind string, size int64, put func() error) error {
+func (b *bridge) arriving(ctx context.Context, log *runlog.Log, kind string, size int64, put func() error) error {
 	b.mu.Lock()
 	gate := b.arrive[kind]
 	b.mu.Unlock()

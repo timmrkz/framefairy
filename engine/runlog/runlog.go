@@ -1,16 +1,9 @@
-// Package engine turns a long-form podcast master into vertical short-form
-// clips, organised so that a command-line front end and a graphical one can
-// both drive it.
-//
-// The stages, in the order a run goes through them:
-//
-//  1. audio      transcribe on the machine, time every word, measure loudness
-//  2. lines      group words into the numbered lines the model reads
-//  3. selection  the model chooses the moments and condenses them
-//  4. analysis   framing, derived from the footage
-//  5. captions   captions made of the same words, written as srt and ass
-//  6. render     build the ffmpeg filter graph and run it
-package engine
+// Package runlog is the log of a run: timestamped lines in the terminal,
+// a progress line one piece of work can hold, steps that say how long
+// they took, and every line and every progress as an event for the app,
+// through one Sink. It knows nothing of the engine above it, see
+// docs/ARCHITECTURE.md.
+package runlog
 
 import (
 	"fmt"
@@ -21,10 +14,10 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-)
 
-// Version of the engine.
-const Version = "0.3.0"
+	"framefairy/engine/num"
+	"framefairy/engine/runes"
+)
 
 // Log writes timestamped output. Every line carries wall clock and elapsed
 // time, so a stalled step is obvious and a slow one can be measured after the
@@ -50,9 +43,9 @@ type Log struct {
 	held atomic.Bool
 }
 
-// NewLog makes a logger writing to w. Colour is only used when w is a
+// New makes a logger writing to w. Colour is only used when w is a
 // terminal and the environment does not ask for plain output.
-func NewLog(w io.Writer, colour, verbose bool) *Log {
+func New(w io.Writer, colour, verbose bool) *Log {
 	tty := isTerminal(w)
 	return &Log{
 		out: w,
@@ -105,28 +98,28 @@ func (l *Log) emit(kind EventKind, marker, text, colour string, tinted bool) {
 
 // Info is an ordinary line.
 func (l *Log) Info(format string, a ...any) {
-	l.emit(EventInfo, "·", sprintf(format, a...), "0", false)
+	l.emit(EventInfo, "·", runes.Format(format, a...), "0", false)
 }
 
 // OK marks something that finished well.
 func (l *Log) OK(format string, a ...any) {
-	l.emit(EventOK, "+", sprintf(format, a...), "32", false)
+	l.emit(EventOK, "+", runes.Format(format, a...), "32", false)
 }
 
 // Warn is something the operator should read.
 func (l *Log) Warn(format string, a ...any) {
-	l.emit(EventWarn, "!", sprintf(format, a...), "33", true)
+	l.emit(EventWarn, "!", runes.Format(format, a...), "33", true)
 }
 
 // Error is a failure.
 func (l *Log) Error(format string, a ...any) {
-	l.emit(EventError, "x", sprintf(format, a...), "31", true)
+	l.emit(EventError, "x", runes.Format(format, a...), "31", true)
 }
 
 // Detail is only shown with --verbose. Use it for anything you would want in
 // a bug report but not in the normal run. A sink gets it either way.
 func (l *Log) Detail(format string, a ...any) {
-	text := sprintf(format, a...)
+	text := runes.Format(format, a...)
 	if !l.verbose {
 		l.send(Event{Kind: EventDetail, Text: text, Fraction: Unknown, Remaining: Unknown})
 		return
@@ -196,8 +189,8 @@ func (l *Log) report(label string, fraction, remaining, from, covered float64, f
 		}
 	}
 	l.showProgress(text)
-	l.send(Event{Kind: EventProgress, Text: label, Fraction: roundTo(fraction, 4),
-		Remaining: roundTo(remaining, 1), From: roundTo(from, 3), Covered: roundTo(covered, 3), Found: found})
+	l.send(Event{Kind: EventProgress, Text: label, Fraction: num.RoundTo(fraction, 4),
+		Remaining: num.RoundTo(remaining, 1), From: num.RoundTo(from, 3), Covered: num.RoundTo(covered, 3), Found: found})
 }
 
 func (l *Log) showProgress(text string) {
@@ -210,7 +203,6 @@ func (l *Log) showProgress(text string) {
 	l.progressOpen = true
 }
 
-// ClearProgress removes a progress line if one is showing. A sink is told
 // Underway says which clips the work has on the way, all of them, each
 // time that changes, how many it has written, and whether the list is
 // whole: every clip still to come is on it. The two go in one event,
@@ -223,6 +215,7 @@ func (l *Log) Underway(list []Underway, written int, whole bool) {
 		Whole: whole})
 }
 
+// ClearProgress removes a progress line if one is showing. A sink is told
 // that nothing is in progress any more. While the line is held, it is not
 // this work's to clear: ffmpeg reading the frames of one clip cleared a
 // search's line every time it finished, and the search's fill
@@ -254,7 +247,7 @@ func (l *Log) Step(name string, fn func() error) error {
 	start := time.Now()
 	err := fn()
 	l.popStage()
-	took := roundTo(time.Since(start).Seconds(), 3)
+	took := num.RoundTo(time.Since(start).Seconds(), 3)
 	if err != nil {
 		l.writeLine("x", l.c("31", fmt.Sprintf("%s failed after %.1fs", name, took)), "31")
 		l.send(Event{Kind: EventStepFailed, Stage: name, Text: err.Error(),
@@ -279,33 +272,4 @@ func (l *Log) writeLine(marker, shown, colour string) {
 	defer l.mu.Unlock()
 	l.clearProgressLocked()
 	fmt.Fprintf(l.out, "%s  %s %s\n", l.stamp(), l.c(colour, marker), shown)
-}
-
-// sprintf only formats when there are arguments, so a message that happens to
-// contain a percent sign is printed as written.
-func sprintf(format string, a ...any) string {
-	if len(a) == 0 {
-		return format
-	}
-	return fmt.Sprintf(format, a...)
-}
-
-// commas formats an integer with thousands separators.
-func commas(n int) string {
-	negative := n < 0
-	if negative {
-		n = -n
-	}
-	digits := fmt.Sprintf("%d", n)
-	var b strings.Builder
-	for i, ch := range digits {
-		if i > 0 && (len(digits)-i)%3 == 0 {
-			b.WriteByte(',')
-		}
-		b.WriteRune(ch)
-	}
-	if negative {
-		return "-" + b.String()
-	}
-	return b.String()
 }

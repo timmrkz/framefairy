@@ -14,6 +14,7 @@ import (
 
 	"github.com/spf13/afero"
 
+	"framefairy/engine/runlog"
 	"framefairy/internal/ffmpegtest"
 	"framefairy/internal/framewire"
 )
@@ -355,7 +356,7 @@ func TestAPlansRotationsAreCheckedNotRepaired(t *testing.T) {
 //
 // On the real disk: ffmpeg renders the short.
 func TestARotatedPieceIsRotatedBeforeItsCrop(t *testing.T) {
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	clip := Clip{Segments: []Segment{{Start: 1, End: 2}, {Start: 3, End: 4, Rotate: 90}}}
 	graph, _, _, err := e.BuildFilterGraph(context.Background(), clip,
 		SourceInfo{Width: 1080, Height: 1920, FPSNum: 25, FPSDen: 1},
@@ -459,7 +460,7 @@ func phoneVideos(t *testing.T, dir string, seconds string) map[string]string {
 func TestProbeStandsAPhoneVideoUp(t *testing.T) {
 	t.Parallel()
 	ffmpegtest.Need(t)
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	for name, path := range phoneVideos(t, t.TempDir(), "1") {
 		info, err := e.Probe(context.Background(), path)
 		if err != nil {

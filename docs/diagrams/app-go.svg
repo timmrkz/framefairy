@@ -54,8 +54,12 @@
 <text class="n" x="76" y="382">the engine</text>
 <text class="p" x="76" y="400">engine/</text>
 <text class="q" x="76" y="416">reached through engine.Project</text>
-<rect class="chip" x="76" y="426" width="96" height="22" rx="6"/>
-<text class="c" x="84" y="441">engine/timed</text>
+<rect class="chip" x="76" y="426" width="103" height="22" rx="6"/>
+<text class="c" x="84" y="441">engine/runlog</text>
+<rect class="chip" x="185" y="426" width="96" height="22" rx="6"/>
+<text class="c" x="193" y="441">engine/timed</text>
+<rect class="chip" x="287" y="426" width="96" height="22" rx="6"/>
+<text class="c" x="295" y="441">engine/runes</text>
 <rect class="box" x="64" y="482" width="672" height="54" rx="8"/>
 <text class="n" x="76" y="504">small libraries</text>
 <text class="p" x="76" y="522">licence/, internal/wake/, internal/framewire/</text>

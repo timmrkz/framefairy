@@ -5,9 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	"framefairy/engine/timed"
-
 	"github.com/spf13/afero"
+
+	"framefairy/engine/num"
+	"framefairy/engine/timed"
 )
 
 // keyedFrames is the loudness of captionHeard, with a soft stretch before
@@ -309,7 +310,7 @@ func TestAMovedCaptionFromBeforeIsReadAndKeptAnew(t *testing.T) {
   "clips": [
     {"id": "01", "slug": "schulhof",
      "segments": [{"start": 59.9, "end": 66.0}],
-     "caption_times": {"`+wordKey(und)+`": {"start": `+fixed(und-0.5, 3)+`}}}
+     "caption_times": {"`+wordKey(und)+`": {"start": `+num.Fixed(und-0.5, 3)+`}}}
   ]
 }`)
 	second := func(tr *Transcript) CaptionView {

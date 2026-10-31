@@ -13,6 +13,8 @@ import (
 	"sync"
 	"testing"
 
+	"framefairy/engine/runes"
+	"framefairy/engine/runlog"
 	"framefairy/engine/timed"
 )
 
@@ -153,7 +155,7 @@ func TestAnExperimentKeepsToItself(t *testing.T) {
 	var heard, asked int32
 	server := fakeModel(t, &asked)
 	defer server.Close()
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	records := ownRecords(e)
 
@@ -208,7 +210,7 @@ func TestAComparisonReportsEveryRecipe(t *testing.T) {
 	var heard, asked int32
 	server := fakeModel(t, &asked)
 	defer server.Close()
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 
 	opts := DefaultOptions()
@@ -235,7 +237,7 @@ func TestAComparisonReportsEveryRecipe(t *testing.T) {
 		// Each recipe keeps what it asked and what came back, and the
 		// next one does not write over it.
 		prompt, err := os.ReadFile(filepath.Join(dir, "prompt.txt"))
-		if err != nil || runeLen(string(prompt)) != run.PromptChars {
+		if err != nil || runes.Len(string(prompt)) != run.PromptChars {
 			t.Errorf("%s kept no prompt of its own: %v", run.Recipe, err)
 		}
 		if _, err := os.Stat(filepath.Join(dir, "reply.json")); err != nil {
@@ -307,7 +309,7 @@ func TestASideKeepsThePromptItWroteThoughItLooksUnchanged(t *testing.T) {
 		writeLocalStream(w, answer, 7)
 	}))
 	defer server.Close()
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 
 	opts := DefaultOptions()
@@ -331,7 +333,7 @@ func TestASideKeepsThePromptItWroteThoughItLooksUnchanged(t *testing.T) {
 			t.Errorf("%s kept no prompt, though its search wrote one", run.Recipe)
 		}
 		kept, err := os.ReadFile(filepath.Join(WorkDir(source), "experiments", run.Recipe, "prompt.txt"))
-		if err != nil || runeLen(string(kept)) != run.PromptChars {
+		if err != nil || runes.Len(string(kept)) != run.PromptChars {
 			t.Errorf("%s kept no copy of its prompt: %v", run.Recipe, err)
 		}
 		if run.Plan == "" {
@@ -348,7 +350,7 @@ func TestAComparisonOfFailuresIsAFailure(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "20")
 	var heard int32
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 
 	opts := DefaultOptions()
@@ -414,7 +416,7 @@ func TestAComparisonOfThinkingBudgets(t *testing.T) {
 	}))
 	defer server.Close()
 	var heard int32
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	opts := DefaultOptions()
 	opts.Source = source

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"framefairy/engine/runes"
 )
 
 // Everything in this file works on what a model sent back. That text is the
@@ -148,8 +150,8 @@ func TestValidatePlanTamesTheTextItIsGiven(t *testing.T) {
 	if strings.ContainsRune(good[0].Title, '\x1b') {
 		t.Errorf("control character kept: %q", good[0].Title)
 	}
-	if runeLen(good[0].Reason) != 300 {
-		t.Errorf("reason is %d characters", runeLen(good[0].Reason))
+	if runes.Len(good[0].Reason) != 300 {
+		t.Errorf("reason is %d characters", runes.Len(good[0].Reason))
 	}
 	if good[0].Slug == good[1].Slug {
 		t.Errorf("both clips are called %q, their files would overwrite each other", good[0].Slug)
@@ -230,12 +232,12 @@ func FuzzValidatePlan(f *testing.F) {
 				}
 				previous = pair[1]
 			}
-			if runeLen(clip.Slug) > 64 || runeLen(clip.Title) > 200 || runeLen(clip.Reason) > 300 {
+			if runes.Len(clip.Slug) > 64 || runes.Len(clip.Title) > 200 || runes.Len(clip.Reason) > 300 {
 				t.Fatalf("text too long: %d %d %d",
-					runeLen(clip.Slug), runeLen(clip.Title), runeLen(clip.Reason))
+					runes.Len(clip.Slug), runes.Len(clip.Title), runes.Len(clip.Reason))
 			}
 			for _, field := range []string{clip.Slug, clip.Title, clip.Reason} {
-				if strings.ContainsFunc(field, isControl) || strings.ContainsAny(field, "\n\r\t") {
+				if strings.ContainsFunc(field, runes.IsControl) || strings.ContainsAny(field, "\n\r\t") {
 					t.Fatalf("control characters survived in %s", fmt.Sprintf("%q", field))
 				}
 			}

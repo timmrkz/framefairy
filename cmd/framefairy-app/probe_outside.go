@@ -21,10 +21,11 @@ import (
 	"sync"
 	"time"
 
-	"framefairy/engine"
-	"framefairy/internal/wake"
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
+
+	"framefairy/engine"
+	"framefairy/internal/wake"
 )
 
 // probeAddr is where the probe listens. Fixed, because the test cannot

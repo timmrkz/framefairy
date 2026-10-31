@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"framefairy/engine/runlog"
 )
 
 // A tar.bz2 the way the real one comes: one folder named after the model,
@@ -63,7 +65,7 @@ func serving(t *testing.T, body []byte) *httptest.Server {
 	return s
 }
 
-func quietLog() *Log { return NewLog(io.Discard, false, false) }
+func quietLog() *runlog.Log { return runlog.New(io.Discard, false, false) }
 
 // On the real disk: the speech model is unpacked into the folder the speech library loads.
 func TestInstallingASpeechModel(t *testing.T) {

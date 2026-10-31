@@ -14,9 +14,10 @@ import (
 	"strings"
 	"time"
 
-	"framefairy/engine/timed"
-
 	"github.com/spf13/afero"
+
+	"framefairy/engine/runlog"
+	"framefairy/engine/timed"
 )
 
 // ---------------------------------------------------------------------------
@@ -147,11 +148,11 @@ func (r JobRecord) Clip() ClipRequest {
 // read back from its record shows its clip where it would have appeared.
 // Only a clip made by hand has one: a search's clips on the way are either
 // in its plan or not proposed yet.
-func (r JobRecord) Underway() []Underway {
+func (r JobRecord) Underway() []runlog.Underway {
 	if r.Kind != JobClip {
 		return nil
 	}
-	return []Underway{{N: 1, Start: r.At, End: r.At, Step: r.Step}}
+	return []runlog.Underway{{N: 1, Start: r.At, End: r.At, Step: r.Step}}
 }
 
 // Render is what a render asks for, less the clips it has finished.

@@ -16,6 +16,7 @@ import (
 
 	"framefairy/asr"
 	"framefairy/engine"
+	"framefairy/engine/runlog"
 	"framefairy/internal/wake"
 )
 
@@ -50,8 +51,8 @@ type Job struct {
 	Clips []string `json:"clips,omitempty"`
 	// Last is the most recent event, so a screen opened later still shows
 	// where the job is.
-	Last     *engine.Event `json:"last,omitempty"`
-	Progress *engine.Event `json:"progress,omitempty"`
+	Last     *runlog.Event `json:"last,omitempty"`
+	Progress *runlog.Event `json:"progress,omitempty"`
 	Queued   time.Time     `json:"queued"`
 	// Lane is "hearing", "finding" or "rendering". Each lane runs one job at
 	// a time, so a long transcription never holds up finding or rendering
@@ -73,9 +74,9 @@ type Job struct {
 	At       float64 `json:"at,omitempty"`
 	Backward bool    `json:"backward,omitempty"`
 	// Underway is every clip the job has on the way, proposed and not
-	// written yet, whoever proposed it, see engine.Underway. The clip list
+	// written yet, whoever proposed it, see runlog.Underway. The clip list
 	// shows each in its place until it is written.
-	Underway []engine.Underway `json:"underway,omitempty"`
+	Underway []runlog.Underway `json:"underway,omitempty"`
 	// Written is how many clips the job has written, from the same event
 	// as Underway, so a clip is never counted both as written and as on
 	// the way, or as neither.
@@ -954,18 +955,18 @@ func (q *queue) runJob(job *Job) {
 			out = f
 		}
 	}
-	log := engine.NewLog(out, false, true)
+	log := runlog.New(out, false, true)
 	// Where the part being heard began, so a new part is seen beginning.
 	var partMu sync.Mutex
 	partFrom := -1.0
-	log.SetSink(func(ev engine.Event) {
+	log.SetSink(func(ev runlog.Event) {
 		// Detail lines are for bug reports, not for the interface.
-		if ev.Kind == engine.EventDetail {
+		if ev.Kind == runlog.EventDetail {
 			return
 		}
 		// A warning is in app.log too, which a report carries and the
 		// job's own log in the video's work folder is not.
-		if ev.Kind == engine.EventWarn {
+		if ev.Kind == runlog.EventWarn {
 			theLog.jobLine(zerolog.WarnLevel, job).Msg(ev.Text)
 		}
 		copied := ev
@@ -975,7 +976,7 @@ func (q *queue) runJob(job *Job) {
 		// ends. Read only when it ended, a share of the video worked out
 		// from it went back each time the work went on to another part,
 		// found by Tim on #458.
-		if copied.Kind == engine.EventProgress && copied.Covered > 0 {
+		if copied.Kind == runlog.EventProgress && copied.Covered > 0 {
 			partMu.Lock()
 			moved := partFrom >= 0 && copied.From != partFrom
 			partFrom = copied.From
@@ -984,7 +985,7 @@ func (q *queue) runJob(job *Job) {
 				q.notify(job.Episode)
 			}
 		}
-		if copied.Kind == engine.EventUnderway {
+		if copied.Kind == runlog.EventUnderway {
 			q.update(job, func(j *Job) {
 				j.Underway, j.Written, j.Whole = copied.Underway, copied.Found, copied.Whole
 			})
@@ -992,9 +993,9 @@ func (q *queue) runJob(job *Job) {
 		}
 		q.update(job, func(j *Job) {
 			j.Last = &copied
-			if copied.Kind == engine.EventProgress {
+			if copied.Kind == runlog.EventProgress {
 				j.Progress = &copied
-			} else if copied.Kind == engine.EventIdle {
+			} else if copied.Kind == runlog.EventIdle {
 				// Only the log says when nothing is in progress: a step
 				// that ends inside a search leaves the search's line.
 				j.Progress = nil

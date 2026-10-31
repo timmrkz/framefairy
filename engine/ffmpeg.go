@@ -18,10 +18,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"framefairy/engine/timed"
-
 	"github.com/spf13/afero"
 
+	"framefairy/engine/num"
+	"framefairy/engine/runes"
+	"framefairy/engine/runlog"
+	"framefairy/engine/timed"
 	"framefairy/internal/framewire"
 )
 
@@ -36,13 +38,13 @@ type RenderError struct {
 func (e *RenderError) Error() string { return e.Msg }
 
 func renderErr(format string, a ...any) error {
-	return &RenderError{Msg: sprintf(format, a...)}
+	return &RenderError{Msg: runes.Format(format, a...)}
 }
 
 // saidErr is a failure said in a person's words, from its first sentence,
 // which is what the row of a search shows. Issue #311.
 func saidErr(format string, a ...any) error {
-	return &RenderError{Msg: sprintf(format, a...), Said: true}
+	return &RenderError{Msg: runes.Format(format, a...), Said: true}
 }
 
 // videoGone is a video whose file is no longer where it was added from:
@@ -69,7 +71,7 @@ type APICalls struct {
 // writes to and what it has spent. One Engine per run keeps two runs in the
 // same process, as a GUI will have, from stepping on each other.
 type Engine struct {
-	Log     *Log
+	Log     *runlog.Log
 	FFmpeg  string
 	FFprobe string
 
@@ -150,7 +152,7 @@ type Engine struct {
 // environment, or else the ones beside the program, checked. See FindTool
 // in tools.go. A tool that may not run is left empty, and Preflight says
 // why.
-func NewEngine(log *Log, files afero.Fs) *Engine {
+func NewEngine(log *runlog.Log, files afero.Fs) *Engine {
 	return &Engine{Log: log,
 		Files:   files,
 		Records: NewRecords(files, "", ""),
@@ -602,7 +604,7 @@ func (e *Engine) SubtitleFilter(ctx context.Context) (string, error) {
 			return candidate, nil
 		}
 		failures = append(failures, fmt.Sprintf("  %s\n    %s", chain,
-			runePrefix(strip(res.Stderr), 200)))
+			runes.Prefix(runes.Trim(res.Stderr), 200)))
 	}
 	return "", renderErr("%s", "this ffmpeg cannot burn in subtitles with any syntax I know.\n"+
 		strings.Join(failures, "\n")+
@@ -636,7 +638,7 @@ func (e *Engine) Preflight(ctx context.Context) error {
 		version := run(ctx, "", e.FFmpeg, "-version")
 		if version.Code != 0 {
 			e.Log.ClearProgress()
-			return renderErr("%s does not run: %s", e.FFmpeg, Scrub(version.Stderr, 200))
+			return renderErr("%s does not run: %s", e.FFmpeg, runes.Scrub(version.Stderr, 200))
 		}
 		first = "ffmpeg ?"
 		if lines := strings.SplitN(version.Stdout, "\n", 2); lines[0] != "" {
@@ -782,11 +784,11 @@ func gcd(a, b int) int {
 // from the start of the file, the earliest of its streams, so that is
 // where the picture's start is measured from.
 func videoStartOf(stream, format map[string]any) float64 {
-	first, ok := toFloat(stream["start_time"])
+	first, ok := num.AsFloat(stream["start_time"])
 	if !ok {
 		return 0
 	}
-	if from, ok := toFloat(format["start_time"]); ok && first-from > 1e-6 {
+	if from, ok := num.AsFloat(format["start_time"]); ok && first-from > 1e-6 {
 		return first - from
 	}
 	return 0
@@ -864,7 +866,7 @@ func (e *Engine) probe(ctx context.Context, path string) (SourceInfo, error) {
 		if !exists(e.Files, path) {
 			return SourceInfo{}, videoGone(path)
 		}
-		return SourceInfo{}, renderErr("ffprobe failed on %s:\n%s", path, strip(res.Stderr))
+		return SourceInfo{}, renderErr("ffprobe failed on %s:\n%s", path, runes.Trim(res.Stderr))
 	}
 	var data struct {
 		Streams []map[string]any `json:"streams"`
@@ -886,17 +888,17 @@ func (e *Engine) probe(ctx context.Context, path string) (SourceInfo, error) {
 	if denText == "" {
 		denText = "1"
 	}
-	num, err1 := strconv.Atoi(numText)
+	numer, err1 := strconv.Atoi(numText)
 	den, err2 := strconv.Atoi(denText)
-	if err1 != nil || err2 != nil || den == 0 || num == 0 || (num < 0) != (den < 0) {
+	if err1 != nil || err2 != nil || den == 0 || numer == 0 || (numer < 0) != (den < 0) {
 		return SourceInfo{}, renderErr("%s reports no usable frame rate, so the "+
 			"output frame rate cannot be matched to the source", path)
 	}
 	if den < 0 {
-		num, den = -num, -den
+		numer, den = -numer, -den
 	}
-	g := gcd(num, den)
-	num, den = num/g, den/g
+	g := gcd(numer, den)
+	numer, den = numer/g, den/g
 
 	var colour [][2]string
 	for _, pair := range [][2]string{
@@ -913,11 +915,11 @@ func (e *Engine) probe(ctx context.Context, path string) (SourceInfo, error) {
 	duration := 0.0
 	if raw, ok := data.Format["duration"]; ok {
 		// Some containers report N/A, and the range check just skips then.
-		if d, ok := toFloat(raw); ok {
+		if d, ok := num.AsFloat(raw); ok {
 			duration = d
 		}
 	}
-	formatStart, _ := toFloat(data.Format["start_time"])
+	formatStart, _ := num.AsFloat(data.Format["start_time"])
 	if duration <= 0 {
 		// A Matroska file whose writing was cut off, the way OBS leaves a
 		// recording when it crashes, has no duration and no index. It is
@@ -926,8 +928,8 @@ func (e *Engine) probe(ctx context.Context, path string) (SourceInfo, error) {
 	}
 	format, _ := data.Format["format_name"].(string)
 
-	width, okW := toInt(stream["width"])
-	height, okH := toInt(stream["height"])
+	width, okW := num.AsInt(stream["width"])
+	height, okH := num.AsInt(stream["height"])
 	if _, present := stream["width"]; !present || !okW {
 		return SourceInfo{}, renderErr("%s reports no video dimensions", path)
 	}
@@ -942,8 +944,8 @@ func (e *Engine) probe(ctx context.Context, path string) (SourceInfo, error) {
 		width, height = height, width
 	}
 	videoStart := videoStartOf(stream, data.Format)
-	first, hasFirst := toFloat(stream["start_time"])
-	info := SourceInfo{Width: width, Height: height, Turned: turned, FPSNum: num, FPSDen: den,
+	first, hasFirst := num.AsFloat(stream["start_time"])
+	info := SourceInfo{Width: width, Height: height, Turned: turned, FPSNum: numer, FPSDen: den,
 		Duration: duration, VideoStart: videoStart, Colour: colour,
 		origin: first - videoStart, hasClock: hasFirst, unindexed: unindexed(format)}
 	info.SoundRate, info.SoundChannels = e.soundOf(ctx, path)
@@ -952,7 +954,7 @@ func (e *Engine) probe(ctx context.Context, path string) (SourceInfo, error) {
 		// The rate ffmpeg reports for uneven frames is the finest step
 		// they keep to, 50 or more for a phone's, so a short is made at
 		// their average instead, rounded to a rate shorts are played at.
-		average := float64(num) / float64(den)
+		average := float64(numer) / float64(den)
 		if text, _ := stream["avg_frame_rate"].(string); text != "" {
 			a, b, _ := strings.Cut(text, "/")
 			n, err1 := strconv.ParseFloat(a, 64)
@@ -982,8 +984,8 @@ func (e *Engine) soundOf(ctx context.Context, path string) (rate, channels int) 
 	if decoder.Decode(&data) != nil || len(data.Streams) == 0 {
 		return 0, 0
 	}
-	rate, ok1 := toInt(data.Streams[0]["sample_rate"])
-	channels, ok2 := toInt(data.Streams[0]["channels"])
+	rate, ok1 := num.AsInt(data.Streams[0]["sample_rate"])
+	channels, ok2 := num.AsInt(data.Streams[0]["channels"])
 	if !ok1 || !ok2 || rate <= 0 || channels <= 0 {
 		return 0, 0
 	}
@@ -997,8 +999,8 @@ func fileRotation(sideData any) int {
 	list, _ := sideData.([]any)
 	for _, item := range list {
 		entry, _ := item.(map[string]any)
-		value, ok := toFloat(entry["rotation"])
-		if !ok || !isFinite(value) {
+		value, ok := num.AsFloat(entry["rotation"])
+		if !ok || !num.IsFinite(value) {
 			continue
 		}
 		return framewire.Quarter(value)
@@ -1051,18 +1053,18 @@ func (e *Engine) uneven(ctx context.Context, path string, info SourceInfo) bool 
 func (e *Engine) unevenIn(ctx context.Context, path string, info SourceInfo, at, span float64) bool {
 	frame := float64(info.FPSDen) / float64(info.FPSNum)
 	first := info.origin + info.VideoStart
-	from := fixed(info.origin+at, 3)
+	from := num.Fixed(info.origin+at, 3)
 	if info.unindexed {
 		// From its first packet where there is no key frame before
 		// that: ffprobe sent to the start of the file itself lands after
 		// the first key frame in MPEG-TS.
 		from = ""
 		if key, ok := e.keyBefore(ctx, path, info, int64(math.Round(at*1e6))); ok && key > 0 {
-			from = fixed(info.origin+float64(key)/1e6, 6)
+			from = num.Fixed(info.origin+float64(key)/1e6, 6)
 		}
 	}
 	res := run(ctx, "", e.FFprobe, "-v", "error", "-select_streams", "v:0",
-		"-read_intervals", from+"%"+fixed(info.origin+at+span, 3),
+		"-read_intervals", from+"%"+num.Fixed(info.origin+at+span, 3),
 		"-show_entries", "packet=pts_time,pos,flags", "-of", "csv=p=0", path)
 	if res.Code != 0 {
 		return false
@@ -1223,9 +1225,9 @@ func (e *Engine) keyBefore(ctx context.Context, path string, s SourceInfo, at in
 	for span := 2.0; span <= 128; span *= 2 {
 		from := max(moment-span, 0)
 		// Close to the start the file is read from its first packet.
-		interval := "%" + fixed(s.origin+moment, 6)
+		interval := "%" + num.Fixed(s.origin+moment, 6)
 		if from > 0 {
-			interval = fixed(s.origin+from, 6) + interval
+			interval = num.Fixed(s.origin+from, 6) + interval
 		}
 		res := run(ctx, "", e.FFprobe, "-v", "error", "-select_streams", "v:0",
 			"-read_intervals", interval,

@@ -13,9 +13,11 @@ import (
 	"sync"
 	"time"
 
-	"framefairy/engine/timed"
-
 	"github.com/spf13/afero"
+
+	"framefairy/engine/num"
+	"framefairy/engine/runes"
+	"framefairy/engine/timed"
 )
 
 // ---------------------------------------------------------------------------
@@ -85,7 +87,7 @@ func ParseVariant(name string) (Variant, error) {
 		f, err := strconv.ParseFloat(temperature, 64)
 		if err != nil || f < 0 || f > 2 || math.IsNaN(f) {
 			return Variant{}, renderErr("%s: after the ~ goes the temperature, from 0 to 2, "+
-				"for instance stories~0.3", pyRepr(name))
+				"for instance stories~0.3", runes.Quote(name))
 		}
 		t = &f
 	}
@@ -102,11 +104,11 @@ func ParseVariant(name string) (Variant, error) {
 	if hasSwitches {
 		if !r.Switchable {
 			return Variant{}, renderErr("%s: %s takes no switches. heart-lean, points and middle do, "+
-				"as in middle+times", pyRepr(name), recipe)
+				"as in middle+times", runes.Quote(name), recipe)
 		}
 		sw, err := ParseSwitches(switches)
 		if err != nil {
-			return Variant{}, renderErr("%s: %s", pyRepr(name), err)
+			return Variant{}, renderErr("%s: %s", runes.Quote(name), err)
 		}
 		v.Switches = sw
 	}
@@ -114,7 +116,7 @@ func ParseVariant(name string) (Variant, error) {
 		n, err := strconv.Atoi(think)
 		if err != nil || n < -1 {
 			return Variant{}, renderErr("%s: after the @ goes how many tokens the model may think, "+
-				"for instance stories@1024, or -1 for no limit", pyRepr(name))
+				"for instance stories@1024, or -1 for no limit", runes.Quote(name))
 		}
 		v.Think = &n
 	}
@@ -190,7 +192,7 @@ func (e *Engine) Compare(ctx context.Context, opts Options, names []string) ([]R
 		// What was asked and what came back are kept beside the plan, where
 		// the next recipe's search does not write over them.
 		if body, err := afero.ReadFile(e.Files, files.prompt); files.prompt != "" && err == nil {
-			run.PromptChars = runeLen(string(body))
+			run.PromptChars = runes.Len(string(body))
 			keepCopy(e.Files, dir, "prompt.txt", body)
 		}
 		if body, err := afero.ReadFile(e.Files, files.answer); files.answer != "" && err == nil {
@@ -371,7 +373,7 @@ func compareReport(opts Options, runs []RecipeRun) string {
 	}
 	fmt.Fprintf(&b, "# Recipes compared\n\n%s, %s, %s of %s to %s seconds asked for. "+
 		"Seed %d, temperature %s unless a side says otherwise.\n\n",
-		filepath.Base(opts.Source), window, count, fixed(opts.Min, 0), fixed(opts.Max, 0),
+		filepath.Base(opts.Source), window, count, num.Fixed(opts.Min, 0), num.Fixed(opts.Max, 0),
 		seed, temperature)
 	costs := [][]string{{"Recipe", "Clips", "Asks", "Seconds", "Model, seconds", "Reading, seconds",
 		"Request, characters", "Read, tokens", "Read anew, tokens", "Thought, tokens", "Written, tokens"}}
@@ -381,14 +383,14 @@ func compareReport(opts Options, runs []RecipeRun) string {
 			if s <= 0 {
 				return "-"
 			}
-			return fixed(s, 0)
+			return num.Fixed(s, 0)
 		}
 		thought := orNone(u.Thought)
 		if u.Thought == 0 && u.ThoughtChars > 0 {
-			thought = "about " + commas(u.ThoughtChars*10/25)
+			thought = "about " + num.Thousands(u.ThoughtChars*10/25)
 		}
 		costs = append(costs, []string{r.Recipe, strconv.Itoa(len(r.Clips)), orNone(u.Asks),
-			fixed(r.Seconds, 0), seconds(u.Seconds), seconds(u.Reading), commas(r.PromptChars),
+			num.Fixed(r.Seconds, 0), seconds(u.Seconds), seconds(u.Reading), num.Thousands(r.PromptChars),
 			orNone(u.Read), orNone(u.ReadAnew), thought, orNone(u.Written)})
 	}
 	b.WriteString(alignedTable(costs))
@@ -417,7 +419,7 @@ func compareReport(opts Options, runs []RecipeRun) string {
 			recipe, _ := RecipeNamed(v.Recipe)
 			b.WriteString(recipe.About)
 			if v.Think != nil {
-				fmt.Fprintf(&b, ", thinking at most %s tokens", commas(*v.Think))
+				fmt.Fprintf(&b, ", thinking at most %s tokens", num.Thousands(*v.Think))
 			}
 			if v.Temperature != nil {
 				fmt.Fprintf(&b, ", at a temperature of %s", trimFloat(*v.Temperature))
@@ -440,7 +442,7 @@ func compareReport(opts Options, runs []RecipeRun) string {
 		}
 		for i, c := range r.Clips {
 			fmt.Fprintf(&b, "### %d. %s\n\nAt %s, %s seconds, %d part(s). %s\n\n> %s\n\n",
-				i+1, c.Title, HMS(c.Start), fixed(c.Seconds, 1), c.Parts, c.Reason, c.Text)
+				i+1, c.Title, HMS(c.Start), num.Fixed(c.Seconds, 1), c.Parts, c.Reason, c.Text)
 		}
 	}
 	return b.String()
@@ -494,7 +496,7 @@ func momentsTable(runs []RecipeRun) string {
 		for side := range runs {
 			cell := "-"
 			if s, ok := m.seconds[side]; ok {
-				cell = fixed(s, 0) + " s"
+				cell = num.Fixed(s, 0) + " s"
 			}
 			row = append(row, cell)
 		}
@@ -512,14 +514,14 @@ func alignedTable(rows [][]string) string {
 	widths := make([]int, len(rows[0]))
 	for _, row := range rows {
 		for i, cell := range row {
-			widths[i] = max(widths[i], runeLen(cell), 3)
+			widths[i] = max(widths[i], runes.Len(cell), 3)
 		}
 	}
 	var b strings.Builder
 	line := func(row []string) {
 		b.WriteString("|")
 		for i, cell := range row {
-			pad := strings.Repeat(" ", widths[i]-runeLen(cell))
+			pad := strings.Repeat(" ", widths[i]-runes.Len(cell))
 			if i == 0 {
 				b.WriteString(" " + cell + pad + " |")
 			} else {
@@ -582,5 +584,5 @@ func orNone(n int) string {
 	if n == 0 {
 		return "-"
 	}
-	return commas(n)
+	return num.Thousands(n)
 }

@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/spf13/afero"
+
+	"framefairy/engine/num"
 )
 
 // ---------------------------------------------------------------------------
@@ -293,7 +295,7 @@ func splitPlan(state fileState) (*planParts, error) {
 		fallback := twoDigits(i + 1)
 		id := fallback
 		if raw, ok := c.get(keyID); ok {
-			id = pyStr(raw)
+			id = num.FormatValue(raw)
 		}
 		id = SanitiseName(id, fallback)
 		parts.ids = append(parts.ids, id)
@@ -482,7 +484,7 @@ func putClip(list []any, id string, to *planParts) []any {
 		fallback := twoDigits(i + 1)
 		cid := fallback
 		if raw, ok := c.get(keyID); ok {
-			cid = pyStr(raw)
+			cid = num.FormatValue(raw)
 		}
 		if SanitiseName(cid, fallback) == id {
 			at = i

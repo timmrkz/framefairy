@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"framefairy/engine/runlog"
 	"framefairy/internal/ffmpegtest"
 )
 
@@ -30,7 +31,7 @@ import (
 //
 // On the real disk: ffmpeg reads the episode and writes the short.
 func TestARenderCutsOnWholeFrames(t *testing.T) {
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	if err := e.Preflight(context.Background()); err != nil {
 		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}

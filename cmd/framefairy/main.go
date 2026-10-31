@@ -23,6 +23,7 @@ import (
 
 	"framefairy/asr"
 	"framefairy/engine"
+	"framefairy/engine/runlog"
 )
 
 type kind int
@@ -294,8 +295,7 @@ func usageError(msg string) error {
 	return fmt.Errorf("%s\nframefairy: error: %s", usageLine, msg)
 }
 
-// parseArgs follows argparse's rules, so every command that worked with the
-// Python version works here. Options and the source may come in any order,
+// parseArgs keeps every command that ever worked working. Options and the source may come in any order,
 // values may be joined with "=", and a unique prefix of an option is enough.
 func parseArgs(argv []string) (parsed, error) {
 	p := parsed{opts: engine.DefaultOptions()}
@@ -437,7 +437,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	log := engine.NewLog(os.Stdout, !p.plain, p.verbose)
+	log := runlog.New(os.Stdout, !p.plain, p.verbose)
 	e := engine.NewEngine(log, afero.NewOsFs())
 	// The one folder the records go in, for the whole run, the way the app
 	// keeps it from its settings.
@@ -450,7 +450,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "cannot write %s: %s\n", p.events, err)
 			os.Exit(1)
 		}
-		log.SetSink(engine.JSONLines(events))
+		log.SetSink(runlog.JSONLines(events))
 	}
 	// A llama-server a run left behind, because it was killed or its
 	// terminal closed, holds a model in memory, and a model loaded beside it

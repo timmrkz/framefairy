@@ -10,9 +10,10 @@ import (
 	"sort"
 	"sync"
 
-	"framefairy/engine/timed"
-
 	"github.com/spf13/afero"
+
+	"framefairy/engine/runes"
+	"framefairy/engine/timed"
 )
 
 // Project is one episode, driven step by step as the app does it. Every step
@@ -216,7 +217,7 @@ func warmSize(model string, seconds float64, maxTokens int) int {
 	if seconds <= 0 {
 		seconds = 3600
 	}
-	chars := int(max(seconds, 60)*warmChars) + runeLen(SystemPrompt)
+	chars := int(max(seconds, 60)*warmChars) + runes.Len(SystemPrompt)
 	return localContextFor(model, chars, maxTokens)
 }
 

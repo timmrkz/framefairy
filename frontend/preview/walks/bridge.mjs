@@ -1142,23 +1142,28 @@ export async function fromSidebar(page, click) {
 }
 
 // Until fn, run in the page with arg, says true. It is asked again each
-// time the page changes, an attribute, a node or a text, never on the
-// clock, so what it waits for has to show on the page. One that never
-// comes is a walk that hangs, ended by the -timeout of make walks with
-// the step the walk printed last. seenUntil is the same wait for a read
-// the walk makes itself.
+// time the page changes, an attribute, a node or a text, and each time
+// the text of a field changes, which is no change to the page's nodes,
+// never on the clock, so what it waits for has to show on the page. One
+// that never comes is a walk that hangs, ended by the -timeout of make
+// walks with the step the walk printed last. seenUntil is the same wait
+// for a read the walk makes itself.
 export function pageUntil(page, fn, arg) {
   return page.evaluate(
     ([source, arg]) =>
       new Promise((done) => {
         const holds = new Function(`return (${source})`)();
         if (holds(arg)) return done();
-        const o = new MutationObserver(() => {
+        const check = () => {
           if (!holds(arg)) return;
           o.disconnect();
+          for (const e of ["input", "written"]) document.removeEventListener(e, check, true);
           done();
-        });
+        };
+        const o = new MutationObserver(check);
         o.observe(document, { subtree: true, childList: true, characterData: true, attributes: true });
+        // Typed, or written by the page, see wails-bridge.ts.
+        for (const e of ["input", "written"]) document.addEventListener(e, check, true);
       }),
     [fn.toString(), arg],
   );

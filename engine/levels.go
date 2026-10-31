@@ -15,9 +15,10 @@ import (
 	"strings"
 	"time"
 
-	"framefairy/engine/timed"
-
 	"github.com/spf13/afero"
+
+	"framefairy/engine/num"
+	"framefairy/engine/timed"
 )
 
 // ---------------------------------------------------------------------------
@@ -94,7 +95,7 @@ func (l Levels) Seconds() [][2]float64 { return partSeconds(l.Parts) }
 func partSeconds(parts [][2]int) [][2]float64 {
 	out := make([][2]float64, len(parts))
 	for i, p := range parts {
-		out[i] = [2]float64{roundTo(float64(p[0])*timed.FrameSeconds, 2), roundTo(float64(p[1])*timed.FrameSeconds, 2)}
+		out[i] = [2]float64{num.RoundTo(float64(p[0])*timed.FrameSeconds, 2), num.RoundTo(float64(p[1])*timed.FrameSeconds, 2)}
 	}
 	return out
 }

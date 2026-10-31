@@ -8,6 +8,9 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+
+	"framefairy/engine/runes"
+	"framefairy/engine/runlog"
 )
 
 // The language models somebody can install, and installing one.
@@ -364,7 +367,7 @@ func MachineMemory() int64 {
 	case "darwin":
 		res := run(context.Background(), "", "sysctl", "-n", "hw.memsize")
 		if res.Code == 0 {
-			if n, err := strconv.ParseInt(strip(res.Stdout), 10, 64); err == nil {
+			if n, err := strconv.ParseInt(runes.Trim(res.Stdout), 10, 64); err == nil {
 				return n
 			}
 		}
@@ -412,7 +415,7 @@ func meminfo(path, field string) int64 {
 // machine that loses power or a person who presses cancel is left with no
 // model rather than half of one. Half a model is worse than none, because
 // it looks installed.
-func InstallLanguageModel(ctx context.Context, log *Log, m LanguageModel, dir string) error {
+func InstallLanguageModel(ctx context.Context, log *runlog.Log, m LanguageModel, dir string) error {
 	if dir == "" {
 		dir = ModelsDir()
 	}

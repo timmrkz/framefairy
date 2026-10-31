@@ -14,6 +14,9 @@ import (
 	"testing"
 
 	"github.com/spf13/afero"
+
+	"framefairy/engine/num"
+	"framefairy/engine/runlog"
 )
 
 // A clip plan is written by a model, read back by both front ends and edited
@@ -157,7 +160,7 @@ func FuzzParseTime(f *testing.F) {
 		if err != nil {
 			return
 		}
-		if !isFinite(seconds) || seconds < 0 {
+		if !num.IsFinite(seconds) || seconds < 0 {
 			t.Fatalf("ParseTime(%q) = %v", text, seconds)
 		}
 	})
@@ -302,7 +305,7 @@ func FuzzLoadClips(f *testing.F) {
 				t.Fatalf("%s is taken for the short of %s", short, clip.Basename())
 			}
 			for _, seg := range clip.Segments {
-				if !isFinite(seg.Start) || !isFinite(seg.End) || seg.Start < 0 || seg.End <= seg.Start {
+				if !num.IsFinite(seg.Start) || !num.IsFinite(seg.End) || seg.Start < 0 || seg.End <= seg.Start {
 					t.Fatalf("segment %v-%v", seg.Start, seg.End)
 				}
 			}
@@ -434,7 +437,7 @@ func TestASearchThatCouldFindNothingIsRefused(t *testing.T) {
 		{"no clips at all", Options{Min: 20, Max: 30, Count: -1}, "at least one clip"},
 	} {
 		var said bytes.Buffer
-		e := NewEngine(NewLog(&said, false, false), disk)
+		e := NewEngine(runlog.New(&said, false, false), disk)
 		c.opts.Source = source
 		c.opts.Planner = "local"
 		if code := e.Run(context.Background(), c.opts); code == 0 {

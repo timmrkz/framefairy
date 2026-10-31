@@ -135,8 +135,9 @@ type Dictation struct {
 	// says so before the person has talked for minutes. It goes on
 	// recording, since the prompt that allows it may still be open.
 	Unheard string `json:"unheard,omitempty"`
-	// Asked is how many of the window's SettleListening calls are in
-	// Said, so it can tell an answer from before its last one.
+	// Asked is how many of the window's SettleListening and
+	// BreakListening calls are in Said, so it can tell an answer from
+	// before its last one.
 	Asked int `json:"asked"`
 }
 
@@ -176,7 +177,9 @@ type recording struct {
 	full atomic.Bool
 	// voiced says whether the microphone was ever as loud as a voice,
 	// listenVoice. Until it was, nobody spoke, and nothing is written down.
-	voiced atomic.Bool
+	// spokeTo is how much had been recorded when it last was, behind mu.
+	voiced  atomic.Bool
+	spokeTo int
 	// over is closed once the recording is written down or dropped.
 	over chan struct{}
 	// ended is closed when the person stops, kept says whether what they
@@ -188,10 +191,14 @@ type recording struct {
 }
 
 // settle is the window's ask to settle the words it shows as being heard,
-// text, as the piece after the first pieces it has.
+// text, as the piece after the first pieces it has. Typing at its end
+// asks for a cut instead, see BreakListening: cut says so, and at is how much had
+// been recorded when it came.
 type settle struct {
 	pieces int
 	text   string
+	cut    bool
+	at     int
 }
 
 type writtenDown struct {
@@ -216,8 +223,25 @@ func (r *recording) heard(samples []float32) {
 		r.peak = max(r.peak, db)
 		if db >= listenVoice {
 			r.voiced.Store(true)
+			r.spokeTo = len(r.samples)
 		}
 	}
+}
+
+// spoke says whether the microphone was as loud as a voice anywhere in
+// samples, a tenth of a second at a time, the way heard measures it.
+func spoke(samples []float32) bool {
+	for at := 0; at < len(samples); at += engine.SampleRate / 10 {
+		part := samples[at:min(at+engine.SampleRate/10, len(samples))]
+		power := 0.0
+		for _, s := range part {
+			power += float64(s) * float64(s)
+		}
+		if 10*math.Log10(power/float64(len(part))+1e-20) >= listenVoice {
+			return true
+		}
+	}
+	return false
 }
 
 // listenVoice is how loud the microphone has to be, in dB, for somebody to
@@ -243,6 +267,14 @@ func (r *recording) line(level zerolog.Level) *zerolog.Event {
 
 // hush stops the microphone, the first time it is asked.
 func (r *recording) hush() { r.hushed.Do(r.mic.stop) }
+
+// spoken is how much had been recorded when the microphone was last as
+// loud as a voice.
+func (r *recording) spoken() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.spokeTo
+}
 
 func (r *recording) recorded() []float32 {
 	r.mu.Lock()
@@ -368,7 +400,12 @@ func (l *listening) write(r *recording, dir string, every, quiet time.Duration) 
 	}
 	defer rec.Close()
 	var said []string
+	// Where in the recording each piece of said ends, so a cut knows
+	// where the pieces the window has end.
+	var ends []int
 	settled, passed, hearing, unheard, asked := 0, 0, "", "", 0
+	// How much had been said at the last pass of the speech model.
+	spokenAt := 0
 	worded := time.Now()
 	// The last few things told as being heard, and how far into the
 	// recording each was heard, so words the window settles are settled
@@ -388,14 +425,32 @@ func (l *listening) write(r *recording, dir string, every, quiet time.Duration) 
 		r.settles = nil
 		r.mu.Unlock()
 		for _, ask := range asks {
-			end := passed
-			for _, t := range slices.Backward(told) {
-				if t.text == ask.text {
-					end = t.end
-					break
+			n := min(ask.pieces, len(said))
+			text, end := ask.text, passed
+			if ask.cut {
+				// Everything said before the typing, written down now,
+				// however far behind the voice the passes were.
+				from := 0
+				if n > 0 {
+					from = ends[n-1]
+				}
+				// A stretch nobody spoke in, two new lines in a row, needs no
+				// pass of the speech model, which on a slow machine would
+				// hold up the answer to every one after it.
+				samples := r.recorded()
+				end, text = max(ask.at, from), ""
+				if spoke(samples[from:end]) {
+					text, _ = heardAround(rec, samples, from, end)
+				}
+			} else {
+				for _, t := range slices.Backward(told) {
+					if t.text == ask.text {
+						end = t.end
+						break
+					}
 				}
 			}
-			said = append(said[:min(ask.pieces, len(said))], ask.text)
+			said, ends = append(said[:n], text), append(ends[:n], end)
 			settled, hearing, told = end, "", nil
 			asked++
 		}
@@ -455,30 +510,34 @@ func (l *listening) write(r *recording, dir string, every, quiet time.Duration) 
 			return
 		}
 		samples := r.recorded()
-		// Nothing new since the last pass, or too little yet to be a word.
-		if len(samples)-passed < listenLeast/2 || len(samples)-settled < listenLeast {
-			continue
-		}
-		passed = len(samples)
-		// The speech model is not asked until somebody speaks.
-		cut, before, now := 0, "", ""
-		if r.voiced.Load() {
-			cut = engine.Settled(samples[settled:])
-			began := time.Now()
-			before, now = heardAround(rec, samples, settled, settled+cut)
-			r.paced(time.Since(began), len(samples)-max(settled-listenAround, 0), every)
-		}
-		changed := false
-		if cut > 0 {
-			if before != "" {
-				said = append(said, before)
-				changed = true
-			}
-			settled += cut
-		}
 		deaf := ""
 		if len(samples) >= listenUnheard && silent(samples) {
 			deaf = heardNothing()
+		}
+		// The speech model hears what was said and a pause after it, never
+		// the silence beyond: it heard words there, and changed the words
+		// before them, while Tim said nothing (29 October). It is asked
+		// only when something new was said, and once more when what was
+		// said is followed by a whole pause, which settles it. So while
+		// nobody speaks, nothing changes.
+		spoken := r.spoken()
+		end := min(len(samples), spoken+engine.SettleSamples)
+		paused := end == spoken+engine.SettleSamples && passed < end
+		changed, now := false, hearing
+		if r.voiced.Load() && end-settled >= listenLeast && (spoken-spokenAt >= listenLeast/2 || paused) {
+			passed, spokenAt = end, spoken
+			cut := engine.Settled(samples[settled:end])
+			began := time.Now()
+			var before string
+			before, now = heardAround(rec, samples[:end], settled, settled+cut)
+			r.paced(time.Since(began), end-max(settled-listenAround, 0), every)
+			if cut > 0 {
+				if before != "" {
+					said, ends = append(said, before), append(ends, settled+cut)
+					changed = true
+				}
+				settled += cut
+			}
 		}
 		if changed || now != hearing || deaf != unheard {
 			if changed || now != "" {
@@ -615,6 +674,9 @@ func (l *listening) finish(r *recording, rec engine.Recognizer, said []string, s
 		return writtenDown{}
 	}
 	hearing := time.Now()
+	// What was said and a pause after it, not the silence beyond, see
+	// write.
+	samples = samples[:min(len(samples), r.spoken()+engine.SettleSamples)]
 	if _, rest := heardAround(rec, samples, settled, settled); rest != "" {
 		said = append(said, rest)
 	}
@@ -672,7 +734,28 @@ func (f *FrameFairy) SettleListening(recording, pieces int, text string) {
 	r := l.now
 	if r != nil && r.id == recording && text != "" {
 		r.mu.Lock()
-		r.settles = append(r.settles, settle{pieces, strings.TrimSpace(text)})
+		r.settles = append(r.settles, settle{pieces: pieces, text: strings.TrimSpace(text)})
+		r.mu.Unlock()
+	}
+	l.mu.Unlock()
+}
+
+// BreakListening cuts the recording where it is when the person types at
+// the end of what they said, a new line, a letter or a paste, after the
+// first pieces the window has. Everything recorded before the cut is the
+// next piece, however much of it the speech model has written down by
+// then, and the window puts it in front of what was typed. Tim said a lot
+// quickly and pressed Shift+Enter, and the words the speech model wrote
+// down after that went below the new line, though he said them before
+// it, issues #573 and #584. A recording that is no longer in hand has
+// nothing to cut.
+func (f *FrameFairy) BreakListening(recording, pieces int) {
+	l := &f.listening
+	l.mu.Lock()
+	r := l.now
+	if r != nil && r.id == recording {
+		r.mu.Lock()
+		r.settles = append(r.settles, settle{pieces: pieces, cut: true, at: len(r.samples)})
 		r.mu.Unlock()
 	}
 	l.mu.Unlock()

@@ -14,10 +14,11 @@ import (
 	"testing"
 	"time"
 
-	"framefairy/engine/timed"
-
 	"github.com/spf13/afero"
 
+	"framefairy/engine/num"
+	"framefairy/engine/runlog"
+	"framefairy/engine/timed"
 	"framefairy/internal/ffmpegtest"
 )
 
@@ -44,7 +45,7 @@ func TestTranscriptionResumes(t *testing.T) {
 
 	var calls int32
 	heard := 0.0
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	e.checkpointEvery = time.Nanosecond
 	e.OpenRecognizer = func(string) (Recognizer, error) {
 		return countingRecognizer{fakeRecognizer{&calls}, &heard}, nil
@@ -78,7 +79,7 @@ func TestTranscriptionResumes(t *testing.T) {
 			early = append(early, w)
 		}
 	}
-	file.Parts, file.Words = [][2]PyFloat{{0, PyFloat(cut)}}, storedWords(early)
+	file.Parts, file.Words = [][2]num.Float{{0, num.Float(cut)}}, storedWords(early)
 	if err := writeTranscript(disk, path, file, frames); err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +143,7 @@ func storedTranscript(t *testing.T, words []timed.Cue, frames []float32, to floa
 		end = to + 10
 	}
 	file := transcriptFile{Version: transcriptVersion, Source: stamp, Model: "modell",
-		Mean: PyFloat(-30), Parts: [][2]PyFloat{{0, PyFloat(to)}}, End: PyFloat(end),
+		Mean: num.Float(-30), Parts: [][2]num.Float{{0, num.Float(to)}}, End: num.Float(end),
 		Words: storedWords(words)}
 	if err := writeTranscript(fsys, path, file, frames); err != nil {
 		t.Fatal(err)
@@ -325,7 +326,7 @@ func FuzzReadTranscriptFile(f *testing.F) {
 			t.Fatalf("%d frames out of %d bytes", len(framesRead), len(raw))
 		}
 		for i, w := range words {
-			if !isFinite(w.Start) || !isFinite(w.End) {
+			if !num.IsFinite(w.Start) || !num.IsFinite(w.End) {
 				t.Fatalf("word %d is timed %v-%v", i, w.Start, w.End)
 			}
 		}
@@ -370,7 +371,7 @@ func TestAPartOfAudioLinesUpWithTheWholeEpisode(t *testing.T) {
 	source := beatEpisode(t, "12")
 	var calls int32
 	rec := fakeRecognizer{&calls}
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 
 	whole, err := e.Transcribe(context.Background(), source, timed.Window{Start: 0, End: 12}, rec, nil)
 	if err != nil {
@@ -439,7 +440,7 @@ func TestATranscriptionSaysHowFarItHasComeWhileItRuns(t *testing.T) {
 	model := t.TempDir()
 	var calls int32
 	var seen []float64
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	e.checkpointEvery = time.Nanosecond
 	e.OpenRecognizer = func(string) (Recognizer, error) {
 		return watchingRecognizer{fakeRecognizer{&calls}, func() {
@@ -480,9 +481,9 @@ func TestEveryChunkSaysHowFarTheAudioHasBeenHeard(t *testing.T) {
 
 	var mu sync.Mutex
 	var reached []float64
-	log := NewLog(&bytes.Buffer{}, false, false)
-	log.SetSink(func(ev Event) {
-		if ev.Kind != EventProgress || ev.Covered <= 0 {
+	log := runlog.New(&bytes.Buffer{}, false, false)
+	log.SetSink(func(ev runlog.Event) {
+		if ev.Kind != runlog.EventProgress || ev.Covered <= 0 {
 			return
 		}
 		mu.Lock()
@@ -531,7 +532,7 @@ func TestSaveHeardDecidesWhenATranscriptionSaves(t *testing.T) {
 	// How far the saved transcript reached as each piece was heard.
 	var seen []float64
 	var asked atomic.Int32
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	// The clock alone would save after every piece.
 	e.checkpointEvery = time.Nanosecond
 	e.OpenRecognizer = func(string) (Recognizer, error) {
@@ -584,9 +585,9 @@ func TestHearingAWindowHeardInPartFillsFromZero(t *testing.T) {
 	type moment struct{ fraction, covered float64 }
 	var said []moment
 	listening := false
-	log := NewLog(&bytes.Buffer{}, false, false)
-	log.SetSink(func(ev Event) {
-		if ev.Kind != EventProgress || ev.Covered <= 0 {
+	log := runlog.New(&bytes.Buffer{}, false, false)
+	log.SetSink(func(ev runlog.Event) {
+		if ev.Kind != runlog.EventProgress || ev.Covered <= 0 {
 			return
 		}
 		mu.Lock()
@@ -662,9 +663,9 @@ func TestAHearingThatLosesItsTurnCountsOnFromWhereItWas(t *testing.T) {
 	var said []moment
 	turns := 0
 	var takeBack context.CancelFunc
-	log := NewLog(&bytes.Buffer{}, false, false)
-	log.SetSink(func(ev Event) {
-		if ev.Kind != EventProgress || ev.Covered <= 0 {
+	log := runlog.New(&bytes.Buffer{}, false, false)
+	log.SetSink(func(ev runlog.Event) {
+		if ev.Kind != runlog.EventProgress || ev.Covered <= 0 {
 			return
 		}
 		mu.Lock()
@@ -746,9 +747,9 @@ func stoppedKeepsWhatItHeard(t *testing.T, rec Recognizer) {
 	defer cancel()
 	var mu sync.Mutex
 	heard, stoppedAt := 0.0, 0.0
-	log := NewLog(&bytes.Buffer{}, false, false)
-	log.SetSink(func(ev Event) {
-		if ev.Kind != EventProgress || ev.Covered <= 0 {
+	log := runlog.New(&bytes.Buffer{}, false, false)
+	log.SetSink(func(ev runlog.Event) {
+		if ev.Kind != runlog.EventProgress || ev.Covered <= 0 {
 			return
 		}
 		mu.Lock()
@@ -795,7 +796,7 @@ func TestCarryingOnFromFilesOutOfStep(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "70")
 	var calls int32
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	e.checkpointEvery = time.Nanosecond
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&calls}, nil }
 	base := DefaultOptions()
@@ -821,7 +822,7 @@ func TestCarryingOnFromFilesOutOfStep(t *testing.T) {
 			early = append(early, w)
 		}
 	}
-	file.Parts, file.Words = [][2]PyFloat{{0, 40}}, storedWords(early)
+	file.Parts, file.Words = [][2]num.Float{{0, 40}}, storedWords(early)
 	if err := writeTranscript(disk, path, file, frames[:2000]); err != nil {
 		t.Fatal(err)
 	}
@@ -854,7 +855,7 @@ func TestADamagedTranscriptIsStartedAgain(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "40")
 	var calls int32
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&calls}, nil }
 	base := DefaultOptions()
 	base.ASRModel = t.TempDir()
@@ -896,7 +897,7 @@ func TestTheTranscriptIsReadWhileItIsWritten(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "70")
 	var calls int32
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	e.checkpointEvery = time.Nanosecond
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&calls}, nil }
 	base := DefaultOptions()
@@ -1009,7 +1010,7 @@ func TestPartsMeetWithEveryWordOnce(t *testing.T) {
 	t.Parallel()
 	source := beatEpisode(t, "12")
 	heard := 0.0
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return beatRecognizer{&heard}, nil }
 	base := DefaultOptions()
 	base.ASRModel = t.TempDir()
@@ -1085,7 +1086,7 @@ func TestTwoHearingsOfOnePartAtOnce(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			heard := 0.0
-			e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+			e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 			e.OpenRecognizer = func(string) (Recognizer, error) { return beatRecognizer{&heard}, nil }
 			errs[i] = NewProject(e, source, base).Hear(context.Background(), span)
 		}()
@@ -1141,15 +1142,15 @@ func TestAFileIsReplacedWholeOrNotAtAll(t *testing.T) {
 func TestATranscriptIsDoneWhenNothingIsLeftToHear(t *testing.T) {
 	cases := []struct {
 		name  string
-		parts [][2]PyFloat
+		parts [][2]num.Float
 		done  bool
 	}{
-		{"one part to the end", [][2]PyFloat{{0, 600}}, true},
-		{"a gap too short to hold a word", [][2]PyFloat{{0, 100}, {100.05, 600}}, true},
-		{"a gap with room for a word", [][2]PyFloat{{0, 100}, {100.5, 600}}, false},
-		{"short of the end by too little for a word", [][2]PyFloat{{0, 599.95}}, true},
-		{"short of the end", [][2]PyFloat{{0, 590}}, false},
-		{"from a little after the start", [][2]PyFloat{{0.05, 600}}, true},
+		{"one part to the end", [][2]num.Float{{0, 600}}, true},
+		{"a gap too short to hold a word", [][2]num.Float{{0, 100}, {100.05, 600}}, true},
+		{"a gap with room for a word", [][2]num.Float{{0, 100}, {100.5, 600}}, false},
+		{"short of the end by too little for a word", [][2]num.Float{{0, 599.95}}, true},
+		{"short of the end", [][2]num.Float{{0, 590}}, false},
+		{"from a little after the start", [][2]num.Float{{0.05, 600}}, true},
 		{"nothing heard", nil, false},
 	}
 	for _, c := range cases {

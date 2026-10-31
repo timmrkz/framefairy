@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/spf13/afero"
+
+	"framefairy/engine/runlog"
 )
 
 // ---------------------------------------------------------------------------
@@ -272,11 +274,11 @@ func rounds(clips, framers int) int {
 // time left to say by the clock, see partLeft.
 func searchProgress(now searchNow, past searchSpeed, known bool) (float64, float64) {
 	if !known || now.Count <= 0 || past.Read <= 0 {
-		return Unknown, Unknown
+		return runlog.Unknown, runlog.Unknown
 	}
 	at := partIndex(now.Part)
 	if at < 0 {
-		return Unknown, Unknown
+		return runlog.Unknown, runlog.Unknown
 	}
 	// A local model with a budget thinks to it: every side of Tim's
 	// comparisons of 3 October did. The budget follows the window, see
@@ -337,7 +339,7 @@ func searchProgress(now searchNow, past searchSpeed, known bool) (float64, float
 		total += t
 	}
 	if total <= 0 {
-		return Unknown, Unknown
+		return runlog.Unknown, runlog.Unknown
 	}
 	part := took[at]
 	// counted is the share of the part the work counts itself, where it
@@ -408,7 +410,7 @@ func searchProgress(now searchNow, past searchSpeed, known bool) (float64, float
 	fraction := min(done/total, 0.99)
 	left := partLeft(now.InPart, part, share, counted)
 	if left < 0 {
-		return fraction, Unknown
+		return fraction, runlog.Unknown
 	}
 	return fraction, left + after
 }
@@ -449,7 +451,7 @@ func partLeft(inPart, part, share, counted float64) float64 {
 	if counted > 0 {
 		return inPart * (1 - counted) / counted
 	}
-	return Unknown
+	return runlog.Unknown
 }
 
 // searchLabel is what the search is doing, in the words the app shows. It
@@ -475,7 +477,7 @@ func searchLabel(now searchNow) string {
 // twice a second, which is also what moves the share on between the
 // moments anything happens.
 type searchClock struct {
-	log *Log
+	log *runlog.Log
 	// records is where the timings it measures against are kept, and
 	// where it keeps what it measured.
 	records *Records
@@ -507,7 +509,7 @@ type searchClock struct {
 // newSearchClock starts watching a search of chars characters of
 // transcript for count clips. budget is the most a local model may think,
 // negative for no limit.
-func newSearchClock(log *Log, records *Records, model string, local bool, chars, count, budget int) *searchClock {
+func newSearchClock(log *runlog.Log, records *Records, model string, local bool, chars, count, budget int) *searchClock {
 	past, known := records.pastSpeed(model, local)
 	c := &searchClock{log: log, records: records, model: model, past: past, known: known,
 		took: map[string]float64{}, stopped: make(chan struct{})}
@@ -570,7 +572,7 @@ func (c *searchClock) report() {
 // left that goes up only when it stays up.
 func (c *searchClock) measure(now searchNow) (float64, float64) {
 	fraction, remaining := searchProgress(now, c.past, c.known)
-	if fraction == Unknown {
+	if fraction == runlog.Unknown {
 		return fraction, remaining
 	}
 	c.mu.Lock()

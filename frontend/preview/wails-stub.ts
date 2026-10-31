@@ -970,6 +970,7 @@ const Answers = {
         return Promise.resolve(null);
       // The script goes on as it was, but says it took the ask in.
       case "SettleListening":
+      case "BreakListening":
         if (dict) dict.asked++;
         return Promise.resolve(null);
       case "Licences":

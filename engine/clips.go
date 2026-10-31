@@ -11,6 +11,9 @@ import (
 	"strings"
 
 	"github.com/spf13/afero"
+
+	"framefairy/engine/num"
+	"framefairy/engine/runes"
 )
 
 // Segment is one continuous part of the source that ends up in a clip.
@@ -101,7 +104,7 @@ func (c Clip) Duration() float64 {
 	for i, s := range c.Segments {
 		lengths[i] = s.Duration()
 	}
-	return pysum(lengths)
+	return num.Sum(lengths)
 }
 
 // Basename is the name of the clip's files in the episode's work folder,
@@ -182,7 +185,7 @@ func SafeChildIn(fsys afero.Fs, base, name string) (string, error) {
 	rel, err := filepath.Rel(root, joined)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) ||
 		filepath.IsAbs(rel) {
-		return "", renderErr("refusing to write outside %s: %s", base, pyRepr(name))
+		return "", renderErr("refusing to write outside %s: %s", base, runes.Quote(name))
 	}
 	return joined, nil
 }
@@ -190,35 +193,35 @@ func SafeChildIn(fsys afero.Fs, base, name string) (string, error) {
 // ParseTime accepts seconds as a number, or a timecode string like
 // 00:14:23.500.
 func ParseTime(value any) (float64, error) {
-	bad := func() error { return renderErr("invalid time value: %s", pyReprAny(value)) }
+	bad := func() error { return renderErr("invalid time value: %s", quoteValue(value)) }
 	var seconds float64
 	switch v := value.(type) {
 	case bool, nil:
 		return 0, bad()
 	case float64, int, json.Number:
-		f, ok := toFloat(v)
+		f, ok := num.AsFloat(v)
 		if !ok {
 			return 0, bad()
 		}
 		seconds = f
 	default:
-		text := strip(pyStr(value))
+		text := runes.Trim(num.FormatValue(value))
 		if !strings.Contains(text, ":") {
-			f, ok := parsePyFloat(text)
+			f, ok := num.Parse(text)
 			if !ok {
-				return 0, renderErr("not a time: %s", pyRepr(text))
+				return 0, renderErr("not a time: %s", runes.Quote(text))
 			}
 			seconds = f
 		} else {
 			parts := strings.Split(strings.ReplaceAll(text, ",", "."), ":")
 			if len(parts) > 3 {
-				return 0, renderErr("invalid timecode: %s", pyReprAny(value))
+				return 0, renderErr("invalid timecode: %s", quoteValue(value))
 			}
 			numbers := make([]float64, 0, 3)
 			for _, p := range parts {
-				f, ok := parsePyFloat(p)
+				f, ok := num.Parse(p)
 				if !ok {
-					return 0, renderErr("invalid timecode: %s", pyReprAny(value))
+					return 0, renderErr("invalid timecode: %s", quoteValue(value))
 				}
 				numbers = append(numbers, f)
 			}
@@ -230,17 +233,18 @@ func ParseTime(value any) (float64, error) {
 	}
 	// NaN and infinity survive parsing and then compare false against
 	// everything, which would sail straight through the ordering checks.
-	if !isFinite(seconds) || seconds < 0 {
+	if !num.IsFinite(seconds) || seconds < 0 {
 		return 0, bad()
 	}
 	return seconds, nil
 }
 
-func pyReprAny(v any) string {
+// quoteValue writes a value of a plan for an error message, text in quotes.
+func quoteValue(v any) string {
 	if s, ok := v.(string); ok {
-		return pyRepr(s)
+		return runes.Quote(s)
 	}
-	return pyStr(v)
+	return num.FormatValue(v)
 }
 
 // MaxSegments keeps the filter graph, which travels as a single command line
@@ -349,9 +353,9 @@ func LoadClips(fsys afero.Fs, path string) (Plan, []Clip, error) {
 				text, isText := value.(string)
 				lowered := strings.ToLower(text)
 				if !(isText && (lowered == "center" || lowered == "centre" || lowered == "auto")) {
-					n, ok := toInt(value)
+					n, ok := num.AsInt(value)
 					if !ok {
-						return Plan{}, nil, fmt.Errorf("invalid crop_x: %s", pyReprAny(value))
+						return Plan{}, nil, fmt.Errorf("invalid crop_x: %s", quoteValue(value))
 					}
 					if !(-1_000_000 < n && n < 1_000_000) {
 						return Plan{}, nil, renderErr("crop_x out of range: %d", n)
@@ -380,7 +384,7 @@ func LoadClips(fsys afero.Fs, path string) (Plan, []Clip, error) {
 			// and fail somewhere far from the cause.
 			if end <= start {
 				return Plan{}, nil, renderErr("clip %d: a segment ends at %s and starts at %s",
-					index, fixed(end, 3), fixed(start, 3))
+					index, num.Fixed(end, 3), num.Fixed(start, 3))
 			}
 			// A moment in an episode, not an arbitrary number. Anything
 			// outside this is a broken plan, and it would reach ffmpeg as a
@@ -398,10 +402,10 @@ func LoadClips(fsys afero.Fs, path string) (Plan, []Clip, error) {
 			if rotate != 0 {
 				cropX, moved = nil, false
 				if value, present := seg[keyCropXTurned]; present && value != nil {
-					n, ok := toInt(value)
+					n, ok := num.AsInt(value)
 					if !ok || !(-1_000_000 < n && n < 1_000_000) {
 						return Plan{}, nil, renderErr("clip %d: a rotated piece has its crop at %s",
-							index, Scrub(pyReprAny(value), 40))
+							index, runes.Scrub(quoteValue(value), 40))
 					}
 					cropX, moved = &n, true
 				}
@@ -424,20 +428,20 @@ func LoadClips(fsys afero.Fs, path string) (Plan, []Clip, error) {
 		idValue, present := entry[keyID]
 		idText := fallback
 		if present {
-			idText = pyStr(idValue)
+			idText = num.FormatValue(idValue)
 		}
 		slugText := ""
 		if value, present := entry[keySlug]; present {
-			slugText = pyStr(value)
+			slugText = num.FormatValue(value)
 		}
 		titleText := ""
 		if value, present := entry[keyTitle]; present {
-			titleText = pyStr(value)
+			titleText = num.FormatValue(value)
 		}
 		rejected, _ := entry[keyRejected].(bool)
 		var captionY *float64
 		if value, present := entry[keyCaptionY]; present {
-			if y, ok := toFloat(value); ok && isFinite(y) {
+			if y, ok := num.AsFloat(value); ok && num.IsFinite(y) {
 				snapped := SnapCaptionY(y)
 				captionY = &snapped
 			}
@@ -453,7 +457,7 @@ func LoadClips(fsys afero.Fs, path string) (Plan, []Clip, error) {
 			Found:        readFound(entry[keyFound]),
 			ID:           SanitiseName(idText, fallback),
 			Slug:         SanitiseName(slugText, ""),
-			Title:        Scrub(titleText, 200),
+			Title:        runes.Scrub(titleText, 200),
 			Segments:     segments,
 			Rotations:    spans,
 		})
@@ -466,7 +470,7 @@ func LoadClips(fsys afero.Fs, path string) (Plan, []Clip, error) {
 	for i, clip := range clips {
 		if first, dup := named[clip.ID]; dup {
 			return Plan{}, nil, renderErr("clips %d and %d are both called %s, "+
-				"and an edit names the clip it belongs to", first, i+1, pyRepr(clip.ID))
+				"and an edit names the clip it belongs to", first, i+1, runes.Quote(clip.ID))
 		}
 		named[clip.ID] = i + 1
 	}
@@ -478,7 +482,7 @@ func LoadClips(fsys afero.Fs, path string) (Plan, []Clip, error) {
 	for i, clip := range clips {
 		if first, dup := seen[clip.Basename()]; dup {
 			return Plan{}, nil, renderErr("clips %d and %d both resolve to the name %s, "+
-				"which would overwrite one output", first, i+1, pyRepr(clip.Basename()))
+				"which would overwrite one output", first, i+1, runes.Quote(clip.Basename()))
 		}
 		seen[clip.Basename()] = i + 1
 	}
@@ -509,11 +513,11 @@ func (s SourceInfo) Rotated(degrees int) SourceInfo {
 // ratio, which is always the case cutting 9:16 out of 16:9.
 func CropWindow(source SourceInfo, outW, outH int) (int, int) {
 	ratio := float64(outW) / float64(outH)
-	cropW := pyround(float64(source.Height) * ratio)
+	cropW := num.Round(float64(source.Height) * ratio)
 	cropH := source.Height
 	if cropW > source.Width {
 		cropW = source.Width
-		cropH = pyround(float64(source.Width) / ratio)
+		cropH = num.Round(float64(source.Width) / ratio)
 	}
 	// yuv420p needs even dimensions.
 	cropW -= cropW % 2
@@ -556,8 +560,8 @@ func readCaptionTimes(raw any) map[string]CaptionTime {
 		}
 		var t CaptionTime
 		for name, into := range map[string]**float64{"start": &t.Start, "end": &t.End} {
-			v, ok := toFloat(edges[name])
-			if ok && isFinite(v) && v >= 0 && v <= MaxEpisodeSeconds {
+			v, ok := num.AsFloat(edges[name])
+			if ok && num.IsFinite(v) && v >= 0 && v <= MaxEpisodeSeconds {
 				*into = &v
 			}
 		}
@@ -601,13 +605,13 @@ func readThumbnails(raw any, segments []Segment) []float64 {
 		if i >= 4*MaxThumbnails {
 			break
 		}
-		at, ok := toFloat(item)
-		if !ok || !isFinite(at) {
+		at, ok := num.AsFloat(item)
+		if !ok || !num.IsFinite(at) {
 			continue
 		}
 		// Kept to the millisecond, and judged as kept: 0.9996 in a piece
 		// that ends at 1 is 1, which is past it.
-		at = roundTo(at, 3)
+		at = num.RoundTo(at, 3)
 		if !insidePieces(segments, at) {
 			continue
 		}
@@ -632,12 +636,12 @@ func readFound(raw any) *[2]float64 {
 	if !ok || len(list) != 2 {
 		return nil
 	}
-	start, ok1 := toFloat(list[0])
-	end, ok2 := toFloat(list[1])
-	if !ok1 || !ok2 || !isFinite(start) || !isFinite(end) || start < 0 || end <= start {
+	start, ok1 := num.AsFloat(list[0])
+	end, ok2 := num.AsFloat(list[1])
+	if !ok1 || !ok2 || !num.IsFinite(start) || !num.IsFinite(end) || start < 0 || end <= start {
 		return nil
 	}
-	return &[2]float64{roundTo(start, 3), roundTo(end, 3)}
+	return &[2]float64{num.RoundTo(start, 3), num.RoundTo(end, 3)}
 }
 
 // insidePieces says whether a moment of the episode is in the short.

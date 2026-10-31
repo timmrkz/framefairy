@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"framefairy/engine/runlog"
 )
 
 // An episode shorter than a clip at its shortest is the clip, all of it,
@@ -19,7 +21,7 @@ func TestAShortEpisodeIsItsOwnClip(t *testing.T) {
 	server := fakeModel(t, &asked)
 	defer server.Close()
 
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	ownRecords(e)
 	base := DefaultOptions()
@@ -68,7 +70,7 @@ func TestAShortEpisodeGetsItsClipAgainOnceRemoved(t *testing.T) {
 	server := fakeModel(t, &asked)
 	defer server.Close()
 
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	ownRecords(e)
 	base := DefaultOptions()

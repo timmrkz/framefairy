@@ -10,8 +10,9 @@ import (
 	"strings"
 	"testing"
 
+	"framefairy/engine/num"
+	"framefairy/engine/runlog"
 	"framefairy/engine/timed"
-
 	"framefairy/internal/ffmpegtest"
 )
 
@@ -93,7 +94,7 @@ func renderedRowsAt(t *testing.T, rate string, words []timed.Cue, end float64, t
 func bounceEpisode(t *testing.T, rate string, words []timed.Cue, end float64) (e *Engine, source string, info SourceInfo, clip Clip, laid []LaidCaption) {
 	t.Helper()
 	ctx := context.Background()
-	e = NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e = NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	if err := e.Preflight(ctx); err != nil {
 		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}
@@ -217,7 +218,7 @@ func TestThePillLeavesRoomRoundItsWord(t *testing.T) {
 				t.Errorf("%s: no word inside the pill on frame %d", name, k)
 				continue
 			}
-			want := roomAround*float64(pyround(style.Size)) - 1
+			want := roomAround*float64(num.Round(style.Size)) - 1
 			sides := map[string]int{"left of": il - l, "right of": r - ir, "above": it - top, "below": bottom - ib}
 			for side, px := range sides {
 				least = min(least, px)
@@ -412,7 +413,7 @@ func TestThePillAtRestNeverReachesAnotherLine(t *testing.T) {
 		t.Fatalf("the words should make one caption of two lines, the second from Leute, not %+v", laid)
 	}
 	style := ResolveStyle(nil)
-	size := float64(pyround(style.Size))
+	size := float64(num.Round(style.Size))
 	pill := pillColour(t, style)
 
 	// lines are the rows each line of letters stands in, top to bottom. A
@@ -515,7 +516,7 @@ func TestThePillAtRestNeverReachesAnotherLine(t *testing.T) {
 func TestEveryPillOfALineIsOneHeightAndClearOfTheOther(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	if err := e.Preflight(ctx); err != nil {
 		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}
@@ -523,7 +524,7 @@ func TestEveryPillOfALineIsOneHeightAndClearOfTheOther(t *testing.T) {
 		ffmpegtest.Unusable(t, "this ffmpeg cannot draw captions: %v", err)
 	}
 	style := ResolveStyle(nil)
-	size := pyround(style.Size)
+	size := num.Round(style.Size)
 	clear := math.Round(float64(size) * lineClear)
 	for _, second := range []string{"Leute", "Ägypten", ""} {
 		words := []timed.Cue{
