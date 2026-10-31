@@ -87,8 +87,8 @@ type Transcript struct {
 	// Silence threshold in dB. Anything quieter counts as a pause.
 	Floor float64
 	// Mean level in dB the floor is made from: over the whole window
-	// heard, and for the episode's transcript over the start of the first
-	// part it saved, see floorSpan.
+	// heard, and for the episode's transcript over the first minute of the
+	// first part it saved, see floorSpan.
 	Mean float64
 	// Heard are the parts of the episode the words are for, in seconds, in
 	// order and apart. The frames outside them read -90. Only the
@@ -394,8 +394,8 @@ func SnapWords(words []timed.Cue, frames []float32, start, floor float64) []time
 // NoiseFloor turns the mean level into a silence threshold. A fixed value
 // treats a lowered voice as silence, and a voice dropping for the serious
 // part of a story is exactly the material worth keeping, so the threshold
-// sits a fixed distance below the episode's own level, as the start of its
-// transcript measured it, see floorSpan.
+// sits a fixed distance below the episode's own level, as the first minute
+// of its transcript measured it, see floorSpan.
 func NoiseFloor(mean float64) float64 {
 	return math.Max(-55.0, math.Min(mean-22, -35.0))
 }
@@ -693,7 +693,6 @@ func (e *Engine) transcribe(ctx context.Context, path string, window timed.Windo
 	}
 	sort.SliceStable(raw, func(i, j int) bool { return raw[i].Start < raw[j].Start })
 	t.hear(raw)
-	e.Log.Detail("mean level %s dB, treating below %s dB as silence",
-		num.Fixed(t.Mean, 1), num.Fixed(t.Floor, 0))
+	e.Log.Detail("the audio heard is %s dB on average", num.Fixed(t.Mean, 1))
 	return t, nil
 }

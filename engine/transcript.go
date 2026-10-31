@@ -50,9 +50,11 @@ type transcriptFile struct {
 	Model   string      `json:"model"`
 	From    num.Float   `json:"from"`
 	To      num.Float   `json:"to"`
-	// Mean is the level the noise floor is made from, measured once over
-	// the start of the first part saved and kept, see floorSpan.
-	Mean num.Float `json:"mean"`
+	// Mean is the level the noise floor is made from, and MeanOver the
+	// stretch it was measured over, from and to, see floorSpan. A file
+	// with no stretch was written before it, and its mean is kept.
+	Mean     num.Float    `json:"mean"`
+	MeanOver [2]num.Float `json:"mean_over,omitzero"`
 	// Partial marks a transcription still in progress, or stopped before
 	// the end. To is then how far it got.
 	Partial bool `json:"partial,omitempty"`
@@ -151,17 +153,27 @@ func writeTranscript(fsys afero.Fs, path string, file transcriptFile, frames []f
 	return fileio.WriteAtomic(fsys, path, body)
 }
 
-// floorSpan is how much of the first part saved of an episode's transcript
-// the level of its noise floor is measured over, in seconds, all of the
-// part when it is shorter. The floor is kept from then on, whatever is
-// heard after it. Measured over all that was heard, as it once was, a part
-// heard later, quieter or louder, moved the floor, and with it where words
-// start and end, the pauses between lines and where lines break, in lines
-// heard and read long before, issue #437. A fixed stretch rather than all
-// the first save holds, so a machine that hears a minute before it first
-// saves, eight times faster than the audio plays, gets the same floor
-// however its saves fall, see checkpointDefault.
+// floorSpan is the stretch an episode's noise floor is measured over, in
+// seconds: the first minute of the first part saved, or as much of it as
+// there is before the audio ends. Until that part reaches a minute, each
+// save measures it again, and from then on it is kept, whatever is heard
+// after it. Measured over all that was heard, as it once was, a part heard
+// later, quieter or louder, moved the floor, and with it where words start
+// and end, the pauses between lines and where lines break, in lines heard
+// and read long before, issue #437. Kept from the first save alone, it
+// came from however much a slow machine had heard after its first eight
+// seconds, or a stop had left, a few seconds of quiet before anyone spoke
+// that then counted the room's hum as sound for the whole video. So a line
+// heard can still change while the first part is shorter than a minute,
+// and never after.
 const floorSpan = 60.0
+
+// floorGrows says whether the stretch the noise floor is measured over is
+// still shorter than floorSpan, and before the end of the audio.
+func (f transcriptFile) floorGrows() bool {
+	from, to := float64(f.MeanOver[0]), float64(f.MeanOver[1])
+	return to > from && to-from < floorSpan-0.005 && to < float64(f.End)-0.005
+}
 
 // meanOfFrames is the mean level over loudness frames, in dB.
 func meanOfFrames(frames []float32) float64 {
@@ -491,6 +503,9 @@ func (e *Engine) loadTranscript(ctx context.Context, source string, window timed
 		return nil, err
 	}
 	if t, ok := sliceTranscript(e.Files, path, stamp, model, window, silenceDB); ok {
+		// The floor the transcript keeps, not the level of what was
+		// just heard, see floorSpan.
+		e.Log.Detail("treating below %s dB as silence", num.Fixed(t.Floor, 0))
 		return t, nil
 	}
 	return nil, renderErr("the finished transcript could not be read back from %s", path)
@@ -580,17 +595,30 @@ func addHeard(fsys afero.Fs, path string, stamp sourceStamp, model string, durat
 		stored[i] = [2]num.Float{num.Float(p[0]), num.Float(p[1])}
 	}
 	end := num.Float(num.RoundTo(duration, 3))
-	// The level the noise floor is made from is fixed by the first part
-	// saved, see floorSpan, and kept from then on.
-	mean := file.Mean
-	if !ok {
-		at := int(math.Round(read / timed.FrameSeconds))
-		from := min(max(int(math.Round(part.Start/timed.FrameSeconds))-at, 0), len(frames))
-		to := min(max(int(math.Round(math.Min(part.End, part.Start+floorSpan)/timed.FrameSeconds))-at, from), len(frames))
-		mean = num.Float(num.RoundTo(meanOfFrames(frames[from:to]), 3))
+	// The level the noise floor is made from, over the first minute of
+	// the first part saved, measured again while that part is shorter, see
+	// floorSpan, and kept from then on.
+	mean, over := file.Mean, file.MeanOver
+	if grows := ok && file.floorGrows(); !ok || grows {
+		from := num.RoundTo(part.Start, 3)
+		if grows {
+			from = float64(over[0])
+		}
+		to := from
+		for _, p := range parts {
+			if p[0] <= from+0.005 && p[1] > to {
+				to = p[1]
+			}
+		}
+		to = math.Min(to, from+floorSpan)
+		// On frames, and inside them, whatever the file said.
+		first := min(max(int(math.Round(from/timed.FrameSeconds)), 0), len(all))
+		last := min(max(int(math.Round(to/timed.FrameSeconds)), first), len(all))
+		mean = num.Float(num.RoundTo(meanOfFrames(all[first:last]), 3))
+		over = [2]num.Float{num.Float(from), num.Float(num.RoundTo(to, 3))}
 	}
 	err := writeTranscript(fsys, path, transcriptFile{Version: transcriptVersion, Source: stamp, Model: model,
-		To: end, Mean: mean, Parts: stored, End: end,
+		To: end, Mean: mean, MeanOver: over, Parts: stored, End: end,
 		Words: storedWords(words)}, all)
 	if err == nil {
 		transcriptGrew(path)

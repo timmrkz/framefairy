@@ -346,21 +346,22 @@ func TestTheTranscriptIsReadAheadOfTheSearch(t *testing.T) {
 	}
 }
 
-// A line read stays as it was read, whatever is heard after it: the
-// loudness a pause is told from is fixed by the first minute heard, so a
-// quieter part heard later moves no word after a pause and no pause the
-// request marks, and the model never reads the window again. Before, it
-// was the mean of all that was heard, and the quiet part below wrote the
-// lines of the loud part out again, issue #437.
+// A line read stays as it was read, whatever is heard after the first
+// minute: the loudness a pause is told from is kept once a minute is
+// heard, see floorSpan, so a quieter part heard later moves no word after
+// a pause and no pause the request marks, and the model never reads the
+// window again. Before, it was the mean of all that was heard, and the
+// quiet part below wrote the lines of the loud minute out again, issue
+// #437.
 func TestALineReadStaysAsItWasWhenAQuieterPartIsHeard(t *testing.T) {
 	fake := &fakeReader{reads: make(chan []int, 16), asks: make(chan fakeAsk, 4)}
 	hostedFake(t, fake)
 	v := videoReadAhead(t, afero.NewMemMapFs(), t.Name())
 	v.speak = func(from, to float64) ([]timed.Cue, []float32) {
 		words, frames := spokenPart(from, to)
-		if from < 20 {
-			// Loud, in a room with a hum, and the word after each pause
-			// stamped before its sound begins.
+		if from < 60 {
+			// Loud, in a room with a hum just under the floor, and the
+			// word after each pause stamped before its sound begins.
 			for i := 1; i < len(words); i++ {
 				if endsSentence(words[i-1].Text) {
 					words[i].Start -= 0.55
@@ -368,7 +369,7 @@ func TestALineReadStaysAsItWasWhenAQuieterPartIsHeard(t *testing.T) {
 			}
 			for i, f := range frames {
 				if f == -80 {
-					frames[i] = -45
+					frames[i] = -46
 				}
 			}
 			return words, frames
@@ -382,19 +383,19 @@ func TestALineReadStaysAsItWasWhenAQuieterPartIsHeard(t *testing.T) {
 		}
 		return words, frames
 	}
-	req := PlanRequest{From: 0, To: 60, Count: 1, Pass: 1}
+	req := PlanRequest{From: 0, To: 120, Count: 1, Pass: 1}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	warmed := v.warm(ctx, req)
 
-	v.hear(0, 20)
+	v.hear(0, 60)
 	first := <-fake.reads
-	v.hear(20, 40)
+	v.hear(60, 90)
 	second := <-fake.reads
 	if same := commonPrefix(first, second); same < len(first) {
 		t.Errorf("the quiet part wrote the lines read before out again from token %d of %d", same, len(first))
 	}
-	v.hear(40, 60)
+	v.hear(90, 120)
 	ahead := <-warmed
 	if ahead.Rewritten != 0 || ahead.Read != ahead.Tokens || ahead.Tokens != len(second) {
 		t.Errorf("the reads ahead are said to be %+v, want none written out again, nothing read twice, "+
