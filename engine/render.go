@@ -737,7 +737,7 @@ func (e *Engine) renderShort(ctx context.Context, clip Clip, sourcePath string,
 			cmd[len(cmd)-1] = outPath
 			quoted := make([]string, len(cmd))
 			for i, c := range cmd {
-				quoted[i] = tool.Quote(c)
+				quoted[i] = tool.ShellQuote(c)
 			}
 			fmt.Println(strings.Join(quoted, " "))
 			return outPath, nil
@@ -788,7 +788,7 @@ func (e *Engine) renderShort(ctx context.Context, clip Clip, sourcePath string,
 	// An exit code of zero is not proof that the clip is right. A filter
 	// graph that quietly drops a segment still exits cleanly, and the result
 	// looks like a finished file until someone plays it.
-	check := e.Tools.Run(ctx, "", e.FFprobe, "-v", "error", "-show_entries",
+	check := e.Runner.Run(ctx, "", e.FFprobe, "-v", "error", "-show_entries",
 		"format=duration", "-of", "csv=p=0", tmp)
 	written, ok := num.Parse(runes.Trim(check.Stdout))
 	if !ok {
@@ -943,7 +943,7 @@ func (e *Engine) WriteThumbnails(ctx context.Context, clip Clip, short string) e
 		// from the episode's once anything was cut out before it.
 		t := frames.thumbnailSeek(ClipTime(clip, at))
 		tmp := path + partial + ".jpg"
-		res := e.Tools.Run(ctx, "", e.FFmpeg, "-hide_banner", "-loglevel", "error", "-y",
+		res := e.Runner.Run(ctx, "", e.FFmpeg, "-hide_banner", "-loglevel", "error", "-y",
 			"-ss", num.Fixed(t, 6), "-i", short, "-frames:v", "1", "-update", "1",
 			"-vf", thumbnailColours, "-q:v", "2", tmp)
 		if ctx.Err() != nil {

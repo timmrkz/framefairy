@@ -184,7 +184,7 @@ func TestAServerThatWillNotStopIsKilledAtOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	e := NewEngine(runlog.New(io.Discard, false, false), disk)
-	e.Tools.Leave = func(time.Duration) <-chan time.Time { return up }
+	e.Runner.Leave = func(time.Duration) <-chan time.Time { return up }
 	_, stop, err := e.startServer(context.Background(), LocalModel{Server: os.Args[0], Model: model}, 4096, "")
 	if err != nil {
 		t.Fatal(err)

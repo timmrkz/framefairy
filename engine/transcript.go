@@ -686,10 +686,10 @@ func joinParts(parts [][2]float64) [][2]float64 {
 func ModelHelp(dir string) string {
 	parent := filepath.Dir(dir)
 	return "  Download it once with:\n" +
-		"    mkdir -p " + tool.Quote(parent) + "\n" +
+		"    mkdir -p " + tool.ShellQuote(parent) + "\n" +
 		"    curl -L -o /tmp/" + ModelName + ".tar.bz2 \\\n" +
 		"      https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/" + ModelName + ".tar.bz2\n" +
-		"    tar -xjf /tmp/" + ModelName + ".tar.bz2 -C " + tool.Quote(parent) + "\n" +
+		"    tar -xjf /tmp/" + ModelName + ".tar.bz2 -C " + tool.ShellQuote(parent) + "\n" +
 		"  or point --asr-model at a folder that has it."
 }
 

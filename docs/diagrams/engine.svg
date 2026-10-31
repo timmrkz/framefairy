@@ -77,8 +77,8 @@
 <text class="c" x="243" y="461">Runner</text>
 <rect class="chip" x="295" y="446" width="36" height="22" rx="6"/>
 <text class="c" x="303" y="461">Run</text>
-<rect class="chip" x="337" y="446" width="47" height="22" rx="6"/>
-<text class="c" x="345" y="461">Quote</text>
+<rect class="chip" x="337" y="446" width="78" height="22" rx="6"/>
+<text class="c" x="345" y="461">ShellQuote</text>
 <rect class="box" x="64" y="502" width="672" height="90" rx="8"/>
 <text class="n" x="76" y="524">numbers, the same on every platform</text>
 <text class="p" x="76" y="542">engine/num/</text>

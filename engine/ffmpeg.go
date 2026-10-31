@@ -74,10 +74,10 @@ type Engine struct {
 	Log     *runlog.Log
 	FFmpeg  string
 	FFprobe string
-	// Tools runs ffmpeg, ffprobe and the other programs, and says how a
+	// Runner runs ffmpeg, ffprobe and the other programs, and says how a
 	// program whose work is called off is stopped. A test sets its own
 	// stop on its own engine.
-	Tools tool.Runner
+	Runner tool.Runner
 
 	// Files is where the files of episodes are read and written, the real
 	// disk in the programs, see files.go.
@@ -218,7 +218,7 @@ func (e *Engine) runFFmpegWatched(ctx context.Context, args []string, label stri
 	}
 	quoted := make([]string, len(kept))
 	for i, a := range kept {
-		quoted[i] = tool.Quote(a)
+		quoted[i] = tool.ShellQuote(a)
 	}
 	e.Log.Detail("%s", "ffmpeg "+strings.Join(quoted, " "))
 
@@ -239,7 +239,7 @@ func (e *Engine) runFFmpegWatched(ctx context.Context, args []string, label stri
 	// is part of.
 	ctx, stop := context.WithCancel(ctx)
 	defer stop()
-	cmd := e.Tools.Command(ctx, e.FFmpeg, full...)
+	cmd := e.Runner.Command(ctx, e.FFmpeg, full...)
 	cmd.Dir = cwd
 	cmd.Stderr = handle
 	var out *tool.CutWriter
@@ -271,7 +271,7 @@ func (e *Engine) runFFmpegWatched(ctx context.Context, args []string, label stri
 loop:
 	for {
 		if gone == nil && ctx.Err() != nil {
-			gone, stopping = e.Tools.Leaving(tool.LeaveAfter), nil
+			gone, stopping = e.Runner.Leaving(tool.LeaveAfter), nil
 		}
 		said := false
 		select {
@@ -410,7 +410,7 @@ func (e *Engine) SubtitleFilter(ctx context.Context) (string, error) {
 		}
 	}
 
-	filters := e.Tools.Run(ctx, "", e.FFmpeg, "-hide_banner", "-filters")
+	filters := e.Runner.Run(ctx, "", e.FFmpeg, "-hide_banner", "-filters")
 	hasASS := false
 	for _, line := range strings.Split(filters.Stdout, "\n") {
 		parts := strings.Fields(line)
@@ -450,7 +450,7 @@ func (e *Engine) SubtitleFilter(ctx context.Context) (string, error) {
 	var failures []string
 	for _, candidate := range candidates {
 		chain := subtitleChain(candidate, name)
-		res := e.Tools.Run(ctx, tmp, e.FFmpeg, "-hide_banner", "-loglevel", "error",
+		res := e.Runner.Run(ctx, tmp, e.FFmpeg, "-hide_banner", "-loglevel", "error",
 			"-nostats", "-y", "-f", "lavfi",
 			"-i", "color=c=black:s=320x180:d=0.1:r=25",
 			"-filter_complex", "[0:v]"+chain+"[v]",
@@ -497,7 +497,7 @@ func (e *Engine) Preflight(ctx context.Context) error {
 	ffmpegKey, keepFFmpeg := keyFor("ffmpeg version", e.FFmpeg, "")
 	first, ran := recall[string](ffmpegKey)
 	if !ran {
-		version := e.Tools.Run(ctx, "", e.FFmpeg, "-version")
+		version := e.Runner.Run(ctx, "", e.FFmpeg, "-version")
 		if version.Code != 0 {
 			e.Log.ClearProgress()
 			return renderErr("%s does not run: %s", e.FFmpeg, runes.Scrub(version.Stderr, 200))
@@ -514,7 +514,7 @@ func (e *Engine) Preflight(ctx context.Context) error {
 
 	ffprobeKey, keepFFprobe := keyFor("ffprobe version", e.FFprobe, "")
 	if _, ran := recall[bool](ffprobeKey); !ran {
-		if e.Tools.Run(ctx, "", e.FFprobe, "-version").Code != 0 {
+		if e.Runner.Run(ctx, "", e.FFprobe, "-version").Code != 0 {
 			e.Log.ClearProgress()
 			return renderErr("%s is missing, which usually means a partial ffmpeg install.",
 				e.FFprobe)
@@ -677,7 +677,7 @@ func (e *Engine) pictureStart(ctx context.Context, path string) float64 {
 // readPictureStart is pictureStart asked of ffprobe, and whether it
 // answered.
 func (e *Engine) readPictureStart(ctx context.Context, path string) (float64, bool) {
-	res := e.Tools.Run(ctx, "", e.FFprobe, "-v", "error", "-select_streams", "v:0",
+	res := e.Runner.Run(ctx, "", e.FFprobe, "-v", "error", "-select_streams", "v:0",
 		"-show_entries", "stream=start_time", "-show_entries", "format=start_time",
 		"-of", "json", path)
 	if res.Code != 0 {
@@ -717,7 +717,7 @@ func (e *Engine) Probe(ctx context.Context, path string) (SourceInfo, error) {
 }
 
 func (e *Engine) probe(ctx context.Context, path string) (SourceInfo, error) {
-	res := e.Tools.Run(ctx, "", e.FFprobe, "-v", "error",
+	res := e.Runner.Run(ctx, "", e.FFprobe, "-v", "error",
 		"-select_streams", "v:0",
 		"-show_entries",
 		"stream=width,height,r_frame_rate,avg_frame_rate,start_time,color_primaries,color_transfer,color_space",
@@ -833,7 +833,7 @@ func (e *Engine) probe(ctx context.Context, path string) (SourceInfo, error) {
 // soundOf is the rate and the channels of a file's first sound, or
 // nought for a file with no sound or one ffprobe cannot read.
 func (e *Engine) soundOf(ctx context.Context, path string) (rate, channels int) {
-	res := e.Tools.Run(ctx, "", e.FFprobe, "-v", "error", "-select_streams", "a:0",
+	res := e.Runner.Run(ctx, "", e.FFprobe, "-v", "error", "-select_streams", "a:0",
 		"-show_entries", "stream=sample_rate,channels", "-of", "json", path)
 	if res.Code != 0 {
 		return 0, 0
@@ -925,7 +925,7 @@ func (e *Engine) unevenIn(ctx context.Context, path string, info SourceInfo, at,
 			from = num.Fixed(info.origin+float64(key)/1e6, 6)
 		}
 	}
-	res := e.Tools.Run(ctx, "", e.FFprobe, "-v", "error", "-select_streams", "v:0",
+	res := e.Runner.Run(ctx, "", e.FFprobe, "-v", "error", "-select_streams", "v:0",
 		"-read_intervals", from+"%"+num.Fixed(info.origin+at+span, 3),
 		"-show_entries", "packet=pts_time,pos,flags", "-of", "csv=p=0", path)
 	if res.Code != 0 {
@@ -1091,7 +1091,7 @@ func (e *Engine) keyBefore(ctx context.Context, path string, s SourceInfo, at in
 		if from > 0 {
 			interval = num.Fixed(s.origin+from, 6) + interval
 		}
-		res := e.Tools.Run(ctx, "", e.FFprobe, "-v", "error", "-select_streams", "v:0",
+		res := e.Runner.Run(ctx, "", e.FFprobe, "-v", "error", "-select_streams", "v:0",
 			"-read_intervals", interval,
 			"-show_entries", "packet=dts_time,pos,flags", "-of", "csv=p=0", path)
 		if res.Code != 0 {
@@ -1148,7 +1148,7 @@ func (e *Engine) lastMoment(ctx context.Context, path string, start float64) flo
 			return end.(float64)
 		}
 	}
-	res := e.Tools.Run(ctx, "", e.FFprobe, "-v", "error",
+	res := e.Runner.Run(ctx, "", e.FFprobe, "-v", "error",
 		"-show_entries", "packet=pts_time,duration_time", "-of", "csv=p=0", path)
 	if res.Code != 0 {
 		return 0

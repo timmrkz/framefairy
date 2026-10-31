@@ -231,7 +231,7 @@ func (e *Engine) VideoEncoder(ctx context.Context) (Encoder, error) {
 	}
 	e.mu.Unlock()
 
-	have := e.Tools.Run(ctx, "", e.FFmpeg, "-hide_banner", "-encoders")
+	have := e.Runner.Run(ctx, "", e.FFmpeg, "-hide_banner", "-encoders")
 	if have.Code != 0 {
 		return Encoder{}, renderErr("%s cannot list its encoders.", e.FFmpeg)
 	}
@@ -274,7 +274,7 @@ func (e *Engine) HDREncoder(ctx context.Context) (Encoder, error) {
 		return chosen, nil
 	}
 	e.mu.Unlock()
-	have := e.Tools.Run(ctx, "", e.FFmpeg, "-hide_banner", "-encoders")
+	have := e.Runner.Run(ctx, "", e.FFmpeg, "-hide_banner", "-encoders")
 	if have.Code != 0 {
 		return Encoder{}, renderErr("%s cannot list its encoders.", e.FFmpeg)
 	}
@@ -386,7 +386,7 @@ func (e *Engine) encoderAfter(ctx context.Context, failed Encoder, light framewi
 	if at < 0 {
 		return Encoder{}, false
 	}
-	have := e.Tools.Run(ctx, "", e.FFmpeg, "-hide_banner", "-encoders")
+	have := e.Runner.Run(ctx, "", e.FFmpeg, "-hide_banner", "-encoders")
 	if have.Code != 0 {
 		return Encoder{}, false
 	}

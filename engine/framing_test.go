@@ -225,7 +225,7 @@ func TestASystemDecoderThatWillNotEndIsLeftBehind(t *testing.T) {
 
 	var said bytes.Buffer
 	e := NewEngine(runlog.New(&said, false, false), afero.NewMemMapFs())
-	e.FFmpeg, e.Tools = stuckFFmpeg(t, false), stuck
+	e.FFmpeg, e.Runner = stuckFFmpeg(t, false), stuck
 	used := e.decoderUsed(context.Background(), "episode.mp4", 10.2)
 	if used != "the processor" || !e.softDecode.Load() {
 		t.Errorf("the decoder used is %q, want the processor from now on", used)
@@ -237,13 +237,13 @@ func TestASystemDecoderThatWillNotEndIsLeftBehind(t *testing.T) {
 	// Pulling one frame, and reading the frames of a span as ffmpeg
 	// decodes it, are left the same way.
 	e = NewEngine(runlog.New(io.Discard, false, false), afero.NewMemMapFs())
-	e.FFmpeg, e.Tools = stuckFFmpeg(t, true), stuck
+	e.FFmpeg, e.Runner = stuckFFmpeg(t, true), stuck
 	if got := e.sampleGray(context.Background(), "episode.mp4", 10, 0.1, FaceWidth, FaceHeight, 1); len(got) != 0 {
 		t.Errorf("an ffmpeg left behind gave %d frames", len(got))
 	}
 	said.Reset()
 	e = NewEngine(runlog.New(&said, false, false), afero.NewMemMapFs())
-	e.FFmpeg, e.Tools = stuckFFmpeg(t, true), stuck
+	e.FFmpeg, e.Runner = stuckFFmpeg(t, true), stuck
 	if frames, err := e.readSpan(context.Background(), "episode.mp4", 10, 20); err != nil || len(frames) != 0 {
 		t.Errorf("an ffmpeg left behind while it reads the frames: %d frames, %v", len(frames), err)
 	}

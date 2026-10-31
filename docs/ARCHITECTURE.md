@@ -199,6 +199,9 @@ copies what it finds nearby, so these are not the pattern for new code.
   `frontend/src/lib/rotate.ts` and `frontend/src/lib/room.ts`, #610.
 - The transcript cache in `cmd/framefairy-app/words.go`, #608.
 - A new `engine.NewEngine` for each job or probe, #607.
+- The tools already checked, `checked` in `engine/tool/find.go`, a cache
+  as a package variable, and the sums `make` builds in, `sums` beside it,
+  which four tests set for the whole process, #607.
 - The effects in `frontend/src/screens/Episode.svelte` that compare an
   old value with a new one to notice that work ended, #606.
 

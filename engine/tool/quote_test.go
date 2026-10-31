@@ -2,7 +2,7 @@ package tool
 
 import "testing"
 
-func TestQuoteLeavesWhatAShellLeavesAlone(t *testing.T) {
+func TestShellQuoteLeavesWhatAShellLeavesAlone(t *testing.T) {
 	t.Parallel()
 	for in, want := range map[string]string{
 		"":              "''",
@@ -15,8 +15,8 @@ func TestQuoteLeavesWhatAShellLeavesAlone(t *testing.T) {
 		"a;rm -rf /":    "'a;rm -rf /'",
 		"$HOME":         "'$HOME'",
 	} {
-		if got := Quote(in); got != want {
-			t.Errorf("Quote(%q) = %s, want %s", in, got, want)
+		if got := ShellQuote(in); got != want {
+			t.Errorf("ShellQuote(%q) = %s, want %s", in, got, want)
 		}
 	}
 }

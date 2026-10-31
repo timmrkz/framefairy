@@ -1193,8 +1193,8 @@ video on VideoToolbox` or `on the processor`. A single frame has 15 s,
 `frameLimit`, there and wherever framing pulls one frame: VideoToolbox
 has given none and said nothing on a virtual Mac, and a system decoder
 that misses the limit is gone round on the processor from then on. An
-ffmpeg that is stopped has five seconds to end, `leaveAfter` in
-`engine/ffmpeg.go`, and one that is still there after them is left
+ffmpeg that is stopped has five seconds to end, `LeaveAfter` in
+`engine/tool/run.go`, and one that is still there after them is left
 behind, with a warning that says so, and the search goes on without it.
 On the same Mac an ffmpeg went on in VideoToolbox for eight minutes after
 it was killed, and the search waited on it until the test run was ended. The crop

@@ -35,12 +35,15 @@ Measured on main at 7634f17:
   test swaps, the stop of a program and the wait after it, the idle time
   of the model, the free memory, the clients and their stalls.
 - Running a program is six names in `engine/ffmpeg.go`, `run`,
-  `runBytes`, `command`, `finish`, `cutWriter` and `result`, used by 22
-  calls in 8 files, with three seams beside them, `leaveAfter`, `leaving`
+  `runBytes`, `command`, `finish`, `cutWriter` and `result`, used in 28
+  places in 9 files, with three seams beside them, `leaveAfter`, `leaving`
   and `stopProcess`. Finding the programs, `FindTool`, `ToolPath`, the
   sums `make` writes into the build and the checks of each copy, is
   `engine/tools.go`, 312 lines. `shellQuote`, a command written out for a
-  shell, is the last helper in `engine/util.go`, used 5 times.
+  shell, is the last helper in `engine/util.go`, used 5 times. Four more
+  runs of ffmpeg in the engine, which read its pipe as it goes, and the
+  app's three for a screen recording called `os/exec` themselves, with an
+  engine in hand.
 - Two tests swap the stop seams and so cannot run beside the others,
   `TestASystemDecoderThatWillNotEndIsLeftBehind` and
   `TestAServerThatWillNotStopIsKilledAtOnce`, and `command` copies
@@ -98,10 +101,14 @@ is state that lives once per process whether a test wants it or not.
 
 `os/exec` already has the parts of a stop: `Cmd.Cancel` decides how a
 program is stopped once its context is done, and `Cmd.WaitDelay` how
-long to wait before it is left. `WaitDelay` waits on the clock with no
-seam, though, so a test of a program that will not end would wait the
-five seconds, and the walks and tests are held to no waits on the clock.
-So the stop stays ours, as fields: a `Stop` that `Cancel` calls and a
+long to wait after it. But `WaitDelay` cannot leave a program behind.
+Once it is up it kills the program and closes its pipes, and `Cmd.Wait`
+still waits in `Process.Wait` until the program has ended, so an ffmpeg
+the system will not let go of holds whoever waits for it just the same.
+That is the case the stop exists for, and the reason not to trade
+`Finish` for `WaitDelay` later. `WaitDelay` also waits on the clock with
+no seam, so a test of a program that will not end would wait the five
+seconds. So the stop stays ours, as fields: a `Stop` that `Cancel` calls and a
 `Leave` that gives the wait, each a default when left empty, which is how
 `http.Client` keeps its `Transport` and `CheckRedirect`. The object that
 outlives a job is a plain struct made once in `main`, the way `net/http`
@@ -140,8 +147,17 @@ and only to set it aside for its cost.
 `engine/tool` finds, checks and runs the programs the engine calls:
 `Path`, `Find`, `Inspect`, and a `Runner`, whose `Run`, `Bytes`,
 `Command` and `Finish` take its `Stop` and `Leave`, each the default
-when left empty, and `Quote`, a command written out for a shell. The
+when left empty, and `ShellQuote`, a command written out for a shell. The
 sums `make` writes into the build move with it.
+
+Two package variables come along and stay for now. `checked`, the tools
+already found to be what they should be, is a cache, and `sums` is what
+four tests set for the whole process. `engine/tool` cannot reach the
+object above it that outlives a job, so that object holds a value of
+`engine/tool`'s, a finder, made once from the sums, with the tools it has
+checked on it. `sums` then stays a package variable only as the name
+`make` writes to, read once when the finder is made, and a test makes a
+finder with sums of its own and runs beside the others.
 
 A package for the files at the bottom takes `SafeChild`, `WriteAtomic`,
 the checks of a path in a file system and the plan's lock. Its name is
@@ -174,7 +190,8 @@ The pull requests, in order, each one self-contained:
 2. The package for the files.
 3. The object that outlives a job, made once in each `main`, with what
    is learned about the machine moved onto it, so `softDecode` is
-   learned once per run.
+   learned once per run, and the finder that holds `checked`, with the
+   sums handed in.
 4. The engine's caches and seams moved onto it, area by area, as many
    pull requests as their size asks, the key store handed in so
    `testing.Testing()` leaves shipped code.

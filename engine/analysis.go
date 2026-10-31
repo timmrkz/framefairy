@@ -58,7 +58,7 @@ func (e *Engine) decoderUsed(ctx context.Context, path string, at float64) strin
 		args := append([]string{"-hide_banner", "-loglevel", "verbose"}, flags...)
 		args = append(args, "-ss", num.Fixed(at, 3), "-i", path, "-an", "-frames:v", "1", "-f", "null", "-")
 		probeCtx, cancel := timeLimit(ctx, frameLimit)
-		said := e.Tools.Run(probeCtx, "", e.FFmpeg, args...)
+		said := e.Runner.Run(probeCtx, "", e.FFmpeg, args...)
 		cancel()
 		if ctx.Err() != nil {
 			return ""
@@ -90,7 +90,7 @@ func (e *Engine) decoderUsed(ctx context.Context, path string, at float64) strin
 // decoding to, as ffmpeg -hwaccels names them. Whether a file really goes
 // through one is decided per file, and is in the log of the search.
 func (e *Engine) SystemDecoders(ctx context.Context) []string {
-	said := e.Tools.Run(ctx, "", e.FFmpeg, "-hide_banner", "-hwaccels")
+	said := e.Runner.Run(ctx, "", e.FFmpeg, "-hide_banner", "-hwaccels")
 	if said.Code != 0 {
 		return nil
 	}
@@ -266,7 +266,7 @@ func (e *Engine) sampleGray(ctx context.Context, path string, start, duration fl
 		// below like one that failed.
 		pullCtx, cancel := timeLimit(ctx, time.Duration(frames)*frameLimit)
 		defer cancel()
-		raw, _ := e.Tools.Bytes(pullCtx, "", e.FFmpeg, args...)
+		raw, _ := e.Runner.Bytes(pullCtx, "", e.FFmpeg, args...)
 		return raw
 	}
 	flags := e.decodeFlags()

@@ -5,10 +5,10 @@ import (
 	"unicode"
 )
 
-// Quote puts s in single quotes unless it holds only letters, digits and
+// ShellQuote puts s in single quotes unless it holds only letters, digits and
 // the characters a shell leaves alone, for printing a command a person
 // can paste into a shell.
-func Quote(s string) string {
+func ShellQuote(s string) string {
 	if s == "" {
 		return "''"
 	}

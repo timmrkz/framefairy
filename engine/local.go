@@ -430,7 +430,7 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 			_ = cmd.Process.Signal(os.Interrupt)
 			select {
 			case <-exited:
-			case <-e.Tools.Leaving(stopGrace):
+			case <-e.Runner.Leaving(stopGrace):
 				// llama-server can hang on the way out after an interrupt:
 				// it joins the threads of its HTTP server, and one still
 				// waiting on an answer it will never give keeps it there.

@@ -9,7 +9,6 @@ import (
 	"errors"
 	"io"
 	"math"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -351,7 +350,7 @@ func (e *Engine) measureFrom(ctx context.Context, source string, st *levelState,
 	focus func() (float64, float64), tell func()) error {
 	run, stop := context.WithCancel(ctx)
 	defer stop()
-	cmd := exec.CommandContext(run, e.FFmpeg, audioFrom(source, start, e.pictureStart(ctx, source))...)
+	cmd := e.Runner.Command(run, e.FFmpeg, audioFrom(source, start, e.pictureStart(ctx, source))...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return err

@@ -14,8 +14,9 @@ import (
 
 // A program whose work is called off is stopped the way its runner says,
 // and one that still has not ended when the runner's wait is up is left
-// behind, with what it would write from then on going nowhere. Each
-// runner keeps its own stop and wait, so this test runs beside the
+// behind once the wait it asked its runner for, LeaveAfter, is up. What
+// it would write from then on goes nowhere, see
+// TestACutWriterDropsWhatComesAfterTheCut. Each runner keeps its own stop and wait, so this test runs beside the
 // others: the two tests in the engine that once swapped the package's
 // stop could not.
 //
@@ -30,9 +31,13 @@ func TestARunnerLeavesBehindAProgramItCouldNotStop(t *testing.T) {
 	}
 	stopped := make(chan *os.Process, 1)
 	up := make(chan time.Time)
+	asked := make(chan time.Duration, 1)
 	r := Runner{
-		Stop:  func(p *os.Process) error { stopped <- p; return nil },
-		Leave: func(time.Duration) <-chan time.Time { return up },
+		Stop: func(p *os.Process) error { stopped <- p; return nil },
+		Leave: func(d time.Duration) <-chan time.Time {
+			asked <- d
+			return up
+		},
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	ran := make(chan Result, 1)
@@ -45,6 +50,14 @@ func TestARunnerLeavesBehindAProgramItCouldNotStop(t *testing.T) {
 	got := <-ran
 	if !got.Left || got.Code != 1 || got.Stderr != "stuck "+LeftBehind {
 		t.Errorf("a program that would not stop came back as %+v, want it left behind", got)
+	}
+	select {
+	case d := <-asked:
+		if d != LeaveAfter {
+			t.Errorf("the runner was asked to wait %v, want LeaveAfter, %v", d, LeaveAfter)
+		}
+	default:
+		t.Error("the program was left behind without the runner's wait being asked for")
 	}
 }
 
