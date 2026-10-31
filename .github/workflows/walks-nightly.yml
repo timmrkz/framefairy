@@ -45,7 +45,7 @@ jobs:
       run:
         shell: bash -e {0}
     container:
-      image: ${{ needs.image.outputs.ref }}
+      image: ${{ needs.image.outputs.walks }}
       options: --init --ipc=host
       volumes:
         - /home/runner/work:/home/runner/work
@@ -93,8 +93,8 @@ jobs:
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .build/walk-videos
-          key: walk-videos-${{ strategy.job-index }}-${{ needs.image.outputs.ref }}-${{ hashFiles('cmd/framefairy-app/walkvideos_test.go') }}-
-          restore-keys: walk-videos-${{ strategy.job-index }}-${{ needs.image.outputs.ref }}-${{ hashFiles('cmd/framefairy-app/walkvideos_test.go') }}-
+          key: walk-videos-${{ strategy.job-index }}-${{ needs.image.outputs.walks }}-${{ hashFiles('cmd/framefairy-app/walkvideos_test.go') }}-
+          restore-keys: walk-videos-${{ strategy.job-index }}-${{ needs.image.outputs.walks }}-${{ hashFiles('cmd/framefairy-app/walkvideos_test.go') }}-
       - name: Sequences and walks with motion
         run: |
           make walks STILL=none WALKSHARD=${{ matrix.shard }} WALKTIMEOUT=12m COVERAGE=.build/coverage 2>&1 | tee walks.log
