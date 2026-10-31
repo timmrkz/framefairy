@@ -85,6 +85,13 @@ func TestAMeasuringThatGoesWrongIsInTheAppsLog(t *testing.T) {
 	m := newMeasuring(afero.NewMemMapFs(), func(string) { panic("a waveform nobody drew before") })
 	t.Cleanup(m.shutDown)
 	path := "/home/tim/videos/gone.mp4"
+	// Every slot is taken first, so the measuring waits for one and is
+	// still running when the test looks for it. A video that is not there
+	// fails at once, and once let go too early it was over and gone from
+	// the list before the test looked, in CI on #634.
+	for range cap(m.slots) {
+		m.slots <- struct{}{}
+	}
 	m.start(path)
 	m.mu.Lock()
 	run := m.running[path]
@@ -92,6 +99,7 @@ func TestAMeasuringThatGoesWrongIsInTheAppsLog(t *testing.T) {
 	if run == nil {
 		t.Fatal("the measuring did not start")
 	}
+	<-m.slots
 	<-run.done
 	lines := read()
 	has(t, find(lines, "the loudness could not be measured"), map[string]any{"level": "warn", "from": "levels", "video": "gone.mp4"})
