@@ -12,6 +12,7 @@ import (
 	"sync"
 	"testing"
 
+	"framefairy/engine/fileio"
 	"framefairy/engine/runlog"
 	"framefairy/engine/timed"
 )
@@ -211,7 +212,7 @@ func TestTheCommandLineSearchesTheWindowTheAppWouldPlace(t *testing.T) {
 		}
 	}
 	for _, name := range []string{"clips.json", "clips-0-40-2.json"} {
-		if !exists(disk, filepath.Join(p.LogsDir(), name)) {
+		if !fileio.Exists(disk, filepath.Join(p.LogsDir(), name)) {
 			t.Errorf("no plan %s after two runs", name)
 		}
 	}
@@ -252,7 +253,7 @@ func TestTheCommandLineSearchesOnWhereTheVideoWasNotSearched(t *testing.T) {
 	if code := p.engine.Run(context.Background(), opts); code != 0 {
 		t.Fatalf("the search with --next ended with %d", code)
 	}
-	if !exists(disk, filepath.Join(p.LogsDir(), "clips-20-40.json")) {
+	if !fileio.Exists(disk, filepath.Join(p.LogsDir(), "clips-20-40.json")) {
 		t.Error("--next after a search of 0 to 20 did not search 20 to 40")
 	}
 }

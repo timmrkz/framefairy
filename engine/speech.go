@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"framefairy/engine/fileio"
 	"framefairy/engine/runlog"
 )
 
@@ -444,9 +445,10 @@ func inMB(n int64) string {
 //
 // What arrives over a network is untrusted. A tar can name ../../../ and
 // a link can point anywhere, and both are how an archive writes over
-// something it was never given. Every name goes through SafeChild, and no
-// link of either kind is written at all: the models do not have any, so
-// accepting one would only ever be somebody else's idea.
+// something it was never given. Every name goes through
+// fileio.SafeChild, and no link of either kind is written at all: the
+// models do not have any, so accepting one would only ever be somebody
+// else's idea.
 func unpackTarBz2(ctx context.Context, archive, into string) error {
 	file, err := os.Open(archive)
 	if err != nil {
@@ -476,7 +478,7 @@ func unpackTarBz2(ctx context.Context, archive, into string) error {
 			// so one odd entry does not throw away a good model.
 			continue
 		}
-		target, err := SafeChild(into, head.Name)
+		target, err := fileio.SafeChild(into, head.Name)
 		if err != nil {
 			return err
 		}

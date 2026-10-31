@@ -1436,7 +1436,7 @@ What the code takes from outside, so a test can drive it:
 | the model, the recogniser | an interface with a fake | the fake recogniser and fake llama-server in `engine/project_test.go` |
 | a program we run | its path | ffmpeg and the decoder through `FRAMEFAIRY_FRAMES` |
 | asking another program to stop | a function | `interrupt` in `engine/leftover.go`, which a test wraps to hear which servers left behind were asked |
-| a lock that has to wait | `lockWaits(path)`, called as the plan lock starts to wait for another holder | `engine/edit.go` and `engine/filelock_unix.go`, waited on through `waitsOn` in `engine/files_test.go`, which `engine/edit_test.go` uses too |
+| a lock that has to wait | `waits(path)`, called as the lock of a file starts to wait for another holder | `engine/fileio/lock.go` and `engine/fileio/lock_unix.go`, waited on through `waitsOn` in `engine/fileio/lock_test.go` |
 | the end of work | a callback the caller gives, a channel closed at every change, a channel closed when the work ends, or a `sync.WaitGroup` | `emit` in `newQueue`, and `until` on `queue.changed`, `cmd/framefairy-app/jobs.go`, `changed` on the updates in `cmd/framefairy-app/updates.go`, `done` of a measuring in `cmd/framefairy-app/levels.go`, `Arrived` in `updates/fetch.go`, `clearing` in `cmd/framefairy-app/main.go`, `news` on the model host in `engine/modelhost.go`, waited on by `untilHost`, `cursors` on the episode's decoder in `engine/episodeframes.go`, waited on by `untilCursors`. A stand-in program says it is up on its output, or ends once it has said what the test reads, as in `engine/leftover_test.go` and `engine/local_test.go` |
 
 The fake clocks: `testing/synctest` in Go, whose `time.Sleep` line says

@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/afero"
 
+	"framefairy/engine/fileio"
 	"framefairy/engine/num"
 	"framefairy/engine/runes"
 	"framefairy/engine/timed"
@@ -174,20 +175,10 @@ func shortsFolder(out, shorts, source string) (string, error) {
 	case out != "":
 		return out, nil
 	case shorts != "":
-		return SafeChild(shorts, EpisodeName(source))
+		return fileio.SafeChild(shorts, EpisodeName(source))
 	default:
 		return filepath.Join(WorkDir(source), "out"), nil
 	}
-}
-
-func exists(fsys afero.Fs, path string) bool {
-	_, err := fsys.Stat(path)
-	return err == nil
-}
-
-func isFile(fsys afero.Fs, path string) bool {
-	info, err := fsys.Stat(path)
-	return err == nil && info.Mode().IsRegular()
 }
 
 // Run executes one complete run and returns the process exit code: 0 when
@@ -254,7 +245,7 @@ func (e *Engine) execute(ctx context.Context, opts Options) error {
 	}
 	// A model that cannot be loaded fails the run before the transcript
 	// is made for it.
-	if r.opts.ClipsPath == "" && (r.opts.Replan || !exists(e.Files, r.planPath)) {
+	if r.opts.ClipsPath == "" && (r.opts.Replan || !fileio.Exists(e.Files, r.planPath)) {
 		if err := roomBeforeSearch(r.opts, r.span.End-r.span.Start); err != nil {
 			return err
 		}
@@ -270,7 +261,7 @@ func (e *Engine) execute(ctx context.Context, opts Options) error {
 // for the window, made first when there is none or a new one is asked for.
 func (r *runner) planned(ctx context.Context) (Plan, []Clip, error) {
 	plannedNow := false
-	if r.opts.ClipsPath == "" && (r.opts.Replan || !exists(r.e.Files, r.planPath)) {
+	if r.opts.ClipsPath == "" && (r.opts.Replan || !fileio.Exists(r.e.Files, r.planPath)) {
 		if err := r.plan(ctx); err != nil {
 			return Plan{}, nil, err
 		}
@@ -384,7 +375,7 @@ func (e *Engine) prepare(ctx context.Context, opts Options, ask *timed.Window) (
 	e.Prefill = opts.Prefill
 	e.UseTools(opts.FFmpeg, opts.FFprobe)
 
-	if !exists(e.Files, opts.Source) {
+	if !fileio.Exists(e.Files, opts.Source) {
 		return nil, videoGone(opts.Source)
 	}
 	if opts.Planner != "local" && opts.Planner != "api" {
@@ -496,11 +487,11 @@ func (e *Engine) prepare(ctx context.Context, opts Options, ask *timed.Window) (
 		stale, _ := afero.Glob(e.Files, filepath.Join(work, "clips*.json"))
 		sort.Strings(stale)
 		for _, old := range stale {
-			if !isFile(e.Files, old) {
+			if !fileio.IsFile(e.Files, old) {
 				continue
 			}
 			moved := filepath.Join(logsDir, filepath.Base(old))
-			if exists(e.Files, moved) {
+			if fileio.Exists(e.Files, moved) {
 				continue
 			}
 			if err := e.Files.MkdirAll(logsDir, 0o755); err != nil {
@@ -517,12 +508,12 @@ func (e *Engine) prepare(ctx context.Context, opts Options, ask *timed.Window) (
 	// another one. Planning costs money, so an existing plan is looked for
 	// before that happens rather than after.
 	experiment := opts.Experiment || IsExperiment(opts.Recipe)
-	if opts.ClipsPath == "" && !exists(e.Files, planPath) && !opts.Replan && !opts.TranscribeOnly &&
+	if opts.ClipsPath == "" && !fileio.Exists(e.Files, planPath) && !opts.Replan && !opts.TranscribeOnly &&
 		!opts.ExactPlan && !experiment {
 		matches, _ := afero.Glob(e.Files, filepath.Join(logsDir, "clips*.json"))
 		var existing []string
 		for _, m := range matches {
-			if isFile(e.Files, m) {
+			if fileio.IsFile(e.Files, m) {
 				existing = append(existing, m)
 			}
 		}
@@ -671,7 +662,7 @@ func (r *runner) plan(ctx context.Context) error {
 // that held nothing new.
 func (r *runner) clips(plannedNow bool) (Plan, []Clip, error) {
 	opts, log, planPath := r.opts, r.e.Log, r.planPath
-	if !exists(r.e.Files, planPath) {
+	if !fileio.Exists(r.e.Files, planPath) {
 		return Plan{}, nil, fmt.Errorf("clip plan not found: %s", planPath)
 	}
 
@@ -822,7 +813,7 @@ func (r *runner) render(ctx context.Context, plan Plan, clips []Clip) error {
 		}
 	}
 
-	own := filepath.Dir(ResolvePath(r.planPath)) == ResolvePath(logsDir)
+	own := filepath.Dir(fileio.ResolvePath(r.planPath)) == fileio.ResolvePath(logsDir)
 	cueMap := map[string][]LaidCaption{}
 	for _, clip := range clips {
 		// Rendered on the source's frames, and captioned on them too, see

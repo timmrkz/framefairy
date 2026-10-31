@@ -9,6 +9,8 @@ import (
 	"unicode"
 
 	"github.com/spf13/afero"
+
+	"framefairy/engine/fileio"
 )
 
 // Label is the few words and the colour a person gives a video, so that
@@ -58,7 +60,7 @@ func labelWords(text string) string {
 // file is read like any file the app did not just write: whatever is in
 // it that is not a label is no label.
 func ReadLabel(fsys afero.Fs, source string) *Label {
-	path, err := SafeChildIn(fsys, WorkDir(source), labelFile)
+	path, err := fileio.SafeChildIn(fsys, WorkDir(source), labelFile)
 	if err != nil {
 		return nil
 	}
@@ -83,7 +85,7 @@ func ReadLabel(fsys afero.Fs, source string) *Label {
 // is written.
 func WriteLabel(fsys afero.Fs, source string, l Label) (*Label, error) {
 	work := WorkDir(source)
-	path, err := SafeChildIn(fsys, work, labelFile)
+	path, err := fileio.SafeChildIn(fsys, work, labelFile)
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +106,7 @@ func WriteLabel(fsys afero.Fs, source string, l Label) (*Label, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := WriteAtomic(fsys, path, body); err != nil {
+	if err := fileio.WriteAtomic(fsys, path, body); err != nil {
 		return nil, err
 	}
 	return &tidy, nil

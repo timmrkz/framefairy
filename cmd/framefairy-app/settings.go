@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/afero"
 
 	"framefairy/engine"
+	"framefairy/engine/fileio"
 )
 
 // Settings are what the settings screen edits. Empty paths mean the same
@@ -180,7 +181,7 @@ func (s *store) save(name string, value any) error {
 	if err != nil {
 		return err
 	}
-	return engine.WriteAtomic(s.files, filepath.Join(s.dir, name), body)
+	return fileio.WriteAtomic(s.files, filepath.Join(s.dir, name), body)
 }
 
 func (s *store) Settings() Settings {
@@ -284,11 +285,11 @@ func (s *store) AddEpisodes(paths []string) ([]string, error) {
 // episode.framefairy that led to the home folder made every file there
 // the episode's, to read, to serve and to write into.
 func linkedEpisode(files afero.Fs, video string) string {
-	if info, err := engine.LstatIn(files, video); err == nil && info.Mode()&os.ModeSymlink != 0 {
+	if info, err := fileio.LstatIn(files, video); err == nil && info.Mode()&os.ModeSymlink != 0 {
 		return filepath.Base(video) + " is a link, which the app does not follow"
 	}
 	work := engine.WorkDir(video)
-	if info, err := engine.LstatIn(files, work); err == nil && (info.Mode()&os.ModeSymlink != 0 || !info.IsDir()) {
+	if info, err := fileio.LstatIn(files, work); err == nil && (info.Mode()&os.ModeSymlink != 0 || !info.IsDir()) {
 		return filepath.Base(work) + " beside " + filepath.Base(video) +
 			" is a link or not a folder, which the app does not follow"
 	}
@@ -325,7 +326,7 @@ func markAdded(files afero.Fs, video string) error {
 	if err := files.MkdirAll(work, 0o755); err != nil {
 		return err
 	}
-	file, err := engine.SafeChildIn(files, work, addedFile)
+	file, err := fileio.SafeChildIn(files, work, addedFile)
 	if err != nil {
 		return err
 	}
@@ -338,12 +339,12 @@ func markAdded(files afero.Fs, video string) error {
 	if err != nil {
 		return err
 	}
-	return engine.WriteAtomic(files, file, body)
+	return fileio.WriteAtomic(files, file, body)
 }
 
 // marked says whether the work folder of a video carries the mark.
 func marked(files afero.Fs, video string) bool {
-	file, err := engine.SafeChildIn(files, engine.WorkDir(video), addedFile)
+	file, err := fileio.SafeChildIn(files, engine.WorkDir(video), addedFile)
 	if err != nil {
 		return false
 	}
@@ -435,7 +436,7 @@ func (s *store) clearLetGo(path string) (bool, error) {
 	if slices.Contains(s.episodes, path) || marked(s.files, path) {
 		return false, nil
 	}
-	if _, err := engine.LstatIn(s.files, engine.WorkDir(path)); err != nil {
+	if _, err := fileio.LstatIn(s.files, engine.WorkDir(path)); err != nil {
 		return false, nil
 	}
 	return true, engine.DeleteWork(s.files, path)
@@ -451,7 +452,7 @@ func (s *store) clearLetGo(path string) (bool, error) {
 // folder it has to be inside are resolved before they are compared.
 func (s *store) Known(path string) bool {
 	clean := filepath.Clean(path)
-	real := engine.ResolveIn(s.files, clean)
+	real := fileio.ResolveIn(s.files, clean)
 	episodes := s.Episodes()
 	for _, ep := range episodes {
 		// An episode whose video or work folder has become a link since
@@ -460,10 +461,10 @@ func (s *store) Known(path string) bool {
 		if linkedEpisode(s.files, ep) != "" {
 			continue
 		}
-		if clean == ep || real == engine.ResolveIn(s.files, ep) {
+		if clean == ep || real == fileio.ResolveIn(s.files, ep) {
 			return true
 		}
-		work := engine.ResolveIn(s.files, engine.WorkDir(ep)) + string(filepath.Separator)
+		work := fileio.ResolveIn(s.files, engine.WorkDir(ep)) + string(filepath.Separator)
 		if len(real) > len(work) && real[:len(work)] == work {
 			return true
 		}
@@ -491,7 +492,7 @@ func (s *store) PlanOf(path, plan string) bool {
 	if !s.Known(path) || !s.Known(plan) {
 		return false
 	}
-	return filepath.Dir(engine.ResolveIn(s.files, plan)) == engine.ResolveIn(s.files, engine.LogsDir(path))
+	return filepath.Dir(fileio.ResolveIn(s.files, plan)) == fileio.ResolveIn(s.files, engine.LogsDir(path))
 }
 
 // targetFor is the target typed for a window as long as this one, or 0,

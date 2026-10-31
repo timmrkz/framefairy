@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"framefairy/engine/fileio"
 	"framefairy/engine/num"
 	"framefairy/engine/runes"
 	"framefairy/engine/tool"
@@ -694,7 +695,7 @@ func (e *Engine) renderShort(ctx context.Context, clip Clip, sourcePath string,
 		// ffmpeg runs with the caption directory as its working directory, so
 		// the ass filter can reference a bare filename. That sidesteps the
 		// filter-graph escaping rules for colons and backslashes in paths.
-		assPath, err := SafeChild(captionDir, clip.Basename()+".ass")
+		assPath, err := fileio.SafeChild(captionDir, clip.Basename()+".ass")
 		if err != nil {
 			return "", err
 		}
@@ -709,7 +710,7 @@ func (e *Engine) renderShort(ctx context.Context, clip Clip, sourcePath string,
 		assName = clip.Basename() + ".ass"
 	}
 
-	outPath, err := SafeChild(outDir, stem+".mp4")
+	outPath, err := fileio.SafeChild(outDir, stem+".mp4")
 	if err != nil {
 		return "", err
 	}
@@ -718,7 +719,7 @@ func (e *Engine) renderShort(ctx context.Context, clip Clip, sourcePath string,
 	// finished short, so one being written, or cut off by a crash, or a
 	// render that failed its check, would count as one too, and a failed
 	// render again would take the good one before it away.
-	tmp, err := SafeChild(outDir, stem+partial+".mp4")
+	tmp, err := fileio.SafeChild(outDir, stem+partial+".mp4")
 	if err != nil {
 		return "", err
 	}
@@ -745,7 +746,7 @@ func (e *Engine) renderShort(ctx context.Context, clip Clip, sourcePath string,
 
 		stall := e.stallFor(encoder, source.Light())
 		code, stderr, stalled := e.runFFmpegWatched(ctx, cmd[1:], "rendering "+clip.Basename(),
-			clip.Duration(), resolvePath(captionDir), nil, stall)
+			clip.Duration(), fileio.ResolvePath(captionDir), nil, stall)
 		if ctx.Err() != nil {
 			os.Remove(tmp)
 			return "", ctx.Err()
@@ -935,7 +936,7 @@ func (e *Engine) WriteThumbnails(ctx context.Context, clip Clip, short string) e
 		return err
 	}
 	for i, at := range clip.Thumbnails {
-		path, err := SafeChild(dir, thumbnailName(stem, i+1))
+		path, err := fileio.SafeChild(dir, thumbnailName(stem, i+1))
 		if err != nil {
 			return err
 		}

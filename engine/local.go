@@ -22,6 +22,7 @@ import (
 
 	"github.com/spf13/afero"
 
+	"framefairy/engine/fileio"
 	"framefairy/engine/num"
 	"framefairy/engine/runes"
 	"framefairy/engine/tool"
@@ -143,7 +144,7 @@ func LocalModelPath(named string) string {
 	if _, err := os.Stat(named); err == nil {
 		return named
 	}
-	if inModels := filepath.Join(ModelsDir(), named); isFile(disk, inModels) {
+	if inModels := filepath.Join(ModelsDir(), named); fileio.IsFile(disk, inModels) {
 		return inModels
 	}
 	return named

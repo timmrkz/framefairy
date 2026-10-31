@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/afero"
 
+	"framefairy/engine/fileio"
 	"framefairy/engine/runlog"
 	"framefairy/engine/timed"
 )
@@ -129,7 +130,7 @@ func TestAShortBeingWrittenIsNotCounted(t *testing.T) {
 // disk, see IsShort.
 func episodeWithPlan(t *testing.T, name string) (source, plan string) {
 	t.Helper()
-	source = filepath.Join(ResolvePath(t.TempDir()), name+".mp4")
+	source = filepath.Join(fileio.ResolvePath(t.TempDir()), name+".mp4")
 	if err := os.WriteFile(source, []byte("not really a video"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -205,11 +206,11 @@ func shortOfClip(t *testing.T, plan, id string) ClipView {
 // into the episode's own work folder.
 //
 // On the real disk: the folder for shorts is judged by where it really
-// leads, see SafeChild, and on a Mac /home leads elsewhere.
+// leads, see fileio.SafeChild, and on a Mac /home leads elsewhere.
 func TestTheShortsGoWhereTheSettingsSay(t *testing.T) {
 	t.Parallel()
 	source := "/home/tim/Podcast/folge.mp4"
-	shorts := ResolvePath(t.TempDir())
+	shorts := fileio.ResolvePath(t.TempDir())
 	for _, c := range []struct {
 		name, out, shorts, want string
 	}{
@@ -239,7 +240,7 @@ func TestTheShortsGoWhereTheSettingsSay(t *testing.T) {
 func TestAShortInTheOutputFolderIsTheClipsShort(t *testing.T) {
 	t.Parallel()
 	source, plan := episodeWithPlan(t, "folge")
-	shorts := ResolvePath(t.TempDir())
+	shorts := fileio.ResolvePath(t.TempDir())
 	other := filepath.Join(shorts, "wort.mp4")
 	if err := os.WriteFile(other, []byte("another episode's short"), 0o644); err != nil {
 		t.Fatal(err)
@@ -297,7 +298,7 @@ func TestAShortInTheOutputFolderIsTheClipsShort(t *testing.T) {
 func TestARenderAgainWritesOverOnlyItsOwnShort(t *testing.T) {
 	t.Parallel()
 	source, plan := episodeWithPlan(t, "folge")
-	dir := ResolvePath(t.TempDir())
+	dir := fileio.ResolvePath(t.TempDir())
 	short := placeShort(t, plan, dir, "01")
 	if again := placeShort(t, plan, dir, "01"); again != short {
 		t.Errorf("rendered again, the short went to %s, not over its own at %s", again, short)
@@ -344,7 +345,7 @@ func TestTwoEpisodesKeepTheirOwnShorts(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			shorts := ResolvePath(t.TempDir())
+			shorts := fileio.ResolvePath(t.TempDir())
 			type episode struct{ source, plan, short string }
 			var eps [2]episode
 			for i, name := range []string{c.first, c.second} {
@@ -384,7 +385,7 @@ func TestTwoClipsOfTheSameWordsAreNumbered(t *testing.T) {
   {"id": "t60-01", "slug": "wort", "segments": [{"start": 1, "end": 21}], "thumbnails": [2]}]}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	dir := ResolvePath(t.TempDir())
+	dir := fileio.ResolvePath(t.TempDir())
 	want := []string{filepath.Join(dir, "wort.mp4"), filepath.Join(dir, "wort 2.mp4")}
 	for range 2 {
 		for i, id := range []string{"01", "t60-01"} {
@@ -404,7 +405,7 @@ func TestAnEditIsUndoneAfterARender(t *testing.T) {
 	t.Parallel()
 	_, plan := episodeWithPlan(t, "folge")
 	change := edited(t, disk, filepath.Dir(plan), func() error { return SetCaptionY(disk, plan, "01", 400) })
-	placeShort(t, plan, ResolvePath(t.TempDir()), "01")
+	placeShort(t, plan, fileio.ResolvePath(t.TempDir()), "01")
 	if _, err := change.Undo(); err != nil {
 		t.Fatalf("the edit before the render cannot be undone: %v", err)
 	}
@@ -432,7 +433,7 @@ func TestARenderPutsItsShortWhereItsNameSays(t *testing.T) {
 	base.Width, base.Height = 180, 320
 	base.Preset = "ultrafast"
 	base.NoCaptions = true
-	base.Out = ResolvePath(t.TempDir())
+	base.Out = fileio.ResolvePath(t.TempDir())
 	if err := os.MkdirAll(LogsDir(source), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -504,7 +505,7 @@ func TestARenderPutsItsShortWhereItsNameSays(t *testing.T) {
 // On the real disk: a short is a file ffmpeg wrote, looked for on the disk.
 func TestAPlanNamesNoFileButAShort(t *testing.T) {
 	t.Parallel()
-	dir := ResolvePath(t.TempDir())
+	dir := fileio.ResolvePath(t.TempDir())
 	c := Clip{ID: "01", Slug: "erste", Segments: []Segment{{Start: 1, End: 2}}}
 	for _, name := range []string{"erste.mp4", "erste 2.mp4", "erste 10.mp4", "01_erste.mp4",
 		"secret.mp4", "erste 02.mp4", "erste 2.mov", "erste .mp4", "erste 2 3.mp4"} {

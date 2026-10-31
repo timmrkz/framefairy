@@ -68,6 +68,7 @@ with the boxes one level down under it.
 | 4 | `engine/timed/` | the types every part of the engine uses for a moment of a video: a piece of text with its times, a span, a window, a loudness reading, the 10 ms grid of the sound | a function or a rule, and a type only one part uses |
 | 4 | `engine/runlog/` | the log of a run: timestamped lines in the terminal, the progress line one piece of work can hold, steps with how long they took, and every line and progress as an event, which reaches the app through one `Sink` | a rule of a feature. A job says what happens and the log says it |
 | 4 | `engine/tool/` | finding our own ffmpeg, ffprobe and llama-server, each checked against the sum `make` built in, and running a program as an argument list, stopped once its work is called off, with how it stops held on a `Runner` | anything about a video, and a cache or a seam as a package variable |
+| 4 | `engine/fileio/` | a path and a file in whatever `afero.Fs` it is handed: where a path really leads, whether a name stays inside its folder, a file replaced in one step, and one edit of a file at a time, inside the program and across programs | anything about a video or a plan, and a cache or a seam as a package variable |
 | 4 | `engine/num/` over `engine/runes/` | numbers rounded, summed, read and written the same on every platform, from JSON values too, and text counted, cut, trimmed and quoted by its characters, and scrubbed when it comes from outside | a rule of a feature, and anything about a file of a video |
 | 5 the frames decoder | `cmd/framefairy-frames/` | turning a video into the frames, sound and captions of the video preview. The engine starts one for each video | anything but decoding. It is a child process |
 | 6 small libraries | `licence/`, `internal/wake/`, `internal/framewire/` | the format of a licence key, how a waiter hears that something changed, and the wire between the engine and the decoder | |
@@ -121,7 +122,7 @@ What to do today, and what changes once the issue named is built.
 | decide where an edge, a word or a window lands | the engine: `engine/shape.go` for a gesture, `engine.Project` for a window. The interface asks and draws the answer |
 | show the interface a new fact about a video | a field on what the workspace already reads for the video, its status or its clip views, never a new event of its own or a poll. Once #606 is built, on the snapshot Go sends |
 | keep something between two jobs, a cache or a fact about the machine | today the caches that outlive a job are package variables, the way `engine/probed.go` keeps the probes. A new one says why in its pull request, and never comes from a new `Engine` made only to get it. #607 moves them all onto one object a program keeps |
-| read a file of a video | through the `afero.Fs` the code was given, with `engine.SafeChildIn` for a path in a work folder. Not `os`. Once #608 is built, through the video's `Episode` |
+| read a file of a video | through the `afero.Fs` the code was given, with `fileio.SafeChildIn` for a path in a work folder. Not `os`. Once #608 is built, through the video's `Episode` |
 | change a plan | `editPlan` in `engine/edit.go` |
 | start a goroutine that runs code which can panic, like layout of words a person typed | a deferred recover where that work comes in, which turns a panic into that work's error and logs the stack where the work has a log, as `engine/planbuild.go` does. A goroutine that only waits, counts or hands on gets none. A parser of outside bytes has its fuzz target first |
 | say that something went wrong | an error that keeps its kind with `%w`, returned to the caller. The app turns it into a row or a toast, and logs through `theLog`, never `log.Printf`, which forbidigo refuses. An engine the app makes outside a job logs through `engineLog(part, video)` in `cmd/framefairy-app/applog.go`, never to `io.Discard`. Once #607 is built, the one engine the app keeps takes the part and the video with each call |
@@ -140,11 +141,11 @@ which reads this file.
 
 1. The engine knows nothing of the layers over it. `engine/` imports
    nothing from `cmd/`, which Go refuses anyway, nor from `asr/`, and
-   `engine/runlog/`, `engine/tool/`, `engine/timed/`, `engine/num/` and
-   `engine/runes/` nothing of the rest of the engine. Among them
-   `engine/runlog/` uses `engine/num/` and `engine/runes/`, `engine/num/`
-   uses `engine/runes/`, `engine/tool/` uses none of them, and none uses
-   one above it. Held by Go's imports, which refuse a cycle, and by the
+   `engine/runlog/`, `engine/tool/`, `engine/fileio/`, `engine/timed/`,
+   `engine/num/` and `engine/runes/` nothing of the rest of the engine.
+   Among them `engine/runlog/` uses `engine/num/` and `engine/runes/`,
+   `engine/num/` and `engine/fileio/` use `engine/runes/`, `engine/tool/`
+   uses none of them, and none uses one above it. Held by Go's imports, which refuse a cycle, and by the
    review for the rest.
 2. One engine, two front ends. A rule lives once, in the engine. Held by
    the review.
@@ -164,7 +165,8 @@ which reads this file.
    again for each job. Held by the review, and by the design once #607
    is built.
 8. Every path is judged by where it really leads, inside the library.
-   Held by `SafeChild` and the store's `Known`, and their fuzz targets.
+   Held by `SafeChild` in `engine/fileio/` and the store's `Known`, and
+   their fuzz targets.
 9. What comes from outside is read by code made for it, never parsed on
    the way: a model answer by the stream readers in `engine/stream.go`,
    `ExtractJSONObject` and `ValidatePlan`, a plan by `LoadClips`, a
@@ -200,6 +202,8 @@ copies what it finds nearby, so these are not the pattern for new code.
 - The tools already checked, `checked` in `engine/tool/find.go`, a cache
   as a package variable, and the sums `make` builds in, `sums` beside it,
   which four tests set for the whole process, #607.
+- The lock's seam in `engine/fileio/lock.go`, `waits`, which the package's
+  tests set for the whole process, #607.
 - The effects in `frontend/src/screens/Episode.svelte` that compare an
   old value with a new one to notice that work ended, #606.
 

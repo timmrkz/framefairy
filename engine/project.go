@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/afero"
 
+	"framefairy/engine/fileio"
 	"framefairy/engine/runes"
 	"framefairy/engine/timed"
 )
@@ -355,7 +356,7 @@ func (p *Project) nextPass(ctx context.Context, req PlanRequest) (int, error) {
 		if err != nil {
 			return 0, err
 		}
-		if !exists(p.Files, PlanFor(p.WorkDir(), opts.folder(), opts.Experiment, PassName(window, pass))) {
+		if !fileio.Exists(p.Files, PlanFor(p.WorkDir(), opts.folder(), opts.Experiment, PassName(window, pass))) {
 			return pass, nil
 		}
 	}

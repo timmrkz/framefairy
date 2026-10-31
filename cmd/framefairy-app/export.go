@@ -12,6 +12,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"framefairy/engine"
+	"framefairy/engine/fileio"
 )
 
 // Transcribe whole video and Export transcript, the two items about the
@@ -140,13 +141,13 @@ func (s *FrameFairy) ExportTranscript(path, format string) (saved string, err er
 	// found by the review of #458.
 	if !strings.EqualFold(filepath.Ext(dest), as.ext) {
 		dest += as.ext
-		if _, err := engine.LstatIn(s.store.files, dest); err == nil {
+		if _, err := fileio.LstatIn(s.store.files, dest); err == nil {
 			return "", fmt.Errorf("%s is already there. Export again and pick another name, or that file to replace it", filepath.Base(dest))
 		}
 	}
 	// Written beside it and moved in place, so a file it replaces is
 	// whole or untouched, and a link is replaced and not what it leads to.
-	if err := engine.WriteAtomic(s.store.files, dest, []byte(text)); err != nil {
+	if err := fileio.WriteAtomic(s.store.files, dest, []byte(text)); err != nil {
 		return "", err
 	}
 	// A file made to share, so it is readable the way a saved file is. It

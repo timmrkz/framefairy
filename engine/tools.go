@@ -3,6 +3,8 @@ package engine
 import (
 	"path/filepath"
 	"strings"
+
+	"framefairy/engine/fileio"
 )
 
 // UseTools points the engine at an ffmpeg and an ffprobe that were chosen,
@@ -24,7 +26,7 @@ func (e *Engine) UseTools(ffmpeg, ffprobe string) {
 	if strings.EqualFold(filepath.Ext(ffmpeg), ".exe") {
 		name = "ffprobe.exe"
 	}
-	if guess := filepath.Join(filepath.Dir(ffmpeg), name); exists(disk, guess) {
+	if guess := filepath.Join(filepath.Dir(ffmpeg), name); fileio.Exists(disk, guess) {
 		e.FFprobe = guess
 	}
 }

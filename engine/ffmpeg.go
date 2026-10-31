@@ -19,6 +19,7 @@ import (
 
 	"github.com/spf13/afero"
 
+	"framefairy/engine/fileio"
 	"framefairy/engine/num"
 	"framefairy/engine/runes"
 	"framefairy/engine/runlog"
@@ -808,7 +809,7 @@ func (e *Engine) probe(ctx context.Context, path string) (SourceInfo, error) {
 		"-show_entries", "format=duration,start_time,format_name",
 		"-of", "json", path)
 	if res.Code != 0 {
-		if !exists(e.Files, path) {
+		if !fileio.Exists(e.Files, path) {
 			return SourceInfo{}, videoGone(path)
 		}
 		return SourceInfo{}, renderErr("ffprobe failed on %s:\n%s", path, runes.Trim(res.Stderr))
