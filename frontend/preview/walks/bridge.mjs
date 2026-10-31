@@ -4,7 +4,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
-import { chromium } from "playwright";
+import { chromium, webkit } from "playwright";
 import { filmed as filmedList } from "./filmed.mjs";
 
 // The Chromium the pinned Playwright was made for. CI's image holds only
@@ -45,9 +45,20 @@ function fallbackBrowser() {
   return undefined;
 }
 let fellBack;
+
+// The browser the walks run in, WALKBROWSER: Chromium, which the app runs
+// in on Windows, unless it says webkit, which the app runs in on a Mac and
+// on Linux. Playwright brings a WebKit of its own for Linux, which takes
+// real key presses, so the same walks run in both, see Two browsers in
+// docs/TESTING.md.
+export const browserName = process.env.WALKBROWSER || "chromium";
+if (browserName !== "chromium" && browserName !== "webkit") {
+  throw new Error(`WALKBROWSER is chromium or webkit, not ${browserName}`);
+}
 async function launch(args) {
   // An interrupt is the walk's own to answer, see keepTraces, not
   // Playwright's, which would close the browser under the traces.
+  if (browserName === "webkit") return webkit.launch({ handleSIGINT: !traces });
   const options = { args, handleSIGINT: !traces };
   try {
     return await chromium.launch(options);
@@ -92,6 +103,7 @@ export function random(seed) {
 export async function slowDown(page) {
   const slow = Number(process.env.SLOW);
   if (slow > 1) {
+    if (browserName !== "chromium") throw new Error("SLOW slows a page through Chromium's own tools, so it walks in Chromium only");
     const cdp = await page.context().newCDPSession(page);
     await cdp.send("Emulation.setCPUThrottlingRate", { rate: slow });
   }
@@ -110,8 +122,10 @@ export function noDeadlines(page) {
 // checks what the GPU draws, ["screen light"]. The video preview itself
 // draws on a 2D canvas here, __flatScreen, because headless Chromium gives
 // nothing back from a WebGPU canvas, and the walks read the frame on
-// screen from the canvas. See screen.ts.
+// screen from the canvas. See screen.ts. The counts of the lines a page
+// runs are Chromium's, so WALKCOVERAGE counts in Chromium only.
 export async function newBrowser() {
+  if (coverage && browserName !== "chromium") throw new Error("WALKCOVERAGE counts lines through Chromium's own tools, so it walks in Chromium only");
   const browser = await launch(["--enable-unsafe-webgpu"]);
   if (traces) {
     const plain = browser.newPage.bind(browser);

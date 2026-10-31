@@ -1652,7 +1652,12 @@ func TestWalks(t *testing.T) {
 	if n := envNumber("STEPS", 0); n > 0 {
 		steps = append(steps, fmt.Sprintf("STEPS=%d", n))
 	}
-	// Every walk in the folder, each for the same seeds.
+	// Every walk in the folder, each for the same seeds. In WebKit only
+	// the sequences of the parts that have walked there yet, see
+	// frontend/preview/walks/webkit.mjs, #380.
+	if os.Getenv("WALKBROWSER") == "webkit" {
+		walksWanted = 0
+	}
 	for seed := 1; seed <= walksWanted; seed++ {
 		for _, script := range walkScripts(t, walks) {
 			runs = append(runs, walkRun{script: script, env: append([]string{fmt.Sprintf("SEED=%d", seed)}, steps...)})

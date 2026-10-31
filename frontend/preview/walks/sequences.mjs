@@ -14,9 +14,10 @@
 // The episode is the bridge's, so the words are the sentences its speech
 // stand-in says: "Ich war vielleicht sechs Jahre alt, als mich auf dem
 // Schulhof irgendein Typ geschubst hat."
-import { chosen, keepTraces, newBrowser, open, settle, shown, shownOnPlayhead, traceAs, traceStep } from "./bridge.mjs";
+import { browserName, chosen, keepTraces, newBrowser, open, settle, shown, shownOnPlayhead, traceAs, traceStep } from "./bridge.mjs";
 import { clock, moving, soundCard, still, url } from "./common/steps.mjs";
 import { filmed } from "./filmed.mjs";
+import { notYet } from "./webkit.mjs";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -40,7 +41,8 @@ import { steps as appSteps } from "./app/steps.mjs";
 import { steps as commonSteps } from "./common/steps.mjs";
 
 // Every sequence, in the order of the folders they are kept in.
-export const sequences = [captions, timeline, playback, clips, search, videos, report, app].flat();
+const parts = { captions, timeline, playback, clips, search, videos, report, app };
+export const sequences = Object.values(parts).flat();
 
 // Every step by its name, from every folder. A name in two folders would
 // walk whichever came last, so it is named by --names and fails.
@@ -62,6 +64,13 @@ let failures = 0;
 // walks the one of that name and no other, where a part of a name could
 // be a part of two.
 if (only === "--names") {
+  // A part webkit.mjs names that is no folder would leave nothing out
+  // and look as if it did.
+  const noPart = notYet.filter((p) => !parts[p]);
+  if (noPart.length) {
+    console.log(`webkit.mjs names ${JSON.stringify(noPart[0])}, which is no part`);
+    process.exit(1);
+  }
   const names = sequences.map((q) => q.name);
   const twice = names.filter((n, i) => names.indexOf(n) !== i);
   if (twice.length) {
@@ -103,7 +112,9 @@ if (only === "--names") {
     console.log(`filmed.mjs names ${JSON.stringify(noWalk[0])}, which is no walk or sequence`);
     process.exit(1);
   }
-  console.log(names.join("\n"));
+  // In WebKit, the parts that have walked there.
+  const walked = browserName === "webkit" ? Object.entries(parts).filter(([p]) => !notYet.includes(p)).flatMap(([, own]) => own.map((q) => q.name)) : names;
+  console.log(walked.join("\n"));
   process.exit(0);
 }
 
