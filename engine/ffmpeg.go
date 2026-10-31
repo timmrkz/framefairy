@@ -799,11 +799,38 @@ func videoStartOf(stream, format map[string]any) float64 {
 	return 0
 }
 
+// lengthOf is SourceInfo.Duration from what ffprobe said of a file, its
+// picture's stream, its format and its warnings, see Probe. readThrough
+// reads the file through for where its picture ends, counted from the
+// start given, see lastMoment. It is asked only of a file that does not
+// say how long it is, or whose length ffprobe guessed.
+func lengthOf(stream, format map[string]any, said string, readThrough func(start float64) float64) float64 {
+	duration := 0.0
+	if raw, ok := format["duration"]; ok {
+		// Some containers report N/A, and the range check just skips then.
+		if d, ok := num.AsFloat(raw); ok {
+			duration = d
+		}
+	}
+	formatStart, _ := num.AsFloat(format["start_time"])
+	guessed := guessedLength(said)
+	if duration <= 0 || guessed {
+		// A Matroska file whose writing was cut off, the way OBS leaves a
+		// recording when it crashes, has no duration and no index. It is
+		// read through once for where its picture ends.
+		return readThrough(formatStart)
+	}
+	if end, ok := pictureEndOf(stream, formatStart); ok && end > 0 && end < duration {
+		return end
+	}
+	return duration
+}
+
 // guessedLength tells whether ffprobe, by what it said, guessed how long
 // a file is from its size and its bit rate. It does for a file that does
 // not say how long it is, when every track says its bit rate: a Matroska
 // recording cut off by a crash, in MPEG-4 Part 2 with PCM sound, was
-// guessed 8.443 s long where it holds 7 s, #270. libavformat says so in
+// guessed 8.236 s long where it holds 7 s, #270. libavformat says so in
 // a warning, and in nothing ffprobe prints as data.
 func guessedLength(said string) bool {
 	return strings.Contains(said, "Estimating duration from bitrate")
@@ -968,26 +995,9 @@ func (e *Engine) probe(ctx context.Context, path string) (SourceInfo, error) {
 		}
 	}
 
-	duration := 0.0
-	if raw, ok := data.Format["duration"]; ok {
-		// Some containers report N/A, and the range check just skips then.
-		if d, ok := num.AsFloat(raw); ok {
-			duration = d
-		}
-	}
-	formatStart, _ := num.AsFloat(data.Format["start_time"])
-	guessed := guessedLength(res.Stderr)
-	if duration <= 0 || guessed {
-		// A Matroska file whose writing was cut off, the way OBS leaves a
-		// recording when it crashes, has no duration and no index. It is
-		// read through once for where its last packet ends.
-		duration = e.lastMoment(ctx, path, formatStart)
-	}
-	// A guessed length is the picture's too, so it says nothing of where
-	// the picture ends.
-	if end, ok := pictureEndOf(stream, formatStart); ok && !guessed && end > 0 && end < duration {
-		duration = end
-	}
+	duration := lengthOf(stream, data.Format, res.Stderr, func(start float64) float64 {
+		return e.lastMoment(ctx, path, start)
+	})
 	format, _ := data.Format["format_name"].(string)
 
 	width, okW := num.AsInt(stream["width"])
@@ -1335,8 +1345,10 @@ func (e *Engine) keyBefore(ctx context.Context, path string, s SourceInfo, at in
 	return 0, false
 }
 
-// lastMoment is where the last packet of a file ends, counted from start,
-// the start of the file, for a file that does not say how long it is.
+// lastMoment is where the last packet of a file's picture ends, counted
+// from start, the start of the file, for a file that does not say how
+// long it is. The picture's, because past it there is nothing to show or
+// cut, though the sound may go on, #274.
 // Nought for one that cannot be read. Every packet is read, a few seconds
 // for an episode of hours, so the answer is kept for as long as the file
 // stays as it is.
@@ -1348,7 +1360,7 @@ func (e *Engine) lastMoment(ctx context.Context, path string, start float64) flo
 			return end.(float64)
 		}
 	}
-	res := run(ctx, "", e.FFprobe, "-v", "error",
+	res := run(ctx, "", e.FFprobe, "-v", "error", "-select_streams", "v:0",
 		"-show_entries", "packet=pts_time,duration_time", "-of", "csv=p=0", path)
 	if res.Code != 0 {
 		return 0
