@@ -395,7 +395,7 @@
   // the cursor in view and scrolls nothing itself: WebKit on a Mac puts a
   // cursor out of view in the middle of the field.
   function reveal(at: number, top = field.scrollTop, lines = 0) {
-    scroll(place(at, top, lines));
+    scroll(place(at, top, lines), top);
   }
 
   // place is where reveal would put the field's top, and top itself when
@@ -418,10 +418,14 @@
   // field scrolled past (30 October). The cursor's colour said another
   // way, auto or the text's colour, which are the same colour here, has
   // the field drawn again. Once a frame, since twice would be no change.
-  function scroll(top: number) {
-    if (top === field.scrollTop) return;
-    field.scrollTop = top;
-    if (redrawing) return;
+  // It is drawn again whenever the field ends anywhere but from, where it
+  // was before the key or the edit, even when the browser scrolled it
+  // there itself: WebKit reveals the cursor as it makes an edit, before
+  // the page hears of it, and a new line at the foot of the field was
+  // left drawn on the line it left in Playwright's WebKit (#380).
+  function scroll(top: number, from = field.scrollTop) {
+    if (top !== field.scrollTop) field.scrollTop = top;
+    if (top === from || redrawing) return;
     redrawing = true;
     field.style.caretColor = field.style.caretColor ? "" : "currentcolor";
     requestAnimationFrame(() => (redrawing = false));
