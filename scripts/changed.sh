@@ -280,7 +280,7 @@ for file in $changed; do
 	scripts/machine.sh) lint=1 ;;
 	# The rules of the repository, which make lint tests, and this
 	# script and its test among them.
-	scripts/changed-test.sh | scripts/needs-build.sh | scripts/needs-build-test.sh | scripts/built-on-push.sh | scripts/built-on-push-test.sh | scripts/main-moved.sh | scripts/main-moved-test.sh | scripts/plan-frozen.sh | scripts/plan-frozen-test.sh | scripts/test-failures-test.sh | scripts/testdata/test-failures/* | scripts/pins.sh) lint=1 ;;
+	scripts/changed-test.sh | scripts/needs-build.sh | scripts/needs-build-test.sh | scripts/main-moved.sh | scripts/main-moved-test.sh | scripts/plan-frozen.sh | scripts/plan-frozen-test.sh | scripts/test-failures-test.sh | scripts/testdata/test-failures/* | scripts/pins.sh) lint=1 ;;
 	*.sh)
 		lint=1
 		ships

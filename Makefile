@@ -684,7 +684,6 @@ lint: toolchain modules golangci-lint frontend/node_modules/.package-lock.json
 	@sh scripts/pins.sh
 	@sh scripts/changed-test.sh
 	@sh scripts/needs-build-test.sh
-	@sh scripts/built-on-push-test.sh
 	@sh scripts/main-moved-test.sh
 	@sh scripts/plan-frozen-test.sh
 	@sh scripts/test-failures-test.sh
