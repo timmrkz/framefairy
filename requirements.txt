@@ -3,9 +3,10 @@
 # Dependabot moves them, see .github/dependabot.yml. Nothing that ships is
 # Python. #591.
 
-# What builds the ffmpeg and the llama-server we ship, installed by
-# scripts/build-tools.sh into an environment of their own. nasm is not
-# here: only ffmpeg's Intel code needs it, and the Mac is Apple silicon.
+# What builds the ffmpeg and the llama-server we ship on a Mac, installed
+# by scripts/build-tools.sh into an environment of their own,
+# .build/tools. nasm is not here: only ffmpeg's Intel code needs it, and
+# the Mac is Apple silicon.
 cmake==4.4.4 \
     --hash=sha256:02e9599cba932b386dc5c7e29db5dbda0610d13263798ff1521298c18014357d \
     --hash=sha256:3c3f40c4656ec1ad1b873dd502bb31b3bba75295ae66b2623e515f2931eddbcb \
@@ -70,7 +71,8 @@ pkgconf==3.0.7.post0 \
     --hash=sha256:faebb89a180ac7a288f4f7f6c9475ab480bfc2c675812f90801e63c3959d6a04
 
 # What reads the recorded talks of the speech benchmark,
-# .github/workflows/speechbench.yml.
+# .github/workflows/speechbench.yml, which has scripts/build-tools.sh
+# install it alone.
 pyarrow==26.0.0 \
     --hash=sha256:01c863a18bd9c8412453dd0d92de6d0ee7b2b3d6fb079d9734a4b2a3c8bd4453 \
     --hash=sha256:0cccd36e00ea3afeb52ded61f2721ce71f604853d70c45365c58324eb773d6ae \

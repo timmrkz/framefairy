@@ -16,7 +16,10 @@ the folder, copy the new files in and run `make` again.
    Go, Node.js and a Python of 3.10 or newer, and
    `scripts/build-tools.sh` putting the few tools that build ffmpeg and
    llama.cpp, cmake, meson, ninja and pkg-config, in `.build/tools` at the
-   versions `requirements.txt` pins, the same ones CI's Macs build with.
+   versions `requirements.txt` pins as each build starts, `make ffmpeg`
+   and `make llama` too. CI's Macs build with the same, and their caches
+   of ffmpeg and llama-server are keyed on those pins, so a newer tool
+   builds them again.
    Elsewhere it says what to install, because those need administrator
    rights.
 2. Builds the two programs framefairy ships beside itself, if they are not

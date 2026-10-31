@@ -38,7 +38,7 @@ export function pictures(got: Pulled, width: number, height: number): { at: numb
   return got.frames.map(({ at, data }) => ({ at, frame: new Picture(data, width, height, Math.round(at * 1e6), got.light) }));
 }
 
-// The frames are colours ready to draw, see engine.PreviewFrames. Nothing
+// The frames are colours ready to draw, see framewire.Picture. Nothing
 // here decides colour. Each frame is read into one of the spare buffers
 // while there are any of its size, and into a new one after.
 export async function pull(url: string, width: number, height: number, spare: ArrayBuffer[] = []): Promise<Pulled> {

@@ -162,7 +162,7 @@ all: deps toolchain frames $(PROGRAMS) tools-beside
 # or a file test.
 deps:
 ifeq ($(INSTALL),1)
-	@sh scripts/tools.sh $(STAMPS)/ffmpeg $(STAMPS)/llama $(STAMPS)/tools
+	@sh scripts/tools.sh $(STAMPS)/ffmpeg $(STAMPS)/llama
 endif
 
 # Our own ffmpeg and llama-server go beside the programs, which is the only
@@ -380,7 +380,7 @@ FRESH_FRAMES := $(if $(and $(wildcard $(FRAMES)),$(wildcard $(STAMPS)/ffmpeg/lib
 # there, for when the last one went wrong.
 ffmpeg:
 	@rm -rf $(STAMPS)/ffmpeg
-	@sh scripts/build-ffmpeg.sh $(STAMPS)/ffmpeg
+	@sh scripts/build-tools.sh --then sh scripts/build-ffmpeg.sh $(STAMPS)/ffmpeg
 	@cksum scripts/build-ffmpeg.sh | cut -d' ' -f1 >$(STAMPS)/ffmpeg/built
 
 # The llama-server we ship, so choosing a local model is not an instruction
@@ -389,7 +389,7 @@ ffmpeg:
 # whatever is there.
 llama:
 	@rm -rf $(STAMPS)/llama
-	@sh scripts/build-llama.sh $(STAMPS)/llama
+	@sh scripts/build-tools.sh --then sh scripts/build-llama.sh $(STAMPS)/llama
 	@cksum scripts/build-llama.sh | cut -d' ' -f1 >$(STAMPS)/llama/built
 
 # Both of them in one archive, with a manifest that says what each one is
@@ -703,7 +703,7 @@ check:
 	@sh scripts/check.sh || true
 
 tools:
-	@sh scripts/tools.sh $(STAMPS)/ffmpeg $(STAMPS)/llama $(STAMPS)/tools
+	@sh scripts/tools.sh $(STAMPS)/ffmpeg $(STAMPS)/llama
 
 models: toolchain modules
 	@$(GO) run ./scripts/models

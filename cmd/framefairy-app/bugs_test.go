@@ -722,32 +722,42 @@ func TestAToastsReportButtonWritesItsWordsInTheReport(t *testing.T) {
 	}
 }
 
-// heldMove holds the move of a file onto its name, the last step of
-// engine.WriteAtomic, until free is closed, and says at when it is there.
-// moved is set once the move is done.
-type heldMove struct {
+// heldWrite holds a write of the draft at its first step, making the
+// folder, until free is closed, and says at when it is there. The rest of
+// the write reads the report's files again, so an end that does not wait
+// for the lock is a race the race detector names on every run. written is
+// set once the draft is moved onto its name, the last step.
+type heldWrite struct {
 	afero.Fs
 	at, free chan struct{}
-	moved    atomic.Bool
+	once     sync.Once
+	written  atomic.Bool
 }
 
-func (h *heldMove) Rename(from, to string) error {
-	close(h.at)
-	<-h.free
+func (h *heldWrite) MkdirAll(path string, perm os.FileMode) error {
+	h.once.Do(func() {
+		close(h.at)
+		<-h.free
+	})
+	return h.Fs.MkdirAll(path, perm)
+}
+
+func (h *heldWrite) Rename(from, to string) error {
 	err := h.Fs.Rename(from, to)
-	h.moved.Store(true)
+	h.written.Store(true)
 	return err
 }
 
 // The bridge ends the report of the app a walk ran before it removes the
-// config folder: a save the page sent as the walk ended is let finish,
+// config folder: a save the page sent as the walk ended, held here as it
+// makes the folder, is let finish,
 // whole, and a save after it writes nothing, so no file is made in the
 // folder while it is removed and no draft lands in the next walk's.
 // Issue #632, where a draft written during the reset failed it with
 // "directory not empty".
 func TestAnEndedReportWritesNothingMore(t *testing.T) {
 	files := afero.NewMemMapFs()
-	held := &heldMove{Fs: files, at: make(chan struct{}), free: make(chan struct{})}
+	held := &heldWrite{Fs: files, at: make(chan struct{}), free: make(chan struct{})}
 	r := newReporting(held, "/config/report")
 	s := &FrameFairy{report: r}
 
@@ -757,13 +767,13 @@ func TestAnEndedReportWritesNothingMore(t *testing.T) {
 	ended := make(chan bool, 1)
 	go func() {
 		endReport(r)
-		ended <- held.moved.Load()
+		ended <- held.written.Load()
 	}()
 	close(held.free)
 	if err := <-saved; err != nil {
 		t.Fatalf("the save in hand failed: %v", err)
 	}
-	if moved := <-ended; !moved {
+	if written := <-ended; !written {
 		t.Fatal("the report ended while a save was still writing its draft")
 	}
 

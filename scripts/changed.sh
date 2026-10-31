@@ -259,10 +259,14 @@ for file in $changed; do
 	.node-version) everything ;;
 	# The machine every Linux job runs in, so every part that runs there.
 	# No Mac runs in it, so a Mac has nothing to check.
+	# The interface's checks run on the runner's own Node, not in the
+	# image, so the image asks for no interface run, and leaves one a
+	# file before it asked for, like .node-version, as it was.
 	.github/ci-image/* | .github/workflows/ci-image.yml | scripts/ci-packages.sh)
 		if [ "$OS" != Darwin ]; then
+			asked=$interface
 			everything
-			interface=0
+			interface=$asked
 		fi
 		;;
 	# make unit and make fuzz run these, so they decide how the Go tests
