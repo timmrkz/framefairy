@@ -111,14 +111,19 @@ frame it shares too. The walk "a word too short for a frame of its own is
 lit with the word on the frame it shares" types " Q Schulhofgeschichten"
 into "war", steps frame by frame onto "Q", sees it lit with the words
 beside it on one pill libass drew, and steps back from there with Shift
-and ←, a new frame each press. The walks' video says "Mein", "es" and
-"dem" in a hundredth of a second, `quick` in
+and ←, a new frame each press. The walks' video says "so", "sich" and
+"wir" in a hundredth of a second, `quick` in
 `cmd/framefairy-app/bridge_test.go`, so they share a frame at the start,
 in the middle and at the end of a caption in every walk that shows
-captions. Every caption walk, the edges dragged, a word corrected or
-removed, runs over them, and the walk "the walks' video has words that
-share a frame at the end, in the middle and at the start of a caption"
-checks the three are lit together. `TestEveryWordOfACaptionShownIsLitOnAFrame`
+captions, and every other word keeps its time. Every caption walk, the
+edges dragged, a word corrected or removed, runs over them, and the walk
+"the walks' video has words that share a frame at the start, in the
+middle and at the end of a caption" checks the three are lit together.
+They found that a click on the edge where a caption appears put the
+playhead in the middle of its first word, in the frame before the
+caption is up, when that word is too short for a frame. `captionAppears`
+in `ClipTimeline.svelte` now goes no earlier than the first frame drawn
+with the caption up. `TestEveryWordOfACaptionShownIsLitOnAFrame`
 in `engine/wordframes_test.go` makes 400 captions of its own at ten frame
 rates, with words of no length, words shorter than a frame, captions
 that start before their first word and clips that start off the frame

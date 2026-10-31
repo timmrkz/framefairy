@@ -489,21 +489,20 @@ export default [
     ],
   },
   {
-    // #280: the walks' video says "dem", "es" and "Mein" faster than a
+    // #280: the walks' video says "so", "sich" and "wir" faster than a
     // frame, see quick in bridge_test.go, so every caption walk meets
-    // words that share a frame, at the end, in the middle and at the start
-    // of a caption. This holds it: each is lit with the word beside it,
-    // and a step back goes on from there.
-    name: "the walks' video has words that share a frame at the end, in the middle and at the start of a caption",
+    // words that share a frame, at the start, in the middle and at the
+    // end of a caption. This holds it: each is lit with the word beside
+    // it, and a step back goes on from there.
+    name: "the walks' video has words that share a frame at the start, in the middle and at the end of a caption",
     steps: [
-      ["frame", "auf"],
-      ["lit together", "dem"],
+      ["frame", "dabei"],
+      ["lit together", "so"],
       ["steps back", 1],
-      ["frame", "geschubst"],
-      ["lit together", "Mein"],
+      ["lit together", "sich"],
       ["steps back", 1],
-      ["frame", "so"],
-      ["lit together", "es"],
+      ["frame", "abgeholt"],
+      ["lit together", "wir"],
       ["steps back", 1],
     ],
   },

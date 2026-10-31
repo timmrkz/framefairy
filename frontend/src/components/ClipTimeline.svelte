@@ -1379,9 +1379,15 @@
   // frames, and the frame that holds its start begins before it, where the
   // caption is not up yet. Tim saw nothing in the video preview to snap to
   // on #294, and the caption before it on pressing the edge.
+  // Never before the first frame drawn with the caption up, the first
+  // that starts at or after the hundredth the caption file puts its start
+  // on. A first word too short for a frame of its own has its middle in
+  // the frame before, #280.
   function captionAppears(c: CaptionCue): number {
     const word = c.lines?.[0]?.words?.[0];
-    return word && Math.abs(word.start - c.start) < 1e-6 ? intoWord(word, frame) : c.start;
+    const into = word && Math.abs(word.start - c.start) < 1e-6 ? intoWord(word, frame) : c.start;
+    const f = frame > 0 ? frame : 1 / 30;
+    return Math.max(into, Math.ceil((c.start - 0.005) / f) * f);
   }
 
   // Letting go of the draft, and of any answer still on its way.
