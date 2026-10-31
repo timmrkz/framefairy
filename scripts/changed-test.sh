@@ -219,6 +219,7 @@ has "scripts/bundle-macos.sh" "go framefairy/cmd/framefairy-release"
 
 # The rules are tested in make lint.
 is "scripts/needs-build.sh" "lint unit go framefairy/internal/naming"
+is "scripts/built-on-push.sh" "lint unit go framefairy/internal/naming"
 is "scripts/main-moved.sh" "lint unit go framefairy/internal/naming"
 is "scripts/plan-frozen.sh" "lint unit go framefairy/internal/naming"
 

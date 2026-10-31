@@ -21,7 +21,10 @@
 # its channel. A branch with no open pull request builds nothing. The
 # pull_request event is left with what only it says: opened, reopened and
 # closed. The build is of the branch as it is, not merged with main, so a
-# conflict does not make it wrong to test.
+# conflict does not make it wrong to test. A pull request opened in the
+# same second as its branch was pushed, the way Dependabot opens them, is
+# built by that push, and its opening builds nothing, see
+# scripts/built-on-push.sh.
 #
 # A commit that is built already, or that only changes the docs against
 # the build there is, gets no build of its own. scripts/needs-build.sh
@@ -59,6 +62,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
+      actions: read
       contents: read
       pull-requests: read
     outputs:
@@ -68,6 +72,13 @@ jobs:
       sha: ${{ steps.which.outputs.sha }}
       build: ${{ steps.which.outputs.build }}
     steps:
+      # Only the rule an opening asks, not the whole branch.
+      - if: github.event_name == 'pull_request' && github.event.action == 'opened'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: scripts/built-on-push.sh
+          sparse-checkout-cone-mode: false
+
       - id: which
         name: What this is a build of
         env:
@@ -79,12 +90,19 @@ jobs:
           NUMBER: ${{ github.event.pull_request.number }}
           TITLE: ${{ github.event.pull_request.title }}
           SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          OPENED: ${{ github.event.pull_request.created_at }}
         # A branch's pull request is only one opened from this repository:
         # a fork can have a branch of the same name.
         run: |
           build=true
           if [ "$EVENT" = pull_request ]; then
             if [ "$ACTION" = closed ]; then build=false; fi
+            # A push of the same commit that came after the opening builds
+            # it already, and a second build would stop that one.
+            if [ "$ACTION" = opened ] && [ "$(sh scripts/built-on-push.sh "$OPENED" "$SHA")" = push ]; then
+              echo "::notice::A push of $SHA builds this pull request already."
+              build=false
+            fi
           elif [ "$BRANCH" = main ]; then
             NUMBER=
           else

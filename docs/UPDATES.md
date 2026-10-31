@@ -265,8 +265,12 @@ How it would work:
   request while it is in conflict with main, and a commit pushed to #35
   in that state got no build. A branch with no open pull request builds
   nothing, and a pull request opened on a branch pushed before is built
-  when it is opened. The build is of the branch as it is, not merged with
-  main, so a pull request in conflict can still be tested.
+  when it is opened. One opened in the same second as its branch was
+  pushed, the way Dependabot opens them, is built by that push alone:
+  built twice, the second build stopped the first and left a cancelled
+  check on the pull request. `scripts/built-on-push.sh` decides it. The
+  build is of the branch as it is, not merged with main, so a pull
+  request in conflict can still be tested.
 - **A commit gets one build.** One that is built already, or that only
   changes the docs against the build there is, gets none of its own.
   `scripts/needs-build.sh` decides it, for the build and for the list
