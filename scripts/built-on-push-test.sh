@@ -17,12 +17,14 @@ fail=0
 mkdir "$work/bin"
 cat >"$work/bin/gh" <<'GH'
 #!/bin/sh
-# run list: the times the runs were made, one a line, the way the script
-# asks gh's own jq for them, or a failure when there are none.
-case "$1 $2" in
-"run list") cat "$GH_DIR/runs" ;;
-*) echo "gh: $*" >&2 && exit 1 ;;
-esac
+# Only the one question the rule asks: the times the runs for a push of
+# the commit to the branch were made, one a line, the way the script asks
+# gh's own jq for them. Anything else fails, so a question that would
+# also count the opening's own run, or another branch, fails the cases
+# that want push.
+want="run list --workflow builds.yml --branch dependabot/npm_and_yarn/frontend/interface-673c3a6cd6 --commit 36033381ba4c --event push --json createdAt --jq .[].createdAt"
+[ "$*" = "$want" ] || { echo "gh: $*" >&2 && exit 1; }
+cat "$GH_DIR/runs"
 GH
 chmod +x "$work/bin/gh"
 export GH_DIR="$work" PATH="$work/bin:$PATH"
@@ -33,7 +35,7 @@ check() {
 	want=$3
 	# - stands for runs gh cannot read.
 	if [ "$runs" != - ]; then printf '%s' "$runs" >"$work/runs"; else rm -f "$work/runs"; fi
-	got=$(sh "$here/built-on-push.sh" 2026-10-31T13:20:20Z 36033381ba4c 2>/dev/null)
+	got=$(sh "$here/built-on-push.sh" 2026-10-31T13:20:20Z 36033381ba4c dependabot/npm_and_yarn/frontend/interface-673c3a6cd6 2>/dev/null)
 	if [ "$got" = "$want" ]; then
 		printf 'ok  \t%-52s %s\n' "$what" "$got"
 	else

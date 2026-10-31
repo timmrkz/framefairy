@@ -21,9 +21,10 @@
 # its channel. A branch with no open pull request builds nothing. The
 # pull_request event is left with what only it says: opened, reopened and
 # closed. The build is of the branch as it is, not merged with main, so a
-# conflict does not make it wrong to test. A pull request opened in the
-# same second as its branch was pushed, the way Dependabot opens them, is
-# built by that push, and its opening builds nothing, see
+# conflict does not make it wrong to test. When the run for a push of the
+# pull request's commit was made at or after the opening, the way
+# Dependabot pushes and opens in the same second, that push found the pull
+# request and builds it, and the opening builds nothing, see
 # scripts/built-on-push.sh.
 #
 # A commit that is built already, or that only changes the docs against
@@ -91,6 +92,7 @@ jobs:
           TITLE: ${{ github.event.pull_request.title }}
           SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           OPENED: ${{ github.event.pull_request.created_at }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
         # A branch's pull request is only one opened from this repository:
         # a fork can have a branch of the same name.
         run: |
@@ -99,7 +101,7 @@ jobs:
             if [ "$ACTION" = closed ]; then build=false; fi
             # A push of the same commit that came after the opening builds
             # it already, and a second build would stop that one.
-            if [ "$ACTION" = opened ] && [ "$(sh scripts/built-on-push.sh "$OPENED" "$SHA")" = push ]; then
+            if [ "$ACTION" = opened ] && [ "$(sh scripts/built-on-push.sh "$OPENED" "$SHA" "$HEAD_REF")" = push ]; then
               echo "::notice::A push of $SHA builds this pull request already."
               build=false
             fi
