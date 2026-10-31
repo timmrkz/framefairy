@@ -174,6 +174,67 @@ asks. The weekly triage labels every open issue that lacks one and
 looks again at the ones whose facts changed, a flaky test seen failing
 again for example. The table itself changes only when Tim says so.
 
+## Triage
+
+A session looks over the issues once a week, started by a routine on
+claude.ai, and every second week it also looks for problems that come
+back, see the next section. It changes no file, so it opens no pull
+request. It works in this order, because what happens now comes first:
+
+1. **Main's CI runs since the last triage.** Every red run is matched to
+   an issue. A red run with none gets one.
+2. **Labels.** Every open issue without a priority or a size gets one
+   from the table above. An issue whose facts changed is looked at again.
+3. **What can close.** An issue that main has done is closed as done.
+   One that a later decision went against, or that waited for something
+   that has happened, is closed as not planned. A duplicate is closed as
+   one, and the issue that stays gets a comment with what the other
+   added. An issue that is mostly done is rewritten to what is left. Each
+   closing says in one line which pull request or decision closed it.
+4. **Problems that come back**, every second week, see below.
+
+Tim's labels and Tim's words are never changed. The triage ends with a
+reply to Tim that lists every change, each linked, and he checks them.
+
+## Problems that come back
+
+When the same thing goes wrong again and again, each time under a new
+issue, every fix looks done and none of them is. Seen together, the
+issues say what is broken underneath. On GitHub's virtual Mac the media
+engine hung in the decoder probe, #282, then in the video preview's
+decoder, #553, in the render, #570, in a test's reference frame, #581,
+and in the decoder again, #638. Each fix made one place give up on it,
+and the next hang came in a place that did not.
+
+This is how ITIL's problem management keeps them apart. One time
+something goes wrong is an **incident**: a failed run, a bug Tim saw, a
+test that hung. It is an ordinary issue. The cause behind several
+incidents is a **problem**. It is an issue of its own, labelled
+`problem` beside its kind, its priority and its size, and its incidents
+are its [sub-issues](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/adding-sub-issues).
+
+- **Before an issue is logged,** the closed issues are searched as well
+  as the open ones. When the new incident has the cause of an earlier
+  one, it goes under that cause's problem. When there is no problem yet,
+  one is opened, and both incidents go under it. The same cause means
+  the same thing breaks underneath, even in another test, another path
+  or another part of the app.
+- **A problem says** the cause as far as it is known, every fix tried
+  so far and why it did not hold, and what would take the cause away in
+  one place. Its priority is the highest of its incidents.
+- **Work on an incident of a problem is work on the problem.** A
+  session that picks one fixes the cause, or says in the pull request
+  why a fix for this one incident is enough.
+- **A fix closes its incident** with `Fixes #N`. **A problem closes**
+  only with the pull request that takes its cause away. When a new
+  incident comes after that, it goes under the problem and the problem
+  is reopened. A reopened problem is a fix that did not hold.
+- **Every second week the triage** reads every issue opened or closed
+  since the last time it looked, puts each that shares a cause with
+  another under its problem, and opens the problems that are missing.
+  Its reply to Tim names the problems that had a new incident, the ones
+  reopened, and the ones whose fix held.
+
 ## The review skill in this project
 
 The skill in `.claude/skills/review/` is written for any project, so it

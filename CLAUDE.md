@@ -156,6 +156,12 @@ thing belongs. In short:
   `priority/important` or `priority/backlog`, and one size,
   `size/small`, `size/medium` or `size/large`, as
   [docs/WORKFLOW.md](docs/WORKFLOW.md#priority-and-size) defines them.
+  Before it is logged, the closed issues are searched as well as the
+  open ones. One whose cause was seen before goes under that cause's
+  `problem` issue, and work on it is work on that cause, see
+  [Problems that come back](docs/WORKFLOW.md#problems-that-come-back).
+  How the issues are looked over every week is
+  [Triage](docs/WORKFLOW.md#triage) there.
 - **Open work is GitHub issues, never rows in a file.** Every pull
   request once added its row at the end of the same table in
   [docs/GUI-PLAN.md](docs/GUI-PLAN.md), so any two of them conflicted,
