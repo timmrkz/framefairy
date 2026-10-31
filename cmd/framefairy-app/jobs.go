@@ -964,6 +964,11 @@ func (q *queue) runJob(job *Job) {
 		if ev.Kind == runlog.EventDetail {
 			return
 		}
+		// A warning is in app.log too, which a report carries and the
+		// job's own log in the video's work folder is not.
+		if ev.Kind == runlog.EventWarn {
+			theLog.jobLine(zerolog.WarnLevel, job).Msg(ev.Text)
+		}
 		copied := ev
 		// A hearing that begins another part has saved the part before
 		// it, so the library is read again: what it says was heard stays

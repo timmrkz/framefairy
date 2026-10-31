@@ -108,6 +108,9 @@ func specs() []flagSpec {
 			func(o *engine.Options, v string) error { o.From = v; return nil }},
 		{[]string{"--to"}, kString, "END_AT", "only consider the episode up to this point",
 			func(o *engine.Options, v string) error { o.To = v; return nil }},
+		{[]string{"--next"}, kBool, "", "search the window the app would place next, where the " +
+			"fewest searches have been, as another pass when it was searched before. Takes no --from or --to",
+			func(o *engine.Options, _ string) error { o.Next = true; return nil }},
 		{[]string{"--max-pause"}, kFloat, "MAX_PAUSE", "cut any silence longer than this even when " +
 			"the model chose to keep it. Off by default, because which pauses survive is the model's call",
 			floatValue("--max-pause", func(o *engine.Options, v float64) { o.MaxPause = &v })},
