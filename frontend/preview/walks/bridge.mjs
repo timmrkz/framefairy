@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { dirname, join, relative, resolve } from "node:path";
 import { chromium, webkit } from "playwright";
 import { filmed as filmedList } from "./filmed.mjs";
+import { inChromium } from "./webkit.mjs";
 
 // The Chromium the pinned Playwright was made for. CI's image holds only
 // its headless shell, which a headless launch finds by itself, so there
@@ -46,19 +47,26 @@ function fallbackBrowser() {
 }
 let fellBack;
 
-// The browser the walks run in, WALKBROWSER: Chromium, which the app runs
-// in on Windows, unless it says webkit, which the app runs in on a Mac and
-// on Linux. Playwright brings a WebKit of its own for Linux, which takes
-// real key presses, so the same walks run in both, see Two browsers in
-// docs/TESTING.md.
-export const browserName = process.env.WALKBROWSER || "chromium";
-if (browserName !== "chromium" && browserName !== "webkit") {
-  throw new Error(`WALKBROWSER is chromium or webkit, not ${browserName}`);
+// The browser a walk runs in: WebKit, which the app runs in on a Mac and
+// on Linux, for every part of the app that has moved there, webkit.mjs,
+// and Chromium, which the app runs in on Windows, for the rest and for
+// the random walks until the last part has moved. WALKBROWSER names one
+// for every walk, as the nightly walks do for Chromium. Playwright brings
+// a WebKit of its own for Linux, which takes real key presses. See Two
+// browsers in docs/TESTING.md.
+const asked = process.env.WALKBROWSER || "";
+if (asked && asked !== "chromium" && asked !== "webkit") {
+  throw new Error(`WALKBROWSER is chromium or webkit, not ${asked}`);
 }
-async function launch(args) {
+export function browserFor(part) {
+  if (asked) return asked;
+  if (part === undefined) return inChromium.length ? "chromium" : "webkit";
+  return inChromium.includes(part) ? "chromium" : "webkit";
+}
+async function launch(name, args) {
   // An interrupt is the walk's own to answer, see keepTraces, not
   // Playwright's, which would close the browser under the traces.
-  if (browserName === "webkit") return webkit.launch({ handleSIGINT: !traces });
+  if (name === "webkit") return webkit.launch({ handleSIGINT: !traces });
   const options = { args, handleSIGINT: !traces };
   try {
     return await chromium.launch(options);
@@ -103,7 +111,7 @@ export function random(seed) {
 export async function slowDown(page) {
   const slow = Number(process.env.SLOW);
   if (slow > 1) {
-    if (browserName !== "chromium") throw new Error("SLOW slows a page through Chromium's own tools, so it walks in Chromium only");
+    if (page.context().browser().browserType().name() !== "chromium") throw new Error("SLOW slows a page through Chromium's own tools, so it walks in Chromium only, WALKBROWSER=chromium");
     const cdp = await page.context().newCDPSession(page);
     await cdp.send("Emulation.setCPUThrottlingRate", { rate: slow });
   }
@@ -123,10 +131,11 @@ export function noDeadlines(page) {
 // draws on a 2D canvas here, __flatScreen, because headless Chromium gives
 // nothing back from a WebGPU canvas, and the walks read the frame on
 // screen from the canvas. See screen.ts. The counts of the lines a page
-// runs are Chromium's, so WALKCOVERAGE counts in Chromium only.
-export async function newBrowser() {
-  if (coverage && browserName !== "chromium") throw new Error("WALKCOVERAGE counts lines through Chromium's own tools, so it walks in Chromium only");
-  const browser = await launch(["--enable-unsafe-webgpu"]);
+// runs are Chromium's, so WALKCOVERAGE counts in Chromium only. name is
+// the browser, a random walk's unless said, see browserFor.
+export async function newBrowser(name = browserFor()) {
+  if (coverage && name !== "chromium") throw new Error("WALKCOVERAGE counts lines through Chromium's own tools, so it walks in Chromium only, WALKBROWSER=chromium");
+  const browser = await launch(name, ["--enable-unsafe-webgpu"]);
   if (traces) {
     const plain = browser.newPage.bind(browser);
     browser.newPage = async (options) => {
@@ -336,19 +345,20 @@ if (traces) {
 // scale its device pixels to a CSS pixel, 2 for a Mac's screen, and again
 // opens another page on the episode as it is now, beside the first, in
 // its browser. browser is a browser to open it in rather than one of its
-// own, see newBrowser. clock is the clock a play runs on, see
+// own, see newBrowser, and named the browser of its own, see browserFor.
+// clock is the clock a play runs on, see
 // preview/clock.ts: "frames", the walk's clock, stands on each frame
 // until it is up and holds the sound card meanwhile, so every frame of a
 // play is shown and read on any machine, issues #534 and #588. "sound"
 // is the sound card's, as the app runs without a walk, for what a walk
 // checks on the sound's own time, see soundCard in common/steps.mjs.
-export async function open(url, { viewport = { width: 1500, height: 1000 }, scale = 1, again = null, browser: given = null, still = false, clock = "frames" } = {}) {
+export async function open(url, { viewport = { width: 1500, height: 1000 }, scale = 1, again = null, browser: given = null, named = browserFor(), still = false, clock = "frames" } = {}) {
   // The episode the way the bridge found it, whatever the walk before did.
   if (!again) {
     const reset = await fetch(new URL("/reset", url), { method: "POST" });
     if (!reset.ok) throw new Error(`the bridge did not reset: ${await reset.text()}`);
   }
-  const browser = again ?? given ?? (await newBrowser());
+  const browser = again ?? given ?? (await newBrowser(named));
   // A page of its own in a context of its own, which browser.newPage
   // makes, so nothing a page before it kept is there.
   // A page still asks the system for less motion, the way a person can

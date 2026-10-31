@@ -272,10 +272,10 @@ jobs:
   # Playwright drives, all of it in the image ci-image.yml keeps, which
   # the job runs in.
   #
-  # And in WebKit, the engine the app runs in on a Mac, on a machine of
-  # its own: for now the parts of the app that have walked there, which
-  # take one, see frontend/preview/walks/webkit.mjs and Two browsers in
-  # docs/TESTING.md, #380.
+  # Each part of the app walks in WebKit, the engine the app runs in on a
+  # Mac, once it has moved there, and in Chromium until then, in the same
+  # jobs, see frontend/preview/walks/webkit.mjs and Two browsers in
+  # docs/TESTING.md, #380. The nightly walks walk in Chromium.
   #
   # On four machines, each with a quarter of the runs by how long they took
   # last, see frontend/preview/walks/walk-times.tsv: on one the runs took
@@ -299,11 +299,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        browser: [chromium]
         shard: [1/4, 2/4, 3/4, 4/4]
-        include:
-          - browser: webkit
-            shard: 1/1
     runs-on: ubuntu-24.04
     # A container runs a step with sh, where ${PIPESTATUS[0]} is no word.
     # bash as a runner has it, without pipefail, so a walk that fails still
@@ -385,14 +381,13 @@ jobs:
       - name: Sequences and walks
         id: walks
         run: |
-          make changed PART=walks SHARD=${{ matrix.shard }} WALKBROWSER=${{ matrix.browser }} WALKTIMEOUT=8m 2>&1 | tee walks.log
+          make changed PART=walks SHARD=${{ matrix.shard }} WALKTIMEOUT=8m 2>&1 | tee walks.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then sh scripts/test-failures.sh walks.log; fi
           exit "$status"
       # The traces of the walks that failed, threw or hung, kept with the
-      # run as walk-traces-0 to walk-traces-3 by share in Chromium and
-      # walk-traces-4 in WebKit, see Finding why a walk failed in
-      # docs/TESTING.md.
+      # run as walk-traces-0 to walk-traces-3 by share, see Finding why a
+      # walk failed in docs/TESTING.md.
       - if: failure() && steps.walks.outcome == 'failure'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

@@ -560,8 +560,10 @@ fuzz: toolchain modules
 # once as the machine has cores unless WALKERS says. It needs Node, ffmpeg and
 # the Chromium Playwright drives, which CI installs and a cloud session
 # already has. Built for the bridge first, which takes seconds.
-# WALKBROWSER=webkit walks in Playwright's WebKit instead, the engine the
-# app runs in on a Mac, which CI's image holds, see Two browsers there.
+# Each part of the app walks in Playwright's WebKit, the engine the app
+# runs in on a Mac, once it has moved there, and in Chromium until then,
+# see Two browsers there. WALKBROWSER=chromium or webkit walks every walk
+# in that one, as the nightly walks do in Chromium.
 WALKS ?= 3
 WALKBROWSER ?=
 STEPS ?=

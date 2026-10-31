@@ -14,6 +14,11 @@
 # frontend/preview/walks/common/steps.mjs. A new step that looks at motion and
 # is not named there passes without ever seeing what it checks. Walked with
 # the motion it does see it, so a step left out of moving fails here.
+#
+# They walk in Chromium, the engine the app runs in on Windows, where the
+# walks in ci.yml walk in WebKit, which it runs in on a Mac, so both are
+# walked every day, and Chromium's line counts are the ones coverage
+# reads. See Two browsers in docs/TESTING.md.
 name: Nightly walks with motion, and coverage
 
 on:
@@ -31,7 +36,7 @@ jobs:
       packages: write
     uses: ./.github/workflows/ci-image.yml
 
-  # The same as the walks in ci.yml, with STILL=none.
+  # The same as the walks in ci.yml, with STILL=none, in Chromium.
   walks:
     needs: image
     name: walks
@@ -97,7 +102,7 @@ jobs:
           restore-keys: walk-videos-${{ strategy.job-index }}-${{ needs.image.outputs.walks }}-${{ hashFiles('cmd/framefairy-app/walkvideos_test.go') }}-
       - name: Sequences and walks with motion
         run: |
-          make walks STILL=none WALKSHARD=${{ matrix.shard }} WALKTIMEOUT=12m COVERAGE=.build/coverage 2>&1 | tee walks.log
+          make walks STILL=none WALKBROWSER=chromium WALKSHARD=${{ matrix.shard }} WALKTIMEOUT=12m COVERAGE=.build/coverage 2>&1 | tee walks.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then sh scripts/test-failures.sh walks.log; fi
           exit "$status"

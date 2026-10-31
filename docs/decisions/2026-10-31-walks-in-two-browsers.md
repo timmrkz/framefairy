@@ -80,10 +80,9 @@ first run and split if it slows the jobs that never walk. Kept: one image.
 ## What converges
 
 Four of the five keep one set of walks and one harness, 1, 3, 4 and 5.
-Three keep both browsers, 1, 3 and 5. What only one needs: a second
-harness (2) is dropped, and so is a hand list of walks for each browser
-(3). A temporary list of parts not yet walked in WebKit stays, because
-turning every part at once (4) leaves main red.
+A second harness (2) is dropped, and so is a hand list of walks for each
+browser (3). A list of parts that stays only while they move over is
+kept, because turning every part at once (4) leaves main red.
 
 What only a Mac does is no simulation's to solve. A cursor revealed in
 the middle of a field, a button that takes no focus from a click and a
@@ -92,30 +91,58 @@ no browser on Linux has them. A walk acts them out on purpose, as
 `attach, as on a Mac` does, and the rule they protect is plain code with
 a unit test.
 
+## Measured, and decided again
+
+The first answer was every walk in both browsers, with WebKit on machines
+of its own. The first runs, in #633, showed what that costs. The walk
+jobs of one push, main over its last three pushes, the pull request one
+run:
+
+| | jobs | machine time (s) | slowest job (s) |
+| ---: | ---: | ---: | ---: |
+| Chromium alone, main | 4 | 815, ± 12 % | 201 to 363 |
+| the report in WebKit too | 5 | 858 | 203 |
+| change | 1 more | 5 % more | the WebKit job, 117 s, ends first |
+
+Every part in both browsers would double the machine time and need about
+four more jobs, or make each job twice as long. Tim, on 31 October: "What
+I do not want to do is to slow down CI. What I do not want to do is to
+launch even more jobs." So a pull request walks each walk in one browser,
+WebKit, the fourth simulation. What that simulation dropped is kept at
+night: the nightly walks walk in Chromium, so both engines are walked
+every day and Windows is not left out. The list kept from the third
+simulation turns round: it names the parts still in Chromium, so the
+work stays the same at every step of the move.
+
 ## The decision
 
 ```
 plain code      Go tests and Vitest, once: every rule said without a page
   │
-walks           every walk and sequence, the same set, in both browsers
+walks           every walk and sequence, the same set
   │
-harness         walks/bridge.mjs, browserName from WALKBROWSER
+harness         walks/bridge.mjs, browserFor: the part's browser, or WALKBROWSER
   │
-Playwright      Chromium (Windows)        WebKit (Mac, Linux)
+Playwright      WebKit (Mac, Linux), every pull request
+                Chromium (Windows), every night
 ```
 
-Every walk runs in Chromium and in WebKit on every pull request that
-reaches the walks. Until a part has walked in WebKit it is named in
-`walks/webkit.mjs`, and the random walks join last. CI walks WebKit on
-machines of its own, one now, as many as the time limit of a job asks for
-once every part walks there.
+Every walk runs in WebKit on every pull request that reaches the walks,
+in the same four jobs as before. Until a part has moved to WebKit it is
+named in `walks/webkit.mjs` and walks in Chromium, and the random walks
+move last. The nightly walks walk everything in Chromium.
 
 ## What follows
 
-- The WebKit walks take Linux machines, which CI has more of, and no Mac.
-  The answer comes when the slowest job ends, so it should come no later.
-- Each part that turns to WebKit is a pull request of its own, with the
-  faults it finds fixed in it, so a red WebKit job names one part.
+- CI keeps its jobs and its time. A part that walks slower in WebKit
+  shows in the shard times, and is fixed or split there.
+- Each part that moves is a pull request of its own, with the faults it
+  finds fixed in it, so a red job names one part. A walk that passes only
+  in Chromium is a walk to fix, because the app on a Mac is WebKit.
+- A fault only Chromium has is found by the night, a day late. Windows is
+  not built yet, so that is the cheap side to be late on.
+- `SLOW` and the walks' coverage need Chromium, so they run with
+  `WALKBROWSER=chromium`, the coverage at night as before.
 - It is wrong if WebKit on Linux passes what Tim then meets on his Mac
   with no Mac-only cause. Then the Mac's own WebKit, through the macOS
   job, is the next thing to weigh, at the cost of the scarce Mac machines.

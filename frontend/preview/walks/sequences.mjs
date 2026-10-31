@@ -14,10 +14,10 @@
 // The episode is the bridge's, so the words are the sentences its speech
 // stand-in says: "Ich war vielleicht sechs Jahre alt, als mich auf dem
 // Schulhof irgendein Typ geschubst hat."
-import { browserName, chosen, keepTraces, newBrowser, open, settle, shown, shownOnPlayhead, traceAs, traceStep } from "./bridge.mjs";
+import { browserFor, chosen, keepTraces, newBrowser, open, settle, shown, shownOnPlayhead, traceAs, traceStep } from "./bridge.mjs";
 import { clock, moving, soundCard, still, url } from "./common/steps.mjs";
 import { filmed } from "./filmed.mjs";
-import { notYet } from "./webkit.mjs";
+import { inChromium } from "./webkit.mjs";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -41,8 +41,10 @@ import { steps as appSteps } from "./app/steps.mjs";
 import { steps as commonSteps } from "./common/steps.mjs";
 
 // Every sequence, in the order of the folders they are kept in.
+// Each knows its part, the folder, which says the browser it walks in, see
+// browserFor in bridge.mjs.
 const parts = { captions, timeline, playback, clips, search, videos, report, app };
-export const sequences = Object.values(parts).flat();
+export const sequences = Object.entries(parts).flatMap(([part, own]) => own.map((q) => Object.assign(q, { part })));
 
 // Every step by its name, from every folder. A name in two folders would
 // walk whichever came last, so it is named by --names and fails.
@@ -64,9 +66,9 @@ let failures = 0;
 // walks the one of that name and no other, where a part of a name could
 // be a part of two.
 if (only === "--names") {
-  // A part webkit.mjs names that is no folder would leave nothing out
-  // and look as if it did.
-  const noPart = notYet.filter((p) => !parts[p]);
+  // A part webkit.mjs names that is no folder would keep nothing in
+  // Chromium and look as if it did.
+  const noPart = inChromium.filter((p) => !parts[p]);
   if (noPart.length) {
     console.log(`webkit.mjs names ${JSON.stringify(noPart[0])}, which is no part`);
     process.exit(1);
@@ -112,9 +114,7 @@ if (only === "--names") {
     console.log(`filmed.mjs names ${JSON.stringify(noWalk[0])}, which is no walk or sequence`);
     process.exit(1);
   }
-  // In WebKit, the parts that have walked there.
-  const walked = browserName === "webkit" ? Object.entries(parts).filter(([p]) => !notYet.includes(p)).flatMap(([, own]) => own.map((q) => q.name)) : names;
-  console.log(walked.join("\n"));
+  console.log(names.join("\n"));
   process.exit(0);
 }
 
@@ -130,7 +130,9 @@ if (only === "--names") {
 // sequence after it starts in a new one.
 if (only === "--serve") {
   const { createInterface } = await import("node:readline");
-  const browser = await newBrowser();
+  // A browser of each kind, opened when a sequence first asks for it.
+  const browsers = {};
+  const browserOf = async (seq) => (browsers[browserFor(seq.part)] ??= await newBrowser(browserFor(seq.part)));
   for await (const line of createInterface({ input: process.stdin })) {
     await mark("walking");
     const name = JSON.parse(line);
@@ -141,14 +143,14 @@ if (only === "--serve") {
       continue;
     }
     try {
-      await said((await walkSequence(seq, browser)) ? "FAIL" : "ok");
+      await said((await walkSequence(seq, await browserOf(seq))) ? "FAIL" : "ok");
     } catch (e) {
       console.log(e?.stack ?? String(e));
       await said("threw");
       process.exit(1);
     }
   }
-  await browser.close();
+  for (const browser of Object.values(browsers)) await browser.close();
   process.exit(0);
 }
 
@@ -192,7 +194,7 @@ async function walkSequence(seq, shared = null) {
 async function walkingSequence(seq, shared) {
   const began = performance.now();
   traceAs(seq.name);
-  const opened = await open(url, { browser: shared, still: still(seq), clock: clock(seq) });
+  const opened = await open(url, { browser: shared, named: browserFor(seq.part), still: still(seq), clock: clock(seq) });
   const { browser, errors } = opened;
   // The page the steps act on: the app's window, or the report window
   // once Bugs opened it. The watch keeps to the app's window.

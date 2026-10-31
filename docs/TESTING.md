@@ -51,26 +51,28 @@ can show:
 | | Runs | For | Why this way |
 | --- | --- | --- | --- |
 | plain code | Go tests and Vitest, once | every rule that can be said without a page: what a dictation does to the text, where an arrow key takes the cursor, how far a field scrolls | no browser decides it, so a second browser would test the same code twice. It is the quickest test and the easiest to read |
-| the walks | every walk and sequence, in Chromium and in WebKit, `WALKBROWSER=webkit` | what a person does, against the real Go side, in the engine the app runs in | the engines differ where people type and look: the cursor, the selection, the focus, scrolling, fonts and layout. Nearly every bug Tim met in Report a Problem, #574, was WebKit's alone and passed in Chromium |
+| the walks | every walk and sequence, in WebKit on every pull request that reaches them, in Chromium every night | what a person does, against the real Go side, in the engine the app runs in | the engines differ where people type and look: the cursor, the selection, the focus, scrolling, fonts and layout. Nearly every bug Tim met in Report a Problem, #574, was WebKit's alone and passed in Chromium. The Mac ships first, and Windows is not built yet |
 | what only a Mac does | a step that acts out the Mac's behaviour on purpose, and the rule it protects in plain code | how AppKit reaches WebKit: a cursor revealed in the middle of a field, a button that takes no focus from a click, a mouse entering as a plain move | no browser on Linux has it, WebKit's Linux ports included, so a walk can only play it, as `attach, as on a Mac` does |
 
-The walks are the same walks in both browsers, the browser a setting of
-the harness, `browserName` in `walks/bridge.mjs`, never a second set. A
-list of walks for each browser would be kept by hand and miss the next new
-walk, the same reason the walks run whole, see
-[BUILD.md](BUILD.md#why-the-walks-run-whole). The WebKit is Playwright's
-own build for Linux, which takes real key presses, and CI's image holds it
-beside the Chromium, see `.github/ci-image/Dockerfile`. `SLOW` and
-`WALKCOVERAGE` work through Chromium's own tools, so they walk in Chromium
-only, and say so when asked for in WebKit.
+The walks are the same walks in both browsers, and the browser is a
+setting of the harness, `browserFor` in `walks/bridge.mjs`, never a second
+set. A pull request walks each in one browser, so the second browser
+costs CI no job and no time: walking every walk in both would take twice
+the machines, or twice as long on the same ones, see
+[the decision](decisions/2026-10-31-walks-in-two-browsers.md). The nightly
+walks, `walks-nightly.yml`, walk in Chromium, `WALKBROWSER=chromium`, so
+both engines are walked every day. The WebKit is Playwright's own build
+for Linux, which takes real key presses, and CI's image holds it beside
+the Chromium, see `.github/ci-image/Dockerfile`. `SLOW` and
+`WALKCOVERAGE` work through Chromium's own tools, so they need
+`WALKBROWSER=chromium`, and say so when asked for in WebKit.
 
-Until every part of the app has walked in WebKit, #380,
-`walks/webkit.mjs` names the parts that have not, and make walks
-`WALKBROWSER=webkit` leaves their sequences and the random walks out. CI
-walks the rest in WebKit on a machine of its own, `walks (webkit, 1/1)`.
-A cloud session cannot download Playwright's WebKit while its network
-refuses `cdn.playwright.dev`, so a walk that fails in WebKit is read from
-its trace in CI there.
+Until every part of the app has moved to WebKit, #380,
+`walks/webkit.mjs` names the parts that still walk in Chromium, and the
+random walks walk there too. A part moves in a pull request of its own,
+which fixes what WebKit finds in it, so a red job names one part. A walk
+that only passes in Chromium is a walk to fix, not a part to keep there:
+the app on a Mac is WebKit.
 
 ## The bridge
 

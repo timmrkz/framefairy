@@ -75,7 +75,7 @@ models and the work folders.
 
 Outside the picture, not shipped in the app: `frontend/preview/` holds
 the walks, in `frontend/preview/walks/`, which do what a person does
-against the real Go side, in Chromium and in WebKit, see
+against the real Go side, in WebKit, and at night in Chromium, see
 [decisions/2026-10-31-walks-in-two-browsers.md](decisions/2026-10-31-walks-in-two-browsers.md),
 and the harness they run in. `train/` and
 `cmd/framefairy-train/` read the training records, `cmd/framefairy-release/`
