@@ -29,9 +29,10 @@ import (
 //	                                 on the frame of the episode that starts
 //	                                 at, at width by height, as a
 //	                                 framewire.Layer, with the caption and
-//	                                 the word it shows in the header
-//	                                 X-Caption-Showing, "<caption> <word>",
-//	                                 see engine.CaptionShowing, and in
+//	                                 the words it lights in the header
+//	                                 X-Caption-Showing, "<caption> <word>
+//	                                 <last>", see engine.CaptionShowing,
+//	                                 and in
 //	                                 X-Caption-Scale how large the pill of
 //	                                 that word is drawn on it, 1 at rest,
 //	                                 see engine.PopScale. With part, only
@@ -188,7 +189,7 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 				// What the layer shows, which the caption box over it shows.
 				showing := kept.drawing.Showing(source, at)
 				w.Header().Set("Content-Type", "application/octet-stream")
-				w.Header().Set("X-Caption-Showing", fmt.Sprintf("%d %d", showing.Caption, showing.Word))
+				w.Header().Set("X-Caption-Showing", fmt.Sprintf("%d %d %d", showing.Caption, showing.Word, showing.Last))
 				// A part is drawn at rest, and the word comes with the
 				// curve the video preview bounces it by.
 				scale := 1.0

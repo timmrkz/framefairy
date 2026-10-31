@@ -413,46 +413,50 @@ func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
 			add(2, start, begins[0], "Caption", "{"+anchor+"}"+taggedText(L.words, L.lines, all, shown))
 		}
 
-		for k := range L.words {
-			from := begins[k]
-			to := end
-			if k+1 < len(begins) {
-				to = begins[k+1]
-			}
+		for _, run := range source.litRuns(c, start, end) {
+			from, to := run.from, run.to
 			if to <= from {
 				continue
 			}
-			k := k
-			// The pill at rest, and the centre the word and its pill pop
-			// around: the middle of the pill, which is the middle of the
-			// word's ink across.
-			pl, pt, pr, pb := L.pill(k, size)
-			cx := ax + (pl+pr)/2
-			cy := ay + (pt+pb)/2
-			w, h := pr-pl, pb-pt
-			pill := roundedRect(0, 0, w, h, pillRadius(h, radius))
+			lit := func(j int) bool { return j >= run.first && j <= run.last }
 
-			// The line with the active word hidden, so nothing else moves.
+			// The line with the words lit hidden, so nothing else moves.
 			if !word {
 				add(2, from, to, "Caption", "{"+anchor+"}"+
-					taggedText(L.words, L.lines, func(j int) bool { return j != k && !c.Hidden[j] }, shown))
+					taggedText(L.words, L.lines, func(j int) bool { return !lit(j) && !c.Hidden[j] }, shown))
 			}
 
+			// The pill at rest, a part on each line the words lit stand
+			// on, and the centre the words and the pill pop around: the
+			// middle of the whole pill, which is the middle of one word's
+			// ink across where one word is lit.
 			// The word being typed has neither its ink nor its pill here:
 			// the caption box draws both, the pill growing with what is
 			// typed, see CaptionDrawing.Typing. libass drew the pill at the
 			// word's old size, and Tim saw the word typed run out of it.
-			if c.Hidden[k] {
+			parts := L.runPill(run, c.Hidden, size)
+			if len(parts) == 0 {
 				continue
 			}
+			pl, pt, pr, pb := parts[0][0], parts[0][1], parts[0][2], parts[0][3]
+			for _, p := range parts[1:] {
+				pl, pt, pr, pb = math.Min(pl, p[0]), math.Min(pt, p[1]), math.Max(pr, p[2]), math.Max(pb, p[3])
+			}
+			cx := ax + (pl+pr)/2
+			cy := ay + (pt+pb)/2
+			shapes := make([]string, len(parts))
+			for n, p := range parts {
+				shapes[n] = roundedRect(p[0]-pl, p[1]-pt, p[2]-pl, p[3]-pt, pillRadius(p[3]-p[1], radius))
+			}
+			pill := strings.Join(shapes, " ")
 
-			// The pill, and the active word alone over it, both at one
+			// The pill, and the words lit alone over it, both at one
 			// scale around one centre, one scale a frame, over the line,
-			// so the words beside them never reach into the pill. The word is the
-			// whole caption with the others hidden, so it stands where it
-			// stands in the line, and its anchor moves with the scale to
+			// so the words beside them never reach into the pill. The words are the
+			// whole caption with the others hidden, so they stand where they
+			// stand in the line, and their anchor moves with the scale to
 			// keep its centre still.
-			only := taggedText(L.words, L.lines, func(j int) bool { return j == k && !c.Hidden[j] }, shown)
+			only := taggedText(L.words, L.lines, func(j int) bool { return lit(j) && !c.Hidden[j] }, shown)
 			at := func(scale float64, from, to int) {
 				x, y := tagNumber(ax+(1-scale)*(cx-ax)), tagNumber(ay+(1-scale)*(cy-ay))
 				add(3, from, to, "Box", fmt.Sprintf(`{\an5\pos(%s,%s)\p1\1c%s\1a&H%s&\bord0\shad0\fscx%s\fscy%s}%s{\p0}`,
@@ -463,9 +467,9 @@ func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
 			// Each frame of the pop holds its scale from the hundredth its
 			// frame starts in to the hundredth the next starts in, so the
 			// frame shows exactly that scale. Before the first frame, and
-			// after the pop, the word is at rest.
-			// A part of the caption is drawn at rest, and the word only
-			// with the word, see LaidCaption.Lift.
+			// after the pop, the words are at rest.
+			// A part of the caption is drawn at rest, and the words only
+			// with the words, see LaidCaption.Lift.
 			if !whole {
 				if word {
 					at(1, from, to)

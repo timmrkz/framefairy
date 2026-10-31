@@ -747,8 +747,8 @@ func TestPopScaleIsWhatLibassDrawsAbove100Fps(t *testing.T) {
 // pill each frame shows, and that a frame before the captions shows none.
 // Held only to Showing before, through the same moments, which proved the
 // frames were counted one way and not that libass shows that, found by
-// the second review. "so" is lit for 20 ms between two frames and on
-// none.
+// the second review. "so" is lit for 20 ms between two frames, and so it
+// is lit on the frame it shares with "Ich", together with it, #280.
 //
 // On the real disk: ffmpeg renders the short and the test reads it back.
 func TestWordsLitIsWhatTheShortLights(t *testing.T) {
@@ -761,18 +761,11 @@ func TestWordsLitIsWhatTheShortLights(t *testing.T) {
 	pill := pillColour(t, ResolveStyle(nil))
 	first, _ := info.pieceFrames(clip.Segments[0].Start, clip.Segments[0].End)
 	none, changes := 0, 0
-	was := CaptionShowing{-1, -1}
+	was := CaptionShowing{-1, -1, -1}
 	middle := -100.0
 	for k, f := range frames {
 		at := info.keptAt(first + int64(k))
-		want := CaptionShowing{-1, -1}
-		for i := range lit {
-			for w, span := range lit[i] {
-				if at >= span[0] && at < span[1] {
-					want = CaptionShowing{i, w}
-				}
-			}
-		}
+		want := litAt(lit, at)
 		l, r, _, _ := pillBox(f, pill, bounceRows)
 		if (r < 0) != (want.Word < 0) {
 			t.Errorf("frame %d at %.3f s shows a pill %v, WordsLit has caption %d word %d there", k, at, r >= 0, want.Caption, want.Word)
@@ -787,18 +780,25 @@ func TestWordsLitIsWhatTheShortLights(t *testing.T) {
 		x := float64(l+r) / 2
 		moved := math.Abs(x-middle) > 4
 		if k > 0 && moved != (want != was) {
-			t.Errorf("frame %d at %.3f s: the pill moved %v, WordsLit goes from caption %d word %d to caption %d word %d",
-				k, at, moved, was.Caption, was.Word, want.Caption, want.Word)
+			t.Errorf("frame %d at %.3f s: the pill moved %v, WordsLit goes from caption %d words %d to %d to caption %d words %d to %d",
+				k, at, moved, was.Caption, was.Word, was.Last, want.Caption, want.Word, want.Last)
 		}
 		if moved {
 			changes++
 		}
 		middle, was = x, want
 	}
-	if none == 0 || changes != 3 {
-		t.Errorf("%d frames without a pill and %d words lit, not some and 3", none, changes)
+	if none == 0 || changes != 4 {
+		t.Errorf("%d frames without a pill and %d changes of the words lit, not some and 4", none, changes)
 	}
-	if got := lit[0][1]; got != [2]float64{-1, -1} {
-		t.Errorf(`"so", lit for 20 ms between two frames, is lit from %.3f to %.3f s, on no frame was wanted`, got[0], got[1])
+	// "so" is lit with "Ich" on the frame they share, from 0.60 s to 0.64,
+	// and "Ich" is lit until "war" is, #280.
+	for _, c := range []struct {
+		word     int
+		from, to float64
+	}{{0, 0.32, 0.64}, {1, 0.60, 0.64}, {2, 0.64, 1.04}} {
+		if got := lit[0][c.word]; math.Abs(got[0]-c.from) > 1e-6 || math.Abs(got[1]-c.to) > 1e-6 {
+			t.Errorf("%q is lit from %.3f to %.3f s, not from %.3f to %.3f", words[c.word].Text, got[0], got[1], c.from, c.to)
+		}
 	}
 }

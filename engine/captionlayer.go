@@ -103,25 +103,26 @@ func (e *Engine) PreviewCaptions(ctx context.Context, dec *EpisodeFrames, work s
 // the caption box over the video preview shows the caption and the word
 // the layer under it shows, see CaptionShowing.
 func (d *CaptionDrawing) Showing(source SourceInfo, at float64) CaptionShowing {
-	return ShowingAt(d.Laid, source.CaptionMoment(d.Clip, at))
+	return ShowingAt(d.Laid, source, source.CaptionMoment(d.Clip, at))
 }
 
-// popping is the word lit at the moment m of the short, and the
-// hundredths of a second it is lit from and to. ok is false where no word
-// is lit.
-func (d *CaptionDrawing) popping(m int64) (from, to int, ok bool) {
-	on := ShowingAt(d.Laid, m)
-	if on.Caption < 0 || on.Word < 0 {
-		return 0, 0, false
+// popping is the hundredths of a second of the short the words lit at
+// its moment m are lit from and to, together, see litRuns. ok is false
+// where no word is lit.
+func (d *CaptionDrawing) popping(source SourceInfo, m int64) (from, to int, ok bool) {
+	for _, c := range d.Laid {
+		start, end := centiseconds(c.Start), centiseconds(c.End)
+		if end <= start || m < int64(start)*10 || m >= int64(end)*10 {
+			continue
+		}
+		for _, r := range source.litRuns(c, start, end) {
+			if int64(r.from)*10 <= m && m < int64(r.to)*10 {
+				from, to, ok = r.from, r.to, true
+			}
+		}
+		return from, to, ok
 	}
-	c := d.Laid[on.Caption]
-	start, end := centiseconds(c.Start), centiseconds(c.End)
-	begins := wordBegins(c, start, end)
-	from, to = begins[on.Word], end
-	if on.Word+1 < len(begins) {
-		to = begins[on.Word+1]
-	}
-	return from, to, true
+	return 0, 0, false
 }
 
 // PopScale is the scale libass draws the pill of the word lit on the frame
@@ -132,7 +133,7 @@ func (d *CaptionDrawing) popping(m int64) (from, to int, ok bool) {
 // reads on the frame.
 func (d *CaptionDrawing) PopScale(source SourceInfo, at float64) float64 {
 	m := source.CaptionMoment(d.Clip, at)
-	from, to, ok := d.popping(m)
+	from, to, ok := d.popping(source, m)
 	if !ok {
 		return 1
 	}

@@ -88,6 +88,23 @@ does in the short. Nothing bounces while the clip plays, where the frames pop by
 themselves, or when the Mac is set to reduce motion. `Lift` and
 `CaptionLayers.sought` in `lib/frames/captions.ts`.
 
+## Words too short for a frame of their own
+
+A word with no frame of the short starting in its time is lit on the
+frame showing when it begins, together with the words lit there, in one
+pill round them that pops from its middle, a part of it on each line they
+stand on. That frame is the only one they share: the word before is lit
+alone on its frames before it. A word with no frame before the first
+word of its caption that has one is lit on that word's first frame, with
+it. `litRuns` in `engine/wordframes.go` says which words are lit
+together and when, and the caption file, `ShowingAt`, `WordsLit` and
+`PopScale` all read it, so the caption box frames every word of the pill.
+`X-Caption-Showing` says the first and the last of them, "<caption>
+<word> <last>". Several words typed into a word a frame or two long were
+lit on no frame before, so they were never seen lit, #280. Tim asked
+that how many words go into so little time stays the person's choice,
+so their times are not stretched, the words share the frame.
+
 ## The frame round a word
 
 The frame round a word in the caption box stands across the edge of its
@@ -350,7 +367,7 @@ file to the hundredth of a second at the moment `CaptionMoment` names on
 the short's frames. So `/frames/captions` says with every layer which
 caption and which word of it libass drew, in the header
 `X-Caption-Showing`, from `ShowingAt` in `engine/wordframes.go`, which
-reads the same times the caption file is written with, `wordBegins`. The
+reads the same times the caption file is written with, `litRuns`. The
 video preview hands the caption box what the layer it paints says. Tim saw
 the frame round a word go on to the next caption a few frames before the
 pill did on #201, when the caption box worked the word out from the
@@ -443,7 +460,10 @@ before, with the keyboard's frame already round the next, which Tim saw on
   is there once the layer has come. Before, it stood on "war" 38 pixels
   from the pill, which was still on "Ich". `TestWordsLitIsWhatEachFrameShows`
   holds `WordsLit` to the layer of every frame of a clip whose pieces start
-  off the grid of the frames.
+  off the grid of the frames. `TestWordsTooShortForAFrameAreLitTogether`
+  holds words with no frame of their own to the frame they share, and
+  `TestWordsLitIsWhatTheShortLights` reads the pill of a rendered short
+  move onto "Ich so" on the one frame they share.
 - `TestShowingAtIsWhatTheCaptionFileShows` in `engine/wordframes_test.go`
   holds `ShowingAt` to the hundredths the caption file is written in, and
   `TestPillCornersAreQuartersOfACircle` holds each corner of a pill to a
