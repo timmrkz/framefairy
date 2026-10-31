@@ -799,6 +799,16 @@ func videoStartOf(stream, format map[string]any) float64 {
 	return 0
 }
 
+// guessedLength tells whether ffprobe, by what it said, guessed how long
+// a file is from its size and its bit rate. It does for a file that does
+// not say how long it is, when every track says its bit rate: a Matroska
+// recording cut off by a crash, in MPEG-4 Part 2 with PCM sound, was
+// guessed 8.443 s long where it holds 7 s, #270. libavformat says so in
+// a warning, and in nothing ffprobe prints as data.
+func guessedLength(said string) bool {
+	return strings.Contains(said, "Estimating duration from bitrate")
+}
+
 // pictureEndOf is where the picture's last frame ends, counted the way
 // SourceInfo.Duration is, from the start of the file, and whether
 // ffprobe said. MP4 and QuickTime give the picture's own length from its
@@ -898,7 +908,9 @@ func (e *Engine) Probe(ctx context.Context, path string) (SourceInfo, error) {
 }
 
 func (e *Engine) probe(ctx context.Context, path string) (SourceInfo, error) {
-	res := run(ctx, "", e.FFprobe, "-v", "error",
+	// Warnings too, for the one that says the length was guessed, see
+	// guessedLength.
+	res := run(ctx, "", e.FFprobe, "-v", "warning",
 		"-select_streams", "v:0",
 		"-show_entries",
 		"stream=width,height,r_frame_rate,avg_frame_rate,start_time,color_primaries,color_transfer,color_space,duration",
@@ -964,13 +976,16 @@ func (e *Engine) probe(ctx context.Context, path string) (SourceInfo, error) {
 		}
 	}
 	formatStart, _ := num.AsFloat(data.Format["start_time"])
-	if duration <= 0 {
+	guessed := guessedLength(res.Stderr)
+	if duration <= 0 || guessed {
 		// A Matroska file whose writing was cut off, the way OBS leaves a
 		// recording when it crashes, has no duration and no index. It is
 		// read through once for where its last packet ends.
 		duration = e.lastMoment(ctx, path, formatStart)
 	}
-	if end, ok := pictureEndOf(stream, formatStart); ok && end > 0 && end < duration {
+	// A guessed length is the picture's too, so it says nothing of where
+	// the picture ends.
+	if end, ok := pictureEndOf(stream, formatStart); ok && !guessed && end > 0 && end < duration {
 		duration = end
 	}
 	format, _ := data.Format["format_name"].(string)

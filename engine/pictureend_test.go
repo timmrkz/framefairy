@@ -68,3 +68,28 @@ func TestAVideoEndsWhereItsPictureEnds(t *testing.T) {
 		})
 	}
 }
+
+// A recording cut off by a crash says nothing of how long it is, and when
+// every track says its bit rate, as MPEG-4 Part 2 with PCM sound does,
+// ffprobe guesses its length from the size of the file: 8.443 s for a
+// recording of 7. The guess was taken for its length, so the grid had a
+// second and a half of frames that are not there and the read through
+// for where it ends did not happen, #270.
+//
+// On the real disk: ffprobe reads the episode.
+func TestACutOffRecordingIsNotTakenAtItsGuessedLength(t *testing.T) {
+	t.Parallel()
+	ffmpegtest.Need(t)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
+	path := timesEpisode(t, timesCase{name: "crashed_mpeg4_mkv", file: "crashed.mkv", cutOff: true})
+	info, err := e.Probe(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Duration < 6.99 || info.Duration > 7.01 {
+		t.Errorf("the recording is %.3f s long, not the 7 s it holds", info.Duration)
+	}
+	if seconds := float64(info.Grid().Count) / info.FPS(); seconds < 7-1/info.FPS() || seconds > 7+1/info.FPS() {
+		t.Errorf("the grid holds %.3f s of frames, not the 7 s the recording holds", seconds)
+	}
+}
