@@ -99,10 +99,11 @@ func TestTheVideoPreviewGoesOnWhenTheDecoderHangs(t *testing.T) {
 	// On the 3rd packet the decoder hangs in the open, before the stream
 	// has a frame, and on the 12th in the middle of a stream, after the
 	// first frames were handed over, so the new cursor goes on from the
-	// frame after the last one.
+	// frame after the last one. With open every cursor of picture hangs
+	// as its decoder opens, until one is given up, issue #638.
 	for _, c := range timesCases {
 		if c.name == "even_mp4" || c.name == "crashed_mkv" {
-			for _, after := range []string{"3", "12"} {
+			for _, after := range []string{"open", "3", "12"} {
 				t.Run(c.name+"/"+after, func(t *testing.T) {
 					t.Parallel()
 					previewShowsTheShort(t, e, program, c, "FRAMEFAIRY_FRAMES_HANG_AFTER="+after)
@@ -242,8 +243,15 @@ func previewShowsTheShort(t *testing.T, e *Engine, program string, c timesCase, 
 	if failing && fellBack < streams {
 		t.Errorf("the decoder went on with the processor %d times in %d streams, made to fail in each", fellBack, streams)
 	}
-	if hanging && gaveUp != 1 {
+	// Made to hang once on a packet, one cursor is given up. Made to hang
+	// in the open, every cursor that opened before the first was given up
+	// hung too, the ones kept for the next stream among them.
+	inOpen := strings.HasSuffix(made, "=open")
+	if hanging && !inOpen && gaveUp != 1 {
 		t.Errorf("the decoder gave up on %d cursors, made to hang once", gaveUp)
+	}
+	if inOpen && gaveUp < 1 {
+		t.Errorf("the decoder gave up on no cursor, made to hang in every open")
 	}
 	// Nothing made to hang, nothing is given up, on CI's Mac too, where
 	// the chip decodes.

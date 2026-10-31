@@ -568,8 +568,9 @@ func (c *cursor) run() {
 }
 
 // chipHang is how long one call into the decoder may take on the
-// graphics chip: a packet handed in, a frame taken out or brought off the
-// chip. Each takes milliseconds, a frame of 4K too. On CI's virtual Mac
+// graphics chip: a decoder opened, flushed or freed, a packet handed in,
+// a frame taken out or brought off the chip. Each takes milliseconds, a
+// frame of 4K too. On CI's virtual Mac
 // the chip stopped once in the middle of a stream and never went on, and
 // the video preview with it, issue #553. ffmpeg's calls cannot be called
 // off, so the work is left where it hangs. Reading the file is not
@@ -604,7 +605,7 @@ func (c *cursor) stuck() bool {
 // machine is.
 func (c *cursor) watch(job func()) bool {
 	onChip := !c.sound && c.d.chip() != nil
-	if !onChip && hangAfter == 0 {
+	if !onChip && hangAfter == 0 && !hangInOpen {
 		job()
 		return true
 	}
@@ -619,14 +620,19 @@ func (c *cursor) watch(job func()) bool {
 		defer t.Stop()
 		tick = t.C
 	}
+	// A hang that was made is a call into the decoder that has taken
+	// chipHang, at once: it is one only inside such a call, as on the
+	// clock, so a test sees which calls are watched.
+	hangs := c.hangs
 	for hung := false; !hung; {
 		select {
 		case <-done:
 			return true
 		case <-tick:
 			hung = c.stuck()
-		case <-c.hangs:
-			hung = true
+		case <-hangs:
+			hangs = nil
+			hung = c.calling.Load() != 0
 		}
 	}
 	c.d.chipHung.Store(true)
@@ -713,7 +719,7 @@ func (c *cursor) open(frame, w, h int, grid framewire.Grid, key bool) {
 	if c.v == nil {
 		v, err := openVideo(c.d.path)
 		if err == nil {
-			err = v.openDecoder(c.d.chip(), c.say)
+			err = c.openDecoder(v, c.d.chip())
 			if err != nil {
 				v.close()
 			}
@@ -862,7 +868,10 @@ func (c *cursor) seek(from float64) error {
 	if err != nil {
 		return fmt.Errorf("the video cannot be read from %.3f s: %s", from, err)
 	}
-	flushDecoder(c.v.dec)
+	_ = c.inDecoder(func() error {
+		flushDecoder(c.v.dec)
+		return nil
+	})
 	c.held.Unref()
 	c.sentEOF, c.holding = false, false
 	c.dropQueued()
@@ -1151,6 +1160,11 @@ var errMadeToFail = errors.New("made to fail by FRAMEFAIRY_FRAMES_FAIL_AFTER")
 // Nought, never, unless FRAMEFAIRY_FRAMES_HANG_AFTER says otherwise.
 var hangAfter, _ = strconv.Atoi(os.Getenv("FRAMEFAIRY_FRAMES_HANG_AFTER"))
 
+// hangInOpen makes every cursor of picture hang as its decoder opens,
+// until one is given up, as every one did on CI's virtual Mac, issue
+// #638. FRAMEFAIRY_FRAMES_HANG_AFTER=open says so.
+var hangInOpen = os.Getenv("FRAMEFAIRY_FRAMES_HANG_AFTER") == "open"
+
 var madeToHang atomic.Bool
 
 // toProcessor goes on decoding on the processor after the graphics chip
@@ -1189,15 +1203,35 @@ func (c *cursor) toProcessor(why error) error {
 func (c *cursor) reopenDecoder(hardware *astiav.HardwareDeviceContext) error {
 	c.disown(&c.keys)
 	c.freeGraph()
-	c.v.dec.Free()
+	_ = c.inDecoder(func() error {
+		c.v.dec.Free()
+		return nil
+	})
 	c.v.dec = nil
-	if err := c.v.openDecoder(hardware, c.say); err != nil {
+	if err := c.openDecoder(c.v, hardware); err != nil {
 		c.v.close()
 		c.v = nil
 		return err
 	}
 	c.own(&c.keys, c.v.fc, c.v.dec)
 	return nil
+}
+
+// openDecoder opens v's decoder for the cursor as one call into the
+// decoder, which watch times: on a Mac it asks VideoToolbox whether the
+// chip decodes the codec and hands the decoder the chip, and either can
+// hang where the chip does. On CI's virtual Mac every cursor of picture
+// stood in its first open for two minutes while the one of sound opened,
+// and no cursor was given up, because only a packet handed in, a frame
+// taken out or brought off the chip was timed, issue #638.
+func (c *cursor) openDecoder(v *video, hardware *astiav.HardwareDeviceContext) error {
+	return c.inDecoder(func() error {
+		if hangInOpen && !c.d.chipHung.Load() {
+			close(c.hangs)
+			select {}
+		}
+		return v.openDecoder(hardware, c.say)
+	})
 }
 
 // show scales the frame in decoded through the chain and shows it from
@@ -1255,10 +1289,6 @@ func (c *cursor) feed() error {
 			}
 		}
 		c.sentInOpen++
-		if hangAfter > 0 && !c.sound && c.sentInOpen == hangAfter && madeToHang.CompareAndSwap(false, true) {
-			close(c.hangs)
-			select {}
-		}
 		if failAfter > 0 && c.sentInOpen == failAfter && !c.madeToFail {
 			p.Unref()
 			c.madeToFail = true
@@ -1267,7 +1297,13 @@ func (c *cursor) feed() error {
 		if !c.sound {
 			c.skipBefore(p)
 		}
-		err := c.inDecoder(func() error { return c.v.dec.SendPacket(p) })
+		err := c.inDecoder(func() error {
+			if hangAfter > 0 && !c.sound && c.sentInOpen == hangAfter && madeToHang.CompareAndSwap(false, true) {
+				close(c.hangs)
+				select {}
+			}
+			return c.v.dec.SendPacket(p)
+		})
 		p.Unref()
 		if err != nil && !errors.Is(err, astiav.ErrEagain) {
 			return c.withSaid(fmt.Errorf("the picture could not be decoded: %w", err))
