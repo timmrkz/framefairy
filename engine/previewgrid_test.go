@@ -259,8 +259,9 @@ func previewShowsTheShort(t *testing.T, e *Engine, program string, c timesCase, 
 		t.Errorf("the decoder gave up on %d cursors, made to hang in none", gaveUp)
 	}
 	// A fallback must not hide a chip that never decodes: on a Mac the
-	// chip decodes H.264.
-	if runtime.GOOS == "darwin" && c.gop > 0 && !onChip {
+	// chip decodes H.264. Made to hang in every open, the chip is given up
+	// before it decodes a frame.
+	if runtime.GOOS == "darwin" && c.gop > 0 && !onChip && !inOpen {
 		t.Errorf("the graphics chip decoded none of this H.264, the decoder said:\n%s", strings.Join(heard, "\n"))
 	}
 }
