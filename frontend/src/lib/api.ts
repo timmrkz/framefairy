@@ -499,9 +499,8 @@ export interface Job {
   progress?: EngineEvent;
   queued: string;
   lane: Lane;
-  // Where a search or a render is, and the record it keeps.
-  step?: JobStep;
-  record?: string;
+  // Where a search or a render is, empty for a job with no steps.
+  step?: JobStep | "";
   // The window of a search. To is 0 for the end of the episode.
   from?: number;
   to?: number;
@@ -528,6 +527,16 @@ export interface Job {
   // Grows with every change to any job. Of two snapshots of a job, the one
   // with the larger number is the later one.
   seq?: number;
+  // The rest of the record the job holds, see Job in jobs.go. A job read
+  // back as the app starts has them all, a job started since only what
+  // the app asked for. Nothing here reads them.
+  max?: number;
+  replan?: boolean;
+  pass?: number;
+  preview?: boolean;
+  done?: string[];
+  asked?: string;
+  steps?: { step: string; from: string; to?: string }[] | null;
 }
 
 // The lanes the Go side runs work in, one job at a time in each: the
