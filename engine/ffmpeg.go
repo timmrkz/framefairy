@@ -693,9 +693,14 @@ type SourceInfo struct {
 	// stand up, in degrees counterclockwise, 0, 90, 180 or 270, the way
 	// ffprobe reports a phone's display matrix. ffmpeg turns it by
 	// itself. Width and Height are already the picture turned.
-	Turned   int
-	FPSNum   int
-	FPSDen   int
+	Turned int
+	FPSNum int
+	FPSDen int
+	// Duration is how long the video is, in seconds from the start of the
+	// file. It ends where the picture ends when the sound goes on after
+	// it, because past the picture there is nothing to show or cut, #274,
+	// and where the file ends otherwise, or when the file does not say
+	// where its picture ends.
 	Duration float64
 	// When the picture's first frame begins, in seconds after the start of
 	// the file, which is where ffmpeg's -ss and every time in a clip count
@@ -794,6 +799,44 @@ func videoStartOf(stream, format map[string]any) float64 {
 	return 0
 }
 
+// pictureEndOf is where the picture's last frame ends, counted the way
+// SourceInfo.Duration is, from the start of the file, and whether
+// ffprobe said. MP4 and QuickTime give the picture's own length from its
+// start. Matroska keeps it in a DURATION tag, which ffmpeg writes as where
+// the picture ends, though its name says how long the picture lasts. Read
+// as a length from the picture's start it is right when the picture
+// starts with the file and too long otherwise, never too short, so no
+// frame with a picture is lost.
+func pictureEndOf(stream map[string]any, formatStart float64) (float64, bool) {
+	start, _ := num.AsFloat(stream["start_time"])
+	length, ok := num.AsFloat(stream["duration"])
+	if !ok {
+		tags, _ := stream["tags"].(map[string]any)
+		text, _ := tags["DURATION"].(string)
+		length, ok = clockSeconds(text)
+	}
+	if !ok || length <= 0 || math.IsNaN(length) || math.IsInf(length, 0) {
+		return 0, false
+	}
+	return start + length - formatStart, true
+}
+
+// clockSeconds reads a time written the way Matroska tags keep it,
+// 00:00:01.000000000, in seconds, and whether it was one.
+func clockSeconds(text string) (float64, bool) {
+	parts := strings.Split(text, ":")
+	if len(parts) != 3 {
+		return 0, false
+	}
+	hours, err1 := strconv.Atoi(parts[0])
+	minutes, err2 := strconv.Atoi(parts[1])
+	seconds, err3 := strconv.ParseFloat(parts[2], 64)
+	if err1 != nil || err2 != nil || err3 != nil || hours < 0 || minutes < 0 || seconds < 0 {
+		return 0, false
+	}
+	return float64(hours*3600+minutes*60) + seconds, true
+}
+
 // pictureStart is SourceInfo.VideoStart on its own, for a reading of the
 // sound, which needs nothing else Probe works out and so asks ffprobe for
 // nothing else. Nought for a file with no picture or one ffprobe cannot
@@ -858,7 +901,8 @@ func (e *Engine) probe(ctx context.Context, path string) (SourceInfo, error) {
 	res := run(ctx, "", e.FFprobe, "-v", "error",
 		"-select_streams", "v:0",
 		"-show_entries",
-		"stream=width,height,r_frame_rate,avg_frame_rate,start_time,color_primaries,color_transfer,color_space",
+		"stream=width,height,r_frame_rate,avg_frame_rate,start_time,color_primaries,color_transfer,color_space,duration",
+		"-show_entries", "stream_tags=DURATION",
 		"-show_entries", "stream_side_data=rotation",
 		"-show_entries", "format=duration,start_time,format_name",
 		"-of", "json", path)
@@ -925,6 +969,9 @@ func (e *Engine) probe(ctx context.Context, path string) (SourceInfo, error) {
 		// recording when it crashes, has no duration and no index. It is
 		// read through once for where its last packet ends.
 		duration = e.lastMoment(ctx, path, formatStart)
+	}
+	if end, ok := pictureEndOf(stream, formatStart); ok && end > 0 && end < duration {
+		duration = end
 	}
 	format, _ := data.Format["format_name"].(string)
 
