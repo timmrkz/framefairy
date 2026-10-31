@@ -77,7 +77,10 @@ models and the work folders.
 
 Outside the picture, not shipped in the app: `frontend/preview/` holds
 the walks, in `frontend/preview/walks/`, which do what a person does
-against the real Go side, and the harness they run in. `train/` and
+against the real Go side, in WebKit for the parts that have moved there
+and in Chromium for the rest, and at night all in Chromium, see
+[decisions/2026-10-31-walks-in-two-browsers.md](decisions/2026-10-31-walks-in-two-browsers.md),
+and the harness they run in. `train/` and
 `cmd/framefairy-train/` read the training records, `cmd/framefairy-release/`
 and `licence/signer/` sign builds and keys, `licence/dispenser/` is the
 licence server, and the rest of `internal/` holds the checks and

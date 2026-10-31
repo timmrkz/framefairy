@@ -357,7 +357,7 @@ command, `make changed` for its part, the one a person runs, see
 | `build` | Linux, in the CI image | `make changed PART="lint build"`: `make lint`, then `make NOTOOLS=1`, the programs and the interface, which is what proves they still link, without the tools we ship, which nothing builds for Linux yet. In CI `make` fails on a `go.mod` that is not tidy, where it would tidy it elsewhere |
 | `linux (1/3)` to `linux (3/3)` | Linux, in the CI image | `make changed PART=unit SHARD=1/3` to `3/3`, a third of the tests each by the first letters of their names, for a change that reaches the engine or the app. On one machine those took six minutes. Any other change takes one machine, `SHARD=1/1` |
 | `image` | Linux | the CI image `build`, `linux`, `fuzz` and the walks run in, see [The CI image](#the-ci-image), by `.github/workflows/ci-image.yml`, which the nightly fuzzing and the security check call too. Asks the registry whether the image for this commit's recipe is there, and builds and pushes it only when it is not |
-| `walks (1/4)` to `walks (4/4)` | Linux, in the CI image | `make changed PART=walks SHARD=1/4` to `4/4` with `WALKTIMEOUT=8m`, a quarter of the runs each by how long they took last, `walk-times.tsv`, so a run that hangs is named in minutes. On three machines each job took four and three quarter minutes |
+| `walks (1/4)` to `walks (4/4)` | Linux, in the CI image | `make changed PART=walks SHARD=1/4` to `4/4` with `WALKTIMEOUT=8m`, a quarter of the runs each by how long they took last, `walk-times.tsv`, so a run that hangs is named in minutes. Each part of the app walks in WebKit once it has moved there, and in Chromium until then, see Two browsers in [TESTING.md](TESTING.md#two-browsers). On three machines each job took four and three quarter minutes |
 | `fuzz` | Linux, in the CI image | `make changed PART=fuzz SIMTIME=0`, from the fuzz cache main left, see [Tests](#tests) |
 | `macos` | macOS | the ffmpeg we ship, built by its script and kept until the script changes, then `make changed PART=unit` against it, which on a Mac leaves out the race detector, which Linux runs, and the licence server's packages, which never run on a Mac |
 | `outside` | macOS | the ffmpeg and the llama-server we ship, then `make changed PART="build outside"`, `make` with no warnings allowed, then `make outside`: a keychain of its own, then the app opened by macOS from an Unlock link, closed and open, with the local dispenser beside it, see [TESTING.md](TESTING.md#from-outside-the-app). Stopped after 30 minutes |
@@ -514,10 +514,13 @@ because it runs by hand, takes half an hour anyway and holds up nothing.
 run in a container, the CI image, built from
 `.github/ci-image/Dockerfile`: Ubuntu 24.04, the runners' own system,
 with every package `scripts/ci-packages.sh` installs for the Go side,
-ffmpeg, meson, ninja, nasm and patchelf beside them, and the headless
-Chromium of the Playwright version in `frontend/package-lock.json` with
-the libraries and fonts it needs. Go and Node are not in it: setup-go
-and setup-node bring them as in every other job.
+ffmpeg, meson, ninja, nasm and patchelf beside them. The walks run in a
+second image of the same file, the first with the headless Chromium and
+the WebKit of the Playwright version in `frontend/package-lock.json`,
+with the libraries and fonts they need. With WebKit in one image for
+every job, pulling it took 73 to 80 s where 24 to 30 s had done, so the
+jobs that open no browser take the first. Go and Node are in neither:
+setup-go and setup-node bring them as in every other job.
 
 On some days the runners' Ubuntu mirror gave 18 to 40 kB a second, and
 the libraries Chromium needs, mostly fonts, held a walks job for up to
@@ -532,9 +535,10 @@ a new one, and every job in it runs on that.
 `.github/workflows/ci-image.yml`, which `ci.yml` calls as the job
 `image`, and `fuzz-nightly.yml`, `walks-nightly.yml` and `security.yml` call too, names the image by a sum of
 the Dockerfile, of `scripts/ci-packages.sh` and of the Playwright
-version, as `ghcr.io/timmrkz/framefairy-ci:<sum>`. When the registry has
-that tag, the job is done in seconds, and when it does not, which is
-only when one of the three changed, it builds the image and pushes it,
+version, as `ghcr.io/timmrkz/framefairy-ci:<sum>`, and the walks' image
+as `<sum>-walks`. When the registry has both tags, the job is done in
+seconds, and when it does not, which is only when one of the three
+changed, it builds both images and pushes them,
 and the jobs in it wait for it. Both images the Dockerfile starts from
 are pinned to a digest, so the same sum always means the same image, and
 moving them is a change to the file. Dependabot moves both once a week,

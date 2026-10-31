@@ -955,16 +955,24 @@ export const steps = {
     const { kept, page } = walk;
     const box = await page.locator(".telling").boundingBox();
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-    const was = await page.locator(".telling").evaluate((f) => f.scrollTop);
+    // The field's own word on the scroll is heard from before the wheel
+    // turns, so a scroll that ends at once is heard too: scroll when it
+    // starts, scrollend when it has come to rest. In WebKit the step read
+    // the field at 99 px, at its first scroll event, and it stood at 0 by
+    // the next step (#380).
+    const was = await page.locator(".telling").evaluate((f) => {
+      f.wheeled = { scrolled: false, ended: new Promise((done) => f.addEventListener("scrollend", () => done(f.scrollTop), { once: true })) };
+      f.addEventListener("scroll", () => (f.wheeled.scrolled = true), { once: true });
+      return f.scrollTop;
+    });
     await page.mouse.wheel(0, arg);
-    // Read as soon as the wheel has turned the field, before the next
-    // words come, or two frames on if it did not.
+    // Where the wheel has left the field: where its scroll came to rest,
+    // or where it was, two frames on, when the wheel turned nothing.
     kept.scrolledTo = await page.locator(".telling").evaluate(
       (f, was) =>
         new Promise((done) => {
-          if (f.scrollTop !== was) return done(f.scrollTop);
-          f.addEventListener("scroll", () => done(f.scrollTop), { once: true });
-          requestAnimationFrame(() => requestAnimationFrame(() => done(f.scrollTop)));
+          f.wheeled.ended.then(done);
+          requestAnimationFrame(() => requestAnimationFrame(() => f.wheeled.scrolled || done(was)));
         }),
       was,
     );

@@ -108,10 +108,13 @@
   // clicked back into the app. WebKit hands on every mouse entered and
   // exited macOS sends as a move of the pointer, and a sidebar that opens
   // and closes under a still pointer can have the system send another, so
-  // the sidebar answered itself. Those moves move nothing: what the hand
-  // does on the trackpad or the mouse is in a move's movement, and theirs
-  // is none. Only the very first move is taken without it, since the
-  // pointer had no place before it to have moved from. And the sidebar
+  // the sidebar answered itself. Those moves move nothing: they land
+  // where the move before them did. A move is the hand's when it lands
+  // somewhere else, which every engine can tell. The movement a move
+  // reports cannot be relied on for it: the moves of Playwright's WebKit
+  // report none, and the sidebar never opened there (#380). MDN gives the
+  // same advice. Only the very first move is taken as it comes, since
+  // the pointer had no place before it to have moved from. And the sidebar
   // only answers the pointer while the app is in front, the way the Mac's
   // own windows do: a move while another app is in front is not taken
   // in at all, or the sidebar took the pointer for already there and
@@ -122,10 +125,12 @@
   // it stays, and closes on the way out.
   let inside = false;
   let moved = false;
+  let lastAt = [0, 0];
   function pointerMoved(e: PointerEvent) {
-    if (moved && !e.movementX && !e.movementY) return;
+    if (moved && e.clientX === lastAt[0] && e.clientY === lastAt[1]) return;
     if (!document.hasFocus()) return;
     moved = true;
+    lastAt = [e.clientX, e.clientY];
     const now = !!aside?.contains(e.target as Node);
     const came = now && !inside;
     const went = !now && inside;

@@ -824,7 +824,9 @@ frame of the video preview comes from, take longer to build than the five
 minutes a setup script may take and still be cached, so the SessionStart
 hook in `.claude/settings.json` builds them in the background as each
 session starts, see `scripts/cloud-decoder.sh`, logged in
-`/tmp/framefairy-decoder.log`. There are no models in the cloud, which the tests do not need.
+`/tmp/framefairy-decoder.log`. The same hook installs Playwright's WebKit
+for the walks, see `scripts/cloud-webkit.sh`, logged in
+`/tmp/framefairy-webkit.log`. There are no models in the cloud, which the tests do not need.
 It also installs the engineering skills from `samber/cc-skills-golang` and
 `addyosmani/agent-skills` into `~/.claude/skills`, each pinned to a commit,
 because plugins added on claude.ai do not reach cloud sessions. They are

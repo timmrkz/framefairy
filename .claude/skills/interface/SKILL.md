@@ -394,14 +394,22 @@ impossible.
 
 ## When it only goes wrong on the Mac, try WebKit
 
-The harness is Chromium, and the app on a Mac is WebKit. Where the two
-keep time or paint differently, a probe in Chromium passes and Tim still
-sees the bug. The fill of a removed row grew back under the pointer on
+The app on a Mac is WebKit. The walks walk each part of the app in
+Playwright's WebKit once it has moved there, see Two browsers in
+`docs/TESTING.md`, and the rest and the probes of `frontend/preview/open.mjs`
+in Chromium, until #380 is done. Where the two keep time or paint
+differently, a probe in Chromium passes and Tim still sees the bug. The fill of a removed row grew back under the pointer on
 his Mac for two rounds while every Chromium probe said it held still:
 WebKit plays a paused animation on from its timeline's last frame, and
 Chromium from now.
 
-WebKit is in the cloud session: WebKitGTK 6.0 with its Python bindings
+Walk one sequence in WebKit the way you walk one in Chromium, with
+`WALKBROWSER=webkit` in front of `node frontend/preview/walks/sequences.mjs`.
+A cloud session installs Playwright's WebKit in the background as it starts,
+see `/tmp/framefairy-webkit.log`.
+
+For a probe of your own outside the walks, the session also has the system's
+WebKit, WebKitGTK 6.0 with its Python bindings
 for `/usr/bin/python3.12` (not the default `python3`), `xvfb-run` for a
 screen, and `libXtst` for a real pointer. Serve `frontend/preview/dist`
 over http, open it in a `WebKit.WebView` in a `Gtk.ApplicationWindow`

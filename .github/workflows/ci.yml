@@ -272,6 +272,11 @@ jobs:
   # Playwright drives, all of it in the image ci-image.yml keeps, which
   # the job runs in.
   #
+  # Each part of the app walks in WebKit, the engine the app runs in on a
+  # Mac, once it has moved there, and in Chromium until then, in the same
+  # jobs, see frontend/preview/walks/webkit.mjs and Two browsers in
+  # docs/TESTING.md, #380. The nightly walks walk in Chromium.
+  #
   # On four machines, each with a quarter of the runs by how long they took
   # last, see frontend/preview/walks/walk-times.tsv: on one the runs took
   # five and a half minutes after two of setting up, on two each still took
@@ -303,7 +308,7 @@ jobs:
       run:
         shell: bash -e {0}
     container:
-      image: ${{ needs.image.outputs.ref }}
+      image: ${{ needs.image.outputs.walks }}
       options: --init --ipc=host
       volumes:
         - /home/runner/work:/home/runner/work
@@ -364,8 +369,8 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .build/walk-videos
-          key: walk-videos-${{ strategy.job-index }}-${{ needs.image.outputs.ref }}-${{ hashFiles('cmd/framefairy-app/walkvideos_test.go') }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: walk-videos-${{ strategy.job-index }}-${{ needs.image.outputs.ref }}-${{ hashFiles('cmd/framefairy-app/walkvideos_test.go') }}-
+          key: walk-videos-${{ strategy.job-index }}-${{ needs.image.outputs.walks }}-${{ hashFiles('cmd/framefairy-app/walkvideos_test.go') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: walk-videos-${{ strategy.job-index }}-${{ needs.image.outputs.walks }}-${{ hashFiles('cmd/framefairy-app/walkvideos_test.go') }}-
       - name: The videos there were
         run: ls .build/walk-videos > "$RUNNER_TEMP/videos-before" 2>/dev/null || true
       # A walk or a sequence that breaks a rule is named on the check, see

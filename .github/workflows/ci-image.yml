@@ -1,10 +1,10 @@
-# The machine the walks and the Linux Go jobs run on in CI,
-# .github/ci-image/Dockerfile: Ubuntu with every system package they use
-# and Playwright's Chromium already in it, so none of them downloads from
-# the Ubuntu mirror, which on some days held a walks job for twelve
-# minutes, #462. Called by every workflow with a job in it, ci.yml,
-# fuzz-nightly.yml and security.yml, whose jobs run in the image this
-# names as ref.
+# The machines the walks and the Linux Go jobs run on in CI,
+# .github/ci-image/Dockerfile: Ubuntu with every system package they use,
+# so none of them downloads from the Ubuntu mirror, which on some days
+# held a walks job for twelve minutes, #462. Two images of one file: ref
+# for the jobs that open no browser, and walks, the same with Playwright's
+# Chromium and WebKit, for the walks. Called by every workflow with a job
+# in one, ci.yml, fuzz-nightly.yml, security.yml and walks-nightly.yml.
 #
 # It is kept in GitHub's container registry under a sum of what goes into
 # it: the Dockerfile, scripts/ci-packages.sh, which it runs, and the
@@ -19,8 +19,11 @@ on:
   workflow_call:
     outputs:
       ref:
-        description: The image, by its tag in the registry.
+        description: The image without browsers, by its tag in the registry.
         value: ${{ jobs.image.outputs.ref }}
+      walks:
+        description: The image with the browsers, by its tag in the registry.
+        value: ${{ jobs.image.outputs.walks }}
 
 permissions:
   contents: read
@@ -32,6 +35,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       ref: ${{ steps.tag.outputs.ref }}
+      walks: ${{ steps.tag.outputs.walks }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -46,17 +50,20 @@ jobs:
           sum=$({ echo "playwright $playwright"; cat .github/ci-image/Dockerfile scripts/ci-packages.sh; } | sha256sum | cut -c1-16)
           echo "playwright=$playwright" >> "$GITHUB_OUTPUT"
           echo "ref=ghcr.io/${GITHUB_REPOSITORY}-ci:$sum" >> "$GITHUB_OUTPUT"
+          echo "walks=ghcr.io/${GITHUB_REPOSITORY}-ci:$sum-walks" >> "$GITHUB_OUTPUT"
       - name: The image, unless it is there
         timeout-minutes: 10
         env:
           REF: ${{ steps.tag.outputs.ref }}
+          WALKS: ${{ steps.tag.outputs.walks }}
           PLAYWRIGHT: ${{ steps.tag.outputs.playwright }}
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          if docker buildx imagetools inspect "$REF" >/dev/null 2>&1; then
-            echo "$REF is there"
+          if docker buildx imagetools inspect "$REF" >/dev/null 2>&1 && docker buildx imagetools inspect "$WALKS" >/dev/null 2>&1; then
+            echo "$REF and $WALKS are there"
             exit 0
           fi
-          docker buildx build --push --build-arg PLAYWRIGHT="$PLAYWRIGHT" \
-            -t "$REF" -f .github/ci-image/Dockerfile .
+          docker buildx build --push --target base -t "$REF" -f .github/ci-image/Dockerfile .
+          docker buildx build --push --target walks --build-arg PLAYWRIGHT="$PLAYWRIGHT" \
+            -t "$WALKS" -f .github/ci-image/Dockerfile .
