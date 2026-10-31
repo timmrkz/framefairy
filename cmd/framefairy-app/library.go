@@ -13,8 +13,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/rs/zerolog"
+	"github.com/spf13/afero"
 
 	"framefairy/engine"
+	"framefairy/engine/fileio"
 	"framefairy/internal/framewire"
 )
 
@@ -330,7 +332,7 @@ func showInFolder(path string) error {
 		return startReaped(exec.Command("explorer", "/select,"+path))
 	}
 	dir := path
-	if fileExists(path) {
+	if fileio.IsFile(afero.NewOsFs(), path) {
 		dir = filepath.Dir(path)
 	}
 	return startReaped(exec.Command("xdg-open", dir))

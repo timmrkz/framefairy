@@ -145,8 +145,8 @@ which reads this file.
    `engine/num/` and `engine/runes/` nothing of the rest of the engine.
    Among them `engine/runlog/` uses `engine/num/` and `engine/runes/`,
    `engine/num/` and `engine/fileio/` use `engine/runes/`, `engine/tool/`
-   uses none of them, and none uses one above it. Held by Go's imports, which refuse a cycle, and by the
-   review for the rest.
+   uses none of them, and none uses one above it. Held by Go's imports,
+   which refuse a cycle, and by the review for the rest.
 2. One engine, two front ends. A rule lives once, in the engine. Held by
    the review.
 3. One word model. What a video says is `Transcript.Words`, and what a
@@ -202,8 +202,6 @@ copies what it finds nearby, so these are not the pattern for new code.
 - The tools already checked, `checked` in `engine/tool/find.go`, a cache
   as a package variable, and the sums `make` builds in, `sums` beside it,
   which four tests set for the whole process, #607.
-- The lock's seam in `engine/fileio/lock.go`, `waits`, which the package's
-  tests set for the whole process, #607.
 - The effects in `frontend/src/screens/Episode.svelte` that compare an
   old value with a new one to notice that work ended, #606.
 

@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -37,30 +36,16 @@ func holdLock(path string) {
 	release()
 }
 
-// waiters holds, by the path of a lock, the channel a test hears on that
-// an edit found that lock held and waits, see waitsOn.
-var waiters sync.Map
-
-func init() {
-	waits = func(path string) {
-		if c, ok := waiters.Load(path); ok {
-			select {
-			case c.(chan struct{}) <- struct{}{}:
-			default:
-			}
-		}
-	}
-}
-
-// waitsOn has a value each time an edit of the file at path in fsys finds
-// its lock held and waits for it.
-func waitsOn(t *testing.T, fsys afero.Fs, path string) <-chan struct{} {
-	t.Helper()
+// waitsOn is a waits for lock, and a channel that has a value each time
+// the lock it is handed to finds the file's lock held and waits for it.
+func waitsOn() (func(string), <-chan struct{}) {
 	c := make(chan struct{}, 1)
-	key := ResolveIn(fsys, path)
-	waiters.Store(key, c)
-	t.Cleanup(func() { waiters.Delete(key) })
-	return c
+	return func(string) {
+		select {
+		case c <- struct{}{}:
+		default:
+		}
+	}, c
 }
 
 // A plan in one memory does not wait for a plan at the same path in
@@ -70,12 +55,11 @@ func TestALockIsTheLockOfOneFileSystem(t *testing.T) {
 	const path = "/ep.framefairy/logs/clips.json"
 	a, b := afero.NewMemMapFs(), afero.NewMemMapFs()
 	unlock := Lock(a, path)
-	// Both memories have their lock under the same path, so an edit of
-	// either that waits says so here.
-	waits := waitsOn(t, a, path)
+	// Both edits below say here when they wait.
+	told, waits := waitsOn()
 	done := make(chan struct{})
 	go func() {
-		Lock(b, path)()
+		lock(b, path, told)()
 		close(done)
 	}()
 	select {
@@ -86,7 +70,7 @@ func TestALockIsTheLockOfOneFileSystem(t *testing.T) {
 	}
 	same := make(chan struct{})
 	go func() {
-		Lock(a, path)()
+		lock(a, path, told)()
 		close(same)
 	}()
 	// An edit that did not wait never says so, and hangs here until go
@@ -130,10 +114,10 @@ func TestALockWaitsForAnotherProgram(t *testing.T) {
 		t.Fatalf("the other program said %q, %v", line, err)
 	}
 
-	waits := waitsOn(t, afero.NewOsFs(), path)
+	told, waits := waitsOn()
 	got := make(chan struct{})
 	go func() {
-		release := Lock(afero.NewOsFs(), path)
+		release := lock(afero.NewOsFs(), path, told)
 		release()
 		close(got)
 	}()

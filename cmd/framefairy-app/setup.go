@@ -8,7 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/spf13/afero"
+
 	"framefairy/engine"
+	"framefairy/engine/fileio"
 	"framefairy/engine/tool"
 )
 
@@ -631,7 +634,7 @@ func languageCheck(opts engine.Options) Check {
 		}
 	}
 	if model != "" {
-		lm.OK = fileExists(model)
+		lm.OK = fileio.IsFile(afero.NewOsFs(), model)
 		lm.Detail = model
 		// Chosen and not fetched yet, which is a step still to take rather
 		// than a file gone missing.
@@ -640,9 +643,4 @@ func languageCheck(opts engine.Options) Check {
 		}
 	}
 	return lm
-}
-
-func fileExists(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && info.Mode().IsRegular()
 }

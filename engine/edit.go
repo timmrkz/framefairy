@@ -154,7 +154,7 @@ var errUnchanged = errors.New("the plan is unchanged")
 // editPlan loads a plan, lets change edit it, and writes it back in one
 // step. The file is replaced atomically, so a crash never leaves half a
 // plan. The result is checked with the same loader a render uses before it
-// is written. Edits of one file are one at a time, see files.Lock.
+// is written. Edits of one file are one at a time, see fileio.Lock.
 func editPlan(fsys afero.Fs, path string, change func(top *object, clips []*object) error) error {
 	defer fileio.Lock(fsys, path)()
 	return editPlanLocked(fsys, path, change)
@@ -238,7 +238,6 @@ func replacePlan(fsys afero.Fs, path string, body []byte) error {
 		_, _, err := LoadClips(fsys, tmp)
 		return err
 	})
-
 }
 
 // errNotAdded is a clip that was not added because the plan has it

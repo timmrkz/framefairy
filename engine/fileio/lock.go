@@ -31,6 +31,13 @@ type key struct {
 // file: two tests that each hold a plan at the same path in their own
 // memory do not wait for each other. Every OsFs is the one disk.
 func Lock(fsys afero.Fs, path string) (release func()) {
+	return lock(fsys, path, nil)
+}
+
+// lock is Lock that tells waits, when it is given, the path of a lock it
+// found held, before it waits for it. A test hands in its own, so it hears
+// that an edit waits rather than sees it not finish for a while.
+func lock(fsys afero.Fs, path string, waits func(path string)) (release func()) {
 	k := key{path: ResolveIn(fsys, path)}
 	if !OnDisk(fsys) {
 		k.fsys = fsys
@@ -45,15 +52,10 @@ func Lock(fsys afero.Fs, path string) (release func()) {
 	}
 	other := func() {}
 	if OnDisk(fsys) {
-		other = acrossProcesses(k.path)
+		other = acrossProcesses(k.path, waits)
 	}
 	return func() {
 		other()
 		mu.Unlock()
 	}
 }
-
-// waits is told the path of a lock that an edit found held, before the
-// edit waits for it. Only this package's tests set it, so they hear that
-// an edit waits rather than see it not finish for a while.
-var waits func(path string)

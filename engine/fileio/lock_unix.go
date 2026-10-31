@@ -20,8 +20,9 @@ import (
 // replaced would keep nobody out of the new one. The system gives the lock
 // back when a program ends, so a crash leaves nothing held. Where the
 // system cannot lock, on some network drives, an edit goes ahead without
-// it, as it did before.
-func acrossProcesses(path string) (release func()) {
+// it, as it did before. waits is told when another program holds it, see
+// lock.
+func acrossProcesses(path string, waits func(path string)) (release func()) {
 	name := filepath.Join(filepath.Dir(path), "."+filepath.Base(path)+".lock")
 	f, err := os.OpenFile(name, os.O_RDWR|os.O_CREATE, 0o644)
 	if err != nil {
