@@ -18,15 +18,23 @@
 # build: the Updates page went on offering the one before as the newest.
 # GitHub runs push whatever the conflict, so every push to a branch of this
 # repository comes here, finds the branch's open pull request and builds
-# its channel. A branch with no open pull request builds nothing. The
-# pull_request event is left with what only it says: opened, reopened and
-# closed. The build is of the branch as it is, not merged with main, so a
-# conflict does not make it wrong to test.
+# its channel. A branch with no open pull request builds nothing.
+#
+# Only a push builds. Opening a pull request builds nothing, so a pull
+# request is built from its first push after it was opened. Dependabot
+# pushes its branch and opens its pull request in the same second, and
+# when the opening built too, the push and the opening each built the one
+# commit and the second stopped the first, which left a cancelled check on
+# every update it opened, #642. The first push of a session's branch comes
+# before its pull request and holds nothing worth testing in the app, Tim
+# said. The pull_request event is left with the close, which builds
+# nothing and only has publish.yml write the list again without it. The
+# build is of the branch as it is, not merged with main, so a conflict
+# does not make it wrong to test.
 #
 # A commit that is built already, or that only changes the docs against
 # the build there is, gets no build of its own. scripts/needs-build.sh
-# decides that for the build and for the list alike, so a pull request
-# opened after its branch was pushed is not built twice.
+# decides that for the build and for the list alike.
 #
 # Two jobs:
 #
@@ -43,7 +51,7 @@ name: Builds to update to
 
 on:
   pull_request:
-    types: [opened, reopened, closed]
+    types: [closed]
   push:
     branches: ["**"]
 
@@ -74,7 +82,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           EVENT: ${{ github.event_name }}
-          ACTION: ${{ github.event.action }}
           BRANCH: ${{ github.ref_name }}
           NUMBER: ${{ github.event.pull_request.number }}
           TITLE: ${{ github.event.pull_request.title }}
@@ -84,7 +91,7 @@ jobs:
         run: |
           build=true
           if [ "$EVENT" = pull_request ]; then
-            if [ "$ACTION" = closed ]; then build=false; fi
+            build=false
           elif [ "$BRANCH" = main ]; then
             NUMBER=
           else
