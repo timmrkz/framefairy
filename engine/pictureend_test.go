@@ -34,10 +34,11 @@ func TestAVideoEndsWhereItsPictureEnds(t *testing.T) {
 		// One second of picture at 25 frames a second, two of sound, in
 		// MPEG-4 Part 2, which the ffmpeg we ship encodes on every machine.
 		{name: "sound_longer.mp4", picture: "1", sound: "2", frames: 25, length: 1},
-		// Matroska keeps the picture's length in a tag of its own. AAC
-		// starts the file 23 ms before the picture, so the picture
-		// ends 23 ms after its second.
-		{name: "sound_longer.mkv", picture: "1", sound: "2", frames: 25, length: 1.023, slack: 0.002},
+		// Matroska keeps the picture's length in a tag of its own. The
+		// AAC of Linux's ffmpeg starts the file 23 ms before the picture,
+		// so the picture ends 23 ms after its second there, and the
+		// Mac's starts it with the picture.
+		{name: "sound_longer.mkv", picture: "1", sound: "2", frames: 25, length: 1.0115, slack: 0.012},
 		{name: "sound_longer.mov", picture: "1", sound: "2", frames: 25, length: 1},
 		// The picture longer than the sound: the file is as long as the
 		// picture, and stays so.
