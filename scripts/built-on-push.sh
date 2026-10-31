@@ -37,10 +37,14 @@ answer() {
 	exit 0
 }
 
-runs=$(gh run list --workflow builds.yml --commit "$sha" --event push --json createdAt 2>/dev/null) ||
+# gh reads the runs with the jq it carries, because the CI image has no jq
+# of its own. The times are compared as text, which orders them, since
+# GitHub writes every one the same way, in UTC.
+stamp='^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z$'
+echo "$opened" | grep -q "$stamp" || answer build "The opening, $opened, does not read as a time."
+made=$(gh run list --workflow builds.yml --commit "$sha" --event push --json createdAt --jq '.[].createdAt' 2>/dev/null) ||
 	answer build "The pushes of $sha cannot be read."
-after=$(printf '%s' "$runs" | jq -r --arg opened "$opened" '[.[] | select(.createdAt >= $opened)] | length' 2>/dev/null) ||
-	answer build "The pushes of $sha do not read."
-[ "${after:-0}" -gt 0 ] 2>/dev/null ||
+after=$(printf '%s\n' "$made" | awk -v opened="$opened" -v stamp="$stamp" '$0 ~ stamp && $0 >= opened { n++ } END { print n + 0 }')
+[ "$after" -gt 0 ] ||
 	answer build "No push of $sha started after the pull request was opened at $opened."
 answer push "A push of $sha started after the pull request was opened at $opened, and builds it."
