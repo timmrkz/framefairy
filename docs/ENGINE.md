@@ -559,8 +559,9 @@ the removed ones too, and asked for other moments, see version 4 in
 those all the same is left out and said in the log, the same measure as a
 moment given twice. A pass that brings nothing new writes a plan with no
 clips, so it still counts as a pass. `SearchPasses` cuts the episode into
-parts by how many searches have read them, and the app's Search goes where the
-fewest have been, earliest first. A plan
+parts by how many searches have read them, and `Project.PlaceWindow` puts the
+next window where the fewest have been, earliest first, for the app's Search
+and for `--next` on the command line alike. A plan
 carries the window it was made over in `planned_with`. No part of an
 episode is ever taken or given back: any window can be searched, as often
 as anyone likes, and a clip goes the way every clip goes, removed from its
@@ -1494,7 +1495,9 @@ the prompt is mostly the transcript. The first search of a new video is
 asked for while its transcript is still being heard, so while it grows,
 the model loaded ahead is given what of the window's transcript is
 settled to read, every time a part heard is written, and keeps it, in
-`engine/readahead.go`. The search then reads only the rest. What is read
+`engine/readahead.go`. `Project.Search` starts it by itself, beside its
+hearing, whenever some of its window is still to be heard. The search
+then reads only the rest. What is read
 is the start of the search's own prompt, token for token: the transcript
 is written out by the search's request, `searchRequest`, from every line
 heard but the last, which may still grow, laid out by llama-server with

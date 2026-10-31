@@ -373,13 +373,17 @@
   // line it went nowhere, so a double-click in the clip did nothing at all
   // while one on a cut's edge did something. Told here, it is the same
   // gesture wherever the second press lands. The time and the distance are
-  // the Mac's own for a double-click.
-  let lastPress = { at: 0, x: 0 };
+  // the Mac's own for a double-click, and the distance is measured both
+  // ways, as the Mac measures it. Measured along the track only, a press
+  // on a caption block and then on a keyframe over it at the same x was a
+  // double-click, which removed the keyframe, #535.
+  let lastPress = { at: 0, x: 0, y: 0 };
 
   function twice(event: PointerEvent): boolean {
     const now = event.timeStamp;
-    const again = now - lastPress.at < 500 && Math.abs(event.clientX - lastPress.x) < 6;
-    lastPress = again ? { at: 0, x: 0 } : { at: now, x: event.clientX };
+    const again =
+      now - lastPress.at < 500 && Math.abs(event.clientX - lastPress.x) < 6 && Math.abs(event.clientY - lastPress.y) < 6;
+    lastPress = again ? { at: 0, x: 0, y: 0 } : { at: now, x: event.clientX, y: event.clientY };
     return again;
   }
 

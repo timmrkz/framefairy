@@ -193,8 +193,6 @@ other side relies on, and the pull request says so.
 Code that breaks this map today, with the issue that fixes it. A session
 copies what it finds nearby, so these are not the pattern for new code.
 
-- The decisions around a search made in `cmd/framefairy-app/search.go`,
-  whether to warm the model up and the plan's name, #610.
 - Rules of the engine in `frontend/src/lib/flow.ts`,
   `frontend/src/lib/rotate.ts` and `frontend/src/lib/room.ts`, #610.
 - The transcript cache in `cmd/framefairy-app/words.go`, #608.
