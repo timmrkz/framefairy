@@ -440,7 +440,7 @@ shipping bugs live:
 | Signature | none | Developer ID, notarised | **no** |
 
 Four of those rows became the same on purpose, in `engine/encode.go`,
-`engine/tools.go`, `scripts/build-ffmpeg.sh` and `scripts/build-llama.sh`.
+`engine/tool/find.go`, `scripts/build-ffmpeg.sh` and `scripts/build-llama.sh`.
 The encoder is chosen at render time from what the ffmpeg in hand actually
 has, and a tool beside the program always beats the one on the search
 path, so the day these land in the bundle they are the ones that run

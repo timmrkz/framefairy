@@ -169,13 +169,11 @@ func TestTheServerLogIsKeptBeforeTheLogsFolderExists(t *testing.T) {
 func TestAServerThatWillNotStopIsKilledAtOnce(t *testing.T) {
 	noteIn(t)
 	t.Setenv("FRAMEFAIRY_STUBBORN_SERVER", "1")
-	// stopGrace is up the moment it is asked about. Not parallel: leaving
-	// is a package variable, and t.Setenv rules it out too.
-	was := leaving
+	// stopGrace is up the moment it is asked about, on the engine's own
+	// runner. Not parallel: lookAgain is a package variable, and t.Setenv
+	// rules it out too.
 	up := make(chan time.Time)
 	close(up)
-	leaving = func(time.Duration) <-chan time.Time { return up }
-	t.Cleanup(func() { leaving = was })
 	// The start ends on the server's word that it is listening, and never
 	// on a look of the clock, which here never comes, #550.
 	wasLook := lookAgain
@@ -186,6 +184,7 @@ func TestAServerThatWillNotStopIsKilledAtOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	e := NewEngine(runlog.New(io.Discard, false, false), disk)
+	e.Tools.Leave = func(time.Duration) <-chan time.Time { return up }
 	_, stop, err := e.startServer(context.Background(), LocalModel{Server: os.Args[0], Model: model}, 4096, "")
 	if err != nil {
 		t.Fatal(err)

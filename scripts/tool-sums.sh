@@ -5,8 +5,8 @@
 #   scripts/tool-sums.sh [STAMPS]
 #
 # make builds this into every program that runs a tool, and a program runs
-# a tool beside it only when the file is the one summed here. See FindTool
-# in engine/tools.go. A tool that is not there is left out, and a program
+# a tool beside it only when the file is the one summed here. See Find
+# in engine/tool/find.go. A tool that is not there is left out, and a program
 # then runs no tool of that name from beside itself.
 set -e
 STAMPS=${1:-.build}

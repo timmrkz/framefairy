@@ -3295,8 +3295,8 @@ next update is the new tools. A customer never runs older tools than the
 app they have. The tests and the command line can name others in the
 environment, `FRAMEFAIRY_FFMPEG`, `FRAMEFAIRY_FFPROBE`,
 `FRAMEFAIRY_LLAMA_SERVER` and `FRAMEFAIRY_ASR_MODEL` for the speech model,
-and the app as it ships takes none of them, see `named` in
-`engine/tools.go`. On a Mac any program of the same user can set a
+and the app as it ships takes none of them, see `Named` in
+`engine/tool/find.go`. On a Mac any program of the same user can set a
 variable the next launch of the app reads, and what it named would run
 unchecked with the app's access to the person's folders.
 

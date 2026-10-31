@@ -527,7 +527,7 @@ func (e *Engine) measureASS(ctx context.Context, blocks []string, s Style,
 		return nil, false
 	}
 	chain := subtitleChain(template, name)
-	raw, code := runBytes(ctx, tmp, e.FFmpeg, "-hide_banner", "-loglevel", "error",
+	raw, code := e.Tools.Bytes(ctx, tmp, e.FFmpeg, "-hide_banner", "-loglevel", "error",
 		"-nostats", "-f", "lavfi",
 		"-i", fmt.Sprintf("color=c=black:s=%dx%d:d=0.04:r=25", width, height),
 		"-filter_complex", "[0:v]"+chain+",format=gray[v]",

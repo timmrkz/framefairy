@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -24,6 +23,7 @@ import (
 	"framefairy/engine/runes"
 	"framefairy/engine/runlog"
 	"framefairy/engine/timed"
+	"framefairy/engine/tool"
 	"framefairy/internal/framewire"
 )
 
@@ -74,6 +74,10 @@ type Engine struct {
 	Log     *runlog.Log
 	FFmpeg  string
 	FFprobe string
+	// Tools runs ffmpeg, ffprobe and the other programs, and says how a
+	// program whose work is called off is stopped. A test sets its own
+	// stop on its own engine.
+	Tools tool.Runner
 
 	// Files is where the files of episodes are read and written, the real
 	// disk in the programs, see files.go.
@@ -149,158 +153,16 @@ type Engine struct {
 }
 
 // NewEngine makes an engine with the tools it calls: the ones named in the
-// environment, or else the ones beside the program, checked. See FindTool
-// in tools.go. A tool that may not run is left empty, and Preflight says
+// environment, or else the ones beside the program, checked. See
+// tool.Find. A tool that may not run is left empty, and Preflight says
 // why.
 func NewEngine(log *runlog.Log, files afero.Fs) *Engine {
 	return &Engine{Log: log,
 		Files:   files,
 		Records: NewRecords(files, "", ""),
-		FFmpeg:  ToolPath("FRAMEFAIRY_FFMPEG", "ffmpeg"),
-		FFprobe: ToolPath("FRAMEFAIRY_FFPROBE", "ffprobe"),
+		FFmpeg:  tool.Path("FRAMEFAIRY_FFMPEG", "ffmpeg"),
+		FFprobe: tool.Path("FRAMEFAIRY_FFPROBE", "ffprobe"),
 		NoFaces: os.Getenv("FRAMEFAIRY_NO_FACES") != ""}
-}
-
-type result struct {
-	Code   int
-	Stdout string
-	Stderr string
-	// Left is set for a program that did not end when it was stopped,
-	// see leaveAfter.
-	Left bool
-}
-
-// run executes a command as an argument list, never through a shell. A
-// missing binary is a normal outcome here, so it comes back as exit code 127
-// rather than as an error.
-func run(ctx context.Context, cwd string, name string, args ...string) result {
-	if name == "" {
-		return result{Code: 127, Stderr: "no tool that may run, see Preflight"}
-	}
-	cmd := command(ctx, name, args...)
-	cmd.Dir = cwd
-	var stdout, stderr bytes.Buffer
-	out, said := &cutWriter{w: &stdout}, &cutWriter{w: &stderr}
-	cmd.Stdout, cmd.Stderr = out, said
-	if err := cmd.Start(); err != nil {
-		return result{Code: 127, Stderr: err.Error()}
-	}
-	left, err := finish(ctx, cmd, out, said)
-	if left {
-		return result{Code: 1, Stderr: filepath.Base(name) + " " + leftBehind, Left: true}
-	}
-	code := 0
-	if err != nil {
-		var exit *exec.ExitError
-		if errors.As(err, &exit) {
-			code = exit.ExitCode()
-			if code < 0 {
-				code = 1
-			}
-		} else {
-			return result{Code: 127, Stderr: err.Error()}
-		}
-	}
-	return result{Code: code, Stdout: stdout.String(), Stderr: stderr.String()}
-}
-
-func runBytes(ctx context.Context, cwd string, name string, args ...string) ([]byte, int) {
-	cmd := command(ctx, name, args...)
-	cmd.Dir = cwd
-	var stdout bytes.Buffer
-	out := &cutWriter{w: &stdout}
-	cmd.Stdout = out
-	if err := cmd.Start(); err != nil {
-		return nil, 127
-	}
-	left, err := finish(ctx, cmd, out)
-	if left {
-		return nil, 1
-	}
-	if err != nil {
-		var exit *exec.ExitError
-		if errors.As(err, &exit) {
-			return stdout.Bytes(), max(exit.ExitCode(), 1)
-		}
-		return nil, 127
-	}
-	return stdout.Bytes(), 0
-}
-
-// leaveAfter is how long a program that was stopped has to end before it
-// is left behind. A killed program ends at once, unless it is inside the
-// system and the system will not let it go: ffmpeg in VideoToolbox on CI's
-// virtual Mac went on for eight minutes after it was killed, and the
-// search that waited for it waited for good.
-var leaveAfter = 5 * time.Second
-
-// leaving is the wait for a program that was asked to stop to end,
-// leaveAfter for ffmpeg and stopGrace for llama-server, time.After unless
-// a test hands in a wait of its own.
-var leaving = time.After
-
-// leftBehind is what is said of a program that was left behind.
-const leftBehind = "did not end when it was stopped, so it was left behind"
-
-// stopProcess stops a program whose work is called off, by killing it. A
-// variable so a test can stand in a stop that does not end the program.
-var stopProcess = func(p *os.Process) error { return p.Kill() }
-
-// command is exec.CommandContext that stops the program with stopProcess
-// once ctx is done. run, runBytes and runFFmpegWatched start their
-// programs with it and wait for them with finish.
-func command(ctx context.Context, name string, args ...string) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, name, args...)
-	// Read here rather than in the stop, which may run after a test has
-	// put the variable back.
-	stop := stopProcess
-	cmd.Cancel = func() error { return stop(cmd.Process) }
-	return cmd
-}
-
-// finish waits for a command that was started to end. Once ctx is done
-// the command is stopped, and one that has still not ended leaveAfter
-// later is left behind and left says so: what it writes from then on goes
-// to none of outs, which the caller may read at once.
-func finish(ctx context.Context, cmd *exec.Cmd, outs ...*cutWriter) (left bool, err error) {
-	finished := make(chan error, 1)
-	go func() { finished <- cmd.Wait() }()
-	select {
-	case err := <-finished:
-		return false, err
-	case <-ctx.Done():
-	}
-	select {
-	case err := <-finished:
-		return false, err
-	case <-leaving(leaveAfter):
-	}
-	for _, out := range outs {
-		out.cut()
-	}
-	return true, nil
-}
-
-// cutWriter passes what is written on to w until it is cut, and drops it
-// after, so a program left behind writes into nothing anyone reads.
-type cutWriter struct {
-	mu sync.Mutex
-	w  io.Writer
-}
-
-func (c *cutWriter) Write(p []byte) (int, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.w == nil {
-		return len(p), nil
-	}
-	return c.w.Write(p)
-}
-
-func (c *cutWriter) cut() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.w = nil
 }
 
 // parseProgress reads seconds of media processed so far from an ffmpeg
@@ -356,7 +218,7 @@ func (e *Engine) runFFmpegWatched(ctx context.Context, args []string, label stri
 	}
 	quoted := make([]string, len(kept))
 	for i, a := range kept {
-		quoted[i] = shellQuote(a)
+		quoted[i] = tool.Quote(a)
 	}
 	e.Log.Detail("%s", "ffmpeg "+strings.Join(quoted, " "))
 
@@ -377,12 +239,12 @@ func (e *Engine) runFFmpegWatched(ctx context.Context, args []string, label stri
 	// is part of.
 	ctx, stop := context.WithCancel(ctx)
 	defer stop()
-	cmd := command(ctx, e.FFmpeg, full...)
+	cmd := e.Tools.Command(ctx, e.FFmpeg, full...)
 	cmd.Dir = cwd
 	cmd.Stderr = handle
-	var out *cutWriter
+	var out *tool.CutWriter
 	if stdout != nil {
-		out = &cutWriter{w: stdout}
+		out = tool.NewCutWriter(stdout)
 		cmd.Stdout = out
 	}
 	started := time.Now()
@@ -397,7 +259,7 @@ func (e *Engine) runFFmpegWatched(ctx context.Context, args []string, label stri
 	defer ticker.Stop()
 	lastMove, lastDone, warned := time.Now(), -1.0, false
 	var waitErr error
-	// gone runs from the moment ffmpeg is stopped, see leaveAfter, and
+	// gone runs from the moment ffmpeg is stopped, see tool.LeaveAfter, and
 	// stopping is heard at once rather than on the next tick.
 	var gone <-chan time.Time
 	stopping := ctx.Done()
@@ -409,7 +271,7 @@ func (e *Engine) runFFmpegWatched(ctx context.Context, args []string, label stri
 loop:
 	for {
 		if gone == nil && ctx.Err() != nil {
-			gone, stopping = leaving(leaveAfter), nil
+			gone, stopping = e.Tools.Leaving(tool.LeaveAfter), nil
 		}
 		said := false
 		select {
@@ -422,13 +284,13 @@ loop:
 		case <-gone:
 			left = true
 			if out != nil {
-				out.cut()
+				out.Cut()
 			}
 			name := label
 			if name == "" {
 				name = "ffmpeg"
 			}
-			e.Log.Warn("%s %s", name, leftBehind)
+			e.Log.Warn("%s %s", name, tool.LeftBehind)
 			break loop
 		case <-ticker.C:
 		}
@@ -548,7 +410,7 @@ func (e *Engine) SubtitleFilter(ctx context.Context) (string, error) {
 		}
 	}
 
-	filters := run(ctx, "", e.FFmpeg, "-hide_banner", "-filters")
+	filters := e.Tools.Run(ctx, "", e.FFmpeg, "-hide_banner", "-filters")
 	hasASS := false
 	for _, line := range strings.Split(filters.Stdout, "\n") {
 		parts := strings.Fields(line)
@@ -588,7 +450,7 @@ func (e *Engine) SubtitleFilter(ctx context.Context) (string, error) {
 	var failures []string
 	for _, candidate := range candidates {
 		chain := subtitleChain(candidate, name)
-		res := run(ctx, tmp, e.FFmpeg, "-hide_banner", "-loglevel", "error",
+		res := e.Tools.Run(ctx, tmp, e.FFmpeg, "-hide_banner", "-loglevel", "error",
 			"-nostats", "-y", "-f", "lavfi",
 			"-i", "color=c=black:s=320x180:d=0.1:r=25",
 			"-filter_complex", "[0:v]"+chain+"[v]",
@@ -617,15 +479,15 @@ func (e *Engine) SubtitleFilter(ctx context.Context) (string, error) {
 // paying to plan an episode is the wrong order to find out.
 func (e *Engine) Preflight(ctx context.Context) error {
 	e.Log.Progress("checking ffmpeg")
-	for _, tool := range []struct{ path, env, name string }{
+	for _, program := range []struct{ path, env, name string }{
 		{e.FFmpeg, "FRAMEFAIRY_FFMPEG", "ffmpeg"},
 		{e.FFprobe, "FRAMEFAIRY_FFPROBE", "ffprobe"},
 	} {
-		if tool.path == "" {
+		if program.path == "" {
 			e.Log.ClearProgress()
-			_, err := FindTool(tool.env, tool.name)
+			_, err := tool.Find(program.env, program.name)
 			if err == nil {
-				err = renderErr("there is no %s to run", tool.name)
+				err = renderErr("there is no %s to run", program.name)
 			}
 			return err
 		}
@@ -635,7 +497,7 @@ func (e *Engine) Preflight(ctx context.Context) error {
 	ffmpegKey, keepFFmpeg := keyFor("ffmpeg version", e.FFmpeg, "")
 	first, ran := recall[string](ffmpegKey)
 	if !ran {
-		version := run(ctx, "", e.FFmpeg, "-version")
+		version := e.Tools.Run(ctx, "", e.FFmpeg, "-version")
 		if version.Code != 0 {
 			e.Log.ClearProgress()
 			return renderErr("%s does not run: %s", e.FFmpeg, runes.Scrub(version.Stderr, 200))
@@ -652,7 +514,7 @@ func (e *Engine) Preflight(ctx context.Context) error {
 
 	ffprobeKey, keepFFprobe := keyFor("ffprobe version", e.FFprobe, "")
 	if _, ran := recall[bool](ffprobeKey); !ran {
-		if run(ctx, "", e.FFprobe, "-version").Code != 0 {
+		if e.Tools.Run(ctx, "", e.FFprobe, "-version").Code != 0 {
 			e.Log.ClearProgress()
 			return renderErr("%s is missing, which usually means a partial ffmpeg install.",
 				e.FFprobe)
@@ -815,7 +677,7 @@ func (e *Engine) pictureStart(ctx context.Context, path string) float64 {
 // readPictureStart is pictureStart asked of ffprobe, and whether it
 // answered.
 func (e *Engine) readPictureStart(ctx context.Context, path string) (float64, bool) {
-	res := run(ctx, "", e.FFprobe, "-v", "error", "-select_streams", "v:0",
+	res := e.Tools.Run(ctx, "", e.FFprobe, "-v", "error", "-select_streams", "v:0",
 		"-show_entries", "stream=start_time", "-show_entries", "format=start_time",
 		"-of", "json", path)
 	if res.Code != 0 {
@@ -855,7 +717,7 @@ func (e *Engine) Probe(ctx context.Context, path string) (SourceInfo, error) {
 }
 
 func (e *Engine) probe(ctx context.Context, path string) (SourceInfo, error) {
-	res := run(ctx, "", e.FFprobe, "-v", "error",
+	res := e.Tools.Run(ctx, "", e.FFprobe, "-v", "error",
 		"-select_streams", "v:0",
 		"-show_entries",
 		"stream=width,height,r_frame_rate,avg_frame_rate,start_time,color_primaries,color_transfer,color_space",
@@ -971,7 +833,7 @@ func (e *Engine) probe(ctx context.Context, path string) (SourceInfo, error) {
 // soundOf is the rate and the channels of a file's first sound, or
 // nought for a file with no sound or one ffprobe cannot read.
 func (e *Engine) soundOf(ctx context.Context, path string) (rate, channels int) {
-	res := run(ctx, "", e.FFprobe, "-v", "error", "-select_streams", "a:0",
+	res := e.Tools.Run(ctx, "", e.FFprobe, "-v", "error", "-select_streams", "a:0",
 		"-show_entries", "stream=sample_rate,channels", "-of", "json", path)
 	if res.Code != 0 {
 		return 0, 0
@@ -1063,7 +925,7 @@ func (e *Engine) unevenIn(ctx context.Context, path string, info SourceInfo, at,
 			from = num.Fixed(info.origin+float64(key)/1e6, 6)
 		}
 	}
-	res := run(ctx, "", e.FFprobe, "-v", "error", "-select_streams", "v:0",
+	res := e.Tools.Run(ctx, "", e.FFprobe, "-v", "error", "-select_streams", "v:0",
 		"-read_intervals", from+"%"+num.Fixed(info.origin+at+span, 3),
 		"-show_entries", "packet=pts_time,pos,flags", "-of", "csv=p=0", path)
 	if res.Code != 0 {
@@ -1229,7 +1091,7 @@ func (e *Engine) keyBefore(ctx context.Context, path string, s SourceInfo, at in
 		if from > 0 {
 			interval = num.Fixed(s.origin+from, 6) + interval
 		}
-		res := run(ctx, "", e.FFprobe, "-v", "error", "-select_streams", "v:0",
+		res := e.Tools.Run(ctx, "", e.FFprobe, "-v", "error", "-select_streams", "v:0",
 			"-read_intervals", interval,
 			"-show_entries", "packet=dts_time,pos,flags", "-of", "csv=p=0", path)
 		if res.Code != 0 {
@@ -1286,7 +1148,7 @@ func (e *Engine) lastMoment(ctx context.Context, path string, start float64) flo
 			return end.(float64)
 		}
 	}
-	res := run(ctx, "", e.FFprobe, "-v", "error",
+	res := e.Tools.Run(ctx, "", e.FFprobe, "-v", "error",
 		"-show_entries", "packet=pts_time,duration_time", "-of", "csv=p=0", path)
 	if res.Code != 0 {
 		return 0

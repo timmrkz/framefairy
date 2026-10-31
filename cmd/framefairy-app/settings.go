@@ -23,7 +23,7 @@ import (
 //
 // There is no ffmpeg and no llama-server here. They were paths the
 // settings could name, and the app ran whatever they named: the app's own
-// tools are the only ones it runs now, see engine.FindTool. A settings file
+// tools are the only ones it runs now, see tool.Find. A settings file
 // that still names one has it read past and dropped on the next save.
 type Settings struct {
 	LLMModel string `json:"llmModel"`

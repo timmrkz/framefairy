@@ -11,6 +11,7 @@ import (
 
 	"framefairy/engine/runes"
 	"framefairy/engine/runlog"
+	"framefairy/engine/tool"
 )
 
 // The language models somebody can install, and installing one.
@@ -365,7 +366,7 @@ func (m LanguageModel) FitsIn(total int64) Fit {
 func MachineMemory() int64 {
 	switch runtime.GOOS {
 	case "darwin":
-		res := run(context.Background(), "", "sysctl", "-n", "hw.memsize")
+		res := tool.Runner{}.Run(context.Background(), "", "sysctl", "-n", "hw.memsize")
 		if res.Code == 0 {
 			if n, err := strconv.ParseInt(runes.Trim(res.Stdout), 10, 64); err == nil {
 				return n
