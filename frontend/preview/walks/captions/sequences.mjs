@@ -483,6 +483,9 @@ export default [
       ["captions drawn"],
       ["holds", "Q"],
       ["lit together", "Q"],
+      // A step back from the frame they share goes on to the word
+      // before, never to the same frame again.
+      ["steps back", 1],
     ],
   },
   {

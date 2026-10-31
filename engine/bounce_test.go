@@ -754,10 +754,22 @@ func TestPopScaleIsWhatLibassDrawsAbove100Fps(t *testing.T) {
 func TestWordsLitIsWhatTheShortLights(t *testing.T) {
 	t.Parallel()
 	words := []timed.Cue{{Start: 0.30, End: 0.62, Text: "Ich"}, {Start: 0.62, End: 0.64, Text: "so"}, {Start: 0.64, End: 1.02, Text: "war"}, {Start: 1.02, End: 1.50, Text: "da"}}
-	_, info, laid, frames := renderedRowsAt(t, "25", words, 1.60, bounceTop, bounceRows)
+	e, info, laid, frames := renderedRowsAt(t, "25", words, 1.60, bounceTop, bounceRows)
 	clip := info.OnFrames(Clip{ID: "01", Slug: "bounce", Segments: []Segment{{Start: 0, End: 1.60}}})
 	d := &CaptionDrawing{Laid: laid, Clip: clip}
 	lit := d.WordsLit(info)
+	// Where the caption box grows the frames round "Ich so" from, which is
+	// the middle of the one pill libass draws round both.
+	wordFrames := e.PreviewWordFrames(context.Background(), d, nil, info, RenderSettings{OutW: shortW, OutH: shortH})
+	if len(wordFrames) != 1 || len(wordFrames[0]) != len(words) {
+		t.Fatalf("word frames %+v, want one caption of %d words", wordFrames, len(words))
+	}
+	for k, f := range wordFrames[0] {
+		if (f.Grow != nil) != (k == 0) {
+			t.Errorf("%q grows the frames of words lit together from %+v, only \"Ich\" should", words[k].Text, f.Grow)
+		}
+	}
+	together := 0
 	pill := pillColour(t, ResolveStyle(nil))
 	first, _ := info.pieceFrames(clip.Segments[0].Start, clip.Segments[0].End)
 	none, changes := 0, 0
@@ -766,7 +778,7 @@ func TestWordsLitIsWhatTheShortLights(t *testing.T) {
 	for k, f := range frames {
 		at := info.keptAt(first + int64(k))
 		want := litAt(lit, at)
-		l, r, _, _ := pillBox(f, pill, bounceRows)
+		l, r, top, bottom := pillBox(f, pill, bounceRows)
 		if (r < 0) != (want.Word < 0) {
 			t.Errorf("frame %d at %.3f s shows a pill %v, WordsLit has caption %d word %d there", k, at, r >= 0, want.Caption, want.Word)
 		}
@@ -774,6 +786,16 @@ func TestWordsLitIsWhatTheShortLights(t *testing.T) {
 			none++
 			middle, was = -100, want
 			continue
+		}
+		// On the frame "Ich" and "so" share, the pill of both is drawn
+		// round the middle the caption box grows their frames from.
+		if grow := wordFrames[0][0].Grow; grow != nil && want == (CaptionShowing{0, 0, 1}) {
+			together++
+			x, y := float64(l+r+1)/2, float64(top+bottom+1)/2+bounceTop
+			if math.Abs(x-grow.X*shortW) > 1.5 || math.Abs(y-grow.Y*shortH) > 1.5 {
+				t.Errorf("frame %d: the pill round \"Ich so\" has its middle at %.1f, %.1f, the frames grow from %.1f, %.1f",
+					k, x, y, grow.X*shortW, grow.Y*shortH)
+			}
 		}
 		// A new word lit is a pill somewhere else, on the frame WordsLit
 		// says it begins, and on no other.
@@ -787,6 +809,9 @@ func TestWordsLitIsWhatTheShortLights(t *testing.T) {
 			changes++
 		}
 		middle, was = x, want
+	}
+	if together != 1 {
+		t.Errorf("%d frames light \"Ich so\" together, not 1", together)
 	}
 	if none == 0 || changes != 4 {
 		t.Errorf("%d frames without a pill and %d changes of the words lit, not some and 4", none, changes)

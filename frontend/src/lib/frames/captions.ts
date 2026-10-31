@@ -280,8 +280,9 @@ export function laidPart(
 // baseline of its line as a share of the height from the top. And
 // when the picture lights it, from and to on the episode's clock, from the
 // start of the first frame libass draws it lit on to the end of the last,
-// -1 for a word lit on no frame. See engine.WordFrame and
-// /frames/captions/words.
+// -1 for a word lit on no frame. For the first of words lit together,
+// grow, the middle of their one pill, which it grows round in the pop,
+// as shares of the short. See engine.WordFrame and /frames/captions/words.
 export type WordFrame = {
   x: number;
   y: number;
@@ -291,6 +292,7 @@ export type WordFrame = {
   base: number;
   from: number;
   to: number;
+  grow?: { x: number; y: number };
 };
 
 // The word frames of the captions of a track, each caption's words in

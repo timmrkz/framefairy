@@ -76,13 +76,18 @@ func TestWordsTooShortForAFrameAreLitTogether(t *testing.T) {
 			// "Ich" is lit alone until the frame at 0.60 s, and on it with
 			// "so", which starts after it.
 			{Caption: Caption{Start: 2, End: 3, Words: []timed.Cue{{Start: 2.3, End: 2.62, Text: "Ich"}, {Start: 2.62, End: 2.64, Text: "so"}, {Start: 2.64, End: 3, Text: "war"}}}},
+			// A word of no length, as a letter typed into a short word
+			// can be, on the hundredth a frame starts on, which shows the
+			// word after it: it is lit with that word on its first frame.
+			{Caption: Caption{Start: 3, End: 3.8, Words: []timed.Cue{{Start: 3, End: 3.4, Text: "A"}, {Start: 3.4, End: 3.4, Text: "B"}, {Start: 3.4, End: 3.8, Text: "C"}}}},
 		},
-		Clip: Clip{Segments: []Segment{{Start: 0, End: 3}}},
+		Clip: Clip{Segments: []Segment{{Start: 0, End: 3.8}}},
 	}
 	want := [][][2]float64{
 		{{0, 0.52}, {0.52, 0.56}, {0.52, 0.56}, {0.56, 0.60}, {0.60, 1.20}},
 		{{1.24, 1.28}, {1.24, 2}},
 		{{2.32, 2.64}, {2.60, 2.64}, {2.64, 3}},
+		{{3, 3.40}, {3.40, 3.44}, {3.40, 3.80}},
 	}
 	lit := d.WordsLit(source)
 	for i := range want {
@@ -116,6 +121,21 @@ func TestWordsTooShortForAFrameAreLitTogether(t *testing.T) {
 		}
 		if got := d.PopScale(source, c.at); math.Abs(got-c.scale) > 1e-9 {
 			t.Errorf("the frame at %.2f s draws the pill at %.3f, not %.3f", c.at, got, c.scale)
+		}
+	}
+
+	// At 200 frames a second two frames start in each hundredth: the word
+	// of no length on the hundredth of 20 ms is lit on both, with "c".
+	fast := SourceInfo{FPSNum: 200, FPSDen: 1, Duration: 60}
+	quick := &CaptionDrawing{
+		Laid: []LaidCaption{{Caption: Caption{Start: 0, End: 0.1, Words: []timed.Cue{{Start: 0, End: 0.02, Text: "a"}, {Start: 0.02, End: 0.02, Text: "b"}, {Start: 0.02, End: 0.1, Text: "c"}}}}},
+		Clip: Clip{Segments: []Segment{{Start: 0, End: 0.1}}},
+	}
+	lit = quick.WordsLit(fast)
+	for k, w := range [][2]float64{{0, 0.02}, {0.02, 0.03}, {0.02, 0.1}} {
+		if got := lit[0][k]; math.Abs(got[0]-w[0]) > 1e-6 || math.Abs(got[1]-w[1]) > 1e-6 {
+			t.Errorf("at 200 frames a second %q is lit from %.3f to %.3f s, not from %.3f to %.3f",
+				quick.Laid[0].Words[k].Text, got[0], got[1], w[0], w[1])
 		}
 	}
 }

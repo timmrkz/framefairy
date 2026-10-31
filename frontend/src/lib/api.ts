@@ -1319,7 +1319,8 @@ export function intoWord(word: { start: number; end: number; framed?: boolean },
   return Math.min(word.start + (word.framed ? frame / 2 : frame), (word.start + word.end) / 2);
 }
 
-export function wordStep(words: Word[], at: number, back: boolean, frame: number): number | null {
+export function wordStep(all: Word[], at: number, back: boolean, frame: number): number | null {
+  const words = landings(all);
   if (!words.length) return null;
   // The last word that has begun, and whether the playhead is still in it.
   let here = -1;
@@ -1333,6 +1334,22 @@ export function wordStep(words: Word[], at: number, back: boolean, frame: number
   const target = back ? (inside ? here - 1 : here) : here + 1;
   const word = words[target];
   return word ? intoWord(word, frame) : null;
+}
+
+// The places a word step lands on, one for each change of what is lit.
+// Words lit together on one frame begin on it together, see
+// engine.litRuns, #280: the first of them is the place, and a word that
+// goes on lit alone after it is a place from where the others end. Two
+// words begun on one frame were two places on one frame, and a step back
+// from the second landed on the frame it stood on.
+export function landings(words: Word[]): Word[] {
+  const out: Word[] = [];
+  for (const w of words) {
+    const before = out[out.length - 1];
+    if (!before || w.start !== before.start) out.push(w);
+    else if (w.end > before.end) out.push({ ...w, start: before.end });
+  }
+  return out;
 }
 
 // Which build of the app is running, which channel it follows and how far a

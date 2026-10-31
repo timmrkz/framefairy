@@ -101,11 +101,17 @@ together and when, and the caption file, `ShowingAt`, `WordsLit` and
 `PopScale` all read it. `X-Caption-Showing` says the first and the last
 of them, "<caption> <word> <last>", and the caption box lights every
 word from the one to the other, each frame growing in the pop round the
-middle of the whole pill, as libass grows it, see `litMiddle` in
-`Player.svelte`. The walk "a word too short for a frame of its own is
+middle of the whole pill, as libass grows it. The engine says that middle
+with the first of the words, `WordFrame.Grow`, and `litMiddle` in
+`Player.svelte` only reads it. Shift and an arrow land once on the frame
+the words share, and once more where a word of them goes on lit alone,
+see `landings` in `frontend/src/lib/api.ts`. A word of no length, as a
+letter typed into a short word can be, is lit with the words on the
+frame it shares too. The walk "a word too short for a frame of its own is
 lit with the word on the frame it shares" types " Q Schulhofgeschichten"
-into "war", steps frame by frame onto "Q", and sees it lit with the
-words beside it on one pill libass drew. Several words typed into a word a frame or two long were
+into "war", steps frame by frame onto "Q", sees it lit with the words
+beside it on one pill libass drew, and steps back from there with Shift
+and ←, a new frame each press. Several words typed into a word a frame or two long were
 lit on no frame before, so they were never seen lit, #280. Tim asked
 that how many words go into so little time stays the person's choice,
 so their times are not stretched, the words share the frame.

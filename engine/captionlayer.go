@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime/debug"
@@ -184,6 +185,21 @@ func (e *Engine) PreviewWordFrames(ctx context.Context, d *CaptionDrawing, draft
 			if i < len(lit) && k < len(lit[i]) {
 				frames[i][k].From, frames[i][k].To = lit[i][k][0], lit[i][k][1]
 			}
+		}
+	}
+	// The middle of the pill of words lit together: their pills at rest
+	// together, as runPill draws it.
+	for i, runs := range source.runsOf(d.Laid) {
+		for _, r := range runs {
+			if i >= len(frames) || r.last <= r.first || r.last >= len(frames[i]) {
+				continue
+			}
+			left, top, right, bottom := math.Inf(1), math.Inf(1), math.Inf(-1), math.Inf(-1)
+			for _, f := range frames[i][r.first : r.last+1] {
+				left, top = math.Min(left, f.X), math.Min(top, f.Y)
+				right, bottom = math.Max(right, f.X+f.W), math.Max(bottom, f.Y+f.H)
+			}
+			frames[i][r.first].Grow = &GrowFrom{X: (left + right) / 2, Y: (top + bottom) / 2}
 		}
 	}
 	return frames

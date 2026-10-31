@@ -552,6 +552,24 @@ export const steps = {
     else if (behind.some((c) => !c || c !== behind[0]))
       walk.wrong = `libass draws no one pill behind the words lit: ${lit.map((w, i) => `"${w.text}" on ${behind[i] || "nothing"}`).join(", ")}`;
   },
+  // ["steps back", n]  presses Shift and ← n times, and each press lights
+  //                    other words than the one before: none lands on
+  //                    the frame it stood on
+  async "steps back"(walk, arg, s) {
+    const { page, settled, watch } = walk;
+    const litNow = () =>
+      page.$$eval(".captions .word.now", (all) => all.map((e) => e.textContent).join(" ") + " in " + (document.querySelector(".captions")?.textContent ?? "").trim());
+    let was = await litNow();
+    for (let k = 0; k < arg && !walk.wrong; k++) {
+      await page.keyboard.press("Shift+ArrowLeft");
+      await watch.step("press", s);
+      await settled();
+      const now = await litNow();
+      console.log(`    step ${k + 1} back: ${now}`);
+      if (now === was) walk.wrong = `step ${k + 1} back with Shift and ← stayed on "${now}"`;
+      was = now;
+    }
+  },
   // ["grow", word]     walks the playhead with Shift and → until the word
   //                    is lit and a frame on with →, into its pop, clicks
   //                    the word, types after it and leaves it with Escape,

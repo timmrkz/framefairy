@@ -1378,19 +1378,14 @@
   }
 
   // The middle of the pill round words lit together, which libass grows
-  // them and their pill round in the pop, see engine.wordsLaid.runPill,
-  // so the frame round each of them grows round it too and stays on the
-  // pill's edge. Nothing where one word is lit, which grows round its own
-  // middle.
+  // them and their pill round in the pop, as the engine says it with the
+  // first of them, see engine.WordFrame, so the frame round each of them
+  // grows round it too and stays on the pill's edge. Nothing where one
+  // word is lit, which grows round its own middle.
   const litMiddle = $derived.by(() => {
-    if (!laidWords || lit < 0 || litLast <= lit) return null;
-    const run = laidWords.words.slice(lit, litLast + 1);
-    if (!run.length) return null;
-    const left = Math.min(...run.map((f) => f.x));
-    const right = Math.max(...run.map((f) => f.x + f.w));
-    const top = Math.min(...run.map((f) => f.top));
-    const bottom = Math.max(...run.map((f) => f.top + f.h));
-    return { x: (left + right) / 2, y: (top + bottom) / 2 };
+    if (!laidWords || !caption || !captions || lit < 0 || litLast <= lit) return null;
+    const grow = wordFrames?.frames?.[(captions.captions ?? []).indexOf(caption)]?.[lit]?.grow;
+    return grow ? { x: grow.x, y: grow.y - (1 - captions.style.marginV) } : null;
   });
   function growFrom(middle: { x: number; y: number }, f: LaidWord | undefined): string {
     if (!f || !f.w || !f.h) return "";
