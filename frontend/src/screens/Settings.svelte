@@ -1184,6 +1184,16 @@
     justify-content: space-between;
   }
 
+  /* The mark is 20 pixels high and the head 23, so centred it stood 1.5
+     pixels down, between two pixels, and was painted from a whole pixel
+     away from where it was laid out. It stands 1 down, on a whole pixel,
+     and its circle is in the middle of the head. And 1 in from the side,
+     so it is as far from the group's right edge as from its top. */
+  .headrow .ask {
+    align-self: flex-start;
+    margin: 1px 1px 0 0;
+  }
+
   /* The head of a group, the same size and weight as the head of the clip
      list and of every area. */
   h2 {
