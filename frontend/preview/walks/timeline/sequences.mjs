@@ -467,6 +467,20 @@ export default [
     ],
   },
   {
+    // Issue #535, found by the review of #529: the clip timeline took a
+    // second press within half a second and six pixels along it for a
+    // double-click, whatever its height, so a press on the track and then
+    // on the keyframe over it at the same x removed the keyframe.
+    name: "a press on the track and then on the keyframe over it is no double-click",
+    steps: [
+      ["add", 30, "25"],
+      ["wait for", "Search"],
+      ["cards", 1],
+      ["keyframe at", 0.5],
+      ["press under, then on the keyframe"],
+    ],
+  },
+  {
     // Plan row 2.190, found by Tim on #188: a thumbnail mark did not
     // react to the pointer, and was removed only by putting the playhead
     // on it and pressing T. It is the keyframe's kind of mark, lit under
