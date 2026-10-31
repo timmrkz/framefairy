@@ -43,7 +43,9 @@ this order, because what happens now comes first:
    see below. An issue a session opened that is mostly done is
    rewritten to what is left. One Tim opened gets a comment that says
    what is left. Each closing says in one line which pull request or
-   decision closed it.
+   decision closed it. A closed issue with a sub-issue still open is
+   reopened, a problem or any other parent, because a parent closes only
+   after the last of its sub-issues.
 4. **Problems that come back**, in even weeks of the year, see below.
 
 Tim's labels and Tim's words are never changed. The triage ends with a
@@ -83,12 +85,18 @@ Here it does not, see Root causes only above.
   so far and why the cause stayed, and what would take the cause away in
   one place. Its priority is the highest of its incidents.
 - **An incident under an open problem is taken up as its problem.** The
-  pull request takes the cause away and says `Fixes #N` for the problem
-  and for each of its open incidents.
-- **A problem closes** only with the pull request that takes its cause
-  away. When a new incident comes after that, it goes under the problem
-  and the problem is reopened. A reopened problem means the cause named
-  was not the whole cause, and finding the rest comes first.
+  pull request takes the cause away and says `Fixes #N` for each
+  incident it ends.
+- **A problem closes last,** once the last of its sub-issues is closed
+  and not before. Thinking the cause is gone is not enough while one
+  incident under it is still open. The pull request that ends that last
+  incident says `Fixes #N` for the problem too. A problem closed while a
+  sub-issue of it is open is reopened, so the whole tree is worked
+  through.
+- **When the cause comes back later,** the new incident goes under the
+  problem, the problem is reopened, and the work starts over from the
+  top. A reopened problem means the cause named was not the whole cause,
+  and finding the rest comes first.
 - **In even weeks the triage** reads every issue opened or closed in the
   last fourteen days, puts each that shares a cause with another under
   its problem, and opens the problems that are missing. Its reply to Tim
