@@ -151,6 +151,28 @@ func TestQuittingWaitsForTheDeleteOfAVideoLetGo(t *testing.T) {
 	})
 }
 
+func TestAVideoLetGoWhileTheAppQuitsIsClearedAtOnce(t *testing.T) {
+	// Once quitting waits for the deletes under way, a video let go starts
+	// none beside them, and is cleared before the library is read.
+	svc, eps := memoryLibrary(t, "youtube.mp4")
+	withJobs(svc)
+	svc.stopAll()
+	files := svc.store.files
+	ep := eps[0]
+	if err := files.RemoveAll(engine.WorkDir(ep)); err != nil {
+		t.Fatal(err)
+	}
+	if err := changeChosen(files, ep, func(c *chosen) { c.Opened = 1 }); err != nil {
+		t.Fatal(err)
+	}
+	if listed(svc.Library(), ep) {
+		t.Fatalf("the folder written back kept %s in the library", ep)
+	}
+	if there, _ := afero.DirExists(files, engine.WorkDir(ep)); there {
+		t.Errorf("what was written back into %s is still there once the library was read", engine.WorkDir(ep))
+	}
+}
+
 func TestVideosAddedBeforeTheMarkAreMarkedOnceByTheirWork(t *testing.T) {
 	files := afero.NewMemMapFs()
 	config := "/home/tim/config/FrameFairy"

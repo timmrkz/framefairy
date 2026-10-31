@@ -110,6 +110,11 @@ func (l *leaving) closing() {
 // engine's for the whole process until #647, and a test that quits must
 // not close the models of every other test.
 func (s *FrameFairy) stopAll() {
+	// A WaitGroup takes no new work while it is waited for, so a video let
+	// go from here on is cleared where it is let go.
+	s.clearMu.Lock()
+	s.quitting = true
+	s.clearMu.Unlock()
 	if s.jobs.shutDown() {
 		s.clearing.Wait()
 	}

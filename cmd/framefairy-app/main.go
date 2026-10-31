@@ -388,6 +388,11 @@ type FrameFairy struct {
 	// every one started has returned, whether it deleted what was written
 	// back or gave up, see clearLetGo.
 	clearing sync.WaitGroup
+	// quitting is set under clearMu once the app is on its way out, see
+	// stopAll. From then on a video let go is cleared where it is let go,
+	// since no clearLetGo may start on clearing while it is waited for.
+	clearMu  sync.Mutex
+	quitting bool
 	// link is what became of the last framefairy:// link, waiting for
 	// the settings, see licence.go.
 	link *LicenceLink
