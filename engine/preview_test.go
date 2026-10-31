@@ -31,18 +31,17 @@ func TestShowinfoTime(t *testing.T) {
 // each the size asked for and saying where it starts.
 //
 // On the real disk: ffmpeg reads the episode.
-func TestPreviewFramesFromAMoment(t *testing.T) {
+func TestFFmpegFramesFromAMoment(t *testing.T) {
 	t.Parallel()
 	path := testEpisode(t, "6")
-	e := NewEngine(NewLog(io.Discard, false, false), disk)
-	info, err := e.Probe(context.Background(), path)
+	info, err := NewEngine(NewLog(io.Discard, false, false), disk).Probe(context.Background(), path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	frame := 1 / info.FPS()
 	const from, w, h = 2.0, 64, 36
 	var ats []float64
-	err = e.PreviewFrames(context.Background(), path, from, w, h, func(at float64, f []byte) error {
+	err = ffmpegFrames(context.Background(), path, from, w, h, func(at float64, f []byte) error {
 		if len(f) != w*h*4 {
 			t.Fatalf("a frame of %d bytes, want %d", len(f), w*h*4)
 		}
@@ -73,12 +72,11 @@ func TestPreviewFramesFromAMoment(t *testing.T) {
 // One that went on would hand the reader a fourth frame.
 //
 // On the real disk: ffmpeg reads the episode.
-func TestPreviewFramesStopsWhenTheReaderDoes(t *testing.T) {
+func TestFFmpegFramesStopsWhenTheReaderDoes(t *testing.T) {
 	path := testEpisode(t, "6")
-	e := NewEngine(NewLog(io.Discard, false, false), disk)
 	enough := errors.New("enough")
 	n := 0
-	err := e.PreviewFrames(context.Background(), path, 0, 64, 36, func(float64, []byte) error {
+	err := ffmpegFrames(context.Background(), path, 0, 64, 36, func(float64, []byte) error {
 		n++
 		if n == 3 {
 			return enough
@@ -90,10 +88,9 @@ func TestPreviewFramesStopsWhenTheReaderDoes(t *testing.T) {
 	}
 }
 
-func TestPreviewFramesRefusesAnOddSize(t *testing.T) {
-	e := &Engine{FFmpeg: "ffmpeg"}
+func TestFFmpegFramesRefusesAnOddSize(t *testing.T) {
 	for _, s := range [][2]int{{63, 36}, {64, 0}, {1 << 14, 36}} {
-		if err := e.PreviewFrames(context.Background(), "x.mp4", 0, s[0], s[1], nil); err == nil {
+		if err := ffmpegFrames(context.Background(), "x.mp4", 0, s[0], s[1], nil); err == nil {
 			t.Errorf("%d by %d was taken", s[0], s[1])
 		}
 	}

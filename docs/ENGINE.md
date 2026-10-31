@@ -1796,9 +1796,8 @@ macOS keychain of `engine/keys_darwin.go`, in the frames decoder of
   hdrcolour.go  caption colours in an HDR short, at the reference white
   episodeframes.go the client of a video's frames decoder,
                 cmd/framefairy-frames, over internal/framewire
-  preview.go    frames for the video preview straight from ffmpeg.
-                Only the tests call PreviewFrames, see #590, and the app
-                reads PreviewTimes. previewsound.go is its sound
+  preview.go    where the time of a stream of the video preview's frames
+                goes, PreviewTimes. previewsound.go is its sound
   modelcheck.go a downloaded language model checked again before it loads
   licence.go    the licence key, kept with the API keys
   shipped_production.go says the build is the one that ships, made with
