@@ -19,6 +19,7 @@ import (
 
 	"framefairy/engine/num"
 	"framefairy/engine/runes"
+	"framefairy/engine/runlog"
 	"framefairy/engine/timed"
 )
 
@@ -128,7 +129,7 @@ type planBuilder struct {
 	closed  bool
 	// underway is every clip queued and not yet written or let go, as the
 	// log is told it, see Underway.
-	underway []Underway
+	underway []runlog.Underway
 
 	// writing is held while a clip goes to disk, so two framers finishing
 	// at once write one after the other.
@@ -306,7 +307,7 @@ func (b *planBuilder) acceptLocked(entry PlanEntry) {
 		b.heldCards = append(b.heldCards, card)
 		// On its way like any other, being fitted to the length first.
 		first, last := entry.Keep[0][0], entry.Keep[len(entry.Keep)-1][1]
-		b.underway = append(b.underway, Underway{N: card, Start: b.lines[first-1].Start(),
+		b.underway = append(b.underway, runlog.Underway{N: card, Start: b.lines[first-1].Start(),
 			End: b.lines[last-1].End(), Title: entry.Title, Step: StepFitting})
 		b.sayUnderwayLocked()
 		return
@@ -473,7 +474,7 @@ func (b *planBuilder) queueLocked(entry PlanEntry, card int) {
 	b.entries = append(b.entries, entry)
 	b.ids = append(b.ids, id)
 	first, last := entry.Keep[0][0], entry.Keep[len(entry.Keep)-1][1]
-	on := Underway{N: card, Start: b.lines[first-1].Start(), End: b.lines[last-1].End(),
+	on := runlog.Underway{N: card, Start: b.lines[first-1].Start(), End: b.lines[last-1].End(),
 		Title: entry.Title, Step: StepFraming, Clip: b.clipKey(id)}
 	// A clip that was held back already has its card, and keeps it.
 	placed := false

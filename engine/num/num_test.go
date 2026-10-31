@@ -109,3 +109,11 @@ func TestJSONValuesAreReadAndWritten(t *testing.T) {
 		}
 	}
 }
+
+func TestThousandsAreGroupedByThree(t *testing.T) {
+	for n, want := range map[int]string{0: "0", 999: "999", 1000: "1,000", 1234567: "1,234,567", -45678: "-45,678"} {
+		if got := Thousands(n); got != want {
+			t.Errorf("Thousands(%d) = %s, want %s", n, got, want)
+		}
+	}
+}

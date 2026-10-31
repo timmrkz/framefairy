@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"framefairy/engine/runlog"
 	"framefairy/engine/timed"
-
 	"framefairy/internal/ffmpegtest"
 )
 
@@ -100,7 +100,7 @@ func TestPopScaleIsThePillOnTheFrame(t *testing.T) {
 // On the real disk: ffmpeg measures the captions.
 func TestThePillAndItsWordLieOverTheLine(t *testing.T) {
 	ffmpegtest.Need(t)
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	clip := Clip{ID: "01", Slug: "over", Segments: []Segment{{Start: 0, End: 2}}}
 	tr := &Transcript{Words: []timed.Cue{{Start: 0.2, End: 0.6, Text: "Das"}, {Start: 0.6, End: 1.2, Text: "respektvoll"}, {Start: 1.2, End: 1.5, Text: "ist."}}, Language: "de"}
 	d := captionsView(Plan{}, clip, tr, nil).Drawing()

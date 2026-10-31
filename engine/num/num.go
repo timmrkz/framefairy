@@ -8,6 +8,7 @@ package num
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"strconv"
 	"strings"
@@ -187,4 +188,24 @@ func AsInt(v any) (int, bool) {
 		return n, err == nil
 	}
 	return 0, false
+}
+
+// Thousands writes n with a comma between each group of three digits.
+func Thousands(n int) string {
+	negative := n < 0
+	if negative {
+		n = -n
+	}
+	digits := fmt.Sprintf("%d", n)
+	var b strings.Builder
+	for i, ch := range digits {
+		if i > 0 && (len(digits)-i)%3 == 0 {
+			b.WriteByte(',')
+		}
+		b.WriteRune(ch)
+	}
+	if negative {
+		return "-" + b.String()
+	}
+	return b.String()
 }

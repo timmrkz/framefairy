@@ -16,6 +16,7 @@ import (
 
 	"github.com/spf13/afero"
 
+	"framefairy/engine/runlog"
 	"framefairy/internal/ffmpegtest"
 )
 
@@ -166,7 +167,7 @@ func cloud(t *testing.T, files afero.Fs, answers ...func(w http.ResponseWriter))
 	t.Cleanup(func() { providers = saved })
 	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-test")
 	t.Setenv("OPENAI_API_KEY", "sk-proj-test")
-	return fake, NewEngine(NewLog(&bytes.Buffer{}, false, false), files)
+	return fake, NewEngine(runlog.New(&bytes.Buffer{}, false, false), files)
 }
 
 func openAIStream(pieces []string, finish string, usage string) func(w http.ResponseWriter) {
@@ -622,7 +623,7 @@ func TestAVideoThatIsGoneSaysWhere(t *testing.T) {
 	ffmpegtest.Need(t)
 	const path = "/Users/tim/Movies/My First Memory 12.mp4"
 	want := "The video file is no longer at " + path + ". Put it back there, then try again."
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), afero.NewMemMapFs())
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), afero.NewMemMapFs())
 	_, err := e.Probe(context.Background(), path)
 	if err == nil || e.planFailed(context.Background(), err).Error() != want {
 		t.Errorf("ffprobe on a gone video: %v", err)

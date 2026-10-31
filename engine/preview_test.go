@@ -6,6 +6,8 @@ import (
 	"io"
 	"math"
 	"testing"
+
+	"framefairy/engine/runlog"
 )
 
 func TestShowinfoTime(t *testing.T) {
@@ -34,7 +36,7 @@ func TestShowinfoTime(t *testing.T) {
 func TestPreviewFramesFromAMoment(t *testing.T) {
 	t.Parallel()
 	path := testEpisode(t, "6")
-	e := NewEngine(NewLog(io.Discard, false, false), disk)
+	e := NewEngine(runlog.New(io.Discard, false, false), disk)
 	info, err := e.Probe(context.Background(), path)
 	if err != nil {
 		t.Fatal(err)
@@ -75,7 +77,7 @@ func TestPreviewFramesFromAMoment(t *testing.T) {
 // On the real disk: ffmpeg reads the episode.
 func TestPreviewFramesStopsWhenTheReaderDoes(t *testing.T) {
 	path := testEpisode(t, "6")
-	e := NewEngine(NewLog(io.Discard, false, false), disk)
+	e := NewEngine(runlog.New(io.Discard, false, false), disk)
 	enough := errors.New("enough")
 	n := 0
 	err := e.PreviewFrames(context.Background(), path, 0, 64, 36, func(float64, []byte) error {

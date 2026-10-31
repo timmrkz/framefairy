@@ -34,9 +34,9 @@ fi
 # The version lives in one place and is read from it, so a bundle can never
 # claim a version the program does not.
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-VERSION=$(awk -F'"' '/^const Version = /{ print $2; exit }' "$ROOT/engine/log.go")
+VERSION=$(awk -F'"' '/^const Version = /{ print $2; exit }' "$ROOT/engine/doc.go")
 [ -n "$VERSION" ] || {
-	echo "bundle-macos.sh: cannot read the version out of engine/log.go" >&2
+	echo "bundle-macos.sh: cannot read the version out of engine/doc.go" >&2
 	exit 1
 }
 

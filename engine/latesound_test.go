@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"framefairy/engine/runlog"
 	"framefairy/engine/timed"
-
 	"framefairy/internal/ffmpegtest"
 )
 
@@ -36,7 +36,7 @@ func TestSoundResumedBeforeALatePictureIsTheSoundThere(t *testing.T) {
 	if err != nil {
 		ffmpegtest.Unusable(t, "ffmpeg could not make a late picture: %s %s", err, out)
 	}
-	e := NewEngine(NewLog(nil, false, false), disk)
+	e := NewEngine(runlog.New(nil, false, false), disk)
 	e.FFmpeg, e.FFprobe = "ffmpeg", "ffprobe"
 	picture := e.pictureStart(t.Context(), path)
 	if math.Abs(picture-1) > 0.001 {

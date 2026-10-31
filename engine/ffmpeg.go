@@ -22,6 +22,7 @@ import (
 
 	"framefairy/engine/num"
 	"framefairy/engine/runes"
+	"framefairy/engine/runlog"
 	"framefairy/engine/timed"
 	"framefairy/internal/framewire"
 )
@@ -37,13 +38,13 @@ type RenderError struct {
 func (e *RenderError) Error() string { return e.Msg }
 
 func renderErr(format string, a ...any) error {
-	return &RenderError{Msg: sprintf(format, a...)}
+	return &RenderError{Msg: runes.Format(format, a...)}
 }
 
 // saidErr is a failure said in a person's words, from its first sentence,
 // which is what the row of a search shows. Issue #311.
 func saidErr(format string, a ...any) error {
-	return &RenderError{Msg: sprintf(format, a...), Said: true}
+	return &RenderError{Msg: runes.Format(format, a...), Said: true}
 }
 
 // videoGone is a video whose file is no longer where it was added from:
@@ -70,7 +71,7 @@ type APICalls struct {
 // writes to and what it has spent. One Engine per run keeps two runs in the
 // same process, as a GUI will have, from stepping on each other.
 type Engine struct {
-	Log     *Log
+	Log     *runlog.Log
 	FFmpeg  string
 	FFprobe string
 
@@ -151,7 +152,7 @@ type Engine struct {
 // environment, or else the ones beside the program, checked. See FindTool
 // in tools.go. A tool that may not run is left empty, and Preflight says
 // why.
-func NewEngine(log *Log, files afero.Fs) *Engine {
+func NewEngine(log *runlog.Log, files afero.Fs) *Engine {
 	return &Engine{Log: log,
 		Files:   files,
 		Records: NewRecords(files, "", ""),

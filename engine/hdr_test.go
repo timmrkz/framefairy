@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"framefairy/engine/runlog"
 	"framefairy/internal/ffmpegtest"
 )
 
@@ -19,7 +20,7 @@ import (
 func TestAnHDREpisodeMakesAnHDRShort(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	if err := e.Preflight(ctx); err != nil {
 		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}

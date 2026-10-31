@@ -20,6 +20,7 @@ import (
 
 	"github.com/spf13/afero"
 
+	"framefairy/engine/runlog"
 	"framefairy/internal/standin"
 )
 
@@ -66,7 +67,7 @@ func TestCallLocalWithRunningServer(t *testing.T) {
 	}))
 	defer server.Close()
 
-	e := NewEngine(NewLog(io.Discard, false, false), afero.NewMemMapFs())
+	e := NewEngine(runlog.New(io.Discard, false, false), afero.NewMemMapFs())
 	var heard strings.Builder
 	answer, err := e.CallLocal(context.Background(), LocalModel{URL: server.URL, Think: 2048}, linesRecipe, "Transcript:", 40, 12, 1000, "",
 		&Listener{Text: func(p string) { heard.WriteString(p) }})
@@ -99,7 +100,7 @@ func TestCallLocalReportsServerErrors(t *testing.T) {
 		io.WriteString(w, `{"error":{"message":"the request exceeds the available context size"}}`)
 	}))
 	defer server.Close()
-	e := NewEngine(NewLog(io.Discard, false, false), afero.NewMemMapFs())
+	e := NewEngine(runlog.New(io.Discard, false, false), afero.NewMemMapFs())
 	_, err := e.CallLocal(context.Background(), LocalModel{URL: server.URL}, linesRecipe, "x", 1, 1, 10, "", nil)
 	if err == nil || !strings.Contains(err.Error(), "context size") {
 		t.Errorf("err = %v", err)
@@ -146,7 +147,7 @@ func TestTheServerLogIsKeptBeforeTheLogsFolderExists(t *testing.T) {
 	logDir := filepath.Join(dir, "episode.framefairy", "logs")
 	logFile := filepath.Join(logDir, "llm-server.log")
 
-	e := NewEngine(NewLog(io.Discard, false, false), disk)
+	e := NewEngine(runlog.New(io.Discard, false, false), disk)
 	if _, _, err := e.startServer(context.Background(), LocalModel{Server: server, Model: model}, 16384, logDir); err == nil {
 		t.Fatal("a server that ended while it loaded was taken for loaded")
 	}
@@ -184,7 +185,7 @@ func TestAServerThatWillNotStopIsKilledAtOnce(t *testing.T) {
 	if err := os.WriteFile(model, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	e := NewEngine(NewLog(io.Discard, false, false), disk)
+	e := NewEngine(runlog.New(io.Discard, false, false), disk)
 	_, stop, err := e.startServer(context.Background(), LocalModel{Server: os.Args[0], Model: model}, 4096, "")
 	if err != nil {
 		t.Fatal(err)
@@ -274,7 +275,7 @@ func TestAComputeErrorSaysTheMemoryRanOut(t *testing.T) {
 		fmt.Fprint(w, `{"error":{"code":500,"message":"Compute error.","type":"server_error"}}`)
 	}))
 	defer server.Close()
-	e := NewEngine(NewLog(io.Discard, false, false), afero.NewMemMapFs())
+	e := NewEngine(runlog.New(io.Discard, false, false), afero.NewMemMapFs())
 	_, err := e.CallLocal(context.Background(), LocalModel{URL: server.URL}, linesRecipe, "Transcript:",
 		40, 12, 1000, "", nil)
 	if err == nil || !strings.Contains(err.Error(), "ran out of memory") ||
@@ -353,7 +354,7 @@ func TestTheServerIsHandedAKeyOfItsOwn(t *testing.T) {
 	}
 	launch := func(name string) string {
 		logDir := filepath.Join(dir, name)
-		e := NewEngine(NewLog(io.Discard, false, false), disk)
+		e := NewEngine(runlog.New(io.Discard, false, false), disk)
 		_, _, _ = e.startServer(context.Background(), LocalModel{Server: server, Model: model}, 16384, logDir)
 		body, _ := os.ReadFile(filepath.Join(logDir, "llm-server.log"))
 		return string(body)

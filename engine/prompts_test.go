@@ -14,6 +14,7 @@ import (
 	"sync"
 	"testing"
 
+	"framefairy/engine/runlog"
 	"framefairy/engine/timed"
 )
 
@@ -196,7 +197,7 @@ func TestAPromptFileIsOneMessage(t *testing.T) {
 	}))
 	defer server.Close()
 	var heard int32
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	base := DefaultOptions()
 	base.LLMURL = server.URL
@@ -397,7 +398,7 @@ func TestASearchWithAPlainAnswer(t *testing.T) {
 	}))
 	defer server.Close()
 	var heard int32
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	base := DefaultOptions()
 	base.LLMURL = server.URL
