@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"math"
+	"math/rand/v2"
 	"strconv"
 	"strings"
 	"testing"
@@ -44,10 +45,225 @@ func TestShowingAtIsWhatTheCaptionFileShows(t *testing.T) {
 		{3999, 1, 1},
 		{4000, -1, -1},
 	} {
-		got := ShowingAt(laid, c.ms)
+		got := ShowingAt(laid, SourceInfo{FPSNum: 25, FPSDen: 1}, c.ms)
 		if got.Caption != c.caption || got.Word != c.wrd {
 			t.Errorf("at %d ms libass shows caption %d word %d, ShowingAt says %d and %d",
 				c.ms, c.caption, c.wrd, got.Caption, got.Word)
+		}
+	}
+}
+
+// Words typed into a word a frame or two long are each lit: a word with
+// no frame starting in its time is lit on the frame showing when it
+// begins, together with the words lit there, and they pop together. Each
+// was lit on no frame before, so a person never saw it lit, and Shift and
+// the arrows could not reach it, #280. Tim asked that the time is not
+// stretched, the words share the frame.
+func TestWordsTooShortForAFrameAreLitTogether(t *testing.T) {
+	// Frames every 40 ms from nought.
+	source := SourceInfo{FPSNum: 25, FPSDen: 1, Duration: 60}
+	d := &CaptionDrawing{
+		Laid: []LaidCaption{
+			// "jaja" from 0.50 s to 0.58 typed as three words: the second
+			// has no frame of its own, the frame at 0.52 s lights it with
+			// the first.
+			{Caption: Caption{Start: 0, End: 1.2, Words: []timed.Cue{{Start: 0, End: 0.5, Text: "Und"},
+				{Start: 0.5, End: 0.53, Text: "ja"}, {Start: 0.53, End: 0.55, Text: "ja"}, {Start: 0.55, End: 0.58, Text: "ja"},
+				{Start: 0.58, End: 1.2, Text: "genau"}}}},
+			// A caption whose first word has no frame: it is lit on the
+			// first frame of the word after, with it, and that word alone
+			// after.
+			{Caption: Caption{Start: 1.21, End: 2, Words: []timed.Cue{{Start: 1.21, End: 1.23, Text: "na"}, {Start: 1.23, End: 2, Text: "gut"}}}},
+			// "Ich" is lit alone until the frame at 0.60 s, and on it with
+			// "so", which starts after it.
+			{Caption: Caption{Start: 2, End: 3, Words: []timed.Cue{{Start: 2.3, End: 2.62, Text: "Ich"}, {Start: 2.62, End: 2.64, Text: "so"}, {Start: 2.64, End: 3, Text: "war"}}}},
+			// A word of no length, as a letter typed into a short word
+			// can be, on the hundredth a frame starts on, which shows the
+			// word after it: it is lit with that word on its first frame.
+			{Caption: Caption{Start: 3, End: 3.8, Words: []timed.Cue{{Start: 3, End: 3.4, Text: "A"}, {Start: 3.4, End: 3.4, Text: "B"}, {Start: 3.4, End: 3.8, Text: "C"}}}},
+		},
+		Clip: Clip{Segments: []Segment{{Start: 0, End: 3.8}}},
+	}
+	want := [][][2]float64{
+		{{0, 0.52}, {0.52, 0.56}, {0.52, 0.56}, {0.56, 0.60}, {0.60, 1.20}},
+		{{1.24, 1.28}, {1.24, 2}},
+		{{2.32, 2.64}, {2.60, 2.64}, {2.64, 3}},
+		{{3, 3.40}, {3.40, 3.44}, {3.40, 3.80}},
+	}
+	lit := d.WordsLit(source)
+	for i := range want {
+		for k, w := range want[i] {
+			if got := lit[i][k]; math.Abs(got[0]-w[0]) > 1e-6 || math.Abs(got[1]-w[1]) > 1e-6 {
+				t.Errorf("%q of caption %d is lit from %.2f to %.2f s, not from %.2f to %.2f",
+					d.Laid[i].Words[k].Text, i, got[0], got[1], w[0], w[1])
+			}
+		}
+	}
+	// What the caption box over the video preview shows lit, and how far
+	// the pill is grown, on the frames the words share: each a pill of its
+	// own frame, at its peak, see popScales.
+	for _, c := range []struct {
+		at    float64
+		on    CaptionShowing
+		scale float64
+	}{
+		{0.48, CaptionShowing{0, 0, 0}, 1},
+		{0.52, CaptionShowing{0, 1, 2}, popPeak},
+		{0.56, CaptionShowing{0, 3, 3}, popPeak},
+		{1.24, CaptionShowing{1, 0, 1}, popPeak},
+		{1.28, CaptionShowing{1, 1, 1}, 1},
+		{2.56, CaptionShowing{2, 0, 0}, 1},
+		{2.60, CaptionShowing{2, 0, 1}, popPeak},
+		{2.64, CaptionShowing{2, 2, 2}, 1},
+	} {
+		if got := d.Showing(source, c.at); got != c.on {
+			t.Errorf("the frame at %.2f s shows caption %d words %d to %d lit, not caption %d words %d to %d",
+				c.at, got.Caption, got.Word, got.Last, c.on.Caption, c.on.Word, c.on.Last)
+		}
+		if got := d.PopScale(source, c.at); math.Abs(got-c.scale) > 1e-9 {
+			t.Errorf("the frame at %.2f s draws the pill at %.3f, not %.3f", c.at, got, c.scale)
+		}
+	}
+
+	// At 200 frames a second two frames start in each hundredth: the word
+	// of no length on the hundredth of 20 ms is lit on both, with "c".
+	fast := SourceInfo{FPSNum: 200, FPSDen: 1, Duration: 60}
+	quick := &CaptionDrawing{
+		Laid: []LaidCaption{{Caption: Caption{Start: 0, End: 0.1, Words: []timed.Cue{{Start: 0, End: 0.02, Text: "a"}, {Start: 0.02, End: 0.02, Text: "b"}, {Start: 0.02, End: 0.1, Text: "c"}}}}},
+		Clip: Clip{Segments: []Segment{{Start: 0, End: 0.1}}},
+	}
+	lit = quick.WordsLit(fast)
+	for k, w := range [][2]float64{{0, 0.02}, {0.02, 0.03}, {0.02, 0.1}} {
+		if got := lit[0][k]; math.Abs(got[0]-w[0]) > 1e-6 || math.Abs(got[1]-w[1]) > 1e-6 {
+			t.Errorf("at 200 frames a second %q is lit from %.3f to %.3f s, not from %.3f to %.3f",
+				quick.Laid[0].Words[k].Text, got[0], got[1], w[0], w[1])
+		}
+	}
+}
+
+// Whatever captions an edit leaves, a caption edge dragged, a word typed
+// into another, a word removed, the engine lays the words out again and
+// lights them by the one rule, litRuns, so the rule is held here over many
+// made-up captions at many frame rates: words said in less than a frame or
+// in no time at all, at the start, in the middle and at the end of a
+// caption, captions that start before their first word, and clips that
+// start off the frames' grid. Tim asked how we know words that share a
+// frame work in every such case, #280.
+//
+// On every frame of the clip, the word whose time it is, the last begun,
+// is lit, and any other word lit with it has no frame of its own, so
+// words are lit together only where they cannot each have a frame. Every
+// word of a caption the short shows is lit on a frame, and the pill is
+// never grown past its peak.
+func TestEveryWordOfACaptionShownIsLitOnAFrame(t *testing.T) {
+	t.Parallel()
+	rates := [][2]int{{24000, 1001}, {24, 1}, {25, 1}, {30000, 1001}, {30, 1}, {50, 1}, {60000, 1001}, {60, 1}, {120, 1}, {240, 1}}
+	for seed := uint64(1); seed <= 400; seed++ {
+		random := rand.New(rand.NewPCG(seed, 280))
+		rate := rates[random.IntN(len(rates))]
+		source := SourceInfo{FPSNum: rate[0], FPSDen: rate[1], Duration: 600}
+		var laid []LaidCaption
+		at := random.Float64() * 0.5
+		for range 6 {
+			start := at
+			if random.IntN(3) == 0 {
+				at += random.Float64() * 0.1
+			}
+			var words []timed.Cue
+			for w := range 1 + random.IntN(7) {
+				lasts := 0.05 + random.Float64()*0.5
+				switch random.IntN(4) {
+				case 0:
+					lasts = 0
+				case 1:
+					lasts = random.Float64() * 0.04
+				}
+				words = append(words, timed.Cue{Start: at, End: at + lasts, Text: strconv.Itoa(w)})
+				at += lasts
+			}
+			at += random.Float64() * 0.3
+			laid = append(laid, LaidCaption{Caption: Caption{Start: start, End: at, Words: words}})
+		}
+		from := 10 + random.Float64()
+		d := &CaptionDrawing{Laid: laid, Clip: Clip{Segments: []Segment{{Start: from, End: from + at + 0.5}}}}
+		lit := d.WordsLit(source)
+
+		// The moment libass draws each frame of the short at, and where
+		// that frame is in the episode.
+		var moments []int64
+		var kept []float64
+		for _, seg := range d.Clip.Segments {
+			first, end := source.pieceFrames(seg.Start, seg.End)
+			for n := first; n < end; n++ {
+				moments = append(moments, source.shortMoment(int64(len(moments))))
+				kept = append(kept, source.keptAt(n))
+			}
+		}
+		// When each word begins and ends as the caption file says it, in
+		// hundredths: from its start, never before the word before it,
+		// inside its caption.
+		type said struct{ begins, ends []int }
+		times := make([]said, len(laid))
+		for i, c := range laid {
+			start, end := centiseconds(c.Start), centiseconds(c.End)
+			b := make([]int, len(c.Words))
+			for k, w := range c.Words {
+				b[k] = min(max(centiseconds(w.Start), start), end)
+				if k > 0 {
+					b[k] = max(b[k], b[k-1])
+				}
+			}
+			e := make([]int, len(b))
+			for k := range b {
+				e[k] = end
+				if k+1 < len(b) {
+					e[k] = b[k+1]
+				}
+			}
+			times[i] = said{b, e}
+		}
+		ownFrame := func(i, k int) bool {
+			for _, m := range moments {
+				if int64(times[i].begins[k])*10 <= m && m < int64(times[i].ends[k])*10 {
+					return true
+				}
+			}
+			return false
+		}
+		shown := make([]bool, len(laid))
+		for j, m := range moments {
+			on := ShowingAt(laid, source, m)
+			if on.Caption < 0 {
+				continue
+			}
+			shown[on.Caption] = true
+			begun := -1
+			for k, b := range times[on.Caption].begins {
+				if int64(b)*10 <= m {
+					begun = k
+				}
+			}
+			if begun >= 0 && (on.Word < 0 || begun < on.Word || begun > on.Last) {
+				t.Fatalf("seed %d, %d/%d fps, frame %d at %d ms: word %d of caption %d has begun, and words %d to %d are lit",
+					seed, rate[0], rate[1], j, m, begun, on.Caption, on.Word, on.Last)
+			}
+			for k := max(on.Word, 0); k <= on.Last; k++ {
+				if k != begun && ownFrame(on.Caption, k) {
+					t.Fatalf("seed %d, %d/%d fps, frame %d at %d ms: word %d of caption %d has frames of its own and is lit with word %d",
+						seed, rate[0], rate[1], j, m, k, on.Caption, begun)
+				}
+			}
+			if scale := d.PopScale(source, kept[j]); scale < 1 || scale > popPeak+1e-9 {
+				t.Fatalf("seed %d, frame %d: the pill is drawn at %.3f", seed, j, scale)
+			}
+		}
+		for i := range laid {
+			for k := range laid[i].Words {
+				if shown[i] && lit[i][k][0] < 0 {
+					t.Fatalf("seed %d, %d/%d fps: word %d of caption %d, said from %d to %d hundredths, is lit on no frame of the %d its caption is shown on",
+						seed, rate[0], rate[1], k, i, times[i].begins[k], times[i].ends[k], len(moments))
+				}
+			}
 		}
 	}
 }
@@ -125,17 +341,10 @@ func TestWordsLitIsWhatEachFrameShows(t *testing.T) {
 		for n := first; n < end; n++ {
 			at := source.keptAt(n)
 			on := d.Showing(source, at)
-			want := CaptionShowing{-1, -1}
-			for i := range lit {
-				for k, span := range lit[i] {
-					if at >= span[0] && at < span[1] {
-						want = CaptionShowing{i, k}
-					}
-				}
-			}
+			want := litAt(lit, at)
 			if on.Word >= 0 && on != want {
-				t.Errorf("the frame at %.3f s shows caption %d word %d, WordsLit has caption %d word %d there",
-					at, on.Caption, on.Word, want.Caption, want.Word)
+				t.Errorf("the frame at %.3f s shows caption %d words %d to %d, WordsLit has caption %d words %d to %d there",
+					at, on.Caption, on.Word, on.Last, want.Caption, want.Word, want.Last)
 			}
 		}
 	}
@@ -152,9 +361,11 @@ func TestWordsLitIsWhatEachFrameShows(t *testing.T) {
 	if ahead == 0 {
 		t.Errorf("a frame into every word by its time lights that word, so this clip does not show what WordsLit is for")
 	}
-	// The word too short to fall on a frame of its own is lit on none.
-	if got := lit[1][2]; got != [2]float64{-1, -1} {
-		t.Errorf(`"als", lit for 20 ms between two frames, is lit from %.3f to %.3f s, on no frame was wanted`, got[0], got[1])
+	// The word too short to fall on a frame of its own is lit on one, the
+	// last of the word before, with it, #280.
+	if got, before := lit[1][2], lit[1][1]; math.Abs(got[1]-got[0]-frame) > 1e-6 || math.Abs(got[1]-before[1]) > 1e-6 {
+		t.Errorf(`"als", lit for 20 ms between two frames, is lit from %.3f to %.3f s, not on the last frame of "alt,", which ends at %.3f s`,
+			got[0], got[1], before[1])
 	}
 }
 
@@ -230,4 +441,22 @@ func TestTheBoxStandsEvenlyRoundItsPills(t *testing.T) {
 			t.Errorf("%q: the box is %.0f pixels high, and %.0f round %q", c.Words[0].Text, h, first, laid[0].Words[0].Text)
 		}
 	}
+}
+
+// litAt is the caption and the words in it WordsLit has lit at the moment
+// at, from the first of them to the last.
+func litAt(lit [][][2]float64, at float64) CaptionShowing {
+	on := CaptionShowing{-1, -1, -1}
+	for i := range lit {
+		for k, span := range lit[i] {
+			if at < span[0] || at >= span[1] {
+				continue
+			}
+			if on.Caption != i {
+				on = CaptionShowing{i, k, k}
+			}
+			on.Last = k
+		}
+	}
+	return on
 }

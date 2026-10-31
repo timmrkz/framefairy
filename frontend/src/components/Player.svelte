@@ -790,6 +790,7 @@
       now?.track === drawn?.track &&
       now?.caption === drawn?.caption &&
       now?.word === drawn?.word &&
+      now?.last === drawn?.last &&
       now?.scale === drawn?.scale
     )
       return;
@@ -814,12 +815,16 @@
 
   const spoken = $derived(inClipTime(shown));
 
-  // The word lit, counted across the caption's lines: the one the layer on
-  // screen lights, and none until a layer of these captions has come. The
-  // playhead's word lit here while the picture drew no captions yet, after
-  // a clip was picked or an edit landed, which is a second say in what is
-  // lit. firstOfRow is where each line's words begin in that count.
+  // The words lit, lit to litLast, counted across the caption's lines: the
+  // ones the layer on screen lights, and none until a layer of these
+  // captions has come. It is one word but where words too short for a
+  // frame of their own are lit together, #280. The playhead's word lit
+  // here while the picture drew no captions yet, after a clip was picked
+  // or an edit landed, which is a second say in what is lit. firstOfRow is
+  // where each line's words begin in that count.
   const lit = $derived(!caption || !showing ? -1 : showing.word);
+  const litLast = $derived(!caption || !showing ? -1 : showing.last);
+  const isLit = (n: number) => lit >= 0 && n >= lit && n <= litLast;
   const firstOfRow = $derived.by(() => {
     const out: number[] = [];
     let n = 0;
@@ -1372,6 +1377,21 @@
       line-height: ${px(f.h)}; border-radius: ${px(f.r)};`;
   }
 
+  // The middle of the pill round words lit together, which libass grows
+  // them and their pill round in the pop, as the engine says it with the
+  // first of them, see engine.WordFrame, so the frame round each of them
+  // grows round it too and stays on the pill's edge. Nothing where one
+  // word is lit, which grows round its own middle.
+  const litMiddle = $derived.by(() => {
+    if (!laidWords || !caption || !captions || lit < 0 || litLast <= lit) return null;
+    const grow = wordFrames?.frames?.[(captions.captions ?? []).indexOf(caption)]?.[lit]?.grow;
+    return grow ? { x: grow.x, y: grow.y - (1 - captions.style.marginV) } : null;
+  });
+  function growFrom(middle: { x: number; y: number }, f: LaidWord | undefined): string {
+    if (!f || !f.w || !f.h) return "";
+    return `--grow-from: ${((middle.x - f.x) / f.w) * 100}% ${((middle.y - f.top) / f.h) * 100}%;`;
+  }
+
   // Everything the captions over a frame are worked out from, so a change
   // to any of them draws the frame on screen again.
   $effect(() => {
@@ -1882,8 +1902,8 @@
                     class="word"
                     class:correctable={!!said}
                     class:fixing={fixing?.at === word.start}
-                    class:keyed={!!keyed && !fixing && !!said && keyed.start === word.start && !!showing && firstOfRow[row] + i === lit}
-                    class:now={captions.style.highlight && firstOfRow[row] + i === lit}
+                    class:keyed={!!keyed && !fixing && !!said && keyed.start === word.start && !!showing && isLit(firstOfRow[row] + i)}
+                    class:now={captions.style.highlight && isLit(firstOfRow[row] + i)}
                     contenteditable={said ? "plaintext-only" : null}
                     spellcheck="false"
                     data-at={word.start}
@@ -1897,6 +1917,8 @@
                       ? `--pad: ${fixing.pad}em;`
                       : ''}{laidWords?.words[firstOfRow[row] + i]
                       ? wordPlace(laidWords, laidWords.words[firstOfRow[row] + i])
+                      : ''}{litMiddle && isLit(firstOfRow[row] + i)
+                      ? growFrom(litMiddle, laidWords?.words[firstOfRow[row] + i])
                       : ''}"
                     use:says={[word.text, captions]}
                     onfocusin={(e) => takeWord(e.currentTarget, word, said)}
@@ -2301,6 +2323,7 @@
      layer on screen says, see onScreen. At rest it is 1. */
   .laid .line span.now {
     transform: scale(var(--pop, 1));
+    transform-origin: var(--grow-from, 50% 50%);
   }
 
   /* The steps the caption line snaps to, shown while it is dragged. */

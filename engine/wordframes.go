@@ -105,34 +105,164 @@ func wordBegins(c LaidCaption, start, end int) []int {
 	return begins
 }
 
+// litRun is the words first to last of a caption, counted across its
+// lines, lit together from the hundredth of a second from of the short to
+// the hundredth to.
+type litRun struct{ first, last, from, to int }
+
+// litRuns is how the words of a caption that shows from start to end are
+// lit on the frames of the short s, in their order, see popGrid: each word
+// from when it begins, see wordBegins, on the frames that start before
+// the next one begins. A word too short to have a frame start in its time
+// has no frame of its own, and is lit on the frame showing when it
+// begins together with the words lit there, so the frame lights them
+// together and they pop together, #280. That run of words is lit on that
+// one frame only: the word before it is still lit alone on its frames
+// before. A word with no frame before the first word with one shares that
+// word's first frame, and so does a word of no length whose hundredth a
+// frame starts on, which shows the word after it. Words of no length at
+// the end of a caption share its last frame.
+//
+// A word typed into a word a frame or two long was lit on no frame, so it
+// was never seen lit and Shift and the arrows could not reach it. Tim
+// asked that how many words go into so little time stays the person's
+// choice, so the time is not stretched, the words share the frame.
+func (s SourceInfo) litRuns(c LaidCaption, start, end int) []litRun {
+	g := s.popGrid()
+	begins := wordBegins(c, start, end)
+	// The first frame of the short that starts at or after the hundredth
+	// cs.
+	firstFrame := func(cs int) int64 {
+		k := g.frameOf(int64(cs) * 10)
+		if g.shortMoment(k) < int64(cs)*10 {
+			k++
+		}
+		return k
+	}
+	var runs []litRun
+	// share lights the words up to k on the frame showing the moment at,
+	// in milliseconds, with the words lit there, the last run, until the
+	// hundredth to. The words of that run are lit alone until the frame
+	// they share, from the hundredth that frame starts in. False where
+	// the run would light no frame: the frame starts on the very
+	// hundredth the words end on.
+	share := func(k int, at int64, to int) bool {
+		last := &runs[len(runs)-1]
+		shared := g.frameOf(at)
+		if shared <= firstFrame(last.from) {
+			last.last, last.to = k, to
+			return true
+		}
+		cut := int(g.shortMoment(shared) / 10)
+		if cut >= to {
+			return false
+		}
+		last.to = cut
+		runs = append(runs, litRun{last.first, k, cut, to})
+		return true
+	}
+	waiting := -1
+	for k, from := range begins {
+		to := end
+		if k+1 < len(begins) {
+			to = begins[k+1]
+		}
+		own := firstFrame(from)
+		switch {
+		case to > from && g.shortMoment(own) < int64(to)*10:
+			if waiting < 0 {
+				runs = append(runs, litRun{k, k, from, to})
+				continue
+			}
+			// The words waiting share this word's first frame, and it is
+			// lit alone on the frames after. Above 100 frames a second the
+			// next frame can start in the same hundredth, and lights them
+			// too.
+			cut := to
+			if next := g.shortMoment(own + 1); next < int64(to)*10 {
+				cut = min(to, max(int(next/10), int(g.shortMoment(own)/10)+1))
+			}
+			runs = append(runs, litRun{waiting, k, begins[waiting], cut})
+			if cut < to {
+				runs = append(runs, litRun{k, k, cut, to})
+			}
+			waiting = -1
+		case len(runs) > 0 && share(k, int64(from)*10, to):
+			// Any word waiting is in the run shared, which ends on this
+			// one.
+			waiting = -1
+		default:
+			// No frame before it lights a word of this caption, or it is
+			// a word of no length whose hundredth a frame starts on, which
+			// shows the word after: it waits for the next word with a
+			// frame, and shares that word's first frame.
+			if waiting < 0 {
+				waiting = k
+			}
+		}
+	}
+	if waiting >= 0 && (len(runs) == 0 || !share(len(begins)-1, int64(end)*10-1, end)) {
+		// No word of the caption has a frame of its own. They are lit
+		// together on the frame showing when the first of them begins,
+		// when that frame shows the caption.
+		from := begins[waiting]
+		if m := g.shortMoment(g.frameOf(int64(from) * 10)); m >= int64(start)*10 {
+			from = int(m / 10)
+		}
+		runs = append(runs, litRun{waiting, len(begins) - 1, from, end})
+	}
+	return runs
+}
+
 // CaptionShowing is what libass shows of the captions at a moment of the
 // short, in milliseconds, by the times their caption file gives them:
-// the caption, -1 for none, and the word of it being spoken, counted
-// across its lines, -1 for none yet. The caption box over the video
-// preview shows what the layer under it shows by it, see
-// /frames/captions.
+// the caption, -1 for none, and the words of it lit, Word to Last,
+// counted across its lines, both -1 for none yet. It is one word but where
+// words too short for a frame of their own are lit together, see
+// litRuns. The caption box over the video preview shows what the layer
+// under it shows by it, see /frames/captions.
 type CaptionShowing struct {
 	Caption int `json:"caption"`
 	Word    int `json:"word"`
+	Last    int `json:"last"`
 }
 
-// ShowingAt is what libass shows of laid at the moment ms, see
-// CaptionShowing.
-func ShowingAt(laid []LaidCaption, ms int64) CaptionShowing {
+// ShowingAt is what libass shows of laid at the moment ms of a short of
+// the frames of source, see CaptionShowing.
+func ShowingAt(laid []LaidCaption, source SourceInfo, ms int64) CaptionShowing {
+	return showing(laid, source.runsOf(laid), ms)
+}
+
+// runsOf is how the words of each caption of laid are lit on the frames
+// of the short s, see litRuns.
+func (s SourceInfo) runsOf(laid []LaidCaption) [][]litRun {
+	runs := make([][]litRun, len(laid))
+	for i, c := range laid {
+		if start, end := centiseconds(c.Start), centiseconds(c.End); end > start {
+			runs[i] = s.litRuns(c, start, end)
+		}
+	}
+	return runs
+}
+
+// showing is what libass shows of laid, its words lit in runs, see
+// runsOf, at the moment ms, see ShowingAt. Worked out once, the runs
+// serve every frame of a clip, see WordsLit.
+func showing(laid []LaidCaption, runs [][]litRun, ms int64) CaptionShowing {
 	for i, c := range laid {
 		start, end := centiseconds(c.Start), centiseconds(c.End)
 		if end <= start || ms < int64(start)*10 || ms >= int64(end)*10 {
 			continue
 		}
-		word := -1
-		for k, b := range wordBegins(c, start, end) {
-			if ms >= int64(b)*10 {
-				word = k
+		on := CaptionShowing{Caption: i, Word: -1, Last: -1}
+		for _, r := range runs[i] {
+			if ms >= int64(r.from)*10 {
+				on.Word, on.Last = r.first, r.last
 			}
 		}
-		return CaptionShowing{Caption: i, Word: word}
+		return on
 	}
-	return CaptionShowing{Caption: -1, Word: -1}
+	return CaptionShowing{Caption: -1, Word: -1, Last: -1}
 }
 
 // pill is the box the pill of word k takes at rest, from the caption's
@@ -143,6 +273,45 @@ func (l wordsLaid) pill(k, size int) (left, top, right, bottom float64) {
 	b := l.boxes[k]
 	top, bottom = l.lineBand(l.lineOf[k], size)
 	return float64(b.left) - padX, top, float64(b.right) + padX, bottom
+}
+
+// runPill is the pill of the words of run at rest, from the caption's
+// anchor, at size: a part on each line they stand on, from the left of the
+// pill of the first of them on it to the right of the pill of the last,
+// see pill, in the order of the lines. Words lit together are one thing
+// lit, so they sit in one pill that pops from its middle, #280. Nothing
+// where every word of it is in hidden, being typed: the caption box draws
+// the pill of a word typed, see CaptionDrawing.Typing. Among other words
+// the place of a word typed stays in the pill, so it grows round the
+// middle the caption box knows, see WordFrame.Grow, and the pill the
+// caption box draws for it is never smaller than that place.
+func (l wordsLaid) runPill(run litRun, hidden map[int]bool, size int) [][4]float64 {
+	shown := false
+	for k := run.first; k <= run.last; k++ {
+		shown = shown || !hidden[k]
+	}
+	if !shown {
+		return nil
+	}
+	var parts [][4]float64
+	for _, line := range l.lines {
+		part, found := [4]float64{}, false
+		for _, k := range line {
+			if k < run.first || k > run.last {
+				continue
+			}
+			left, top, right, bottom := l.pill(k, size)
+			if !found {
+				part, found = [4]float64{left, top, right, bottom}, true
+				continue
+			}
+			part[0], part[2] = math.Min(part[0], left), math.Max(part[2], right)
+		}
+		if found {
+			parts = append(parts, part)
+		}
+	}
+	return parts
 }
 
 // lineBand is how far down the pills of line r reach at rest, the same for
@@ -262,12 +431,25 @@ type WordFrame struct {
 	// set on it, so its letters stand where libass drew them, see
 	// docs/CAPTIONS.md.
 	Base float64 `json:"base"`
+	// Grow is where the pill of the words lit together from this one grows
+	// from in the pop, the middle of the whole pill, as shares of the
+	// short's width and height from its top left corner, see litRuns and
+	// runPill. The caption box grows the frame round each of them from it.
+	// Nil where this word is not the first of words lit together.
+	Grow *GrowFrom `json:"grow,omitempty"`
 	// From and To are when the picture lights the word, on the episode's
 	// clock: from the start of the first frame of the clip libass draws it
 	// lit on to the end of the last, see WordsLit. Both -1 for a word lit
 	// on no frame, or where the frames are not known.
 	From float64 `json:"from"`
 	To   float64 `json:"to"`
+}
+
+// GrowFrom is a point of the short, as shares of its width and height
+// from its top left corner.
+type GrowFrom struct {
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
 }
 
 // WordFrames is where the words of the captions stand in a short width by
@@ -303,7 +485,8 @@ func (e *Engine) WordFrames(ctx context.Context, laid []LaidCaption, width, heig
 // the episode's clock, each caption's words in their order: from the start
 // of the first frame of the clip on which libass draws the word lit to the
 // end of the last, read frame by frame at the moment CaptionMoment names,
-// with ShowingAt. A word lit on no frame is -1 to -1. Nothing where the
+// with ShowingAt. Words lit together on a frame, see litRuns, each have
+// it among theirs. A word lit on no frame is -1 to -1. Nothing where the
 // rate of the frames is not known.
 //
 // The caption's own times are on the clip's clock, and a piece of the
@@ -323,20 +506,23 @@ func (d *CaptionDrawing) WordsLit(source SourceInfo) [][][2]float64 {
 			out[i][k] = [2]float64{-1, -1}
 		}
 	}
+	runs := source.runsOf(d.Laid)
 	var k int64
 	for _, seg := range d.Clip.Segments {
 		first, end := source.pieceFrames(seg.Start, seg.End)
 		for n := first; n < end; n++ {
-			on := ShowingAt(d.Laid, source.shortMoment(k))
+			on := showing(d.Laid, runs, source.shortMoment(k))
 			k++
-			if on.Caption < 0 || on.Word < 0 || on.Word >= len(out[on.Caption]) {
+			if on.Caption < 0 || on.Word < 0 || on.Last >= len(out[on.Caption]) {
 				continue
 			}
-			span := &out[on.Caption][on.Word]
-			if span[0] < 0 {
-				span[0] = source.keptAt(n)
+			for w := on.Word; w <= on.Last; w++ {
+				span := &out[on.Caption][w]
+				if span[0] < 0 {
+					span[0] = source.keptAt(n)
+				}
+				span[1] = source.keptAt(n + 1)
 			}
-			span[1] = source.keptAt(n + 1)
 		}
 	}
 	return out

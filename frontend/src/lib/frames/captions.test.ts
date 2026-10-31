@@ -138,7 +138,7 @@ describe("the layers of the captions", () => {
   // The answer to the nth ask, the way the Go side gives it: a layer whose
   // first red is n, and the caption n with its first word lit.
   function answerOf(n: number): Response {
-    return new Response(body(layer(0, 0, 1, 1, [n, 0, 0, 255])), { headers: { "X-Caption-Showing": `${n} 0` } });
+    return new Response(body(layer(0, 0, 1, 1, [n, 0, 0, 255])), { headers: { "X-Caption-Showing": `${n} 0 0` } });
   }
 
   it("keeps the last layer up while the one for a newer frame is on its way, and draws again when it comes", async () => {
@@ -163,7 +163,7 @@ describe("the layers of the captions", () => {
     expect(came).toBe(1);
     expect(layers.at(1.0, [10, 20])?.pixels[0]).toBe(1);
     // What the layer shows comes with it, for the caption box.
-    expect(layers.at(1.0, [10, 20])?.showing).toEqual({ caption: 1, word: 0 });
+    expect(layers.at(1.0, [10, 20])?.showing).toEqual({ caption: 1, word: 0, last: 0 });
     // The next frame: the first one's layer stays until its own comes.
     expect(layers.at(1.04, [10, 20])?.pixels[0]).toBe(1);
     answer.shift()!();
@@ -446,7 +446,7 @@ describe("the bounce after a word step", () => {
     vi.stubGlobal("fetch", async (url: string) => {
       asked.push(url);
       const q = new URLSearchParams(url.split("?")[1]);
-      const showing = { "X-Caption-Showing": `0 ${word()}` };
+      const showing = { "X-Caption-Showing": `0 ${word()} ${word()}` };
       if (q.get("part") === "rest") return new Response(body(20), { headers: { ...showing, "X-Caption-Scale": "1.0000" } });
       if (q.get("part") === "word")
         return new Response(body(30), { headers: { ...showing, "X-Caption-Scale": "1.0000", "X-Caption-Bounce": "220 0.55 1.15" } });
@@ -549,7 +549,7 @@ describe("the bounce after a word step", () => {
     expect(l.pixels[0]).toBe(20);
     expect(l.lift?.layer.pixels[0]).toBe(30);
     expect(l.lift?.scale).toBe(1);
-    expect(l.showing).toEqual({ caption: 0, word: 2 });
+    expect(l.showing).toEqual({ caption: 0, word: 2, last: 2 });
     // Then one scale for each frame of the screen, by its clock: up to its
     // peak a little past the middle, and back to rest.
     const scales: number[] = [];
@@ -667,7 +667,7 @@ describe("the bounce after a word step", () => {
           const at = q.get("at")!;
           const part = q.get("part");
           const red = part === "rest" ? 20 : part === "word" ? 30 : 100;
-          const headers: Record<string, string> = { "X-Caption-Showing": "0 1", "X-Caption-Scale": "1.0000" };
+          const headers: Record<string, string> = { "X-Caption-Showing": "0 1 1", "X-Caption-Scale": "1.0000" };
           if (part === "word") headers["X-Caption-Bounce"] = "220 0.55 1.15";
           held.push({ at, part, go: () => resolve(new Response(body(red), { headers })) });
         }),
@@ -760,9 +760,11 @@ describe("the bounce after a word step", () => {
 
 describe("what a layer shows", () => {
   it("is read off the header the Go side sends, and is nothing for a header it cannot read", () => {
-    expect(readShowing("3 1")).toEqual({ caption: 3, word: 1 });
-    expect(readShowing("0 -1")).toEqual({ caption: 0, word: -1 });
-    expect(readShowing("-1 -1")).toEqual({ caption: -1, word: -1 });
+    expect(readShowing("3 1 1")).toEqual({ caption: 3, word: 1, last: 1 });
+    expect(readShowing("3 1 3")).toEqual({ caption: 3, word: 1, last: 3 });
+    expect(readShowing("0 -1 -1")).toEqual({ caption: 0, word: -1, last: -1 });
+    expect(readShowing("-1 -1 -1")).toEqual({ caption: -1, word: -1, last: -1 });
+    expect(readShowing("3 1")).toBeUndefined();
     expect(readShowing(null)).toBeUndefined();
     expect(readShowing("")).toBeUndefined();
     expect(readShowing("1.5 0")).toBeUndefined();
@@ -850,7 +852,7 @@ describe("asks no longer wanted", () => {
       frames++;
       const b = new ArrayBuffer(8 + 4);
       [0, 0, 1, 1].forEach((n, i) => new DataView(b).setUint16(2 * i, n, true));
-      return new Response(b, { headers: { "X-Caption-Showing": "0 1", "X-Caption-Scale": "1.0000" } });
+      return new Response(b, { headers: { "X-Caption-Showing": "0 1 1", "X-Caption-Scale": "1.0000" } });
     });
     const layers = new CaptionLayers(() => {}, { paused: () => true });
     // Until every frame's own layer asked for has come.

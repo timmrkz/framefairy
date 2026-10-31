@@ -753,6 +753,17 @@ verstaucht. Ich habe trotzdem eine Woche lang einen Verband getragen und
 allen erzählt, er wäre gebrochen. Das war meine erste richtige Lüge, glaube
 ich. Und eigentlich erinnere ich mich an die Lüge besser als an den Arm.`)
 
+// quick are words said in a hundredth of a second and straight into the
+// word after, the way words typed into one short word are: too short for a
+// frame of their own, so each is lit on the frame it shares with the
+// words beside it, #280. "so" starts a caption between two frames, "sich"
+// is in the middle of the same one and "wir" ends the one after, so the
+// caption walks meet words that share a frame wherever they go: edges
+// dragged, words typed and removed, blocks clicked, Shift and the arrows.
+// The word after a quick word starts straight after it and ends where it
+// always did, so every other word keeps its time.
+var quick = map[string]bool{"so": true, "sich": true, "wir": true}
+
 func (p *prose) Recognize(samples []float32, rate int) []engine.Token {
 	p.gate.Lock()
 	if p.held && p.steps == 0 && !p.closing {
@@ -781,16 +792,28 @@ func (p *prose) Recognize(samples []float32, rate int) []engine.Token {
 	defer p.mu.Unlock()
 	length := float64(len(samples)) / float64(rate)
 	var tokens []engine.Token
+	// The time a quick word leaves over goes to the word after it.
+	carry := 0.0
 	for at := 0.1; ; {
 		word := proseText[p.next%len(proseText)]
 		// Longer words take longer to say.
-		lasts := 0.12 + 0.05*float64(len([]rune(word)))
-		if at+lasts > length-0.05 {
+		lasts, after := 0.12+0.05*float64(len([]rune(word))), 0.08
+		said := lasts + carry
+		if quick[word] {
+			said = 0.01
+		}
+		if at+said > length-0.05 {
 			break
 		}
-		tokens = append(tokens, engine.Token{Text: " " + word, Start: at, Duration: lasts})
+		tokens = append(tokens, engine.Token{Text: " " + word, Start: at, Duration: said})
 		p.next++
-		at += lasts + 0.08
+		if quick[word] {
+			carry = lasts + after - said
+			at += said
+		} else {
+			at += said + after
+			carry = 0
+		}
 		if strings.HasSuffix(word, ".") {
 			at += 0.9
 		}

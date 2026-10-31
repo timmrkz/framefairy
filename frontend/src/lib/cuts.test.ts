@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { wordStep, type Word } from "./api";
+import { landings, wordStep, type Word } from "./api";
 
 const said = (list: [number, number, string][]): Word[] =>
   list.map(([start, end, text]) => ({ start, end, text }));
@@ -145,5 +145,49 @@ describe("wordStep", () => {
     expect(wordStep([], 10, true, frame)).toBe(null);
     expect(wordStep(said, 20, false, frame)).toBe(null);
     expect(wordStep(said, 0, true, frame)).toBe(null);
+  });
+});
+
+// Words lit together on one frame begin there together, #280. The steps
+// land on each change of what is lit, once: a step back from the frame
+// they share goes on to the word before, never to the same frame again.
+describe("words lit together", () => {
+  const frame = 0.04;
+  // "Und", then "ja" and "ja" lit together on the frame at 0.52 s, then
+  // "na" lit with "gut" on the frame at 1.24 s and "gut" alone from 1.28.
+  const said: Word[] = [
+    { start: 0, end: 0.52, text: "Und", framed: true },
+    { start: 0.52, end: 0.56, text: "ja", framed: true },
+    { start: 0.52, end: 0.56, text: "ja", framed: true },
+    { start: 0.56, end: 0.6, text: "genau", framed: true },
+    { start: 1.24, end: 1.28, text: "na", framed: true },
+    { start: 1.24, end: 2, text: "gut", framed: true },
+  ];
+
+  test("are one place to land on, and a word lit alone after them another", () => {
+    expect(landings(said).map((w) => [w.start, w.end, w.text])).toEqual([
+      [0, 0.52, "Und"],
+      [0.52, 0.56, "ja"],
+      [0.56, 0.6, "genau"],
+      [1.24, 1.28, "na"],
+      [1.28, 2, "gut"],
+    ]);
+  });
+
+  test("step back from the end to the start and forward again, a new frame each press", () => {
+    const back: number[] = [];
+    let at: number | null = 1.5;
+    for (let i = 0; i < 10 && at !== null; i++) {
+      at = wordStep(said, at, true, frame);
+      if (at !== null) back.push(Math.round(at * 100) / 100);
+    }
+    expect(back).toEqual([1.26, 0.58, 0.54, 0.02]);
+    const forward: number[] = [];
+    at = 0.02;
+    for (let i = 0; i < 10 && at !== null; i++) {
+      at = wordStep(said, at, false, frame);
+      if (at !== null) forward.push(Math.round(at * 100) / 100);
+    }
+    expect(forward).toEqual([0.54, 0.58, 1.26, 1.3]);
   });
 });

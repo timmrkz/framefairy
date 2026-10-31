@@ -519,6 +519,57 @@ export const steps = {
     // which left a dark line between the two.
     else if (!state.outline.startsWith("none")) walk.wrong = `"${arg}" typed has a focus ring round its pill, ${state.outline}`;
   },
+  // ["lit together", word]
+  //                    steps the playhead a frame at a time with → until
+  //                    the word is lit, within 40 frames, and sees it lit
+  //                    with the word beside it: the caption box lights
+  //                    both, and libass draws its pill behind both
+  async "lit together"(walk, arg, s) {
+    const { letters, page, settled, watch } = walk;
+    // Read at once, never waited for: the playhead goes on past the
+    // caption the word is in when the word is lit on no frame.
+    const isLit = () => page.$$eval(".captions .word.now", (all, w) => all.some((e) => e.textContent === w), arg);
+    await settled();
+    for (let i = 0; i < 40 && !(await isLit()); i++) {
+      await page.keyboard.press("ArrowRight");
+      await settled();
+    }
+    await watch.step("press", s);
+    if (!(await isLit())) {
+      walk.wrong = `"${arg}" is lit on none of the 40 frames after the playhead`;
+      return;
+    }
+    const lit = await page.$$eval(".captions .word.now", (all) =>
+      all.map((e) => {
+        const r = e.getBoundingClientRect();
+        return { text: e.textContent, left: r.left + 2, top: r.top + 2, width: r.width - 4, height: r.height - 4 };
+      }),
+    );
+    const behind = [];
+    for (const w of lit) behind.push((await letters(w))?.pill ?? "");
+    console.log(`    lit together: ${lit.map((w, i) => `"${w.text}" on ${behind[i] || "nothing"}`).join(", ")}`);
+    if (lit.length < 2) walk.wrong = `"${arg}" is lit alone, on a frame of its own or with no word beside it`;
+    else if (behind.some((c) => !c || c !== behind[0]))
+      walk.wrong = `libass draws no one pill behind the words lit: ${lit.map((w, i) => `"${w.text}" on ${behind[i] || "nothing"}`).join(", ")}`;
+  },
+  // ["steps back", n]  presses Shift and ← n times, and each press lights
+  //                    other words than the one before: none lands on
+  //                    the frame it stood on
+  async "steps back"(walk, arg, s) {
+    const { page, settled, watch } = walk;
+    const litNow = () =>
+      page.$$eval(".captions .word.now", (all) => all.map((e) => e.textContent).join(" ") + " in " + (document.querySelector(".captions")?.textContent ?? "").trim());
+    let was = await litNow();
+    for (let k = 0; k < arg && !walk.wrong; k++) {
+      await page.keyboard.press("Shift+ArrowLeft");
+      await watch.step("press", s);
+      await settled();
+      const now = await litNow();
+      console.log(`    step ${k + 1} back: ${now}`);
+      if (now === was) walk.wrong = `step ${k + 1} back with Shift and ← stayed on "${now}"`;
+      was = now;
+    }
+  },
   // ["grow", word]     walks the playhead with Shift and → until the word
   //                    is lit and a frame on with →, into its pop, clicks
   //                    the word, types after it and leaves it with Escape,
@@ -2145,11 +2196,19 @@ async function watchPills(page) {
           }
         }
       }
-      const frame = (word) => {
-        if (!word) return null;
-        const f = word.getBoundingClientRect();
+      // Words lit together share one pill, so what stands on the pill
+      // is the box round all of them, #280.
+      const frame = (words) => {
+        if (!words.length) return null;
+        const boxes = words.map((w) => w.getBoundingClientRect());
+        const f = {
+          left: Math.min(...boxes.map((b) => b.left)),
+          right: Math.max(...boxes.map((b) => b.right)),
+          top: Math.min(...boxes.map((b) => b.top)),
+          bottom: Math.max(...boxes.map((b) => b.bottom)),
+        };
         return {
-          text: word.textContent,
+          text: words.map((w) => w.textContent).join(" "),
           x: (f.left + f.right) / 2 - c.left,
           y: (f.top + f.bottom) / 2 - c.top,
           t: f.top - c.top,
@@ -2163,8 +2222,8 @@ async function watchPills(page) {
         t: performance.now(),
         late: window.__captionLayers?.late ?? false,
         bounced: window.__captionLayers?.stats.bounced ?? 0,
-        now: frame(box.querySelector(".word.now")),
-        keyed: frame(box.querySelector(".word.keyed")),
+        now: frame([...box.querySelectorAll(".word.now")]),
+        keyed: frame([...box.querySelectorAll(".word.keyed")]),
         pill:
           l === Infinity
             ? null
