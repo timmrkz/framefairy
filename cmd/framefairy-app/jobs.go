@@ -41,17 +41,25 @@ type Job struct {
 	State   string `json:"state"`
 	Result  string `json:"result,omitempty"`
 	// JobRecord is what the job was asked to do, the step it is in and why
-	// it failed, as the record a search, a render, a clip made by hand or
-	// the whole video heard keeps in the episode's work folder, see
-	// engine/jobs.go. It is held, not copied field by field, so the job
-	// and its record say one thing, issue #606. Its ID is the record's,
-	// empty for a job that keeps none. Its fields go to the window as the
-	// job's own: Kind, the step, the error, the window of a search and
-	// the clips it was asked for, what a render is of from the moment it
-	// is queued, and the moment I or O was pressed at. The clip list holds
-	// as many rows open as a search's Count, whatever the workspace would
-	// ask for now, and reads what it found by its Min, not by Shortest as
-	// it is now.
+	// it failed, in the shape of the record a search, a render, a clip
+	// made by hand or the whole video heard keeps in the episode's work
+	// folder, see engine/jobs.go. It is held, not copied field by field,
+	// issue #606. A job read back as the app starts holds its record
+	// whole. A job started now holds what the app asked for, and the queue
+	// writes its step and its error, while the engine writes the record on
+	// disk. Until the engine alone writes the step, the two are kept in
+	// step by hand, see the decision record
+	// docs/decisions/2026-10-30-a-videos-state-in-one-session.md.
+	//
+	// Its ID is the record's, empty for a job that keeps none, and never
+	// the job's own ID. Its methods are the record's: Interrupted says
+	// what a record read back says, not whether the job is interrupted,
+	// which State does. Its fields go to the window as the job's own:
+	// Kind, the step, the error, the window of a search and the clips it
+	// was asked for, what a render is of from the moment it is queued, and
+	// the moment I or O was pressed at. The clip list holds as many rows
+	// open as a search's Count, whatever the workspace would ask for now,
+	// and reads what it found by its Min, not by Shortest as it is now.
 	engine.JobRecord
 	// Last is the most recent event, so a screen opened later still shows
 	// where the job is.

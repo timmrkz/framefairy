@@ -1040,40 +1040,70 @@ func TestStopTranscribingKeepsTheRecordOfTheJobThatCarriesOn(t *testing.T) {
 
 // A job holds its record instead of copying it field by field, issue
 // #606, and still reaches the window with every field the window reads,
-// under the names it reads them by. A search cut off as the app closed,
-// read back from its record, is the case with the most of them: its id
-// must be the job's and not the record's, or Continue and Cancel name a
-// job the queue does not have, and its window and its numbers must come
-// across, or its row says nothing of what it was searching.
+// under the names it reads them by. Jobs read back from their records as
+// the app starts are the cases with the most of them: a search cut off as
+// the app closed, a render cut off, and a clip made by hand that failed.
+// Each id must be the job's and not the record's, or Continue and Cancel
+// name a job the queue does not have, and what each was asked to do must
+// come across, or its row or card says nothing of it.
 func TestAJobReachesTheWindowWithEverythingItsRecordSays(t *testing.T) {
 	s, eps := memoryLibrary(t, "talk.mp4")
 	var sent []JobUpdate
 	s.jobs = newQueue(s.store, func(u JobUpdate) { sent = append(sent, u) }, func(string) {})
-	rec := engine.JobRecord{ID: engine.SearchID, Kind: engine.JobSearch, From: 60, To: 240, Count: 3,
-		Min: 20, Step: engine.StepFinding, Asked: time.Date(2026, 10, 31, 9, 0, 0, 0, time.UTC)}
-	if err := engine.WriteJob(s.store.files, eps[0], rec); err != nil {
-		t.Fatal(err)
+	asked := time.Date(2026, 10, 31, 9, 0, 0, 0, time.UTC)
+	for _, rec := range []engine.JobRecord{
+		{ID: engine.SearchID, Kind: engine.JobSearch, From: 60, To: 240, Count: 3, Min: 20,
+			Step: engine.StepFinding, Asked: asked},
+		{ID: "render-7", Kind: engine.JobRender, Plan: "/home/tim/videos/talk.framefairy/logs/clips.json",
+			Clips: []string{"c2"}, Step: engine.StepRendering, Asked: asked},
+		{ID: "clip-9", Kind: engine.JobClip, At: 95.5, Backward: true, Step: engine.StepFailed,
+			Error: "nobody speaks there", Asked: asked},
+	} {
+		if err := engine.WriteJob(s.store.files, eps[0], rec); err != nil {
+			t.Fatal(err)
+		}
 	}
 	s.jobs.restore(eps)
-	if len(sent) != 1 {
-		t.Fatalf("%d jobs were sent, want the one search", len(sent))
+	common := map[string]any{"episode": eps[0], "queued": "2026-10-31T09:00:00Z"}
+	want := map[string]map[string]any{
+		"search": {"label": "Find clips", "state": "interrupted", "step": "finding", "from": 60.0,
+			"to": 240.0, "count": 3.0, "min": 20.0, "lane": "finding"},
+		"render": {"label": "Render", "state": "interrupted", "step": "rendering", "lane": "rendering",
+			"plan": "/home/tim/videos/talk.framefairy/logs/clips.json", "clips": []any{"c2"}},
+		"clip": {"label": "Make a clip", "state": "failed", "step": "failed", "at": 95.5, "backward": true,
+			"error": "nobody speaks there"},
 	}
-	raw, err := json.Marshal(sent[0].Job)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var got map[string]any
-	if err := json.Unmarshal(raw, &got); err != nil {
-		t.Fatal(err)
-	}
-	want := map[string]any{
-		"id": "job-1", "episode": eps[0], "kind": "search", "label": "Find clips", "state": "interrupted",
-		"step": "finding", "from": 60.0, "to": 240.0, "count": 3.0, "min": 20.0, "lane": "finding",
-		"queued": "2026-10-31T09:00:00Z",
-	}
-	for key, value := range want {
-		if got[key] != value {
-			t.Errorf("%s is %v, want %v, in %s", key, got[key], value, raw)
+	ids := map[string]bool{}
+	for _, u := range sent {
+		raw, err := json.Marshal(u.Job)
+		if err != nil {
+			t.Fatal(err)
 		}
+		var got map[string]any
+		if err := json.Unmarshal(raw, &got); err != nil {
+			t.Fatal(err)
+		}
+		kind, _ := got["kind"].(string)
+		fields, ok := want[kind]
+		if !ok {
+			t.Errorf("a job of the kind %q was sent: %s", kind, raw)
+			continue
+		}
+		delete(want, kind)
+		id, _ := got["id"].(string)
+		if !strings.HasPrefix(id, "job-") || ids[id] {
+			t.Errorf("the %s went with the id %q, not a job's own: %s", kind, id, raw)
+		}
+		ids[id] = true
+		for _, set := range []map[string]any{common, fields} {
+			for key, value := range set {
+				if fmt.Sprint(got[key]) != fmt.Sprint(value) {
+					t.Errorf("the %s's %s is %v, want %v, in %s", kind, key, got[key], value, raw)
+				}
+			}
+		}
+	}
+	for kind := range want {
+		t.Errorf("no %s was sent", kind)
 	}
 }
