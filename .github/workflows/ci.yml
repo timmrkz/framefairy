@@ -98,7 +98,7 @@ jobs:
           fetch-depth: 2
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: .node-version
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       # ESLint among it, see frontend/eslint.config.js.
@@ -126,7 +126,7 @@ jobs:
       - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: .node-version
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -197,7 +197,7 @@ jobs:
       # no Node, which a runner has.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: .node-version
       # Go's build cache, kept by main after every push, see above the job
       # linux. v2 since the job runs in the image, see the walks.
       - id: gocache
@@ -333,7 +333,7 @@ jobs:
           restore-keys: go-v2-walks-${{ runner.os }}-
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: .node-version
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       # The episode's decoder, which the tests and the walks play through,
@@ -457,7 +457,7 @@ jobs:
       # no Node, which a runner has.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: .node-version
       # The licence dispenser's simulation is fuzzed at night only, see
       # SIMTIME in scripts/fuzz.sh. Its known seeds run in the job linux.
       - name: Fuzz
@@ -507,25 +507,31 @@ jobs:
             ~/Library/Caches/go-build
           key: go-v1-macos-${{ runner.os }}-${{ github.sha }}
           restore-keys: go-v1-macos-${{ runner.os }}-
+      # The checksum of the pins of the tools that build them, in the
+      # keys below, so a newer tool builds them again, see
+      # scripts/build-tools.sh.
+      - id: tools
+        run: echo "recipe=$(sh scripts/build-tools.sh --recipe)" >> "$GITHUB_OUTPUT"
       - id: ffmpeg
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .build/ffmpeg
-          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}
+          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}-${{ steps.tools.outputs.recipe }}
+      # What builds the ffmpeg we ship, at the versions requirements.txt
+      # pins, see scripts/build-tools.sh. With the ffmpeg from the cache,
+      # only pkg-config, with which the episode's decoder finds its
+      # libraries.
+      - name: What builds them
+        run: |
+          sh scripts/build-tools.sh .build/tools ${{ steps.ffmpeg.outputs.cache-hit == 'true' && 'pkgconf' || '' }}
+          echo "$PWD/.build/tools/bin" >> "$GITHUB_PATH"
       - name: The ffmpeg we ship
         if: steps.ffmpeg.outputs.cache-hit != 'true'
-        run: |
-          brew install meson ninja pkg-config nasm cmake
-          sh scripts/build-ffmpeg.sh .build/ffmpeg
+        run: sh scripts/build-ffmpeg.sh .build/ffmpeg
       - name: ffmpeg on the path, for the tests
         run: |
           .build/ffmpeg/bin/ffmpeg -hide_banner -encoders | grep videotoolbox
           echo "$PWD/.build/ffmpeg/bin" >> "$GITHUB_PATH"
-      # The episode's decoder is built against that ffmpeg's libraries,
-      # which pkg-config finds. A runner whose ffmpeg came from the cache
-      # installed nothing above.
-      - name: pkg-config, for the episode's decoder
-        run: command -v pkg-config >/dev/null || brew install pkg-config
       # With a limit and a look at what is left, as in the job linux.
       - name: Go tests
         timeout-minutes: 15
@@ -572,33 +578,37 @@ jobs:
           cache: true
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: .node-version
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       # The same ffmpeg and llama-server as the job macos, from the same
       # caches: the app runs no other, so make stops without them.
+      # The checksum of the pins of the tools that build them, in the
+      # keys below, so a newer tool builds them again, see
+      # scripts/build-tools.sh.
+      - id: tools
+        run: echo "recipe=$(sh scripts/build-tools.sh --recipe)" >> "$GITHUB_OUTPUT"
       - id: ffmpeg
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .build/ffmpeg
-          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}
-      - name: The ffmpeg we ship
-        if: steps.ffmpeg.outputs.cache-hit != 'true'
-        run: |
-          brew install meson ninja pkg-config nasm cmake
-          sh scripts/build-ffmpeg.sh .build/ffmpeg
-      - name: pkg-config, for the episode's decoder
-        run: command -v pkg-config >/dev/null || brew install pkg-config
+          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}-${{ steps.tools.outputs.recipe }}
       - id: llama
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .build/llama
-          key: llama-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-llama.sh') }}
+          key: llama-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-llama.sh') }}-${{ steps.tools.outputs.recipe }}
+      # As in the job macos, with cmake too when the llama-server is built.
+      - name: What builds them
+        run: |
+          sh scripts/build-tools.sh .build/tools ${{ (steps.ffmpeg.outputs.cache-hit == 'true' && steps.llama.outputs.cache-hit == 'true') && 'pkgconf' || '' }}
+          echo "$PWD/.build/tools/bin" >> "$GITHUB_PATH"
+      - name: The ffmpeg we ship
+        if: steps.ffmpeg.outputs.cache-hit != 'true'
+        run: sh scripts/build-ffmpeg.sh .build/ffmpeg
       - name: The llama-server we ship
         if: steps.llama.outputs.cache-hit != 'true'
-        run: |
-          brew install cmake
-          sh scripts/build-llama.sh .build/llama
+        run: sh scripts/build-llama.sh .build/llama
       # Unlock writes the key to the default keychain. A locked one puts a
       # box on screen that nobody here can answer, so this one is made
       # unlocked, never locks again and becomes the default.

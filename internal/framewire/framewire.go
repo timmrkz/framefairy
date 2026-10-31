@@ -168,8 +168,8 @@ func LightOf(trc string) Light {
 // into light on the screen. 10 bits is what an HDR file has.
 //
 // The short is never changed by any of it: its numbers are the file's.
-// The episode's decoder and engine.PreviewFrames build the same chain from
-// here.
+// The episode's decoder builds its chain from here, and so does the ffmpeg
+// program the engine's tests compare it with.
 func Picture(width, height int) string {
 	return fmt.Sprintf("scale=%d:%d:flags=bilinear,format=x2bgr10le", width, height)
 }

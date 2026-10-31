@@ -1517,6 +1517,9 @@ func (b *bridge) reset() error {
 	// empty", issue #561. The work folders go the way the app deletes
 	// one, see engine.DeleteWork.
 	defer engine.HoldPreviews(b.d.home)()
+	// So does a draft of Report a Problem the page saved as the walk
+	// ended, in the config folder, issue #632.
+	endReport(b.d.svc.report)
 	// A log a walk started lives in the home, which goes next.
 	theLog.close()
 	entries, err := os.ReadDir(b.d.home)
@@ -1541,6 +1544,20 @@ func (b *bridge) reset() error {
 	freshDecoders()
 	b.d.reopen()
 	return nil
+}
+
+// endReport ends the report of the app a walk ran, the way the app's
+// process ending would: a write in hand is let finish, and every write
+// after it fails, so nothing lands in the config folder while it is
+// removed, or in the next walk's once it is put back. A save the page
+// sent as the walk ended may be waiting on the lock, and the app opened
+// again is a reporting of its own, so the old one is never written
+// through again. Every write of the report goes through its files under
+// its lock, see bugs.go.
+func endReport(r *reporting) {
+	r.mu.Lock()
+	r.files = afero.NewReadOnlyFs(r.files)
+	r.mu.Unlock()
 }
 
 // freshDecoders closes the streams and the episode's decoders the walk

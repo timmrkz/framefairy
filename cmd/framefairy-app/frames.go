@@ -281,7 +281,7 @@ func (p *previews) start(kind string, times *engine.PreviewTimes, light func() f
 		defer close(s.done)
 		err := streamSafely(ctx, run, func(at float64, frame []byte) error {
 			// A frame is handed over in a buffer of its own, see
-			// engine.PreviewFrames, and kept as it is. Sound comes in one
+			// engine.EpisodeFrames.Stream, and kept as it is. Sound comes in one
 			// buffer read into again and again, so it is copied.
 			if kind == "sound" {
 				frame = append([]byte(nil), frame...)

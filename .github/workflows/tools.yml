@@ -84,9 +84,12 @@ jobs:
       # CI is set in the environment on a runner, so make never installs
       # anything by itself here. What a build needs is asked for in the
       # workflow, which is the rule everywhere in this repository.
+      # At the versions requirements.txt pins, see scripts/build-tools.sh.
       - name: What the builds need, on macOS
         if: runner.os == 'macOS'
-        run: brew install meson ninja pkg-config nasm cmake
+        run: |
+          sh scripts/build-tools.sh .build/tools
+          echo "$PWD/.build/tools/bin" >> "$GITHUB_PATH"
 
       - name: What the builds need, on Linux
         if: runner.os == 'Linux'

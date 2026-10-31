@@ -100,7 +100,9 @@ type draftFile struct {
 
 // reporting is the report window and its draft.
 type reporting struct {
-	mu    sync.Mutex
+	mu sync.Mutex
+	// files is where the draft is read and written, the real disk in the
+	// app. Read under mu, since a test hands in other files as it runs.
 	files afero.Fs
 	// Where the draft is kept: draft.json and the pictures beside it.
 	dir    string
@@ -827,12 +829,13 @@ func (r *reporting) servePicture(w http.ResponseWriter, req *http.Request) {
 	r.mu.Lock()
 	r.load()
 	known := slices.ContainsFunc(r.draft.Pictures, func(p ReportPicture) bool { return p.ID == id })
+	files := r.files
 	r.mu.Unlock()
 	if !known {
 		http.NotFound(w, req)
 		return
 	}
-	data, err := afero.ReadFile(r.files, filepath.Join(r.dir, id+".png"))
+	data, err := afero.ReadFile(files, filepath.Join(r.dir, id+".png"))
 	if err != nil {
 		http.NotFound(w, req)
 		return

@@ -35,21 +35,16 @@ missing=""
 want() { command -v "$1" >/dev/null 2>&1 || missing="$missing $2"; }
 want go go
 want npm node
-# What building our own ffmpeg needs. harfbuzz is built with meson, and
-# ffmpeg assembles its own x86 code with nasm.
-if [ ! -x "$FFMPEG_DIR/bin/ffmpeg" ]; then
-	want meson meson
-	want ninja ninja
-	want pkg-config pkg-config
-	want nasm nasm
-fi
-# And what building our own llama-server needs. llama.cpp itself is not
-# installed from Homebrew any more: a customer has no Homebrew, so the
-# llama-server that has to work is the one we build and ship, and the way
-# to find out whether it works is to run that one every day.
-if [ ! -x "$LLAMA_DIR/bin/llama-server" ]; then
-	want cmake cmake
-fi
+# What building our own ffmpeg and llama-server needs, meson, ninja,
+# pkg-config and cmake, comes from requirements.txt at the versions it
+# pins, put in .build/tools by scripts/build-tools.sh as each build starts,
+# and not from Homebrew, which has only its newest, #591. Their
+# environment needs a Python of 3.10 or newer, and the one macOS brings is
+# 3.9, so Homebrew brings one. llama.cpp itself is not installed from
+# Homebrew any more: a customer has no Homebrew, so the llama-server that
+# has to work is the one we build and ship, and the way to find out
+# whether it works is to run that one every day.
+[ -x /opt/homebrew/bin/python3 ] || [ -x /usr/local/bin/python3 ] || missing="$missing python"
 
 if [ -n "$missing" ]; then
 	if ! command -v brew >/dev/null 2>&1; then
@@ -105,7 +100,7 @@ build_tool() {
 		exit 1
 	fi
 	echo "Building the $name framefairy ships. This takes several minutes, once."
-	if sh "$script" "$dir"; then
+	if sh scripts/build-tools.sh --then sh "$script" "$dir"; then
 		rm -f "$dir/failed"
 		echo "$recipe" >"$dir/built"
 		return 0

@@ -491,7 +491,6 @@ func TestTheEpisodesDecoderStandsAPhoneVideoUp(t *testing.T) {
 	if program == "" {
 		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
 	}
-	e := ffmpegOnTheProcessor()
 	first := func(run func(got func(float64, []byte) error) error) []byte {
 		var frame []byte
 		err := run(func(_ float64, data []byte) error {
@@ -510,7 +509,7 @@ func TestTheEpisodesDecoderStandsAPhoneVideoUp(t *testing.T) {
 		}
 		grid := gridOf(t, phone)
 		want := first(func(got func(float64, []byte) error) error {
-			return e.PreviewFrames(t.Context(), phone, grid.At(grid.Holding(0.5)), w, h, got)
+			return ffmpegFrames(t.Context(), phone, grid.At(grid.Holding(0.5)), w, h, got)
 		})
 		dec := NewEpisodeFrames(program, phone)
 		frame := first(func(got func(float64, []byte) error) error {

@@ -490,7 +490,7 @@ type cursor struct {
 	brought  *astiav.Frame
 	filtered *astiav.Frame
 	// The chain that makes a decoded frame the size of the canvas, in
-	// colours ready to draw, the same as engine.PreviewFrames asks of ffmpeg.
+	// colours ready to draw, framewire.Picture.
 	graph  *astiav.FilterGraph
 	src    *astiav.BuffersrcFilterContext
 	sink   *astiav.BuffersinkFilterContext
@@ -1325,7 +1325,7 @@ func (c *cursor) bringOut() error {
 }
 
 // makeGraph builds the chain for the frames the decoder makes, the one
-// engine.PreviewFrames asks of the ffmpeg program, framewire.Picture:
+// the engine's tests ask of the ffmpeg program, framewire.Picture:
 // scaled to the size of the canvas and turned into colours, 10-bit red,
 // green and blue. The colours are ffmpeg's, from the file's own range
 // and matrix, with ffmpeg's defaults where the file says nothing. Plan

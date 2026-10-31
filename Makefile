@@ -354,7 +354,7 @@ $(FRAMES): $(FRAMES_SRC) $(wildcard $(STAMPS)/ffmpeg/built) | modules
 	fi
 	@echo "Building the episode's decoder, framefairy-frames"
 	@mkdir -p $(dir $(FRAMES))
-	@PKG_CONFIG="$(CURDIR)/scripts/pkg-config-static.sh" \
+	@PATH="$(CURDIR)/$(STAMPS)/tools/bin:$$PATH" PKG_CONFIG="$(CURDIR)/scripts/pkg-config-static.sh" \
 		PKG_CONFIG_PATH="$(CURDIR)/$(STAMPS)/ffmpeg/lib/pkgconfig:$(CURDIR)/$(STAMPS)/ffmpeg/deps/lib/pkgconfig" \
 		CGO_ENABLED=1 CGO_CFLAGS="$${CGO_CFLAGS:--O2} -Wno-unused-result" $(GO) build -trimpath -tags ffmpeglibs -ldflags "$(FRAMES_LDFLAGS)" -o $(FRAMES) ./cmd/framefairy-frames
 
@@ -380,7 +380,7 @@ FRESH_FRAMES := $(if $(and $(wildcard $(FRAMES)),$(wildcard $(STAMPS)/ffmpeg/lib
 # there, for when the last one went wrong.
 ffmpeg:
 	@rm -rf $(STAMPS)/ffmpeg
-	@sh scripts/build-ffmpeg.sh $(STAMPS)/ffmpeg
+	@sh scripts/build-tools.sh --then sh scripts/build-ffmpeg.sh $(STAMPS)/ffmpeg
 	@cksum scripts/build-ffmpeg.sh | cut -d' ' -f1 >$(STAMPS)/ffmpeg/built
 
 # The llama-server we ship, so choosing a local model is not an instruction
@@ -389,7 +389,7 @@ ffmpeg:
 # whatever is there.
 llama:
 	@rm -rf $(STAMPS)/llama
-	@sh scripts/build-llama.sh $(STAMPS)/llama
+	@sh scripts/build-tools.sh --then sh scripts/build-llama.sh $(STAMPS)/llama
 	@cksum scripts/build-llama.sh | cut -d' ' -f1 >$(STAMPS)/llama/built
 
 # Both of them in one archive, with a manifest that says what each one is
