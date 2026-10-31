@@ -1519,9 +1519,13 @@ puts its own prompt where the search's was, `saved` on the model held.
 A server that runs already,
 `--llm-url`, is left alone. Only a request that starts with the
 transcript is read ahead of, which of the recipes is `middle`. A line
-read can still be written out differently once more is heard, because
-the loudness a pause is told from is the mean of all that is heard, and
-then it is read again, issue #437.
+read is not written out differently once more is heard, because the
+loudness a pause is told from is measured over the first minute of the
+first part of the episode saved, and kept once that part holds a minute,
+`floorSpan` in `engine/transcript.go`, issue #437. Before then, on a
+machine that saves before it has heard a minute or after a stop in the
+first seconds, a line read can still come out differently, and it is
+read again from there, and the log says so.
 The search's line in the log says how much of its prompt was new. Each
 read leaves two checkpoints, and llama-server keeps 32 by itself, about
 200 MiB each for Gemma 4, so it is told to keep three, the three the

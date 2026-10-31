@@ -1135,3 +1135,90 @@ func TestATranscriptIsDoneWhenNothingIsLeftToHear(t *testing.T) {
 		}
 	}
 }
+
+// The noise floor of an episode's transcript is measured over the first
+// minute of the first part saved, measured again while that part is
+// shorter and kept once it is not. So it is the same whether the first two
+// minutes were saved in one piece, in two, or after a stop a few seconds
+// in, and a part heard after it moves it no more. Measured over all that
+// was heard, the quiet second minute pulled it down, issue #437. Kept from
+// the first save alone, a stop in the quiet before anyone spoke set it to
+// the quiet's level for good.
+func TestTheNoiseFloorIsTheFirstMinutesHoweverTheSavesFall(t *testing.T) {
+	// Twenty seconds of room before anyone speaks, then a loud voice to
+	// the end of the first minute and a quiet one after it, a word every
+	// half second.
+	frames := make([]float32, int(120/timed.FrameSeconds))
+	var words []timed.Cue
+	for i := range frames {
+		at := float64(i) * timed.FrameSeconds
+		frames[i] = -60
+		if at >= 20 && i%50 < 35 {
+			frames[i] = -20
+			if at >= 60 {
+				frames[i] = -40
+			}
+		}
+		if at >= 20 && i%50 == 0 {
+			words = append(words, timed.Cue{Start: at, End: at + 0.35, Text: fmt.Sprintf("wort%d", i/50)})
+		}
+	}
+	within := func(from, to float64) ([]timed.Cue, []float32) {
+		var in []timed.Cue
+		for _, w := range words {
+			if w.Start >= from && w.Start < to {
+				in = append(in, w)
+			}
+		}
+		return in, frames[int(math.Round(from/timed.FrameSeconds)):int(math.Round(to/timed.FrameSeconds))]
+	}
+	floorAfter := func(parts ...timed.Window) float64 {
+		t.Helper()
+		files := afero.NewMemMapFs()
+		if err := afero.WriteFile(files, "/ep.mp4", []byte("the video"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		stamp, err := stampOf(files, "/ep.mp4")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, part := range parts {
+			heard, measured := within(part.Start, part.End)
+			if err := addHeard(files, "/words.json", stamp, "parakeet", 120, part, heard, measured, part.Start); err != nil {
+				t.Fatal(err)
+			}
+		}
+		file, _, _, ok := readTranscriptFile(files, "/words.json", stamp, "parakeet")
+		if !ok {
+			t.Fatal("the transcript cannot be read back")
+		}
+		return float64(file.Mean)
+	}
+	of := func(from, to float64) float64 {
+		return meanOfFrames(frames[int(from/timed.FrameSeconds):int(to/timed.FrameSeconds)])
+	}
+
+	first, all, stopped := of(0, 60), of(0, 120), of(0, 16)
+	if math.Abs(first-all) < 1 || math.Abs(first-stopped) < 1 {
+		t.Fatalf("the first minute is %.1f dB, both %.1f dB and the quiet start %.1f dB, too close for this "+
+			"test to prove anything", first, all, stopped)
+	}
+	for _, c := range []struct {
+		name  string
+		parts []timed.Window
+		want  float64
+	}{
+		{"in one piece", []timed.Window{{Start: 0, End: 120}}, first},
+		{"in two", []timed.Window{{Start: 0, End: 70}, {Start: 70, End: 120}}, first},
+		{"stopped in the quiet", []timed.Window{{Start: 0, End: 16}, {Start: 16, End: 120}}, first},
+		{"saved every few seconds", []timed.Window{{Start: 0, End: 2}, {Start: 2, End: 16}, {Start: 16, End: 40},
+			{Start: 40, End: 120}}, first},
+		// The first part saved is where the floor is measured, and what is
+		// heard before it later moves it no more.
+		{"from the middle first", []timed.Window{{Start: 30, End: 100}, {Start: 0, End: 30}}, of(30, 90)},
+	} {
+		if got := floorAfter(c.parts...); math.Abs(got-c.want) > 0.001 {
+			t.Errorf("saved %s, %v, the floor is made from %.3f dB, want %.3f dB", c.name, c.parts, got, c.want)
+		}
+	}
+}
