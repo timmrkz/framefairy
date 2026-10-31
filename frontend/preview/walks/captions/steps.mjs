@@ -2196,11 +2196,19 @@ async function watchPills(page) {
           }
         }
       }
-      const frame = (word) => {
-        if (!word) return null;
-        const f = word.getBoundingClientRect();
+      // Words lit together share one pill, so what stands on the pill
+      // is the box round all of them, #280.
+      const frame = (words) => {
+        if (!words.length) return null;
+        const boxes = words.map((w) => w.getBoundingClientRect());
+        const f = {
+          left: Math.min(...boxes.map((b) => b.left)),
+          right: Math.max(...boxes.map((b) => b.right)),
+          top: Math.min(...boxes.map((b) => b.top)),
+          bottom: Math.max(...boxes.map((b) => b.bottom)),
+        };
         return {
-          text: word.textContent,
+          text: words.map((w) => w.textContent).join(" "),
           x: (f.left + f.right) / 2 - c.left,
           y: (f.top + f.bottom) / 2 - c.top,
           t: f.top - c.top,
@@ -2214,8 +2222,8 @@ async function watchPills(page) {
         t: performance.now(),
         late: window.__captionLayers?.late ?? false,
         bounced: window.__captionLayers?.stats.bounced ?? 0,
-        now: frame(box.querySelector(".word.now")),
-        keyed: frame(box.querySelector(".word.keyed")),
+        now: frame([...box.querySelectorAll(".word.now")]),
+        keyed: frame([...box.querySelectorAll(".word.keyed")]),
         pill:
           l === Infinity
             ? null
