@@ -349,9 +349,7 @@ func TestProjectReportsErrors(t *testing.T) {
 	e.OpenRecognizer = func(string) (Recognizer, error) {
 		return nil, errors.New("no model here")
 	}
-	base := DefaultOptions()
-	base.ASRModel = speechModelFolder(t)
-	p := NewProject(e, source, base)
+	p := NewProject(e, source, DefaultOptions())
 	err := p.Transcribe(context.Background())
 	if !errors.Is(err, ErrStepFailed) {
 		t.Fatalf("got %v", err)
@@ -381,7 +379,7 @@ func TestAFailedStepSaysWhatWentWrong(t *testing.T) {
 	e := NewEngine(runlog.New(&logged, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return nil, broken }
 	base := DefaultOptions()
-	base.ASRModel = speechModelFolder(t)
+	base.ASRModel = t.TempDir()
 	p := NewProject(e, source, base)
 	err := p.Transcribe(context.Background())
 	if !errors.Is(err, ErrStepFailed) || !errors.Is(err, broken) {

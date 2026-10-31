@@ -475,8 +475,9 @@ type cursor struct {
 	// Closed when the decoder is made to hang, see hangAfter, which says
 	// at once what chipHang says on the clock.
 	hangs chan struct{}
-	// When the call into the decoder the cursor is in began, counted from
-	// started and one more, or 0 while it is in none, see inDecoder.
+	// When the stretch of work the cursor is in began, counted from
+	// started and one more, or 0 while it waits on the file or the engine
+	// or is not watched, see watch and outside.
 	calling atomic.Int64
 
 	v       *video
@@ -567,40 +568,76 @@ func (c *cursor) run() {
 	c.free()
 }
 
-// chipHang is how long one call into the decoder may take on the
-// graphics chip: a decoder opened, flushed or freed, a packet handed in,
-// a frame taken out or brought off the chip. Each takes milliseconds, a
-// frame of 4K too. On CI's virtual Mac
-// the chip stopped once in the middle of a stream and never went on, and
-// the video preview with it, issue #553. ffmpeg's calls cannot be called
-// off, so the work is left where it hangs. Reading the file is not
-// watched, so a slow disk or a file still coming down from iCloud is no
-// hang, and neither is a long seek, which is many calls.
+// chipHang is how long a cursor on the graphics chip may work without
+// reading the file or answering the engine. Between two reads it hands a
+// packet in, takes a frame out, brings it off the chip and scales it,
+// which takes milliseconds, a frame of 4K too. On CI's virtual Mac the
+// chip stopped once in the middle of a stream and never went on, and the
+// video preview with it, issue #553, and once in the first open of every
+// cursor of picture, issue #638. ffmpeg's calls cannot be called off, so
+// the work is left where it hangs.
+//
+// Every stretch of a chip cursor's work is timed, and only waits are left
+// out, see outside: reading the file, so a slow disk or a file still
+// coming down from iCloud is no hang, and neither is a long seek, which
+// reads all the way, and answering the engine, which may be slow to take
+// what it asked for. Timing only the calls known to reach the chip missed
+// every call nobody had seen hang yet, once in each of #553, #570, #581
+// and #638.
 const chipHang = 10 * time.Second
 
-// started is what the calls into the decoder are timed from, on the
-// clock that only goes forward.
+// started is what the work is timed from, on the clock that only goes
+// forward.
 var started = time.Now()
 
-// inDecoder makes one call into the decoder, noting when it began, so
-// watch can tell a chip that hangs from work that is only long.
-func (c *cursor) inDecoder(call func() error) error {
-	c.calling.Store(int64(time.Since(started)) + 1)
-	defer c.calling.Store(0)
-	return call()
+// since is the moment now, as calling keeps it.
+func since() int64 { return int64(time.Since(started)) + 1 }
+
+// outside runs wait, which waits on the file or on the engine, outside
+// the time watch keeps, and starts the stretch after it anew. On a cursor
+// that is not watched it only runs wait.
+func (c *cursor) outside(wait func() error) error {
+	if c.calling.Swap(0) == 0 {
+		return wait()
+	}
+	defer c.calling.Store(since())
+	return wait()
 }
 
-// stuck tells whether the cursor has been in one call into the decoder
-// for chipHang or more.
+// answer hands the engine a record of this cursor, outside the time
+// watch keeps.
+func (c *cursor) answer(r framewire.Record) {
+	_ = c.outside(func() error {
+		c.d.answer(r)
+		return nil
+	})
+}
+
+// readPacket reads the next packet of the file into p, outside the time watch
+// keeps.
+func (c *cursor) readPacket(p *astiav.Packet) error {
+	return c.outside(func() error { return c.v.fc.ReadFrame(p) })
+}
+
+// seekFile seeks the file to the key frame of the picture at ts or
+// before it, outside the time watch keeps.
+func (c *cursor) seekFile(ts int64) error {
+	return c.outside(func() error {
+		return c.v.fc.SeekFrame(c.v.stream.Index(), ts, astiav.NewSeekFlags(astiav.SeekFlagBackward))
+	})
+}
+
+// stuck tells whether the cursor has worked without a wait for chipHang
+// or more.
 func (c *cursor) stuck() bool {
 	at := c.calling.Load()
 	return at != 0 && time.Since(started)-time.Duration(at-1) >= chipHang
 }
 
 // watch runs one piece of the cursor's work and tells whether the cursor
-// goes on. On the graphics chip it gives up on the cursor once one call
-// into the decoder has taken chipHang: the stream is told the cursor
-// hung, and every decoder from then on decodes on the processor. On the
+// goes on. On the graphics chip it gives up on the cursor once it has
+// worked for chipHang without a wait: the stream is told the cursor hung,
+// and every decoder from then on decodes on the processor. On the
 // processor nothing is watched, since work there is as slow as the
 // machine is.
 func (c *cursor) watch(job func()) bool {
@@ -610,8 +647,10 @@ func (c *cursor) watch(job func()) bool {
 		return true
 	}
 	done := make(chan struct{})
+	c.calling.Store(since())
 	go func() {
 		defer close(done)
+		defer c.calling.Store(0)
 		job()
 	}()
 	var tick <-chan time.Time
@@ -620,9 +659,9 @@ func (c *cursor) watch(job func()) bool {
 		defer t.Stop()
 		tick = t.C
 	}
-	// A hang that was made is a call into the decoder that has taken
-	// chipHang, at once: it is one only inside such a call, as on the
-	// clock, so a test sees which calls are watched.
+	// A hang that was made is a stretch of work that has taken chipHang,
+	// at once: it is one only outside a wait, as on the clock, so a test
+	// sees what is watched.
 	hangs := c.hangs
 	for hung := false; !hung; {
 		select {
@@ -636,7 +675,7 @@ func (c *cursor) watch(job func()) bool {
 		}
 	}
 	c.d.chipHung.Store(true)
-	warn("cursor %d, picture: one call into the decoder took %s or more, gives it up and decodes on the processor from now on",
+	warn("cursor %d, picture: worked %s or more without reading the file or answering, gives it up and decodes on the processor from now on",
 		c.id, chipHang)
 	c.d.answer(framewire.Record{Cursor: c.id, Kind: framewire.Hung})
 	return false
@@ -679,7 +718,7 @@ func (c *cursor) say(line string) {
 func (c *cursor) fail(why string) {
 	c.say("failed: " + why)
 	c.failedWhy = why
-	c.d.answer(framewire.Record{Cursor: c.id, Kind: framewire.Failed, Body: []byte(why)})
+	c.answer(framewire.Record{Cursor: c.id, Kind: framewire.Failed, Body: []byte(why)})
 }
 
 // open moves the cursor to frame of the grid: to the key frame shown at
@@ -717,7 +756,11 @@ func (c *cursor) open(frame, w, h int, grid framewire.Grid, key bool) {
 	}
 	opened := c.v == nil
 	if c.v == nil {
-		v, err := openVideo(c.d.path)
+		var v *video
+		err := c.outside(func() (err error) {
+			v, err = openVideo(c.d.path)
+			return err
+		})
 		if err == nil {
 			err = c.openDecoder(v, c.d.chip())
 			if err != nil {
@@ -748,7 +791,7 @@ func (c *cursor) open(frame, w, h int, grid framewire.Grid, key bool) {
 	c.fromKey, c.keyNext = false, false
 	if !opened && !reopened && c.goOn(frame, w, h, grid) {
 		c.say(fmt.Sprintf("went on, at frame %d, %.3f s, for %dx%d, %d ms", frame, from, w, h, time.Since(c.asked).Milliseconds()))
-		c.d.answer(framewire.Record{Cursor: c.id, Kind: framewire.Opened, Body: framewire.OpenedBody(framewire.WentOn, c.light)})
+		c.answer(framewire.Record{Cursor: c.id, Kind: framewire.Opened, Body: framewire.OpenedBody(framewire.WentOn, c.light)})
 		return
 	}
 	c.grid, c.rank, c.until, c.shown, c.retries, c.fromKey, c.keyNext = grid, frame, frame, nil, 0, key, false
@@ -769,7 +812,7 @@ func (c *cursor) open(frame, w, h int, grid framewire.Grid, key bool) {
 	if opened {
 		reached = framewire.OpenedFile
 	}
-	c.d.answer(framewire.Record{Cursor: c.id, Kind: framewire.Opened, Body: framewire.OpenedBody(reached, c.light)})
+	c.answer(framewire.Record{Cursor: c.id, Kind: framewire.Opened, Body: framewire.OpenedBody(reached, c.light)})
 }
 
 // goOn takes the cursor to the frame of the grid without a seek, when that
@@ -809,7 +852,7 @@ func (c *cursor) goOn(frame, w, h int, grid framewire.Grid) bool {
 	for len(c.queued) == 0 || c.queued[len(c.queued)-1].Dts() == astiav.NoPtsValue ||
 		float64(c.queued[len(c.queued)-1].Dts())*tb <= at {
 		p := astiav.AllocPacket()
-		err := c.v.fc.ReadFrame(p)
+		err := c.readPacket(p)
 		if err != nil {
 			p.Free()
 			if errors.Is(err, astiav.ErrEof) {
@@ -863,15 +906,12 @@ func (c *cursor) seek(from float64) error {
 	at := from + c.grid.Origin
 	ts, err := c.keyBefore(at, int64(math.Floor(at/tb)))
 	if err == nil {
-		err = c.v.fc.SeekFrame(c.v.stream.Index(), ts, astiav.NewSeekFlags(astiav.SeekFlagBackward))
+		err = c.seekFile(ts)
 	}
 	if err != nil {
 		return fmt.Errorf("the video cannot be read from %.3f s: %s", from, err)
 	}
-	_ = c.inDecoder(func() error {
-		flushDecoder(c.v.dec)
-		return nil
-	})
+	flushDecoder(c.v.dec)
 	c.held.Unref()
 	c.sentEOF, c.holding = false, false
 	c.dropQueued()
@@ -909,7 +949,7 @@ func (c *cursor) keyBefore(from float64, ts int64) (int64, error) {
 	}
 	landed, back := int64(math.MaxInt64), int64(math.Ceil(1/tb))
 	for range 24 {
-		if err := c.v.fc.SeekFrame(c.v.stream.Index(), ts, astiav.NewSeekFlags(astiav.SeekFlagBackward)); err != nil {
+		if err := c.seekFile(ts); err != nil {
 			return 0, err
 		}
 		pts, dts, err := c.firstKey()
@@ -956,7 +996,7 @@ func (c *cursor) keyBefore(from float64, ts int64) (int64, error) {
 // is decoded. It is read and let go, so a seek has to follow it.
 func (c *cursor) firstKey() (pts, dts int64, err error) {
 	for {
-		if err := c.v.fc.ReadFrame(c.pkt); err != nil {
+		if err := c.readPacket(c.pkt); err != nil {
 			return 0, 0, err
 		}
 		if c.pkt.StreamIndex() != c.v.stream.Index() || !c.pkt.Flags().Has(astiav.PacketFlagKey) {
@@ -988,7 +1028,7 @@ func (c *cursor) next(n int, skip float64) {
 	for sent < n {
 		if c.rank >= c.grid.Count {
 			c.say(fmt.Sprintf("the grid ended after %d frames of %d asked", sent, n))
-			c.d.answer(framewire.Record{Cursor: c.id, Kind: framewire.End})
+			c.answer(framewire.Record{Cursor: c.id, Kind: framewire.End})
 			return
 		}
 		if c.shown == nil || c.rank >= c.until {
@@ -1001,7 +1041,7 @@ func (c *cursor) next(n int, skip float64) {
 			if err != nil {
 				if errors.Is(err, astiav.ErrEof) {
 					c.say(fmt.Sprintf("the video ended after %d frames of %d asked", sent, n))
-					c.d.answer(framewire.Record{Cursor: c.id, Kind: framewire.End})
+					c.answer(framewire.Record{Cursor: c.id, Kind: framewire.End})
 				} else {
 					c.fail(err.Error())
 				}
@@ -1019,7 +1059,7 @@ func (c *cursor) next(n int, skip float64) {
 			c.firstSaid = true
 			c.say(fmt.Sprintf("first frame %d at %.3f s, %d ms after the open, %d decoded", c.rank, at, time.Since(c.asked).Milliseconds(), c.decodedInOpen))
 		}
-		c.d.answer(framewire.Record{Cursor: c.id, Kind: framewire.Frame, At: at, Body: c.shown})
+		c.answer(framewire.Record{Cursor: c.id, Kind: framewire.Frame, At: at, Body: c.shown})
 		c.rank++
 		if key {
 			// The frames between the key frame and the frame asked for
@@ -1032,7 +1072,7 @@ func (c *cursor) next(n int, skip float64) {
 	if took := time.Since(began); took > 250*time.Millisecond {
 		c.say(fmt.Sprintf("%d frames took %d ms, %d sent", n, took.Milliseconds(), sent))
 	}
-	c.d.answer(framewire.Record{Cursor: c.id, Kind: framewire.Done})
+	c.answer(framewire.Record{Cursor: c.id, Kind: framewire.Done})
 }
 
 // advance makes the picture shown for the cursor's frame of the grid: the
@@ -1116,7 +1156,7 @@ func (c *cursor) seekBack(landed float64) error {
 func (c *cursor) decode() (float64, error) {
 	tb := c.v.stream.TimeBase().Float64()
 	for {
-		err := c.inDecoder(func() error { return c.v.dec.ReceiveFrame(c.decoded) })
+		err := c.v.dec.ReceiveFrame(c.decoded)
 		switch {
 		case err == nil:
 			// Its moment is ffmpeg's best guess, as the ffmpeg program
@@ -1203,10 +1243,7 @@ func (c *cursor) toProcessor(why error) error {
 func (c *cursor) reopenDecoder(hardware *astiav.HardwareDeviceContext) error {
 	c.disown(&c.keys)
 	c.freeGraph()
-	_ = c.inDecoder(func() error {
-		c.v.dec.Free()
-		return nil
-	})
+	c.v.dec.Free()
 	c.v.dec = nil
 	if err := c.openDecoder(c.v, hardware); err != nil {
 		c.v.close()
@@ -1217,21 +1254,17 @@ func (c *cursor) reopenDecoder(hardware *astiav.HardwareDeviceContext) error {
 	return nil
 }
 
-// openDecoder opens v's decoder for the cursor as one call into the
-// decoder, which watch times: on a Mac it asks VideoToolbox whether the
-// chip decodes the codec and hands the decoder the chip, and either can
-// hang where the chip does. On CI's virtual Mac every cursor of picture
-// stood in its first open for two minutes while the one of sound opened,
-// and no cursor was given up, because only a packet handed in, a frame
-// taken out or brought off the chip was timed, issue #638.
+// openDecoder opens v's decoder for the cursor: on a Mac it asks
+// VideoToolbox whether the chip decodes the codec and hands the decoder
+// the chip, and either can hang where the chip does. It was not timed,
+// and on CI's virtual Mac every cursor of picture stood in its first
+// open for two minutes while the one of sound opened, issue #638.
 func (c *cursor) openDecoder(v *video, hardware *astiav.HardwareDeviceContext) error {
-	return c.inDecoder(func() error {
-		if hangInOpen && !c.d.chipHung.Load() {
-			close(c.hangs)
-			select {}
-		}
-		return v.openDecoder(hardware, c.say)
-	})
+	if hangInOpen && !c.d.chipHung.Load() {
+		close(c.hangs)
+		select {}
+	}
+	return v.openDecoder(hardware, c.say)
 }
 
 // show scales the frame in decoded through the chain and shows it from
@@ -1275,10 +1308,10 @@ func (c *cursor) feed() error {
 			c.queued = append(c.queued[:0], c.queued[1:]...)
 			defer p.Free()
 		} else {
-			err := c.v.fc.ReadFrame(p)
+			err := c.readPacket(p)
 			if errors.Is(err, astiav.ErrEof) {
 				c.sentEOF = true
-				return c.inDecoder(func() error { return c.v.dec.SendPacket(nil) })
+				return c.v.dec.SendPacket(nil)
 			}
 			if err != nil {
 				return c.withSaid(fmt.Errorf("the video could not be read: %w", err))
@@ -1297,13 +1330,11 @@ func (c *cursor) feed() error {
 		if !c.sound {
 			c.skipBefore(p)
 		}
-		err := c.inDecoder(func() error {
-			if hangAfter > 0 && !c.sound && c.sentInOpen == hangAfter && madeToHang.CompareAndSwap(false, true) {
-				close(c.hangs)
-				select {}
-			}
-			return c.v.dec.SendPacket(p)
-		})
+		if hangAfter > 0 && !c.sound && c.sentInOpen == hangAfter && madeToHang.CompareAndSwap(false, true) {
+			close(c.hangs)
+			select {}
+		}
+		err := c.v.dec.SendPacket(p)
 		p.Unref()
 		if err != nil && !errors.Is(err, astiav.ErrEagain) {
 			return c.withSaid(fmt.Errorf("the picture could not be decoded: %w", err))
@@ -1347,7 +1378,7 @@ func (c *cursor) bringOut() error {
 	if c.decoded.PixelFormat() != astiav.PixelFormatVideotoolbox {
 		return nil
 	}
-	err := c.inDecoder(func() error { return c.decoded.TransferHardwareData(c.brought) })
+	err := c.decoded.TransferHardwareData(c.brought)
 	if err == nil {
 		err = copyFrameProps(c.brought, c.decoded)
 	}

@@ -88,18 +88,9 @@ func open(t *testing.T) *desk {
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
 	d := &desk{t: t, home: home, speech: &speech{}, model: newModel(t)}
-	// A folder the engine takes for a speech model's, so the stand-in the
-	// desk hands it is the one asked, and its failures are its own.
-	speechModel := filepath.Join(home, "speech-model")
-	if err := os.MkdirAll(speechModel, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(speechModel, "tokens.txt"), []byte("<blk> 0\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
 	st := openStore()
 	if err := st.UpdateSettings(func(s *Settings) {
-		s.ASRModel = speechModel
+		s.ASRModel = filepath.Join(home, "speech-model")
 		s.OutputDir = filepath.Join(home, "shorts")
 		s.Planner = "local"
 	}); err != nil {
