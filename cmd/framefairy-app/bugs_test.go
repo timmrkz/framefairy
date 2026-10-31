@@ -746,8 +746,8 @@ func (h *heldMove) Rename(from, to string) error {
 // Issue #632, where a draft written during the reset failed it with
 // "directory not empty".
 func TestAnEndedReportWritesNothingMore(t *testing.T) {
-	disk := afero.NewMemMapFs()
-	held := &heldMove{Fs: disk, at: make(chan struct{}), free: make(chan struct{})}
+	files := afero.NewMemMapFs()
+	held := &heldMove{Fs: files, at: make(chan struct{}), free: make(chan struct{})}
 	r := newReporting(held, "/config/report")
 	s := &FrameFairy{report: r}
 
@@ -773,7 +773,7 @@ func TestAnEndedReportWritesNothingMore(t *testing.T) {
 	if d := s.AttachPasted("shot.png", base64.StdEncoding.EncodeToString(pngOf(t, 4, 4))); len(d.Pictures) != 0 {
 		t.Fatalf("a picture pasted after the report ended was kept: %+v", d.Pictures)
 	}
-	names, err := afero.ReadDir(disk, "/config/report")
+	names, err := afero.ReadDir(files, "/config/report")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -784,7 +784,7 @@ func TestAnEndedReportWritesNothingMore(t *testing.T) {
 		}
 		t.Fatalf("the report's folder holds %v, want only draft.json", got)
 	}
-	if again := newReporting(disk, "/config/report"); (&FrameFairy{report: again}).ReportDraft().Text != "typed as the walk ended" {
+	if again := newReporting(files, "/config/report"); (&FrameFairy{report: again}).ReportDraft().Text != "typed as the walk ended" {
 		t.Fatal("the save in hand was not kept whole")
 	}
 }
