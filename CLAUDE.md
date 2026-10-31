@@ -143,10 +143,10 @@ thing belongs. In short:
   mostly never done. Google sends a second thing as a second small change
   right away. A session here holds one pull request at a time, so a small
   second thing Tim asks for in the thread goes into the open one, as a
-  commit of its own named in the description. Only a problem the pull
-  request did not cause, and that cannot be done now, is logged: a bug
-  seen while testing, a review finding that points elsewhere, a larger
-  ask. It becomes a
+  commit of its own named in the description. Only something wrong that
+  the pull request did not cause, and that cannot be done now, is
+  logged: a bug seen while testing, a review finding that points
+  elsewhere, a larger ask. It becomes a
   [GitHub issue](https://github.com/timmrkz/framefairy/issues) of its
   own, with what was seen, where, who found it and what to build, linked
   in the reply and under Found along the way. It carries one label or
@@ -181,7 +181,10 @@ thing belongs. In short:
   it: a test that has just failed on main, or an issue that comes with
   its trace or its log, goes before an older one still waiting for its
   next failure to show why. Following the evidence in hand gets a fix
-  done sooner. The session says which it picked and why.
+  done sooner. An incident under an open `problem` issue is taken up
+  as its problem, see
+  [Problems that come back](docs/WORKFLOW.md#problems-that-come-back).
+  The session says which it picked and why.
 - His machine is an M2 Max with 32 GB of memory, on the latest macOS, with
   Go 1.27, Homebrew and the models in `~/.framefairy/models`. ffmpeg and
   llama-server are built by `make` and live in `bin/`, the only place the

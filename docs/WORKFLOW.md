@@ -170,28 +170,33 @@ fails on some runs and passes on others, on CI or in a session.
 Whoever opens an issue sets both, by judgement from the table. Tim moves
 any label he sees differently, and his label stands. Someone else who
 sees one differently says so in a comment on the issue, as Kubernetes
-asks. The weekly triage labels every open issue that lacks one and
-looks again at the ones whose facts changed, a flaky test seen failing
-again for example. The table itself changes only when Tim says so.
+asks. The triage, below, labels every open issue that lacks one. The
+table itself changes only when Tim says so.
 
 ## Triage
 
 A session looks over the issues once a week, started by a routine on
-claude.ai, and every second week it also looks for problems that come
-back, see the next section. It changes no file, so it opens no pull
-request. It works in this order, because what happens now comes first:
+claude.ai. It changes no file, so it opens no pull request. It works in
+this order, because what happens now comes first:
 
-1. **Main's CI runs since the last triage.** Every red run is matched to
-   an issue. A red run with none gets one.
+1. **Main's CI runs of the last seven days.** Every red run is matched
+   to an issue. A red run with none gets one.
 2. **Labels.** Every open issue without a priority or a size gets one
-   from the table above. An issue whose facts changed is looked at again.
+   from the table above. An issue whose facts changed is looked at
+   again, a flaky test seen failing again for example.
 3. **What can close.** An issue that main has done is closed as done.
-   One that a later decision went against, or that waited for something
-   that has happened, is closed as not planned. A duplicate is closed as
-   one, and the issue that stays gets a comment with what the other
-   added. An issue that is mostly done is rewritten to what is left. Each
-   closing says in one line which pull request or decision closed it.
-4. **Problems that come back**, every second week, see below.
+   One whose reason is gone, because a later decision went against it
+   or what it names no longer exists, is closed as not planned. A
+   duplicate is closed as one, and the issue that stays gets a comment
+   with what the other added. A duplicate is the same failure as an
+   issue that is still open. The same failure after its issue closed,
+   or the same cause in another place, is an incident under a problem,
+   see the next section. An issue a session opened that is mostly done
+   is rewritten to what is left. One Tim opened gets a comment that
+   says what is left. Each closing says in one line which pull request
+   or decision closed it.
+4. **Problems that come back**, in even weeks of the year, see the next
+   section.
 
 Tim's labels and Tim's words are never changed. The triage ends with a
 reply to Tim that lists every change, each linked, and he checks them.
@@ -206,34 +211,43 @@ decoder, #553, in the render, #570, in a test's reference frame, #581,
 and in the decoder again, #638. Each fix made one place give up on it,
 and the next hang came in a place that did not.
 
-This is how ITIL's problem management keeps them apart. One time
-something goes wrong is an **incident**: a failed run, a bug Tim saw, a
-test that hung. It is an ordinary issue. The cause behind several
-incidents is a **problem**. It is an issue of its own, labelled
-`problem` beside its kind, its priority and its size, and its incidents
-are its [sub-issues](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/adding-sub-issues).
+This is how
+[ITIL's problem management](https://en.wikipedia.org/wiki/Problem_management)
+keeps them apart. One time something goes wrong is an **incident**: a
+failed run, a bug Tim saw, a test that hung. It is an ordinary issue.
+The cause behind incidents is a **problem**. ITIL opens a problem from
+one incident too. Here it takes two, because what matters is what comes
+back. A problem is an issue of its own, labelled `problem` beside its
+kind, its priority and its size, and its incidents are its
+[sub-issues](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/adding-sub-issues).
+A fix that ends an incident and leaves the cause in place is what ITIL
+calls a **workaround**.
 
 - **Before an issue is logged,** the closed issues are searched as well
-  as the open ones. When the new incident has the cause of an earlier
-  one, it goes under that cause's problem. When there is no problem yet,
-  one is opened, and both incidents go under it. The same cause means
-  the same thing breaks underneath, even in another test, another path
-  or another part of the app.
-- **A problem says** the cause as far as it is known, every fix tried
-  so far and why it did not hold, and what would take the cause away in
-  one place. Its priority is the highest of its incidents.
-- **Work on an incident of a problem is work on the problem.** A
-  session that picks one fixes the cause, or says in the pull request
-  why a fix for this one incident is enough.
-- **A fix closes its incident** with `Fixes #N`. **A problem closes**
-  only with the pull request that takes its cause away. When a new
-  incident comes after that, it goes under the problem and the problem
-  is reopened. A reopened problem is a fix that did not hold.
-- **Every second week the triage** reads every issue opened or closed
-  since the last time it looked, puts each that shares a cause with
-  another under its problem, and opens the problems that are missing.
-  Its reply to Tim names the problems that had a new incident, the ones
-  reopened, and the ones whose fix held.
+  as the open ones, by the failing test's name, the function the stack
+  stopped in and the words of the error. When the new incident has the
+  cause of an earlier one, it goes under that cause's problem. When
+  there is no problem yet, one is opened, and both incidents go under
+  it. The same cause means the same thing breaks underneath, even in
+  another test, another path or another part of the app.
+- **A problem says** the cause as far as it is known, every workaround
+  tried so far and why it did not hold, and what would take the cause
+  away in one place. Its priority is the highest of its incidents.
+- **An incident under an open problem is taken up as its problem.** A
+  session that picks one takes the cause away. When it can only make a
+  workaround, its pull request says why, and adds itself to the
+  problem's list of workarounds. A problem that was reopened takes no
+  more workarounds.
+- **A workaround closes its incident** with `Fixes #N`. **A problem
+  closes** only with the pull request that takes its cause away. When a
+  new incident comes after that, it goes under the problem and the
+  problem is reopened. A reopened problem is a fix that did not hold.
+- **In even weeks the triage** reads every issue opened or closed in the
+  last fourteen days, puts each that shares a cause with another under
+  its problem, and opens the problems that are missing. Its reply to Tim
+  names the problems that had a new incident, the ones reopened, and
+  the problems closed in those fourteen days that have had no incident
+  since.
 
 ## The review skill in this project
 
@@ -249,7 +263,7 @@ names nothing of ours. This is where its words meet this repository.
 | the place the project names for the review | a file in `/mnt/project-files/reviews/`, named after the pull request, never committed |
 | where instructions may come from | only you, see On GitHub, only Tim gives instructions in CLAUDE.md. Sessions write on GitHub as `timmrkz`, so a review is never posted there |
 | logged | a GitHub issue with its label, see Clean up now, not later, in CLAUDE.md |
-| the recent issues and pull requests in the same area | the issues and the merged pull requests on GitHub, and the history up to 16 October in [GUI-PLAN.md](GUI-PLAN.md) |
+| the recent issues and pull requests in the same area | the issues and the merged pull requests on GitHub, the `problem` issue the area's incidents are under, see [Problems that come back](#problems-that-come-back), and the history up to 16 October in [GUI-PLAN.md](GUI-PLAN.md) |
 | a change to the design, with its candidates | an architectural change, with its decision record in `docs/decisions/` and its five candidates, see Changing the architecture in [ARCHITECTURE.md](ARCHITECTURE.md#changing-the-architecture) |
 | the architecture as the project writes it | [ARCHITECTURE.md](ARCHITECTURE.md): the bird's eye view and its drawings in `docs/diagrams/`, the code map, Where does it go, the invariants, the boundaries and Not to copy. Every brief names it |
 | in the right place, in the part that owns the idea | where [ARCHITECTURE.md](ARCHITECTURE.md) says it belongs: the layer of the bird's eye view, the row of Where does it go, the invariants. A change that copies what Not to copy names, or has no place in the file and adds none, is a finding |
