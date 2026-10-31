@@ -3,7 +3,9 @@ package main
 import (
 	"path/filepath"
 	"slices"
+	"sync"
 	"testing"
+	"testing/synctest"
 
 	"github.com/spf13/afero"
 
@@ -93,6 +95,60 @@ func TestAFolderWrittenBackAfterItWasDeletedIsLetGoAndCleared(t *testing.T) {
 	if there, _ := afero.DirExists(files, engine.WorkDir(ep)); there {
 		t.Errorf("what was written back into %s is still there", engine.WorkDir(ep))
 	}
+}
+
+// removeHeld is a disk whose RemoveAll says that it began and waits to be
+// let go, so a test holds a delete in the middle.
+type removeHeld struct {
+	afero.Fs
+	began, letGo chan struct{}
+	once         sync.Once
+}
+
+func (f *removeHeld) RemoveAll(path string) error {
+	f.once.Do(func() { close(f.began) })
+	<-f.letGo
+	return f.Fs.RemoveAll(path)
+}
+
+func TestQuittingWaitsForTheDeleteOfAVideoLetGo(t *testing.T) {
+	// The app quit while it deleted what was written back into the folder
+	// of a video let go, and left part of it behind, issue #507. The
+	// delete is held, and quitting waits for it.
+	synctest.Test(t, func(t *testing.T) {
+		svc, eps := memoryLibrary(t, "youtube.mp4")
+		files := svc.store.files
+		ep := eps[0]
+		if err := files.RemoveAll(engine.WorkDir(ep)); err != nil {
+			t.Fatal(err)
+		}
+		if err := changeChosen(files, ep, func(c *chosen) { c.Opened = 1 }); err != nil {
+			t.Fatal(err)
+		}
+		held := &removeHeld{Fs: files, began: make(chan struct{}), letGo: make(chan struct{})}
+		svc.store.files = held
+		withJobs(svc)
+		if listed(svc.Library(), ep) {
+			t.Fatalf("the folder written back kept %s in the library", ep)
+		}
+		<-held.began
+		quit := make(chan struct{})
+		go func() {
+			svc.stopAll()
+			close(quit)
+		}()
+		synctest.Wait()
+		select {
+		case <-quit:
+			t.Fatal("the app quit in the middle of deleting what was written back")
+		default:
+		}
+		close(held.letGo)
+		<-quit
+		if there, _ := afero.DirExists(files, engine.WorkDir(ep)); there {
+			t.Errorf("what was written back into %s is still there after the app quit", engine.WorkDir(ep))
+		}
+	})
 }
 
 func TestVideosAddedBeforeTheMarkAreMarkedOnceByTheirWork(t *testing.T) {

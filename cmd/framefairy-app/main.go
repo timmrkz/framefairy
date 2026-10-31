@@ -137,10 +137,7 @@ func main() {
 	})
 	quit := sync.OnceFunc(func() {
 		engine.CloseModels()
-		svc.jobs.shutDown()
-		svc.levels.shutDown()
-		// A build that is ready goes in place once the app is gone.
-		svc.updates.installOnQuit()
+		svc.stopAll()
 	})
 	// What Cmd+Q does, see quit.go. The hook above stays for whatever
 	// ends the app without asking, a signal from the terminal among them.
