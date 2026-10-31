@@ -1135,3 +1135,71 @@ func TestATranscriptIsDoneWhenNothingIsLeftToHear(t *testing.T) {
 		}
 	}
 }
+
+// The noise floor of an episode's transcript is measured over the first
+// minute of the first part saved and kept, so it is the same whether the
+// first two minutes were saved in one piece or in two, and a quieter part
+// heard after it moves it no more. Measured over all that was heard, the
+// quiet second minute pulled it down, issue #437.
+func TestTheNoiseFloorIsTheFirstMinutesHoweverTheSavesFall(t *testing.T) {
+	// A loud first minute and a quiet second, words every half second.
+	frames := make([]float32, int(120/timed.FrameSeconds))
+	var words []timed.Cue
+	for i := range frames {
+		frames[i] = -60
+		if i%50 < 35 {
+			frames[i] = -20
+			if i >= len(frames)/2 {
+				frames[i] = -40
+			}
+		}
+		if i%50 == 0 {
+			at := float64(i) * timed.FrameSeconds
+			words = append(words, timed.Cue{Start: at, End: at + 0.35, Text: fmt.Sprintf("wort%d", i/50)})
+		}
+	}
+	within := func(from, to float64) ([]timed.Cue, []float32) {
+		var in []timed.Cue
+		for _, w := range words {
+			if w.Start >= from && w.Start < to {
+				in = append(in, w)
+			}
+		}
+		return in, frames[int(math.Round(from/timed.FrameSeconds)):int(math.Round(to/timed.FrameSeconds))]
+	}
+	floorAfter := func(parts ...timed.Window) float64 {
+		t.Helper()
+		files := afero.NewMemMapFs()
+		if err := afero.WriteFile(files, "/ep.mp4", []byte("the video"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		stamp, err := stampOf(files, "/ep.mp4")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, part := range parts {
+			heard, measured := within(part.Start, part.End)
+			if err := addHeard(files, "/words.json", stamp, "parakeet", 120, part, heard, measured, part.Start); err != nil {
+				t.Fatal(err)
+			}
+		}
+		file, _, _, ok := readTranscriptFile(files, "/words.json", stamp, "parakeet")
+		if !ok {
+			t.Fatal("the transcript cannot be read back")
+		}
+		return float64(file.Mean)
+	}
+
+	first, all := meanOfFrames(frames[:len(frames)/2]), meanOfFrames(frames)
+	if math.Abs(first-all) < 1 {
+		t.Fatalf("the first minute is %.1f dB and both %.1f dB, too close for this test to prove anything", first, all)
+	}
+	whole := floorAfter(timed.Window{Start: 0, End: 120})
+	inTwo := floorAfter(timed.Window{Start: 0, End: 70}, timed.Window{Start: 70, End: 120})
+	for _, got := range []float64{whole, inTwo} {
+		if math.Abs(got-first) > 0.001 {
+			t.Errorf("the floor is made from %.3f dB, want the first minute's %.3f dB and not both minutes' %.3f dB",
+				got, first, all)
+		}
+	}
+}

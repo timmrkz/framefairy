@@ -39,8 +39,11 @@ another clip over the same word reads it as it was heard. It is kept
 against the millisecond the recogniser heard the word start, which
 nothing moves, written `h61200`, and not against where the word starts on
 the sound, which the silence level moves, see `heardIndex` in
-`engine/words.go`. The app measures that level from the audio heard so
-far, so it moves while the rest of a video is heard. Two words heard
+`engine/words.go`. The app measures that level once, over the first
+minute of the first part of a video it saves, and keeps it, so more of a
+video heard later moves no word heard before, `floorSpan` in
+`engine/transcript.go`, issue #437. `--silence-db` on the command line
+sets it by hand in its place. Two words heard
 starting in the same millisecond each have a key of their own, the second
 the next millisecond free. A key kept the old way, the bare millisecond on
 the sound, is read only that way, and is kept anew the next time the

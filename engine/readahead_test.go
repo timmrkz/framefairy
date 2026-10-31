@@ -346,13 +346,13 @@ func TestTheTranscriptIsReadAheadOfTheSearch(t *testing.T) {
 	}
 }
 
-// A part heard later can write a line read before out differently: the
-// loudness a pause is told from is the mean of all that is heard, so a
-// quieter part moves it, and with it where a word after a pause starts,
-// and the pause the request marks. The read after it says so, reads from
-// where the two part, and the search still finds the last read held.
-// Issue #437 is about keeping the line as it was.
-func TestALineReadBeforeAndWrittenOutAgainIsReadAgain(t *testing.T) {
+// A line read stays as it was read, whatever is heard after it: the
+// loudness a pause is told from is fixed by the first minute heard, so a
+// quieter part heard later moves no word after a pause and no pause the
+// request marks, and the model never reads the window again. Before, it
+// was the mean of all that was heard, and the quiet part below wrote the
+// lines of the loud part out again, issue #437.
+func TestALineReadStaysAsItWasWhenAQuieterPartIsHeard(t *testing.T) {
 	fake := &fakeReader{reads: make(chan []int, 16), asks: make(chan fakeAsk, 4)}
 	hostedFake(t, fake)
 	v := videoReadAhead(t, afero.NewMemMapFs(), t.Name())
@@ -373,8 +373,8 @@ func TestALineReadBeforeAndWrittenOutAgainIsReadAgain(t *testing.T) {
 			}
 			return words, frames
 		}
-		// Quiet, so the mean falls and the hum of the first part is
-		// heard as sound.
+		// Quiet, so a mean of all that is heard would fall, and the hum
+		// of the first part would be heard as sound.
 		for i, f := range frames {
 			if f == -20 {
 				frames[i] = -50
@@ -391,14 +391,14 @@ func TestALineReadBeforeAndWrittenOutAgainIsReadAgain(t *testing.T) {
 	first := <-fake.reads
 	v.hear(20, 40)
 	second := <-fake.reads
-	if commonPrefix(first, second) >= len(first) {
-		t.Fatalf("the quiet part changed nothing read before, so this test proves nothing")
+	if same := commonPrefix(first, second); same < len(first) {
+		t.Errorf("the quiet part wrote the lines read before out again from token %d of %d", same, len(first))
 	}
 	v.hear(40, 60)
 	ahead := <-warmed
-	if ahead.Rewritten != 1 || ahead.Read <= ahead.Tokens || ahead.Tokens != len(second) {
-		t.Errorf("the reads ahead are said to be %+v, want one written out again, more read than "+
-			"held, and %d held", ahead, len(second))
+	if ahead.Rewritten != 0 || ahead.Read != ahead.Tokens || ahead.Tokens != len(second) {
+		t.Errorf("the reads ahead are said to be %+v, want none written out again, nothing read twice, "+
+			"and %d held", ahead, len(second))
 	}
 	_ = v.ask(ctx, req)
 	if search := <-fake.asks; search.held != len(second) {

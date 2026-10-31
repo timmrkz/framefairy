@@ -50,7 +50,9 @@ type transcriptFile struct {
 	Model   string      `json:"model"`
 	From    num.Float   `json:"from"`
 	To      num.Float   `json:"to"`
-	Mean    num.Float   `json:"mean"`
+	// Mean is the level the noise floor is made from, measured once over
+	// the start of the first part saved and kept, see floorSpan.
+	Mean num.Float `json:"mean"`
 	// Partial marks a transcription still in progress, or stopped before
 	// the end. To is then how far it got.
 	Partial bool `json:"partial,omitempty"`
@@ -149,6 +151,18 @@ func writeTranscript(fsys afero.Fs, path string, file transcriptFile, frames []f
 	return fileio.WriteAtomic(fsys, path, body)
 }
 
+// floorSpan is how much of the first part saved of an episode's transcript
+// the level of its noise floor is measured over, in seconds, all of the
+// part when it is shorter. The floor is kept from then on, whatever is
+// heard after it. Measured over all that was heard, as it once was, a part
+// heard later, quieter or louder, moved the floor, and with it where words
+// start and end, the pauses between lines and where lines break, in lines
+// heard and read long before, issue #437. A fixed stretch rather than all
+// the first save holds, so a machine that hears a minute before it first
+// saves, eight times faster than the audio plays, gets the same floor
+// however its saves fall, see checkpointDefault.
+const floorSpan = 60.0
+
 // meanOfFrames is the mean level over loudness frames, in dB.
 func meanOfFrames(frames []float32) float64 {
 	if len(frames) == 0 {
@@ -245,7 +259,7 @@ func readEpisodeTranscript(fsys afero.Fs, source, asrModelDir string) (transcrip
 
 // sliceTranscript cuts a window out of the episode's transcript, so no part
 // of the audio is ever heard twice. It has to have heard all of the window.
-// The noise floor stays the one measured over all that was heard.
+// The noise floor stays the episode's, see floorSpan.
 func sliceTranscript(fsys afero.Fs, path string, stamp sourceStamp, model string, window timed.Window,
 	silenceDB *float64) (*Transcript, bool) {
 	file, words, frames, ok := readTranscriptFile(fsys, path, stamp, model)
@@ -561,19 +575,22 @@ func addHeard(fsys afero.Fs, path string, stamp sourceStamp, model string, durat
 	sort.SliceStable(words, func(i, j int) bool { return words[i].Start < words[j].Start })
 	parts = joinParts(append(parts, [2]float64{num.RoundTo(part.Start, 3), num.RoundTo(part.End, 3)}))
 
-	var heard []float32
-	for n, f := range all {
-		if heardFrame(n) || inParts(parts, (float64(n)+0.5)*timed.FrameSeconds) {
-			heard = append(heard, f)
-		}
-	}
 	stored := make([][2]num.Float, len(parts))
 	for i, p := range parts {
 		stored[i] = [2]num.Float{num.Float(p[0]), num.Float(p[1])}
 	}
 	end := num.Float(num.RoundTo(duration, 3))
+	// The level the noise floor is made from is fixed by the first part
+	// saved, see floorSpan, and kept from then on.
+	mean := file.Mean
+	if !ok {
+		at := int(math.Round(read / timed.FrameSeconds))
+		from := min(max(int(math.Round(part.Start/timed.FrameSeconds))-at, 0), len(frames))
+		to := min(max(int(math.Round(math.Min(part.End, part.Start+floorSpan)/timed.FrameSeconds))-at, from), len(frames))
+		mean = num.Float(num.RoundTo(meanOfFrames(frames[from:to]), 3))
+	}
 	err := writeTranscript(fsys, path, transcriptFile{Version: transcriptVersion, Source: stamp, Model: model,
-		To: end, Mean: num.Float(num.RoundTo(meanOfFrames(heard), 3)), Parts: stored, End: end,
+		To: end, Mean: mean, Parts: stored, End: end,
 		Words: storedWords(words)}, all)
 	if err == nil {
 		transcriptGrew(path)
