@@ -1582,7 +1582,8 @@ func bridgeDist(t *testing.T) string {
 // against the bridge, and fails with what they printed when one breaks a
 // rule or a sequence does not come out as it should. make walks runs it,
 // with the interface built for the bridge first, and it only runs when
-// asked, because it needs Node, Playwright's Chromium and the build:
+// asked, because it needs Node, Playwright's Chromium and WebKit, and the
+// build:
 //
 //	make walks
 //	make walks WALKS=40 STEPS=80   to look further

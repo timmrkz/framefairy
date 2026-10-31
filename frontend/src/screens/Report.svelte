@@ -453,7 +453,7 @@
       field.setRangeText(put, a, b);
     }
     if (field.selectionStart !== sel[0] || field.selectionEnd !== sel[1] || field.selectionDirection !== dir) field.setSelectionRange(sel[0], sel[1], dir);
-    if (follow && d.end === d.text.length) reveal(d.end);
+    if (follow && d.end === d.text.length) scroll(place(d.end), top);
     else if (seen && sel[0] === d.end && sel[1] === d.end) reveal(d.end, top);
   }
 
@@ -555,9 +555,10 @@
   function step(how: "undo" | "redo") {
     const c = how === "undo" ? steps.undo(field.value) : steps.redo(field.value);
     if (!c) return;
+    const top = field.scrollTop;
     field.setRangeText(c[2], c[0], c[1], "end");
     follow(...c);
-    reveal(field.selectionEnd);
+    scroll(place(field.selectionEnd), top);
     read();
   }
 

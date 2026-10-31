@@ -52,21 +52,32 @@ let fellBack;
 // and Chromium, which the app runs in on Windows, for the rest and for
 // the random walks until the last part has moved. WALKBROWSER names one
 // for every walk, as the nightly walks do for Chromium. Playwright brings
-// a WebKit of its own for Linux, which takes real key presses. See Two
-// browsers in docs/TESTING.md.
+// a WebKit of its own for Linux, which takes real key presses. SLOW and
+// WALKCOVERAGE work through Chromium's own tools, so either walks every
+// walk in Chromium unless WALKBROWSER says otherwise. See Two browsers in
+// docs/TESTING.md.
 const asked = process.env.WALKBROWSER || "";
 if (asked && asked !== "chromium" && asked !== "webkit") {
   throw new Error(`WALKBROWSER is chromium or webkit, not ${asked}`);
 }
 export function browserFor(part) {
   if (asked) return asked;
+  if (Number(process.env.SLOW) > 1 || process.env.WALKCOVERAGE) return "chromium";
   if (part === undefined) return inChromium.length ? "chromium" : "webkit";
   return inChromium.includes(part) ? "chromium" : "webkit";
 }
 async function launch(name, args) {
   // An interrupt is the walk's own to answer, see keepTraces, not
   // Playwright's, which would close the browser under the traces.
-  if (name === "webkit") return webkit.launch({ handleSIGINT: !traces });
+  if (name === "webkit") {
+    try {
+      return await webkit.launch({ handleSIGINT: !traces });
+    } catch (e) {
+      // There is no older WebKit to fall back on, as there is a Chromium.
+      if (!String(e?.message).includes("Executable doesn't exist")) throw e;
+      throw new Error("Playwright's WebKit is not installed. A cloud session installs it in the background, see /tmp/framefairy-webkit.log, and elsewhere it is npx playwright install --with-deps webkit in frontend", { cause: e });
+    }
+  }
   const options = { args, handleSIGINT: !traces };
   try {
     return await chromium.launch(options);

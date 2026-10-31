@@ -75,7 +75,9 @@ as each session starts, see
 [`scripts/cloud-decoder.sh`](../scripts/cloud-decoder.sh), and the
 targets that run the decoder, `make unit`, `walks` and `test`,
 wait for it, so a session can run the decoder's tests and a walk of its
-own too. It also installs the engineering skills from two plugins, Go skills
+own too. The same hook installs Playwright's WebKit, which the
+environment's browsers lack, see
+[`scripts/cloud-webkit.sh`](../scripts/cloud-webkit.sh). It also installs the engineering skills from two plugins, Go skills
 from `samber/cc-skills-golang` and general ones from `addyosmani/agent-skills`,
 because plugins added on claude.ai do not reach cloud sessions. Each is pinned
 to a commit in `SKILL_SOURCES` at the top of the script, so a new version is

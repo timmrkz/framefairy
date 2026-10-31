@@ -545,7 +545,7 @@ async function walkingSequence(seq, shared) {
   }
   const failed = wrong ?? (watch.failed && `broke: ${watch.failed.rule}\n${watch.failed.detail}`);
   const took = ((performance.now() - began) / 1000).toFixed(1).padStart(5);
-  console.log(`${failed ? "FAIL" : "ok  "}  ${took} s  ${seq.name}`);
+  console.log(`${failed ? "FAIL" : "ok  "}  ${took} s  ${browserFor(seq.part).padEnd(8)}  ${seq.name}`);
   if (failed) console.log(`      after ${done.join(", ")}\n      ${failed.replaceAll("\n", "\n      ")}`);
   if (failed) await keepTraces();
   if (shared) await Promise.all(shared.contexts().map((c) => c.close()));

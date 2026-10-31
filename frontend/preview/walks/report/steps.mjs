@@ -955,30 +955,24 @@ export const steps = {
     const { kept, page } = walk;
     const box = await page.locator(".telling").boundingBox();
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-    const was = await page.locator(".telling").evaluate((f) => f.scrollTop);
+    // The field's own word on the scroll is heard from before the wheel
+    // turns, so a scroll that ends at once is heard too: scroll when it
+    // starts, scrollend when it has come to rest. In WebKit the step read
+    // the field at 99 px, at its first scroll event, and it stood at 0 by
+    // the next step (#380).
+    const was = await page.locator(".telling").evaluate((f) => {
+      f.wheeled = { scrolled: false, ended: new Promise((done) => f.addEventListener("scrollend", () => done(f.scrollTop), { once: true })) };
+      f.addEventListener("scroll", () => (f.wheeled.scrolled = true), { once: true });
+      return f.scrollTop;
+    });
     await page.mouse.wheel(0, arg);
-    // Read where the wheel has left the field, two frames on if it did
-    // not turn it, or once the scroll it started has stood still for two
-    // frames. In WebKit the step read the field at 99 px, at its first
-    // scroll event, and it stood at 0 by the next step (#380).
+    // Where the wheel has left the field: where its scroll came to rest,
+    // or where it was, two frames on, when the wheel turned nothing.
     kept.scrolledTo = await page.locator(".telling").evaluate(
       (f, was) =>
         new Promise((done) => {
-          let last = f.scrollTop;
-          let still = 0;
-          const frame = () => {
-            still = f.scrollTop === last ? still + 1 : 0;
-            last = f.scrollTop;
-            if (still >= 2) done(last);
-            else requestAnimationFrame(frame);
-          };
-          const turned = () => {
-            last = f.scrollTop;
-            requestAnimationFrame(frame);
-          };
-          if (f.scrollTop !== was) return turned();
-          f.addEventListener("scroll", turned, { once: true });
-          requestAnimationFrame(() => requestAnimationFrame(() => f.scrollTop === was && done(was)));
+          f.wheeled.ended.then(done);
+          requestAnimationFrame(() => requestAnimationFrame(() => f.wheeled.scrolled || done(was)));
         }),
       was,
     );

@@ -51,7 +51,7 @@ can show:
 | | Runs | For | Why this way |
 | --- | --- | --- | --- |
 | plain code | Go tests and Vitest, once | every rule that can be said without a page: what a dictation does to the text, where an arrow key takes the cursor, how far a field scrolls | no browser decides it, so a second browser would test the same code twice. It is the quickest test and the easiest to read |
-| the walks | every walk and sequence, in WebKit on every pull request that reaches them, in Chromium every night | what a person does, against the real Go side, in the engine the app runs in | the engines differ where people type and look: the cursor, the selection, the focus, scrolling, fonts and layout. Nearly every bug Tim met in Report a Problem, #574, was WebKit's alone and passed in Chromium. The Mac ships first, and Windows is not built yet |
+| the walks | every walk and sequence on every pull request that reaches them, in WebKit for each part `walks/webkit.mjs` no longer names and in Chromium for the rest, and all of them in Chromium every night | what a person does, against the real Go side, in the engine the app runs in | the engines differ where people type and look: the cursor, the selection, the focus, scrolling, fonts and layout. Nearly every bug Tim met in Report a Problem, #574, was WebKit's alone and passed in Chromium. The Mac ships first, and Windows is not built yet |
 | what only a Mac does | a step that acts out the Mac's behaviour on purpose, and the rule it protects in plain code | how AppKit reaches WebKit: a cursor revealed in the middle of a field, a button that takes no focus from a click, a mouse entering as a plain move | no browser on Linux has it, WebKit's Linux ports included, so a walk can only play it, as `attach, as on a Mac` does |
 
 The walks are the same walks in both browsers, and the browser is a
@@ -63,14 +63,16 @@ the machines, or twice as long on the same ones, see
 walks, `walks-nightly.yml`, walk in Chromium, `WALKBROWSER=chromium`, so
 both engines are walked every day. The WebKit is Playwright's own build
 for Linux, which takes real key presses, and CI's image holds it beside
-the Chromium, see `.github/ci-image/Dockerfile`. `SLOW` and
-`WALKCOVERAGE` work through Chromium's own tools, so they need
-`WALKBROWSER=chromium`, and say so when asked for in WebKit.
+the Chromium, see `.github/ci-image/Dockerfile`. A cloud session gets it
+from the SessionStart hook, see `scripts/cloud-webkit.sh`, and walks one
+sequence in it the way it walks one in Chromium. `SLOW` and
+`WALKCOVERAGE` work through Chromium's own tools, so either walks every
+walk in Chromium, and says so when `WALKBROWSER=webkit` asks for WebKit.
 
 Until every part of the app has moved to WebKit, #380,
 `walks/webkit.mjs` names the parts that still walk in Chromium, and the
 random walks walk there too. A part moves in a pull request of its own,
-which fixes what WebKit finds in it, so a red job names one part. A walk
+which fixes what WebKit finds in it, so each stays a size to review. A walk
 that only passes in Chromium is a walk to fix, not a part to keep there:
 the app on a Mac is WebKit.
 
@@ -183,8 +185,8 @@ for each part, and they run against the bridge.
     SEED=12 STEPS=60 node frontend/preview/walks/words.mjs
 
 `BRIDGE_URL` says where the bridge is, `http://127.0.0.1:8123/` unless
-set. `SLOW=4` runs the page four times slower, through Chromium's own CPU
-throttle, the way a busy CI runner does, to find a walk that counts on
+set. `SLOW=4` runs the page four times slower, in Chromium, through its
+own CPU throttle, the way a busy CI runner does, to find a walk that counts on
 the machine being quick. It slows every page a walk opens, through
 `slowDown` in `walks/bridge.mjs`, the report window too. It does not slow
 the browser's calls from Node, so a walk that times a gesture from Node
@@ -194,7 +196,8 @@ episode back the way it was first searched before every walk,
 
 ### How a walk picks its steps
 
-Each gesture is the real key or click, pressed in Chromium, with a test
+Each gesture is the real key or click, pressed in the browser the walk
+runs in, see Two browsers, with a test
 of when it can be made and a weight for how often it comes up among those
 that can. A seed decides every choice, so the same seed walks the same
 way step for step: a walk that breaks a rule prints its seed and its
@@ -1157,8 +1160,8 @@ since #501, so a broken test video is said where it is found. See
 No test waits on the clock in
 [BUILD.md](BUILD.md#no-test-waits-on-the-clock).
 
-CI runs it in the jobs `walks`, the only ones with Chromium, which comes
-in the CI image they run in, see [The CI image](BUILD.md#the-ci-image), on
+CI runs it in the jobs `walks`, the only ones with the browsers, which
+come in the CI image they run in, see [The CI image](BUILD.md#the-ci-image), on
 every pull request but one of docs alone.
 
 A walk that breaks a rule leaves a picture of the app at that moment in

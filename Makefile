@@ -46,7 +46,8 @@
 #   make fuzz       the fuzz targets, FUZZTIME executions each
 #   make interface  the interface type check, its own tests, and that no
 #                   walk or interface test waits on the clock
-#   make walks      the interface against the real Go side, in Chromium:
+#   make walks      the interface against the real Go side, in WebKit
+#                   and Chromium, see WALKBROWSER below:
 #                   the sequences, and every walk WALKS times, each of
 #                   its own length unless STEPS says, WALKERS at once,
 #                   stopped after WALKTIMEOUT, 30m unless set, with
@@ -555,11 +556,12 @@ unit: toolchain modules $(FRESH_FRAMES)
 fuzz: toolchain modules
 	@PATH="$(TOOLS_FIRST)" GO='$(GO)' FUZZTIME='$(FUZZTIME)' FUZZTARGETS='$(FUZZTARGETS)' FUZZSHARD='$(FUZZSHARD)' SIMTIME='$(SIMTIME)' sh scripts/fuzz.sh
 
-# The interface in Chromium against the real Go side, see docs/TESTING.md:
+# The interface against the real Go side, see docs/TESTING.md:
 # every sequence and every walk for seeds 1 to WALKS, half as many again at
 # once as the machine has cores unless WALKERS says. It needs Node, ffmpeg and
-# the Chromium Playwright drives, which CI installs and a cloud session
-# already has. Built for the bridge first, which takes seconds.
+# the Chromium and WebKit Playwright drives, which CI's image holds and a
+# cloud session gets from its SessionStart hook. Built for the bridge
+# first, which takes seconds.
 # Each part of the app walks in Playwright's WebKit, the engine the app
 # runs in on a Mac, once it has moved there, and in Chromium until then,
 # see Two browsers there. WALKBROWSER=chromium or webkit walks every walk
