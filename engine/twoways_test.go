@@ -22,7 +22,7 @@ func TestAMissingModelSaysTheWayOnOfEachFrontEnd(t *testing.T) {
 		app, line string
 	}{
 		{"no speech model", noSpeechModel("/nowhere/sherpa",
-			errors.New("the speech model folder /nowhere/sherpa is missing [tokens.txt]")),
+			fmt.Errorf("%w: the speech model folder /nowhere/sherpa is missing [tokens.txt]", ErrNoSpeechModel)),
 			"Download it in the settings, under Speech model.", "--asr-model"},
 		{"no clip model", none, "Download one in the settings, under Clip model.", "--llm-model"},
 		{"several clip models", several, "Choose one in the settings, under Clip model.", "--llm-model"},
@@ -51,6 +51,11 @@ func TestAMissingModelSaysTheWayOnOfEachFrontEnd(t *testing.T) {
 			strings.Contains(line, "in the settings") {
 			t.Errorf("%s: the command line says %q, want %q and no settings", c.name, line, c.line)
 		}
+	}
+	// A recogniser that fails for another reason says its own words.
+	broken := errors.New("the speech model is broken")
+	if err := noSpeechModel("/nowhere/sherpa", broken); err != broken {
+		t.Errorf("a broken speech model says %v", err)
 	}
 	// What has no way of its own is said the same in both.
 	plain := errors.New("planning failed: x")

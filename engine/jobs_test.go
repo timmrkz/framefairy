@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -39,23 +40,10 @@ func searchProject(t *testing.T, rec func(string) (Recognizer, error)) (*Project
 	e.OpenRecognizer = rec
 	base := DefaultOptions()
 	base.LLMURL = server.URL
-	base.ASRModel = speechModelFolder(t)
+	base.ASRModel = t.TempDir()
 	base.Width, base.Height = 360, 640
 	base.Preset = "ultrafast"
 	return NewProject(e, source, base), &asked
-}
-
-// speechModelFolder is a folder the engine takes for a speech model's,
-// so the recogniser a test stands in is the one asked.
-//
-// On the real disk: the engine looks for the speech model's tokens.txt on it.
-func speechModelFolder(t *testing.T) string {
-	t.Helper()
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "tokens.txt"), []byte("<blk> 0\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return dir
 }
 
 // On the real disk: ffmpeg reads the episode the search hears.
@@ -229,10 +217,9 @@ func TestASearchThatFailsSaysWhy(t *testing.T) {
 		}
 	})
 	t.Run("with no speech model", func(t *testing.T) {
-		p, _ := searchProject(t, func(string) (Recognizer, error) {
-			return nil, errors.New("the speech model folder is missing [tokens.txt]")
+		p, _ := searchProject(t, func(dir string) (Recognizer, error) {
+			return nil, fmt.Errorf("%w: the speech model folder %s is missing [tokens.txt]", ErrNoSpeechModel, dir)
 		})
-		p.Base.ASRModel = t.TempDir()
 		if _, err := p.Search(context.Background(), PlanRequest{To: 20, Count: 1, Min: 5}, nil); err == nil {
 			t.Fatal("no error")
 		}
