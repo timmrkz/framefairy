@@ -8,4 +8,4 @@
 // random walks walk in Chromium too. The pull request that takes it out
 // takes this file out. sequences.mjs --names fails on a name here that is
 // no part, so a name cannot outlive its folder.
-export const inChromium = ["captions", "timeline", "playback", "clips", "search", "videos", "app"];
+export const inChromium = [];
