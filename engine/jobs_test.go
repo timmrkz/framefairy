@@ -15,6 +15,7 @@ import (
 
 	"github.com/spf13/afero"
 
+	"framefairy/engine/fileio"
 	"framefairy/engine/runlog"
 	"framefairy/engine/timed"
 	"framefairy/internal/standin"
@@ -599,7 +600,7 @@ func TestAPlanIsWhereTheSearchSaysItIs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
-	if !isFile(p.Files, plan) {
+	if !fileio.IsFile(p.Files, plan) {
 		made, _ := afero.Glob(p.Files, filepath.Join(p.LogsDir(), "clips-*.json"))
 		t.Fatalf("the search answered %s, and wrote %v", filepath.Base(plan), made)
 	}

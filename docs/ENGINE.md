@@ -1774,8 +1774,6 @@ macOS keychain of `engine/keys_darwin.go`, in the frames decoder of
                 reject, trimming, correcting words, the caption look, moving
                 the crop and the caption line by hand and back, and letting
                 go of a whole plan
-  filelock_unix.go a lock every program of ours takes before it edits a
-                plan or a transcript. filelock_windows.go keeps none yet
   frames.go     deleting everything made for an episode
   corrections.go what a clip corrects and removes of the words heard
   training.go   training records of plans and decisions
@@ -1829,5 +1827,10 @@ ffprobe and llama-server beside the program, each only once its
 SHA-256 matches the one `make` built in, and a `Runner` that runs a
 program as an argument list and stops it once its work is called off.
 How it stops one is the runner's `Stop` and `Leave`, so a test sets its
-own on its own engine. None of them imports the rest of the engine, see
+own on its own engine. `engine/fileio/` is a path and a file in whatever
+file system it is handed: where a path really leads, `SafeChild` for a
+name that must stay inside its folder, `WriteAtomic` for a file replaced
+in one step, and `Lock`, which keeps edits of one plan or transcript one
+at a time, inside the program and across the command line and the app.
+None of them imports the rest of the engine, see
 [ARCHITECTURE.md](ARCHITECTURE.md).

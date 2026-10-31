@@ -16,6 +16,7 @@ import (
 
 	"github.com/spf13/afero"
 
+	"framefairy/engine/fileio"
 	"framefairy/engine/num"
 	"framefairy/engine/timed"
 )
@@ -527,7 +528,7 @@ func writeLevels(fsys afero.Fs, logs string, stamp sourceStamp, st *levelState) 
 	if err := binary.Write(&raw, binary.LittleEndian, st.frames[:reach]); err != nil {
 		return err
 	}
-	if err := WriteAtomic(fsys, framesAt, raw.Bytes()); err != nil {
+	if err := fileio.WriteAtomic(fsys, framesAt, raw.Bytes()); err != nil {
 		return err
 	}
 	file := levelsFile{Version: levelsVersion, Source: stamp, Parts: parts, Done: st.done()}
@@ -538,5 +539,5 @@ func writeLevels(fsys afero.Fs, logs string, stamp sourceStamp, st *levelState) 
 	if err != nil {
 		return err
 	}
-	return WriteAtomic(fsys, meta, body)
+	return fileio.WriteAtomic(fsys, meta, body)
 }

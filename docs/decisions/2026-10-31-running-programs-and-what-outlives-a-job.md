@@ -163,6 +163,28 @@ A package for the files at the bottom takes `SafeChild`, `WriteAtomic`,
 the checks of a path in a file system and the plan's lock. Its name is
 chosen in its own pull request, where its uses are counted.
 
+The name, chosen on 31 October in that pull request, is `engine/fileio`.
+Its functions are used in 88 places in 30 files. `files` said it best,
+but the code already names a file system `files` in 16 declarations, the
+app's store and reporting among them, and `NewEngine` too, and inside
+each of those the name would have hidden the package. `fileio` hides nothing in the code, and says a
+file read and written, which is what it does. The functions keep their
+names, `SafeChild`, `SafeChildIn`, `ResolvePath`, `ResolveIn`, `OnDisk`,
+`LstatIn` and `WriteAtomic`, and the four that were the engine's own
+are named for what they are once outside it: `replaceFile` is `Replace`,
+`lockFile` is `Lock`, `exists` is `Exists` and `isFile` is `IsFile`. The
+lock's seam for tests, once the package variable `lockWaits`, is now an
+argument of an unexported `lock`, which `Lock` calls with none, because
+`engine/fileio` cannot reach the object above it and a seam must not
+stay a package variable. The table of locks, `locks`, stays one per
+program on purpose: two engines in one program that edit the same plan
+must wait for each other, so the table is shared the way the disk is.
+
+Go's own guards were weighed for `SafeChild` and do not fit. `os.Root`
+and `filepath.IsLocal` judge a path on the real disk or by its text, and
+`SafeChild` has to judge one in whatever file system it is handed, memory
+too, and then give a path ffmpeg can open, which an `os.Root` does not.
+
 One object in `engine` outlives a job. Each program makes it once in
 `main` and every `Engine` takes it. It holds the file system, the
 records, the runner, what was learned about the machine, and every
@@ -173,13 +195,11 @@ area. `NewEngine` takes it in place of the file system.
 engine          every area, still one package, and what outlives a job
 engine/runlog   the log of a run
 engine/tool     finding and running programs
+engine/fileio   a path and a file in a file system
 engine/num      numbers
 engine/runes    text, by its characters
                 engine/timed beside them, using none
 ```
-
-The files' package joins `engine/tool` on its layer in its own pull
-request.
 
 The pull requests, in order, each one self-contained:
 
@@ -187,7 +207,7 @@ The pull requests, in order, each one self-contained:
    tests that swapped them set their own runner instead. They still run
    alone, for the other package variables they set, `timeLimit` and
    `lookAgain`, until those move in the fourth pull request below.
-2. The package for the files.
+2. The package for the files, `engine/fileio`.
 3. The object that outlives a job, made once in each `main`, with what
    is learned about the machine moved onto it, so `softDecode` is
    learned once per run, and the finder that holds `checked`, with the
@@ -195,7 +215,9 @@ The pull requests, in order, each one self-contained:
 4. The engine's caches and seams moved onto it, area by area, as many
    pull requests as their size asks, the key store handed in so
    `testing.Testing()` leaves shipped code.
-5. The app's own package variables that hold a cache or a seam.
+5. The app's own package variables that hold a cache or a seam, and
+   `chosenMu` in `cmd/framefairy-app/chosen.go`, a second lock beside
+   `fileio.Lock`, which then takes its place.
 
 ## What follows
 

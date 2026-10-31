@@ -4,6 +4,8 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+
+	"framefairy/engine/fileio"
 )
 
 // Taking a model off the machine again. A model is gigabytes, and a person
@@ -33,11 +35,11 @@ func RemoveSpeechModel(m SpeechModel, dir string) error {
 // somehow pointed elsewhere deletes nothing. What is already gone is fine.
 func removeAll(dir string, names ...string) error {
 	for _, name := range names {
-		path, err := SafeChild(dir, name)
+		path, err := fileio.SafeChild(dir, name)
 		if err != nil {
 			return err
 		}
-		if path == resolvePath(dir) {
+		if path == fileio.ResolvePath(dir) {
 			return renderErr("refusing to remove the models folder itself")
 		}
 		if err := os.RemoveAll(path); err != nil && !errors.Is(err, fs.ErrNotExist) {

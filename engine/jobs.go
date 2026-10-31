@@ -16,6 +16,7 @@ import (
 
 	"github.com/spf13/afero"
 
+	"framefairy/engine/fileio"
 	"framefairy/engine/runlog"
 	"framefairy/engine/timed"
 )
@@ -201,7 +202,7 @@ func WriteJob(fsys afero.Fs, source string, rec JobRecord) error {
 	if err != nil {
 		return err
 	}
-	return WriteAtomic(fsys, filepath.Join(JobsDir(source), rec.ID+".json"), body)
+	return fileio.WriteAtomic(fsys, filepath.Join(JobsDir(source), rec.ID+".json"), body)
 }
 
 // RemoveJob takes a job's record away. A job that has none is fine.
@@ -278,7 +279,7 @@ func ReadSearch(fsys afero.Fs, source string) *JobRecord {
 }
 
 func readJob(fsys afero.Fs, source, path string) (JobRecord, bool) {
-	info, err := LstatIn(fsys, path)
+	info, err := fileio.LstatIn(fsys, path)
 	if err != nil || !info.Mode().IsRegular() || info.Size() > recordLimit {
 		return JobRecord{}, false
 	}

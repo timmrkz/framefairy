@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"framefairy/engine/fileio"
 	"framefairy/engine/runlog"
 	"framefairy/internal/framewire"
 )
@@ -238,7 +239,7 @@ func (e *Engine) previewTrack(ctx context.Context, work string, d *CaptionDrawin
 	font string, source SourceInfo, outW, outH int) (previewFile, error) {
 	// The folder by where it really leads, which must be inside the work
 	// folder.
-	dir, err := SafeChild(work, PreviewCaptionsFolder)
+	dir, err := fileio.SafeChild(work, PreviewCaptionsFolder)
 	if err != nil {
 		return previewFile{}, err
 	}
@@ -261,7 +262,7 @@ func (e *Engine) previewTrack(ctx context.Context, work string, d *CaptionDrawin
 			return previewFile{}, err
 		}
 		sum := sha256.Sum256(track)
-		file, err := SafeChild(dir, hex.EncodeToString(sum[:12])+".ass")
+		file, err := fileio.SafeChild(dir, hex.EncodeToString(sum[:12])+".ass")
 		if err != nil {
 			return previewFile{}, err
 		}

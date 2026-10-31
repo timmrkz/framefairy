@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/afero"
 
+	"framefairy/engine/fileio"
 	"framefairy/engine/runlog"
 	"framefairy/engine/timed"
 )
@@ -160,13 +161,13 @@ func TestDeleteWorkLeavesNothingButTheEpisode(t *testing.T) {
 	if err := DeleteWork(fsys, source); err != nil {
 		t.Fatal(err)
 	}
-	if exists(fsys, work) {
+	if fileio.Exists(fsys, work) {
 		t.Errorf("the work folder is still there")
 	}
-	if !exists(fsys, source) {
+	if !fileio.Exists(fsys, source) {
 		t.Errorf("the episode itself was deleted")
 	}
-	if !exists(fsys, records) {
+	if !fileio.Exists(fsys, records) {
 		t.Errorf("the training records were deleted with the episode")
 	}
 	if err := DeleteWork(fsys, "/home/tim/missing.mp4"); err != nil {

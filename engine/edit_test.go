@@ -1,14 +1,10 @@
 package engine
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"math"
-	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -1016,55 +1012,6 @@ func TestTheWordsShownAreTheWordsTheCaptionsLight(t *testing.T) {
 	if shaped.Playhead != shaped.Pieces[0].Start {
 		t.Errorf("the playhead is at %v, not on the clip's start %v", shaped.Playhead, shaped.Pieces[0].Start)
 	}
-}
-
-// An edit waits for another program editing the same file, the command
-// line or a second copy of the app, and goes ahead once it is done.
-//
-// On the real disk, because the lock between two programs is the system's.
-func TestAnEditWaitsForAnotherProgram(t *testing.T) {
-	t.Parallel()
-	if runtime.GOOS == "windows" {
-		t.Skip("no lock across programs on Windows yet")
-	}
-	path := filepath.Join(t.TempDir(), "clips.json")
-	other := exec.Command(os.Args[0])
-	other.Env = append(os.Environ(), "FRAMEFAIRY_HOLD_LOCK="+path)
-	stdin, err := other.StdinPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	out, err := other.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := other.Start(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { stdin.Close(); _ = other.Wait() })
-	line, err := bufio.NewReader(out).ReadString('\n')
-	if err != nil || strings.TrimSpace(line) != "held" {
-		t.Fatalf("the other program said %q, %v", line, err)
-	}
-
-	waits := waitsOn(t, disk, path)
-	got := make(chan struct{})
-	go func() {
-		release := lockFile(disk, path)
-		release()
-		close(got)
-	}()
-	// An edit that does not wait for the other program never says so, and
-	// hangs here until go test's -timeout.
-	<-waits
-	select {
-	case <-got:
-		t.Fatal("the lock was taken while another program held it")
-	default:
-	}
-	stdin.Close()
-	// One that is never let in hangs here.
-	<-got
 }
 
 // captionWords is the text of every word of a laid out caption, in order.

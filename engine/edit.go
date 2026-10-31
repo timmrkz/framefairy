@@ -13,10 +13,10 @@ import (
 	"slices"
 	"sort"
 	"strings"
-	"sync"
 
 	"github.com/spf13/afero"
 
+	"framefairy/engine/fileio"
 	"framefairy/engine/num"
 	"framefairy/engine/runes"
 	"framefairy/engine/timed"
@@ -147,69 +147,16 @@ func decodeValue(dec *json.Decoder) (any, error) {
 	}
 }
 
-// editPlan loads a plan, lets change edit it, and writes it back in one
-// step. The file is replaced atomically, so a crash never leaves half a
-// plan. The result is checked with the same loader a render uses before it
-// is written.
-//
-// Edits of one file happen one at a time, a plan's or a transcript's. Every
-// edit reads the file, changes it and writes it back, and the app has no
-// save button, so an edit that lands while another is being written must
-// not be the one that disappears.
-var fileLocks sync.Map
-
-// fileKey names a file for its lock: the file system it is in, nil for
-// the disk, and where it really is there.
-type fileKey struct {
-	fsys afero.Fs
-	path string
-}
-
-// lockFile holds the lock of the file at path until the function it
-// returns is called. Edits are one at a time inside the program, and one
-// program at a time as well, the command line and the app, see
-// lockAcrossProcesses. The lock inside the program is taken first, so two
-// edits in one program wait for each other without both waiting on the
-// system.
-//
-// A file in memory has no other program to share it with, so its lock is
-// the one inside the program alone, and it is the lock of that memory's
-// file: two tests that each hold a plan at the same path in their own
-// memory do not wait for each other. Every OsFs is the one disk.
-func lockFile(fsys afero.Fs, path string) func() {
-	key := fileKey{path: ResolveIn(fsys, path)}
-	if !OnDisk(fsys) {
-		key.fsys = fsys
-	}
-	held, _ := fileLocks.LoadOrStore(key, &sync.Mutex{})
-	mu := held.(*sync.Mutex)
-	if !mu.TryLock() {
-		if lockWaits != nil {
-			lockWaits(key.path)
-		}
-		mu.Lock()
-	}
-	release := func() {}
-	if OnDisk(fsys) {
-		release = lockAcrossProcesses(key.path)
-	}
-	return func() {
-		release()
-		mu.Unlock()
-	}
-}
-
-// lockWaits is told the path of a lock that an edit found held, before the
-// edit waits for it. Only tests set it, so they hear that an edit waits
-// rather than see it not finish for a while.
-var lockWaits func(path string)
-
 // errUnchanged is what a change to a plan says when it changes nothing,
 // so the plan is not written and keeps its revision.
 var errUnchanged = errors.New("the plan is unchanged")
 
+// editPlan loads a plan, lets change edit it, and writes it back in one
+// step. The file is replaced atomically, so a crash never leaves half a
+// plan. The result is checked with the same loader a render uses before it
+// is written. Edits of one file are one at a time, see fileio.Lock.
 func editPlan(fsys afero.Fs, path string, change func(top *object, clips []*object) error) error {
-	defer lockFile(fsys, path)()
+	defer fileio.Lock(fsys, path)()
 	return editPlanLocked(fsys, path, change)
 }
 
@@ -265,7 +212,7 @@ func editPlanLocked(fsys afero.Fs, path string, change func(top *object, clips [
 // Without the lock a search can land in the middle of an edit reading the
 // file, changing it and writing it back.
 func writePlanFile(fsys afero.Fs, path string, body []byte) error {
-	defer lockFile(fsys, path)()
+	defer fileio.Lock(fsys, path)()
 	if err := fsys.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -287,7 +234,7 @@ func writePlanFile(fsys afero.Fs, path string, body []byte) error {
 // plans of an episode globs for clips*.json and a half written plan must
 // never be one of them.
 func replacePlan(fsys afero.Fs, path string, body []byte) error {
-	return replaceFile(fsys, path, ".clips-*.json", body, func(tmp string) error {
+	return fileio.Replace(fsys, path, ".clips-*.json", body, func(tmp string) error {
 		_, _, err := LoadClips(fsys, tmp)
 		return err
 	})
@@ -302,7 +249,7 @@ var errNotAdded = errors.New("the clip is in the plan already")
 // and so is the plan's shape. A plan that is gone is reported as the
 // missing file it is.
 func appendClip(fsys afero.Fs, path string, clip PlanClip) error {
-	defer lockFile(fsys, path)()
+	defer fileio.Lock(fsys, path)()
 	return appendClipLocked(fsys, path, clip)
 }
 
@@ -351,7 +298,7 @@ func appendClipLocked(fsys afero.Fs, path string, clip PlanClip) error {
 // set's lock, so two clips made at the same moment never take the same
 // one. It answers with the clip as it went in.
 func addClip(fsys afero.Fs, path string, set PlanFile, clip PlanClip, prefix string) (PlanClip, error) {
-	defer lockFile(fsys, path)()
+	defer fileio.Lock(fsys, path)()
 	clip.ID = fmt.Sprintf("%s%02d", prefix, lastNumber(fsys, path, prefix)+1)
 	if _, err := fsys.Stat(path); !os.IsNotExist(err) {
 		return clip, appendClipLocked(fsys, path, clip)

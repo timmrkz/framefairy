@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"framefairy/engine/fileio"
 )
 
 // A language model the app downloaded is checked again before it is loaded.
@@ -93,7 +95,7 @@ func checkModel(path, dir string, known LanguageModel) error {
 func noteModelChecked(record string, checks map[string]modelCheck, m LanguageModel, info os.FileInfo) {
 	checks[m.Name] = modelCheck{Size: info.Size(), Mod: info.ModTime(), SHA256: m.SHA256}
 	if body, err := json.MarshalIndent(checks, "", "  "); err == nil {
-		_ = WriteAtomic(disk, record, body)
+		_ = fileio.WriteAtomic(disk, record, body)
 	}
 }
 

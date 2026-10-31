@@ -1,6 +1,6 @@
 //go:build !windows
 
-package engine
+package fileio
 
 import (
 	"errors"
@@ -9,19 +9,20 @@ import (
 	"syscall"
 )
 
-// lockAcrossProcesses holds a lock that every program of ours takes before
-// it edits the file at path, and gives it back when release is called. The
+// acrossProcesses holds a lock that every program of ours takes before it
+// edits the file at path, and gives it back when release is called. The
 // command line and the app can edit one plan or one transcript at the same
 // time, and a lock inside one program does not keep the other out: one of
 // the two edits would be lost.
 //
 // The lock is on a file beside it, not on the file itself, because an edit
-// replaces the file with another, see replaceFile, and a lock on the one
+// replaces the file with another, see Replace, and a lock on the one
 // replaced would keep nobody out of the new one. The system gives the lock
 // back when a program ends, so a crash leaves nothing held. Where the
 // system cannot lock, on some network drives, an edit goes ahead without
-// it, as it did before.
-func lockAcrossProcesses(path string) (release func()) {
+// it, as it did before. waits is told when another program holds it, see
+// lock.
+func acrossProcesses(path string, waits func(path string)) (release func()) {
 	name := filepath.Join(filepath.Dir(path), "."+filepath.Base(path)+".lock")
 	f, err := os.OpenFile(name, os.O_RDWR|os.O_CREATE, 0o644)
 	if err != nil {
@@ -30,8 +31,8 @@ func lockAcrossProcesses(path string) (release func()) {
 	err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
 	if errors.Is(err, syscall.EWOULDBLOCK) {
 		// Another program holds it, and the edit waits.
-		if lockWaits != nil {
-			lockWaits(path)
+		if waits != nil {
+			waits(path)
 		}
 		err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX)
 	}

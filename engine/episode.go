@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/afero"
 
+	"framefairy/engine/fileio"
 	"framefairy/engine/num"
 	"framefairy/engine/runes"
 	"framefairy/engine/runlog"
@@ -154,7 +155,7 @@ func Status(fsys afero.Fs, source, asrModelDir string, silenceDB *float64) Episo
 			if len(st.Heard) > 0 && st.Heard[0][0] <= 0.005 {
 				st.Covered = st.Heard[0][1]
 			}
-		} else if exists(fsys, whole) {
+		} else if fileio.Exists(fsys, whole) {
 			st.TranscriptStale = true
 		}
 	}
@@ -171,7 +172,7 @@ func Status(fsys afero.Fs, source, asrModelDir string, silenceDB *float64) Episo
 		}
 	}
 	st.Previews = countFiles(filepath.Join(work, "preview"), ".mp4")
-	st.Work = exists(fsys, work)
+	st.Work = fileio.Exists(fsys, work)
 	st.EverSearched = EverSearched(fsys, source)
 	st.Label = ReadLabel(fsys, source)
 	return st
@@ -578,7 +579,7 @@ func (s PlanSummary) View() *PlanView {
 		}
 		v.Rendered = renderedOf(plan, c)
 		v.Short = shortOf(plan, c)
-		if prev := filepath.Join(work, "preview", v.Basename+".mp4"); isFile(disk, prev) {
+		if prev := filepath.Join(work, "preview", v.Basename+".mp4"); fileio.IsFile(disk, prev) {
 			v.Preview = prev
 		}
 		view.Clips = append(view.Clips, v)
@@ -604,7 +605,7 @@ func shortOf(plan Plan, c Clip) string {
 	if !ok {
 		return ""
 	}
-	short, err := SafeChild(rec.folder, rec.name)
+	short, err := fileio.SafeChild(rec.folder, rec.name)
 	if err != nil || filepath.Base(short) != rec.name {
 		return ""
 	}
@@ -683,7 +684,7 @@ func ownName(c Clip, name string) bool {
 func IsShort(fsys afero.Fs, source, path string) bool {
 	// A short is what ffmpeg wrote, so it is on the disk and its path is
 	// resolved there, whatever fsys the plans are read from, see files.go.
-	real := ResolvePath(path)
+	real := fileio.ResolvePath(path)
 	for _, plan := range PlanSummaries(fsys, LogsDir(source)) {
 		for _, c := range plan.clips {
 			if short := shortOf(plan.plan, c); short != "" && short == real {
@@ -703,7 +704,7 @@ func IsShort(fsys afero.Fs, source, path string) bool {
 // name is taken by a short or by the first picture of one, so no short
 // takes the pictures of another either.
 func shortStem(dir string, plan Plan, c Clip) string {
-	if rec, ok := recordOf(plan, c); ok && ResolvePath(rec.folder) == ResolvePath(dir) {
+	if rec, ok := recordOf(plan, c); ok && fileio.ResolvePath(rec.folder) == fileio.ResolvePath(dir) {
 		if info, err := os.Stat(filepath.Join(rec.folder, rec.name)); err == nil && rec.still(info) {
 			return strings.TrimSuffix(rec.name, ".mp4")
 		}
@@ -724,7 +725,7 @@ func shortStem(dir string, plan Plan, c Clip) string {
 // size and the modification time it was written with.
 func recordShort(fsys afero.Fs, planPath, clipID, short string) error {
 	// The short is what ffmpeg wrote, so it is on the disk, see files.go.
-	real := ResolvePath(short)
+	real := fileio.ResolvePath(short)
 	info, err := os.Stat(real)
 	if err != nil {
 		return err

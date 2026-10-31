@@ -16,8 +16,10 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+	"github.com/spf13/afero"
 
 	"framefairy/engine"
+	"framefairy/engine/fileio"
 )
 
 // A report of a problem: one zip on the Desktop that a customer sends us,
@@ -208,7 +210,7 @@ func readLog(path string) ([]byte, error) {
 // with a number after it.
 func freeName(dir, name, ext string) string {
 	path := filepath.Join(dir, name+ext)
-	for i := 2; fileExists(path); i++ {
+	for i := 2; fileio.IsFile(afero.NewOsFs(), path); i++ {
 		path = filepath.Join(dir, fmt.Sprintf("%s %d%s", name, i, ext))
 	}
 	return path

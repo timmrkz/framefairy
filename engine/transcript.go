@@ -14,6 +14,7 @@ import (
 
 	"github.com/spf13/afero"
 
+	"framefairy/engine/fileio"
 	"framefairy/engine/num"
 	"framefairy/engine/timed"
 	"framefairy/engine/tool"
@@ -142,59 +143,10 @@ func writeTranscript(fsys afero.Fs, path string, file transcriptFile, frames []f
 	if err := binary.Write(&raw, binary.LittleEndian, frames); err != nil {
 		return err
 	}
-	if err := WriteAtomic(fsys, framesPath(path), raw.Bytes()); err != nil {
+	if err := fileio.WriteAtomic(fsys, framesPath(path), raw.Bytes()); err != nil {
 		return err
 	}
-	return WriteAtomic(fsys, path, body)
-}
-
-// WriteAtomic replaces the file at path with body in one step as far as
-// any reader is concerned, see replaceFile.
-func WriteAtomic(fsys afero.Fs, path string, body []byte) error {
-	return replaceFile(fsys, path, "."+filepath.Base(path)+"-*", body, nil)
-}
-
-// replaceFile writes body beside path, under a temporary name made from
-// pattern, and moves it onto path. check, if there is one, reads the
-// temporary file first, and a file it refuses is never moved.
-//
-// The file is flushed to the disk before it is moved, and the folder after,
-// so that after a power cut path holds either what was there or all of
-// body. Without the flush the move can reach the disk before the bytes do,
-// and a plan or a transcript comes back empty. On macOS Go's Sync is a
-// full flush, F_FULLFSYNC, which is the one the drive does not keep in
-// its own cache. In memory both flushes are nothing.
-func replaceFile(fsys afero.Fs, path, pattern string, body []byte, check func(tmp string) error) error {
-	dir := filepath.Dir(path)
-	tmp, err := afero.TempFile(fsys, dir, pattern)
-	if err != nil {
-		return err
-	}
-	name := tmp.Name()
-	_, err = tmp.Write(body)
-	if err == nil {
-		err = tmp.Sync()
-	}
-	if closeErr := tmp.Close(); err == nil {
-		err = closeErr
-	}
-	if err == nil && check != nil {
-		err = check(name)
-	}
-	if err == nil {
-		err = fsys.Rename(name, path)
-	}
-	if err != nil {
-		fsys.Remove(name)
-		return err
-	}
-	// The move is kept by the folder, so the folder is flushed too. A
-	// system that cannot open a folder for that, Windows, keeps it anyway.
-	if d, err := fsys.Open(dir); err == nil {
-		_ = d.Sync()
-		d.Close()
-	}
-	return nil
+	return fileio.WriteAtomic(fsys, path, body)
 }
 
 // meanOfFrames is the mean level over loudness frames, in dB.
@@ -543,7 +495,7 @@ func (e *Engine) loadTranscript(ctx context.Context, source string, window timed
 // of the neighbour's word across the join is that word again, and left out.
 func addHeard(fsys afero.Fs, path string, stamp sourceStamp, model string, duration float64, part timed.Window,
 	raw []timed.Cue, frames []float32, read float64) error {
-	defer lockFile(fsys, path)()
+	defer fileio.Lock(fsys, path)()
 	file, had, hadFrames, ok := readTranscriptFile(fsys, path, stamp, model)
 	var parts [][2]float64
 	if ok {

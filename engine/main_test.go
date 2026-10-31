@@ -2,7 +2,6 @@ package engine
 
 import (
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"os"
@@ -23,10 +22,6 @@ import (
 func TestMain(m *testing.M) {
 	if os.Getenv("FRAMEFAIRY_STUBBORN_SERVER") != "" {
 		stubbornServer()
-		return
-	}
-	if path := os.Getenv("FRAMEFAIRY_HOLD_LOCK"); path != "" {
-		holdLock(path)
 		return
 	}
 	toolsFromThePath()
@@ -85,18 +80,6 @@ func stubbornServer() {
 	http.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {})
 	fmt.Printf("main: server is listening on http://127.0.0.1:%s - starting the main loop\n", port)
 	_ = http.Serve(listener, nil)
-}
-
-// holdLock is this test binary run as another program that edits a file:
-// it takes the file's lock, says so, and holds it until its input closes.
-//
-// On the real disk: it stands for another program, and the lock between
-// two programs is the system's.
-func holdLock(path string) {
-	release := lockFile(disk, path)
-	fmt.Println("held")
-	_, _ = io.Copy(io.Discard, os.Stdin)
-	release()
 }
 
 // toolsFromThePath names the ffmpeg, ffprobe and llama-server on the search

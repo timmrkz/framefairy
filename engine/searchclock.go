@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/afero"
 
+	"framefairy/engine/fileio"
 	"framefairy/engine/runlog"
 )
 
@@ -201,7 +202,7 @@ func (r *Records) keepSpeed(model string, took searchSpeed, loaded bool) {
 	if fsys.MkdirAll(filepath.Dir(path), 0o755) != nil {
 		return
 	}
-	_ = WriteAtomic(fsys, path, body)
+	_ = fileio.WriteAtomic(fsys, path, body)
 }
 
 // The parts of a search, in the order they come.

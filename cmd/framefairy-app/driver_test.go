@@ -36,6 +36,7 @@ import (
 	"github.com/spf13/afero"
 
 	"framefairy/engine"
+	"framefairy/engine/fileio"
 	"framefairy/internal/ffmpegtest"
 )
 
@@ -506,7 +507,7 @@ func (d *desk) shorts() []string {
 	var found []string
 	_ = filepath.WalkDir(d.svc.store.Settings().OutputDir, func(p string, e os.DirEntry, err error) error {
 		if err == nil && !e.IsDir() && strings.HasSuffix(p, ".mp4") {
-			found = append(found, engine.ResolvePath(p))
+			found = append(found, fileio.ResolvePath(p))
 		}
 		return nil
 	})

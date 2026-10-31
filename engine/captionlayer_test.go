@@ -19,6 +19,7 @@ import (
 
 	"github.com/spf13/afero"
 
+	"framefairy/engine/fileio"
 	"framefairy/engine/runlog"
 	"framefairy/engine/timed"
 	"framefairy/internal/ffmpegtest"
@@ -745,7 +746,7 @@ func TestAWorkFolderIsDeletedOnceItsCaptionFileIsWritten(t *testing.T) {
 		if err := <-deleted; err != nil {
 			t.Fatal(err)
 		}
-		if exists(fsys, work) {
+		if fileio.Exists(fsys, work) {
 			t.Errorf("the caption file written while the folder went is still there")
 		}
 	})

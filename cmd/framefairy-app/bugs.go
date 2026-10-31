@@ -23,7 +23,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/spf13/afero"
 
-	"framefairy/engine"
+	"framefairy/engine/fileio"
 )
 
 // Bugs, at the foot of the sidebar: Report a Problem in a window of its
@@ -542,10 +542,10 @@ func (r *reporting) attach(how string, all []handed) ReportDraft {
 			pic.ID = fmt.Sprintf("p%d", r.draft.Next)
 			pic.Name = name
 			if err = r.files.MkdirAll(r.dir, 0o700); err == nil {
-				err = engine.WriteAtomic(r.files, filepath.Join(r.dir, pic.ID+".png"), g.body)
+				err = fileio.WriteAtomic(r.files, filepath.Join(r.dir, pic.ID+".png"), g.body)
 			}
 			if err == nil && pic.Recording != "" {
-				err = engine.WriteAtomic(r.files, filepath.Join(r.dir, pic.ID+"."+pic.Recording), g.film)
+				err = fileio.WriteAtomic(r.files, filepath.Join(r.dir, pic.ID+"."+pic.Recording), g.film)
 			}
 			if err != nil {
 				err = errors.New("could not be kept")
@@ -742,7 +742,7 @@ func (r *reporting) keep() error {
 		r.draft.Pictures = []ReportPicture{}
 	}
 	body, _ := json.MarshalIndent(r.draft, "", "  ")
-	if err := engine.WriteAtomic(r.files, filepath.Join(r.dir, "draft.json"), body); err != nil {
+	if err := fileio.WriteAtomic(r.files, filepath.Join(r.dir, "draft.json"), body); err != nil {
 		return fmt.Errorf("the draft could not be kept: %w", err)
 	}
 	return nil

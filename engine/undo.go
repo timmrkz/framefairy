@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/afero"
 
+	"framefairy/engine/fileio"
 	"framefairy/engine/num"
 )
 
@@ -355,7 +356,7 @@ func fieldsOf(p *planParts) map[string]any {
 }
 
 func applyPlan(fsys afero.Fs, rec *Records, path string, from, to fileState, dryRun bool) error {
-	defer lockFile(fsys, path)()
+	defer fileio.Lock(fsys, path)()
 	src, err := splitPlan(from)
 	if err != nil {
 		return err

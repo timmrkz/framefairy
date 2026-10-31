@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/afero"
 
 	"framefairy/engine"
+	"framefairy/engine/fileio"
 )
 
 // The interface may only reach the episodes in the library and what belongs
@@ -116,7 +117,7 @@ func TestNothingOutsideTheLibraryIsTouched(t *testing.T) {
 	if _, err := svc.SetLabel(elsewhere, "Ben", "#942192"); err == nil {
 		t.Error("SetLabel wrote a label for a file that is not a video in the library")
 	}
-	if !fileExists(elsewhere) {
+	if !fileio.IsFile(afero.NewOsFs(), elsewhere) {
 		t.Error("a file outside the library was deleted")
 	}
 	// Nothing may have been written beside a file that is not an episode.
