@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 
 import type { ClipEntry, EpisodeStatus, Job, VideoState } from "./api";
+import moves from "./moves.cases.json";
 import { said } from "./said";
 import { EpisodeSession, type WorkMoves } from "./session.svelte";
 import { JobStore } from "./state.svelte";
@@ -317,6 +318,25 @@ describe.each(orders)("a video's session, $order", ({ store }) => {
       ["t", "done"],
     ]);
     expect(said).toHaveBeenCalledWith(expect.stringContaining("the list is gone"), { level: "error", video: "/v.mp4" });
+  });
+});
+
+// Which news moves the work on is said twice, in the moves here and in
+// movesOn on the Go side, which sends a video's state before that news.
+// Both are held to the cases in moves.cases.json, the Go side by
+// TestTheNewsThatMovesTheWorkOnIsTheNewsTheWindowMovesOn in
+// cmd/framefairy-app/jobs_test.go.
+type MoveCase = { name: string; kind: string; before: Partial<Job> | null; after: Partial<Job>; moves: string[]; asked: string[] };
+describe("the moves of a job's news, as moves.cases.json has them", () => {
+  test.each(moves.cases as MoveCase[])("$name", (c) => {
+    for (const asked of [false, true]) {
+      const { jobs, heard, session: here } = session(new Ahead());
+      if (c.before) jobs.apply(job("j", c.kind, c.before.state ?? "", 1, c.before));
+      if (asked) here.asked(job("j", c.kind, "queued", 0));
+      const was = heard.length;
+      jobs.apply(job("j", c.kind, c.after.state ?? "", 2, c.after));
+      expect(heard.slice(was), asked ? "asked for here" : "asked for elsewhere").toEqual((asked ? c.asked : c.moves).map((m) => `${m} j`));
+    }
   });
 });
 

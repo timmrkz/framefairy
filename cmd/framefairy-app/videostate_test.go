@@ -433,10 +433,14 @@ func TestAJobsNewsThatMovesItsWorkOnGoesOutAfterItsState(t *testing.T) {
 			told = append(told, fmt.Sprintf("news %d", u.Job.Seq))
 		}, nil)
 		q.news = news.after
+		j := Job{ID: "s", Episode: "a.mp4", Kind: engine.JobSearch}
 		job := func(seq uint64, state, step string, written int) {
 			clock.Store(seq)
-			j := Job{ID: "s", Episode: "a.mp4", Seq: seq, State: state, Written: written}
-			j.Step = step
+			j.State, j.Step, j.Written = state, step, written
+			q.mu.Lock()
+			q.stampLocked(&j)
+			q.mu.Unlock()
+			j.Seq = seq
 			q.emit(JobUpdate{Job: j})
 		}
 		// Started, then heard further: as it comes, and the state the two
@@ -503,10 +507,15 @@ func TestNewsThatComesWhileNewsWaitsGoesOutAfterIt(t *testing.T) {
 }
 
 // heardStates has the desk send each video's state, as the app does to
-// its window, and keeps what it sends.
-func heardStates(d *desk) func(path string) VideoState {
+// its window, and keeps what it sends. What it returns gives the state
+// sent last once the news of every stamp of the video's jobs is out and
+// the sends it made due have gone, with the seq of the newest of that
+// news.
+func heardStates(d *desk) func(path string) (VideoState, uint64) {
 	var mu sync.Mutex
+	out := sync.NewCond(&mu)
 	last := map[string]VideoState{}
+	told := map[string]uint64{}
 	svc := d.svc
 	svc.news = newVideoNews(func(path string) (VideoState, error) {
 		return svc.State(context.Background(), path)
@@ -516,11 +525,36 @@ func heardStates(d *desk) func(path string) VideoState {
 		last[v.Video] = v
 	})
 	svc.jobs.news = svc.jobMoved
-	return func(path string) VideoState {
+	tell := svc.jobs.tell
+	svc.jobs.tell = func(u JobUpdate) {
+		if tell != nil {
+			tell(u)
+		}
+		mu.Lock()
+		told[u.Job.Episode] = max(told[u.Job.Episode], u.Job.Seq)
+		mu.Unlock()
+		out.Broadcast()
+	}
+	return func(path string) (VideoState, uint64) {
+		// The queue wakes what waits on its jobs as it stamps them, before
+		// their news is handed on, so the news is waited for here.
+		var stamped uint64
+		svc.jobs.mu.Lock()
+		for _, j := range svc.jobs.jobs {
+			if j.Episode == path {
+				stamped = max(stamped, j.Seq)
+			}
+		}
+		svc.jobs.mu.Unlock()
+		mu.Lock()
+		for told[path] < stamped {
+			out.Wait()
+		}
+		mu.Unlock()
 		sendDue(svc.news)
 		mu.Lock()
 		defer mu.Unlock()
-		return last[path]
+		return last[path], told[path]
 	}
 }
 
@@ -536,15 +570,13 @@ func TestPathWhatChangesAVideoSendsItsState(t *testing.T) {
 	sent := heardStates(d)
 	ep := d.add("ep", minutes5)
 	d.idle(ep)
-	found := sent(ep)
+	found, news := sent(ep)
 	clips := d.clips(ep)
 	if len(clips) == 0 || len(found.Clips) != len(clips) {
 		t.Fatalf("the state sent last holds %d clips, the search wrote %d", len(found.Clips), len(clips))
 	}
-	for _, j := range found.Jobs {
-		if j.Seq >= found.Rev {
-			t.Errorf("the state sent last is at %d, older than the job %s at %d", found.Rev, j.ID, j.Seq)
-		}
+	if found.Rev <= news {
+		t.Errorf("the state sent last is at %d, read before the search's last news at %d", found.Rev, news)
 	}
 	// The removal comes long after the last state was sent, as it does
 	// for a person, so the state it tells is read at once, beside the
@@ -557,7 +589,7 @@ func TestPathWhatChangesAVideoSendsItsState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	after := sent(ep)
+	after, _ := sent(ep)
 	if after.Rev <= removed.Rev {
 		t.Errorf("the state sent after the removal is at %d, its answer at %d", after.Rev, removed.Rev)
 	}
@@ -567,7 +599,7 @@ func TestPathWhatChangesAVideoSendsItsState(t *testing.T) {
 	if done, err := d.svc.Undo(ep); err != nil || !done.Done {
 		t.Fatalf("the removal was not undone: %v", err)
 	}
-	undone := sent(ep)
+	undone, _ := sent(ep)
 	if undone.Rev <= after.Rev {
 		t.Errorf("no state was sent after the undo")
 	}

@@ -99,8 +99,9 @@ waiting for the day the two disagree.
 | the library and the settings | the app's config folder | the app's Go side |
 | the models, notes about running servers, the training records | `~/.framefairy/` | the engine |
 | what runs now, and the lane each job holds or waits for | the job queue, in memory | the app's Go side |
+| whether a job's news moves its work on, and the news a video's state goes out before | on the job the queue holds, decided as it is stamped, and in the video's `videoNews` until its state is out, `cmd/framefairy-app/videostate.go` | the app's Go side |
 | the step a job is in, and what it was asked for | its `engine.JobRecord`, on disk and in the job the queue holds, which keeps each record the engine tells it through the job's `engine.Host` | the engine |
-| what is on screen | the interface's stores, and a video's status, clips and coverage in its `EpisodeSession`, `frontend/src/lib/session.svelte.ts`, which keeps the newest `VideoState` | from what Go sends. Today `Episode.svelte` also works out from what changed that a search started, see Not to copy |
+| what is on screen | the interface's stores, and a video's status, clips and coverage in its `EpisodeSession`, `frontend/src/lib/session.svelte.ts`, which keeps the newest `VideoState`, and the moves that wait for a state read after their news | from what Go sends. Today `Episode.svelte` also works out from what changed that a search started, see Not to copy |
 
 ## The programs that run
 
@@ -124,9 +125,9 @@ What to do today, and what changes once the issue named is built.
 | I need to | It goes |
 | --- | --- |
 | decide where an edge, a word or a window lands | the engine: `engine/shape.go` for a gesture, `engine.Project` for a window. The interface asks and draws the answer |
-| do something in the workspace when a video's work moves on | a move of `EpisodeSession` in `frontend/src/lib/session.svelte.ts`, never an effect that keeps the value from before. The Go side sends a state read after the news that moves a job's work on before that news, so the move reads what the work left and asks for no read of the video's state. The window holds nothing back to put them in order |
+| do something in the workspace when a video's work moves on | a move of `EpisodeSession` in `frontend/src/lib/session.svelte.ts`, never an effect that keeps the value from before. A move is made once the state the session keeps was read after its job's news, its rev past the job's seq, so it reads what the work left and asks for no read of the video's state. The Go side sends that state before the news that moves the work on, so a move waits for nothing. A new move takes a row in `frontend/src/lib/moves.cases.json`, which holds the Go side's `movesOn` to the moves |
 | show the interface a new fact about a video | a field of `VideoState` in `cmd/framefairy-app/videostate.go`, or of what it holds, the status and the clip views, which the session keeps. Never a new event of its own or a poll |
-| tell the window that something about a video changed | `told` on `*FrameFairy`, or the queue's `moved` for a job, which send the video's state, at most four times a second and always after the last change, and at once when a job is over. A job's news goes through `videoNews.after`, after a state read after it when it moves the work on. Nothing else sends either |
+| tell the window that something about a video changed | `told` on `*FrameFairy`, or the queue's `moved` for a job, which send the video's state, at most four times a second and always after the last change, one at a time. A job's news goes through `videoNews.after`, right after a state read after it when it moves the work on, which goes at once. Nothing else sends either |
 | keep something between two jobs, a cache or a fact about the machine | today the caches that outlive a job are package variables, the way `engine/probed.go` keeps the probes. A new one says why in its pull request, and never comes from a new `Engine` made only to get it. #607 moves them all onto one object a program keeps |
 | read a file of a video | through the `afero.Fs` the code was given, with `fileio.SafeChildIn` for a path in a work folder. Not `os`. Once #608 is built, through the video's `Episode` |
 | change a plan | `editPlan` in `engine/edit.go` |

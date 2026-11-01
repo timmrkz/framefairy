@@ -465,3 +465,33 @@ within a quarter second.
 - One table, `frontend/src/lib/moves.cases.json`, holds the two rules
   to one, and a new move takes a row there: 2 and 5.
 - Go sending what moved is dropped, by 2.
+
+### As built
+
+- `EpisodeSession.seen` puts each snapshot of a video's job in a list,
+  and the moves of the first are made once the state kept was read
+  after it, `knows`, then the next. `take` makes the waiting moves as it
+  keeps a state, before the moves of the jobs the state hands on.
+  `asked` puts a job the store has over in the same list. This replaces
+  the bullet above on an edit holding the states: a move made then now
+  waits for the state taken after the edit.
+- A move whose news came before its state, with no edit holding the
+  states, is said in the app's log as a warning: the Go side's rule
+  missed it, or the order broke on the way.
+- `movesOn` in `jobs.go` is decided in `stampLocked`, from what the
+  job's last stamp said, kept on the job, and `q.told` and its mutex
+  are gone. It now says what the table says for a search first heard of
+  as it runs, which moves the work on when it has written clips, and
+  for work first heard of as over, which moves it on only when it could
+  have been asked for here, a clip made by hand or a render.
+- `frontend/src/lib/moves.cases.json` has 22 cases, read by
+  `TestTheNewsThatMovesTheWorkOnIsTheNewsTheWindowMovesOn` in Go and by
+  `session.test.ts`, each with the moves made for work asked for
+  elsewhere and for work asked for here.
+- `videoNews.tell` waits for the send before it first, so the changes
+  and the news that come meanwhile join it: one send runs and one waits,
+  review finding 1.
+- Simulations 2 and 3 of the part before said the order needed no new
+  name and added no state. The build added both: `movesOn`, with its
+  record of every job, and the news a video's sender holds. The first now
+  lives on the job, the second is in Where state lives.

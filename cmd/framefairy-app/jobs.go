@@ -144,6 +144,14 @@ type Job struct {
 	// window and let go of its lane, so whatever waits for jobs to stop
 	// waits for this too, see runSafely.
 	alive bool
+	// said is what the job's last stamp said of its work, once it is
+	// stamped, and movesOn whether that stamp moved the work on from the
+	// one before, see movesOn. Decided under q.mu as it is stamped, so in
+	// the order of the stamps, and carried by each copy of the job made
+	// for its news.
+	said    workSaid
+	stamped bool
+	movesOn bool
 }
 
 // going says whether a job is queued or running.
@@ -182,8 +190,11 @@ type queue struct {
 	lanes *lanes
 	// idle is a queue that takes work and does none of it, see
 	// newIdleQueue.
-	idle   bool
-	emit   func(JobUpdate)
+	idle bool
+	emit func(JobUpdate)
+	// tell sends a job's news to the window, once emit has had the video's
+	// state sent before it when it moves the work on.
+	tell   func(JobUpdate)
 	store  *store
 	notify func(episode string)
 	// closed counts, per episode, the removals under way. While an episode
@@ -213,38 +224,46 @@ type queue struct {
 	// change moves the video's work on, and the job's news, see
 	// videoNews.after.
 	news func(episode string, movesOn bool, then func())
-	// told is what the window was last told of each job, by its ID, so
-	// the news that moves its work on is known, see movesOn.
-	toldMu sync.Mutex
-	told   map[string]toldJob
 }
 
-// toldJob is what the window's moves are made of in a job's news, see
-// EpisodeSession in frontend/src/lib/session.svelte.ts.
-type toldJob struct {
+// workSaid is what a job's news says of its work that the window's
+// moves are made of, see EpisodeSession in
+// frontend/src/lib/session.svelte.ts.
+type workSaid struct {
 	going   bool
 	written int
 	hearing bool
 }
 
-// movesOn says whether this news of a job moves the work on from the
-// news before it: the job over, a clip written, or its hearing over.
-// The window makes a move of each, with the clips and the status the
-// work left, so the news goes out after a state of the video that holds
-// them. The rest, a job started or going on, goes out as it comes.
-func (q *queue) movesOn(j Job) bool {
-	now := toldJob{going: j.going(), written: j.Written, hearing: j.Step == "hearing"}
-	q.toldMu.Lock()
-	defer q.toldMu.Unlock()
-	if q.told == nil {
-		q.told = map[string]toldJob{}
-	}
-	was, seen := q.told[j.ID]
-	q.told[j.ID] = now
+func (j *Job) workSaid() workSaid {
+	return workSaid{going: j.going(), written: j.Written, hearing: j.Step == "hearing"}
+}
+
+// movesOn says whether news of a job of kind that says now moves its
+// work on from the news before it, which said was, or from none, when
+// seen is false: a search's clip written or its hearing over, or the work
+// over. The window makes a move of each with the clips and the status
+// the work left, so the news goes out after a state of the video read
+// after it. The rest, work started or going on, goes out as it comes. The
+// window makes its moves once it has such a state, whatever order they
+// come in, so this decides how soon, not whether.
+// frontend/src/lib/moves.cases.json holds the two to one.
+func movesOn(kind string, was workSaid, seen bool, now workSaid) bool {
 	if !now.going {
-		return !seen || was.going
+		if !seen {
+			// Only work asked for in the window is said over when it was
+			// never seen going, a clip made by hand or a render.
+			return kind == engine.JobClip || kind == engine.JobRender
+		}
+		return was.going
 	}
-	return seen && (now.written != was.written || (was.hearing && !now.hearing))
+	if kind != engine.JobSearch {
+		return false
+	}
+	if !seen {
+		was = workSaid{}
+	}
+	return (now.written > 0 && now.written != was.written) || (was.going && was.hearing && !now.hearing)
 }
 
 // moved says a job changed the state of its video, and whether that
@@ -303,6 +322,9 @@ func (q *queue) ofVideo(episode string) ([]Job, uint64) {
 func (q *queue) stampLocked(j *Job) {
 	q.seq++
 	j.Seq = q.seq
+	now := j.workSaid()
+	j.movesOn = movesOn(j.Kind, j.said, j.stamped, now)
+	j.said, j.stamped = now, true
 	q.changed.WakeLocked()
 }
 
@@ -310,15 +332,15 @@ func (q *queue) stampLocked(j *Job) {
 func newQueue(s *store, emit func(JobUpdate), notify func(string)) *queue {
 	q := &queue{store: s, notify: quietly(notify), closed: map[string]int{},
 		lanes: newLanes(), calledOff: map[string]string{}}
-	tell := quietly(emit)
+	q.tell = quietly(emit)
 	q.emit = func(u JobUpdate) {
 		// A job's news goes out after the state of its video read after
 		// it, so the window has what the job left when it hears what the
 		// job did, see the decision record
 		// docs/decisions/2026-10-30-a-videos-state-in-one-session.md.
-		q.moved(u.Job.Episode, q.movesOn(u.Job), func() {
-			if tell != nil {
-				tell(u)
+		q.moved(u.Job.Episode, u.Job.movesOn, func() {
+			if q.tell != nil {
+				q.tell(u)
 			}
 		})
 	}
