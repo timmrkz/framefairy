@@ -7,6 +7,27 @@
 import { ask, caughtUp, control, fromSidebar, letClockGo, letHeld, nextPaint, noDeadlines, pageUntil, runClock, seenUntil, settle, sidebarStill, slowDown } from "../bridge.mjs";
 import { dropOn, standsAt, stillStands, toastSays, toastsSay, url } from "../common/steps.mjs";
 
+// The two notes of dictation, E5 and B5 in Hz, going up as it starts and
+// down as it stops, see frontend/src/lib/chime.ts.
+const LOW = 659.26;
+const HIGH = 987.77;
+const near = (n, pitch) => Math.abs(n.f - pitch) < 40;
+// sounds waits until a note near first and one near second have sounded
+// since note from, and gives every note since, however late they come.
+// The walk's own timeout ends it if they never do.
+async function sounds(page, from, first, second) {
+  await page.evaluate(([from, a, b]) => window.__pair(from, a, b), [from, first, second]);
+  return page.evaluate((from) => window.__notes.slice(from), from);
+}
+// inOrder says whether the note near first began no later than the one
+// near second. A busy machine can start both at the same moment, which
+// still sounds both.
+function inOrder(notes, first, second) {
+  const a = notes.find((n) => near(n, first));
+  const b = notes.find((n) => near(n, second));
+  return a !== undefined && b !== undefined && a.at <= b.at;
+}
+
 export const steps = {
   // ["bugs"]           clicks Bugs in the sidebar, which has the app open
   //                    the report window or bring it forward, and opens
@@ -27,16 +48,20 @@ export const steps = {
       // connected to a tap that reads the samples as they are played. A
       // note is a pitch that starts to sound, and when it starts is read
       // on the audio's own clock, against the moment Listen answered.
-      // window.__noted(n) settles once n notes have sounded.
+      // window.__pair(from, a, b) settles once, from note from on, a
+      // note near pitch a and one near pitch b have sounded.
       await walk.reportPage.addInitScript(() => {
         window.__notes = [];
         let waiting = [];
-        window.__noted = (n) => new Promise((done) => (window.__notes.length >= n ? done() : waiting.push({ n, done })));
+        const has = ({ from, a, b }) => {
+          const since = window.__notes.slice(from);
+          return [a, b].every((p) => since.some((n) => Math.abs(n.f - p) < 40));
+        };
+        window.__pair = (from, a, b) => new Promise((done) => (has({ from, a, b }) ? done() : waiting.push({ from, a, b, done })));
         const heard = (note) => {
           window.__notes.push(note);
-          const n = window.__notes.length;
-          for (const w of waiting.filter((w) => w.n <= n)) w.done();
-          waiting = waiting.filter((w) => w.n > n);
+          for (const w of waiting.filter(has)) w.done();
+          waiting = waiting.filter((w) => !has(w));
         };
         // A sample louder than this is sound, and a pitch whose strength
         // is over it sounds. The app's notes are about ten times louder.
@@ -1485,15 +1510,16 @@ export const steps = {
     // waits for the two notes, however late, and reads only what sounded
     // since the press. The walk's own timeout ends it if they never come.
     if (late) await control(url, "/hold?call=Listen&gate=open");
-    if (!running) await page.evaluate((n) => window.__noted(n), before + 2);
-    const up = await page.evaluate((from) => window.__notes.slice(from), running ? -2 : before);
-    if (up.some((n) => !n.open)) {
-      walk.wrong = `a note sounded before the microphone said it was on, it sounded ${JSON.stringify(up)}`;
-      return;
-    }
-    if (up.length !== 2 || up[0].f >= up[1].f) {
-      walk.wrong = `the microphone opened without the start sound, it sounded ${JSON.stringify(up)}`;
-      return;
+    if (!running) {
+      const up = await sounds(page, before, LOW, HIGH);
+      if (up.some((n) => !n.open)) {
+        walk.wrong = `a note sounded before the microphone said it was on, it sounded ${JSON.stringify(up)}`;
+        return;
+      }
+      if (!inOrder(up, LOW, HIGH)) {
+        walk.wrong = `the microphone opened without the start sound going up, it sounded ${JSON.stringify(up)}`;
+        return;
+      }
     }
     kept.notes = await page.evaluate(() => window.__notes.length);
     await watch.step("hearing", s);
@@ -1551,12 +1577,11 @@ export const steps = {
       if (on.name !== "Report") walk.wrong ||= `once the last words were written the focus was on ${on.name}, not on Report where Tab put it`;
       else if (!on.ring) walk.wrong ||= "once the last words were written Report had the focus with no ring asked for";
     }
-    // Two notes going down say it stopped, however it stopped, and
-    // only those two. They sound a moment after Dictate shows again, so
-    // the walk waits until two more have sounded.
-    await page.evaluate((n) => window.__noted(n), kept.notes + 2);
-    const down = await page.evaluate((from) => window.__notes.slice(from), kept.notes);
-    if (down.length !== 2 || down[0].f <= down[1].f) walk.wrong = `it stopped with ${JSON.stringify(down)} played, not the two notes of the stop sound`;
+    // The two notes going down say it stopped, however it stopped. They
+    // sound a moment after Dictate shows again, so the walk waits for
+    // them.
+    const down = await sounds(page, kept.notes, HIGH, LOW);
+    if (!inOrder(down, HIGH, LOW)) walk.wrong = `it stopped with ${JSON.stringify(down)} sounded, not the two notes of the stop sound going down`;
     await watch.step("dictate", s);
   },
   // ["report reads", text]
