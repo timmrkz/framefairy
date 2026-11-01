@@ -54,13 +54,27 @@ class Behind extends JobStore {
   }
 }
 
+// A job store whose every news comes before the state of the video read
+// after it, which comes right behind: the order of news that does not
+// move the work on, or of news that went out of order. The move waits for
+// the state.
+class Ahead extends JobStore {
+  sessions: EpisodeSession[] = [];
+  private rev = 0;
+  apply(j: Job) {
+    super.apply(j);
+    this.rev = Math.max(this.rev + 1, (j.seq ?? 0) + 1);
+    for (const s of this.sessions) s.take(state(this.rev, { jobs: [j] }));
+  }
+}
+
 // The two orders the news of a job and the states of its video come in:
-// the news before any state is in, as a test of the moves alone has
-// them, and each news after a state read after it, as the Go side sends
-// them. Every move is said the same in both.
+// each news after a state read after it, as the Go side sends the news
+// that moves the work on, and each news before it. Every move is said
+// the same in both.
 const orders = [
-  { order: "before any state of the video", store: () => new JobStore() },
   { order: "with a state read after each news, sent before it", store: (): JobStore => new Behind() },
+  { order: "with a state read after each news, sent after it", store: (): JobStore => new Ahead() },
 ];
 
 // Every move the session says, in the order it said them, as "move id".
@@ -82,6 +96,7 @@ function session(jobs: JobStore, moves: Partial<WorkMoves> = {}) {
     jobs.sessions.push({ session: here, heard });
     here.take(state(1));
   }
+  if (jobs instanceof Ahead) jobs.sessions.push(here);
   return { jobs, heard, session: here, close };
 }
 
@@ -312,6 +327,7 @@ describe.each(orders)("a video's session, $order", ({ store }) => {
 // state, as it hands its jobs to the store.
 describe("a video's session as the app runs", () => {
   test("makes a move with the state its job comes in, which holds what the work left", () => {
+    vi.mocked(said).mockClear();
     const jobs = new JobStore();
     const seen: string[][] = [];
     const { session: here } = session(jobs, { wrote: () => seen.push(here.clips.map((c) => c.key)) });
@@ -321,6 +337,56 @@ describe("a video's session as the app runs", () => {
     expect(seen).toEqual([["a", "b"]]);
     jobs.apply(job("s", "search", "running", 2, { step: "finding", written: 1 }));
     expect(seen).toEqual([["a", "b"]]);
+    expect(said).not.toHaveBeenCalledWith(expect.stringContaining("waited"), expect.anything());
+  });
+
+  test("makes a move whose news came first once its state is in, and says in the log it waited", () => {
+    vi.mocked(said).mockClear();
+    const jobs = new JobStore();
+    const seen: string[][] = [];
+    const { session: here } = session(jobs, { wrote: () => seen.push(here.clips.map((c) => c.key)) });
+    here.take(state(1));
+    jobs.apply(job("s", "search", "running", 1, { step: "finding" }));
+    jobs.apply(job("s", "search", "running", 2, { step: "finding", written: 1 }));
+    expect(seen).toEqual([]);
+    here.take(state(3, { clips: [clip("a"), clip("b")] }));
+    expect(seen).toEqual([["a", "b"]]);
+    expect(said).toHaveBeenCalledWith(expect.stringContaining("the move wrote of the job s waited for its state"), { level: "warn", video: "/v.mp4" });
+  });
+
+  test("makes no move while an edit holds the states, and makes it with the state taken after", async () => {
+    vi.mocked(said).mockClear();
+    const jobs = new JobStore();
+    const seen: string[][] = [];
+    const { session: here } = session(jobs, { wrote: () => seen.push(here.clips.map((c) => c.key)) });
+    here.take(state(1));
+    jobs.apply(job("s", "search", "running", 1, { step: "finding" }));
+    let answer!: (c: ClipEntry) => void;
+    const edited = here.edit("a", (c) => ({ ...c, thumbnails: [12] }), () => new Promise((done) => (answer = done)));
+    // The search writes a clip while the thumbnail is written.
+    here.take(state(4, { clips: [clip("a"), clip("b")], jobs: [job("s", "search", "running", 3, { step: "finding", written: 1 })] }));
+    jobs.apply(job("s", "search", "running", 3, { step: "finding", written: 1 }));
+    expect(seen).toEqual([]);
+    answer(clip("a", { thumbnails: [12], rev: 2 }));
+    await edited;
+    expect(seen).toEqual([["a", "b"]]);
+    expect(said).not.toHaveBeenCalledWith(expect.stringContaining("waited"), expect.anything());
+  });
+
+  test("makes no move from a state read before an edit's answer, and makes it with the next", () => {
+    vi.mocked(said).mockClear();
+    const jobs = new JobStore();
+    const seen: string[][] = [];
+    const { session: here } = session(jobs, { wrote: () => seen.push(here.clips.map((c) => c.key)) });
+    here.take(state(1));
+    jobs.apply(job("s", "search", "running", 1, { step: "finding" }));
+    here.put(clip("a", { rejected: true, rev: 5 }));
+    // Read before the clip was removed, after the search wrote one.
+    expect(here.take(state(4, { clips: [clip("a"), clip("b")], jobs: [job("s", "search", "running", 3, { step: "finding", written: 1 })] }))).toBe(false);
+    expect(seen).toEqual([]);
+    here.take(state(6, { clips: [clip("a", { rejected: true }), clip("b")] }));
+    expect(seen).toEqual([["a", "b"]]);
+    expect(said).not.toHaveBeenCalledWith(expect.stringContaining("waited"), expect.anything());
   });
 
   test("makes every move the state's jobs bring, though one goes wrong", () => {
