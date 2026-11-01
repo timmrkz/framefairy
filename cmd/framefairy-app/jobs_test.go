@@ -1133,10 +1133,16 @@ func TestTheWindowIsToldTheStepTheEngineWrites(t *testing.T) {
 	s, eps := memoryLibrary(t, "talk.mp4")
 	var mu sync.Mutex
 	var heard []Job
+	// The window is told a job ended after the queue says so, see
+	// queue.update, so a render is over here once its news of the end is.
+	ended := make(chan string, 4)
 	s.jobs = newQueue(s.store, func(u JobUpdate) {
 		mu.Lock()
 		heard = append(heard, u.Job)
 		mu.Unlock()
+		if !u.Job.going() {
+			ended <- u.Job.ID
+		}
 	}, func(string) {})
 	logJobsOnFailure(t, s.jobs)
 	plan := filepath.Join(engine.WorkDir(eps[0]), "logs", "clips-0-60.json")
@@ -1147,7 +1153,11 @@ func TestTheWindowIsToldTheStepTheEngineWrites(t *testing.T) {
 			func(ctx context.Context, p *engine.Project, host engine.Host) (string, error) {
 				return plan, p.RenderJob(ctx, carry.ID, req, carry, host)
 			})
-		s.jobs.untilNoneGoing()
+		for id := range ended {
+			if id == job.ID {
+				break
+			}
+		}
 		return job
 	}
 	told := func(id string) (steps []string, last Job) {
