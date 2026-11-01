@@ -150,7 +150,7 @@ thing belongs. In short:
   commit of its own named in the description. Only something wrong that
   the pull request did not cause, and that cannot be done now, is
   logged: a bug seen while testing, a review finding that points
-  elsewhere, a larger ask. It becomes a
+  elsewhere and that people using the app can meet, a larger ask. It becomes a
   [GitHub issue](https://github.com/timmrkz/framefairy/issues) of its
   own, written the way
   [.github/ISSUE_TEMPLATE/issue.md](.github/ISSUE_TEMPLATE/issue.md)

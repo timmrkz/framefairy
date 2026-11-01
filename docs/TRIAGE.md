@@ -14,13 +14,14 @@ A workaround closes its issue and leaves the cause to come back under
 the next one, and nobody sees that it is the same thing again.
 
 When the cause lies outside our code, in a driver, a runner or a tool,
-what matters is whom it reaches. What reaches only a test, a CI runner's
-virtual hardware, a machine loaded on purpose, a file made for the test,
-is fixed in the test or in how it uses its environment, never in the
-app. What reaches a person is fixed once in our code, in one place, for
-every path it can come through. Evidence that it reaches a person comes
-first: Tim's report or log, or the failure reproduced with real input on
-a machine people use. When
+what matters is whom it reaches. What only a test's environment does,
+a CI runner's virtual hardware or a stand-in program, is fixed in how
+the test uses it, never in the app. What reaches a person is fixed once
+in our code, in one place, for every path it can come through, and so is
+an order of the app's own work that a busy runner only made likelier.
+Evidence comes first: Tim's report or log, the failure reproduced with
+real input on a machine people use, or the order made to happen on
+purpose. When
 the cause is not known yet, finding it is the work: the trace first,
 then the order the code assumes, see section 7 of the
 [testing skill](../.claude/skills/testing/SKILL.md). A pull request that
@@ -39,10 +40,10 @@ this order, because what happens now comes first:
    issue whose facts changed is looked at again, a flaky test seen
    failing again for example.
 3. **Who meets it.** Every open issue that reports a problem is checked
-   for who meets it, in Tim's report logs first. One met only where a
-   test runs, on a CI runner, on a machine loaded on purpose or with a
-   file made for the test, is rewritten to be about the test and its
-   environment, see Root causes only. One found only by reading code or
+   for who meets it, in Tim's report logs first. One that only a test's
+   environment causes, a CI runner's virtual hardware, a stand-in or a
+   file made for the test, is rewritten to be about the test, see Root
+   causes only. One found only by reading code or
    in a review, which nothing a person does can reach, is closed as not
    planned. An order of events in our own code that a test can make
    happen, quitting in the middle of a delete for example, stays and

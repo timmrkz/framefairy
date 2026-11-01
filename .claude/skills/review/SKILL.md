@@ -283,8 +283,8 @@ approve it, and nobody waits for them.
   too, so the author confirms a finding before fixing it, and agrees
   with nothing for its own sake.
 - **Each finding is fixed, shown wrong with the reason, or logged when it
-  lies outside this work,** and reported by its number once the work is
-  done.
+  lies outside this work and people using the product can meet it,** and
+  reported by its number once the work is done.
 - **Only a choice that would change what the user asked for goes to the
   user,** as one question with a recommendation. The rest of the review
   goes ahead meanwhile.

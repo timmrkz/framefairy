@@ -374,8 +374,8 @@ nothing more than a field, a parameter or an option:
 
 ## 6. When a test fails, or a bug is reported
 
-A failing test is a question about the product first and about the test
-second. A bug report is the same question.
+A failing test asks what should have happened, and what kept it from
+happening there. A bug report asks the same.
 
 1. **Reproduce it first, as it happened.**
    - Use the input the reporter used, the same file, the same data, at
@@ -406,11 +406,13 @@ second. A bug report is the same question.
 4. **Decide what is wrong**, asking of each in this order, and moving
    on only once the evidence rules it out:
    - **The environment.** Does it fail only where the test runs, on a
-     CI runner and its virtual hardware, on a machine loaded on purpose,
-     with a stand-in program or a file made for the test? Then the
-     environment is the cause, and the fix is in how the test uses it.
-     The product is not changed for what only the test's environment
-     does.
+     CI runner and its virtual hardware, on a busy machine, with a
+     stand-in program or a file made for the test? Look there first.
+     What the environment's own hardware or programs do is fixed in how
+     the test uses them, never in the product. What the test fed the
+     product decides it, not where it ran: input from outside, like a
+     fuzzer's bytes, or an order of the product's own work that a busy
+     machine only made likelier, is the product's to fix.
    - **The test.** It checked something nobody specified, read the page
      before the step had happened, or depended on time. Fix it so it
      checks what matters, on an event.
@@ -431,8 +433,8 @@ second. A bug report is the same question.
    issue when it is outside the change.
 7. **Fix for every machine people use.** A fix tuned to one machine, its
    screen, its speed or its system, is a bug on the next machine. A CI
-   runner, a machine loaded on purpose and a stand-in are the test's
-   environment, not machines people use, see step 4.
+   runner's virtual hardware and a stand-in are the test's environment,
+   not machines people use, see step 4.
 
 Never, to get green: loosen a check, raise a timeout, add a sleep or a
 retry, skip, quarantine or remove a test, or change the expected value to
