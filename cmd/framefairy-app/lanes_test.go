@@ -242,6 +242,39 @@ func TestATurnTakenBackSaysItWaitsAtOnce(t *testing.T) {
 	})
 }
 
+// A job whose first turn has to wait says the lane it waits for, not the
+// lane of its kind: a search that waits to hear says Waiting to
+// transcribe, not Waiting to find clips. Its record says it waits from
+// the start, so the engine has nothing new to write, and the queue says
+// the lane itself, found by the review of #655. One that waits after a
+// step says it with the waiting the engine writes.
+func TestAJobWaitingForItsFirstTurnSaysTheLaneItWaitsFor(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		q := newQueue(nil, func(JobUpdate) {}, func(string) {})
+		_, busy := given(t, q.lanes, LaneHearing, plainTurn)
+		search := &Job{Kind: engine.JobSearch, Lane: laneFor(engine.JobSearch)}
+		search.Step = engine.StepWaiting
+		told := make(chan string, 1)
+		got := make(chan func(), 1)
+		go func() {
+			_, release, err := q.turn(search, engine.Options{Planner: "local"})(t.Context(), engine.StepHearing, func() {
+				q.mu.Lock()
+				told <- search.Lane
+				q.mu.Unlock()
+			})
+			if err == nil {
+				got <- release
+			}
+		}()
+		waits(t, got, "the search while the lane of hearing is busy")
+		if lane := <-told; lane != LaneHearing {
+			t.Errorf("a search waiting to hear says it waits for the lane %q", lane)
+		}
+		busy()
+		comes(t, got, "the search once the lane of hearing is free")()
+	})
+}
+
 // A search asks to find while it still holds the hearing lane, and the
 // lane is let go once the ask has its place. Hearing then waits while the
 // search waits to find, as it waits while one finds, so the whole video

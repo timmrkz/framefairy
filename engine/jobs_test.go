@@ -60,7 +60,7 @@ func TestASearchHearsItsWindowAndFindsItsClips(t *testing.T) {
 		var once sync.Once
 		return ctx, func() { once.Do(func() { turns = append(turns, "let go of "+step) }) }, nil
 	}
-	plan, err := p.Search(context.Background(), PlanRequest{From: 5, To: 25, Count: 1, Min: 5}, turn)
+	plan, err := p.Search(context.Background(), PlanRequest{From: 5, To: 25, Count: 1, Min: 5}, Host{Turn: turn})
 	if err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
@@ -101,7 +101,7 @@ func TestASearchHearsItsWindowAndFindsItsClips(t *testing.T) {
 	// moment the first search found, so the search keeps nothing, and
 	// ends with a plan that says so rather than failing.
 	turns = nil
-	again, err := p.Search(context.Background(), PlanRequest{From: 5, To: 15, Count: 1, Min: 5}, turn)
+	again, err := p.Search(context.Background(), PlanRequest{From: 5, To: 15, Count: 1, Min: 5}, Host{Turn: turn})
 	if err != nil {
 		t.Fatal(err, p.LastError())
 	}
@@ -119,7 +119,7 @@ func TestASearchHearsItsWindowAndFindsItsClips(t *testing.T) {
 func TestASearchOfTheWholeEpisodeFinishesTheTranscript(t *testing.T) {
 	t.Parallel()
 	p, _ := searchProject(t, nil)
-	if _, err := p.Search(context.Background(), PlanRequest{Count: 1, Min: 5}, nil); err != nil {
+	if _, err := p.Search(context.Background(), PlanRequest{Count: 1, Min: 5}, Host{}); err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
 	if _, done := Coverage(disk, p.Source, p.Base.ASRModel); !done {
@@ -153,7 +153,7 @@ func TestASearchStoppedWhileItHearsKeepsItsRecord(t *testing.T) {
 	defer cancel()
 	var heard int32
 	p, _ := searchProject(t, func(string) (Recognizer, error) { return stops{cancel, fakeRecognizer{&heard}}, nil })
-	_, err := p.Search(ctx, PlanRequest{From: 0, To: 30, Count: 1, Min: 5}, nil)
+	_, err := p.Search(ctx, PlanRequest{From: 0, To: 30, Count: 1, Min: 5}, Host{})
 	if !errors.Is(err, ErrCancelled) {
 		t.Fatalf("stopped: %v", err)
 	}
@@ -187,7 +187,7 @@ func TestASearchStoppedWhileItWaitsKeepsItsRecord(t *testing.T) {
 		}
 		return ctx, func() {}, nil
 	}
-	if _, err := p.Search(ctx, PlanRequest{To: 20, Count: 1, Min: 5}, turn); !errors.Is(err, ErrCancelled) {
+	if _, err := p.Search(ctx, PlanRequest{To: 20, Count: 1, Min: 5}, Host{Turn: turn}); !errors.Is(err, ErrCancelled) {
 		t.Fatalf("stopped: %v", err)
 	}
 	if rec := ReadSearch(disk, p.Source); rec == nil || rec.Step != StepWaiting || !rec.Interrupted() {
@@ -205,7 +205,7 @@ func TestASearchThatFailsSaysWhy(t *testing.T) {
 		p, _ := searchProject(t, func(string) (Recognizer, error) {
 			return nil, errors.New("the speech model is not there")
 		})
-		if _, err := p.Search(context.Background(), PlanRequest{To: 20, Count: 1, Min: 5}, nil); err == nil {
+		if _, err := p.Search(context.Background(), PlanRequest{To: 20, Count: 1, Min: 5}, Host{}); err == nil {
 			t.Fatal("no error")
 		}
 		rec := ReadSearch(disk, p.Source)
@@ -224,7 +224,7 @@ func TestASearchThatFailsSaysWhy(t *testing.T) {
 		}))
 		defer broken.Close()
 		p.Base.LLMURL = broken.URL
-		if _, err := p.Search(context.Background(), PlanRequest{To: 20, Count: 1, Min: 5}, nil); err == nil {
+		if _, err := p.Search(context.Background(), PlanRequest{To: 20, Count: 1, Min: 5}, Host{}); err == nil {
 			t.Fatal("no error")
 		}
 		rec := ReadSearch(disk, p.Source)
@@ -245,7 +245,7 @@ func TestASearchThatFailsSaysWhy(t *testing.T) {
 func TestARenderCarriesOnWithTheClipsItHasNotFinished(t *testing.T) {
 	t.Parallel()
 	p, _ := searchProject(t, nil)
-	plan, err := p.Search(context.Background(), PlanRequest{Count: 1, Min: 5}, nil)
+	plan, err := p.Search(context.Background(), PlanRequest{Count: 1, Min: 5}, Host{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -266,7 +266,7 @@ func TestARenderCarriesOnWithTheClipsItHasNotFinished(t *testing.T) {
 		found, _ := filepath.Glob(filepath.Join(p.Base.Out, "*.mp4"))
 		return len(found)
 	}
-	if err := p.RenderJob(context.Background(), id, RenderRequest{Plan: plan}, cut, turn); err != nil {
+	if err := p.RenderJob(context.Background(), id, RenderRequest{Plan: plan}, cut, Host{Turn: turn}); err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
 	if got := shorts(); got != len(view.Clips)-1 {
@@ -284,7 +284,7 @@ func TestARenderCarriesOnWithTheClipsItHasNotFinished(t *testing.T) {
 	}
 
 	// And one from the start renders every clip.
-	if err := p.RenderJob(context.Background(), NewRenderID(), RenderRequest{Plan: plan}, nil, nil); err != nil {
+	if err := p.RenderJob(context.Background(), NewRenderID(), RenderRequest{Plan: plan}, nil, Host{}); err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
 	if n := ReadTimings(disk, p.Source)[2].Clips; n != len(view.Clips) || shorts() != len(view.Clips) {
@@ -402,7 +402,7 @@ func TestASearchCarriesOnHearingWhenItGetsTheLaneBack(t *testing.T) {
 	}
 	// The whole episode, which is heard to its end without a hold to stop
 	// at first.
-	if _, err := p.Search(context.Background(), PlanRequest{Count: 1, Min: 5}, turn); err != nil {
+	if _, err := p.Search(context.Background(), PlanRequest{Count: 1, Min: 5}, Host{Turn: turn}); err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
 	if got := strings.Join(turns, " "); got != "hearing hearing finding" {
@@ -424,7 +424,7 @@ func TestAJobCalledOffByHandSaysSo(t *testing.T) {
 		Step: StepHearing, Steps: []StepTime{{Step: StepHearing}}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := StopJob(fsys, source, SearchID); err != nil {
+	if _, _, err := StopJob(fsys, source, SearchID); err != nil {
 		t.Fatal(err)
 	}
 	rec := ReadSearch(fsys, source)
@@ -434,7 +434,7 @@ func TestAJobCalledOffByHandSaysSo(t *testing.T) {
 	if rec.Steps[0].To == nil {
 		t.Error("the step it was in did not end")
 	}
-	if err := StopJob(fsys, source, "render-9"); err != nil {
+	if _, _, err := StopJob(fsys, source, "render-9"); err != nil {
 		t.Errorf("a job with no record: %v", err)
 	}
 }
@@ -464,7 +464,7 @@ func TestASearchOfALaterWindowHearsOnlyWhatIsNew(t *testing.T) {
 	p, _ := searchProject(t, func(string) (Recognizer, error) {
 		return counting{&seconds, fakeRecognizer{&heard}}, nil
 	})
-	if _, err := p.Search(context.Background(), PlanRequest{To: 15, Count: 1, Min: 5}, nil); err != nil {
+	if _, err := p.Search(context.Background(), PlanRequest{To: 15, Count: 1, Min: 5}, Host{}); err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
 	first := seconds
@@ -478,7 +478,7 @@ func TestASearchOfALaterWindowHearsOnlyWhatIsNew(t *testing.T) {
 		}
 	})
 	seconds = 0
-	if _, err := p.Search(context.Background(), PlanRequest{From: 20, To: 30, Count: 1, Min: 5}, nil); err != nil {
+	if _, err := p.Search(context.Background(), PlanRequest{From: 20, To: 30, Count: 1, Min: 5}, Host{}); err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
 	if seconds > 10+2*hearingPad+0.1 {
@@ -497,7 +497,7 @@ func TestASearchOfALaterWindowHearsOnlyWhatIsNew(t *testing.T) {
 func TestAShortRendersWithoutCaptionsWhenTheyAreOff(t *testing.T) {
 	t.Parallel()
 	p, _ := searchProject(t, nil)
-	plan, err := p.Search(context.Background(), PlanRequest{Count: 1, Min: 5}, nil)
+	plan, err := p.Search(context.Background(), PlanRequest{Count: 1, Min: 5}, Host{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -532,7 +532,7 @@ func TestAPanicWhileHearingGivesTheLaneBack(t *testing.T) {
 	}
 	func() {
 		defer func() { _ = recover() }()
-		_, _ = p.Search(context.Background(), PlanRequest{Count: 1, Min: 5}, turn)
+		_, _ = p.Search(context.Background(), PlanRequest{Count: 1, Min: 5}, Host{Turn: turn})
 	}()
 	if held != 0 {
 		t.Errorf("%d lanes still held after the panic", held)
@@ -547,7 +547,7 @@ func TestAPanicWhileHearingGivesTheLaneBack(t *testing.T) {
 func TestARenderThatFailsKeepsTheShortBefore(t *testing.T) {
 	t.Parallel()
 	p, _ := searchProject(t, nil)
-	plan, err := p.Search(context.Background(), PlanRequest{Count: 1, Min: 5}, nil)
+	plan, err := p.Search(context.Background(), PlanRequest{Count: 1, Min: 5}, Host{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -598,7 +598,7 @@ func TestARenderThatFailsKeepsTheShortBefore(t *testing.T) {
 func TestAPlanIsWhereTheSearchSaysItIs(t *testing.T) {
 	t.Parallel()
 	p, _ := searchProject(t, nil)
-	plan, err := p.Search(context.Background(), PlanRequest{From: 9.9996, To: 39.9996, Count: 1, Min: 5}, nil)
+	plan, err := p.Search(context.Background(), PlanRequest{From: 9.9996, To: 39.9996, Count: 1, Min: 5}, Host{})
 	if err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
@@ -626,7 +626,7 @@ func TestASearchCutOffBeforeItBeginsIsInterrupted(t *testing.T) {
 		p, _ := searchProject(t, nil)
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		_, err := p.Search(ctx, req, nil)
+		_, err := p.Search(ctx, req, Host{})
 		if !errors.Is(err, ErrCancelled) {
 			t.Errorf("%+v: a search cut off says %v", req, err)
 		}
@@ -649,7 +649,7 @@ func TestASearchCutOffBeforeItBeginsIsInterrupted(t *testing.T) {
 func TestATranscriptionHearsTheWholeEpisodeAndNothingElse(t *testing.T) {
 	t.Parallel()
 	p, asked := searchProject(t, nil)
-	if _, err := p.Search(context.Background(), PlanRequest{From: 5, To: 15, Count: 1, Min: 5}, nil); err != nil {
+	if _, err := p.Search(context.Background(), PlanRequest{From: 5, To: 15, Count: 1, Min: 5}, Host{}); err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
 	plans := p.Plans()
@@ -661,7 +661,7 @@ func TestATranscriptionHearsTheWholeEpisodeAndNothingElse(t *testing.T) {
 		}
 		return ctx, func() {}, nil
 	}
-	if err := p.TranscribeJob(context.Background(), turn); err != nil {
+	if err := p.TranscribeJob(context.Background(), Host{Turn: turn}); err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
 	if _, done := Coverage(disk, p.Source, p.Base.ASRModel); !done {
@@ -675,7 +675,7 @@ func TestATranscriptionHearsTheWholeEpisodeAndNothingElse(t *testing.T) {
 	}
 	// Heard to the end, there is nothing left to wait for.
 	turns = nil
-	if err := p.TranscribeJob(context.Background(), turn); err != nil || len(turns) != 0 {
+	if err := p.TranscribeJob(context.Background(), Host{Turn: turn}); err != nil || len(turns) != 0 {
 		t.Errorf("again: %v, turns %v", err, turns)
 	}
 }
@@ -689,7 +689,6 @@ func TestTheEngineAloneSaysWhatStepAJobIsIn(t *testing.T) {
 	fsys := afero.NewMemMapFs()
 	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), fsys)
 	var told []JobRecord
-	e.JobChanged = func(rec JobRecord) { told = append(told, rec) }
 	p := NewProject(e, "/videos/talk.mp4", DefaultOptions())
 	steps := func() string {
 		var out []string
@@ -699,27 +698,36 @@ func TestTheEngineAloneSaysWhatStepAJobIsIn(t *testing.T) {
 		return strings.Join(out, " ")
 	}
 
-	j := p.startJob(JobRecord{ID: SearchID, Kind: JobSearch, To: 60})
 	ctx := context.Background()
 	var waits func()
 	given := func(_ context.Context, _ string, w func()) (context.Context, func(), error) {
 		waits = w
 		return ctx, func() {}, nil
 	}
-	if _, _, err := j.turn(ctx, given, StepHearing); err != nil {
+	takenBack, takeBack := context.WithCancel(ctx)
+	takeBack()
+	asGiven := func(context.Context, string, func()) (context.Context, func(), error) {
+		return takenBack, func() {}, nil
+	}
+	turn := given
+	j := p.startJob(JobRecord{ID: SearchID, Kind: JobSearch, To: 60}, Host{
+		Turn: func(ctx context.Context, step string, w func()) (context.Context, func(), error) {
+			return turn(ctx, step, w)
+		},
+		Changed: func(rec JobRecord) { told = append(told, rec) },
+	})
+	if _, _, err := j.turn(ctx, StepHearing); err != nil {
 		t.Fatal(err)
 	}
 	hearing := waits
 	// Taken back while it hears, it waits at once.
 	hearing()
 	// Given and taken back at the same moment, it goes on waiting.
-	takenBack, takeBack := context.WithCancel(ctx)
-	takeBack()
-	if _, _, err := j.turn(ctx, func(context.Context, string, func()) (context.Context, func(), error) {
-		return takenBack, func() {}, nil
-	}, StepHearing); err != nil {
+	turn = asGiven
+	if _, _, err := j.turn(ctx, StepHearing); err != nil {
 		t.Fatal(err)
 	}
+	turn = given
 	// News of the first turn, which it no longer holds, changes nothing.
 	hearing()
 	if got := steps(); got != "waiting hearing waiting" {
@@ -728,10 +736,10 @@ func TestTheEngineAloneSaysWhatStepAJobIsIn(t *testing.T) {
 
 	// Given at once, it goes from hearing on to finding with no wait.
 	told = nil
-	if _, _, err := j.turn(ctx, given, StepHearing); err != nil {
+	if _, _, err := j.turn(ctx, StepHearing); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := j.turn(ctx, given, StepFinding); err != nil {
+	if _, _, err := j.turn(ctx, StepFinding); err != nil {
 		t.Fatal(err)
 	}
 	if got := steps(); got != "hearing finding" {
@@ -765,21 +773,20 @@ func TestAJobHearsItWaitsFromAnotherGoroutine(t *testing.T) {
 	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), fsys)
 	var mu sync.Mutex
 	var last JobRecord
-	e.JobChanged = func(rec JobRecord) {
-		mu.Lock()
-		last = rec
-		mu.Unlock()
-	}
 	p := NewProject(e, "/videos/talk.mp4", DefaultOptions())
-	j := p.startJob(JobRecord{ID: TranscribeID, Kind: JobTranscribe})
 	ctx := context.Background()
 	var wg sync.WaitGroup
 	takes := func(_ context.Context, _ string, waits func()) (context.Context, func(), error) {
 		wg.Go(waits)
 		return ctx, func() {}, nil
 	}
+	j := p.startJob(JobRecord{ID: TranscribeID, Kind: JobTranscribe}, Host{Turn: takes, Changed: func(rec JobRecord) {
+		mu.Lock()
+		last = rec
+		mu.Unlock()
+	}})
 	for range 50 {
-		if _, _, err := j.turn(ctx, takes, StepHearing); err != nil {
+		if _, _, err := j.turn(ctx, StepHearing); err != nil {
 			t.Fatal(err)
 		}
 	}

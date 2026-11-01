@@ -66,8 +66,8 @@ func (r ClipRequest) reach(longest, duration float64) timed.Window {
 // It says which clip it has on the way from the moment it starts, at the
 // playhead, and the builder says it from the moment it has its sentences,
 // so the app shows it arriving the way it shows a search's clips.
-func (p *Project) MakeClip(ctx context.Context, id string, req ClipRequest, turn Turn) (key string, err error) {
-	j := p.startJob(JobRecord{ID: id, Kind: JobClip, At: req.At, Backward: req.Backward})
+func (p *Project) MakeClip(ctx context.Context, id string, req ClipRequest, host Host) (key string, err error) {
+	j := p.startJob(JobRecord{ID: id, Kind: JobClip, At: req.At, Backward: req.Backward}, host)
 	defer j.end(&err)
 	log := p.engine.Log
 	// Made, it is on the way no more. Called off or failed, it stays where
@@ -95,7 +95,7 @@ func (p *Project) MakeClip(ctx context.Context, id string, req ClipRequest, turn
 	// builder has it.
 	stepOf := func(ctx context.Context, step string) (context.Context, func(), error) {
 		log.Underway([]runlog.Underway{{N: 1, Start: req.At, End: req.At, Step: StepWaiting}}, 0, true)
-		stepCtx, release, err := j.turn(ctx, turn, step)
+		stepCtx, release, err := j.turn(ctx, step)
 		if err == nil {
 			log.Underway([]runlog.Underway{{N: 1, Start: req.At, End: req.At, Step: step}}, 0, true)
 		}

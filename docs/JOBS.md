@@ -221,14 +221,15 @@ without somewhere to send it.
 **The engine** has `Project.Search`, which hears and then finds and writes
 the record as it goes, and `Project.RenderJob`, which renders clips one at
 a time and writes its record the same way. Before each step they ask the
-app for their turn in that step's lane. The engine is the only writer of
-a job's step: a job says it waits only when the lanes say so, so a search
-that goes on from hearing to finding at once is never seen waiting in
-between, and every record it writes it also hands to the app, through
-`Engine.JobChanged`. The app keeps that record as the job the window
-sees, and adds only the lane, so the window and the record on disk say
-the same step. A job that is done is in no step, and one that failed
-says failed. `Project.Search` takes the same two
+app for their turn in that step's lane. Both come with the job, in its
+`engine.Host`: `Turn` hands it its turns, and `Changed` hears every
+record it writes. The engine is the only writer of a job's step: a job
+says it waits only when the lanes say so, so a search that goes on from
+hearing to finding at once is never seen waiting in between. The app
+keeps each record it hears as the job the window sees, and adds only the
+lane, so the window and the record on disk say the same step. A job that
+is done is in no step, and one that failed says failed, and the window
+is told either together with how the job ended. `Project.Search` takes the same two
 steps as the command line's `Run`, transcribing and then planning. The
 command line keeps its flags and its own run, and keeps no records.
 
