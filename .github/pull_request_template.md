@@ -10,7 +10,7 @@ section that has nothing to say.
 
 <!--
 No heading here. For each issue, at most 30 words: what goes wrong or
-what was asked, who met it and where, and what gets better. Then
+what was asked, who saw it happen and where, and what gets better. Then
 `Fixes #N` for each issue this finishes, so merging closes it. For
 example: "Fixes #245. On Tim's Mac, start.mp4 showed no picture and did
 not play. Tim found it testing #184. Now it plays."
@@ -20,8 +20,8 @@ not play. Tim found it testing #184. Now it plays."
 
 <!--
 For each issue, at most 30 words: why it happened, traced to the file
-and the name in the code. Where it was met says whose fault it is: a
-failure met only where a test runs is the test's or its environment's,
+and the name in the code. Where it was seen says whose fault it is: a
+failure seen only where a test runs is the test's or its environment's,
 see section 6 of the testing skill. A pull request that adds something
 says what it builds on instead.
 -->

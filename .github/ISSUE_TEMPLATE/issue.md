@@ -14,13 +14,13 @@ WHEN TO OPEN AN ISSUE, AND WHEN NOT
   the code it touches. Fix it there, as a commit of its own, see Clean
   up now, not later, in CLAUDE.md. An issue starts a whole new round of
   work.
-- Only for what someone meets: Tim on his Mac, a customer, or a test.
+- Only for what someone saw happen: Tim on his Mac, a customer, or a test.
   Say which. When only a test's environment causes it, a CI runner's
   virtual hardware, a stand-in or a file made for the test, the issue
   is about the test, see section 6 of
   .claude/skills/testing/SKILL.md. An order of events in our own code
   that a test can make happen, quitting in the middle of a delete for
-  example, counts even if nobody has met it yet.
+  example, counts even if nobody has seen it happen yet.
 - Search the open and the closed issues first, the way Problems that
   come back in docs/TRIAGE.md says. The same failure as an open issue
   goes into that issue.
@@ -48,8 +48,8 @@ Priority and size in docs/WORKFLOW.md defines them. A problem carries
 
 <!--
 No heading here. At most 30 words: what goes wrong or what is asked,
-who met it or asked for it, and where. For example: "On Tim's Mac,
-start.mp4 shows no picture after a restart. Tim met it testing #184,
+who saw it happen or asked for it, and where. For example: "On Tim's Mac,
+start.mp4 shows no picture after a restart. Tim saw it testing #184,
 report of 16 October 14.02."
 -->
 
@@ -62,7 +62,7 @@ report of 16 October 14.02."
 ## Seen
 
 <!--
-Where it was met, so anyone can find it again: Tim's report with its
+Where it was seen, so anyone can find it again: Tim's report with its
 time and build, the log lines that show it, a CI run with its link and
 commit, or the review or the code it was read from. A problem lists its
 incidents here instead, and every fix tried so far with why the cause

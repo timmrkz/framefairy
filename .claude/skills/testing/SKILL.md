@@ -444,12 +444,12 @@ what the code now says without knowing why it changed.
 
 ### Finding why a test fails now and then
 
-A test that fails now and then has met an order of events it did not
-expect. In a single-threaded language, a page, Node, Python's asyncio,
+A test that fails now and then has run into an order of events it did
+not expect. In a single-threaded language, a page, Node, Python's asyncio,
 nothing touches the same memory at once, so there is no data race to
 detect. What fails is the order: the test read the result before the
 step had finished, or waited for a signal that had already gone by, or
-the code under test met the two halves of its work in an order nobody
+the code under test did the two halves of its work in an order nobody
 thought of. Find that order with these, in this order:
 
 1. **Read what the failure left.** The runner keeps a trace of a

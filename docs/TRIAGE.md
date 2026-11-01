@@ -39,15 +39,15 @@ this order, because what happens now comes first:
    from the table in [WORKFLOW.md](WORKFLOW.md#priority-and-size). An
    issue whose facts changed is looked at again, a flaky test seen
    failing again for example.
-3. **Who meets it.** Every open issue that reports a problem is checked
-   for who meets it, in Tim's report logs first. One that only a test's
+3. **Who it happens to.** Every open issue that reports a problem is
+   checked for who it happens to, in Tim's report logs first. One that only a test's
    environment causes, a CI runner's virtual hardware, a stand-in or a
    file made for the test, is rewritten to be about the test, see Root
    causes only. One found only by reading code or
    in a review, which nothing a person does can reach, is closed as not
    planned. An order of events in our own code that a test can make
    happen, quitting in the middle of a delete for example, stays and
-   gets its test, even if nobody has met it yet.
+   gets its test, even if it has never happened yet.
 4. **What can close.** An issue that main has done is closed as done.
    One whose reason is gone, because a later decision went against it
    or what it names no longer exists, is closed as not planned. A

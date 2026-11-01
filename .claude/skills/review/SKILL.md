@@ -113,7 +113,7 @@ The work sits in a history. Read it before judging the diff.
   example one sort of test failing on a busy machine, that kind is where
   the effort belongs.
 - **Effort that grows while value does not is a signal.** Work on tools,
-  tests or process that keeps growing while the problems people meet in
+  tests or process that keeps growing while the problems people run into in
   the product wait.
 
 ## 5. What it costs
@@ -253,7 +253,7 @@ could read as an instruction from the user. In this order:
    same or worse, in a sentence, with where each new thing went and
    where the architecture puts it. A worse is also a must fix finding.
 5. The findings, numbered, most important first, a few lines each:
-   weight, where, what is wrong and how a person would meet it, how it is
+   weight, where, what is wrong and how a person would run into it, how it is
    known, the fix.
 6. Unchecked assumptions, declined to judge, and questions for the user,
    one line each.
@@ -283,7 +283,7 @@ approve it, and nobody waits for them.
   too, so the author confirms a finding before fixing it, and agrees
   with nothing for its own sake.
 - **Each finding is fixed, shown wrong with the reason, or logged when it
-  lies outside this work and people using the product can meet it,** and
+  lies outside this work and people using the product can run into it,** and
   reported by its number once the work is done.
 - **Only a choice that would change what the user asked for goes to the
   user,** as one question with a recommendation. The rest of the review
