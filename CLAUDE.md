@@ -717,7 +717,8 @@ messages, pull request text, code comments and chat replies.
   `fixtures.Path`. A new test reads one that is there, unless what it
   tests is a property none of them has. A file made at runtime is made
   again on every run, and on CI's Mac it is made on the graphics chip,
-  which fails and hangs. See
+  which fails and hangs. `TestNoTestMakesItsOwnFixture` names a test
+  that does. See
   [the decision record](docs/decisions/2026-11-01-committed-test-fixtures.md).
 - **Tests stay off the disk.** A test is about our code, not the drive
   under it. The engine, a project and the app's store hold an `afero.Fs`,

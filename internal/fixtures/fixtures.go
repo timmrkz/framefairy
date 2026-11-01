@@ -37,7 +37,14 @@ func Path(t testing.TB, name string) string {
 	t.Helper()
 	path := filepath.Join(Dir(), name)
 	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("no fixture %s, go test ./internal/fixtures -update makes it: %v", name, err)
+		var there []string
+		entries, _ := os.ReadDir(Dir())
+		for _, e := range entries {
+			if filepath.Ext(e.Name()) != ".sum" {
+				there = append(there, e.Name())
+			}
+		}
+		t.Fatalf("no fixture %s, the fixtures are %v. Use one of them, or add a recipe in fixtures_test.go when none has what the test needs", name, there)
 	}
 	return path
 }

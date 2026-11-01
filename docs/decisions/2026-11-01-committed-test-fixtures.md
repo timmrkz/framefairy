@@ -79,44 +79,71 @@ kept in a folder by the sum of their recipe, cached by CI.
   still runs ffmpeg, on CI's Mac on the graphics chip. #657 stays. It is
   what Tim ruled out.
 
-### 4. What runs together: Git LFS
+### 4. What runs together: made by `make`, before the tests
 
-The files are committed, but kept outside Git's own store.
+The fixtures are a build step, the way `make` builds ffmpeg and the
+decoder: a target makes each file when it is missing, and the tests read
+what it made.
 
-- Layers: none new in the code. A step in every checkout.
-- What moves: the files into LFS.
-- Crossing: `.gitattributes`, and `git lfs` in CI, in the cloud
-  sessions' setup and on Tim's Mac.
-- Next changes: none in the code.
-- Cost: every machine needs `git-lfs`, GitHub counts LFS bandwidth, and
-  a checkout without it gets pointer files that fail as broken videos.
-  For files of a few MB it buys nothing.
+- Layers: a make target under the tests.
+- What moves: every recipe into the Makefile or a script it runs.
+- Crossing: the folder the target writes, which every package's tests
+  read by path.
+- Next changes: a new fixture is a rule in the Makefile, so every
+  change to one reaches every part of CI, the way the Makefile does.
+- Cost: no file committed, but every fresh machine, every cloud session
+  and every CI runner without a cache makes them again, CI's Mac on its
+  own ffmpeg. It is 3 with `make` as the cache.
 
-### 5. What a test has to build: fixtures embedded with `go:embed`
+### 5. What a test has to build: no video at all
 
-A package embeds the files, and a test gets their bytes.
+Most of the tests that read the shared test video do not look at it.
+`fakeRecognizer` in `engine/project_test.go` hears only how many samples
+it is handed, and the fake model answers from the transcript. A search
+needs the video's length and some sound, not a file. The engine would be
+handed what reads a video, the way the clock, the disk and the models
+are handed in, and a test hands in one that gives a length and silence.
 
-- Layers: as in 2.
-- What moves: as in 2, and every test writes the bytes to a file again,
-  because ffmpeg and the decoder read a path.
-- Crossing: a `[]byte` or an `fs.FS`.
-- Next changes: as in 2.
-- Cost: every test binary that imports it carries every fixture, and
-  each test writes it to the disk before ffmpeg can read it.
+- Layers: a reader of media handed to the engine, under it the real one
+  over ffmpeg, beside it a test's.
+- What moves: every place the engine probes, decodes the sound of or
+  frames a video goes through that reader. Counted on the code: the
+  engine reaches ffmpeg through 16 methods in `engine/ffmpeg.go`, `Probe`,
+  `RunFFmpeg` and `soundOf` among them, called from 11 files of
+  `engine/`.
+- Crossing: the methods of the reader that a test can answer, `Probe`
+  and the sound at least, and what they return.
+- Next changes: a test of a search, a window or a comparison needs no
+  ffmpeg at all. A test of decoding, framing or the render still needs a
+  real file, so the fixtures stay for those.
+- Cost: a change to the engine itself, larger than any of the others,
+  for tests that today take a second or two each. And the tests would
+  no longer run the ffmpeg the app runs, which is what found #570.
+
+Two ways of storing the files of 2 were weighed and are not designs of
+their own: Git LFS, which keeps them outside Git's store but needs
+`git-lfs` on every machine and returns pointer files without it, and
+`go:embed`, which puts every fixture in every test binary that imports
+the package, and each test writes it to the disk again for ffmpeg.
 
 ## What converges
 
-- Committed files: in all but 3. The decisive one is Tim's rule.
-- One home that every package's tests share: 2 and 5. 1 copies the test
-  picture or reaches across packages by path.
-- A plain file on the disk, found by its path: 1, 2 and 4. ffmpeg, the
+- Committed files: in 1 and 2, and what 3 and 4 would cache. The
+  decisive reason is Tim's rule, and that only committed files keep
+  ffmpeg out of every run on every machine.
+- One home that every package's tests share: 2, and 4 by its folder. 1
+  copies the test picture or reaches across packages by path.
+- A plain file on the disk, found by its path: 1 to 4. ffmpeg, the
   decoder and the walks' browser read files.
-- The way each was made, kept beside it: 1, 2 and 3. A fixture made
-  again on purpose comes out the same, and a reader sees what it is.
+- The way each was made, kept beside it: 1 to 4. A fixture made again
+  on purpose comes out the same, and a reader sees what it is.
 
-Dropped: LFS, which only one needs and which costs every machine a tool,
-and embedding, which only one needs and makes every test write the file
-again.
+Dropped: 3 and 4, which make the files again on every fresh machine,
+the cost Tim named. 5 is the better answer for the tests that do not
+look at the video, but it changes the engine for tests that are not
+slow, and it does not remove the fixtures the others need. It is not
+chosen now. If a test of a search ever grows slow for want of it, it is
+an issue of its own.
 
 ## The decision
 
@@ -131,9 +158,15 @@ again.
 - Every video or sound a test reads is a file in
   `internal/fixtures/testdata/`, read with `fixtures.Path`. A test that
   changes one works on a copy.
-- Each is made by its recipe in `internal/fixtures/fixtures_test.go`, and
-  `go test ./internal/fixtures -update` makes them all again. Without the
-  flag, that test checks the folder holds the recipes and nothing else.
+- Each is made by its recipe in `internal/fixtures/fixtures_test.go`,
+  and `go test ./internal/fixtures -update` makes the ones that are
+  missing or whose recipe changed, and leaves the rest as they are, so
+  Git keeps no copy made by another ffmpeg. `testdata/recipes.sum` says
+  which recipe made each. Without the flag, that test checks the folder
+  holds the recipes and nothing else, each made by its recipe as it is.
+- `TestNoTestMakesItsOwnFixture` in `internal/ffmpegtest` names a test
+  file that asks ffmpeg for `lavfi` while it runs. The files that still
+  do are listed there, and each part of #670 takes its own off.
 - As few as the tests allow: a new test reads one that is there, unless
   what it tests is a property none of them has. Then it adds one, as
   small and as short as the test allows.

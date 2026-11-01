@@ -218,3 +218,104 @@ func ffmpegSkips(path string, src []byte) ([]string, error) {
 	ast.Inspect(file, visit)
 	return lines, nil
 }
+
+// stillMakeTheirOwn are the test files that still make a video or a sound
+// with ffmpeg while they run, which the parts of #670 move onto the
+// committed fixtures in internal/fixtures one by one. Each part takes its
+// files off this list, and the list only shrinks.
+var stillMakeTheirOwn = []string{
+	"cmd/framefairy-app/bridge_test.go",
+	"cmd/framefairy-app/captions_test.go",
+	"cmd/framefairy-app/driver_test.go",
+	"cmd/framefairy-app/frames_test.go",
+	"cmd/framefairy-app/harness_test.go",
+	"cmd/framefairy-app/library_test.go",
+	"cmd/framefairy-app/recording_test.go",
+	"cmd/framefairy-app/walkvideos_test.go",
+	"engine/bounce_test.go",
+	"engine/captionlayer_test.go",
+	"engine/captionlook_test.go",
+	"engine/cropmarks_test.go",
+	"engine/encoderfails_test.go",
+	"engine/episodeframes_test.go",
+	"engine/framecuts_test.go",
+	"engine/frametimes_test.go",
+	"engine/framing_test.go",
+	"engine/hdr_test.go",
+	"engine/hdrcolour_test.go",
+	"engine/latesound_test.go",
+	"engine/levels_test.go",
+	"engine/pictureend_test.go",
+	"engine/preroll_test.go",
+	"engine/previewsound_test.go",
+	"engine/rendertiming_test.go",
+	"engine/rotate_test.go",
+	"engine/seam_test.go",
+	"engine/thumbnails_test.go",
+	"engine/transcript_test.go",
+	"internal/outside/run_test.go",
+}
+
+// No test makes its own video or sound while it runs, it reads a
+// committed fixture from internal/fixtures. A test file that asks ffmpeg
+// for lavfi, the sources it makes pictures and tones from, is named,
+// unless it is still on stillMakeTheirOwn. One that is on the list and
+// makes none any more is named too, so the list is kept short.
+//
+// On the real disk: what this reads is the module's own source.
+func TestNoTestMakesItsOwnFixture(t *testing.T) {
+	root, err := filepath.Abs("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	makes := map[string]bool{}
+	read := 0
+	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			switch d.Name() {
+			case ".git", "node_modules", "frontend", "bin", ".build", "testdata":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		rel, _ := filepath.Rel(root, path)
+		rel = filepath.ToSlash(rel)
+		// The recipes the fixtures are made by, and this check itself.
+		if strings.HasPrefix(rel, "internal/fixtures/") || rel == "internal/ffmpegtest/ffmpegtest_test.go" {
+			return nil
+		}
+		read++
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if bytes.Contains(body, []byte("lavfi")) {
+			makes[rel] = true
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if read < 50 {
+		t.Fatalf("read %d test files under %s, too few to be the module", read, root)
+	}
+	listed := map[string]bool{}
+	for _, f := range stillMakeTheirOwn {
+		listed[f] = true
+		if !makes[f] {
+			t.Errorf("%s makes no fixture any more. Take it off stillMakeTheirOwn", f)
+		}
+	}
+	for f := range makes {
+		if !listed[f] {
+			t.Errorf("%s makes a video or a sound with ffmpeg while it runs. Read a committed one with fixtures.Path, see internal/fixtures", f)
+		}
+	}
+}
