@@ -109,6 +109,7 @@ export const steps = {
           let sounding = [];
           let began = null;
           return (played, d) => {
+            heardTo = played + d.length / rate;
             const first = d.findIndex((x) => Math.abs(x) > loud);
             if (first < 0) {
               sounding = [];
@@ -140,12 +141,14 @@ export const steps = {
           };
         };
         const Real = window.AudioContext;
-        let audio = null;
+        // How far the tap has handed the samples on, on the audio's own
+        // clock, and how far it had when the microphone said it was on.
+        let heardTo = -Infinity;
         let micOn = Infinity;
         window.AudioContext = class extends Real {
           constructor(...a) {
             super(...a);
-            audio = this;
+            heardTo = -Infinity;
             micOn = Infinity;
             const bus = new GainNode(this);
             buses.set(this, bus);
@@ -171,8 +174,14 @@ export const steps = {
           }
         };
         // The bridge says when a call is answered, see wails-bridge.ts.
+        // Whatever the tap had handed on by then played before it, so a
+        // note that began there sounded before the microphone said it
+        // was on. The page's own audio clock, currentTime, is no measure
+        // of that: in WebKit it ran ahead of what played after the audio
+        // had rested, so a start sound that came after the answer read as
+        // tens of milliseconds before it.
         window.addEventListener("answered", (e) => {
-          if (e.detail === "Listen") micOn = audio ? audio.currentTime : -Infinity;
+          if (e.detail === "Listen") micOn = heardTo;
         });
         window.addEventListener("asked", (e) => {
           if (e.detail === "Listen") micOn = Infinity;
