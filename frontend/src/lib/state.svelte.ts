@@ -16,7 +16,6 @@ const recheck = 5000;
 // the clips made by hand, from Search, Continue and Cancel.
 export type Work = "whole" | "clips";
 
-
 function doing(work: Work, j: Job): boolean {
   return work === "whole" ? j.kind === "transcribe" : j.kind === "search" || j.kind === "clip";
 }

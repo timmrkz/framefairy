@@ -66,7 +66,7 @@ func (s *FrameFairy) search(path string, req engine.PlanRequest, click string, c
 	return job
 }
 
-// Continue carries on a search or a render that was cut off or failed,
+// Continue carries on a job that was cut off, stopped by hand or failed,
 // from what it left. click names the press, the way it does for Search.
 func (s *FrameFairy) Continue(id, click string) Job {
 	var stopped *Job

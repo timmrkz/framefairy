@@ -30,7 +30,6 @@ export interface WorkMoves {
   rendered(render: Job): void;
 }
 
-
 export class EpisodeSession {
   // The work asked for in this workspace that is not over yet.
   private asking = new Set<string>();

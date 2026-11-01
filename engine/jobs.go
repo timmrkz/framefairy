@@ -162,13 +162,6 @@ func (r JobRecord) Render() RenderRequest {
 	return RenderRequest{Plan: r.Plan, Clips: r.Clips, Preview: r.Preview}
 }
 
-// Interrupted says whether the job stopped before it was done, cut off in a
-// step that runs when whatever ran it went away, or called off by hand, and
-// can be carried on. A failed job says why instead.
-func (r JobRecord) Interrupted() bool {
-	return r.Step != StepFailed
-}
-
 // JobsDir is where an episode's jobs keep their records.
 func JobsDir(source string) string {
 	return filepath.Join(WorkDir(source), "jobs")

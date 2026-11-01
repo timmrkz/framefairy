@@ -265,7 +265,7 @@
   // clips comes from it, and the workspace decides nothing about when a
   // search starts or stops. It is undefined when there is nothing to say.
   const search = $derived(jobs.search(path));
-  const searching = $derived(!!search && (search.state === "running" || search.state === "queued"));
+  const searching = $derived(going(search));
   const working = $derived(searching ? search : undefined);
   // The search while it hears the episode. Its progress says how far the
   // audio has been heard.

@@ -58,9 +58,8 @@ type Job struct {
 	// runJob.
 	//
 	// Its ID is the record's, empty for a job that keeps none, and never
-	// the job's own ID. Its methods are the record's: Interrupted says
-	// what a record read back says, not whether the job is interrupted,
-	// which State does. Its fields go to the window as the job's own:
+	// the job's own ID. How the job ended is State, never read from the
+	// record's step. Its fields go to the window as the job's own:
 	// Kind, the step, the error, the window of a search and the clips it
 	// was asked for, what a render is of from the moment it is queued, and
 	// the moment I or O was pressed at. The clip list holds as many rows
@@ -504,8 +503,8 @@ func jobLabel(kind string, preview bool) string {
 	return "Find clips"
 }
 
-// restore puts the searches and renders the episodes' records say were
-// cut off or failed into the queue, as the app starts, so each says so
+// restore puts the jobs the episodes' records say were cut off, stopped
+// by hand or failed into the queue, as the app starts, so each says so
 // where its work was. See engine/jobs.go.
 func (q *queue) restore(episodes []string) {
 	for _, episode := range episodes {

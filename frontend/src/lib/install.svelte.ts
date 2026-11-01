@@ -8,7 +8,6 @@ import { api, errorText, type Job } from "./api";
 import { live } from "./flow";
 import { jobs } from "./state.svelte";
 
-
 export class Install {
   // Download pressed and the job not reported yet, so a click shows at
   // once.
