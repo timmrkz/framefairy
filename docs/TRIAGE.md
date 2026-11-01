@@ -38,7 +38,16 @@ this order, because what happens now comes first:
    from the table in [WORKFLOW.md](WORKFLOW.md#priority-and-size). An
    issue whose facts changed is looked at again, a flaky test seen
    failing again for example.
-3. **What can close.** An issue that main has done is closed as done.
+3. **Who meets it.** Every open issue that reports a problem is checked
+   for who meets it, in Tim's report logs first. One met only where a
+   test runs, on a CI runner, on a machine loaded on purpose or with a
+   file made for the test, is rewritten to be about the test and its
+   environment, see Root causes only. One found only by reading code or
+   in a review, which nothing a person does can reach, is closed as not
+   planned. An order of events in our own code that a test can make
+   happen, quitting in the middle of a delete for example, stays and
+   gets its test, even if nobody has met it yet.
+4. **What can close.** An issue that main has done is closed as done.
    One whose reason is gone, because a later decision went against it
    or what it names no longer exists, is closed as not planned. A
    duplicate is closed as one, and the issue that stays gets a comment
@@ -51,7 +60,7 @@ this order, because what happens now comes first:
    decision closed it. A closed issue with a sub-issue still open is
    reopened, a problem or any other parent, because a parent closes only
    after the last of its sub-issues.
-4. **Problems that come back**, in even weeks of the year, see below.
+5. **Problems that come back**, in even weeks of the year, see below.
 
 Tim's labels and Tim's words are never changed. The triage ends with a
 reply to Tim that lists every change, each linked, and he checks them.
