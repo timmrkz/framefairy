@@ -903,6 +903,28 @@ also logs every line the decoder says, so the log shows how far each
 cursor came. Both change nothing a test does. They are there to find
 the cause of #638, which only CI's virtual Mac has shown.
 
+When a job's log has a dump, `scripts/test-failures.sh` says so in the
+first error on the check, so the session that reads the check learns of
+it without opening the log. Whichever session sees it, on its own pull
+request, on another one or on main, writes it down before anything else:
+
+1. A comment on #638, the issue the dumps are collected under while its
+   cause is unknown, never a new issue. It gives the link to the job,
+   the commit, the test that was running when the package ran out of
+   time, and the dump itself, from `== hangdump:` to `== hangdump: end`,
+   in a collapsed `<details>` block. When the dump is longer than a
+   comment may be, the threads of each program that wait inside ffmpeg,
+   VideoToolbox or the decoder, and the link to the log for the rest.
+2. Its reply to Tim says the hang came, with the link to that comment.
+3. The hang is not the pull request's, so the session re-runs that one
+   job once, so the pull request is judged on its own tests. A second
+   hang on the same commit is written down the same way, and the reply
+   says it came twice.
+
+Nothing in the app changes for it, and no test is changed to get past
+it. The comments on #638 are read together after a few days, see its
+Progress list.
+
 ### Finding why a walk failed
 
 A walk that fails now and then has met an order of events it did not

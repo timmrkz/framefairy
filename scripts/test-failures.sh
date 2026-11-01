@@ -11,11 +11,23 @@
 # and one per panic, with the tests that were running. It reads what go
 # test prints and what gotestsum prints, see make unit. At most ten, which
 # is as many as GitHub shows for a step.
+#
+# When a program a test started hung, internal/hangdump wrote its stack
+# into the log, and the first error says so and where to write it down,
+# because the session reading the check would not open the log to find
+# it. See When a Go test hangs on a program it started, in
+# docs/TESTING.md.
 set -eu
 
 log=${1:?say which log of go test to read}
 
-awk '
+most=10
+if grep -q '== hangdump: the programs' "$log"; then
+	echo '::error title=A program a test started hung::Its stack is in this job'"'"'s log, between == hangdump and == hangdump: end. Write this run down before anything else, on the issue docs/TESTING.md names under When a Go test hangs on a program it started.'
+	most=9
+fi
+
+awk -v most="$most" '
 function esc(s) { gsub(/%/, "%25", s); gsub(/\r/, "%0D", s); return s }
 function title(s) { s = esc(s); gsub(/:/, "%3A", s); gsub(/,/, "%2C", s); return s }
 # The first twenty lines a test printed and the last sixty, with an
@@ -23,7 +35,7 @@ function title(s) { s = esc(s); gsub(/:/, "%3A", s); gsub(/,/, "%2C", s); return
 # its steps first and the rule it broke last.
 function flush(   i, text) {
 	while (lines > 0 && line[lines] == "") lines--
-	if (name != "" && shown < 10) {
+	if (name != "" && shown < most) {
 		text = body
 		for (i = 1; i <= lines; i++) {
 			if (lines > 80 && i == 21) text = text "%0A        …"
