@@ -644,7 +644,7 @@ function searchAt(s: FakeSearch, now = Date.now()) {
 }
 function searchJob(s: FakeSearch) {
   const now = searchAt(s);
-  const base = { id: s.id, episode: "/eps/ep.mp4", kind: "search", label: "Find clips", state: now.state, step: now.step, record: "search", from: s.from, to: s.to, count: s.count, queued: "", lane: now.step === "hearing" ? "hearing" : "finding", error: s.error, result: now.state === "done" ? "/eps/ep.framefairy/logs/clips.json" : undefined };
+  const base = { id: s.id, episode: "/eps/ep.mp4", kind: "search", label: "Find clips", state: now.state, step: now.step, from: s.from, to: s.to, count: s.count, queued: "", lane: now.step === "hearing" ? "hearing" : "finding", error: s.error, result: now.state === "done" ? "/eps/ep.framefairy/logs/clips.json" : undefined };
   if (now.state !== "running") return base;
   if (now.step === "hearing") {
     // How far and how long, to the end of the window it hears for, the way
@@ -805,7 +805,7 @@ function handJob(h: FakeHand) {
   const running = now.state === "running";
   return {
     id: h.id, episode: "/eps/ep.mp4", kind: "clip", label: "Make a clip", state: now.state,
-    step: now.step, record: `clip-${h.n}`, at: h.at, backward: h.backward, queued: "",
+    step: now.step, at: h.at, backward: h.backward, queued: "",
     lane: now.step === "hearing" ? "hearing" : "framing",
     result: now.state === "done" ? `clips-hand.json/h0${h.n}` : undefined,
     underway: now.state === "interrupted" ? [{ n: 1, start: h.at, end: h.at, step: "stopped" }] : running ? [{ n: 1, start: now.start, end: now.end, title: now.step === "framing" && now.start !== now.end ? `Von ${clock(now.start)} an` : undefined, step: now.step, pieces: now.step === "framing" && now.start !== now.end ? handPieces(h, now.start) : undefined, clip: now.step === "framing" ? `clips-hand.json/h0${h.n}` : undefined }] : undefined,
@@ -1681,7 +1681,6 @@ const Answers = {
             label: "Find clips",
             state: "running",
             step: "finding",
-            record: "search",
             from: 0,
             to: 1800,
             queued: "",

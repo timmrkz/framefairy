@@ -47,7 +47,7 @@ func (s *FrameFairy) search(path string, req engine.PlanRequest, click string, c
 	// of its own in its place.
 	s.jobs.settle(path, engine.JobSearch, "")
 	job := s.jobs.addSteps(path, engine.JobSearch, jobLabel(engine.JobSearch, false), true, func(j *Job) {
-		j.Record, j.From, j.To, j.Count, j.Min, j.click = engine.SearchID, req.From, req.To, req.Count, req.Min, click
+		j.JobRecord.ID, j.From, j.To, j.Count, j.Min, j.click = engine.SearchID, req.From, req.To, req.Count, req.Min, click
 		j.Carried = carried
 	}, func(ctx context.Context, p *engine.Project, turn engine.Turn) (string, error) {
 		// Its window is the video's window, written here, in the search's
@@ -74,7 +74,7 @@ func (s *FrameFairy) Continue(id, click string) Job {
 		// A search that failed before it had a record, refused as it was
 		// asked for, is asked for again.
 		if j.ID == id && (j.State == JobInterrupted || j.State == JobFailed) &&
-			(j.Record != "" || j.Kind == engine.JobSearch) {
+			(j.JobRecord.ID != "" || j.Kind == engine.JobSearch) {
 			stopped = &j
 		}
 	}
@@ -87,7 +87,7 @@ func (s *FrameFairy) Continue(id, click string) Job {
 		carried := 0
 		// A search that was refused wrote no record, and the one on disk
 		// is an older search's, about another window.
-		if rec := engine.ReadSearch(s.store.files, path); rec != nil && stopped.Record != "" {
+		if rec := engine.ReadSearch(s.store.files, path); rec != nil && stopped.JobRecord.ID != "" {
 			req = rec.Request()
 			carried = s.planned(path, *rec)
 		}
@@ -106,7 +106,7 @@ func (s *FrameFairy) Continue(id, click string) Job {
 	}
 	var carry *engine.JobRecord
 	for _, rec := range engine.ReadJobs(s.store.files, path) {
-		if rec.ID == stopped.Record {
+		if rec.ID == stopped.JobRecord.ID {
 			carry = &rec
 		}
 	}
@@ -150,7 +150,7 @@ func (s *FrameFairy) render(path string, req engine.RenderRequest, carry *engine
 		s.jobs.settle(path, engine.JobRender, id)
 	}
 	return s.jobs.addSteps(path, engine.JobRender, label, false, func(j *Job) {
-		j.Record, j.Plan, j.Clips = id, req.Plan, append([]string(nil), req.Clips...)
+		j.JobRecord.ID, j.Plan, j.Clips = id, req.Plan, append([]string(nil), req.Clips...)
 	}, func(ctx context.Context, p *engine.Project, turn engine.Turn) (string, error) {
 		if err := p.RenderJob(ctx, id, req, carry, turn); err != nil {
 			return req.Plan, err
@@ -204,7 +204,7 @@ func (s *FrameFairy) makeClip(path string, req engine.ClipRequest, carry, click 
 		s.jobs.settle(path, engine.JobClip, id)
 	}
 	return s.jobs.addSteps(path, engine.JobClip, label, false, func(j *Job) {
-		j.Record, j.At, j.Backward, j.click = id, req.At, req.Backward, click
+		j.JobRecord.ID, j.At, j.Backward, j.click = id, req.At, req.Backward, click
 		j.Underway = engine.JobRecord{Kind: engine.JobClip, At: req.At, Step: engine.StepWaiting}.Underway()
 	}, func(ctx context.Context, p *engine.Project, turn engine.Turn) (string, error) {
 		return p.MakeClip(ctx, id, req, turn)
@@ -260,7 +260,7 @@ func (s *FrameFairy) cancelSteps(id string) bool {
 		if j.ID != id {
 			continue
 		}
-		if j.Record == "" {
+		if j.JobRecord.ID == "" {
 			if j.State == JobFailed && makesClips(j.Kind) {
 				s.jobs.settleRefused(id)
 				return true
@@ -269,8 +269,8 @@ func (s *FrameFairy) cancelSteps(id string) bool {
 		}
 		if j.State == JobInterrupted || j.State == JobFailed {
 			theLog.jobLine(zerolog.InfoLevel, &j).Str("state", j.State).Msg("the work that stopped is removed, its record forgotten")
-			s.forgetRecord(j.Episode, j.Record)
-			s.jobs.settle(j.Episode, j.Kind, j.Record)
+			s.forgetRecord(j.Episode, j.JobRecord.ID)
+			s.jobs.settle(j.Episode, j.Kind, j.JobRecord.ID)
 			return true
 		}
 		// A search, a clip or the whole video's transcription says Stopped

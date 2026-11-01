@@ -44,7 +44,7 @@ func (s *FrameFairy) Transcribe(path string) Job {
 	// again in its place.
 	s.jobs.settle(path, engine.JobTranscribe, "")
 	return s.jobs.addSteps(path, engine.JobTranscribe, label, true, func(j *Job) {
-		j.Record = engine.TranscribeID
+		j.JobRecord.ID = engine.TranscribeID
 	}, func(ctx context.Context, p *engine.Project, turn engine.Turn) (string, error) {
 		return "", p.TranscribeJob(ctx, turn)
 	})

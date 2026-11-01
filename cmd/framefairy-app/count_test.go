@@ -46,8 +46,8 @@ func TestARefusedSearchKeepsItsWindow(t *testing.T) {
 	}
 	d.svc.jobs.shutDown()
 	refused := d.svc.Search(ep, engine.PlanRequest{From: 120, To: 180, Count: 2, Min: 5}, "")
-	if refused.State != JobFailed || refused.Record != "" {
-		t.Fatalf("the search was %s with record %q, not refused", refused.State, refused.Record)
+	if refused.State != JobFailed || refused.JobRecord.ID != "" {
+		t.Fatalf("the search was %s with record %q, not refused", refused.State, refused.JobRecord.ID)
 	}
 	if refused.From != 120 || refused.To != 180 || refused.Count != 2 {
 		t.Fatalf("the refused search says %.0f to %.0f for %d", refused.From, refused.To, refused.Count)

@@ -37,18 +37,30 @@ const (
 type Job struct {
 	ID      string `json:"id"`
 	Episode string `json:"episode"`
-	// Kind is transcribe, plan or render.
-	Kind   string `json:"kind"`
-	Label  string `json:"label"`
-	State  string `json:"state"`
-	Error  string `json:"error,omitempty"`
-	Result string `json:"result,omitempty"`
-	// Plan and Clips say what a render is of, from the moment it is
-	// queued, so the Render button of that clip can show it running.
-	// Result only says it once the job is over. No clips means the whole
-	// plan.
-	Plan  string   `json:"plan,omitempty"`
-	Clips []string `json:"clips,omitempty"`
+	Label   string `json:"label"`
+	State   string `json:"state"`
+	Result  string `json:"result,omitempty"`
+	// JobRecord is what the job was asked to do, the step it is in and why
+	// it failed, in the shape of the record a search, a render, a clip
+	// made by hand or the whole video heard keeps in the episode's work
+	// folder, see engine/jobs.go. It is held, not copied field by field,
+	// issue #606. A job read back as the app starts holds its record
+	// whole. A job started now holds what the app asked for, and the queue
+	// writes its step and its error, while the engine writes the record on
+	// disk. Until the engine alone writes the step, the two are kept in
+	// step by hand, see the decision record
+	// docs/decisions/2026-10-30-a-videos-state-in-one-session.md.
+	//
+	// Its ID is the record's, empty for a job that keeps none, and never
+	// the job's own ID. Its methods are the record's: Interrupted says
+	// what a record read back says, not whether the job is interrupted,
+	// which State does. Its fields go to the window as the job's own:
+	// Kind, the step, the error, the window of a search and the clips it
+	// was asked for, what a render is of from the moment it is queued, and
+	// the moment I or O was pressed at. The clip list holds as many rows
+	// open as a search's Count, whatever the workspace would ask for now,
+	// and reads what it found by its Min, not by Shortest as it is now.
+	engine.JobRecord
 	// Last is the most recent event, so a screen opened later still shows
 	// where the job is.
 	Last     *runlog.Event `json:"last,omitempty"`
@@ -59,20 +71,6 @@ type Job struct {
 	// clips, and a render never holds up a search. A search moves from one
 	// lane to the other as it goes from hearing to finding.
 	Lane string `json:"lane"`
-	// Step is where a search or a render is: waiting, hearing, finding or
-	// rendering. See docs/JOBS.md.
-	Step string `json:"step,omitempty"`
-	// Record is the id of the record a search or a render keeps in the
-	// episode's work folder, see engine/jobs.go.
-	Record string `json:"record,omitempty"`
-	// From and To are the window of a search, To 0 for the end of the
-	// episode.
-	From float64 `json:"from,omitempty"`
-	To   float64 `json:"to,omitempty"`
-	// At and Backward are a clip made by hand: the moment I or O was
-	// pressed at, and whether it was O.
-	At       float64 `json:"at,omitempty"`
-	Backward bool    `json:"backward,omitempty"`
 	// Underway is every clip the job has on the way, proposed and not
 	// written yet, whoever proposed it, see runlog.Underway. The clip list
 	// shows each in its place until it is written.
@@ -87,14 +85,6 @@ type Job struct {
 	// them and not as one that found nothing, Tim's report of 25 October,
 	// 21.40.
 	Carried int `json:"carried,omitempty"`
-	// Count is how many clips a search was asked for. The clip list holds
-	// that many rows open, whatever the workspace would ask for now: the
-	// first search of an episode is asked for by the Go side, and a number
-	// worked out again in the workspace told the list another.
-	Count int `json:"count,omitempty"`
-	// Min is the Shortest a search was asked for, so what it found is
-	// read by the clips it was asked for, not by Shortest as it is now.
-	Min float64 `json:"min,omitempty"`
 	// Whole is, for a search, that its answer is read to its end, so every
 	// clip still to come is in Underway.
 	Whole bool `json:"whole,omitempty"`
@@ -363,7 +353,7 @@ func (q *queue) addSteps(episode, kind, label string, once bool, prepare func(*J
 	// the Go side first. It is called off before it starts, and ends the
 	// way one called off while it ran does, see stopClips.
 	if makesClips(kind) && job.click != "" && q.calledOff[episode] == job.click {
-		job.byHand = job.Record != ""
+		job.byHand = job.JobRecord.ID != ""
 		cancel()
 	}
 	job.alive = !q.idle
@@ -481,11 +471,9 @@ func (q *queue) restore(episodes []string) {
 			}
 			q.mu.Lock()
 			q.next++
-			job := &Job{ID: fmt.Sprintf("job-%d", q.next), Episode: episode, Kind: rec.Kind,
-				Label: jobLabel(rec.Kind, rec.Preview), State: state, Error: rec.Error, Queued: rec.Asked,
-				Lane: laneFor(rec.Kind), Step: rec.Step, Record: rec.ID, From: rec.From, To: rec.To, Count: rec.Count, Min: rec.Min,
-				At: rec.At, Backward: rec.Backward, Underway: rec.Underway(), Plan: rec.Plan,
-				Clips: append([]string(nil), rec.Clips...), cancel: func() {}, ctx: context.Background()}
+			job := &Job{ID: fmt.Sprintf("job-%d", q.next), Episode: episode, JobRecord: rec,
+				Label: jobLabel(rec.Kind, rec.Preview), State: state, Queued: rec.Asked,
+				Lane: laneFor(rec.Kind), Underway: rec.Underway(), cancel: func() {}, ctx: context.Background()}
 			q.stampLocked(job)
 			q.jobs = append(q.jobs, job)
 			snapshot := *job
@@ -512,7 +500,7 @@ func (q *queue) refuse(episode, kind, label, reason string, with ...func(*Job)) 
 	}
 	// It wrote nothing, so there is no record to carry on from, whatever
 	// the record would have been.
-	job.Record = ""
+	job.JobRecord.ID = ""
 	q.stampLocked(job)
 	q.jobs = append(q.jobs, job)
 	snapshot := *job
@@ -712,7 +700,7 @@ func (q *queue) cancelEpisode(episode string) bool {
 // same record as this one: Continue clicked while this one stopped.
 func (q *queue) carriedOnLocked(job *Job) bool {
 	for _, j := range q.jobs {
-		if j != job && j.Episode == job.Episode && j.Record == job.Record &&
+		if j != job && j.Episode == job.Episode && j.JobRecord.ID == job.JobRecord.ID &&
 			(j.State == JobQueued || j.State == JobRunning) && j.ctx.Err() == nil {
 			return true
 		}
@@ -727,7 +715,7 @@ func (q *queue) carriedOnLocked(job *Job) bool {
 func (q *queue) stopByHand(id string) {
 	q.mu.Lock()
 	for _, j := range q.jobs {
-		if j.ID == id && j.Record != "" {
+		if j.ID == id && j.JobRecord.ID != "" {
 			j.byHand = true
 		}
 	}
@@ -755,7 +743,7 @@ func (q *queue) stopClips(episode, click string) {
 			j.ctx.Err() != nil {
 			continue
 		}
-		j.byHand = j.Record != ""
+		j.byHand = j.JobRecord.ID != ""
 		j.cancel()
 		if j.State == JobQueued {
 			j.State = JobCancelled
@@ -776,8 +764,8 @@ func (q *queue) settle(episode, kind, record string) {
 	q.mu.Lock()
 	var settled []Job
 	for _, j := range q.jobs {
-		if j.Episode == episode && j.Kind == kind && (record == "" || j.Record == record) &&
-			(j.State == JobInterrupted || (j.State == JobFailed && j.Record != "")) {
+		if j.Episode == episode && j.Kind == kind && (record == "" || j.JobRecord.ID == record) &&
+			(j.State == JobInterrupted || (j.State == JobFailed && j.JobRecord.ID != "")) {
 			j.State = JobCancelled
 			q.stampLocked(j)
 			settled = append(settled, *j)
@@ -841,7 +829,7 @@ func (q *queue) settleRefused(id string) {
 	q.mu.Lock()
 	var settled []Job
 	for _, j := range q.jobs {
-		if j.ID == id && j.State == JobFailed && j.Record == "" {
+		if j.ID == id && j.State == JobFailed && j.JobRecord.ID == "" {
 			j.State = JobCancelled
 			q.stampLocked(j)
 			settled = append(settled, *j)
@@ -1030,11 +1018,11 @@ func (q *queue) runJob(job *Job) {
 	case !job.byHand || !errors.Is(err, engine.ErrCancelled):
 	case stopsAsStopped(job.Kind) && q.carriedOnLocked(job):
 	case stopsAsStopped(job.Kind):
-		if serr := engine.StopJob(q.store.files, job.Episode, job.Record); serr != nil {
+		if serr := engine.StopJob(q.store.files, job.Episode, job.JobRecord.ID); serr != nil {
 			project.Log().Warn("could not note the search as stopped: %s", serr)
 		}
 	default:
-		if rerr := engine.RemoveJob(q.store.files, job.Episode, job.Record); rerr != nil {
+		if rerr := engine.RemoveJob(q.store.files, job.Episode, job.JobRecord.ID); rerr != nil {
 			project.Log().Warn("could not clear the record of the render: %s", rerr)
 		}
 	}
