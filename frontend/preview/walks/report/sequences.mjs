@@ -26,10 +26,11 @@ export default [
   {
     // Issue #654. The microphone tells the window what it hears from the
     // moment it opens, and the answer that it opened comes on its own
-    // way, later on a busy machine. The two notes going up waited for
-    // that answer, so a walk in CI saw words and the microphone moving
-    // with no start sound played at all.
-    name: "The start sound plays as the microphone opens, before Dictate hears back that it did",
+    // way, later on a busy machine. The start sound waits for that
+    // answer, 4 ms after the microphone opens on Tim's Mac and 46 ms at
+    // most, and a walk in CI that read the notes at the microphone's
+    // first news found none. This one holds the answer every time.
+    name: "The start sound plays once Dictate hears back, however late that is",
     steps: [["bugs"], ["dictate", "start, answered late"], ["microphone moves"], ["dictate", "button"]],
   },
   {

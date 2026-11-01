@@ -577,19 +577,9 @@
     read();
   }
 
-  // opened plays the start sound once the microphone is open, from here
-  // on what is said is written down. Whichever says so first plays it: the
-  // answer of listen, or the first loudness or words the Go side sends,
-  // which it starts sending before its answer reaches the window (#654).
-  function opened() {
-    if (listening) chime("on");
-  }
-
   onMount(() =>
     onLoudness((n) => {
-      if (!listening || (recording && n.recording !== recording)) return;
-      loud = n.level;
-      opened();
+      if (listening && (!recording || n.recording === recording)) loud = n.level;
     }),
   );
 
@@ -605,7 +595,6 @@
         finish(d.said ?? pieces);
         return;
       }
-      opened();
       unheard = d.unheard ? sentence(d.unheard) : "";
       if ((d.asked ?? 0) < asked) return;
       take(d);
@@ -634,7 +623,8 @@
     wake();
     try {
       recording = await api.listen();
-      opened();
+      // The microphone is open: what is said from here is written down.
+      if (listening) chime("on");
     } catch (e) {
       listening = false;
       finish([]);

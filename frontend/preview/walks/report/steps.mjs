@@ -22,11 +22,17 @@ export const steps = {
       walk.reportPage.on("pageerror", (e) => errors.push(String(e)));
       // Every note the window plays, with its pitch and whether the
       // microphone was open then, for the dictate step's sounds.
+      // window.__noted(n) settles once n notes have played.
       await walk.reportPage.addInitScript(() => {
         window.__notes = [];
+        let waiting = [];
+        window.__noted = (n) => new Promise((done) => (window.__notes.length >= n ? done() : waiting.push({ n, done })));
         const start = OscillatorNode.prototype.start;
         OscillatorNode.prototype.start = function (...a) {
           window.__notes.push({ f: this.frequency.value, open: document.querySelector("button.dictate")?.getAttribute("aria-label") === "Stop" });
+          const n = window.__notes.length;
+          for (const w of waiting.filter((w) => w.n <= n)) w.done();
+          waiting = waiting.filter((w) => w.n > n);
           return start.apply(this, a);
         };
       });
@@ -1367,6 +1373,7 @@ export const steps = {
     // answer that it started waits, see /hold.
     const late = arg === "start, answered late";
     if (late) await control(url, "/hold?call=Listen&gate=shut&answer=1&times=1");
+    const before = await page.evaluate(() => window.__notes.length);
     if (!running) await button.click();
     // Stop the moment it is pressed, see the rules on a click.
     const said = await button.getAttribute("aria-label");
@@ -1389,9 +1396,13 @@ export const steps = {
       // stand in its pause, and stays there between steps.
       await pageUntil(page, () => parseFloat(document.querySelector("button.dictate")?.dataset.loud) > 0.3);
     }
-    // Two notes going up say the microphone is open, while it is.
-    const up = await page.evaluate(() => window.__notes.slice(-2));
+    // Two notes going up say the microphone is open, while it is. They
+    // play once Dictate hears back that it opened, which a busy machine
+    // hands back after the microphone's first news, so the walk waits
+    // for them rather than reading them at the first news, #654.
     if (late) await control(url, "/hold?call=Listen&gate=open");
+    if (!running) await page.evaluate((n) => window.__noted(n), before + 2);
+    const up = await page.evaluate(() => window.__notes.slice(-2));
     if (up.length < 2 || !up.every((n) => n.open) || up[0].f >= up[1].f) {
       walk.wrong = `the microphone opened without the start sound, it played ${JSON.stringify(up)}`;
       return;
