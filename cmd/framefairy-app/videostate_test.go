@@ -443,8 +443,12 @@ func TestAJobsNewsThatMovesItsWorkOnGoesOutAfterItsState(t *testing.T) {
 			j.Seq = seq
 			q.emit(JobUpdate{Job: j})
 		}
-		// Started, then heard further: as it comes, and the state the two
-		// made due after them.
+		// A state sent a moment before, so the next is due a quarter second
+		// on. A first state would be sent at once, beside the news, in
+		// either order.
+		news.changed("a.mp4")
+		synctest.Wait()
+		// Started, then heard further: as it comes.
 		job(1, JobRunning, "hearing", 0)
 		job(3, JobRunning, "hearing", 0)
 		synctest.Wait()
@@ -464,7 +468,7 @@ func TestAJobsNewsThatMovesItsWorkOnGoesOutAfterItsState(t *testing.T) {
 		synctest.Wait()
 		mu.Lock()
 		defer mu.Unlock()
-		want := []string{"news 1", "news 3", "state 4", "state 6", "news 5", "state 8", "news 7", "state 10", "news 9", "news 11", "news 13"}
+		want := []string{"state 1", "news 1", "news 3", "state 6", "news 5", "state 8", "news 7", "state 10", "news 9", "news 11", "news 13"}
 		if !slices.Equal(told, want) {
 			t.Errorf("told %v,\nnot %v", told, want)
 		}
