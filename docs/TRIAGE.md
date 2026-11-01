@@ -14,8 +14,14 @@ A workaround closes its issue and leaves the cause to come back under
 the next one, and nobody sees that it is the same thing again.
 
 When the cause lies outside our code, in a driver, a runner or a tool,
-the cause in our code is what lets it reach the person or the test. That
-is fixed once, in one place, for every path it can come through. When
+what matters is whom it reaches. What only a test's environment does,
+a CI runner's virtual hardware or a stand-in program, is fixed in how
+the test uses it, never in the app. What reaches a person is fixed once
+in our code, in one place, for every path it can come through, and so is
+an order of the app's own work that a busy runner only made likelier.
+Evidence comes first: Tim's report or log, the failure reproduced with
+real input on a machine people use, or the order made to happen on
+purpose. When
 the cause is not known yet, finding it is the work: the trace first,
 then the order the code assumes, see section 7 of the
 [testing skill](../.claude/skills/testing/SKILL.md). A pull request that
@@ -33,7 +39,16 @@ this order, because what happens now comes first:
    from the table in [WORKFLOW.md](WORKFLOW.md#priority-and-size). An
    issue whose facts changed is looked at again, a flaky test seen
    failing again for example.
-3. **What can close.** An issue that main has done is closed as done.
+3. **Who it happens to.** Every open issue that reports a problem is
+   checked for who it happens to, in Tim's report logs first. One that only a test's
+   environment causes, a CI runner's virtual hardware, a stand-in or a
+   file made for the test, is rewritten to be about the test, see Root
+   causes only. One found only by reading code or
+   in a review, which nothing a person does can reach, is closed as not
+   planned. An order of events in our own code that a test can make
+   happen, quitting in the middle of a delete for example, stays and
+   gets its test, even if it has never happened yet.
+4. **What can close.** An issue that main has done is closed as done.
    One whose reason is gone, because a later decision went against it
    or what it names no longer exists, is closed as not planned. A
    duplicate is closed as one, and the issue that stays gets a comment
@@ -46,7 +61,7 @@ this order, because what happens now comes first:
    decision closed it. A closed issue with a sub-issue still open is
    reopened, a problem or any other parent, because a parent closes only
    after the last of its sub-issues.
-4. **Problems that come back**, in even weeks of the year, see below.
+5. **Problems that come back**, in even weeks of the year, see below.
 
 Tim's labels and Tim's words are never changed. The triage ends with a
 reply to Tim that lists every change, each linked, and he checks them.
@@ -83,7 +98,9 @@ Here it does not, see Root causes only above.
   another test, another path or another part of the app.
 - **A problem says** the cause as far as it is known, every fix tried
   so far and why the cause stayed, and what would take the cause away in
-  one place. Its priority is the highest of its incidents.
+  one place, the way
+  [the issue template](../.github/ISSUE_TEMPLATE/issue.md) lays it out.
+  Its priority is the highest of its incidents.
 - **An incident under an open problem is taken up as its problem.** The
   pull request takes the cause away and says `Fixes #N` for each
   incident it ends.

@@ -330,6 +330,33 @@ func (neverAnswers) RoundTrip(r *http.Request) (*http.Response, error) {
 	return nil, r.Context().Err()
 }
 
+// launchStandIn starts a stand-in llama-server that says what it was
+// handed and ends, and returns what it said. Each name is a launch of its
+// own, with a log of its own.
+//
+// On the real disk: the stand-in llama-server is a program that is run, and its log is a file.
+func launchStandIn(t *testing.T, dir, name string) string {
+	t.Helper()
+	server := filepath.Join(dir, "llama-server")
+	if _, err := os.Stat(server); err != nil {
+		// It says what it was handed and ends, so the start is over once
+		// it has said it.
+		script := "#!/bin/sh\necho \"key=$LLAMA_API_KEY args=$*\"\n"
+		if err := standin.Write(server, []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	model := filepath.Join(dir, "model.gguf")
+	if err := os.WriteFile(model, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	logDir := filepath.Join(dir, name)
+	e := NewEngine(runlog.New(io.Discard, false, false), NewMachine(disk))
+	_, _, _ = e.startServer(context.Background(), LocalModel{Server: server, Model: model}, 16384, logDir)
+	body, _ := os.ReadFile(filepath.Join(logDir, "llm-server.log"))
+	return string(body)
+}
+
 // A llama-server the app starts answers only to the app: it is handed a
 // key of its own in its environment, a new one every launch, never on its
 // command line, and it lists nothing of what it is working on.
@@ -340,30 +367,12 @@ func TestTheServerIsHandedAKeyOfItsOwn(t *testing.T) {
 		t.Skip("the stand-in for llama-server is a shell script")
 	}
 	dir := t.TempDir()
-	server := filepath.Join(dir, "llama-server")
-	// It says what it was handed and ends, so the start is over once it
-	// has said it.
-	script := "#!/bin/sh\necho \"key=$LLAMA_API_KEY args=$*\"\n"
-	if err := standin.Write(server, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	model := filepath.Join(dir, "model.gguf")
-	if err := os.WriteFile(model, nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	launch := func(name string) string {
-		logDir := filepath.Join(dir, name)
-		e := NewEngine(runlog.New(io.Discard, false, false), NewMachine(disk))
-		_, _, _ = e.startServer(context.Background(), LocalModel{Server: server, Model: model}, 16384, logDir)
-		body, _ := os.ReadFile(filepath.Join(logDir, "llm-server.log"))
-		return string(body)
-	}
 	keyOf := func(out string) string {
 		_, after, _ := strings.Cut(out, "key=")
 		key, _, _ := strings.Cut(after, " ")
 		return key
 	}
-	first, second := launch("one"), launch("two")
+	first, second := launchStandIn(t, dir, "one"), launchStandIn(t, dir, "two")
 	key := keyOf(first)
 	if len(key) != 64 {
 		t.Fatalf("the server was handed no key of 64 hex digits: %q", first)
@@ -379,6 +388,25 @@ func TestTheServerIsHandedAKeyOfItsOwn(t *testing.T) {
 	}
 	if other := keyOf(second); other == key || len(other) != 64 {
 		t.Errorf("a second launch was handed %q after %q, not a key of its own", other, key)
+	}
+}
+
+// The server keeps no copies of earlier prompts in ordinary memory. Left
+// to itself it keeps up to 8 GiB of them, one each time a search of the
+// next window starts, which the memory a model is judged by does not
+// count and nothing asks for again. Issue #433.
+//
+// On the real disk: the stand-in llama-server is a program that is run, and its log is a file.
+func TestTheServerKeepsNoCopiesOfEarlierPrompts(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the stand-in for llama-server is a shell script")
+	}
+	out := launchStandIn(t, t.TempDir(), "one")
+	if !strings.Contains(out, " --cache-ram 0") {
+		t.Errorf("the server keeps copies of earlier prompts, up to 8 GiB of them by itself: %q", out)
+	}
+	if !strings.Contains(out, " --no-cache-idle-slots") {
+		t.Errorf("the server warns at every start that it has no cache to keep idle slots in: %q", out)
 	}
 }
 
