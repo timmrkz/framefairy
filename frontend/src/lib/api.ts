@@ -1172,7 +1172,7 @@ export function onDropped(fn: (d: Added) => void): () => void {
 
 // The state of a video, sent whole whenever it changed, at most four
 // times a second, see VideoState.
-export function onVideo(fn: (state: VideoState) => void): () => void {
+export function onVideoState(fn: (state: VideoState) => void): () => void {
   return Events.On("video", (ev) => fn(ev.data as VideoState));
 }
 

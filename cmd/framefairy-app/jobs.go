@@ -231,14 +231,27 @@ func (q *queue) stamp() uint64 {
 	return q.seq
 }
 
-// ofVideo is the jobs of one video as they are now, and the number the
-// clock of the jobs gives this moment, see VideoState.Rev.
+// ofVideo is the jobs of one video the workspace shows as they are now,
+// and the number the clock of the jobs gives this moment, see
+// VideoState.Rev. Those are the jobs queued or running and, of those
+// over, the newest of each kind. The queue keeps every job since the app
+// opened, and every older one's last news reached the window long ago, so
+// a state sent four times a second does not carry the renders of the
+// whole day.
 func (q *queue) ofVideo(episode string) ([]Job, uint64) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
+	newest := map[string]*Job{}
+	for _, j := range q.jobs {
+		if j.Episode == episode && !j.going() {
+			if n := newest[j.Kind]; n == nil || j.Seq > n.Seq {
+				newest[j.Kind] = j
+			}
+		}
+	}
 	out := []Job{}
 	for _, j := range q.jobs {
-		if j.Episode == episode {
+		if j.Episode == episode && (j.going() || newest[j.Kind] == j) {
 			out = append(out, *j)
 		}
 	}

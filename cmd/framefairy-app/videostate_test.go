@@ -3,12 +3,16 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
 	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
+
+	"framefairy/engine"
 )
 
 // newsOf is a videoNews whose reads are counted, each read giving the
@@ -284,4 +288,129 @@ func TestAJobsNewsComesOnceItsVideosStateIsDue(t *testing.T) {
 			t.Errorf("%d states were sent by a mark the job's news asked for, the first and the one the job asked for were due", sentAtNews)
 		}
 	})
+}
+
+// heardStates has the desk send each video's state, as the app does to
+// its window, and keeps what it sends.
+func heardStates(d *desk) func(path string) VideoState {
+	var mu sync.Mutex
+	last := map[string]VideoState{}
+	svc := d.svc
+	svc.news = newVideoNews(func(path string) (VideoState, error) {
+		return svc.State(context.Background(), path)
+	}, func(v VideoState) {
+		mu.Lock()
+		defer mu.Unlock()
+		last[v.Video] = v
+	})
+	svc.jobs.news = svc.told
+	return func(path string) VideoState {
+		sendDue(svc.news)
+		mu.Lock()
+		defer mu.Unlock()
+		return last[path]
+	}
+}
+
+// What changes a video sends its state, and the state sent last holds the
+// change: the clips a search wrote, a clip removed, and the undo of it.
+// The state sent after an edit is newer than the edit's answer, so the
+// window, which takes no state older than an answer, takes it.
+//
+// On the real disk: ffmpeg makes the video, and its clips are fitted to
+// the picture ffprobe reads.
+func TestPathWhatChangesAVideoSendsItsState(t *testing.T) {
+	d := open(t)
+	sent := heardStates(d)
+	ep := d.add("ep", minutes5)
+	d.idle(ep)
+	found := sent(ep)
+	clips := d.clips(ep)
+	if len(clips) == 0 || len(found.Clips) != len(clips) {
+		t.Fatalf("the state sent last holds %d clips, the search wrote %d", len(found.Clips), len(clips))
+	}
+	for _, j := range found.Jobs {
+		if j.Seq >= found.Rev {
+			t.Errorf("the state sent last is at %d, older than the job %s at %d", found.Rev, j.ID, j.Seq)
+		}
+	}
+	// The removal comes long after the last state was sent, as it does
+	// for a person, so the state it tells is read at once, beside the
+	// answer.
+	d.svc.news.mu.Lock()
+	d.svc.news.due[ep].last = time.Time{}
+	d.svc.news.mu.Unlock()
+	first := clips[0]
+	removed, err := d.svc.RemoveClip(context.Background(), ep, first.Plan, first.ID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after := sent(ep)
+	if after.Rev <= removed.Rev {
+		t.Errorf("the state sent after the removal is at %d, its answer at %d", after.Rev, removed.Rev)
+	}
+	if i := slices.IndexFunc(after.Clips, func(c ClipEntry) bool { return c.Key == first.Key }); i < 0 || !after.Clips[i].Rejected {
+		t.Errorf("the state sent after the removal does not hold the clip removed")
+	}
+	if done, err := d.svc.Undo(ep); err != nil || !done.Done {
+		t.Fatalf("the removal was not undone: %v", err)
+	}
+	undone := sent(ep)
+	if undone.Rev <= after.Rev {
+		t.Errorf("no state was sent after the undo")
+	}
+	if i := slices.IndexFunc(undone.Clips, func(c ClipEntry) bool { return c.Key == first.Key }); i < 0 || undone.Clips[i].Rejected {
+		t.Errorf("the state sent after the undo does not hold the clip back")
+	}
+}
+
+// A video whose file cannot be read now still has its state, its status
+// and its clips, so the workspace still says what it can.
+//
+// On the real disk: ffprobe reads the video, and then the bytes that took
+// its place.
+func TestPathAVideoThatCannotBeReadStillHasItsState(t *testing.T) {
+	d := open(t)
+	ep := d.add("ep", minutes5)
+	d.idle(ep)
+	clips := d.clips(ep)
+	if err := os.WriteFile(ep, []byte("not a video any more"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	st, err := d.svc.State(context.Background(), ep)
+	if err != nil {
+		t.Fatalf("a video that cannot be read has no state: %v", err)
+	}
+	if st.Status.Source != ep || len(st.Clips) != len(clips) || len(st.Jobs) == 0 {
+		t.Errorf("the state of a video that cannot be read is of %q with %d clips of %d and %d jobs", st.Status.Source, len(st.Clips), len(clips), len(st.Jobs))
+	}
+}
+
+// A state holds the jobs queued or running and, of those over, the
+// newest of each kind, not every job the video had since the app opened.
+func TestAStateHoldsTheJobsTheWorkspaceShows(t *testing.T) {
+	q := newIdleQueue(nil, nil, nil)
+	add := func(id, episode, kind, state string) {
+		q.mu.Lock()
+		defer q.mu.Unlock()
+		j := &Job{ID: id, Episode: episode, JobRecord: engine.JobRecord{Kind: kind}, State: state}
+		q.stampLocked(j)
+		q.jobs = append(q.jobs, j)
+	}
+	for i := range 50 {
+		add(fmt.Sprintf("render-%d", i), "a.mp4", engine.JobRender, JobDone)
+	}
+	add("search-old", "a.mp4", engine.JobSearch, JobStopped)
+	add("search-new", "a.mp4", engine.JobSearch, JobDone)
+	add("render-running", "a.mp4", engine.JobRender, JobRunning)
+	add("render-queued", "a.mp4", engine.JobRender, JobQueued)
+	add("other", "b.mp4", engine.JobSearch, JobRunning)
+	jobs, _ := q.ofVideo("a.mp4")
+	ids := []string{}
+	for _, j := range jobs {
+		ids = append(ids, j.ID)
+	}
+	if want := []string{"render-49", "search-new", "render-running", "render-queued"}; !slices.Equal(ids, want) {
+		t.Errorf("the state holds %v, not %v", ids, want)
+	}
 }

@@ -181,6 +181,40 @@ func TestWhatWasHeardIsReadAgainWhenTheTranscriptIsWritten(t *testing.T) {
 	}
 }
 
+// A transcript saved again and again as more is heard keeps one place
+// among what was heard, so it never pushes out another video's.
+func TestATranscriptSavedAgainKeepsOnePlaceOfWhatWasHeard(t *testing.T) {
+	words := []timed.Cue{{Start: 0.5, End: 1.2, Text: "Hallo"}}
+	fsys, source, path := storedTranscript(t, words, make([]float32, 300), 3, false)
+	stamp, err := stampOf(fsys, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range keptHeard + 2 {
+		end := num.Float(3 + i)
+		file := transcriptFile{Version: transcriptVersion, Source: stamp, Model: "modell",
+			Mean: num.Float(-30), Parts: [][2]num.Float{{0, end}}, End: num.Float(100), Words: storedWords(words)}
+		if err := writeTranscript(fsys, path, file, make([]float32, 300+100*i)); err != nil {
+			t.Fatal(err)
+		}
+		if st := Status(fsys, source, "/models/modell", nil); st.Covered != float64(end) {
+			t.Fatalf("saved heard to %v, the status says %v", end, st.Covered)
+		}
+	}
+	mine := fmt.Sprintf("%p|%s", fsys, path)
+	heardKept.mu.Lock()
+	places := 0
+	for _, key := range heardKept.keys {
+		if key == mine {
+			places++
+		}
+	}
+	heardKept.mu.Unlock()
+	if places != 1 {
+		t.Errorf("the transcript saved %d times takes %d places among what was heard", keptHeard+2, places)
+	}
+}
+
 // A transcript from before numbers stood apart is still the episode's
 // transcript. Reading it as stale took the waveform off the clip timeline.
 func TestAnOlderTranscriptIsStillRead(t *testing.T) {

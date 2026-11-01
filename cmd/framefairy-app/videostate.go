@@ -52,11 +52,15 @@ func (s *FrameFairy) State(ctx context.Context, path string) (VideoState, error)
 	}
 	info := sources.lastOf(path)
 	if !st.Status.Missing {
-		var err error
-		if info, err = s.probe(ctx, path); err != nil {
-			return VideoState{}, err
+		// A video that cannot be read now still has its status, its jobs
+		// and its clips, as a missing one does, so the workspace says what
+		// it can. Only how often each part was searched needs its length.
+		if probed, err := s.probe(ctx, path); err != nil {
+			theLog.line(zerolog.WarnLevel, "app").Str("video", filepath.Base(path)).Err(err).Msg("the video could not be read for its state")
+		} else {
+			info = probed
+			st.Coverage = coverageOf(plans, info.Duration)
 		}
-		st.Coverage = coverageOf(plans, info.Duration)
 	}
 	st.Clips = s.clipsOf(plans, info)
 	return st, nil

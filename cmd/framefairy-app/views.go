@@ -30,6 +30,8 @@ type ClipEntry struct {
 }
 
 // Clips lists the clips of every clip set of an episode, in time order.
+// The workspace reads it in the state of the video, see State, and calls
+// it no more. The walks and the tests ask it.
 func (s *FrameFairy) Clips(ctx context.Context, path string) ([]ClipEntry, error) {
 	if !s.store.Known(path) {
 		return nil, errNotInLibrary
@@ -120,6 +122,8 @@ type PassView struct {
 
 // Coverage gives the episode in parts by how many searches have read
 // each, see CoverageView.
+// The workspace reads it in the state of the video, see State, and calls
+// it no more. The walks and the tests ask it.
 func (s *FrameFairy) Coverage(ctx context.Context, path string) (CoverageView, error) {
 	if !s.store.Known(path) {
 		return CoverageView{}, errNotInLibrary
@@ -285,6 +289,18 @@ func (s *FrameFairy) Fonts() []engine.CaptionFont {
 // which read every plan of the episode and its transcript for one clip.
 // An edit is written by the time it answers, so the answer takes its
 // number from the clock here, see ClipEntry.Rev.
+// answer is a clip as an edit left it, the answer to the edit. Its rev is
+// taken first and the video's state is told after it, so a state is sent
+// that was read after the answer and is newer than it. Told only before
+// the answer, in editMoving, the state could take its rev first, and the
+// window, which takes no state older than an edit's answer, would drop it,
+// see EpisodeSession.put in frontend/src/lib/session.svelte.ts.
+func (s *FrameFairy) answer(ctx context.Context, path, plan, clipID string) (ClipEntry, error) {
+	entry, err := s.clipEntry(ctx, path, plan, clipID)
+	s.told(path)
+	return entry, err
+}
+
 func (s *FrameFairy) clipEntry(ctx context.Context, path, plan, clipID string) (ClipEntry, error) {
 	if !s.store.PlanOf(path, plan) {
 		return ClipEntry{}, errNotInLibrary

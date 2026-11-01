@@ -32,7 +32,7 @@
     type Word,
     type Sentence,
     onUndo,
-    onVideo,
+    onVideoState,
   } from "../lib/api";
   import { jobs } from "../lib/state.svelte";
   import { EpisodeSession, type WorkMoves } from "../lib/session.svelte";
@@ -3023,7 +3023,7 @@
       });
     },
   };
-  onMount(() => session.open(moves, onVideo));
+  onMount(() => session.open(moves, onVideoState));
 
   // Playing moves nothing. An editor's timeline follows its playhead while
   // it plays, and that is a setting there, off as often as on, because a

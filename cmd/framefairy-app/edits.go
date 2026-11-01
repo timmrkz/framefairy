@@ -54,7 +54,7 @@ func (s *FrameFairy) SetCrop(ctx context.Context, path, plan, clipID string, at 
 	if err := s.edit(path, func() error { return engine.SetCrop(s.store.files, plan, clipID, at, left, info, cw) }); err != nil {
 		return ClipEntry{}, err
 	}
-	return s.clipEntry(ctx, path, plan, clipID)
+	return s.answer(ctx, path, plan, clipID)
 }
 
 // RotatePart rotates the part of a clip between two cuts that a moment is
@@ -71,7 +71,7 @@ func (s *FrameFairy) RotatePart(ctx context.Context, path, plan, clipID string, 
 	err = s.edit(path, func() error { return engine.RotatePart(s.store.files, plan, clipID, at, info) })
 	var entry ClipEntry
 	if err == nil {
-		entry, err = s.clipEntry(ctx, path, plan, clipID)
+		entry, err = s.answer(ctx, path, plan, clipID)
 	}
 	// The turn the part has now and the crop it plays with, so a report
 	// shows whether it took the crop of a part turned alike, #402. The
@@ -267,7 +267,7 @@ func (s *FrameFairy) SetThumbnail(ctx context.Context, path, plan, clipID string
 	}); err != nil {
 		return ClipEntry{}, err
 	}
-	return s.clipEntry(ctx, path, plan, clipID)
+	return s.answer(ctx, path, plan, clipID)
 }
 
 // SetCropMark adds, moves or removes a keyframe of a clip, a crop placed
@@ -288,7 +288,7 @@ func (s *FrameFairy) SetCropMark(ctx context.Context, path, plan, clipID string,
 	}); err != nil {
 		return ClipEntry{}, err
 	}
-	return s.clipEntry(ctx, path, plan, clipID)
+	return s.answer(ctx, path, plan, clipID)
 }
 
 // SetCaptionTime moves the caption of a clip that begins or ends on a word,
@@ -335,7 +335,7 @@ func (s *FrameFairy) SetCaptionTime(ctx context.Context, path, plan, clipID stri
 	if err != nil {
 		return ClipEntry{}, err
 	}
-	return s.clipEntry(ctx, path, plan, clipID)
+	return s.answer(ctx, path, plan, clipID)
 }
 
 // ShapeCaptionTime works out the captions of a clip with the edge of one
@@ -370,7 +370,7 @@ func (s *FrameFairy) ResetCrop(ctx context.Context, path, plan, clipID string, a
 	if err := s.edit(path, func() error { return engine.ResetCrop(s.store.files, plan, clipID, at) }); err != nil {
 		return ClipEntry{}, err
 	}
-	return s.clipEntry(ctx, path, plan, clipID)
+	return s.answer(ctx, path, plan, clipID)
 }
 
 // RemoveClip takes a clip out of the list, or puts it back. The clip stays
@@ -390,7 +390,7 @@ func (s *FrameFairy) RemoveClip(ctx context.Context, path, plan, clipID string, 
 	if err != nil {
 		return ClipEntry{}, err
 	}
-	return s.clipEntry(ctx, path, plan, clipID)
+	return s.answer(ctx, path, plan, clipID)
 }
 
 // Shape works out what a gesture on the clip timeline makes of a clip,
@@ -431,5 +431,5 @@ func (s *FrameFairy) Reshape(ctx context.Context, path, plan, clipID string, g e
 	}); err != nil {
 		return ClipEntry{}, err
 	}
-	return s.clipEntry(ctx, path, plan, clipID)
+	return s.answer(ctx, path, plan, clipID)
 }

@@ -289,6 +289,19 @@ describe("a video's state in its session", () => {
     expect([here.rev, here.status?.measured]).toEqual([6, 6]);
   });
 
+  test("a read asked to be fresh makes the clips new, though a newer state came first", () => {
+    const here = new EpisodeSession("/v.mp4", new JobStore());
+    here.take(state(5));
+    const was = here.clips[0];
+    // The state the read asked for after a caption style edit comes after
+    // one the Go side sent.
+    expect(here.take(state(6))).toBe(true);
+    expect(here.clips[0]).toBe(was);
+    expect(here.take(state(4), true)).toBe(false);
+    expect(here.clips[0]).not.toBe(was);
+    expect(here.clips[0]).toEqual(was);
+  });
+
   test("takes no state read before an edit's answer, and the first read after it", () => {
     const here = new EpisodeSession("/v.mp4", new JobStore());
     here.take(state(5));

@@ -65,7 +65,7 @@ export class EpisodeSession {
 
   // The workspace is on the page: from now on the session hears every
   // snapshot of a job the store keeps and says what the video's work did
-  // with moves, and takes every state of the video hear brings, onVideo
+  // with moves, and takes every state of the video hear brings, onVideoState
   // in lib/api.ts. The function it returns is for when the workspace is
   // gone, and then it hears nothing more.
   open(moves: WorkMoves, hear: (fn: (state: VideoState) => void) => () => void = () => () => {}): () => void {
@@ -83,7 +83,8 @@ export class EpisodeSession {
   // A state of the video, sent by the Go side or read by the workspace.
   // It is kept when it is newer than every state and every edit's answer
   // kept before it, and fresh makes every clip in it a new one, so the
-  // captions of the clip on screen are read again after an edit of them.
+  // captions of the clip on screen are read again after an edit of them,
+  // the clips kept when the state is older than them.
   // A state sent as work goes on keeps each clip it holds unchanged the
   // very same clip, so nothing about the clip on screen is drawn again.
   // Its jobs go to the store whether it is kept or not, those the store
@@ -101,6 +102,9 @@ export class EpisodeSession {
       this.coverage = same(this.coverage, state.coverage);
       this.written = Object.fromEntries(state.jobs.map((j) => [j.id, j.written ?? 0]));
       kept = true;
+    } else if (fresh) {
+      // A newer state came first, and still the captions are read again.
+      this.clips = this.clips.map((c) => ({ ...c }));
     }
     for (const job of state.jobs) {
       const had = this.store.list.find((j) => j.id === job.id);
