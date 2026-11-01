@@ -1,11 +1,11 @@
 <!--
-How a pull request is described, see CLAUDE.md. Plain words, short
+How a pull request is described, the one place that says it. Plain words, short
 sentences, no semicolons. The opening, Root cause and The fix are brief
 and concrete: at most 30 words for each issue the pull request works on,
 one short paragraph per issue. A pull request for three issues has three
 paragraphs in each of the three. Proof may say as much as it needs. How
-to test is always there. Leave out any other section that has nothing to
-say.
+to test and Found along the way are always there. Leave out any other
+section that has nothing to say.
 -->
 
 <!--

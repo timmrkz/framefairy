@@ -12,18 +12,18 @@ WHEN TO OPEN AN ISSUE, AND WHEN NOT
 
 - Not for what the pull request you are on caused, or a small thing on
   the code it touches. Fix it there, as a commit of its own, see Clean
-  up now in CLAUDE.md. An issue starts a whole new round of work.
-- Not for what nobody can meet. Say who meets it: Tim on his Mac, a
-  customer, or only a test. What only a test meets, on a CI runner, on
-  a loaded machine or with a file made for the test, is an issue about
-  the test, see section 6 of the testing skill. An order of events in
-  our own code that a test can make happen, quitting in the middle of a
-  delete for example, counts even if nobody has met it yet.
-- Search the open and the closed issues first, by the failing test's
-  name, the function the stack stopped in and the words of the error.
-  The same failure as an open issue goes into that issue. The same
-  cause as an earlier one is an incident under that cause's problem,
-  see docs/TRIAGE.md.
+  up now, not later, in CLAUDE.md. An issue starts a whole new round of
+  work.
+- Only for what someone meets: Tim on his Mac, a customer, or a test.
+  Say which. When only a test's environment causes it, a CI runner's
+  virtual hardware, a stand-in or a file made for the test, the issue
+  is about the test, see section 6 of
+  .claude/skills/testing/SKILL.md. An order of events in our own code
+  that a test can make happen, quitting in the middle of a delete for
+  example, counts even if nobody has met it yet.
+- Search the open and the closed issues first, the way Problems that
+  come back in docs/TRIAGE.md says. The same failure as an open issue
+  goes into that issue.
 
 THE THREE KINDS
 
@@ -37,10 +37,13 @@ THE THREE KINDS
   one pull request has a Progress list at the top, one line per pull
   request, ticked with its number as each merges.
 
-Every issue carries a kind label, `bug`, `feature`, `tests`,
-`reliability`, `performance` or `shipping`, one priority and one size,
-as docs/WORKFLOW.md defines them. Leave out a section that has nothing
-to say.
+The title says what goes wrong or what is asked, in plain words, as a
+sentence a person would say, never a name from the code alone. Every
+issue carries one kind label or more, `bug`, `feature`, `tests` for
+tests, walks and CI, `reliability`, `performance`, or `shipping` for
+getting the app to customers, and one priority and one size, as
+Priority and size in docs/WORKFLOW.md defines them. A problem carries
+`problem` too. Leave out a section that has nothing to say.
 -->
 
 <!--
