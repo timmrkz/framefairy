@@ -330,7 +330,7 @@ func TestMain(m *testing.M) {
 	// looking. The engine's TestProjectSteps frames with it.
 	os.Setenv("FRAMEFAIRY_NO_FACES", "1")
 	// A test that hangs on the programs it started, the decoder or
-	// ffmpeg, leaves what each of them was doing in the log, issue #638.
+	// ffmpeg, leaves what each of them was doing in the log.
 	flag.Parse()
 	stop := hangdump.BeforeTimeout()
 	code := m.Run()

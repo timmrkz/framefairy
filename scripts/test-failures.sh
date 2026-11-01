@@ -14,8 +14,7 @@
 #
 # When a program a test started hung, internal/hangdump wrote its stack
 # into the log, and the first error says so, because whoever reads the
-# check would not open the log to find it. See When a Go test hangs on a
-# program it started, in docs/TESTING.md.
+# check would not open the log to find it.
 set -eu
 
 log=${1:?say which log of go test to read}

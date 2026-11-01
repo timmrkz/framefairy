@@ -505,7 +505,7 @@ func TestTheEpisodesDecoderStandsAPhoneVideoUp(t *testing.T) {
 		return frame
 	}
 	// What the decoder says goes into the test's log, so a run that hangs
-	// shows how far each of its cursors came, issue #638. Nothing is said
+	// shows how far each of its cursors came. Nothing is said
 	// once the test is done.
 	var saidMu sync.Mutex
 	done := false

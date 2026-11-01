@@ -33,7 +33,7 @@ func waiting(t *testing.T) int {
 
 // A program the tests started and that waits is written down with its
 // state, and on a Mac with the stack of its threads, which is what a hang
-// on CI's virtual Mac needs and the Go trace does not show, issue #638.
+// on CI's virtual Mac needs and the Go trace does not show.
 //
 // On the real disk: on a Mac, macOS's sample writes its report to a file.
 func TestAProgramThatWaitsIsWrittenDown(t *testing.T) {

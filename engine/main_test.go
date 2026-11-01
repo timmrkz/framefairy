@@ -47,8 +47,7 @@ func TestMain(m *testing.M) {
 	os.Setenv("USERPROFILE", home)
 	os.Unsetenv("FRAMEFAIRY_TRAINING")
 	// A test that hangs on the programs it started, the decoder, ffmpeg
-	// or ffprobe, leaves what each of them was doing in the log, issue
-	// #638.
+	// or ffprobe, leaves what each of them was doing in the log.
 	flag.Parse()
 	stop := hangdump.BeforeTimeout()
 	code := m.Run()

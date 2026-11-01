@@ -1,5 +1,5 @@
 // Package hangdump writes down what every program a test binary started
-// is doing, just before go test's -timeout ends the binary, issue #638.
+// is doing, just before go test's -timeout ends the binary.
 //
 // A test waits on signals, so one whose signal never comes runs until the
 // -timeout, which prints every goroutine of the test binary and nothing of
@@ -55,7 +55,7 @@ func BeforeTimeout() (stop func()) {
 	if v := flag.Lookup("test.v"); v != nil {
 		framed = v.Value.String() == "test2json"
 	}
-	t := time.AfterFunc(timeout-Margin, func() { //nolint:forbidigo // writes down the programs still running before go test's -timeout ends them, #638
+	t := time.AfterFunc(timeout-Margin, func() { //nolint:forbidigo // writes down the programs still running before go test's -timeout ends them
 		Dump(os.Stderr, os.Getpid(), framed)
 	})
 	return func() { t.Stop() }
@@ -89,7 +89,7 @@ func Dump(w io.Writer, parent int, framed bool) {
 	if err != nil {
 		said = fmt.Sprintf("not all of them found: %v\n", err)
 	}
-	part("\n== hangdump: the programs process %d started, %d of them, before go test's -timeout, #638\n%s%s",
+	part("\n== hangdump: the programs process %d started, %d of them, before go test's -timeout\n%s%s",
 		parent, len(pids), said, states(pids))
 
 	// Every program is sampled at once, so a slow one, or one sample
