@@ -315,7 +315,7 @@
   // A search that found its clips is over, and the window it moved on to
   // is on its way from the Go side. The search's frame stays where it is
   // until then, so the range picker never shows the window back where the
-  // search was, between the search and the next, see workMoved.
+  // search was, between the search and the next, see load.
   let movingOn = $state(false);
   // What the search is doing right now, in the step's own words, see
   // lib/steps.ts.
@@ -1379,25 +1379,14 @@
     }
   }
 
-  // The video read again, after something the workspace did not hear of
-  // in a state: the file gone or back, the app woken, an undo.
-  async function load() {
-    await refreshClips();
-    await workMoved();
-  }
-
-  // What follows from the video's work moving on, once the session keeps
-  // the state that work left, see moves: the room for windows, the file
-  // found again, the window. The state is not read again: the move is
-  // made with it.
-  //
   // moved is the window a search that ended moved on to, asked for with
   // the rest. It is drawn with the clips the search found, and the window
   // still drawn is not fitted to the new room and written back over it,
   // found by the fourth review of #458.
-  async function workMoved(moved?: Promise<KeptWindow | null>) {
+  async function load(moved?: Promise<KeptWindow | null>) {
     const was = path;
     try {
+      await refreshClips();
       if (!status) return;
       // A file that was missing as the workspace opened and is there now.
       const found = !source && !status.missing;
@@ -2969,18 +2958,18 @@
       toasts.say(where(), why, { video: path, report: true });
     },
     // A search says how many clips it has written each time one lands, and
-    // the first is put on screen with the state that holds it.
-    wrote: () => showFirstFound(),
+    // the list is read again then, rather than on the next tick of a timer.
+    wrote: () => refreshClips(true).then(() => showFirstFound()),
     // And when the whole video's work ends, which no search's hearing says:
     // the workspace kept what it read last, so stopped on its last pieces
     // the video was heard to its end and the dots stayed, found by the
     // second review of #458.
-    transcribed: () => workMoved(),
+    transcribed: () => load(),
     // How far the episode has been heard is read again when the hearing
     // stops, so the range picker's edge lands on what was saved.
     heard: () => {
       onchange();
-      workMoved();
+      load();
     },
     // A search that ends: the list shows what it found, and the window
     // moves on. How it ended otherwise is said by the search itself, in the
@@ -2995,7 +2984,7 @@
       const moved = ended.state === "done" ? api.chosenWindow(path) : undefined;
       moved?.catch(() => {});
       movingOn = !!moved;
-      workMoved(moved).then(() => {
+      load(moved).then(() => {
         if (ended.state !== "done") {
           listedBefore = null;
           return;
@@ -3023,12 +3012,13 @@
       const key = job.result;
       if (job.state !== "done" || !key) return;
       landing.set(before, key);
+      void refreshClips();
     },
     // A render this workspace started: the list shows what was rendered,
     // and a render that failed says why over the workspace.
     rendered: (job) => {
       onchange();
-      workMoved().then(() => {
+      load().then(() => {
         if (job.state === "failed") oops(job.error ?? "The render failed.");
       });
     },

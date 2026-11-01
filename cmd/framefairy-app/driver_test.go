@@ -122,7 +122,7 @@ func (d *desk) start(st *store) {
 		svc.news = newVideoNews(func(path string) (VideoState, error) {
 			return svc.State(context.Background(), path)
 		}, func(v VideoState) { d.bus.send("video", v) })
-		svc.jobs.news = svc.jobMoved
+		svc.jobs.news = svc.told
 	}
 	d.svc.listening.say = func(x Dictation) {
 		if d.told != nil {

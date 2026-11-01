@@ -163,90 +163,56 @@ func TestAVideosStatesGoOutInTheOrderTheyWereRead(t *testing.T) {
 }
 
 // A search that writes a clip and then logs a line every 10 ms, on a
-// machine where a state takes 50 ms to read. Each line is news that waits
-// behind the clip's, and each asks for a state. The states still go out
-// at most one at a time with one waiting, so the end of the search, five
-// seconds on, reaches the window within two reads, not behind a read for
-// every line.
+// machine so busy that a state takes 400 ms to read, longer than the wait
+// between two sends. Each line asks for a state. The states still go out
+// one at a time with at most one waiting, so the state that says the
+// search is over, five seconds on, reaches the window within two reads,
+// not behind a read for every line.
 func TestASlowReadKeepsNoBacklogOfStates(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		const read = 50 * time.Millisecond
-		var reads atomic.Int64
+		const read = 400 * time.Millisecond
+		const lines = 500
+		var changes, reads atomic.Int64
 		var mu sync.Mutex
-		var heard []string
 		var endAt time.Time
 		news := newVideoNews(func(path string) (VideoState, error) {
 			reads.Add(1)
+			rev := uint64(changes.Load())
 			time.Sleep(read) //nolint:forbidigo // synctest bubble
-			return VideoState{Video: path}, nil
-		}, func(VideoState) {})
-		say := func(what string) func() {
-			return func() {
-				mu.Lock()
-				defer mu.Unlock()
-				heard = append(heard, what)
-				if what == "over" {
-					endAt = time.Now()
-				}
+			return VideoState{Video: path, Rev: rev}, nil
+		}, func(v VideoState) {
+			mu.Lock()
+			defer mu.Unlock()
+			if v.Rev == lines+2 && endAt.IsZero() {
+				endAt = time.Now()
 			}
-		}
-		news.after("a.mp4", true, say("wrote"))
-		for range 500 {
+		})
+		changes.Add(1)
+		news.changed("a.mp4")
+		for range lines {
 			time.Sleep(10 * time.Millisecond) //nolint:forbidigo // synctest bubble
-			news.after("a.mp4", false, say("line"))
+			changes.Add(1)
+			news.changed("a.mp4")
 		}
 		over := time.Now()
-		news.after("a.mp4", true, say("over"))
-		time.Sleep(time.Minute) //nolint:forbidigo // synctest bubble
+		changes.Add(1)
+		news.changed("a.mp4")
+		// Long enough for a backlog of a read for every line to run out,
+		// so it fails here and not as goroutines left behind.
+		time.Sleep(10 * time.Minute) //nolint:forbidigo // synctest bubble
 		synctest.Wait()
 		mu.Lock()
 		defer mu.Unlock()
-		if len(heard) != 502 || heard[0] != "wrote" || heard[501] != "over" {
-			t.Fatalf("heard %d news, %q first and %q last, not all 502 in order", len(heard), heard[0], heard[len(heard)-1])
+		if endAt.IsZero() {
+			t.Fatal("the state that says the search is over was never sent")
 		}
+		// The read still under way, then its own.
 		if late := endAt.Sub(over); late > 2*read {
 			t.Errorf("the end went out %v after it came, more than two reads of %v", late, read)
 		}
-		// One read for every 50 ms of the five seconds, and the last two.
+		// One read after another for the five seconds, and the last two.
 		if n := reads.Load(); n > 5*time.Second.Milliseconds()/read.Milliseconds()+3 {
-			t.Errorf("%d states were read for five seconds of news, one at least for each line", n)
-		}
-	})
-}
-
-// The state that says a job is over goes out at once, though another
-// went out a moment before, because the window shows the end with it. The
-// send that was due goes out with it, and nothing is left due.
-func TestTheStateThatEndsAJobIsSentAtOnce(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		n := countedNews()
-		n.change("a.mp4")
-		synctest.Wait()
-		time.Sleep(10 * time.Millisecond) //nolint:forbidigo // synctest bubble
-		over := time.Now()
-		// A change due at the end of the wait, then the end.
-		n.change("a.mp4")
-		n.changes.Add(1)
-		n.news.after("a.mp4", true, nil)
-		synctest.Wait()
-		// And an end with nothing due.
-		n.changes.Add(1)
-		n.news.after("a.mp4", true, nil)
-		synctest.Wait()
-		time.Sleep(time.Second) //nolint:forbidigo // synctest bubble
-		synctest.Wait()
-		sent, at := n.states()
-		revs := []uint64{}
-		for _, v := range sent {
-			revs = append(revs, v.Rev)
-		}
-		if !slices.Equal(revs, []uint64{1, 3, 4}) {
-			t.Fatalf("sent the states of %v changes", revs)
-		}
-		for i, when := range at[1:] {
-			if !when.Equal(over) {
-				t.Errorf("the end %d was sent %v after it, not at once", i+1, when.Sub(over))
-			}
+			t.Errorf("%d states were read for five seconds of changes, more than one read after another", n)
 		}
 	})
 }
@@ -403,109 +369,25 @@ func TestAStateDueIsSentBeforeAMark(t *testing.T) {
 	})
 }
 
-// The news of a job that moves the work on, a clip written, the hearing
-// over, the work over, goes out right after a state of its video read
-// after it, so the window has what the job left when it hears what the
-// job did: the clips a search wrote before the move the search's end
-// makes. The news of work going on goes out as it comes, so the row of a
-// search says the step it enters at once, unless news of the video waits
-// for its state, and then after it. A video that left the library still
-// has its jobs' news sent.
-func TestAJobsNewsThatMovesItsWorkOnGoesOutAfterItsState(t *testing.T) {
+// A job's news goes out once the state of its video is due, so a walk
+// that hears the news and then asks for a mark sees that state before the
+// mark, see sendDue. Sent the other way round, the mark could come
+// between the two and the walk read a state from before the job's news.
+func TestAJobsNewsComesOnceItsVideosStateIsDue(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		var mu sync.Mutex
-		var told []string
-		var clock atomic.Uint64
-		gone := false
-		news := newVideoNews(func(path string) (VideoState, error) {
-			if gone {
-				return VideoState{}, errNotInLibrary
-			}
-			return VideoState{Video: path, Rev: clock.Add(1)}, nil
-		}, func(v VideoState) {
-			mu.Lock()
-			defer mu.Unlock()
-			told = append(told, fmt.Sprintf("state %d", v.Rev))
-		})
-		q := newQueue(nil, func(u JobUpdate) {
-			mu.Lock()
-			defer mu.Unlock()
-			told = append(told, fmt.Sprintf("news %d", u.Job.Seq))
+		n := countedNews()
+		n.change("a.mp4")
+		synctest.Wait()
+		sentAtNews := -1
+		q := newQueue(nil, func(JobUpdate) {
+			sendDue(n.news)
+			sent, _ := n.states()
+			sentAtNews = len(sent)
 		}, nil)
-		q.news = news.after
-		j := Job{ID: "s", Episode: "a.mp4", Kind: engine.JobSearch}
-		job := func(seq uint64, state, step string, written int) {
-			clock.Store(seq)
-			j.State, j.Step, j.Written = state, step, written
-			q.mu.Lock()
-			q.stampLocked(&j)
-			q.mu.Unlock()
-			j.Seq = seq
-			q.emit(JobUpdate{Job: j})
-		}
-		// A state sent a moment before, so the next is due a quarter second
-		// on. A first state would be sent at once, beside the news, in
-		// either order.
-		news.changed("a.mp4")
-		synctest.Wait()
-		// Started, then heard further: as it comes.
-		job(1, JobRunning, "hearing", 0)
-		job(3, JobRunning, "hearing", 0)
-		synctest.Wait()
-		// The hearing over and a clip written, each after a state read
-		// after it.
-		job(5, JobRunning, "finding", 0)
-		synctest.Wait()
-		job(7, JobRunning, "finding", 1)
-		synctest.Wait()
-		job(9, JobDone, "finding", 1)
-		synctest.Wait()
-		gone = true
-		job(11, JobSettled, "finding", 1)
-		job(13, JobCancelled, "finding", 1)
-		synctest.Wait()
-		time.Sleep(time.Second) //nolint:forbidigo // synctest bubble
-		synctest.Wait()
-		mu.Lock()
-		defer mu.Unlock()
-		want := []string{"state 1", "news 1", "news 3", "state 6", "news 5", "state 8", "news 7", "state 10", "news 9", "news 11", "news 13"}
-		if !slices.Equal(told, want) {
-			t.Errorf("told %v,\nnot %v", told, want)
-		}
-	})
-}
-
-// News of work going on that comes while news of the video waits for its
-// state goes out after it, in the order the two came.
-func TestNewsThatComesWhileNewsWaitsGoesOutAfterIt(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		var mu sync.Mutex
-		var told []string
-		slow := make(chan struct{})
-		news := newVideoNews(func(path string) (VideoState, error) {
-			<-slow
-			return VideoState{Video: path, Rev: 9}, nil
-		}, func(v VideoState) {
-			mu.Lock()
-			defer mu.Unlock()
-			told = append(told, "state")
-		})
-		say := func(what string) func() {
-			return func() {
-				mu.Lock()
-				defer mu.Unlock()
-				told = append(told, what)
-			}
-		}
-		news.after("a.mp4", true, say("the search is over"))
-		synctest.Wait()
-		news.after("a.mp4", false, say("the next search starts"))
-		close(slow)
-		synctest.Wait()
-		mu.Lock()
-		defer mu.Unlock()
-		if want := []string{"state", "the search is over", "state", "the next search starts"}; !slices.Equal(told, want) {
-			t.Errorf("told %v, not %v", told, want)
+		q.news = n.change
+		q.emit(JobUpdate{Job: Job{Episode: "a.mp4"}})
+		if sentAtNews != 2 {
+			t.Errorf("%d states were sent by a mark the job's news asked for, the first and the one the job asked for were due", sentAtNews)
 		}
 	})
 }
@@ -528,12 +410,10 @@ func heardStates(d *desk) func(path string) (VideoState, uint64) {
 		defer mu.Unlock()
 		last[v.Video] = v
 	})
-	svc.jobs.news = svc.jobMoved
-	tell := svc.jobs.tell
-	svc.jobs.tell = func(u JobUpdate) {
-		if tell != nil {
-			tell(u)
-		}
+	svc.jobs.news = svc.told
+	emit := svc.jobs.emit
+	svc.jobs.emit = func(u JobUpdate) {
+		emit(u)
 		mu.Lock()
 		told[u.Job.Episode] = max(told[u.Job.Episode], u.Job.Seq)
 		mu.Unlock()

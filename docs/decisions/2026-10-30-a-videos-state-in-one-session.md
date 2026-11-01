@@ -806,10 +806,16 @@ engine and decides nothing about a video's work.
 Each one removes what it replaces, so every merge leaves the app working
 and fewer rules in the interface. Each is listed on #606 as it opens.
 
-1. **One channel**, #665: the serial sender with no backlog, and a
-   video's jobs only in its state. `movesOn`, `videoNews.after`, the
-   session's waiting moves and `moves.cases.json` go, and the moves are
-   made from the jobs a state brings, for as long as they last.
+1. **One send at a time**, #665: a video's states go out one at a time,
+   with at most one more waiting however slow a read is, which fixes
+   `TestPathWhatChangesAVideoSendsItsState` on the Mac. And this record.
+   What the two parts of slice 4 before this one built on the branch,
+   the news sent after its state, `movesOn`, the session's waiting moves
+   and `moves.cases.json`, is taken out again before it is merged, so
+   the moves stay as main has them, reading the video again, until they
+   go. One channel would make that order hold by itself, but while the
+   moves are still made in the interface it would need the same waiting
+   moves again, so it comes once they are gone, in 6.
 2. **The clip chosen and the window kept in Go**: the record of each
    video in memory, written through, both in `VideoState`, `ChooseClip`
    answering with a rev, `ChosenClip` and `ChosenWindow` gone.
@@ -819,9 +825,10 @@ and fewer rules in the interface. Each is listed on #606 as it opens.
    fitting in the interface and `followed` gone.
 5. **Failures as notices**: the `failed` move, `told`, and App's watch
    of transcription failures gone.
-6. **How a search ended, from Go**, with forgetting stopped work and
-   the polls gone, and `EpisodeSession`'s moves, `WorkMoves` and
-   `onchange` from them gone. #513 with it.
+6. **One channel, and the moves gone**: a video's jobs only in its
+   state, how a search ended from Go, stopped work forgotten by Go,
+   `EpisodeSession`'s moves, `WorkMoves`, `onchange` from them and both
+   polls gone. #513 with it. It may split in two once it is worked out.
 7. **The architecture's own lines**: the exception in layer 1, the copy
    row, the move row and the "what is on screen" row rewritten, and
    invariant 5 held by the design. Each earlier pull request already

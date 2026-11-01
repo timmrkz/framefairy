@@ -2091,10 +2091,6 @@ const licenceListeners = new Set<(ev: unknown) => void>();
 // two steps after the last word of a sentence it is settled.
 const dictListeners = new Set<(ev: unknown) => void>();
 const loudListeners = new Set<(ev: unknown) => void>();
-// Who hears the states of the videos. Like the Go side, the stand-in
-// sends a video's state read after the news of its jobs, and then the
-// news, see videoNews in cmd/framefairy-app/videostate.go.
-const videoListeners = new Set<(ev: unknown) => void>();
 // ?talk=N says the two sentences N times over, a word every 40 ms, for a
 // long dictation.
 const dictTalk = Number(new URLSearchParams(location.search).get("talk") ?? 1);
@@ -2253,16 +2249,12 @@ export const Events = {
     }
     // The state of the video, sent as its loudness is measured further.
     if (name === "video") {
-      videoListeners.add(fn);
-      if (!location.search.includes("measuring")) return () => videoListeners.delete(fn);
+      if (!location.search.includes("measuring")) return () => {};
       const timer = setInterval(() => {
         void videoState("/eps/ep.mp4").then((state) => fn({ data: state }));
         if (measuredNow() >= fullLength - 0.01) clearInterval(timer);
       }, 500);
-      return () => {
-        clearInterval(timer);
-        videoListeners.delete(fn);
-      };
+      return () => clearInterval(timer);
     }
     if (name !== "job") return () => {};
     // Every search reports the way the Go side reports one: about four
@@ -2271,7 +2263,6 @@ export const Events = {
     // called off stays in the interface's hands.
     const told = new Map<string, string>();
     const searchTimer = setInterval(() => {
-      const moved = new Map<string, unknown[]>();
       for (const job of [...fakeSearches().map(searchJob), ...hands().map(handJob), ...((window as any).__refused ?? [])] as any[]) {
         const s = { id: job.id };
         const key = `${job.state}`;
@@ -2280,14 +2271,8 @@ export const Events = {
         if (job.progress) {
           ((window as any).__heardSent ??= []).push({ at: Date.now() - ((window as any).__started ?? Date.now()), covered: job.progress.covered });
         }
-        const news = { data: { job: { ...job, seq: tick() } } };
-        moved.set(job.episode, [...(moved.get(job.episode) ?? []), news]);
+        fn({ data: { job: { ...job, seq: tick() } } });
       }
-      for (const [path, news] of moved)
-        void videoState(path).then((state) => {
-          videoListeners.forEach((l) => l({ data: state }));
-          news.forEach((n) => fn(n));
-        });
     }, 250);
     if (location.search.includes("setup") || location.search.includes("models")) {
       const timer = setInterval(() => {

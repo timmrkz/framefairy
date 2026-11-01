@@ -81,12 +81,6 @@ func (s *FrameFairy) told(path string) {
 	s.news.changed(path)
 }
 
-// jobMoved says a job changed its video's state, and passes its news on,
-// see videoNews.after.
-func (s *FrameFairy) jobMoved(path string, movesOn bool, news func()) {
-	s.news.after(path, movesOn, news)
-}
-
 // How often a video's state is sent at most while its work goes on.
 const newsEvery = 250 * time.Millisecond
 
@@ -94,11 +88,9 @@ const newsEvery = 250 * time.Millisecond
 // changed: at most four times a second for each video, and always once
 // more after the last change, so what the window has in the end is what
 // is there. A change while a send is due is in that send, because the
-// state is read when it is sent, not when it changed. The news of a job
-// of the video goes out right after the state read after it, so the
-// window always has what a job left when it hears what the job did, see
-// after. Like every method here it does nothing on a nil videoNews, which
-// is what a test that builds the service by hand has.
+// state is read when it is sent, not when it changed. Like every method
+// here it does nothing on a nil videoNews, which is what a test that
+// builds the service by hand has.
 type videoNews struct {
 	read func(path string) (VideoState, error)
 	send func(VideoState)
@@ -112,11 +104,6 @@ type videoNews struct {
 type telling struct {
 	last  time.Time
 	timer *time.Timer
-	// later is what goes out after the next state, the news of the jobs
-	// that changed the video, in the order it was made, and held how much
-	// of it has not gone out yet, taken for a send or not.
-	later []func()
-	held  int
 	// sends is the sends asked for that have not ended, the one due last,
 	// each closed once it has ended, so what waits on the news can tell
 	// that it is all out, see sendDue in bridge_test.go.
@@ -126,10 +113,10 @@ type telling struct {
 	// sends of one video at once, one begun while the other still read,
 	// could end the other way round, and the older state went out last.
 	// A send whose timer has fired waits on it before it takes anything,
-	// so its timer stays set while it waits, and the changes and the news
-	// that come meanwhile join it: one send runs and one waits, however
-	// slow a read is. A channel of one, so a send that waits on it is one
-	// a synctest bubble sees waiting.
+	// so its timer stays set while it waits, and the changes that come
+	// meanwhile join it: one send runs and one waits, however slow a read
+	// is. A channel of one, so a send that waits on it is one a synctest
+	// bubble sees waiting.
 	sending chan struct{}
 }
 
@@ -138,44 +125,7 @@ func newVideoNews(read func(string) (VideoState, error), send func(VideoState)) 
 }
 
 // changed says the state of the video at path changed.
-func (n *videoNews) changed(path string) { n.ask(path, false, nil) }
-
-// after says a job changed the state of the video at path, with news,
-// the job's news. News that moves the work on, a clip written, the
-// hearing over, the work over, goes out right after a state of the video
-// read after it, which is sent at once: the window makes a move of it
-// with the clips and the status the work left, a clip chosen, the window
-// moved on, a toast. The rest goes out as it comes, so the row of a
-// search says the step it is in as it enters it, unless news of the video
-// is still waiting for its state, and then it goes after that, in the
-// order it came. On a nil videoNews news goes out at once.
-func (n *videoNews) after(path string, movesOn bool, news func()) {
-	if n == nil {
-		if news != nil {
-			news()
-		}
-		return
-	}
-	if movesOn {
-		n.ask(path, true, news)
-		return
-	}
-	n.mu.Lock()
-	t := n.due[path]
-	waits := !n.shut && t != nil && t.held > 0
-	n.mu.Unlock()
-	if waits {
-		// Right after the news it waits behind, which is out at once.
-		n.ask(path, true, news)
-		return
-	}
-	n.ask(path, false, nil)
-	if news != nil {
-		news()
-	}
-}
-
-func (n *videoNews) ask(path string, now bool, later func()) {
+func (n *videoNews) changed(path string) {
 	if n == nil {
 		return
 	}
@@ -189,22 +139,10 @@ func (n *videoNews) ask(path string, now bool, later func()) {
 		t = &telling{sending: make(chan struct{}, 1)}
 		n.due[path] = t
 	}
-	if later != nil {
-		t.later = append(t.later, later)
-		t.held++
-	}
 	if t.timer != nil {
-		// The send due goes out at once instead. One that has begun reads
-		// the state after this change, see tell.
-		if now && t.timer.Stop() {
-			t.timer.Reset(0)
-		}
 		return
 	}
 	wait := max(0, time.Until(t.last.Add(newsEvery)))
-	if now {
-		wait = 0
-	}
 	sent := make(chan struct{})
 	t.sends = append(t.sends, sent)
 	t.timer = time.AfterFunc(wait, func() {
@@ -221,9 +159,9 @@ func (n *videoNews) ended(t *telling, sent chan struct{}) {
 	close(sent)
 }
 
-// tell reads the state of the video and sends it, and then the news that
-// waited for it, once the send before it has ended. A change from the
-// moment it begins is due again, after the wait.
+// tell reads the state of the video and sends it, once the send before it
+// has ended. A change from the moment it begins is due again, after the
+// wait.
 func (n *videoNews) tell(path string, t *telling) {
 	t.sending <- struct{}{}
 	defer func() { <-t.sending }()
@@ -235,24 +173,12 @@ func (n *videoNews) tell(path string, t *telling) {
 	}
 	t.timer = nil
 	t.last = time.Now()
-	later := t.later
-	t.later = nil
 	n.mu.Unlock()
-	// What waited for this state goes out after it, read or not: a video
-	// that left the library still says its jobs ended.
-	defer func() {
-		for _, then := range later {
-			then()
-		}
-		n.mu.Lock()
-		t.held -= len(later)
-		n.mu.Unlock()
-	}()
 	st, err := n.read(path)
 	if errors.Is(err, errNotInLibrary) {
-		// The video left the library, and there is no state to tell.
+		// The video left the library, and there is nobody to tell.
 		n.mu.Lock()
-		if t.timer == nil {
+		if t.timer == nil && n.due[path] == t {
 			delete(n.due, path)
 		}
 		n.mu.Unlock()

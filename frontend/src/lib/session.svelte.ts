@@ -6,7 +6,6 @@
 // docs/decisions/2026-10-30-a-videos-state-in-one-session.md.
 import type { ClipEntry, CoverageView, EpisodeStatus, Job, VideoState } from "./api";
 import { live } from "./flow";
-import { said } from "./said";
 import type { JobStore } from "./state.svelte";
 import { unchanged } from "./unchanged";
 
@@ -57,11 +56,6 @@ export class EpisodeSession {
   // The failures said, so the answer to a call that comes after its news
   // says nothing again.
   private told = new Set<string>();
-  // The news of the video's jobs whose moves wait for a state read after
-  // it, in the order it came, see seen. late is news that should have come
-  // after its state and came before it.
-  private waits: { before: Job | undefined; after: Job; late: boolean }[] = [];
-  private late = false;
   private moves: WorkMoves = { failed() {}, wrote() {}, heard() {}, searched() {}, transcribed() {}, made() {}, rendered() {} };
 
   constructor(
@@ -72,12 +66,8 @@ export class EpisodeSession {
   // The workspace is on the page: from now on the session hears every
   // snapshot of a job the store keeps and says what the video's work did
   // with moves, and takes every state of the video hear brings, onVideoState
-  // in lib/api.ts. A move is made once the state kept was read after the
-  // job's news, so it reads what the work left, see seen. The Go side
-  // sends that state before the news that moves the work on, so a move
-  // waits for nothing unless an edit holds the states, see take. The
-  // function it returns is for when the workspace is gone, and then it
-  // hears nothing more.
+  // in lib/api.ts. The function it returns is for when the workspace is
+  // gone, and then it hears nothing more.
   open(moves: WorkMoves, hear: (fn: (state: VideoState) => void) => () => void = () => () => {}): () => void {
     this.moves = moves;
     const off = this.store.watch((before, after) => this.seen(before, after));
@@ -99,8 +89,7 @@ export class EpisodeSession {
   // very same clip, so nothing about the clip on screen is drawn again.
   // Its jobs go to the store whether it is kept or not, those the store
   // has no newer snapshot of, so the jobs on screen are never older than
-  // the state, and the moves they make wait for a state that is kept.
-  // Whether it was kept.
+  // the state. Whether it was kept.
   take(state: VideoState, fresh = false): boolean {
     let kept = false;
     if (this.holds > 0) {
@@ -113,7 +102,6 @@ export class EpisodeSession {
       this.coverage = same(this.coverage, state.coverage);
       this.written = Object.fromEntries(state.jobs.map((j) => [j.id, j.written ?? 0]));
       kept = true;
-      this.decideWaiting();
     } else if (fresh) {
       // A newer state came first, and still the captions are read again.
       this.clips = this.clips.map((c) => ({ ...c }));
@@ -169,98 +157,45 @@ export class EpisodeSession {
   // Go side answered with. What the Go side says of a job travels apart
   // from the answer to the call, so a job can be over in the store before
   // the answer comes back, its news heard first on a busy machine, issue
-  // #508. Then it is said from what the store knows of it, once a state
-  // read after that is in. The answer alone does not say it is over: that
-  // is said once the store has its end.
+  // #508. Then it is said at once, from what the store knows of it.
   asked(job: Job) {
-    this.asking.add(job.id);
-    const now = this.store.list.find((j) => j.id === job.id);
-    if (now && !live(now)) {
-      this.waits.push({ before: undefined, after: now, late: false });
-      this.decideWaiting();
+    const now = this.store.list.find((j) => j.id === job.id) ?? job;
+    if (live(now)) {
+      this.asking.add(job.id);
+      return;
     }
+    if (now.state === "failed") this.fail(now);
+    this.over(now);
   }
 
-  // A snapshot of a job the store kept. Its moves are made once the state
-  // kept was read after it, its rev past the job's seq, so a move reads
-  // the clips and the status the work left: the first clip found chosen,
-  // the window moved on. Until then they wait, in the order the news
-  // came: while an edit holds the states, when a state read before an
-  // edit's answer is not kept, and when news went out before its state.
   private seen(before: Job | undefined, after: Job) {
     if (after.episode !== this.path) return;
-    const late = this.rev > 0 && this.holds === 0 && this.rev >= this.floor && !this.knows(after);
-    this.waits.push({ before, after, late });
-    this.decideWaiting();
-  }
-
-  // Whether the state kept was read after this news of the job.
-  private knows(job: Job): boolean {
-    return (job.seq ?? 0) < this.rev;
-  }
-
-  private decideWaiting() {
-    while (this.waits.length > 0 && this.knows(this.waits[0].after)) {
-      const { before, after, late } = this.waits.shift()!;
-      this.decide(before, after, late);
-    }
-  }
-
-  private decide(before: Job | undefined, after: Job, late: boolean) {
-    this.late = late;
-    try {
-      this.movesOf(before, after);
-    } finally {
-      this.late = false;
-    }
-  }
-
-  private movesOf(before: Job | undefined, after: Job) {
     const was = live(before);
     const now = live(after);
-    const asked = !now && this.asking.delete(after.id);
-    if ((was || asked) && after.state === "failed") this.fail(after);
+    if (was && after.state === "failed") this.fail(after);
     switch (after.kind) {
       case "search":
-        if (now && (after.written ?? 0) > 0 && after.written !== (before?.written ?? 0)) this.make("wrote", after);
-        if (was && before?.step === "hearing" && !(now && after.step === "hearing")) this.make("heard", after);
-        if (was && !now) this.make("searched", after);
+        if (now && (after.written ?? 0) > 0 && after.written !== (before?.written ?? 0)) this.moves.wrote(after);
+        if (was && before?.step === "hearing" && !(now && after.step === "hearing")) this.moves.heard(after);
+        if (was && !now) this.moves.searched(after);
         break;
       case "transcribe":
-        if (was && !now) this.make("transcribed", after);
+        if (was && !now) this.moves.transcribed(after);
         break;
     }
-    if (asked) this.over(after);
-  }
-
-  // A move that goes wrong is said in the app's log and stops nothing
-  // else: not the moves after it, and not the rest of the state taken. A
-  // move whose news came before its state is said there too: the Go side
-  // sends the state first for every news that moves the work on, by
-  // movesOn in cmd/framefairy-app/jobs.go, so one that did not means the
-  // two sides' rules no longer agree, see moves.cases.json. The move still
-  // reads the right state, only a moment later.
-  private make(move: keyof WorkMoves, job: Job) {
-    if (this.late) {
-      said(`session: the move ${move} of the job ${job.id} waited for its state, which came after its news`, { level: "warn", video: this.path });
-    }
-    try {
-      this.moves[move](job);
-    } catch (err) {
-      said(`session: the move ${move} of the job ${job.id} went wrong: ${err}`, { level: "error", video: this.path });
-    }
+    if (!now && this.asking.delete(after.id)) this.over(after);
   }
 
   private fail(job: Job) {
     if (job.kind !== "search" && job.kind !== "clip") return;
     if (this.told.has(job.id)) return;
     this.told.add(job.id);
-    this.make("failed", job);
+    this.moves.failed(job);
   }
 
   private over(job: Job) {
-    if (job.kind === "clip") this.make("made", job);
-    else if (job.kind === "render") this.make("rendered", job);
+    if (job.kind === "clip") this.moves.made(job);
+    else if (job.kind === "render") this.moves.rendered(job);
   }
 }
 
