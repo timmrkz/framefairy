@@ -48,7 +48,8 @@ export const steps = {
       // note is a pitch that starts to sound, and when it starts is read
       // on the audio's own clock, against the moment Listen answered.
       // window.__pair(from, a, b) settles once, from note from on, a
-      // note near pitch a and one near pitch b have sounded.
+      // note near pitch a and one near pitch b have sounded, and
+      // window.__tapped once the tap listens.
       await walk.reportPage.addInitScript(() => {
         window.__notes = [];
         let waiting = [];
@@ -75,42 +76,39 @@ export const steps = {
           for (let i = from; i < d.length; i++) [a, b] = [d[i] + c * a - b, a];
           return (2 * Math.sqrt(Math.max(0, a * a + b * b - c * a * b))) / (d.length - from);
         };
-        const Real = window.AudioContext;
-        let audio = null;
-        let micOn = Infinity;
-        window.AudioContext = class extends Real {
-          constructor(...a) {
-            super(...a);
-            audio = this;
-            micOn = Infinity;
-            // Settles once the audio's clock runs, which it does only
-            // after the click that woke it.
-            window.__running = new Promise((done) => {
-              const runs = () => this.state === "running" && done();
-              this.addEventListener("statechange", runs);
-              runs();
-            });
+        // The tap runs on the audio's own thread and hands every 1024
+        // samples on, with the moment the first of them plays, so none is
+        // lost however busy the window is. A ScriptProcessorNode, the
+        // older tap, drops what the window is too busy to take, and on
+        // CI's machines it heard no start sound at all.
+        const tapCode = `registerProcessor("tap", class extends AudioWorkletProcessor {
+          constructor() { super(); this.d = new Float32Array(1024); this.n = 0; this.at = 0; }
+          process([input]) {
+            const d = input[0];
+            for (let i = 0; d && i < d.length; i++) {
+              if (this.n === 0) this.at = (currentFrame + i) / sampleRate;
+              this.d[this.n++] = d[i];
+              if (this.n < this.d.length) continue;
+              this.port.postMessage({ at: this.at, d: this.d }, [this.d.buffer]);
+              this.d = new Float32Array(1024);
+              this.n = 0;
+            }
+            return true;
           }
-        };
-        // The bridge says when a call is answered, see wails-bridge.ts.
-        window.addEventListener("answered", (e) => {
-          if (e.detail === "Listen") micOn = audio ? audio.currentTime : -Infinity;
-        });
-        window.addEventListener("asked", (e) => {
-          if (e.detail === "Listen") micOn = Infinity;
-        });
-        const taps = new WeakMap();
+        });`;
+        const tapURL = URL.createObjectURL(new Blob([tapCode], { type: "text/javascript" }));
         const connect = AudioNode.prototype.connect;
-        const tapOf = (ctx) => {
-          if (taps.has(ctx)) return taps.get(ctx);
-          const tap = ctx.createScriptProcessor(1024, 1, 1);
+        // What the app connects to the speakers, also connected to the tap
+        // through this, for each audio.
+        const buses = new WeakMap();
+        // hearing reads the samples the tap hands on, at the moment the
+        // first of them plays.
+        const hearing = (rate) => {
           // The pitches sounding now, and when the sound began while
           // there were too few samples yet to tell its pitch by.
           let sounding = [];
           let began = null;
-          tap.onaudioprocess = (e) => {
-            const d = e.inputBuffer.getChannelData(0);
-            const rate = ctx.sampleRate;
+          return (played, d) => {
             const first = d.findIndex((x) => Math.abs(x) > loud);
             if (first < 0) {
               sounding = [];
@@ -118,7 +116,7 @@ export const steps = {
               return;
             }
             const from = sounding.length || began !== null ? 0 : first;
-            const at = sounding.length ? e.playbackTime : (began ?? e.playbackTime + from / rate);
+            const at = sounding.length ? played : (began ?? played + from / rate);
             if (d.length - from < 256) {
               began = at;
               return;
@@ -140,13 +138,48 @@ export const steps = {
               sounding.push(f);
             }
           };
-          connect.call(tap, ctx.destination);
-          taps.set(ctx, tap);
-          return tap;
         };
+        const Real = window.AudioContext;
+        let audio = null;
+        let micOn = Infinity;
+        window.AudioContext = class extends Real {
+          constructor(...a) {
+            super(...a);
+            audio = this;
+            micOn = Infinity;
+            const bus = new GainNode(this);
+            buses.set(this, bus);
+            // Settles once the audio's clock runs, which it does only
+            // after the click that woke it.
+            window.__running = new Promise((done) => {
+              const runs = () => this.state === "running" && done();
+              this.addEventListener("statechange", runs);
+              runs();
+            });
+            // Settles once the tap listens. It is made once the audio
+            // runs: WebKit asked for it while the audio was waking at
+            // times never woke it.
+            window.__tapped = window.__running
+              .then(() => this.audioWorklet.addModule(tapURL))
+              .then(() => {
+                const tap = new AudioWorkletNode(this, "tap", { channelCount: 1, channelCountMode: "explicit", outputChannelCount: [1] });
+                const hear = hearing(this.sampleRate);
+                tap.port.onmessage = (e) => hear(e.data.at, e.data.d);
+                connect.call(bus, tap);
+                connect.call(tap, this.destination);
+              });
+          }
+        };
+        // The bridge says when a call is answered, see wails-bridge.ts.
+        window.addEventListener("answered", (e) => {
+          if (e.detail === "Listen") micOn = audio ? audio.currentTime : -Infinity;
+        });
+        window.addEventListener("asked", (e) => {
+          if (e.detail === "Listen") micOn = Infinity;
+        });
         AudioNode.prototype.connect = function (to, ...a) {
           const out = connect.call(this, to, ...a);
-          if (to instanceof AudioDestinationNode) connect.call(this, tapOf(this.context));
+          if (to instanceof AudioDestinationNode && buses.has(this.context)) connect.call(this, buses.get(this.context));
           return out;
         };
         // A window that is late to start a sound, for the dictate step's
@@ -1498,15 +1531,14 @@ export const steps = {
     // loud the microphone was, so the walk waits until it is.
     if (!running) await caughtUp(page, url);
     // The recording starts and tells the window what it hears, and the
-    // answer that it started waits, see /hold.
+    // answer that it started waits, see /hold, until the walk listens to
+    // what the window plays: the tap is made with the window's audio, at
+    // the press. "start, answered late" holds it longer still.
     const late = arg === "start, answered late";
-    if (late) await control(url, "/hold?call=Listen&gate=shut&answer=1&times=1");
     // The window starts the start sound later than it means to, by more
-    // than the sound is long. The answer to Listen, which the sound
-    // follows, waits until the sound can play at all, so the lateness is
-    // counted on a clock that runs.
+    // than the sound is long, counted on the audio's clock once it runs.
     const slow = arg === "start, sounded late";
-    if (slow) await control(url, "/hold?call=Listen&gate=shut&answer=1&times=1");
+    if (!running) await control(url, "/hold?call=Listen&gate=shut&answer=1&times=1");
     const before = await page.evaluate(() => window.__notes.length);
     if (!running) await button.click();
     // Stop the moment it is pressed, see the rules on a click.
@@ -1515,10 +1547,9 @@ export const steps = {
       walk.wrong = `Dictate says "${said}" the frame after it was pressed, not Stop`;
       return;
     }
-    if (slow) {
-      await page.evaluate(() => window.__running.then(() => (window.__late = 0.5)));
-      await control(url, "/hold?call=Listen&gate=open");
-    }
+    if (!running) await page.evaluate(() => window.__tapped);
+    if (slow) await page.evaluate(() => window.__running.then(() => (window.__late = 0.5)));
+    if (!running && !late) await control(url, "/hold?call=Listen&gate=open");
     // The words appear while they are heard, before anything stops. The
     // recording goes on until the app has told words being heard, see
     // /microphone.
