@@ -174,17 +174,29 @@ func (n *videoNews) tell(path string) {
 	n.send(st)
 }
 
-// stop sends nothing more, as the app quits.
+// stop sends nothing more, as the app quits, and returns once a send
+// under way has ended. A state read before the stop is never sent after
+// it: in a walk, the app opened again numbers its states from the start,
+// and a late state of the app that closed would be newer than all of
+// them, see VideoState.Rev.
 func (n *videoNews) stop() {
 	if n == nil {
 		return
 	}
 	n.mu.Lock()
-	defer n.mu.Unlock()
 	n.shut = true
+	var going []chan struct{}
 	for _, t := range n.due {
-		if t.timer != nil {
-			t.timer.Stop()
+		if t.timer != nil && t.timer.Stop() {
+			// The send not begun yet is the one asked for last.
+			t.timer = nil
+			close(t.sends[len(t.sends)-1])
+			t.sends = t.sends[:len(t.sends)-1]
 		}
+		going = append(going, t.sends...)
+	}
+	n.mu.Unlock()
+	for _, sent := range going {
+		<-sent
 	}
 }

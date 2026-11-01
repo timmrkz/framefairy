@@ -448,6 +448,8 @@ func (d *desk) copied() string {
 
 // reopen starts the app again over the same library, the way main does.
 func (d *desk) reopen() {
+	// The app that closed sends nothing more, as it does when it quits.
+	d.svc.news.stop()
 	st := openStore()
 	d.start(st)
 	d.svc.restoreJobs(st.Episodes())

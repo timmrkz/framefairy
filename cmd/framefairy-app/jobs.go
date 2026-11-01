@@ -260,10 +260,13 @@ func newQueue(s *store, emit func(JobUpdate), notify func(string)) *queue {
 		lanes: newLanes(), calledOff: map[string]string{}}
 	tell := quietly(emit)
 	q.emit = func(u JobUpdate) {
+		// The video's state is due before the job's news goes out, so
+		// whatever hears the news and then waits behind every state due,
+		// a walk's mark, see sendDue, waits for the one this news asks for.
+		q.moved(u.Job.Episode)
 		if tell != nil {
 			tell(u)
 		}
-		q.moved(u.Job.Episode)
 	}
 	return q
 }
@@ -1169,10 +1172,10 @@ func (q *queue) runJob(job *Job) {
 		ended = theLog.jobLine(zerolog.ErrorLevel, job).Str("error", failed)
 	}
 	ended.Str("state", string(state)).Int("written", written).Int64("ms", time.Since(started).Milliseconds()).Msg("the job ended")
+	q.moved(job.Episode)
 	if q.notify != nil {
 		q.notify(job.Episode)
 	}
-	q.moved(job.Episode)
 }
 
 // jobOptions are the options a job runs with, the engine readied for it.

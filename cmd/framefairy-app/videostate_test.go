@@ -262,3 +262,26 @@ func TestAStateDueIsSentBeforeAMark(t *testing.T) {
 		}
 	})
 }
+
+// A job's news goes out once the state of its video is due, so a walk
+// that hears the news and then asks for a mark sees that state before the
+// mark, see sendDue. Sent the other way round, the mark could come
+// between the two and the walk read a state from before the job's news.
+func TestAJobsNewsComesOnceItsVideosStateIsDue(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		n := countedNews()
+		n.change("a.mp4")
+		synctest.Wait()
+		sentAtNews := -1
+		q := newQueue(nil, func(JobUpdate) {
+			sendDue(n.news)
+			sent, _ := n.states()
+			sentAtNews = len(sent)
+		}, nil)
+		q.news = n.change
+		q.emit(JobUpdate{Job: Job{Episode: "a.mp4"}})
+		if sentAtNews != 2 {
+			t.Errorf("%d states were sent by a mark the job's news asked for, the first and the one the job asked for were due", sentAtNews)
+		}
+	})
+}
