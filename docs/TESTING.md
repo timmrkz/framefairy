@@ -884,6 +884,21 @@ headless Chromium in the cloud draws WebGPU on the processor, at about
 25 frames a second, so only a Mac's numbers say how the app plays.
 `VIEWPORT` and `SCALE` are as for `speed.mjs`.
 
+### When a Go test hangs on a program it started
+
+A Go test that waits on the decoder, ffmpeg or ffprobe and never hears
+back runs until `go test`'s `-timeout`, which prints every goroutine of
+the test binary and nothing of the program. So the engine's tests start
+`internal/hangdump` in their `TestMain`: 30 seconds before the
+`-timeout` it writes every program the binary started to stderr, with
+its state from `ps`, and on a Mac with the stack of every thread from
+macOS's `sample`, ffmpeg's and VideoToolbox's frames included. The job
+log then shows, between `== hangdump:` and `== hangdump: end`, which
+call each program was in. `TestTheEpisodesDecoderStandsAPhoneVideoUp`
+also logs every line the decoder says, so the log shows how far each
+cursor came. Both change nothing a test does. They are there to find
+the cause of #638, which only CI's virtual Mac has shown.
+
 ### Finding why a walk failed
 
 A walk that fails now and then has met an order of events it did not

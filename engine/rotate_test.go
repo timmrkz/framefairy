@@ -5,11 +5,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -502,6 +504,16 @@ func TestTheEpisodesDecoderStandsAPhoneVideoUp(t *testing.T) {
 		}
 		return frame
 	}
+	// What the decoder says goes into the test's log, so a run that hangs
+	// shows how far each of its cursors came, issue #638. Nothing is said
+	// once the test is done.
+	var saidMu sync.Mutex
+	done := false
+	t.Cleanup(func() {
+		saidMu.Lock()
+		done = true
+		saidMu.Unlock()
+	})
 	for name, phone := range phoneVideos(t, t.TempDir(), "2") {
 		w, h := 160, 90
 		if strings.HasSuffix(name, " 90") || strings.HasSuffix(name, " 270") {
@@ -512,6 +524,13 @@ func TestTheEpisodesDecoderStandsAPhoneVideoUp(t *testing.T) {
 			return ffmpegFrames(t.Context(), phone, grid.At(grid.Holding(0.5)), w, h, got)
 		})
 		dec := NewEpisodeFrames(program, phone)
+		dec.heard = func(_ slog.Level, line string) {
+			saidMu.Lock()
+			defer saidMu.Unlock()
+			if !done {
+				t.Logf("%s, the decoder: %s", name, line)
+			}
+		}
 		frame := first(func(got func(float64, []byte) error) error {
 			return dec.Stream(context.Background(), grid, 0.5, w, h, false, nil, got)
 		})
