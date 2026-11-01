@@ -333,6 +333,8 @@ func (neverAnswers) RoundTrip(r *http.Request) (*http.Response, error) {
 // launchStandIn starts a stand-in llama-server that says what it was
 // handed and ends, and returns what it said. Each name is a launch of its
 // own, with a log of its own.
+//
+// On the real disk: the stand-in llama-server is a program that is run, and its log is a file.
 func launchStandIn(t *testing.T, dir, name string) string {
 	t.Helper()
 	server := filepath.Join(dir, "llama-server")
