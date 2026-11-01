@@ -1536,6 +1536,11 @@ The search's line in the log says how much of its prompt was new. Each
 read leaves two checkpoints, and llama-server keeps 32 by itself, about
 200 MiB each for Gemma 4, so it is told to keep three, the three the
 memory a model is judged by holds, `--ctx-checkpoints`. Issue #242.
+The server keeps no copies of earlier prompts either, `--cache-ram 0`.
+By itself it keeps up to 8 GiB of them, a copy of the slot each time an
+ask starts differently, and since the window moves on after every
+search, each search left a copy nothing asked for again. A window
+searched again after another is read again. Issue #433.
 
 **A model that does not fit is not started.** Before llama-server starts,
 what the model needs at the context it is started with, the same

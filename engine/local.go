@@ -381,7 +381,17 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 		// by holds, see checkpoints in language.go. The transcript read
 		// ahead of a search, see readahead.go, makes two with every read,
 		// and llama.cpp keeps 32 of them by itself, gigabytes of them.
-		"--ctx-checkpoints", itoa(checkpoints)}
+		"--ctx-checkpoints", itoa(checkpoints),
+		// No copies of earlier prompts. Left to itself the server keeps up
+		// to 8 GiB of them in ordinary memory, a copy of the whole slot,
+		// its checkpoints too, each time an ask starts differently from
+		// what the slot holds. After a search the window moves on, so
+		// every search left the window before it there, about a gigabyte
+		// for a half hour window with Gemma 4, kept until the app quits
+		// and never asked for again. The memory a model is judged by
+		// counts none of it. A window searched again after another is
+		// read again, as it was the first time. Issue #433.
+		"--cache-ram", "0"}
 	e.Log.Detail("%s %s", server, strings.Join(args, " "))
 	key, err := newServerKey()
 	if err != nil {
