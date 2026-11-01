@@ -21,8 +21,20 @@ const none: WorkMoves = {
 const job = (id: string, kind: string, state: string, seq: number, more: Partial<Job> = {}): Job =>
   ({ id, episode: "/v.mp4", kind, state, seq, ...more }) as Job;
 
+// A state of the video read after every news a test sends, so each move
+// is made as its news comes. The tests of a move waiting for its state
+// take states of their own.
+const ahead = (rev = 1_000_000): VideoState => ({
+  video: "/v.mp4",
+  rev,
+  status: { source: "/v.mp4" } as EpisodeStatus,
+  clips: [],
+  coverage: { passes: [] },
+  jobs: [],
+});
+
 // Every move the session says, in the order it said them, as "move id".
-function session(jobs = new JobStore()) {
+function session(jobs = new JobStore(), caughtUp = true) {
   const heard: string[] = [];
   const say = (move: string) => (j: Job) => heard.push(`${move} ${j.id}`);
   const moves: WorkMoves = {
@@ -36,6 +48,7 @@ function session(jobs = new JobStore()) {
   };
   const here = new EpisodeSession("/v.mp4", jobs);
   const close = here.open(moves);
+  if (caughtUp) here.take(ahead());
   return { jobs, heard, session: here, close };
 }
 
@@ -208,6 +221,7 @@ describe("a video's session", () => {
     const got: Job[] = [];
     const here = new EpisodeSession("/v.mp4", jobs);
     here.open({ ...none, rendered: (j) => got.push(j) });
+    here.take(ahead());
     jobs.apply(job("r", "render", "running", 1));
     jobs.apply(job("r", "render", "done", 2, { result: "short.mp4" }));
     here.asked(job("r", "render", "queued", 0));
@@ -242,12 +256,14 @@ describe("a video's session", () => {
   // workspace that goes wrong must not leave the others behind.
   test("a workspace whose move goes wrong stops neither the other workspaces nor the next news, and is in the log", () => {
     const jobs = new JobStore();
-    new EpisodeSession("/v.mp4", jobs).open({
+    const wrong = new EpisodeSession("/v.mp4", jobs);
+    wrong.open({
       ...none,
       searched: () => {
         throw new Error("the list is gone");
       },
     });
+    wrong.take(ahead());
     const stays = session(jobs);
     jobs.apply(job("s", "search", "running", 1, { step: "finding" }));
     jobs.apply(job("s", "search", "done", 2, { step: "finding" }));
@@ -355,7 +371,7 @@ describe("a video's state in its session", () => {
 
   test("hands its jobs to the store unless the store has newer news of them, and counts what each wrote", () => {
     const jobs = new JobStore();
-    const { heard, session: here } = session(jobs);
+    const { heard, session: here } = session(jobs, false);
     jobs.apply(job("s", "search", "running", 4, { step: "finding", written: 2 }));
     here.take(state(5, { jobs: [job("s", "search", "running", 3, { step: "finding", written: 1 })] }));
     expect(jobs.list[0].written).toBe(2);
@@ -363,6 +379,56 @@ describe("a video's state in its session", () => {
     here.take(state(7, { jobs: [job("s", "search", "done", 6, { step: "finding", written: 3 })] }));
     expect([jobs.list[0].state, here.wrote("s")]).toEqual(["done", 3]);
     expect(heard).toEqual(["wrote s", "searched s"]);
+  });
+
+  test("makes a move once a state read after its news is kept, so the move sees what the work left", () => {
+    const jobs = new JobStore();
+    const seen: string[] = [];
+    const here = new EpisodeSession("/v.mp4", jobs);
+    here.open({
+      ...none,
+      wrote: () => seen.push(`wrote, ${here.clips.length} clips`),
+      searched: () => seen.push(`searched, ${here.clips.length} clips`),
+    });
+    here.take(state(1, { clips: [] }));
+    jobs.apply(job("s", "search", "running", 2, { step: "finding", written: 1 }));
+    // The news came first, and no state read after it yet.
+    expect(seen).toEqual([]);
+    here.take(state(2, { clips: [] }));
+    expect(seen).toEqual([]);
+    here.take(state(3, { clips: [clip("a")] }));
+    expect(seen).toEqual(["wrote, 1 clips"]);
+    // A state read after the news comes before it, and the move is made
+    // with the news.
+    here.take(state(9, { clips: [clip("a"), clip("b")] }));
+    jobs.apply(job("s", "search", "done", 5, { step: "finding", written: 2 }));
+    expect(seen).toEqual(["wrote, 1 clips", "searched, 2 clips"]);
+  });
+
+  test("holds a search as ending from its news until its state is kept", () => {
+    const jobs = new JobStore();
+    const { heard, session: here } = session(jobs, false);
+    here.take(state(1));
+    jobs.apply(job("s", "search", "running", 2, { step: "finding" }));
+    jobs.apply(job("s", "search", "done", 3, { step: "finding" }));
+    expect([here.ending, heard]).toEqual([true, []]);
+    here.take(state(4));
+    expect([here.ending, heard]).toEqual([false, ["searched s"]]);
+  });
+
+  test("makes the moves that waited in the order they were said, before those of the state's own jobs", () => {
+    const jobs = new JobStore();
+    const { heard, session: here } = session(jobs, false);
+    jobs.apply(job("r", "render", "running", 1));
+    here.asked(job("r", "render", "queued", 1));
+    jobs.apply(job("s", "search", "running", 2, { step: "hearing" }));
+    jobs.apply(job("s", "search", "running", 3, { step: "finding" }));
+    jobs.apply(job("r", "render", "done", 4));
+    expect(heard).toEqual([]);
+    here.take(state(6, { jobs: [job("t", "transcribe", "running", 5)] }));
+    jobs.apply(job("t", "transcribe", "done", 6));
+    here.take(state(7));
+    expect(heard).toEqual(["heard s", "rendered r", "transcribed t"]);
   });
 
   test("hears the states of its own video while it is open", () => {

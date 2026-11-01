@@ -4,7 +4,13 @@
 // no effect in the workspace has to keep a value from before and compare
 // it with the next. See
 // docs/decisions/2026-10-30-a-videos-state-in-one-session.md.
-import type { ClipEntry, CoverageView, EpisodeStatus, Job, VideoState } from "./api";
+import type {
+  ClipEntry,
+  CoverageView,
+  EpisodeStatus,
+  Job,
+  VideoState,
+} from "./api";
 import { live } from "./flow";
 import type { JobStore } from "./state.svelte";
 import { unchanged } from "./unchanged";
@@ -51,12 +57,26 @@ export class EpisodeSession {
   private holds = 0;
   private waiting: VideoState | null = null;
   private waitingFresh = false;
+  // The moves said that wait for a state read after their news.
+  private due: { after: number; move: () => void; ends: boolean }[] = [];
+  // A search is over and the move its end makes waits for its state: the
+  // workspace shows it as it was until then, its frame where it was, so
+  // the end lands in one step, see searched.
+  ending = $state(false);
   // The work asked for in this workspace that is not over yet.
   private asking = new Set<string>();
   // The failures said, so the answer to a call that comes after its news
   // says nothing again.
   private told = new Set<string>();
-  private moves: WorkMoves = { failed() {}, wrote() {}, heard() {}, searched() {}, transcribed() {}, made() {}, rendered() {} };
+  private moves: WorkMoves = {
+    failed() {},
+    wrote() {},
+    heard() {},
+    searched() {},
+    transcribed() {},
+    made() {},
+    rendered() {},
+  };
 
   constructor(
     readonly path: string,
@@ -68,7 +88,10 @@ export class EpisodeSession {
   // with moves, and takes every state of the video hear brings, onVideoState
   // in lib/api.ts. The function it returns is for when the workspace is
   // gone, and then it hears nothing more.
-  open(moves: WorkMoves, hear: (fn: (state: VideoState) => void) => () => void = () => () => {}): () => void {
+  open(
+    moves: WorkMoves,
+    hear: (fn: (state: VideoState) => void) => () => void = () => () => {},
+  ): () => void {
     this.moves = moves;
     const off = this.store.watch((before, after) => this.seen(before, after));
     const unheard = hear((state) => {
@@ -100,8 +123,11 @@ export class EpisodeSession {
       this.status = same(this.status, state.status);
       this.clips = fresh ? state.clips : unchanged(this.clips, state.clips);
       this.coverage = same(this.coverage, state.coverage);
-      this.written = Object.fromEntries(state.jobs.map((j) => [j.id, j.written ?? 0]));
+      this.written = Object.fromEntries(
+        state.jobs.map((j) => [j.id, j.written ?? 0]),
+      );
       kept = true;
+      this.dueNow();
     } else if (fresh) {
       // A newer state came first, and still the captions are read again.
       this.clips = this.clips.map((c) => ({ ...c }));
@@ -132,7 +158,11 @@ export class EpisodeSession {
   // come while it writes are kept aside, because each was read before the
   // edit and would undo it on screen for a moment. The newest of them is
   // taken once it has answered, unless the answer is newer.
-  async edit(key: string, to: (clip: ClipEntry) => ClipEntry, write: () => Promise<ClipEntry>): Promise<void> {
+  async edit(
+    key: string,
+    to: (clip: ClipEntry) => ClipEntry,
+    write: () => Promise<ClipEntry>,
+  ): Promise<void> {
     const was = this.clips.find((c) => c.key === key);
     this.holds++;
     this.clips = this.clips.map((c) => (c.key === key ? to(c) : c));
@@ -168,6 +198,30 @@ export class EpisodeSession {
     this.over(now);
   }
 
+  // A move is made once the session keeps a state of the video read
+  // after the news that makes it, rev past the job's seq, so what the
+  // workspace does then, a clip chosen, the window moved on, reads the
+  // clips and the status that work left. Each move read them again
+  // itself before, and the answers came apart, one frame after another.
+  private say(job: Job, move: () => void, ends = false) {
+    const after = job.seq ?? 0;
+    if (this.rev > after) move();
+    else {
+      this.due.push({ after, move, ends });
+      this.ending = this.due.some((d) => d.ends);
+    }
+  }
+
+  // The moves due once a state newer than their news is kept, in the
+  // order they were said.
+  private dueNow() {
+    const now = this.due.filter((d) => this.rev > d.after);
+    if (now.length === 0) return;
+    this.due = this.due.filter((d) => this.rev <= d.after);
+    this.ending = this.due.some((d) => d.ends);
+    for (const d of now) d.move();
+  }
+
   private seen(before: Job | undefined, after: Job) {
     if (after.episode !== this.path) return;
     const was = live(before);
@@ -175,12 +229,23 @@ export class EpisodeSession {
     if (was && after.state === "failed") this.fail(after);
     switch (after.kind) {
       case "search":
-        if (now && (after.written ?? 0) > 0 && after.written !== (before?.written ?? 0)) this.moves.wrote(after);
-        if (was && before?.step === "hearing" && !(now && after.step === "hearing")) this.moves.heard(after);
-        if (was && !now) this.moves.searched(after);
+        if (
+          now &&
+          (after.written ?? 0) > 0 &&
+          after.written !== (before?.written ?? 0)
+        )
+          this.say(after, () => this.moves.wrote(after));
+        if (
+          was &&
+          before?.step === "hearing" &&
+          !(now && after.step === "hearing")
+        )
+          this.say(after, () => this.moves.heard(after));
+        if (was && !now)
+          this.say(after, () => this.moves.searched(after), true);
         break;
       case "transcribe":
-        if (was && !now) this.moves.transcribed(after);
+        if (was && !now) this.say(after, () => this.moves.transcribed(after));
         break;
     }
     if (!now && this.asking.delete(after.id)) this.over(after);
@@ -190,17 +255,20 @@ export class EpisodeSession {
     if (job.kind !== "search" && job.kind !== "clip") return;
     if (this.told.has(job.id)) return;
     this.told.add(job.id);
-    this.moves.failed(job);
+    this.say(job, () => this.moves.failed(job));
   }
 
   private over(job: Job) {
-    if (job.kind === "clip") this.moves.made(job);
-    else if (job.kind === "render") this.moves.rendered(job);
+    if (job.kind === "clip") this.say(job, () => this.moves.made(job));
+    else if (job.kind === "render")
+      this.say(job, () => this.moves.rendered(job));
   }
 }
 
 // The value kept, when the one that came says the same, so nothing that
 // reads it runs again for a state that changed elsewhere.
 function same<T>(was: T, now: T): T {
-  return was !== null && JSON.stringify(was) === JSON.stringify(now) ? was : now;
+  return was !== null && JSON.stringify(was) === JSON.stringify(now)
+    ? was
+    : now;
 }

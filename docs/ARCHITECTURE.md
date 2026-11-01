@@ -124,7 +124,7 @@ What to do today, and what changes once the issue named is built.
 | I need to | It goes |
 | --- | --- |
 | decide where an edge, a word or a window lands | the engine: `engine/shape.go` for a gesture, `engine.Project` for a window. The interface asks and draws the answer |
-| do something in the workspace when a video's work moves on | a move of `EpisodeSession` in `frontend/src/lib/session.svelte.ts`, never an effect that keeps the value from before |
+| do something in the workspace when a video's work moves on | a move of `EpisodeSession` in `frontend/src/lib/session.svelte.ts`, never an effect that keeps the value from before. The session makes it once it keeps the state read after the news, so the move reads what the work left and asks for no read of its own |
 | show the interface a new fact about a video | a field of `VideoState` in `cmd/framefairy-app/videostate.go`, or of what it holds, the status and the clip views, which the session keeps. Never a new event of its own or a poll |
 | tell the window that something about a video changed | `told` on `*FrameFairy`, or the queue's `moved` for a job, which send the video's state, at most four times a second and always after the last change. Nothing else sends it |
 | keep something between two jobs, a cache or a fact about the machine | today the caches that outlive a job are package variables, the way `engine/probed.go` keeps the probes. A new one says why in its pull request, and never comes from a new `Engine` made only to get it. #607 moves them all onto one object a program keeps |
@@ -212,8 +212,7 @@ copies what it finds nearby, so these are not the pattern for new code.
   which four tests set for the whole process, #607.
 - The effects in `frontend/src/screens/Episode.svelte` that compare an
   old value with a new one to notice that a search started, `followed`
-  and `searchSeen`, the reads of the video's state it asks for after
-  work moves on, the poll of the job list and its own timer, #606. Work that moves on or fails is said by `EpisodeSession`,
+  and `searchSeen`, the poll of the job list and its own timer, #606. Work that moves on or fails is said by `EpisodeSession`,
   and by `JobStore.watch` for what is not one video's, see the decision
   record
   [2026-10-30-a-videos-state-in-one-session.md](decisions/2026-10-30-a-videos-state-in-one-session.md).

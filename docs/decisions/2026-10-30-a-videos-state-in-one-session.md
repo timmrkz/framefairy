@@ -232,3 +232,27 @@ Measured in a cloud session before it was sent:
 What slice 4 takes away is still here: the reads the workspace asks for
 after work moves on, the poll of the clip list while clips are found,
 the poll of the job list, `unread`, and the effects that notice a start.
+
+## Slice 4, first part, as built
+
+Slice 4 is three pull requests, in this order: the moves made with the
+state they come with, one `startJob` for the pending state of every
+control, and both polls going with #513.
+
+- The session makes a move once it keeps a state read after the news
+  that makes it, rev past the job's seq, `say` in
+  `frontend/src/lib/session.svelte.ts`. A move that waits is made when
+  that state is kept, in the order it was said, before the moves the
+  state's own jobs make. Go always sends one, because a job's news makes
+  its video's state due before the news goes out.
+- So no move asks for the video again. `wrote` puts the first clip on
+  screen from the state, `made` hands the card to its clip, and
+  `searched`, `heard`, `transcribed` and `rendered` read only what the
+  state does not hold, the room for windows and the window moved on to,
+  in `workMoved`. `load` keeps its read for what no state says: the
+  file gone or back, the app woken, an undo.
+- A search whose end waits for its state is `ending`, and the range
+  picker keeps the search's frame until it is made, so the window is
+  never drawn back where the search was in between. The walk "the dots
+  after a search's window begin at the window it moves on to" saw that
+  frame, at 0 s, before `ending`.
