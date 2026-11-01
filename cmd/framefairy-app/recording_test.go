@@ -15,6 +15,7 @@ import (
 
 	"github.com/spf13/afero"
 
+	"framefairy/engine"
 	"framefairy/internal/ffmpegtest"
 )
 
@@ -98,7 +99,7 @@ func TestScreenRecordingsAreAttachedWithoutWhatElseTheyHeld(t *testing.T) {
 			if !bytes.Contains(data, []byte("52.52")) {
 				t.Fatalf("the test recording %s does not hold the place it should be copied without", c.name)
 			}
-			r := newReporting(afero.NewMemMapFs(), "/config/report")
+			r := newReporting(engine.NewMachine(afero.NewMemMapFs()), "/config/report")
 			d := r.attach("drop", []handed{{name: c.name, data: data}})
 			if d.Error != "" || len(d.Pictures) != 1 {
 				t.Fatalf("%s gave %+v", c.name, d)
@@ -167,7 +168,7 @@ func TestWhatIsNoRecordingIsLeftOut(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := newReporting(afero.NewMemMapFs(), "/config/report")
+	r := newReporting(engine.NewMachine(afero.NewMemMapFs()), "/config/report")
 	d := r.attach("drop", []handed{
 		{name: "broken.mov", data: []byte("\x00\x00\x00\x18ftypqt  \x00\x00\x00\x00 and then nothing")},
 		{name: "voice.m4a", data: voice},
@@ -208,7 +209,7 @@ func TestAReportHoldsTheRecordings(t *testing.T) {
 		t.Fatal(err)
 	}
 	st := &store{dir: t.TempDir(), files: disk, settings: defaultSettings()}
-	f := &FrameFairy{store: st, report: newReporting(afero.NewMemMapFs(), "/config/report")}
+	f := &FrameFairy{store: st, report: newReporting(engine.NewMachine(afero.NewMemMapFs()), "/config/report")}
 	d := f.report.attach("drop", []handed{{name: "a.png", data: pngOf(t, 12, 8)}, {name: "Screen Recording.mov", data: film}})
 	if d.Error != "" {
 		t.Fatal(d.Error)

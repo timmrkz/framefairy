@@ -51,7 +51,8 @@ Open work is GitHub issues now, see CLAUDE.md. Take the edit out with
 
 	git checkout $base -- $plan
 
-and open an issue for each row it added, with what was seen, where and
-who found it. A pull request that finishes an issue says Fixes #N.
+and open an issue for each row it added, the way
+.github/ISSUE_TEMPLATE/issue.md lays it out. A pull request that
+finishes an issue says Fixes #N.
 MSG
 exit 1

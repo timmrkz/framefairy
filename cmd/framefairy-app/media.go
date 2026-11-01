@@ -51,11 +51,15 @@ type GridView struct {
 
 // sources are the episodes probed, by path, size and when they were
 // written, for the app and for the video preview's streams alike.
-var sources = &probed{}
+var sources = &probed{machine: engine.NewMachine(afero.NewOsFs())}
 
 type probed struct {
-	mu   sync.Mutex
-	info map[string]engine.SourceInfo
+	// machine reads the episode on the real disk, where the stamp below
+	// is taken. The probes are the app's one set, made before main, so
+	// they keep a machine of their own.
+	machine *engine.Machine
+	mu      sync.Mutex
+	info    map[string]engine.SourceInfo
 	// last is what each episode was probed as last, by path alone, for a
 	// video whose file has gone since.
 	last map[string]engine.SourceInfo
@@ -86,7 +90,7 @@ func (p *probed) probe(ctx context.Context, path string) (engine.SourceInfo, err
 	}
 	// ffprobe reads the episode, and the stamp above is taken from the
 	// same disk.
-	e := engine.NewEngine(engineLog("files", path), afero.NewOsFs())
+	e := engine.NewEngine(engineLog("files", path), p.machine)
 	info, err := e.Probe(ctx, path)
 	if err == nil && stamp != "" {
 		p.mu.Lock()

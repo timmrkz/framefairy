@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"flag"
 	"fmt"
 	"net"
 	"net/http"
@@ -10,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/spf13/afero"
+
+	"framefairy/internal/hangdump"
 )
 
 // The tests never write into the home folder of whoever runs them. An
@@ -43,7 +46,12 @@ func TestMain(m *testing.M) {
 	os.Setenv("HOME", home)
 	os.Setenv("USERPROFILE", home)
 	os.Unsetenv("FRAMEFAIRY_TRAINING")
+	// A test that hangs on the programs it started, the decoder, ffmpeg
+	// or ffprobe, leaves what each of them was doing in the log.
+	flag.Parse()
+	stop := hangdump.BeforeTimeout()
 	code := m.Run()
+	stop()
 	_ = os.RemoveAll(home)
 	if episodes.dir != "" {
 		_ = os.RemoveAll(episodes.dir)
@@ -85,7 +93,7 @@ func stubbornServer() {
 // toolsFromThePath names the ffmpeg, ffprobe and llama-server on the search
 // path in the environment, where the programs take a tool from by choice.
 // A program never falls back to the search path by itself, see
-// tool.Find, and a test binary has nothing beside it. One already
+// tool.Finder, and a test binary has nothing beside it. One already
 // named is left as it is.
 func toolsFromThePath() {
 	for env, name := range map[string]string{

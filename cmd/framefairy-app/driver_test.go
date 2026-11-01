@@ -19,6 +19,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io/fs"
 	"net/http"
@@ -38,6 +39,7 @@ import (
 	"framefairy/engine"
 	"framefairy/engine/fileio"
 	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/hangdump"
 )
 
 // desk is the app as a person uses it, over one library.
@@ -132,7 +134,7 @@ func (d *desk) start(st *store) {
 	d.svc.listening.still = d.still
 	d.svc.listening.beats = d.beats
 	d.svc.listening.most = d.most
-	d.svc.report = newReporting(st.files, filepath.Join(st.dir, "report"))
+	d.svc.report = newReporting(st.machine, filepath.Join(st.dir, "report"))
 	// The clipboard is the desk's, so a walk can read what was copied.
 	d.svc.clipboard = func(text string) bool {
 		d.clipboard.Store(&text)
@@ -165,7 +167,7 @@ func (d *desk) start(st *store) {
 		return picked, nil
 	}
 	if d.bus != nil {
-		d.svc.levels = newMeasuring(d.svc.store.files, svc.told)
+		d.svc.levels = newMeasuring(d.svc.store.machine, svc.told)
 	}
 	// Whatever is still running when the test ends is stopped before its
 	// folder goes.
@@ -338,7 +340,12 @@ func TestMain(m *testing.M) {
 	// falls back to what is in focus, after some 50 milliseconds a frame of
 	// looking. The engine's TestProjectSteps frames with it.
 	os.Setenv("FRAMEFAIRY_NO_FACES", "1")
+	// A test that hangs on the programs it started, the decoder or
+	// ffmpeg, leaves what each of them was doing in the log.
+	flag.Parse()
+	stop := hangdump.BeforeTimeout()
 	code := m.Run()
+	stop()
 	if videos.dir != "" {
 		_ = os.RemoveAll(videos.dir)
 	}
@@ -749,7 +756,7 @@ var errBroken = errors.New("the speech model could not be loaded")
 // toolsFromThePath names the ffmpeg, ffprobe and llama-server on the search
 // path in the environment, where the programs take a tool from by choice.
 // A program never falls back to the search path by itself, see
-// tool.Find, and a test binary has nothing beside it. One already
+// tool.Finder, and a test binary has nothing beside it. One already
 // named is left as it is.
 func toolsFromThePath() {
 	for env, name := range map[string]string{

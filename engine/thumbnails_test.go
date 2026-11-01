@@ -42,7 +42,7 @@ func TestThumbnailsAreFramesOfTheShort(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	e := NewEngine(nil, disk)
+	e := NewEngine(nil, NewMachine(disk))
 	if err := e.WriteThumbnails(context.Background(), clip, short); err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestAThumbnailIsTheFrameThatWasMarked(t *testing.T) {
 	// clip starts in the episode.
 	clip := Clip{ID: "01", Slug: "eins", Segments: []Segment{{Start: 10, End: 11}},
 		Thumbnails: []float64{10.02, 10.30, 10.98}}
-	if err := NewEngine(nil, disk).WriteThumbnails(context.Background(), clip, short); err != nil {
+	if err := NewEngine(nil, NewMachine(disk)).WriteThumbnails(context.Background(), clip, short); err != nil {
 		t.Fatal(err)
 	}
 	for i, n := range []int{0, 7, 24} {
@@ -159,7 +159,7 @@ func TestAThumbnailHasTheColoursOfTheShort(t *testing.T) {
 	shown := [3]int{int(px[0]), int(px[1]), int(px[2])}
 	clip := Clip{ID: "01", Slug: "eins", Segments: []Segment{{Start: 0, End: 1}},
 		Thumbnails: []float64{0.5}}
-	if err := NewEngine(nil, disk).WriteThumbnails(context.Background(), clip, short); err != nil {
+	if err := NewEngine(nil, NewMachine(disk)).WriteThumbnails(context.Background(), clip, short); err != nil {
 		t.Fatal(err)
 	}
 	if got := jpegColour(t, filepath.Join(dir, thumbnailName("01_eins", 1))); !closeColour(got, shown, 3) {

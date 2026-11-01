@@ -349,7 +349,7 @@ func TestAWordTooWideGetsACaptionOfItsOwn(t *testing.T) {
 // On the real disk: ffmpeg measures the captions.
 func TestTheMeasureAgreesWithLibass(t *testing.T) {
 	t.Parallel()
-	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
 	if err := e.Preflight(context.Background()); err != nil {
 		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}
@@ -376,7 +376,7 @@ func TestTheMeasureAgreesWithLibass(t *testing.T) {
 // On the real disk: WriteASS writes the caption file where ffmpeg reads it.
 func writeCaptionFile(t *testing.T, captions []Caption) string {
 	t.Helper()
-	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
 	path := filepath.Join(t.TempDir(), "clip.ass")
 	overrides := map[string]any{"radius": 0.0, "highlight": 0.0}
 	laid := LayOutCaptions(withWords(captions), ResolveStyle(overrides), "de")
@@ -395,7 +395,7 @@ func writeCaptionFile(t *testing.T, captions []Caption) string {
 // memory, for the fuzz target, which would wait on the drive otherwise.
 func captionTrackOf(t *testing.T, captions []Caption) string {
 	t.Helper()
-	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), afero.NewMemMapFs())
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(afero.NewMemMapFs()))
 	overrides := map[string]any{"radius": 0.0, "highlight": 0.0}
 	laid := LayOutCaptions(withWords(captions), ResolveStyle(overrides), "de")
 	track, err := e.CaptionTrack(context.Background(), laid, 1080, 1920, overrides, SourceInfo{})
@@ -538,7 +538,7 @@ func FuzzResolveStyle(f *testing.F) {
 //
 // On the real disk: WriteASS writes the caption file where ffmpeg reads it.
 func TestTheBoxCanBeSwitchedOff(t *testing.T) {
-	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
 	write := func(style map[string]any) string {
 		path := filepath.Join(t.TempDir(), "clip.ass")
 		laid := LayOutCaptions([]Caption{{Start: 0, End: 2, Text: "zwei worte"}}, ResolveStyle(style), "de")

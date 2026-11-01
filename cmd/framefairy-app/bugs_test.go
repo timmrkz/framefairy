@@ -25,6 +25,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/spf13/afero"
+
+	"framefairy/engine"
 )
 
 // Bugs in the sidebar opens one report window. Asked again while it is
@@ -32,7 +34,7 @@ import (
 // once the window is gone the next ask makes a new one. The app's window
 // is told each time the report window opens and closes. Plan row 2.244.
 func TestBugsOpensOneReportWindow(t *testing.T) {
-	r := newReporting(afero.NewMemMapFs(), "/config/report")
+	r := newReporting(engine.NewMachine(afero.NewMemMapFs()), "/config/report")
 	made, fronted, shut := 0, 0, 0
 	var closeIt func()
 	r.make = func(closed func()) (func(), func()) {
@@ -75,7 +77,7 @@ func TestBugsOpensOneReportWindow(t *testing.T) {
 // second click comes while the first is still making its window, which
 // waits until that click has had its answer.
 func TestTwoQuickClicksOnBugsMakeOneWindow(t *testing.T) {
-	r := newReporting(afero.NewMemMapFs(), "/config/report")
+	r := newReporting(engine.NewMachine(afero.NewMemMapFs()), "/config/report")
 	var made atomic.Int32
 	making, second := make(chan struct{}), make(chan struct{})
 	r.make = func(closed func()) (func(), func()) {
@@ -106,7 +108,7 @@ func TestTwoQuickClicksOnBugsMakeOneWindow(t *testing.T) {
 // or Bugs would bring forward a window that is not there and nothing would
 // open until the app started again. Found in the review of #217.
 func TestAWindowGoneBeforeItWasMadeIsNotOpen(t *testing.T) {
-	r := newReporting(afero.NewMemMapFs(), "/config/report")
+	r := newReporting(engine.NewMachine(afero.NewMemMapFs()), "/config/report")
 	made := 0
 	var told []bool
 	r.told = func(open bool) { told = append(told, open) }
@@ -136,7 +138,7 @@ func TestAWindowGoneBeforeItWasMadeIsNotOpen(t *testing.T) {
 // them. Found in the review of #217. It holds a decode with decoding, a
 // package variable, so it runs alone.
 func TestNothingWaitsOnAPictureBeingDecoded(t *testing.T) {
-	r := newReporting(afero.NewMemMapFs(), "/config/report")
+	r := newReporting(engine.NewMachine(afero.NewMemMapFs()), "/config/report")
 	s := &FrameFairy{report: r}
 	hold, held := make(chan struct{}), make(chan struct{})
 	was := decoding
@@ -167,7 +169,7 @@ func TestNothingWaitsOnAPictureBeingDecoded(t *testing.T) {
 // none, and is the start of the next report rather than lost. Found in the
 // review of #217.
 func TestAPictureAttachedWhileAReportIsMadeIsKept(t *testing.T) {
-	r := newReporting(afero.NewMemMapFs(), "/config/report")
+	r := newReporting(engine.NewMachine(afero.NewMemMapFs()), "/config/report")
 	s := &FrameFairy{report: r}
 	r.attach("drop", []handed{{name: "a.png", data: pngOf(t, 8, 8)}, {name: "b.png", data: pngOf(t, 8, 8)}})
 	_ = s.RemovePicture(s.ReportDraft().Pictures[1].ID)
@@ -187,7 +189,7 @@ func TestAPictureAttachedWhileAReportIsMadeIsKept(t *testing.T) {
 // kept, read again and put in a report. Found in the review of #217.
 func TestTextIsCutBetweenLetters(t *testing.T) {
 	files := afero.NewMemMapFs()
-	s := &FrameFairy{report: newReporting(files, "/config/report")}
+	s := &FrameFairy{report: newReporting(engine.NewMachine(files), "/config/report")}
 	long := strings.Repeat("ä", reportWordsMax/2) + "x" + "ä"
 	if err := s.SaveReportText("x" + long); err != nil {
 		t.Fatal(err)
@@ -201,7 +203,7 @@ func TestTextIsCutBetweenLetters(t *testing.T) {
 	if err := afero.WriteFile(files, "/config/report/draft.json", []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	s = &FrameFairy{report: newReporting(files, "/config/report")}
+	s = &FrameFairy{report: newReporting(engine.NewMachine(files), "/config/report")}
 	if read := s.ReportDraft().Text; !utf8.ValidString(read) || len(read) > reportWordsMax {
 		t.Fatalf("the text read again is %d bytes, valid %v", len(read), utf8.ValidString(read))
 	}
@@ -237,7 +239,7 @@ func TestTheReportWindowOpensBesideTheApp(t *testing.T) {
 func TestTheDraftOutlivesTheWindowUntilAReportIsMade(t *testing.T) {
 	files := afero.NewMemMapFs()
 	dir := "/config/report"
-	s := &FrameFairy{report: newReporting(files, dir)}
+	s := &FrameFairy{report: newReporting(engine.NewMachine(files), dir)}
 	if err := s.SaveReportText("The picture froze at 46 s."); err != nil {
 		t.Fatal(err)
 	}
@@ -247,7 +249,7 @@ func TestTheDraftOutlivesTheWindowUntilAReportIsMade(t *testing.T) {
 	}
 
 	// The app starts again.
-	s = &FrameFairy{report: newReporting(files, dir)}
+	s = &FrameFairy{report: newReporting(engine.NewMachine(files), dir)}
 	d = s.ReportDraft()
 	if d.Text != "The picture froze at 46 s." || len(d.Pictures) != 1 || d.Pictures[0].Name != "Screenshot 1.png" ||
 		d.Pictures[0].Width != 40 || d.Pictures[0].Height != 30 {
@@ -259,7 +261,7 @@ func TestTheDraftOutlivesTheWindowUntilAReportIsMade(t *testing.T) {
 	if d := s.ReportDraft(); d.Text != "" || len(d.Pictures) != 0 {
 		t.Fatalf("after a report the draft is %+v, want it empty", d)
 	}
-	s = &FrameFairy{report: newReporting(files, dir)}
+	s = &FrameFairy{report: newReporting(engine.NewMachine(files), dir)}
 	if d := s.ReportDraft(); d.Text != "" || len(d.Pictures) != 0 {
 		t.Fatalf("after a report and a restart the draft is %+v, want it empty", d)
 	}
@@ -271,7 +273,7 @@ func TestTheDraftOutlivesTheWindowUntilAReportIsMade(t *testing.T) {
 // A picture goes in a report as a PNG of its pixels alone. A JPEG photo's
 // place and camera, in its EXIF, and a PNG's text are left behind.
 func TestAPictureGoesWithoutWhatElseTheFileHeld(t *testing.T) {
-	r := newReporting(afero.NewMemMapFs(), "/config/report")
+	r := newReporting(engine.NewMachine(afero.NewMemMapFs()), "/config/report")
 	photo := withEXIF(t, jpegOf(t, 64, 48), "GPS 52.52N 13.40E")
 	shot := withText(t, pngOf(t, 32, 20), "Author", "Tim")
 	d := r.attach("picked", []handed{{name: "photo.jpg", data: photo}, {name: "shot.png", data: shot}})
@@ -305,7 +307,7 @@ func TestAPictureGoesWithoutWhatElseTheFileHeld(t *testing.T) {
 // else is left out with the reason, and what could be attached still is.
 func TestPicturesAreLeftOutWithTheReason(t *testing.T) {
 	t.Parallel()
-	r := newReporting(afero.NewMemMapFs(), "/config/report")
+	r := newReporting(engine.NewMachine(afero.NewMemMapFs()), "/config/report")
 	var many []handed
 	for i := range picturesMax + 1 {
 		many = append(many, handed{name: fmt.Sprintf("%d.png", i+1), data: pngOf(t, 8, 8)})
@@ -315,7 +317,7 @@ func TestPicturesAreLeftOutWithTheReason(t *testing.T) {
 		t.Fatalf("eleven pictures gave %d with %q", len(d.Pictures), d.Error)
 	}
 
-	r = newReporting(afero.NewMemMapFs(), "/config/report")
+	r = newReporting(engine.NewMachine(afero.NewMemMapFs()), "/config/report")
 	d = r.attach("drop", []handed{
 		{name: "notes.txt", data: []byte("not a picture")},
 		{name: "big.png", data: make([]byte, pictureBytesMax+1)},
@@ -349,7 +351,7 @@ func TestPicturesAreLeftOutWithTheReason(t *testing.T) {
 // the next start.
 func TestARemovedPictureCanBePutBack(t *testing.T) {
 	files := afero.NewMemMapFs()
-	s := &FrameFairy{report: newReporting(files, "/config/report")}
+	s := &FrameFairy{report: newReporting(engine.NewMachine(files), "/config/report")}
 	d := s.report.attach("drop", []handed{
 		{name: "a.png", data: pngOf(t, 8, 8)}, {name: "b.png", data: pngOf(t, 9, 9)}, {name: "c.png", data: pngOf(t, 10, 10)},
 	})
@@ -365,7 +367,7 @@ func TestARemovedPictureCanBePutBack(t *testing.T) {
 		t.Fatalf("put back, the draft holds %s", names(d))
 	}
 	s.RemovePicture(b)
-	s = &FrameFairy{report: newReporting(files, "/config/report")}
+	s = &FrameFairy{report: newReporting(engine.NewMachine(files), "/config/report")}
 	if d := s.ReportDraft(); names(d) != "a.png c.png" {
 		t.Fatalf("after a restart the draft holds %s", names(d))
 	}
@@ -378,7 +380,7 @@ func TestARemovedPictureCanBePutBack(t *testing.T) {
 // nowhere else, so no path the page names is ever read.
 func TestThePreviewServesOnlyTheDraftsPictures(t *testing.T) {
 	files := afero.NewMemMapFs()
-	r := newReporting(files, "/config/report")
+	r := newReporting(engine.NewMachine(files), "/config/report")
 	d := r.attach("drop", []handed{{name: "a.png", data: pngOf(t, 8, 8)}})
 	_ = afero.WriteFile(files, "/config/report/p99.png", pngOf(t, 8, 8), 0o600)
 	_ = afero.WriteFile(files, "/config/settings.json", []byte("{}"), 0o600)
@@ -416,7 +418,7 @@ func TestAReportHoldsThePictures(t *testing.T) {
 	t.Cleanup(func() { showReport = was })
 
 	st := &store{dir: t.TempDir(), files: disk, settings: defaultSettings()}
-	f := &FrameFairy{store: st, report: newReporting(afero.NewMemMapFs(), "/config/report")}
+	f := &FrameFairy{store: st, report: newReporting(engine.NewMachine(afero.NewMemMapFs()), "/config/report")}
 	f.Acted(Act{ID: "a1", What: "picked a video", Video: filepath.Join(home, "Movies", "start.mp4")})
 	f.Acted(Act{ID: "r1", What: "clicked Report"})
 	f.report.attach("drop", []handed{{name: "a.png", data: pngOf(t, 12, 8)}, {name: "b.png", data: pngOf(t, 8, 12)}})
@@ -473,7 +475,7 @@ func TestPicturesPickedAreReadFromWhereTheyAre(t *testing.T) {
 	if err := os.WriteFile(big, make([]byte, pictureBytesMax+1), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	s := &FrameFairy{report: newReporting(afero.NewMemMapFs(), "/config/report")}
+	s := &FrameFairy{report: newReporting(engine.NewMachine(afero.NewMemMapFs()), "/config/report")}
 	s.report.pick = func() ([]string, error) { return []string{shot, big, dir, filepath.Join(dir, "gone.png")}, nil }
 	d := s.AttachPictures()
 	if names(d) != "Screenshot.png" {
@@ -497,7 +499,7 @@ func TestPicturesPickedAreReadFromWhereTheyAre(t *testing.T) {
 // restart the app's copies are gone and the draft stays empty. Issue #415.
 func TestClearEmptiesTheDraft(t *testing.T) {
 	files := afero.NewMemMapFs()
-	s := &FrameFairy{report: newReporting(files, "/config/report")}
+	s := &FrameFairy{report: newReporting(engine.NewMachine(files), "/config/report")}
 	if err := s.SaveReportText("It froze."); err != nil {
 		t.Fatal(err)
 	}
@@ -514,7 +516,7 @@ func TestClearEmptiesTheDraft(t *testing.T) {
 		t.Fatalf("put back after Clear, the draft holds %s", names(d))
 	}
 	s.ClearReport()
-	s = &FrameFairy{report: newReporting(files, "/config/report")}
+	s = &FrameFairy{report: newReporting(engine.NewMachine(files), "/config/report")}
 	if d := s.ReportDraft(); d.Text != "" || len(d.Pictures) != 0 {
 		t.Fatalf("after a restart the cleared draft is %+v", d)
 	}
@@ -535,7 +537,7 @@ func TestClearEmptiesTheDraft(t *testing.T) {
 func TestClearWhileTheDraftChanges(t *testing.T) {
 	t.Parallel()
 	files := afero.NewMemMapFs()
-	s := &FrameFairy{report: newReporting(files, "/config/report")}
+	s := &FrameFairy{report: newReporting(engine.NewMachine(files), "/config/report")}
 	pic := pngOf(t, 8, 8)
 	var wg sync.WaitGroup
 	for i := range 6 {
@@ -570,7 +572,7 @@ func TestClearWhileTheDraftChanges(t *testing.T) {
 // every picture that was given.
 func TestTheDraftFromSeveralAtOnce(t *testing.T) {
 	t.Parallel()
-	r := newReporting(afero.NewMemMapFs(), "/config/report")
+	r := newReporting(engine.NewMachine(afero.NewMemMapFs()), "/config/report")
 	// How many report windows are open at once, which is never more than
 	// one, however many ask at the same time.
 	var open, most atomic.Int32
@@ -692,7 +694,7 @@ func chunk(kind string, data []byte) []byte {
 // handed them to write in, and the draft it keeps is not written behind
 // its back, since the window's field would save over it. Issue #311.
 func TestAToastsReportButtonWritesItsWordsInTheReport(t *testing.T) {
-	r := newReporting(afero.NewMemMapFs(), "/config/report")
+	r := newReporting(engine.NewMachine(afero.NewMemMapFs()), "/config/report")
 	made := 0
 	r.make = func(closed func()) (func(), func()) {
 		made++
@@ -758,7 +760,7 @@ func (h *heldWrite) Rename(from, to string) error {
 func TestAnEndedReportWritesNothingMore(t *testing.T) {
 	files := afero.NewMemMapFs()
 	held := &heldWrite{Fs: files, at: make(chan struct{}), free: make(chan struct{})}
-	r := newReporting(held, "/config/report")
+	r := newReporting(engine.NewMachine(held), "/config/report")
 	s := &FrameFairy{report: r}
 
 	saved := make(chan error, 1)
@@ -794,7 +796,7 @@ func TestAnEndedReportWritesNothingMore(t *testing.T) {
 		}
 		t.Fatalf("the report's folder holds %v, want only draft.json", got)
 	}
-	if again := newReporting(files, "/config/report"); (&FrameFairy{report: again}).ReportDraft().Text != "typed as the walk ended" {
+	if again := newReporting(engine.NewMachine(files), "/config/report"); (&FrameFairy{report: again}).ReportDraft().Text != "typed as the walk ended" {
 		t.Fatal("the save in hand was not kept whole")
 	}
 }

@@ -428,7 +428,7 @@ func (e *Engine) KeepModel(ctx context.Context, opts Options, logDir string) (bo
 		keepOnly("")
 		return false, nil
 	}
-	local, err := resolveLocal(opts)
+	local, err := e.resolveLocal(opts)
 	if err != nil {
 		keepOnly("")
 		return false, err

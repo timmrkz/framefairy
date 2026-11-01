@@ -25,7 +25,6 @@ import (
 	"framefairy/engine/fileio"
 	"framefairy/engine/num"
 	"framefairy/engine/runes"
-	"framefairy/engine/tool"
 )
 
 // ---------------------------------------------------------------------------
@@ -69,20 +68,14 @@ const DefaultThink = 2048
 // its budget runs out.
 const thinkEnough = "\n\nThat is enough thinking. Time to write the answer.\n"
 
-// LlamaServerPath decides which llama-server to run, the same way ffmpeg is
-// decided: the one named in the environment, or else the one beside the
-// program, checked. See tool.Find. Empty when there is none
-// that may run, and FindLlamaServer says why.
-func LlamaServerPath() string {
-	return tool.Path("FRAMEFAIRY_LLAMA_SERVER", "llama-server")
-}
-
 // serverToRun is the llama-server an ask runs: the one named on the command
 // line with --llm-server, which is somebody's own choice, or else the
-// program's own, checked.
-func serverToRun(named string) (string, error) {
+// program's own, decided the same way ffmpeg is: the one named in the
+// environment, or else the one beside the program, checked. See
+// tool.Finder.
+func (m *Machine) serverToRun(named string) (string, error) {
 	if named == "" {
-		return FindLlamaServer()
+		return m.Tools.Find("FRAMEFAIRY_LLAMA_SERVER", "llama-server")
 	}
 	if _, err := exec.LookPath(named); err != nil {
 		return "", renderErr("%s was not found. Point --llm-server at the binary.", named)
@@ -90,16 +83,11 @@ func serverToRun(named string) (string, error) {
 	return named, nil
 }
 
-// FindLlamaServer is LlamaServerPath with the reason when there is none.
-func FindLlamaServer() (string, error) {
-	return tool.Find("FRAMEFAIRY_LLAMA_SERVER", "llama-server")
-}
-
 // HasLlamaServer says whether a llama-server can be run at all. The setup
 // and the settings ask this before offering the local way, because a model
 // on its own is fifteen gigabytes that cannot answer anything.
-func HasLlamaServer() bool {
-	server, err := FindLlamaServer()
+func (m *Machine) HasLlamaServer() bool {
+	server, err := m.serverToRun("")
 	if err != nil {
 		return false
 	}
@@ -348,7 +336,7 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 	if err := roomForModel(m.Model, contextSize); err != nil {
 		return "", nil, err
 	}
-	server, err := serverToRun(m.Server)
+	server, err := e.serverToRun(m.Server)
 	if err != nil {
 		return "", nil, err
 	}
@@ -381,7 +369,22 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 		// by holds, see checkpoints in language.go. The transcript read
 		// ahead of a search, see readahead.go, makes two with every read,
 		// and llama.cpp keeps 32 of them by itself, gigabytes of them.
-		"--ctx-checkpoints", itoa(checkpoints)}
+		"--ctx-checkpoints", itoa(checkpoints),
+		// No copies of earlier prompts. Left to itself the server keeps up
+		// to 8 GiB of them in ordinary memory, a copy of the whole slot,
+		// its checkpoints too, whenever an ask keeps less than half of
+		// what the slot holds. After a search the window moves on, so
+		// every search left the window before it there, about a gigabyte
+		// for a half hour window with Gemma 4, kept until the app quits.
+		// The memory a model is judged by counts none of it. What the copy
+		// saved is read again instead: a window searched again after
+		// another, and the transcript of a new video read ahead, when the
+		// read gave way to a search of another video. Both are rare, and
+		// a half hour window is read in about 30 seconds. Issue #433.
+		"--cache-ram", "0",
+		// Without the cache the server says at every start that it cannot
+		// keep idle slots in it, a warning about nothing.
+		"--no-cache-idle-slots"}
 	e.Log.Detail("%s %s", server, strings.Join(args, " "))
 	key, err := newServerKey()
 	if err != nil {

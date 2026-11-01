@@ -217,19 +217,21 @@ func encoderOrderFor(goos string) []Encoder {
 	}
 }
 
-// VideoEncoder is the encoder this run uses, found once and kept.
+// VideoEncoder is the encoder this run uses, found once for its ffmpeg and
+// kept on the machine.
 //
 // Named rather than found when Options.Encoder says so, which is the escape
 // hatch for a machine whose ffmpeg is unusual, and for comparing two
 // encoders on the same clip.
 func (e *Engine) VideoEncoder(ctx context.Context) (Encoder, error) {
-	e.mu.Lock()
-	if e.encoder.Name != "" {
-		chosen := e.encoder
-		e.mu.Unlock()
+	learned := e.learnedFor()
+	learned.mu.Lock()
+	if learned.encoder.Name != "" {
+		chosen := learned.encoder
+		learned.mu.Unlock()
 		return chosen, nil
 	}
-	e.mu.Unlock()
+	learned.mu.Unlock()
 
 	have := e.Runner.Run(ctx, "", e.FFmpeg, "-hide_banner", "-encoders")
 	if have.Code != 0 {
@@ -247,14 +249,14 @@ func (e *Engine) VideoEncoder(ctx context.Context) (Encoder, error) {
 			// number that means something else to it.
 			chosen = Encoder{Name: e.WantEncoder, Quality: func(RenderSettings) []string { return nil }}
 		}
-		e.keepEncoder(chosen)
+		learned.keepEncoder(chosen)
 		return chosen, nil
 	}
 
 	var tried []string
 	for _, candidate := range e.order(false) {
 		if hasEncoder(have.Stdout, candidate.Name) {
-			e.keepEncoder(candidate)
+			learned.keepEncoder(candidate)
 			e.Log.Detail("video encoder: %s", candidate.Name)
 			return candidate, nil
 		}
@@ -265,15 +267,17 @@ func (e *Engine) VideoEncoder(ctx context.Context) (Encoder, error) {
 }
 
 // HDREncoder is the encoder this run uses for an HDR short, found once
-// and kept. --encoder names the encoder of standard video only.
+// for its ffmpeg and kept on the machine. --encoder names the encoder of
+// standard video only.
 func (e *Engine) HDREncoder(ctx context.Context) (Encoder, error) {
-	e.mu.Lock()
-	if e.hdrEncoder.Name != "" {
-		chosen := e.hdrEncoder
-		e.mu.Unlock()
+	learned := e.learnedFor()
+	learned.mu.Lock()
+	if learned.hdrEncoder.Name != "" {
+		chosen := learned.hdrEncoder
+		learned.mu.Unlock()
 		return chosen, nil
 	}
-	e.mu.Unlock()
+	learned.mu.Unlock()
 	have := e.Runner.Run(ctx, "", e.FFmpeg, "-hide_banner", "-encoders")
 	if have.Code != 0 {
 		return Encoder{}, renderErr("%s cannot list its encoders.", e.FFmpeg)
@@ -281,9 +285,9 @@ func (e *Engine) HDREncoder(ctx context.Context) (Encoder, error) {
 	var tried []string
 	for _, candidate := range e.order(true) {
 		if hasEncoder(have.Stdout, candidate.Name) {
-			e.mu.Lock()
-			e.hdrEncoder = candidate
-			e.mu.Unlock()
+			learned.mu.Lock()
+			learned.hdrEncoder = candidate
+			learned.mu.Unlock()
 			e.Log.Detail("video encoder for HDR: %s", candidate.Name)
 			return candidate, nil
 		}
@@ -293,10 +297,10 @@ func (e *Engine) HDREncoder(ctx context.Context) (Encoder, error) {
 		"to keep it HDR: %s.", strings.Join(tried, ", "))
 }
 
-func (e *Engine) keepEncoder(chosen Encoder) {
-	e.mu.Lock()
-	e.encoder = chosen
-	e.mu.Unlock()
+func (l *learnedTool) keepEncoder(chosen Encoder) {
+	l.mu.Lock()
+	l.encoder = chosen
+	l.mu.Unlock()
 }
 
 // hasEncoder looks for the name in an `ffmpeg -encoders` listing. Each line

@@ -32,7 +32,7 @@ func searchProject(t *testing.T, rec func(string) (Recognizer, error)) (*Project
 	var asked int32
 	server := fakeModel(t, &asked)
 	t.Cleanup(server.Close)
-	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
 	var heard int32
 	if rec == nil {
 		rec = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
@@ -702,7 +702,7 @@ func TestATranscriptionHearsTheWholeEpisodeAndNothingElse(t *testing.T) {
 // over the one it is in. Done, it is in no step.
 func TestTheEngineAloneSaysWhatStepAJobIsIn(t *testing.T) {
 	fsys := afero.NewMemMapFs()
-	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), fsys)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(fsys))
 	var told []JobRecord
 	p := NewProject(e, "/videos/talk.mp4", DefaultOptions())
 	steps := func() string {
@@ -785,7 +785,7 @@ func TestTheEngineAloneSaysWhatStepAJobIsIn(t *testing.T) {
 // program hears last is the record on disk, however the two meet.
 func TestAJobHearsItWaitsFromAnotherGoroutine(t *testing.T) {
 	fsys := afero.NewMemMapFs()
-	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), fsys)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(fsys))
 	var mu sync.Mutex
 	var last JobRecord
 	p := NewProject(e, "/videos/talk.mp4", DefaultOptions())

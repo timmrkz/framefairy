@@ -238,7 +238,7 @@ func (p *Project) warmModel(ctx context.Context, req PlanRequest) (ReadAhead, er
 	if opts.Planner != "local" || opts.LLMURL != "" {
 		return ReadAhead{}, nil
 	}
-	local, err := resolveLocal(opts)
+	local, err := p.engine.resolveLocal(opts)
 	if err != nil {
 		return ReadAhead{}, err
 	}

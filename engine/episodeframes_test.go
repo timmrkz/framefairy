@@ -507,7 +507,7 @@ var errStop = errors.New("enough")
 //
 // On the real disk: ffmpeg reads the episode the test made.
 func ffmpegEngine() *Engine {
-	e := NewEngine(runlog.New(nil, false, false), disk)
+	e := NewEngine(runlog.New(nil, false, false), NewMachine(disk))
 	e.FFmpeg, e.FFprobe = "ffmpeg", "ffprobe"
 	return e
 }

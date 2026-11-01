@@ -374,8 +374,8 @@ nothing more than a field, a parameter or an option:
 
 ## 6. When a test fails, or a bug is reported
 
-A failing test is a question about the product first and about the test
-second. A bug report is the same question.
+A failing test asks what should have happened, and what kept it from
+happening there. A bug report asks the same.
 
 1. **Reproduce it first, as it happened.**
    - Use the input the reporter used, the same file, the same data, at
@@ -394,32 +394,47 @@ second. A bug report is the same question.
      fails now.
    - Several symptoms after a run of merges often have one cause. Look
      for it before fixing each, or the fixes stack up on each other.
-   - A test that fails now and then fails for a reason: find the event
-     it misses or the order it assumes, with the tools in section 7,
-     in their order. Loading the machine comes last.
+   - A test that passes most of the time and fails now and then has a
+     source of entropy in the test or in its environment. Look for it
+     there first: the event the test misses or the order it assumes,
+     with the tools in section 7, in their order. Loading the machine
+     comes last. The product is suspected only once the trace shows the
+     product itself doing the wrong thing in that order.
    - A vague report of instability, with no case that fails every time,
      is still a report. Look at the design, its concurrency and its order
      of events.
-4. **Decide which of three is wrong:**
-   - **The code.** Fix the code, the test stays as it is.
+4. **Decide what is wrong**, asking of each in this order, and moving
+   on only once the evidence rules it out:
+   - **The environment.** Does it fail only where the test runs, on a
+     CI runner and its virtual hardware, on a busy machine, with a
+     stand-in program or a file made for the test? Look there first.
+     What the environment's own hardware or programs do is fixed in how
+     the test uses them, never in the product. What the test fed the
+     product decides it, not where it ran: input from outside, like a
+     fuzzer's bytes, or an order of the product's own work that a busy
+     machine only made likelier, is the product's to fix.
    - **The test.** It checked something nobody specified, read the page
      before the step had happened, or depended on time. Fix it so it
      checks what matters, on an event.
-   - **The design.** The behaviour the test protects does not serve a
-     person, or the spec contradicts itself, or the code is shaped so the
-     right behaviour cannot be tested without waiting. Tests on a broken
-     design protect the broken design. Say so to the user plainly, log an
-     issue, and fix the design when that is what the change is for. No
-     patches on top: find the root cause, and refactor if that is what it
-     takes.
+   - **The product's assumptions, the design.** The behaviour the test
+     protects does not serve a person, or the spec contradicts itself,
+     or the code is shaped so the right behaviour cannot be tested
+     without waiting. Tests on a broken design protect the broken
+     design. Say so to the user plainly, log an issue, and fix the
+     design when that is what the change is for. No patches on top:
+     find the root cause, and refactor if that is what it takes.
+   - **How the product carries them out, the code.** Fix the code, the
+     test stays as it is.
 5. **Size it.** How big is the difference, and where would a person see
    it? A finding too small to matter is closed as won't fix, with its
    number.
 6. **Look around it.** Where one bug was, try the gestures and states
    next to it. Each new case found gets its own failing test, or its own
    issue when it is outside the change.
-7. **Fix for every machine.** A fix tuned to one machine, its screen, its
-   speed or its system, is a bug on the next machine.
+7. **Fix for every machine people use.** A fix tuned to one machine, its
+   screen, its speed or its system, is a bug on the next machine. A CI
+   runner's virtual hardware and a stand-in are the test's environment,
+   not machines people use, see step 4.
 
 Never, to get green: loosen a check, raise a timeout, add a sleep or a
 retry, skip, quarantine or remove a test, or change the expected value to
@@ -429,12 +444,12 @@ what the code now says without knowing why it changed.
 
 ### Finding why a test fails now and then
 
-A test that fails now and then has met an order of events it did not
-expect. In a single-threaded language, a page, Node, Python's asyncio,
+A test that fails now and then has run into an order of events it did
+not expect. In a single-threaded language, a page, Node, Python's asyncio,
 nothing touches the same memory at once, so there is no data race to
 detect. What fails is the order: the test read the result before the
 step had finished, or waited for a signal that had already gone by, or
-the code under test met the two halves of its work in an order nobody
+the code under test did the two halves of its work in an order nobody
 thought of. Find that order with these, in this order:
 
 1. **Read what the failure left.** The runner keeps a trace of a
@@ -497,6 +512,13 @@ failure belongs in the trace or the product's logs for good.
   annotations and compare its step times with the last runs on the main
   branch. A runner that was never given, or was lost, says so there. A
   failure of ours is ours, whatever change it showed up on.
+- **Every failure seen is written down where it is tracked.** Whoever
+  runs into a failing check, on their own change, on someone else's or
+  on the main branch, looks for the issue that tracks it. When one is
+  open, a comment there gives the run, the commit, the test and what it
+  printed, so every time it happened is in one place when the issue is
+  read again. When none is open, one is opened, the way the project logs
+  its issues. The reply to the user links the comment or the issue.
 - **A manual step to get tests passing is a defect.** A stale build
   rebuilt by hand, a cache cleared by hand: fix the build so the step is
   never needed again.

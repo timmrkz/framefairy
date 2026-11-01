@@ -214,7 +214,22 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
+      # Go's build cache, the one ci.yml's job outside saves on main after
+      # every push, from the same make with the same flags, see above it.
+      # setup-go keys its cache by go.sum alone and saves it only when
+      # go.sum changes, so the build started from one days old and
+      # compiled ever more again: make app went from 58 s to 113 s in the
+      # five days after go.sum last changed, #408.
+      - id: gocache
+        if: steps.needs.outputs.run == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/Library/Caches/go-build
+          key: go-v1-app-${{ runner.os }}-${{ needs.which.outputs.sha }}
+          restore-keys: go-v1-app-${{ runner.os }}-
       - if: steps.needs.outputs.run == 'true'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -266,6 +281,17 @@ jobs:
           BUILD_CHANNEL='${{ steps.what.outputs.channel }}'
           BUILD_COMMIT='${{ steps.what.outputs.commit }}'
 
+      # Saved here only when none was found, so the next build starts
+      # warm. Otherwise the job outside saves it: an upload here would sit
+      # between every push and its build on the Updates page.
+      - if: steps.needs.outputs.run == 'true' && steps.gocache.outputs.cache-matched-key == ''
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/Library/Caches/go-build
+          key: ${{ steps.gocache.outputs.cache-primary-key }}
+
       # One entry at the top, Frame Fairy.app, which is what Wails' updater
       # asks of a zip. --norsrc, because ditto otherwise adds a ._ file
       # beside every file for its extended attributes, and the updater
@@ -286,5 +312,7 @@ jobs:
         with:
           name: build
           path: dist/app.zip
+          # The app is zipped already, by ditto above.
+          compression-level: 0
           if-no-files-found: error
           retention-days: 3

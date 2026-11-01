@@ -670,6 +670,22 @@ at least 90% of the tone from its first moment, after the fade of a cut.
 Without the lead, the quietest piece was 66% in Matroska, 83% in MP4 and
 silent in MP3.
 
+### What outlives a job
+
+Each program makes one `Machine` in `main`, `engine/machine.go`, and
+hands it to every `Engine` it makes. The app makes an engine for every
+job, caption and frame stream, and the command line one for its run.
+The machine holds the file system, the records, the `tool.Runner`, the
+`tool.Finder` with the tools it already checked, and what was learned
+about the machine: whether the system's video decoder failed here,
+which decoder each episode used, the encoders and the subtitle filter
+of each ffmpeg, by the ffmpeg, the encoder a run names and the system,
+and the face detector. So a Mac whose system decoder failed once
+decodes on the processor for every job after it, not only for the rest
+of that job. An `Engine` keeps what belongs to its one job: the log,
+what it spent, the switches of its run, the hearing and the read-ahead.
+See [decisions/2026-10-31-running-programs-and-what-outlives-a-job.md](decisions/2026-10-31-running-programs-and-what-outlives-a-job.md).
+
 ### What ffmpeg and ffprobe said, kept
 
 The app makes an engine for every job, every caption it draws and every
@@ -1193,7 +1209,8 @@ reading what ffmpeg says, and written to the log as `framing decodes
 video on VideoToolbox` or `on the processor`. A single frame has 15 s,
 `frameLimit`, there and wherever framing pulls one frame: VideoToolbox
 has given none and said nothing on a virtual Mac, and a system decoder
-that misses the limit is gone round on the processor from then on. An
+that misses the limit is gone round on the processor from then on, by
+every job of the program, see What outlives a job. An
 ffmpeg that is stopped has five seconds to end, `LeaveAfter` in
 `engine/tool/run.go`, and one that is still there after them is left
 behind, with a warning that says so, and the search goes on without it.
@@ -1536,6 +1553,13 @@ The search's line in the log says how much of its prompt was new. Each
 read leaves two checkpoints, and llama-server keeps 32 by itself, about
 200 MiB each for Gemma 4, so it is told to keep three, the three the
 memory a model is judged by holds, `--ctx-checkpoints`. Issue #242.
+The server keeps no copies of earlier prompts either, `--cache-ram 0`.
+By itself it keeps up to 8 GiB of them, a copy of the slot whenever an
+ask keeps less than half of what the slot holds, and since the window
+moves on after every search, each search left a copy there until the
+app quit, counted nowhere. What a copy saved is read again instead: a
+window searched again after another, and a new video's transcript read
+ahead when the read gave way to a search of another video. Issue #433.
 
 **A model that does not fit is not started.** Before llama-server starts,
 what the model needs at the context it is started with, the same

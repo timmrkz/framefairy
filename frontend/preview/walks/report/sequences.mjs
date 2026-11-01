@@ -24,6 +24,25 @@ export default [
     ],
   },
   {
+    // Issue #654. The microphone tells the window what it hears from the
+    // moment it opens, and the answer that it opened comes on its own
+    // way, later on a busy machine. The start sound waits for that
+    // answer, 4 ms after the microphone opens on Tim's Mac and 46 ms at
+    // most, and a walk in CI that read the notes at the microphone's
+    // first news found none. This one holds the answer every time.
+    name: "The start sound plays once Dictate hears back, however late that is",
+    steps: [["bugs"], ["dictate", "start, answered late"], ["microphone moves"], ["dictate", "button"]],
+  },
+  {
+    // Issue #654. Each note of the start sound was started at a moment of
+    // its own, a hundredth of a second ahead, so a window that got to
+    // them after their end played nothing. The pair is one sound now,
+    // started once, so it plays whole and in order however late the
+    // window is.
+    name: "The start sound plays both notes in order, however late the window is to start it",
+    steps: [["bugs"], ["dictate", "start, sounded late"], ["dictate", "button"]],
+  },
+  {
     // Plan row 2.189. Tim undid what he typed while he talked, and Cmd+Y
     // did not bring it back: the words that arrived meanwhile were steps
     // of their own, which emptied what there was to redo. They are not
