@@ -33,6 +33,8 @@ func (s *FrameFairy) Library() []engine.EpisodeStatus {
 }
 
 // Episode returns one episode's state.
+// The workspace reads it in the state of the video, see State, and calls
+// it no more. The walks and the tests ask it.
 func (s *FrameFairy) Episode(path string) engine.EpisodeStatus {
 	if !s.store.Known(path) {
 		return engine.EpisodeStatus{}
@@ -264,7 +266,14 @@ func (s *FrameFairy) letGoOfRemoved() {
 		s.jobs.forgetEpisode(ep)
 		s.levels.stop(ep)
 		s.forget(ep)
+		s.clearMu.Lock()
+		if s.quitting {
+			s.clearMu.Unlock()
+			s.clearLetGo(ep)
+			continue
+		}
 		s.clearing.Go(func() { s.clearLetGo(ep) })
+		s.clearMu.Unlock()
 	}
 }
 

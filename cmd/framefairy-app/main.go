@@ -4,6 +4,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"embed"
 	"errors"
 	"fmt"
@@ -91,6 +92,15 @@ func main() {
 	st.changed = svc.keeping.ask
 	svc.jobs = newQueue(st, emit, notify)
 	svc.jobs.searched = svc.keeping.ask
+	// A video's state is sent whole as its work goes on, see videostate.go.
+	svc.news = newVideoNews(func(path string) (VideoState, error) {
+		return svc.State(context.Background(), path)
+	}, func(v VideoState) {
+		if app != nil {
+			app.Event.Emit("video", v)
+		}
+	})
+	svc.jobs.news = svc.told
 	svc.listening.say = quietly(func(d Dictation) {
 		if app != nil {
 			app.Event.Emit("dictation", d)
@@ -130,17 +140,12 @@ func main() {
 	// this has to be one of them. Code after app.Run only runs on the other
 	// systems, and left a llama-server behind on every Mac that quit during
 	// a search.
-	svc.levels = newMeasuring(svc.store.machine, func(episode string) {
-		if app != nil {
-			app.Event.Emit("levels", episode)
-		}
-	})
+	// How far the loudness is measured is in the video's state.
+	svc.levels = newMeasuring(svc.store.machine, svc.told)
 	quit := sync.OnceFunc(func() {
+		svc.news.stop()
 		engine.CloseModels()
-		svc.jobs.shutDown()
-		svc.levels.shutDown()
-		// A build that is ready goes in place once the app is gone.
-		svc.updates.installOnQuit()
+		svc.stopAll()
 	})
 	// What Cmd+Q does, see quit.go. The hook above stays for whatever
 	// ends the app without asking, a signal from the terminal among them.
@@ -368,6 +373,9 @@ type FrameFairy struct {
 	// The loudness of each episode, measured from the moment it is
 	// added, which is the waveform, see levels.go.
 	levels *measuring
+	// news sends a video's state to the window as its work goes on, see
+	// videostate.go.
+	news *videoNews
 	// Finding and installing a newer build of the app, see updates.go.
 	updates *updating
 	// What Cmd+Q does, see quit.go.
@@ -391,6 +399,11 @@ type FrameFairy struct {
 	// every one started has returned, whether it deleted what was written
 	// back or gave up, see clearLetGo.
 	clearing sync.WaitGroup
+	// quitting is set under clearMu once the app is on its way out, see
+	// stopAll. From then on a video let go is cleared where it is let go,
+	// since no clearLetGo may start on clearing while it is waited for.
+	clearMu  sync.Mutex
+	quitting bool
 	// link is what became of the last framefairy:// link, waiting for
 	// the settings, see licence.go.
 	link *LicenceLink

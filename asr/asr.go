@@ -26,7 +26,7 @@ func Check(dir string) error {
 		}
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("the speech model folder %s is missing %v", dir, missing)
+		return fmt.Errorf("%w: the speech model folder %s is missing %v", engine.ErrNoSpeechModel, dir, missing)
 	}
 	return nil
 }

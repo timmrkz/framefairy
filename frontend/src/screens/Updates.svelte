@@ -12,6 +12,7 @@
   // Updates in the app menu. See docs/UPDATES.md.
   import { onDestroy, onMount } from "svelte";
   import { api, errorText } from "../lib/api";
+  import { live } from "../lib/flow";
   import Busy from "../components/Busy.svelte";
   import Icon from "../components/Icon.svelte";
   import Info from "../components/Info.svelte";
@@ -122,7 +123,7 @@
   // a Relaunch pressed all the same. In the words of the work the person
   // started, the first there is.
   const working = $derived.by(() => {
-    const job = jobs.list.find((j) => j.state === "running" || j.state === "queued");
+    const job = jobs.list.find(live);
     if (!job) return "";
     switch (job.kind) {
       case "search":

@@ -65,7 +65,7 @@ func TestSearchesFromEverywhereAtOnce(t *testing.T) {
 					called := map[string]bool{}
 					for _, j := range d.svc.Jobs() {
 						if j.Episode == ep && (j.Kind == engine.JobSearch || j.Kind == engine.JobClip) {
-							if j.State == JobInterrupted || j.State == JobFailed {
+							if j.unfinished() {
 								d.svc.Continue(j.ID, "")
 							} else {
 								d.svc.CancelJob(j.ID)

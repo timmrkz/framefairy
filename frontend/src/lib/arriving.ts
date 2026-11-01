@@ -4,6 +4,7 @@
 // the model named and a clip made by hand with I or O come in the same way,
 // because nothing here asks which it is.
 import { clock, type Job, type JobStep } from "./api";
+import { live, unfinished } from "./flow";
 import { arrivalLine } from "./steps";
 
 export type Arriving = {
@@ -87,8 +88,8 @@ export function arriving(
 ): Arriving[] {
   const out: Arriving[] = [];
   for (const job of jobs) {
-    const running = job.state === "running" || job.state === "queued";
-    const stopped = job.state === "interrupted" || job.state === "failed";
+    const running = live(job);
+    const stopped = unfinished(job);
     if (!running && !stopped) continue;
     for (const clip of job.underway ?? []) {
       const key = `${job.id}/${clip.n}`;
@@ -104,7 +105,7 @@ export function arriving(
           // In the words a search that stopped uses, in its row.
           what: failed
             ? "Failed. Click Continue"
-            : job.step === "stopped"
+            : job.state === "stopped"
               ? "Stopped. Click Continue"
               : "Interrupted. Click Continue",
           // Where it lies, never why it failed: why is said whole in a
@@ -143,14 +144,14 @@ export function arriving(
   return out;
 }
 
-// A card on the way, or one whose clip was just written and that no read
-// of the list holds yet.
+// A card on the way, or one whose clip was just written and that no state
+// of the video holds yet.
 export type OnTheWayCard = Arriving & { held?: boolean };
 
 // The cards the list shows on the way: every card the jobs have on the
 // way, and every card that left that list without being stopped, until a
-// read of the clip list asked after it left has answered. That read holds
-// its clip, so the card hands over to it in one step.
+// state of the video read after it left is kept. That state holds its
+// clip, so the card hands over to it in one step.
 //
 // It is worked out in the same pass that builds the list, never after it.
 // An effect held the card one render late, so for that render the card was
@@ -161,22 +162,19 @@ export class OnTheWay {
   private live = new Map<string, Arriving>();
   private held = new Map<string, Arriving & { after: number }>();
 
-  // now is what the jobs have on the way, next the ticket the next read of
-  // the list will get, and read the ticket of the newest read kept.
-  cards(now: Arriving[], next: number, read: number): OnTheWayCard[] {
+  // now is what the jobs have on the way, seq the number of the newest
+  // news of a job, Job.seq, and kept the rev of the newest state of the
+  // video kept, see VideoState: a state read after the news that took
+  // the card off the job's list holds its clip.
+  cards(now: Arriving[], seq: (job: string) => number, kept: number): OnTheWayCard[] {
     const here = new Set(now.map((a) => a.key));
     for (const [key, a] of this.live) {
-      if (!here.has(key) && !a.stopped && !this.held.has(key)) this.held.set(key, { ...a, after: next });
+      if (!here.has(key) && !a.stopped && !this.held.has(key)) this.held.set(key, { ...a, after: seq(a.job) });
     }
     for (const key of here) this.held.delete(key);
-    for (const [key, a] of this.held) if (a.after <= read) this.held.delete(key);
+    for (const [key, a] of this.held) if (a.after < kept) this.held.delete(key);
     this.live = new Map(now.map((a) => [a.key, a]));
     return [...now, ...[...this.held.values()].map(({ after: _, ...a }) => ({ ...a, held: true }))];
-  }
-
-  // Whether a card is held that no read has been asked for since it left.
-  unread(next: number): boolean {
-    return [...this.held.values()].some((a) => a.after >= next);
   }
 }
 

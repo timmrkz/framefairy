@@ -193,7 +193,7 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 	case errors.Is(err, ErrCancelled):
 		return 130
 	}
-	e.Log.Error("%s", err)
+	e.Log.Error("%s", ForCommandLine(err))
 	return 1
 }
 
@@ -545,6 +545,11 @@ func (r *runner) transcript(ctx context.Context) (*Transcript, error) {
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, e.fail(ctx, err)
+		}
+		// One already in a person's words, a speech model that is not
+		// there, says so as it is in the row of the search.
+		if inWords(err) {
+			return nil, err
 		}
 		return nil, fmt.Errorf("transcription failed: %w", err)
 	}

@@ -102,7 +102,7 @@ waiting for the day the two disagree.
 | what was learned about the machine while a program runs: the decoder that works, the encoders and subtitle filter of each ffmpeg, the face detector, the tools already checked | `engine.Machine`, one for each program, in memory | the engine |
 | what runs now, and the lane each job holds or waits for | the job queue, in memory | the app's Go side |
 | the step a job is in, and what it was asked for | its `engine.JobRecord`, on disk and in the job the queue holds, which keeps each record the engine tells it through the job's `engine.Host` | the engine |
-| what is on screen | the interface's stores. Once #606 is built, a video's in its `EpisodeSession`, `frontend/src/lib/session.svelte.ts` | from what Go sends. Today `Episode.svelte` also works out a video's state from what changed, see Not to copy |
+| what is on screen | the interface's stores, and a video's status, clips and coverage in its `EpisodeSession`, `frontend/src/lib/session.svelte.ts`, which keeps the newest `VideoState` | from what Go sends. Today `Episode.svelte` also works out from what changed that a search started, see Not to copy |
 
 ## The programs that run
 
@@ -127,7 +127,8 @@ What to do today, and what changes once the issue named is built.
 | --- | --- |
 | decide where an edge, a word or a window lands | the engine: `engine/shape.go` for a gesture, `engine.Project` for a window. The interface asks and draws the answer |
 | do something in the workspace when a video's work moves on | a move of `EpisodeSession` in `frontend/src/lib/session.svelte.ts`, never an effect that keeps the value from before |
-| show the interface a new fact about a video | a field on what the workspace already reads for the video, its status or its clip views, never a new event of its own or a poll. Once #606 is built, on the snapshot Go sends |
+| show the interface a new fact about a video | a field of `VideoState` in `cmd/framefairy-app/videostate.go`, or of what it holds, the status and the clip views, which the session keeps. Never a new event of its own or a poll |
+| tell the window that something about a video changed | `told` on `*FrameFairy`, or the queue's `moved` for a job, which send the video's state, at most four times a second and always after the last change. Nothing else sends it |
 | keep something between two jobs, a cache or a fact about the machine | today the caches that outlive a job are package variables, the way `engine/probed.go` keeps the probes. A new one says why in its pull request, and never comes from a new `Engine` made only to get it. #607 moves them all onto one object a program keeps |
 | read a file of a video | through the `afero.Fs` the code was given, with `fileio.SafeChildIn` for a path in a work folder. Not `os`. Once #608 is built, through the video's `Episode` |
 | change a plan | `editPlan` in `engine/edit.go` |
@@ -190,6 +191,8 @@ Where one layer meets another. A change to one of these changes what the
 other side relies on, and the pull request says so.
 
 - The bindings on `*FrameFairy` and `frontend/src/lib/api.ts`.
+- The `video` event, `VideoState`, whose `rev` is on the clock of the
+  jobs' `seq`, so the window can tell which of two came later.
 - `engine.Project`, the steps a front end may take.
 - The files of a work folder and of the config folder, which an older
   and a newer build both read, `chosen.json` and the settings among
@@ -213,8 +216,8 @@ copies what it finds nearby, so these are not the pattern for new code.
   `cmd/framefairy-app/frames.go`, #607.
 - The effects in `frontend/src/screens/Episode.svelte` that compare an
   old value with a new one to notice that a search started, `followed`
-  and `searchSeen`, and the tickets and polls that keep its reads in
-  order, #606. Work that moves on or fails is said by `EpisodeSession`,
+  and `searchSeen`, the reads of the video's state it asks for after
+  work moves on, the poll of the job list and its own timer, #606. Work that moves on or fails is said by `EpisodeSession`,
   and by `JobStore.watch` for what is not one video's, see the decision
   record
   [2026-10-30-a-videos-state-in-one-session.md](decisions/2026-10-30-a-videos-state-in-one-session.md).

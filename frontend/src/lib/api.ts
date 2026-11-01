@@ -426,6 +426,24 @@ export interface ClipEntry extends ClipView {
   key: string;
   plan: string;
   cropLefts: number[];
+  // On the answer to an edit, when the edit was written, on the clock a
+  // video's state is read by, see VideoState.
+  rev?: number;
+}
+
+// What the workspace shows of one video, read at one moment and sent
+// whole as the video's work goes on, issue #606: its status, its clips,
+// how often each part was searched and its jobs, see VideoState in
+// cmd/framefairy-app/videostate.go. Of two, the one with the larger rev
+// was read later, and its clips hold every clip a job of rev before it
+// had said it wrote.
+export interface VideoState {
+  video: string;
+  rev: number;
+  status: EpisodeStatus;
+  clips: ClipEntry[];
+  coverage: CoverageView;
+  jobs: Job[];
 }
 
 export interface EngineEvent {
@@ -446,14 +464,27 @@ export interface EngineEvent {
   time: string;
 }
 
-// A search or a render that was running when the app last stopped is
-// "interrupted": its record in the work folder says so, and Continue
-// carries it on. See docs/JOBS.md.
-export type JobState = "queued" | "running" | "done" | "failed" | "cancelled" | "interrupted";
+// A job that was running when the app last stopped is "interrupted": its
+// record in the work folder says so, and Continue carries it on. One
+// called off by hand with Cancel or Stop transcribing that keeps what it
+// did is "stopped", and Continue carries it on the same way. One of
+// these, or one that failed, is "settled" once it is taken care of:
+// carried on by a new job, its row removed, or its video taken out of the
+// library. A job called off whose work nothing carries on is
+// "cancelled". See docs/JOBS.md.
+export type JobState =
+  | "queued"
+  | "running"
+  | "done"
+  | "failed"
+  | "cancelled"
+  | "interrupted"
+  | "stopped"
+  | "settled";
 
 // Where a search or a render is: waiting for its turn, hearing the
-// episode, finding clips, or rendering them. A search called off with
-// Cancel is "stopped", and says so the way one cut off does.
+// episode, finding clips, or rendering them. A job called off with
+// Cancel ends in the step "stopped", in its record too.
 export type JobStep =
   | "waiting"
   | "hearing"
@@ -811,7 +842,8 @@ export const api = {
   chooseCloudModel: (model: string) => call<void>("ChooseCloudModel", model),
   choosePlanner: (planner: "local" | "api") => call<void>("ChoosePlanner", planner),
   library: () => call<EpisodeStatus[]>("Library"),
-  episode: (path: string) => call<EpisodeStatus>("Episode", path),
+  // The state of a video as it is now, see VideoState.
+  state: (path: string) => call<VideoState>("State", path),
   addEpisodes: () => call<Added>("AddEpisodes"),
   // Which files the app takes as videos, in words, from the one list there
   // is, VideoExtensions in engine/episode.go.
@@ -826,8 +858,6 @@ export const api = {
   removeEpisode: (path: string, deleteWork: boolean) =>
     call<void>("RemoveEpisode", path, deleteWork),
   source: (path: string) => call<SourceView>("Source", path),
-  clips: (path: string) => call<ClipEntry[]>("Clips", path),
-  coverage: (path: string) => call<CoverageView>("Coverage", path),
   // A search asked for before the transcript covers its window is held by
   // the interface until it does. These note it with the episode, and take
   // the note away when it is called off, so an app closed in that wait
@@ -1140,10 +1170,10 @@ export function onDropped(fn: (d: Added) => void): () => void {
   return Events.On("dropped", (ev) => fn(ev.data as Added));
 }
 
-// The loudness of an episode was measured further, about twice a second
-// while it is measured, so the waveform can grow.
-export function onLevels(fn: (path: string) => void): () => void {
-  return Events.On("levels", (ev) => fn(ev.data as string));
+// The state of a video, sent whole whenever it changed, at most four
+// times a second, see VideoState.
+export function onVideoState(fn: (state: VideoState) => void): () => void {
+  return Events.On("video", (ev) => fn(ev.data as VideoState));
 }
 
 export function clock(seconds: number): string {

@@ -252,7 +252,7 @@ func (s *FrameFairy) SetWord(ctx context.Context, path, plan, clipID string, sta
 	if err != nil {
 		return ClipEntry{}, err
 	}
-	return s.clipEntry(ctx, path, plan, clipID)
+	return s.answer(ctx, path, plan, clipID)
 }
 
 // RemoveWord removes a word from the captions of one clip, the word heard
@@ -279,7 +279,7 @@ func (s *FrameFairy) RemoveWord(ctx context.Context, path, plan, clipID string, 
 	if err != nil {
 		return ClipEntry{}, err
 	}
-	return s.clipEntry(ctx, path, plan, clipID)
+	return s.answer(ctx, path, plan, clipID)
 }
 
 // RemoveCaption removes the caption of a clip that begins on the word heard
@@ -305,5 +305,5 @@ func (s *FrameFairy) RemoveCaption(ctx context.Context, path, plan, clipID strin
 	if err != nil {
 		return ClipEntry{}, err
 	}
-	return s.clipEntry(ctx, path, plan, clipID)
+	return s.answer(ctx, path, plan, clipID)
 }

@@ -584,7 +584,7 @@ func (s *FrameFairy) CheckSetup(ctx context.Context) []Check {
 	speech := Check{Name: "Speech model", Detail: asrDir}
 	speech.OK = engine.SpeechModelReady(asrDir)
 	if !speech.OK {
-		speech.Detail = "not found in " + asrDir + "\n" + engine.ModelHelp(asrDir)
+		speech.Detail = "not found in " + asrDir
 	}
 	out = append(out, speech)
 

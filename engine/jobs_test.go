@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -158,7 +159,7 @@ func TestASearchStoppedWhileItHearsKeepsItsRecord(t *testing.T) {
 		t.Fatalf("stopped: %v", err)
 	}
 	rec := ReadSearch(disk, p.Source)
-	if rec == nil || rec.Step != StepHearing || !rec.Interrupted() || rec.To != 30 {
+	if rec == nil || rec.Step != StepHearing || rec.To != 30 {
 		t.Fatalf("the record: %+v", rec)
 	}
 	if req := rec.Request(); req.To != 30 || req.Count != 1 || req.Min != 5 {
@@ -190,7 +191,7 @@ func TestASearchStoppedWhileItWaitsKeepsItsRecord(t *testing.T) {
 	if _, err := p.Search(ctx, PlanRequest{To: 20, Count: 1, Min: 5}, Host{Turn: turn}); !errors.Is(err, ErrCancelled) {
 		t.Fatalf("stopped: %v", err)
 	}
-	if rec := ReadSearch(disk, p.Source); rec == nil || rec.Step != StepWaiting || !rec.Interrupted() {
+	if rec := ReadSearch(disk, p.Source); rec == nil || rec.Step != StepWaiting {
 		t.Errorf("the record: %+v", rec)
 	}
 	if *asked != 0 {
@@ -209,12 +210,26 @@ func TestASearchThatFailsSaysWhy(t *testing.T) {
 			t.Fatal("no error")
 		}
 		rec := ReadSearch(disk, p.Source)
-		if rec == nil || rec.Step != StepFailed || rec.Interrupted() ||
+		if rec == nil || rec.Step != StepFailed ||
 			!strings.Contains(rec.Error, "the speech model is not there") {
 			t.Errorf("the record: %+v", rec)
 		}
 		if last := rec.Steps[len(rec.Steps)-1]; last.Step != StepFailed || last.To == nil {
 			t.Errorf("the last step: %+v", last)
+		}
+	})
+	t.Run("with no speech model", func(t *testing.T) {
+		p, _ := searchProject(t, func(dir string) (Recognizer, error) {
+			return nil, fmt.Errorf("%w: the speech model folder %s is missing [tokens.txt]", ErrNoSpeechModel, dir)
+		})
+		if _, err := p.Search(context.Background(), PlanRequest{To: 20, Count: 1, Min: 5}, Host{}); err == nil {
+			t.Fatal("no error")
+		}
+		// The row of the search says it in words, with the settings as
+		// the way on, issue #411.
+		want := "The speech model is not on this computer. Download it in the settings, under Speech model."
+		if rec := ReadSearch(disk, p.Source); rec == nil || rec.Error != want {
+			t.Errorf("the record: %+v", rec)
 		}
 	})
 	t.Run("while it finds", func(t *testing.T) {
@@ -428,7 +443,7 @@ func TestAJobCalledOffByHandSaysSo(t *testing.T) {
 		t.Fatal(err)
 	}
 	rec := ReadSearch(fsys, source)
-	if rec == nil || rec.Step != StepStopped || !rec.Interrupted() || rec.To != 1800 || rec.Count != 12 {
+	if rec == nil || rec.Step != StepStopped || rec.To != 1800 || rec.Count != 12 {
 		t.Fatalf("the record: %+v", rec)
 	}
 	if rec.Steps[0].To == nil {
@@ -635,7 +650,7 @@ func TestASearchCutOffBeforeItBeginsIsInterrupted(t *testing.T) {
 			t.Errorf("%+v: a search cut off before it began left no record", req)
 			continue
 		}
-		if !rec.Interrupted() || rec.From != req.From || rec.To != req.To || rec.Count != req.Count {
+		if rec.Step == StepFailed || rec.From != req.From || rec.To != req.To || rec.Count != req.Count {
 			t.Errorf("%+v: the record says %+v", req, rec)
 		}
 	}

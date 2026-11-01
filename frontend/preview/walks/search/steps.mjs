@@ -1693,7 +1693,7 @@ export const steps = {
       const state = await stateOf();
       if (!back) walk.wrong = "Put it back did not bring back the card that said Stopped";
       else if ((await waiting()) !== marked) walk.wrong = `put back, the range picker has ${await waiting()} marks of clips on their way, not ${marked}`;
-      else if (state !== "interrupted") walk.wrong = `put back, the work of the clip is ${state}, not interrupted`;
+      else if (state !== "stopped") walk.wrong = `put back, the work of the clip is ${state}, not stopped`;
     } else {
       // The time stands still under the hand, see Busy, so the hand
       // goes off the list, and then it runs out.
@@ -1703,7 +1703,7 @@ export const steps = {
       const gone = await page.evaluate((k) => !document.querySelector(`li[data-key="${k}"]`), key);
       const state = await stateOf();
       if (!gone) walk.wrong = "the card that stopped is still in the list after its time ran down";
-      else if (state !== "cancelled") walk.wrong = `removed, the work of the clip is ${state}, not cancelled`;
+      else if (state !== "settled") walk.wrong = `removed, the work of the clip is ${state}, not settled`;
     }
     await watch.step("wait", s);
   },
@@ -1786,7 +1786,7 @@ export const steps = {
       await settle(page);
       const now = await search();
       if (!back) walk.wrong = `Put it back did not bring back the row "${was}"`;
-      else if (now?.id !== job || now.state === "cancelled") walk.wrong = `put back, the search is ${now?.id} ${now?.state}, not ${job} as it stopped`;
+      else if (now?.id !== job || now.state === "settled") walk.wrong = `put back, the search is ${now?.id} ${now?.state}, not ${job} as it stopped`;
     } else {
       // The time stands still under the hand, see Busy, so the hand
       // goes off the list, and then it runs out. The Go side is asked
@@ -1797,7 +1797,7 @@ export const steps = {
       const left = await page.evaluate(() => document.querySelectorAll("li.next.stopped, li.next .gone").length);
       const now = await search();
       if (left) walk.wrong = `${left} rows or cards of the search are still in the list after its time ran down`;
-      else if (now?.state !== "cancelled") walk.wrong = `removed, the search is ${now?.state}, not cancelled`;
+      else if (now?.state !== "settled") walk.wrong = `removed, the search is ${now?.state}, not settled`;
     }
     await watch.step("wait", s);
   },

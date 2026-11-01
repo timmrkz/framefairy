@@ -296,7 +296,7 @@ func openSpeech(dir string) (engine.Recognizer, error) {
 
 // errNoSpeechModel is what Listen says when there is nothing to write
 // down with.
-var errNoSpeechModel = errors.New("the speech model is not installed. Install it in Settings, then try again.")
+var errNoSpeechModel = errors.New(engine.NoSpeechModelSaid)
 
 // Listen starts recording what the person says for a report, and gives
 // the recording's number, which every Dictation about it carries. The

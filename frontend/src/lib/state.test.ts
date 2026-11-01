@@ -22,7 +22,7 @@ describe("a stop pressed for a video's work", () => {
     jobs.apply(job("running", 2));
     expect(jobs.isStopping("/v.mp4", "whole")).toBe(true);
     expect(jobs.stops(job("running", 2))).toBe(true);
-    jobs.apply(job("interrupted", 3));
+    jobs.apply(job("stopped", 3));
     expect(jobs.stopping).toEqual([]);
   });
 
@@ -30,9 +30,9 @@ describe("a stop pressed for a video's work", () => {
     const jobs = new JobStore();
     jobs.apply(job("running", 4));
     jobs.stop("/v.mp4", "whole");
-    jobs.apply(job("interrupted", 3));
+    jobs.apply(job("stopped", 3));
     expect(jobs.isStopping("/v.mp4", "whole")).toBe(true);
-    jobs.apply(job("interrupted", 5));
+    jobs.apply(job("stopped", 5));
     expect(jobs.stopping).toEqual([]);
   });
 
@@ -44,9 +44,9 @@ describe("a stop pressed for a video's work", () => {
     jobs.stop("/v.mp4", "clips");
     expect(jobs.stops(job("running", 2, "search", "s"))).toBe(true);
     expect(jobs.stops(job("running", 2, "transcribe", "t"))).toBe(false);
-    jobs.apply(job("interrupted", 2, "search", "s"));
+    jobs.apply(job("stopped", 2, "search", "s"));
     expect(jobs.isStopping("/v.mp4", "clips")).toBe(true);
-    jobs.apply(job("interrupted", 2, "clip", "c"));
+    jobs.apply(job("stopped", 2, "clip", "c"));
     expect(jobs.isStopping("/v.mp4", "clips")).toBe(false);
   });
 
@@ -57,7 +57,7 @@ describe("a stop pressed for a video's work", () => {
     jobs.apply(job("running", 1, "search", "s"));
     jobs.answered("/v.mp4", "clips");
     expect(jobs.isStopping("/v.mp4", "clips")).toBe(true);
-    jobs.apply(job("interrupted", 2, "search", "s"));
+    jobs.apply(job("stopped", 2, "search", "s"));
     expect(jobs.isStopping("/v.mp4", "clips")).toBe(false);
   });
 
@@ -85,7 +85,7 @@ describe("the work on the clips asked for", () => {
     jobs.apply(job("running", 1, "search", "s"));
     jobs.answered("/v.mp4", "clips");
     expect(jobs.isStopping("/v.mp4", "whole")).toBe(true);
-    jobs.apply(job("interrupted", 2, "transcribe", "t"));
+    jobs.apply(job("stopped", 2, "transcribe", "t"));
     expect(jobs.isStopping("/v.mp4", "whole")).toBe(false);
     expect(jobs.isStopping("/v.mp4", "clips")).toBe(false);
   });
@@ -109,7 +109,29 @@ describe("the video's transcription", () => {
     const jobs = new JobStore();
     jobs.apply(job("interrupted", 1));
     expect(jobs.transcription("/v.mp4")?.state).toBe("interrupted");
-    jobs.apply(job("cancelled", 2));
+    jobs.apply(job("settled", 2));
     expect(jobs.transcription("/v.mp4")).toBeUndefined();
+  });
+});
+
+// A search or a clip made by hand says how it ended until it is settled,
+// and one done, cancelled or settled says nothing, issue #606.
+describe("the work of the clip list", () => {
+  test("is a search with something to say, and none once it is settled or cancelled", () => {
+    const jobs = new JobStore();
+    jobs.apply(job("stopped", 1, "search", "s"));
+    expect(jobs.search("/v.mp4")?.state).toBe("stopped");
+    jobs.apply(job("settled", 2, "search", "s"));
+    expect(jobs.search("/v.mp4")).toBeUndefined();
+    jobs.apply(job("cancelled", 3, "search", "t"));
+    expect(jobs.search("/v.mp4")).toBeUndefined();
+  });
+
+  test("is every clip made by hand on its way or ended before it was done, and no other", () => {
+    const jobs = new JobStore();
+    for (const [n, state] of ["running", "failed", "interrupted", "stopped", "done", "cancelled", "settled"].entries()) {
+      jobs.apply(job(state, n + 1, "clip", `c${n}`));
+    }
+    expect(jobs.clips("/v.mp4").map((j) => j.state)).toEqual(["running", "failed", "interrupted", "stopped"]);
   });
 });

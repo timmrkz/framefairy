@@ -52,6 +52,7 @@
   import Icon from "./Icon.svelte";
   import Swatches from "./Swatches.svelte";
   import type { EpisodeStatus, Job, Label, TranscriptFormat } from "../lib/api";
+  import { live } from "../lib/flow";
   import { freshColour } from "../lib/colour";
 
   // How many characters a label keeps, engine.LabelLength.
@@ -113,7 +114,7 @@
   // What the row about the words says, see above. A video whose
   // transcript reaches its end is done, whatever job brought it there. One
   // told to stop is as good as stopped, so the row offers it again.
-  const running = $derived((work?.state === "running" || work?.state === "queued") && !stopping);
+  const running = $derived(live(work) && !stopping);
   const words = $derived(
     running ? "stop" : ep.transcribed ? "export" : "transcribe",
   );

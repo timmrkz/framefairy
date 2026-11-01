@@ -1,7 +1,7 @@
 // Shared state: the job list, kept current from the Go side's events.
 import { untrack } from "svelte";
 import { api, onJob, type Job, type Lane } from "./api";
-import { mergeJob } from "./flow";
+import { live, mergeJob, outstanding } from "./flow";
 import { said } from "./said";
 import type { EpisodeOrder } from "./order";
 
@@ -15,8 +15,6 @@ const recheck = 5000;
 // video heard, from its menu, and the clip list's work, the search with
 // the clips made by hand, from Search, Continue and Cancel.
 export type Work = "whole" | "clips";
-
-const live = (j: Job) => j.state === "running" || j.state === "queued";
 
 function doing(work: Work, j: Job): boolean {
   return work === "whole" ? j.kind === "transcribe" : j.kind === "search" || j.kind === "clip";
@@ -153,17 +151,17 @@ export class JobStore {
     return this.list.find(
       (j) =>
         j.episode === path &&
-        (j.state === "running" || j.state === "queued") &&
+        live(j) &&
         (!lane || j.lane === lane),
     );
   }
 
   // The episode's search, the newest there is: running, or stopped with
-  // something to say, cut off or failed. One called off by hand or done
+  // something to say, cut off or failed. One done, cancelled or settled
   // has nothing to say, and is not it.
   search(path: string): Job | undefined {
     const last = this.list.findLast((j) => j.episode === path && j.kind === "search");
-    if (!last || last.state === "done" || last.state === "cancelled") return undefined;
+    if (!outstanding(last)) return undefined;
     return last;
   }
 
@@ -172,7 +170,7 @@ export class JobStore {
   // they are the work of the clip list.
   clips(path: string): Job[] {
     return this.list.filter(
-      (j) => j.episode === path && j.kind === "clip" && j.state !== "done" && j.state !== "cancelled",
+      (j) => j.episode === path && j.kind === "clip" && outstanding(j),
     );
   }
 
@@ -183,7 +181,7 @@ export class JobStore {
   // its video when the video left the library.
   transcription(path: string): Job | undefined {
     const last = this.list.findLast((j) => j.episode === path && j.kind === "transcribe");
-    if (!last || last.state === "done" || last.state === "cancelled") return undefined;
+    if (!outstanding(last)) return undefined;
     return last;
   }
 

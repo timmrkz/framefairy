@@ -22,15 +22,31 @@ import (
 
 // Job states.
 const (
-	JobQueued    = "queued"
-	JobRunning   = "running"
-	JobDone      = "done"
-	JobFailed    = "failed"
+	JobQueued  = "queued"
+	JobRunning = "running"
+	JobDone    = "done"
+	JobFailed  = "failed"
+	// JobCancelled is a job called off that nothing in this run of the app
+	// carries on: one still in the queue, a render or a download called
+	// off, a job running when its video is removed, or work the app is
+	// closing on, which its record brings back as interrupted when the app
+	// starts again.
 	JobCancelled = "cancelled"
-	// JobInterrupted is a search or a render whose record says it was
-	// running when the app last stopped: the app was closed or fell over
-	// in the middle of it. Continue carries it on.
+	// JobSettled is a job that ended before it was done, interrupted,
+	// stopped or failed, and was taken care of since: carried on by
+	// Continue, taken up by a new Search or Transcribe video, its row
+	// removed, or its video taken out of the library. It has nothing more
+	// to say, see settle.
+	JobSettled = "settled"
+	// JobInterrupted is a job whose record says it was running when the
+	// app last stopped: the app was closed or fell over in the middle of
+	// it. Continue carries it on.
 	JobInterrupted = "interrupted"
+	// JobStopped is a job called off by hand, with Cancel or Stop
+	// transcribing, that keeps what it did: a search, a clip made by hand
+	// or the whole video heard. Continue carries it on, as it does one
+	// that was interrupted, after a restart too.
+	JobStopped = "stopped"
 )
 
 // Job is one engine step the interface asked for.
@@ -53,9 +69,8 @@ type Job struct {
 	// runJob.
 	//
 	// Its ID is the record's, empty for a job that keeps none, and never
-	// the job's own ID. Its methods are the record's: Interrupted says
-	// what a record read back says, not whether the job is interrupted,
-	// which State does. Its fields go to the window as the job's own:
+	// the job's own ID. How the job ended is State, never read from the
+	// record's step. Its fields go to the window as the job's own:
 	// Kind, the step, the error, the window of a search and the clips it
 	// was asked for, what a render is of from the moment it is queued, and
 	// the moment I or O was pressed at. The clip list holds as many rows
@@ -134,6 +149,13 @@ type Job struct {
 // going says whether a job is queued or running.
 func (j *Job) going() bool { return j.State == JobQueued || j.State == JobRunning }
 
+// unfinished is a job that ended before it was done, interrupted, stopped
+// or failed, and says so where its work was until Continue carries it on
+// or it is settled.
+func (j *Job) unfinished() bool {
+	return j.State == JobInterrupted || j.State == JobStopped || j.State == JobFailed
+}
+
 // JobUpdate is what the interface receives on the "job" event.
 type JobUpdate struct {
 	Job Job `json:"job"`
@@ -187,6 +209,54 @@ type queue struct {
 	// changed tells whoever waits on the jobs of every change to one, so
 	// a wait for jobs to stop goes on the moment they have, see until.
 	changed wake.Wake
+	// news is told the video whose state a job changed, with its news or
+	// as it heard more of the video, so the video's state is sent to the
+	// window, see videoNews.
+	news func(episode string)
+}
+
+// moved says a job changed the state of its video.
+func (q *queue) moved(episode string) {
+	if q.news != nil && episode != "" {
+		q.news(episode)
+	}
+}
+
+// stamp takes the next number of the clock of the jobs, which the states
+// of the videos share, see VideoState.Rev.
+func (q *queue) stamp() uint64 {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.seq++
+	return q.seq
+}
+
+// ofVideo is the jobs of one video the workspace shows as they are now,
+// and the number the clock of the jobs gives this moment, see
+// VideoState.Rev. Those are the jobs queued or running and, of those
+// over, the newest of each kind. The queue keeps every job since the app
+// opened, and every older one's last news reached the window long ago, so
+// a state sent four times a second does not carry the renders of the
+// whole day.
+func (q *queue) ofVideo(episode string) ([]Job, uint64) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	newest := map[string]*Job{}
+	for _, j := range q.jobs {
+		if j.Episode == episode && !j.going() {
+			if n := newest[j.Kind]; n == nil || j.Seq > n.Seq {
+				newest[j.Kind] = j
+			}
+		}
+	}
+	out := []Job{}
+	for _, j := range q.jobs {
+		if j.Episode == episode && (j.going() || newest[j.Kind] == j) {
+			out = append(out, *j)
+		}
+	}
+	q.seq++
+	return out, q.seq
 }
 
 // stampLocked marks a change to a job, and tells whoever waits on the
@@ -199,8 +269,19 @@ func (q *queue) stampLocked(j *Job) {
 
 // newQueue builds the queue.
 func newQueue(s *store, emit func(JobUpdate), notify func(string)) *queue {
-	return &queue{emit: quietly(emit), store: s, notify: quietly(notify), closed: map[string]int{},
+	q := &queue{store: s, notify: quietly(notify), closed: map[string]int{},
 		lanes: newLanes(), calledOff: map[string]string{}}
+	tell := quietly(emit)
+	q.emit = func(u JobUpdate) {
+		// The video's state is due before the job's news goes out, so
+		// whatever hears the news and then waits behind every state due,
+		// a walk's mark, see sendDue, waits for the one this news asks for.
+		q.moved(u.Job.Episode)
+		if tell != nil {
+			tell(u)
+		}
+	}
+	return q
 }
 
 // newIdleQueue builds the queue without setting it running, so work can be
@@ -492,15 +573,18 @@ func jobLabel(kind string, preview bool) string {
 	return "Find clips"
 }
 
-// restore puts the searches and renders the episodes' records say were
-// cut off or failed into the queue, as the app starts, so each says so
+// restore puts the jobs the episodes' records say were cut off, stopped
+// by hand or failed into the queue, as the app starts, so each says so
 // where its work was. See engine/jobs.go.
 func (q *queue) restore(episodes []string) {
 	for _, episode := range episodes {
 		for _, rec := range engine.ReadJobs(q.store.files, episode) {
 			state := JobInterrupted
-			if !rec.Interrupted() {
+			switch rec.Step {
+			case engine.StepFailed:
 				state = JobFailed
+			case engine.StepStopped:
+				state = JobStopped
 			}
 			q.mu.Lock()
 			q.next++
@@ -790,16 +874,17 @@ func (q *queue) stopClips(episode, click string) {
 	}
 }
 
-// settle marks the searches or renders of an episode that stopped, cut
-// off or failed, as taken care of: carried on by a new job, or their note
-// taken away. A record id picks one of them, and "" all of that kind.
+// settle marks the jobs of one kind of an episode that stopped, were cut
+// off or failed, a search, a render, a clip made by hand or the whole
+// video heard, as settled: carried on by a new job, or their row removed.
+// A record id picks one of them, and "" all of that kind.
 func (q *queue) settle(episode, kind, record string) {
 	q.mu.Lock()
 	var settled []Job
 	for _, j := range q.jobs {
 		if j.Episode == episode && j.Kind == kind && (record == "" || j.JobRecord.ID == record) &&
-			(j.State == JobInterrupted || (j.State == JobFailed && j.JobRecord.ID != "")) {
-			j.State = JobCancelled
+			j.unfinished() && j.JobRecord.ID != "" {
+			j.State = JobSettled
 			q.stampLocked(j)
 			settled = append(settled, *j)
 		}
@@ -817,7 +902,7 @@ func (q *queue) setAside(episode string, aside func(j *Job) bool) {
 	q.mu.Lock()
 	var changed []Job
 	for _, j := range q.jobs {
-		if j.Episode != episode || j.Kind != engine.JobSearch || (j.State != JobInterrupted && j.State != JobFailed) {
+		if j.Episode != episode || j.Kind != engine.JobSearch || !j.unfinished() {
 			continue
 		}
 		if now := aside(j); now != j.Aside {
@@ -843,8 +928,8 @@ func (q *queue) forgetEpisode(episode string) {
 	q.mu.Lock()
 	var settled []Job
 	for _, j := range q.jobs {
-		if j.Episode == episode && !j.going() && (j.State == JobInterrupted || j.State == JobFailed) {
-			j.State = JobCancelled
+		if j.Episode == episode && j.unfinished() {
+			j.State = JobSettled
 			q.stampLocked(j)
 			settled = append(settled, *j)
 		}
@@ -863,7 +948,7 @@ func (q *queue) settleRefused(id string) {
 	var settled []Job
 	for _, j := range q.jobs {
 		if j.ID == id && j.State == JobFailed && j.JobRecord.ID == "" {
-			j.State = JobCancelled
+			j.State = JobSettled
 			q.stampLocked(j)
 			settled = append(settled, *j)
 		}
@@ -1080,7 +1165,7 @@ func (q *queue) runJob(job *Job) {
 		case errors.Is(err, engine.ErrCancelled) && j.byHand && stopsAsStopped(j.Kind):
 			// Called off by hand, a search says Stopped, Click Continue,
 			// because what it heard stays and it can be carried on.
-			j.State, j.JobRecord = JobInterrupted, stopped
+			j.State, j.JobRecord = JobStopped, stopped
 		case errors.Is(err, engine.ErrCancelled):
 			j.State, j.Underway = JobCancelled, nil
 		default:
@@ -1099,6 +1184,7 @@ func (q *queue) runJob(job *Job) {
 		ended = theLog.jobLine(zerolog.ErrorLevel, job).Str("error", failed)
 	}
 	ended.Str("state", string(state)).Int("written", written).Int64("ms", time.Since(started).Milliseconds()).Msg("the job ended")
+	q.moved(job.Episode)
 	if q.notify != nil {
 		q.notify(job.Episode)
 	}

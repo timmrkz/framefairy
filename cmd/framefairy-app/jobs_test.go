@@ -1021,7 +1021,7 @@ func TestStopTranscribingKeepsTheRecordOfTheJobThatCarriesOn(t *testing.T) {
 	}
 	<-started
 	close(firstGo)
-	if j := ended(first.ID); j.State != JobInterrupted {
+	if j := ended(first.ID); j.State != JobStopped {
 		t.Errorf("Stop transcribing ended the job as %s", j.State)
 	}
 	if rec, ok := record(); !ok || rec.Step == engine.StepStopped {
@@ -1031,7 +1031,7 @@ func TestStopTranscribingKeepsTheRecordOfTheJobThatCarriesOn(t *testing.T) {
 	svc.cancelSteps(second.ID)
 	close(secondGo)
 	j := ended(second.ID)
-	if j.State != JobInterrupted || j.Step != engine.StepStopped {
+	if j.State != JobStopped || j.Step != engine.StepStopped {
 		t.Errorf("Stop transcribing ended the job as %s, %s", j.State, j.Step)
 	}
 	rec, ok := record()
@@ -1049,7 +1049,9 @@ func TestStopTranscribingKeepsTheRecordOfTheJobThatCarriesOn(t *testing.T) {
 // #606, and still reaches the window with every field the window reads,
 // under the names it reads them by. Jobs read back from their records as
 // the app starts are the cases with the most of them: a search cut off as
-// the app closed, a render cut off, and a clip made by hand that failed.
+// the app closed, a render cut off, a clip made by hand that failed, and
+// the whole video's transcription stopped by hand, which is stopped and
+// not interrupted.
 // Each id must be the job's and not the record's, or Continue and Cancel
 // name a job the queue does not have, and what each was asked to do must
 // come across, or its row or card says nothing of it.
@@ -1065,6 +1067,8 @@ func TestAJobReachesTheWindowWithEverythingItsRecordSays(t *testing.T) {
 			Clips: []string{"c2"}, Step: engine.StepRendering, Asked: asked},
 		{ID: "clip-9", Kind: engine.JobClip, At: 95.5, Backward: true, Step: engine.StepFailed,
 			Error: "nobody speaks there", Asked: asked},
+		{ID: engine.TranscribeID, Kind: engine.JobTranscribe, From: 600, To: 1800,
+			Step: engine.StepStopped, Asked: asked},
 	} {
 		if err := engine.WriteJob(s.store.files, eps[0], rec); err != nil {
 			t.Fatal(err)
@@ -1079,6 +1083,8 @@ func TestAJobReachesTheWindowWithEverythingItsRecordSays(t *testing.T) {
 			"plan": "/home/tim/videos/talk.framefairy/logs/clips.json", "clips": []any{"c2"}},
 		"clip": {"label": "Make a clip", "state": "failed", "step": "failed", "at": 95.5, "backward": true,
 			"error": "nobody speaks there"},
+		"transcribe": {"label": "Transcribe whole video", "state": "stopped", "step": "stopped", "from": 600.0,
+			"to": 1800.0, "lane": "hearing"},
 	}
 	ids := map[string]bool{}
 	for _, u := range sent {
@@ -1127,10 +1133,16 @@ func TestTheWindowIsToldTheStepTheEngineWrites(t *testing.T) {
 	s, eps := memoryLibrary(t, "talk.mp4")
 	var mu sync.Mutex
 	var heard []Job
+	// The window is told a job ended after the queue says so, see
+	// queue.update, so a render is over here once its news of the end is.
+	ended := make(chan string, 4)
 	s.jobs = newQueue(s.store, func(u JobUpdate) {
 		mu.Lock()
 		heard = append(heard, u.Job)
 		mu.Unlock()
+		if !u.Job.going() {
+			ended <- u.Job.ID
+		}
 	}, func(string) {})
 	logJobsOnFailure(t, s.jobs)
 	plan := filepath.Join(engine.WorkDir(eps[0]), "logs", "clips-0-60.json")
@@ -1141,7 +1153,11 @@ func TestTheWindowIsToldTheStepTheEngineWrites(t *testing.T) {
 			func(ctx context.Context, p *engine.Project, host engine.Host) (string, error) {
 				return plan, p.RenderJob(ctx, carry.ID, req, carry, host)
 			})
-		s.jobs.untilNoneGoing()
+		for id := range ended {
+			if id == job.ID {
+				break
+			}
+		}
 		return job
 	}
 	told := func(id string) (steps []string, last Job) {

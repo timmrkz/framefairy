@@ -19,7 +19,7 @@ func TestARemovedStoppedSearchIsGoneForGood(t *testing.T) {
 	var mu sync.Mutex
 	settled := map[string]int{}
 	s.jobs = newQueue(s.store, func(u JobUpdate) {
-		if u.Job.State == JobCancelled {
+		if u.Job.State == JobSettled {
 			mu.Lock()
 			settled[u.Job.ID]++
 			mu.Unlock()
@@ -41,7 +41,7 @@ func TestARemovedStoppedSearchIsGoneForGood(t *testing.T) {
 
 	var ids []string
 	for _, j := range s.jobs.list() {
-		if j.State == JobFailed || j.State == JobInterrupted {
+		if j.unfinished() {
 			ids = append(ids, j.ID)
 		}
 	}
@@ -66,7 +66,7 @@ func TestARemovedStoppedSearchIsGoneForGood(t *testing.T) {
 	wg.Wait()
 
 	for _, j := range s.jobs.list() {
-		if j.State != JobCancelled {
+		if j.State != JobSettled {
 			t.Errorf("%s of %s is %s after its row was removed", j.ID, j.Episode, j.State)
 		}
 	}

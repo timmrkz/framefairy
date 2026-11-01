@@ -64,7 +64,7 @@ describe("every clip on its way comes in the same way, whoever proposed it", () 
   test("a clip whose job was cut off or failed stays, still, and carries on with a click", () => {
     let carried = "";
     const cut = job({ id: "c", kind: "clip", state: "interrupted", underway: [{ n: 1, start: 600, end: 600, step: "hearing" }] });
-    const called = job({ id: "s", kind: "clip", state: "interrupted", step: "stopped", underway: [{ n: 1, start: 900, end: 900, step: "stopped" }] });
+    const called = job({ id: "s", kind: "clip", state: "stopped", step: "stopped", underway: [{ n: 1, start: 900, end: 900, step: "stopped" }] });
     const failed = job({ id: "f", kind: "clip", state: "failed", error: "nothing is said after 1:00:00", underway: [{ n: 1, start: 3600, end: 3600, step: "failed" }] });
     const rows = arriving([cut, called, failed], never, (j) => (carried = j.id));
     expect(rows.map((r) => [r.key, r.stopped, r.what])).toEqual([
@@ -81,7 +81,7 @@ describe("every clip on its way comes in the same way, whoever proposed it", () 
 
   test("a clip made by hand that stopped can be removed, and so can a search's, which takes its search", () => {
     const removed: string[] = [];
-    const hand = job({ id: "h", kind: "clip", state: "interrupted", step: "stopped", underway: [{ n: 1, start: 900, end: 900, step: "stopped" }] });
+    const hand = job({ id: "h", kind: "clip", state: "stopped", step: "stopped", underway: [{ n: 1, start: 900, end: 900, step: "stopped" }] });
     const search = job({ id: "s", state: "failed", underway: [{ n: 2, start: 100, end: 120, step: "failed" }] });
     const rows = arriving([hand, search], never, nothing, {
       remove: (j) => removed.push(j.id),
@@ -98,7 +98,7 @@ describe("every clip on its way comes in the same way, whoever proposed it", () 
 
   test("only work that failed is marked failed, so it is said in red", () => {
     const cut = job({ id: "c", state: "interrupted", underway: [{ n: 1, start: 600, end: 600, step: "finding" }] });
-    const called = job({ id: "s", kind: "clip", state: "interrupted", step: "stopped", underway: [{ n: 1, start: 900, end: 900, step: "stopped" }] });
+    const called = job({ id: "s", kind: "clip", state: "stopped", step: "stopped", underway: [{ n: 1, start: 900, end: 900, step: "stopped" }] });
     const failed = job({ id: "f", state: "failed", error: "could not reach Anthropic", underway: [{ n: 1, start: 30, end: 50, step: "failed" }] });
     expect(arriving([cut, called, failed], never, nothing).map((r) => [r.key, !!r.failed])).toEqual([
       ["c/1", false],
@@ -108,7 +108,7 @@ describe("every clip on its way comes in the same way, whoever proposed it", () 
   });
 
   test("a clip made by hand being removed says so, and is Stopped as it was once it is not", () => {
-    const hand = job({ id: "h", kind: "clip", state: "interrupted", step: "stopped", underway: [{ n: 1, start: 900, end: 900, step: "stopped" }] });
+    const hand = job({ id: "h", kind: "clip", state: "stopped", step: "stopped", underway: [{ n: 1, start: 900, end: 900, step: "stopped" }] });
     const away = { spent: 3, together: "away h", onputback: nothing, onend: nothing, onresume: nothing };
     const [row] = arriving([hand], never, nothing, { remove: nothing, away: () => away });
     expect(row.away).toBe(away);
@@ -138,29 +138,31 @@ describe("a card is held from the moment its clip is written until the list has 
 
   test("in the same pass it leaves, not a render later", () => {
     const way = new OnTheWay();
-    way.cards([card("s/1")], 5, 4);
+    // The search's news is at 5 and the newest state of the video at 4.
+    let seq = 5;
+    way.cards([card("s/1")], () => seq, 4);
     // Written: gone from the job's list, and still on screen in that pass.
-    const now = way.cards([], 5, 4);
+    seq = 6;
+    const now = way.cards([], () => seq, 4);
     expect(now.map((a) => [a.key, a.held])).toEqual([["s/1", true]]);
-    expect(way.unread(5)).toBe(true);
-    // A read asked before it left knows nothing of it and keeps it.
-    expect(way.cards([], 6, 4).length).toBe(1);
-    expect(way.unread(6)).toBe(false);
-    // The first read asked after it left holds the clip: it goes.
-    expect(way.cards([], 6, 5)).toEqual([]);
+    // A state read before the news that it left knows nothing of it and
+    // keeps it.
+    expect(way.cards([], () => seq, 6).length).toBe(1);
+    // The first state read after it left holds the clip: it goes.
+    expect(way.cards([], () => seq, 7)).toEqual([]);
   });
 
   test("a card that stopped is not held, it says so where it is", () => {
     const way = new OnTheWay();
-    way.cards([card("s/1", { stopped: true })], 3, 2);
-    expect(way.cards([], 3, 2)).toEqual([]);
+    way.cards([card("s/1", { stopped: true })], () => 3, 2);
+    expect(way.cards([], () => 3, 2)).toEqual([]);
   });
 
   test("a card back on the way is live again, not held twice", () => {
     const way = new OnTheWay();
-    way.cards([card("s/1")], 3, 2);
-    way.cards([], 3, 2);
-    expect(way.cards([card("s/1")], 3, 2).map((a) => a.held)).toEqual([undefined]);
+    way.cards([card("s/1")], () => 3, 2);
+    way.cards([], () => 3, 2);
+    expect(way.cards([card("s/1")], () => 3, 2).map((a) => a.held)).toEqual([undefined]);
   });
 });
 
