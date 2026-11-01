@@ -32,7 +32,7 @@ func TestAShortEpisodeIsItsOwnClip(t *testing.T) {
 	ctx := context.Background()
 
 	// Three clips of twenty seconds asked for, more than the episode has.
-	plan, err := p.Search(ctx, PlanRequest{Count: 3, Min: 20, Max: 30}, nil)
+	plan, err := p.Search(ctx, PlanRequest{Count: 3, Min: 20, Max: 30}, Host{})
 	if err != nil {
 		t.Fatalf("search: %v %s", err, p.LastError())
 	}
@@ -81,13 +81,13 @@ func TestAShortEpisodeGetsItsClipAgainOnceRemoved(t *testing.T) {
 	ctx := context.Background()
 	req := PlanRequest{Count: 1, Min: 20, Max: 30}
 
-	first, err := p.Search(ctx, req, nil)
+	first, err := p.Search(ctx, req, Host{})
 	if err != nil {
 		t.Fatalf("first search: %v %s", err, p.LastError())
 	}
 
 	// Searched again with the clip in the list: nothing new, no failure.
-	again, err := p.Search(ctx, req, nil)
+	again, err := p.Search(ctx, req, Host{})
 	if err != nil {
 		t.Fatalf("a search with the clip still there failed: %v %s", err, p.LastError())
 	}
@@ -106,7 +106,7 @@ func TestAShortEpisodeGetsItsClipAgainOnceRemoved(t *testing.T) {
 	}
 	removal := ChangeBetween(before, TakeSnapshot(disk, nil, p.LogsDir()))
 
-	plan, err := p.Search(ctx, req, nil)
+	plan, err := p.Search(ctx, req, Host{})
 	if err != nil {
 		t.Fatalf("search after the clip was removed: %v %s", err, p.LastError())
 	}

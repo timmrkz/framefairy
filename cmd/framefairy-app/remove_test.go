@@ -159,8 +159,8 @@ func hearing(t *testing.T, s *FrameFairy, path string) *atomic.Bool {
 	t.Cleanup(func() { s.jobs.cancelEpisode(path) })
 	started := make(chan struct{})
 	s.jobs.addSteps(path, engine.JobSearch, "Find clips", true, nil,
-		func(ctx context.Context, p *engine.Project, turn engine.Turn) (string, error) {
-			stepCtx, release, err := turn(ctx, engine.StepHearing)
+		func(ctx context.Context, p *engine.Project, host engine.Host) (string, error) {
+			stepCtx, release, err := host.Turn(ctx, engine.StepHearing, nil)
 			if err != nil {
 				return "", engine.ErrCancelled
 			}

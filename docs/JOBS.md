@@ -129,7 +129,9 @@ them. A search that comes to finding takes the lane of hearing back from a
 search that hears, which saves what it heard, waits its turn and carries
 on after. A job whose turn is taken back says it waits the moment it is,
 before the job that took it says anything, so the whole video goes on
-hold on the range picker as Search is pressed. What the speech model is
+hold on the range picker as Search is pressed. The lanes tell the engine,
+through the `waits` its `Turn` is given, and the engine writes it, see
+Who does what. What the speech model is
 still hearing then is waited for and let go, not saved, in
 `engine/audio.go`, so what was shown as heard is what is kept, and the
 work carries on from there. Hearing waits while a search waits to find
@@ -219,7 +221,15 @@ without somewhere to send it.
 **The engine** has `Project.Search`, which hears and then finds and writes
 the record as it goes, and `Project.RenderJob`, which renders clips one at
 a time and writes its record the same way. Before each step they ask the
-app for their turn in that step's lane. `Project.Search` takes the same two
+app for their turn in that step's lane. Both come with the job, in its
+`engine.Host`: `Turn` hands it its turns, and `Changed` hears every
+record it writes. The engine is the only writer of a job's step: a job
+says it waits only when the lanes say so, so a search that goes on from
+hearing to finding at once is never seen waiting in between. The app
+keeps each record it hears as the job the window sees, and adds only the
+lane, so the window and the record on disk say the same step. A job that
+is done is in no step, and one that failed says failed, and the window
+is told either together with how the job ended. `Project.Search` takes the same two
 steps as the command line's `Run`, transcribing and then planning. The
 command line keeps its flags and its own run, and keeps no records.
 

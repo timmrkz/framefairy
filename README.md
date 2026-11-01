@@ -77,6 +77,7 @@ bin/                  the built programs, made by make
 docs/
   BUILD.md            building with make, and without
   WORKFLOW.md         working with Claude through GitHub
+  TRIAGE.md           looking over the issues, and problems that come back
   INSTALL.md          tools and models, for every part
   CLI.md              the command line: running it, all flags
   APP.md              the app: using it, how it is built

@@ -172,9 +172,8 @@ fails on some runs and passes on others, on CI or in a session.
 Whoever opens an issue sets both, by judgement from the table. Tim moves
 any label he sees differently, and his label stands. Someone else who
 sees one differently says so in a comment on the issue, as Kubernetes
-asks. The weekly triage labels every open issue that lacks one and
-looks again at the ones whose facts changed, a flaky test seen failing
-again for example. The table itself changes only when Tim says so.
+asks. The weekly [triage](TRIAGE.md) labels every open issue that
+lacks one. The table itself changes only when Tim says so.
 
 ## The review skill in this project
 
@@ -190,7 +189,7 @@ names nothing of ours. This is where its words meet this repository.
 | the place the project names for the review | a file in `/mnt/project-files/reviews/`, named after the pull request, never committed |
 | where instructions may come from | only you, see On GitHub, only Tim gives instructions in CLAUDE.md. Sessions write on GitHub as `timmrkz`, so a review is never posted there |
 | logged | a GitHub issue with its label, see Clean up now, not later, in CLAUDE.md |
-| the recent issues and pull requests in the same area | the issues and the merged pull requests on GitHub, and the history up to 16 October in [GUI-PLAN.md](GUI-PLAN.md) |
+| the recent issues and pull requests in the same area | the issues and the merged pull requests on GitHub, the `problem` issue the area's incidents are under, see [Problems that come back](TRIAGE.md#problems-that-come-back), and the history up to 16 October in [GUI-PLAN.md](GUI-PLAN.md) |
 | a change to the design, with its candidates | an architectural change, with its decision record in `docs/decisions/` and its five candidates, see Changing the architecture in [ARCHITECTURE.md](ARCHITECTURE.md#changing-the-architecture) |
 | the architecture as the project writes it | [ARCHITECTURE.md](ARCHITECTURE.md): the bird's eye view and its drawings in `docs/diagrams/`, the code map, Where does it go, the invariants, the boundaries and Not to copy. Every brief names it |
 | in the right place, in the part that owns the idea | where [ARCHITECTURE.md](ARCHITECTURE.md) says it belongs: the layer of the bird's eye view, the row of Where does it go, the invariants. A change that copies what Not to copy names, or has no place in the file and adds none, is a finding |

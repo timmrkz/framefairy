@@ -65,6 +65,7 @@ thing belongs. In short:
 | interface tests | `frontend/preview/`, `cmd/framefairy-app/bridge_test.go` | [docs/TESTING.md](docs/TESTING.md) |
 | how every test is written | `*_test.go`, `*.test.ts`, `frontend/preview/walks/` | [the testing skill](.claude/skills/testing/SKILL.md), and where it meets this repository in [docs/TESTING.md](docs/TESTING.md#the-testing-skill-in-this-project) |
 | how a pull request is reviewed | | [the review skill](.claude/skills/review/SKILL.md), and where it meets this repository in [docs/WORKFLOW.md](docs/WORKFLOW.md#the-review-skill-in-this-project) |
+| how the issues are looked over, and problems that come back | | [docs/TRIAGE.md](docs/TRIAGE.md) |
 | shipping | not yet | [docs/PACKAGING.md](docs/PACKAGING.md) |
 | open work | | [issues](https://github.com/timmrkz/framefairy/issues), and the history in [docs/GUI-PLAN.md](docs/GUI-PLAN.md) |
 
@@ -143,10 +144,10 @@ thing belongs. In short:
   mostly never done. Google sends a second thing as a second small change
   right away. A session here holds one pull request at a time, so a small
   second thing Tim asks for in the thread goes into the open one, as a
-  commit of its own named in the description. Only a problem the pull
-  request did not cause, and that cannot be done now, is logged: a bug
-  seen while testing, a review finding that points elsewhere, a larger
-  ask. It becomes a
+  commit of its own named in the description. Only something wrong that
+  the pull request did not cause, and that cannot be done now, is
+  logged: a bug seen while testing, a review finding that points
+  elsewhere, a larger ask. It becomes a
   [GitHub issue](https://github.com/timmrkz/framefairy/issues) of its
   own, with what was seen, where, who found it and what to build, linked
   in the reply and under Found along the way. It carries one label or
@@ -156,6 +157,12 @@ thing belongs. In short:
   `priority/important` or `priority/backlog`, and one size,
   `size/small`, `size/medium` or `size/large`, as
   [docs/WORKFLOW.md](docs/WORKFLOW.md#priority-and-size) defines them.
+  Before it is logged, the closed issues are searched as well as the
+  open ones. One whose cause was seen before goes under that cause's
+  `problem` issue, and work on it is work on that cause. Every fix
+  takes the cause away, never only its symptom. See
+  [docs/TRIAGE.md](docs/TRIAGE.md), which also says how the issues are
+  looked over every week.
 - **Open work is GitHub issues, never rows in a file.** Every pull
   request once added its row at the end of the same table in
   [docs/GUI-PLAN.md](docs/GUI-PLAN.md), so any two of them conflicted,
@@ -175,7 +182,10 @@ thing belongs. In short:
   it: a test that has just failed on main, or an issue that comes with
   its trace or its log, goes before an older one still waiting for its
   next failure to show why. Following the evidence in hand gets a fix
-  done sooner. The session says which it picked and why.
+  done sooner. An incident under an open `problem` issue is taken up
+  as its problem, see
+  [Problems that come back](docs/TRIAGE.md#problems-that-come-back).
+  The session says which it picked and why.
 - His machine is an M2 Max with 32 GB of memory, on the latest macOS, with
   Go 1.27, Homebrew and the models in `~/.framefairy/models`. ffmpeg and
   llama-server are built by `make` and live in `bin/`, the only place the

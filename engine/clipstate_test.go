@@ -158,7 +158,7 @@ func TestAClipMadeByHandAgainIsTheClipMadeTheFirstTime(t *testing.T) {
 	log, _ := underwayLog()
 	p := handProject(t, source, log)
 	ctx := context.Background()
-	if _, err := p.MakeClip(ctx, "clip-1", ClipRequest{At: 20}, nil); err != nil {
+	if _, err := p.MakeClip(ctx, "clip-1", ClipRequest{At: 20}, Host{}); err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
 	tr, err := p.Transcript()
@@ -178,7 +178,7 @@ func TestAClipMadeByHandAgainIsTheClipMadeTheFirstTime(t *testing.T) {
 	if err := SetRejected(disk, nil, p.HandPlanPath(), "h01", true); err != nil {
 		t.Fatal(err)
 	}
-	key, err := p.MakeClip(ctx, "clip-2", ClipRequest{At: 20}, nil)
+	key, err := p.MakeClip(ctx, "clip-2", ClipRequest{At: 20}, Host{})
 	if err != nil || key != HandPlanName+"/h02" {
 		t.Fatalf("%q %v %s", key, err, p.LastError())
 	}

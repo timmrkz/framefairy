@@ -88,11 +88,11 @@ func TestAWindowSearchedAgainKeepsEveryClip(t *testing.T) {
 	p := passProject(t, server.URL)
 	req := PlanRequest{From: 10, To: 30, Count: 2, Min: 1, Max: 30}
 
-	first, err := p.Search(context.Background(), req, nil)
+	first, err := p.Search(context.Background(), req, Host{})
 	if err != nil {
 		t.Fatalf("first search: %v", err)
 	}
-	second, err := p.Search(context.Background(), req, nil)
+	second, err := p.Search(context.Background(), req, Host{})
 	if err != nil {
 		t.Fatalf("second search: %v", err)
 	}
@@ -125,12 +125,12 @@ func TestASearchCarriedOnKeepsItsPass(t *testing.T) {
 	server, _ := answering(t, clipAnswer(1), clipAnswer(2))
 	p := passProject(t, server.URL)
 	req := PlanRequest{From: 10, To: 30, Count: 1, Min: 1, Max: 30}
-	if _, err := p.Search(context.Background(), req, nil); err != nil {
+	if _, err := p.Search(context.Background(), req, Host{}); err != nil {
 		t.Fatal(err)
 	}
 	carried := req
 	carried.Pass = 1
-	plan, err := p.Search(context.Background(), carried, nil)
+	plan, err := p.Search(context.Background(), carried, Host{})
 	if err != nil {
 		t.Fatal(err)
 	}

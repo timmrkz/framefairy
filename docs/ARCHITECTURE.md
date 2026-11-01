@@ -98,7 +98,8 @@ waiting for the day the two disagree.
 | what was last chosen in a video, its clip and window | `chosen.json` in its work folder | the app's Go side |
 | the library and the settings | the app's config folder | the app's Go side |
 | the models, notes about running servers, the training records | `~/.framefairy/` | the engine |
-| what runs now | the job queue, in memory | the app's Go side |
+| what runs now, and the lane each job holds or waits for | the job queue, in memory | the app's Go side |
+| the step a job is in, and what it was asked for | its `engine.JobRecord`, on disk and in the job the queue holds, which keeps each record the engine tells it through the job's `engine.Host` | the engine |
 | what is on screen | the interface's stores. Once #606 is built, a video's in its `EpisodeSession`, `frontend/src/lib/session.svelte.ts` | from what Go sends. Today `Episode.svelte` also works out a video's state from what changed, see Not to copy |
 
 ## The programs that run
