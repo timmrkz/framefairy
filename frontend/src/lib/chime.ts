@@ -54,9 +54,9 @@ export function wake() {
 //
 // The pair is one sound, made whole before it plays and started once, so
 // the second note follows the first however late the window gets to it.
-// Two notes each started at a moment of their own sounded together when
-// the window was late to start them, and not at all when it was later
-// than their end, which a walk heard on a busy machine, #654.
+// Two notes each started at a moment of their own, a hundredth of a
+// second ahead, played nothing in a window that got to them after their
+// end, which a walk shows by starting every sound late, #654.
 export function chime(how: "on" | "off") {
   if (!context || (how === "on") === on) return;
   on = how === "on";
