@@ -266,14 +266,19 @@ designs were weighed for how the rest of the window keeps in step:
    stays the one complete record of each job, and the state says when it
    may be shown. Every reader of the store, the workspace, the sidebar
    and the stop pressed, sees the end in the same step as the clips it
-   left. Work started shows at once, so a press still shows at once.
-   Chosen.
+   left. News that work started or goes on shows at once, so a press
+   and the progress of a row still show at once. Chosen.
 
 As built:
 
 - From a video's first state on, the store keeps the news of its jobs
-  aside, the newest of each, until a state read after it is shown, then
-  shows it in the order it was sent. Before the first state, as the app
+  that moves the work on aside, the newest of each job, until a state
+  read after it is shown, then shows it in the order it was sent. That is
+  news of a clip written, of the hearing over and of the work over, which
+  is what the moves are made of. News that work started or goes on shows
+  at once. Held too, the row of a search carried on said its window for
+  a moment in place of how much of it was heard, and the frame of Transcribe
+  whole video shed no motes, in CI on the first commit of this. Before the first state, as the app
   opens, it shows it at once. While a workspace is open on the video,
   its session says which state it kept, from `take`. The states of the
   other videos are shown as they come. A video that left the library has

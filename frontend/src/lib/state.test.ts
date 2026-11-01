@@ -182,20 +182,27 @@ describe("the news of a video's job", () => {
     expect([jobs.search("/v.mp4")?.state, jobs.isStopping("/v.mp4", "clips")]).toEqual(["stopped", false]);
   });
 
-  test("shows work started at once, carried on too, and what it says after that with its state", () => {
+  test("shows work started, carried on and going on at once, and what moves it on with its state", () => {
     const jobs = new JobStore();
     jobs.shown("/v.mp4", 1);
     jobs.apply(job("queued", 5, "search", "s"));
     expect(jobs.search("/v.mp4")?.state).toBe("queued");
     jobs.apply(job("stopped", 6, "search", "s"));
     jobs.shown("/v.mp4", 7);
-    jobs.apply(job("running", 8, "search", "s"));
+    jobs.apply({ ...job("running", 8, "search", "s"), step: "hearing" });
     expect(jobs.search("/v.mp4")?.state).toBe("running");
-    jobs.apply(job("running", 9, "search", "s"));
-    jobs.apply(job("running", 10, "search", "s"));
-    expect(jobs.list[0].seq).toBe(8);
-    jobs.shown("/v.mp4", 11);
-    expect(jobs.list[0].seq).toBe(10);
+    jobs.apply({ ...job("running", 9, "search", "s"), step: "hearing", progress: { fraction: 0.5 } } as Job);
+    expect(jobs.list[0].seq).toBe(9);
+    // The hearing over, then a clip written, and the news after them.
+    jobs.apply({ ...job("running", 10, "search", "s"), step: "finding" });
+    jobs.apply({ ...job("running", 11, "search", "s"), step: "finding", progress: { fraction: 0.2 } } as Job);
+    expect(jobs.list[0].seq).toBe(9);
+    jobs.shown("/v.mp4", 12);
+    expect(jobs.list[0].seq).toBe(11);
+    jobs.apply({ ...job("running", 12, "search", "s"), step: "finding", written: 1 });
+    expect(jobs.list[0].seq).toBe(11);
+    jobs.shown("/v.mp4", 13);
+    expect(jobs.list[0].written).toBe(1);
   });
 
   test("is shown at once when the video leaves the library, because no state of it comes again", () => {

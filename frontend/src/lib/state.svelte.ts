@@ -22,6 +22,15 @@ function doing(work: Work, j: Job): boolean {
 
 const key = (path: string, work: Work) => `${work} ${path}`;
 
+// Whether the news of a job moves its work on from what was shown: the
+// work over, a clip written, or the hearing over, which is what the moves
+// of EpisodeSession are made of, see lib/session.svelte.ts.
+function movesOn(had: Job | undefined, job: Job): boolean {
+  if (!live(job)) return live(had) || !had;
+  if (!had) return false;
+  return (job.written ?? 0) !== (had.written ?? 0) || (had.step === "hearing" && job.step !== "hearing");
+}
+
 export class JobStore {
   list = $state<Job[]>([]);
   // What a person pressed that the Go side has not caught up with yet, the
@@ -54,14 +63,16 @@ export class JobStore {
   private followed = new Map<string, number>();
 
   // A snapshot of a job, kept unless the list already has a later one.
-  // The news of a video's job waits for a state of the video read after
-  // it, unless it says work started: a press shows at once, and a start
-  // leaves nothing in the state that has to come with it.
+  // The news of a video's job that moves its work on, a clip written, the
+  // hearing over or the work over, waits for a state of the video read
+  // after it, which holds what that left. News that work started or goes
+  // on shows at once: a press shows at once, and the row says how far the
+  // work has come as it comes. Held too, the row of a search carried on
+  // said its window for a moment in place of how much of it is heard.
   apply(job: Job) {
     const rev = this.revs.get(job.episode);
     const had = this.list.find((j) => j.id === job.id);
-    const waits =
-      rev !== undefined && (job.seq ?? 0) >= rev && (this.waiting.has(job.id) || !(live(job) && !live(had)));
+    const waits = rev !== undefined && (job.seq ?? 0) >= rev && (this.waiting.has(job.id) || movesOn(had, job));
     if (!waits) return this.keep(job);
     const was = this.waiting.get(job.id);
     if (!was || (job.seq ?? 0) > (was.seq ?? 0)) this.waiting.set(job.id, job);
