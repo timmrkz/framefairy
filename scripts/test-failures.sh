@@ -13,17 +13,16 @@
 # is as many as GitHub shows for a step.
 #
 # When a program a test started hung, internal/hangdump wrote its stack
-# into the log, and the first error says so and where to write it down,
-# because the session reading the check would not open the log to find
-# it. See When a Go test hangs on a program it started, in
-# docs/TESTING.md.
+# into the log, and the first error says so, because whoever reads the
+# check would not open the log to find it. See When a Go test hangs on a
+# program it started, in docs/TESTING.md.
 set -eu
 
 log=${1:?say which log of go test to read}
 
 most=10
 if grep -q '== hangdump: the programs' "$log"; then
-	echo '::error title=A program a test started hung::Its stack is in this job'"'"'s log, between == hangdump and == hangdump: end. Write this run down before anything else, on the issue docs/TESTING.md names under When a Go test hangs on a program it started.'
+	echo '::error title=A program a test started hung::Its stack is in this job'"'"'s log, between == hangdump and == hangdump: end.'
 	most=9
 fi
 
