@@ -21,15 +21,16 @@ export const steps = {
       await slowDown(walk.reportPage);
       walk.reportPage.on("pageerror", (e) => errors.push(String(e)));
       // Every note the window plays, with its pitch and whether the
-      // microphone was open then, for the dictate step's sounds.
-      // window.__noted(n) settles once n notes have played.
+      // microphone had said it was on then, its answer to the latest
+      // Listen, for the dictate step's sounds. window.__noted(n) settles
+      // once n notes have played.
       await walk.reportPage.addInitScript(() => {
         window.__notes = [];
         let waiting = [];
         window.__noted = (n) => new Promise((done) => (window.__notes.length >= n ? done() : waiting.push({ n, done })));
         const start = OscillatorNode.prototype.start;
         OscillatorNode.prototype.start = function (...a) {
-          window.__notes.push({ f: this.frequency.value, open: document.querySelector("button.dictate")?.getAttribute("aria-label") === "Stop" });
+          window.__notes.push({ f: this.frequency.value, open: window.__calls?.findLast((c) => c.name === "Listen")?.answered === true });
           const n = window.__notes.length;
           for (const w of waiting.filter((w) => w.n <= n)) w.done();
           waiting = waiting.filter((w) => w.n > n);
@@ -1396,14 +1397,19 @@ export const steps = {
       // stand in its pause, and stays there between steps.
       await pageUntil(page, () => parseFloat(document.querySelector("button.dictate")?.dataset.loud) > 0.3);
     }
-    // Two notes going up say the microphone is open, while it is. They
-    // play once Dictate hears back that it opened, which a busy machine
-    // hands back after the microphone's first news, so the walk waits
-    // for them rather than reading them at the first news, #654.
+    // From the press on, nothing plays until the microphone says it is
+    // on, and then the two notes going up, #654. A busy machine hands
+    // that answer back after the microphone's first news, so the walk
+    // waits for the two notes, however late, and reads only what played
+    // since the press. The walk's own timeout ends it if they never come.
     if (late) await control(url, "/hold?call=Listen&gate=open");
     if (!running) await page.evaluate((n) => window.__noted(n), before + 2);
-    const up = await page.evaluate(() => window.__notes.slice(-2));
-    if (up.length < 2 || !up.every((n) => n.open) || up[0].f >= up[1].f) {
+    const up = await page.evaluate((from) => window.__notes.slice(from), running ? -2 : before);
+    if (up.some((n) => !n.open)) {
+      walk.wrong = `a note played before the microphone said it was on, it played ${JSON.stringify(up)}`;
+      return;
+    }
+    if (up.length !== 2 || up[0].f >= up[1].f) {
       walk.wrong = `the microphone opened without the start sound, it played ${JSON.stringify(up)}`;
       return;
     }
