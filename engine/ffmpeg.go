@@ -94,6 +94,9 @@ type APICalls struct {
 // keeps two jobs in the same process, as the app has, from stepping on
 // each other.
 type Engine struct {
+	// Machine is shared by every engine the program makes, so a field set
+	// through an engine, e.Runner = x, is set for every job. A job that
+	// needs its own, as a test does, makes its own machine for it.
 	*Machine
 
 	Log     *runlog.Log
