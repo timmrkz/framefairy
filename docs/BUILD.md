@@ -362,9 +362,12 @@ command, `make changed` for its part, the one a person runs, see
 | `macos` | macOS | the ffmpeg we ship, built by its script and kept until the script changes, then `make changed PART=unit` against it, which on a Mac leaves out the race detector, which Linux runs, and the licence server's packages, which never run on a Mac |
 | `outside` | macOS | the ffmpeg and the llama-server we ship, then `make changed PART="build outside"`, `make` with no warnings allowed, then `make outside`: a keychain of its own, then the app opened by macOS from an Unlock link, closed and open, with the local dispenser beside it, see [TESTING.md](TESTING.md#from-outside-the-app). Stopped after 30 minutes |
 
-`linux`, `walks` and `macos` start from Go's build cache as main left it
-after its last push, one cache for each job and for each machine of
-`linux`, saved by main. A pull
+`linux`, `walks`, `macos` and `outside` start from Go's build cache as
+main left it after its last push, one cache for each job and for each
+machine of `linux`, saved by main. The build to update to in
+`builds.yml` starts from the cache of `outside`, which runs the same
+`make`, and saves none of its own, so no upload sits between a push and
+its build on the Updates page. A pull
 request saves its own only when it found none, for its next push. setup-go keeps the cache by `go.sum` alone and saves
 it only when `go.sum` changes, so with it a job started from a cache
 weeks old and compiled nearly everything again: a minute on Linux and
