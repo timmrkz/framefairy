@@ -129,7 +129,7 @@ func TestInstallFontLeavesTheFaceAndItsLicenceBehind(t *testing.T) {
 // On the real disk: ffmpeg reads the bundled face.
 func TestABundledFaceReachesLibass(t *testing.T) {
 	t.Parallel()
-	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
 	if err := e.Preflight(context.Background()); err != nil {
 		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}

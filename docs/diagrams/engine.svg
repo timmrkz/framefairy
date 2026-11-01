@@ -37,6 +37,8 @@
 <text class="c" x="84" y="165">clips: the plan file, edits, undo, gestures</text>
 <rect class="chip" x="385" y="150" width="249" height="22" rx="6"/>
 <text class="c" x="393" y="165">captions: lines, the drawing, fonts</text>
+<rect class="chip" x="640" y="150" width="61" height="22" rx="6"/>
+<text class="c" x="648" y="165">Machine</text>
 <rect class="chip" x="76" y="178" width="229" height="22" rx="6"/>
 <text class="c" x="84" y="193">framing: crops, faces, rotations</text>
 <rect class="chip" x="311" y="178" width="56" height="22" rx="6"/>
@@ -65,18 +67,14 @@
 <rect class="box" x="64" y="368" width="672" height="90" rx="8"/>
 <text class="n" x="76" y="390">finding and running programs</text>
 <text class="p" x="76" y="408">engine/tool/</text>
-<rect class="chip" x="76" y="418" width="40" height="22" rx="6"/>
-<text class="c" x="84" y="433">Find</text>
-<rect class="chip" x="122" y="418" width="40" height="22" rx="6"/>
-<text class="c" x="130" y="433">Path</text>
-<rect class="chip" x="168" y="418" width="61" height="22" rx="6"/>
-<text class="c" x="176" y="433">Inspect</text>
-<rect class="chip" x="235" y="418" width="54" height="22" rx="6"/>
-<text class="c" x="243" y="433">Runner</text>
-<rect class="chip" x="295" y="418" width="36" height="22" rx="6"/>
-<text class="c" x="303" y="433">Run</text>
-<rect class="chip" x="337" y="418" width="78" height="22" rx="6"/>
-<text class="c" x="345" y="433">ShellQuote</text>
+<rect class="chip" x="76" y="418" width="54" height="22" rx="6"/>
+<text class="c" x="84" y="433">Finder</text>
+<rect class="chip" x="136" y="418" width="54" height="22" rx="6"/>
+<text class="c" x="144" y="433">Runner</text>
+<rect class="chip" x="196" y="418" width="36" height="22" rx="6"/>
+<text class="c" x="204" y="433">Run</text>
+<rect class="chip" x="238" y="418" width="78" height="22" rx="6"/>
+<text class="c" x="246" y="433">ShellQuote</text>
 <rect class="box" x="64" y="474" width="672" height="90" rx="8"/>
 <text class="n" x="76" y="496">a path and a file in a file system</text>
 <text class="p" x="76" y="514">engine/fileio/</text>

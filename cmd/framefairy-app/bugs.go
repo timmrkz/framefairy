@@ -23,6 +23,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/spf13/afero"
 
+	"framefairy/engine"
 	"framefairy/engine/fileio"
 )
 
@@ -104,6 +105,9 @@ type reporting struct {
 	// files is where the draft is read and written, the real disk in the
 	// app. Read under mu, since a test hands in other files as it runs.
 	files afero.Fs
+	// machine is the app's, whose ffmpeg reads a recording handed to
+	// the report.
+	machine *engine.Machine
 	// Where the draft is kept: draft.json and the pictures beside it.
 	dir    string
 	draft  draftFile
@@ -137,8 +141,8 @@ type reporting struct {
 	video string
 }
 
-func newReporting(files afero.Fs, dir string) *reporting {
-	return &reporting{files: files, dir: dir}
+func newReporting(machine *engine.Machine, dir string) *reporting {
+	return &reporting{files: machine.Files, machine: machine, dir: dir}
 }
 
 // OpenReport opens the report window, or brings it forward when it is open
@@ -525,7 +529,7 @@ func (r *reporting) attach(how string, all []handed) ReportDraft {
 	got := make([]read, len(all))
 	for i, g := range all {
 		got[i].name = tidyName(g.name)
-		got[i].pic, got[i].body, got[i].film, got[i].err = g.attachment()
+		got[i].pic, got[i].body, got[i].film, got[i].err = g.attachment(r.machine)
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -582,7 +586,7 @@ var decoding = func() {}
 // attachment reads what was handed to the report: a picture, see picture,
 // or a screen recording, see recording.go. It gives the picture, or the
 // still of the recording, as a PNG, and the recording.
-func (g handed) attachment() (ReportPicture, []byte, []byte, error) {
+func (g handed) attachment(m *engine.Machine) (ReportPicture, []byte, []byte, error) {
 	if g.err != nil {
 		return ReportPicture{}, nil, nil, g.err
 	}
@@ -590,7 +594,7 @@ func (g handed) attachment() (ReportPicture, []byte, []byte, error) {
 		return ReportPicture{}, nil, nil, errTooBig
 	}
 	if reader := sniffRecording(g.data); reader != "" {
-		return g.recording(reader)
+		return g.recording(m, reader)
 	}
 	pic, body, err := g.picture()
 	return pic, body, nil, err

@@ -24,7 +24,7 @@ import (
 //
 // There is no ffmpeg and no llama-server here. They were paths the
 // settings could name, and the app ran whatever they named: the app's own
-// tools are the only ones it runs now, see tool.Find. A settings file
+// tools are the only ones it runs now, see tool.Finder. A settings file
 // that still names one has it read past and dropped on the next save.
 type Settings struct {
 	LLMModel string `json:"llmModel"`
@@ -136,7 +136,11 @@ type store struct {
 	// records is where the training records and the timings of past
 	// searches are kept, for every engine the app makes and every edit
 	// that records. The training folder follows the settings.
-	records  *engine.Records
+	records *engine.Records
+	// machine is what every engine the app makes shares for as long as
+	// the app runs: these files and records, and what was learned about
+	// the machine, see engine.Machine.
+	machine  *engine.Machine
 	settings Settings
 	episodes []string
 	// changed is told when the settings change. It is told under the
@@ -155,7 +159,8 @@ func openStore() *store {
 // openStoreIn is the store whose settings and library are in dir, with
 // everything read and written through files.
 func openStoreIn(files afero.Fs, dir string) *store {
-	s := &store{dir: dir, files: files, records: engine.NewRecords(files, "", ""), settings: defaultSettings()}
+	machine := engine.NewMachine(files)
+	s := &store{dir: dir, files: files, records: machine.Records, machine: machine, settings: defaultSettings()}
 	s.load("settings.json", &s.settings)
 	s.load("library.json", &s.episodes)
 	s.settings.tidy()

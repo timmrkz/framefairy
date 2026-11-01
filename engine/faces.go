@@ -67,16 +67,13 @@ func loadFaceDetector(packet []byte) (*faceDetector, bool) {
 	return d, true
 }
 
-// faceDetector returns the engine's detector, loading it on first use. Nil
-// means face detection is off.
+// faceDetector returns the machine's detector, loading it the first time
+// any job needs it. Nil means face detection is off.
 func (e *Engine) faceDetector() *faceDetector {
-	e.mu.Lock()
-	defer e.mu.Unlock()
 	if e.NoFaces {
 		return nil
 	}
-	if !e.facesLoaded {
-		e.facesLoaded = true
+	e.facesOnce.Do(func() {
 		detector, ok := loadFaceDetector(facefinderCascade)
 		if ok {
 			e.faces = detector
@@ -84,7 +81,7 @@ func (e *Engine) faceDetector() *faceDetector {
 			e.Log.Warn("the face detection data could not be read, so framing " +
 				"falls back to finding the in-focus subject")
 		}
-	}
+	})
 	return e.faces
 }
 

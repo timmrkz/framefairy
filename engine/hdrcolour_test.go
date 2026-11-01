@@ -80,7 +80,7 @@ func TestTheCaptionsOfAnHDRShortAreAtTheReferenceWhite(t *testing.T) {
 // On the real disk: ffmpeg reads the captions file and burns it in.
 func TestACaptionIsBurnedIntoAnHDRShortAtTheReferenceWhite(t *testing.T) {
 	ctx := context.Background()
-	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
 	if err := e.Preflight(ctx); err != nil {
 		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}

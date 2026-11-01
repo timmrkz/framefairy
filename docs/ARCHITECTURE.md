@@ -65,9 +65,10 @@ with the boxes one level down under it.
 | 3 | `updates/`, `notices/` | finding, checking and fetching a newer build, and the licences of what the app is made of | |
 | 4 the engine | `engine/` | every rule about a video: words, clips, edges, windows, captions, crops, rendering, the models, the files of a work folder, the training records | anything about the screen, a binding or a click |
 | 4 | `engine.Project` | the steps one video takes, the same for both front ends | a second way to run a step |
+| 4 | `engine.Machine` | what a program keeps for its whole life and shares with every `Engine` it makes: the files, the records, the `tool.Runner` and `tool.Finder`, and what was learned about the machine, made once in each `main` | what belongs to one job, which stays on its `Engine`, and a rule of its own |
 | 4 | `engine/timed/` | the types every part of the engine uses for a moment of a video: a piece of text with its times, a span, a window, a loudness reading, the 10 ms grid of the sound | a function or a rule, and a type only one part uses |
 | 4 | `engine/runlog/` | the log of a run: timestamped lines in the terminal, the progress line one piece of work can hold, steps with how long they took, and every line and progress as an event, which reaches the app through one `Sink` | a rule of a feature. A job says what happens and the log says it |
-| 4 | `engine/tool/` | finding our own ffmpeg, ffprobe and llama-server, each checked against the sum `make` built in, and running a program as an argument list, stopped once its work is called off, with how it stops held on a `Runner` | anything about a video, and a cache or a seam as a package variable |
+| 4 | `engine/tool/` | finding our own ffmpeg, ffprobe and llama-server, each checked against the sum `make` built in, by a `Finder` each program makes once, and running a program as an argument list, stopped once its work is called off, with how it stops held on a `Runner` | anything about a video, and a cache or a seam as a package variable |
 | 4 | `engine/fileio/` | a path and a file in whatever `afero.Fs` it is handed: where a path really leads, whether a name stays inside its folder, a file replaced in one step, and one edit of a file at a time, inside the program and across programs | anything about a video or a plan, and a cache or a seam as a package variable |
 | 4 | `engine/num/` over `engine/runes/` | numbers rounded, summed, read and written the same on every platform, from JSON values too, and text counted, cut, trimmed and quoted by its characters, and scrubbed when it comes from outside | a rule of a feature, and anything about a file of a video |
 | 5 the frames decoder | `cmd/framefairy-frames/` | turning a video into the frames, sound and captions of the video preview. The engine starts one for each video | anything but decoding. It is a child process |
@@ -98,6 +99,7 @@ waiting for the day the two disagree.
 | what was last chosen in a video, its clip and window | `chosen.json` in its work folder | the app's Go side |
 | the library and the settings | the app's config folder | the app's Go side |
 | the models, notes about running servers, the training records | `~/.framefairy/` | the engine |
+| what was learned about the machine while a program runs: the decoder that works, the encoders and subtitle filter of each ffmpeg, the face detector, the tools already checked | `engine.Machine`, one for each program, in memory | the engine |
 | what runs now, and the lane each job holds or waits for | the job queue, in memory | the app's Go side |
 | the step a job is in, and what it was asked for | its `engine.JobRecord`, on disk and in the job the queue holds, which keeps each record the engine tells it through the job's `engine.Host` | the engine |
 | what is on screen | the interface's stores, and a video's status, clips and coverage in its `EpisodeSession`, `frontend/src/lib/session.svelte.ts`, which keeps the newest `VideoState` | from what Go sends. Today `Episode.svelte` also works out from what changed that a search started, see Not to copy |
@@ -127,11 +129,11 @@ What to do today, and what changes once the issue named is built.
 | do something in the workspace when a video's work moves on | a move of `EpisodeSession` in `frontend/src/lib/session.svelte.ts`, never an effect that keeps the value from before |
 | show the interface a new fact about a video | a field of `VideoState` in `cmd/framefairy-app/videostate.go`, or of what it holds, the status and the clip views, which the session keeps. Never a new event of its own or a poll |
 | tell the window that something about a video changed | `told` on `*FrameFairy`, or the queue's `moved` for a job, which send the video's state, at most four times a second and always after the last change. Nothing else sends it |
-| keep something between two jobs, a cache or a fact about the machine | today the caches that outlive a job are package variables, the way `engine/probed.go` keeps the probes. A new one says why in its pull request, and never comes from a new `Engine` made only to get it. #607 moves them all onto one object a program keeps |
+| keep something between two jobs, a cache or a fact about the machine | a field on `engine.Machine`, in `engine/machine.go`, which a program makes once and hands to every `Engine`. Never a package variable, and never a new `Engine` made only to get it. #607 moves the package variables still left onto it |
 | read a file of a video | through the `afero.Fs` the code was given, with `fileio.SafeChildIn` for a path in a work folder. Not `os`. Once #608 is built, through the video's `Episode` |
 | change a plan | `editPlan` in `engine/edit.go` |
 | start a goroutine that runs code which can panic, like layout of words a person typed | a deferred recover where that work comes in, which turns a panic into that work's error and logs the stack where the work has a log, as `engine/planbuild.go` does. A goroutine that only waits, counts or hands on gets none. A parser of outside bytes has its fuzz target first |
-| say that something went wrong | an error that keeps its kind with `%w`, returned to the caller. The app turns it into a row or a toast, and logs through `theLog`, never `log.Printf`, which forbidigo refuses. An engine the app makes outside a job logs through `engineLog(part, video)` in `cmd/framefairy-app/applog.go`, never to `io.Discard`. Once #607 is built, the one engine the app keeps takes the part and the video with each call |
+| say that something went wrong | an error that keeps its kind with `%w`, returned to the caller. The app turns it into a row or a toast, and logs through `theLog`, never `log.Printf`, which forbidigo refuses. An engine the app makes outside a job logs through `engineLog(part, video)` in `cmd/framefairy-app/applog.go`, never to `io.Discard`. An engine is made for each job and takes its log then, and what outlives the job is on the machine it is handed |
 | add a call between the interface and Go | a method on `*FrameFairy` in the file of its kind in `cmd/framefairy-app/`, and its call in `frontend/src/lib/api.ts`. `bindings_test.go` checks the name and the arguments |
 | give the interface a new type or field | the Go struct and its interface in `frontend/src/lib/api.ts` in the same change. Once #611 is built, generated from the Go struct |
 | add a setting | a field of `Settings` in `cmd/framefairy-app/settings.go`, changed through `UpdateSettings`. What the engine needs from it reaches it through its options |
@@ -168,8 +170,9 @@ which reads this file.
    through the app's `PanicHandler`, and every goroutine of ours that
    reads what nobody checked.
 7. Nothing is learned twice. What outlives a job is kept, not worked out
-   again for each job. Held by the review, and by the design once #607
-   is built.
+   again for each job. Held by `engine.Machine`, which each program
+   makes once and hands to every `Engine`, and by the review for what
+   #607 still has to move onto it.
 8. Every path is judged by where it really leads, inside the library.
    Held by `SafeChild` in `engine/fileio/` and the store's `Known`, and
    their fuzz targets.
@@ -206,10 +209,11 @@ copies what it finds nearby, so these are not the pattern for new code.
 - Rules of the engine in `frontend/src/lib/flow.ts`,
   `frontend/src/lib/rotate.ts` and `frontend/src/lib/room.ts`, #610.
 - The transcript cache in `cmd/framefairy-app/words.go`, #608.
-- A new `engine.NewEngine` for each job or probe, #607.
-- The tools already checked, `checked` in `engine/tool/find.go`, a cache
-  as a package variable, and the sums `make` builds in, `sums` beside it,
-  which four tests set for the whole process, #607.
+- What the engine learns kept in package variables rather than on
+  `engine.Machine`, like the probes in `engine/probed.go`, and the app's
+  own that keep a machine or a finder of their own, `sources` in
+  `cmd/framefairy-app/media.go` and `openPreviews` in
+  `cmd/framefairy-app/frames.go`, #607.
 - The effects in `frontend/src/screens/Episode.svelte` that compare an
   old value with a new one to notice that a search started, `followed`
   and `searchSeen`, the reads of the video's state it asks for after

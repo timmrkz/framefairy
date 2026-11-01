@@ -61,7 +61,7 @@ func (k *keeping) keep(st *store, said string) string {
 	}()
 	// The engine says how long the load took and its parts, and what
 	// went wrong on the way.
-	e := engine.NewEngine(engineLog("model", ""), st.files)
+	e := engine.NewEngine(engineLog("model", ""), st.machine)
 	opts := jobOptions(st, e)
 	started := time.Now()
 	loaded, err := e.KeepModel(context.Background(), opts, filepath.Dir(appLogPath()))

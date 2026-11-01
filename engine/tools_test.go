@@ -17,7 +17,7 @@ import (
 func TestNewEngineTakesItsToolsTheSameWay(t *testing.T) {
 	t.Setenv("FRAMEFAIRY_FFMPEG", "/named/ffmpeg")
 	t.Setenv("FRAMEFAIRY_FFPROBE", "/named/ffprobe")
-	e := NewEngine(runlog.New(os.Stderr, false, false), afero.NewMemMapFs())
+	e := NewEngine(runlog.New(os.Stderr, false, false), NewMachine(afero.NewMemMapFs()))
 	if e.FFmpeg != "/named/ffmpeg" || e.FFprobe != "/named/ffprobe" {
 		t.Errorf("ffmpeg %q, ffprobe %q", e.FFmpeg, e.FFprobe)
 	}
@@ -31,19 +31,20 @@ func TestNewEngineTakesItsToolsTheSameWay(t *testing.T) {
 //
 // On the real disk: llama-server is a program that is found on the disk and run.
 func TestLlamaServerIsFoundTheSameWayAsFfmpeg(t *testing.T) {
+	m := NewMachine(afero.NewMemMapFs())
 	t.Run("a named one is taken as it stands", func(t *testing.T) {
 		t.Setenv("FRAMEFAIRY_LLAMA_SERVER", "/somewhere/else/llama-server")
-		if got := LlamaServerPath(); got != "/somewhere/else/llama-server" {
+		if got, _ := m.serverToRun(""); got != "/somewhere/else/llama-server" {
 			t.Errorf("got %q", got)
 		}
 	})
 
 	t.Run("otherwise nothing, never the search path", func(t *testing.T) {
 		t.Setenv("FRAMEFAIRY_LLAMA_SERVER", "")
-		if got := LlamaServerPath(); got != "" {
+		if got, err := m.serverToRun(""); got != "" || err == nil {
 			t.Errorf("got %q from somewhere other than beside the program", got)
 		}
-		if HasLlamaServer() {
+		if m.HasLlamaServer() {
 			t.Error("said yes with nothing beside the program")
 		}
 	})
@@ -53,7 +54,7 @@ func TestLlamaServerIsFoundTheSameWayAsFfmpeg(t *testing.T) {
 	// disagree about the same machine.
 	t.Run("what the setup asks follows the same path", func(t *testing.T) {
 		t.Setenv("FRAMEFAIRY_LLAMA_SERVER", filepath.Join(t.TempDir(), "not-here"))
-		if HasLlamaServer() {
+		if m.HasLlamaServer() {
 			t.Error("said yes about a file that is not there")
 		}
 	})
@@ -76,14 +77,14 @@ func TestFFprobeIsFoundBesideTheFFmpegChosen(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		e := NewEngine(runlog.New(io.Discard, false, false), disk)
+		e := NewEngine(runlog.New(io.Discard, false, false), NewMachine(disk))
 		e.UseTools(filepath.Join(dir, c.ffmpeg), "")
 		if want := filepath.Join(dir, c.ffprobe); e.FFprobe != want {
 			t.Errorf("beside %s: ffprobe is %s, want %s", c.ffmpeg, e.FFprobe, want)
 		}
 	}
 
-	e := NewEngine(runlog.New(io.Discard, false, false), disk)
+	e := NewEngine(runlog.New(io.Discard, false, false), NewMachine(disk))
 	was := e.FFprobe
 	e.UseTools("", "")
 	if e.FFprobe != was {

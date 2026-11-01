@@ -41,9 +41,10 @@ func TestARenderGoesOnWhenTheEncoderFails(t *testing.T) {
 	e.Log = runlog.New(&log, false, false)
 	calls := filepath.Join(dir, "calls")
 	e.FFmpeg = failingMediaEngine(t, e.FFmpeg, calls, onMac, "")
-	// The encoder Preflight found for this system is let go, so the
-	// render reaches for the Mac's.
-	e.system, e.encoder = "darwin", Encoder{}
+	// The render reaches for the Mac's encoders. What the machine learned
+	// of the ffmpeg Preflight ran is kept by its ffmpeg and system, so this
+	// one is learned afresh.
+	e.system = "darwin"
 
 	clip := info.OnFrames(Clip{ID: "01", Slug: "chip", Segments: []Segment{{Start: 0.5, End: 2.5}}})
 	rs := RenderSettings{OutW: 90, OutH: 160, CRF: 30, Preset: "ultrafast", AudioBitrate: "96k", ScaleUp: true}
@@ -102,7 +103,7 @@ func TestARenderGoesOnWhenTheEncoderHangs(t *testing.T) {
 	pipe, hangs := standin.Hangs(t)
 	e.FFmpeg = failingMediaEngine(t, e.FFmpeg, calls, onMac, pipe)
 	e.stuck = hangs
-	e.system, e.encoder = "darwin", Encoder{}
+	e.system = "darwin"
 
 	clip := info.OnFrames(Clip{ID: "01", Slug: "hung", Segments: []Segment{{Start: 0.5, End: 2.5}}})
 	rs := RenderSettings{OutW: 90, OutH: 160, CRF: 30, Preset: "ultrafast", AudioBitrate: "96k", ScaleUp: true}
@@ -345,7 +346,7 @@ func TestTheProcessorEncodesWhatAShortAsks(t *testing.T) {
 	}
 	t.Parallel()
 	ctx := context.Background()
-	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
 	if err := e.Preflight(ctx); err != nil {
 		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}
@@ -397,7 +398,7 @@ func TestAnFFmpegEndedByASignalSaysSo(t *testing.T) {
 	if err := standin.Write(path, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	e := &Engine{Log: runlog.New(&bytes.Buffer{}, false, false), FFmpeg: path}
+	e := &Engine{Machine: &Machine{}, Log: runlog.New(&bytes.Buffer{}, false, false), FFmpeg: path}
 	code, said, _ := e.runFFmpegWatched(context.Background(), []string{"-i", "episode.mp4", "short.mp4"},
 		"rendering", 2, "", nil, 0)
 	if code == 0 {
@@ -425,7 +426,7 @@ func TestAnFFmpegEndedByASignalSaysSo(t *testing.T) {
 func encoderFailure(t *testing.T) (e *Engine, onMac bool, dir, source string, info SourceInfo) {
 	t.Helper()
 	ctx := context.Background()
-	e = NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
+	e = NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
 	if err := e.Preflight(ctx); err != nil {
 		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}

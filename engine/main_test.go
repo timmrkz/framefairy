@@ -93,7 +93,7 @@ func stubbornServer() {
 // toolsFromThePath names the ffmpeg, ffprobe and llama-server on the search
 // path in the environment, where the programs take a tool from by choice.
 // A program never falls back to the search path by itself, see
-// tool.Find, and a test binary has nothing beside it. One already
+// tool.Finder, and a test binary has nothing beside it. One already
 // named is left as it is.
 func toolsFromThePath() {
 	for env, name := range map[string]string{

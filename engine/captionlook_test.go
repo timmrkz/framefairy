@@ -35,7 +35,7 @@ func TestTheVideoPreviewsCaptionFileIsTheShorts(t *testing.T) {
 		t.Fatalf("making the test episode: %s %s", err, out)
 	}
 	var heard int32
-	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
 	if err := e.Preflight(ctx); err != nil {
 		ffmpegtest.Unusable(t, "%s", err)
 	}

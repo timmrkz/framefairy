@@ -160,7 +160,7 @@ func (s *FrameFairy) Setup(ctx context.Context) SetupState {
 		}
 	}
 	state.HasKey = state.Keys[state.Provider] != ""
-	state.HasServer = engine.HasLlamaServer()
+	state.HasServer = s.store.machine.HasLlamaServer()
 	// A model put there by hand counts too. The catalogue is a convenience,
 	// not the only way in: somebody who already has a .gguf they like keeps
 	// using it.
@@ -526,8 +526,8 @@ type Check struct {
 // look reads the file again and compares it with the SHA-256 built into
 // the app, so a file changed since it last ran is seen here, not only
 // when it is next refused.
-func toolCheck(ctx context.Context, env, name string) Check {
-	s := tool.Inspect(ctx, env, name)
+func toolCheck(ctx context.Context, tools *tool.Finder, env, name string) Check {
+	s := tools.Inspect(ctx, env, name)
 	c := Check{Name: name, Version: s.Version, Path: s.Path, SHA256: s.SHA256}
 	switch {
 	case s.Err != nil:
@@ -546,9 +546,9 @@ func (s *FrameFairy) CheckSetup(ctx context.Context) []Check {
 	opts := set.options()
 	var out []Check
 
-	e := engine.NewEngine(engineLog("setup", ""), s.store.files)
-	ff := toolCheck(ctx, "FRAMEFAIRY_FFMPEG", "ffmpeg")
-	probe := toolCheck(ctx, "FRAMEFAIRY_FFPROBE", "ffprobe")
+	e := engine.NewEngine(engineLog("setup", ""), s.store.machine)
+	ff := toolCheck(ctx, e.Tools, "FRAMEFAIRY_FFMPEG", "ffmpeg")
+	probe := toolCheck(ctx, e.Tools, "FRAMEFAIRY_FFPROBE", "ffprobe")
 	// The file is right and it has to work too: an encoder this machine
 	// can use and the captions filter.
 	if ff.OK && probe.OK {
@@ -600,7 +600,7 @@ func (s *FrameFairy) CheckSetup(ctx context.Context) []Check {
 		return append(out, key)
 	}
 
-	out = append(out, toolCheck(ctx, "FRAMEFAIRY_LLAMA_SERVER", "llama-server"))
+	out = append(out, toolCheck(ctx, s.store.machine.Tools, "FRAMEFAIRY_LLAMA_SERVER", "llama-server"))
 	return append(out, languageCheck(opts))
 }
 

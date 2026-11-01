@@ -37,7 +37,7 @@ func TestAnEpisodeRemembersItHasBeenSearched(t *testing.T) {
 
 	// Clips made by hand search nothing: neither their set nor their
 	// jobs' timings say the episode was searched.
-	p := NewProject(NewEngine(runlog.New(io.Discard, false, false), fsys), source, DefaultOptions())
+	p := NewProject(NewEngine(runlog.New(io.Discard, false, false), NewMachine(fsys)), source, DefaultOptions())
 	hand := PlanFile{Source: "ep.mp4", PlannedWith: PlannedWith{By: ByHand}, Clips: []PlanClip{{ID: "h01",
 		Slug: "hand", Keep: [][2]int{{1, 1}},
 		Segments: []PlanSegment{{Start: 1, End: 20, CropX: "center"}}}}}
@@ -427,7 +427,7 @@ func TestARenderPutsItsShortWhereItsNameSays(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	source := testEpisode(t, "2")
-	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
 	base := DefaultOptions()
 	base.ASRModel = t.TempDir()
 	base.Width, base.Height = 180, 320

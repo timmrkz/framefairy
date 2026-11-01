@@ -25,7 +25,6 @@ import (
 	"framefairy/engine/fileio"
 	"framefairy/engine/num"
 	"framefairy/engine/runes"
-	"framefairy/engine/tool"
 )
 
 // ---------------------------------------------------------------------------
@@ -69,20 +68,14 @@ const DefaultThink = 2048
 // its budget runs out.
 const thinkEnough = "\n\nThat is enough thinking. Time to write the answer.\n"
 
-// LlamaServerPath decides which llama-server to run, the same way ffmpeg is
-// decided: the one named in the environment, or else the one beside the
-// program, checked. See tool.Find. Empty when there is none
-// that may run, and FindLlamaServer says why.
-func LlamaServerPath() string {
-	return tool.Path("FRAMEFAIRY_LLAMA_SERVER", "llama-server")
-}
-
 // serverToRun is the llama-server an ask runs: the one named on the command
 // line with --llm-server, which is somebody's own choice, or else the
-// program's own, checked.
-func serverToRun(named string) (string, error) {
+// program's own, decided the same way ffmpeg is: the one named in the
+// environment, or else the one beside the program, checked. See
+// tool.Finder.
+func (m *Machine) serverToRun(named string) (string, error) {
 	if named == "" {
-		return FindLlamaServer()
+		return m.Tools.Find("FRAMEFAIRY_LLAMA_SERVER", "llama-server")
 	}
 	if _, err := exec.LookPath(named); err != nil {
 		return "", renderErr("%s was not found. Point --llm-server at the binary.", named)
@@ -90,16 +83,11 @@ func serverToRun(named string) (string, error) {
 	return named, nil
 }
 
-// FindLlamaServer is LlamaServerPath with the reason when there is none.
-func FindLlamaServer() (string, error) {
-	return tool.Find("FRAMEFAIRY_LLAMA_SERVER", "llama-server")
-}
-
 // HasLlamaServer says whether a llama-server can be run at all. The setup
 // and the settings ask this before offering the local way, because a model
 // on its own is fifteen gigabytes that cannot answer anything.
-func HasLlamaServer() bool {
-	server, err := FindLlamaServer()
+func (m *Machine) HasLlamaServer() bool {
+	server, err := m.serverToRun("")
 	if err != nil {
 		return false
 	}
@@ -348,7 +336,7 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 	if err := roomForModel(m.Model, contextSize); err != nil {
 		return "", nil, err
 	}
-	server, err := serverToRun(m.Server)
+	server, err := e.serverToRun(m.Server)
 	if err != nil {
 		return "", nil, err
 	}

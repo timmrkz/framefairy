@@ -98,7 +98,7 @@ func TestTooLittleMemorySaysWhatToDo(t *testing.T) {
 	if said := tooLittleMemory(2e9, 1e9, nil).Error(); !strings.Contains(said, "Quit other programs") {
 		t.Errorf("without a server: %q", said)
 	}
-	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), afero.NewMemMapFs())
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(afero.NewMemMapFs()))
 	if got := e.planFailed(context.Background(), err); got.Error() != said {
 		t.Errorf("a search ended on it says %q", got)
 	}
@@ -121,7 +121,7 @@ func TestASearchThatCannotLoadItsModelFailsBeforeListening(t *testing.T) {
 
 	source := testEpisode(t, "40")
 	var heard int32
-	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	base := DefaultOptions()
 	base.Planner, base.LLMURL, base.LLMServer, base.LLMModel = "local", "", "true", os.Args[0]
@@ -136,7 +136,7 @@ func TestASearchThatCannotLoadItsModelFailsBeforeListening(t *testing.T) {
 	}
 	// With the API there is no model to load here.
 	base.Planner = "api"
-	if err := roomBeforeSearch(base, 1800); err != nil {
+	if err := e.roomBeforeSearch(base, 1800); err != nil {
 		t.Errorf("an API search: %v", err)
 	}
 }

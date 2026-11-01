@@ -19,6 +19,7 @@ import (
 //
 // On the real disk: a tool is a program that is found on the disk and run.
 func TestAToolBesideTheProgramWinsOverTheSearchPath(t *testing.T) {
+	t.Parallel()
 	// The shape of a real bundle, so the macOS branch is read on whatever
 	// machine this runs on rather than only on a Mac.
 	root := t.TempDir()
@@ -109,25 +110,41 @@ func TestAToolBesideTheProgramWinsOverTheSearchPath(t *testing.T) {
 	})
 }
 
+// env is an environment of a test's own, handed to a Finder in place of
+// the process's, so the test runs beside the others.
+func env(pairs ...string) func(string) string {
+	return func(name string) string {
+		for i := 0; i+1 < len(pairs); i += 2 {
+			if pairs[i] == name {
+				return pairs[i+1]
+			}
+		}
+		return ""
+	}
+}
+
 // The order: what was named, then what is beside the program, and nothing
 // else.
 func TestTheEnvironmentAlwaysWins(t *testing.T) {
+	t.Parallel()
 	t.Run("a named tool is taken as it stands", func(t *testing.T) {
-		t.Setenv("FRAMEFAIRY_FFMPEG", "/somewhere/else/ffmpeg")
-		if got := Path("FRAMEFAIRY_FFMPEG", "ffmpeg"); got != "/somewhere/else/ffmpeg" {
+		t.Parallel()
+		f := &Finder{named: env("FRAMEFAIRY_FFMPEG", "/somewhere/else/ffmpeg")}
+		if got := f.Path("FRAMEFAIRY_FFMPEG", "ffmpeg"); got != "/somewhere/else/ffmpeg" {
 			t.Errorf("got %q", got)
 		}
 	})
 
-	// Nothing named and nothing beside the test binary, so there is no
+	// Nothing named and nothing beside the program, so there is no
 	// ffmpeg, whatever the search path holds. It used to be left to the
 	// search path, which ran whichever ffmpeg was first on it.
 	t.Run("otherwise nothing, never the search path", func(t *testing.T) {
-		t.Setenv("FRAMEFAIRY_FFMPEG", "")
-		if got := Path("FRAMEFAIRY_FFMPEG", "ffmpeg"); got != "" {
+		t.Parallel()
+		f := &Finder{named: env()}
+		if got := f.Path("FRAMEFAIRY_FFMPEG", "ffmpeg"); got != "" {
 			t.Errorf("got %q from somewhere other than beside the program", got)
 		}
-		if _, err := Find("FRAMEFAIRY_FFMPEG", "ffmpeg"); err == nil {
+		if _, err := f.Find("FRAMEFAIRY_FFMPEG", "ffmpeg"); err == nil {
 			t.Error("no ffmpeg, and no reason given")
 		}
 	})
@@ -136,11 +153,12 @@ func TestTheEnvironmentAlwaysWins(t *testing.T) {
 // The app as it ships takes no program and no model from the
 // environment, see named: the tests and the command line do.
 func TestTheShippedAppTakesNothingFromTheEnvironment(t *testing.T) {
-	t.Setenv("FRAMEFAIRY_FFMPEG", "/somewhere/else/ffmpeg")
-	if got := namedWhen(true, "FRAMEFAIRY_FFMPEG"); got != "" {
+	t.Parallel()
+	given := env("FRAMEFAIRY_FFMPEG", "/somewhere/else/ffmpeg")
+	if got := namedWhen(true, given, "FRAMEFAIRY_FFMPEG"); got != "" {
 		t.Errorf("the shipped app took %q from the environment", got)
 	}
-	if got := namedWhen(false, "FRAMEFAIRY_FFMPEG"); got != "/somewhere/else/ffmpeg" {
+	if got := namedWhen(false, given, "FRAMEFAIRY_FFMPEG"); got != "/somewhere/else/ffmpeg" {
 		t.Errorf("the tests and the command line got %q", got)
 	}
 	if shipped {
@@ -155,23 +173,21 @@ func TestTheShippedAppTakesNothingFromTheEnvironment(t *testing.T) {
 //
 // On the real disk: a tool is a program that is found on the disk and run.
 func TestAToolBesideTheProgramIsCheckedBeforeItRuns(t *testing.T) {
-	t.Setenv("FRAMEFAIRY_FFMPEG", "")
+	t.Parallel()
 	dir := t.TempDir()
 	ffmpeg := filepath.Join(dir, "ffmpeg")
 	if err := standin.Write(ffmpeg, []byte("#!/bin/sh\necho the real one\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	sum := sha256.Sum256([]byte("#!/bin/sh\necho the real one\n"))
-	was := sums
-	t.Cleanup(func() { sums = was })
 
-	sums = ""
-	if _, err := findIn(dir, "FRAMEFAIRY_FFMPEG", "ffmpeg"); err == nil {
+	none := &Finder{dir: dir, named: env()}
+	if _, err := none.Find("FRAMEFAIRY_FFMPEG", "ffmpeg"); err == nil {
 		t.Error("ran a tool no sum was built in for")
 	}
 
-	sums = "ffprobe=00,ffmpeg=" + hex.EncodeToString(sum[:])
-	got, err := findIn(dir, "FRAMEFAIRY_FFMPEG", "ffmpeg")
+	f := &Finder{sums: "ffprobe=00,ffmpeg=" + hex.EncodeToString(sum[:]), dir: dir, named: env()}
+	got, err := f.Find("FRAMEFAIRY_FFMPEG", "ffmpeg")
 	if err != nil || got != ffmpeg {
 		t.Fatalf("the right file was refused: %q, %v", got, err)
 	}
@@ -183,15 +199,15 @@ func TestAToolBesideTheProgramIsCheckedBeforeItRuns(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = os.Chtimes(ffmpeg, later, later)
-	if _, err := findIn(dir, "FRAMEFAIRY_FFMPEG", "ffmpeg"); err == nil {
+	if _, err := f.Find("FRAMEFAIRY_FFMPEG", "ffmpeg"); err == nil {
 		t.Error("ran a tool that changed after it was checked")
 	} else if !strings.Contains(err.Error(), "not the one this program was built with") {
 		t.Errorf("refused for another reason: %v", err)
 	}
 
 	// Named in the environment, it is somebody's own choice and is taken.
-	t.Setenv("FRAMEFAIRY_FFMPEG", ffmpeg)
-	if got, err := findIn(dir, "FRAMEFAIRY_FFMPEG", "ffmpeg"); err != nil || got != ffmpeg {
+	f.named = env("FRAMEFAIRY_FFMPEG", ffmpeg)
+	if got, err := f.Find("FRAMEFAIRY_FFMPEG", "ffmpeg"); err != nil || got != ffmpeg {
 		t.Errorf("a tool named in the environment was refused: %q, %v", got, err)
 	}
 }
@@ -199,6 +215,7 @@ func TestAToolBesideTheProgramIsCheckedBeforeItRuns(t *testing.T) {
 // What the settings say about each tool: the version it says it is,
 // as each of them says it.
 func TestAToolSaysItsVersion(t *testing.T) {
+	t.Parallel()
 	for out, want := range map[string]string{
 		"ffmpeg version n8.1.3 Copyright (c) 2000-2026 the FFmpeg developers\nbuilt with clang": "8.1.3",
 		"ffprobe version n8.1.3 Copyright (c) 2007-2026 the FFmpeg developers":                  "8.1.3",
@@ -218,7 +235,7 @@ func TestAToolSaysItsVersion(t *testing.T) {
 //
 // On the real disk: a tool is a program that is found on the disk and run.
 func TestInspectingAToolReadsItAgain(t *testing.T) {
-	t.Setenv("FRAMEFAIRY_FFMPEG", "")
+	t.Parallel()
 	dir := t.TempDir()
 	ffmpeg := filepath.Join(dir, "ffmpeg")
 	body := []byte("#!/bin/sh\necho 'ffmpeg version n8.1.3 Copyright'\n")
@@ -226,11 +243,9 @@ func TestInspectingAToolReadsItAgain(t *testing.T) {
 		t.Fatal(err)
 	}
 	sum := sha256.Sum256(body)
-	was := sums
-	t.Cleanup(func() { sums = was })
-	sums = "ffmpeg=" + hex.EncodeToString(sum[:])
+	f := &Finder{sums: "ffmpeg=" + hex.EncodeToString(sum[:]), dir: dir, named: env()}
 
-	s := inspectIn(t.Context(), dir, "FRAMEFAIRY_FFMPEG", "ffmpeg")
+	s := f.Inspect(t.Context(), "FRAMEFAIRY_FFMPEG", "ffmpeg")
 	if !s.Checked || s.Err != nil || s.SHA256 != hex.EncodeToString(sum[:]) || s.Version != "8.1.3" {
 		t.Fatalf("the right file read as %+v", s)
 	}
@@ -242,7 +257,7 @@ func TestInspectingAToolReadsItAgain(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = os.Chtimes(ffmpeg, info.ModTime(), info.ModTime())
-	s = inspectIn(t.Context(), dir, "FRAMEFAIRY_FFMPEG", "ffmpeg")
+	s = f.Inspect(t.Context(), "FRAMEFAIRY_FFMPEG", "ffmpeg")
 	if s.Checked || s.Err == nil || s.Version != "" {
 		t.Errorf("a changed file read as %+v", s)
 	}

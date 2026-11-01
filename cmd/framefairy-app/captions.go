@@ -160,7 +160,7 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 		if err == nil {
 			// The short's size as the render takes it, which is what the
 			// caption file is laid out at.
-			e := engine.NewEngine(engineLog("captions", path), st.files)
+			e := engine.NewEngine(engineLog("captions", path), st.machine)
 			o := jobOptions(st, e)
 			drawing := kept.drawing.Typing(typing).Lifted(part)
 			var l engine.CaptionLayer
@@ -242,7 +242,7 @@ func (p *previews) serveWordFrames(st *store, w http.ResponseWriter, r *http.Req
 		}
 		return
 	}
-	e := engine.NewEngine(engineLog("captions", path), st.files)
+	e := engine.NewEngine(engineLog("captions", path), st.machine)
 	frames := e.PreviewWordFrames(ctx, kept.drawing, drafts, source, jobOptions(st, e).RenderSettings())
 	if frames == nil {
 		frames = [][]engine.WordFrame{}

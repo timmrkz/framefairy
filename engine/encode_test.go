@@ -40,7 +40,7 @@ func fakeFFmpeg(t *testing.T, encoders ...string) string {
 
 func encodingEngine(t *testing.T, encoders ...string) *Engine {
 	t.Helper()
-	e := &Engine{Log: runlog.New(io.Discard, false, false), FFmpeg: fakeFFmpeg(t, encoders...)}
+	e := &Engine{Machine: &Machine{}, Log: runlog.New(io.Discard, false, false), FFmpeg: fakeFFmpeg(t, encoders...)}
 	return e
 }
 
