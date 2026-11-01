@@ -495,3 +495,76 @@ within a quarter second.
   name and added no state. The build added both: `movesOn`, with its
   record of every job, and the news a video's sender holds. The first now
   lives on the job, the second is in Where state lives.
+
+## Slice 4, first part, with every rule in Go
+
+### The question
+
+Tim, on 1 November: Go is the back end and the interface the front end,
+they talk through a channel of state with no logic in it, every rule is
+in the engine and Go, and the front end has no rules at all, it asks and
+shows the answer. The part before kept the rule of which job news moves
+the work on in Go and in the session, held to one by a table both read,
+and the moves in `Episode.svelte` decide what the screen does: which
+clip to choose when a search finds clips, where the window moves on, the
+room for windows read again, which failures to tell. Where do those
+decisions live, and how does the interface get them?
+
+### Five simulations
+
+Counted at 9c10e5c. The session makes seven moves. In `Episode.svelte`
+they use nine values the workspace keeps for them, `listedBefore`,
+`pickedBefore`, `shownFirst`, `chosenByFind`, `selected`, `paused`,
+`movingOn`, `madeHere` and `landing`, and call the Go side three times,
+`chosenWindow`, `room` and `source`. The Go side already keeps the clip
+chosen and the window in `chosen.json`, written on every pick through
+`ChooseClip` and `ChooseWindow`, and already decides where the window
+moves on after a search, `ChosenWindow`. `VideoState` has six fields.
+
+1. **Who may know about whom.** The interface knows only what Go sends.
+   Go decides each outcome and puts it in the state: the clip chosen, the
+   window and the room for windows, beside the clips. The interface draws
+   the state it keeps, and a move is a field that changed, not a rule.
+   Crossing the boundary: three fields on `VideoState`. What goes: the
+   seven moves, `movesOn`, the order of a state before its news, the
+   session's waiting moves, and `moves.cases.json`.
+2. **What changes together.** A search's first clip and the choice of it
+   change together, so they are decided together, where the clip is
+   written: the queue hears the plan written, and if nobody chose a clip
+   since the search began, which the Go side knows from `ChooseClip`, it
+   writes the first new clip as chosen. The state read after holds the
+   clip and its choice, so they reach the screen in one step, with no
+   send at once for it and no order to keep.
+3. **Where state lives.** Today the clip chosen lives twice, in the
+   workspace's `selected` and in `chosen.json`, and the four values that
+   say what a search found live only in the workspace. One home:
+   `chosen.json` and the search's job, on the Go side. The workspace
+   sends a pick and draws what the state says is chosen. Whether the
+   video plays is the one value only the workspace has: a clip chosen
+   while it plays is shown, and the playhead goes to it once it is
+   paused, which is how it is drawn, not what is chosen.
+4. **What runs together.** The choice is made on the job's goroutine as
+   the plan is written, under `chosenMu`, and the next state carries it,
+   at most a quarter second later, the same as the clip. Nothing waits on
+   the order of two messages, so neither `sending` nor `later` is needed
+   for it. One send at a time for each video stays, because the states
+   of one video still go out in the order they were read.
+5. **What a test has to build.** A Go test drives a search with the fake
+   recogniser and model: the first clip it writes is chosen in the state
+   sent after it, a clip chosen by hand during the search stays chosen,
+   and the window moves on when it is done. Vitest checks only that the
+   workspace draws what a state says. The walks check the screen. No
+   table both sides read.
+
+### What converges
+
+- Go decides the clip chosen, the window and the room for windows, and
+  sends them in `VideoState`: 1, 2, 3 and 5.
+- The interface draws the newest state, and sends picks and drags. It
+  decides nothing about the work: 1 and 3.
+- `movesOn`, the news sent after its state, the session's waiting moves
+  and `moves.cases.json` go: 1 and 4. One send at a time for each video,
+  and no backlog behind a slow read, stay: 4.
+- Left for the next slice, by the same rule: which failure is told in a
+  toast, once, and the card of a clip made by hand handed to its clip.
+  Both move to Go as fields of the state.
