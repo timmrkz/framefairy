@@ -129,13 +129,15 @@ var ErrNoRoom = errors.New("not enough memory")
 // the one the row of a search shows, so it is two words, and the rest is
 // read on hover.
 func tooLittleMemory(need, free int64, servers []string) error {
-	what := "Quit other programs, or choose a smaller model."
+	said := fmt.Sprintf(". The model needs about %s and %s are free.", inGB(need), inGB(free))
+	way := twoWays(true, said+" Quit other programs, or choose a smaller clip model in the settings.",
+		said+" Quit other programs, or choose a smaller model.")
 	if len(servers) > 0 {
-		what = "Another llama-server holds memory, process " + strings.Join(servers, ", ") +
-			". Quit the program that started it, or stop it with kill " + strings.Join(servers, " ") + "."
+		held := said + " Another llama-server holds memory, process " + strings.Join(servers, ", ") +
+			". Quit the program that started it"
+		way = twoWays(true, held+".", held+", or stop it with kill "+strings.Join(servers, " ")+".")
 	}
-	return fmt.Errorf("%w. The model needs about %s and %s are free. %s",
-		ErrNoRoom, inGB(need), inGB(free), what)
+	return fmt.Errorf("%w%w", ErrNoRoom, way)
 }
 
 // roomBeforeSearch says whether the local model a search will ask fits in

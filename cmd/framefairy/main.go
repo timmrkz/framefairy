@@ -467,7 +467,7 @@ func main() {
 		p.opts.Replan = true
 		_, report, err := e.Compare(ctx, p.opts, p.opts.Compare)
 		if err != nil {
-			log.Error("%s", err)
+			log.Error("%s", engine.ForCommandLine(err))
 			code = 1
 		} else {
 			log.OK("the comparison is in %s", report)

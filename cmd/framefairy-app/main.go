@@ -137,10 +137,7 @@ func main() {
 	})
 	quit := sync.OnceFunc(func() {
 		engine.CloseModels()
-		svc.jobs.shutDown()
-		svc.levels.shutDown()
-		// A build that is ready goes in place once the app is gone.
-		svc.updates.installOnQuit()
+		svc.stopAll()
 	})
 	// What Cmd+Q does, see quit.go. The hook above stays for whatever
 	// ends the app without asking, a signal from the terminal among them.
@@ -391,6 +388,11 @@ type FrameFairy struct {
 	// every one started has returned, whether it deleted what was written
 	// back or gave up, see clearLetGo.
 	clearing sync.WaitGroup
+	// quitting is set under clearMu once the app is on its way out, see
+	// stopAll. From then on a video let go is cleared where it is let go,
+	// since no clearLetGo may start on clearing while it is waited for.
+	clearMu  sync.Mutex
+	quitting bool
 	// link is what became of the last framefairy:// link, waiting for
 	// the settings, see licence.go.
 	link *LicenceLink

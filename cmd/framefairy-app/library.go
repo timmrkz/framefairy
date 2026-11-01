@@ -264,7 +264,14 @@ func (s *FrameFairy) letGoOfRemoved() {
 		s.jobs.forgetEpisode(ep)
 		s.levels.stop(ep)
 		s.forget(ep)
+		s.clearMu.Lock()
+		if s.quitting {
+			s.clearMu.Unlock()
+			s.clearLetGo(ep)
+			continue
+		}
 		s.clearing.Go(func() { s.clearLetGo(ep) })
+		s.clearMu.Unlock()
 	}
 }
 

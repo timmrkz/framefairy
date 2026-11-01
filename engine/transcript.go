@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -436,7 +437,7 @@ func (e *Engine) loadTranscript(ctx context.Context, source string, window timed
 		rec, err := e.OpenRecognizer(modelDir)
 		e.Log.ClearProgress()
 		if err != nil {
-			return fmt.Errorf("%w\n%s", err, ModelHelp(modelDir))
+			return noSpeechModel(modelDir, err)
 		}
 		defer rec.Close()
 		started := time.Now()
@@ -634,8 +635,26 @@ func joinParts(parts [][2]float64) [][2]float64 {
 	return out
 }
 
-// ModelHelp says how to get the speech model.
-func ModelHelp(dir string) string {
+// ErrNoSpeechModel is a speech model folder that lacks a file the model
+// needs, as the recogniser finds when it opens, see asr.Check.
+var ErrNoSpeechModel = errors.New("no speech model")
+
+// NoSpeechModelSaid is how the app says that the speech model is not
+// there, for a search and for a dictation alike.
+const NoSpeechModelSaid = "The speech model is not on this computer. Download it in the settings, under Speech model."
+
+// noSpeechModel is the speech model in dir that would not open, err. One
+// that is not there says so with the way to get it: the settings in the
+// app, a download and --asr-model on the command line. Issue #411.
+func noSpeechModel(dir string, err error) error {
+	if !errors.Is(err, ErrNoSpeechModel) {
+		return err
+	}
+	return twoWays(true, NoSpeechModelSaid, fmt.Sprintf("%v\n%s", err, modelHelp(dir)))
+}
+
+// modelHelp says how to get the speech model on the command line.
+func modelHelp(dir string) string {
 	parent := filepath.Dir(dir)
 	return "  Download it once with:\n" +
 		"    mkdir -p " + tool.ShellQuote(parent) + "\n" +

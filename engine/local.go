@@ -117,20 +117,27 @@ func DefaultLocalModel() (string, error) {
 		return "", err
 	}
 	dir := filepath.Join(home, ".framefairy", "models")
-	models := LocalModelFiles(dir)
+	return onlyModel(dir, LocalModelFiles(dir))
+}
+
+// onlyModel is the one model of models, the files in dir, and says what
+// is wrong when there are none or several.
+func onlyModel(dir string, models []string) (string, error) {
 	switch len(models) {
 	case 1:
 		return models[0], nil
 	case 0:
-		return "", renderErr("no language model found in %s. Download one as docs/INSTALL.md "+
-			"describes, or name the file with --llm-model.", dir)
+		return "", twoWays(true, "No clip model is on this computer. Download one in the settings, under Clip model.",
+			runes.Format("no language model found in %s. Download one as docs/INSTALL.md "+
+				"describes, or name the file with --llm-model.", dir))
 	}
 	names := make([]string, len(models))
 	for i, m := range models {
 		names[i] = filepath.Base(m)
 	}
-	return "", renderErr("several language models are in %s (%s). Choose one with --llm-model.",
-		dir, strings.Join(names, ", "))
+	return "", twoWays(true, "Several clip models are on this computer and none is chosen. Choose one in the settings, under Clip model.",
+		runes.Format("several language models are in %s (%s). Choose one with --llm-model.",
+			dir, strings.Join(names, ", ")))
 }
 
 // LocalModelPath is the model file a name given on the command line means.
@@ -465,17 +472,7 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 			return "", nil, ctx.Err()
 		case <-exited:
 			stop()
-			// Killed while loading is what macOS does when memory runs
-			// out, most often because a model is already loaded by
-			// another llama-server.
-			why := ""
-			if strings.Contains(fmt.Sprint(exitErr), "killed") {
-				why = " The system stopped it, which it does when memory runs out. Another " +
-					"llama-server may be holding a model: quit the app, or find it with " +
-					"pgrep -fl llama-server."
-			}
-			return "", nil, renderErr("%s stopped while loading the model (%v).%s Its output is "+
-				"in %s", server, exitErr, why, filepath.Join(logDir, "llm-server.log"))
+			return "", nil, stoppedLoading(server, exitErr, logDir)
 		case <-ready:
 		case <-lookAgain(500 * time.Millisecond):
 		}
@@ -905,4 +902,21 @@ func localAsk(m LocalModel, r Recipe, messages []chatMessage, units, count,
 		ask["temperature"] = *m.Temperature
 	}
 	return ask, maxTokens
+}
+
+// stoppedLoading is llama-server, server, that ended with exitErr while it
+// loaded the model, its output in logDir. Killed while loading is what
+// macOS does when memory runs out, most often because a model is already
+// loaded by another llama-server.
+func stoppedLoading(server string, exitErr error, logDir string) error {
+	stopped := runes.Format("%s stopped while loading the model (%v).", server, exitErr)
+	output := runes.Format(" Its output is in %s", filepath.Join(logDir, "llm-server.log"))
+	if !strings.Contains(fmt.Sprint(exitErr), "killed") {
+		return renderErr("%s", stopped+output)
+	}
+	const why = " The system stopped it, which it does when memory runs out."
+	return twoWays(false,
+		stopped+why+" Quit other programs, or choose a smaller clip model in the settings."+output,
+		stopped+why+" Another llama-server may be holding a model: quit the app, or find it with "+
+			"pgrep -fl llama-server."+output)
 }
