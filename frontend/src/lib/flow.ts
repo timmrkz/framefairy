@@ -3,6 +3,8 @@
 // it: that is the Go side's, see docs/JOBS.md, and its tests are the path
 // tests in cmd/framefairy-app.
 
+import type { Job } from "./api";
+
 // A piece of a clip, in the episode's own seconds.
 export type Piece = { start: number; end: number };
 
@@ -168,6 +170,14 @@ export function mergeJob<T extends Stamped>(list: T[], got: T): T[] | null {
   out[i] = got;
   return out;
 }
+
+// A job waiting its turn or running.
+export const live = (j: Job | undefined) => j?.state === "running" || j?.state === "queued";
+
+// A job that ended before it was done, interrupted, stopped or failed,
+// which says so where its work was until Continue carries it on.
+export const unfinished = (j: Job | undefined) =>
+  j?.state === "interrupted" || j?.state === "stopped" || j?.state === "failed";
 
 export class Heard {
   private parts: Parts = [];

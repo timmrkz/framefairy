@@ -1021,7 +1021,7 @@ func TestStopTranscribingKeepsTheRecordOfTheJobThatCarriesOn(t *testing.T) {
 	}
 	<-started
 	close(firstGo)
-	if j := ended(first.ID); j.State != JobInterrupted {
+	if j := ended(first.ID); j.State != JobStopped {
 		t.Errorf("Stop transcribing ended the job as %s", j.State)
 	}
 	if rec, ok := record(); !ok || rec.Step == engine.StepStopped {
@@ -1031,7 +1031,7 @@ func TestStopTranscribingKeepsTheRecordOfTheJobThatCarriesOn(t *testing.T) {
 	svc.cancelSteps(second.ID)
 	close(secondGo)
 	j := ended(second.ID)
-	if j.State != JobInterrupted || j.Step != engine.StepStopped {
+	if j.State != JobStopped || j.Step != engine.StepStopped {
 		t.Errorf("Stop transcribing ended the job as %s, %s", j.State, j.Step)
 	}
 	rec, ok := record()

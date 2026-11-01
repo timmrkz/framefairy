@@ -193,7 +193,7 @@ func (s *FrameFairy) restoreJobs(episodes []string) {
 func (s *FrameFairy) markAsideIn(episodes []string) {
 	halted := map[string]bool{}
 	for _, j := range s.jobs.list() {
-		if j.Kind == engine.JobSearch && (j.State == JobInterrupted || j.State == JobFailed) {
+		if j.Kind == engine.JobSearch && j.unfinished() {
 			halted[j.Episode] = true
 		}
 	}

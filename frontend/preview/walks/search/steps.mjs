@@ -1693,7 +1693,7 @@ export const steps = {
       const state = await stateOf();
       if (!back) walk.wrong = "Put it back did not bring back the card that said Stopped";
       else if ((await waiting()) !== marked) walk.wrong = `put back, the range picker has ${await waiting()} marks of clips on their way, not ${marked}`;
-      else if (state !== "interrupted") walk.wrong = `put back, the work of the clip is ${state}, not interrupted`;
+      else if (state !== "stopped") walk.wrong = `put back, the work of the clip is ${state}, not stopped`;
     } else {
       // The time stands still under the hand, see Busy, so the hand
       // goes off the list, and then it runs out.

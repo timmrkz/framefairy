@@ -18,6 +18,7 @@
     type TranscriptFormat,
     errorText,
   } from "./lib/api";
+  import { live } from "./lib/flow";
   import { jobs, nav, shell } from "./lib/state.svelte";
   import { railDot, standing, updates } from "./lib/updates.svelte";
   import { sortEpisodes, type EpisodeOrder } from "./lib/order";
@@ -248,7 +249,6 @@
   // pulses while it runs, the way it does for all work. The store keeps
   // that true from the frame of the click: a start on its way pulses it,
   // and work a stop was pressed for does not, unless other work runs.
-  const live = (j: Job) => j.state === "running" || j.state === "queued";
   function working(path: string): boolean {
     return (
       jobs.isStarting(path, "whole") ||
@@ -662,7 +662,7 @@
     const found = jobs.search(ep.source);
     const search = found?.aside ? undefined : found;
     if (search?.state === "failed") return "err";
-    if (search?.state === "interrupted") return "warn";
+    if (search?.state === "interrupted" || search?.state === "stopped") return "warn";
     if (ep.transcriptStale) return "warn";
     if (ep.plans?.length) return "ok";
     return "";

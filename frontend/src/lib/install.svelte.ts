@@ -5,9 +5,9 @@
 // work alike because they are one thing used twice, never two copies
 // that drift, see ModelCard.svelte.
 import { api, errorText, type Job } from "./api";
+import { live } from "./flow";
 import { jobs } from "./state.svelte";
 
-const live = (j: Job) => j.state === "running" || j.state === "queued";
 
 export class Install {
   // Download pressed and the job not reported yet, so a click shows at

@@ -64,7 +64,7 @@ describe("every clip on its way comes in the same way, whoever proposed it", () 
   test("a clip whose job was cut off or failed stays, still, and carries on with a click", () => {
     let carried = "";
     const cut = job({ id: "c", kind: "clip", state: "interrupted", underway: [{ n: 1, start: 600, end: 600, step: "hearing" }] });
-    const called = job({ id: "s", kind: "clip", state: "interrupted", step: "stopped", underway: [{ n: 1, start: 900, end: 900, step: "stopped" }] });
+    const called = job({ id: "s", kind: "clip", state: "stopped", step: "stopped", underway: [{ n: 1, start: 900, end: 900, step: "stopped" }] });
     const failed = job({ id: "f", kind: "clip", state: "failed", error: "nothing is said after 1:00:00", underway: [{ n: 1, start: 3600, end: 3600, step: "failed" }] });
     const rows = arriving([cut, called, failed], never, (j) => (carried = j.id));
     expect(rows.map((r) => [r.key, r.stopped, r.what])).toEqual([
@@ -81,7 +81,7 @@ describe("every clip on its way comes in the same way, whoever proposed it", () 
 
   test("a clip made by hand that stopped can be removed, and so can a search's, which takes its search", () => {
     const removed: string[] = [];
-    const hand = job({ id: "h", kind: "clip", state: "interrupted", step: "stopped", underway: [{ n: 1, start: 900, end: 900, step: "stopped" }] });
+    const hand = job({ id: "h", kind: "clip", state: "stopped", step: "stopped", underway: [{ n: 1, start: 900, end: 900, step: "stopped" }] });
     const search = job({ id: "s", state: "failed", underway: [{ n: 2, start: 100, end: 120, step: "failed" }] });
     const rows = arriving([hand, search], never, nothing, {
       remove: (j) => removed.push(j.id),
@@ -98,7 +98,7 @@ describe("every clip on its way comes in the same way, whoever proposed it", () 
 
   test("only work that failed is marked failed, so it is said in red", () => {
     const cut = job({ id: "c", state: "interrupted", underway: [{ n: 1, start: 600, end: 600, step: "finding" }] });
-    const called = job({ id: "s", kind: "clip", state: "interrupted", step: "stopped", underway: [{ n: 1, start: 900, end: 900, step: "stopped" }] });
+    const called = job({ id: "s", kind: "clip", state: "stopped", step: "stopped", underway: [{ n: 1, start: 900, end: 900, step: "stopped" }] });
     const failed = job({ id: "f", state: "failed", error: "could not reach Anthropic", underway: [{ n: 1, start: 30, end: 50, step: "failed" }] });
     expect(arriving([cut, called, failed], never, nothing).map((r) => [r.key, !!r.failed])).toEqual([
       ["c/1", false],
@@ -108,7 +108,7 @@ describe("every clip on its way comes in the same way, whoever proposed it", () 
   });
 
   test("a clip made by hand being removed says so, and is Stopped as it was once it is not", () => {
-    const hand = job({ id: "h", kind: "clip", state: "interrupted", step: "stopped", underway: [{ n: 1, start: 900, end: 900, step: "stopped" }] });
+    const hand = job({ id: "h", kind: "clip", state: "stopped", step: "stopped", underway: [{ n: 1, start: 900, end: 900, step: "stopped" }] });
     const away = { spent: 3, together: "away h", onputback: nothing, onend: nothing, onresume: nothing };
     const [row] = arriving([hand], never, nothing, { remove: nothing, away: () => away });
     expect(row.away).toBe(away);

@@ -4,6 +4,7 @@
 // compare it with the next. It is where the video's state Go sends is to
 // be kept, see docs/decisions/2026-10-30-a-videos-state-in-one-session.md.
 import type { Job } from "./api";
+import { live } from "./flow";
 import type { JobStore } from "./state.svelte";
 
 // What the workspace does when the video's work moves on. When one
@@ -29,7 +30,6 @@ export interface WorkMoves {
   rendered(render: Job): void;
 }
 
-const live = (j: Job | undefined) => j?.state === "running" || j?.state === "queued";
 
 export class EpisodeSession {
   // The work asked for in this workspace that is not over yet.

@@ -74,9 +74,8 @@ async function firstSearch(path) {
 function expected(job) {
   if (job && (job.state === "running" || job.state === "queued")) return { head: ["Cancel", "Cancelling"] };
   if (job && job.state === "failed") return { head: ["Continue"], row: "Failed. Click Continue" };
-  if (job && job.state === "interrupted") {
-    return { head: ["Continue"], row: job.step === "stopped" ? "Stopped. Click Continue" : "Interrupted. Click Continue" };
-  }
+  if (job && job.state === "stopped") return { head: ["Continue"], row: "Stopped. Click Continue" };
+  if (job && job.state === "interrupted") return { head: ["Continue"], row: "Interrupted. Click Continue" };
   return { head: ["Search"] };
 }
 
@@ -278,7 +277,7 @@ const gestures = [
       // How the work ended is still there after the app was closed: a
       // search the closing cut off is interrupted, one that stopped or
       // failed stays as it was, and one that was done leaves nothing.
-      const how = (j) => (!j || j.state === "done" || j.state === "cancelled" ? "none" : `${j.state} ${j.step === "stopped" ? "stopped" : ""}`.trim());
+      const how = (j) => (!j || j.state === "done" || j.state === "cancelled" ? "none" : j.state);
       const want =
         !was || was.state === "done" ? "none" : was.state === "cancelled" ? "interrupted" : how(was);
       const job = await searchOf(path);

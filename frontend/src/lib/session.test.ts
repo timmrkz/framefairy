@@ -69,7 +69,7 @@ describe("a video's session", () => {
   test("says a search stopped while it heard has stopped hearing first, then that it is over", () => {
     const { jobs, heard } = session();
     jobs.apply(job("s", "search", "running", 1, { step: "hearing" }));
-    jobs.apply(job("s", "search", "interrupted", 2, { step: "hearing" }));
+    jobs.apply(job("s", "search", "stopped", 2, { step: "stopped" }));
     expect(heard).toEqual(["heard s", "searched s"]);
   });
 
@@ -172,7 +172,7 @@ describe("a video's session", () => {
 
   test("says no failure of a job that ended any other way and was read again as failed", () => {
     const { jobs, heard } = session();
-    for (const state of ["done", "cancelled", "interrupted"]) {
+    for (const state of ["done", "cancelled", "interrupted", "stopped"]) {
       jobs.apply(job(state, "clip", "running", 1));
       jobs.apply(job(state, "clip", state, 2));
       jobs.apply(job(state, "clip", "failed", 3));

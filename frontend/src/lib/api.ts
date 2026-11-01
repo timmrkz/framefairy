@@ -446,14 +446,16 @@ export interface EngineEvent {
   time: string;
 }
 
-// A search or a render that was running when the app last stopped is
-// "interrupted": its record in the work folder says so, and Continue
-// carries it on. See docs/JOBS.md.
-export type JobState = "queued" | "running" | "done" | "failed" | "cancelled" | "interrupted";
+// A job that was running when the app last stopped is "interrupted": its
+// record in the work folder says so, and Continue carries it on. One
+// called off by hand with Cancel or Stop transcribing that keeps what it
+// did is "stopped", and Continue carries it on the same way. See
+// docs/JOBS.md.
+export type JobState = "queued" | "running" | "done" | "failed" | "cancelled" | "interrupted" | "stopped";
 
 // Where a search or a render is: waiting for its turn, hearing the
-// episode, finding clips, or rendering them. A search called off with
-// Cancel is "stopped", and says so the way one cut off does.
+// episode, finding clips, or rendering them. A job called off with
+// Cancel ends in the step "stopped", in its record too.
 export type JobStep =
   | "waiting"
   | "hearing"

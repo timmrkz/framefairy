@@ -985,7 +985,7 @@ export const steps = {
         seen = await nextNews(page, seen);
       }
       await settle(page);
-      if ((await transcription())?.state !== "interrupted") {
+      if ((await transcription())?.state !== "stopped") {
         walk.wrong = `a search asked for while the whole video is transcribed left the transcription ${(await transcription())?.state}, not stopped`;
         return;
       }

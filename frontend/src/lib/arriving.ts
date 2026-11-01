@@ -4,6 +4,7 @@
 // the model named and a clip made by hand with I or O come in the same way,
 // because nothing here asks which it is.
 import { clock, type Job, type JobStep } from "./api";
+import { live, unfinished } from "./flow";
 import { arrivalLine } from "./steps";
 
 export type Arriving = {
@@ -87,8 +88,8 @@ export function arriving(
 ): Arriving[] {
   const out: Arriving[] = [];
   for (const job of jobs) {
-    const running = job.state === "running" || job.state === "queued";
-    const stopped = job.state === "interrupted" || job.state === "failed";
+    const running = live(job);
+    const stopped = unfinished(job);
     if (!running && !stopped) continue;
     for (const clip of job.underway ?? []) {
       const key = `${job.id}/${clip.n}`;
@@ -104,7 +105,7 @@ export function arriving(
           // In the words a search that stopped uses, in its row.
           what: failed
             ? "Failed. Click Continue"
-            : job.step === "stopped"
+            : job.state === "stopped"
               ? "Stopped. Click Continue"
               : "Interrupted. Click Continue",
           // Where it lies, never why it failed: why is said whole in a
