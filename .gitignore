@@ -41,8 +41,10 @@ node_modules/
 *.m4v
 *.mkv
 *.wav
-# Except the one test video, an open GOP that the Mac's own ffmpeg cannot
-# make, see engine/episodeframes_test.go
+# Except the test fixtures, which are committed, see internal/fixtures,
+# and the open GOP that the Mac's own ffmpeg cannot make, see
+# engine/episodeframes_test.go
+!internal/fixtures/testdata/**
 !engine/testdata/open-gop.mp4
 
 # Models
