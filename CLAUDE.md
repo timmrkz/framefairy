@@ -96,14 +96,9 @@ thing belongs. In short:
   work back on the machine either.
 - **A pull request is described the way
   [.github/pull_request_template.md](.github/pull_request_template.md)
-  lays it out:** one or two opening sentences on who saw what was
-  wrong, where, and who tested what, then the root cause, the fix, the
-  proof, how to test it by hand, and what was found along the way. The
-  opening sentences are the summary, so nothing below says what was
-  wrong again. How to test is what Tim reads first, so it is never left
-  out. A change with nothing to see in the app says so and names the
-  test that proves it instead. A short Before and After is no
-  replacement for any of it.
+  lays it out,** short and concrete at the top and as long as it needs
+  in the proof. How to test is what Tim reads first, so it is never left
+  out. A short Before and After is no replacement for any of it.
 - **One self-contained change per pull request**, the way Google's
   [code review guide](https://google.github.io/eng-practices/review/developer/small-cls.html)
   draws it. A pull request is the right size when:
@@ -147,22 +142,16 @@ thing belongs. In short:
   commit of its own named in the description. Only something wrong that
   the pull request did not cause, and that cannot be done now, is
   logged: a bug seen while testing, a review finding that points
-  elsewhere, a larger ask. It becomes a
-  [GitHub issue](https://github.com/timmrkz/framefairy/issues) of its
-  own, with what was seen, where, who found it and what to build, linked
-  in the reply and under Found along the way. It carries one label or
-  more for its kind: `bug`, `feature`, `tests` for tests, walks and CI,
-  `reliability`, `performance`, or `shipping` for getting the app to
-  customers. It also carries one priority, `priority/critical`,
-  `priority/important` or `priority/backlog`, and one size,
-  `size/small`, `size/medium` or `size/large`, as
-  [docs/WORKFLOW.md](docs/WORKFLOW.md#priority-and-size) defines them.
-  Before it is logged, the closed issues are searched as well as the
-  open ones. One whose cause was seen before goes under that cause's
-  `problem` issue, and work on it is work on that cause. Every fix
-  takes the cause away, never only its symptom. See
-  [docs/TRIAGE.md](docs/TRIAGE.md), which also says how the issues are
-  looked over every week.
+  elsewhere and that people using the app can run into, a larger ask. It
+  becomes a [GitHub issue](https://github.com/timmrkz/framefairy/issues)
+  of its own, written and labelled the way
+  [.github/ISSUE_TEMPLATE/issue.md](.github/ISSUE_TEMPLATE/issue.md)
+  lays it out, which also says when an issue is not the answer, and it
+  is linked in the reply and under Found along the way. Every fix takes
+  the cause away, never only its symptom. See
+  [docs/TRIAGE.md](docs/TRIAGE.md), which says how the issues are
+  looked over every week and how a cause that comes back is kept as one
+  problem.
 - **Open work is GitHub issues, never rows in a file.** Every pull
   request once added its row at the end of the same table in
   [docs/GUI-PLAN.md](docs/GUI-PLAN.md), so any two of them conflicted,
