@@ -100,7 +100,7 @@ func main() {
 			app.Event.Emit("video", v)
 		}
 	})
-	svc.jobs.news = svc.told
+	svc.jobs.news = svc.jobMoved
 	svc.listening.say = quietly(func(d Dictation) {
 		if app != nil {
 			app.Event.Emit("dictation", d)

@@ -135,3 +135,85 @@ describe("the work of the clip list", () => {
     expect(jobs.clips("/v.mp4").map((j) => j.state)).toEqual(["running", "failed", "interrupted", "stopped"]);
   });
 });
+
+// A video's state and the news of its jobs travel apart, and the news
+// comes first. Shown at its news, a search was over with its clips still
+// to come and its window drawn back where it was for a frame, and Cancel
+// came back after Cancelling for as long, found by the review of #665.
+// So from a video's first state on, the news of its jobs is shown once a
+// state read after it is, and the end lands with what it left, #513.
+describe("the news of a video's job", () => {
+  test("is shown at once until a state of the video is in", () => {
+    const jobs = new JobStore();
+    jobs.apply(job("running", 1, "search", "s"));
+    jobs.apply(job("done", 2, "search", "s"));
+    expect(jobs.list.map((j) => j.state)).toEqual(["done"]);
+  });
+
+  test("waits for a state read after it, and is shown in the order it was sent", () => {
+    const jobs = new JobStore();
+    const told: string[] = [];
+    jobs.watch((_, after) => told.push(`${after.id} ${after.state}`));
+    jobs.shown("/v.mp4", 1);
+    jobs.apply(job("running", 1, "search", "s"));
+    jobs.apply(job("running", 2, "render", "r"));
+    jobs.apply(job("done", 4, "render", "r"));
+    jobs.apply(job("done", 3, "search", "s"));
+    expect(told).toEqual(["s running", "r running"]);
+    // Read before the render's end.
+    jobs.shown("/v.mp4", 4);
+    expect(told).toEqual(["s running", "r running", "s done"]);
+    jobs.shown("/v.mp4", 5);
+    expect(told).toEqual(["s running", "r running", "s done", "r done"]);
+    expect(jobs.list.map((j) => [j.id, j.state])).toEqual([
+      ["s", "done"],
+      ["r", "done"],
+    ]);
+  });
+
+  test("keeps a stop pressed until the end it waits for is shown", () => {
+    const jobs = new JobStore();
+    jobs.shown("/v.mp4", 1);
+    jobs.apply(job("running", 1, "search", "s"));
+    jobs.stop("/v.mp4", "clips");
+    jobs.apply(job("stopped", 2, "search", "s"));
+    expect([jobs.search("/v.mp4")?.state, jobs.isStopping("/v.mp4", "clips")]).toEqual(["running", true]);
+    jobs.shown("/v.mp4", 3);
+    expect([jobs.search("/v.mp4")?.state, jobs.isStopping("/v.mp4", "clips")]).toEqual(["stopped", false]);
+  });
+
+  test("shows work started at once, carried on too, and what it says after that with its state", () => {
+    const jobs = new JobStore();
+    jobs.shown("/v.mp4", 1);
+    jobs.apply(job("queued", 5, "search", "s"));
+    expect(jobs.search("/v.mp4")?.state).toBe("queued");
+    jobs.apply(job("stopped", 6, "search", "s"));
+    jobs.shown("/v.mp4", 7);
+    jobs.apply(job("running", 8, "search", "s"));
+    expect(jobs.search("/v.mp4")?.state).toBe("running");
+    jobs.apply(job("running", 9, "search", "s"));
+    jobs.apply(job("running", 10, "search", "s"));
+    expect(jobs.list[0].seq).toBe(8);
+    jobs.shown("/v.mp4", 11);
+    expect(jobs.list[0].seq).toBe(10);
+  });
+
+  test("is shown at once when the video leaves the library, because no state of it comes again", () => {
+    const jobs = new JobStore();
+    jobs.shown("/v.mp4", 1);
+    jobs.apply(job("running", 1, "search", "s"));
+    jobs.apply(job("cancelled", 2, "search", "s"));
+    jobs.forget("/v.mp4");
+    expect(jobs.list[0].state).toBe("cancelled");
+    jobs.apply(job("settled", 3, "search", "s"));
+    expect(jobs.list[0].state).toBe("settled");
+  });
+
+  test("of another video does not wait for this video's state", () => {
+    const jobs = new JobStore();
+    jobs.shown("/v.mp4", 1);
+    jobs.apply({ ...job("running", 1, "search", "o"), episode: "/other.mp4" });
+    jobs.apply({ ...job("done", 2, "search", "o"), episode: "/other.mp4" });
+    expect(jobs.list[0].state).toBe("done");
+  });
+});

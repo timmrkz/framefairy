@@ -115,6 +115,43 @@ func TestEachVideosStateIsSentOnItsOwn(t *testing.T) {
 	})
 }
 
+// The state that says a job is over goes out at once, though another
+// went out a moment before, because the window shows the end with it. The
+// send that was due goes out with it, and nothing is left due.
+func TestTheStateThatEndsAJobIsSentAtOnce(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		n := countedNews()
+		n.change("a.mp4")
+		synctest.Wait()
+		time.Sleep(10 * time.Millisecond) //nolint:forbidigo // synctest bubble
+		over := time.Now()
+		// A change due at the end of the wait, then the end.
+		n.change("a.mp4")
+		n.changes.Add(1)
+		n.news.now("a.mp4")
+		synctest.Wait()
+		// And an end with nothing due.
+		n.changes.Add(1)
+		n.news.now("a.mp4")
+		synctest.Wait()
+		time.Sleep(time.Second) //nolint:forbidigo // synctest bubble
+		synctest.Wait()
+		sent, at := n.states()
+		revs := []uint64{}
+		for _, v := range sent {
+			revs = append(revs, v.Rev)
+		}
+		if !slices.Equal(revs, []uint64{1, 3, 4}) {
+			t.Fatalf("sent the states of %v changes", revs)
+		}
+		for i, when := range at[1:] {
+			if !when.Equal(over) {
+				t.Errorf("the end %d was sent %v after it, not at once", i+1, when.Sub(over))
+			}
+		}
+	})
+}
+
 // The jobs, the measuring and the edits all say a video changed, each on
 // a goroutine of its own. The state is still sent once per wait, and the
 // last one sent knows of every change.
@@ -282,7 +319,7 @@ func TestAJobsNewsComesOnceItsVideosStateIsDue(t *testing.T) {
 			sent, _ := n.states()
 			sentAtNews = len(sent)
 		}, nil)
-		q.news = n.change
+		q.news = func(path string, _ bool) { n.change(path) }
 		q.emit(JobUpdate{Job: Job{Episode: "a.mp4"}})
 		if sentAtNews != 2 {
 			t.Errorf("%d states were sent by a mark the job's news asked for, the first and the one the job asked for were due", sentAtNews)
@@ -303,7 +340,7 @@ func heardStates(d *desk) func(path string) VideoState {
 		defer mu.Unlock()
 		last[v.Video] = v
 	})
-	svc.jobs.news = svc.told
+	svc.jobs.news = svc.jobMoved
 	return func(path string) VideoState {
 		sendDue(svc.news)
 		mu.Lock()

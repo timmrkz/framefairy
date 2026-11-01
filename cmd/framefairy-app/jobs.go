@@ -211,14 +211,15 @@ type queue struct {
 	changed wake.Wake
 	// news is told the video whose state a job changed, with its news or
 	// as it heard more of the video, so the video's state is sent to the
-	// window, see videoNews.
-	news func(episode string)
+	// window, see videoNews, and whether the job is over.
+	news func(episode string, over bool)
 }
 
-// moved says a job changed the state of its video.
-func (q *queue) moved(episode string) {
+// moved says a job changed the state of its video, and whether it is
+// over.
+func (q *queue) moved(episode string, over bool) {
 	if q.news != nil && episode != "" {
-		q.news(episode)
+		q.news(episode, over)
 	}
 }
 
@@ -276,7 +277,7 @@ func newQueue(s *store, emit func(JobUpdate), notify func(string)) *queue {
 		// The video's state is due before the job's news goes out, so
 		// whatever hears the news and then waits behind every state due,
 		// a walk's mark, see sendDue, waits for the one this news asks for.
-		q.moved(u.Job.Episode)
+		q.moved(u.Job.Episode, !u.Job.going())
 		if tell != nil {
 			tell(u)
 		}
@@ -1185,7 +1186,7 @@ func (q *queue) runJob(job *Job) {
 		ended = theLog.jobLine(zerolog.ErrorLevel, job).Str("error", failed)
 	}
 	ended.Str("state", string(state)).Int("written", written).Int64("ms", time.Since(started).Milliseconds()).Msg("the job ended")
-	q.moved(job.Episode)
+	q.moved(job.Episode, true)
 	if q.notify != nil {
 		q.notify(job.Episode)
 	}

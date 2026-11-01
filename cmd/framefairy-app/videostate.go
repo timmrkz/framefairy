@@ -81,6 +81,20 @@ func (s *FrameFairy) told(path string) {
 	s.news.changed(path)
 }
 
+// jobMoved says a job changed its video's state. The state that says a
+// job is over goes out at once: the window shows the end with it, and
+// what follows from the end, a clip chosen, the window moved on, a toast,
+// see JobStore.apply in frontend/src/lib/state.svelte.ts. Held to the end
+// of the wait, all of it came up to a quarter second after the work was
+// over.
+func (s *FrameFairy) jobMoved(path string, over bool) {
+	if over {
+		s.news.now(path)
+		return
+	}
+	s.news.changed(path)
+}
+
 // How often a video's state is sent at most while its work goes on.
 const newsEvery = 250 * time.Millisecond
 
@@ -115,7 +129,13 @@ func newVideoNews(read func(string) (VideoState, error), send func(VideoState)) 
 }
 
 // changed says the state of the video at path changed.
-func (n *videoNews) changed(path string) {
+func (n *videoNews) changed(path string) { n.ask(path, false) }
+
+// now says the state of the video at path changed, and sends it at once,
+// the wait or not.
+func (n *videoNews) now(path string) { n.ask(path, true) }
+
+func (n *videoNews) ask(path string, now bool) {
 	if n == nil {
 		return
 	}
@@ -130,9 +150,17 @@ func (n *videoNews) changed(path string) {
 		n.due[path] = t
 	}
 	if t.timer != nil {
+		// The send due goes out at once instead. One that has begun reads
+		// the state after this change, see tell.
+		if now && t.timer.Stop() {
+			t.timer.Reset(0)
+		}
 		return
 	}
 	wait := max(0, time.Until(t.last.Add(newsEvery)))
+	if now {
+		wait = 0
+	}
 	sent := make(chan struct{})
 	t.sends = append(t.sends, sent)
 	t.timer = time.AfterFunc(wait, func() {

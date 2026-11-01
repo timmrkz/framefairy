@@ -270,11 +270,7 @@
   // finds, see docs/JOBS.md. Everything the workspace shows about finding
   // clips comes from it, and the workspace decides nothing about when a
   // search starts or stops. It is undefined when there is nothing to say.
-  // A search that ended is shown as it ran until the session keeps the
-  // state it left, so its end, its clips and the window moving on land in
-  // one step, see EpisodeSession.held.
-  const newest = $derived(jobs.search(path));
-  const search = $derived(newest && newest.id !== session.held?.id ? newest : (session.held ?? newest));
+  const search = $derived(jobs.search(path));
   const searching = $derived(going(search));
   const working = $derived(searching ? search : undefined);
   // The search while it hears the episode. Its progress says how far the
