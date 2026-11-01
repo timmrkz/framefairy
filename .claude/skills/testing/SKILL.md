@@ -443,12 +443,8 @@ thought of. Find that order with these, in this order:
    for them, a film of the screen and snapshots of the page before and
    after each action, with the network. Read what the project records before
    looking for what it left out. The race detector has its
-   report, and `go test -timeout` prints every goroutine. A test that
-   hangs while it waits on another program it started shows only its
-   own side when the runner's timeout ends it. So just before that
-   timeout, the tests write down every program they started and the
-   stack of each, and the log says where the other program stopped.
-   Most flakes are explained there, without running anything. Where the runner keeps
+   report, and `go test -timeout` prints every goroutine. Most flakes are
+   explained there, without running anything. Where the runner keeps
    no trace of a failure yet, that is the first thing to fix. A trace
    is several records of different cost. The calls and the console
    are text the runner already has, and cost next to nothing. A film
