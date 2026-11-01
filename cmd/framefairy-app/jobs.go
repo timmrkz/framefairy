@@ -22,10 +22,10 @@ import (
 
 // Job states.
 const (
-	JobQueued    = "queued"
-	JobRunning   = "running"
-	JobDone      = "done"
-	JobFailed    = "failed"
+	JobQueued  = "queued"
+	JobRunning = "running"
+	JobDone    = "done"
+	JobFailed  = "failed"
 	// JobCancelled is a job called off that nothing in this run of the app
 	// carries on: one still in the queue, a render or a download called
 	// off, or work the app is closing on, which its record brings back as
