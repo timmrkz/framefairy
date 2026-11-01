@@ -122,6 +122,13 @@ type telling struct {
 	// each closed once it has ended, so what waits on the news can tell
 	// that it is all out, see sendDue in bridge_test.go.
 	sends []chan struct{}
+	// sending is held while the state is read and sent, so the states of
+	// a video go out one at a time, in the order they were read. A read
+	// that takes longer than the wait, on a slow machine, had the next one
+	// begin beside it, and the newer state could go out first. A channel
+	// of one, so a send that waits on it is one a synctest bubble sees
+	// waiting.
+	sending chan struct{}
 }
 
 func newVideoNews(read func(string) (VideoState, error), send func(VideoState)) *videoNews {
@@ -146,7 +153,7 @@ func (n *videoNews) ask(path string, now bool) {
 	}
 	t := n.due[path]
 	if t == nil {
-		t = &telling{}
+		t = &telling{sending: make(chan struct{}, 1)}
 		n.due[path] = t
 	}
 	if t.timer != nil {
@@ -189,6 +196,15 @@ func (n *videoNews) tell(path string) {
 	t.timer = nil
 	t.last = time.Now()
 	n.mu.Unlock()
+	t.sending <- struct{}{}
+	defer func() { <-t.sending }()
+	// The app may have quit while the send before this one went out.
+	n.mu.Lock()
+	shut := n.shut
+	n.mu.Unlock()
+	if shut {
+		return
+	}
 	st, err := n.read(path)
 	if errors.Is(err, errNotInLibrary) {
 		// The video left the library, and there is nobody to tell.

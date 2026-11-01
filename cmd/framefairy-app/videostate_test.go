@@ -115,6 +115,49 @@ func TestEachVideosStateIsSentOnItsOwn(t *testing.T) {
 	})
 }
 
+// A video's state that takes longer to read than the wait is still read
+// and sent once at a time, so the states go out in the order they were
+// read. Read side by side, the newer could go first and the older after
+// it, and what kept the last one sent kept the older: the Mac's CI, where
+// reading the state of a video takes longer, saw it in
+// TestPathWhatChangesAVideoSendsItsState.
+func TestAVideosStatesGoOutInTheOrderTheyWereRead(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var changes atomic.Int64
+		slow := make(chan struct{})
+		var reads atomic.Int64
+		var mu sync.Mutex
+		var sent []uint64
+		news := newVideoNews(func(path string) (VideoState, error) {
+			rev := uint64(changes.Load())
+			if reads.Add(1) == 1 {
+				<-slow
+			}
+			return VideoState{Video: path, Rev: rev}, nil
+		}, func(v VideoState) {
+			mu.Lock()
+			defer mu.Unlock()
+			sent = append(sent, v.Rev)
+		})
+		changes.Add(1)
+		news.changed("a.mp4")
+		synctest.Wait()
+		// A change while the first state is still being read, and the wait
+		// after it long over.
+		changes.Add(1)
+		news.changed("a.mp4")
+		time.Sleep(time.Second) //nolint:forbidigo // synctest bubble
+		synctest.Wait()
+		close(slow)
+		synctest.Wait()
+		mu.Lock()
+		defer mu.Unlock()
+		if !slices.Equal(sent, []uint64{1, 2}) {
+			t.Errorf("the states went out as %v, not in the order they were read", sent)
+		}
+	})
+}
+
 // The state that says a job is over goes out at once, though another
 // went out a moment before, because the window shows the end with it. The
 // send that was due goes out with it, and nothing is left due.
