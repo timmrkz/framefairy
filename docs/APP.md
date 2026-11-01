@@ -3567,7 +3567,8 @@ heard and that it is over. macOS Dictation, Siri and the Google
 Assistant do the same, so the pair needs no learning. They are two soft
 sine notes a fifth apart, E5 and B5, made in the window with Web Audio
 rather than played from a file, see `frontend/src/lib/chime.ts`, plan
-row 2.244.
+row 2.244. The pair is one sound started once, so the second note
+follows the first even when a busy machine starts it late.
 
 The app records, not the window, through malgo, see
 `cmd/framefairy-app/listen.go`: WKWebView on macOS would ask for the

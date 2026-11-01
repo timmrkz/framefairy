@@ -34,6 +34,15 @@ export default [
     steps: [["bugs"], ["dictate", "start, answered late"], ["microphone moves"], ["dictate", "button"]],
   },
   {
+    // Issue #654. Two dictation walks on a busy machine heard no start
+    // sound at all: each note was started at a moment of its own, and the
+    // window got to them after they were meant to end. The pair is one
+    // sound now, started once, so it plays whole and in order however
+    // late the window is.
+    name: "The start sound plays both notes in order, however late the window is to start it",
+    steps: [["bugs"], ["dictate", "start, sounded late"], ["dictate", "button"]],
+  },
+  {
     // Plan row 2.189. Tim undid what he typed while he talked, and Cmd+Y
     // did not bring it back: the words that arrived meanwhile were steps
     // of their own, which emptied what there was to redo. They are not

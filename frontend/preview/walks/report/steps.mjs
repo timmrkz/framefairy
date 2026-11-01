@@ -19,13 +19,12 @@ async function sounds(page, from, first, second) {
   await page.evaluate(([from, a, b]) => window.__pair(from, a, b), [from, first, second]);
   return page.evaluate((from) => window.__notes.slice(from), from);
 }
-// inOrder says whether the note near first began no later than the one
-// near second. A busy machine can start both at the same moment, which
-// still sounds both.
+// inOrder says whether the note near first began before the one near
+// second.
 function inOrder(notes, first, second) {
   const a = notes.find((n) => near(n, first));
   const b = notes.find((n) => near(n, second));
-  return a !== undefined && b !== undefined && a.at <= b.at;
+  return a !== undefined && b !== undefined && a.at < b.at;
 }
 
 export const steps = {
@@ -84,6 +83,13 @@ export const steps = {
             super(...a);
             audio = this;
             micOn = Infinity;
+            // Settles once the audio's clock runs, which it does only
+            // after the click that woke it.
+            window.__running = new Promise((done) => {
+              const runs = () => this.state === "running" && done();
+              this.addEventListener("statechange", runs);
+              runs();
+            });
           }
         };
         // The bridge says when a call is answered, see wails-bridge.ts.
@@ -142,6 +148,18 @@ export const steps = {
           const out = connect.call(this, to, ...a);
           if (to instanceof AudioDestinationNode) connect.call(this, tapOf(this.context));
           return out;
+        };
+        // A window that is late to start a sound, for the dictate step's
+        // "sounded late": with window.__late set, every sound starts that
+        // many seconds of the audio's own clock after the moment it was
+        // meant to, the way a busy machine starts it.
+        const start = AudioScheduledSourceNode.prototype.start;
+        AudioScheduledSourceNode.prototype.start = function (when = 0, ...a) {
+          if (window.__late) {
+            const due = Math.max(when, this.context.currentTime) + window.__late;
+            while (this.context.currentTime < due);
+          }
+          return start.call(this, when, ...a);
         };
       });
       // Whether the page asked for the ring when it moved the focus
@@ -1429,6 +1447,8 @@ export const steps = {
   //                    same with the answer to Listen held until the
   //                    start sound is checked, the way a busy machine
   //                    hands it back after the microphone's first news,
+  //                    "start, sounded late" the same with the window
+  //                    starting the start sound half a second late,
   //                    "hearing" waits for more
   //                    to be said and settled, "settled" waits for words
   //                    before a pause to be settled, and a recording
@@ -1481,6 +1501,12 @@ export const steps = {
     // answer that it started waits, see /hold.
     const late = arg === "start, answered late";
     if (late) await control(url, "/hold?call=Listen&gate=shut&answer=1&times=1");
+    // The window starts the start sound later than it means to, by more
+    // than the sound is long. The answer to Listen, which the sound
+    // follows, waits until the sound can play at all, so the lateness is
+    // counted on a clock that runs.
+    const slow = arg === "start, sounded late";
+    if (slow) await control(url, "/hold?call=Listen&gate=shut&answer=1&times=1");
     const before = await page.evaluate(() => window.__notes.length);
     if (!running) await button.click();
     // Stop the moment it is pressed, see the rules on a click.
@@ -1488,6 +1514,10 @@ export const steps = {
     if (!running && said !== "Stop") {
       walk.wrong = `Dictate says "${said}" the frame after it was pressed, not Stop`;
       return;
+    }
+    if (slow) {
+      await page.evaluate(() => window.__running.then(() => (window.__late = 0.5)));
+      await control(url, "/hold?call=Listen&gate=open");
     }
     // The words appear while they are heard, before anything stops. The
     // recording goes on until the app has told words being heard, see
@@ -1523,7 +1553,8 @@ export const steps = {
     }
     kept.notes = await page.evaluate(() => window.__notes.length);
     await watch.step("hearing", s);
-    if (arg === "start" || late) {
+    if (slow) await page.evaluate(() => (window.__late = 0));
+    if (arg === "start" || late || slow) {
       kept.dictating = await page.locator(".telling").evaluate((f) => f.value);
       return;
     }

@@ -22,6 +22,10 @@ const NEXT = 0.075;
 // How loud, as a gain: quiet beside a voice, and a tone the speech model
 // writes nothing down for if the microphone hears it.
 const LOUD = 0.12;
+// How long a note takes to reach LOUD, in seconds, and the gain it falls
+// to by its end.
+const RISE = 0.008;
+const QUIET = 0.0001;
 
 let context: AudioContext | null = null;
 // Counts every wake and every sound, so the rest after the stop sound is
@@ -47,32 +51,39 @@ export function wake() {
 // only after an on, so a microphone that never opened makes no sound. Off
 // lets the sound rest again once the notes have sounded, so nothing holds
 // the speakers between two dictations.
+//
+// The pair is one sound, made whole before it plays and started once, so
+// the second note follows the first however late the window gets to it.
+// Two notes each started at a moment of their own sounded together when
+// the window was late to start them, and not at all when it was later
+// than their end, which a walk heard on a busy machine, #654.
 export function chime(how: "on" | "off") {
   if (!context || (how === "on") === on) return;
   on = how === "on";
   const c = context;
-  const at = c.currentTime + 0.01;
-  const notes = how === "on" ? [LOW, HIGH] : [HIGH, LOW];
-  notes.forEach((f, i) => note(c, f, at + i * NEXT));
-  said(`dictation: the ${how === "on" ? "start" : "stop"} sound played`);
+  const sound = c.createBufferSource();
+  sound.buffer = pair(c, how === "on" ? [LOW, HIGH] : [HIGH, LOW]);
+  sound.connect(c.destination);
   const was = ++played;
-  if (how === "off")
-    setTimeout(
-      () => was === played && c.suspend().catch(() => {}),
-      (0.01 + NEXT + NOTE) * 1000 + 100,
-    );
+  if (how === "off") sound.onended = () => was === played && c.suspend().catch(() => {});
+  sound.start();
+  said(`dictation: the ${how === "on" ? "start" : "stop"} sound played`);
 }
 
-function note(c: AudioContext, f: number, at: number) {
-  const tone = c.createOscillator();
-  const gain = c.createGain();
-  tone.type = "sine";
-  tone.frequency.value = f;
-  // A soft start and a long fall, so it rings rather than clicks.
-  gain.gain.setValueAtTime(0, at);
-  gain.gain.linearRampToValueAtTime(LOUD, at + 0.008);
-  gain.gain.exponentialRampToValueAtTime(0.0001, at + NOTE);
-  tone.connect(gain).connect(c.destination);
-  tone.start(at);
-  tone.stop(at + NOTE + 0.02);
+// pair writes the two notes into one sound, the second NEXT after the
+// first, each with a soft start and a long fall, so it rings rather than
+// clicks.
+function pair(c: AudioContext, notes: number[]): AudioBuffer {
+  const rate = c.sampleRate;
+  const sound = c.createBuffer(1, Math.ceil((NEXT + NOTE) * rate), rate);
+  const d = sound.getChannelData(0);
+  notes.forEach((f, n) => {
+    const from = Math.round(n * NEXT * rate);
+    for (let i = 0; i < NOTE * rate && from + i < d.length; i++) {
+      const t = i / rate;
+      const loud = t < RISE ? (LOUD * t) / RISE : LOUD * (QUIET / LOUD) ** ((t - RISE) / (NOTE - RISE));
+      d[from + i] += loud * Math.sin(2 * Math.PI * f * t);
+    }
+  });
+  return sound;
 }
