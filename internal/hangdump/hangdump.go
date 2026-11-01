@@ -16,6 +16,7 @@ package hangdump
 
 import (
 	"bytes"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -25,11 +26,13 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
 // Margin is how long before the -timeout the programs are written down.
-// sample takes about a second a program and the binary starts a handful.
+// sample takes a second or two a program, and every program is sampled
+// at once.
 const Margin = 30 * time.Second
 
 // BeforeTimeout writes Dump to stderr Margin before this test binary's
@@ -44,36 +47,85 @@ func BeforeTimeout() (stop func()) {
 	if !ok || timeout <= Margin {
 		return func() {}
 	}
+	// Under go test -json, test2json files a line under the last test
+	// that spoke, which has mostly passed by then, and gotestsum shows
+	// no output of a test that passed. So each part of the dump says
+	// first that it belongs to no test.
+	framed := false
+	if v := flag.Lookup("test.v"); v != nil {
+		framed = v.Value.String() == "test2json"
+	}
 	t := time.AfterFunc(timeout-Margin, func() { //nolint:forbidigo // writes down the programs still running before go test's -timeout ends them, #638
-		Dump(os.Stderr, os.Getpid())
+		Dump(os.Stderr, os.Getpid(), framed)
 	})
 	return func() { t.Stop() }
 }
 
+// noTest is the line the testing package writes under go test -json for
+// output that belongs to no test, which test2json files under the
+// package. ^V marks a line of the testing package's own.
+const noTest = "\x16=== NAME  \n"
+
 // Dump writes every program parent started, and the programs they
-// started, with their state, and on a Mac the stack of each.
-func Dump(w io.Writer, parent int) {
-	pids := descendants(parent)
-	fmt.Fprintf(w, "\n== hangdump: the programs process %d started, %d of them, before go test's -timeout, #638\n", parent, len(pids))
-	for _, pid := range pids {
-		state, _ := exec.Command("ps", "-o", "pid=,ppid=,stat=,etime=,time=,command=", "-p", strconv.Itoa(pid)).Output()
-		fmt.Fprintf(w, "\n== process %d: %s", pid, state)
-		if runtime.GOOS == "darwin" {
-			fmt.Fprintf(w, "%s", sample(pid))
+// started, with their state, and on a Mac the stack of each. Each part
+// goes out in one write, so no line of a test lands inside it, and with
+// framed each part starts with the line that says it belongs to no test,
+// for go test -json.
+func Dump(w io.Writer, parent int, framed bool) {
+	var mu sync.Mutex
+	part := func(format string, a ...any) {
+		var b bytes.Buffer
+		if framed {
+			b.WriteString(noTest)
 		}
+		fmt.Fprintf(&b, format, a...)
+		mu.Lock()
+		defer mu.Unlock()
+		_, _ = w.Write(b.Bytes())
 	}
-	fmt.Fprintf(w, "\n== hangdump: end\n")
+
+	pids, err := descendants(parent)
+	said := ""
+	if err != nil {
+		said = fmt.Sprintf("not all of them found: %v\n", err)
+	}
+	part("\n== hangdump: the programs process %d started, %d of them, before go test's -timeout, #638\n%s%s",
+		parent, len(pids), said, states(pids))
+
+	// Every program is sampled at once, so a slow one, or one sample
+	// never comes back from, holds up none of the others.
+	if runtime.GOOS == "darwin" {
+		var wg sync.WaitGroup
+		for _, pid := range pids {
+			wg.Go(func() {
+				part("\n== process %d:\n%s", pid, sample(pid))
+			})
+		}
+		wg.Wait()
+	}
+	part("\n== hangdump: end\n")
 }
 
 // descendants lists the programs parent started, and theirs, parents
-// first.
-func descendants(parent int) []int {
+// first. pgrep says 1 when a program started none, and anything else it
+// says is an error, kept so the dump tells no programs from a pgrep that
+// failed.
+func descendants(parent int) ([]int, error) {
 	var all []int
+	var errs []error
 	next := []int{parent}
 	for len(next) > 0 {
 		pid := next[0]
 		next = next[1:]
-		out, _ := exec.Command("pgrep", "-P", strconv.Itoa(pid)).Output()
+		out, err := exec.Command("pgrep", "-P", strconv.Itoa(pid)).Output()
+		var exit *exec.ExitError
+		if errors.As(err, &exit) && exit.ExitCode() == 1 {
+			continue
+		}
+		if err != nil {
+			errs = append(errs, fmt.Errorf("pgrep -P %d: %w", pid, err))
+			continue
+		}
 		for _, field := range strings.Fields(string(out)) {
 			if child, err := strconv.Atoi(field); err == nil {
 				all = append(all, child)
@@ -81,7 +133,24 @@ func descendants(parent int) []int {
 			}
 		}
 	}
-	return all
+	return all, errors.Join(errs...)
+}
+
+// states is what ps says of every pid, in one call, or why it said
+// nothing.
+func states(pids []int) string {
+	if len(pids) == 0 {
+		return ""
+	}
+	list := make([]string, len(pids))
+	for i, pid := range pids {
+		list[i] = strconv.Itoa(pid)
+	}
+	out, err := exec.Command("ps", "-o", "pid,ppid,stat,etime,time,command", "-p", strings.Join(list, ",")).CombinedOutput()
+	if err != nil {
+		return fmt.Sprintf("%sps: %v\n", out, err)
+	}
+	return string(out)
 }
 
 // sample is the stack of every thread of pid, sampled for a second by

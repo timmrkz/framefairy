@@ -19,6 +19,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io/fs"
 	"net/http"
@@ -38,6 +39,7 @@ import (
 	"framefairy/engine"
 	"framefairy/engine/fileio"
 	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/hangdump"
 )
 
 // desk is the app as a person uses it, over one library.
@@ -327,7 +329,12 @@ func TestMain(m *testing.M) {
 	// falls back to what is in focus, after some 50 milliseconds a frame of
 	// looking. The engine's TestProjectSteps frames with it.
 	os.Setenv("FRAMEFAIRY_NO_FACES", "1")
+	// A test that hangs on the programs it started, the decoder or
+	// ffmpeg, leaves what each of them was doing in the log, issue #638.
+	flag.Parse()
+	stop := hangdump.BeforeTimeout()
 	code := m.Run()
+	stop()
 	if videos.dir != "" {
 		_ = os.RemoveAll(videos.dir)
 	}
