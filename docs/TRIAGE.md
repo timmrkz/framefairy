@@ -97,7 +97,9 @@ Here it does not, see Root causes only above.
   another test, another path or another part of the app.
 - **A problem says** the cause as far as it is known, every fix tried
   so far and why the cause stayed, and what would take the cause away in
-  one place. Its priority is the highest of its incidents.
+  one place, the way
+  [the issue template](../.github/ISSUE_TEMPLATE/issue.md) lays it out.
+  Its priority is the highest of its incidents.
 - **An incident under an open problem is taken up as its problem.** The
   pull request takes the cause away and says `Fixes #N` for each
   incident it ends.

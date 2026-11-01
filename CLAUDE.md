@@ -152,7 +152,9 @@ thing belongs. In short:
   logged: a bug seen while testing, a review finding that points
   elsewhere, a larger ask. It becomes a
   [GitHub issue](https://github.com/timmrkz/framefairy/issues) of its
-  own, with what was seen, where, who found it and what to build, linked
+  own, written the way
+  [.github/ISSUE_TEMPLATE/issue.md](.github/ISSUE_TEMPLATE/issue.md)
+  lays it out, which also says when an issue is not the answer, linked
   in the reply and under Found along the way. It carries one label or
   more for its kind: `bug`, `feature`, `tests` for tests, walks and CI,
   `reliability`, `performance`, or `shipping` for getting the app to
