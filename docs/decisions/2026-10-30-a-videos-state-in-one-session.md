@@ -179,7 +179,18 @@ Tim asked on 1 November for all of step 3 in one pull request.
   past a job's seq was read after that job's news and holds every clip
   the job had said it wrote. An edit's answer, `ClipEntry.Rev`, takes a
   number once the edit is written, and the session takes no state older
-  than it. One clock for the jobs, the states and the edits, where the
+  than it. The video's state is told again after the answer took its
+  number, `answer` in `views.go`, so the state sent after an edit is
+  newer than its answer. Told only before, it could be read first, and
+  the window would drop it, which the review found.
+- A state holds the jobs queued or running and, of those over, the
+  newest of each kind. The queue keeps every job since the app opened,
+  and the news of the older ones reached the window long ago.
+- A job's news goes out once its video's state is due, so a walk that
+  hears the news and asks for a mark sees the state first. The app that
+  closes sends no state once it has stopped, which a walk that opens it
+  again met: its late state was newer than every state of the app
+  opened again. One clock for the jobs, the states and the edits, where the
   workspace had three tickets, `Newest`, one for each read.
 - What tells: every job's news, through the queue's `moved`, the
   loudness measured further, every edit of the clips through
@@ -205,7 +216,8 @@ Measured in a cloud session before it was sent:
   times, from 105 to 150: 60 to read the transcript, 25 to place its
   words on the sound and 35 to make its lines. Four times a second that
   is half a core. So what the transcript says was heard is kept while its
-  file stays as it was, `heardOf` in `engine/heard.go`, and the status
+  file stays as it was, one for each transcript, `heardOf` in
+  `engine/heard.go`, and the status
   then took 0.013 ms, from 0.012 to 0.035. It is a package variable, as
   the caches that outlive a job are until #607 gives them one home.
 - The state of a video of five minutes with one clip and one job was
