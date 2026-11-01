@@ -96,6 +96,17 @@ and `interrupted`, so nothing has to read the step to tell them apart.
 The sidebar gives both the colour of a warning, and a failed search the
 colour of an error.
 
+A job that stopped, was interrupted or failed is **settled** once it is
+taken care of: Continue carried it on with a new job, a new Search or
+Transcribe video took it up, its row was removed, or its video left the
+library. It says nothing more, after a restart neither, because its
+record goes or the new job's takes its place. A job is **cancelled**
+when it is called off and nothing carries it on in this run of the app:
+one still waiting in the queue, a render or a download called off, one
+running when its video is removed, or work the app is closing on, which
+its record brings back as interrupted the next time. Each of the two is a
+state of its own, `settled` and `cancelled`.
+
 **There is no Pause.** Pause and Cancel did nearly the same thing under
 two names, and Pause only while transcribing. What made pausing worth
 having was that it kept what was heard, and every step now keeps what it

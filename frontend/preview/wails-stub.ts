@@ -611,7 +611,7 @@ function baseCovered(): number {
 function searchAt(s: FakeSearch, now = Date.now()) {
   const end = s.to > 0 ? s.to : fullLength;
   if (s.ended) {
-    return { state: s.settled ? "cancelled" : s.ended, step: s.step, covered: s.heardFrom, found: 0, since: 0 };
+    return { state: s.settled ? "settled" : s.ended, step: s.step, covered: s.heardFrom, found: 0, since: 0 };
   }
   // Called off with Cancel, it stops where it is and says so, with
   // Continue, the way the Go side does, after the moment the real one takes
@@ -627,7 +627,7 @@ function searchAt(s: FakeSearch, now = Date.now()) {
   const still = location.search.includes("transcribing");
   const hearFor = still ? Infinity : (Math.max(end - s.heardFrom, 0) / hearsPerSecond) * 1000;
   const covered = still ? s.heardFrom : Math.min(end, s.heardFrom + (since / 1000) * hearsPerSecond);
-  const stoppedState = s.settled ? "cancelled" : "stopped";
+  const stoppedState = s.settled ? "settled" : "stopped";
   if (since < hearFor) {
     return byHand
       ? { state: stoppedState, step: "stopped", covered: Math.max(covered, s.heardFrom), found: 0, since }
@@ -726,7 +726,7 @@ const handTakes = () => (location.search.includes("slowhand") ? 5000 : 3000);
 function handAt(h: FakeHand, now = Date.now()) {
   // Called off, it says so where its clip would have been, the way a
   // search does, after the moment the real one takes to stop.
-  if (h.settled) return { state: "cancelled", step: "", start: h.at, end: h.at, since: 0, share: -1 };
+  if (h.settled) return { state: "settled", step: "", start: h.at, end: h.at, since: 0, share: -1 };
   if (h.cancelledAt !== undefined && now - h.cancelledAt >= 400) {
     return { state: "stopped", step: "stopped", start: h.at, end: h.at, since: 0, share: -1 };
   }

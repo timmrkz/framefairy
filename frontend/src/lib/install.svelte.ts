@@ -21,13 +21,13 @@ export class Install {
   readonly running = $derived(this.job && live(this.job) ? this.job : undefined);
 
   // kind is the job's, "model" for speech and "llm" for the clip model.
-  // settled is told once each time a download ends, so the models are
+  // ended is told once each time a download ends, so the models are
   // read again then and not on every job event, which arrive about once
   // a second while one runs. Made while a component is set up, which is
   // where its effects belong.
   private readonly kind: string;
 
-  constructor(kind: string, settled: () => void) {
+  constructor(kind: string, ended: () => void) {
     this.kind = kind;
     let seen = "";
     $effect(() => {
@@ -37,7 +37,7 @@ export class Install {
       seen = now;
       if (!job || live(job)) return;
       if (job.state === "failed") this.failed = job.error ?? "The download stopped.";
-      settled();
+      ended();
     });
     $effect(() => {
       if (!this.running) this.cancelling = false;

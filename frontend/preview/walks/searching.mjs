@@ -277,7 +277,7 @@ const gestures = [
       // How the work ended is still there after the app was closed: a
       // search the closing cut off is interrupted, one that stopped or
       // failed stays as it was, and one that was done leaves nothing.
-      const how = (j) => (!j || j.state === "done" || j.state === "cancelled" ? "none" : j.state);
+      const how = (j) => (!j || j.state === "done" || j.state === "cancelled" || j.state === "settled" ? "none" : j.state);
       const want =
         !was || was.state === "done" ? "none" : was.state === "cancelled" ? "interrupted" : how(was);
       const job = await searchOf(path);

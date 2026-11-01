@@ -179,6 +179,10 @@ export const live = (j: Job | undefined) => j?.state === "running" || j?.state =
 export const unfinished = (j: Job | undefined) =>
   j?.state === "interrupted" || j?.state === "stopped" || j?.state === "failed";
 
+// A job that still has something to say: on its way, or ended before it
+// was done and not settled yet. One done, cancelled or settled has not.
+export const outstanding = (j: Job | undefined) => live(j) || unfinished(j);
+
 export class Heard {
   private parts: Parts = [];
   private of = "";

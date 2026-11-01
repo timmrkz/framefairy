@@ -44,7 +44,7 @@
     kind,
     // How to start one.
     oninstall,
-    // Called when an install settles, so whoever asked can read again what
+    // Called when an install ends, so whoever asked can read again what
     // is installed.
     onchange,
     // How to remove one, where models can be removed. The setup has
@@ -84,15 +84,15 @@
   const job = $derived(jobs.list.filter((j) => j.kind === kind).at(-1));
   const running = $derived(live(job) ? job : undefined);
 
-  // Read again when an install settles, and not on every job event: the Go
+  // Read again when an install ends, and not on every job event: the Go
   // side sends one about once a second while anything runs, and asking
   // that often would be a call a second for an answer that cannot have
   // changed.
-  let settled = "";
+  let seen = "";
   $effect(() => {
     const now = job ? `${job.id}:${job.state}` : "";
-    if (now === settled) return;
-    settled = now;
+    if (now === seen) return;
+    seen = now;
     if (job && !live(job)) {
       asked = "";
       onchange();

@@ -191,3 +191,80 @@ func split(inside string) []string {
 	}
 	return out
 }
+
+// A job's state crosses the same boundary as a name: Go writes it and the
+// interface reads it, and nothing in either language checks that the two
+// know the same states. #659 and #660 each added one by hand on both
+// sides, issue #606. Every state the queue can set has to be one api.ts
+// names in JobState, and api.ts names no state the queue never sets.
+func TestTheInterfaceKnowsEveryJobState(t *testing.T) {
+	goes, knows := queueStates(t), interfaceStates(t)
+	for state := range goes {
+		if !knows[state] {
+			t.Errorf("the queue sets the state %q, which JobState in api.ts does not name", state)
+		}
+	}
+	for state := range knows {
+		if !goes[state] {
+			t.Errorf("JobState in api.ts names %q, which the queue never sets", state)
+		}
+	}
+}
+
+// The values of the block of constants in jobs.go headed "Job states.".
+func queueStates(t *testing.T) map[string]bool {
+	t.Helper()
+	file, err := parser.ParseFile(token.NewFileSet(), "jobs.go", nil, parser.ParseComments)
+	if err != nil {
+		t.Fatalf("reading jobs.go: %v", err)
+	}
+	out := map[string]bool{}
+	for _, decl := range file.Decls {
+		gen, ok := decl.(*ast.GenDecl)
+		if !ok || gen.Tok != token.CONST || gen.Doc == nil || strings.TrimSpace(gen.Doc.Text()) != "Job states." {
+			continue
+		}
+		for _, spec := range gen.Specs {
+			for _, v := range spec.(*ast.ValueSpec).Values {
+				if lit, ok := v.(*ast.BasicLit); ok && lit.Kind == token.STRING {
+					out[strings.Trim(lit.Value, `"`)] = true
+				}
+			}
+		}
+	}
+	if len(out) < 6 {
+		t.Fatalf("found only %d job states in jobs.go, the parsing is wrong", len(out))
+	}
+	return out
+}
+
+// The states the union JobState in api.ts names.
+//
+// On the real disk: what is read is the interface's own source.
+func interfaceStates(t *testing.T) map[string]bool {
+	t.Helper()
+	const path = "../../frontend/src/lib/api.ts"
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading %s: %v", path, err)
+	}
+	text := string(body)
+	start := strings.Index(text, "export type JobState =")
+	if start < 0 {
+		t.Fatalf("%s has no JobState", path)
+	}
+	end := strings.Index(text[start:], ";")
+	if end < 0 {
+		t.Fatalf("JobState in %s does not end", path)
+	}
+	out := map[string]bool{}
+	for _, part := range strings.Split(text[start+len("export type JobState ="):start+end], "|") {
+		if part = strings.TrimSpace(part); part != "" {
+			out[strings.Trim(part, `"`)] = true
+		}
+	}
+	if len(out) < 6 {
+		t.Fatalf("found only %d job states in %s, the parsing is wrong", len(out), path)
+	}
+	return out
+}

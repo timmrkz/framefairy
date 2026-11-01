@@ -449,9 +449,20 @@ export interface EngineEvent {
 // A job that was running when the app last stopped is "interrupted": its
 // record in the work folder says so, and Continue carries it on. One
 // called off by hand with Cancel or Stop transcribing that keeps what it
-// did is "stopped", and Continue carries it on the same way. See
-// docs/JOBS.md.
-export type JobState = "queued" | "running" | "done" | "failed" | "cancelled" | "interrupted" | "stopped";
+// did is "stopped", and Continue carries it on the same way. One of
+// these, or one that failed, is "settled" once it is taken care of:
+// carried on by a new job, its row removed, or its video taken out of the
+// library. A job called off whose work nothing carries on is
+// "cancelled". See docs/JOBS.md.
+export type JobState =
+  | "queued"
+  | "running"
+  | "done"
+  | "failed"
+  | "cancelled"
+  | "interrupted"
+  | "stopped"
+  | "settled";
 
 // Where a search or a render is: waiting for its turn, hearing the
 // episode, finding clips, or rendering them. A job called off with
