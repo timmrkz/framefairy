@@ -394,32 +394,45 @@ second. A bug report is the same question.
      fails now.
    - Several symptoms after a run of merges often have one cause. Look
      for it before fixing each, or the fixes stack up on each other.
-   - A test that fails now and then fails for a reason: find the event
-     it misses or the order it assumes, with the tools in section 7,
-     in their order. Loading the machine comes last.
+   - A test that passes most of the time and fails now and then has a
+     source of entropy in the test or in its environment. Look for it
+     there first: the event the test misses or the order it assumes,
+     with the tools in section 7, in their order. Loading the machine
+     comes last. The product is suspected only once the trace shows the
+     product itself doing the wrong thing in that order.
    - A vague report of instability, with no case that fails every time,
      is still a report. Look at the design, its concurrency and its order
      of events.
-4. **Decide which of three is wrong:**
-   - **The code.** Fix the code, the test stays as it is.
+4. **Decide what is wrong**, asking of each in this order, and moving
+   on only once the evidence rules it out:
+   - **The environment.** Does it fail only where the test runs, on a
+     CI runner and its virtual hardware, on a machine loaded on purpose,
+     with a stand-in program or a file made for the test? Then the
+     environment is the cause, and the fix is in how the test uses it.
+     The product is not changed for what only the test's environment
+     does.
    - **The test.** It checked something nobody specified, read the page
      before the step had happened, or depended on time. Fix it so it
      checks what matters, on an event.
-   - **The design.** The behaviour the test protects does not serve a
-     person, or the spec contradicts itself, or the code is shaped so the
-     right behaviour cannot be tested without waiting. Tests on a broken
-     design protect the broken design. Say so to the user plainly, log an
-     issue, and fix the design when that is what the change is for. No
-     patches on top: find the root cause, and refactor if that is what it
-     takes.
+   - **The product's assumptions, the design.** The behaviour the test
+     protects does not serve a person, or the spec contradicts itself,
+     or the code is shaped so the right behaviour cannot be tested
+     without waiting. Tests on a broken design protect the broken
+     design. Say so to the user plainly, log an issue, and fix the
+     design when that is what the change is for. No patches on top:
+     find the root cause, and refactor if that is what it takes.
+   - **How the product carries them out, the code.** Fix the code, the
+     test stays as it is.
 5. **Size it.** How big is the difference, and where would a person see
    it? A finding too small to matter is closed as won't fix, with its
    number.
 6. **Look around it.** Where one bug was, try the gestures and states
    next to it. Each new case found gets its own failing test, or its own
    issue when it is outside the change.
-7. **Fix for every machine.** A fix tuned to one machine, its screen, its
-   speed or its system, is a bug on the next machine.
+7. **Fix for every machine people use.** A fix tuned to one machine, its
+   screen, its speed or its system, is a bug on the next machine. A CI
+   runner, a machine loaded on purpose and a stand-in are the test's
+   environment, not machines people use, see step 4.
 
 Never, to get green: loosen a check, raise a timeout, add a sleep or a
 retry, skip, quarantine or remove a test, or change the expected value to

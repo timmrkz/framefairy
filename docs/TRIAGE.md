@@ -14,8 +14,13 @@ A workaround closes its issue and leaves the cause to come back under
 the next one, and nobody sees that it is the same thing again.
 
 When the cause lies outside our code, in a driver, a runner or a tool,
-the cause in our code is what lets it reach the person or the test. That
-is fixed once, in one place, for every path it can come through. When
+what matters is whom it reaches. What reaches only a test, a CI runner's
+virtual hardware, a machine loaded on purpose, a file made for the test,
+is fixed in the test or in how it uses its environment, never in the
+app. What reaches a person is fixed once in our code, in one place, for
+every path it can come through. Evidence that it reaches a person comes
+first: Tim's report or log, or the failure reproduced with real input on
+a machine people use. When
 the cause is not known yet, finding it is the work: the trace first,
 then the order the code assumes, see section 7 of the
 [testing skill](../.claude/skills/testing/SKILL.md). A pull request that
