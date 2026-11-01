@@ -512,6 +512,13 @@ failure belongs in the trace or the product's logs for good.
   annotations and compare its step times with the last runs on the main
   branch. A runner that was never given, or was lost, says so there. A
   failure of ours is ours, whatever change it showed up on.
+- **Every failure seen is written down where it is tracked.** Whoever
+  runs into a failing check, on their own change, on someone else's or
+  on the main branch, looks for the issue that tracks it. When one is
+  open, a comment there gives the run, the commit, the test and what it
+  printed, so every time it happened is in one place when the issue is
+  read again. When none is open, one is opened, the way the project logs
+  its issues. The reply to the user links the comment or the issue.
 - **A manual step to get tests passing is a defect.** A stale build
   rebuilt by hand, a cache cleared by hand: fix the build so the step is
   never needed again.

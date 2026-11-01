@@ -45,4 +45,25 @@ for want in 'title=TestBlank::.*%0A%0A    a_test.go:12: the reason after a blank
 	fi
 done
 
+# A log with a hang dump in it names the hang first, and then no more
+# than nine failures, so the ten GitHub shows still hold all of them. The
+# dump's line is put in the log of the package that ran out of time.
+sed '/^panic: test timed out/i\
+== hangdump: the programs process 4242 started, 1 of them, before go test'"'"'s -timeout' \
+	"$data/gotestsum.txt" >"$work/hung.txt"
+sh "$here/test-failures.sh" "$work/hung.txt" >"$work/hung"
+if head -n 1 "$work/hung" | grep -q '^::error title=A program a test started hung::.*== hangdump' &&
+	[ "$(grep -c '^::error' "$work/hung")" -le 10 ] &&
+	[ "$(tail -n +2 "$work/hung" | sed 's/::.*//')" = "$(head -n 9 "$data/gotestsum.want" | sed 's/::.*//')" ]; then
+	printf 'ok  \t%s\n' "a hang dump is named first"
+else
+	printf 'FAIL\t%s\n' "a hang dump is named first"
+	sed 's/^/\t/' "$work/hung"
+	fail=1
+fi
+grep -q '== hangdump' "$data/gotestsum.txt" "$data/gotest.txt" && {
+	printf 'FAIL\t%s\n' "a log with no hang dump names no hang"
+	fail=1
+}
+
 exit $fail
