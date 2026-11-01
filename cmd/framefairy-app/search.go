@@ -49,7 +49,7 @@ func (s *FrameFairy) search(path string, req engine.PlanRequest, click string, c
 	job := s.jobs.addSteps(path, engine.JobSearch, jobLabel(engine.JobSearch, false), true, func(j *Job) {
 		j.JobRecord.ID, j.From, j.To, j.Count, j.Min, j.click = engine.SearchID, req.From, req.To, req.Count, req.Min, click
 		j.Carried = carried
-	}, func(ctx context.Context, p *engine.Project, turn engine.Turn) (string, error) {
+	}, func(ctx context.Context, p *engine.Project, host engine.Host) (string, error) {
 		// Its window is the video's window, written here, in the search's
 		// own work and so before windowOn below, never after it. Written
 		// once the job was queued, a search that found its clips at once
@@ -57,7 +57,7 @@ func (s *FrameFairy) search(path string, req engine.PlanRequest, click string, c
 		// the fourth review of #458. Not where the job is prepared, which
 		// holds the queue, taken after windowMu everywhere else.
 		s.searchesWindow(path, req)
-		result, err := p.Search(ctx, req, turn)
+		result, err := p.Search(ctx, req, host)
 		if err == nil && ctx.Err() == nil {
 			s.windowOn(path, req)
 		}
@@ -151,8 +151,8 @@ func (s *FrameFairy) render(path string, req engine.RenderRequest, carry *engine
 	}
 	return s.jobs.addSteps(path, engine.JobRender, label, false, func(j *Job) {
 		j.JobRecord.ID, j.Plan, j.Clips = id, req.Plan, append([]string(nil), req.Clips...)
-	}, func(ctx context.Context, p *engine.Project, turn engine.Turn) (string, error) {
-		if err := p.RenderJob(ctx, id, req, carry, turn); err != nil {
+	}, func(ctx context.Context, p *engine.Project, host engine.Host) (string, error) {
+		if err := p.RenderJob(ctx, id, req, carry, host); err != nil {
 			return req.Plan, err
 		}
 		if !req.Preview {
@@ -206,8 +206,8 @@ func (s *FrameFairy) makeClip(path string, req engine.ClipRequest, carry, click 
 	return s.jobs.addSteps(path, engine.JobClip, label, false, func(j *Job) {
 		j.JobRecord.ID, j.At, j.Backward, j.click = id, req.At, req.Backward, click
 		j.Underway = engine.JobRecord{Kind: engine.JobClip, At: req.At, Step: engine.StepWaiting}.Underway()
-	}, func(ctx context.Context, p *engine.Project, turn engine.Turn) (string, error) {
-		return p.MakeClip(ctx, id, req, turn)
+	}, func(ctx context.Context, p *engine.Project, host engine.Host) (string, error) {
+		return p.MakeClip(ctx, id, req, host)
 	})
 }
 

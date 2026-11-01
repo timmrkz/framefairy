@@ -488,7 +488,7 @@ func TestReadingAheadEndsWithTheSearch(t *testing.T) {
 	<-fake.reads
 	cancelled, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := v.p.Search(cancelled, req, nil); !errors.Is(err, ErrCancelled) {
+	if _, err := v.p.Search(cancelled, req, Host{}); !errors.Is(err, ErrCancelled) {
 		t.Fatalf("the cancelled search says %v", err)
 	}
 	// It returns, though the window is not heard.
@@ -606,7 +606,7 @@ func TestASearchOfAWindowStillToBeHeardLoadsTheModelAsItHears(t *testing.T) {
 
 	searched := make(chan error, 1)
 	go func() {
-		_, err := p.Search(context.Background(), PlanRequest{From: 0, To: 40, Count: 1, Min: 1, Max: 30}, nil)
+		_, err := p.Search(context.Background(), PlanRequest{From: 0, To: 40, Count: 1, Min: 1, Max: 30}, Host{})
 		searched <- err
 	}()
 	<-loaded

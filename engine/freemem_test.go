@@ -123,7 +123,7 @@ func TestASearchThatCannotLoadItsModelFailsBeforeListening(t *testing.T) {
 	base.Planner, base.LLMURL, base.LLMServer, base.LLMModel = "local", "", "true", os.Args[0]
 	base.ASRModel = t.TempDir()
 	p := NewProject(e, source, base)
-	_, err := p.Search(context.Background(), PlanRequest{To: 40, Count: 1}, nil)
+	_, err := p.Search(context.Background(), PlanRequest{To: 40, Count: 1}, Host{})
 	if !errors.Is(err, ErrNoRoom) || !strings.Contains(err.Error(), "kill 4534") {
 		t.Fatalf("the search ended on %v", err)
 	}

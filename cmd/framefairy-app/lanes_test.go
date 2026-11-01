@@ -156,7 +156,7 @@ func TestASearchTakesItsTurnByWhereItsModelIs(t *testing.T) {
 			q := newQueue(nil, func(JobUpdate) {}, func(string) {})
 			ctx, cancel := context.WithCancel(context.Background())
 			search := &Job{Kind: "search"}
-			_, found, err := q.turn(search, engine.Options{Planner: c.planner, LLMURL: c.url})(ctx, "finding")
+			_, found, err := q.turn(search, engine.Options{Planner: c.planner, LLMURL: c.url})(ctx, "finding", nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -176,59 +176,102 @@ func TestASearchTakesItsTurnByWhereItsModelIs(t *testing.T) {
 // A turn taken back says the job waits the moment it is, before whoever
 // took it has its turn, while the step still finishes the piece it is in,
 // so the whole video goes on hold on the range picker as Search is
-// pressed and not once its piece is heard, Tim's report of 24 October. A turn let go of as its step ends says
-// nothing of the kind, and neither does a job that is stopped.
+// pressed and not once its piece is heard, Tim's report of 24 October. The
+// engine is told, and writes that the job waits, see engine.Turn. A turn
+// let go of as its step ends says nothing of the kind, and neither does a
+// job that is stopped.
 func TestATurnTakenBackSaysItWaitsAtOnce(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		q := newQueue(nil, func(JobUpdate) {}, func(string) {})
-		step := func(j *Job) string {
-			q.mu.Lock()
-			defer q.mu.Unlock()
-			return j.Step
+		var mu sync.Mutex
+		waited := map[string]int{}
+		waits := func(name string) func() {
+			return func() {
+				mu.Lock()
+				waited[name]++
+				mu.Unlock()
+			}
+		}
+		said := func(name string) int {
+			mu.Lock()
+			defer mu.Unlock()
+			return waited[name]
 		}
 		local := engine.Options{Planner: "local"}
 
 		whole := &Job{Kind: engine.JobTranscribe}
-		_, heard, err := q.turn(whole, local)(context.Background(), engine.StepHearing)
+		_, heard, err := q.turn(whole, local)(context.Background(), engine.StepHearing, waits("whole"))
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, found, err := q.turn(&Job{Kind: engine.JobSearch}, local)(context.Background(), "finding")
+		_, found, err := q.turn(&Job{Kind: engine.JobSearch}, local)(context.Background(), "finding", waits("search"))
 		if err != nil {
 			t.Fatal(err)
 		}
 		// Before the search has said it finds.
-		if got := step(whole); got != engine.StepWaiting {
-			t.Errorf("the whole video taken back by a search that finds says %q", got)
+		if said("whole") != 1 || said("search") != 0 {
+			t.Errorf("the whole video taken back by a search that finds was said to wait %d times, the search %d",
+				said("whole"), said("search"))
 		}
 		heard()
 		found()
 
 		// Let go of as its step ends, it stays in the step it was in.
-		done := &Job{Kind: engine.JobTranscribe}
-		_, let, err := q.turn(done, local)(context.Background(), engine.StepHearing)
+		_, let, err := q.turn(&Job{Kind: engine.JobTranscribe}, local)(context.Background(), engine.StepHearing, waits("done"))
 		if err != nil {
 			t.Fatal(err)
 		}
 		let()
 		synctest.Wait()
-		if got := step(done); got != engine.StepHearing {
-			t.Errorf("a turn let go of says %q", got)
+		if n := said("done"); n != 0 {
+			t.Errorf("a turn let go of was said to wait %d times", n)
 		}
 
 		// Stopped, it is the stop that says what became of it.
 		ctx, stop := context.WithCancel(context.Background())
-		stopped := &Job{Kind: engine.JobTranscribe}
-		_, gone, err := q.turn(stopped, local)(ctx, engine.StepHearing)
+		_, gone, err := q.turn(&Job{Kind: engine.JobTranscribe}, local)(ctx, engine.StepHearing, waits("stopped"))
 		if err != nil {
 			t.Fatal(err)
 		}
 		stop()
 		synctest.Wait()
-		if got := step(stopped); got != engine.StepHearing {
-			t.Errorf("a job stopped says %q", got)
+		if n := said("stopped"); n != 0 {
+			t.Errorf("a job stopped was said to wait %d times", n)
 		}
 		gone()
+	})
+}
+
+// A job whose first turn has to wait says the lane it waits for, not the
+// lane of its kind: a search that waits to hear says Waiting to
+// transcribe, not Waiting to find clips. Its record says it waits from
+// the start, so the engine has nothing new to write, and the queue says
+// the lane itself, found by the review of #655. One that waits after a
+// step says it with the waiting the engine writes.
+func TestAJobWaitingForItsFirstTurnSaysTheLaneItWaitsFor(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		q := newQueue(nil, func(JobUpdate) {}, func(string) {})
+		_, busy := given(t, q.lanes, LaneHearing, plainTurn)
+		search := &Job{Kind: engine.JobSearch, Lane: laneFor(engine.JobSearch)}
+		search.Step = engine.StepWaiting
+		told := make(chan string, 1)
+		got := make(chan func(), 1)
+		go func() {
+			_, release, err := q.turn(search, engine.Options{Planner: "local"})(t.Context(), engine.StepHearing, func() {
+				q.mu.Lock()
+				told <- search.Lane
+				q.mu.Unlock()
+			})
+			if err == nil {
+				got <- release
+			}
+		}()
+		waits(t, got, "the search while the lane of hearing is busy")
+		if lane := <-told; lane != LaneHearing {
+			t.Errorf("a search waiting to hear says it waits for the lane %q", lane)
+		}
+		busy()
+		comes(t, got, "the search once the lane of hearing is free")()
 	})
 }
 
@@ -243,13 +286,13 @@ func TestASearchHandsHearingOnToFinding(t *testing.T) {
 		q := newQueue(nil, func(JobUpdate) {}, func(string) {})
 		local := engine.Options{Planner: "local"}
 		search := q.turn(&Job{Kind: engine.JobSearch}, local)
-		_, heard, err := search(context.Background(), engine.StepHearing)
+		_, heard, err := search(context.Background(), engine.StepHearing, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
 		whole := make(chan func(), 1)
 		go func() {
-			if _, release, err := q.turn(&Job{Kind: engine.JobTranscribe}, local)(t.Context(), engine.StepHearing); err == nil {
+			if _, release, err := q.turn(&Job{Kind: engine.JobTranscribe}, local)(t.Context(), engine.StepHearing, nil); err == nil {
 				whole <- release
 			}
 		}()
@@ -259,7 +302,7 @@ func TestASearchHandsHearingOnToFinding(t *testing.T) {
 		_, busy := given(t, q.lanes, LaneFinding, plainTurn)
 		found := make(chan func(), 1)
 		go func() {
-			if _, release, err := search(t.Context(), "finding"); err == nil {
+			if _, release, err := search(t.Context(), "finding", nil); err == nil {
 				found <- release
 			}
 		}()

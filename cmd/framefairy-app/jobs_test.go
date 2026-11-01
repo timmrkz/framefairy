@@ -987,7 +987,7 @@ func TestStopTranscribingKeepsTheRecordOfTheJobThatCarriesOn(t *testing.T) {
 	transcribe := func(letGo chan struct{}) Job {
 		return svc.jobs.addSteps(ep, engine.JobTranscribe, "Transcribe whole video", true, func(j *Job) {
 			j.JobRecord.ID = engine.TranscribeID
-		}, func(ctx context.Context, p *engine.Project, turn engine.Turn) (string, error) {
+		}, func(ctx context.Context, p *engine.Project, host engine.Host) (string, error) {
 			rec := engine.JobRecord{ID: engine.TranscribeID, Kind: engine.JobTranscribe, Step: engine.StepHearing}
 			if err := engine.WriteJob(svc.store.files, ep, rec); err != nil {
 				return "", err
@@ -1030,11 +1030,18 @@ func TestStopTranscribingKeepsTheRecordOfTheJobThatCarriesOn(t *testing.T) {
 
 	svc.cancelSteps(second.ID)
 	close(secondGo)
-	if j := ended(second.ID); j.State != JobInterrupted || j.Step != engine.StepStopped {
+	j := ended(second.ID)
+	if j.State != JobInterrupted || j.Step != engine.StepStopped {
 		t.Errorf("Stop transcribing ended the job as %s, %s", j.State, j.Step)
 	}
-	if rec, ok := record(); !ok || rec.Step != engine.StepStopped {
+	rec, ok := record()
+	if !ok || rec.Step != engine.StepStopped {
 		t.Errorf("after Stop transcribing the record is %+v, there %v", rec, ok)
+	}
+	// The window is told the record that was written, stopped at the same
+	// moment, found by the review of #655.
+	if n := len(rec.Steps); n == 0 || len(j.Steps) != n || !j.Steps[n-1].From.Equal(rec.Steps[n-1].From) {
+		t.Errorf("the window was told the steps %+v, the record says %+v", j.Steps, rec.Steps)
 	}
 }
 
@@ -1105,5 +1112,79 @@ func TestAJobReachesTheWindowWithEverythingItsRecordSays(t *testing.T) {
 	}
 	for kind := range want {
 		t.Errorf("no %s was sent", kind)
+	}
+}
+
+// The window is told the step a job is in by the engine's record, the
+// only place it is written, issue #606. A render that is done is in no
+// step, and one that failed says failed, the step its record says, where
+// the window once kept the step it failed in while the record said
+// failed. Each step is told with the lane it is in, and the record the
+// window has is the engine's own, with when each step began. A job that
+// ended is told so with the record it ended with, never running in no
+// step, which the window reads as waiting, found by the review of #655.
+func TestTheWindowIsToldTheStepTheEngineWrites(t *testing.T) {
+	s, eps := memoryLibrary(t, "talk.mp4")
+	var mu sync.Mutex
+	var heard []Job
+	s.jobs = newQueue(s.store, func(u JobUpdate) {
+		mu.Lock()
+		heard = append(heard, u.Job)
+		mu.Unlock()
+	}, func(string) {})
+	logJobsOnFailure(t, s.jobs)
+	plan := filepath.Join(engine.WorkDir(eps[0]), "logs", "clips-0-60.json")
+	render := func(clips, done []string) Job {
+		carry := &engine.JobRecord{ID: engine.NewRenderID(), Kind: engine.JobRender, Plan: plan, Done: done}
+		req := engine.RenderRequest{Plan: plan, Clips: clips}
+		job := s.jobs.addSteps(eps[0], engine.JobRender, "Render", false, nil,
+			func(ctx context.Context, p *engine.Project, host engine.Host) (string, error) {
+				return plan, p.RenderJob(ctx, carry.ID, req, carry, host)
+			})
+		s.jobs.untilNoneGoing()
+		return job
+	}
+	told := func(id string) (steps []string, last Job) {
+		mu.Lock()
+		defer mu.Unlock()
+		news := slices.Clone(heard)
+		slices.SortFunc(news, func(a, b Job) int { return int(a.Seq) - int(b.Seq) })
+		for _, j := range news {
+			if j.ID != id {
+				continue
+			}
+			if j.Step == engine.StepRendering && j.Lane != LaneRendering {
+				t.Errorf("%s was told rendering in the lane %q", id, j.Lane)
+			}
+			if j.going() && (j.Step == "" || j.Step == engine.StepFailed) {
+				t.Errorf("%s was told it is %s in the step %q", id, j.State, j.Step)
+			}
+			if len(steps) == 0 || steps[len(steps)-1] != j.Step {
+				steps = append(steps, j.Step)
+			}
+			last = j
+		}
+		return steps, last
+	}
+
+	// Every clip already rendered, so it is done without ffmpeg.
+	done := render([]string{"a"}, []string{"a"})
+	steps, last := told(done.ID)
+	if got := strings.Join(steps, ","); got != "waiting,rendering," || last.State != JobDone {
+		t.Errorf("a render that was done was told the steps %q and ended %s", got, last.State)
+	}
+	if last.Asked.IsZero() || len(last.Steps) != 2 {
+		t.Errorf("a render that was done has the record %+v", last.JobRecord)
+	}
+
+	// A clip of a plan that is not there fails as it renders.
+	failed := render([]string{"b"}, nil)
+	steps, last = told(failed.ID)
+	if got := strings.Join(steps, ","); got != "waiting,rendering,failed" || last.State != JobFailed || last.Error == "" {
+		t.Errorf("a render that failed was told the steps %q and ended %s, %q", got, last.State, last.Error)
+	}
+	if recs := engine.ReadJobs(s.store.files, eps[0]); len(recs) != 1 || recs[0].Step != last.Step ||
+		len(recs[0].Steps) != len(last.Steps) {
+		t.Errorf("the window was told %+v, the record on disk is %+v", last.JobRecord, recs)
 	}
 }
