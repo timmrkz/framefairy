@@ -49,7 +49,7 @@ func levelsLibrary(t *testing.T, n int) (*FrameFairy, []string, *atomic.Int64) {
 	told := &atomic.Int64{}
 	s := &FrameFairy{store: st}
 	s.jobs = newQueue(st, func(JobUpdate) {}, func(string) {})
-	s.levels = newMeasuring(s.store.files, func(string) { told.Add(1) })
+	s.levels = newMeasuring(s.store.machine, func(string) { told.Add(1) })
 	t.Cleanup(s.levels.shutDown)
 	return s, paths, told
 }
@@ -82,7 +82,7 @@ func measured(t *testing.T, s *FrameFairy, path string) {
 // On the real disk: lumberjack writes the log and knows only the disk.
 func TestAMeasuringThatGoesWrongIsInTheAppsLog(t *testing.T) {
 	_, read := testLog(t)
-	m := newMeasuring(afero.NewMemMapFs(), func(string) { panic("a waveform nobody drew before") })
+	m := newMeasuring(engine.NewMachine(afero.NewMemMapFs()), func(string) { panic("a waveform nobody drew before") })
 	t.Cleanup(m.shutDown)
 	path := "/home/tim/videos/gone.mp4"
 	// Every slot is taken until the test holds the measuring, so it

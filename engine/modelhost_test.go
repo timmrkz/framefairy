@@ -91,7 +91,7 @@ func useStandIn(t *testing.T) *standIn {
 }
 
 func quietEngine() *Engine {
-	return NewEngine(runlog.New(io.Discard, false, false), afero.NewMemMapFs())
+	return NewEngine(runlog.New(io.Discard, false, false), NewMachine(afero.NewMemMapFs()))
 }
 
 var gemma = LocalModel{Model: "gemma"}

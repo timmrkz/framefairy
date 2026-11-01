@@ -147,7 +147,7 @@ func TestProjectSteps(t *testing.T) {
 	rec := &recorder{}
 	log := runlog.New(&bytes.Buffer{}, false, false)
 	log.SetSink(rec.sink)
-	e := NewEngine(log, disk)
+	e := NewEngine(log, NewMachine(disk))
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	// The records of every episode on a machine go in one folder. This
 	// test counts them, so it gets records of its own.
@@ -345,7 +345,7 @@ func TestProjectReportsErrors(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "2")
 	log := runlog.New(&bytes.Buffer{}, false, false)
-	e := NewEngine(log, disk)
+	e := NewEngine(log, NewMachine(disk))
 	e.OpenRecognizer = func(string) (Recognizer, error) {
 		return nil, errors.New("no model here")
 	}
@@ -376,7 +376,7 @@ func TestAFailedStepSaysWhatWentWrong(t *testing.T) {
 	source := testEpisode(t, "20")
 	broken := errors.New("the speech model is broken")
 	var logged bytes.Buffer
-	e := NewEngine(runlog.New(&logged, false, false), disk)
+	e := NewEngine(runlog.New(&logged, false, false), NewMachine(disk))
 	e.OpenRecognizer = func(string) (Recognizer, error) { return nil, broken }
 	base := DefaultOptions()
 	base.ASRModel = t.TempDir()

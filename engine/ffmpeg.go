@@ -14,10 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
-
-	"github.com/spf13/afero"
 
 	"framefairy/engine/fileio"
 	"framefairy/engine/num"
@@ -68,25 +65,17 @@ type APICalls struct {
 	Spent    float64
 }
 
-// Engine holds everything a run shares: the binaries it calls, the log it
-// writes to and what it has spent. One Engine per run keeps two runs in the
-// same process, as a GUI will have, from stepping on each other.
+// Engine is one job: the log it writes to, the binaries it calls, the
+// switches of its run and what it has spent. What outlives the job is on
+// its Machine, which every engine of a program shares. One Engine per job
+// keeps two jobs in the same process, as the app has, from stepping on
+// each other.
 type Engine struct {
+	*Machine
+
 	Log     *runlog.Log
 	FFmpeg  string
 	FFprobe string
-	// Runner runs ffmpeg, ffprobe and the other programs, and says how a
-	// program whose work is called off is stopped. A test sets its own
-	// stop on its own engine.
-	Runner tool.Runner
-
-	// Files is where the files of episodes are read and written, the real
-	// disk in the programs, see files.go.
-	Files afero.Fs
-	// Records is where the training records and the timings of past
-	// searches are kept, on Files in the default places unless the
-	// program hands it its own, see records.go.
-	Records *Records
 
 	// SkipCaptions renders without burning in captions.
 	SkipCaptions bool
@@ -105,14 +94,6 @@ type Engine struct {
 	// WantEncoder names the video encoder instead of picking one, for a
 	// machine whose ffmpeg is unusual and for comparing two on one clip.
 	WantEncoder string
-
-	// softDecode is set once decoding through the system's own video
-	// decoder has failed on this machine, and every decode after it is
-	// done on the processor.
-	softDecode atomic.Bool
-	// decoders holds, per episode file, which decoder framing was found to
-	// use, so it is looked up and reported once.
-	decoders sync.Map
 
 	// checkpointEvery is how often a transcription saves what it has, and
 	// levelsReads how many reads of the sound apart the loudness measure
@@ -145,24 +126,17 @@ type Engine struct {
 	// an engine for each, see runJob in cmd/framefairy-app/jobs.go, and the
 	// command line runs one job at a time. A second hearing on the same
 	// engine at once would take the first one's whole.
-	hearingWhole     float64
-	encoder          Encoder
-	hdrEncoder       Encoder
-	subtitleTemplate string
-	faces            *faceDetector
-	facesLoaded      bool
+	hearingWhole float64
 }
 
-// NewEngine makes an engine with the tools it calls: the ones named in the
-// environment, or else the ones beside the program, checked. See
-// tool.Find. A tool that may not run is left empty, and Preflight says
-// why.
-func NewEngine(log *runlog.Log, files afero.Fs) *Engine {
-	return &Engine{Log: log,
-		Files:   files,
-		Records: NewRecords(files, "", ""),
-		FFmpeg:  tool.Path("FRAMEFAIRY_FFMPEG", "ffmpeg"),
-		FFprobe: tool.Path("FRAMEFAIRY_FFPROBE", "ffprobe"),
+// NewEngine makes an engine for one job on the program's machine, with the
+// tools it calls: the ones named in the environment, or else the ones
+// beside the program, checked. See tool.Finder. A tool that may not run is
+// left empty, and Preflight says why.
+func NewEngine(log *runlog.Log, m *Machine) *Engine {
+	return &Engine{Machine: m, Log: log,
+		FFmpeg:  m.Tools.Path("FRAMEFAIRY_FFMPEG", "ffmpeg"),
+		FFprobe: m.Tools.Path("FRAMEFAIRY_FFPROBE", "ffprobe"),
 		NoFaces: os.Getenv("FRAMEFAIRY_NO_FACES") != ""}
 }
 
@@ -395,18 +369,19 @@ const noLibassHelp = "this ffmpeg was built without libass, so it cannot burn in
 // SubtitleFilter works out how this ffmpeg wants a subtitle file named,
 // once for as long as the ffmpeg stays as it is, see probed.go.
 func (e *Engine) SubtitleFilter(ctx context.Context) (string, error) {
-	e.mu.Lock()
-	template := e.subtitleTemplate
-	e.mu.Unlock()
+	learned := e.learnedFor()
+	learned.mu.Lock()
+	template := learned.subtitleTemplate
+	learned.mu.Unlock()
 	if template != "" {
 		return template, nil
 	}
 	key, keep := keyFor("subtitle filter", e.FFmpeg, "")
 	if keep {
 		if template, ok := recall[string](key); ok {
-			e.mu.Lock()
-			e.subtitleTemplate = template
-			e.mu.Unlock()
+			learned.mu.Lock()
+			learned.subtitleTemplate = template
+			learned.mu.Unlock()
 			return template, nil
 		}
 	}
@@ -457,9 +432,9 @@ func (e *Engine) SubtitleFilter(ctx context.Context) (string, error) {
 			"-filter_complex", "[0:v]"+chain+"[v]",
 			"-map", "[v]", "-frames:v", "1", "-f", "null", "-")
 		if res.Code == 0 {
-			e.mu.Lock()
-			e.subtitleTemplate = candidate
-			e.mu.Unlock()
+			learned.mu.Lock()
+			learned.subtitleTemplate = candidate
+			learned.mu.Unlock()
 			if keep {
 				remember(key, candidate)
 			}
@@ -486,7 +461,7 @@ func (e *Engine) Preflight(ctx context.Context) error {
 	} {
 		if program.path == "" {
 			e.Log.ClearProgress()
-			_, err := tool.Find(program.env, program.name)
+			_, err := e.Tools.Find(program.env, program.name)
 			if err == nil {
 				err = renderErr("there is no %s to run", program.name)
 			}

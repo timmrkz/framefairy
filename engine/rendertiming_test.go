@@ -165,7 +165,7 @@ func TestTheShortKeepsItsCaptionsOnTheirWordsAcrossCuts(t *testing.T) {
 func checkRenderTiming(t *testing.T, clip Clip) {
 	t.Helper()
 	ctx := context.Background()
-	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
 	if err := e.Preflight(ctx); err != nil {
 		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}

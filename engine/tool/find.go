@@ -45,12 +45,37 @@ import (
 
 // sums is what make builds in: name=sha256 for each tool it put beside
 // the programs, separated by commas. Empty in a program built any other way,
-// which then runs no tool from beside itself.
+// which then runs no tool from beside itself. It is only the name make
+// writes to, and read once, when a program makes its Finder.
 var sums string
 
+// Finder finds and checks the tools a program runs, see Find. A program
+// makes one in main and keeps it for its whole life, on the engine's
+// Machine, so a tool checked once is not read again before every run.
+type Finder struct {
+	// sums is what the program was built with, see the package variable.
+	sums string
+	// dir is the folder the program sits in, where its tools are.
+	dir string
+	// named is what the environment names in place of a tool, Named in a
+	// program. A test hands in its own, so it changes no environment of
+	// the whole process and runs beside the others.
+	named func(envVar string) string
+	// checked is every tool already found to be what it should be, with
+	// the size and time of the file as it was then, so a file is read once
+	// and not before every run, and read again the moment it changes.
+	checked sync.Map
+}
+
+// NewFinder is the finder of the running program: the sums make built
+// into it, and the tools beside it.
+func NewFinder() *Finder {
+	return &Finder{sums: sums, dir: exeDir(), named: Named}
+}
+
 // sum is the SHA-256 built in for a tool, or empty.
-func sum(name string) string {
-	for _, pair := range strings.Split(sums, ",") {
+func (f *Finder) sum(name string) string {
+	for _, pair := range strings.Split(f.sums, ",") {
 		if tool, sum, ok := strings.Cut(strings.TrimSpace(pair), "="); ok && tool == name {
 			return strings.ToLower(sum)
 		}
@@ -114,37 +139,32 @@ func inFolder(goos, dir, name string) string {
 // next launch of the app reads, with launchctl setenv, and what it named
 // would run unchecked, with the app's access to the person's folders.
 func Named(envVar string) string {
-	return namedWhen(shipped, envVar)
+	return namedWhen(shipped, os.Getenv, envVar)
 }
 
-// namedWhen is Named for an app that ships or does not, for the test.
-func namedWhen(ships bool, envVar string) string {
+// namedWhen is Named for an app that ships or does not, and an
+// environment of the test's own.
+func namedWhen(ships bool, getenv func(string) string, envVar string) string {
 	if ships {
 		return ""
 	}
-	return os.Getenv(envVar)
+	return getenv(envVar)
 }
 
 // Find decides which copy of a tool to run: the one named in the
 // environment, see Named, or else the one beside the program once it is
 // checked. When there is none that may run, it says why, in words for
 // whoever reads it.
-func Find(envVar, name string) (string, error) {
-	return findIn(exeDir(), envVar, name)
-}
-
-// findIn is Find for a program in dir, split out so a test can say where
-// the program is.
-func findIn(dir, envVar, name string) (string, error) {
-	if given := Named(envVar); given != "" {
+func (f *Finder) Find(envVar, name string) (string, error) {
+	if given := f.named(envVar); given != "" {
 		return given, nil
 	}
-	own := inFolder(runtime.GOOS, dir, name)
+	own := inFolder(runtime.GOOS, f.dir, name)
 	if own == "" {
 		return "", fmt.Errorf("%s is not beside the program in %s, and no other is run. "+
-			"Building with make puts it there. An app missing it needs installing again.", name, dir)
+			"Building with make puts it there. An app missing it needs installing again.", name, f.dir)
 	}
-	if err := check(own, name); err != nil {
+	if err := f.check(own, name); err != nil {
 		return "", err
 	}
 	return own, nil
@@ -152,15 +172,10 @@ func findIn(dir, envVar, name string) (string, error) {
 
 // Path is Find without the reason: empty when there is no tool that may
 // run. The reason is Find's to give, and Preflight gives it.
-func Path(envVar, name string) string {
-	path, _ := Find(envVar, name)
+func (f *Finder) Path(envVar, name string) string {
+	path, _ := f.Find(envVar, name)
 	return path
 }
-
-// checked is every tool already found to be what it should be, with the
-// size and time of the file as it was then, so a file is read once and not
-// before every run, and read again the moment it changes.
-var checked sync.Map
 
 type stamp struct {
 	size int64
@@ -169,8 +184,8 @@ type stamp struct {
 
 // check says whether the tool at path is the file its built-in sum says
 // it is.
-func check(path, name string) error {
-	want := sum(name)
+func (f *Finder) check(path, name string) error {
+	want := f.sum(name)
 	if want == "" {
 		return fmt.Errorf("%s beside the program has no checksum built into this program, so it is "+
 			"not run. Building with make builds one in.", name)
@@ -180,7 +195,7 @@ func check(path, name string) error {
 		return err
 	}
 	now := stamp{info.Size(), info.ModTime()}
-	if was, ok := checked.Load(path); ok && was == now {
+	if was, ok := f.checked.Load(path); ok && was == now {
 		return nil
 	}
 	got, err := fileSHA256(path)
@@ -192,7 +207,7 @@ func check(path, name string) error {
 			"not run. Its SHA-256 is %s and should be %s. Installing the app again puts the right one back.",
 			name, got, want)
 	}
-	checked.Store(path, now)
+	f.checked.Store(path, now)
 	return nil
 }
 
@@ -216,16 +231,12 @@ type State struct {
 // Inspect reads a tool again, whatever was checked before, and says what
 // it is. A tool that does not match is not run here either: its version
 // is only asked of a file that may run.
-func Inspect(ctx context.Context, envVar, name string) State {
-	return inspectIn(ctx, exeDir(), envVar, name)
-}
-
-func inspectIn(ctx context.Context, dir, envVar, name string) State {
+func (f *Finder) Inspect(ctx context.Context, envVar, name string) State {
 	var s State
-	if given := Named(envVar); given != "" {
+	if given := f.named(envVar); given != "" {
 		s.Path, s.Named = given, true
-	} else if s.Path = inFolder(runtime.GOOS, dir, name); s.Path == "" {
-		_, s.Err = findIn(dir, envVar, name)
+	} else if s.Path = inFolder(runtime.GOOS, f.dir, name); s.Path == "" {
+		_, s.Err = f.Find(envVar, name)
 		return s
 	}
 	sum, err := fileSHA256(s.Path)
@@ -235,8 +246,8 @@ func inspectIn(ctx context.Context, dir, envVar, name string) State {
 	}
 	s.SHA256 = sum
 	if !s.Named {
-		checked.Delete(s.Path)
-		if s.Err = check(s.Path, name); s.Err != nil {
+		f.checked.Delete(s.Path)
+		if s.Err = f.check(s.Path, name); s.Err != nil {
 			return s
 		}
 		s.Checked = true

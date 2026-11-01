@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
-	"github.com/spf13/afero"
 
 	"framefairy/engine"
 	"framefairy/engine/tool"
@@ -89,7 +88,7 @@ var errNotKept = errors.New("is not a picture or a screen recording")
 // else its file held, and takes a still of its first frame for the tile.
 // It gives the recording's size and length, the ending it is kept under,
 // the still as a PNG and the recording.
-func (g handed) recording(reader string) (ReportPicture, []byte, []byte, error) {
+func (g handed) recording(m *engine.Machine, reader string) (ReportPicture, []byte, []byte, error) {
 	// On the real disk: ffprobe and ffmpeg read the recording from a file
 	// of the app's own, which is gone again when this returns.
 	dir, err := os.MkdirTemp("", "framefairy-recording-")
@@ -101,7 +100,7 @@ func (g handed) recording(reader string) (ReportPicture, []byte, []byte, error) 
 	if err := os.WriteFile(in, g.data, 0o600); err != nil {
 		return ReportPicture{}, nil, nil, errors.New("could not be kept")
 	}
-	e := engine.NewEngine(engineLog("report", ""), afero.NewOsFs())
+	e := engine.NewEngine(engineLog("report", ""), m)
 	if e.FFmpeg == "" || e.FFprobe == "" {
 		return ReportPicture{}, nil, nil, errors.New("needs ffmpeg, which the app is missing")
 	}

@@ -197,7 +197,7 @@ func TestAPromptFileIsOneMessage(t *testing.T) {
 	}))
 	defer server.Close()
 	var heard int32
-	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	base := DefaultOptions()
 	base.LLMURL = server.URL
@@ -398,7 +398,7 @@ func TestASearchWithAPlainAnswer(t *testing.T) {
 	}))
 	defer server.Close()
 	var heard int32
-	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	base := DefaultOptions()
 	base.LLMURL = server.URL

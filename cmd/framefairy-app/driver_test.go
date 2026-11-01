@@ -123,7 +123,7 @@ func (d *desk) start(st *store) {
 	d.svc.listening.still = d.still
 	d.svc.listening.beats = d.beats
 	d.svc.listening.most = d.most
-	d.svc.report = newReporting(st.files, filepath.Join(st.dir, "report"))
+	d.svc.report = newReporting(st.machine, filepath.Join(st.dir, "report"))
 	// The clipboard is the desk's, so a walk can read what was copied.
 	d.svc.clipboard = func(text string) bool {
 		d.clipboard.Store(&text)
@@ -156,7 +156,7 @@ func (d *desk) start(st *store) {
 		return picked, nil
 	}
 	if d.bus != nil {
-		d.svc.levels = newMeasuring(d.svc.store.files, func(episode string) { d.bus.send("levels", episode) })
+		d.svc.levels = newMeasuring(d.svc.store.machine, func(episode string) { d.bus.send("levels", episode) })
 	}
 	svc := d.svc
 	// Whatever is still running when the test ends is stopped before its
@@ -737,7 +737,7 @@ var errBroken = errors.New("the speech model could not be loaded")
 // toolsFromThePath names the ffmpeg, ffprobe and llama-server on the search
 // path in the environment, where the programs take a tool from by choice.
 // A program never falls back to the search path by itself, see
-// tool.Find, and a test binary has nothing beside it. One already
+// tool.Finder, and a test binary has nothing beside it. One already
 // named is left as it is.
 func toolsFromThePath() {
 	for env, name := range map[string]string{

@@ -591,7 +591,7 @@ func (p *Project) Search(ctx context.Context, req PlanRequest, host Host) (plan 
 	}
 	// A model that cannot be loaded fails the search before it listens to
 	// its window, which can take minutes, see roomBeforeSearch.
-	if err := roomBeforeSearch(p.Base, end-req.From); err != nil {
+	if err := p.engine.roomBeforeSearch(p.Base, end-req.From); err != nil {
 		return "", err
 	}
 	// The model loads while the window is still being heard, and reads

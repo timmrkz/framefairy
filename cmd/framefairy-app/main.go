@@ -103,7 +103,7 @@ func main() {
 	})
 	// The report window and its draft, see bugs.go. The draft is kept
 	// beside the settings.
-	svc.report = newReporting(st.files, filepath.Join(st.dir, "report"))
+	svc.report = newReporting(st.machine, filepath.Join(st.dir, "report"))
 	svc.report.stop = svc.CancelListening
 	svc.report.told = func(open bool) {
 		if app != nil {
@@ -130,7 +130,7 @@ func main() {
 	// this has to be one of them. Code after app.Run only runs on the other
 	// systems, and left a llama-server behind on every Mac that quit during
 	// a search.
-	svc.levels = newMeasuring(svc.store.files, func(episode string) {
+	svc.levels = newMeasuring(svc.store.machine, func(episode string) {
 		if app != nil {
 			app.Event.Emit("levels", episode)
 		}

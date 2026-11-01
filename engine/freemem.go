@@ -145,11 +145,11 @@ func tooLittleMemory(need, free int64, servers []string) error {
 // way a warm-up reckons it. A model this program holds already, loaded or
 // loading, is not checked: its memory is counted as used, and the engine
 // checks again when it starts a server, see startServer.
-func roomBeforeSearch(opts Options, seconds float64) error {
+func (e *Engine) roomBeforeSearch(opts Options, seconds float64) error {
 	if opts.Planner != "local" || opts.LLMURL != "" {
 		return nil
 	}
-	local, err := resolveLocal(opts)
+	local, err := e.resolveLocal(opts)
 	if err != nil {
 		return nil
 	}

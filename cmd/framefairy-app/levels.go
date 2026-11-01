@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
-	"github.com/spf13/afero"
 
 	"framefairy/engine"
 )
@@ -24,9 +23,9 @@ import (
 // start a decoder for every episode at once, and one goes on while the
 // transcription has the speech model.
 type measuring struct {
-	// files is where the levels are kept, the store's.
-	files  afero.Fs
-	notify func(episode string)
+	// machine is the store's, whose files the levels are kept on.
+	machine *engine.Machine
+	notify  func(episode string)
 
 	mu      sync.Mutex
 	running map[string]*measure
@@ -46,8 +45,8 @@ type measure struct {
 	done chan struct{}
 }
 
-func newMeasuring(files afero.Fs, notify func(string)) *measuring {
-	return &measuring{files: files, notify: notify,
+func newMeasuring(machine *engine.Machine, notify func(string)) *measuring {
+	return &measuring{machine: machine, notify: notify,
 		running: map[string]*measure{}, looking: map[string][2]float64{}, slots: make(chan struct{}, 2)}
 }
 
@@ -65,7 +64,7 @@ func (m *measuring) start(path string) {
 		return
 	}
 	m.mu.Unlock()
-	if _, done := engine.LevelsReach(m.files, path); done {
+	if _, done := engine.LevelsReach(m.machine.Files, path); done {
 		return
 	}
 	m.mu.Lock()
@@ -101,7 +100,7 @@ func (m *measuring) run(ctx context.Context, path string, run *measure) {
 	case <-ctx.Done():
 		return
 	}
-	e := engine.NewEngine(engineLog("levels", path), m.files)
+	e := engine.NewEngine(engineLog("levels", path), m.machine)
 	// The interface is told twice a second at most, which is as often as
 	// the engine writes what it has.
 	var told time.Time
@@ -177,7 +176,7 @@ func (m *measuring) read(path string) engine.Levels {
 	// measured of it before is no longer its loudness.
 	stamp := path
 	for _, file := range append([]string{path}, engine.LevelsFiles(path)...) {
-		info, err := m.files.Stat(file)
+		info, err := m.machine.Files.Stat(file)
 		if err != nil {
 			stamp += "|-"
 			continue
@@ -191,7 +190,7 @@ func (m *measuring) read(path string) engine.Levels {
 		return kept
 	}
 	m.mu.Unlock()
-	l := engine.ReadLevels(m.files, path)
+	l := engine.ReadLevels(m.machine.Files, path)
 	m.mu.Lock()
 	m.kept, m.keptBy = l, stamp
 	m.mu.Unlock()

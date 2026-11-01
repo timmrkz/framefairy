@@ -51,11 +51,15 @@ import (
 //
 // openPreviews are the streams of the app, one set however many times the
 // handler is made.
-var openPreviews = &previews{}
+var openPreviews = &previews{tools: tool.NewFinder()}
 
 type previews struct {
-	mu   sync.Mutex
-	open map[string]*preview
+	// tools finds the episode's decoder beside the app, checked. The
+	// streams are the app's one set, made before main, so they keep a
+	// finder of their own for the one program only they run.
+	tools *tool.Finder
+	mu    sync.Mutex
+	open  map[string]*preview
 	// The episode's decoder of each episode a stream was asked of, see
 	// engine.EpisodeFrames. One whose episode is open in the video preview
 	// is held, by how many times, and is never closed for standing unused:
@@ -177,7 +181,7 @@ func (p *previews) serveOpen(st *store, w http.ResponseWriter, r *http.Request) 
 	if err != nil || math.IsNaN(from) || math.IsInf(from, 0) || from < 0 {
 		from = 0
 	}
-	e := engine.NewEngine(engineLog("files", path), st.files)
+	e := engine.NewEngine(engineLog("files", path), st.machine)
 	var run func(ctx context.Context, got func(at float64, data []byte) error) error
 	var times *engine.PreviewTimes
 	var light func() framewire.Light
@@ -426,7 +430,7 @@ func (p *previews) spare() {
 // without it says so the way it says a missing ffmpeg: there is no second
 // way to the frames.
 func (p *previews) decoder(path string) (*engine.EpisodeFrames, error) {
-	program, err := tool.Find("FRAMEFAIRY_FRAMES", "framefairy-frames")
+	program, err := p.tools.Find("FRAMEFAIRY_FRAMES", "framefairy-frames")
 	if err != nil {
 		return nil, err
 	}
