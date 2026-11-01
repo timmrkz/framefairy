@@ -96,14 +96,17 @@ thing belongs. In short:
   work back on the machine either.
 - **A pull request is described the way
   [.github/pull_request_template.md](.github/pull_request_template.md)
-  lays it out:** one or two opening sentences on who saw what was
-  wrong, where, and who tested what, then the root cause, the fix, the
-  proof, how to test it by hand, and what was found along the way. The
-  opening sentences are the summary, so nothing below says what was
-  wrong again. How to test is what Tim reads first, so it is never left
-  out. A change with nothing to see in the app says so and names the
-  test that proves it instead. A short Before and After is no
-  replacement for any of it.
+  lays it out:** an opening on who met what, where, and what gets
+  better, then the root cause, the fix, the proof, how to test it, and
+  what was found along the way. The opening, the root cause and the fix
+  take at most 30 words each for every issue the pull request works on,
+  so a pull request for three issues has three short paragraphs in each.
+  The opening is the summary, so nothing below says what was wrong
+  again. The proof may be as long as it needs. How to test is what Tim
+  reads first, so it is never left out: a numbered list of steps he can
+  take, in the app, in CI or wherever the change shows, or one line that
+  says "Nothing to test, because" and why. A short Before and After is
+  no replacement for any of it.
 - **One self-contained change per pull request**, the way Google's
   [code review guide](https://google.github.io/eng-practices/review/developer/small-cls.html)
   draws it. A pull request is the right size when:
