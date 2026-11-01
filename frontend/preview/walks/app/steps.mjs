@@ -797,7 +797,7 @@ export const steps = {
   // ["restart"]        closes the app and opens it again on the episode
   async restart(walk) {
     const { page } = walk;
-    const path = await page.evaluate(() => [...window.__calls].reverse().find((c) => c.name === "Clips")?.args[0]);
+    const path = await page.evaluate(() => [...window.__calls].reverse().find((c) => c.name === "State")?.args[0]);
     await control(url, "/reopen");
     await page.reload();
     await page.locator("aside li", { hasText: path.split("/").pop() }).first().waitFor();

@@ -209,7 +209,7 @@ func startProbe(svc *FrameFairy) {
 	// What the app tells the page, the windows it opens and closes, and
 	// whether it is in front, are the changes the app makes by itself.
 	// The page says when what it shows changes, see watchScript.
-	for _, name := range []string{"job", "episode", "licence-link", "report-window", "quit", "updates"} {
+	for _, name := range []string{"job", "episode", "video", "licence-link", "report-window", "quit", "updates"} {
 		svc.app.Event.On(name, func(*application.CustomEvent) { theProbe.bump() })
 	}
 	for _, e := range []events.WindowEventType{events.Common.WindowFocus, events.Common.WindowLostFocus, events.Common.WindowRuntimeReady} {

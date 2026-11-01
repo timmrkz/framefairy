@@ -33,6 +33,8 @@ func (s *FrameFairy) Library() []engine.EpisodeStatus {
 }
 
 // Episode returns one episode's state.
+// The workspace reads it in the state of the video, see State, and calls
+// it no more. The walks and the tests ask it.
 func (s *FrameFairy) Episode(path string) engine.EpisodeStatus {
 	if !s.store.Known(path) {
 		return engine.EpisodeStatus{}

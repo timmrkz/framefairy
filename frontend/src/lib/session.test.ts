@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 
-import type { Job } from "./api";
+import type { ClipEntry, EpisodeStatus, Job, VideoState } from "./api";
 import { said } from "./said";
 import { EpisodeSession, type WorkMoves } from "./session.svelte";
 import { JobStore } from "./state.svelte";
@@ -34,7 +34,9 @@ function session(jobs = new JobStore()) {
     made: say("made"),
     rendered: say("rendered"),
   };
-  return { jobs, heard, session: new EpisodeSession("/v.mp4", jobs, moves) };
+  const here = new EpisodeSession("/v.mp4", jobs);
+  const close = here.open(moves);
+  return { jobs, heard, session: here, close };
 }
 
 // When a video's work moves on, the workspace shows it: the clips a search
@@ -204,7 +206,8 @@ describe("a video's session", () => {
   test("says a render that was over before its answer came, at once, with what the store knows of it", () => {
     const jobs = new JobStore();
     const got: Job[] = [];
-    const here = new EpisodeSession("/v.mp4", jobs, { ...none, rendered: (j) => got.push(j) });
+    const here = new EpisodeSession("/v.mp4", jobs);
+    here.open({ ...none, rendered: (j) => got.push(j) });
     jobs.apply(job("r", "render", "running", 1));
     jobs.apply(job("r", "render", "done", 2, { result: "short.mp4" }));
     here.asked(job("r", "render", "queued", 0));
@@ -229,7 +232,7 @@ describe("a video's session", () => {
     const gone = session(jobs);
     const stays = session(jobs);
     jobs.apply(job("s", "search", "running", 1, { step: "finding" }));
-    gone.session.close();
+    gone.close();
     jobs.apply(job("s", "search", "done", 2, { step: "finding" }));
     expect(gone.heard).toEqual([]);
     expect(stays.heard).toEqual(["searched s"]);
@@ -239,7 +242,7 @@ describe("a video's session", () => {
   // workspace that goes wrong must not leave the others behind.
   test("a workspace whose move goes wrong stops neither the other workspaces nor the next news, and is in the log", () => {
     const jobs = new JobStore();
-    new EpisodeSession("/v.mp4", jobs, {
+    new EpisodeSession("/v.mp4", jobs).open({
       ...none,
       searched: () => {
         throw new Error("the list is gone");
@@ -256,5 +259,126 @@ describe("a video's session", () => {
       ["t", "done"],
     ]);
     expect(said).toHaveBeenCalledWith(expect.stringContaining("the list is gone"), { level: "error", video: "/v.mp4" });
+  });
+});
+
+// The workspace shows the video's state as the Go side sends it, issue
+// #606. A state read before another, or before an edit was written, comes
+// last now and then on a busy machine, and taken it put back a clip just
+// removed or a trim just made until the next read, the family of #323 and
+// #572.
+describe("a video's state in its session", () => {
+  const clip = (key: string, more: Partial<ClipEntry> = {}): ClipEntry =>
+    ({ key, plan: "/v.mp4.framefairy/logs/clips.json", cropLefts: [0], start: 10, end: 30, ...more }) as ClipEntry;
+  const state = (rev: number, more: Partial<VideoState> = {}): VideoState => ({
+    video: "/v.mp4",
+    rev,
+    status: { source: "/v.mp4", measured: rev } as EpisodeStatus,
+    clips: [clip("a")],
+    coverage: { passes: [] },
+    jobs: [],
+    ...more,
+  });
+
+  test("keeps the newest state, whichever order they come in", () => {
+    const here = new EpisodeSession("/v.mp4", new JobStore());
+    expect(here.take(state(5))).toBe(true);
+    expect(here.take(state(3))).toBe(false);
+    expect(here.status?.measured).toBe(5);
+    expect(here.take(state(6))).toBe(true);
+    expect([here.rev, here.status?.measured]).toEqual([6, 6]);
+  });
+
+  test("a read asked to be fresh makes the clips new, though a newer state came first", () => {
+    const here = new EpisodeSession("/v.mp4", new JobStore());
+    here.take(state(5));
+    const was = here.clips[0];
+    // The state the read asked for after a caption style edit comes after
+    // one the Go side sent.
+    expect(here.take(state(6))).toBe(true);
+    expect(here.clips[0]).toBe(was);
+    expect(here.take(state(4), true)).toBe(false);
+    expect(here.clips[0]).not.toBe(was);
+    expect(here.clips[0]).toEqual(was);
+  });
+
+  test("takes no state read before an edit's answer, and the first read after it", () => {
+    const here = new EpisodeSession("/v.mp4", new JobStore());
+    here.take(state(5));
+    here.put(clip("a", { rejected: true, rev: 8 }));
+    // Read before the clip was removed, so it holds it as it was.
+    expect(here.take(state(7))).toBe(false);
+    expect(here.clips[0].rejected).toBe(true);
+    expect(here.take(state(9, { clips: [clip("a", { rejected: true })] }))).toBe(true);
+    expect(here.clips[0].rejected).toBe(true);
+  });
+
+  test("shows an edit at once, holds what comes while it is written, and takes the newest after", async () => {
+    const here = new EpisodeSession("/v.mp4", new JobStore());
+    here.take(state(5));
+    let answer!: (c: ClipEntry) => void;
+    const edited = here.edit("a", (c) => ({ ...c, thumbnails: [12] }), () => new Promise((done) => (answer = done)));
+    expect(here.clips[0].thumbnails).toEqual([12]);
+    // A state read before the edit was written comes while it is.
+    here.take(state(6));
+    expect(here.clips[0].thumbnails).toEqual([12]);
+    expect(here.status?.measured).toBe(5);
+    answer(clip("a", { thumbnails: [12], rev: 7 }));
+    await edited;
+    expect(here.clips[0].thumbnails).toEqual([12]);
+    // The state held was older than the answer, so it is not taken.
+    expect(here.status?.measured).toBe(5);
+    expect(here.take(state(8, { clips: [clip("a", { thumbnails: [12] })] }))).toBe(true);
+  });
+
+  test("puts the clip back when the edit is refused, and takes the state that came meanwhile", async () => {
+    const here = new EpisodeSession("/v.mp4", new JobStore());
+    here.take(state(5));
+    const edited = here.edit("a", (c) => ({ ...c, thumbnails: [12] }), async () => {
+      here.take(state(6));
+      throw new Error("the plan is gone");
+    });
+    await expect(edited).rejects.toThrow("the plan is gone");
+    expect(here.clips[0].thumbnails).toBeUndefined();
+    expect(here.status?.measured).toBe(6);
+  });
+
+  test("keeps a clip that did not change the very same clip, unless it is read for an edit", () => {
+    const here = new EpisodeSession("/v.mp4", new JobStore());
+    here.take(state(5));
+    const was = here.clips[0];
+    here.take(state(6, { clips: [clip("a"), clip("b", { start: 40 })] }));
+    expect(here.clips[0]).toBe(was);
+    here.take(state(7, { clips: [clip("a"), clip("b", { start: 40 })] }), true);
+    expect(here.clips[0]).not.toBe(was);
+  });
+
+  test("hands its jobs to the store unless the store has newer news of them, and counts what each wrote", () => {
+    const jobs = new JobStore();
+    const { heard, session: here } = session(jobs);
+    jobs.apply(job("s", "search", "running", 4, { step: "finding", written: 2 }));
+    here.take(state(5, { jobs: [job("s", "search", "running", 3, { step: "finding", written: 1 })] }));
+    expect(jobs.list[0].written).toBe(2);
+    expect(here.wrote("s")).toBe(1);
+    here.take(state(7, { jobs: [job("s", "search", "done", 6, { step: "finding", written: 3 })] }));
+    expect([jobs.list[0].state, here.wrote("s")]).toEqual(["done", 3]);
+    expect(heard).toEqual(["wrote s", "searched s"]);
+  });
+
+  test("hears the states of its own video while it is open", () => {
+    const jobs = new JobStore();
+    const here = new EpisodeSession("/v.mp4", jobs);
+    let send: (s: VideoState) => void = () => {};
+    const close = here.open(none, (fn) => {
+      send = fn;
+      return () => (send = () => {});
+    });
+    send(state(5, { video: "/other.mp4" }));
+    expect(here.rev).toBe(0);
+    send(state(5));
+    expect(here.rev).toBe(5);
+    close();
+    send(state(6));
+    expect(here.rev).toBe(5);
   });
 });

@@ -6,8 +6,8 @@
 // the helpers only these steps use. See docs/TESTING.md.
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { addHEVC, ask, chosen, clickOnTrack, cropFrame, drag, engineState, episodeOn, filmedOnScreen, fromSidebar, handles, high, loudness, middle, news, nextNews, nextPaint, playUntil, preview, readShort, recordFrames, sameLook, sayLook, seekTo, settle, shortFrames, shownOnPlayhead, xOf } from "../bridge.mjs";
-import { nextCall, onePiece, pieceCount, rate, restAhead, shortOf, url } from "../common/steps.mjs";
+import { addHEVC, ask, caughtUp, chosen, clickOnTrack, cropFrame, drag, engineState, episodeOn, filmedOnScreen, fromSidebar, handles, high, loudness, middle, news, nextNews, nextPaint, playUntil, preview, readShort, recordFrames, sameLook, sayLook, seekTo, settle, shortFrames, shownOnPlayhead, xOf } from "../bridge.mjs";
+import { onePiece, pieceCount, rate, restAhead, shortOf, url } from "../common/steps.mjs";
 import { overlaid, stillFrame } from "../rules.mjs";
 
 export const steps = {
@@ -1267,11 +1267,10 @@ export const steps = {
         return;
       }
     }
-    // And the app has read how far the saved transcript reaches since,
-    // which it reads again on its own while the work hears, so the
-    // cards it reads are those sentences too.
-    await nextCall(page, "Episode", await page.evaluate(() => window.__calls.length));
-    await settle(page);
+    // And the app has the state of the video sent since, which says how
+    // far the saved transcript reaches, so the cards it reads are those
+    // sentences too: caughtUp waits behind every state due to be sent.
+    await caughtUp(page, url);
     await settled();
   },
   // ["as previewed", rate]

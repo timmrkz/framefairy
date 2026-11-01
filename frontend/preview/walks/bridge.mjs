@@ -547,14 +547,14 @@ export async function sidebarStill(page) {
 }
 
 // What the app marks as current, read in the page: the name of the
-// episode the sidebar marks, the clips the interface has asked for,
-// newest first, and the key of the card the clip list marks. The one
+// episode the sidebar marks, the videos whose state the interface has
+// asked for, newest first, and the key of the card the clip list marks. The one
 // reader of it, so episodeOn, chosen and settledScreen all read the same
 // screen the same way.
 function readChosen() {
   return {
     name: document.querySelector("aside button.episode.current .name")?.textContent ?? null,
-    asked: [...window.__calls].reverse().filter((c) => c.name === "Clips").map((c) => c.args[0]),
+    asked: [...window.__calls].reverse().filter((c) => c.name === "State").map((c) => c.args[0]),
     key: document.querySelector("aside ol li[data-key] button.pick.current")?.closest("li")?.dataset.key ?? null,
   };
 }
@@ -565,9 +565,9 @@ async function chosenPath(page, seen) {
   const named = (await ask(page, "Library")).filter((e) => e.name === seen.name).map((e) => e.source);
   if (named.length < 2) return named[0] ?? null;
   // Two episodes of one file name, from two folders, look the same in the
-  // sidebar, so they are told apart by the one whose clips the app asked
-  // for last: the one on screen, once its clip list has come, which a
-  // walk waits for before it asks.
+  // sidebar, so they are told apart by the one whose state the app asked
+  // for last: the one on screen, once its state has come, which a walk
+  // waits for before it asks.
   return seen.asked.find((p) => named.includes(p)) ?? null;
 }
 

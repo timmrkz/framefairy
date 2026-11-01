@@ -26,14 +26,13 @@
     type ClipEntry,
     type Gesture,
     type Job,
-    type CoverageView,
     type KeptWindow,
     type EpisodeStatus,
     type SourceView,
     type Word,
     type Sentence,
     onUndo,
-    onLevels,
+    onVideoState,
   } from "../lib/api";
   import { jobs } from "../lib/state.svelte";
   import { EpisodeSession, type WorkMoves } from "../lib/session.svelte";
@@ -95,7 +94,6 @@
   import { act, said } from "../lib/said";
   import { pieceHolding, rotated, rotationAt } from "../lib/rotate";
   import { markOn } from "../lib/glide";
-  import { unchanged } from "../lib/unchanged";
   import { toasts } from "../lib/toast.svelte";
 
   let {
@@ -130,12 +128,20 @@
   const tell = (line: string) =>
     said(`workspace: ${line}, ${Math.round(performance.now() - built)} ms after it was made`, { video: path });
 
-  let status = $state<EpisodeStatus | null>(null);
+  // The video's state as the Go side sends it, the newest there is, kept
+  // in its session, see lib/session.svelte.ts: its status, its clips and
+  // how often each part was searched. A workspace is one video for as
+  // long as it lives, see the workspaces in App.svelte, keyed by path.
+  const session = new EpisodeSession(
+    untrack(() => path),
+    jobs,
+  );
+  const status = $derived(session.status);
   let source = $state<SourceView | null>(null);
   // Until the workspace knows where it opens, on its clip or at the start,
   // the video preview draws nothing, see opening in Player.svelte.
   let opened = $state(false);
-  let clips = $state<ClipEntry[]>([]);
+  const clips = $derived(session.clips);
   let from = $state(0);
   let to = $state(0);
   // The target typed in the workspace, or 0 while it follows the window,
@@ -156,7 +162,7 @@
   let clicks = 0;
   let time = $state(0);
   // Where the model has already looked. A window is only drawn outside it.
-  let coverage = $state<CoverageView>({ passes: [] });
+  const coverage = $derived(session.coverage);
   // How much one search can read, from the engine, and what that makes of
   // the window and the clip settings. The window is no longer than the
   // model reads in one request and no shorter than the clips asked for
@@ -622,23 +628,10 @@
 
   // How far the loudness is measured, which is the waveform. It is measured
   // on its own from the moment the episode is added, ahead of the
-  // transcript, and the Go side says it got further about twice a second
-  // while it runs, which is when the status is read again.
+  // transcript, and the video's state says how far it got as it goes.
   const measured = $derived(status?.measuredAll ? duration : (status?.measured ?? 0));
   const measuredParts = $derived<[number, number][]>(
     status?.measuredAll ? [[0, duration]] : (status?.measuredParts ?? []),
-  );
-  onMount(() =>
-    onLevels((p) => {
-      if (p !== path || away) return;
-      const ticket = statusRead.send();
-      api
-        .episode(path)
-        .then((now) => {
-          if (statusRead.keep(ticket)) status = now;
-        })
-        .catch(() => {});
-    }),
   );
 
   // What of the audio has been heard, which is not the same as what the
@@ -1045,36 +1038,25 @@
       if (kept.length < Object.keys(putAway).length) putAway = Object.fromEntries(kept);
     });
   });
-  // Everything that puts the clip list on screen takes a ticket: a read of
-  // the whole list and the answer to an edit alike. A read asked for before
-  // an edit can answer after it, and it knows nothing of the edit, so a clip
-  // removed a moment ago came back, and a trim looked undone, until the list
-  // was read again. Only the newest answer is used.
-  const listed = new Newest();
-  // A clip that has just been written keeps its card until the list has
-  // read it, so the card becomes the clip in one step: never a gap where
-  // it was, and never the two of them at once. See OnTheWay in
+  // A clip that has just been written keeps its card until a state of the
+  // video holds it, so the card becomes the clip in one step: never a gap
+  // where it was, and never the two of them at once. See OnTheWay in
   // lib/arriving.ts. The card goes in the same step that puts the list on
-  // screen, with the first read asked after the clip was written, whichever
-  // read answers first.
+  // screen, with the first state read after the job's news that it was
+  // written, which the Go side sends by itself.
   const cardsOnTheWay = new OnTheWay();
-  let keptRead = $state(0);
-  const onTheWay = $derived(cardsOnTheWay.cards(arrivingNow, listed.next(), keptRead));
-  $effect(() => {
-    void onTheWay;
-    if (cardsOnTheWay.unread(listed.next())) void refreshClips(true);
-  });
+  const seqOf = (job: string) => jobs.list.find((j) => j.id === job)?.seq ?? 0;
+  const onTheWay = $derived(cardsOnTheWay.cards(arrivingNow, seqOf, session.rev));
   // The search the list last counted rows for, and how many of its clips
-  // the newest read of the list holds: what it had written when the read
-  // was asked, because the plan is written before the job says so.
+  // the newest state of the video holds: what it had written when the
+  // state was read, because the plan is written before the job says so.
   let searchSeen = $state("");
-  let readWritten = $state(0);
   $effect(() => {
     const id = working?.id;
     if (!id || id === untrack(() => searchSeen)) return;
     searchSeen = id;
-    readWritten = 0;
   });
+  const readWritten = $derived(session.wrote(searchSeen));
 
   // How many clips the search has written and has on the way. It says so
   // itself, so a clip made by hand while it runs is not counted as one of
@@ -1216,23 +1198,6 @@
       (!renderingJob.clips?.length || renderingJob.clips.includes(current.id)),
   );
 
-  // The free room changes whenever a search finishes, so it is taken again
-  // with the rest of the episode.
-  // The same for the episode's own state and what has been searched: a
-  // read that answers late never puts back what a newer one said.
-  const statusRead = new Newest();
-  const coverageRead = new Newest();
-
-  async function refreshCoverage() {
-    const ticket = coverageRead.send();
-    try {
-      const now = await api.coverage(path);
-      if (coverageRead.keep(ticket)) coverage = now;
-    } catch {
-      if (coverageRead.keep(ticket)) coverage = { passes: [] };
-    }
-  }
-
   // The window put back where the app places it, a double-click on its
   // marks. The Go side places it, as it places every window the app
   // chooses, see chosenWindow.
@@ -1345,32 +1310,23 @@
 
   // One clip as an edit left it.
   function putClip(updated: ClipEntry) {
-    listed.keep(listed.send());
-    clips = clips.map((c) => (c.key === updated.key ? updated : c));
+    session.put(updated);
   }
 
-  // The list read again. A read for what a search wrote, found, keeps
+  // The video's state read again, and kept in its session when no newer
+  // one is there already. A read for what a search wrote, found, keeps
   // every clip the read says is as it was, the very same clip: a search
-  // only adds clips, and a running one reads the list every two seconds.
-  // Each read made every clip a new one, the clip on screen too, and its
-  // captions were asked for and drawn again each time, the clip timeline
-  // and the caption box with them, while nothing about it had changed.
-  // Plan row 2.242. Every other read is for an edit of the clips or of
-  // their captions, and takes them all as new, so the captions of the clip
-  // on screen are read again with them.
-  async function refreshClips(found = false, written = lastSearch?.written ?? 0) {
-    const ticket = listed.send();
+  // only adds clips. Each read made every clip a new one, the clip on
+  // screen too, and its captions were asked for and drawn again each time,
+  // the clip timeline and the caption box with them, while nothing about
+  // it had changed. Plan row 2.242. Every other read is for an edit of the
+  // clips or of their captions, and takes them all as new, so the captions
+  // of the clip on screen are read again with them.
+  async function refreshClips(found = false) {
     try {
-      const list = (await api.clips(path)) ?? [];
-      if (listed.keep(ticket)) {
-        // The list, and the cards of the clips it holds going, in one step.
-        clips = found ? unchanged(clips, list) : list;
-        readWritten = written;
-        keptRead = ticket;
-      }
+      session.take(await api.state(path), !found);
     } catch (err) {
       oops(errorText(err));
-      if (listed.keep(ticket)) keptRead = ticket;
     }
   }
 
@@ -1383,16 +1339,13 @@
   // read first, one after another, with the video preview waiting.
   async function openEpisode() {
     try {
-      const ticket = statusRead.send();
-      const [now, picture, , key] = await Promise.all([
-        api.episode(path),
+      const [, picture, key] = await Promise.all([
+        refreshClips(),
         // A file that is missing has no picture to say.
         api.source(path).catch(() => null),
-        refreshClips(),
         // An episode that cannot say has simply never been opened.
         api.chosenClip(path).catch(() => ""),
       ]);
-      if (statusRead.keep(ticket)) status = now;
       tell(
         `the Go side answered: ${status ? (status.missing ? "the file is missing" : "the file is there") : "no status"}, picture ${picture ? `${picture.width}x${picture.height} at ${picture.fps} a second, ${picture.duration.toFixed(3)} s` : "none"}, ${clips.length} clips, opens on ${key ? `the clip ${key}` : "no clip"}`,
       );
@@ -1416,7 +1369,7 @@
       // kept the workspace behind the one on screen three answers longer.
       const kept = api.chosenWindow(path);
       kept.catch(() => {});
-      await Promise.all([refreshCoverage(), refreshRoom()]);
+      await refreshRoom();
       if (source) await openWindow(kept);
     } catch (err) {
       oops(errorText(err));
@@ -1433,18 +1386,14 @@
   async function load(moved?: Promise<KeptWindow | null>) {
     const was = path;
     try {
-      const ticket = statusRead.send();
-      const now = await api.episode(path);
-      if (statusRead.keep(ticket)) status = now;
+      await refreshClips();
       if (!status) return;
       // A file that was missing as the workspace opened and is there now.
       const found = !source && !status.missing;
       if (found) source = await api.source(path);
-      if (!status.missing) await refreshCoverage();
       if (!status.missing) await refreshRoom(!moved);
       if (found && source) await openWindow();
       const next = moved ? await moved.catch(() => null) : null;
-      await refreshClips();
       movingOn = false;
       if (next && path === was) drawWindow(next);
       keepRemovedTrue();
@@ -1673,13 +1622,12 @@
     const next = was.filter((t) => from < 0 || ms(t) !== ms(from));
     if (to >= 0) next.push(Math.round(to * 1000) / 1000);
     next.sort((a, b) => a - b);
-    clips = clips.map((c) => (c.key === clip.key ? { ...c, thumbnails: next } : c));
     try {
-      const updated = await api.setThumbnail(path, clip.plan, clip.id, from, to);
-      clips = clips.map((c) => (c.key === updated.key ? updated : c));
+      await session.edit(clip.key, (c) => ({ ...c, thumbnails: next }), () =>
+        api.setThumbnail(path, clip.plan, clip.id, from, to),
+      );
     } catch (err) {
       oops(errorText(err));
-      clips = clips.map((c) => (c.key === clip.key ? { ...c, thumbnails: was } : c));
     }
   }
 
@@ -1704,13 +1652,12 @@
         turn: moving?.turn ?? rotationAt(clip.rotations, to),
       });
     next.sort((a, b) => a.at - b.at);
-    clips = clips.map((c) => (c.key === clip.key ? { ...c, cropMarks: next } : c));
     try {
-      const updated = await api.setCropMark(path, clip.plan, clip.id, from, to, x);
-      putClip(updated);
+      await session.edit(clip.key, (c) => ({ ...c, cropMarks: next }), () =>
+        api.setCropMark(path, clip.plan, clip.id, from, to, x),
+      );
     } catch (err) {
       oops(errorText(err));
-      clips = clips.map((c) => (c.key === clip.key ? { ...c, cropMarks: was } : c));
     }
   }
 
@@ -2711,13 +2658,11 @@
     if (!current || renderingCurrent || !inShort || !source) return;
     const clip = current;
     const at = time;
-    clips = clips.map((c) => (c.key === clip.key ? rotated(c, source!, at) : c));
+    const picture = source;
     try {
-      const updated = await api.rotatePart(path, clip.plan, clip.id, at);
-      putClip(updated);
+      await session.edit(clip.key, (c) => rotated(c, picture, at), () => api.rotatePart(path, clip.plan, clip.id, at));
     } catch (err) {
       oops(errorText(err));
-      clips = clips.map((c) => (c.key === clip.key ? clip : c));
     }
   }
 
@@ -3001,7 +2946,6 @@
   // see lib/session.svelte.ts. Each was an effect here that kept the value
   // from before and compared it with the next, issue #606. It hears from
   // the moment the workspace is on the page, as the effects did.
-  let session: EpisodeSession;
   const moves: WorkMoves = {
     // A search that fails while the app is open says why in a toast, with
     // Report for what the person cannot put right alone, and so does a
@@ -3015,10 +2959,7 @@
     },
     // A search says how many clips it has written each time one lands, and
     // the list is read again then, rather than on the next tick of a timer.
-    // The read counts what this search has written, from its own news, not
-    // from the search the list last counted rows for, which an effect
-    // follows and may not have caught up with yet.
-    wrote: (search) => refreshClips(true, search.written ?? 0).then(() => showFirstFound()),
+    wrote: () => refreshClips(true).then(() => showFirstFound()),
     // And when the whole video's work ends, which no search's hearing says:
     // the workspace kept what it read last, so stopped on its last pieces
     // the video was heard to its end and the dots stayed, found by the
@@ -3082,10 +3023,7 @@
       });
     },
   };
-  onMount(() => {
-    session = new EpisodeSession(path, jobs, moves);
-    return () => session.close();
-  });
+  onMount(() => session.open(moves, onVideoState));
 
   // Playing moves nothing. An editor's timeline follows its playhead while
   // it plays, and that is a setting there, off as often as on, because a
@@ -3206,18 +3144,11 @@
       if (away) return;
       ticks++;
       if (isTranscribing) {
-        // While the transcript grows, how far it has come is read again:
-        // the track draws it, and the first search waits for it.
-        const ticket = statusRead.send();
-        api
-          .episode(path)
-          .then((now) => {
-            if (statusRead.keep(ticket)) status = now;
-          })
-          .catch(() => {});
-        // What the new lines weigh, less often: the room only needs them
-        // to say how far a window may reach, and the rest of the episode
-        // is weighed at a rate that errs towards less until then.
+        // How far the transcript has come is in the video's state, which
+        // the Go side sends as it grows. What the new lines weigh is read
+        // now and then: the room only needs them to say how far a window
+        // may reach, and the rest of the episode is weighed at a rate that
+        // errs towards less until then.
         if (ticks % 5 === 0) refreshRoom();
       }
       if (isFinding) {

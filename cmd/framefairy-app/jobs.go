@@ -209,6 +209,54 @@ type queue struct {
 	// changed tells whoever waits on the jobs of every change to one, so
 	// a wait for jobs to stop goes on the moment they have, see until.
 	changed wake.Wake
+	// news is told the video whose state a job changed, with its news or
+	// as it heard more of the video, so the video's state is sent to the
+	// window, see videoNews.
+	news func(episode string)
+}
+
+// moved says a job changed the state of its video.
+func (q *queue) moved(episode string) {
+	if q.news != nil && episode != "" {
+		q.news(episode)
+	}
+}
+
+// stamp takes the next number of the clock of the jobs, which the states
+// of the videos share, see VideoState.Rev.
+func (q *queue) stamp() uint64 {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.seq++
+	return q.seq
+}
+
+// ofVideo is the jobs of one video the workspace shows as they are now,
+// and the number the clock of the jobs gives this moment, see
+// VideoState.Rev. Those are the jobs queued or running and, of those
+// over, the newest of each kind. The queue keeps every job since the app
+// opened, and every older one's last news reached the window long ago, so
+// a state sent four times a second does not carry the renders of the
+// whole day.
+func (q *queue) ofVideo(episode string) ([]Job, uint64) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	newest := map[string]*Job{}
+	for _, j := range q.jobs {
+		if j.Episode == episode && !j.going() {
+			if n := newest[j.Kind]; n == nil || j.Seq > n.Seq {
+				newest[j.Kind] = j
+			}
+		}
+	}
+	out := []Job{}
+	for _, j := range q.jobs {
+		if j.Episode == episode && (j.going() || newest[j.Kind] == j) {
+			out = append(out, *j)
+		}
+	}
+	q.seq++
+	return out, q.seq
 }
 
 // stampLocked marks a change to a job, and tells whoever waits on the
@@ -221,8 +269,19 @@ func (q *queue) stampLocked(j *Job) {
 
 // newQueue builds the queue.
 func newQueue(s *store, emit func(JobUpdate), notify func(string)) *queue {
-	return &queue{emit: quietly(emit), store: s, notify: quietly(notify), closed: map[string]int{},
+	q := &queue{store: s, notify: quietly(notify), closed: map[string]int{},
 		lanes: newLanes(), calledOff: map[string]string{}}
+	tell := quietly(emit)
+	q.emit = func(u JobUpdate) {
+		// The video's state is due before the job's news goes out, so
+		// whatever hears the news and then waits behind every state due,
+		// a walk's mark, see sendDue, waits for the one this news asks for.
+		q.moved(u.Job.Episode)
+		if tell != nil {
+			tell(u)
+		}
+	}
+	return q
 }
 
 // newIdleQueue builds the queue without setting it running, so work can be
@@ -1126,6 +1185,7 @@ func (q *queue) runJob(job *Job) {
 		ended = theLog.jobLine(zerolog.ErrorLevel, job).Str("error", failed)
 	}
 	ended.Str("state", string(state)).Int("written", written).Int64("ms", time.Since(started).Milliseconds()).Msg("the job ended")
+	q.moved(job.Episode)
 	if q.notify != nil {
 		q.notify(job.Episode)
 	}

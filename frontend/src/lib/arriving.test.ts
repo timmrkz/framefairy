@@ -138,29 +138,31 @@ describe("a card is held from the moment its clip is written until the list has 
 
   test("in the same pass it leaves, not a render later", () => {
     const way = new OnTheWay();
-    way.cards([card("s/1")], 5, 4);
+    // The search's news is at 5 and the newest state of the video at 4.
+    let seq = 5;
+    way.cards([card("s/1")], () => seq, 4);
     // Written: gone from the job's list, and still on screen in that pass.
-    const now = way.cards([], 5, 4);
+    seq = 6;
+    const now = way.cards([], () => seq, 4);
     expect(now.map((a) => [a.key, a.held])).toEqual([["s/1", true]]);
-    expect(way.unread(5)).toBe(true);
-    // A read asked before it left knows nothing of it and keeps it.
-    expect(way.cards([], 6, 4).length).toBe(1);
-    expect(way.unread(6)).toBe(false);
-    // The first read asked after it left holds the clip: it goes.
-    expect(way.cards([], 6, 5)).toEqual([]);
+    // A state read before the news that it left knows nothing of it and
+    // keeps it.
+    expect(way.cards([], () => seq, 6).length).toBe(1);
+    // The first state read after it left holds the clip: it goes.
+    expect(way.cards([], () => seq, 7)).toEqual([]);
   });
 
   test("a card that stopped is not held, it says so where it is", () => {
     const way = new OnTheWay();
-    way.cards([card("s/1", { stopped: true })], 3, 2);
-    expect(way.cards([], 3, 2)).toEqual([]);
+    way.cards([card("s/1", { stopped: true })], () => 3, 2);
+    expect(way.cards([], () => 3, 2)).toEqual([]);
   });
 
   test("a card back on the way is live again, not held twice", () => {
     const way = new OnTheWay();
-    way.cards([card("s/1")], 3, 2);
-    way.cards([], 3, 2);
-    expect(way.cards([card("s/1")], 3, 2).map((a) => a.held)).toEqual([undefined]);
+    way.cards([card("s/1")], () => 3, 2);
+    way.cards([], () => 3, 2);
+    expect(way.cards([card("s/1")], () => 3, 2).map((a) => a.held)).toEqual([undefined]);
   });
 });
 

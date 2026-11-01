@@ -402,6 +402,7 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 	// sent, so a walk can wait until the interface knows what the engine
 	// knew when the walk asked it, see caughtUp in bridge.mjs.
 	mux.HandleFunc("/mark", func(w http.ResponseWriter, r *http.Request) {
+		sendDue(b.d.svc.news)
 		n := b.marks.Add(1)
 		b.d.bus.send("mark", n)
 		answer(w, n, nil)
@@ -2557,4 +2558,34 @@ func (b *bridge) openLog() error {
 		theLog.line(zerolog.InfoLevel, "app").Int("i", i).Msg("a line for the walk")
 	}
 	return nil
+}
+
+// sendDue sends at once the state of every video that is due to be sent,
+// and waits for the sends under way, so a mark sent after it comes behind
+// all of them: what the Go side had to say when a walk asks is then what
+// the interface has heard by the mark, see caughtUp in bridge.mjs.
+func sendDue(n *videoNews) {
+	if n == nil {
+		return
+	}
+	n.mu.Lock()
+	var now []string
+	var going []chan struct{}
+	for path, t := range n.due {
+		// The send not begun yet is the one asked for last.
+		if t.timer != nil && t.timer.Stop() {
+			t.timer = nil
+			close(t.sends[len(t.sends)-1])
+			t.sends = t.sends[:len(t.sends)-1]
+			now = append(now, path)
+		}
+		going = append(going, t.sends...)
+	}
+	n.mu.Unlock()
+	for _, path := range now {
+		n.tell(path)
+	}
+	for _, sent := range going {
+		<-sent
+	}
 }
