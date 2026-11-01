@@ -2092,9 +2092,8 @@ const licenceListeners = new Set<(ev: unknown) => void>();
 const dictListeners = new Set<(ev: unknown) => void>();
 const loudListeners = new Set<(ev: unknown) => void>();
 // Who hears the states of the videos. Like the Go side, the stand-in
-// sends a video's state after the news of its jobs, see videoNews in
-// cmd/framefairy-app/videostate.go, and the window shows a job's news
-// once a state read after it is in, see JobStore.apply.
+// sends a video's state read after the news of its jobs, and then the
+// news, see videoNews in cmd/framefairy-app/videostate.go.
 const videoListeners = new Set<(ev: unknown) => void>();
 // ?talk=N says the two sentences N times over, a word every 40 ms, for a
 // long dictation.
@@ -2272,7 +2271,7 @@ export const Events = {
     // called off stays in the interface's hands.
     const told = new Map<string, string>();
     const searchTimer = setInterval(() => {
-      const moved = new Set<string>();
+      const moved = new Map<string, unknown[]>();
       for (const job of [...fakeSearches().map(searchJob), ...hands().map(handJob), ...((window as any).__refused ?? [])] as any[]) {
         const s = { id: job.id };
         const key = `${job.state}`;
@@ -2281,10 +2280,14 @@ export const Events = {
         if (job.progress) {
           ((window as any).__heardSent ??= []).push({ at: Date.now() - ((window as any).__started ?? Date.now()), covered: job.progress.covered });
         }
-        fn({ data: { job: { ...job, seq: tick() } } });
-        moved.add(job.episode);
+        const news = { data: { job: { ...job, seq: tick() } } };
+        moved.set(job.episode, [...(moved.get(job.episode) ?? []), news]);
       }
-      for (const path of moved) void videoState(path).then((state) => videoListeners.forEach((l) => l({ data: state })));
+      for (const [path, news] of moved)
+        void videoState(path).then((state) => {
+          videoListeners.forEach((l) => l({ data: state }));
+          news.forEach((n) => fn(n));
+        });
     }, 250);
     if (location.search.includes("setup") || location.search.includes("models")) {
       const timer = setInterval(() => {

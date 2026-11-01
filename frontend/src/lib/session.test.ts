@@ -33,28 +33,34 @@ const state = (rev: number, more: Partial<VideoState> = {}): VideoState => ({
   ...more,
 });
 
-// A job store whose every news is followed by a state of the video read
-// after it, the way the Go side sends them, see videoNews in
-// cmd/framefairy-app/videostate.go. No move is made at the news itself:
-// the store shows it once the state is kept, see JobStore.apply.
+// A job store whose every news comes after a state of the video read
+// after it, which holds the job, the way the Go side sends them, see
+// videoNews in cmd/framefairy-app/videostate.go. The move is made with
+// the state, and the news after it says nothing new.
 class Behind extends JobStore {
   sessions: { session: EpisodeSession; heard: string[] }[] = [];
+  private taking = false;
   apply(j: Job) {
+    if (this.taking) return super.apply(j);
+    this.taking = true;
+    try {
+      for (const s of this.sessions) s.session.take(state((j.seq ?? 0) + 1, { jobs: [j] }));
+    } finally {
+      this.taking = false;
+    }
     const was = this.sessions.map((s) => s.heard.length);
     super.apply(j);
-    // News older than a state kept was read in it, and is shown at once.
-    if (this.sessions.every((s) => (j.seq ?? 0) >= s.session.rev)) expect(this.sessions.map((s) => s.heard.length)).toEqual(was);
-    for (const s of this.sessions) s.session.take(state((j.seq ?? 0) + 1));
+    expect(this.sessions.map((s) => s.heard.length)).toEqual(was);
   }
 }
 
 // The two orders the news of a job and the states of its video come in:
-// the news before any state is in, as the app opens, and each news with a
-// state read after it, as the app runs. Every move is said the same in
-// both.
+// the news before any state is in, as a test of the moves alone has
+// them, and each news after a state read after it, as the Go side sends
+// them. Every move is said the same in both.
 const orders = [
   { order: "before any state of the video", store: () => new JobStore() },
-  { order: "with a state read after each news", store: (): JobStore => new Behind() },
+  { order: "with a state read after each news, sent before it", store: (): JobStore => new Behind() },
 ];
 
 // Every move the session says, in the order it said them, as "move id".
@@ -299,26 +305,25 @@ describe.each(orders)("a video's session, $order", ({ store }) => {
   });
 });
 
-// As the app runs, a job's news comes before the state read after it. A
-// move made at the news read a state that did not hold what the work
-// left yet: a search over with no clip chosen, its window back where it
-// was for a frame, #513. So the moves are made with that state.
+// The Go side sends a video's state before the news of its jobs the state
+// was read after. Made at the news, a move read a state that did not hold
+// what the work left yet: a search over with no clip chosen, its window
+// back where it was for a frame, #513. So the moves are made with the
+// state, as it hands its jobs to the store.
 describe("a video's session as the app runs", () => {
-  test("makes a move with the state read after its news, which holds what the work left", () => {
+  test("makes a move with the state its job comes in, which holds what the work left", () => {
     const jobs = new JobStore();
     const seen: string[][] = [];
     const { session: here } = session(jobs, { wrote: () => seen.push(here.clips.map((c) => c.key)) });
     here.take(state(1));
     jobs.apply(job("s", "search", "running", 1, { step: "finding" }));
-    jobs.apply(job("s", "search", "running", 2, { step: "finding", written: 1 }));
-    expect(seen).toEqual([]);
-    expect(jobs.list[0].written).toBeUndefined();
     here.take(state(3, { clips: [clip("a"), clip("b")], jobs: [job("s", "search", "running", 2, { step: "finding", written: 1 })] }));
     expect(seen).toEqual([["a", "b"]]);
-    expect([jobs.list[0].written, here.wrote("s")]).toEqual([1, 1]);
+    jobs.apply(job("s", "search", "running", 2, { step: "finding", written: 1 }));
+    expect(seen).toEqual([["a", "b"]]);
   });
 
-  test("makes the moves that waited in the order their news was sent, though one goes wrong", () => {
+  test("makes every move the state's jobs bring, though one goes wrong", () => {
     vi.mocked(said).mockClear();
     const jobs = new JobStore();
     const { heard, session: here } = session(jobs, {
@@ -330,10 +335,7 @@ describe("a video's session as the app runs", () => {
     jobs.apply(job("s", "search", "running", 1, { step: "hearing" }));
     jobs.apply(job("r", "render", "queued", 2));
     here.asked(job("r", "render", "queued", 2));
-    jobs.apply(job("r", "render", "done", 4));
-    jobs.apply(job("s", "search", "done", 3, { step: "finding" }));
-    expect(heard).toEqual([]);
-    here.take(state(5));
+    here.take(state(5, { jobs: [job("s", "search", "done", 3, { step: "finding" }), job("r", "render", "done", 4)] }));
     expect(heard).toEqual(["heard s", "rendered r"]);
     expect(jobs.list.map((j) => [j.id, j.state])).toEqual([
       ["s", "done"],
@@ -342,21 +344,14 @@ describe("a video's session as the app runs", () => {
     expect(said).toHaveBeenCalledWith(expect.stringContaining("the list is gone"), { level: "error", video: "/v.mp4" });
   });
 
-  test("makes no move while an edit holds the states that come, and makes it with the state taken after", async () => {
+  test("says a clip made by hand once its state is in, though the call answered first that it was over", () => {
     const jobs = new JobStore();
     const { heard, session: here } = session(jobs);
     here.take(state(1));
-    jobs.apply(job("s", "search", "running", 1, { step: "finding" }));
-    let answer!: (c: ClipEntry) => void;
-    const edited = here.edit("a", (c) => ({ ...c, thumbnails: [12] }), () => new Promise((done) => (answer = done)));
-    jobs.apply(job("s", "search", "done", 2, { step: "finding" }));
-    here.take(state(3));
+    here.asked(job("c", "clip", "done", 2, { result: "e/3" }));
     expect(heard).toEqual([]);
-    answer(clip("a", { thumbnails: [12], rev: 4 }));
-    await edited;
-    expect(heard).toEqual([]);
-    here.take(state(5, { clips: [clip("a", { thumbnails: [12] })] }));
-    expect(heard).toEqual(["searched s"]);
+    here.take(state(3, { clips: [clip("a"), clip("e/3")], jobs: [job("c", "clip", "done", 2, { result: "e/3" })] }));
+    expect(heard).toEqual(["made c"]);
   });
 });
 

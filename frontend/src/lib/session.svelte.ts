@@ -67,20 +67,19 @@ export class EpisodeSession {
   // The workspace is on the page: from now on the session hears every
   // snapshot of a job the store keeps and says what the video's work did
   // with moves, and takes every state of the video hear brings, onVideoState
-  // in lib/api.ts. The store shows the news of the video's jobs once the
-  // session has kept a state read after it, see JobStore.apply. The
-  // function it returns is for when the workspace is gone, and then it
-  // hears nothing more.
+  // in lib/api.ts. The Go side sends a video's state before the news of
+  // its jobs that the state was read after, so the state that holds what
+  // a job left is kept here when the store hears of the job, see take.
+  // The function it returns is for when the workspace is gone, and then
+  // it hears nothing more.
   open(moves: WorkMoves, hear: (fn: (state: VideoState) => void) => () => void = () => () => {}): () => void {
     this.moves = moves;
     const off = this.store.watch((before, after) => this.seen(before, after));
-    const unfollow = this.store.follow(this.path);
     const unheard = hear((state) => {
       if (state.video === this.path) this.take(state);
     });
     return () => {
       off();
-      unfollow();
       unheard();
     };
   }
@@ -107,9 +106,6 @@ export class EpisodeSession {
       this.coverage = same(this.coverage, state.coverage);
       this.written = Object.fromEntries(state.jobs.map((j) => [j.id, j.written ?? 0]));
       kept = true;
-      // The news of the jobs from before the state reaches the store now,
-      // and with it the moves, which read what the state holds.
-      this.store.shown(this.path, state.rev);
     } else if (fresh) {
       // A newer state came first, and still the captions are read again.
       this.clips = this.clips.map((c) => ({ ...c }));
@@ -166,8 +162,8 @@ export class EpisodeSession {
   // from the answer to the call, so a job can be over in the store before
   // the answer comes back, its news heard first on a busy machine, issue
   // #508. Then it is said at once, from what the store knows of it. The
-  // answer alone is not enough to say it is over: the store shows its end
-  // with the state that holds what it left, and says it then.
+  // answer alone does not say it is over: that is said once the store has
+  // its end, which comes with the state that holds what it left.
   asked(job: Job) {
     const now = this.store.list.find((j) => j.id === job.id);
     if (!now || live(now)) {

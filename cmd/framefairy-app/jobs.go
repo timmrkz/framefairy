@@ -209,18 +209,56 @@ type queue struct {
 	// changed tells whoever waits on the jobs of every change to one, so
 	// a wait for jobs to stop goes on the moment they have, see until.
 	changed wake.Wake
-	// news is told the video whose state a job changed, with its news or
-	// as it heard more of the video, so the video's state is sent to the
-	// window, see videoNews, and whether the job is over.
-	news func(episode string, over bool)
+	// news is told the video whose state a job changed, whether the
+	// change moves the video's work on, and the job's news, see
+	// videoNews.after.
+	news func(episode string, movesOn bool, then func())
+	// told is what the window was last told of each job, by its ID, so
+	// the news that moves its work on is known, see movesOn.
+	toldMu sync.Mutex
+	told   map[string]toldJob
 }
 
-// moved says a job changed the state of its video, and whether it is
-// over.
-func (q *queue) moved(episode string, over bool) {
-	if q.news != nil && episode != "" {
-		q.news(episode, over)
+// toldJob is what the window's moves are made of in a job's news, see
+// EpisodeSession in frontend/src/lib/session.svelte.ts.
+type toldJob struct {
+	going   bool
+	written int
+	hearing bool
+}
+
+// movesOn says whether this news of a job moves the work on from the
+// news before it: the job over, a clip written, or its hearing over.
+// The window makes a move of each, with the clips and the status the
+// work left, so the news goes out after a state of the video that holds
+// them. The rest, a job started or going on, goes out as it comes.
+func (q *queue) movesOn(j Job) bool {
+	now := toldJob{going: j.going(), written: j.Written, hearing: j.Step == "hearing"}
+	q.toldMu.Lock()
+	defer q.toldMu.Unlock()
+	if q.told == nil {
+		q.told = map[string]toldJob{}
 	}
+	was, seen := q.told[j.ID]
+	q.told[j.ID] = now
+	if !now.going {
+		return !seen || was.going
+	}
+	return seen && (now.written != was.written || (was.hearing && !now.hearing))
+}
+
+// moved says a job changed the state of its video, and whether that
+// moves the video's work on. then, when there is one, is the job's news,
+// see videoNews.after. It goes out at once when the job has no video or
+// nobody sends the states.
+func (q *queue) moved(episode string, movesOn bool, then func()) {
+	if q.news == nil || episode == "" {
+		if then != nil {
+			then()
+		}
+		return
+	}
+	q.news(episode, movesOn, then)
 }
 
 // stamp takes the next number of the clock of the jobs, which the states
@@ -274,13 +312,15 @@ func newQueue(s *store, emit func(JobUpdate), notify func(string)) *queue {
 		lanes: newLanes(), calledOff: map[string]string{}}
 	tell := quietly(emit)
 	q.emit = func(u JobUpdate) {
-		// The video's state is due before the job's news goes out, so
-		// whatever hears the news and then waits behind every state due,
-		// a walk's mark, see sendDue, waits for the one this news asks for.
-		q.moved(u.Job.Episode, !u.Job.going())
-		if tell != nil {
-			tell(u)
-		}
+		// A job's news goes out after the state of its video read after
+		// it, so the window has what the job left when it hears what the
+		// job did, see the decision record
+		// docs/decisions/2026-10-30-a-videos-state-in-one-session.md.
+		q.moved(u.Job.Episode, q.movesOn(u.Job), func() {
+			if tell != nil {
+				tell(u)
+			}
+		})
 	}
 	return q
 }
@@ -1186,7 +1226,7 @@ func (q *queue) runJob(job *Job) {
 		ended = theLog.jobLine(zerolog.ErrorLevel, job).Str("error", failed)
 	}
 	ended.Str("state", string(state)).Int("written", written).Int64("ms", time.Since(started).Milliseconds()).Msg("the job ended")
-	q.moved(job.Episode, true)
+	q.moved(job.Episode, true, nil)
 	if q.notify != nil {
 		q.notify(job.Episode)
 	}
