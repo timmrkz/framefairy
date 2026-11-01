@@ -154,7 +154,7 @@ jobs:
   # Go's build cache: setup-go keeps it by go.sum alone and saves it only
   # when go.sum changes, so a job started from one that was weeks old and
   # compiled nearly everything again, a minute here and close to two on a
-  # Mac. The jobs that compile most, linux, walks and macos, take theirs
+  # Mac. The jobs that compile most, linux, walks, macos and outside, take theirs
   # from the cache main saved last, one for each job, because each
   # compiles with other flags, and one for each machine of linux, since
   # each keeps the results of other tests. Main saves it after every
@@ -580,7 +580,19 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
+      # Go's build cache, kept by main after every push, see above the job
+      # linux. It is the cache of the app built on a Mac, which the build
+      # to update to in builds.yml starts from too, because both run make
+      # with the same flags. Only the link differs, and Go caches no link.
+      - id: gocache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/Library/Caches/go-build
+          key: go-v1-app-${{ runner.os }}-${{ github.sha }}
+          restore-keys: go-v1-app-${{ runner.os }}-
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
@@ -630,3 +642,10 @@ jobs:
       # scripts/changed.sh. make outside builds on what it built.
       - name: Built without warnings and opened from outside
         run: make changed PART="build outside"
+      - if: ${{ !cancelled() && (github.ref == 'refs/heads/main' || steps.gocache.outputs.cache-matched-key == '') }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/Library/Caches/go-build
+          key: ${{ steps.gocache.outputs.cache-primary-key }}
