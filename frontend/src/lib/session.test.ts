@@ -172,7 +172,7 @@ describe("a video's session", () => {
 
   test("says no failure of a job that ended any other way and was read again as failed", () => {
     const { jobs, heard } = session();
-    for (const state of ["done", "cancelled", "interrupted", "stopped"]) {
+    for (const state of ["done", "cancelled", "interrupted", "stopped", "settled"]) {
       jobs.apply(job(state, "clip", "running", 1));
       jobs.apply(job(state, "clip", state, 2));
       jobs.apply(job(state, "clip", "failed", 3));

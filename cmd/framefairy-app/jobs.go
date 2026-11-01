@@ -26,7 +26,16 @@ const (
 	JobRunning   = "running"
 	JobDone      = "done"
 	JobFailed    = "failed"
+	// JobCancelled is a job called off that nothing in this run of the app
+	// carries on: one still in the queue, a render or a download called
+	// off, or work the app is closing on, which its record brings back as
+	// interrupted when the app starts again.
 	JobCancelled = "cancelled"
+	// JobSettled is a job that ended before it was done, interrupted,
+	// stopped or failed, and was taken care of since: carried on by a new
+	// job, or its row removed, or its video taken out of the library. It
+	// has nothing more to say, see settle.
+	JobSettled = "settled"
 	// JobInterrupted is a job whose record says it was running when the
 	// app last stopped: the app was closed or fell over in the middle of
 	// it. Continue carries it on.
@@ -813,7 +822,7 @@ func (q *queue) settle(episode, kind, record string) {
 	for _, j := range q.jobs {
 		if j.Episode == episode && j.Kind == kind && (record == "" || j.JobRecord.ID == record) &&
 			j.unfinished() && j.JobRecord.ID != "" {
-			j.State = JobCancelled
+			j.State = JobSettled
 			q.stampLocked(j)
 			settled = append(settled, *j)
 		}
@@ -858,7 +867,7 @@ func (q *queue) forgetEpisode(episode string) {
 	var settled []Job
 	for _, j := range q.jobs {
 		if j.Episode == episode && j.unfinished() {
-			j.State = JobCancelled
+			j.State = JobSettled
 			q.stampLocked(j)
 			settled = append(settled, *j)
 		}
@@ -877,7 +886,7 @@ func (q *queue) settleRefused(id string) {
 	var settled []Job
 	for _, j := range q.jobs {
 		if j.ID == id && j.State == JobFailed && j.JobRecord.ID == "" {
-			j.State = JobCancelled
+			j.State = JobSettled
 			q.stampLocked(j)
 			settled = append(settled, *j)
 		}

@@ -109,7 +109,7 @@ describe("the video's transcription", () => {
     const jobs = new JobStore();
     jobs.apply(job("interrupted", 1));
     expect(jobs.transcription("/v.mp4")?.state).toBe("interrupted");
-    jobs.apply(job("cancelled", 2));
+    jobs.apply(job("settled", 2));
     expect(jobs.transcription("/v.mp4")).toBeUndefined();
   });
 });
