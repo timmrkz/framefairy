@@ -50,9 +50,10 @@ func TestASearchHearsItsWindowAndFindsItsClips(t *testing.T) {
 	t.Parallel()
 	p, asked := searchProject(t, nil)
 	var turns []string
-	turn := func(ctx context.Context, step string) (context.Context, func(), error) {
+	turn := func(ctx context.Context, step string, waits func()) (context.Context, func(), error) {
 		turns = append(turns, step)
 		// While it waits for its turn, the record says so.
+		waits()
 		if rec := ReadSearch(disk, p.Source); rec == nil || rec.Step != StepWaiting {
 			t.Errorf("waiting for %s, the record says %+v", step, rec)
 		}
@@ -178,8 +179,9 @@ func TestASearchStoppedWhileItWaitsKeepsItsRecord(t *testing.T) {
 	t.Parallel()
 	p, asked := searchProject(t, nil)
 	ctx, cancel := context.WithCancel(context.Background())
-	turn := func(ctx context.Context, step string) (context.Context, func(), error) {
+	turn := func(ctx context.Context, step string, waits func()) (context.Context, func(), error) {
 		if step == StepFinding {
+			waits()
 			cancel()
 			return nil, nil, ctx.Err()
 		}
@@ -255,7 +257,7 @@ func TestARenderCarriesOnWithTheClipsItHasNotFinished(t *testing.T) {
 	// A render that was cut off after the first clip.
 	cut := &JobRecord{ID: id, Kind: JobRender, Plan: plan, Done: []string{view.Clips[0].ID}, Step: StepRendering}
 	var turns []string
-	turn := func(ctx context.Context, step string) (context.Context, func(), error) {
+	turn := func(ctx context.Context, step string, _ func()) (context.Context, func(), error) {
 		turns = append(turns, step)
 		return ctx, func() {}, nil
 	}
@@ -390,7 +392,7 @@ func TestASearchCarriesOnHearingWhenItGetsTheLaneBack(t *testing.T) {
 		return takenBack{&take, fakeRecognizer{&heard}}, nil
 	})
 	var turns []string
-	turn := func(ctx context.Context, step string) (context.Context, func(), error) {
+	turn := func(ctx context.Context, step string, _ func()) (context.Context, func(), error) {
 		turns = append(turns, step)
 		stepCtx, cancel := context.WithCancel(ctx)
 		if step == StepHearing && len(turns) == 1 {
@@ -523,7 +525,7 @@ func TestAPanicWhileHearingGivesTheLaneBack(t *testing.T) {
 		panic("the speech model broke")
 	})
 	held := 0
-	turn := func(ctx context.Context, step string) (context.Context, func(), error) {
+	turn := func(ctx context.Context, step string, _ func()) (context.Context, func(), error) {
 		held++
 		stepCtx, cancel := context.WithCancel(ctx)
 		return stepCtx, func() { held--; cancel() }, nil
@@ -652,7 +654,7 @@ func TestATranscriptionHearsTheWholeEpisodeAndNothingElse(t *testing.T) {
 	}
 	plans := p.Plans()
 	var turns []string
-	turn := func(ctx context.Context, step string) (context.Context, func(), error) {
+	turn := func(ctx context.Context, step string, _ func()) (context.Context, func(), error) {
 		turns = append(turns, step)
 		if rec := ReadJobs(disk, p.Source); len(rec) != 1 || rec[0].ID != TranscribeID || rec[0].Step != StepWaiting {
 			t.Errorf("waiting for %s, the records say %+v", step, rec)
@@ -675,5 +677,117 @@ func TestATranscriptionHearsTheWholeEpisodeAndNothingElse(t *testing.T) {
 	turns = nil
 	if err := p.TranscribeJob(context.Background(), turn); err != nil || len(turns) != 0 {
 		t.Errorf("again: %v, turns %v", err, turns)
+	}
+}
+
+// The engine alone says what step a job is in, and the program running
+// the job hears every record it writes, in order, issue #606. A job says
+// it waits only when its Turn says so: news that a turn it no longer
+// holds waits, or a turn taken back as it was given, never writes a step
+// over the one it is in. Done, it is in no step.
+func TestTheEngineAloneSaysWhatStepAJobIsIn(t *testing.T) {
+	fsys := afero.NewMemMapFs()
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), fsys)
+	var told []JobRecord
+	e.JobChanged = func(rec JobRecord) { told = append(told, rec) }
+	p := NewProject(e, "/videos/talk.mp4", DefaultOptions())
+	steps := func() string {
+		var out []string
+		for _, rec := range told {
+			out = append(out, rec.Step)
+		}
+		return strings.Join(out, " ")
+	}
+
+	j := p.startJob(JobRecord{ID: SearchID, Kind: JobSearch, To: 60})
+	ctx := context.Background()
+	var waits func()
+	given := func(_ context.Context, _ string, w func()) (context.Context, func(), error) {
+		waits = w
+		return ctx, func() {}, nil
+	}
+	if _, _, err := j.turn(ctx, given, StepHearing); err != nil {
+		t.Fatal(err)
+	}
+	hearing := waits
+	// Taken back while it hears, it waits at once.
+	hearing()
+	// Given and taken back at the same moment, it goes on waiting.
+	takenBack, takeBack := context.WithCancel(ctx)
+	takeBack()
+	if _, _, err := j.turn(ctx, func(context.Context, string, func()) (context.Context, func(), error) {
+		return takenBack, func() {}, nil
+	}, StepHearing); err != nil {
+		t.Fatal(err)
+	}
+	// News of the first turn, which it no longer holds, changes nothing.
+	hearing()
+	if got := steps(); got != "waiting hearing waiting" {
+		t.Errorf("heard and taken back, the job said %q", got)
+	}
+
+	// Given at once, it goes from hearing on to finding with no wait.
+	told = nil
+	if _, _, err := j.turn(ctx, given, StepHearing); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := j.turn(ctx, given, StepFinding); err != nil {
+		t.Fatal(err)
+	}
+	if got := steps(); got != "hearing finding" {
+		t.Errorf("given its turns at once, the job said %q", got)
+	}
+	if rec := ReadSearch(fsys, p.Source); rec == nil || rec.Step != StepFinding {
+		t.Errorf("finding, the record on disk is %+v", rec)
+	}
+
+	var err error
+	j.end(&err)
+	waits()
+	if got := steps(); got != "hearing finding " {
+		t.Errorf("done, the job said %q", got)
+	}
+	if rec := ReadSearch(fsys, p.Source); rec != nil {
+		t.Errorf("done, the record on disk is %+v", rec)
+	}
+	// Each record told is the record as it was then, not one the job went
+	// on writing to.
+	if n := len(told[0].Steps); n != 4 || told[0].Steps[n-1].To != nil {
+		t.Errorf("hearing, the job was told with the steps %+v", told[0].Steps)
+	}
+}
+
+// A Turn says a job waits on the goroutine of whoever took its turn,
+// while the job goes on to its next step on its own. The record the
+// program hears last is the record on disk, however the two meet.
+func TestAJobHearsItWaitsFromAnotherGoroutine(t *testing.T) {
+	fsys := afero.NewMemMapFs()
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), fsys)
+	var mu sync.Mutex
+	var last JobRecord
+	e.JobChanged = func(rec JobRecord) {
+		mu.Lock()
+		last = rec
+		mu.Unlock()
+	}
+	p := NewProject(e, "/videos/talk.mp4", DefaultOptions())
+	j := p.startJob(JobRecord{ID: TranscribeID, Kind: JobTranscribe})
+	ctx := context.Background()
+	var wg sync.WaitGroup
+	takes := func(_ context.Context, _ string, waits func()) (context.Context, func(), error) {
+		wg.Go(waits)
+		return ctx, func() {}, nil
+	}
+	for range 50 {
+		if _, _, err := j.turn(ctx, takes, StepHearing); err != nil {
+			t.Fatal(err)
+		}
+	}
+	wg.Wait()
+	recs := ReadJobs(fsys, p.Source)
+	mu.Lock()
+	defer mu.Unlock()
+	if len(recs) != 1 || recs[0].Step != last.Step || len(recs[0].Steps) != len(last.Steps) {
+		t.Errorf("the record on disk is %+v, the last one heard %+v", recs, last)
 	}
 }

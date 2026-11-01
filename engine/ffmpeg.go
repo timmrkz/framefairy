@@ -87,6 +87,13 @@ type Engine struct {
 	// searches are kept, on Files in the default places unless the
 	// program hands it its own, see records.go.
 	Records *Records
+	// JobChanged is told every record a job of this engine writes, in the
+	// order it writes them, and the record of a job that is done, which is
+	// in no step and no longer on disk. The app keeps what it is told as
+	// the job the window sees, so the engine alone says what step a job is
+	// in, see docs/JOBS.md. It is called on whatever goroutine wrote the
+	// record, one at a time for each job, and should return quickly.
+	JobChanged func(JobRecord)
 
 	// SkipCaptions renders without burning in captions.
 	SkipCaptions bool
