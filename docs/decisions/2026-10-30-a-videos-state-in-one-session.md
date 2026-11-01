@@ -373,3 +373,95 @@ jobs.go q.emit             a job's news, and whether it moves the work on
   clips right.
 - The stand-in in `frontend/preview/wails-stub.ts` sends a video's state
   before the news of its jobs, the way the Go side does.
+
+## Slice 4, first part, after its second review
+
+### The question
+
+The second review of #665 found four ways a move still reads a state
+from before its work, and one rule kept twice. A move is made when the
+store keeps a job's news. That is right only when the state the session
+keeps was read after that news, and four things break it:
+
+- An edit holds the states that come while it is written, `holds` in
+  `EpisodeSession`, and their jobs still reach the store, so the move is
+  made with the clips from before.
+- A state read before an edit's answer is dropped, `floor`, and its
+  jobs reach the store the same way.
+- `q.emit` runs after `q.mu` is let go, from 12 places, so two
+  goroutines can hand on two news of one job the other way round, and
+  the later can go out before the state the earlier asked for.
+- Which news moves the work on is decided twice: `movesOn` in
+  `jobs.go` and the moves in `EpisodeSession.seen`. A move added to the
+  session and not to Go would have its news go out first. No test holds
+  the two to one.
+
+So the question: what makes a move read the state its work left in
+every case, and where does the rule live of which news moves the work
+on?
+
+### Five simulations
+
+Counted at 5379ac4. `seen` makes five moves from a job's news, from
+three things about it: whether it is going, how many clips it wrote and
+whether it is hearing, and `asked` adds the work asked for here.
+`movesOn` decides from the same three, kept in `q.told`, a map beside
+`q.jobs` with a mutex of its own, never emptied. A state's `rev` and a
+job's `seq` come from one clock, the queue's, and both reach the window
+already. Every news of a video's job asks for a state, at once or
+within a quarter second.
+
+1. **Who may know about whom.** Go knows the order its news was made in.
+   The window knows two numbers Go gave it: the rev of the state it
+   keeps and the seq of each job. A state whose rev is past a job's seq
+   was read after that news and holds what the work left. The session
+   checking that before it makes a move works out nothing Go knew, it
+   reads Go's own numbers. Then the order Go sends in decides only how
+   soon a move is made, never whether it reads the right state. Crossing
+   the boundary: nothing new.
+2. **What changes together.** A move and the rule for which news makes
+   it change together, so they would live in one place. Go deciding and
+   sending what moved, a field on the job, fails on what the store
+   keeps: a state hands the store a job several stamps on, seq 8 where
+   the store had 5, and the news of 6 and 7 then says nothing newer. A
+   flag of one stamp loses the moves of the stamps between. Flags that
+   survive that have to add up, and what adds up is already sent: the
+   clips written, the step, whether it is going. So a move is a
+   comparison of two snapshots, and only the window has the two it
+   compares. Go needs the rule only to know when to read a state first.
+   The copy stays, held to one by a table of cases both sides read, the
+   form `docs/ARCHITECTURE.md` gives a rule kept on both sides.
+3. **Where state lives.** `q.told` is a second record of every job
+   beside `q.jobs`, kept by hand in step with it. What the last stamp
+   said of a job belongs on the job, where the stamp is: two fields of
+   `Job` not sent to the window, no map and no mutex. In the session, the
+   moves whose state is not in yet are one list, emptied as states are
+   kept. It replaces nothing in `holds` or `floor`, which still keep an
+   edit on screen, and makes them safe for the moves.
+4. **What runs together.** Judging `movesOn` at the stamp, under `q.mu`,
+   makes the judgement follow the order of the stamps, but the news is
+   still handed on after the lock is let go, so two goroutines can still
+   send it the other way round. Nothing that runs in Go can hold the
+   order to the far end, through Wails, the bridge or the stand-in. Only
+   a check at the far end, on the numbers, holds whatever runs. It costs
+   a wait only when the order broke: the next state is due within a
+   quarter second, and an edit's answer in milliseconds.
+5. **What a test has to build.** Today the agreement of the two rules is
+   proven by nothing, and a walk would only see it as a flash. A table
+   read by a Go test of `movesOn` and by a Vitest of the session proves
+   it in milliseconds, and a row added for a new move fails on the side
+   not changed. The check in the session is proven by Vitest alone: news
+   before its state makes no move until the state, an edit holding its
+   states, a state dropped under the edit's answer.
+
+### What converges
+
+- The session makes a move once the state it keeps was read after the
+  job's news, rev past seq: 1, 4 and 5. Until then the move waits, in
+  the order its news came. Every case the review found becomes a wait,
+  never a move with the wrong clips.
+- Go's rule decides how soon, not whether: 1 and 4. It is decided as
+  the job is stamped and kept on the job, and `q.told` goes: 3 and 4.
+- One table, `frontend/src/lib/moves.cases.json`, holds the two rules
+  to one, and a new move takes a row there: 2 and 5.
+- Go sending what moved is dropped, by 2.
