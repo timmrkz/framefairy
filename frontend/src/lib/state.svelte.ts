@@ -1,6 +1,6 @@
 // Shared state: the job list, kept current from the Go side's events.
 import { untrack } from "svelte";
-import { api, onJob, onVideoState, type Job, type Lane, type VideoState } from "./api";
+import { api, onJob, type Job, type Lane } from "./api";
 import { live, mergeJob, outstanding } from "./flow";
 import { said } from "./said";
 import type { EpisodeOrder } from "./order";
@@ -22,15 +22,6 @@ function doing(work: Work, j: Job): boolean {
 
 const key = (path: string, work: Work) => `${work} ${path}`;
 
-// Whether the news of a job moves its work on from what was shown: the
-// work over, a clip written, or the hearing over, which is what the moves
-// of EpisodeSession are made of, see lib/session.svelte.ts.
-function movesOn(had: Job | undefined, job: Job): boolean {
-  if (!live(job)) return live(had) || !had;
-  if (!had) return false;
-  return (job.written ?? 0) !== (had.written ?? 0) || (had.step === "hearing" && job.step !== "hearing");
-}
-
 export class JobStore {
   list = $state<Job[]>([]);
   // What a person pressed that the Go side has not caught up with yet, the
@@ -47,84 +38,8 @@ export class JobStore {
   // EpisodeSession in lib/session.svelte.ts.
   private watchers = new Set<(before: Job | undefined, after: Job) => void>();
 
-  // The newest state heard of each video, by its rev, and the news of its
-  // jobs that waits for a state read after it, the newest of each job.
-  // A video's state and the news of its jobs travel apart, and the news
-  // comes first. A job's end shown at its news, with the clips it left
-  // still to come in the state, was a search over with no clip chosen yet
-  // and its window drawn back where it was for a frame, #513. So the list
-  // shows the news of a video's job only once a state read after it is
-  // shown, and the end, its clips and what follows land in one step.
-  private revs = new Map<string, number>();
-  private waiting = new Map<string, Job>();
-  // The videos a workspace is open on, and how many. Their states are the
-  // session's to show, and it says which it showed with shown, see
-  // EpisodeSession.take. The states of the rest are shown as they come.
-  private followed = new Map<string, number>();
-
   // A snapshot of a job, kept unless the list already has a later one.
-  // The news of a video's job that moves its work on, a clip written, the
-  // hearing over or the work over, waits for a state of the video read
-  // after it, which holds what that left. News that work started or goes
-  // on shows at once: a press shows at once, and the row says how far the
-  // work has come as it comes. Held too, the row of a search carried on
-  // said its window for a moment in place of how much of it is heard.
   apply(job: Job) {
-    const rev = this.revs.get(job.episode);
-    const had = this.list.find((j) => j.id === job.id);
-    const waits = rev !== undefined && (job.seq ?? 0) >= rev && (this.waiting.has(job.id) || movesOn(had, job));
-    if (!waits) return this.keep(job);
-    const was = this.waiting.get(job.id);
-    if (!was || (job.seq ?? 0) > (was.seq ?? 0)) this.waiting.set(job.id, job);
-  }
-
-  // A state of the video read at rev is shown: the news of its jobs that
-  // came before it was read is let through, in the order it was sent.
-  shown(path: string, rev: number) {
-    const was = this.revs.get(path);
-    if (was !== undefined && rev <= was) return;
-    this.revs.set(path, rev);
-    this.release(path, rev);
-  }
-
-  // A workspace is open on the video, until the function it returns is
-  // called.
-  follow(path: string): () => void {
-    this.followed.set(path, (this.followed.get(path) ?? 0) + 1);
-    return () => {
-      const n = (this.followed.get(path) ?? 1) - 1;
-      if (n > 0) this.followed.set(path, n);
-      else this.followed.delete(path);
-    };
-  }
-
-  // A state of a video no workspace is open on, for the sidebar and the
-  // rest of the app.
-  private heard(state: VideoState) {
-    if (this.followed.has(state.video)) return;
-    this.shown(state.video, state.rev);
-    for (const job of state.jobs) this.apply(job);
-  }
-
-  // The video left the library, and no state of it comes again. What
-  // its jobs said last is shown now.
-  forget(path: string) {
-    this.revs.delete(path);
-    this.release(path, Infinity);
-  }
-
-  // The news of the video's jobs from before rev, in the order it was sent.
-  private release(path: string, rev: number) {
-    const due = [...this.waiting.values()]
-      .filter((j) => j.episode === path && (j.seq ?? 0) < rev)
-      .sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0));
-    for (const job of due) {
-      this.waiting.delete(job.id);
-      this.keep(job);
-    }
-  }
-
-  private keep(job: Job) {
     const before = this.list.find((j) => j.id === job.id);
     const next = mergeJob(this.list, job);
     if (next) this.list = next;
@@ -214,7 +129,6 @@ export class JobStore {
     // while it is read is missed. What was heard in the meantime and what
     // the list says are merged by their numbers.
     onJob(({ job }) => this.apply(job));
-    onVideoState((state) => this.heard(state));
     await this.resync();
     setInterval(() => {
       if (this.busy > 0) void this.resync();

@@ -606,9 +606,6 @@
     removingHow = deleteWork ? "delete" : "keep";
     try {
       await api.removeEpisode(ep.source, deleteWork);
-      // No state of the video comes again, so what its jobs said last is
-      // shown now, see JobStore.forget.
-      jobs.forget(ep.source);
       // The workspace goes first. Left open, it went on reading the
       // episode it showed, which was no longer in the library, and every
       // read came back as "file does not exist".

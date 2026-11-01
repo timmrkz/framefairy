@@ -233,68 +233,143 @@ What slice 4 takes away is still here: the reads the workspace asks for
 after work moves on, the poll of the clip list while clips are found,
 the poll of the job list, `unread`, and the effects that notice a start.
 
-## Slice 4, first part, as built
+## Slice 4, first part
 
 Slice 4 is three pull requests, in this order: the moves made with the
 state they come with, one `startJob` for the pending state of every
 control, and both polls going with #513.
 
-A job's news and its video's state travel apart, and the news comes
-first. The moves used to read the video again at the news, and the
-answers came one frame after another. Made at the news with no read of
-their own, they read a state from before the work: a search was over
-with no clip chosen yet, and its window was drawn back where it was for
-a frame. So a move is made with the state read after its news. Three
-designs were weighed for how the rest of the window keeps in step:
+### The question
 
-1. The session makes a move once it keeps a state past its news, and the
-   rest of the window shows the job at its news. Built first, it showed
-   a search over before its clips, so it needed a copy of the search as
-   it ran, `held`, which only the workspace read. The store cleared the
-   stop on the news, and the copy still ran, so Cancelling turned back
-   into Cancel for up to a quarter second. The review of #665 found it.
-   A second home for a job, and a render or a clip made by hand had the
-   same gap. Dropped.
-2. A video's jobs reach the window only inside its state, and the job
-   event is left for work with no video. One channel. But a state holds
-   only the jobs going and the newest of each kind over, so two renders
-   that end within one wait would lose the first, and every caller that
-   applies the job a call answered with would need another way in. It
-   changes the Go side and the walks' marks, which count the jobs' news.
-3. The job store shows the news of a video's job once a state of the
-   video read after it is shown, `JobStore.apply` and `shown`. The news
-   stays the one complete record of each job, and the state says when it
-   may be shown. Every reader of the store, the workspace, the sidebar
-   and the stop pressed, sees the end in the same step as the clips it
-   left. News that work started or goes on shows at once, so a press
-   and the progress of a row still show at once. Chosen.
+The workspace read the video again at every move, and the answers came
+one frame after another. Made with no read, a move has to read a state
+that holds what the work left. But a job's news and its video's state
+travel apart: `q.emit` sends the news at once and makes the state due,
+and `videoNews` sends the state up to a quarter second later. So at the
+news the session's state is from before the work: a search is over with
+no clip chosen yet and its window drawn back where it was for a frame.
+Where does the rule live that brings the two together?
 
-As built:
+The first two commits of #665 were built before this question was asked
+as one. The review of #665 found the first, a copy of the search kept as
+it ran, `held`, made Cancelling turn back into Cancel. The third, the
+job store holding the news of a video's job until a state read after it
+is shown, passed CI. Tim asked on 1 November for the five simulations
+the change to `docs/ARCHITECTURE.md` needed before any code. They were
+run on the code at b0eefbf, and their answer replaced the third.
 
-- From a video's first state on, the store keeps the news of its jobs
-  that moves the work on aside, the newest of each job, until a state
-  read after it is shown, then shows it in the order it was sent. That is
-  news of a clip written, of the hearing over and of the work over, which
-  is what the moves are made of. News that work started or goes on shows
-  at once. Held too, the row of a search carried on said its window for
-  a moment in place of how much of it was heard, and the frame of Transcribe
-  whole video shed no motes, in CI on the first commit of this. Before the first state, as the app
-  opens, it shows it at once. While a workspace is open on the video,
-  its session says which state it kept, from `take`. The states of the
-  other videos are shown as they come. A video that left the library has
-  its last news shown at once, `forget`, because no state of it comes
-  again.
-- So the session makes each move at the store's news, with the state it
-  kept a moment before, and no move asks for the video again. `wrote`
-  puts the first clip on screen from the state, `made` hands the card to
-  its clip, and `searched`, `heard`, `transcribed` and `rendered` read
-  only what no state holds, the room for windows and the window moved on
-  to, in `workMoved`. `load` keeps its read for what no state says: the
-  file gone or back, the app woken, an undo. A move that goes wrong is
-  said in the log and stops none after it.
-- The state that says a job is over goes out at once, `jobMoved` in
-  `cmd/framefairy-app/videostate.go`, rather than at the end of the
-  quarter second, so the end shows as soon as it did when it was shown at
-  its news.
-- The stand-in in `frontend/preview/wails-stub.ts` sends the video's
-  state after the news of its jobs, the way the Go side does.
+### Five simulations
+
+Counted at b0eefbf: `q.emit` is called from 12 places in
+`cmd/framefairy-app/jobs.go`, each after `q.mu` is let go. The window
+reads a video's jobs from the store in `App.svelte`, 12 times, and in
+`Episode.svelte`, 14, and applies the job a call answered with 5 times.
+Reading a state took 0.1 ms in #663, measured five times.
+
+1. **Who may know about whom.** Go knows the order its news is made in,
+   the window only the order it arrives in. The window holding news back
+   to put it in order is the window working out what Go knew, which
+   #606 set out to end. So Go sends them in the order the window needs:
+   the state read after a job's change first, then the job's news. The
+   window knows nothing of the order. Crossing the boundary: nothing new.
+   Cost: `q.emit` and `videoNews`, one pull request, and the window's
+   holding taken out.
+2. **What changes together.** A job's end and the clips it left change
+   together and should reach the window as one. Either the news carries
+   the state, a field `State` on `JobUpdate`, or the state goes out
+   right before the news. The field is a second way a state reaches the
+   window, beside the `video` event, with a type crossing the boundary
+   for it, and the window then has two places to take a state from. The
+   order needs no new name. Both are Go's.
+3. **Where state lives.** The window has two homes for a video's work,
+   the store for its jobs and the session for its state. Holding news in
+   the store is a third: the news held, the rev of each video's last
+   state and the videos a workspace is open on, 3 fields, 5 methods and a function
+   in `lib/state.svelte.ts`, with a rule, which news waits, that copies
+   what the session's moves are made of. A copy of the job in the
+   session, the first commit, is a second home of the job itself. Go
+   sending the state first adds no state anywhere.
+4. **What runs together.** Wails delivers the events one Go goroutine
+   emits in the order emitted: `EventProcessor.Emit` in Wails
+   v3.0.0-beta.23 hands every event to one mailbox, `frontendEvents`,
+   which "serializes delivery to all ... transports", and the walks'
+   bridge sends each browser its events through one channel, `bus`. So
+   the order holds if one goroutine sends a video's state and then the
+   news read before it. Reading the state on the job's own goroutine
+   would hold the work back for a read, a probe of the video the first
+   time. So the news is handed to the video's sender, `videoNews`, which
+   already sends one state at a time, and it sends the state and then the
+   news it was read after. The worker does not wait. Built that way, with
+   every news after its state, the walks found the news of work going on
+   cannot wait the quarter second the state may: the row of a search
+   carried on said its window for a moment in place of how much of it was
+   heard, "Continue fills the transcription from nothing over what is
+   left to hear", and the frame of Transcribe whole video shed no motes,
+   "a video added is transcribed to its end from its menu". Sending a
+   state at once before every news would read the state for every line
+   the engine logs. So only the news that moves the work on, what the
+   window's moves are made of, goes after a state read after it, which
+   goes at once. The rest goes as it comes, unless news of the video is
+   still waiting, and then after it, so the order holds.
+5. **What a test has to build.** The order in Go is proven by a Go test
+   with the send recorded: every news goes after a state whose rev is past
+   it. The window then needs no test of its own for the order, and the
+   session's tests take each state before the news it holds. Holding
+   news in the store needed a Vitest of the store and of the session
+   together, in both orders, and the walks to prove the two agree.
+
+### What converges
+
+- Go sends a video's state before the news of its job that the state
+  was read after, for the news that moves the work on: 1, 2 and 4, and 3
+  and 5 by what they spare. The order
+  comes from the one sender of each video, `videoNews`, which 4 needs
+  and 2 allows.
+- The window holds nothing back and decides nothing about the order: 1,
+  3 and 5. The session makes each move as the store keeps the job, which
+  is when the state that holds it has just been kept.
+- A field `State` on `JobUpdate` is only in 2, and is dropped for the
+  second way into the window it makes.
+- The job store holding news, which was built, is in none of the five,
+  and goes.
+
+```
+screens/Episode.svelte     a view: reads the session, asks Go through api.ts
+lib/session.svelte.ts      one video's state, kept by revision, and what its work did
+lib/state.svelte.ts        every video's jobs, each snapshot kept handed on
+lib/api.ts                 the calls and the events of Go
+------------------------   events in the order Go sent them
+videostate.go videoNews    a video's state, then the news of its jobs read before it
+jobs.go q.emit             a job's news, and whether it moves the work on
+```
+
+### As built
+
+- `q.emit` hands the news of a video's job to `videoNews.after`, with
+  whether it moves the work on, `movesOn` in `jobs.go`: the job over, a
+  clip written, or its hearing over, from what the window was told of
+  the job before. Such news goes out right after a state of the video
+  read after it, which is sent at once. The news of a job started or
+  going on goes out as it comes, unless news of the video waits for its
+  state, and then right after it, in the order it came. The news of work
+  with no video, the models, goes out at once. A video that left the
+  library, or whose state cannot be read, still has its news sent.
+  Nothing is sent once the app quits.
+- One send at a time for each video, so the states leave in the order
+  they were read, b0eefbf, found by the Mac's CI on main.
+- `EpisodeSession.take` hands the state's jobs to the store after it
+  kept the state, and the store tells the session, which makes each move
+  then, with what the state holds. The news that follows says nothing
+  newer and is not kept. No move asks for the video again. `wrote` puts
+  the first clip on screen from the state, `made` hands the card to its
+  clip, and `searched`, `heard`, `transcribed` and `rendered` read only
+  what no state holds, the room for windows and the window moved on to,
+  in `workMoved`. `load` keeps its read for what no state says: the file
+  gone or back, the app woken, an undo. A move that goes wrong is said in
+  the log and stops none after it.
+- While an edit holds the states that come, their jobs still reach the
+  store, so a move made then reads the clips from before the edit's
+  state. An edit is written in milliseconds, and the next state puts the
+  clips right.
+- The stand-in in `frontend/preview/wails-stub.ts` sends a video's state
+  before the news of its jobs, the way the Go side does.
