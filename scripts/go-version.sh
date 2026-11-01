@@ -25,8 +25,11 @@ else
 	manifest=$(curl -fsSL --retry 3 https://raw.githubusercontent.com/actions/go-versions/main/versions-manifest.json)
 fi
 
-# The manifest lists the newest first, as setup-go reads it.
-version=$(printf '%s' "$manifest" | jq -r --arg want "$want" \
-	'[.[] | select(.stable and (.version == $want or (.version | startswith($want + "."))))][0].version // empty')
+# The manifest lists the newest first, as setup-go reads it, and each
+# release says its version and then whether it is stable. Read with awk,
+# because the image the Linux jobs run in has no jq.
+version=$(printf '%s' "$manifest" | tr -d ' \t\r\n' |
+	grep -o '"version":"[^"]*","stable":[a-z]*' |
+	awk -F'"' -v want="$want" '$NF == ":true" && ($4 == want || index($4, want ".") == 1) { print $4; exit }')
 [ -n "$version" ] || { echo "no stable Go release in the manifest for go $want" >&2; exit 1; }
 echo "$version"
