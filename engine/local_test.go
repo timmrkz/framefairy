@@ -405,6 +405,9 @@ func TestTheServerKeepsNoCopiesOfEarlierPrompts(t *testing.T) {
 	if !strings.Contains(out, " --cache-ram 0") {
 		t.Errorf("the server keeps copies of earlier prompts, up to 8 GiB of them by itself: %q", out)
 	}
+	if !strings.Contains(out, " --no-cache-idle-slots") {
+		t.Errorf("the server warns at every start that it has no cache to keep idle slots in: %q", out)
+	}
 }
 
 // The key goes with a request to the server it belongs to and to no other
