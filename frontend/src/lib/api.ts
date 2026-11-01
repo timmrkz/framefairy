@@ -451,8 +451,9 @@ export interface EngineEvent {
 // called off by hand with Cancel or Stop transcribing that keeps what it
 // did is "stopped", and Continue carries it on the same way. One of
 // these, or one that failed, is "settled" once it is taken care of:
-// carried on by a new job, or its row removed. A job called off whose
-// work nothing carries on is "cancelled". See docs/JOBS.md.
+// carried on by a new job, its row removed, or its video taken out of the
+// library. A job called off whose work nothing carries on is
+// "cancelled". See docs/JOBS.md.
 export type JobState =
   | "queued"
   | "running"

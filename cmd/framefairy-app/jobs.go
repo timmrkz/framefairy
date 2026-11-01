@@ -28,13 +28,15 @@ const (
 	JobFailed  = "failed"
 	// JobCancelled is a job called off that nothing in this run of the app
 	// carries on: one still in the queue, a render or a download called
-	// off, or work the app is closing on, which its record brings back as
-	// interrupted when the app starts again.
+	// off, a job running when its video is removed, or work the app is
+	// closing on, which its record brings back as interrupted when the app
+	// starts again.
 	JobCancelled = "cancelled"
 	// JobSettled is a job that ended before it was done, interrupted,
-	// stopped or failed, and was taken care of since: carried on by a new
-	// job, or its row removed, or its video taken out of the library. It
-	// has nothing more to say, see settle.
+	// stopped or failed, and was taken care of since: carried on by
+	// Continue, taken up by a new Search or Transcribe video, its row
+	// removed, or its video taken out of the library. It has nothing more
+	// to say, see settle.
 	JobSettled = "settled"
 	// JobInterrupted is a job whose record says it was running when the
 	// app last stopped: the app was closed or fell over in the middle of
@@ -813,9 +815,10 @@ func (q *queue) stopClips(episode, click string) {
 	}
 }
 
-// settle marks the searches or renders of an episode that stopped, cut
-// off or failed, as taken care of: carried on by a new job, or their note
-// taken away. A record id picks one of them, and "" all of that kind.
+// settle marks the jobs of one kind of an episode that stopped, were cut
+// off or failed, a search, a render, a clip made by hand or the whole
+// video heard, as settled: carried on by a new job, or their row removed.
+// A record id picks one of them, and "" all of that kind.
 func (q *queue) settle(episode, kind, record string) {
 	q.mu.Lock()
 	var settled []Job
