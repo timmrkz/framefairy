@@ -711,6 +711,14 @@ messages, pull request text, code comments and chat replies.
   of its own in a workflow, and the rule for what reaches it is added to
   `scripts/changed.sh`, with its case in `scripts/changed-test.sh`. See
   [docs/BUILD.md](docs/BUILD.md#one-way-to-test).
+- **Test fixtures are committed, never made while the tests run.** A
+  video or a sound a test reads is a file in
+  `internal/fixtures/testdata/`, made once by its recipe and read with
+  `fixtures.Path`. A new test reads one that is there, unless what it
+  tests is a property none of them has. A file made at runtime is made
+  again on every run, and on CI's Mac it is made on the graphics chip,
+  which fails and hangs. See
+  [the decision record](docs/decisions/2026-11-01-committed-test-fixtures.md).
 - **Tests stay off the disk.** A test is about our code, not the drive
   under it. The engine, a project and the app's store hold an `afero.Fs`,
   see `engine/files.go`: the programs hand them the real disk, a test

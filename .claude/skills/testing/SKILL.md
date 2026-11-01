@@ -560,7 +560,10 @@ every push, by the people waiting on CI and by the machines.
 - **Every test file and every CI job earns its place.** Say what it
   guards and what it costs. Test tooling stays small, uses the tools'
   own features, and keeps fixtures as plain files, not text inside a
-  script.
+  script. A fixture is made once and committed with the tests, never
+  made while they run: one made every run costs its time on every run,
+  and fails wherever the tool that makes it does. Share the few that
+  are there before adding one.
 - **Work on the tests proves itself against the main branch.** The point
   of it is tests that are faster and more reliable. A change to tests or
   CI shows its numbers before and after, on the same machine, in a table.

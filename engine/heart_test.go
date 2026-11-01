@@ -351,7 +351,7 @@ func TestThoughtIsCountedInTokens(t *testing.T) {
 //
 // On the real disk: a search runs ffmpeg on the episode.
 func TestEverySideOfAComparisonHasItsOwnServer(t *testing.T) {
-	source := testEpisode(t, "20")
+	source := testEpisode(t, "40")
 	var asked int32
 	server := fakeModel(t, &asked)
 	defer server.Close()

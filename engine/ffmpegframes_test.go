@@ -155,7 +155,7 @@ func TestShowinfoTime(t *testing.T) {
 // On the real disk: ffmpeg reads the episode.
 func TestFFmpegFramesFromAMoment(t *testing.T) {
 	t.Parallel()
-	path := testEpisode(t, "6")
+	path := testEpisode(t, "15")
 	info, err := NewEngine(runlog.New(io.Discard, false, false), disk).Probe(context.Background(), path)
 	if err != nil {
 		t.Fatal(err)
@@ -195,7 +195,7 @@ func TestFFmpegFramesFromAMoment(t *testing.T) {
 //
 // On the real disk: ffmpeg reads the episode.
 func TestFFmpegFramesStopsWhenTheReaderDoes(t *testing.T) {
-	path := testEpisode(t, "6")
+	path := testEpisode(t, "15")
 	enough := errors.New("enough")
 	n := 0
 	err := ffmpegFrames(context.Background(), path, 0, 64, 36, func(float64, []byte) error {

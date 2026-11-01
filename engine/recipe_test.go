@@ -151,7 +151,7 @@ func TestStoriesSaysTheLengthInWords(t *testing.T) {
 //
 // On the real disk: ffmpeg reads the episode the search hears.
 func TestAnExperimentKeepsToItself(t *testing.T) {
-	source := testEpisode(t, "20")
+	source := testEpisode(t, "40")
 	var heard, asked int32
 	server := fakeModel(t, &asked)
 	defer server.Close()
@@ -206,7 +206,7 @@ func TestAnExperimentKeepsToItself(t *testing.T) {
 // On the real disk: ffmpeg reads the episode the searches hear.
 func TestAComparisonReportsEveryRecipe(t *testing.T) {
 	t.Parallel()
-	source := testEpisode(t, "20")
+	source := testEpisode(t, "40")
 	var heard, asked int32
 	server := fakeModel(t, &asked)
 	defer server.Close()
@@ -269,7 +269,7 @@ func TestAComparisonReportsEveryRecipe(t *testing.T) {
 // On the real disk: ffmpeg reads the episode the searches hear.
 func TestASideKeepsThePromptItWroteThoughItLooksUnchanged(t *testing.T) {
 	t.Parallel()
-	source := testEpisode(t, "20")
+	source := testEpisode(t, "40")
 	prompt := filepath.Join(WorkDir(source), "logs", "plan-prompt.txt")
 	var heard int32
 	var mu sync.Mutex
@@ -348,7 +348,7 @@ func TestASideKeepsThePromptItWroteThoughItLooksUnchanged(t *testing.T) {
 // On the real disk: ffmpeg reads the episode the searches hear.
 func TestAComparisonOfFailuresIsAFailure(t *testing.T) {
 	t.Parallel()
-	source := testEpisode(t, "20")
+	source := testEpisode(t, "40")
 	var heard int32
 	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
@@ -397,7 +397,7 @@ func TestAComparisonOfThinkingBudgets(t *testing.T) {
 		}
 	}
 
-	source := testEpisode(t, "20")
+	source := testEpisode(t, "40")
 	var mu sync.Mutex
 	var budgets, seeds []float64
 	var temperatures []any
