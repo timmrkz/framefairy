@@ -77,8 +77,8 @@ func TestARemovedStoppedSearchIsGoneForGood(t *testing.T) {
 		}
 	}
 	mu.Unlock()
-	if refused.Record != "" {
-		t.Errorf("the refused search has the record %q", refused.Record)
+	if refused.JobRecord.ID != "" {
+		t.Errorf("the refused search has the record %q", refused.JobRecord.ID)
 	}
 	for _, ep := range eps {
 		if recs := engine.ReadJobs(s.store.files, ep); len(recs) != 0 {

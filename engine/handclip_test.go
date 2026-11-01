@@ -62,7 +62,7 @@ func TestAClipMadeByHand(t *testing.T) {
 	p := handProject(t, source, log)
 	ctx := context.Background()
 
-	key, err := p.MakeClip(ctx, "clip-1", ClipRequest{At: 20}, nil)
+	key, err := p.MakeClip(ctx, "clip-1", ClipRequest{At: 20}, Host{})
 	if err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
@@ -158,7 +158,7 @@ func TestAClipMadeByHand(t *testing.T) {
 	}
 
 	// O at 60 s ends a clip there and grows it back, into the same set.
-	key, err = p.MakeClip(ctx, "clip-2", ClipRequest{At: 60, Backward: true}, nil)
+	key, err = p.MakeClip(ctx, "clip-2", ClipRequest{At: 60, Backward: true}, Host{})
 	if err != nil || key != HandPlanName+"/h02" {
 		t.Fatalf("%q %v", key, err)
 	}
@@ -199,7 +199,7 @@ func TestClipsMadeByHandAtOnce(t *testing.T) {
 			// A project each, the way the app runs every job with its own.
 			q := NewProject(NewEngine(log, disk), source, p.Base)
 			keys[i], errs[i] = q.MakeClip(context.Background(), fmt.Sprintf("clip-%d", i),
-				ClipRequest{At: float64(5 + i*12)}, nil)
+				ClipRequest{At: float64(5 + i*12)}, Host{})
 		}()
 	}
 	wg.Wait()
@@ -231,7 +231,7 @@ func TestAClipMadeByHandCalledOff(t *testing.T) {
 	p := handProject(t, source, log)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := p.MakeClip(ctx, "clip-9", ClipRequest{At: 30}, nil); err == nil {
+	if _, err := p.MakeClip(ctx, "clip-9", ClipRequest{At: 30}, Host{}); err == nil {
 		t.Fatal("a clip called off was made")
 	}
 	if _, clips, err := LoadClips(disk, p.HandPlanPath()); err == nil && len(clips) > 0 {

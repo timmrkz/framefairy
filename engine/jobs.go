@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/afero"
@@ -251,21 +252,30 @@ func ReadJobs(fsys afero.Fs, source string) []JobRecord {
 // StopJob marks a job's record as called off by hand, once the job has
 // stopped. What it did stays and it can be carried on, so it says so where
 // its work was, the same way a job cut off by the app closing does, see
-// docs/JOBS.md. A job with no record is left alone.
-func StopJob(fsys afero.Fs, source, id string) error {
+// docs/JOBS.md. It gives the record it wrote, or tried to, so the app
+// tells the window the same record. A job with no record is left alone,
+// and it gives false.
+func StopJob(fsys afero.Fs, source, id string) (JobRecord, bool, error) {
 	for _, rec := range ReadJobs(fsys, source) {
-		if rec.ID != id {
-			continue
+		if rec.ID == id {
+			stopped := rec.Stopped(time.Now())
+			return stopped, true, WriteJob(fsys, source, stopped)
 		}
-		now := time.Now()
-		if n := len(rec.Steps); n > 0 && rec.Steps[n-1].To == nil {
-			rec.Steps[n-1].To = &now
-		}
-		rec.Step = StepStopped
-		rec.Steps = append(rec.Steps, StepTime{Step: StepStopped, From: now, To: &now})
-		return WriteJob(fsys, source, rec)
 	}
-	return nil
+	return JobRecord{}, false, nil
+}
+
+// Stopped is the record of a job called off by hand at now: the step it
+// was in ends, and it is stopped. StopJob writes it, and the app tells the
+// window it, see docs/JOBS.md.
+func (r JobRecord) Stopped(now time.Time) JobRecord {
+	r.Steps = slices.Clone(r.Steps)
+	if n := len(r.Steps); n > 0 && r.Steps[n-1].To == nil {
+		r.Steps[n-1].To = &now
+	}
+	r.Step = StepStopped
+	r.Steps = append(r.Steps, StepTime{Step: StepStopped, From: now, To: &now})
+	return r
 }
 
 // ReadSearch gives the record of the episode's search, or nil when it has
@@ -356,55 +366,121 @@ func saneJob(source string, r *JobRecord) bool {
 // video heard for a moment between a search's hearing and its finding,
 // and its frame on the range picker lit up and went dim again, Tim's
 // report of 25 October, 14.33.
-type Turn func(ctx context.Context, step string) (context.Context, func(), error)
+//
+// waits is how the job hears that it waits for its turn: its ask found the
+// lane taken, or its turn was taken back. The engine then writes that the
+// job waits, so the record, and the window that is told it, say so the
+// moment it happens. A Turn calls it before whoever took the turn has it,
+// on whatever goroutine that is.
+type Turn func(ctx context.Context, step string, waits func()) (context.Context, func(), error)
 
-// job keeps a running job's record.
-type job struct {
-	p   *Project
-	rec JobRecord
+// Host is how the program a job runs in takes part in it. Turn hands the
+// job its turns, and Changed is told every record the job writes, in the
+// order it writes them, and the record of the job once it is done, which
+// is in no step and no longer on disk. The app keeps what Changed is told
+// as the job the window sees, so the engine alone says what step a job is
+// in, see docs/JOBS.md. Changed is called on whatever goroutine wrote the
+// record, one at a time, and should return quickly. Both belong to one
+// job, so a record never has to say which job it is of. The zero Host runs
+// every step at once and tells nobody, which is what the command line and
+// the tests do.
+type Host struct {
+	Turn    Turn
+	Changed func(JobRecord)
 }
 
-func (p *Project) startJob(rec JobRecord) *job {
+// job keeps a running job's record. It is the only writer of the record
+// while the job runs, the step included, see docs/JOBS.md. mu is held
+// for every change to rec, because a Turn may say the job waits from
+// another goroutine.
+type job struct {
+	p    *Project
+	host Host
+
+	mu  sync.Mutex
+	rec JobRecord
+	// turns counts the turns the job has asked for, so news that one of
+	// them waits is never news about a later one.
+	turns int
+	// over is set once the job has ended, after which nothing is written.
+	over bool
+}
+
+func (p *Project) startJob(rec JobRecord, host Host) *job {
 	now := time.Now()
 	rec.Asked = now
 	rec.Step = StepWaiting
 	rec.Steps = []StepTime{{Step: StepWaiting, From: now}}
-	j := &job{p: p, rec: rec}
-	j.write()
+	j := &job{p: p, host: host, rec: rec}
+	j.mu.Lock()
+	j.writeLocked()
+	j.mu.Unlock()
 	return j
 }
 
-func (j *job) write() {
+// writeLocked writes the record and tells the program running the job,
+// see Host. j.mu is held, so the program hears the record in
+// the order it was written.
+func (j *job) writeLocked() {
 	if err := WriteJob(j.p.Files, j.p.Source, j.rec); err != nil {
 		j.p.engine.Log.Warn("could not note the %s: %s", j.rec.Kind, err)
 	}
+	j.changedLocked()
 }
 
-// step ends the step the job is in and starts the next.
-func (j *job) step(name string) {
+func (j *job) changedLocked() {
+	if tell := j.host.Changed; tell != nil {
+		rec := j.rec
+		rec.Steps, rec.Done, rec.Clips = slices.Clone(rec.Steps), slices.Clone(rec.Done), slices.Clone(rec.Clips)
+		tell(rec)
+	}
+}
+
+// note changes the record and writes it.
+func (j *job) note(change func(*JobRecord)) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	change(&j.rec)
+	j.writeLocked()
+}
+
+// stepLocked ends the step the job is in and starts the next.
+func (j *job) stepLocked(name string) {
 	now := time.Now()
 	if n := len(j.rec.Steps); n > 0 && j.rec.Steps[n-1].To == nil {
 		j.rec.Steps[n-1].To = &now
 	}
 	j.rec.Step = name
 	j.rec.Steps = append(j.rec.Steps, StepTime{Step: name, From: now})
-	j.write()
+	j.writeLocked()
 }
 
 // turn waits for the lane of a step and then starts it. It gives the
-// context the step runs in and what lets the lane go again.
-func (j *job) turn(ctx context.Context, turn Turn, step string) (context.Context, func(), error) {
+// context the step runs in and what lets the lane go again. The job says
+// it waits only when it does, when the Turn says so, so a search that goes
+// from hearing on to finding at once is never seen waiting in between.
+func (j *job) turn(ctx context.Context, step string) (context.Context, func(), error) {
 	// Stopped as the last step ended, it stays in that step.
 	if ctx.Err() != nil {
 		return nil, nil, ErrCancelled
 	}
 	stepCtx, release := ctx, func() {}
-	if turn != nil {
-		if j.rec.Step != StepWaiting {
-			j.step(StepWaiting)
+	if turn := j.host.Turn; turn != nil {
+		j.mu.Lock()
+		j.turns++
+		mine := j.turns
+		j.mu.Unlock()
+		waits := func() {
+			j.mu.Lock()
+			defer j.mu.Unlock()
+			// News of a turn before this one, of a job over or called off,
+			// or of a job that already says it waits, changes nothing.
+			if j.turns == mine && !j.over && ctx.Err() == nil && j.rec.Step != StepWaiting {
+				j.stepLocked(StepWaiting)
+			}
 		}
 		var err error
-		stepCtx, release, err = turn(ctx, step)
+		stepCtx, release, err = turn(ctx, step, waits)
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil, nil, ErrCancelled
@@ -412,7 +488,15 @@ func (j *job) turn(ctx context.Context, turn Turn, step string) (context.Context
 			return nil, nil, err
 		}
 	}
-	j.step(step)
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	// A turn taken back as it was given waits, and waits said so. The
+	// look and the step are under the lock waits takes, and the turn's
+	// context ends before waits is called, so the step is never written
+	// over the news that it waits.
+	if stepCtx.Err() == nil {
+		j.stepLocked(step)
+	}
 	return stepCtx, release, nil
 }
 
@@ -427,6 +511,9 @@ func (j *job) end(err *error) {
 	}
 	switch {
 	case *err == nil:
+		j.mu.Lock()
+		defer j.mu.Unlock()
+		j.over = true
 		now := time.Now()
 		if n := len(j.rec.Steps); n > 0 && j.rec.Steps[n-1].To == nil {
 			j.rec.Steps[n-1].To = &now
@@ -435,7 +522,13 @@ func (j *job) end(err *error) {
 		if rerr := RemoveJob(j.p.Files, j.p.Source, j.rec.ID); rerr != nil {
 			j.p.engine.Log.Warn("could not clear the %s: %s", j.rec.Kind, rerr)
 		}
+		// Done, it is in no step, and its record is gone.
+		j.rec.Step = ""
+		j.changedLocked()
 	case errors.Is(*err, ErrCancelled):
+		j.mu.Lock()
+		j.over = true
+		j.mu.Unlock()
 	default:
 		reason := j.p.LastError()
 		if reason == "" {
@@ -446,11 +539,17 @@ func (j *job) end(err *error) {
 }
 
 func (j *job) fail(reason string) {
-	j.rec.Error = reason
-	j.step(StepFailed)
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.over = true
 	now := time.Now()
-	j.rec.Steps[len(j.rec.Steps)-1].To = &now
-	j.write()
+	if n := len(j.rec.Steps); n > 0 && j.rec.Steps[n-1].To == nil {
+		j.rec.Steps[n-1].To = &now
+	}
+	j.rec.Error = reason
+	j.rec.Step = StepFailed
+	j.rec.Steps = append(j.rec.Steps, StepTime{Step: StepFailed, From: now, To: &now})
+	j.writeLocked()
 }
 
 // Search finds clips in a window of the episode: it hears the episode as
@@ -460,13 +559,13 @@ func (j *job) fail(reason string) {
 //
 // What was heard stays however the search ends, and the next search
 // carries on from there.
-func (p *Project) Search(ctx context.Context, req PlanRequest, turn Turn) (plan string, err error) {
+func (p *Project) Search(ctx context.Context, req PlanRequest, host Host) (plan string, err error) {
 	// The record first, before anything that can be cut off, so a search
 	// the app closes on says it was interrupted, however early: working
 	// out the pass of a window asks ffmpeg for the episode's length, and a
 	// search cancelled there once left no record at all.
 	j := p.startJob(JobRecord{ID: SearchID, Kind: JobSearch, From: req.From, To: req.To,
-		Count: req.Count, Min: req.Min, Max: req.Max, Replan: req.Replan, Pass: req.Pass})
+		Count: req.Count, Min: req.Min, Max: req.Max, Replan: req.Replan, Pass: req.Pass}, host)
 	defer j.end(&err)
 	// Whatever is read ahead of the search ends with it, however it ends,
 	// see readahead.go.
@@ -483,8 +582,7 @@ func (p *Project) Search(ctx context.Context, req PlanRequest, turn Turn) (plan 
 		if req.Pass, err = p.nextPass(ctx, req); err != nil {
 			return "", err
 		}
-		j.rec.Pass = req.Pass
-		j.write()
+		j.note(func(r *JobRecord) { r.Pass = req.Pass })
 	}
 
 	end, err := p.windowEnd(ctx, req)
@@ -503,13 +601,13 @@ func (p *Project) Search(ctx context.Context, req PlanRequest, turn Turn) (plan 
 		go p.warmAhead(ctx, req)
 	}
 	stepOf := func(ctx context.Context, step string) (context.Context, func(), error) {
-		return j.turn(ctx, turn, step)
+		return j.turn(ctx, step)
 	}
 	letGo, err := p.hear(ctx, stepOf, timed.Window{Start: req.From, End: end})
 	if err != nil {
 		return "", err
 	}
-	stepCtx, release, err := j.turn(ctx, turn, StepFinding)
+	stepCtx, release, err := j.turn(ctx, StepFinding)
 	letGo()
 	if err != nil {
 		return "", err
@@ -523,8 +621,8 @@ func (p *Project) Search(ctx context.Context, req PlanRequest, turn Turn) (plan 
 // a video's menu. It keeps a record like a search, so an app closed while
 // it hears says so, and carries on from what was heard. Its hearing gives
 // way to every search and clip made by hand, which the app's lanes decide.
-func (p *Project) TranscribeJob(ctx context.Context, turn Turn) (err error) {
-	j := p.startJob(JobRecord{ID: TranscribeID, Kind: JobTranscribe})
+func (p *Project) TranscribeJob(ctx context.Context, host Host) (err error) {
+	j := p.startJob(JobRecord{ID: TranscribeID, Kind: JobTranscribe}, host)
 	defer j.end(&err)
 	if ctx.Err() != nil {
 		return ErrCancelled
@@ -534,7 +632,7 @@ func (p *Project) TranscribeJob(ctx context.Context, turn Turn) (err error) {
 		return err
 	}
 	stepOf := func(ctx context.Context, step string) (context.Context, func(), error) {
-		return j.turn(ctx, turn, step)
+		return j.turn(ctx, step)
 	}
 	letGo, err := p.hear(ctx, stepOf, timed.Window{Start: 0, End: end})
 	letGo()
@@ -629,7 +727,7 @@ func (p *Project) windowEnd(ctx context.Context, req PlanRequest) (float64, erro
 // RenderJob renders clips of a plan, one at a time, and keeps a record of
 // the ones it has finished. Given the record of a render that was cut off
 // or failed, it renders the clips that are not finished yet.
-func (p *Project) RenderJob(ctx context.Context, id string, req RenderRequest, carry *JobRecord, turn Turn) (err error) {
+func (p *Project) RenderJob(ctx context.Context, id string, req RenderRequest, carry *JobRecord, host Host) (err error) {
 	clips := req.Clips
 	if len(clips) == 0 {
 		view, err := ReadPlan(p.Files, req.Plan)
@@ -646,9 +744,9 @@ func (p *Project) RenderJob(ctx context.Context, id string, req RenderRequest, c
 	if carry != nil && carry.ID == id && carry.Plan == req.Plan {
 		rec.Done = carry.Done
 	}
-	j := p.startJob(rec)
+	j := p.startJob(rec, host)
 	defer j.end(&err)
-	stepCtx, release, err := j.turn(ctx, turn, StepRendering)
+	stepCtx, release, err := j.turn(ctx, StepRendering)
 	if err != nil {
 		return err
 	}
@@ -660,8 +758,7 @@ func (p *Project) RenderJob(ctx context.Context, id string, req RenderRequest, c
 		if err := p.Render(stepCtx, RenderRequest{Plan: req.Plan, Clips: []string{clip}, Preview: req.Preview}); err != nil {
 			return err
 		}
-		j.rec.Done = append(j.rec.Done, clip)
-		j.write()
+		j.note(func(r *JobRecord) { r.Done = append(r.Done, clip) })
 	}
 	return nil
 }

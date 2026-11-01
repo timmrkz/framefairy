@@ -37,18 +37,31 @@ const (
 type Job struct {
 	ID      string `json:"id"`
 	Episode string `json:"episode"`
-	// Kind is transcribe, plan or render.
-	Kind   string `json:"kind"`
-	Label  string `json:"label"`
-	State  string `json:"state"`
-	Error  string `json:"error,omitempty"`
-	Result string `json:"result,omitempty"`
-	// Plan and Clips say what a render is of, from the moment it is
-	// queued, so the Render button of that clip can show it running.
-	// Result only says it once the job is over. No clips means the whole
-	// plan.
-	Plan  string   `json:"plan,omitempty"`
-	Clips []string `json:"clips,omitempty"`
+	Label   string `json:"label"`
+	State   string `json:"state"`
+	Result  string `json:"result,omitempty"`
+	// JobRecord is what the job was asked to do, the step it is in and why
+	// it failed, in the shape of the record a search, a render, a clip
+	// made by hand or the whole video heard keeps in the episode's work
+	// folder, see engine/jobs.go. It is held, not copied field by field,
+	// issue #606. A job read back as the app starts holds its record
+	// whole. A job started now holds what the app asked for until the
+	// engine writes its record, and from then on every record the engine
+	// writes, see heard, so the engine alone says what step it is in. The
+	// queue adds only the lane, and, for a job called off by hand or one
+	// that failed in the app rather than in the engine, how it ended, see
+	// runJob.
+	//
+	// Its ID is the record's, empty for a job that keeps none, and never
+	// the job's own ID. Its methods are the record's: Interrupted says
+	// what a record read back says, not whether the job is interrupted,
+	// which State does. Its fields go to the window as the job's own:
+	// Kind, the step, the error, the window of a search and the clips it
+	// was asked for, what a render is of from the moment it is queued, and
+	// the moment I or O was pressed at. The clip list holds as many rows
+	// open as a search's Count, whatever the workspace would ask for now,
+	// and reads what it found by its Min, not by Shortest as it is now.
+	engine.JobRecord
 	// Last is the most recent event, so a screen opened later still shows
 	// where the job is.
 	Last     *runlog.Event `json:"last,omitempty"`
@@ -59,20 +72,6 @@ type Job struct {
 	// clips, and a render never holds up a search. A search moves from one
 	// lane to the other as it goes from hearing to finding.
 	Lane string `json:"lane"`
-	// Step is where a search or a render is: waiting, hearing, finding or
-	// rendering. See docs/JOBS.md.
-	Step string `json:"step,omitempty"`
-	// Record is the id of the record a search or a render keeps in the
-	// episode's work folder, see engine/jobs.go.
-	Record string `json:"record,omitempty"`
-	// From and To are the window of a search, To 0 for the end of the
-	// episode.
-	From float64 `json:"from,omitempty"`
-	To   float64 `json:"to,omitempty"`
-	// At and Backward are a clip made by hand: the moment I or O was
-	// pressed at, and whether it was O.
-	At       float64 `json:"at,omitempty"`
-	Backward bool    `json:"backward,omitempty"`
 	// Underway is every clip the job has on the way, proposed and not
 	// written yet, whoever proposed it, see runlog.Underway. The clip list
 	// shows each in its place until it is written.
@@ -87,14 +86,6 @@ type Job struct {
 	// them and not as one that found nothing, Tim's report of 25 October,
 	// 21.40.
 	Carried int `json:"carried,omitempty"`
-	// Count is how many clips a search was asked for. The clip list holds
-	// that many rows open, whatever the workspace would ask for now: the
-	// first search of an episode is asked for by the Go side, and a number
-	// worked out again in the workspace told the list another.
-	Count int `json:"count,omitempty"`
-	// Min is the Shortest a search was asked for, so what it found is
-	// read by the clips it was asked for, not by Shortest as it is now.
-	Min float64 `json:"min,omitempty"`
 	// Whole is, for a search, that its answer is read to its end, so every
 	// clip still to come is in Underway.
 	Whole bool `json:"whole,omitempty"`
@@ -112,7 +103,7 @@ type Job struct {
 	work func(ctx context.Context, p *engine.Project) (string, error)
 	// steps is the work of a job that takes a turn in a lane for each of
 	// its steps, a search or a render, instead of one for the whole job.
-	steps  func(ctx context.Context, p *engine.Project, turn engine.Turn) (string, error)
+	steps  func(ctx context.Context, p *engine.Project, host engine.Host) (string, error)
 	ask    *ask
 	cancel context.CancelFunc
 	ctx    context.Context
@@ -121,9 +112,11 @@ type Job struct {
 	// one cut off by the app closing does, and a render takes its record
 	// with it, see runJob.
 	byHand bool
-	// turns counts the turns the job has had, so news that a turn was
-	// taken back is never news about a later one, see turn.
-	turns int
+	// asking is the lane the job's newest turn asks for, see turn.
+	asking string
+	// ending is the record the engine wrote as the job ended, done or
+	// failed, which the window is told with how the job ended, see heard.
+	ending *engine.JobRecord
 	// click is the press of Search or Continue that asked for the job, named
 	// by the window, see stopClips.
 	click string
@@ -326,7 +319,7 @@ func (q *queue) queueFor(episode, kind, label, plan string, clips []string, once
 // turn. With once, it hands back the job of the kind that already runs for
 // the episode instead, looked for under the same lock, see addOnce.
 func (q *queue) addSteps(episode, kind, label string, once bool, prepare func(*Job),
-	steps func(ctx context.Context, p *engine.Project, turn engine.Turn) (string, error)) Job {
+	steps func(ctx context.Context, p *engine.Project, host engine.Host) (string, error)) Job {
 	q.mu.Lock()
 	if q.closed[episode] > 0 {
 		q.mu.Unlock()
@@ -353,6 +346,8 @@ func (q *queue) addSteps(episode, kind, label string, once bool, prepare func(*J
 	}
 	q.next++
 	ctx, cancel := context.WithCancel(context.Background())
+	// It waits, which is what the engine's record says until the job has
+	// a turn, from the moment the engine writes it, see heard.
 	job := &Job{ID: fmt.Sprintf("job-%d", q.next), Episode: episode, Kind: kind, Label: label,
 		State: JobRunning, Step: engine.StepWaiting, Queued: time.Now(), Lane: laneFor(kind),
 		steps: steps, cancel: cancel, ctx: ctx, act: theLog.acting()}
@@ -363,7 +358,7 @@ func (q *queue) addSteps(episode, kind, label string, once bool, prepare func(*J
 	// the Go side first. It is called off before it starts, and ends the
 	// way one called off while it ran does, see stopClips.
 	if makesClips(kind) && job.click != "" && q.calledOff[episode] == job.click {
-		job.byHand = job.Record != ""
+		job.byHand = job.JobRecord.ID != ""
 		cancel()
 	}
 	job.alive = !q.idle
@@ -379,61 +374,89 @@ func (q *queue) addSteps(episode, kind, label string, once bool, prepare func(*J
 	return snapshot
 }
 
-// turn is how a job with steps waits for the lane of each. The job says
-// which lane it waits for, so the interface can say what it waits to do,
-// and which step it is in once it has its turn. How far the step before
-// came is not how far this one is, so the progress starts again with it.
-// opts are the settings the job runs with, which say where its language
-// model is: the API, or llama-server on another machine at LLMURL, are
-// both not this one, issue #276.
+// turn is how a job with steps waits for the lane of each. The engine
+// says which step the job is in, and that it waits, see engine.Turn, and
+// the queue only which lane: the lane the newest turn asks for, said with
+// the next record the engine writes, see heard. opts are the settings the
+// job runs with, which say where its language model is: the API, or
+// llama-server on another machine at LLMURL, are both not this one, issue
+// #276.
 func (q *queue) turn(job *Job, opts engine.Options) engine.Turn {
 	onThisMachine := opts.Planner != "api" && opts.LLMURL == ""
 	// The turn the job holds, let go of once it has asked for its next,
 	// see engine.Turn. The engine asks for a job's turns one after another.
 	var holding func()
-	return func(ctx context.Context, step string) (context.Context, func(), error) {
+	return func(ctx context.Context, step string, waits func()) (context.Context, func(), error) {
 		lane, kind := laneOfStep(job.Kind, step, onThisMachine)
 		// Which lane a step waits for and whether its model is on this
 		// machine, so a log says why a transcription waited on a search.
 		theLog.jobLine(zerolog.DebugLevel, job).Str("step", step).Str("lane", lane).
 			Bool("model_here", onThisMachine).Msg("the job waits for its turn")
+		if waits == nil {
+			waits = func() {}
+		}
+		q.mu.Lock()
+		job.asking = lane
+		q.mu.Unlock()
+		// Its ask found the lane taken. A job that says it waits already,
+		// for its first turn, has nothing new in its record, so the queue
+		// says the lane it waits for itself. Any other is told it with
+		// the waiting the engine writes, see heard. Only the job's own
+		// goroutine writes its step while it asks, so the step looked at
+		// is the step it is in.
+		asked := func() {
+			q.mu.Lock()
+			already := job.Step == engine.StepWaiting
+			q.mu.Unlock()
+			if already {
+				q.update(job, func(j *Job) { j.Lane = lane })
+			}
+			waits()
+		}
 		// A turn taken back says so the moment it is, not once the step
 		// has finished the piece it is in and asks again: the whole video,
 		// put on hold by a search, kept its frame's motes and moved its
 		// dots on for two seconds after Search, Tim's report of 24 October.
 		// The lanes say so before the job that took it back says it waits
 		// or has its turn, so news of that job is never news from before
-		// the one it took the turn from went on hold. turns tells this
-		// turn from a later one.
-		q.mu.Lock()
-		job.turns++
-		mine := job.turns
-		q.mu.Unlock()
-		var taken atomic.Bool
-		waits := func() {
-			q.update(job, func(j *Job) {
-				if j.turns == mine {
-					j.Step, j.Lane, j.Progress = engine.StepWaiting, lane, nil
-				}
-			})
-		}
+		// the one it took the turn from went on hold.
 		letGo := holding
 		holding = nil
-		stepCtx, release, err := q.lanes.takeTold(ctx, lane, kind, letGo, waits, func() {
-			taken.Store(true)
-			waits()
-		})
+		stepCtx, release, err := q.lanes.takeTold(ctx, lane, kind, letGo, asked, waits)
 		if err != nil {
 			return nil, nil, err
 		}
 		holding = release
-		q.update(job, func(j *Job) {
-			if !taken.Load() {
-				j.Step, j.Lane, j.Progress = step, lane, nil
-			}
-		})
 		return stepCtx, release, nil
 	}
+}
+
+// heard keeps the record the engine wrote for a job as the job the window
+// sees, see engine.Host. The lane goes with it, so the window is told the
+// step and the lane it is in at once. How far the step before came is not
+// how far this one is, so the progress starts again with it.
+//
+// The record of a job that ended, done and in no step or failed, waits
+// for runJob, which tells it with how the job ended. Told at once, the
+// window read a job running in no step as one waiting for its lane, and
+// said Waiting to render while the app recorded the clips the render was
+// of, found by the review of #655.
+func (q *queue) heard(job *Job, rec engine.JobRecord) {
+	if rec.Step == "" || rec.Step == engine.StepFailed {
+		q.mu.Lock()
+		job.ending = &rec
+		q.mu.Unlock()
+		return
+	}
+	q.update(job, func(j *Job) {
+		if rec.Step != j.Step {
+			j.Progress = nil
+		}
+		if j.asking != "" {
+			j.Lane = j.asking
+		}
+		j.JobRecord = rec
+	})
 }
 
 // makesClips says whether a kind of job makes clips: a search and a clip
@@ -481,11 +504,9 @@ func (q *queue) restore(episodes []string) {
 			}
 			q.mu.Lock()
 			q.next++
-			job := &Job{ID: fmt.Sprintf("job-%d", q.next), Episode: episode, Kind: rec.Kind,
-				Label: jobLabel(rec.Kind, rec.Preview), State: state, Error: rec.Error, Queued: rec.Asked,
-				Lane: laneFor(rec.Kind), Step: rec.Step, Record: rec.ID, From: rec.From, To: rec.To, Count: rec.Count, Min: rec.Min,
-				At: rec.At, Backward: rec.Backward, Underway: rec.Underway(), Plan: rec.Plan,
-				Clips: append([]string(nil), rec.Clips...), cancel: func() {}, ctx: context.Background()}
+			job := &Job{ID: fmt.Sprintf("job-%d", q.next), Episode: episode, JobRecord: rec,
+				Label: jobLabel(rec.Kind, rec.Preview), State: state, Queued: rec.Asked,
+				Lane: laneFor(rec.Kind), Underway: rec.Underway(), cancel: func() {}, ctx: context.Background()}
 			q.stampLocked(job)
 			q.jobs = append(q.jobs, job)
 			snapshot := *job
@@ -512,7 +533,7 @@ func (q *queue) refuse(episode, kind, label, reason string, with ...func(*Job)) 
 	}
 	// It wrote nothing, so there is no record to carry on from, whatever
 	// the record would have been.
-	job.Record = ""
+	job.JobRecord.ID = ""
 	q.stampLocked(job)
 	q.jobs = append(q.jobs, job)
 	snapshot := *job
@@ -712,7 +733,7 @@ func (q *queue) cancelEpisode(episode string) bool {
 // same record as this one: Continue clicked while this one stopped.
 func (q *queue) carriedOnLocked(job *Job) bool {
 	for _, j := range q.jobs {
-		if j != job && j.Episode == job.Episode && j.Record == job.Record &&
+		if j != job && j.Episode == job.Episode && j.JobRecord.ID == job.JobRecord.ID &&
 			(j.State == JobQueued || j.State == JobRunning) && j.ctx.Err() == nil {
 			return true
 		}
@@ -727,7 +748,7 @@ func (q *queue) carriedOnLocked(job *Job) bool {
 func (q *queue) stopByHand(id string) {
 	q.mu.Lock()
 	for _, j := range q.jobs {
-		if j.ID == id && j.Record != "" {
+		if j.ID == id && j.JobRecord.ID != "" {
 			j.byHand = true
 		}
 	}
@@ -755,7 +776,7 @@ func (q *queue) stopClips(episode, click string) {
 			j.ctx.Err() != nil {
 			continue
 		}
-		j.byHand = j.Record != ""
+		j.byHand = j.JobRecord.ID != ""
 		j.cancel()
 		if j.State == JobQueued {
 			j.State = JobCancelled
@@ -776,8 +797,8 @@ func (q *queue) settle(episode, kind, record string) {
 	q.mu.Lock()
 	var settled []Job
 	for _, j := range q.jobs {
-		if j.Episode == episode && j.Kind == kind && (record == "" || j.Record == record) &&
-			(j.State == JobInterrupted || (j.State == JobFailed && j.Record != "")) {
+		if j.Episode == episode && j.Kind == kind && (record == "" || j.JobRecord.ID == record) &&
+			(j.State == JobInterrupted || (j.State == JobFailed && j.JobRecord.ID != "")) {
 			j.State = JobCancelled
 			q.stampLocked(j)
 			settled = append(settled, *j)
@@ -841,7 +862,7 @@ func (q *queue) settleRefused(id string) {
 	q.mu.Lock()
 	var settled []Job
 	for _, j := range q.jobs {
-		if j.ID == id && j.State == JobFailed && j.Record == "" {
+		if j.ID == id && j.State == JobFailed && j.JobRecord.ID == "" {
 			j.State = JobCancelled
 			q.stampLocked(j)
 			settled = append(settled, *j)
@@ -1009,7 +1030,8 @@ func (q *queue) runJob(job *Job) {
 	opts := jobOptions(q.store, e)
 	project := engine.NewProject(e, job.Episode, opts)
 
-	result, err := run(ctx, job, project, q.turn(job, opts))
+	host := engine.Host{Turn: q.turn(job, opts), Changed: func(rec engine.JobRecord) { q.heard(job, rec) }}
+	result, err := run(ctx, job, project, host)
 	// A search called off by hand says so in its record before it says
 	// it has ended, so the note is there whenever anyone looks, the app
 	// quit a moment later included. A render called off by hand forgets
@@ -1026,15 +1048,22 @@ func (q *queue) runJob(job *Job) {
 	// press of Stop or Cancel, and a write outside the lock could land
 	// over the record of the job Continue started.
 	q.mu.Lock()
+	// The record the window is told a job called off by hand ends with:
+	// the one written, or, when Continue has the record, this job's own.
+	stopped := job.JobRecord.Stopped(time.Now())
 	switch {
 	case !job.byHand || !errors.Is(err, engine.ErrCancelled):
 	case stopsAsStopped(job.Kind) && q.carriedOnLocked(job):
 	case stopsAsStopped(job.Kind):
-		if serr := engine.StopJob(q.store.files, job.Episode, job.Record); serr != nil {
+		rec, found, serr := engine.StopJob(q.store.files, job.Episode, job.JobRecord.ID)
+		if found {
+			stopped = rec
+		}
+		if serr != nil {
 			project.Log().Warn("could not note the search as stopped: %s", serr)
 		}
 	default:
-		if rerr := engine.RemoveJob(q.store.files, job.Episode, job.Record); rerr != nil {
+		if rerr := engine.RemoveJob(q.store.files, job.Episode, job.JobRecord.ID); rerr != nil {
 			project.Log().Warn("could not clear the record of the render: %s", rerr)
 		}
 	}
@@ -1043,8 +1072,8 @@ func (q *queue) runJob(job *Job) {
 	q.update(job, func(j *Job) {
 		j.Progress = nil
 		j.Result = result
-		if j.steps != nil && err == nil {
-			j.Step = ""
+		if j.ending != nil {
+			j.JobRecord, j.ending = *j.ending, nil
 		}
 		switch {
 		case err == nil:
@@ -1052,7 +1081,7 @@ func (q *queue) runJob(job *Job) {
 		case errors.Is(err, engine.ErrCancelled) && j.byHand && stopsAsStopped(j.Kind):
 			// Called off by hand, a search says Stopped, Click Continue,
 			// because what it heard stays and it can be carried on.
-			j.State, j.Step = JobInterrupted, engine.StepStopped
+			j.State, j.JobRecord = JobInterrupted, stopped
 		case errors.Is(err, engine.ErrCancelled):
 			j.State, j.Underway = JobCancelled, nil
 		default:
@@ -1109,7 +1138,7 @@ var standIns atomic.Pointer[func(*engine.Engine, *engine.Options)]
 // The job's error is the line its toast shows, and the stack goes to the
 // app's log only: a toast that held the whole stack was a screen of Go
 // nobody could read, issue #604.
-func run(ctx context.Context, job *Job, project *engine.Project, turn engine.Turn) (result string, err error) {
+func run(ctx context.Context, job *Job, project *engine.Project, host engine.Host) (result string, err error) {
 	defer func() {
 		if caught := recover(); caught != nil {
 			theLog.jobLine(zerolog.ErrorLevel, job).Str("stack", string(debug.Stack())).Msgf("the job stopped unexpectedly: %v", caught)
@@ -1117,7 +1146,7 @@ func run(ctx context.Context, job *Job, project *engine.Project, turn engine.Tur
 		}
 	}()
 	if job.steps != nil {
-		return job.steps(ctx, project, turn)
+		return job.steps(ctx, project, host)
 	}
 	return job.work(ctx, project)
 }
