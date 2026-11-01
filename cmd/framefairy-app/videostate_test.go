@@ -115,12 +115,16 @@ func TestEachVideosStateIsSentOnItsOwn(t *testing.T) {
 	})
 }
 
-// A video's state that takes longer to read than the wait is still read
-// and sent once at a time, so the states go out in the order they were
-// read. Read side by side, the newer could go first and the older after
-// it, and what kept the last one sent kept the older: the Mac's CI, where
-// reading the state of a video takes longer, saw it in
-// TestPathWhatChangesAVideoSendsItsState.
+// A send of a video's state that begins while the one before it still
+// reads waits for it, so the states go out in the order they were read.
+// Side by side, the newer could go first and the older after it, and what
+// kept the last one sent kept the older. That is how
+// TestPathWhatChangesAVideoSendsItsState failed on the Mac's CI: the
+// removal tells the video twice, the first send read at once, and
+// sendDue in bridge_test.go ran the second beside it, so the first read
+// only had to end a few milliseconds after the second. In the app the
+// second waits for its quarter second, so a read slower than that is what
+// it takes there.
 func TestAVideosStatesGoOutInTheOrderTheyWereRead(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		var changes atomic.Int64
@@ -154,6 +158,58 @@ func TestAVideosStatesGoOutInTheOrderTheyWereRead(t *testing.T) {
 		defer mu.Unlock()
 		if !slices.Equal(sent, []uint64{1, 2}) {
 			t.Errorf("the states went out as %v, not in the order they were read", sent)
+		}
+	})
+}
+
+// A search that writes a clip and then logs a line every 10 ms, on a
+// machine where a state takes 50 ms to read. Each line is news that waits
+// behind the clip's, and each asks for a state. The states still go out
+// at most one at a time with one waiting, so the end of the search, five
+// seconds on, reaches the window within two reads, not behind a read for
+// every line.
+func TestASlowReadKeepsNoBacklogOfStates(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const read = 50 * time.Millisecond
+		var reads atomic.Int64
+		var mu sync.Mutex
+		var heard []string
+		var endAt time.Time
+		news := newVideoNews(func(path string) (VideoState, error) {
+			reads.Add(1)
+			time.Sleep(read) //nolint:forbidigo // synctest bubble
+			return VideoState{Video: path}, nil
+		}, func(VideoState) {})
+		say := func(what string) func() {
+			return func() {
+				mu.Lock()
+				defer mu.Unlock()
+				heard = append(heard, what)
+				if what == "over" {
+					endAt = time.Now()
+				}
+			}
+		}
+		news.after("a.mp4", true, say("wrote"))
+		for range 500 {
+			time.Sleep(10 * time.Millisecond) //nolint:forbidigo // synctest bubble
+			news.after("a.mp4", false, say("line"))
+		}
+		over := time.Now()
+		news.after("a.mp4", true, say("over"))
+		time.Sleep(time.Minute) //nolint:forbidigo // synctest bubble
+		synctest.Wait()
+		mu.Lock()
+		defer mu.Unlock()
+		if len(heard) != 502 || heard[0] != "wrote" || heard[501] != "over" {
+			t.Fatalf("heard %d news, %q first and %q last, not all 502 in order", len(heard), heard[0], heard[len(heard)-1])
+		}
+		if late := endAt.Sub(over); late > 2*read {
+			t.Errorf("the end went out %v after it came, more than two reads of %v", late, read)
+		}
+		// One read for every 50 ms of the five seconds, and the last two.
+		if n := reads.Load(); n > 5*time.Second.Milliseconds()/read.Milliseconds()+3 {
+			t.Errorf("%d states were read for five seconds of news, one at least for each line", n)
 		}
 	})
 }

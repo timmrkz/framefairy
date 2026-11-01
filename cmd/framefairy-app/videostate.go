@@ -122,11 +122,14 @@ type telling struct {
 	// that it is all out, see sendDue in bridge_test.go.
 	sends []chan struct{}
 	// sending is held while the state is read and sent, so the states of
-	// a video go out one at a time, in the order they were read. A read
-	// that takes longer than the wait, on a slow machine, had the next one
-	// begin beside it, and the newer state could go out first. A channel
-	// of one, so a send that waits on it is one a synctest bubble sees
-	// waiting.
+	// a video go out one at a time, in the order they were read. Two
+	// sends of one video at once, one begun while the other still read,
+	// could end the other way round, and the older state went out last.
+	// A send whose timer has fired waits on it before it takes anything,
+	// so its timer stays set while it waits, and the changes and the news
+	// that come meanwhile join it: one send runs and one waits, however
+	// slow a read is. A channel of one, so a send that waits on it is one
+	// a synctest bubble sees waiting.
 	sending chan struct{}
 }
 
@@ -205,7 +208,7 @@ func (n *videoNews) ask(path string, now bool, later func()) {
 	sent := make(chan struct{})
 	t.sends = append(t.sends, sent)
 	t.timer = time.AfterFunc(wait, func() {
-		n.tell(path)
+		n.tell(path, t)
 		n.ended(t, sent)
 	})
 }
@@ -219,12 +222,14 @@ func (n *videoNews) ended(t *telling, sent chan struct{}) {
 }
 
 // tell reads the state of the video and sends it, and then the news that
-// waited for it. A change from the moment it begins is due again, after
-// the wait.
-func (n *videoNews) tell(path string) {
+// waited for it, once the send before it has ended. A change from the
+// moment it begins is due again, after the wait.
+func (n *videoNews) tell(path string, t *telling) {
+	t.sending <- struct{}{}
+	defer func() { <-t.sending }()
 	n.mu.Lock()
-	t := n.due[path]
-	if n.shut || t == nil {
+	// The app may have quit while the send before this one went out.
+	if n.shut {
 		n.mu.Unlock()
 		return
 	}
@@ -233,15 +238,6 @@ func (n *videoNews) tell(path string) {
 	later := t.later
 	t.later = nil
 	n.mu.Unlock()
-	t.sending <- struct{}{}
-	defer func() { <-t.sending }()
-	// The app may have quit while the send before this one went out.
-	n.mu.Lock()
-	shut := n.shut
-	n.mu.Unlock()
-	if shut {
-		return
-	}
 	// What waited for this state goes out after it, read or not: a video
 	// that left the library still says its jobs ended.
 	defer func() {

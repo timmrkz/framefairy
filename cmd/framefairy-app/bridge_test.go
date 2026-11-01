@@ -2569,7 +2569,7 @@ func sendDue(n *videoNews) {
 		return
 	}
 	n.mu.Lock()
-	var now []string
+	now := map[string]*telling{}
 	var going []chan struct{}
 	for path, t := range n.due {
 		// The send not begun yet is the one asked for last.
@@ -2577,13 +2577,13 @@ func sendDue(n *videoNews) {
 			t.timer = nil
 			close(t.sends[len(t.sends)-1])
 			t.sends = t.sends[:len(t.sends)-1]
-			now = append(now, path)
+			now[path] = t
 		}
 		going = append(going, t.sends...)
 	}
 	n.mu.Unlock()
-	for _, path := range now {
-		n.tell(path)
+	for path, t := range now {
+		n.tell(path, t)
 	}
 	for _, sent := range going {
 		<-sent
