@@ -162,3 +162,61 @@ In four slices, each a pull request:
   to send four times a second, which slice 3 measures before it sends
   it, or if a component needs a value from before that the session does
   not keep.
+
+## Slice 3, as built
+
+Tim asked on 1 November for all of step 3 in one pull request.
+
+- Go reads a video's state with `State` in
+  `cmd/framefairy-app/videostate.go`: its status, its clips, how often
+  each part was searched and its jobs, as one `VideoState`. It is sent
+  as the `video` event by `videoNews`, at once when nothing was sent in
+  the last quarter of a second, else at the end of it, and always once
+  more after the last change. The state is read when it is sent, so a
+  change while a send is due is in it.
+- Its `rev` is a number of the clock the jobs already had, `Job.Seq`,
+  taken as the jobs are read and before the rest. So a state whose rev is
+  past a job's seq was read after that job's news and holds every clip
+  the job had said it wrote. An edit's answer, `ClipEntry.Rev`, takes a
+  number once the edit is written, and the session takes no state older
+  than it. One clock for the jobs, the states and the edits, where the
+  workspace had three tickets, `Newest`, one for each read.
+- What tells: every job's news, through the queue's `moved`, the
+  loudness measured further, every edit of the clips through
+  `editMoving`, and undo and redo. The `levels` event went into the
+  state. The `episode` event stays the library's news, which the sidebar
+  reads the whole library on, as What converges left it.
+- `EpisodeSession` keeps `status`, `clips` and `coverage`, and
+  `Episode.svelte` reads them from it. A state kept hands its jobs to the
+  job store where the store has nothing newer, and says how many clips
+  each job had written in it, which is what the list counts its rows
+  still to come by. A clip changed on screen before Go has it, a
+  thumbnail, a keyframe, a turn, goes through `edit`, which holds the
+  states that come while it is written, because each was read before
+  the edit. `OnTheWay` holds a card by the same clock: until a state is
+  kept that was read after the news that took the card off its job.
+- The workspace opens with one read of the state in place of three, and
+  reads it again where it read the clips or the video before, until
+  slice 4. Its timer no longer reads the status while the video is heard.
+
+Measured in a cloud session before it was sent:
+
+- Reading the status of a video of four hours took 125 ms, measured ten
+  times, from 105 to 150: 60 to read the transcript, 25 to place its
+  words on the sound and 35 to make its lines. Four times a second that
+  is half a core. So what the transcript says was heard is kept while its
+  file stays as it was, `heardOf` in `engine/heard.go`, and the status
+  then took 0.013 ms, from 0.012 to 0.035. It is a package variable, as
+  the caches that outlive a job are until #607 gives them one home.
+- The state of a video of five minutes with one clip and one job was
+  2.2 KB, measured once: 0.6 for the clip, 0.9 for the job and 0.6 for the
+  status. Reading it took 0.1 ms, measured five times. A state of fifty
+  clips made up like it is 25 KB, and the window parsed it and kept each
+  clip that did not change in 0.3 ms, from 0.27 to 1.17, measured ten
+  times in Node. Four times a second is about 1 ms of a second, in a
+  window that read the whole clip list every two seconds while clips
+  were found before.
+
+What slice 4 takes away is still here: the reads the workspace asks for
+after work moves on, the poll of the clip list while clips are found,
+the poll of the job list, `unread`, and the effects that notice a start.

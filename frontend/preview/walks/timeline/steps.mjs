@@ -1130,10 +1130,11 @@ export const steps = {
     // it with more than a few pixels painted is the waveform there.
     // The bridge's episode has sound from its first second to its last.
     // Read once the Go side has measured all of it, which it says in
-    // a levels event, and the interface has heard that and drawn it.
+    // the state of the video it sends, and the interface has heard that
+    // and drawn it: caughtUp waits behind every state due to be sent.
     const path = await episodeOn(page);
-    for (let seen = await news(page, "levels"); !(await ask(page, "Episode", path))?.measuredAll; ) {
-      seen = await nextNews(page, seen, "levels");
+    for (let seen = await news(page, "video"); !(await ask(page, "Episode", path))?.measuredAll; ) {
+      seen = await nextNews(page, seen, "video");
     }
     await caughtUp(page, url);
     const read = await page.evaluate(() => {

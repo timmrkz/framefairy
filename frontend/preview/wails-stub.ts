@@ -507,7 +507,7 @@ const fullLength = 14423;
 // The loudness of the episode, measured on its own the way the Go side
 // measures it when an episode is added. ?measuring measures it from the
 // moment the page opens, the four hours in twelve seconds, and says it got
-// further every half second with a levels event. Like the Go side it
+// further every half second with the video's state. Like the Go side it
 // measures what the clip timeline last asked the waveform of first, then
 // on from there, then from the start, and jumps when the view moves to a
 // part not measured yet. ?unmeasured never measures it, an episode added
@@ -870,6 +870,27 @@ const late = <T,>(method: string, answer: Promise<T>): Promise<T> => {
   );
 };
 
+// The clock the jobs' news, the states of the video and the answers to
+// edits share, the way the Go side keeps one, see VideoState in
+// cmd/framefairy-app/videostate.go.
+const tick = (): number => ((window as any).__clock = ((window as any).__clock ?? 0) + 1);
+
+// The calls that answer with the clip an edit left, which takes its
+// number from the clock once it is written, see ClipEntry.Rev.
+const edits = new Set([
+  "SetCrop",
+  "RotatePart",
+  "SetThumbnail",
+  "SetCropMark",
+  "SetCaptionTime",
+  "ResetCrop",
+  "RemoveClip",
+  "Reshape",
+  "SetWord",
+  "RemoveWord",
+  "RemoveCaption",
+]);
+
 // Each call is counted out until it is answered, for a probe that waits
 // until the app is done, see settled.ts.
 export const Call = {
@@ -882,9 +903,25 @@ export const Call = {
     } catch (e) {
       answer = Promise.reject(e);
     }
+    if (edits.has(method)) answer = answer.then((clip) => (clip && typeof clip === "object" ? { ...clip, rev: tick() } : clip));
     return late(method, answer).finally(back);
   },
 };
+
+// The state of the video, the way the Go side reads it: its jobs first,
+// and the clock read with them, then the rest.
+function videoState(path: string): Promise<unknown> {
+  const list = Answers.ByName("main.FrameFairy.Jobs") as Promise<any[]>;
+  return list.then((all) => {
+    const jobs = (all ?? []).filter((j) => j.episode === path).map((j) => ({ ...j, seq: tick() }));
+    const rev = tick();
+    return Promise.all([
+      Answers.ByName("main.FrameFairy.Episode", path),
+      Answers.ByName("main.FrameFairy.Clips", path),
+      Answers.ByName("main.FrameFairy.Coverage", path),
+    ]).then(([status, clips, coverage]) => ({ video: path, rev, status, clips, coverage, jobs }));
+  });
+}
 
 const Answers = {
   ByName(name: string, ...args: unknown[]): Promise<unknown> {
@@ -1243,6 +1280,8 @@ const Answers = {
           { source: "/eps/zwei.mp4", name: "Folge 12, die lange Nacht", size: 1, modified: "", missing: false, transcribed: false, covered: 900, heard: [[0, 900]], transcriptStale: false, plans: [], rendered: 0, previews: 0, work: true, everSearched: true },
           ...Array.from({ length: (window as any).__added ?? 0 }, (_, k) => ({ source: `/eps/neu${k + 1}.mp4`, name: `Folge ${k + 3}, der Morgen danach`, size: 1, modified: "", missing: false, transcribed: false, covered: 0, heard: [], transcriptStale: false, plans: [], rendered: 0, previews: 0, work: true, everSearched: false })),
         ]);
+      case "State":
+        return videoState(String(args[0]));
       case "Episode":
         return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: covered >= fullLength, covered, heard: heardParts(), measured: measuredNow(), measuredParts: measuredParts(), measuredAll: measuredNow() >= fullLength - 0.01, transcriptStale: false, plans, rendered: fresh ? 0 : 1, previews: 0, work: true, everSearched: true });
       // Search. A probe reads what was asked for on window.__searches.
@@ -2208,10 +2247,11 @@ export const Events = {
       licenceListeners.add(fn);
       return () => licenceListeners.delete(fn);
     }
-    if (name === "levels") {
+    // The state of the video, sent as its loudness is measured further.
+    if (name === "video") {
       if (!location.search.includes("measuring")) return () => {};
       const timer = setInterval(() => {
-        fn({ data: "/eps/ep.mp4" });
+        void videoState("/eps/ep.mp4").then((state) => fn({ data: state }));
         if (measuredNow() >= fullLength - 0.01) clearInterval(timer);
       }, 500);
       return () => clearInterval(timer);
@@ -2231,7 +2271,7 @@ export const Events = {
         if (job.progress) {
           ((window as any).__heardSent ??= []).push({ at: Date.now() - ((window as any).__started ?? Date.now()), covered: job.progress.covered });
         }
-        fn({ data: { job } });
+        fn({ data: { job: { ...job, seq: tick() } } });
       }
     }, 250);
     if (location.search.includes("setup") || location.search.includes("models")) {

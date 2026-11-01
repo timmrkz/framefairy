@@ -145,13 +145,8 @@ func Status(fsys afero.Fs, source, asrModelDir string, silenceDB *float64) Episo
 	model := filepath.Base(filepath.Clean(asrModelDir))
 	whole := filepath.Join(logs, TranscriptName(nil))
 	if stamp, err := stampOf(fsys, source); err == nil {
-		if file, words, frames, ok := readTranscriptFile(fsys, whole, stamp, model); ok {
-			st.Transcribed = file.done()
-			st.Heard = file.heard()
-			// The lines a clip made by hand is made of, the way MakeClip
-			// makes them, see Project.Transcript.
-			t := fromStored(words, frames, float64(file.From), float64(file.Mean), silenceDB)
-			st.Said = saidOf(BuildLines(t.Words, t.Levels(), nil))
+		if h, ok := heardOf(fsys, whole, stamp, model, silenceDB); ok {
+			st.Transcribed, st.Heard, st.Said = h.done, h.heard, h.said
 			if len(st.Heard) > 0 && st.Heard[0][0] <= 0.005 {
 				st.Covered = st.Heard[0][1]
 			}

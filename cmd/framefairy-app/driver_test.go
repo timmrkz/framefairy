@@ -113,6 +113,15 @@ func (d *desk) start(st *store) {
 	d.svc = &FrameFairy{store: st}
 	d.svc.jobs = newQueue(st, func(u JobUpdate) { d.bus.send("job", u) },
 		func(episode string) { d.bus.send("episode", episode) })
+	svc := d.svc
+	// A video's state is sent only to a window, which a path test has
+	// none of.
+	if d.bus != nil {
+		svc.news = newVideoNews(func(path string) (VideoState, error) {
+			return svc.State(context.Background(), path)
+		}, func(v VideoState) { d.bus.send("video", v) })
+		svc.jobs.news = svc.told
+	}
 	d.svc.listening.say = func(x Dictation) {
 		if d.told != nil {
 			d.told(x)
@@ -156,12 +165,14 @@ func (d *desk) start(st *store) {
 		return picked, nil
 	}
 	if d.bus != nil {
-		d.svc.levels = newMeasuring(d.svc.store.files, func(episode string) { d.bus.send("levels", episode) })
+		d.svc.levels = newMeasuring(d.svc.store.files, svc.told)
 	}
-	svc := d.svc
 	// Whatever is still running when the test ends is stopped before its
 	// folder goes.
-	d.t.Cleanup(func() { svc.jobs.shutDown() })
+	d.t.Cleanup(func() {
+		svc.news.stop()
+		svc.jobs.shutDown()
+	})
 	logJobsOnFailure(d.t, svc.jobs)
 }
 

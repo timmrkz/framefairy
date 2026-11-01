@@ -150,6 +150,37 @@ func storedTranscript(t *testing.T, words []timed.Cue, frames []float32, to floa
 	return fsys, source, path
 }
 
+// What the transcript says was heard is kept while its file stays as it
+// was, issue #606, and read again the moment it is written anew: a
+// transcription that saves another part says so in the video's state at
+// once.
+func TestWhatWasHeardIsReadAgainWhenTheTranscriptIsWritten(t *testing.T) {
+	words := []timed.Cue{{Start: 0.5, End: 1.2, Text: "Hallo"}}
+	fsys, source, path := storedTranscript(t, words, make([]float32, 300), 3, true)
+	if st := Status(fsys, source, "/models/modell", nil); st.Covered != 3 || st.Transcribed {
+		t.Fatalf("heard to %v, done %v, before", st.Covered, st.Transcribed)
+	}
+	stamp, err := stampOf(fsys, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	more := append(words, timed.Cue{Start: 4, End: 5, Text: "Welt"})
+	file := transcriptFile{Version: transcriptVersion, Source: stamp, Model: "modell",
+		Mean: num.Float(-30), Parts: [][2]num.Float{{0, 13}}, End: num.Float(13), Words: storedWords(more)}
+	if err := writeTranscript(fsys, path, file, make([]float32, 1300)); err != nil {
+		t.Fatal(err)
+	}
+	st := Status(fsys, source, "/models/modell", nil)
+	if st.Covered != 13 || !st.Transcribed || st.Said == nil || st.Said[1] < 5 {
+		t.Errorf("heard to %v, done %v, said %v, once written again", st.Covered, st.Transcribed, st.Said)
+	}
+	// What one caller does with it is not what the next one reads.
+	st.Heard[0][1] = 0
+	if again := Status(fsys, source, "/models/modell", nil); again.Heard[0][1] != 13 {
+		t.Errorf("a status changed by its caller changed what is kept: heard to %v", again.Heard[0][1])
+	}
+}
+
 // A transcript from before numbers stood apart is still the episode's
 // transcript. Reading it as stale took the waveform off the clip timeline.
 func TestAnOlderTranscriptIsStillRead(t *testing.T) {

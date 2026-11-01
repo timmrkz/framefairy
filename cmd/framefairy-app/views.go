@@ -22,6 +22,11 @@ type ClipEntry struct {
 	Key       string `json:"key"`
 	Plan      string `json:"plan"`
 	CropLefts []int  `json:"cropLefts"`
+	// Rev is, on the answer to an edit, the number the edit took from the
+	// clock of the jobs once it was written, see VideoState.Rev. The
+	// window takes no state of the video read before it. A clip in a
+	// VideoState has none.
+	Rev uint64 `json:"rev,omitempty"`
 }
 
 // Clips lists the clips of every clip set of an episode, in time order.
@@ -39,14 +44,20 @@ func (s *FrameFairy) Clips(ctx context.Context, path string) ([]ClipEntry, error
 			return nil, err
 		}
 	}
+	return s.clipsOf(plansOf(s.store.files, path), info), nil
+}
+
+// clipsOf is the clips of these plans, in time order, their crops fitted
+// to the picture info says, see entryOf.
+func (s *FrameFairy) clipsOf(plans []engine.PlanSummary, info engine.SourceInfo) []ClipEntry {
 	out := []ClipEntry{}
-	for _, summary := range plansOf(s.store.files, path) {
+	for _, summary := range plans {
 		for _, c := range summary.View().Clips {
 			out = append(out, s.entryOf(summary.Path, c, info))
 		}
 	}
 	sort.SliceStable(out, func(a, b int) bool { return out[a].Start < out[b].Start })
-	return out, nil
+	return out
 }
 
 // plansOf lists the plans of an episode, each read once. It is what the
@@ -117,11 +128,17 @@ func (s *FrameFairy) Coverage(ctx context.Context, path string) (CoverageView, e
 	if err != nil {
 		return CoverageView{}, err
 	}
+	return coverageOf(plansOf(s.store.files, path), info.Duration), nil
+}
+
+// coverageOf is how often each part of an episode this long was searched
+// by the searches that made these plans.
+func coverageOf(plans []engine.PlanSummary, duration float64) CoverageView {
 	out := CoverageView{Passes: []PassView{}}
-	for _, p := range engine.SearchPasses(plansOf(s.store.files, path), info.Duration) {
+	for _, p := range engine.SearchPasses(plans, duration) {
 		out.Passes = append(out.Passes, PassView{From: p.Start, To: p.End, Times: p.Times})
 	}
-	return out, nil
+	return out
 }
 
 // Captions gives the captions of one clip, on the clip's own clock and in
@@ -266,10 +283,13 @@ func (s *FrameFairy) Fonts() []engine.CaptionFont {
 // clipEntry is one clip as it is now, read from its own plan alone. An
 // edit answers with it, and it used to be found in the whole clip list,
 // which read every plan of the episode and its transcript for one clip.
+// An edit is written by the time it answers, so the answer takes its
+// number from the clock here, see ClipEntry.Rev.
 func (s *FrameFairy) clipEntry(ctx context.Context, path, plan, clipID string) (ClipEntry, error) {
 	if !s.store.PlanOf(path, plan) {
 		return ClipEntry{}, errNotInLibrary
 	}
+	rev := s.stamp()
 	info, err := s.probe(ctx, path)
 	if err != nil {
 		return ClipEntry{}, err
@@ -280,7 +300,9 @@ func (s *FrameFairy) clipEntry(ctx context.Context, path, plan, clipID string) (
 	}
 	for _, c := range view.Clips {
 		if c.ID == clipID {
-			return s.entryOf(plan, c, info), nil
+			entry := s.entryOf(plan, c, info)
+			entry.Rev = rev
+			return entry, nil
 		}
 	}
 	return ClipEntry{}, fmt.Errorf("the clip %s is not in this video's clips any more: %w", clipID, os.ErrNotExist)
