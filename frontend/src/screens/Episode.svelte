@@ -270,7 +270,11 @@
   // finds, see docs/JOBS.md. Everything the workspace shows about finding
   // clips comes from it, and the workspace decides nothing about when a
   // search starts or stops. It is undefined when there is nothing to say.
-  const search = $derived(jobs.search(path));
+  // A search that ended is shown as it ran until the session keeps the
+  // state it left, so its end, its clips and the window moving on land in
+  // one step, see EpisodeSession.held.
+  const newest = $derived(jobs.search(path));
+  const search = $derived(newest && newest.id !== session.held?.id ? newest : (session.held ?? newest));
   const searching = $derived(going(search));
   const working = $derived(searching ? search : undefined);
   // The search while it hears the episode. Its progress says how far the
@@ -315,9 +319,7 @@
   // A search that found its clips is over, and the window it moved on to
   // is on its way from the Go side. The search's frame stays where it is
   // until then, so the range picker never shows the window back where the
-  // search was, between the search and the next, see workMoved. Before
-  // that the session holds it, while the state the search left is on its
-  // way, see EpisodeSession.ending.
+  // search was, between the search and the next, see workMoved.
   let movingOn = $state(false);
   // What the search is doing right now, in the step's own words, see
   // lib/steps.ts.
@@ -3199,7 +3201,7 @@
     {duration}
     {from}
     {to}
-    shown={(busy || movingOn || session.ending) && !stopping}
+    shown={(busy || movingOn) && !stopping}
     resumes={!!stopped}
     {marks}
     {selected}

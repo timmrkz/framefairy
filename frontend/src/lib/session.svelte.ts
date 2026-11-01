@@ -58,11 +58,12 @@ export class EpisodeSession {
   private waiting: VideoState | null = null;
   private waitingFresh = false;
   // The moves said that wait for a state read after their news.
-  private due: { after: number; move: () => void; ends: boolean }[] = [];
-  // A search is over and the move its end makes waits for its state: the
-  // workspace shows it as it was until then, its frame where it was, so
-  // the end lands in one step, see searched.
-  ending = $state(false);
+  private due: { after: number; move: () => void; was?: Job }[] = [];
+  // A search that is over while the move its end makes waits for its
+  // state, as it was before it ended. The workspace shows the search as
+  // this until then, its row, its button and its frame, so the end lands
+  // in one step with the clips it left, see searched and #513.
+  held = $state<Job | undefined>(undefined);
   // The work asked for in this workspace that is not over yet.
   private asking = new Set<string>();
   // The failures said, so the answer to a call that comes after its news
@@ -203,12 +204,12 @@ export class EpisodeSession {
   // workspace does then, a clip chosen, the window moved on, reads the
   // clips and the status that work left. Each move read them again
   // itself before, and the answers came apart, one frame after another.
-  private say(job: Job, move: () => void, ends = false) {
+  private say(job: Job, move: () => void, was?: Job) {
     const after = job.seq ?? 0;
     if (this.rev > after) move();
     else {
-      this.due.push({ after, move, ends });
-      this.ending = this.due.some((d) => d.ends);
+      this.due.push({ after, move, was });
+      this.held = this.due.findLast((d) => d.was)?.was;
     }
   }
 
@@ -218,7 +219,7 @@ export class EpisodeSession {
     const now = this.due.filter((d) => this.rev > d.after);
     if (now.length === 0) return;
     this.due = this.due.filter((d) => this.rev <= d.after);
-    this.ending = this.due.some((d) => d.ends);
+    this.held = this.due.findLast((d) => d.was)?.was;
     for (const d of now) d.move();
   }
 
@@ -242,7 +243,7 @@ export class EpisodeSession {
         )
           this.say(after, () => this.moves.heard(after));
         if (was && !now)
-          this.say(after, () => this.moves.searched(after), true);
+          this.say(after, () => this.moves.searched(after), before);
         break;
       case "transcribe":
         if (was && !now) this.say(after, () => this.moves.transcribed(after));

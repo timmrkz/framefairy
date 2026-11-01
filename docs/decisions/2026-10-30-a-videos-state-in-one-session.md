@@ -251,8 +251,11 @@ control, and both polls going with #513.
   state does not hold, the room for windows and the window moved on to,
   in `workMoved`. `load` keeps its read for what no state says: the
   file gone or back, the app woken, an undo.
-- A search whose end waits for its state is `ending`, and the range
-  picker keeps the search's frame until it is made, so the window is
-  never drawn back where the search was in between. The walk "the dots
-  after a search's window begin at the window it moves on to" saw that
-  frame, at 0 s, before `ending`.
+- A search whose end waits for its state is `held`, as it was before it
+  ended, and the workspace shows the search as that until the move is
+  made: its row, its button and its frame. So the end lands in one step
+  with the clips it left. Shown over before its state, the window was
+  drawn back where the search was for a frame, in the walk "the dots
+  after a search's window begin at the window it moves on to", and
+  Search came back with no clip chosen yet, in every walk that cuts or
+  sets a keyframe on the first clip right after it.
