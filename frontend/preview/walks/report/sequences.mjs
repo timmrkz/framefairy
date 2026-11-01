@@ -24,6 +24,15 @@ export default [
     ],
   },
   {
+    // Issue #654. The microphone tells the window what it hears from the
+    // moment it opens, and the answer that it opened comes on its own
+    // way, later on a busy machine. The two notes going up waited for
+    // that answer, so a walk in CI saw words and the microphone moving
+    // with no start sound played at all.
+    name: "The start sound plays as the microphone opens, before Dictate hears back that it did",
+    steps: [["bugs"], ["dictate", "start, answered late"], ["microphone moves"], ["dictate", "button"]],
+  },
+  {
     // Plan row 2.189. Tim undid what he typed while he talked, and Cmd+Y
     // did not bring it back: the words that arrived meanwhile were steps
     // of their own, which emptied what there was to redo. They are not

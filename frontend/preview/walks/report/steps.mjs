@@ -1311,7 +1311,11 @@ export const steps = {
   //                    It hears two notes going up once the microphone is
   //                    open, and two going down when it stops, however
   //                    it stops.
-  //                    "start" only starts it, "hearing" waits for more
+  //                    "start" only starts it, "start, answered late" the
+  //                    same with the answer to Listen held until the
+  //                    start sound is checked, the way a busy machine
+  //                    hands it back after the microphone's first news,
+  //                    "hearing" waits for more
   //                    to be said and settled, "settled" waits for words
   //                    before a pause to be settled, and a recording
   //                    already running is only ended
@@ -1359,6 +1363,10 @@ export const steps = {
     // opened may not be listening yet, and missed every reading of how
     // loud the microphone was, so the walk waits until it is.
     if (!running) await caughtUp(page, url);
+    // The recording starts and tells the window what it hears, and the
+    // answer that it started waits, see /hold.
+    const late = arg === "start, answered late";
+    if (late) await control(url, "/hold?call=Listen&gate=shut&answer=1&times=1");
     if (!running) await button.click();
     // Stop the moment it is pressed, see the rules on a click.
     const said = await button.getAttribute("aria-label");
@@ -1383,13 +1391,14 @@ export const steps = {
     }
     // Two notes going up say the microphone is open, while it is.
     const up = await page.evaluate(() => window.__notes.slice(-2));
+    if (late) await control(url, "/hold?call=Listen&gate=open");
     if (up.length < 2 || !up.every((n) => n.open) || up[0].f >= up[1].f) {
       walk.wrong = `the microphone opened without the start sound, it played ${JSON.stringify(up)}`;
       return;
     }
     kept.notes = await page.evaluate(() => window.__notes.length);
     await watch.step("hearing", s);
-    if (arg === "start") {
+    if (arg === "start" || late) {
       kept.dictating = await page.locator(".telling").evaluate((f) => f.value);
       return;
     }
