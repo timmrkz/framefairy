@@ -687,6 +687,7 @@ lint: toolchain modules golangci-lint frontend/node_modules/.package-lock.json
 	@sh scripts/main-moved-test.sh
 	@sh scripts/plan-frozen-test.sh
 	@sh scripts/test-failures-test.sh
+	@sh scripts/go-version-test.sh
 	@sh scripts/plan-frozen.sh
 
 # The release golangci-lint builds and checks against its own checksums,

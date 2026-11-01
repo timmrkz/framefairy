@@ -221,6 +221,7 @@ has "scripts/bundle-macos.sh" "go framefairy/cmd/framefairy-release"
 is "scripts/needs-build.sh" "lint unit go framefairy/internal/naming"
 is "scripts/main-moved.sh" "lint unit go framefairy/internal/naming"
 is "scripts/plan-frozen.sh" "lint unit go framefairy/internal/naming"
+is "scripts/go-version.sh" "lint unit go framefairy/internal/naming"
 
 # The plan is history, so a change to it runs the check that says so.
 is "docs/GUI-PLAN.md" "lint unit go framefairy/internal/naming"

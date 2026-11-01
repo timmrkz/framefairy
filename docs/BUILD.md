@@ -367,7 +367,11 @@ main left it after its last push, one cache for each job and for each
 machine of `linux`, saved by main. The build to update to in
 `builds.yml` starts from the cache of `outside`, which runs the same
 `make`, and saves none of its own, so no upload sits between a push and
-its build on the Updates page. A pull
+its build on the Updates page. The three Mac jobs, `macos`, `outside`
+and the build, keep Go itself in a cache of their own too, by the
+release `scripts/go-version.sh` works out for `go.mod`, so setup-go finds
+it in the runner's tool cache instead of downloading it and copying it
+there. A pull
 request saves its own only when it found none, for its next push. setup-go keeps the cache by `go.sum` alone and saves
 it only when `go.sum` changes, so with it a job started from a cache
 weeks old and compiled nearly everything again: a minute on Linux and

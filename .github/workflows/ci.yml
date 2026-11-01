@@ -498,9 +498,21 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
+      # Go, restored into the runner's tool cache from a cache of its own,
+      # so setup-go finds it there and does not spend 11 s copying a
+      # download into that tool cache, #408. scripts/go-version.sh works
+      # out the release setup-go would take for go.mod.
+      - id: go
+        run: |
+          version=$(sh scripts/go-version.sh)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.tool_cache }}/go/${{ steps.go.outputs.version }}
+          key: go-toolchain-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.version }}
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: go.mod
+          go-version: ${{ steps.go.outputs.version }}
           cache: false
       # Go's build cache, kept by main after every push, see above the job
       # linux.
@@ -577,9 +589,21 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
+      # Go, restored into the runner's tool cache from a cache of its own,
+      # so setup-go finds it there and does not spend 11 s copying a
+      # download into that tool cache, #408. scripts/go-version.sh works
+      # out the release setup-go would take for go.mod.
+      - id: go
+        run: |
+          version=$(sh scripts/go-version.sh)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.tool_cache }}/go/${{ steps.go.outputs.version }}
+          key: go-toolchain-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.version }}
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: go.mod
+          go-version: ${{ steps.go.outputs.version }}
           cache: false
       # Go's build cache, kept by main after every push, see above the job
       # linux. It is the cache of the app built on a Mac, which the build

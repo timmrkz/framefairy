@@ -210,10 +210,24 @@ jobs:
             echo "commit=$(echo "$SHA" | cut -c1-12)"
           } >> "$GITHUB_OUTPUT"
 
-      - if: steps.needs.outputs.run == 'true'
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      # Go, restored into the runner's tool cache from a cache of its own,
+      # so setup-go finds it there and does not spend 11 s copying a
+      # download into that tool cache, #408. scripts/go-version.sh works
+      # out the release setup-go would take for go.mod.
+      - id: go
+        if: steps.needs.outputs.run == 'true'
+        run: |
+          version=$(sh scripts/go-version.sh)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: steps.needs.outputs.run == 'true'
         with:
-          go-version-file: go.mod
+          path: ${{ runner.tool_cache }}/go/${{ steps.go.outputs.version }}
+          key: go-toolchain-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.version }}
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: steps.needs.outputs.run == 'true'
+        with:
+          go-version: ${{ steps.go.outputs.version }}
           cache: false
       # Go's build cache, the one ci.yml's job outside saves on main after
       # every push, from the same make with the same flags, see above it.
