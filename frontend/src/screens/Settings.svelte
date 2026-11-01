@@ -34,7 +34,6 @@
     speechRow,
     type Check,
     type CloudModel,
-    type Job,
     type Provider,
     type LanguageModel,
     type Settings,
@@ -45,6 +44,7 @@
     type LicenceState,
     onLicenceLink,
   } from "../lib/api";
+  import { live } from "../lib/flow";
   import ApiKey from "../components/ApiKey.svelte";
   import Confirm from "../components/Confirm.svelte";
   import Busy from "../components/Busy.svelte";
@@ -459,10 +459,9 @@
   const notHere = $derived(!!inUse && !inUse.installed);
   // What a search, a clip made by hand or the whole video being
   // transcribed is using, see refuseFinding and speechLocked.
-  const running = (j: Job) => j.state === "running" || j.state === "queued";
-  const searching = $derived(jobs.list.some((j) => j.kind === "search" && running(j)));
+  const searching = $derived(jobs.list.some((j) => j.kind === "search" && live(j)));
   const hearing = $derived(
-    searching || jobs.list.some((j) => (j.kind === "clip" || j.kind === "transcribe") && running(j)),
+    searching || jobs.list.some((j) => (j.kind === "clip" || j.kind === "transcribe") && live(j)),
   );
   // The clip model's download, and the speech model's below: one Install
   // each, see install.svelte.ts. When one ends the models are read again:

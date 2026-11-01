@@ -49,6 +49,8 @@
     timesIn,
     frameAt,
     frameMiddle,
+    live as going,
+    unfinished,
   } from "../lib/flow";
   import { faceLook, families, installFonts, nearestFace, styleNames } from "../lib/fonts";
   import { playheadClock, type About } from "../lib/playhead";
@@ -263,7 +265,7 @@
   // clips comes from it, and the workspace decides nothing about when a
   // search starts or stops. It is undefined when there is nothing to say.
   const search = $derived(jobs.search(path));
-  const searching = $derived(!!search && (search.state === "running" || search.state === "queued"));
+  const searching = $derived(going(search));
   const working = $derived(searching ? search : undefined);
   // The search while it hears the episode. Its progress says how far the
   // audio has been heard.
@@ -288,8 +290,8 @@
   // The clips made by hand are work of the clip list too: its Cancel stops
   // them with the search, and its Continue carries them all on.
   const handWork = $derived(jobs.clips(path));
-  const handRunning = $derived(handWork.filter((j) => j.state === "running" || j.state === "queued"));
-  const handStopped = $derived(handWork.filter((j) => j.state === "interrupted" || j.state === "failed"));
+  const handRunning = $derived(handWork.filter(going));
+  const handStopped = $derived(handWork.filter(unfinished));
   // The video heard to its end by itself, Transcribe whole video in its
   // menu, while it hears.
   const wholeHearing = $derived.by(() => {
@@ -872,7 +874,7 @@
   }
   const halted = $derived.by(() => {
     if (!search || busy) return null;
-    if (search.state !== "interrupted" && search.state !== "failed") return null;
+    if (!unfinished(search)) return null;
     const start = search.from ?? 0;
     const end = search.to && search.to > 0 ? search.to : duration;
     const window = `Window ${clock(start)} to ${clock(end)}`;
@@ -886,7 +888,7 @@
     // Called off with Cancel, or cut off by the app closing: the same row
     // either way, because either way what it did stays and Continue
     // carries it on. Only the first word says which it was.
-    const byHand = search.step === "stopped";
+    const byHand = search.state === "stopped";
     const what = byHand ? "Stopped. Click Continue" : "Interrupted. Click Continue";
     const how = byHand ? "Cancel stopped the search" : "The app was closed";
     // Stopped before it had heard its window, which is the first half of

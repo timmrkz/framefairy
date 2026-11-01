@@ -29,6 +29,7 @@
   // An installed model can be removed again, to give its room back. It
   // asks first, because getting it back means fetching gigabytes again.
   import { api, clock, errorText, type Job, type ModelRow } from "../lib/api";
+  import { live } from "../lib/flow";
   import { jobs } from "../lib/state.svelte";
   import { sentence } from "../lib/steps";
   import Busy from "./Busy.svelte";
@@ -81,9 +82,7 @@
   // The install as the job list has it. The list is only ever brought up
   // to date by events, which is where the progress comes from.
   const job = $derived(jobs.list.filter((j) => j.kind === kind).at(-1));
-  const running = $derived(
-    job && (job.state === "running" || job.state === "queued") ? job : undefined,
-  );
+  const running = $derived(live(job) ? job : undefined);
 
   // Read again when an install settles, and not on every job event: the Go
   // side sends one about once a second while anything runs, and asking
@@ -94,7 +93,7 @@
     const now = job ? `${job.id}:${job.state}` : "";
     if (now === settled) return;
     settled = now;
-    if (job && job.state !== "running" && job.state !== "queued") {
+    if (job && !live(job)) {
       asked = "";
       onchange();
     }

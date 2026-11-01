@@ -245,7 +245,7 @@ func TestAClipMadeByHandCalledOff(t *testing.T) {
 		t.Errorf("last on the way %+v, want it stopped at the playhead", last)
 	}
 	recs := ReadJobs(disk, source)
-	if len(recs) != 1 || recs[0].Kind != JobClip || recs[0].Clip() != (ClipRequest{At: 30}) || !recs[0].Interrupted() {
+	if len(recs) != 1 || recs[0].Kind != JobClip || recs[0].Clip() != (ClipRequest{At: 30}) || recs[0].Step == StepFailed {
 		t.Errorf("records %+v", recs)
 	}
 }

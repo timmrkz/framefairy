@@ -80,18 +80,21 @@ from waiting to finding.
 Every job can stop before done in one of two ways:
 
 - **Failed**, with the reason.
-- **Stopped**, by Cancel. A search says so where its work was, with
-  **Continue**, the same way as one the app was closed on: what it heard
-  stays and it can be carried on, and an empty column after Cancel read as
-  work that had vanished. A render called off goes, and its Render button
-  carries it on.
+- **Stopped**, by Cancel or Stop transcribing. A search, a clip made by
+  hand or the whole video heard is in the state `stopped` and says so
+  where its work was, with **Continue**, the same way as one the app was
+  closed on: what it did stays and it can be carried on, and an empty
+  column after Cancel read as work that had vanished. A render called off
+  goes, and its Render button carries it on.
 
 A job whose record says it was running when the app starts was
 **interrupted**: the app was closed or fell over. Nobody writes that
 state. It is what a running job looks like to an app that did not start
 it. It says so where its work was, with **Continue**, and so does a
-stopped search, after a restart too. The sidebar gives both the colour of
-a warning, and a failed search the colour of an error.
+stopped job, after a restart too. Each is a state of its own, `stopped`
+and `interrupted`, so nothing has to read the step to tell them apart.
+The sidebar gives both the colour of a warning, and a failed search the
+colour of an error.
 
 **There is no Pause.** Pause and Cancel did nearly the same thing under
 two names, and Pause only while transcribing. What made pausing worth
@@ -236,7 +239,8 @@ command line keeps its flags and its own run, and keeps no records.
 **The app** runs every job on a goroutine of its own, in the lanes above.
 When it starts, it reads the records of the episodes in its library: a
 record in a running step is a job in the list in the state `interrupted`,
-a failed one a job that `failed`, with its reason. Adding a video asks for
+one in the step `stopped` a job that is `stopped`, and a failed one a job
+that `failed`, with its reason. Adding a video asks for
 its first search, of the video's window, which the Go side places then:
 the first of the windows the video is cut into, see
 `engine.SuggestedWindow`, on a round step, and no longer than the model

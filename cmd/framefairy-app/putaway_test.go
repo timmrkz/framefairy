@@ -41,7 +41,7 @@ func TestARemovedStoppedSearchIsGoneForGood(t *testing.T) {
 
 	var ids []string
 	for _, j := range s.jobs.list() {
-		if j.State == JobFailed || j.State == JobInterrupted {
+		if j.unfinished() {
 			ids = append(ids, j.ID)
 		}
 	}

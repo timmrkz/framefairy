@@ -27,10 +27,15 @@ const (
 	JobDone      = "done"
 	JobFailed    = "failed"
 	JobCancelled = "cancelled"
-	// JobInterrupted is a search or a render whose record says it was
-	// running when the app last stopped: the app was closed or fell over
-	// in the middle of it. Continue carries it on.
+	// JobInterrupted is a job whose record says it was running when the
+	// app last stopped: the app was closed or fell over in the middle of
+	// it. Continue carries it on.
 	JobInterrupted = "interrupted"
+	// JobStopped is a job called off by hand, with Cancel or Stop
+	// transcribing, that keeps what it did: a search, a clip made by hand
+	// or the whole video heard. Continue carries it on, as it does one
+	// that was interrupted, after a restart too.
+	JobStopped = "stopped"
 )
 
 // Job is one engine step the interface asked for.
@@ -53,9 +58,8 @@ type Job struct {
 	// runJob.
 	//
 	// Its ID is the record's, empty for a job that keeps none, and never
-	// the job's own ID. Its methods are the record's: Interrupted says
-	// what a record read back says, not whether the job is interrupted,
-	// which State does. Its fields go to the window as the job's own:
+	// the job's own ID. How the job ended is State, never read from the
+	// record's step. Its fields go to the window as the job's own:
 	// Kind, the step, the error, the window of a search and the clips it
 	// was asked for, what a render is of from the moment it is queued, and
 	// the moment I or O was pressed at. The clip list holds as many rows
@@ -133,6 +137,13 @@ type Job struct {
 
 // going says whether a job is queued or running.
 func (j *Job) going() bool { return j.State == JobQueued || j.State == JobRunning }
+
+// unfinished is a job that ended before it was done, interrupted, stopped
+// or failed, and says so where its work was until Continue carries it on
+// or it is settled.
+func (j *Job) unfinished() bool {
+	return j.State == JobInterrupted || j.State == JobStopped || j.State == JobFailed
+}
 
 // JobUpdate is what the interface receives on the "job" event.
 type JobUpdate struct {
@@ -492,15 +503,18 @@ func jobLabel(kind string, preview bool) string {
 	return "Find clips"
 }
 
-// restore puts the searches and renders the episodes' records say were
-// cut off or failed into the queue, as the app starts, so each says so
+// restore puts the jobs the episodes' records say were cut off, stopped
+// by hand or failed into the queue, as the app starts, so each says so
 // where its work was. See engine/jobs.go.
 func (q *queue) restore(episodes []string) {
 	for _, episode := range episodes {
 		for _, rec := range engine.ReadJobs(q.store.files, episode) {
 			state := JobInterrupted
-			if !rec.Interrupted() {
+			switch rec.Step {
+			case engine.StepFailed:
 				state = JobFailed
+			case engine.StepStopped:
+				state = JobStopped
 			}
 			q.mu.Lock()
 			q.next++
@@ -798,7 +812,7 @@ func (q *queue) settle(episode, kind, record string) {
 	var settled []Job
 	for _, j := range q.jobs {
 		if j.Episode == episode && j.Kind == kind && (record == "" || j.JobRecord.ID == record) &&
-			(j.State == JobInterrupted || (j.State == JobFailed && j.JobRecord.ID != "")) {
+			j.unfinished() && j.JobRecord.ID != "" {
 			j.State = JobCancelled
 			q.stampLocked(j)
 			settled = append(settled, *j)
@@ -817,7 +831,7 @@ func (q *queue) setAside(episode string, aside func(j *Job) bool) {
 	q.mu.Lock()
 	var changed []Job
 	for _, j := range q.jobs {
-		if j.Episode != episode || j.Kind != engine.JobSearch || (j.State != JobInterrupted && j.State != JobFailed) {
+		if j.Episode != episode || j.Kind != engine.JobSearch || !j.unfinished() {
 			continue
 		}
 		if now := aside(j); now != j.Aside {
@@ -843,7 +857,7 @@ func (q *queue) forgetEpisode(episode string) {
 	q.mu.Lock()
 	var settled []Job
 	for _, j := range q.jobs {
-		if j.Episode == episode && !j.going() && (j.State == JobInterrupted || j.State == JobFailed) {
+		if j.Episode == episode && j.unfinished() {
 			j.State = JobCancelled
 			q.stampLocked(j)
 			settled = append(settled, *j)
@@ -1081,7 +1095,7 @@ func (q *queue) runJob(job *Job) {
 		case errors.Is(err, engine.ErrCancelled) && j.byHand && stopsAsStopped(j.Kind):
 			// Called off by hand, a search says Stopped, Click Continue,
 			// because what it heard stays and it can be carried on.
-			j.State, j.JobRecord = JobInterrupted, stopped
+			j.State, j.JobRecord = JobStopped, stopped
 		case errors.Is(err, engine.ErrCancelled):
 			j.State, j.Underway = JobCancelled, nil
 		default:

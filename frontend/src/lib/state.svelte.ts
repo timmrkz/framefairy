@@ -1,7 +1,7 @@
 // Shared state: the job list, kept current from the Go side's events.
 import { untrack } from "svelte";
 import { api, onJob, type Job, type Lane } from "./api";
-import { mergeJob } from "./flow";
+import { live, mergeJob } from "./flow";
 import { said } from "./said";
 import type { EpisodeOrder } from "./order";
 
@@ -15,8 +15,6 @@ const recheck = 5000;
 // video heard, from its menu, and the clip list's work, the search with
 // the clips made by hand, from Search, Continue and Cancel.
 export type Work = "whole" | "clips";
-
-const live = (j: Job) => j.state === "running" || j.state === "queued";
 
 function doing(work: Work, j: Job): boolean {
   return work === "whole" ? j.kind === "transcribe" : j.kind === "search" || j.kind === "clip";
@@ -153,7 +151,7 @@ export class JobStore {
     return this.list.find(
       (j) =>
         j.episode === path &&
-        (j.state === "running" || j.state === "queued") &&
+        live(j) &&
         (!lane || j.lane === lane),
     );
   }

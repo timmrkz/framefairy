@@ -210,7 +210,7 @@ func TestPathAVideoRemovedAndAddedAgainSaysOnlyWhatItsFolderHolds(t *testing.T) 
 	ended := func(when string) {
 		t.Helper()
 		for _, j := range d.svc.jobs.list() {
-			if j.Episode == ep && (j.State == JobInterrupted || j.State == JobFailed) {
+			if j.Episode == ep && j.unfinished() {
 				t.Errorf("%s, %s %s still says it ended %s", when, j.ID, j.Kind, j.State)
 			}
 		}
@@ -666,7 +666,7 @@ func TestPathTheWholeVideoAndASearchGoOneAtATime(t *testing.T) {
 			after = append(after, j)
 		}
 	}
-	if len(after) != 1 || after[0].ID != whole.ID || after[0].State != JobInterrupted {
+	if len(after) != 1 || after[0].ID != whole.ID || after[0].State != JobStopped {
 		t.Fatalf("a search asked for while the whole video was transcribed left %+v, not the transcription stopped", after)
 	}
 	if o := d.outcome(ep); o.stopped || o.interrupted || o.failed != "" {

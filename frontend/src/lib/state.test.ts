@@ -22,7 +22,7 @@ describe("a stop pressed for a video's work", () => {
     jobs.apply(job("running", 2));
     expect(jobs.isStopping("/v.mp4", "whole")).toBe(true);
     expect(jobs.stops(job("running", 2))).toBe(true);
-    jobs.apply(job("interrupted", 3));
+    jobs.apply(job("stopped", 3));
     expect(jobs.stopping).toEqual([]);
   });
 
@@ -30,9 +30,9 @@ describe("a stop pressed for a video's work", () => {
     const jobs = new JobStore();
     jobs.apply(job("running", 4));
     jobs.stop("/v.mp4", "whole");
-    jobs.apply(job("interrupted", 3));
+    jobs.apply(job("stopped", 3));
     expect(jobs.isStopping("/v.mp4", "whole")).toBe(true);
-    jobs.apply(job("interrupted", 5));
+    jobs.apply(job("stopped", 5));
     expect(jobs.stopping).toEqual([]);
   });
 
@@ -44,9 +44,9 @@ describe("a stop pressed for a video's work", () => {
     jobs.stop("/v.mp4", "clips");
     expect(jobs.stops(job("running", 2, "search", "s"))).toBe(true);
     expect(jobs.stops(job("running", 2, "transcribe", "t"))).toBe(false);
-    jobs.apply(job("interrupted", 2, "search", "s"));
+    jobs.apply(job("stopped", 2, "search", "s"));
     expect(jobs.isStopping("/v.mp4", "clips")).toBe(true);
-    jobs.apply(job("interrupted", 2, "clip", "c"));
+    jobs.apply(job("stopped", 2, "clip", "c"));
     expect(jobs.isStopping("/v.mp4", "clips")).toBe(false);
   });
 
@@ -57,7 +57,7 @@ describe("a stop pressed for a video's work", () => {
     jobs.apply(job("running", 1, "search", "s"));
     jobs.answered("/v.mp4", "clips");
     expect(jobs.isStopping("/v.mp4", "clips")).toBe(true);
-    jobs.apply(job("interrupted", 2, "search", "s"));
+    jobs.apply(job("stopped", 2, "search", "s"));
     expect(jobs.isStopping("/v.mp4", "clips")).toBe(false);
   });
 
@@ -85,7 +85,7 @@ describe("the work on the clips asked for", () => {
     jobs.apply(job("running", 1, "search", "s"));
     jobs.answered("/v.mp4", "clips");
     expect(jobs.isStopping("/v.mp4", "whole")).toBe(true);
-    jobs.apply(job("interrupted", 2, "transcribe", "t"));
+    jobs.apply(job("stopped", 2, "transcribe", "t"));
     expect(jobs.isStopping("/v.mp4", "whole")).toBe(false);
     expect(jobs.isStopping("/v.mp4", "clips")).toBe(false);
   });

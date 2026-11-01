@@ -66,14 +66,14 @@ func (s *FrameFairy) search(path string, req engine.PlanRequest, click string, c
 	return job
 }
 
-// Continue carries on a search or a render that was cut off or failed,
+// Continue carries on a job that was cut off, stopped by hand or failed,
 // from what it left. click names the press, the way it does for Search.
 func (s *FrameFairy) Continue(id, click string) Job {
 	var stopped *Job
 	for _, j := range s.jobs.list() {
 		// A search that failed before it had a record, refused as it was
 		// asked for, is asked for again.
-		if j.ID == id && (j.State == JobInterrupted || j.State == JobFailed) &&
+		if j.ID == id && j.unfinished() &&
 			(j.JobRecord.ID != "" || j.Kind == engine.JobSearch) {
 			stopped = &j
 		}
@@ -267,7 +267,7 @@ func (s *FrameFairy) cancelSteps(id string) bool {
 			}
 			continue
 		}
-		if j.State == JobInterrupted || j.State == JobFailed {
+		if j.unfinished() {
 			theLog.jobLine(zerolog.InfoLevel, &j).Str("state", j.State).Msg("the work that stopped is removed, its record forgotten")
 			s.forgetRecord(j.Episode, j.JobRecord.ID)
 			s.jobs.settle(j.Episode, j.Kind, j.JobRecord.ID)

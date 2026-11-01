@@ -461,10 +461,9 @@ func (d *desk) outcome(path string) outcome {
 	}
 	w := window{j.From, j.To}
 	switch j.State {
+	case JobStopped:
+		return outcome{stopped: true, window: w}
 	case JobInterrupted:
-		if j.Step == engine.StepStopped {
-			return outcome{stopped: true, window: w}
-		}
 		return outcome{interrupted: true, window: w}
 	case JobFailed:
 		return outcome{failed: j.Error, window: w}
