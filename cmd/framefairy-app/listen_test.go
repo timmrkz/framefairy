@@ -974,7 +974,7 @@ func TestClosingTheReportWindowDropsTheRecording(t *testing.T) {
 	read := bubbleLog(t)
 	synctest.Test(t, func(t *testing.T) {
 		f := listenTo(t, tone(30))
-		f.report = newReporting(afero.NewMemMapFs(), "/config/report")
+		f.report = newReporting(engine.NewMachine(afero.NewMemMapFs()), "/config/report")
 		f.report.stop = f.CancelListening
 		f.report.make = func(closed func()) (func(), func()) { return func() {}, closed }
 		f.OpenReport("bugs")

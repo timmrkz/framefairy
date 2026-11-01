@@ -63,7 +63,7 @@ func TestAFileIsProbedOnceUntilItChanges(t *testing.T) {
 	}
 	probe := func() SourceInfo {
 		t.Helper()
-		e := &Engine{Log: runlog.New(io.Discard, false, false), FFprobe: ffprobe}
+		e := &Engine{Machine: &Machine{}, Log: runlog.New(io.Discard, false, false), FFprobe: ffprobe}
 		info, err := e.Probe(ctx, video)
 		if err != nil {
 			t.Fatal(err)
@@ -117,7 +117,7 @@ func TestAProbeThatWasStoppedIsNotKept(t *testing.T) {
 	if err := os.WriteFile(video, []byte("a video"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	e := &Engine{Log: runlog.New(io.Discard, false, false), FFprobe: ffprobe}
+	e := &Engine{Machine: &Machine{}, Log: runlog.New(io.Discard, false, false), FFprobe: ffprobe}
 	if _, err := e.Probe(saysStopped{context.Background()}, video); err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +140,7 @@ func TestTheSubtitleSyntaxIsFoundOnceForEveryEngine(t *testing.T) {
 	ffmpeg, runs := countingTool(t, "ffmpeg")
 	find := func() string {
 		t.Helper()
-		e := &Engine{Log: runlog.New(io.Discard, false, false), FFmpeg: ffmpeg}
+		e := &Engine{Machine: &Machine{}, Log: runlog.New(io.Discard, false, false), FFmpeg: ffmpeg}
 		template, err := e.SubtitleFilter(ctx)
 		if err != nil {
 			t.Fatal(err)
@@ -178,7 +178,7 @@ func TestEveryToolIsAskedItsVersionOnce(t *testing.T) {
 		return n
 	}
 	for range 3 {
-		e := &Engine{Log: runlog.New(io.Discard, false, false), FFmpeg: ffmpeg, FFprobe: ffprobe,
+		e := &Engine{Machine: &Machine{}, Log: runlog.New(io.Discard, false, false), FFmpeg: ffmpeg, FFprobe: ffprobe,
 			SkipCaptions: true}
 		// The stand-in knows no encoder, so Preflight fails past the
 		// versions. It must fail there, not on either tool.

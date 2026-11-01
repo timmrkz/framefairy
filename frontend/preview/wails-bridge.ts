@@ -13,7 +13,9 @@ install();
 type Listener = (ev: { data: unknown }) => void;
 const listeners = new Map<string, Set<Listener>>();
 
-// The calls made and how each ended, for a walk to read.
+// The calls made and how each ended, for a walk to read. A call says so
+// with an event, asked, as it is made and, answered, once the Go side's
+// answer is in, before the interface reads it.
 const calls: { name: string; args: unknown[]; failed?: string }[] = [];
 (window as any).__calls = calls;
 // Settled once the interface is listening, so a walk asks for a mark only
@@ -131,6 +133,7 @@ export const Call = {
   async ByName(name: string, ...args: unknown[]): Promise<unknown> {
     const call: Made = { name: name.split(".").pop() ?? name, args };
     calls.push(call);
+    window.dispatchEvent(new CustomEvent("asked", { detail: call.name }));
     const now = calling.filter((w) => w.match(call));
     calling = calling.filter((w) => !now.includes(w));
     for (const w of now) w.done();
@@ -152,6 +155,9 @@ export const Call = {
       throw new Error(call.failed);
     }
     const answered = body ? JSON.parse(body) : null;
+    // For a walk that reads what happened against it, like the dictate
+    // step's sounds against the microphone saying it is on.
+    window.dispatchEvent(new CustomEvent("answered", { detail: call.name }));
     if (call.name === "Jobs" && Array.isArray(answered)) answered.forEach(had);
     return answered;
   },

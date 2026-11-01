@@ -359,7 +359,7 @@ func TestASearchThatCouldFindNothingIsRefused(t *testing.T) {
 		{"no clips at all", Options{Min: 20, Max: 30, Count: -1}, "at least one clip"},
 	} {
 		var said bytes.Buffer
-		e := NewEngine(runlog.New(&said, false, false), disk)
+		e := NewEngine(runlog.New(&said, false, false), NewMachine(disk))
 		c.opts.Source = source
 		c.opts.Planner = "local"
 		if code := e.Run(context.Background(), c.opts); code == 0 {

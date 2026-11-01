@@ -327,7 +327,7 @@ func TestASearchSaysHowFarItIs(t *testing.T) {
 			mu.Unlock()
 		}
 	})
-	e := NewEngine(log, disk)
+	e := NewEngine(log, NewMachine(disk))
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	r := ownRecords(e)
 	base := DefaultOptions()

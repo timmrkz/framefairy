@@ -169,7 +169,7 @@ func TestTheRenderGlidesTheCropOverTheMarks(t *testing.T) {
 
 	// Scaled to the short, the glide is cut glideMargin wider, scaled,
 	// and cropped again, and the frames come out the short's size.
-	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
 	graph, _, _, err := e.BuildFilterGraph(context.Background(), Clip{Segments: []Segment{seg}},
 		source, RenderSettings{OutW: 1080, OutH: 1920, ScaleUp: true}, "")
 	if err != nil {

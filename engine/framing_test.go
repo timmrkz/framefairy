@@ -46,7 +46,7 @@ func twoCameras(t *testing.T) (string, SourceInfo) {
 // tests are about how a clip is framed, and looking for faces in
 // every sampled frame under the race detector is most of a minute.
 func framingEngine() *Engine {
-	e := NewEngine(runlog.New(io.Discard, false, false), afero.NewMemMapFs())
+	e := NewEngine(runlog.New(io.Discard, false, false), NewMachine(afero.NewMemMapFs()))
 	e.NoFaces = true
 	return e
 }
@@ -113,6 +113,53 @@ func TestFramingDecodesOnTheProcessorWhenTheSystemWillNot(t *testing.T) {
 	}
 }
 
+// What one job learned about the system's decoder, the next one knows.
+// The app makes an engine for every job, and each one used to try the
+// system's decoder again, so a Mac whose decoder fails paid for it on
+// every search (#644). Two engines of one machine: once the decoder
+// refused the first, the second never asks it.
+//
+// On the real disk: the stand-in ffmpeg is a program that is run.
+func TestTheNextJobDecodesOnTheProcessorOnceTheSystemWouldNot(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("the stand-in is a shell script")
+	}
+	path, source := twoCameras(t)
+	real, _ := exec.LookPath("ffmpeg")
+	dir := t.TempDir()
+	asked := filepath.Join(dir, "asked")
+	refusing := filepath.Join(dir, "ffmpeg")
+	script := "#!/bin/sh\ncase \"$*\" in *-hwaccel*) echo asked >>\"" + asked +
+		"\"; echo refused >&2; exit 1;; esac\nexec \"" + real + "\" \"$@\"\n"
+	if err := standin.Write(refusing, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	machine := NewMachine(afero.NewMemMapFs())
+	job := func() {
+		e := NewEngine(runlog.New(io.Discard, false, false), machine)
+		e.FFmpeg, e.NoFaces = refusing, true
+		if _, err := e.ClipSegments(context.Background(), path, []timed.Span{{Start: 7, End: 13}},
+			source, 202, nil); err != nil {
+			t.Fatalf("framing failed: %v", err)
+		}
+	}
+	times := func() int {
+		said, _ := os.ReadFile(asked)
+		return strings.Count(string(said), "asked")
+	}
+
+	job()
+	if times() == 0 {
+		t.Fatal("the first job never asked the system's decoder")
+	}
+	first := times()
+	job()
+	if more := times() - first; more != 0 {
+		t.Errorf("the next job asked the system's decoder %d times more after it refused the first", more)
+	}
+}
+
 func TestDecoderIn(t *testing.T) {
 	cases := map[string]string{
 		"[vist#0:0/h264] Using auto hwaccel type videotoolbox with new default device.\n": "VideoToolbox",
@@ -151,7 +198,7 @@ func TestHwaccelsIn(t *testing.T) {
 // ten minutes, in TestNewAndCancelInEitherOrder and the engine's tests
 // alike. Not parallel: stuckFFmpeg sets timeLimit, a package variable.
 func TestFramingGoesOnWhenTheSystemDecoderHangs(t *testing.T) {
-	e := NewEngine(runlog.New(io.Discard, false, false), afero.NewMemMapFs())
+	e := NewEngine(runlog.New(io.Discard, false, false), NewMachine(afero.NewMemMapFs()))
 	e.FFmpeg = stuckFFmpeg(t, false)
 	used := e.decoderUsed(context.Background(), "episode.mp4", 10.2)
 	if used != "the processor" {
@@ -163,7 +210,7 @@ func TestFramingGoesOnWhenTheSystemDecoderHangs(t *testing.T) {
 
 	// A frame pulled on its own is ended the same way. One that is not
 	// ends the test at go test's -timeout.
-	e = NewEngine(runlog.New(io.Discard, false, false), afero.NewMemMapFs())
+	e = NewEngine(runlog.New(io.Discard, false, false), NewMachine(afero.NewMemMapFs()))
 	e.FFmpeg = stuckFFmpeg(t, false)
 	if got := e.sampleGray(context.Background(), "episode.mp4", 10, 0.1, FaceWidth, FaceHeight, 1); len(got) != 0 {
 		t.Errorf("a frame pulled with a system decoder that hangs gave %d frames from a stand-in that has none", len(got))
@@ -176,7 +223,7 @@ func TestFramingGoesOnWhenTheSystemDecoderHangs(t *testing.T) {
 // minutes, and nothing ended it: the search would have waited for good.
 // Not parallel: stuckFFmpeg sets timeLimit, a package variable.
 func TestReadingFramesThatHangsIsEnded(t *testing.T) {
-	e := NewEngine(runlog.New(io.Discard, false, false), afero.NewMemMapFs())
+	e := NewEngine(runlog.New(io.Discard, false, false), NewMachine(afero.NewMemMapFs()))
 	e.FFmpeg = stuckFFmpeg(t, false)
 	if _, err := e.readSpan(context.Background(), "episode.mp4", 10, 20); err != nil {
 		t.Fatal(err)
@@ -186,7 +233,7 @@ func TestReadingFramesThatHangsIsEnded(t *testing.T) {
 	}
 
 	// One that hangs either way gives no frames rather than no clip.
-	e = NewEngine(runlog.New(io.Discard, false, false), afero.NewMemMapFs())
+	e = NewEngine(runlog.New(io.Discard, false, false), NewMachine(afero.NewMemMapFs()))
 	e.FFmpeg = stuckFFmpeg(t, true)
 	if frames, err := e.readSpan(context.Background(), "episode.mp4", 10, 20); err != nil || len(frames) != 0 {
 		t.Errorf("an ffmpeg that always hangs: %d frames, %v", len(frames), err)
@@ -224,7 +271,7 @@ func TestASystemDecoderThatWillNotEndIsLeftBehind(t *testing.T) {
 	})
 
 	var said bytes.Buffer
-	e := NewEngine(runlog.New(&said, false, false), afero.NewMemMapFs())
+	e := NewEngine(runlog.New(&said, false, false), NewMachine(afero.NewMemMapFs()))
 	e.FFmpeg, e.Runner = stuckFFmpeg(t, false), stuck
 	used := e.decoderUsed(context.Background(), "episode.mp4", 10.2)
 	if used != "the processor" || !e.softDecode.Load() {
@@ -236,13 +283,13 @@ func TestASystemDecoderThatWillNotEndIsLeftBehind(t *testing.T) {
 
 	// Pulling one frame, and reading the frames of a span as ffmpeg
 	// decodes it, are left the same way.
-	e = NewEngine(runlog.New(io.Discard, false, false), afero.NewMemMapFs())
+	e = NewEngine(runlog.New(io.Discard, false, false), NewMachine(afero.NewMemMapFs()))
 	e.FFmpeg, e.Runner = stuckFFmpeg(t, true), stuck
 	if got := e.sampleGray(context.Background(), "episode.mp4", 10, 0.1, FaceWidth, FaceHeight, 1); len(got) != 0 {
 		t.Errorf("an ffmpeg left behind gave %d frames", len(got))
 	}
 	said.Reset()
-	e = NewEngine(runlog.New(&said, false, false), afero.NewMemMapFs())
+	e = NewEngine(runlog.New(&said, false, false), NewMachine(afero.NewMemMapFs()))
 	e.FFmpeg, e.Runner = stuckFFmpeg(t, true), stuck
 	if frames, err := e.readSpan(context.Background(), "episode.mp4", 10, 20); err != nil || len(frames) != 0 {
 		t.Errorf("an ffmpeg left behind while it reads the frames: %d frames, %v", len(frames), err)

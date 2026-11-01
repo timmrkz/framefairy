@@ -1072,8 +1072,14 @@ func (q *queue) runJob(job *Job) {
 		}
 		// A warning is in app.log too, which a report carries and the
 		// job's own log in the video's work folder is not.
+		// It is written from the job as it stands under the queue's lock,
+		// since the step the job is in is written there while the engine
+		// warns, see heard.
 		if ev.Kind == runlog.EventWarn {
-			theLog.jobLine(zerolog.WarnLevel, job).Msg(ev.Text)
+			q.mu.Lock()
+			seen := *job
+			q.mu.Unlock()
+			theLog.jobLine(zerolog.WarnLevel, &seen).Msg(ev.Text)
 		}
 		copied := ev
 		// A hearing that begins another part has saved the part before
@@ -1110,8 +1116,7 @@ func (q *queue) runJob(job *Job) {
 	})
 	started := time.Now()
 	theLog.jobLine(zerolog.InfoLevel, job).Msg("the job started")
-	e := engine.NewEngine(log, q.store.files)
-	e.Records = q.store.records
+	e := engine.NewEngine(log, q.store.machine)
 	opts := jobOptions(q.store, e)
 	project := engine.NewProject(e, job.Episode, opts)
 

@@ -191,6 +191,21 @@ records, the runner, what was learned about the machine, and every
 cache and seam that is a package variable today, each moved with its
 area. `NewEngine` takes it in place of the file system.
 
+The name, chosen on 1 November 2026 in that pull request, #644, is
+`engine.Machine`, for what it holds: this machine's disk, its records,
+the programs it runs and what was learned about it while the program
+runs. `Engine` embeds it, so an engine still reads `e.Files` and
+`e.Runner`, and keeps beside it only what belongs to one job. What was
+learned about an ffmpeg, its encoders and its subtitle filter, is kept
+by the ffmpeg, the encoder a run names and the system, because the
+command line can name another ffmpeg or encoder for each run. The
+`tool.Finder` holds the tools already checked and the sums, read once
+from the package variable `make` writes to, and what the environment
+names, so its tests make their own and run side by side. Two parts of
+the app are made before `main` and keep their own until the app's own
+caches move: the probes, `sources`, keep a machine on the real disk, and
+the streams, `openPreviews`, a finder for the decoder only they run.
+
 ```
 engine          every area, still one package, and what outlives a job
 engine/runlog   the log of a run

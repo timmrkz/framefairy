@@ -94,7 +94,7 @@ func TestTheLengthOfAVideo(t *testing.T) {
 func TestAVideoEndsWhereItsPictureEnds(t *testing.T) {
 	t.Parallel()
 	ffmpegtest.Need(t)
-	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
 	dir := t.TempDir()
 	for _, c := range []struct {
 		name           string
@@ -184,7 +184,7 @@ func cutOff(t *testing.T, whole, path string) {
 func TestACutOffRecordingIsNotTakenAtItsGuessedLength(t *testing.T) {
 	t.Parallel()
 	ffmpegtest.Need(t)
-	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
 	path := timesEpisode(t, timesCase{name: "crashed_mpeg4_mkv", file: "crashed.mkv", cutOff: true})
 	info, err := e.Probe(context.Background(), path)
 	if err != nil {

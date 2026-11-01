@@ -246,7 +246,7 @@ func (e *Engine) execute(ctx context.Context, opts Options) error {
 	// A model that cannot be loaded fails the run before the transcript
 	// is made for it.
 	if r.opts.ClipsPath == "" && (r.opts.Replan || !fileio.Exists(e.Files, r.planPath)) {
-		if err := roomBeforeSearch(r.opts, r.span.End-r.span.Start); err != nil {
+		if err := r.e.roomBeforeSearch(r.opts, r.span.End-r.span.Start); err != nil {
 			return err
 		}
 	}
@@ -603,7 +603,7 @@ func (r *runner) plan(ctx context.Context) error {
 	// with one around this is only a warning.
 	var local *LocalModel
 	if opts.Planner == "local" && !whole {
-		local, err = resolveLocal(opts)
+		local, err = r.e.resolveLocal(opts)
 		if err != nil {
 			return err
 		}
@@ -917,7 +917,7 @@ func failedClips(failures, of int, first error) error {
 }
 
 // resolveLocal finds the local model and server before anything slow starts.
-func resolveLocal(opts Options) (*LocalModel, error) {
+func (e *Engine) resolveLocal(opts Options) (*LocalModel, error) {
 	m := &LocalModel{Server: opts.LLMServer, Model: opts.LLMModel, URL: opts.LLMURL,
 		Think: opts.Think, Seed: opts.Seed, Temperature: opts.Temperature}
 	if m.URL != "" {
@@ -933,7 +933,7 @@ func resolveLocal(opts Options) (*LocalModel, error) {
 	if _, err := os.Stat(m.Model); err != nil {
 		return nil, renderErr("the language model %s cannot be read: %s", m.Model, err)
 	}
-	if _, err := serverToRun(m.Server); err != nil {
+	if _, err := e.serverToRun(m.Server); err != nil {
 		return nil, err
 	}
 	return m, nil

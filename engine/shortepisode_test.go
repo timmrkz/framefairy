@@ -21,7 +21,7 @@ func TestAShortEpisodeIsItsOwnClip(t *testing.T) {
 	server := fakeModel(t, &asked)
 	defer server.Close()
 
-	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	ownRecords(e)
 	base := DefaultOptions()
@@ -70,7 +70,7 @@ func TestAShortEpisodeGetsItsClipAgainOnceRemoved(t *testing.T) {
 	server := fakeModel(t, &asked)
 	defer server.Close()
 
-	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	ownRecords(e)
 	base := DefaultOptions()

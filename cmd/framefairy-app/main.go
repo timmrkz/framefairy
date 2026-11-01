@@ -113,7 +113,7 @@ func main() {
 	})
 	// The report window and its draft, see bugs.go. The draft is kept
 	// beside the settings.
-	svc.report = newReporting(st.files, filepath.Join(st.dir, "report"))
+	svc.report = newReporting(st.machine, filepath.Join(st.dir, "report"))
 	svc.report.stop = svc.CancelListening
 	svc.report.told = func(open bool) {
 		if app != nil {
@@ -141,7 +141,7 @@ func main() {
 	// systems, and left a llama-server behind on every Mac that quit during
 	// a search.
 	// How far the loudness is measured is in the video's state.
-	svc.levels = newMeasuring(svc.store.files, svc.told)
+	svc.levels = newMeasuring(svc.store.machine, svc.told)
 	quit := sync.OnceFunc(func() {
 		svc.news.stop()
 		engine.CloseModels()
