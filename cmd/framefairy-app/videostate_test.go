@@ -396,7 +396,9 @@ func TestAJobsNewsComesOnceItsVideosStateIsDue(t *testing.T) {
 // its window, and keeps what it sends. What it returns gives the state
 // sent last once the news of every stamp of the video's jobs is out and
 // the sends it made due have gone, with the seq of the newest of that
-// news.
+// news. It waits for news of every stamp, so it is not for a test that
+// stamps a job with no news, as shutDown in jobs.go does: that would
+// wait until go test's -timeout.
 func heardStates(d *desk) func(path string) (VideoState, uint64) {
 	var mu sync.Mutex
 	out := sync.NewCond(&mu)
