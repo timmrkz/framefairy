@@ -375,6 +375,29 @@ describe("a slow drag to the left", () => {
     app.close();
   });
 
+  // Found in CI on a busy runner: the Go side waits only a moment for each
+  // frame after a pull's first, so a run came in two pulls, and the second
+  // skipped the frames the next steps back wanted.
+  test("hands over every frame up to its place even when the Go side brings them in two pulls", async () => {
+    const { app, asked, pulls, rankOf } = goSide();
+    app.grip(true);
+    void app.frame(100, 0, undefined, true);
+    await pulls(1);
+    asked[0].give([100]);
+    const back = rankOf(app.frame(99, 0, undefined, true));
+    await pulls(2);
+    expect(asked[1].url).toContain("n=16");
+    asked[1].give([84, 85, 86, 87, 88, 89, 90]);
+    await pulls(3);
+    expect(asked[2].url).toContain("n=9");
+    expect(asked[2].url).not.toContain("skip=");
+    asked[2].give([91, 92, 93, 94, 95, 96, 97, 98, 99]);
+    expect(await back).toBe(99);
+    for (let r = 98; r >= 85; r--) expect(await rankOf(app.frame(r, 0, undefined, true))).toBe(r);
+    expect(asked.length).toBe(3);
+    app.close();
+  });
+
   // A far step back is a hand moving fast, and a far step comes quicker
   // with its key frame first, as before, issue #281.
   test("leaves a far step back to its key frame first", async () => {

@@ -92,9 +92,10 @@ class Stream {
   private placed = 0;
   // Opened for a frame read ahead of the hand, see AppFrames.ahead.
   aheadOnly = false;
-  // Opened before a place the hand dragged back to, and hands over every
-  // frame from its first on, see AppFrames.frame.
-  run = false;
+  // Opened before a place the hand dragged back to: the place, and every
+  // frame from its first to it is handed over, see AppFrames.frame. -1 for
+  // any other stream.
+  runTo = -1;
   // While a pull that skips is on its way, the rank it skips to: the Go
   // side lets every frame before it go unmade, see reaches.
   private skipping = -Infinity;
@@ -197,9 +198,14 @@ class Stream {
         // which comes too and is kept: the arrow to the left after a jump
         // asks for it next, and it would cost a seek back to the key
         // frame. Plan row 2.269.
-        // A run hands over every frame from where it stands, its first
-        // pull only: asked again later, it skips as any stream does.
-        const run = this.run && !this.gave;
+        // A run hands over every frame from where it stands, until it has
+        // reached the place it was opened for, however many pulls that
+        // takes: the Go side waits only a moment for each frame after the
+        // first, so on a busy machine a pull brings fewer than asked for,
+        // and a run that stopped there skipped the rest, which the next
+        // steps back then had to seek. Asked again later, past the place,
+        // it skips as any stream does.
+        const run = this.position < this.runTo;
         const from = run ? Math.min(lowest, this.position + 1) : lowest > this.position + 2 ? lowest - 1 : lowest;
         const skip = from > this.position + 1 && !keyNow ? this.owner.ptsOf(from) - this.owner.track.frame / 2 : 0;
         const n = keyNow ? 1 : Math.min(16, Math.max(1, highest - Math.max(this.position, from - 1)));
@@ -718,7 +724,7 @@ export class AppFrames {
       // under it follows from the same stream. Issue #281.
       const key = !!w.key && !w.ahead;
       s = new Stream(this, w.back ? Math.max(0, w.rank - BACK) : w.rank, width, height, key);
-      s.run = !!w.back;
+      s.runTo = w.back ? w.rank : -1;
       if (key) this.stats.keyFirst++;
       s.aheadOnly = !!w.ahead;
       this.stats.first ||= `${width}x${height}`;
