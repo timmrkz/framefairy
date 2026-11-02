@@ -721,6 +721,11 @@ export const steps = {
     }
     await page.mouse.up();
     await playUntil(page, { most: 0.5 });
+    // Half a second of the episode is thirty animation frames and more
+    // on a machine at rest, and on a busy runner in WebKit it was five,
+    // too few to prove anything by, #380. So the watch goes on while the
+    // play does, until it has read thirty, counted on the page.
+    await pageUntil(page, () => window.__played.length >= 30 || !document.querySelector('button[aria-label="Pause"]'));
     await page.evaluate(() => (window.__playWatch = false));
     await settle(page);
   },

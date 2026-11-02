@@ -770,6 +770,20 @@ export async function shownOnPlayhead(page, { captions = false, lost } = {}) {
   return page.locator(".screen").evaluate(
     (screen, [fps, start, captions, lost]) =>
       new Promise((done) => {
+        // The moment whose frame shows for a playhead at, by the clip
+        // timeline's handles: a frame before the end on the end itself,
+        // and never before the start of the clip's last piece.
+        const edgeOfClip = (at, fps) => {
+          const box = document.querySelector(".clip-timeline");
+          const value = (el) => Number(el?.getAttribute("aria-valuenow"));
+          const end = value(box?.querySelector('[aria-label="Clip end"]'));
+          if (!Number.isFinite(end) || at !== end) return at;
+          const ends = [...(box?.querySelectorAll(".cutedge") ?? [])]
+            .filter((e) => /cut \d+ ends/.test(e.getAttribute("aria-label") ?? ""))
+            .map(value);
+          const last = Math.max(value(box.querySelector('[aria-label="Clip start"]')), ...ends.filter(Number.isFinite));
+          return Math.max(last, at - 1 / fps);
+        };
         const since = lost ?? screen.dataset.captionsLost ?? "";
         const gone = () => captions && (screen.dataset.captionsLost ?? "") !== since;
         const up = () => {
@@ -777,8 +791,12 @@ export async function shownOnPlayhead(page, { captions = false, lost } = {}) {
           const shown = Number(screen.dataset.shown);
           // The frame that holds the playhead, one that begins a
           // millisecond or less after it included, see frameAt in
-          // lib/flow.ts.
-          const begins = start + Math.floor((at - start + 0.001) * fps) / fps;
+          // lib/flow.ts. On the clip's end itself it is the clip's last
+          // frame, the one that holds the moment a frame before the end,
+          // where a play of the clip stops, see settle in
+          // lib/frames/queue.ts. A step that lands on the end shows it.
+          const held = edgeOfClip(at, fps);
+          const begins = start + Math.floor((held - start + 0.001) * fps) / fps;
           if (!Number.isFinite(shown) || Math.abs(shown - begins) >= 0.5 / fps) return false;
           return !captions || (screen.dataset.captioned !== undefined && Number(screen.dataset.captioned) === shown);
         };

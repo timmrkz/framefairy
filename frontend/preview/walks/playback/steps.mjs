@@ -439,13 +439,16 @@ export const steps = {
   async "press while playing"(walk, arg) {
     const { page } = walk;
     await preview(page, 0.2);
+    // Settled before the play, not while it plays: a busy runner in
+    // WebKit took seconds to settle, the play ran to the clip's end
+    // meanwhile, and after the hand let go nothing played, #380.
+    await settle(page);
     if (!(await page.evaluate(() => !!document.querySelector('button[aria-label="Pause"]')))) {
       await page.keyboard.press("Space");
     }
     // The play's waits in the episode's time, read off the playhead,
     // and the hand's in the page's frames, since a press may stop the
     // playhead.
-    await settle(page);
     await playUntil(page, { most: 0.7 });
     await page.evaluate(() => {
       window.__played = [];
