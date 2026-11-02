@@ -69,12 +69,7 @@ func main() {
 	// Their folders are read once now, so the Font list opens at once.
 	engine.UseMachineFonts()
 	go engine.RefreshFonts()
-	st := openStore()
-	// The app's machine keeps its keys in the keychain, reads them before
-	// the environment's and reaches the network. A machine a test makes
-	// does none of that.
-	st.machine.UseSystem()
-	st.machine.PreferSavedKeys()
+	st := appStore()
 
 	var app *application.App
 	emit := func(u JobUpdate) {

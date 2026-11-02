@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"framefairy/engine"
@@ -38,6 +39,54 @@ func TestLanesRunSideBySide(t *testing.T) {
 	<-started
 	<-started
 	close(release)
+}
+
+// The store the app runs on checks a key typed in the settings with its
+// company, and a store a test opens asks nobody.
+//
+// On the real disk: the stores read their settings in the user's config
+// folder, which HOME points at a folder of the test's own. Not parallel:
+// it sets HOME and http.DefaultTransport, which the whole process shares.
+func TestTheAppsStoreReachesTheCompanies(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
+	refusing := &refusesEveryKey{}
+	system := http.DefaultTransport
+	http.DefaultTransport = refusing
+	t.Cleanup(func() { http.DefaultTransport = system })
+	anthropic, _ := engine.ProviderNamed("anthropic")
+
+	if err := openStore().machine.VerifyAPIKey(context.Background(), anthropic, "sk-ant-typed"); err != nil || len(refusing.seen()) != 0 {
+		t.Fatalf("a store a test opens asked %v, and said %v", refusing.seen(), err)
+	}
+	err := appStore().machine.VerifyAPIKey(context.Background(), anthropic, "sk-ant-typed")
+	if err == nil || !strings.Contains(err.Error(), "Anthropic did not accept this key") {
+		t.Errorf("the app's store said %v", err)
+	}
+	if asked := refusing.seen(); len(asked) != 1 || asked[0] != "api.anthropic.com/v1/models" {
+		t.Errorf("the app's store asked %v", asked)
+	}
+}
+
+// refusesEveryKey is a network that answers every request as a company
+// does a key it does not know, and keeps where each was meant to go.
+type refusesEveryKey struct {
+	mu    sync.Mutex
+	asked []string
+}
+
+func (r *refusesEveryKey) RoundTrip(req *http.Request) (*http.Response, error) {
+	r.mu.Lock()
+	r.asked = append(r.asked, req.URL.Host+req.URL.Path)
+	r.mu.Unlock()
+	return &http.Response{StatusCode: http.StatusUnauthorized, Body: http.NoBody, Header: http.Header{}, Request: req}, nil
+}
+
+func (r *refusesEveryKey) seen() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.asked...)
 }
 
 // Nothing serves the bytes of a file to the page, not even of an episode
