@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -77,42 +76,6 @@ func testEpisode(t *testing.T, seconds string) string {
 		t.Fatal(err)
 	}
 	return path
-}
-
-// episodes are the test episodes a test still makes for this run of the
-// tests, in a folder of their own that TestMain takes away at the end.
-var episodes = &testEpisodes{files: map[string]string{}}
-
-type testEpisodes struct {
-	mu    sync.Mutex
-	dir   string
-	files map[string]string
-}
-
-// once is the episode called name, made by making it at the path it is
-// given the first time it is asked for, and the same file every time
-// after. A test that changes it works on a copy.
-//
-// On the real disk: the episodes are made by ffmpeg.
-func (m *testEpisodes) once(name string, making func(path string) error) (string, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if path, ok := m.files[name]; ok {
-		return path, nil
-	}
-	if m.dir == "" {
-		dir, err := os.MkdirTemp("", "framefairy-episodes-")
-		if err != nil {
-			return "", err
-		}
-		m.dir = dir
-	}
-	path := filepath.Join(m.dir, name)
-	if err := making(path); err != nil {
-		return "", err
-	}
-	m.files[name] = path
-	return path, nil
 }
 
 // On the real disk: the project runs ffmpeg on the episode.

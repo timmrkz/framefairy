@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 
 	"framefairy/engine/runlog"
 	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/fixtures"
 )
 
 // The caption file the video preview draws is the caption file the render
@@ -21,19 +21,13 @@ import (
 // clip's own caption line is where both put the captions, over the one
 // in the settings, which the app once put first.
 //
-// On the real disk: ffmpeg makes the episode, and the render writes its
+// On the real disk: ffmpeg reads the episode, and the render writes its
 // caption file where ffmpeg would read it.
 func TestTheVideoPreviewsCaptionFileIsTheShorts(t *testing.T) {
 	t.Parallel()
 	ffmpegtest.Need(t)
 	ctx := context.Background()
-	source := filepath.Join(t.TempDir(), "episode.mp4")
-	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
-		"-f", "lavfi", "-i", "testsrc=s=320x180:r=30000/1001:d=12",
-		"-f", "lavfi", "-i", "sine=f=220:d=12",
-		"-shortest", "-c:v", "mpeg4", "-q:v", "5", "-c:a", "aac", source).CombinedOutput(); err != nil {
-		t.Fatalf("making the test episode: %s %s", err, out)
-	}
+	source := fixtures.Copy(t, "episode-15s.mp4", filepath.Join(t.TempDir(), "episode.mp4"))
 	var heard int32
 	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
 	if err := e.Preflight(ctx); err != nil {

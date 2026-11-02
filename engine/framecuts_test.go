@@ -13,6 +13,7 @@ import (
 
 	"framefairy/engine/runlog"
 	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/fixtures"
 )
 
 // A render cuts on whole frames at every frame rate. Every piece of a short
@@ -49,17 +50,12 @@ func TestARenderCutsOnWholeFrames(t *testing.T) {
 	}
 }
 
-// On the real disk: ffmpeg makes the episode and renders the short.
+// On the real disk: ffmpeg reads the episode and renders the short.
 func cutsOnWholeFrames(t *testing.T, e *Engine, rate, container string) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	source := filepath.Join(dir, "episode."+container)
-	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
-		"-f", "lavfi", "-i", "color=c=black:s=64x36:r="+rate+":d=4,geq=lum='20+7*mod(N,30)':cb=128:cr=128",
-		"-f", "lavfi", "-i", "sine=f=440:sample_rate=48000:d=4",
-		"-shortest", "-c:v", "mpeg4", "-q:v", "2", "-c:a", "pcm_s16le", source).CombinedOutput(); err != nil {
-		t.Fatalf("making the test episode: %s %s", err, out)
-	}
+	name := strings.NewReplacer("30000/1001", "29.97", "24000/1001", "23.976").Replace(rate)
+	source := fixtures.Path(t, "steps-"+name+"."+container)
 	info, err := e.Probe(ctx, source)
 	if err != nil {
 		t.Fatal(err)

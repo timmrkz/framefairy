@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -19,6 +18,7 @@ import (
 	"framefairy/engine/runlog"
 	"framefairy/engine/timed"
 	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/fixtures"
 )
 
 // transcript.go keeps what the recogniser heard, so the same audio is never
@@ -404,23 +404,16 @@ func FuzzReadTranscriptFile(f *testing.F) {
 	})
 }
 
-// beatEpisode is a test episode whose tone is gated on and off five times a
-// second. A steady tone measures the same wherever you start, so a start
-// that is a few milliseconds out would hide in it.
+// beatEpisode is a copy of a test episode of 12 seconds whose tone is
+// gated on and off five times a second. A steady tone measures the same
+// wherever you start, so a start that is a few milliseconds out would hide
+// in it. A copy, since the transcript is kept beside it.
 //
-// On the real disk: ffmpeg makes the episode.
-func beatEpisode(t *testing.T, seconds string) string {
+// On the real disk: ffmpeg reads the episode.
+func beatEpisode(t *testing.T) string {
 	t.Helper()
 	ffmpegtest.Need(t)
-	path := filepath.Join(t.TempDir(), "beats.mp4")
-	out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
-		"-f", "lavfi", "-i", "testsrc=s=320x180:r=25:d="+seconds,
-		"-f", "lavfi", "-i", "aevalsrc='sin(2*PI*440*t)*lt(mod(t,0.4),0.2)':s=44100:d="+seconds,
-		"-shortest", "-c:v", "mpeg4", "-q:v", "5", "-c:a", "aac", path).CombinedOutput()
-	if err != nil {
-		t.Fatalf("making the test episode: %s %s", err, out)
-	}
-	return path
+	return fixtures.Copy(t, "beats.mp4", filepath.Join(t.TempDir(), "beats.mp4"))
 }
 
 // Starting part way in has to give exactly the audio the whole episode has
@@ -432,7 +425,7 @@ func beatEpisode(t *testing.T, seconds string) string {
 // On the real disk: ffmpeg reads the episode the speech model hears.
 func TestAPartOfAudioLinesUpWithTheWholeEpisode(t *testing.T) {
 	t.Parallel()
-	source := beatEpisode(t, "12")
+	source := beatEpisode(t)
 	var calls int32
 	rec := fakeRecognizer{&calls}
 	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
@@ -1072,7 +1065,7 @@ func (beatRecognizer) Close() {}
 // On the real disk: ffmpeg reads the episode the speech model hears.
 func TestPartsMeetWithEveryWordOnce(t *testing.T) {
 	t.Parallel()
-	source := beatEpisode(t, "12")
+	source := beatEpisode(t)
 	heard := 0.0
 	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
 	e.OpenRecognizer = func(string) (Recognizer, error) { return beatRecognizer{&heard}, nil }
@@ -1140,7 +1133,7 @@ func TestPartsMeetWithEveryWordOnce(t *testing.T) {
 // On the real disk: ffmpeg reads the episode the speech model hears.
 func TestTwoHearingsOfOnePartAtOnce(t *testing.T) {
 	t.Parallel()
-	source := beatEpisode(t, "12")
+	source := beatEpisode(t)
 	base := DefaultOptions()
 	base.ASRModel = t.TempDir()
 	var wg sync.WaitGroup

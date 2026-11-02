@@ -172,15 +172,22 @@ an issue of its own.
   small and as short as the test allows.
 - `engine/testdata/open-gop.mp4` and `cmd/framefairy-app/testdata/gnome.webm`
   move in as their packages' tests move.
+- A fixture made from another, a copy of it put together otherwise, names
+  it in its recipe as `@` and its name, so it is made first and its sum
+  counts in the other's. One written the way a crash leaves it ends in
+  `pipe:1`, and what ffmpeg sends there is the file. A test that writes
+  beside its file, or changes it, takes a copy with `fixtures.Copy`.
 - The move is made over several pull requests, in the order of #670's
   Progress list. Until it is done, what is left is under Not to copy in
   ARCHITECTURE.md.
 
 ## What follows
 
-- Costs: the repository grows by the fixtures, about 4 MB for the
-  engine's shared test video, and each change to one is a new copy in
-  Git's history. A fixture is made small before it is committed.
+- Costs: the repository grows by the fixtures, and each change to one
+  is a new copy in Git's history. With every engine test on them, 78
+  files take 24 MB on the disk, and what a clone of main fetches grows
+  from 7.2 to 14.2 MB, measured with `git pack-objects` on 2 November
+  2026. A fixture is made small before it is committed.
 - Buys: no ffmpeg run to make an input, so no input made on CI's
   graphics chip, and the time it took. The tests read the same bytes on
   every machine, so a failure is about the code, not about the ffmpeg
