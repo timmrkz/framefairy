@@ -1019,10 +1019,11 @@ export class FrameQueue {
     this.start(this.at);
   }
 
-  // A program a running play took a change into is that play's alone, see
-  // Program.spliced: a new play or a paused frame builds its own.
+  // A program a running play took a change into, or switched the loop
+  // of, is that play's alone, see Program.changedWhilePlaying: a new play
+  // or a paused frame builds its own.
   private unsplice() {
-    if (this.built?.spliced) this.built = null;
+    if (this.built?.changedWhilePlaying) this.built = null;
   }
 
   // Takes a program as the one play plays, and says whether it is another

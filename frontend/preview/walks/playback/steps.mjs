@@ -6,7 +6,7 @@
 // the helpers only these steps use. See docs/TESTING.md.
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { addHEVC, ask, caughtUp, chosen, clickOnTrack, cropFrame, drag, engineState, episodeOn, filmedOnScreen, fromSidebar, handles, high, loudness, middle, news, nextNews, nextPaint, playUntil, preview, readShort, recordFrames, sameLook, sayLook, seekTo, settle, shortFrames, shownOnPlayhead, xOf } from "../bridge.mjs";
+import { addHEVC, ask, caughtUp, chosen, clickOnTrack, cropFrame, drag, engineState, episodeOn, filmedOnScreen, fromSidebar, handles, high, holdSound, loudness, middle, news, nextNews, nextPaint, playUntil, preview, readShort, recordFrames, sameLook, sayLook, seekTo, settle, shortFrames, shownOnPlayhead, timeline, xOf } from "../bridge.mjs";
 import { onePiece, pieceCount, rate, restAhead, shortOf, url } from "../common/steps.mjs";
 import { overlaid, stillFrame } from "../rules.mjs";
 
@@ -366,6 +366,68 @@ export const steps = {
     const off = after.find(([, at, n]) => !(n >= 0) || Math.abs(n / fps - at) > 2.5 / fps);
     if (off) {
       walk.wrong = `${(off[0] - played[round][0]).toFixed(0)} ms after the playhead came round to ${played[round][1].toFixed(3)}, it stood at ${off[1].toFixed(3)} and the video preview showed ${off[2] >= 0 ? (off[2] / fps).toFixed(3) : "nothing it could read"}`;
+    }
+  },
+  // ["loop off, then again", seconds]
+  //                    drags the clip's start to so many seconds before
+  //                    its end, plays it from its start with L at once,
+  //                    lets it go round its end, switches the loop off
+  //                    with L in the second time through and lets it stop
+  //                    at the end, then plays it again from a second
+  //                    before its end with the loop off: that play stops
+  //                    at the end too
+  async "loop off, then again"(walk, arg, s) {
+    const { page, watch } = walk;
+    // Short, so going round takes seconds and not the whole clip.
+    const was = (await engineState(page, watch.at)).segments;
+    const end = was.at(-1).end;
+    const g = await handles(page);
+    const t = await timeline(page);
+    await drag(page, middle(g.start), high(g.track), (await xOf(page, end - arg)) - (await xOf(page, t.start)), false);
+    await watch.step("trim", s);
+    const segs = (await engineState(page, watch.at)).segments;
+    const length = segs.reduce((sum, x) => sum + (x.end - x.start), 0);
+    if (segs.at(-1).end !== end || length > arg + 1) {
+      walk.wrong = `the clip runs ${length.toFixed(2)} s to ${segs.at(-1).end.toFixed(2)} after its start was dragged, not ${arg} s to ${end.toFixed(2)}`;
+      return;
+    }
+    const fps = await rate(page);
+    await seekTo(page, segs[0].start + 0.5, fps);
+    await page.evaluate(() => document.body.focus());
+    // L at once, before the walk waits for anything, see "loop through
+    // the end".
+    await page.keyboard.press("Space");
+    await page.keyboard.press("l");
+    await settle(page);
+    // Round the end and half a second into the second time through, by
+    // the playhead, where the sound card is held while the walk switches
+    // the loop off, so a busy runner cannot take the play on to the end
+    // of that time through first.
+    const round = await playUntil(page, { most: length });
+    await holdSound(page, true);
+    await page.keyboard.press("l");
+    await settle(page);
+    await holdSound(page, false);
+    if (!round.playing) {
+      walk.wrong = `the play stopped at ${round.at.toFixed(3)} with the loop on, before it went round`;
+      return;
+    }
+    const first = await playUntil(page, { most: length + 1 });
+    if (first.playing || Math.abs(first.at - end) > 1 / fps + 0.01) {
+      walk.wrong = `with the loop switched off in the second time through, the play ${first.playing ? "went on" : "stopped"} at ${first.at.toFixed(3)}, the clip ends at ${end.toFixed(3)}`;
+      return;
+    }
+    // The play after: a loop switched while a play went on belongs to
+    // that play, and the next one plays the clip once. It played on
+    // round the end, to the end of the time through the loop was
+    // switched off in.
+    await seekTo(page, end - 1, fps);
+    await page.evaluate(() => document.body.focus());
+    await page.keyboard.press("Space");
+    await settle(page);
+    const again = await playUntil(page, { most: 2 });
+    if (again.playing || Math.abs(again.at - end) > 1 / fps + 0.01) {
+      walk.wrong = `played again from ${(end - 1).toFixed(3)} with the loop off, the play ${again.playing ? "went on" : "stopped"} at ${again.at.toFixed(3)}, past the clip's end at ${end.toFixed(3)}`;
     }
   },
   // ["loop off as the sound crosses the end"]
