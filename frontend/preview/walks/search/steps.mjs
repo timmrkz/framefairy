@@ -1020,7 +1020,10 @@ export const steps = {
         });
         await field.focus();
         await page.keyboard.press("Space");
-        await watch.step("press", s);
+        // Read before the watch looks at the step, which on a busy
+        // runner in WebKit took long enough for the play to stop and
+        // the field to take the keyboard back, as it does once a play
+        // the space bar started from it is paused, #380.
         const started = await page.evaluate(() => ({
           typed: document.querySelector(".listhead .search input")?.value ?? null,
           focused: document.activeElement?.getAttribute("aria-label") ?? document.activeElement?.tagName ?? null,
@@ -1028,6 +1031,7 @@ export const steps = {
           at: Number(document.querySelector(".screen")?.dataset.playhead),
         }));
         const first = await topRow();
+        await watch.step("press", s);
         if (started.typed !== "") walk.wrong = `the space bar in the empty search field typed "${started.typed}"`;
         else if (started.focused === "Search transcript") walk.wrong = "the space bar in the empty search field left the keyboard in it";
         else if (!started.playing) walk.wrong = "the space bar in the empty search field did not play";

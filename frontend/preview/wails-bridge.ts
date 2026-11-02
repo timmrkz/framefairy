@@ -129,6 +129,16 @@ let calling: { after: number; match: (c: Made) => boolean; done: () => void }[] 
 (window as any).__nextCall = (after: number, match: (c: Made) => boolean) =>
   new Promise<void>((done) => (calls.slice(after).some(match) ? done() : calling.push({ after, match, done })));
 
+// Whether the page is being left, as a walk loads it again after the app
+// closed. Leaving cancels the calls the page has out, and WebKit rejects
+// them, "cannot load ... due to access control checks", while the page's
+// code still runs, so a walk read the page as having thrown, #380. A
+// call cut off by the page leaving answers nothing, the way the app's
+// window hears nothing more once it closes.
+let leaving = false;
+addEventListener("beforeunload", () => (leaving = true));
+addEventListener("pagehide", () => (leaving = true));
+
 export const Call = {
   async ByName(name: string, ...args: unknown[]): Promise<unknown> {
     const call: Made = { name: name.split(".").pop() ?? name, args };
@@ -147,6 +157,9 @@ export const Call = {
         body: JSON.stringify({ name, args }),
       });
       body = await answer.text();
+    } catch (e) {
+      if (leaving) return new Promise(() => {});
+      throw e;
     } finally {
       back();
     }

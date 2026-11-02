@@ -800,12 +800,20 @@ export const steps = {
       }
       return -1;
     };
-    // The first frame of every word, where the highlight bounces, and
-    // a frame in its middle, where it has settled.
+    // The first frame that shows every word, where the highlight
+    // bounces, and the frame in its middle, where it has settled, each
+    // aimed at the middle of its frame. A word that starts inside a
+    // frame is first shown by the frame after, and aimed at half a
+    // frame past its start the walk stood on the edge between the two,
+    // where a click a pixel either side picked one or the other: WebKit
+    // lays the clip timeline out a fraction of a pixel off Chromium, and
+    // landed on the frame before, #380.
     const words = (state.captions ?? []).flatMap((c) => c.lines.flatMap((l) => l.words));
     const moments = words
-      .flatMap((w) => [w.start + 0.5 / fps, (w.start + w.end) / 2])
-      .map(into)
+      .flatMap((w) => {
+        const [first, middle] = [into(w.start), into((w.start + w.end) / 2)];
+        return [first === null ? null : (Math.ceil(first * fps - 0.001) + 0.5) / fps, middle === null ? null : (Math.floor(middle * fps) + 0.5) / fps];
+      })
       .filter((at) => at !== null);
     let compared = 0;
     let apart = 0;

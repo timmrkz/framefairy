@@ -303,9 +303,13 @@ export const steps = {
     if (!(await page.evaluate(() => !!document.querySelector('button[aria-label="Pause"]')))) {
       await page.keyboard.press("Space");
     }
+    // L at once, before the walk waits for anything: a busy runner in
+    // WebKit took 8 s to settle after the space bar, and the play had
+    // ended at the clip's end before L came, #380. Should it have gone
+    // round meanwhile, the watch below waits for the next time round.
+    await page.keyboard.press("l");
     await settle(page);
     await playUntil(page, { most: 0.3 });
-    await page.keyboard.press("l");
     await page.evaluate(() => {
       window.__played = [];
       window.__playWatch = true;
