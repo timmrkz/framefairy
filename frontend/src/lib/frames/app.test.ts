@@ -132,19 +132,19 @@ describe("AppFrames", () => {
 
 // Frames of a 200 frame track on a Go side that never answers, so a frame
 // not kept is never handed over.
-function frames(size: () => { width: number; height: number }) {
+function frames(size: () => { width: number; height: number }, rate = 25) {
   const n = 200;
   const order = Uint32Array.from({ length: n }, (_, i) => i);
   const samples = {
     count: n,
-    timescale: 25,
+    timescale: rate,
     pts: Float64Array.from(order),
     duration: new Float64Array(n).fill(1),
     key: new Uint8Array(n).fill(1),
     order,
     rank: order,
   };
-  const track: VideoTrack = { kind: "video", width: 4, height: 2, samples, frame: 1 / 25 };
+  const track: VideoTrack = { kind: "video", width: 4, height: 2, samples, frame: 1 / rate };
   const app = new AppFrames("/v.mp4", track, size, () => {});
   const picture = (rank: number, w: number, h: number) => new Picture(new Uint8Array(w * h * 4), w, h, rank * 40000);
   return { app, picture };
@@ -153,11 +153,11 @@ function frames(size: () => { width: number; height: number }) {
 // A stream on a Go side the test answers by hand: each pull waits until
 // the test hands it the ranks it brings, each frame's first byte its rank,
 // and the times the Go side tells with a stream's first frame.
-function goSide() {
+function goSide(rate = 25) {
   vi.stubGlobal("fetch", (url: string) =>
     Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ id: `s${url.length}` }), text: () => Promise.resolve("") }),
   );
-  const { app } = frames(() => ({ width: 4, height: 2 }));
+  const { app } = frames(() => ({ width: 4, height: 2 }), rate);
   app.paused = () => false;
   const asked: { url: string; give: (ranks: number[], times?: string) => void; shut: () => void }[] = [];
   const came: (() => void)[] = [];
@@ -175,7 +175,7 @@ function goSide() {
               times,
               light: "",
               spare: [],
-              frames: ranks.map((r) => ({ at: r / 25, frame: new Picture(new Uint8Array(4 * 2 * 4).fill(r), 4, 2, r * 40000) })),
+              frames: ranks.map((r) => ({ at: r / rate, frame: new Picture(new Uint8Array(4 * 2 * 4).fill(r), 4, 2, (r * 1e6) / rate) })),
             }),
           // Closed on the Go side, to make room for newer streams.
           shut: () => done({ status: 200, end: false, error: "", closed: true, times: "", light: "", spare: [], frames: [] }),
@@ -395,6 +395,28 @@ describe("a slow drag to the left", () => {
     expect(await back).toBe(99);
     for (let r = 98; r >= 85; r--) expect(await rankOf(app.frame(r, 0, undefined, true))).toBe(r);
     expect(asked.length).toBe(3);
+    app.close();
+  });
+
+  // Found in CI on a video of 5 frames a second: the run's 15 frames are
+  // 3 s, further than a stream is taken to reach, and the place asked
+  // again while the run was in its second pull opened a stream of its own.
+  test("reaches the place it was opened for, however far that is", async () => {
+    const { app, asked, pulls, rankOf } = goSide(5);
+    app.grip(true);
+    void app.frame(100, 0, undefined, true);
+    await pulls(1);
+    asked[0].give([100]);
+    void app.frame(99, 0, undefined, true);
+    await pulls(2);
+    asked[1].give([84, 85, 86]);
+    await pulls(3);
+    // The place asked again, the way the hand asks at every pixel, waits
+    // on the run, which brings it, and no stream of its own opens.
+    const again = rankOf(app.frame(99, 0, undefined, true));
+    expect(app.stats.streams).toBe(2);
+    asked[2].give(Array.from({ length: 13 }, (_, i) => 87 + i));
+    expect(await again).toBe(99);
     app.close();
   });
 

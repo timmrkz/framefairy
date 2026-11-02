@@ -148,8 +148,16 @@ class Stream {
   // frame skipped over never came, and once the pull was in it was handed
   // the frame before it, so the video preview showed that frame and said
   // it showed this one, issue #358.
+  //
+  // A run reaches every frame up to the place it was opened for, however
+  // far that is: it reads them all anyway. On a video of 5 frames a second
+  // its 15 frames are 3 s, further than REACH, and the place asked again
+  // while the run was on its way, which a slow drag does at every pixel,
+  // opened a stream of its own when the Go side had brought the run in two
+  // pulls.
   reaches(rank: number): boolean {
     if (this.ended || rank <= this.position || rank < this.first || rank < this.skipping) return false;
+    if (rank <= this.runTo) return true;
     return this.owner.ptsOf(rank) - this.owner.ptsOf(Math.max(this.position, this.first)) <= REACH;
   }
 
