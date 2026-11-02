@@ -7,7 +7,7 @@
 //
 //   SEED=12 STEPS=30 BRIDGE_URL=http://127.0.0.1:8123/ node searching.mjs
 import { begin, walk } from "./walk.mjs";
-import { ask, clipList, control, settle, pressHead as pressHeadOn, fromSidebar, episodeOn as episodeOnIn } from "./bridge.mjs";
+import { ask, clipList, control, settle, pressHead as pressHeadOn, fromSidebar, episodeOn as episodeOnIn, reload } from "./bridge.mjs";
 import { caughtUp, news, nextNews } from "./bridge.mjs";
 
 const w = await begin({ steps: 30 });
@@ -271,7 +271,7 @@ const gestures = [
       // can end in that moment, done before the app closes.
       const closed = await control(url, "/reopen");
       const was = closed.findLast((j) => j.episode === path && j.kind === "search");
-      await page.reload();
+      await reload(page);
       await page.locator("aside li", { hasText: name }).first().waitFor({ state: "attached" });
       await sidebar(() => page.locator("aside li", { hasText: name }).first().click());
       await settle(page);

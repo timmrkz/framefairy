@@ -5,7 +5,7 @@
 // caption box showed before it and the step's name. A sequence of any
 // folder can take it. Below them the helpers only these steps use. See
 // docs/TESTING.md.
-import { ask, caughtUp, clipList, control, drag, episodeOn, fakeClock, fromSidebar, news, nextNews, nextPaint, pageUntil, pressHead, realFrames, runClock, seenUntil, settle } from "../bridge.mjs";
+import { ask, caughtUp, clipList, control, drag, episodeOn, fakeClock, fromSidebar, news, nextNews, nextPaint, pageUntil, pressHead, realFrames, runClock, seenUntil, settle, holdSound } from "../bridge.mjs";
 import { clockOf, nextCall, onePiece, toastSays, url } from "../common/steps.mjs";
 
 export const steps = {
@@ -1020,10 +1020,15 @@ export const steps = {
         });
         await field.focus();
         await page.keyboard.press("Space");
-        // Read before the watch looks at the step, which on a busy
-        // runner in WebKit took long enough for the play to stop and
-        // the field to take the keyboard back, as it does once a play
-        // the space bar started from it is paused, #380.
+        // Held from the moment it plays while the walk reads and the
+        // watch looks at the step, which on a busy runner in WebKit took
+        // the whole clip: the play stopped at its end, the field took the
+        // keyboard back, as it does once a play the space bar started
+        // from it is paused, and the walk's space bar to stop it played
+        // the clip again.
+        // Or until the space bar typed into the field, which plays nothing.
+        await pageUntil(page, () => !!document.querySelector('button[aria-label="Pause"]') || document.querySelector(".listhead .search input")?.value !== "");
+        await holdSound(page, true);
         const started = await page.evaluate(() => ({
           typed: document.querySelector(".listhead .search input")?.value ?? null,
           focused: document.activeElement?.getAttribute("aria-label") ?? document.activeElement?.tagName ?? null,
@@ -1032,6 +1037,7 @@ export const steps = {
         }));
         const first = await topRow();
         await watch.step("press", s);
+        await holdSound(page, false);
         if (started.typed !== "") walk.wrong = `the space bar in the empty search field typed "${started.typed}"`;
         else if (started.focused === "Search transcript") walk.wrong = "the space bar in the empty search field left the keyboard in it";
         else if (!started.playing) walk.wrong = "the space bar in the empty search field did not play";

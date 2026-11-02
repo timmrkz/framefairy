@@ -20,7 +20,7 @@
 // clip that many times. CODEC=hevc makes the video HEVC with 10-bit colour.
 // SIZE=2160 makes it 3840 by 2160, the way a 4K camera records.
 // SCALE, 2 unless set, is the device pixels of a CSS pixel, a Mac's screen.
-import { control, fromSidebar, handles, high, nextPaint, open, pageUntil, settle, shownOnPlayhead } from "./bridge.mjs";
+import { control, fromSidebar, handles, high, nextPaint, open, pageUntil, settle, shownOnPlayhead, reload } from "./bridge.mjs";
 
 const url = process.env.BRIDGE_URL ?? "http://127.0.0.1:8123/";
 // REST was the same pause in milliseconds, and 250 of them now would be
@@ -216,7 +216,7 @@ try {
   for (let r = 0; r < rounds; r++) {
     if (r > 0) {
       await count();
-      await page.reload();
+      await reload(page);
       await ready();
     }
     await pickClip();

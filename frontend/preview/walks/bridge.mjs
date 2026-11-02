@@ -1190,6 +1190,15 @@ export async function fromSidebar(page, click) {
   );
 }
 
+// Loads the page again, the way a walk opens the app again after it
+// closed. The page is told first that it is being left, so a call it has
+// out answers nothing rather than throwing, see __leave in
+// wails-bridge.ts.
+export async function reload(page) {
+  await page.evaluate(() => window.__leave?.());
+  await page.reload();
+}
+
 // Until fn, run in the page with arg, says true. It is asked again each
 // time the page changes, an attribute, a node or a text, and each time
 // the text of a field changes, which is no change to the page's nodes,

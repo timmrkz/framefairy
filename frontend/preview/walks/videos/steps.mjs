@@ -7,7 +7,7 @@
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
-import { ask, caughtUp, clipList, control, episodeOn, fromSidebar, hold, letHeld, news, nextNews, pageUntil, seenUntil, settle, sidebarStill } from "../bridge.mjs";
+import { ask, caughtUp, clipList, control, episodeOn, fromSidebar, hold, letHeld, news, nextNews, pageUntil, seenUntil, settle, sidebarStill, reload } from "../bridge.mjs";
 import { dropOn, halfOf, standsAt, stillStands, toastSays, url } from "../common/steps.mjs";
 
 export const steps = {
@@ -531,7 +531,7 @@ export const steps = {
     }
     if (arg === "closed" || arg === "written back") {
       await control(url, "/reopen");
-      await page.reload();
+      await reload(page);
     } else {
       // The person went to Finder and came back: the app lost the
       // keyboard and has it again.
