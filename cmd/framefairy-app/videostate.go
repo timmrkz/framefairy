@@ -108,6 +108,16 @@ type telling struct {
 	// each closed once it has ended, so what waits on the news can tell
 	// that it is all out, see sendDue in bridge_test.go.
 	sends []chan struct{}
+	// sending is held while the state is read and sent, so the states of
+	// a video go out one at a time, in the order they were read. Two
+	// sends of one video at once, one begun while the other still read,
+	// could end the other way round, and the older state went out last.
+	// A send whose timer has fired waits on it before it takes anything,
+	// so its timer stays set while it waits, and the changes that come
+	// meanwhile join it: one send runs and one waits, however slow a read
+	// is. A channel of one, so a send that waits on it is one a synctest
+	// bubble sees waiting.
+	sending chan struct{}
 }
 
 func newVideoNews(read func(string) (VideoState, error), send func(VideoState)) *videoNews {
@@ -126,7 +136,7 @@ func (n *videoNews) changed(path string) {
 	}
 	t := n.due[path]
 	if t == nil {
-		t = &telling{}
+		t = &telling{sending: make(chan struct{}, 1)}
 		n.due[path] = t
 	}
 	if t.timer != nil {
@@ -136,7 +146,7 @@ func (n *videoNews) changed(path string) {
 	sent := make(chan struct{})
 	t.sends = append(t.sends, sent)
 	t.timer = time.AfterFunc(wait, func() {
-		n.tell(path)
+		n.tell(path, t)
 		n.ended(t, sent)
 	})
 }
@@ -149,12 +159,15 @@ func (n *videoNews) ended(t *telling, sent chan struct{}) {
 	close(sent)
 }
 
-// tell reads the state of the video and sends it. A change from the
-// moment it begins is due again, after the wait.
-func (n *videoNews) tell(path string) {
+// tell reads the state of the video and sends it, once the send before it
+// has ended. A change from the moment it begins is due again, after the
+// wait.
+func (n *videoNews) tell(path string, t *telling) {
+	t.sending <- struct{}{}
+	defer func() { <-t.sending }()
 	n.mu.Lock()
-	t := n.due[path]
-	if n.shut || t == nil {
+	// The app may have quit while the send before this one went out.
+	if n.shut {
 		n.mu.Unlock()
 		return
 	}
@@ -165,7 +178,7 @@ func (n *videoNews) tell(path string) {
 	if errors.Is(err, errNotInLibrary) {
 		// The video left the library, and there is nobody to tell.
 		n.mu.Lock()
-		if t.timer == nil {
+		if t.timer == nil && n.due[path] == t {
 			delete(n.due, path)
 		}
 		n.mu.Unlock()

@@ -58,7 +58,7 @@ with the boxes one level down under it.
 | --- | --- | --- | --- |
 | 1 the interface | `frontend/src/App.svelte`, started by `frontend/src/main.ts` | the sidebar and which screen shows | a screen's own layout |
 | 1 | `frontend/src/screens/`, `frontend/src/components/` | layout and wiring | logic worth a test, which goes in `frontend/src/lib/` |
-| 1 | `frontend/src/lib/` | what the interface keeps and works out, tested with Vitest. `frontend/src/lib/frames/` is the frame queue the video preview plays from | a rule of the engine, except the few held to Go by a shared `.cases.json` |
+| 1 | `frontend/src/lib/` | what the interface keeps of what Go sent and of what the hand is doing, tested with Vitest. `frontend/src/lib/frames/` is the frame queue the video preview plays from | a rule of the engine, or a decision about a video's work. The rules still copied here are under Not to copy |
 | 1 the command line | `cmd/framefairy/` | flags into `engine.Run`, and exit codes | a rule of its own |
 | 2 the app's Go side | `cmd/framefairy-app/` | the bindings, the job queue and its lanes, the library and the settings, updates, the log | a rule of the engine. A binding asks the engine and passes the answer on |
 | 3 | `asr/` | the speech recogniser. It implements `engine.Recognizer`, and each front end hands it to the engine | |
@@ -126,9 +126,9 @@ What to do today, and what changes once the issue named is built.
 | I need to | It goes |
 | --- | --- |
 | decide where an edge, a word or a window lands | the engine: `engine/shape.go` for a gesture, `engine.Project` for a window. The interface asks and draws the answer |
-| do something in the workspace when a video's work moves on | a move of `EpisodeSession` in `frontend/src/lib/session.svelte.ts`, never an effect that keeps the value from before |
+| do something in the workspace when a video's work moves on | today a move of `EpisodeSession` in `frontend/src/lib/session.svelte.ts`, never an effect that keeps the value from before. Once #606 is built, nothing in the interface: Go decides what follows, the clip chosen, the window, a failure told, and sends it, see [2026-11-01-every-rule-of-the-workspace-in-go.md](decisions/2026-11-01-every-rule-of-the-workspace-in-go.md) |
 | show the interface a new fact about a video | a field of `VideoState` in `cmd/framefairy-app/videostate.go`, or of what it holds, the status and the clip views, which the session keeps. Never a new event of its own or a poll |
-| tell the window that something about a video changed | `told` on `*FrameFairy`, or the queue's `moved` for a job, which send the video's state, at most four times a second and always after the last change. Nothing else sends it |
+| tell the window that something about a video changed | `told` on `*FrameFairy`, or the queue's `moved` for a job, which send the video's state, at most four times a second and always after the last change, one at a time, with at most one more waiting however slow a read is. Nothing else sends it |
 | keep something between two jobs, a cache or a fact about the machine | a field on `engine.Machine`, in `engine/machine.go`, which a program makes once and hands to every `Engine`. Never a package variable, and never a new `Engine` made only to get it. #607 moves the package variables still left onto it |
 | read a file of a video | through the `afero.Fs` the code was given, with `fileio.SafeChildIn` for a path in a work folder. Not `os`. Once #608 is built, through the video's `Episode` |
 | change a plan | `editPlan` in `engine/edit.go` |
@@ -138,7 +138,7 @@ What to do today, and what changes once the issue named is built.
 | give the interface a new type or field | the Go struct and its interface in `frontend/src/lib/api.ts` in the same change. Once #611 is built, generated from the Go struct |
 | add a setting | a field of `Settings` in `cmd/framefairy-app/settings.go`, changed through `UpdateSettings`. What the engine needs from it reaches it through its options |
 | add a kind of work to the queue | a kind in `engine/jobs.go`, started with `addSteps` in `cmd/framefairy-app/jobs.go`, so it gets the lanes, the recover and the record every job has |
-| copy a rule of the engine into TypeScript | don't. If the interface must answer before Go does, the copy and a `.cases.json` both sides read go in together |
+| copy a rule of the engine into TypeScript | don't, and no `.cases.json` makes it right. The interface asks Go, or reads the answer from the state. Where it must answer while a hand drags, Go sends what the drag needs as data, see [2026-11-01-every-rule-of-the-workspace-in-go.md](decisions/2026-11-01-every-rule-of-the-workspace-in-go.md) |
 | add a check to CI | a make target, and its rule in `scripts/changed.sh` with its case in `scripts/changed-test.sh`, see BUILD.md |
 | fake something in a test | the clock, the disk and the models are handed in. Use the fakes there are, in `engine/project_test.go` and `internal/standin/` |
 | give a test a video or a sound | a file committed in `internal/fixtures/testdata/`, read with `fixtures.Path`, made by its recipe in `internal/fixtures/fixtures_test.go`. One that is there before a new one, see the decision record [2026-11-01-committed-test-fixtures.md](decisions/2026-11-01-committed-test-fixtures.md). Never made by ffmpeg while the test runs |
@@ -212,7 +212,10 @@ Code that breaks this map today, with the issue that fixes it. A session
 copies what it finds nearby, so these are not the pattern for new code.
 
 - Rules of the engine in `frontend/src/lib/flow.ts`,
-  `frontend/src/lib/rotate.ts` and `frontend/src/lib/room.ts`, #610.
+  `frontend/src/lib/rotate.ts` and `frontend/src/lib/room.ts`, and the
+  three held to Go by a shared case file, `frontend/src/lib/glide.ts`,
+  `frontend/src/lib/flow.ts`'s frames and `frontend/src/lib/suggest.ts`,
+  #610.
 - The transcript cache in `cmd/framefairy-app/words.go`, #608.
 - What the engine learns kept in package variables rather than on
   `engine.Machine`, like the probes in `engine/probed.go`, and the app's
@@ -232,6 +235,12 @@ copies what it finds nearby, so these are not the pattern for new code.
   and by `JobStore.watch` for what is not one video's, see the decision
   record
   [2026-10-30-a-videos-state-in-one-session.md](decisions/2026-10-30-a-videos-state-in-one-session.md).
+- What the interface decides about a video's work and its workspace:
+  the moves of `EpisodeSession`, the clip chosen in `Episode.svelte`,
+  the window it fits with `frontend/src/lib/room.ts` and writes back,
+  how a search ended, which failures are told, #606. Go decides each of
+  them and sends it, see
+  [2026-11-01-every-rule-of-the-workspace-in-go.md](decisions/2026-11-01-every-rule-of-the-workspace-in-go.md).
 
 ## Changing the architecture
 

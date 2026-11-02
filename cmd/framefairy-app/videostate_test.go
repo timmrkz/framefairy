@@ -115,6 +115,108 @@ func TestEachVideosStateIsSentOnItsOwn(t *testing.T) {
 	})
 }
 
+// A send of a video's state that begins while the one before it still
+// reads waits for it, so the states go out in the order they were read.
+// Side by side, the newer could go first and the older after it, and what
+// kept the last one sent kept the older. That is how
+// TestPathWhatChangesAVideoSendsItsState failed on the Mac's CI: the
+// removal tells the video twice, the first send read at once, and
+// sendDue in bridge_test.go ran the second beside it, so the first read
+// only had to end a few milliseconds after the second. In the app the
+// second waits for its quarter second, so a read slower than that is what
+// it takes there.
+func TestAVideosStatesGoOutInTheOrderTheyWereRead(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var changes atomic.Int64
+		slow := make(chan struct{})
+		var reads atomic.Int64
+		var mu sync.Mutex
+		var sent []uint64
+		news := newVideoNews(func(path string) (VideoState, error) {
+			rev := uint64(changes.Load())
+			if reads.Add(1) == 1 {
+				<-slow
+			}
+			return VideoState{Video: path, Rev: rev}, nil
+		}, func(v VideoState) {
+			mu.Lock()
+			defer mu.Unlock()
+			sent = append(sent, v.Rev)
+		})
+		changes.Add(1)
+		news.changed("a.mp4")
+		synctest.Wait()
+		// A change while the first state is still being read, and the wait
+		// after it long over.
+		changes.Add(1)
+		news.changed("a.mp4")
+		time.Sleep(time.Second) //nolint:forbidigo // synctest bubble
+		synctest.Wait()
+		close(slow)
+		synctest.Wait()
+		mu.Lock()
+		defer mu.Unlock()
+		if !slices.Equal(sent, []uint64{1, 2}) {
+			t.Errorf("the states went out as %v, not in the order they were read", sent)
+		}
+	})
+}
+
+// A search that writes a clip and then logs a line every 10 ms, on a
+// machine so busy that a state takes 400 ms to read, longer than the wait
+// between two sends. Each line asks for a state. The states still go out
+// one at a time with at most one waiting, so the state that says the
+// search is over, five seconds on, reaches the window within two reads,
+// not behind a read for every line.
+func TestASlowReadKeepsNoBacklogOfStates(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const read = 400 * time.Millisecond
+		const lines = 500
+		var changes, reads atomic.Int64
+		var mu sync.Mutex
+		var endAt time.Time
+		news := newVideoNews(func(path string) (VideoState, error) {
+			reads.Add(1)
+			rev := uint64(changes.Load())
+			time.Sleep(read) //nolint:forbidigo // synctest bubble
+			return VideoState{Video: path, Rev: rev}, nil
+		}, func(v VideoState) {
+			mu.Lock()
+			defer mu.Unlock()
+			if v.Rev == lines+2 && endAt.IsZero() {
+				endAt = time.Now()
+			}
+		})
+		changes.Add(1)
+		news.changed("a.mp4")
+		for range lines {
+			time.Sleep(10 * time.Millisecond) //nolint:forbidigo // synctest bubble
+			changes.Add(1)
+			news.changed("a.mp4")
+		}
+		over := time.Now()
+		changes.Add(1)
+		news.changed("a.mp4")
+		// Long enough for a backlog of a read for every line to run out,
+		// so it fails here and not as goroutines left behind.
+		time.Sleep(10 * time.Minute) //nolint:forbidigo // synctest bubble
+		synctest.Wait()
+		mu.Lock()
+		defer mu.Unlock()
+		if endAt.IsZero() {
+			t.Fatal("the state that says the search is over was never sent")
+		}
+		// The read still under way, then its own.
+		if late := endAt.Sub(over); late > 2*read {
+			t.Errorf("the end went out %v after it came, more than two reads of %v", late, read)
+		}
+		// One read after another for the five seconds, and the last two.
+		if n := reads.Load(); n > 5*time.Second.Milliseconds()/read.Milliseconds()+3 {
+			t.Errorf("%d states were read for five seconds of changes, more than one read after another", n)
+		}
+	})
+}
+
 // The jobs, the measuring and the edits all say a video changed, each on
 // a goroutine of its own. The state is still sent once per wait, and the
 // last one sent knows of every change.
@@ -291,10 +393,17 @@ func TestAJobsNewsComesOnceItsVideosStateIsDue(t *testing.T) {
 }
 
 // heardStates has the desk send each video's state, as the app does to
-// its window, and keeps what it sends.
-func heardStates(d *desk) func(path string) VideoState {
+// its window, and keeps what it sends. What it returns gives the state
+// sent last once the news of every stamp of the video's jobs is out and
+// the sends it made due have gone, with the seq of the newest of that
+// news. It waits for news of every stamp, so it is not for a test that
+// stamps a job with no news, as shutDown in jobs.go does: that would
+// wait until go test's -timeout.
+func heardStates(d *desk) func(path string) (VideoState, uint64) {
 	var mu sync.Mutex
+	out := sync.NewCond(&mu)
 	last := map[string]VideoState{}
+	told := map[string]uint64{}
 	svc := d.svc
 	svc.news = newVideoNews(func(path string) (VideoState, error) {
 		return svc.State(context.Background(), path)
@@ -304,11 +413,34 @@ func heardStates(d *desk) func(path string) VideoState {
 		last[v.Video] = v
 	})
 	svc.jobs.news = svc.told
-	return func(path string) VideoState {
+	emit := svc.jobs.emit
+	svc.jobs.emit = func(u JobUpdate) {
+		emit(u)
+		mu.Lock()
+		told[u.Job.Episode] = max(told[u.Job.Episode], u.Job.Seq)
+		mu.Unlock()
+		out.Broadcast()
+	}
+	return func(path string) (VideoState, uint64) {
+		// The queue wakes what waits on its jobs as it stamps them, before
+		// their news is handed on, so the news is waited for here.
+		var stamped uint64
+		svc.jobs.mu.Lock()
+		for _, j := range svc.jobs.jobs {
+			if j.Episode == path {
+				stamped = max(stamped, j.Seq)
+			}
+		}
+		svc.jobs.mu.Unlock()
+		mu.Lock()
+		for told[path] < stamped {
+			out.Wait()
+		}
+		mu.Unlock()
 		sendDue(svc.news)
 		mu.Lock()
 		defer mu.Unlock()
-		return last[path]
+		return last[path], told[path]
 	}
 }
 
@@ -324,15 +456,13 @@ func TestPathWhatChangesAVideoSendsItsState(t *testing.T) {
 	sent := heardStates(d)
 	ep := d.add("ep", minutes5)
 	d.idle(ep)
-	found := sent(ep)
+	found, news := sent(ep)
 	clips := d.clips(ep)
 	if len(clips) == 0 || len(found.Clips) != len(clips) {
 		t.Fatalf("the state sent last holds %d clips, the search wrote %d", len(found.Clips), len(clips))
 	}
-	for _, j := range found.Jobs {
-		if j.Seq >= found.Rev {
-			t.Errorf("the state sent last is at %d, older than the job %s at %d", found.Rev, j.ID, j.Seq)
-		}
+	if found.Rev <= news {
+		t.Errorf("the state sent last is at %d, read before the search's last news at %d", found.Rev, news)
 	}
 	// The removal comes long after the last state was sent, as it does
 	// for a person, so the state it tells is read at once, beside the
@@ -345,7 +475,7 @@ func TestPathWhatChangesAVideoSendsItsState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	after := sent(ep)
+	after, _ := sent(ep)
 	if after.Rev <= removed.Rev {
 		t.Errorf("the state sent after the removal is at %d, its answer at %d", after.Rev, removed.Rev)
 	}
@@ -355,7 +485,7 @@ func TestPathWhatChangesAVideoSendsItsState(t *testing.T) {
 	if done, err := d.svc.Undo(ep); err != nil || !done.Done {
 		t.Fatalf("the removal was not undone: %v", err)
 	}
-	undone := sent(ep)
+	undone, _ := sent(ep)
 	if undone.Rev <= after.Rev {
 		t.Errorf("no state was sent after the undo")
 	}

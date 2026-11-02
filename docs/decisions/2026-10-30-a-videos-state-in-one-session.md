@@ -1,5 +1,7 @@
 # A video's state lives in one session in the interface
 
+Replaced by [2026-11-01-every-rule-of-the-workspace-in-go.md](2026-11-01-every-rule-of-the-workspace-in-go.md) for the reactions to a video's work, which that record puts in Go.
+
 Issue #606, from the architecture review of 29 October 2026 (#603).
 Decided on 30 October 2026, in the pull request that makes its first
 slice. The slices after it name this record.
