@@ -1784,6 +1784,41 @@ export const steps = {
     await page.evaluate(() => (window.__scrubbing = false));
     await watch.step("scrub", s);
   },
+  // ["slow drag left", n]
+  //                    presses the clip timeline near the clip's end and
+  //                    drags the playhead to the left a pixel every frame
+  //                    of the page, the way a slow hand does, until its
+  //                    frame is n frames back, then lets go. The frames
+  //                    under the hand come from no more new streams than
+  //                    one for every 15 frames back and one more: each
+  //                    step back was a stream of its own, a seek, and the
+  //                    picture stood for each, issue #596
+  async "slow drag left"(walk, arg, s) {
+    const { page, watch } = walk;
+    const fps = await rate(page);
+    const g = await handles(page);
+    const y = high(g.track);
+    const at = () => page.evaluate(() => Number(document.querySelector(".screen").dataset.playhead));
+    let x = g.end.x - 0.1 * (g.end.x - g.start.x - g.start.w);
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await settle(page);
+    const from = Math.floor((await at()) * fps + 1e-6);
+    const was = await page.evaluate(() => window.__appFrames.stats.streams);
+    let back = 0;
+    while (back < arg && x > g.start.x + g.start.w) {
+      x -= 1;
+      await page.mouse.move(x, y);
+      await nextPaint(page);
+      back = from - Math.floor((await at()) * fps + 1e-6);
+    }
+    await page.mouse.up();
+    await settle(page);
+    const streams = (await page.evaluate(() => window.__appFrames.stats.streams)) - was;
+    await watch.step("scrub", s);
+    if (back < arg) walk.wrong = `the drag reached the clip's start ${back} frames back, not ${arg}`;
+    else if (streams > Math.ceil(back / 15) + 1) walk.wrong = `a slow drag ${back} frames to the left opened ${streams} streams, more than one for every 15 frames back and one more`;
+  },
   // ["skip outside a clip"]
   //                    with no clip on the playhead, presses Shift and the
   //                    right arrow until the playhead is 5 s past where the

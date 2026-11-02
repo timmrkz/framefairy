@@ -274,10 +274,21 @@ closed for standing unused.
   it, not the frame of a place it left long ago, and a place it has
   already left costs its key frame alone, since the queue lets go of that
   stream sooner. Where the hand rests, and once it lets go, the frame on
-  screen is the exact one, as before. The app's log says how each drag
+  screen is the exact one, as before. A hand dragging slowly to the left,
+  a frame or two back from the place before, asks for frames no stream
+  reaches, since a stream only reads on. Each step was a stream of its
+  own, a seek with its key frame first that the frame on screen was
+  nearer than, and the picture stood for each, up to seconds, where a
+  slow drag to the right read on and kept up, issue #596. Such a step
+  opens its stream 15 frames before the place, `BACK` in
+  `lib/frames/app.ts`, with no key frame first, and every frame from
+  there comes and is kept, so the next 15 steps back find their frames
+  kept. The app's log says how each drag
   went once the hand lets go: how far the frame on screen was from the
-  playhead as the hand moved, the key frames put up, and how long the
-  frame under the hand took after letting go. The decoder's own lines say
+  playhead as the hand moved, the key frames put up, how long the frame
+  under the hand took after letting go, how long the picture stood while
+  the hand had moved on, against the 50 ms below, and how the frames
+  came, kept, from a stream reading on or from a new one. The decoder's own lines say
   when an open asked for the key frame first and when it came. An open
   that finds a cursor already standing between the key frame and the
   frame asked for reads on from there instead, which is cheaper, and then
@@ -511,6 +522,39 @@ by word and by frame came out inside the spread of the runs at both
 sizes, faster or slower by a few per cent in most rows: the numbers are
 in pull request #502. A click and a step never ask for a key frame first,
 so they take the path they took before.
+
+A slow drag to the left stood where one to the right kept up, issue
+#596. `drag.mjs` in the cloud, on its camera video of a minute at 1080p,
+25 frames a second, decoded on the processor, three runs a side of a slow
+drag to the right, a slow drag to the left, a pixel every frame of the
+page, and a fast drag of 30 pixels to the right and back. Before is the
+branch with `app.ts` as on main, After the branch as it is. Each number is
+the mean of the three runs, the spread is half the range of Before's runs
+over its mean, and each number is from that one machine:
+
+| Slow drag to the left                      | Before | After | Change                |
+| ------------------------------------------ | -----: | ----: | --------------------- |
+| Picture standing, median (ms)              |     90 |     1 | 99 % shorter, ± 4 %   |
+| Picture standing, longest (ms)             |   1964 |   350 | 82 % shorter, ± 3 %   |
+| Waits over 50 ms (% of waits)              |     62 |     6 | 90 % fewer, ± 6 %     |
+| New streams                                |    221 |    17 | 92 % fewer, ± 1 %     |
+| Frame under the hand after letting go (ms) |     88 |     0 | 100 % shorter, ± 22 % |
+
+| Other drags, unchanged in how they work      | Before | After | Change               |
+| -------------------------------------------- | -----: | ----: | -------------------- |
+| Slow to the right, standing, median (ms)     |     13 |    14 | 5 % longer, ± 4 %    |
+| Slow to the right, standing, longest (ms)    |     99 |   138 | 39 % longer, ± 15 %  |
+| Fast, standing, median (ms)                  |     81 |    89 | 10 % longer, ± 27 %  |
+| Fast, standing, longest (ms)                 |    356 |   442 | 24 % longer, ± 19 %  |
+
+The longest wait that is left on a slow drag to the left is the stream
+each 15 steps opens, a seek and 16 frames, on the processor here and on
+the video chip on a Mac. The other drags take no new path: every new
+stream of a fast drag came with its key frame first in all six runs, and
+a slow drag to the right opened one stream or none. Their longest waits
+came out longer by more than Before's spread, one wait of 182 ms in one
+run to the right and 533 ms in one fast run, with three runs a side too
+few to tell that from the machine.
 
 ## Colour
 

@@ -300,3 +300,49 @@ describe("a place dragged to, opened with its key frame first", () => {
     app.close();
   });
 });
+
+describe("a slow drag to the left", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  // Issue #596: a slow drag of the playhead to the left stood for each
+  // step, up to seconds, where one to the right kept up. A stream only
+  // reads on, so every step back was a stream of its own, a seek with its
+  // key frame first, which the frame on screen was nearer than.
+  test("brings the frames before the place it steps back to, so the next steps find them kept", async () => {
+    const { app, asked, pulls, rankOf } = goSide();
+    app.grip(true);
+    // Where the press landed.
+    const pressed = rankOf(app.frame(100, 0, undefined, true));
+    await pulls(1);
+    asked[0].give([100]);
+    expect(await pressed).toBe(100);
+    // A frame back: one stream, from 15 frames before, every frame of it
+    // handed over, with no key frame first and no skip.
+    const back = rankOf(app.frame(99, 0, undefined, true));
+    await pulls(2);
+    expect(asked[1].url).toContain("n=16");
+    expect(asked[1].url).not.toContain("skip=");
+    asked[1].give(Array.from({ length: 16 }, (_, i) => 84 + i));
+    expect(await back).toBe(99);
+    // The next 14 steps back come from the frames kept.
+    for (let r = 98; r >= 85; r--) expect(await rankOf(app.frame(r, 0, undefined, true))).toBe(r);
+    expect(asked.length).toBe(2);
+    expect([app.stats.streams, app.stats.keyFirst]).toEqual([2, 0]);
+    app.close();
+  });
+
+  // A far step back is a hand moving fast, and a far step comes quicker
+  // with its key frame first, as before, issue #281.
+  test("leaves a far step back to its key frame first", async () => {
+    const { app, asked, pulls } = goSide();
+    app.grip(true);
+    void app.frame(100, 0, undefined, true);
+    await pulls(1);
+    asked[0].give([100]);
+    void app.frame(90, 0, undefined, true);
+    await pulls(2);
+    expect(asked[1].url).toContain("n=1");
+    expect(app.stats.keyFirst).toBe(1);
+    app.close();
+  });
+});

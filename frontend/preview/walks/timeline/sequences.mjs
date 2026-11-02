@@ -607,6 +607,13 @@ export default [
     steps: [["time field"], ["card says"], ["cut at", 0.5], ["card says"], ["card follows", -60], ["card says"]],
   },
   {
+    // Issue #596, found by Tim on 29 October: a slow drag of the playhead
+    // stuttered where a fast one did not. To the left, every step back
+    // was a stream of its own, a seek, and the picture stood for each.
+    name: "a slow drag of the playhead to the left reads its frames in runs, not a seek a step",
+    steps: [["slow drag left", 40]],
+  },
+  {
     // Issue #377, found by Tim on 19 October: outside a clip, Shift and
     // the right arrow walked the words heard and stopped dead where the
     // transcript ended, in the middle of the video. Outside a clip there

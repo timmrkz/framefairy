@@ -893,7 +893,8 @@ and after a change to how frames follow the hand:
 
 It adds the same video of a minute at 1920 by 1080, and drags the
 playhead over the clip timeline `ROUNDS` times, 3 unless set, slowly, a
-pixel every frame of the page, and fast, 30 pixels. It prints the line
+pixel every frame of the page, to the right and then to the left, and
+fast, 30 pixels, to the right and back. It prints the line
 each drag ends with in the app's log, see `dragged` in
 `lib/frames/queue.ts`: how far behind the frame on screen was, how long
 the picture stood while the hand had moved on, against the 50 ms of

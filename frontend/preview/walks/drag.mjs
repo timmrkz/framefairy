@@ -10,11 +10,12 @@
 //
 // It adds a video of 1920 by 1080 at 25 frames a second, picks the clip its
 // search finds, and drags the playhead over the clip timeline ROUNDS times,
-// 3 unless set, each way: slowly, a pixel every frame of the page, to the
-// right and back, and fast, 30 pixels every frame of the page. A frame of
+// 3 unless set: slowly, a pixel every frame of the page, to the right, and
+// then to the left, and fast, 30 pixels every frame of the page, to the
+// right and back. A frame of
 // the page is the browser's own pace, the way a hand's moves come. VIEWPORT
 // and SCALE as in speed.mjs.
-import { control, fromSidebar, handles, high, nextPaint, open, settle } from "./bridge.mjs";
+import { control, fromSidebar, handles, high, nextPaint, open, pageUntil, settle } from "./bridge.mjs";
 
 const url = process.env.BRIDGE_URL ?? "http://127.0.0.1:8123/";
 const rounds = Number(process.env.ROUNDS ?? 3);
@@ -44,7 +45,9 @@ try {
         watch.observe(document.body, { childList: true, subtree: true, characterData: true });
       }),
   );
-  await page.locator("ol li[data-key]").first().click();
+  // The first clip picked, and its edges on the clip timeline.
+  await page.locator("aside ol li[data-key] button.pick").first().click();
+  await pageUntil(page, () => !!document.querySelector('.clip-timeline [aria-label="Clip start"]'));
   await settle(page);
 
   // The line the next drag ends with, as the app hands it to the Go side:
@@ -78,7 +81,7 @@ try {
       from,
     );
 
-  const drag = async (step) => {
+  const drag = async (step, ways) => {
     const g = await handles(page);
     const left = g.start.x + g.start.w;
     const span = g.end.x - left;
@@ -86,9 +89,9 @@ try {
     const from = left + 0.2 * span;
     const moves = Math.max(2, Math.round((0.6 * span) / step));
     const before = await page.evaluate(() => window.__calls.length);
-    await page.mouse.move(from, y);
+    await page.mouse.move(ways[0] > 0 ? from : from + moves * step, y);
     await page.mouse.down();
-    for (const way of [1, -1]) {
+    for (const way of ways) {
       for (let i = 1; i <= moves; i++) {
         await page.mouse.move(way > 0 ? from + i * step : from + (moves - i) * step, y);
         await nextPaint(page);
@@ -102,8 +105,9 @@ try {
 
   const rows = [];
   for (let r = 0; r < rounds; r++) {
-    rows.push(["slow", await drag(1)]);
-    rows.push(["fast", await drag(30)]);
+    rows.push(["slow, right", await drag(1, [1])]);
+    rows.push(["slow, left", await drag(1, [-1])]);
+    rows.push(["fast, right and back", await drag(30, [1, -1])]);
   }
   for (const [how, l] of rows) console.log(`${how}: ${l.replace(/^.*?let go at /, "")}\n`);
 } finally {
