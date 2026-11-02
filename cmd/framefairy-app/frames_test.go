@@ -18,6 +18,7 @@ import (
 
 	"framefairy/engine"
 	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/fixtures"
 	"framefairy/internal/framewire"
 )
 
@@ -29,11 +30,7 @@ func TestTheFramesRouteStreamsAnEpisode(t *testing.T) {
 	ffmpegtest.Need(t)
 	needDecoder(t)
 	svc, mine, _ := library(t)
-	// Ten seconds at five frames a second, a picture any ffmpeg writes.
-	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi",
-		"-i", "testsrc2=s=160x90:r=5:d=10", "-c:v", "mpeg4", "-g", "10", "-f", "mp4", mine).CombinedOutput(); err != nil {
-		t.Fatalf("making the episode: %s %s", err, out)
-	}
+	fixtures.Copy(t, "small-10s.mp4", mine)
 	handler := mediaMiddleware(svc.store)(http.NotFoundHandler())
 	get := func(path string, q url.Values) *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()
@@ -117,16 +114,8 @@ func TestTheFramesRouteSaysAnHDREpisodesLight(t *testing.T) {
 	ffmpegtest.Need(t)
 	needDecoder(t)
 	svc, mine, _ := library(t)
-	// The tags are what says HDR, so any picture tagged HLG will do. The
-	// colr box carries them in an MP4 whatever the codec. They are set on
-	// the frames, because a newer ffmpeg, ours among them, drops -color_trc
-	// and takes the encoder's tags from its frames.
-	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi",
-		"-i", "testsrc2=s=160x90:r=5:d=2",
-		"-vf", "setparams=color_primaries=bt2020:color_trc=arib-std-b67:colorspace=bt2020nc",
-		"-c:v", "mpeg4", "-f", "mp4", mine).CombinedOutput(); err != nil {
-		t.Fatalf("making the episode: %s %s", err, out)
-	}
+	// The tags are what says HDR, so any picture tagged HLG will do.
+	fixtures.Copy(t, "small-hlg.mp4", mine)
 	handler := mediaMiddleware(svc.store)(http.NotFoundHandler())
 	get := func(path string, q url.Values) *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()
@@ -158,10 +147,7 @@ func TestTheFramesRouteSaysWhenAnEpisodeEnds(t *testing.T) {
 	ffmpegtest.Need(t)
 	needDecoder(t)
 	svc, mine, _ := library(t)
-	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi",
-		"-i", "testsrc2=s=160x90:r=5:d=1", "-c:v", "mpeg4", "-f", "mp4", mine).CombinedOutput(); err != nil {
-		t.Fatalf("making the episode: %s %s", err, out)
-	}
+	fixtures.Copy(t, "small-1s.mp4", mine)
 	handler := mediaMiddleware(svc.store)(http.NotFoundHandler())
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/open?"+url.Values{"path": {mine}, "w": {"32"}, "h": {"18"}, "grid": {gridOf(t, mine)}}.Encode(), nil))
@@ -193,10 +179,7 @@ func TestTheFramesRouteSaysAStoppedStreamWasClosed(t *testing.T) {
 	ffmpegtest.Need(t)
 	needDecoder(t)
 	svc, mine, _ := library(t)
-	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi",
-		"-i", "testsrc2=s=160x90:r=5:d=10", "-c:v", "mpeg4", "-f", "mp4", mine).CombinedOutput(); err != nil {
-		t.Fatalf("making the episode: %s %s", err, out)
-	}
+	fixtures.Copy(t, "small-10s.mp4", mine)
 	handler := mediaMiddleware(svc.store)(http.NotFoundHandler())
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/open?"+url.Values{"path": {mine}, "w": {"32"}, "h": {"18"}, "grid": {gridOf(t, mine)}}.Encode(), nil))
@@ -246,12 +229,7 @@ func TestTheFramesRouteStreamsSound(t *testing.T) {
 	ffmpegtest.Need(t)
 	needDecoder(t)
 	svc, mine, _ := library(t)
-	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
-		"-f", "lavfi", "-i", "testsrc2=s=160x90:r=5:d=4",
-		"-f", "lavfi", "-i", "aevalsrc=sin(2*PI*(200*t+300*t*t))|0.5*sin(2*PI*900*t):s=48000:d=4",
-		"-c:v", "mpeg4", "-c:a", "aac", "-f", "mp4", mine).CombinedOutput(); err != nil {
-		t.Fatalf("making the episode: %s %s", err, out)
-	}
+	fixtures.Copy(t, "small-4s.mp4", mine)
 	handler := mediaMiddleware(svc.store)(http.NotFoundHandler())
 	get := func(path string, q url.Values) *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()
@@ -330,10 +308,7 @@ func TestTheFramesRouteKeepsTheDecoderOfAnOpenEpisode(t *testing.T) {
 	ffmpegtest.Need(t)
 	needDecoder(t)
 	svc, mine, _ := library(t)
-	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi",
-		"-i", "testsrc2=s=160x90:r=5:d=4", "-c:v", "mpeg4", "-f", "mp4", mine).CombinedOutput(); err != nil {
-		t.Fatalf("making the episode: %s %s", err, out)
-	}
+	fixtures.Copy(t, "small-4s.mp4", mine)
 	handler := mediaMiddleware(svc.store)(http.NotFoundHandler())
 	get := func(route string) int {
 		rec := httptest.NewRecorder()

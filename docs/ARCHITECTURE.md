@@ -141,7 +141,7 @@ What to do today, and what changes once the issue named is built.
 | copy a rule of the engine into TypeScript | don't, and no `.cases.json` makes it right. The interface asks Go, or reads the answer from the state. Where it must answer while a hand drags, Go sends what the drag needs as data, see [2026-11-01-every-rule-of-the-workspace-in-go.md](decisions/2026-11-01-every-rule-of-the-workspace-in-go.md) |
 | add a check to CI | a make target, and its rule in `scripts/changed.sh` with its case in `scripts/changed-test.sh`, see BUILD.md |
 | fake something in a test | the clock, the disk and the models are handed in. Use the fakes there are, in `engine/project_test.go` and `internal/standin/` |
-| give a test a video or a sound | a file committed in `internal/fixtures/testdata/`, read with `fixtures.Path`, or copied with `fixtures.Copy` by a test that changes it or writes beside it, made by its recipe in `internal/fixtures/fixtures_test.go`. One that is there before a new one, see the decision record [2026-11-01-committed-test-fixtures.md](decisions/2026-11-01-committed-test-fixtures.md). Never made by ffmpeg while the test runs |
+| give a test a video or a sound | a file committed in `internal/fixtures/testdata/`, read with `fixtures.Path`, or copied with `fixtures.Copy` by a test that changes it or writes beside it, or with `fixtures.CopyTo` where nothing can end the test, like a route a walk calls, made by its recipe in `internal/fixtures/fixtures_test.go`. One that is there before a new one, see the decision record [2026-11-01-committed-test-fixtures.md](decisions/2026-11-01-committed-test-fixtures.md). Never made by ffmpeg while the test runs |
 
 ## Invariants
 
@@ -222,11 +222,6 @@ copies what it finds nearby, so these are not the pattern for new code.
   own that keep a machine or a finder of their own, `sources` in
   `cmd/framefairy-app/media.go` and `openPreviews` in
   `cmd/framefairy-app/frames.go`, #607.
-- Test videos and sounds made by ffmpeg while the tests run, the
-  fixtures of the app's tests, of `internal/outside` and of
-  `cmd/framefairy-app/walkvideos_test.go`, and `frontend/preview/open.mjs`,
-  #670. `TestNoTestMakesItsOwnFixture` in `internal/ffmpegtest` lists the
-  Go test files.
 - The effects in `frontend/src/screens/Episode.svelte` that compare an
   old value with a new one to notice that a search started, `followed`
   and `searchSeen`, the reads of the video's state it asks for after

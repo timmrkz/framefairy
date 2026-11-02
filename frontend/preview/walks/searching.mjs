@@ -152,7 +152,8 @@ const gestures = [
     weight: 2,
     when: (s) => s.episodes < 3,
     async run() {
-      const seconds = 40 + rng.int(80);
+      // A length the videos committed in internal/fixtures have.
+      const seconds = [60, 90, 120][rng.int(3)];
       const path = await control(url, `/pick?seconds=${seconds}`);
       await sidebar(() => page.locator("aside").getByText("Add", { exact: true }).first().click());
       // A new video is transcribed and its first search starts by itself.

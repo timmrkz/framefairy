@@ -1731,7 +1731,8 @@ export const steps = {
       ([bits, band]) => {
         // The frame number of a filmed video standing up by its display
         // matrix: its bands run down the right side, the highest bit
-        // furthest right, see makeTurnedEpisode in bridge_test.go.
+        // furthest right, see filmed-30s-25-turned.mp4 in
+        // internal/fixtures/fixtures_test.go.
         const c = document.querySelector(".screen canvas");
         const s = document.createElement("canvas");
         const t = s.getContext("2d", { willReadFrequently: true });

@@ -215,6 +215,247 @@ var recipes = map[string][]string{
 		"-vf", "scale=out_color_matrix=bt709:out_range=tv,format=yuv420p," +
 			"setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv",
 		"-c:v", "mpeg4", "-q:v", "1"},
+	// The videos the app's tests add to the library, at the lengths they
+	// need: a grey and a tone, which is all a search, a render and the
+	// speech stand-in need, and nothing that takes room. The longest is
+	// one a search does not cover in one window.
+	"grey-6s.mp4":    grey("6"),
+	"grey-12s.mp4":   grey("12"),
+	"grey-20s.mp4":   grey("20"),
+	"grey-72s.mp4":   grey("72"),
+	"grey-300s.mp4":  grey("300"),
+	"grey-1200s.mp4": grey("1200"),
+	// Small test pictures for the routes of the video preview, five
+	// frames a second, a key frame every two seconds. The one of four
+	// seconds has two tones, one climbing, so a sample out of place
+	// differs. The one of two seconds is tagged HLG, which is what says
+	// HDR, whatever the codec.
+	"small-1s.mp4": small("1"),
+	"small-4s.mp4": {"-f", "lavfi", "-i", "testsrc2=s=160x90:r=5:d=4",
+		"-f", "lavfi", "-i", "aevalsrc=sin(2*PI*(200*t+300*t*t))|0.5*sin(2*PI*900*t):s=48000:d=4",
+		"-c:v", "mpeg4", "-g", "10", "-c:a", "aac"},
+	"small-10s.mp4": small("10"),
+	"small-hlg.mp4": append(small("2"), "-vf", "setparams=color_primaries=bt2020:color_trc=arib-std-b67:colorspace=bt2020nc"),
+	// The test picture at 25 frames a second for 24 seconds, long enough
+	// for a clip with words at 10 and at 20 seconds.
+	"picture-24s.mp4": {"-f", "lavfi", "-i", "testsrc2=s=320x180:r=25:d=24", "-c:v", "mpeg4", "-q:v", "31", "-g", "50"},
+	// A recording of one second, the way a phone, a recorder and the
+	// Mac's own write one, with a place, a title and a comment: in a MOV,
+	// in an MP4 and the same held upright, in Matroska the way OBS writes
+	// it, and in WebM the way GNOME's recorder does.
+	"recording.mov":         recording("-c:v", "mpeg4", "-c:a", "aac", "-f", "mov"),
+	"recording.mp4":         recording("-c:v", "mpeg4", "-c:a", "aac", "-f", "mp4"),
+	"recording-upright.mp4": {"-display_rotation", "90", "-i", "@recording.mp4", "-map", "0", "-c", "copy", "-movflags", "use_metadata_tags"},
+	"recording.mkv":         recording("-c:v", "mpeg4", "-c:a", "aac", "-f", "matroska"),
+	"recording.webm":        recording("-c:v", "libvpx-vp9", "-deadline", "realtime", "-c:a", "libopus", "-f", "webm"),
+	// The videos the walks add, see walk below, at every length a walk
+	// asks for, the longest for the windows of a long video, 1503 seconds
+	// for a window off the range picker's step. One in HEVC, and two
+	// filmed by two cameras, see cameras.
+	"walk-12s.mp4":             walk("12"),
+	"walk-15s.mp4":             walk("15"),
+	"walk-20s.mp4":             walk("20"),
+	"walk-30s.mp4":             walk("30"),
+	"walk-60s.mp4":             walk("60"),
+	"walk-90s.mp4":             walk("90"),
+	"walk-120s.mp4":            walk("120"),
+	"walk-600s.mp4":            walk("600"),
+	"walk-1200s.mp4":           walk("1200"),
+	"walk-1500s.mp4":           walk("1500"),
+	"walk-1503s.mp4":           walk("1503"),
+	"walk-40s-hevc.mp4":        walkHEVC(walk("40")),
+	"cameras-30s-12.mp4":       cameras("30", 12, false),
+	"cameras-120s-60-hevc.mp4": cameras("120", 60, true),
+	"filmed-30s-25.mp4":        filmed("30", "25", ""),
+	"filmed-40s-25.mp4":        filmed("40", "25", ""),
+	"filmed-40s-29.97.mp4":     filmed("40", "30000/1001", ""),
+	// A phone's frames, each 0, 8 or 16 ms late in ticks of 1/600 s.
+	"filmed-40s-29.97-uneven.mp4": filmed("40", "30000/1001", "uneven"),
+	// A picture that starts a quarter of a second after the sound,
+	// between two of its frames, by an edit list, and the same copied
+	// into Matroska, the way OBS records, where it starts late by its
+	// first timestamp.
+	"filmed-40s-29.97-late.mp4": filmed("40", "30000/1001", "late"),
+	"filmed-40s-29.97-late.mkv": {"-i", "@filmed-40s-29.97-late.mp4", "-map", "0", "-c", "copy"},
+	// A filmed video the way a phone that recorded it upright stores it:
+	// the picture lying on its side and a display matrix that says to
+	// turn it a quarter to the right to stand it up. Standing up, the
+	// frame number's bands run down its right side, and rotated a quarter
+	// to the left in the app they run across its top again, where a short
+	// of it is read.
+	"filmed-30s-25-turned.mp4": {"-display_rotation", "270", "-i", "@filmed-30s-25.mp4", "-c", "copy"},
+}
+
+// walk is the recipe of the walks' own kind of video, this many seconds
+// long. VP9 and Opus rather than MPEG-4 and AAC, because the Chromium a
+// walk drives is built without the proprietary codecs. The picture says
+// which frame it is, the recipe of the harness's own episodes in
+// frontend/preview/open.mjs: a strip along its top, 12 pixels high, is
+// the frame number in ten bars of 32 pixels, the highest bit on the
+// left, light for one and dark for nought, so a walk reads back from the
+// video preview's canvas the frame on screen, see recordFrames in
+// walks/bridge.mjs. Below it is a grey that grows lighter. The strip is
+// thin so that no two frames differ by a camera switch, which a half of
+// bars did every 16 frames, and the search then split its clip into
+// pieces at every one. The bars are worked out on a picture one pixel a
+// bit and made large without smoothing.
+//
+// The sound is a tone, in Opus at 24k, which keeps it as steady as the
+// walks need: the speech model hears a video in pieces, each cut at the
+// quietest moment, see quietestCut in engine/audio.go, so the slight
+// waver of a tone decides where the stand-in's words fall. At 8k the tone
+// wavered by 5 % rather than 1 %, the words moved, and the walks that
+// press beside a caption pressed on it.
+func walk(seconds string) []string {
+	return walkOf(seconds, "[1]geq=lum='30+180*T/"+seconds+"':cb=128:cr=128,scale=320:168:flags=neighbor[g]", "2x2", "220",
+		"-c:v", "libvpx-vp9", "-b:v", "100k", "-deadline", "realtime", "-cpu-used", "8", "-g", "10",
+		"-c:a", "libopus", "-b:a", "24k")
+}
+
+// walkOf is the recipe of a video of the walks with the picture below
+// its strip made by below from an input of size, a tone of pitch and the
+// codecs given.
+func walkOf(seconds, below, size, pitch string, codecs ...string) []string {
+	return append([]string{
+		"-f", "lavfi", "-i", "color=c=black:s=10x2:r=5:d=" + seconds,
+		"-f", "lavfi", "-i", "color=c=black:s=" + size + ":r=5:d=" + seconds,
+		"-f", "lavfi", "-i", "sine=f=" + pitch + ":sample_rate=48000:d=" + seconds,
+		"-filter_complex",
+		"[0]geq=lum='if(bitand(N\\,pow(2\\,9-X))\\,220\\,30)':cb=128:cr=128,scale=320:12:flags=neighbor[b];" +
+			below + ";[b][g]vstack,format=yuv420p[v]",
+		"-map", "[v]", "-map", "2",
+		"-shortest"}, codecs...)
+}
+
+// walkHEVC is a recipe of the walks with its picture in HEVC with 10-bit
+// colour instead, which WebKit says it decodes and then fails on, and
+// which the Chromium a walk drives cannot decode at all: the Go side
+// decodes it, see frames.go. Its GOPs are open, the way x265 writes them
+// and DaVinci Resolve wrote Tim's start.mp4: a key frame every twelve
+// frames, the last of a run of four, so the three frames shown before it
+// are decoded after it. With a key frame every ten, every run of four
+// ended on the frame before a key frame, and no frame led up to one.
+func walkHEVC(args []string) []string {
+	at := slices.Index(args, "-c:v")
+	return slices.Concat(args[:at], []string{"-c:v", "libx265", "-preset", "ultrafast", "-pix_fmt", "yuv420p10le", "-tag:v", "hvc1",
+		"-x265-params", "bframes=3:keyint=12:log-level=error"}, args[slices.Index(args, "-c:a"):])
+}
+
+// cameras is the recipe of a video of the walks filmed by two cameras,
+// the first up to the second it switches at and the second from it, in
+// HEVC with hevc. Each looks at a subject, a chequerboard, on its own
+// side of the picture, the first on the left and the second on the
+// right, so the search frames each shot on its own subject and the two
+// crops differ. Around the subject is a plain backdrop, dark grey for the
+// first camera and a light red for the second, so a short tells the shots
+// apart by their colour, and a shot framed by the other's crop shows only
+// its backdrop. The switch changes the whole picture at once, which is
+// what the search reads as a camera switch.
+//
+// The sound is lossless, FLAC, so it decodes to the plain samples it was
+// once kept as, and the speech model's pieces fall where they did, see
+// walk. Plain samples were chosen when a render read each piece's sound
+// from where the piece starts: Opus needs 80 ms decoded ahead of a seek,
+// so every piece started a little quiet, and a walk listening for a dip
+// heard that. A render now reads the sound a fifth of a second early,
+// soundLead, so Opus would do for that, but it would move the pieces.
+func cameras(seconds string, switchAt int, hevc bool) []string {
+	n := strconv.Itoa(switchAt * 5)
+	checks := "if(mod(floor(X/4)+floor(Y/4)\\,2)\\,235\\,20)"
+	below := "[1]geq=lum='if(lt(N\\," + n + ")\\," +
+		"if(between(X\\,20\\,99)\\," + checks + "\\,60)\\," +
+		"if(between(X\\,220\\,299)\\," + checks + "\\,170))'" +
+		":cb=128:cr='if(lt(N\\," + n + ")\\,128\\,180)'[g]"
+	args := walkOf(seconds, below, "320x168", "440",
+		"-c:v", "libvpx-vp9", "-b:v", "300k", "-deadline", "realtime", "-cpu-used", "8", "-g", "10", "-c:a", "flac")
+	if hevc {
+		return walkHEVC(args)
+	}
+	return args
+}
+
+// filmedBits is how many bits the frame number of a filmed video has, so
+// it says the number of every frame up to 2048, more than a minute at
+// 29.97 fps. Its bands are filmedBand pixels high each, of a picture 180
+// high. The walks read them back with the same numbers, see shortFrames
+// in walks/bridge.mjs.
+const filmedBits, filmedBand = 11, 4
+
+// filmed is the recipe of a video of the walks of this many seconds at
+// the frame rate a camera records at, rate as ffmpeg takes it, 30000/1001
+// for 29.97 fps, so a walk can render a clip of it and read the short
+// back. Its picture says which frame it is in a way the render keeps: a
+// short is a narrow part of the picture made larger, so bars side by side
+// would be cut away. The frame number is bands one above the other across
+// the whole width, the highest bit at the top, each filmedBand pixels
+// high, light for one and dark for nought, and whatever part of the width
+// the crop keeps holds every band. They take 44 of the picture's 180
+// pixels, a quarter, and light and dark are only 100 apart, so no two
+// frames differ by a camera switch, see walk: bands of 220 and 30 made
+// six of them in 45 seconds. They are worked out two pixels a bit, since
+// a picture is an even number of pixels high. Below them is the grey that
+// grows lighter. The sound is a steady tone, so padded silence at a cut
+// can be heard.
+//
+// The frames come at the rate, unless timing says otherwise: "uneven" is
+// a phone's frames, each 0, 8 or 16 ms late in ticks of 1/600 s, and
+// "late" is a picture that starts a quarter of a second after the sound,
+// between two of its frames, by an edit list. Either way each frame keeps
+// its number.
+func filmed(seconds, rate, timing string) []string {
+	bands := filmedBits * filmedBand
+	shift, keep := "", []string{}
+	switch timing {
+	case "uneven":
+		shift = fmt.Sprintf(",settb=1/600,setpts='(N/(%s)+0.008*mod(N\\,3))/TB'", rate)
+		keep = []string{"-fps_mode", "passthrough", "-enc_time_base", "1/600", "-video_track_timescale", "600"}
+	case "late":
+		// On a clock of 1/90000 s, so the picture starts a true quarter
+		// second in, 7.49 frames at 29.97 a second. On the rate's own
+		// clock the quarter second came out a whole 7 frames, 0.233 s,
+		// on the grid of the file's start, where frames counted from the
+		// file and from the picture are the same frames and a mistake
+		// between the two could not be seen.
+		shift = ",settb=1/90000,setpts=PTS+0.25/TB"
+		keep = []string{"-fps_mode", "passthrough", "-enc_time_base", "1/90000", "-video_track_timescale", "90000"}
+	}
+	args := []string{
+		"-f", "lavfi", "-i", fmt.Sprintf("color=c=black:s=2x%d:r=%s:d=%s", 2*filmedBits, rate, seconds),
+		"-f", "lavfi", "-i", fmt.Sprintf("color=c=black:s=2x2:r=%s:d=%s", rate, seconds),
+		"-f", "lavfi", "-i", "sine=f=440:sample_rate=48000:d=" + seconds,
+		"-filter_complex",
+		fmt.Sprintf("[0]geq=lum='if(bitand(N\\,pow(2\\,%d-floor(Y/2)))\\,160\\,60)':cb=128:cr=128,scale=320:%d:flags=neighbor[b];", filmedBits-1, bands) +
+			fmt.Sprintf("[1]geq=lum='30+180*T/%s':cb=128:cr=128,scale=320:%d:flags=neighbor[g];", seconds, 180-bands) +
+			"[b][g]vstack,format=yuv420p" + shift + "[v]",
+		"-map", "[v]", "-map", "2"}
+	return slices.Concat(args, keep, []string{"-shortest", "-c:v", "libvpx-vp9", "-crf", "30", "-b:v", "0", "-deadline", "realtime", "-cpu-used", "8",
+		"-g", "15", "-c:a", "libopus", "-b:a", "64k"})
+}
+
+// grey is the recipe of a video of so many seconds, a grey at five
+// frames a second and a tone at 16 kHz, in MPEG-4 and AAC.
+func grey(seconds string) []string {
+	return []string{"-f", "lavfi", "-i", "color=c=gray:s=320x180:r=5:d=" + seconds,
+		"-f", "lavfi", "-i", "sine=f=220:sample_rate=16000:d=" + seconds,
+		"-shortest", "-c:v", "mpeg4", "-g", "50", "-c:a", "aac", "-b:a", "8k"}
+}
+
+// small is the recipe of the test picture, 160 by 90 at five frames a
+// second, so many seconds long, in MPEG-4 with a key frame every ten
+// frames.
+func small(seconds string) []string {
+	return []string{"-f", "lavfi", "-i", "testsrc2=s=160x90:r=5:d=" + seconds, "-c:v", "mpeg4", "-g", "10"}
+}
+
+// recording is the recipe of a recording of one second, 160 by 90 at 30
+// frames a second, with a tone, and a place, a title and a comment, coded
+// and kept the way the arguments say.
+func recording(codecs ...string) []string {
+	return append([]string{"-f", "lavfi", "-i", "testsrc2=size=160x90:rate=30:duration=1",
+		"-f", "lavfi", "-i", "sine=f=440:d=1",
+		"-metadata", "title=Tim's desk", "-metadata", "comment=Made on Tim's Mac",
+		"-metadata", "location=+52.5200+013.4050/", "-metadata", "com.apple.quicktime.location.ISO6709=+52.5200+013.4050/",
+		"-movflags", "use_metadata_tags", "-pix_fmt", "yuv420p", "-shortest"}, codecs...)
 }
 
 func episode(seconds string) []string {

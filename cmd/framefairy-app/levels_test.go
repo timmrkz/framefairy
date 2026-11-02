@@ -11,6 +11,7 @@ import (
 
 	"framefairy/engine"
 	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/fixtures"
 )
 
 // levelsLibrary is a library with n short episodes in it and a service
@@ -27,19 +28,8 @@ func levelsLibrary(t *testing.T, n int) (*FrameFairy, []string, *atomic.Int64) {
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
 	var paths []string
 	for i := range n {
-		made, err := videos.make("levels"+string(rune('a'+i)), "20")
-		if err != nil {
-			t.Fatal(err)
-		}
 		// Each test its own copy, so one test's levels are not another's.
-		path := filepath.Join(home, filepath.Base(made))
-		data, err := os.ReadFile(made)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, data, 0o644); err != nil {
-			t.Fatal(err)
-		}
+		path := fixtures.Copy(t, "grey-20s.mp4", filepath.Join(home, "levels"+string(rune('a'+i))+".mp4"))
 		paths = append(paths, path)
 	}
 	st := openStore()

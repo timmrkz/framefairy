@@ -16,6 +16,9 @@
 package fixtures
 
 import (
+	"errors"
+	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -45,16 +48,26 @@ func Path(t testing.TB, name string) string {
 
 // Copy copies the fixture called name to path, for a test that changes
 // the file or writes beside it, and gives path back.
-//
-// On the real disk: the fixture is a file, and so is its copy.
 func Copy(t testing.TB, name, path string) string {
 	t.Helper()
-	body, err := os.ReadFile(Path(t, name))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, body, 0o644); err != nil {
+	if err := CopyTo(name, path); err != nil {
 		t.Fatal(err)
 	}
 	return path
+}
+
+// CopyTo copies the fixture called name to path, the way Copy does, for
+// what is not a test's own goroutine and cannot end the test, like a
+// route the walks call.
+//
+// On the real disk: the fixture is a file, and so is its copy.
+func CopyTo(name, path string) error {
+	body, err := os.ReadFile(filepath.Join(Dir(), name))
+	if errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("no fixture %s in %s. Use one that is there, or add a recipe in fixtures_test.go when none has what the test needs", name, Dir())
+	}
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, body, 0o644)
 }
