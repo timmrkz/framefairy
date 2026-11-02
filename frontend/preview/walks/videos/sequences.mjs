@@ -178,6 +178,20 @@ export default [
     ],
   },
   {
+    // Issue #673. A video moved away in Finder said File not found only
+    // once the app came back to the front. Now the app watches the
+    // folders of its videos, so the sidebar says it while the app stays
+    // in front, and stops saying it once the file is back.
+    name: "a video whose file is moved away while the app is in front says File not found at once",
+    steps: [
+      ["add", 20],
+      ["wait for", "Search"],
+      ["add", 20],
+      ["wait for", "Search"],
+      ["file moved in front"],
+    ],
+  },
+  {
     // Issue #311. Tim moved a video's file away in Finder and opened the
     // video again. A red line over the workspace said the file was gone
     // and pushed everything down, and a toast said it a second time. Put

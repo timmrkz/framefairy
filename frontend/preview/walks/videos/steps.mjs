@@ -579,6 +579,38 @@ export const steps = {
     }
     await settle(page);
   },
+  // ["file moved in front"]
+  //                    moves the file of a video that is not on screen
+  //                    away from outside the app while the app stays in
+  //                    front, the way a terminal or a sync service does,
+  //                    and its row in the sidebar says File not found
+  //                    with no look at the app. Then it puts the file
+  //                    back, and the row no longer says so. Only the
+  //                    app's watch on the disk can tell it, issue #673
+  async "file moved in front"(walk) {
+    const { page } = walk;
+    const on = await episodeOn(page);
+    const source = (await ask(page, "Library")).map((e) => e.source).find((s) => s !== on);
+    if (!source) {
+      walk.wrong = "there is no second video to move";
+      return;
+    }
+    const name = basename(source);
+    const line = () =>
+      page.evaluate(
+        (n) =>
+          [...document.querySelectorAll("aside button.episode")]
+            .find((b) => b.querySelector(".name")?.textContent === n)
+            ?.querySelector(".line")
+            ?.getAttribute("title") ?? "",
+        name,
+      );
+    renameSync(source, `${source}.away`);
+    await seenUntil(page, url, line, (title) => title === "File not found");
+    renameSync(`${source}.away`, source);
+    await seenUntil(page, url, line, (title) => title !== "File not found");
+    if ((await episodeOn(page)) !== on) walk.wrong = `the video on screen changed to ${await episodeOn(page)}`;
+  },
   // ["file moved away"]
   //                    moves the file of the video on screen away from
   //                    outside the app, the way Finder does, while
