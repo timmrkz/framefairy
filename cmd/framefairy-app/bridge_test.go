@@ -1029,7 +1029,7 @@ func (b *bridge) held(name string) (<-chan struct{}, bool, string) {
 // openBridge opens a desk whose Go side tells a browser what it does, with
 // one episode in it, heard and searched, so the workspace has a clip.
 //
-// On the real disk: ffmpeg makes the episode, and ffmpeg and the episode's decoder read it.
+// On the real disk: ffmpeg and the episode's decoder read the episode.
 func openBridge(t *testing.T) *bridge {
 	t.Helper()
 	d := open(t)

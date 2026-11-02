@@ -298,11 +298,18 @@ var recipes = map[string][]string{
 // thin so that no two frames differ by a camera switch, which a half of
 // bars did every 16 frames, and the search then split its clip into
 // pieces at every one. The bars are worked out on a picture one pixel a
-// bit and made large without smoothing. The sound is a tone.
+// bit and made large without smoothing.
+//
+// The sound is a tone, in Opus at 24k, which keeps it as steady as the
+// walks need: the speech model hears a video in pieces, each cut at the
+// quietest moment, see quietestCut in engine/audio.go, so the slight
+// waver of a tone decides where the stand-in's words fall. At 8k the tone
+// wavered by 5 % rather than 1 %, the words moved, and the walks that
+// press beside a caption pressed on it.
 func walk(seconds string) []string {
 	return walkOf(seconds, "[1]geq=lum='30+180*T/"+seconds+"':cb=128:cr=128,scale=320:168:flags=neighbor[g]", "2x2", "220",
 		"-c:v", "libvpx-vp9", "-b:v", "100k", "-deadline", "realtime", "-cpu-used", "8", "-g", "10",
-		"-c:a", "libopus", "-b:a", "8k")
+		"-c:a", "libopus", "-b:a", "24k")
 }
 
 // walkOf is the recipe of a video of the walks with the picture below
@@ -345,10 +352,13 @@ func walkHEVC(args []string) []string {
 // its backdrop. The switch changes the whole picture at once, which is
 // what the search reads as a camera switch.
 //
-// The sound is FLAC, plain samples, chosen when a render read each
-// piece's sound from where the piece starts: Opus needs 80 ms decoded
-// ahead of a seek, so every piece started a little quiet, and a walk
-// listening for a dip heard that.
+// The sound is lossless, FLAC, so it decodes to the plain samples it was
+// once kept as, and the speech model's pieces fall where they did, see
+// walk. Plain samples were chosen when a render read each piece's sound
+// from where the piece starts: Opus needs 80 ms decoded ahead of a seek,
+// so every piece started a little quiet, and a walk listening for a dip
+// heard that. A render now reads the sound a fifth of a second early,
+// soundLead, so Opus would do for that, but it would move the pieces.
 func cameras(seconds string, switchAt int, hevc bool) []string {
 	n := strconv.Itoa(switchAt * 5)
 	checks := "if(mod(floor(X/4)+floor(Y/4)\\,2)\\,235\\,20)"

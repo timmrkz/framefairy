@@ -489,13 +489,15 @@ on Linux, where ours has no H.264 encoder yet and every test that renders
 would fail, so a Linux machine keeps the system's. A Mac with
 Homebrew's ffmpeg tested that one before, which is not the version the
 app ships and not built the same way, and a test that failed there said
-nothing about the app. `make walks` is the exception. It makes its
-episode in VP9, the one video Chromium plays without the proprietary
-codecs, and our ffmpeg has no VP9 encoder, so the walks use the system's.
+nothing about the app. `make walks` is the exception and keeps the
+system's, because the camera's videos `speed.mjs` and `smooth.mjs` ask
+for are made with x264 and x265, which ours has not. Every other video a
+test reads is made once, by the system's ffmpeg, and committed, see
+`internal/fixtures`, so which encoders ours has does not matter to it.
 
 **The tests that render share their episodes and skip the face detector.**
-A test episode is made once for each length and every test gets a copy,
-the way the app's tests share their videos. The face detector finds no
+A test episode is committed once for each length in `internal/fixtures`,
+and every test gets a copy. The face detector finds no
 face in a test picture, so the tests turn it off and framing falls back
 to what is in focus, as it did anyway. It cost some 50 milliseconds a
 frame, and with forty identical episodes made one by one it was most of

@@ -160,8 +160,8 @@ func TestWhatIsNoRecordingIsLeftOut(t *testing.T) {
 // A report holds a recording under recordings/, stored as it is, and the
 // pictures under pictures/, each counted on its own.
 //
-// On the real disk: ffmpeg makes the recording, and the report is saved
-// on the Desktop.
+// On the real disk: the recording is a copy on the disk, and the report
+// is saved on the Desktop.
 func TestAReportHoldsTheRecordings(t *testing.T) {
 	ffmpegtest.Need(t)
 	// Not side by side with the others: it sets HOME for the whole process,
