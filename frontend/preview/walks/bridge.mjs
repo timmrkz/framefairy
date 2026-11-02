@@ -379,7 +379,7 @@ export async function open(url, { viewport = { width: 1500, height: 1000 }, scal
   }, clock);
   await slowDown(page);
   const errors = [];
-  page.on("pageerror", (e) => errors.push(String(e)));
+  threw(page, errors);
   await page.goto(url);
   await page.locator("aside li", { hasText: ".mp4" }).first().waitFor();
   await page.locator("aside li", { hasText: ".mp4" }).first().click();
@@ -1193,10 +1193,28 @@ export async function fromSidebar(page, click) {
 // Loads the page again, the way a walk opens the app again after it
 // closed. The page is told first that it is being left, so a call it has
 // out answers nothing rather than throwing, see __leave in
-// wails-bridge.ts.
+// wails-bridge.ts. WebKit still writes each call it cuts off on the
+// console as an error, "Fetch API cannot load ... due to access control
+// checks", though the page caught it, and Playwright hands that on as the
+// page having thrown, so those are not counted while the page is left.
+const leaving = new WeakSet();
 export async function reload(page) {
-  await page.evaluate(() => window.__leave?.());
-  await page.reload();
+  leaving.add(page);
+  try {
+    await page.evaluate(() => window.__leave?.());
+    await page.reload();
+  } finally {
+    leaving.delete(page);
+  }
+}
+
+// What the page threw, without what WebKit wrote of the calls it cut off
+// as the walk loaded the page again, see reload.
+function threw(page, errors) {
+  page.on("pageerror", (e) => {
+    if (leaving.has(page) && String(e).includes("due to access control checks")) return;
+    errors.push(String(e));
+  });
 }
 
 // Until fn, run in the page with arg, says true. It is asked again each

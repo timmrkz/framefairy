@@ -1073,6 +1073,18 @@ export const steps = {
       // plays on is turned to the top, found by Tim. The list is made
       // as high as the cards down to the playhead's, so the next is
       // below it.
+      // The space bar to play, held the same way from the moment it
+      // plays while the watch looks at the step, which on a busy runner
+      // in WebKit took the whole clip, so the walk read the list only
+      // once the play had stopped at the clip's end.
+      const playHeld = async () => {
+        await page.evaluate(() => document.activeElement?.blur());
+        await page.keyboard.press("Space");
+        await pageUntil(page, () => !!document.querySelector('button[aria-label="Pause"]'));
+        await holdSound(page, true);
+        await watch.step("press", s);
+        await holdSound(page, false);
+      };
       if (!walk.wrong && own.length >= 2) {
         // First with both cards in view: playing into the next card
         // leaves the list where it is.
@@ -1089,9 +1101,7 @@ export const steps = {
         }, [`s${own[0].start}|${chosenKey}`, `s${own[1].start}|${chosenKey}`]);
         if (!both.seen) walk.wrong = "the chosen clip's first two cards are not both in view, so the list standing still could not be seen";
         else {
-          await page.evaluate(() => document.activeElement?.blur());
-          await page.keyboard.press("Space");
-          await watch.step("press", s);
+          await playHeld();
           const frames = await playedTo(page, own[1].start + 0.3, () => ({ scrolled: document.querySelector(".scroll.list").scrollTop }), true);
           const moved = frames.find((now) => now.scrolled !== both.scrolled);
           await page.keyboard.press("Space");
@@ -1114,9 +1124,7 @@ export const steps = {
         }, `s${own[0].start}|${chosenKey}`);
         await nextPaint(page, 2);
         const from = await page.evaluate(() => document.querySelector(".scroll.list").scrollTop);
-        await page.evaluate(() => document.activeElement?.blur());
-        await page.keyboard.press("Space");
-        await watch.step("press", s);
+        await playHeld();
         const frames = await playedTo(
           page,
           own[1].start + 0.3,
