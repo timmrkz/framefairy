@@ -43,6 +43,16 @@ func (s *FrameFairy) projectWith(path string, opts engine.Options) *engine.Proje
 //
 // What it hands out is shared, so only what reads goes through here.
 func (s *FrameFairy) transcript(p *engine.Project) (*engine.Transcript, error) {
+	return s.said.get(p.Source, transcriptStamp(p), func() (*engine.Transcript, error) {
+		s.oldCorrections(p)
+		return p.Transcript()
+	})
+}
+
+// transcriptStamp is how the files a transcript is read from are now, the
+// size and the time of each, so what is kept of one is read again only
+// once they changed.
+func transcriptStamp(p *engine.Project) string {
 	stamp := ""
 	for _, file := range engine.TranscriptFiles(p.LogsDir()) {
 		info, err := p.Files.Stat(file)
@@ -52,10 +62,7 @@ func (s *FrameFairy) transcript(p *engine.Project) (*engine.Transcript, error) {
 		}
 		stamp += fmt.Sprintf("|%d,%d", info.Size(), info.ModTime().UnixNano())
 	}
-	return s.said.get(p.Source, stamp, func() (*engine.Transcript, error) {
-		s.oldCorrections(p)
-		return p.Transcript()
-	})
+	return stamp
 }
 
 // oldCorrections says once, at info, that a video still has the

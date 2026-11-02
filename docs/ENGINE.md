@@ -1601,8 +1601,9 @@ instead, `-1` is no limit and `0` is no thinking. How many clips a search
 looks for follows the window too, one for every twelve clip lengths
 of a half hour and in proportion to the square root of other windows,
 unless `--count` says. Both are in `engine/suggest.go`, with
-their cases in `frontend/src/lib/suggest.cases.json`, which the workspace
-is tested against too.
+their cases in `engine/testdata/suggest-cases.json`. The app sends what
+they come to for the video's window, with the window's limits, see
+`Project.Limits` in `engine/limits.go`.
 
 A run reports how fast the model read and wrote, for instance
 `read 38,210 tok at 850 tok/s`. Loading a 14 GB model takes a while, so when

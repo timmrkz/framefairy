@@ -15,8 +15,8 @@ import (
 	"framefairy/engine/runlog"
 )
 
-// suggestCases are the cases the engine and the workspace are both held
-// to, in frontend/src/lib/suggest.cases.json, so the two never drift apart.
+// suggestCases are the cases of what a search asks for when nobody has
+// said, in testdata/suggest-cases.json.
 type suggestCases struct {
 	Windows []struct {
 		Duration float64 `json:"duration"`
@@ -37,7 +37,7 @@ type suggestCases struct {
 // On the real disk: what is read is the repository's testdata.
 func readSuggestCases(t *testing.T) suggestCases {
 	t.Helper()
-	data, err := os.ReadFile("../frontend/src/lib/suggest.cases.json")
+	data, err := os.ReadFile("testdata/suggest-cases.json")
 	if err != nil {
 		t.Fatal(err)
 	}

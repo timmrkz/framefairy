@@ -211,11 +211,10 @@ other side relies on, and the pull request says so.
 Code that breaks this map today, with the issue that fixes it. A session
 copies what it finds nearby, so these are not the pattern for new code.
 
-- Rules of the engine in `frontend/src/lib/flow.ts`,
-  `frontend/src/lib/rotate.ts` and `frontend/src/lib/room.ts`, and the
-  three held to Go by a shared case file, `frontend/src/lib/glide.ts`,
-  `frontend/src/lib/flow.ts`'s frames and `frontend/src/lib/suggest.ts`,
-  #610.
+- Rules of the engine in `frontend/src/lib/flow.ts` and
+  `frontend/src/lib/rotate.ts`, and the two held to Go by a shared case
+  file, `frontend/src/lib/glide.ts` and `frontend/src/lib/flow.ts`'s
+  frames, #610.
 - The transcript cache in `cmd/framefairy-app/words.go`, #608.
 - What the engine learns kept in package variables rather than on
   `engine.Machine`, like the probes in `engine/probed.go`, and the app's
@@ -230,8 +229,8 @@ copies what it finds nearby, so these are not the pattern for new code.
   record
   [2026-10-30-a-videos-state-in-one-session.md](decisions/2026-10-30-a-videos-state-in-one-session.md).
 - What the interface decides about a video's work and its workspace:
-  the moves of `EpisodeSession`, the window it fits with `frontend/src/lib/room.ts` and writes back,
-  how a search ended, which failures are told, #606. Go decides each of
+  the moves of `EpisodeSession`, how a search ended, which failures are
+  told, #606. Go decides each of
   them and sends it, see
   [2026-11-01-every-rule-of-the-workspace-in-go.md](decisions/2026-11-01-every-rule-of-the-workspace-in-go.md).
 

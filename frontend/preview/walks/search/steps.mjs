@@ -1885,7 +1885,7 @@ export const steps = {
       return;
     }
     await settle(page);
-    const kept = await ask(page, "ChosenWindow", path);
+    const kept = (await ask(page, "State", path))?.window;
     const drawn = await page.evaluate(() => {
       const n = (sel) => Number(document.querySelector(`.aim .tip.top.${sel}`)?.getAttribute("aria-valuenow"));
       return { from: n("from"), to: n("to") };

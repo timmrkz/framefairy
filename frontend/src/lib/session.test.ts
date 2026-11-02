@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 
-import type { ClipEntry, EpisodeStatus, Job, VideoState } from "./api";
+import type { ClipEntry, EpisodeStatus, Job, VideoState, WindowView } from "./api";
 import { said } from "./said";
 import { EpisodeSession, type WorkMoves } from "./session.svelte";
 import { JobStore } from "./state.svelte";
@@ -411,6 +411,23 @@ describe("a video's state in its session", () => {
     await picked;
     expect(here.chosen).toBe("p/c");
     expect(heard).toEqual(["chose p/a none", "chose p/c p/b"]);
+  });
+
+  test("draws the window its state carries, and keeps a hand's place on screen until its answer", async () => {
+    const { session: here } = session();
+    const win = (from: number, to: number) => ({ from, to, length: to - from, most: 1800, least: 60 }) as WindowView;
+    here.take(state(5, { window: win(0, 600) }));
+    expect([here.window?.from, here.window?.to]).toEqual([0, 600]);
+    let answer: (s: VideoState) => void = () => {};
+    const placed = here.place({ from: 600, to: 1200, length: 600 }, () => new Promise((r) => (answer = r)));
+    expect([here.window?.from, here.window?.to]).toEqual([600, 1200]);
+    // Read before the Go side had the window moved.
+    here.take(state(6, { window: win(0, 600) }));
+    expect([here.window?.from, here.window?.to]).toEqual([600, 1200]);
+    // The Go side fitted it as it kept it.
+    answer(state(7, { window: win(600, 1100) }));
+    await placed;
+    expect([here.window?.from, here.window?.to, here.window?.least]).toEqual([600, 1100, 60]);
   });
 
   test("hears the states of its own video while it is open", () => {

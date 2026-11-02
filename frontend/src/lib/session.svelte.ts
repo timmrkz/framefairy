@@ -4,7 +4,7 @@
 // no effect in the workspace has to keep a value from before and compare
 // it with the next. See
 // docs/decisions/2026-10-30-a-videos-state-in-one-session.md.
-import type { ClipEntry, CoverageView, EpisodeStatus, Job, VideoState } from "./api";
+import type { ClipEntry, CoverageView, EpisodeStatus, Job, KeptWindow, VideoState, WindowView } from "./api";
 import { live } from "./flow";
 import type { JobStore } from "./state.svelte";
 import { unchanged } from "./unchanged";
@@ -56,18 +56,13 @@ export class EpisodeSession {
   // The failures said, so the answer to a call that comes after its news
   // says nothing again.
   private told = new Set<string>();
-  // The clip chosen, by a hand or by the app, from the newest state kept,
-  // or a hand's pick while the Go side has not answered it. picking counts
-  // the picks not answered, and pickedAt is the rev of the newest answer,
-  // the state read after the pick: a state read before it may know
-  // nothing of the pick and would put back the clip chosen before it for
-  // a moment. The newest state that came while a pick was on its way, the
-  // answer among them, is kept, so what it chose is shown once the pick
-  // is answered.
+  // The clip chosen, by a hand or by the app, and the video's window, from
+  // the newest state kept, or what a hand did while the Go side has not
+  // answered it, see Hand.
   chosen = $state("");
-  private picking = 0;
-  private pickedAt = 0;
-  private whilePicking: VideoState | null = null;
+  window = $state<WindowView | null>(null);
+  private picks = new Hand();
+  private places = new Hand();
   private moves: WorkMoves = { failed() {}, chose() {}, heard() {}, searched() {}, transcribed() {}, rendered() {} };
 
   constructor(
@@ -115,6 +110,7 @@ export class EpisodeSession {
       this.written = Object.fromEntries(state.jobs.map((j) => [j.id, j.written ?? 0]));
       kept = true;
       this.choose(state);
+      this.frame(state);
     } else if (fresh) {
       // A newer state came first, and still the captions are read again.
       this.clips = this.clips.map((c) => ({ ...c }));
@@ -129,16 +125,19 @@ export class EpisodeSession {
   // The clip a state says is chosen, once no pick is on its way that the
   // state was read before.
   private choose(state: VideoState) {
-    if (this.picking > 0) {
-      if (!this.whilePicking || state.rev > this.whilePicking.rev) this.whilePicking = state;
-      return;
-    }
-    if (state.rev < this.pickedAt) return;
+    if (this.picks.holds(state)) return;
     const now = state.chosen ?? "";
     if (now === this.chosen) return;
     const before = this.chosen;
     this.chosen = now;
     this.moves.chose(now, before, state.chosenCard ?? "");
+  }
+
+  // The window a state says, once no move of a hand is on its way that the
+  // state was read before.
+  private frame(state: VideoState) {
+    if (this.places.holds(state)) return;
+    this.window = same(this.window, state.window ?? null);
   }
 
   // A clip chosen by a hand, shown at once while choose tells the Go side,
@@ -149,23 +148,23 @@ export class EpisodeSession {
   // answer is in.
   pick(key: string, choose: (key: string) => Promise<VideoState>): Promise<void> {
     this.chosen = key;
-    this.picking++;
-    return choose(key)
-      .then((state) => {
-        this.pickedAt = Math.max(this.pickedAt, state.rev);
-        this.take(state);
-      })
-      .catch(() => {
-        this.pickedAt = 0;
-      })
-      .finally(() => {
-        this.picking--;
-        const late = this.whilePicking;
-        if (this.picking === 0 && late) {
-          this.whilePicking = null;
-          this.choose(late);
-        }
-      });
+    return this.picks.ask(
+      () => choose(key),
+      (state) => this.take(state),
+      (late) => this.choose(late),
+    );
+  }
+
+  // The window as a hand put it, shown at once while place tells the Go
+  // side, which answers with the state of the video read after it, whose
+  // window it fitted to what a search can do with it.
+  place(w: KeptWindow, place: (w: KeptWindow) => Promise<VideoState>): Promise<void> {
+    if (this.window) this.window = { ...this.window, ...w };
+    return this.places.ask(
+      () => place(w),
+      (state) => this.take(state),
+      (late) => this.frame(late),
+    );
   }
 
   // How many clips the job had written in the newest state kept, which
@@ -256,4 +255,51 @@ export class EpisodeSession {
 // reads it runs again for a state that changed elsewhere.
 function same<T>(was: T, now: T): T {
   return was !== null && JSON.stringify(was) === JSON.stringify(now) ? was : now;
+}
+
+// What a hand did that the Go side has not answered yet: a pick, or a
+// window put somewhere. It is shown at once, and the Go side answers with
+// the state of the video read after it. A state read before that answer
+// may know nothing of what the hand did and would put back what was there
+// for a moment, so asking counts the calls not answered and at is the rev
+// of the newest answer. The newest state that came while one was on its
+// way, the answer among them, is kept, so what it says is shown once
+// every call is answered.
+class Hand {
+  private asking = 0;
+  private at = 0;
+  private late: VideoState | null = null;
+
+  // Whether what a state says is held back: kept for later while a call
+  // is on its way, or older than the newest answer.
+  holds(state: VideoState): boolean {
+    if (this.asking > 0) {
+      if (!this.late || state.rev > this.late.rev) this.late = state;
+      return true;
+    }
+    return state.rev < this.at;
+  }
+
+  // call is answered with a state, which take keeps. A call that is
+  // refused leaves what is shown to the next state. show is given the
+  // newest state that came meanwhile, once nothing is on its way.
+  ask(call: () => Promise<VideoState>, take: (state: VideoState) => void, show: (late: VideoState) => void): Promise<void> {
+    this.asking++;
+    return call()
+      .then((state) => {
+        this.at = Math.max(this.at, state.rev);
+        take(state);
+      })
+      .catch(() => {
+        this.at = 0;
+      })
+      .finally(() => {
+        this.asking--;
+        const late = this.late;
+        if (this.asking === 0 && late) {
+          this.late = null;
+          show(late);
+        }
+      });
+  }
 }

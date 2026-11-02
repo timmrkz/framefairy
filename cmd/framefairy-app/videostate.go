@@ -33,6 +33,9 @@ type VideoState struct {
 	Clips    []ClipEntry          `json:"clips"`
 	Coverage CoverageView         `json:"coverage"`
 	Jobs     []Job                `json:"jobs"`
+	// Window is the video's window, with its limits, see WindowView, or
+	// nil while the video cannot be read.
+	Window *WindowView `json:"window"`
 	// Chosen is the key of the clip chosen, by a hand or by the app, see
 	// choose.go, or nothing. It is read after the clips, and chosen from
 	// them and the jobs, so a clip the app chose comes with the state that
@@ -74,6 +77,9 @@ func (s *FrameFairy) State(ctx context.Context, path string) (VideoState, error)
 		}
 	}
 	st.Clips = s.clipsOf(plans, info)
+	if !st.Status.Missing {
+		st.Window = s.windowFor(ctx, path, st, info.Duration)
+	}
 	st.Chosen, st.ChosenCard = s.chosenFor(path, st)
 	return st, nil
 }

@@ -298,7 +298,7 @@ export default [
     name: "Cancel while a video just added is transcribed says Stopped with Continue, and the window's frame fades",
     steps: [
       ["speech", "hold"],
-      ["add, the window read late", 1503],
+      ["add, until its search shows", 1503],
       ["cancel fades"],
       ["speech", "go"],
       ["wait for", "Continue"],

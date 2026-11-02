@@ -551,7 +551,7 @@ func TestPathNewOnALaterWindowHearsOnlyWhatIsNew(t *testing.T) {
 // On the real disk: the search works beside a video ffmpeg made and reads.
 func TestPathATargetStaysWithItsWindow(t *testing.T) {
 	d := open(t)
-	if err := d.svc.SetSearch(3, 1800, 20, 30); err != nil {
+	if err := d.svc.setSearch(3, 1800, 20, 30); err != nil {
 		t.Fatal(err)
 	}
 	asked := func(ep string) int {
@@ -565,7 +565,7 @@ func TestPathATargetStaysWithItsWindow(t *testing.T) {
 	if n, want := asked(d.add("other", minutes5)), engine.SuggestedCount(300, 20, 30); n != want || n == 3 {
 		t.Errorf("five minutes asked for %d, want the %d they suggest", n, want)
 	}
-	if err := d.svc.SetSearch(3, 300, 20, 30); err != nil {
+	if err := d.svc.setSearch(3, 300, 20, 30); err != nil {
 		t.Fatal(err)
 	}
 	if n := asked(d.add("same", minutes5)); n != 3 {
@@ -595,7 +595,7 @@ func TestPathAVideoHasOneWindow(t *testing.T) {
 	if !ok {
 		t.Fatal("the video just added was not searched")
 	}
-	w := d.svc.ChosenWindow(ep)
+	w := keptWindow(d.svc, ep)
 	if w == nil || *w != (KeptWindow{From: 0, To: 600, Length: 600}) {
 		t.Fatalf("the video's window is %+v, want the first ten minutes", w)
 	}
@@ -615,7 +615,7 @@ func TestPathAVideoHasOneWindow(t *testing.T) {
 	if aside() {
 		t.Error("the search was set aside on its own window")
 	}
-	if err := d.svc.ChooseWindow(ep, 600, 1200, 600, true); err != nil {
+	if err := d.svc.chooseWindow(ep, 600, 1200, 600, true); err != nil {
 		t.Fatal(err)
 	}
 	if !aside() {
@@ -632,7 +632,7 @@ func TestPathAVideoHasOneWindow(t *testing.T) {
 	if o := d.outcome(ep); o != (outcome{}) {
 		t.Fatalf("carried on, the search says %+v", o)
 	}
-	if w := d.svc.ChosenWindow(ep); w == nil || *w != (KeptWindow{From: 600, To: 1200, Length: 600}) {
+	if w := keptWindow(d.svc, ep); w == nil || *w != (KeptWindow{From: 600, To: 1200, Length: 600}) {
 		t.Errorf("after the search found its clips the window is %+v, want the next ten minutes", w)
 	}
 }

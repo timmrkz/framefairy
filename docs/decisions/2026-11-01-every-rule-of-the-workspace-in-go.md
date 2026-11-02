@@ -428,3 +428,26 @@ ahead of the read that brings the clip, could not promise. The read
 of the plans is outside the lock, as the convergence asks, because the
 state is read before the record is taken. The layer, the lock and the
 file are as decided.
+
+Step 4 differs from the convergence in one place too. The reach is one
+number, not a reach at each point of the video: a window has one longest
+length wherever it is drawn, `Reach.Anywhere`, so the state carries the
+window with `most`, `least` and what a search of it may ask, see
+`engine.WindowLimits` in `engine/limits.go`, and the range picker holds a
+drag to the two numbers. The window is fitted as the state is read,
+`windowFor` in `cmd/framefairy-app/window.go`, and kept, unless a search
+runs on it or stands stopped on it. Measured first, as decided: a state
+of a four hour video took 55 ms on a cloud session, almost all of it
+weighing every line, read for every state. The lines are now weighed
+once for each transcript read, and kept with it.
+
+The state of a four hour video read in memory, in a Go benchmark on a
+cloud session with four cores, 200 reads a run, five runs each.
+
+| measured | before ms | after ms | change |
+| ---: | ---: | ---: | ---: |
+| one state | 0.020 | 0.244 | 1120 % slower, ± 40 % |
+
+The state is read about once a second while work runs, and once for
+each answer to a hand, so a quarter of a millisecond is far under a
+frame.

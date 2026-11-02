@@ -6,9 +6,8 @@ import "math"
 // many clips it looks for in it, and how long the local model may think.
 // All three follow the episode and the window, so a new episode shows its
 // first clips as soon as it can, and a window drawn by hand gets as many
-// clips and as much thought as its length is worth. The workspace works
-// the same out while a window is dragged, in frontend/src/lib/suggest.ts,
-// and both are held to the same table of cases in their tests.
+// clips and as much thought as its length is worth. The workspace shows
+// what they come to for its window, which the app sends it, see Limits.
 
 // The window grows with the episode, but more slowly: as the square root
 // of its length. An episode twice as long gets windows about 1.4 times as

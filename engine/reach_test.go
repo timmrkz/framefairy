@@ -8,7 +8,7 @@ import (
 
 // A line every four seconds, three seconds long, each weighing 100
 // characters, for as long as the transcript goes, the room the range
-// picker's tests in room.test.ts use.
+// picker's tests once used.
 func reachOf(chars int, heardTo, rate, duration float64) *Reach {
 	var lines []LineWeight
 	for at := 0.0; at+3 <= heardTo; at += 4 {

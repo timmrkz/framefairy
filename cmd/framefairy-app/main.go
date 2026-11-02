@@ -390,6 +390,9 @@ type FrameFairy struct {
 	// The transcripts of the episodes worked on last, each kept while the
 	// files it was read from stay as they were, see transcript.
 	said keptReads[*engine.Transcript]
+	// weighed are the lines of each transcript in said, weighed for what
+	// a search can read, see roomAndLines.
+	weighed keptReads[engine.RoomAndLines]
 	// toldOld is the videos whose old corrections.json was said to be
 	// left unread, so it is said once, see oldCorrections.
 	toldOld sync.Map
@@ -407,6 +410,9 @@ type FrameFairy struct {
 	// link is what became of the last framefairy:// link, waiting for
 	// the settings, see licence.go.
 	link *LicenceLink
+	// probes are the videos probed, sources unless a test hands in its
+	// own, see probe.
+	probes *probed
 	// clipboard stands in for the system's in tests, see copyText.
 	clipboard func(string) bool
 	// saveBox stands in for the system's save box in tests, see saveAs.
