@@ -884,23 +884,24 @@ headless Chromium in the cloud draws WebGPU on the processor, at about
 25 frames a second, so only a Mac's numbers say how the app plays.
 `VIEWPORT` and `SCALE` are as for `speed.mjs`.
 
-### `drag.mjs`: how the video preview follows a drag of the playhead
+### `speed.mjs` with `DRAG=1`: how the video preview follows a drag of the playhead
 
-`drag.mjs` is not a walk either, and is run by hand the same way, before
-and after a change to how frames follow the hand:
+With `DRAG=1`, `speed.mjs` times drags of the playhead instead of the
+keys, before and after a change to how frames follow the hand:
 
-    BRIDGE_URL=http://127.0.0.1:8123/ node frontend/preview/walks/drag.mjs
+    DRAG=1 BRIDGE_URL=http://127.0.0.1:8123/ node frontend/preview/walks/speed.mjs
 
-It adds the same video of a minute at 1920 by 1080, and drags the
-playhead over the clip timeline `ROUNDS` times, 3 unless set, slowly, a
-pixel every frame of the page, to the right and then to the left, and
-fast, 30 pixels, to the right and back. It prints the line
+It adds the same video and drags the playhead over the clip timeline
+`ROUNDS` times, slowly, `STEP` pixels every frame of the page, 1 unless
+set, to the right and then to the left, and fast, 30 pixels, to the
+right and back. `DRAGS`, as `left` or `right,fast`, picks some of them,
+and `RATE=50` makes the video 50 frames a second. It prints the line
 each drag ends with in the app's log, see `dragged` in
 `lib/frames/queue.ts`: how far behind the frame on screen was, how long
 the picture stood while the hand had moved on, against the 50 ms of
 [VIDEO-PREVIEW.md](VIDEO-PREVIEW.md), and how the frames came, kept, from
 a stream reading on or from a new one. Tim's slow drags stuttered where
-fast ones did not, #596. `VIEWPORT` and `SCALE` are as for `speed.mjs`.
+fast ones did not, #596.
 
 ### Finding why a walk failed
 

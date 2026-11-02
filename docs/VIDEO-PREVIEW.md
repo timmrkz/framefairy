@@ -524,7 +524,7 @@ in pull request #502. A click and a step never ask for a key frame first,
 so they take the path they took before.
 
 A slow drag to the left stood where one to the right kept up, issue
-#596. `drag.mjs` in the cloud, on its camera video of a minute at 1080p,
+#596. `speed.mjs` with `DRAG=1` in the cloud, on its camera video of a minute at 1080p,
 25 frames a second, decoded on the processor, three runs a side of a slow
 drag to the right, a slow drag to the left, a pixel every frame of the
 page, and a fast drag of 30 pixels to the right and back. Before is the
