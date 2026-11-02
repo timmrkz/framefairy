@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"math"
+	"os/exec"
+	"strings"
 	"testing"
 
 	"framefairy/engine/runlog"
@@ -146,6 +148,15 @@ func TestACutOffRecordingIsNotTakenAtItsGuessedLength(t *testing.T) {
 	ffmpegtest.Need(t)
 	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
 	path := timesEpisode(t, timesCase{name: "crashed_mpeg4_mkv", file: "crashed-mpeg4.mkv"})
+	// The file itself says nothing of its length, so ffprobe guesses.
+	// A file that says it is not one a crash left.
+	said, err := exec.Command("ffprobe", "-v", "verbose", path).CombinedOutput()
+	if err != nil {
+		t.Fatalf("ffprobe: %v %s", err, said)
+	}
+	if !strings.Contains(string(said), "Estimating duration from bitrate") {
+		t.Fatalf("%s says how long it is, so it is no recording cut off by a crash:\n%s", path, said)
+	}
 	info, err := e.Probe(context.Background(), path)
 	if err != nil {
 		t.Fatal(err)

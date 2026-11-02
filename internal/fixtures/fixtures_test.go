@@ -71,7 +71,7 @@ var recipes = map[string][]string{
 	"bars-intra.ts":          bars(barsFile{codecs: []string{"-c:v", "mpeg2video", "-q:v", "2", "-g", "1", "-c:a", "mp2"}}),
 	"bars-intra.mpg":         bars(barsFile{codecs: []string{"-c:v", "mpeg2video", "-q:v", "2", "-g", "1", "-c:a", "mp2"}}),
 	"bars-crashed.mkv":       bars(barsFile{gop: 60, cutOff: true}),
-	"bars-crashed-mpeg4.mkv": bars(barsFile{cutOff: true}),
+	"bars-crashed-mpeg4.mkv": bars(barsFile{cutOff: true, pcm: true}),
 
 	// The test picture alone, for the episode's decoder: 25 frames a
 	// second, a key frame every two seconds and two B-frames between the
@@ -273,14 +273,21 @@ const renderTimingTone = "between(t,1.20,1.50)+between(t,1.60,2.00)+between(t,2.
 // frames and drops -color_trc and the like.
 func colour(encoder, space, primaries, transfer, rng string) []string {
 	args := []string{"-f", "lavfi", "-i", "testsrc2=s=320x180:r=25:d=3", "-f", "lavfi", "-i", "sine=f=440:r=48000:d=3"}
-	if space != "" {
-		args = append(args, "-vf", "setparams=colorspace="+space+":color_primaries="+primaries+":color_trc="+transfer+":range="+rng)
-	}
+	// The picture is in the encoder's format before it is tagged, or the
+	// conversion to it would take the range back to video range.
+	format := "yuv420p"
 	if encoder == "libx265" {
-		args = append(args, "-c:v", "libx265", "-preset", "ultrafast", "-crf", "35", "-x265-params", "log-level=error",
-			"-pix_fmt", "yuv420p10le", "-tag:v", "hvc1")
+		format = "yuv420p10le"
+	}
+	vf := "format=" + format
+	if space != "" {
+		vf += ",setparams=colorspace=" + space + ":color_primaries=" + primaries + ":color_trc=" + transfer + ":range=" + rng
+	}
+	args = append(args, "-vf", vf)
+	if encoder == "libx265" {
+		args = append(args, "-c:v", "libx265", "-preset", "ultrafast", "-crf", "35", "-x265-params", "log-level=error", "-tag:v", "hvc1")
 	} else {
-		args = append(args, "-c:v", "libx264", "-preset", "ultrafast", "-crf", "35", "-pix_fmt", "yuv420p")
+		args = append(args, "-c:v", "libx264", "-preset", "ultrafast", "-crf", "35")
 	}
 	return append(args, "-c:a", "aac", "-shortest")
 }
@@ -296,9 +303,10 @@ type barsFile struct {
 	// How long it is, seven seconds when nought.
 	seconds int
 	// H.264 with two B-frames and a key frame every gop frames where it
-	// is not nought, with the sound in AAC. MPEG-4 Part 2 in GOPs of 30
-	// and PCM where it is.
+	// is not nought. MPEG-4 Part 2 in GOPs of 30 where it is.
 	gop int
+	// The sound in PCM rather than AAC, so every track says its bit rate.
+	pcm bool
 	// The picture's codec and the sound's, from "-c:v", where they are
 	// not the ones gop picks.
 	codecs []string
@@ -324,15 +332,23 @@ func bars(f barsFile) []string {
 	case len(f.codecs) > 0:
 		args = append(args, f.codecs...)
 	case f.gop > 0:
-		args = append(args, "-c:v", "libx264", "-bf", "2", "-g", strconv.Itoa(f.gop), "-sc_threshold", "0", "-pix_fmt", "yuv420p", "-c:a", "aac")
+		args = append(args, "-c:v", "libx264", "-bf", "2", "-g", strconv.Itoa(f.gop), "-sc_threshold", "0", "-pix_fmt", "yuv420p")
 	default:
-		args = append(args, "-c:v", "mpeg4", "-q:v", "2", "-g", "30", "-c:a", "pcm_s16le")
+		args = append(args, "-c:v", "mpeg4", "-q:v", "2", "-g", "30")
 	}
-	args = append(args, "-t", seconds)
+	if len(f.codecs) == 0 {
+		sound := "aac"
+		if f.pcm {
+			sound = "pcm_s16le"
+		}
+		args = append(args, "-c:a", sound)
+	}
+	// Into a pipe the muxer is told no length: the inputs end by
+	// themselves, and -t would say how long the file is up front.
 	if f.cutOff {
-		args = append(args, "-map_metadata", "-1", "-f", "matroska", "pipe:1")
+		return append(args, "-map_metadata", "-1", "-f", "matroska", "pipe:1")
 	}
-	return args
+	return append(args, "-t", seconds)
 }
 
 // makeFixture has ffmpeg make the fixture at path by its recipe.
@@ -380,46 +396,67 @@ func recipeSum(name string) string {
 	return hex.EncodeToString(sum[:8])
 }
 
-// recipeSums is the line of recipes.sum each recipe should have.
-func recipeSums() string {
-	var lines []string
-	for name := range recipes {
-		lines = append(lines, name+" "+recipeSum(name))
+// fileSum is the sum of the bytes of the fixture at path.
+//
+// On the real disk: the fixture is a file in testdata.
+func fileSum(t *testing.T, path string) string {
+	t.Helper()
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
 	}
-	slices.Sort(lines)
-	return strings.Join(lines, "\n") + "\n"
+	sum := sha256.Sum256(body)
+	return hex.EncodeToString(sum[:8])
 }
 
-// madeBy reads recipes.sum: the sum of the recipe each fixture was made
-// by.
+// record is a line of recipes.sum: the sum of the recipe a fixture was
+// made by, and the sum of the file it made, so a fixture changed in place
+// shows.
+type record struct{ recipe, file string }
+
+// madeBy reads recipes.sum.
 //
 // On the real disk: recipes.sum is committed beside the fixtures.
-func madeBy(t *testing.T) map[string]string {
+func madeBy(t *testing.T) map[string]record {
 	t.Helper()
 	body, err := os.ReadFile(filepath.Join(Dir(), sums))
 	if err != nil && !os.IsNotExist(err) {
 		t.Fatal(err)
 	}
-	out := map[string]string{}
+	out := map[string]record{}
 	for line := range strings.Lines(string(body)) {
-		if name, sum, ok := strings.Cut(strings.TrimSpace(line), " "); ok {
-			out[name] = sum
+		if f := strings.Fields(line); len(f) == 3 {
+			out[f[0]] = record{f[1], f[2]}
 		}
 	}
 	return out
 }
 
+// write writes recipes.sum: each fixture's recipe and the file it is now.
+//
+// On the real disk: recipes.sum is committed beside the fixtures.
+func write(t *testing.T) {
+	t.Helper()
+	var lines []string
+	for name := range recipes {
+		lines = append(lines, name+" "+recipeSum(name)+" "+fileSum(t, filepath.Join(Dir(), name)))
+	}
+	slices.Sort(lines)
+	if err := os.WriteFile(filepath.Join(Dir(), sums), []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// With -update, a fixture is made when it is missing, when its recipe
+// changed, or when a fixture it is made from was made again, so a copy
+// never keeps the bytes of a file that is gone.
+//
 // On the real disk: the fixtures are files in testdata, and with -update
 // ffmpeg writes them there.
 func TestEveryFixtureIsMadeByItsRecipe(t *testing.T) {
-	want := map[string]string{}
-	for line := range strings.Lines(recipeSums()) {
-		name, sum, _ := strings.Cut(strings.TrimSpace(line), " ")
-		want[name] = sum
-	}
 	if *update {
 		had := madeBy(t)
-		done := map[string]bool{}
+		done, remade := map[string]bool{}, map[string]bool{}
 		var ensure func(name string)
 		ensure = func(name string) {
 			if done[name] {
@@ -427,27 +464,28 @@ func TestEveryFixtureIsMadeByItsRecipe(t *testing.T) {
 			}
 			done[name] = true
 			args := slices.Clone(recipes[name])
+			fresh := false
 			for i, arg := range args {
 				if from, ok := made(arg); ok {
 					ensure(from)
+					fresh = fresh || remade[from]
 					args[i] = filepath.Join(Dir(), from)
 				}
 			}
 			path := filepath.Join(Dir(), name)
-			if _, err := os.Stat(path); err == nil && had[name] == want[name] {
+			if _, err := os.Stat(path); err == nil && had[name].recipe == recipeSum(name) && !fresh {
 				return
 			}
 			if err := makeFixture(args, path); err != nil {
 				t.Fatalf("making %s: %s", name, err)
 			}
+			remade[name] = true
 			t.Logf("made %s", name)
 		}
 		for name := range recipes {
 			ensure(name)
 		}
-		if err := os.WriteFile(filepath.Join(Dir(), sums), []byte(recipeSums()), 0o644); err != nil {
-			t.Fatal(err)
-		}
+		write(t)
 	}
 	entries, err := os.ReadDir(Dir())
 	if err != nil {
@@ -466,14 +504,18 @@ func TestEveryFixtureIsMadeByItsRecipe(t *testing.T) {
 	slices.Sort(wanted)
 	if !slices.Equal(there, wanted) {
 		t.Errorf("testdata holds %v, the recipes make %v. go test ./internal/fixtures -update makes them again", there, wanted)
+		return
 	}
 	had := madeBy(t)
 	for _, name := range wanted {
-		if had[name] != want[name] {
+		switch {
+		case had[name].recipe != recipeSum(name):
 			t.Errorf("%s was not made by its recipe as it is now. go test ./internal/fixtures -update makes it again", name)
+		case had[name].file != fileSum(t, filepath.Join(Dir(), name)):
+			t.Errorf("%s is not the file its recipe made. A test that changes a fixture works on a copy, see Copy", name)
 		}
 	}
-	if len(had) != len(want) {
-		t.Errorf("%s names %d fixtures, the recipes make %d", sums, len(had), len(want))
+	if len(had) != len(wanted) {
+		t.Errorf("%s names %d fixtures, the recipes make %d", sums, len(had), len(wanted))
 	}
 }

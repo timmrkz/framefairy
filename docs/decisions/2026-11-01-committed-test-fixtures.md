@@ -183,9 +183,11 @@ an issue of its own.
 
 ## What follows
 
-- Costs: the repository grows by the fixtures, about 4 MB for the
-  engine's shared test video, and each change to one is a new copy in
-  Git's history. A fixture is made small before it is committed.
+- Costs: the repository grows by the fixtures, and each change to one
+  is a new copy in Git's history. With every engine test on them, 78
+  files take 24 MB on the disk, and what a clone of main fetches grows
+  from 7.2 to 14.2 MB, measured with `git pack-objects` on 2 November
+  2026. A fixture is made small before it is committed.
 - Buys: no ffmpeg run to make an input, so no input made on CI's
   graphics chip, and the time it took. The tests read the same bytes on
   every machine, so a failure is about the code, not about the ffmpeg

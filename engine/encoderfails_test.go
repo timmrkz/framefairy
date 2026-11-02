@@ -419,8 +419,8 @@ func TestAnFFmpegEndedByASignalSaysSo(t *testing.T) {
 
 // encoderFailure is what both tests of a failing encoder start from: an
 // engine whose ffmpeg can encode on the processor, whether it has the
-// Mac's media engine, a folder of the test's own and an episode of three
-// seconds, made once for both.
+// Mac's media engine, a folder of the test's own and the 15 s test
+// episode, which both only read.
 //
 // On the real disk: ffprobe and the stand-in read the episode.
 func encoderFailure(t *testing.T) (e *Engine, onMac bool, dir, source string, info SourceInfo) {

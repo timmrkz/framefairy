@@ -108,10 +108,7 @@ var timesCases = []timesCase{
 	// MPEG-TS, which OBS also records and camcorders write, has no index
 	// of its key frames, so a seek lands between two. A key frame every
 	// two seconds puts every jump of the test inside a GOP.
-	// Its rate is not checked: the Mac's encoder stamped its frames
-	// unevenly in MPEG-TS when the tests made the file there, and the
-	// probe then made it 30.
-	{name: "mpegts", file: "ts.ts", h264: true},
+	{name: "mpegts", file: "ts.ts", rate: "30000/1001", h264: true},
 	// What OBS records in MPEG-TS with its key frame every 250 frames,
 	// more than eight seconds, and frames left out under load, so most
 	// stretches Probe reads hold no key frame.
@@ -136,8 +133,7 @@ var timesCases = []timesCase{
 	{name: "mpegps_intra", file: "intra.mpg", rate: "30000/1001"},
 	// What OBS leaves of a Matroska recording when it crashes: no
 	// duration and no index of its key frames, plan row 2.203.
-	// Its rate is not checked, like mpegts'.
-	{name: "crashed_mkv", file: "crashed.mkv", h264: true},
+	{name: "crashed_mkv", file: "crashed.mkv", rate: "30000/1001", h264: true},
 }
 
 // timesEpisode is the episode of a case: its frames carry their numbers
