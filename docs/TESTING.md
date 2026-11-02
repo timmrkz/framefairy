@@ -74,7 +74,13 @@ Until every part of the app has moved to WebKit, #380,
 random walks walk there too. A part moves in a pull request of its own,
 which fixes what WebKit finds in it, so each stays a size to review. A walk
 that only passes in Chromium is a walk to fix, not a part to keep there:
-the app on a Mac is WebKit.
+the app on a Mac is WebKit. What WebKit finds is fixed where its cause
+is. A walk that reads what the two engines write differently, like the
+name of a font in quotes or without, is fixed in the walk. What a person
+on a Mac would see too, like a hover WebKit works out only when the
+pointer moves, is fixed in the app. What only WebKit's Linux port does,
+like playing sound through GStreamer with no speakers, is fixed in how
+the walk is set up, never in the app.
 
 ## The bridge
 
