@@ -16,8 +16,9 @@ export interface WorkMoves {
   // asked for here. Each is said once, issue #450. One seen failed only
   // as the app opened said why already, the time it failed.
   failed(job: Job): void;
-  // The search wrote another clip to the plan while it runs.
-  wrote(search: Job): void;
+  // The app chose another clip, see cmd/framefairy-app/choose.go, in
+  // place of before, the clip chosen until then.
+  chose(key: string, before: string): void;
   // The search has stopped hearing the video: it went on to find clips,
   // or it ended while it heard.
   heard(search: Job): void;
@@ -25,9 +26,6 @@ export interface WorkMoves {
   searched(search: Job): void;
   // Transcribe whole video, from the video's menu, is over.
   transcribed(job: Job): void;
-  // A clip made by hand that was asked for here is over, however it
-  // ended.
-  made(clip: Job): void;
   // A render that was asked for here is over.
   rendered(render: Job): void;
 }
@@ -56,7 +54,18 @@ export class EpisodeSession {
   // The failures said, so the answer to a call that comes after its news
   // says nothing again.
   private told = new Set<string>();
-  private moves: WorkMoves = { failed() {}, wrote() {}, heard() {}, searched() {}, transcribed() {}, made() {}, rendered() {} };
+  // The clip chosen, by a hand or by the app, from the newest state kept,
+  // or a hand's pick while the Go side has not answered it. picking counts
+  // the picks not answered, and pickedAt is the rev of the newest answer:
+  // a state read before it knows nothing of the pick and would put back
+  // the clip chosen before it for a moment. The newest state that came
+  // while a pick was on its way is kept, so what it chose is shown once
+  // the pick is answered, when it was read after it.
+  chosen = $state("");
+  private picking = 0;
+  private pickedAt = 0;
+  private whilePicking: VideoState | null = null;
+  private moves: WorkMoves = { failed() {}, chose() {}, heard() {}, searched() {}, transcribed() {}, rendered() {} };
 
   constructor(
     readonly path: string,
@@ -102,6 +111,7 @@ export class EpisodeSession {
       this.coverage = same(this.coverage, state.coverage);
       this.written = Object.fromEntries(state.jobs.map((j) => [j.id, j.written ?? 0]));
       kept = true;
+      this.choose(state);
     } else if (fresh) {
       // A newer state came first, and still the captions are read again.
       this.clips = this.clips.map((c) => ({ ...c }));
@@ -111,6 +121,45 @@ export class EpisodeSession {
       if (!had || (job.seq ?? 0) > (had.seq ?? 0)) this.store.apply(job);
     }
     return kept;
+  }
+
+  // The clip a state says is chosen, once no pick is on its way that the
+  // state was read before.
+  private choose(state: VideoState) {
+    if (this.picking > 0) {
+      if (!this.whilePicking || state.rev > this.whilePicking.rev) this.whilePicking = state;
+      return;
+    }
+    if (state.rev <= this.pickedAt) return;
+    const now = state.chosen ?? "";
+    if (now === this.chosen) return;
+    const before = this.chosen;
+    this.chosen = now;
+    this.moves.chose(now, before);
+  }
+
+  // A clip chosen by a hand, shown at once while choose tells the Go side,
+  // which answers with the rev the pick was kept at. A pick that is
+  // refused leaves the clip chosen to the next state. What it returns is
+  // done once the answer is in.
+  pick(key: string, choose: (key: string) => Promise<number>): Promise<void> {
+    this.chosen = key;
+    this.picking++;
+    return choose(key)
+      .then((rev) => {
+        this.pickedAt = Math.max(this.pickedAt, rev ?? 0);
+      })
+      .catch(() => {
+        this.pickedAt = 0;
+      })
+      .finally(() => {
+        this.picking--;
+        const late = this.whilePicking;
+        if (this.picking === 0 && late) {
+          this.whilePicking = null;
+          this.choose(late);
+        }
+      });
   }
 
   // How many clips the job had written in the newest state kept, which
@@ -175,7 +224,6 @@ export class EpisodeSession {
     if (was && after.state === "failed") this.fail(after);
     switch (after.kind) {
       case "search":
-        if (now && (after.written ?? 0) > 0 && after.written !== (before?.written ?? 0)) this.moves.wrote(after);
         if (was && before?.step === "hearing" && !(now && after.step === "hearing")) this.moves.heard(after);
         if (was && !now) this.moves.searched(after);
         break;
@@ -194,8 +242,7 @@ export class EpisodeSession {
   }
 
   private over(job: Job) {
-    if (job.kind === "clip") this.moves.made(job);
-    else if (job.kind === "render") this.moves.rendered(job);
+    if (job.kind === "render") this.moves.rendered(job);
   }
 }
 

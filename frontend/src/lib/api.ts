@@ -444,6 +444,8 @@ export interface VideoState {
   clips: ClipEntry[];
   coverage: CoverageView;
   jobs: Job[];
+  // The key of the clip chosen, by a hand or by the Go side, or nothing.
+  chosen?: string;
 }
 
 export interface EngineEvent {
@@ -776,11 +778,15 @@ export const api = {
   chrome: (window: ChromeWindow) => call<Chrome>("Chrome", window),
   // The clip of an episode that was last worked on, so opening it again
   // opens on the same one. It is the clip's key, or an empty string.
-  chosenClip: (path: string) => call<string>("ChosenClip", path),
   // The episodes opened last, newest first, at most n.
   opened: (n: number) => call<string[]>("Opened", n),
   openEpisode: (path: string) => call<void>("OpenEpisode", path),
-  chooseClip: (path: string, key: string) => call<void>("ChooseClip", path, key),
+  // A clip chosen by a hand, answered with the rev it was kept at, see
+  // EpisodeSession.pick. Every other clip chosen the Go side chooses.
+  chooseClip: (path: string, key: string) => call<number>("ChooseClip", path, key),
+  // Whether the video plays: the Go side chooses a search's clips only
+  // while it is paused.
+  playing: (path: string, playing: boolean) => call<void>("Playing", path, playing),
   // The window of a video, which the Go side owns: as it was left, after
   // a restart too, and where there is none, the one the app places. Every
   // search starts on it, and one that found its clips moves it on. length

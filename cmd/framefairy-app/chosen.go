@@ -54,10 +54,6 @@ func (w KeptWindow) ok() bool {
 	return w.To > w.From && w.Length >= w.To-w.From-0.001
 }
 
-// chosenMu keeps two changes to the same file from crossing, a clip chosen
-// while the window is let go, each reading the file and writing it back.
-var chosenMu sync.Mutex
-
 func readChosen(files afero.Fs, path string) chosen {
 	var held chosen
 	file, err := fileio.SafeChildIn(files, engine.WorkDir(path), chosenFile)
@@ -77,13 +73,9 @@ func readChosen(files afero.Fs, path string) chosen {
 	return held
 }
 
-// changeChosen reads the file, changes it and writes it back whole, through
-// a file of its own, so it is never found half written.
-func changeChosen(files afero.Fs, path string, change func(*chosen)) error {
-	chosenMu.Lock()
-	defer chosenMu.Unlock()
-	held := readChosen(files, path)
-	change(&held)
+// writeChosen writes the file whole, through a file of its own, so it is
+// never found half written.
+func writeChosen(files afero.Fs, path string, held chosen) error {
 	dir := engine.WorkDir(path)
 	if err := files.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -99,33 +91,126 @@ func changeChosen(files afero.Fs, path string, change func(*chosen)) error {
 	return fileio.WriteAtomic(files, file, body)
 }
 
-// ChooseClip remembers which clip of an episode is being worked on, so
-// opening the episode again opens on the same one. An empty key forgets it.
+// picked is what is chosen in a video while the app runs: the clip worked
+// on and the window, kept in memory beside the video's undo steps, see
+// history, and written through to chosen.json, which is read only the
+// first time, so the app opens on them again after a restart. A state of
+// the video reads them here, never from the file. Its lock is its own,
+// held only to read or change what is kept, never for a read of the disk
+// and never for an edit, which holds the history's lock for as long as it
+// writes the plans. The file is written after the lock is let go, the
+// newest version only, so what is on the disk is never older than what
+// was written before it.
+type picked struct {
+	mu      sync.Mutex
+	loaded  bool
+	kept    chosen
+	version uint64
+	// writing is held while the file is written, and written the version
+	// last written.
+	writing sync.Mutex
+	written uint64
+	// What the app chooses a clip by, see choose.go: whether the video
+	// plays, the search it follows, the clip each removal chose instead of
+	// the one it removed, whether a state was read yet and the rev of the
+	// newest state it chose from.
+	playing bool
+	search  *followed
+	instead map[string]string
+	opened  bool
+	decided uint64
+}
+
+// chosenIn is what is chosen in the video at path, see picked.
+func (s *FrameFairy) chosenIn(path string) *picked {
+	return &s.historyOf(path).picked
+}
+
+// get gives back what is kept, read from the file the first time.
+func (p *picked) get(files afero.Fs, path string) chosen {
+	p.load(files, path)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	held := p.kept
+	if held.Window != nil {
+		w := *held.Window
+		held.Window = &w
+	}
+	return held
+}
+
+// load reads the file once, before the lock is taken.
+func (p *picked) load(files afero.Fs, path string) {
+	p.mu.Lock()
+	loaded := p.loaded
+	p.mu.Unlock()
+	if loaded {
+		return
+	}
+	held := readChosen(files, path)
+	p.mu.Lock()
+	if !p.loaded {
+		p.kept, p.loaded = held, true
+	}
+	p.mu.Unlock()
+}
+
+// change changes what is kept, when change says it changed it, and writes
+// it through. It says whether it changed.
+func (p *picked) change(files afero.Fs, path string, change func(*chosen) bool) (bool, error) {
+	return p.with(files, path, func(p *picked) bool { return change(&p.kept) })
+}
+
+// with runs change with the lock held, on everything picked keeps, and
+// writes what is kept through when change says it changed it.
+func (p *picked) with(files afero.Fs, path string, change func(*picked) bool) (bool, error) {
+	p.load(files, path)
+	p.mu.Lock()
+	if !change(p) {
+		p.mu.Unlock()
+		return false, nil
+	}
+	p.version++
+	held, version := p.kept, p.version
+	p.mu.Unlock()
+	p.writing.Lock()
+	defer p.writing.Unlock()
+	if version <= p.written {
+		return true, nil
+	}
+	p.written = version
+	return true, writeChosen(files, path, held)
+}
+
+// ChooseClip remembers which clip of a video a hand chose, so the state
+// of the video says it and opening it again opens on the same one. An
+// empty key chooses none. Every clip the app chooses by itself it chooses
+// in choose.go, so a clip chosen here is always a hand's. It answers with
+// a number from the clock of the states: a state read before the pick
+// has a smaller rev, so the workspace keeps the pick on screen until a
+// state past it comes, see EpisodeSession.pick.
 //
 // The key names a clip set and a clip inside it. It arrives from the
 // interface, so it is never joined onto a path and never used to reach a
 // file: it is written down as it is and only ever compared with the keys
 // the app works out for itself. Anything longer than a key could be, or
 // carrying anything a key never carries, is refused rather than stored.
-func (s *FrameFairy) ChooseClip(path, key string) error {
+func (s *FrameFairy) ChooseClip(path, key string) (uint64, error) {
 	if !s.store.Known(path) {
-		return errNotInLibrary
+		return 0, errNotInLibrary
 	}
 	if !looksLikeClipKey(key) {
-		return errors.New("that is not the key of a clip")
+		return 0, errors.New("that is not the key of a clip")
 	}
-	return changeChosen(s.store.files, path, func(c *chosen) { c.Clip = key })
-}
-
-// ChosenClip gives back the clip an episode was last worked on, or an empty
-// string where there is none or where what is written down is not a key.
-// The interface checks it against the clips it has either way: a clip set
-// that has been searched again no longer holds it.
-func (s *FrameFairy) ChosenClip(path string) string {
-	if !s.store.Known(path) {
-		return ""
+	if _, err := s.chosenIn(path).change(s.store.files, path, func(c *chosen) bool {
+		c.Clip = key
+		return true
+	}); err != nil {
+		return 0, err
 	}
-	return readChosen(s.store.files, path).Clip
+	rev := s.stamp()
+	s.told(path)
+	return rev, nil
 }
 
 // ChooseWindow remembers the window on an episode's range picker as it was
@@ -144,10 +229,11 @@ func (s *FrameFairy) ChooseWindow(path string, from, to, length float64, byHand 
 	h := s.historyOf(path)
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	windowMu.Lock()
-	defer windowMu.Unlock()
-	was := readChosen(s.store.files, path).Window
-	if err := changeChosen(s.store.files, path, func(c *chosen) { c.Window = &w }); err != nil {
+	var was *KeptWindow
+	if _, err := h.picked.change(s.store.files, path, func(c *chosen) bool {
+		was, c.Window = c.Window, &w
+		return true
+	}); err != nil {
 		return err
 	}
 	if byHand && (was == nil || *was != w) {
@@ -203,7 +289,11 @@ func (s *FrameFairy) OpenEpisode(path string) error {
 		return errNotInLibrary
 	}
 	now := time.Now().UnixMilli()
-	return changeChosen(s.store.files, path, func(c *chosen) { c.Opened = max(now, c.Opened) })
+	_, err := s.chosenIn(path).change(s.store.files, path, func(c *chosen) bool {
+		c.Opened = max(now, c.Opened)
+		return true
+	})
+	return err
 }
 
 // Opened lists the episodes of the library opened last, newest first, at
@@ -235,7 +325,7 @@ func (s *FrameFairy) Opened(n int) []string {
 		if err != nil || !info.Mode().IsRegular() {
 			continue
 		}
-		if at := readChosen(s.store.files, ep).Opened; at > 0 {
+		if at := s.chosenIn(ep).get(s.store.files, ep).Opened; at > 0 {
 			all = append(all, seen{ep, true, at})
 		} else {
 			all = append(all, seen{ep, false, info.ModTime().UnixMilli()})

@@ -170,7 +170,10 @@
   // held to the longest window that can be drawn anywhere on the episode,
   // so whatever they ask for fits wherever the window is.
   let roomView = $state<RoomView | null>(null);
-  let selected = $state("");
+  // The clip chosen, by a hand or by the app, which the Go side decides
+  // and sends in the video's state, see choose.go. A hand's pick shows at
+  // once, see EpisodeSession.pick.
+  const selected = $derived(session.chosen);
   // How many times a clip was chosen, so choosing the clip that already
   // was chosen still takes the sentences of what was said to it.
   let chosenTimes = $state(0);
@@ -183,18 +186,6 @@
     if (on) hovered = key;
     else if (hovered === key) hovered = "";
   }
-  // What the clip list held and which clip was picked when a search began.
-  // A search writes each clip to the plan as it is found, so the first one
-  // it finds is put on screen the moment it lands, long before the search
-  // is over. Only if nobody picked another clip meanwhile: a clip taken
-  // away from under the hand that is working on it is worse than one shown
-  // a little later. What the list held is state, because the rows still to
-  // come are counted from it.
-  let listedBefore = $state<Set<string> | null>(null);
-  let pickedBefore = "";
-  // The clip the search chose by itself, see showFirstFound.
-  let chosenByFind = "";
-  let shownFirst = false;
   let player = $state<Player>();
   let timeline = $state<ClipTimeline>();
   // The column the video preview and the range picker stand in, which a
@@ -240,6 +231,12 @@
     if (now) untrack(() => toasts.say(where(), gone, { video: path }));
   });
   let paused = $state(true);
+  // The Go side chooses a search's clips only while the video is paused,
+  // so it is told each time it starts and stops, see choose.go.
+  $effect(() => {
+    const playing = !paused;
+    untrack(() => api.playing(path, playing).catch(() => {}));
+  });
   let looping = $state(false);
   // Whether the playhead is on the chosen clip or on the video, which the
   // video preview keeps, see lib/playhead.ts. On the video the clip is
@@ -588,10 +585,7 @@
       sayOn = null;
       if (!from || !on || time < on[0] - 0.05 || time >= on[1]) return;
       said(`search what was said: let go of, back to ${from.at.toFixed(2)}${from.clip ? ` in ${from.clip}` : ""}`);
-      if (from.clip !== selected) {
-        if (from.clip) void select(from.clip, false, false);
-        else selected = "";
-      }
+      if (from.clip !== selected) void select(from.clip, false, false);
       seekTo(from.at);
     });
   });
@@ -1292,20 +1286,6 @@
     api.chooseWindow(path, from, to, Math.max(length, to - from), byHand).catch(() => {});
   }
 
-  // The clip the workspace opens on: the one this episode was last worked
-  // on if it is still there, otherwise the first one. An episode with clips
-  // in it and nothing chosen is a workspace with an empty captions column
-  // and an empty clip panel, waiting for a click that says nothing.
-  //
-  // The playhead follows the clip because that is what choosing a clip
-  // already does. Where the playhead stood a moment before the app was
-  // closed is not kept: no editor keeps it, and the start of the clip is a
-  // place that means something.
-  async function openOnAClip(key: string) {
-    if (selected || !clips.length) return;
-    const clip = clips.find((c) => c.key === key) ?? clips[0];
-    await select(clip.key);
-  }
 
 
   // One clip as an edit left it.
@@ -1339,23 +1319,25 @@
   // read first, one after another, with the video preview waiting.
   async function openEpisode() {
     try {
-      const [, picture, key] = await Promise.all([
+      const [, picture] = await Promise.all([
         refreshClips(),
         // A file that is missing has no picture to say.
         api.source(path).catch(() => null),
-        // An episode that cannot say has simply never been opened.
-        api.chosenClip(path).catch(() => ""),
       ]);
       tell(
-        `the Go side answered: ${status ? (status.missing ? "the file is missing" : "the file is there") : "no status"}, picture ${picture ? `${picture.width}x${picture.height} at ${picture.fps} a second, ${picture.duration.toFixed(3)} s` : "none"}, ${clips.length} clips, opens on ${key ? `the clip ${key}` : "no clip"}`,
+        `the Go side answered: ${status ? (status.missing ? "the file is missing" : "the file is there") : "no status"}, picture ${picture ? `${picture.width}x${picture.height} at ${picture.fps} a second, ${picture.duration.toFixed(3)} s` : "none"}, ${clips.length} clips, opens on ${selected ? `the clip ${selected}` : "no clip"}`,
       );
       if (!status) return;
       if (!status.missing) source = picture;
       keepRemovedTrue();
       // The video preview is drawn for the picture before the clip is
-      // chosen, so choosing it puts the playhead there.
+      // shown, so showing it puts the playhead there. The Go side opens a
+      // video on the clip chosen last, or else the first. Where the
+      // playhead stood a moment before the app was closed is not kept: no
+      // editor keeps it, and the start of the clip is a place that means
+      // something.
       await tick();
-      await openOnAClip(key);
+      if (selected) await show(selected);
     } catch (err) {
       oops(errorText(err));
     } finally {
@@ -1441,11 +1423,16 @@
   // sentences stay where they are rather than go to the clip's first.
   // step is the way the clip list was walked to it, see showChosen.
   async function select(key: string, seek = true, jump = true, step: 0 | 1 | -1 = 0) {
-    selected = key;
+    // The Go side keeps it, so the video's state says it and opening the
+    // video again opens on the same clip.
+    session.pick(key, (k) => api.chooseClip(path, k));
+    await show(key, seek, jump, step);
+  }
+
+  // A clip chosen, shown: by a hand, see select, or by the app, see the
+  // move chose.
+  async function show(key: string, seek = true, jump = true, step: 0 | 1 | -1 = 0) {
     if (jump) chosenTimes++;
-    // The episode remembers what is being worked on, so opening it again
-    // opens on the same clip. Forgetting it is no reason to say anything.
-    api.chooseClip(path, key).catch(() => {});
     const clip = clips.find((c) => c.key === key);
     // On the clip, at its start: picking a clip is a gesture about it.
     if (clip && seek) player?.seek(clip.start, "clip");
@@ -1516,24 +1503,20 @@
   // deleted. It used to leave nothing chosen and the clip timeline empty.
   // Found by Tim.
   async function removeClip(clip: ClipEntry) {
-    // The clip beside it in the list as it stands before the remove, the
-    // same list the shift and arrow keys walk.
-    const list = shown.filter((c) => !(c.key in removed));
-    const here = list.findIndex((c) => c.key === clip.key);
-    const beside = here < 0 ? undefined : (list[here + 1] ?? list[here - 1]);
+    // The Go side chooses the clip beside it, see choose.go, which the
+    // state read after the remove says.
     const at = time;
+    const chosen = selected === clip.key;
     try {
       const updated = await api.removeClip(path, clip.plan, clip.id, true);
       putClip(updated);
-      const chosen = selected === updated.key;
-      const then = chosen && beside ? beside.key : "";
-      if (chosen) {
-        said(`clip list: removed ${updated.key}, which was chosen, ${then ? `chose ${then}` : "no clip left to choose"}`, {
-          level: "info",
-          video: path,
-        });
-        if (then) select(then);
-        else selected = "";
+      await refreshClips();
+      // Playing, the play goes on from the clip chosen instead, which the
+      // hand asked for by removing the one it played.
+      const then = chosen ? selected : "";
+      if (then && !paused) {
+        const next = clips.find((c) => c.key === then);
+        if (next) player?.seek(next.start, "clip");
       }
       removed = {
         ...removed,
@@ -1559,15 +1542,16 @@
       const updated = await api.removeClip(path, clip.plan, clip.id, false);
       putClip(updated);
       forget(key);
-      const again = !!was.chosen && selected === (was.then ?? "");
+      // The Go side chooses it again when it was chosen as it was removed
+      // and the clip chosen instead still is, see choose.go. Then the
+      // playhead goes back where it was when it was removed.
+      await refreshClips();
+      const again = selected === updated.key;
       said(`clip list: put back ${updated.key}, ${again ? "chosen again as it was" : `the clip chosen stays ${selected || "none"}`}, ${paused ? "paused" : "playing"}`, {
         level: "info",
         video: path,
       });
-      if (again) {
-        void select(updated.key, false);
-        if (was.at !== undefined) player?.seek(was.at, "clip");
-      }
+      if (again && was.at !== undefined) player?.seek(was.at, "clip");
     } catch (err) {
       oops(errorText(err));
     }
@@ -1728,7 +1712,9 @@
       const key = `${job.id}/1`;
       if (now.state !== "failed") {
         madeHere.set(job.id, key);
-        selected = key;
+        // Its card is chosen, and the Go side makes the clip the one chosen
+        // when it is written, see choose.go.
+        session.pick(key, (k) => api.chooseClip(path, k));
       }
       // Asked for here, so a failure says why in a toast however soon it
       // comes, the store's news of it before this answer too, and a clip
@@ -1743,34 +1729,6 @@
       pressed = null;
     }
   }
-  // A clip made here, by its key on its way, and the key it is written
-  // under, from the moment its card says it, which is before it is
-  // written, or else from its job's result. The chosen card becomes the
-  // clip in the same step the list brings it in, whichever read of the
-  // list that is. Chosen once its job was over and the read asked for it
-  // had come back, it was a frame or more late: the job says it has
-  // nothing on the way before it says it is done, a read in between
-  // brought the clip in and took the card away, and for those frames no
-  // card was chosen and the clip timeline drew it dimmed.
-  const landing = new SvelteMap<string, string>();
-  $effect(() => {
-    const made = new Set(madeHere.values());
-    for (const a of onTheWay) if (a.clip && made.has(a.key)) landing.set(a.key, a.clip);
-  });
-  $effect(() => {
-    const list = clips;
-    for (const [before, key] of landing) {
-      if (!list.some((c) => c.key === key)) continue;
-      landing.delete(before);
-      untrack(() => {
-        if (selected !== before) return;
-        void select(key, paused);
-        // Playing, the playhead stays on the clip it was made on, which is
-        // written now under its own key. See claim in Player.svelte.
-        if (!paused) player?.claim(before);
-      });
-    }
-  });
   // The clip on its way that is chosen, drawn on the clip timeline the way
   // a clip is: its frame, fitted, which cannot be edited until it is
   // written. Before its sentences are known it is as long as Shortest,
@@ -2716,10 +2674,6 @@
   function begin(): string {
     jobs.press(path, "clips");
     click = `${Date.now()}-${++clicks}`;
-    listedBefore = new Set(clips.map((c) => c.key));
-    pickedBefore = selected;
-    shownFirst = false;
-    chosenByFind = "";
     return click;
   }
 
@@ -2797,8 +2751,8 @@
       const settings = await api.getSettings();
       captionY = settings.captionY || captionYDefault;
       onchange();
-      const clip = done.clip ? clips.find((c) => c.key === done.clip) : undefined;
-      if (clip && clip.key !== selected) await select(clip.key);
+      // The Go side chose the clip the step changed, which the state read in
+      // load says, and the move chose shows it.
       // A dragged edge took the playhead along, so taking it back takes
       // the playhead back too. After the clip is chosen, because choosing
       // one puts the playhead on it. Not while the episode plays: only the
@@ -2812,31 +2766,6 @@
     }
   }
   onMount(() => onUndo(undo));
-
-  // The first clip a search finds, shown as soon as it is in the list.
-  // Not while the video plays: choosing a clip puts the playhead on it, and
-  // a picture that jumps from where it was playing to a clip nobody asked
-  // for is the search taking the video away from the hand. The clips land
-  // in the list and on both tracks either way, and are one click off.
-  //
-  // When the search is over, the earliest of what it found is the one
-  // chosen, the first of its clips in the list, as long as the clip chosen
-  // is still the one the search chose. The model names its clips strongest
-  // first, not in the order of the episode, so the first to land was often
-  // the last in the list, and it stayed chosen with the playhead on it.
-  function showFirstFound(ended = false) {
-    if (!listedBefore || (shownFirst && !ended)) return;
-    const known = listedBefore;
-    const found = clips.filter((c) => !known.has(c.key));
-    if (!found.length) return;
-    shownFirst = true;
-    if ((selected !== pickedBefore && selected !== chosenByFind) || !paused) return;
-    // The list is in the order of the episode, and so is what is new in
-    // it, so this is the earliest of what has landed.
-    if (found[0].key === selected) return;
-    chosenByFind = found[0].key;
-    select(found[0].key);
-  }
 
   // The job has reported in, so the placeholder can give way to it.
   $effect(() => {
@@ -2857,12 +2786,6 @@
     if (end > start) {
       from = start;
       to = end;
-    }
-    if (!listedBefore) {
-      listedBefore = new Set(clips.map((c) => c.key));
-      pickedBefore = selected;
-      shownFirst = false;
-      chosenByFind = "";
     }
   });
 
@@ -2957,9 +2880,22 @@
       tell(`${what} failed: ${why}`);
       toasts.say(where(), why, { video: path, report: true });
     },
-    // A search says how many clips it has written each time one lands, and
-    // the list is read again then, rather than on the next tick of a timer.
-    wrote: () => refreshClips(true).then(() => showFirstFound()),
+    // The app chose another clip, see choose.go: a search's first clip or
+    // its earliest, the clip beside one removed or one put back, the clip
+    // an undo changed, or a clip made by hand that was written, whose card
+    // was chosen. It is shown the way a hand's pick is, the playhead on it
+    // while the video is paused. Playing, a card that became its clip
+    // keeps the playhead, which is on the clip it was made on, written now
+    // under its own key, see claim in Player.svelte.
+    chose: (key, before) => {
+      if (!opened) return;
+      void show(key, paused);
+      for (const [job, made] of madeHere) {
+        if (made !== before) continue;
+        madeHere.delete(job);
+        if (!paused) player?.claim(before);
+      }
+    },
     // And when the whole video's work ends, which no search's hearing says:
     // the workspace kept what it read last, so stopped on its last pieces
     // the video was heard to its end and the dots stayed, found by the
@@ -2984,35 +2920,9 @@
       const moved = ended.state === "done" ? api.chosenWindow(path) : undefined;
       moved?.catch(() => {});
       movingOn = !!moved;
-      load(moved).then(() => {
-        if (ended.state !== "done") {
-          listedBefore = null;
-          return;
-        }
-        // The earliest clip it found, unless something else has been
-        // picked since the search chose one, which is where the hand is
-        // now.
-        showFirstFound(true);
-        // A window searched again comes back under the names it had, so
-        // nothing in the list is new. Its first clip, as long as nobody
-        // has picked another.
-        if (!shownFirst && selected === pickedBefore && paused && ended.result) {
-          const first = clips.find((c) => c.plan === ended.result);
-          if (first) select(first.key);
-        }
-        listedBefore = null;
-      });
-    },
-    // A clip made here is written: its card becomes the clip, under the
-    // key it is written under.
-    made: (job) => {
-      const before = madeHere.get(job.id);
-      if (before === undefined) return;
-      madeHere.delete(job.id);
-      const key = job.result;
-      if (job.state !== "done" || !key) return;
-      landing.set(before, key);
-      void refreshClips();
+      // The clip it chose comes with the state that holds what it found,
+      // see the move chose.
+      void load(moved);
     },
     // A render this workspace started: the list shows what was rendered,
     // and a render that failed says why over the workspace.
@@ -3154,8 +3064,8 @@
       if (isFinding) {
         // Each clip lands in the plan the moment it is framed, while the
         // model is still writing the next, so the list is read again as
-        // the search runs and the first one is put on screen.
-        refreshClips(true).then(() => showFirstFound());
+        // the search runs.
+        void refreshClips(true);
       }
     }, 2000);
     return () => clearInterval(timer);
