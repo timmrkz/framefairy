@@ -295,7 +295,10 @@
   // from the video's state until #606's one channel. The search's frame
   // stays where it is until then, so the range picker never shows the
   // window back where the search was, between the search and the next.
-  const movingOn = $derived(search?.state === "done" && (search.seq ?? 0) > session.rev);
+  const movingOn = $derived.by(() => {
+    const last = jobs.list.findLast((j) => j.episode === path && j.kind === "search");
+    return last?.state === "done" && (last.seq ?? 0) > session.rev;
+  });
   // What the search is doing right now, in the step's own words, see
   // lib/steps.ts.
   const doing = $derived(working ? stepLine(working).what : "");
