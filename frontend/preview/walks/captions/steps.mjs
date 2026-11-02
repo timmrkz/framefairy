@@ -1311,7 +1311,9 @@ export const steps = {
     else if (seen.look.rowCorner !== "0px") walk.wrong = `a row has corners of ${seen.look.rowCorner}`;
     else if (Math.abs(seen.look.above) > 0.5 || Math.abs(seen.look.below) >= 1)
       walk.wrong = `${seen.look.above.toFixed(1)} px between the search field and the first row, ${seen.look.below.toFixed(1)} under the last`;
-    else if (!seen.look.face.startsWith('"Inter Black"'))
+    // The first family the field names, read the way the rows are:
+    // Chromium writes a name with a space in quotes and WebKit without.
+    else if (seen.look.face.split(",")[0].replace(/"/g, "").trim() !== "Inter Black")
       walk.wrong = `the Font field is drawn in ${seen.look.face}, not in Inter Black`;
     else if (Math.abs(seen.look.searchHigh - seen.field.height) > 0.5)
       walk.wrong = `the search field is ${seen.look.searchHigh.toFixed(1)} high above its line, a row ${seen.field.height.toFixed(1)}`;

@@ -154,9 +154,9 @@ func (s *FrameFairy) Setup(ctx context.Context) SetupState {
 	// ask this every time they open, and reading a secret is what puts a
 	// box from macOS on screen for an app it does not know yet.
 	for _, p := range state.Providers {
-		if engine.CheckAPIKey(p) == nil {
-			state.Keys[p.Name] = engine.KeySource(p)
-			state.KeyHints[p.Name] = engine.KeyHint(p)
+		if s.store.machine.CheckAPIKey(p) == nil {
+			state.Keys[p.Name] = s.store.machine.KeySource(p)
+			state.KeyHints[p.Name] = s.store.machine.KeyHint(p)
 		}
 	}
 	state.HasKey = state.Keys[state.Provider] != ""
@@ -198,11 +198,11 @@ func (s *FrameFairy) Setup(ctx context.Context) SetupState {
 }
 
 // installSpeech and installLanguage are what the setup and the settings
-// install a model with. The bridge a walk drives stands in for them, so a
-// walk never downloads a model.
+// install a model with, through the machine's network. The bridge a walk
+// drives stands in for them, so a walk never downloads a model.
 var (
-	installSpeech   = engine.InstallSpeechModel
-	installLanguage = engine.InstallLanguageModel
+	installSpeech   = (*engine.Machine).InstallSpeechModel
+	installLanguage = (*engine.Machine).InstallLanguageModel
 )
 
 // InstallSpeechModel fetches a model and unpacks it, as a job, so it wears
@@ -220,7 +220,7 @@ func (s *FrameFairy) InstallSpeechModel(name string) Job {
 	// folder, and the interface can ask twice by being opened twice.
 	return s.jobs.addOnce("", "model", model.Title,
 		func(ctx context.Context, p *engine.Project) (string, error) {
-			return "", installSpeech(ctx, p.Log(), model, engine.ModelsDir())
+			return "", installSpeech(p.Engine().Machine, ctx, p.Log(), model, engine.ModelsDir())
 		})
 }
 
@@ -254,7 +254,7 @@ func (s *FrameFairy) InstallLanguageModel(name string) Job {
 	// One at a time, however often it is asked for.
 	return s.jobs.addOnce("", "llm", model.Title,
 		func(ctx context.Context, p *engine.Project) (string, error) {
-			if err := installLanguage(ctx, p.Log(), model, engine.ModelsDir()); err != nil {
+			if err := installLanguage(p.Engine().Machine, ctx, p.Log(), model, engine.ModelsDir()); err != nil {
 				return "", err
 			}
 			// The only model there is may be the one in use now.
@@ -307,10 +307,10 @@ func (s *FrameFairy) SaveAPIKey(provider, key string) error {
 	if err := s.languageLocked(); err != nil {
 		return err
 	}
-	if err := engine.VerifyAPIKey(context.Background(), p, key); err != nil {
+	if err := s.store.machine.VerifyAPIKey(context.Background(), p, key); err != nil {
 		return err
 	}
-	return engine.StoreAPIKey(p, key)
+	return s.store.machine.StoreAPIKey(p, key)
 }
 
 // ChooseCloudModel names the model in the cloud clips are found with, and
@@ -592,10 +592,10 @@ func (s *FrameFairy) CheckSetup(ctx context.Context) []Check {
 		// The key of whichever company the model in the settings belongs to.
 		p := engine.ProviderFor(opts.Model)
 		key := Check{Name: p.Title + " API key"}
-		if err := engine.CheckAPIKey(p); err != nil {
+		if err := s.store.machine.CheckAPIKey(p); err != nil {
 			key.Detail = err.Error()
 		} else {
-			key.OK, key.Detail = true, "found in the "+engine.KeySource(p)
+			key.OK, key.Detail = true, "found in the "+s.store.machine.KeySource(p)
 		}
 		return append(out, key)
 	}

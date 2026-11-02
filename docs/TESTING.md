@@ -74,7 +74,13 @@ Until every part of the app has moved to WebKit, #380,
 random walks walk there too. A part moves in a pull request of its own,
 which fixes what WebKit finds in it, so each stays a size to review. A walk
 that only passes in Chromium is a walk to fix, not a part to keep there:
-the app on a Mac is WebKit.
+the app on a Mac is WebKit. What WebKit finds is fixed where its cause
+is. A walk that reads what the two engines write differently, like the
+name of a font in quotes or without, is fixed in the walk. What a person
+on a Mac would see too, like a hover WebKit works out only when the
+pointer moves, is fixed in the app. What only WebKit's Linux port does,
+like playing sound through GStreamer with no speakers, is fixed in how
+the walk is set up, never in the app.
 
 ## The bridge
 
@@ -1465,9 +1471,10 @@ What the code takes from outside, so a test can drive it:
 | the two clocks of a recording, its level readings and its passes | channels | `beats` on the listening in `cmd/framefairy-app/listen.go`, which the bridge hands its steps through, see `TestARecordingRunsOnTheBeatsItIsHanded` |
 | a loading llama-server saying it is up | its output | `hearReady` in `engine/local.go`, and `lookAgain`, the look every half second for a server that says nothing, which `TestAServerThatWillNotStopIsKilledAtOnce` takes away |
 | how often work that reads from another program saves | a count of reads | `levelsReads` on the engine, `engine/levels.go`, in place of `levelsDefault` of the clock |
-| the network | an `http.Client` with a transport of the test's | `localClient` in `engine/local.go`, `downloadClient` in `engine/speech.go`, with `neverAnswers`, `streamFrom` and `stopsAfter` in `engine/local_test.go`, so the stall of a model or a download is waited for in a bubble |
+| the network | an `http.Client` with a transport of the test's | `localClient` in `engine/local.go`, and the network of `engine.Machine`, `network` in `engine/machine.go`, which a machine `NewMachine` makes does not have, so it reaches nothing until a test hands it one, with `neverAnswers`, `streamFrom` and `stopsAfter` in `engine/local_test.go`, so the stall of a model or a download is waited for in a bubble |
 | timers inside goroutines | `testing/synctest` around the test | the lint fixture `scripts/testdata/lint/go/signals`, the dictation tests in `cmd/framefairy-app/listen_test.go`, `TestOnlyAFewDecodersNobodyHoldsStandRunning` in `cmd/framefairy-app/frames_test.go`, and the tests of a health check and of a model that keeps talking in `engine/local_test.go`, which ask llama-server through `neverAnswers` and `streamFrom`, transports with no network |
 | the disk | `afero.Fs` | `engine/files.go`, the project and the app's store |
+| the keychain | a key store on the machine | `keys` and `oldKeys` on `engine.Machine`, empty in a machine `NewMachine` makes, so it keeps no key. A test of the keys puts `memKeys` from `engine/keys_test.go` there, see `keychains` |
 | random numbers | `io.Reader` | `signer.WithRandom` |
 | the model, the recogniser | an interface with a fake | the fake recogniser and fake llama-server in `engine/project_test.go` |
 | a program we run | its path | ffmpeg and the decoder through `FRAMEFAIRY_FRAMES` |

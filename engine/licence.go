@@ -77,7 +77,8 @@ func DescribeLicence(l licence.Licence) string {
 
 // SaveLicence checks a key and keeps it, and gives back how it is
 // described. An empty one takes the kept key off the machine.
-func SaveLicence(text string, testKeys bool) (string, error) {
+func (m *Machine) SaveLicence(text string, testKeys bool) (string, error) {
+	keys := m.keyStore()
 	if strings.TrimSpace(text) == "" {
 		keys.remove(licenceItem)
 		return "", nil
@@ -96,7 +97,8 @@ func SaveLicence(text string, testKeys bool) (string, error) {
 // SavedLicence says whether a key is kept, and how it was described when
 // it was, without reading the key, so opening the settings never puts the
 // keychain's box on screen.
-func SavedLicence() (about string, saved bool) {
+func (m *Machine) SavedLicence() (about string, saved bool) {
+	keys := m.keyStore()
 	if !keys.has(licenceItem) {
 		return "", false
 	}

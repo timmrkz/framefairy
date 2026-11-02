@@ -158,13 +158,18 @@ func writeJSONText(fsys afero.Fs, path string, body []byte) {
 	_ = afero.WriteFile(fsys, path, body, 0o644)
 }
 
-// httpClient never follows redirects. A redirect would resend the key header
-// to whatever host it names, and nothing legitimate needs one.
-var httpClient = &http.Client{
-	Timeout: 10 * time.Minute,
-	CheckRedirect: func(*http.Request, []*http.Request) error {
-		return http.ErrUseLastResponse
-	},
+// companies is the client every request to a company goes through, over
+// the machine's network. It never follows a redirect: a redirect would
+// resend the key header to whatever host it names, and nothing legitimate
+// needs one.
+func (m *Machine) companies() *http.Client {
+	return &http.Client{
+		Transport: m.transport(),
+		Timeout:   10 * time.Minute,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 }
 
 // apiReply is an answer as Anthropic's API gives it. OpenAI's answers are
@@ -226,7 +231,7 @@ func (e *Engine) post(ctx context.Context, p Provider, build func(prefill bool) 
 		if err != nil {
 			return nil, nil, err
 		}
-		key, source, err := readAPIKey(ctx, p)
+		key, source, err := e.readAPIKey(ctx, p)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -238,7 +243,7 @@ func (e *Engine) post(ctx context.Context, p Provider, build func(prefill bool) 
 		request.Header.Set("content-type", "application/json")
 		setKey(request, p, key)
 
-		response, err := httpClient.Do(request)
+		response, err := e.companies().Do(request)
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil, nil, ctx.Err()

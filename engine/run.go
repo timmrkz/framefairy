@@ -609,7 +609,7 @@ func (r *runner) plan(ctx context.Context) error {
 		}
 	}
 	if opts.Planner == "api" && !whole {
-		if _, err := ReadAPIKey(ctx, ProviderFor(opts.Model)); err != nil {
+		if _, err := r.e.ReadAPIKey(ctx, ProviderFor(opts.Model)); err != nil {
 			saved, _ := afero.Glob(r.e.Files, filepath.Join(logsDir, "reply-*.json"))
 			if len(saved) == 0 || opts.Replan {
 				return err
