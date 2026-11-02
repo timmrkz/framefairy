@@ -141,6 +141,8 @@ let calling: { after: number; match: (c: Made) => boolean; done: () => void }[] 
 let leaving = false;
 (window as any).__leave = () => (leaving = true);
 addEventListener("pagehide", () => (leaving = true));
+// A page brought back from the back-forward cache is no longer leaving.
+addEventListener("pageshow", () => (leaving = false));
 
 export const Call = {
   async ByName(name: string, ...args: unknown[]): Promise<unknown> {

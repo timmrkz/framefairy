@@ -203,6 +203,9 @@ move last. The nightly walks walk everything in Chromium.
 ## Where it stands
 
 Every part and the random walks walk in WebKit since 2 November 2026.
+The timeline, playback, clips and search parts moved together with the
+random walks in one pull request, not one part at a time, because Tim
+asked for the two steps that were left to go in together on that day.
 `walks/webkit.mjs` is gone with its last name, and `browserFor` asks
 only `WALKBROWSER`, `SLOW` and `WALKCOVERAGE`. What the parts found was
 fixed in them, most of it walks that raced a busy runner and now wait

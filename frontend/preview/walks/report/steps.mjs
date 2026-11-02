@@ -146,7 +146,10 @@ export const steps = {
           }
           resume() {
             meant.set(this, "running");
-            return super.resume();
+            // A resume that fails leaves the audio as it was.
+            const p = super.resume();
+            p.catch(() => meant.set(this, this.state));
+            return p;
           }
           suspend() {
             meant.set(this, "suspended");
@@ -170,15 +173,23 @@ export const steps = {
           told("Listen asked");
         });
         // played reads a sound the window starts.
-        const played = (node) => {
+        // A sound started at once and played whole is what the walk
+        // reads. One started later, from inside, for part of its length
+        // or stopped is a sound the walk cannot read, and the order of the
+        // notes fails on it rather than reading what was not played.
+        const played = (node, how = []) => {
           const c = node.context;
-          if (!(node instanceof AudioBufferSourceNode) || !node.buffer) {
-            told(`a sound the walk cannot read, ${node.constructor.name}`);
-            window.__notes.push({ f: 0, at: playedFor, open: micOn, silent: true, unread: node.constructor.name });
+          const at = how[0] ?? 0;
+          const asked = at > c.currentTime || how.length > 1 ? `start(${how.join(", ")})` : "";
+          if (!(node instanceof AudioBufferSourceNode) || !node.buffer || asked) {
+            const why = asked || node.constructor.name;
+            told(`a sound the walk cannot read, ${why}`);
+            window.__notes.push({ f: 0, at: playedFor, open: micOn, silent: true, unread: why });
             for (const w of waiting.filter(has)) w.done();
             waiting = waiting.filter((w) => !has(w));
             return;
           }
+          node.__read = true;
           const d = node.buffer.getChannelData(0);
           const rate = node.buffer.sampleRate;
           told(`a sound started, ${(d.length / rate).toFixed(3)} s, while the audio is ${c.state} and was asked to be ${wants(c)}${micOn ? "" : ", before the microphone was on"}`);
@@ -207,7 +218,7 @@ export const steps = {
         const late = function (when = 0, ...a) {
           const start = startOf(this);
           if (!window.__late) {
-            played(this);
+            played(this, [when, ...a]);
             return start.call(this, when, ...a);
           }
           const c = this.context;
@@ -215,12 +226,22 @@ export const steps = {
           rest.buffer = c.createBuffer(1, Math.round(window.__late * c.sampleRate), c.sampleRate);
           connect.call(rest, c.destination);
           rest.onended = () => {
-            played(this);
+            played(this, [when, ...a]);
             start.call(this, when, ...a);
           };
           startOf(rest).call(rest, Math.max(when, c.currentTime));
         };
         for (const Node of real.keys()) Node.prototype.start = late;
+        const stop = AudioScheduledSourceNode.prototype.stop;
+        AudioScheduledSourceNode.prototype.stop = function (...a) {
+          if (this.__read) {
+            told("a sound read whole was stopped");
+            window.__notes.push({ f: 0, at: playedFor, open: micOn, silent: true, unread: "stop()" });
+            for (const w of waiting.filter(has)) w.done();
+            waiting = waiting.filter((w) => !has(w));
+          }
+          return stop.apply(this, a);
+        };
       });
       // Whether the page asked for the ring when it moved the focus
       // last, for the tab step: WebKit rings a focus moved by a script
