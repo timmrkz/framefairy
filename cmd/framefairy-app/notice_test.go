@@ -75,7 +75,9 @@ func TestFailuresAtOnceAreEachToldOnce(t *testing.T) {
 	for i := range hands {
 		video := fmt.Sprintf("/home/tim/ep%d.mp4", i%3)
 		all.Go(func() { ids <- q.add(video, engine.JobClip, "Make a clip", fail).ID })
-		all.Go(func() { ids <- q.refuse(video, engine.JobTranscribe, "Transcribe whole video", "the video is being removed").ID })
+		all.Go(func() {
+			ids <- q.refuse(video, engine.JobTranscribe, "Transcribe whole video", "the video is being removed").ID
+		})
 		all.Go(func() { q.list() })
 	}
 	all.Wait()
