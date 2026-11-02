@@ -115,8 +115,9 @@ func (s *FrameFairy) searchesWindow(path string, req engine.PlanRequest) {
 // engine.Project.WindowAfter. It is done before the search says it is
 // done, so the workspace reads the window moved on when it hears that.
 // It is worked out before the kept window is changed, and moves it on
-// only if it is still the one it was worked out from: a hand that moved
-// the window meanwhile has the last word.
+// only if it is still the one it was worked out from: a window written
+// meanwhile has the last word, a hand's drag or the interface's own fit
+// of it to the room, which step 4 of #606 moves into Go.
 func (s *FrameFairy) windowOn(path string, req engine.PlanRequest) {
 	info, err := s.probe(context.Background(), path)
 	if err != nil || info.Duration <= 0 {

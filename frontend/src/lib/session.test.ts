@@ -26,7 +26,7 @@ function session(jobs = new JobStore()) {
   const say = (move: string) => (j: Job) => heard.push(`${move} ${j.id}`);
   const moves: WorkMoves = {
     failed: say("failed"),
-    chose: (key: string, before: string) => heard.push(`chose ${key} ${before || "none"}`),
+    chose: (key: string, before: string, card: string) => heard.push(`chose ${key} ${before || "none"}${card ? ` from ${card}` : ""}`),
     heard: say("heard"),
     searched: say("searched"),
     transcribed: say("transcribed"),
@@ -393,10 +393,10 @@ describe("a video's state in its session", () => {
     here.take(state(5, { chosen: "p/a" }));
     let answer: (s: VideoState) => void = () => {};
     const picked = here.pick("job/1", () => new Promise((r) => (answer = r)));
-    answer(state(6, { chosen: "hand/h01" }));
+    answer(state(6, { chosen: "hand/h01", chosenCard: "job/1" }));
     await picked;
     expect(here.chosen).toBe("hand/h01");
-    expect(heard).toEqual(["chose p/a none", "chose hand/h01 job/1"]);
+    expect(heard).toEqual(["chose p/a none", "chose hand/h01 job/1 from job/1"]);
   });
 
   test("shows what the app chose while a pick was on its way once the pick is answered, when it chose after it", async () => {

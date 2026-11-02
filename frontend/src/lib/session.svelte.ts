@@ -17,8 +17,10 @@ export interface WorkMoves {
   // as the app opened said why already, the time it failed.
   failed(job: Job): void;
   // The app chose another clip, see cmd/framefairy-app/choose.go, in
-  // place of before, the clip chosen until then.
-  chose(key: string, before: string): void;
+  // place of before, the clip chosen until then. card is the card the
+  // clip was on its way as, when it was chosen because that card was
+  // written as it, or nothing.
+  chose(key: string, before: string, card: string): void;
   // The search has stopped hearing the video: it went on to find clips,
   // or it ended while it heard.
   heard(search: Job): void;
@@ -136,7 +138,7 @@ export class EpisodeSession {
     if (now === this.chosen) return;
     const before = this.chosen;
     this.chosen = now;
-    this.moves.chose(now, before);
+    this.moves.chose(now, before, state.chosenCard ?? "");
   }
 
   // A clip chosen by a hand, shown at once while choose tells the Go side,

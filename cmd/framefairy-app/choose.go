@@ -28,8 +28,9 @@ import (
 //     A window searched again comes back under the names its clips had,
 //     so then it is the first clip of its clip set,
 //  3. never when a search stopped, was cancelled or failed,
-//  4. when the app first reads the video's state, the clip chosen last if
-//     it is still there, or else the first,
+//  4. when the clip chosen is not among the clips, the first, so a video
+//     opens on the clip chosen last if it is still there, or else the
+//     first,
 //  5. when the clip chosen is removed, the one beside it, and when it is
 //     put back while that one is still chosen, the clip put back,
 //  6. after an undo or a redo, the clip it changed,
@@ -62,49 +63,82 @@ func (s *FrameFairy) Playing(path string, playing bool) error {
 	return nil
 }
 
+// searchBegins notes the clips there are as a search of the video begins
+// its work, before it writes any, so the clips it writes are known as its
+// own however late a state first sees it running, rules 1 and 2.
+func (s *FrameFairy) searchBegins(path string) {
+	known := map[string]bool{}
+	for _, summary := range plansOf(s.store.files, path) {
+		for _, c := range summary.View().Clips {
+			known[filepath.Base(summary.Path)+"/"+c.ID] = true
+		}
+	}
+	p := s.chosenIn(path)
+	p.load(s.store.files, path)
+	p.mu.Lock()
+	p.begins = &followed{before: p.kept.Clip, known: known}
+	p.mu.Unlock()
+}
+
 // chosenFor is the clip chosen in the video whose state st is, read with
 // its jobs and its clips, after the app chose by rules 1, 2, 3, 4 and 7
-// from them. A state older than the newest it chose from chooses nothing
-// and says what is chosen now.
-func (s *FrameFairy) chosenFor(path string, st VideoState) string {
+// from them, and the card that clip was while it was on its way, if it
+// was one. A state older than the newest it chose from chooses nothing.
+// It says what is chosen now when its clips hold it, and otherwise the
+// clip chosen before, so a state never names a clip it does not hold.
+func (s *FrameFairy) chosenFor(path string, st VideoState) (clip, was string) {
 	p := s.chosenIn(path)
 	var said []string
 	if _, err := p.with(s.store.files, path, func(p *picked) bool {
+		defer func() { clip, was = p.answer(st) }()
 		if st.Rev != 0 && st.Rev <= p.decided {
 			return false
 		}
 		p.decided = st.Rev
-		was := p.kept.Clip
-		if !p.opened {
-			// Opening, rule 4. What is chosen here is not written: the file
-			// says what a hand or a search chose, and is still right.
-			p.opened = true
-			if len(st.Clips) > 0 && !holdsClip(st.Clips, was) && card(st.Jobs, was) == nil {
-				p.kept.Clip = st.Clips[0].Key
-				said = append(said, "opened on the first clip")
-				was = p.kept.Clip
-			}
-		}
-		now := was
+		before := p.kept.Clip
+		now := before
 		if landed := landedClip(st, now); landed != "" {
+			p.card, p.became = now, landed
 			now = landed
 			said = append(said, "the clip made by hand was written")
 		}
 		now, said = p.follow(st, now, said)
-		if now == was {
-			return false
+		if now != before {
+			p.prior, p.kept.Clip = before, now
+			return true
 		}
-		p.kept.Clip = now
-		return true
+		if first := firstKept(st.Clips); first != "" && !holdsClip(st.Clips, now) && card(st.Jobs, now) == nil {
+			// Rule 4. What is chosen here is not written: the file says
+			// what a hand or a search chose, and a video opened again
+			// opens on the clip chosen last once it is there.
+			p.prior, p.kept.Clip = before, first
+			said = append(said, "the clip chosen is not there, so the first")
+		}
+		return false
 	}); err != nil {
 		theLog.line(zerolog.WarnLevel, "chosen").Str("video", filepath.Base(path)).Err(err).Msg("the clip the app chose could not be kept")
 	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
 	for _, why := range said {
-		theLog.line(zerolog.InfoLevel, "chosen").Str("video", filepath.Base(path)).Str("clip", p.kept.Clip).Msg("the app chose a clip: " + why)
+		theLog.line(zerolog.InfoLevel, "chosen").Str("video", filepath.Base(path)).Str("clip", clip).Str("why", why).Msg("the app chose a clip")
 	}
-	return p.kept.Clip
+	return clip, was
+}
+
+// answer is the clip chosen a state says, and the card it was, with the
+// lock held: the clip chosen, or for a state older than the newest that
+// chose, the clip chosen before when its clips do not hold the one now.
+func (p *picked) answer(st VideoState) (string, string) {
+	now := p.kept.Clip
+	if st.Rev != 0 && st.Rev < p.decided && !holdsClip(st.Clips, now) && card(st.Jobs, now) == nil {
+		now = ""
+		if holdsClip(st.Clips, p.prior) {
+			now = p.prior
+		}
+	}
+	if now != "" && now == p.became {
+		return now, p.card
+	}
+	return now, ""
 }
 
 // follow chooses for the newest search of the video, rules 1, 2 and 3,
@@ -120,12 +154,21 @@ func (p *picked) follow(st VideoState, now string, said []string) (string, []str
 		p.search = nil
 		return now, said
 	}
-	if search.going() && (p.search == nil || p.search.id != search.ID) {
-		known := map[string]bool{}
-		for _, c := range st.Clips {
-			known[c.Key] = true
+	if p.search == nil || p.search.id != search.ID {
+		switch {
+		case p.begins != nil:
+			// The clips there were as the search began its work.
+			p.search, p.begins = p.begins, nil
+			p.search.id = search.ID
+		case search.going():
+			// A search seen running that began before the app noted it,
+			// one read back as the app starts.
+			known := map[string]bool{}
+			for _, c := range st.Clips {
+				known[c.Key] = true
+			}
+			p.search = &followed{id: search.ID, before: now, known: known}
 		}
-		p.search = &followed{id: search.ID, before: now, known: known}
 	}
 	f := p.search
 	if f == nil || f.id != search.ID {
@@ -168,6 +211,16 @@ func (p *picked) follow(st VideoState, now string, said []string) (string, []str
 		}
 	}
 	return now, said
+}
+
+// firstKept is the first of the clips not removed, or nothing.
+func firstKept(clips []ClipEntry) string {
+	for _, c := range clips {
+		if !c.Rejected {
+			return c.Key
+		}
+	}
+	return ""
 }
 
 // holdsClip says whether key is one of the clips.
@@ -267,7 +320,7 @@ func (s *FrameFairy) removing(path, key string, removed bool, before VideoState)
 		theLog.line(zerolog.WarnLevel, "chosen").Str("video", filepath.Base(path)).Err(err).Msg("the clip the app chose could not be kept")
 	}
 	if why != "" {
-		theLog.line(zerolog.InfoLevel, "chosen").Str("video", filepath.Base(path)).Str("clip", p.get(s.store.files, path).Clip).Msg("the app chose a clip: " + why)
+		theLog.line(zerolog.InfoLevel, "chosen").Str("video", filepath.Base(path)).Str("clip", p.get(s.store.files, path).Clip).Str("why", why).Msg("the app chose a clip")
 	}
 }
 
@@ -287,7 +340,7 @@ func (s *FrameFairy) undone(path, key string) {
 		theLog.line(zerolog.WarnLevel, "chosen").Str("video", filepath.Base(path)).Err(err).Msg("the clip the app chose could not be kept")
 	}
 	if changed {
-		theLog.line(zerolog.InfoLevel, "chosen").Str("video", filepath.Base(path)).Str("clip", key).Msg("the app chose a clip: the clip the undo changed")
+		theLog.line(zerolog.InfoLevel, "chosen").Str("video", filepath.Base(path)).Str("clip", key).Str("why", "the clip the undo changed").Msg("the app chose a clip")
 	}
 }
 

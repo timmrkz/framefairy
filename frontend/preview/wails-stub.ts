@@ -923,9 +923,9 @@ function videoState(path: string): Promise<unknown> {
   });
 }
 
-// The clip chosen, the one picked last while it is there, or else the
-// first. The Go side chooses for a search as well, see choose.go, which a
-// probe that needs it sets with __chosen.
+// The clip chosen, the one picked last, or else the first. The Go side
+// also chooses for a search, a removal and a clip gone, see choose.go,
+// which a probe that needs it sets with __chosen.
 function chosenIn(clips: { key: string }[]): string {
   const kept = (window as any).__chosen ?? "";
   return kept || (clips?.[0]?.key ?? "");

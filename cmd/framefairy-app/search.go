@@ -57,6 +57,7 @@ func (s *FrameFairy) search(path string, req engine.PlanRequest, click string, c
 		// the fourth review of #458. Not where the job is prepared, which
 		// holds the queue.
 		s.searchesWindow(path, req)
+		s.searchBegins(path)
 		result, err := p.Search(ctx, req, host)
 		if err == nil && ctx.Err() == nil {
 			s.windowOn(path, req)

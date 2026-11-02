@@ -102,7 +102,7 @@ waiting for the day the two disagree.
 | what was learned about the machine while a program runs: the decoder that works, the encoders and subtitle filter of each ffmpeg, the face detector, the tools already checked | `engine.Machine`, one for each program, in memory | the engine |
 | what runs now, and the lane each job holds or waits for | the job queue, in memory | the app's Go side |
 | the step a job is in, and what it was asked for | its `engine.JobRecord`, on disk and in the job the queue holds, which keeps each record the engine tells it through the job's `engine.Host` | the engine |
-| what is on screen | the interface's stores, and a video's status, clips and coverage in its `EpisodeSession`, `frontend/src/lib/session.svelte.ts`, which keeps the newest `VideoState` | from what Go sends. Today `Episode.svelte` also works out from what changed that a search started, see Not to copy |
+| what is on screen | the interface's stores, and a video's status, clips, coverage and clip chosen in its `EpisodeSession`, `frontend/src/lib/session.svelte.ts`, which keeps the newest `VideoState`, and a hand's pick until Go answers it | from what Go sends. Today `Episode.svelte` also works out from what changed that a search started, see Not to copy |
 
 ## The programs that run
 

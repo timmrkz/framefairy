@@ -3,8 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"sync"
 	"testing"
+
+	"github.com/spf13/afero"
 
 	"framefairy/engine"
 	"framefairy/engine/runlog"
@@ -87,6 +90,16 @@ func TestTheAppChoosesTheClipsASearchFinds(t *testing.T) {
 			{st: stateOf(5, old), want: "old/1"},
 			{st: stateOf(4, with("new/1"), searchJob(JobRunning)), want: "old/1"},
 		}},
+		{"a state older than the newest names no clip it does not hold", []step{
+			{st: stateOf(1, old), want: "old/1"},
+			{st: stateOf(2, old, searchJob(JobRunning)), want: "old/1"},
+			{st: stateOf(4, with("new/2"), searchJob(JobRunning)), want: "new/2"},
+			{st: stateOf(3, old, searchJob(JobRunning)), want: "old/1"},
+		}},
+		{"a clip chosen that is gone gives way to the first", []step{
+			{st: stateOf(1, old), want: "old/1"},
+			{pick: "gone/1", st: stateOf(2, old), want: "old/1"},
+		}},
 		{"a card chosen becomes its clip once it is written", []step{
 			{st: stateOf(1, old), want: "old/1"},
 			{pick: "c1/1", st: stateOf(2, old, Job{ID: "c1", State: JobRunning, JobRecord: engine.JobRecord{Kind: engine.JobClip},
@@ -112,7 +125,7 @@ func TestTheAppChoosesTheClipsASearchFinds(t *testing.T) {
 				if err := s.Playing(ep, st.playing); err != nil {
 					t.Fatal(err)
 				}
-				if got := s.chosenFor(ep, st.st); got != st.want {
+				if got, _ := s.chosenFor(ep, st.st); got != st.want {
 					t.Fatalf("step %d chose %q, not %q", i+1, got, st.want)
 				}
 			}
@@ -129,10 +142,10 @@ func TestAVideoOpensOnTheClipChosenLast(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.forget(eps[0])
-	if got := s.chosenFor(eps[0], stateOf(1, []string{"old/1", "old/2"})); got != "old/2" {
+	if got, _ := s.chosenFor(eps[0], stateOf(1, []string{"old/1", "old/2"})); got != "old/2" {
 		t.Errorf("opened on %q, not on the clip chosen last", got)
 	}
-	if got := s.chosenFor(eps[1], stateOf(1, []string{"old/1", "old/2"})); got != "old/1" {
+	if got, _ := s.chosenFor(eps[1], stateOf(1, []string{"old/1", "old/2"})); got != "old/1" {
 		t.Errorf("opened on %q, not on the first clip", got)
 	}
 	if on := readChosen(s.store.files, eps[1]); on.Clip != "" {
@@ -168,12 +181,16 @@ func TestARemovedClipsNeighbourIsChosenAndAnUndoChoosesItsClip(t *testing.T) {
 	if got := chosenClip(svc, mine); got != first {
 		t.Fatalf("removing the last clip chose %q, not the one before", got)
 	}
-	// A hand chose another since, so putting it back chooses nothing.
-	if _, err := svc.ChooseClip(context.Background(), mine, "other/1"); err != nil {
+	// A hand chose another since, the clip removed beside it, so putting
+	// it back chooses nothing.
+	if _, err := svc.ChooseClip(context.Background(), mine, "clips.json/02"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.ChooseClip(context.Background(), mine, first); err != nil {
 		t.Fatal(err)
 	}
 	_, _ = svc.RemoveClip(ctx, mine, plan, "02", false)
-	if got := chosenClip(svc, mine); got != "other/1" {
+	if got := chosenClip(svc, mine); got != first {
 		t.Fatalf("putting back a clip after another was chosen chose %q", got)
 	}
 	// Removing a clip that is not chosen chooses nothing, and its undo
@@ -190,6 +207,34 @@ func TestARemovedClipsNeighbourIsChosenAndAnUndoChoosesItsClip(t *testing.T) {
 	}
 	if got := chosenClip(svc, mine); got != second {
 		t.Errorf("the undo chose %q, not the clip it changed", got)
+	}
+}
+
+// A search seen first in a state that already holds its first clip,
+// because the state was read late, still chooses that clip: the clips
+// there were are noted as its work begins, not when a state first sees
+// it, and so at its end its earliest.
+func TestASearchSeenLateStillChoosesItsFirstClip(t *testing.T) {
+	svc, mine, plan := anEpisodeWithAPlan(t)
+	ctx := context.Background()
+	if st, err := svc.State(ctx, mine); err != nil || st.Chosen != "clips.json/01" {
+		t.Fatalf("the video opened on %q, %v", st.Chosen, err)
+	}
+	svc.searchBegins(mine)
+	found := filepath.Join(filepath.Dir(plan), "clips-found.json")
+	if err := afero.WriteFile(svc.store.files, found, []byte(historyPlan), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	job := Job{ID: "s1", Episode: mine, State: JobRunning, JobRecord: engine.JobRecord{Kind: engine.JobSearch}}
+	svc.jobs.mu.Lock()
+	svc.jobs.jobs = append(svc.jobs.jobs, &job)
+	svc.jobs.mu.Unlock()
+	st, err := svc.State(ctx, mine)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Chosen != "clips-found.json/01" {
+		t.Errorf("a search first seen with its clip written chose %q, not its clip", st.Chosen)
 	}
 }
 

@@ -446,6 +446,9 @@ export interface VideoState {
   jobs: Job[];
   // The key of the clip chosen, by a hand or by the Go side, or nothing.
   chosen?: string;
+  // The card the clip chosen was on its way as, when the app chose it
+  // because that card was written as it.
+  chosenCard?: string;
 }
 
 export interface EngineEvent {
@@ -776,8 +779,6 @@ export const api = {
   // Where macOS put the title bar and its buttons, in whole CSS pixels, or
   // zeros where the system draws its own title bar.
   chrome: (window: ChromeWindow) => call<Chrome>("Chrome", window),
-  // The clip of an episode that was last worked on, so opening it again
-  // opens on the same one. It is the clip's key, or an empty string.
   // The episodes opened last, newest first, at most n.
   opened: (n: number) => call<string[]>("Opened", n),
   openEpisode: (path: string) => call<void>("OpenEpisode", path),

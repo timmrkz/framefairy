@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onMount, tick, untrack } from "svelte";
-  import { SvelteMap } from "svelte/reactivity";
   import { fade } from "svelte/transition";
   import {
     api,
@@ -1311,9 +1310,9 @@
   }
 
   // The workspace opening: where the playhead opens comes first, before
-  // anything else is asked. The episode, its picture, its clips and the
-  // clip it was last worked on are asked at once, the video preview and
-  // the playhead are put on that clip the moment they are in, and only
+  // anything else is asked. The video's state, which says the clip it was
+  // last worked on, and its picture are asked at once, the video preview
+  // and the playhead are put on that clip the moment they are in, and only
   // then the rest is read, how far it was searched, the room for windows
   // and the window, none of which the video preview waits for. They were
   // read first, one after another, with the video preview waiting.
@@ -1690,14 +1689,9 @@
   // on its sentences as soon as the engine has them. When it is written,
   // the chosen card becomes the clip, if nothing else has been chosen
   // since. Any number can be asked for at once, so the buttons never wait.
-  //
-  // The clips made here and where they land are state the effects below
-  // follow. A job can be over before its answer comes back to the press,
-  // its news heard first on a busy machine, and with plain maps no effect
-  // looked at it again: the card on its way was chosen after it had gone,
-  // and no clip was chosen at all, issue #508. That a clip made here is
-  // written is said by the session, see made.
-  const madeHere = new SvelteMap<string, string>();
+  // A job can be over before its answer comes back to the press, its news
+  // heard first on a busy machine, so the Go side answers the pick of its
+  // card with the clip it was written as, see choose.go, issue #508.
   let pressed = $state<"in" | "out" | null>(null);
   const makingIn = $derived(pressed === "in" || handRunning.some((j) => !j.backward));
   const makingOut = $derived(pressed === "out" || handRunning.some((j) => !!j.backward));
@@ -1711,14 +1705,12 @@
       const now = jobs.list.find((j) => j.id === job.id) ?? job;
       const key = `${job.id}/1`;
       if (now.state !== "failed") {
-        madeHere.set(job.id, key);
         // Its card is chosen, and the Go side makes the clip the one chosen
         // when it is written, see choose.go.
         session.pick(key, (k) => api.chooseClip(path, k));
       }
       // Asked for here, so a failure says why in a toast however soon it
-      // comes, the store's news of it before this answer too, and a clip
-      // already written lands at once, see made.
+      // comes, the store's news of it before this answer too.
       session.asked(now);
       if (now.state === "failed") return;
       await tick();
@@ -1781,7 +1773,7 @@
   let followingMade = "";
   $effect(() => {
     const m = making;
-    if (!m || ![...madeHere.values()].includes(m.key)) return;
+    if (!m) return;
     const start = m.segments[0].start;
     const mark = `${m.key}:${start}`;
     if (mark === followingMade) return;
@@ -2887,14 +2879,12 @@
     // while the video is paused. Playing, a card that became its clip
     // keeps the playhead, which is on the clip it was made on, written now
     // under its own key, see claim in Player.svelte.
-    chose: (key, before) => {
+    chose: (key, before, card) => {
       if (!opened) return;
       void show(key, paused);
-      for (const [job, made] of madeHere) {
-        if (made !== before) continue;
-        madeHere.delete(job);
-        if (!paused) player?.claim(before);
-      }
+      // A card written as its clip while it plays: the play goes on as a
+      // play of the clip.
+      if (card && card === before && !paused) player?.claim(before);
     },
     // And when the whole video's work ends, which no search's hearing says:
     // the workspace kept what it read last, so stopped on its last pieces

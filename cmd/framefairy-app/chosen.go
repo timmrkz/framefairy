@@ -111,14 +111,18 @@ type picked struct {
 	writing sync.Mutex
 	written uint64
 	// What the app chooses a clip by, see choose.go: whether the video
-	// plays, the search it follows, the clip each removal chose instead of
-	// the one it removed, whether a state was read yet and the rev of the
-	// newest state it chose from.
+	// plays, the clips there were as the newest search began, the search
+	// it follows, the clip each removal chose instead of the one it
+	// removed, the rev of the newest state it chose from and the clip
+	// chosen before it, and the card the clip became was, rule 7.
 	playing bool
+	begins  *followed
 	search  *followed
 	instead map[string]string
-	opened  bool
 	decided uint64
+	prior   string
+	card    string
+	became  string
 }
 
 // chosenIn is what is chosen in the video at path, see picked.
@@ -214,8 +218,10 @@ func (s *FrameFairy) pick(path, key string) error {
 	if !looksLikeClipKey(key) {
 		return errors.New("that is not the key of a clip")
 	}
-	_, err := s.chosenIn(path).change(s.store.files, path, func(c *chosen) bool {
-		c.Clip = key
+	_, err := s.chosenIn(path).with(s.store.files, path, func(p *picked) bool {
+		// A clip a hand chose is no longer the one a removal chose, so
+		// putting a removed clip back after it chooses nothing, rule 5.
+		p.kept.Clip, p.instead = key, nil
 		return true
 	})
 	return err
