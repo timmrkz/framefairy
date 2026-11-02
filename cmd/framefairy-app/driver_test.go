@@ -459,10 +459,20 @@ func (d *desk) copied() string {
 
 // reopen starts the app again over the same library, the way main does.
 func (d *desk) reopen() {
-	// The app that closed sends nothing more, as it does when it quits,
-	// and hears nothing more of the disk.
+	d.shut()
+	d.open()
+}
+
+// shut is the app closing: it sends nothing more, as it does when it
+// quits, and hears nothing more of the disk, so what changes on the disk
+// until open is a change made while the app was closed.
+func (d *desk) shut() {
 	d.svc.watch.stop()
 	d.svc.news.stop()
+}
+
+// open starts the app over the library on the disk, the way main does.
+func (d *desk) open() {
 	st := openStore()
 	d.start(st)
 	d.svc.restoreJobs(st.Episodes())

@@ -518,13 +518,20 @@ export const steps = {
     // Go side told it, however often that takes on a busy machine. What
     // the app must not do, make the folder again once it is gone, is
     // what the walk then looks for.
+    // Closed is closed before anything is deleted: the app watches the
+    // folders of its videos, so a folder deleted while it runs is heard at
+    // once, which is the "in front" case, not this one.
+    const closed = arg === "closed" || arg === "written back";
+    if (closed) await control(url, "/close");
     for (;;) {
       try {
         rmSync(folder, { recursive: true, force: true });
         break;
       } catch (err) {
         if (err.code !== "ENOTEMPTY") throw err;
-        await caughtUp(page, url);
+        // Closed, nothing writes it, so a folder not empty is one more
+        // try away. Open, the interface catches up first.
+        if (!closed) await caughtUp(page, url);
       }
     }
     walk.videoGone = arg === "with the video" || arg === "written back";
@@ -533,8 +540,8 @@ export const steps = {
       mkdirSync(folder);
       writeFileSync(join(folder, "chosen.json"), JSON.stringify({ clip: "", opened: Date.now() }));
     }
-    if (arg === "closed" || arg === "written back") {
-      await control(url, "/reopen");
+    if (closed) {
+      await control(url, "/open");
       await page.reload();
     } else if (arg !== "in front") {
       // The person went to Finder and came back: the app lost the

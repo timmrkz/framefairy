@@ -642,6 +642,17 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		closed, err := b.reopen()
 		answer(w, closed, err)
 	})
+	// The app closed, and opened again later, so a walk changes the disk
+	// in between the way a person does while it is closed: the app's
+	// watch on the disk does not hear it.
+	mux.HandleFunc("/close", func(w http.ResponseWriter, r *http.Request) {
+		closed, err := b.close()
+		answer(w, closed, err)
+	})
+	mux.HandleFunc("/open", func(w http.ResponseWriter, r *http.Request) {
+		b.d.open()
+		answer(w, true, nil)
+	})
 	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mediaMiddleware(b.d.svc.store)(reportMiddleware(b.d.svc.report)(http.FileServer(http.Dir(dist)))).ServeHTTP(w, r)
 	}))
@@ -1483,13 +1494,24 @@ func (b *bridge) arriving(ctx context.Context, log *runlog.Log, kind string, siz
 // done. What a walk read off the screen before it asked is a moment older,
 // and a search the model answers at once can end in that moment.
 func (b *bridge) reopen() ([]Job, error) {
+	closed, err := b.close()
+	if err != nil {
+		return nil, err
+	}
+	b.d.open()
+	return closed, nil
+}
+
+// close closes the app the way quitting does, and says the jobs it
+// closed on. Nothing runs and nothing hears the disk until open.
+func (b *bridge) close() ([]Job, error) {
 	if !b.words.whileClosing(b.d.svc.jobs.shutDown) {
 		return nil, fmt.Errorf("the app did not stop its work in time")
 	}
 	closed := b.d.svc.jobs.list()
 	b.d.svc.levels.shutDown()
 	b.d.svc.CancelListening()
-	b.d.reopen()
+	b.d.shut()
 	return closed, nil
 }
 
