@@ -209,12 +209,14 @@ export default [
     // landed in it. A step while the episode plays on the video skips
     // through the episode and stays on the video, cuts and all. On the
     // clip the same keys walk its words and the play stays on the clip.
+    // A skip on the video is 5 s, #377, so four of them, in 1.6 s of
+    // play, take the play into the clip and through it and leave it there.
     name: "shift and the arrows skip ahead through a clip on the video, and walk its words on the clip",
     steps: [
       ["trim", "start", 300],
       ["cut at", 0.4],
       ["cuts", 1],
-      ["play from", "before", 8, "Shift+ArrowRight"],
+      ["play from", "before", 1.6, "Shift+ArrowRight"],
       ["only the video"],
       ["play from", "in", 4, "Shift+ArrowRight"],
       ["the clip shown"],

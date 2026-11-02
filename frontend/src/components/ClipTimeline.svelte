@@ -975,6 +975,14 @@
   // asks for, and the clip lighting up under it was a clip nobody chose.
   // On the clip and paused, a step lands where its frame says, see
   // placeOf.
+  // Whether the playhead is on the clip for Shift and an arrow: from a frame
+  // before its first piece to a frame after its last, its cuts included. A
+  // clip playing on the clip crosses its cuts, and a step there walked the
+  // words heard in the cut and stayed on the clip.
+  function onClip(t: number, step: number): boolean {
+    return drawnPieces.length > 0 && t >= start - step && t <= end + step;
+  }
+
   function onKey(event: KeyboardEvent) {
     if (removePicked(event)) return;
     // Any other key lets the pick go, and the key does what it does. A
@@ -1012,13 +1020,14 @@
     // clip that could not be made to happen twice: it only happens on the
     // first press after picking one.
     const step = Math.max(frame, 1 / 240);
-    if (through || !insideClip(drawnPieces, time, step)) {
+    if (through || !onClip(time, step)) {
       put(time + (back ? -SKIP : SKIP));
       return;
     }
-    // The caption's words arrive a moment after the clip is chosen, and
-    // until then the words heard there are the ones it will light.
-    const walk = lit.length ? lit : words;
+    // In a cut the caption lights nothing, so the words heard there are
+    // walked, and the caption's words arrive a moment after the clip is
+    // chosen, until when the words heard are the ones it will light.
+    const walk = lit.length && insideClip(drawnPieces, time, step) ? lit : words;
     const to = wordStep(walk, time, back, step);
     if (to !== null) {
       put(to, true);
@@ -1039,17 +1048,20 @@
   // It runs on every move of the playhead while paused, a play just ended
   // too: FrameQueue.ahead drops what it was asked already, so this needs
   // no guard of its own.
+  //
+  // Outside a clip nothing is read ahead. A skip lands SKIP seconds away,
+  // further than a stream reads on, so the frames there would cost a seek
+  // each, back and on, at every move of the playhead, a click too, and
+  // the decoder would be busy with them when the hand goes somewhere else.
   $effect(() => {
     if (playing || scrubbing || gripping || !onahead) return;
     const step = Math.max(frame, 1 / 240);
-    const inside = insideClip(drawnPieces, time, step);
-    const walk = lit.length ? lit : words;
+    if (!onClip(time, step)) return;
+    const walk = lit.length && insideClip(drawnPieces, time, step) ? lit : words;
     const times: number[] = [];
     for (const back of [false, true]) {
-      const to = inside ? wordStep(walk, time, back, step) : time + (back ? -SKIP : SKIP);
-      if (to === null) continue;
-      const at = Math.max(0, Math.min(to, duration));
-      if (at !== time) times.push(at);
+      const to = wordStep(walk, time, back, step);
+      if (to !== null) times.push(Math.max(0, Math.min(to, duration)));
     }
     if (times.length) onahead(times);
   });

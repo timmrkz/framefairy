@@ -495,7 +495,8 @@ export const steps = {
   //                    so many seconds of play, and pauses
   // ["play from", where, seconds, key]
   //                    the same, pressing this key every 400 ms of the
-  //                    play, "Shift+ArrowRight" to skip ahead by words,
+  //                    play, "Shift+ArrowRight" to skip ahead, 5 s on
+  //                    the video and by words on the clip,
   //                    and from "before" the playhead has to have gone a
   //                    second or more further than the play takes it
   async "play from"(walk, arg, s) {
