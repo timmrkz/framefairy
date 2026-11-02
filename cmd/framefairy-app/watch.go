@@ -126,7 +126,10 @@ func (ws *watching) run() {
 			if !ok {
 				return
 			}
-			theLog.line(zerolog.WarnLevel, "files").Err(err).Msg("the watch on the disk missed a change")
+			// The system's queue of changes ran over, most often, so
+			// which changed is not known: every video is looked at.
+			theLog.line(zerolog.WarnLevel, "files").Err(err).Msg("the watch on the disk missed a change, so every video is looked at")
+			ws.heard(nil)
 			continue
 		}
 		for more := true; more; {

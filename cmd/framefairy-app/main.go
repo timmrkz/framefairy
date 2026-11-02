@@ -382,10 +382,11 @@ type FrameFairy struct {
 	news *videoNews
 	// watch hears what changes in the folders of the videos in the
 	// library, whoever changed it, and hands it to reconcile, see
-	// watch.go. listed is what the library said of each video the last
-	// time a change named it, see listIfChanged.
-	watch  *watching
-	listed map[string]string
+	// watch.go. reconciling keeps reconcile to one at a time, and away
+	// from a Remove that is deleting a video's folder, so the app's own
+	// deletion is never taken for one made outside it.
+	watch       *watching
+	reconciling sync.Mutex
 	// Finding and installing a newer build of the app, see updates.go.
 	updates *updating
 	// What Cmd+Q does, see quit.go.

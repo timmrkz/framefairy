@@ -221,6 +221,13 @@ func (s *FrameFairy) RemoveEpisode(path string, deleteWork bool) error {
 			return errors.New("something is still running on this video and would not stop, " +
 				"so nothing was deleted. Remove the video again in a moment")
 		}
+	}
+	// The watch hears the folder go, and reconcile waits until the video
+	// is out of the library, so it never takes this for a folder deleted
+	// outside the app.
+	s.reconciling.Lock()
+	defer s.reconciling.Unlock()
+	if deleteWork {
 		if err := engine.DeleteWork(s.store.files, path); err != nil {
 			return err
 		}

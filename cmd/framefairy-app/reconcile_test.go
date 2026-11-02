@@ -6,6 +6,7 @@ import (
 	"slices"
 	"sync"
 	"testing"
+	"testing/synctest"
 
 	"github.com/spf13/afero"
 
@@ -64,52 +65,68 @@ func TestAChangeHeardInTheFolderOfAVideoDeletedOutsideLetsItGoAtOnce(t *testing.
 	svc.clearing.Wait()
 }
 
-func TestAVideoMovedAwayAndBackIsToldEachTimeAndOnlyThen(t *testing.T) {
-	t.Parallel()
-	svc, eps := memoryLibrary(t, "youtube.mp4", "start.mp4")
-	var told toldList
-	listingTo(svc, told.add)
-	sent := make(chan string, 4)
-	svc.news = newVideoNews(func(path string) (VideoState, error) {
-		return VideoState{Video: path}, nil
-	}, func(v VideoState) { sent <- v.Video })
-	t.Cleanup(svc.news.stop)
-	files := svc.store.files
-	video, other := eps[0], eps[1]
+// The state of a video named by a change is sent to the workspace each
+// time, and the sidebar is told when the video itself changed, not when
+// something was written in its work folder, which is the app's own work
+// most of the time. videoNews keeps time, so the test runs in a bubble.
+func TestAVideoMovedAwayAndBackIsSentEachTimeAndTheSidebarToldOnlyThen(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		svc, eps := memoryLibrary(t, "youtube.mp4", "start.mp4")
+		var told toldList
+		listingTo(svc, told.add)
+		sent := make(chan string, 4)
+		svc.news = newVideoNews(func(path string) (VideoState, error) {
+			return VideoState{Video: path}, nil
+		}, func(v VideoState) { sent <- v.Video })
+		t.Cleanup(svc.news.stop)
+		files := svc.store.files
+		video, other := eps[0], eps[1]
+		plan := filepath.Join(engine.WorkDir(video), "logs", "clips.json")
 
-	steps := []struct {
-		name    string
-		change  func() error
-		missing bool
-		told    []string
-	}{
-		{"moved away", func() error { return files.Rename(video, video+".away") }, true, []string{video}},
-		{"heard again with nothing changed", func() error { return nil }, true, []string{video}},
-		{"put back", func() error { return files.Rename(video+".away", video) }, false, []string{video, video}},
-	}
-	for _, step := range steps {
-		if err := step.change(); err != nil {
-			t.Fatal(err)
+		steps := []struct {
+			name    string
+			change  func() error
+			heard   string
+			missing bool
+			told    int
+		}{
+			{"moved away", func() error { return files.Rename(video, video+".away") }, video, true, 1},
+			{"heard again with nothing changed", func() error { return nil }, video, true, 2},
+			{"put back", func() error { return files.Rename(video+".away", video) }, video, false, 3},
+			{"a plan written by the command line", func() error {
+				return afero.WriteFile(files, plan, []byte("{}"), 0o644)
+			}, plan, false, 3},
 		}
-		svc.reconcile([]string{video})
-		if got := svc.Episode(video).Missing; got != step.missing {
-			t.Fatalf("%s: the library says missing %v", step.name, got)
+		for _, step := range steps {
+			if err := step.change(); err != nil {
+				t.Fatal(err)
+			}
+			svc.reconcile([]string{step.heard})
+			if got := svc.Episode(video).Missing; got != step.missing {
+				t.Fatalf("%s: the library says missing %v", step.name, got)
+			}
+			if got := told.all(); len(got) != step.told {
+				t.Fatalf("%s: the sidebar was told %d times, want %d", step.name, len(got), step.told)
+			}
+			// Its state is sent to the workspace each time it is heard of.
+			if got := <-sent; got != video {
+				t.Fatalf("%s: the state of %s was sent", step.name, got)
+			}
 		}
-		if got := told.all(); !slices.Equal(got, step.told) {
-			t.Fatalf("%s: the sidebar was told about %v, want %v", step.name, got, step.told)
+		if !svc.store.Known(video) {
+			t.Errorf("%s left the library, though only its file moved", video)
 		}
-		// Its state is sent to the interface each time it is heard of.
-		if got := <-sent; got != video {
-			t.Fatalf("%s: the state of %s was sent", step.name, got)
+		svc.reconcile([]string{filepath.Join(filepath.Dir(other), "elsewhere.mp4")})
+		synctest.Wait()
+		if got := told.all(); len(got) != 3 {
+			t.Errorf("a change to a file of no video told the sidebar about %v", got[3:])
 		}
-	}
-	if !svc.store.Known(video) {
-		t.Errorf("%s left the library, though only its file moved", video)
-	}
-	svc.reconcile([]string{filepath.Join(filepath.Dir(other), "elsewhere.mp4")})
-	if got := told.all(); len(got) != 2 {
-		t.Errorf("a change to a file of no video told the sidebar about %v", got[2:])
-	}
+		select {
+		case v := <-sent:
+			t.Errorf("a change to a file of no video sent the state of %s", v)
+		default:
+		}
+	})
 }
 
 func TestAChangeIsHintedForTheVideoItCanChange(t *testing.T) {
@@ -137,8 +154,9 @@ func TestAChangeIsHintedForTheVideoItCanChange(t *testing.T) {
 
 // On the real disk: diskLibrary is the app over a library on the real
 // disk, watched, with one video in it, and where the sidebar's news of the
-// library goes. The system's watch hears only the real disk.
-func diskLibrary(t *testing.T) (*FrameFairy, string, chan string) {
+// library goes and the states sent to the workspace. The system's watch
+// hears only the real disk.
+func diskLibrary(t *testing.T) (*FrameFairy, string, chan string, chan string) {
 	t.Helper()
 	dir := t.TempDir()
 	files := afero.NewOsFs()
@@ -153,9 +171,22 @@ func diskLibrary(t *testing.T) (*FrameFairy, string, chan string) {
 	if added, err := st.AddEpisodes([]string{video}); err != nil || len(added) != 1 {
 		t.Fatalf("adding %s: %v %v", video, added, err)
 	}
+	if err := os.MkdirAll(filepath.Join(engine.WorkDir(video), "logs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	svc := &FrameFairy{store: st}
 	told := make(chan string, 64)
 	listingTo(svc, func(ep string) { told <- ep })
+	sent := make(chan string, 64)
+	svc.news = newVideoNews(func(path string) (VideoState, error) {
+		return VideoState{Video: path}, nil
+	}, func(v VideoState) {
+		select {
+		case sent <- v.Video:
+		default:
+		}
+	})
+	t.Cleanup(svc.news.stop)
 	svc.watch = newWatching(svc.reconcile)
 	if svc.watch == nil {
 		t.Fatal("the disk cannot be watched here")
@@ -164,13 +195,15 @@ func diskLibrary(t *testing.T) (*FrameFairy, string, chan string) {
 	t.Cleanup(svc.watch.stop)
 	// Reading the library is what starts the watch, as it does in the app.
 	svc.Library()
-	return svc, video, told
+	return svc, video, told, sent
 }
 
-// toldOf reads the sidebar's news until it names video.
-func toldOf(told chan string, video string) {
-	for ep := range told {
-		if ep == video {
+// newsUntil reads news of videos, the sidebar's or the workspace's, until
+// one names video and holds is true. A folder deleted is heard file by
+// file, so the first news of it may come before the last file is gone.
+func newsUntil(news chan string, video string, holds func() bool) {
+	for ep := range news {
+		if ep == video && holds() {
 			return
 		}
 	}
@@ -180,14 +213,11 @@ func toldOf(told chan string, video string) {
 // tested, the way Finder's changes reach it.
 func TestAFolderDeletedInFinderLeavesTheLibraryWithoutTheAppComingToTheFront(t *testing.T) {
 	t.Parallel()
-	svc, video, told := diskLibrary(t)
+	svc, video, told, _ := diskLibrary(t)
 	if err := os.RemoveAll(engine.WorkDir(video)); err != nil {
 		t.Fatal(err)
 	}
-	toldOf(told, video)
-	if svc.store.Known(video) {
-		t.Errorf("the sidebar was told, and %s is still in the library", video)
-	}
+	newsUntil(told, video, func() bool { return !svc.store.Known(video) })
 	if _, err := os.Stat(video); err != nil {
 		t.Errorf("the video itself is gone: %v", err)
 	}
@@ -197,22 +227,28 @@ func TestAFolderDeletedInFinderLeavesTheLibraryWithoutTheAppComingToTheFront(t *
 // tested, the way Finder's changes reach it.
 func TestAVideoMovedInFinderSaysFileNotFoundAndBackWithoutTheAppComingToTheFront(t *testing.T) {
 	t.Parallel()
-	svc, video, told := diskLibrary(t)
+	svc, video, told, _ := diskLibrary(t)
 	if err := os.Rename(video, video+".away"); err != nil {
 		t.Fatal(err)
 	}
-	toldOf(told, video)
-	if !svc.Episode(video).Missing {
-		t.Fatalf("the sidebar was told, and %s is not missing", video)
-	}
+	newsUntil(told, video, func() bool { return svc.Episode(video).Missing })
 	if err := os.Rename(video+".away", video); err != nil {
 		t.Fatal(err)
 	}
-	toldOf(told, video)
-	if svc.Episode(video).Missing {
-		t.Errorf("the sidebar was told, and %s is still missing", video)
-	}
+	newsUntil(told, video, func() bool { return !svc.Episode(video).Missing })
 	if !svc.store.Known(video) {
 		t.Errorf("%s left the library, though only its file moved", video)
 	}
+}
+
+// On the real disk: the system's own watch on the logs folder is what is
+// tested, the way the command line's writes reach it.
+func TestAPlanWrittenByTheCommandLineIsSentToTheWorkspaceAtOnce(t *testing.T) {
+	t.Parallel()
+	_, video, _, sent := diskLibrary(t)
+	plan := filepath.Join(engine.WorkDir(video), "logs", "clips.json")
+	if err := os.WriteFile(plan, []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	newsUntil(sent, video, func() bool { return true })
 }
