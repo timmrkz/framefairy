@@ -1051,6 +1051,23 @@ export function onJob(fn: (u: JobUpdate) => void): () => void {
   return Events.On("job", (ev) => fn(ev.data as JobUpdate));
 }
 
+// A failure, told once by the Go side as it happens: a job of a video
+// that failed while it waited or ran, or was refused as it was asked for,
+// see notice.go. Its words are the Go side's, and the toast shows them.
+export interface Notice {
+  video: string;
+  job: string;
+  kind: string;
+  text: string;
+  // Whether the toast offers Report, for what the person cannot put
+  // right alone.
+  report: boolean;
+}
+
+export function onNotice(fn: (n: Notice) => void): () => void {
+  return Events.On("notice", (ev) => fn(ev.data as Notice));
+}
+
 // Where macOS put the title bar and its buttons, in whole CSS pixels. All
 // zeros means the system draws its own title bar, which is every other
 // system, and then the stylesheet keeps its own numbers.

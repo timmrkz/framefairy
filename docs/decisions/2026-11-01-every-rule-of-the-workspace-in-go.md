@@ -451,3 +451,13 @@ cloud session with four cores, 200 reads a run, five runs each.
 The state is read about once a second while work runs, and once for
 each answer to a hand, so a quarter of a millisecond is far under a
 frame.
+
+Step 5 is as decided. The queue tells a failure where it sees it, in
+`update` as a job goes from waiting or running to failed, and in
+`refuse`, see `cmd/framefairy-app/notice.go`, on the `notice` event, and
+App shows it in a toast. It tells the work of a video that said why in a
+toast before, a search, a clip made by hand, a transcription and a
+render, in the same words, and a download goes on saying why in its card
+alone. A search refused as it is asked for, while the app closes or the
+video is being removed, now says why in a toast too, where it said only
+Failed in its row before.

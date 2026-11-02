@@ -101,6 +101,12 @@ func main() {
 		}
 	})
 	svc.jobs.news = svc.told
+	// A failure is said once, as it happens, see notice.go.
+	svc.jobs.notice = quietly(func(n Notice) {
+		if app != nil {
+			app.Event.Emit("notice", n)
+		}
+	})
 	svc.listening.say = quietly(func(d Dictation) {
 		if app != nil {
 			app.Event.Emit("dictation", d)

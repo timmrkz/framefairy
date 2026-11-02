@@ -12,10 +12,6 @@ import { unchanged } from "./unchanged";
 // What the workspace does when the video's work moves on. When one
 // snapshot says more than one of them, they come in this order.
 export interface WorkMoves {
-  // A search or a clip made by hand failed: one seen running, or one
-  // asked for here. Each is said once, issue #450. One seen failed only
-  // as the app opened said why already, the time it failed.
-  failed(job: Job): void;
   // The app chose another clip, see cmd/framefairy-app/choose.go, in
   // place of before, the clip chosen until then. card is the card the
   // clip was on its way as, when it was chosen because that card was
@@ -53,9 +49,6 @@ export class EpisodeSession {
   private waitingFresh = false;
   // The work asked for in this workspace that is not over yet.
   private asking = new Set<string>();
-  // The failures said, so the answer to a call that comes after its news
-  // says nothing again.
-  private told = new Set<string>();
   // The clip chosen, by a hand or by the app, and the video's window, from
   // the newest state kept, or what a hand did while the Go side has not
   // answered it, see Hand.
@@ -63,7 +56,7 @@ export class EpisodeSession {
   window = $state<WindowView | null>(null);
   private picks = new Hand();
   private places = new Hand();
-  private moves: WorkMoves = { failed() {}, chose() {}, heard() {}, searched() {}, transcribed() {}, rendered() {} };
+  private moves: WorkMoves = { chose() {}, heard() {}, searched() {}, transcribed() {}, rendered() {} };
 
   constructor(
     readonly path: string,
@@ -218,7 +211,6 @@ export class EpisodeSession {
       this.asking.add(job.id);
       return;
     }
-    if (now.state === "failed") this.fail(now);
     this.over(now);
   }
 
@@ -226,7 +218,6 @@ export class EpisodeSession {
     if (after.episode !== this.path) return;
     const was = live(before);
     const now = live(after);
-    if (was && after.state === "failed") this.fail(after);
     switch (after.kind) {
       case "search":
         if (was && before?.step === "hearing" && !(now && after.step === "hearing")) this.moves.heard(after);
@@ -237,13 +228,6 @@ export class EpisodeSession {
         break;
     }
     if (!now && this.asking.delete(after.id)) this.over(after);
-  }
-
-  private fail(job: Job) {
-    if (job.kind !== "search" && job.kind !== "clip") return;
-    if (this.told.has(job.id)) return;
-    this.told.add(job.id);
-    this.moves.failed(job);
   }
 
   private over(job: Job) {

@@ -841,7 +841,7 @@
     const window = `Window ${clock(start)} to ${clock(end)}`;
     const span = { from: start, to: end, window };
     if (search.state === "failed") {
-      // Why is said in a toast as it fails, see failedNow. A card is no
+      // Why is said in a toast as it fails, see notice.go. A card is no
       // place to carry a reason, and cut to one line it lost the part
       // that said what to do, issue #311.
       return { ...span, what: "Failed. Click Continue", left: window, full: `${window}. ${reasonOf(search.error)}` };
@@ -2719,16 +2719,6 @@
   // from before and compared it with the next, issue #606. It hears from
   // the moment the workspace is on the page, as the effects did.
   const moves: WorkMoves = {
-    // A search that fails while the app is open says why in a toast, with
-    // Report for what the person cannot put right alone, and so does a
-    // clip made by hand with I or O. Its row or card goes on saying Failed
-    // with Continue, after a restart too, and never why, issue #450.
-    failed: (job) => {
-      const what = job.kind === "clip" ? "clip made by hand" : "search";
-      const why = reasonOf(job.error, what);
-      tell(`${what} failed: ${why}`);
-      toasts.say(where(), why, { video: path, report: true });
-    },
     // The app chose another clip, see choose.go: a search's first clip or
     // its earliest, the clip beside one removed or one put back, the clip
     // an undo changed, or a clip made by hand that was written, whose card
@@ -2766,13 +2756,12 @@
       // comes in it too, see the move chose.
       void load();
     },
-    // A render this workspace started: the list shows what was rendered,
-    // and a render that failed says why over the workspace.
-    rendered: (job) => {
+    // A render this workspace started: the list shows what was rendered.
+    // One that failed says why in a toast, which the Go side tells, see
+    // notice.go.
+    rendered: () => {
       onchange();
-      load().then(() => {
-        if (job.state === "failed") oops(job.error ?? "The render failed.");
-      });
+      void load();
     },
   };
   onMount(() => session.open(moves, onVideoState));

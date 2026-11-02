@@ -1344,6 +1344,7 @@ const Answers = {
           const list = ((window as any).__refused ??= []) as any[];
           const job = { id: `refused-${list.length + 1}`, episode: "/eps/ep.mp4", kind: "search", label: "Find clips", state: "failed", error: "the app is closing", from: req.From, to: req.To, count: req.Count, queued: "", lane: "finding" };
           list.push(job);
+          noticeListeners.forEach((f) => f({ data: { video: job.episode, job: job.id, kind: "search", text: "The app is closing", report: true } }));
           return Promise.resolve(job);
         }
         const made = askSearch(req.From, req.To, req.Count);
@@ -2228,6 +2229,8 @@ function draftStub() {
   if (n > 0) attachStub(n);
 }
 
+const noticeListeners = new Set<(ev: unknown) => void>();
+
 export const Events = {
   // The Go side sends a job event every second while work runs, and an
   // interface that re-subscribes to anything on every one of those events
@@ -2255,6 +2258,13 @@ export const Events = {
     if (name === "report-draft") {
       (window as any).__dropPictures = (n: number) => fn({ data: attachStub(n) });
       return () => delete (window as any).__dropPictures;
+    }
+    // A failure the Go side tells once, see notice.go, and a probe tells
+    // with window.__notice(notice).
+    if (name === "notice") {
+      noticeListeners.add(fn);
+      (window as any).__notice = (n: unknown) => noticeListeners.forEach((f) => f({ data: n }));
+      return () => noticeListeners.delete(fn);
     }
     if (name === "dictation") {
       dictListeners.add(fn);

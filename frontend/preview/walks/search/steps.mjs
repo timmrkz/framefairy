@@ -1616,10 +1616,12 @@ export const steps = {
       walk.wrong = `I at ${at} s on a video with no speech made a clip that is ${job.state}, not failed`;
       return;
     }
-    // The failed news is in the store, so its card and its toast are
-    // drawn once the app is quiet, and read straight away, well inside
-    // the toast's own time.
-    await settle(page);
+    // The failed news is in the store, so its card is drawn once the app
+    // is quiet. Its toast comes with the Go side's notice, an event of its
+    // own after the news, see notice.go, there once the interface has
+    // heard all the Go side said. Both are read straight away, well
+    // inside the toast's own time.
+    await caughtUp(page, url);
     const said = await page.evaluate((id) => {
       const li = document.querySelector(`li[data-key^="${id}/"]`);
       return {

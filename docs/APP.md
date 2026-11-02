@@ -2397,7 +2397,12 @@ What has a place of its own keeps it: a clip that failed says so on its
 card, a search that stopped in its row, and what dictation did not hear
 beside the microphone. Why is said in a toast, whole, issue #311. A
 search that failed says Failed with Continue in its row and why in a
-toast, which offers Report: Report a Problem opens with the toast's
+toast, which offers Report. Which failures are told, and in what words,
+is the Go side's: the queue tells each once, as the job goes from
+waiting or running to failed, or is refused as it is asked for, a search,
+a clip made by hand, a transcription or a render, see
+`cmd/framefairy-app/notice.go`. One found failed only as the app opens
+said why the time it failed. Report opens Report a Problem with the toast's
 words written in its field, after what was there, and a report window
 already open is handed them to write in, see `ReportAbout` in
 `bugs.go`. Cut to one line in the row, the reason lost the part that

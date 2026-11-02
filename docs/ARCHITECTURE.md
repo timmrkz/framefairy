@@ -126,14 +126,14 @@ What to do today, and what changes once the issue named is built.
 | I need to | It goes |
 | --- | --- |
 | decide where an edge, a word or a window lands | the engine: `engine/shape.go` for a gesture, `engine.Project` for a window. The interface asks and draws the answer |
-| do something in the workspace when a video's work moves on | today a move of `EpisodeSession` in `frontend/src/lib/session.svelte.ts`, never an effect that keeps the value from before. Once #606 is built, nothing in the interface: Go decides what follows, the window, a failure told, and sends it, the way it already decides the clip chosen, in `cmd/framefairy-app/choose.go`, and sends it in the video's state, see [2026-11-01-every-rule-of-the-workspace-in-go.md](decisions/2026-11-01-every-rule-of-the-workspace-in-go.md) |
+| do something in the workspace when a video's work moves on | today a move of `EpisodeSession` in `frontend/src/lib/session.svelte.ts`, never an effect that keeps the value from before. Once #606 is built, nothing in the interface: Go decides what follows and sends it, the way it already chooses the clip and fits the window, in `cmd/framefairy-app/choose.go` and `window.go`, and sends both in the video's state, and tells a failure once, see [2026-11-01-every-rule-of-the-workspace-in-go.md](decisions/2026-11-01-every-rule-of-the-workspace-in-go.md) |
 | show the interface a new fact about a video | a field of `VideoState` in `cmd/framefairy-app/videostate.go`, or of what it holds, the status and the clip views, which the session keeps. Never a new event of its own or a poll |
 | tell the window that something about a video changed | `told` on `*FrameFairy`, or the queue's `moved` for a job, which send the video's state, at most four times a second and always after the last change, one at a time, with at most one more waiting however slow a read is. Nothing else sends it |
 | keep something between two jobs, a cache or a fact about the machine | a field on `engine.Machine`, in `engine/machine.go`, which a program makes once and hands to every `Engine`. Never a package variable, and never a new `Engine` made only to get it. #607 moves the package variables still left onto it |
 | read a file of a video | through the `afero.Fs` the code was given, with `fileio.SafeChildIn` for a path in a work folder. Not `os`. Once #608 is built, through the video's `Episode` |
 | change a plan | `editPlan` in `engine/edit.go` |
 | start a goroutine that runs code which can panic, like layout of words a person typed | a deferred recover where that work comes in, which turns a panic into that work's error and logs the stack where the work has a log, as `engine/planbuild.go` does. A goroutine that only waits, counts or hands on gets none. A parser of outside bytes has its fuzz target first |
-| say that something went wrong | an error that keeps its kind with `%w`, returned to the caller. The app turns it into a row or a toast, and logs through `theLog`, never `log.Printf`, which forbidigo refuses. An engine the app makes outside a job logs through `engineLog(part, video)` in `cmd/framefairy-app/applog.go`, never to `io.Discard`. An engine is made for each job and takes its log then, and what outlives the job is on the machine it is handed |
+| say that something went wrong | an error that keeps its kind with `%w`, returned to the caller. The app turns it into a row or a toast, and a job that fails is told once by the queue, a `Notice` from `cmd/framefairy-app/notice.go`, which the interface shows in a toast and never decides. It logs through `theLog`, never `log.Printf`, which forbidigo refuses. An engine the app makes outside a job logs through `engineLog(part, video)` in `cmd/framefairy-app/applog.go`, never to `io.Discard`. An engine is made for each job and takes its log then, and what outlives the job is on the machine it is handed |
 | add a call between the interface and Go | a method on `*FrameFairy` in the file of its kind in `cmd/framefairy-app/`, and its call in `frontend/src/lib/api.ts`. `bindings_test.go` checks the name and the arguments |
 | give the interface a new type or field | the Go struct and its interface in `frontend/src/lib/api.ts` in the same change. Once #611 is built, generated from the Go struct |
 | add a setting | a field of `Settings` in `cmd/framefairy-app/settings.go`, changed through `UpdateSettings`. What the engine needs from it reaches it through its options |
@@ -198,6 +198,8 @@ other side relies on, and the pull request says so.
 - The bindings on `*FrameFairy` and `frontend/src/lib/api.ts`.
 - The `video` event, `VideoState`, whose `rev` is on the clock of the
   jobs' `seq`, so the window can tell which of two came later.
+- The `notice` event, `Notice`, a failure told once as it happens, which
+  is no fact of a video's state.
 - `engine.Project`, the steps a front end may take.
 - The files of a work folder and of the config folder, which an older
   and a newer build both read, `chosen.json` and the settings among
@@ -222,15 +224,14 @@ copies what it finds nearby, so these are not the pattern for new code.
   `cmd/framefairy-app/media.go` and `openPreviews` in
   `cmd/framefairy-app/frames.go`, #607.
 - The effects in `frontend/src/screens/Episode.svelte` that compare an
-  old value with a new one to notice that a search started, `followed`
-  and `searchSeen`, the reads of the video's state it asks for after
-  work moves on, the poll of the job list and its own timer, #606. Work that moves on or fails is said by `EpisodeSession`,
-  and by `JobStore.watch` for what is not one video's, see the decision
+  old value with a new one to notice that a search started,
+  `searchSeen`, the reads of the video's state it asks for after work
+  moves on, the poll of the job list and its own timer, #606. Work that
+  moves on is said by `EpisodeSession`, see the decision
   record
   [2026-10-30-a-videos-state-in-one-session.md](decisions/2026-10-30-a-videos-state-in-one-session.md).
 - What the interface decides about a video's work and its workspace:
-  the moves of `EpisodeSession`, how a search ended, which failures are
-  told, #606. Go decides each of
+  the moves of `EpisodeSession` and how a search ended, #606. Go decides each of
   them and sends it, see
   [2026-11-01-every-rule-of-the-workspace-in-go.md](decisions/2026-11-01-every-rule-of-the-workspace-in-go.md).
 
