@@ -540,21 +540,52 @@ over its mean, and each number is from that one machine:
 | New streams                                |    221 |    17 | 92 % fewer, ± 1 %     |
 | Frame under the hand after letting go (ms) |     88 |     0 | 100 % shorter, ± 22 % |
 
-| Other drags, unchanged in how they work      | Before | After | Change               |
-| -------------------------------------------- | -----: | ----: | -------------------- |
-| Slow to the right, standing, median (ms)     |     13 |    14 | 5 % longer, ± 4 %    |
-| Slow to the right, standing, longest (ms)    |     99 |   138 | 39 % longer, ± 15 %  |
-| Fast, standing, median (ms)                  |     81 |    89 | 10 % longer, ± 27 %  |
-| Fast, standing, longest (ms)                 |    356 |   442 | 24 % longer, ± 19 %  |
-
 The longest wait that is left on a slow drag to the left is the stream
 each 15 steps opens, a seek and 16 frames, on the processor here and on
-the video chip on a Mac. The other drags take no new path: every new
-stream of a fast drag came with its key frame first in all six runs, and
-a slow drag to the right opened one stream or none. Their longest waits
-came out longer by more than Before's spread, one wait of 182 ms in one
-run to the right and 533 ms in one fast run, with three runs a side too
-few to tell that from the machine.
+the video chip on a Mac.
+
+The other drags take no new path: every new stream of a fast drag comes
+with its key frame first, and a slow drag to the right opens one stream
+or none. Ten runs a side, the same machine and video, Before `app.ts` as
+on main, After as it is, each number the mean of the ten, the spread half
+the range of Before's runs over its mean:
+
+| Other drags                                      | Before | After | Change              |
+| ------------------------------------------------ | -----: | ----: | ------------------- |
+| Slow to the right, standing, median (ms)         |   13.5 |  13.1 | 3 % shorter, ± 4 %  |
+| Slow to the right, standing, longest (ms)        |   68.6 |  64.8 | 6 % shorter, ± 48 % |
+| Fast, standing, median (ms)                      |   94.7 | 106.7 | 13 % longer, ± 34 % |
+| Fast, standing, longest (ms)                     |  296.6 | 286.0 | 4 % shorter, ± 24 % |
+| Fast, frame under the hand after letting go (ms) |   95.4 | 105.9 | 11 % longer, ± 88 % |
+
+Only a step back of `SLOW`, 2 frames, or fewer opens a run. A hand that
+moves further a step leaves the frames of a run behind before they would
+be shown, and a run in flight holds up the frame under the hand once it
+lets go. A video of 50 frames a second, three runs a side, slow drags to
+the left of 6 and 10 pixels every frame of the page and a fast drag of
+30, with `SLOW` at 2 against a run for every step back within `BACK`, 15
+frames. The spread is half the range of the runs at 2 over their mean,
+and none of the fast runs at 2 waited after letting go, so that row
+gives the change in milliseconds:
+
+| 50 frames a second                     | `SLOW` 2 | `SLOW` 15 | Change                |
+| -------------------------------------- | -------: | --------: | --------------------- |
+| 6 pixels left, standing, median (ms)   |     46.0 |      22.7 | 51 % shorter, ± 93 %  |
+| 6 pixels left, standing, longest (ms)  |    508.7 |     440.7 | 13 % shorter, ± 20 %  |
+| 6 pixels left, after letting go (ms)   |    144.7 |     206.0 | 42 % longer, ± 94 %   |
+| 10 pixels left, standing, median (ms)  |    405.0 |     129.0 | 68 % shorter, ± 15 %  |
+| 10 pixels left, standing, longest (ms) |    590.3 |     406.3 | 31 % shorter, ± 5 %   |
+| 10 pixels left, after letting go (ms)  |     71.3 |     243.3 | 241 % longer, ± 149 % |
+| Fast, standing, median (ms)            |     92.0 |      70.3 | 24 % shorter, ± 73 %  |
+| Fast, standing, longest (ms)           |    284.3 |     459.0 | 61 % longer, ± 22 %   |
+| Fast, after letting go (ms)            |      0.0 |     144.7 | 144.7 ms longer       |
+
+A run for every step within 15 frames makes a quicker hand's picture
+stand shorter while it moves, and the frame under the hand comes later
+once it lets go, three times as late at 10 pixels, and a fast drag's
+longest wait grows by more than its spread. The frame under the hand once
+it rests is the one a person looks at, so `SLOW` stays at 2, and a step
+of 3 to 15 frames back takes the path it took before.
 
 ## Colour
 
