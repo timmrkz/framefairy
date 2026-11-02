@@ -260,60 +260,93 @@ Measured on main at 1251f2a: the keys are read and kept in 15 places
 in `keys.go` and `licence.go`, through `keys`, `oldKeys` and
 `savedFirst`. The network is two clients, `httpClient` for the
 companies, which no test sets, and `downloadClient` for the models,
-which one test sets. The only test that would reach a company today is
+which one test sets. `cloud` in `engine/provider_test.go` points
+`providers` at its own server for the 13 tests that ask a company, which
+changes the table every other test reads. The only test that would reach a company today is
 the app's `SaveAPIKey` with a real provider, `setup_test.go`, kept from
 it only by the blanked address.
 
-### 1. Who may know about whom
+Five candidates follow, each from a principle of its own, and each
+names what it moves and what it costs.
 
-The keychain and the network sit under the engine, and only `main`
-knows the machine it runs on. So `main` hands them down, and nothing
-under it asks what kind of program it is in. The switch asks exactly
-that, so it goes.
+### A. Where state lives: package variables with a safe default
 
-### 2. What changes together
+The keys, `savedFirst` and both clients stay package variables, empty
+by default, and each `main` sets them once. The smallest change: the
+switch and the blanked addresses go, and no call changes its receiver.
+But it is state a test changes for the whole process, so every test that
+sets a key store or a transport runs alone, and a key one test keeps can
+be read by the next. That is what the row "Never a package variable" in
+`docs/ARCHITECTURE.md` and #607 take away. Loses.
+
+### B. What changes together: the machine keeps both, empty is safe
 
 A key kept and a key shown to its company change together: the key
 store, the model list's address and the client that carries the key
 came in together and are read together in `VerifyAPIKey`. Downloads
-change with the setup. One way to hand both in, the network, fits both,
-because what decides how a request leaves is the transport. The rule
-that a request carrying a key never follows a redirect stays with the
-engine's own client, over whatever transport it is given, so a test
-that hands in its own transport tests the same rule.
+change with the setup. So the keys, the order they are read in and one
+network for both become unexported fields of `engine.Machine`, made
+once in each `main`. Empty, the machine keeps no key and every request
+is refused with an error that says so, and a key being checked then
+passes, the way it does on a train. `UseSystem` hands it the system's.
+The rule that a request carrying a key never follows a redirect stays
+on the engine's own client, over whatever transport it is given, so a
+test that hands in its own transport tests the same rule. It moves the
+15 reads and writes of the keys in `keys.go` and `licence.go` and the
+two downloads onto the machine, and every caller in the app, the
+command line and `scripts/models` with them. A test sets the fields
+from inside the package.
 
-### 3. Where state lives
+### C. What Go and its libraries already have: exported fields
 
-The keys, the order they are read in and the network become fields of
-`engine.Machine`, made once in each `main`. A machine in a test is made
-fresh, so a key one test keeps is never read by another, and the tests
-that set them run side by side.
+The machine already shows its seams as exported fields that are the
+real thing when empty, `Files`, `Runner` and `Tools`, the way
+`http.Client` shows `Transport`. So `Keys` and `Network` would be
+exported too, with an exported `KeyStore` interface, and safe when
+nil, unlike the others. The app's tests could then hand the app's
+machine a store in memory, and `savedLicence` and `saveLicence` in
+`cmd/framefairy-app/licence.go` would stop being package variables a
+test swaps. The cost: a store a package outside the engine can make
+needs exported methods, and then anything that holds the machine can
+read a key straight off it, past the rules for the order the keys are
+read in, the move of the first ones into the new item and the hint.
+The app never reads a key back, see `Copy` in `licence.go`, and C
+would make that a habit to keep instead of a thing that cannot be done.
+The licence seams become fields of `FrameFairy` with the app's other
+seams in #650, which needs no key store from outside the engine. Loses
+to B on what it opens, for a gain #650 brings anyway.
 
-### 4. What Go and its libraries already have
+### D. Who may know about whom: the engine knows no keychain
 
-`http.Client` takes a `RoundTripper`, the one place a request leaves the
-program, and a nil one is the default transport. A machine whose
-transport is nil would reach the network, so the machine keeps its own:
-empty, every request is refused with an error that says so, and a key
-being checked then passes, the way it does on a train today. A machine
-without a keychain already exists, `noKeys`, which Linux uses.
+Only `main` knows the machine it runs on, so each front end keeps its
+own keys, and the engine is handed a key in its options and a client
+for the network. The engine then asks nothing about the program it is
+in. But the move of the first keys into the new item, the hints, the
+order a saved key and the environment are read in, and the licence
+store would leave the engine for the app and be written again for the
+command line and `scripts/models`, against "a rule lives once, in the
+engine". Three front ends would hold three copies. Loses.
 
-### 5. What a test has to build
+### E. What a test has to build: the real thing by default
 
-A test makes `NewMachine` and gets no keychain and no network without a
-line of its own. A test of the keys puts a store in memory on its
-machine, one of the network a transport, often `http.DefaultTransport`
-to its own `httptest` server. With the real thing as the empty value, a
-test that forgot one line would write into the developer's keychain or
-show a key to a company, the box nobody answers, which the switch exists
-to prevent.
+Every other seam on the machine is the real thing when empty, so the
+keys and the network would be too, and the tests would make their
+machines through a helper that hands them memory and no network. The
+programs then change by not one line. But a test that forgets the
+helper writes into the keychain of the developer's Mac, or of CI's,
+and shows a key to a company, the box nobody answers, which is what
+the switch was there to prevent. Nothing can make a test call the
+helper. Loses.
 
 ### What converges
 
-All five keep the store and the network on the machine, made in `main`.
-Simulations 1, 4 and 5 make them the two seams that are safe when
-empty, because they are the two that reach out of the program. Every
-other seam stays the real thing when empty.
+A, B, C and E keep the store and the network on something `main` sets,
+and B, C and E put them on the machine. A loses on shared state, D on a
+rule kept three times, E on a mistake one forgotten line makes. B and C
+are as safe as each other, and C opens the keys to every package that
+holds the machine. So B: the keys and the network are the two seams
+that are safe when empty, because they are the two that reach out of
+the program. Every other seam stays the real thing when empty.
 
 `Machine.UseSystem` hands a machine the system's keychain and the
 network, and the app, the command line and `scripts/models` call it
@@ -322,4 +355,8 @@ model downloads become methods of the machine, `InstallSpeechModel` and
 `InstallLanguageModel`, so they go through its network. `downloadStall`
 is a constant now, since no test sets it. `httpClient` becomes the
 machine's client for the companies, over its transport. `models`, the
-facts of each cloud model, is a table no test sets, and stays one.
+facts of each cloud model, and `providers`, the companies' addresses,
+are tables no test sets, and stay tables: a test that asks a company
+hands its machine a network that carries the real addresses to a server
+of its own, `cloud` in `engine/provider_test.go`, and checks the address
+each request was meant for.

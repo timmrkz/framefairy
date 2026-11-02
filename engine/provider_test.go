@@ -121,6 +121,7 @@ type fakeCloud struct {
 }
 
 type seenRequest struct {
+	// path is where the request was meant to go, its host and path.
 	path    string
 	headers http.Header
 	body    map[string]any
@@ -131,7 +132,7 @@ func (f *fakeCloud) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var body map[string]any
 	_ = json.Unmarshal(raw, &body)
 	f.mu.Lock()
-	f.requests = append(f.requests, seenRequest{r.URL.Path, r.Header.Clone(), body})
+	f.requests = append(f.requests, seenRequest{r.Host + r.URL.Path, r.Header.Clone(), body})
 	var answer func(w http.ResponseWriter)
 	if len(f.answers) > 0 {
 		answer, f.answers = f.answers[0], f.answers[1:]
@@ -150,26 +151,33 @@ func (f *fakeCloud) seen() []seenRequest {
 	return append([]seenRequest(nil), f.requests...)
 }
 
-// cloud points both providers at one fake server for the length of a test,
-// with a key for each in the environment, and gives an engine on files.
+// cloud gives an engine on files whose machine reaches one fake server
+// for both providers, with a key for each in the environment. The
+// providers keep their real addresses: the machine's network carries
+// every request to the fake server, which records where it was meant to
+// go, so no test changes the table every other test reads.
 func cloud(t *testing.T, files afero.Fs, answers ...func(w http.ResponseWriter)) (*fakeCloud, *Engine) {
 	t.Helper()
 	fake := &fakeCloud{answers: answers}
 	server := httptest.NewServer(fake)
 	t.Cleanup(server.Close)
-	saved := providers
-	providers = nil
-	for _, p := range saved {
-		p.URL = server.URL + "/" + p.Name
-		p.Models = server.URL + "/" + p.Name + "/models"
-		providers = append(providers, p)
-	}
-	t.Cleanup(func() { providers = saved })
 	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-test")
 	t.Setenv("OPENAI_API_KEY", "sk-proj-test")
 	m := NewMachine(files)
-	m.network = http.DefaultTransport
+	m.network = toServer{server.Listener.Addr().String()}
 	return fake, NewEngine(runlog.New(&bytes.Buffer{}, false, false), m)
+}
+
+// toServer is a network that takes every request to one server, whatever
+// address it names, and leaves the address in its Host header, for the
+// server to record.
+type toServer struct{ addr string }
+
+func (s toServer) RoundTrip(r *http.Request) (*http.Response, error) {
+	r = r.Clone(r.Context())
+	r.Host = r.URL.Host
+	r.URL.Scheme, r.URL.Host = "http", s.addr
+	return http.DefaultTransport.RoundTrip(r)
 }
 
 func openAIStream(pieces []string, finish string, usage string) func(w http.ResponseWriter) {
@@ -227,7 +235,7 @@ func TestCallAPIAsksEachProviderItsOwnWay(t *testing.T) {
 		t.Fatalf("%d requests", len(seen))
 	}
 	gpt, claude := seen[0], seen[1]
-	if gpt.path != "/openai" || gpt.headers.Get("authorization") != "Bearer sk-proj-test" ||
+	if gpt.path != "api.openai.com/v1/chat/completions" || gpt.headers.Get("authorization") != "Bearer sk-proj-test" ||
 		gpt.headers.Get("x-api-key") != "" {
 		t.Errorf("openai was asked at %s with %v", gpt.path, gpt.headers)
 	}
@@ -243,7 +251,7 @@ func TestCallAPIAsksEachProviderItsOwnWay(t *testing.T) {
 		msgs[1].(map[string]any)["content"] != "the transcript" {
 		t.Errorf("openai messages %v", msgs)
 	}
-	if claude.path != "/anthropic" || claude.headers.Get("x-api-key") != "sk-ant-test" ||
+	if claude.path != "api.anthropic.com/v1/messages" || claude.headers.Get("x-api-key") != "sk-ant-test" ||
 		claude.headers.Get("anthropic-version") == "" || claude.headers.Get("authorization") != "" {
 		t.Errorf("anthropic was asked at %s with %v", claude.path, claude.headers)
 	}
@@ -366,7 +374,7 @@ func TestProjectPlansWithOpenAI(t *testing.T) {
 		t.Fatalf("the plan from OpenAI's answer: %+v, %v", clips, err)
 	}
 	seen := fake.seen()
-	if len(seen) != 1 || seen[0].path != "/openai" || seen[0].body["model"] != "gpt-6-sol" {
+	if len(seen) != 1 || seen[0].path != "api.openai.com/v1/chat/completions" || seen[0].body["model"] != "gpt-6-sol" {
 		t.Fatalf("asked %d times, first at %v", len(seen), seen)
 	}
 	// middle is one message, with nothing before it.

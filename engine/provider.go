@@ -47,8 +47,9 @@ type Provider struct {
 	KeysAt   string `json:"keysAt"`
 }
 
-// providers are the companies the app can ask. Tests point the addresses at
-// a server of their own, which is the only reason this is a variable.
+// providers are the companies the app can ask. Nothing changes the table,
+// tests included: a test hands its machine a network that takes these
+// addresses to a server of its own. Go has no constant of this kind.
 var providers = []Provider{
 	{Name: "anthropic", Title: "Anthropic", URL: "https://api.anthropic.com/v1/messages",
 		Models: "https://api.anthropic.com/v1/models",
