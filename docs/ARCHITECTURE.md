@@ -217,7 +217,7 @@ copies what it finds nearby, so these are not the pattern for new code.
   `frontend/src/lib/rotate.ts`, and the two held to Go by a shared case
   file, `frontend/src/lib/glide.ts` and `frontend/src/lib/flow.ts`'s
   frames, #610.
-- The transcript cache in `cmd/framefairy-app/words.go`, #608.
+- The transcript cache in `cmd/framefairy-app/words.go`, with the lines weighed for what a search can read kept beside each transcript, #608.
 - What the engine learns kept in package variables rather than on
   `engine.Machine`, like the probes in `engine/probed.go`, and the app's
   own that keep a machine or a finder of their own, `sources` in

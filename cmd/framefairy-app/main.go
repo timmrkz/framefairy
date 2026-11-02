@@ -394,11 +394,9 @@ type FrameFairy struct {
 	keeping *keeping
 	mu      sync.Mutex
 	// The transcripts of the episodes worked on last, each kept while the
-	// files it was read from stay as they were, see transcript.
-	said keptReads[*engine.Transcript]
-	// weighed are the lines of each transcript in said, weighed for what
-	// a search can read, see roomAndLines.
-	weighed keptReads[engine.RoomAndLines]
+	// files it was read from stay as they were, with its lines weighed,
+	// see transcript.
+	said keptReads[*heard]
 	// toldOld is the videos whose old corrections.json was said to be
 	// left unread, so it is said once, see oldCorrections.
 	toldOld sync.Map

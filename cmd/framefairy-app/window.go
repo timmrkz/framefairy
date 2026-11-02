@@ -159,21 +159,15 @@ func (s *FrameFairy) placedWindow(path string, duration float64) KeptWindow {
 // roomAndLines is what one search of the project's video can read, from
 // the transcript as far as it is heard. A transcript that cannot be read
 // is nothing heard yet. Every state carries the window and what it may
-// be, so the lines are weighed once for each transcript read, see
-// weighed: weighed for every state, four hours of them took most of
-// 55 ms.
+// be, so the lines are weighed once for each transcript read and kept
+// with it, see heard: weighed for every state, four hours of them took
+// most of 55 ms.
 func (s *FrameFairy) roomAndLines(p *engine.Project) engine.RoomAndLines {
-	w, err := s.weighed.get(p.Source, transcriptStamp(p), func() (engine.RoomAndLines, error) {
-		t, err := s.transcript(p)
-		if err != nil {
-			return engine.RoomAndLines{}, err
-		}
-		return engine.Weigh(t), nil
-	})
+	h, err := s.heardIn(p)
 	if err != nil {
-		w = engine.Weigh(nil)
+		return p.RoomWith(engine.Weigh(nil))
 	}
-	return p.RoomWith(w)
+	return p.RoomWith(h.weighed())
 }
 
 // keptOf is a window the engine placed as the app keeps it.
