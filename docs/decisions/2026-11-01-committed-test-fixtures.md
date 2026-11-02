@@ -172,6 +172,11 @@ an issue of its own.
   small and as short as the test allows.
 - `engine/testdata/open-gop.mp4` and `cmd/framefairy-app/testdata/gnome.webm`
   move in as their packages' tests move.
+- A fixture made from another, a copy of it put together otherwise, names
+  it in its recipe as `@` and its name, so it is made first and its sum
+  counts in the other's. One written the way a crash leaves it ends in
+  `pipe:1`, and what ffmpeg sends there is the file. A test that writes
+  beside its file, or changes it, takes a copy with `fixtures.Copy`.
 - The move is made over several pull requests, in the order of #670's
   Progress list. Until it is done, what is left is under Not to copy in
   ARCHITECTURE.md.

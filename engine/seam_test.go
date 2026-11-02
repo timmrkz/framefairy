@@ -16,6 +16,7 @@ import (
 
 	"framefairy/engine/runlog"
 	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/fixtures"
 )
 
 // A search parts a clip at every camera switch, so two pieces of a short
@@ -68,17 +69,11 @@ func TestTwoShotsThatMeetRenderWithoutASeam(t *testing.T) {
 // seamless renders a clip of two shots that meet from an episode at a frame
 // rate, and checks the switch is neither seen nor heard.
 //
-// On the real disk: ffmpeg makes the episode and renders the short.
+// On the real disk: ffmpeg reads the episode and renders the short.
 func seamless(t *testing.T, e *Engine, rate string) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	source := filepath.Join(dir, "episode.mov")
-	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
-		"-f", "lavfi", "-i", "color=c=black:s=64x36:r="+rate+":d=6,geq=lum='40+mod(N*6,180)':cb=128:cr=128",
-		"-f", "lavfi", "-i", "sine=f=440:sample_rate=48000:d=6",
-		"-shortest", "-c:v", "mpeg4", "-q:v", "2", "-c:a", "pcm_s16le", source).CombinedOutput(); err != nil {
-		t.Fatalf("making the test episode: %s %s", err, out)
-	}
+	source := fixtures.Path(t, "steps-"+rate+".mov")
 	info, err := e.Probe(ctx, source)
 	if err != nil {
 		t.Fatal(err)

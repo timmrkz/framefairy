@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"math"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -18,6 +17,7 @@ import (
 	"framefairy/engine/runlog"
 	"framefairy/engine/timed"
 	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/fixtures"
 )
 
 // A frame is 10 ms of 16 kHz samples, measured the way the transcription
@@ -57,21 +57,15 @@ func TestLevelsAreTheTranscriptionsFrames(t *testing.T) {
 // forgotten when the file changes. Readers that come while it is written
 // never see frames the json does not vouch for.
 //
-// On the real disk: ffmpeg makes the episode and measures it.
+// On the real disk: ffmpeg measures the episode.
 func TestMeasureLevelsOfAnEpisode(t *testing.T) {
 	t.Parallel()
 	ffmpegtest.Need(t)
 	dir := t.TempDir()
-	source := filepath.Join(dir, "episode.m4a")
 	// A second of tone, at the eighth of full scale ffmpeg plays it, about
-	// -21 dB, and then two of silence.
-	out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
-		"-f", "lavfi", "-i", "sine=frequency=440:duration=1",
-		"-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono:d=2",
-		"-filter_complex", "[0:a][1:a]concat=n=2:v=0:a=1", "-c:a", "aac", source).CombinedOutput()
-	if err != nil {
-		t.Fatalf("%v: %s", err, out)
-	}
+	// -21 dB, and then two of silence. A copy, since the levels are kept
+	// beside it.
+	source := fixtures.Copy(t, "tone-then-silence.m4a", filepath.Join(dir, "episode.m4a"))
 	if got := ReadLevels(disk, source); len(got.Frames) != 0 || got.Done {
 		t.Fatal("levels out of nowhere")
 	}
@@ -93,7 +87,7 @@ func TestMeasureLevelsOfAnEpisode(t *testing.T) {
 		}()
 	}
 	var reached []float64
-	err = e.MeasureLevels(context.Background(), source, nil, func(to float64) { reached = append(reached, to) })
+	err := e.MeasureLevels(context.Background(), source, nil, func(to float64) { reached = append(reached, to) })
 	stop.Store(true)
 	wg.Wait()
 	if err != nil {
@@ -134,16 +128,11 @@ func TestMeasureLevelsOfAnEpisode(t *testing.T) {
 // Stopped part way, the measuring says so and leaves nothing that claims
 // to be done.
 //
-// On the real disk: ffmpeg makes the episode it would measure.
+// On the real disk: the episode is a file ffmpeg would measure.
 func TestMeasureLevelsStops(t *testing.T) {
 	ffmpegtest.Need(t)
 	dir := t.TempDir()
-	source := filepath.Join(dir, "episode.m4a")
-	out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
-		"-f", "lavfi", "-i", "sine=frequency=440:duration=5", "-c:a", "aac", source).CombinedOutput()
-	if err != nil {
-		t.Fatalf("%v: %s", err, out)
-	}
+	source := fixtures.Copy(t, "tone-then-silence.m4a", filepath.Join(dir, "episode.m4a"))
 	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
 	e.FFmpeg = "ffmpeg"
 	ctx, cancel := context.WithCancel(context.Background())
@@ -159,15 +148,10 @@ func TestMeasureLevelsStops(t *testing.T) {
 // How far the loudness reaches is read from the json alone, and agrees with
 // the frames.
 //
-// On the real disk: ffmpeg makes the episode and measures it.
+// On the real disk: ffmpeg measures the episode.
 func TestLevelsReachAgreesWithTheFrames(t *testing.T) {
 	ffmpegtest.Need(t)
-	source := filepath.Join(t.TempDir(), "episode.m4a")
-	out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
-		"-f", "lavfi", "-i", "sine=frequency=440:duration=2", "-c:a", "aac", source).CombinedOutput()
-	if err != nil {
-		t.Fatalf("%v: %s", err, out)
-	}
+	source := fixtures.Copy(t, "tone-then-silence.m4a", filepath.Join(t.TempDir(), "episode.m4a"))
 	if parts, done := LevelsReach(disk, source); len(parts) != 0 || done {
 		t.Fatalf("an episode never measured has %v, done %v", parts, done)
 	}
@@ -185,21 +169,15 @@ func TestLevelsReachAgreesWithTheFrames(t *testing.T) {
 	}
 }
 
-// sweep makes an episode whose loudness rises and falls every few seconds,
-// so a frame measured in the wrong place shows.
+// sweep is a copy of a minute whose loudness rises and falls every few
+// seconds, so a frame measured in the wrong place shows. A copy, since the
+// levels are kept beside it.
 //
-// On the real disk: ffmpeg makes the episode.
-func sweep(t *testing.T, seconds string) string {
+// On the real disk: ffmpeg measures the episode.
+func sweep(t *testing.T) string {
 	t.Helper()
 	ffmpegtest.Need(t)
-	source := filepath.Join(t.TempDir(), "episode.m4a")
-	out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i",
-		"aevalsrc=sin(2*PI*440*t)*(0.5+0.45*sin(2*PI*0.37*t)):s=16000:d="+seconds,
-		"-c:a", "aac", source).CombinedOutput()
-	if err != nil {
-		t.Fatalf("%v: %s", err, out)
-	}
-	return source
+	return fixtures.Copy(t, "sweep.m4a", filepath.Join(t.TempDir(), "episode.m4a"))
 }
 
 // Where the clip timeline looks is measured first, and when it moves to a
@@ -209,7 +187,7 @@ func sweep(t *testing.T, seconds string) string {
 // On the real disk: ffmpeg measures the episode.
 func TestMeasureLevelsGoesWhereTheClipTimelineLooks(t *testing.T) {
 	t.Parallel()
-	source := sweep(t, "60")
+	source := sweep(t)
 	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
 	// The measuring writes and asks where the clip timeline looks every
 	// 2 reads of the sound, whatever the clock says. readLevels reads at
@@ -290,7 +268,7 @@ func TestMeasureLevelsGoesWhereTheClipTimelineLooks(t *testing.T) {
 // On the real disk: ffmpeg measures the episode.
 func TestMeasureLevelsCarriesOn(t *testing.T) {
 	t.Parallel()
-	source := sweep(t, "30")
+	source := sweep(t)
 	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
 	// Every 2 reads, see above.
 	e.levelsReads = 2

@@ -119,6 +119,102 @@ var recipes = map[string][]string{
 	"colour-bt2020-pc-10.mp4": colour("libx265", "bt2020nc", "bt2020", "bt709", "pc"),
 	"colour-hlg-10.mp4":       colour("libx265", "bt2020nc", "bt2020", "arib-std-b67", "tv"),
 	"colour-pq-10.mp4":        colour("libx265", "bt2020nc", "bt2020", "smpte2084", "tv"),
+
+	// Black and silent at the rates a short's captions are drawn at.
+	"black-25.mp4":    black("25"),
+	"black-29.97.mp4": black("30000/1001"),
+	"black-50.mp4":    black("50"),
+	"black-120.mp4":   black("120"),
+	// Lossless, so a frame read back is that frame and no other, in
+	// BT.709 the way HD video is.
+	"lossless.mkv": {"-f", "lavfi", "-i", "testsrc2=s=320x180:r=50:d=3",
+		"-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo:d=3",
+		"-vf", "format=yuv420p,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv",
+		"-shortest", "-c:v", "ffv1", "-c:a", "flac"},
+	// One picture 480 wide whose every column says how far from the left
+	// it is, in 16 bits, X times 64.
+	"ramp.png": {"-f", "lavfi", "-i", "color=black:s=480x270,format=gray16le,geq=lum=X*64", "-frames:v", "1"},
+	// A picture a step brighter on every frame and dark again every 30
+	// frames, with a steady tone in PCM, at the rates and in the
+	// containers a render cuts on whole frames of.
+	"steps-23.976.mov": steps("24000/1001"),
+	"steps-24.mov":     steps("24"),
+	"steps-25.mov":     steps("25"),
+	"steps-29.97.mov":  steps("30000/1001"),
+	"steps-30.mov":     steps("30"),
+	"steps-60.mov":     steps("60"),
+	"steps-29.97.mkv":  steps("30000/1001"),
+	// Every frame a key frame, as after a camera switch, with a steady
+	// tone in Opus and in MP3.
+	"keyframes-opus.mp4": keyframes("libopus"),
+	"keyframes-opus.mkv": keyframes("libopus"),
+	"keyframes-mp3.mp4":  keyframes("libmp3lame"),
+	// Shot on two cameras: the first for ten seconds, the second for ten,
+	// then the first again.
+	"two-cameras.mp4": {"-f", "lavfi", "-i", "testsrc=s=640x360:r=25:d=10",
+		"-f", "lavfi", "-i", "smptebars=s=640x360:r=25:d=10",
+		"-f", "lavfi", "-i", "testsrc=s=640x360:r=25:d=10",
+		"-filter_complex", "[0:v][1:v][2:v]concat=n=3:v=1:a=0",
+		"-c:v", "mpeg4", "-q:v", "5", "-g", "25"},
+	// The picture a second after the sound, by an edit list, and two
+	// channels that differ, a tone that climbs in the left and one that
+	// falls in the right, so a sample from another moment or a channel
+	// swapped does not match.
+	"sound-first.mov": {"-itsoffset", "1", "-f", "lavfi", "-i", "color=c=black:s=320x180:r=30000/1001:d=7",
+		"-f", "lavfi", "-i", "aevalsrc=sin(2*PI*(200*t+300*t*t))|0.5*sin(2*PI*(900*t-40*t*t)):s=48000:d=8",
+		"-map", "0", "-map", "1", "-fps_mode", "passthrough", "-g", "60",
+		"-c:v", "mpeg4", "-q:v", "5", "-c:a", "aac"},
+	// A second of tone, at the eighth of full scale ffmpeg plays it, about
+	// -21 dB, and then two of silence.
+	"tone-then-silence.m4a": {"-f", "lavfi", "-i", "sine=frequency=440:duration=1",
+		"-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono:d=2",
+		"-filter_complex", "[0:a][1:a]concat=n=2:v=0:a=1", "-c:a", "aac"},
+	// A minute whose loudness rises and falls every few seconds, so a
+	// frame measured in the wrong place shows.
+	"sweep.m4a": {"-f", "lavfi", "-i", "aevalsrc=sin(2*PI*440*t)*(0.5+0.45*sin(2*PI*0.37*t)):s=16000:d=60",
+		"-c:a", "aac"},
+	// A tone gated on and off five times a second over the test picture.
+	// A steady tone measures the same wherever you start.
+	"beats.mp4": {"-f", "lavfi", "-i", "testsrc=s=320x180:r=25:d=12",
+		"-f", "lavfi", "-i", "aevalsrc='sin(2*PI*440*t)*lt(mod(t,0.4),0.2)':s=44100:d=12",
+		"-shortest", "-c:v", "mpeg4", "-q:v", "5", "-c:a", "aac"},
+	// Picture and sound of different lengths, 25 frames a second.
+	"sound-longer.mp4":         ends("1", "2"),
+	"sound-longer.mkv":         ends("1", "2"),
+	"sound-longer.mov":         ends("1", "2"),
+	"sound-longer-cut-off.mkv": append(ends("1", "2"), "-map_metadata", "-1", "-f", "matroska", "pipe:1"),
+	"picture-longer.mp4":       ends("2", "1"),
+	// A tone under each of the words of the engine's render timing test,
+	// stopping a little before the word ends, so the next word starts out
+	// of silence and its start can be heard.
+	"render-timing.mp4": {"-f", "lavfi", "-i", "color=c=black:s=640x360:r=25:d=28",
+		"-f", "lavfi", "-i", "aevalsrc='0.5*sin(2*PI*440*t)*(" + renderTimingTone + ")':s=48000:d=28",
+		"-shortest", "-c:v", "mpeg4", "-q:v", "2", "-c:a", "aac", "-b:a", "192k"},
+	// A video lying down 320 by 180, and the same turned by a display
+	// matrix, the way a phone keeps what it records: as MPEG-4 and as
+	// HEVC with B-frames, stored out of the order they show in, which is
+	// what a phone writes.
+	"phone-mpeg4.mp4":     {"-f", "lavfi", "-i", "testsrc2=s=320x180:r=25:d=2", "-c:v", "mpeg4", "-q:v", "3"},
+	"phone-mpeg4-90.mp4":  {"-display_rotation", "90", "-i", "@phone-mpeg4.mp4", "-c", "copy"},
+	"phone-mpeg4-180.mp4": {"-display_rotation", "180", "-i", "@phone-mpeg4.mp4", "-c", "copy"},
+	"phone-mpeg4-270.mp4": {"-display_rotation", "270", "-i", "@phone-mpeg4.mp4", "-c", "copy"},
+	"phone-hevc.mp4": {"-f", "lavfi", "-i", "testsrc2=s=320x180:r=25:d=2",
+		"-c:v", "libx265", "-x265-params", "bframes=3:log-level=error", "-tag:v", "hvc1"},
+	"phone-hevc-90.mp4":  {"-display_rotation", "90", "-i", "@phone-hevc.mp4", "-c", "copy"},
+	"phone-hevc-180.mp4": {"-display_rotation", "180", "-i", "@phone-hevc.mp4", "-c", "copy"},
+	"phone-hevc-270.mp4": {"-display_rotation", "270", "-i", "@phone-hevc.mp4", "-c", "copy"},
+	// Shorts to cut thumbnails from: two seconds of red and two of blue,
+	// every frame its own grey, 16 and 8 times its number, and the
+	// caption purple in BT.709.
+	"short-red-blue.mp4": {"-f", "lavfi", "-i", "color=c=red:s=180x320:r=25:d=2",
+		"-f", "lavfi", "-i", "color=c=blue:s=180x320:r=25:d=2",
+		"-filter_complex", "[0:v][1:v]concat=n=2:v=1[v]", "-map", "[v]", "-c:v", "mpeg4"},
+	"short-greys.mp4": {"-f", "lavfi", "-i", "color=c=black:s=64x64:r=25:d=1,format=yuv420p,geq=lum='16+8*N':cb=128:cr=128",
+		"-c:v", "mpeg4", "-q:v", "1"},
+	"short-purple.mp4": {"-f", "lavfi", "-i", "color=c=0x942192:s=64x64:r=25:d=1",
+		"-vf", "scale=out_color_matrix=bt709:out_range=tv,format=yuv420p," +
+			"setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv",
+		"-c:v", "mpeg4", "-q:v", "1"},
 }
 
 func episode(seconds string) []string {
@@ -128,6 +224,46 @@ func episode(seconds string) []string {
 		"-shortest", "-c:v", "mpeg4", "-q:v", "5", "-c:a", "aac",
 	}
 }
+
+// black is the recipe of four seconds of black at rate, 640 by 360, with
+// two channels of silence.
+func black(rate string) []string {
+	return []string{"-f", "lavfi", "-i", "color=c=black:s=640x360:r=" + rate + ":d=4",
+		"-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo:d=4",
+		"-shortest", "-c:v", "mpeg4", "-q:v", "2", "-c:a", "aac"}
+}
+
+// steps is the recipe of six seconds of a picture 64 by 36 at rate that
+// is a step brighter on every frame and dark again every 30, with a
+// steady tone in PCM.
+func steps(rate string) []string {
+	const d = "6"
+	return []string{"-f", "lavfi", "-i", "color=c=black:s=64x36:r=" + rate + ":d=" + d + ",geq=lum='40+mod(N*6,180)':cb=128:cr=128",
+		"-f", "lavfi", "-i", "sine=f=440:sample_rate=48000:d=" + d,
+		"-shortest", "-c:v", "mpeg4", "-q:v", "2", "-c:a", "pcm_s16le"}
+}
+
+// keyframes is the recipe of seven seconds at 29.97 whose every frame is
+// a key frame, with a steady tone coded by encoder.
+func keyframes(encoder string) []string {
+	return []string{"-f", "lavfi", "-i", "color=c=black:s=64x36:r=30000/1001:d=7,geq=lum='40+mod(N*6,180)':cb=128:cr=128",
+		"-f", "lavfi", "-i", "sine=f=440:sample_rate=48000:d=7",
+		"-shortest", "-c:v", "mpeg4", "-q:v", "2", "-g", "1", "-b:a", "64k", "-c:a", encoder}
+}
+
+// ends is the recipe of the test picture, 64 by 36, picture seconds long,
+// and a tone sound seconds long.
+func ends(picture, sound string) []string {
+	return []string{"-f", "lavfi", "-i", "testsrc=size=64x36:rate=25:duration=" + picture,
+		"-f", "lavfi", "-i", "sine=duration=" + sound, "-c:v", "mpeg4", "-c:a", "aac"}
+}
+
+// renderTimingTone is when the tone of render-timing.mp4 sounds: the
+// words of renderTimingWords in the engine's tests, each 0.1 s short of
+// its end.
+const renderTimingTone = "between(t,1.20,1.50)+between(t,1.60,2.00)+between(t,2.10,2.50)+" +
+	"between(t,6.30,6.70)+between(t,6.80,7.30)+between(t,10.10,10.35)+between(t,13.10,13.35)+" +
+	"between(t,16.10,16.35)+between(t,19.10,19.35)+between(t,22.10,22.35)+between(t,25.10,25.35)"
 
 // colour is the recipe of three seconds of the test picture and a tone,
 // the picture coded by the encoder, H.264 in 8 bits or HEVC in 10, tagged

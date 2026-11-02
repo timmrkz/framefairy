@@ -11,7 +11,8 @@
 //
 //	go test ./internal/fixtures -update
 //
-// makes them all again. A test asks for one by name with Path.
+// makes them all again. A test asks for one by name with Path, or for a
+// copy it may change, or write beside, with Copy.
 package fixtures
 
 import (
@@ -37,14 +38,23 @@ func Path(t testing.TB, name string) string {
 	t.Helper()
 	path := filepath.Join(Dir(), name)
 	if _, err := os.Stat(path); err != nil {
-		var there []string
-		entries, _ := os.ReadDir(Dir())
-		for _, e := range entries {
-			if filepath.Ext(e.Name()) != ".sum" {
-				there = append(there, e.Name())
-			}
-		}
-		t.Fatalf("no fixture %s, the fixtures are %v. Use one of them, or add a recipe in fixtures_test.go when none has what the test needs", name, there)
+		t.Fatalf("no fixture %s in %s. Use one that is there, or add a recipe in fixtures_test.go when none has what the test needs", name, Dir())
+	}
+	return path
+}
+
+// Copy copies the fixture called name to path, for a test that changes
+// the file or writes beside it, and gives path back.
+//
+// On the real disk: the fixture is a file, and so is its copy.
+func Copy(t testing.TB, name, path string) string {
+	t.Helper()
+	body, err := os.ReadFile(Path(t, name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, body, 0o644); err != nil {
+		t.Fatal(err)
 	}
 	return path
 }

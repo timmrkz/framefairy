@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/fixtures"
 )
 
 // The pictures of a short are frames of the short, taken on the short's
@@ -22,16 +23,9 @@ func TestThumbnailsAreFramesOfTheShort(t *testing.T) {
 	t.Parallel()
 	ffmpegtest.Need(t)
 	dir := t.TempDir()
-	short := filepath.Join(dir, "01_eins.mp4")
 	// Two seconds of red, then two of blue: the two pieces of the clip.
-	out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
-		"-f", "lavfi", "-i", "color=c=red:s=180x320:r=25:d=2",
-		"-f", "lavfi", "-i", "color=c=blue:s=180x320:r=25:d=2",
-		"-filter_complex", "[0:v][1:v]concat=n=2:v=1[v]", "-map", "[v]",
-		"-c:v", "mpeg4", short).CombinedOutput()
-	if err != nil {
-		t.Fatalf("making the short: %s %s", err, out)
-	}
+	// A copy, since its thumbnails are written beside it.
+	short := fixtures.Copy(t, "short-red-blue.mp4", filepath.Join(dir, "01_eins.mp4"))
 	clip := Clip{ID: "01", Slug: "eins",
 		Segments:   []Segment{{Start: 10, End: 12}, {Start: 20, End: 22}},
 		Thumbnails: []float64{11, 21.5, 22}}
@@ -95,14 +89,8 @@ func TestAThumbnailIsTheFrameThatWasMarked(t *testing.T) {
 	t.Parallel()
 	ffmpegtest.Need(t)
 	dir := t.TempDir()
-	short := filepath.Join(dir, "01_eins.mp4")
 	// Every frame its own grey: frame n is 16+8n.
-	out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
-		"-f", "lavfi", "-i", "color=c=black:s=64x64:r=25:d=1,format=yuv420p,geq=lum='16+8*N':cb=128:cr=128",
-		"-c:v", "mpeg4", "-q:v", "1", short).CombinedOutput()
-	if err != nil {
-		t.Fatalf("making the short: %s %s", err, out)
-	}
+	short := fixtures.Copy(t, "short-greys.mp4", filepath.Join(dir, "01_eins.mp4"))
 	frame := func(n int) [3]int {
 		t.Helper()
 		px, err := exec.Command("ffmpeg", "-loglevel", "error", "-i", short,
@@ -141,15 +129,7 @@ func TestAThumbnailIsTheFrameThatWasMarked(t *testing.T) {
 func TestAThumbnailHasTheColoursOfTheShort(t *testing.T) {
 	ffmpegtest.Need(t)
 	dir := t.TempDir()
-	short := filepath.Join(dir, "01_eins.mp4")
-	out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
-		"-f", "lavfi", "-i", "color=c=0x942192:s=64x64:r=25:d=1",
-		"-vf", "scale=out_color_matrix=bt709:out_range=tv,format=yuv420p,"+
-			"setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv",
-		"-c:v", "mpeg4", "-q:v", "1", short).CombinedOutput()
-	if err != nil {
-		t.Fatalf("making the short: %s %s", err, out)
-	}
+	short := fixtures.Copy(t, "short-purple.mp4", filepath.Join(dir, "01_eins.mp4"))
 	// The short as a player shows it, from its own tags.
 	px, err := exec.Command("ffmpeg", "-loglevel", "error", "-i", short, "-frames:v", "1",
 		"-vf", "scale=1:1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-").Output()

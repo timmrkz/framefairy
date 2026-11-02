@@ -9,7 +9,6 @@ import (
 	"math"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -18,6 +17,7 @@ import (
 
 	"framefairy/engine/runlog"
 	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/fixtures"
 	"framefairy/internal/framewire"
 )
 
@@ -411,43 +411,18 @@ func TestRotatingLeftPutsTheTopOnTheLeft(t *testing.T) {
 	}
 }
 
-// phoneVideos writes, into dir, a video lying down 320 by 180, and the
-// same turned by a display matrix 90, 180 and 270 degrees, the way a
-// phone keeps what it records: once as mpeg4, and once as HEVC with
+// phoneVideos are a video lying down 320 by 180, two seconds long, and
+// the same turned by a display matrix 90, 180 and 270 degrees, the way a
+// phone keeps what it records: once as MPEG-4, and once as HEVC with
 // B-frames, stored out of the order they show in, which is what a phone
-// writes. A machine whose ffmpeg has no x265 skips the HEVC ones.
-func phoneVideos(t *testing.T, dir string, seconds string) map[string]string {
+// writes.
+func phoneVideos(t *testing.T) map[string]string {
 	t.Helper()
 	videos := map[string]string{}
-	for _, codec := range []struct{ name, args string }{
-		{"mpeg4", "-c:v mpeg4 -q:v 3"},
-		{"hevc", "-c:v libx265 -x265-params bframes=3:log-level=error -tag:v hvc1"},
-	} {
-		lying := filepath.Join(dir, codec.name+".mp4")
-		args := append([]string{"-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=25:d=" + seconds},
-			strings.Fields(codec.args)...)
-		if out, err := exec.Command("ffmpeg", append(args, lying)...).CombinedOutput(); err != nil {
-			if codec.name == "hevc" {
-				t.Logf("no HEVC video, this ffmpeg cannot write one: %v %s", err, out)
-				continue
-			}
-			ffmpegtest.Unusable(t, "ffmpeg made no video: %v %s", err, out)
-		}
-		if codec.name == "hevc" {
-			out, err := exec.Command("ffprobe", "-v", "error", "-select_streams", "v:0",
-				"-show_entries", "stream=has_b_frames", "-of", "csv=p=0", lying).Output()
-			if err != nil || strings.TrimSpace(string(out)) == "0" {
-				t.Fatalf("the HEVC video has no B-frames: %v %q", err, out)
-			}
-		}
-		videos[codec.name+" 0"] = lying
+	for _, codec := range []string{"mpeg4", "hevc"} {
+		videos[codec+" 0"] = fixtures.Path(t, "phone-"+codec+".mp4")
 		for _, turn := range []string{"90", "180", "270"} {
-			phone := filepath.Join(dir, codec.name+"-"+turn+".mp4")
-			if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-display_rotation", turn,
-				"-i", lying, "-c", "copy", phone).CombinedOutput(); err != nil {
-				ffmpegtest.Unusable(t, "ffmpeg cannot write a display matrix: %v %s", err, out)
-			}
-			videos[codec.name+" "+turn] = phone
+			videos[codec+" "+turn] = fixtures.Path(t, "phone-"+codec+"-"+turn+".mp4")
 		}
 	}
 	return videos
@@ -463,7 +438,7 @@ func TestProbeStandsAPhoneVideoUp(t *testing.T) {
 	t.Parallel()
 	ffmpegtest.Need(t)
 	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
-	for name, path := range phoneVideos(t, t.TempDir(), "1") {
+	for name, path := range phoneVideos(t) {
 		info, err := e.Probe(context.Background(), path)
 		if err != nil {
 			t.Fatal(err)
@@ -514,7 +489,7 @@ func TestTheEpisodesDecoderStandsAPhoneVideoUp(t *testing.T) {
 		done = true
 		saidMu.Unlock()
 	})
-	for name, phone := range phoneVideos(t, t.TempDir(), "2") {
+	for name, phone := range phoneVideos(t) {
 		w, h := 160, 90
 		if strings.HasSuffix(name, " 90") || strings.HasSuffix(name, " 270") {
 			w, h = 90, 160

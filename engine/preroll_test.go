@@ -8,11 +8,11 @@ import (
 	"math"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"framefairy/engine/runlog"
 	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/fixtures"
 )
 
 // A render once read each piece's sound from where the piece starts, and
@@ -25,7 +25,7 @@ import (
 
 // TestEveryPieceIsHeardFromItsFirstMoment renders a clip with two cuts and
 // a camera switch from an episode with a steady tone in Opus, in each
-// container that carries Opus, and in MP3 where this ffmpeg can make it,
+// container that carries Opus, and in MP3,
 // and checks that every piece is as loud from its first moment as
 // anywhere, after the fade a cut puts there. Every frame of the episode
 // is a key frame, as after a camera switch, where an encoder puts one, so
@@ -37,49 +37,20 @@ func TestEveryPieceIsHeardFromItsFirstMoment(t *testing.T) {
 	if err := e.Preflight(context.Background()); err != nil {
 		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}
-	listed, _ := exec.Command("ffmpeg", "-hide_banner", "-encoders").Output()
-	has := func(name string) bool { return strings.Contains(string(listed), " "+name+" ") }
-	// The ffmpeg we ship has no libopus, only ffmpeg's own encoder, which
-	// it calls experimental. Episodes are mostly made with libopus. It has
-	// no MP3 encoder at all.
-	opus := []string{"opus", "-strict", "experimental"}
-	if has("libopus") {
-		opus = []string{"libopus"}
-	}
-	cases := []struct {
-		sound, container string
-		encoder          []string
-	}{
-		// WebM is Matroska with fewer codecs, read by the same demuxer,
-		// and the ffmpeg we ship has no encoder for its pictures.
-		{"opus", "mp4", opus}, {"opus", "mkv", opus},
-	}
-	if has("libmp3lame") {
-		cases = append(cases, struct {
-			sound, container string
-			encoder          []string
-		}{"mp3", "mp4", []string{"libmp3lame"}})
-	}
-	for _, c := range cases {
+	// WebM is Matroska with fewer codecs, read by the same demuxer.
+	for _, c := range []struct{ sound, container string }{{"opus", "mp4"}, {"opus", "mkv"}, {"mp3", "mp4"}} {
 		t.Run(c.sound+"_"+c.container, func(t *testing.T) {
 			t.Parallel()
-			withoutADip(t, e, c.container, c.encoder)
+			withoutADip(t, e, c.sound, c.container)
 		})
 	}
 }
 
-// On the real disk: ffmpeg makes the episode and renders the short.
-func withoutADip(t *testing.T, e *Engine, container string, encoder []string) {
+// On the real disk: ffmpeg reads the episode and renders the short.
+func withoutADip(t *testing.T, e *Engine, sound, container string) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	source := filepath.Join(dir, "episode."+container)
-	args := append([]string{"-loglevel", "error", "-y",
-		"-f", "lavfi", "-i", "color=c=black:s=64x36:r=30000/1001:d=7,geq=lum='40+mod(N*6,180)':cb=128:cr=128",
-		"-f", "lavfi", "-i", "sine=f=440:sample_rate=48000:d=7",
-		"-shortest", "-c:v", "mpeg4", "-q:v", "2", "-g", "1", "-b:a", "64k", "-c:a"}, encoder...)
-	if out, err := exec.Command("ffmpeg", append(args, source)...).CombinedOutput(); err != nil {
-		t.Fatalf("making the test episode: %s %s", err, out)
-	}
+	source := fixtures.Path(t, "keyframes-"+sound+"."+container)
 	info, err := e.Probe(ctx, source)
 	if err != nil {
 		t.Fatal(err)

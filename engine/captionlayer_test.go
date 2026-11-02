@@ -8,7 +8,6 @@ import (
 	"io"
 	"math"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -23,6 +22,7 @@ import (
 	"framefairy/engine/runlog"
 	"framefairy/engine/timed"
 	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/fixtures"
 	"framefairy/internal/framewire"
 )
 
@@ -60,14 +60,7 @@ func TestTheVideoPreviewDrawsTheShortsCaptions(t *testing.T) {
 	// the layer are each one frame and no other, in BT.709 the way HD
 	// video is.
 	dir := t.TempDir()
-	source := filepath.Join(dir, "episode.mkv")
-	if out, err := exec.Command(ffmpeg, "-loglevel", "error", "-y",
-		"-f", "lavfi", "-i", fmt.Sprintf("testsrc2=s=640x360:r=%d:d=3", bounceFPS),
-		"-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo:d=3",
-		"-vf", "format=yuv420p,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv",
-		"-shortest", "-c:v", "ffv1", "-c:a", "flac", source).CombinedOutput(); err != nil {
-		t.Fatalf("making the test episode: %s %s", err, out)
-	}
+	source := fixtures.Path(t, "lossless.mkv")
 	info, err := e.Probe(ctx, source)
 	if err != nil {
 		t.Fatal(err)
@@ -310,11 +303,7 @@ func TestTheVideoPreviewDrawsTheCaptionsSmallerAsTheShortWouldShowThem(t *testin
 	}
 	// The decoder is the video's, so it opens one, though no frame of it
 	// is drawn on.
-	source := filepath.Join(dir, "episode.mkv")
-	if out, err := exec.Command(builtFFmpeg(program), "-loglevel", "error", "-y",
-		"-f", "lavfi", "-i", "color=c=gray:s=64x64:r=25:d=1", "-c:v", "ffv1", source).CombinedOutput(); err != nil {
-		t.Fatalf("making the test video: %s %s", err, out)
-	}
+	source := fixtures.Path(t, "lossless.mkv")
 	dec := NewEpisodeFrames(program, source)
 	defer dec.Close()
 	draw := func(w, h, shortW, shortH int, ms int64) framewire.Layer {
@@ -488,11 +477,7 @@ func TestTheWordLiftedOutAndTheRestAreTheCaptionAtRest(t *testing.T) {
 	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
 	e.FFmpeg, e.FFprobe = ffmpeg, filepath.Join(filepath.Dir(ffmpeg), "ffprobe")
 	dir := t.TempDir()
-	source := filepath.Join(dir, "episode.mkv")
-	if out, err := exec.Command(ffmpeg, "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=640x360:r=30:d=3",
-		"-c:v", "ffv1", source).CombinedOutput(); err != nil {
-		t.Fatalf("making the test episode: %s %s", err, out)
-	}
+	source := fixtures.Path(t, "lossless.mkv")
 	info, err := e.Probe(ctx, source)
 	if err != nil {
 		t.Fatal(err)

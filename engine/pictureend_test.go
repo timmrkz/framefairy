@@ -4,13 +4,11 @@ import (
 	"bytes"
 	"context"
 	"math"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"testing"
 
 	"framefairy/engine/runlog"
 	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/fixtures"
 )
 
 // How long a video is, from what ffprobe says of it, see lengthOf: where
@@ -90,51 +88,34 @@ func TestTheLengthOfAVideo(t *testing.T) {
 // its picture ends, not its sound. A video whose picture goes on after its
 // sound keeps the file's length.
 //
-// On the real disk: ffmpeg makes the episode and ffprobe reads it.
+// On the real disk: ffprobe reads the episode.
 func TestAVideoEndsWhereItsPictureEnds(t *testing.T) {
 	t.Parallel()
 	ffmpegtest.Need(t)
 	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
-	dir := t.TempDir()
 	for _, c := range []struct {
-		name           string
-		picture, sound string
-		cutOff         bool
-		frames         int
+		name   string
+		frames int
 		// How long the picture is, from its first frame: the video's
-		// length less VideoStart. The AAC of Linux's ffmpeg starts a
-		// Matroska file 23 ms before the picture, and the Mac's starts it
-		// with the picture, so the length itself differs by machine.
+		// length less VideoStart, since the AAC may start a Matroska file
+		// before the picture.
 		seconds float64
 	}{
 		// One second of picture at 25 frames a second, two of sound, in
-		// MPEG-4 Part 2, which the ffmpeg we ship encodes on every machine.
-		{name: "sound_longer.mp4", picture: "1", sound: "2", frames: 25, seconds: 1},
+		// MPEG-4 Part 2.
+		{name: "sound-longer.mp4", frames: 25, seconds: 1},
 		// Matroska keeps the picture's length in a tag of its own.
-		{name: "sound_longer.mkv", picture: "1", sound: "2", frames: 25, seconds: 1},
-		{name: "sound_longer.mov", picture: "1", sound: "2", frames: 25, seconds: 1},
+		{name: "sound-longer.mkv", frames: 25, seconds: 1},
+		{name: "sound-longer.mov", frames: 25, seconds: 1},
 		// Written the way a crash leaves it: no length, no tags.
-		{name: "sound_longer_cut_off.mkv", picture: "1", sound: "2", cutOff: true, frames: 25, seconds: 1},
+		{name: "sound-longer-cut-off.mkv", frames: 25, seconds: 1},
 		// The picture longer than the sound: the file is as long as the
 		// picture, and stays so.
-		{name: "picture_longer.mp4", picture: "2", sound: "1", frames: 50, seconds: 2},
+		{name: "picture-longer.mp4", frames: 50, seconds: 2},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			path := filepath.Join(dir, c.name)
-			made := path
-			if c.cutOff {
-				made = path + ".whole.mkv"
-			}
-			if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
-				"-f", "lavfi", "-i", "testsrc=size=64x36:rate=25:duration="+c.picture,
-				"-f", "lavfi", "-i", "sine=duration="+c.sound,
-				"-c:v", "mpeg4", "-c:a", "aac", made).CombinedOutput(); err != nil {
-				ffmpegtest.Unusable(t, "ffmpeg cannot make the video: %v %s", err, out)
-			}
-			if c.cutOff {
-				cutOff(t, made, path)
-			}
+			path := fixtures.Path(t, c.name)
 			info, err := e.Probe(context.Background(), path)
 			if err != nil {
 				t.Fatal(err)
@@ -152,27 +133,6 @@ func TestAVideoEndsWhereItsPictureEnds(t *testing.T) {
 	}
 }
 
-// cutOff copies the Matroska file whole to path the way a recording cut
-// off by a crash is left: written as it is made, into a pipe, so ffmpeg
-// cannot go back to say how long it is, and without the tags that say how
-// long each track is. See timesEpisode.
-//
-// On the real disk: ffmpeg reads the file and writes the copy.
-func cutOff(t *testing.T, whole, path string) {
-	t.Helper()
-	file, err := os.Create(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer file.Close()
-	var stderr bytes.Buffer
-	cmd := exec.Command("ffmpeg", "-loglevel", "error", "-i", whole, "-map_metadata", "-1", "-c", "copy", "-f", "matroska", "-")
-	cmd.Stdout, cmd.Stderr = file, &stderr
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("cutting the video off: %s %s", err, stderr.Bytes())
-	}
-}
-
 // A recording cut off by a crash says nothing of how long it is, and when
 // every track says its bit rate, as MPEG-4 Part 2 with PCM sound does,
 // ffprobe guesses its length from the size of the file: 8.236 s for a
@@ -180,7 +140,7 @@ func cutOff(t *testing.T, whole, path string) {
 // for its length, so the grid had more than a second of frames that are
 // not there and the read through for where it ends did not happen, #270.
 //
-// On the real disk: ffmpeg makes the episode and ffprobe reads it.
+// On the real disk: ffprobe reads the episode.
 func TestACutOffRecordingIsNotTakenAtItsGuessedLength(t *testing.T) {
 	t.Parallel()
 	ffmpegtest.Need(t)

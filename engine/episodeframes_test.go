@@ -669,8 +669,9 @@ func TestTheEpisodesDecoderAgreesOnAPictureThatStartsLate(t *testing.T) {
 		}); err != nil {
 			t.Fatalf("%s, the ffmpeg program: %v", name, err)
 		}
-		if len(all) != 150 || math.Abs(all[0].at-c.start) > 1e-6 {
-			t.Fatalf("%s has %d frames from %.3f, want 150 from %.3f", name, len(all), all[0].at, c.start)
+		// Ten seconds at 25 frames a second.
+		if len(all) != 250 || math.Abs(all[0].at-c.start) > 1e-6 {
+			t.Fatalf("%s has %d frames from %.3f, want 250 from %.3f", name, len(all), all[0].at, c.start)
 		}
 		holds := func(at float64) frame {
 			k := 0

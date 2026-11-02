@@ -13,6 +13,7 @@ import (
 
 	"framefairy/engine/runlog"
 	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/fixtures"
 	"framefairy/internal/framewire"
 )
 
@@ -102,8 +103,8 @@ func TestACaptionIsBurnedIntoAnHDRShortAtTheReferenceWhite(t *testing.T) {
 			t.Fatal(err)
 		}
 		out, err := exec.Command(e.FFmpeg, "-v", "error",
-			"-f", "lavfi", "-i", "color=black:s=64x64:d=0.04",
-			"-vf", fmt.Sprintf("format=yuv420p10le,setparams=range=tv:color_primaries=bt2020:color_trc=%s:colorspace=bt2020nc,subtitles=%s", c.trc, path),
+			"-i", fixtures.Path(t, "ramp.png"),
+			"-vf", fmt.Sprintf("scale=64:64,format=yuv420p10le,setparams=range=tv:color_primaries=bt2020:color_trc=%s:colorspace=bt2020nc,subtitles=%s", c.trc, path),
 			"-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "yuv420p10le", "-").Output()
 		if err != nil {
 			ffmpegtest.Unusable(t, "%s: burning a caption: %v", c.light, err)

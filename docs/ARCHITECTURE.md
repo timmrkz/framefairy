@@ -219,8 +219,7 @@ copies what it finds nearby, so these are not the pattern for new code.
   own that keep a machine or a finder of their own, `sources` in
   `cmd/framefairy-app/media.go` and `openPreviews` in
   `cmd/framefairy-app/frames.go`, #607.
-- Test videos and sounds made by ffmpeg while the tests run,
-  `encodeTestFile` and `episodes.once` in the engine's tests, the
+- Test videos and sounds made by ffmpeg while the tests run, the
   fixtures of the app's tests, of `internal/outside` and of
   `cmd/framefairy-app/walkvideos_test.go`, and `frontend/preview/open.mjs`,
   #670. `TestNoTestMakesItsOwnFixture` in `internal/ffmpegtest` lists the
