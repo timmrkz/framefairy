@@ -284,8 +284,8 @@ func TestAVideoThatLeftTheLibraryIsNotSent(t *testing.T) {
 // newer than every one of them, and an edit's answer is newer than a state
 // read before the edit and older than one read after it, which holds it.
 //
-// On the real disk: ffmpeg makes the video, and its clips are fitted to
-// the picture ffprobe reads.
+// On the real disk: the video is a copy on the disk, and its clips are
+// fitted to the picture ffprobe reads.
 func TestPathAStateIsNewerThanItsJobsAndAnEditBeforeIt(t *testing.T) {
 	d := open(t)
 	ep := d.add("ep", minutes5)
@@ -449,8 +449,8 @@ func heardStates(d *desk) func(path string) (VideoState, uint64) {
 // The state sent after an edit is newer than the edit's answer, so the
 // window, which takes no state older than an answer, takes it.
 //
-// On the real disk: ffmpeg makes the video, and its clips are fitted to
-// the picture ffprobe reads.
+// On the real disk: the video is a copy on the disk, and its clips are
+// fitted to the picture ffprobe reads.
 func TestPathWhatChangesAVideoSendsItsState(t *testing.T) {
 	d := open(t)
 	sent := heardStates(d)

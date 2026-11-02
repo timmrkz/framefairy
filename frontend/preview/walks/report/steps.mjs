@@ -578,7 +578,7 @@ export const steps = {
     await pageUntil(page, (n) => document.querySelectorAll("li.tile").length >= n, before + shapes.length);
     await settle(page);
   },
-  // ["drop recording"] drops a screen recording of three seconds on the
+  // ["drop recording"] drops a screen recording of one second on the
   //                    report window, a MOV the way a Mac makes one
   async "drop recording"(walk) {
     const { page } = walk;

@@ -19,27 +19,18 @@ import (
 	"framefairy/engine/timed"
 	"framefairy/engine/tool"
 	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/fixtures"
 	"framefairy/internal/standin"
 )
 
 // twoCameras is an episode shot on two cameras: the first for ten seconds,
 // the second for ten, then the first again.
 //
-// On the real disk: ffmpeg makes the episode and reads it.
+// On the real disk: ffmpeg reads the episode.
 func twoCameras(t *testing.T) (string, SourceInfo) {
 	t.Helper()
 	ffmpegtest.Need(t)
-	path := filepath.Join(t.TempDir(), "two.mp4")
-	out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
-		"-f", "lavfi", "-i", "testsrc=s=640x360:r=25:d=10",
-		"-f", "lavfi", "-i", "smptebars=s=640x360:r=25:d=10",
-		"-f", "lavfi", "-i", "testsrc=s=640x360:r=25:d=10",
-		"-filter_complex", "[0:v][1:v][2:v]concat=n=3:v=1:a=0",
-		"-c:v", "mpeg4", "-q:v", "5", "-g", "25", path).CombinedOutput()
-	if err != nil {
-		t.Fatalf("making the episode: %s %s", err, out)
-	}
-	return path, SourceInfo{Width: 640, Height: 360, Duration: 30}
+	return fixtures.Path(t, "two-cameras.mp4"), SourceInfo{Width: 640, Height: 360, Duration: 30}
 }
 
 // framingEngine frames by what is in focus rather than by faces. These

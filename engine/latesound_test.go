@@ -5,12 +5,12 @@ import (
 	"encoding/binary"
 	"math"
 	"os/exec"
-	"path/filepath"
 	"testing"
 
 	"framefairy/engine/runlog"
 	"framefairy/engine/timed"
 	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/fixtures"
 )
 
 // A reading of the sound resumed before a late picture starts hears the
@@ -20,22 +20,13 @@ import (
 // and what was wanted before it was missing and the rest out of step.
 // Plan row 2.138.
 //
-// On the real disk: ffmpeg makes the episode and reads it.
+// On the real disk: ffmpeg reads the episode.
 func TestSoundResumedBeforeALatePictureIsTheSoundThere(t *testing.T) {
 	t.Parallel()
 	ffmpegtest.Need(t)
-	path := filepath.Join(t.TempDir(), "late.mov")
 	// A tone whose pitch climbs, so sound from another moment does not
-	// match, and a picture a second late, by an edit list. MPEG-4 Part 2
-	// and AAC, which the ffmpeg a Mac builds can write.
-	out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
-		"-itsoffset", "1", "-f", "lavfi", "-i", "color=c=black:s=320x180:r=30000/1001:d=7",
-		"-f", "lavfi", "-i", "aevalsrc=sin(2*PI*(200*t+300*t*t)):s=48000:d=8",
-		"-map", "0", "-map", "1", "-fps_mode", "passthrough", "-g", "60",
-		"-c:v", "mpeg4", "-q:v", "5", "-c:a", "aac", path).CombinedOutput()
-	if err != nil {
-		ffmpegtest.Unusable(t, "ffmpeg could not make a late picture: %s %s", err, out)
-	}
+	// match, and a picture a second late, by an edit list.
+	path := fixtures.Path(t, "sound-first.mov")
 	e := NewEngine(runlog.New(nil, false, false), NewMachine(disk))
 	e.FFmpeg, e.FFprobe = "ffmpeg", "ffprobe"
 	picture := e.pictureStart(t.Context(), path)

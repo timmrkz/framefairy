@@ -18,6 +18,7 @@ import (
 
 	"framefairy/engine/runlog"
 	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/fixtures"
 )
 
 // A crop that follows, plan row 3.26: keyframes put on frames of a clip,
@@ -131,8 +132,8 @@ func TestTheGlideIsTheOneTheVideoPreviewWorksOut(t *testing.T) {
 func renderedLefts(t *testing.T, source SourceInfo, seg Segment, frames int) []int {
 	t.Helper()
 	filters := source.cropFilters(seg, 152, 270, 0, 480, 152, 270, "flags=lanczos", "gray16le")
-	got := readFrames(t, exec.Command("ffmpeg", "-v", "error", "-f", "lavfi",
-		"-i", "color=black:s=480x270:r=25:d=10,format=gray16le,geq=lum=X*64",
+	got := readFrames(t, exec.Command("ffmpeg", "-v", "error", "-loop", "1", "-framerate", "25", "-t", "10",
+		"-i", fixtures.Path(t, "ramp.png"),
 		"-vf", strings.Join(filters, ",")+",format=gray16le", "-frames:v", strconv.Itoa(frames),
 		"-f", "rawvideo", "-"), 152*270*2)
 	if len(got) != frames {
@@ -179,8 +180,8 @@ func TestTheRenderGlidesTheCropOverTheMarks(t *testing.T) {
 	if chain == "" {
 		t.Fatalf("the piece has no crop that glides to the pixel of the short: %s", graph)
 	}
-	frames := readFrames(t, exec.Command("ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=black:s=480x270:r=25:d=3",
-		"-vf", chain, "-frames:v", "65", "-f", "rawvideo", "-pix_fmt", "gray", "-"), 1080*1920)
+	frames := readFrames(t, exec.Command("ffmpeg", "-v", "error", "-loop", "1", "-framerate", "25", "-t", "3",
+		"-i", fixtures.Path(t, "ramp.png"), "-vf", chain, "-frames:v", "65", "-f", "rawvideo", "-pix_fmt", "gray", "-"), 1080*1920)
 	if len(frames) != 65 {
 		t.Errorf("the glide scaled to the short gave %d frames of 1080 by 1920, not 65", len(frames))
 	}

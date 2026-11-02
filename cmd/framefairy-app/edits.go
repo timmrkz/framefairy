@@ -381,6 +381,13 @@ func (s *FrameFairy) RemoveClip(ctx context.Context, path, plan, clipID string, 
 		return ClipEntry{}, errNotInLibrary
 	}
 	began := time.Now()
+	key := filepath.Base(plan) + "/" + clipID
+	// The clip beside the one chosen is read from the list as it was
+	// before the remove, see removing.
+	var before VideoState
+	if removed && s.chosenIn(path).get(s.store.files, path).Clip == key {
+		before = s.stateBefore(path)
+	}
 	err := s.edit(path, func() error { return engine.SetRejected(s.store.files, s.store.records, plan, clipID, removed) })
 	what := "a clip was put back"
 	if removed {
@@ -390,6 +397,8 @@ func (s *FrameFairy) RemoveClip(ctx context.Context, path, plan, clipID string, 
 	if err != nil {
 		return ClipEntry{}, err
 	}
+	s.removing(path, key, removed, before)
+	s.told(path)
 	return s.answer(ctx, path, plan, clipID)
 }
 

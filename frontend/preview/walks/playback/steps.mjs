@@ -1125,10 +1125,10 @@ export const steps = {
     // ends, a search of the episode added before, so they say nothing
     // about the order the workspace opens in. A workspace kept from
     // before, see App.svelte, is woken rather than built and asks
-    // neither the clip it opens on nor the window: it has them.
+    // neither the picture it opens on nor the window: it has them.
     const asked = await page.evaluate(() => window.__asked ?? []);
     const after = ["ChosenWindow"];
-    const built = asked.some(([name]) => name === "ChosenClip");
+    const built = asked.some(([name]) => name === "Source");
     const early = asked.filter(([name, at]) => after.includes(name) && Math.abs(at - clip.start) > 0.002);
     if (!walk.wrong && built && !asked.some(([name]) => after.includes(name))) walk.wrong = `the workspace opened asking none of ${after.join(", ")}`;
     else if (!walk.wrong && early.length) {

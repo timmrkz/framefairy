@@ -219,41 +219,11 @@ func ffmpegSkips(path string, src []byte) ([]string, error) {
 	return lines, nil
 }
 
-// stillMakeTheirOwn are the test files that still make a video or a sound
-// with ffmpeg while they run, which the parts of #670 move onto the
-// committed fixtures in internal/fixtures one by one. Each part takes its
-// files off this list, and the list only shrinks.
-var stillMakeTheirOwn = []string{
-	"cmd/framefairy-app/bridge_test.go",
-	"cmd/framefairy-app/captions_test.go",
-	"cmd/framefairy-app/driver_test.go",
-	"cmd/framefairy-app/frames_test.go",
-	"cmd/framefairy-app/harness_test.go",
-	"cmd/framefairy-app/library_test.go",
-	"cmd/framefairy-app/recording_test.go",
-	"cmd/framefairy-app/walkvideos_test.go",
-	"engine/bounce_test.go",
-	"engine/captionlayer_test.go",
-	"engine/captionlook_test.go",
-	"engine/cropmarks_test.go",
-	"engine/encoderfails_test.go",
-	"engine/episodeframes_test.go",
-	"engine/framecuts_test.go",
-	"engine/frametimes_test.go",
-	"engine/framing_test.go",
-	"engine/hdr_test.go",
-	"engine/hdrcolour_test.go",
-	"engine/latesound_test.go",
-	"engine/levels_test.go",
-	"engine/pictureend_test.go",
-	"engine/preroll_test.go",
-	"engine/previewsound_test.go",
-	"engine/rendertiming_test.go",
-	"engine/rotate_test.go",
-	"engine/seam_test.go",
-	"engine/thumbnails_test.go",
-	"engine/transcript_test.go",
-	"internal/outside/run_test.go",
+// stillMakeTheirOwn are the test files that still make a video with
+// ffmpeg while they run, each with why it is not committed.
+var stillMakeTheirOwn = map[string]string{
+	"cmd/framefairy-app/cameravideos_test.go": "only speed.mjs and smooth.mjs ask for it, run by hand and never by a test, " +
+		"and a minute of 1080p that moves all over is too large to commit",
 }
 
 // No test makes its own video or sound while it runs, it reads a
@@ -306,15 +276,13 @@ func TestNoTestMakesItsOwnFixture(t *testing.T) {
 	if read < 50 {
 		t.Fatalf("read %d test files under %s, too few to be the module", read, root)
 	}
-	listed := map[string]bool{}
-	for _, f := range stillMakeTheirOwn {
-		listed[f] = true
+	for f := range stillMakeTheirOwn {
 		if !makes[f] {
 			t.Errorf("%s makes no fixture any more. Take it off stillMakeTheirOwn", f)
 		}
 	}
 	for f := range makes {
-		if !listed[f] {
+		if _, ok := stillMakeTheirOwn[f]; !ok {
 			t.Errorf("%s makes a video or a sound with ffmpeg while it runs. Read a committed one with fixtures.Path, see internal/fixtures", f)
 		}
 	}

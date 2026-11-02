@@ -6,11 +6,11 @@ import (
 	"encoding/binary"
 	"math"
 	"os/exec"
-	"path/filepath"
 	"testing"
 
 	"framefairy/engine/runlog"
 	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/fixtures"
 )
 
 // The sound the video preview hears from any moment is ffmpeg's decode of
@@ -20,22 +20,14 @@ import (
 // a late picture starts, where a seek alone finds the sound only from the
 // picture on.
 //
-// On the real disk: ffmpeg makes the episode and decodes its sound.
+// On the real disk: ffmpeg decodes the sound of the episode.
 func TestPreviewSoundIsTheEpisodesOwnFromAnyMoment(t *testing.T) {
 	t.Parallel()
 	ffmpegtest.Need(t)
-	path := filepath.Join(t.TempDir(), "late.mov")
 	// Two channels that differ, a tone that climbs in the left and one that
 	// falls in the right, so a sample from another moment or a channel
 	// swapped does not match. The picture a second late, by an edit list.
-	out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
-		"-itsoffset", "1", "-f", "lavfi", "-i", "color=c=black:s=320x180:r=25:d=5",
-		"-f", "lavfi", "-i", "aevalsrc=sin(2*PI*(200*t+300*t*t))|0.5*sin(2*PI*(900*t-40*t*t)):s=48000:d=6",
-		"-map", "0", "-map", "1", "-fps_mode", "passthrough", "-g", "50",
-		"-c:v", "mpeg4", "-q:v", "5", "-c:a", "aac", path).CombinedOutput()
-	if err != nil {
-		ffmpegtest.Unusable(t, "ffmpeg could not make an episode: %s %s", err, out)
-	}
+	path := fixtures.Path(t, "sound-first.mov")
 	e := NewEngine(runlog.New(nil, false, false), NewMachine(disk))
 	e.FFmpeg, e.FFprobe = "ffmpeg", "ffprobe"
 	const rate, channels = 48000, 2

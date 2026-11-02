@@ -96,13 +96,13 @@ waiting for the day the two disagree.
 | State | Home | Writer |
 | --- | --- | --- |
 | everything about a video | its work folder, `<video>.framefairy/`, the truth the app keeps in step with | the engine, and from outside the app the person in Finder, the command line and a sync service, which `reconcile` in `cmd/framefairy-app/reconcile.go` hears of through the watch on the disk, see the decision record [2026-11-01-the-app-in-step-with-its-files.md](decisions/2026-11-01-the-app-in-step-with-its-files.md) |
-| what was last chosen in a video, its clip and window | `chosen.json` in its work folder | the app's Go side |
+| what is chosen in a video, its clip and window | in memory, in the video's record beside its undo steps, `picked` in `cmd/framefairy-app/chosen.go`, behind a lock of its own, and written through to `chosen.json` in its work folder, which is read only the first time | the app's Go side |
 | the library and the settings | the app's config folder | the app's Go side |
 | the models, notes about running servers, the training records | `~/.framefairy/` | the engine |
 | what was learned about the machine while a program runs: the decoder that works, the encoders and subtitle filter of each ffmpeg, the face detector, the tools already checked | `engine.Machine`, one for each program, in memory | the engine |
 | what runs now, and the lane each job holds or waits for | the job queue, in memory | the app's Go side |
 | the step a job is in, and what it was asked for | its `engine.JobRecord`, on disk and in the job the queue holds, which keeps each record the engine tells it through the job's `engine.Host` | the engine |
-| what is on screen | the interface's stores, and a video's status, clips and coverage in its `EpisodeSession`, `frontend/src/lib/session.svelte.ts`, which keeps the newest `VideoState` | from what Go sends. Today `Episode.svelte` also works out from what changed that a search started, see Not to copy |
+| what is on screen | the interface's stores, and a video's status, clips, coverage and clip chosen in its `EpisodeSession`, `frontend/src/lib/session.svelte.ts`, which keeps the newest `VideoState`, and a hand's pick until Go answers it | from what Go sends. Today `Episode.svelte` also works out from what changed that a search started, see Not to copy |
 
 ## The programs that run
 
@@ -126,7 +126,7 @@ What to do today, and what changes once the issue named is built.
 | I need to | It goes |
 | --- | --- |
 | decide where an edge, a word or a window lands | the engine: `engine/shape.go` for a gesture, `engine.Project` for a window. The interface asks and draws the answer |
-| do something in the workspace when a video's work moves on | today a move of `EpisodeSession` in `frontend/src/lib/session.svelte.ts`, never an effect that keeps the value from before. Once #606 is built, nothing in the interface: Go decides what follows, the clip chosen, the window, a failure told, and sends it, see [2026-11-01-every-rule-of-the-workspace-in-go.md](decisions/2026-11-01-every-rule-of-the-workspace-in-go.md) |
+| do something in the workspace when a video's work moves on | today a move of `EpisodeSession` in `frontend/src/lib/session.svelte.ts`, never an effect that keeps the value from before. Once #606 is built, nothing in the interface: Go decides what follows, the window, a failure told, and sends it, the way it already decides the clip chosen, in `cmd/framefairy-app/choose.go`, and sends it in the video's state, see [2026-11-01-every-rule-of-the-workspace-in-go.md](decisions/2026-11-01-every-rule-of-the-workspace-in-go.md) |
 | show the interface a new fact about a video | a field of `VideoState` in `cmd/framefairy-app/videostate.go`, or of what it holds, the status and the clip views, which the session keeps. Never a new event of its own or a poll |
 | tell the window that something about a video changed | `told` on `*FrameFairy`, or the queue's `moved` for a job, which send the video's state, at most four times a second and always after the last change, one at a time, with at most one more waiting however slow a read is. Nothing else sends it |
 | keep something between two jobs, a cache or a fact about the machine | a field on `engine.Machine`, in `engine/machine.go`, which a program makes once and hands to every `Engine`. Never a package variable, and never a new `Engine` made only to get it. #607 moves the package variables still left onto it |
@@ -142,7 +142,7 @@ What to do today, and what changes once the issue named is built.
 | copy a rule of the engine into TypeScript | don't, and no `.cases.json` makes it right. The interface asks Go, or reads the answer from the state. Where it must answer while a hand drags, Go sends what the drag needs as data, see [2026-11-01-every-rule-of-the-workspace-in-go.md](decisions/2026-11-01-every-rule-of-the-workspace-in-go.md) |
 | add a check to CI | a make target, and its rule in `scripts/changed.sh` with its case in `scripts/changed-test.sh`, see BUILD.md |
 | fake something in a test | the clock, the disk and the models are handed in. Use the fakes there are, in `engine/project_test.go` and `internal/standin/` |
-| give a test a video or a sound | a file committed in `internal/fixtures/testdata/`, read with `fixtures.Path`, made by its recipe in `internal/fixtures/fixtures_test.go`. One that is there before a new one, see the decision record [2026-11-01-committed-test-fixtures.md](decisions/2026-11-01-committed-test-fixtures.md). Never made by ffmpeg while the test runs |
+| give a test a video or a sound | a file committed in `internal/fixtures/testdata/`, read with `fixtures.Path`, or copied with `fixtures.Copy` by a test that changes it or writes beside it, or with `fixtures.CopyTo` where nothing can end the test, like a route a walk calls, made by its recipe in `internal/fixtures/fixtures_test.go`. One that is there before a new one, see the decision record [2026-11-01-committed-test-fixtures.md](decisions/2026-11-01-committed-test-fixtures.md). Never made by ffmpeg while the test runs |
 
 ## Invariants
 
@@ -227,12 +227,6 @@ copies what it finds nearby, so these are not the pattern for new code.
   own that keep a machine or a finder of their own, `sources` in
   `cmd/framefairy-app/media.go` and `openPreviews` in
   `cmd/framefairy-app/frames.go`, #607.
-- Test videos and sounds made by ffmpeg while the tests run,
-  `encodeTestFile` and `episodes.once` in the engine's tests, the
-  fixtures of the app's tests, of `internal/outside` and of
-  `cmd/framefairy-app/walkvideos_test.go`, and `frontend/preview/open.mjs`,
-  #670. `TestNoTestMakesItsOwnFixture` in `internal/ffmpegtest` lists the
-  Go test files.
 - The effects in `frontend/src/screens/Episode.svelte` that compare an
   old value with a new one to notice that a search started, `followed`
   and `searchSeen`, the reads of the video's state it asks for after
@@ -241,8 +235,7 @@ copies what it finds nearby, so these are not the pattern for new code.
   record
   [2026-10-30-a-videos-state-in-one-session.md](decisions/2026-10-30-a-videos-state-in-one-session.md).
 - What the interface decides about a video's work and its workspace:
-  the moves of `EpisodeSession`, the clip chosen in `Episode.svelte`,
-  the window it fits with `frontend/src/lib/room.ts` and writes back,
+  the moves of `EpisodeSession`, the window it fits with `frontend/src/lib/room.ts` and writes back,
   how a search ended, which failures are told, #606. Go decides each of
   them and sends it, see
   [2026-11-01-every-rule-of-the-workspace-in-go.md](decisions/2026-11-01-every-rule-of-the-workspace-in-go.md).

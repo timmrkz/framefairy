@@ -3,7 +3,6 @@ package engine
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +14,7 @@ import (
 
 	"framefairy/engine/runlog"
 	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/fixtures"
 	"framefairy/internal/framewire"
 	"framefairy/internal/standin"
 )
@@ -31,7 +31,7 @@ import (
 // render asks of it, and elsewhere with libx264 in its place, which proves
 // the way round on any machine.
 //
-// On the real disk: ffmpeg makes the episode and renders the short.
+// On the real disk: ffmpeg reads the episode and renders the short.
 func TestARenderGoesOnWhenTheEncoderFails(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -89,7 +89,7 @@ func TestARenderGoesOnWhenTheEncoderFails(t *testing.T) {
 // words handed it on. A render that makes no frame for encoderStall goes
 // on with the next encoder, the way a failed one does. Plan row 2.232.
 //
-// On the real disk: ffmpeg makes the episode and renders the short.
+// On the real disk: ffmpeg reads the episode and renders the short.
 func TestARenderGoesOnWhenTheEncoderHangs(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -368,7 +368,7 @@ func TestTheProcessorEncodesWhatAShortAsks(t *testing.T) {
 			}
 			out := filepath.Join(t.TempDir(), "short.mp4")
 			args := []string{"-hide_banner", "-loglevel", "error", "-y",
-				"-f", "lavfi", "-i", "testsrc2=s=180x320:r=30:d=1", "-vf", "format=" + c.input}
+				"-i", fixtures.Path(t, "picture.mp4"), "-t", "1", "-vf", "scale=180:320,format=" + c.input}
 			args = append(append(args, c.encoder.args(rs)...), out)
 			if said, err := exec.Command(e.FFmpeg, args...).CombinedOutput(); err != nil {
 				t.Fatalf("%s on the processor refused %v: %v\n%s", c.encoder.Name, args, err, said)
@@ -419,10 +419,10 @@ func TestAnFFmpegEndedByASignalSaysSo(t *testing.T) {
 
 // encoderFailure is what both tests of a failing encoder start from: an
 // engine whose ffmpeg can encode on the processor, whether it has the
-// Mac's media engine, a folder of the test's own and an episode of three
-// seconds, made once for both.
+// Mac's media engine, a folder of the test's own and the 15 s test
+// episode, which both only read.
 //
-// On the real disk: ffmpeg makes the episode and the stand-in reads it.
+// On the real disk: ffprobe and the stand-in read the episode.
 func encoderFailure(t *testing.T) (e *Engine, onMac bool, dir, source string, info SourceInfo) {
 	t.Helper()
 	ctx := context.Background()
@@ -435,19 +435,8 @@ func encoderFailure(t *testing.T) (e *Engine, onMac bool, dir, source string, in
 	if !onMac && !hasEncoder(string(listing), "libx264") {
 		ffmpegtest.Unusable(t, "this ffmpeg has neither VideoToolbox nor libx264")
 	}
-	source, err := episodes.once("encoder-fails.mp4", func(path string) error {
-		if out, err := exec.Command(e.FFmpeg, "-loglevel", "error", "-y",
-			"-f", "lavfi", "-i", "testsrc2=s=320x180:r=25:d=3",
-			"-f", "lavfi", "-i", "sine=f=440:r=48000:d=3",
-			"-c:v", "mpeg4", "-q:v", "4", "-c:a", "aac", "-shortest", path).CombinedOutput(); err != nil {
-			return fmt.Errorf("making the test episode: %s %s", err, out)
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	info, err = e.Probe(ctx, source)
+	source = fixtures.Path(t, "episode-15s.mp4")
+	info, err := e.Probe(ctx, source)
 	if err != nil {
 		t.Fatal(err)
 	}

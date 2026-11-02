@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"path/filepath"
@@ -49,26 +50,26 @@ func TestTheChosenClipSurvivesAndNothingElseDoes(t *testing.T) {
 	s, eps := memoryLibrary(t, "ep.mp4")
 	source := eps[0]
 
-	if got := s.ChosenClip(source); got != "" {
+	if got := chosenClip(s, source); got != "" {
 		t.Errorf("an episode nobody has opened gave %q, wanted nothing", got)
 	}
-	if err := s.ChooseClip(source, "clips/abc123"); err != nil {
+	if err := s.pick(source, "clips/abc123"); err != nil {
 		t.Fatal(err)
 	}
-	if got := s.ChosenClip(source); got != "clips/abc123" {
+	if got := chosenClip(s, source); got != "clips/abc123" {
 		t.Errorf("got %q, wanted clips/abc123", got)
 	}
-	if err := s.ChooseClip(source, "clips/def456"); err != nil {
+	if err := s.pick(source, "clips/def456"); err != nil {
 		t.Fatal(err)
 	}
-	if got := s.ChosenClip(source); got != "clips/def456" {
+	if got := chosenClip(s, source); got != "clips/def456" {
 		t.Errorf("choosing another clip gave %q, wanted clips/def456", got)
 	}
 
-	if err := s.ChooseClip(source, "../../escape"); err == nil {
+	if err := s.pick(source, "../../escape"); err == nil {
 		t.Error("a key that is a path was taken")
 	}
-	if got := s.ChosenClip(source); got != "clips/def456" {
+	if got := chosenClip(s, source); got != "clips/def456" {
 		t.Errorf("a refused key changed what was kept, now %q", got)
 	}
 
@@ -78,17 +79,19 @@ func TestTheChosenClipSurvivesAndNothingElseDoes(t *testing.T) {
 		if err := afero.WriteFile(s.store.files, file, []byte(junk), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if got := s.ChosenClip(source); got != "" {
+		// Read as the app starts again, the one time the file is read.
+		s.forget(source)
+		if got := chosenClip(s, source); got != "" {
 			t.Errorf("a file holding %q gave %q, wanted nothing", junk, got)
 		}
 	}
 
 	// An episode that is not in the library is not read and not written.
 	other := filepath.Join(filepath.Dir(source), "other.mp4")
-	if err := s.ChooseClip(other, "clips/abc"); err == nil {
+	if _, err := s.ChooseClip(context.Background(), other, "clips/abc"); err == nil {
 		t.Error("a file outside the library was written to")
 	}
-	if got := s.ChosenClip(other); got != "" {
+	if got := chosenClip(s, other); got != "" {
 		t.Errorf("a file outside the library gave %q", got)
 	}
 }
@@ -100,7 +103,7 @@ func TestTheWindowIsKeptBesideTheClip(t *testing.T) {
 	if got := s.ChosenWindow(source); got != nil {
 		t.Fatalf("a fresh episode had a window: %+v", got)
 	}
-	if err := s.ChooseClip(source, "clips/abc123"); err != nil {
+	if err := s.pick(source, "clips/abc123"); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.ChooseWindow(source, 120, 180, 60, false); err != nil {
@@ -109,10 +112,10 @@ func TestTheWindowIsKeptBesideTheClip(t *testing.T) {
 	if got := s.ChosenWindow(source); got == nil || *got != (KeptWindow{From: 120, To: 180, Length: 60}) {
 		t.Errorf("the window came back as %+v", got)
 	}
-	if got := s.ChosenClip(source); got != "clips/abc123" {
+	if got := chosenClip(s, source); got != "clips/abc123" {
 		t.Errorf("choosing a window lost the clip: %q", got)
 	}
-	if err := s.ChooseClip(source, "clips/def456"); err != nil {
+	if err := s.pick(source, "clips/def456"); err != nil {
 		t.Fatal(err)
 	}
 	if got := s.ChosenWindow(source); got == nil || got.From != 120 {
@@ -142,10 +145,11 @@ func TestTheWindowIsKeptBesideTheClip(t *testing.T) {
 	if err := afero.WriteFile(s.store.files, file, []byte(`{"clip":"clips/a","window":{"from":50,"to":10,"length":1}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	s.forget(source)
 	if got := s.ChosenWindow(source); got != nil {
 		t.Errorf("a window written backwards was read back: %+v", got)
 	}
-	if got := s.ChosenClip(source); got != "clips/a" {
+	if got := chosenClip(s, source); got != "clips/a" {
 		t.Errorf("a bad window took the clip with it: %q", got)
 	}
 }
@@ -159,7 +163,7 @@ func TestAClipAndAWindowChosenAtOnce(t *testing.T) {
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			if err := s.ChooseClip(source, fmt.Sprintf("clips/c%d", i)); err != nil {
+			if err := s.pick(source, fmt.Sprintf("clips/c%d", i)); err != nil {
 				t.Error(err)
 			}
 		}()
@@ -172,8 +176,37 @@ func TestAClipAndAWindowChosenAtOnce(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	if s.ChosenClip(source) == "" || s.ChosenWindow(source) == nil {
-		t.Errorf("one change lost the other: clip %q, window %+v", s.ChosenClip(source), s.ChosenWindow(source))
+	if chosenClip(s, source) == "" || s.ChosenWindow(source) == nil {
+		t.Errorf("one change lost the other: clip %q, window %+v", chosenClip(s, source), s.ChosenWindow(source))
+	}
+}
+
+// What is chosen is kept in memory and written through: changes from
+// many goroutines at once leave the file holding what the app holds, and
+// the app opened again on that file holds it too.
+func TestWhatIsChosenIsWrittenThroughNewestLast(t *testing.T) {
+	s, source := chosenApp(t)
+	var wg sync.WaitGroup
+	for i := range 40 {
+		wg.Go(func() {
+			if err := s.pick(source, fmt.Sprintf("clips/c%d", i)); err != nil {
+				t.Error(err)
+			}
+		})
+		wg.Go(func() {
+			if err := s.ChooseWindow(source, float64(i), float64(i+60), 60, false); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	wg.Wait()
+	held := s.chosenIn(source).get(s.store.files, source)
+	if on := readChosen(s.store.files, source); on.Clip != held.Clip || on.Window == nil || *on.Window != *held.Window {
+		t.Errorf("the file holds %q and %+v, the app %q and %+v", on.Clip, on.Window, held.Clip, held.Window)
+	}
+	s.forget(source)
+	if got := chosenClip(s, source); got != held.Clip {
+		t.Errorf("opened again, the app chose %q, not %q", got, held.Clip)
 	}
 }
 
@@ -234,7 +267,7 @@ func TestTheEpisodesOpenedLastComeNewestFirst(t *testing.T) {
 	// b, then c, then a, each a second apart on the clock of the files.
 	base := time.Now().Add(-time.Hour)
 	for i, ep := range []string{eps[1], eps[2], eps[0]} {
-		if err := s.ChooseClip(ep, "clips/x"); err != nil {
+		if err := s.pick(ep, "clips/x"); err != nil {
 			t.Fatal(err)
 		}
 		at := base.Add(time.Duration(i) * time.Second)
@@ -262,7 +295,7 @@ func TestTheEpisodesOpenedLastComeNewestFirst(t *testing.T) {
 	}
 	// c's file is written after b was opened, and its clock says an hour
 	// later still.
-	if err := s.ChooseClip(eps[2], "clips/y"); err != nil {
+	if err := s.pick(eps[2], "clips/y"); err != nil {
 		t.Fatal(err)
 	}
 	later := time.Now().Add(time.Hour)
@@ -275,4 +308,10 @@ func TestTheEpisodesOpenedLastComeNewestFirst(t *testing.T) {
 	if err := s.OpenEpisode(filepath.Join(filepath.Dir(eps[0]), "elsewhere.mp4")); err == nil {
 		t.Error("an episode not in the library was noted as opened")
 	}
+}
+
+// chosenClip is the clip chosen in the video at path, as the app keeps
+// it.
+func chosenClip(s *FrameFairy, path string) string {
+	return s.chosenIn(path).get(s.store.files, path).Clip
 }

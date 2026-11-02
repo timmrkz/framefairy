@@ -165,22 +165,44 @@ an issue of its own.
   which recipe made each. Without the flag, that test checks the folder
   holds the recipes and nothing else, each made by its recipe as it is.
 - `TestNoTestMakesItsOwnFixture` in `internal/ffmpegtest` names a test
-  file that asks ffmpeg for `lavfi` while it runs. The files that still
-  do are listed there, and each part of #670 takes its own off.
+  file that asks ffmpeg for `lavfi` while it runs. One file is let off,
+  with its reason: `cmd/framefairy-app/cameravideos_test.go`, the
+  camera's videos only `speed.mjs` and `smooth.mjs` ask for, which are
+  run by hand and never by a test, and a minute of 1080p moving all
+  over is too large to commit.
+- What only a probe run by hand reads is made when it is asked for, as
+  it was: the four hours and the ten minutes `frontend/preview/open.mjs`
+  makes for the preview harness, kept in the temp folder. They would add
+  49 MB to every clone, for a probe a session runs by hand, and no test
+  waits for them.
 - As few as the tests allow: a new test reads one that is there, unless
   what it tests is a property none of them has. Then it adds one, as
   small and as short as the test allows.
 - `engine/testdata/open-gop.mp4` and `cmd/framefairy-app/testdata/gnome.webm`
-  move in as their packages' tests move.
-- The move is made over several pull requests, in the order of #670's
-  Progress list. Until it is done, what is left is under Not to copy in
-  ARCHITECTURE.md.
+  move in as their packages' tests move, `gnome.webm` as
+  `recording.webm`, made by a recipe like every other.
+- A fixture made from another, a copy of it put together otherwise, names
+  it in its recipe as `@` and its name, so it is made first and its sum
+  counts in the other's. One written the way a crash leaves it ends in
+  `pipe:1`, and what ffmpeg sends there is the file. A test that writes
+  beside its file, or changes it, takes a copy with `fixtures.Copy`, or
+  with `fixtures.CopyTo` where it cannot end the test, like the walks'
+  bridge answering a walk. A walk asks for a video by what it is, and
+  the bridge names the fixture, see `walkFixture`, so the walks' cache in
+  CI is gone.
+- The move was made over three pull requests, in the order of #670's
+  Progress list, the engine's tests first and the app's and the walks'
+  last.
 
 ## What follows
 
-- Costs: the repository grows by the fixtures, about 4 MB for the
-  engine's shared test video, and each change to one is a new copy in
-  Git's history. A fixture is made small before it is committed.
+- Costs: the repository grows by the fixtures, and each change to one
+  is a new copy in Git's history. With every test on them, 114 files
+  take 58 MB on the disk, and what a clone of main fetches grows from
+  7.2 MB before them to 30.8 MB, measured with `git pack-objects` on 2
+  November 2026. Most of it is the walks' long videos, whose tone has to
+  stay as steady as Opus at 24k keeps it, see `walk` in the recipes. A
+  fixture is made small before it is committed.
 - Buys: no ffmpeg run to make an input, so no input made on CI's
   graphics chip, and the time it took. The tests read the same bytes on
   every machine, so a failure is about the code, not about the ffmpeg

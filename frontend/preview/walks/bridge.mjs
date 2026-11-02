@@ -1384,8 +1384,8 @@ export function loudness(short, at) {
 }
 
 // A filmed episode, made by /pick with a rate, carries its frame number
-// in a way a render keeps, see makeFilmedEpisode in bridge_test.go: bands
-// one above the other across the whole width of a picture 180 pixels
+// in a way a render keeps, see filmed in internal/fixtures/fixtures_test.go:
+// bands one above the other across the whole width of a picture 180 pixels
 // high, FILMED_BITS of them, the highest bit at the top, each BAND pixels
 // high, light for one and dark for nought.
 const FILMED_BITS = 11;

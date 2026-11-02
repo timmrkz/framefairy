@@ -9,7 +9,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strconv"
@@ -18,6 +17,7 @@ import (
 
 	"framefairy/engine"
 	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/fixtures"
 	"framefairy/internal/framewire"
 )
 
@@ -226,10 +226,7 @@ func captionsEpisode(t *testing.T) (*FrameFairy, string, *engine.CaptionsView) {
 	if err := os.WriteFile(plan, []byte(historyPlan), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi",
-		"-i", "testsrc2=s=320x180:r=25:d=24", "-c:v", "mpeg4", "-f", "mp4", mine).CombinedOutput(); err != nil {
-		t.Fatalf("making the episode: %s %s", err, out)
-	}
+	fixtures.Copy(t, "picture-24s.mp4", mine)
 	heardEpisode(t, svc, mine, 24, [][3]any{{10.1, 10.5, "eins"}, {10.5, 11.2, "respektvoll"}, {20.1, 20.6, "zwei"}})
 	view, err := svc.Captions(mine, plan, "01")
 	if err != nil || view.Track == "" || len(view.Captions) == 0 {

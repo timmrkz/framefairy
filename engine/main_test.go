@@ -20,8 +20,7 @@ import (
 // them in a home of the tests' own, see Records, which a test that reads
 // them back replaces with records of its own, see ownRecords.
 //
-// On the real disk: the episodes the tests share are made by ffmpeg, and
-// removed when they end, and so is the tests' home.
+// On the real disk: the tests' home is a folder, removed when they end.
 func TestMain(m *testing.M) {
 	if os.Getenv("FRAMEFAIRY_STUBBORN_SERVER") != "" {
 		stubbornServer()
@@ -53,9 +52,6 @@ func TestMain(m *testing.M) {
 	code := m.Run()
 	stop()
 	_ = os.RemoveAll(home)
-	if episodes.dir != "" {
-		_ = os.RemoveAll(episodes.dir)
-	}
 	os.Exit(code)
 }
 

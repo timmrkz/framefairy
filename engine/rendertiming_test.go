@@ -10,12 +10,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
-	"strings"
 	"testing"
 
 	"framefairy/engine/runlog"
 	"framefairy/engine/timed"
 	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/fixtures"
 )
 
 // The captions burned into a short appear on the frames the subtitle file
@@ -34,7 +34,8 @@ import (
 // renderTimingFPS is the frame rate of the test episode.
 const renderTimingFPS = 25
 
-// renderTimingWords are what the test episode says, on its own clock. The
+// renderTimingWords are what the test episode says, on its own clock, the
+// times renderTimingTone in internal/fixtures sounds its tone at. The
 // first three are in the first piece of the two-piece clip, the next two
 // after its cut, and the last six one in each piece of the six-piece clip.
 var renderTimingWords = []timed.Cue{
@@ -44,32 +45,12 @@ var renderTimingWords = []timed.Cue{
 	{Start: 19.10, End: 19.45, Text: "neun"}, {Start: 22.10, End: 22.45, Text: "zehn"}, {Start: 25.10, End: 25.45, Text: "elf."},
 }
 
-// renderTimingEpisode is made once for every test that reads it, see
-// testEpisodes. It is only read.
-//
-// On the real disk: ffmpeg makes the episode.
+// renderTimingEpisode is black, with a tone under each word of
+// renderTimingWords, render-timing.mp4 in internal/fixtures, which keeps
+// the times of the tone beside its recipe. It is only read.
 func renderTimingEpisode(t *testing.T) string {
 	t.Helper()
-	var tone []string
-	for _, w := range renderTimingWords {
-		// The tone stops a little before the word ends, so the next word
-		// starts out of silence and its start can be heard.
-		tone = append(tone, fmt.Sprintf("between(t,%.2f,%.2f)", w.Start, w.End-0.1))
-	}
-	path, err := episodes.once("render-timing.mp4", func(path string) error {
-		out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
-			"-f", "lavfi", "-i", fmt.Sprintf("color=c=black:s=640x360:r=%d:d=28", renderTimingFPS),
-			"-f", "lavfi", "-i", "aevalsrc='0.5*sin(2*PI*440*t)*("+strings.Join(tone, "+")+")':s=48000:d=28",
-			"-shortest", "-c:v", "mpeg4", "-q:v", "2", "-c:a", "aac", "-b:a", "192k", path).CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("making the test episode: %s %s", err, out)
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return path
+	return fixtures.Path(t, "render-timing.mp4")
 }
 
 // frameRGB reads every frame of a video as rgb24.

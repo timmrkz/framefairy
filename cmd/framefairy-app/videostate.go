@@ -33,12 +33,23 @@ type VideoState struct {
 	Clips    []ClipEntry          `json:"clips"`
 	Coverage CoverageView         `json:"coverage"`
 	Jobs     []Job                `json:"jobs"`
+	// Chosen is the key of the clip chosen, by a hand or by the app, see
+	// choose.go, or nothing. It is read after the clips, and chosen from
+	// them and the jobs, so a clip the app chose comes with the state that
+	// holds it.
+	Chosen string `json:"chosen"`
+	// ChosenCard is the card the clip chosen was while it was on its way,
+	// when the app chose the clip because that card was written as it,
+	// rule 7, so a play of the card goes on as a play of the clip.
+	ChosenCard string `json:"chosenCard,omitempty"`
 }
 
 // State reads the state of a video as it is now, see VideoState. It is
 // what the workspace opens with and what it reads again after its own
 // changes, and what is sent to it as the video's work goes on, see
-// videoNews.
+// videoNews. Reading it is also where the app chooses a clip from what
+// it read, so a read can change the clip chosen and write it to
+// chosen.json, see chosenFor.
 func (s *FrameFairy) State(ctx context.Context, path string) (VideoState, error) {
 	if !s.store.Known(path) {
 		return VideoState{}, errNotInLibrary
@@ -63,6 +74,7 @@ func (s *FrameFairy) State(ctx context.Context, path string) (VideoState, error)
 		}
 	}
 	st.Clips = s.clipsOf(plans, info)
+	st.Chosen, st.ChosenCard = s.chosenFor(path, st)
 	return st, nil
 }
 

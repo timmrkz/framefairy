@@ -14,6 +14,7 @@ import (
 	"framefairy/engine/runlog"
 	"framefairy/engine/timed"
 	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/fixtures"
 )
 
 // The pop of the word being spoken, read back from the frames of a short: the
@@ -90,7 +91,7 @@ func renderedRowsAt(t *testing.T, rate string, words []timed.Cue, end float64, t
 // bounceEpisode is a black episode at rate a little longer than end, and
 // the clip from 0 to end of it with words as its captions.
 //
-// On the real disk: ffmpeg makes the episode.
+// On the real disk: ffprobe reads the episode.
 func bounceEpisode(t *testing.T, rate string, words []timed.Cue, end float64) (e *Engine, source string, info SourceInfo, clip Clip, laid []LaidCaption) {
 	t.Helper()
 	ctx := context.Background()
@@ -101,14 +102,10 @@ func bounceEpisode(t *testing.T, rate string, words []timed.Cue, end float64) (e
 	if _, err := e.SubtitleFilter(ctx); err != nil {
 		ffmpegtest.Unusable(t, "this ffmpeg cannot burn captions in: %v", err)
 	}
-	source = filepath.Join(t.TempDir(), "episode.mp4")
-	long := math.Ceil(end) + 1
-	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
-		"-f", "lavfi", "-i", fmt.Sprintf("color=c=black:s=640x360:r=%s:d=%g", rate, long),
-		"-f", "lavfi", "-i", fmt.Sprintf("anullsrc=r=48000:cl=stereo:d=%g", long),
-		"-shortest", "-c:v", "mpeg4", "-q:v", "2", "-c:a", "aac", source).CombinedOutput(); err != nil {
-		t.Fatalf("making the test episode: %s %s", err, out)
+	if end > 3 {
+		t.Fatalf("the black episodes are four seconds long, too short for a clip to %.2f", end)
 	}
+	source = fixtures.Path(t, "black-"+strings.ReplaceAll(rate, "30000/1001", "29.97")+".mp4")
 	info, err := e.Probe(ctx, source)
 	if err != nil {
 		t.Fatal(err)
