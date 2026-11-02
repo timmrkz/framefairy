@@ -197,8 +197,10 @@ class Stream {
         // which comes too and is kept: the arrow to the left after a jump
         // asks for it next, and it would cost a seek back to the key
         // frame. Plan row 2.269.
-        // A run hands over every frame from where it stands.
-        const from = this.run ? Math.min(lowest, this.position + 1) : lowest > this.position + 2 ? lowest - 1 : lowest;
+        // A run hands over every frame from where it stands, its first
+        // pull only: asked again later, it skips as any stream does.
+        const run = this.run && !this.gave;
+        const from = run ? Math.min(lowest, this.position + 1) : lowest > this.position + 2 ? lowest - 1 : lowest;
         const skip = from > this.position + 1 && !keyNow ? this.owner.ptsOf(from) - this.owner.track.frame / 2 : 0;
         const n = keyNow ? 1 : Math.min(16, Math.max(1, highest - Math.max(this.position, from - 1)));
         const q = new URLSearchParams({ id, n: String(n) });
@@ -463,6 +465,16 @@ export class AppFrames {
     return s.pts[s.order[Math.max(0, Math.min(rank, s.count - 1))]] / s.timescale;
   }
 
+  // The hand takes hold of the playhead, or lets go of it, see
+  // FrameQueue.grip. The cards' frames wait while it holds it, see
+  // readNext, and are read on once it lets go.
+  grip(held: boolean) {
+    this.dragging = held;
+    this.dragPlaces = 0;
+    this.lastPlace = -1;
+    if (!held) this.aheadNow();
+  }
+
   // The frame of this rank, as a new frame with this timestamp, once it is
   // there. Null only when nothing near it could be decoded.
   // withdrawn, when it is set to true before the frame came, makes it
@@ -476,14 +488,6 @@ export class AppFrames {
   // withdrew them, and they were put up between the edge's frames, so the
   // video preview flickered between the two. Found by Tim on youtube.mp4,
   // plan row 2.270.
-  // The hand takes hold of the playhead, or lets go of it, see
-  // FrameQueue.grip.
-  grip(held: boolean) {
-    this.dragging = held;
-    this.dragPlaces = 0;
-    this.lastPlace = -1;
-  }
-
   //
   // A drag a frame or two back from the place before is a hand going
   // slowly to the left. A stream only reads on, so each step back was a stream
@@ -588,7 +592,11 @@ export class AppFrames {
       return;
     }
     this.aheadWanted = null;
-    if (!this.paused()) return;
+    // The cards' frames wait while it plays, and while the hand holds the
+    // playhead: a card's seek then stood between the hand and the frame
+    // under it, soon after a video opens, when the cards are still being
+    // read, issue #596.
+    if (!this.paused() || this.dragging) return;
     this.fitCards();
     const card = this.cardOrder.find((r) => this.cardRanks.has(r) && !this.has(r) && !this.cardTried.has(r));
     if (card === undefined) return;

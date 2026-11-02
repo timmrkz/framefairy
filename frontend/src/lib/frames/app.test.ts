@@ -93,6 +93,21 @@ describe("AppFrames", () => {
     app.close();
   });
 
+  // Issue #596: soon after a video opens its cards are still being read,
+  // and a card's seek stood between a drag and the frame under the hand.
+  test("wait while the hand holds the playhead, and are read once it lets go", () => {
+    vi.stubGlobal("fetch", () => new Promise(() => {}));
+    const { app } = frames(() => ({ width: 4, height: 2 }));
+    app.paused = () => true;
+    app.grip(true);
+    app.cards([150]);
+    app.aheadNow();
+    expect(app.stats.ahead).toBe(0);
+    app.grip(false);
+    expect(app.stats.ahead).toBe(1);
+    app.close();
+  });
+
   // Found by the review of #385: the budget was counted where the cards
   // were given, at the size of that moment, and nowhere when it changed.
   test("keep as many as their budget holds at the size frames are read at", () => {
@@ -328,6 +343,35 @@ describe("a slow drag to the left", () => {
     for (let r = 98; r >= 85; r--) expect(await rankOf(app.frame(r, 0, undefined, true))).toBe(r);
     expect(asked.length).toBe(2);
     expect([app.stats.streams, app.stats.keyFirst]).toEqual([2, 0]);
+    app.close();
+  });
+
+  // Found by the review of #677: the stream opened for a step back handed
+  // over every frame between for as long as it lived, so a frame asked of
+  // it later, after the drag, came with the twenty before it.
+  test("hands over every frame on its first pull only, and skips after", async () => {
+    const { app, asked, pulls, rankOf } = goSide();
+    app.grip(true);
+    void app.frame(100, 0, undefined, true);
+    await pulls(1);
+    asked[0].give([100]);
+    void app.frame(99, 0, undefined, true);
+    await pulls(2);
+    expect(asked[1].url).toContain("n=16");
+    asked[1].give(Array.from({ length: 16 }, (_, i) => 84 + i));
+    app.grip(false);
+    // A still further on goes to the stream of the press, which the Go
+    // side closes on the way, so it goes on to the stream of the step
+    // back: the frames before it are skipped there, but for the one just
+    // before it.
+    const later = rankOf(app.frame(110, 0, undefined, true));
+    await pulls(3);
+    asked[2].shut();
+    await pulls(4);
+    expect(asked[3].url).toContain("n=2");
+    expect(asked[3].url).toContain("skip=");
+    asked[3].give([109, 110]);
+    expect(await later).toBe(110);
     app.close();
   });
 
