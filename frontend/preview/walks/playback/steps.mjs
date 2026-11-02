@@ -517,6 +517,16 @@ export const steps = {
     await page.evaluate(() => {
       window.__played = [];
       window.__hand = {};
+      // When the page hears the hand, which on a busy runner in WebKit
+      // came long after the walk sent it: "nailed" reads each still
+      // stretch from there, not from when the walk moved the hand.
+      if (!window.__handHeard) {
+        window.__handHeard = true;
+        // The event's own time, on the clock the frames are read on.
+        const heard = (name) => (e) => window.__hand && (window.__hand[name] = e.timeStamp);
+        addEventListener("pointerdown", heard("heardDown"), true);
+        addEventListener("pointermove", heard("heardMove"), true);
+      }
       window.__playWatch = true;
       const tick = () => {
         if (!window.__playWatch) return;

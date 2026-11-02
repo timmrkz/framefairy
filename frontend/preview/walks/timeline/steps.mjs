@@ -1282,12 +1282,14 @@ export const steps = {
       if (other) return `frame ${other[2]} was drawn after frame ${holds(at)} had landed ${what}`;
       return at;
     };
-    const first = stood(hand.down, hand.moves, "while the hand held still on the press");
+    // From when the page heard the press, and the last move, which a
+    // busy runner delivered long after the walk sent them.
+    const first = stood(Math.max(hand.down, hand.heardDown ?? 0), hand.moves, "while the hand held still on the press");
     if (typeof first === "string") {
       walk.wrong = first;
       return;
     }
-    const second = stood(hand.still, hand.up, "while the hand held still where it moved to");
+    const second = stood(Math.max(hand.still, hand.heardMove ?? 0), hand.up, "while the hand held still where it moved to");
     if (typeof second === "string") {
       walk.wrong = second;
       return;
