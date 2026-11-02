@@ -303,7 +303,10 @@ class Stream {
     // Nothing came and nothing ended: pull asks again for what waits, and
     // with nobody waiting the stream is let go.
     if (!got.frames.length) {
-      if (!this.waiting.length) this.end("");
+      if (!this.waiting.length) {
+        this.owner.trace(`stream ${id.slice(0, 6)} brought no first frame, and nobody waits on it`);
+        this.end("");
+      }
       return;
     }
     this.take(got);
@@ -332,6 +335,12 @@ class Stream {
     }
     this.waiting = still;
     if (!this.handWaits) this.owner.aheadNow();
+  }
+
+  // How it stands, for the app's log: the frames it can give, its size,
+  // and whether it ended or skips.
+  get state(): string {
+    return `${this.first} to ${this.position} at ${this.width}x${this.height}${this.ended ? " ended" : ""}${this.skipping > -Infinity ? ` skipping to ${this.skipping}` : ""}`;
   }
 
   // Whether a frame the hand asked for is still to come from this stream.
@@ -731,7 +740,7 @@ export class AppFrames {
       s.runTo = w.back ? w.rank : -1;
       const why = `${w.rank} ${w.back ? "run" : key ? "key first" : w.ahead ? "ahead" : "place"}${this.dragging ? " dragging" : ""}`;
       this.stats.newFor.push(why);
-      this.trace(`a new stream for frame ${why}`);
+      this.trace(`a new stream for frame ${why} at ${width}x${height}, beside ${this.streams.filter((x) => x !== s).map((x) => x.state).join(", ") || "none"}`);
       if (this.stats.newFor.length > 16) this.stats.newFor.shift();
       if (key) this.stats.keyFirst++;
       s.aheadOnly = !!w.ahead;
