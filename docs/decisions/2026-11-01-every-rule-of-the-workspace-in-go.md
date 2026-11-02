@@ -397,7 +397,8 @@ and fewer rules in the interface. Each is listed on #606 as it opens.
    answering with a rev, `chosenMu` and `windowMu` gone.
 3. **Go chooses the clip**: the clip chosen in `VideoState`, rules 1 to
    7 above, `Playing`, `ChosenClip`, the `wrote` and `made` moves and
-   their nine values gone.
+   their nine values gone. Steps 2 and 3 came as one pull request,
+   #676, as Tim asked.
 4. **Go fits the window**: the window and the reach in the state,
    measured first, the target typed kept with its window, the fitting in
    the interface, `typed`, `followed` and `ChosenWindow` gone.
@@ -412,3 +413,18 @@ and fewer rules in the interface. Each is listed on #606 as it opens.
    screen" row rewritten, and invariant 5 held by the design. Each
    earlier pull request already changes the lines it makes wrong, so
    this one is what is left.
+
+## As built
+
+Steps 2 and 3, #676, differ from the convergence in one place. The
+queue does not tell the record of each job. The record chooses as the
+state is read, `chosenFor` in `cmd/framefairy-app/choose.go`, from the
+jobs and the clips of that one read, and keeps the rev of the newest
+state it chose from in place of a job's seq. A state no newer chooses
+nothing and says what is chosen now. So the clip chosen is always
+chosen from the clips sent with it, and a search's first clip and the
+clip it chose come in the same frame, which a tell from the queue,
+ahead of the read that brings the clip, could not promise. The read
+of the plans is outside the lock, as the convergence asks, because the
+state is read before the record is taken. The layer, the lock and the
+file are as decided.
