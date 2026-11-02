@@ -924,8 +924,9 @@ it hang, #508.
    of the page before and after each call no walk records: eight
    sequences took 41 % longer with them in a cloud session, and with
    the film a walks job in CI went over its five minutes. In CI a walks
-   job that failed keeps the folder with the run as `walk-traces-0` to
-   `walk-traces-3`, one for each share, for 14 days.
+   job that failed, on a push or at night, keeps the folder with the run
+   as `walk-traces-0` to `walk-traces-3`, one for each share, for 14
+   days.
    A session finds it with the GitHub tools,
    `list_workflow_run_artifacts` for the run and
    `download_workflow_run_artifact`, which gives a link to the zip. The
