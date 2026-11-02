@@ -731,6 +731,7 @@ export class AppFrames {
       s.runTo = w.back ? w.rank : -1;
       const why = `${w.rank} ${w.back ? "run" : key ? "key first" : w.ahead ? "ahead" : "place"}${this.dragging ? " dragging" : ""}`;
       this.stats.newFor.push(why);
+      this.trace(`a new stream for frame ${why}`);
       if (this.stats.newFor.length > 16) this.stats.newFor.shift();
       if (key) this.stats.keyFirst++;
       s.aheadOnly = !!w.ahead;
@@ -743,6 +744,7 @@ export class AppFrames {
         // others are a play's or the hand's.
         const ahead = this.streams.filter((x) => x.aheadOnly && x !== s);
         const oldest = (ahead.length ? ahead : this.streams).reduce((a, b) => (a.used <= b.used ? a : b));
+        this.trace(`a stream at frame ${oldest.position} is closed to make room`);
         oldest.close();
         this.streams = this.streams.filter((x) => x !== oldest);
       }

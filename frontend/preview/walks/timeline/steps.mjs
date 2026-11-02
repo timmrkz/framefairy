@@ -1809,6 +1809,7 @@ export const steps = {
     await settle(page);
     const from = Math.floor((await at()) * fps + 1e-6);
     const was = await page.evaluate(() => window.__appFrames.stats.streams);
+    const calls = await page.evaluate(() => window.__calls.length);
     let back = 0;
     while (back < arg && x > g.start.x + g.start.w) {
       x -= 1;
@@ -1823,7 +1824,19 @@ export const steps = {
     if (back < arg) walk.wrong = `the drag reached the clip's start ${back} frames back, not ${arg}`;
     else if (streams > Math.ceil(back / 15) + 1) {
       const why = await page.evaluate((n) => window.__appFrames.stats.newFor.slice(-n), Math.min(16, streams));
-      walk.wrong = `a slow drag ${back} frames to the left, from frame ${from}, opened ${streams} streams, more than one for every 15 frames back and one more: for ${why.join(", ")}`;
+      // What the video preview said of its streams meanwhile, in the
+      // app's log: one closed on the Go side or to make room, or ended.
+      const told = await page.evaluate(
+        (from) =>
+          window.__calls
+            .slice(from)
+            .filter((c) => c.name === "Said")
+            .flatMap((c) => (c.args[0] ?? []).map((l) => l.text))
+            .filter((t) => /stream/.test(t))
+            .slice(-20),
+        calls,
+      );
+      walk.wrong = `a slow drag ${back} frames to the left, from frame ${from}, opened ${streams} streams, more than one for every 15 frames back and one more: for ${why.join(", ")}. The video preview said: ${told.join(" | ")}`;
     }
   },
   // ["skip outside a clip"]
