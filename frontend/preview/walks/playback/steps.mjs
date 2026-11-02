@@ -6,7 +6,7 @@
 // the helpers only these steps use. See docs/TESTING.md.
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { addHEVC, ask, caughtUp, chosen, clickOnTrack, cropFrame, drag, engineState, episodeOn, filmedOnScreen, fromSidebar, handles, high, holdSound, loudness, middle, news, nextNews, nextPaint, playUntil, preview, readShort, recordFrames, sameLook, sayLook, seekTo, settle, shortFrames, shownOnPlayhead, timeline, xOf, reload } from "../bridge.mjs";
+import { addHEVC, ask, caughtUp, chosen, clickOnTrack, cropFrame, drag, engineState, episodeOn, filmedOnScreen, fromSidebar, handles, high, holdSound, loudness, middle, news, nextNews, nextPaint, playUntil, preview, readShort, recordFrames, sameLook, sayLook, seekTo, settle, shortFrames, shownOnPlayhead, timeline, xOf, reload, pageUntil, inside } from "../bridge.mjs";
 import { onePiece, pieceCount, rate, restAhead, shortOf, url } from "../common/steps.mjs";
 import { overlaid, stillFrame } from "../rules.mjs";
 
@@ -451,9 +451,11 @@ export const steps = {
     if (!(await page.evaluate(() => !!document.querySelector('button[aria-label="Pause"]')))) {
       await page.keyboard.press("Space");
     }
-    await settle(page);
-    await playUntil(page, { most: 0.3 });
+    // L at once, before the walk waits for anything: a busy runner in
+    // WebKit settled after the space bar only once the play had ended
+    // at the clip's end, so L came too late, see "loop through the end".
     await page.keyboard.press("l");
+    await settle(page);
     // The playhead moves once a frame of the video (#446), so it is on
     // the clip's last frame up to a frame before the end. The page is
     // held from there until the sound card has played past the end,
@@ -551,6 +553,15 @@ export const steps = {
     // episode's own time, which "nailed" reads from 300 ms on. A play
     // that stopped ends this at once, and "nailed" says so.
     await playUntil(page, { most: 1 });
+    // A second of the episode is sixty animation frames and more on a
+    // machine at rest, and on a busy runner in WebKit five came after
+    // the 300 ms, too few to prove anything by. So the watch goes on
+    // while the play does, until "nailed" has ten to read, counted on
+    // the page.
+    await pageUntil(
+      page,
+      () => window.__played.filter(([t]) => t > window.__hand.up + 300).length >= 10 || !document.querySelector('button[aria-label="Pause"]'),
+    );
     await page.evaluate(() => (window.__playWatch = false));
     await settle(page);
   },
@@ -570,7 +581,16 @@ export const steps = {
   async "play from"(walk, arg, s) {
     const { page, watch } = walk;
     const [where, seconds, key] = arg;
-    const g = await handles(page);
+    let g = await handles(page);
+    // A play before this one that went on past the clip took the clip
+    // timeline's view with it, and the clip is out of it. The hand
+    // brings the clip back with a click on it on the range picker, the
+    // way a person would, before it clicks the clip timeline.
+    if (!inside(g.track, g.start.x) && !inside(g.track, g.end.x)) {
+      await page.locator(".track .clipmark.selected").click();
+      await settle(page);
+      g = await handles(page);
+    }
     const from = g.start.x + g.start.w;
     const x = where === "before" ? (g.track.x + g.start.x) / 2 : from + 0.2 * (g.end.x - from);
     if (where === "before" && g.start.x - g.track.x < 40) {
