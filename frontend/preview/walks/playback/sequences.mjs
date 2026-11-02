@@ -219,7 +219,7 @@ export default [
       ["play from", "before", 1.6, "Shift+ArrowRight"],
       ["only the video"],
       ["play from", "in", 4, "Shift+ArrowRight"],
-      ["the clip shown"],
+      ["the clip shown", "across cuts"],
     ],
   },
   {

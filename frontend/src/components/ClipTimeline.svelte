@@ -958,6 +958,14 @@
     load(from, Math.min(from + roomy, widest));
   }
 
+  // Whether the playhead is on the clip for Shift and an arrow: from a frame
+  // before its first piece to a frame after its last, its cuts included. A
+  // clip playing on the clip crosses its cuts, and a step in a cut walks
+  // the words heard there and stays on the clip.
+  function onClip(t: number, step: number): boolean {
+    return insideClip(wholeClip ? [wholeClip] : [], t, step);
+  }
+
   // The arrow keys step the playhead a frame at a time, as in every video
   // tool, unless a field or an edge of the clip has the keyboard. On a
   // clip, Shift steps by words, which is the thing the picture is showing:
@@ -975,14 +983,6 @@
   // asks for, and the clip lighting up under it was a clip nobody chose.
   // On the clip and paused, a step lands where its frame says, see
   // placeOf.
-  // Whether the playhead is on the clip for Shift and an arrow: from a frame
-  // before its first piece to a frame after its last, its cuts included. A
-  // clip playing on the clip crosses its cuts, and a step there walked the
-  // words heard in the cut and stayed on the clip.
-  function onClip(t: number, step: number): boolean {
-    return drawnPieces.length > 0 && t >= start - step && t <= end + step;
-  }
-
   function onKey(event: KeyboardEvent) {
     if (removePicked(event)) return;
     // Any other key lets the pick go, and the key does what it does. A

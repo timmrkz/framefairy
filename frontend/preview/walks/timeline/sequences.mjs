@@ -623,4 +623,14 @@ export default [
     name: "Shift and the arrows skip 5 seconds outside a clip, past where the transcript ends",
     steps: [["speech", "hold"], ["add", 600], ["heard some", 3], ["skip outside a clip"], ["speech", "go"]],
   },
+  {
+    // Found by the review of #677: a cut is inside the clip, and Shift and
+    // an arrow there walk to the next word. With the 5 s skip outside a
+    // clip, a press in a cut skipped 5 s, and while the clip played left it.
+    name: "Shift and an arrow in a cut of the clip walk to the next word, not 5 seconds",
+    steps: [
+      ["cut at", 0.5],
+      ["shift in a cut"],
+    ],
+  },
 ];

@@ -1856,6 +1856,31 @@ export const steps = {
     const [from, to] = await press("Shift+ArrowLeft");
     if (Math.abs(from - to - 5) > 0.002) walk.wrong = `Shift and the left arrow at ${from.toFixed(3)} s went to ${to.toFixed(3)} s, not 5 s back`;
   },
+  // ["shift in a cut"] clicks the clip timeline in the middle of the
+  //                    chosen clip's first cut and presses Shift and the
+  //                    right arrow: a cut is inside the clip, so the press
+  //                    walks to the next word, never the 5 s a skip
+  //                    outside a clip goes
+  async "shift in a cut"(walk, arg, s) {
+    const { page, watch } = walk;
+    const pieces = (await engineState(page, watch.at)).segments;
+    if (pieces.length < 2) {
+      walk.wrong = `the clip has ${pieces.length} piece, so no cut to press in`;
+      return;
+    }
+    const middle = (pieces[0].end + pieces[1].start) / 2;
+    await clickOnTrack(page, await xOf(page, middle), high((await handles(page)).track));
+    await settle(page);
+    const at = () => page.evaluate(() => Number(document.querySelector(".screen").dataset.playhead));
+    const from = await at();
+    await page.evaluate(() => document.body.focus());
+    await page.keyboard.press("Shift+ArrowRight");
+    await settle(page);
+    await watch.step("press", s, page);
+    const to = await at();
+    if (from < pieces[0].end || from > pieces[1].start) walk.wrong = `the click in the cut from ${pieces[0].end.toFixed(3)} to ${pieces[1].start.toFixed(3)} s put the playhead at ${from.toFixed(3)} s`;
+    else if (!(to > from && to - from < 4.5)) walk.wrong = `Shift and the right arrow in the cut at ${from.toFixed(3)} s went to ${to.toFixed(3)} s, not to the next word`;
+  },
 };
 
 // Steps that take the same body as the step they are walked by.
