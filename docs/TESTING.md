@@ -149,13 +149,13 @@ each with a POST:
 
 | Path | What it does |
 | --- | --- |
-| `/pick?seconds=N` | makes a new video of N seconds, not in the library, for the Add button's box to hand over next. With `&rate=30000/1001` it is filmed at that frame rate, with `&timing=uneven` its frames come at a phone's uneven times with `&timing=late` its picture starts a quarter of a second after its sound, and with `&timing=turned` it is stored lying on its side with a display matrix that stands it up, the way a phone that recorded upright stores it, with `&in=mkv` it is the same video copied into Matroska, the way OBS records, and with `&switch=S` by two cameras that switch S seconds in, see below. With `&box=0` it is only made, not handed to the box, for a walk to drop instead. With `&namesake=1` it has the file name of the bridge's episode, in a folder of its own. With `&size=1080` it is 1920 by 1080, the size a camera makes, and with `&size=2160` 3840 by 2160, with a key frame every two seconds and frames stored after their key frame, and carries no frame number, for `speed.mjs` |
+| `/pick?seconds=N` | puts a new video of N seconds, not in the library, a copy of one committed in `internal/fixtures`, for the Add button's box to hand over next. With `&rate=30000/1001` it is filmed at that frame rate, with `&timing=uneven` its frames come at a phone's uneven times with `&timing=late` its picture starts a quarter of a second after its sound, and with `&timing=turned` it is stored lying on its side with a display matrix that stands it up, the way a phone that recorded upright stores it, with `&in=mkv` it is the same video copied into Matroska, the way OBS records, and with `&switch=S` by two cameras that switch S seconds in, see below. With `&box=0` it is only made, not handed to the box, for a walk to drop instead. With `&namesake=1` it has the file name of the bridge's episode, in a folder of its own. With `&size=1080` it is 1920 by 1080, the size a camera makes, and with `&size=2160` 3840 by 2160, with a key frame every two seconds and frames stored after their key frame, and carries no frame number, for `speed.mjs` |
 | `/drop` | takes the files in its body, a JSON list of paths, as dropped on the app, the way `WindowFilesDropped` does in the app: adds the videos with `dropFiles` and sends the window `dropped`. A walk does not call it itself: it calls `window._wails.handleDragEnter()`, `window._wails.handleDragOver(x, y)` and `window._wails.handlePlatformFileDrop(files, x, y)`, which `wails-bridge.ts` defines the way the runtime does, so a drop reaches `/drop` only where the page marks a drop target. A walk makes the video to drop with `/pick` and `&box=0`, so Add's box does not hand it over too |
 | `/drop-report` | takes the files in its body, a JSON list of paths, as dropped on the report window, the way `WindowFilesDropped` does on it: `bugs.go` attaches the pictures and tells the window. `wails-bridge.ts` sends a drop there when the page is the report window |
 | `/report-window` | says how many report windows the app made and brought forward and whether one is open, and with `?close=1` closes it, the way its close button does. The walk opens the report window itself as a second page on `?window=report` |
-| `/pick-picture` | makes a PNG of `w` by `h` pixels called `name`, for the paperclip's box to hand over next, or with `&box=0` only makes it, for a walk to drop. With `&kind=text` it is a file of text named like a picture, which the report has to leave out |
+| `/pick-picture` | makes a PNG of `w` by `h` pixels called `name`, for the paperclip's box to hand over next, or with `&box=0` only makes it, for a walk to drop. With `&kind=text` it is a file of text named like a picture, which the report has to leave out, and with `&kind=recording` a screen recording of one second in a MOV |
 | `/report-made` | the names of the files in the last report on the bridge's Desktop, and with `?file=what-happened.txt` what that file in it holds |
-| `/pick-sound` | makes a new file of twelve seconds of a tone and no picture, for the Add button's box to hand over next, so a walk sees Add leave it out with the reason |
+| `/pick-sound` | puts a new file of a tone and no picture, for the Add button's box to hand over next, so a walk sees Add leave it out with the reason |
 | `/model?hang=1&fail=0` | the language model holds its answers until the search is stopped, or fails, or with both off answers. Told to answer again, it answers what it held too, the way a slow model answers in the end, so a search that was asked while it held does not find for good and keep every video added after it from being transcribed |
 | `/speech?hold`, `/speech?step=N`, `/speech?go` | `hold` stops the speech model hearing, once the pieces it is hearing are heard, so a transcript stays where it is while a walk looks at it, cancels it or presses something during it. `step=N` lets N pieces more be heard while it is held, and a walk waits on the news of the work, not for the step. With `&save` what is heard so far is saved once the next piece is heard: the app saves a long transcription every 8 s of real time, and the bridge saves it part way only then, through `SaveHeard`, which the engine asks the speech model in place of its clock, so a walk sees a transcript saved part way on any machine. `go` lets it hear on by itself. Closing the app with `/reopen` lets every piece through while the app closes, the way a piece being heard ends as it quits, and the speech stays held after. With `&from=0` it says its sentences again from the first word, so a video added next is heard with the words of the bridge's episode and its clip has the same name |
 | `/chrome?bar=30&left=12&right=72` | the app's window as macOS lays it out, in points: the title bar's height and where its buttons start and end. It goes through what the Go side does with an answer from macOS and is told to the page the way a resize is. Until it is asked, and again after `/reset`, the title bar is the one every other system draws |
@@ -1051,16 +1051,17 @@ STILL=none` walks every sequence with the motion, and
 `walks-nightly.yml` does so on main every night, so a step that looks at
 motion and was left out of `moving` fails there.
 
-A video a walk adds is made by ffmpeg the first time it is asked for and
-kept, by what it was asked for and by the sum of what makes it, the
-source of `walkvideos_test.go`, which holds every function that makes
-one, and the version of ffmpeg, see `walkVideos`. Every bridge of a run
-keeps them in one folder, `.build/walk-videos` or `WALKVIDEOS`, and CI
-keeps each share's folder between runs, saved again whenever a run made
-a video more, so a walk that adds the same video again gets a copy. ffmpeg makes the same bytes
-from the same arguments, so the copy is the video it would have made.
-Made on every add, the 54 videos the sequences added took 100 s, and the
-one of ten minutes 9 s every time, issue #527.
+A video a walk adds is a copy of one committed in
+`internal/fixtures/testdata/`, named by what the walk asked for, see
+`walkFixture` in `cmd/framefairy-app/bridge_test.go`, and made by its
+recipe in `internal/fixtures/fixtures_test.go`. A walk that asks for a
+length or a kind none of them has is refused with the name it wanted,
+and gets it by a recipe of its own. Only the camera's videos of
+`speed.mjs` and `smooth.mjs` are made when they are asked for, see
+`makeCameraEpisode`, because they are too large to commit. Made on every
+add, the 54 videos the sequences added took 100 s, and the one of ten
+minutes 9 s every time, issue #527, and kept in CI's cache instead, a
+run that changed what makes them made them all again.
 
 Measured on four cores, the cloud's and CI's, with the 3 seeds: the
 sequences were once one run, and took twelve minutes on one bridge while

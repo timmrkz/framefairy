@@ -9,13 +9,13 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 
 	"github.com/spf13/afero"
 
 	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/fixtures"
 )
 
 // harnessFrames is the Go side's own routes of the picture and the sound,
@@ -70,16 +70,12 @@ func TestHarnessFrames(t *testing.T) {
 
 // The harness's routes give the picture of its episode, and only of it.
 //
-// On the real disk: ffmpeg makes the episode and the episode's decoder reads it.
+// On the real disk: the episode's decoder reads the episode.
 func TestTheHarnessGetsItsFramesFromTheDecoder(t *testing.T) {
 	ffmpegtest.Need(t)
 	needDecoder(t)
 	dir := t.TempDir()
-	mine := filepath.Join(dir, "harness.mp4")
-	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi",
-		"-i", "testsrc2=s=160x90:r=5:d=1", "-c:v", "mpeg4", "-f", "mp4", mine).CombinedOutput(); err != nil {
-		t.Fatalf("making the episode: %s %s", err, out)
-	}
+	mine := fixtures.Copy(t, "small-1s.mp4", filepath.Join(dir, "harness.mp4"))
 	handler, err := harnessFrames([]string{mine})
 	if err != nil {
 		t.Fatal(err)

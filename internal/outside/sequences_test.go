@@ -1,14 +1,20 @@
 package outside
 
 import (
+	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"testing"
+
+	"framefairy/internal/fixtures"
 )
 
 // The sequences are read on every machine, in make unit, so a step that
 // is misspelt, has a word too few or names a key nobody bought fails here
 // rather than on the Mac at the end of a CI run.
+//
+// On the real disk: a video added is a committed fixture, and it has to be there.
 func TestEveryStepIsOneTheRunnerKnows(t *testing.T) {
 	names := map[string]bool{}
 	for _, seq := range sequences {
@@ -65,6 +71,8 @@ func TestEveryStepIsOneTheRunnerKnows(t *testing.T) {
 			case "add video":
 				if n, err := strconv.Atoi(s[1]); err != nil || n < 1 {
 					at("a video is a number of seconds long")
+				} else if _, err := os.Stat(filepath.Join(fixtures.Dir(), "grey-"+s[1]+"s.mp4")); err != nil {
+					at("internal/fixtures has no video of that length")
 				}
 				videos++
 			case "search ends", "search and quit", "search":

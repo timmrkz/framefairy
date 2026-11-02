@@ -28,9 +28,9 @@ package outside
 //   {"click", words}       presses the button on screen that says this
 //   {"start"}              starts the app the way the Dock does, and waits
 //                          until it answers
-//   {"add video", seconds} makes a video so many seconds long and adds it,
-//                          the way Add does once a file is picked. Its first
-//                          search starts by itself
+//   {"add video", seconds} adds a video so many seconds long, a length
+//                          internal/fixtures has, the way Add does once a
+//                          file is picked. Its first search starts by itself
 //   {"search and quit", from, to}
 //                          asks for a search of the window from and to, in
 //                          seconds, and quits the app in the same moment,
@@ -126,7 +126,7 @@ var sequences = []sequence{
 		steps: []step{
 			{"set up"},
 			{"start"},
-			{"add video", "90"},
+			{"add video", "72"},
 			{"search ends"},
 			{"search and quit", "30", "60"},
 			{"start"},

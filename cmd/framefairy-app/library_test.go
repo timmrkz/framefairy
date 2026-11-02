@@ -2,7 +2,6 @@ package main
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -11,7 +10,7 @@ import (
 	"github.com/spf13/afero"
 
 	"framefairy/engine"
-	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/fixtures"
 	"framefairy/internal/standin"
 )
 
@@ -25,11 +24,7 @@ import (
 func TestAddLeavesOutWhatItsDecoderCannotDecode(t *testing.T) {
 	d := open(t)
 	good := d.episode("gut", "12")
-	sound := filepath.Join(d.home, "nur-ton.mp4")
-	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "sine=d=3",
-		"-c:a", "aac", sound).CombinedOutput(); err != nil {
-		ffmpegtest.Unusable(t, "ffmpeg could not make a file of sound: %s %s", err, out)
-	}
+	sound := fixtures.Copy(t, "tone-then-silence.m4a", filepath.Join(d.home, "nur-ton.mp4"))
 	broken := filepath.Join(d.home, "kaputt.mp4")
 	if err := os.WriteFile(broken, []byte("no video at all"), 0o644); err != nil {
 		t.Fatal(err)

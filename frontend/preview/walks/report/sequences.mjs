@@ -684,7 +684,7 @@ export default [
       ["drop recording"],
       ["toast", ""],
       ["pictures", 2],
-      ["recording tile", "0:03"],
+      ["recording tile", "0:01"],
       ["report lines up"],
       ["report", [1, 1]],
     ],

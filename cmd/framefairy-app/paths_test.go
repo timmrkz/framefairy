@@ -297,7 +297,7 @@ func TestPathAVideoAddedOnceTheModelAnswersGetsItsClips(t *testing.T) {
 	d.carryOn(first)
 	<-asked
 	d.model.hangs(false)
-	second := d.add("second", "71")
+	second := d.add("second", "72")
 	d.idle(second)
 	d.idle(first)
 	for _, ep := range []string{first, second} {

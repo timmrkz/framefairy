@@ -165,21 +165,34 @@ an issue of its own.
   which recipe made each. Without the flag, that test checks the folder
   holds the recipes and nothing else, each made by its recipe as it is.
 - `TestNoTestMakesItsOwnFixture` in `internal/ffmpegtest` names a test
-  file that asks ffmpeg for `lavfi` while it runs. The files that still
-  do are listed there, and each part of #670 takes its own off.
+  file that asks ffmpeg for `lavfi` while it runs. One file is let off,
+  with its reason: `cmd/framefairy-app/cameravideos_test.go`, the
+  camera's videos only `speed.mjs` and `smooth.mjs` ask for, which are
+  run by hand and never by a test, and a minute of 1080p moving all
+  over is too large to commit.
+- What only a probe run by hand reads is made when it is asked for, as
+  it was: the four hours and the ten minutes `frontend/preview/open.mjs`
+  makes for the preview harness, kept in the temp folder. They would add
+  49 MB to every clone, for a probe a session runs by hand, and no test
+  waits for them.
 - As few as the tests allow: a new test reads one that is there, unless
   what it tests is a property none of them has. Then it adds one, as
   small and as short as the test allows.
 - `engine/testdata/open-gop.mp4` and `cmd/framefairy-app/testdata/gnome.webm`
-  move in as their packages' tests move.
+  move in as their packages' tests move, `gnome.webm` as
+  `recording.webm`, made by a recipe like every other.
 - A fixture made from another, a copy of it put together otherwise, names
   it in its recipe as `@` and its name, so it is made first and its sum
   counts in the other's. One written the way a crash leaves it ends in
   `pipe:1`, and what ffmpeg sends there is the file. A test that writes
-  beside its file, or changes it, takes a copy with `fixtures.Copy`.
-- The move is made over several pull requests, in the order of #670's
-  Progress list. Until it is done, what is left is under Not to copy in
-  ARCHITECTURE.md.
+  beside its file, or changes it, takes a copy with `fixtures.Copy`, or
+  with `fixtures.CopyTo` where it cannot end the test, like the walks'
+  bridge answering a walk. A walk asks for a video by what it is, and
+  the bridge names the fixture, see `walkFixture`, so the walks' cache in
+  CI is gone.
+- The move was made over three pull requests, in the order of #670's
+  Progress list, the engine's tests first and the app's and the walks'
+  last.
 
 ## What follows
 

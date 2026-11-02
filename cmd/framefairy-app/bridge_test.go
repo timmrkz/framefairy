@@ -57,6 +57,7 @@ import (
 
 	"framefairy/engine"
 	"framefairy/engine/runlog"
+	"framefairy/internal/fixtures"
 	"framefairy/updates"
 )
 
@@ -901,8 +902,6 @@ type bridge struct {
 	mu    sync.Mutex
 	picks []string
 	made  int
-	// videos are the videos made for walks before, see /pick.
-	videos *made
 	// gates are shut for the calls of a name, every one or the next so
 	// many, which wait until the walk opens it, the way a busy machine
 	// delivers them late, see /hold. A walk that holds a call by a time
@@ -1108,8 +1107,7 @@ func openBridge(t *testing.T) *bridge {
 	}
 	showReport = func(string) error { return nil }
 	b := &bridge{t: t, d: d, words: words, sound: snd, first: filepath.Join(d.home, "erste-erinnerung.mp4"), kept: t.TempDir(),
-		gates: map[string]*gate{}, fails: map[string]string{},
-		videos: walkVideos(t)}
+		gates: map[string]*gate{}, fails: map[string]string{}}
 	// What the first run downloads, once a walk made the machine new.
 	// What arrives is as much of a model as the app looks for.
 	installSpeech = func(ctx context.Context, log *runlog.Log, m engine.SpeechModel, dir string) error {
@@ -1128,11 +1126,7 @@ func openBridge(t *testing.T) *bridge {
 			return os.WriteFile(filepath.Join(dir, m.Name), []byte("GGUF, the stand-in finds clips"), 0o644)
 		})
 	}
-	if err := b.videos.copy(b.first, pickedAs("120", "", "0", "", false, 0), func(path string) error {
-		return makeEpisode(path, 120, 0, false)
-	}); err != nil {
-		t.Fatal(err)
-	}
+	fixtures.Copy(t, "walk-120s.mp4", b.first)
 	if added, err := d.svc.addEpisodes([]string{b.first}); err != nil || len(added) != 1 {
 		t.Fatalf("adding %s: %v", b.first, err)
 	}
@@ -1153,20 +1147,6 @@ func workOf(video string) string {
 	return strings.TrimSuffix(video, filepath.Ext(video)) + ".framefairy"
 }
 
-// intoMatroska copies a video's streams into Matroska beside it, under
-// the same name ending in .mkv, and removes the MP4. A picture that starts
-// late by an edit list starts late by its first timestamp there.
-//
-// On the real disk: ffmpeg copies the video into Matroska.
-func intoMatroska(path string) (string, error) {
-	mkv := strings.TrimSuffix(path, filepath.Ext(path)) + ".mkv"
-	out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-i", path, "-map", "0", "-c", "copy", mkv).CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("copying %s into Matroska: %s %s", filepath.Base(path), err, out)
-	}
-	return mkv, os.Remove(path)
-}
-
 // frameRate is a frame rate as ffmpeg takes it, a whole number or one
 // whole number over another, and nothing else, since it goes into a
 // filter.
@@ -1184,17 +1164,18 @@ func cameraHeight(size string) int {
 	return 0
 }
 
-// pick makes a new video, not in the library, and has the Add button's box
-// hand it over next. Without a rate it is the bridge's own kind of
-// episode, at five frames a second, and with one it is filmed at that
-// rate, see makeFilmedEpisode. With a switch, in seconds, the bridge's
-// own kind is filmed by two cameras that switch then, see twoCameras, and
-// with hevc it is HEVC with 10-bit colour. With mkv it is the same video
-// in Matroska, the way OBS records, its streams copied as they are. With
-// a height it is a camera's picture of that height instead, see
+// pick puts a new video, not in the library, in the bridge's home, and
+// has the Add button's box hand it over next. Without a rate it is the
+// bridge's own kind of video, at five frames a second, and with one it is
+// filmed at that rate. With a switch, in seconds, the bridge's own kind is
+// filmed by two cameras that switch then, and with hevc it is HEVC with
+// 10-bit colour. With mkv it is the same video in Matroska, the way OBS
+// records. Each is a copy of a video committed in internal/fixtures, see
+// walkFixture, so one that is not there is refused with its name. With a
+// height it is a camera's picture of that height instead, see
 // makeCameraEpisode.
 //
-// On the real disk: ffmpeg makes the video the app adds.
+// On the real disk: the app adds the video from the disk.
 func (b *bridge) pick(seconds, rate, switchAt, timing string, hevc, namesake, box, mkv bool, height int) (string, error) {
 	n, err := strconv.Atoi(seconds)
 	if err != nil || n < 10 || n > 3600 {
@@ -1221,16 +1202,18 @@ func (b *bridge) pick(seconds, rate, switchAt, timing string, hevc, namesake, bo
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return "", err
 	}
-	err = b.videos.copy(path, pickedAs(strconv.Itoa(n), rate, strconv.FormatFloat(at, 'g', -1, 64), timing, hevc, height), func(path string) error {
-		return makePicked(path, n, rate, at, timing, hevc, height)
-	})
+	if height > 0 {
+		err = makeCameraEpisode(path, n, height, hevc)
+	} else {
+		name := walkFixture(n, rate, at, timing, hevc)
+		if mkv {
+			name = strings.TrimSuffix(name, ".mp4") + ".mkv"
+			path = strings.TrimSuffix(path, ".mp4") + ".mkv"
+		}
+		err = fixtures.CopyTo(name, path)
+	}
 	if err != nil {
 		return "", err
-	}
-	if mkv {
-		if path, err = intoMatroska(path); err != nil {
-			return "", err
-		}
 	}
 	if box {
 		b.mu.Lock()
@@ -1240,9 +1223,30 @@ func (b *bridge) pick(seconds, rate, switchAt, timing string, hevc, namesake, bo
 	return path, nil
 }
 
+// walkFixture names the video committed in internal/fixtures that a pick
+// asks for: walk, cameras or filmed and its length, and then its switch,
+// its frame rate and its timing where it has them.
+func walkFixture(seconds int, rate string, switchAt float64, timing string, hevc bool) string {
+	name := fmt.Sprintf("walk-%ds", seconds)
+	switch {
+	case rate != "":
+		name = fmt.Sprintf("filmed-%ds-%s", seconds, strings.NewReplacer("30000/1001", "29.97", "24000/1001", "23.976").Replace(rate))
+		if timing != "" {
+			name += "-" + timing
+		}
+	case switchAt > 0:
+		name = fmt.Sprintf("cameras-%ds-%s", seconds, strconv.FormatFloat(switchAt, 'g', -1, 64))
+	}
+	if hevc && rate == "" {
+		name += "-hevc"
+	}
+	return name + ".mp4"
+}
+
 // pickPicture makes a picture of w by h pixels in the bridge's home, a
 // PNG with a gradient so it is not empty, or a file of text named like a
-// picture, and has the paperclip's box hand it over next when box.
+// picture, or puts a recording of one second there, and has the
+// paperclip's box hand it over next when box.
 //
 // On the real disk: the open box and a drop hand over paths on the disk.
 func (b *bridge) pickPicture(name, w, h, kind string, box bool) (string, error) {
@@ -1267,14 +1271,10 @@ func (b *bridge) pickPicture(name, w, h, kind string, box bool) (string, error) 
 	path := filepath.Join(dir, filepath.Base(name))
 	var data []byte
 	if kind == "recording" {
-		// A recording of three seconds in a MOV, the way the Mac's own
-		// recorder makes one, with a sound. MPEG-4 and not H.264, which
-		// the ffmpeg the app ships cannot make.
-		if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
-			"-f", "lavfi", "-i", fmt.Sprintf("testsrc2=size=%dx%d:rate=30:duration=3", width, height),
-			"-f", "lavfi", "-i", "sine=f=440:d=3", "-c:v", "mpeg4", "-c:a", "aac",
-			"-shortest", "-f", "mov", path).CombinedOutput(); err != nil {
-			return "", fmt.Errorf("ffmpeg: %v: %s", err, out)
+		// A recording in a MOV, the way the Mac's own recorder makes one,
+		// with a sound.
+		if err := fixtures.CopyTo("recording.mov", path); err != nil {
+			return "", err
 		}
 	} else if kind == "text" {
 		data = []byte("not a picture\n")
@@ -1361,16 +1361,15 @@ func newestReport(dir string) (*zip.ReadCloser, error) {
 	return zip.OpenReader(zips[len(zips)-1])
 }
 
-// pickSound makes a file of sound with no picture, named like a video,
+// pickSound puts a file of sound with no picture there, named like a video,
 // and has the Add button's box hand it over next.
 func (b *bridge) pickSound() (string, error) {
 	b.mu.Lock()
 	b.made++
 	path := filepath.Join(b.d.home, fmt.Sprintf("nur-ton-%d.mp4", b.made))
 	b.mu.Unlock()
-	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "sine=f=440:d=12",
-		"-c:a", "aac", path).CombinedOutput(); err != nil {
-		return "", fmt.Errorf("making %s: %s %s", filepath.Base(path), err, out)
+	if err := fixtures.CopyTo("tone-then-silence.m4a", path); err != nil {
+		return "", err
 	}
 	b.mu.Lock()
 	b.picks = append(b.picks, path)
@@ -1754,18 +1753,6 @@ func TestWalks(t *testing.T) {
 	}
 	var unwalked atomic.Int32
 
-	// The videos the bridges make, kept for the next walk that asks for
-	// the same, see walkVideos. Those another recipe made go first.
-	//
-	// On the real disk: the bridges are programs of their own, which share the folder.
-	kept := os.Getenv("FRAMEFAIRY_WALK_VIDEOS")
-	if kept == "" {
-		kept = t.TempDir()
-	}
-	if err := (&made{fs: afero.NewOsFs(), dir: kept, recipe: videoRecipe()}).prune(); err != nil {
-		t.Fatal(err)
-	}
-
 	walkers := min(envNumber("WALKERS", runtime.NumCPU()*3/2), len(runs))
 	todo := make(chan walkRun, len(runs))
 	for _, r := range runs {
@@ -1777,7 +1764,7 @@ func TestWalks(t *testing.T) {
 	var wg sync.WaitGroup
 	for range walkers {
 		wg.Go(func() {
-			url, err := startBridge(t, kept)
+			url, err := startBridge(t)
 			if err != nil {
 				t.Error(err)
 				return
@@ -1848,12 +1835,10 @@ func TestWalks(t *testing.T) {
 }
 
 // startBridge starts TestBridge in a process of its own, on a free port,
-// keeping the videos it makes in the folder videos, and gives back where
-// it answers. It is stopped when the test ends.
-func startBridge(t *testing.T, videos string) (string, error) {
+// and gives back where it answers. It is stopped when the test ends.
+func startBridge(t *testing.T) (string, error) {
 	cmd := exec.Command(os.Args[0], bridgeArgs(flag.Lookup("test.gocoverdir").Value.String())...)
-	cmd.Env = append(os.Environ(), "FRAMEFAIRY_BRIDGE=127.0.0.1:0", "FRAMEFAIRY_BRIDGE_WALKER=1", "FRAMEFAIRY_WALKS=",
-		"FRAMEFAIRY_WALK_VIDEOS="+videos)
+	cmd.Env = append(os.Environ(), "FRAMEFAIRY_BRIDGE=127.0.0.1:0", "FRAMEFAIRY_BRIDGE_WALKER=1", "FRAMEFAIRY_WALKS=")
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return "", err

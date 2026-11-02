@@ -17,6 +17,7 @@ import (
 
 	"framefairy/engine"
 	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/fixtures"
 )
 
 // What a file is, is told by its first bytes: a MOV or an MP4, a WebM or
@@ -51,47 +52,24 @@ func TestWhatARecordingIsIsToldByItsFirstBytes(t *testing.T) {
 // report holds the copy under recordings/, and a recording removed and
 // let go of leaves no file behind.
 //
-// On the real disk: ffmpeg makes the recordings, and ffprobe and ffmpeg
-// read them.
+// On the real disk: ffprobe and ffmpeg read the recordings.
 func TestScreenRecordingsAreAttachedWithoutWhatElseTheyHeld(t *testing.T) {
 	ffmpegtest.Need(t)
 	t.Parallel()
 	dir := t.TempDir()
 	for _, c := range []struct {
-		name   string
-		args   []string
-		ending string
+		name    string
+		fixture string
+		ending  string
 	}{
-		{"Screen Recording 2026-10-15 at 14.02.11.mov", []string{"-c:v", "mpeg4", "-c:a", "aac", "-f", "mov"}, "mov"},
-		{"phone.mp4", []string{"-c:v", "mpeg4", "-c:a", "aac", "-f", "mp4"}, "mp4"},
-		// The ffmpeg the app ships, which the Mac runner has, reads WebM
-		// and makes none, so this one was made once, with VP9 and Opus and
-		// a place, the way recordingOf makes the others, and is kept.
-		{"gnome.webm", nil, "webm"},
-		{"obs.mkv", []string{"-c:v", "mpeg4", "-c:a", "aac", "-f", "matroska"}, "mkv"},
+		{"Screen Recording 2026-10-15 at 14.02.11.mov", "recording.mov", "mov"},
+		// A phone held upright, whose picture lies on its side.
+		{"phone.mp4", "recording-upright.mp4", "mp4"},
+		{"gnome.webm", "recording.webm", "webm"},
+		{"obs.mkv", "recording.mkv", "mkv"},
 	} {
 		t.Run(c.ending, func(t *testing.T) {
-			path := filepath.Join(dir, c.name)
-			if c.args == nil {
-				kept, err := os.ReadFile(filepath.Join("testdata", c.name))
-				if err != nil {
-					t.Fatal(err)
-				}
-				if err := os.WriteFile(path, kept, 0o600); err != nil {
-					t.Fatal(err)
-				}
-			} else {
-				recordingOf(t, path, c.args...)
-			}
-			if c.ending == "mp4" {
-				// A phone held upright, whose picture lies on its side.
-				turned := filepath.Join(dir, "upright.mp4")
-				if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-display_rotation", "90", "-i", path,
-					"-map", "0", "-c", "copy", "-movflags", "use_metadata_tags", turned).CombinedOutput(); err != nil {
-					t.Fatalf("ffmpeg: %v\n%s", err, out)
-				}
-				path = turned
-			}
+			path := fixtures.Copy(t, c.fixture, filepath.Join(dir, c.name))
 			data, err := os.ReadFile(path)
 			if err != nil {
 				t.Fatal(err)
@@ -159,12 +137,7 @@ func TestScreenRecordingsAreAttachedWithoutWhatElseTheyHeld(t *testing.T) {
 func TestWhatIsNoRecordingIsLeftOut(t *testing.T) {
 	ffmpegtest.Need(t)
 	t.Parallel()
-	sound := filepath.Join(t.TempDir(), "voice.m4a")
-	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "sine=f=440:d=1",
-		"-c:a", "aac", "-f", "mp4", sound).CombinedOutput(); err != nil {
-		t.Fatalf("ffmpeg: %v\n%s", err, out)
-	}
-	voice, err := os.ReadFile(sound)
+	voice, err := os.ReadFile(fixtures.Path(t, "tone-then-silence.m4a"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,8 +175,7 @@ func TestAReportHoldsTheRecordings(t *testing.T) {
 	was := showReport
 	showReport = func(string) error { return nil }
 	t.Cleanup(func() { showReport = was })
-	path := filepath.Join(t.TempDir(), "Screen Recording.mov")
-	recordingOf(t, path, "-c:v", "mpeg4", "-c:a", "aac", "-f", "mov")
+	path := fixtures.Copy(t, "recording.mov", filepath.Join(t.TempDir(), "Screen Recording.mov"))
 	film, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -242,23 +214,6 @@ func TestAReportHoldsTheRecordings(t *testing.T) {
 	body, _ := io.ReadAll(rc)
 	if sniffRecording(body) != "mov" {
 		t.Fatal("the recording in the report is not a MOV")
-	}
-}
-
-// recordingOf makes a recording of one second, 160 by 90, with a sound,
-// and a place, a title and a comment the way a phone or a recorder
-// writes them.
-func recordingOf(t *testing.T, path string, args ...string) {
-	t.Helper()
-	all := append([]string{"-loglevel", "error", "-y",
-		"-f", "lavfi", "-i", "testsrc2=size=160x90:rate=30:duration=1",
-		"-f", "lavfi", "-i", "sine=f=440:d=1",
-		"-metadata", "title=Tim's desk", "-metadata", "comment=Made on Tim's Mac",
-		"-metadata", "location=+52.5200+013.4050/", "-metadata", "com.apple.quicktime.location.ISO6709=+52.5200+013.4050/",
-		"-movflags", "use_metadata_tags", "-pix_fmt", "yuv420p", "-shortest"}, args...)
-	all = append(all, path)
-	if out, err := exec.Command("ffmpeg", all...).CombinedOutput(); err != nil {
-		t.Fatalf("ffmpeg: %v\n%s", err, out)
 	}
 }
 

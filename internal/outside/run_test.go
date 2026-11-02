@@ -24,6 +24,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"framefairy/internal/fixtures"
 )
 
 // Where the probe in the app listens, probeAddr in probe_outside.go.
@@ -92,7 +94,7 @@ func TestSequences(t *testing.T) {
 		t.Fatal("make outside says where the app and the dispenser are")
 	}
 	run(t, lsregister, "-f", app)
-	m := &mac{dispenserProgram: disp, app: app, ffmpeg: filepath.Join(filepath.Dir(disp), "ffmpeg"), up: readyAt(t)}
+	m := &mac{dispenserProgram: disp, app: app, up: readyAt(t)}
 	t.Cleanup(func() {
 		if t.Failed() {
 			showLog(t)
@@ -113,9 +115,8 @@ func TestSequences(t *testing.T) {
 // started, and the keys the sequence bought.
 type mac struct {
 	dispenserProgram string
-	// The app and the ffmpeg make outside put beside the dispenser.
-	app    string
-	ffmpeg string
+	// The app make outside put beside the dispenser.
+	app string
 	// video is the video added last.
 	video         string
 	stopDispenser func()
@@ -443,10 +444,10 @@ func (m *mac) start(_ []string) error {
 	return nil
 }
 
-// addVideo makes a video of a test picture and a tone, with the ffmpeg the
-// app carries, and adds it the way Add does once a file is picked.
+// addVideo copies the committed video of so many seconds, see grey in
+// internal/fixtures, and adds it the way Add does once a file is picked.
 //
-// On the real disk: ffmpeg makes the video and the built app reads it.
+// On the real disk: the built app reads the video.
 func (m *mac) addVideo(a []string) error {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -457,12 +458,8 @@ func (m *mac) addVideo(a []string) error {
 		return err
 	}
 	video := filepath.Join(dir, fmt.Sprintf("episode-%d.mp4", time.Now().UnixNano()))
-	out, err := exec.Command(m.ffmpeg, "-loglevel", "error", "-y",
-		"-f", "lavfi", "-i", "testsrc=s=640x360:r=25:d="+a[0],
-		"-f", "lavfi", "-i", "sine=f=440:sample_rate=48000:d="+a[0],
-		"-c:v", "mpeg4", "-q:v", "5", "-c:a", "aac", video).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("making the video: %v: %s", err, out)
+	if err := fixtures.CopyTo("grey-"+a[0]+"s.mp4", video); err != nil {
+		return err
 	}
 	if err := post("/add?video=" + url.QueryEscape(video)); err != nil {
 		return err
