@@ -101,6 +101,9 @@ func main() {
 		}
 	})
 	svc.jobs.news = svc.told
+	// What changes in the folders of the videos, whoever changed it, is
+	// looked at as it happens, see reconcile.go.
+	svc.watch = newWatching(svc.reconcile)
 	svc.listening.say = quietly(func(d Dictation) {
 		if app != nil {
 			app.Event.Emit("dictation", d)
@@ -143,6 +146,7 @@ func main() {
 	// How far the loudness is measured is in the video's state.
 	svc.levels = newMeasuring(svc.store.machine, svc.told)
 	quit := sync.OnceFunc(func() {
+		svc.watch.stop()
 		svc.news.stop()
 		engine.CloseModels()
 		svc.stopAll()
@@ -376,6 +380,12 @@ type FrameFairy struct {
 	// news sends a video's state to the window as its work goes on, see
 	// videostate.go.
 	news *videoNews
+	// watch hears what changes in the folders of the videos in the
+	// library, whoever changed it, and hands it to reconcile, see
+	// watch.go. listed is what the library said of each video the last
+	// time a change named it, see listIfChanged.
+	watch  *watching
+	listed map[string]string
 	// Finding and installing a newer build of the app, see updates.go.
 	updates *updating
 	// What Cmd+Q does, see quit.go.

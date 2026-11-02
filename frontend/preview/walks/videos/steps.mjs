@@ -491,7 +491,11 @@ export const steps = {
   //                    another, which then comes back to the front, and
   //                    "closed" while the app is closed, which is then
   //                    opened again, and "with the video" deletes the
-  //                    video too, while the app is behind another.
+  //                    video too, while the app is behind another. "in
+  //                    front" deletes it while the app stays in front,
+  //                    the way a terminal, the command line or a sync
+  //                    service does, so nothing but the app's watch on
+  //                    the disk can tell it, issue #673.
   //                    "written back" deletes both while the app is
   //                    closed and writes the chosen clip back into a new
   //                    folder, the way the app did when it was asked
@@ -532,7 +536,7 @@ export const steps = {
     if (arg === "closed" || arg === "written back") {
       await control(url, "/reopen");
       await page.reload();
-    } else {
+    } else if (arg !== "in front") {
       // The person went to Finder and came back: the app lost the
       // keyboard and has it again.
       await page.evaluate(() => {

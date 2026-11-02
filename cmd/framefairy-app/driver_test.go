@@ -123,6 +123,9 @@ func (d *desk) start(st *store) {
 			return svc.State(context.Background(), path)
 		}, func(v VideoState) { d.bus.send("video", v) })
 		svc.jobs.news = svc.told
+		// The library is on the real disk, so the walks change its
+		// folders from outside the app the way Finder does.
+		svc.watch = newWatching(svc.reconcile)
 	}
 	d.svc.listening.say = func(x Dictation) {
 		if d.told != nil {
@@ -172,6 +175,7 @@ func (d *desk) start(st *store) {
 	// Whatever is still running when the test ends is stopped before its
 	// folder goes.
 	d.t.Cleanup(func() {
+		svc.watch.stop()
 		svc.news.stop()
 		svc.jobs.shutDown()
 	})
@@ -455,7 +459,9 @@ func (d *desk) copied() string {
 
 // reopen starts the app again over the same library, the way main does.
 func (d *desk) reopen() {
-	// The app that closed sends nothing more, as it does when it quits.
+	// The app that closed sends nothing more, as it does when it quits,
+	// and hears nothing more of the disk.
+	d.svc.watch.stop()
 	d.svc.news.stop()
 	st := openStore()
 	d.start(st)

@@ -1093,6 +1093,7 @@ func openBridge(t *testing.T) *bridge {
 	openMicrophone = snd.open
 	// The desk is started again with a bus, before anything is in it.
 	d.svc.jobs.shutDown()
+	d.svc.watch.stop()
 	d.bus = newBus()
 	// The bridge's microphone talks for as long as a walk takes steps of
 	// a recording, so one also stops after a minute, 600 steps, long after

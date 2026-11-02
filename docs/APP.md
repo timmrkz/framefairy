@@ -341,10 +341,14 @@ The list of episodes is the app's own, `library.json` in its config folder,
 because a video can be anywhere on disk. Everything else about a video is in
 its work folder, so deleting that folder by hand, in Finder, is the same as
 **Remove** with the folder deleted: the video leaves the list, its work
-stops, and adding it again starts it from nothing. The app reads the list
-again as it starts and whenever it comes back to the front, and lets go of
-every video whose folder is gone, closing its workspace if it was open, see
-`letGoOfRemoved` in `library.go`. It tells a deleted folder by a mark the
+stops, and adding it again starts it from nothing. The app watches the
+folders of every video in the list, so it hears of such a change at once,
+whoever made it, and it reads the whole list again as it starts and
+whenever it comes back to the front, for whatever the watch could not
+hear. Either way the change lands in `reconcile`, in `reconcile.go`, which
+reads the disk and lets go of every video whose folder is gone, closing its
+workspace if it was open. A video whose file went or came back says so in
+the sidebar at once. It tells a deleted folder by a mark the
 folder carries from the moment the video is added, `added.json`, and not by
 the folder alone, because the app writes a folder back whenever it is asked
 about the video, the chosen clip and the waveform among other things: Tim

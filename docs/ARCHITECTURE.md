@@ -95,7 +95,7 @@ waiting for the day the two disagree.
 
 | State | Home | Writer |
 | --- | --- | --- |
-| everything about a video | its work folder, `<video>.framefairy/` | the engine |
+| everything about a video | its work folder, `<video>.framefairy/`, the truth the app keeps in step with | the engine, and from outside the app the person in Finder, the command line and a sync service, which `reconcile` in `cmd/framefairy-app/reconcile.go` hears of through the watch on the disk, see the decision record [2026-11-01-the-app-in-step-with-its-files.md](decisions/2026-11-01-the-app-in-step-with-its-files.md) |
 | what was last chosen in a video, its clip and window | `chosen.json` in its work folder | the app's Go side |
 | the library and the settings | the app's config folder | the app's Go side |
 | the models, notes about running servers, the training records | `~/.framefairy/` | the engine |
@@ -132,6 +132,7 @@ What to do today, and what changes once the issue named is built.
 | keep something between two jobs, a cache or a fact about the machine | a field on `engine.Machine`, in `engine/machine.go`, which a program makes once and hands to every `Engine`. Never a package variable, and never a new `Engine` made only to get it. #607 moves the package variables still left onto it |
 | read a file of a video | through the `afero.Fs` the code was given, with `fileio.SafeChildIn` for a path in a work folder. Not `os`. Once #608 is built, through the video's `Episode` |
 | change a plan | `editPlan` in `engine/edit.go` |
+| notice a change made to a video's files outside the app | `reconcile` in `cmd/framefairy-app/reconcile.go`, which the watch in `watch.go` hands every change to, and which runs as the library is read. Never a check of its own in a binding |
 | start a goroutine that runs code which can panic, like layout of words a person typed | a deferred recover where that work comes in, which turns a panic into that work's error and logs the stack where the work has a log, as `engine/planbuild.go` does. A goroutine that only waits, counts or hands on gets none. A parser of outside bytes has its fuzz target first |
 | say that something went wrong | an error that keeps its kind with `%w`, returned to the caller. The app turns it into a row or a toast, and logs through `theLog`, never `log.Printf`, which forbidigo refuses. An engine the app makes outside a job logs through `engineLog(part, video)` in `cmd/framefairy-app/applog.go`, never to `io.Discard`. An engine is made for each job and takes its log then, and what outlives the job is on the machine it is handed |
 | add a call between the interface and Go | a method on `*FrameFairy` in the file of its kind in `cmd/framefairy-app/`, and its call in `frontend/src/lib/api.ts`. `bindings_test.go` checks the name and the arguments |
@@ -163,8 +164,12 @@ which reads this file.
    [WORDS.md](WORDS.md). Held by the review.
 4. One drawing of the captions, by libass, from `CaptionTrack`, see
    [CAPTIONS.md](CAPTIONS.md). Held by the review.
-5. Go owns a video's state, and the interface shows it. Held by the
-   review, and by its design once #606 is built.
+5. The files on the disk are the truth about a video, and others than
+   the app write them. Go is the one that reads them for the interface,
+   and the interface shows what Go sends. A change from outside lands in
+   `reconcile` and nowhere else. Held by the review, by its design once
+   #606 is built, and by the watch, see
+   [the decision record](decisions/2026-11-01-the-app-in-step-with-its-files.md).
 6. A job that goes wrong fails itself, not the app. Held by a recover
    at each place work comes into the Go side: around every job, every
    request of the window in `mediaMiddleware`, every callback of Wails
