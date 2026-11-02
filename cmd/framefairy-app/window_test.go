@@ -174,35 +174,33 @@ func TestAWindowTakesEverythingAtOnce(t *testing.T) {
 	svc, source, duration := anUnevenVideo(t)
 	ctx := context.Background()
 	var all sync.WaitGroup
+	answers := make(chan VideoState, 5*4)
+	answer := func(st VideoState, err error) {
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		answers <- st
+	}
 	for i := range 4 {
 		all.Go(func() {
 			from := float64(i) * 300
-			if _, err := svc.ChooseWindow(ctx, source, from, duration, duration-from, true); err != nil {
-				t.Error(err)
-			}
+			answer(svc.ChooseWindow(ctx, source, from, duration, duration-from, true))
 		})
-		all.Go(func() {
-			if _, err := svc.PlaceWindow(ctx, source); err != nil {
-				t.Error(err)
-			}
-		})
-		all.Go(func() {
-			if _, err := svc.SetSearch(ctx, source, 1+i, 20, 30, "target"); err != nil {
-				t.Error(err)
-			}
-		})
-		all.Go(func() {
-			if _, err := svc.SetSearch(ctx, source, 0, float64(15+i*10), 30, "min"); err != nil {
-				t.Error(err)
-			}
-		})
-		all.Go(func() {
-			if _, err := svc.State(ctx, source); err != nil {
-				t.Error(err)
-			}
-		})
+		all.Go(func() { answer(svc.PlaceWindow(ctx, source)) })
+		all.Go(func() { answer(svc.SetSearch(ctx, source, 1+i, 20, 30, "target")) })
+		all.Go(func() { answer(svc.SetSearch(ctx, source, 0, float64(15+i*10), 30, "min")) })
+		all.Go(func() { answer(svc.State(ctx, source)) })
 	}
 	all.Wait()
+	close(answers)
+	// Every answer carries a window fitted to what a search reads, never
+	// the one read before another call fitted it.
+	for st := range answers {
+		if w := st.Window; w == nil || w.To-w.From > w.Most+0.01 || w.To > duration {
+			t.Errorf("an answer of rev %d came with the window %+v", st.Rev, w)
+		}
+	}
 	st, err := svc.State(ctx, source)
 	if err != nil {
 		t.Fatal(err)

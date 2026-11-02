@@ -106,9 +106,17 @@ func (s *FrameFairy) windowFor(ctx context.Context, path string, st VideoState, 
 	if sameWindow(fitted, w) {
 		return view(w, l)
 	}
-	kept := false
+	// Only the window it was fitted from is changed. One written
+	// meanwhile, by a hand or by another read that fitted it first, is
+	// the window kept, so that is the one the state carries, never the
+	// one read before it.
+	kept, now := false, w
 	if _, err := s.chosenIn(path).change(s.store.files, path, func(c *chosen) bool {
-		if c.Window == nil || !sameWindow(*c.Window, w) {
+		if c.Window == nil {
+			return false
+		}
+		if !sameWindow(*c.Window, w) {
+			now = *c.Window
 			return false
 		}
 		c.Window, kept = &fitted, true
@@ -118,7 +126,8 @@ func (s *FrameFairy) windowFor(ctx context.Context, path string, st VideoState, 
 			Msg("the window fitted to what a search can read could not be kept")
 	}
 	if !kept {
-		return view(w, l)
+		now.To = math.Min(now.To, duration)
+		return view(now, limits(now))
 	}
 	// A target typed for the window is the target of the window fitted,
 	// most often to the clips it asked for.
