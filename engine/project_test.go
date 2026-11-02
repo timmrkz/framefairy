@@ -5,11 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -18,6 +16,7 @@ import (
 
 	"framefairy/engine/runlog"
 	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/fixtures"
 )
 
 // fakeRecognizer hears a word every 0.6 seconds, so tests need no speech
@@ -60,18 +59,16 @@ func fakeModel(t *testing.T, asked *int32) *httptest.Server {
 	}))
 }
 
-// On the real disk: ffmpeg makes the episode and reads it.
+// testEpisode is a copy of the test picture with its tone, 15, 40 or 70
+// seconds long, from the fixtures. A copy of its own, because a test works
+// in the folder beside its episode, and one test makes "the same episode
+// again" to have one nothing was heard of before.
+//
+// On the real disk: ffmpeg reads the episode.
 func testEpisode(t *testing.T, seconds string) string {
 	t.Helper()
 	ffmpegtest.Need(t)
-	made, err := episodes.make(seconds)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// A copy of its own, because a test works in the folder beside its
-	// episode, and one test makes "the same episode again" to have one
-	// nothing was heard of before.
-	body, err := os.ReadFile(made)
+	body, err := os.ReadFile(fixtures.Path(t, "episode-"+seconds+"s.mp4"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,33 +79,14 @@ func testEpisode(t *testing.T, seconds string) string {
 	return path
 }
 
-// episodes are the test episodes made for this run of the tests, one of
-// each length, in a folder of their own that TestMain takes away at the
-// end. Forty tests used to make their own, all of them the same picture
-// and the same tone, at four seconds each for the 70 second one.
+// episodes are the test episodes a test still makes for this run of the
+// tests, in a folder of their own that TestMain takes away at the end.
 var episodes = &testEpisodes{files: map[string]string{}}
 
 type testEpisodes struct {
 	mu    sync.Mutex
 	dir   string
 	files map[string]string
-}
-
-// On the real disk: ffmpeg makes the episode and reads it.
-func (m *testEpisodes) make(seconds string) (string, error) {
-	return m.once(seconds+".mp4", func(path string) error {
-		// mpeg4 and aac are in every ffmpeg, the one we ship included, which
-		// has no libx264. Test episodes made with libx264 could not be made on
-		// the macOS runner once it tested against our ffmpeg.
-		out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
-			"-f", "lavfi", "-i", "testsrc=s=640x360:r=25:d="+seconds,
-			"-f", "lavfi", "-i", "sine=f=220:d="+seconds,
-			"-shortest", "-c:v", "mpeg4", "-q:v", "5", "-c:a", "aac", path).CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("making the test episode: %s %s", err, out)
-		}
-		return nil
-	})
 }
 
 // once is the episode called name, made by making it at the path it is
@@ -343,7 +321,7 @@ func TestProjectSteps(t *testing.T) {
 // On the real disk: ffmpeg reads the episode.
 func TestProjectReportsErrors(t *testing.T) {
 	t.Parallel()
-	source := testEpisode(t, "2")
+	source := testEpisode(t, "15")
 	log := runlog.New(&bytes.Buffer{}, false, false)
 	e := NewEngine(log, NewMachine(disk))
 	e.OpenRecognizer = func(string) (Recognizer, error) {
@@ -373,7 +351,7 @@ func TestProjectReportsErrors(t *testing.T) {
 // On the real disk: the project runs ffmpeg on the episode.
 func TestAFailedStepSaysWhatWentWrong(t *testing.T) {
 	t.Parallel()
-	source := testEpisode(t, "20")
+	source := testEpisode(t, "40")
 	broken := errors.New("the speech model is broken")
 	var logged bytes.Buffer
 	e := NewEngine(runlog.New(&logged, false, false), NewMachine(disk))
