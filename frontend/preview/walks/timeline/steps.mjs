@@ -1784,6 +1784,43 @@ export const steps = {
     await page.evaluate(() => (window.__scrubbing = false));
     await watch.step("scrub", s);
   },
+  // ["skip outside a clip"]
+  //                    with no clip on the playhead, presses Shift and the
+  //                    right arrow until the playhead is 5 s past where the
+  //                    saved transcript ends, then Shift and the left arrow
+  //                    once. Every press moves the playhead 5 s, over what
+  //                    was heard and what was not alike
+  async "skip outside a clip"(walk, arg, s) {
+    const { page, watch } = walk;
+    const path = await episodeOn(page);
+    // Where the saved transcript ends: the end of its first part.
+    const heard = (await ask(page, "Episode", path))?.heard ?? [];
+    const edge = Math.max(0, ...heard.filter(([a]) => a < 1).map(([, b]) => b));
+    const at = () => page.evaluate(() => Number(document.querySelector(".screen").dataset.playhead));
+    const press = async (key) => {
+      const before = await at();
+      await page.keyboard.press(key);
+      await settle(page);
+      await watch.step("press", s, page);
+      return [before, await at()];
+    };
+    await page.evaluate(() => document.body.focus());
+    if (await chosen(page)) {
+      walk.wrong = "a clip is chosen, so the playhead may be on one";
+      return;
+    }
+    // Enough presses to cross the end of what was heard and one more.
+    const presses = Math.ceil(edge / 5) + 2;
+    for (let i = 0; i < presses; i++) {
+      const [from, to] = await press("Shift+ArrowRight");
+      if (Math.abs(to - from - 5) > 0.002) {
+        walk.wrong = `Shift and the right arrow at ${from.toFixed(3)} s went to ${to.toFixed(3)} s, not 5 s on, with what was heard ending at ${edge.toFixed(3)} s`;
+        return;
+      }
+    }
+    const [from, to] = await press("Shift+ArrowLeft");
+    if (Math.abs(from - to - 5) > 0.002) walk.wrong = `Shift and the left arrow at ${from.toFixed(3)} s went to ${to.toFixed(3)} s, not 5 s back`;
+  },
 };
 
 // Steps that take the same body as the step they are walked by.

@@ -308,6 +308,9 @@
   const nearest = 2;
   // How much of the episode is asked for in words at a time.
   const spoken = 600;
+  // How far Shift and an arrow skip outside a clip, in seconds, the jump
+  // Tim chose for #377. YouTube's arrows jump 5 seconds too.
+  const SKIP = 5;
 
   const segments = $derived(clip?.segments ?? []);
   const first = $derived(segments.length ? segments[0].start : 0);
@@ -956,17 +959,22 @@
   }
 
   // The arrow keys step the playhead a frame at a time, as in every video
-  // tool, unless a field or an edge of the clip has the keyboard. Shift
-  // steps by words, which is the thing the picture is showing: the caption
-  // lights up the word being spoken, so this walks that light one word at
-  // a time. Where nothing has been heard yet there are no words to walk,
-  // and shift takes a second, which is all it ever took before.
+  // tool, unless a field or an edge of the clip has the keyboard. On a
+  // clip, Shift steps by words, which is the thing the picture is showing:
+  // the caption lights up the word being spoken, so this walks that light
+  // one word at a time.
+  //
+  // Outside a clip there is no caption, so nothing on screen to step
+  // through, and Shift skips SKIP seconds, transcribed or not. It walked
+  // the words heard there, and stopped dead at the end of them, in the
+  // middle of the video, wherever nothing had been heard yet. Issue #377.
   //
   // While the episode plays on the video, a step skips through the
-  // episode and stays on the video, the clip and its cuts included: the
-  // play started outside the clip, so moving on is all it asks for, and
-  // the clip lighting up under it was a clip nobody chose. On the clip
-  // and paused, a step lands where its frame says, see placeOf.
+  // episode the same way and stays on the video, the clip and its cuts
+  // included: the play started outside the clip, so moving on is all it
+  // asks for, and the clip lighting up under it was a clip nobody chose.
+  // On the clip and paused, a step lands where its frame says, see
+  // placeOf.
   function onKey(event: KeyboardEvent) {
     if (removePicked(event)) return;
     // Any other key lets the pick go, and the key does what it does. A
@@ -991,9 +999,8 @@
       put(time + Math.max(frame, 1 / 240) * (back ? -1 : 1));
       return;
     }
-    // Inside the clip, the words the caption lights up. Outside it there
-    // is no caption at all, so the words that were heard are the only ones
-    // there are.
+    // Inside the clip, the words the caption lights up, and outside it a
+    // skip.
     //
     // Inside by a whole frame either side, because the playhead is not
     // where it was put: picking a clip sends it to the clip's first second
@@ -1005,7 +1012,13 @@
     // clip that could not be made to happen twice: it only happens on the
     // first press after picking one.
     const step = Math.max(frame, 1 / 240);
-    const walk = lit.length && !through && insideClip(drawnPieces, time, step) ? lit : words;
+    if (through || !insideClip(drawnPieces, time, step)) {
+      put(time + (back ? -SKIP : SKIP));
+      return;
+    }
+    // The caption's words arrive a moment after the clip is chosen, and
+    // until then the words heard there are the ones it will light.
+    const walk = lit.length ? lit : words;
     const to = wordStep(walk, time, back, step);
     if (to !== null) {
       put(to, true);
@@ -1029,11 +1042,14 @@
   $effect(() => {
     if (playing || scrubbing || gripping || !onahead) return;
     const step = Math.max(frame, 1 / 240);
-    const walk = lit.length && insideClip(drawnPieces, time, step) ? lit : words;
+    const inside = insideClip(drawnPieces, time, step);
+    const walk = lit.length ? lit : words;
     const times: number[] = [];
     for (const back of [false, true]) {
-      const to = wordStep(walk, time, back, step);
-      if (to !== null) times.push(Math.max(0, Math.min(to, duration)));
+      const to = inside ? wordStep(walk, time, back, step) : time + (back ? -SKIP : SKIP);
+      if (to === null) continue;
+      const at = Math.max(0, Math.min(to, duration));
+      if (at !== time) times.push(at);
     }
     if (times.length) onahead(times);
   });

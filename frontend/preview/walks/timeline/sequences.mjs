@@ -606,4 +606,14 @@ export default [
     name: "the playhead's time is in a field beside the buttons, and the clip's numbers on its card",
     steps: [["time field"], ["card says"], ["cut at", 0.5], ["card says"], ["card follows", -60], ["card says"]],
   },
+  {
+    // Issue #377, found by Tim on 19 October: outside a clip, Shift and
+    // the right arrow walked the words heard and stopped dead where the
+    // transcript ended, in the middle of the video. Outside a clip there
+    // is no caption to step through, so Tim chose a skip of 5 seconds,
+    // heard or not. The speech is held, so the end of what was heard
+    // stays where it is and no search finds a clip meanwhile.
+    name: "Shift and the arrows skip 5 seconds outside a clip, past where the transcript ends",
+    steps: [["speech", "hold"], ["add", 600], ["heard some", 3], ["skip outside a clip"], ["speech", "go"]],
+  },
 ];

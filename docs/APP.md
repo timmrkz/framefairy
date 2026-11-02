@@ -1769,9 +1769,13 @@ bubble scrolled by those eight pixels.
         clip comes round instead**, the way a play of it does: past its
         last word is its first word, and before its first its last, and the
         clip stays chosen.
-      - Outside a clip there is no caption, so the words that were heard
-        are the only ones there are. Where nothing has been heard yet
-        shift takes a second.
+      - **Outside a clip, Shift and an arrow skip 5 seconds**, the way
+        the arrows do in a video on YouTube, over what was heard and what
+        was not alike. There is no caption there, so nothing on screen to
+        step through, and what a hand wants there is to get on. They
+        walked the words heard, and stopped dead where the transcript
+        ended, in the middle of the video, found by Tim. The same while the
+        episode plays on the video. Issue #377.
       - **Which list is walked is decided a whole frame either side of the
         clip**, for the same reason the crop frame is. Read exactly, a
         playhead just put at a clip's start is outside it, so the keys
