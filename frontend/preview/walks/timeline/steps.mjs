@@ -1799,6 +1799,10 @@ export const steps = {
     const g = await handles(page);
     const y = high(g.track);
     const at = () => page.evaluate(() => Number(document.querySelector(".screen").dataset.playhead));
+    // The cards' frames read first, which a drag leaves for after it, so
+    // the streams counted are the drag's own: on a busy runner the cards
+    // were still to come, and their streams were counted too.
+    await page.evaluate(() => window.__readAheadRested());
     let x = g.end.x - 0.1 * (g.end.x - g.start.x - g.start.w);
     await page.mouse.move(x, y);
     await page.mouse.down();
