@@ -82,3 +82,29 @@ func TestAWindowIsFittedFromItsStart(t *testing.T) {
 		}
 	}
 }
+
+// The lengths at which the suggested count rises are where SuggestedCount
+// rises, to the millisecond, so a drag that reads its count off them sees
+// what Go will answer when the hand lets go.
+func TestTheSuggestedCountRisesWhereItsStepsSay(t *testing.T) {
+	for _, c := range []struct{ least, most float64 }{{20, 30}, {5, 5}, {60, 180}, {180, 180}} {
+		steps := SuggestedSteps(c.least, c.most, 30)
+		if len(steps) == 0 {
+			t.Fatalf("clips of %v–%v s rise nowhere", c.least, c.most)
+		}
+		for i, at := range steps {
+			if got := SuggestedCount(at, c.least, c.most); got != i+2 {
+				t.Errorf("clips of %v–%v s: %v s suggests %d, not %d", c.least, c.most, at, got, i+2)
+			}
+			if got := SuggestedCount(at-0.002, c.least, c.most); got != i+1 {
+				t.Errorf("clips of %v–%v s: just under %v s suggests %d, not %d", c.least, c.most, at, got, i+1)
+			}
+		}
+		if len(steps) < 29 && steps[len(steps)-1] < MaxEpisodeSeconds/2 {
+			t.Errorf("clips of %v–%v s stop rising at %v s", c.least, c.most, steps[len(steps)-1])
+		}
+	}
+	if steps := SuggestedSteps(20, 30, 1); len(steps) != 0 {
+		t.Errorf("one clip at most rises at %v", steps)
+	}
+}

@@ -31,6 +31,10 @@ type WindowLimits struct {
 	// longest Shortest may be, so Count clips of it still fit.
 	ClipsAtMost    int     `json:"clipsAtMost"`
 	ShortestAtMost float64 `json:"shortestAtMost"`
+	// Steps are the lengths of window at which Suggested rises, see
+	// SuggestedSteps, up to ClipsAtMost, so the count a drag suggests
+	// is read off them as the hand moves.
+	Steps []float64 `json:"steps"`
 }
 
 // The bounds of what a hand may type: clips asked for, and how long the
@@ -60,6 +64,7 @@ func (p *Project) Limits(r RoomAndLines, duration, length float64, typed int) Wi
 		l.Count = l.Typed
 	}
 	l.Least = math.Min(math.Max(float64(max(l.Typed, 1))*shortest, leastWindowFloor), duration)
+	l.Steps = SuggestedSteps(shortest, longest, l.ClipsAtMost)
 	l.ShortestAtMost = math.Max(leastShortest, math.Min(mostShortest, math.Floor((most+0.01)/float64(max(l.Count, 1)))))
 	return l
 }

@@ -404,6 +404,9 @@ export interface WindowView extends KeptWindow {
   // The most clips a search may ask for, and the longest Shortest may be.
   clipsAtMost: number;
   shortestAtMost: number;
+  // The lengths of window at which the count suggested rises, so a drag
+  // reads its count off them, see engine.SuggestedSteps.
+  steps?: number[];
   // How long the clips a search asks for may be, as they are set.
   shortest: number;
   longest: number;

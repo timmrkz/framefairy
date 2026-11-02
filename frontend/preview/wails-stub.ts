@@ -923,8 +923,8 @@ function videoState(path: string): Promise<unknown> {
   });
 }
 
-// The window and how far a search reaches, the way window.go and
-// engine/limits.go answer them: a model that reads everything, or with
+// The window and how far a search reaches, the way window.go answers
+// them: a model that reads everything, or with
 // ?small one that reads about 35 minutes at a time, the way Qwen3 14B
 // does, and with ?memory a machine whose memory holds about 1.3 hours.
 function windowIn() {
@@ -944,22 +944,22 @@ function windowIn() {
   const set = (window as any).__settings ?? {};
   const shortest = set.min ?? 20;
   const longest = set.max ?? 30;
-  const clipsAtMost = Math.max(1, Math.min(30, Math.floor((most + 0.01) / Math.max(shortest, 1))));
-  const typed = Math.min(set.target ?? 0, clipsAtMost);
-  const suggested = Math.min(Math.max(1, Math.round(Math.sqrt(length * 1800) / (12 * ((shortest + longest) / 2)))), clipsAtMost);
-  const count = typed || suggested;
+  // The rest is as Go answers for clips of 20 to 30 s and a half hour,
+  // fixed, so no rule of engine/limits.go is copied here to drift from it.
+  const typed = set.target ?? 0;
   return {
     from,
     to,
     length,
     most,
-    least: Math.min(Math.max(Math.max(typed, 1) * shortest, 10), duration),
+    least: 20,
     by,
     typed,
-    suggested,
-    count,
-    clipsAtMost,
-    shortestAtMost: Math.max(5, Math.min(180, Math.floor((most + 0.01) / Math.max(count, 1)))),
+    suggested: 6,
+    count: typed || 6,
+    clipsAtMost: 30,
+    shortestAtMost: 180,
+    steps: [113, 313, 613, 1013, 1513, 2113, 2813, 3613, 4513, 5513, 6613, 7813, 9113, 10513, 12013, 13613, 15313, 17113, 19013, 21013, 23113, 25313, 27613, 30013, 32513, 35113, 37813, 40613, 43513],
     shortest,
     longest,
   };

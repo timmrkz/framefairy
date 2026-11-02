@@ -123,6 +123,55 @@ export const steps = {
     walk.movedOff = { search: searches[searches.length - 1]?.id ?? "", window: after };
     await watch.step("move window", s);
   },
+  // ["count follows drag", handle, share] takes the window's "to" or
+  //                    "from" triangle and drags it by this share of the
+  //                    track's width, and in every frame of the drag the
+  //                    Target field says the count the window's length
+  //                    then suggests, the count Go answers with when the
+  //                    hand lets go, read off the lengths the state says
+  //                    it rises at. A drag that crosses none proves nothing
+  async "count follows drag"(walk, arg, s) {
+    const { page, watch } = walk;
+    const [handle, share] = arg;
+    const path = await episodeOn(page);
+    const steps = (await ask(page, "State", path))?.window?.steps ?? [];
+    const field = page.locator("label.setting", { hasText: "Target" }).locator("input");
+    const seen = () =>
+      page.evaluate(() => {
+        const aim = document.querySelector(".aim");
+        const n = (sel) => Number(aim?.querySelector(sel)?.getAttribute("aria-valuenow"));
+        return { from: n(".tip.top.from"), to: n(".tip.top.to") };
+      });
+    const grip = page.locator(`.aim .tip.top.${handle}`);
+    const box = await grip.boundingBox().catch(() => null);
+    const track = await page.getByLabel("The range picker", { exact: true }).boundingBox();
+    if (!box || !track || !steps.length) {
+      walk.wrong = `there is no window to take hold of, or the state says no lengths the count rises at: ${JSON.stringify(steps)}`;
+      return;
+    }
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height / 2;
+    const counts = new Set();
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    for (let i = 1; i <= 6 && !walk.wrong; i++) {
+      await page.mouse.move(x + (share * track.width * i) / 6, y);
+      await nextPaint(page);
+      const w = await seen();
+      const want = 1 + steps.filter((at) => at <= w.to - w.from).length;
+      const says = Number(await field.inputValue());
+      counts.add(says);
+      if (says !== want) walk.wrong = `dragged to ${w.from.toFixed(0)}–${w.to.toFixed(0)} s, the Target field says ${says}, not the ${want} that length suggests`;
+    }
+    await page.mouse.up();
+    if (!walk.wrong && counts.size < 2) walk.wrong = `the drag crossed no length the count rises at, it said ${[...counts]} all along, so it proves nothing`;
+    if (walk.wrong) return;
+    await caughtUp(page, url);
+    const answer = (await ask(page, "State", path))?.window;
+    const says = Number(await field.inputValue());
+    if (answer && says !== answer.count) walk.wrong = `let go, the Target field says ${says}, and Go answered ${answer.count}`;
+    await watch.step("move window", s);
+  },
   // ["searched moved"] the episode's newest search is a new one, not the
   //                    search there was at "move window", and it searched
   //                    the window where "move window" left it

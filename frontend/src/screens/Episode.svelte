@@ -139,9 +139,6 @@
   let drag = $state<{ from: number; to: number } | null>(null);
   const from = $derived(drag?.from ?? win?.from ?? 0);
   const to = $derived(drag?.to ?? win?.to ?? 0);
-  // How long the window was made, by the app or by a hand on its marks. A
-  // window cut short at the end of the episode is still this long.
-  const length = $derived(win ? Math.max(win.length, to - from) : 0);
   // How long the clips a search asks for may be, as they are set.
   const min = $derived(win?.shortest ?? 20);
   const max = $derived(win?.longest ?? 30);
@@ -238,9 +235,13 @@
   // shorter than the clips typed need at their shortest, and the clip
   // count and the shortest length held to that longest window, so
   // whatever they ask for fits wherever the window is.
-  const typed = $derived(win?.typed ?? 0);
-  const suggested = $derived(win?.suggested ?? 1);
-  const count = $derived(win?.count ?? 1);
+  // While a hand drags the window to another length, the count follows
+  // the hand: it is the count that length suggests, read off the lengths
+  // Go sends at which it rises, and what Go answers when the hand lets go.
+  const dragged = $derived(drag && win && Math.abs(drag.to - drag.from - (win.to - win.from)) > 0.001 ? drag.to - drag.from : null);
+  const typed = $derived(dragged === null ? (win?.typed ?? 0) : 0);
+  const suggested = $derived(dragged === null ? (win?.suggested ?? 1) : 1 + (win?.steps ?? []).filter((at) => at <= dragged).length);
+  const count = $derived(dragged === null ? (win?.count ?? 1) : suggested);
   const clipsAtMost = $derived(win?.clipsAtMost ?? 30);
   const shortestAtMost = $derived(win?.shortestAtMost ?? 180);
   // The episode's search, as the Go side keeps it: one job from Search to its
@@ -1605,9 +1606,8 @@
         // when it is written, see choose.go.
         session.pick(key, (k) => api.chooseClip(path, k));
       }
-      // Asked for here, so a failure says why in a toast however soon it
-      // comes, the store's news of it before this answer too.
-      session.asked(now);
+      // A failure says why in a toast, which the Go side tells as it
+      // fails, see notice.go.
       if (now.state === "failed") return;
       await tick();
       showChosen();

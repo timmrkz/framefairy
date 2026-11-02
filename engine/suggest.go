@@ -67,6 +67,38 @@ func SuggestedCount(window, least, most float64) int {
 	return max(int(math.Round(math.Sqrt(window*clipsFor)/(clipsApart*clip))), 1)
 }
 
+// SuggestedSteps is the length of window, in seconds, at which the count
+// SuggestedCount suggests rises past each number, with clips from least
+// to most seconds long: the first is the shortest window that suggests 2,
+// and so on, up to upTo clips. It is how a hand dragging a window sees
+// the count follow it, without a rule of its own, see WindowLimits.Steps.
+// Each length is found from SuggestedCount itself, to the millisecond,
+// so the two never disagree.
+func SuggestedSteps(least, most float64, upTo int) []float64 {
+	var steps []float64
+	low := 0.0
+	for n := 2; n <= upTo; n++ {
+		high := math.Max(low, 1)
+		for SuggestedCount(high, least, most) < n {
+			if high > MaxEpisodeSeconds {
+				return steps
+			}
+			high *= 2
+		}
+		for high-low > 0.001 {
+			mid := (low + high) / 2
+			if SuggestedCount(mid, least, most) >= n {
+				high = mid
+			} else {
+				low = mid
+			}
+		}
+		steps = append(steps, high)
+		low = high
+	}
+	return steps
+}
+
 // ThinkForWindow asks for the thinking budget that fits the window, see
 // SuggestedThink. It is the default, and what a run is given unless a
 // number is.
