@@ -197,10 +197,12 @@ an issue of its own.
 ## What follows
 
 - Costs: the repository grows by the fixtures, and each change to one
-  is a new copy in Git's history. With every engine test on them, 78
-  files take 24 MB on the disk, and what a clone of main fetches grows
-  from 7.2 to 14.2 MB, measured with `git pack-objects` on 2 November
-  2026. A fixture is made small before it is committed.
+  is a new copy in Git's history. With every test on them, 114 files
+  take 58 MB on the disk, and what a clone of main fetches grows from
+  7.2 MB before them to 30.8 MB, measured with `git pack-objects` on 2
+  November 2026. Most of it is the walks' long videos, whose tone has to
+  stay as steady as Opus at 24k keeps it, see `walk` in the recipes. A
+  fixture is made small before it is committed.
 - Buys: no ffmpeg run to make an input, so no input made on CI's
   graphics chip, and the time it took. The tests read the same bytes on
   every machine, so a failure is about the code, not about the ffmpeg
