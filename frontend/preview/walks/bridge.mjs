@@ -6,7 +6,6 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { dirname, join, relative, resolve } from "node:path";
 import { chromium, webkit } from "playwright";
 import { filmed as filmedList } from "./filmed.mjs";
-import { inChromium } from "./webkit.mjs";
 
 // The Chromium the pinned Playwright was made for. CI's image holds only
 // its headless shell, which a headless launch finds by itself, so there
@@ -48,23 +47,20 @@ function fallbackBrowser() {
 let fellBack;
 
 // The browser a walk runs in: WebKit, which the app runs in on a Mac and
-// on Linux, for every part of the app that has moved there, webkit.mjs,
-// and Chromium, which the app runs in on Windows, for the rest and for
-// the random walks until the last part has moved. WALKBROWSER names one
-// for every walk, as the nightly walks do for Chromium. Playwright brings
-// a WebKit of its own for Linux, which takes real key presses. SLOW and
-// WALKCOVERAGE work through Chromium's own tools, so either walks every
-// walk in Chromium unless WALKBROWSER says otherwise. See Two browsers in
-// docs/TESTING.md.
+// on Linux, for every walk and sequence. WALKBROWSER names another, as
+// the nightly walks name Chromium, which the app runs in on Windows.
+// Playwright brings a WebKit of its own for Linux, which takes real key
+// presses. SLOW and WALKCOVERAGE work through Chromium's own tools, so
+// either walks every walk in Chromium unless WALKBROWSER says otherwise.
+// See Two browsers in docs/TESTING.md.
 const asked = process.env.WALKBROWSER || "";
 if (asked && asked !== "chromium" && asked !== "webkit") {
   throw new Error(`WALKBROWSER is chromium or webkit, not ${asked}`);
 }
-export function browserFor(part) {
+export function browserFor() {
   if (asked) return asked;
   if (Number(process.env.SLOW) > 1 || process.env.WALKCOVERAGE) return "chromium";
-  if (part === undefined) return inChromium.length ? "chromium" : "webkit";
-  return inChromium.includes(part) ? "chromium" : "webkit";
+  return "webkit";
 }
 async function launch(name, args) {
   // An interrupt is the walk's own to answer, see keepTraces, not
@@ -143,7 +139,7 @@ export function noDeadlines(page) {
 // nothing back from a WebGPU canvas, and the walks read the frame on
 // screen from the canvas. See screen.ts. The counts of the lines a page
 // runs are Chromium's, so WALKCOVERAGE counts in Chromium only. name is
-// the browser, a random walk's unless said, see browserFor.
+// the browser, the walks' unless said, see browserFor.
 export async function newBrowser(name = browserFor()) {
   if (coverage && name !== "chromium") throw new Error("WALKCOVERAGE counts lines through Chromium's own tools, so it walks in Chromium only, WALKBROWSER=chromium");
   const browser = await launch(name, ["--enable-unsafe-webgpu"]);
