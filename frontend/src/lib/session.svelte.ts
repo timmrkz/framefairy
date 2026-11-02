@@ -200,8 +200,8 @@ export class EpisodeSession {
     }
   }
 
-  // Work asked for here, a clip made by hand or a render, by the job the
-  // Go side answered with. What the Go side says of a job travels apart
+  // Work asked for here, a render, by the job the Go side answered with.
+  // What the Go side says of a job travels apart
   // from the answer to the call, so a job can be over in the store before
   // the answer comes back, its news heard first on a busy machine, issue
   // #508. Then it is said at once, from what the store knows of it.

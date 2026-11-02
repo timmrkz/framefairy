@@ -41,19 +41,37 @@ func TestAFailureIsToldOnceAsItHappens(t *testing.T) {
 }
 
 // A job that was failed already, as the app opened, said why the time it
-// failed, so it is told nothing again, and nor is one that ends any other
-// way.
+// failed, so it is told nothing again as the app reads it back, and
+// nothing when it is read again as failed or as ending any other way.
 func TestAFailureSeenOnlyAsTheAppOpensIsNotToldAgain(t *testing.T) {
-	for _, state := range []string{JobFailed, JobDone, JobStopped, JobCancelled} {
-		job := Job{ID: "job-1", Episode: "/home/tim/ep.mp4", State: JobFailed, JobRecord: engine.JobRecord{Kind: engine.JobSearch}}
-		q := newQueue(memoryStore(), func(JobUpdate) {}, func(string) {})
-		var told []Notice
-		q.notice = func(n Notice) { told = append(told, n) }
-		was := job
-		q.update(&was, func(j *Job) { j.State = state })
-		if len(told) != 0 {
-			t.Errorf("a job failed already and read again as %s told %+v", state, told)
+	s, eps := memoryLibrary(t, "talk.mp4")
+	s.jobs = newQueue(s.store, func(JobUpdate) {}, func(string) {})
+	var told []Notice
+	s.jobs.notice = func(n Notice) { told = append(told, n) }
+	for _, rec := range []engine.JobRecord{
+		{ID: engine.SearchID, Kind: engine.JobSearch, Step: engine.StepFailed, Error: "the model went away"},
+		{ID: "clip-9", Kind: engine.JobClip, At: 95.5, Step: engine.StepFailed, Error: "nobody speaks there"},
+	} {
+		if err := engine.WriteJob(s.store.files, eps[0], rec); err != nil {
+			t.Fatal(err)
 		}
+	}
+	s.restoreJobs(eps)
+	jobs := s.jobs.list()
+	if len(jobs) != 2 || len(told) != 0 {
+		t.Fatalf("the app opened on %d jobs and told %+v", len(jobs), told)
+	}
+	for _, j := range jobs {
+		if j.State != JobFailed {
+			t.Errorf("the job %s came back %s, not failed", j.Kind, j.State)
+		}
+		for _, state := range []string{JobFailed, JobDone, JobStopped, JobCancelled} {
+			was := j
+			s.jobs.update(&was, func(j *Job) { j.State = state })
+		}
+	}
+	if len(told) != 0 {
+		t.Errorf("jobs failed already and read again told %+v", told)
 	}
 }
 
