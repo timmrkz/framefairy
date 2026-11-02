@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -514,7 +515,15 @@ func TestTheEpisodesDecoderStandsAPhoneVideoUp(t *testing.T) {
 			t.Errorf("%s: the decoder gave %d bytes and ffmpeg %d", name, len(frame), len(want))
 			continue
 		}
-		if d := meanDiff(frame, want); d > 2 {
+		// On a Mac the decoder decodes HEVC on the graphics chip and ffmpeg
+		// on the processor, and the two scalers round differently, issue
+		// #581, see TestTheEpisodesDecoderHandsOverTheKeyFrameFirst. A
+		// frame stood up the wrong way is tens apart.
+		apart := 2.0
+		if runtime.GOOS == "darwin" && strings.HasPrefix(name, "hevc") {
+			apart = 6
+		}
+		if d := meanDiff(frame, want); d > apart {
 			t.Errorf("%s: the decoder's frame differs from ffmpeg's by %.2f on average, "+
 				"so it does not stand up the way the short does", name, d)
 		}
