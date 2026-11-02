@@ -423,6 +423,10 @@ export class AppFrames {
     keyCame: 0,
     keyWentOn: 0,
     wentOnRanks: [] as number[],
+    // The last 16 new streams, each the frame it was opened for and why:
+    // a run before a step back, its key frame first, read ahead, or a
+    // place, for a walk to say how a drag's frames came.
+    newFor: [] as string[],
     opens: [] as Opened[],
     first: "",
   };
@@ -725,6 +729,9 @@ export class AppFrames {
       const key = !!w.key && !w.ahead;
       s = new Stream(this, w.back ? Math.max(0, w.rank - BACK) : w.rank, width, height, key);
       s.runTo = w.back ? w.rank : -1;
+      const why = `${w.rank} ${w.back ? "run" : key ? "key first" : w.ahead ? "ahead" : "place"}${this.dragging ? " dragging" : ""}`;
+      this.stats.newFor.push(why);
+      if (this.stats.newFor.length > 16) this.stats.newFor.shift();
       if (key) this.stats.keyFirst++;
       s.aheadOnly = !!w.ahead;
       this.stats.first ||= `${width}x${height}`;

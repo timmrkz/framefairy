@@ -1821,7 +1821,10 @@ export const steps = {
     const streams = (await page.evaluate(() => window.__appFrames.stats.streams)) - was;
     await watch.step("scrub", s);
     if (back < arg) walk.wrong = `the drag reached the clip's start ${back} frames back, not ${arg}`;
-    else if (streams > Math.ceil(back / 15) + 1) walk.wrong = `a slow drag ${back} frames to the left opened ${streams} streams, more than one for every 15 frames back and one more`;
+    else if (streams > Math.ceil(back / 15) + 1) {
+      const why = await page.evaluate((n) => window.__appFrames.stats.newFor.slice(-n), Math.min(16, streams));
+      walk.wrong = `a slow drag ${back} frames to the left, from frame ${from}, opened ${streams} streams, more than one for every 15 frames back and one more: for ${why.join(", ")}`;
+    }
   },
   // ["skip outside a clip"]
   //                    with no clip on the playhead, presses Shift and the
