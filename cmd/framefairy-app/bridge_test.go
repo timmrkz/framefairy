@@ -1536,6 +1536,10 @@ func (b *bridge) reset() error {
 		return fmt.Errorf("the app did not stop its work in time")
 	}
 	b.d.svc.levels.shutDown()
+	// The watch on the folders hears the reset delete them, and reconcile
+	// would let the videos go and write the library into the config
+	// folder while it is put back. The app opened again watches anew.
+	b.d.svc.watch.stop()
 	// A caption file the video preview asked for goes on being written
 	// after the page that asked is gone, and one written into a work
 	// folder while it was removed failed the reset with "directory not
