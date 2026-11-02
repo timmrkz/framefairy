@@ -85,7 +85,7 @@ func TestAFolderWrittenBackAfterItWasDeletedIsLetGoAndCleared(t *testing.T) {
 	if err := files.RemoveAll(engine.WorkDir(ep)); err != nil {
 		t.Fatal(err)
 	}
-	if err := changeChosen(files, ep, func(c *chosen) { c.Opened = 1 }); err != nil {
+	if err := writeChosen(files, ep, chosen{Opened: 1}); err != nil {
 		t.Fatal(err)
 	}
 	if lib := svc.Library(); listed(lib, ep) {
@@ -122,7 +122,7 @@ func TestQuittingWaitsForTheDeleteOfAVideoLetGo(t *testing.T) {
 		if err := files.RemoveAll(engine.WorkDir(ep)); err != nil {
 			t.Fatal(err)
 		}
-		if err := changeChosen(files, ep, func(c *chosen) { c.Opened = 1 }); err != nil {
+		if err := writeChosen(files, ep, chosen{Opened: 1}); err != nil {
 			t.Fatal(err)
 		}
 		held := &removeHeld{Fs: files, began: make(chan struct{}), letGo: make(chan struct{})}
@@ -162,7 +162,7 @@ func TestAVideoLetGoWhileTheAppQuitsIsClearedAtOnce(t *testing.T) {
 	if err := files.RemoveAll(engine.WorkDir(ep)); err != nil {
 		t.Fatal(err)
 	}
-	if err := changeChosen(files, ep, func(c *chosen) { c.Opened = 1 }); err != nil {
+	if err := writeChosen(files, ep, chosen{Opened: 1}); err != nil {
 		t.Fatal(err)
 	}
 	if listed(svc.Library(), ep) {
@@ -244,7 +244,7 @@ func TestTheAppNeverOpensOnAVideoDeletedOutsideIt(t *testing.T) {
 	withJobs(svc)
 	files := svc.store.files
 	gone, stays := eps[0], eps[1]
-	if err := changeChosen(files, stays, func(c *chosen) { c.Opened = 1 }); err != nil {
+	if err := writeChosen(files, stays, chosen{Opened: 1}); err != nil {
 		t.Fatal(err)
 	}
 	for _, p := range []string{gone, engine.WorkDir(gone)} {
@@ -252,7 +252,7 @@ func TestTheAppNeverOpensOnAVideoDeletedOutsideIt(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := changeChosen(files, gone, func(c *chosen) { c.Opened = 2 }); err != nil {
+	if err := writeChosen(files, gone, chosen{Opened: 2}); err != nil {
 		t.Fatal(err)
 	}
 	if opened := svc.Opened(10); slices.Contains(opened, gone) || !slices.Contains(opened, stays) {

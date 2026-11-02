@@ -96,13 +96,13 @@ waiting for the day the two disagree.
 | State | Home | Writer |
 | --- | --- | --- |
 | everything about a video | its work folder, `<video>.framefairy/` | the engine |
-| what was last chosen in a video, its clip and window | `chosen.json` in its work folder | the app's Go side |
+| what is chosen in a video, its clip and window | in memory, in the video's record beside its undo steps, `picked` in `cmd/framefairy-app/chosen.go`, behind a lock of its own, and written through to `chosen.json` in its work folder, which is read only the first time | the app's Go side |
 | the library and the settings | the app's config folder | the app's Go side |
 | the models, notes about running servers, the training records | `~/.framefairy/` | the engine |
 | what was learned about the machine while a program runs: the decoder that works, the encoders and subtitle filter of each ffmpeg, the face detector, the tools already checked | `engine.Machine`, one for each program, in memory | the engine |
 | what runs now, and the lane each job holds or waits for | the job queue, in memory | the app's Go side |
 | the step a job is in, and what it was asked for | its `engine.JobRecord`, on disk and in the job the queue holds, which keeps each record the engine tells it through the job's `engine.Host` | the engine |
-| what is on screen | the interface's stores, and a video's status, clips and coverage in its `EpisodeSession`, `frontend/src/lib/session.svelte.ts`, which keeps the newest `VideoState` | from what Go sends. Today `Episode.svelte` also works out from what changed that a search started, see Not to copy |
+| what is on screen | the interface's stores, and a video's status, clips, coverage and clip chosen in its `EpisodeSession`, `frontend/src/lib/session.svelte.ts`, which keeps the newest `VideoState`, and a hand's pick until Go answers it | from what Go sends. Today `Episode.svelte` also works out from what changed that a search started, see Not to copy |
 
 ## The programs that run
 
@@ -126,7 +126,7 @@ What to do today, and what changes once the issue named is built.
 | I need to | It goes |
 | --- | --- |
 | decide where an edge, a word or a window lands | the engine: `engine/shape.go` for a gesture, `engine.Project` for a window. The interface asks and draws the answer |
-| do something in the workspace when a video's work moves on | today a move of `EpisodeSession` in `frontend/src/lib/session.svelte.ts`, never an effect that keeps the value from before. Once #606 is built, nothing in the interface: Go decides what follows, the clip chosen, the window, a failure told, and sends it, see [2026-11-01-every-rule-of-the-workspace-in-go.md](decisions/2026-11-01-every-rule-of-the-workspace-in-go.md) |
+| do something in the workspace when a video's work moves on | today a move of `EpisodeSession` in `frontend/src/lib/session.svelte.ts`, never an effect that keeps the value from before. Once #606 is built, nothing in the interface: Go decides what follows, the window, a failure told, and sends it, the way it already decides the clip chosen, in `cmd/framefairy-app/choose.go`, and sends it in the video's state, see [2026-11-01-every-rule-of-the-workspace-in-go.md](decisions/2026-11-01-every-rule-of-the-workspace-in-go.md) |
 | show the interface a new fact about a video | a field of `VideoState` in `cmd/framefairy-app/videostate.go`, or of what it holds, the status and the clip views, which the session keeps. Never a new event of its own or a poll |
 | tell the window that something about a video changed | `told` on `*FrameFairy`, or the queue's `moved` for a job, which send the video's state, at most four times a second and always after the last change, one at a time, with at most one more waiting however slow a read is. Nothing else sends it |
 | keep something between two jobs, a cache or a fact about the machine | a field on `engine.Machine`, in `engine/machine.go`, which a program makes once and hands to every `Engine`. Never a package variable, and never a new `Engine` made only to get it. #607 moves the package variables still left onto it |
@@ -230,8 +230,7 @@ copies what it finds nearby, so these are not the pattern for new code.
   record
   [2026-10-30-a-videos-state-in-one-session.md](decisions/2026-10-30-a-videos-state-in-one-session.md).
 - What the interface decides about a video's work and its workspace:
-  the moves of `EpisodeSession`, the clip chosen in `Episode.svelte`,
-  the window it fits with `frontend/src/lib/room.ts` and writes back,
+  the moves of `EpisodeSession`, the window it fits with `frontend/src/lib/room.ts` and writes back,
   how a search ended, which failures are told, #606. Go decides each of
   them and sends it, see
   [2026-11-01-every-rule-of-the-workspace-in-go.md](decisions/2026-11-01-every-rule-of-the-workspace-in-go.md).

@@ -57,6 +57,8 @@ type history struct {
 	mu   sync.Mutex
 	undo []step
 	redo []step
+	// picked is the clip chosen and the window, with a lock of its own.
+	picked picked
 }
 
 func (s *FrameFairy) historyOf(path string) *history {
@@ -221,9 +223,10 @@ func (s *FrameFairy) step(path string, back bool) (Undone, error) {
 		}
 		if window != nil {
 			w := *window
-			windowMu.Lock()
-			err := changeChosen(s.store.files, path, func(c *chosen) { c.Window = &w })
-			windowMu.Unlock()
+			_, err := h.picked.change(s.store.files, path, func(c *chosen) bool {
+				c.Window = &w
+				return true
+			})
 			if err != nil {
 				return Undone{}, err
 			}
@@ -242,6 +245,7 @@ func (s *FrameFairy) step(path string, back bool) (Undone, error) {
 	}
 	if shown.ID != "" {
 		done.Clip = filepath.Base(shown.Plan) + "/" + shown.ID
+		s.undone(path, done.Clip)
 	}
 	return done, nil
 }

@@ -919,8 +919,16 @@ function videoState(path: string): Promise<unknown> {
       Answers.ByName("main.FrameFairy.Episode", path),
       Answers.ByName("main.FrameFairy.Clips", path),
       Answers.ByName("main.FrameFairy.Coverage", path),
-    ]).then(([status, clips, coverage]) => ({ video: path, rev, status, clips, coverage, jobs }));
+    ]).then(([status, clips, coverage]) => ({ video: path, rev, status, clips, coverage, jobs, chosen: chosenIn(clips as any[]) }));
   });
+}
+
+// The clip chosen, the one picked last, or else the first. The Go side
+// also chooses for a search, a removal and a clip gone, see choose.go,
+// which a probe that needs it sets with __chosen.
+function chosenIn(clips: { key: string }[]): string {
+  const kept = (window as any).__chosen ?? "";
+  return kept || (clips?.[0]?.key ?? "");
 }
 
 const Answers = {
@@ -1485,17 +1493,19 @@ const Answers = {
             ? { bar: 52, left: 20, right: 92 }
             : { bar: 0, left: 0, right: 0 },
         );
-      case "ChosenClip":
-        return Promise.resolve((window as any).__chosen ?? "");
       // No workspace is built before one is picked, so a probe starts
       // from the same place it always did.
       case "OpenEpisode":
         return Promise.resolve(null);
       case "Opened":
         return Promise.resolve([]);
+      // A pick answers with the state read after it, the way the Go side
+      // does, so a state read before it is not drawn over it.
       case "ChooseClip":
         (window as any).__chosen = args[1];
-        return Promise.resolve();
+        return videoState(String(args[0]));
+      case "Playing":
+        return Promise.resolve(null);
       // Kept across a reload, the way the Go side keeps it across a
       // restart, so a probe can reload the page and see it come back.
       // Where nothing is kept, the window the Go side places: the first

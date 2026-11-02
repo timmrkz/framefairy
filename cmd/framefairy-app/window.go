@@ -5,7 +5,6 @@ import (
 	"errors"
 	"math"
 	"path/filepath"
-	"sync"
 
 	"github.com/rs/zerolog"
 
@@ -23,36 +22,43 @@ import (
 // two lay two seconds apart, so a search cancelled on one was set aside by
 // the other, Tim's report of 24 October on #458.
 
-// windowMu keeps the window from being placed twice at once, by the first
-// search of a video just added and by its workspace opening.
-var windowMu sync.Mutex
-
 // videoWindow is the window of a video, placed first where there is none
 // or what is kept no longer fits the video. One that is kept is given
 // back as it is while the video cannot be read, and ok is false only
-// when there is none and nothing can be placed.
+// when there is none and nothing can be placed. The window is placed
+// before the kept one is changed, and kept only if nothing put one there
+// that fits meanwhile, so the first search of a video just added and its
+// workspace opening never place it twice.
 func (s *FrameFairy) videoWindow(ctx context.Context, path string) (KeptWindow, bool) {
 	info, err := s.probe(ctx, path)
-	windowMu.Lock()
-	defer windowMu.Unlock()
-	kept := readChosen(s.store.files, path).Window
+	picked := s.chosenIn(path)
+	kept := picked.get(s.store.files, path).Window
 	if err != nil || info.Duration <= 0 {
 		if kept == nil {
 			return KeptWindow{}, false
 		}
 		return *kept, true
 	}
-	if kept != nil && kept.To <= info.Duration+0.5 {
+	fits := func(w *KeptWindow) bool { return w != nil && w.To <= info.Duration+0.5 }
+	if fits(kept) {
 		w := *kept
 		w.To = math.Min(w.To, info.Duration)
 		return w, w.To > w.From
 	}
 	w := s.placedWindow(path, info.Duration)
-	if err := changeChosen(s.store.files, path, func(c *chosen) { c.Window = &w }); err != nil {
+	if _, err := picked.change(s.store.files, path, func(c *chosen) bool {
+		if fits(c.Window) {
+			w = *c.Window
+			return false
+		}
+		c.Window = &w
+		return true
+	}); err != nil {
 		theLog.line(zerolog.WarnLevel, "window").Str("video", filepath.Base(path)).Err(err).
 			Msg("the window the app placed could not be kept")
 	}
-	return w, true
+	w.To = math.Min(w.To, info.Duration)
+	return w, w.To > w.From
 }
 
 // placedWindow is where the app puts a video's window, see
@@ -94,12 +100,13 @@ func (s *FrameFairy) searchesWindow(path string, req engine.PlanRequest) {
 	if !w.ok() {
 		return
 	}
-	windowMu.Lock()
-	defer windowMu.Unlock()
-	if kept := readChosen(s.store.files, path).Window; kept != nil && sameWindow(*kept, w) {
-		return
-	}
-	_ = changeChosen(s.store.files, path, func(c *chosen) { c.Window = &w })
+	_, _ = s.chosenIn(path).change(s.store.files, path, func(c *chosen) bool {
+		if c.Window != nil && sameWindow(*c.Window, w) {
+			return false
+		}
+		c.Window = &w
+		return true
+	})
 }
 
 // windowOn moves the window on after a search found its clips, as long
@@ -107,15 +114,19 @@ func (s *FrameFairy) searchesWindow(path string, req engine.PlanRequest) {
 // which the first search of a video measures from its real speech, see
 // engine.Project.WindowAfter. It is done before the search says it is
 // done, so the workspace reads the window moved on when it hears that.
+// It is worked out before the kept window is changed, and moves it on
+// only if it is still the one it was worked out from: a window written
+// meanwhile has the last word, a hand's drag or the interface's own fit
+// of it to the room, which step 4 of #606 moves into Go.
 func (s *FrameFairy) windowOn(path string, req engine.PlanRequest) {
 	info, err := s.probe(context.Background(), path)
 	if err != nil || info.Duration <= 0 {
 		return
 	}
-	windowMu.Lock()
-	defer windowMu.Unlock()
+	picked := s.chosenIn(path)
+	kept := picked.get(s.store.files, path).Window
 	length := 0.0
-	if kept := readChosen(s.store.files, path).Window; kept != nil {
+	if kept != nil {
 		length = kept.Length
 	}
 	p := s.project(path)
@@ -123,7 +134,13 @@ func (s *FrameFairy) windowOn(path string, req engine.PlanRequest) {
 	if !w.ok() {
 		return
 	}
-	if err := changeChosen(s.store.files, path, func(c *chosen) { c.Window = &w }); err != nil {
+	if _, err := picked.change(s.store.files, path, func(c *chosen) bool {
+		if (c.Window == nil) != (kept == nil) || (kept != nil && *c.Window != *kept) {
+			return false
+		}
+		c.Window = &w
+		return true
+	}); err != nil {
 		theLog.line(zerolog.WarnLevel, "window").Str("video", filepath.Base(path)).Err(err).
 			Msg("the window could not be moved on after the search")
 	}
@@ -139,9 +156,7 @@ func (s *FrameFairy) PlaceWindow(path string) (*KeptWindow, error) {
 	if err != nil || info.Duration <= 0 {
 		return nil, errors.New("the video cannot be read")
 	}
-	windowMu.Lock()
 	w := s.placedWindow(path, info.Duration)
-	windowMu.Unlock()
 	if err := s.ChooseWindow(path, w.From, w.To, w.Length, true); err != nil {
 		return nil, err
 	}
@@ -167,7 +182,7 @@ func (s *FrameFairy) markAside(path string) {
 	if err != nil || info.Duration <= 0 {
 		return
 	}
-	kept := readChosen(s.store.files, path).Window
+	kept := s.chosenIn(path).get(s.store.files, path).Window
 	s.jobs.setAside(path, func(j *Job) bool {
 		if kept == nil {
 			return false
