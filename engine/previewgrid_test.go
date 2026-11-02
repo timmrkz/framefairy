@@ -252,7 +252,7 @@ func previewShowsTheShort(t *testing.T, e *Engine, program string, c timesCase, 
 	}
 	// A fallback must not hide a chip that never decodes: on a Mac the
 	// chip decodes H.264.
-	if runtime.GOOS == "darwin" && c.gop > 0 && !onChip {
+	if runtime.GOOS == "darwin" && c.h264 && !onChip {
 		t.Errorf("the graphics chip decoded none of this H.264, the decoder said:\n%s", strings.Join(heard, "\n"))
 	}
 }

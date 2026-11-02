@@ -21,6 +21,7 @@ import (
 
 	"framefairy/engine/runlog"
 	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/fixtures"
 	"framefairy/internal/framewire"
 	"framefairy/internal/standin"
 )
@@ -32,20 +33,16 @@ import (
 // It needs framefairy-frames built against ffmpeg's libraries, which make
 // does, named by FRAMEFAIRY_FRAMES, and skips without it.
 //
-// On the real disk: ffmpeg makes the episode and the frames decoder reads it.
+// On the real disk: the frames decoder reads the episode.
 func TestTheEpisodesDecoderHandsOverTheFramesFFmpegDoes(t *testing.T) {
 	ffmpegtest.Need(t)
 	program := os.Getenv("FRAMEFAIRY_FRAMES")
 	if program == "" {
 		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
 	}
-	path := filepath.Join(t.TempDir(), "episode.mp4")
 	// Ten seconds at 25 frames a second with a key frame every two seconds,
 	// so a jump decodes from the key frame before it.
-	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi",
-		"-i", "testsrc2=s=320x180:r=25:d=10", "-c:v", "mpeg4", "-q:v", "3", "-g", "50", path).CombinedOutput(); err != nil {
-		ffmpegtest.Unusable(t, "ffmpeg could not make an episode: %s %s", err, out)
-	}
+	path := fixtures.Path(t, "picture.mp4")
 	dec := NewEpisodeFrames(program, path)
 	defer dec.Close()
 
@@ -106,20 +103,16 @@ func TestTheEpisodesDecoderHandsOverTheFramesFFmpegDoes(t *testing.T) {
 // that are shown before it are not decoded at all. The frames handed over
 // are still the ones the ffmpeg program hands over.
 //
-// On the real disk: ffmpeg makes the episode and the frames decoder reads it.
+// On the real disk: the frames decoder reads the episode.
 func TestTheEpisodesDecoderDecodesAJumpNoFurtherThanItMust(t *testing.T) {
 	ffmpegtest.Need(t)
 	program := os.Getenv("FRAMEFAIRY_FRAMES")
 	if program == "" {
 		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
 	}
-	path := filepath.Join(t.TempDir(), "episode.mp4")
 	// A key frame every two seconds and two B-frames between the others,
 	// which no frame is made from, the way an export usually has them.
-	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi",
-		"-i", "testsrc2=s=320x180:r=25:d=8", "-c:v", "mpeg4", "-q:v", "3", "-g", "50", "-bf", "2", path).CombinedOutput(); err != nil {
-		ffmpegtest.Unusable(t, "ffmpeg could not make an episode: %s %s", err, out)
-	}
+	path := fixtures.Path(t, "picture.mp4")
 	dec := NewEpisodeFrames(program, path)
 	defer dec.Close()
 	var mu sync.Mutex
@@ -247,18 +240,14 @@ func TestTheEpisodesDecoderDecodesAJumpNoFurtherThanItMust(t *testing.T) {
 // pictures of them that are thrown away. The frame at the moment is still
 // the one the ffmpeg program hands over. Plan row 2.269.
 //
-// On the real disk: ffmpeg makes the episode and the frames decoder reads it.
+// On the real disk: the frames decoder reads the episode.
 func TestTheEpisodesDecoderMakesNoFrameBeforeTheSkip(t *testing.T) {
 	ffmpegtest.Need(t)
 	program := os.Getenv("FRAMEFAIRY_FRAMES")
 	if program == "" {
 		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
 	}
-	path := filepath.Join(t.TempDir(), "episode.mp4")
-	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi",
-		"-i", "testsrc2=s=320x180:r=25:d=4", "-c:v", "mpeg4", "-q:v", "3", "-g", "50", "-bf", "2", path).CombinedOutput(); err != nil {
-		ffmpegtest.Unusable(t, "ffmpeg could not make an episode: %s %s", err, out)
-	}
+	path := fixtures.Path(t, "picture.mp4")
 	dec := NewEpisodeFrames(program, path)
 	defer dec.Close()
 	grid := gridOf(t, path)
@@ -312,46 +301,21 @@ func TestTheEpisodesDecoderMakesNoFrameBeforeTheSkip(t *testing.T) {
 // key frame comes at once. HEVC with open GOPs too, where a seek finds its
 // key frame by when it is decoded. Issue #281.
 //
-// On the real disk: ffmpeg makes the episode and the frames decoder reads it.
+// On the real disk: the frames decoder reads the episode.
 func TestTheEpisodesDecoderHandsOverTheKeyFrameFirst(t *testing.T) {
 	ffmpegtest.Need(t)
 	program := os.Getenv("FRAMEFAIRY_FRAMES")
 	if program == "" {
 		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
 	}
-	// codecs are the encoders to make the episode with, the next one
-	// only when the one before failed, see encodeTestFile.
-	type kind struct {
-		name   string
-		codecs [][]string
-	}
-	kinds := []kind{{"MPEG-4", [][]string{{"-c:v", "mpeg4", "-q:v", "3", "-g", "50", "-bf", "2"}}}}
-	// Our own ffmpeg on the Mac has no x265, which is GPL, and makes the
-	// HEVC with the Mac's encoder, which writes no open GOPs.
-	encoders, _ := exec.Command("ffmpeg", "-hide_banner", "-encoders").Output()
-	has := func(name string) bool { return strings.Contains(string(encoders), " "+name+" ") }
-	switch {
-	case has("libx265"):
-		kinds = append(kinds, kind{"HEVC with open GOPs", [][]string{{"-c:v", "libx265", "-preset", "ultrafast",
-			"-x265-params", "keyint=50:min-keyint=50:scenecut=0:bframes=3:open-gop=1:log-level=error"}}})
-	case has("hevc_videotoolbox"):
-		kinds = append(kinds, kind{"HEVC", chipThenProcessor([]string{"-c:v", "hevc_videotoolbox", "-b:v", "2M", "-g", "50", "-tag:v", "hvc1"})})
-	default:
-		// Ends only this case, so MPEG-4 still runs.
-		kinds = append(kinds, kind{"HEVC", nil})
+	kinds := []struct{ name, file string }{
+		{"MPEG-4", "picture.mp4"},
+		{"HEVC with open GOPs", "hevc-open-gop.mp4"},
 	}
 	for _, enc := range kinds {
 		t.Run(enc.name, func(t *testing.T) {
 			t.Parallel()
-			if enc.codecs == nil {
-				ffmpegtest.Unusable(t, "this ffmpeg has no HEVC encoder to make the episode with")
-			}
-			path := filepath.Join(t.TempDir(), "episode.mp4")
-			// Four seconds at 25 frames a second, a key frame every two.
-			args := []string{"-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=25:d=4"}
-			if out, err := encodeTestFile(t, "ffmpeg", args, enc.codecs, path); err != nil {
-				ffmpegtest.Unusable(t, "ffmpeg could not make an episode: %s %s", err, out)
-			}
+			path := fixtures.Path(t, enc.file)
 			// How far apart on average the frames compared may be. On a
 			// Mac the episode's decoder decodes HEVC on the chip, and the
 			// ffmpeg it is compared with on the processor, issue #581.
@@ -463,18 +427,14 @@ func TestTheEpisodesDecoderHandsOverTheKeyFrameFirst(t *testing.T) {
 // any frame is asked for, with its cursors on the file, so the first frame
 // asked for only moves one. Plan row 2.156.
 //
-// On the real disk: ffmpeg makes the episode and the frames decoder reads it.
+// On the real disk: the frames decoder reads the episode.
 func TestTheEpisodesDecoderIsReadyBeforeTheFirstFrame(t *testing.T) {
 	ffmpegtest.Need(t)
 	program := os.Getenv("FRAMEFAIRY_FRAMES")
 	if program == "" {
 		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
 	}
-	path := filepath.Join(t.TempDir(), "episode.mp4")
-	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi",
-		"-i", "testsrc2=s=320x180:r=25:d=4", "-c:v", "mpeg4", path).CombinedOutput(); err != nil {
-		ffmpegtest.Unusable(t, "ffmpeg could not make an episode: %s %s", err, out)
-	}
+	path := fixtures.Path(t, "picture.mp4")
 	dec := NewEpisodeFrames(program, path)
 	defer dec.Close()
 	if err := dec.Ready(); err != nil {
@@ -550,18 +510,14 @@ func meanDiff(a, b []byte) float64 {
 // and started again under them. Every stream either hands over frames in
 // order or ends with a reason, none hangs, and none gets another's frames.
 //
-// On the real disk: ffmpeg makes the episode and the frames decoder reads it.
+// On the real disk: the frames decoder reads the episode.
 func TestTheEpisodesDecoderTakesStreamsFromEverywhereAtOnce(t *testing.T) {
 	ffmpegtest.Need(t)
 	program := os.Getenv("FRAMEFAIRY_FRAMES")
 	if program == "" {
 		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
 	}
-	path := filepath.Join(t.TempDir(), "episode.mp4")
-	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi",
-		"-i", "testsrc2=s=320x180:r=25:d=6", "-c:v", "mpeg4", "-q:v", "3", "-g", "25", path).CombinedOutput(); err != nil {
-		ffmpegtest.Unusable(t, "ffmpeg could not make an episode: %s %s", err, out)
-	}
+	path := fixtures.Path(t, "picture.mp4")
 	dec := NewEpisodeFrames(program, path)
 	defer dec.Close()
 	grid := gridOf(t, path)
@@ -614,47 +570,16 @@ func TestTheEpisodesDecoderTakesStreamsFromEverywhereAtOnce(t *testing.T) {
 // argument", and the tests had only an MPEG-4 file, which no Mac decodes
 // on its chip. Plan row 2.156.
 //
-// On the real disk: ffmpeg makes the episodes and the frames decoder reads them.
+// On the real disk: the frames decoder reads the episodes.
 func TestTheEpisodesDecoderPlaysTheFilesPeopleBring(t *testing.T) {
 	ffmpegtest.Need(t)
 	program := os.Getenv("FRAMEFAIRY_FRAMES")
 	if program == "" {
 		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
 	}
-	encoders, _ := exec.Command("ffmpeg", "-hide_banner", "-encoders").Output()
-	has := func(name string) bool { return strings.Contains(string(encoders), " "+name+" ") }
-	// codecs are the encoders to make the episode with, the next one
-	// only when the one before failed, see encodeTestFile.
-	type kind struct {
-		name   string
-		codecs [][]string
-	}
-	var kinds []kind
-	switch {
-	case has("h264_videotoolbox"):
-		kinds = append(kinds, kind{"H.264", chipThenProcessor([]string{"-c:v", "h264_videotoolbox", "-b:v", "2M", "-g", "50"})})
-	case has("libx264"):
-		kinds = append(kinds, kind{"H.264", [][]string{{"-c:v", "libx264", "-preset", "ultrafast", "-g", "50"}}})
-	default:
-		ffmpegtest.Unusable(t, "this ffmpeg has no H.264 encoder to make an episode with")
-	}
-	switch {
-	case has("hevc_videotoolbox"):
-		kinds = append(kinds, kind{"HEVC 10-bit", chipThenProcessor([]string{"-c:v", "hevc_videotoolbox", "-profile:v", "main10", "-pix_fmt", "p010le", "-b:v", "2M", "-g", "50", "-tag:v", "hvc1"})})
-	case has("libx265"):
-		kinds = append(kinds, kind{"HEVC 10-bit", [][]string{{"-c:v", "libx265", "-preset", "ultrafast", "-pix_fmt", "yuv420p10le", "-x265-params", "keyint=50:log-level=error", "-tag:v", "hvc1"}}})
-	}
+	kinds := []struct{ name, file string }{{"H.264", "h264.mp4"}, {"HEVC 10-bit", "hevc-10bit.mp4"}}
 	for _, k := range kinds {
-		path := filepath.Join(t.TempDir(), "episode.mp4")
-		args := []string{"-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=640x360:r=25:d=6"}
-		if out, err := encodeTestFile(t, "ffmpeg", args, k.codecs, path); err != nil {
-			if k.name == "H.264" {
-				ffmpegtest.Unusable(t, "ffmpeg could not make an %s episode: %s %s", k.name, err, out)
-			}
-			// A virtual Mac may have no HEVC encoder that takes 10 bits.
-			t.Logf("no %s episode here: %s", k.name, out)
-			continue
-		}
+		path := fixtures.Path(t, k.file)
 		dec := NewEpisodeFrames(program, path)
 		grid := gridOf(t, path)
 		for _, from := range []float64{0, 2.3, 4.97} {
@@ -704,7 +629,7 @@ func TestTheEpisodesDecoderPlaysTheFilesPeopleBring(t *testing.T) {
 // nought. The decoder once counted by the file's own stamps there, 0.3 s
 // off the sound and the clips.
 //
-// On the real disk: ffmpeg makes the episodes and the frames decoder reads them.
+// On the real disk: the frames decoder reads the episodes.
 func TestTheEpisodesDecoderAgreesOnAPictureThatStartsLate(t *testing.T) {
 	ffmpegtest.Need(t)
 	program := os.Getenv("FRAMEFAIRY_FRAMES")
@@ -713,19 +638,7 @@ func TestTheEpisodesDecoderAgreesOnAPictureThatStartsLate(t *testing.T) {
 	}
 	// The picture and the sound made apart and put together late, the way
 	// only a copy of them keeps it.
-	dir := t.TempDir()
-	mux := func(args ...string) {
-		t.Helper()
-		if out, err := exec.Command("ffmpeg", append([]string{"-loglevel", "error", "-y"}, args...)...).CombinedOutput(); err != nil {
-			ffmpegtest.Unusable(t, "ffmpeg could not make an episode: %s %s", err, out)
-		}
-	}
-	picture, sound := filepath.Join(dir, "picture.mp4"), filepath.Join(dir, "sound.m4a")
-	mux("-f", "lavfi", "-i", "testsrc2=s=320x180:r=25:d=6", "-c:v", "mpeg4", "-q:v", "3", "-g", "25", picture)
-	mux("-f", "lavfi", "-i", "sine=f=440:sample_rate=48000:d=6", "-c:a", "aac", sound)
-	pictureLate, allLate := filepath.Join(dir, "picture-late.mp4"), filepath.Join(dir, "all-late.mp4")
-	mux("-itsoffset", "0.3", "-i", picture, "-i", sound, "-map", "0:v", "-map", "1:a", "-c", "copy", pictureLate)
-	mux("-itsoffset", "0.3", "-i", picture, "-itsoffset", "0.3", "-i", sound, "-map", "0:v", "-map", "1:a", "-c", "copy", allLate)
+	pictureLate, allLate := fixtures.Path(t, "picture-late.mp4"), fixtures.Path(t, "all-late.mp4")
 	e := ffmpegEngine()
 	type frame struct {
 		at   float64
@@ -833,20 +746,13 @@ func TestTheEpisodesDecoderAgreesOnAPictureThatStartsLate(t *testing.T) {
 // lead up to, the decoder dropped them, and the first frame came a key
 // frame late: the frame asked for never came, and start.mp4 stood without
 // a picture and would not play. Plan row 2.186.
-//
-// The file is in testdata so that the Mac, whose own ffmpeg has no x265,
-// reads it too:
-//
-//	ffmpeg -f lavfi -i testsrc2=s=320x180:r=25:d=4 -c:v libx265 -preset ultrafast \
-//		-pix_fmt yuv420p10le -x265-params keyint=24:min-keyint=24:bframes=3:scenecut=0:crf=40 \
-//		-tag:v hvc1 -an open-gop.mp4
 func TestTheEpisodesDecoderGivesTheFramesBeforeAnOpenKeyFrame(t *testing.T) {
 	ffmpegtest.Need(t)
 	program := os.Getenv("FRAMEFAIRY_FRAMES")
 	if program == "" {
 		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
 	}
-	path := filepath.Join("testdata", "open-gop.mp4")
+	path := fixtures.Path(t, "hevc-open-gop.mp4")
 	// The frames shown before the key frame they are decoded after, read
 	// from the file's packets in the order they are decoded.
 	out, err := exec.Command("ffprobe", "-v", "error", "-select_streams", "v:0",
@@ -909,30 +815,16 @@ func TestTheEpisodesDecoderGivesTheFramesBeforeAnOpenKeyFrame(t *testing.T) {
 // two. Read by the same rule, soundSeek, cut at the same sample. Plan row
 // 2.156, step 3 of docs/VIDEO-PREVIEW.md.
 //
-// On the real disk: ffmpeg makes the episodes and the frames decoder reads them.
+// On the real disk: the frames decoder reads the episodes.
 func TestTheEpisodesDecoderHearsWhatFFmpegDoes(t *testing.T) {
 	ffmpegtest.Need(t)
 	program := os.Getenv("FRAMEFAIRY_FRAMES")
 	if program == "" {
 		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
 	}
-	dir := t.TempDir()
-	mux := func(args ...string) {
-		t.Helper()
-		if out, err := exec.Command("ffmpeg", append([]string{"-loglevel", "error", "-y"}, args...)...).CombinedOutput(); err != nil {
-			ffmpegtest.Unusable(t, "ffmpeg could not make an episode: %s %s", err, out)
-		}
-	}
 	// Tones whose pitch climbs, so a sample out of place is a sample that
-	// differs. No noise: AAC carries noise as a band to make noise in, and
-	// a decoder makes it up afresh, differently from wherever it started.
-	picture, sound := filepath.Join(dir, "picture.mp4"), filepath.Join(dir, "sound.m4a")
-	mux("-f", "lavfi", "-i", "testsrc2=s=160x90:r=25:d=8", "-c:v", "mpeg4", "-g", "25", picture)
-	mux("-f", "lavfi", "-i", "aevalsrc=0.4*sin(2*PI*(200+60*t)*t)+0.1*sin(2*PI*(1500+300*t)*t)|0.3*sin(2*PI*330*t):s=48000:d=8",
-		"-c:a", "aac", "-b:a", "192k", sound)
-	plain, late := filepath.Join(dir, "plain.mp4"), filepath.Join(dir, "late.mp4")
-	mux("-i", picture, "-i", sound, "-map", "0:v", "-map", "1:a", "-c", "copy", plain)
-	mux("-itsoffset", "0.3", "-i", picture, "-i", sound, "-map", "0:v", "-map", "1:a", "-c", "copy", late)
+	// differs, see tones.m4a in internal/fixtures.
+	plain, late := fixtures.Path(t, "picture-sound.mp4"), fixtures.Path(t, "picture-late.mp4")
 	e := ffmpegEngine()
 	collect := func(run func(got func(float64, []byte) error) error) ([]float64, []byte) {
 		var ats []float64
@@ -991,18 +883,15 @@ func TestTheEpisodesDecoderHearsWhatFFmpegDoes(t *testing.T) {
 // forgotten, so every stream after it on that cursor ended at once and
 // the video preview stayed black. Plan row 2.166.
 //
-// On the real disk: ffmpeg makes the episode and the frames decoder reads it.
+// On the real disk: the frames decoder reads the episode.
 func TestTheEpisodesDecoderComesBackFromTheEnd(t *testing.T) {
 	ffmpegtest.Need(t)
 	program := os.Getenv("FRAMEFAIRY_FRAMES")
 	if program == "" {
 		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
 	}
-	path := filepath.Join(t.TempDir(), "episode.mp4")
-	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi",
-		"-i", "testsrc2=s=320x180:r=25:d=4", "-c:v", "mpeg4", "-g", "25", path).CombinedOutput(); err != nil {
-		ffmpegtest.Unusable(t, "ffmpeg could not make an episode: %s %s", err, out)
-	}
+	// Ten seconds long.
+	path := fixtures.Path(t, "picture.mp4")
 	dec := NewEpisodeFrames(program, path)
 	defer dec.Close()
 	grid := gridOf(t, path)
@@ -1023,7 +912,7 @@ func TestTheEpisodesDecoderComesBackFromTheEnd(t *testing.T) {
 	// The cursor a stream gives back is the next one taken, so each stream
 	// after one that read to the end runs on the cursor that did.
 	for round := range 3 {
-		if n := count(3.5, 0); n == 0 {
+		if n := count(9.5, 0); n == 0 {
 			t.Fatalf("round %d: the stream to the end gave no frames", round)
 		}
 		if n := count(1, 10); n != 10 {
@@ -1039,83 +928,31 @@ func TestTheEpisodesDecoderComesBackFromTheEnd(t *testing.T) {
 // both take ffmpeg's defaults. And the tags count: the same picture tagged
 // otherwise comes out in other colours. Plan row 2.156, step 4.
 //
-// On the real disk: ffmpeg makes the episodes and the frames decoder reads them.
+// On the real disk: the frames decoder reads the episodes.
 func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
 	ffmpegtest.Need(t)
 	program := os.Getenv("FRAMEFAIRY_FRAMES")
 	if program == "" {
 		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
 	}
-	encoders, _ := exec.Command("ffmpeg", "-hide_banner", "-encoders").Output()
-	has := func(name string) bool { return strings.Contains(string(encoders), " "+name+" ") }
-	// Our own ffmpeg on the Mac has no x264 or x265, which are GPL, and
-	// makes the files with the Mac's encoders instead.
-	h264 := []string{"-c:v", "libx264", "-preset", "ultrafast"}
-	hevc := []string{"-c:v", "libx265", "-preset", "ultrafast", "-x265-params", "log-level=error"}
-	software := true
-	switch {
-	case has("libx264"):
-	case has("h264_videotoolbox"):
-		h264 = []string{"-c:v", "h264_videotoolbox", "-b:v", "2M"}
-		hevc = []string{"-c:v", "hevc_videotoolbox", "-profile:v", "main10", "-b:v", "2M"}
-		software = false
-	default:
-		ffmpegtest.Unusable(t, "this ffmpeg has no H.264 encoder to make the files with")
-	}
-	type file struct {
-		name string
-		args []string
-	}
-	// The tags are set on the frames rather than asked of the encoder. A
-	// newer ffmpeg, ours among them, takes an encoder's tags from its
-	// frames and drops -color_trc and the like, so a file made with those
-	// came out with no tags at all from our own ffmpeg, 9, and only the
-	// ffmpeg of a Linux distribution, 6, wrote them.
-	tags := func(space, primaries, transfer, rng string) []string {
-		return []string{"-vf", fmt.Sprintf("setparams=colorspace=%s:color_primaries=%s:color_trc=%s:range=%s", space, primaries, transfer, rng)}
-	}
-	x264 := append(append([]string{}, h264...), "-pix_fmt", "yuv420p")
-	files := []file{
-		{"BT.601 video range", append(append([]string{}, x264...), tags("smpte170m", "smpte170m", "smpte170m", "tv")...)},
-		{"BT.601 full range", append(append([]string{}, x264...), tags("smpte170m", "smpte170m", "smpte170m", "pc")...)},
-		{"BT.709 video range", append(append([]string{}, x264...), tags("bt709", "bt709", "bt709", "tv")...)},
-		{"BT.709 full range", append(append([]string{}, x264...), tags("bt709", "bt709", "bt709", "pc")...)},
-		{"no tags", x264},
-	}
-	if has("libx265") || !software && has("hevc_videotoolbox") {
-		tenBits := "yuv420p10le"
-		if !software {
-			tenBits = "p010le"
-		}
-		x265 := append(append([]string{}, hevc...), "-pix_fmt", tenBits, "-tag:v", "hvc1")
-		files = append(files,
-			file{"BT.709 video range, 10 bits", append(append([]string{}, x265...), tags("bt709", "bt709", "bt709", "tv")...)},
-			file{"BT.2020 video range, 10 bits", append(append([]string{}, x265...), tags("bt2020nc", "bt2020", "bt709", "tv")...)},
-			file{"BT.2020 full range, 10 bits", append(append([]string{}, x265...), tags("bt2020nc", "bt2020", "bt709", "pc")...)},
-			file{"HLG, 10 bits", append(append([]string{}, x265...), tags("bt2020nc", "bt2020", "arib-std-b67", "tv")...)},
-			file{"PQ, 10 bits", append(append([]string{}, x265...), tags("bt2020nc", "bt2020", "smpte2084", "tv")...)},
-		)
+	// The same numbers in every file, only the tags differ, so what tells
+	// two files' colours apart is what the tags say.
+	files := []struct{ name, file string }{
+		{"BT.601 video range", "colour-bt601-tv.mp4"},
+		{"BT.601 full range", "colour-bt601-pc.mp4"},
+		{"BT.709 video range", "colour-bt709-tv.mp4"},
+		{"BT.709 full range", "colour-bt709-pc.mp4"},
+		{"no tags", "colour-none.mp4"},
+		{"BT.709 video range, 10 bits", "colour-bt709-tv-10.mp4"},
+		{"BT.2020 video range, 10 bits", "colour-bt2020-tv-10.mp4"},
+		{"BT.2020 full range, 10 bits", "colour-bt2020-pc-10.mp4"},
+		{"HLG, 10 bits", "colour-hlg-10.mp4"},
+		{"PQ, 10 bits", "colour-pq-10.mp4"},
 	}
 	const w, h = 64, 36
-	dir := t.TempDir()
 	got := map[string][]byte{}
-	for i, f := range files {
-		path := filepath.Join(dir, fmt.Sprintf("%d.mp4", i))
-		// The same numbers in every file, only the tags differ, so what
-		// tells two files' colours apart is what the tags say.
-		args := []string{"-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=25:d=1"}
-		codecs := [][]string{f.args}
-		if !software {
-			codecs = chipThenProcessor(f.args)
-		}
-		if out, err := encodeTestFile(t, "ffmpeg", args, codecs, path); err != nil {
-			if strings.Contains(f.name, "10 bits") {
-				// A virtual Mac may have no HEVC encoder that takes 10 bits.
-				t.Logf("no file %s here: %s", f.name, out)
-				continue
-			}
-			ffmpegtest.Unusable(t, "ffmpeg could not make the file %s: %s %s", f.name, err, out)
-		}
+	for _, f := range files {
+		path := fixtures.Path(t, f.file)
 		dec := NewEpisodeFrames(program, path)
 		// Where the decoder decoded, which it says as it opens and again
 		// when it gives the chip up.
@@ -1241,18 +1078,14 @@ func colours(frame []byte) []int {
 // went on after the panic, issue #604. Here the next stream would hang
 // until go test's own -timeout.
 //
-// On the real disk: ffmpeg makes the episode and the frames decoder reads it.
+// On the real disk: the frames decoder reads the episode.
 func TestAStreamThatPanicsLeavesTheDecoderToTheNext(t *testing.T) {
 	ffmpegtest.Need(t)
 	program := os.Getenv("FRAMEFAIRY_FRAMES")
 	if program == "" {
 		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
 	}
-	path := filepath.Join(t.TempDir(), "episode.mp4")
-	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi",
-		"-i", "testsrc2=s=320x180:r=25:d=4", "-c:v", "mpeg4", "-q:v", "3", "-g", "25", path).CombinedOutput(); err != nil {
-		ffmpegtest.Unusable(t, "ffmpeg could not make an episode: %s %s", err, out)
-	}
+	path := fixtures.Path(t, "picture.mp4")
 	dec := NewEpisodeFrames(program, path)
 	defer dec.Close()
 	grid := gridOf(t, path)

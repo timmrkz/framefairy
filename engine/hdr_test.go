@@ -10,13 +10,14 @@ import (
 
 	"framefairy/engine/runlog"
 	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/fixtures"
 )
 
 // An HDR episode makes an HDR short and a standard one a standard short,
 // each with the episode's own colour tags, see HDR in
 // docs/VIDEO-PREVIEW.md. Plan row 2.156, step 4.
 //
-// On the real disk: ffmpeg makes the episode and renders the short.
+// On the real disk: ffmpeg reads the episode and renders the short.
 func TestAnHDREpisodeMakesAnHDRShort(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -24,35 +25,16 @@ func TestAnHDREpisodeMakesAnHDRShort(t *testing.T) {
 	if err := e.Preflight(ctx); err != nil {
 		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}
-	encoders, _ := exec.Command(e.FFmpeg, "-hide_banner", "-encoders").Output()
-	if !hasEncoder(string(encoders), "libx265") && !hasEncoder(string(encoders), "hevc_videotoolbox") {
-		ffmpegtest.Unusable(t, "this ffmpeg has no encoder of HEVC in 10 bits")
-	}
-	// The encoders to make the episode with, the next one only when the
-	// one before failed, see encodeTestFile.
-	hevc := [][]string{{"-c:v", "libx265", "-preset", "ultrafast", "-x265-params", "log-level=error", "-pix_fmt", "yuv420p10le"}}
-	if !hasEncoder(string(encoders), "libx265") {
-		hevc = chipThenProcessor([]string{"-c:v", "hevc_videotoolbox", "-profile:v", "main10", "-pix_fmt", "p010le", "-b:v", "4M"})
-	}
-	h264 := [][]string{{"-c:v", "mpeg4", "-q:v", "2", "-pix_fmt", "yuv420p"}}
 	for _, c := range []struct {
-		name, tags string
-		codecs     [][]string
+		name, file string
 		codec, trc string
 	}{
-		{"HLG", "color_primaries=bt2020:color_trc=arib-std-b67:colorspace=bt2020nc", hevc, "hevc", "arib-std-b67"},
-		{"PQ", "color_primaries=bt2020:color_trc=smpte2084:colorspace=bt2020nc", hevc, "hevc", "smpte2084"},
-		{"BT.709", "color_primaries=bt709:color_trc=bt709:colorspace=bt709", h264, "h264", "bt709"},
+		{"HLG", "colour-hlg-10.mp4", "hevc", "arib-std-b67"},
+		{"PQ", "colour-pq-10.mp4", "hevc", "smpte2084"},
+		{"BT.709", "colour-bt709-tv.mp4", "h264", "bt709"},
 	} {
 		dir := t.TempDir()
-		source := filepath.Join(dir, "episode.mp4")
-		args := []string{"-loglevel", "error", "-y",
-			"-f", "lavfi", "-i", "testsrc2=s=640x360:r=25:d=4",
-			"-f", "lavfi", "-i", "sine=f=440:r=48000:d=4",
-			"-vf", "setparams=" + c.tags + ":range=tv"}
-		if out, err := encodeTestFile(t, e.FFmpeg, args, c.codecs, "-c:a", "aac", "-shortest", source); err != nil {
-			ffmpegtest.Unusable(t, "%s: making the episode: %s %s", c.name, err, out)
-		}
+		source := fixtures.Path(t, c.file)
 		info, err := e.Probe(ctx, source)
 		if err != nil {
 			t.Fatal(err)

@@ -6,18 +6,16 @@ import (
 	"encoding/binary"
 	"io"
 	"math"
-	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 
 	"framefairy/engine/runlog"
 	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/fixtures"
 )
 
 // A render shows, at every moment of a short, the frame of the episode
@@ -63,28 +61,17 @@ func TestARenderShowsTheFrameThatHoldsEachMoment(t *testing.T) {
 	}
 }
 
-// An episode of the test above: how it is made and the rate of its short.
+// An episode of the test above, the fixture bars-<file>, and the rate of
+// its short. internal/fixtures says how each was made.
 type timesCase struct {
-	name  string
-	input []string
-	video []string
-	out   []string
-	file  string
+	name string
+	file string
 	// The frame rate the short has, not checked where it is empty.
 	rate string
-	// How long the episode is, seven seconds when nought.
+	// How long the file is, seven seconds when nought.
 	seconds int
-	// H.264 with B-frames and a key frame every gop frames where it is
-	// not nought, with the sound in AAC. MPEG-4 Part 2 in GOPs of 30 and
-	// PCM where it is.
-	gop int
-	// The picture's codec and the sound's, from "-c:v", where they are
-	// not the ones gop picks.
-	codecs []string
-	// Written the way a recording cut off by a crash is left: as it is
-	// made, with no going back to say how long it is or where its key
-	// frames are.
-	cutOff bool
+	// Its picture is H.264, which a Mac decodes on its graphics chip.
+	h264 bool
 	// A file only the video preview's test takes, see
 	// TestTheVideoPreviewShowsTheFramesOfTheShort: one whose frames keep to
 	// their rate, which TestARenderCutsOnWholeFrames renders.
@@ -94,27 +81,19 @@ type timesCase struct {
 var timesCases = []timesCase{
 	// A phone: a frame every 1/29.97 s, each 0, 8 or 16 ms late, in
 	// ticks of 1/600 s.
-	{name: "uneven", file: "uneven.mov", rate: "30/1",
-		video: []string{"settb=1/600", "setpts='(N*1001/30000+0.008*mod(N\\,3))/TB'"},
-		out:   []string{"-fps_mode", "passthrough", "-enc_time_base", "1/600", "-video_track_timescale", "600"}},
+	{name: "uneven", file: "uneven.mov", rate: "30/1"},
 	// A screen recorder: frames 40 to 49 and 100 to 104 left out, so
 	// the frames before them are held.
-	{name: "held", file: "held.mov", rate: "30/1",
-		video: []string{"select='not(between(n\\,40\\,49)+between(n\\,100\\,104))'"},
-		out:   []string{"-fps_mode", "passthrough"}},
+	{name: "held", file: "held.mov", rate: "30/1"},
 	// Frames 95 to 104 left out, 3.17 to 3.47 s into an episode of 20,
 	// so they lie between the four stretches Probe looks at and the
 	// file reads as even. Only the piece over them is cut by times.
-	{name: "held_between", file: "between.mov", rate: "30000/1001", seconds: 20,
-		video: []string{"select='not(between(n\\,95\\,104))'"},
-		out:   []string{"-fps_mode", "passthrough"}},
+	{name: "held_between", file: "between.mov", rate: "30000/1001", seconds: 20},
 	// The picture a quarter of a second after the sound, which is
 	// 7.4925 frames, so its frames are half a frame off the grid of
 	// the file's start.
-	{name: "late_mov", file: "late.mov", rate: "30000/1001", input: []string{"-itsoffset", "0.25"},
-		out: []string{"-fps_mode", "passthrough"}},
-	{name: "late_mkv", file: "late.mkv", rate: "30000/1001", input: []string{"-itsoffset", "0.25"},
-		out: []string{"-fps_mode", "passthrough"}},
+	{name: "late_mov", file: "late.mov", rate: "30000/1001"},
+	{name: "late_mkv", file: "late.mkv", rate: "30000/1001"},
 	// Frames that keep to their rate, in MP4 and in Matroska, whose
 	// times are whole milliseconds.
 	{name: "even_mp4", file: "even.mp4", rate: "30000/1001", previewOnly: true},
@@ -125,162 +104,48 @@ var timesCases = []timesCase{
 	// the picture, in Matroska, with frames left out under load. Its
 	// frames begin on whole milliseconds, some exactly a hair after the
 	// moment they hold, #266.
-	{name: "obs_mkv", file: "obs.mkv", rate: "30/1",
-		video: []string{"select='not(between(n\\,40\\,49)+between(n\\,100\\,104))'"},
-		out:   []string{"-fps_mode", "passthrough"},
-		gop:   30},
+	{name: "obs_mkv", file: "obs.mkv", rate: "30/1", h264: true},
 	// MPEG-TS, which OBS also records and camcorders write, has no index
 	// of its key frames, so a seek lands between two. A key frame every
 	// two seconds puts every jump of the test inside a GOP.
-	// Its rate is not checked: the Mac's encoder stamps its frames
-	// unevenly in MPEG-TS, and the probe then makes it 30.
-	{name: "mpegts", file: "ts.ts", gop: 60},
+	// Its rate is not checked: the Mac's encoder stamped its frames
+	// unevenly in MPEG-TS when the tests made the file there, and the
+	// probe then made it 30.
+	{name: "mpegts", file: "ts.ts", h264: true},
 	// What OBS records in MPEG-TS with its key frame every 250 frames,
 	// more than eight seconds, and frames left out under load, so most
 	// stretches Probe reads hold no key frame.
-	{name: "held_ts", file: "held.ts", rate: "30/1", seconds: 20, gop: 250,
-		video: []string{"select='not(between(n\\,160\\,169))'"},
-		out:   []string{"-fps_mode", "passthrough"}},
+	{name: "held_ts", file: "held.ts", rate: "30/1", seconds: 20, h264: true},
 	// MPEG-PS, .mpg and .vob, the way a DVD or an old camcorder holds
 	// MPEG-2 and MP2. It has no index of its key frames either, and
 	// ffmpeg stamps no time on some of its packets, #268.
-	{name: "mpegps", file: "ps.mpg", rate: "30000/1001",
-		codecs: []string{"-c:v", "mpeg2video", "-q:v", "2", "-g", "15", "-c:a", "mp2"}},
+	{name: "mpegps", file: "ps.mpg", rate: "30000/1001"},
 	// The same with two B-frames between key frames and the frames they
 	// are made from, the usual MPEG-2. The frames the B-frames are made
 	// from have no time of their own, the key frames among them.
-	{name: "mpegps_bframes", file: "bframes.mpg", rate: "30000/1001",
-		codecs: []string{"-c:v", "mpeg2video", "-q:v", "2", "-g", "15", "-bf", "2", "-c:a", "mp2"}},
+	{name: "mpegps_bframes", file: "bframes.mpg", rate: "30000/1001"},
 	// A DVD: MPEG-2 with B-frames and MP2 in a .vob, whose key frames
 	// have their time, #268.
-	{name: "dvd", file: "dvd.vob", rate: "30000/1001",
-		codecs: []string{"-c:v", "mpeg2video", "-q:v", "2", "-g", "18", "-bf", "2", "-c:a", "mp2", "-f", "dvd"}},
+	{name: "dvd", file: "dvd.vob", rate: "30000/1001"},
 	// MPEG-2 with B-frames in MPEG-TS, the way a TV recording or an HDV
 	// camcorder holds it, #600.
-	{name: "mpegts_bframes", file: "bframes.ts", rate: "30000/1001",
-		codecs: []string{"-c:v", "mpeg2video", "-q:v", "2", "-g", "15", "-bf", "2", "-c:a", "mp2"}},
+	{name: "mpegts_bframes", file: "bframes.ts", rate: "30000/1001"},
 	// Every frame a key frame, in MPEG-TS and in MPEG-PS, so a key
 	// frame is decoded right after another, #601.
-	{name: "mpegts_intra", file: "intra.ts", rate: "30000/1001",
-		codecs: []string{"-c:v", "mpeg2video", "-q:v", "2", "-g", "1", "-c:a", "mp2"}},
-	{name: "mpegps_intra", file: "intra.mpg", rate: "30000/1001",
-		codecs: []string{"-c:v", "mpeg2video", "-q:v", "2", "-g", "1", "-c:a", "mp2"}},
+	{name: "mpegts_intra", file: "intra.ts", rate: "30000/1001"},
+	{name: "mpegps_intra", file: "intra.mpg", rate: "30000/1001"},
 	// What OBS leaves of a Matroska recording when it crashes: no
 	// duration and no index of its key frames, plan row 2.203.
 	// Its rate is not checked, like mpegts'.
-	{name: "crashed_mkv", file: "crashed.mkv", gop: 60, cutOff: true},
+	{name: "crashed_mkv", file: "crashed.mkv", h264: true},
 }
 
-// timesEpisode makes the episode of a case: its frames carry their
-// numbers in bars, and its sound says which moment of a second it is.
-//
-// On the real disk: ffmpeg makes the episode.
+// timesEpisode is the episode of a case: its frames carry their numbers
+// in bars, and its sound says which moment of a second it is.
 func timesEpisode(t *testing.T, c timesCase) string {
 	t.Helper()
-	dir := t.TempDir()
-	source := filepath.Join(dir, c.file)
-	seconds := strconv.Itoa(max(c.seconds, 7))
-	picture := "color=c=black:s=2x8:r=30000/1001:d=" + seconds + "," +
-		"geq=lum='if(bitand(N\\,pow(2\\,7-Y))\\,220\\,30)':cb=128:cr=128,scale=128:72:flags=neighbor"
-	if len(c.video) > 0 {
-		picture += "," + strings.Join(c.video, ",")
-	}
-	args := []string{"-loglevel", "error", "-y"}
-	args = append(args, c.input...)
-	args = append(args, "-f", "lavfi", "-i", picture,
-		"-f", "lavfi", "-i", "aevalsrc='(0.1+0.8*mod(t\\,1))*sin(2*PI*440*t)':s=48000:d="+seconds)
-	args = append(args, c.out...)
-	codecs, sound := [][]string{{"-c:v", "mpeg4", "-q:v", "2", "-g", "30"}}, []string{"-c:a", "pcm_s16le"}
-	if c.gop > 0 {
-		codecs, sound = h264(t, c.gop), []string{"-c:a", "aac"}
-	}
-	if len(c.codecs) > 0 {
-		codecs, sound = [][]string{c.codecs}, nil
-	}
-	if out, err := encodeTestFile(t, "ffmpeg", args, codecs, append(sound, "-t", seconds, source)...); err != nil {
-		t.Fatalf("making the test episode: %s %s", err, out)
-	}
-	if !c.cutOff {
-		return source
-	}
-	// Copied into a pipe, ffmpeg cannot go back to the start of the file
-	// to say how long it is. Made whole first and copied, so the file is
-	// the same whichever encoder made the picture.
-	whole := source + ".whole.mkv"
-	if err := os.Rename(source, whole); err != nil {
-		t.Fatal(err)
-	}
-	file, err := os.Create(source)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer file.Close()
-	var stderr bytes.Buffer
-	// Without the tags, which say how long each track is.
-	cmd := exec.Command("ffmpeg", "-loglevel", "error", "-i", whole, "-map_metadata", "-1", "-c", "copy", "-f", "matroska", "-")
-	cmd.Stdout, cmd.Stderr = file, &stderr
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("making the test episode: %s %s", err, stderr.Bytes())
-	}
-	return source
+	return fixtures.Path(t, "bars-"+c.file)
 }
-
-// h264 is how the ffmpeg on the path codes H.264 with two B-frames and a
-// key frame every gop frames, best first. The one CI's Mac runs is the
-// one we ship, which has no libx264 and encodes H.264 on the graphics
-// chip, and on the processor where the chip fails, the way onProcessor
-// does for a render.
-func h264(t *testing.T, gop int) [][]string {
-	t.Helper()
-	encoders := encodersHere()
-	g := strconv.Itoa(gop)
-	switch {
-	case hasEncoder(encoders, "libx264"):
-		return [][]string{{"-c:v", "libx264", "-bf", "2", "-g", g, "-sc_threshold", "0", "-pix_fmt", "yuv420p"}}
-	case hasEncoder(encoders, "h264_videotoolbox"):
-		return chipThenProcessor([]string{"-c:v", "h264_videotoolbox", "-profile:v", "high", "-bf", "2", "-g", g, "-b:v", "4M", "-pix_fmt", "yuv420p"})
-	}
-	ffmpegtest.Unusable(t, "the ffmpeg on the path has no encoder of H.264")
-	return nil
-}
-
-// chipThenProcessor is an encoder of VideoToolbox asked of the media
-// engine, and then the same asked of the processor, the way onProcessor
-// goes on for a render.
-func chipThenProcessor(chip []string) [][]string {
-	return [][]string{chip, append(slices.Clip(chip), "-require_sw", "1")}
-}
-
-// encodeTestFile has the program, an ffmpeg, make a test file: args, then
-// the first of codecs, then rest. Each codec starts with "-c:v" and its
-// encoder. The media engine of CI's virtual Mac would not open now and
-// then, "Error retrieving the supported property dictionary err=-12903",
-// issue #570, and a test failed before it began. So the file is made with
-// the next of codecs once an encoder said it failed, by Encoder.failed,
-// the way a render goes on, see nextEncoder. It is never made again with
-// the same encoder, and a failure of anything else fails at once.
-//
-// On the real disk: ffmpeg writes the test file.
-func encodeTestFile(t *testing.T, program string, args []string, codecs [][]string, rest ...string) ([]byte, error) {
-	t.Helper()
-	var out []byte
-	var err error
-	for i, codec := range codecs {
-		made := append(append(slices.Clip(args), codec...), rest...)
-		out, err = exec.Command(program, made...).CombinedOutput()
-		if err == nil || i == len(codecs)-1 || !(Encoder{Name: codec[1]}).failed(string(out)) {
-			return out, err
-		}
-		t.Logf("%v did not make the test file, %v makes it: %s", codec, codecs[i+1], out)
-	}
-	return out, err
-}
-
-// encodersHere is the encoders of the ffmpeg on the path.
-var encodersHere = sync.OnceValue(func() string {
-	out, _ := exec.Command("ffmpeg", "-hide_banner", "-encoders").Output()
-	return string(out)
-})
 
 // On the real disk: ffmpeg renders the short.
 func showsWhatItSays(t *testing.T, e *Engine, source, rate string) {

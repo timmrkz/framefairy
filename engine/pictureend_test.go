@@ -185,7 +185,7 @@ func TestACutOffRecordingIsNotTakenAtItsGuessedLength(t *testing.T) {
 	t.Parallel()
 	ffmpegtest.Need(t)
 	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
-	path := timesEpisode(t, timesCase{name: "crashed_mpeg4_mkv", file: "crashed.mkv", cutOff: true})
+	path := timesEpisode(t, timesCase{name: "crashed_mpeg4_mkv", file: "crashed-mpeg4.mkv"})
 	info, err := e.Probe(context.Background(), path)
 	if err != nil {
 		t.Fatal(err)
