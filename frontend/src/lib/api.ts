@@ -783,7 +783,7 @@ export const api = {
   openEpisode: (path: string) => call<void>("OpenEpisode", path),
   // A clip chosen by a hand, answered with the rev it was kept at, see
   // EpisodeSession.pick. Every other clip chosen the Go side chooses.
-  chooseClip: (path: string, key: string) => call<number>("ChooseClip", path, key),
+  chooseClip: (path: string, key: string) => call<VideoState>("ChooseClip", path, key),
   // Whether the video plays: the Go side chooses a search's clips only
   // while it is paused.
   playing: (path: string, playing: boolean) => call<void>("Playing", path, playing),

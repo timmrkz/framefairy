@@ -56,11 +56,12 @@ export class EpisodeSession {
   private told = new Set<string>();
   // The clip chosen, by a hand or by the app, from the newest state kept,
   // or a hand's pick while the Go side has not answered it. picking counts
-  // the picks not answered, and pickedAt is the rev of the newest answer:
-  // a state read before it knows nothing of the pick and would put back
-  // the clip chosen before it for a moment. The newest state that came
-  // while a pick was on its way is kept, so what it chose is shown once
-  // the pick is answered, when it was read after it.
+  // the picks not answered, and pickedAt is the rev of the newest answer,
+  // the state read after the pick: a state read before it may know
+  // nothing of the pick and would put back the clip chosen before it for
+  // a moment. The newest state that came while a pick was on its way, the
+  // answer among them, is kept, so what it chose is shown once the pick
+  // is answered.
   chosen = $state("");
   private picking = 0;
   private pickedAt = 0;
@@ -130,7 +131,7 @@ export class EpisodeSession {
       if (!this.whilePicking || state.rev > this.whilePicking.rev) this.whilePicking = state;
       return;
     }
-    if (state.rev <= this.pickedAt) return;
+    if (state.rev < this.pickedAt) return;
     const now = state.chosen ?? "";
     if (now === this.chosen) return;
     const before = this.chosen;
@@ -139,15 +140,18 @@ export class EpisodeSession {
   }
 
   // A clip chosen by a hand, shown at once while choose tells the Go side,
-  // which answers with the rev the pick was kept at. A pick that is
-  // refused leaves the clip chosen to the next state. What it returns is
-  // done once the answer is in.
-  pick(key: string, choose: (key: string) => Promise<number>): Promise<void> {
+  // which answers with the state of the video read after the pick. What
+  // that state says is chosen is drawn, which is the clip picked, or the
+  // clip a card picked was written as. A pick that is refused leaves the
+  // clip chosen to the next state. What it returns is done once the
+  // answer is in.
+  pick(key: string, choose: (key: string) => Promise<VideoState>): Promise<void> {
     this.chosen = key;
     this.picking++;
     return choose(key)
-      .then((rev) => {
-        this.pickedAt = Math.max(this.pickedAt, rev ?? 0);
+      .then((state) => {
+        this.pickedAt = Math.max(this.pickedAt, state.rev);
+        this.take(state);
       })
       .catch(() => {
         this.pickedAt = 0;

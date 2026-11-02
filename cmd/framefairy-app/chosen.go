@@ -186,31 +186,39 @@ func (p *picked) with(files afero.Fs, path string, change func(*picked) bool) (b
 // of the video says it and opening it again opens on the same one. An
 // empty key chooses none. Every clip the app chooses by itself it chooses
 // in choose.go, so a clip chosen here is always a hand's. It answers with
-// a number from the clock of the states: a state read before the pick
-// has a smaller rev, so the workspace keeps the pick on screen until a
-// state past it comes, see EpisodeSession.pick.
+// the state of the video read after the pick: a state read before it has
+// a smaller rev, so the workspace keeps the pick on screen until the
+// answer, and draws the clip the answer says is chosen, see
+// EpisodeSession.pick.
 //
 // The key names a clip set and a clip inside it. It arrives from the
 // interface, so it is never joined onto a path and never used to reach a
 // file: it is written down as it is and only ever compared with the keys
 // the app works out for itself. Anything longer than a key could be, or
 // carrying anything a key never carries, is refused rather than stored.
-func (s *FrameFairy) ChooseClip(path, key string) (uint64, error) {
+func (s *FrameFairy) ChooseClip(ctx context.Context, path, key string) (VideoState, error) {
 	if !s.store.Known(path) {
-		return 0, errNotInLibrary
+		return VideoState{}, errNotInLibrary
 	}
+	if err := s.pick(path, key); err != nil {
+		return VideoState{}, err
+	}
+	// The state read after the pick is its answer, so the window draws
+	// what the app made of it in the same frame as the pick's answer: a
+	// card picked after its clip was written is that clip, rule 7.
+	return s.State(ctx, path)
+}
+
+// pick keeps the clip a hand chose, for ChooseClip.
+func (s *FrameFairy) pick(path, key string) error {
 	if !looksLikeClipKey(key) {
-		return 0, errors.New("that is not the key of a clip")
+		return errors.New("that is not the key of a clip")
 	}
-	if _, err := s.chosenIn(path).change(s.store.files, path, func(c *chosen) bool {
+	_, err := s.chosenIn(path).change(s.store.files, path, func(c *chosen) bool {
 		c.Clip = key
 		return true
-	}); err != nil {
-		return 0, err
-	}
-	rev := s.stamp()
-	s.told(path)
-	return rev, nil
+	})
+	return err
 }
 
 // ChooseWindow remembers the window on an episode's range picker as it was

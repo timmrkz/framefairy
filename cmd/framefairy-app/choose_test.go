@@ -105,7 +105,7 @@ func TestTheAppChoosesTheClipsASearchFinds(t *testing.T) {
 			ep := eps[0]
 			for i, st := range c.steps {
 				if st.pick != "" {
-					if _, err := s.ChooseClip(ep, st.pick); err != nil {
+					if err := s.pick(ep, st.pick); err != nil {
 						t.Fatal(err)
 					}
 				}
@@ -125,7 +125,7 @@ func TestTheAppChoosesTheClipsASearchFinds(t *testing.T) {
 // says what a hand or a search chose.
 func TestAVideoOpensOnTheClipChosenLast(t *testing.T) {
 	s, eps := memoryLibrary(t, "ep.mp4", "other.mp4")
-	if _, err := s.ChooseClip(eps[0], "old/2"); err != nil {
+	if err := s.pick(eps[0], "old/2"); err != nil {
 		t.Fatal(err)
 	}
 	s.forget(eps[0])
@@ -147,7 +147,7 @@ func TestARemovedClipsNeighbourIsChosenAndAnUndoChoosesItsClip(t *testing.T) {
 	svc, mine, plan := anEpisodeWithAPlan(t)
 	ctx := context.Background()
 	first, second := "clips.json/01", "clips.json/02"
-	if _, err := svc.ChooseClip(mine, first); err != nil {
+	if _, err := svc.ChooseClip(context.Background(), mine, first); err != nil {
 		t.Fatal(err)
 	}
 	// The answer needs the video read, and this one is not a video.
@@ -161,7 +161,7 @@ func TestARemovedClipsNeighbourIsChosenAndAnUndoChoosesItsClip(t *testing.T) {
 		t.Fatalf("putting it back chose %q, not the clip put back", got)
 	}
 	// The last removed chooses the one before it.
-	if _, err := svc.ChooseClip(mine, second); err != nil {
+	if _, err := svc.ChooseClip(context.Background(), mine, second); err != nil {
 		t.Fatal(err)
 	}
 	_, _ = svc.RemoveClip(ctx, mine, plan, "02", true)
@@ -169,7 +169,7 @@ func TestARemovedClipsNeighbourIsChosenAndAnUndoChoosesItsClip(t *testing.T) {
 		t.Fatalf("removing the last clip chose %q, not the one before", got)
 	}
 	// A hand chose another since, so putting it back chooses nothing.
-	if _, err := svc.ChooseClip(mine, "other/1"); err != nil {
+	if _, err := svc.ChooseClip(context.Background(), mine, "other/1"); err != nil {
 		t.Fatal(err)
 	}
 	_, _ = svc.RemoveClip(ctx, mine, plan, "02", false)
@@ -178,7 +178,7 @@ func TestARemovedClipsNeighbourIsChosenAndAnUndoChoosesItsClip(t *testing.T) {
 	}
 	// Removing a clip that is not chosen chooses nothing, and its undo
 	// chooses it.
-	if _, err := svc.ChooseClip(mine, first); err != nil {
+	if _, err := svc.ChooseClip(context.Background(), mine, first); err != nil {
 		t.Fatal(err)
 	}
 	_, _ = svc.RemoveClip(ctx, mine, plan, "02", true)
@@ -193,27 +193,44 @@ func TestARemovedClipsNeighbourIsChosenAndAnUndoChoosesItsClip(t *testing.T) {
 	}
 }
 
-// A pick answers with a number from the clock of the states, newer than
-// a state read before it and older than one read after.
-func TestAPickAnswersWithARevOnTheClockOfTheStates(t *testing.T) {
+// A pick answers with the state read after it, newer than a state read
+// before it, which says the clip picked is chosen.
+func TestAPickAnswersWithTheStateAfterIt(t *testing.T) {
 	svc, mine, _ := anEpisodeWithAPlan(t)
 	before, err := svc.State(context.Background(), mine)
 	if err != nil {
 		t.Fatal(err)
 	}
-	rev, err := svc.ChooseClip(mine, "clips.json/02")
+	after, err := svc.ChooseClip(context.Background(), mine, "clips.json/02")
 	if err != nil {
 		t.Fatal(err)
 	}
-	after, err := svc.State(context.Background(), mine)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !(before.Rev < rev && rev < after.Rev) {
-		t.Errorf("the pick is at %d, between states at %d and %d", rev, before.Rev, after.Rev)
+	if after.Rev <= before.Rev {
+		t.Errorf("the pick answered with a state at %d, not after the one at %d", after.Rev, before.Rev)
 	}
 	if after.Chosen != "clips.json/02" {
 		t.Errorf("the state after the pick says %q is chosen", after.Chosen)
+	}
+}
+
+// A card picked after its clip was written, because the answer to the
+// press that made it came late, is answered with the clip chosen, rule 7.
+func TestACardPickedAfterItsClipWasWrittenIsAnsweredWithTheClip(t *testing.T) {
+	svc, mine, _ := anEpisodeWithAPlan(t)
+	ctx := context.Background()
+	if _, err := svc.State(ctx, mine); err != nil {
+		t.Fatal(err)
+	}
+	job := Job{ID: "c1", Episode: mine, State: JobDone, Result: "clips.json/02", JobRecord: engine.JobRecord{Kind: engine.JobClip}}
+	svc.jobs.mu.Lock()
+	svc.jobs.jobs = append(svc.jobs.jobs, &job)
+	svc.jobs.mu.Unlock()
+	st, err := svc.ChooseClip(ctx, mine, "c1/1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Chosen != "clips.json/02" {
+		t.Errorf("the card picked after its clip was written was answered with %q chosen, not its clip", st.Chosen)
 	}
 }
 
@@ -226,7 +243,7 @@ func TestWhatIsChosenTakesEverythingAtOnce(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := range 20 {
 		wg.Go(func() {
-			if _, err := svc.ChooseClip(mine, fmt.Sprintf("clips.json/0%d", 1+i%2)); err != nil {
+			if _, err := svc.ChooseClip(context.Background(), mine, fmt.Sprintf("clips.json/0%d", 1+i%2)); err != nil {
 				t.Error(err)
 			}
 		})

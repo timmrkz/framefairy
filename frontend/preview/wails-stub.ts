@@ -1499,11 +1499,11 @@ const Answers = {
         return Promise.resolve(null);
       case "Opened":
         return Promise.resolve([]);
-      // A pick answers with a number on the clock of the states, the way
-      // the Go side does, so a state read before it is not drawn over it.
+      // A pick answers with the state read after it, the way the Go side
+      // does, so a state read before it is not drawn over it.
       case "ChooseClip":
         (window as any).__chosen = args[1];
-        return Promise.resolve(tick());
+        return videoState(String(args[0]));
       case "Playing":
         return Promise.resolve(null);
       // Kept across a reload, the way the Go side keeps it across a

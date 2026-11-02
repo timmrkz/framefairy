@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"path/filepath"
@@ -52,20 +53,20 @@ func TestTheChosenClipSurvivesAndNothingElseDoes(t *testing.T) {
 	if got := chosenClip(s, source); got != "" {
 		t.Errorf("an episode nobody has opened gave %q, wanted nothing", got)
 	}
-	if _, err := s.ChooseClip(source, "clips/abc123"); err != nil {
+	if err := s.pick(source, "clips/abc123"); err != nil {
 		t.Fatal(err)
 	}
 	if got := chosenClip(s, source); got != "clips/abc123" {
 		t.Errorf("got %q, wanted clips/abc123", got)
 	}
-	if _, err := s.ChooseClip(source, "clips/def456"); err != nil {
+	if err := s.pick(source, "clips/def456"); err != nil {
 		t.Fatal(err)
 	}
 	if got := chosenClip(s, source); got != "clips/def456" {
 		t.Errorf("choosing another clip gave %q, wanted clips/def456", got)
 	}
 
-	if _, err := s.ChooseClip(source, "../../escape"); err == nil {
+	if err := s.pick(source, "../../escape"); err == nil {
 		t.Error("a key that is a path was taken")
 	}
 	if got := chosenClip(s, source); got != "clips/def456" {
@@ -87,7 +88,7 @@ func TestTheChosenClipSurvivesAndNothingElseDoes(t *testing.T) {
 
 	// An episode that is not in the library is not read and not written.
 	other := filepath.Join(filepath.Dir(source), "other.mp4")
-	if _, err := s.ChooseClip(other, "clips/abc"); err == nil {
+	if _, err := s.ChooseClip(context.Background(), other, "clips/abc"); err == nil {
 		t.Error("a file outside the library was written to")
 	}
 	if got := chosenClip(s, other); got != "" {
@@ -102,7 +103,7 @@ func TestTheWindowIsKeptBesideTheClip(t *testing.T) {
 	if got := s.ChosenWindow(source); got != nil {
 		t.Fatalf("a fresh episode had a window: %+v", got)
 	}
-	if _, err := s.ChooseClip(source, "clips/abc123"); err != nil {
+	if err := s.pick(source, "clips/abc123"); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.ChooseWindow(source, 120, 180, 60, false); err != nil {
@@ -114,7 +115,7 @@ func TestTheWindowIsKeptBesideTheClip(t *testing.T) {
 	if got := chosenClip(s, source); got != "clips/abc123" {
 		t.Errorf("choosing a window lost the clip: %q", got)
 	}
-	if _, err := s.ChooseClip(source, "clips/def456"); err != nil {
+	if err := s.pick(source, "clips/def456"); err != nil {
 		t.Fatal(err)
 	}
 	if got := s.ChosenWindow(source); got == nil || got.From != 120 {
@@ -162,7 +163,7 @@ func TestAClipAndAWindowChosenAtOnce(t *testing.T) {
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			if _, err := s.ChooseClip(source, fmt.Sprintf("clips/c%d", i)); err != nil {
+			if err := s.pick(source, fmt.Sprintf("clips/c%d", i)); err != nil {
 				t.Error(err)
 			}
 		}()
@@ -188,7 +189,7 @@ func TestWhatIsChosenIsWrittenThroughNewestLast(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := range 40 {
 		wg.Go(func() {
-			if _, err := s.ChooseClip(source, fmt.Sprintf("clips/c%d", i)); err != nil {
+			if err := s.pick(source, fmt.Sprintf("clips/c%d", i)); err != nil {
 				t.Error(err)
 			}
 		})
@@ -266,7 +267,7 @@ func TestTheEpisodesOpenedLastComeNewestFirst(t *testing.T) {
 	// b, then c, then a, each a second apart on the clock of the files.
 	base := time.Now().Add(-time.Hour)
 	for i, ep := range []string{eps[1], eps[2], eps[0]} {
-		if _, err := s.ChooseClip(ep, "clips/x"); err != nil {
+		if err := s.pick(ep, "clips/x"); err != nil {
 			t.Fatal(err)
 		}
 		at := base.Add(time.Duration(i) * time.Second)
@@ -294,7 +295,7 @@ func TestTheEpisodesOpenedLastComeNewestFirst(t *testing.T) {
 	}
 	// c's file is written after b was opened, and its clock says an hour
 	// later still.
-	if _, err := s.ChooseClip(eps[2], "clips/y"); err != nil {
+	if err := s.pick(eps[2], "clips/y"); err != nil {
 		t.Fatal(err)
 	}
 	later := time.Now().Add(time.Hour)

@@ -373,31 +373,41 @@ describe("a video's state in its session", () => {
     expect(heard).toEqual(["chose p/a none", "chose p/b p/a"]);
   });
 
-  test("keeps a hand's pick on screen until a state read after it, and says nothing of it", async () => {
+  test("keeps a hand's pick on screen until its answer, the state read after it, and says nothing of it", async () => {
     const { heard, session: here } = session();
     here.take(state(5, { chosen: "p/a" }));
-    let answer: (rev: number) => void = () => {};
+    let answer: (s: VideoState) => void = () => {};
     const picked = here.pick("p/b", () => new Promise((r) => (answer = r)));
     expect(here.chosen).toBe("p/b");
     // Read before the Go side had the pick.
     here.take(state(6, { chosen: "p/a" }));
     expect(here.chosen).toBe("p/b");
-    answer(7);
+    answer(state(7, { chosen: "p/b" }));
     await picked;
-    here.take(state(8, { chosen: "p/b" }));
-    expect(here.chosen).toBe("p/b");
+    expect([here.chosen, here.rev]).toEqual(["p/b", 7]);
     expect(heard).toEqual(["chose p/a none"]);
+  });
+
+  test("draws the clip a card picked was written as, when its answer says so", async () => {
+    const { heard, session: here } = session();
+    here.take(state(5, { chosen: "p/a" }));
+    let answer: (s: VideoState) => void = () => {};
+    const picked = here.pick("job/1", () => new Promise((r) => (answer = r)));
+    answer(state(6, { chosen: "hand/h01" }));
+    await picked;
+    expect(here.chosen).toBe("hand/h01");
+    expect(heard).toEqual(["chose p/a none", "chose hand/h01 job/1"]);
   });
 
   test("shows what the app chose while a pick was on its way once the pick is answered, when it chose after it", async () => {
     const { heard, session: here } = session();
     here.take(state(5, { chosen: "p/a" }));
-    let answer: (rev: number) => void = () => {};
+    let answer: (s: VideoState) => void = () => {};
     const picked = here.pick("p/b", () => new Promise((r) => (answer = r)));
-    // A search's first clip, chosen after the pick was kept at 6.
+    // A search's first clip, chosen after the pick was answered at 6.
     here.take(state(7, { chosen: "p/c" }));
     expect(here.chosen).toBe("p/b");
-    answer(6);
+    answer(state(6, { chosen: "p/b" }));
     await picked;
     expect(here.chosen).toBe("p/c");
     expect(heard).toEqual(["chose p/a none", "chose p/c p/b"]);
