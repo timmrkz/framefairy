@@ -230,12 +230,15 @@ export const steps = {
         // had rested, so a start sound that came after the answer read as
         // tens of milliseconds before it.
         window.addEventListener("answered", (e) => {
-          if (e.detail === "Listen") micOn = heardTo;
+          if (e.detail !== "Listen") return;
+          micOn = heardTo;
+          told(`Listen answered, heard to ${heardTo.toFixed(3)} s`);
         });
         window.addEventListener("asked", (e) => {
           if (e.detail !== "Listen") return;
           micOn = Infinity;
           window.__before = 0;
+          told(`Listen asked, heard to ${heardTo.toFixed(3)} s`);
         });
         AudioNode.prototype.connect = function (to, ...a) {
           const out = connect.call(this, to, ...a);
