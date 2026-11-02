@@ -409,14 +409,15 @@ func meminfo(path, field string) int64 {
 	return 0
 }
 
-// InstallLanguageModel fetches a model, reporting as it goes.
+// InstallLanguageModel fetches a model through the machine's network,
+// reporting as it goes.
 //
 // Like the speech model it is written to be interrupted: the download lands
 // under a part name and is only moved into place once it is whole, so a
 // machine that loses power or a person who presses cancel is left with no
 // model rather than half of one. Half a model is worse than none, because
 // it looks installed.
-func InstallLanguageModel(ctx context.Context, log *runlog.Log, m LanguageModel, dir string) error {
+func (mc *Machine) InstallLanguageModel(ctx context.Context, log *runlog.Log, m LanguageModel, dir string) error {
 	if dir == "" {
 		dir = ModelsDir()
 	}
@@ -439,7 +440,7 @@ func InstallLanguageModel(ctx context.Context, log *runlog.Log, m LanguageModel,
 	}
 
 	return log.Step("language model", func() error {
-		sum, err := download(ctx, log, m.URL, m.Download, part, m.Title)
+		sum, err := mc.download(ctx, log, m.URL, m.Download, part, m.Title)
 		if err != nil {
 			return err
 		}

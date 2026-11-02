@@ -6,8 +6,6 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"sync/atomic"
-	"testing"
 	"time"
 )
 
@@ -60,24 +58,20 @@ func (noKeys) get(context.Context, string) (string, bool) { return "", false }
 func (noKeys) set(string, string, string) error           { return errNoKeychain }
 func (noKeys) remove(string)                              {}
 
-// keys is where keys are kept now, and oldKeys where the first ones were.
-// A test never reaches the machine's own keychain: macOS puts a box on
-// screen when it is locked, a box nobody answers is a test that hangs, and
-// a test that writes a key writes it into somebody's keychain. Tests that
-// are about keeping keys put a keyStore of their own here.
-//
-// Nor does a test show a key to a company: a key saved in a test is never
-// sent anywhere, and a test that means to ask a company names a server of
-// its own.
-var keys, oldKeys keyStore = systemKeys(), legacyKeys()
-
-func init() {
-	if testing.Testing() {
-		keys, oldKeys = noKeys{}, noKeys{}
-		for i := range providers {
-			providers[i].Models = ""
-		}
+// keyStore is where m keeps keys, and oldStore where the first ones
+// were, see Machine. A machine handed no keychain keeps none.
+func (m *Machine) keyStore() keyStore {
+	if m.keys == nil {
+		return noKeys{}
 	}
+	return m.keys
+}
+
+func (m *Machine) oldStore() keyStore {
+	if m.oldKeys == nil {
+		return noKeys{}
+	}
+	return m.oldKeys
 }
 
 // keyAccount is the account every item is kept under.
@@ -94,18 +88,17 @@ func missingKey(p Provider) error {
 		p.Title, p.Env)
 }
 
-// savedFirst puts the key saved in the app before the one in the
-// environment. The command line reads the environment first, which is how
+// The machine's savedFirst puts the key saved in the app before the one
+// in the environment. The command line reads the environment first, which is how
 // it is given a key. The app is given one in its settings, and a key saved
 // there has to be the one used: an app started from a terminal has the
 // terminal's environment, and an old key in it would otherwise win over
 // the one just saved, without a word.
-var savedFirst atomic.Bool
 
 // PreferSavedKeys makes the key saved in the app the one used, and one in
 // the environment a stand-in for when none is saved. The app calls it once,
 // as it starts.
-func PreferSavedKeys() { savedFirst.Store(true) }
+func (m *Machine) PreferSavedKeys() { m.savedFirst.Store(true) }
 
 // Where a key was found, as KeySource says it.
 const (
@@ -117,11 +110,11 @@ const (
 // it: the keychain, the environment, or nowhere. The settings ask this every
 // time they are opened, and a secret read each time would be a box on screen
 // each time.
-func KeySource(p Provider) string {
-	saved := keys.has(p.Item) || oldKeys.has(p.Keychain)
+func (m *Machine) KeySource(p Provider) string {
+	saved := m.keyStore().has(p.Item) || m.oldStore().has(p.Keychain)
 	env := envKey(p) != ""
 	switch {
-	case saved && (savedFirst.Load() || !env):
+	case saved && (m.savedFirst.Load() || !env):
 		return KeyInKeychain
 	case env:
 		return KeyInEnvironment
@@ -142,12 +135,12 @@ func abbreviate(key string) string {
 
 // KeyHint is the provider's key in short, from wherever KeySource says it
 // is, read without the secret. Empty when it cannot be said.
-func KeyHint(p Provider) string {
-	switch KeySource(p) {
+func (m *Machine) KeyHint(p Provider) string {
+	switch m.KeySource(p) {
 	case KeyInEnvironment:
 		return abbreviate(envKey(p))
 	case KeyInKeychain:
-		return keys.hint(p.Item)
+		return m.keyStore().hint(p.Item)
 	}
 	return ""
 }
@@ -156,14 +149,15 @@ func KeyHint(p Provider) string {
 // in the order KeySource says. Never from a file on disk. A key still kept
 // the old way is moved into an item only this app may read, and the old one
 // is removed.
-func ReadAPIKey(ctx context.Context, p Provider) (string, error) {
-	key, _, err := readAPIKey(ctx, p)
+func (m *Machine) ReadAPIKey(ctx context.Context, p Provider) (string, error) {
+	key, _, err := m.readAPIKey(ctx, p)
 	return key, err
 }
 
 // readAPIKey is ReadAPIKey, and says where the key came from, so a key the
 // provider refuses can be named.
-func readAPIKey(ctx context.Context, p Provider) (key, source string, err error) {
+func (m *Machine) readAPIKey(ctx context.Context, p Provider) (key, source string, err error) {
+	keys, oldKeys := m.keyStore(), m.oldStore()
 	fromKeychain := func() {
 		if found, ok := keys.get(ctx, p.Item); ok {
 			key, source = strings.TrimSpace(found), "the keychain"
@@ -181,7 +175,7 @@ func readAPIKey(ctx context.Context, p Provider) (key, source string, err error)
 			key, source = env, p.Env
 		}
 	}
-	if savedFirst.Load() {
+	if m.savedFirst.Load() {
 		fromKeychain()
 		if key == "" {
 			fromEnv()
@@ -217,8 +211,8 @@ func refusedKey(p Provider, source string) error {
 
 // CheckAPIKey says whether a provider's key can be found, without reading
 // it, and why not when it cannot.
-func CheckAPIKey(p Provider) error {
-	switch KeySource(p) {
+func (m *Machine) CheckAPIKey(p Provider) error {
+	switch m.KeySource(p) {
 	case KeyInKeychain:
 		return nil
 	case KeyInEnvironment:
@@ -237,8 +231,9 @@ func CheckAPIKey(p Provider) error {
 // rather than an hour later, when an episode has been transcribed and the
 // first search fails. When the provider cannot be reached, nothing can be
 // said about the key, so it passes: somebody saving a key on a train keeps
-// it.
-func VerifyAPIKey(ctx context.Context, p Provider, key string) error {
+// it. A machine handed no network reaches no company, and passes the key
+// the same way.
+func (m *Machine) VerifyAPIKey(ctx context.Context, p Provider, key string) error {
 	key = strings.TrimSpace(key)
 	if key == "" || !keyIsSane(key) || p.Models == "" {
 		return nil
@@ -251,10 +246,10 @@ func VerifyAPIKey(ctx context.Context, p Provider, key string) error {
 	}
 	setKey(request, p, key)
 	// Never followed anywhere, like every other request that carries a key,
-	// see httpClient. Go keeps a header it does not know on a redirect to
+	// see companies. Go keeps a header it does not know on a redirect to
 	// another host, and the key is one: a redirect would have handed it to
 	// whoever the provider's address sent it on to.
-	response, err := httpClient.Do(request)
+	response, err := m.companies().Do(request)
 	if err != nil {
 		return nil
 	}
@@ -285,7 +280,8 @@ func VerifyAPIKey(ctx context.Context, p Provider, key string) error {
 // A key pasted with a newline on the end is the common case, and finding
 // that out at the moment it is typed beats finding out when an episode has
 // already been transcribed.
-func StoreAPIKey(p Provider, key string) error {
+func (m *Machine) StoreAPIKey(p Provider, key string) error {
+	keys, oldKeys := m.keyStore(), m.oldStore()
 	key = strings.TrimSpace(key)
 	if key == "" {
 		keys.remove(p.Item)

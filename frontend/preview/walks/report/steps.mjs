@@ -51,7 +51,15 @@ export const steps = {
       // is quiet again, window.__before is the loudest sample played
       // since the latest Listen was asked and before it answered, and
       // window.__tapped settles once the tap listens.
+      //
+      // What the tap hears is also written to the page's console, which
+      // the walk's trace keeps: every note, every change of the audio's
+      // state, every sound the page starts and every wait for a sound. A
+      // walk that waited for a sound that never came, #672, then says
+      // whether the audio ran when the sound was started and what the tap
+      // heard after it.
       await walk.reportPage.addInitScript(() => {
+        const told = (...a) => console.log("tap:", ...a);
         window.__notes = [];
         window.__before = 0;
         let waiting = [];
@@ -60,8 +68,20 @@ export const steps = {
           const since = window.__notes.slice(from);
           return quiet && [a, b].every((p) => since.some((n) => Math.abs(n.f - p) < 40));
         };
-        window.__sound = (from, a, b) => new Promise((done) => (has({ from, a, b }) ? done() : waiting.push({ from, a, b, done })));
-        const heard = (note) => window.__notes.push(note);
+        window.__sound = (from, a, b) =>
+          new Promise((done) => {
+            told(`waits for ${a} and ${b} from note ${from}, ${window.__notes.length} heard, ${quiet ? "quiet" : "sounding"}`);
+            const settled = () => {
+              told(`heard ${a} and ${b} from note ${from}`);
+              done();
+            };
+            if (has({ from, a, b })) settled();
+            else waiting.push({ from, a, b, done: settled });
+          });
+        const heard = (note) => {
+          told(`note ${window.__notes.length}, ${note.f} Hz at ${note.at.toFixed(3)} s${note.open ? "" : ", before the microphone was on"}`);
+          window.__notes.push(note);
+        };
         // A sound is over once the audio has been quiet this long, in
         // seconds of its own clock: longer than the rest between the two
         // notes of one sound, and shorter than the quiet the stop sound
@@ -74,7 +94,9 @@ export const steps = {
           let last = d.length - 1;
           while (last >= 0 && Math.abs(d[last]) <= loud) last--;
           if (last >= 0) quietFrom = played + (last + 1) / rate;
+          const was = quiet;
           quiet = played + d.length / rate - quietFrom >= over;
+          if (quiet !== was) told(`${quiet ? "quiet" : "sounding"} at ${played.toFixed(3)} s`);
           for (const w of waiting.filter(has)) w.done();
           waiting = waiting.filter((w) => !has(w));
         };
@@ -179,6 +201,8 @@ export const steps = {
             buses.set(this, bus);
             // Settles once the audio's clock runs, which it does only
             // after the click that woke it.
+            told(`audio made, ${this.state}`);
+            this.addEventListener("statechange", () => told(`audio ${this.state} at ${this.currentTime.toFixed(3)} s`));
             window.__running = new Promise((done) => {
               const runs = () => this.state === "running" && done();
               this.addEventListener("statechange", runs);
@@ -206,12 +230,15 @@ export const steps = {
         // had rested, so a start sound that came after the answer read as
         // tens of milliseconds before it.
         window.addEventListener("answered", (e) => {
-          if (e.detail === "Listen") micOn = heardTo;
+          if (e.detail !== "Listen") return;
+          micOn = heardTo;
+          told(`Listen answered, heard to ${heardTo.toFixed(3)} s`);
         });
         window.addEventListener("asked", (e) => {
           if (e.detail !== "Listen") return;
           micOn = Infinity;
           window.__before = 0;
+          told(`Listen asked, heard to ${heardTo.toFixed(3)} s`);
         });
         AudioNode.prototype.connect = function (to, ...a) {
           const out = connect.call(this, to, ...a);
@@ -224,6 +251,7 @@ export const steps = {
         // moment it was meant to start.
         const start = AudioScheduledSourceNode.prototype.start;
         AudioScheduledSourceNode.prototype.start = function (when = 0, ...a) {
+          told(`a sound started while the audio is ${this.context.state}, at ${this.context.currentTime.toFixed(3)} s, heard to ${heardTo.toFixed(3)} s`);
           if (!window.__late) return start.call(this, when, ...a);
           const c = this.context;
           const rest = c.createBufferSource();

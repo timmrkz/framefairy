@@ -65,12 +65,11 @@ func main() {
 	// Started again to put a new build in place once the app has quit.
 	installIfAsked()
 	go tidyTemp(os.TempDir(), time.Now())
-	engine.PreferSavedKeys()
 	// The fonts installed on the Mac are offered for captions beside ours.
 	// Their folders are read once now, so the Font list opens at once.
 	engine.UseMachineFonts()
 	go engine.RefreshFonts()
-	st := openStore()
+	st := appStore()
 
 	var app *application.App
 	emit := func(u JobUpdate) {

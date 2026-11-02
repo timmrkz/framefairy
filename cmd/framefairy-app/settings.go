@@ -156,6 +156,17 @@ func openStore() *store {
 	return openStoreIn(afero.NewOsFs(), filepath.Join(dir, "FrameFairy"))
 }
 
+// appStore is the store the app runs on, the one openStore opens, on a
+// machine that keeps its keys in the keychain, reads them before the
+// environment's and reaches the network. A store a test opens does none
+// of that.
+func appStore() *store {
+	st := openStore()
+	st.machine.UseSystem()
+	st.machine.PreferSavedKeys()
+	return st
+}
+
 // openStoreIn is the store whose settings and library are in dir, with
 // everything read and written through files.
 func openStoreIn(files afero.Fs, dir string) *store {

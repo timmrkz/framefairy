@@ -244,3 +244,119 @@ The pull requests, in order, each one self-contained:
 - It was wrong if a part at the bottom has to import something of an
   area to do its work, or if the object that outlives a job grows rules
   of its own rather than holding what its areas own.
+
+## The keys and the network, #648
+
+Added on 2 November 2026, in the pull request that moves them. Every
+other seam on the machine is the real thing when left empty, the way
+`http.Client` keeps its `Transport`. The keys and the network are the
+two seams that reach out of the program, into the keychain and to the
+companies. Today `testing.Testing()` in `engine/keys.go` swaps the
+keychain for none and blanks the companies' addresses in any test
+binary, which is a switch for tests in shipped code. Tim, 2 November:
+the empty store is the safe one, and the programs hand in the keychain.
+
+Measured on main at 1251f2a: the keys are read and kept in 15 places
+in `keys.go` and `licence.go`, through `keys`, `oldKeys` and
+`savedFirst`. The network is two clients, `httpClient` for the
+companies, which no test sets, and `downloadClient` for the models,
+which one test sets. `cloud` in `engine/provider_test.go` points
+`providers` at its own server for the 13 tests that ask a company, which
+changes the table every other test reads. The only test that would reach a company today is
+the app's `SaveAPIKey` with a real provider, `setup_test.go`, kept from
+it only by the blanked address.
+
+Five candidates follow, each from a principle of its own, and each
+names what it moves and what it costs.
+
+### A. Where state lives: package variables with a safe default
+
+The keys, `savedFirst` and both clients stay package variables, empty
+by default, and each `main` sets them once. The smallest change: the
+switch and the blanked addresses go, and no call changes its receiver.
+But it is state a test changes for the whole process, so every test that
+sets a key store or a transport runs alone, and a key one test keeps can
+be read by the next. That is what the row "Never a package variable" in
+`docs/ARCHITECTURE.md` and #607 take away. Loses.
+
+### B. What changes together: the machine keeps both, empty is safe
+
+A key kept and a key shown to its company change together: the key
+store, the model list's address and the client that carries the key
+came in together and are read together in `VerifyAPIKey`. Downloads
+change with the setup. So the keys, the order they are read in and one
+network for both become unexported fields of `engine.Machine`, made
+once in each `main`. Empty, the machine keeps no key and every request
+is refused with an error that says so, and a key being checked then
+passes, the way it does on a train. `UseSystem` hands it the system's.
+The rule that a request carrying a key never follows a redirect stays
+on the engine's own client, over whatever transport it is given, so a
+test that hands in its own transport tests the same rule. It moves the
+15 reads and writes of the keys in `keys.go` and `licence.go` and the
+two downloads onto the machine, and every caller in the app, the
+command line and `scripts/models` with them. A test sets the fields
+from inside the package.
+
+### C. What Go and its libraries already have: exported fields
+
+The machine already shows its seams as exported fields that are the
+real thing when empty, `Files`, `Runner` and `Tools`, the way
+`http.Client` shows `Transport`. So `Keys` and `Network` would be
+exported too, with an exported `KeyStore` interface, and safe when
+nil, unlike the others. The app's tests could then hand the app's
+machine a store in memory, and `savedLicence` and `saveLicence` in
+`cmd/framefairy-app/licence.go` would stop being package variables a
+test swaps. The cost: a store a package outside the engine can make
+needs exported methods, and then anything that holds the machine can
+read a key straight off it, past the rules for the order the keys are
+read in, the move of the first ones into the new item and the hint.
+The app never reads a key back, see `Copy` in `licence.go`, and C
+would make that a habit to keep instead of a thing that cannot be done.
+The licence seams become fields of `FrameFairy` with the app's other
+seams in #650, which needs no key store from outside the engine. Loses
+to B on what it opens, for a gain #650 brings anyway.
+
+### D. Who may know about whom: the engine knows no keychain
+
+Only `main` knows the machine it runs on, so each front end keeps its
+own keys, and the engine is handed a key in its options and a client
+for the network. The engine then asks nothing about the program it is
+in. But the move of the first keys into the new item, the hints, the
+order a saved key and the environment are read in, and the licence
+store would leave the engine for the app and be written again for the
+command line and `scripts/models`, against "a rule lives once, in the
+engine". Three front ends would hold three copies. Loses.
+
+### E. What a test has to build: the real thing by default
+
+Every other seam on the machine is the real thing when empty, so the
+keys and the network would be too, and the tests would make their
+machines through a helper that hands them memory and no network. The
+programs then change by not one line. But a test that forgets the
+helper writes into the keychain of the developer's Mac, or of CI's,
+and shows a key to a company, the box nobody answers, which is what
+the switch was there to prevent. Nothing can make a test call the
+helper. Loses.
+
+### What converges
+
+A, B, C and E keep the store and the network on something `main` sets,
+and B, C and E put them on the machine. A loses on shared state, D on a
+rule kept three times, E on a mistake one forgotten line makes. B and C
+are as safe as each other, and C opens the keys to every package that
+holds the machine. So B: the keys and the network are the two seams
+that are safe when empty, because they are the two that reach out of
+the program. Every other seam stays the real thing when empty.
+
+`Machine.UseSystem` hands a machine the system's keychain and the
+network, and the app, the command line and `scripts/models` call it
+once in `main`. `testing.Testing()` and the blanked addresses go. The
+model downloads become methods of the machine, `InstallSpeechModel` and
+`InstallLanguageModel`, so they go through its network. `downloadStall`
+is a constant now, since no test sets it. `httpClient` becomes the
+machine's client for the companies, over its transport. `models`, the
+facts of each cloud model, and `providers`, the companies' addresses,
+are tables no test sets, and stay tables: a test that asks a company
+hands its machine a network that carries the real addresses to a server
+of its own, `cloud` in `engine/provider_test.go`, and checks the address
+each request was meant for.

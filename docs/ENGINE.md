@@ -1364,8 +1364,11 @@ command line a command or a flag. The engine makes these with
 the command line's, which `Run` prints. The app's words never name a
 command or a flag, which its person has nowhere to type.
 
-The command line reads the environment first and the keychain after. The
-app turns that round with `PreferSavedKeys` as it starts, so the key saved
+The keys are kept on the program's `engine.Machine`, which reaches the
+keychain and the network only once `main` hands it them with `UseSystem`,
+so a machine a test makes keeps no key and shows none to a company. The
+command line reads the environment first and the keychain after. The
+app turns that round with `PreferSavedKeys` on its machine as it starts, so the key saved
 in its settings is the one used, and a key left in a terminal's
 environment never wins over it. `KeyHint` gives a key in short, its first
 twelve characters and its last four, kept as the keychain item's comment

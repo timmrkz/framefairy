@@ -1364,15 +1364,18 @@
     right: 8px;
     display: flex;
     gap: 2px;
+    /* Hidden, but still under the pointer. They lie inside the row, so
+       the pointer is never on them without being on the row, which
+       shows them. Taken from the pointer while hidden, WebKit found the
+       row's button under a pointer that came in on the dots, and lit the
+       dots only once it moved again. */
     opacity: 0;
-    pointer-events: none;
   }
 
   li:hover .tools,
   .tools:focus-within,
   .tools:has(:global([aria-expanded="true"])) {
     opacity: 1;
-    pointer-events: auto;
   }
 
   .name {

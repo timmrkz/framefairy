@@ -44,17 +44,24 @@ type LicenceLink struct {
 	Reason string `json:"reason"`
 }
 
-// The keychain, as the licence row uses it. Tests put a map in its place,
-// so they never reach the machine's own keychain, whose locked box nobody
-// answers in CI.
+// The keychain, as the licence row uses it, the one the app's machine was
+// handed. Tests put a map in its place.
 var (
-	savedLicence = engine.SavedLicence
-	saveLicence  = engine.SaveLicence
+	savedLicence = (*engine.Machine).SavedLicence
+	saveLicence  = (*engine.Machine).SaveLicence
 )
+
+// machine is the app's machine, the one its store holds.
+func (s *FrameFairy) machine() *engine.Machine {
+	if s.store == nil {
+		return nil
+	}
+	return s.store.machine
+}
 
 // Licence is the Licence row as it stands.
 func (s *FrameFairy) Licence() LicenceState {
-	about, saved := savedLicence()
+	about, saved := savedLicence(s.machine())
 	s.mu.Lock()
 	waiting := s.link != nil
 	s.mu.Unlock()
@@ -64,7 +71,7 @@ func (s *FrameFairy) Licence() LicenceState {
 // SaveLicence checks a key and keeps it. An empty key takes the kept one
 // off the machine. The errors start small, to sit inside a sentence.
 func (s *FrameFairy) SaveLicence(key string) (LicenceState, error) {
-	if _, err := saveLicence(key, testKeys()); err != nil {
+	if _, err := saveLicence(s.machine(), key, testKeys()); err != nil {
 		return s.Licence(), err
 	}
 	return s.Licence(), nil
@@ -111,7 +118,7 @@ func (s *FrameFairy) openedWith(raw string) {
 		theLog.line(zerolog.InfoLevel, "app").Err(err).Msg("a link the app does not take")
 		return
 	}
-	l := linkOutcome(k, testKeys())
+	l := linkOutcome(s.machine(), k, testKeys())
 	s.mu.Lock()
 	s.link = &l
 	s.mu.Unlock()
@@ -130,17 +137,17 @@ func (s *FrameFairy) openedWith(raw string) {
 // because every key unlocks the same app and nothing is lost by it, and
 // the settings say which key went. A key that does not check changes
 // nothing, so a Mac that was licensed stays licensed.
-func linkOutcome(k licence.Key, testKeys bool) LicenceLink {
+func linkOutcome(m *engine.Machine, k licence.Key, testKeys bool) LicenceLink {
 	_, l, err := engine.CheckLicence(string(k), testKeys)
 	if err != nil {
 		return LicenceLink{What: "refused", Reason: err.Error()}
 	}
 	about := engine.DescribeLicence(l)
-	before, saved := savedLicence()
+	before, saved := savedLicence(m)
 	if saved && before == about {
 		return LicenceLink{What: "same", About: about}
 	}
-	if _, err := saveLicence(string(k), testKeys); err != nil {
+	if _, err := saveLicence(m, string(k), testKeys); err != nil {
 		return LicenceLink{What: "refused", Reason: err.Error()}
 	}
 	if !saved {

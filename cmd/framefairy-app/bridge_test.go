@@ -1122,7 +1122,7 @@ func openBridge(t *testing.T) *bridge {
 		gates: map[string]*gate{}, fails: map[string]string{}}
 	// What the first run downloads, once a walk made the machine new.
 	// What arrives is as much of a model as the app looks for.
-	installSpeech = func(ctx context.Context, log *runlog.Log, m engine.SpeechModel, dir string) error {
+	installSpeech = func(_ *engine.Machine, ctx context.Context, log *runlog.Log, m engine.SpeechModel, dir string) error {
 		return b.arriving(ctx, log, "speech", m.Download, func() error {
 			if err := os.MkdirAll(filepath.Join(dir, m.Name), 0o755); err != nil {
 				return err
@@ -1130,7 +1130,7 @@ func openBridge(t *testing.T) *bridge {
 			return os.WriteFile(filepath.Join(dir, m.Name, "tokens.txt"), []byte("the stand-in hears\n"), 0o644)
 		})
 	}
-	installLanguage = func(ctx context.Context, log *runlog.Log, m engine.LanguageModel, dir string) error {
+	installLanguage = func(_ *engine.Machine, ctx context.Context, log *runlog.Log, m engine.LanguageModel, dir string) error {
 		return b.arriving(ctx, log, "clip", m.Download, func() error {
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				return err

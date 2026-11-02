@@ -438,8 +438,11 @@ func main() {
 	defer stop()
 
 	log := runlog.New(os.Stdout, !p.plain, p.verbose)
-	// The one machine of the run, made once here, see engine.Machine.
-	e := engine.NewEngine(log, engine.NewMachine(afero.NewOsFs()))
+	// The one machine of the run, made once here, see engine.Machine,
+	// with the keychain and the network.
+	machine := engine.NewMachine(afero.NewOsFs())
+	machine.UseSystem()
+	e := engine.NewEngine(log, machine)
 	// The one folder the records go in, for the whole run, the way the app
 	// keeps it from its settings.
 	e.Records.SetTrainingDir(p.opts.TrainingDir)
