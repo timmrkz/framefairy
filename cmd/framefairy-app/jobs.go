@@ -304,7 +304,8 @@ func newIdleQueue(s *store, emit func(JobUpdate), notify func(string)) *queue {
 // model rather than failing on it: the speech model with hearing, which
 // cannot start without it, and the language model with finding clips.
 // That way installing one does not hold up the other. A search starts in
-// the lane of finding and moves as its steps go, see lanes.go.
+// the lane of its first step, see firstLane, and moves as its steps go,
+// see lanes.go.
 func laneFor(kind string) string {
 	switch kind {
 	case "model", engine.JobTranscribe:
