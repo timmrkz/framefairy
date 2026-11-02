@@ -551,7 +551,7 @@ func TestPathNewOnALaterWindowHearsOnlyWhatIsNew(t *testing.T) {
 // On the real disk: the search works beside a video ffmpeg made and reads.
 func TestPathATargetStaysWithItsWindow(t *testing.T) {
 	d := open(t)
-	if err := d.svc.setSearch(3, 1800, 20, 30); err != nil {
+	if err := d.svc.setSearch("", 3, 1800, 20, 30); err != nil {
 		t.Fatal(err)
 	}
 	asked := func(ep string) int {
@@ -565,7 +565,7 @@ func TestPathATargetStaysWithItsWindow(t *testing.T) {
 	if n, want := asked(d.add("other", minutes5)), engine.SuggestedCount(300, 20, 30); n != want || n == 3 {
 		t.Errorf("five minutes asked for %d, want the %d they suggest", n, want)
 	}
-	if err := d.svc.setSearch(3, 300, 20, 30); err != nil {
+	if err := d.svc.setSearch("", 3, 300, 20, 30); err != nil {
 		t.Fatal(err)
 	}
 	if n := asked(d.add("same", minutes5)); n != 3 {

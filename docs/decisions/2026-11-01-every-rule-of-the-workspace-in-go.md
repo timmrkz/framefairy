@@ -452,6 +452,16 @@ The state is read about once a second while work runs, and once for
 each answer to a hand, so a quarter of a millisecond is far under a
 frame.
 
+A number of clips typed is still kept in the settings by the length of
+the window it was typed for, not in the video's record. It is a choice
+people make once for every video: a count typed for a window of five
+minutes is asked for in every window of five minutes, on the next video
+too, which a test holds, `TestPathATargetStaysWithItsWindow`. What
+changed is who moves it. Go fits the window of every video whose state
+is read, and a fit of another video's window as long took the count
+typed on this one away, so the settings keep the video it was typed on,
+and only a fit of that video's window carries it along.
+
 Step 5 is as decided. The queue tells a failure where it sees it, in
 `update` as a job goes from waiting or running to failed, and in
 `refuse`, see `cmd/framefairy-app/notice.go`, on the `notice` event, and

@@ -39,8 +39,13 @@ type Settings struct {
 	// TargetWindow is how long the window was that Target was typed for,
 	// in seconds. Target is for that window and no other, see targetFor.
 	TargetWindow float64 `json:"targetWindow,omitempty"`
-	Min          float64 `json:"min"`
-	Max          float64 `json:"max"`
+	// TargetVideo is the video Target was typed on. Every window of its
+	// length asks for it, on any video, and only the window of the video
+	// it was typed on carries it along when Go fits that window, see
+	// windowFor. A fit of another video's window took it away.
+	TargetVideo string  `json:"targetVideo,omitempty"`
+	Min         float64 `json:"min"`
+	Max         float64 `json:"max"`
 	// The colour of the pill behind the word being spoken, in the framefairy
 	// the engine renders. It belongs to the short, not to the app.
 	HighlightColour string `json:"highlightColour"`

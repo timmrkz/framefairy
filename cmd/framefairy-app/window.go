@@ -130,10 +130,11 @@ func (s *FrameFairy) windowFor(ctx context.Context, path string, st VideoState, 
 		return view(now, limits(now))
 	}
 	// A target typed for the window is the target of the window fitted,
-	// most often to the clips it asked for.
+	// most often to the clips it asked for, when it was typed on this
+	// video. A window of another video as long only asks for it.
 	if l.Typed > 0 {
 		if err := s.store.UpdateSettings(func(set *Settings) {
-			if set.targetFor(w.To-w.From) > 0 {
+			if set.targetFor(w.To-w.From) > 0 && set.TargetVideo == path {
 				set.TargetWindow = to - from
 			}
 		}); err != nil {

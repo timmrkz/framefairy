@@ -165,6 +165,66 @@ func TestWhatIsTypedForASearchIsHeldToTheWindow(t *testing.T) {
 	}
 }
 
+// A target typed on one video stays when another video's window of the
+// same length is fitted shorter: the fit carries the target along only
+// on the video it was typed on. A state read of the other video, as it
+// is heard, once took the target typed on this one away.
+func TestATargetTypedOnOneVideoStaysWhenAnotherIsFitted(t *testing.T) {
+	t.Parallel()
+	svc, eps := memoryLibrary(t, "a.mp4", "b.mp4")
+	a, b := eps[0], eps[1]
+	svc.jobs = newQueue(svc.store, func(JobUpdate) {}, func(string) {})
+	const duration = 3600.0
+	for _, ep := range eps {
+		var words [][3]any
+		for at := 0.0; at+1 <= duration; at += 0.5 {
+			word := "ja"
+			if ep == b && at >= 1800 {
+				word = "Donaudampfschifffahrtsgesellschaft"
+			}
+			words = append(words, [3]any{at, at + 0.4, fmt.Sprintf("%s%d", word, len(words))})
+		}
+		heardEpisode(t, svc, ep, duration, words)
+	}
+	svc.probes = &probed{info: map[string]engine.SourceInfo{"": {Duration: duration}}}
+	ctx := context.Background()
+	most := func(ep string) float64 {
+		st, err := svc.State(ctx, ep)
+		if err != nil || st.Window == nil {
+			t.Fatalf("the state of %s: %v", ep, err)
+		}
+		return st.Window.Most
+	}
+	mostA, mostB := most(a), most(b)
+	if mostA <= mostB+20 {
+		t.Fatalf("a reads %v s and b %v s, so b is fitted to no shorter a window", mostA, mostB)
+	}
+	length := math.Round((mostA + mostB) / 2)
+	if err := svc.chooseWindow(a, 0, length, length, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.SetSearch(ctx, a, 5, 20, 30, "target"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.chooseWindow(b, 0, length, length, true); err != nil {
+		t.Fatal(err)
+	}
+	stB, err := svc.State(ctx, b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := stB.Window; w.To-w.From > mostB+0.01 || w.Typed != 0 {
+		t.Errorf("b's window of %v s came as %v–%v s asking for %d typed", length, w.From, w.To, w.Typed)
+	}
+	stA, err := svc.State(ctx, a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stA.Window.Typed != 5 {
+		t.Errorf("a's window of %v s asks for %d typed after b's was fitted, not the 5 typed on it", length, stA.Window.Typed)
+	}
+}
+
 // Everything the workspace does to a window at once, from several
 // goroutines, while states are read: the window moved by hand, placed
 // again, and the numbers of a search typed. Once all is still, the state
