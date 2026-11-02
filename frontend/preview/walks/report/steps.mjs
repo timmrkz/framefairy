@@ -12,18 +12,17 @@ import { dropOn, standsAt, stillStands, toastSays, toastsSay, url } from "../com
 const LOW = 659.26;
 const HIGH = 987.77;
 const near = (n, pitch) => Math.abs(n.f - pitch) < 40;
-// sounds waits until a note near first and one near second have sounded
-// since note from and the audio is quiet again, and gives every note
-// since, however late they come. The walk's own timeout ends it if they
-// never do.
+// sounds waits until the window has started a note near first and one
+// near second since note from, and gives every note since, however late
+// they come. The walk's own timeout ends it if they never do.
 async function sounds(page, from, first, second) {
   await page.evaluate(([from, a, b]) => window.__sound(from, a, b), [from, first, second]);
   return page.evaluate((from) => window.__notes.slice(from), from);
 }
-// theTwo says whether the notes are exactly two, the one near first and
-// then the one near second.
+// theTwo says whether the notes are exactly two that play, the one near
+// first and then the one near second.
 function theTwo(notes, first, second) {
-  return notes.length === 2 && near(notes[0], first) && near(notes[1], second) && notes[0].at < notes[1].at;
+  return notes.length === 2 && !notes.some((n) => n.silent) && near(notes[0], first) && near(notes[1], second) && notes[0].at < notes[1].at;
 }
 
 export const steps = {
@@ -39,227 +38,189 @@ export const steps = {
       noDeadlines(walk.reportPage);
       await slowDown(walk.reportPage);
       walk.reportPage.on("pageerror", (e) => errors.push(String(e)));
-      // Every note the window sounds, heard in what it sends to the
-      // speakers, with its pitch and whether the microphone had said it
-      // was on by then, its answer to the latest Listen, for the dictate
-      // step's sounds. Whatever the app connects to the speakers is also
-      // connected to a tap that reads the samples as they are played. A
-      // note is a pitch that starts to sound, and when it starts is read
-      // on the audio's own clock, against the moment Listen answered.
+      // Every note the window plays, read from the sound itself as the
+      // window starts it, with its pitch and whether the microphone had
+      // said it was on by then, its answer to the latest Listen, for the
+      // dictate step's sounds. The walk does not listen to the speakers:
+      // an ear on the audio's output heard a start sound late after the
+      // audio had rested, in Chromium, or never, in WebKit, while the
+      // window had played it, #672 and #680. What the window starts is
+      // what a person hears, as long as its audio runs or was asked to,
+      // so a sound started on audio that was last asked to rest is
+      // marked silent, and so is one the walk cannot read. A note's at counts the seconds of every sound started
+      // before it, so notes come in the order they play.
       // window.__sound(from, a, b) settles once, from note from on, a
-      // note near pitch a and one near pitch b have sounded and the audio
-      // is quiet again, window.__before is the loudest sample played
-      // since the latest Listen was asked and before it answered, and
-      // window.__tapped settles once the tap listens.
+      // note near pitch a and one near pitch b have been started, and
+      // window.__before is the loudest sample started since the latest
+      // Listen was asked and before it answered.
       //
-      // What the tap hears is also written to the page's console, which
-      // the walk's trace keeps: every note, every change of the audio's
-      // state, every sound the page starts and every wait for a sound. A
-      // walk that waited for a sound that never came, #672, then says
-      // whether the audio ran when the sound was started and what the tap
-      // heard after it.
+      // What the window plays is also written to the page's console,
+      // which the walk's trace keeps: every note, every change of the
+      // audio's state, every sound started and every wait for a sound.
       await walk.reportPage.addInitScript(() => {
-        const told = (...a) => console.log("tap:", ...a);
+        const told = (...a) => console.log("ear:", ...a);
         window.__notes = [];
         window.__before = 0;
         let waiting = [];
-        let quiet = true;
+        // A wait settles once both pitches were started, or once a sound
+        // was started that plays nothing, for the step to say so rather
+        // than wait for good.
         const has = ({ from, a, b }) => {
           const since = window.__notes.slice(from);
-          return quiet && [a, b].every((p) => since.some((n) => Math.abs(n.f - p) < 40));
+          return since.some((n) => n.silent) || [a, b].every((p) => since.some((n) => Math.abs(n.f - p) < 40));
         };
         window.__sound = (from, a, b) =>
           new Promise((done) => {
-            told(`waits for ${a} and ${b} from note ${from}, ${window.__notes.length} heard, ${quiet ? "quiet" : "sounding"}`);
+            told(`waits for ${a} and ${b} from note ${from}, ${window.__notes.length} played`);
             const settled = () => {
-              told(`heard ${a} and ${b} from note ${from}`);
+              told(`played ${a} and ${b} from note ${from}`);
               done();
             };
             if (has({ from, a, b })) settled();
             else waiting.push({ from, a, b, done: settled });
           });
-        const heard = (note) => {
-          told(`note ${window.__notes.length}, ${note.f} Hz at ${note.at.toFixed(3)} s${note.open ? "" : ", before the microphone was on"}`);
-          window.__notes.push(note);
-        };
-        // A sound is over once the audio has been quiet this long, in
-        // seconds of its own clock: longer than the rest between the two
-        // notes of one sound, and shorter than the quiet the stop sound
-        // ends in before the audio rests.
-        const over = 0.05;
-        let quietFrom = 0;
-        // quieted hears whether the samples of a piece the tap handed on
-        // were loud, and from when the audio has been quiet since.
-        const quieted = (played, d, rate) => {
-          let last = d.length - 1;
-          while (last >= 0 && Math.abs(d[last]) <= loud) last--;
-          if (last >= 0) quietFrom = played + (last + 1) / rate;
-          const was = quiet;
-          quiet = played + d.length / rate - quietFrom >= over;
-          if (quiet !== was) told(`${quiet ? "quiet" : "sounding"} at ${played.toFixed(3)} s`);
-          for (const w of waiting.filter(has)) w.done();
-          waiting = waiting.filter((w) => !has(w));
-        };
         // A sample louder than this is sound, and a pitch whose strength
         // is over it sounds. The app's notes are about ten times louder.
         const loud = 0.01;
         // The pitches a note is looked for at, in Hz.
         const pitches = [];
         for (let f = 200; f <= 2000; f += 10) pitches.push(f);
-        const strength = (d, from, f, rate) => {
+        const strength = (d, from, to, f, rate) => {
           const k = (2 * Math.PI * f) / rate;
           const c = 2 * Math.cos(k);
           let a = 0, b = 0;
-          for (let i = from; i < d.length; i++) [a, b] = [d[i] + c * a - b, a];
-          return (2 * Math.sqrt(Math.max(0, a * a + b * b - c * a * b))) / (d.length - from);
+          for (let i = from; i < to; i++) [a, b] = [d[i] + c * a - b, a];
+          return (2 * Math.sqrt(Math.max(0, a * a + b * b - c * a * b))) / (to - from);
         };
-        // The tap runs on the audio's own thread and hands every piece it
-        // plays on, with the moment it plays, so none is lost however
-        // busy the window is. A ScriptProcessorNode, the older tap, drops
-        // what the window is too busy to take, and on CI's machines it
-        // heard no start sound at all.
-        const tapCode = `registerProcessor("tap", class extends AudioWorkletProcessor {
-          process([input]) {
-            if (input[0]) this.port.postMessage({ at: currentFrame / sampleRate, d: input[0].slice() });
-            return true;
-          }
-        });`;
-        const tapURL = URL.createObjectURL(new Blob([tapCode], { type: "text/javascript" }));
-        const connect = AudioNode.prototype.connect;
-        // What the app connects to the speakers, also connected to the tap
-        // through this, for each audio.
-        const buses = new WeakMap();
-        // hearing reads the samples the tap hands on, at the moment the
-        // first of them plays, 1024 at a time for their pitches.
-        const hearing = (rate) => {
-          const block = new Float32Array(1024);
-          let filled = 0;
-          let blockAt = 0;
-          const pitched = pitchesOf(rate);
-          return (played, d) => {
-            heardTo = played + d.length / rate;
-            for (let i = 0; i < d.length && played + i / rate < micOn; i++) window.__before = Math.max(window.__before, Math.abs(d[i]));
-            for (let i = 0; i < d.length; i++) {
-              if (filled === 0) blockAt = played + i / rate;
-              block[filled++] = d[i];
-              if (filled < block.length) continue;
-              pitched(blockAt, block);
-              filled = 0;
-            }
-            quieted(played, d, rate);
-          };
-        };
-        // pitchesOf reads the notes in each 1024 samples, at the moment
-        // the first of them plays.
-        const pitchesOf = (rate) => {
-          // The pitches sounding now, and when the sound began while
-          // there were too few samples yet to tell its pitch by.
+        // notesIn reads the notes of a sound, 1024 samples at a time, each
+        // at the moment of the sound it starts at, in seconds. A note
+        // sounds on for as long as its own pitch is there, even where a
+        // newer one is stronger, so it is read once.
+        const notesIn = (d, rate) => {
+          const notes = [];
           let sounding = [];
-          let began = null;
-          return (played, d) => {
-            const first = d.findIndex((x) => Math.abs(x) > loud);
-            if (first < 0) {
-              sounding = [];
-              began = null;
-              return;
+          for (let at = 0; at < d.length; at += 1024) {
+            const to = Math.min(d.length, at + 1024);
+            let first = at;
+            while (first < to && Math.abs(d[first]) <= loud) first++;
+            if (to - first < 256) {
+              if (first === to) sounding = [];
+              continue;
             }
-            const from = sounding.length || began !== null ? 0 : first;
-            const at = sounding.length ? played : (began ?? played + from / rate);
-            if (d.length - from < 256) {
-              began = at;
-              return;
-            }
-            began = null;
-            const s = pitches.map((f) => strength(d, from, f, rate));
+            const s = pitches.map((f) => strength(d, first, to, f, rate));
             // A pure tone also shows weaker beside itself, so only a peak
             // near the strongest is a pitch that sounds.
             const most = Math.max(...s);
-            const peaks = pitches.filter(
-              (f, i) => s[i] > loud && s[i] > most / 3 && s[i] >= (s[i - 1] ?? 0) && s[i] >= (s[i + 1] ?? 0),
-            );
-            // A note sounds on for as long as its own pitch is there, even
-            // where a newer one is stronger, so it is heard once.
-            sounding = sounding.filter((f) => strength(d, from, f, rate) > loud / 2);
+            const peaks = pitches.filter((f, i) => s[i] > loud && s[i] > most / 3 && s[i] >= (s[i - 1] ?? 0) && s[i] >= (s[i + 1] ?? 0));
+            sounding = sounding.filter((f) => strength(d, first, to, f, rate) > loud / 2);
             for (const f of peaks) {
               if (sounding.some((g) => Math.abs(g - f) < 60)) continue;
-              heard({ f, at, open: at >= micOn });
+              notes.push({ f, at: first / rate });
               sounding.push(f);
             }
-          };
+          }
+          return notes;
         };
+        // Whether the microphone has said it is on, by its answer to the
+        // latest Listen, and how many seconds of sound were started
+        // before, which a note's at counts from.
+        let micOn = false;
+        let playedFor = 0;
+        // What each audio was last asked, to run or to rest, which is what
+        // it does once it can.
+        const meant = new WeakMap();
+        const wants = (c) => meant.get(c) ?? c.state;
         const Real = window.AudioContext;
-        // How far the tap has handed the samples on, on the audio's own
-        // clock, and how far it had when the microphone said it was on.
-        let heardTo = -Infinity;
-        let micOn = Infinity;
         window.AudioContext = class extends Real {
           constructor(...a) {
             super(...a);
-            heardTo = -Infinity;
-            micOn = Infinity;
-            const bus = new GainNode(this);
-            buses.set(this, bus);
-            // Settles once the audio's clock runs, which it does only
-            // after the click that woke it.
             told(`audio made, ${this.state}`);
             this.addEventListener("statechange", () => told(`audio ${this.state} at ${this.currentTime.toFixed(3)} s`));
+            // Settles once the audio's clock runs, which it does only
+            // after the click that woke it.
             window.__running = new Promise((done) => {
               const runs = () => this.state === "running" && done();
               this.addEventListener("statechange", runs);
               runs();
             });
-            // Settles once the tap listens. It is made once the audio
-            // runs: WebKit asked for it while the audio was waking at
-            // times never woke it.
-            window.__tapped = window.__running
-              .then(() => this.audioWorklet.addModule(tapURL))
-              .then(() => {
-                const tap = new AudioWorkletNode(this, "tap", { channelCount: 1, channelCountMode: "explicit", outputChannelCount: [1] });
-                const hear = hearing(this.sampleRate);
-                tap.port.onmessage = (e) => hear(e.data.at, e.data.d);
-                connect.call(bus, tap);
-                connect.call(tap, this.destination);
-              });
+          }
+          resume() {
+            meant.set(this, "running");
+            return super.resume();
+          }
+          suspend() {
+            meant.set(this, "suspended");
+            return super.suspend();
           }
         };
-        // The bridge says when a call is answered, see wails-bridge.ts.
-        // Whatever the tap had handed on by then played before it, so a
-        // note that began there sounded before the microphone said it
-        // was on. The page's own audio clock, currentTime, is no measure
-        // of that: in WebKit it ran ahead of what played after the audio
-        // had rested, so a start sound that came after the answer read as
-        // tens of milliseconds before it.
+        // The bridge says when a call is asked and when it is answered,
+        // see wails-bridge.ts, before the window that asked hears the
+        // answer. A sound the window starts after the answer to Listen
+        // comes after the microphone said it was on, and one started
+        // before it does not.
         window.addEventListener("answered", (e) => {
           if (e.detail !== "Listen") return;
-          micOn = heardTo;
-          told(`Listen answered, heard to ${heardTo.toFixed(3)} s`);
+          micOn = true;
+          told("Listen answered");
         });
         window.addEventListener("asked", (e) => {
           if (e.detail !== "Listen") return;
-          micOn = Infinity;
+          micOn = false;
           window.__before = 0;
-          told(`Listen asked, heard to ${heardTo.toFixed(3)} s`);
+          told("Listen asked");
         });
-        AudioNode.prototype.connect = function (to, ...a) {
-          const out = connect.call(this, to, ...a);
-          if (to instanceof AudioDestinationNode && buses.has(this.context)) connect.call(this, buses.get(this.context));
-          return out;
+        // played reads a sound the window starts.
+        const played = (node) => {
+          const c = node.context;
+          if (!(node instanceof AudioBufferSourceNode) || !node.buffer) {
+            told(`a sound the walk cannot read, ${node.constructor.name}`);
+            window.__notes.push({ f: 0, at: playedFor, open: micOn, silent: true, unread: node.constructor.name });
+            for (const w of waiting.filter(has)) w.done();
+            waiting = waiting.filter((w) => !has(w));
+            return;
+          }
+          const d = node.buffer.getChannelData(0);
+          const rate = node.buffer.sampleRate;
+          told(`a sound started, ${(d.length / rate).toFixed(3)} s, while the audio is ${c.state} and was asked to be ${wants(c)}${micOn ? "" : ", before the microphone was on"}`);
+          const silent = wants(c) !== "running";
+          if (!micOn && !silent) for (const x of d) window.__before = Math.max(window.__before, Math.abs(x));
+          for (const n of notesIn(d, rate)) {
+            const note = { f: n.f, at: playedFor + n.at, open: micOn, ...(silent && { silent }) };
+            told(`note ${window.__notes.length}, ${note.f} Hz at ${note.at.toFixed(3)} s${note.open ? "" : ", before the microphone was on"}${silent ? ", on audio asked to rest, so it plays nothing" : ""}`);
+            window.__notes.push(note);
+          }
+          playedFor += d.length / rate;
+          for (const w of waiting.filter(has)) w.done();
+          waiting = waiting.filter((w) => !has(w));
         };
         // A window that is late to start a sound, for the dictate step's
         // "sounded late": with window.__late set, every sound is started
         // only once that many seconds of silence have played, past the
-        // moment it was meant to start.
-        const start = AudioScheduledSourceNode.prototype.start;
-        AudioScheduledSourceNode.prototype.start = function (when = 0, ...a) {
-          told(`a sound started while the audio is ${this.context.state}, at ${this.context.currentTime.toFixed(3)} s, heard to ${heardTo.toFixed(3)} s`);
-          if (!window.__late) return start.call(this, when, ...a);
+        // moment it was meant to start. What it plays is read when it
+        // really starts. A sound of samples has a start of its own in
+        // WebKit, and a tone has the one every sound has, so both are
+        // taken.
+        const connect = AudioNode.prototype.connect;
+        const real = new Map();
+        for (const Node of [AudioScheduledSourceNode, AudioBufferSourceNode]) if (Object.hasOwn(Node.prototype, "start")) real.set(Node, Node.prototype.start);
+        const startOf = (node) => real.get(node instanceof AudioBufferSourceNode && real.has(AudioBufferSourceNode) ? AudioBufferSourceNode : AudioScheduledSourceNode);
+        const late = function (when = 0, ...a) {
+          const start = startOf(this);
+          if (!window.__late) {
+            played(this);
+            return start.call(this, when, ...a);
+          }
           const c = this.context;
           const rest = c.createBufferSource();
           rest.buffer = c.createBuffer(1, Math.round(window.__late * c.sampleRate), c.sampleRate);
           connect.call(rest, c.destination);
-          rest.onended = () => start.call(this, when, ...a);
-          start.call(rest, Math.max(when, c.currentTime));
+          rest.onended = () => {
+            played(this);
+            start.call(this, when, ...a);
+          };
+          startOf(rest).call(rest, Math.max(when, c.currentTime));
         };
+        for (const Node of real.keys()) Node.prototype.start = late;
       });
       // Whether the page asked for the ring when it moved the focus
       // last, for the tab step: WebKit rings a focus moved by a script
@@ -1596,15 +1557,14 @@ export const steps = {
     // opened may not be listening yet, and missed every reading of how
     // loud the microphone was, so the walk waits until it is.
     if (!running) await caughtUp(page, url);
-    // The recording starts and tells the window what it hears, and the
-    // answer that it started waits, see /hold, until the walk listens to
-    // what the window plays: the tap is made with the window's audio, at
-    // the press. "start, answered late" holds it longer still.
+    // The recording starts and tells the window what it hears. "start,
+    // answered late" holds the answer that it started, see /hold, until
+    // the window has told what it heard.
     const late = arg === "start, answered late";
     // The window starts the start sound later than it means to, by more
     // than the sound is long, counted on the audio's clock once it runs.
     const slow = arg === "start, sounded late";
-    if (!running) await control(url, "/hold?call=Listen&gate=shut&answer=1&times=1");
+    if (late) await control(url, "/hold?call=Listen&gate=shut&answer=1&times=1");
     const before = await page.evaluate(() => window.__notes.length);
     if (!running) await button.click();
     // Stop the moment it is pressed, see the rules on a click.
@@ -1613,9 +1573,7 @@ export const steps = {
       walk.wrong = `Dictate says "${said}" the frame after it was pressed, not Stop`;
       return;
     }
-    if (!running) await page.evaluate(() => window.__tapped);
     if (slow) await page.evaluate(() => window.__running.then(() => (window.__late = 0.5)));
-    if (!running && !late) await control(url, "/hold?call=Listen&gate=open");
     // The words appear while they are heard, before anything stops. The
     // recording goes on until the app has told words being heard, see
     // /microphone.
@@ -1634,12 +1592,9 @@ export const steps = {
     // From the press on, nothing sounds until the microphone says it is
     // on, not a sample, and then exactly the two notes going up, #654. A
     // busy machine hands that answer back after the microphone's first
-    // news, so the walk waits for the two notes and the quiet after them,
-    // however late, and reads only what sounded since the press. The
-    // walk's own timeout ends it if they never come. On a page's first
-    // dictation the tap is made at the press, so a sound played that
-    // early is not heard at all: the walk then waits for it until the
-    // timeout of the whole shard, which the walks of that shard fail by.
+    // news, so the walk waits until the window has started the two
+    // notes, however late, and reads only what was started since the
+    // press. The walk's own timeout ends it if they never come.
     if (late) await control(url, "/hold?call=Listen&gate=open");
     if (!running) {
       const up = await sounds(page, before, LOW, HIGH);
@@ -1711,8 +1666,8 @@ export const steps = {
       else if (!on.ring) walk.wrong ||= "once the last words were written Report had the focus with no ring asked for";
     }
     // The two notes going down say it stopped, however it stopped. They
-    // sound a moment after Dictate shows again, so the walk waits for
-    // them, and for the quiet after them.
+    // start a moment after Dictate shows again, so the walk waits for
+    // them.
     const down = await sounds(page, kept.notes, HIGH, LOW);
     if (!theTwo(down, HIGH, LOW)) walk.wrong = `it stopped with ${JSON.stringify(down)} sounded, not the two notes of the stop sound going down`;
     await watch.step("dictate", s);
