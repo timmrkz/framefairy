@@ -67,8 +67,8 @@ func useFakeKeychain(t *testing.T) *fakeKeychain {
 	f := &fakeKeychain{}
 	read, keep := savedLicence, saveLicence
 	t.Cleanup(func() { savedLicence, saveLicence = read, keep })
-	savedLicence = func() (string, bool) { return f.about, f.key != "" }
-	saveLicence = func(text string, test bool) (string, error) {
+	savedLicence = func(*engine.Machine) (string, bool) { return f.about, f.key != "" }
+	saveLicence = func(_ *engine.Machine, text string, test bool) (string, error) {
 		if strings.TrimSpace(text) == "" {
 			f.key, f.about = "", ""
 			return "", nil
@@ -124,7 +124,7 @@ func TestALinkUnlocksAMacWithNoKey(t *testing.T) {
 func TestALinkReplacesAKeptKeyAndSaysWhichWent(t *testing.T) {
 	kc := useFakeKeychain(t)
 	first, second := testKey(t, 1), testKey(t, 2)
-	if _, err := saveLicence(first, true); err != nil {
+	if _, err := saveLicence(nil, first, true); err != nil {
 		t.Fatal(err)
 	}
 	s := &FrameFairy{}
@@ -147,7 +147,7 @@ func TestALinkReplacesAKeptKeyAndSaysWhichWent(t *testing.T) {
 func TestARefusedLinkLeavesTheKeptKey(t *testing.T) {
 	kc := useFakeKeychain(t)
 	first := testKey(t, 1)
-	if _, err := saveLicence(first, true); err != nil {
+	if _, err := saveLicence(nil, first, true); err != nil {
 		t.Fatal(err)
 	}
 	s := &FrameFairy{}
@@ -166,7 +166,7 @@ func TestARefusedLinkLeavesTheKeptKey(t *testing.T) {
 func TestALinkWithAKeyThisBuildRefuses(t *testing.T) {
 	kc := useFakeKeychain(t)
 	k := testKey(t, 1)
-	got := linkOutcome(licence.Key(k), false)
+	got := linkOutcome(nil, licence.Key(k), false)
 	if got.What != "refused" || !strings.Contains(got.Reason, "test key") {
 		t.Fatalf("%+v", got)
 	}

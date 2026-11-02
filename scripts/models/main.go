@@ -20,6 +20,8 @@ import (
 
 	"framefairy/engine"
 	"framefairy/engine/runlog"
+
+	"github.com/spf13/afero"
 )
 
 // language is the model fetched for the command line, the one the app
@@ -38,13 +40,16 @@ func main() {
 }
 
 func fetch(ctx context.Context, log *runlog.Log) error {
+	// The models come over the network, which a machine is handed here.
+	machine := engine.NewMachine(afero.NewOsFs())
+	machine.UseSystem()
 	for _, m := range engine.SpeechModels() {
 		if !m.Recommended {
 			continue
 		}
 		if m.Installed("") {
 			fmt.Println("Speech model already there")
-		} else if err := engine.InstallSpeechModel(ctx, log, m, ""); err != nil {
+		} else if err := machine.InstallSpeechModel(ctx, log, m, ""); err != nil {
 			return err
 		}
 	}
@@ -57,5 +62,5 @@ func fetch(ctx context.Context, log *runlog.Log) error {
 		return fmt.Errorf("%s is not among the language models the engine knows", language)
 	}
 	fmt.Printf("Downloading %s, %.1f GB.\n", m.Title, float64(m.Download)/1e9)
-	return engine.InstallLanguageModel(ctx, log, m, "")
+	return machine.InstallLanguageModel(ctx, log, m, "")
 }

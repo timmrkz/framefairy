@@ -15,6 +15,8 @@ import (
 	"testing"
 
 	"framefairy/engine/runlog"
+
+	"github.com/spf13/afero"
 )
 
 // A tar.bz2 the way the real one comes: one folder named after the model,
@@ -67,6 +69,14 @@ func serving(t *testing.T, body []byte) *httptest.Server {
 
 func quietLog() *runlog.Log { return runlog.New(io.Discard, false, false) }
 
+// online is a machine handed the network, for a test whose download
+// comes from a server of its own.
+func online() *Machine {
+	m := NewMachine(afero.NewMemMapFs())
+	m.network = http.DefaultTransport
+	return m
+}
+
 // On the real disk: the speech model is unpacked into the folder the speech library loads.
 func TestInstallingASpeechModel(t *testing.T) {
 	const name = "test-model"
@@ -82,7 +92,7 @@ func TestInstallingASpeechModel(t *testing.T) {
 		if m.Installed(dir) {
 			t.Fatal("said it was there before anything happened")
 		}
-		if err := InstallSpeechModel(context.Background(), quietLog(), m, dir); err != nil {
+		if err := online().InstallSpeechModel(context.Background(), quietLog(), m, dir); err != nil {
 			t.Fatal(err)
 		}
 		if !m.Installed(dir) {
@@ -110,7 +120,7 @@ func TestInstallingASpeechModel(t *testing.T) {
 		defer s.Close()
 		m := SpeechModel{Name: name, Title: "Test", URL: s.URL, Download: int64(len(good))}
 		for i := 0; i < 2; i++ {
-			if err := InstallSpeechModel(context.Background(), quietLog(), m, dir); err != nil {
+			if err := online().InstallSpeechModel(context.Background(), quietLog(), m, dir); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -126,7 +136,7 @@ func TestInstallingASpeechModel(t *testing.T) {
 		s := serving(t, good)
 		m := SpeechModel{Name: name, Title: "Test", URL: s.URL, Download: int64(len(good)),
 			SHA256: "0000000000000000000000000000000000000000000000000000000000000000"}
-		err := InstallSpeechModel(context.Background(), quietLog(), m, dir)
+		err := online().InstallSpeechModel(context.Background(), quietLog(), m, dir)
 		if err == nil {
 			t.Fatal("took a model with the wrong checksum")
 		}
@@ -140,7 +150,7 @@ func TestInstallingASpeechModel(t *testing.T) {
 		wrong := modelArchive(t, map[string]string{"readme.txt": "nothing to see"})
 		s := serving(t, wrong)
 		m := SpeechModel{Name: name, Title: "Test", URL: s.URL, Download: int64(len(wrong))}
-		if err := InstallSpeechModel(context.Background(), quietLog(), m, dir); err == nil {
+		if err := online().InstallSpeechModel(context.Background(), quietLog(), m, dir); err == nil {
 			t.Fatal("took an archive with no tokens.txt")
 		}
 		if m.Installed(dir) {
@@ -155,7 +165,7 @@ func TestInstallingASpeechModel(t *testing.T) {
 		}))
 		defer s.Close()
 		m := SpeechModel{Name: name, Title: "Test", URL: s.URL}
-		if err := InstallSpeechModel(context.Background(), quietLog(), m, dir); err == nil {
+		if err := online().InstallSpeechModel(context.Background(), quietLog(), m, dir); err == nil {
 			t.Fatal("took a 404 for a model")
 		}
 		entries, _ := os.ReadDir(dir)
@@ -183,7 +193,7 @@ func TestInstallingASpeechModel(t *testing.T) {
 		}))
 		defer s.Close()
 		m := SpeechModel{Name: name, Title: "Test", URL: s.URL}
-		err := InstallSpeechModel(ctx, quietLog(), m, dir)
+		err := online().InstallSpeechModel(ctx, quietLog(), m, dir)
 		if err == nil {
 			t.Fatal("a cancelled install reported success")
 		}

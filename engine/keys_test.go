@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -75,25 +76,54 @@ func (m *memKeys) remove(item string) {
 	delete(m.hints, item)
 }
 
-// keychains puts two keychains in memory in place of the machine's, the
-// one the app keeps keys in now and the one the first keys were kept in.
-func keychains(t *testing.T, now, old map[string]string) (*memKeys, *memKeys) {
+// keychains is a machine with two keychains in memory, the one the app
+// keeps keys in now and the one the first keys were kept in, and no key in
+// the environment.
+func keychains(t *testing.T, now, old map[string]string) (*Machine, *memKeys, *memKeys) {
 	t.Helper()
-	savedKeys, savedOld := keys, oldKeys
+	m := NewMachine(afero.NewMemMapFs())
 	k, o := newMemKeys(now), newMemKeys(old)
-	keys, oldKeys = k, o
-	t.Cleanup(func() { keys, oldKeys = savedKeys, savedOld })
+	m.keys, m.oldKeys = k, o
 	t.Setenv("ANTHROPIC_API_KEY", "")
 	t.Setenv("OPENAI_API_KEY", "")
-	return k, o
+	return m, k, o
 }
 
-func TestTestsNeverReachTheMachinesKeychain(t *testing.T) {
-	if _, ok := keys.(noKeys); !ok {
-		t.Fatalf("a test binary keeps keys in %T, which may be the machine's own keychain", keys)
+// A machine a test makes keeps no key and reaches no company until a
+// program hands it the system's, so no test can write into the keychain
+// of the machine it runs on, where macOS would put a box nobody answers,
+// or show a key to a company.
+func TestAMachineKeepsNoKeyAndReachesNothingUntilHandedTheSystems(t *testing.T) {
+	t.Parallel()
+	m := NewMachine(afero.NewMemMapFs())
+	p, _ := ProviderNamed("anthropic")
+	if err := m.StoreAPIKey(p, "sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789"); err == nil ||
+		!strings.Contains(err.Error(), "no keychain") {
+		t.Errorf("a new machine kept a key: %v", err)
 	}
-	if _, ok := oldKeys.(noKeys); !ok {
-		t.Fatalf("a test binary reads old keys from %T", oldKeys)
+	if _, saved := m.SavedLicence(); saved {
+		t.Error("a new machine has a licence kept")
+	}
+
+	var asked atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked.Add(1)
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer server.Close()
+	p.Models = server.URL
+	// A key nobody could check passes, the way it does on a train.
+	if err := m.VerifyAPIKey(context.Background(), p, "sk-ant-bad"); err != nil {
+		t.Errorf("a new machine judged a key: %v", err)
+	}
+	if n := asked.Load(); n != 0 {
+		t.Errorf("a new machine asked a company %d times", n)
+	}
+
+	// Handed a network, the same machine asks.
+	m.network = http.DefaultTransport
+	if err := m.VerifyAPIKey(context.Background(), p, "sk-ant-bad"); err == nil || asked.Load() != 1 {
+		t.Errorf("with a network: %v, asked %d times", err, asked.Load())
 	}
 }
 
@@ -103,9 +133,9 @@ func TestTestsNeverReachTheMachinesKeychain(t *testing.T) {
 func TestStoreAPIKeyKeepsItInTheAppsOwnItem(t *testing.T) {
 	openai, _ := ProviderNamed("openai")
 	anthropic, _ := ProviderNamed("anthropic")
-	now, old := keychains(t, nil, map[string]string{openai.Keychain: "sk-old"})
+	m, now, old := keychains(t, nil, map[string]string{openai.Keychain: "sk-old"})
 
-	if err := StoreAPIKey(openai, "  sk-proj-new\n"); err != nil {
+	if err := m.StoreAPIKey(openai, "  sk-proj-new\n"); err != nil {
 		t.Fatal(err)
 	}
 	if now.items[openai.Item] != "sk-proj-new" {
@@ -124,7 +154,7 @@ func TestStoreAPIKeyKeepsItInTheAppsOwnItem(t *testing.T) {
 
 	// An empty key takes it off the machine, both ways.
 	old.items[openai.Keychain] = "sk-old"
-	if err := StoreAPIKey(openai, ""); err != nil {
+	if err := m.StoreAPIKey(openai, ""); err != nil {
 		t.Fatal(err)
 	}
 	if now.has(openai.Item) || old.has(openai.Keychain) {
@@ -132,13 +162,13 @@ func TestStoreAPIKeyKeepsItInTheAppsOwnItem(t *testing.T) {
 	}
 
 	// A key that cannot go in a header is refused before it is kept.
-	if err := StoreAPIKey(openai, "sk-a\nb"); err == nil || now.has(openai.Item) {
+	if err := m.StoreAPIKey(openai, "sk-a\nb"); err == nil || now.has(openai.Item) {
 		t.Errorf("a key with a newline: %v", err)
 	}
 
 	// With no keychain the person is told what works instead.
 	now.refuse = true
-	if err := StoreAPIKey(openai, "sk-proj-x"); err == nil || !strings.Contains(err.Error(), "OPENAI_API_KEY") {
+	if err := m.StoreAPIKey(openai, "sk-proj-x"); err == nil || !strings.Contains(err.Error(), "OPENAI_API_KEY") {
 		t.Errorf("no keychain: %v", err)
 	}
 }
@@ -147,8 +177,8 @@ func TestStoreAPIKeyKeepsItInTheAppsOwnItem(t *testing.T) {
 // the first time it is read, and only then is the old one removed.
 func TestReadAPIKeyMovesAnOldKey(t *testing.T) {
 	p, _ := ProviderNamed("anthropic")
-	now, old := keychains(t, nil, map[string]string{p.Keychain: "sk-ant-old"})
-	key, err := ReadAPIKey(context.Background(), p)
+	m, now, old := keychains(t, nil, map[string]string{p.Keychain: "sk-ant-old"})
+	key, err := m.ReadAPIKey(context.Background(), p)
 	if err != nil || key != "sk-ant-old" {
 		t.Fatalf("read %q, %v", key, err)
 	}
@@ -158,9 +188,9 @@ func TestReadAPIKeyMovesAnOldKey(t *testing.T) {
 
 	// A keychain that will not take the new item keeps the old one, so the
 	// key is never lost on the way.
-	now, old = keychains(t, nil, map[string]string{p.Keychain: "sk-ant-old"})
+	m, now, old = keychains(t, nil, map[string]string{p.Keychain: "sk-ant-old"})
 	now.refuse = true
-	if key, err := ReadAPIKey(context.Background(), p); err != nil || key != "sk-ant-old" {
+	if key, err := m.ReadAPIKey(context.Background(), p); err != nil || key != "sk-ant-old" {
 		t.Fatalf("read with a refusing keychain: %q, %v", key, err)
 	}
 	if !old.has(p.Keychain) {
@@ -172,13 +202,13 @@ func TestReadAPIKeyMovesAnOldKey(t *testing.T) {
 // says where a key goes.
 func TestReadAPIKeyOrder(t *testing.T) {
 	p, _ := ProviderNamed("openai")
-	now, _ := keychains(t, map[string]string{p.Item: "sk-from-keychain"}, nil)
-	if key, _ := ReadAPIKey(context.Background(), p); key != "sk-from-keychain" {
+	m, now, _ := keychains(t, map[string]string{p.Item: "sk-from-keychain"}, nil)
+	if key, _ := m.ReadAPIKey(context.Background(), p); key != "sk-from-keychain" {
 		t.Errorf("from the keychain: %q", key)
 	}
 	t.Setenv("OPENAI_API_KEY", "sk-from-env")
 	reads := now.reads
-	if key, _ := ReadAPIKey(context.Background(), p); key != "sk-from-env" {
+	if key, _ := m.ReadAPIKey(context.Background(), p); key != "sk-from-env" {
 		t.Errorf("from the environment: %q", key)
 	}
 	if now.reads != reads {
@@ -186,7 +216,7 @@ func TestReadAPIKeyOrder(t *testing.T) {
 	}
 	t.Setenv("OPENAI_API_KEY", "")
 	now.remove(p.Item)
-	_, err := ReadAPIKey(context.Background(), p)
+	_, err := m.ReadAPIKey(context.Background(), p)
 	if err == nil || !strings.Contains(err.Error(), "settings") || !strings.Contains(err.Error(), "OPENAI_API_KEY") {
 		t.Errorf("no key: %v", err)
 	}
@@ -197,23 +227,23 @@ func TestReadAPIKeyOrder(t *testing.T) {
 func TestCheckAPIKeyNeverReadsTheSecret(t *testing.T) {
 	anthropic, _ := ProviderNamed("anthropic")
 	openai, _ := ProviderNamed("openai")
-	now, old := keychains(t, map[string]string{anthropic.Item: "sk-ant"}, map[string]string{openai.Keychain: "sk-old"})
-	if err := CheckAPIKey(anthropic); err != nil {
+	m, now, old := keychains(t, map[string]string{anthropic.Item: "sk-ant"}, map[string]string{openai.Keychain: "sk-old"})
+	if err := m.CheckAPIKey(anthropic); err != nil {
 		t.Errorf("anthropic: %v", err)
 	}
 	// A key still kept the old way counts, and is moved when it is used.
-	if err := CheckAPIKey(openai); err != nil {
+	if err := m.CheckAPIKey(openai); err != nil {
 		t.Errorf("openai, kept the old way: %v", err)
 	}
 	if now.reads+old.reads != 0 {
 		t.Errorf("a check read %d secrets", now.reads+old.reads)
 	}
 	old.remove(openai.Keychain)
-	if err := CheckAPIKey(openai); err == nil {
+	if err := m.CheckAPIKey(openai); err == nil {
 		t.Error("no key, and the check found one")
 	}
 	t.Setenv("OPENAI_API_KEY", "sk-a\nb")
-	if err := CheckAPIKey(openai); err == nil {
+	if err := m.CheckAPIKey(openai); err == nil {
 		t.Error("a key with a newline in the environment passed the check")
 	}
 }
@@ -224,32 +254,32 @@ func TestCheckAPIKeyNeverReadsTheSecret(t *testing.T) {
 // refused it. The command line still reads the environment first.
 func TestTheAppUsesTheSavedKeyFirst(t *testing.T) {
 	p, _ := ProviderNamed("anthropic")
-	keychains(t, map[string]string{p.Item: "sk-ant-saved"}, nil)
+	m, _, _ := keychains(t, map[string]string{p.Item: "sk-ant-saved"}, nil)
 	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-old-in-the-shell")
-	t.Cleanup(func() { savedFirst.Store(false) })
 
-	if key, _ := ReadAPIKey(context.Background(), p); key != "sk-ant-old-in-the-shell" {
+	if key, _ := m.ReadAPIKey(context.Background(), p); key != "sk-ant-old-in-the-shell" {
 		t.Errorf("the command line read %q", key)
 	}
-	if got := KeySource(p); got != KeyInEnvironment {
+	if got := m.KeySource(p); got != KeyInEnvironment {
 		t.Errorf("the command line's key is in the %q", got)
 	}
 
-	PreferSavedKeys()
-	if key, _ := ReadAPIKey(context.Background(), p); key != "sk-ant-saved" {
+	m.PreferSavedKeys()
+	if key, _ := m.ReadAPIKey(context.Background(), p); key != "sk-ant-saved" {
 		t.Errorf("the app read %q", key)
 	}
-	if got := KeySource(p); got != KeyInKeychain {
+	if got := m.KeySource(p); got != KeyInKeychain {
 		t.Errorf("the app's key is in the %q", got)
 	}
 
 	// With nothing saved, the environment still stands in.
-	keychains(t, nil, nil)
+	m, _, _ = keychains(t, nil, nil)
+	m.PreferSavedKeys()
 	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-in-the-shell")
-	if key, _ := ReadAPIKey(context.Background(), p); key != "sk-ant-in-the-shell" {
+	if key, _ := m.ReadAPIKey(context.Background(), p); key != "sk-ant-in-the-shell" {
 		t.Errorf("with nothing saved the app read %q", key)
 	}
-	if got := KeySource(p); got != KeyInEnvironment {
+	if got := m.KeySource(p); got != KeyInEnvironment {
 		t.Errorf("with nothing saved the key is in the %q", got)
 	}
 }
@@ -275,16 +305,18 @@ func TestVerifyAPIKeyAsksTheCompany(t *testing.T) {
 	anthropic, _ := ProviderNamed("anthropic")
 	openai, _ := ProviderNamed("openai")
 	anthropic.Models, openai.Models = server.URL+"/anthropic", server.URL+"/openai"
+	m := NewMachine(afero.NewMemMapFs())
+	m.network = http.DefaultTransport
 
-	if err := VerifyAPIKey(context.Background(), anthropic, "sk-ant-good\n"); err != nil {
+	if err := m.VerifyAPIKey(context.Background(), anthropic, "sk-ant-good\n"); err != nil {
 		t.Errorf("a good key: %v", err)
 	}
-	err := VerifyAPIKey(context.Background(), anthropic, "sk-ant-bad")
+	err := m.VerifyAPIKey(context.Background(), anthropic, "sk-ant-bad")
 	if err == nil || !strings.Contains(err.Error(), "Anthropic did not accept this key") ||
 		strings.Contains(err.Error(), "{") {
 		t.Errorf("a refused key: %v", err)
 	}
-	if err := VerifyAPIKey(context.Background(), openai, "sk-proj-bad"); err == nil ||
+	if err := m.VerifyAPIKey(context.Background(), openai, "sk-proj-bad"); err == nil ||
 		err.Error() != "OpenAI did not accept this key." {
 		t.Errorf("a refused OpenAI key: %v", err)
 	}
@@ -303,14 +335,14 @@ func TestVerifyAPIKeyAsksTheCompany(t *testing.T) {
 
 	// Something else copied from the same page, like the ID the Console
 	// lists a key by, is refused as no key of theirs, in a short line.
-	err = VerifyAPIKey(context.Background(), anthropic, "apikey_01Jc8z2Rkr225X8W3UCSCFSDbad")
+	err = m.VerifyAPIKey(context.Background(), anthropic, "apikey_01Jc8z2Rkr225X8W3UCSCFSDbad")
 	if err == nil || err.Error() != "not an Anthropic key. Those start with sk-ant-." {
 		t.Errorf("a key's ID: %v", err)
 	}
 
 	// Nobody there: the key passes, since nothing is known against it.
 	server.Close()
-	if err := VerifyAPIKey(context.Background(), anthropic, "sk-ant-bad"); err != nil {
+	if err := m.VerifyAPIKey(context.Background(), anthropic, "sk-ant-bad"); err != nil {
 		t.Errorf("with the company out of reach: %v", err)
 	}
 }
@@ -330,18 +362,11 @@ func TestARefusedKeyIsSaidInWords(t *testing.T) {
 	}
 
 	p, _ := ProviderNamed("anthropic")
-	keychains(t, map[string]string{p.Item: "sk-ant-saved"}, nil)
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	e.keys = newMemKeys(map[string]string{p.Item: "sk-ant-saved"})
 	_, err = e.CallAPI(context.Background(), "the transcript", "claude-sonnet-5", 4000, "", "plan", "", nil)
 	if err == nil || !strings.Contains(err.Error(), "did not accept the saved API key. Replace it in the settings") {
 		t.Errorf("from the keychain: %v", err)
-	}
-}
-
-func TestTestsNeverShowAKeyToACompany(t *testing.T) {
-	for _, p := range Providers() {
-		if p.Models != "" {
-			t.Errorf("a test binary would show %s a key at %s", p.Title, p.Models)
-		}
 	}
 }
 
@@ -350,12 +375,12 @@ func TestTestsNeverShowAKeyToACompany(t *testing.T) {
 func TestAKeyIsShownInShort(t *testing.T) {
 	p, _ := ProviderNamed("anthropic")
 	const key = "sk-ant-api03-Ah3xxxxxxxxxxxxxxxxxxxxxxxxxxMwAA"
-	now, _ := keychains(t, nil, nil)
-	if err := StoreAPIKey(p, key); err != nil {
+	m, now, _ := keychains(t, nil, nil)
+	if err := m.StoreAPIKey(p, key); err != nil {
 		t.Fatal(err)
 	}
 	reads := now.reads
-	if got := KeyHint(p); got != "sk-ant-api03...MwAA" {
+	if got := m.KeyHint(p); got != "sk-ant-api03...MwAA" {
 		t.Errorf("in short: %q", got)
 	}
 	if now.reads != reads {
@@ -365,20 +390,22 @@ func TestAKeyIsShownInShort(t *testing.T) {
 		t.Errorf("a short key showed %q", got)
 	}
 	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-api03-fromtheenvironment0000WXYZ")
-	if got := KeyHint(p); got != "sk-ant-api03...WXYZ" {
+	if got := m.KeyHint(p); got != "sk-ant-api03...WXYZ" {
 		t.Errorf("from the environment: %q", got)
 	}
-	if _, err := ReadAPIKey(context.Background(), p); err != nil {
+	if _, err := m.ReadAPIKey(context.Background(), p); err != nil {
 		t.Fatal(err)
 	}
-	if err := StoreAPIKey(p, ""); err != nil || KeyHint(p) != "sk-ant-api03...WXYZ" || now.has(p.Item) {
-		t.Errorf("removed: %v, hint %q", err, KeyHint(p))
+	if err := m.StoreAPIKey(p, ""); err != nil || m.KeyHint(p) != "sk-ant-api03...WXYZ" || now.has(p.Item) {
+		t.Errorf("removed: %v, hint %q", err, m.KeyHint(p))
 	}
 }
 
 // A key being checked goes to the provider's address and nowhere else: a
 // redirect to another host is not followed, so the key never reaches it.
 func TestAKeyBeingCheckedFollowsNoRedirect(t *testing.T) {
+	m := NewMachine(afero.NewMemMapFs())
+	m.network = http.DefaultTransport
 	var leaked []string
 	elsewhere := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		leaked = append(leaked, r.Header.Get("x-api-key")+r.Header.Get("authorization"))
@@ -392,7 +419,7 @@ func TestAKeyBeingCheckedFollowsNoRedirect(t *testing.T) {
 		{Name: "anthropic", Models: provider.URL, KeyPrefix: "sk-ant-"},
 		{Name: "openai", Models: provider.URL, KeyPrefix: "sk-"},
 	} {
-		_ = VerifyAPIKey(context.Background(), p, p.KeyPrefix+"api03-abcdefghijklmnopqrstuvwxyz0123456789")
+		_ = m.VerifyAPIKey(context.Background(), p, p.KeyPrefix+"api03-abcdefghijklmnopqrstuvwxyz0123456789")
 	}
 	if len(leaked) > 0 {
 		t.Errorf("a redirect took the key to another host: %q", leaked)

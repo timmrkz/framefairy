@@ -167,7 +167,9 @@ func cloud(t *testing.T, files afero.Fs, answers ...func(w http.ResponseWriter))
 	t.Cleanup(func() { providers = saved })
 	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-test")
 	t.Setenv("OPENAI_API_KEY", "sk-proj-test")
-	return fake, NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(files))
+	m := NewMachine(files)
+	m.network = http.DefaultTransport
+	return fake, NewEngine(runlog.New(&bytes.Buffer{}, false, false), m)
 }
 
 func openAIStream(pieces []string, finish string, usage string) func(w http.ResponseWriter) {
@@ -317,12 +319,13 @@ func TestReadAPIKeyNamesTheProvider(t *testing.T) {
 	t.Setenv("PATH", "/no/tools/here")
 	t.Setenv("OPENAI_API_KEY", "")
 	p, _ := ProviderNamed("openai")
-	_, err := ReadAPIKey(context.Background(), p)
+	m := NewMachine(afero.NewMemMapFs())
+	_, err := m.ReadAPIKey(context.Background(), p)
 	if err == nil || !strings.Contains(err.Error(), "OPENAI_API_KEY") || !strings.Contains(err.Error(), "OpenAI") {
 		t.Errorf("no key: %v", err)
 	}
 	t.Setenv("OPENAI_API_KEY", "sk-proj-a\nb")
-	if _, err := ReadAPIKey(context.Background(), p); err == nil {
+	if _, err := m.ReadAPIKey(context.Background(), p); err == nil {
 		t.Error("a key with a newline in it was taken")
 	}
 }

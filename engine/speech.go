@@ -113,13 +113,14 @@ func SpeechModelReady(dir string) bool {
 	return err == nil && !info.IsDir() && info.Size() > 0
 }
 
-// InstallSpeechModel fetches a model and unpacks it, reporting as it goes.
+// InstallSpeechModel fetches a model through the machine's network and
+// unpacks it, reporting as it goes.
 //
 // It is written to be interrupted. The download lands beside the folder
 // under a part name, the unpacking goes to a folder of its own, and only a
 // complete model is moved into place, so a machine that loses power or a
 // person who presses cancel is left with no model rather than half of one.
-func InstallSpeechModel(ctx context.Context, log *runlog.Log, m SpeechModel, dir string) error {
+func (mc *Machine) InstallSpeechModel(ctx context.Context, log *runlog.Log, m SpeechModel, dir string) error {
 	if dir == "" {
 		dir = ModelsDir()
 	}
@@ -145,7 +146,7 @@ func InstallSpeechModel(ctx context.Context, log *runlog.Log, m SpeechModel, dir
 	}
 
 	return log.Step("speech model", func() error {
-		sum, err := download(ctx, log, m.URL, m.Download, part, m.Title)
+		sum, err := mc.download(ctx, log, m.URL, m.Download, part, m.Title)
 		if err != nil {
 			return err
 		}
@@ -216,7 +217,7 @@ func InstallSpeechModel(ctx context.Context, log *runlog.Log, m SpeechModel, dir
 // come when the server does not say, to know a download that stopped early
 // from one that finished, and to stop one that goes on past it, see
 // downloadRoom. what is the name to say it by.
-func download(ctx context.Context, log *runlog.Log, url string, expect int64, path, what string) (string, error) {
+func (mc *Machine) download(ctx context.Context, log *runlog.Log, url string, expect int64, path, what string) (string, error) {
 	have := int64(0)
 	if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
 		have = info.Size()
@@ -256,7 +257,7 @@ func download(ctx context.Context, log *runlog.Log, url string, expect int64, pa
 	if have > 0 {
 		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", have))
 	}
-	res, err := downloadClient.Do(req)
+	res, err := (&http.Client{Transport: mc.transport()}).Do(req)
 	if err != nil {
 		if e := stalled(nil); e != nil {
 			return "", e
@@ -336,15 +337,10 @@ func downloadRoom(expect int64) int64 {
 	return max(expect/100, 1<<20)
 }
 
-// downloadClient is what the models are downloaded through. A test hands
-// it a transport with no network, so it can run in a testing/synctest
-// bubble.
-var downloadClient = http.DefaultClient
-
 // downloadStall is how long a download may go without a byte before it is
 // taken for dead. Long enough for a server that is slow to begin, short
 // enough that nobody sits in front of a bar that no longer moves.
-var downloadStall = time.Minute
+const downloadStall = time.Minute
 
 // watchedReader calls arrived each time bytes come.
 type watchedReader struct {

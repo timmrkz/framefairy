@@ -59,12 +59,12 @@ func TestRefusedKeysSayWhy(t *testing.T) {
 }
 
 func TestALicenceIsKeptAndDescribedWithoutReadingIt(t *testing.T) {
-	k, _ := keychains(t, nil, nil)
-	if _, saved := SavedLicence(); saved {
+	m, k, _ := keychains(t, nil, nil)
+	if _, saved := m.SavedLicence(); saved {
 		t.Fatal("a licence before any was saved")
 	}
 	key := testKey(t, 0, "", "Lena Fischer")
-	about, err := SaveLicence(string(key), true)
+	about, err := m.SaveLicence(string(key), true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,23 +72,23 @@ func TestALicenceIsKeptAndDescribedWithoutReadingIt(t *testing.T) {
 		t.Fatalf("described as %q", about)
 	}
 	reads := k.reads
-	got, saved := SavedLicence()
+	got, saved := m.SavedLicence()
 	if !saved || got != about || k.reads != reads {
 		t.Fatalf("saved %v as %q after %d reads of the secret", saved, got, k.reads-reads)
 	}
 	if k.items[licenceItem] != string(key) {
 		t.Fatal("the key itself is not what was kept")
 	}
-	if _, err := SaveLicence("not a key", true); err == nil {
+	if _, err := m.SaveLicence("not a key", true); err == nil {
 		t.Fatal("a refused key was kept")
 	}
 	if k.items[licenceItem] != string(key) {
 		t.Fatal("a refused key replaced the kept one")
 	}
-	if _, err := SaveLicence("", true); err != nil {
+	if _, err := m.SaveLicence("", true); err != nil {
 		t.Fatal(err)
 	}
-	if _, saved := SavedLicence(); saved {
+	if _, saved := m.SavedLicence(); saved {
 		t.Fatal("still kept after it was removed")
 	}
 }

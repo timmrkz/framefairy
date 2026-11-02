@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"errors"
+	"net/http"
 	"sync"
 	"sync/atomic"
 
@@ -46,6 +48,48 @@ type Machine struct {
 
 	facesOnce sync.Once
 	faces     *faceDetector
+
+	// keys is where the keys are kept, and oldKeys where the first ones
+	// were, see keys.go, and savedFirst reads a saved key before one in
+	// the environment. network is how a request leaves the program, to a
+	// company or for a model's download. These two reach out of the
+	// program, so a machine NewMachine makes has neither: it keeps no key
+	// and reaches nothing until UseSystem hands it the system's, and a
+	// machine a test makes can never write into somebody's keychain or
+	// show a key to a company. See the decision record above.
+	keys, oldKeys keyStore
+	savedFirst    atomic.Bool
+	network       http.RoundTripper
+}
+
+// UseSystem hands the machine the system's keychain and its network.
+// Each program calls it once, in main, on the machine it hands every
+// Engine.
+func (m *Machine) UseSystem() {
+	m.keys, m.oldKeys = systemKeys(), legacyKeys()
+	m.network = http.DefaultTransport
+}
+
+// transport is the machine's network, or offline when it was handed none.
+func (m *Machine) transport() http.RoundTripper {
+	if m.network == nil {
+		return offline{}
+	}
+	return m.network
+}
+
+// errOffline is a request on a machine that was handed no network.
+var errOffline = errors.New("this program was handed no network")
+
+// offline is the network of a machine handed none: every request is
+// refused, and nothing leaves the program.
+type offline struct{}
+
+func (offline) RoundTrip(r *http.Request) (*http.Response, error) {
+	if r.Body != nil {
+		r.Body.Close()
+	}
+	return nil, errOffline
 }
 
 // NewMachine is the machine of a program whose files are on files, with

@@ -244,3 +244,82 @@ The pull requests, in order, each one self-contained:
 - It was wrong if a part at the bottom has to import something of an
   area to do its work, or if the object that outlives a job grows rules
   of its own rather than holding what its areas own.
+
+## The keys and the network, #648
+
+Added on 2 November 2026, in the pull request that moves them. Every
+other seam on the machine is the real thing when left empty, the way
+`http.Client` keeps its `Transport`. The keys and the network are the
+two seams that reach out of the program, into the keychain and to the
+companies. Today `testing.Testing()` in `engine/keys.go` swaps the
+keychain for none and blanks the companies' addresses in any test
+binary, which is a switch for tests in shipped code. Tim, 2 November:
+the empty store is the safe one, and the programs hand in the keychain.
+
+Measured on main at 1251f2a: the keys are read and kept in 15 places
+in `keys.go` and `licence.go`, through `keys`, `oldKeys` and
+`savedFirst`. The network is two clients, `httpClient` for the
+companies, which no test sets, and `downloadClient` for the models,
+which one test sets. The only test that would reach a company today is
+the app's `SaveAPIKey` with a real provider, `setup_test.go`, kept from
+it only by the blanked address.
+
+### 1. Who may know about whom
+
+The keychain and the network sit under the engine, and only `main`
+knows the machine it runs on. So `main` hands them down, and nothing
+under it asks what kind of program it is in. The switch asks exactly
+that, so it goes.
+
+### 2. What changes together
+
+A key kept and a key shown to its company change together: the key
+store, the model list's address and the client that carries the key
+came in together and are read together in `VerifyAPIKey`. Downloads
+change with the setup. One way to hand both in, the network, fits both,
+because what decides how a request leaves is the transport. The rule
+that a request carrying a key never follows a redirect stays with the
+engine's own client, over whatever transport it is given, so a test
+that hands in its own transport tests the same rule.
+
+### 3. Where state lives
+
+The keys, the order they are read in and the network become fields of
+`engine.Machine`, made once in each `main`. A machine in a test is made
+fresh, so a key one test keeps is never read by another, and the tests
+that set them run side by side.
+
+### 4. What Go and its libraries already have
+
+`http.Client` takes a `RoundTripper`, the one place a request leaves the
+program, and a nil one is the default transport. A machine whose
+transport is nil would reach the network, so the machine keeps its own:
+empty, every request is refused with an error that says so, and a key
+being checked then passes, the way it does on a train today. A machine
+without a keychain already exists, `noKeys`, which Linux uses.
+
+### 5. What a test has to build
+
+A test makes `NewMachine` and gets no keychain and no network without a
+line of its own. A test of the keys puts a store in memory on its
+machine, one of the network a transport, often `http.DefaultTransport`
+to its own `httptest` server. With the real thing as the empty value, a
+test that forgot one line would write into the developer's keychain or
+show a key to a company, the box nobody answers, which the switch exists
+to prevent.
+
+### What converges
+
+All five keep the store and the network on the machine, made in `main`.
+Simulations 1, 4 and 5 make them the two seams that are safe when
+empty, because they are the two that reach out of the program. Every
+other seam stays the real thing when empty.
+
+`Machine.UseSystem` hands a machine the system's keychain and the
+network, and the app, the command line and `scripts/models` call it
+once in `main`. `testing.Testing()` and the blanked addresses go. The
+model downloads become methods of the machine, `InstallSpeechModel` and
+`InstallLanguageModel`, so they go through its network. `downloadStall`
+is a constant now, since no test sets it. `httpClient` becomes the
+machine's client for the companies, over its transport. `models`, the
+facts of each cloud model, is a table no test sets, and stays one.
