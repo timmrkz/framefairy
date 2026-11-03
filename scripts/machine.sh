@@ -29,16 +29,15 @@
 # two cores more still show, about 60 fixed works against 68, #592.
 set -u
 
-# Every package that took over a second, slowest first, from the event
-# go test -json writes as a package ends, the one that names no test.
-# A package that failed says so, since a hang ends at the timeout and its
-# time says nothing about how fast it was.
+# Every package that took over a second, slowest first, from the line
+# go test prints as a package ends, "ok  \tframefairy/engine\t89.845s",
+# the time the log shows above. The Elapsed of the event after it can be
+# seconds longer. A package that failed says so, since a hang ends at the
+# timeout and its time says nothing about how fast it was.
 packages() {
-	awk '/"Action":"(pass|fail)"/ && !/"Test":/ && match($0, /"Package":"[^"]*"/) {
-		pkg = substr($0, RSTART + 11, RLENGTH - 12)
-		if (/"Action":"fail"/) pkg = pkg " (failed)"
-		if (match($0, /"Elapsed":[0-9.]+/) && substr($0, RSTART + 10, RLENGTH - 10) + 0 > 1)
-			print substr($0, RSTART + 10, RLENGTH - 10) "\t" pkg
+	awk '/"Action":"output"/ && !/"Test":/ && match($0, /"Output":"(ok  |FAIL)\\t[^"]*\\t[0-9.]+s/) {
+		n = split(substr($0, RSTART + 10, RLENGTH - 11), f, /\\t/)
+		if (f[n] + 0 > 1) print f[n] "\t" f[2] (f[1] == "FAIL" ? " (failed)" : "")
 	}' "$2" | sort -t "$(printf '\t')" -k1,1nr | awk -F '\t' -v work="$1" '
 		{ name[NR] = $2; secs[NR] = $1; if (length($2) > w) w = length($2) }
 		END {

@@ -1,12 +1,18 @@
 {"Time":"2026-11-03T10:00:00Z","Action":"start","Package":"framefairy/asr"}
 {"Time":"2026-11-03T10:00:00Z","Action":"output","Package":"framefairy/asr","Output":"ok  \tframefairy/asr\t(cached)\n"}
 {"Time":"2026-11-03T10:00:00Z","Action":"pass","Package":"framefairy/asr","Elapsed":0}
+{"Time":"2026-11-03T10:00:01Z","Action":"output","Package":"framefairy/engine","Test":"TestProjectSteps","Output":"--- PASS: TestProjectSteps (8.35s)\n"}
 {"Time":"2026-11-03T10:00:01Z","Action":"pass","Package":"framefairy/engine","Test":"TestProjectSteps","Elapsed":8.35}
-{"Time":"2026-11-03T10:01:40Z","Action":"pass","Package":"framefairy/engine","Elapsed":101.21}
+{"Time":"2026-11-03T10:01:39Z","Action":"output","Package":"framefairy/engine","Output":"PASS\n"}
+{"Time":"2026-11-03T10:01:40Z","Action":"output","Package":"framefairy/engine","Output":"ok  \tframefairy/engine\t89.847s\n"}
+{"Time":"2026-11-03T10:01:40Z","Action":"pass","Package":"framefairy/engine","Elapsed":95.75}
+{"Time":"2026-11-03T10:00:02Z","Action":"output","Package":"framefairy/cmd/framefairy-app","Test":"TestSilenceChangesNothing","Output":"ok  \tframefairy/quoted\t99.000s\n"}
 {"Time":"2026-11-03T10:00:02Z","Action":"fail","Package":"framefairy/cmd/framefairy-app","Test":"TestSilenceChangesNothing","Elapsed":211.5}
+{"Time":"2026-11-03T10:04:00Z","Action":"output","Package":"framefairy/cmd/framefairy-app","Output":"FAIL\tframefairy/cmd/framefairy-app\t240.081s\n"}
 {"Time":"2026-11-03T10:04:00Z","Action":"fail","Package":"framefairy/cmd/framefairy-app","Elapsed":240.08}
+{"Time":"2026-11-03T10:00:03Z","Action":"output","Package":"framefairy/notices","Output":"ok  \tframefairy/notices\t0.027s\n"}
 {"Time":"2026-11-03T10:00:03Z","Action":"pass","Package":"framefairy/notices","Elapsed":0.03}
-{"Time":"2026-11-03T10:00:04Z","Action":"pass","Package":"framefairy/notices/gen","Elapsed":1.42}
-{"Time":"2026-11-03T10:00:05Z","Action":"output","Package":"framefairy/train","Output":"{\"Action\":\"pass\",\"Package\":\"framefairy/quoted\",\"Elapsed\":99}\n"}
-{"Time":"2026-11-03T10:00:05Z","Action":"skip","Package":"framefairy/licence/paddle","Elapsed":3.5}
-{"Time":"2026-11-03T10:00:06Z","Action":"pass","Package":"framefairy/train","Elapsed":2.5}
+{"Time":"2026-11-03T10:00:04Z","Action":"output","Package":"framefairy/notices/gen","Output":"ok  \tframefairy/notices/gen\t1.42s\n"}
+{"Time":"2026-11-03T10:00:04Z","Action":"output","Package":"framefairy/train","Output":"{\"Action\":\"output\",\"Output\":\"ok  \\tframefairy/twice\\t99.000s\\n\"}\n"}
+{"Time":"2026-11-03T10:00:05Z","Action":"output","Package":"framefairy/train","Output":"ok  \tframefairy/train\t2.500s\n"}
+{"Time":"2026-11-03T10:00:06Z","Action":"output","Package":"framefairy/cmd/framefairy-train","Output":"FAIL\tframefairy/cmd/framefairy-train [build failed]\n"}
