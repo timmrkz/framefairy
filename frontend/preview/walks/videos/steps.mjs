@@ -491,7 +491,11 @@ export const steps = {
   //                    another, which then comes back to the front, and
   //                    "closed" while the app is closed, which is then
   //                    opened again, and "with the video" deletes the
-  //                    video too, while the app is behind another.
+  //                    video too, while the app is behind another. "in
+  //                    front" deletes it while the app stays in front,
+  //                    the way a terminal, the command line or a sync
+  //                    service does, so nothing but the app's watch on
+  //                    the disk can tell it, issue #673.
   //                    "written back" deletes both while the app is
   //                    closed and writes the chosen clip back into a new
   //                    folder, the way the app did when it was asked
@@ -514,13 +518,20 @@ export const steps = {
     // Go side told it, however often that takes on a busy machine. What
     // the app must not do, make the folder again once it is gone, is
     // what the walk then looks for.
+    // Closed is closed before anything is deleted: the app watches the
+    // folders of its videos, so a folder deleted while it runs is heard at
+    // once, which is the "in front" case, not this one.
+    const closed = arg === "closed" || arg === "written back";
+    if (closed) await control(url, "/close");
     for (;;) {
       try {
         rmSync(folder, { recursive: true, force: true });
         break;
       } catch (err) {
         if (err.code !== "ENOTEMPTY") throw err;
-        await caughtUp(page, url);
+        // Closed, nothing writes it, so a folder not empty is one more
+        // try away. Open, the interface catches up first.
+        if (!closed) await caughtUp(page, url);
       }
     }
     walk.videoGone = arg === "with the video" || arg === "written back";
@@ -529,10 +540,10 @@ export const steps = {
       mkdirSync(folder);
       writeFileSync(join(folder, "chosen.json"), JSON.stringify({ clip: "", opened: Date.now() }));
     }
-    if (arg === "closed" || arg === "written back") {
-      await control(url, "/reopen");
+    if (closed) {
+      await control(url, "/open");
       await page.reload();
-    } else {
+    } else if (arg !== "in front") {
       // The person went to Finder and came back: the app lost the
       // keyboard and has it again.
       await page.evaluate(() => {
@@ -574,6 +585,38 @@ export const steps = {
       walk.wrong = `a workspace is still open with no video picked in the sidebar`;
     }
     await settle(page);
+  },
+  // ["file moved in front"]
+  //                    moves the file of a video that is not on screen
+  //                    away from outside the app while the app stays in
+  //                    front, the way a terminal or a sync service does,
+  //                    and its row in the sidebar says File not found
+  //                    with no look at the app. Then it puts the file
+  //                    back, and the row no longer says so. Only the
+  //                    app's watch on the disk can tell it, issue #673
+  async "file moved in front"(walk) {
+    const { page } = walk;
+    const on = await episodeOn(page);
+    const source = (await ask(page, "Library")).map((e) => e.source).find((s) => s !== on);
+    if (!source) {
+      walk.wrong = "there is no second video to move";
+      return;
+    }
+    const name = basename(source);
+    const line = () =>
+      page.evaluate(
+        (n) =>
+          [...document.querySelectorAll("aside button.episode")]
+            .find((b) => b.querySelector(".name")?.textContent === n)
+            ?.querySelector(".line")
+            ?.getAttribute("title") ?? "",
+        name,
+      );
+    renameSync(source, `${source}.away`);
+    await seenUntil(page, url, line, (title) => title === "File not found");
+    renameSync(`${source}.away`, source);
+    await seenUntil(page, url, line, (title) => title !== "File not found");
+    if ((await episodeOn(page)) !== on) walk.wrong = `the video on screen changed to ${await episodeOn(page)}`;
   },
   // ["file moved away"]
   //                    moves the file of the video on screen away from

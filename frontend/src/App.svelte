@@ -719,10 +719,11 @@
       .catch(() => {});
     const off = onEpisodeChanged(() => refresh());
     // The library is read again whenever the app comes back to the front,
-    // which is where a person comes back from who deleted a video's folder
-    // in Finder: the Go side lets that video go as it answers, see
-    // letGoOfRemoved in library.go. The rest of the library is the app's
-    // own, so nothing else can have changed it while the app was behind.
+    // and the Go side looks at the disk as it answers, see reconcile in
+    // reconcile.go. It also watches the folders of the videos and says
+    // when what the library holds changed, so a folder deleted in Finder
+    // shows at once, and this read is only the look that catches what the
+    // watch could not hear.
     const comeBack = () => refresh();
     window.addEventListener("focus", comeBack);
     const noDropped = onDropped(took);

@@ -20,10 +20,11 @@ import (
 	"framefairy/internal/framewire"
 )
 
-// Library lists the episodes with their state. A video whose folder was
-// deleted outside the app is let go first, so it is not listed.
+// Library lists the episodes with their state. The library is brought in
+// step with the disk first, see reconcile, so a video whose folder was
+// deleted outside the app is not listed.
 func (s *FrameFairy) Library() []engine.EpisodeStatus {
-	s.letGoOfRemoved()
+	s.reconcile(nil)
 	opts := s.store.Settings().options()
 	out := []engine.EpisodeStatus{}
 	for _, ep := range s.store.Episodes() {
@@ -220,6 +221,13 @@ func (s *FrameFairy) RemoveEpisode(path string, deleteWork bool) error {
 			return errors.New("something is still running on this video and would not stop, " +
 				"so nothing was deleted. Remove the video again in a moment")
 		}
+	}
+	// The watch hears the folder go, and reconcile waits until the video
+	// is out of the library, so it never takes this for a folder deleted
+	// outside the app.
+	s.reconciling.Lock()
+	defer s.reconciling.Unlock()
+	if deleteWork {
 		if err := engine.DeleteWork(s.store.files, path); err != nil {
 			return err
 		}
@@ -231,50 +239,6 @@ func (s *FrameFairy) RemoveEpisode(path string, deleteWork bool) error {
 	removed = true
 	s.jobs.forgetEpisode(path)
 	return nil
-}
-
-// letGoOfRemoved takes every video whose folder was deleted outside the
-// app, with the video or without it, see deletedOutside, out of the
-// library, the way Remove with Delete does: its folder is
-// everything the app has of it, so with the folder gone the video is
-// gone from the app too, and adding it again starts it from nothing.
-// The interface reads the library as the app starts and whenever it comes
-// back to the front, which is where a person who deleted the folder in
-// Finder comes back from.
-//
-// Its work stops and the library no longer has it before anything else,
-// so nothing new starts on it. Whatever was still writing its folder
-// is waited for out of the way, and what it wrote back is deleted.
-func (s *FrameFairy) letGoOfRemoved() {
-	for _, ep := range s.store.Episodes() {
-		if !deletedOutside(s.store.files, ep) {
-			continue
-		}
-		gone, err := s.store.letGo(ep)
-		if err != nil {
-			theLog.line(zerolog.ErrorLevel, "files").Str("video", filepath.Base(ep)).Err(err).
-				Msg("the video's folder was deleted outside the app, and the library could not be written without it")
-		}
-		if !gone {
-			continue
-		}
-		_, err = s.store.files.Stat(ep)
-		theLog.line(zerolog.InfoLevel, "files").Str("video", filepath.Base(ep)).
-			Str("folder", filepath.Base(engine.WorkDir(ep))).Bool("videoDeleted", err != nil).
-			Msg("the video's folder was deleted outside the app, so the video leaves the library")
-		s.jobs.closeEpisode(ep)
-		s.jobs.forgetEpisode(ep)
-		s.levels.stop(ep)
-		s.forget(ep)
-		s.clearMu.Lock()
-		if s.quitting {
-			s.clearMu.Unlock()
-			s.clearLetGo(ep)
-			continue
-		}
-		s.clearing.Go(func() { s.clearLetGo(ep) })
-		s.clearMu.Unlock()
-	}
 }
 
 // clearLetGo waits until nothing runs on a video let go, and deletes what

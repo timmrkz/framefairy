@@ -100,6 +100,9 @@ func main() {
 		}
 	})
 	svc.jobs.news = svc.told
+	// What changes in the folders of the videos, whoever changed it, is
+	// looked at as it happens, see reconcile.go.
+	svc.watch = newWatching(svc.reconcile)
 	// A failure is said once, as it happens, see notice.go.
 	svc.jobs.notice = quietly(func(n Notice) {
 		if app != nil {
@@ -148,6 +151,7 @@ func main() {
 	// How far the loudness is measured is in the video's state.
 	svc.levels = newMeasuring(svc.store.machine, svc.told)
 	quit := sync.OnceFunc(func() {
+		svc.watch.stop()
 		svc.news.stop()
 		engine.CloseModels()
 		svc.stopAll()
@@ -381,6 +385,13 @@ type FrameFairy struct {
 	// news sends a video's state to the window as its work goes on, see
 	// videostate.go.
 	news *videoNews
+	// watch hears what changes in the folders of the videos in the
+	// library, whoever changed it, and hands it to reconcile, see
+	// watch.go. reconciling keeps reconcile to one at a time, and away
+	// from a Remove that is deleting a video's folder, so the app's own
+	// deletion is never taken for one made outside it.
+	watch       *watching
+	reconciling sync.Mutex
 	// Finding and installing a newer build of the app, see updates.go.
 	updates *updating
 	// What Cmd+Q does, see quit.go.

@@ -145,9 +145,15 @@ export default [
     // video, and it stayed in the sidebar with no clips and no lamp, and
     // opening it wrote a folder back. Its folder is everything the app
     // has of a video, so a video whose folder is gone has left the list,
-    // the way Remove with Delete takes it.
+    // the way Remove with Delete takes it. Issue #673: it leaves at once,
+    // also while the app stays in front, because the app watches the
+    // folders of its videos.
     name: "a video whose folder is deleted outside the app leaves the list",
     steps: [
+      ["add", 20],
+      ["wait for", "Search"],
+      ["folder removed", "in front"],
+      ["let go"],
       ["add", 20],
       ["wait for", "Search"],
       ["folder removed", "away"],
@@ -169,6 +175,20 @@ export default [
       ["wait for", "Search"],
       ["folder removed", "written back"],
       ["let go"],
+    ],
+  },
+  {
+    // Issue #673. A video moved away in Finder said File not found only
+    // once the app came back to the front. Now the app watches the
+    // folders of its videos, so the sidebar says it while the app stays
+    // in front, and stops saying it once the file is back.
+    name: "a video whose file is moved away while the app is in front says File not found at once",
+    steps: [
+      ["add", 20],
+      ["wait for", "Search"],
+      ["add", 20],
+      ["wait for", "Search"],
+      ["file moved in front"],
     ],
   },
   {
