@@ -285,6 +285,25 @@ export default [
     ],
   },
   {
+    // Tim's report of 24 October, 15.02. A search on a window at the very
+    // end of a video, partly transcribed, ended in one state after another:
+    // the window's marks put in place and moved a frame later, then the
+    // first clip chosen and the playhead jumping to it. It ends in one.
+    name: "a search at the end of a video ends in one frame",
+    steps: [
+      ["speech", "hold"],
+      ["add", 1200],
+      ["wait for", "Cancel"],
+      ["head"],
+      ["wait for", "Continue"],
+      ["move window", "bar", 1],
+      ["wait for", "Search"],
+      ["head"],
+      ["wait for", "Cancel"],
+      ["ends in one frame"],
+    ],
+  },
+  {
     // Tim's report of 25 October, 21.40: the window moved on to where the
     // search had transcribed to, and the dots after it began a few pixels
     // right of its edge, because they were laid from the end of the

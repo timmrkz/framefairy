@@ -1974,6 +1974,69 @@ export const steps = {
     }
     return;
   },
+  // ["ends in one frame"]
+  //                    lets the speech go on to a search that hears its
+  //                    window, and from the first frame its end shows,
+  //                    the head no longer saying Cancel or the window
+  //                    marked at rest, every frame shows what the end
+  //                    leaves: the head, the window's marks, the playhead
+  //                    and the clip chosen where they end up, never one
+  //                    of them on its way there. Tim saw the window's
+  //                    marks put in place and moved a frame later, and
+  //                    then the clip chosen and the playhead jump to it
+  async "ends in one frame"(walk, arg, s) {
+    const { page, watch } = walk;
+    await page.evaluate(() => {
+      const pane = () => [...document.querySelectorAll("aside")].find((a) => a.querySelector(".listhead"));
+      window.__endsShown = () => {
+        const tip = (sel) => document.querySelector(`.aim .tip.top.${sel}`)?.getAttribute("aria-valuenow") ?? "";
+        const card = pane()?.querySelector("ol li[data-key].current, ol li[data-key] button.pick.current")?.closest("li");
+        return {
+          head: (pane()?.querySelector(".listhead button.search")?.textContent ?? "").replace(/\s+/g, " ").trim(),
+          aim: `${tip("from")}–${tip("to")}`,
+          playhead: document.querySelector(".screen")?.dataset.playhead ?? "",
+          card: card?.dataset.key ?? "",
+        };
+      };
+      window.__ends = new Promise((done) => {
+        const seen = [];
+        let after = -1;
+        const frame = () => {
+          const now = window.__endsShown();
+          seen.push(now);
+          if (after < 0 && now.head !== "Cancel" && now.head !== "Cancelling") after = seen.length;
+          if (after >= 0 && seen.length - after >= 30) return done(seen);
+          requestAnimationFrame(frame);
+        };
+        requestAnimationFrame(frame);
+      });
+    });
+    await control(url, "/speech?go");
+    walk.speechHeld = false;
+    const seen = await page.evaluate(() => window.__ends);
+    // Everything the Go side said by now has been heard and drawn, so
+    // the screen is where the end of the search leaves it.
+    await caughtUp(page, url);
+    const last = await page.evaluate(() => window.__endsShown());
+    const said = (f) => `${f.head}, the window ${f.aim} s, the playhead at ${f.playhead} s, clip ${f.card || "none"}`;
+    const running = seen[0];
+    const end = seen.findIndex((f) => f.head !== running.head || f.aim !== running.aim);
+    if (running.head !== "Cancel") {
+      walk.wrong = `the head said ${running.head} before the speech went on, so no search was hearing`;
+      return;
+    }
+    if (last.head !== "Search" || !last.card) {
+      walk.wrong = `the search ended on ${said(last)}, not on Search with a clip chosen`;
+      return;
+    }
+    const between = seen.slice(end).filter((f) => said(f) !== said(last));
+    if (between.length) {
+      walk.wrong = `of the ${seen.length - end} frames from the search's end, ${between.length} showed a state on the way: ${[...new Set(between.map(said))].join(" | ")}, before ${said(last)}`;
+      return;
+    }
+    console.log(`      the search's end showed in frame ${end} of ${seen.length}, as ${said(last)}`);
+    await watch.step("ends in one frame", s);
+  },
   // ["dots begin at the window"]
   //                    once a search heard its window and the window moved
   //                    on, the part not transcribed yet begins where the
