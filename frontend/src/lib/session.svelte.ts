@@ -1,32 +1,20 @@
 // A video's session in the workspace, issue #606. It keeps the video's
-// state as Go sends it, the newest there is, and it says when the video's
-// work moves on, once, as the job store keeps each snapshot of a job, so
-// no effect in the workspace has to keep a value from before and compare
-// it with the next. See
-// docs/decisions/2026-10-30-a-videos-state-in-one-session.md.
-import type { ClipEntry, CoverageView, EpisodeStatus, Job, KeptWindow, VideoState, WindowView } from "./api";
-import { live } from "./flow";
+// state as Go sends it, the newest there is, and says when the app chose
+// another clip, once. Everything the video's work changes comes in that
+// state, the clips a search wrote, how far the video is heard, what a
+// render made, so nothing waits for the work to move on and reads the
+// video again. See
+// docs/decisions/2026-10-30-a-videos-state-in-one-session.md and
+// docs/decisions/2026-11-01-every-rule-of-the-workspace-in-go.md.
+import type { ClipEntry, CoverageView, EpisodeStatus, KeptWindow, VideoState, WindowView } from "./api";
 import type { JobStore } from "./state.svelte";
 import { unchanged } from "./unchanged";
 
-// What the workspace does when the video's work moves on. When one
-// snapshot says more than one of them, they come in this order.
-export interface WorkMoves {
-  // The app chose another clip, see cmd/framefairy-app/choose.go, in
-  // place of before, the clip chosen until then. card is the card the
-  // clip was on its way as, when it was chosen because that card was
-  // written as it, or nothing.
-  chose(key: string, before: string, card: string): void;
-  // The search has stopped hearing the video: it went on to find clips,
-  // or it ended while it heard.
-  heard(search: Job): void;
-  // The search is over, however it ended.
-  searched(search: Job): void;
-  // Transcribe whole video, from the video's menu, is over.
-  transcribed(job: Job): void;
-  // A render that was asked for here is over.
-  rendered(render: Job): void;
-}
+// What the workspace does when the app chose another clip, see
+// cmd/framefairy-app/choose.go, in place of before, the clip chosen until
+// then. card is the card the clip was on its way as, when it was chosen
+// because that card was written as it, or nothing.
+export type Chose = (key: string, before: string, card: string) => void;
 
 export class EpisodeSession {
   // The video's state, from the newest VideoState kept: null until the
@@ -47,8 +35,6 @@ export class EpisodeSession {
   private holds = 0;
   private waiting: VideoState | null = null;
   private waitingFresh = false;
-  // The work asked for in this workspace that is not over yet.
-  private asking = new Set<string>();
   // The clip chosen, by a hand or by the app, and the video's window, from
   // the newest state kept, or what a hand did while the Go side has not
   // answered it, see Hand.
@@ -56,28 +42,22 @@ export class EpisodeSession {
   window = $state<WindowView | null>(null);
   private picks = new Hand();
   private places = new Hand();
-  private moves: WorkMoves = { chose() {}, heard() {}, searched() {}, transcribed() {}, rendered() {} };
+  private chose: Chose = () => {};
 
   constructor(
     readonly path: string,
     private store: JobStore,
   ) {}
 
-  // The workspace is on the page: from now on the session hears every
-  // snapshot of a job the store keeps and says what the video's work did
-  // with moves, and takes every state of the video hear brings, onVideoState
-  // in lib/api.ts. The function it returns is for when the workspace is
-  // gone, and then it hears nothing more.
-  open(moves: WorkMoves, hear: (fn: (state: VideoState) => void) => () => void = () => () => {}): () => void {
-    this.moves = moves;
-    const off = this.store.watch((before, after) => this.seen(before, after));
-    const unheard = hear((state) => {
+  // The workspace is on the page: from now on the session says when the
+  // app chose another clip with chose, and takes every state of the video
+  // hear brings, onVideoState in lib/api.ts. The function it returns is
+  // for when the workspace is gone, and then it hears nothing more.
+  open(chose: Chose, hear: (fn: (state: VideoState) => void) => () => void = () => () => {}): () => void {
+    this.chose = chose;
+    return hear((state) => {
       if (state.video === this.path) this.take(state);
     });
-    return () => {
-      off();
-      unheard();
-    };
   }
 
   // A state of the video, sent by the Go side or read by the workspace.
@@ -120,7 +100,7 @@ export class EpisodeSession {
     if (now === this.chosen) return;
     const before = this.chosen;
     this.chosen = now;
-    this.moves.chose(now, before, state.chosenCard ?? "");
+    this.chose(now, before, state.chosenCard ?? "");
   }
 
   // The window a state says, once no move of a hand is on its way that the
@@ -195,40 +175,6 @@ export class EpisodeSession {
         this.take(next, fresh);
       }
     }
-  }
-
-  // Work asked for here, a render, by the job the Go side answered with.
-  // What the Go side says of a job travels apart
-  // from the answer to the call, so a job can be over in the store before
-  // the answer comes back, its news heard first on a busy machine, issue
-  // #508. Then it is said at once, from what the store knows of it.
-  asked(job: Job) {
-    const now = this.store.list.find((j) => j.id === job.id) ?? job;
-    if (live(now)) {
-      this.asking.add(job.id);
-      return;
-    }
-    this.over(now);
-  }
-
-  private seen(before: Job | undefined, after: Job) {
-    if (after.episode !== this.path) return;
-    const was = live(before);
-    const now = live(after);
-    switch (after.kind) {
-      case "search":
-        if (was && before?.step === "hearing" && !(now && after.step === "hearing")) this.moves.heard(after);
-        if (was && !now) this.moves.searched(after);
-        break;
-      case "transcribe":
-        if (was && !now) this.moves.transcribed(after);
-        break;
-    }
-    if (!now && this.asking.delete(after.id)) this.over(after);
-  }
-
-  private over(job: Job) {
-    if (job.kind === "render") this.moves.rendered(job);
   }
 }
 

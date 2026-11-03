@@ -35,7 +35,7 @@
     onVideoState,
   } from "../lib/api";
   import { jobs } from "../lib/state.svelte";
-  import { EpisodeSession, type WorkMoves } from "../lib/session.svelte";
+  import { EpisodeSession, type Chose } from "../lib/session.svelte";
   import {
     Heard,
     covers,
@@ -258,13 +258,6 @@
   const transcribing = $derived(working?.step === "hearing" ? working : undefined);
   const finding = $derived(working?.step === "finding");
   const renderingJob = $derived(jobs.active(path, "rendering"));
-  // Whether work is running, as a plain yes or no. The Go side sends a job
-  // event about once a second, and every one of them replaces the job
-  // object, so anything that watches the job itself is torn down and set
-  // up again that often. A timer that watches one never fires at all,
-  // which is what stopped the transcript from being read again while it
-  // grew, and with it the first search.
-  const isFinding = $derived(!!finding);
   // A render is shown by the Render button it was started from, which
   // fills up and becomes Cancel. The head of the clip list is about
   // finding clips, so a render is not its business, and it runs in a lane
@@ -1175,17 +1168,14 @@
   }
 
   // The video's state read again, and kept in its session when no newer
-  // one is there already. A read for what a search wrote, found, keeps
-  // every clip the read says is as it was, the very same clip: a search
-  // only adds clips. Each read made every clip a new one, the clip on
-  // screen too, and its captions were asked for and drawn again each time,
-  // the clip timeline and the caption box with them, while nothing about
-  // it had changed. Plan row 2.242. Every other read is for an edit of the
-  // clips or of their captions, and takes them all as new, so the captions
-  // of the clip on screen are read again with them.
-  async function refreshClips(found = false) {
+  // one is there already. A read is for an edit of the clips or of their
+  // captions, and takes them all as new, so the captions of the clip on
+  // screen are read again with them. What a search writes comes in the
+  // states the Go side sends, which keep every clip that is as it was the
+  // very same clip, see EpisodeSession.take.
+  async function refreshClips() {
     try {
-      session.take(await api.state(path), !found);
+      session.take(await api.state(path), true);
     } catch (err) {
       oops(errorText(err));
     }
@@ -2603,7 +2593,7 @@
   // startJob.
   async function render(clip: ClipEntry) {
     try {
-      session.asked(await jobs.startJob(path, "render", () => api.render(path, { Plan: clip.plan, Clips: [clip.id], Preview: false }), clip.key));
+      await jobs.startJob(path, "render", () => api.render(path, { Plan: clip.plan, Clips: [clip.id], Preview: false }), clip.key);
     } catch (err) {
       oops(errorText(err));
     }
@@ -2658,66 +2648,24 @@
     return () => (dropped = true);
   });
 
-  // The model answers a search with the whole set at once, and the clips
-  // land in the plan file there and then. The list is taken again while a
-  // search runs, so they show up the moment they exist instead of when the
-  // job has wrapped up.
-
-
-  // While the transcript grows, the covered part of the timeline grows.
-
-
-  // How the workspace meets the video's work moving on. The session says
-  // each move once, as the job store keeps the snapshot that makes it,
-  // see lib/session.svelte.ts. Each was an effect here that kept the value
-  // from before and compared it with the next, issue #606. It hears from
-  // the moment the workspace is on the page, as the effects did.
-  const moves: WorkMoves = {
-    // The app chose another clip, see choose.go: a search's first clip or
-    // its earliest, the clip beside one removed or one put back, the clip
-    // an undo changed, or a clip made by hand that was written, whose card
-    // was chosen. It is shown the way a hand's pick is, the playhead on it
-    // while the video is paused. Playing, a card that became its clip
-    // keeps the playhead, which is on the clip it was made on, written now
-    // under its own key, see claim in Player.svelte.
-    chose: (key, before, card) => {
-      if (!opened) return;
-      void show(key, paused);
-      // A card written as its clip while it plays: the play goes on as a
-      // play of the clip.
-      if (card && card === before && !paused) player?.claim(before);
-    },
-    // And when the whole video's work ends, which no search's hearing says:
-    // the workspace kept what it read last, so stopped on its last pieces
-    // the video was heard to its end and the dots stayed, found by the
-    // second review of #458.
-    transcribed: () => load(),
-    // How far the episode has been heard is read again when the hearing
-    // stops, so the range picker's edge lands on what was saved.
-    heard: () => {
-      onchange();
-      load();
-    },
-    // A search that ends: the list shows what it found, and the window
-    // moves on. How it ended otherwise is said by the search itself, in the
-    // row its next clip would have appeared in.
-    searched: (ended) => {
-      onchange();
-      // The window walks on from where the search ended, which the Go
-      // side did before the search said it was done, so it comes in the
-      // state that holds the clips found, see windowOn. The clip it chose
-      // comes in it too, see the move chose.
-      void load();
-    },
-    // A render this workspace started: the list shows what was rendered.
-    // One that failed says why in a toast, which the Go side tells, see
-    // notice.go.
-    rendered: () => {
-      onchange();
-      void load();
-    },
+  // The app chose another clip, see choose.go: a search's first clip or
+  // its earliest, the clip beside one removed or one put back, the clip
+  // an undo changed, or a clip made by hand that was written, whose card
+  // was chosen. It is shown the way a hand's pick is, the playhead on it
+  // while the video is paused. Playing, a card that became its clip
+  // keeps the playhead, which is on the clip it was made on, written now
+  // under its own key, see claim in Player.svelte. Everything else the
+  // video's work changes, the clips a search wrote, how far the video is
+  // heard, the window moved on, comes in the video's state, issue #606:
+  // nothing waits for the work to end and reads the video again.
+  const chose: Chose = (key, before, card) => {
+    if (!opened) return;
+    void show(key, paused);
+    // A card written as its clip while it plays: the play goes on as a
+    // play of the clip.
+    if (card && card === before && !paused) player?.claim(before);
   };
-  onMount(() => session.open(moves, onVideoState));
+  onMount(() => session.open(chose, onVideoState));
 
   // Playing moves nothing. An editor's timeline follows its playhead while
   // it plays, and that is a setting there, off as often as on, because a
@@ -2825,24 +2773,6 @@
       window.removeEventListener("keydown", percentKey);
       window.removeEventListener("keydown", inOutKey);
     };
-  });
-
-  // One timer for as long as the workspace is open, and it decides what to
-  // do each time it fires. It is not an effect: an effect that mentions
-  // running work is torn down and set up again on every job event, about
-  // once a second, so its timer would never fire at all.
-  onMount(() => {
-    const timer = setInterval(() => {
-      // Asleep, nothing is read: waking reads it all once.
-      if (away) return;
-      if (isFinding) {
-        // Each clip lands in the plan the moment it is framed, while the
-        // model is still writing the next, so the list is read again as
-        // the search runs.
-        void refreshClips(true);
-      }
-    }, 2000);
-    return () => clearInterval(timer);
   });
 
   onMount(() => {

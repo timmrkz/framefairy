@@ -1,7 +1,6 @@
 // Shared state: the job list, kept current from the Go side's events.
 // A video's jobs come in its state, onVideoState, one channel, and a job
 // of no video, a model being downloaded, on the job event.
-import { untrack } from "svelte";
 import { api, onJob, onVideoState, type Job, type Lane, type VideoState } from "./api";
 import { live, mergeJob, outstanding } from "./flow";
 import { said } from "./said";
@@ -40,10 +39,6 @@ export class JobStore {
   starting = $state.raw<Press[]>([]);
   stopping = $state.raw<Press[]>([]);
 
-  // Who hears each snapshot the list keeps, with the one it replaced, see
-  // EpisodeSession in lib/session.svelte.ts.
-  private watchers = new Set<(before: Job | undefined, after: Job) => void>();
-
   // The rev of the newest state of each video the jobs were taken from.
   private revs = new Map<string, number>();
 
@@ -69,32 +64,9 @@ export class JobStore {
 
   // A snapshot of a job, kept unless the list already has a later one.
   apply(job: Job) {
-    const before = this.list.find((j) => j.id === job.id);
     const next = mergeJob(this.list, job);
     if (next) this.list = next;
     this.settle();
-    if (next) untrack(() => this.tell(before, job));
-  }
-
-  // Heard outside any effect that applied it, so what a watcher reads
-  // does not make that effect run again. A watcher that goes wrong is said
-  // in the app's log and stops nothing else: not the watchers after it,
-  // which are the other workspaces, and not the rest of a list being read.
-  private tell(before: Job | undefined, after: Job) {
-    for (const watch of this.watchers) {
-      try {
-        watch(before, after);
-      } catch (err) {
-        said(`jobs: what the job ${after.id} moved on to could not be shown: ${err}`, { level: "error", video: after.episode });
-      }
-    }
-  }
-
-  // Hears every snapshot kept from now on, until the function it returns
-  // is called.
-  watch(fn: (before: Job | undefined, after: Job) => void): () => void {
-    this.watchers.add(fn);
-    return () => this.watchers.delete(fn);
   }
 
   isStarting(path: string, work: Work, what?: string): boolean {
