@@ -1777,9 +1777,13 @@ bubble scrolled by those eight pixels.
         clip comes round instead**, the way a play of it does: past its
         last word is its first word, and before its first its last, and the
         clip stays chosen.
-      - Outside a clip there is no caption, so the words that were heard
-        are the only ones there are. Where nothing has been heard yet
-        shift takes a second.
+      - **Outside a clip, Shift and an arrow skip 5 seconds**, the way
+        the arrows do in a video on YouTube, over what was heard and what
+        was not alike. There is no caption there, so nothing on screen to
+        step through, and what a hand wants there is to get on. They
+        walked the words heard, and stopped dead where the transcript
+        ended, in the middle of the video, found by Tim. The same while the
+        episode plays on the video. Issue #377.
       - **Which list is walked is decided a whole frame either side of the
         clip**, for the same reason the crop frame is. Read exactly, a
         playhead just put at a clip's start is outside it, so the keys
@@ -2081,7 +2085,10 @@ bubble scrolled by those eight pixels.
       it. A quarter in, tried first, left Tim too little to look ahead to. It turns rather than slides, so
       the waveform holds still to be read between turns, and the view
       turned is held, like a move by hand, until the crosshair or the clip
-      takes it back. The crosshair in the row under the track
+      takes it back. **The keys keep it in sight the same way:** an arrow,
+      or Shift and an arrow, that lands in the last twentieth of the view
+      the way it goes, or out of the view, turns the page there, to the
+      left as to the right. A skip of 5 s left the view behind, #677. The crosshair in the row under the track
       goes to the playhead and puts it in the middle. Clicking a clip in
       the list, the one that is already selected included, puts that clip
       back in view. A double-click on the track never did: one was meant
