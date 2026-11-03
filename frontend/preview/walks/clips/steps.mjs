@@ -7,7 +7,7 @@
 // docs/TESTING.md.
 import { existsSync, mkdirSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, join } from "node:path";
-import { ask, caughtUp, chosen, clickOnTrack, clipList, control, engineState, episodeOn, fakeClock, foldsDone, fromSidebar, handles, high, hold, holdClock, letClockGo, letHeld, middle, news, nextNews, nextPaint, overlay, pageUntil, playUntil, holdSound, pressHead, realFrames, recordFrames, runClock, seenUntil, settle, shortFrames, shortSound, reload } from "../bridge.mjs";
+import { ask, caughtUp, chosen, clickOnTrack, clipList, control, engineState, episodeOn, foldsDone, fromSidebar, handles, high, hold, holdClock, letClockGo, letHeld, middle, news, nextNews, nextPaint, overlay, pageUntil, playUntil, holdSound, pressHead, realFrames, recordFrames, runClock, seenUntil, settle, shortFrames, shortSound, reload } from "../bridge.mjs";
 import { canLook, changesOf, clickCard, clickedFromAhead, clockOf, halfOf, newCards, pieceCount, rate, restAhead, shortOf, shotClips, url } from "../common/steps.mjs";
 
 export const steps = {
@@ -203,8 +203,8 @@ export const steps = {
       else if (existsSync(join(jobs, `${id}.json`))) walk.wrong = "the render carried on, its record is still there";
     } else {
       // The time a remove runs is run on by hand, on both sides, see
-      // runClock, so nothing waits on the clock.
-      await fakeClock(page);
+      // holdClock and runClock, so nothing waits on the clock.
+      await holdClock(page);
       await bin.click();
       await realFrames(page);
       if (!(await page.locator(".renderaway .gone", { hasText: "Removed" }).count())) {
@@ -220,6 +220,7 @@ export const steps = {
       if (now !== "Render") walk.wrong = `the render cut off removed, the Render button says ${now}, not Render`;
       else if (job && job.state !== "settled") walk.wrong = `the render cut off removed, it is ${job.state}, not forgotten`;
       else if (existsSync(join(jobs, `${id}.json`))) walk.wrong = "the render cut off removed, its record is still in the work folder";
+      await letClockGo(page);
     }
     await watch.step("render", s);
   },

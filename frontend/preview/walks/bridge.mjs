@@ -475,6 +475,9 @@ export async function holdClock(page) {
     const after = await pageNow(page);
     if (after !== at) throw new Error(`pauseAt did not hold the clock: it went from ${at} to ${after}`);
   }
+  // The Go side's clock for the time removed work has stands still with
+  // it, see walkTime in walktime_test.go.
+  await control(page.url(), "/clock?hold");
   page.__held = true;
 }
 
@@ -492,6 +495,7 @@ export async function runClock(page, ms) {
 }
 
 export async function letClockGo(page) {
+  await control(page.url(), "/clock?go");
   await page.clock.resume();
   page.__held = false;
 }

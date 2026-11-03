@@ -5,7 +5,7 @@
 // caption box showed before it and the step's name. A sequence of any
 // folder can take it. Below them the helpers only these steps use. See
 // docs/TESTING.md.
-import { ask, caughtUp, clipList, control, drag, episodeOn, fakeClock, fromSidebar, news, nextNews, nextPaint, pageUntil, pressHead, realFrames, runClock, seenUntil, settle, holdSound } from "../bridge.mjs";
+import { ask, caughtUp, clipList, control, drag, episodeOn, fromSidebar, holdClock, letClockGo, news, nextNews, nextPaint, pageUntil, pressHead, realFrames, runClock, seenUntil, settle, holdSound } from "../bridge.mjs";
 import { clockOf, nextCall, onePiece, toastSays, url } from "../common/steps.mjs";
 
 export const steps = {
@@ -1724,9 +1724,10 @@ export const steps = {
       walk.wrong = "the card that stopped has no bin to remove it with";
       return;
     }
-    // The time a remove runs is run on by hand, so nothing waits on
-    // the clock: everything else goes on in step with it.
-    await fakeClock(page);
+    // The time a remove runs is run on by hand, on both sides, so
+    // nothing waits on the clock: everything else goes on in step with
+    // it, and a busy machine spends none of it.
+    await holdClock(page);
     // The marks of clips on their way on the range picker, the card's
     // among them.
     const waiting = () => page.evaluate(() => document.querySelectorAll(".clipmark.waiting").length);
@@ -1779,6 +1780,7 @@ export const steps = {
       if (!gone) walk.wrong = "the card that stopped is still in the list after its time ran down";
       else if (state !== "settled") walk.wrong = `removed, the work of the clip is ${state}, not settled`;
     }
+    await letClockGo(page);
     await watch.step("wait", s);
   },
   // ["failed red"]     the row of the search that failed, the video's dot
@@ -1825,9 +1827,9 @@ export const steps = {
       walk.wrong = `the row "${was}" has no bin to remove the search with`;
       return;
     }
-    // The time a remove runs is run on by hand, so nothing waits on
-    // the clock.
-    await fakeClock(page);
+    // The time a remove runs is run on by hand, on both sides, so
+    // nothing waits on the clock.
+    await holdClock(page);
     await row.locator("button.drop").click();
     // Removed takes its place in the frame of the click.
     await realFrames(page);
@@ -1878,6 +1880,7 @@ export const steps = {
       if (left) walk.wrong = `${left} rows or cards of the search are still in the list after its time ran down`;
       else if (now?.state !== "settled") walk.wrong = `removed, the search is ${now?.state}, not settled`;
     }
+    await letClockGo(page);
     await watch.step("wait", s);
   },
   // ["no hand card"]   no card of a clip made by hand is in the list
@@ -2120,7 +2123,7 @@ export const steps = {
 // on either side of it, or stands anywhere but where it is laid out, or
 // null. Removed fills its card from edge to edge and does not move, issue
 // #431. The row is the Removed's offset parent, see li in ClipList.svelte.
-// The app's clock is held while a remove runs, see fakeClock, so a slide
+// The app's clock is held while a remove runs, see holdClock, so a slide
 // in would stand at its start and be read here.
 async function removedStrip(page, row) {
   const boxes = await page.evaluate((sel) => {

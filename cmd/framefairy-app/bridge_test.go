@@ -412,7 +412,18 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 	// with every call due by then made before it answers, the way a walk
 	// runs the page's clock on, see runClock in walks/bridge.mjs.
 	mux.HandleFunc("/clock", func(w http.ResponseWriter, r *http.Request) {
-		ms, err := strconv.Atoi(r.URL.Query().Get("run"))
+		q := r.URL.Query()
+		if q.Has("hold") {
+			b.d.time.hold()
+			answer(w, true, nil)
+			return
+		}
+		if q.Has("go") {
+			b.d.time.letGo()
+			answer(w, true, nil)
+			return
+		}
+		ms, err := strconv.Atoi(q.Get("run"))
 		if err != nil || ms < 0 {
 			http.Error(w, "run says how many milliseconds to run the clock on", http.StatusBadRequest)
 			return
