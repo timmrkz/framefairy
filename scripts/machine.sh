@@ -1,10 +1,11 @@
 #!/bin/sh
 # Says in one line what machine the tests run on and how fast it is today,
 # so a slow run of the Go tests can be told from a slow machine, #592.
-# GitHub runs the same job on machines whose tests differ by a fifth on
-# average, and by more from run to run, and the log said nothing of which
-# machine it was. make unit prints it before the tests when SLOWEST asks
-# for the tests' times, which CI does, and once more after them.
+# GitHub gives the macos job an M1 with 3 cores or an M2 Pro with 5, and
+# the M1 is not equally fast from one run to the next, so the same tests
+# take from about 60 s to 150 s. make unit prints it before the tests
+# when SLOWEST asks for the tests' times, which CI does, and once more
+# after them.
 #
 #   sh scripts/machine.sh          the machine, then how fast it is
 #   sh scripts/machine.sh after    how fast it is, after the tests

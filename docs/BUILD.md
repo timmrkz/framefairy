@@ -383,10 +383,18 @@ Under the Go tests, `linux` and `macos` name every test that took over
 five seconds, slowest first, `SLOWEST` in `ci.yml`, see `make unit`. The
 Mac runs three cores where Linux runs four, and a test that is slow only
 there shows in its log without anybody running it again. Above the
-tests, a line names the machine and how fast it was that day, and a
-second line under them says how fast it was then, since the same tests
-take a fifth longer on average on one kind of GitHub's Macs than on the
-other, and vary more from run to run, #592.
+tests, a line names the machine and how long a fixed piece of ffmpeg
+work took, and under them a second line says how long it took then.
+GitHub's Macs differ: of 203 runs of `macos` from 29 October to 3
+November, 179 had an Apple M1 with 3 cores, where the fixed work took
+from 1.01 s to 2.30 s, and 24 an M2 Pro with 5 cores, where the `engine`
+package took a third less time. The machine explains most of how long
+the tests take, so a Mac run's seconds say more about the machine than
+about the code. Compare only runs on the same chip, which the line
+names, and with a similar fixed work. Even then the `engine` package's
+seconds varied by 17 % from run to run on the M1, so a claim that tests
+got slower or faster needs several runs of each side, with their spread,
+#592.
 
 The Go tests in `linux` and `macos` stop after 15 minutes. go test ends a
 package that runs over ten minutes by itself, and the tests take about
