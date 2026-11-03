@@ -3,4 +3,5 @@ Each package that took over a second, in seconds and in pieces of the fixed work
 | -------------------------------------- | -------: | -----------: |
 | framefairy/cmd/framefairy-app (failed) |   240.08 |        160.1 |
 | framefairy/engine                      |   101.21 |         67.5 |
+| framefairy/train                       |     2.50 |          1.7 |
 | framefairy/notices/gen                 |     1.42 |          0.9 |

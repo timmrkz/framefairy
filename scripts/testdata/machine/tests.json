@@ -7,3 +7,6 @@
 {"Time":"2026-11-03T10:04:00Z","Action":"fail","Package":"framefairy/cmd/framefairy-app","Elapsed":240.08}
 {"Time":"2026-11-03T10:00:03Z","Action":"pass","Package":"framefairy/notices","Elapsed":0.03}
 {"Time":"2026-11-03T10:00:04Z","Action":"pass","Package":"framefairy/notices/gen","Elapsed":1.42}
+{"Time":"2026-11-03T10:00:05Z","Action":"output","Package":"framefairy/train","Output":"{\"Action\":\"pass\",\"Package\":\"framefairy/quoted\",\"Elapsed\":99}\n"}
+{"Time":"2026-11-03T10:00:05Z","Action":"skip","Package":"framefairy/licence/paddle","Elapsed":3.5}
+{"Time":"2026-11-03T10:00:06Z","Action":"pass","Package":"framefairy/train","Elapsed":2.5}

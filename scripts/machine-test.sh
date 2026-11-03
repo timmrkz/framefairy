@@ -7,7 +7,9 @@
 #
 # testdata/machine/tests.json holds go test -json events the way
 # gotestsum keeps them, with a package that was cached, one that passed
-# in 101.21 s, one that failed at the timeout and one under a second.
+# in 101.21 s, one that failed at the timeout, one under a second, one
+# skipped, the events of single tests, and a test's output that quotes a
+# package's event, none of which is a package that ended.
 # tests.want is the table for a fixed work of 1.5 s.
 set -eu
 
