@@ -120,8 +120,13 @@ func (s *FrameFairy) windowFor(ctx context.Context, path string, st VideoState, 
 			if c.Window == nil {
 				return false
 			}
-			if !sameWindow(*c.Window, w) {
-				now = *c.Window
+			// Cut at the video's end the way the window read was, so a
+			// kept window that runs a little past the end is still the
+			// one read.
+			inFile := *c.Window
+			inFile.To = math.Min(inFile.To, duration)
+			if !sameWindow(inFile, w) {
+				now = inFile
 				return false
 			}
 			c.Window, kept = &fitted, true
@@ -139,7 +144,6 @@ func (s *FrameFairy) windowFor(ctx context.Context, path string, st VideoState, 
 			return view(w, l)
 		}
 		w = now
-		w.To = math.Min(w.To, duration)
 		l = limits(w)
 	}
 	// A target typed for the window is the target of the window fitted,

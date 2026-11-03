@@ -273,3 +273,26 @@ func TestAWindowTakesEverythingAtOnce(t *testing.T) {
 		t.Errorf("the window kept is %+v, the one in the state %+v", kept, w.KeptWindow)
 	}
 }
+
+// A window kept a little past the video's end, as one written by another
+// program or dragged to the edge can be, is fitted and kept like any
+// other. The state compared the window cut at the end with the one in the
+// file, never found them the same, and tried again for good.
+func TestAWindowKeptPastTheEndIsFittedOnce(t *testing.T) {
+	t.Parallel()
+	svc, source, duration := anUnevenVideo(t)
+	if err := svc.chooseWindow(source, 900, duration+0.3, duration-900+0.3, true); err != nil {
+		t.Fatal(err)
+	}
+	st, err := svc.State(context.Background(), source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := st.Window
+	if w == nil || w.To-w.From > w.Most+0.01 || w.To > duration {
+		t.Fatalf("the window came as %+v", w)
+	}
+	if kept := keptWindow(svc, source); kept == nil || !sameWindow(*kept, w.KeptWindow) {
+		t.Errorf("the window kept is %+v, the one in the state %+v", kept, w.KeptWindow)
+	}
+}
