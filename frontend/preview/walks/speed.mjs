@@ -30,7 +30,7 @@
 // prints the line each drag ends with in the app's log, see dragged in
 // lib/frames/queue.ts: how long the picture stood, and how its frames
 // came. DRAGS, as left or right,fast, picks some of the three.
-import { control, fromSidebar, handles, high, nextPaint, open, pageUntil, settle, shownOnPlayhead } from "./bridge.mjs";
+import { control, fromSidebar, handles, high, nextPaint, open, pageUntil, settle, shownOnPlayhead, reload } from "./bridge.mjs";
 
 const url = process.env.BRIDGE_URL ?? "http://127.0.0.1:8123/";
 // REST was the same pause in milliseconds, and 250 of them now would be
@@ -292,7 +292,7 @@ try {
     for (let r = 0; r < rounds; r++) {
       if (r > 0) {
         await count();
-        await page.reload();
+        await reload(page);
         await ready();
       }
       await pickClip();

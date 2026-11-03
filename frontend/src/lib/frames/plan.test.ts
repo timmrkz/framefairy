@@ -72,6 +72,20 @@ describe("Program", () => {
     expect(again.at).toBeCloseTo(57.5);
     expect(l.visit(4)!.from).toBeCloseTo(l.length + 2.53);
   });
+  // The loop switched on while the clip plays, let go round, and switched
+  // off in the second time through: that play ends after it. The program
+  // is that play's, and the next play builds its own, which plays the
+  // clip once. Kept, it went on round the end.
+  test("with its loop switched while it plays, it is that play's alone", () => {
+    const fresh = new Program(clip, false);
+    expect(fresh.changedWhilePlaying).toBe(false);
+    const played = new Program(clip, false);
+    played.loopOn();
+    played.loopOff(played.length + 0.5);
+    expect(played.end).toBeCloseTo(2 * played.length);
+    expect(played.changedWhilePlaying).toBe(true);
+    expect(fresh.end).toBeCloseTo(fresh.length);
+  });
   // #277: the clip changed while it plays, by a drag, an undo or a redo.
   test("changed under the play, it goes on from the visit in hand with the new pieces", () => {
     const now = [
@@ -80,7 +94,7 @@ describe("Program", () => {
       { start: 63.05, end: 65.0 },
     ];
     const c = Program.spliced(p, 0, 58, now, false)!;
-    expect(c.spliced).toBe(true);
+    expect(c.changedWhilePlaying).toBe(true);
     expect(c.visit(0)).toMatchObject({ v: 0, from: 0, start: 57, end: 60 });
     expect(c.visit(1)).toMatchObject({ v: 1, from: 3, start: 61, end: 62.17 });
     expect(c.visit(2)!.from).toBeCloseTo(4.17);
