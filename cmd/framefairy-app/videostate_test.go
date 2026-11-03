@@ -516,8 +516,11 @@ func TestPathAVideoThatCannotBeReadStillHasItsState(t *testing.T) {
 	}
 }
 
-// A state holds the jobs queued or running and, of those over, the
-// newest of each kind, not every job the video had since the app opened.
+// A state holds the jobs queued or running, those that stopped before
+// they were done and still say so, and of the rest the newest of each
+// kind, not every job the video had since the app opened. The state is
+// the one way a video's jobs reach the window, so a clip made by hand
+// that stopped keeps its card while a later one is made.
 func TestAStateHoldsTheJobsTheWorkspaceShows(t *testing.T) {
 	q := newIdleQueue(nil, nil, nil)
 	add := func(id, episode, kind, state string) {
@@ -530,8 +533,10 @@ func TestAStateHoldsTheJobsTheWorkspaceShows(t *testing.T) {
 	for i := range 50 {
 		add(fmt.Sprintf("render-%d", i), "a.mp4", engine.JobRender, JobDone)
 	}
-	add("search-old", "a.mp4", engine.JobSearch, JobStopped)
+	add("search-old", "a.mp4", engine.JobSearch, JobSettled)
+	add("clip-stopped", "a.mp4", engine.JobClip, JobStopped)
 	add("search-new", "a.mp4", engine.JobSearch, JobDone)
+	add("clip-new", "a.mp4", engine.JobClip, JobDone)
 	add("render-running", "a.mp4", engine.JobRender, JobRunning)
 	add("render-queued", "a.mp4", engine.JobRender, JobQueued)
 	add("other", "b.mp4", engine.JobSearch, JobRunning)
@@ -540,7 +545,7 @@ func TestAStateHoldsTheJobsTheWorkspaceShows(t *testing.T) {
 	for _, j := range jobs {
 		ids = append(ids, j.ID)
 	}
-	if want := []string{"render-49", "search-new", "render-running", "render-queued"}; !slices.Equal(ids, want) {
+	if want := []string{"render-49", "clip-stopped", "search-new", "clip-new", "render-running", "render-queued"}; !slices.Equal(ids, want) {
 		t.Errorf("the state holds %v, not %v", ids, want)
 	}
 }

@@ -107,8 +107,12 @@ func open(t *testing.T) *desk {
 // start runs the app over a store.
 func (d *desk) start(st *store) {
 	d.svc = &FrameFairy{store: st}
-	d.svc.jobs = newQueue(st, func(u JobUpdate) { d.bus.send("job", u) },
-		func(episode string) { d.bus.send("episode", episode) })
+	toJob := func(u JobUpdate) {
+		if toWindow(u) {
+			d.bus.send("job", u)
+		}
+	}
+	d.svc.jobs = newQueue(st, toJob, func(episode string) { d.bus.send("episode", episode) })
 	svc := d.svc
 	// A video's state is sent only to a window, which a path test has
 	// none of.

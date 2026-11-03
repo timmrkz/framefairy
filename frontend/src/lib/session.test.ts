@@ -5,7 +5,7 @@ import { said } from "./said";
 import { EpisodeSession, type WorkMoves } from "./session.svelte";
 import { JobStore } from "./state.svelte";
 
-vi.mock("./api", () => ({ api: {}, onJob: () => {} }));
+vi.mock("./api", () => ({ api: {}, onJob: () => {}, onVideoState: () => {} }));
 vi.mock("./said", () => ({ said: vi.fn() }));
 
 const none: WorkMoves = {

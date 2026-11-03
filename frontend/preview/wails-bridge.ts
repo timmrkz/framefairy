@@ -64,7 +64,8 @@ let waiting: { n: number; done: () => void }[] = [];
 (window as any).__heardMark = (n: number) =>
   new Promise<void>((done) => (mark >= n ? done() : waiting.push({ n, done })));
 // The newest change of each job the interface has had, by the job's seq,
-// from its news and from the lists of jobs it asked for. The Go side sends
+// from the states of the videos, from a download's news and from the
+// lists of jobs it asked for. The Go side sends
 // a job's news after it lets go of the queue, so a list asked for can show
 // a change whose news is still on its way, and a walk waits for the seq
 // the list showed, see caughtUp in walks/bridge.mjs.
@@ -87,6 +88,8 @@ function tell(name: string, data: unknown) {
   heard[name] = (heard[name] ?? 0) + 1;
   last[name] = data;
   if (name === "job") had((data as { job?: { id?: string; seq?: number } })?.job);
+  // A video's jobs come in its state, one channel.
+  if (name === "video") for (const job of (data as { jobs?: { id?: string; seq?: number }[] })?.jobs ?? []) had(job);
   if (name === "mark") {
     mark = Math.max(mark, data as number);
     const now = waiting.filter((w) => w.n <= mark);

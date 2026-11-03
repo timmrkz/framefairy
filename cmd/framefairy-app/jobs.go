@@ -156,9 +156,19 @@ func (j *Job) unfinished() bool {
 	return j.State == JobInterrupted || j.State == JobStopped || j.State == JobFailed
 }
 
-// JobUpdate is what the interface receives on the "job" event.
+// JobUpdate is what the interface receives on the "job" event, for a
+// job of no video, see toWindow.
 type JobUpdate struct {
 	Job Job `json:"job"`
+}
+
+// toWindow says whether a job's news goes to the window on the "job"
+// event. A video's jobs reach it in the video's state alone, one channel,
+// so its clips, its window and the clip chosen change in the same frame
+// as the job that changed them, issue #513. A job of no video, a model
+// being downloaded, has no state, and is sent as it is.
+func toWindow(u JobUpdate) bool {
+	return u.Job.Episode == ""
 }
 
 // Lanes the queue runs side by side, one for each kind of machinery a step
@@ -235,11 +245,12 @@ func (q *queue) stamp() uint64 {
 
 // ofVideo is the jobs of one video the workspace shows as they are now,
 // and the number the clock of the jobs gives this moment, see
-// VideoState.Rev. Those are the jobs queued or running and, of those
-// over, the newest of each kind. The queue keeps every job since the app
-// opened, and every older one's last news reached the window long ago, so
-// a state sent four times a second does not carry the renders of the
-// whole day.
+// VideoState.Rev. Those are the jobs queued or running, those that ended
+// before they were done and still say so, and of the rest the newest of
+// each kind. The state is the one way a video's jobs reach the window,
+// so a job that is not in it is one the window forgets. The queue keeps
+// every job since the app opened, so a state sent four times a second
+// does not carry the renders of the whole day.
 func (q *queue) ofVideo(episode string) ([]Job, uint64) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -253,7 +264,7 @@ func (q *queue) ofVideo(episode string) ([]Job, uint64) {
 	}
 	out := []Job{}
 	for _, j := range q.jobs {
-		if j.Episode == episode && (j.going() || newest[j.Kind] == j) {
+		if j.Episode == episode && (j.going() || j.unfinished() || newest[j.Kind] == j) {
 			out = append(out, *j)
 		}
 	}

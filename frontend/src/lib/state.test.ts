@@ -3,7 +3,7 @@ import { describe, expect, test, vi } from "vitest";
 import type { Job } from "./api";
 import { JobStore } from "./state.svelte";
 
-vi.mock("./api", () => ({ api: {}, onJob: () => {} }));
+vi.mock("./api", () => ({ api: {}, onJob: () => {}, onVideoState: () => {} }));
 
 const job = (state: string, seq: number, kind = "transcribe", id = "job-5"): Job =>
   ({ id, episode: "/v.mp4", kind, state, seq }) as Job;
@@ -133,5 +133,38 @@ describe("the work of the clip list", () => {
       jobs.apply(job(state, n + 1, "clip", `c${n}`));
     }
     expect(jobs.clips("/v.mp4").map((j) => j.state)).toEqual(["running", "failed", "interrupted", "stopped"]);
+  });
+});
+
+// A video's jobs come in its state, one channel, so its clips, its window
+// and the clip chosen change in the same frame as the job that changed
+// them, issue #513. A state holds every job of the video there is to say
+// anything about, so a job it no longer holds is one the Go side forgot.
+describe("the jobs of a video's state", () => {
+  const state = (rev: number, jobs: Job[], video = "/v.mp4") =>
+    ({ video, rev, jobs, clips: [], coverage: { passes: [] }, status: null, window: null, chosen: "" }) as never;
+
+  test("are kept, each unless a later snapshot of it is", () => {
+    const jobs = new JobStore();
+    jobs.apply(job("running", 4, "search", "s"));
+    jobs.take(state(5, [job("running", 3, "search", "s"), job("queued", 5, "render", "r")]));
+    expect(jobs.list.map((j) => `${j.id} ${j.seq}`)).toEqual(["s 4", "r 5"]);
+  });
+
+  test("go when a newer state no longer holds them, and not for an older state or a newer job", () => {
+    const jobs = new JobStore();
+    jobs.take(state(5, [job("stopped", 2, "clip", "c"), job("done", 3, "search", "s")]));
+    jobs.apply(job("running", 7, "clip", "late"));
+    jobs.take(state(4, []));
+    expect(jobs.list.map((j) => j.id)).toEqual(["c", "s", "late"]);
+    jobs.take(state(6, [job("done", 3, "search", "s")]));
+    expect(jobs.list.map((j) => j.id)).toEqual(["s", "late"]);
+  });
+
+  test("of one video leave another video's jobs alone", () => {
+    const jobs = new JobStore();
+    jobs.apply({ ...job("running", 1, "search", "other"), episode: "/w.mp4" });
+    jobs.take(state(2, []));
+    expect(jobs.list.map((j) => j.id)).toEqual(["other"]);
   });
 });

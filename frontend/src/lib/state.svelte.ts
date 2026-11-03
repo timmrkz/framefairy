@@ -1,15 +1,11 @@
 // Shared state: the job list, kept current from the Go side's events.
+// A video's jobs come in its state, onVideoState, one channel, and a job
+// of no video, a model being downloaded, on the job event.
 import { untrack } from "svelte";
-import { api, onJob, type Job, type Lane } from "./api";
+import { api, onJob, onVideoState, type Job, type Lane, type VideoState } from "./api";
 import { live, mergeJob, outstanding } from "./flow";
 import { said } from "./said";
 import type { EpisodeOrder } from "./order";
-
-// How often the list is read again while anything runs. The events keep it
-// current, and this is what puts it right when one of them was lost: a job
-// that looks as if it runs for ever holds up the first search and says
-// Cancelling for good, and only a restart cleared it.
-const recheck = 5000;
 
 // The two kinds of work a person starts and stops for a video: the whole
 // video heard, from its menu, and the clip list's work, the search with
@@ -37,6 +33,29 @@ export class JobStore {
   // Who hears each snapshot the list keeps, with the one it replaced, see
   // EpisodeSession in lib/session.svelte.ts.
   private watchers = new Set<(before: Job | undefined, after: Job) => void>();
+
+  // The rev of the newest state of each video the jobs were taken from.
+  private revs = new Map<string, number>();
+
+  // The jobs of a video, from a state of it the Go side sent or a call
+  // answered with. Each is kept unless the list has a later snapshot of
+  // it. A state newer than every one before it holds every job of the
+  // video there is to say anything about, so a job of the video it no
+  // longer holds, older than it, is one the Go side forgot, and goes.
+  take(state: VideoState) {
+    for (const job of state.jobs) {
+      const had = this.list.find((j) => j.id === job.id);
+      if (!had || (job.seq ?? 0) > (had.seq ?? 0)) this.apply(job);
+    }
+    if (state.rev <= (this.revs.get(state.video) ?? 0)) return;
+    this.revs.set(state.video, state.rev);
+    const held = new Set(state.jobs.map((j) => j.id));
+    const kept = this.list.filter((j) => j.episode !== state.video || held.has(j.id) || (j.seq ?? 0) > state.rev);
+    if (kept.length < this.list.length) {
+      this.list = kept;
+      this.settle();
+    }
+  }
 
   // A snapshot of a job, kept unless the list already has a later one.
   apply(job: Job) {
@@ -127,12 +146,12 @@ export class JobStore {
   async start() {
     // Listening starts before the list is read, so nothing that happens
     // while it is read is missed. What was heard in the meantime and what
-    // the list says are merged by their numbers.
+    // the list says are merged by their numbers. Nothing is read again
+    // after: every state of a video holds all of its jobs, so a state that
+    // was missed is put right by the next, and nothing has to be polled.
     onJob(({ job }) => this.apply(job));
+    onVideoState((state) => this.take(state));
     await this.resync();
-    setInterval(() => {
-      if (this.busy > 0) void this.resync();
-    }, recheck);
   }
 
   async resync() {

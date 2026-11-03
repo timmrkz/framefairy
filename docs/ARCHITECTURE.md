@@ -198,7 +198,10 @@ other side relies on, and the pull request says so.
 
 - The bindings on `*FrameFairy` and `frontend/src/lib/api.ts`.
 - The `video` event, `VideoState`, whose `rev` is on the clock of the
-  jobs' `seq`, so the window can tell which of two came later.
+  jobs' `seq`, so the window can tell which of two came later. It is the
+  one way a video's jobs reach the window, and it holds every job of the
+  video there is to say anything about. The `job` event carries only a
+  job of no video, a model being downloaded, see `toWindow`.
 - The `notice` event, `Notice`, a failure told once as it happens, which
   is no fact of a video's state.
 - `engine.Project`, the steps a front end may take.

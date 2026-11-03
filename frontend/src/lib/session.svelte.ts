@@ -108,10 +108,7 @@ export class EpisodeSession {
       // A newer state came first, and still the captions are read again.
       this.clips = this.clips.map((c) => ({ ...c }));
     }
-    for (const job of state.jobs) {
-      const had = this.store.list.find((j) => j.id === job.id);
-      if (!had || (job.seq ?? 0) > (had.seq ?? 0)) this.store.apply(job);
-    }
+    this.store.take(state);
     return kept;
   }
 
