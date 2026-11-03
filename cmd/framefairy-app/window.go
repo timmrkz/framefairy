@@ -170,14 +170,14 @@ func (s *FrameFairy) placedWindow(path string, duration float64) KeptWindow {
 // the transcript as far as it is heard. A transcript that cannot be read
 // is nothing heard yet. Every state carries the window and what it may
 // be, so the lines are weighed once for each transcript read and kept
-// with it, see heard: weighed for every state, four hours of them took
-// most of 55 ms.
+// with it, see engine.TranscriptRead: weighed for every state, four hours
+// of them took most of 55 ms.
 func (s *FrameFairy) roomAndLines(p *engine.Project) engine.RoomAndLines {
 	h, err := s.heardIn(p)
 	if err != nil {
 		return p.RoomWith(engine.Weigh(nil))
 	}
-	return p.RoomWith(h.weighed())
+	return p.RoomWith(h.Weighed())
 }
 
 // keptOf is a window the engine placed as the app keeps it.

@@ -1507,7 +1507,7 @@ interface tests, as `frontend/src/lib/frames/captions.test.ts` does, and
 Playwright's clock in the walks, through `fakeClock`, `holdClock`,
 `runClock` and `letClockGo` in `walks/bridge.mjs`. In a bubble,
 `synctest.Wait` tells a test that every goroutine of the bubble waits, as
-the asks at once for a transcript in `cmd/framefairy-app/kept_test.go`
+the asks at once for a transcript in `engine/held_test.go`
 use it. The end-to-end tests
 are the walks, against the real Go side through the bridge, and the
 rules every walk checks after every step are in `walks/rules.mjs`.

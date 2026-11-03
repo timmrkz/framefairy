@@ -686,6 +686,17 @@ of that job. An `Engine` keeps what belongs to its one job: the log,
 what it spent, the switches of its run, the hearing and the read-ahead.
 See [decisions/2026-10-31-running-programs-and-what-outlives-a-job.md](decisions/2026-10-31-running-programs-and-what-outlives-a-job.md).
 
+The machine also gives the one `Episode` of each video,
+`Machine.Episode` in `engine/held.go`. The files of a video are the
+truth, and the app, the command line, a person in Finder or a sync
+service may write them, so an episode keeps each read with the size and
+time of the files it came from, looks at them on every question, and
+reads again only what changed, once however many ask at once. It holds
+the transcript, which `Status` and the app read through it, with its
+lines weighed and the edges of what is said worked out once for each
+read. The transcripts of the last ten videos asked about are kept. See
+[decisions/2026-11-03-one-episode-per-video.md](decisions/2026-11-03-one-episode-per-video.md).
+
 ### What ffmpeg and ffprobe said, kept
 
 The app makes an engine for every job, every caption it draws and every
@@ -1742,7 +1753,8 @@ macOS keychain of `engine/keys_darwin.go`, in the frames decoder of
 
 ```
   audio.go      reading the audio, word timing, loudness
-  transcript.go the transcript cache and the speech model location
+  transcript.go the transcript file and the speech model location
+  held.go       what a program holds of each video's files, by their stamps
   words.go      the one list of words an episode says, see WORDS.md
   speech.go     the speech models there are, and installing one
   lines.go      lines, cuts and captions, all built from words

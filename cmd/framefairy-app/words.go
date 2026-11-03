@@ -4,10 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -16,11 +14,6 @@ import (
 	"framefairy/engine"
 )
 
-// transcript is the whole-episode transcript, read once and kept, for the
-// calls the timeline makes over and over as it is moved. A four hour
-// transcript is megabytes of words and levels, and reading it for every
-// swipe made the timeline crawl and the waveform arrive in steps.
-//
 // project is the episode at path with the settings as they are now, for
 // what reads or edits its files without running a step.
 func (s *FrameFairy) project(path string) *engine.Project {
@@ -34,14 +27,12 @@ func (s *FrameFairy) projectWith(path string, opts engine.Options) *engine.Proje
 	return p
 }
 
-// The transcripts of the last keptTranscripts episodes are kept, as many as
-// the app keeps workspaces of, so going back to one reads nothing. One was
-// kept, so every episode picked read its transcript again. And it is read
-// once however many ask at once: an episode opening asks for its words, its
-// waveform, its captions and its room together, and each read the whole
-// file for itself, up to seven times.
-//
-// What it hands out is shared, so only what reads goes through here.
+// transcript is the whole-episode transcript as the engine holds it, see
+// engine.Episode, for the calls the timeline makes over and over as it is
+// moved. A four hour transcript is megabytes of words and levels, and
+// reading it for every swipe made the timeline crawl and the waveform
+// arrive in steps. What it hands out is shared, so only what reads goes
+// through here.
 func (s *FrameFairy) transcript(p *engine.Project) (*engine.Transcript, error) {
 	h, err := s.heardIn(p)
 	if err != nil {
@@ -50,41 +41,11 @@ func (s *FrameFairy) transcript(p *engine.Project) (*engine.Transcript, error) {
 	return h.Transcript, nil
 }
 
-// heard is a transcript as it was read, with its lines weighed for what
-// a search can read, see engine.Weigh. They are weighed the first time
-// they are asked for and kept with the transcript they are of, so they
-// are read again together and never from two reads of the file.
-type heard struct {
-	*engine.Transcript
-	weighed func() engine.RoomAndLines
-}
-
-// heardIn is the transcript of p's video as it is kept, see transcript.
-func (s *FrameFairy) heardIn(p *engine.Project) (*heard, error) {
-	return s.said.get(p.Source, transcriptStamp(p), func() (*heard, error) {
-		s.oldCorrections(p)
-		t, err := p.Transcript()
-		if err != nil {
-			return nil, err
-		}
-		return &heard{Transcript: t, weighed: sync.OnceValue(func() engine.RoomAndLines { return engine.Weigh(t) })}, nil
-	})
-}
-
-// transcriptStamp is how the files a transcript is read from are now, the
-// size and the time of each, so what is kept of one is read again only
-// once they changed.
-func transcriptStamp(p *engine.Project) string {
-	stamp := ""
-	for _, file := range engine.TranscriptFiles(p.LogsDir()) {
-		info, err := p.Files.Stat(file)
-		if err != nil {
-			stamp += "|-"
-			continue
-		}
-		stamp += fmt.Sprintf("|%d,%d", info.Size(), info.ModTime().UnixNano())
-	}
-	return stamp
+// heardIn is the transcript of p's video as the engine holds it, with its
+// lines weighed once for each read, see transcript.
+func (s *FrameFairy) heardIn(p *engine.Project) (*engine.TranscriptRead, error) {
+	s.oldCorrections(p)
+	return s.store.machine.Episode(p.Source).Transcript(p.Base.ASRModel, p.Base.SilenceDB)
 }
 
 // oldCorrections says once, at info, that a video still has the
@@ -94,6 +55,9 @@ func transcriptStamp(p *engine.Project) string {
 // after the update explains itself. It never says what the words read.
 func (s *FrameFairy) oldCorrections(p *engine.Project) {
 	file := filepath.Join(p.LogsDir(), "corrections.json")
+	if _, told := s.toldOld.Load(file); told {
+		return
+	}
 	data, err := afero.ReadFile(p.Files, file)
 	if err != nil {
 		return
@@ -121,73 +85,6 @@ func (s *FrameFairy) wordCounts(line *zerolog.Event, plan, clipID string) *zerol
 		}
 	}
 	return line
-}
-
-// keptTranscripts is how many episodes' transcripts are kept, the same as
-// KEPT in App.svelte.
-const keptTranscripts = 10
-
-// keptReads keeps what was read for the last few keys, each with the stamp
-// of what it was read from, and reads a key once however many ask at once.
-// The zero value keeps keptTranscripts.
-type keptReads[T any] struct {
-	mu   sync.Mutex
-	held map[string]*keptRead[T]
-	uses uint64
-}
-
-// keptRead is one key's read: as stamp says its source was, or still being
-// read until done is closed.
-type keptRead[T any] struct {
-	stamp string
-	v     T
-	err   error
-	done  chan struct{}
-	used  uint64
-}
-
-// get gives what read gives for key, read again only when stamp has
-// changed. A failure is not kept: the next ask reads again.
-func (k *keptReads[T]) get(key, stamp string, read func() (T, error)) (T, error) {
-	k.mu.Lock()
-	k.uses++
-	if r := k.held[key]; r != nil && r.stamp == stamp {
-		r.used = k.uses
-		k.mu.Unlock()
-		<-r.done
-		return r.v, r.err
-	}
-	r := &keptRead[T]{stamp: stamp, used: k.uses, done: make(chan struct{})}
-	if k.held == nil {
-		k.held = map[string]*keptRead[T]{}
-	}
-	k.held[key] = r
-	for len(k.held) > keptTranscripts {
-		oldest := ""
-		for other, o := range k.held {
-			if oldest == "" || o.used < k.held[oldest].used {
-				oldest = other
-			}
-		}
-		delete(k.held, oldest)
-	}
-	k.mu.Unlock()
-	// However the read ends, a panic too, whoever waits is let go and a
-	// failure is not kept. The failure is taken out first, so a waiter let
-	// go that asks again reads again rather than finding it.
-	defer func() {
-		if r.err != nil {
-			k.mu.Lock()
-			if k.held[key] == r {
-				delete(k.held, key)
-			}
-			k.mu.Unlock()
-		}
-		close(r.done)
-	}()
-	r.err = fmt.Errorf("the read stopped before it finished")
-	r.v, r.err = read()
-	return r.v, r.err
 }
 
 // words is what an episode says, see engine/words.go, from the transcript

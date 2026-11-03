@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -125,10 +126,12 @@ type EpisodeStatus struct {
 	Label *Label `json:"label,omitempty"`
 }
 
-// Status reads an episode's state from disk. silenceDB is the floor the
-// words are placed on the sound with, Options.SilenceDB, nil for the one
-// worked out from the episode.
-func Status(fsys afero.Fs, source, asrModelDir string, silenceDB *float64) EpisodeStatus {
+// Status reads an episode's state from the files of m. silenceDB is the
+// floor the words are placed on the sound with, Options.SilenceDB, nil for
+// the one worked out from the episode. The transcript is the one the
+// episode holds, see Episode.
+func Status(m *Machine, source, asrModelDir string, silenceDB *float64) EpisodeStatus {
+	fsys := m.Files
 	st := EpisodeStatus{Source: source, Name: filepath.Base(source)}
 	info, err := fsys.Stat(source)
 	if err != nil {
@@ -139,20 +142,19 @@ func Status(fsys afero.Fs, source, asrModelDir string, silenceDB *float64) Episo
 	work := WorkDir(source)
 	logs := filepath.Join(work, "logs")
 
-	if asrModelDir == "" {
-		asrModelDir = DefaultModelDir()
-	}
-	model := filepath.Base(filepath.Clean(asrModelDir))
 	whole := filepath.Join(logs, TranscriptName(nil))
-	if stamp, err := stampOf(fsys, source); err == nil {
-		if h, ok := heardOf(fsys, whole, stamp, model, silenceDB); ok {
-			st.Transcribed, st.Heard, st.Said = h.done, h.heard, h.said
-			if len(st.Heard) > 0 && st.Heard[0][0] <= 0.005 {
-				st.Covered = st.Heard[0][1]
-			}
-		} else if fileio.Exists(fsys, whole) {
-			st.TranscriptStale = true
+	if t, err := m.Episode(source).Transcript(asrModelDir, silenceDB); err == nil {
+		// Copies, so nothing the status is handed on to changes what is held.
+		st.Transcribed, st.Heard = t.Done, slices.Clone(t.Heard)
+		if said := t.Said(); said != nil {
+			span := *said
+			st.Said = &span
 		}
+		if len(st.Heard) > 0 && st.Heard[0][0] <= 0.005 {
+			st.Covered = st.Heard[0][1]
+		}
+	} else if errors.Is(err, ErrNoTranscript) && fileio.Exists(fsys, whole) {
+		st.TranscriptStale = true
 	}
 	st.MeasuredParts, st.MeasuredAll = LevelsReach(fsys, source)
 	for _, p := range st.MeasuredParts {
@@ -274,8 +276,8 @@ func countFiles(dir, ext string) int {
 }
 
 // ScanFolder lists the episodes in a folder, not its subfolders.
-func ScanFolder(fsys afero.Fs, dir, asrModelDir string) ([]EpisodeStatus, error) {
-	entries, err := afero.ReadDir(fsys, dir)
+func ScanFolder(m *Machine, dir, asrModelDir string) ([]EpisodeStatus, error) {
+	entries, err := afero.ReadDir(m.Files, dir)
 	if err != nil {
 		return nil, err
 	}
@@ -285,7 +287,7 @@ func ScanFolder(fsys afero.Fs, dir, asrModelDir string) ([]EpisodeStatus, error)
 		if !entry.Mode().IsRegular() || strings.HasPrefix(name, ".") || !IsVideo(name) {
 			continue
 		}
-		out = append(out, Status(fsys, filepath.Join(dir, name), asrModelDir, nil))
+		out = append(out, Status(m, filepath.Join(dir, name), asrModelDir, nil))
 	}
 	return out, nil
 }
@@ -326,17 +328,30 @@ func SavedTranscript(fsys afero.Fs, source, logsDir, modelDir string, silenceDB 
 	if err != nil {
 		return nil, err
 	}
-	if modelDir == "" {
-		modelDir = DefaultModelDir()
-	}
-	file, words, frames, ok := readTranscriptFile(fsys, filepath.Join(logsDir, TranscriptName(nil)),
-		stamp, filepath.Base(filepath.Clean(modelDir)))
+	t, _, err := readSaved(fsys, stamp, logsDir, modelName(modelDir), silenceDB)
+	return t, err
+}
+
+// readSaved is SavedTranscript of the video stamp names, heard by model,
+// and the file it was read from.
+func readSaved(fsys afero.Fs, stamp sourceStamp, logsDir, model string, silenceDB *float64) (*Transcript,
+	transcriptFile, error) {
+	file, words, frames, ok := readTranscriptFile(fsys, filepath.Join(logsDir, TranscriptName(nil)), stamp, model)
 	if !ok {
-		return nil, ErrNoTranscript
+		return nil, file, ErrNoTranscript
 	}
 	t := fromStored(words, frames, float64(file.From), float64(file.Mean), silenceDB)
 	t.Heard = file.heard()
-	return t, nil
+	return t, file, nil
+}
+
+// modelName is the name a transcript keeps of the speech model in
+// modelDir, the default one when it is empty.
+func modelName(modelDir string) string {
+	if modelDir == "" {
+		modelDir = DefaultModelDir()
+	}
+	return filepath.Base(filepath.Clean(modelDir))
 }
 
 // Duration of the transcript in seconds.

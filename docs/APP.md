@@ -898,9 +898,9 @@ episode's decoder is asked for as the workspace starts to build,
 `holdAhead` in `lib/frames/queue.ts`, rather than once the workspace
 knows what the episode is. The clip timeline asks for its words and its waveform
 once the episode has answered, and never twice for the same view. The
-Go side keeps the transcripts of the last ten episodes read, `keptReads`
-in `words.go`, and reads one once however many calls ask for it at the
-same moment: a workspace opening asked for the same transcript up to
+engine holds the transcripts of the last ten videos read, each by its
+`engine.Episode`, and reads one once however many calls ask for it at
+the same moment, and again only once a file of it changed: a workspace opening asked for the same transcript up to
 seven times, and each read it from the file. The longest window the range
 picker may draw is worked out without a search from every line, which
 took forty milliseconds of an hour's transcript in the frame the
