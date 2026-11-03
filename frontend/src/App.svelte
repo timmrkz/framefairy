@@ -11,6 +11,7 @@
     onShowUpdates,
     onLicenceLink,
     onQuit,
+    onNotice,
     type EpisodeStatus,
     type Job,
     type Label,
@@ -267,14 +268,6 @@
     );
   }
 
-  // Why a transcription failed, said in a toast with Report, whether the
-  // job failed as it ran or was refused as it was asked for.
-  function sayFailed(j: Job) {
-    const said = j.error?.trim() ?? "";
-    const why = said ? said[0].toUpperCase() + said.slice(1) : "The transcription failed, and no reason was given.";
-    toasts.say("transcribe whole video", why, { video: j.episode, report: true });
-  }
-
   // Transcribe video in a video's menu.
   // The job it answers with is taken at once, so the row says Transcribing
   // without waiting for the job's first news.
@@ -284,10 +277,6 @@
     try {
       const job = await api.transcribe(ep.source);
       jobs.apply(job);
-      // Refused, while the app relaunches or the video is being removed,
-      // it never ran, so the effect below never sees it fail. Found by
-      // the review of #458.
-      if (job.state === "failed") sayFailed(job);
     } catch (err) {
       toasts.say("transcribe whole video", errorText(err), { video: ep.source });
     } finally {
@@ -295,15 +284,13 @@
     }
   }
 
-  // A transcription that fails says why in a toast, the way a search does,
-  // and its row says Transcribe video again. One seen failed only as the
-  // app opened has said why already. Heard as the store keeps each
-  // snapshot, like the moves of a video's session, issue #606.
-  onMount(() =>
-    jobs.watch((before, after) => {
-      if (after.kind === "transcribe" && before && live(before) && after.state === "failed") sayFailed(after);
-    }),
-  );
+  // A failure says why in a toast, a search, a clip made by hand, a
+  // transcription or a render, whether it failed as it ran or was refused
+  // as it was asked for. The Go side tells each once, as it happens, see
+  // notice.go, and the row or card of the work goes on saying Failed. It
+  // is about its video, so it shows while that video is on screen.
+  onMount(() => onNotice((n) => toasts.say(`video:${n.video}`, n.text, { video: n.video, report: n.report })));
+
 
   // Export transcript: the save box is the system's, so nothing is said
   // here but a failure.
@@ -732,10 +719,11 @@
       .catch(() => {});
     const off = onEpisodeChanged(() => refresh());
     // The library is read again whenever the app comes back to the front,
-    // which is where a person comes back from who deleted a video's folder
-    // in Finder: the Go side lets that video go as it answers, see
-    // letGoOfRemoved in library.go. The rest of the library is the app's
-    // own, so nothing else can have changed it while the app was behind.
+    // and the Go side looks at the disk as it answers, see reconcile in
+    // reconcile.go. It also watches the folders of the videos and says
+    // when what the library holds changed, so a folder deleted in Finder
+    // shows at once, and this read is only the look that catches what the
+    // watch could not hear.
     const comeBack = () => refresh();
     window.addEventListener("focus", comeBack);
     const noDropped = onDropped(took);

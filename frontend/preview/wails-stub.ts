@@ -919,8 +919,50 @@ function videoState(path: string): Promise<unknown> {
       Answers.ByName("main.FrameFairy.Episode", path),
       Answers.ByName("main.FrameFairy.Clips", path),
       Answers.ByName("main.FrameFairy.Coverage", path),
-    ]).then(([status, clips, coverage]) => ({ video: path, rev, status, clips, coverage, jobs, chosen: chosenIn(clips as any[]) }));
+    ]).then(([status, clips, coverage]) => ({ video: path, rev, status, clips, coverage, jobs, chosen: chosenIn(clips as any[]), window: windowIn() }));
   });
+}
+
+// The window and how far a search reaches, the way window.go answers
+// them: a model that reads everything, or with
+// ?small one that reads about 35 minutes at a time, the way Qwen3 14B
+// does, and with ?memory a machine whose memory holds about 1.3 hours.
+function windowIn() {
+  const duration = 14423;
+  const q = location.search;
+  const most = q.includes("small") ? 2080 : q.includes("memory") ? 4680 : duration;
+  const by = q.includes("memory") ? "memory" : "context";
+  let kept: { from: number; to: number; length: number } | null = null;
+  try {
+    kept = JSON.parse(sessionStorage.getItem("__window") ?? "null");
+  } catch {
+    kept = null;
+  }
+  const from = kept?.from ?? 0;
+  const length = Math.min(kept?.length ?? 1800, most);
+  const to = Math.min(kept ? kept.to : from + 1800, from + most, duration);
+  const set = (window as any).__settings ?? {};
+  const shortest = set.min ?? 20;
+  const longest = set.max ?? 30;
+  // The rest is as Go answers for clips of 20 to 30 s and a half hour,
+  // fixed, so no rule of engine/limits.go is copied here to drift from it.
+  const typed = set.target ?? 0;
+  return {
+    from,
+    to,
+    length,
+    most,
+    least: 20,
+    by,
+    typed,
+    suggested: 6,
+    count: typed || 6,
+    clipsAtMost: 30,
+    shortestAtMost: 180,
+    steps: [113, 313, 613, 1013, 1513, 2113, 2813, 3613, 4513, 5513, 6613, 7813, 9113, 10513, 12013, 13613, 15313, 17113, 19013, 21013, 23113, 25313, 27613, 30013, 32513, 35113, 37813, 40613, 43513],
+    shortest,
+    longest,
+  };
 }
 
 // The clip chosen, the one picked last, or else the first. The Go side
@@ -1302,6 +1344,7 @@ const Answers = {
           const list = ((window as any).__refused ??= []) as any[];
           const job = { id: `refused-${list.length + 1}`, episode: "/eps/ep.mp4", kind: "search", label: "Find clips", state: "failed", error: "the app is closing", from: req.From, to: req.To, count: req.Count, queued: "", lane: "finding" };
           list.push(job);
+          noticeListeners.forEach((f) => f({ data: { video: job.episode, job: job.id, kind: "search", text: "The app is closing", report: true } }));
           return Promise.resolve(job);
         }
         const made = askSearch(req.From, req.To, req.Count);
@@ -1409,26 +1452,6 @@ const Answers = {
           ]),
         );
       }
-      case "Room":
-        // ?uneven is an episode read for its first hour, lighter there than
-        // the rest is weighed, the way a real one is: the longest window
-        // that fits is longer from the start than further on, which is
-        // what Tim ran into moving a window along.
-        if (location.search.includes("uneven")) {
-          const lines = [];
-          for (let at = 0; at + 3 <= 3600; at += 4) lines.push({ start: at, end: at + 3, chars: 80 });
-          return Promise.resolve({ chars: 250000, by: "memory", lines, heard: [[0, 3600]], rate: 30 });
-        }
-        // A model that reads everything, or with ?small one that reads
-        // about 35 minutes at a time, the way Qwen3 14B does, and with
-        // ?memory a machine whose memory holds about 1.3 hours.
-        return Promise.resolve({
-          chars: location.search.includes("small") ? 52000 : location.search.includes("memory") ? 117000 : 600000,
-          by: location.search.includes("memory") ? "memory" : "context",
-          lines: [],
-          heard: [],
-          rate: 25,
-        });
       case "ArrivingCaptions": {
         const h = hands().find((x) => x.id === args[0]);
         const now = h && handAt(h);
@@ -1506,32 +1529,24 @@ const Answers = {
         return videoState(String(args[0]));
       case "Playing":
         return Promise.resolve(null);
-      // Kept across a reload, the way the Go side keeps it across a
-      // restart, so a probe can reload the page and see it come back.
-      // Where nothing is kept, the window the Go side places: the first
-      // half hour nobody searched, on its step, see window.go.
-      case "ChosenWindow":
+      // The Go side places the window again where nothing is kept: the
+      // first half hour nobody searched, on its step, see window.go. The
+      // state read after it carries the window, kept across a reload the
+      // way the Go side keeps it across a restart.
       case "PlaceWindow": {
-        let kept = null;
-        try {
-          kept = method === "PlaceWindow" ? null : JSON.parse(sessionStorage.getItem("__window") ?? "null");
-        } catch {
-          kept = null;
-        }
-        if (kept) return Promise.resolve(kept);
         const from = fresh && found.length ? 1800 : 0;
         const placed = { from, to: Math.min(from + 1800, 14423), length: 1800 };
         try {
           const was = JSON.parse(sessionStorage.getItem("__window") ?? "null");
           sessionStorage.setItem("__window", JSON.stringify(placed));
-          if (method === "PlaceWindow" && JSON.stringify(was) !== JSON.stringify(placed)) {
+          if (JSON.stringify(was) !== JSON.stringify(placed)) {
             ((window as any).__windowSteps ??= []).push([was, placed]);
             (window as any).__windowRedo = [];
           }
         } catch {
           /* nothing to keep it in */
         }
-        return Promise.resolve(placed);
+        return videoState(String(args[0]));
       }
       case "ChooseWindow": {
         const now = { from: args[1], to: args[2], length: args[3] };
@@ -1547,7 +1562,16 @@ const Answers = {
           ((window as any).__windowSteps ??= []).push([was, now]);
           (window as any).__windowRedo = [];
         }
-        return Promise.resolve();
+        return videoState(String(args[0]));
+      }
+      // What is typed for a search, kept in the settings the way the Go
+      // side keeps it, see SetSearch in edits.go.
+      case "SetSearch": {
+        const [, target, min, max, typed] = args as [string, number, number, number, string];
+        const was = (window as any).__settings ?? {};
+        const kept = typed === "target" ? { target } : { min: Math.min(min, max), max: Math.max(min, max) };
+        (window as any).__settings = { ...was, ...kept };
+        return videoState(String(args[0]));
       }
       case "GetSettings":
         return Promise.resolve({ llmModel: "", asrModel: "", planner: (window as any).__planner || "local", apiModel: "claude-sonnet-5", target: 0, min: 20, max: 30, highlightColour: "#b4236f", appColour: "#942192", outputDir: "", captionY: 240, trainingDir: "", ...((window as any).__settings ?? {}) });
@@ -2205,6 +2229,8 @@ function draftStub() {
   if (n > 0) attachStub(n);
 }
 
+const noticeListeners = new Set<(ev: unknown) => void>();
+
 export const Events = {
   // The Go side sends a job event every second while work runs, and an
   // interface that re-subscribes to anything on every one of those events
@@ -2232,6 +2258,13 @@ export const Events = {
     if (name === "report-draft") {
       (window as any).__dropPictures = (n: number) => fn({ data: attachStub(n) });
       return () => delete (window as any).__dropPictures;
+    }
+    // A failure the Go side tells once, see notice.go, and a probe tells
+    // with window.__notice(notice).
+    if (name === "notice") {
+      noticeListeners.add(fn);
+      (window as any).__notice = (n: unknown) => noticeListeners.forEach((f) => f({ data: n }));
+      return () => noticeListeners.delete(fn);
     }
     if (name === "dictation") {
       dictListeners.add(fn);

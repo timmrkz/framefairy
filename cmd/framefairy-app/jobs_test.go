@@ -1204,3 +1204,17 @@ func TestTheWindowIsToldTheStepTheEngineWrites(t *testing.T) {
 		t.Errorf("the window was told %+v, the record on disk is %+v", last.JobRecord, recs)
 	}
 }
+
+// A search of a window not heard yet hears it first, so from the press on
+// it says it waits to transcribe, never to find clips. For the moment the
+// engine got ready, the row of a search carried on said the whole window
+// under Transcribing, which a walk saw once the app heard its own writes.
+func TestASearchOfAWindowNotHeardWaitsToTranscribeFromThePress(t *testing.T) {
+	t.Parallel()
+	svc, eps := memoryLibrary(t, "youtube.mp4")
+	svc.jobs = newIdleQueue(svc.store, func(JobUpdate) {}, func(string) {})
+	job := svc.Search(eps[0], engine.PlanRequest{From: 0, To: 20, Count: 1}, "")
+	if job.Lane != LaneHearing {
+		t.Errorf("a search of a window not heard waits in the lane %q, not %q", job.Lane, LaneHearing)
+	}
+}

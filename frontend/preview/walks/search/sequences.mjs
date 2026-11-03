@@ -103,6 +103,16 @@ export default [
     ],
   },
   {
+    // Found in the review of #682: once Go said how many clips a window
+    // suggests, the Target field kept the old number all through a drag
+    // and caught up only when the hand let go. It follows the hand.
+    name: "the clip count follows the window as its length is dragged",
+    steps: [
+      ["wait for", "Search"],
+      ["count follows drag", "to", -0.3],
+    ],
+  },
+  {
     // Tim cancelled a search to look somewhere else, and the window stood
     // locked on the range picker until the search was carried on. Moved
     // off it, the search is set aside: Search, and a fresh search where the
@@ -298,7 +308,7 @@ export default [
     name: "Cancel while a video just added is transcribed says Stopped with Continue, and the window's frame fades",
     steps: [
       ["speech", "hold"],
-      ["add, the window read late", 1503],
+      ["add, until its search shows", 1503],
       ["cancel fades"],
       ["speech", "go"],
       ["wait for", "Continue"],

@@ -100,6 +100,15 @@ func main() {
 		}
 	})
 	svc.jobs.news = svc.told
+	// What changes in the folders of the videos, whoever changed it, is
+	// looked at as it happens, see reconcile.go.
+	svc.watch = newWatching(svc.reconcile)
+	// A failure is said once, as it happens, see notice.go.
+	svc.jobs.notice = quietly(func(n Notice) {
+		if app != nil {
+			app.Event.Emit("notice", n)
+		}
+	})
 	svc.listening.say = quietly(func(d Dictation) {
 		if app != nil {
 			app.Event.Emit("dictation", d)
@@ -142,6 +151,7 @@ func main() {
 	// How far the loudness is measured is in the video's state.
 	svc.levels = newMeasuring(svc.store.machine, svc.told)
 	quit := sync.OnceFunc(func() {
+		svc.watch.stop()
 		svc.news.stop()
 		engine.CloseModels()
 		svc.stopAll()
@@ -375,6 +385,13 @@ type FrameFairy struct {
 	// news sends a video's state to the window as its work goes on, see
 	// videostate.go.
 	news *videoNews
+	// watch hears what changes in the folders of the videos in the
+	// library, whoever changed it, and hands it to reconcile, see
+	// watch.go. reconciling keeps reconcile to one at a time, and away
+	// from a Remove that is deleting a video's folder, so the app's own
+	// deletion is never taken for one made outside it.
+	watch       *watching
+	reconciling sync.Mutex
 	// Finding and installing a newer build of the app, see updates.go.
 	updates *updating
 	// What Cmd+Q does, see quit.go.
@@ -387,8 +404,9 @@ type FrameFairy struct {
 	keeping *keeping
 	mu      sync.Mutex
 	// The transcripts of the episodes worked on last, each kept while the
-	// files it was read from stay as they were, see transcript.
-	said keptReads[*engine.Transcript]
+	// files it was read from stay as they were, with its lines weighed,
+	// see transcript.
+	said keptReads[*heard]
 	// toldOld is the videos whose old corrections.json was said to be
 	// left unread, so it is said once, see oldCorrections.
 	toldOld sync.Map
@@ -406,6 +424,9 @@ type FrameFairy struct {
 	// link is what became of the last framefairy:// link, waiting for
 	// the settings, see licence.go.
 	link *LicenceLink
+	// probes are the videos probed, sources unless a test hands in its
+	// own, see probe.
+	probes *probed
 	// clipboard stands in for the system's in tests, see copyText.
 	clipboard func(string) bool
 	// saveBox stands in for the system's save box in tests, see saveAs.

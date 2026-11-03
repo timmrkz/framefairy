@@ -166,6 +166,10 @@ const SOUND_FIRST = 0.15;
 const START_LEAD = 0.025;
 // Samples in one stretch of sound handed to the sound card.
 const CHUNK = 4096;
+// The longest the picture may stand while the hand drags the playhead on,
+// in milliseconds, the mark docs/VIDEO-PREVIEW.md sets, for the log of a
+// drag. Only said, never acted on.
+const DRAG_FRAME_MS = 50;
 // The longest a frame a gesture put the playhead on waits for what lies
 // over it, the captions, milliseconds, see dress. A layer comes in tens of
 // milliseconds, and one that did not come is asked for once more after a
@@ -679,8 +683,21 @@ export class FrameQueue {
   private gripped = false;
   // How a drag of the playhead goes, for the log, see grip: how many
   // frames the frame on screen was from each place the hand moved to, the
-  // key frames put up before it, and when the hand let go.
-  private drag: { behind: number[]; keys: number; letGo: number } | null = null;
+  // key frames put up before it, and when the hand let go. waits are how
+  // long the picture stood while the hand had moved on from it, each from
+  // the move that left it behind to the next frame put up, and waitFrom
+  // when the one going on now began, or -1. A stutter is a long wait,
+  // which how far behind the frame was does not show, issue #596. ways
+  // is how the frames of the moves came, from AppFrames.stats at the
+  // press.
+  private drag: {
+    behind: number[];
+    keys: number;
+    letGo: number;
+    waits: number[];
+    waitFrom: number;
+    ways: { streams: number; continued: number; kept: number; parked: number; keyFirst: number };
+  } | null = null;
   // The first frame of a cue or a play that is waiting for what lies over
   // it, and the one that has it, each by its ticket and rank, see dressed.
   private dressing = "";
@@ -1061,7 +1078,9 @@ export class FrameQueue {
     if (!changed && this.state === "starting" && at === this.startFrom) return;
     this.at = at;
     if (this.gripped && this.drag && this.shown && this.video && this.drag.behind.length < 4096) {
-      this.drag.behind.push(Math.abs(this.shown.rank - rankAt(this.video.samples, at)));
+      const behind = Math.abs(this.shown.rank - rankAt(this.video.samples, at));
+      this.drag.behind.push(behind);
+      if (behind && this.drag.waitFrom < 0) this.drag.waitFrom = performance.now();
     }
     if (this.state === "playing" || this.state === "starting") {
       this.start(at);
@@ -1122,7 +1141,7 @@ export class FrameQueue {
     if (this.gripped === held) return;
     this.gripped = held;
     this.app?.grip(held);
-    if (held) this.drag = { behind: [], keys: this.stats.keys, letGo: -1 };
+    if (held) this.drag = { behind: [], keys: this.stats.keys, letGo: -1, waits: [], waitFrom: -1, ways: this.ways() };
     else if (this.drag) {
       this.drag.letGo = performance.now();
       if (this.shown && this.video && this.shown.rank === rankAt(this.video.samples, this.at)) this.dragged();
@@ -1137,10 +1156,21 @@ export class FrameQueue {
     this.drag = null;
     if (!d || d.behind.length < 2) return;
     const behind = [...d.behind].sort((a, b) => a - b);
+    const waits = [...d.waits].sort((a, b) => a - b);
+    const now = this.ways();
+    const was = d.ways;
     this.trace(
       `a drag of the playhead let go at ${this.at.toFixed(3)} s, after ${behind.length} moves: the frame on screen ${behind[Math.floor(behind.length / 2)]} frames from the playhead on the median and ${behind[behind.length - 1]} at most as the hand moved, ` +
-        `${this.stats.keys - d.keys} key frames put up on the way, the frame under the hand ${Math.round(performance.now() - d.letGo)} ms after letting go`,
+        `${this.stats.keys - d.keys} key frames put up on the way, the frame under the hand ${Math.round(performance.now() - d.letGo)} ms after letting go, ` +
+        `the picture waited ${Math.round(waits[Math.floor(waits.length / 2)] ?? 0)} ms on the median and ${Math.round(waits[waits.length - 1] ?? 0)} ms at most for a new frame, ${waits.filter((w) => w > DRAG_FRAME_MS).length} of ${waits.length} waits over ${DRAG_FRAME_MS} ms, ` +
+        `the frames from ${now.kept - was.kept} kept, ${now.continued - was.continued} streams read on, ${now.streams - was.streams} new streams of which ${now.keyFirst - was.keyFirst} key frame first, ${now.parked - was.parked} places parked`,
     );
+  }
+
+  // The counts of how AppFrames found its frames, see drag.
+  private ways() {
+    const s = this.app?.stats;
+    return { streams: s?.streams ?? 0, continued: s?.continued ?? 0, kept: s?.kept ?? 0, parked: s?.parked ?? 0, keyFirst: s?.keyFirst ?? 0 };
   }
 
   // The moments the hand is likely to step to next while paused, the first
@@ -1412,6 +1442,11 @@ export class FrameQueue {
       this.trace(`first frame drawn, frame ${rank} of ${frame.width}x${frame.height}${frame.light ? `, ${frame.light}` : ""}, ${this.ms()}`);
     }
     if (this.shown && this.shown.frame !== frame) this.closeFrame(this.shown.frame);
+    if (this.gripped && this.drag && this.video && this.shown?.rank !== rank) {
+      const now = performance.now();
+      if (this.drag.waitFrom >= 0 && this.drag.waits.length < 4096) this.drag.waits.push(now - this.drag.waitFrom);
+      this.drag.waitFrom = rank === rankAt(this.video.samples, this.at) ? -1 : now;
+    }
     this.shown = { frame, run, rank };
     this.shownKey = false;
     if (!passing) {

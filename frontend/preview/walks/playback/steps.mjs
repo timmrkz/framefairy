@@ -585,7 +585,8 @@ export const steps = {
   //                    so many seconds of play, and pauses
   // ["play from", where, seconds, key]
   //                    the same, pressing this key every 400 ms of the
-  //                    play, "Shift+ArrowRight" to skip ahead by words,
+  //                    play, "Shift+ArrowRight" to skip ahead, 5 s on
+  //                    the video and by words on the clip,
   //                    and from "before" the playhead has to have gone a
   //                    second or more further than the play takes it
   async "play from"(walk, arg, s) {
@@ -786,20 +787,6 @@ export const steps = {
       const was = window.__appFrames;
       window.__drawn = [];
       window.__watching = true;
-      // Every call to the Go side, with where the playhead stood as it
-      // was made.
-      window.__asked = [];
-      if (!window.__askWatched) {
-        window.__askWatched = true;
-        const real = window.fetch;
-        window.fetch = (input, init) => {
-          if (window.__watching && String(input).endsWith("/call") && init?.body) {
-            const playhead = Number(document.querySelector(".screen")?.dataset.playhead);
-            window.__asked.push([String(JSON.parse(init.body).name).split(".").pop(), playhead]);
-          }
-          return real(input, init);
-        };
-      }
       const watch = () => {
         if (!window.__watching) return;
         if (window.__appFrames && window.__appFrames !== was) {
@@ -1200,9 +1187,7 @@ export const steps = {
   },
   // ["opened on the clip"]
   //                    since "episode watched", the video preview drew the
-  //                    first frame of the chosen clip and no other, and the
-  //                    playhead was on the clip before the workspace asked
-  //                    for the window
+  //                    first frame of the chosen clip and no other
   async "opened on the clip"(walk) {
     const { page } = walk;
     // The video preview of an episode that opens on a clip draws the
@@ -1216,22 +1201,6 @@ export const steps = {
     if (!drawn.length) walk.wrong = "the video preview drew no frame of the episode it opened";
     else if (drawn.some((n) => n !== first)) {
       walk.wrong = `the episode opened on its clip at frame ${first} and the video preview drew frames ${drawn.join(", ")} on the way`;
-    }
-    // Where the playhead opens comes before anything else the
-    // workspace reads as it opens: the window, which it reads last and
-    // only as it opens, is asked with the playhead on the clip. The
-    // coverage and the room are read again whenever work elsewhere
-    // ends, a search of the episode added before, so they say nothing
-    // about the order the workspace opens in. A workspace kept from
-    // before, see App.svelte, is woken rather than built and asks
-    // neither the picture it opens on nor the window: it has them.
-    const asked = await page.evaluate(() => window.__asked ?? []);
-    const after = ["ChosenWindow"];
-    const built = asked.some(([name]) => name === "Source");
-    const early = asked.filter(([name, at]) => after.includes(name) && Math.abs(at - clip.start) > 0.002);
-    if (!walk.wrong && built && !asked.some(([name]) => after.includes(name))) walk.wrong = `the workspace opened asking none of ${after.join(", ")}`;
-    else if (!walk.wrong && early.length) {
-      walk.wrong = `the workspace asked ${early.map(([n, at]) => `${n} with the playhead at ${at}`).join(", ")}, before the playhead was on its clip at ${clip.start}`;
     }
   },
   // ["played through"] since "drag while playing", the play went on as if

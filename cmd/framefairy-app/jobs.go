@@ -213,6 +213,8 @@ type queue struct {
 	// as it heard more of the video, so the video's state is sent to the
 	// window, see videoNews.
 	news func(episode string)
+	// notice is told each failure to say, once, see notice.go.
+	notice func(Notice)
 }
 
 // moved says a job changed the state of its video.
@@ -304,7 +306,8 @@ func newIdleQueue(s *store, emit func(JobUpdate), notify func(string)) *queue {
 // model rather than failing on it: the speech model with hearing, which
 // cannot start without it, and the language model with finding clips.
 // That way installing one does not hold up the other. A search starts in
-// the lane of finding and moves as its steps go, see lanes.go.
+// the lane of its first step, see firstLane, and moves as its steps go,
+// see lanes.go.
 func laneFor(kind string) string {
 	switch kind {
 	case "model", engine.JobTranscribe:
@@ -623,6 +626,7 @@ func (q *queue) refuse(episode, kind, label, reason string, with ...func(*Job)) 
 	snapshot := *job
 	q.mu.Unlock()
 	q.emit(JobUpdate{Job: snapshot})
+	q.tell(snapshot)
 	return snapshot
 }
 
@@ -1244,11 +1248,15 @@ func run(ctx context.Context, job *Job, project *engine.Project, host engine.Hos
 
 func (q *queue) update(job *Job, change func(*Job)) {
 	q.mu.Lock()
+	was := job.going()
 	change(job)
 	q.stampLocked(job)
 	snapshot := *job
 	q.mu.Unlock()
 	q.emit(JobUpdate{Job: snapshot})
+	if was && snapshot.State == JobFailed {
+		q.tell(snapshot)
+	}
 }
 
 // Render queues rendering clips of a plan. The render keeps a record of

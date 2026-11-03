@@ -341,10 +341,14 @@ The list of episodes is the app's own, `library.json` in its config folder,
 because a video can be anywhere on disk. Everything else about a video is in
 its work folder, so deleting that folder by hand, in Finder, is the same as
 **Remove** with the folder deleted: the video leaves the list, its work
-stops, and adding it again starts it from nothing. The app reads the list
-again as it starts and whenever it comes back to the front, and lets go of
-every video whose folder is gone, closing its workspace if it was open, see
-`letGoOfRemoved` in `library.go`. It tells a deleted folder by a mark the
+stops, and adding it again starts it from nothing. The app watches the
+folders of every video in the list, so it hears of such a change at once,
+whoever made it, and it reads the whole list again as it starts and
+whenever it comes back to the front, for whatever the watch could not
+hear. Either way the change lands in `reconcile`, in `reconcile.go`, which
+reads the disk and lets go of every video whose folder is gone, closing its
+workspace if it was open. A video whose file went or came back says so in
+the sidebar at once. It tells a deleted folder by a mark the
 folder carries from the moment the video is added, `added.json`, and not by
 the folder alone, because the app writes a folder back whenever it is asked
 about the video, the chosen clip and the waveform among other things: Tim
@@ -900,7 +904,8 @@ same moment: a workspace opening asked for the same transcript up to
 seven times, and each read it from the file. The longest window the range
 picker may draw is worked out without a search from every line, which
 took forty milliseconds of an hour's transcript in the frame the
-workspace opened in, `anywhere` in `lib/room.ts`. An hour's episode not
+workspace opened in, `Reach.Anywhere` in `engine/reach.go`, which the
+app now works out and sends with the window. An hour's episode not
 kept is on screen in 200 ms in the walks' browser, from 240, and what is
 left is the workspace itself being laid out.
 
@@ -1342,7 +1347,14 @@ bubble scrolled by those eight pixels.
       itself when a video is added. Three typed for the six minutes of one
       episode went on asking for three in the half hour of the next.
       Cleared, the field follows the window again and shows its
-      suggestion. The suggestion used to be a grey placeholder in an empty
+      suggestion. What may be typed comes with the window in the video's
+      state, so the Go side holds every number to it: no more clips than
+      fit in the longest window a search reads, no clip longer than its
+      share of that window, and a shortest over the longest moves the
+      longest with it, and the other way round. A window the Go side
+      lengthens to hold the clips typed keeps the target typed for it.
+      See `SetSearch` in `cmd/framefairy-app/edits.go` and `windowFor` in
+      `cmd/framefairy-app/window.go`. The suggestion used to be a grey placeholder in an empty
       field, and a browser steps an empty number field from zero, so the
       down arrow on a suggested 6 landed on 1. Twelve
       because the model, asked for 8 in half an hour, gave 6: it gives
@@ -1769,9 +1781,13 @@ bubble scrolled by those eight pixels.
         clip comes round instead**, the way a play of it does: past its
         last word is its first word, and before its first its last, and the
         clip stays chosen.
-      - Outside a clip there is no caption, so the words that were heard
-        are the only ones there are. Where nothing has been heard yet
-        shift takes a second.
+      - **Outside a clip, Shift and an arrow skip 5 seconds**, the way
+        the arrows do in a video on YouTube, over what was heard and what
+        was not alike. There is no caption there, so nothing on screen to
+        step through, and what a hand wants there is to get on. They
+        walked the words heard, and stopped dead where the transcript
+        ended, in the middle of the video, found by Tim. The same while the
+        episode plays on the video. Issue #377.
       - **Which list is walked is decided a whole frame either side of the
         clip**, for the same reason the crop frame is. Read exactly, a
         playhead just put at a clip's start is outside it, so the keys
@@ -2073,7 +2089,10 @@ bubble scrolled by those eight pixels.
       it. A quarter in, tried first, left Tim too little to look ahead to. It turns rather than slides, so
       the waveform holds still to be read between turns, and the view
       turned is held, like a move by hand, until the crosshair or the clip
-      takes it back. The crosshair in the row under the track
+      takes it back. **The keys keep it in sight the same way:** an arrow,
+      or Shift and an arrow, that lands in the last twentieth of the view
+      the way it goes, or out of the view, turns the page there, to the
+      left as to the right. A skip of 5 s left the view behind, #677. The crosshair in the row under the track
       goes to the playhead and puts it in the middle. Clicking a clip in
       the list, the one that is already selected included, puts that clip
       back in view. A double-click on the track never did: one was meant
@@ -2389,7 +2408,12 @@ What has a place of its own keeps it: a clip that failed says so on its
 card, a search that stopped in its row, and what dictation did not hear
 beside the microphone. Why is said in a toast, whole, issue #311. A
 search that failed says Failed with Continue in its row and why in a
-toast, which offers Report: Report a Problem opens with the toast's
+toast, which offers Report. Which failures are told, and in what words,
+is the Go side's: the queue tells each once, as the job goes from
+waiting or running to failed, or is refused as it is asked for, a search,
+a clip made by hand, a transcription or a render, see
+`cmd/framefairy-app/notice.go`. One found failed only as the app opens
+said why the time it failed. Report opens Report a Problem with the toast's
 words written in its field, after what was there, and a report window
 already open is handed them to write in, see `ReportAbout` in
 `bugs.go`. Cut to one line in the row, the reason lost the part that

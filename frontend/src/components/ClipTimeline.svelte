@@ -308,6 +308,9 @@
   const nearest = 2;
   // How much of the episode is asked for in words at a time.
   const spoken = 600;
+  // How far Shift and an arrow skip outside a clip, in seconds, the jump
+  // Tim chose for #377. YouTube's arrows jump 5 seconds too.
+  const SKIP = 5;
 
   const segments = $derived(clip?.segments ?? []);
   const first = $derived(segments.length ? segments[0].start : 0);
@@ -955,18 +958,31 @@
     load(from, Math.min(from + roomy, widest));
   }
 
+  // Whether the playhead is on the clip for Shift and an arrow: from a frame
+  // before its first piece to a frame after its last, its cuts included. A
+  // clip playing on the clip crosses its cuts, and a step in a cut walks
+  // the words heard there and stays on the clip.
+  function onClip(t: number, step: number): boolean {
+    return insideClip(wholeClip ? [wholeClip] : [], t, step);
+  }
+
   // The arrow keys step the playhead a frame at a time, as in every video
-  // tool, unless a field or an edge of the clip has the keyboard. Shift
-  // steps by words, which is the thing the picture is showing: the caption
-  // lights up the word being spoken, so this walks that light one word at
-  // a time. Where nothing has been heard yet there are no words to walk,
-  // and shift takes a second, which is all it ever took before.
+  // tool, unless a field or an edge of the clip has the keyboard. On a
+  // clip, Shift steps by words, which is the thing the picture is showing:
+  // the caption lights up the word being spoken, so this walks that light
+  // one word at a time.
+  //
+  // Outside a clip there is no caption, so nothing on screen to step
+  // through, and Shift skips SKIP seconds, transcribed or not. It walked
+  // the words heard there, and stopped dead at the end of them, in the
+  // middle of the video, wherever nothing had been heard yet. Issue #377.
   //
   // While the episode plays on the video, a step skips through the
-  // episode and stays on the video, the clip and its cuts included: the
-  // play started outside the clip, so moving on is all it asks for, and
-  // the clip lighting up under it was a clip nobody chose. On the clip
-  // and paused, a step lands where its frame says, see placeOf.
+  // episode the same way and stays on the video, the clip and its cuts
+  // included: the play started outside the clip, so moving on is all it
+  // asks for, and the clip lighting up under it was a clip nobody chose.
+  // On the clip and paused, a step lands where its frame says, see
+  // placeOf.
   function onKey(event: KeyboardEvent) {
     if (removePicked(event)) return;
     // Any other key lets the pick go, and the key does what it does. A
@@ -986,14 +1002,17 @@
     const back = event.key === "ArrowLeft";
     event.preventDefault();
     const through = playing && dimmed;
-    const put = (t: number, wordStep = false) => onseek(Math.max(0, Math.min(t, duration)), through ? "video" : undefined, wordStep);
+    const put = (t: number, wordStep = false) => {
+      const at = Math.max(0, Math.min(t, duration));
+      onseek(at, through ? "video" : undefined, wordStep);
+      keepInSight(at, back);
+    };
     if (!event.shiftKey) {
       put(time + Math.max(frame, 1 / 240) * (back ? -1 : 1));
       return;
     }
-    // Inside the clip, the words the caption lights up. Outside it there
-    // is no caption at all, so the words that were heard are the only ones
-    // there are.
+    // Inside the clip, the words the caption lights up, and outside it a
+    // skip.
     //
     // Inside by a whole frame either side, because the playhead is not
     // where it was put: picking a clip sends it to the clip's first second
@@ -1005,7 +1024,14 @@
     // clip that could not be made to happen twice: it only happens on the
     // first press after picking one.
     const step = Math.max(frame, 1 / 240);
-    const walk = lit.length && !through && insideClip(drawnPieces, time, step) ? lit : words;
+    if (through || !onClip(time, step)) {
+      put(time + (back ? -SKIP : SKIP));
+      return;
+    }
+    // In a cut the caption lights nothing, so the words heard there are
+    // walked, and the caption's words arrive a moment after the clip is
+    // chosen, until when the words heard are the ones it will light.
+    const walk = lit.length && insideClip(drawnPieces, time, step) ? lit : words;
     const to = wordStep(walk, time, back, step);
     if (to !== null) {
       put(to, true);
@@ -1026,9 +1052,15 @@
   // It runs on every move of the playhead while paused, a play just ended
   // too: FrameQueue.ahead drops what it was asked already, so this needs
   // no guard of its own.
+  //
+  // Outside a clip nothing is read ahead. A skip lands SKIP seconds away,
+  // further than a stream reads on, so the frames there would cost a seek
+  // each, back and on, at every move of the playhead, a click too, and
+  // the decoder would be busy with them when the hand goes somewhere else.
   $effect(() => {
     if (playing || scrubbing || gripping || !onahead) return;
     const step = Math.max(frame, 1 / 240);
+    if (!onClip(time, step)) return;
     const walk = lit.length && insideClip(drawnPieces, time, step) ? lit : words;
     const times: number[] = [];
     for (const back of [false, true]) {
@@ -1161,15 +1193,34 @@
     const t = time;
     const shown = view.to - view.from;
     if (t >= view.from && t < view.to - shown * PAGE_EDGE) return;
-    untrack(() => {
-      held = !!clip;
-      viewFor = clip?.key ?? "";
-      const whole = Math.max(duration, shown);
-      const from = Math.max(0, Math.min(t - shown * PAGE_EDGE, whole - shown));
-      if (Math.abs(from - view.from) < 0.001) return;
-      load(from, from + shown);
-    });
+    untrack(() => turnPage(t, false));
   });
+
+  // Turns the page so the playhead at t stands a twentieth in from the
+  // side it came from, on to the right, back to the left, and holds the
+  // view there the way a page turned by a play does.
+  function turnPage(t: number, back: boolean) {
+    held = !!clip;
+    viewFor = clip?.key ?? "";
+    const shown = view.to - view.from;
+    const whole = Math.max(duration, shown);
+    const from = Math.max(0, Math.min(t - shown * (back ? 1 - PAGE_EDGE : PAGE_EDGE), whole - shown));
+    if (Math.abs(from - view.from) < 0.001) return;
+    load(from, from + shown);
+  }
+
+  // The keys keep the playhead in sight the same way: a step that lands in
+  // the last twentieth of the view the way it goes, or anywhere out of the
+  // view, turns the page. Shift and an arrow skipping 5 s outside a clip,
+  // or walking the words past the clip's edge, left the view behind, where
+  // a play turned it. Tim saw it on #677.
+  function keepInSight(t: number, back: boolean) {
+    if (!loaded) return;
+    const shown = view.to - view.from;
+    const ahead = back ? t >= view.from + shown * PAGE_EDGE : t < view.to - shown * PAGE_EDGE;
+    if (ahead && t >= view.from && t <= view.to) return;
+    turnPage(t, back);
+  }
 
   // A new episode's waveform arrives in seconds and its words as it is
   // heard, both piece by piece, so a view read before either reached it is
