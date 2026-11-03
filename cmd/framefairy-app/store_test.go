@@ -256,9 +256,9 @@ func TestTwoSettingsChangedAtOnceBothStay(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for i := range 30 {
-				_ = s.SetSearch(i%20+1, 1800, 20, 30)
+				_ = s.setSearch("", i%20+1, 1800, 20, 30)
 			}
-			_ = s.SetSearch(7, 1800, 20, 30)
+			_ = s.setSearch("", 7, 1800, 20, 30)
 		}()
 		go func() {
 			defer wg.Done()
@@ -295,7 +295,7 @@ func TestAnOldCountFollowsTheWindow(t *testing.T) {
 // episode went on asking for three in the half hour of the next.
 func TestATargetIsForItsWindow(t *testing.T) {
 	s := &FrameFairy{store: memoryStore()}
-	if err := s.SetSearch(3, 360, 20, 30); err != nil {
+	if err := s.setSearch("", 3, 360, 20, 30); err != nil {
 		t.Fatal(err)
 	}
 	set := s.store.Settings()
@@ -306,7 +306,7 @@ func TestATargetIsForItsWindow(t *testing.T) {
 		t.Errorf("a half hour window asks for the %d typed for six minutes", n)
 	}
 	// Cleared, every window follows its own.
-	if err := s.SetSearch(0, 360, 20, 30); err != nil {
+	if err := s.setSearch("", 0, 360, 20, 30); err != nil {
 		t.Fatal(err)
 	}
 	if n := s.store.Settings().targetFor(360); n != 0 {

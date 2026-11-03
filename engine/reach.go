@@ -6,14 +6,12 @@ import (
 )
 
 // Reach is how far a window may reach in one search, from the room and the
-// weight of every line heard so far, the same sum the range picker makes
-// while a window is dragged, see Reach in frontend/src/lib/room.ts, a
-// copy no shared case file holds to this one yet, #610. The engine
-// places its windows with it, see Project.PlaceWindow, so a window it
-// places is one the workspace leaves as it is: the app capped its
-// windows at the video's average rate and the workspace at its densest
-// stretch, and cut every window the app placed again, found by the
-// fourth review of #458.
+// weight of every line heard so far. The engine places its windows with
+// it, see Project.PlaceWindow, and the app holds the range picker to it,
+// see Limits, so a window it places is one the workspace leaves as it
+// is: the app once capped its windows at the video's average rate and
+// the workspace at its densest stretch, and cut every window the app
+// placed again, found by the fourth review of #458.
 type Reach struct {
 	chars    int
 	lines    []LineWeight
@@ -25,9 +23,9 @@ type Reach struct {
 
 // RoomAndLines is what a reach is made from: the room one search has
 // with a video's settings, the weight of every line heard of it so far,
-// the parts heard, and what a second weighs outside them. The app sends
-// it to the range picker, see Room, and the engine places a window with
-// it, see Project.PlaceWindow, so both start from the same numbers.
+// the parts heard, and what a second weighs outside them. The engine
+// places a window with it, see Project.PlaceWindow, and works out what a
+// window may be, see Project.Limits, so both start from the same numbers.
 type RoomAndLines struct {
 	Room
 	Lines []LineWeight
@@ -41,13 +39,28 @@ type RoomAndLines struct {
 // its settings, over t, what has been heard of it, nil before anything
 // is.
 func (p *Project) RoomAndLines(t *Transcript) RoomAndLines {
-	r := RoomAndLines{Room: SearchRoom(p.Files, p.Base, p.LogsDir()), Rate: SpokenChars}
+	return p.RoomWith(Weigh(t))
+}
+
+// Weigh is the part of a RoomAndLines that comes from t alone, its lines,
+// the parts heard and the rate, with no room. Weighing every line of a
+// long video is the slow part, so what reads it often keeps it for as
+// long as t is the same, and hands it to RoomWith.
+func Weigh(t *Transcript) RoomAndLines {
+	r := RoomAndLines{Rate: SpokenChars}
 	if t != nil {
 		r.Lines = WeighLines(t)
 		r.Heard = t.Heard
 		r.Rate = RateOf(r.Lines)
 	}
 	return r
+}
+
+// RoomWith is w, weighed by Weigh, with the room one search of the
+// project's video has with its settings.
+func (p *Project) RoomWith(w RoomAndLines) RoomAndLines {
+	w.Room = SearchRoom(p.Files, p.Base, p.LogsDir())
+	return w
 }
 
 // Longest is the longest window of a video of duration seconds one
@@ -123,8 +136,23 @@ func (r *Reach) longestFrom(from float64) float64 {
 }
 
 // Anywhere is the longest window that fits wherever it is drawn, on a
-// whole second: the densest stretch decides it. See anywhere in room.ts,
-// which says why one length and how the starts are chosen.
+// whole second: the densest stretch decides it.
+//
+// One length for the whole video, and not the longest that fits where
+// the window happens to be. Speech is denser in some places than others,
+// and what is not heard yet is weighed with room to spare, so the longest
+// window that fits changes as a window is moved along. A window that fits
+// at the start and not at the end, the same length both times, is a limit
+// nobody can see a reason for. So the window has the length that fits
+// anywhere, and keeps it wherever it goes, on a whole second.
+//
+// A window is densest when it starts just before a line ends: the line
+// is counted whole for a moment of it. Where nothing is heard every
+// second weighs the same, so the edges of what is heard say it all. A
+// window cut short by the end of the video does not count, because the
+// end is not the model's limit. A start whose window of the shortest
+// length so far still fits can only find a longer one, so it is passed
+// over with one sum rather than a search.
 func (r *Reach) Anywhere() float64 {
 	if !r.known() || r.fits(0, r.duration) {
 		return r.duration

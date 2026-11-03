@@ -100,6 +100,12 @@ func main() {
 		}
 	})
 	svc.jobs.news = svc.told
+	// A failure is said once, as it happens, see notice.go.
+	svc.jobs.notice = quietly(func(n Notice) {
+		if app != nil {
+			app.Event.Emit("notice", n)
+		}
+	})
 	svc.listening.say = quietly(func(d Dictation) {
 		if app != nil {
 			app.Event.Emit("dictation", d)
@@ -387,8 +393,9 @@ type FrameFairy struct {
 	keeping *keeping
 	mu      sync.Mutex
 	// The transcripts of the episodes worked on last, each kept while the
-	// files it was read from stay as they were, see transcript.
-	said keptReads[*engine.Transcript]
+	// files it was read from stay as they were, with its lines weighed,
+	// see transcript.
+	said keptReads[*heard]
 	// toldOld is the videos whose old corrections.json was said to be
 	// left unread, so it is said once, see oldCorrections.
 	toldOld sync.Map
@@ -406,6 +413,9 @@ type FrameFairy struct {
 	// link is what became of the last framefairy:// link, waiting for
 	// the settings, see licence.go.
 	link *LicenceLink
+	// probes are the videos probed, sources unless a test hands in its
+	// own, see probe.
+	probes *probed
 	// clipboard stands in for the system's in tests, see copyText.
 	clipboard func(string) bool
 	// saveBox stands in for the system's save box in tests, see saveAs.

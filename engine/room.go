@@ -229,9 +229,9 @@ type LineWeight struct {
 }
 
 // WeighLines is the transcript cut into the lines a search would send, each
-// with what it weighs, written the way the default recipe writes them. The
-// app adds them up over a window to know whether the window fits the
-// room, without asking the engine at every step of a drag. The numbers in
+// with what it weighs, written the way the default recipe writes them.
+// They are added up over a window to know whether it fits the room, see
+// Reach. The numbers in
 // front of a line depend on where the window starts, so a line is counted
 // with the widest number any window of this episode would give it, which
 // only ever errs towards a window that fits.

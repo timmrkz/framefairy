@@ -428,3 +428,46 @@ ahead of the read that brings the clip, could not promise. The read
 of the plans is outside the lock, as the convergence asks, because the
 state is read before the record is taken. The layer, the lock and the
 file are as decided.
+
+Step 4 differs from the convergence in one place too. The reach is one
+number, not a reach at each point of the video: a window has one longest
+length wherever it is drawn, `Reach.Anywhere`, so the state carries the
+window with `most`, `least` and what a search of it may ask, see
+`engine.WindowLimits` in `engine/limits.go`, and the range picker holds a
+drag to the two numbers. The window is fitted as the state is read,
+`windowFor` in `cmd/framefairy-app/window.go`, and kept, unless a search
+runs on it or stands stopped on it. Measured first, as decided: a state
+of a four hour video took 55 ms on a cloud session, almost all of it
+weighing every line, read for every state. The lines are now weighed
+once for each transcript read, and kept with it.
+
+The state of a four hour video read in memory, in a Go benchmark on a
+cloud session with four cores, 200 reads a run, five runs each.
+
+| measured | before ms | after ms | change |
+| ---: | ---: | ---: | ---: |
+| one state | 0.020 | 0.244 | 1120 % slower, ± 40 % |
+
+The state is read about once a second while work runs, and once for
+each answer to a hand, so a quarter of a millisecond is far under a
+frame.
+
+A number of clips typed is still kept in the settings by the length of
+the window it was typed for, not in the video's record. It is a choice
+people make once for every video: a count typed for a window of five
+minutes is asked for in every window of five minutes, on the next video
+too, which a test holds, `TestPathATargetStaysWithItsWindow`. What
+changed is who moves it. Go fits the window of every video whose state
+is read, and a fit of another video's window as long took the count
+typed on this one away, so the settings keep the video it was typed on,
+and only a fit of that video's window carries it along.
+
+Step 5 is as decided. The queue tells a failure where it sees it, in
+`update` as a job goes from waiting or running to failed, and in
+`refuse`, see `cmd/framefairy-app/notice.go`, on the `notice` event, and
+App shows it in a toast. It tells the work of a video that said why in a
+toast before, a search, a clip made by hand, a transcription and a
+render, in the same words, and a download goes on saying why in its card
+alone. A search refused as it is asked for, while the app closes or the
+video is being removed, now says why in a toast too, where it said only
+Failed in its row before.

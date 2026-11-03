@@ -1,8 +1,6 @@
 // Typed calls into the Go side. The names match the methods of the FrameFairy
 // service in main.go.
 import { Call, Events } from "@wailsio/runtime";
-import type { RoomView } from "./room";
-export type { RoomView } from "./room";
 
 // Every call into the Go side. One that fails, or takes longer than a
 // person waits without noticing, goes to the app's log, and so do the
@@ -383,11 +381,35 @@ export interface CaptionsView {
   pieces?: { start: number; end: number }[];
 }
 
-// The window of a video, see chosenWindow.
+// The window of a video: the part of it a search reads, and how long it
+// was made.
 export interface KeptWindow {
   from: number;
   to: number;
   length: number;
+}
+
+// The window as the Go side sends it in the video's state, with what it
+// and a search of it may be, see WindowView in cmd/framefairy-app/window.go.
+export interface WindowView extends KeptWindow {
+  // The longest a window may be and the shortest, and what sets the longest.
+  most: number;
+  least: number;
+  by: string;
+  // The clips typed for this window, 0 while the count follows it, what it
+  // suggests, and what a search of it asks for.
+  typed: number;
+  suggested: number;
+  count: number;
+  // The most clips a search may ask for, and the longest Shortest may be.
+  clipsAtMost: number;
+  shortestAtMost: number;
+  // The lengths of window at which the count suggested rises, so a drag
+  // reads its count off them, see engine.SuggestedSteps.
+  steps?: number[];
+  // How long the clips a search asks for may be, as they are set.
+  shortest: number;
+  longest: number;
 }
 
 // How many searches have read each part of an episode. Any window can be
@@ -444,6 +466,8 @@ export interface VideoState {
   clips: ClipEntry[];
   coverage: CoverageView;
   jobs: Job[];
+  // The video's window, or none while the video cannot be read.
+  window?: WindowView | null;
   // The key of the clip chosen, by a hand or by the Go side, or nothing.
   chosen?: string;
   // The card the clip chosen was on its way as, when the app chose it
@@ -788,20 +812,14 @@ export const api = {
   // Whether the video plays: the Go side chooses a search's clips only
   // while it is paused.
   playing: (path: string, playing: boolean) => call<void>("Playing", path, playing),
-  // The window of a video, which the Go side owns: as it was left, after
-  // a restart too, and where there is none, the one the app places. Every
-  // search starts on it, and one that found its clips moves it on. length
-  // is how long it was made, longer than it is when the end of the
-  // episode cut it. null while the video cannot be read.
-  chosenWindow: (path: string) => call<KeptWindow | null>("ChosenWindow", path),
   // The window put back where the app places it, a double-click on its
-  // marks, as a step undo takes back.
-  placeWindow: (path: string) => call<KeptWindow | null>("PlaceWindow", path),
-  // The window as a hand moved it, or as the workspace fitted it to what
-  // a search can read. byHand makes it a step that undo takes back, as a
-  // drag is.
+  // marks, as a step undo takes back, answered with the state after it.
+  placeWindow: (path: string) => call<VideoState>("PlaceWindow", path),
+  // The window as a hand moved it, a step that undo takes back when
+  // byHand, answered with the state after it, whose window the Go side
+  // fitted to what a search can read.
   chooseWindow: (path: string, from: number, to: number, length: number, byHand: boolean) =>
-    call<void>("ChooseWindow", path, from, to, length, byHand),
+    call<VideoState>("ChooseWindow", path, from, to, length, byHand),
   getSettings: () => call<Settings>("GetSettings"),
   training: () => call<TrainingStatus>("Training"),
   clearTraining: () => call<void>("ClearTraining"),
@@ -812,13 +830,13 @@ export const api = {
   removeAppLog: () => call<LogStatus>("RemoveAppLog"),
   // What changed in the settings, and only that, see SaveSettings.
   saveSettings: (changed: Partial<Settings>) => call<void>("SaveSettings", changed),
-  // How many clips a search looks for and how long they may be. They are
-  // set in the workspace, beside the episode they are about, and kept for
-  // the next one.
-  // A target of 0 follows the window. window is how long the window is
-  // that the target was typed for.
-  setSearch: (target: number, window: number, min: number, max: number) =>
-    call<void>("SetSearch", target, window, min, max),
+  // How many clips a search looks for and how long they may be, as typed
+  // in the workspace of the video at path, beside the episode they are
+  // about, and kept for the next one. A target of 0 follows the window.
+  // typed names the field typed in, "target", "min" or "max". The Go
+  // side holds each to what it may be, and answers with the state after.
+  setSearch: (path: string, target: number, min: number, max: number, typed: "target" | "min" | "max") =>
+    call<VideoState>("SetSearch", path, target, min, max, typed),
   checkSetup: () => call<Check[]>("CheckSetup"),
   // What a new copy of the app still needs, and the three ways to answer
   // it. Setup only reads, the other three change something.
@@ -869,9 +887,6 @@ export const api = {
   // the interface until it does. These note it with the episode, and take
   // the note away when it is called off, so an app closed in that wait
   // leaves the episode saying so.
-  // How much of the episode one search can read, and the weight of every
-  // line so far, so the range picker knows how far a window may reach.
-  room: (path: string) => call<RoomView>("Room", path),
   captions: (path: string, plan: string, clip: string) => call<CaptionsView>("Captions", path, plan, clip),
   // The moment of the episode a share of a clip shows, the share of the
   // clip as it plays, its cuts taken out. The number keys put the playhead
@@ -1037,6 +1052,23 @@ export interface JobUpdate {
 
 export function onJob(fn: (u: JobUpdate) => void): () => void {
   return Events.On("job", (ev) => fn(ev.data as JobUpdate));
+}
+
+// A failure, told once by the Go side as it happens: a job of a video
+// that failed while it waited or ran, or was refused as it was asked for,
+// see notice.go. Its words are the Go side's, and the toast shows them.
+export interface Notice {
+  video: string;
+  job: string;
+  kind: string;
+  text: string;
+  // Whether the toast offers Report, for what the person cannot put
+  // right alone.
+  report: boolean;
+}
+
+export function onNotice(fn: (n: Notice) => void): () => void {
+  return Events.On("notice", (ev) => fn(ev.data as Notice));
 }
 
 // Where macOS put the title bar and its buttons, in whole CSS pixels. All

@@ -18,6 +18,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/rs/zerolog"
@@ -660,7 +661,8 @@ func sentence(s string) string {
 	if s == "" {
 		return ""
 	}
-	return strings.ToUpper(s[:1]) + s[1:]
+	first, size := utf8.DecodeRuneInString(s)
+	return string(unicode.ToUpper(first)) + s[size:]
 }
 
 // count is how many pictures the draft holds that are not removed.

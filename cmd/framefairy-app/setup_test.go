@@ -413,7 +413,7 @@ func TestSavingSettingsKeepsTheAnswer(t *testing.T) {
 // save from a page that read the settings before.
 func TestASaveChangesOnlyWhatChanged(t *testing.T) {
 	s := emptyMachine(t)
-	if err := s.SetSearch(7, 1800, 25, 35); err != nil {
+	if err := s.setSearch("", 7, 1800, 25, 35); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.SaveSettings(changed(`{"appColour": "#112233"}`)); err != nil {

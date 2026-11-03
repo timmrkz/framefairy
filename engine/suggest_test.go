@@ -7,7 +7,6 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"sync"
 	"testing"
 
@@ -15,44 +14,20 @@ import (
 	"framefairy/engine/runlog"
 )
 
-// suggestCases are the cases the engine and the workspace are both held
-// to, in frontend/src/lib/suggest.cases.json, so the two never drift apart.
-type suggestCases struct {
-	Windows []struct {
-		Duration float64 `json:"duration"`
-		Window   float64 `json:"window"`
-	} `json:"windows"`
-	Counts []struct {
-		Window float64 `json:"window"`
-		Least  float64 `json:"least"`
-		Most   float64 `json:"most"`
-		Count  int     `json:"count"`
-	} `json:"counts"`
-	Thinks []struct {
-		Window float64 `json:"window"`
-		Think  int     `json:"think"`
-	} `json:"thinks"`
-}
-
-// On the real disk: what is read is the repository's testdata.
-func readSuggestCases(t *testing.T) suggestCases {
-	t.Helper()
-	data, err := os.ReadFile("../frontend/src/lib/suggest.cases.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var c suggestCases
-	if err := json.Unmarshal(data, &c); err != nil {
-		t.Fatal(err)
-	}
-	if len(c.Windows) == 0 || len(c.Counts) == 0 || len(c.Thinks) == 0 {
-		t.Fatal("no cases")
-	}
-	return c
-}
-
 func TestSuggestedWindow(t *testing.T) {
-	for _, c := range readSuggestCases(t).Windows {
+	for _, c := range []struct{ Duration, Window float64 }{
+		{300, 300},
+		{600, 600},
+		{900, 900},
+		{1200, 600},
+		{1500, 750},
+		{1800, 600},
+		{2700, 900},
+		{3600, 900},
+		{5400, 1080},
+		{7200, 1200},
+		{14400, 1800},
+	} {
 		if got := SuggestedWindow(c.Duration); math.Abs(got-c.Window) > 0.5 {
 			t.Errorf("an episode of %s: windows of %s, want %s", HMS(c.Duration), HMS(got), HMS(c.Window))
 		}
@@ -75,7 +50,20 @@ func TestSuggestedWindowsDivideEvenly(t *testing.T) {
 }
 
 func TestSuggestedCount(t *testing.T) {
-	for _, c := range readSuggestCases(t).Counts {
+	for _, c := range []struct {
+		Window, Least, Most float64
+		Count               int
+	}{
+		{60, 20, 30, 1},
+		{300, 20, 30, 2},
+		{350, 20, 30, 3},
+		{600, 20, 30, 3},
+		{900, 20, 30, 4},
+		{1200, 20, 30, 5},
+		{1800, 20, 30, 6},
+		{3600, 20, 30, 8},
+		{1800, 45, 60, 3},
+	} {
 		if got := SuggestedCount(c.Window, c.Least, c.Most); got != c.Count {
 			t.Errorf("%s at %s to %s s: %d clips, want %d", HMS(c.Window), trimFloat(c.Least),
 				trimFloat(c.Most), got, c.Count)
@@ -84,7 +72,18 @@ func TestSuggestedCount(t *testing.T) {
 }
 
 func TestSuggestedThink(t *testing.T) {
-	for _, c := range readSuggestCases(t).Thinks {
+	for _, c := range []struct {
+		Window float64
+		Think  int
+	}{
+		{60, 512},
+		{600, 683},
+		{900, 1024},
+		{1200, 1365},
+		{1800, 2048},
+		{3600, 4096},
+		{14400, 4096},
+	} {
 		if got := SuggestedThink(c.Window); got != c.Think {
 			t.Errorf("%s: %d tokens, want %d", HMS(c.Window), got, c.Think)
 		}

@@ -208,17 +208,66 @@ func (s *FrameFairy) ResetCaptionsHeight(path string) error {
 }
 
 // SetSearch keeps how many clips a search looks for and how long they may
-// be. They are set in the workspace, where the episode they are about is,
-// and kept for the next episode as well, because a person who wants short
-// clips wants them everywhere. A target of 0 follows the window. The
-// numbers are held to the same range the controls offer, because what
-// arrives here is not to be trusted.
-func (s *FrameFairy) SetSearch(target int, window, min, max float64) error {
+// be, as typed in the workspace of the video at path, and answers with
+// its state read after it. They are set in the workspace, where the
+// episode they are about is, and kept for the next episode as well,
+// because a person who wants short clips wants them everywhere. A target
+// of 0 follows the window, and one typed is for the window it was typed
+// for, the video's window now. typed names the field the hand typed in,
+// "target", "min" or "max". A target past what fits in the longest
+// window, and a Shortest too long for the clips asked for, are taken back
+// to the most they may be, the way a field's own arrows stop there. The
+// Shortest cannot be longer than the Longest, so whichever was typed
+// pushes the other along rather than leaving a search that can find
+// nothing.
+func (s *FrameFairy) SetSearch(ctx context.Context, path string, target int, shortest, longest float64, typed string) (VideoState, error) {
+	if !s.store.Known(path) {
+		return VideoState{}, errNotInLibrary
+	}
+	st, err := s.State(ctx, path)
+	if err != nil {
+		return VideoState{}, err
+	}
+	window := 0.0
+	if w := st.Window; w != nil {
+		window = w.To - w.From
+		if typed == "target" {
+			target = min(target, w.ClipsAtMost)
+		}
+		if typed == "min" {
+			shortest = math.Min(shortest, w.ShortestAtMost)
+		}
+	}
+	if shortest > longest {
+		if typed == "max" {
+			shortest = longest
+		} else {
+			longest = shortest
+		}
+	}
+	video := path
+	if typed != "target" {
+		// A target typed for a window of another length is kept for it.
+		set := s.store.Settings()
+		target, window, video = set.Target, set.TargetWindow, set.TargetVideo
+	}
+	if err := s.setSearch(video, target, window, shortest, longest); err != nil {
+		return VideoState{}, err
+	}
+	return s.State(ctx, path)
+}
+
+// setSearch keeps the numbers a search is made with, see SetSearch, a
+// target typed on video for a window that long. They are held to the
+// range the controls offer, because what arrives here is not to be
+// trusted.
+func (s *FrameFairy) setSearch(video string, target int, window, min, max float64) error {
 	return s.store.UpdateSettings(func(set *Settings) {
-		set.Target, set.TargetWindow = 0, 0
+		set.Target, set.TargetWindow, set.TargetVideo = 0, 0, ""
 		if target > 0 && window > 0 {
 			set.Target = int(hold(float64(target), 1, 30))
 			set.TargetWindow = hold(window, 1, engine.MaxEpisodeSeconds)
+			set.TargetVideo = video
 		}
 		set.Min = hold(min, 5, 180)
 		set.Max = hold(max, 5, 180)

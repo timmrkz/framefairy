@@ -52,15 +52,6 @@
   } from "../lib/flow";
   import { faceLook, families, installFonts, nearestFace, styleNames } from "../lib/fonts";
   import { playheadClock, type About } from "../lib/playhead";
-  import {
-    Reach,
-    fitWindow,
-    leastWindow,
-    longestShortest,
-    mostClips,
-    type RoomView,
-  } from "../lib/room";
-  import { suggestedCount } from "../lib/suggest";
   import { captionColours, joinColour, splitColour } from "../lib/colour";
   import { stepLine } from "../lib/steps";
   import { asleep, asking, keysElsewhere, typing, workspaceKey } from "../lib/keys";
@@ -141,15 +132,16 @@
   // the video preview draws nothing, see opening in Player.svelte.
   let opened = $state(false);
   const clips = $derived(session.clips);
-  let from = $state(0);
-  let to = $state(0);
-  // The target typed in the workspace, or 0 while it follows the window,
-  // and how long the window was it was typed for. It is the target of a
-  // window that long and of no other, see typed.
-  let target = $state(0);
-  let targetWindow = $state(0);
-  let min = $state(20);
-  let max = $state(30);
+  // The video's window, as the Go side sends it in the video's state with
+  // what it and a search of it may be, see WindowView in window.go, or as
+  // a hand drags it while it is dragged.
+  const win = $derived(session.window);
+  let drag = $state<{ from: number; to: number } | null>(null);
+  const from = $derived(drag?.from ?? win?.from ?? 0);
+  const to = $derived(drag?.to ?? win?.to ?? 0);
+  // How long the clips a search asks for may be, as they are set.
+  const min = $derived(win?.shortest ?? 20);
+  const max = $derived(win?.longest ?? 30);
   // A click has to show at once, long before the job it starts reports in.
   // The store keeps the press, the same for this work as for the whole
   // video heard from its menu.
@@ -162,13 +154,6 @@
   let time = $state(0);
   // Where the model has already looked. A window is only drawn outside it.
   const coverage = $derived(session.coverage);
-  // How much one search can read, from the engine, and what that makes of
-  // the window and the clip settings. The window is no longer than the
-  // model reads in one request and no shorter than the clips asked for
-  // need at their shortest. The clip count and the shortest length are
-  // held to the longest window that can be drawn anywhere on the episode,
-  // so whatever they ask for fits wherever the window is.
-  let roomView = $state<RoomView | null>(null);
   // The clip chosen, by a hand or by the app, which the Go side decides
   // and sends in the video's state, see choose.go. A hand's pick shows at
   // once, see EpisodeSession.pick.
@@ -244,23 +229,21 @@
   let offers = $state<PlayerOffers>({ crop: "", savingCrop: false, hint: "" });
 
   const duration = $derived(source?.duration ?? 0);
-  const reach = $derived(new Reach(roomView, duration));
-  const reachAnywhere = $derived(reach.anywhere());
-  // The window has room for the clips typed for it. A suggestion follows
-  // the window instead, so it only needs room for one.
-  // The target typed for this window, or 0 when it follows the window.
-  // Three typed for the six minutes of one episode went on asking for
-  // three in the half hour of the next, so a number typed is for the
-  // window it was typed for: another length follows its own suggestion.
-  const typed = $derived(target > 0 && Math.abs(to - from - targetWindow) < 0.5 ? target : 0);
-  const leastLong = $derived(leastWindow(typed > 0 ? typed : 1, min, duration));
-  const clipsAtMost = $derived(mostClips(reachAnywhere, min, 30));
-  // How many clips the window drawn now suggests. The engine works out the
-  // same, see engine/suggest.go. What a search looks for is the target
-  // typed, or the suggestion while nothing is typed.
-  const suggested = $derived(Math.min(suggestedCount(to - from, min, max), clipsAtMost));
-  const count = $derived(typed > 0 ? typed : suggested);
-  const shortestAtMost = $derived(longestShortest(reachAnywhere, count, 5, 180));
+  // What the window and a search of it may be, which the Go side works
+  // out and sends with it, see engine.Project.Limits: the window no longer
+  // than the model reads in one request anywhere on the video and no
+  // shorter than the clips typed need at their shortest, and the clip
+  // count and the shortest length held to that longest window, so
+  // whatever they ask for fits wherever the window is.
+  // While a hand drags the window to another length, the count follows
+  // the hand: it is the count that length suggests, read off the lengths
+  // Go sends at which it rises, and what Go answers when the hand lets go.
+  const dragged = $derived(drag && win && Math.abs(drag.to - drag.from - (win.to - win.from)) > 0.001 ? drag.to - drag.from : null);
+  const typed = $derived(dragged === null ? (win?.typed ?? 0) : 0);
+  const suggested = $derived(dragged === null ? (win?.suggested ?? 1) : 1 + (win?.steps ?? []).filter((at) => at <= dragged).length);
+  const count = $derived(dragged === null ? (win?.count ?? 1) : suggested);
+  const clipsAtMost = $derived(win?.clipsAtMost ?? 30);
+  const shortestAtMost = $derived(win?.shortestAtMost ?? 180);
   // The episode's search, as the Go side keeps it: one job from Search to its
   // clips, which hears the episode as far as the window reaches and then
   // finds, see docs/JOBS.md. Everything the workspace shows about finding
@@ -308,11 +291,15 @@
   const wholeWork = $derived(jobs.transcribing(path));
   const isTranscribing = $derived(!!hearing);
   const busy = $derived(searching || starting);
-  // A search that found its clips is over, and the window it moved on to
-  // is on its way from the Go side. The search's frame stays where it is
-  // until then, so the range picker never shows the window back where the
-  // search was, between the search and the next, see load.
-  let movingOn = $state(false);
+  // A search that found its clips is over, and the state that holds the
+  // window it moved on to has not come yet: the job's news travels apart
+  // from the video's state until #606's one channel. The search's frame
+  // stays where it is until then, so the range picker never shows the
+  // window back where the search was, between the search and the next.
+  const movingOn = $derived.by(() => {
+    const last = jobs.list.findLast((j) => j.episode === path && j.kind === "search");
+    return last?.state === "done" && (last.seq ?? 0) > session.rev;
+  });
   // What the search is doing right now, in the step's own words, see
   // lib/steps.ts.
   const doing = $derived(working ? stepLine(working).what : "");
@@ -418,8 +405,6 @@
   // with it. One press, so a Cancel after it stops all of them.
   function carryOn() {
     if (!stopped || !search) return;
-    from = stopped.from;
-    to = stopped.to;
     const id = search.id;
     const press = begin();
     for (const job of handStopped) void api.continueJob(job.id, press).then((j) => jobs.apply(j));
@@ -866,7 +851,7 @@
     const window = `Window ${clock(start)} to ${clock(end)}`;
     const span = { from: start, to: end, window };
     if (search.state === "failed") {
-      // Why is said in a toast as it fails, see failedNow. A card is no
+      // Why is said in a toast as it fails, see notice.go. A card is no
       // place to carry a reason, and cut to one line it lost the part
       // that said what to do, issue #311.
       return { ...span, what: "Failed. Click Continue", left: window, full: `${window}. ${reasonOf(search.error)}` };
@@ -1193,99 +1178,28 @@
 
   // The window put back where the app places it, a double-click on its
   // marks. The Go side places it, as it places every window the app
-  // chooses, see chosenWindow.
+  // chooses, and answers with the state that holds it.
   async function placeWindowBack() {
     try {
-      drawWindow(await api.placeWindow(path));
+      session.take(await api.placeWindow(path));
     } catch (err) {
       oops(errorText(err));
     }
   }
 
-  // The video's window, drawn as the Go side has it. It fits what a search
-  // can do with it here, or is fitted and written back, see keepWindow.
-  function drawWindow(w: KeptWindow | null) {
-    if (!w || w.to <= w.from || duration <= 0) return;
-    from = w.from;
-    to = Math.min(w.to, duration);
-    length = Math.max(w.length, to - from);
-    keepWindow();
-  }
-
-  // How long the window was made, by the app or by a hand on its marks.
-  // A window cut short at the end of the episode is still this long when
-  // it starts over, see followingWindow.
-  let length = $state(0);
-
   // The window dragged by its marks on the range picker, moved whole or by
   // one edge. An edge stops where the window would hold too few clips or
-  // more than the model reads, which the range picker works out and says,
-  // see least and most on it. When the hand lets go it is put inside what
-  // a search can do with it there.
+  // more than the model reads, the least and most the Go side sends with
+  // the window. When the hand lets go it is kept, and the Go side answers
+  // with it put inside what a search can do with it there.
   function moveWindow(start: number, end: number, done: boolean) {
-    from = start;
-    to = end;
-    if (done) {
-      fit();
-      length = to - from;
-      rememberWindow(true);
-    }
+    drag = { from: start, to: end };
+    if (!done || duration <= 0 || end <= start) return;
+    drag = null;
+    void session.place({ from: start, to: end, length: end - start }, (w) =>
+      api.chooseWindow(path, w.from, w.to, w.length, true),
+    );
   }
-
-  // The window put back inside what a search can do with it, whenever
-  // what that is changes: the room, or the clips asked for. Not while clips
-  // are being found for it, because then it is the window being searched.
-  // Nor while a search stands stopped on it, because it is the window
-  // Continue carries on. A window fitted is written back, so the window
-  // drawn is the video's window.
-  function keepWindow() {
-    if (fit()) rememberWindow();
-  }
-
-  function fit(): boolean {
-    if (busy || stopped || duration <= 0 || to <= from) return false;
-    const kept = fitWindow({ from, to }, reachAnywhere, leastLong, duration);
-    const moved = Math.abs(kept.from - from) > 0.001 || Math.abs(kept.to - to) > 0.001;
-    if (Math.abs(kept.from - from) > 0.001) from = kept.from;
-    if (Math.abs(kept.to - to) > 0.001) to = kept.to;
-    return moved;
-  }
-
-  // keep is false when another window is on its way, see load, so the
-  // window still drawn is not fitted and written back over it.
-  async function refreshRoom(keep = true) {
-    try {
-      roomView = await api.room(path);
-    } catch {
-      roomView = null;
-    }
-    if (keep) keepWindow();
-  }
-
-  // The window the workspace opens with: the video's window, which the
-  // Go side keeps and places, see chosenWindow. A search that runs has
-  // its window drawn when it is heard of, see followed, and it is the
-  // same window, because every search starts on the video's window.
-  async function openWindow(asked: Promise<KeptWindow | null> = api.chosenWindow(path)) {
-    const was = path;
-    let kept: KeptWindow | null = null;
-    try {
-      kept = await asked;
-    } catch {
-      kept = null;
-    }
-    if (path !== was) return;
-    drawWindow(kept);
-  }
-
-  // The window is written the moment a hand moves it, or the workspace
-  // fits it, so the Go side's window is the window drawn.
-  function rememberWindow(byHand = false) {
-    if (duration <= 0 || to <= from) return;
-    api.chooseWindow(path, from, to, Math.max(length, to - from), byHand).catch(() => {});
-  }
-
-
 
   // One clip as an edit left it.
   function putClip(updated: ClipEntry) {
@@ -1343,45 +1257,28 @@
       opened = true;
       tell(`opened, the playhead at ${time.toFixed(3)} s`);
     }
-    try {
-      if (!status || status.missing) return;
-      // Asked together, and used in this order: the window is placed from
-      // what was searched and fitted to the room. One after another they
-      // kept the workspace behind the one on screen three answers longer.
-      const kept = api.chosenWindow(path);
-      kept.catch(() => {});
-      await refreshRoom();
-      if (source) await openWindow(kept);
-    } catch (err) {
-      oops(errorText(err));
-    } finally {
-      settled = true;
-      tell("settled, the window and its room are read");
-    }
+    // The window came with the video's state, placed and fitted by the
+    // Go side.
+    settled = true;
+    tell("settled, the window is read");
   }
 
-  // moved is the window a search that ended moved on to, asked for with
-  // the rest. It is drawn with the clips the search found, and the window
-  // still drawn is not fitted to the new room and written back over it,
-  // found by the fourth review of #458.
-  async function load(moved?: Promise<KeptWindow | null>) {
-    const was = path;
+  // The video's state read again, and its picture once a file that was
+  // missing is there again.
+  async function load() {
     try {
       await refreshClips();
       if (!status) return;
       // A file that was missing as the workspace opened and is there now.
       const found = !source && !status.missing;
-      if (found) source = await api.source(path);
-      if (!status.missing) await refreshRoom(!moved);
-      if (found && source) await openWindow();
-      const next = moved ? await moved.catch(() => null) : null;
-      movingOn = false;
-      if (next && path === was) drawWindow(next);
+      if (found) {
+        source = await api.source(path);
+        // Its window is placed once its length is known.
+        await refreshClips();
+      }
       keepRemovedTrue();
     } catch (err) {
       oops(errorText(err));
-    } finally {
-      movingOn = false;
     }
   }
 
@@ -1709,9 +1606,8 @@
         // when it is written, see choose.go.
         session.pick(key, (k) => api.chooseClip(path, k));
       }
-      // Asked for here, so a failure says why in a toast however soon it
-      // comes, the store's news of it before this answer too.
-      session.asked(now);
+      // A failure says why in a toast, which the Go side tells as it
+      // fails, see notice.go.
       if (now.state === "failed") return;
       await tick();
       showChosen();
@@ -2625,36 +2521,28 @@
     }
   }
 
-  // The shortest cannot be longer than the longest, so whichever was just
-  // typed pushes the other along rather than leaving a search that can find
-  // nothing.
-  function keepOrder(typed: "min" | "max") {
-    if (typed === "min" && min > shortestAtMost) min = shortestAtMost;
-    if ((min > 0) && (max > 0) && min > max) {
-      if (typed === "min") max = min;
-      else min = max;
-    }
-    saveSearch();
-  }
-
-  // The numbers a search is made with live in the workspace, next to the
-  // episode they are about, and there is nowhere else to set them. So they
-  // are kept the moment they change, like everything else in the
-  // workspace, and the next episode opens with them.
-  function saveSearch() {
-    api.setSearch(target, targetWindow, min, max).catch((err) => oops(errorText(err)));
-    keepWindow();
-  }
-
-  // A number typed past what the window can hold is taken back to the
-  // most it can, the way a field's own arrows stop there. A field cleared
+  // A number of the search typed: how many clips, the shortest or the
+  // longest. The numbers live in the workspace, next to the episode they
+  // are about, and are kept the moment they change, like everything else
+  // in the workspace, and the next episode opens with them. The Go side
+  // holds each to what it may be, see SetSearch, and answers with the
+  // state, whose window says what it made of them. A target cleared
   // follows the window again, and shows its suggestion.
-  function keepTarget(e: Event) {
-    const entry = (e.currentTarget as HTMLInputElement).value.trim();
-    target = entry === "" ? 0 : Math.min(Math.max(Math.round(Number(entry)) || 1, 1), clipsAtMost);
-    targetWindow = target > 0 ? to - from : 0;
-    (e.currentTarget as HTMLInputElement).value = String(target > 0 ? target : suggested);
-    saveSearch();
+  function typedIn(field: "target" | "min" | "max", e: Event) {
+    const input = e.currentTarget as HTMLInputElement;
+    const entry = input.value.trim();
+    const number = Number(entry);
+    const target = field === "target" ? (entry === "" ? 0 : Math.max(Math.round(number) || 1, 1)) : typed;
+    const shortest = field === "min" && entry !== "" ? number : min;
+    const longest = field === "max" && entry !== "" ? number : max;
+    api
+      .setSearch(path, target, shortest, longest, field)
+      .then((state) => {
+        session.take(state);
+        const w = state.window;
+        if (w) input.value = String(field === "target" ? w.count : field === "min" ? w.shortest : w.longest);
+      })
+      .catch((err) => oops(errorText(err)));
   }
 
   function newClips() {
@@ -2730,13 +2618,8 @@
     try {
       const done = what === "undo" ? await api.undo(path) : await api.redo(path);
       if (!done?.done) return;
-      // A step that moved the window puts it where it was. It is kept on
-      // the Go side already.
-      if (done.window && !busy) {
-        from = done.window.from;
-        to = Math.min(done.window.to, duration);
-        length = Math.max(done.window.length, to - from);
-      }
+      // A step that moved the window puts it where it was, which the Go
+      // side keeps already, and the state read next says.
       await load();
       // The caption height is kept in the settings, so an undo of a drag
       // is read back from there.
@@ -2762,23 +2645,6 @@
   // The job has reported in, so the placeholder can give way to it.
   $effect(() => {
     if (working) untrack(() => jobs.answered(path, "clips"));
-  });
-
-  // The window on the range picker is the window being searched, for as
-  // long as a search runs. A search the Go side started by itself, the
-  // first one of an episode just added, has a window the workspace did not
-  // draw, so the range picker goes to it. And its rows are counted from
-  // the list as it was when it started, the same as for one started here.
-  let followed = "";
-  $effect(() => {
-    if (!working || !source || followed === working.id) return;
-    followed = working.id;
-    const start = working.from ?? 0;
-    const end = working.to && working.to > 0 ? working.to : duration;
-    if (end > start) {
-      from = start;
-      to = end;
-    }
   });
 
   // The clip a render was asked for, from the click until the job is
@@ -2862,16 +2728,6 @@
   // from before and compared it with the next, issue #606. It hears from
   // the moment the workspace is on the page, as the effects did.
   const moves: WorkMoves = {
-    // A search that fails while the app is open says why in a toast, with
-    // Report for what the person cannot put right alone, and so does a
-    // clip made by hand with I or O. Its row or card goes on saying Failed
-    // with Continue, after a restart too, and never why, issue #450.
-    failed: (job) => {
-      const what = job.kind === "clip" ? "clip made by hand" : "search";
-      const why = reasonOf(job.error, what);
-      tell(`${what} failed: ${why}`);
-      toasts.say(where(), why, { video: path, report: true });
-    },
     // The app chose another clip, see choose.go: a search's first clip or
     // its earliest, the clip beside one removed or one put back, the clip
     // an undo changed, or a clip made by hand that was written, whose card
@@ -2903,24 +2759,18 @@
     searched: (ended) => {
       jobs.answered(path, "clips");
       onchange();
-      // The window walks on from where the search ended, as long as it
-      // was, which the Go side did before the search said it was done.
-      // Asked for with the rest and drawn with the clips found, so the
-      // window does not move one answer after the first clip is picked.
-      const moved = ended.state === "done" ? api.chosenWindow(path) : undefined;
-      moved?.catch(() => {});
-      movingOn = !!moved;
-      // The clip it chose comes with the state that holds what it found,
-      // see the move chose.
-      void load(moved);
+      // The window walks on from where the search ended, which the Go
+      // side did before the search said it was done, so it comes in the
+      // state that holds the clips found, see windowOn. The clip it chose
+      // comes in it too, see the move chose.
+      void load();
     },
-    // A render this workspace started: the list shows what was rendered,
-    // and a render that failed says why over the workspace.
-    rendered: (job) => {
+    // A render this workspace started: the list shows what was rendered.
+    // One that failed says why in a toast, which the Go side tells, see
+    // notice.go.
+    rendered: () => {
       onchange();
-      load().then(() => {
-        if (job.state === "failed") oops(job.error ?? "The render failed.");
-      });
+      void load();
     },
   };
   onMount(() => session.open(moves, onVideoState));
@@ -3038,19 +2888,9 @@
   // running work is torn down and set up again on every job event, about
   // once a second, so its timer would never fire at all.
   onMount(() => {
-    let ticks = 0;
     const timer = setInterval(() => {
       // Asleep, nothing is read: waking reads it all once.
       if (away) return;
-      ticks++;
-      if (isTranscribing) {
-        // How far the transcript has come is in the video's state, which
-        // the Go side sends as it grows. What the new lines weigh is read
-        // now and then: the room only needs them to say how far a window
-        // may reach, and the rest of the episode is weighed at a rate that
-        // errs towards less until then.
-        if (ticks % 5 === 0) refreshRoom();
-      }
       if (isFinding) {
         // Each clip lands in the plan the moment it is framed, while the
         // model is still writing the next, so the list is read again as
@@ -3073,10 +2913,6 @@
 
   function readSettings() {
     api.getSettings().then((settings) => {
-      target = settings.target || 0;
-      targetWindow = settings.targetWindow || 0;
-      min = settings.min || 20;
-      max = settings.max || 30;
       captionY = settings.captionY || captionYDefault;
     });
   }
@@ -3110,12 +2946,12 @@
     onhoverunheard={saying ? (i) => (unheardLit = i) : undefined}
     onmove={moveWindow}
     onreset={() => void placeWindowBack()}
-    least={leastLong}
+    least={win?.least ?? 0}
     leastSays={typed > 0 ? `room for ${typed} clips of ${min} s` : `room for a clip of ${min} s`}
-    most={reachAnywhere}
-    reachSays={roomView?.by === "budget"
+    most={win?.most ?? duration}
+    reachSays={win?.by === "budget"
       ? "all the budget pays for"
-      : roomView?.by === "memory"
+      : win?.by === "memory"
         ? "all this computer's memory holds"
         : "all the model reads at once"}
   />
@@ -3156,7 +2992,7 @@
                   : `How many clips the model looks for. Until you change it, it follows the window: ${suggested} for this one, 6 for half an hour and by the square root of its length for others. Type a number to set your own for this window, and clear it to follow the window again. A window of another length follows its own. The model gives fewer when fewer moments are strong enough. At most ${clipsAtMost}, as many as fit at ${min} s each in the longest window the model can read`}
                 disabled={comingNow}
                 value={comingNow && working?.count ? working.count : typed > 0 ? typed : suggested}
-                onchange={keepTarget}
+                onchange={(e) => typedIn("target", e)}
               /></span
             >
           </label>
@@ -3172,8 +3008,8 @@
                   ? "The search on its way asks for clips this long. Change it for the next one"
                   : `At most ${shortestAtMost} s, so ${count} clips of it fit in the longest window the model can read`}
                 disabled={comingNow}
-                bind:value={min}
-                onchange={() => keepOrder("min")}
+                value={min}
+                onchange={(e) => typedIn("min", e)}
               /><span class="unit">s</span></span
             >
           </label>
@@ -3187,8 +3023,8 @@
                 max="180"
                 title={comingNow ? "The search on its way asks for clips this long. Change it for the next one" : undefined}
                 disabled={comingNow}
-                bind:value={max}
-                onchange={() => keepOrder("max")}
+                value={max}
+                onchange={(e) => typedIn("max", e)}
               /><span class="unit">s</span></span
             >
           </label>

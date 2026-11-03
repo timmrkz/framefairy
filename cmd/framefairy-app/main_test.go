@@ -150,8 +150,7 @@ func TestAnEpisodeWithoutATranscriptReadsEmpty(t *testing.T) {
 	if err != nil || sentences == nil || len(sentences) != 0 {
 		t.Errorf("sentences got %v, %v", sentences, err)
 	}
-	room, err := svc.Room(source)
-	if err != nil || len(room.Lines) != 0 || room.Chars <= 0 || room.Rate != engine.SpokenChars {
-		t.Errorf("room %+v, %v", room, err)
+	if room := svc.roomAndLines(svc.project(source)); len(room.Lines) != 0 || room.Chars <= 0 || room.Rate != engine.SpokenChars {
+		t.Errorf("room %+v", room)
 	}
 }

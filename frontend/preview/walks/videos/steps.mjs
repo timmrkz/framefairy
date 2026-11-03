@@ -1246,32 +1246,19 @@ export const steps = {
       walk.wrong = `the transcript exported does not hold ${JSON.stringify(arg)}`;
     return;
   },
-  // ["add, the window read late", seconds]
+  // ["add, until its search shows", seconds]
   //                    adds a new video of so many seconds with Add, and
-  //                    its workspace hears that no window was kept for it
-  //                    only once its first search is seen, the order Tim's
-  //                    Mac took on 24 October
-  async "add, the window read late"(walk, arg, s) {
+  //                    waits until the head of the clip list says Cancel,
+  //                    for a search the speech held has not let finish
+  async "add, until its search shows"(walk, arg, s) {
     const { page, watch } = walk;
-    // A video added whose workspace hears that no window was kept for
-    // it only once its first search is seen, the order Tim's Mac took
-    // on 24 October. The call is held and then fails, which the
-    // workspace takes as nothing kept: let through, it would find the
-    // window the search had already kept. Nothing settles while the
-    // call is held, so this step waits on the head of the clip list
-    // instead, and settles once the call has answered.
-    await control(url, "/hold?call=ChosenWindow&gate=shut&fail=nothing%20kept");
     await control(url, `/pick?seconds=${arg}`);
     await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());
     await pageUntil(page, () => {
       const pane = [...document.querySelectorAll("aside")].find((a) => a.querySelector(".listhead"));
       return pane?.querySelector(".listhead button.search")?.textContent.replace(/\s+/g, " ").trim() === "Cancel";
     });
-    await control(url, "/hold?call=ChosenWindow&gate=open");
-    await settle(page);
-    // The call failed on purpose, so the watch reads on from here.
-    await watch.start();
-    return;
+    await watch.step("add", s);
   },
 };
 
