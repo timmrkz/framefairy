@@ -55,21 +55,22 @@ export type Arriving = {
   away?: Away;
 };
 
-// A card being removed: how much of its time it has used, in seconds, and
-// what putting it back, its time running out and its time running on
-// again after a pause do. together names the work it is removed with, so
-// every card of it and its row hold and run down as one, see Busy.
+// A card being removed: how much of its time it has used, in seconds,
+// what putting it back does, and what a hand on it holding its time and
+// letting it go does. The time is the Go side's, which forgets the work
+// once it is up, see removal.go, so the card only draws it. together
+// names the work it is removed with, so every card of it and its row hold
+// and run down as one, see Busy.
 export type Away = {
   spent: number;
   together?: string;
   onputback: () => void;
-  onend: () => void;
-  onresume: (left: number) => void;
+  onhold: (held: boolean) => void;
 };
 
 // What the episode does with work that stopped, a search or a clip made
 // by hand: remove it, and say how its removal stands. Work that could not
-// be called off is Stopped again, and why is a toast.
+// be removed is Stopped again, and why is a toast.
 export type Hand = {
   remove: (job: Job) => void;
   away: (job: Job) => Away | undefined;

@@ -486,8 +486,12 @@ export async function holdClock(page) {
 const pageNow = (page) => page.evaluate(() => Date.now());
 
 // Runs the app's held time on by ms, every timer and frame on the way
-// firing in turn, and holds it again there.
+// firing in turn, and holds it again there. The Go side's clock for the
+// time removed work has runs on with it, first, so work whose time is up
+// is forgotten there before the page sees its own time run out, see
+// walkTime in walktime_test.go.
 export async function runClock(page, ms) {
+  await control(page.url(), `/clock?run=${Math.round(ms)}`);
   await page.clock.runFor(ms);
 }
 

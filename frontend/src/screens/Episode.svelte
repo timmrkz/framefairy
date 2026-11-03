@@ -30,6 +30,7 @@
     type SourceView,
     type Word,
     type Sentence,
+    type VideoState,
     onUndo,
     onVideoState,
   } from "../lib/api";
@@ -935,78 +936,58 @@
   // A clip made by hand that stopped can be removed, so it is not made,
   // issue #257, and so can a search that stopped, issue #431. Its card
   // says Removed and offers it back for as long as a removed clip's row
-  // does, and only then is the work called off, and the Go side forgets
-  // its record, see cancelSteps. The time is the
-  // episode's, kept by the job the way a search's row that found nothing
-  // is, see lib/removed.ts: it runs on while another video is open, and
-  // work whose time ran out while it was away is called off on coming
-  // back. By the job: the moment its time runs out, and 0 once it has.
-  let putAway = $state<Told>(untrack(() => takeUpTold(path, Date.now(), "put away")));
+  // does, and then the work is forgotten, its record and all. The time is
+  // the Go side's, kept by the job, see removal.go: it runs on while
+  // another video is open, a hand on the row holds it, and the job says
+  // how it stands, in away. Here it is only drawn. A press shows in its
+  // frame: what was pressed is kept until the answer, which is the video's
+  // state with the job as it now stands.
+  let pressedAway = $state<Record<string, "away" | "back">>({});
+
+  // Work that could not be removed or put back is as it was, and why is
+  // said whole in a toast, never pressed into its row or card, where it
+  // is cut to a line, issue #431.
+  async function removal(job: string, press: "away" | "back", call: () => Promise<VideoState>) {
+    pressedAway = { ...pressedAway, [job]: press };
+    try {
+      session.take(await call());
+    } catch (err) {
+      const why = `${press === "away" ? "Could not remove it" : "Could not put it back"}: ${errorText(err)}`;
+      said(`clip list: the work of ${job} that stopped, ${why}`, { level: "warn", video: path });
+      toasts.say(where(), why, { video: path, report: true });
+    } finally {
+      const { [job]: _, ...rest } = pressedAway;
+      pressedAway = rest;
+    }
+  }
 
   function putAside(job: string) {
-    putAway = { ...putAway, [job]: Date.now() + secondThoughts * 1000 };
-    said(`clip list: the work of ${job} that stopped removed, ${secondThoughts} s to put it back`, { level: "info", video: path });
+    said(`clip list: the work of ${job} that stopped removed`, { level: "info", video: path });
+    void removal(job, "away", () => api.removeWork(job));
   }
 
   function awayOf(job: string): Away | undefined {
-    if (!(job in putAway)) return undefined;
-    const until = putAway[job];
+    const press = pressedAway[job];
+    const away = jobs.list.find((j) => j.id === job)?.away;
+    if (press === "back" || (!away && press !== "away")) return undefined;
+    const whole = away?.whole ?? secondThoughts;
+    const left = !away ? whole : away.until ? (away.until - Date.now()) / 1000 : away.left;
     return {
-      // Once called off, the row has no time left, and stays until the
-      // job says it is gone.
-      spent: until === 0 ? secondThoughts : toldSpent(until),
+      spent: Math.min(whole, Math.max(0, whole - left)),
       // A search is removed in its row and in each of its cards on the
       // way at once, and the hand on any of them holds them all.
       together: `away ${job}`,
       onputback: () => {
-        if (putAway[job] === 0) return;
-        const { [job]: _, ...rest } = putAway;
-        putAway = rest;
         said(`clip list: the work of ${job} that stopped put back`, { level: "info", video: path });
+        void removal(job, "back", () => api.putWorkBack(job));
       },
-      onend: () => callOff(job),
-      onresume: (left) => {
-        if (putAway[job]) putAway = { ...putAway, [job]: Date.now() + left * 1000 };
+      onhold: (held) => {
+        api.holdRemoval(job, held).catch((err) => {
+          said(`clip list: the time of the work of ${job} removed could not be ${held ? "held" : "let go"}: ${errorText(err)}`, { level: "warn", video: path });
+        });
       },
     };
   }
-
-  function callOff(job: string) {
-    if (putAway[job] === 0) return;
-    putAway = { ...putAway, [job]: 0 };
-    said(`clip list: the work of ${job} that stopped is called off and forgotten`, { level: "info", video: path });
-    send(job);
-  }
-
-  // Work that could not be called off is as it was, Stopped with
-  // Continue, and why is said whole in a toast, never pressed into its
-  // row or card, where it is cut to a line, issue #431.
-  function send(job: string) {
-    api.cancelJob(job).catch((err) => {
-      const { [job]: _, ...rest } = putAway;
-      putAway = rest;
-      const why = `Could not remove it: ${errorText(err)}`;
-      said(`clip list: the work of ${job} that stopped could not be removed, ${why}`, { level: "warn", video: path });
-      toasts.say(where(), why, { video: path, report: true });
-    });
-  }
-
-  // Work whose time ran out while the video was away is called off now.
-  for (const [job, until] of Object.entries(untrack(() => putAway))) if (until === 0) send(job);
-
-  // A card whose work was called off goes when its job says so, and what
-  // was kept of its time goes with it. So does one whose job runs again.
-  // A job not heard of yet, as the video opens, keeps its time.
-  $effect(() => {
-    const here = new Set(arrivingNow.filter((a) => a.stopped).map((a) => a.job));
-    // The search's own row, which stands while it has no clip on the way.
-    if (halted && search) here.add(search.id);
-    const known = new Set(jobs.forEpisode(path).map((j) => j.id));
-    untrack(() => {
-      const kept = Object.entries(putAway).filter(([job, until]) => here.has(job) || (until !== 0 && !known.has(job)));
-      if (kept.length < Object.keys(putAway).length) putAway = Object.fromEntries(kept);
-    });
-  });
   // A clip that has just been written keeps its card until a state of the
   // video holds it, so the card becomes the clip in one step: never a gap
   // where it was, and never the two of them at once. See OnTheWay in
@@ -1348,7 +1329,6 @@
     return () => {
       setAside(path, $state.snapshot(removed));
       setAsideTold(path, $state.snapshot(told));
-      setAsideTold(path, $state.snapshot(putAway), "put away");
     };
   });
 

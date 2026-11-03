@@ -408,6 +408,18 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		b.d.bus.send("mark", n)
 		answer(w, n, nil)
 	})
+	// The clock removed work is timed by, run on by run milliseconds,
+	// with every call due by then made before it answers, the way a walk
+	// runs the page's clock on, see runClock in walks/bridge.mjs.
+	mux.HandleFunc("/clock", func(w http.ResponseWriter, r *http.Request) {
+		ms, err := strconv.Atoi(r.URL.Query().Get("run"))
+		if err != nil || ms < 0 {
+			http.Error(w, "run says how many milliseconds to run the clock on", http.StatusBadRequest)
+			return
+		}
+		b.d.time.run(time.Duration(ms) * time.Millisecond)
+		answer(w, ms, nil)
+	})
 	mux.HandleFunc("/pick", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		path, err := b.pick(q.Get("seconds"), q.Get("rate"), q.Get("switch"), q.Get("timing"), q.Get("codec") == "hevc",
@@ -1098,6 +1110,7 @@ func openBridge(t *testing.T) *bridge {
 	// every sequence has heard what it waits for, and a walk waiting for
 	// more words ends there.
 	d.most = 60 * engine.SampleRate
+	d.time = newWalkTime()
 	d.start(d.svc.store)
 	// A report goes on the bridge's own Desktop and is shown nowhere.
 	reportFolder = func() string {

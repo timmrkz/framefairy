@@ -9,7 +9,8 @@
   // row in the clip list and a picture's tile in a report wear it, so the
   // two look the same. spent is how many seconds of the time had run when
   // it was drawn, and onresume says how many are left when it starts
-  // again. Given together, every Removed of that name tells one time, see
+  // again, and onhold each time it stands still and runs on, see Busy.
+  // Given together, every Removed of that name tells one time, see
   // Busy: a search's row and its cards are removed as one.
   //
   // It takes the place of what was removed in one frame and stands still:
@@ -25,6 +26,7 @@
     onputback,
     onend,
     onresume,
+    onhold,
   }: {
     spent?: number;
     tile?: boolean;
@@ -32,6 +34,7 @@
     onputback?: () => void;
     onend?: () => void;
     onresume?: (left: number) => void;
+    onhold?: (held: boolean) => void;
   } = $props();
 </script>
 
@@ -40,7 +43,7 @@
   <span class="what">Removed</span>
   {#if !tile}<span class="grow"></span>{/if}
   <button class="quiet back" onclick={() => onputback?.()}>Put it back</button>
-  <Busy drain={secondThoughts} {spent} {together} {onend} {onresume} />
+  <Busy drain={secondThoughts} {spent} {together} {onend} {onresume} {onhold} />
 </div>
 
 <style>

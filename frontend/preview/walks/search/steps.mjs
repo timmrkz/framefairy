@@ -1695,7 +1695,7 @@ export const steps = {
   //                    range picker at once. With "put back" that is
   //                    clicked, and the card says Stopped again and the
   //                    work stays. With "for good" the time runs down, the
-  //                    card goes and the Go side calls the work off
+  //                    Go side forgets the work, and the card goes
   async "remove stopped"(walk, arg, s) {
     const { page, removeTime, watch } = walk;
     const card = page.locator(`li[data-key^="${walk.handJob}/"]`).first();
@@ -1740,17 +1740,22 @@ export const steps = {
       // would have called the work off by now, and what that set
       // going has come back.
       await runClock(page, (removeTime + 1) * 1000);
-      await settle(page);
+      await caughtUp(page, url);
       const state = await stateOf();
       if (!back) walk.wrong = "Put it back did not bring back the card that said Stopped";
       else if ((await waiting()) !== marked) walk.wrong = `put back, the range picker has ${await waiting()} marks of clips on their way, not ${marked}`;
       else if (state !== "stopped") walk.wrong = `put back, the work of the clip is ${state}, not stopped`;
     } else {
       // The time stands still under the hand, see Busy, so the hand
-      // goes off the list, and then it runs out.
+      // goes off the list, and then it runs out. The Go side keeps the
+      // time and forgets the work, and the list hears so in the video's
+      // state.
       await page.mouse.move(5, 5);
-      await runClock(page, (removeTime + 1) * 1000);
+      // The hand going off lets the Go side's time run on, and that call
+      // is back before the time is run on.
       await settle(page);
+      await runClock(page, (removeTime + 1) * 1000);
+      await caughtUp(page, url);
       const gone = await page.evaluate((k) => !document.querySelector(`li[data-key="${k}"]`), key);
       const state = await stateOf();
       if (!gone) walk.wrong = "the card that stopped is still in the list after its time ran down";
@@ -1833,18 +1838,23 @@ export const steps = {
       const back = (await page.evaluate((lead) => document.querySelector(`${lead}.stopped .title`)?.textContent.trim(), lead)) === was;
       // Past the time a remove runs, so a put back that only hid it
       // would have forgotten the search by now.
-      await runClock(page, (removeTime + 1) * 1000);
       await settle(page);
+      await runClock(page, (removeTime + 1) * 1000);
+      await caughtUp(page, url);
       const now = await search();
       if (!back) walk.wrong = `Put it back did not bring back the row "${was}"`;
       else if (now?.id !== job || now.state === "settled") walk.wrong = `put back, the search is ${now?.id} ${now?.state}, not ${job} as it stopped`;
     } else {
       // The time stands still under the hand, see Busy, so the hand
-      // goes off the list, and then it runs out. The Go side is asked
-      // to forget the search, and settle waits for its answer.
+      // goes off the list, and then it runs out. The Go side keeps the
+      // time and forgets the search, and the list hears so in the
+      // video's state.
       await page.mouse.move(5, 5);
-      await runClock(page, (removeTime + 1) * 1000);
+      // The hand going off lets the Go side's time run on, and that call
+      // is back before the time is run on.
       await settle(page);
+      await runClock(page, (removeTime + 1) * 1000);
+      await caughtUp(page, url);
       const left = await page.evaluate(() => document.querySelectorAll("li.next.stopped, li.next .gone").length);
       const now = await search();
       if (left) walk.wrong = `${left} rows or cards of the search are still in the list after its time ran down`;

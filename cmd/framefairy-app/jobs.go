@@ -107,6 +107,9 @@ type Job struct {
 	// Aside is, for a search that stopped, that the video's window was
 	// moved off the window it was about, see markAside.
 	Aside bool `json:"aside,omitempty"`
+	// Away is, for work that stopped and was removed, how its removal
+	// stands, see removal.go.
+	Away *JobAway `json:"away,omitempty"`
 	// Ended is, for a search that is over or stopped, how it ended, see
 	// engine.SearchEnded, set as the video's state is read, so the
 	// interface picks the words and works nothing out.
@@ -229,6 +232,11 @@ type queue struct {
 	news func(episode string)
 	// notice is told each failure to say, once, see notice.go.
 	notice func(Notice)
+	// removals stops the timer of each removed job, which forgets it
+	// when its time is up, and time is the clock they run on, see
+	// removal.go.
+	removals map[string]func() bool
+	time     timeKeeper
 }
 
 // moved says a job changed the state of its video.
@@ -287,7 +295,7 @@ func (q *queue) stampLocked(j *Job) {
 // newQueue builds the queue.
 func newQueue(s *store, emit func(JobUpdate), notify func(string)) *queue {
 	q := &queue{store: s, notify: quietly(notify), closed: map[string]int{},
-		lanes: newLanes(), calledOff: map[string]string{}}
+		lanes: newLanes(), calledOff: map[string]string{}, removals: map[string]func() bool{}, time: systemTime{}}
 	tell := quietly(emit)
 	q.emit = func(u JobUpdate) {
 		// The video's state is due before the job's news goes out, so
@@ -903,6 +911,7 @@ func (q *queue) settle(episode, kind, record string) {
 		if j.Episode == episode && j.Kind == kind && (record == "" || j.JobRecord.ID == record) &&
 			j.unfinished() && j.JobRecord.ID != "" {
 			j.State = JobSettled
+			j.Away = nil
 			q.stampLocked(j)
 			settled = append(settled, *j)
 		}
@@ -967,6 +976,7 @@ func (q *queue) settleRefused(id string) {
 	for _, j := range q.jobs {
 		if j.ID == id && j.State == JobFailed && j.JobRecord.ID == "" {
 			j.State = JobSettled
+			j.Away = nil
 			q.stampLocked(j)
 			settled = append(settled, *j)
 		}

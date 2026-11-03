@@ -56,7 +56,10 @@
   // nothing is being worked on. It stands still while the pointer or the
   // keyboard is on the control, so nobody is rushed, and runs on the
   // moment the pointer is seen anywhere else, and onresume tells
-  // the time left each time it runs on. The control gives it its colour,
+  // the time left each time it runs on. onhold says each time it stands
+  // still and runs on again, and that it runs on when it goes while it
+  // stands still, for time kept elsewhere, the Go side's for removed work.
+  // The control gives it its colour,
   // the same way it does for work, through --lit, --wash-from and
   // --wash-to. Given spent, it starts that many seconds in, for time that
   // ran on while it was not on screen.
@@ -87,6 +90,7 @@
     together = "",
     onend,
     onresume,
+    onhold,
   }: {
     fraction?: number;
     rim?: boolean;
@@ -99,6 +103,7 @@
     together?: string;
     onend?: () => void;
     onresume?: (left: number) => void;
+    onhold?: (held: boolean) => void;
   } = $props();
 
   // The time running out, kept here and nowhere else. The clock is the
@@ -146,6 +151,7 @@
         left = Math.max(0, left - (performance.now() - since));
         clearTimeout(timer);
         stand();
+        onhold?.(true);
       };
       const go = () => {
         if (!held) return;
@@ -154,6 +160,7 @@
         run();
         timer = window.setTimeout(over, left);
         onresume?.(left / 1000);
+        onhold?.(false);
       };
       // Held while the pointer or the keyboard is anywhere on the control.
       //
@@ -234,6 +241,7 @@
       if (pointer || focused || holding()) {
         held = true;
         stand();
+        onhold?.(true);
       } else {
         since = performance.now();
         run();
@@ -250,6 +258,7 @@
         clearTimeout(timer);
         cancelAnimationFrame(outside);
         fill?.cancel();
+        if (held) onhold?.(false);
         document.removeEventListener("pointerover", moved, true);
         document.removeEventListener("pointermove", moved, true);
         document.removeEventListener("pointerout", gone, true);
