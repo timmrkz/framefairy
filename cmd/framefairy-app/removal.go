@@ -122,9 +122,13 @@ func (s *FrameFairy) stateAfter(ctx context.Context, video string) (VideoState, 
 }
 
 // forgetRemoved forgets removed work whose time is up, its record and all.
+// Work refused as it was asked for has no record to take with it, so it
+// is settled instead, of any kind: a render refused while the app closed
+// once stayed failed and removed for good.
 func (s *FrameFairy) forgetRemoved(id string) {
 	theLog.line(zerolog.InfoLevel, "jobs").Str("job", id).Msg("the work removed is forgotten, its time is up")
 	s.CancelJob(id)
+	s.jobs.settleRefused(id)
 }
 
 // away changes how the removal of job id stands, and sets its timer by

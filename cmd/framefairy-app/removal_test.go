@@ -158,3 +158,24 @@ func TestALetGoThatOvertakesItsHoldLetsTheTimeRunOn(t *testing.T) {
 		}
 	})
 }
+
+// A render refused as it was asked for, which wrote no record, can be
+// removed like any other failed render, and is forgotten once its time
+// is up. With no record to take away it stayed failed and removed for
+// good, and its clip's Render button stayed a Removed row.
+func TestARefusedRenderRemovedIsForgotten(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s, eps := memoryLibrary(t, "refused.mp4")
+		s.jobs = newQueue(s.store, func(JobUpdate) {}, func(string) {})
+		id := s.jobs.refuse(eps[0], engine.JobRender, "Render", "the app is closing").ID
+		_, _ = s.RemoveWork(context.Background(), id)
+		if _, away := removalOf(s, id); away == nil {
+			t.Fatal("the refused render could not be removed")
+		}
+		time.Sleep(removalTime) //nolint:forbidigo // synctest bubble
+		synctest.Wait()
+		if state, away := removalOf(s, id); state != JobSettled || away != nil {
+			t.Errorf("once its time was up, the refused render is %s with %+v", state, away)
+		}
+	})
+}
