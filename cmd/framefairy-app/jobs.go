@@ -107,6 +107,10 @@ type Job struct {
 	// Aside is, for a search that stopped, that the video's window was
 	// moved off the window it was about, see markAside.
 	Aside bool `json:"aside,omitempty"`
+	// Ended is, for a search that is over or stopped, how it ended, see
+	// engine.SearchEnded, set as the video's state is read, so the
+	// interface picks the words and works nothing out.
+	Ended string `json:"ended,omitempty"`
 	// Seq grows with every change to any job, and is set under the queue's
 	// lock, so of two snapshots of a job the later one has the larger
 	// number. News is sent after the lock is let go, so two changes made

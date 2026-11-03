@@ -584,6 +584,10 @@ export interface Job {
   // A search that stopped whose window the video's window was moved off,
   // so it is set aside, see markAside in window.go.
   aside?: boolean;
+  // For a search that is over or stopped, how it ended, as the Go side
+  // says it, see engine.SearchEnded: "found", "nothing", "short",
+  // "hearing" or "finding".
+  ended?: "found" | "nothing" | "short" | "hearing" | "finding";
   // Grows with every change to any job. Of two snapshots of a job, the one
   // with the larger number is the later one.
   seq?: number;

@@ -645,7 +645,12 @@ function searchAt(s: FakeSearch, now = Date.now()) {
 function searchJob(s: FakeSearch) {
   const now = searchAt(s);
   const base = { id: s.id, episode: "/eps/ep.mp4", kind: "search", label: "Find clips", state: now.state, step: now.step, from: s.from, to: s.to, count: s.count, queued: "", lane: now.step === "hearing" ? "hearing" : "finding", error: s.error, result: now.state === "done" ? "/eps/ep.framefairy/logs/clips.json" : undefined };
-  if (now.state !== "running") return base;
+  if (now.state !== "running") {
+    // How it ended, as the Go side says it, see engine.SearchEnded.
+    const end = s.to > 0 ? s.to : fullLength;
+    const ended = now.state === "done" ? (now.found > 0 ? "found" : "nothing") : now.covered >= end - 0.5 ? "finding" : "hearing";
+    return { ...base, ended };
+  }
   if (now.step === "hearing") {
     // How far and how long, to the end of the window it hears for, the way
     // the engine reports it. A made-up time left here hid that the engine

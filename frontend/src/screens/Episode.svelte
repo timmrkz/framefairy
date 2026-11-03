@@ -855,8 +855,8 @@
     const how = byHand ? "Cancel stopped the search" : "The app was closed";
     // Stopped before it had heard its window, which is the first half of
     // every search of a window not heard yet: Continue hears the rest of
-    // it and then finds.
-    if (!covers(saved, start, end)) {
+    // it and then finds. The Go side says which, see engine.SearchEnded.
+    if (search.ended === "hearing") {
       return {
         ...span,
         what,
@@ -1072,10 +1072,11 @@
   const foundNothing = $derived.by(() => {
     if (busy || stopped) return null;
     const last = jobs.forEpisode(path).findLast((j) => j.kind === "search");
-    // A Continue counts what the search it carries on wrote: one called
-    // off once its clips were written had nothing left to write, and its
-    // row said Nothing new found, Tim's report of 25 October, 21.40.
-    if (last?.state !== "done" || (last.written ?? 0) + (last.carried ?? 0) > 0) return null;
+    // The Go side says how it ended, see engine.SearchEnded. A Continue
+    // counts what the search it carries on wrote: one called off once its
+    // clips were written had nothing left to write, and its row said
+    // Nothing new found, Tim's report of 25 October, 21.40.
+    if (last?.state !== "done" || (last.ended !== "nothing" && last.ended !== "short")) return null;
     const job = last.id;
     if (told[job] === 0) return null;
     const fades = {
@@ -1090,8 +1091,7 @@
     const start = last.from ?? 0;
     const end = last.to && last.to > 0 ? last.to : duration;
     const window = `Window ${clock(start)} to ${clock(end)}`;
-    // Shortest as the search was asked for it, not as it is now.
-    if (duration > 0 && duration < (last.min || min)) {
+    if (last.ended === "short") {
       return {
         job,
         what: "Nothing new found",
