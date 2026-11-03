@@ -226,6 +226,18 @@ export default [
     steps: [["render"], ["rendered"], ["by its words"], ["restart"], ["rendered"]],
   },
   {
+    // Issue #392: a render the app closed on came back after the restart
+    // as a job that said it was cut off, and nothing showed it. The clip
+    // looked as if it was never rendered or asked for, there was no
+    // Continue, and its record stayed in the work folder.
+    name: "a render cut off by the app closing says so at its Render button, and Continue carries it on",
+    steps: [["render cut off", "continue"]],
+  },
+  {
+    name: "a render cut off by the app closing can be removed, and is forgotten",
+    steps: [["render cut off", "remove"]],
+  },
+  {
     // Issue #384: Tim rendered a clip, uploaded the short and removed it
     // and its pictures from the folder. The clip lost its green dot and its
     // green mark, as if it had never been rendered.

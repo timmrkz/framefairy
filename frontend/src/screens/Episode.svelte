@@ -78,6 +78,7 @@
   import SearchField from "../components/SearchField.svelte";
   import ClipTimeline, { type ClipNumbers } from "../components/ClipTimeline.svelte";
   import Icon from "../components/Icon.svelte";
+  import RemovedRow from "../components/Removed.svelte";
   import Info from "../components/Info.svelte";
   import Confirm from "../components/Confirm.svelte";
   import Pick from "../components/Pick.svelte";
@@ -1136,6 +1137,36 @@
       renderingJob.plan === current.plan &&
       (!renderingJob.clips?.length || renderingJob.clips.includes(current.id)),
   );
+
+  // A render of the clip that ended before it was done: cut off by the app
+  // closing, or failed. It says so at the clip's Render button, after a
+  // restart too, with Continue, and it can be removed the way a clip made
+  // by hand that stopped can, issue #392. It showed nowhere, so the clip
+  // looked as if it was never asked for and its record stayed.
+  const renderLeft = $derived(
+    current
+      ? jobs.list.findLast(
+          (j) =>
+            j.episode === path &&
+            j.kind === "render" &&
+            !j.preview &&
+            unfinished(j) &&
+            j.plan === current.plan &&
+            (!j.clips?.length || j.clips.includes(current.id)),
+        )
+      : undefined,
+  );
+  const renderAway = $derived(renderLeft ? awayOf(renderLeft.id) : undefined);
+
+  // Continue on a render that ended before it was done carries it on from
+  // its record, see Continue in search.go.
+  async function carryOnRender(job: Job, clip: ClipEntry) {
+    try {
+      await jobs.startJob(path, "render", () => api.continueJob(job.id, ""), clip.key);
+    } catch (err) {
+      oops(errorText(err));
+    }
+  }
 
   // The window put back where the app places it, a double-click on its
   // marks. The Go side places it, as it places every window the app
@@ -3592,6 +3623,35 @@
                button it was started from, and becomes the way to stop it,
                the same as Search does for a search. -->
           {@const inHand = renderingCurrent || jobs.isStarting(path, "render", current.key)}
+          {#if !inHand && renderLeft && renderAway}
+            <span class="renderaway">
+              <RemovedRow
+                spent={renderAway.spent}
+                together={renderAway.together}
+                onputback={renderAway.onputback}
+                onhold={renderAway.onhold}
+              />
+            </span>
+          {:else if !inHand && renderLeft}
+            {@const left = renderLeft}
+            <button
+              class="drop quiet danger"
+              title="Remove this render, so it is not carried on"
+              aria-label="Remove the render that was cut off"
+              onclick={() => putAside(left.id)}><Icon name="trash" /></button
+            >
+            <button
+              class="primary render"
+              class:failed={left.state === "failed"}
+              onclick={() => carryOnRender(left, current)}
+              disabled={!!working}
+              title={working
+                ? "Carry the render on once the work running now is done"
+                : left.state === "failed"
+                  ? "The render failed. Continue renders the clip again"
+                  : "The render was cut off when the app closed. Continue carries it on"}>Continue</button
+            >
+          {:else}
           <button
             class="primary render"
             onclick={() => (inHand ? stopRender() : render(current))}
@@ -3609,6 +3669,7 @@
                 ? "Render again"
                 : "Render"}</button
           >
+          {/if}
         {/if}
       </div>
     </div>
@@ -4095,4 +4156,21 @@
   }
 
 
+
+  /* A render removed says so in the place of its buttons, the way a row
+     of the clip list does, as high as the controls beside it. */
+  .renderaway {
+    display: flex;
+  }
+
+  .renderaway :global(.gone) {
+    height: var(--control-h);
+    border-radius: var(--radius-s);
+  }
+
+  /* A render that failed says so in the red of an error, the way the row
+     of a search that failed does. */
+  .render.failed {
+    color: var(--err);
+  }
 </style>
