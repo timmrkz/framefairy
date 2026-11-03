@@ -471,3 +471,36 @@ render, in the same words, and a download goes on saying why in its card
 alone. A search refused as it is asked for, while the app closes or the
 video is being removed, now says why in a toast too, where it said only
 Failed in its row before.
+
+Steps 6 and 7 came as one pull request, #689, as Tim asked, and differ
+from the plan in three places.
+
+Stopped work forgotten by Go needed a clock a walk can run on. The time
+a removed row has is kept by the job, `JobAway` in
+`cmd/framefairy-app/removal.go`, on the queue's clock, and a hand on the
+row holds it there, `HoldRemoval`. The walks ran the page's ten seconds
+on by hand and the Go side's ran on the real clock, so the bridge hands
+the queue a clock of its own, `walkTime` in `walktime_test.go`, which
+follows the system's and which `runClock` runs on with the page's,
+through `/clock?run=`. A timer only forgets the removal it was set for,
+so a job settled or carried on meanwhile keeps its record.
+
+The transcription said stopping is one field for all work, not one for
+the transcription. A job told to stop says `Stopping` from that moment
+until it ends, set wherever the queue calls work off, `callOff`, so a
+Stop, a Cancel, a search stopping the transcription and the app closing
+all say it the same way. The press is the interface's until then, in
+`startJob` and `stopJob` of the job store, which tell two presses of one
+kind of work apart by what they are of, I or O, or the clip a render is
+of. A transcription stopped by a search says so once the video's state
+holds it, at most a send of the state after the press, and the walk
+that checks the menu waits for that state.
+
+The walks that waited on the Go side and then looked at the page assumed
+the page heard a job's news as the Go side sent it, because the job
+event went out at once. A video's jobs come in its state now, a moment
+later, so those walks catch up with the Go side's news first,
+`caughtUp`, before they look. And #392 came with it: a render cut off
+by the app closing, or failed, says so at its clip's Render button with
+Continue and a bin, removed the way stopped work is, which needed
+nothing new but the button.

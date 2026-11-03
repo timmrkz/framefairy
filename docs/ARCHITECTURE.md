@@ -102,7 +102,8 @@ waiting for the day the two disagree.
 | what was learned about the machine while a program runs: the decoder that works, the encoders and subtitle filter of each ffmpeg, the face detector, the tools already checked | `engine.Machine`, one for each program, in memory | the engine |
 | what runs now, and the lane each job holds or waits for | the job queue, in memory | the app's Go side |
 | the step a job is in, and what it was asked for | its `engine.JobRecord`, on disk and in the job the queue holds, which keeps each record the engine tells it through the job's `engine.Host` | the engine |
-| what is on screen | the interface's stores, and a video's status, clips, coverage, clip chosen and window in its `EpisodeSession`, `frontend/src/lib/session.svelte.ts`, which keeps the newest `VideoState`, and a hand's pick or move of the window until Go answers it | from what Go sends. Today `Episode.svelte` also works out from what changed that a search started, see Not to copy |
+| how a job stands beyond its step: that it is stopping, how a search ended, how long removed work has left | the job the queue holds, `Stopping`, `Ended` and `Away` in `cmd/framefairy-app/jobs.go`, and the timer of each removal in the queue, see `removal.go` | the app's Go side |
+| what is on screen | the interface's stores, and a video's status, clips, coverage, jobs, clip chosen and window in its `EpisodeSession`, `frontend/src/lib/session.svelte.ts`, which keeps the newest `VideoState`, and a hand's pick or move of the window until Go answers it | from what Go sends, and nothing else. What a hand pressed is kept by the job store until Go answers, see `startJob` |
 
 ## The programs that run
 
@@ -126,7 +127,9 @@ What to do today, and what changes once the issue named is built.
 | I need to | It goes |
 | --- | --- |
 | decide where an edge, a word or a window lands | the engine: `engine/shape.go` for a gesture, `engine.Project` for a window. The interface asks and draws the answer |
-| do something in the workspace when a video's work moves on | today a move of `EpisodeSession` in `frontend/src/lib/session.svelte.ts`, never an effect that keeps the value from before. Once #606 is built, nothing in the interface: Go decides what follows and sends it, the way it already chooses the clip and fits the window, in `cmd/framefairy-app/choose.go` and `window.go`, and sends both in the video's state, and tells a failure once, see [2026-11-01-every-rule-of-the-workspace-in-go.md](decisions/2026-11-01-every-rule-of-the-workspace-in-go.md) |
+| do something in the workspace when a video's work moves on | nothing in the interface: Go decides what follows and sends it in the video's state, the clip it chose and the window it fitted, in `cmd/framefairy-app/choose.go` and `window.go`, how a search ended, that work is stopping and how long removed work has left, and tells a failure once. The interface draws the newest state, and never waits for work to end to read the video again or keeps a value from before to compare, see [2026-11-01-every-rule-of-the-workspace-in-go.md](decisions/2026-11-01-every-rule-of-the-workspace-in-go.md) |
+| show a press of a video's work before Go has answered it | `startJob` or `stopJob` of the job store, `frontend/src/lib/state.svelte.ts`, which keeps the press until Go answers with the job or says the work is stopping. Never a flag of the control's own |
+| give a person time to take something back that Go then does | the job keeps the time, `JobAway` in `cmd/framefairy-app/removal.go`, on the queue's clock, which the bridge hands the walks, and the interface draws it and says only that a hand holds it |
 | show the interface a new fact about a video | a field of `VideoState` in `cmd/framefairy-app/videostate.go`, or of what it holds, the status and the clip views, which the session keeps. Never a new event of its own or a poll |
 | tell the window that something about a video changed | `told` on `*FrameFairy`, or the queue's `moved` for a job, which send the video's state, at most four times a second and always after the last change, one at a time, with at most one more waiting however slow a read is. Nothing else sends it |
 | keep something between two jobs, a cache or a fact about the machine | a field on `engine.Machine`, in `engine/machine.go`, which a program makes once and hands to every `Engine`. Never a package variable, and never a new `Engine` made only to get it. #607 moves the package variables still left onto it |
@@ -164,8 +167,11 @@ which reads this file.
    [WORDS.md](WORDS.md). Held by the review.
 4. One drawing of the captions, by libass, from `CaptionTrack`, see
    [CAPTIONS.md](CAPTIONS.md). Held by the review.
-5. Go owns a video's state, and the interface shows it. Held by the
-   review, and by its design once #606 is built.
+5. Go owns a video's state, and the interface shows it. Held by its
+   design: a video's jobs and everything they change reach the window
+   only in its `VideoState`, the session keeps the newest, and the
+   interface keeps nothing of a video's work but a press Go has not
+   answered yet. And by the review.
 6. A job that goes wrong fails itself, not the app. Held by a recover
    at each place work comes into the Go side: around every job, every
    request of the window in `mediaMiddleware`, every callback of Wails
@@ -227,17 +233,6 @@ copies what it finds nearby, so these are not the pattern for new code.
   own that keep a machine or a finder of their own, `sources` in
   `cmd/framefairy-app/media.go` and `openPreviews` in
   `cmd/framefairy-app/frames.go`, #607.
-- The effects in `frontend/src/screens/Episode.svelte` that compare an
-  old value with a new one to notice that a search started,
-  `searchSeen`, the reads of the video's state it asks for after work
-  moves on, the poll of the job list and its own timer, #606. Work that
-  moves on is said by `EpisodeSession`, see the decision
-  record
-  [2026-10-30-a-videos-state-in-one-session.md](decisions/2026-10-30-a-videos-state-in-one-session.md).
-- What the interface decides about a video's work and its workspace:
-  the moves of `EpisodeSession` and how a search ended, #606. Go decides each of
-  them and sends it, see
-  [2026-11-01-every-rule-of-the-workspace-in-go.md](decisions/2026-11-01-every-rule-of-the-workspace-in-go.md).
 
 ## Changing the architecture
 

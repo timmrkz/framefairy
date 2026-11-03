@@ -987,15 +987,11 @@
   const cardsOnTheWay = new OnTheWay();
   const seqOf = (job: string) => jobs.list.find((j) => j.id === job)?.seq ?? 0;
   const onTheWay = $derived(cardsOnTheWay.cards(arrivingNow, seqOf, session.rev));
-  // The search the list last counted rows for, and how many of its clips
-  // the newest state of the video holds: what it had written when the
-  // state was read, because the plan is written before the job says so.
-  let searchSeen = $state("");
-  $effect(() => {
-    const id = working?.id;
-    if (!id || id === untrack(() => searchSeen)) return;
-    searchSeen = id;
-  });
+  // The newest search of the video, which the list counts rows for, and
+  // how many of its clips the newest state of the video kept holds: what
+  // it had written when the state was read. The search is read from the
+  // jobs as they are, never kept from a value seen before, issue #606.
+  const searchSeen = $derived(jobs.list.findLast((j) => j.episode === path && j.kind === "search")?.id ?? "");
   const readWritten = $derived(session.wrote(searchSeen));
 
   // How many clips the search has written and has on the way. It says so
