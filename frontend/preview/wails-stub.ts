@@ -919,8 +919,9 @@ export const Call = {
 // moment it is forgotten, 0 while a hand holds its row, how many seconds
 // are left then, and how many it had. Its time is kept here, not by the
 // interface, and once it is up the work is forgotten.
-type Removal = { until: number; left: number; whole: number };
-const removals = (): Record<string, Removal> => ((window as any).__removals ??= {});
+type Removal = { until: number; left: number; whole: number; press?: number };
+// Not __removals, which counts the videos removed, see RemoveEpisode.
+const removals = (): Record<string, Removal> => ((window as any).__removedWork ??= {});
 function forgetDue(now = Date.now()) {
   for (const [id, r] of Object.entries(removals())) {
     if (!r.until || r.until > now) continue;
@@ -1999,8 +2000,13 @@ const Answers = {
       case "HoldRemoval": {
         const id = String(args[0]);
         const was = removals()[id];
-        if (was && args[1] && was.until) removals()[id] = { until: 0, left: Math.max(0, (was.until - Date.now()) / 1000), whole: was.whole };
-        if (was && !args[1] && !was.until) removals()[id] = { until: Date.now() + was.left * 1000, left: 0, whole: was.whole };
+        // A hold or let go older than the last one taken is left out,
+        // as Go does, see HoldRemoval in removal.go.
+        const press = Number(args[2] ?? 0);
+        if (was && press <= (was.press ?? 0)) return Promise.resolve(null);
+        if (was) was.press = press;
+        if (was && args[1] && was.until) removals()[id] = { until: 0, left: Math.max(0, (was.until - Date.now()) / 1000), whole: was.whole, press };
+        if (was && !args[1] && !was.until) removals()[id] = { until: Date.now() + was.left * 1000, left: 0, whole: was.whole, press };
         return Promise.resolve(null);
       }
       case "PutWorkBack": {

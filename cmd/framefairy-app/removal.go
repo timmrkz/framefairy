@@ -53,6 +53,9 @@ type JobAway struct {
 	Left float64 `json:"left"`
 	// Whole is how many seconds it had in all.
 	Whole float64 `json:"whole"`
+	// press is the number of the last hold or let go taken, see
+	// HoldRemoval.
+	press int
 }
 
 // RemoveWork removes work that stopped: it is forgotten once its time is
@@ -70,20 +73,30 @@ func (s *FrameFairy) RemoveWork(ctx context.Context, id string) (VideoState, err
 }
 
 // HoldRemoval holds the time of removed work while a hand is on its row,
-// and lets it run on when held is false.
-func (s *FrameFairy) HoldRemoval(id string, held bool) {
+// and lets it run on when held is false. The window numbers each hold and
+// let go it sends, press, one more each time, and one older than the last
+// taken is left out: two calls can arrive the other way round, and a let
+// go taken before its hold would leave the time held for good.
+func (s *FrameFairy) HoldRemoval(id string, held bool, press int) {
 	s.jobs.away(id, func(j *Job, now time.Time) bool {
 		// A new JobAway each time, never one changed in place: the
 		// snapshots sent before hold the one they were sent with.
 		was := j.Away
-		if was == nil || held == (was.Until == 0) {
+		if was == nil || press <= was.press {
+			return false
+		}
+		if held == (was.Until == 0) {
+			// Nothing to change but the number, kept in place: a new
+			// JobAway would be one its timer was not set for, and no
+			// snapshot reads the number.
+			was.press = press
 			return false
 		}
 		if held {
-			j.Away = &JobAway{Left: max(0, time.UnixMilli(was.Until).Sub(now).Seconds()), Whole: was.Whole}
+			j.Away = &JobAway{Left: max(0, time.UnixMilli(was.Until).Sub(now).Seconds()), Whole: was.Whole, press: press}
 			return true
 		}
-		j.Away = &JobAway{Until: now.Add(time.Duration(was.Left * float64(time.Second))).UnixMilli(), Whole: was.Whole}
+		j.Away = &JobAway{Until: now.Add(time.Duration(was.Left * float64(time.Second))).UnixMilli(), Whole: was.Whole, press: press}
 		return true
 	}, s.forgetRemoved)
 }

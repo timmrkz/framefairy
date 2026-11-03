@@ -956,6 +956,10 @@
     void removal(job, "away", () => api.removeWork(job));
   }
 
+  // The number of each hold and let go of removed work sent to Go, one
+  // more each time, so Go leaves out one that arrives after a later one,
+  // see HoldRemoval in removal.go.
+  let holdPress = 0;
   function awayOf(job: string): Away | undefined {
     const press = pressedAway[job];
     const away = jobs.list.find((j) => j.id === job)?.away;
@@ -972,7 +976,7 @@
         void removal(job, "back", () => api.putWorkBack(job));
       },
       onhold: (held) => {
-        api.holdRemoval(job, held).catch((err) => {
+        api.holdRemoval(job, held, ++holdPress).catch((err) => {
           said(`clip list: the time of the work of ${job} removed could not be ${held ? "held" : "let go"}: ${errorText(err)}`, { level: "warn", video: path });
         });
       },

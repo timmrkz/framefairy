@@ -1047,7 +1047,7 @@ export const api = {
   // and put it back. The Go side keeps the time and forgets the work once
   // it is up. Removing and putting back answer with the video's state.
   removeWork: (id: string) => call<VideoState>("RemoveWork", id),
-  holdRemoval: (id: string, held: boolean) => call<void>("HoldRemoval", id, held),
+  holdRemoval: (id: string, held: boolean, press: number) => call<void>("HoldRemoval", id, held, press),
   putWorkBack: (id: string) => call<VideoState>("PutWorkBack", id),
   reveal: (path: string) => call<void>("Reveal", path),
   // No words take the label away, and the answer is then null.

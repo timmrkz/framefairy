@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -60,7 +61,7 @@ func TestRemovedWorkIsForgottenWhenItsTimeIsUp(t *testing.T) {
 		// one is, whose record it is by then.
 		s.jobs.settle(eps[3], engine.JobSearch, "")
 		time.Sleep(removalTime / 2) //nolint:forbidigo // synctest bubble
-		s.HoldRemoval(held, true)
+		s.HoldRemoval(held, true, 1)
 		if _, away := removalOf(s, held); away == nil || away.Until != 0 || away.Left != (removalTime/2).Seconds() {
 			t.Errorf("held halfway, the removal is %+v", away)
 		}
@@ -78,7 +79,7 @@ func TestRemovedWorkIsForgottenWhenItsTimeIsUp(t *testing.T) {
 		if state, away := removalOf(s, back); state != JobStopped || away != nil {
 			t.Errorf("put back, the search is %s with %+v", state, away)
 		}
-		s.HoldRemoval(held, false)
+		s.HoldRemoval(held, false, 2)
 		time.Sleep(removalTime/2 - time.Millisecond) //nolint:forbidigo // synctest bubble
 		synctest.Wait()
 		if state, _ := removalOf(s, held); state != JobStopped {
@@ -106,11 +107,12 @@ func TestRemovalsAtOnce(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		s, _, ids := stoppedSearches(t, "a.mp4", "b.mp4", "c.mp4")
 		var all sync.WaitGroup
+		var press atomic.Int64
 		for range 4 {
 			for _, id := range ids {
 				all.Go(func() { _, _ = s.RemoveWork(context.Background(), id) })
-				all.Go(func() { s.HoldRemoval(id, true) })
-				all.Go(func() { s.HoldRemoval(id, false) })
+				all.Go(func() { s.HoldRemoval(id, true, int(press.Add(1))) })
+				all.Go(func() { s.HoldRemoval(id, false, int(press.Add(1))) })
 				all.Go(func() { _, _ = s.PutWorkBack(context.Background(), id) })
 				all.Go(func() { s.jobs.list() })
 			}
@@ -131,6 +133,28 @@ func TestRemovalsAtOnce(t *testing.T) {
 		defer s.jobs.mu.Unlock()
 		if len(s.jobs.removals) != 0 {
 			t.Errorf("%d timers were left behind", len(s.jobs.removals))
+		}
+	})
+}
+
+// A let go that arrives before the hold it follows, as two calls can, is
+// taken as the later of the two: the hold, older, is left out, and the
+// time runs on. Taken in the order they came, the time stood held for
+// good and the row said Removed until a hand passed over it again.
+func TestALetGoThatOvertakesItsHoldLetsTheTimeRunOn(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s, _, ids := stoppedSearches(t, "overtaken.mp4")
+		id := ids[0]
+		_, _ = s.RemoveWork(context.Background(), id)
+		s.HoldRemoval(id, false, 2)
+		s.HoldRemoval(id, true, 1)
+		if _, away := removalOf(s, id); away == nil || away.Until == 0 {
+			t.Fatalf("the hold that came last but was older held the removal: %+v", away)
+		}
+		time.Sleep(removalTime) //nolint:forbidigo // synctest bubble
+		synctest.Wait()
+		if state, _ := removalOf(s, id); state != JobSettled {
+			t.Errorf("once its time was up, the search is %s", state)
 		}
 	})
 }
