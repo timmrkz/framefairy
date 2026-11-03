@@ -91,51 +91,59 @@ func (s *FrameFairy) windowFor(ctx context.Context, path string, st VideoState, 
 	}
 	p := s.project(path)
 	r := s.roomAndLines(p)
-	limits := func(w KeptWindow) engine.WindowLimits {
-		return p.Limits(r, duration, w.To-w.From, s.store.Settings().targetFor(w.To-w.From))
+	limitsWith := func(set Settings, w KeptWindow) engine.WindowLimits {
+		return p.Limits(r, duration, w.To-w.From, set.targetFor(w.To-w.From))
 	}
+	limits := func(w KeptWindow) engine.WindowLimits { return limitsWith(s.store.Settings(), w) }
 	view := func(w KeptWindow, l engine.WindowLimits) *WindowView {
 		return &WindowView{KeptWindow: w, WindowLimits: l, Shortest: p.Base.Min, Longest: p.Base.Max}
 	}
-	l := limits(w)
 	if searchHolds(st.Jobs) {
-		return view(w, l)
+		return view(w, limits(w))
 	}
-	from, to := engine.FitWindow(w.From, w.To, l.Most, l.Least, duration)
-	fitted := KeptWindow{From: from, To: to, Length: math.Max(w.Length, to-from)}
-	if sameWindow(fitted, w) {
-		return view(w, l)
-	}
-	// Only the window it was fitted from is changed. One written
-	// meanwhile, by a hand or by another read that fitted it first, is
-	// the window kept, so that is the one the state carries, never the
-	// one read before it.
-	kept, now := false, w
-	if _, err := s.chosenIn(path).change(s.store.files, path, func(c *chosen) bool {
+	// The window fitted is the one kept as the fit is written, under its
+	// lock. One written meanwhile, by a hand or by another read, is fitted
+	// itself, never sent as it came: fitting the window read before it
+	// and finding it gone sent a hand's window of 45 minutes with a most
+	// of 7 in CI.
+	// The settings are taken before the window's lock, which the fit
+	// holds while it reads them.
+	set := s.store.Settings()
+	var was, fitted KeptWindow
+	var l engine.WindowLimits
+	found := false
+	kept, err := s.chosenIn(path).change(s.store.files, path, func(c *chosen) bool {
 		if c.Window == nil {
 			return false
 		}
-		if !sameWindow(*c.Window, w) {
-			now = *c.Window
+		found, was = true, *c.Window
+		l = limitsWith(set, was)
+		from, to := engine.FitWindow(was.From, was.To, l.Most, l.Least, duration)
+		fitted = KeptWindow{From: from, To: to, Length: math.Max(was.Length, to-from)}
+		if sameWindow(fitted, was) {
 			return false
 		}
-		c.Window, kept = &fitted, true
+		c.Window = &fitted
 		return true
-	}); err != nil {
+	})
+	if err != nil {
 		theLog.line(zerolog.WarnLevel, "window").Str("video", filepath.Base(path)).Err(err).
 			Msg("the window fitted to what a search can read could not be kept")
 	}
+	if !found {
+		return view(w, limits(w))
+	}
 	if !kept {
-		now.To = math.Min(now.To, duration)
-		return view(now, limits(now))
+		was.To = math.Min(was.To, duration)
+		return view(was, limits(was))
 	}
 	// A target typed for the window is the target of the window fitted,
 	// most often to the clips it asked for, when it was typed on this
 	// video. A window of another video as long only asks for it.
 	if l.Typed > 0 {
 		if err := s.store.UpdateSettings(func(set *Settings) {
-			if set.targetFor(w.To-w.From) > 0 && set.TargetVideo == path {
-				set.TargetWindow = to - from
+			if set.targetFor(was.To-was.From) > 0 && set.TargetVideo == path {
+				set.TargetWindow = fitted.To - fitted.From
 			}
 		}); err != nil {
 			theLog.line(zerolog.WarnLevel, "window").Str("video", filepath.Base(path)).Err(err).
@@ -143,7 +151,7 @@ func (s *FrameFairy) windowFor(ctx context.Context, path string, st VideoState, 
 		}
 	}
 	theLog.line(zerolog.InfoLevel, "window").Str("video", filepath.Base(path)).
-		Float64("from", from).Float64("to", to).Float64("most", l.Most).Float64("least", l.Least).
+		Float64("from", fitted.From).Float64("to", fitted.To).Float64("most", l.Most).Float64("least", l.Least).
 		Msg("the window was fitted to what a search can read")
 	return view(fitted, limits(fitted))
 }
