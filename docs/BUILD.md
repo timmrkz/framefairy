@@ -385,14 +385,16 @@ Mac runs three cores where Linux runs four, and a test that is slow only
 there shows in its log without anybody running it again. Above the
 tests, a line names the machine and how long a fixed piece of ffmpeg
 work took, and under them a second line says it again and gives each
-package's time in pieces of that work, its fixed works. Those are what
-to compare between two runs on the Mac, never the seconds. GitHub's
-Macs differ: of 203 runs of `macos` from 29 October to 3 November, 179
-had an Apple M1 with 3 cores, where the fixed work took from 1.01 s to
-2.30 s, and 24 an M2 Pro with 5 cores, where the `engine` package took
-65.29 s on average against 101.84 s. Its seconds varied by 20 % from
-run to run and its fixed works by 11 %, so a smaller difference between
-two runs says nothing, #592.
+package's time in pieces of that work, its fixed works. GitHub's Macs
+differ: of 203 runs of `macos` from 29 October to 3 November, 179 had an
+Apple M1 with 3 cores, where the fixed work took from 1.01 s to 2.30 s,
+and 24 an M2 Pro with 5 cores, where the `engine` package took a third
+less time. So compare runs on the same chip, which the line names, and
+in fixed works rather than seconds: on the M1 the `engine` package's
+seconds varied by 17 % from run to run and its fixed works by 11 %. One
+run against one run still differs by about 16 %, so a claim that tests
+got slower or faster needs several runs of each side, with their spread,
+#592.
 
 The Go tests in `linux` and `macos` stop after 15 minutes. go test ends a
 package that runs over ten minutes by itself, and the tests take about

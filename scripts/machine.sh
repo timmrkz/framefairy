@@ -1,10 +1,11 @@
 #!/bin/sh
 # Says in one line what machine the tests run on and how fast it is today,
 # so a slow run of the Go tests can be told from a slow machine, #592.
-# GitHub runs the same job on machines whose tests differ by a fifth on
-# average, and by more from run to run, and the log said nothing of which
-# machine it was. make unit prints it before the tests when SLOWEST asks
-# for the tests' times, which CI does, and once more after them.
+# GitHub gives the macos job an M1 with 3 cores or an M2 Pro with 5, and
+# the M1 is not equally fast from one run to the next, so the same tests
+# take from about 60 s to 150 s. make unit prints the line before the
+# tests when SLOWEST asks for the tests' times, which CI does, and once
+# more after them.
 #
 #   sh scripts/machine.sh          the machine, then how fast it is
 #   sh scripts/machine.sh after    how fast it is, after the tests
@@ -12,6 +13,8 @@
 #                                  and each package's time in fixed works,
 #                                  from the line the machine printed before
 #                                  and the go test -json events of the tests
+#   sh scripts/machine.sh packages WORK JSON
+#                                  only the packages, for a work of WORK s
 #
 # The chip, the cores, the memory, the ffmpeg that does the work, and how
 # long one fixed piece of ffmpeg work took: a test picture of twenty
@@ -19,12 +22,42 @@
 # CI's Mac. Two of them a run show how much the measure itself varies.
 # Nothing in it fails: a fact it cannot read is left out.
 #
-# A package's time over the mean of the two pieces of fixed work is what
-# compares from one Mac to the next. Over 169 runs of the macos job, the
-# engine's time in seconds varied by 20 % and in fixed works by 11 %, and
-# the faster kind of GitHub's Macs gave the same fixed works as the
-# slower, #592.
+# A package's time over the mean of the two pieces of fixed work, its
+# fixed works, compares runs on the same chip, which the line names.
+# Over 149 runs on the M1, the engine's seconds varied by 17 % and its
+# fixed works by 11 %. It does not make the two chips alike: the M2 Pro's
+# two cores more still show, about 60 fixed works against 68, #592.
 set -u
+
+# Every package that took over a second, slowest first, from the event
+# go test -json writes as a package ends, the one that names no test.
+# A package that failed says so, since a hang ends at the timeout and its
+# time says nothing about how fast it was.
+packages() {
+	awk '/"Action":"(pass|fail)"/ && !/"Test":/ && match($0, /"Package":"[^"]*"/) {
+		pkg = substr($0, RSTART + 11, RLENGTH - 12)
+		if (/"Action":"fail"/) pkg = pkg " (failed)"
+		if (match($0, /"Elapsed":[0-9.]+/) && substr($0, RSTART + 10, RLENGTH - 10) + 0 > 1)
+			print substr($0, RSTART + 10, RLENGTH - 10) "\t" pkg
+	}' "$2" | sort -t "$(printf '\t')" -k1,1nr | awk -F '\t' -v work="$1" '
+		{ name[NR] = $2; secs[NR] = $1; if (length($2) > w) w = length($2) }
+		END {
+			if (!NR) exit
+			print "Each package that took over a second, in seconds and in pieces of the fixed work, " work " s, which compare runs on the same chip:"
+			if (w < 7) w = 7
+			bar = ""; for (i = 0; i < w; i++) bar = bar "-"
+			row = "| %-" w "s | %8s | %12s |\n"
+			printf row, "package", "time, s", "fixed works"
+			printf "| %s | -------: | -----------: |\n", bar
+			row = "| %-" w "s | %8.2f | %12.1f |\n"
+			for (i = 1; i <= NR; i++) printf row, name[i], secs[i], secs[i] / work
+		}'
+}
+
+if [ "${1:-}" = packages ]; then
+	[ -n "${2:-}" ] && [ -r "${3:-}" ] && packages "$2" "$3"
+	exit 0
+fi
 
 if [ "${1:-}" = after ]; then
 	line="machine after the tests:"
@@ -63,25 +96,6 @@ fi
 
 echo "${line%,}"
 
-# Every package that took over a second, slowest first, from the event
-# go test -json writes as a package ends, the one that names no test.
 if [ -n "${before:-}" ] && [ -n "$bench" ] && [ -r "${json:-}" ]; then
-	work=$(awk -v a="$before" -v b="$1" 'BEGIN { printf "%.3f", (a + b) / 2 }')
-	awk '/"Action":"(pass|fail)"/ && !/"Test":/ && match($0, /"Package":"[^"]*"/) {
-		pkg = substr($0, RSTART + 11, RLENGTH - 12)
-		if (match($0, /"Elapsed":[0-9.]+/) && substr($0, RSTART + 10, RLENGTH - 10) + 0 > 1)
-			print pkg, substr($0, RSTART + 10, RLENGTH - 10)
-	}' "$json" | sort -k2,2nr | awk -v work="$work" '
-		{ name[NR] = $1; secs[NR] = $2; if (length($1) > w) w = length($1) }
-		END {
-			if (!NR) exit
-			print "Each package that took over a second, in seconds and in pieces of the fixed work, " work " s, which compare from one machine to the next:"
-			if (w < 7) w = 7
-			bar = ""; for (i = 0; i < w; i++) bar = bar "-"
-			row = "| %-" w "s | %8s | %12s |\n"
-			printf row, "package", "time, s", "fixed works"
-			printf "| %s | -------: | -----------: |\n", bar
-			row = "| %-" w "s | %8.2f | %12.1f |\n"
-			for (i = 1; i <= NR; i++) printf row, name[i], secs[i], secs[i] / work
-		}'
+	packages "$(awk -v a="$before" -v b="$1" 'BEGIN { printf "%.3f", (a + b) / 2 }')" "$json"
 fi

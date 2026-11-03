@@ -481,8 +481,8 @@ changed:
 # test's time in UNITJSON besides, for a closer look on this machine.
 # Before the tests it says in one line what machine they run on and how
 # fast it is, scripts/machine.sh, and after them how fast it is again and
-# each package's time in pieces of that fixed work, which compares from
-# one of GitHub's Macs to the next where seconds do not, #592.
+# each package's time in pieces of that fixed work, which compares runs
+# on the same chip better than seconds do, #592.
 ifeq ($(UNAME),Darwin)
 RACE ?=
 UNITSKIP ?= framefairy/licence/dispenser framefairy/licence/paddle framefairy/cmd/framefairy-dispenser framefairy/internal/workflows framefairy/internal/naming
@@ -684,6 +684,7 @@ lint: toolchain modules golangci-lint frontend/node_modules/.package-lock.json
 	@sh scripts/main-moved-test.sh
 	@sh scripts/plan-frozen-test.sh
 	@sh scripts/test-failures-test.sh
+	@sh scripts/machine-test.sh
 	@sh scripts/plan-frozen.sh
 
 # The release golangci-lint builds and checks against its own checksums,

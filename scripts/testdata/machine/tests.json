@@ -1,0 +1,9 @@
+{"Time":"2026-11-03T10:00:00Z","Action":"start","Package":"framefairy/asr"}
+{"Time":"2026-11-03T10:00:00Z","Action":"output","Package":"framefairy/asr","Output":"ok  \tframefairy/asr\t(cached)\n"}
+{"Time":"2026-11-03T10:00:00Z","Action":"pass","Package":"framefairy/asr","Elapsed":0}
+{"Time":"2026-11-03T10:00:01Z","Action":"pass","Package":"framefairy/engine","Test":"TestProjectSteps","Elapsed":8.35}
+{"Time":"2026-11-03T10:01:40Z","Action":"pass","Package":"framefairy/engine","Elapsed":101.21}
+{"Time":"2026-11-03T10:00:02Z","Action":"fail","Package":"framefairy/cmd/framefairy-app","Test":"TestSilenceChangesNothing","Elapsed":211.5}
+{"Time":"2026-11-03T10:04:00Z","Action":"fail","Package":"framefairy/cmd/framefairy-app","Elapsed":240.08}
+{"Time":"2026-11-03T10:00:03Z","Action":"pass","Package":"framefairy/notices","Elapsed":0.03}
+{"Time":"2026-11-03T10:00:04Z","Action":"pass","Package":"framefairy/notices/gen","Elapsed":1.42}
