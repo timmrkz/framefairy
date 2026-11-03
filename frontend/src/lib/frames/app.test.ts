@@ -93,6 +93,21 @@ describe("AppFrames", () => {
     app.close();
   });
 
+  // Issue #596: soon after a video opens its cards are still being read,
+  // and a card's seek stood between a drag and the frame under the hand.
+  test("wait while the hand holds the playhead, and are read once it lets go", () => {
+    vi.stubGlobal("fetch", () => new Promise(() => {}));
+    const { app } = frames(() => ({ width: 4, height: 2 }));
+    app.paused = () => true;
+    app.grip(true);
+    app.cards([150]);
+    app.aheadNow();
+    expect(app.stats.ahead).toBe(0);
+    app.grip(false);
+    expect(app.stats.ahead).toBe(1);
+    app.close();
+  });
+
   // Found by the review of #385: the budget was counted where the cards
   // were given, at the size of that moment, and nowhere when it changed.
   test("keep as many as their budget holds at the size frames are read at", () => {
@@ -117,19 +132,19 @@ describe("AppFrames", () => {
 
 // Frames of a 200 frame track on a Go side that never answers, so a frame
 // not kept is never handed over.
-function frames(size: () => { width: number; height: number }) {
+function frames(size: () => { width: number; height: number }, rate = 25) {
   const n = 200;
   const order = Uint32Array.from({ length: n }, (_, i) => i);
   const samples = {
     count: n,
-    timescale: 25,
+    timescale: rate,
     pts: Float64Array.from(order),
     duration: new Float64Array(n).fill(1),
     key: new Uint8Array(n).fill(1),
     order,
     rank: order,
   };
-  const track: VideoTrack = { kind: "video", width: 4, height: 2, samples, frame: 1 / 25 };
+  const track: VideoTrack = { kind: "video", width: 4, height: 2, samples, frame: 1 / rate };
   const app = new AppFrames("/v.mp4", track, size, () => {});
   const picture = (rank: number, w: number, h: number) => new Picture(new Uint8Array(w * h * 4), w, h, rank * 40000);
   return { app, picture };
@@ -138,11 +153,11 @@ function frames(size: () => { width: number; height: number }) {
 // A stream on a Go side the test answers by hand: each pull waits until
 // the test hands it the ranks it brings, each frame's first byte its rank,
 // and the times the Go side tells with a stream's first frame.
-function goSide() {
+function goSide(rate = 25) {
   vi.stubGlobal("fetch", (url: string) =>
     Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ id: `s${url.length}` }), text: () => Promise.resolve("") }),
   );
-  const { app } = frames(() => ({ width: 4, height: 2 }));
+  const { app } = frames(() => ({ width: 4, height: 2 }), rate);
   app.paused = () => false;
   const asked: { url: string; give: (ranks: number[], times?: string) => void; shut: () => void }[] = [];
   const came: (() => void)[] = [];
@@ -160,7 +175,7 @@ function goSide() {
               times,
               light: "",
               spare: [],
-              frames: ranks.map((r) => ({ at: r / 25, frame: new Picture(new Uint8Array(4 * 2 * 4).fill(r), 4, 2, r * 40000) })),
+              frames: ranks.map((r) => ({ at: r / rate, frame: new Picture(new Uint8Array(4 * 2 * 4).fill(r), 4, 2, (r * 1e6) / rate) })),
             }),
           // Closed on the Go side, to make room for newer streams.
           shut: () => done({ status: 200, end: false, error: "", closed: true, times: "", light: "", spare: [], frames: [] }),
@@ -297,6 +312,126 @@ describe("a place dragged to, opened with its key frame first", () => {
     expect(app.stats.wentOnRanks).toEqual([150]);
     expect(app.stats.opens.at(-1)?.on).toBe(true);
     expect(passed).toEqual([]);
+    app.close();
+  });
+});
+
+describe("a slow drag to the left", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  // Issue #596: a slow drag of the playhead to the left stood for each
+  // step, up to seconds, where one to the right kept up. A stream only
+  // reads on, so every step back was a stream of its own, a seek with its
+  // key frame first, which the frame on screen was nearer than.
+  test("brings the frames before the place it steps back to, so the next steps find them kept", async () => {
+    const { app, asked, pulls, rankOf } = goSide();
+    app.grip(true);
+    // Where the press landed.
+    const pressed = rankOf(app.frame(100, 0, undefined, true));
+    await pulls(1);
+    asked[0].give([100]);
+    expect(await pressed).toBe(100);
+    // A frame back: one stream, from 15 frames before, every frame of it
+    // handed over, with no key frame first and no skip.
+    const back = rankOf(app.frame(99, 0, undefined, true));
+    await pulls(2);
+    expect(asked[1].url).toContain("n=16");
+    expect(asked[1].url).not.toContain("skip=");
+    asked[1].give(Array.from({ length: 16 }, (_, i) => 84 + i));
+    expect(await back).toBe(99);
+    // The next 14 steps back come from the frames kept.
+    for (let r = 98; r >= 85; r--) expect(await rankOf(app.frame(r, 0, undefined, true))).toBe(r);
+    expect(asked.length).toBe(2);
+    expect([app.stats.streams, app.stats.keyFirst]).toEqual([2, 0]);
+    app.close();
+  });
+
+  // Found by the review of #677: the stream opened for a step back handed
+  // over every frame between for as long as it lived, so a frame asked of
+  // it later, after the drag, came with the twenty before it.
+  test("hands over every frame on its first pull only, and skips after", async () => {
+    const { app, asked, pulls, rankOf } = goSide();
+    app.grip(true);
+    void app.frame(100, 0, undefined, true);
+    await pulls(1);
+    asked[0].give([100]);
+    void app.frame(99, 0, undefined, true);
+    await pulls(2);
+    expect(asked[1].url).toContain("n=16");
+    asked[1].give(Array.from({ length: 16 }, (_, i) => 84 + i));
+    app.grip(false);
+    // A still further on goes to the stream of the press, which the Go
+    // side closes on the way, so it goes on to the stream of the step
+    // back: the frames before it are skipped there, but for the one just
+    // before it.
+    const later = rankOf(app.frame(110, 0, undefined, true));
+    await pulls(3);
+    asked[2].shut();
+    await pulls(4);
+    expect(asked[3].url).toContain("n=2");
+    expect(asked[3].url).toContain("skip=");
+    asked[3].give([109, 110]);
+    expect(await later).toBe(110);
+    app.close();
+  });
+
+  // Found in CI on a busy runner: the Go side waits only a moment for each
+  // frame after a pull's first, so a run came in two pulls, and the second
+  // skipped the frames the next steps back wanted.
+  test("hands over every frame up to its place even when the Go side brings them in two pulls", async () => {
+    const { app, asked, pulls, rankOf } = goSide();
+    app.grip(true);
+    void app.frame(100, 0, undefined, true);
+    await pulls(1);
+    asked[0].give([100]);
+    const back = rankOf(app.frame(99, 0, undefined, true));
+    await pulls(2);
+    expect(asked[1].url).toContain("n=16");
+    asked[1].give([84, 85, 86, 87, 88, 89, 90]);
+    await pulls(3);
+    expect(asked[2].url).toContain("n=9");
+    expect(asked[2].url).not.toContain("skip=");
+    asked[2].give([91, 92, 93, 94, 95, 96, 97, 98, 99]);
+    expect(await back).toBe(99);
+    for (let r = 98; r >= 85; r--) expect(await rankOf(app.frame(r, 0, undefined, true))).toBe(r);
+    expect(asked.length).toBe(3);
+    app.close();
+  });
+
+  // Found in CI on a video of 5 frames a second: the run's 15 frames are
+  // 3 s, further than a stream is taken to reach, and the place asked
+  // again while the run was in its second pull opened a stream of its own.
+  test("reaches the place it was opened for, however far that is", async () => {
+    const { app, asked, pulls, rankOf } = goSide(5);
+    app.grip(true);
+    void app.frame(100, 0, undefined, true);
+    await pulls(1);
+    asked[0].give([100]);
+    void app.frame(99, 0, undefined, true);
+    await pulls(2);
+    asked[1].give([84, 85, 86]);
+    await pulls(3);
+    // The place asked again, the way the hand asks at every pixel, waits
+    // on the run, which brings it, and no stream of its own opens.
+    const again = rankOf(app.frame(99, 0, undefined, true));
+    expect(app.stats.streams).toBe(2);
+    asked[2].give(Array.from({ length: 13 }, (_, i) => 87 + i));
+    expect(await again).toBe(99);
+    app.close();
+  });
+
+  // A far step back is a hand moving fast, and a far step comes quicker
+  // with its key frame first, as before, issue #281.
+  test("leaves a far step back to its key frame first", async () => {
+    const { app, asked, pulls } = goSide();
+    app.grip(true);
+    void app.frame(100, 0, undefined, true);
+    await pulls(1);
+    asked[0].give([100]);
+    void app.frame(90, 0, undefined, true);
+    await pulls(2);
+    expect(asked[1].url).toContain("n=1");
+    expect(app.stats.keyFirst).toBe(1);
     app.close();
   });
 });

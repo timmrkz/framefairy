@@ -394,10 +394,9 @@ impossible.
 
 ## When it only goes wrong on the Mac, try WebKit
 
-The app on a Mac is WebKit. The walks walk each part of the app in
-Playwright's WebKit once it has moved there, see Two browsers in
-`docs/TESTING.md`, and the rest and the probes of `frontend/preview/open.mjs`
-in Chromium, until #380 is done. Where the two keep time or paint
+The app on a Mac is WebKit. The walks walk in Playwright's WebKit, see
+Two browsers in `docs/TESTING.md`, and the probes of
+`frontend/preview/open.mjs` still in Chromium. Where the two keep time or paint
 differently, a probe in Chromium passes and Tim still sees the bug. The fill of a removed row grew back under the pointer on
 his Mac for two rounds while every Chromium probe said it held still:
 WebKit plays a paused animation on from its timeline's last frame, and

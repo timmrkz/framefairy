@@ -721,6 +721,11 @@ export const steps = {
     }
     await page.mouse.up();
     await playUntil(page, { most: 0.5 });
+    // Half a second of the episode is thirty animation frames and more
+    // on a machine at rest, and on a busy runner in WebKit it was five,
+    // too few to prove anything by, #380. So the watch goes on while the
+    // play does, until it has read thirty, counted on the page.
+    await pageUntil(page, () => window.__played.length >= 30 || !document.querySelector('button[aria-label="Pause"]'));
     await page.evaluate(() => (window.__playWatch = false));
     await settle(page);
   },
@@ -744,14 +749,16 @@ export const steps = {
     await page.evaluate(() => document.body.focus());
     await preview(page, 0.2);
     await page.keyboard.press("Space");
-    await settle(page);
-    await playUntil(page, { most: 0.3 });
     // The play is a fifth of the clip from its end, and on the sound
     // card's clock a busy runner ran it to the end before the hand let
     // go, so the walk had nothing to prove, issue #583. The sound card is
-    // held while the hand takes the end back, as long as the machine
-    // needs, and the play goes on from there once it lets go.
+    // held from a moment into the play while the walk settles and the
+    // hand takes the end back, as long as the machine needs, and the
+    // play goes on from there once it lets go. Held only after the
+    // settle, the play had run on through it, #380.
+    await playUntil(page, { most: 0.3 });
     await holdSound(page, true);
+    await settle(page);
     const starts = await page.evaluate(() => window.__frameQueue.stats.starts);
     await page.evaluate(() => {
       window.__played = [];
@@ -840,8 +847,12 @@ export const steps = {
       await page.evaluate(() => document.body.focus());
       await preview(page, 0.2);
       await page.keyboard.press("Space");
-      await settle(page);
+      // Played a moment, then held while the walk settles and acts, see
+      // below: a busy runner in WebKit took seconds to settle, and the
+      // play had run past the end before the hand came, #380.
       await playUntil(page, { most: 0.2 });
+      await holdSound(page, true);
+      await settle(page);
     };
     const pullIn = async () => {
       const g = await handles(page);
@@ -858,6 +869,13 @@ export const steps = {
     };
     if (when === "paused") await pullIn();
     await play();
+    // The play is a fifth of the clip before the new end, and a busy
+    // runner in WebKit played it to the end before Undo and Redo were
+    // taken, so the walk had nothing to prove, #380. The sound card is
+    // held from a moment into the play, see play, while the hand drags
+    // and takes the menu, as long as the machine needs, and the play
+    // goes on from there once it lets go, the way "end back past the
+    // playhead" does, issue #583.
     const starts = await page.evaluate(() => window.__frameQueue.stats.starts);
     await record();
     if (when !== "paused") await pullIn();
@@ -867,6 +885,7 @@ export const steps = {
       await settle(page);
     }
     const [atBack, playingAtBack] = await page.evaluate(() => [Number(document.querySelector(".screen").dataset.playhead), !!document.querySelector('button[aria-label="Pause"]')]);
+    await holdSound(page, false);
     const pieces = (await engineState(page, watch.at)).segments;
     const end = pieces.at(-1).end;
     const want = menu.length % 2 ? oldEnd : newEnd;
@@ -916,8 +935,12 @@ export const steps = {
     await page.evaluate(() => document.body.focus());
     await preview(page, 0.2);
     await page.keyboard.press("Space");
-    await settle(page);
+    // Played a moment, then held while the walk settles and takes the
+    // menu, so the play cannot reach the cut first on a busy machine,
+    // see "end in and back".
     await playUntil(page, { most: 0.2 });
+    await holdSound(page, true);
+    await settle(page);
     const starts = await page.evaluate(() => window.__frameQueue.stats.starts);
     await page.evaluate(() => {
       window.__played = [];
@@ -934,6 +957,7 @@ export const steps = {
     await page.evaluate((m) => window.__menu(m), what);
     await settle(page);
     const [atBack, playingAtBack] = await page.evaluate(() => [Number(document.querySelector(".screen").dataset.playhead), !!document.querySelector('button[aria-label="Pause"]')]);
+    await holdSound(page, false);
     const pieces = (await engineState(page, watch.at)).segments;
     // A second past the cut, whichever side of the menu it is on.
     const past = Math.max(...[...cutsOf(before), ...cutsOf(pieces)].map(([, b]) => b)) + 1;
@@ -1258,12 +1282,14 @@ export const steps = {
       if (other) return `frame ${other[2]} was drawn after frame ${holds(at)} had landed ${what}`;
       return at;
     };
-    const first = stood(hand.down, hand.moves, "while the hand held still on the press");
+    // From when the page heard the press, and the last move, which a
+    // busy runner delivered long after the walk sent them.
+    const first = stood(Math.max(hand.down, hand.heardDown ?? 0), hand.moves, "while the hand held still on the press");
     if (typeof first === "string") {
       walk.wrong = first;
       return;
     }
-    const second = stood(hand.still, hand.up, "while the hand held still where it moved to");
+    const second = stood(Math.max(hand.still, hand.heardMove ?? 0), hand.up, "while the hand held still where it moved to");
     if (typeof second === "string") {
       walk.wrong = second;
       return;
@@ -1784,6 +1810,154 @@ export const steps = {
     await nextPaint(page, 2);
     await page.evaluate(() => (window.__scrubbing = false));
     await watch.step("scrub", s);
+  },
+  // ["slow drag left", n]
+  //                    presses the clip timeline near the clip's end and
+  //                    drags the playhead to the left a pixel every frame
+  //                    of the page, the way a slow hand does, until its
+  //                    frame is n frames back, then lets go. The frames
+  //                    under the hand come from no more new streams than
+  //                    one for every 15 frames back and one more: each
+  //                    step back was a stream of its own, a seek, and the
+  //                    picture stood for each, issue #596
+  async "slow drag left"(walk, arg, s) {
+    const { page, watch } = walk;
+    const fps = await rate(page);
+    const g = await handles(page);
+    const y = high(g.track);
+    const at = () => page.evaluate(() => Number(document.querySelector(".screen").dataset.playhead));
+    // The cards' frames read first, which a drag leaves for after it, so
+    // the streams counted are the drag's own: on a busy runner the cards
+    // were still to come, and their streams were counted too.
+    await page.evaluate(() => window.__readAheadRested());
+    let x = g.end.x - 0.1 * (g.end.x - g.start.x - g.start.w);
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await settle(page);
+    const from = Math.floor((await at()) * fps + 1e-6);
+    const was = await page.evaluate(() => window.__appFrames.stats.streams);
+    const calls = await page.evaluate(() => window.__calls.length);
+    let back = 0;
+    while (back < arg && x > g.start.x + g.start.w) {
+      x -= 1;
+      await page.mouse.move(x, y);
+      await nextPaint(page);
+      back = from - Math.floor((await at()) * fps + 1e-6);
+    }
+    await page.mouse.up();
+    await settle(page);
+    const streams = (await page.evaluate(() => window.__appFrames.stats.streams)) - was;
+    await watch.step("scrub", s);
+    if (back < arg) walk.wrong = `the drag reached the clip's start ${back} frames back, not ${arg}`;
+    else if (streams > Math.ceil(back / 15) + 1) {
+      const why = await page.evaluate((n) => window.__appFrames.stats.newFor.slice(-n), Math.min(16, streams));
+      // What the video preview said of its streams meanwhile, in the
+      // app's log: one closed on the Go side or to make room, or ended.
+      const told = await page.evaluate(
+        (from) =>
+          window.__calls
+            .slice(from)
+            .filter((c) => c.name === "Said")
+            .flatMap((c) => (c.args[0] ?? []).map((l) => l.text))
+            .filter((t) => /stream/.test(t))
+            .slice(-20),
+        calls,
+      );
+      walk.wrong = `a slow drag ${back} frames to the left, from frame ${from}, opened ${streams} streams, more than one for every 15 frames back and one more: for ${why.join(", ")}. The video preview said: ${told.join(" | ")}`;
+    }
+  },
+  // ["skip outside a clip"]
+  //                    with no clip on the playhead, presses Shift and the
+  //                    right arrow until the playhead is 5 s past where the
+  //                    saved transcript ends, then Shift and the left arrow
+  //                    once. Every press moves the playhead 5 s, over what
+  //                    was heard and what was not alike
+  async "skip outside a clip"(walk, arg, s) {
+    const { page, watch } = walk;
+    const path = await episodeOn(page);
+    // Where the saved transcript ends: the end of its first part.
+    const heard = (await ask(page, "Episode", path))?.heard ?? [];
+    const edge = Math.max(0, ...heard.filter(([a]) => a < 1).map(([, b]) => b));
+    const at = () => page.evaluate(() => Number(document.querySelector(".screen").dataset.playhead));
+    const press = async (key) => {
+      const before = await at();
+      await page.keyboard.press(key);
+      await settle(page);
+      await watch.step("press", s, page);
+      return [before, await at()];
+    };
+    await page.evaluate(() => document.body.focus());
+    if (await chosen(page)) {
+      walk.wrong = "a clip is chosen, so the playhead may be on one";
+      return;
+    }
+    // Enough presses to cross the end of what was heard and one more.
+    const presses = Math.ceil(edge / 5) + 2;
+    for (let i = 0; i < presses; i++) {
+      const [from, to] = await press("Shift+ArrowRight");
+      if (Math.abs(to - from - 5) > 0.002) {
+        walk.wrong = `Shift and the right arrow at ${from.toFixed(3)} s went to ${to.toFixed(3)} s, not 5 s on, with what was heard ending at ${edge.toFixed(3)} s`;
+        return;
+      }
+    }
+    const [from, to] = await press("Shift+ArrowLeft");
+    if (Math.abs(from - to - 5) > 0.002) walk.wrong = `Shift and the left arrow at ${from.toFixed(3)} s went to ${to.toFixed(3)} s, not 5 s back`;
+  },
+  // ["skips in sight", n]
+  //                    clicks the clip timeline a second after the chosen
+  //                    clip's end, presses Shift and the right arrow n
+  //                    times and then the left arrow n times, and after
+  //                    every press the playhead is in the clip timeline's
+  //                    view: a skip out of it turns the page, the way a
+  //                    play does
+  async "skips in sight"(walk, arg, s) {
+    const { page, watch } = walk;
+    const t = await timeline(page);
+    await clickOnTrack(page, await xOf(page, t.end + 1), high((await handles(page)).track));
+    await settle(page);
+    await page.evaluate(() => document.body.focus());
+    const at = () => page.evaluate(() => Number(document.querySelector(".screen").dataset.playhead));
+    for (const key of [...Array(arg).fill("Shift+ArrowRight"), ...Array(arg).fill("Shift+ArrowLeft")]) {
+      const from = await at();
+      await page.keyboard.press(key);
+      await settle(page);
+      await watch.step("press", s, page);
+      const to = await at();
+      const seen = await page.evaluate(() => !!document.querySelector(".clip-timeline .playhead"));
+      if (Math.abs(to - from) < 1) {
+        walk.wrong = `${key} at ${from.toFixed(3)} s went to ${to.toFixed(3)} s, not a skip`;
+        return;
+      }
+      if (!seen) {
+        walk.wrong = `${key} from ${from.toFixed(3)} s to ${to.toFixed(3)} s left the playhead out of the clip timeline's view`;
+        return;
+      }
+    }
+  },
+  // ["shift in a cut"] clicks the clip timeline in the middle of the
+  //                    chosen clip's first cut and presses Shift and the
+  //                    right arrow: a cut is inside the clip, so the press
+  //                    walks to the next word, never the 5 s a skip
+  //                    outside a clip goes
+  async "shift in a cut"(walk, arg, s) {
+    const { page, watch } = walk;
+    const pieces = (await engineState(page, watch.at)).segments;
+    if (pieces.length < 2) {
+      walk.wrong = `the clip has ${pieces.length} piece, so no cut to press in`;
+      return;
+    }
+    const middle = (pieces[0].end + pieces[1].start) / 2;
+    await clickOnTrack(page, await xOf(page, middle), high((await handles(page)).track));
+    await settle(page);
+    const at = () => page.evaluate(() => Number(document.querySelector(".screen").dataset.playhead));
+    const from = await at();
+    await page.evaluate(() => document.body.focus());
+    await page.keyboard.press("Shift+ArrowRight");
+    await settle(page);
+    await watch.step("press", s, page);
+    const to = await at();
+    if (from < pieces[0].end || from > pieces[1].start) walk.wrong = `the click in the cut from ${pieces[0].end.toFixed(3)} to ${pieces[1].start.toFixed(3)} s put the playhead at ${from.toFixed(3)} s`;
+    else if (!(to > from && to - from < 4.5)) walk.wrong = `Shift and the right arrow in the cut at ${from.toFixed(3)} s went to ${to.toFixed(3)} s, not to the next word`;
   },
 };
 

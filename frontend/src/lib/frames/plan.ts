@@ -60,6 +60,8 @@ export class Program {
   private times: number;
   // Where a running play took in a change of the clip, see spliced.
   private splice: Splice | null = null;
+  // Whether the loop was switched while it played, see loopOn.
+  private switched = false;
 
   constructor(pieces: Piece[], loop: boolean) {
     this.times = loop ? Infinity : 1;
@@ -114,10 +116,14 @@ export class Program {
     return this.splice?.visit ?? null;
   }
 
-  // Whether a running play took in a change, see spliced. Such a program
-  // is only for the play under way: a new play builds its own.
-  get spliced(): boolean {
-    return this.splice !== null;
+  // Whether a running play took in a change, see spliced, or had its loop
+  // switched, see loopOn and loopOff. Such a program is only for the play
+  // under way: a new play builds its own. One whose loop was switched off
+  // in its second time through ends after that time through, and the
+  // next play of the clip, from a moment before its end, went on round
+  // it.
+  get changedWhilePlaying(): boolean {
+    return this.splice !== null || this.switched;
   }
 
   get loop(): boolean {
@@ -149,12 +155,14 @@ export class Program {
   // The loop switched on while it plays: it goes on and on from here.
   loopOn() {
     this.times = Infinity;
+    this.switched = true;
   }
 
   // The loop switched off while it plays, at a position on the program: it
   // ends at the end of the time through that position is in.
   loopOff(pos: number) {
     this.times = this.length > 0 ? Math.floor(Math.max(pos - this.shift, 0) / this.length) + 1 : 1;
+    this.switched = true;
   }
 
   // The v-th piece played, or null past the end of a program that does not

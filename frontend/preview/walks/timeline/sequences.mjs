@@ -606,4 +606,38 @@ export default [
     name: "the playhead's time is in a field beside the buttons, and the clip's numbers on its card",
     steps: [["time field"], ["card says"], ["cut at", 0.5], ["card says"], ["card follows", -60], ["card says"]],
   },
+  {
+    // Issue #596, found by Tim on 29 October: a slow drag of the playhead
+    // stuttered where a fast one did not. To the left, every step back
+    // was a stream of its own, a seek, and the picture stood for each.
+    name: "a slow drag of the playhead to the left reads its frames in runs, not a seek a step",
+    steps: [["slow drag left", 40]],
+  },
+  {
+    // Issue #377, found by Tim on 19 October: outside a clip, Shift and
+    // the right arrow walked the words heard and stopped dead where the
+    // transcript ended, in the middle of the video. Outside a clip there
+    // is no caption to step through, so Tim chose a skip of 5 seconds,
+    // heard or not. The speech is held, so the end of what was heard
+    // stays where it is and no search finds a clip meanwhile.
+    name: "Shift and the arrows skip 5 seconds outside a clip, past where the transcript ends",
+    steps: [["speech", "hold"], ["add", 600], ["heard some", 3], ["skip outside a clip"], ["speech", "go"]],
+  },
+  {
+    // Tim on #677: a play turns the clip timeline's page as the playhead
+    // reaches its edge, and Shift and an arrow outside the clip skipped
+    // out of the view and left it behind.
+    name: "Shift and an arrow outside a clip turn the clip timeline's page, the way a play does",
+    steps: [["skips in sight", 4]],
+  },
+  {
+    // Found by the review of #677: a cut is inside the clip, and Shift and
+    // an arrow there walk to the next word. With the 5 s skip outside a
+    // clip, a press in a cut skipped 5 s, and while the clip played left it.
+    name: "Shift and an arrow in a cut of the clip walk to the next word, not 5 seconds",
+    steps: [
+      ["cut at", 0.5],
+      ["shift in a cut"],
+    ],
+  },
 ];

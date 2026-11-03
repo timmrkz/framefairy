@@ -7,7 +7,7 @@
 // docs/TESTING.md.
 import { existsSync, mkdirSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, join } from "node:path";
-import { ask, caughtUp, chosen, clickOnTrack, clipList, control, engineState, episodeOn, fakeClock, foldsDone, fromSidebar, handles, high, hold, holdClock, letClockGo, letHeld, middle, news, nextNews, nextPaint, overlay, pageUntil, playUntil, pressHead, realFrames, recordFrames, runClock, seenUntil, settle, shortFrames, shortSound } from "../bridge.mjs";
+import { ask, caughtUp, chosen, clickOnTrack, clipList, control, engineState, episodeOn, fakeClock, foldsDone, fromSidebar, handles, high, hold, holdClock, letClockGo, letHeld, middle, news, nextNews, nextPaint, overlay, pageUntil, playUntil, holdSound, pressHead, realFrames, recordFrames, runClock, seenUntil, settle, shortFrames, shortSound, reload } from "../bridge.mjs";
 import { canLook, changesOf, clickCard, clickedFromAhead, clockOf, halfOf, newCards, pieceCount, rate, restAhead, shortOf, shotClips, url } from "../common/steps.mjs";
 
 export const steps = {
@@ -171,7 +171,7 @@ export const steps = {
     const record = { id, kind: "render", plan: on.plan, clips: [on.clip], step: "rendering", asked: new Date().toISOString(), steps: [] };
     writeFileSync(join(jobs, `${id}.json`), JSON.stringify(record));
     await control(url, "/reopen");
-    await page.reload();
+    await reload(page);
     const row = page.locator("aside li", { hasText: on.path.split("/").pop() }).first();
     await row.waitFor();
     await fromSidebar(page, () => row.click());
@@ -644,7 +644,7 @@ export const steps = {
       return route.fulfill({ response: answer, json: cards });
     };
     await page.route("**/call", later);
-    await page.reload();
+    await reload(page);
     await page.locator("aside li", { hasText: path.split("/").pop() }).first().waitFor();
     await fromSidebar(page, () => page.locator("aside li", { hasText: path.split("/").pop() }).first().click());
     await settle(page);
@@ -758,11 +758,9 @@ export const steps = {
     }
     await page.evaluate(() => document.body.focus());
     await page.keyboard.press("Space");
-    await settle(page);
-    if (!(await page.locator('button[aria-label="Pause"]').count())) {
-      walk.wrong = "the space bar did not start the play";
-      return;
-    }
+    // Not settled while it plays: a busy runner in WebKit took seconds
+    // to settle, and the play had ended at the clip's end by then, #380.
+    await pageUntil(page, () => !!document.querySelector('button[aria-label="Pause"]'));
     // Every playhead and every clip chosen from here on, on every
     // animation frame, so a jump back is seen however short it was.
     await page.evaluate(() => {
@@ -781,7 +779,14 @@ export const steps = {
     // after the clip is put back, in the episode's time: a jump back
     // or a stop comes as the app takes the answers in, before the app
     // settles, and the play going on after shows it was not stopped.
-    await playUntil(page, { most: 0.5 });
+    // The play is held from then on while the hand removes the clip and
+    // puts it back, as long as the machine needs to settle, and goes on
+    // once it has, see holdSound in bridge.mjs.
+    if (!(await playUntil(page, { most: 0.5 })).playing) {
+      walk.wrong = "the play stopped before the hand came";
+      return;
+    }
+    await holdSound(page, true);
     await page.hover(`aside ol li[data-key="${other}"]`);
     await page.locator(`aside ol li[data-key="${other}"] button.drop`).click();
     await settle(page);
@@ -794,6 +799,7 @@ export const steps = {
     await settle(page);
     const kept = (await ask(page, "Clips", path)).some((c) => c.key === other && !c.rejected);
     if (!kept) walk.wrong = "Put it back left the other clip removed";
+    await holdSound(page, false);
     await playUntil(page, { most: 1 });
     const heads = await page.evaluate(() => {
       const h = window.__heads;

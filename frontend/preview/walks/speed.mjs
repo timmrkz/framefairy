@@ -18,9 +18,19 @@
 // of what is measured, a person's pace, not a wait for work. ROUNDS, 5
 // unless set, walks the
 // clip that many times. CODEC=hevc makes the video HEVC with 10-bit colour.
-// SIZE=2160 makes it 3840 by 2160, the way a 4K camera records.
+// SIZE=2160 makes it 3840 by 2160, the way a 4K camera records. RATE=50
+// makes it 50 frames a second.
 // SCALE, 2 unless set, is the device pixels of a CSS pixel, a Mac's screen.
-import { control, fromSidebar, handles, high, nextPaint, open, pageUntil, settle, shownOnPlayhead } from "./bridge.mjs";
+//
+// DRAG=1 times drags of the playhead instead, issue #596: a slow drag
+// stuttered on Tim's Mac where a fast one did not. Each round drags over
+// the clip timeline slowly, STEP pixels every frame of the page, 1 unless
+// set, to the right and then to the left, and fast, 30 pixels every frame
+// of the page, to the right and back, the way a hand's moves come. It
+// prints the line each drag ends with in the app's log, see dragged in
+// lib/frames/queue.ts: how long the picture stood, and how its frames
+// came. DRAGS, as left or right,fast, picks some of the three.
+import { control, fromSidebar, handles, high, nextPaint, open, pageUntil, settle, shownOnPlayhead, reload } from "./bridge.mjs";
 
 const url = process.env.BRIDGE_URL ?? "http://127.0.0.1:8123/";
 // REST was the same pause in milliseconds, and 250 of them now would be
@@ -31,6 +41,11 @@ const rounds = Number(process.env.ROUNDS ?? 5);
 const scale = Number(process.env.SCALE ?? 2);
 const codec = process.env.CODEC === "hevc" ? "&codec=hevc" : "";
 const size = process.env.SIZE === "2160" ? 2160 : 1080;
+const fps = Number(process.env.RATE ?? 25);
+const rated = process.env.RATE ? `&rate=${fps}` : "";
+const dragging = !!process.env.DRAG;
+const step = Number(process.env.STEP ?? 1);
+const drags = (process.env.DRAGS ?? "right,left,fast").split(",");
 
 // A window as big as a 16 inch MacBook Pro's screen, which has the video
 // preview draw frames about the size Tim's do.
@@ -38,7 +53,7 @@ const size = process.env.SIZE === "2160" ? 2160 : 1080;
 const [vw, vh] = (process.env.VIEWPORT ?? "1728x1080").split("x").map(Number);
 const { browser, page, errors } = await open(url, { viewport: { width: vw, height: vh }, scale });
 try {
-  await control(url, `/pick?seconds=60&size=${size}${codec}`);
+  await control(url, `/pick?seconds=60&size=${size}${codec}${rated}`);
   await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());
   // The page is opened afresh for every round, so no round finds the frames
   // the one before kept, and each times what a first walk of a clip costs.
@@ -102,7 +117,6 @@ try {
         });
     }, fps);
   };
-  const fps = 25;
   await ready();
 
   const times = new Map();
@@ -203,66 +217,129 @@ try {
     await page.evaluate(() => window.__readAheadRested());
   };
 
-  const seen = { streams: 0, continued: 0, kept: 0, parked: 0, ahead: 0, aheadLost: 0, size: "" };
-  const count = async () => {
-    const s = await page.evaluate(() => {
-      const s = window.__appFrames?.stats;
-      return s ? { streams: s.streams, continued: s.continued, kept: s.kept, parked: s.parked, ahead: s.ahead, aheadLost: s.aheadLost, size: s.first } : null;
-    });
-    if (!s) return;
-    for (const k of ["streams", "continued", "kept", "parked", "ahead", "aheadLost"]) seen[k] += s[k];
-    seen.size ||= s.size;
+  // The line the next drag ends with, as the app hands it to the Go side:
+  // every call goes onto window.__calls, see wails-bridge.ts, so its push
+  // is the signal.
+  const nextLine = (from) =>
+    page.evaluate(
+      (from) =>
+        new Promise((done) => {
+          const calls = window.__calls;
+          const push = calls.push;
+          const look = () => {
+            for (const c of calls.slice(from)) {
+              if (c.name !== "Said") continue;
+              for (const l of c.args[0] ?? []) {
+                if (!/a drag of the playhead let go/.test(l.text)) continue;
+                calls.push = push;
+                done(l.text);
+                return true;
+              }
+            }
+            return false;
+          };
+          if (look()) return;
+          calls.push = function (...xs) {
+            const n = push.apply(this, xs);
+            look();
+            return n;
+          };
+        }),
+      from,
+    );
+  // A drag over the middle of the clip, so many pixels every frame of the
+  // page, each way in turn, 1 to the right and -1 to the left.
+  const drag = async (px, ways) => {
+    const g = await handles(page);
+    const left = g.start.x + g.start.w;
+    const span = g.end.x - left;
+    const y = high(g.track);
+    const from = left + 0.2 * span;
+    const moves = Math.max(2, Math.round((0.6 * span) / px));
+    const before = await page.evaluate(() => window.__calls.length);
+    await page.mouse.move(ways[0] > 0 ? from : from + moves * px, y);
+    await page.mouse.down();
+    for (const way of ways) {
+      for (let i = 1; i <= moves; i++) {
+        await page.mouse.move(way > 0 ? from + i * px : from + (moves - i) * px, y);
+        await nextPaint(page);
+      }
+    }
+    await page.mouse.up();
+    const line = await nextLine(before);
+    await settle(page);
+    return line.replace(/^.*?let go at /, "");
   };
-  for (let r = 0; r < rounds; r++) {
-    if (r > 0) {
-      await count();
-      await page.reload();
-      await ready();
-    }
-    await pickClip();
-    for (let i = 0; i < 8; i++) await press("Shift+Right, a word on", "Shift+ArrowRight");
-    for (let i = 0; i < 3; i++) await press("Left, a frame back", "ArrowLeft");
-    for (let i = 0; i < 3; i++) await press("Right, a frame on", "ArrowRight");
-    // Seven back, not eight: the clip is picked with the playhead before
-    // its first word, so eight on lands on the eighth word, and an eighth
-    // step back from the first word has no word to go to and does nothing.
-    for (let i = 0; i < 7; i++) await press("Shift+Left, a word back", "Shift+ArrowLeft");
-    for (let i = 0; i < 4; i++) {
-      await press("Shift+Right, a word on", "Shift+ArrowRight");
-      await press("Left after a word", "ArrowLeft");
-    }
-    await dragAcross();
-    await clickFar(0.85);
-    await clickFar(0.15);
-  }
 
-  await count();
-  const stats = seen;
-  const q = (xs, p) => xs[Math.min(xs.length - 1, Math.floor(p * xs.length))];
-  const rows = [...times].map(([name, xs]) => {
-    const ok = xs.filter((x) => x >= 0).sort((a, b) => a - b);
-    const [opened, readOn, kept] = ways.get(name) ?? [0, 0, 0];
-    const cs = captions.get(name).filter((x) => x >= 0).sort((a, b) => a - b);
-    const ms = (v) => (v === undefined ? "-" : String(Math.round(v)));
-    return [name, String(xs.length), ms(q(ok, 0.5)), ms(q(ok, 0.9)), ms(ok[ok.length - 1]), String(xs.length - ok.length), ms(q(cs, 0.5)), ms(q(cs, 0.9)), String(opened), String(readOn), String(kept)];
-  });
-  const head = ["What", "Presses", "Median ms", "90th ms", "Most ms", "Never", "Captions median ms", "Captions 90th ms", "Opened", "Read on", "Kept"];
-  const widths = head.map((h, i) => Math.max(h.length, ...rows.map((r) => r[i].length)));
-  const line = (r) => "| " + r.map((c, i) => (i === 0 ? c.padEnd(widths[i]) : c.padStart(widths[i]))).join(" | ") + " |";
-  console.log(line(head));
-  console.log("| " + widths.map((w, i) => (i === 0 ? "-".repeat(w) : "-".repeat(w - 1) + ":")).join(" | ") + " |");
-  for (const r of rows) console.log(line(r));
-  console.log(`frames at ${stats?.size}, ${stats?.streams} streams opened, ${stats?.continued} frames waited for on an open stream, ${stats?.kept} from the kept frames, ${stats?.parked} parked, ${stats?.ahead} read ahead, ${stats?.aheadLost} of them let go of before the hand asked for them`);
-  const sorted = (xs) => xs.filter((x) => x >= 0).sort((a, b) => a - b);
-  const a = sorted(apart);
-  const z = sorted(settled);
-  console.log(
-    `dragging the playhead: the frame on screen ${q(a, 0.5)} frames from it on the median, ${q(a, 0.9)} at the 90th, ${a[a.length - 1]} at most, ` +
-      `and the frame that holds it ${Math.round(q(z, 0.5))} ms after letting go on the median, ${Math.round(z[z.length - 1])} ms at most, ` +
-      `${keyed} key frames put up on the way`,
-  );
-  const c = sorted(clicked);
-  console.log(`clicking far along the clip timeline: the frame clicked ${Math.round(q(c, 0.5))} ms after the press on the median, ${Math.round(c[c.length - 1])} ms at most, ${clicked.length - c.length} never`);
+  if (dragging) {
+    await pickClip();
+    for (let r = 0; r < rounds; r++) {
+      if (drags.includes("right")) console.log(`slow, right: ${await drag(step, [1])}\n`);
+      if (drags.includes("left")) console.log(`slow, left: ${await drag(step, [-1])}\n`);
+      if (drags.includes("fast")) console.log(`fast, right and back: ${await drag(30, [1, -1])}\n`);
+    }
+  } else {
+    const seen = { streams: 0, continued: 0, kept: 0, parked: 0, ahead: 0, aheadLost: 0, size: "" };
+    const count = async () => {
+      const s = await page.evaluate(() => {
+        const s = window.__appFrames?.stats;
+        return s ? { streams: s.streams, continued: s.continued, kept: s.kept, parked: s.parked, ahead: s.ahead, aheadLost: s.aheadLost, size: s.first } : null;
+      });
+      if (!s) return;
+      for (const k of ["streams", "continued", "kept", "parked", "ahead", "aheadLost"]) seen[k] += s[k];
+      seen.size ||= s.size;
+    };
+    for (let r = 0; r < rounds; r++) {
+      if (r > 0) {
+        await count();
+        await reload(page);
+        await ready();
+      }
+      await pickClip();
+      for (let i = 0; i < 8; i++) await press("Shift+Right, a word on", "Shift+ArrowRight");
+      for (let i = 0; i < 3; i++) await press("Left, a frame back", "ArrowLeft");
+      for (let i = 0; i < 3; i++) await press("Right, a frame on", "ArrowRight");
+      // Seven back, not eight: the clip is picked with the playhead before
+      // its first word, so eight on lands on the eighth word, and an eighth
+      // step back from the first word has no word to go to and does nothing.
+      for (let i = 0; i < 7; i++) await press("Shift+Left, a word back", "Shift+ArrowLeft");
+      for (let i = 0; i < 4; i++) {
+        await press("Shift+Right, a word on", "Shift+ArrowRight");
+        await press("Left after a word", "ArrowLeft");
+      }
+      await dragAcross();
+      await clickFar(0.85);
+      await clickFar(0.15);
+    }
+
+    await count();
+    const stats = seen;
+    const q = (xs, p) => xs[Math.min(xs.length - 1, Math.floor(p * xs.length))];
+    const rows = [...times].map(([name, xs]) => {
+      const ok = xs.filter((x) => x >= 0).sort((a, b) => a - b);
+      const [opened, readOn, kept] = ways.get(name) ?? [0, 0, 0];
+      const cs = captions.get(name).filter((x) => x >= 0).sort((a, b) => a - b);
+      const ms = (v) => (v === undefined ? "-" : String(Math.round(v)));
+      return [name, String(xs.length), ms(q(ok, 0.5)), ms(q(ok, 0.9)), ms(ok[ok.length - 1]), String(xs.length - ok.length), ms(q(cs, 0.5)), ms(q(cs, 0.9)), String(opened), String(readOn), String(kept)];
+    });
+    const head = ["What", "Presses", "Median ms", "90th ms", "Most ms", "Never", "Captions median ms", "Captions 90th ms", "Opened", "Read on", "Kept"];
+    const widths = head.map((h, i) => Math.max(h.length, ...rows.map((r) => r[i].length)));
+    const line = (r) => "| " + r.map((c, i) => (i === 0 ? c.padEnd(widths[i]) : c.padStart(widths[i]))).join(" | ") + " |";
+    console.log(line(head));
+    console.log("| " + widths.map((w, i) => (i === 0 ? "-".repeat(w) : "-".repeat(w - 1) + ":")).join(" | ") + " |");
+    for (const r of rows) console.log(line(r));
+    console.log(`frames at ${stats?.size}, ${stats?.streams} streams opened, ${stats?.continued} frames waited for on an open stream, ${stats?.kept} from the kept frames, ${stats?.parked} parked, ${stats?.ahead} read ahead, ${stats?.aheadLost} of them let go of before the hand asked for them`);
+    const sorted = (xs) => xs.filter((x) => x >= 0).sort((a, b) => a - b);
+    const a = sorted(apart);
+    const z = sorted(settled);
+    console.log(
+      `dragging the playhead: the frame on screen ${q(a, 0.5)} frames from it on the median, ${q(a, 0.9)} at the 90th, ${a[a.length - 1]} at most, ` +
+        `and the frame that holds it ${Math.round(q(z, 0.5))} ms after letting go on the median, ${Math.round(z[z.length - 1])} ms at most, ` +
+        `${keyed} key frames put up on the way`,
+    );
+    const c = sorted(clicked);
+    console.log(`clicking far along the clip timeline: the frame clicked ${Math.round(q(c, 0.5))} ms after the press on the median, ${Math.round(c[c.length - 1])} ms at most, ${clicked.length - c.length} never`);
+  }
   if (errors.length) console.log("errors on the page:", errors.join("\n"));
 } finally {
   await browser.close();

@@ -655,6 +655,17 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		closed, err := b.reopen()
 		answer(w, closed, err)
 	})
+	// The app closed, and opened again later, so a walk changes the disk
+	// in between the way a person does while it is closed: the app's
+	// watch on the disk does not hear it.
+	mux.HandleFunc("/close", func(w http.ResponseWriter, r *http.Request) {
+		closed, err := b.close()
+		answer(w, closed, err)
+	})
+	mux.HandleFunc("/open", func(w http.ResponseWriter, r *http.Request) {
+		b.d.open()
+		answer(w, true, nil)
+	})
 	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mediaMiddleware(b.d.svc.store)(reportMiddleware(b.d.svc.report)(http.FileServer(http.Dir(dist)))).ServeHTTP(w, r)
 	}))
@@ -1104,6 +1115,7 @@ func openBridge(t *testing.T) *bridge {
 	openMicrophone = snd.open
 	// The desk is started again with a bus, before anything is in it.
 	d.svc.jobs.shutDown()
+	d.svc.watch.stop()
 	d.bus = newBus()
 	// The bridge's microphone talks for as long as a walk takes steps of
 	// a recording, so one also stops after a minute, 600 steps, long after
@@ -1494,13 +1506,24 @@ func (b *bridge) arriving(ctx context.Context, log *runlog.Log, kind string, siz
 // done. What a walk read off the screen before it asked is a moment older,
 // and a search the model answers at once can end in that moment.
 func (b *bridge) reopen() ([]Job, error) {
+	closed, err := b.close()
+	if err != nil {
+		return nil, err
+	}
+	b.d.open()
+	return closed, nil
+}
+
+// close closes the app the way quitting does, and says the jobs it
+// closed on. Nothing runs and nothing hears the disk until open.
+func (b *bridge) close() ([]Job, error) {
 	if !b.words.whileClosing(b.d.svc.jobs.shutDown) {
 		return nil, fmt.Errorf("the app did not stop its work in time")
 	}
 	closed := b.d.svc.jobs.list()
 	b.d.svc.levels.shutDown()
 	b.d.svc.CancelListening()
-	b.d.reopen()
+	b.d.shut()
 	return closed, nil
 }
 
@@ -1547,6 +1570,10 @@ func (b *bridge) reset() error {
 		return fmt.Errorf("the app did not stop its work in time")
 	}
 	b.d.svc.levels.shutDown()
+	// The watch on the folders hears the reset delete them, and reconcile
+	// would let the videos go and write the library into the config
+	// folder while it is put back. The app opened again watches anew.
+	b.d.svc.watch.stop()
 	// A caption file the video preview asked for goes on being written
 	// after the page that asked is gone, and one written into a work
 	// folder while it was removed failed the reset with "directory not

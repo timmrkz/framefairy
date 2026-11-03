@@ -51,7 +51,7 @@ can show:
 | | Runs | For | Why this way |
 | --- | --- | --- | --- |
 | plain code | Go tests and Vitest, once | every rule that can be said without a page: what a dictation does to the text, where an arrow key takes the cursor, how far a field scrolls | no browser decides it, so a second browser would test the same code twice. It is the quickest test and the easiest to read |
-| the walks | every walk and sequence on every pull request that reaches them, in WebKit for each part `walks/webkit.mjs` no longer names and in Chromium for the rest, and all of them in Chromium every night | what a person does, against the real Go side, in the engine the app runs in | the engines differ where people type and look: the cursor, the selection, the focus, scrolling, fonts and layout. Nearly every bug Tim met in Report a Problem, #574, was WebKit's alone and passed in Chromium. The Mac ships first, and Windows is not built yet |
+| the walks | every walk and sequence on every pull request that reaches them, in WebKit, and all of them in Chromium every night | what a person does, against the real Go side, in the engine the app runs in | the engines differ where people type and look: the cursor, the selection, the focus, scrolling, fonts and layout. Nearly every bug Tim met in Report a Problem, #574, was WebKit's alone and passed in Chromium. The Mac ships first, and Windows is not built yet |
 | what only a Mac does | a step that acts out the Mac's behaviour on purpose, and the rule it protects in plain code | how AppKit reaches WebKit: a cursor revealed in the middle of a field, a button that takes no focus from a click, a mouse entering as a plain move | no browser on Linux has it, WebKit's Linux ports included, so a walk can only play it, as `attach, as on a Mac` does |
 
 The walks are the same walks in both browsers, and the browser is a
@@ -69,12 +69,8 @@ sequence in it the way it walks one in Chromium. `SLOW` and
 `WALKCOVERAGE` work through Chromium's own tools, so either walks every
 walk in Chromium, and says so when `WALKBROWSER=webkit` asks for WebKit.
 
-Until every part of the app has moved to WebKit, #380,
-`walks/webkit.mjs` names the parts that still walk in Chromium, and the
-random walks walk there too. A part moves in a pull request of its own,
-which fixes what WebKit finds in it, so each stays a size to review. A walk
-that only passes in Chromium is a walk to fix, not a part to keep there:
-the app on a Mac is WebKit. What WebKit finds is fixed where its cause
+A walk that only passes in Chromium is a walk to fix, never one to keep
+there: the app on a Mac is WebKit. What WebKit finds is fixed where its cause
 is. A walk that reads what the two engines write differently, like the
 name of a font in quotes or without, is fixed in the walk. What a person
 on a Mac would see too, like a hover WebKit works out only when the
@@ -891,6 +887,25 @@ headless Chromium in the cloud draws WebGPU on the processor, at about
 25 frames a second, so only a Mac's numbers say how the app plays.
 `VIEWPORT` and `SCALE` are as for `speed.mjs`.
 
+### `speed.mjs` with `DRAG=1`: how the video preview follows a drag of the playhead
+
+With `DRAG=1`, `speed.mjs` times drags of the playhead instead of the
+keys, before and after a change to how frames follow the hand:
+
+    DRAG=1 BRIDGE_URL=http://127.0.0.1:8123/ node frontend/preview/walks/speed.mjs
+
+It adds the same video and drags the playhead over the clip timeline
+`ROUNDS` times, slowly, `STEP` pixels every frame of the page, 1 unless
+set, to the right and then to the left, and fast, 30 pixels, to the
+right and back. `DRAGS`, as `left` or `right,fast`, picks some of them,
+and `RATE=50` makes the video 50 frames a second. It prints the line
+each drag ends with in the app's log, see `dragged` in
+`lib/frames/queue.ts`: how far behind the frame on screen was, how long
+the picture stood while the hand had moved on, against the 50 ms of
+[VIDEO-PREVIEW.md](VIDEO-PREVIEW.md), and how the frames came, kept, from
+a stream reading on or from a new one. Tim's slow drags stuttered where
+fast ones did not, #596.
+
 ### Finding why a walk failed
 
 A walk that fails now and then has met an order of events it did not
@@ -925,8 +940,9 @@ it hang, #508.
    of the page before and after each call no walk records: eight
    sequences took 41 % longer with them in a cloud session, and with
    the film a walks job in CI went over its five minutes. In CI a walks
-   job that failed keeps the folder with the run as `walk-traces-0` to
-   `walk-traces-3`, one for each share, for 14 days.
+   job that failed, on a push or at night, keeps the folder with the run
+   as `walk-traces-0` to `walk-traces-3`, one for each share, for 14
+   days.
    A session finds it with the GitHub tools,
    `list_workflow_run_artifacts` for the run and
    `download_workflow_run_artifact`, which gives a link to the zip. The
@@ -1033,7 +1049,7 @@ run once the others are done. Each sequence opens the app afresh with
 Every walker hands its sequences to one node of its own, `sequences.mjs
 --serve`, which reads the name of the next sequence from its input,
 says `walking` in a line of its own as it begins and how it went in
-another as it ends, and keeps one Chromium for all of them. Each sequence still opens a page in a context of its own, so it
+another as it ends, and keeps one browser for all of them. Each sequence still opens a page in a context of its own, so it
 keeps nothing a sequence before it kept. Starting node, Playwright and
 Chromium for every sequence was 1.45 s and 1.2 s of CPU each time, 220
 times, issue #526. A sequence that throws ends its node, and the next

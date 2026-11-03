@@ -6,7 +6,7 @@
 // the helpers only these steps use. See docs/TESTING.md.
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { addHEVC, ask, caughtUp, chosen, clickOnTrack, cropFrame, drag, engineState, episodeOn, filmedOnScreen, fromSidebar, handles, high, loudness, middle, news, nextNews, nextPaint, playUntil, preview, readShort, recordFrames, sameLook, sayLook, seekTo, settle, shortFrames, shownOnPlayhead, xOf } from "../bridge.mjs";
+import { addHEVC, ask, caughtUp, chosen, clickOnTrack, cropFrame, drag, engineState, episodeOn, filmedOnScreen, fromSidebar, handles, high, holdSound, loudness, middle, news, nextNews, nextPaint, playUntil, preview, readShort, recordFrames, sameLook, sayLook, seekTo, settle, shortFrames, shownOnPlayhead, timeline, xOf, reload, pageUntil, inside } from "../bridge.mjs";
 import { onePiece, pieceCount, rate, restAhead, shortOf, url } from "../common/steps.mjs";
 import { overlaid, stillFrame } from "../rules.mjs";
 
@@ -303,9 +303,13 @@ export const steps = {
     if (!(await page.evaluate(() => !!document.querySelector('button[aria-label="Pause"]')))) {
       await page.keyboard.press("Space");
     }
+    // L at once, before the walk waits for anything: a busy runner in
+    // WebKit took 8 s to settle after the space bar, and the play had
+    // ended at the clip's end before L came, #380. Should it have gone
+    // round meanwhile, the watch below waits for the next time round.
+    await page.keyboard.press("l");
     await settle(page);
     await playUntil(page, { most: 0.3 });
-    await page.keyboard.press("l");
     await page.evaluate(() => {
       window.__played = [];
       window.__playWatch = true;
@@ -364,6 +368,68 @@ export const steps = {
       walk.wrong = `${(off[0] - played[round][0]).toFixed(0)} ms after the playhead came round to ${played[round][1].toFixed(3)}, it stood at ${off[1].toFixed(3)} and the video preview showed ${off[2] >= 0 ? (off[2] / fps).toFixed(3) : "nothing it could read"}`;
     }
   },
+  // ["loop off, then again", seconds]
+  //                    drags the clip's start to so many seconds before
+  //                    its end, plays it from its start with L at once,
+  //                    lets it go round its end, switches the loop off
+  //                    with L in the second time through and lets it stop
+  //                    at the end, then plays it again from a second
+  //                    before its end with the loop off: that play stops
+  //                    at the end too
+  async "loop off, then again"(walk, arg, s) {
+    const { page, watch } = walk;
+    // Short, so going round takes seconds and not the whole clip.
+    const was = (await engineState(page, watch.at)).segments;
+    const end = was.at(-1).end;
+    const g = await handles(page);
+    const t = await timeline(page);
+    await drag(page, middle(g.start), high(g.track), (await xOf(page, end - arg)) - (await xOf(page, t.start)), false);
+    await watch.step("trim", s);
+    const segs = (await engineState(page, watch.at)).segments;
+    const length = segs.reduce((sum, x) => sum + (x.end - x.start), 0);
+    if (segs.at(-1).end !== end || length > arg + 1) {
+      walk.wrong = `the clip runs ${length.toFixed(2)} s to ${segs.at(-1).end.toFixed(2)} after its start was dragged, not ${arg} s to ${end.toFixed(2)}`;
+      return;
+    }
+    const fps = await rate(page);
+    await seekTo(page, segs[0].start + 0.5, fps);
+    await page.evaluate(() => document.body.focus());
+    // L at once, before the walk waits for anything, see "loop through
+    // the end".
+    await page.keyboard.press("Space");
+    await page.keyboard.press("l");
+    await settle(page);
+    // Round the end and half a second into the second time through, by
+    // the playhead, where the sound card is held while the walk switches
+    // the loop off, so a busy runner cannot take the play on to the end
+    // of that time through first.
+    const round = await playUntil(page, { most: length });
+    await holdSound(page, true);
+    await page.keyboard.press("l");
+    await settle(page);
+    await holdSound(page, false);
+    if (!round.playing) {
+      walk.wrong = `the play stopped at ${round.at.toFixed(3)} with the loop on, before it went round`;
+      return;
+    }
+    const first = await playUntil(page, { most: length + 1 });
+    if (first.playing || Math.abs(first.at - end) > 1 / fps + 0.01) {
+      walk.wrong = `with the loop switched off in the second time through, the play ${first.playing ? "went on" : "stopped"} at ${first.at.toFixed(3)}, the clip ends at ${end.toFixed(3)}`;
+      return;
+    }
+    // The play after: a loop switched while a play went on belongs to
+    // that play, and the next one plays the clip once. It played on
+    // round the end, to the end of the time through the loop was
+    // switched off in.
+    await seekTo(page, end - 1, fps);
+    await page.evaluate(() => document.body.focus());
+    await page.keyboard.press("Space");
+    await settle(page);
+    const again = await playUntil(page, { most: 2 });
+    if (again.playing || Math.abs(again.at - end) > 1 / fps + 0.01) {
+      walk.wrong = `played again from ${(end - 1).toFixed(3)} with the loop off, the play ${again.playing ? "went on" : "stopped"} at ${again.at.toFixed(3)}, past the clip's end at ${end.toFixed(3)}`;
+    }
+  },
   // ["loop off as the sound crosses the end"]
   //                    puts the playhead near the clip's end, plays it with
   //                    the loop on, holds the page 250 ms as the playhead
@@ -385,9 +451,11 @@ export const steps = {
     if (!(await page.evaluate(() => !!document.querySelector('button[aria-label="Pause"]')))) {
       await page.keyboard.press("Space");
     }
-    await settle(page);
-    await playUntil(page, { most: 0.3 });
+    // L at once, before the walk waits for anything: a busy runner in
+    // WebKit settled after the space bar only once the play had ended
+    // at the clip's end, so L came too late, see "loop through the end".
     await page.keyboard.press("l");
+    await settle(page);
     // The playhead moves once a frame of the video (#446), so it is on
     // the clip's last frame up to a frame before the end. The page is
     // held from there until the sound card has played past the end,
@@ -435,17 +503,30 @@ export const steps = {
   async "press while playing"(walk, arg) {
     const { page } = walk;
     await preview(page, 0.2);
+    // Settled before the play, not while it plays: a busy runner in
+    // WebKit took seconds to settle, the play ran to the clip's end
+    // meanwhile, and after the hand let go nothing played, #380.
+    await settle(page);
     if (!(await page.evaluate(() => !!document.querySelector('button[aria-label="Pause"]')))) {
       await page.keyboard.press("Space");
     }
     // The play's waits in the episode's time, read off the playhead,
     // and the hand's in the page's frames, since a press may stop the
     // playhead.
-    await settle(page);
     await playUntil(page, { most: 0.7 });
     await page.evaluate(() => {
       window.__played = [];
       window.__hand = {};
+      // When the page hears the hand, which on a busy runner in WebKit
+      // came long after the walk sent it: "nailed" reads each still
+      // stretch from there, not from when the walk moved the hand.
+      if (!window.__handHeard) {
+        window.__handHeard = true;
+        // The event's own time, on the clock the frames are read on.
+        const heard = (name) => (e) => window.__hand && (window.__hand[name] = e.timeStamp);
+        addEventListener("pointerdown", heard("heardDown"), true);
+        addEventListener("pointermove", heard("heardMove"), true);
+      }
       window.__playWatch = true;
       const tick = () => {
         if (!window.__playWatch) return;
@@ -482,6 +563,15 @@ export const steps = {
     // episode's own time, which "nailed" reads from 300 ms on. A play
     // that stopped ends this at once, and "nailed" says so.
     await playUntil(page, { most: 1 });
+    // A second of the episode is sixty animation frames and more on a
+    // machine at rest, and on a busy runner in WebKit five came after
+    // the 300 ms, too few to prove anything by. So the watch goes on
+    // while the play does, until "nailed" has ten to read, counted on
+    // the page.
+    await pageUntil(
+      page,
+      () => window.__played.filter(([t]) => t > window.__hand.up + 300).length >= 10 || !document.querySelector('button[aria-label="Pause"]'),
+    );
     await page.evaluate(() => (window.__playWatch = false));
     await settle(page);
   },
@@ -495,13 +585,23 @@ export const steps = {
   //                    so many seconds of play, and pauses
   // ["play from", where, seconds, key]
   //                    the same, pressing this key every 400 ms of the
-  //                    play, "Shift+ArrowRight" to skip ahead by words,
+  //                    play, "Shift+ArrowRight" to skip ahead, 5 s on
+  //                    the video and by words on the clip,
   //                    and from "before" the playhead has to have gone a
   //                    second or more further than the play takes it
   async "play from"(walk, arg, s) {
     const { page, watch } = walk;
     const [where, seconds, key] = arg;
-    const g = await handles(page);
+    let g = await handles(page);
+    // A play before this one that went on past the clip took the clip
+    // timeline's view with it, and the clip is out of it. The hand
+    // brings the clip back with a click on it on the range picker, the
+    // way a person would, before it clicks the clip timeline.
+    if (!inside(g.track, g.start.x) && !inside(g.track, g.end.x)) {
+      await page.locator(".track .clipmark.selected").click();
+      await settle(page);
+      g = await handles(page);
+    }
     const from = g.start.x + g.start.w;
     const x = where === "before" ? (g.track.x + g.start.x) / 2 : from + 0.2 * (g.end.x - from);
     if (where === "before" && g.start.x - g.track.x < 40) {
@@ -964,7 +1064,7 @@ export const steps = {
       }
     });
     const name = (await episodeOn(page)).split("/").pop();
-    await page.reload();
+    await reload(page);
     await page.locator("aside li", { hasText: name }).first().waitFor();
     await fromSidebar(page, () => page.locator("aside li", { hasText: name }).first().click());
     await page.locator("aside ol li[data-key] button.pick").first().click();

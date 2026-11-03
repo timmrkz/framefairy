@@ -47,7 +47,7 @@
 #   make interface  the interface type check, its own tests, and that no
 #                   walk or interface test waits on the clock
 #   make walks      the interface against the real Go side, in WebKit
-#                   and Chromium, see WALKBROWSER below:
+#                   or the browser WALKBROWSER names, see below:
 #                   the sequences, and every walk WALKS times, each of
 #                   its own length unless STEPS says, WALKERS at once,
 #                   stopped after WALKTIMEOUT, 30m unless set, with
@@ -562,10 +562,9 @@ fuzz: toolchain modules
 # the Chromium and WebKit Playwright drives, which CI's image holds and a
 # cloud session gets from its SessionStart hook. Built for the bridge
 # first, which takes seconds.
-# Each part of the app walks in Playwright's WebKit, the engine the app
-# runs in on a Mac, once it has moved there, and in Chromium until then,
-# see Two browsers there. WALKBROWSER=chromium or webkit walks every walk
-# in that one, as the nightly walks do in Chromium.
+# Every walk walks in Playwright's WebKit, the engine the app runs in on
+# a Mac, see Two browsers there. WALKBROWSER=chromium walks every walk in
+# Chromium, as the nightly walks do.
 WALKS ?= 3
 WALKBROWSER ?=
 STEPS ?=

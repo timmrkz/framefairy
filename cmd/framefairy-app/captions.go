@@ -165,9 +165,9 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 			drawing := kept.drawing.Typing(typing).Lifted(part)
 			var l engine.CaptionLayer
 			// A video whose folder was deleted outside the app is let go
-			// as the app comes back to the front, see letGoOfRemoved, and
-			// until then its captions write nothing into a folder that is
-			// gone, which would bring the folder back. The engine checks
+			// as the app hears of it, see reconcile, and until then its
+			// captions write nothing into a folder that is gone, which
+			// would bring the folder back. The engine checks
 			// again as it writes, see engine.ErrNoWorkFolder.
 			if !marked(st.files, path) {
 				http.NotFound(w, r)

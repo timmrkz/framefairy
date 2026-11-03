@@ -327,7 +327,7 @@ func (s *FrameFairy) Opened(n int) []string {
 	// opens on it as it starts: Tim deleted two videos with their folders,
 	// an earlier version wrote the chosen clip back into one, and the app
 	// opened on it after an update and said it was not in the library.
-	s.letGoOfRemoved()
+	s.reconcile(nil)
 	var all []seen
 	for _, ep := range s.store.Episodes() {
 		file, err := fileio.SafeChildIn(s.store.files, engine.WorkDir(ep), chosenFile)

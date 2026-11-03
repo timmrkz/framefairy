@@ -5,7 +5,7 @@
 // caption box showed before it and the step's name. A sequence of any
 // folder can take it. Below them the helpers only these steps use. See
 // docs/TESTING.md.
-import { ask, caughtUp, clipList, control, drag, episodeOn, fakeClock, fromSidebar, news, nextNews, nextPaint, pageUntil, pressHead, realFrames, runClock, seenUntil, settle } from "../bridge.mjs";
+import { ask, caughtUp, clipList, control, drag, episodeOn, fakeClock, fromSidebar, news, nextNews, nextPaint, pageUntil, pressHead, realFrames, runClock, seenUntil, settle, holdSound } from "../bridge.mjs";
 import { clockOf, nextCall, onePiece, toastSays, url } from "../common/steps.mjs";
 
 export const steps = {
@@ -1069,7 +1069,15 @@ export const steps = {
         });
         await field.focus();
         await page.keyboard.press("Space");
-        await watch.step("press", s);
+        // Held from the moment it plays while the walk reads and the
+        // watch looks at the step, which on a busy runner in WebKit took
+        // the whole clip: the play stopped at its end, the field took the
+        // keyboard back, as it does once a play the space bar started
+        // from it is paused, and the walk's space bar to stop it played
+        // the clip again.
+        // Or until the space bar typed into the field, which plays nothing.
+        await pageUntil(page, () => !!document.querySelector('button[aria-label="Pause"]') || document.querySelector(".listhead .search input")?.value !== "");
+        await holdSound(page, true);
         const started = await page.evaluate(() => ({
           typed: document.querySelector(".listhead .search input")?.value ?? null,
           focused: document.activeElement?.getAttribute("aria-label") ?? document.activeElement?.tagName ?? null,
@@ -1077,6 +1085,8 @@ export const steps = {
           at: Number(document.querySelector(".screen")?.dataset.playhead),
         }));
         const first = await topRow();
+        await watch.step("press", s);
+        await holdSound(page, false);
         if (started.typed !== "") walk.wrong = `the space bar in the empty search field typed "${started.typed}"`;
         else if (started.focused === "Search transcript") walk.wrong = "the space bar in the empty search field left the keyboard in it";
         else if (!started.playing) walk.wrong = "the space bar in the empty search field did not play";
@@ -1112,6 +1122,18 @@ export const steps = {
       // plays on is turned to the top, found by Tim. The list is made
       // as high as the cards down to the playhead's, so the next is
       // below it.
+      // The space bar to play, held the same way from the moment it
+      // plays while the watch looks at the step, which on a busy runner
+      // in WebKit took the whole clip, so the walk read the list only
+      // once the play had stopped at the clip's end.
+      const playHeld = async () => {
+        await page.evaluate(() => document.activeElement?.blur());
+        await page.keyboard.press("Space");
+        await pageUntil(page, () => !!document.querySelector('button[aria-label="Pause"]'));
+        await holdSound(page, true);
+        await watch.step("press", s);
+        await holdSound(page, false);
+      };
       if (!walk.wrong && own.length >= 2) {
         // First with both cards in view: playing into the next card
         // leaves the list where it is.
@@ -1128,9 +1150,7 @@ export const steps = {
         }, [`s${own[0].start}|${chosenKey}`, `s${own[1].start}|${chosenKey}`]);
         if (!both.seen) walk.wrong = "the chosen clip's first two cards are not both in view, so the list standing still could not be seen";
         else {
-          await page.evaluate(() => document.activeElement?.blur());
-          await page.keyboard.press("Space");
-          await watch.step("press", s);
+          await playHeld();
           const frames = await playedTo(page, own[1].start + 0.3, () => ({ scrolled: document.querySelector(".scroll.list").scrollTop }), true);
           const moved = frames.find((now) => now.scrolled !== both.scrolled);
           await page.keyboard.press("Space");
@@ -1153,9 +1173,7 @@ export const steps = {
         }, `s${own[0].start}|${chosenKey}`);
         await nextPaint(page, 2);
         const from = await page.evaluate(() => document.querySelector(".scroll.list").scrollTop);
-        await page.evaluate(() => document.activeElement?.blur());
-        await page.keyboard.press("Space");
-        await watch.step("press", s);
+        await playHeld();
         const frames = await playedTo(
           page,
           own[1].start + 0.3,

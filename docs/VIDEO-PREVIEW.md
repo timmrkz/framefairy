@@ -95,7 +95,10 @@ removed. Nothing is prepared before the first play.
    and started it again for a gesture that changed the program. #152 had
    spliced the new program into the running play in 366 lines, and was
    closed for it. Loop was the first exception, 2.150 and 2.183, which
-   changes only where the play ends. Then the play kept the pieces it
+   changes only where the play ends. That end is the play's own: the
+   next play builds its program again, `Program.changedWhilePlaying`.
+   Kept, a loop switched off in the second time through sent the next
+   play round the clip's end once more. Then the play kept the pieces it
    started with while an edge or a cut was dragged, because starting it
    again at every step of the hand stuttered. Tim found the cost of that
    on #277: he pulled the end of a clip in, played it, put the end back
@@ -274,10 +277,21 @@ closed for standing unused.
   it, not the frame of a place it left long ago, and a place it has
   already left costs its key frame alone, since the queue lets go of that
   stream sooner. Where the hand rests, and once it lets go, the frame on
-  screen is the exact one, as before. The app's log says how each drag
+  screen is the exact one, as before. A hand dragging slowly to the left,
+  a frame or two back from the place before, asks for frames no stream
+  reaches, since a stream only reads on. Each step was a stream of its
+  own, a seek with its key frame first that the frame on screen was
+  nearer than, and the picture stood for each, up to seconds, where a
+  slow drag to the right read on and kept up, issue #596. Such a step
+  opens its stream 15 frames before the place, `BACK` in
+  `lib/frames/app.ts`, with no key frame first, and every frame from
+  there comes and is kept, so the next 15 steps back find their frames
+  kept. The app's log says how each drag
   went once the hand lets go: how far the frame on screen was from the
-  playhead as the hand moved, the key frames put up, and how long the
-  frame under the hand took after letting go. The decoder's own lines say
+  playhead as the hand moved, the key frames put up, how long the frame
+  under the hand took after letting go, how long the picture stood while
+  the hand had moved on, against the 50 ms below, and how the frames
+  came, kept, from a stream reading on or from a new one. The decoder's own lines say
   when an open asked for the key frame first and when it came. An open
   that finds a cursor already standing between the key frame and the
   frame asked for reads on from there instead, which is cheaper, and then
@@ -511,6 +525,70 @@ by word and by frame came out inside the spread of the runs at both
 sizes, faster or slower by a few per cent in most rows: the numbers are
 in pull request #502. A click and a step never ask for a key frame first,
 so they take the path they took before.
+
+A slow drag to the left stood where one to the right kept up, issue
+#596. `speed.mjs` with `DRAG=1` in the cloud, on its camera video of a minute at 1080p,
+25 frames a second, decoded on the processor, three runs a side of a slow
+drag to the right, a slow drag to the left, a pixel every frame of the
+page, and a fast drag of 30 pixels to the right and back. Before is the
+branch with `app.ts` as on main, After the branch as it is. Each number is
+the mean of the three runs, the spread is half the range of Before's runs
+over its mean, and each number is from that one machine:
+
+| Slow drag to the left                      | Before | After | Change                |
+| ------------------------------------------ | -----: | ----: | --------------------- |
+| Picture standing, median (ms)              |     90 |     1 | 99 % shorter, ± 4 %   |
+| Picture standing, longest (ms)             |   1964 |   350 | 82 % shorter, ± 3 %   |
+| Waits over 50 ms (% of waits)              |     62 |     6 | 90 % fewer, ± 6 %     |
+| New streams                                |    221 |    17 | 92 % fewer, ± 1 %     |
+| Frame under the hand after letting go (ms) |     88 |     0 | 100 % shorter, ± 22 % |
+
+The longest wait that is left on a slow drag to the left is the stream
+each 15 steps opens, a seek and 16 frames, on the processor here and on
+the video chip on a Mac.
+
+The other drags take no new path: every new stream of a fast drag comes
+with its key frame first, and a slow drag to the right opens one stream
+or none. Ten runs a side, the same machine and video, Before `app.ts` as
+on main, After as it is, each number the mean of the ten, the spread half
+the range of Before's runs over its mean:
+
+| Other drags                                      | Before | After | Change              |
+| ------------------------------------------------ | -----: | ----: | ------------------- |
+| Slow to the right, standing, median (ms)         |   13.5 |  13.1 | 3 % shorter, ± 4 %  |
+| Slow to the right, standing, longest (ms)        |   68.6 |  64.8 | 6 % shorter, ± 48 % |
+| Fast, standing, median (ms)                      |   94.7 | 106.7 | 13 % longer, ± 34 % |
+| Fast, standing, longest (ms)                     |  296.6 | 286.0 | 4 % shorter, ± 24 % |
+| Fast, frame under the hand after letting go (ms) |   95.4 | 105.9 | 11 % longer, ± 88 % |
+
+Only a step back of `SLOW`, 2 frames, or fewer opens a run. A hand that
+moves further a step leaves the frames of a run behind before they would
+be shown, and a run in flight holds up the frame under the hand once it
+lets go. A video of 50 frames a second, three runs a side, slow drags to
+the left of 6 and 10 pixels every frame of the page and a fast drag of
+30, with `SLOW` at 2 against a run for every step back within `BACK`, 15
+frames. The spread is half the range of the runs at 2 over their mean,
+and none of the fast runs at 2 waited after letting go, so that row
+gives the change in milliseconds:
+
+| 50 frames a second                     | `SLOW` 2 | `SLOW` 15 | Change                |
+| -------------------------------------- | -------: | --------: | --------------------- |
+| 6 pixels left, standing, median (ms)   |     46.0 |      22.7 | 51 % shorter, ± 93 %  |
+| 6 pixels left, standing, longest (ms)  |    508.7 |     440.7 | 13 % shorter, ± 20 %  |
+| 6 pixels left, after letting go (ms)   |    144.7 |     206.0 | 42 % longer, ± 94 %   |
+| 10 pixels left, standing, median (ms)  |    405.0 |     129.0 | 68 % shorter, ± 15 %  |
+| 10 pixels left, standing, longest (ms) |    590.3 |     406.3 | 31 % shorter, ± 5 %   |
+| 10 pixels left, after letting go (ms)  |     71.3 |     243.3 | 241 % longer, ± 149 % |
+| Fast, standing, median (ms)            |     92.0 |      70.3 | 24 % shorter, ± 73 %  |
+| Fast, standing, longest (ms)           |    284.3 |     459.0 | 61 % longer, ± 22 %   |
+| Fast, after letting go (ms)            |      0.0 |     144.7 | 144.7 ms longer       |
+
+A run for every step within 15 frames makes a quicker hand's picture
+stand shorter while it moves, and the frame under the hand comes later
+once it lets go, three times as late at 10 pixels, and a fast drag's
+longest wait grows by more than its spread. The frame under the hand once
+it rests is the one a person looks at, so `SLOW` stays at 2, and a step
+of 3 to 15 frames back takes the path it took before.
 
 ## Colour
 
