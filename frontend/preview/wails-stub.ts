@@ -644,7 +644,7 @@ function searchAt(s: FakeSearch, now = Date.now()) {
 }
 function searchJob(s: FakeSearch) {
   const now = searchAt(s);
-  const base = { id: s.id, episode: "/eps/ep.mp4", kind: "search", label: "Find clips", state: now.state, step: now.step, from: s.from, to: s.to, count: s.count, queued: "", lane: now.step === "hearing" ? "hearing" : "finding", error: s.error, result: now.state === "done" ? "/eps/ep.framefairy/logs/clips.json" : undefined, away: awayOf(s.id, now.state) };
+  const base = { id: s.id, episode: "/eps/ep.mp4", kind: "search", label: "Find clips", state: now.state, step: now.step, from: s.from, to: s.to, count: s.count, queued: "", lane: now.step === "hearing" ? "hearing" : "finding", error: s.error, result: now.state === "done" ? "/eps/ep.framefairy/logs/clips.json" : undefined, away: awayOf(s.id, now.state), stopping: now.state === "running" && s.cancelledAt !== undefined ? true : undefined };
   if (now.state !== "running") {
     // How it ended, as the Go side says it, see engine.SearchEnded.
     const end = s.to > 0 ? s.to : fullLength;
@@ -811,6 +811,7 @@ function handJob(h: FakeHand) {
   return {
     id: h.id, episode: "/eps/ep.mp4", kind: "clip", label: "Make a clip", state: now.state,
     away: awayOf(h.id, now.state),
+    stopping: now.state === "running" && h.cancelledAt !== undefined ? true : undefined,
     step: now.step, at: h.at, backward: h.backward, queued: "",
     lane: now.step === "hearing" ? "hearing" : "framing",
     result: now.state === "done" ? `clips-hand.json/h0${h.n}` : undefined,

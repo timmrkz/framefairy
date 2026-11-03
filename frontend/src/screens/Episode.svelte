@@ -146,7 +146,7 @@
   // A click has to show at once, long before the job it starts reports in.
   // The store keeps the press, the same for this work as for the whole
   // video heard from its menu.
-  const starting = $derived(jobs.isStarting(path, "clips"));
+  const starting = $derived(jobs.isStarting(path, "clips", "search"));
   // The press of Search or Continue the work in hand was asked for by. Cancel
   // names it, so it stops that search whether or not the Go side has heard
   // of it yet, see stopWork.
@@ -374,22 +374,18 @@
   // search the press asked for even if Cancel reaches it first.
   function stopWork() {
     if (!busy || stopping) return;
-    jobs.stop(path, "clips");
-    void api.stopClipWork(path, click);
+    jobs.stopJob(path, "clips", () => api.stopClipWork(path, click));
   }
 
   // The Render button's Cancel stops the render and nothing else. It
   // called the clip list's Cancel, which stopped the search and every
   // clip on its way, and left the render running.
-  let renderStopping = $state(false);
+  const renderStopping = $derived(jobs.isStopping(path, "render"));
   function stopRender() {
-    if (!renderingJob) return;
-    renderStopping = true;
-    api.cancelJob(renderingJob.id);
+    const job = renderingJob;
+    if (!job) return;
+    jobs.stopJob(path, "render", () => api.cancelJob(job.id));
   }
-  $effect(() => {
-    if (!renderingJob) renderStopping = false;
-  });
 
   // Continue, on everything of the clip list that stopped: the search
   // carries on from what it left, on the window it was about, which the
@@ -399,7 +395,7 @@
     if (!stopped || !search) return;
     const id = search.id;
     const press = begin();
-    for (const job of handStopped) void api.continueJob(job.id, press).then((j) => jobs.apply(j));
+    for (const job of handStopped) jobs.startJob(path, "clips", () => api.continueJob(job.id, press), "hand").catch((err) => oops(errorText(err)));
     void asked(() => api.continueJob(id, press));
   }
   // What the transcript on disk has heard.
@@ -925,7 +921,7 @@
     arriving(
       jobs.forEpisode(path),
       () => stopping,
-      (job) => void api.continueJob(job.id, "").then((j) => jobs.apply(j)),
+      (job) => void jobs.startJob(path, "clips", () => api.continueJob(job.id, ""), "hand").catch((err) => oops(errorText(err))),
       {
         remove: (job) => putAside(job.id),
         away: (job) => awayOf(job.id),
@@ -1560,16 +1556,13 @@
   // A job can be over before its answer comes back to the press, its news
   // heard first on a busy machine, so the Go side answers the pick of its
   // card with the clip it was written as, see choose.go, issue #508.
-  let pressed = $state<"in" | "out" | null>(null);
-  const makingIn = $derived(pressed === "in" || handRunning.some((j) => !j.backward));
-  const makingOut = $derived(pressed === "out" || handRunning.some((j) => !!j.backward));
+  const makingIn = $derived(jobs.isStarting(path, "clips", "in") || handRunning.some((j) => !j.backward));
+  const makingOut = $derived(jobs.isStarting(path, "clips", "out") || handRunning.some((j) => !!j.backward));
   async function makeClip(backward: boolean) {
     if (duration <= 0) return;
-    pressed = backward ? "out" : "in";
-    jobs.clipsAsked(path);
     try {
-      const job = await api.makeClip(path, time, backward);
-      jobs.apply(job);
+      const at = time;
+      const job = await jobs.startJob(path, "clips", () => api.makeClip(path, at, backward), backward ? "out" : "in");
       const now = jobs.list.find((j) => j.id === job.id) ?? job;
       const key = `${job.id}/1`;
       if (now.state !== "failed") {
@@ -1584,8 +1577,6 @@
       showChosen();
     } catch (err) {
       oops(errorText(err));
-    } finally {
-      pressed = null;
     }
   }
   // The clip on its way that is chosen, drawn on the clip timeline the way
@@ -2520,10 +2511,8 @@
     findClips(false);
   }
 
-  // A click shows at once: the list opens its rows and the head says
-  // Cancel before the job has reported in. It gives the press its name.
+  // The name of a press of Search or Continue, which Cancel names.
   function begin(): string {
-    jobs.press(path, "clips");
     click = `${Date.now()}-${++clicks}`;
     return click;
   }
@@ -2548,20 +2537,17 @@
     );
   }
 
-  // Search and Continue alike. The Go side answers with the search, and one
-  // it would not start, while the app closes or the episode is being
-  // removed, comes back failed already. It never runs, so nothing would
-  // ever end the start the click showed: the head stood on Cancel, greyed
-  // out, over Finding clips. Its row says why instead, with Continue, the
-  // way any search that failed does.
+  // Search and Continue alike. A click shows at once: the list opens its
+  // rows and the head says Cancel before the job has reported in, see
+  // startJob. The Go side answers with the search, and one it would not
+  // start, while the app closes or the episode is being removed, comes
+  // back failed already. It never runs, and its row says why, with
+  // Continue, the way any search that failed does.
   async function asked(ask: () => Promise<Job>) {
     try {
-      const job = await ask();
-      jobs.apply(job);
+      await jobs.startJob(path, "clips", ask, "search");
     } catch (err) {
       oops(errorText(err));
-    } finally {
-      jobs.answered(path, "clips");
     }
   }
 
@@ -2613,24 +2599,12 @@
   }
   onMount(() => onUndo(undo));
 
-  // The job has reported in, so the placeholder can give way to it.
-  $effect(() => {
-    if (working) untrack(() => jobs.answered(path, "clips"));
-  });
-
-  // The clip a render was asked for, from the click until the job is
-  // there, so the button fills from the moment it is pressed.
-  let renderAsked = $state("");
-  $effect(() => {
-    if (renderingJob) renderAsked = "";
-  });
-
+  // A render, which fills its button from the moment it is pressed, see
+  // startJob.
   async function render(clip: ClipEntry) {
-    renderAsked = clip.key;
     try {
-      session.asked(await api.render(path, { Plan: clip.plan, Clips: [clip.id], Preview: false }));
+      session.asked(await jobs.startJob(path, "render", () => api.render(path, { Plan: clip.plan, Clips: [clip.id], Preview: false }), clip.key));
     } catch (err) {
-      renderAsked = "";
       oops(errorText(err));
     }
   }
@@ -2728,7 +2702,6 @@
     // moves on. How it ended otherwise is said by the search itself, in the
     // row its next clip would have appeared in.
     searched: (ended) => {
-      jobs.answered(path, "clips");
       onchange();
       // The window walks on from where the search ended, which the Go
       // side did before the search said it was done, so it comes in the
@@ -3688,7 +3661,7 @@
           <!-- The one act that matters, so it says how it is going in the
                button it was started from, and becomes the way to stop it,
                the same as Search does for a search. -->
-          {@const inHand = renderingCurrent || renderAsked === current.key}
+          {@const inHand = renderingCurrent || jobs.isStarting(path, "render", current.key)}
           <button
             class="primary render"
             onclick={() => (inHand ? stopRender() : render(current))}

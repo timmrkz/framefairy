@@ -110,6 +110,11 @@ type Job struct {
 	// Away is, for work that stopped and was removed, how its removal
 	// stands, see removal.go.
 	Away *JobAway `json:"away,omitempty"`
+	// Stopping is, for work that runs, that it was told to stop and has
+	// not ended yet, from the moment it was told: by its own Stop or
+	// Cancel, or as work on the clips stops the video's transcription,
+	// see stopTranscribing. The interface says Stopping from it.
+	Stopping bool `json:"stopping,omitempty"`
 	// Ended is, for a search that is over or stopped, how it ended, see
 	// engine.SearchEnded, set as the video's state is read, so the
 	// interface picks the words and works nothing out.
@@ -155,6 +160,19 @@ type Job struct {
 
 // going says whether a job is queued or running.
 func (j *Job) going() bool { return j.State == JobQueued || j.State == JobRunning }
+
+// callOff tells a job to stop. One waiting its turn is called off then and
+// there, and one that runs is stopping until its work ends. The caller
+// holds the queue's lock and stamps the job.
+func (j *Job) callOff() {
+	j.cancel()
+	switch j.State {
+	case JobQueued:
+		j.State = JobCancelled
+	case JobRunning:
+		j.Stopping = true
+	}
+}
 
 // unfinished is a job that ended before it was done, interrupted, stopped
 // or failed, and says so where its work was until Continue carries it on
@@ -705,9 +723,8 @@ func (q *queue) cancel(id string) {
 		q.mu.Unlock()
 		return
 	}
-	job.cancel()
-	if job.State == JobQueued {
-		job.State = JobCancelled
+	if job.going() {
+		job.callOff()
 	}
 	// Always said, also for a job that had already ended: the window asked
 	// because it thinks the job is still going, and without an answer it
@@ -729,20 +746,17 @@ var stopWait = 15 * time.Second
 func (q *queue) closeEpisode(episode string) (reopen func()) {
 	q.mu.Lock()
 	q.closed[episode]++
-	var queued []Job
+	var told []Job
 	for _, j := range q.jobs {
 		if j.Episode != episode || !j.going() {
 			continue
 		}
-		j.cancel()
-		if j.State == JobQueued {
-			j.State = JobCancelled
-			q.stampLocked(j)
-			queued = append(queued, *j)
-		}
+		j.callOff()
+		q.stampLocked(j)
+		told = append(told, *j)
 	}
 	q.mu.Unlock()
-	for _, j := range queued {
+	for _, j := range told {
 		q.emit(JobUpdate{Job: j})
 	}
 	var once sync.Once
@@ -818,11 +832,8 @@ func (q *queue) shutDown() bool {
 	q.shut = true
 	for _, j := range q.jobs {
 		if j.going() {
-			j.cancel()
-			if j.State == JobQueued {
-				j.State = JobCancelled
-				q.stampLocked(j)
-			}
+			j.callOff()
+			q.stampLocked(j)
 		}
 	}
 	q.mu.Unlock()
@@ -887,10 +898,7 @@ func (q *queue) stopClips(episode, click string) {
 			continue
 		}
 		j.byHand = j.JobRecord.ID != ""
-		j.cancel()
-		if j.State == JobQueued {
-			j.State = JobCancelled
-		}
+		j.callOff()
 		q.stampLocked(j)
 		stopped = append(stopped, *j)
 	}
@@ -1189,6 +1197,7 @@ func (q *queue) runJob(job *Job) {
 	log.SetSink(nil)
 	q.update(job, func(j *Job) {
 		j.Progress = nil
+		j.Stopping = false
 		j.Result = result
 		if j.ending != nil {
 			j.JobRecord, j.ending = *j.ending, nil

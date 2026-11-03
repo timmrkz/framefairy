@@ -273,14 +273,10 @@
   // without waiting for the job's first news.
   async function transcribe(ep: EpisodeStatus) {
     said(`video menu: transcribe whole video`, { video: ep.source });
-    jobs.press(ep.source, "whole");
     try {
-      const job = await api.transcribe(ep.source);
-      jobs.apply(job);
+      await jobs.startJob(ep.source, "whole", () => api.transcribe(ep.source));
     } catch (err) {
       toasts.say("transcribe whole video", errorText(err), { video: ep.source });
-    } finally {
-      jobs.answered(ep.source, "whole");
     }
   }
 
@@ -873,9 +869,8 @@
               onstoptranscribe={() => {
                 const work = jobs.transcribing(ep.source);
                 if (!work) return;
-                jobs.stop(ep.source, "whole");
                 said("video menu: stop transcribing", { video: ep.source });
-                void api.cancelJob(work.id);
+                jobs.stopJob(ep.source, "whole", () => api.cancelJob(work.id));
               }}
               onexport={(format) => exportTranscript(ep, format)}
             />

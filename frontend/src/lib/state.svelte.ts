@@ -7,28 +7,38 @@ import { live, mergeJob, outstanding } from "./flow";
 import { said } from "./said";
 import type { EpisodeOrder } from "./order";
 
-// The two kinds of work a person starts and stops for a video: the whole
-// video heard, from its menu, and the clip list's work, the search with
-// the clips made by hand, from Search, Continue and Cancel.
-export type Work = "whole" | "clips";
+// The kinds of work a person starts and stops for a video: the whole
+// video heard, from its menu, the clip list's work, the search with the
+// clips made by hand, from Search, Continue, Cancel, I and O, and a render,
+// from Render.
+export type Work = "whole" | "clips" | "render";
+
+const works: Work[] = ["whole", "clips", "render"];
 
 function doing(work: Work, j: Job): boolean {
-  return work === "whole" ? j.kind === "transcribe" : j.kind === "search" || j.kind === "clip";
+  if (work === "whole") return j.kind === "transcribe";
+  if (work === "render") return j.kind === "render";
+  return j.kind === "search" || j.kind === "clip";
 }
 
-const key = (path: string, work: Work) => `${work} ${path}`;
+// A press of a video's work the Go side has not answered yet. what tells
+// two presses of one kind of work apart, the clip a render is of, or I and
+// O for a clip made by hand.
+type Press = { path: string; work: Work; what: string };
+
+const of = (path: string, work: Work) => (p: Press) => p.path === path && p.work === work;
 
 export class JobStore {
   list = $state<Job[]>([]);
-  // What a person pressed that the Go side has not caught up with yet, the
-  // same for both kinds of work. starting is a start whose job has not
-  // answered. stopping is a stop whose work has not said it ended: the
-  // video's dot, its menu, the clip list's head and the range picker all
-  // stop on the press, and not when the work ends a second or two later.
-  // It was kept twice, once in the store for the transcription and once in
-  // the workspace for the search, found by the third review of #458.
-  starting = $state<string[]>([]);
-  stopping = $state<string[]>([]);
+  // What a person pressed that the Go side has not answered yet, the same
+  // for every kind of work, so no control keeps a flag of its own. A start
+  // lasts until its call answers with the job, see startJob. A stop lasts
+  // until the Go side says its work is stopping, which it says from the
+  // moment it is told, or has ended, see stopJob: the video's dot, its
+  // menu, the clip list's head and the range picker all stop on the
+  // press, and not when the work ends a second or two later.
+  starting = $state.raw<Press[]>([]);
+  stopping = $state.raw<Press[]>([]);
 
   // Who hears each snapshot the list keeps, with the one it replaced, see
   // EpisodeSession in lib/session.svelte.ts.
@@ -87,60 +97,54 @@ export class JobStore {
     return () => this.watchers.delete(fn);
   }
 
-  isStarting(path: string, work: Work): boolean {
-    return this.starting.includes(key(path, work));
+  isStarting(path: string, work: Work, what?: string): boolean {
+    return this.starting.some((p) => of(path, work)(p) && (what === undefined || p.what === what));
   }
 
+  // Whether a stop was pressed for the work, or the Go side says it is
+  // stopping.
   isStopping(path: string, work: Work): boolean {
-    return this.stopping.includes(key(path, work));
+    return this.stopping.some(of(path, work)) || this.list.some((j) => j.episode === path && live(j) && doing(work, j) && !!j.stopping);
   }
 
-  // Whether a stop was pressed for the work this job does.
+  // Whether the job stops: the Go side says so, or a stop was pressed for
+  // the work it does.
   stops(j: Job): boolean {
-    return (["whole", "clips"] as const).some((w) => doing(w, j) && this.isStopping(j.episode, w));
+    return !!j.stopping || works.some((w) => doing(w, j) && this.stopping.some(of(j.episode, w)));
   }
 
-  // A start pressed. It is a new press, so a stop before it is over. The
-  // work on the clips stops the video's transcription, see clipsAsked.
-  press(path: string, work: Work) {
-    const k = key(path, work);
-    if (!this.starting.includes(k)) this.starting = [...this.starting, k];
-    if (this.stopping.includes(k)) this.stopping = this.stopping.filter((s) => s !== k);
-    if (work === "clips") this.clipsAsked(path);
+  // Starts a video's work: the press shows from this frame, until the Go
+  // side answers with the job, which the list then holds. A start is a new
+  // press, so a stop before it is over. It answers with the job, and a
+  // call that failed throws, for the caller to say why.
+  async startJob(path: string, work: Work, call: () => Promise<Job>, what = ""): Promise<Job> {
+    const press = { path, work, what };
+    this.starting = [...this.starting, press];
+    if (this.stopping.some(of(path, work))) this.stopping = this.stopping.filter((p) => !of(path, work)(p));
+    try {
+      const job = await call();
+      this.apply(job);
+      return job;
+    } finally {
+      this.starting = this.starting.filter((p) => p !== press);
+      this.settle();
+    }
   }
 
-  // Work on the video's clips asked for, a search or a clip made by hand.
-  // The Go side stops the video's transcription for it, stopTranscribing
-  // in export.go, and the transcription ends once the speech model has
-  // heard the piece it is in, seconds later. So the stop is said on the
-  // press, the way Stop transcribing says it: the menu said Stop
-  // transcribing for three and a half seconds after Search, Tim's report
-  // of 26 October, 14.22.
-  clipsAsked(path: string) {
-    if (this.isStarting(path, "whole") || this.list.some((j) => j.episode === path && live(j) && doing("whole", j))) this.stop(path, "whole");
+  // Stops a video's work: the stop shows from this frame, until the Go
+  // side says the work is stopping or has ended.
+  stopJob(path: string, work: Work, call: () => Promise<unknown>) {
+    if (!this.stopping.some(of(path, work))) this.stopping = [...this.stopping, { path, work, what: "" }];
+    call().catch((err) => said(`jobs: the stop of the ${work} work could not be asked for: ${err}`, { level: "warn", video: path }));
   }
 
-  // The Go side answered the start, with its job or with a refusal.
-  answered(path: string, work: Work) {
-    const k = key(path, work);
-    if (this.starting.includes(k)) this.starting = this.starting.filter((s) => s !== k);
-    this.settle();
-  }
-
-  // A stop pressed, for whatever of the work runs or is on its way.
-  stop(path: string, work: Work) {
-    const k = key(path, work);
-    if (!this.stopping.includes(k)) this.stopping = [...this.stopping, k];
-  }
-
-  // A stop lasts until nothing of its work runs or is asked for.
+  // A stop lasts while a start of its work is out, or work of it runs that
+  // the Go side does not say is stopping yet.
   private settle() {
-    const ended = this.stopping.filter((k) => {
-      const [work, ...rest] = k.split(" ");
-      const path = rest.join(" ");
-      return !this.starting.includes(k) && !this.list.some((j) => j.episode === path && live(j) && doing(work as Work, j));
-    });
-    if (ended.length) this.stopping = this.stopping.filter((k) => !ended.includes(k));
+    const left = this.stopping.filter(
+      (p) => this.starting.some(of(p.path, p.work)) || this.list.some((j) => j.episode === p.path && live(j) && doing(p.work, j) && !j.stopping),
+    );
+    if (left.length < this.stopping.length) this.stopping = left;
   }
 
   async start() {

@@ -962,6 +962,10 @@ export const steps = {
       await control(url, "/speech?hold=one");
       await settle(page);
       await page.locator(".listhead button.search").click();
+      // The Go side says the transcription is stopping the moment the
+      // search is asked for, and the menu reads it from the video's
+      // state, the news the search's answer is sent behind.
+      await caughtUp(page, url);
       await reopen();
       const ending = await item();
       await page.keyboard.press("Escape");

@@ -593,6 +593,9 @@ export interface Job {
   // epoch and 0 while a hand holds its row, then how many seconds are
   // left, and how many it had in all.
   away?: { until: number; left: number; whole: number };
+  // For work that runs, that it was told to stop and has not ended yet,
+  // from the moment it was told, see Job.Stopping in jobs.go.
+  stopping?: boolean;
   // Grows with every change to any job. Of two snapshots of a job, the one
   // with the larger number is the later one.
   seq?: number;

@@ -1204,3 +1204,55 @@ func TestTheWindowIsToldTheStepTheEngineWrites(t *testing.T) {
 		t.Errorf("the window was told %+v, the record on disk is %+v", last.JobRecord, recs)
 	}
 }
+
+// Work on the clips stops the video's transcription, and the transcription
+// says it is stopping from that moment, in the snapshot that tells of the
+// stop, until it ends, and then it no longer does. The interface once
+// guessed it on the press of Search, a rule of its own.
+func TestATranscriptionSaysItIsStoppingFromTheMomentItIsTold(t *testing.T) {
+	t.Parallel()
+	svc, eps := memoryLibrary(t, "ep.mp4")
+	ep := eps[0]
+	news := make(chan Job, 256)
+	svc.jobs = newQueue(svc.store, func(u JobUpdate) { news <- u.Job }, func(string) {})
+	started, letGo := make(chan struct{}), make(chan struct{})
+	job := svc.jobs.addSteps(ep, engine.JobTranscribe, "Transcribe whole video", true, func(j *Job) {
+		j.JobRecord.ID = engine.TranscribeID
+	}, func(ctx context.Context, p *engine.Project, host engine.Host) (string, error) {
+		close(started)
+		<-ctx.Done()
+		<-letGo
+		return "", engine.ErrCancelled
+	})
+	<-started
+	held := func() Job {
+		jobs, _ := svc.jobs.ofVideo(ep)
+		for _, j := range jobs {
+			if j.ID == job.ID {
+				return j
+			}
+		}
+		t.Fatal("the video's state holds no transcription")
+		return Job{}
+	}
+	if held().Stopping {
+		t.Fatal("the transcription says it is stopping before it was told")
+	}
+	svc.stopTranscribing(ep, "a search")
+	if j := held(); j.State != JobRunning || !j.Stopping {
+		t.Errorf("told to stop, the transcription is %s, stopping %v", j.State, j.Stopping)
+	}
+	close(letGo)
+	for j := range news {
+		if j.ID != job.ID || j.State == JobQueued || j.State == JobRunning {
+			continue
+		}
+		if j.Stopping {
+			t.Errorf("ended as %s, the transcription still says it is stopping", j.State)
+		}
+		break
+	}
+	if j := held(); j.Stopping {
+		t.Errorf("ended as %s, the video's state holds the transcription as stopping", j.State)
+	}
+}
