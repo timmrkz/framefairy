@@ -1781,6 +1781,7 @@ func TestWalks(t *testing.T) {
 	var unwalked atomic.Int32
 
 	walkers := min(envNumber("WALKERS", runtime.NumCPU()*3/2), len(runs))
+	started := time.Now()
 	todo := make(chan walkRun, len(runs))
 	for _, r := range runs {
 		todo <- r
@@ -1836,12 +1837,17 @@ func TestWalks(t *testing.T) {
 					t.Errorf("%s: %v\n%s", what, err, out.Bytes())
 					continue
 				}
+				// What a run that passed printed is left out: make walks
+				// runs go test with -v, so CI shows each walk's time, and
+				// the steps of every walk would bury them.
 				fmt.Fprintf(os.Stderr, "walked %s\n", what)
-				t.Logf("%s:\n%s", what, out.Bytes())
 			}
 		})
 	}
 	wg.Wait()
+	// Where this machine's time went, so a slow walks job says which runs
+	// made it slow. On the clock only to be read, never waited on.
+	fmt.Fprint(os.Stderr, walkSummary(took, len(runs), walkers, time.Since(started).Seconds(), 10)) //nolint:forbidigo // the seconds the walks took, reported, never waited on
 	if left := len(todo); left > 0 {
 		t.Errorf("%d runs were not walked, since no bridge started", left)
 	}
@@ -2455,11 +2461,72 @@ func writeWalkTimes(names []string, before, now map[string]float64) string {
 	return out.String()
 }
 
+// walkSummary says where a machine's walks spent their time: how many
+// runs its walkers walked, the seconds they took together against the
+// seconds the walkers had, and the slowest runs, most of them, slowest
+// first. Every number stands right in its column, so the table reads in a
+// terminal as it does on GitHub.
+func walkSummary(took map[string]float64, runs, walkers int, wall float64, most int) string {
+	type run struct {
+		name    string
+		seconds float64
+	}
+	var all []run
+	sum := 0.0
+	for name, s := range took {
+		all = append(all, run{name, s})
+		sum += s
+	}
+	slices.SortFunc(all, func(a, b run) int {
+		return cmp.Or(cmp.Compare(b.seconds, a.seconds), strings.Compare(a.name, b.name))
+	})
+	busy := 0.0
+	if wall > 0 && walkers > 0 {
+		busy = 100 * sum / (wall * float64(walkers))
+	}
+	var out strings.Builder
+	fmt.Fprintf(&out, "%d of %d runs on %d walkers in %.0f s, %.0f s of walking together, the walkers busy %.0f %% of the time\n", len(all), runs, walkers, wall, sum, busy)
+	shown := all[:min(most, len(all))]
+	if len(shown) == 0 {
+		return out.String()
+	}
+	width := max(len("Seconds"), len(fmt.Sprintf("%.0f", shown[0].seconds)))
+	name := len("Slowest runs")
+	for _, r := range shown {
+		name = max(name, len(r.name))
+	}
+	fmt.Fprintf(&out, "| %*s | %-*s |\n", width, "Seconds", name, "Slowest runs")
+	fmt.Fprintf(&out, "| %s: | %s |\n", strings.Repeat("-", width-1), strings.Repeat("-", name))
+	for _, r := range shown {
+		fmt.Fprintf(&out, "| %*.0f | %-*s |\n", width, r.seconds, name, r.name)
+	}
+	return out.String()
+}
+
 func envNumber(name string, otherwise int) int {
 	if n, err := strconv.Atoi(os.Getenv(name)); err == nil && n > 0 {
 		return n
 	}
 	return otherwise
+}
+
+// The summary of a machine's walks counts what its walkers did against the
+// time they had, and lists the slowest runs first, each column lined up.
+func TestTheWalksSummarySaysWhereTheTimeWent(t *testing.T) {
+	took := map[string]float64{"sequences.mjs SEQUENCE=short": 4.4, "playback.mjs SEED=1": 83, "timeline.mjs SEED=2": 9.6, "words.mjs SEED=1": 12}
+	got := walkSummary(took, 5, 2, 60, 3)
+	want := "4 of 5 runs on 2 walkers in 60 s, 109 s of walking together, the walkers busy 91 % of the time\n" +
+		"| Seconds | Slowest runs        |\n" +
+		"| ------: | ------------------- |\n" +
+		"|      83 | playback.mjs SEED=1 |\n" +
+		"|      12 | words.mjs SEED=1    |\n" +
+		"|      10 | timeline.mjs SEED=2 |\n"
+	if got != want {
+		t.Errorf("the summary is\n%s\nwant\n%s", got, want)
+	}
+	if got := walkSummary(nil, 3, 2, 0, 3); got != "0 of 3 runs on 2 walkers in 0 s, 0 s of walking together, the walkers busy 0 % of the time\n" {
+		t.Errorf("with no runs walked the summary is %q", got)
+	}
 }
 
 // Split two ways or three, the shares of the walks hold every run once,
