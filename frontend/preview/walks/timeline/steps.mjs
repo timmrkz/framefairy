@@ -1876,6 +1876,37 @@ export const steps = {
     const [from, to] = await press("Shift+ArrowLeft");
     if (Math.abs(from - to - 5) > 0.002) walk.wrong = `Shift and the left arrow at ${from.toFixed(3)} s went to ${to.toFixed(3)} s, not 5 s back`;
   },
+  // ["skips in sight", n]
+  //                    clicks the clip timeline a second after the chosen
+  //                    clip's end, presses Shift and the right arrow n
+  //                    times and then the left arrow n times, and after
+  //                    every press the playhead is in the clip timeline's
+  //                    view: a skip out of it turns the page, the way a
+  //                    play does
+  async "skips in sight"(walk, arg, s) {
+    const { page, watch } = walk;
+    const t = await timeline(page);
+    await clickOnTrack(page, await xOf(page, t.end + 1), high((await handles(page)).track));
+    await settle(page);
+    await page.evaluate(() => document.body.focus());
+    const at = () => page.evaluate(() => Number(document.querySelector(".screen").dataset.playhead));
+    for (const key of [...Array(arg).fill("Shift+ArrowRight"), ...Array(arg).fill("Shift+ArrowLeft")]) {
+      const from = await at();
+      await page.keyboard.press(key);
+      await settle(page);
+      await watch.step("press", s, page);
+      const to = await at();
+      const seen = await page.evaluate(() => !!document.querySelector(".clip-timeline .playhead"));
+      if (Math.abs(to - from) < 1) {
+        walk.wrong = `${key} at ${from.toFixed(3)} s went to ${to.toFixed(3)} s, not a skip`;
+        return;
+      }
+      if (!seen) {
+        walk.wrong = `${key} from ${from.toFixed(3)} s to ${to.toFixed(3)} s left the playhead out of the clip timeline's view`;
+        return;
+      }
+    }
+  },
   // ["shift in a cut"] clicks the clip timeline in the middle of the
   //                    chosen clip's first cut and presses Shift and the
   //                    right arrow: a cut is inside the clip, so the press

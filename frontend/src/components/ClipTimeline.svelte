@@ -1002,7 +1002,11 @@
     const back = event.key === "ArrowLeft";
     event.preventDefault();
     const through = playing && dimmed;
-    const put = (t: number, wordStep = false) => onseek(Math.max(0, Math.min(t, duration)), through ? "video" : undefined, wordStep);
+    const put = (t: number, wordStep = false) => {
+      const at = Math.max(0, Math.min(t, duration));
+      onseek(at, through ? "video" : undefined, wordStep);
+      keepInSight(at, back);
+    };
     if (!event.shiftKey) {
       put(time + Math.max(frame, 1 / 240) * (back ? -1 : 1));
       return;
@@ -1189,15 +1193,34 @@
     const t = time;
     const shown = view.to - view.from;
     if (t >= view.from && t < view.to - shown * PAGE_EDGE) return;
-    untrack(() => {
-      held = !!clip;
-      viewFor = clip?.key ?? "";
-      const whole = Math.max(duration, shown);
-      const from = Math.max(0, Math.min(t - shown * PAGE_EDGE, whole - shown));
-      if (Math.abs(from - view.from) < 0.001) return;
-      load(from, from + shown);
-    });
+    untrack(() => turnPage(t, false));
   });
+
+  // Turns the page so the playhead at t stands a twentieth in from the
+  // side it came from, on to the right, back to the left, and holds the
+  // view there the way a page turned by a play does.
+  function turnPage(t: number, back: boolean) {
+    held = !!clip;
+    viewFor = clip?.key ?? "";
+    const shown = view.to - view.from;
+    const whole = Math.max(duration, shown);
+    const from = Math.max(0, Math.min(t - shown * (back ? 1 - PAGE_EDGE : PAGE_EDGE), whole - shown));
+    if (Math.abs(from - view.from) < 0.001) return;
+    load(from, from + shown);
+  }
+
+  // The keys keep the playhead in sight the same way: a step that lands in
+  // the last twentieth of the view the way it goes, or anywhere out of the
+  // view, turns the page. Shift and an arrow skipping 5 s outside a clip,
+  // or walking the words past the clip's edge, left the view behind, where
+  // a play turned it. Tim saw it on #677.
+  function keepInSight(t: number, back: boolean) {
+    if (!loaded) return;
+    const shown = view.to - view.from;
+    const ahead = back ? t >= view.from + shown * PAGE_EDGE : t < view.to - shown * PAGE_EDGE;
+    if (ahead && t >= view.from && t <= view.to) return;
+    turnPage(t, back);
+  }
 
   // A new episode's waveform arrives in seconds and its words as it is
   // heard, both piece by piece, so a view read before either reached it is

@@ -2077,7 +2077,10 @@ bubble scrolled by those eight pixels.
       it. A quarter in, tried first, left Tim too little to look ahead to. It turns rather than slides, so
       the waveform holds still to be read between turns, and the view
       turned is held, like a move by hand, until the crosshair or the clip
-      takes it back. The crosshair in the row under the track
+      takes it back. **The keys keep it in sight the same way:** an arrow,
+      or Shift and an arrow, that lands in the last twentieth of the view
+      the way it goes, or out of the view, turns the page there, to the
+      left as to the right. A skip of 5 s left the view behind, #677. The crosshair in the row under the track
       goes to the playhead and puts it in the middle. Clicking a clip in
       the list, the one that is already selected included, puts that clip
       back in view. A double-click on the track never did: one was meant

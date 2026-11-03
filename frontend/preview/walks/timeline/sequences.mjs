@@ -624,6 +624,13 @@ export default [
     steps: [["speech", "hold"], ["add", 600], ["heard some", 3], ["skip outside a clip"], ["speech", "go"]],
   },
   {
+    // Tim on #677: a play turns the clip timeline's page as the playhead
+    // reaches its edge, and Shift and an arrow outside the clip skipped
+    // out of the view and left it behind.
+    name: "Shift and an arrow outside a clip turn the clip timeline's page, the way a play does",
+    steps: [["skips in sight", 4]],
+  },
+  {
     // Found by the review of #677: a cut is inside the clip, and Shift and
     // an arrow there walk to the next word. With the 5 s skip outside a
     // clip, a press in a cut skipped 5 s, and while the clip played left it.
