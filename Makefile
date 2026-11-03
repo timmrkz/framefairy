@@ -480,9 +480,9 @@ changed:
 # use for this, which prints the same lines go test does and keeps every
 # test's time in UNITJSON besides, for a closer look on this machine.
 # Before the tests it says in one line what machine they run on and how
-# fast it is, scripts/machine.sh, and after them how fast it is again and
-# each package's time in pieces of that fixed work, which compares runs
-# on the same chip better than seconds do, #592.
+# fast it is, scripts/machine.sh, and after them how fast it is again,
+# since the same tests take a fifth longer on some of GitHub's Macs than
+# on others, #592.
 ifeq ($(UNAME),Darwin)
 RACE ?=
 UNITSKIP ?= framefairy/licence/dispenser framefairy/licence/paddle framefairy/cmd/framefairy-dispenser framefairy/internal/workflows framefairy/internal/naming
@@ -527,7 +527,7 @@ unit: toolchain modules $(FRESH_FRAMES)
 	if [ -z "$$pkgs" ]; then echo "no Go package to test"; exit 0; fi; \
 	$(if $(COVERAGE),mkdir -p '$(COVERDIR)' || exit $$?; )run=; \
 	if [ -n '$(SLOWEST)' ]; then \
-		machine=$$(PATH="$(TOOLS_FIRST)" sh scripts/machine.sh); echo "$$machine"; \
+		PATH="$(TOOLS_FIRST)" sh scripts/machine.sh; \
 		mkdir -p $(dir $(UNITJSON)) && \
 		run='$(GO) run $(GOTESTSUM) --format standard-quiet --hide-summary skipped --jsonfile $(UNITJSON) --raw-command --'; \
 	fi; \
@@ -537,7 +537,7 @@ unit: toolchain modules $(FRESH_FRAMES)
 		$(if $(COVERAGE),$(COVERPKG) -coverprofile='$(COVERDIR)/go-unit$(if $(UNITSHARD),-$(subst /,-of-,$(UNITSHARD))).txt') \
 		-ldflags '$(LDFLAGS)' $$pkgs || status=$$?; \
 	if [ -n '$(SLOWEST)' ]; then \
-		PATH="$(TOOLS_FIRST)" sh scripts/machine.sh after "$$machine" $(UNITJSON); \
+		PATH="$(TOOLS_FIRST)" sh scripts/machine.sh after; \
 		slow=$$($(GO) run $(GOTESTSUM) tool slowest --jsonfile $(UNITJSON) --threshold $(SLOWEST)); \
 		if [ -n "$$slow" ]; then \
 			echo "The tests that took over $(SLOWEST), slowest first:"; echo "$$slow"; \
@@ -684,7 +684,6 @@ lint: toolchain modules golangci-lint frontend/node_modules/.package-lock.json
 	@sh scripts/main-moved-test.sh
 	@sh scripts/plan-frozen-test.sh
 	@sh scripts/test-failures-test.sh
-	@sh scripts/machine-test.sh
 	@sh scripts/plan-frozen.sh
 
 # The release golangci-lint builds and checks against its own checksums,
