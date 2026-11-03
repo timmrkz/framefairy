@@ -126,6 +126,14 @@ func storedTranscript(t *testing.T, words []timed.Cue, frames []float32, to floa
 	t.Helper()
 	fsys := afero.NewMemMapFs()
 	source := "/ep.mp4"
+	return fsys, source, storedTranscriptOf(t, fsys, source, words, frames, to, partial)
+}
+
+// storedTranscriptOf is storedTranscript of a stand-in episode at source
+// on fsys, and gives back the transcript's path.
+func storedTranscriptOf(t *testing.T, fsys afero.Fs, source string, words []timed.Cue, frames []float32, to float64,
+	partial bool) string {
+	t.Helper()
 	if err := afero.WriteFile(fsys, source, []byte("nicht wirklich ein video"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +155,7 @@ func storedTranscript(t *testing.T, words []timed.Cue, frames []float32, to floa
 	if err := writeTranscript(fsys, path, file, frames); err != nil {
 		t.Fatal(err)
 	}
-	return fsys, source, path
+	return path
 }
 
 // What the transcript says was heard is kept while its file stays as it

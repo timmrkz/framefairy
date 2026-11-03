@@ -55,14 +55,13 @@ func (s *FrameFairy) heardIn(p *engine.Project) (*engine.TranscriptRead, error) 
 // after the update explains itself. It never says what the words read.
 func (s *FrameFairy) oldCorrections(p *engine.Project) {
 	file := filepath.Join(p.LogsDir(), "corrections.json")
-	if _, told := s.toldOld.Load(file); told {
+	// Looked for once for each video in a run, since the file only ever
+	// comes from before 2.249, and not on every read of the transcript.
+	if _, looked := s.toldOld.LoadOrStore(file, true); looked {
 		return
 	}
 	data, err := afero.ReadFile(p.Files, file)
 	if err != nil {
-		return
-	}
-	if _, told := s.toldOld.LoadOrStore(file, true); told {
 		return
 	}
 	var words map[string]any

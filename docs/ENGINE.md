@@ -694,7 +694,11 @@ time of the files it came from, looks at them on every question, and
 reads again only what changed, once however many ask at once. It holds
 the transcript, which `Status` and the app read through it, with its
 lines weighed and the edges of what is said worked out once for each
-read. The transcripts of the last ten videos asked about are kept. See
+read. The transcripts of the last ten videos asked about are kept. What
+`Status` says of a transcript, done, the parts heard and where its lines
+start and end, is kept for every video, so listing the library lets go
+of no transcript, and "no transcript yet" is kept by its stamp as well.
+See
 [decisions/2026-11-03-one-episode-per-video.md](decisions/2026-11-03-one-episode-per-video.md).
 
 ### What ffmpeg and ffprobe said, kept

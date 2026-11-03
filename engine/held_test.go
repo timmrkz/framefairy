@@ -8,6 +8,8 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/spf13/afero"
+
 	"framefairy/engine/num"
 	"framefairy/engine/timed"
 )
@@ -53,6 +55,84 @@ func TestAVideosTranscriptIsReadOnceForEveryoneUntilItIsWritten(t *testing.T) {
 	}
 }
 
+// transcriptOf is the episode's transcript as read gives it, held by
+// stamp the way Episode.Transcript holds it.
+func transcriptOf(ep *Episode, stamp string, read func() (*TranscriptRead, error)) (*TranscriptRead, error) {
+	return held(ep, &ep.transcript, stamp, ep.usedTranscript, read)
+}
+
+// The library asks the status of every video each time it is listed.
+// What a transcript has heard is held for every video, so a library of
+// more videos than transcripts are held lets go of no transcript a
+// workspace holds, and lists again without reading any. Listing twelve
+// once took the transcript of the video on screen out of the ten held.
+func TestListingTheLibraryLetsGoOfNoTranscript(t *testing.T) {
+	fsys := afero.NewMemMapFs()
+	words := []timed.Cue{{Start: 0.5, End: 1.2, Text: "Hallo"}}
+	var videos []string
+	for i := range keptTranscripts + 2 {
+		video := fmt.Sprintf("/v/folge%d.mp4", i)
+		storedTranscriptOf(t, fsys, video, words, make([]float32, 300), 3, false)
+		videos = append(videos, video)
+	}
+	m := NewMachine(fsys)
+	open, err := m.Episode(videos[0]).Transcript("/models/modell", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	list := func() []*keptRead[heardSoFar] {
+		var reads []*keptRead[heardSoFar]
+		for _, video := range videos {
+			if st := Status(m, video, "/models/modell", nil); !st.Transcribed || st.Covered != 3 || st.Said == nil {
+				t.Fatalf("%s listed as heard to %v, done %v, said %v", video, st.Covered, st.Transcribed, st.Said)
+			}
+			ep := m.Episode(video)
+			m.held.Lock()
+			reads = append(reads, ep.heard)
+			m.held.Unlock()
+		}
+		return reads
+	}
+	first := list()
+	if again, _ := m.Episode(videos[0]).Transcript("/models/modell", nil); again != open {
+		t.Error("listing the library let go of the transcript of the video on screen")
+	}
+	for i, r := range list() {
+		if r != first[i] {
+			t.Errorf("%s was read again for the second listing, though nothing changed", videos[i])
+		}
+	}
+}
+
+// A transcript that is not this video's, heard by another speech model or
+// of the file before it changed, is no transcript yet. That answer is kept
+// by its stamp like a transcript, so the file is not read whole again for
+// every question while it stays as it is.
+func TestNoTranscriptYetIsKeptByItsStamp(t *testing.T) {
+	words := []timed.Cue{{Start: 0.5, End: 1.2, Text: "Hallo"}}
+	fsys, source, _ := storedTranscript(t, words, make([]float32, 300), 3, false)
+	m := NewMachine(fsys)
+	ep := m.Episode(source)
+	if _, err := ep.Transcript("/models/anderes", nil); !errors.Is(err, ErrNoTranscript) {
+		t.Fatalf("a transcript of another model read as %v, not as none yet", err)
+	}
+	m.held.Lock()
+	first := ep.transcript
+	m.held.Unlock()
+	if _, err := ep.Transcript("/models/anderes", nil); !errors.Is(err, ErrNoTranscript) {
+		t.Fatalf("asked again it read as %v", err)
+	}
+	m.held.Lock()
+	again := ep.transcript
+	m.held.Unlock()
+	if first == nil || again != first {
+		t.Error("no transcript yet was read again though nothing changed")
+	}
+	if r, err := ep.Transcript("/models/modell", nil); err != nil || r == nil {
+		t.Errorf("the model the transcript is of read %v", err)
+	}
+}
+
 // An episode opening asks for its transcript from several calls at once,
 // and it is read once. Going back to one of the last few videos reads
 // nothing, one more lets go of the one asked for longest ago, a file that
@@ -77,7 +157,7 @@ func TestTranscriptsAreReadOnceAndKeptForTheLastVideos(t *testing.T) {
 		// The first read holds until every ask has come.
 		held := make(chan struct{})
 		get := func(video, stamp string) (*TranscriptRead, error) {
-			return m.transcriptHeld(m.Episode(video), stamp, func() (*TranscriptRead, error) {
+			return transcriptOf(m.Episode(video), stamp, func() (*TranscriptRead, error) {
 				if reads[video].Add(1) == 1 && video == a {
 					<-held
 				}
@@ -132,7 +212,7 @@ func TestTranscriptsAreReadOnceAndKeptForTheLastVideos(t *testing.T) {
 		fails := 0
 		broken := func() (*TranscriptRead, error) { fails++; return nil, errors.New("no transcript yet") }
 		for range 2 {
-			if _, err := m.transcriptHeld(m.Episode("/v/f.mp4"), "1", broken); err == nil {
+			if _, err := transcriptOf(m.Episode("/v/f.mp4"), "1", broken); err == nil {
 				t.Error("a failure came back as an answer")
 			}
 		}
@@ -150,7 +230,7 @@ func TestTranscriptsHeldFromEverywhereAtOnce(t *testing.T) {
 		wg.Go(func() {
 			video := fmt.Sprintf("/v/%d.mp4", i%13)
 			stamp := fmt.Sprint(i % 3)
-			r, err := m.transcriptHeld(m.Episode(video), stamp, func() (*TranscriptRead, error) {
+			r, err := transcriptOf(m.Episode(video), stamp, func() (*TranscriptRead, error) {
 				return newTranscriptRead(&Transcript{}, i%2 == 0), nil
 			})
 			if err != nil || r == nil {
@@ -174,7 +254,7 @@ func TestATranscriptReadThatPanicsLetsGoOfItsWaiters(t *testing.T) {
 		started, held := make(chan struct{}), make(chan struct{})
 		go func() {
 			defer func() { _ = recover() }()
-			_, _ = m.transcriptHeld(ep, "1", func() (*TranscriptRead, error) {
+			_, _ = transcriptOf(ep, "1", func() (*TranscriptRead, error) {
 				close(started)
 				<-held
 				panic("read")
@@ -183,7 +263,7 @@ func TestATranscriptReadThatPanicsLetsGoOfItsWaiters(t *testing.T) {
 		<-started
 		waited := make(chan error)
 		go func() {
-			_, err := m.transcriptHeld(ep, "1", func() (*TranscriptRead, error) { return nil, nil })
+			_, err := transcriptOf(ep, "1", func() (*TranscriptRead, error) { return nil, nil })
 			waited <- err
 		}()
 		synctest.Wait()
@@ -192,7 +272,7 @@ func TestATranscriptReadThatPanicsLetsGoOfItsWaiters(t *testing.T) {
 			t.Fatal("a waiter on a read that panicked got no error")
 		}
 		want := newTranscriptRead(&Transcript{}, true)
-		if r, err := m.transcriptHeld(ep, "1", func() (*TranscriptRead, error) { return want, nil }); err != nil || r != want {
+		if r, err := transcriptOf(ep, "1", func() (*TranscriptRead, error) { return want, nil }); err != nil || r != want {
 			t.Fatalf("after a panic the video gave %v, %v, not a new read", r, err)
 		}
 	})

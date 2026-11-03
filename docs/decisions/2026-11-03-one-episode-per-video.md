@@ -64,6 +64,14 @@ file, the loudness, is a field. Cost: a `Stat` per file per question,
 microseconds, and the memory of the transcripts kept, which stays at
 ten as today.
 
+Why not `engine.Project`, which is already "the episode at path" and
+already has `Transcript`? A `Project` is made for each call, with one
+set of options and one `Engine`, and lives as long as the step it takes.
+The app makes one for every binding. What holds a read has to live as
+long as the program and take the speech model and the floor with each
+question, so it hangs off the `Machine`, and a `Project` asks its
+`Episode` rather than being it.
+
 ### 2. The watch says what changed, nothing asks the disk
 
 The principle: since step 2 the app hears every change to a video's
@@ -79,6 +87,12 @@ no longer be the truth, the watch would. Its hints are good for one
 thing here: a copy can be dropped early, which costs nothing and
 changes no answer.
 
+Layers: the watch in the app over a cache in the app over the files.
+What crosses: `reconcile` hands the cache the paths it heard. Next
+changes: the command line and every test would each need a watch of
+their own, or a second way in. Cost: no stat per question, and a wrong
+answer for as long as a lost hint goes unnoticed.
+
 ### 3. One read-by-stamp primitive, no object
 
 The principle: the smallest thing that removes the copies. `fileio`
@@ -93,6 +107,12 @@ package variables. The questions that span files, `Status` reads the
 transcript, the plans and the loudness, still gather them by hand in
 every caller. It is the right mechanism and the wrong home.
 
+Layers: each reader over `fileio.Kept` over the files. What crosses:
+`fileio.Kept(fsys, path, parse)`. Next changes: each new kind of file
+picks its own key and its own cap, and the status still gathers them by
+hand. Cost: the same stat per question as simulation 1, and three caps
+to keep in step.
+
 ### 4. The app holds it, beside what is chosen
 
 The principle: the app already keeps a record for each video, its undo
@@ -103,6 +123,12 @@ It is close to where they are used. But it is the second holder #608
 is about: the engine's `Status` still reads for itself, and the command
 line gets nothing. It breaks "one engine, two front ends", and a rule
 about when a file is read again would live in the app.
+
+Layers: the app's record of a video over the engine's reads. What
+crosses: nothing new in the engine, a field on the app's record. Next
+changes: the command line would need its own copy, which is the drift
+"one engine, two front ends" forbids. Cost: the same as simulation 1 in
+the app, and the engine's `Status` still reads twice.
 
 ### 5. A snapshot made on each change, every read served from it
 
@@ -116,6 +142,12 @@ building keeps each part by its stamp, which is simulation 1 again
 under it. Shaping a clip needs the transcript's words, not a view of
 them. And the snapshot lives where the watch does, in the app, with
 the faults of simulation 2.
+
+Layers: `reconcile` over a builder over the files. What crosses: a
+`Snapshot` value per video. Next changes: every new kind of file is a
+field the builder fills, and a question that needs a fresh file between
+two hints has no way to ask. Cost: a whole build per change, or
+simulation 1 under it.
 
 ## What converges
 
@@ -159,15 +191,27 @@ The pull requests, in order, each one self-contained:
 2. The plans: `PlanSummaries`, `ReadPlan` and the plan reads of the
    shaping go through the episode, by each plan's stamp.
 3. `Status` asked of the episode, and the app's `project()` and
-   `NewProject(nil, ...)` go. Closes #608.
+   `NewProject(nil, ...)` go.
+4. The paths of a video's own files checked by its episode, opened
+   through `os.Root` on its work folder, the third thing #608 asks for.
+   Closes #608.
 
 ## What follows
 
-- It costs three pull requests, each about one kind of file.
+- It costs four pull requests, three about one kind of file each and
+  one about the paths.
 - It buys one holder of what a video's files said, in the engine, for
   both front ends, read again whoever changed the file, and a transcript
   read once where it is read twice.
 - It was wrong if a `Stat` per question shows in a measurement, or if a
-  writer changes a file without changing its size or time, which a sync
-  service restoring an older copy could. Then the stamp takes the
-  file's contents, a hash, in place of its time.
+  file changes without its size or time changing. A copy restored by a
+  sync service has an older time and is seen. A volume that keeps times
+  coarsely, HFS+ to the second or FAT to two, would hide two saves of
+  the same size within one tick, and APFS keeps them to the nanosecond.
+  Then the stamp takes the file's inode and change time too, or a hash
+  of its contents.
+- What the library lists of every video, whether its transcript is done,
+  what it heard and where its lines start and end, is held for every
+  video and by the same stamp, so listing more videos than transcripts
+  are held lets go of none. "No transcript yet" is an answer kept by its
+  stamp like a transcript, not a failure read again on every question.

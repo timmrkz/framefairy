@@ -128,8 +128,8 @@ type EpisodeStatus struct {
 
 // Status reads an episode's state from the files of m. silenceDB is the
 // floor the words are placed on the sound with, Options.SilenceDB, nil for
-// the one worked out from the episode. The transcript is the one the
-// episode holds, see Episode.
+// the one worked out from the episode. What the transcript has heard is
+// what the episode holds, see Episode.heardSoFar.
 func Status(m *Machine, source, asrModelDir string, silenceDB *float64) EpisodeStatus {
 	fsys := m.Files
 	st := EpisodeStatus{Source: source, Name: filepath.Base(source)}
@@ -143,10 +143,10 @@ func Status(m *Machine, source, asrModelDir string, silenceDB *float64) EpisodeS
 	logs := filepath.Join(work, "logs")
 
 	whole := filepath.Join(logs, TranscriptName(nil))
-	if t, err := m.Episode(source).Transcript(asrModelDir, silenceDB); err == nil {
+	if t, err := m.Episode(source).heardSoFar(asrModelDir, silenceDB); err == nil {
 		// Copies, so nothing the status is handed on to changes what is held.
-		st.Transcribed, st.Heard = t.Done, slices.Clone(t.Heard)
-		if said := t.Said(); said != nil {
+		st.Transcribed, st.Heard = t.done, slices.Clone(t.heard)
+		if said := t.said; said != nil {
 			span := *said
 			st.Said = &span
 		}
