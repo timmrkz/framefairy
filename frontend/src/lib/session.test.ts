@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 
-import type { ClipEntry, EpisodeStatus, Job, VideoState } from "./api";
+import type { ClipEntry, EpisodeStatus, Job, VideoState, WindowView } from "./api";
 import { said } from "./said";
 import { EpisodeSession, type WorkMoves } from "./session.svelte";
 import { JobStore } from "./state.svelte";
@@ -9,7 +9,6 @@ vi.mock("./api", () => ({ api: {}, onJob: () => {} }));
 vi.mock("./said", () => ({ said: vi.fn() }));
 
 const none: WorkMoves = {
-  failed: () => {},
   chose: () => {},
   heard: () => {},
   searched: () => {},
@@ -25,7 +24,6 @@ function session(jobs = new JobStore()) {
   const heard: string[] = [];
   const say = (move: string) => (j: Job) => heard.push(`${move} ${j.id}`);
   const moves: WorkMoves = {
-    failed: say("failed"),
     chose: (key: string, before: string, card: string) => heard.push(`chose ${key} ${before || "none"}${card ? ` from ${card}` : ""}`),
     heard: say("heard"),
     searched: say("searched"),
@@ -39,13 +37,13 @@ function session(jobs = new JobStore()) {
 
 // When a video's work moves on, the workspace shows it: the window walks
 // on when the search is over, the range picker's edge lands on what was
-// heard, and a failure says why in a toast. The clips a search wrote and
+// heard. The clips a search wrote and
 // the clip made by hand come in the video's state, with the clip the Go
 // side chose. Each was an
 // effect in Episode.svelte that kept a value from before, issue #606. Said
-// twice, the list is read twice, the window walks on twice and the toast
-// comes twice. Not said, the clips found stay out of the list until
-// something else reads it, and a failure says nothing.
+// twice, the list is read twice and the window walks on twice. Not said,
+// the clips found stay out of the list until something else reads it. A
+// failure is told by the Go side, see notice.go.
 describe("a video's session", () => {
   test("says nothing of a search's clips as they are written, only that it is over", () => {
     const { jobs, heard } = session();
@@ -74,13 +72,13 @@ describe("a video's session", () => {
     expect(heard).toEqual(["heard s", "searched s"]);
   });
 
-  test("says a search over however it ended, and that it failed first when it did", () => {
+  test("says a search over however it ended", () => {
     const { jobs, heard } = session();
     jobs.apply(job("a", "search", "queued", 1, { step: "waiting" }));
     jobs.apply(job("a", "search", "failed", 2, { step: "waiting" }));
     jobs.apply(job("b", "search", "running", 1, { step: "finding" }));
     jobs.apply(job("b", "search", "cancelled", 2, { step: "finding" }));
-    expect(heard).toEqual(["failed a", "searched a", "searched b"]);
+    expect(heard).toEqual(["searched a", "searched b"]);
   });
 
   test("says a search is over when it ends after the next one began", () => {
@@ -127,67 +125,6 @@ describe("a video's session", () => {
     jobs.apply(job("d", "clip", "done", 3, { step: "finding", result: "e/3" }));
     jobs.apply(job("d", "clip", "done", 4, { step: "finding", result: "e/3" }));
     expect(heard).toEqual([]);
-  });
-
-  test("says a failure once it was seen running, and only once", () => {
-    const { jobs, heard } = session();
-    jobs.apply(job("a", "clip", "queued", 1));
-    jobs.apply(job("a", "clip", "running", 2));
-    jobs.apply(job("a", "clip", "failed", 3));
-    jobs.apply(job("a", "clip", "failed", 4));
-    expect(heard).toEqual(["failed a"]);
-  });
-
-  test("says no failure of a job only ever seen failed, as the app opened", () => {
-    const { jobs, heard } = session();
-    jobs.apply(job("a", "clip", "failed", 1));
-    jobs.apply(job("b", "search", "failed", 1));
-    expect(heard).toEqual([]);
-  });
-
-  test("says the failure of a clip asked for here that failed in the store before its call answered", () => {
-    const { jobs, heard, session: here } = session();
-    // The events came first, all at once, so the store was failed already.
-    jobs.apply(job("a", "clip", "failed", 1));
-    here.asked(job("a", "clip", "queued", 0));
-    expect(heard).toEqual(["failed a"]);
-  });
-
-  test("says the failure of a clip whose call answers that it failed, the same way as one that fails later", () => {
-    const { jobs, heard, session: here } = session();
-    here.asked(job("a", "clip", "failed", 1));
-    jobs.apply(job("a", "clip", "failed", 1));
-    jobs.apply(job("b", "clip", "queued", 1));
-    here.asked(job("b", "clip", "queued", 1));
-    jobs.apply(job("b", "clip", "failed", 2));
-    expect(heard).toEqual(["failed a", "failed b"]);
-  });
-
-  test("says a failure seen running and said before the call answered not again", () => {
-    const { jobs, heard, session: here } = session();
-    jobs.apply(job("a", "clip", "running", 1));
-    jobs.apply(job("a", "clip", "failed", 2));
-    here.asked(job("a", "clip", "queued", 0));
-    expect(heard).toEqual(["failed a"]);
-  });
-
-  test("says no failure of a job that ended any other way and was read again as failed", () => {
-    const { jobs, heard } = session();
-    for (const state of ["done", "cancelled", "interrupted", "stopped", "settled"]) {
-      jobs.apply(job(state, "clip", "running", 1));
-      jobs.apply(job(state, "clip", state, 2));
-      jobs.apply(job(state, "clip", "failed", 3));
-    }
-    expect(heard).toEqual([]);
-  });
-
-  test("says no failure of work that is not a search or a clip made by hand", () => {
-    const { jobs, heard } = session();
-    jobs.apply(job("t", "transcribe", "running", 1));
-    jobs.apply(job("t", "transcribe", "failed", 2));
-    jobs.apply(job("r", "render", "running", 1));
-    jobs.apply(job("r", "render", "failed", 2));
-    expect(heard).toEqual(["transcribed t"]);
   });
 
   test("says only the renders asked for in this workspace, once each", () => {
@@ -411,6 +348,23 @@ describe("a video's state in its session", () => {
     await picked;
     expect(here.chosen).toBe("p/c");
     expect(heard).toEqual(["chose p/a none", "chose p/c p/b"]);
+  });
+
+  test("draws the window its state carries, and keeps a hand's place on screen until its answer", async () => {
+    const { session: here } = session();
+    const win = (from: number, to: number) => ({ from, to, length: to - from, most: 1800, least: 60 }) as WindowView;
+    here.take(state(5, { window: win(0, 600) }));
+    expect([here.window?.from, here.window?.to]).toEqual([0, 600]);
+    let answer: (s: VideoState) => void = () => {};
+    const placed = here.place({ from: 600, to: 1200, length: 600 }, () => new Promise((r) => (answer = r)));
+    expect([here.window?.from, here.window?.to]).toEqual([600, 1200]);
+    // Read before the Go side had the window moved.
+    here.take(state(6, { window: win(0, 600) }));
+    expect([here.window?.from, here.window?.to]).toEqual([600, 1200]);
+    // The Go side fitted it as it kept it.
+    answer(state(7, { window: win(600, 1100) }));
+    await placed;
+    expect([here.window?.from, here.window?.to, here.window?.least]).toEqual([600, 1100, 60]);
   });
 
   test("hears the states of its own video while it is open", () => {

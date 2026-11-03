@@ -232,7 +232,21 @@ func (s *FrameFairy) pick(path, key string) error {
 // its own choosing. length is how long the window was made. A window moved
 // by a hand, dragged or put back with a double-click, is a step that undo
 // takes back. One the app moved by itself, after a search, is not.
-func (s *FrameFairy) ChooseWindow(path string, from, to, length float64, byHand bool) error {
+//
+// It answers with the state of the video read after it, whose window is
+// the one kept, fitted to what a search can do with it, see windowFor.
+func (s *FrameFairy) ChooseWindow(ctx context.Context, path string, from, to, length float64, byHand bool) (VideoState, error) {
+	if !s.store.Known(path) {
+		return VideoState{}, errNotInLibrary
+	}
+	if err := s.chooseWindow(path, from, to, length, byHand); err != nil {
+		return VideoState{}, err
+	}
+	return s.State(ctx, path)
+}
+
+// chooseWindow keeps the window, for ChooseWindow and PlaceWindow.
+func (s *FrameFairy) chooseWindow(path string, from, to, length float64, byHand bool) error {
 	if !s.store.Known(path) {
 		return errNotInLibrary
 	}
@@ -259,21 +273,6 @@ func (s *FrameFairy) ChooseWindow(path string, from, to, length float64, byHand 
 	}
 	s.markAside(path)
 	return nil
-}
-
-// ChosenWindow gives back the window of a video, the one the workspace
-// draws: as it was left, after a restart too, and where there is none, or
-// what is written down is not a window of this video, the one the app
-// places, see videoWindow. nil while the video cannot be read.
-func (s *FrameFairy) ChosenWindow(path string) *KeptWindow {
-	if !s.store.Known(path) {
-		return nil
-	}
-	w, ok := s.videoWindow(context.Background(), path)
-	if !ok {
-		return nil
-	}
-	return &w
 }
 
 // looksLikeClipKey reports whether a string could be the key of a clip: a

@@ -79,8 +79,11 @@ func TestNothingOutsideTheLibraryIsTouched(t *testing.T) {
 	if _, err := svc.State(ctx, other); err == nil {
 		t.Error("State answered for a file that is not in the library")
 	}
-	if _, err := svc.Room(other); err == nil {
-		t.Error("Room answered for a file that is not in the library")
+	if _, err := svc.ChooseWindow(ctx, other, 0, 60, 60, true); err == nil {
+		t.Error("ChooseWindow answered for a file that is not in the library")
+	}
+	if _, err := svc.SetSearch(ctx, other, 3, 20, 30, "target"); err == nil {
+		t.Error("SetSearch answered for a file that is not in the library")
 	}
 	if job := svc.Search(other, engine.PlanRequest{To: 10}, ""); job.State != JobFailed {
 		t.Errorf("Search queued %s: %s", other, job.State)

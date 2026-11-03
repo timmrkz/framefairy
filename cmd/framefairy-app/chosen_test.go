@@ -100,16 +100,16 @@ func TestTheChosenClipSurvivesAndNothingElseDoes(t *testing.T) {
 // other, and one that could not be a window is neither kept nor read back.
 func TestTheWindowIsKeptBesideTheClip(t *testing.T) {
 	s, source := chosenApp(t)
-	if got := s.ChosenWindow(source); got != nil {
+	if got := keptWindow(s, source); got != nil {
 		t.Fatalf("a fresh episode had a window: %+v", got)
 	}
 	if err := s.pick(source, "clips/abc123"); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.ChooseWindow(source, 120, 180, 60, false); err != nil {
+	if err := s.chooseWindow(source, 120, 180, 60, false); err != nil {
 		t.Fatal(err)
 	}
-	if got := s.ChosenWindow(source); got == nil || *got != (KeptWindow{From: 120, To: 180, Length: 60}) {
+	if got := keptWindow(s, source); got == nil || *got != (KeptWindow{From: 120, To: 180, Length: 60}) {
 		t.Errorf("the window came back as %+v", got)
 	}
 	if got := chosenClip(s, source); got != "clips/abc123" {
@@ -118,11 +118,11 @@ func TestTheWindowIsKeptBesideTheClip(t *testing.T) {
 	if err := s.pick(source, "clips/def456"); err != nil {
 		t.Fatal(err)
 	}
-	if got := s.ChosenWindow(source); got == nil || got.From != 120 {
+	if got := keptWindow(s, source); got == nil || got.From != 120 {
 		t.Errorf("choosing a clip lost the window: %+v", got)
 	}
 	// Cut short at the end of the episode, it is shorter than it was made.
-	if err := s.ChooseWindow(source, 300, 325, 60, false); err != nil {
+	if err := s.chooseWindow(source, 300, 325, 60, false); err != nil {
 		t.Errorf("a window cut short: %v", err)
 	}
 	for _, bad := range [][3]float64{
@@ -133,11 +133,11 @@ func TestTheWindowIsKeptBesideTheClip(t *testing.T) {
 		{0, 60, 30},
 		{0, engine.MaxEpisodeSeconds + 1, engine.MaxEpisodeSeconds + 1},
 	} {
-		if err := s.ChooseWindow(source, bad[0], bad[1], bad[2], false); err == nil {
+		if err := s.chooseWindow(source, bad[0], bad[1], bad[2], false); err == nil {
 			t.Errorf("%v was kept", bad)
 		}
 	}
-	if got := s.ChosenWindow(source); got == nil || got.From != 300 {
+	if got := keptWindow(s, source); got == nil || got.From != 300 {
 		t.Errorf("a refused window changed the kept one: %+v", got)
 	}
 	// Whatever else is written into the file is not a window.
@@ -146,7 +146,7 @@ func TestTheWindowIsKeptBesideTheClip(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.forget(source)
-	if got := s.ChosenWindow(source); got != nil {
+	if got := keptWindow(s, source); got != nil {
 		t.Errorf("a window written backwards was read back: %+v", got)
 	}
 	if got := chosenClip(s, source); got != "clips/a" {
@@ -169,15 +169,15 @@ func TestAClipAndAWindowChosenAtOnce(t *testing.T) {
 		}()
 		go func() {
 			defer wg.Done()
-			if err := s.ChooseWindow(source, float64(i), float64(i+60), 60, i%2 == 0); err != nil {
+			if err := s.chooseWindow(source, float64(i), float64(i+60), 60, i%2 == 0); err != nil {
 				t.Error(err)
 			}
-			_ = s.ChosenWindow(source)
+			_ = keptWindow(s, source)
 		}()
 	}
 	wg.Wait()
-	if chosenClip(s, source) == "" || s.ChosenWindow(source) == nil {
-		t.Errorf("one change lost the other: clip %q, window %+v", chosenClip(s, source), s.ChosenWindow(source))
+	if chosenClip(s, source) == "" || keptWindow(s, source) == nil {
+		t.Errorf("one change lost the other: clip %q, window %+v", chosenClip(s, source), keptWindow(s, source))
 	}
 }
 
@@ -194,7 +194,7 @@ func TestWhatIsChosenIsWrittenThroughNewestLast(t *testing.T) {
 			}
 		})
 		wg.Go(func() {
-			if err := s.ChooseWindow(source, float64(i), float64(i+60), 60, false); err != nil {
+			if err := s.chooseWindow(source, float64(i), float64(i+60), 60, false); err != nil {
 				t.Error(err)
 			}
 		})
@@ -221,21 +221,21 @@ func chosenApp(t *testing.T) (*FrameFairy, string) {
 // itself is no step.
 func TestTheWindowMovedByHandIsUndone(t *testing.T) {
 	s, source := chosenApp(t)
-	if err := s.ChooseWindow(source, 0, 60, 60, false); err != nil {
+	if err := s.chooseWindow(source, 0, 60, 60, false); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.ChooseWindow(source, 120, 180, 60, true); err != nil {
+	if err := s.chooseWindow(source, 120, 180, 60, true); err != nil {
 		t.Fatal(err)
 	}
 	// A search moves it on by itself.
-	if err := s.ChooseWindow(source, 180, 240, 60, false); err != nil {
+	if err := s.chooseWindow(source, 180, 240, 60, false); err != nil {
 		t.Fatal(err)
 	}
 	done, err := s.Undo(source)
 	if err != nil || !done.Done || done.Window == nil || *done.Window != (KeptWindow{0, 60, 60}) {
 		t.Fatalf("undo gave %+v, %v", done, err)
 	}
-	if got := s.ChosenWindow(source); got == nil || got.From != 0 {
+	if got := keptWindow(s, source); got == nil || got.From != 0 {
 		t.Errorf("after undo the window is kept at %+v", got)
 	}
 	done, err = s.Redo(source)
@@ -246,7 +246,7 @@ func TestTheWindowMovedByHandIsUndone(t *testing.T) {
 		t.Error("a search moving the window on was a step")
 	}
 	// The same place again is no step.
-	if err := s.ChooseWindow(source, 120, 180, 60, true); err != nil {
+	if err := s.chooseWindow(source, 120, 180, 60, true); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Undo(source); err != nil {
@@ -314,4 +314,17 @@ func TestTheEpisodesOpenedLastComeNewestFirst(t *testing.T) {
 // it.
 func chosenClip(s *FrameFairy, path string) string {
 	return s.chosenIn(path).get(s.store.files, path).Clip
+}
+
+// keptWindow is the window of a video the workspace draws, placed where
+// none is kept, or nil while the video cannot be read.
+func keptWindow(s *FrameFairy, path string) *KeptWindow {
+	if !s.store.Known(path) {
+		return nil
+	}
+	w, ok := s.videoWindow(context.Background(), path)
+	if !ok {
+		return nil
+	}
+	return &w
 }

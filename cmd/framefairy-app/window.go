@@ -61,6 +61,104 @@ func (s *FrameFairy) videoWindow(ctx context.Context, path string) (KeptWindow, 
 	return w, w.To > w.From
 }
 
+// WindowView is the video's window as the workspace draws it, sent in
+// its state, with what it and the search asked of it may be, so the
+// range picker holds a drag to its limits in the frame the hand moves
+// and the clip settings to theirs, and decides none of it.
+type WindowView struct {
+	KeptWindow
+	engine.WindowLimits
+	// Shortest and Longest are how long the clips a search of it asks
+	// for may be, in seconds, as they are set.
+	Shortest float64 `json:"shortest"`
+	Longest  float64 `json:"longest"`
+}
+
+// windowFor is the window of the video whose state st is, on a video of
+// duration seconds, fitted to what a search can do with it whenever that
+// changed, the room or the clips asked for. Not while a search runs on
+// it, because then it is the window being searched, nor while a search
+// stands stopped on it, because it is the window Continue carries on. A
+// window fitted is kept, so the window drawn is the video's window. nil
+// while the video cannot be read.
+func (s *FrameFairy) windowFor(ctx context.Context, path string, st VideoState, duration float64) *WindowView {
+	if duration <= 0 {
+		return nil
+	}
+	w, ok := s.videoWindow(ctx, path)
+	if !ok {
+		return nil
+	}
+	p := s.project(path)
+	r := s.roomAndLines(p)
+	limits := func(w KeptWindow) engine.WindowLimits {
+		return p.Limits(r, duration, w.To-w.From, s.store.Settings().targetFor(w.To-w.From))
+	}
+	view := func(w KeptWindow, l engine.WindowLimits) *WindowView {
+		return &WindowView{KeptWindow: w, WindowLimits: l, Shortest: p.Base.Min, Longest: p.Base.Max}
+	}
+	l := limits(w)
+	if searchHolds(st.Jobs) {
+		return view(w, l)
+	}
+	from, to := engine.FitWindow(w.From, w.To, l.Most, l.Least, duration)
+	fitted := KeptWindow{From: from, To: to, Length: math.Max(w.Length, to-from)}
+	if sameWindow(fitted, w) {
+		return view(w, l)
+	}
+	// Only the window it was fitted from is changed. One written
+	// meanwhile, by a hand or by another read that fitted it first, is
+	// the window kept, so that is the one the state carries, never the
+	// one read before it.
+	kept, now := false, w
+	if _, err := s.chosenIn(path).change(s.store.files, path, func(c *chosen) bool {
+		if c.Window == nil {
+			return false
+		}
+		if !sameWindow(*c.Window, w) {
+			now = *c.Window
+			return false
+		}
+		c.Window, kept = &fitted, true
+		return true
+	}); err != nil {
+		theLog.line(zerolog.WarnLevel, "window").Str("video", filepath.Base(path)).Err(err).
+			Msg("the window fitted to what a search can read could not be kept")
+	}
+	if !kept {
+		now.To = math.Min(now.To, duration)
+		return view(now, limits(now))
+	}
+	// A target typed for the window is the target of the window fitted,
+	// most often to the clips it asked for, when it was typed on this
+	// video. A window of another video as long only asks for it.
+	if l.Typed > 0 {
+		if err := s.store.UpdateSettings(func(set *Settings) {
+			if set.targetFor(w.To-w.From) > 0 && set.TargetVideo == path {
+				set.TargetWindow = to - from
+			}
+		}); err != nil {
+			theLog.line(zerolog.WarnLevel, "window").Str("video", filepath.Base(path)).Err(err).
+				Msg("the target typed could not follow the window fitted")
+		}
+	}
+	theLog.line(zerolog.InfoLevel, "window").Str("video", filepath.Base(path)).
+		Float64("from", from).Float64("to", to).Float64("most", l.Most).Float64("least", l.Least).
+		Msg("the window was fitted to what a search can read")
+	return view(fitted, limits(fitted))
+}
+
+// searchHolds says whether a search of the video holds its window: one
+// that runs, or one that stopped on it and is not set aside.
+func searchHolds(jobs []Job) bool {
+	for _, j := range jobs {
+		if j.Kind == engine.JobSearch && (j.going() || (j.unfinished() && !j.Aside)) {
+			return true
+		}
+	}
+	return false
+}
+
 // placedWindow is where the app puts a video's window, see
 // engine.Project.PlaceWindow.
 func (s *FrameFairy) placedWindow(path string, duration float64) KeptWindow {
@@ -69,14 +167,17 @@ func (s *FrameFairy) placedWindow(path string, duration float64) KeptWindow {
 }
 
 // roomAndLines is what one search of the project's video can read, from
-// the transcript as far as it is heard, the same Room sends the range
-// picker. A transcript that cannot be read is nothing heard yet.
+// the transcript as far as it is heard. A transcript that cannot be read
+// is nothing heard yet. Every state carries the window and what it may
+// be, so the lines are weighed once for each transcript read and kept
+// with it, see heard: weighed for every state, four hours of them took
+// most of 55 ms.
 func (s *FrameFairy) roomAndLines(p *engine.Project) engine.RoomAndLines {
-	t, err := s.transcript(p)
+	h, err := s.heardIn(p)
 	if err != nil {
-		t = nil
+		return p.RoomWith(engine.Weigh(nil))
 	}
-	return p.RoomAndLines(t)
+	return p.RoomWith(h.weighed())
 }
 
 // keptOf is a window the engine placed as the app keeps it.
@@ -148,19 +249,17 @@ func (s *FrameFairy) windowOn(path string, req engine.PlanRequest) {
 
 // PlaceWindow puts the window back where the app would place it, a
 // double-click on its marks. It is a hand's step, which undo takes back.
-func (s *FrameFairy) PlaceWindow(path string) (*KeptWindow, error) {
+// It answers with the state of the video read after it.
+func (s *FrameFairy) PlaceWindow(ctx context.Context, path string) (VideoState, error) {
 	if !s.store.Known(path) {
-		return nil, errNotInLibrary
+		return VideoState{}, errNotInLibrary
 	}
-	info, err := s.probe(context.Background(), path)
+	info, err := s.probe(ctx, path)
 	if err != nil || info.Duration <= 0 {
-		return nil, errors.New("the video cannot be read")
+		return VideoState{}, errors.New("the video cannot be read")
 	}
 	w := s.placedWindow(path, info.Duration)
-	if err := s.ChooseWindow(path, w.From, w.To, w.Length, true); err != nil {
-		return nil, err
-	}
-	return &w, nil
+	return s.ChooseWindow(ctx, path, w.From, w.To, w.Length, true)
 }
 
 // sameWindow says whether two windows are the same part of the video. A

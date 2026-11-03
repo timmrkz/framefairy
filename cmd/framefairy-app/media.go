@@ -74,6 +74,9 @@ func (p *probed) lastOf(path string) engine.SourceInfo {
 }
 
 func (s *FrameFairy) probe(ctx context.Context, path string) (engine.SourceInfo, error) {
+	if s.probes != nil {
+		return s.probes.probe(ctx, path)
+	}
 	return sources.probe(ctx, path)
 }
 

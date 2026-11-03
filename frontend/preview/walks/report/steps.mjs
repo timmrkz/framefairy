@@ -1759,7 +1759,11 @@ export const steps = {
     const { page } = walk;
     // Issue #311: Tim read "Anthropic is busy and did not a…" in the
     // row, cut where it said what to do. Why is said in a toast,
-    // whole, with Report, and the row says only that it failed.
+    // whole, with Report, and the row says only that it failed. The Go
+    // side tells the failure on an event of its own, after the job's
+    // news, see notice.go. Once the interface has heard all the Go side
+    // said, the toast is there.
+    await caughtUp(page, url);
     const said = await page.evaluate(() => {
       const t = document.querySelector(".toast");
       const li = document.querySelector("li.next.stopped");

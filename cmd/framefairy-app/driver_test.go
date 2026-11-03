@@ -120,6 +120,7 @@ func (d *desk) start(st *store) {
 		// The library is on the real disk, so the walks change its
 		// folders from outside the app the way Finder does.
 		svc.watch = newWatching(svc.reconcile)
+		svc.jobs.notice = func(n Notice) { d.bus.send("notice", n) }
 	}
 	d.svc.listening.say = func(x Dictation) {
 		if d.told != nil {

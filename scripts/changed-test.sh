@@ -108,7 +108,7 @@ mac "frontend/src/App.svelte" "interface walks build outside"
 # Except the files of the interface a Go test reads, which are that test's
 # package too. A file a Go test only names in a comment is not one of them.
 has "frontend/src/lib/api.ts" "interface" "unit" "go framefairy/cmd/framefairy-app" "walks"
-has "frontend/src/lib/suggest.cases.json" "interface" "go framefairy/engine"
+has "frontend/src/lib/glide.cases.json" "interface" "go framefairy/engine"
 is "frontend/src/lib/flow.ts" "interface unit go framefairy/internal/naming walks build"
 
 # A package reaches every package that imports it, and only those.
