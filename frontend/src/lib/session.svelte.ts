@@ -31,9 +31,8 @@ export class EpisodeSession {
   // The rev of the newest answer to an edit: a state read before it
   // knows nothing of the edit, and would put back what it changed.
   private floor = 0;
-  // Changes shown before the Go side has answered them, an edit or a
-  // pick, and the newest state that came in the meantime, the answer to a
-  // pick among them, kept until they are answered.
+  // Changes shown before the Go side has answered them, and the newest
+  // state that came in the meantime, kept until they are answered.
   private holds = 0;
   private waiting: VideoState | null = null;
   private waitingFresh = false;
@@ -42,6 +41,7 @@ export class EpisodeSession {
   // answered it, see Hand.
   chosen = $state("");
   window = $state<WindowView | null>(null);
+  private picks = new Hand();
   private places = new Hand();
   private chose: Chose = () => {};
 
@@ -93,8 +93,16 @@ export class EpisodeSession {
     return kept;
   }
 
-  // The clip a state says is chosen.
+  // The clip a state says is chosen, once no pick is on its way that the
+  // state was read before. A state that says the card picked was written
+  // as its clip is read after the pick, whenever its answer comes: the Go
+  // side had the pick, the card is gone from the state's jobs and its clip
+  // is in its clips, so the clip is chosen with them. Held for the pick's
+  // answer, the card was gone and nothing chosen for as long as the answer
+  // took on a busy machine, issue #697.
   private choose(state: VideoState) {
+    const written = !!state.chosenCard && state.chosenCard === this.chosen;
+    if (this.picks.holds(state) && !written) return;
     const now = state.chosen ?? "";
     if (now === this.chosen) return;
     const before = this.chosen;
@@ -112,26 +120,16 @@ export class EpisodeSession {
   // A clip chosen by a hand, shown at once while choose tells the Go side,
   // which answers with the state of the video read after the pick. What
   // that state says is chosen is drawn, which is the clip picked, or the
-  // clip a card picked was written as. The states that come while the
-  // pick is on its way are kept aside with its answer, the way an edit
-  // keeps them, and the newest is taken once it is in, so what is drawn is
-  // the pick, or all of one state. A state read before the pick would put
-  // back the clip chosen before it. And a card picked as its clip was
-  // written was drawn as no card at all: the state its clip came in was
-  // drawn but for what it said is chosen, so the card was gone and the
-  // clip not chosen yet, issue #697. A pick that is refused leaves the
-  // clip chosen to the newest state that came meanwhile, or the next.
-  // What it returns is done once the answer is in.
-  async pick(key: string, choose: (key: string) => Promise<VideoState>): Promise<void> {
+  // clip a card picked was written as. A pick that is refused leaves the
+  // clip chosen to the next state. What it returns is done once the
+  // answer is in.
+  pick(key: string, choose: (key: string) => Promise<VideoState>): Promise<void> {
     this.chosen = key;
-    this.holds++;
-    try {
-      this.take(await choose(key));
-    } catch {
-      // Refused: the states kept aside say what is chosen.
-    } finally {
-      this.release();
-    }
+    return this.picks.ask(
+      () => choose(key),
+      (state) => this.take(state),
+      (late) => this.choose(late),
+    );
   }
 
   // The window as a hand put it, shown at once while place tells the Go
@@ -169,20 +167,14 @@ export class EpisodeSession {
       if (was) this.clips = this.clips.map((c) => (c.key === key ? was : c));
       throw err;
     } finally {
-      this.release();
-    }
-  }
-
-  // One change fewer on its way, and once none is, the newest state kept
-  // aside meanwhile is taken.
-  private release() {
-    this.holds--;
-    const next = this.waiting;
-    if (this.holds === 0 && next) {
-      const fresh = this.waitingFresh;
-      this.waiting = null;
-      this.waitingFresh = false;
-      this.take(next, fresh);
+      this.holds--;
+      const next = this.waiting;
+      if (this.holds === 0 && next) {
+        const fresh = this.waitingFresh;
+        this.waiting = null;
+        this.waitingFresh = false;
+        this.take(next, fresh);
+      }
     }
   }
 }
@@ -193,8 +185,8 @@ function same<T>(was: T, now: T): T {
   return was !== null && JSON.stringify(was) === JSON.stringify(now) ? was : now;
 }
 
-// What a hand did that the Go side has not answered yet: a window put
-// somewhere. It is shown at once, and the Go side answers with
+// What a hand did that the Go side has not answered yet: a pick, or a
+// window put somewhere. It is shown at once, and the Go side answers with
 // the state of the video read after it. A state read before that answer
 // may know nothing of what the hand did and would put back what was there
 // for a moment, so asking counts the calls not answered and at is the rev

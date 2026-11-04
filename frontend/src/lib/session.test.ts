@@ -160,41 +160,39 @@ describe("a video's state in its session", () => {
     expect(heard).toEqual(["chose p/a none", "chose hand/h01 job/1 from job/1"]);
   });
 
-  test("keeps a card picked on screen, and its job on the way, until its answer, though a state came meanwhile with its clip written", async () => {
-    // Issue #697: O pressed while the video played, and its card picked.
-    // The clip was written and the state that holds it came before the
-    // pick's answer. Its clips and its jobs were drawn but not what it
-    // said is chosen, so for a frame the card was gone, the clip not yet
-    // chosen, and no card was chosen at all.
+  test("draws the clip a card picked was written as in the state that says so, before the pick has its answer", async () => {
+    // Issue #697: O pressed, and its card picked. The Go side had the pick
+    // and wrote the clip, and the state that says so came before the
+    // pick's answer on a busy machine. Its clips and its jobs were drawn
+    // but not what it said is chosen, so the card was gone and no card was
+    // chosen until the answer came.
     const { heard, session: here } = session();
     const making = job("job", "clip", "running", 3, { underway: [{ n: 1, start: 5, end: 12 }] } as Partial<Job>);
     const made = job("job", "clip", "done", 4, { result: "hand/h01" });
     here.take(state(5, { chosen: "p/a", jobs: [making] }));
     let answer: (s: VideoState) => void = () => {};
     const picked = here.pick("job/1", () => new Promise((r) => (answer = r)));
-    here.take(state(6, { chosen: "p/a", clips: [clip("a"), clip("hand/h01")], jobs: [made] }));
-    expect(here.chosen).toBe("job/1");
-    expect(here.jobs).toEqual([making]);
-    expect(here.clips.map((c) => c.key)).toEqual(["a"]);
+    here.take(state(6, { chosen: "hand/h01", chosenCard: "job/1", clips: [clip("a"), clip("hand/h01")], jobs: [made] }));
+    expect([here.chosen, here.clips.map((c) => c.key)]).toEqual(["hand/h01", ["a", "hand/h01"]]);
     answer(state(7, { chosen: "hand/h01", chosenCard: "job/1", clips: [clip("a"), clip("hand/h01")], jobs: [made] }));
     await picked;
     expect([here.chosen, here.rev]).toEqual(["hand/h01", 7]);
-    expect(here.clips.map((c) => c.key)).toEqual(["a", "hand/h01"]);
     expect(heard).toEqual(["chose p/a none", "chose hand/h01 job/1 from job/1"]);
   });
 
-  test("leaves what is chosen to the state that came while a pick was on its way, when the pick is refused", async () => {
+  test("keeps a card picked on screen while its pick is on its way, when a state says another card was written", async () => {
     const { heard, session: here } = session();
     here.take(state(5, { chosen: "p/a" }));
-    const picked = here.pick("p/b", async () => {
-      here.take(state(6, { chosen: "p/a", clips: [clip("a"), clip("c")] }));
-      throw new Error("the clip is gone");
-    });
-    expect(here.chosen).toBe("p/b");
+    let answer: (s: VideoState) => void = () => {};
+    const picked = here.pick("job/1", () => new Promise((r) => (answer = r)));
+    // Read before the Go side had the pick, while a card picked before it
+    // was written.
+    here.take(state(6, { chosen: "hand/h02", chosenCard: "job/2", clips: [clip("a"), clip("hand/h02")] }));
+    expect(here.chosen).toBe("job/1");
+    answer(state(7, { chosen: "job/1", clips: [clip("a"), clip("hand/h02")] }));
     await picked;
-    expect([here.chosen, here.rev]).toEqual(["p/a", 6]);
-    expect(here.clips.map((c) => c.key)).toEqual(["a", "c"]);
-    expect(heard).toEqual(["chose p/a none", "chose p/a p/b"]);
+    expect(here.chosen).toBe("job/1");
+    expect(heard).toEqual(["chose p/a none"]);
   });
 
   test("shows what the app chose while a pick was on its way once the pick is answered, when it chose after it", async () => {
