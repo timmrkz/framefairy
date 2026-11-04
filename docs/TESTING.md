@@ -1110,10 +1110,12 @@ each share starts its longest runs first, so no bridge is left with a
 minute of work after the others are done. Every third run, as it was,
 left one machine a minute behind. A run the file does not know counts as
 the median. `make walks WALKTIMES=1` writes the file again from the times
-of that run, best on the whole set on a quiet machine, and keeps the time
-it had for a run that the test's time stopped, since how long a run that
-hung was stopped after says nothing of how long it takes. On three machines
-each job still took four and three quarter minutes, setup included. More
+of that run, and keeps the time it had for a run that the test's time
+stopped, since how long a run that hung was stopped after says nothing of
+how long it takes. The times that count are CI's, so the file is best made
+from the logs of the walks jobs, which end on the time of every run they
+walked. On four machines, once every walk walked in WebKit, the jobs took
+223 to 377 seconds, setup included. More
 bridges on a machine do not help: on four cores eight bridges finished a
 share no sooner than six and broke three walks that wait on the clock.
 
