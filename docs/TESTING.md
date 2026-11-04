@@ -63,7 +63,10 @@ the machines, or twice as long on the same ones, see
 walks, `walks-nightly.yml`, walk in Chromium, `WALKBROWSER=chromium`, so
 both engines are walked every day. The WebKit is Playwright's own build
 for Linux, which takes real key presses, and CI's image holds it beside
-the Chromium, see `.github/ci-image/Dockerfile`. A cloud session gets it
+the Chromium, see `.github/ci-image/Dockerfile`. It draws every frame through OpenGL,
+which a machine without a graphics chip runs on the CPU, and drawing is
+42 % of the walks' CPU there, so the walks give it two threads to draw
+with rather than one a core, see `drawingThreads` in `walks/bridge.mjs`. A cloud session gets it
 from the SessionStart hook, see `scripts/cloud-webkit.sh`, and walks one
 sequence in it the way it walks one in Chromium. `SLOW` and
 `WALKCOVERAGE` work through Chromium's own tools, so either walks every
