@@ -6,7 +6,7 @@
 // video again. See
 // docs/decisions/2026-10-30-a-videos-state-in-one-session.md and
 // docs/decisions/2026-11-01-every-rule-of-the-workspace-in-go.md.
-import type { ClipEntry, CoverageView, EpisodeStatus, KeptWindow, VideoState, WindowView } from "./api";
+import type { ClipEntry, CoverageView, EpisodeStatus, Job, KeptWindow, VideoState, WindowView } from "./api";
 import type { JobStore } from "./state.svelte";
 import { unchanged } from "./unchanged";
 
@@ -22,11 +22,12 @@ export class EpisodeSession {
   status = $state<EpisodeStatus | null>(null);
   clips = $state<ClipEntry[]>([]);
   coverage = $state<CoverageView>({ passes: [] });
-  // The rev of the newest state kept, and how many clips each job had
-  // written in it. A state read after a job's news, rev past its seq,
-  // holds every clip the job had said it wrote by then.
+  // The rev of the newest state kept.
   rev = $state(0);
-  private written = $state<Record<string, number>>({});
+  // The video's jobs in the newest state kept, the clips on their way
+  // among them. They come with the clips, so a card on its way becomes its
+  // clip in the state that holds the clip, never a frame before or after.
+  jobs = $state<Job[]>([]);
   // The rev of the newest answer to an edit: a state read before it
   // knows nothing of the edit, and would put back what it changed.
   private floor = 0;
@@ -80,7 +81,7 @@ export class EpisodeSession {
       this.status = same(this.status, state.status);
       this.clips = fresh ? state.clips : unchanged(this.clips, state.clips);
       this.coverage = same(this.coverage, state.coverage);
-      this.written = Object.fromEntries(state.jobs.map((j) => [j.id, j.written ?? 0]));
+      this.jobs = state.jobs;
       kept = true;
       this.choose(state);
       this.frame(state);
@@ -135,12 +136,6 @@ export class EpisodeSession {
       (state) => this.take(state),
       (late) => this.frame(late),
     );
-  }
-
-  // How many clips the job had written in the newest state kept, which
-  // are in its clips.
-  wrote(job: string): number {
-    return this.written[job] ?? 0;
   }
 
   // One clip as an edit left it, from the edit's answer. No state read

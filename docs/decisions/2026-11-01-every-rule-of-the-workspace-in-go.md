@@ -481,8 +481,11 @@ a removed row has is kept by the job, `JobAway` in
 row holds it there, `HoldRemoval`. The walks ran the page's ten seconds
 on by hand and the Go side's ran on the real clock, so the bridge hands
 the queue a clock of its own, `walkTime` in `walktime_test.go`, which
-follows the system's and which `runClock` runs on with the page's,
-through `/clock?run=`. A timer only forgets the removal it was set for,
+holds and lets go with the page's, `holdClock` and `letClockGo`, and
+which `runClock` runs on with it, through `/clock?run=`. A hold and a
+let go are numbered, so one that arrives after a later one is left out.
+Refused work, which has no record to take away, is settled when its
+time is up. A timer only forgets the removal it was set for,
 so a job settled or carried on meanwhile keeps its record.
 
 The transcription said stopping is one field for all work, not one for
@@ -504,3 +507,17 @@ later, so those walks catch up with the Go side's news first,
 by the app closing, or failed, says so at its clip's Render button with
 Continue and a bin, removed the way stopped work is, which needed
 nothing new but the button.
+
+`OnTheWay`'s hold, `unread` and `session.wrote` went as decided. The
+cards on their way come from the jobs of the state the session keeps,
+the state their clips come from, so a card leaves the list in the state
+that holds its clip. A job no state holds yet, one a press has just
+started, is taken from the job store as Go answered the press, since it
+has written no clip yet. Two things stay in the interface on purpose:
+how long a row that says what became of something stays on screen, a
+clip removed by hand and a search that found nothing, `told`, which is
+how news is shown, like a toast's time, and decides nothing about the
+work. And the preview's stub, `frontend/preview/wails-stub.ts`, plays
+the Go side for the interface's own tests, `engine.SearchEnded` among
+it. It is a stand-in, never the app, and the walks run every rule
+against the real Go side.

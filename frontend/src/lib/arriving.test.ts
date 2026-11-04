@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { Job } from "./api";
-import { arriving, Carrier, OnTheWay, type Arriving } from "./arriving";
+import { arriving, Carrier, type Arriving } from "./arriving";
 import { arrivalLine } from "./steps";
 
 function job(over: Partial<Job>): Job {
@@ -131,43 +131,8 @@ describe("every clip on its way comes in the same way, whoever proposed it", () 
   });
 });
 
-describe("a card is held from the moment its clip is written until the list has it", () => {
-  const card = (key: string, over: Partial<Arriving> = {}): Arriving => ({
-    key, job: "s", n: 1, start: 10, end: 30, title: "", what: "Placing the crop", left: "", fraction: -1, ...over,
-  });
-
-  test("in the same pass it leaves, not a render later", () => {
-    const way = new OnTheWay();
-    // The search's news is at 5 and the newest state of the video at 4.
-    let seq = 5;
-    way.cards([card("s/1")], () => seq, 4);
-    // Written: gone from the job's list, and still on screen in that pass.
-    seq = 6;
-    const now = way.cards([], () => seq, 4);
-    expect(now.map((a) => [a.key, a.held])).toEqual([["s/1", true]]);
-    // A state read before the news that it left knows nothing of it and
-    // keeps it.
-    expect(way.cards([], () => seq, 6).length).toBe(1);
-    // The first state read after it left holds the clip: it goes.
-    expect(way.cards([], () => seq, 7)).toEqual([]);
-  });
-
-  test("a card that stopped is not held, it says so where it is", () => {
-    const way = new OnTheWay();
-    way.cards([card("s/1", { stopped: true })], () => 3, 2);
-    expect(way.cards([], () => 3, 2)).toEqual([]);
-  });
-
-  test("a card back on the way is live again, not held twice", () => {
-    const way = new OnTheWay();
-    way.cards([card("s/1")], () => 3, 2);
-    way.cards([], () => 3, 2);
-    expect(way.cards([card("s/1")], () => 3, 2).map((a) => a.held)).toEqual([undefined]);
-  });
-});
-
 describe("one card carries the search's work, from the first card to the last", () => {
-  const card = (key: string, start: number, over: Partial<Arriving> & { held?: boolean } = {}) => ({
+  const card = (key: string, start: number, over: Partial<Arriving> = {}) => ({
     key, job: "s", n: Number(key.split("/")[1]), start, end: start + 25, title: "", what: "Fitting to the length", left: "", fraction: -1, ...over,
   });
 
@@ -182,8 +147,8 @@ describe("one card carries the search's work, from the first card to the last", 
     carrier.pick([card("s/2", 400), card("s/3", 900)], "s");
     // A card named above it does not take it away.
     expect(carrier.pick([card("s/1", 100), card("s/2", 400), card("s/3", 900)], "s")).toBe("s/2");
-    // Written, and held until the list reads it: its work is done.
-    expect(carrier.pick([card("s/1", 100), card("s/2", 400, { held: true }), card("s/3", 900)], "s")).toBe("s/1");
+    // Written: gone from the cards, and its work is done.
+    expect(carrier.pick([card("s/1", 100), card("s/3", 900)], "s")).toBe("s/1");
     expect(carrier.pick([card("s/3", 900)], "s")).toBe("s/3");
     expect(carrier.pick([], "s")).toBe("");
   });

@@ -172,8 +172,13 @@ which reads this file.
    and the interface shows what Go sends. A change from outside lands in
    `reconcile` and nowhere else. Held by its design: a video's jobs and
    everything they change reach the window only in its `VideoState`, the
-   session keeps the newest, and the interface keeps nothing of a
-   video's work but a press Go has not answered yet. And by the watch,
+   session keeps the newest, the cards on their way come from the jobs
+   of the state the clips come from, and the interface keeps nothing of
+   a video's work but a press Go has not answered yet. How long a row
+   that says what became of something stays on screen, a clip removed by
+   hand or a search that found nothing, is the interface's, like a
+   toast's: it is how the news is shown, not what happened to the work.
+   And by the watch,
    see [the decision record](decisions/2026-11-01-the-app-in-step-with-its-files.md),
    and by the review.
 6. A job that goes wrong fails itself, not the app. Held by a recover

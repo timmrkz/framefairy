@@ -111,15 +111,18 @@ describe("a video's state in its session", () => {
     expect(here.clips[0]).not.toBe(was);
   });
 
-  test("hands its jobs to the store unless the store has newer news of them, and counts what each wrote", () => {
+  test("hands its jobs to the store unless the store has newer news of them, and keeps those of the state it keeps", () => {
     const jobs = new JobStore();
     const { session: here } = session(jobs);
     jobs.apply(job("s", "search", "running", 4, { step: "finding", written: 2 }));
     here.take(state(5, { jobs: [job("s", "search", "running", 3, { step: "finding", written: 1 })] }));
     expect(jobs.list[0].written).toBe(2);
-    expect(here.wrote("s")).toBe(1);
+    // The cards on the way come from the state the clips come from.
+    expect(here.jobs.map((j) => j.written)).toEqual([1]);
+    here.take(state(4, { jobs: [job("s", "search", "running", 2, { step: "finding", written: 0 })] }));
+    expect(here.jobs.map((j) => j.written)).toEqual([1]);
     here.take(state(7, { jobs: [job("s", "search", "done", 6, { step: "finding", written: 3 })] }));
-    expect([jobs.list[0].state, here.wrote("s")]).toEqual(["done", 3]);
+    expect([jobs.list[0].state, here.jobs[0].written]).toEqual(["done", 3]);
   });
 
   test("shows the clip a state says is chosen, and says the app chose another", () => {

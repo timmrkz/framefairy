@@ -67,7 +67,7 @@
     type Removed,
     type Told,
   } from "../lib/removed";
-  import { arriving, OnTheWay, type Arriving, type Away } from "../lib/arriving";
+  import { arriving, type Arriving, type Away } from "../lib/arriving";
   import { holdAhead } from "../lib/frames/queue";
   import { wordFramesOf, type WordFrame } from "../lib/frames/captions";
   import RangeWindow from "../components/RangeWindow.svelte";
@@ -911,9 +911,19 @@
   // The clips on their way, from every job of the episode alike: the
   // search's, from the moment the model names each, and the ones made with
   // I and O, from the moment the key is pressed. See lib/arriving.ts.
+  // They come from the jobs of the newest state of the video kept, the
+  // state its clips come from, so a card becomes its clip in one step:
+  // never a gap where it was, and never the two of them at once. A job
+  // that state does not hold yet, one a press has just started, is taken
+  // as Go answered the press: it has written no clip yet, so its cards
+  // show at once and hand over in the state that holds it.
+  const wayJobs = $derived([
+    ...session.jobs,
+    ...jobs.forEpisode(path).filter((j) => !session.jobs.some((k) => k.id === j.id)),
+  ]);
   const arrivingNow = $derived(
     arriving(
-      jobs.forEpisode(path),
+      wayJobs,
       () => stopping,
       (job) => void jobs.startJob(path, "clips", () => api.continueJob(job.id, ""), "hand").catch((err) => oops(errorText(err))),
       {
@@ -982,39 +992,14 @@
       },
     };
   }
-  // A clip that has just been written keeps its card until a state of the
-  // video holds it, so the card becomes the clip in one step: never a gap
-  // where it was, and never the two of them at once. See OnTheWay in
-  // lib/arriving.ts. The card goes in the same step that puts the list on
-  // screen, with the first state read after the job's news that it was
-  // written, which the Go side sends by itself.
-  const cardsOnTheWay = new OnTheWay();
-  const seqOf = (job: string) => jobs.list.find((j) => j.id === job)?.seq ?? 0;
-  const onTheWay = $derived(cardsOnTheWay.cards(arrivingNow, seqOf, session.rev));
-  // The newest search of the video, which the list counts rows for, and
-  // how many of its clips the newest state of the video kept holds: what
-  // it had written when the state was read. The search is read from the
-  // jobs as they are, never kept from a value seen before, issue #606.
-  const searchSeen = $derived(jobs.list.findLast((j) => j.episode === path && j.kind === "search")?.id ?? "");
-  const readWritten = $derived(session.wrote(searchSeen));
+  const onTheWay = $derived(arrivingNow);
 
   // How many clips the search has written and has on the way. It says so
   // itself, so a clip made by hand while it runs is not counted as one of
-  // its own.
-  const searchTook = $derived((working?.written ?? 0) + (working?.underway?.length ?? 0));
-  // Clips the search has written that no read of the list has brought in
-  // yet, and that have no card on the way either: a clip can be written
-  // between two job events and never be on the way in either. Each keeps
-  // a row of its own until the list has it, during the search and after
-  // it ended alike, so the list is never a row short while the read is in
-  // the air.
-  const lastSearch = $derived(jobs.forEpisode(path).find((j) => j.id === searchSeen));
-  const unread = $derived(
-    Math.max(
-      0,
-      (lastSearch?.written ?? 0) - readWritten - onTheWay.filter((a) => a.held && a.job === searchSeen).length,
-    ),
-  );
+  // its own. Read from the state the cards and the clips come from, so
+  // the rows still to come and the cards add up in every frame.
+  const searchKept = $derived(session.jobs.find((j) => j.id === working?.id));
+  const searchTook = $derived((searchKept?.written ?? 0) + (searchKept?.underway?.length ?? 0));
   // Every clip the episode had was removed, and nothing is on its way:
   // the first row still to come says so, in the words a row that says how
   // work ended uses, rather than leaving empty rows that look like nothing
@@ -1094,12 +1079,12 @@
         ? // The rows the search itself was asked for, not what the
           // workspace would ask for now: the first search of an episode
           // is asked for by the Go side.
-          (working?.whole ? 0 : Math.max(0, (working?.count || count) - searchTook)) + unread
+          working?.whole ? 0 : Math.max(0, (working?.count || count) - searchTook)
         : shown.length === 0 && onTheWay.length === 0 && closing.length === 0
-          ? Math.max(count, unread)
+          ? count
           : // Clips a search wrote before it was cut off stay, and one row
             // after them says what became of the rest.
-            unread + (stopped || foundNothing ? 1 : 0)),
+            stopped || foundNothing ? 1 : 0),
   );
   // Whether the window has been searched before, all of it or a part.
   // Search then looks there again, for moments its searches did not bring,
