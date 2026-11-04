@@ -1982,9 +1982,10 @@ export const steps = {
   //                    window, and from the first frame its end shows,
   //                    the head no longer saying Cancel or the window
   //                    marked at rest, every frame shows what the end
-  //                    leaves: the head, the window's marks, the playhead
-  //                    and the clip chosen where they end up, never one
-  //                    of them on its way there. Tim saw the window's
+  //                    leaves: the head, the window's marks, no window
+  //                    lit over the track, the playhead and the clip
+  //                    chosen where they end up, never one of them on its
+  //                    way there. Tim saw the window's highlight come, its
   //                    marks put in place and moved a frame later, and
   //                    then the clip chosen and the playhead jump to it
   async "ends in one frame"(walk, arg, s) {
@@ -1999,6 +2000,10 @@ export const steps = {
           aim: `${tip("from")}–${tip("to")}`,
           playhead: document.querySelector(".screen")?.dataset.playhead ?? "",
           card: card?.dataset.key ?? "",
+          // The window drawn over the track at rest, not waiting for its
+          // search: a frame that fades out as its search ends still
+          // waits, so this is a highlight that came.
+          lit: document.querySelectorAll(".searched .window.frame:not(.waiting)").length,
         };
       };
       window.__ends = new Promise((done) => {
@@ -2021,7 +2026,7 @@ export const steps = {
     // the screen is where the end of the search leaves it.
     await caughtUp(page, url);
     const last = await page.evaluate(() => window.__endsShown());
-    const said = (f) => `${f.head}, the window ${f.aim} s, the playhead at ${f.playhead} s, clip ${f.card || "none"}`;
+    const said = (f) => `${f.head}, the window ${f.aim} s${f.lit ? ", lit over the track" : ""}, the playhead at ${f.playhead} s, clip ${f.card || "none"}`;
     const running = seen[0];
     const end = seen.findIndex((f) => f.head !== running.head || f.aim !== running.aim);
     if (running.head !== "Cancel") {
