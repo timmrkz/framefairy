@@ -7,7 +7,7 @@
 // docs/TESTING.md.
 import { existsSync, mkdirSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, join } from "node:path";
-import { ask, caughtUp, chosen, clickOnTrack, clipList, control, engineState, episodeOn, foldsDone, fromSidebar, handles, high, hold, holdClock, letClockGo, letHeld, middle, news, nextNews, nextPaint, overlay, pageUntil, playUntil, holdSound, pressHead, realFrames, recordFrames, runClock, seenUntil, settle, shortFrames, shortSound, reload } from "../bridge.mjs";
+import { ask, caughtUp, chosen, clickOnTrack, clipList, control, engineState, episodeOn, foldsDone, fromSidebar, handles, high, hold, holdClock, letClockGo, letHeld, middle, news, nextNews, nextPaint, overlay, pageUntil, playUntil, holdSound, pressHead, pressPlay, realFrames, recordFrames, runClock, seenUntil, settle, shortFrames, shortSound, reload } from "../bridge.mjs";
 import { canLook, changesOf, clickCard, clickedFromAhead, clockOf, halfOf, newCards, pieceCount, rate, restAhead, shortOf, shotClips, url } from "../common/steps.mjs";
 
 export const steps = {
@@ -64,18 +64,15 @@ export const steps = {
     const stop = await recordFrames(page, 1 / (await rate(page)));
     await page.evaluate(() => document.body.focus());
     // The play's waits are in the episode's time, read off the
-    // playhead, see playUntil. The play is held where it is in the frame
-    // the second and a half is up, while the press comes, and let go
-    // once the app has settled on it. Not held, a busy runner played on
-    // into the clip in the five seconds the press took to come, and O
-    // in a clip makes none, so the walk waited for good on a clip that
-    // was never asked for.
+    // playhead, see playUntil, from a play that stood at its start while
+    // the app settled on the space bar, see pressPlay. The play is held
+    // where it is in the frame the second and a half is up, while the
+    // press comes, and let go once the app has settled on it. Not held, a
+    // busy runner played on into the clip in the five seconds the press
+    // took to come, and O in a clip makes none, so the walk waited for
+    // good on a clip that was never asked for.
     let standing = false;
-    if (playing) {
-      await page.keyboard.press("Space");
-      await settle(page);
-      standing = (await playUntil(page, { most: 1.5, hold: true })).playing;
-    }
+    if (playing) standing = (await pressPlay(page)) && (await playUntil(page, { most: 1.5, hold: true })).playing;
     let before, seen;
     if (late) {
       before = new Set((await ask(page, "Jobs")).map((j) => j.id));

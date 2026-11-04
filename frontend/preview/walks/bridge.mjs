@@ -890,19 +890,29 @@ export async function holdSound(page, held) {
   await page.evaluate((held) => window.__holdSound(held), held);
 }
 
+// Presses the space bar to play, with the sound card held from before the
+// press until the app has settled on it, so the play starts and stands at
+// its first frame meanwhile, see holdSound. Not held, a settle while a
+// play runs lasted as long as the play on a busy runner, which answered
+// the app's calls for the frames the whole way, and the play had reached
+// the clip's end before the walk looked, issue #705. Says whether it
+// plays.
+export async function pressPlay(page) {
+  await holdSound(page, true);
+  await page.keyboard.press("Space");
+  await settle(page);
+  const playing = await page.evaluate(() => !document.querySelector('button[aria-label="Play"]'));
+  await holdSound(page, false);
+  return playing;
+}
+
 // Plays from the playhead until it has gone on by seconds of the episode,
 // or until the play has stopped by itself at the clip's end, and pauses it
 // there, see playUntil. Says false, and plays nothing, when the space bar
 // did not start a play, once the app has settled on the press.
 export async function playFor(page, seconds) {
   const from = await page.evaluate(() => document.querySelector(".screen")?.dataset.playhead ?? null);
-  await page.keyboard.press("Space");
-  await settle(page);
-  const now = await page.evaluate(() => ({
-    playing: !document.querySelector('button[aria-label="Play"]'),
-    at: document.querySelector(".screen")?.dataset.playhead ?? null,
-  }));
-  if (!now.playing) return now.at !== from;
+  if (!(await pressPlay(page))) return (await page.evaluate(() => document.querySelector(".screen")?.dataset.playhead ?? null)) !== from;
   await playUntil(page, { most: seconds, from: Number(from), pause: true });
   return true;
 }
