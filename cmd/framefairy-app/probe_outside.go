@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"sync"
 	"time"
@@ -54,6 +55,14 @@ func init() {
 		return
 	}
 	log.SetOutput(io.MultiWriter(os.Stderr, f))
+	// A crash, an unrecovered panic or a fatal error of the runtime, is
+	// printed to stderr only, and an app macOS starts has none anyone
+	// reads. So the app that went in the middle of a check said nothing,
+	// and the check only saw its connection end. Written here too, the
+	// log the test shows has why.
+	if err := debug.SetCrashOutput(f, debug.CrashOptions{}); err != nil {
+		log.Printf("the crash output is not in this log: %v", err) //nolint:forbidigo // the checks from outside read the file the standard log writes
+	}
 }
 
 // probePage is the route the page sends what it shows to. It is on the

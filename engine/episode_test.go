@@ -31,7 +31,7 @@ func TestAnEpisodeRemembersItHasBeenSearched(t *testing.T) {
 	if EverSearched(fsys, source) {
 		t.Fatal("an episode nobody has searched should not say it has been")
 	}
-	if st := Status(fsys, source, "", nil); st.EverSearched || st.Work {
+	if st := Status(NewMachine(fsys), source, "", nil); st.EverSearched || st.Work {
 		t.Errorf("status of a fresh episode %+v", st)
 	}
 
@@ -64,7 +64,7 @@ func TestAnEpisodeRemembersItHasBeenSearched(t *testing.T) {
 	if !EverSearched(fsys, source) {
 		t.Fatal("an episode that was searched says it was not")
 	}
-	if st := Status(fsys, source, "", nil); !st.EverSearched || !st.Work {
+	if st := Status(NewMachine(fsys), source, "", nil); !st.EverSearched || !st.Work {
 		t.Errorf("status after a search %+v", st)
 	}
 
@@ -110,7 +110,7 @@ func TestAShortBeingWrittenIsNotCounted(t *testing.T) {
 	if err := recordShort(disk, plan, "01", filepath.Join(out, "done.mp4")); err != nil {
 		t.Fatal(err)
 	}
-	if got := Status(disk, source, "", nil).Rendered; got != 1 {
+	if got := Status(NewMachine(disk), source, "", nil).Rendered; got != 1 {
 		t.Errorf("%d rendered, want 1", got)
 	}
 }
@@ -245,7 +245,8 @@ func TestAShortInTheOutputFolderIsTheClipsShort(t *testing.T) {
 	if err := os.WriteFile(other, []byte("another episode's short"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	rendered := func() int { return Status(disk, source, "", nil).Rendered }
+	m := NewMachine(disk)
+	rendered := func() int { return Status(m, source, "", nil).Rendered }
 	if c := shortOfClip(t, plan, "01"); c.Short != "" || c.Rendered {
 		t.Errorf("a clip never rendered says it is, at %q", c.Short)
 	}

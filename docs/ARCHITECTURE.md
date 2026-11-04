@@ -44,7 +44,9 @@ of one package, so nothing holds them apart yet.
 The drawings are plain SVG in `docs/diagrams/`, a box a `rect` with its
 texts and a chip a small `rect` with its text, and they follow the
 reader's light or dark theme, on a background of their own. A change
-that moves a box changes its drawing in the same pull request.
+that adds a part, moves a box, or changes what a box holds or how it is
+reached changes its drawing in the same pull request, as the line it
+changes in this file does.
 `internal/naming` checks that every path a drawing names exists, written
 from the top of the repository, and that every drawing shown here is
 there.
@@ -65,7 +67,7 @@ with the boxes one level down under it.
 | 3 | `updates/`, `notices/` | finding, checking and fetching a newer build, and the licences of what the app is made of | |
 | 4 the engine | `engine/` | every rule about a video: words, clips, edges, windows, captions, crops, rendering, the models, the files of a work folder, the training records | anything about the screen, a binding or a click |
 | 4 | `engine.Project` | the steps one video takes, the same for both front ends | a second way to run a step |
-| 4 | `engine.Machine` | what a program keeps for its whole life and shares with every `Engine` it makes: the files, the records, the `tool.Runner` and `tool.Finder`, the keychain and the network it was handed, and what was learned about the machine, made once in each `main` | what belongs to one job, which stays on its `Engine`, and a rule of its own |
+| 4 | `engine.Machine` | what a program keeps for its whole life and shares with every `Engine` it makes: the files, the records, the `tool.Runner` and `tool.Finder`, the keychain and the network it was handed, what was learned about the machine, and the one `engine.Episode` of each video, which keeps its own rules, made once in each `main` | what belongs to one job, which stays on its `Engine`, and a rule of its own |
 | 4 | `engine/timed/` | the types every part of the engine uses for a moment of a video: a piece of text with its times, a span, a window, a loudness reading, the 10 ms grid of the sound | a function or a rule, and a type only one part uses |
 | 4 | `engine/runlog/` | the log of a run: timestamped lines in the terminal, the progress line one piece of work can hold, steps with how long they took, and every line and progress as an event, which reaches the app through one `Sink` | a rule of a feature. A job says what happens and the log says it |
 | 4 | `engine/tool/` | finding our own ffmpeg, ffprobe and llama-server, each checked against the sum `make` built in, by a `Finder` each program makes once, and running a program as an argument list, stopped once its work is called off, with how it stops held on a `Runner` | anything about a video, and a cache or a seam as a package variable |
@@ -98,6 +100,7 @@ waiting for the day the two disagree.
 | what is chosen in a video, its clip and window | in memory, in the video's record beside its undo steps, `picked` in `cmd/framefairy-app/chosen.go`, behind a lock of its own, and written through to `chosen.json` in its work folder, which is read only the first time | the app's Go side |
 | the library and the settings | the app's config folder | the app's Go side |
 | the models, notes about running servers, the training records | `~/.framefairy/` | the engine |
+| what a video's files said, as read: its transcript so far | the video's one `engine.Episode`, which `Machine.Episode` gives, `engine/held.go`. It keeps each read with the size and time of the files it was read from and reads again only what changed, whoever wrote it, see the decision record [2026-11-03-one-episode-per-video.md](decisions/2026-11-03-one-episode-per-video.md) | the engine, as the files are read. Nothing tells it a file changed |
 | what was learned about the machine while a program runs: the decoder that works, the encoders and subtitle filter of each ffmpeg, the face detector, the tools already checked | `engine.Machine`, one for each program, in memory | the engine |
 | what runs now, and the lane each job holds or waits for | the job queue, in memory | the app's Go side |
 | the step a job is in, and what it was asked for | its `engine.JobRecord`, on disk and in the job the queue holds, which keeps each record the engine tells it through the job's `engine.Host` | the engine |
@@ -131,6 +134,7 @@ What to do today, and what changes once the issue named is built.
 | give a person time to take something back that Go then does | the job keeps the time, `JobAway` in `cmd/framefairy-app/removal.go`, on the queue's clock, which the bridge hands the walks, and the interface draws it and says only that a hand holds it |
 | show the interface a new fact about a video | a field of `VideoState` in `cmd/framefairy-app/videostate.go`, or of what it holds, the status and the clip views, which the session keeps. Never a new event of its own or a poll |
 | tell the window that something about a video changed | `told` on `*FrameFairy`, or the queue's `moved` for a job, which send the video's state, at most four times a second and always after the last change, one at a time, with at most one more waiting however slow a read is. Nothing else sends it |
+| keep what a video's file said, so the next question does not read it again | its `engine.Episode`, by the file's stamp. Never a cache of its own in the app or a package variable |
 | keep something between two jobs, a cache or a fact about the machine | a field on `engine.Machine`, in `engine/machine.go`, which a program makes once and hands to every `Engine`. Never a package variable, and never a new `Engine` made only to get it. #607 moves the package variables still left onto it |
 | reach the keychain, a company or a model's download from the engine | through `engine.Machine`, whose keys and network are empty in a machine `NewMachine` makes, so it keeps no key and reaches nothing. Each program hands it the system's with `UseSystem` in `main`, the app through `appStore`, see the decision record [2026-10-31-running-programs-and-what-outlives-a-job.md](decisions/2026-10-31-running-programs-and-what-outlives-a-job.md#the-keys-and-the-network-648). Never a switch on whether a test is running. A part outside the engine that reaches the network, like `updates/`, is handed its client by `main`. llama-server on this machine is reached by a package variable in `engine/local.go`, which #607 moves |
 | read a file of a video | through the `afero.Fs` the code was given, with `fileio.SafeChildIn` for a path in a work folder. Not `os`. Once #608 is built, through the video's `Episode` |
@@ -236,7 +240,7 @@ copies what it finds nearby, so these are not the pattern for new code.
   `frontend/src/lib/rotate.ts`, and the two held to Go by a shared case
   file, `frontend/src/lib/glide.ts` and `frontend/src/lib/flow.ts`'s
   frames, #610.
-- The transcript cache in `cmd/framefairy-app/words.go`, with the lines weighed for what a search can read kept beside each transcript, #608.
+- The plans read and parsed again for every question, by `Status`, `PlanSummaries`, `ReadPlan` and `LoadClips`, and the app's `project()` and `NewProject(nil, ...)` made only to find a video's paths, #608. The plans and the status move onto `engine.Episode`, see the decision record [2026-11-03-one-episode-per-video.md](decisions/2026-11-03-one-episode-per-video.md).
 - What the engine learns kept in package variables rather than on
   `engine.Machine`, like the probes in `engine/probed.go`, and the app's
   own that keep a machine or a finder of their own, `sources` in

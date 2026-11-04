@@ -403,12 +403,8 @@ type FrameFairy struct {
 	// The local model kept loaded while the app is open, see keep.go.
 	keeping *keeping
 	mu      sync.Mutex
-	// The transcripts of the episodes worked on last, each kept while the
-	// files it was read from stay as they were, with its lines weighed,
-	// see transcript.
-	said keptReads[*heard]
-	// toldOld is the videos whose old corrections.json was said to be
-	// left unread, so it is said once, see oldCorrections.
+	// toldOld is the videos whose old corrections.json was looked for, so
+	// it is looked for and said once, see oldCorrections.
 	toldOld sync.Map
 	// histories are the undo and redo of each episode, see history.go.
 	histories map[string]*history
