@@ -306,7 +306,7 @@ jobs:
       run:
         shell: bash -e {0}
     container:
-      image: ${{ needs.image.outputs.webkit }}
+      image: ${{ needs.image.outputs.walks }}
       options: --init --ipc=host
       volumes:
         - /home/runner/work:/home/runner/work
