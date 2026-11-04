@@ -158,39 +158,57 @@ func TestTheLibraryIsReadWhileAVideoLetGoIsCleared(t *testing.T) {
 	// wait for that lock. The delete is held in the middle, and the
 	// library is read while it is, on the test's own goroutine, so a read
 	// that waits for the delete hangs the test until go test's -timeout.
-	svc, eps := memoryLibrary(t, "youtube.mp4", "start.mp4")
-	files := svc.store.files
-	gone, stays := eps[0], eps[1]
-	if err := files.RemoveAll(engine.WorkDir(gone)); err != nil {
-		t.Fatal(err)
-	}
-	if err := writeChosen(files, gone, chosen{Opened: 1}); err != nil {
-		t.Fatal(err)
-	}
-	held := &removeHeld{Fs: files, began: make(chan struct{}), letGo: make(chan struct{})}
-	svc.store.files = held
-	withJobs(svc)
-	if listed(svc.Library(), gone) {
-		t.Fatalf("the folder written back kept %s in the library", gone)
-	}
-	<-held.began
-	if lib := svc.Library(); !listed(lib, stays) || listed(lib, gone) {
-		t.Errorf("read while %s is cleared, the library is %v", gone, lib)
-	}
-	if eps := svc.store.Episodes(); !slices.Equal(eps, []string{stays}) {
-		t.Errorf("read while %s is cleared, the list is %v", gone, eps)
-	}
-	if err := svc.store.UpdateSettings(func(s *Settings) { s.Target = 3 }); err != nil {
-		t.Fatal(err)
-	}
-	if got := svc.store.Settings().Target; got != 3 {
-		t.Errorf("settings changed while %s is cleared read back %d", gone, got)
-	}
-	close(held.letGo)
-	svc.clearing.Wait()
-	if there, _ := afero.DirExists(files, engine.WorkDir(gone)); there {
-		t.Errorf("what was written back into %s is still there", engine.WorkDir(gone))
-	}
+	// The same video added again meanwhile still waits for the delete, so
+	// the mark it writes is not deleted with the rest.
+	synctest.Test(t, func(t *testing.T) {
+		svc, eps := memoryLibrary(t, "youtube.mp4", "start.mp4")
+		files := svc.store.files
+		gone, stays := eps[0], eps[1]
+		if err := files.RemoveAll(engine.WorkDir(gone)); err != nil {
+			t.Fatal(err)
+		}
+		if err := writeChosen(files, gone, chosen{Opened: 1}); err != nil {
+			t.Fatal(err)
+		}
+		held := &removeHeld{Fs: files, began: make(chan struct{}), letGo: make(chan struct{})}
+		svc.store.files = held
+		withJobs(svc)
+		if listed(svc.Library(), gone) {
+			t.Fatalf("the folder written back kept %s in the library", gone)
+		}
+		<-held.began
+		if lib := svc.Library(); !listed(lib, stays) || listed(lib, gone) {
+			t.Errorf("read while %s is cleared, the library is %v", gone, lib)
+		}
+		if eps := svc.store.Episodes(); !slices.Equal(eps, []string{stays}) {
+			t.Errorf("read while %s is cleared, the list is %v", gone, eps)
+		}
+		if err := svc.store.UpdateSettings(func(s *Settings) { s.Target = 3 }); err != nil {
+			t.Fatal(err)
+		}
+		if got := svc.store.Settings().Target; got != 3 {
+			t.Errorf("settings changed while %s is cleared read back %d", gone, got)
+		}
+		added := make(chan error)
+		go func() {
+			_, err := svc.store.AddEpisodes([]string{gone})
+			added <- err
+		}()
+		synctest.Wait()
+		select {
+		case err := <-added:
+			t.Fatalf("%s was added again in the middle of the delete, %v", gone, err)
+		default:
+		}
+		close(held.letGo)
+		if err := <-added; err != nil {
+			t.Fatal(err)
+		}
+		svc.clearing.Wait()
+		if !listed(svc.Library(), gone) || !marked(files, gone) {
+			t.Errorf("added again while it was cleared, %s is not in the library with its folder marked", gone)
+		}
+	})
 }
 
 func TestAVideoLetGoWhileTheAppQuitsIsClearedAtOnce(t *testing.T) {

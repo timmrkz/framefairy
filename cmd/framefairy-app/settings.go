@@ -139,8 +139,9 @@ type store struct {
 	// turns. It is taken before mu and never under it. The delete waits
 	// on the disk for as long as a work folder takes to go, and holding mu
 	// for that long held every read of the library and the settings with
-	// it.
-	adding sync.Mutex
+	// it. A channel of one, so an Add that waits on it is one a synctest
+	// bubble sees waiting.
+	adding chan struct{}
 	dir    string
 	// files is where the library's episodes and their work folders are
 	// read and written, the real disk in the app. See engine/files.go.
@@ -183,7 +184,7 @@ func appStore() *store {
 // everything read and written through files.
 func openStoreIn(files afero.Fs, dir string) *store {
 	machine := engine.NewMachine(files)
-	s := &store{dir: dir, files: files, records: machine.Records, machine: machine, settings: defaultSettings()}
+	s := &store{dir: dir, files: files, records: machine.Records, machine: machine, settings: defaultSettings(), adding: make(chan struct{}, 1)}
 	s.load("settings.json", &s.settings)
 	s.load("library.json", &s.episodes)
 	s.settings.tidy()
@@ -264,8 +265,8 @@ func (s *store) Episodes() []string {
 // transcript, the same clip sets, the same rendered names. The second of
 // them is not added, and the caller is told which.
 func (s *store) AddEpisodes(paths []string) ([]string, error) {
-	s.adding.Lock()
-	defer s.adding.Unlock()
+	s.adding <- struct{}{}
+	defer func() { <-s.adding }()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	seen := map[string]bool{}
@@ -464,8 +465,8 @@ func (s *store) letGo(path string) (bool, error) {
 // only to read the library: only an Add puts a video in it, so the
 // answer holds for the whole delete.
 func (s *store) clearLetGo(path string) (bool, error) {
-	s.adding.Lock()
-	defer s.adding.Unlock()
+	s.adding <- struct{}{}
+	defer func() { <-s.adding }()
 	s.mu.Lock()
 	again := slices.Contains(s.episodes, path)
 	s.mu.Unlock()

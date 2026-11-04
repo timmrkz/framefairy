@@ -417,7 +417,7 @@ func TestAReportHoldsThePictures(t *testing.T) {
 	showReport = func(string) error { return nil }
 	t.Cleanup(func() { showReport = was })
 
-	st := &store{dir: t.TempDir(), files: disk, settings: defaultSettings()}
+	st := &store{dir: t.TempDir(), files: disk, settings: defaultSettings(), adding: make(chan struct{}, 1)}
 	f := &FrameFairy{store: st, report: newReporting(engine.NewMachine(afero.NewMemMapFs()), "/config/report")}
 	f.Acted(Act{ID: "a1", What: "picked a video", Video: filepath.Join(home, "Movies", "start.mp4")})
 	f.Acted(Act{ID: "r1", What: "clicked Report"})
