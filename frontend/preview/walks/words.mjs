@@ -58,9 +58,10 @@ const gestures = [
         ([x, y]) => document.elementFromPoint(x, y)?.closest(".captions .word")?.textContent ?? null,
         [x, y],
       );
+      if (hit === null) throw new Error(`no word shows in the middle of the word "${s[i].text}" to click`);
       await page.mouse.click(x, y);
       if (hit === s[i].text) return `click "${s[i].text}"`;
-      return `click "${s[i].text}", which "${hit ?? "nothing"}" lies over`;
+      return `click "${s[i].text}", which "${hit}" lies over`;
     },
   },
   {
