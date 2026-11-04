@@ -64,11 +64,17 @@ export const steps = {
     const stop = await recordFrames(page, 1 / (await rate(page)));
     await page.evaluate(() => document.body.focus());
     // The play's waits are in the episode's time, read off the
-    // playhead, see playUntil.
+    // playhead, see playUntil. The play is held where it is in the frame
+    // the second and a half is up, while the press comes, and let go
+    // once the app has settled on it. Not held, a busy runner played on
+    // into the clip in the five seconds the press took to come, and O
+    // in a clip makes none, so the walk waited for good on a clip that
+    // was never asked for.
+    let standing = false;
     if (playing) {
       await page.keyboard.press("Space");
       await settle(page);
-      await playUntil(page, { most: 1.5 });
+      standing = (await playUntil(page, { most: 1.5, hold: true })).playing;
     }
     let before, seen;
     if (late) {
@@ -77,6 +83,10 @@ export const steps = {
       await hold(page, held, true);
     }
     await page.keyboard.press(arg);
+    if (standing) {
+      await settle(page);
+      await holdSound(page, false);
+    }
     if (late) {
       // Until the job the press set going is over and the app has heard
       // it, each look woken by the next news of a job.

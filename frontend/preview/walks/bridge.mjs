@@ -844,10 +844,12 @@ export async function shownOnPlayhead(page, { captions = false, lost } = {}) {
 // a play still going is paused in the frame the wait ends, inside the
 // page: pressed a trip later, the play went on further the busier the
 // machine, and a clip that reached its end in between would play again
-// from its start.
-export async function playUntil(page, { past = Infinity, most = Infinity, from = NaN, pause = false } = {}) {
+// from its start. With hold, a play still going is held where it is in
+// that frame instead, sound and picture, see holdSound, until the walk
+// lets it go.
+export async function playUntil(page, { past = Infinity, most = Infinity, from = NaN, pause = false, hold = false } = {}) {
   return page.evaluate(
-    ([past, most, from, pause]) =>
+    ([past, most, from, pause, hold]) =>
       new Promise((done) => {
         let last = Number.isFinite(from) ? from : Number(document.querySelector(".screen")?.dataset.playhead);
         let gone = 0;
@@ -862,6 +864,7 @@ export async function playUntil(page, { past = Infinity, most = Infinity, from =
             document.body.dispatchEvent(new KeyboardEvent("keydown", key));
             document.body.dispatchEvent(new KeyboardEvent("keyup", key));
           }
+          if (playing && hold) void window.__holdSound(true);
           return { at, playing, gone };
         };
         const now = look();
@@ -874,7 +877,7 @@ export async function playUntil(page, { past = Infinity, most = Infinity, from =
         });
         watch.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-playhead", "aria-label"] });
       }),
-    [past === Infinity ? Number.MAX_VALUE : past, most === Infinity ? Number.MAX_VALUE : most, from, pause],
+    [past === Infinity ? Number.MAX_VALUE : past, most === Infinity ? Number.MAX_VALUE : most, from, pause, hold],
   );
 }
 
