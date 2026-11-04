@@ -111,16 +111,20 @@ if (only === "--names") {
 // a line of its own on standard input as JSON, for TestWalks to hand one
 // walker its sequences without starting node, Playwright and Chromium
 // again for each, 1.45 s and 1.2 s of CPU a sequence, issue #526. Each
-// still starts with /reset and pages of its own, so it walks the same as
-// alone. What a sequence prints begins with a line of its own, walking,
+// still starts with /reset and on a page as a new one is, the page of
+// the sequence before loaded again where it can be, see open in
+// bridge.mjs, so it walks the same as alone. What a sequence prints begins with a line of its own, walking,
 // see walkingLine, so what the node says between two sequences is told
 // from either. It ends in a line that starts with walked, see walkedLine,
 // then "ok" or "FAIL", or "threw" when it threw and this node ends, so a
 // sequence after it starts in a new one.
 if (only === "--serve") {
   const { createInterface } = await import("node:readline");
-  // The browser, opened when the first sequence asks for it.
+  // The browser, opened when the first sequence asks for it, and the page
+  // the sequence before passed on, which the next loads again if it can,
+  // see open.
   let browser;
+  let passed = null;
   const browserOf = async () => (browser ??= await newBrowser());
   for await (const line of createInterface({ input: process.stdin })) {
     await mark("walking");
@@ -132,7 +136,9 @@ if (only === "--serve") {
       continue;
     }
     try {
-      await said((await walkSequence(seq, await browserOf())) ? "FAIL" : "ok");
+      const walked = await walkSequence(seq, await browserOf(), passed);
+      passed = walked.page;
+      await said(walked.failed ? "FAIL" : "ok");
     } catch (e) {
       console.log(e?.stack ?? String(e));
       await said("threw");
@@ -150,7 +156,7 @@ if (exact && !toWalk.length) {
   process.exit(1);
 }
 
-for (const seq of toWalk) if (await walkSequence(seq)) failures++;
+for (const seq of toWalk) if ((await walkSequence(seq)).failed) failures++;
 process.exit(failures ? 1 : 0);
 
 // The line --serve ends what a sequence printed with, walkedLine in
@@ -168,22 +174,24 @@ async function mark(what) {
 
 
 // Walks one sequence and says whether it failed, in a browser of its own
-// or in browser, whose pages it closes again.
-async function walkSequence(seq, shared = null) {
+// or in shared, whose pages it closes again, all but the page of a
+// sequence that passed, which it hands back for the next to load again.
+// passed is the page the sequence before handed back.
+async function walkSequence(seq, shared = null, passed = null) {
   // Whatever ends the sequence keeps its trace: opening the video, a step
   // that throws, reading the screen between two steps.
   try {
-    return await walkingSequence(seq, shared);
+    return await walkingSequence(seq, shared, passed);
   } catch (e) {
     await keepTraces();
     throw e;
   }
 }
 
-async function walkingSequence(seq, shared) {
+async function walkingSequence(seq, shared, passed) {
   const began = performance.now();
   traceAs(seq.name);
-  const opened = await open(url, { browser: shared, named: browserFor(), still: still(seq), clock: clock(seq) });
+  const opened = await open(url, { browser: shared, named: browserFor(), still: still(seq), clock: clock(seq), reuse: passed });
   const { browser, errors } = opened;
   // The page the steps act on: the app's window, or the report window
   // once Bugs opened it. The watch keeps to the app's window.
@@ -537,7 +545,10 @@ async function walkingSequence(seq, shared) {
   console.log(`${failed ? "FAIL" : "ok  "}  ${took} s  ${browserFor().padEnd(8)}  ${seq.name}`);
   if (failed) console.log(`      after ${done.join(", ")}\n      ${failed.replaceAll("\n", "\n      ")}`);
   if (failed) await keepTraces();
+  // A page alone in the browser, with no report window or second page
+  // beside it, is handed on, see reusable in bridge.mjs.
+  if (shared && !failed && shared.contexts().length === 1 && main.context().pages().length === 1) return { failed: false, page: main };
   if (shared) await Promise.all(shared.contexts().map((c) => c.close()));
   else await browser.close();
-  return Boolean(failed);
+  return { failed: Boolean(failed), page: null };
 }
