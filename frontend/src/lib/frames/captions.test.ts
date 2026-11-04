@@ -860,10 +860,17 @@ describe("asks no longer wanted", () => {
     layers.at(1.0, [10, 20]);
     layers.next([{ ask: { path: "/v.mp4", clip: "b", track: "card", drafts: {} }, frame: 84, size: [10, 20] }]);
     expect(asked.length).toBe(1);
+    // A letter more: the frame on screen asks for its new layer, and the
+    // card's still waits behind it.
+    layers.set({ ...plain, typing: "3 4" });
+    layers.at(1.0, [10, 20]);
+    await Promise.resolve();
+    expect(asked.length).toBe(2);
+    expect(asked[1]).toContain("typing=3+4");
     layers.set(plain);
     await layers.rested();
-    expect(asked.length).toBe(2);
-    expect(asked[1]).toContain("track=card");
+    expect(asked.length).toBe(3);
+    expect(asked[2]).toContain("track=card");
   });
 
   it("are called off for both parts of a word put back", async () => {
