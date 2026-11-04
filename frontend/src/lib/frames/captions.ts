@@ -539,7 +539,8 @@ export class CaptionLayers {
   set(ask: CaptionAsk | null) {
     const key = keyOf(ask);
     if (!ask || ask.path !== this.ask?.path || ask.clip !== this.ask?.clip) this.last = null;
-    if (key !== this.askKey) {
+    const changed = key !== this.askKey;
+    if (changed) {
       this.waiting = null;
       this.ahead = [];
       this.again.clear();
@@ -552,7 +553,13 @@ export class CaptionLayers {
     }
     this.ask = ask;
     this.askKey = key;
-    this.settleRest();
+    // What waited for the room the layers called off had is asked for now.
+    // A layer called off is answered by nothing, so nothing else would ask,
+    // and the cards' layers waited for good with nothing on its way: a word
+    // clicked to be corrected and left with Escape left the walks waiting
+    // on rested until their time ran out, issue #694.
+    if (changed) this.more(false);
+    else this.settleRest();
   }
 
   // The frame on screen drawn again with what lies over it now.
