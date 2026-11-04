@@ -231,11 +231,11 @@ func TestAProjectPlacesItsWindowPastWhatWasSearched(t *testing.T) {
 	if got := p.PlaceWindow(roomy, duration); got != want {
 		t.Errorf("placed %+v, want the quarter hour after the half hour searched, %+v", got, want)
 	}
-	after := p.WindowAfter(roomy, PlanRequest{From: 1800, To: 2700}, 900, duration)
+	after := p.Base.WindowAfter(roomy, PlanRequest{From: 1800, To: 2700}, 900, duration)
 	if want := (PlacedWindow{timed.Window{Start: 2700, End: 3600}, 900}); after != want {
 		t.Errorf("after the search %+v, want %+v", after, want)
 	}
-	toEnd := p.WindowAfter(roomy, PlanRequest{From: 2700}, 0, duration)
+	toEnd := p.Base.WindowAfter(roomy, PlanRequest{From: 2700}, 0, duration)
 	if want := (PlacedWindow{timed.Window{Start: 0, End: 900}, 900}); toEnd != want {
 		t.Errorf("after a search to the end %+v, want the start again, %+v", toEnd, want)
 	}
@@ -245,7 +245,7 @@ func TestAProjectPlacesItsWindowPastWhatWasSearched(t *testing.T) {
 	if got, want := p.PlaceWindow(tight, duration), (PlacedWindow{timed.Window{Start: 1800, End: 2400}, 600}); got != want {
 		t.Errorf("placed %+v in room for ten minutes, want %+v", got, want)
 	}
-	if got, want := p.WindowAfter(tight, PlanRequest{From: 1800, To: 2700}, 900, duration), (PlacedWindow{timed.Window{Start: 2700, End: 3300}, 600}); got != want {
+	if got, want := p.Base.WindowAfter(tight, PlanRequest{From: 1800, To: 2700}, 900, duration), (PlacedWindow{timed.Window{Start: 2700, End: 3300}, 600}); got != want {
 		t.Errorf("moved on to %+v in room for ten minutes, want %+v", got, want)
 	}
 }

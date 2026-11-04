@@ -188,13 +188,110 @@ The pull requests, in order, each one self-contained:
 1. This record, and `Episode` with the transcript: `heardKept` and the
    app's `keptReads` go, and `Status` and the app read the transcript
    through it.
-2. The plans: `PlanSummaries`, `ReadPlan` and the plan reads of the
-   shaping go through the episode, by each plan's stamp.
+2. The plans: `PlanSummaries` and `ReadPlan` go through the episode,
+   by each plan's stamp. The plan reads of the shaping move with part 4,
+   see Parts 2 and 3 below.
 3. `Status` asked of the episode, and the app's `project()` and
    `NewProject(nil, ...)` go.
 4. The paths of a video's own files checked by its episode, opened
-   through `os.Root` on its work folder, the third thing #608 asks for.
-   Closes #608.
+   through `os.Root` on its work folder, the third thing #608 asks for,
+   and the shaping's plan reads with them. Closes #608.
+
+## Parts 2 and 3: what the app asks in place of a Project
+
+Tim asked on 4 November for parts 2 and 3 in one pull request. Part 2
+carries out what the decision above holds: the plans are read through
+the episode, each by its own stamp. Part 3 takes the app's `project()`
+away, and the decision did not say what the app asks instead. Seven
+calls make a `Project` with no `Engine` only to ask it something, and
+what they ask is counted from the code: `LogsDir` once, the transcript
+through it three times, and `RoomWith`, `Limits`, `PlaceWindow` and
+`WindowAfter` for the window. Of the last four, `Limits` and
+`WindowAfter` read nothing but the options and the room they are handed,
+`RoomWith` reads the search's room from the logs folder, and
+`PlaceWindow` reads the plans. So the question is where a rule that
+needs the settings and a video's files lives, once nothing makes a
+`Project` to hold the settings.
+
+### 1. Who may know about whom: the episode answers, the settings are handed in
+
+The app knows the `Machine` and asks `Episode`. What reads the files is
+the episode's, with the options handed in: `Episode.Room(o)` for the
+room and the lines weighed, `Episode.PlaceWindow(o, r, duration)` for
+the window placed from the plans. What reads no file is the options':
+`Options.Limits` and `Options.WindowAfter`. The app reaches the engine
+through the `Machine` and its episodes for questions, and through
+`Project` for steps, which is what the drawings already say.
+`Project.PlaceWindow` stays for the command line and asks the episode of
+its engine. What crosses: four methods, two on `Episode` and two on
+`Options`, and `project()` and `projectWith` go. Cost: one pull request,
+about ten files.
+
+### 2. What changes together: one Project per video, kept by the machine
+
+`Machine.Project(source, o)` gives a `Project` made from the machine,
+with its episode, and the app asks it as it does today. The four window
+rules stay on `Project`. But a `Project` is made for one set of options,
+and the settings change under the app, so either the machine keeps one
+per video and per set of options, or the app makes one per call as it
+does now. The first is a cache keyed by options, a second holder beside
+the episode. The second changes only who calls `NewProject`, and leaves
+#608's complaint, a `Project` made to find a path, where it was. Dropped.
+
+### 3. Where state lives: the episode keeps the answers too
+
+The episode holds the room, the limits and the placed window, each by
+the stamps of what it read and the options asked with. Every state of a
+video asks for them, about four times a second while it plays, and the
+lines are already weighed once for each read of the transcript, 0.24 ms
+for four hours. What is left, the room from a small file and the plans
+already held, costs microseconds. A key made of the options is a second
+thing to keep right. Dropped for now. It is the step to take if a
+measurement shows the window in a profile.
+
+### 4. What runs together: one answer for everything a state needs
+
+One `Episode.View(o, duration)` gives the room, the limits, the placed
+window and the plans together, since `windowFor` asks for them together.
+It saves no read, because each is held already, and it ties the window's
+rules to the shape of `VideoState`, which belongs to the app. The next
+field the app needs changes the engine. Dropped.
+
+### 5. What a test has to build: rules over values, reads apart
+
+Every rule is a function of values: `PlaceWindow(plans, o, r, duration)`
+over the plans handed in, `Limits` and `WindowAfter` over the options and
+the room. The app reads the plans and the room from the episode and
+hands them on. A test of a rule builds values and no file system. That
+is how `placeWindow` and `moveWindowOn` are tested today, under the
+methods, and it stays so. But the app then knows which reads each rule
+needs and in what order, a little of the engine's knowledge above it.
+
+### What converges
+
+1 and 5 agree that what reads no file belongs to the options, and 1, 2
+and 3 that what reads the files is asked of the episode. 5's rules over
+values are already there under the methods, and stay the test's way in.
+So: simulation 1. `project()` and `projectWith` go, `Episode.Room` and
+`Episode.PlaceWindow` read through the episode, `Options.Limits` and
+`Options.WindowAfter` read nothing, and `Project.Limits` and
+`Project.WindowAfter` go with their last callers in the app.
+`Project.PlaceWindow`, `Project.RoomAndLines` and the `Project.RoomWith`
+under it stay for the command line, and the first asks the episode.
+
+```
+app bindings                 ask Machine.Episode, hand in the options
+engine.Episode               plans, transcript, status, room, placed window
+engine.Options               limits, the window after a search
+the parse of each file       as today
+```
+
+The plan reads of the shaping, `planClip` and the ordered read beside it
+in `ShapeClip`, stay as they are in this pull request and move with part
+4. Each reads the plan whole and a gesture changes it, so the episode
+would have to hand out a plan the shaping copies before it changes it.
+Part 4 opens every file of the video through the episode anyway, which
+is where that copy belongs.
 
 ## What follows
 

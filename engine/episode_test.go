@@ -28,10 +28,10 @@ func TestAnEpisodeRemembersItHasBeenSearched(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if EverSearched(fsys, source) {
+	if NewMachine(fsys).Episode(source).EverSearched() {
 		t.Fatal("an episode nobody has searched should not say it has been")
 	}
-	if st := Status(NewMachine(fsys), source, "", nil); st.EverSearched || st.Work {
+	if st := NewMachine(fsys).Episode(source).Status("", nil); st.EverSearched || st.Work {
 		t.Errorf("status of a fresh episode %+v", st)
 	}
 
@@ -45,7 +45,7 @@ func TestAnEpisodeRemembersItHasBeenSearched(t *testing.T) {
 		t.Fatal(err)
 	}
 	p.addTimings(JobRecord{ID: "clip-1", Kind: JobClip})
-	if EverSearched(fsys, source) {
+	if NewMachine(fsys).Episode(source).EverSearched() {
 		t.Fatal("clips made by hand made the episode searched")
 	}
 
@@ -54,24 +54,24 @@ func TestAnEpisodeRemembersItHasBeenSearched(t *testing.T) {
 	if err := WriteJob(fsys, source, JobRecord{ID: SearchID, Kind: JobSearch, Step: StepWaiting}); err != nil {
 		t.Fatal(err)
 	}
-	if !EverSearched(fsys, source) {
+	if !NewMachine(fsys).Episode(source).EverSearched() {
 		t.Fatal("an episode being searched says it was not searched")
 	}
 	if err := RemoveJob(fsys, source, SearchID); err != nil {
 		t.Fatal(err)
 	}
 	p.addTimings(JobRecord{ID: SearchID, Kind: JobSearch})
-	if !EverSearched(fsys, source) {
+	if !NewMachine(fsys).Episode(source).EverSearched() {
 		t.Fatal("an episode that was searched says it was not")
 	}
-	if st := Status(NewMachine(fsys), source, "", nil); !st.EverSearched || !st.Work {
+	if st := NewMachine(fsys).Episode(source).Status("", nil); !st.EverSearched || !st.Work {
 		t.Errorf("status after a search %+v", st)
 	}
 
 	if err := DeleteWork(fsys, source); err != nil {
 		t.Fatal(err)
 	}
-	if EverSearched(fsys, source) {
+	if NewMachine(fsys).Episode(source).EverSearched() {
 		t.Error("an episode whose work folder is gone is new again")
 	}
 }
@@ -110,7 +110,7 @@ func TestAShortBeingWrittenIsNotCounted(t *testing.T) {
 	if err := recordShort(disk, plan, "01", filepath.Join(out, "done.mp4")); err != nil {
 		t.Fatal(err)
 	}
-	if got := Status(NewMachine(disk), source, "", nil).Rendered; got != 1 {
+	if got := NewMachine(disk).Episode(source).Status("", nil).Rendered; got != 1 {
 		t.Errorf("%d rendered, want 1", got)
 	}
 }
@@ -246,7 +246,7 @@ func TestAShortInTheOutputFolderIsTheClipsShort(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := NewMachine(disk)
-	rendered := func() int { return Status(m, source, "", nil).Rendered }
+	rendered := func() int { return m.Episode(source).Status("", nil).Rendered }
 	if c := shortOfClip(t, plan, "01"); c.Short != "" || c.Rendered {
 		t.Errorf("a clip never rendered says it is, at %q", c.Short)
 	}

@@ -98,7 +98,7 @@ func (s *FrameFairy) editMoving(path string, playhead *[2]float64, fn func() err
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	held := s.clock()
-	logs := s.project(path).LogsDir()
+	logs := engine.LogsDir(path)
 	before := engine.TakeSnapshot(s.store.files, s.store.records, logs)
 	read := s.clock()
 	heightWas := s.store.Settings().CaptionY

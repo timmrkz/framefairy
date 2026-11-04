@@ -24,8 +24,8 @@ type Reach struct {
 // RoomAndLines is what a reach is made from: the room one search has
 // with a video's settings, the weight of every line heard of it so far,
 // the parts heard, and what a second weighs outside them. The engine
-// places a window with it, see Project.PlaceWindow, and works out what a
-// window may be, see Project.Limits, so both start from the same numbers.
+// places a window with it, see Episode.PlaceWindow, and works out what a
+// window may be, see Options.Limits, so both start from the same numbers.
 type RoomAndLines struct {
 	Room
 	Lines []LineWeight
@@ -60,6 +60,19 @@ func Weigh(t *Transcript) RoomAndLines {
 // project's video has with its settings.
 func (p *Project) RoomWith(w RoomAndLines) RoomAndLines {
 	w.Room = SearchRoom(p.Files, p.Base, p.LogsDir())
+	return w
+}
+
+// Room is what one search of the episode's video can read with the
+// settings o, over its transcript as far as it is heard, with the lines
+// weighed once for each read of it, see TranscriptRead.Weighed. A
+// transcript that cannot be read is nothing heard yet.
+func (ep *Episode) Room(o Options) RoomAndLines {
+	w := Weigh(nil)
+	if h, err := ep.Transcript(o.ASRModel, o.SilenceDB); err == nil {
+		w = h.Weighed()
+	}
+	w.Room = SearchRoom(ep.m.Files, o, LogsDir(ep.source))
 	return w
 }
 

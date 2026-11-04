@@ -68,7 +68,7 @@ func (s *FrameFairy) Playing(path string, playing bool) error {
 // own however late a state first sees it running, rules 1 and 2.
 func (s *FrameFairy) searchBegins(path string) {
 	known := map[string]bool{}
-	for _, summary := range plansOf(s.store.files, path) {
+	for _, summary := range s.plansOf(path) {
 		for _, c := range summary.View().Clips {
 			known[filepath.Base(summary.Path)+"/"+c.ID] = true
 		}

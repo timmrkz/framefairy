@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
-	"github.com/spf13/afero"
 
 	"framefairy/engine"
 )
@@ -46,7 +45,7 @@ func (s *FrameFairy) Clips(ctx context.Context, path string) ([]ClipEntry, error
 			return nil, err
 		}
 	}
-	return s.clipsOf(plansOf(s.store.files, path), info), nil
+	return s.clipsOf(s.plansOf(path), info), nil
 }
 
 // clipsOf is the clips of these plans, in time order, their crops fitted
@@ -62,12 +61,13 @@ func (s *FrameFairy) clipsOf(plans []engine.PlanSummary, info engine.SourceInfo)
 	return out
 }
 
-// plansOf lists the plans of an episode, each read once. It is what the
-// clip list, the coverage and the edits over every plan need, and all
-// they need: they used to ask engine.Status, which also parses the whole
+// plansOf lists the plans of an episode, as its engine Episode holds
+// them, each read again only when its file changed. It is what the clip
+// list, the coverage and the edits over every plan need, and all they
+// need: they used to ask engine.Status, which also parses the whole
 // transcript, 71 ms on an episode of four hours, for every click.
-func plansOf(fsys afero.Fs, path string) []engine.PlanSummary {
-	return engine.PlanSummaries(fsys, engine.LogsDir(path))
+func (s *FrameFairy) plansOf(path string) []engine.PlanSummary {
+	return s.store.machine.Episode(path).Plans()
 }
 
 // cropWidth is how wide the crop of a short is in the episode's pixels,
@@ -132,7 +132,7 @@ func (s *FrameFairy) Coverage(ctx context.Context, path string) (CoverageView, e
 	if err != nil {
 		return CoverageView{}, err
 	}
-	return coverageOf(plansOf(s.store.files, path), info.Duration), nil
+	return coverageOf(s.plansOf(path), info.Duration), nil
 }
 
 // coverageOf is how often each part of an episode this long was searched
@@ -310,7 +310,7 @@ func (s *FrameFairy) clipEntry(ctx context.Context, path, plan, clipID string) (
 	if err != nil {
 		return ClipEntry{}, err
 	}
-	view, err := engine.ReadPlan(s.store.files, plan)
+	view, err := s.store.machine.Episode(path).ReadPlan(plan)
 	if err != nil {
 		return ClipEntry{}, err
 	}

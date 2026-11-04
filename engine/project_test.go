@@ -210,7 +210,7 @@ func TestProjectSteps(t *testing.T) {
 		t.Errorf("decisions %+v", decisions)
 	}
 
-	st := Status(NewMachine(disk), source, base.ASRModel, nil)
+	st := NewMachine(disk).Episode(source).Status(base.ASRModel, nil)
 	if !st.Transcribed || st.TranscriptStale || len(st.Plans) != 2 || st.Previews != 0 {
 		t.Errorf("status %+v", st)
 	}

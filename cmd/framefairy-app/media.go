@@ -156,8 +156,7 @@ func (s *FrameFairy) Waveform(path string, from, to float64, buckets int) ([]flo
 	// measuring goes there first.
 	s.levels.look(path, from, to)
 	s.levels.start(path)
-	p := s.project(path)
-	t, err := s.transcript(p)
+	t, err := s.transcript(path)
 	if err != nil && !errors.Is(err, engine.ErrNoTranscript) {
 		return nil, err
 	}
@@ -169,7 +168,7 @@ func (s *FrameFairy) Waveform(path string, from, to float64, buckets int) ([]flo
 	if s.levels != nil {
 		levels = s.levels.read(path)
 	} else {
-		levels = engine.ReadLevels(p.Files, path)
+		levels = engine.ReadLevels(s.store.files, path)
 	}
 	t = levels.Over(t)
 	if t == nil {

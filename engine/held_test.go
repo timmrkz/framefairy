@@ -3,6 +3,7 @@ package engine
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -29,7 +30,7 @@ func TestAVideosTranscriptIsReadOnceForEveryoneUntilItIsWritten(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st := Status(m, source, "/models/modell", nil); st.Covered != 3 {
+	if st := m.Episode(source).Status("/models/modell", nil); st.Covered != 3 {
 		t.Fatalf("the status says heard to %v, want 3", st.Covered)
 	}
 	if again, _ := m.Episode(source).Transcript("/models/modell", nil); again != first {
@@ -83,7 +84,7 @@ func TestListingTheLibraryLetsGoOfNoTranscript(t *testing.T) {
 	list := func() []*keptRead[heardSoFar] {
 		var reads []*keptRead[heardSoFar]
 		for _, video := range videos {
-			if st := Status(m, video, "/models/modell", nil); !st.Transcribed || st.Covered != 3 || st.Said == nil {
+			if st := m.Episode(video).Status("/models/modell", nil); !st.Transcribed || st.Covered != 3 || st.Said == nil {
 				t.Fatalf("%s listed as heard to %v, done %v, said %v", video, st.Covered, st.Transcribed, st.Said)
 			}
 			ep := m.Episode(video)
@@ -276,4 +277,115 @@ func TestATranscriptReadThatPanicsLetsGoOfItsWaiters(t *testing.T) {
 			t.Fatalf("after a panic the video gave %v, %v, not a new read", r, err)
 		}
 	})
+}
+
+// planRead is the read the episode keeps of the plan at path, nil for none.
+func planRead(ep *Episode, path string) *keptRead[PlanSummary] {
+	ep.m.held.Lock()
+	defer ep.m.held.Unlock()
+	if slot := ep.plans[path]; slot != nil {
+		return slot.read
+	}
+	return nil
+}
+
+// A video's plans are read once for the clip list, the status and the
+// window alike, each again only when its file changed, whoever wrote it.
+// A plan removed is let go of, and a plan that does not parse is left
+// out and read again on the next question.
+func TestAPlanIsReadOnceUntilItsFileChanges(t *testing.T) {
+	fsys := afero.NewMemMapFs()
+	m := NewMachine(fsys)
+	source := "/v/folge.mp4"
+	if err := afero.WriteFile(fsys, source, []byte("video"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	logs := LogsDir(source)
+	first, second := filepath.Join(logs, "clips.json"), filepath.Join(logs, "clips-0-1800.json")
+	write := func(path string, clips int) {
+		t.Helper()
+		if err := afero.WriteFile(fsys, path, []byte(aRealisticPlan(clips)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(first, 2)
+	write(second, 3)
+	ep := m.Episode(source)
+
+	plans := ep.Plans()
+	if len(plans) != 2 {
+		t.Fatalf("listed %d plans, want 2", len(plans))
+	}
+	read := planRead(ep, first)
+	if st := ep.Status("", nil); len(st.Plans) != 2 || !st.EverSearched {
+		t.Errorf("the status lists %d plans, searched %v", len(st.Plans), st.EverSearched)
+	}
+	if view, err := ep.ReadPlan(first); err != nil || len(view.Clips) != 2 {
+		t.Fatalf("the plan read for display gave %v", err)
+	}
+	if planRead(ep, first) != read {
+		t.Error("the plan was read again though its file did not change")
+	}
+
+	write(first, 4)
+	if view, err := ep.ReadPlan(first); err != nil || len(view.Clips) != 4 {
+		t.Fatalf("the plan written again read %v, want its 4 clips", err)
+	}
+	if planRead(ep, first) == read {
+		t.Error("the plan written again was not read again")
+	}
+
+	if err := fsys.Remove(second); err != nil {
+		t.Fatal(err)
+	}
+	if plans := ep.Plans(); len(plans) != 1 || plans[0].Path != first {
+		t.Errorf("after a plan was removed the episode lists %d", len(plans))
+	}
+	if planRead(ep, second) != nil {
+		t.Error("the plan removed is still held")
+	}
+
+	if err := afero.WriteFile(fsys, second, []byte("{"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if plans := ep.Plans(); len(plans) != 1 {
+		t.Errorf("a plan that does not parse was listed, %d plans", len(plans))
+	}
+	if planRead(ep, second) != nil {
+		t.Error("a plan that does not parse was kept as an answer")
+	}
+}
+
+// The plans asked for from everywhere at once while they are written,
+// under the race detector.
+func TestPlansHeldFromEverywhereAtOnce(t *testing.T) {
+	fsys := afero.NewMemMapFs()
+	m := NewMachine(fsys)
+	source := "/v/folge.mp4"
+	if err := afero.WriteFile(fsys, source, []byte("video"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan := filepath.Join(LogsDir(source), "clips.json")
+	if err := afero.WriteFile(fsys, plan, []byte(aRealisticPlan(2)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	for i := range 100 {
+		wg.Go(func() {
+			ep := m.Episode(source)
+			switch i % 4 {
+			case 0:
+				_ = afero.WriteFile(fsys, plan, []byte(aRealisticPlan(1+i%5)), 0o644)
+			case 1:
+				for _, p := range ep.Plans() {
+					_ = p.View()
+				}
+			case 2:
+				_ = ep.Status("", nil)
+			default:
+				_, _ = ep.ReadPlan(plan)
+			}
+		})
+	}
+	wg.Wait()
 }

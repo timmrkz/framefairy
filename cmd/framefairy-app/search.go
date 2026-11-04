@@ -154,7 +154,7 @@ func (s *FrameFairy) planned(path string, rec engine.JobRecord) int {
 	if info, err := s.probe(context.Background(), path); err == nil {
 		duration = info.Duration
 	}
-	view, err := engine.ReadPlan(s.store.files, rec.PlanPath(path, duration))
+	view, err := s.store.machine.Episode(path).ReadPlan(rec.PlanPath(path, duration))
 	if err != nil {
 		return 0
 	}
@@ -185,7 +185,7 @@ func (s *FrameFairy) render(path string, req engine.RenderRequest, carry *engine
 			// it is recorded with the clip as it was rendered.
 			ids := req.Clips
 			if len(ids) == 0 {
-				if view, err := engine.ReadPlan(s.store.files, req.Plan); err == nil {
+				if view, err := s.store.machine.Episode(path).ReadPlan(req.Plan); err == nil {
 					for _, c := range view.Clips {
 						if !c.Rejected {
 							ids = append(ids, c.ID)
@@ -241,7 +241,7 @@ func (s *FrameFairy) makeClip(path string, req engine.ClipRequest, carry, click 
 // it places, see videoWindow, the same one the workspace draws, and looks
 // for the clips that window suggests, or for the target typed.
 func (s *FrameFairy) firstSearch(ctx context.Context, path string) {
-	if engine.EverSearched(s.store.files, path) {
+	if s.store.machine.Episode(path).EverSearched() {
 		return
 	}
 	info, err := s.probe(ctx, path)

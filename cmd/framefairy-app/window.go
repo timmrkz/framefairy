@@ -89,13 +89,13 @@ func (s *FrameFairy) windowFor(ctx context.Context, path string, st VideoState, 
 	if !ok {
 		return nil
 	}
-	p := s.project(path)
-	r := s.roomAndLines(p)
+	o := s.store.Settings().options()
+	r := s.store.machine.Episode(path).Room(o)
 	limits := func(w KeptWindow) engine.WindowLimits {
-		return p.Limits(r, duration, w.To-w.From, s.store.Settings().targetFor(w.To-w.From))
+		return o.Limits(r, duration, w.To-w.From, s.store.Settings().targetFor(w.To-w.From))
 	}
 	view := func(w KeptWindow, l engine.WindowLimits) *WindowView {
-		return &WindowView{KeptWindow: w, WindowLimits: l, Shortest: p.Base.Min, Longest: p.Base.Max}
+		return &WindowView{KeptWindow: w, WindowLimits: l, Shortest: o.Min, Longest: o.Max}
 	}
 	l := limits(w)
 	if searchHolds(st.Jobs) {
@@ -176,25 +176,16 @@ func searchHolds(jobs []Job) bool {
 	return false
 }
 
-// placedWindow is where the app puts a video's window, see
-// engine.Project.PlaceWindow.
+// placedWindow is where the app puts a video's window, with the settings
+// as they are now, see engine.Episode.PlaceWindow. Every state carries the
+// window and what it may be, so the room comes from the episode, which
+// weighs the lines once for each read of the transcript, see
+// engine.Episode.Room: weighed for every state, four hours of them took
+// most of 55 ms.
 func (s *FrameFairy) placedWindow(path string, duration float64) KeptWindow {
-	p := s.project(path)
-	return keptOf(p.PlaceWindow(s.roomAndLines(p), duration))
-}
-
-// roomAndLines is what one search of the project's video can read, from
-// the transcript as far as it is heard. A transcript that cannot be read
-// is nothing heard yet. Every state carries the window and what it may
-// be, so the lines are weighed once for each transcript read and kept
-// with it, see engine.TranscriptRead: weighed for every state, four hours
-// of them took most of 55 ms.
-func (s *FrameFairy) roomAndLines(p *engine.Project) engine.RoomAndLines {
-	h, err := s.heardIn(p)
-	if err != nil {
-		return p.RoomWith(engine.Weigh(nil))
-	}
-	return p.RoomWith(h.Weighed())
+	o := s.store.Settings().options()
+	ep := s.store.machine.Episode(path)
+	return keptOf(ep.PlaceWindow(o, ep.Room(o), duration))
 }
 
 // keptOf is a window the engine placed as the app keeps it.
@@ -247,8 +238,8 @@ func (s *FrameFairy) windowOn(path string, req engine.PlanRequest) {
 	if kept != nil {
 		length = kept.Length
 	}
-	p := s.project(path)
-	w := keptOf(p.WindowAfter(s.roomAndLines(p), req, length, info.Duration))
+	o := s.store.Settings().options()
+	w := keptOf(o.WindowAfter(s.store.machine.Episode(path).Room(o), req, length, info.Duration))
 	if !w.ok() {
 		return
 	}

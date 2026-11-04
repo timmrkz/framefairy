@@ -4,7 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
+	"sort"
 	"sync"
+
+	"github.com/spf13/afero"
 )
 
 // Episode is what the program holds of one video's files. The files are
@@ -25,6 +29,16 @@ type Episode struct {
 	transcript *keptRead[*TranscriptRead]
 	used       uint64
 	heard      *keptRead[heardSoFar]
+	// plans is each plan file as it was last read, by its path, guarded by
+	// the machine's held as well. A plan is a few kilobytes, so every plan
+	// of every video asked about is kept.
+	plans map[string]*planSlot
+}
+
+// planSlot is where one plan file's read is kept, so held has a place
+// that stays while the map grows.
+type planSlot struct {
+	read *keptRead[PlanSummary]
 }
 
 // keptTranscripts is how many videos' transcripts a program holds, the
@@ -90,6 +104,74 @@ func (ep *Episode) Transcript(modelDir string, silenceDB *float64) (*TranscriptR
 		}
 		return newTranscriptRead(t, file.done()), nil
 	})
+}
+
+// Plans is every plan of the episode, newest first, each read again only
+// when its file changed, by its size and time, once however many ask at
+// once. Files that do not parse are left out. What it hands out is shared
+// and only read: the plan and the clips each summary keeps among them.
+func (ep *Episode) Plans() []PlanSummary {
+	files, _ := afero.Glob(ep.m.Files, filepath.Join(LogsDir(ep.source), "clips*.json"))
+	ep.forgetPlansBut(files)
+	var out []PlanSummary
+	for _, file := range files {
+		if s, err := ep.plan(file); err == nil {
+			out = append(out, s)
+		}
+	}
+	sort.Slice(out, func(a, b int) bool { return out[a].Modified.After(out[b].Modified) })
+	return out
+}
+
+// ReadPlan is the plan at path for display, see ReadPlan, read through
+// the episode when it is one of the episode's own plans.
+func (ep *Episode) ReadPlan(path string) (*PlanView, error) {
+	if filepath.Dir(filepath.Clean(path)) != LogsDir(ep.source) {
+		return ReadPlan(ep.m.Files, path)
+	}
+	s, err := ep.plan(filepath.Clean(path))
+	if err != nil {
+		return nil, err
+	}
+	return s.View(), nil
+}
+
+// plan is the plan file at path as it is now, read again only when its
+// size or time changed.
+func (ep *Episode) plan(path string) (PlanSummary, error) {
+	info, err := ep.m.Files.Stat(path)
+	if err != nil {
+		return PlanSummary{}, err
+	}
+	if !info.Mode().IsRegular() {
+		return PlanSummary{}, fmt.Errorf("%s is not a file", filepath.Base(path))
+	}
+	stamp := fmt.Sprintf("%d,%d", info.Size(), info.ModTime().UnixNano())
+	ep.m.held.Lock()
+	if ep.plans == nil {
+		ep.plans = map[string]*planSlot{}
+	}
+	slot := ep.plans[path]
+	if slot == nil {
+		slot = &planSlot{}
+		ep.plans[path] = slot
+	}
+	ep.m.held.Unlock()
+	return held(ep, &slot.read, stamp, nil, func() (PlanSummary, error) {
+		return summaryOf(ep.m.Files, path)
+	})
+}
+
+// forgetPlansBut lets go of every plan read the episode keeps that is not
+// one of files, the plans there are now.
+func (ep *Episode) forgetPlansBut(files []string) {
+	ep.m.held.Lock()
+	defer ep.m.held.Unlock()
+	for path := range ep.plans {
+		if !slices.Contains(files, path) {
+			delete(ep.plans, path)
+		}
+	}
 }
 
 // heardSoFar is what Status says of a transcript: whether it is done, the

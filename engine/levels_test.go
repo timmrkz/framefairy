@@ -164,7 +164,7 @@ func TestLevelsReachAgreesWithTheFrames(t *testing.T) {
 	if !done || len(parts) != 1 || parts[0][0] != 0 || math.Abs(parts[0][1]-ReadLevels(disk, source).To()) > 1e-9 {
 		t.Errorf("parts %v done %v, frames %.2f", parts, done, ReadLevels(disk, source).To())
 	}
-	if st := Status(e.Machine, source, "", nil); !st.MeasuredAll || st.Measured != parts[0][1] {
+	if st := e.Machine.Episode(source).Status("", nil); !st.MeasuredAll || st.Measured != parts[0][1] {
 		t.Errorf("the library says %.2f, all %v", st.Measured, st.MeasuredAll)
 	}
 }
@@ -290,7 +290,7 @@ func TestMeasureLevelsCarriesOn(t *testing.T) {
 	if had.Done || len(had.Parts) != 1 || had.Parts[0][0] != int(15/timed.FrameSeconds) {
 		t.Fatalf("cut off with %v, done %v", partSeconds(had.Parts), had.Done)
 	}
-	if st := Status(e.Machine, source, "", nil); st.MeasuredAll || st.Measured <= 0 || len(st.MeasuredParts) == 0 {
+	if st := e.Machine.Episode(source).Status("", nil); st.MeasuredAll || st.Measured <= 0 || len(st.MeasuredParts) == 0 {
 		t.Errorf("the library says %.2f in %v, all %v", st.Measured, st.MeasuredParts, st.MeasuredAll)
 	}
 	var calls int
