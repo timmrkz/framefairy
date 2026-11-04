@@ -49,13 +49,24 @@ RUN --mount=type=bind,source=scripts/ci-packages.sh,target=/tmp/ci-packages.sh \
 # With WebKit in it, pulling one image for every job took 73 to 80 s where
 # 24 to 30 s had done, so the jobs that open no browser take the one
 # above, #380. Node is lent from the image above for this step only.
-FROM base AS walks
+#
+# The walks on every push walk in WebKit alone, so they take webkit, the
+# same without Chromium: every job of them pulls the image, at about
+# 15 MB a second from the registry, 764 MB in 48 to 52 s, and
+# Chromium's shell is 261 MB of what it unpacks. walks, with both, is the
+# nightly walks', which walk in Chromium.
+FROM base AS webkit
 ARG PLAYWRIGHT
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 RUN --mount=type=bind,from=node,source=/usr/local,target=/opt/node \
 	test -n "$PLAYWRIGHT" && \
-	PATH="/opt/node/bin:$PATH" npx --yes "playwright@$PLAYWRIGHT" install --with-deps --only-shell chromium && \
 	PATH="/opt/node/bin:$PATH" npx --yes "playwright@$PLAYWRIGHT" install --with-deps webkit && \
+	rm -rf /root/.npm /var/lib/apt/lists/*
+
+FROM webkit AS walks
+ARG PLAYWRIGHT
+RUN --mount=type=bind,from=node,source=/usr/local,target=/opt/node \
+	PATH="/opt/node/bin:$PATH" npx --yes "playwright@$PLAYWRIGHT" install --with-deps --only-shell chromium && \
 	rm -rf /root/.npm /var/lib/apt/lists/*
 
 LABEL org.opencontainers.image.source=https://github.com/timmrkz/framefairy

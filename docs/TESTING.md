@@ -62,8 +62,9 @@ the machines, or twice as long on the same ones, see
 [the decision](decisions/2026-10-31-walks-in-two-browsers.md). The nightly
 walks, `walks-nightly.yml`, walk in Chromium, `WALKBROWSER=chromium`, so
 both engines are walked every day. The WebKit is Playwright's own build
-for Linux, which takes real key presses, and CI's image holds it beside
-the Chromium, see `.github/ci-image/Dockerfile`. It draws every frame through OpenGL,
+for Linux, which takes real key presses, and CI's image for the walks
+on a push holds it alone, the nightly walks' beside the Chromium, see
+`.github/ci-image/Dockerfile`. It draws every frame through OpenGL,
 which a machine without a graphics chip runs on the CPU, and drawing is
 42 % of the walks' CPU there, so the walks give it two threads to draw
 with rather than one a core, see `drawingThreads` in `walks/bridge.mjs`. A cloud session gets it

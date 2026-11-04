@@ -548,11 +548,14 @@ a new one, and every job in it runs on that.
 `.github/workflows/ci-image.yml`, which `ci.yml` calls as the job
 `image`, and `fuzz-nightly.yml`, `walks-nightly.yml` and `security.yml` call too, names the image by a sum of
 the Dockerfile, of `scripts/ci-packages.sh` and of the Playwright
-version, as `ghcr.io/timmrkz/framefairy-ci:<sum>`, and the walks' image
-as `<sum>-walks`. When the registry has both tags, the job is done in
-seconds, and when it does not, which is only when one of the three
-changed, it builds both images and pushes them,
-and the jobs in it wait for it. Both images the Dockerfile starts from
+version, as `ghcr.io/timmrkz/framefairy-ci:<sum>`, the image with
+WebKit, which the walks on every push run in, as `<sum>-webkit`, and the
+one with Chromium too, the nightly walks', as `<sum>-walks`. The walks
+on a push pull theirs without Chromium, since every walks job pulls it
+at about 15 MB a second. When the registry has all three tags, the job
+is done in seconds, and when it does not, which is only when one of the
+three files changed, it builds the images and pushes them, and the jobs
+in them wait for it. Both images the Dockerfile starts from
 are pinned to a digest, so the same sum always means the same image, and
 moving them is a change to the file. Dependabot moves both once a week,
 in one pull request. A Playwright update from Dependabot likewise builds
