@@ -95,11 +95,22 @@ jobs:
       - name: The episode's decoder
         run: make frames
       - name: Sequences and walks with motion
+        id: walks
         run: |
           make walks STILL=none WALKBROWSER=chromium WALKSHARD=${{ matrix.shard }} WALKTIMEOUT=12m COVERAGE=.build/coverage 2>&1 | tee walks.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then sh scripts/test-failures.sh walks.log; fi
           exit "$status"
+      # The traces of the walks that failed, threw or hung, the same as
+      # the walks in ci.yml keep, see Finding why a walk failed in
+      # docs/TESTING.md.
+      - if: failure() && steps.walks.outcome == 'failure'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: walk-traces-${{ strategy.job-index }}
+          path: .build/walk-traces
+          retention-days: 14
+          if-no-files-found: ignore
       # The shares build the same, so one of them saves.
       - if: ${{ !cancelled() && steps.gocache.outputs.cache-hit != 'true' && strategy.job-index == 0 }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

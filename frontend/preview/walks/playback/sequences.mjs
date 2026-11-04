@@ -238,6 +238,16 @@ export default [
     ],
   },
   {
+    // The loop switched on while the clip played, let go round and
+    // switched off in the second time through stopped the play at the
+    // end. The next play of the clip, from a moment before its end with
+    // the loop off, went on round it: it kept the program of the play
+    // before, which was to end after the second time through. A busy
+    // runner in WebKit found it, #380.
+    name: "a play after the loop was switched off on the way plays the clip once",
+    steps: [["loop off, then again", 3]],
+  },
+  {
     // Tim switched the loop on early in a clip with a cut, let it run, and
     // at the end the sound went round while the video preview stood on the
     // clip's last frame (2.264).

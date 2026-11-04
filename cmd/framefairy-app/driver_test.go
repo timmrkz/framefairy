@@ -59,6 +59,9 @@ type desk struct {
 	// window, so the bridge knows what a step of a recording told.
 	beats *listenBeats
 	told  func(Dictation)
+	// time, when set, is the clock removed work is timed by in every
+	// opening of the app, see timeKeeper in removal.go.
+	time *walkTime
 	// The report windows Bugs made and brought forward, the window the
 	// app would have made, and the pictures its open box hands over
 	// next, see bugs.go.
@@ -107,8 +110,15 @@ func open(t *testing.T) *desk {
 // start runs the app over a store.
 func (d *desk) start(st *store) {
 	d.svc = &FrameFairy{store: st}
-	d.svc.jobs = newQueue(st, func(u JobUpdate) { d.bus.send("job", u) },
-		func(episode string) { d.bus.send("episode", episode) })
+	toJob := func(u JobUpdate) {
+		if toWindow(u) {
+			d.bus.send("job", u)
+		}
+	}
+	d.svc.jobs = newQueue(st, toJob, func(episode string) { d.bus.send("episode", episode) })
+	if d.time != nil {
+		d.svc.jobs.time = d.time
+	}
 	svc := d.svc
 	// A video's state is sent only to a window, which a path test has
 	// none of.

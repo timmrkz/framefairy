@@ -51,7 +51,7 @@ can show:
 | | Runs | For | Why this way |
 | --- | --- | --- | --- |
 | plain code | Go tests and Vitest, once | every rule that can be said without a page: what a dictation does to the text, where an arrow key takes the cursor, how far a field scrolls | no browser decides it, so a second browser would test the same code twice. It is the quickest test and the easiest to read |
-| the walks | every walk and sequence on every pull request that reaches them, in WebKit for each part `walks/webkit.mjs` no longer names and in Chromium for the rest, and all of them in Chromium every night | what a person does, against the real Go side, in the engine the app runs in | the engines differ where people type and look: the cursor, the selection, the focus, scrolling, fonts and layout. Nearly every bug Tim met in Report a Problem, #574, was WebKit's alone and passed in Chromium. The Mac ships first, and Windows is not built yet |
+| the walks | every walk and sequence on every pull request that reaches them, in WebKit, and all of them in Chromium every night | what a person does, against the real Go side, in the engine the app runs in | the engines differ where people type and look: the cursor, the selection, the focus, scrolling, fonts and layout. Nearly every bug Tim met in Report a Problem, #574, was WebKit's alone and passed in Chromium. The Mac ships first, and Windows is not built yet |
 | what only a Mac does | a step that acts out the Mac's behaviour on purpose, and the rule it protects in plain code | how AppKit reaches WebKit: a cursor revealed in the middle of a field, a button that takes no focus from a click, a mouse entering as a plain move | no browser on Linux has it, WebKit's Linux ports included, so a walk can only play it, as `attach, as on a Mac` does |
 
 The walks are the same walks in both browsers, and the browser is a
@@ -69,12 +69,8 @@ sequence in it the way it walks one in Chromium. `SLOW` and
 `WALKCOVERAGE` work through Chromium's own tools, so either walks every
 walk in Chromium, and says so when `WALKBROWSER=webkit` asks for WebKit.
 
-Until every part of the app has moved to WebKit, #380,
-`walks/webkit.mjs` names the parts that still walk in Chromium, and the
-random walks walk there too. A part moves in a pull request of its own,
-which fixes what WebKit finds in it, so each stays a size to review. A walk
-that only passes in Chromium is a walk to fix, not a part to keep there:
-the app on a Mac is WebKit. What WebKit finds is fixed where its cause
+A walk that only passes in Chromium is a walk to fix, never one to keep
+there: the app on a Mac is WebKit. What WebKit finds is fixed where its cause
 is. A walk that reads what the two engines write differently, like the
 name of a font in quotes or without, is fixed in the walk. What a person
 on a Mac would see too, like a hover WebKit works out only when the
@@ -166,6 +162,7 @@ each with a POST:
 | `/speech?hold`, `/speech?step=N`, `/speech?go` | `hold` stops the speech model hearing, once the pieces it is hearing are heard, so a transcript stays where it is while a walk looks at it, cancels it or presses something during it. `step=N` lets N pieces more be heard while it is held, and a walk waits on the news of the work, not for the step. With `&save` what is heard so far is saved once the next piece is heard: the app saves a long transcription every 8 s of real time, and the bridge saves it part way only then, through `SaveHeard`, which the engine asks the speech model in place of its clock, so a walk sees a transcript saved part way on any machine. `go` lets it hear on by itself. Closing the app with `/reopen` lets every piece through while the app closes, the way a piece being heard ends as it quits, and the speech stays held after. With `&from=0` it says its sentences again from the first word, so a video added next is heard with the words of the bridge's episode and its clip has the same name |
 | `/chrome?bar=30&left=12&right=72` | the app's window as macOS lays it out, in points: the title bar's height and where its buttons start and end. It goes through what the Go side does with an answer from macOS and is told to the page the way a resize is. Until it is asked, and again after `/reset`, the title bar is the one every other system draws |
 | `/hold?call=Search&gate=shut&times=K&answer=1&fail=why` | with `gate=shut`, the calls of that name wait before they reach the Go side until `gate=open`, every one of them, or the next K with `times`, the way a busy machine delivers them late, so a walk can press something and look while the Go side has not heard of the call yet, and lets it through once it has looked, on any machine. A walk holds a call with `hold` in `walks/bridge.mjs` and lets it go with `letHeld`: the page sets the held call aside, so `settle` waits for everything else meanwhile, and the watch lets go of whatever is still held before it compares the screen with the engine. With `answer=1` the call reaches the Go side at once and only its answer waits for `gate=open`, so the news of what it set going comes before it, `hold(page, name, true)`. With `fail` the next call fails with that reason instead of reaching the Go side, the way a full disk refuses a save. `/reset` opens every gate |
+| `/clock?run=MS` | runs the clock removed work is timed by on by MS milliseconds, and makes every call due by then before it answers. The Go side keeps that time and forgets the work once it is up, see `removal.go`, and `runClock` in `walks/bridge.mjs` runs it on with the page's clock, so the ten seconds a walk runs on are the same ten seconds on both sides, on any machine. `/clock?hold` holds it with the page's clock and `/clock?go` lets it go again, see `holdClock` and `letClockGo`, so while a walk holds the page's time a busy machine spends none of Go's either. Let go, it goes as the system's clock does |
 | `/updates?from=main&stored=pr-143&list=main,pr-143` | gives the app's Updates page the app's own updating and Wails' updater, reading a channel list the bridge serves on this machine: a build from the channel `from`, or made on the Mac without it, with `stored` picked by a build before it, and the channels of `list`, each with a newer build that downloads in a moment. Until it is asked, and again after `/reset`, the Updates page's calls are answered with nothing like the rest. Relaunch always is |
 | `/fresh`, `/fresh?memory=8`, `/fresh?arrive=speech`, `/fresh?arrive=clip` | makes the bridge's machine one the app never ran on: no model, no video in the app and nothing said yet about how clips are found, on a machine of 32 GB like Tim's, or of the gigabytes `memory` gives, so the setup offers the same models on every machine. A key saved there is kept by the bridge, never the keychain, and counted as there. A walk opens the page again to see the setup. Download there runs as a job like any other, through a stand-in that says it has fetched two fifths and holds there until `arrive` lets that kind of model arrive, so a walk sees both downloads at once for as long as it looks, on any machine. `/reset` makes the machine the bridge's again |
 | `/reopen` | closes the app and opens it again, the way quitting and starting it does: the work stops and how it ended is read back. It answers with the jobs as the app left them, once nothing ran any more |
@@ -943,8 +940,9 @@ it hang, #508.
    of the page before and after each call no walk records: eight
    sequences took 41 % longer with them in a cloud session, and with
    the film a walks job in CI went over its five minutes. In CI a walks
-   job that failed keeps the folder with the run as `walk-traces-0` to
-   `walk-traces-3`, one for each share, for 14 days.
+   job that failed, on a push or at night, keeps the folder with the run
+   as `walk-traces-0` to `walk-traces-3`, one for each share, for 14
+   days.
    A session finds it with the GitHub tools,
    `list_workflow_run_artifacts` for the run and
    `download_workflow_run_artifact`, which gives a link to the zip. The
@@ -1051,7 +1049,7 @@ run once the others are done. Each sequence opens the app afresh with
 Every walker hands its sequences to one node of its own, `sequences.mjs
 --serve`, which reads the name of the next sequence from its input,
 says `walking` in a line of its own as it begins and how it went in
-another as it ends, and keeps one Chromium for all of them. Each sequence still opens a page in a context of its own, so it
+another as it ends, and keeps one browser for all of them. Each sequence still opens a page in a context of its own, so it
 keeps nothing a sequence before it kept. Starting node, Playwright and
 Chromium for every sequence was 1.45 s and 1.2 s of CPU each time, 220
 times, issue #526. A sequence that throws ends its node, and the next

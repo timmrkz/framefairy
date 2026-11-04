@@ -73,7 +73,7 @@ func main() {
 
 	var app *application.App
 	emit := func(u JobUpdate) {
-		if app != nil {
+		if app != nil && toWindow(u) {
 			app.Event.Emit("job", u)
 		}
 	}

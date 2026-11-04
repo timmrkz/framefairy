@@ -644,8 +644,13 @@ function searchAt(s: FakeSearch, now = Date.now()) {
 }
 function searchJob(s: FakeSearch) {
   const now = searchAt(s);
-  const base = { id: s.id, episode: "/eps/ep.mp4", kind: "search", label: "Find clips", state: now.state, step: now.step, from: s.from, to: s.to, count: s.count, queued: "", lane: now.step === "hearing" ? "hearing" : "finding", error: s.error, result: now.state === "done" ? "/eps/ep.framefairy/logs/clips.json" : undefined };
-  if (now.state !== "running") return base;
+  const base = { id: s.id, episode: "/eps/ep.mp4", kind: "search", label: "Find clips", state: now.state, step: now.step, from: s.from, to: s.to, count: s.count, queued: "", lane: now.step === "hearing" ? "hearing" : "finding", error: s.error, result: now.state === "done" ? "/eps/ep.framefairy/logs/clips.json" : undefined, away: awayOf(s.id, now.state), stopping: now.state === "running" && s.cancelledAt !== undefined ? true : undefined };
+  if (now.state !== "running") {
+    // How it ended, as the Go side says it, see engine.SearchEnded.
+    const end = s.to > 0 ? s.to : fullLength;
+    const ended = now.state === "done" ? (now.found > 0 ? "found" : "nothing") : now.covered >= end - 0.5 ? "finding" : "hearing";
+    return { ...base, ended };
+  }
   if (now.step === "hearing") {
     // How far and how long, to the end of the window it hears for, the way
     // the engine reports it. A made-up time left here hid that the engine
@@ -805,6 +810,8 @@ function handJob(h: FakeHand) {
   const running = now.state === "running";
   return {
     id: h.id, episode: "/eps/ep.mp4", kind: "clip", label: "Make a clip", state: now.state,
+    away: awayOf(h.id, now.state),
+    stopping: now.state === "running" && h.cancelledAt !== undefined ? true : undefined,
     step: now.step, at: h.at, backward: h.backward, queued: "",
     lane: now.step === "hearing" ? "hearing" : "framing",
     result: now.state === "done" ? `clips-hand.json/h0${h.n}` : undefined,
@@ -907,6 +914,28 @@ export const Call = {
     return late(method, answer).finally(back);
   },
 };
+
+// Work that stopped and was removed, the way removal.go keeps it: the
+// moment it is forgotten, 0 while a hand holds its row, how many seconds
+// are left then, and how many it had. Its time is kept here, not by the
+// interface, and once it is up the work is forgotten.
+type Removal = { until: number; left: number; whole: number; press?: number };
+// Not __removals, which counts the videos removed, see RemoveEpisode.
+const removals = (): Record<string, Removal> => ((window as any).__removedWork ??= {});
+function forgetDue(now = Date.now()) {
+  for (const [id, r] of Object.entries(removals())) {
+    if (!r.until || r.until > now) continue;
+    delete removals()[id];
+    ((window as any).__cancels ??= []).push(id);
+    const hand = hands().find((h) => h.id === id);
+    if (hand) hand.settled = true;
+    const search = fakeSearches().find((f) => f.id === id);
+    if (search) search.settled = true;
+  }
+}
+function awayOf(id: string, state: string): Removal | undefined {
+  return state === "settled" ? undefined : removals()[id];
+}
 
 // The state of the video, the way the Go side reads it: its jobs first,
 // and the clock read with them, then the rest.
@@ -1734,6 +1763,7 @@ const Answers = {
         return Promise.resolve({ done: true, clip: "clips.json/03" });
       }
       case "Jobs": {
+        forgetDue();
         const searches = [...fakeSearches().map(searchJob), ...hands().map(handJob)];
         // A render running on the first clip, so the Render button has
         // work of its own to show.
@@ -1961,6 +1991,27 @@ const Answers = {
           }
         }
         return Promise.resolve(null);
+      }
+      case "RemoveWork": {
+        const was = removals()[String(args[0])];
+        if (!was) removals()[String(args[0])] = { until: Date.now() + 10000, left: 0, whole: 10 };
+        return videoState("/eps/ep.mp4");
+      }
+      case "HoldRemoval": {
+        const id = String(args[0]);
+        const was = removals()[id];
+        // A hold or let go older than the last one taken is left out,
+        // as Go does, see HoldRemoval in removal.go.
+        const press = Number(args[2] ?? 0);
+        if (was && press <= (was.press ?? 0)) return Promise.resolve(null);
+        if (was) was.press = press;
+        if (was && args[1] && was.until) removals()[id] = { until: 0, left: Math.max(0, (was.until - Date.now()) / 1000), whole: was.whole, press };
+        if (was && !args[1] && !was.until) removals()[id] = { until: Date.now() + was.left * 1000, left: 0, whole: was.whole, press };
+        return Promise.resolve(null);
+      }
+      case "PutWorkBack": {
+        delete removals()[String(args[0])];
+        return videoState("/eps/ep.mp4");
       }
       case "CancelJob": {
         (window as any).__stopped = true;
@@ -2306,9 +2357,10 @@ export const Events = {
     // called off stays in the interface's hands.
     const told = new Map<string, string>();
     const searchTimer = setInterval(() => {
+      forgetDue();
       for (const job of [...fakeSearches().map(searchJob), ...hands().map(handJob), ...((window as any).__refused ?? [])] as any[]) {
         const s = { id: job.id };
-        const key = `${job.state}`;
+        const key = `${job.state} ${JSON.stringify(job.away ?? null)}`;
         if (job.state !== "running" && told.get(s.id) === key) continue;
         told.set(s.id, key);
         if (job.progress) {

@@ -721,6 +721,11 @@ export const steps = {
     }
     await page.mouse.up();
     await playUntil(page, { most: 0.5 });
+    // Half a second of the episode is thirty animation frames and more
+    // on a machine at rest, and on a busy runner in WebKit it was five,
+    // too few to prove anything by, #380. So the watch goes on while the
+    // play does, until it has read thirty, counted on the page.
+    await pageUntil(page, () => window.__played.length >= 30 || !document.querySelector('button[aria-label="Pause"]'));
     await page.evaluate(() => (window.__playWatch = false));
     await settle(page);
   },
@@ -744,14 +749,16 @@ export const steps = {
     await page.evaluate(() => document.body.focus());
     await preview(page, 0.2);
     await page.keyboard.press("Space");
-    await settle(page);
-    await playUntil(page, { most: 0.3 });
     // The play is a fifth of the clip from its end, and on the sound
     // card's clock a busy runner ran it to the end before the hand let
     // go, so the walk had nothing to prove, issue #583. The sound card is
-    // held while the hand takes the end back, as long as the machine
-    // needs, and the play goes on from there once it lets go.
+    // held from a moment into the play while the walk settles and the
+    // hand takes the end back, as long as the machine needs, and the
+    // play goes on from there once it lets go. Held only after the
+    // settle, the play had run on through it, #380.
+    await playUntil(page, { most: 0.3 });
     await holdSound(page, true);
+    await settle(page);
     const starts = await page.evaluate(() => window.__frameQueue.stats.starts);
     await page.evaluate(() => {
       window.__played = [];
@@ -840,8 +847,12 @@ export const steps = {
       await page.evaluate(() => document.body.focus());
       await preview(page, 0.2);
       await page.keyboard.press("Space");
-      await settle(page);
+      // Played a moment, then held while the walk settles and acts, see
+      // below: a busy runner in WebKit took seconds to settle, and the
+      // play had run past the end before the hand came, #380.
       await playUntil(page, { most: 0.2 });
+      await holdSound(page, true);
+      await settle(page);
     };
     const pullIn = async () => {
       const g = await handles(page);
@@ -858,6 +869,13 @@ export const steps = {
     };
     if (when === "paused") await pullIn();
     await play();
+    // The play is a fifth of the clip before the new end, and a busy
+    // runner in WebKit played it to the end before Undo and Redo were
+    // taken, so the walk had nothing to prove, #380. The sound card is
+    // held from a moment into the play, see play, while the hand drags
+    // and takes the menu, as long as the machine needs, and the play
+    // goes on from there once it lets go, the way "end back past the
+    // playhead" does, issue #583.
     const starts = await page.evaluate(() => window.__frameQueue.stats.starts);
     await record();
     if (when !== "paused") await pullIn();
@@ -867,6 +885,7 @@ export const steps = {
       await settle(page);
     }
     const [atBack, playingAtBack] = await page.evaluate(() => [Number(document.querySelector(".screen").dataset.playhead), !!document.querySelector('button[aria-label="Pause"]')]);
+    await holdSound(page, false);
     const pieces = (await engineState(page, watch.at)).segments;
     const end = pieces.at(-1).end;
     const want = menu.length % 2 ? oldEnd : newEnd;
@@ -916,8 +935,12 @@ export const steps = {
     await page.evaluate(() => document.body.focus());
     await preview(page, 0.2);
     await page.keyboard.press("Space");
-    await settle(page);
+    // Played a moment, then held while the walk settles and takes the
+    // menu, so the play cannot reach the cut first on a busy machine,
+    // see "end in and back".
     await playUntil(page, { most: 0.2 });
+    await holdSound(page, true);
+    await settle(page);
     const starts = await page.evaluate(() => window.__frameQueue.stats.starts);
     await page.evaluate(() => {
       window.__played = [];
@@ -934,6 +957,7 @@ export const steps = {
     await page.evaluate((m) => window.__menu(m), what);
     await settle(page);
     const [atBack, playingAtBack] = await page.evaluate(() => [Number(document.querySelector(".screen").dataset.playhead), !!document.querySelector('button[aria-label="Pause"]')]);
+    await holdSound(page, false);
     const pieces = (await engineState(page, watch.at)).segments;
     // A second past the cut, whichever side of the menu it is on.
     const past = Math.max(...[...cutsOf(before), ...cutsOf(pieces)].map(([, b]) => b)) + 1;
@@ -1258,12 +1282,14 @@ export const steps = {
       if (other) return `frame ${other[2]} was drawn after frame ${holds(at)} had landed ${what}`;
       return at;
     };
-    const first = stood(hand.down, hand.moves, "while the hand held still on the press");
+    // From when the page heard the press, and the last move, which a
+    // busy runner delivered long after the walk sent them.
+    const first = stood(Math.max(hand.down, hand.heardDown ?? 0), hand.moves, "while the hand held still on the press");
     if (typeof first === "string") {
       walk.wrong = first;
       return;
     }
-    const second = stood(hand.still, hand.up, "while the hand held still where it moved to");
+    const second = stood(Math.max(hand.still, hand.heardMove ?? 0), hand.up, "while the hand held still where it moved to");
     if (typeof second === "string") {
       walk.wrong = second;
       return;

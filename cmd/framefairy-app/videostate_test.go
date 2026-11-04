@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"slices"
 	"sync"
@@ -516,8 +517,11 @@ func TestPathAVideoThatCannotBeReadStillHasItsState(t *testing.T) {
 	}
 }
 
-// A state holds the jobs queued or running and, of those over, the
-// newest of each kind, not every job the video had since the app opened.
+// A state holds the jobs queued or running, those that stopped before
+// they were done and still say so, and of the rest the newest of each
+// kind, not every job the video had since the app opened. The state is
+// the one way a video's jobs reach the window, so a clip made by hand
+// that stopped keeps its card while a later one is made.
 func TestAStateHoldsTheJobsTheWorkspaceShows(t *testing.T) {
 	q := newIdleQueue(nil, nil, nil)
 	add := func(id, episode, kind, state string) {
@@ -530,8 +534,10 @@ func TestAStateHoldsTheJobsTheWorkspaceShows(t *testing.T) {
 	for i := range 50 {
 		add(fmt.Sprintf("render-%d", i), "a.mp4", engine.JobRender, JobDone)
 	}
-	add("search-old", "a.mp4", engine.JobSearch, JobStopped)
+	add("search-old", "a.mp4", engine.JobSearch, JobSettled)
+	add("clip-stopped", "a.mp4", engine.JobClip, JobStopped)
 	add("search-new", "a.mp4", engine.JobSearch, JobDone)
+	add("clip-new", "a.mp4", engine.JobClip, JobDone)
 	add("render-running", "a.mp4", engine.JobRender, JobRunning)
 	add("render-queued", "a.mp4", engine.JobRender, JobQueued)
 	add("other", "b.mp4", engine.JobSearch, JobRunning)
@@ -540,7 +546,38 @@ func TestAStateHoldsTheJobsTheWorkspaceShows(t *testing.T) {
 	for _, j := range jobs {
 		ids = append(ids, j.ID)
 	}
-	if want := []string{"render-49", "search-new", "render-running", "render-queued"}; !slices.Equal(ids, want) {
+	if want := []string{"render-49", "clip-stopped", "search-new", "clip-new", "render-running", "render-queued"}; !slices.Equal(ids, want) {
 		t.Errorf("the state holds %v, not %v", ids, want)
+	}
+}
+
+// A video's state says how each search that is over or stopped ended,
+// from the video's status, so the interface works nothing out: a search
+// that found nothing, one that stopped before its window was heard, and
+// one stopped once it was. A running search and a render say nothing.
+func TestAStateSaysHowEachSearchEnded(t *testing.T) {
+	search := func(id, state string, written int) Job {
+		return Job{ID: id, State: state, Written: written, JobRecord: engine.JobRecord{Kind: engine.JobSearch, From: 600, To: 1200, Min: 20}}
+	}
+	jobs := []Job{
+		search("found", JobDone, 2),
+		search("nothing", JobDone, 0),
+		search("stopped", JobStopped, 0),
+		search("running", JobRunning, 0),
+		{ID: "render", State: JobDone, JobRecord: engine.JobRecord{Kind: engine.JobRender}},
+	}
+	searchesEnded(jobs, engine.EpisodeStatus{Heard: [][2]float64{{0, 900}}}, 3600)
+	got := map[string]string{}
+	for _, j := range jobs {
+		got[j.ID] = j.Ended
+	}
+	want := map[string]string{"found": engine.EndedFound, "nothing": engine.EndedNothing, "stopped": engine.EndedHearing, "running": "", "render": ""}
+	if !maps.Equal(got, want) {
+		t.Errorf("the searches ended %v, want %v", got, want)
+	}
+	transcribed := []Job{search("stopped", JobStopped, 0)}
+	searchesEnded(transcribed, engine.EpisodeStatus{Transcribed: true}, 3600)
+	if transcribed[0].Ended != engine.EndedFinding {
+		t.Errorf("a search stopped on a video heard to its end ended %q", transcribed[0].Ended)
 	}
 }

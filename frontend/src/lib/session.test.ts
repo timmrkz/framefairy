@@ -1,202 +1,24 @@
 import { describe, expect, test, vi } from "vitest";
 
 import type { ClipEntry, EpisodeStatus, Job, VideoState, WindowView } from "./api";
-import { said } from "./said";
-import { EpisodeSession, type WorkMoves } from "./session.svelte";
+import { EpisodeSession } from "./session.svelte";
 import { JobStore } from "./state.svelte";
 
-vi.mock("./api", () => ({ api: {}, onJob: () => {} }));
+vi.mock("./api", () => ({ api: {}, onJob: () => {}, onVideoState: () => {} }));
 vi.mock("./said", () => ({ said: vi.fn() }));
 
-const none: WorkMoves = {
-  chose: () => {},
-  heard: () => {},
-  searched: () => {},
-  transcribed: () => {},
-  rendered: () => {},
-};
+const none = () => {};
 
 const job = (id: string, kind: string, state: string, seq: number, more: Partial<Job> = {}): Job =>
   ({ id, episode: "/v.mp4", kind, state, seq, ...more }) as Job;
 
-// Every move the session says, in the order it said them, as "move id".
+// Every clip the session says the app chose, in the order it said them.
 function session(jobs = new JobStore()) {
   const heard: string[] = [];
-  const say = (move: string) => (j: Job) => heard.push(`${move} ${j.id}`);
-  const moves: WorkMoves = {
-    chose: (key: string, before: string, card: string) => heard.push(`chose ${key} ${before || "none"}${card ? ` from ${card}` : ""}`),
-    heard: say("heard"),
-    searched: say("searched"),
-    transcribed: say("transcribed"),
-    rendered: say("rendered"),
-  };
   const here = new EpisodeSession("/v.mp4", jobs);
-  const close = here.open(moves);
+  const close = here.open((key: string, before: string, card: string) => heard.push(`chose ${key} ${before || "none"}${card ? ` from ${card}` : ""}`));
   return { jobs, heard, session: here, close };
 }
-
-// When a video's work moves on, the workspace shows it: the window walks
-// on when the search is over, the range picker's edge lands on what was
-// heard. The clips a search wrote and
-// the clip made by hand come in the video's state, with the clip the Go
-// side chose. Each was an
-// effect in Episode.svelte that kept a value from before, issue #606. Said
-// twice, the list is read twice and the window walks on twice. Not said,
-// the clips found stay out of the list until something else reads it. A
-// failure is told by the Go side, see notice.go.
-describe("a video's session", () => {
-  test("says nothing of a search's clips as they are written, only that it is over", () => {
-    const { jobs, heard } = session();
-    jobs.apply(job("s", "search", "running", 1, { step: "finding" }));
-    jobs.apply(job("s", "search", "running", 2, { step: "finding", written: 1 }));
-    jobs.apply(job("s", "search", "running", 3, { step: "finding", written: 1 }));
-    jobs.apply(job("s", "search", "running", 4, { step: "finding", written: 2 }));
-    jobs.apply(job("s", "search", "done", 5, { step: "finding", written: 3 }));
-    expect(heard).toEqual(["searched s"]);
-  });
-
-  test("says the search stopped hearing when it goes on to find, and is over only when it is", () => {
-    const { jobs, heard } = session();
-    jobs.apply(job("s", "search", "running", 1, { step: "hearing" }));
-    jobs.apply(job("s", "search", "running", 2, { step: "hearing" }));
-    jobs.apply(job("s", "search", "running", 3, { step: "finding" }));
-    expect(heard).toEqual(["heard s"]);
-    jobs.apply(job("s", "search", "done", 4, { step: "finding" }));
-    expect(heard).toEqual(["heard s", "searched s"]);
-  });
-
-  test("says a search stopped while it heard has stopped hearing first, then that it is over", () => {
-    const { jobs, heard } = session();
-    jobs.apply(job("s", "search", "running", 1, { step: "hearing" }));
-    jobs.apply(job("s", "search", "stopped", 2, { step: "stopped" }));
-    expect(heard).toEqual(["heard s", "searched s"]);
-  });
-
-  test("says a search over however it ended", () => {
-    const { jobs, heard } = session();
-    jobs.apply(job("a", "search", "queued", 1, { step: "waiting" }));
-    jobs.apply(job("a", "search", "failed", 2, { step: "waiting" }));
-    jobs.apply(job("b", "search", "running", 1, { step: "finding" }));
-    jobs.apply(job("b", "search", "cancelled", 2, { step: "finding" }));
-    expect(heard).toEqual(["searched a", "searched b"]);
-  });
-
-  test("says a search is over when it ends after the next one began", () => {
-    const { jobs, heard } = session();
-    jobs.apply(job("a", "search", "running", 1, { step: "finding" }));
-    jobs.apply(job("b", "search", "queued", 1, { step: "waiting" }));
-    jobs.apply(job("a", "search", "done", 2, { step: "finding" }));
-    expect(heard).toEqual(["searched a"]);
-    jobs.apply(job("b", "search", "done", 2, { step: "finding" }));
-    expect(heard).toEqual(["searched a", "searched b"]);
-  });
-
-  test("says nothing for an older snapshot that comes after a newer one", () => {
-    const { jobs, heard } = session();
-    jobs.apply(job("s", "search", "running", 4, { step: "hearing", written: 0 }));
-    jobs.apply(job("s", "search", "done", 5, { step: "finding", written: 2 }));
-    jobs.apply(job("s", "search", "running", 3, { step: "hearing", written: 1 }));
-    expect(heard).toEqual(["heard s", "searched s"]);
-  });
-
-  test("says nothing for a search it only ever heard of as over", () => {
-    const { jobs, heard } = session();
-    jobs.apply(job("s", "search", "interrupted", 1, { step: "hearing", written: 2 }));
-    jobs.apply(job("s", "search", "interrupted", 2, { step: "hearing", written: 2, aside: true }));
-    expect(heard).toEqual([]);
-  });
-
-  test("says the whole video heard is over, once", () => {
-    const { jobs, heard } = session();
-    jobs.apply(job("t", "transcribe", "queued", 1));
-    jobs.apply(job("t", "transcribe", "running", 2, { step: "hearing" }));
-    jobs.apply(job("t", "transcribe", "interrupted", 3, { step: "hearing" }));
-    jobs.apply(job("t", "transcribe", "interrupted", 4, { step: "hearing" }));
-    expect(heard).toEqual(["transcribed t"]);
-  });
-
-  test("says a clip made by hand is none of a search's moves", () => {
-    const { jobs, heard, session: here } = session();
-    jobs.apply(job("c", "clip", "running", 1, { step: "hearing", written: 0 }));
-    jobs.apply(job("c", "clip", "done", 2, { step: "finding", written: 1 }));
-    jobs.apply(job("d", "clip", "running", 1, { step: "hearing" }));
-    here.asked(job("d", "clip", "running", 1));
-    jobs.apply(job("d", "clip", "running", 2, { step: "finding" }));
-    jobs.apply(job("d", "clip", "done", 3, { step: "finding", result: "e/3" }));
-    jobs.apply(job("d", "clip", "done", 4, { step: "finding", result: "e/3" }));
-    expect(heard).toEqual([]);
-  });
-
-  test("says only the renders asked for in this workspace, once each", () => {
-    const { jobs, heard, session: here } = session();
-    jobs.apply(job("mine", "render", "queued", 1));
-    jobs.apply(job("other", "render", "queued", 1));
-    here.asked(job("mine", "render", "queued", 1));
-    jobs.apply(job("mine", "render", "running", 2));
-    jobs.apply(job("other", "render", "done", 2));
-    jobs.apply(job("mine", "render", "failed", 3, { error: "the disk is full" }));
-    jobs.apply(job("mine", "render", "failed", 4, { error: "the disk is full" }));
-    expect(heard).toEqual(["rendered mine"]);
-  });
-
-  test("says a render that was over before its answer came, at once, with what the store knows of it", () => {
-    const jobs = new JobStore();
-    const got: Job[] = [];
-    const here = new EpisodeSession("/v.mp4", jobs);
-    here.open({ ...none, rendered: (j) => got.push(j) });
-    jobs.apply(job("r", "render", "running", 1));
-    jobs.apply(job("r", "render", "done", 2, { result: "short.mp4" }));
-    here.asked(job("r", "render", "queued", 0));
-    expect(got.map((j) => [j.state, j.result])).toEqual([["done", "short.mp4"]]);
-    jobs.apply(job("r", "render", "done", 3, { result: "short.mp4" }));
-    expect(got).toHaveLength(1);
-  });
-
-  test("says nothing of another video's work", () => {
-    const { jobs, heard, session: here } = session();
-    here.asked(job("r", "render", "queued", 1, { episode: "/other.mp4" }));
-    for (const kind of ["search", "transcribe", "render", "clip"]) {
-      jobs.apply(job(kind, kind, "running", 1, { episode: "/other.mp4", step: "hearing" }));
-      jobs.apply(job(kind, kind, "failed", 2, { episode: "/other.mp4", step: "finding", written: 1 }));
-    }
-    jobs.apply(job("r", "render", "done", 3, { episode: "/other.mp4" }));
-    expect(heard).toEqual([]);
-  });
-
-  test("says nothing once the workspace is gone, and the other workspaces still hear", () => {
-    const jobs = new JobStore();
-    const gone = session(jobs);
-    const stays = session(jobs);
-    jobs.apply(job("s", "search", "running", 1, { step: "finding" }));
-    gone.close();
-    jobs.apply(job("s", "search", "done", 2, { step: "finding" }));
-    expect(gone.heard).toEqual([]);
-    expect(stays.heard).toEqual(["searched s"]);
-  });
-
-  // The store is what every part of the app hears its jobs from, so one
-  // workspace that goes wrong must not leave the others behind.
-  test("a workspace whose move goes wrong stops neither the other workspaces nor the next news, and is in the log", () => {
-    const jobs = new JobStore();
-    new EpisodeSession("/v.mp4", jobs).open({
-      ...none,
-      searched: () => {
-        throw new Error("the list is gone");
-      },
-    });
-    const stays = session(jobs);
-    jobs.apply(job("s", "search", "running", 1, { step: "finding" }));
-    jobs.apply(job("s", "search", "done", 2, { step: "finding" }));
-    jobs.apply(job("t", "transcribe", "running", 1));
-    jobs.apply(job("t", "transcribe", "done", 2));
-    expect(stays.heard).toEqual(["searched s", "transcribed t"]);
-    expect(jobs.list.map((j) => [j.id, j.state])).toEqual([
-      ["s", "done"],
-      ["t", "done"],
-    ]);
-    expect(said).toHaveBeenCalledWith(expect.stringContaining("the list is gone"), { level: "error", video: "/v.mp4" });
-  });
-});
 
 // The workspace shows the video's state as the Go side sends it, issue
 // #606. A state read before another, or before an edit was written, comes
@@ -289,16 +111,18 @@ describe("a video's state in its session", () => {
     expect(here.clips[0]).not.toBe(was);
   });
 
-  test("hands its jobs to the store unless the store has newer news of them, and counts what each wrote", () => {
+  test("hands its jobs to the store unless the store has newer news of them, and keeps those of the state it keeps", () => {
     const jobs = new JobStore();
-    const { heard, session: here } = session(jobs);
+    const { session: here } = session(jobs);
     jobs.apply(job("s", "search", "running", 4, { step: "finding", written: 2 }));
     here.take(state(5, { jobs: [job("s", "search", "running", 3, { step: "finding", written: 1 })] }));
     expect(jobs.list[0].written).toBe(2);
-    expect(here.wrote("s")).toBe(1);
+    // The cards on the way come from the state the clips come from.
+    expect(here.jobs.map((j) => j.written)).toEqual([1]);
+    here.take(state(4, { jobs: [job("s", "search", "running", 2, { step: "finding", written: 0 })] }));
+    expect(here.jobs.map((j) => j.written)).toEqual([1]);
     here.take(state(7, { jobs: [job("s", "search", "done", 6, { step: "finding", written: 3 })] }));
-    expect([jobs.list[0].state, here.wrote("s")]).toEqual(["done", 3]);
-    expect(heard).toEqual(["searched s"]);
+    expect([jobs.list[0].state, here.jobs[0].written]).toEqual(["done", 3]);
   });
 
   test("shows the clip a state says is chosen, and says the app chose another", () => {

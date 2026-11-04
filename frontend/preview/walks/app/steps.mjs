@@ -4,7 +4,7 @@
 // walk so far, the step's argument, what the caption box showed before it
 // and the step's name. A sequence of any folder can take it. Below them the
 // helpers only these steps use. See docs/TESTING.md.
-import { ask, chosen, control, engineState, fromSidebar, nextPaint, seekTo, seenUntil, settle, sidebarStill } from "../bridge.mjs";
+import { ask, chosen, control, engineState, fromSidebar, nextPaint, seekTo, seenUntil, settle, sidebarStill, reload } from "../bridge.mjs";
 import { rate, url } from "../common/steps.mjs";
 
 export const steps = {
@@ -18,7 +18,7 @@ export const steps = {
   async "first run"(walk) {
     const { page } = walk;
     await control(url, "/fresh");
-    await page.reload();
+    await reload(page);
     const card = (name) => page.locator(".setup .area", { has: page.locator("h2", { hasText: name }) });
     const [speech, clip] = [card("Speech model"), card("Clip model")];
     await clip.locator("li").first().waitFor();
@@ -106,7 +106,7 @@ export const steps = {
   async "first run small"(walk) {
     const { page } = walk;
     await control(url, "/fresh?memory=8");
-    await page.reload();
+    await reload(page);
     const card = (name) => page.locator(".setup .area", { has: page.locator("h2", { hasText: name }) });
     const [speech, clip] = [card("Speech model"), card("Clip model")];
     await speech.locator("li").first().waitFor();
@@ -799,7 +799,7 @@ export const steps = {
     const { page } = walk;
     const path = await page.evaluate(() => [...window.__calls].reverse().find((c) => c.name === "State")?.args[0]);
     await control(url, "/reopen");
-    await page.reload();
+    await reload(page);
     await page.locator("aside li", { hasText: path.split("/").pop() }).first().waitFor();
     await fromSidebar(page, () => page.locator("aside li", { hasText: path.split("/").pop() }).first().click());
     await settle(page);

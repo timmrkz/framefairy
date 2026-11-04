@@ -199,3 +199,16 @@ move last. The nightly walks walk everything in Chromium.
   with reduced motion except for the steps `moving` names. Once every
   part is in WebKit, a fault in motion that only WebKit has is caught
   only by those steps. Tim chose Chromium at night, so it stays that way.
+
+## Where it stands
+
+Every part and the random walks walk in WebKit since 2 November 2026.
+The timeline, playback, clips and search parts moved together with the
+random walks in one pull request, not one part at a time, because Tim
+asked for the two steps that were left to go in together on that day.
+`walks/webkit.mjs` is gone with its last name, and `browserFor` asks
+only `WALKBROWSER`, `SLOW` and `WALKCOVERAGE`. What the parts found was
+fixed in them, most of it walks that raced a busy runner and now wait
+on the page, and one fault of the app: a play after the loop was
+switched off in the second time through went round the clip's end once
+more.

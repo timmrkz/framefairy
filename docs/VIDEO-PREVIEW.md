@@ -95,7 +95,10 @@ removed. Nothing is prepared before the first play.
    and started it again for a gesture that changed the program. #152 had
    spliced the new program into the running play in 366 lines, and was
    closed for it. Loop was the first exception, 2.150 and 2.183, which
-   changes only where the play ends. Then the play kept the pieces it
+   changes only where the play ends. That end is the play's own: the
+   next play builds its program again, `Program.changedWhilePlaying`.
+   Kept, a loop switched off in the second time through sent the next
+   play round the clip's end once more. Then the play kept the pieces it
    started with while an edge or a cut was dragged, because starting it
    again at every step of the hand stuttered. Tim found the cost of that
    on #277: he pulled the end of a clip in, played it, put the end back
