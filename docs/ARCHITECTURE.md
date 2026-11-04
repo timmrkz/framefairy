@@ -44,7 +44,9 @@ of one package, so nothing holds them apart yet.
 The drawings are plain SVG in `docs/diagrams/`, a box a `rect` with its
 texts and a chip a small `rect` with its text, and they follow the
 reader's light or dark theme, on a background of their own. A change
-that moves a box changes its drawing in the same pull request.
+that adds a part, moves a box, or changes what a box holds or how it is
+reached changes its drawing in the same pull request, as the line it
+changes in this file does.
 `internal/naming` checks that every path a drawing names exists, written
 from the top of the repository, and that every drawing shown here is
 there.
