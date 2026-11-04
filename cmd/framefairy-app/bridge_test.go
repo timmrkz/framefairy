@@ -1984,12 +1984,6 @@ func TestAWalkThatHangsIsStoppedWithWhatItSaid(t *testing.T) {
 	}
 }
 
-// A walker's sequences are walked by one node, one after another, and
-// each says how it went: passed, failed, or threw, which ends the node, so
-// the next starts in a new one. A node that ends before its sequence is
-// walked, or that is still walking when the test's time runs out, fails
-// that sequence, with what it printed, and the next starts in a new one.
-// A shell stands in for node, saying what sequences.mjs --serve says.
 func TestAWalkersNodeThatEndsOnItsOwnIsHeardToItsLastLine(t *testing.T) {
 	// A node that ended on its own lost what it said last, issue #684:
 	// what it printed went through a copy that cmd.Wait cut off a moment
@@ -2015,6 +2009,12 @@ func TestAWalkersNodeThatEndsOnItsOwnIsHeardToItsLastLine(t *testing.T) {
 	}
 }
 
+// A walker's sequences are walked by one node, one after another, and
+// each says how it went: passed, failed, or threw, which ends the node, so
+// the next starts in a new one. A node that ends before its sequence is
+// walked, or that is still walking when the test's time runs out, fails
+// that sequence, with what it printed, and the next starts in a new one.
+// A shell stands in for node, saying what sequences.mjs --serve says.
 func TestAWalkersSequencesAreWalkedByOneNode(t *testing.T) {
 	serve := `while read -r name; do
 		printf '\036walking\n'
