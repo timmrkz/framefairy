@@ -1233,10 +1233,10 @@ export const steps = {
   //                    at the ends of a silence where the frame queue says
   //                    it handed the sound card its sound late, nothing
   //                    was heard after the clip's end, the play
-  //                    stopped within 400 ms of the playhead reaching it,
-  //                    and no frame drawn from then on is from before the
-  //                    last second of the clip, so nothing of the clip's
-  //                    start played again
+  //                    stopped within 24 animation frames of the playhead
+  //                    reaching it, and no frame drawn from then on is
+  //                    from before the last second of the clip, so
+  //                    nothing of the clip's start played again
   async "stopped at its end"(walk) {
     const { page } = walk;
     if (!walk.loopEnd) {
@@ -1252,8 +1252,16 @@ export const steps = {
       return;
     }
     const [reached] = played[i];
-    const stopped = played.slice(i).find(([, , , playing]) => !playing);
+    // The play stops in so many frames drawn after the playhead reached
+    // the end, never in milliseconds: a busy machine draws its frames
+    // late, and the same stop took 413 ms by the clock, issue #696. It is
+    // the 400 ms that check allowed, as a screen of 60 Hz draws them, and
+    // a machine that draws late draws fewer of them in the same play.
+    const most = 24;
+    const drawn = played.slice(i).findIndex(([, , , playing]) => !playing);
+    const stopped = drawn < 0 ? undefined : played[i + drawn];
     const old = played.slice(i).find(([, , n]) => n >= 0 && n / fps < end - 1);
+    if (stopped) console.log(`      the play stopped ${drawn} animation frames, ${(stopped[0] - reached).toFixed(0)} ms, after the playhead reached the clip's end`);
     // The sound, sample by sample. The bridge's episode sounds a steady
     // tone, so a click is a step in it: from one sample to the next the
     // tone bends by its second difference, never more than a few
@@ -1313,7 +1321,7 @@ export const steps = {
     else if (clicks) walk.wrong = `the sound clicked ${clicks} times, the first ${(-firstClick).toFixed(0)} ms before the end`;
     else if (after) walk.wrong = `${after} samples of sound were heard after the clip's end`;
     else if (!stopped) walk.wrong = `the play went on for ${(played.at(-1)[0] - reached).toFixed(0)} ms with the playhead at the clip's end`;
-    else if (stopped[0] - reached > 400) walk.wrong = `the play stopped ${(stopped[0] - reached).toFixed(0)} ms after the playhead reached the clip's end`;
+    else if (drawn > most) walk.wrong = `the play stopped ${drawn} animation frames after the playhead reached the clip's end, not within ${most}`;
     else if (old) walk.wrong = `frame ${(old[2] / fps).toFixed(3)} was drawn ${(old[0] - reached).toFixed(0)} ms after the playhead reached the clip's end at ${end.toFixed(3)}`;
   },
   // ["heard some"]     waits until the engine has a sentence of the video
