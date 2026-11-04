@@ -292,26 +292,199 @@ func planRead(ep *Episode, path string) *keptRead[PlanSummary] {
 }
 
 // planOpens is a disk that counts how often a plan file is opened, to
-// read it, the one way a plan is read.
+// read it, the one way a plan is read. With a gate, the first plan opened
+// is held open, read from no further, until the gate is closed, and
+// opened is closed once it is held there.
 type planOpens struct {
 	afero.Fs
-	n atomic.Int64
+	n            atomic.Int64
+	gate, opened chan struct{}
+	once         sync.Once
 }
 
 func (f *planOpens) Open(name string) (afero.File, error) {
-	f.count(name)
-	return f.Fs.Open(name)
+	file, err := f.Fs.Open(name)
+	f.held(name)
+	return file, err
 }
 
 func (f *planOpens) OpenFile(name string, flag int, perm os.FileMode) (afero.File, error) {
-	f.count(name)
-	return f.Fs.OpenFile(name, flag, perm)
+	file, err := f.Fs.OpenFile(name, flag, perm)
+	f.held(name)
+	return file, err
 }
 
-func (f *planOpens) count(name string) {
-	if ok, _ := filepath.Match("clips*.json", filepath.Base(name)); ok {
-		f.n.Add(1)
+func (f *planOpens) held(name string) {
+	if ok, _ := filepath.Match("clips*.json", filepath.Base(name)); !ok {
+		return
 	}
+	f.n.Add(1)
+	if f.gate == nil {
+		return
+	}
+	first := false
+	f.once.Do(func() {
+		first = true
+		close(f.opened)
+	})
+	if first {
+		<-f.gate
+	}
+}
+
+// heldPlan is a video with one plan of two clips, on a disk that holds
+// the first read of a plan open until the gate is closed.
+func heldPlan(t *testing.T) (*Machine, *planOpens, string, string) {
+	t.Helper()
+	counted := &planOpens{Fs: afero.NewMemMapFs()}
+	source := "/v/folge.mp4"
+	if err := afero.WriteFile(counted, source, []byte("video"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan := filepath.Join(LogsDir(source), "clips.json")
+	if err := fileio.WriteAtomic(counted, plan, []byte(aRealisticPlan(2))); err != nil {
+		t.Fatal(err)
+	}
+	counted.n.Store(0)
+	counted.gate, counted.opened = make(chan struct{}), make(chan struct{})
+	return NewMachine(counted), counted, source, plan
+}
+
+// Everyone who asks for a plan while it is being read waits for that one
+// read and gets what it read: the clip list, the status, the window and
+// a plan read alone, twenty of them at once. The read is held open until
+// all twenty wait, which testing/synctest's Wait says, and the plan file
+// is opened once.
+func TestEveryoneAskingWhileAPlanIsReadWaitsForThatRead(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		m, counted, source, plan := heldPlan(t)
+		ep := m.Episode(source)
+		type answer struct {
+			clips int
+			err   error
+		}
+		answers := make(chan answer, 21)
+		go func() {
+			v, err := ep.ReadPlan(plan)
+			if err != nil {
+				answers <- answer{err: err}
+				return
+			}
+			answers <- answer{clips: len(v.Clips)}
+		}()
+		<-counted.opened
+		for i := range 20 {
+			go func() {
+				switch i % 4 {
+				case 0:
+					ps := ep.Plans()
+					if len(ps) != 1 {
+						answers <- answer{err: fmt.Errorf("listed %d plans", len(ps))}
+						return
+					}
+					answers <- answer{clips: ps[0].Clips}
+				case 1:
+					st := m.Episode(source).Status("", nil)
+					if len(st.Plans) != 1 {
+						answers <- answer{err: fmt.Errorf("the status lists %d plans", len(st.Plans))}
+						return
+					}
+					answers <- answer{clips: st.Plans[0].Clips}
+				case 2:
+					s, err := ep.Plan(plan)
+					answers <- answer{clips: len(s.AllClips()), err: err}
+				default:
+					v, err := ep.ReadPlan(plan)
+					if err != nil {
+						answers <- answer{err: err}
+						return
+					}
+					answers <- answer{clips: len(v.Clips)}
+				}
+			}()
+		}
+		synctest.Wait()
+		if n := counted.n.Load(); n != 1 {
+			t.Errorf("with twenty asking while the plan is read, it was opened %d times", n)
+		}
+		close(counted.gate)
+		for range 21 {
+			if a := <-answers; a.err != nil || a.clips != 2 {
+				t.Errorf("an ask got %d clips, %v, want the 2 read", a.clips, a.err)
+			}
+		}
+		if n := counted.n.Load(); n != 1 {
+			t.Errorf("the plan was opened %d times, want once for all", n)
+		}
+	})
+}
+
+// A plan written again while it is being read: the read in hand gives
+// the plan as it was, and is kept by the stamp it was asked with, so the
+// next ask sees the new stamp and reads the new plan. A read kept under
+// the stamp of the file as it is after would show the old clips until
+// the next write.
+func TestAPlanWrittenWhileItIsReadIsReadAgain(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		m, counted, source, plan := heldPlan(t)
+		ep := m.Episode(source)
+		before := make(chan int)
+		go func() {
+			v, err := ep.ReadPlan(plan)
+			if err != nil {
+				t.Error(err)
+				before <- 0
+				return
+			}
+			before <- len(v.Clips)
+		}()
+		<-counted.opened
+		if err := fileio.WriteAtomic(counted, plan, []byte(aRealisticPlan(3))); err != nil {
+			t.Fatal(err)
+		}
+		close(counted.gate)
+		if n := <-before; n != 2 {
+			t.Errorf("the read in hand gave %d clips, want the 2 it opened", n)
+		}
+		v, err := ep.ReadPlan(plan)
+		if err != nil || len(v.Clips) != 3 {
+			t.Fatalf("after the write the plan read %v, want its 3 clips", err)
+		}
+		if n := counted.n.Load(); n != 2 {
+			t.Errorf("the plan was opened %d times, want twice, once for each write", n)
+		}
+	})
+}
+
+// A video let go of while its plan is read: the read in hand ends with
+// what it read, and the video asked for again is a new Episode that reads
+// its plan afresh, without waiting on the read of the one let go.
+func TestAVideoLetGoWhileItsPlanIsReadReadsAfresh(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		m, counted, source, plan := heldPlan(t)
+		old := m.Episode(source)
+		first := make(chan error)
+		go func() {
+			_, err := old.ReadPlan(plan)
+			first <- err
+		}()
+		<-counted.opened
+		m.Forget(source)
+		fresh := m.Episode(source)
+		if fresh == old {
+			t.Fatal("the video let go of was given its old Episode")
+		}
+		if v, err := fresh.ReadPlan(plan); err != nil || len(v.Clips) != 2 {
+			t.Errorf("the video asked for again read %v", err)
+		}
+		close(counted.gate)
+		if err := <-first; err != nil {
+			t.Errorf("the read in hand ended with %v", err)
+		}
+		if n := counted.n.Load(); n != 2 {
+			t.Errorf("the plan was opened %d times, want once by each Episode", n)
+		}
+	})
 }
 
 // A video's plans are read once for the clip list, the status and the
@@ -429,6 +602,9 @@ func TestPlansHeldFromEverywhereAtOnce(t *testing.T) {
 				}
 			case 2:
 				_ = ep.Status("", nil)
+				if i%10 == 2 {
+					m.Forget(source)
+				}
 			default:
 				_, _ = ep.ReadPlan(plan)
 			}

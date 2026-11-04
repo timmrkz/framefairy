@@ -1,10 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -112,5 +114,49 @@ func TestTheAppReadsAPlanOnceUntilItChanges(t *testing.T) {
 	ask()
 	if n := counted.n.Load(); n != 1 {
 		t.Errorf("the plan of a video added again was opened %d times, want once, read afresh", n)
+	}
+}
+
+// The library, the cards, the caption look and the status asked from
+// many goroutines at once while the plan is written again and the video
+// is removed from the library and added back, under the race detector.
+// Once all is still, the app shows the plan as its file says.
+func TestThePlansAskedThroughTheAppFromEverywhereAtOnce(t *testing.T) {
+	svc, video, plan := anEpisodeWithAPlan(t)
+	var wg sync.WaitGroup
+	for i := range 60 {
+		wg.Go(func() {
+			switch i % 6 {
+			case 0:
+				body := strings.Replace(historyPlan, "eins", fmt.Sprintf("eins %d", i), 1)
+				_ = fileio.WriteAtomic(svc.store.files, plan, []byte(body))
+			case 1:
+				_ = svc.Library()
+			case 2:
+				_ = svc.Episode(video)
+			case 3:
+				_, _ = svc.Sentences(video)
+			case 4:
+				_ = svc.captionLook(video, plan)
+			default:
+				if i%12 == 5 {
+					_ = svc.RemoveEpisode(video, false)
+				} else {
+					_, _ = svc.store.AddEpisodes([]string{video})
+				}
+			}
+		})
+	}
+	wg.Wait()
+
+	if _, err := svc.store.AddEpisodes([]string{video}); err != nil {
+		t.Fatal(err)
+	}
+	if err := fileio.WriteAtomic(svc.store.files, plan, []byte(strings.Replace(historyPlan, "eins", "last", 1))); err != nil {
+		t.Fatal(err)
+	}
+	v, err := svc.store.machine.Episode(video).ReadPlan(plan)
+	if err != nil || len(v.Clips) != 2 || v.Clips[0].Slug != "last" {
+		t.Errorf("once still, the plan read %v, want the one written last", err)
 	}
 }
