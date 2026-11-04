@@ -494,6 +494,16 @@ export async function runClock(page, ms) {
   await page.clock.runFor(ms);
 }
 
+// Lets the app's time run again and leaves the Go side's held, for a
+// walk that takes the app somewhere its frames and timers have to run,
+// another video and back, while the time removed work has stands still.
+// The Go side keeps that time, so the page running on draws it and
+// decides nothing. holdClock holds the page again.
+export async function letPageTimeGo(page) {
+  await page.clock.resume();
+  page.__held = false;
+}
+
 export async function letClockGo(page) {
   await control(page.url(), "/clock?go");
   await page.clock.resume();

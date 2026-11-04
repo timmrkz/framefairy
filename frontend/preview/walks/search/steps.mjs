@@ -5,7 +5,7 @@
 // caption box showed before it and the step's name. A sequence of any
 // folder can take it. Below them the helpers only these steps use. See
 // docs/TESTING.md.
-import { ask, caughtUp, clipList, control, drag, episodeOn, fromSidebar, holdClock, letClockGo, news, nextNews, nextPaint, pageUntil, pressHead, realFrames, runClock, seenUntil, settle, holdSound } from "../bridge.mjs";
+import { ask, caughtUp, clipList, control, drag, episodeOn, fromSidebar, holdClock, letClockGo, letPageTimeGo, news, nextNews, nextPaint, pageUntil, pressHead, realFrames, runClock, seenUntil, settle, holdSound } from "../bridge.mjs";
 import { clockOf, nextCall, onePiece, toastSays, url } from "../common/steps.mjs";
 
 export const steps = {
@@ -1839,12 +1839,18 @@ export const steps = {
       return;
     }
     if (arg === "away and back") {
+      // The sidebar slides and the video picked takes its place in the
+      // app's frames, which stand still while its time is held, so the
+      // page's time runs while it goes away and back. The Go side's time
+      // stays held, and it is the Go side that forgets the search.
+      await letPageTimeGo(page);
       const buttons = page.locator("aside button.episode");
       const mine = await buttons.evaluateAll((all) => all.findIndex((b) => b.classList.contains("current")));
       await fromSidebar(page, () => buttons.nth(mine === 0 ? 1 : 0).click());
       await settle(page);
       await fromSidebar(page, () => buttons.nth(mine).click());
       await settle(page);
+      await holdClock(page);
       const again = await removedStrip(page, `${lead}:has(.gone)`);
       if (again) {
         walk.wrong = `back on the video, ${again}`;
