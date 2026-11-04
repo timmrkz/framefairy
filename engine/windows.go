@@ -216,12 +216,6 @@ func lengthWithin(size, most, step, least float64) float64 {
 	return size
 }
 
-// PlaceWindow is where the project's video of duration seconds gets its
-// window when nobody has drawn one, see Episode.PlaceWindow.
-func (p *Project) PlaceWindow(r RoomAndLines, duration float64) PlacedWindow {
-	return p.engine.Episode(p.Source).PlaceWindow(p.Base, r, duration)
-}
-
 // PlaceWindow is where the episode's video of duration seconds gets its
 // window when nobody has drawn one, from what was searched of it, its
 // plans, and what one search can read of it with the settings o, r, the

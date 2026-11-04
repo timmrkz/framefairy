@@ -221,7 +221,7 @@ func (s *FrameFairy) searchesWindow(path string, req engine.PlanRequest) {
 // windowOn moves the window on after a search found its clips, as long
 // as the window was made and no longer than one search can read now,
 // which the first search of a video measures from its real speech, see
-// engine.Project.WindowAfter. It is done before the search says it is
+// engine.Options.WindowAfter. It is done before the search says it is
 // done, so the workspace reads the window moved on when it hears that.
 // It is worked out before the kept window is changed, and moves it on
 // only if it is still the one it was worked out from: a window written

@@ -3,6 +3,7 @@ package engine
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/spf13/afero"
 
+	"framefairy/engine/fileio"
 	"framefairy/engine/num"
 	"framefairy/engine/timed"
 )
@@ -289,12 +291,36 @@ func planRead(ep *Episode, path string) *keptRead[PlanSummary] {
 	return nil
 }
 
+// planOpens is a disk that counts how often a plan file is opened, to
+// read it, the one way a plan is read.
+type planOpens struct {
+	afero.Fs
+	n atomic.Int64
+}
+
+func (f *planOpens) Open(name string) (afero.File, error) {
+	f.count(name)
+	return f.Fs.Open(name)
+}
+
+func (f *planOpens) OpenFile(name string, flag int, perm os.FileMode) (afero.File, error) {
+	f.count(name)
+	return f.Fs.OpenFile(name, flag, perm)
+}
+
+func (f *planOpens) count(name string) {
+	if ok, _ := filepath.Match("clips*.json", filepath.Base(name)); ok {
+		f.n.Add(1)
+	}
+}
+
 // A video's plans are read once for the clip list, the status and the
 // window alike, each again only when its file changed, whoever wrote it.
 // A plan removed is let go of, and a plan that does not parse is left
 // out and read again on the next question.
 func TestAPlanIsReadOnceUntilItsFileChanges(t *testing.T) {
-	fsys := afero.NewMemMapFs()
+	counted := &planOpens{Fs: afero.NewMemMapFs()}
+	fsys := afero.Fs(counted)
 	m := NewMachine(fsys)
 	source := "/v/folge.mp4"
 	if err := afero.WriteFile(fsys, source, []byte("video"), 0o644); err != nil {
@@ -310,6 +336,7 @@ func TestAPlanIsReadOnceUntilItsFileChanges(t *testing.T) {
 	}
 	write(first, 2)
 	write(second, 3)
+	counted.n.Store(0)
 	ep := m.Episode(source)
 
 	plans := ep.Plans()
@@ -323,16 +350,28 @@ func TestAPlanIsReadOnceUntilItsFileChanges(t *testing.T) {
 	if view, err := ep.ReadPlan(first); err != nil || len(view.Clips) != 2 {
 		t.Fatalf("the plan read for display gave %v", err)
 	}
+	if s, err := ep.Plan(second); err != nil || len(s.AllClips()) != 3 {
+		t.Fatalf("the plan asked for alone gave %v", err)
+	}
+	_ = ep.Plans()
 	if planRead(ep, first) != read {
 		t.Error("the plan was read again though its file did not change")
 	}
+	if n := counted.n.Load(); n != 2 {
+		t.Errorf("two plans asked about five times were opened %d times, want once each", n)
+	}
 
 	write(first, 4)
+	counted.n.Store(0)
 	if view, err := ep.ReadPlan(first); err != nil || len(view.Clips) != 4 {
 		t.Fatalf("the plan written again read %v, want its 4 clips", err)
 	}
+	_ = ep.Plans()
 	if planRead(ep, first) == read {
 		t.Error("the plan written again was not read again")
+	}
+	if n := counted.n.Load(); n != 1 {
+		t.Errorf("one plan written again was opened %d times, want once", n)
 	}
 
 	if err := fsys.Remove(second); err != nil {
@@ -356,8 +395,9 @@ func TestAPlanIsReadOnceUntilItsFileChanges(t *testing.T) {
 	}
 }
 
-// The plans asked for from everywhere at once while they are written,
-// under the race detector.
+// The plans asked for from everywhere at once while they are written and
+// removed, under the race detector. Once all is still, the episode says
+// what the files say.
 func TestPlansHeldFromEverywhereAtOnce(t *testing.T) {
 	fsys := afero.NewMemMapFs()
 	m := NewMachine(fsys)
@@ -369,13 +409,20 @@ func TestPlansHeldFromEverywhereAtOnce(t *testing.T) {
 	if err := afero.WriteFile(fsys, plan, []byte(aRealisticPlan(2)), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	other := filepath.Join(LogsDir(source), "clips-0-1800.json")
 	var wg sync.WaitGroup
 	for i := range 100 {
 		wg.Go(func() {
 			ep := m.Episode(source)
-			switch i % 4 {
+			switch i % 5 {
 			case 0:
-				_ = afero.WriteFile(fsys, plan, []byte(aRealisticPlan(1+i%5)), 0o644)
+				_ = fileio.WriteAtomic(fsys, plan, []byte(aRealisticPlan(1+i%7)))
+			case 4:
+				if i%2 == 0 {
+					_ = fileio.WriteAtomic(fsys, other, []byte(aRealisticPlan(2)))
+				} else {
+					_ = fsys.Remove(other)
+				}
 			case 1:
 				for _, p := range ep.Plans() {
 					_ = p.View()
@@ -388,4 +435,16 @@ func TestPlansHeldFromEverywhereAtOnce(t *testing.T) {
 		})
 	}
 	wg.Wait()
+
+	// Still now: one plan of three clips, and the other gone.
+	if err := fileio.WriteAtomic(fsys, plan, []byte(aRealisticPlan(3))); err != nil {
+		t.Fatal(err)
+	}
+	if err := fsys.Remove(other); err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	plans := m.Episode(source).Plans()
+	if len(plans) != 1 || plans[0].Path != plan || plans[0].Clips != 3 {
+		t.Errorf("after the writes the episode lists %+v, want the one plan of 3 clips", plans)
+	}
 }

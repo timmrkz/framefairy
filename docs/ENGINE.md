@@ -689,8 +689,9 @@ See [decisions/2026-10-31-running-programs-and-what-outlives-a-job.md](decisions
 The machine also gives the one `Episode` of each video,
 `Machine.Episode` in `engine/held.go`. The files of a video are the
 truth, and the app, the command line, a person in Finder or a sync
-service may write them, so an episode keeps each read with the size and
-time of the files it came from, looks at them on every question, and
+service may write them, so an episode keeps each read with the stamp of
+the files it came from, their size, time and the number the system gives
+each file, `fileio.Stamp`, looks at them on every question, and
 reads again only what changed, once however many ask at once. It holds
 the transcript, which `Status` and the app read through it, with its
 lines weighed and the edges of what is said worked out once for each
@@ -698,12 +699,15 @@ read. The transcripts of the last ten videos asked about are kept. What
 `Status` says of a transcript, done, the parts heard and where its lines
 start and end, is kept for every video, so listing the library lets go
 of no transcript, and "no transcript yet" is kept by its stamp as well.
-It holds every plan of the video too, each by its own file's size and
-time, `Episode.Plans`, which the status, the clip list and the window
-read, and a plan that does not parse is left out and read again. The
+It holds every plan of the video too, each by its own file's stamp,
+`Episode.Plans` and `Episode.Plan`, which the status, the clip list, the
+window, the caption look and the word counts of an edit read, and a plan
+that does not parse is left out and read again. A video that leaves the
+library is let go of, `Machine.Forget`. The
 status is asked of the episode, `Episode.Status`, and so are the room
 one search can read, `Episode.Room`, and where the window goes,
-`Episode.PlaceWindow`, with the settings handed in. What reads no file,
+`Episode.PlaceWindow`, with the settings handed in, for the app and for
+`--next` alike. What reads no file,
 the window's limits and where it goes after a search, is the settings'
 own, `Options.Limits` and `Options.WindowAfter`. The app makes no
 `Project` to ask any of it. See

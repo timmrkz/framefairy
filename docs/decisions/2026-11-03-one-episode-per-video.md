@@ -195,7 +195,8 @@ The pull requests, in order, each one self-contained:
    `NewProject(nil, ...)` go.
 4. The paths of a video's own files checked by its episode, opened
    through `os.Root` on its work folder, the third thing #608 asks for,
-   and the shaping's plan reads with them. Closes #608.
+   and with them every plan read still outside the episode, the ones
+   the Not to copy line of ARCHITECTURE.md names. Closes #608.
 
 ## Parts 2 and 3: what the app asks in place of a Project
 
@@ -277,7 +278,9 @@ So: simulation 1. `project()` and `projectWith` go, `Episode.Room` and
 `Options.WindowAfter` read nothing, and `Project.Limits` and
 `Project.WindowAfter` go with their last callers in the app.
 `Project.PlaceWindow`, `Project.RoomAndLines` and the `Project.RoomWith`
-under it stay for the command line, and the first asks the episode.
+under it were to stay for the command line. The review of the pull
+request found that this works out the room two ways, so they go too, and
+`--next` asks the episode the way the app does.
 
 ```
 app bindings                 ask Machine.Episode, hand in the options
@@ -288,7 +291,10 @@ the parse of each file       as today
 
 The plan reads of the shaping, `planClip` and the ordered read beside it
 in `ShapeClip`, stay as they are in this pull request and move with part
-4. Each reads the plan whole and a gesture changes it, so the episode
+4, and so do the other reads of a plan whole, `ClipShareTime`, the
+moved clip's captions, `IsShort` and the undo's snapshot. The caption look
+and the word counts of an edit only read, so they ask `Episode.Plan`
+now: a drag asks for the look on every step. Each reads the plan whole and a gesture changes it, so the episode
 would have to hand out a plan the shaping copies before it changes it.
 Part 4 opens every file of the video through the episode anyway, which
 is where that copy belongs.
@@ -305,8 +311,19 @@ is where that copy belongs.
   sync service has an older time and is seen. A volume that keeps times
   coarsely, HFS+ to the second or FAT to two, would hide two saves of
   the same size within one tick, and APFS keeps them to the nanosecond.
-  Then the stamp takes the file's inode and change time too, or a hash
-  of its contents.
+  The review of parts 2 and 3 found that Linux keeps times in ticks of a
+  few milliseconds too, so a plan edited twice in one tick to the same
+  size kept its old read. The stamp takes the file's inode as well, see
+  `fileio.Stamp`: every write of a plan puts a new file in the old one's
+  place, which the system numbers anew. #608 asked for `editPlan` to
+  tell the episode instead. That covers the app's own edits alone, and
+  the command line, Finder and a sync service tell nobody, so the stamp
+  is the one way that sees them all.
+- A plan held costs about ten times its file: 11 KB for one of 24 clips,
+  97 KB for one from before the clips kept no words, measured once. With
+  every plan of every video held, a library of 20 videos of 24 plans
+  each holds 5 MB, or 46 MB of the older plans. A video's plans go when
+  it leaves the library, `Machine.Forget`.
 - What the library lists of every video, whether its transcript is done,
   what it heard and where its lines start and end, is held for every
   video and by the same stamp, so listing more videos than transcripts

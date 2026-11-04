@@ -373,7 +373,7 @@ func (s *FrameFairy) SetCaptionTime(ctx context.Context, path, plan, clipID stri
 	// Which edge, of the caption on which word, where to, and what it did
 	// to the words: a caption that ended up other than the person meant is
 	// read back from these.
-	line := s.wordCounts(editLine(editLevel(err), path, clipID, time.Since(began)).Err(err), plan, clipID)
+	line := s.wordCounts(editLine(editLevel(err), path, clipID, time.Since(began)).Err(err), path, plan, clipID)
 	line = line.Str("edge", edge).Float64("word", word)
 	if math.IsNaN(at) {
 		line = line.Bool("reset", true)

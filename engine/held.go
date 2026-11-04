@@ -9,6 +9,8 @@ import (
 	"sync"
 
 	"github.com/spf13/afero"
+
+	"framefairy/engine/fileio"
 )
 
 // Episode is what the program holds of one video's files. The files are
@@ -30,8 +32,10 @@ type Episode struct {
 	used       uint64
 	heard      *keptRead[heardSoFar]
 	// plans is each plan file as it was last read, by its path, guarded by
-	// the machine's held as well. A plan is a few kilobytes, so every plan
-	// of every video asked about is kept.
+	// the machine's held as well. Every plan of every video asked about is
+	// kept, about ten times its file in memory: 11 KB for a plan of 24
+	// clips, 97 KB for one from before the clips kept no words, measured
+	// once. A video's plans go when it leaves the library, see Forget.
 	plans map[string]*planSlot
 }
 
@@ -64,6 +68,15 @@ func (m *Machine) Episode(source string) *Episode {
 	ep := &Episode{m: m, source: source}
 	m.episodes[source] = ep
 	return ep
+}
+
+// Forget lets go of everything held of the video at source, for a video
+// that left the library. One still asked for after is made again from its
+// files.
+func (m *Machine) Forget(source string) {
+	m.held.Lock()
+	defer m.held.Unlock()
+	delete(m.episodes, filepath.Clean(source))
 }
 
 // TranscriptRead is a video's transcript as it was read, shared by all
@@ -126,18 +139,26 @@ func (ep *Episode) Plans() []PlanSummary {
 // ReadPlan is the plan at path for display, see ReadPlan, read through
 // the episode when it is one of the episode's own plans.
 func (ep *Episode) ReadPlan(path string) (*PlanView, error) {
-	if filepath.Dir(filepath.Clean(path)) != LogsDir(ep.source) {
-		return ReadPlan(ep.m.Files, path)
-	}
-	s, err := ep.plan(filepath.Clean(path))
+	s, err := ep.Plan(path)
 	if err != nil {
 		return nil, err
 	}
 	return s.View(), nil
 }
 
+// Plan is the plan at path as it is now, read through the episode when it
+// is one of the episode's own plans, and from the file each time when it
+// is not. What it hands out is shared and only read.
+func (ep *Episode) Plan(path string) (PlanSummary, error) {
+	path = filepath.Clean(path)
+	if filepath.Dir(path) != LogsDir(ep.source) {
+		return summaryOf(ep.m.Files, path)
+	}
+	return ep.plan(path)
+}
+
 // plan is the plan file at path as it is now, read again only when its
-// size or time changed.
+// stamp changed, see fileio.Stamp.
 func (ep *Episode) plan(path string) (PlanSummary, error) {
 	info, err := ep.m.Files.Stat(path)
 	if err != nil {
@@ -146,7 +167,7 @@ func (ep *Episode) plan(path string) (PlanSummary, error) {
 	if !info.Mode().IsRegular() {
 		return PlanSummary{}, fmt.Errorf("%s is not a file", filepath.Base(path))
 	}
-	stamp := fmt.Sprintf("%d,%d", info.Size(), info.ModTime().UnixNano())
+	stamp := fileio.Stamp(info)
 	ep.m.held.Lock()
 	if ep.plans == nil {
 		ep.plans = map[string]*planSlot{}
@@ -252,7 +273,7 @@ func (ep *Episode) transcriptStamp(modelDir string, silenceDB *float64) (transcr
 			at.stamp += "|-"
 			continue
 		}
-		at.stamp += fmt.Sprintf("|%d,%d", info.Size(), info.ModTime().UnixNano())
+		at.stamp += "|" + fileio.Stamp(info)
 	}
 	return at, nil
 }

@@ -219,7 +219,7 @@ func TestTheWindowMovesOnAsLongAsItWasMade(t *testing.T) {
 // past what was searched, and moves it on after a search the same way,
 // no longer than the room it is given, the one the range picker reads,
 // so both front ends ask one place where a search reads, #610.
-func TestAProjectPlacesItsWindowPastWhatWasSearched(t *testing.T) {
+func TestAVideoPlacesItsWindowPastWhatWasSearched(t *testing.T) {
 	fsys := afero.NewMemMapFs()
 	p := NewProject(NewEngine(runlog.New(io.Discard, false, false), NewMachine(fsys)), "/home/tim/ep.mp4", DefaultOptions())
 	if err := afero.WriteFile(fsys, filepath.Join(p.LogsDir(), "clips-0-1800.json"), []byte(aRealisticPlan(3)), 0o644); err != nil {
@@ -228,7 +228,8 @@ func TestAProjectPlacesItsWindowPastWhatWasSearched(t *testing.T) {
 	const duration = 3600.0
 	roomy := RoomAndLines{Room: Room{Chars: 1e6}, Rate: SpokenChars}
 	want := PlacedWindow{timed.Window{Start: 1800, End: 2700}, 900}
-	if got := p.PlaceWindow(roomy, duration); got != want {
+	ep := p.engine.Episode(p.Source)
+	if got := ep.PlaceWindow(p.Base, roomy, duration); got != want {
 		t.Errorf("placed %+v, want the quarter hour after the half hour searched, %+v", got, want)
 	}
 	after := p.Base.WindowAfter(roomy, PlanRequest{From: 1800, To: 2700}, 900, duration)
@@ -242,7 +243,7 @@ func TestAProjectPlacesItsWindowPastWhatWasSearched(t *testing.T) {
 
 	// Room for ten minutes of speech, and nothing heard yet.
 	tight := RoomAndLines{Room: Room{Chars: 600 * SpokenChars}, Rate: SpokenChars}
-	if got, want := p.PlaceWindow(tight, duration), (PlacedWindow{timed.Window{Start: 1800, End: 2400}, 600}); got != want {
+	if got, want := ep.PlaceWindow(p.Base, tight, duration), (PlacedWindow{timed.Window{Start: 1800, End: 2400}, 600}); got != want {
 		t.Errorf("placed %+v in room for ten minutes, want %+v", got, want)
 	}
 	if got, want := p.Base.WindowAfter(tight, PlanRequest{From: 1800, To: 2700}, 900, duration), (PlacedWindow{timed.Window{Start: 2700, End: 3300}, 600}); got != want {

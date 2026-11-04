@@ -61,12 +61,12 @@ func (s *FrameFairy) oldCorrections(path string) {
 // wordCounts adds to the line of an edit of a clip's words how many words
 // the clip corrects and how many it removes once the edit is made, never
 // which, so a word come back or a fix gone is read from the log alone.
-func (s *FrameFairy) wordCounts(line *zerolog.Event, plan, clipID string) *zerolog.Event {
-	_, clips, err := engine.LoadClips(s.store.files, plan)
+func (s *FrameFairy) wordCounts(line *zerolog.Event, path, plan, clipID string) *zerolog.Event {
+	summary, err := s.store.machine.Episode(path).Plan(plan)
 	if err != nil {
 		return line
 	}
-	for _, c := range clips {
+	for _, c := range summary.AllClips() {
 		if c.ID == clipID {
 			return line.Int("corrections", len(c.Corrections)).Int("removed_words", len(c.RemovedWords))
 		}
@@ -160,7 +160,7 @@ func (s *FrameFairy) SetWord(ctx context.Context, path, plan, clipID string, sta
 		return engine.SetWordText(s.store.files, plan, clipID, start, text, t)
 	})
 	// Where the word is and whether it was removed, never what it reads.
-	line := s.wordCounts(editLine(editLevel(err), path, clipID, time.Since(began)).Err(err), plan, clipID)
+	line := s.wordCounts(editLine(editLevel(err), path, clipID, time.Since(began)).Err(err), path, plan, clipID)
 	line.Float64("word", start).Bool("removed", strings.TrimSpace(text) == "").Msg("a word was corrected")
 	if err != nil {
 		return ClipEntry{}, err
@@ -187,7 +187,7 @@ func (s *FrameFairy) RemoveWord(ctx context.Context, path, plan, clipID string, 
 		return engine.RemoveWord(s.store.files, plan, clipID, start, part, t)
 	})
 	// Where the word is and which of its words, never what it reads.
-	line := s.wordCounts(editLine(editLevel(err), path, clipID, time.Since(began)).Err(err), plan, clipID)
+	line := s.wordCounts(editLine(editLevel(err), path, clipID, time.Since(began)).Err(err), path, plan, clipID)
 	line.Float64("word", start).Int("part", part).Msg("a word was removed")
 	if err != nil {
 		return ClipEntry{}, err
@@ -213,7 +213,7 @@ func (s *FrameFairy) RemoveCaption(ctx context.Context, path, plan, clipID strin
 	err = s.edit(path, func() error {
 		return engine.RemoveCaption(s.store.files, plan, clipID, first, t, look)
 	})
-	line := s.wordCounts(editLine(editLevel(err), path, clipID, time.Since(began)).Err(err), plan, clipID)
+	line := s.wordCounts(editLine(editLevel(err), path, clipID, time.Since(began)).Err(err), path, plan, clipID)
 	line.Float64("word", first).Msg("a caption was removed")
 	if err != nil {
 		return ClipEntry{}, err

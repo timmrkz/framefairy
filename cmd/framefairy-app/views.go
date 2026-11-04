@@ -177,8 +177,12 @@ func (s *FrameFairy) ShareOfClip(path, planPath, clipID string, share float64) (
 // engine.ClipDrawing. The video preview once took the style apart from
 // the render and the clip off the frames, and lit some words a frame from
 // where the short lights them.
+//
+// The plan is read through the video's Episode, which reads it again only
+// when its file changed, since a drag asks for the look on every step.
 func (s *FrameFairy) captionLook(path, planPath string) *engine.Look {
-	plan, _, _ := engine.LoadClips(s.store.files, planPath)
+	summary, _ := s.store.machine.Episode(path).Plan(planPath)
+	plan := summary.Plan()
 	style, err := s.store.Settings().options().CaptionLook(plan)
 	if err != nil {
 		theLog.line(zerolog.WarnLevel, "captions").Err(err).Msg("the settings' caption look is not one the render takes")
