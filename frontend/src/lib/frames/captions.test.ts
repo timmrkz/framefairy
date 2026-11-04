@@ -837,6 +837,42 @@ describe("asks no longer wanted", () => {
     expect(asked.length).toBe(6);
   });
 
+  it("leave the room they had to the cards' layers waiting for it", async () => {
+    // The frame on screen asks for its layer of the word being typed,
+    // which never comes, and the card's layer waits for it. Escape leaves
+    // the word: the typed layer is called off, and then the card's is
+    // asked for and the layers rest, issue #694.
+    const asked: string[] = [];
+    vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
+      asked.push(url);
+      if (url.includes("track=card")) {
+        const b = new ArrayBuffer(8 + 4);
+        [0, 0, 1, 1].forEach((n, i) => new DataView(b).setUint16(2 * i, n, true));
+        return Promise.resolve(new Response(b));
+      }
+      return new Promise((_, failed) =>
+        init?.signal?.addEventListener("abort", () => failed(new DOMException("called off", "AbortError"))),
+      );
+    });
+    const layers = new CaptionLayers(() => {}, { paused: () => true });
+    const plain = { path: "/v.mp4", clip: "a", track: "abc", drafts: {} };
+    layers.set({ ...plain, typing: "3 3" });
+    layers.at(1.0, [10, 20]);
+    layers.next([{ ask: { path: "/v.mp4", clip: "b", track: "card", drafts: {} }, frame: 84, size: [10, 20] }]);
+    expect(asked.length).toBe(1);
+    // A letter more: the frame on screen asks for its new layer, and the
+    // card's still waits behind it.
+    layers.set({ ...plain, typing: "3 4" });
+    layers.at(1.0, [10, 20]);
+    await Promise.resolve();
+    expect(asked.length).toBe(2);
+    expect(asked[1]).toContain("typing=3+4");
+    layers.set(plain);
+    await layers.rested();
+    expect(asked.length).toBe(3);
+    expect(asked[2]).toContain("track=card");
+  });
+
   it("are called off for both parts of a word put back", async () => {
     vi.stubGlobal("requestAnimationFrame", () => 1);
     vi.stubGlobal("cancelAnimationFrame", () => {});
