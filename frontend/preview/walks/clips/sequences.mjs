@@ -334,6 +334,18 @@ export default [
     ],
   },
   {
+    // Issue #697: a busy machine wrote the clip made with O before the
+    // pick of its card had its answer, and for a frame no card was
+    // chosen and the clip timeline was dimmed. The clip is written while
+    // the answer to the pick is held, so it is that order every time.
+    name: "a clip made with O is not dimmed when it is written before its card's pick has its answer",
+    steps: [
+      ["trim", "start", 300],
+      ["make with its pick late", "o"],
+      ["made on the clip"],
+    ],
+  },
+  {
     // Paused, the playhead is put on the clip's start while it is on its
     // way, and it was dimmed there too until it was written.
     name: "a clip made with I while the video is paused is not dimmed",

@@ -42,10 +42,16 @@ export const steps = {
   //                    the press held until the clip is written and the
   //                    app has heard so, the way a busy machine hands it
   //                    back, and the clip made is chosen once it comes
+  // ["make with its pick late", key]
+  //                    the same as made while paused, with the answer to
+  //                    the pick of the card on its way held until the clip
+  //                    is written and the app has heard so and drawn it,
+  //                    the order a busy machine had, issue #697
   async "make while playing"(walk, arg, s, what) {
     const { page, watch } = walk;
     const playing = what === "make while playing";
-    const late = what === "make with its answer late";
+    const late = what === "make with its answer late" || what === "make with its pick late";
+    const held = what === "make with its pick late" ? "ChooseClip" : "MakeClip";
     const g = await handles(page);
     if (g.start.x - g.track.x < 40) {
       walk.wrong = "there is no room on the clip timeline before the clip";
@@ -68,7 +74,7 @@ export const steps = {
     if (late) {
       before = new Set((await ask(page, "Jobs")).map((j) => j.id));
       seen = await news(page);
-      await hold(page, "MakeClip", true);
+      await hold(page, held, true);
     }
     await page.keyboard.press(arg);
     if (late) {
@@ -82,6 +88,9 @@ export const steps = {
         }
         seen = await nextNews(page, seen);
       }
+      // The frames the app draws with the clip written and the pick on
+      // its way are recorded.
+      await nextPaint(page, 2);
       await letHeld(page);
     }
     // Until the card chosen is a clip the engine has written, the one
@@ -98,7 +107,7 @@ export const steps = {
       await settle(page);
       written = await chosenCard();
       if (!written) {
-        walk.wrong = "the clip made was written before the press had its answer, and it was never chosen";
+        walk.wrong = `the clip made was written before ${held === "MakeClip" ? "the press" : "the pick of its card"} had its answer, and it was never chosen`;
         return;
       }
     } else written = await seenUntil(page, url, chosenCard, (card) => !!card);
@@ -1346,6 +1355,7 @@ export const steps = {
 // Steps that take the same body as the step they are walked by.
 steps["make while paused"] = steps["make while playing"];
 steps["make with its answer late"] = steps["make while playing"];
+steps["make with its pick late"] = steps["make while playing"];
 
 // The shorts in a folder, by name, finished ones only.
 const shortsIn = (dir) => readdirSync(dir).filter((n) => n.endsWith(".mp4") && !n.endsWith(".part.mp4")).sort();
