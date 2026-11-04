@@ -858,7 +858,9 @@ export const steps = {
       const runs = async () => (await ask(page, "Jobs")).some((j) => j.episode === source && (j.state === "running" || j.state === "queued"));
       for (let seen = await news(page); await runs(); ) seen = await nextNews(page, seen);
       await control(url, "/speech?hold");
-      await settle(page);
+      // Go says nothing runs, and the state it sent since, which says so
+      // to the dot, is heard before the dot is looked at.
+      await caughtUp(page, url);
       if (await page.locator("aside li:has(button.episode.current) .dot.busy").count()) {
         walk.wrong = "the video's dot pulses with nothing running";
         return;

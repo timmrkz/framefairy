@@ -1045,14 +1045,15 @@ export const steps = {
     const { page, watch } = walk;
     // With the transcript open while the work hears, where the first
     // part not transcribed yet begins, against how far the saved
-    // transcript reaches, over nine of the job's news.
+    // transcript reaches, over nine of the video's states, which carry
+    // its jobs.
     const path = await episodeOn(page);
     await page.evaluate(() => document.querySelector('.listhead button[aria-label="Search the transcript"]').click());
     await watch.step("click", s);
     // Where its dots end on the right, too, which must not move while
     // its left edge does: centred, the pattern walked back and forth
     // as the edge passed over it, found by Tim. Read in every frame
-    // until the work has told the app how far it heard nine times,
+    // until the video's state has told the app how far it heard nine times,
     // with what the saved transcript holds asked after each.
     const from = await news(page);
     const times = 9;
@@ -1073,7 +1074,7 @@ export const steps = {
               };
             }
             if (!seen.length || JSON.stringify(seen.at(-1)) !== JSON.stringify(now)) seen.push(now);
-            if ((window.__news.job ?? 0) >= from + times) done(seen);
+            if ((window.__news.video ?? 0) >= from + times) done(seen);
             else requestAnimationFrame(tick);
           };
           requestAnimationFrame(tick);
@@ -1095,7 +1096,7 @@ export const steps = {
     const moves = edges.filter((v, i) => i && v !== null && edges[i - 1] !== null && v !== edges[i - 1]).length;
     if (edges.every((v) => v === null)) walk.wrong = "no part was not transcribed yet while the work heard";
     else if (moves < Math.max(4, 2 * saves.size))
-      walk.wrong = `the first part not transcribed yet moved ${moves} times over ${times} of the job's news while the saved transcript changed ${saves.size - 1} times, so it gives way as the transcript is saved, not as the work hears`;
+      walk.wrong = `the first part not transcribed yet moved ${moves} times over ${times} of the video's states while the saved transcript changed ${saves.size - 1} times, so it gives way as the transcript is saved, not as the work hears`;
     else {
       // The samples taken while the edge moved, from the first move
       // to the last, the dots' right end in each.
