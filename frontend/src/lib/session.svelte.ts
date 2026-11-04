@@ -94,9 +94,15 @@ export class EpisodeSession {
   }
 
   // The clip a state says is chosen, once no pick is on its way that the
-  // state was read before.
+  // state was read before. A state that says the card picked was written
+  // as its clip is read after the pick, whenever its answer comes: the Go
+  // side had the pick, the card is gone from the state's jobs and its clip
+  // is in its clips, so the clip is chosen with them. Held for the pick's
+  // answer, the card was gone and nothing chosen for as long as the answer
+  // took on a busy machine, issue #697.
   private choose(state: VideoState) {
-    if (this.picks.holds(state)) return;
+    const written = !!state.chosenCard && state.chosenCard === this.chosen;
+    if (this.picks.holds(state) && !written) return;
     const now = state.chosen ?? "";
     if (now === this.chosen) return;
     const before = this.chosen;

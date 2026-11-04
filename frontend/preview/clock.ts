@@ -25,18 +25,19 @@ export function walkClock(play: Play): PlayClock {
 // walks/bridge.mjs and issue #583. The sound card runs again only once
 // nobody holds it, and only while a play goes on: a play the app pauses or
 // ends holds it itself, and a play that starts starts it. Held again on
-// every tick it is wanted, since the app may have started it meanwhile.
-// Settles once the sound card has done what it was told.
+// every tick, whoever holds it, since the app may have started it
+// meanwhile: a play asked for starts the sound card a moment after its
+// Pause button shows, so a hand that held it in between held a card that
+// was not running yet, and the play then ran to the clip's end on the
+// sound card's time, issue #702. Settles once the sound card has done
+// what it was told.
 const holders = new WeakMap<Play, Set<string>>();
 export function holdSound(play: Play, who: string, held: boolean): Promise<void> {
   let by = holders.get(play);
   if (!by) holders.set(play, (by = new Set()));
-  if (held) {
-    by.add(who);
-    return play.audio.state === "running" ? play.audio.suspend() : Promise.resolve();
-  }
-  if (!by.delete(who) || by.size) return Promise.resolve();
-  return play.playing && play.audio.state === "suspended" ? play.audio.resume() : Promise.resolve();
+  if (held) by.add(who);
+  else if (by.delete(who) && !by.size) return play.playing && play.audio.state === "suspended" ? play.audio.resume() : Promise.resolve();
+  return by.size && play.audio.state === "running" ? play.audio.suspend() : Promise.resolve();
 }
 
 // Hands every queue the page makes the walk's clock, unless the walk asked

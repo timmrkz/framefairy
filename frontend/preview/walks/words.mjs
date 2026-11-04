@@ -43,10 +43,25 @@ const gestures = [
     name: "click",
     weight: 3,
     when: (s) => s.length > 0,
+    // A click lands where a person's would, in the middle of the word as
+    // it shows. The word being typed grows its pill round its middle, so it
+    // can lie over the word beside it, and a click there is a click on the
+    // word being typed, as it is in the app. Playwright's own click would
+    // wait for the covered word to come free, which it never does.
     async run(s) {
       const i = rng.int(s.length);
-      await page.locator(".captions .word").nth(i).click();
-      return `click "${s[i].text}"`;
+      const box = await page.locator(".captions .word").nth(i).boundingBox();
+      if (!box) throw new Error(`the word "${s[i].text}" shows nowhere to click`);
+      const x = box.x + box.width / 2;
+      const y = box.y + box.height / 2;
+      const hit = await page.evaluate(
+        ([x, y]) => document.elementFromPoint(x, y)?.closest(".captions .word")?.textContent ?? null,
+        [x, y],
+      );
+      if (hit === null) throw new Error(`no word shows in the middle of the word "${s[i].text}" to click`);
+      await page.mouse.click(x, y);
+      if (hit === s[i].text) return `click "${s[i].text}"`;
+      return `click "${s[i].text}", which "${hit}" lies over`;
     },
   },
   {
