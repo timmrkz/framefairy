@@ -475,6 +475,9 @@ export async function holdClock(page) {
     const after = await pageNow(page);
     if (after !== at) throw new Error(`pauseAt did not hold the clock: it went from ${at} to ${after}`);
   }
+  // The Go side's clock for the time removed work has stands still with
+  // it, see walkTime in walktime_test.go.
+  await control(page.url(), "/clock?hold");
   page.__held = true;
 }
 
@@ -482,12 +485,27 @@ export async function holdClock(page) {
 const pageNow = (page) => page.evaluate(() => Date.now());
 
 // Runs the app's held time on by ms, every timer and frame on the way
-// firing in turn, and holds it again there.
+// firing in turn, and holds it again there. The Go side's clock for the
+// time removed work has runs on with it, first, so work whose time is up
+// is forgotten there before the page sees its own time run out, see
+// walkTime in walktime_test.go.
 export async function runClock(page, ms) {
+  await control(page.url(), `/clock?run=${Math.round(ms)}`);
   await page.clock.runFor(ms);
 }
 
+// Lets the app's time run again and leaves the Go side's held, for a
+// walk that takes the app somewhere its frames and timers have to run,
+// another video and back, while the time removed work has stands still.
+// The Go side keeps that time, so the page running on draws it and
+// decides nothing. holdClock holds the page again.
+export async function letPageTimeGo(page) {
+  await page.clock.resume();
+  page.__held = false;
+}
+
 export async function letClockGo(page) {
+  await control(page.url(), "/clock?go");
   await page.clock.resume();
   page.__held = false;
 }
@@ -887,12 +905,12 @@ export async function playFor(page, seconds) {
 }
 
 // How many times the Go side has told the interface something of a name,
-// "job" above all, counted from the first time a walk asks, so it can wait
-// for the next. The bridge sends every event to every page listening, so
+// "video" above all, the state of a video, which carries its jobs,
+// counted from the first time a walk asks, so it can wait for the next. The bridge sends every event to every page listening, so
 // the walk listens beside the app and takes nothing from it.
 // The first ask waits until the walk is listening, so nothing the Go side
 // says after it is missed.
-export async function news(page, name = "job") {
+export async function news(page, name = "video") {
   return page.evaluate(async (name) => {
     if (!window.__news) {
       window.__news = {};
@@ -934,7 +952,7 @@ export async function caughtUp(page, url, jobs = []) {
 // often than seen, a count news gave, and says how often now. It waits
 // for good: news that never comes is a walk that hangs, ended by the
 // -timeout of make walks with the step it was in printed, see walk.mjs.
-export async function nextNews(page, seen, name = "job") {
+export async function nextNews(page, seen, name = "video") {
   await page.evaluate(
     ([name, seen]) =>
       new Promise((done) => ((window.__news[name] ?? 0) > seen ? done() : window.__newsWaiting.push({ name, seen, done }))),

@@ -133,8 +133,11 @@ const gestures = [
       await nearEnd(p, g);
       if (!(await playsClip())) return off("a click on the clip timeline put the playhead on the video");
       const from = (await at()).at;
-      // A clip at its end starts over, so as long as the whole clip.
-      const length = p.reduce((sum, x) => sum + (x.end - x.start), 0);
+      // A clip at its end starts over, so as long as the whole clip, from
+      // its first piece's start to its last piece's end: playUntil counts
+      // the jump over each cut as time gone on, so the pieces alone come
+      // short of the end by the cuts between them.
+      const length = p[p.length - 1].end - p[0].start;
       const stop = await recordFrames(page, frame);
       await page.evaluate(() => document.body.focus());
       await page.keyboard.press("Space");

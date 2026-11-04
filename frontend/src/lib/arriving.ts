@@ -55,21 +55,22 @@ export type Arriving = {
   away?: Away;
 };
 
-// A card being removed: how much of its time it has used, in seconds, and
-// what putting it back, its time running out and its time running on
-// again after a pause do. together names the work it is removed with, so
-// every card of it and its row hold and run down as one, see Busy.
+// A card being removed: how much of its time it has used, in seconds,
+// what putting it back does, and what a hand on it holding its time and
+// letting it go does. The time is the Go side's, which forgets the work
+// once it is up, see removal.go, so the card only draws it. together
+// names the work it is removed with, so every card of it and its row hold
+// and run down as one, see Busy.
 export type Away = {
   spent: number;
   together?: string;
   onputback: () => void;
-  onend: () => void;
-  onresume: (left: number) => void;
+  onhold: (held: boolean) => void;
 };
 
 // What the episode does with work that stopped, a search or a clip made
 // by hand: remove it, and say how its removal stands. Work that could not
-// be called off is Stopped again, and why is a toast.
+// be removed is Stopped again, and why is a toast.
 export type Hand = {
   remove: (job: Job) => void;
   away: (job: Job) => Away | undefined;
@@ -144,39 +145,10 @@ export function arriving(
   return out;
 }
 
-// A card on the way, or one whose clip was just written and that no state
-// of the video holds yet.
-export type OnTheWayCard = Arriving & { held?: boolean };
-
-// The cards the list shows on the way: every card the jobs have on the
-// way, and every card that left that list without being stopped, until a
-// state of the video read after it left is kept. That state holds its
-// clip, so the card hands over to it in one step.
-//
-// It is worked out in the same pass that builds the list, never after it.
-// An effect held the card one render late, so for that render the card was
-// gone, a row still to come stood in its place, and then the card slid
-// back open before it became its clip: card, gap, card, clip, for every
-// clip, which at the end of a search read as the whole list blinking.
-export class OnTheWay {
-  private live = new Map<string, Arriving>();
-  private held = new Map<string, Arriving & { after: number }>();
-
-  // now is what the jobs have on the way, seq the number of the newest
-  // news of a job, Job.seq, and kept the rev of the newest state of the
-  // video kept, see VideoState: a state read after the news that took
-  // the card off the job's list holds its clip.
-  cards(now: Arriving[], seq: (job: string) => number, kept: number): OnTheWayCard[] {
-    const here = new Set(now.map((a) => a.key));
-    for (const [key, a] of this.live) {
-      if (!here.has(key) && !a.stopped && !this.held.has(key)) this.held.set(key, { ...a, after: seq(a.job) });
-    }
-    for (const key of here) this.held.delete(key);
-    for (const [key, a] of this.held) if (a.after < kept) this.held.delete(key);
-    this.live = new Map(now.map((a) => [a.key, a]));
-    return [...now, ...[...this.held.values()].map(({ after: _, ...a }) => ({ ...a, held: true }))];
-  }
-}
+// A card on the way, as the newest state of the video kept has it. The
+// card and the clip it becomes come in the same state, so the list hands
+// one over to the other in one step, see EpisodeSession.jobs.
+export type OnTheWayCard = Arriving;
 
 // Which one card of a search wears the search's fill: how far the whole
 // search has come and, once no row is left to say it, the time left. One
@@ -196,7 +168,7 @@ export class Carrier {
   private key = "";
 
   pick(cards: OnTheWayCard[], job: string, place: (a: OnTheWayCard) => number = (a) => a.start): string {
-    const own = cards.filter((a) => a.job === job && !a.stopped && !a.held);
+    const own = cards.filter((a) => a.job === job && !a.stopped);
     if (own.some((a) => a.key === this.key)) return this.key;
     let first: OnTheWayCard | undefined;
     for (const a of own) if (!first || place(a) < place(first)) first = a;

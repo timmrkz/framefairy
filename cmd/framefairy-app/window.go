@@ -101,33 +101,50 @@ func (s *FrameFairy) windowFor(ctx context.Context, path string, st VideoState, 
 	if searchHolds(st.Jobs) {
 		return view(w, l)
 	}
-	from, to := engine.FitWindow(w.From, w.To, l.Most, l.Least, duration)
-	fitted := KeptWindow{From: from, To: to, Length: math.Max(w.Length, to-from)}
-	if sameWindow(fitted, w) {
-		return view(w, l)
-	}
 	// Only the window it was fitted from is changed. One written
 	// meanwhile, by a hand or by another read that fitted it first, is
-	// the window kept, so that is the one the state carries, never the
-	// one read before it.
-	kept, now := false, w
-	if _, err := s.chosenIn(path).change(s.store.files, path, func(c *chosen) bool {
-		if c.Window == nil {
-			return false
+	// the window kept, and it is fitted in its turn, so the state carries
+	// the window kept, fitted, never the one read before it. A hand that
+	// moved it is the one that changes it, so this ends the moment no
+	// other call writes the window between the read and the write.
+	var from, to float64
+	var fitted KeptWindow
+	for {
+		from, to = engine.FitWindow(w.From, w.To, l.Most, l.Least, duration)
+		fitted = KeptWindow{From: from, To: to, Length: math.Max(w.Length, to-from)}
+		if sameWindow(fitted, w) {
+			return view(w, l)
 		}
-		if !sameWindow(*c.Window, w) {
-			now = *c.Window
-			return false
+		kept, now := false, w
+		if _, err := s.chosenIn(path).change(s.store.files, path, func(c *chosen) bool {
+			if c.Window == nil {
+				return false
+			}
+			// Cut at the video's end the way the window read was, so a
+			// kept window that runs a little past the end is still the
+			// one read.
+			inFile := *c.Window
+			inFile.To = math.Min(inFile.To, duration)
+			if !sameWindow(inFile, w) {
+				now = inFile
+				return false
+			}
+			c.Window, kept = &fitted, true
+			return true
+		}); err != nil {
+			theLog.line(zerolog.WarnLevel, "window").Str("video", filepath.Base(path)).Err(err).
+				Msg("the window fitted to what a search can read could not be kept")
+			return view(w, l)
 		}
-		c.Window, kept = &fitted, true
-		return true
-	}); err != nil {
-		theLog.line(zerolog.WarnLevel, "window").Str("video", filepath.Base(path)).Err(err).
-			Msg("the window fitted to what a search can read could not be kept")
-	}
-	if !kept {
-		now.To = math.Min(now.To, duration)
-		return view(now, limits(now))
+		if kept {
+			break
+		}
+		if sameWindow(now, w) {
+			// Gone from the file meanwhile: nothing is kept to fit.
+			return view(w, l)
+		}
+		w = now
+		l = limits(w)
 	}
 	// A target typed for the window is the target of the window fitted,
 	// most often to the clips it asked for, when it was typed on this

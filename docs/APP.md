@@ -3038,13 +3038,14 @@ twenty are kept, see `engine.OpenJobLog`. That file is where a failure is
 looked into. Work that belongs to no episode, a model being fetched,
 keeps none.
 
-The list of jobs is kept current by the news the Go side sends about every job.
-Each piece of news carries a number that grows with every change, so a
-piece that arrives late never puts a job back to where it was. While
-anything runs, the list is also read again every five seconds, so a piece
-of news that was lost costs a few seconds and never a job that looks as if
-it runs for ever. Quitting the app stops the model and every job before
-the app goes.
+The list of jobs is kept current by the states of the videos the Go side
+sends, each with every job of its video there is to say anything about,
+and by the news of a model being downloaded, which has no video. Each job
+carries a number that grows with every change, so a state that arrives
+late never puts a job back to where it was. A job a newer state of its
+video no longer holds is one the Go side forgot, and it goes. Nothing is
+read again on a timer: a state that was lost is put right by the next.
+Quitting the app stops the model and every job before the app goes.
 
 **Quitting.** Cmd+Q dims the app at once and says what happens next.
 The first press only asks, Press ⌘Q again to quit, for three seconds, the

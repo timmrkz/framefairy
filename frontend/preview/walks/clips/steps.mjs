@@ -5,7 +5,7 @@
 // caption box showed before it and the step's name. A sequence of any
 // folder can take it. Below them the helpers only these steps use. See
 // docs/TESTING.md.
-import { existsSync, readdirSync, realpathSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, join } from "node:path";
 import { ask, caughtUp, chosen, clickOnTrack, clipList, control, engineState, episodeOn, foldsDone, fromSidebar, handles, high, hold, holdClock, letClockGo, letHeld, middle, news, nextNews, nextPaint, overlay, pageUntil, playUntil, holdSound, pressHead, realFrames, recordFrames, runClock, seenUntil, settle, shortFrames, shortSound, reload } from "../bridge.mjs";
 import { canLook, changesOf, clickCard, clickedFromAhead, clockOf, halfOf, newCards, pieceCount, rate, restAhead, shortOf, shotClips, url } from "../common/steps.mjs";
@@ -149,6 +149,79 @@ export const steps = {
     // And until the interface has heard that news too, which is where
     // the Render button reads that the render ended.
     await caughtUp(page, url, [job]);
+    await watch.step("render", s);
+  },
+  // ["render cut off", how]
+  //                    the clip on screen was being rendered when the app
+  //                    closed: its render's record is left in the work
+  //                    folder the way a render the app closed on leaves
+  //                    it, and the app is opened again. Its Render button
+  //                    says Continue, with a bin beside it, issue #392.
+  //                    With "continue" Continue renders the clip, and the
+  //                    button says Render again. With "remove" the bin is
+  //                    clicked, Removed is said in the buttons' place at
+  //                    once, and once its time is up the Go side forgets
+  //                    the render, its record and all, and Render is back
+  async "render cut off"(walk, arg, s) {
+    const { page, removeTime, watch } = walk;
+    const on = await chosen(page);
+    const jobs = join(dirname(on.path), `${basename(on.path, extname(on.path))}.framefairy`, "jobs");
+    mkdirSync(jobs, { recursive: true });
+    const id = "render-cut-off";
+    const record = { id, kind: "render", plan: on.plan, clips: [on.clip], step: "rendering", asked: new Date().toISOString(), steps: [] };
+    writeFileSync(join(jobs, `${id}.json`), JSON.stringify(record));
+    await control(url, "/reopen");
+    await reload(page);
+    const row = page.locator("aside li", { hasText: on.path.split("/").pop() }).first();
+    await row.waitFor();
+    await fromSidebar(page, () => row.click());
+    await settle(page);
+    const button = page.locator("button.primary.render");
+    const bin = page.getByRole("button", { name: "Remove the render that was cut off" });
+    const said = (await button.textContent())?.trim();
+    if (said !== "Continue") {
+      walk.wrong = `the Render button of a clip whose render the app closed on says ${said}, not Continue`;
+      return;
+    }
+    if (!(await bin.count())) {
+      walk.wrong = "the render the app closed on has no bin to remove it with";
+      return;
+    }
+    const render = async () => (await ask(page, "Jobs")).filter((j) => j.kind === "render" && j.episode === on.path).pop();
+    if (arg === "continue") {
+      let heard = await news(page);
+      await button.click();
+      let job = await render();
+      while (job && job.state !== "done" && job.state !== "failed") {
+        heard = await nextNews(page, heard);
+        job = await render();
+      }
+      await caughtUp(page, url, job ? [job] : []);
+      const now = (await button.textContent())?.trim();
+      if (job?.state !== "done") walk.wrong = `Continue on the render cut off ended it as ${job?.state}: ${job?.error ?? ""}`;
+      else if (now !== "Render again") walk.wrong = `the render carried on, the Render button says ${now}, not Render again`;
+      else if (existsSync(join(jobs, `${id}.json`))) walk.wrong = "the render carried on, its record is still there";
+    } else {
+      // The time a remove runs is run on by hand, on both sides, see
+      // holdClock and runClock, so nothing waits on the clock.
+      await holdClock(page);
+      await bin.click();
+      await realFrames(page);
+      if (!(await page.locator(".renderaway .gone", { hasText: "Removed" }).count())) {
+        walk.wrong = "the bin of the render cut off did not say Removed in the place of its buttons";
+        return;
+      }
+      await page.mouse.move(5, 5);
+      await settle(page);
+      await runClock(page, (removeTime + 1) * 1000);
+      await caughtUp(page, url);
+      const now = (await button.textContent())?.trim();
+      const job = await render();
+      if (now !== "Render") walk.wrong = `the render cut off removed, the Render button says ${now}, not Render`;
+      else if (job && job.state !== "settled") walk.wrong = `the render cut off removed, it is ${job.state}, not forgotten`;
+      else if (existsSync(join(jobs, `${id}.json`))) walk.wrong = "the render cut off removed, its record is still in the work folder";
+      await letClockGo(page);
+    }
     await watch.step("render", s);
   },
   // ["head"]           presses the clip list's head button, Search, Cancel or

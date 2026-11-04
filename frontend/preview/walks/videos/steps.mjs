@@ -838,7 +838,7 @@ export const steps = {
       }
       await control(url, "/speech?go");
       for (let seen = await news(page); await searching(); ) seen = await nextNews(page, seen);
-      await settle(page);
+      await caughtUp(page, url);
       await reopen();
       const after = await item();
       await page.keyboard.press("Escape");
@@ -858,7 +858,9 @@ export const steps = {
       const runs = async () => (await ask(page, "Jobs")).some((j) => j.episode === source && (j.state === "running" || j.state === "queued"));
       for (let seen = await news(page); await runs(); ) seen = await nextNews(page, seen);
       await control(url, "/speech?hold");
-      await settle(page);
+      // Go says nothing runs, and the state it sent since, which says so
+      // to the dot, is heard before the dot is looked at.
+      await caughtUp(page, url);
       if (await page.locator("aside li:has(button.episode.current) .dot.busy").count()) {
         walk.wrong = "the video's dot pulses with nothing running";
         return;
@@ -950,10 +952,15 @@ export const steps = {
         });
       // It hears once the Go side says so. Queued first, for as long as
       // a busy machine takes, its frame is on hold and sheds nothing.
-      const hears = async () =>
-        (await ask(page, "Jobs")).some((j) => j.episode === source && j.kind === "transcribe" && j.state === "running" && j.step === "hearing");
+      let hearing;
+      const hears = async () => {
+        hearing = (await ask(page, "Jobs")).find((j) => j.episode === source && j.kind === "transcribe" && j.state === "running" && j.step === "hearing");
+        return !!hearing;
+      };
       for (let seen = await news(page); !(await hears()); ) seen = await nextNews(page, seen);
-      await settle(page);
+      // The page hears it in the video's state, which may come after the
+      // Go side said so to the walk.
+      await caughtUp(page, url, [hearing]);
       const look = await framed();
       if (!look.frame) walk.wrong = `while the whole video is transcribed, the range picker frames no part of it`;
       else if (!look.motes) walk.wrong = `while the whole video is transcribed, its frame on the range picker sheds no motes`;
@@ -1005,6 +1012,10 @@ export const steps = {
       await control(url, "/speech?hold=one");
       await settle(page);
       await page.locator(".listhead button.search").click();
+      // The Go side says the transcription is stopping the moment the
+      // search is asked for, and the menu reads it from the video's
+      // state, the news the search's answer is sent behind.
+      await caughtUp(page, url);
       await reopen();
       const ending = await item();
       await page.keyboard.press("Escape");
@@ -1106,7 +1117,7 @@ export const steps = {
       await nextNews(page, read, "episode");
       const runs = async () => (await ask(page, "Jobs")).some((j) => j.episode === source && j.kind === "transcribe" && (j.state === "running" || j.state === "queued"));
       for (let seen = await news(page); await runs(); ) seen = await nextNews(page, seen);
-      await settle(page);
+      await caughtUp(page, url);
       if (!(await whole())) walk.wrong = "stopped on its last piece, the video was not heard to its end";
       else if (await page.locator(".unheard").count()) walk.wrong = "the video is transcribed to its end, and the range picker still shows dots on a part";
       return;
@@ -1166,7 +1177,7 @@ export const steps = {
       await nextNews(page, read, "episode");
       const runs = async () => (await ask(page, "Jobs")).some((j) => j.episode === source && j.kind === "transcribe" && (j.state === "running" || j.state === "queued"));
       for (let seen = await news(page); await runs(); ) seen = await nextNews(page, seen);
-      await settle(page);
+      await caughtUp(page, url);
       // Not one dot moves sideways either: centred again as the work
       // stopped, every dot jumped, Tim's report of 24 October.
       const dots = await page.evaluate(() => window.dotsNow());
@@ -1182,7 +1193,7 @@ export const steps = {
       await page.keyboard.press("Escape");
       await menu.waitFor({ state: "detached" });
       for (let seen = await news(page); !(await whole()); ) seen = await nextNews(page, seen);
-      await settle(page);
+      await caughtUp(page, url);
       await row.hover();
       await row.locator("button.more").click();
       await menu.waitFor();

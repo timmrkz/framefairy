@@ -456,12 +456,13 @@ will be, `Clip` on `Underway`, the clip set's file name and the id the
 builder gave it when it queued it, and the list keeps the card's row for
 the clip. They were two rows, the card's going and the clip's coming, and
 between the two the list was a row short for an instant, which a list
-scrolled down answered by jumping. The card is held from the moment it
-leaves the job's list in the same pass that builds the list, `OnTheWay`
-in `frontend/src/lib/arriving.ts`: an effect held it a render late, so
-every card went away, left a row still to come in its place and slid back
-open before it became its clip, which at the end of a search read as the
-whole list blinking. A clip made by hand is chosen the moment
+scrolled down answered by jumping. The cards come from the jobs of the
+video's state the workspace keeps, `EpisodeSession.jobs`, the state its
+clips come from, so a card leaves the job's list in the very state that
+holds its clip. The card was once held until a later state came, first
+by an effect a render late, so every card went away, left a row still to
+come in its place and slid back open before it became its clip, which at
+the end of a search read as the whole list blinking. A clip made by hand is chosen the moment
 the key is pressed, as its card, and the card that is chosen stays chosen
 as the clip, unless another has been chosen since. It was chosen only once
 it landed, so for the seconds it took nothing on the clip timeline said
