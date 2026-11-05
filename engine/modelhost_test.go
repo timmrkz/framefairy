@@ -556,6 +556,39 @@ func TestAKeptModelStaysBetweenSearches(t *testing.T) {
 	}
 }
 
+// The app makes an engine for every job and one to keep the model, all
+// on the program's one machine. So a kept model is the one every search
+// finds, however many engines ask, and closing the machine's models as
+// the app quits stops the model a search still holds.
+func TestEveryJobOfAProgramSharesItsModel(t *testing.T) {
+	t.Parallel()
+	s := useStandIn(t)
+	ctx := context.Background()
+	if _, err := s.engine().keep(ctx, gemma, 0, ""); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		_, release, err := s.engine().holdModel(ctx, gemma, 32768, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		release(0)
+	}
+	if s.started.Load() != 1 {
+		t.Errorf("two searches of a kept model, each with its own engine, loaded it %d times", s.started.Load())
+	}
+	// A search holds the model when the app quits.
+	_, release, err := s.engine().holdModel(ctx, gemma, 32768, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release(0)
+	s.machine.CloseModels()
+	if s.running.Load() != 0 {
+		t.Errorf("%d models still running after the app closed them during a search", s.running.Load())
+	}
+}
+
 // A model kept is held by nobody, so the transcript can be read into it
 // ahead of a search, and a search of another size replaces it with one
 // that is kept in turn.
