@@ -104,6 +104,12 @@ export default [
     steps: [["mission control"]],
   },
   {
+    // Tim hovered the sidebar open and clicked its button to keep it, and
+    // it closed, on 29 October, in his report's log, #615.
+    name: "One click on the sidebar's button keeps a sidebar hovering opened, and the next closes it",
+    steps: [["keep the sidebar"]],
+  },
+  {
     // Tim's logs showed the sidebar opened by the pointer closing again
     // within 100 ms one time in three, on a leave no hand made, #540.
     name: "The sidebar opened by the pointer stays open on a leave with no move, and closes on a real one",

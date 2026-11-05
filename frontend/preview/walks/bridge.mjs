@@ -393,8 +393,9 @@ export async function open(url, { viewport = { width: 1500, height: 1000 }, scal
   // The sidebar of a new library is pinned open, over the left of the
   // workspace and the start of the clip timeline. It is let go of, the way
   // a person who works in the workspace would, so a hand can reach what is
-  // under it.
-  if (await page.evaluate(() => document.querySelector("aside")?.classList.contains("open"))) {
+  // under it. Its button keeps a sidebar that is not kept, so it is
+  // clicked only when the sidebar is kept.
+  if ((await page.locator("aside .head .glyph").getAttribute("aria-pressed")) === "true") {
     await page.locator("aside .head .glyph").click();
     await page.mouse.move(750, 500);
     await sidebarStill(page);

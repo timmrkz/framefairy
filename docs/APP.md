@@ -277,10 +277,14 @@ label the video still has. The pill shows only what is kept or still on
 its way.
 
 The sidebar is a narrow rail until the pointer reaches the left edge, and it
-opens over the workspace while it is there. The mark at the top keeps it
-open, and clicking it while it is open closes it at once, even with the
+opens over the workspace while it is there. The button at the top keeps it
+open, with one click, whether hovering opened it or it was a rail.
+Clicking it while the sidebar is kept closes it at once, even with the
 pointer still on it. Hovering opens it again once the pointer has left and
-come back. It closes when the app's window loses the focus, as it does
+come back. The button says which it will do, in its title and its icon:
+a panel with the arrow out to keep it, the arrow in to close it, the way
+Notion's sidebar does, since a sidebar hovering opened looks the same as
+one kept open. It closes when the app's window loses the focus, as it does
 to the report window Bugs opens, since a Mac tells the window nothing
 of the pointer going then, and the next move of the pointer says where
 it is. Only the keyboard going into it opens it, not the focus coming
