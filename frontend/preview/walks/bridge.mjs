@@ -593,12 +593,17 @@ async function chosenPath(page, seen) {
 }
 
 // The clip a reading of readChosen is of, by its plan and id as the
-// engine names them.
-async function chosenClip(page, seen) {
+// engine names them, and the clips of its episode the engine said that
+// in, which engineState can take rather than ask for again.
+async function chosenClipAndClips(page, seen) {
   const path = await chosenPath(page, seen);
-  if (!path || !seen.key) return null;
-  const entry = (await ask(page, "Clips", path)).find((c) => c.key === seen.key);
-  return entry ? { path, plan: entry.plan, clip: entry.id } : null;
+  if (!path || !seen.key) return { at: null, clips: null };
+  const clips = await ask(page, "Clips", path);
+  const entry = clips.find((c) => c.key === seen.key);
+  return { at: entry ? { path, plan: entry.plan, clip: entry.id } : null, clips };
+}
+async function chosenClip(page, seen) {
+  return (await chosenClipAndClips(page, seen)).at;
 }
 
 // Which episode is on screen: the one the sidebar marks as the current
@@ -619,9 +624,12 @@ export async function chosen(page) {
 
 // What the engine says about the clip on screen, asked directly: its
 // captions and its pieces, on the episode's clock. A walk compares what is
-// on screen with this, and this before a step with this after it.
-export async function engineState(page, at) {
-  return page.evaluate(async ({ path, plan, clip }) => {
+// on screen with this, and this before a step with this after it. clips,
+// when given, are the clips of the episode settledScreen read in the same
+// settled moment, so they are not asked for a second time after every
+// step.
+export async function engineState(page, at, clips = null) {
+  return page.evaluate(async ({ at: { path, plan, clip }, read }) => {
     const ask = async (name, args) => {
       const answer = await fetch("/call", {
         method: "POST",
@@ -630,14 +638,14 @@ export async function engineState(page, at) {
       });
       return answer.json();
     };
-    const [captions, clips] = await Promise.all([ask("Captions", [path, plan, clip]), ask("Clips", [path])]);
+    const [captions, clips] = await Promise.all([ask("Captions", [path, plan, clip]), read ?? ask("Clips", [path])]);
     const entry = clips.find((c) => c.plan === plan && (c.id === clip || c.basename === clip));
     // Each piece with its crop, the keyframes that glide it and its
     // rotation, which are steps of the history as the edges are, issue
     // #248.
     const pieces = (entry?.segments ?? []).map((s) => ({ start: s.start, end: s.end, cropX: s.cropX ?? null, marks: s.marks ?? [], rotate: s.rotate ?? 0 }));
     return { ...captions, segments: pieces };
-  }, at);
+  }, { at, read: clips });
 }
 
 // What the clip timeline shows: where the clip starts and ends and where
@@ -696,7 +704,8 @@ export async function settledScreen(page) {
     },
     [Boolean(page.__held), readChosen.toString(), readShown.toString(), readTimeline.toString()],
   );
-  return { at: await chosenClip(page, seen), now: seen.now, drawn: seen.drawn };
+  const { at, clips } = await chosenClipAndClips(page, seen);
+  return { at, clips, now: seen.now, drawn: seen.drawn };
 }
 
 // Where everything a hand can take hold of on the clip timeline is on
