@@ -11,12 +11,13 @@ import (
 
 // What ffmpeg says it can do, and what ffprobe says a file holds, stays
 // true for as long as the binary and the file stay as they were. So it is
-// asked once a process and kept by the file's size and time, the way
+// asked once a program and kept by the file's size and time, the way
 // engine/tool keeps the tools it has checked, and asked again the moment
-// either changes. Every engine shares it, and there are many: the app
-// makes one for every job, every caption it draws and every video it
-// reads, and a render once asked ffprobe the same questions about the
-// same file twelve times over, issues #346 and #351.
+// either changes. It is kept on the Machine, which every engine of a
+// program shares, and there are many: the app makes one for every job,
+// every caption it draws and every video it reads, and a render once
+// asked ffprobe the same questions about the same file twelve times over,
+// issues #346 and #351.
 
 // fileStamp is a file as it is now, by where it really is, its size and
 // the time it was last written. It reads the real disk and not an
@@ -81,27 +82,29 @@ func keyFor(kind, tool, file string) (probeKey, bool) {
 // many, which no number of episodes and shorts a person works on reaches.
 const probedMost = 4096
 
-var probed = struct {
-	sync.Mutex
+// probeCache is the answers a machine keeps, by the question and the
+// files it was about.
+type probeCache struct {
+	mu      sync.Mutex
 	answers map[probeKey]any
-}{answers: map[probeKey]any{}}
+}
 
-// recall is the answer kept for key.
-func recall[T any](key probeKey) (T, bool) {
-	probed.Lock()
-	defer probed.Unlock()
-	v, ok := probed.answers[key].(T)
+// recall is the answer the machine kept for key.
+func recall[T any](m *Machine, key probeKey) (T, bool) {
+	m.probes.mu.Lock()
+	defer m.probes.mu.Unlock()
+	v, ok := m.probes.answers[key].(T)
 	return v, ok
 }
 
-// remember keeps an answer for key.
-func remember(key probeKey, v any) {
-	probed.Lock()
-	defer probed.Unlock()
-	if len(probed.answers) >= probedMost {
-		clear(probed.answers)
+// remember keeps an answer for key on the machine.
+func remember(m *Machine, key probeKey, v any) {
+	m.probes.mu.Lock()
+	defer m.probes.mu.Unlock()
+	if m.probes.answers == nil || len(m.probes.answers) >= probedMost {
+		m.probes.answers = map[probeKey]any{}
 	}
-	probed.answers[key] = v
+	m.probes.answers[key] = v
 }
 
 // clone is a SourceInfo that shares no slice with the one kept, so a

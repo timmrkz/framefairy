@@ -65,20 +65,17 @@ func leftover(t *testing.T, args ...string) *standingServer {
 	return s
 }
 
-// asked records the servers the app asks to stop, by process number, and
-// still asks them.
-func asked(t *testing.T) func() []int {
-	t.Helper()
+// asked records the servers m asks to stop, by process number, and still
+// asks them.
+func asked(m *Machine) func() []int {
 	var mu sync.Mutex
 	var pids []int
-	was := interrupt
-	interrupt = func(proc *os.Process) error {
+	m.notes.interrupt = func(proc *os.Process) error {
 		mu.Lock()
 		pids = append(pids, proc.Pid)
 		mu.Unlock()
-		return was(proc)
+		return proc.Signal(os.Interrupt)
 	}
-	t.Cleanup(func() { interrupt = was })
 	return func() []int {
 		mu.Lock()
 		defer mu.Unlock()
@@ -86,14 +83,16 @@ func asked(t *testing.T) func() []int {
 	}
 }
 
+// noteIn is a machine whose notes are in a folder of the test's own, and
+// that folder.
+//
 // On the real disk: the note is read by the next program to start.
-func noteIn(t *testing.T) string {
+func noteIn(t *testing.T) (*Machine, string) {
 	t.Helper()
 	dir := filepath.Join(t.TempDir(), "llama-servers")
-	was := serverNoteDir
-	serverNoteDir = func() string { return dir }
-	t.Cleanup(func() { serverNoteDir = was })
-	return dir
+	m := memoryUnasked(NewMachine(disk))
+	m.notes.dir = func() string { return dir }
+	return m, dir
 }
 
 // gone is the number of a process that has ended, the owner of a note
@@ -112,12 +111,13 @@ func gone(t *testing.T) int {
 //
 // On the real disk: the note is read by the next program to start.
 func TestALeftoverServerIsStopped(t *testing.T) {
-	dir := noteIn(t)
+	t.Parallel()
+	m, dir := noteIn(t)
 	cmd := leftover(t, "-m", "/models/gemma.gguf", "--host", "127.0.0.1", "--port", "41234")
 	pid := cmd.cmd.Process.Pid
-	noteServer(serverNote{PID: pid, Port: 41234, Model: "/models/gemma.gguf", Owner: gone(t)})
+	m.noteServer(serverNote{PID: pid, Port: 41234, Model: "/models/gemma.gguf", Owner: gone(t)})
 
-	if !StopLeftoverServer() {
+	if !m.StopLeftoverServer() {
 		t.Fatal("the server left behind was not stopped")
 	}
 	// A server that is still running hangs here until go test's -timeout.
@@ -132,13 +132,14 @@ func TestALeftoverServerIsStopped(t *testing.T) {
 //
 // On the real disk: the note is read by the next program to start.
 func TestAServerInUseIsLeftAlone(t *testing.T) {
-	dir := noteIn(t)
+	t.Parallel()
+	m, dir := noteIn(t)
 	cmd := leftover(t, "-m", "/models/gemma.gguf", "--port", "41234")
 	pid := cmd.cmd.Process.Pid
 	// Owned by this test, which is running.
-	noteServer(serverNote{PID: pid, Port: 41234, Model: "/models/gemma.gguf"})
-	stops := asked(t)
-	if StopLeftoverServer() {
+	m.noteServer(serverNote{PID: pid, Port: 41234, Model: "/models/gemma.gguf"})
+	stops := asked(m)
+	if m.StopLeftoverServer() {
 		t.Error("a server in use was stopped")
 	}
 	if slices.Contains(stops(), pid) {
@@ -152,12 +153,13 @@ func TestAServerInUseIsLeftAlone(t *testing.T) {
 // Two programs that each run a server keep a note each, so the one does
 // not write over the other's and leave a leftover nobody finds.
 func TestEveryServerKeepsItsOwnNote(t *testing.T) {
-	noteIn(t)
+	t.Parallel()
+	m, _ := noteIn(t)
 	cli := leftover(t, "-m", "/models/a.gguf", "--port", "41001")
 	app := leftover(t, "-m", "/models/b.gguf", "--port", "41002")
-	noteServer(serverNote{PID: cli.cmd.Process.Pid, Port: 41001, Model: "/models/a.gguf", Owner: gone(t)})
-	noteServer(serverNote{PID: app.cmd.Process.Pid, Port: 41002, Model: "/models/b.gguf", Owner: gone(t)})
-	if !StopLeftoverServer() {
+	m.noteServer(serverNote{PID: cli.cmd.Process.Pid, Port: 41001, Model: "/models/a.gguf", Owner: gone(t)})
+	m.noteServer(serverNote{PID: app.cmd.Process.Pid, Port: 41002, Model: "/models/b.gguf", Owner: gone(t)})
+	if !m.StopLeftoverServer() {
 		t.Fatal("nothing was stopped")
 	}
 	// A server that is still running hangs here until go test's -timeout.
@@ -167,11 +169,12 @@ func TestEveryServerKeepsItsOwnNote(t *testing.T) {
 
 // A model whose path has a space in it is still the same model.
 func TestAModelPathWithASpaceIsFound(t *testing.T) {
-	noteIn(t)
+	t.Parallel()
+	m, _ := noteIn(t)
 	model := "/Users/tim/My Models/gemma.gguf"
 	cmd := leftover(t, "-m", model, "--port", "41234")
-	noteServer(serverNote{PID: cmd.cmd.Process.Pid, Port: 41234, Model: model, Owner: gone(t)})
-	if !StopLeftoverServer() {
+	m.noteServer(serverNote{PID: cmd.cmd.Process.Pid, Port: 41234, Model: model, Owner: gone(t)})
+	if !m.StopLeftoverServer() {
 		t.Fatal("the server left behind was not stopped")
 	}
 	// A server that is still running hangs here until go test's -timeout.
@@ -183,14 +186,15 @@ func TestAModelPathWithASpaceIsFound(t *testing.T) {
 //
 // On the real disk: the note is read by the next program to start.
 func TestTheNoteOfAnOlderVersionIsRead(t *testing.T) {
-	dir := noteIn(t)
+	t.Parallel()
+	m, dir := noteIn(t)
 	cmd := leftover(t, "-m", "/models/gemma.gguf", "--port", "41234")
 	old := filepath.Join(filepath.Dir(dir), "llama-server.json")
 	body := fmt.Sprintf(`{"pid":%d,"port":41234,"model":"/models/gemma.gguf"}`, cmd.cmd.Process.Pid)
 	if err := os.WriteFile(old, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if !StopLeftoverServer() {
+	if !m.StopLeftoverServer() {
 		t.Fatal("the server left behind was not stopped")
 	}
 	// A server that is still running hangs here until go test's -timeout.
@@ -203,11 +207,12 @@ func TestTheNoteOfAnOlderVersionIsRead(t *testing.T) {
 // Whatever runs under a number the note names but is not that server is
 // left alone: the system gives numbers out again.
 func TestSomebodyElsesProcessIsLeftAlone(t *testing.T) {
-	noteIn(t)
+	t.Parallel()
+	m, _ := noteIn(t)
 	cmd := leftover(t, "-m", "/models/other.gguf", "--port", "41234")
-	noteServer(serverNote{PID: cmd.cmd.Process.Pid, Port: 41234, Model: "/models/gemma.gguf", Owner: gone(t)})
-	stops := asked(t)
-	if StopLeftoverServer() {
+	m.noteServer(serverNote{PID: cmd.cmd.Process.Pid, Port: 41234, Model: "/models/gemma.gguf", Owner: gone(t)})
+	stops := asked(m)
+	if m.StopLeftoverServer() {
 		t.Error("a process that is not the server was stopped")
 	}
 	if slices.Contains(stops(), cmd.cmd.Process.Pid) {
@@ -220,10 +225,11 @@ func TestSomebodyElsesProcessIsLeftAlone(t *testing.T) {
 //
 // On the real disk: the note is read by the next program to start.
 func TestAServerStoppedTheNormalWayLeavesNoNote(t *testing.T) {
-	dir := noteIn(t)
-	noteServer(serverNote{PID: 123456, Port: 1, Model: "m"})
-	noteServer(serverNote{PID: 654321, Port: 1, Model: "m"})
-	forgetServer(123456)
+	t.Parallel()
+	m, dir := noteIn(t)
+	m.noteServer(serverNote{PID: 123456, Port: 1, Model: "m"})
+	m.noteServer(serverNote{PID: 654321, Port: 1, Model: "m"})
+	m.forgetServer(123456)
 	if _, err := os.Stat(noteFile(dir, 123456)); !os.IsNotExist(err) {
 		t.Error("the note outlived its server")
 	}

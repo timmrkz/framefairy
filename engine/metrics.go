@@ -34,11 +34,6 @@ type faceMetrics struct {
 	cache map[rune]float64
 }
 
-var (
-	facesMu sync.Mutex
-	faces   = map[string]*faceMetrics{}
-)
-
 func u16(b []byte, at int) (uint16, bool) {
 	if at < 0 || at+2 > len(b) {
 		return 0, false
@@ -116,28 +111,39 @@ func bestCmap(cmap []byte) []byte {
 	return best
 }
 
-// forgetMetrics drops what was read of every face, for when the faces of
-// the machine are read again and a name may now be another file.
-func forgetMetrics() {
-	facesMu.Lock()
-	faces = map[string]*faceMetrics{}
-	facesMu.Unlock()
+// metricsCache is what was read of each face by its name. A name may be
+// another file once the shelf reads the machine's fonts again, so the
+// shelf keeps it and forgets it then, see fontShelf.
+type metricsCache struct {
+	mu    sync.Mutex
+	faces map[string]*faceMetrics
+}
+
+// forget drops what was read of every face.
+func (c *metricsCache) forget() {
+	c.mu.Lock()
+	c.faces = nil
+	c.mu.Unlock()
 }
 
 // face reads the tables of a font once and keeps them.
 func face(name string) (*faceMetrics, bool) {
-	facesMu.Lock()
-	f, seen := faces[name]
-	facesMu.Unlock()
+	c := &shelf.metrics
+	c.mu.Lock()
+	f, seen := c.faces[name]
+	c.mu.Unlock()
 	if seen {
 		return f, f != nil
 	}
 	// Read without the lock, because finding a face of the machine may read
 	// its font folders, which forgets every face read before.
 	f = readFace(name)
-	facesMu.Lock()
-	faces[name] = f
-	facesMu.Unlock()
+	c.mu.Lock()
+	if c.faces == nil {
+		c.faces = map[string]*faceMetrics{}
+	}
+	c.faces[name] = f
+	c.mu.Unlock()
 	return f, f != nil
 }
 

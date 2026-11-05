@@ -198,10 +198,11 @@ func TestHwaccelsIn(t *testing.T) {
 // CI's virtual Mac VideoToolbox hung there four times between 10 and 13
 // October, and the search waited on it until the test run was killed at
 // ten minutes, in TestNewAndCancelInEitherOrder and the engine's tests
-// alike. Not parallel: stuckFFmpeg sets timeLimit, a package variable.
+// alike.
 func TestFramingGoesOnWhenTheSystemDecoderHangs(t *testing.T) {
+	t.Parallel()
 	e := NewEngine(runlog.New(io.Discard, false, false), decodingMachine())
-	e.FFmpeg = stuckFFmpeg(t, false)
+	e.FFmpeg = stuckFFmpeg(t, e.Machine, false)
 	used := e.decoderUsed(context.Background(), "episode.mp4", 10.2)
 	if used != "the processor" {
 		t.Errorf("the decoder used is %q, want the processor", used)
@@ -213,7 +214,7 @@ func TestFramingGoesOnWhenTheSystemDecoderHangs(t *testing.T) {
 	// A frame pulled on its own is ended the same way. One that is not
 	// ends the test at go test's -timeout.
 	e = NewEngine(runlog.New(io.Discard, false, false), decodingMachine())
-	e.FFmpeg = stuckFFmpeg(t, false)
+	e.FFmpeg = stuckFFmpeg(t, e.Machine, false)
 	if got := e.sampleGray(context.Background(), "episode.mp4", 10, 0.1, FaceWidth, FaceHeight, 1); len(got) != 0 {
 		t.Errorf("a frame pulled with a system decoder that hangs gave %d frames from a stand-in that has none", len(got))
 	}
@@ -223,10 +224,10 @@ func TestFramingGoesOnWhenTheSystemDecoderHangs(t *testing.T) {
 // ended, and the frames are read again with the processor decoding. The
 // first macOS test run with ffmpeg 7.1.5 had one hang there for six
 // minutes, and nothing ended it: the search would have waited for good.
-// Not parallel: stuckFFmpeg sets timeLimit, a package variable.
 func TestReadingFramesThatHangsIsEnded(t *testing.T) {
+	t.Parallel()
 	e := NewEngine(runlog.New(io.Discard, false, false), decodingMachine())
-	e.FFmpeg = stuckFFmpeg(t, false)
+	e.FFmpeg = stuckFFmpeg(t, e.Machine, false)
 	if _, err := e.readSpan(context.Background(), "episode.mp4", 10, 20); err != nil {
 		t.Fatal(err)
 	}
@@ -236,7 +237,7 @@ func TestReadingFramesThatHangsIsEnded(t *testing.T) {
 
 	// One that hangs either way gives no frames rather than no clip.
 	e = NewEngine(runlog.New(io.Discard, false, false), decodingMachine())
-	e.FFmpeg = stuckFFmpeg(t, true)
+	e.FFmpeg = stuckFFmpeg(t, e.Machine, true)
 	if frames, err := e.readSpan(context.Background(), "episode.mp4", 10, 20); err != nil || len(frames) != 0 {
 		t.Errorf("an ffmpeg that always hangs: %d frames, %v", len(frames), err)
 	}
@@ -247,10 +248,10 @@ func TestReadingFramesThatHangsIsEnded(t *testing.T) {
 // #201, the ffmpeg of the probe was stopped after its fifteen seconds and
 // went on sitting in the system's decoder, and the test waited on it for
 // eight minutes, until the run was killed. Here the stop does nothing, as
-// it did there. Not parallel: stuckFFmpeg sets timeLimit, a package
-// variable. The engines' runner stops nothing and leaves a program it
+// it did there. The engines' runner stops nothing and leaves a program it
 // stopped behind at once, rather than after tool.LeaveAfter of the clock.
 func TestASystemDecoderThatWillNotEndIsLeftBehind(t *testing.T) {
+	t.Parallel()
 	gone := make(chan time.Time)
 	close(gone)
 	var mu sync.Mutex
@@ -274,7 +275,7 @@ func TestASystemDecoderThatWillNotEndIsLeftBehind(t *testing.T) {
 
 	var said bytes.Buffer
 	e := NewEngine(runlog.New(&said, false, false), decodingMachine())
-	e.FFmpeg, e.Runner = stuckFFmpeg(t, false), stuck
+	e.FFmpeg, e.Runner = stuckFFmpeg(t, e.Machine, false), stuck
 	used := e.decoderUsed(context.Background(), "episode.mp4", 10.2)
 	if used != "the processor" || !e.softDecode.Load() {
 		t.Errorf("the decoder used is %q, want the processor from now on", used)
@@ -286,13 +287,13 @@ func TestASystemDecoderThatWillNotEndIsLeftBehind(t *testing.T) {
 	// Pulling one frame, and reading the frames of a span as ffmpeg
 	// decodes it, are left the same way.
 	e = NewEngine(runlog.New(io.Discard, false, false), decodingMachine())
-	e.FFmpeg, e.Runner = stuckFFmpeg(t, true), stuck
+	e.FFmpeg, e.Runner = stuckFFmpeg(t, e.Machine, true), stuck
 	if got := e.sampleGray(context.Background(), "episode.mp4", 10, 0.1, FaceWidth, FaceHeight, 1); len(got) != 0 {
 		t.Errorf("an ffmpeg left behind gave %d frames", len(got))
 	}
 	said.Reset()
 	e = NewEngine(runlog.New(&said, false, false), decodingMachine())
-	e.FFmpeg, e.Runner = stuckFFmpeg(t, true), stuck
+	e.FFmpeg, e.Runner = stuckFFmpeg(t, e.Machine, true), stuck
 	if frames, err := e.readSpan(context.Background(), "episode.mp4", 10, 20); err != nil || len(frames) != 0 {
 		t.Errorf("an ffmpeg left behind while it reads the frames: %d frames, %v", len(frames), err)
 	}

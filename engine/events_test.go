@@ -158,7 +158,7 @@ func TestDeleteWorkLeavesNothingButTheEpisode(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := DeleteWork(fsys, source); err != nil {
+	if err := NewMachine(fsys).DeleteWork(source); err != nil {
 		t.Fatal(err)
 	}
 	if fileio.Exists(fsys, work) {
@@ -170,7 +170,7 @@ func TestDeleteWorkLeavesNothingButTheEpisode(t *testing.T) {
 	if !fileio.Exists(fsys, records) {
 		t.Errorf("the training records were deleted with the episode")
 	}
-	if err := DeleteWork(fsys, "/home/tim/missing.mp4"); err != nil {
+	if err := NewMachine(fsys).DeleteWork("/home/tim/missing.mp4"); err != nil {
 		t.Errorf("missing work folder: %v", err)
 	}
 }

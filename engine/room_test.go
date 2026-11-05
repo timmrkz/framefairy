@@ -31,26 +31,26 @@ func TestLocalContextIsWhatTheMakerPublishes(t *testing.T) {
 	}
 }
 
-// machine makes the tests a machine with this much memory, and puts the
-// real one back after.
-func machine(t *testing.T, total int64) {
-	was := machineMemory
-	machineMemory = func() int64 { return total }
-	t.Cleanup(func() { machineMemory = was })
+// machineWith is a machine with this much memory.
+func machineWith(total int64) *Machine {
+	m := NewMachine(afero.NewMemMapFs())
+	m.memory = func() int64 { return total }
+	return m
 }
 
-func roomOf(opts PlanOptions) Room {
+func roomOf(m *Machine, opts PlanOptions) Room {
 	if opts.Count == 0 {
 		opts.Count, opts.MinLen, opts.MaxLen = 12, 20, 30
 	}
 	if opts.MaxTokens == 0 {
 		opts.MaxTokens = 48000
 	}
-	return planRoom(afero.NewMemMapFs(), opts)
+	return m.planRoom(opts)
 }
 
 func TestTheRoomOfALocalModelIsItsContextLessTheAnswer(t *testing.T) {
-	machine(t, 128<<30)
+	t.Parallel()
+	m := machineWith(128 << 30)
 	// What the default recipe sends around the transcript comes off it.
 	r, _ := RecipeNamed("")
 	around := runes.Len(r.System) + runes.Len(r.Request(nil, nil, PlanOptions{Count: 12, MinLen: 20, MaxLen: 30}))
@@ -58,7 +58,7 @@ func TestTheRoomOfALocalModelIsItsContextLessTheAnswer(t *testing.T) {
 		"gemma-4-26B_q4_0-it.gguf": 262144 - 16384 - 2048,
 		"Qwen3-14B-Q4_K_M.gguf":    40960 - 16384 - 2048,
 	} {
-		room := roomOf(PlanOptions{Local: &LocalModel{Model: model}})
+		room := roomOf(m, PlanOptions{Local: &LocalModel{Model: model}})
 		if room.Tokens != tokens || room.By != "context" {
 			t.Errorf("%s: %+v, want %d tokens by context", model, room, tokens)
 		}
@@ -69,13 +69,13 @@ func TestTheRoomOfALocalModelIsItsContextLessTheAnswer(t *testing.T) {
 	// A room the engine sizes the context by has to fit the context it
 	// sizes: the most a window may send never needs more than the model
 	// holds.
-	room := roomOf(PlanOptions{Local: &LocalModel{Model: "gemma-4-26B_q4_0-it.gguf"}})
+	room := roomOf(m, PlanOptions{Local: &LocalModel{Model: "gemma-4-26B_q4_0-it.gguf"}})
 	if size := contextFor(room.Chars, 48000); size > 262144 {
 		t.Errorf("a full window asks for a context of %d", size)
 	}
 	// A server somebody started themselves holds what they started it with,
 	// which the engine cannot know, so it does not stand in the way.
-	if room := roomOf(PlanOptions{Local: &LocalModel{URL: "http://127.0.0.1:8080"}}); room.Tokens != 262144-18432 {
+	if room := roomOf(m, PlanOptions{Local: &LocalModel{URL: "http://127.0.0.1:8080"}}); room.Tokens != 262144-18432 {
 		t.Errorf("a running server: %+v", room)
 	}
 }
@@ -99,7 +99,7 @@ func TestTheRoomOfTheAPIIsTheContextOrTheBudget(t *testing.T) {
 		{"claude-fable-5-1", 0.5, 0, "budget"},
 	}
 	for _, c := range cases {
-		room := roomOf(PlanOptions{Model: c.model, Budget: c.budget})
+		room := roomOf(NewMachine(afero.NewMemMapFs()), PlanOptions{Model: c.model, Budget: c.budget})
 		if room.Tokens != c.tokens || room.By != c.by {
 			t.Errorf("%s at $%v: %+v, want %d by %s", c.model, c.budget, room, c.tokens, c.by)
 		}
@@ -118,20 +118,21 @@ func talk(n int) *Transcript {
 }
 
 func TestAWindowTheModelCannotReadIsRefusedBeforeAnythingIsSent(t *testing.T) {
+	t.Parallel()
 	// A machine with room for the model, so the model is what refuses.
-	machine(t, 128<<30)
+	m := machineWith(128 << 30)
 	lines := BuildLines(talk(4000).Words, nil, nil)
 	opts := PlanOptions{Count: 12, MinLen: 20, MaxLen: 30, MaxTokens: 48000,
 		Local: &LocalModel{Model: "Qwen3-14B-Q4_K_M.gguf"}}
-	err := windowFits(afero.NewMemMapFs(), lines, opts)
+	err := m.windowFits(lines, opts)
 	if err == nil || !strings.Contains(err.Error(), "Qwen3-14B-Q4_K_M.gguf reads at most") {
 		t.Fatalf("a window four times too long: %v", err)
 	}
-	if err := windowFits(afero.NewMemMapFs(), lines[:100], opts); err != nil {
+	if err := m.windowFits(lines[:100], opts); err != nil {
 		t.Errorf("a short window: %v", err)
 	}
 	opts.Local, opts.Model, opts.Budget = nil, "claude-opus-5", 0.01
-	if err := windowFits(afero.NewMemMapFs(), lines[:100], opts); err == nil || !strings.Contains(err.Error(), "--budget") {
+	if err := m.windowFits(lines[:100], opts); err == nil || !strings.Contains(err.Error(), "--budget") {
 		t.Errorf("a budget that buys nothing: %v", err)
 	}
 }
@@ -238,21 +239,22 @@ func TestAWindowNeverAsksForMoreMemoryThanTheMachineHas(t *testing.T) {
 }
 
 func TestTheRoomOnASmallMachineIsItsMemory(t *testing.T) {
-	machine(t, 16<<30)
-	room := roomOf(PlanOptions{Local: &LocalModel{Model: "/m/Ministral-3-8B-Instruct-2512-Q4_K_M.gguf"}})
+	t.Parallel()
+	m := machineWith(16 << 30)
+	room := roomOf(m, PlanOptions{Local: &LocalModel{Model: "/m/Ministral-3-8B-Instruct-2512-Q4_K_M.gguf"}})
 	if room.By != "memory" || room.Tokens != judgedContext-localAnswerRoom(48000) {
 		t.Errorf("Ministral 3 8B on 16 GiB: %+v", room)
 	}
 	// And the context it is started with is never more than was checked,
 	// however contextFor rounds.
-	if size := localContextFor("Ministral-3-8B-Instruct-2512-Q4_K_M.gguf", room.Chars, 48000); size > judgedContext {
+	if size := m.localContextFor("Ministral-3-8B-Instruct-2512-Q4_K_M.gguf", room.Chars, 48000); size > judgedContext {
 		t.Errorf("started with %d", size)
 	}
-	if size := localContextFor("Ministral-3-8B-Instruct-2512-Q4_K_M.gguf", 1_000_000, 48000); size > judgedContext {
+	if size := m.localContextFor("Ministral-3-8B-Instruct-2512-Q4_K_M.gguf", 1_000_000, 48000); size > judgedContext {
 		t.Errorf("a prompt too long for the room starts it with %d", size)
 	}
-	machine(t, 4<<30)
-	if size := localContextFor("gemma-4-26B_q4_0-it.gguf", 1000, 48000); size != 4096 {
+	m = machineWith(4 << 30)
+	if size := m.localContextFor("gemma-4-26B_q4_0-it.gguf", 1000, 48000); size != 4096 {
 		t.Errorf("a model with no room at all is started with %d", size)
 	}
 }

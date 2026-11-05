@@ -4,8 +4,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/spf13/afero"
-
 	"framefairy/engine/runlog"
 )
 
@@ -21,13 +19,13 @@ func (p *Project) Engine() *Engine { return p.engine }
 // in there, they live in one folder of their own, so they outlive it. The
 // episode file itself is never touched. No caption file of the video
 // preview is written into it while it goes, see HoldPreviews.
-func DeleteWork(fsys afero.Fs, source string) error {
+func (m *Machine) DeleteWork(source string) error {
 	work := WorkDir(source)
 	if filepath.Ext(work) != ".framefairy" || filepath.Clean(work) == filepath.Clean(source) {
 		return renderErr("refusing to delete %s", work)
 	}
-	defer HoldPreviews(work)()
-	if err := fsys.RemoveAll(work); err != nil && !os.IsNotExist(err) {
+	defer m.HoldPreviews(work)()
+	if err := m.Files.RemoveAll(work); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	return nil

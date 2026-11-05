@@ -58,7 +58,7 @@ func (ep *Episode) Room(o Options) RoomAndLines {
 	if h, err := ep.Transcript(o.ASRModel, o.SilenceDB); err == nil {
 		w = h.Weighed()
 	}
-	w.Room = SearchRoom(ep.m.Files, o, LogsDir(ep.source))
+	w.Room = ep.m.SearchRoom(o, LogsDir(ep.source))
 	return w
 }
 

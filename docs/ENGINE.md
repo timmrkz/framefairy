@@ -680,7 +680,24 @@ The machine holds the file system, the records, the `tool.Runner`, the
 about the machine: whether the system's video decoder failed here,
 which decoder each episode used, the encoders and the subtitle filter
 of each ffmpeg, by the ffmpeg, the encoder a run names and the system,
-and the face detector. So a Mac whose system decoder failed once
+and the face detector. It keeps what ffmpeg and ffprobe said, see What
+ffmpeg and ffprobe said, kept, the caption blocks libass measured, the
+caption files of the video preview, and the news that a transcript grew,
+which the job that hears and the search that reads ahead share. It holds
+the local model too: the one llama-server the program keeps loaded, in
+`engine/modelhost.go`, the client and the keys that reach it, the notes
+about the servers this program started, in `engine/leftover.go`, and
+the check of a model file in hand. And it holds what the machine says of
+its memory, how much it has, how much is free and which other
+llama-servers run on it, in `engine/room.go` and `engine/freemem.go`.
+Each seam is a field that is empty for the real thing, set by a test on
+its own machine: the time limit of a decode, empty for
+`context.WithTimeout`, the framing of a clip, empty for
+`planBuilder.frame`, how the host starts a server and how long it waits
+unused, the client to llama-server, how a server that will not stop is
+looked at again, how a leftover server is asked to stop, and the three
+facts of memory. So
+a Mac whose system decoder failed once
 decodes on the processor for every job after it, not only for the rest
 of that job. An `Engine` keeps what belongs to its one job: the log,
 what it spent, the switches of its run, the hearing and the read-ahead.
@@ -710,7 +727,22 @@ one search can read, `Episode.Room`, and where the window goes,
 `--next` alike. What reads no file,
 the window's limits and where it goes after a search, is the settings'
 own, `Options.Limits` and `Options.WindowAfter`. The app makes no
-`Project` to ask any of it. See
+`Project` to ask any of it. A view of a clip takes the plan the episode
+holds, with the bytes it was read from: a gesture while the hand moves,
+`ShapeClip` and `ShapeClipView`, a caption edge, `ShapeCaptionTime`, the
+captions of a clip and of one on its way, and a share of a clip, so a
+drag reads no file. An edit reads the plan file itself and trusts no
+stamp: `editPlan` reads it again under its lock, and `Reshape`,
+`SetCaptionTime` and `RemoveCaption` read it with `planClip` before, to
+work out the change. The undo's snapshot, `Episode.TakeSnapshot`, asks
+the episode which plans there are and reads each from the file for the
+same reason. Whether a file is a clip's short, `Episode.IsShort`, asks
+the episode for its plans, and `Episode.Shorts` names every short the
+plans say was rendered, for the app to watch. Whose a path is, is the episode's to say:
+`Episode.Owns` for the video and what is in its work folder, by where
+the path really leads, `Episode.HasPlan` for a plan right in its logs
+folder, and `Episode.Linked` for a video or work folder that is a link
+and owns nothing. See
 [decisions/2026-11-03-one-episode-per-video.md](decisions/2026-11-03-one-episode-per-video.md).
 
 ### What ffmpeg and ffprobe said, kept
@@ -719,10 +751,10 @@ The app makes an engine for every job, every caption it draws and every
 video it reads. Each used to ask ffprobe five questions about the episode,
 ffmpeg for its filters and a test caption, and both tools for their
 versions, though nothing had changed. `engine/probed.go` keeps those
-answers for the process, by the path, size and modification time of the
-tool and of the file, so a file written again or a tool replaced is asked
-again. `Probe`, `pictureStart`, `SubtitleFilter` and `Preflight` ask it
-first. A probe whose context was stopped is not kept, and no caller can
+answers on the program's `Machine`, by the path, size and modification
+time of the tool and of the file, so a file written again or a tool
+replaced is asked again. `Probe`, `pictureStart`, `lastMoment`,
+`SubtitleFilter` and `Preflight` ask it first. A probe whose context was stopped is not kept, and no caller can
 change what is kept through the `SourceInfo` it was given. What a render
 reads of each piece it cuts, `unevenPieces`, is its own stretch of the
 file and is read every time.
@@ -1663,7 +1695,7 @@ is on the loopback and new every time, but a page can try every port in a
 few seconds. So each server is handed a key of its own when it starts, in
 its environment as `LLAMA_API_KEY` and not on its command line, where any
 program could read it, and `--no-slots` switches the list off. The key
-goes only with a request to the server it was made for, see `serverKeys`
+goes only with a request to the server it was made for, see the keys of `llamaLink`
 in `engine/local.go`. A server given with `--llm-url`, started by hand as
 above, gets no key and needs none.
 

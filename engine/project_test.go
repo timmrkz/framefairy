@@ -248,7 +248,7 @@ func TestProjectSteps(t *testing.T) {
 		t.Errorf("plan view %+v", view)
 	}
 	// The clip's words are read off the transcript.
-	if captions, err := ClipCaptionsView(disk, plan, "t10-01", tr, nil); err != nil || len(captions.Captions) == 0 {
+	if captions, err := ClipCaptionsView(planAt(t, disk, plan), "t10-01", tr, nil); err != nil || len(captions.Captions) == 0 {
 		t.Errorf("the clip says nothing: %v %+v", err, captions)
 	}
 

@@ -55,8 +55,9 @@ var sources = &probed{machine: engine.NewMachine(afero.NewOsFs())}
 
 type probed struct {
 	// machine reads the episode on the real disk, where the stamp below
-	// is taken. The probes are the app's one set, made before main, so
-	// they keep a machine of their own.
+	// is taken. The probes are the app's one set, made before main, which
+	// hands them the program's machine before anything is probed, so the
+	// probes and the jobs ask ffprobe once between them.
 	machine *engine.Machine
 	mu      sync.Mutex
 	info    map[string]engine.SourceInfo

@@ -228,7 +228,7 @@ func (s *FrameFairy) RemoveEpisode(path string, deleteWork bool) error {
 	s.reconciling.Lock()
 	defer s.reconciling.Unlock()
 	if deleteWork {
-		if err := engine.DeleteWork(s.store.files, path); err != nil {
+		if err := s.store.machine.DeleteWork(path); err != nil {
 			return err
 		}
 	}

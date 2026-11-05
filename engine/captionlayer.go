@@ -262,6 +262,7 @@ func (e *Engine) previewTrack(ctx context.Context, work string, d *CaptionDrawin
 	}
 	key := fmt.Sprintf("%s\x00%s\x00%+v\x00%s\x00%d/%d\x00%dx%d", dir, d.name(), style, source.Light(),
 		source.FPSNum, source.FPSDen, outW, outH)
+	_, previewTracks := e.captions()
 	return previewTracks.once(ctx, e.Log, work, key, func(ctx context.Context) (previewFile, error) {
 		started := time.Now()
 		track, pill, err := e.captionTrack(ctx, d.Laid, outW, outH, style, source)
@@ -381,8 +382,6 @@ func newTrackCache() *trackCache {
 	return &trackCache{files: map[string]previewFile{}, making: map[string]*making{}, dirs: map[string][]string{},
 		held: map[string]int{}}
 }
-
-var previewTracks = newTrackCache()
 
 const previewTracksKept = 256
 
@@ -519,7 +518,10 @@ func within(dir, path string) bool {
 // inside dir until the release it gives is called, and returns once none
 // is being written there. DeleteWork deletes a work folder under it, and
 // whatever else deletes work folders does the same.
-func HoldPreviews(dir string) (release func()) { return previewTracks.hold(dir) }
+func (m *Machine) HoldPreviews(dir string) (release func()) {
+	_, previewTracks := m.captions()
+	return previewTracks.hold(dir)
+}
 
 // used moves a file kept to the end of its folder's list, so the files
 // removed beyond what is kept are those used least lately, never the one

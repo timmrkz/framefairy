@@ -147,7 +147,7 @@ func TestTheServerLogIsKeptBeforeTheLogsFolderExists(t *testing.T) {
 	logDir := filepath.Join(dir, "episode.framefairy", "logs")
 	logFile := filepath.Join(logDir, "llm-server.log")
 
-	e := NewEngine(runlog.New(io.Discard, false, false), NewMachine(disk))
+	e := NewEngine(runlog.New(io.Discard, false, false), memoryUnasked(NewMachine(disk)))
 	if _, _, err := e.startServer(context.Background(), LocalModel{Server: server, Model: model}, 16384, logDir); err == nil {
 		t.Fatal("a server that ended while it loaded was taken for loaded")
 	}
@@ -167,23 +167,21 @@ func TestTheServerLogIsKeptBeforeTheLogsFolderExists(t *testing.T) {
 //
 // On the real disk: the stand-in llama-server is a program that is run, with its model as a file.
 func TestAServerThatWillNotStopIsKilledAtOnce(t *testing.T) {
-	noteIn(t)
+	machine, _ := noteIn(t)
+	// Not parallel: t.Setenv rules it out.
 	t.Setenv("FRAMEFAIRY_STUBBORN_SERVER", "1")
 	// stopGrace is up the moment it is asked about, on the engine's own
-	// runner. Not parallel: lookAgain is a package variable, and t.Setenv
-	// rules it out too.
+	// runner.
 	up := make(chan time.Time)
 	close(up)
 	// The start ends on the server's word that it is listening, and never
 	// on a look of the clock, which here never comes, #550.
-	wasLook := lookAgain
-	lookAgain = func(time.Duration) <-chan time.Time { return nil }
-	t.Cleanup(func() { lookAgain = wasLook })
+	machine.llama.lookAgain = func(time.Duration) <-chan time.Time { return nil }
 	model := filepath.Join(t.TempDir(), "model.gguf")
 	if err := os.WriteFile(model, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	e := NewEngine(runlog.New(io.Discard, false, false), NewMachine(disk))
+	e := NewEngine(runlog.New(io.Discard, false, false), machine)
 	e.Runner.Leave = func(time.Duration) <-chan time.Time { return up }
 	_, stop, err := e.startServer(context.Background(), LocalModel{Server: os.Args[0], Model: model}, 4096, "")
 	if err != nil {
@@ -289,16 +287,16 @@ func TestAComputeErrorSaysTheMemoryRanOut(t *testing.T) {
 // quitting.
 //
 // It runs in a bubble, with healthWait as the app has it, on the bubble's
-// clock. Changes localClient, which the whole package shares, so it does
-// not run in parallel.
+// clock, and its machine reaches llama-server through a transport that
+// never answers.
 func TestAHealthCheckThatGetsNoAnswerGivesUp(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
-		was := localClient
-		localClient = &http.Client{Transport: neverAnswers{}}
-		defer func() { localClient = was }()
+		m := NewMachine(afero.NewMemMapFs())
+		m.llama.client = &http.Client{Transport: neverAnswers{}}
 
 		began := time.Now()
-		if healthy(context.Background(), "http://llama-server") {
+		if m.healthy(context.Background(), "http://llama-server") {
 			t.Error("a server that never answered was taken for ready")
 		}
 		if took := time.Since(began); took != healthWait { //nolint:forbidigo // synctest bubble
@@ -308,7 +306,7 @@ func TestAHealthCheckThatGetsNoAnswerGivesUp(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		looked := make(chan bool)
 		began = time.Now()
-		go func() { looked <- healthy(ctx, "http://llama-server") }()
+		go func() { looked <- m.healthy(ctx, "http://llama-server") }()
 		// Cancelled while it waits for the answer, not before it asks.
 		synctest.Wait()
 		cancel()
@@ -351,7 +349,7 @@ func launchStandIn(t *testing.T, dir, name string) string {
 		t.Fatal(err)
 	}
 	logDir := filepath.Join(dir, name)
-	e := NewEngine(runlog.New(io.Discard, false, false), NewMachine(disk))
+	e := NewEngine(runlog.New(io.Discard, false, false), memoryUnasked(NewMachine(disk)))
 	_, _, _ = e.startServer(context.Background(), LocalModel{Server: server, Model: model}, 16384, logDir)
 	body, _ := os.ReadFile(filepath.Join(logDir, "llm-server.log"))
 	return string(body)
@@ -423,11 +421,12 @@ func TestTheKeyGoesOnlyToItsServer(t *testing.T) {
 	}))
 	defer other.Close()
 
-	serverKeys.Store(answer.URL, "the-key")
-	healthy(context.Background(), answer.URL)
-	healthy(context.Background(), other.URL)
-	serverKeys.Delete(answer.URL)
-	healthy(context.Background(), answer.URL)
+	m := NewMachine(afero.NewMemMapFs())
+	m.llama.keys.Store(answer.URL, "the-key")
+	m.healthy(context.Background(), answer.URL)
+	m.healthy(context.Background(), other.URL)
+	m.llama.keys.Delete(answer.URL)
+	m.healthy(context.Background(), answer.URL)
 
 	want := []string{"Bearer the-key", "other:", ""}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
@@ -441,26 +440,22 @@ func TestTheKeyGoesOnlyToItsServer(t *testing.T) {
 // every video's transcription up behind it (2.224).
 //
 // It runs in a bubble, with localStall as the app has it, on the bubble's
-// clock. Changes localClient and launch, which the whole package shares,
-// so it does not run in parallel.
+// clock, and its machine reaches llama-server through a transport that
+// stops answering.
 func TestALocalModelThatStopsAnsweringIsGivenUpOn(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
-		client := localClient
-		localClient = &http.Client{Transport: stopsAfter(`data: {"choices":[],"prompt_progress":{"total":100,"cache":0,"processed":50}}` + "\n\n")}
+		e := quietEngine()
+		e.llama.client = &http.Client{Transport: stopsAfter(`data: {"choices":[],"prompt_progress":{"total":100,"cache":0,"processed":50}}` + "\n\n")}
 		var stopped atomic.Int32
-		was := launch
-		launch = func(_ *Engine, _ context.Context, _ LocalModel, _ int, _ string) (string, func(), error) {
+		e.host.launch = func(_ *Engine, _ context.Context, _ LocalModel, _ int, _ string) (string, func(), error) {
 			var once sync.Once
 			return "http://llama-server", func() { once.Do(func() { stopped.Add(1) }) }, nil
 		}
-		t.Cleanup(func() {
-			StopModels()
-			launch, localClient = was, client
-		})
-		StopModels()
+		defer e.StopModels()
 
 		began := time.Now()
-		_, err := quietEngine().CallLocal(context.Background(), LocalModel{Model: "stalls.gguf", Keep: time.Hour},
+		_, err := e.CallLocal(context.Background(), LocalModel{Model: "stalls.gguf", Keep: time.Hour},
 			linesRecipe, "Transcript:", 40, 12, 1000, "", nil)
 		if err == nil || !strings.Contains(err.Error(), "stopped answering") {
 			t.Fatalf("err = %v", err)
@@ -510,12 +505,13 @@ func TestASlowMachineIsNotTakenForAStalledModel(t *testing.T) {
 // all the while, is not a server that stopped answering.
 //
 // It runs in a bubble, with localStall as the app has it, on the bubble's
-// clock. Changes localClient, which the whole package shares, so it does
-// not run in parallel.
+// clock, and its machine reaches llama-server through a transport that
+// streams the answer.
 func TestALocalModelThatKeepsTalkingIsWaitedFor(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
-		was := localClient
-		localClient = &http.Client{Transport: streamFrom(func(w http.ResponseWriter) {
+		e := quietEngine()
+		e.llama.client = &http.Client{Transport: streamFrom(func(w http.ResponseWriter) {
 			// Ten lines, each half of localStall after the one before, five
 			// times localStall in all.
 			for done := 0; done < 100; done += 10 {
@@ -524,10 +520,9 @@ func TestALocalModelThatKeepsTalkingIsWaitedFor(t *testing.T) {
 			}
 			writeLocalStream(w, `{"clips":[]}`, 4)
 		})}
-		defer func() { localClient = was }()
 
 		began := time.Now()
-		answer, err := quietEngine().CallLocal(context.Background(), LocalModel{URL: "http://llama-server"},
+		answer, err := e.CallLocal(context.Background(), LocalModel{URL: "http://llama-server"},
 			linesRecipe, "Transcript:", 40, 12, 1000, "", nil)
 		if err != nil {
 			t.Fatal(err)

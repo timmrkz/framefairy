@@ -74,7 +74,7 @@ func TestACutPutBackOverAnOldSwitchLeavesOnePiece(t *testing.T) {
 			t.Fatalf("with snap %v the clip has the cuts %+v", snap, cut)
 		}
 		join := Gesture{Kind: "join", From: (cut[0].From + cut[0].To) / 2}
-		shaped, err := ShapeClip(fsys, path, "01", join, tr, 0.1)
+		shaped, err := ShapeClip(planAt(t, fsys, path), "01", join, tr, 0.1)
 		if err != nil {
 			t.Fatal(err)
 		}

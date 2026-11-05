@@ -514,7 +514,7 @@ func newSearchClock(log *runlog.Log, records *Records, model string, local bool,
 	past, known := records.pastSpeed(model, local)
 	c := &searchClock{log: log, records: records, model: model, past: past, known: known,
 		took: map[string]float64{}, stopped: make(chan struct{})}
-	c.now = searchNow{Local: local, Chars: chars, Count: count, Budget: budget, Framers: framers}
+	c.now = searchNow{Local: local, Chars: chars, Count: count, Budget: budget, Framers: framers()}
 	return c
 }
 

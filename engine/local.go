@@ -234,8 +234,8 @@ func contextFor(promptChars, maxTokens int) int {
 // and a search waiting on it waits for good, with every video's
 // transcription held up behind it, see lanes.go in the app. The client has
 // no timeout of its own, because a whole answer takes minutes. Plan row
-// 2.224. A variable so a test can make it short.
-var localStall = 2 * time.Minute
+// 2.224.
+const localStall = 2 * time.Minute
 
 // promptBatch is how many tokens of the prompt llama-server reads before
 // it says how far it has come, its logical batch, `-b`. Its own default is
@@ -282,10 +282,29 @@ type readerFunc func([]byte) (int, error)
 
 func (f readerFunc) Read(p []byte) (int, error) { return f(p) }
 
-var localClient = &http.Client{
-	CheckRedirect: func(*http.Request, []*http.Request) error {
+// llamaLink is how a program reaches the llama-servers it starts, kept
+// on its machine, see Machine.llama.
+type llamaLink struct {
+	// keys holds the key of each server, by its address, see authorize.
+	keys sync.Map
+	// client carries every request to a llama-server, one that follows
+	// no redirect when it is empty. A test hands in one with a transport
+	// of its own.
+	client *http.Client
+	// lookAgain is the wait before the next look at a loading server that
+	// has said nothing, time.After when it is empty, so a test can take
+	// it away and prove the server's own word is enough.
+	lookAgain func(time.Duration) <-chan time.Time
+}
+
+// localClient is the client of the llama-servers on m.
+func (m *Machine) localClient() *http.Client {
+	if m.llama.client != nil {
+		return m.llama.client
+	}
+	return &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
 		return http.ErrUseLastResponse
-	},
+	}}
 }
 
 // A llama-server the app starts answers only to the app. Left to itself
@@ -300,8 +319,8 @@ var localClient = &http.Client{
 // program on the machine could read it, and the list of what it is
 // working on is switched off. The key lives as long as the server, by
 // its address, and only goes with a request to that address. An address
-// given by hand, a server somebody else started, gets no key.
-var serverKeys sync.Map
+// given by hand, a server somebody else started, gets no key. The keys
+// are kept in llamaLink.keys.
 
 func newServerKey() (string, error) {
 	b := make([]byte, 32)
@@ -312,15 +331,15 @@ func newServerKey() (string, error) {
 }
 
 // authorize puts the key of the server at url on a request to it.
-func authorize(request *http.Request, url string) {
-	if key, ok := serverKeys.Load(url); ok {
+func (m *Machine) authorize(request *http.Request, url string) {
+	if key, ok := m.llama.keys.Load(url); ok {
 		request.Header.Set("Authorization", "Bearer "+key.(string))
 	}
 }
 
 // stopGrace is how long llama-server has to go by itself once it is asked
 // to. Idle, it goes well inside it.
-var stopGrace = 500 * time.Millisecond
+const stopGrace = 500 * time.Millisecond
 
 // startServer runs llama-server and waits until the model is loaded.
 func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
@@ -328,12 +347,12 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 	if _, err := os.Stat(m.Model); err != nil {
 		return "", nil, renderErr("the language model %s cannot be read: %s", m.Model, err)
 	}
-	if err := CheckModelFile(m.Model, ""); err != nil {
+	if err := e.CheckModelFile(m.Model, ""); err != nil {
 		return "", nil, err
 	}
 	// A model that does not fit in the memory free now is not started:
 	// macOS would kill it while it loads, see freemem.go.
-	if err := roomForModel(m.Model, contextSize); err != nil {
+	if err := e.roomForModel(m.Model, contextSize); err != nil {
 		return "", nil, err
 	}
 	server, err := e.serverToRun(m.Server)
@@ -360,7 +379,7 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 		// a token.
 		"-lv", "4",
 		// Nothing reads what the server is working on, and it is the
-		// transcript, see serverKeys.
+		// transcript, see llamaLink.keys.
 		"--no-slots",
 		// How far it has read the prompt is said once a batch, see
 		// promptBatch.
@@ -422,8 +441,8 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 	}
 	// Written down while it runs, so a server an app that crashed left
 	// behind is found and stopped the next time the app starts.
-	noteServer(serverNote{PID: cmd.Process.Pid, Port: port, Model: m.Model})
-	serverKeys.Store(url, key)
+	e.noteServer(serverNote{PID: cmd.Process.Pid, Port: port, Model: m.Model})
+	e.llama.keys.Store(url, key)
 	// exited is closed once the server has gone, and exitErr says how. Only
 	// the goroutine that waits for it writes them, so stopping it never
 	// reads the process's state while that goroutine writes it.
@@ -454,8 +473,8 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 			}
 		}
 		closeLog.Do(func() {
-			forgetServer(cmd.Process.Pid)
-			serverKeys.Delete(url)
+			e.forgetServer(cmd.Process.Pid)
+			e.llama.keys.Delete(url)
 			if logFile != nil {
 				logFile.Close()
 			}
@@ -477,11 +496,11 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 			stop()
 			return "", nil, stoppedLoading(server, exitErr, logDir)
 		case <-ready:
-		case <-lookAgain(500 * time.Millisecond):
+		case <-e.lookAgain(500 * time.Millisecond):
 		}
 		// How far the loading is, is the search's to say: it knows how long
 		// it took before.
-		if healthy(ctx, url) {
+		if e.healthy(ctx, url) {
 			took := time.Since(started).Seconds()
 			// What loading costs is worth knowing in its parts, to know
 			// which of them to make shorter.
@@ -506,9 +525,13 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 }
 
 // lookAgain is the wait before the next look at a loading server that has
-// said nothing, a variable so a test can take it away and prove the
-// server's own word is enough.
-var lookAgain = time.After
+// said nothing, see llamaLink.lookAgain.
+func (m *Machine) lookAgain(d time.Duration) <-chan time.Time {
+	if m.llama.lookAgain != nil {
+		return m.llama.lookAgain(d)
+	}
+	return time.After(d)
+}
 
 // readyMarks are the lines llama-server writes once it may be ready: b11430
 // says "model loaded" once the model is in memory and "server is listening"
@@ -555,19 +578,19 @@ func (h *hearReady) Write(p []byte) (int, error) {
 // that took the connection and never answers would otherwise hold the
 // load past Cancel and past quitting, since the client has no timeout of
 // its own: an answer from the model takes minutes.
-var healthWait = 2 * time.Second
+const healthWait = 2 * time.Second
 
 // healthy says whether the server at url says it is ready, asking for no
 // longer than healthWait and no longer than ctx lasts.
-func healthy(ctx context.Context, url string) bool {
+func (m *Machine) healthy(ctx context.Context, url string) bool {
 	ctx, cancel := context.WithTimeout(ctx, healthWait)
 	defer cancel()
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url+"/health", nil)
 	if err != nil {
 		return false
 	}
-	authorize(request, url)
-	response, err := localClient.Do(request)
+	m.authorize(request, url)
+	response, err := m.localClient().Do(request)
 	if err != nil {
 		return false
 	}
@@ -718,8 +741,8 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 				chars += runes.Len(message.Content)
 			}
 		}
-		size := localContextFor(m.Model, chars, maxTokens)
-		if !modelReady(m.Model, size) {
+		size := e.localContextFor(m.Model, chars, maxTokens)
+		if !e.host.modelReady(m.Model, size) {
 			listen.part(partLoading)
 		}
 		held, release, err := e.holdModel(ctx, m, size, logDir)
@@ -765,7 +788,7 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 		return nil, err
 	}
 	request.Header.Set("content-type", "application/json")
-	authorize(request, url)
+	e.authorize(request, url)
 	gaveUp := func() error {
 		return renderErr("the local model stopped answering: nothing came from it for %s seconds, "+
 			"so it was stopped. Press Continue to start it afresh.", num.Fixed(localStall.Seconds(), 0))
@@ -779,7 +802,7 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 	defer watch.Stop()
 
 	started := time.Now()
-	response, err := localClient.Do(request)
+	response, err := e.localClient().Do(request)
 	if err != nil {
 		if stalled.Load() {
 			return nil, gaveUp()

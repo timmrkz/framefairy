@@ -662,6 +662,13 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		}
 		answer(w, nil, b.makeFresh(memory<<30))
 	})
+	// A model deleted outside the app, the way Tim removed one from the
+	// models folder in Finder: the first of the kind, "language" or
+	// "speech", that is here. It answers the model's name.
+	mux.HandleFunc("/model-gone", func(w http.ResponseWriter, r *http.Request) {
+		name, err := modelGone(r.URL.Query().Get("kind"))
+		answer(w, name, err)
+	})
 	mux.HandleFunc("/reopen", func(w http.ResponseWriter, r *http.Request) {
 		closed, err := b.reopen()
 		answer(w, closed, err)
@@ -1200,7 +1207,6 @@ func openBridge(t *testing.T) *bridge {
 	// more words ends there.
 	d.most = 60 * engine.SampleRate
 	d.time = newWalkTime()
-	d.start(d.svc.store)
 	// A report goes on the bridge's own Desktop and is shown nowhere.
 	reportFolder = func() string {
 		desk := filepath.Join(d.home, "Desktop")
@@ -1211,13 +1217,19 @@ func openBridge(t *testing.T) *bridge {
 	b := &bridge{t: t, d: d, words: words, sound: snd, first: filepath.Join(d.home, "erste-erinnerung.mp4"), kept: t.TempDir(),
 		gates: map[string]*gate{}, fails: map[string]string{}}
 	// What the first run downloads, once a walk made the machine new.
-	// What arrives is as much of a model as the app looks for.
+	// What arrives is as much of a model as the app looks for, and it
+	// lands the way the engine's download lands it: written under a name
+	// of its own and renamed into place whole.
 	installSpeech = func(_ *engine.Machine, ctx context.Context, log *runlog.Log, m engine.SpeechModel, dir string) error {
 		return b.arriving(ctx, log, "speech", m.Download, func() error {
-			if err := os.MkdirAll(filepath.Join(dir, m.Name), 0o755); err != nil {
+			staging := filepath.Join(dir, m.Name+".unpacking")
+			if err := os.MkdirAll(staging, 0o755); err != nil {
 				return err
 			}
-			return os.WriteFile(filepath.Join(dir, m.Name, "tokens.txt"), []byte("the stand-in hears\n"), 0o644)
+			if err := os.WriteFile(filepath.Join(staging, "tokens.txt"), []byte("the stand-in hears\n"), 0o644); err != nil {
+				return err
+			}
+			return os.Rename(staging, filepath.Join(dir, m.Name))
 		})
 	}
 	installLanguage = func(_ *engine.Machine, ctx context.Context, log *runlog.Log, m engine.LanguageModel, dir string) error {
@@ -1225,9 +1237,18 @@ func openBridge(t *testing.T) *bridge {
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				return err
 			}
-			return os.WriteFile(filepath.Join(dir, m.Name), []byte("GGUF, the stand-in finds clips"), 0o644)
+			part := filepath.Join(dir, m.Name+".part")
+			if err := os.WriteFile(part, []byte("GGUF, the stand-in finds clips"), 0o644); err != nil {
+				return err
+			}
+			return os.Rename(part, filepath.Join(dir, m.Name))
 		})
 	}
+	// The setup the app sends when the models change is the bridge's
+	// machine's, like the one every call answers with, so the desk starts
+	// again only once it knows the bridge.
+	d.setup = func(state SetupState) SetupState { return standInsSetup(state, b.fresh.Load()) }
+	d.start(d.svc.store)
 	fixtures.Copy(t, "walk-120s.mp4", b.first)
 	if added, err := d.svc.addEpisodes([]string{b.first}); err != nil || len(added) != 1 {
 		t.Fatalf("adding %s: %v", b.first, err)
@@ -1490,7 +1511,9 @@ func (b *bridge) makeFresh(memory int64) error {
 	b.arrive = map[string]chan struct{}{"speech": make(chan struct{}), "clip": make(chan struct{})}
 	b.mu.Unlock()
 	b.fresh.Store(&freshMachine{memory: memory})
-	if err := os.RemoveAll(engine.ModelsDir()); err != nil {
+	// The folder over the models goes too: the app never ran here, so
+	// the first run's download makes both, see modelsMade.
+	if err := os.RemoveAll(filepath.Dir(engine.ModelsDir())); err != nil {
 		return err
 	}
 	if err := b.d.svc.RemoveEpisode(b.first, false); err != nil {
@@ -1500,6 +1523,32 @@ func (b *bridge) makeFresh(memory int64) error {
 	return b.d.svc.store.UpdateSettings(func(s *Settings) {
 		s.Planner, s.Chosen, s.LLMModel = planner, false, ""
 	})
+}
+
+// modelGone deletes the first model of a kind that is here, "language" or
+// "speech", from the models folder, the way Finder does, and says which.
+//
+// On the real disk: the models folder is the one the app watches, in the
+// bridge's home.
+func modelGone(kind string) (string, error) {
+	dir := engine.ModelsDir()
+	switch kind {
+	case "language":
+		for _, m := range engine.LanguageModels() {
+			if m.Installed(dir) {
+				return m.Name, os.Remove(filepath.Join(dir, m.Name))
+			}
+		}
+	case "speech":
+		for _, m := range engine.SpeechModels() {
+			if m.Installed(dir) {
+				return m.Name, os.RemoveAll(filepath.Join(dir, m.Name))
+			}
+		}
+	default:
+		return "", fmt.Errorf("no kind of model is called %q", kind)
+	}
+	return "", fmt.Errorf("no %s model is here", kind)
 }
 
 // freshMachine is the bridge's machine on its first run, see /fresh: the
@@ -1655,8 +1704,8 @@ func (b *bridge) reset() error {
 	// after the page that asked is gone, and one written into a work
 	// folder while it was removed failed the reset with "directory not
 	// empty", issue #561. The work folders go the way the app deletes
-	// one, see engine.DeleteWork.
-	defer engine.HoldPreviews(b.d.home)()
+	// one, see engine.Machine.DeleteWork.
+	defer b.d.svc.store.machine.HoldPreviews(b.d.home)()
 	// So does a draft of Report a Problem the page saved as the walk
 	// ended, in the config folder, issue #632.
 	endReport(b.d.svc.report)
@@ -1678,7 +1727,7 @@ func (b *bridge) reset() error {
 			continue
 		}
 		if err := os.RemoveAll(filepath.Join(b.d.home, e.Name())); err != nil {
-			return fmt.Errorf("%w, and what was written into it meanwhile is %s", err, leftIn(filepath.Join(b.d.home, e.Name())))
+			return fmt.Errorf("%w, and in it now %s", err, leftIn(filepath.Join(b.d.home, e.Name())))
 		}
 	}
 	for _, dir := range []string{workOf(b.first), filepath.Join(b.d.home, "config")} {
@@ -1693,21 +1742,26 @@ func (b *bridge) reset() error {
 	return nil
 }
 
-// leftIn names what is in dir, a folder the reset could not remove
-// because something wrote into it while it went. The reset failed once
-// with only "directory not empty", issue #561 and #632 came that way too,
-// and the name of the file says which part of the app still wrote.
+// leftIn names what is in a folder the reset could not remove, each file
+// with how long ago it was written, so a failed reset says what wrote into
+// the folder while it was removed, and when.
+//
+// On the real disk: it reads the folder reset could not remove there.
 func leftIn(dir string) string {
 	var left []string
 	_ = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
-		if err == nil && path != dir {
-			rel, _ := filepath.Rel(dir, path)
-			left = append(left, rel)
+		if err != nil || path == dir {
+			return nil
 		}
+		rel, _ := filepath.Rel(dir, path)
+		if info, err := d.Info(); err == nil && !d.IsDir() {
+			rel += fmt.Sprintf(" (%d bytes, written %d ms ago)", info.Size(), time.Since(info.ModTime()).Milliseconds()) //nolint:forbidigo // how long ago, said in an error, waits on nothing
+		}
+		left = append(left, rel)
 		return nil
 	})
 	if len(left) == 0 {
-		return "nothing now"
+		return "nothing"
 	}
 	return strings.Join(left, ", ")
 }
@@ -1897,6 +1951,7 @@ func TestWalks(t *testing.T) {
 	var unwalked atomic.Int32
 
 	walkers := min(envNumber("WALKERS", runtime.NumCPU()*3/2), len(runs))
+	started := time.Now()
 	todo := make(chan walkRun, len(runs))
 	for _, r := range runs {
 		todo <- r
@@ -1958,6 +2013,19 @@ func TestWalks(t *testing.T) {
 		})
 	}
 	wg.Wait()
+	// Where this machine's time went, every run by what it took, so a slow
+	// walks job says which runs made it slow. Written to the file
+	// WALKSUMMARY names, which make walks prints after go test, since go
+	// test prints nothing a passing test said. On the clock only to be
+	// read, never waited on.
+	//
+	// On the real disk: make walks reads the file once go test has ended.
+	if file := os.Getenv("WALKSUMMARY"); file != "" {
+		summary := walkSummary(took, len(runs), walkers, time.Since(started).Seconds()) //nolint:forbidigo // the seconds the walks took, reported, never waited on
+		if err := os.WriteFile(file, []byte(summary), 0o644); err != nil {
+			t.Error(err)
+		}
+	}
 	if left := len(todo); left > 0 {
 		t.Errorf("%d runs were not walked, since no bridge started", left)
 	}
@@ -2613,11 +2681,75 @@ func writeWalkTimes(names []string, before, now map[string]float64) string {
 	return out.String()
 }
 
+// walkSummary says where a machine's walks spent their time: how many
+// runs its walkers walked, the seconds they took together against the
+// seconds the walkers had, and what every run took, slowest first. Every number stands right in its column, so the table
+// reads in a terminal as it does on GitHub.
+func walkSummary(took map[string]float64, runs, walkers int, wall float64) string {
+	type run struct {
+		name    string
+		seconds float64
+	}
+	var all []run
+	sum := 0.0
+	for name, s := range took {
+		all = append(all, run{name, s})
+		sum += s
+	}
+	slices.SortFunc(all, func(a, b run) int {
+		return cmp.Or(cmp.Compare(b.seconds, a.seconds), strings.Compare(a.name, b.name))
+	})
+	busy := 0.0
+	if wall > 0 && walkers > 0 {
+		busy = 100 * sum / (wall * float64(walkers))
+	}
+	var out strings.Builder
+	several := "walkers"
+	if walkers == 1 {
+		several = "walker"
+	}
+	fmt.Fprintf(&out, "%d of %d runs on %d %s in %.0f s, %.0f s of walking together, the walkers busy %.0f %% of the time\n", len(all), runs, walkers, several, wall, sum, busy)
+	if len(all) == 0 {
+		return out.String()
+	}
+	width := max(len("Seconds"), len(fmt.Sprintf("%.0f", all[0].seconds)))
+	name := len("Run")
+	for _, r := range all {
+		name = max(name, len(r.name))
+	}
+	fmt.Fprintf(&out, "| %*s | %-*s |\n", width, "Seconds", name, "Run")
+	fmt.Fprintf(&out, "| %s: | %s |\n", strings.Repeat("-", width-1), strings.Repeat("-", name))
+	for _, r := range all {
+		fmt.Fprintf(&out, "| %*.0f | %-*s |\n", width, r.seconds, name, r.name)
+	}
+	return out.String()
+}
+
 func envNumber(name string, otherwise int) int {
 	if n, err := strconv.Atoi(os.Getenv(name)); err == nil && n > 0 {
 		return n
 	}
 	return otherwise
+}
+
+// The summary of a machine's walks counts what its walkers did against the
+// time they had, and lists the slowest runs first, each column lined up.
+func TestTheWalksSummarySaysWhereTheTimeWent(t *testing.T) {
+	took := map[string]float64{"sequences.mjs SEQUENCE=short": 4.4, "playback.mjs SEED=1": 83, "timeline.mjs SEED=2": 9.6, "words.mjs SEED=1": 12}
+	got := walkSummary(took, 5, 2, 60)
+	want := "4 of 5 runs on 2 walkers in 60 s, 109 s of walking together, the walkers busy 91 % of the time\n" +
+		"| Seconds | Run                          |\n" +
+		"| ------: | ---------------------------- |\n" +
+		"|      83 | playback.mjs SEED=1          |\n" +
+		"|      12 | words.mjs SEED=1             |\n" +
+		"|      10 | timeline.mjs SEED=2          |\n" +
+		"|       4 | sequences.mjs SEQUENCE=short |\n"
+	if got != want {
+		t.Errorf("the summary is\n%s\nwant\n%s", got, want)
+	}
+	if got := walkSummary(nil, 3, 2, 0); got != "0 of 3 runs on 2 walkers in 0 s, 0 s of walking together, the walkers busy 0 % of the time\n" {
+		t.Errorf("with no runs walked the summary is %q", got)
+	}
 }
 
 // Split two ways or three, the shares of the walks hold every run once,

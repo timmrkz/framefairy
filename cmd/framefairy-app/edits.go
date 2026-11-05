@@ -405,7 +405,11 @@ func (s *FrameFairy) ShapeCaptionTime(path, plan, clipID string, word float64, e
 	if err != nil {
 		return nil, err
 	}
-	view, err := engine.ShapeCaptionTime(s.store.files, plan, clipID, word, edge, at, toWords, t, s.captionLook(path, plan))
+	summary, err := s.heldPlan(path, plan)
+	if err != nil {
+		return nil, err
+	}
+	view, err := engine.ShapeCaptionTime(summary, clipID, word, edge, at, toWords, t, s.lookOf(path, summary))
 	captionTracks.keep(path, view)
 	return view, err
 }
@@ -463,8 +467,12 @@ func (s *FrameFairy) Shape(path, plan, clipID string, g engine.Gesture) (*engine
 		return nil, err
 	}
 	g.Frames = s.frames(context.Background(), path)
-	view, err := engine.ShapeClipView(s.store.files, plan, clipID, g, t, s.store.Settings().options().KeepPause,
-		s.captionLook(path, plan))
+	summary, err := s.heldPlan(path, plan)
+	if err != nil {
+		return nil, err
+	}
+	view, err := engine.ShapeClipView(summary, clipID, g, t, s.store.Settings().options().KeepPause,
+		s.lookOf(path, summary))
 	if err == nil {
 		captionTracks.keep(path, view.Captions)
 	}

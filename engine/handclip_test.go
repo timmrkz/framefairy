@@ -151,8 +151,8 @@ func TestAClipMadeByHand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	arriving := ArrivingCaptionsView(disk, p.HandPlanPath(), *cut, heard, nil)
-	written, err := ClipCaptionsView(disk, p.HandPlanPath(), c.ID, heard, nil)
+	arriving := ArrivingCaptionsView(planAt(t, disk, p.HandPlanPath()), *cut, heard, nil)
+	written, err := ClipCaptionsView(planAt(t, disk, p.HandPlanPath()), c.ID, heard, nil)
 	if arriving == nil || err != nil || len(arriving.Captions) == 0 || len(arriving.Captions) != len(written.Captions) {
 		t.Errorf("captions on the way %v, written %v %v", arriving, written, err)
 	}

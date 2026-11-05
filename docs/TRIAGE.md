@@ -33,8 +33,9 @@ A session looks over the issues once a week, started by a routine on
 claude.ai. It changes no file, so it opens no pull request. It works in
 this order, because what happens now comes first:
 
-1. **Main's CI runs of the last seven days.** Every red run is matched
-   to an issue. A red run with none gets one.
+1. **Main's CI runs of the last seven days**, the nightly runs among
+   them, the walks and the fuzzing, which no pull request waits on.
+   Every red run is matched to an issue. A red run with none gets one.
 2. **Labels.** Every open issue without a priority or a size gets one
    from the table in [WORKFLOW.md](WORKFLOW.md#priority-and-size). An
    issue whose facts changed is looked at again, a flaky test seen

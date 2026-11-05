@@ -108,20 +108,18 @@ func TestTooLittleMemorySaysWhatToDo(t *testing.T) {
 }
 
 // A search whose model does not fit in the memory free now fails before
-// it listens to its window, which can take minutes, and says why. Not in
-// parallel: it puts its own machine in place of the one the tests run on,
-// and the tests that run in parallel wait until it is done.
+// it listens to its window, which can take minutes, and says why. Its
+// machine has a megabyte free and another llama-server running.
 //
 // On the real disk: ffmpeg reads the episode, and the model is a file on the disk.
 func TestASearchThatCannotLoadItsModelFailsBeforeListening(t *testing.T) {
-	wasFree, wasServers := freeMemory, otherServers
-	freeMemory = func() int64 { return 1 << 20 }
-	otherServers = func() []string { return []string{"4534"} }
-	t.Cleanup(func() { freeMemory, otherServers = wasFree, wasServers })
-
+	t.Parallel()
 	source := testEpisode(t, "40")
 	var heard int32
-	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
+	machine := NewMachine(disk)
+	machine.free = func() int64 { return 1 << 20 }
+	machine.servers = func() []string { return []string{"4534"} }
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), machine)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	base := DefaultOptions()
 	base.Planner, base.LLMURL, base.LLMServer, base.LLMModel = "local", "", "true", os.Args[0]

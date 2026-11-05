@@ -220,6 +220,7 @@ func (s *FrameFairy) InstallSpeechModel(name string) Job {
 	// folder, and the interface can ask twice by being opened twice.
 	return s.jobs.addOnce("", "model", model.Title,
 		func(ctx context.Context, p *engine.Project) (string, error) {
+			defer s.modelsMade()
 			return "", installSpeech(p.Engine().Machine, ctx, p.Log(), model, engine.ModelsDir())
 		})
 }
@@ -254,6 +255,7 @@ func (s *FrameFairy) InstallLanguageModel(name string) Job {
 	// One at a time, however often it is asked for.
 	return s.jobs.addOnce("", "llm", model.Title,
 		func(ctx context.Context, p *engine.Project) (string, error) {
+			defer s.modelsMade()
 			if err := installLanguage(p.Engine().Machine, ctx, p.Log(), model, engine.ModelsDir()); err != nil {
 				return "", err
 			}
@@ -477,7 +479,7 @@ func (s *FrameFairy) RemoveLanguageModel(name string) error {
 	// The model kept loaded maps its file, which Windows would then not
 	// let go of. It is given up first, and the settings changed below
 	// have the model that is left kept again.
-	engine.KeepNone()
+	s.store.machine.KeepNone()
 	if err := engine.RemoveLanguageModel(model, engine.ModelsDir()); err != nil {
 		s.keeping.ask()
 		return err

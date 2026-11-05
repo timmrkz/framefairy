@@ -702,6 +702,10 @@ export class FrameQueue {
   // it, and the one that has it, each by its ticket and rank, see dressed.
   private dressing = "";
   private dressedKey = "";
+  // The ticket whose frame is decoded or on its way and waits for what
+  // lies over it, see dress, and -1 when none waits. A frame passing is
+  // not put up meanwhile, see passing.
+  private dressFor = -1;
   private scratch: Float32Array[] = [];
 
   // path is the episode's, and movie what the engine says of it, see
@@ -1479,8 +1483,17 @@ export class FrameQueue {
   // frame on screen, and once it is up, a frame passing has to be nearer
   // still. It says nothing of the ask it came for, whose own frame still
   // comes and replaces it, so a key frame never stays once the hand rests.
+  //
+  // Nor while the frame of the newest gesture waits for what lies over it.
+  // A clip card clicked puts up the clip's first frame with its captions,
+  // in one change, and a frame of an older place came in between: a clip
+  // made with Mark In was sought to the mark and then to its first
+  // sentence, the mark's frame came while the clip's waited for its
+  // captions, and it went up first, the picture of another moment under
+  // the clip's captions, then the clip's own frame.
   private passing(rank: number, frame: Picture, seq: number, key = false) {
     if (this.closed || (this.state !== "paused" && this.state !== "cued") || this.putFor === this.ticket) return;
+    if (this.dressFor === this.ticket) return;
     if (seq <= this.shownAsked) return;
     if ((key || this.shownKey) && this.shown && !this.nearer(rank, this.shown.rank)) return;
     if (!key) this.shownAsked = seq;
@@ -1571,10 +1584,12 @@ export class FrameQueue {
     const ticket = this.ticket;
     const asked = performance.now();
     this.stats.waitedForDress++;
+    this.dressFor = ticket;
     let stop = () => {};
     const late = new Promise<"late">((done) => (stop = this.dressWait(() => done("late"))));
     return Promise.race([came.then(() => "came" as const), late]).then((how) => {
       stop();
+      if (this.dressFor === ticket) this.dressFor = -1;
       const wanted = ticket === this.ticket && !this.closed;
       if (how === "late" && wanted) {
         this.stats.bare++;

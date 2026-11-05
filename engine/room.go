@@ -74,9 +74,13 @@ func LocalContext(model string) int {
 	return unknownContext
 }
 
-// machineMemory is how much memory this machine has. It is a variable so
-// a test can be any machine.
-var machineMemory = MachineMemory
+// machineMemory is how much memory this machine has, see Machine.memory.
+func (m *Machine) machineMemory() int64 {
+	if m.memory != nil {
+		return m.memory()
+	}
+	return MachineMemory()
+}
 
 // MemoryContext is the largest context a search with this model can have
 // on a machine with this much memory, by the rule the app offers models
@@ -116,13 +120,13 @@ func largestContext(fits func(int) bool) int {
 // this machine, and what sets it: "context" for what the model holds,
 // "memory" for what the machine does. A model the engine does not know the
 // shape of is held by its context alone, which for such a model is small.
-func localHeld(model string) (int, string) {
+func (mc *Machine) localHeld(model string) (int, string) {
 	held := LocalContext(model)
 	m, known := LanguageModelByName(filepath.Base(model))
 	if !known {
 		return held, "context"
 	}
-	if fits := MemoryContext(m, machineMemory()); fits < held {
+	if fits := MemoryContext(m, mc.machineMemory()); fits < held {
 		return fits, "memory"
 	}
 	return held, "context"
@@ -134,8 +138,8 @@ func localHeld(model string) (int, string) {
 // both, so this never cuts a prompt short. It keeps a model from being
 // started with a context it was not made for, and the rounding up in
 // contextFor from asking the machine for memory the room never checked.
-func localContextFor(model string, promptChars, maxTokens int) int {
-	held, _ := localHeld(model)
+func (m *Machine) localContextFor(model string, promptChars, maxTokens int) int {
+	held, _ := m.localHeld(model)
 	// Never nothing: llama-server takes a context of 0 to mean the whole
 	// of what the model holds, which is the very memory this keeps it
 	// from asking for. A model that has no room at all is refused before
@@ -146,7 +150,7 @@ func localContextFor(model string, promptChars, maxTokens int) int {
 // SearchRoom is the room a search made with these options has. It is what
 // the app asks before a window is drawn, and the same sum BuildPlan checks
 // a window against before anything is sent.
-func SearchRoom(fsys afero.Fs, opts Options, logDir string) Room {
+func (m *Machine) SearchRoom(opts Options, logDir string) Room {
 	plan := PlanOptions{Count: opts.Count, MinLen: opts.Min, MaxLen: opts.Max,
 		Context: opts.Context, Model: opts.Model, MaxTokens: opts.MaxTokens,
 		Budget: opts.Budget, LogDir: logDir}
@@ -157,12 +161,12 @@ func SearchRoom(fsys afero.Fs, opts Options, logDir string) Room {
 		}
 		plan.Local = &LocalModel{Model: model, URL: opts.LLMURL}
 	}
-	return planRoom(fsys, plan)
+	return m.planRoom(plan)
 }
 
 // planRoom works the room out. Whatever the request sends besides the
 // transcript, the instructions and the ask, comes off the top.
-func planRoom(fsys afero.Fs, opts PlanOptions) Room {
+func (m *Machine) planRoom(opts PlanOptions) Room {
 	recipe := opts.recipe()
 	around := runes.Len(recipe.System) + runes.Len(recipe.Request(nil, nil, opts))
 	if opts.Local != nil {
@@ -170,7 +174,7 @@ func planRoom(fsys afero.Fs, opts PlanOptions) Room {
 		// memory they gave it, which the engine cannot know.
 		held, by := contextCeiling, "context"
 		if opts.Local.URL == "" || opts.Local.Model != "" {
-			held, by = localHeld(opts.Local.Model)
+			held, by = m.localHeld(opts.Local.Model)
 		}
 		tokens := max(held-localAnswerRoom(opts.MaxTokens), 0)
 		return Room{Chars: charsFor(tokens, localCharsPerToken, around), Tokens: tokens, By: by}
@@ -182,7 +186,7 @@ func planRoom(fsys afero.Fs, opts PlanOptions) Room {
 	facts := FactsFor(opts.Model)
 	answer := max(min(opts.MaxTokens*2, facts.MaxOutput), opts.MaxTokens)
 	room := Room{Tokens: max(facts.Context-answer, 0), By: "context"}
-	perToken, output := apiRate(fsys, opts.LogDir)
+	perToken, output := apiRate(m.Files, opts.LogDir)
 	if facts.Priced {
 		// The same sum BuildPlan uses for what a search is likely to cost:
 		// the answer it usually writes, and whatever is left of the budget

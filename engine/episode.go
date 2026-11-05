@@ -67,9 +67,13 @@ type PlanSummary struct {
 	By       string    `json:"by,omitempty"`
 	Modified time.Time `json:"modified"`
 	// plan and clips are the plan as it was read for the summary, so what
-	// asks where its clips' shorts are does not read it a second time.
+	// asks where its clips' shorts are does not read it a second time, and
+	// data the bytes they were parsed from, for what reads the plan in its
+	// own order, a gesture, and the undo's snapshot. All are shared and
+	// only read.
 	plan  Plan
 	clips []Clip
+	data  []byte
 }
 
 // Over is the part of the episode the clip set was made over, see
@@ -242,12 +246,16 @@ func summaryOf(fsys afero.Fs, m string) (PlanSummary, error) {
 	if !info.Mode().IsRegular() {
 		return PlanSummary{}, fmt.Errorf("%s is not a file", filepath.Base(m))
 	}
-	plan, clips, err := LoadClips(fsys, m)
+	data, err := afero.ReadFile(fsys, m)
+	if err != nil {
+		return PlanSummary{}, err
+	}
+	plan, clips, err := parseClips(data)
 	if err != nil {
 		return PlanSummary{}, err
 	}
 	s := PlanSummary{Path: m, Name: filepath.Base(m), Clips: len(clips),
-		Modified: info.ModTime(), plan: plan, clips: clips}
+		Modified: info.ModTime(), plan: plan, clips: clips, data: data}
 	made := plan.PlannedWith()
 	if v, ok := num.AsFloat(made[keyFrom]); ok {
 		s.From = v
@@ -631,6 +639,33 @@ func shortOf(plan Plan, c Clip) string {
 	return short
 }
 
+// Shorts is the path of every short the plans say was rendered of the
+// episode, whether it is still there or not, each once, sorted, so the
+// app can watch them: a short deleted or moved in Finder is then gone
+// from its clip at once, see shortOf. Each is the path on the disk, by
+// where its folder leads, the way shortOf names it. The shorts are
+// watched and not their folders, because a folder can be any folder,
+// the Desktop with a thousand files, and every file in a folder watched
+// costs the Mac a file descriptor, and every file ffmpeg writes there
+// would be heard while it renders.
+func (ep *Episode) Shorts() []string {
+	var out []string
+	for _, plan := range ep.Plans() {
+		for _, c := range plan.clips {
+			rec, ok := recordOf(plan.plan, c)
+			if !ok {
+				continue
+			}
+			short, err := fileio.SafeChild(rec.folder, rec.name)
+			if err == nil && !slices.Contains(out, short) {
+				out = append(out, short)
+			}
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
 // renderedOf says whether a clip was rendered. It is the plan's record
 // alone, see recordShort, and not the file: a short is uploaded and then
 // removed from its folder, or written over by hand, and the clip was
@@ -696,11 +731,14 @@ func ownName(c Clip, name string) bool {
 // short in the folder the settings name for shorts belongs to its episode
 // as much as one in the work folder does, and nothing else in that folder
 // does, not even a file of the same name another episode wrote.
-func IsShort(fsys afero.Fs, source, path string) bool {
+func (ep *Episode) IsShort(path string) bool {
+	if ep.Linked() != "" {
+		return false
+	}
 	// A short is what ffmpeg wrote, so it is on the disk and its path is
 	// resolved there, whatever fsys the plans are read from, see files.go.
 	real := fileio.ResolvePath(path)
-	for _, plan := range PlanSummaries(fsys, LogsDir(source)) {
+	for _, plan := range ep.Plans() {
 		for _, c := range plan.clips {
 			if short := shortOf(plan.plan, c); short != "" && short == real {
 				return true
@@ -861,18 +899,18 @@ func (v *CaptionsView) Drawing() *CaptionDrawing { return v.drawing }
 // own clock, in the lines and the look the render uses. It is what the app
 // draws over the picture, made by ClipCaptions like the render's, so that
 // nothing about captions is decided twice.
-func ClipCaptionsView(fsys afero.Fs, planPath, clipID string, t *Transcript, look *Look) (*CaptionsView, error) {
-	plan, clip, err := planClip(fsys, planPath, clipID)
+func ClipCaptionsView(s PlanSummary, clipID string, t *Transcript, look *Look) (*CaptionsView, error) {
+	clip, err := s.clip(clipID)
 	if err != nil {
 		return nil, err
 	}
-	return captionsView(plan, clip, t, look), nil
+	return captionsView(s.plan, clip, t, look), nil
 }
 
 // ClipShareTime is the moment of the episode a share of one clip shows,
 // see ShareTime.
-func ClipShareTime(fsys afero.Fs, planPath, clipID string, share float64) (float64, error) {
-	_, clip, err := planClip(fsys, planPath, clipID)
+func ClipShareTime(s PlanSummary, clipID string, share float64) (float64, error) {
+	clip, err := s.clip(clipID)
 	if err != nil {
 		return 0, err
 	}
@@ -889,44 +927,57 @@ type ShapedView struct {
 
 // ShapeClipView works out what a gesture makes of a clip and its captions,
 // see ShapeClip.
-func ShapeClipView(fsys afero.Fs, planPath, clipID string, g Gesture, t *Transcript, keepPause float64,
+func ShapeClipView(s PlanSummary, clipID string, g Gesture, t *Transcript, keepPause float64,
 	look *Look) (*ShapedView, error) {
-	shaped, err := ShapeClip(fsys, planPath, clipID, g, t, keepPause)
+	shaped, err := ShapeClip(s, clipID, g, t, keepPause)
 	if err != nil {
 		return nil, err
 	}
-	plan, _, err := planClip(fsys, planPath, clipID)
-	if err != nil {
-		return nil, err
-	}
-	return &ShapedView{Shaped: shaped, Captions: captionsView(plan, shaped.Clip, t, look)}, nil
+	return &ShapedView{Shaped: shaped, Captions: captionsView(s.plan, shaped.Clip, t, look)}, nil
 }
 
 // ShapeCaptionTime works out the captions of a clip with the edge of one
 // where the hand has it, the words it crosses taken out or put back, and
 // writes nothing. It is what SetCaptionTime saves when the hand lets go,
 // see moveCaptionEdge.
-func ShapeCaptionTime(fsys afero.Fs, planPath, clipID string, word float64, edge string, at float64,
+func ShapeCaptionTime(s PlanSummary, clipID string, word float64, edge string, at float64,
 	toWords bool, t *Transcript, look *Look) (*CaptionsView, error) {
-	moved, err := moveCaptionEdge(fsys, planPath, clipID, word, edge, at, toWords, t, look)
+	clip, err := s.clip(clipID)
+	if err != nil {
+		return nil, err
+	}
+	moved, err := moveCaptionEdge(s.plan, clip, word, edge, at, toWords, t, look)
 	if err != nil {
 		return nil, err
 	}
 	return captionsView(moved.plan, moved.clip, t, look), nil
 }
 
-// planClip finds one clip of a plan.
+// planClip finds one clip of a plan, read from its file, for an edit,
+// which reads the plan as it is under editPlan's lock. A view takes the
+// plan its video's Episode holds, see PlanSummary.clip.
 func planClip(fsys afero.Fs, planPath, clipID string) (Plan, Clip, error) {
 	plan, clips, err := LoadClips(fsys, planPath)
 	if err != nil {
 		return Plan{}, Clip{}, err
 	}
+	clip, err := findIn(clips, clipID, planPath)
+	return plan, clip, err
+}
+
+// clip finds one clip of the summary's plan, by its id or its file name.
+func (s PlanSummary) clip(clipID string) (Clip, error) {
+	return findIn(s.clips, clipID, s.Path)
+}
+
+// findIn finds the clip of clips with the id or the file name clipID.
+func findIn(clips []Clip, clipID, planPath string) (Clip, error) {
 	for _, c := range clips {
 		if c.ID == clipID || c.Basename() == clipID {
-			return plan, c, nil
+			return c, nil
 		}
 	}
-	return Plan{}, Clip{}, fmt.Errorf("no clip %s in %s", runes.Scrub(clipID, 60), filepath.Base(planPath))
+	return Clip{}, fmt.Errorf("no clip %s in %s", runes.Scrub(clipID, 60), filepath.Base(planPath))
 }
 
 // Look is how the captions of a clip are made: the caption style the
@@ -974,7 +1025,7 @@ func ClipDrawing(style map[string]any, clip Clip, t *Transcript, source SourceIn
 // pieces the plan builder says it keeps and the words said in them, laid
 // out the way a written clip's are, in the style of the clip set it goes
 // into. It is nil until the builder has them.
-func ArrivingCaptionsView(fsys afero.Fs, planPath string, u runlog.Underway, t *Transcript,
+func ArrivingCaptionsView(s PlanSummary, u runlog.Underway, t *Transcript,
 	look *Look) *CaptionsView {
 	if len(u.Pieces) == 0 {
 		return nil
@@ -986,8 +1037,7 @@ func ArrivingCaptionsView(fsys afero.Fs, planPath string, u runlog.Underway, t *
 	if len(Said(clip, t.Words)) == 0 {
 		return nil
 	}
-	plan, _, _ := LoadClips(fsys, planPath)
-	return captionsView(plan, clip, t, look)
+	return captionsView(s.plan, clip, t, look)
 }
 
 func captionsView(plan Plan, clip Clip, t *Transcript, look *Look) *CaptionsView {

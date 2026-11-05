@@ -48,7 +48,7 @@ func cueWords(c CaptionView) string {
 func TestRemovingACaptionRemovesItsWordsAndNothingElse(t *testing.T) {
 	fsys, path := captionPlanPath(t)
 	tr := fromStored(captionHeard(), nil, 0, 0, nil)
-	before, err := ClipCaptionsView(fsys, path, "01", tr, nil)
+	before, err := ClipCaptionsView(planAt(t, fsys, path), "01", tr, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ func TestRemovingACaptionRemovesItsWordsAndNothingElse(t *testing.T) {
 	if err := RemoveCaption(fsys, path, "01", gone.First, tr, nil); err != nil {
 		t.Fatal(err)
 	}
-	after, err := ClipCaptionsView(fsys, path, "01", tr, nil)
+	after, err := ClipCaptionsView(planAt(t, fsys, path), "01", tr, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func TestRemovingACaptionRemovesItsWordsAndNothingElse(t *testing.T) {
 	if err := SetWordText(fsys, path, "01", *first.Said, "Hier", tr); err != nil {
 		t.Fatal(err)
 	}
-	again, _ := ClipCaptionsView(fsys, path, "01", tr, nil)
+	again, _ := ClipCaptionsView(planAt(t, fsys, path), "01", tr, nil)
 	if !strings.HasPrefix(cueWords(again.Captions[0]), "Hier") {
 		t.Errorf("the word put back reads %q", cueWords(again.Captions[0]))
 	}
@@ -110,7 +110,7 @@ func TestRemovingAnyCaptionLeavesTheOthersAsTheyWere(t *testing.T) {
 	}
 	tr := fromStored(heard, nil, 0, 0, nil)
 	firstFS, firstPath := captionPlanPath(t)
-	before, err := ClipCaptionsView(firstFS, firstPath, "01", tr, nil)
+	before, err := ClipCaptionsView(planAt(t, firstFS, firstPath), "01", tr, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func TestRemovingAnyCaptionLeavesTheOthersAsTheyWere(t *testing.T) {
 		if err := RemoveCaption(fsys, path, "01", before.Captions[k].First, tr, nil); err != nil {
 			t.Fatal(err)
 		}
-		after, err := ClipCaptionsView(fsys, path, "01", tr, nil)
+		after, err := ClipCaptionsView(planAt(t, fsys, path), "01", tr, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
