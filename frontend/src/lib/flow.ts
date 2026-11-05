@@ -303,10 +303,20 @@ export function insideClip(pieces: Piece[], at: number, frame: number): boolean 
 // render gives a moment, frameHair in engine/ffmpeg.go.
 export const FRAME_HAIR = 0.001;
 
+// How far before a frame's start a moment may lie and still be in that
+// frame: a hair, and half a microsecond more, because a moment is counted
+// to the microsecond, the way the engine counts it, see frameHolding in
+// engine/cropmarks.go. Without the half microsecond, a moment exactly a
+// hair before a frame's start fell on either side by how the arithmetic
+// rounded it: 9.199 s and its hair came to 45.99999999999999 frames of
+// 0.2 s, frame 45, while the same moment in a file's ticks came to frame
+// 46, so a pause there showed a frame the playhead was not on, issue #704.
+export const FRAME_REACH = FRAME_HAIR + 0.0000005;
+
 // Which frame of the episode holds a moment, the frame the video preview
 // draws for it, counted from the picture's first frame, start seconds into
 // the file. A moment up to FRAME_HAIR before a frame's start is in that
-// frame. Every edge of a clip is kept on the start of the frame the render
+// frame, see FRAME_REACH. Every edge of a clip is kept on the start of the frame the render
 // cuts on, see PieceOnFrames in engine/render.go, and at 29.97 frames a
 // second that start, kept, lies just before the frame for 1400 of every
 // 3000 frames, so this is the frame the short starts on for every edge.
@@ -319,7 +329,7 @@ export const FRAME_HAIR = 0.001;
 // from the frame the render takes, see VideoStart in engine/ffmpeg.go.
 // Frame is one frame in seconds.
 export function frameAt(t: number, frame: number, start = 0): number {
-  return Math.floor((Math.max(t - start, 0) + FRAME_HAIR) / frame);
+  return Math.floor((Math.max(t - start, 0) + FRAME_REACH) / frame);
 }
 
 // The middle of frame k, counted the same way.

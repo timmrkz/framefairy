@@ -51,13 +51,18 @@ function overlaysFollow(overlays, state) {
 // the frame on screen is the one that holds it, or where a play stopped on
 // the clip's end, the frame that holds the moment a frame before it, the
 // last the short shows, see frameAt in lib/flow.ts. Read before and after
-// the app has settled, so whatever the pause set going has ended.
+// the app has settled, so whatever the pause set going has ended. A moment
+// a hair before a frame's start is in that frame, counted to the
+// microsecond, FRAME_REACH in lib/flow.ts: a pause a millisecond before a
+// frame showed that frame, and the walk, counting without the half
+// microsecond, wanted the one before, issue #704.
+const REACH = 0.001 + 0.0000005;
 async function staysPaused(what) {
   const a = await at();
   await settle(page);
   const b = await at();
-  const holds = Math.floor((b.at + 0.001) / frame) * frame;
-  const endsOn = Math.floor((b.at - frame + 0.001) / frame) * frame;
+  const holds = Math.floor((b.at + REACH) / frame) * frame;
+  const endsOn = Math.floor((b.at - frame + REACH) / frame) * frame;
   const pictured = Math.abs(b.frame - holds) < 1e-6 || Math.abs(b.frame - endsOn) < 1e-6;
   if (!a.paused || !b.paused || Math.abs(a.at - b.at) > 1e-3 || !pictured) {
     watch.broke(
