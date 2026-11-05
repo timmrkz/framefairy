@@ -18,7 +18,7 @@ func TestThePlacedWindowFitsTheRoomTheRangePickerReads(t *testing.T) {
 	t.Parallel()
 	svc, source, duration := anUnevenVideo(t)
 
-	reach := svc.roomAndLines(svc.project(source)).Longest(duration)
+	reach := svc.store.machine.Episode(source).Room(svc.store.Settings().options()).Longest(duration)
 	if reach >= engine.SuggestedWindow(duration) {
 		t.Fatalf("one search reads %v s, no less than a window, so this proves nothing", reach)
 	}
@@ -74,7 +74,7 @@ func TestTheStateCarriesTheWindowFittedToWhatASearchReads(t *testing.T) {
 	if w == nil {
 		t.Fatal("the state carries no window")
 	}
-	reach := svc.roomAndLines(svc.project(source)).Longest(duration)
+	reach := svc.store.machine.Episode(source).Room(svc.store.Settings().options()).Longest(duration)
 	if math.Abs(w.Most-reach) > 0.01 || w.Most >= duration {
 		t.Errorf("the window may be %v s long, not the %v s one search reads", w.Most, reach)
 	}

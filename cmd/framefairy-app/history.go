@@ -77,8 +77,9 @@ func (s *FrameFairy) historyOf(path string) *history {
 
 func (s *FrameFairy) forget(path string) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	delete(s.histories, path)
+	s.mu.Unlock()
+	s.store.machine.Forget(path)
 }
 
 // edit runs one edit of an episode and remembers what it changed. An edit
@@ -98,7 +99,7 @@ func (s *FrameFairy) editMoving(path string, playhead *[2]float64, fn func() err
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	held := s.clock()
-	logs := s.project(path).LogsDir()
+	logs := engine.LogsDir(path)
 	before := engine.TakeSnapshot(s.store.files, s.store.records, logs)
 	read := s.clock()
 	heightWas := s.store.Settings().CaptionY

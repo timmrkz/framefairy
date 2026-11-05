@@ -85,7 +85,7 @@ func TestTranscriptionResumes(t *testing.T) {
 	if got, done := Coverage(disk, source, base.ASRModel); done || got != cut {
 		t.Fatalf("partial coverage %v %v", got, done)
 	}
-	if st := Status(e.Machine, source, base.ASRModel, nil); st.Transcribed || st.Covered != cut {
+	if st := e.Machine.Episode(source).Status(base.ASRModel, nil); st.Transcribed || st.Covered != cut {
 		t.Errorf("status of a partial transcript %+v", st)
 	}
 
@@ -166,7 +166,7 @@ func TestWhatWasHeardIsReadAgainWhenTheTranscriptIsWritten(t *testing.T) {
 	words := []timed.Cue{{Start: 0.5, End: 1.2, Text: "Hallo"}}
 	fsys, source, path := storedTranscript(t, words, make([]float32, 300), 3, true)
 	m := NewMachine(fsys)
-	if st := Status(m, source, "/models/modell", nil); st.Covered != 3 || st.Transcribed {
+	if st := m.Episode(source).Status("/models/modell", nil); st.Covered != 3 || st.Transcribed {
 		t.Fatalf("heard to %v, done %v, before", st.Covered, st.Transcribed)
 	}
 	stamp, err := stampOf(fsys, source)
@@ -179,13 +179,13 @@ func TestWhatWasHeardIsReadAgainWhenTheTranscriptIsWritten(t *testing.T) {
 	if err := writeTranscript(fsys, path, file, make([]float32, 1300)); err != nil {
 		t.Fatal(err)
 	}
-	st := Status(m, source, "/models/modell", nil)
+	st := m.Episode(source).Status("/models/modell", nil)
 	if st.Covered != 13 || !st.Transcribed || st.Said == nil || st.Said[1] < 5 {
 		t.Errorf("heard to %v, done %v, said %v, once written again", st.Covered, st.Transcribed, st.Said)
 	}
 	// What one caller does with it is not what the next one reads.
 	st.Heard[0][1] = 0
-	if again := Status(m, source, "/models/modell", nil); again.Heard[0][1] != 13 {
+	if again := m.Episode(source).Status("/models/modell", nil); again.Heard[0][1] != 13 {
 		t.Errorf("a status changed by its caller changed what is kept: heard to %v", again.Heard[0][1])
 	}
 }
@@ -210,7 +210,7 @@ func TestAnOlderTranscriptIsStillRead(t *testing.T) {
 		if _, _, _, ok := readTranscriptFile(fsys, path, stamp, "modell"); ok != read {
 			t.Errorf("version %d read %v, want %v", version, ok, read)
 		}
-		if st := Status(m, source, "modell", nil); st.TranscriptStale == read {
+		if st := m.Episode(source).Status("modell", nil); st.TranscriptStale == read {
 			t.Errorf("version %d stale %v", version, st.TranscriptStale)
 		}
 	}
@@ -477,7 +477,7 @@ func TestATranscriptionSaysHowFarItHasComeWhileItRuns(t *testing.T) {
 	e.checkpointEvery = time.Nanosecond
 	e.OpenRecognizer = func(string) (Recognizer, error) {
 		return watchingRecognizer{fakeRecognizer{&calls}, func() {
-			st := Status(e.Machine, source, model, nil)
+			st := e.Machine.Episode(source).Status(model, nil)
 			if st.Covered > 0 && !st.Transcribed {
 				seen = append(seen, st.Covered)
 			}
@@ -496,7 +496,7 @@ func TestATranscriptionSaysHowFarItHasComeWhileItRuns(t *testing.T) {
 	if seen[len(seen)-1] <= seen[0] {
 		t.Errorf("coverage did not grow while it ran: %v", seen)
 	}
-	if st := Status(e.Machine, source, model, nil); !st.Transcribed || st.Covered < 69.9 {
+	if st := e.Machine.Episode(source).Status(model, nil); !st.Transcribed || st.Covered < 69.9 {
 		t.Errorf("status when it is done %+v", st)
 	}
 }
@@ -570,7 +570,7 @@ func TestSaveHeardDecidesWhenATranscriptionSaves(t *testing.T) {
 	e.checkpointEvery = time.Nanosecond
 	e.OpenRecognizer = func(string) (Recognizer, error) {
 		return savingRecognizer{watchingRecognizer{fakeRecognizer{&calls}, func() {
-			seen = append(seen, Status(e.Machine, source, model, nil).Covered)
+			seen = append(seen, e.Machine.Episode(source).Status(model, nil).Covered)
 		}}, func() bool { return asked.Add(1) == 2 }}, nil
 	}
 	base := DefaultOptions()
@@ -953,7 +953,7 @@ func TestTheTranscriptIsReadWhileItIsWritten(t *testing.T) {
 				default:
 				}
 				covered, done := Coverage(disk, source, base.ASRModel)
-				st := Status(e.Machine, source, base.ASRModel, nil)
+				st := e.Machine.Episode(source).Status(base.ASRModel, nil)
 				mu.Lock()
 				if covered < last-0.001 {
 					problems = append(problems, fmt.Sprintf("coverage went back from %v to %v", last, covered))

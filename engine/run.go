@@ -110,7 +110,7 @@ type Options struct {
 	Pass int
 	// Next searches the window the app would place on the episode now,
 	// where the fewest searches have been, as the next pass over it, see
-	// Project.PlaceWindow. --from and --to name a window by hand instead.
+	// Episode.PlaceWindow. --from and --to name a window by hand instead.
 	Next bool
 	// Taken are the parts of the episode clips were proposed for already.
 	// The model is told to leave them, see PlanOptions.Taken.
@@ -317,7 +317,7 @@ func askedWith(opts Options) PlanOptions {
 // nextSearch is the window --next asks for and the options its search
 // runs with: the window the app would place on the episode now, from what
 // was searched of it and what one search can read of what is heard, see
-// Project.PlaceWindow, and the next pass over it, told what the passes
+// Episode.PlaceWindow, and the next pass over it, told what the passes
 // before it proposed, the way a search in the app is.
 func (e *Engine) nextSearch(ctx context.Context, opts Options) (*timed.Window, Options, error) {
 	source, err := e.Probe(ctx, opts.Source)
@@ -328,11 +328,9 @@ func (e *Engine) nextSearch(ctx context.Context, opts Options) (*timed.Window, O
 		return nil, opts, fmt.Errorf("%s reports no duration, so there is no audio to work with", opts.Source)
 	}
 	p := NewProject(e, opts.Source, opts)
-	heard, err := p.Transcript()
-	if err != nil {
-		heard = nil
-	}
-	placed := p.PlaceWindow(p.RoomAndLines(heard), source.Duration)
+	// Asked of the video's Episode, the way the app asks it.
+	ep := e.Episode(opts.Source)
+	placed := ep.PlaceWindow(p.Base, ep.Room(p.Base), source.Duration)
 	req := PlanRequest{From: placed.Start, To: placed.End}
 	if req.Pass, err = p.nextPass(ctx, req); err != nil {
 		return nil, opts, err

@@ -232,7 +232,7 @@
 
   const duration = $derived(source?.duration ?? 0);
   // What the window and a search of it may be, which the Go side works
-  // out and sends with it, see engine.Project.Limits: the window no longer
+  // out and sends with it, see engine.Options.Limits: the window no longer
   // than the model reads in one request anywhere on the video and no
   // shorter than the clips typed need at their shortest, and the clip
   // count and the shortest length held to that longest window, so

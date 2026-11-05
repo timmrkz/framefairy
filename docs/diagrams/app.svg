@@ -70,7 +70,7 @@
 <rect class="box" x="64" y="366" width="672" height="134" rx="8"/>
 <text class="n" x="76" y="388">the engine</text>
 <text class="p" x="76" y="406">engine/</text>
-<text class="q" x="76" y="422">reached through engine.Project, and engine.Machine with each video&#x27;s Episode</text>
+<text class="q" x="76" y="422">jobs through engine.Project, and what a video holds through engine.Machine and its Episode</text>
 <rect class="chip" x="76" y="432" width="43" height="22" rx="6"/>
 <text class="c" x="84" y="447">hear</text>
 <rect class="chip" x="125" y="432" width="56" height="22" rx="6"/>

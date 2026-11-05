@@ -126,12 +126,13 @@ type EpisodeStatus struct {
 	Label *Label `json:"label,omitempty"`
 }
 
-// Status reads an episode's state from the files of m. silenceDB is the
+// Status is the episode's state as its files say it now. silenceDB is the
 // floor the words are placed on the sound with, Options.SilenceDB, nil for
-// the one worked out from the episode. What the transcript has heard is
-// what the episode holds, see Episode.heardSoFar.
-func Status(m *Machine, source, asrModelDir string, silenceDB *float64) EpisodeStatus {
-	fsys := m.Files
+// the one worked out from the episode. What the transcript has heard and
+// the plans are what the episode holds, see Episode.heardSoFar and
+// Episode.Plans.
+func (ep *Episode) Status(asrModelDir string, silenceDB *float64) EpisodeStatus {
+	fsys, source := ep.m.Files, ep.source
 	st := EpisodeStatus{Source: source, Name: filepath.Base(source)}
 	info, err := fsys.Stat(source)
 	if err != nil {
@@ -143,7 +144,7 @@ func Status(m *Machine, source, asrModelDir string, silenceDB *float64) EpisodeS
 	logs := filepath.Join(work, "logs")
 
 	whole := filepath.Join(logs, TranscriptName(nil))
-	if t, err := m.Episode(source).heardSoFar(asrModelDir, silenceDB); err == nil {
+	if t, err := ep.heardSoFar(asrModelDir, silenceDB); err == nil {
 		// Copies, so nothing the status is handed on to changes what is held.
 		st.Transcribed, st.Heard = t.done, slices.Clone(t.heard)
 		if said := t.said; said != nil {
@@ -160,7 +161,7 @@ func Status(m *Machine, source, asrModelDir string, silenceDB *float64) EpisodeS
 	for _, p := range st.MeasuredParts {
 		st.Measured += p[1] - p[0]
 	}
-	st.Plans = PlanSummaries(fsys, logs)
+	st.Plans = ep.Plans()
 	for _, plan := range st.Plans {
 		for _, c := range plan.clips {
 			if renderedOf(plan.plan, c) {
@@ -170,7 +171,7 @@ func Status(m *Machine, source, asrModelDir string, silenceDB *float64) EpisodeS
 	}
 	st.Previews = countFiles(filepath.Join(work, "preview"), ".mp4")
 	st.Work = fileio.Exists(fsys, work)
-	st.EverSearched = EverSearched(fsys, source)
+	st.EverSearched = ep.everSearched(st.Plans)
 	st.Label = ReadLabel(fsys, source)
 	return st
 }
@@ -195,8 +196,12 @@ func saidOf(lines []Line) *[2]float64 {
 // removed again, because the timings stay, and the app searches by itself
 // only for an episode nobody has searched. Clips made by hand search
 // nothing. Deleting the work folder makes the episode new.
-func EverSearched(fsys afero.Fs, source string) bool {
-	for _, plan := range PlanSummaries(fsys, filepath.Join(WorkDir(source), "logs")) {
+func (ep *Episode) EverSearched() bool { return ep.everSearched(ep.Plans()) }
+
+// everSearched is EverSearched with the episode's plans read already.
+func (ep *Episode) everSearched(plans []PlanSummary) bool {
+	fsys, source := ep.m.Files, ep.source
+	for _, plan := range plans {
 		if w := plan.Over(0); w.End > w.Start {
 			return true
 		}
@@ -287,7 +292,7 @@ func ScanFolder(m *Machine, dir, asrModelDir string) ([]EpisodeStatus, error) {
 		if !entry.Mode().IsRegular() || strings.HasPrefix(name, ".") || !IsVideo(name) {
 			continue
 		}
-		out = append(out, Status(m, filepath.Join(dir, name), asrModelDir, nil))
+		out = append(out, m.Episode(filepath.Join(dir, name)).Status(asrModelDir, nil))
 	}
 	return out, nil
 }

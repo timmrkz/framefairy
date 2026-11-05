@@ -220,7 +220,7 @@ numbers, and `done`, the clips it has finished, written as each one is.
 - It is read as untrusted, like every file on disk: a record that is not
   one is no record, and a render's plan has to be one of the episode's
   own plans.
-- Whether an episode has ever been searched is `EverSearched`: it has a
+- Whether an episode has ever been searched is `Episode.EverSearched`: it has a
   plan or a `jobs/` folder. That took the place of `looked`.
 
 The record is the truth. The app keeps a job nowhere else, and the
@@ -255,10 +255,10 @@ that `failed`, with its reason. Adding a video asks for
 its first search, of the video's window, which the Go side places then:
 the first of the windows the video is cut into, see
 `engine.SuggestedWindow`, on a round step, and no longer than the model
-can read at once, see `engine.Project.PlaceWindow`, kept by
+can read at once, see `engine.Episode.PlaceWindow`, kept by
 `videoWindow` in `cmd/framefairy-app/window.go`. Every search starts on
 the video's window, and one that found its clips moves the window on
-before it says it is done, see `engine.Project.WindowAfter`. Cancel on a search that runs marks its
+before it says it is done, see `engine.Options.WindowAfter`. Cancel on a search that runs marks its
 record stopped as it ends. A new search takes the record of one that
 stopped away. A render or a clip made by hand that stopped has only
 Continue, see row 2.169 in [GUI-PLAN.md](GUI-PLAN.md). Search on an episode waits for a search that
