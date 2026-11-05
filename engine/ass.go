@@ -608,21 +608,30 @@ func (e *Engine) measureMany(ctx context.Context, blocks []string, s Style,
 	var missing, others []int
 	var claimed []string
 	var waits []<-chan struct{}
-	for i := range blocks {
-		if !keep {
+	if !keep {
+		for i := range blocks {
 			missing = append(missing, i)
-			continue
 		}
-		box, wait := measured.claim(key(i))
-		switch {
-		case box != nil:
-			out[i] = box
-		case wait != nil:
-			others = append(others, i)
-			waits = append(waits, wait)
-		default:
-			missing = append(missing, i)
-			claimed = append(claimed, key(i))
+	} else {
+		keys := make([]string, len(blocks))
+		for i := range blocks {
+			keys[i] = key(i)
+		}
+		// All the blocks are claimed at once, so two asks for the same
+		// clip never share its blocks out between them and measure them
+		// in more frames than one ask would.
+		boxes, wait := measured.claim(keys)
+		for i := range blocks {
+			switch {
+			case boxes[i] != nil:
+				out[i] = boxes[i]
+			case wait[i] != nil:
+				others = append(others, i)
+				waits = append(waits, wait[i])
+			default:
+				missing = append(missing, i)
+				claimed = append(claimed, keys[i])
+			}
 		}
 	}
 	ok := e.measureBlocks(ctx, blocks, missing, out, s, width, size, keep)
@@ -705,23 +714,31 @@ type inkCache struct {
 	measuring map[string]chan struct{}
 }
 
-// claim is the box of key when it is known. When it is not, wait is
-// closed once the ask measuring it now lets go of it, or nil when no ask
-// is, and then key is this ask's to measure and to let go of.
-func (c *inkCache) claim(key string) (box *inkBox, wait <-chan struct{}) {
+// claim is the box of each key that is known. For one that is not, its
+// wait is closed once the ask measuring it now lets go of it, or nil when
+// no ask is, and then that key is this ask's to measure and to let go of.
+// The keys are claimed under one lock, so an ask gets every block no
+// other ask is measuring.
+func (c *inkCache) claim(keys []string) (boxes []*inkBox, wait []<-chan struct{}) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if b, ok := c.boxes[key]; ok {
-		return &b, nil
+	boxes = make([]*inkBox, len(keys))
+	wait = make([]<-chan struct{}, len(keys))
+	for i, key := range keys {
+		if b, ok := c.boxes[key]; ok {
+			boxes[i] = &b
+			continue
+		}
+		if w, ok := c.measuring[key]; ok {
+			wait[i] = w
+			continue
+		}
+		if c.measuring == nil {
+			c.measuring = map[string]chan struct{}{}
+		}
+		c.measuring[key] = make(chan struct{})
 	}
-	if w, ok := c.measuring[key]; ok {
-		return nil, w
-	}
-	if c.measuring == nil {
-		c.measuring = map[string]chan struct{}{}
-	}
-	c.measuring[key] = make(chan struct{})
-	return nil, nil
+	return boxes, wait
 }
 
 // letGo says the blocks of keys are measured, or will not be.
