@@ -2815,6 +2815,7 @@
     {to}
     shown={busy && !stopping}
     resumes={!!stopped}
+    hidden={win?.hidden ?? false}
     {marks}
     {selected}
     {hovered}

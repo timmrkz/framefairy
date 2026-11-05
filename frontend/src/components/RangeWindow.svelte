@@ -49,6 +49,7 @@
     most = Infinity,
     reachSays = "",
     resumes = false,
+    hidden = false,
     unheard = [],
     unheardLit = -1,
     unheardOn = -1,
@@ -108,6 +109,9 @@
     // A search stands stopped on the window, so the mark is where Continue
     // carries it on rather than where Search looks.
     resumes?: boolean;
+    // The window at rest is left out, as the Go side says while the whole
+    // video is transcribed, which is about all of it and not the window.
+    hidden?: boolean;
     // The parts of the video not transcribed yet, always, so where a search
     // has to transcribe first, and how much is left to Transcribe whole
     // video, is seen without opening the cards of what was said. Tim
@@ -551,7 +555,7 @@
     </div>
   {/key}
 {/if}
-{#if !shown && to > from && duration > 0}
+{#if !shown && !hidden && to > from && duration > 0}
   <!-- The window at rest, marked at its four corners and not drawn over
        the track. A bar on the top border and one on the bottom border
        join the marks, and past them only the tips of the triangles reach

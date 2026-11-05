@@ -116,6 +116,46 @@ func TestASearchHoldsItsWindowAsItIs(t *testing.T) {
 	}
 }
 
+// While the whole video is transcribed the state says the window is not
+// drawn, because that work is about all of the video, Tim, 5 November.
+// It is drawn again once the transcription was told to stop or ended,
+// and a search that holds the window is drawn as ever.
+func TestTheWindowIsHiddenWhileTheWholeVideoIsTranscribed(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name   string
+		jobs   []Job
+		hidden bool
+	}{
+		{"nothing runs", nil, false},
+		{"transcribing", []Job{{State: JobRunning, JobRecord: engine.JobRecord{Kind: engine.JobTranscribe}}}, true},
+		{"waiting its turn", []Job{{State: JobQueued, JobRecord: engine.JobRecord{Kind: engine.JobTranscribe}}}, true},
+		{"stopping", []Job{{State: JobRunning, Stopping: true, JobRecord: engine.JobRecord{Kind: engine.JobTranscribe}}}, false},
+		{"stopped", []Job{{State: JobStopped, JobRecord: engine.JobRecord{Kind: engine.JobTranscribe}}}, false},
+		{"done", []Job{{State: JobDone, JobRecord: engine.JobRecord{Kind: engine.JobTranscribe}}}, false},
+		{"a search", []Job{{State: JobRunning, JobRecord: engine.JobRecord{Kind: engine.JobSearch}}}, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			svc, source, _ := anUnevenVideo(t)
+			svc.jobs.mu.Lock()
+			for i := range c.jobs {
+				j := c.jobs[i]
+				j.ID, j.Episode = fmt.Sprintf("j%d", i), source
+				svc.jobs.jobs = append(svc.jobs.jobs, &j)
+			}
+			svc.jobs.mu.Unlock()
+			st, err := svc.State(context.Background(), source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if st.Window == nil || st.Window.Hidden != c.hidden {
+				t.Errorf("the window came as %+v, not hidden %v", st.Window, c.hidden)
+			}
+		})
+	}
+}
+
 // What is typed for a search is held to what the window can give: no
 // more clips than fit in it, clips no longer than share it, and the
 // shortest never longer than the longest, by moving the other one. A

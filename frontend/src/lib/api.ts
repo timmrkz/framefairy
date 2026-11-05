@@ -410,6 +410,9 @@ export interface WindowView extends KeptWindow {
   // How long the clips a search asks for may be, as they are set.
   shortest: number;
   longest: number;
+  // The range picker leaves the window out: the whole video is being
+  // transcribed, which is about all of it and not about the window.
+  hidden?: boolean;
 }
 
 // How many searches have read each part of an episode. Any window can be

@@ -711,7 +711,8 @@ export const steps = {
   //                    pulses, with no number in its row. Once the work
   //                    runs, the range picker frames the part it works
   //                    on, breathing with the motes, over that part's
-  //                    dots. "search stops it" clicks Search in the head
+  //                    dots, and the window is no longer marked, which
+  //                    it was before the click. "search stops it" clicks Search in the head
   //                    with the model holding its answer and a piece of
   //                    the audio held in the speech: while the whole
   //                    video's transcription still ends, its frame is
@@ -723,7 +724,8 @@ export const steps = {
   //                    heard: in the next frame the
   //                    frame is fading, standing still, the menu has
   //                    closed, and once the speech hears on and the job
-  //                    ends the dots are where they were at the click.
+  //                    ends the dots are where they were at the click
+  //                    and the window is marked again.
   //                    Opened again the menu says Transcribe video at
   //                    once. "waits for the search", while the video's
   //                    first search transcribes its window with the
@@ -871,6 +873,12 @@ export const steps = {
         walk.wrong = "with nothing running, the range picker frames a part as work in hand";
         return;
       }
+      // And the window is marked where Search looks, so that it is gone
+      // below is the transcription's doing.
+      if (!(await page.locator(".aim").count())) {
+        walk.wrong = "with nothing running, the range picker does not mark the window";
+        return;
+      }
       if (arg === "continue" && !(await page.locator(".unheard").count())) {
         walk.wrong = "the whole video stopped, and the range picker shows no dots on what is left";
         return;
@@ -965,6 +973,9 @@ export const steps = {
       if (!look.frame) walk.wrong = `while the whole video is transcribed, the range picker frames no part of it`;
       else if (!look.motes) walk.wrong = `while the whole video is transcribed, its frame on the range picker sheds no motes`;
       else if (!look.dots) walk.wrong = `while the whole video is transcribed, the part it works on shows no dots under its frame`;
+      // The work is about all of the video, so the window is left out,
+      // Tim's ask of 5 November.
+      else if (await page.locator(".aim").count()) walk.wrong = "while the whole video is transcribed, the range picker still marks the window";
       return;
     }
     const whole = async () => (await ask(page, "Library")).find((e) => e.source === source)?.transcribed;
@@ -1183,6 +1194,8 @@ export const steps = {
       const dots = await page.evaluate(() => window.dotsNow());
       if (dots !== held) {
         walk.wrong = `after Stop transcribing the dots moved, from ${held} to ${dots}`;
+      } else if (!(await page.locator(".aim").count())) {
+        walk.wrong = "after Stop transcribing, the range picker does not mark the window again";
       }
       return;
     }
