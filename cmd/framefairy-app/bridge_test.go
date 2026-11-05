@@ -662,6 +662,13 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		}
 		answer(w, nil, b.makeFresh(memory<<30))
 	})
+	// A model deleted outside the app, the way Tim removed one from the
+	// models folder in Finder: the first of the kind, "language" or
+	// "speech", that is here. It answers the model's name.
+	mux.HandleFunc("/model-gone", func(w http.ResponseWriter, r *http.Request) {
+		name, err := modelGone(r.URL.Query().Get("kind"))
+		answer(w, name, err)
+	})
 	mux.HandleFunc("/reopen", func(w http.ResponseWriter, r *http.Request) {
 		closed, err := b.reopen()
 		answer(w, closed, err)
@@ -1434,6 +1441,32 @@ func (b *bridge) makeFresh(memory int64) error {
 	return b.d.svc.store.UpdateSettings(func(s *Settings) {
 		s.Planner, s.Chosen, s.LLMModel = planner, false, ""
 	})
+}
+
+// modelGone deletes the first model of a kind that is here, "language" or
+// "speech", from the models folder, the way Finder does, and says which.
+//
+// On the real disk: the models folder is the one the app watches, in the
+// bridge's home.
+func modelGone(kind string) (string, error) {
+	dir := engine.ModelsDir()
+	switch kind {
+	case "language":
+		for _, m := range engine.LanguageModels() {
+			if m.Installed(dir) {
+				return m.Name, os.Remove(filepath.Join(dir, m.Name))
+			}
+		}
+	case "speech":
+		for _, m := range engine.SpeechModels() {
+			if m.Installed(dir) {
+				return m.Name, os.RemoveAll(filepath.Join(dir, m.Name))
+			}
+		}
+	default:
+		return "", fmt.Errorf("no kind of model is called %q", kind)
+	}
+	return "", fmt.Errorf("no %s model is here", kind)
 }
 
 // freshMachine is the bridge's machine on its first run, see /fresh: the

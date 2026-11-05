@@ -3,6 +3,7 @@ package main
 import (
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 
 	"github.com/fsnotify/fsnotify"
@@ -25,6 +26,10 @@ import (
 type watching struct {
 	w     *fsnotify.Watcher
 	heard func(changed []string)
+	// models is the folder the models are kept in, watched with the
+	// folder over it, so a model deleted or added outside the app shows
+	// at once. Empty for none.
+	models string
 	// mu keeps follow to one at a time, and watched is what the last one
 	// counted, so the count is said only when it changed.
 	mu      sync.Mutex
@@ -32,16 +37,17 @@ type watching struct {
 	done    chan struct{}
 }
 
-// newWatching starts a watch that hands what changed to heard. It
-// watches nothing until follow names the videos.
-func newWatching(heard func(changed []string)) *watching {
+// newWatching starts a watch that hands what changed to heard, with the
+// models folder models, or none when it is empty. It watches nothing
+// until follow names the videos.
+func newWatching(heard func(changed []string), models string) *watching {
 	w, err := fsnotify.NewWatcher()
 	if err != nil {
 		theLog.line(zerolog.WarnLevel, "files").Err(err).
 			Msg("the disk cannot be watched, so a change made outside the app shows once the app comes back to the front")
 		return nil
 	}
-	ws := &watching{w: w, heard: heard, done: make(chan struct{})}
+	ws := &watching{w: w, heard: heard, models: models, done: make(chan struct{})}
 	go ws.run()
 	return ws
 }
@@ -71,6 +77,10 @@ func (ws *watching) follow(files afero.Fs, videos []string, shortsOf func(video 
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
 	want := map[string]bool{}
+	if ws.models != "" {
+		want[ws.models] = true
+		want[filepath.Dir(ws.models)] = true
+	}
 	for _, v := range videos {
 		for _, dir := range watchedOf(v, shortsOf(v)) {
 			want[dir] = true
@@ -127,7 +137,7 @@ func (ws *watching) run() {
 			if !ok {
 				return
 			}
-			changed = heardOf(changed, ev)
+			changed = ws.heardOf(changed, ev)
 		case err, ok := <-ws.w.Errors:
 			if !ok {
 				return
@@ -145,7 +155,7 @@ func (ws *watching) run() {
 					more = false
 					break
 				}
-				changed = heardOf(changed, ev)
+				changed = ws.heardOf(changed, ev)
 			default:
 				more = false
 			}
@@ -158,12 +168,46 @@ func (ws *watching) run() {
 
 // heardOf adds the path of an event to changed, once. A change of a
 // file's permissions alone is left out: Spotlight and backups touch them
-// all the time, and nothing the app has depends on them.
-func heardOf(changed []string, ev fsnotify.Event) []string {
+// all the time, and nothing the app has depends on them. So is a write
+// to a file in the folder of the models or the one over it: a download
+// writes there for minutes, and whether a model is there is told by a
+// file made, deleted or renamed.
+func (ws *watching) heardOf(changed []string, ev fsnotify.Event) []string {
 	if ev.Op == fsnotify.Chmod || slices.Contains(changed, ev.Name) {
 		return changed
 	}
+	if ev.Op == fsnotify.Write && ws.overModels(ev.Name) {
+		return changed
+	}
 	return append(changed, ev.Name)
+}
+
+// overModels says whether path is the folder over the models folder or
+// anything in it, the models folder too.
+func (ws *watching) overModels(path string) bool {
+	if ws == nil || ws.models == "" {
+		return false
+	}
+	over := filepath.Dir(ws.models)
+	return path == over || strings.HasPrefix(path, over+string(filepath.Separator))
+}
+
+// modelsIn says whether a change at one of the paths can change which
+// models are here, and whether the models folder itself was made or
+// deleted, which the watch then follows.
+func (ws *watching) modelsIn(changed []string) (models, folder bool) {
+	if ws == nil || ws.models == "" {
+		return false, false
+	}
+	sep := string(filepath.Separator)
+	for _, p := range changed {
+		if p == ws.models {
+			models, folder = true, true
+		} else if strings.HasPrefix(p, ws.models+sep) {
+			models = true
+		}
+	}
+	return models, folder
 }
 
 // stop ends the watch and returns once nothing more is handed on.

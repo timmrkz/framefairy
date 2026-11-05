@@ -129,6 +129,7 @@ func (d *desk) start(st *store) {
 		svc.jobs.news = svc.told
 		// The library is on the real disk, so the walks change its
 		// folders from outside the app the way Finder does.
+		svc.setupNews = func(state SetupState) { d.bus.send("setup", state) }
 		svc.watchTheDisk()
 		svc.jobs.notice = func(n Notice) { d.bus.send("notice", n) }
 	}

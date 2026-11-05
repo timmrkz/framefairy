@@ -196,7 +196,7 @@ func diskLibrary(t *testing.T, prepare ...func(video string)) (*FrameFairy, stri
 		}
 	})
 	t.Cleanup(svc.news.stop)
-	svc.watch = newWatching(svc.reconcile)
+	svc.watch = newWatching(svc.reconcile, "")
 	if svc.watch == nil {
 		t.Fatal("the disk cannot be watched here")
 	}
@@ -365,4 +365,79 @@ func shortGoes(t *testing.T, svc *FrameFairy, video string, sent chan string, pl
 	if v, _ := svc.store.machine.Episode(video).ReadPlan(plan); !v.Clips[0].Rendered {
 		t.Error("the clip whose short was deleted no longer says it was rendered")
 	}
+}
+
+// On the real disk: the system's own watch on the models folder is what is
+// tested, the way Finder's changes reach it. It sets HOME, which the whole
+// process shares, so it runs on its own.
+//
+// A model deleted in Finder is gone from the setup and the settings at
+// once, and so is the whole models folder. Made again and a model put back
+// in it, it is there again at once.
+func TestAModelDeletedOrAddedOutsideTheAppIsSentToTheWindowAtOnce(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	models := engine.ModelsDir()
+	model := engine.LanguageModels()[0]
+	put := func() {
+		t.Helper()
+		// Moved into place whole, the way a download lands.
+		part := filepath.Join(models, model.Name+".part")
+		if err := os.WriteFile(part, []byte("GGUF a model"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Rename(part, filepath.Join(models, model.Name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.MkdirAll(models, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	put()
+
+	svc := withJobs(&FrameFairy{store: openStoreIn(afero.NewOsFs(), filepath.Join(home, "config"))})
+	sent := make(chan SetupState, 64)
+	svc.setupNews = func(state SetupState) { sent <- state }
+	svc.watchTheDisk()
+	t.Cleanup(svc.watch.stop)
+	installed := func(state SetupState) bool {
+		i := slices.IndexFunc(state.Language, func(m LanguageModelView) bool { return m.Name == model.Name })
+		return i >= 0 && state.Language[i].Installed
+	}
+	until := func(holds func(SetupState) bool) {
+		t.Helper()
+		for state := range sent {
+			if holds(state) {
+				return
+			}
+		}
+	}
+	if !installed(svc.Setup(t.Context())) {
+		t.Fatalf("%s is not installed before", model.Name)
+	}
+
+	if err := os.Remove(filepath.Join(models, model.Name)); err != nil {
+		t.Fatal(err)
+	}
+	until(func(s SetupState) bool { return !installed(s) })
+
+	put()
+	until(installed)
+
+	// The folder deleted and made again is watched again, before the
+	// reconcile that sent its news lets go.
+	if err := os.RemoveAll(models); err != nil {
+		t.Fatal(err)
+	}
+	until(func(s SetupState) bool { return !installed(s) })
+	if err := os.MkdirAll(models, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	until(func(SetupState) bool {
+		svc.reconciling.Lock()
+		defer svc.reconciling.Unlock()
+		return slices.Contains(svc.watch.w.WatchList(), models)
+	})
+	put()
+	until(installed)
 }

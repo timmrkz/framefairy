@@ -42,7 +42,9 @@
     type LogStatus,
     type LicenceLink,
     type LicenceState,
+    type SetupState,
     onLicenceLink,
+    onSetup,
   } from "../lib/api";
   import { live } from "../lib/flow";
   import ApiKey from "../components/ApiKey.svelte";
@@ -328,20 +330,25 @@
 
   async function readModels() {
     try {
-      const state = await api.setup();
-      speech = state.speech;
-      language = state.language;
-      memory = state.memory;
-      home = state.home ?? "";
-      modelsDir = state.modelsDir ?? "";
-      providers = state.providers ?? [];
-      cloud = state.cloud ?? [];
-      keys = state.keys ?? {};
-      keyHints = state.keyHints ?? {};
-      providerSaid = state.provider || "anthropic";
+      tookModels(await api.setup());
     } catch (err) {
       problem = errorText(err);
     }
+  }
+
+  // What the Go side says of the models, asked for or sent when the
+  // models folder changed outside the app.
+  function tookModels(state: SetupState) {
+    speech = state.speech;
+    language = state.language;
+    memory = state.memory;
+    home = state.home ?? "";
+    modelsDir = state.modelsDir ?? "";
+    providers = state.providers ?? [];
+    cloud = state.cloud ?? [];
+    keys = state.keys ?? {};
+    keyHints = state.keyHints ?? {};
+    providerSaid = state.provider || "anthropic";
   }
 
   async function modelsChanged() {
@@ -656,8 +663,10 @@
     load();
     nav.hold = hold;
     const noLink = onLicenceLink(takeLink);
+    const noSetup = onSetup(tookModels);
     return () => {
       noLink();
+      noSetup();
       clearTimeout(saveTimer);
       if (nav.hold === hold) nav.hold = null;
     };

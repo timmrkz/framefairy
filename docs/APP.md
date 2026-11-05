@@ -63,7 +63,12 @@ the same plain button, and none is lit over the others. The model the app
 recommends for this machine says so under the pointer. A model that
 does not fit would swap, and a model that swaps answers in
 minutes rather than seconds. A `.gguf` already in `~/.framefairy/models`
-is used as it is, whether the app fetched it or not.
+is used as it is, whether the app fetched it or not. The app watches that
+folder, and the one over it, so a model deleted in Finder or put there by
+hand shows in the setup and the settings at once: the Go side sends what
+they show of the models whole, on the `setup` event, see `tellSetup` in
+`reconcile.go`. A write inside the folder is not heard, because a download
+writes there for minutes, only a file made, deleted or renamed.
 
 **A download is work in hand, and it looks it.** The row of the model
 on its way wears the beam and the fill for how far it has come across the

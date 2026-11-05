@@ -102,6 +102,11 @@ func main() {
 	svc.jobs.news = svc.told
 	// What changes in the folders of the videos, whoever changed it, is
 	// looked at as it happens, and every video once now, see reconcile.go.
+	svc.setupNews = quietly(func(state SetupState) {
+		if app != nil {
+			app.Event.Emit("setup", state)
+		}
+	})
 	svc.watchTheDisk()
 	// A failure is said once, as it happens, see notice.go.
 	svc.jobs.notice = quietly(func(n Notice) {
@@ -392,6 +397,10 @@ type FrameFairy struct {
 	// deletion is never taken for one made outside it.
 	watch       *watching
 	reconciling sync.Mutex
+	// setupNews sends what the setup and the settings show of the
+	// models to the window when the models folder changed outside the
+	// app, see reconcile.go.
+	setupNews func(SetupState)
 	// Finding and installing a newer build of the app, see updates.go.
 	updates *updating
 	// What Cmd+Q does, see quit.go.

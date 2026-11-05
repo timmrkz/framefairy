@@ -134,3 +134,25 @@ Each layer uses only the ones under it. The watcher is in the app's Go side, bec
 - **It buys** one place where every change from outside lands, whoever made it, instead of a fix per case. The special cases `writtenBack` and the early let-go in `Opened` go.
 - **`docs/ARCHITECTURE.md` changes:** the State table names the outside writers and the `Episode`, Where does it go gets "notice a change made outside the app: `reconcile`", and invariant 5 says the disk is the truth and Go is its one reader for the interface.
 - **It would be wrong if** watching the folders takes more file descriptors than a Mac allows on Tim's folders (then FSEvents through cgo), or if a sync service ever loses an edit or makes a conflict copy in Tim's use. That is the day to take simulation 1 up again, with Automerge for the plan.
+
+## Steps 5 and 6, as built
+
+Written 5 November 2026, on main at 5acd075, before the code of step 5.
+
+### Step 6: the special cases go
+
+The app looked at the disk only when the window asked, through `Library` or `Opened`. So `Opened` let go of deleted videos itself, in case it was asked first, and `markEarlier` with its list `writtenBack` marked the folders of videos added before the mark `added.json` existed. Now `watchTheDisk`, in `reconcile.go`, starts the watch and looks at every video once, as the app starts and before the window can ask about any. `main` calls it, and so does the desk the walks run on. `Opened` asks nothing of the disk any more. Every video in a library the app has read since the mark began carries the mark, and the app keeps no compatibility with older builds, so `markEarlier` and `writtenBack` go. The mark stays: it is how a deleted folder is told from one never made.
+
+### Step 5: the models watched
+
+A model deleted in Finder, or put there by hand, showed in the setup and the settings only once they were opened again. Tim's report logs have a language model removed from `~/.framefairy/models` on 29 October. Both screens read `Setup`, which looks in the models folder each time it is asked. Five ways to have them see a change at once:
+
+1. **A hint, and the interface asks again.** The watch hears the models folder, the window is told "the models changed", and the setup and the settings call `Setup` again. Two lines in each screen. But the interface then holds a rule, when to read again, and the screens already drift in what they take from `Setup`.
+2. **The state, sent whole.** The watch hears the models folder, and Go sends `SetupState` on a `setup` event, the way a video's state goes out on `video`. The screens take what comes, through the one function each already has for the answer of `Setup`. Go decides, the interface shows, as everywhere since #606. Cost: one event, one place in Go that sends it.
+3. **The engine watches.** `engine.Machine` watches its own models folder and says when it changed. Every program that makes a machine then pays for a watch, the command line too, which runs once and has nothing to keep in step, and the engine gains fsnotify. Dropped: the 1 November decision put the watch in the app's Go side for this reason.
+4. **No watch, a look on focus.** The screens read `Setup` again when the app comes back to the front, the way the library does. A model deleted in Finder is seen once the app is clicked. But the watch is there already, and a download that fails while the settings are open, or a model put in by a script, is missed until a click. Dropped: it is the case the issue names.
+5. **The models held by stamp.** The machine keeps what it read of the models folder by the folder's stamp, like a video's plans, so `Setup` reads nothing that did not change. That is a speed the setup does not need, it is asked a few times a session, and it does not tell the window either. It needs 1 or 2 beside it. Dropped.
+
+2 and 1 both use the watch there is, and 2 keeps every rule in Go. So: 2.
+
+What is watched is the models folder and the folder over it, `~/.framefairy`, so the models folder made or deleted is heard too and the watch follows it. A download writes into the models folder for minutes, so a write to a file there is not heard, only a file or folder made, deleted or renamed, which is all `Installed` looks at. So a change is a few events, and the state is sent once for each batch the watch hands on. A speech model is a folder, and a file deleted inside it is not heard: deleting the model is.

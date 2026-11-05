@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -39,6 +40,12 @@ func (s *FrameFairy) reconcile(changed []string) {
 	s.reconciling.Lock()
 	defer s.reconciling.Unlock()
 	follow := changed == nil
+	// A model deleted or added outside the app shows in the setup and
+	// the settings at once.
+	if models, folder := s.watch.modelsIn(changed); models {
+		s.tellSetup()
+		follow = follow || folder
+	}
 	for _, ep := range s.store.Episodes() {
 		if changed != nil && !touches(ep, changed) && !touchesShort(s.shortsOf(ep), changed) {
 			continue
@@ -77,8 +84,16 @@ func (s *FrameFairy) reconcile(changed []string) {
 // wrote the chosen clip back into one, and the app opened on it after an
 // update and said it was not in the library.
 func (s *FrameFairy) watchTheDisk() {
-	s.watch = newWatching(s.reconcile)
+	s.watch = newWatching(s.reconcile, engine.ModelsDir())
 	s.reconcile(nil)
+}
+
+// tellSetup sends the window what the setup and the settings show of the
+// models, the way they read it with Setup.
+func (s *FrameFairy) tellSetup() {
+	if s.setupNews != nil {
+		s.setupNews(s.Setup(context.Background()))
+	}
 }
 
 // shortsOf is the shorts of a video, as its plans say, see
