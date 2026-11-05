@@ -285,7 +285,7 @@ func (p *Project) readHeard(ctx context.Context, heard heardWindow, local LocalM
 			err = errAheadDone
 		}
 	}()
-	url, release, ok := holdIdle(local.Model, size, giveWay)
+	url, release, ok := p.engine.host.holdIdle(local.Model, size, giveWay)
 	if !ok {
 		return aheadRead{lost: true}, nil
 	}
@@ -294,7 +294,7 @@ func (p *Project) readHeard(ctx context.Context, heard heardWindow, local LocalM
 	if last.url != url {
 		held = nil
 	}
-	settled, err := settledTokens(reading, url, local, asked, heard.lines)
+	settled, err := p.engine.settledTokens(reading, url, local, asked, heard.lines)
 	if err != nil {
 		return aheadRead{}, err
 	}
@@ -309,7 +309,7 @@ func (p *Project) readHeard(ctx context.Context, heard heardWindow, local LocalM
 			"read before that token", num.Thousands(same), num.Thousands(len(held)))
 	}
 	started := time.Now()
-	read, err := readTokens(reading, url, settled)
+	read, err := p.engine.readTokens(reading, url, settled)
 	if err != nil {
 		return aheadRead{}, err
 	}
@@ -336,17 +336,17 @@ func readsAhead(lines []Line, opts PlanOptions) bool {
 // the same however the transcript goes on: what the prompt for all lines
 // but the last and the prompt for all of them start with, as the server
 // lays them out and splits them, see the top of this file.
-func settledTokens(ctx context.Context, url string, m LocalModel, asked PlanOptions,
+func (m *Machine) settledTokens(ctx context.Context, url string, local LocalModel, asked PlanOptions,
 	lines []Line) ([]int, error) {
 	var settled []int
 	for i, n := range []int{len(lines) - 1, len(lines)} {
 		recipe, units, prompt := searchRequest(lines[:n], asked)
-		ask, _ := localAsk(m, recipe, withSystem(recipe.System, chatMessage{"user", prompt}),
+		ask, _ := localAsk(local, recipe, withSystem(recipe.System, chatMessage{"user", prompt}),
 			len(units), asked.Count, asked.MaxTokens)
 		var laid struct {
 			Prompt string `json:"prompt"`
 		}
-		if err := serverCall(ctx, url, "/apply-template", ask, &laid, localStall); err != nil {
+		if err := m.serverCall(ctx, url, "/apply-template", ask, &laid, localStall); err != nil {
 			return nil, err
 		}
 		var split struct {
@@ -354,7 +354,7 @@ func settledTokens(ctx context.Context, url string, m LocalModel, asked PlanOpti
 		}
 		// Split as the server splits a prompt it is asked with, special
 		// tokens added and read, see tokenize_input_prompts in llama.cpp.
-		if err := serverCall(ctx, url, "/tokenize", map[string]any{"content": laid.Prompt,
+		if err := m.serverCall(ctx, url, "/tokenize", map[string]any{"content": laid.Prompt,
 			"add_special": true, "parse_special": true}, &split, localStall); err != nil {
 			return nil, err
 		}
@@ -369,7 +369,7 @@ func settledTokens(ctx context.Context, url string, m LocalModel, asked PlanOpti
 
 // readTokens has the server read tokens and keep them, writing nothing,
 // and says how many it read rather than found kept.
-func readTokens(ctx context.Context, url string, tokens []int) (int, error) {
+func (m *Machine) readTokens(ctx context.Context, url string, tokens []int) (int, error) {
 	var answer struct {
 		Timings *localTimings `json:"timings"`
 	}
@@ -377,7 +377,7 @@ func readTokens(ctx context.Context, url string, tokens []int) (int, error) {
 	// says nothing while it does: the answer comes when it is done. What
 	// the server kept is its own to know, so the time is for all of them.
 	limit := localStall + time.Duration(float64(len(tokens))/slowestReading*float64(time.Second))
-	err := serverCall(ctx, url, "/completion", map[string]any{
+	err := m.serverCall(ctx, url, "/completion", map[string]any{
 		"prompt": tokens, "n_predict": 0, "cache_prompt": true,
 		// Only what it cost, not the prompt back.
 		"response_fields": []string{"timings"},
@@ -395,7 +395,7 @@ func readTokens(ctx context.Context, url string, tokens []int) (int, error) {
 // into answer, giving up after limit. It is for the calls answered in one
 // piece. A search's ask is answered as it is written, and askLocal reads
 // it so, with its own watch on a server that falls silent.
-func serverCall(ctx context.Context, url, path string, ask, answer any, limit time.Duration) error {
+func (m *Machine) serverCall(ctx context.Context, url, path string, ask, answer any, limit time.Duration) error {
 	body, err := json.Marshal(ask)
 	if err != nil {
 		return err
@@ -407,8 +407,8 @@ func serverCall(ctx context.Context, url, path string, ask, answer any, limit ti
 		return err
 	}
 	request.Header.Set("content-type", "application/json")
-	authorize(request, url)
-	response, err := localClient.Do(request)
+	m.authorize(request, url)
+	response, err := m.localClient().Do(request)
 	if err != nil {
 		return err
 	}

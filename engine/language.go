@@ -458,7 +458,7 @@ func (mc *Machine) InstallLanguageModel(ctx context.Context, log *runlog.Log, m 
 		if err := os.Rename(part, final); err != nil {
 			return err
 		}
-		modelArrived(dir, m, final)
+		mc.modelArrived(dir, m, final)
 		return nil
 	})
 }

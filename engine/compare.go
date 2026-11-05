@@ -153,7 +153,7 @@ func (e *Engine) Compare(ctx context.Context, opts Options, names []string) ([]R
 		// read 15,303 tokens in 0.1 seconds where the first took 26. A
 		// server somebody started themselves is theirs to restart.
 		if i > 0 && opts.LLMURL == "" {
-			StopModels()
+			e.StopModels()
 		}
 		e.Log.Info("searching with the %s recipe", name)
 		o := opts

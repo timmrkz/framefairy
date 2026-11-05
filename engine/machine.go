@@ -81,6 +81,25 @@ type Machine struct {
 	// that panics.
 	framing func(*planBuilder, planJob) (PlanClip, bool, error)
 
+	// host is the one local model this program keeps loaded, see
+	// modelhost.go.
+	host modelHost
+	// llama is how the program reaches the llama-servers it starts, and
+	// notes are what it writes down of each, see leftover.go.
+	llama llamaLink
+	notes serverNotes
+	// modelChecks lets one check of a model's file at a time read and
+	// write what the checks found, see checkModel.
+	modelChecks sync.Mutex
+	// memory, free and servers are what is known of this machine's
+	// memory: how much it has, how much it can give a program now, and
+	// the llama-servers it runs, each the system's when it is empty, see
+	// room.go and freemem.go. A test makes its machine any machine in any
+	// state.
+	memory  func() int64
+	free    func() int64
+	servers func() []string
+
 	// keys is where the keys are kept, and oldKeys where the first ones
 	// were, see keys.go, and savedFirst reads a saved key before one in
 	// the environment. network is how a request leaves the program, to a

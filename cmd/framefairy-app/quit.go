@@ -106,9 +106,9 @@ func (l *leaving) closing() {
 // not, each delete gives up after stopWait of its own, and quitting is
 // not held that much longer.
 //
-// The models stay in main, engine.CloseModels, before this: they are the
-// engine's for the whole process until #647, and a test that quits must
-// not close the models of every other test.
+// The models stay in main, the machine's CloseModels, before this: a
+// test that quits must not close the models of a machine it shares with
+// the other tests of the app.
 func (s *FrameFairy) stopAll() {
 	// A WaitGroup takes no new work while it is waited for, so a video let
 	// go from here on is cleared where it is let go.

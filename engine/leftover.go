@@ -45,22 +45,39 @@ type serverNote struct {
 	Owner int `json:"owner,omitempty"`
 }
 
-var (
-	noteMu sync.Mutex
-	// serverNoteDir is where the notes live, one file a server. Tests put
-	// it elsewhere.
-	serverNoteDir = func() string {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return ""
-		}
-		return filepath.Join(home, ".framefairy", "llama-servers")
+// serverNotes are the notes a machine writes of the servers it started,
+// kept on it, see Machine.notes.
+type serverNotes struct {
+	mu sync.Mutex
+	// dir is where the notes live, one file a server, in the home folder
+	// when it is empty. A test puts them in a folder of its own.
+	dir func() string
+	// interrupt asks a server left behind to stop, with os.Interrupt when
+	// it is empty. A test hears through it which servers were asked, so a
+	// server that must be left alone is proven never asked, rather than
+	// seen still running a moment later.
+	interrupt func(proc *os.Process) error
+}
+
+// serverNoteDir is where the notes of the servers m started live.
+func (m *Machine) serverNoteDir() string {
+	if m.notes.dir != nil {
+		return m.notes.dir()
 	}
-	// interrupt asks a server left behind to stop. Tests hear through it
-	// which servers were asked, so a server that must be left alone is
-	// proven never asked, rather than seen still running a moment later.
-	interrupt = func(proc *os.Process) error { return proc.Signal(os.Interrupt) }
-)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".framefairy", "llama-servers")
+}
+
+// interrupt asks a server left behind to stop.
+func (m *Machine) interrupt(proc *os.Process) error {
+	if m.notes.interrupt != nil {
+		return m.notes.interrupt(proc)
+	}
+	return proc.Signal(os.Interrupt)
+}
 
 // noteFile is the note of the server with this process number.
 func noteFile(dir string, pid int) string {
@@ -69,10 +86,10 @@ func noteFile(dir string, pid int) string {
 
 // noteServer writes down a server that has just started, owned by this
 // process unless the note says otherwise.
-func noteServer(n serverNote) {
-	noteMu.Lock()
-	defer noteMu.Unlock()
-	dir := serverNoteDir()
+func (m *Machine) noteServer(n serverNote) {
+	m.notes.mu.Lock()
+	defer m.notes.mu.Unlock()
+	dir := m.serverNoteDir()
 	if dir == "" {
 		return
 	}
@@ -88,10 +105,10 @@ func noteServer(n serverNote) {
 }
 
 // forgetServer takes the note away once that server has stopped.
-func forgetServer(pid int) {
-	noteMu.Lock()
-	defer noteMu.Unlock()
-	if dir := serverNoteDir(); dir != "" {
+func (m *Machine) forgetServer(pid int) {
+	m.notes.mu.Lock()
+	defer m.notes.mu.Unlock()
+	if dir := m.serverNoteDir(); dir != "" {
 		_ = os.Remove(noteFile(dir, pid))
 	}
 }
@@ -108,13 +125,13 @@ func readServerNote(path string) (serverNote, bool) {
 // StopLeftoverServer stops the llama-servers that runs gone before left
 // running, if there are any, and says whether it stopped one. The app
 // calls it when it starts, before it loads a model of its own.
-func StopLeftoverServer() bool {
+func (m *Machine) StopLeftoverServer() bool {
 	if runtime.GOOS == "windows" {
 		return false
 	}
-	noteMu.Lock()
+	m.notes.mu.Lock()
 	var left []serverNote
-	if dir := serverNoteDir(); dir != "" {
+	if dir := m.serverNoteDir(); dir != "" {
 		paths, _ := filepath.Glob(filepath.Join(dir, "*.json"))
 		// The one note of the versions before a note had an owner.
 		paths = append(paths, filepath.Join(filepath.Dir(dir), "llama-server.json"))
@@ -129,10 +146,10 @@ func StopLeftoverServer() bool {
 			}
 		}
 	}
-	noteMu.Unlock()
+	m.notes.mu.Unlock()
 	stopped := false
 	for _, n := range left {
-		if stopServer(n) {
+		if m.stopServer(n) {
 			stopped = true
 		}
 	}
@@ -140,7 +157,7 @@ func StopLeftoverServer() bool {
 }
 
 // stopServer stops the server a note names, if it is still that server.
-func stopServer(n serverNote) bool {
+func (m *Machine) stopServer(n serverNote) bool {
 	if !isThatServer(n) {
 		return false
 	}
@@ -148,7 +165,7 @@ func stopServer(n serverNote) bool {
 	if err != nil {
 		return false
 	}
-	_ = interrupt(proc)
+	_ = m.interrupt(proc)
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		if !isThatServer(n) {

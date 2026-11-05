@@ -37,24 +37,36 @@ import (
 // ---------------------------------------------------------------------------
 
 // idleFor starts the wait a model nobody holds is kept for, which runs
-// gone at its end, and gives what calls the wait off. It is time.AfterFunc
-// unless a test takes the wait in hand itself.
-var idleFor = func(keep time.Duration, gone func()) (callOff func() bool) {
+// gone at its end, and gives what calls the wait off. It is the host's
+// idle when a test takes the wait in hand itself, and time.AfterFunc when
+// it is empty.
+func (host *modelHost) idleFor(keep time.Duration, gone func()) (callOff func() bool) {
+	if host.idle != nil {
+		return host.idle(keep, gone)
+	}
 	return time.AfterFunc(keep, gone).Stop
 }
 
 // warmKeep is how long a model loaded ahead of a search waits for it.
 const warmKeep = 5 * time.Minute
 
-// launch starts llama-server. Tests put a stand-in here, so what is held
-// and let go of can be tested without a model.
-var launch = (*Engine).startServer
+// launchFor starts llama-server, through the host's launch when a test
+// put a stand-in there, so what is held and let go of can be tested
+// without a model, and through Engine.startServer when it is empty.
+func (host *modelHost) launchFor(e *Engine, ctx context.Context, m LocalModel, size int, logDir string) (string, func(), error) {
+	if host.launch != nil {
+		return host.launch(e, ctx, m, size, logDir)
+	}
+	return e.startServer(ctx, m, size, logDir)
+}
 
 // errModelBusy is a warm-up finding another model in use. A warm-up is
 // only a head start, so it gives up rather than wait or load a second one.
 var errModelBusy = errors.New("another model is in use")
 
 type hostedModel struct {
+	// host is the one that loaded it.
+	host  *modelHost
 	model string
 	// size is the context the server was started with. An ask that needs
 	// more starts it again.
@@ -80,8 +92,9 @@ type hostedModel struct {
 // the machines this is for: a second llama-server beside the first is
 // swapping, a frozen machine or one of the two killed for memory. So an
 // ask that needs another model, or more room, waits until the one loaded
-// is free and then takes its place.
-var host struct {
+// is free and then takes its place. There is one host on each machine, so
+// one in each program, see Machine.host.
+type modelHost struct {
 	mu    sync.Mutex
 	model *hostedModel
 	// changed wakes whoever waits for the model whenever it is let go of,
@@ -107,14 +120,23 @@ var host struct {
 	// idled is called by an idle timer once it has decided whether the
 	// model goes, so a test waits for that rather than for the clock.
 	idled func()
+	// launch and idle are the host's seams, see launchFor and idleFor.
+	// A test puts its own on its own machine.
+	launch func(e *Engine, ctx context.Context, m LocalModel, size int, logDir string) (string, func(), error)
+	idle   func(keep time.Duration, gone func()) (callOff func() bool)
 }
 
-func init() {
-	host.down, host.stopAll = context.WithCancel(context.Background())
+// downLocked is what ends every load under way when the models are
+// stopped, made the first time a load asks. host.mu is held.
+func (host *modelHost) downLocked() context.Context {
+	if host.down == nil {
+		host.down, host.stopAll = context.WithCancel(context.Background())
+	}
+	return host.down
 }
 
 // changedLocked wakes whoever waits on the model. host.mu is held.
-func changedLocked() {
+func (host *modelHost) changedLocked() {
 	host.changed.WakeLocked()
 	host.news.WakeLocked()
 }
@@ -130,7 +152,7 @@ func loaded(h *hostedModel) bool {
 
 // modelReady says whether this model is loaded already, big enough for an
 // ask of size, so the ask has nothing to wait for.
-func modelReady(model string, size int) bool {
+func (host *modelHost) modelReady(model string, size int) bool {
 	host.mu.Lock()
 	defer host.mu.Unlock()
 	h := host.model
@@ -141,7 +163,7 @@ func modelReady(model string, size int) bool {
 }
 
 // modelThere says whether this model is loaded or on its way, at any size.
-func modelThere(model string) bool {
+func (host *modelHost) modelThere(model string) bool {
 	host.mu.Lock()
 	defer host.mu.Unlock()
 	h := host.model
@@ -165,7 +187,7 @@ func (e *Engine) holdModel(ctx context.Context, m LocalModel, size int,
 // read started. Any search that asks for a model while the read is under
 // way, this one or another, of any size, calls the read off with giveWay
 // first, so it never waits behind a read either.
-func holdIdle(model string, size int, giveWay context.CancelCauseFunc) (string, func(keep time.Duration), bool) {
+func (host *modelHost) holdIdle(model string, size int, giveWay context.CancelCauseFunc) (string, func(keep time.Duration), bool) {
 	host.mu.Lock()
 	defer host.mu.Unlock()
 	h := host.model
@@ -200,6 +222,7 @@ func (e *Engine) hold(ctx context.Context, m LocalModel, size int, logDir string
 	if warmUp {
 		release = (*hostedModel).release
 	}
+	host := &e.host
 	for {
 		host.mu.Lock()
 		h := host.model
@@ -246,7 +269,7 @@ func (e *Engine) hold(ctx context.Context, m LocalModel, size int, logDir string
 			// is using it. It goes, and this one takes its place.
 			h.shutLocked()
 			host.model = nil
-			changedLocked()
+			host.changedLocked()
 			host.mu.Unlock()
 		case warmUp:
 			host.mu.Unlock()
@@ -277,15 +300,16 @@ func (e *Engine) hold(ctx context.Context, m LocalModel, size int, logDir string
 // the way in and let go of here.
 func (e *Engine) load(ctx context.Context, m LocalModel, size int,
 	logDir string, release func(*hostedModel, time.Duration)) (string, func(keep time.Duration), error) {
-	h := &hostedModel{model: m.Model, size: size, ready: make(chan struct{}), users: 1}
+	host := &e.host
+	h := &hostedModel{host: host, model: m.Model, size: size, ready: make(chan struct{}), users: 1}
 	host.model = h
-	down := host.down
+	down := host.downLocked()
 	host.mu.Unlock()
 
 	// The load ends when the ask gives up or when the app stops the models.
 	loading, cancel := context.WithCancel(ctx)
 	unwatch := context.AfterFunc(down, cancel)
-	url, stop, err := launch(e, loading, m, size, logDir)
+	url, stop, err := host.launchFor(e, loading, m, size, logDir)
 	unwatch()
 	cancel()
 
@@ -303,7 +327,7 @@ func (e *Engine) load(ctx context.Context, m LocalModel, size int,
 		}
 	}
 	close(h.ready)
-	changedLocked()
+	host.changedLocked()
 	host.mu.Unlock()
 	if err != nil {
 		return "", nil, err
@@ -326,6 +350,7 @@ func (h *hostedModel) releaseSearch(keep time.Duration) {
 }
 
 func (h *hostedModel) let(keep time.Duration, search bool) {
+	host := h.host
 	host.mu.Lock()
 	defer host.mu.Unlock()
 	h.users--
@@ -333,7 +358,7 @@ func (h *hostedModel) let(keep time.Duration, search bool) {
 	if h.users > 0 {
 		return
 	}
-	defer changedLocked()
+	defer host.changedLocked()
 	if host.model != h {
 		// It was replaced or stopped. Nothing of it is running.
 		return
@@ -358,13 +383,13 @@ func (h *hostedModel) let(keep time.Duration, search bool) {
 		host.model = nil
 		return
 	}
-	h.idle = idleFor(keep, func() {
+	h.idle = host.idleFor(keep, func() {
 		host.mu.Lock()
 		defer host.mu.Unlock()
 		if host.model == h && h.users == 0 && host.kept != h.model {
 			h.shutLocked()
 			host.model = nil
-			changedLocked()
+			host.changedLocked()
 		}
 		if host.idled != nil {
 			host.idled()
@@ -397,7 +422,7 @@ func (h *hostedModel) shutLocked() {
 // keepOnly makes model the one kept loaded when nobody holds it, none for
 // empty. A model kept before that nobody holds now goes at once, so a
 // model given up in the settings does not hold the memory for the new one.
-func keepOnly(model string) {
+func (host *modelHost) keepOnly(model string) {
 	host.mu.Lock()
 	defer host.mu.Unlock()
 	if host.closed {
@@ -411,7 +436,7 @@ func keepOnly(model string) {
 	}
 	h.shutLocked()
 	host.model = nil
-	changedLocked()
+	host.changedLocked()
 }
 
 // KeepModel loads the local model opts ask for, if it is not loaded, and
@@ -425,12 +450,12 @@ func keepOnly(model string) {
 // and the first search loads it when it fits.
 func (e *Engine) KeepModel(ctx context.Context, opts Options, logDir string) (bool, error) {
 	if opts.Planner != "local" || opts.LLMURL != "" {
-		keepOnly("")
+		e.host.keepOnly("")
 		return false, nil
 	}
 	local, err := e.resolveLocal(opts)
 	if err != nil {
-		keepOnly("")
+		e.host.keepOnly("")
 		return false, err
 	}
 	return e.keep(ctx, *local, opts.MaxTokens, logDir)
@@ -439,8 +464,8 @@ func (e *Engine) KeepModel(ctx context.Context, opts Options, logDir string) (bo
 // KeepNone gives up the model kept loaded, and stops it now when nobody
 // holds it. The app calls it before it removes the model's file, which a
 // server that maps it could otherwise keep from being removed.
-func KeepNone() {
-	keepOnly("")
+func (m *Machine) KeepNone() {
+	m.host.keepOnly("")
 }
 
 // keep is KeepModel with the model found. A model loaded or loading
@@ -448,12 +473,12 @@ func KeepNone() {
 // loading it again at another size would cost the whole load, and what was
 // read into it, for nothing a search needs.
 func (e *Engine) keep(ctx context.Context, local LocalModel, maxTokens int, logDir string) (bool, error) {
-	keepOnly(local.Model)
-	if modelThere(local.Model) {
+	e.host.keepOnly(local.Model)
+	if e.host.modelThere(local.Model) {
 		return false, nil
 	}
-	size := warmSize(local.Model, 0, maxTokens)
-	if err := roomForModel(local.Model, size); err != nil {
+	size := e.warmSize(local.Model, 0, maxTokens)
+	if err := e.roomForModel(local.Model, size); err != nil {
 		return false, err
 	}
 	_, release, err := e.warmModel(ctx, local, size, logDir)
@@ -473,16 +498,19 @@ func (e *Engine) keep(ctx context.Context, local LocalModel, maxTokens int, logD
 // left holding the memory after it. A model still loading used to be left
 // to its loader, which never ran again once the app had quit, and a
 // llama-server held its memory until the machine was restarted.
-func StopModels() {
+func (m *Machine) StopModels() {
+	host := &m.host
 	host.mu.Lock()
 	host.kept = ""
-	host.stopAll()
+	if host.stopAll != nil {
+		host.stopAll()
+	}
 	h := host.model
 	host.model = nil
 	if h != nil && loaded(h) {
 		h.shutLocked()
 	}
-	changedLocked()
+	host.changedLocked()
 	host.mu.Unlock()
 	if h != nil {
 		// The loader sees it was stopped and stops its server. That takes
@@ -501,9 +529,9 @@ func StopModels() {
 // that has not yet seen that it was stopped could otherwise ask for the
 // model again after StopModels and load a new llama-server with nobody
 // left to stop it.
-func CloseModels() {
-	host.mu.Lock()
-	host.closed = true
-	host.mu.Unlock()
-	StopModels()
+func (m *Machine) CloseModels() {
+	m.host.mu.Lock()
+	m.host.closed = true
+	m.host.mu.Unlock()
+	m.StopModels()
 }

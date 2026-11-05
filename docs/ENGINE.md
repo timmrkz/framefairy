@@ -683,10 +683,20 @@ of each ffmpeg, by the ffmpeg, the encoder a run names and the system,
 and the face detector. It keeps what ffmpeg and ffprobe said, see What
 ffmpeg and ffprobe said, kept, the caption blocks libass measured, the
 caption files of the video preview, and the news that a transcript grew,
-which the job that hears and the search that reads ahead share. Its two
-seams are the time limit of a decode, empty for `context.WithTimeout`,
-and the framing of a clip, empty for `planBuilder.frame`, each set by a
-test on its own machine. So
+which the job that hears and the search that reads ahead share. It holds
+the local model too: the one llama-server the program keeps loaded, in
+`engine/modelhost.go`, the client and the keys that reach it, the notes
+about the servers this program started, in `engine/leftover.go`, and
+the check of a model file in hand. And it holds what the machine says of
+its memory, how much it has, how much is free and which other
+llama-servers run on it, in `engine/room.go` and `engine/freemem.go`.
+Each seam is a field that is empty for the real thing, set by a test on
+its own machine: the time limit of a decode, empty for
+`context.WithTimeout`, the framing of a clip, empty for
+`planBuilder.frame`, how the host starts a server and how long it waits
+unused, the client to llama-server, how a server that will not stop is
+looked at again, how a leftover server is asked to stop, and the three
+facts of memory. So
 a Mac whose system decoder failed once
 decodes on the processor for every job after it, not only for the rest
 of that job. An `Engine` keeps what belongs to its one job: the log,
@@ -1667,7 +1677,7 @@ is on the loopback and new every time, but a page can try every port in a
 few seconds. So each server is handed a key of its own when it starts, in
 its environment as `LLAMA_API_KEY` and not on its command line, where any
 program could read it, and `--no-slots` switches the list off. The key
-goes only with a request to the server it was made for, see `serverKeys`
+goes only with a request to the server it was made for, see the keys of `llamaLink`
 in `engine/local.go`. A server given with `--llm-url`, started by hand as
 above, gets no key and needs none.
 

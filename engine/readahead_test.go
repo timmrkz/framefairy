@@ -203,34 +203,30 @@ type readAheadOf struct {
 	speak func(from, to float64) ([]timed.Cue, []float32)
 }
 
-// hostedFake has the model this program loads be fake, so what is read
-// ahead goes through the one model the program holds, as in the app. It
-// changes launch and the model host, which the whole package shares, so
-// a test that uses it does not run beside others.
-func hostedFake(t *testing.T, fake *fakeReader) {
+// hostedFake has the model m loads be fake, so what is read ahead goes
+// through the one model the machine holds, as in the app.
+func hostedFake(t *testing.T, m *Machine, fake *fakeReader) {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(fake.serve))
-	was := launch
-	launch = func(_ *Engine, _ context.Context, _ LocalModel, _ int, _ string) (string, func(), error) {
+	m.host.launch = func(_ *Engine, _ context.Context, _ LocalModel, _ int, _ string) (string, func(), error) {
 		return server.URL, func() {}, nil
 	}
-	StopModels()
 	t.Cleanup(func() {
-		StopModels()
-		launch = was
+		m.StopModels()
 		server.Close()
 	})
 }
 
-// videoReadAhead is a video named name in files, searched with the
+// videoReadAhead is a video named name in m's files, searched with the
 // hosted fake.
-func videoReadAhead(t *testing.T, files afero.Fs, name string) *readAheadOf {
+func videoReadAhead(t *testing.T, m *Machine, name string) *readAheadOf {
 	t.Helper()
+	files := m.Files
 	source := "/videos/" + name + ".mp4"
 	if err := afero.WriteFile(files, source, []byte("the video"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	e := NewEngine(runlog.New(io.Discard, false, false), NewMachine(files))
+	e := NewEngine(runlog.New(io.Discard, false, false), m)
 	base := DefaultOptions()
 	base.Planner, base.LLMModel, base.ASRModel = "local", "/models/gemma.gguf", "/models/parakeet"
 	p := NewProject(e, source, base)
@@ -295,8 +291,9 @@ func (v *readAheadOf) ask(ctx context.Context, req PlanRequest) error {
 // the window is heard, before the search asks. Issue #242.
 func TestTheTranscriptIsReadAheadOfTheSearch(t *testing.T) {
 	fake := &fakeReader{reads: make(chan []int, 16), asks: make(chan fakeAsk, 4)}
-	hostedFake(t, fake)
-	v := videoReadAhead(t, afero.NewMemMapFs(), t.Name())
+	m := NewMachine(afero.NewMemMapFs())
+	hostedFake(t, m, fake)
+	v := videoReadAhead(t, m, t.Name())
 	req := PlanRequest{From: 0, To: 60, Count: 1, Pass: 1}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -354,8 +351,9 @@ func TestTheTranscriptIsReadAheadOfTheSearch(t *testing.T) {
 // Issue #437 is about keeping the line as it was.
 func TestALineReadBeforeAndWrittenOutAgainIsReadAgain(t *testing.T) {
 	fake := &fakeReader{reads: make(chan []int, 16), asks: make(chan fakeAsk, 4)}
-	hostedFake(t, fake)
-	v := videoReadAhead(t, afero.NewMemMapFs(), t.Name())
+	m := NewMachine(afero.NewMemMapFs())
+	hostedFake(t, m, fake)
+	v := videoReadAhead(t, m, t.Name())
 	v.speak = func(from, to float64) ([]timed.Cue, []float32) {
 		words, frames := spokenPart(from, to)
 		if from < 20 {
@@ -415,8 +413,9 @@ func TestALineReadBeforeAndWrittenOutAgainIsReadAgain(t *testing.T) {
 func TestASearchCallsOffWhatIsReadAhead(t *testing.T) {
 	fake := &fakeReader{reads: make(chan []int, 16), asks: make(chan fakeAsk, 4),
 		stuck: make(chan struct{}, 4)}
-	hostedFake(t, fake)
-	v := videoReadAhead(t, afero.NewMemMapFs(), t.Name())
+	m := NewMachine(afero.NewMemMapFs())
+	hostedFake(t, m, fake)
+	v := videoReadAhead(t, m, t.Name())
 	req := PlanRequest{From: 0, To: 60, Count: 1, Pass: 1}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -446,10 +445,10 @@ func TestASearchCallsOffWhatIsReadAhead(t *testing.T) {
 func TestASearchOfAnotherVideoTakesTheModelFromARead(t *testing.T) {
 	fake := &fakeReader{reads: make(chan []int, 16), asks: make(chan fakeAsk, 4),
 		stuck: make(chan struct{}, 4), calledOff: make(chan struct{}, 4)}
-	hostedFake(t, fake)
-	files := afero.NewMemMapFs()
-	reading := videoReadAhead(t, files, t.Name()+"-reading")
-	asking := videoReadAhead(t, files, t.Name()+"-asking")
+	m := NewMachine(afero.NewMemMapFs())
+	hostedFake(t, m, fake)
+	reading := videoReadAhead(t, m, t.Name()+"-reading")
+	asking := videoReadAhead(t, m, t.Name()+"-asking")
 	req := PlanRequest{From: 0, To: 60, Count: 1, Pass: 1}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -480,8 +479,9 @@ func TestASearchOfAnotherVideoTakesTheModelFromARead(t *testing.T) {
 // grow again.
 func TestReadingAheadEndsWithTheSearch(t *testing.T) {
 	fake := &fakeReader{reads: make(chan []int, 16), asks: make(chan fakeAsk, 4)}
-	hostedFake(t, fake)
-	v := videoReadAhead(t, afero.NewMemMapFs(), t.Name())
+	m := NewMachine(afero.NewMemMapFs())
+	hostedFake(t, m, fake)
+	v := videoReadAhead(t, m, t.Name())
 	req := PlanRequest{From: 0, To: 60, Count: 1, Pass: 1}
 	warmed := v.warm(context.Background(), req)
 	v.hear(0, 20)
@@ -542,7 +542,7 @@ func TestOnlyARequestThatStartsWithTheTranscriptIsReadAhead(t *testing.T) {
 // is still to be heard. A window heard already goes straight to finding.
 // It is the engine's to decide, so every search does the same, #610.
 func TestASearchReadsAheadOnlyOfAWindowStillToBeHeard(t *testing.T) {
-	v := videoReadAhead(t, afero.NewMemMapFs(), t.Name())
+	v := videoReadAhead(t, NewMachine(afero.NewMemMapFs()), t.Name())
 	window := timed.Window{Start: 0, End: 60}
 	if !v.p.readsAhead(window) {
 		t.Error("a window nothing of which is heard is not read ahead")
@@ -583,16 +583,14 @@ func (r heldRecognizer) Recognize(samples []float32, rate int) []Token {
 // file that can be read for the search to load it.
 func TestASearchOfAWindowStillToBeHeardLoadsTheModelAsItHears(t *testing.T) {
 	fake := &fakeReader{reads: make(chan []int, 16), asks: make(chan fakeAsk, 4)}
-	hostedFake(t, fake)
-	hosted := launch
+	p := passProject(t, "")
+	hostedFake(t, p.engine.Machine, fake)
+	hosted := p.engine.host.launch
 	loaded := make(chan struct{}, 4)
-	launch = func(e *Engine, ctx context.Context, m LocalModel, size int, logDir string) (string, func(), error) {
+	p.engine.host.launch = func(e *Engine, ctx context.Context, m LocalModel, size int, logDir string) (string, func(), error) {
 		loaded <- struct{}{}
 		return hosted(e, ctx, m, size, logDir)
 	}
-	t.Cleanup(func() { launch = hosted })
-
-	p := passProject(t, "")
 	letGo := make(chan struct{})
 	var heard int32
 	p.engine.OpenRecognizer = func(string) (Recognizer, error) {

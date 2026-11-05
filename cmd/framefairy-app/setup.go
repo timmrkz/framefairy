@@ -477,7 +477,7 @@ func (s *FrameFairy) RemoveLanguageModel(name string) error {
 	// The model kept loaded maps its file, which Windows would then not
 	// let go of. It is given up first, and the settings changed below
 	// have the model that is left kept again.
-	engine.KeepNone()
+	s.store.machine.KeepNone()
 	if err := engine.RemoveLanguageModel(model, engine.ModelsDir()); err != nil {
 		s.keeping.ask()
 		return err
