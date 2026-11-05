@@ -1074,7 +1074,7 @@ func openBridge(t *testing.T) *bridge {
 		o.Width, o.Height = 360, 640
 		o.Preset = "ultrafast"
 	}
-	standIns.Store(&fakes)
+	d.fakes = fakes
 	// A font installed on the bridge's computer: Anton under a name of its
 	// own, so the Font list has a face of the machine to offer, and libass
 	// and the word typed are drawn from its copy.
@@ -1123,10 +1123,10 @@ func openBridge(t *testing.T) *bridge {
 	d.still = snd.still
 	d.beats = snd.beats()
 	d.told = snd.tell
-	openMicrophone = snd.open
 	// The desk is started again with a bus, before anything is in it.
 	d.svc.jobs.shutDown()
 	d.svc.watch.stop()
+	d.svc.store.standIns = fakes
 	d.bus = newBus()
 	// The bridge's microphone talks for as long as a walk takes steps of
 	// a recording, so one also stops after a minute, 600 steps, long after
@@ -1134,34 +1134,37 @@ func openBridge(t *testing.T) *bridge {
 	// more words ends there.
 	d.most = 60 * engine.SampleRate
 	d.time = newWalkTime()
-	d.start(d.svc.store)
-	// A report goes on the bridge's own Desktop and is shown nowhere.
-	reportFolder = func() string {
-		desk := filepath.Join(d.home, "Desktop")
-		_ = os.MkdirAll(desk, 0o755)
-		return desk
-	}
-	showReport = func(string) error { return nil }
 	b := &bridge{t: t, d: d, words: words, sound: snd, first: filepath.Join(d.home, "erste-erinnerung.mp4"), kept: t.TempDir(),
 		gates: map[string]*gate{}, fails: map[string]string{}}
-	// What the first run downloads, once a walk made the machine new.
-	// What arrives is as much of a model as the app looks for.
-	installSpeech = func(_ *engine.Machine, ctx context.Context, log *runlog.Log, m engine.SpeechModel, dir string) error {
-		return b.arriving(ctx, log, "speech", m.Download, func() error {
-			if err := os.MkdirAll(filepath.Join(dir, m.Name), 0o755); err != nil {
-				return err
-			}
-			return os.WriteFile(filepath.Join(dir, m.Name, "tokens.txt"), []byte("the stand-in hears\n"), 0o644)
-		})
+	d.fit = func(svc *FrameFairy) {
+		svc.listening.mic = snd.open
+		// A report goes on the bridge's own Desktop and is shown nowhere.
+		svc.reportFolder = func() string {
+			desk := filepath.Join(d.home, "Desktop")
+			_ = os.MkdirAll(desk, 0o755)
+			return desk
+		}
+		svc.showReport = func(string) error { return nil }
+		// What the first run downloads, once a walk made the machine new.
+		// What arrives is as much of a model as the app looks for.
+		svc.installSpeech = func(_ *engine.Machine, ctx context.Context, log *runlog.Log, m engine.SpeechModel, dir string) error {
+			return b.arriving(ctx, log, "speech", m.Download, func() error {
+				if err := os.MkdirAll(filepath.Join(dir, m.Name), 0o755); err != nil {
+					return err
+				}
+				return os.WriteFile(filepath.Join(dir, m.Name, "tokens.txt"), []byte("the stand-in hears\n"), 0o644)
+			})
+		}
+		svc.installLanguage = func(_ *engine.Machine, ctx context.Context, log *runlog.Log, m engine.LanguageModel, dir string) error {
+			return b.arriving(ctx, log, "clip", m.Download, func() error {
+				if err := os.MkdirAll(dir, 0o755); err != nil {
+					return err
+				}
+				return os.WriteFile(filepath.Join(dir, m.Name), []byte("GGUF, the stand-in finds clips"), 0o644)
+			})
+		}
 	}
-	installLanguage = func(_ *engine.Machine, ctx context.Context, log *runlog.Log, m engine.LanguageModel, dir string) error {
-		return b.arriving(ctx, log, "clip", m.Download, func() error {
-			if err := os.MkdirAll(dir, 0o755); err != nil {
-				return err
-			}
-			return os.WriteFile(filepath.Join(dir, m.Name), []byte("GGUF, the stand-in finds clips"), 0o644)
-		})
-	}
+	d.start(d.svc.store)
 	fixtures.Copy(t, "walk-120s.mp4", b.first)
 	if added, err := d.svc.addEpisodes([]string{b.first}); err != nil || len(added) != 1 {
 		t.Fatalf("adding %s: %v", b.first, err)

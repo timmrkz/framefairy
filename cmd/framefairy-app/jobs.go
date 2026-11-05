@@ -9,7 +9,6 @@ import (
 	"runtime/debug"
 	"slices"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -739,7 +738,7 @@ func (q *queue) cancel(id string) {
 // How long a job is given to stop after it is told to. A render has an
 // ffmpeg to end and a transcription has what it has heard to save, so
 // stopping is not instant.
-var stopWait = 15 * time.Second
+const stopWait = 15 * time.Second
 
 // closeEpisode stops every job of an episode and lets nothing new be
 // queued for it until the reopen it hands back is called. Closing and
@@ -1240,26 +1239,20 @@ func (q *queue) runJob(job *Job) {
 // serveCaptions, so the two never decide it apart.
 func jobOptions(st *store, e *engine.Engine) engine.Options {
 	opts := st.Settings().options()
-	setUp(e, &opts)
+	st.setUp(e, &opts)
 	return opts
 }
 
 // setUp readies the engine and the options a job runs with: the speech
-// model the app carries, unless a test has put stand-ins in standIns.
-func setUp(e *engine.Engine, o *engine.Options) {
-	if f := standIns.Load(); f != nil {
-		(*f)(e, o)
+// model the app carries, unless a test handed the store stand-ins, see
+// store.standIns.
+func (st *store) setUp(e *engine.Engine, o *engine.Options) {
+	if st != nil && st.standIns != nil {
+		st.standIns(e, o)
 		return
 	}
 	e.OpenRecognizer = asr.Open
 }
-
-// standIns is how the path tests hand the app a stand-in speech model and a
-// stand-in language model and run everything else as it is. It is read by
-// every job and written by the tests, from goroutines of their own, so it
-// is atomic: a job still finishing from one test read it while the next
-// test put its own in, which the race detector caught.
-var standIns atomic.Pointer[func(*engine.Engine, *engine.Options)]
 
 // run does the work of a job and turns a panic into a job that failed. A
 // desktop app that dies takes the interface, the other lane and whatever

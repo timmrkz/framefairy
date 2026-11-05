@@ -32,20 +32,18 @@ import (
 // What the person may write, a few pages at most.
 const reportWordsMax = 20000
 
-// Where a report is put and how it is shown, which the tests set.
-var (
-	reportFolder = func() string {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return os.TempDir()
-		}
-		if desk := filepath.Join(home, "Desktop"); dirExists(desk) {
-			return desk
-		}
-		return home
+// reportFolder is where a report is put: the Desktop, or the home folder
+// when there is none.
+func reportFolder() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return os.TempDir()
 	}
-	showReport = showInFolder
-)
+	if desk := filepath.Join(home, "Desktop"); dirExists(desk) {
+		return desk
+	}
+	return home
+}
 
 func dirExists(path string) bool {
 	info, err := os.Stat(path)
@@ -179,13 +177,20 @@ func (f *FrameFairy) ReportProblem(what, video string) (string, error) {
 	if err := z.Close(); err != nil {
 		return "", err
 	}
-	path := freeName(reportFolder(), "Frame Fairy report "+time.Now().Format("2006-01-02 15.04"), ".zip")
+	folder, show := f.reportFolder, f.showReport
+	if folder == nil {
+		folder = reportFolder
+	}
+	if show == nil {
+		show = showInFolder
+	}
+	path := freeName(folder(), "Frame Fairy report "+time.Now().Format("2006-01-02 15.04"), ".zip")
 	if err := os.WriteFile(path, buf.Bytes(), 0o600); err != nil {
 		return "", fmt.Errorf("the report could not be saved: %w", err)
 	}
 	theLog.line(zerolog.InfoLevel, "report").Int("bytes", buf.Len()).Int("pictures", len(pictures)).Msg("a report of a problem was made")
 	f.report.clear(sent)
-	_ = showReport(path)
+	_ = show(path)
 	// Finder has what was made, and the window it was made in has done
 	// its work, as Tim asked.
 	f.report.closeWindow("report")

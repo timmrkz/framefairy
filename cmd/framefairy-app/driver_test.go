@@ -58,6 +58,12 @@ type desk struct {
 	// listening.beats, and told hears each Dictation the app tells the
 	// window, so the bridge knows what a step of a recording told.
 	beats *listenBeats
+	// fakes readies every engine of every opening of the app with the
+	// stand-ins, see store.standIns, and fit hands every opening what
+	// the bridge stands in for, the microphone, the report's folder and
+	// the downloads of the models, when set.
+	fakes func(*engine.Engine, *engine.Options)
+	fit   func(*FrameFairy)
 	told  func(Dictation)
 	// time, when set, is the clock removed work is timed by in every
 	// opening of the app, see timeKeeper in removal.go.
@@ -101,8 +107,8 @@ func open(t *testing.T) *desk {
 		o.Width, o.Height = 360, 640
 		o.Preset = "ultrafast"
 	}
-	standIns.Store(&fakes)
-	t.Cleanup(func() { standIns.Store(nil) })
+	d.fakes = fakes
+	st.standIns = fakes
 	d.start(st)
 	return d
 }
@@ -185,6 +191,9 @@ func (d *desk) start(st *store) {
 		svc.jobs.shutDown()
 	})
 	logJobsOnFailure(d.t, svc.jobs)
+	if d.fit != nil {
+		d.fit(d.svc)
+	}
 }
 
 // episode puts a copy of the video of this many seconds in the library's
@@ -342,6 +351,7 @@ func (d *desk) shut() {
 // open starts the app over the library on the disk, the way main does.
 func (d *desk) open() {
 	st := openStore()
+	st.standIns = d.fakes
 	d.start(st)
 	d.svc.restoreJobs(st.Episodes())
 }

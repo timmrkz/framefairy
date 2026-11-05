@@ -164,24 +164,20 @@ func TestWhatIsNoRecordingIsLeftOut(t *testing.T) {
 // is saved on the Desktop.
 func TestAReportHoldsTheRecordings(t *testing.T) {
 	ffmpegtest.Need(t)
-	// Not side by side with the others: it sets HOME for the whole process,
-	// and showReport, a package variable.
+	// Not side by side with the others: it sets HOME for the whole process.
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	if err := os.Mkdir(filepath.Join(home, "Desktop"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	testLog(t)
-	was := showReport
-	showReport = func(string) error { return nil }
-	t.Cleanup(func() { showReport = was })
 	path := fixtures.Copy(t, "recording.mov", filepath.Join(t.TempDir(), "Screen Recording.mov"))
 	film, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	st := &store{dir: t.TempDir(), files: disk, settings: defaultSettings(), adding: make(chan struct{}, 1)}
-	f := &FrameFairy{store: st, report: newReporting(engine.NewMachine(afero.NewMemMapFs()), "/config/report")}
+	f := &FrameFairy{store: st, report: newReporting(engine.NewMachine(afero.NewMemMapFs()), "/config/report"), showReport: func(string) error { return nil }}
 	d := f.report.attach("drop", []handed{{name: "a.png", data: pngOf(t, 12, 8)}, {name: "Screen Recording.mov", data: film}})
 	if d.Error != "" {
 		t.Fatal(d.Error)

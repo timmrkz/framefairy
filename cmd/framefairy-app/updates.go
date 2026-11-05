@@ -193,6 +193,9 @@ type updating struct {
 	// begun, which puts the build in place by itself.
 	install     func(target, from string) error
 	relaunching bool
+	// app is the .app the build is put in place of, runningApp when it
+	// is empty. A test names one of its own.
+	app func() string
 	// leaving is set once quitting has started putting the build held in
 	// place. From then on, as after Relaunch, nothing removes that build,
 	// whatever arrives after it: the step that puts it in place reads it
@@ -890,7 +893,11 @@ func (c *updating) installOnQuit() {
 	if !ready {
 		return
 	}
-	target := runningApp()
+	from := c.app
+	if from == nil {
+		from = runningApp
+	}
+	target := from()
 	if staged == "" || target == "" {
 		return
 	}

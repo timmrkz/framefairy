@@ -26,6 +26,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/events"
 
 	"framefairy/engine"
+	"framefairy/engine/runlog"
 	"framefairy/notices"
 	"framefairy/updates"
 )
@@ -428,6 +429,20 @@ type FrameFairy struct {
 	previews previews
 	// probeVideo stands in for ffprobe in tests, see probe.
 	probeVideo func(ctx context.Context, path string) (engine.SourceInfo, error)
+	// licences stands in for the keychain of the app's machine in tests,
+	// see keys.
+	licences keychain
+	// reportFolder is where a report is put, the Desktop when it is
+	// empty, and showReport how it is shown, in Finder when it is empty,
+	// see ReportProblem. A test hands in its own.
+	reportFolder func() string
+	showReport   func(path string) error
+	// installSpeech and installLanguage install a model through the
+	// machine's network when they are empty, see InstallSpeechModel. The
+	// bridge a walk drives hands in its own, so a walk never downloads a
+	// model.
+	installSpeech   func(m *engine.Machine, ctx context.Context, log *runlog.Log, model engine.SpeechModel, dir string) error
+	installLanguage func(m *engine.Machine, ctx context.Context, log *runlog.Log, model engine.LanguageModel, dir string) error
 	// clipboard stands in for the system's in tests, see copyText.
 	clipboard func(string) bool
 	// saveBox stands in for the system's save box in tests, see saveAs.
