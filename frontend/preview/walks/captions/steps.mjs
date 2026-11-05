@@ -424,6 +424,28 @@ export const steps = {
       walk.wrong = `the captions over the frame of "${arg}" did not come`;
       return;
     }
+    // Until the engine has said where libass puts the words, which the
+    // caption box stands its words on. The layer of the frame is no sign
+    // of it: on a busy runner the answer came 190 ms after the layer, as
+    // the words were read shut, so they were read where the browser
+    // first set them and moved when the word was opened.
+    const framed = await page.locator(".detail").evaluate(
+      (detail) =>
+        new Promise((done) => {
+          const answered = () => detail.dataset.answered !== undefined;
+          if (answered()) return done(detail.dataset.framed === detail.dataset.answered);
+          const seen = new MutationObserver(() => {
+            if (!answered()) return;
+            seen.disconnect();
+            done(detail.dataset.framed === detail.dataset.answered);
+          });
+          seen.observe(detail, { attributes: true, attributeFilter: ["data-answered"] });
+        }),
+    );
+    if (!framed) {
+      walk.wrong = `the engine did not say where libass puts the words of the captions over "${arg}"`;
+      return;
+    }
     await settled();
     const shut = await look();
     if (!shut) {
