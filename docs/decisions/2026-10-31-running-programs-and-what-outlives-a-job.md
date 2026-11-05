@@ -394,6 +394,15 @@ the count of the failures it writes, and `FrameFairy` keeps the probes
 and the streams, each ready as its zero value, so the 48 places a test
 makes a `FrameFairy` with a literal make a working one.
 
+Its cost is a seam a test forgets. A field left empty is the system's
+own, so a test that forgets the microphone listens to the real one and
+a test that forgets `showReport` opens Finder. Every test that builds
+the whole app goes through the desk, whose `fit` sets the seams a walk
+reaches, the microphone, the report's folder and Finder, and the
+downloads, so a forgotten seam is left to a test that builds one part by
+hand and calls that part. Such a test names the seam it needs on the
+line beside its call, where a reviewer sees it.
+
 ### C. What Go and its libraries already have: options to a constructor
 
 `newFrameFairy(options ...)`, the functional options of many Go
@@ -412,11 +421,19 @@ test that forgets one gets a nil interface and a panic far from where
 it forgot. The keychain is the one place an interface pays, since two
 methods go together, and there it is used.
 
-### E. What a test has to build: nothing changes for the tests
+### E. What a test has to build: one builder that sets every stand-in
 
-The seams stay package variables and only the caches move. The tests
-then change by not one line. But every test that sets a seam keeps
-running alone, which is what #607 was about. Loses.
+A test should build what it needs in one call and get nothing real by
+accident. So one builder, `testApp(t)`, makes a `FrameFairy` with every
+seam set to a stand-in that fails the test when it is used unasked,
+and a test swaps in the one it means to use. A forgotten seam then
+fails loudly instead of reaching the machine, which B cannot promise.
+But the seams still have to live somewhere the builder can set them,
+which is B's fields, so E is a builder on top of B rather than a home of
+its own. And most tests build one part, a `listening`, an `updating`,
+a `reporting`, not the app, so the builder would grow one variant per
+part. The desk is that builder already for the tests that build the
+whole app. Loses as a home, kept as the desk.
 
 ### What converges
 
@@ -428,7 +445,12 @@ the job queue, the captions and a recording among them, so they are a
 field of the store, `standIns`, read as a recording starts. What
 ffprobe said of a file was kept twice, by the machine and by the app's
 `sources`, so the app's copy goes and `FrameFairy` keeps only what a
-video was probed as last, for a video whose file has gone. `stopWait`
+video was probed as last, for a video whose file has gone. That is not
+the engine's `Episode`'s to keep: an `Episode` holds reads of the work
+folder, each checked against the stamps of the files it came from, and
+drops them when the files change, while what is wanted here is the last
+thing known of a source file that has stopped answering, which only the
+interface asks for. `stopWait`
 was never set by a test, so it is a constant.
 
 What stays a package variable on purpose, each with why:

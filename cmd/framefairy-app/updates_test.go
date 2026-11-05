@@ -158,13 +158,13 @@ func (cs *channelServer) publicKey() string {
 	return base64.StdEncoding.EncodeToString(cs.key.Public().(ed25519.PublicKey))
 }
 
+// inApplications is the app a test's build is put in place of.
+func inApplications() string { return "/Applications/Frame Fairy.app" }
+
 // An updating as the app makes it, reading from the server above, and
 // what it has sent so far. The states are sent from the updating's own
 // goroutines, so they are read through sent, under the same lock. It is a
 // build made on the Mac, with nothing in updates.json.
-// inApplications is the app a test's build is put in place of.
-func inApplications() string { return "/Applications/Frame Fairy.app" }
-
 func newTestUpdating(t *testing.T, cs *channelServer, busy bool) (*updating, func(until func([]UpdateState) bool) []UpdateState) {
 	t.Helper()
 	return testUpdating(t, cs, busy, "", "")

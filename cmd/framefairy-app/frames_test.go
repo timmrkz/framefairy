@@ -302,6 +302,38 @@ func needDecoder(t *testing.T) {
 	}
 }
 
+// The streams' reaper ends once it has closed the last decoder nobody
+// holds, so a set of streams the app or a test is done with leaves no
+// goroutine behind, and says so, so the next stream or decoder starts it
+// again. In a testing/synctest bubble, so the decoder stands unused for
+// as long as it takes with no wait on the clock.
+func TestTheReaperEndsOnceNothingIsLeftToReap(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		var p previews
+		path := "/videos/start.mp4"
+		p.mu.Lock()
+		p.decoders = map[string]*engine.EpisodeFrames{path: engine.NewEpisodeFrames("framefairy-frames", path)}
+		p.reaping = true
+		p.mu.Unlock()
+		ended := make(chan struct{})
+		go func() {
+			p.reap()
+			close(ended)
+		}()
+		// A reaper that never ends hangs here until go test's own timeout.
+		<-ended
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		if len(p.decoders) != 0 {
+			t.Errorf("the reaper ended with %d decoders open", len(p.decoders))
+		}
+		if p.reaping {
+			t.Error("the reaper ended and still says it reaps, so no stream would start it again")
+		}
+	})
+}
+
 // An episode open in the video preview holds its decoder, which is never
 // closed for standing unused while it is held: a click after a long pause
 // finds it as ready as the first. Let go, it is closed once it has stood

@@ -58,7 +58,9 @@ type appLog struct {
 	recent recentLines
 	// The person's last act, which the Go side's lines carry, see Acted.
 	act atomic.Pointer[string]
-	// repeats is the failures of the captions said lately, see logged.
+	// repeats is the failures of the captions said lately, see logged. The
+	// log keeps them because they decide which lines it writes, and the
+	// log is the program's one.
 	repeats repeatedFailures
 }
 
@@ -583,6 +585,13 @@ type repeat struct {
 // failuresQuiet is how long the same failure is counted rather than
 // written again.
 const failuresQuiet = 10 * time.Second
+
+// forget lets go of every failure counted, as a log opened again starts.
+func (f *repeatedFailures) forget() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.last = nil
+}
 
 // seen notes a failure of the video at path for reason, and gives -1
 // while it is counted, or how many times it came since it was last

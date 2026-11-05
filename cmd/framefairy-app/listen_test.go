@@ -99,6 +99,7 @@ func bubbleLog(t *testing.T) func() []map[string]any {
 // words, never what they were, under the act that started it. Plan row
 // 2.189.
 func TestWhatIsSaidIsWrittenDown(t *testing.T) {
+	// Not parallel: bubbleLog points the program's one log at this test.
 	read := bubbleLog(t)
 	synctest.Test(t, func(t *testing.T) {
 		f := listenTo(t, tone(3))
@@ -141,6 +142,7 @@ func TestWhatIsSaidIsWrittenDown(t *testing.T) {
 //
 // On the real disk: a speech model is a folder the speech library loads.
 func TestListeningSaysWhyNothingWasWrittenDown(t *testing.T) {
+	// Not parallel: bubbleLog points the program's one log at this test.
 	bubbleLog(t)
 	synctest.Test(t, func(t *testing.T) {
 		f := listenTo(t, make([]float32, 2*engine.SampleRate))
@@ -199,6 +201,7 @@ func (brokenMicrophone) stop()                       {}
 // calls without waiting: every recording ends with words or nothing, never
 // a hang, a panic or a race. Plan row 2.189.
 func TestListeningAtOnce(t *testing.T) {
+	// Not parallel: bubbleLog points the program's one log at this test.
 	bubbleLog(t)
 	synctest.Test(t, func(t *testing.T) {
 		f := listenTo(t, tone(1))
@@ -363,6 +366,7 @@ func TestDroppingARecording(t *testing.T) {
 // still talking, and says why, rather than letting them talk on for
 // nothing. Plan row 2.189.
 func TestListeningSaysAtOnceWhenTheSpeechModelFails(t *testing.T) {
+	// Not parallel: bubbleLog points the program's one log at this test.
 	bubbleLog(t)
 	synctest.Test(t, func(t *testing.T) {
 		f := listenTo(t, tone(1))
@@ -839,6 +843,7 @@ func TestSilenceChangesNothing(t *testing.T) {
 // testing/synctest bubble, so the speech model is slower than the words on
 // any machine, and by exactly as much.
 func TestASlowSpeechModelIsSaidOnce(t *testing.T) {
+	// Not parallel: bubbleLog points the program's one log at this test.
 	read := bubbleLog(t)
 	synctest.Test(t, func(t *testing.T) {
 		f := listenTo(t, nil)
@@ -976,6 +981,7 @@ func TestARecordingRunsOnTheBeatsItIsHanded(t *testing.T) {
 // next window took it up again with every word he had said. Plan row
 // 2.244.
 func TestClosingTheReportWindowDropsTheRecording(t *testing.T) {
+	// Not parallel: bubbleLog points the program's one log at this test.
 	read := bubbleLog(t)
 	synctest.Test(t, func(t *testing.T) {
 		f := listenTo(t, tone(30))
@@ -1008,6 +1014,7 @@ func TestClosingTheReportWindowDropsTheRecording(t *testing.T) {
 // Stop a few times in a row, said nothing, and was given "yeah yeah".
 // Plan row 2.244.
 func TestNobodySpeakingIsWrittenDownAsNothing(t *testing.T) {
+	// Not parallel: bubbleLog points the program's one log at this test.
 	read := bubbleLog(t)
 	synctest.Test(t, func(t *testing.T) {
 		room := tone(3)
