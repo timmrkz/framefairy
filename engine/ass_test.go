@@ -399,13 +399,15 @@ func TestTwoAsksAtOnceMeasureOnce(t *testing.T) {
 	}
 	s := ResolveStyle(map[string]any{"font": CaptionFonts()[0].Name, "size": 96.0, "highlight": 0.0})
 	blocks := []string{`{\alpha&H00&}Hamburgefonstiv`, `{\alpha&H00&}und Wagenrad`}
-	measure := func(machine *Machine) {
+	other := []string{`{\alpha&H00&}Ein ganz anderer Satz`}
+	measureThese := func(machine *Machine, blocks []string) {
 		e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), machine)
 		e.FFmpeg = ffmpeg
-		if boxes, ok := e.measureMany(ctx, blocks, s, 1080, int(s.Size)); !ok || len(boxes) != len(blocks) {
+		if boxes, ok := e.measureMany(ctx, blocks, s, 1080, int(s.Size)); !ok || len(boxes) != len(blocks) || slices.Contains(boxes, nil) {
 			t.Error("this ffmpeg could not measure the captions")
 		}
 	}
+	measure := func(machine *Machine) { measureThese(machine, blocks) }
 	measure(NewMachine(disk))
 	once := runs()
 	if once == 0 {
@@ -429,6 +431,30 @@ func TestTwoAsksAtOnceMeasureOnce(t *testing.T) {
 	}
 	if got := runs() - once; got != once {
 		t.Errorf("%d asks at once ran ffmpeg %d times, one ask runs it %d times", asks, got, once)
+	}
+
+	// Asks for other blocks at the same moment each measure their own,
+	// as many runs as one after the other.
+	before := runs()
+	sequential := NewMachine(disk)
+	measureThese(sequential, blocks)
+	measureThese(sequential, other)
+	apart := runs() - before
+	before = runs()
+	together := NewMachine(disk)
+	start.Add(1)
+	for _, these := range [][]string{blocks, other} {
+		go func() {
+			start.Wait()
+			measureThese(together, these)
+			done <- struct{}{}
+		}()
+	}
+	start.Done()
+	<-done
+	<-done
+	if got := runs() - before; got != apart {
+		t.Errorf("two asks for other blocks at once ran ffmpeg %d times, one after the other %d", got, apart)
 	}
 }
 

@@ -595,26 +595,68 @@ func bandSlot(block string, size int) int {
 func (e *Engine) measureMany(ctx context.Context, blocks []string, s Style,
 	width, size int) ([]*inkBox, bool) {
 	out := make([]*inkBox, len(blocks))
-	var missing []int
 	// A face the program carries is the same file whatever its name finds,
 	// see measureKey, and so is one of the machine's, whose copy is named
 	// after the version of its file. Anything else is measured each time.
 	_, keep := FontByName(s.Font)
 	measured, _ := e.captions()
-	// One measure at a time on a machine: two asks for the same clip's
-	// captions at the same moment, as a video opens, each measured every
-	// block. The second now finds them measured.
-	if keep {
-		measured.measuring.Lock()
-		defer measured.measuring.Unlock()
-	}
-	for i, block := range blocks {
-		if box, ok := measured.get(measureKey(block, s, width, size)); ok && keep {
-			out[i] = box
-		} else {
+	key := func(i int) string { return measureKey(blocks[i], s, width, size) }
+	// Each block is measured by one ask at a time: a block another ask is
+	// measuring now is waited for, not measured again. Two asks for the
+	// same clip's captions at the same moment, as a video opens, each
+	// measured every block. Asks for other blocks do not wait.
+	var missing, others []int
+	var claimed []string
+	var waits []<-chan struct{}
+	for i := range blocks {
+		if !keep {
 			missing = append(missing, i)
+			continue
+		}
+		box, wait := measured.claim(key(i))
+		switch {
+		case box != nil:
+			out[i] = box
+		case wait != nil:
+			others = append(others, i)
+			waits = append(waits, wait)
+		default:
+			missing = append(missing, i)
+			claimed = append(claimed, key(i))
 		}
 	}
+	ok := e.measureBlocks(ctx, blocks, missing, out, s, width, size, keep)
+	// Let go of what this ask measured before waiting for the others, so
+	// two asks that wait for each other's blocks never wait for good.
+	measured.letGo(claimed)
+	if !ok {
+		return nil, false
+	}
+	var again []int
+	for k, i := range others {
+		select {
+		case <-waits[k]:
+		case <-ctx.Done():
+			return nil, false
+		}
+		if box, found := measured.get(key(i)); found {
+			out[i] = box
+		} else {
+			// The other ask failed or found no ink, so it is measured here.
+			again = append(again, i)
+		}
+	}
+	if !e.measureBlocks(ctx, blocks, again, out, s, width, size, keep) {
+		return nil, false
+	}
+	return out, true
+}
+
+// measureBlocks measures the blocks at the indexes missing, a frame at a
+// time, into out, and keeps what it measured when keep.
+func (e *Engine) measureBlocks(ctx context.Context, blocks []string, missing []int, out []*inkBox,
+	s Style, width, size int, keep bool) bool {
+	measured, _ := e.captions()
 	for start := 0; start < len(missing); {
 		end, height := start, 0
 		for end < len(missing) {
@@ -631,7 +673,7 @@ func (e *Engine) measureMany(ctx context.Context, blocks []string, s Style,
 		}
 		boxes, ok := e.measureASS(ctx, batch, s, width, size)
 		if !ok {
-			return nil, false
+			return false
 		}
 		for k, i := range missing[start:end] {
 			out[i] = boxes[k]
@@ -641,7 +683,7 @@ func (e *Engine) measureMany(ctx context.Context, blocks []string, s Style,
 		}
 		start = end
 	}
-	return out, true
+	return true
 }
 
 // measureKey is what a block's ink depends on.
@@ -656,10 +698,42 @@ func measureKey(block string, s Style, width, size int) string {
 // and forgets them all when it is full: the blocks of the clips open now
 // are measured again at once.
 type inkCache struct {
-	// measuring is held while blocks are measured, see measureMany.
-	measuring sync.Mutex
-	mu        sync.Mutex
-	boxes     map[string]inkBox
+	mu    sync.Mutex
+	boxes map[string]inkBox
+	// measuring is the blocks an ask is measuring now, each closed when
+	// that ask lets go of it, see measureMany.
+	measuring map[string]chan struct{}
+}
+
+// claim is the box of key when it is known. When it is not, wait is
+// closed once the ask measuring it now lets go of it, or nil when no ask
+// is, and then key is this ask's to measure and to let go of.
+func (c *inkCache) claim(key string) (box *inkBox, wait <-chan struct{}) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if b, ok := c.boxes[key]; ok {
+		return &b, nil
+	}
+	if w, ok := c.measuring[key]; ok {
+		return nil, w
+	}
+	if c.measuring == nil {
+		c.measuring = map[string]chan struct{}{}
+	}
+	c.measuring[key] = make(chan struct{})
+	return nil, nil
+}
+
+// letGo says the blocks of keys are measured, or will not be.
+func (c *inkCache) letGo(keys []string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, key := range keys {
+		if w, ok := c.measuring[key]; ok {
+			close(w)
+			delete(c.measuring, key)
+		}
+	}
 }
 
 func (c *inkCache) get(key string) (*inkBox, bool) {
