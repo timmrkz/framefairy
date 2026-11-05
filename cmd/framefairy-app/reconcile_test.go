@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/afero"
 
 	"framefairy/engine"
+	"framefairy/engine/fileio"
 )
 
 // The files on the disk are the truth, and others than the app write them:
@@ -307,8 +308,10 @@ func TestAShortDeletedInFinderIsGoneFromItsClipAtOnce(t *testing.T) {
 		}
 		return v.Clips[0].Short
 	}
-	if got := shortOf(); got != short {
-		t.Fatalf("the clip's short is %q before, want %s", got, short)
+	// The engine names a short by where its folder leads. On a Mac the
+	// temporary folder is under /var, which leads to /private/var.
+	if got, want := shortOf(), fileio.ResolvePath(short); got != want {
+		t.Fatalf("the clip's short is %q before, want %s", got, want)
 	}
 	if err := os.Remove(short); err != nil {
 		t.Fatal(err)
