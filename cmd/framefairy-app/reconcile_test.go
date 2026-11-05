@@ -290,13 +290,15 @@ func TestAShortRenderedWhileTheAppIsOpenIsWatched(t *testing.T) {
 	svc, video, _, sent := diskLibrary(t)
 	plan, short := renderedShort(t, video)
 	// The plan written is heard, and the watch follows it before the
-	// reconcile that sent the news lets go.
-	newsUntil(sent, video, func() bool { return true })
-	svc.reconciling.Lock()
-	svc.reconciling.Unlock() //nolint:staticcheck // waits for the reconcile that sent the news
-	if !slices.Contains(svc.watch.w.WatchList(), fileio.ResolvePath(short)) {
-		t.Fatalf("the short rendered is not watched, the watch has %v", svc.watch.w.WatchList())
+	// reconcile that sent the news lets go. The news is read until a
+	// reconcile has followed it, since what came before the plan, its
+	// temporary file, can be heard on its own.
+	watched := func() bool {
+		svc.reconciling.Lock()
+		defer svc.reconciling.Unlock()
+		return slices.Contains(svc.watch.w.WatchList(), fileio.ResolvePath(short))
 	}
+	newsUntil(sent, video, watched)
 	shortGoes(t, svc, video, sent, plan, short)
 }
 
@@ -329,8 +331,9 @@ func renderedShort(t *testing.T, video string) (plan, short string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Put in place whole, the way editPlan writes a plan.
 	plan = filepath.Join(engine.LogsDir(video), "clips.json")
-	if err := os.WriteFile(plan, data, 0o644); err != nil {
+	if err := fileio.WriteAtomic(afero.NewOsFs(), plan, data); err != nil {
 		t.Fatal(err)
 	}
 	return plan, short
