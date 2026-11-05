@@ -69,6 +69,18 @@ func (s *FrameFairy) reconcile(changed []string) {
 	}
 }
 
+// watchTheDisk starts the watch on the folders of the videos and takes
+// the first look at every one of them, as the app starts and before the
+// window can ask about any. A video deleted outside the app while it was
+// closed is then let go before anything opens it or writes into its
+// folder: Tim deleted two videos with their folders, an earlier version
+// wrote the chosen clip back into one, and the app opened on it after an
+// update and said it was not in the library.
+func (s *FrameFairy) watchTheDisk() {
+	s.watch = newWatching(s.reconcile)
+	s.reconcile(nil)
+}
+
 // shortsOf is the shorts of a video, as its plans say, see
 // engine.Episode.Shorts.
 func (s *FrameFairy) shortsOf(video string) []string {

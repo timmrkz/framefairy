@@ -101,8 +101,8 @@ func main() {
 	})
 	svc.jobs.news = svc.told
 	// What changes in the folders of the videos, whoever changed it, is
-	// looked at as it happens, see reconcile.go.
-	svc.watch = newWatching(svc.reconcile)
+	// looked at as it happens, and every video once now, see reconcile.go.
+	svc.watchTheDisk()
 	// A failure is said once, as it happens, see notice.go.
 	svc.jobs.notice = quietly(func(n Notice) {
 		if app != nil {
