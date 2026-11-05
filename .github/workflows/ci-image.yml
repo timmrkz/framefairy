@@ -13,12 +13,6 @@
 # when one of them changed. The step that builds stops after ten minutes,
 # as the system packages of the other jobs do. A file the Dockerfile
 # comes to read joins the sum and the sparse checkout below.
-#
-# A job takes each image with its layers in zstd, the -zstd tags, made
-# from the image as it was built and nothing else, so no package is asked
-# for again. A job unpacks the whole image before its first step, and
-# zstd unpacks several times faster than the gzip docker pushes by
-# default: unpacking the walks' image took 20 of a walks job's seconds.
 name: CI image
 
 on:
@@ -40,8 +34,8 @@ jobs:
     name: find or build
     runs-on: ubuntu-24.04
     outputs:
-      ref: ${{ steps.tag.outputs.ref }}-zstd
-      walks: ${{ steps.tag.outputs.walks }}-zstd
+      ref: ${{ steps.tag.outputs.ref }}
+      walks: ${{ steps.tag.outputs.walks }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -73,18 +67,3 @@ jobs:
           docker buildx build --push --target base -t "$REF" -f .github/ci-image/Dockerfile .
           docker buildx build --push --target walks --build-arg PLAYWRIGHT="$PLAYWRIGHT" \
             -t "$WALKS" -f .github/ci-image/Dockerfile .
-      - name: Each image in zstd, unless it is there
-        timeout-minutes: 10
-        env:
-          REF: ${{ steps.tag.outputs.ref }}
-          WALKS: ${{ steps.tag.outputs.walks }}
-        run: |
-          for image in "$REF" "$WALKS"; do
-            if docker buildx imagetools inspect "$image-zstd" >/dev/null 2>&1; then
-              echo "$image-zstd is there"
-              continue
-            fi
-            docker buildx inspect zstd >/dev/null 2>&1 || docker buildx create --name zstd --driver docker-container --use
-            echo "FROM $image" | docker buildx build --builder zstd \
-              --output "type=image,name=$image-zstd,push=true,compression=zstd,force-compression=true,oci-mediatypes=true" -
-          done
