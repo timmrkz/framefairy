@@ -11,7 +11,8 @@ import { overlaid } from "./rules.mjs";
 
 const w = await begin({ steps: 25 });
 const { page, rng, watch } = w;
-const frame = 1 / (await ask(page, "Source", watch.at.path)).fps;
+const fps = (await ask(page, "Source", watch.at.path)).fps;
+const frame = 1 / fps;
 const at = () => preview(page, frame);
 
 // Whether a press of the space bar plays the clip rather than the episode
@@ -52,17 +53,18 @@ function overlaysFollow(overlays, state) {
 // the clip's end, the frame that holds the moment a frame before it, the
 // last the short shows, see frameAt in lib/flow.ts. Read before and after
 // the app has settled, so whatever the pause set going has ended. A moment
-// a hair before a frame's start is in that frame, counted to the
-// microsecond, FRAME_REACH in lib/flow.ts: a pause a millisecond before a
-// frame showed that frame, and the walk, counting without the half
-// microsecond, wanted the one before, issue #704.
-const REACH = 0.001 + 0.0000005;
+// a hair before a frame's start is in that frame, counted as the engine
+// counts it, in whole microseconds: a pause a millisecond before a frame
+// showed that frame, and the walk, counting in seconds, wanted the one
+// before, issue #704. At a whole rate, which every video of the walks has,
+// the count is exact.
+const holding = (t) => Math.floor((Math.round((t + 0.001) * 1_000_000) * fps) / 1_000_000);
 async function staysPaused(what) {
   const a = await at();
   await settle(page);
   const b = await at();
-  const holds = Math.floor((b.at + REACH) / frame) * frame;
-  const endsOn = Math.floor((b.at - frame + REACH) / frame) * frame;
+  const holds = holding(b.at) * frame;
+  const endsOn = holding(b.at - frame) * frame;
   const pictured = Math.abs(b.frame - holds) < 1e-6 || Math.abs(b.frame - endsOn) < 1e-6;
   if (!a.paused || !b.paused || Math.abs(a.at - b.at) > 1e-3 || !pictured) {
     watch.broke(

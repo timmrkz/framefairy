@@ -102,11 +102,16 @@ func TestEveryEdgeIsKeptOnTheStartOfItsFrame(t *testing.T) {
 			if got, _ := s.pieceFrames(at, at+1); got != k {
 				t.Errorf("at %s fps, frame %d kept at %.3f is cut on frame %d", st.Rate, k, at, got)
 			}
-			// A moment a hair before it is in it too, a pause a millisecond
-			// before a frame, counted to the microsecond, the frame the
-			// video preview draws there, frameAt in lib/flow.ts.
+			// A moment a hair before it, a pause a millisecond before the
+			// frame, is in it, the frame the video preview draws there,
+			// frameAt in lib/flow.ts. Unless the kept start lies before the
+			// frame, as it does for the table's Below of them: then it is
+			// in the frame before.
 			if k > 0 {
-				want := (ms*1000 - int64(math.Round(st.Start*1_000_000))) * num / (den * 1_000_000)
+				want := k
+				if (ms-startMs)*num < k*den*1000 {
+					want = k - 1
+				}
 				if got := s.frameHolding(float64(ms-1) / 1000); got != want {
 					t.Errorf("at %s fps, %.3f, a hair before frame %d kept at %.3f, is frame %d, want %d", st.Rate, float64(ms-1)/1000, k, at, got, want)
 				}

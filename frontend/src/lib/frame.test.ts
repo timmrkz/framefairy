@@ -75,22 +75,23 @@ describe("the frame that holds an edge", () => {
 
   // A pause lands anywhere, a millisecond before a frame's start too, and
   // the frame drawn for it is then the frame the playhead is on, issue
-  // #704. A moment a hair before a frame's start is in that frame, counted
-  // to the microsecond the way the engine counts it, frameHolding in
-  // engine/cropmarks.go, so the frame is worked out here in whole numbers.
-  test.each(cases.stretches)("at $rate fps from $start, a moment a hair before a frame kept to the millisecond is in the frame the engine says", (c) => {
+  // #704. The moment a hair before a frame kept to the millisecond is in
+  // that frame, unless the frame's start, kept, lies before it, as it does
+  // for the table's below of them: then it is in the frame before.
+  test.each(cases.stretches)("at $rate fps from $start, a moment a hair before a frame kept to the millisecond is in that frame, or the one before for the frames kept below", (c) => {
     const [num, den] = rateOf(c.rate);
     const s = samplesAt(num, den, c.start, c.frames + 1);
     const startMs = Math.round(c.start * 1000);
-    const startUs = Math.round(c.start * 1_000_000);
+    let before = 0;
     const wrong: string[] = [];
     for (let k = 1; k < c.frames; k++) {
       const ms = startMs + Math.floor((2 * k * den * 1000 + num) / (2 * num));
       const at = (ms - 1) / 1000;
-      const want = Math.floor(((ms * 1000 - startUs) * num) / (den * 1_000_000));
       const got = [frameAt(at, den / num, c.start), rankAt(s, at)];
-      if (got.join() !== [want, want].join() && wrong.length < 5) wrong.push(`${at} is ${got.join(", ")}, the engine says ${want}`);
+      if (got[0] === k - 1 && got[1] === k - 1) before++;
+      else if ((got[0] !== k || got[1] !== k) && wrong.length < 5) wrong.push(`${at}, a hair before frame ${k}, is ${got.join(", ")}`);
     }
     expect(wrong).toEqual([]);
+    expect(before).toBe(c.below);
   });
 });
