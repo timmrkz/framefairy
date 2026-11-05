@@ -62,27 +62,29 @@ jobs:
       # The checkout is the runner's user's and the job runs as root, see
       # the walks in ci.yml.
       - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: false
       # The walks in Chromium build with coverage, which is a build of its
       # own, so they keep a cache of their own beside the one ci.yml keeps
       # for the walks, and take that one when theirs is not there yet.
       # Saved once for each go.sum, so a night adds no cache of its own to
       # the ten gigabytes the repository may keep, and what changed since
       # is built again. The walks in WebKit build as ci.yml does and take
-      # its cache.
+      # its cache. It holds Go itself too, so it comes before setup-go, see
+      # ci.yml.
       - id: gocache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: go-v2-walks-${{ matrix.browser == 'chromium' && 'coverage-' || '' }}${{ runner.os }}-${{ hashFiles('go.sum') }}
+            ${{ runner.tool_cache }}/go
+          key: go-v3-walks-${{ matrix.browser == 'chromium' && 'coverage-' || '' }}${{ runner.os }}-${{ hashFiles('go.sum') }}
           restore-keys: |
-            go-v2-walks-${{ matrix.browser == 'chromium' && 'coverage-' || '' }}${{ runner.os }}-
-            go-v2-walks-${{ runner.os }}-
+            go-v3-walks-${{ matrix.browser == 'chromium' && 'coverage-' || '' }}${{ runner.os }}-
+            go-v3-walks-${{ runner.os }}-
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
@@ -122,7 +124,8 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: go-v2-walks-coverage-${{ runner.os }}-${{ hashFiles('go.sum') }}
+            ${{ runner.tool_cache }}/go
+          key: go-v3-walks-coverage-${{ runner.os }}-${{ hashFiles('go.sum') }}
       - if: matrix.browser == 'chromium'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
