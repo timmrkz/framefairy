@@ -193,10 +193,10 @@ The pull requests, in order, each one self-contained:
    see Parts 2 and 3 below.
 3. `Status` asked of the episode, and the app's `project()` and
    `NewProject(nil, ...)` go.
-4. The paths of a video's own files checked by its episode, opened
-   through `os.Root` on its work folder, the third thing #608 asks for,
-   and with them every plan read still outside the episode, the ones
-   the Not to copy line of ARCHITECTURE.md names. Closes #608.
+4. Every plan read still outside the episode, the views of a gesture
+   and its captions above all, and whose a path is asked of the episode,
+   the third thing #608 asks for. Opening the work folder through
+   `os.Root` was dropped, see Part 4 below. Closes #608.
 
 ## Parts 2 and 3: what the app asks in place of a Project
 

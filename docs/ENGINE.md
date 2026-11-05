@@ -710,7 +710,20 @@ one search can read, `Episode.Room`, and where the window goes,
 `--next` alike. What reads no file,
 the window's limits and where it goes after a search, is the settings'
 own, `Options.Limits` and `Options.WindowAfter`. The app makes no
-`Project` to ask any of it. See
+`Project` to ask any of it. A view of a clip takes the plan the episode
+holds, with the bytes it was read from: a gesture while the hand moves,
+`ShapeClip` and `ShapeClipView`, a caption edge, `ShapeCaptionTime`, the
+captions of a clip and of one on its way, and a share of a clip, so a
+drag reads no file. An edit reads the plan file under `editPlan`'s lock,
+because it writes what it read. The undo's snapshot,
+`Episode.TakeSnapshot`, and whether a file is a clip's short,
+`Episode.IsShort`, ask the episode for its plans too, and
+`Episode.ShortFolders` says which folders its shorts were rendered into,
+for the app to watch. Whose a path is, is the episode's to say:
+`Episode.Owns` for the video and what is in its work folder, by where
+the path really leads, `Episode.HasPlan` for a plan right in its logs
+folder, and `Episode.Linked` for a video or work folder that is a link
+and owns nothing. See
 [decisions/2026-11-03-one-episode-per-video.md](decisions/2026-11-03-one-episode-per-video.md).
 
 ### What ffmpeg and ffprobe said, kept
