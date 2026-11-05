@@ -39,13 +39,36 @@ describe("the walk's clock", () => {
     expect(card.started).toBe(1);
   });
 
-  // The app holds the sound card itself when it pauses, and the clock
-  // lets go only of a hold it made.
-  test("leaves a sound card held by someone else held", () => {
+  // WebKit suspends a sound card itself when its media session is
+  // interrupted, and left it suspended in the middle of a play nobody
+  // paused. The walk waited six minutes on a play that never moved. The
+  // next tick starts it again, once, however long the browser takes.
+  test("starts again a sound card the browser suspended while a play goes on", async () => {
     const { card, clock } = played();
     card.state = "suspended";
     expect(clock(3.2, 3.24, false)).toBe(3.2);
-    expect(card).toMatchObject({ state: "suspended", held: 0, started: 0 });
+    expect(clock(3.2, 3.24, false)).toBe(3.2);
+    expect(card).toMatchObject({ state: "running", held: 0, started: 1 });
+  });
+
+  // A card WebKit is still bringing back counts as asked: the ticks while
+  // it takes its time do not ask again.
+  test("asks a slow sound card to start once", async () => {
+    const { play, card, clock } = played();
+    let started = () => {};
+    play.audio.resume = () => {
+      card.started++;
+      return new Promise<void>((done) => (started = done));
+    };
+    card.state = "interrupted" as AudioContextState;
+    clock(3.2, 3.24, false);
+    clock(3.21, 3.24, false);
+    expect(card.started).toBe(1);
+    started();
+    await Promise.resolve();
+    await Promise.resolve();
+    clock(3.22, 3.24, false);
+    expect(card.started).toBe(2);
   });
 
   // A paused play holds its sound card, and the clock's last hold let go

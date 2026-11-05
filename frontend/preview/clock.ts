@@ -29,15 +29,34 @@ export function walkClock(play: Play): PlayClock {
 // meanwhile: a play asked for starts the sound card a moment after its
 // Pause button shows, so a hand that held it in between held a card that
 // was not running yet, and the play then ran to the clip's end on the
-// sound card's time, issue #702. Settles once the sound card has done
+// sound card's time, issue #702.
+//
+// Nobody holding it, the card runs for as long as a play goes on,
+// whoever stopped it: the browser suspends a card on its own too. WebKit
+// suspends it when its media session is interrupted, and when the
+// interruption is over before the suspension is done, the card stays
+// suspended and nobody is told, see suspendPlayback in WebKit's
+// AudioContext.cpp. A card made while its session was interrupted ran
+// for 98 ms of a play and then stood, and the walk waited six minutes on
+// a play that never moved. Started again only by a hand or a frame that
+// had held it, it stood for good. Settles once the sound card has done
 // what it was told.
 const holders = new WeakMap<Play, Set<string>>();
+const starting = new WeakMap<Play, Promise<void>>();
 export function holdSound(play: Play, who: string, held: boolean): Promise<void> {
   let by = holders.get(play);
   if (!by) holders.set(play, (by = new Set()));
   if (held) by.add(who);
-  else if (by.delete(who) && !by.size) return play.playing && play.audio.state === "suspended" ? play.audio.resume() : Promise.resolve();
-  return by.size && play.audio.state === "running" ? play.audio.suspend() : Promise.resolve();
+  else by.delete(who);
+  if (by.size) return play.audio.state === "running" ? play.audio.suspend() : Promise.resolve();
+  if (!play.playing || play.audio.state === "running" || play.audio.state === "closed") return Promise.resolve();
+  // Asked once, not again on every tick while the browser takes its time.
+  let start = starting.get(play);
+  if (!start) {
+    start = play.audio.resume().finally(() => starting.delete(play));
+    starting.set(play, start);
+  }
+  return start;
 }
 
 // Hands every queue the page makes the walk's clock, unless the walk asked
