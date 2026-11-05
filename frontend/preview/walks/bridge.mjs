@@ -565,6 +565,9 @@ export async function holdClock(page) {
     const after = await pageNow(page);
     if (after !== at) throw new Error(`pauseAt did not hold the clock: it went from ${at} to ${after}`);
   }
+  // The Go side's clock for the time removed work has stands still with
+  // it, see walkTime in walktime_test.go.
+  await control(page.url(), "/clock?hold");
   page.__held = true;
 }
 
@@ -572,12 +575,27 @@ export async function holdClock(page) {
 const pageNow = (page) => page.evaluate(() => Date.now());
 
 // Runs the app's held time on by ms, every timer and frame on the way
-// firing in turn, and holds it again there.
+// firing in turn, and holds it again there. The Go side's clock for the
+// time removed work has runs on with it, first, so work whose time is up
+// is forgotten there before the page sees its own time run out, see
+// walkTime in walktime_test.go.
 export async function runClock(page, ms) {
+  await control(page.url(), `/clock?run=${Math.round(ms)}`);
   await page.clock.runFor(ms);
 }
 
+// Lets the app's time run again and leaves the Go side's held, for a
+// walk that takes the app somewhere its frames and timers have to run,
+// another video and back, while the time removed work has stands still.
+// The Go side keeps that time, so the page running on draws it and
+// decides nothing. holdClock holds the page again.
+export async function letPageTimeGo(page) {
+  await page.clock.resume();
+  page.__held = false;
+}
+
 export async function letClockGo(page) {
+  await control(page.url(), "/clock?go");
   await page.clock.resume();
   page.__held = false;
 }
@@ -916,10 +934,12 @@ export async function shownOnPlayhead(page, { captions = false, lost } = {}) {
 // a play still going is paused in the frame the wait ends, inside the
 // page: pressed a trip later, the play went on further the busier the
 // machine, and a clip that reached its end in between would play again
-// from its start.
-export async function playUntil(page, { past = Infinity, most = Infinity, from = NaN, pause = false } = {}) {
+// from its start. With hold, a play still going is held where it is in
+// that frame instead, sound and picture, see holdSound, until the walk
+// lets it go.
+export async function playUntil(page, { past = Infinity, most = Infinity, from = NaN, pause = false, hold = false } = {}) {
   return page.evaluate(
-    ([past, most, from, pause]) =>
+    ([past, most, from, pause, hold]) =>
       new Promise((done) => {
         let last = Number.isFinite(from) ? from : Number(document.querySelector(".screen")?.dataset.playhead);
         let gone = 0;
@@ -934,6 +954,7 @@ export async function playUntil(page, { past = Infinity, most = Infinity, from =
             document.body.dispatchEvent(new KeyboardEvent("keydown", key));
             document.body.dispatchEvent(new KeyboardEvent("keyup", key));
           }
+          if (playing && hold) void window.__holdSound(true);
           return { at, playing, gone };
         };
         const now = look();
@@ -946,7 +967,7 @@ export async function playUntil(page, { past = Infinity, most = Infinity, from =
         });
         watch.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-playhead", "aria-label"] });
       }),
-    [past === Infinity ? Number.MAX_VALUE : past, most === Infinity ? Number.MAX_VALUE : most, from, pause],
+    [past === Infinity ? Number.MAX_VALUE : past, most === Infinity ? Number.MAX_VALUE : most, from, pause, hold],
   );
 }
 
@@ -959,30 +980,40 @@ export async function holdSound(page, held) {
   await page.evaluate((held) => window.__holdSound(held), held);
 }
 
+// Presses the space bar to play, with the sound card held from before the
+// press until the app has settled on it, so the play starts and stands at
+// its first frame meanwhile, see holdSound. Not held, a settle while a
+// play runs lasted as long as the play on a busy runner, which answered
+// the app's calls for the frames the whole way, and the play had reached
+// the clip's end before the walk looked, issue #705. Says whether it
+// plays.
+export async function pressPlay(page) {
+  await holdSound(page, true);
+  await page.keyboard.press("Space");
+  await settle(page);
+  const playing = await page.evaluate(() => !document.querySelector('button[aria-label="Play"]'));
+  await holdSound(page, false);
+  return playing;
+}
+
 // Plays from the playhead until it has gone on by seconds of the episode,
 // or until the play has stopped by itself at the clip's end, and pauses it
 // there, see playUntil. Says false, and plays nothing, when the space bar
 // did not start a play, once the app has settled on the press.
 export async function playFor(page, seconds) {
   const from = await page.evaluate(() => document.querySelector(".screen")?.dataset.playhead ?? null);
-  await page.keyboard.press("Space");
-  await settle(page);
-  const now = await page.evaluate(() => ({
-    playing: !document.querySelector('button[aria-label="Play"]'),
-    at: document.querySelector(".screen")?.dataset.playhead ?? null,
-  }));
-  if (!now.playing) return now.at !== from;
+  if (!(await pressPlay(page))) return (await page.evaluate(() => document.querySelector(".screen")?.dataset.playhead ?? null)) !== from;
   await playUntil(page, { most: seconds, from: Number(from), pause: true });
   return true;
 }
 
 // How many times the Go side has told the interface something of a name,
-// "job" above all, counted from the first time a walk asks, so it can wait
-// for the next. The bridge sends every event to every page listening, so
+// "video" above all, the state of a video, which carries its jobs,
+// counted from the first time a walk asks, so it can wait for the next. The bridge sends every event to every page listening, so
 // the walk listens beside the app and takes nothing from it.
 // The first ask waits until the walk is listening, so nothing the Go side
 // says after it is missed.
-export async function news(page, name = "job") {
+export async function news(page, name = "video") {
   return page.evaluate(async (name) => {
     if (!window.__news) {
       window.__news = {};
@@ -1024,7 +1055,7 @@ export async function caughtUp(page, url, jobs = []) {
 // often than seen, a count news gave, and says how often now. It waits
 // for good: news that never comes is a walk that hangs, ended by the
 // -timeout of make walks with the step it was in printed, see walk.mjs.
-export async function nextNews(page, seen, name = "job") {
+export async function nextNews(page, seen, name = "video") {
   await page.evaluate(
     ([name, seen]) =>
       new Promise((done) => ((window.__news[name] ?? 0) > seen ? done() : window.__newsWaiting.push({ name, seen, done }))),

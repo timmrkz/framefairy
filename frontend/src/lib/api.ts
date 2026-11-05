@@ -584,6 +584,18 @@ export interface Job {
   // A search that stopped whose window the video's window was moved off,
   // so it is set aside, see markAside in window.go.
   aside?: boolean;
+  // For a search that is over or stopped, how it ended, as the Go side
+  // says it, see engine.SearchEnded: "found", "nothing", "short",
+  // "hearing" or "finding".
+  ended?: "found" | "nothing" | "short" | "hearing" | "finding";
+  // For work that stopped and was removed, how its removal stands, see
+  // removal.go: the moment it is forgotten, in milliseconds since the
+  // epoch and 0 while a hand holds its row, then how many seconds are
+  // left, and how many it had in all.
+  away?: { until: number; left: number; whole: number };
+  // For work that runs, that it was told to stop and has not ended yet,
+  // from the moment it was told, see Job.Stopping in jobs.go.
+  stopping?: boolean;
   // Grows with every change to any job. Of two snapshots of a job, the one
   // with the larger number is the later one.
   seq?: number;
@@ -1031,6 +1043,12 @@ export const api = {
   redo: (path: string) => call<Undone>("Redo", path),
   jobs: () => call<Job[]>("Jobs"),
   cancelJob: (id: string) => call<void>("CancelJob", id),
+  // Remove work that stopped, hold its time while a hand is on its row,
+  // and put it back. The Go side keeps the time and forgets the work once
+  // it is up. Removing and putting back answer with the video's state.
+  removeWork: (id: string) => call<VideoState>("RemoveWork", id),
+  holdRemoval: (id: string, held: boolean, press: number) => call<void>("HoldRemoval", id, held, press),
+  putWorkBack: (id: string) => call<VideoState>("PutWorkBack", id),
   reveal: (path: string) => call<void>("Reveal", path),
   // No words take the label away, and the answer is then null.
   setLabel: (path: string, text: string, colour: string) => call<Label | null>("SetLabel", path, text, colour),

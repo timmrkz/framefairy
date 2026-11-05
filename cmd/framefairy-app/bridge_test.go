@@ -408,6 +408,29 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		b.d.bus.send("mark", n)
 		answer(w, n, nil)
 	})
+	// The clock removed work is timed by, run on by run milliseconds,
+	// with every call due by then made before it answers, the way a walk
+	// runs the page's clock on, see runClock in walks/bridge.mjs.
+	mux.HandleFunc("/clock", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		if q.Has("hold") {
+			b.d.time.hold()
+			answer(w, true, nil)
+			return
+		}
+		if q.Has("go") {
+			b.d.time.letGo()
+			answer(w, true, nil)
+			return
+		}
+		ms, err := strconv.Atoi(q.Get("run"))
+		if err != nil || ms < 0 {
+			http.Error(w, "run says how many milliseconds to run the clock on", http.StatusBadRequest)
+			return
+		}
+		b.d.time.run(time.Duration(ms) * time.Millisecond)
+		answer(w, ms, nil)
+	})
 	mux.HandleFunc("/pick", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		path, err := b.pick(q.Get("seconds"), q.Get("rate"), q.Get("switch"), q.Get("timing"), q.Get("codec") == "hevc",
@@ -1110,6 +1133,7 @@ func openBridge(t *testing.T) *bridge {
 	// every sequence has heard what it waits for, and a walk waiting for
 	// more words ends there.
 	d.most = 60 * engine.SampleRate
+	d.time = newWalkTime()
 	d.start(d.svc.store)
 	// A report goes on the bridge's own Desktop and is shown nowhere.
 	reportFolder = func() string {
@@ -1974,6 +1998,31 @@ func TestAWalkThatHangsIsStoppedWithWhatItSaid(t *testing.T) {
 	}
 }
 
+func TestAWalkersNodeThatEndsOnItsOwnIsHeardToItsLastLine(t *testing.T) {
+	// A node that ended on its own lost what it said last, issue #684:
+	// what it printed went through a copy that cmd.Wait cut off a moment
+	// after the node ended, and the copy waited on the reading. Here the
+	// node begins, is handed its sequence, says its last line and ends,
+	// all before anything it said is read.
+	s := &sequencer{run: []string{"sh", "-c", `printf '\036walking\n'; read -r name; echo "$name said this last"`}}
+	defer s.stop(context.Background())
+	if err := s.start(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.WriteString(s.in, "ends\n"); err != nil {
+		t.Fatal(err)
+	}
+	<-s.ended
+	var out bytes.Buffer
+	err := s.walk(context.Background(), "ends", &out)
+	if err == nil || !strings.Contains(err.Error(), "its node ended before it had walked") {
+		t.Errorf("a sequence whose node ended in it gives %v, want that its node ended before it had walked", err)
+	}
+	if out.String() != "ends said this last\n" {
+		t.Errorf("a sequence whose node ended in it printed %q, want what the node said last", out.String())
+	}
+}
+
 // A walker's sequences are walked by one node, one after another, and
 // each says how it went: passed, failed, or threw, which ends the node, so
 // the next starts in a new one. A node that ends before its sequence is
@@ -1995,8 +2044,8 @@ func TestAWalkersSequencesAreWalkedByOneNode(t *testing.T) {
 		esac
 	done`
 	// The node's child that holds its output, killed with nothing else,
-	// lingers no longer than it takes to see that it is let go of.
-	s := &sequencer{run: []string{"sh", "-c", serve}, linger: time.Millisecond}
+	// is not waited for.
+	s := &sequencer{run: []string{"sh", "-c", serve}}
 	defer s.stop(context.Background())
 	walked := func(name string) (string, error) {
 		t.Helper()
@@ -2143,23 +2192,18 @@ type sequencer struct {
 	run []string
 	dir string
 	env []string
-	// linger is how long a node that ended may hold its output open,
-	// walkLinger unless set.
-	linger time.Duration
-	cmd    *exec.Cmd
-	in     io.WriteCloser
-	// lines is what the node prints, a line at a time, closed when it
-	// has ended.
+	cmd *exec.Cmd
+	in  io.WriteCloser
+	// lines is what the node prints, a line at a time, closed once
+	// everything it printed before it ended has been read.
 	lines chan string
+	// ended is closed when the node has ended, before what it printed
+	// last is read.
+	ended chan struct{}
 	// last is the sequence the node walked last, which a node that ends
 	// between two sequences is told by.
 	last string
 }
-
-// walkLinger is how long a walk's node that ended may hold its output
-// open. The browser a stopped walk started may hold it open, and what it
-// says then is not worth waiting for.
-const walkLinger = 5 * time.Second
 
 // walkStopping is how long a walk that was interrupted has to keep its
 // traces and end before it is killed.
@@ -2237,35 +2281,57 @@ func (s *sequencer) walk(ctx context.Context, name string, out io.Writer) error 
 func (s *sequencer) start() error {
 	cmd := exec.Command(s.run[0], s.run[1:]...)
 	cmd.Dir, cmd.Env = s.dir, s.env
-	cmd.WaitDelay = cmp.Or(s.linger, walkLinger)
 	in, err := cmd.StdinPipe()
 	if err != nil {
 		return err
 	}
-	said, says := io.Pipe()
-	cmd.Stdout, cmd.Stderr = says, says
-	if err := cmd.Start(); err != nil {
+	// The node prints into a pipe of the app's own, not through a copy
+	// that cmd.Wait stops: that copy was cut off a moment after the node
+	// ended, with what it said last still on its way, whenever the
+	// reading was slower than the moment, issue #684.
+	said, says, err := os.Pipe()
+	if err != nil {
 		return err
 	}
-	lines := make(chan string)
+	cmd.Stdout, cmd.Stderr = says, says
+	if err := cmd.Start(); err != nil {
+		_, _ = said.Close(), says.Close()
+		return err
+	}
+	lines, ended := make(chan string), make(chan struct{})
 	go func() {
-		read := bufio.NewScanner(said)
-		read.Buffer(nil, 1<<24)
-		for read.Scan() {
-			lines <- read.Text()
+		defer said.Close()
+		defer close(lines)
+		read := bufio.NewReader(said)
+		for {
+			l, err := read.ReadString('\n')
+			l, last := strings.CutSuffix(strings.TrimSuffix(l, "\n"), nodeEndedLine)
+			if l != "" || (err == nil && !last) {
+				lines <- l
+			}
+			if last || err != nil {
+				return
+			}
 		}
-		close(lines)
-		// What it says after the reading stopped, a line too long, is
-		// let go of, so it never waits to be heard.
-		_, _ = io.Copy(io.Discard, said)
 	}()
+	// Once the node has ended, everything it printed is in the pipe, and
+	// the line put in after it is read after all of it. What a child of
+	// the node still says after that, a browser a stopped walk started,
+	// is not waited for: the reading ends at that line, whoever else
+	// holds the pipe open.
 	go func() {
 		_ = cmd.Wait()
+		close(ended)
+		_, _ = io.WriteString(says, nodeEndedLine+"\n")
 		_ = says.Close()
 	}()
-	s.cmd, s.in, s.lines, s.last = cmd, in, lines, ""
+	s.cmd, s.in, s.lines, s.ended, s.last = cmd, in, lines, ended, ""
 	return nil
 }
+
+// nodeEndedLine is the line put into a node's output after it ended, see
+// start, which ends the reading of what it said.
+const nodeEndedLine = "\x1enode ended"
 
 // stop has the node end, if one runs, by telling it there is nothing
 // more to walk, so it closes its browser itself. It is killed if that has

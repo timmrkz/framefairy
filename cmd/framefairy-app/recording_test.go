@@ -180,7 +180,7 @@ func TestAReportHoldsTheRecordings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	st := &store{dir: t.TempDir(), files: disk, settings: defaultSettings()}
+	st := &store{dir: t.TempDir(), files: disk, settings: defaultSettings(), adding: make(chan struct{}, 1)}
 	f := &FrameFairy{store: st, report: newReporting(engine.NewMachine(afero.NewMemMapFs()), "/config/report")}
 	d := f.report.attach("drop", []handed{{name: "a.png", data: pngOf(t, 12, 8)}, {name: "Screen Recording.mov", data: film}})
 	if d.Error != "" {

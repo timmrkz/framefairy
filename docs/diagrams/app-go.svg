@@ -33,6 +33,8 @@
 <text class="c" x="84" y="165">a video: videostate, views, edits, history, captions, frames, media, words, room, levels, export</text>
 <rect class="chip" x="76" y="178" width="383" height="22" rx="6"/>
 <text class="c" x="84" y="193">the queue: jobs, lanes, search, keep, the search window</text>
+<rect class="chip" x="465" y="178" width="250" height="22" rx="6"/>
+<text class="c" x="473" y="193">the files on disk: watch, reconcile</text>
 <rect class="chip" x="76" y="206" width="436" height="22" rx="6"/>
 <text class="c" x="84" y="221">library and settings: library, settings, chosen, setup, licence</text>
 <rect class="chip" x="518" y="206" width="183" height="22" rx="6"/>
@@ -53,7 +55,7 @@
 <rect class="box" x="64" y="360" width="672" height="106" rx="8"/>
 <text class="n" x="76" y="382">the engine</text>
 <text class="p" x="76" y="400">engine/</text>
-<text class="q" x="76" y="416">reached through engine.Project</text>
+<text class="q" x="76" y="416">reached through engine.Project, and engine.Machine with each video&#x27;s Episode</text>
 <rect class="chip" x="76" y="426" width="103" height="22" rx="6"/>
 <text class="c" x="84" y="441">engine/runlog</text>
 <rect class="chip" x="185" y="426" width="96" height="22" rx="6"/>

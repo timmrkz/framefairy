@@ -90,7 +90,7 @@ func TestAClipMadeByHand(t *testing.T) {
 	if !strings.HasPrefix(c.Title, "wort") {
 		t.Errorf("titled %q, want its first words", c.Title)
 	}
-	st := Status(disk, source, p.Base.ASRModel, p.Base.SilenceDB)
+	st := Status(NewMachine(disk), source, p.Base.ASRModel, p.Base.SilenceDB)
 	// What is said is the edges of the lines a clip made by hand is made
 	// of, so the app knows where I and O can make one.
 	lined, err := p.Transcript()

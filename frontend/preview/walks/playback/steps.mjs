@@ -6,7 +6,7 @@
 // the helpers only these steps use. See docs/TESTING.md.
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { addHEVC, ask, caughtUp, chosen, clickOnTrack, cropFrame, drag, engineState, episodeOn, filmedOnScreen, fromSidebar, handles, high, holdSound, loudness, middle, news, nextNews, nextPaint, playUntil, preview, readShort, recordFrames, sameLook, sayLook, seekTo, settle, shortFrames, shownOnPlayhead, timeline, xOf, reload, pageUntil, inside } from "../bridge.mjs";
+import { addHEVC, ask, caughtUp, chosen, clickOnTrack, cropFrame, drag, engineState, episodeOn, filmedOnScreen, fromSidebar, handles, high, holdSound, loudness, middle, news, nextNews, nextPaint, playUntil, pressPlay, preview, readShort, recordFrames, sameLook, sayLook, seekTo, settle, shortFrames, shownOnPlayhead, timeline, xOf, reload, pageUntil, inside } from "../bridge.mjs";
 import { onePiece, pieceCount, rate, restAhead, shortOf, url } from "../common/steps.mjs";
 import { overlaid, stillFrame } from "../rules.mjs";
 
@@ -225,7 +225,13 @@ export const steps = {
         if (!window.__playWatch) return;
         const at = Number(document.querySelector(".screen")?.dataset.playhead);
         const playing = !!document.querySelector('button[aria-label="Pause"]');
-        window.__played.push([performance.now(), at, window.__pictured(), playing]);
+        // Where on the program the sound card is heard, by its own time
+        // less the latency it says it has, the way Web Audio has it: the
+        // moment the play is to stop at, whatever the page's frames do.
+        const q = window.__frameQueue;
+        const a = q.audio;
+        const heard = q.c0 === null ? NaN : q.m0 / a.sampleRate + (a.currentTime - q.c0) - ((a.outputLatency || 0) + (a.baseLatency || 0));
+        window.__played.push([performance.now(), at, window.__pictured(), playing, heard]);
         requestAnimationFrame(tick);
       };
       requestAnimationFrame(tick);
@@ -614,8 +620,7 @@ export const steps = {
     const stop = await recordFrames(page, 1 / (await rate(page)));
     await page.evaluate(() => document.body.focus());
     const began = (await page.evaluate(() => Number(document.querySelector(".screen").dataset.playhead))) || 0;
-    await page.keyboard.press("Space");
-    await settle(page);
+    await pressPlay(page);
     // With a key, it is pressed every 0.4 s of the play, counted from
     // where the skip before landed, the way a hand skips ahead while
     // it watches.
@@ -1233,10 +1238,11 @@ export const steps = {
   //                    at the ends of a silence where the frame queue says
   //                    it handed the sound card its sound late, nothing
   //                    was heard after the clip's end, the play
-  //                    stopped within 400 ms of the playhead reaching it,
-  //                    and no frame drawn from then on is from before the
-  //                    last second of the clip, so nothing of the clip's
-  //                    start played again
+  //                    stopped within two animation frames of the sound
+  //                    card being heard past it, and no frame drawn from
+  //                    the playhead reaching it on is
+  //                    from before the last second of the clip, so
+  //                    nothing of the clip's start played again
   async "stopped at its end"(walk) {
     const { page } = walk;
     if (!walk.loopEnd) {
@@ -1252,8 +1258,20 @@ export const steps = {
       return;
     }
     const [reached] = played[i];
-    const stopped = played.slice(i).find(([, , , playing]) => !playing);
+    const drawn = played.slice(i).findIndex(([, , , playing]) => !playing);
+    const stopped = drawn < 0 ? undefined : played[i + drawn];
     const old = played.slice(i).find(([, , n]) => n >= 0 && n / fps < end - 1);
+    // The play stops on the page's next frames once the sound card is
+    // heard past the end of what it plays, counted in frames drawn, never
+    // in milliseconds: a busy machine draws its frames late, and a stop
+    // that came as it should took 413 ms by the page's clock, issue #696.
+    // A machine that draws late draws fewer frames, and one whose sound
+    // comes late is heard past the end later, so neither moves the count.
+    const most = 2;
+    const { programEnd: pend } = walk.loopEnd;
+    const heardEnd = played.findIndex(([, , , , h]) => h >= pend);
+    const lag = stopped && heardEnd >= 0 ? i + drawn - heardEnd : 0;
+    if (stopped) console.log(`      the play stopped ${lag} animation frames after the sound card was heard past the clip's end, ${drawn} after the playhead reached it`);
     // The sound, sample by sample. The bridge's episode sounds a steady
     // tone, so a click is a step in it: from one sample to the next the
     // tone bends by its second difference, never more than a few
@@ -1313,7 +1331,7 @@ export const steps = {
     else if (clicks) walk.wrong = `the sound clicked ${clicks} times, the first ${(-firstClick).toFixed(0)} ms before the end`;
     else if (after) walk.wrong = `${after} samples of sound were heard after the clip's end`;
     else if (!stopped) walk.wrong = `the play went on for ${(played.at(-1)[0] - reached).toFixed(0)} ms with the playhead at the clip's end`;
-    else if (stopped[0] - reached > 400) walk.wrong = `the play stopped ${(stopped[0] - reached).toFixed(0)} ms after the playhead reached the clip's end`;
+    else if (lag > most) walk.wrong = `the play stopped ${lag} animation frames after the sound card was heard past the clip's end, not within ${most}`;
     else if (old) walk.wrong = `frame ${(old[2] / fps).toFixed(3)} was drawn ${(old[0] - reached).toFixed(0)} ms after the playhead reached the clip's end at ${end.toFixed(3)}`;
   },
   // ["heard some"]     waits until the engine has a sentence of the video

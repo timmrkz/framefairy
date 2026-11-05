@@ -175,15 +175,35 @@ func (p *picked) with(files afero.Fs, path string, change func(*picked) bool) (b
 		return false, nil
 	}
 	p.version++
+	p.mu.Unlock()
+	return true, p.save(files, path)
+}
+
+// keep keeps key as the clip chosen by a hand, with only its own lock
+// held, so it can be chosen while the queue's lock is held. It writes
+// nothing: save writes it once that lock is let go.
+func (p *picked) keep(key string) {
+	p.mu.Lock()
+	// A clip a hand chose is no longer the one a removal chose, so
+	// putting a removed clip back after it chooses nothing, rule 5.
+	p.kept.Clip, p.instead = key, nil
+	p.version++
+	p.mu.Unlock()
+}
+
+// save writes what is kept through, the newest version only, so what is
+// on the disk is never older than what was written before it.
+func (p *picked) save(files afero.Fs, path string) error {
+	p.mu.Lock()
 	held, version := p.kept, p.version
 	p.mu.Unlock()
 	p.writing.Lock()
 	defer p.writing.Unlock()
 	if version <= p.written {
-		return true, nil
+		return nil
 	}
 	p.written = version
-	return true, writeChosen(files, path, held)
+	return writeChosen(files, path, held)
 }
 
 // ChooseClip remembers which clip of a video a hand chose, so the state

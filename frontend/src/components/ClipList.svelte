@@ -362,8 +362,7 @@
             spent={stopped.away.spent}
             together={stopped.away.together}
             onputback={stopped.away.onputback}
-            onend={stopped.away.onend}
-            onresume={stopped.away.onresume}
+            onhold={stopped.away.onhold}
           />
         {:else if g === 0 && stopped}
           <span class="title">{stopped.what}</span>
@@ -399,8 +398,7 @@
             spent={a.away.spent}
             together={a.away.together}
             onputback={a.away.onputback}
-            onend={a.away.onend}
-            onresume={a.away.onresume}
+            onhold={a.away.onhold}
           />
         {:else if a.stopped}
           <button class="pick carry" title={a.full} onclick={() => a.oncontinue?.()}>

@@ -8,8 +8,8 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { basename } from "node:path";
-import { ask, clickOnTrack, control, cropPixels, engineState, episodeOn, fromSidebar, handles, high, news, nextNews, nextPaint, open, pageUntil, playUntil, seekTo, settle, shortFramesFrom, shown, shownOnPlayhead, xOf } from "../bridge.mjs";
-import { canLook, clickCard, clickedFromAhead, clock, rate, restAhead, shortOf, shotClips, still, url } from "../common/steps.mjs";
+import { ask, caughtUp, clickOnTrack, control, cropPixels, engineState, episodeOn, fromSidebar, handles, high, news, nextNews, nextPaint, open, pageUntil, playUntil, seekTo, settle, shortFramesFrom, shown, shownOnPlayhead, xOf } from "../bridge.mjs";
+import { canLook, clickCard, clickedFromAhead, clock, onePiece, rate, restAhead, shortOf, shotClips, still, url } from "../common/steps.mjs";
 import { describe } from "../rules.mjs";
 
 export const steps = {
@@ -1045,21 +1045,23 @@ export const steps = {
     const { page, watch } = walk;
     // With the transcript open while the work hears, where the first
     // part not transcribed yet begins, against how far the saved
-    // transcript reaches, over nine of the job's news.
+    // transcript reaches, over nine pieces of audio heard.
     const path = await episodeOn(page);
     await page.evaluate(() => document.querySelector('.listhead button[aria-label="Search the transcript"]').click());
     await watch.step("click", s);
     // Where its dots end on the right, too, which must not move while
     // its left edge does: centred, the pattern walked back and forth
     // as the edge passed over it, found by Tim. Read in every frame
-    // until the work has told the app how far it heard nine times,
-    // with what the saved transcript holds asked after each.
-    const from = await news(page);
+    // until the nine pieces are heard and the state that says so is on
+    // screen, with what the saved transcript holds asked after each. A
+    // piece is counted, not a state: one piece can bring more than one
+    // state of the video, and one state can carry more than one piece.
     const times = 9;
     const sampled = page.evaluate(
-      ([from, times]) =>
+      () =>
         new Promise((done) => {
           const seen = [];
+          window.__giveWayDone = false;
           const tick = () => {
             const u = document.querySelector(".track .unheard");
             let now = null;
@@ -1073,21 +1075,23 @@ export const steps = {
               };
             }
             if (!seen.length || JSON.stringify(seen.at(-1)) !== JSON.stringify(now)) seen.push(now);
-            if ((window.__news.job ?? 0) >= from + times) done(seen);
+            if (window.__giveWayDone) done(seen);
             else requestAnimationFrame(tick);
           };
           requestAnimationFrame(tick);
         }),
-      [from, times],
     );
     const saves = new Set();
-    for (let seen = from; seen < from + times; ) {
-      // With the speech held, a piece more is heard for each news.
-      if (walk.speechHeld) await control(url, "/speech?step=1");
-      seen = await nextNews(page, seen);
+    for (let piece = 0; piece < times; piece++) {
+      // With the speech held, a piece more is heard each time, and the
+      // state that carries it is on screen before the next.
+      if (walk.speechHeld) await onePiece(page, url, path);
+      else await nextNews(page, await news(page));
+      await caughtUp(page, url);
       const status = await ask(page, "Episode", path).catch(() => null);
       saves.add(JSON.stringify(status?.heard ?? null));
     }
+    await page.evaluate(() => (window.__giveWayDone = true));
     const samples = await sampled;
     const edges = samples.map((d) => d?.left ?? null);
     const dots = samples.filter(Boolean);
@@ -1095,7 +1099,7 @@ export const steps = {
     const moves = edges.filter((v, i) => i && v !== null && edges[i - 1] !== null && v !== edges[i - 1]).length;
     if (edges.every((v) => v === null)) walk.wrong = "no part was not transcribed yet while the work heard";
     else if (moves < Math.max(4, 2 * saves.size))
-      walk.wrong = `the first part not transcribed yet moved ${moves} times over ${times} of the job's news while the saved transcript changed ${saves.size - 1} times, so it gives way as the transcript is saved, not as the work hears`;
+      walk.wrong = `the first part not transcribed yet moved ${moves} times over ${times} pieces of audio heard while the saved transcript changed ${saves.size - 1} times, so it gives way as the transcript is saved, not as the work hears`;
     else {
       // The samples taken while the edge moved, from the first move
       // to the last, the dots' right end in each.

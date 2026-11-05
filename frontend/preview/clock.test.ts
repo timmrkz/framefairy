@@ -78,6 +78,22 @@ describe("the walk's clock", () => {
     expect(card).toMatchObject({ state: "running", started: 2 });
   });
 
+  // Issue #702: the hand held the sound card while the play it had just
+  // asked for was still starting it, so there was nothing to hold yet,
+  // and the play ran on the sound card's time to the clip's end. The
+  // first tick after the app has started it holds it again.
+  test("holds the sound card for the hand once the app has started it", async () => {
+    const { play, card, clock } = played();
+    card.state = "suspended";
+    await holdSound(play, "hand", true);
+    expect(card.held).toBe(0);
+    card.state = "running";
+    expect(clock(0.1, 0.12, false)).toBe(0.1);
+    expect(card).toMatchObject({ state: "suspended", held: 1, started: 0 });
+    await holdSound(play, "hand", false);
+    expect(card).toMatchObject({ state: "running", started: 1 });
+  });
+
   // A frame the queue says is nowhere, see unshown in queue.ts, holds
   // nothing, so the play goes by the sound card's time.
   test("does not hold the sound card for a frame that is nowhere", () => {

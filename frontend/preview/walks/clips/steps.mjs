@@ -5,9 +5,9 @@
 // caption box showed before it and the step's name. A sequence of any
 // folder can take it. Below them the helpers only these steps use. See
 // docs/TESTING.md.
-import { existsSync, readdirSync, realpathSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, join } from "node:path";
-import { ask, caughtUp, chosen, clickOnTrack, clipList, control, engineState, episodeOn, foldsDone, fromSidebar, handles, high, hold, holdClock, letClockGo, letHeld, middle, news, nextNews, nextPaint, overlay, pageUntil, playUntil, holdSound, pressHead, realFrames, recordFrames, runClock, seenUntil, settle, shortFrames, shortSound, reload } from "../bridge.mjs";
+import { ask, caughtUp, chosen, clickOnTrack, clipList, control, engineState, episodeOn, foldsDone, fromSidebar, handles, high, hold, holdClock, letClockGo, letHeld, middle, news, nextNews, nextPaint, overlay, pageUntil, playUntil, holdSound, pressHead, pressPlay, realFrames, recordFrames, runClock, seenUntil, settle, shortFrames, shortSound, reload } from "../bridge.mjs";
 import { canLook, changesOf, clickCard, clickedFromAhead, clockOf, halfOf, newCards, pieceCount, rate, restAhead, shortOf, shotClips, url } from "../common/steps.mjs";
 
 export const steps = {
@@ -42,10 +42,16 @@ export const steps = {
   //                    the press held until the clip is written and the
   //                    app has heard so, the way a busy machine hands it
   //                    back, and the clip made is chosen once it comes
+  // ["make with its pick late", key]
+  //                    the same as made while paused, with the answer to
+  //                    the pick of the card on its way held until the clip
+  //                    is written and the app has heard so and drawn it,
+  //                    the order a busy machine had, issue #697
   async "make while playing"(walk, arg, s, what) {
     const { page, watch } = walk;
     const playing = what === "make while playing";
-    const late = what === "make with its answer late";
+    const late = what === "make with its answer late" || what === "make with its pick late";
+    const held = what === "make with its pick late" ? "ChooseClip" : "MakeClip";
     const g = await handles(page);
     if (g.start.x - g.track.x < 40) {
       walk.wrong = "there is no room on the clip timeline before the clip";
@@ -58,19 +64,26 @@ export const steps = {
     const stop = await recordFrames(page, 1 / (await rate(page)));
     await page.evaluate(() => document.body.focus());
     // The play's waits are in the episode's time, read off the
-    // playhead, see playUntil.
-    if (playing) {
-      await page.keyboard.press("Space");
-      await settle(page);
-      await playUntil(page, { most: 1.5 });
-    }
+    // playhead, see playUntil, from a play that stood at its start while
+    // the app settled on the space bar, see pressPlay. The play is held
+    // where it is in the frame the second and a half is up, while the
+    // press comes, and let go once the app has settled on it. Not held, a
+    // busy runner played on into the clip in the five seconds the press
+    // took to come, and O in a clip makes none, so the walk waited for
+    // good on a clip that was never asked for.
+    let standing = false;
+    if (playing) standing = (await pressPlay(page)) && (await playUntil(page, { most: 1.5, hold: true })).playing;
     let before, seen;
     if (late) {
       before = new Set((await ask(page, "Jobs")).map((j) => j.id));
       seen = await news(page);
-      await hold(page, "MakeClip", true);
+      await hold(page, held, true);
     }
     await page.keyboard.press(arg);
+    if (standing) {
+      await settle(page);
+      await holdSound(page, false);
+    }
     if (late) {
       // Until the job the press set going is over and the app has heard
       // it, each look woken by the next news of a job.
@@ -82,6 +95,9 @@ export const steps = {
         }
         seen = await nextNews(page, seen);
       }
+      // The frames the app draws with the clip written and the pick on
+      // its way are recorded.
+      await nextPaint(page, 2);
       await letHeld(page);
     }
     // Until the card chosen is a clip the engine has written, the one
@@ -98,7 +114,7 @@ export const steps = {
       await settle(page);
       written = await chosenCard();
       if (!written) {
-        walk.wrong = "the clip made was written before the press had its answer, and it was never chosen";
+        walk.wrong = `the clip made was written before ${held === "MakeClip" ? "the press" : "the pick of its card"} had its answer, and it was never chosen`;
         return;
       }
     } else written = await seenUntil(page, url, chosenCard, (card) => !!card);
@@ -149,6 +165,79 @@ export const steps = {
     // And until the interface has heard that news too, which is where
     // the Render button reads that the render ended.
     await caughtUp(page, url, [job]);
+    await watch.step("render", s);
+  },
+  // ["render cut off", how]
+  //                    the clip on screen was being rendered when the app
+  //                    closed: its render's record is left in the work
+  //                    folder the way a render the app closed on leaves
+  //                    it, and the app is opened again. Its Render button
+  //                    says Continue, with a bin beside it, issue #392.
+  //                    With "continue" Continue renders the clip, and the
+  //                    button says Render again. With "remove" the bin is
+  //                    clicked, Removed is said in the buttons' place at
+  //                    once, and once its time is up the Go side forgets
+  //                    the render, its record and all, and Render is back
+  async "render cut off"(walk, arg, s) {
+    const { page, removeTime, watch } = walk;
+    const on = await chosen(page);
+    const jobs = join(dirname(on.path), `${basename(on.path, extname(on.path))}.framefairy`, "jobs");
+    mkdirSync(jobs, { recursive: true });
+    const id = "render-cut-off";
+    const record = { id, kind: "render", plan: on.plan, clips: [on.clip], step: "rendering", asked: new Date().toISOString(), steps: [] };
+    writeFileSync(join(jobs, `${id}.json`), JSON.stringify(record));
+    await control(url, "/reopen");
+    await reload(page);
+    const row = page.locator("aside li", { hasText: on.path.split("/").pop() }).first();
+    await row.waitFor();
+    await fromSidebar(page, () => row.click());
+    await settle(page);
+    const button = page.locator("button.primary.render");
+    const bin = page.getByRole("button", { name: "Remove the render that was cut off" });
+    const said = (await button.textContent())?.trim();
+    if (said !== "Continue") {
+      walk.wrong = `the Render button of a clip whose render the app closed on says ${said}, not Continue`;
+      return;
+    }
+    if (!(await bin.count())) {
+      walk.wrong = "the render the app closed on has no bin to remove it with";
+      return;
+    }
+    const render = async () => (await ask(page, "Jobs")).filter((j) => j.kind === "render" && j.episode === on.path).pop();
+    if (arg === "continue") {
+      let heard = await news(page);
+      await button.click();
+      let job = await render();
+      while (job && job.state !== "done" && job.state !== "failed") {
+        heard = await nextNews(page, heard);
+        job = await render();
+      }
+      await caughtUp(page, url, job ? [job] : []);
+      const now = (await button.textContent())?.trim();
+      if (job?.state !== "done") walk.wrong = `Continue on the render cut off ended it as ${job?.state}: ${job?.error ?? ""}`;
+      else if (now !== "Render again") walk.wrong = `the render carried on, the Render button says ${now}, not Render again`;
+      else if (existsSync(join(jobs, `${id}.json`))) walk.wrong = "the render carried on, its record is still there";
+    } else {
+      // The time a remove runs is run on by hand, on both sides, see
+      // holdClock and runClock, so nothing waits on the clock.
+      await holdClock(page);
+      await bin.click();
+      await realFrames(page);
+      if (!(await page.locator(".renderaway .gone", { hasText: "Removed" }).count())) {
+        walk.wrong = "the bin of the render cut off did not say Removed in the place of its buttons";
+        return;
+      }
+      await page.mouse.move(5, 5);
+      await settle(page);
+      await runClock(page, (removeTime + 1) * 1000);
+      await caughtUp(page, url);
+      const now = (await button.textContent())?.trim();
+      const job = await render();
+      if (now !== "Render") walk.wrong = `the render cut off removed, the Render button says ${now}, not Render`;
+      else if (job && job.state !== "settled") walk.wrong = `the render cut off removed, it is ${job.state}, not forgotten`;
+      else if (existsSync(join(jobs, `${id}.json`))) walk.wrong = "the render cut off removed, its record is still in the work folder";
+      await letClockGo(page);
+    }
     await watch.step("render", s);
   },
   // ["head"]           presses the clip list's head button, Search, Cancel or
@@ -1273,6 +1362,7 @@ export const steps = {
 // Steps that take the same body as the step they are walked by.
 steps["make while paused"] = steps["make while playing"];
 steps["make with its answer late"] = steps["make while playing"];
+steps["make with its pick late"] = steps["make while playing"];
 
 // The shorts in a folder, by name, finished ones only.
 const shortsIn = (dir) => readdirSync(dir).filter((n) => n.endsWith(".mp4") && !n.endsWith(".part.mp4")).sort();

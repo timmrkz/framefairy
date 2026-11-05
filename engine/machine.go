@@ -46,6 +46,12 @@ type Machine struct {
 	// see learnedFor.
 	learned sync.Map
 
+	// held guards episodes, one for each video asked about, and what each
+	// holds, uses counts the asks, see Episode.
+	held     sync.Mutex
+	episodes map[string]*Episode
+	uses     uint64
+
 	facesOnce sync.Once
 	faces     *faceDetector
 

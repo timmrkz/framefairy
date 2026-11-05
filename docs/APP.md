@@ -898,9 +898,9 @@ episode's decoder is asked for as the workspace starts to build,
 `holdAhead` in `lib/frames/queue.ts`, rather than once the workspace
 knows what the episode is. The clip timeline asks for its words and its waveform
 once the episode has answered, and never twice for the same view. The
-Go side keeps the transcripts of the last ten episodes read, `keptReads`
-in `words.go`, and reads one once however many calls ask for it at the
-same moment: a workspace opening asked for the same transcript up to
+engine holds the transcripts of the last ten videos read, each by its
+`engine.Episode`, and reads one once however many calls ask for it at
+the same moment, and again only once a file of it changed: a workspace opening asked for the same transcript up to
 seven times, and each read it from the file. The longest window the range
 picker may draw is worked out without a search from every line, which
 took forty milliseconds of an hour's transcript in the frame the
@@ -3038,13 +3038,14 @@ twenty are kept, see `engine.OpenJobLog`. That file is where a failure is
 looked into. Work that belongs to no episode, a model being fetched,
 keeps none.
 
-The list of jobs is kept current by the news the Go side sends about every job.
-Each piece of news carries a number that grows with every change, so a
-piece that arrives late never puts a job back to where it was. While
-anything runs, the list is also read again every five seconds, so a piece
-of news that was lost costs a few seconds and never a job that looks as if
-it runs for ever. Quitting the app stops the model and every job before
-the app goes.
+The list of jobs is kept current by the states of the videos the Go side
+sends, each with every job of its video there is to say anything about,
+and by the news of a model being downloaded, which has no video. Each job
+carries a number that grows with every change, so a state that arrives
+late never puts a job back to where it was. A job a newer state of its
+video no longer holds is one the Go side forgot, and it goes. Nothing is
+read again on a timer: a state that was lost is put right by the next.
+Quitting the app stops the model and every job before the app goes.
 
 **Quitting.** Cmd+Q dims the app at once and says what happens next.
 The first press only asks, Press ⌘Q again to quit, for three seconds, the
