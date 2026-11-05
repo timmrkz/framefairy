@@ -54,7 +54,7 @@ import (
 // the cores, of the memory and of the one system decoder from it. So the
 // others wait until it has landed, and then as many go at once as there
 // are framers, which is what gets the last one out soonest.
-var framers = min(max(runtime.NumCPU()/3, 2), 4)
+func framers() int { return min(max(runtime.NumCPU()/3, 2), 4) }
 
 type planJob struct {
 	index int
@@ -169,7 +169,7 @@ func (e *Engine) newPlanBuilder(ctx context.Context, sourcePath string, source S
 	if opts.Grows && opts.PlanPath != "" {
 		b.base = lastNumber(e.Files, opts.PlanPath, b.prefix)
 	}
-	for range framers {
+	for range framers() {
 		b.done.Add(1)
 		go b.frameAll()
 	}
@@ -692,10 +692,6 @@ func (b *planBuilder) frameAll() {
 	}
 }
 
-// framing turns an entry of the answer into a clip. Tests put one here that
-// panics.
-var framing = (*planBuilder).frame
-
 // work frames one clip and lands it. A framer is a goroutine of its own,
 // so a panic in it is out of reach of the recover that guards the job, and
 // it ended the whole app: the interface, the other lane and whatever was
@@ -711,6 +707,10 @@ func (b *planBuilder) work(job planJob) {
 		b.firstFramed(job)
 		b.arrived(job)
 	}()
+	framing := b.e.framing
+	if framing == nil {
+		framing = (*planBuilder).frame
+	}
 	clip, ok, err := framing(b, job)
 	b.firstFramed(job)
 	if err != nil {

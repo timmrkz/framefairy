@@ -70,6 +70,10 @@ func main() {
 	engine.UseMachineFonts()
 	go engine.RefreshFonts()
 	st := appStore()
+	// The videos are probed on the program's one machine, so what ffprobe
+	// said of a video is said once for the library, the video preview and
+	// every job alike.
+	sources.machine = st.machine
 
 	var app *application.App
 	emit := func(u JobUpdate) {
@@ -153,7 +157,7 @@ func main() {
 	quit := sync.OnceFunc(func() {
 		svc.watch.stop()
 		svc.news.stop()
-		engine.CloseModels()
+		svc.store.machine.CloseModels()
 		svc.stopAll()
 	})
 	// What Cmd+Q does, see quit.go. The hook above stays for whatever
@@ -289,7 +293,7 @@ func main() {
 
 	// A llama-server the last run left behind, because it crashed or was
 	// killed, is stopped before this run loads a model of its own.
-	if engine.StopLeftoverServer() {
+	if st.machine.StopLeftoverServer() {
 		theLog.line(zerolog.InfoLevel, "model").Msg("stopped a llama-server the last run of the app left behind")
 	}
 	go svc.keeping.run(st)

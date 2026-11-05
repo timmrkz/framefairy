@@ -210,18 +210,17 @@ func TestAStoppedSearchKeepsWhatArrived(t *testing.T) {
 //
 // On the real disk: a search runs ffmpeg on the episode.
 func TestAClipThatPanicsWhileFramedIsLeftOut(t *testing.T) {
+	t.Parallel()
 	letGo := make(chan struct{})
 	close(letGo)
 	p, path := searching(t, letGo)
-	was := framing
-	framing = func(b *planBuilder, job planJob) (PlanClip, bool, error) {
+	p.engine.framing = func(b *planBuilder, job planJob) (PlanClip, bool, error) {
 		if job.index == 1 {
 			var nothing map[string]int
 			nothing["the first clip"] = 1
 		}
-		return was(b, job)
+		return b.frame(job)
 	}
-	t.Cleanup(func() { framing = was })
 
 	if _, err := p.Plan(context.Background(), PlanRequest{From: 10, To: 30, Count: 2, Min: 1}); err != nil {
 		t.Fatalf("a search with one clip that panicked: %v", err)

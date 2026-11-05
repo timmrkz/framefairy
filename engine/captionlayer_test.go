@@ -710,6 +710,8 @@ func TestAWorkFolderIsDeletedOnceItsCaptionFileIsWritten(t *testing.T) {
 		fsys, source := afero.NewMemMapFs(), "/held/deleted-while-captioned.mp4"
 		work := WorkDir(source)
 		file := filepath.Join(work, PreviewCaptionsFolder, "a.ass")
+		machine := NewMachine(fsys)
+		_, previewTracks := machine.captions()
 		started, release := make(chan struct{}), make(chan struct{})
 		go func() {
 			_, _ = previewTracks.once(context.Background(), quiet, work, file, func(context.Context) (previewFile, error) {
@@ -720,7 +722,7 @@ func TestAWorkFolderIsDeletedOnceItsCaptionFileIsWritten(t *testing.T) {
 		}()
 		<-started
 		deleted := make(chan error, 1)
-		go func() { deleted <- DeleteWork(fsys, source) }()
+		go func() { deleted <- machine.DeleteWork(source) }()
 		synctest.Wait()
 		select {
 		case err := <-deleted:

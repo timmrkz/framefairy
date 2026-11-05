@@ -34,9 +34,6 @@ func TestMain(m *testing.M) {
 	// took. TestProjectSteps turns it back on, so the whole way a clip is
 	// framed is still tested once.
 	os.Setenv("FRAMEFAIRY_NO_FACES", "1")
-	// The tests start fake servers, whatever the machine they run on has
-	// free, so what is free is not asked. TestTheMemoryFreeNow asks it.
-	freeMemory = func() int64 { return 0 }
 	home, err := os.MkdirTemp("", "framefairy-home-")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -104,4 +101,12 @@ func toolsFromThePath() {
 			_ = os.Setenv(env, found)
 		}
 	}
+}
+
+// memoryUnasked is m starting its fake servers whatever the machine the
+// tests run on has free, so what is free is not asked of the system.
+// TestTheMemoryFreeNow asks it.
+func memoryUnasked(m *Machine) *Machine {
+	m.free = func() int64 { return 0 }
+	return m
 }

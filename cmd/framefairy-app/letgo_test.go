@@ -126,7 +126,7 @@ func TestQuittingWaitsForTheDeleteOfAVideoLetGo(t *testing.T) {
 			t.Fatal(err)
 		}
 		held := &removeHeld{Fs: files, began: make(chan struct{}), letGo: make(chan struct{})}
-		svc.store.files = held
+		svc.store.files, svc.store.machine.Files = held, held
 		withJobs(svc)
 		if listed(svc.Library(), ep) {
 			t.Fatalf("the folder written back kept %s in the library", ep)
@@ -171,7 +171,7 @@ func TestTheLibraryIsReadWhileAVideoLetGoIsCleared(t *testing.T) {
 			t.Fatal(err)
 		}
 		held := &removeHeld{Fs: files, began: make(chan struct{}), letGo: make(chan struct{})}
-		svc.store.files = held
+		svc.store.files, svc.store.machine.Files = held, held
 		withJobs(svc)
 		if listed(svc.Library(), gone) {
 			t.Fatalf("the folder written back kept %s in the library", gone)

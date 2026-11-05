@@ -1,10 +1,12 @@
 package engine
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/spf13/afero"
 
@@ -55,6 +57,49 @@ type Machine struct {
 	facesOnce sync.Once
 	faces     *faceDetector
 
+	// probes is what ffmpeg and ffprobe said, kept while they and the
+	// file asked about stay as they are, see probed.go.
+	probes probeCache
+	// timeLimit ends a decode that has run out of its time, see
+	// decodeWithin. Empty, it is context.WithTimeout. A test ends the
+	// work itself once the stand-in for ffmpeg says it hangs, so it waits
+	// for no limit on the real clock.
+	timeLimit func(context.Context, time.Duration) (context.Context, context.CancelFunc)
+
+	// measured is the ink of the caption blocks libass measured, see
+	// measureMany, and previewTracks the caption files of the video
+	// preview, see previewTrack, each made the first time it is asked for.
+	captionsOnce  sync.Once
+	measured      *inkCache
+	previewTracks *trackCache
+	// grows wakes whoever waits for a transcript to grow, see
+	// transcriptGrows. The job that hears and the search that reads ahead
+	// share the machine, so the news goes from one to the other.
+	grows transcriptNews
+	// framing turns an entry of a model's answer into a clip, see
+	// planBuilder.work. Empty, it is planBuilder.frame. A test puts in one
+	// that panics.
+	framing func(*planBuilder, planJob) (PlanClip, bool, error)
+
+	// host is the one local model this program keeps loaded, see
+	// modelhost.go.
+	host modelHost
+	// llama is how the program reaches the llama-servers it starts, and
+	// notes are what it writes down of each, see leftover.go.
+	llama llamaLink
+	notes serverNotes
+	// modelChecks lets one check of a model's file at a time read and
+	// write what the checks found, see checkModel.
+	modelChecks sync.Mutex
+	// memory, free and servers are what is known of this machine's
+	// memory: how much it has, how much it can give a program now, and
+	// the llama-servers it runs, each the system's when it is empty, see
+	// room.go and freemem.go. A test makes its machine any machine in any
+	// state.
+	memory  func() int64
+	free    func() int64
+	servers func() []string
+
 	// keys is where the keys are kept, and oldKeys where the first ones
 	// were, see keys.go, and savedFirst reads a saved key before one in
 	// the environment. network is how a request leaves the program, to a
@@ -102,6 +147,15 @@ func (offline) RoundTrip(r *http.Request) (*http.Response, error) {
 // the records in their default places and the tools beside the program.
 func NewMachine(files afero.Fs) *Machine {
 	return &Machine{Files: files, Records: NewRecords(files, "", ""), Tools: tool.NewFinder()}
+}
+
+// captions is the machine's caches of caption work, made once.
+func (m *Machine) captions() (*inkCache, *trackCache) {
+	m.captionsOnce.Do(func() {
+		m.measured = &inkCache{boxes: map[string]inkBox{}}
+		m.previewTracks = newTrackCache()
+	})
+	return m.measured, m.previewTracks
 }
 
 // toolAsk is what decides what an ffmpeg offers: the ffmpeg, the encoder

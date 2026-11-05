@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"framefairy/engine/fileio"
@@ -37,12 +36,10 @@ type modelCheck struct {
 	SHA256 string    `json:"sha256"`
 }
 
-var modelChecks sync.Mutex
-
 // CheckModelFile says whether the model at path may be loaded: a model the
 // catalogue knows, in dir, has to be the file its SHA-256 says. dir is the
 // models folder, ModelsDir when empty.
-func CheckModelFile(path, dir string) error {
+func (mc *Machine) CheckModelFile(path, dir string) error {
 	if dir == "" {
 		dir = ModelsDir()
 	}
@@ -50,18 +47,18 @@ func CheckModelFile(path, dir string) error {
 	if !ok || known.SHA256 == "" || filepath.Clean(filepath.Dir(path)) != filepath.Clean(dir) {
 		return nil
 	}
-	return checkModel(path, dir, known)
+	return mc.checkModel(path, dir, known)
 }
 
 // checkModel is CheckModelFile for a model already known to be known, split
 // out so a test can hand it a model of its own.
-func checkModel(path, dir string, known LanguageModel) error {
+func (mc *Machine) checkModel(path, dir string, known LanguageModel) error {
 	info, err := os.Stat(path)
 	if err != nil {
 		return err
 	}
-	modelChecks.Lock()
-	defer modelChecks.Unlock()
+	mc.modelChecks.Lock()
+	defer mc.modelChecks.Unlock()
 	record := filepath.Join(dir, checkedModels)
 	checks := map[string]modelCheck{}
 	if body, err := os.ReadFile(record); err == nil {
@@ -101,13 +98,13 @@ func noteModelChecked(record string, checks map[string]modelCheck, m LanguageMod
 
 // modelArrived keeps what the download of a model has just checked, so the
 // first search after it does not read the whole file a second time.
-func modelArrived(dir string, m LanguageModel, path string) {
+func (mc *Machine) modelArrived(dir string, m LanguageModel, path string) {
 	info, err := os.Stat(path)
 	if err != nil || m.SHA256 == "" {
 		return
 	}
-	modelChecks.Lock()
-	defer modelChecks.Unlock()
+	mc.modelChecks.Lock()
+	defer mc.modelChecks.Unlock()
 	record := filepath.Join(dir, checkedModels)
 	checks := map[string]modelCheck{}
 	if body, err := os.ReadFile(record); err == nil {

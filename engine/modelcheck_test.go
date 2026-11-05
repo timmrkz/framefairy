@@ -23,7 +23,7 @@ func TestAModelIsCheckedBeforeItIsLoaded(t *testing.T) {
 	if err := os.WriteFile(path, body, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := checkModel(path, dir, m); err != nil {
+	if err := NewMachine(disk).checkModel(path, dir, m); err != nil {
 		t.Fatalf("the right model was refused: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, checkedModels)); err != nil {
@@ -39,7 +39,7 @@ func TestAModelIsCheckedBeforeItIsLoaded(t *testing.T) {
 	}
 	later := time.Now().Add(2 * time.Second)
 	_ = os.Chtimes(path, later, later)
-	err := checkModel(path, dir, m)
+	err := NewMachine(disk).checkModel(path, dir, m)
 	if err == nil {
 		t.Fatal("a model that changed after it was checked was loaded")
 	}
@@ -58,21 +58,21 @@ func TestAModelChosenByHandIsNotChecked(t *testing.T) {
 	if err := os.WriteFile(own, ggufBytes(64), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := CheckModelFile(own, dir); err != nil {
+	if err := NewMachine(disk).CheckModelFile(own, dir); err != nil {
 		t.Errorf("a model of the person's own was refused: %v", err)
 	}
 	elsewhere := filepath.Join(t.TempDir(), LanguageModels()[0].Name)
 	if err := os.WriteFile(elsewhere, ggufBytes(64), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := CheckModelFile(elsewhere, dir); err != nil {
+	if err := NewMachine(disk).CheckModelFile(elsewhere, dir); err != nil {
 		t.Errorf("a file outside the models folder was held to the catalogue: %v", err)
 	}
 	inside := filepath.Join(dir, LanguageModels()[0].Name)
 	if err := os.WriteFile(inside, ggufBytes(64), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := CheckModelFile(inside, dir); err == nil {
+	if err := NewMachine(disk).CheckModelFile(inside, dir); err == nil {
 		t.Error("a file named like a known model, and not that model, was loaded")
 	}
 }
