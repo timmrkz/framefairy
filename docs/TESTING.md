@@ -51,17 +51,17 @@ can show:
 | | Runs | For | Why this way |
 | --- | --- | --- | --- |
 | plain code | Go tests and Vitest, once | every rule that can be said without a page: what a dictation does to the text, where an arrow key takes the cursor, how far a field scrolls | no browser decides it, so a second browser would test the same code twice. It is the quickest test and the easiest to read |
-| the walks | every walk and sequence on every pull request that reaches them, in WebKit, and all of them in Chromium every night | what a person does, against the real Go side, in the engine the app runs in | the engines differ where people type and look: the cursor, the selection, the focus, scrolling, fonts and layout. Nearly every bug Tim met in Report a Problem, #574, was WebKit's alone and passed in Chromium. The Mac ships first, and Windows is not built yet |
+| the walks | every walk and sequence on every pull request that reaches them, in Chromium, and all of them in both browsers every night | what a person does, against the real Go side, in the engines the app runs in | the engines differ where people type and look: the cursor, the selection, the focus, scrolling, fonts and layout. Nearly every bug Tim met in Report a Problem, #574, was WebKit's alone and passed in Chromium, so WebKit is walked every night. Playwright's WebKit for Linux draws every frame on the processor, so a push walks in Chromium, which walked the same walks 35 % sooner |
 | what only a Mac does | a step that acts out the Mac's behaviour on purpose, and the rule it protects in plain code | how AppKit reaches WebKit: a cursor revealed in the middle of a field, a button that takes no focus from a click, a mouse entering as a plain move | no browser on Linux has it, WebKit's Linux ports included, so a walk can only play it, as `attach, as on a Mac` does |
 
 The walks are the same walks in both browsers, and the browser is a
 setting of the harness, `browserFor` in `walks/bridge.mjs`, never a second
-set. A pull request walks each in one browser, so the second browser
-costs CI no job and no time: walking every walk in both would take twice
-the machines, or twice as long on the same ones, see
-[the decision](decisions/2026-10-31-walks-in-two-browsers.md). The nightly
-walks, `walks-nightly.yml`, walk in Chromium, `WALKBROWSER=chromium`, so
-both engines are walked every day. The WebKit is Playwright's own build
+set. A pull request walks each in Chromium, and the nightly walks,
+`walks-nightly.yml`, walk each in both, the walks in WebKit on four
+machines of their own, `WALKBROWSER=webkit`, so a pull request waits for
+one browser and both engines are walked every day, see
+[the decision](decisions/2026-11-05-walks-in-chromium-on-a-push.md). Only
+the walks in Chromium count the lines they run. The WebKit is Playwright's own build
 for Linux, which takes real key presses, and CI's image holds it beside
 the Chromium, see `.github/ci-image/Dockerfile`. It draws every frame through OpenGL,
 which a machine without a graphics chip runs on the CPU, and drawing is
@@ -69,11 +69,11 @@ which a machine without a graphics chip runs on the CPU, and drawing is
 with rather than one a core, see `drawingThreads` in `walks/bridge.mjs`. A cloud session gets it
 from the SessionStart hook, see `scripts/cloud-webkit.sh`, and walks one
 sequence in it the way it walks one in Chromium. `SLOW` and
-`WALKCOVERAGE` work through Chromium's own tools, so either walks every
-walk in Chromium, and says so when `WALKBROWSER=webkit` asks for WebKit.
+`WALKCOVERAGE` work through Chromium's own tools, and say so when
+`WALKBROWSER=webkit` asks for WebKit.
 
-A walk that only passes in Chromium is a walk to fix, never one to keep
-there: the app on a Mac is WebKit. What WebKit finds is fixed where its cause
+A walk that fails in WebKit at night is a walk to fix, never one to keep
+out of it: the app on a Mac is WebKit. What WebKit finds is fixed where its cause
 is. A walk that reads what the two engines write differently, like the
 name of a font in quotes or without, is fixed in the walk. What a person
 on a Mac would see too, like a hover WebKit works out only when the
@@ -1127,7 +1127,7 @@ of that run, and keeps the time it had for a run that the test's time
 stopped, since how long a run that hung was stopped after says nothing of
 how long it takes. The times that count are CI's, so the file is best made
 from the logs of the walks jobs, which end on the time of every run they
-walked. On four machines, once every walk walked in WebKit, the jobs took
+walked. On four machines, while every walk walked in WebKit, the jobs took
 223 to 377 seconds, setup included. More
 bridges on a machine do not help: on four cores eight bridges finished a
 share no sooner than six and broke three walks that wait on the clock.

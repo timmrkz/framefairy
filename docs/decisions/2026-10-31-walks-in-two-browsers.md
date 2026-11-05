@@ -1,5 +1,7 @@
 # The walks run in two browsers
 
+Replaced by [a push walks in Chromium, the night in both browsers](2026-11-05-walks-in-chromium-on-a-push.md), for the browser of a push.
+
 How the tests are shared out once there is more than one way to run
 them. Decided on 31 October 2026, in the first pull request of #380.
 

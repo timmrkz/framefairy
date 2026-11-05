@@ -46,21 +46,19 @@ function fallbackBrowser() {
 }
 let fellBack;
 
-// The browser a walk runs in: WebKit, which the app runs in on a Mac and
-// on Linux, for every walk and sequence. WALKBROWSER names another, as
-// the nightly walks name Chromium, which the app runs in on Windows.
-// Playwright brings a WebKit of its own for Linux, which takes real key
-// presses. SLOW and WALKCOVERAGE work through Chromium's own tools, so
-// either walks every walk in Chromium unless WALKBROWSER says otherwise.
-// See Two browsers in docs/TESTING.md.
+// The browser a walk runs in: Chromium, which the app runs in on
+// Windows, for every walk and sequence. WALKBROWSER names another, as the
+// nightly walks name WebKit, which the app runs in on a Mac and on Linux.
+// Playwright's WebKit for Linux draws every frame on the CPU, so the same
+// walks took 54 % longer in it in a cloud session, and a push walks in
+// Chromium. SLOW and WALKCOVERAGE work through Chromium's own tools. See
+// Two browsers in docs/TESTING.md.
 const asked = process.env.WALKBROWSER || "";
 if (asked && asked !== "chromium" && asked !== "webkit") {
   throw new Error(`WALKBROWSER is chromium or webkit, not ${asked}`);
 }
 export function browserFor() {
-  if (asked) return asked;
-  if (Number(process.env.SLOW) > 1 || process.env.WALKCOVERAGE) return "chromium";
-  return "webkit";
+  return asked || "chromium";
 }
 // Playwright's WebKit on Linux draws every frame through OpenGL, which a
 // machine with no graphics chip, a cloud session's or CI's, runs on the
