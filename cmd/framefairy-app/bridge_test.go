@@ -384,7 +384,7 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 			return b.chrome, nil
 		},
 	}
-	mux.Handle("/call", callHandler(svc, own, b.held, b.fresh.Load))
+	mux.Handle("/call", b.calls.serve(callHandler(svc, own, b.held, b.fresh.Load)))
 	mux.Handle("/events", b.d.bus)
 	answer := func(w http.ResponseWriter, v any, err error) {
 		if err != nil {
@@ -965,6 +965,72 @@ type bridge struct {
 	// arrive lets the download of a kind of model, "speech" or "clip",
 	// arrive, closed by the walk, see arriving.
 	arrive map[string]chan struct{}
+	// calls are the page's calls running in the Go side, which the reset
+	// waits for, see pageCalls.
+	calls pageCalls
+}
+
+// pageCalls are the calls of a page the Go side is running. A walk's page
+// is closed before the next walk resets the bridge, and a call it had sent
+// runs on in the Go side all the same: the page going away does not stop
+// a method, and a call held at a gate is let through when the reset opens
+// the gates. Such a call wrote into a video's work folder while the reset
+// removed it, and the reset failed with "directory not empty", issue
+// #709. The reset waits for every call that runs, and a call that comes
+// while it resets is the page's before it and is turned away, the way the
+// app's process ending takes its calls with it.
+type pageCalls struct {
+	mu       sync.Mutex
+	running  int
+	stopping bool
+	// idle is closed once the last call that runs has ended, while a
+	// reset waits for it.
+	idle chan struct{}
+}
+
+// serve runs a call, unless a reset is running.
+func (c *pageCalls) serve(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c.mu.Lock()
+		if c.stopping {
+			c.mu.Unlock()
+			http.Error(w, "the page that made this call was left behind by a reset", http.StatusGone)
+			return
+		}
+		c.running++
+		c.mu.Unlock()
+		defer func() {
+			c.mu.Lock()
+			defer c.mu.Unlock()
+			c.running--
+			if c.running == 0 && c.idle != nil {
+				close(c.idle)
+				c.idle = nil
+			}
+		}()
+		h.ServeHTTP(w, r)
+	})
+}
+
+// stop waits for every call that runs to end, and turns away every call
+// that comes until done is called.
+func (c *pageCalls) stop() (done func()) {
+	c.mu.Lock()
+	c.stopping = true
+	var idle chan struct{}
+	if c.running > 0 {
+		c.idle = make(chan struct{})
+		idle = c.idle
+	}
+	c.mu.Unlock()
+	if idle != nil {
+		<-idle
+	}
+	return func() {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		c.stopping = false
+	}
 }
 
 // updatesAs gives the app updates the way a walk asks for them: a build
@@ -1570,6 +1636,9 @@ func (b *bridge) reset() error {
 	b.chrome = Chrome{}
 	b.arrive = nil
 	b.mu.Unlock()
+	// After the gates are open and the stand-ins let go, so every call
+	// held there ends.
+	defer b.calls.stop()()
 	b.fresh.Store(nil)
 	b.d.pictureMu.Lock()
 	b.d.pictures = nil
