@@ -1,14 +1,17 @@
 // Typed calls into the Go side. The names match the methods of the FrameFairy
 // service in main.go.
-import { Call, Events } from "@wailsio/runtime";
+import { Call, Events as News } from "@wailsio/runtime";
+import { Asking } from "./asking";
 
 // Every call into the Go side. One that fails, or takes longer than a
 // person waits without noticing, goes to the app's log, and so do the
 // calls of a second with more of them than the app makes on its own, which
 // is what a loop gone wrong looks like. See lib/said.ts.
 const call = <T>(method: string, ...args: unknown[]): Promise<T> => {
-  const p = Call.ByName(`main.FrameFairy.${method}`, ...args) as Promise<T>;
-  if (method === "Said" || method === "Acted") return p;
+  const send = () => Call.ByName(`main.FrameFairy.${method}`, ...args) as Promise<T>;
+  // What the app says goes to its log, and changes nothing a read says.
+  if (method === "Said" || method === "Acted") return send();
+  const p = asking.ask(method, args, send);
   const from = performance.now();
   counted(method);
   return p.then(
@@ -22,6 +25,21 @@ const call = <T>(method: string, ...args: unknown[]): Promise<T> => {
       throw e;
     },
   );
+};
+
+// The reads the page asks for again at the same moment, shared while one
+// is on its way, see lib/asking.ts. Opening a video asked for the captions
+// and the sentences of its clip twice each, as the clips came in.
+const asking = new Asking(new Set(["Captions", "Sentences"]));
+
+// News from the Go side, which lets every read on its way go first: what
+// it says may have changed.
+const Events = {
+  On: (name: string, fn: (ev: { data: unknown }) => void) =>
+    News.On(name, (ev) => {
+      asking.forget();
+      fn(ev);
+    }),
 };
 
 // What the log is told through, set by lib/said.ts, which needs this file
