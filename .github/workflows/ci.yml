@@ -322,19 +322,21 @@ jobs:
       # Go's build cache, kept by main after every push, see above the job
       # linux. v2 since the job runs in the image: actions/cache keeps a
       # path by where it lies from the work folder, and the home of a
-      # container is another place than a runner's. v3 since it holds Go
-      # itself too, as setup-go keeps it in the runner's tool cache, which
-      # a container starts without: setup-go took 9 s to fetch Go and copy
-      # it there, and finds it there now. So the cache comes first.
+      # container is another place than a runner's. v4 since it holds Go
+      # itself too, as setup-go keeps it in the tool cache, which a
+      # container starts without: setup-go took 9 s to fetch Go and copy
+      # it there, and finds it there now. So the cache comes first. In a
+      # container the tool cache is /__t, while runner.tool_cache names
+      # the runner's, which the container does not see, and v3 kept no Go.
       - id: gocache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-            ${{ runner.tool_cache }}/go
-          key: go-v3-walks-${{ runner.os }}-${{ github.sha }}
-          restore-keys: go-v3-walks-${{ runner.os }}-
+            /__t/go
+          key: go-v4-walks-${{ runner.os }}-${{ github.sha }}
+          restore-keys: go-v4-walks-${{ runner.os }}-
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
@@ -391,8 +393,8 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-            ${{ runner.tool_cache }}/go
-          key: go-v3-walks-${{ runner.os }}-${{ github.sha }}
+            /__t/go
+          key: go-v4-walks-${{ runner.os }}-${{ github.sha }}
 
   # Looking for new crashers, which is the part that does not need to hold
   # anything else up.
