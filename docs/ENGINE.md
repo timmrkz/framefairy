@@ -681,8 +681,12 @@ about the machine: whether the system's video decoder failed here,
 which decoder each episode used, the encoders and the subtitle filter
 of each ffmpeg, by the ffmpeg, the encoder a run names and the system,
 and the face detector. It keeps what ffmpeg and ffprobe said, see What
-ffmpeg and ffprobe said, kept, and the time limit of a decode, empty for
-`context.WithTimeout` and set by a test that ends the decode itself. So
+ffmpeg and ffprobe said, kept, the caption blocks libass measured, the
+caption files of the video preview, and the news that a transcript grew,
+which the job that hears and the search that reads ahead share. Its two
+seams are the time limit of a decode, empty for `context.WithTimeout`,
+and the framing of a clip, empty for `planBuilder.frame`, each set by a
+test on its own machine. So
 a Mac whose system decoder failed once
 decodes on the processor for every job after it, not only for the rest
 of that job. An `Engine` keeps what belongs to its one job: the log,

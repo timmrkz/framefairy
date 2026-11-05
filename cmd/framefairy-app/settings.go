@@ -476,7 +476,7 @@ func (s *store) clearLetGo(path string) (bool, error) {
 	if _, err := fileio.LstatIn(s.files, engine.WorkDir(path)); err != nil {
 		return false, nil
 	}
-	return true, engine.DeleteWork(s.files, path)
+	return true, s.machine.DeleteWork(path)
 }
 
 // Known reports whether a file belongs to an episode in the library: the

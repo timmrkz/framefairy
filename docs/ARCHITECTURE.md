@@ -243,8 +243,7 @@ copies what it finds nearby, so these are not the pattern for new code.
   frames, #610.
 - A plan read and parsed from its file again outside `engine.Episode`: by `planClip` for every gesture, edit and caption view, by the ordered read beside it in `ShapeClip`, by `ClipShareTime` and the moved clip's captions, and by `engine.PlanSummaries` in `IsShort` and the undo's snapshot. And a video's paths checked against the library rather than opened through its work folder, #608. All of them move onto `engine.Episode`, see the decision record [2026-11-03-one-episode-per-video.md](decisions/2026-11-03-one-episode-per-video.md), and then `engine.PlanSummaries` stays only for what has no machine, the training tool.
 - What the engine learns kept in package variables rather than on
-  `engine.Machine`, like the caption tracks in
-  `engine/captionlayer.go`, and the app's
+  `engine.Machine`, like the model host in `engine/modelhost.go`, and the app's
   own that keep a machine or a finder of their own, `sources` in
   `cmd/framefairy-app/media.go` and `openPreviews` in
   `cmd/framefairy-app/frames.go`, #607.

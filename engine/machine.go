@@ -66,6 +66,21 @@ type Machine struct {
 	// for no limit on the real clock.
 	timeLimit func(context.Context, time.Duration) (context.Context, context.CancelFunc)
 
+	// measured is the ink of the caption blocks libass measured, see
+	// measureMany, and previewTracks the caption files of the video
+	// preview, see previewTrack, each made the first time it is asked for.
+	captionsOnce  sync.Once
+	measured      *inkCache
+	previewTracks *trackCache
+	// grows wakes whoever waits for a transcript to grow, see
+	// transcriptGrows. The job that hears and the search that reads ahead
+	// share the machine, so the news goes from one to the other.
+	grows transcriptNews
+	// framing turns an entry of a model's answer into a clip, see
+	// planBuilder.work. Empty, it is planBuilder.frame. A test puts in one
+	// that panics.
+	framing func(*planBuilder, planJob) (PlanClip, bool, error)
+
 	// keys is where the keys are kept, and oldKeys where the first ones
 	// were, see keys.go, and savedFirst reads a saved key before one in
 	// the environment. network is how a request leaves the program, to a
@@ -113,6 +128,15 @@ func (offline) RoundTrip(r *http.Request) (*http.Response, error) {
 // the records in their default places and the tools beside the program.
 func NewMachine(files afero.Fs) *Machine {
 	return &Machine{Files: files, Records: NewRecords(files, "", ""), Tools: tool.NewFinder()}
+}
+
+// captions is the machine's caches of caption work, made once.
+func (m *Machine) captions() (*inkCache, *trackCache) {
+	m.captionsOnce.Do(func() {
+		m.measured = &inkCache{boxes: map[string]inkBox{}}
+		m.previewTracks = newTrackCache()
+	})
+	return m.measured, m.previewTracks
 }
 
 // toolAsk is what decides what an ffmpeg offers: the ffmpeg, the encoder

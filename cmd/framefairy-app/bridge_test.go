@@ -1589,8 +1589,8 @@ func (b *bridge) reset() error {
 	// after the page that asked is gone, and one written into a work
 	// folder while it was removed failed the reset with "directory not
 	// empty", issue #561. The work folders go the way the app deletes
-	// one, see engine.DeleteWork.
-	defer engine.HoldPreviews(b.d.home)()
+	// one, see engine.Machine.DeleteWork.
+	defer b.d.svc.store.machine.HoldPreviews(b.d.home)()
 	// So does a draft of Report a Problem the page saved as the walk
 	// ended, in the config folder, issue #632.
 	endReport(b.d.svc.report)

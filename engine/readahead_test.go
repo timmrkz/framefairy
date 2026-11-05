@@ -247,7 +247,7 @@ func videoReadAhead(t *testing.T, files afero.Fs, name string) *readAheadOf {
 func (v *readAheadOf) hear(from, to float64) {
 	v.t.Helper()
 	words, frames := v.speak(from, to)
-	if err := addHeard(v.files, v.path, v.stamp, "parakeet", 120, timed.Window{Start: from, End: to}, words, frames,
+	if err := v.p.engine.addHeard(v.path, v.stamp, "parakeet", 120, timed.Window{Start: from, End: to}, words, frames,
 		from); err != nil {
 		v.t.Fatal(err)
 	}

@@ -150,7 +150,7 @@ func (p *Project) readAhead(ctx context.Context, req PlanRequest, local LocalMod
 	var last aheadRead
 	over := p.engine.ahead.ended()
 	for {
-		grew := transcriptGrows(path)
+		grew := p.engine.transcriptGrows(path)
 		// No transcript yet is a transcript to wait for.
 		heard, ok := p.heardSoFar(req)
 		if ok && heard.whole {
