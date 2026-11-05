@@ -303,11 +303,22 @@ export function insideClip(pieces: Piece[], at: number, frame: number): boolean 
 // render gives a moment, frameHair in engine/ffmpeg.go.
 export const FRAME_HAIR = 0.001;
 
+// A moment and its hair in whole microseconds, the way the engine counts
+// the frame that holds a moment, see frameHolding in engine/cropmarks.go.
+// Counted in seconds, a moment exactly a hair before a frame's start fell
+// on either side by how the arithmetic rounded it: 9.199 s and its hair
+// came to 45.99999999999999 frames of 0.2 s, frame 45, while the same
+// moment in a file's ticks came to frame 46, so a pause there showed a
+// frame the playhead was not on, issue #704.
+export function heldMicros(t: number): number {
+  return Math.round((t + FRAME_HAIR) * 1_000_000);
+}
+
 // Which frame of the episode holds a moment, the frame the video preview
 // draws for it, counted from the picture's first frame, start seconds into
 // the file. A moment up to FRAME_HAIR before a frame's start is in that
-// frame. Every edge of a clip is kept on the start of the frame the render
-// cuts on, see PieceOnFrames in engine/render.go, and at 29.97 frames a
+// frame, counted to the microsecond, see heldMicros. Every edge of a clip
+// is kept on the start of the frame the render cuts on, see PieceOnFrames in engine/render.go, and at 29.97 frames a
 // second that start, kept, lies just before the frame for 1400 of every
 // 3000 frames, so this is the frame the short starts on for every edge.
 // frame.cases.json holds the two to each other. The last frame of a piece
@@ -318,8 +329,15 @@ export const FRAME_HAIR = 0.001;
 // from the file's start put an edge or a thumbnail up to half a frame
 // from the frame the render takes, see VideoStart in engine/ffmpeg.go.
 // Frame is one frame in seconds.
+//
+// A frame whose start is a whole microsecond can come out a hair under
+// it once divided, so a ten millionth of a frame is added. A start that is
+// not a whole microsecond lies a third of one or more from the nearest at
+// the rates video has, 29.97 and 23.976 too, so that decides no moment
+// the engine counts otherwise.
 export function frameAt(t: number, frame: number, start = 0): number {
-  return Math.floor((Math.max(t - start, 0) + FRAME_HAIR) / frame);
+  const us = Math.max(heldMicros(t) - Math.round(start * 1_000_000), 0);
+  return Math.floor(us / (frame * 1_000_000) + 1e-7);
 }
 
 // The middle of frame k, counted the same way.
