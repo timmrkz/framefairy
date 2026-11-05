@@ -1899,7 +1899,7 @@ func TestWalks(t *testing.T) {
 	//
 	// On the real disk: make walks reads the file once go test has ended.
 	if file := os.Getenv("WALKSUMMARY"); file != "" {
-		summary := walkSummary(took, len(runs), walkers, time.Since(started).Seconds(), len(runs)) //nolint:forbidigo // the seconds the walks took, reported, never waited on
+		summary := walkSummary(took, len(runs), walkers, time.Since(started).Seconds()) //nolint:forbidigo // the seconds the walks took, reported, never waited on
 		if err := os.WriteFile(file, []byte(summary), 0o644); err != nil {
 			t.Error(err)
 		}
@@ -2561,10 +2561,9 @@ func writeWalkTimes(names []string, before, now map[string]float64) string {
 
 // walkSummary says where a machine's walks spent their time: how many
 // runs its walkers walked, the seconds they took together against the
-// seconds the walkers had, and what the runs took, at most most of them,
-// slowest first. Every number stands right in its column, so the table
+// seconds the walkers had, and what every run took, slowest first. Every number stands right in its column, so the table
 // reads in a terminal as it does on GitHub.
-func walkSummary(took map[string]float64, runs, walkers int, wall float64, most int) string {
+func walkSummary(took map[string]float64, runs, walkers int, wall float64) string {
 	type run struct {
 		name    string
 		seconds float64
@@ -2588,18 +2587,17 @@ func walkSummary(took map[string]float64, runs, walkers int, wall float64, most 
 		several = "walker"
 	}
 	fmt.Fprintf(&out, "%d of %d runs on %d %s in %.0f s, %.0f s of walking together, the walkers busy %.0f %% of the time\n", len(all), runs, walkers, several, wall, sum, busy)
-	shown := all[:min(most, len(all))]
-	if len(shown) == 0 {
+	if len(all) == 0 {
 		return out.String()
 	}
-	width := max(len("Seconds"), len(fmt.Sprintf("%.0f", shown[0].seconds)))
+	width := max(len("Seconds"), len(fmt.Sprintf("%.0f", all[0].seconds)))
 	name := len("Run")
-	for _, r := range shown {
+	for _, r := range all {
 		name = max(name, len(r.name))
 	}
 	fmt.Fprintf(&out, "| %*s | %-*s |\n", width, "Seconds", name, "Run")
 	fmt.Fprintf(&out, "| %s: | %s |\n", strings.Repeat("-", width-1), strings.Repeat("-", name))
-	for _, r := range shown {
+	for _, r := range all {
 		fmt.Fprintf(&out, "| %*.0f | %-*s |\n", width, r.seconds, name, r.name)
 	}
 	return out.String()
@@ -2616,17 +2614,18 @@ func envNumber(name string, otherwise int) int {
 // time they had, and lists the slowest runs first, each column lined up.
 func TestTheWalksSummarySaysWhereTheTimeWent(t *testing.T) {
 	took := map[string]float64{"sequences.mjs SEQUENCE=short": 4.4, "playback.mjs SEED=1": 83, "timeline.mjs SEED=2": 9.6, "words.mjs SEED=1": 12}
-	got := walkSummary(took, 5, 2, 60, 3)
+	got := walkSummary(took, 5, 2, 60)
 	want := "4 of 5 runs on 2 walkers in 60 s, 109 s of walking together, the walkers busy 91 % of the time\n" +
-		"| Seconds | Run                 |\n" +
-		"| ------: | ------------------- |\n" +
-		"|      83 | playback.mjs SEED=1 |\n" +
-		"|      12 | words.mjs SEED=1    |\n" +
-		"|      10 | timeline.mjs SEED=2 |\n"
+		"| Seconds | Run                          |\n" +
+		"| ------: | ---------------------------- |\n" +
+		"|      83 | playback.mjs SEED=1          |\n" +
+		"|      12 | words.mjs SEED=1             |\n" +
+		"|      10 | timeline.mjs SEED=2          |\n" +
+		"|       4 | sequences.mjs SEQUENCE=short |\n"
 	if got != want {
 		t.Errorf("the summary is\n%s\nwant\n%s", got, want)
 	}
-	if got := walkSummary(nil, 3, 2, 0, 3); got != "0 of 3 runs on 2 walkers in 0 s, 0 s of walking together, the walkers busy 0 % of the time\n" {
+	if got := walkSummary(nil, 3, 2, 0); got != "0 of 3 runs on 2 walkers in 0 s, 0 s of walking together, the walkers busy 0 % of the time\n" {
 		t.Errorf("with no runs walked the summary is %q", got)
 	}
 }
