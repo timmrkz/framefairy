@@ -112,9 +112,10 @@ export default [
   {
     // A language model was removed from ~/.framefairy/models outside the
     // app on 29 October, in Tim's report logs, and the settings went on
-    // showing it until they were opened again, #673.
+    // showing it until they were opened again, #673. The first run
+    // lays the models on the disk, where Finder can delete one.
     name: "a model deleted outside the app is gone from the settings at once",
-    steps: [["settings"], ["model gone", "language"]],
+    steps: [["first run"], ["settings"], ["model gone", "language"]],
   },
   {
     // Tim chose another model in the settings while a search ran, and

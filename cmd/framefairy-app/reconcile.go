@@ -96,6 +96,15 @@ func (s *FrameFairy) tellSetup() {
 	}
 }
 
+// modelsMade is the app's word to itself that a download may have made
+// the models folder, and the folder over it. The watch follows a folder
+// only once it is there, and on a machine the app never ran on neither
+// is, so without it a model the first run downloaded and Finder deleted
+// later would go on showing until the next look at the library.
+func (s *FrameFairy) modelsMade() {
+	s.reconcile([]string{engine.ModelsDir()})
+}
+
 // shortsOf is the shorts of a video, as its plans say, see
 // engine.Episode.Shorts.
 func (s *FrameFairy) shortsOf(video string) []string {

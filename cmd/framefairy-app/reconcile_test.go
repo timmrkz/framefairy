@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 
 	"framefairy/engine"
 	"framefairy/engine/fileio"
+	"framefairy/engine/runlog"
 )
 
 // The files on the disk are the truth, and others than the app write them:
@@ -440,4 +442,57 @@ func TestAModelDeletedOrAddedOutsideTheAppIsSentToTheWindowAtOnce(t *testing.T) 
 	})
 	put()
 	until(installed)
+}
+
+// On a machine the app never ran on there is no models folder and no
+// folder over it to watch, and the first run's download makes both. A
+// model it downloaded and Finder deleted later is gone from the settings
+// at once too.
+//
+// On the real disk: the watch hears the models folder the app looks in, in
+// a home of the test's own. It replaces the download the setup installs
+// with, which every test in the package shares, so it is not parallel.
+func TestAModelTheFirstRunDownloadedIsWatched(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	models := engine.ModelsDir()
+	model := engine.LanguageModels()[0]
+	was := installLanguage
+	installLanguage = func(_ *engine.Machine, _ context.Context, _ *runlog.Log, m engine.LanguageModel, dir string) error {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+		return os.WriteFile(filepath.Join(dir, m.Name), []byte("GGUF a model"), 0o644)
+	}
+	t.Cleanup(func() { installLanguage = was })
+
+	svc := &FrameFairy{store: openStoreIn(afero.NewOsFs(), filepath.Join(home, "config"))}
+	ended := make(chan Job, 8)
+	svc.jobs = newQueue(svc.store, func(u JobUpdate) {
+		if u.Job.Kind == "llm" && u.Job.State != JobQueued && u.Job.State != JobRunning {
+			ended <- u.Job
+		}
+	}, func(string) {})
+	sent := make(chan SetupState, 64)
+	svc.setupNews = func(state SetupState) { sent <- state }
+	svc.watchTheDisk()
+	t.Cleanup(svc.watch.stop)
+	if _, err := os.Stat(filepath.Dir(models)); !os.IsNotExist(err) {
+		t.Fatalf("the folder over the models is there before the first run: %v", err)
+	}
+
+	svc.InstallLanguageModel(model.Name)
+	if job := <-ended; job.State != JobDone {
+		t.Fatalf("the download ended %s: %s", job.State, job.Error)
+	}
+	if err := os.Remove(filepath.Join(models, model.Name)); err != nil {
+		t.Fatal(err)
+	}
+	// Hangs, until go test ends it, if the deletion is never heard.
+	for state := range sent {
+		i := slices.IndexFunc(state.Language, func(m LanguageModelView) bool { return m.Name == model.Name })
+		if i >= 0 && !state.Language[i].Installed {
+			return
+		}
+	}
 }

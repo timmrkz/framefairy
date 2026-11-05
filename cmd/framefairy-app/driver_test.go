@@ -73,6 +73,11 @@ type desk struct {
 	// exported is where the app last saved a file through the system's
 	// save box, which the desk stands in for, see start.
 	exported atomic.Pointer[string]
+	// setup, when set, is how the desk's machine shows the setup, the
+	// way every call that answers with it shows it, see standInsSetup.
+	// What the app sends by itself when the models change is shown the
+	// same way.
+	setup func(SetupState) SetupState
 }
 
 // open starts the app over a new, empty library. Adding a video asks the
@@ -129,7 +134,12 @@ func (d *desk) start(st *store) {
 		svc.jobs.news = svc.told
 		// The library is on the real disk, so the walks change its
 		// folders from outside the app the way Finder does.
-		svc.setupNews = func(state SetupState) { d.bus.send("setup", state) }
+		svc.setupNews = func(state SetupState) {
+			if d.setup != nil {
+				state = d.setup(state)
+			}
+			d.bus.send("setup", state)
+		}
 		svc.watchTheDisk()
 		svc.jobs.notice = func(n Notice) { d.bus.send("notice", n) }
 	}

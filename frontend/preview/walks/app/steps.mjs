@@ -624,7 +624,9 @@ export const steps = {
   //                    this machine outside the app, the way Finder does,
   //                    and the settings list one model fewer under the
   //                    Downloaded models of its card, with nothing clicked
-  //                    and the app never brought to the front
+  //                    and the app never brought to the front. Only a
+  //                    machine made new by ["first run"] has its models
+  //                    on the disk, the bridge's own are stand-ins
   async "model gone"(walk, arg) {
     const { page } = walk;
     const card = arg === "language" ? ".card.finding" : ".card.speech";

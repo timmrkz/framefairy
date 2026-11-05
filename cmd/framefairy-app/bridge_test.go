@@ -1141,7 +1141,6 @@ func openBridge(t *testing.T) *bridge {
 	// more words ends there.
 	d.most = 60 * engine.SampleRate
 	d.time = newWalkTime()
-	d.start(d.svc.store)
 	// A report goes on the bridge's own Desktop and is shown nowhere.
 	reportFolder = func() string {
 		desk := filepath.Join(d.home, "Desktop")
@@ -1169,6 +1168,11 @@ func openBridge(t *testing.T) *bridge {
 			return os.WriteFile(filepath.Join(dir, m.Name), []byte("GGUF, the stand-in finds clips"), 0o644)
 		})
 	}
+	// The setup the app sends when the models change is the bridge's
+	// machine's, like the one every call answers with, so the desk starts
+	// again only once it knows the bridge.
+	d.setup = func(state SetupState) SetupState { return standInsSetup(state, b.fresh.Load()) }
+	d.start(d.svc.store)
 	fixtures.Copy(t, "walk-120s.mp4", b.first)
 	if added, err := d.svc.addEpisodes([]string{b.first}); err != nil || len(added) != 1 {
 		t.Fatalf("adding %s: %v", b.first, err)
@@ -1431,7 +1435,9 @@ func (b *bridge) makeFresh(memory int64) error {
 	b.arrive = map[string]chan struct{}{"speech": make(chan struct{}), "clip": make(chan struct{})}
 	b.mu.Unlock()
 	b.fresh.Store(&freshMachine{memory: memory})
-	if err := os.RemoveAll(engine.ModelsDir()); err != nil {
+	// The folder over the models goes too: the app never ran here, so
+	// the first run's download makes both, see modelsMade.
+	if err := os.RemoveAll(filepath.Dir(engine.ModelsDir())); err != nil {
 		return err
 	}
 	if err := b.d.svc.RemoveEpisode(b.first, false); err != nil {
