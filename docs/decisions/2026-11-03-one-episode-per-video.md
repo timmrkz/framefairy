@@ -313,8 +313,10 @@ its `Episode`". Counted from the code on main at 3f10c93:
   edge, the captions of a clip, the share of a clip and the captions of
   a clip on its way read it once each. Each is a view: it writes
   nothing.
-- The edits read the plan too, under the lock of `editPlan`, and must:
-  what they write is made from the file as it is at that moment.
+- The edits read the plan too, and must: what they write is made from
+  the file. `editPlan` reads it under its lock, and `Reshape`,
+  `SetCaptionTime` and `RemoveCaption` read it with `planClip` before,
+  to work out the change they then write.
 - `IsShort` and the undo's `TakeSnapshot` list every plan of a video
   with `PlanSummaries`, which reads and parses them all, and the
   snapshot reads each again for its bytes, twice per edit.
@@ -329,7 +331,7 @@ takes that read rather than a path: `ShapeClip`, `ShapeClipView`,
 `ShapeCaptionTime`, `ClipCaptionsView`, `ClipShareTime` and
 `ArrivingCaptionsView` take a `PlanSummary`. The summary keeps the bytes
 it was parsed from, so the ordered read of a gesture decodes them
-rather than the file. The edits keep reading the file under the lock.
+rather than the file. The edits keep reading the file.
 `IsShort` and the snapshot ask the episode for its plans. Whose a path
 is becomes the episode's to say, `Episode.Owns` and `Episode.HasPlan`,
 by where the path really leads, the way `Known` judges it today. Cost:
@@ -339,14 +341,17 @@ calls of them.
 ### 2. One primitive: the edits read through the episode too
 
 Every read of a plan goes through the episode, the edits' as well, so
-nothing reads a plan file but `Episode.plan`. An edit asks under the
-lock, the stamp has changed if anyone wrote, and the episode reads it
-again. But an edit has to read the file as it is under the lock even
-when the stamp has not moved, two writes in one tick on a drive that
-keeps no inode, and the episode would have to be told to read anyway.
-That is a second way into the episode for one caller, and the stamp
-already covers every case but that one. Dropped: an edit is the one
-reader that must not trust a stamp.
+nothing reads a plan file but `Episode.plan`. An edit asks, the stamp
+has changed if anyone wrote, and the episode reads it again. But an
+edit has to read the file as it is even when the stamp has not moved,
+two writes in one tick on a drive that keeps no inode, and the episode
+would have to be told to read anyway. That is a second way into the
+episode for one caller, and the stamp already covers every case but
+that one. The smaller form of it, every read but `editPlan`'s through
+the episode, has the same fault: the change `Reshape` works out from
+its first read is the change it writes. Dropped: an edit is the one
+reader that must not trust a stamp, and the undo's snapshot of an edit
+with it.
 
 ### 3. A boundary the kernel holds: `os.Root` on the work folder
 
@@ -402,11 +407,11 @@ no `NewProject(nil` is left.
 ```
 app bindings                 ask Machine.Episode: Owns, HasPlan, Plan
 engine views                 take the PlanSummary the episode holds
-engine edits                 read the file under editPlan's lock
+engine edits, undo snapshot  read the file, trusting no stamp
 engine.Episode               plans with their bytes, by stamp
 ```
 
-### Step 4 of #673: the shorts folders watched
+### Step 4 of #673: the shorts watched
 
 Where a clip's short is, the plan says, `recordOf`, and whether it is
 still there is asked each time the clip list is made, `shortOf`. So a
@@ -414,12 +419,23 @@ short deleted in Finder shows as gone the next time the app makes the
 list, and nothing makes it until the video's state is sent again. The
 watch looks at the video's folder, its work folder and its logs, and
 the shorts are in another folder, the one the settings name with the
-video's name in it. The episode says which folders its shorts are in,
-`Episode.ShortFolders`, from the plans it holds, and the watch takes
-them as it takes the work folder. A change in one is a change of that
-video, so its state is sent again. A render records a new folder in the
-plan, so a plan written makes the watch follow again. Nothing else
-needs to know: the list already asks the disk.
+video's name in it. The episode names its shorts, `Episode.Shorts`,
+from the plans it holds, and the watch takes each short as it takes the
+work folder. A change to one is a change of that video, so its state is
+sent again. A render records a new short in the plan, so a plan written
+makes the watch follow again. Nothing else needs to know: the list
+already asks the disk.
+
+The shorts are watched and not their folders. A folder comes from a
+plan, which is untrusted, and the command line's `--out ~/Desktop` is a
+real one, so it can hold any number of files, and on macOS every file in
+a folder watched takes a file descriptor. A folder watched would also
+hear every write ffmpeg makes there while it renders, and each would
+send every video through `reconcile`. A short watched takes one file
+descriptor and is heard only when it changes. What it misses is a short
+put back where it was, which shows the next time the app comes to the
+front. `follow` logs how many folders and shorts it watches and how
+many files are in the folders, for a measurement on a real library.
 
 ## What follows
 

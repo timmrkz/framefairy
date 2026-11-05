@@ -714,12 +714,14 @@ own, `Options.Limits` and `Options.WindowAfter`. The app makes no
 holds, with the bytes it was read from: a gesture while the hand moves,
 `ShapeClip` and `ShapeClipView`, a caption edge, `ShapeCaptionTime`, the
 captions of a clip and of one on its way, and a share of a clip, so a
-drag reads no file. An edit reads the plan file under `editPlan`'s lock,
-because it writes what it read. The undo's snapshot,
-`Episode.TakeSnapshot`, and whether a file is a clip's short,
-`Episode.IsShort`, ask the episode for its plans too, and
-`Episode.ShortFolders` says which folders its shorts were rendered into,
-for the app to watch. Whose a path is, is the episode's to say:
+drag reads no file. An edit reads the plan file itself and trusts no
+stamp: `editPlan` reads it again under its lock, and `Reshape`,
+`SetCaptionTime` and `RemoveCaption` read it with `planClip` before, to
+work out the change. The undo's snapshot, `Episode.TakeSnapshot`, asks
+the episode which plans there are and reads each from the file for the
+same reason. Whether a file is a clip's short, `Episode.IsShort`, asks
+the episode for its plans, and `Episode.Shorts` names every short the
+plans say was rendered, for the app to watch. Whose a path is, is the episode's to say:
 `Episode.Owns` for the video and what is in its work folder, by where
 the path really leads, `Episode.HasPlan` for a plan right in its logs
 folder, and `Episode.Linked` for a video or work folder that is a link

@@ -639,16 +639,26 @@ func shortOf(plan Plan, c Clip) string {
 	return short
 }
 
-// ShortFolders is every folder the plans say a short of the episode was
-// rendered into, each once, sorted, so the app can watch them: a short
-// deleted or moved there in Finder is then gone from its clip at once,
-// see shortOf.
-func (ep *Episode) ShortFolders() []string {
+// Shorts is the path of every short the plans say was rendered of the
+// episode, whether it is still there or not, each once, sorted, so the
+// app can watch them: a short deleted or moved in Finder is then gone
+// from its clip at once, see shortOf. Each is the path on the disk, by
+// where its folder leads, the way shortOf names it. The shorts are
+// watched and not their folders, because a folder can be any folder,
+// the Desktop with a thousand files, and every file in a folder watched
+// costs the Mac a file descriptor, and every file ffmpeg writes there
+// would be heard while it renders.
+func (ep *Episode) Shorts() []string {
 	var out []string
 	for _, plan := range ep.Plans() {
 		for _, c := range plan.clips {
-			if rec, ok := recordOf(plan.plan, c); ok && !slices.Contains(out, rec.folder) {
-				out = append(out, rec.folder)
+			rec, ok := recordOf(plan.plan, c)
+			if !ok {
+				continue
+			}
+			short, err := fileio.SafeChild(rec.folder, rec.name)
+			if err == nil && !slices.Contains(out, short) {
+				out = append(out, short)
 			}
 		}
 	}

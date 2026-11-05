@@ -148,12 +148,13 @@ func TestAChangeIsHintedForTheVideoItCanChange(t *testing.T) {
 		{work + "-old", false},
 		{"/home/tim/videos/you", false},
 		{"/home/tim/Shorts/youtube/eins.mp4", true},
-		{"/home/tim/Shorts/youtube", true},
-		{"/home/tim/Shorts/youtube-old/eins.mp4", false},
+		{"/home/tim/Shorts/youtube/eins.part.mp4", false},
+		{"/home/tim/Shorts/youtube/zwei.mp4", false},
+		{"/home/tim/Shorts/youtube", false},
 		{"/home/tim/Shorts/start/eins.mp4", false},
 	} {
-		shorts := []string{"/home/tim/Shorts/youtube"}
-		if got := touches(video, shorts, []string{c.path}); got != c.want {
+		shorts := []string{"/home/tim/Shorts/youtube/eins.mp4"}
+		if got := touches(video, []string{c.path}) || touchesShort(shorts, []string{c.path}); got != c.want {
 			t.Errorf("a change at %s touches %s: %v, want %v", c.path, video, got, c.want)
 		}
 	}
@@ -264,8 +265,8 @@ func TestAPlanWrittenByTheCommandLineIsSentToTheWorkspaceAtOnce(t *testing.T) {
 	newsUntil(sent, video, func() bool { return true })
 }
 
-// On the real disk: the system's own watch on the folder a short was
-// rendered into is what is tested, the way Finder's changes reach it.
+// On the real disk: the system's own watch on a short is what is tested,
+// the way Finder's changes reach it.
 //
 // A short deleted in Finder is gone from its clip at once: the workspace
 // is sent the video's state, and the clip has no short, so Show in folder
@@ -274,33 +275,74 @@ func TestAShortDeletedInFinderIsGoneFromItsClipAtOnce(t *testing.T) {
 	t.Parallel()
 	var plan, short string
 	svc, video, _, sent := diskLibrary(t, func(video string) {
-		shorts := filepath.Join(filepath.Dir(filepath.Dir(video)), "Shorts", "youtube")
-		if err := os.MkdirAll(shorts, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		short = filepath.Join(shorts, "eins.mp4")
-		if err := os.WriteFile(short, []byte("a short"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		info, err := os.Stat(short)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var body map[string]any
-		if err := json.Unmarshal([]byte(historyPlan), &body); err != nil {
-			t.Fatal(err)
-		}
-		body["shorts"] = map[string]any{"01": map[string]any{
-			"folder": shorts, "name": "eins.mp4", "size": info.Size(), "modified": info.ModTime().UnixNano()}}
-		data, err := json.Marshal(body)
-		if err != nil {
-			t.Fatal(err)
-		}
-		plan = filepath.Join(engine.LogsDir(video), "clips.json")
-		if err := os.WriteFile(plan, data, 0o644); err != nil {
-			t.Fatal(err)
-		}
+		plan, short = renderedShort(t, video)
 	})
+	shortGoes(t, svc, video, sent, plan, short)
+}
+
+// On the real disk: the system's own watch on a short is what is tested,
+// the way Finder's changes reach it.
+//
+// A short rendered while the app is open is watched from the moment its
+// plan says so, so deleting it in Finder is heard at once as well.
+func TestAShortRenderedWhileTheAppIsOpenIsWatched(t *testing.T) {
+	t.Parallel()
+	svc, video, _, sent := diskLibrary(t)
+	plan, short := renderedShort(t, video)
+	// The plan written is heard, and the watch follows it before the
+	// reconcile that sent the news lets go.
+	newsUntil(sent, video, func() bool { return true })
+	svc.reconciling.Lock()
+	svc.reconciling.Unlock() //nolint:staticcheck // waits for the reconcile that sent the news
+	if !slices.Contains(svc.watch.w.WatchList(), fileio.ResolvePath(short)) {
+		t.Fatalf("the short rendered is not watched, the watch has %v", svc.watch.w.WatchList())
+	}
+	shortGoes(t, svc, video, sent, plan, short)
+}
+
+// On the real disk: the short is what the system's watch hears, see the
+// tests above.
+//
+// renderedShort writes a short of the first clip of video's plan and the
+// plan that says it was rendered, the way a render does, and gives both.
+func renderedShort(t *testing.T, video string) (plan, short string) {
+	t.Helper()
+	shorts := filepath.Join(filepath.Dir(filepath.Dir(video)), "Shorts", "youtube")
+	if err := os.MkdirAll(shorts, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	short = filepath.Join(shorts, "eins.mp4")
+	if err := os.WriteFile(short, []byte("a short"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(short)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal([]byte(historyPlan), &body); err != nil {
+		t.Fatal(err)
+	}
+	body["shorts"] = map[string]any{"01": map[string]any{
+		"folder": shorts, "name": "eins.mp4", "size": info.Size(), "modified": info.ModTime().UnixNano()}}
+	data, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan = filepath.Join(engine.LogsDir(video), "clips.json")
+	if err := os.WriteFile(plan, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return plan, short
+}
+
+// On the real disk: the short is what the system's watch hears, see the
+// tests above.
+//
+// shortGoes deletes short and hears the workspace told that the first
+// clip of plan has no short any more, though it was rendered.
+func shortGoes(t *testing.T, svc *FrameFairy, video string, sent chan string, plan, short string) {
+	t.Helper()
 	shortOf := func() string {
 		v, err := svc.store.machine.Episode(video).ReadPlan(plan)
 		if err != nil || len(v.Clips) == 0 {

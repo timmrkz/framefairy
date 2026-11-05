@@ -25,10 +25,10 @@ import (
 type watching struct {
 	w     *fsnotify.Watcher
 	heard func(changed []string)
-	// mu keeps follow to one at a time, and folders is what the last one
+	// mu keeps follow to one at a time, and watched is what the last one
 	// counted, so the count is said only when it changed.
 	mu      sync.Mutex
-	folders int
+	watched int
 	done    chan struct{}
 }
 
@@ -46,21 +46,22 @@ func newWatching(heard func(changed []string)) *watching {
 	return ws
 }
 
-// watchedOf is the folders watched for a video: the one it is in, which
+// watchedOf is what is watched for a video: the folder it is in, which
 // holds the video and its work folder, the work folder, its logs, which
-// hold the transcript, the plans and the loudness, and the folders its
-// shorts were rendered into, which the plans say, see
-// engine.Episode.ShortFolders. A folder that is not there yet is watched
-// once it is, since its making is a change in the folder above it.
+// hold the transcript, the plans and the loudness, and its shorts, which
+// the plans say, see engine.Episode.Shorts. A folder that is not there
+// yet is watched once it is, since its making is a change in the folder
+// above it. A short that is not there is not watched, and a short
+// rendered again is watched again once its plan is written.
 func watchedOf(video string, shorts []string) []string {
 	work := engine.WorkDir(video)
 	return append([]string{filepath.Dir(video), work, filepath.Join(work, "logs")}, shorts...)
 }
 
 // follow watches the folders of these videos that are there, and no
-// other, with the folders shortsOf says each video's shorts are in. It
-// is called after every look at the library, and after a plan is
-// written, which may name a folder a short was rendered into, so the
+// other, with the shorts shortsOf says each video has. It is called
+// after every look at the library, and after a plan is written, which
+// may name a short just rendered, so the
 // watch follows what was added, removed, deleted, made again and
 // rendered, the way the library itself does.
 func (ws *watching) follow(files afero.Fs, videos []string, shortsOf func(video string) []string) {
@@ -85,7 +86,7 @@ func (ws *watching) follow(files afero.Fs, videos []string, shortsOf func(video 
 		if slices.Contains(have, dir) {
 			continue
 		}
-		if info, err := files.Stat(dir); err != nil || !info.IsDir() {
+		if _, err := files.Stat(dir); err != nil {
 			continue
 		}
 		if err := ws.w.Add(dir); err != nil {
@@ -93,21 +94,23 @@ func (ws *watching) follow(files afero.Fs, videos []string, shortsOf func(video 
 				Msg("a folder of a video cannot be watched, so a change in it shows once the app comes back to the front")
 		}
 	}
-	// How many folders are watched, and how many files are in them,
+	// How much is watched, and how many files are in the folders,
 	// which on macOS each take a file descriptor of their own: what
 	// the decision record asked to be measured on a real library.
 	now := ws.w.WatchList()
-	if len(now) == ws.folders {
+	if len(now) == ws.watched {
 		return
 	}
-	ws.folders = len(now)
-	entries := 0
+	ws.watched = len(now)
+	folders, entries := 0, 0
 	for _, dir := range now {
 		if list, err := afero.ReadDir(files, dir); err == nil {
+			folders++
 			entries += len(list)
 		}
 	}
-	theLog.line(zerolog.InfoLevel, "files").Int("videos", len(videos)).Int("folders", len(now)).Int("files", entries).
+	theLog.line(zerolog.InfoLevel, "files").Int("videos", len(videos)).Int("folders", folders).
+		Int("shorts", len(now)-folders).Int("files", entries).
 		Msg("the folders of the videos are watched for changes")
 }
 

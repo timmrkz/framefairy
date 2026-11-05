@@ -348,10 +348,10 @@ whenever it comes back to the front, for whatever the watch could not
 hear. Either way the change lands in `reconcile`, in `reconcile.go`, which
 reads the disk and lets go of every video whose folder is gone, closing its
 workspace if it was open. A video whose file went or came back says so in
-the sidebar at once. The folders a video's shorts were rendered into are
-watched too, so a short deleted or moved in Finder is gone from its clip
-at once, and **Show in folder** with it, while the clip still says it was
-rendered. It tells a deleted folder by a mark the
+the sidebar at once. A video's shorts are watched too, each file and not
+its folder, which can be any folder with any number of files in it, so a
+short deleted or moved in Finder is gone from its clip at once, and **Show
+in folder** with it, while the clip still says it was rendered. It tells a deleted folder by a mark the
 folder carries from the moment the video is added, `added.json`, and not by
 the folder alone, because the app writes a folder back whenever it is asked
 about the video, the chosen clip and the waveform among other things: Tim

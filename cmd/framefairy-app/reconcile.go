@@ -2,6 +2,7 @@ package main
 
 import (
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/rs/zerolog"
@@ -39,7 +40,7 @@ func (s *FrameFairy) reconcile(changed []string) {
 	defer s.reconciling.Unlock()
 	follow := changed == nil
 	for _, ep := range s.store.Episodes() {
-		if changed != nil && !touches(ep, s.shortsOf(ep), changed) {
+		if changed != nil && !touches(ep, changed) && !touchesShort(s.shortsOf(ep), changed) {
 			continue
 		}
 		if s.letGoIfRemoved(ep) {
@@ -58,7 +59,7 @@ func (s *FrameFairy) reconcile(changed []string) {
 			follow = true
 			s.listChanged(ep)
 		}
-		// A plan written may name a folder a short was rendered into.
+		// A plan written may name a short just rendered.
 		if writesPlan(ep, changed) {
 			follow = true
 		}
@@ -68,27 +69,33 @@ func (s *FrameFairy) reconcile(changed []string) {
 	}
 }
 
-// shortsOf is the folders the shorts of a video were rendered into, as
-// its plans say, see engine.Episode.ShortFolders.
+// shortsOf is the shorts of a video, as its plans say, see
+// engine.Episode.Shorts.
 func (s *FrameFairy) shortsOf(video string) []string {
-	return s.store.machine.Episode(video).ShortFolders()
+	return s.store.machine.Episode(video).Shorts()
 }
 
 // touches says whether a change at one of the paths can change what the
 // app has of video: the video itself, its work folder or anything in it,
-// a folder the video is in, or a file in a folder its shorts were
-// rendered into, a short deleted or moved in Finder.
-func touches(video string, shorts, changed []string) bool {
+// or a folder the video is in.
+func touches(video string, changed []string) bool {
 	work := engine.WorkDir(video)
 	sep := string(filepath.Separator)
 	for _, p := range changed {
 		if p == video || p == work || strings.HasPrefix(p, work+sep) || strings.HasPrefix(video, p+sep) {
 			return true
 		}
-		for _, folder := range shorts {
-			if p == folder || strings.HasPrefix(p, folder+sep) {
-				return true
-			}
+	}
+	return false
+}
+
+// touchesShort says whether one of the paths is one of a video's shorts,
+// a short deleted or moved in Finder. It is asked only when touches says
+// no, because the shorts are read from the plans.
+func touchesShort(shorts, changed []string) bool {
+	for _, p := range changed {
+		if slices.Contains(shorts, p) {
+			return true
 		}
 	}
 	return false
