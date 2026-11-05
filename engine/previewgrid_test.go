@@ -53,9 +53,11 @@ func TestTheVideoPreviewShowsTheFramesOfTheShort(t *testing.T) {
 // picture", on what OBS records and on MPEG-TS, and the cursor failed with
 // it. The episode's decoder is made to fail on the third packet of every
 // open, the first stream and every jump, whatever it decodes on, and has
-// to say so and go on with the processor from the frame it is at. On
-// Linux that proves the reopen under the race detector, and on a Mac the
-// way from the chip's failure to it as well. Plan row 2.215.
+// to say so and go on with the processor from the frame it is at. The
+// decoder of a test decodes on the processor, see Media, so this proves
+// the reopen, under the race detector on Linux, and not the chip's own
+// way to it, which only a Mac handed its media engine takes. Plan row
+// 2.215.
 //
 // On the real disk: the frames decoder reads the episode.
 func TestTheVideoPreviewGoesOnWhenTheGraphicsChipFails(t *testing.T) {
@@ -79,7 +81,8 @@ func TestTheVideoPreviewGoesOnWhenTheGraphicsChipFails(t *testing.T) {
 // The video preview goes on when the decoder hangs for good, as the
 // graphics chip did on CI's virtual Mac while it streamed the recording
 // cut off by a crash, issue #553: the stream waited on it until the test
-// run was killed. The decoder is made to hang on one packet of one cursor,
+// run was killed. The decoder, on the processor as a test's is, is made
+// to hang on one packet of one cursor,
 // says so at once, gives the cursor up and decodes on the
 // processor from then on, and the stream goes on from a new cursor at the
 // frame after the last one it had. The frames are checked as in
@@ -143,7 +146,7 @@ func previewShowsTheShort(t *testing.T, e *Engine, program string, c timesCase, 
 		t.Errorf("the file is %.3f s long, it was made %.0f s long", info.Duration, made)
 	}
 	holds := frameHolding(t, source)
-	dec := NewEpisodeFrames(program, source)
+	dec := newEpisodeFrames(program, source)
 	defer dec.Close()
 	var heardMu sync.Mutex
 	var heard []string

@@ -135,6 +135,14 @@ func (m *Machine) UseSystem() {
 // against a stand-in ffmpeg.
 func (m *Machine) useMedia(media Media) { m.media = &media }
 
+// LeaveTheMediaEngine takes the system's media engine away from a machine
+// UseSystem handed it, so it encodes and decodes with ffmpeg's own codecs
+// on the processor, as a test's machine does. Only the build the checks
+// from outside the app drive calls it, before anything is decoded, see
+// probe_outside.go in cmd/framefairy-app: what it checks is the app,
+// not Apple's media engine on a CI runner.
+func (m *Machine) LeaveTheMediaEngine() { m.media = nil }
+
 // mediaOf is the machine's media engine, or ffmpeg's own when it was
 // handed none.
 func (m *Machine) mediaOf() Media {

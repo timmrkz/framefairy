@@ -33,9 +33,6 @@ func twoCameras(t *testing.T) (string, SourceInfo) {
 	return fixtures.Path(t, "two-cameras.mp4"), SourceInfo{Width: 640, Height: 360, Duration: 30}
 }
 
-// framingEngine frames by what is in focus rather than by faces. These
-// tests are about how a clip is framed, and looking for faces in
-// every sampled frame under the race detector is most of a minute.
 // decodingMachine is a machine handed a Mac's media engine, whose system
 // decoder a stand-in ffmpeg plays, so what framing does when the system's
 // decoder fails is tested on any machine, and no test waits on a real
@@ -46,6 +43,9 @@ func decodingMachine() *Machine {
 	return m
 }
 
+// framingEngine frames by what is in focus rather than by faces. These
+// tests are about how a clip is framed, and looking for faces in
+// every sampled frame under the race detector is most of a minute.
 func framingEngine() *Engine {
 	e := NewEngine(runlog.New(io.Discard, false, false), NewMachine(afero.NewMemMapFs()))
 	e.NoFaces = true

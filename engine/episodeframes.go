@@ -133,15 +133,17 @@ var ErrFramesClosed = errors.New("the video's decoder was closed")
 // media engine decodes, see Media. Nothing starts until a stream is
 // asked for.
 func (m *Machine) EpisodeFrames(program, path string) *EpisodeFrames {
-	f := NewEpisodeFrames(program, path)
+	f := newEpisodeFrames(program, path)
 	f.chip = m.mediaOf().Decodes
 	return f
 }
 
-// NewEpisodeFrames is the episode's decoder for the episode at path, run
+// newEpisodeFrames is the episode's decoder for the episode at path, run
 // from program, which decodes on the processor. Nothing starts until a
-// stream is asked for.
-func NewEpisodeFrames(program, path string) *EpisodeFrames {
+// stream is asked for. Outside the engine a decoder is made by
+// Machine.EpisodeFrames, so whether it may use the graphics chip is the
+// machine's to say.
+func newEpisodeFrames(program, path string) *EpisodeFrames {
 	return &EpisodeFrames{program: program, path: path, answers: map[uint32]chan framewire.Record{},
 		placed: map[uint32]place{}, finishing: map[uint32]place{}, used: time.Now(), captionsTurn: make(chan struct{}, 1)}
 }

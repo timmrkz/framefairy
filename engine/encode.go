@@ -191,22 +191,29 @@ var x265 = Encoder{
 var known = map[string]Encoder{
 	x264.Name:         x264,
 	videoToolbox.Name: videoToolbox,
+	mpeg4.Name:        mpeg4,
 }
 
-// Media is the system's media engine as the engine uses it: the encoders
-// a short reaches for, best first, and whether decoding goes to the
-// system's own decoder. It is the one part of making a short that is not
-// ffmpeg's own code, differs from one machine to the next, and is not
-// ours, so a machine is handed it, as it is handed the keychain, see
-// Machine.UseSystem. A machine handed none has ffmpeg's own codecs on the
-// processor, see ffmpegsOwn, so no test of our code reaches it. What it
-// is handed is checked as an argument list, against a stand-in ffmpeg.
-// See docs/decisions/2026-11-05-the-systems-media-engine-handed-in.md.
+// Media is what encodes and decodes a video's picture on a machine: the
+// encoders a short reaches for, best first, and whether decoding goes to
+// the system's own decoder. The system's media engine, VideoToolbox on a
+// Mac, is the one part of making a short that is not ffmpeg's own code,
+// differs from one machine to the next, and is not ours, so a machine is
+// handed it, as it is handed the keychain, see Machine.UseSystem and
+// SystemMedia. A machine handed none has ffmpeg's own codecs on the
+// processor, ffmpegsOwn, so no test of our code reaches it. What the
+// media engine is handed is checked as an argument list, against a
+// stand-in ffmpeg. See
+// docs/decisions/2026-11-05-the-systems-media-engine-handed-in.md.
 type Media struct {
 	// Encoders are for a short of standard video and HDREncoders for one
-	// in HDR, best first. The first one this ffmpeg has is used, and one
-	// that fails in its own words goes on with the next, see nextEncoder.
+	// in HDR, best first. The first one this ffmpeg has is used.
 	Encoders, HDREncoders []Encoder
+	// Fallback says that an encoder that fails in its own words, or makes
+	// no frame for encoderStall, goes on with the next one this ffmpeg
+	// has, see nextEncoder and stallFor. Without it the encoders are one
+	// for each kind of ffmpeg, and the one chosen is the only one.
+	Fallback bool
 	// Decodes says that decoding goes to the system's own decoder where it
 	// takes the file: ffmpeg's -hwaccel auto, and the graphics chip in
 	// the episode's decoder, see Machine.EpisodeFrames.
@@ -214,7 +221,9 @@ type Media struct {
 }
 
 // ffmpegsOwn is the media of a machine handed none: ffmpeg's own
-// encoders and decoders on the processor.
+// encoders and decoders on the processor, libx264 where the ffmpeg has it
+// and mpeg4 where it does not, and neither goes on with the other, so a
+// test whose encoder fails fails.
 var ffmpegsOwn = Media{Encoders: []Encoder{x264, mpeg4}, HDREncoders: []Encoder{x265}}
 
 // SystemMedia is the media engine of a system, goos as runtime.GOOS
@@ -235,10 +244,11 @@ func SystemMedia(goos string) Media {
 		return Media{
 			Encoders:    []Encoder{videoToolbox, onProcessor(videoToolbox), x264},
 			HDREncoders: []Encoder{hevcVideoToolbox, onProcessor(hevcVideoToolbox), x265},
+			Fallback:    true,
 			Decodes:     true,
 		}
 	}
-	return Media{Encoders: []Encoder{x264}, HDREncoders: []Encoder{x265}, Decodes: true}
+	return Media{Encoders: []Encoder{x264}, HDREncoders: []Encoder{x265}, Fallback: true, Decodes: true}
 }
 
 // order is what this engine reaches for, for a short of standard video
@@ -406,12 +416,12 @@ const encoderStall = time.Minute
 
 // stallFor is how long a render on encoder may go without a frame, or
 // zero for as long as it takes: an encoder with none after it in this
-// system's order, libx264 above all, is waited for, since there is
-// nothing better to go on with.
+// system's order, libx264 above all, or on media with no fallback, is
+// waited for, since there is nothing better to go on with.
 func (e *Engine) stallFor(encoder Encoder, light framewire.Light) time.Duration {
 	order := e.order(light != framewire.SDR)
 	at := slices.IndexFunc(order, encoder.is)
-	if at < 0 || at == len(order)-1 {
+	if !e.mediaOf().Fallback || at < 0 || at == len(order)-1 {
 		return 0
 	}
 	return encoderStall
@@ -422,7 +432,7 @@ func (e *Engine) stallFor(encoder Encoder, light framewire.Light) time.Duration 
 func (e *Engine) encoderAfter(ctx context.Context, failed Encoder, light framewire.Light) (Encoder, bool) {
 	order := e.order(light != framewire.SDR)
 	at := slices.IndexFunc(order, failed.is)
-	if at < 0 {
+	if !e.mediaOf().Fallback || at < 0 {
 		return Encoder{}, false
 	}
 	have := e.Runner.Run(ctx, "", e.FFmpeg, "-hide_banner", "-encoders")

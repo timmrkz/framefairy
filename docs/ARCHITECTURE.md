@@ -137,7 +137,7 @@ What to do today, and what changes once the issue named is built.
 | keep what a video's file said, so the next question does not read it again | its `engine.Episode`, by the file's stamp. Never a cache of its own in the app or a package variable |
 | keep something between two jobs, a cache or a fact about the machine | a field on `engine.Machine`, in `engine/machine.go`, which a program makes once and hands to every `Engine`. Never a package variable, and never a new `Engine` made only to get it. #607 moves the package variables still left onto it |
 | reach the keychain, a company or a model's download from the engine | through `engine.Machine`, whose keys and network are empty in a machine `NewMachine` makes, so it keeps no key and reaches nothing. Each program hands it the system's with `UseSystem` in `main`, the app through `appStore`, see the decision record [2026-10-31-running-programs-and-what-outlives-a-job.md](decisions/2026-10-31-running-programs-and-what-outlives-a-job.md#the-keys-and-the-network-648). Never a switch on whether a test is running. A part outside the engine that reaches the network, like `updates/`, is handed its client by `main`. llama-server on this machine is reached through the machine too, its client, its keys and the one server it keeps loaded in `engine/modelhost.go` |
-| encode or decode through the system's own hardware, VideoToolbox on a Mac | through the machine's `engine.Media`, which `UseSystem` hands it in `main` and which is empty in a machine `NewMachine` makes, so a test's machine encodes and decodes with ffmpeg's own code on the processor. The episode's decoder is told by `-chip`, from `Machine.EpisodeFrames`. Never a choice by `runtime.GOOS` in the code that encodes or decodes, see the decision record [2026-11-05-the-systems-media-engine-handed-in.md](decisions/2026-11-05-the-systems-media-engine-handed-in.md) |
+| encode or decode through the system's own hardware, VideoToolbox on a Mac | through the machine's `engine.Media`, which `UseSystem` hands it in `main` and which is empty in a machine `NewMachine` makes, so a test's machine encodes and decodes with ffmpeg's own code on the processor. The episode's decoder is told by `-chip`, from `Machine.EpisodeFrames`, the one way to make one outside the engine. Whether to reach the media engine is never decided by `runtime.GOOS` where a video is encoded or decoded. Only `SystemMedia` reads the system, to say which media engine it has, and the decoder reads it only to know which kind of chip it was told it may use. The checks from outside the app take it away again, `LeaveTheMediaEngine` in the build only they use. See the decision record [2026-11-05-the-systems-media-engine-handed-in.md](decisions/2026-11-05-the-systems-media-engine-handed-in.md) |
 | read a file of a video | through the `afero.Fs` the code was given, with `fileio.SafeChildIn` for a path in a work folder. Not `os`. A video's transcript, plans and status, through its `Episode`, and whether a path is the video's own, `Episode.Owns` and `Episode.HasPlan`. A view of a clip, a gesture or its captions, takes the plan the `Episode` holds. An edit reads the file itself, and `editPlan` again under its lock |
 | change a plan | `editPlan` in `engine/edit.go` |
 | notice a change made to a video's files, or to the models, outside the app | `reconcile` in `cmd/framefairy-app/reconcile.go`, which the watch in `watch.go` hands every change to, in a video's folders, its shorts, `Episode.Shorts`, and the models folder, and which runs once as the app starts, `watchTheDisk`, and as the library is read. Never a check of its own in a binding |
@@ -215,8 +215,10 @@ which reads this file.
 12. No test reaches the system's media engine. A machine is handed it in
     each program's `main`, and one a test makes has none, so a render,
     framing and the episode's decoder run ffmpeg's own code on the
-    processor. Held by `UseSystem` being the one place that hands it, and
-    by `TestOnlyAMachineHandedTheMediaEngineReachesIt`.
+    processor. Held by `UseSystem` being the one place that hands it, by
+    `Machine.EpisodeFrames` being the one way to make the episode's
+    decoder outside the engine, and by
+    `TestOnlyAMachineHandedTheMediaEngineReachesIt`.
 
 ## Boundaries
 
@@ -236,7 +238,7 @@ other side relies on, and the pull request says so.
 - The files of a work folder and of the config folder, which an older
   and a newer build both read, `chosen.json` and the settings among
   them, see #612.
-- `internal/framewire`, between the decoder and the engine.
+- `internal/framewire` and the decoder's one argument besides the episode, `-chip`, between the decoder and the engine.
 - The update feed and the licence key, which the builds of customers
   read.
 

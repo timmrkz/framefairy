@@ -160,7 +160,7 @@ func (p *previews) serve(st *store, w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		if err := p.hold(path); err != nil {
+		if err := p.hold(st.machine, path); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -193,7 +193,7 @@ func (p *previews) serveOpen(st *store, w http.ResponseWriter, r *http.Request) 
 			http.Error(w, "a sound stream needs a rate and a number of channels", http.StatusBadRequest)
 			return
 		}
-		dec, err := p.decoder(path)
+		dec, err := p.decoder(st.machine, path)
 		run = func(ctx context.Context, got func(float64, []byte) error) error {
 			if err != nil {
 				return err
@@ -221,7 +221,7 @@ func (p *previews) serveOpen(st *store, w http.ResponseWriter, r *http.Request) 
 		times = engine.NewPreviewTimes()
 		skip = new(atomic.Uint64)
 		skipped := func() float64 { return math.Float64frombits(skip.Load()) }
-		dec, err := p.decoder(path)
+		dec, err := p.decoder(st.machine, path)
 		if err == nil {
 			light = dec.Light
 		}
@@ -360,8 +360,8 @@ func episodeFile(st *store, path string) bool {
 // cursors opened, as the episode opens in the video preview, and keeps it
 // until release. The frame queue holds it for as long as it has the
 // episode, see AppFrames in lib/frames/app.ts.
-func (p *previews) hold(path string) error {
-	d, err := p.decoder(path)
+func (p *previews) hold(m *engine.Machine, path string) error {
+	d, err := p.decoder(m, path)
 	if err != nil {
 		return err
 	}
@@ -428,8 +428,8 @@ func (p *previews) spare() {
 // decoder is the episode's decoder for the episode at path, started by a
 // hold or on its first stream. It ships beside the app, as ffmpeg does, and an app
 // without it says so the way it says a missing ffmpeg: there is no second
-// way to the frames.
-func (p *previews) decoder(path string) (*engine.EpisodeFrames, error) {
+// way to the frames. It decodes on machine m, see engine.Media.
+func (p *previews) decoder(m *engine.Machine, path string) (*engine.EpisodeFrames, error) {
 	program, err := p.tools.Find("FRAMEFAIRY_FRAMES", "framefairy-frames")
 	if err != nil {
 		return nil, err
@@ -441,10 +441,10 @@ func (p *previews) decoder(path string) (*engine.EpisodeFrames, error) {
 	}
 	d := p.decoders[path]
 	if d == nil {
-		// On the program's machine, which main hands the system's media
+		// On the store's machine, which appStore hands the system's media
 		// engine, so the app's decoder decodes on the graphics chip and a
 		// test's on the processor.
-		d = sources.machine.EpisodeFrames(program, path)
+		d = m.EpisodeFrames(program, path)
 		p.decoders[path] = d
 		if !p.reaping {
 			p.reaping = true

@@ -156,7 +156,7 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 	source, err := sources.probe(ctx, path)
 	if err == nil {
 		var dec *engine.EpisodeFrames
-		dec, err = p.decoder(path)
+		dec, err = p.decoder(st.machine, path)
 		if err == nil {
 			// The short's size as the render takes it, which is what the
 			// caption file is laid out at.

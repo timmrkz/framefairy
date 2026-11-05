@@ -92,7 +92,7 @@ func (s *FrameFairy) addEpisodes(videos []string) ([]string, error) {
 	// nothing to show, and the render nothing to cut.
 	var take, refused []string
 	for _, v := range videos {
-		if why := undecodable(v, s.frameLate); why != "" {
+		if why := undecodable(s.store.machine, v, s.frameLate); why != "" {
 			refused = append(refused, fmt.Sprintf("the picture of %s cannot be decoded, %s", filepath.Base(v), why))
 			continue
 		}
@@ -134,12 +134,12 @@ const firstFrameWait = 30 * time.Second
 // out as "context deadline exceeded" after 30 s, which would have told a
 // person their video could not be decoded. Such a video is taken, and
 // the video preview shows how its decoder does.
-func undecodable(video string, late <-chan struct{}) string {
+func undecodable(m *engine.Machine, video string, late <-chan struct{}) string {
 	abs, err := filepath.Abs(video)
 	if err != nil {
 		return err.Error()
 	}
-	dec, err := openPreviews.decoder(abs)
+	dec, err := openPreviews.decoder(m, abs)
 	if err != nil {
 		return strings.TrimSuffix(err.Error(), ".")
 	}

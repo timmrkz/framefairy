@@ -26,7 +26,7 @@ Measured on main at c714bca:
     VideoToolbox device in `main` whenever it runs on a Mac.
 - Every test that renders, frames or streams on CI's Mac went through
   it, because a test's machine reaches the same media engine as the app.
-  56 calls of `ffmpegtest.Need` in 37 test files run ffmpeg, and 6
+  56 calls of `ffmpegtest.Need` in 24 test files run ffmpeg, and 6
   test files start the episode's decoder.
 - Every incident of #656, eleven failed runs since October, hung inside
   VideoToolbox, in `VTParavirtualizationGuestSendMessageWithIOSurfacesToHostAndCopyReplySync`,
@@ -138,6 +138,20 @@ dropped: ffmpeg is already reached through an argument list, which a
 stand-in can record, and replacing it with a Go interface rewrites the
 render while making the tests of what a short looks like test a fake.
 
+Said plainly, 2 to 5 are four sides of one design, not four designs, so
+the record weighs two candidates, a seam around all of ffmpeg and a seam
+around the media engine. The review of the pull request named two more,
+weighed here:
+
+- A stand-in `tool.Runner` in every test that renders, which swaps the
+  encoder on the way. It leaves the engine choosing VideoToolbox by
+  itself, so every test that forgets it reaches the media engine, and
+  it does not reach the episode's decoder, which is started by `exec`
+  and opens VideoToolbox in its own process.
+- A seam inside the episode's decoder around the hardware device. That
+  is what `-chip` is, seen from the decoder, and it needs the engine to
+  say when, which is simulation 4.
+
 The one thing only one simulation needs, `mpeg4`, is kept for a reason:
 on a Mac without the media engine and without libx264 a short needs an
 encoder, and `mpeg4` is in every ffmpeg. No program takes it, because
@@ -154,17 +168,22 @@ framefairy-frames          VideoToolbox only with -chip
 ffmpeg, VideoToolbox       outside
 ```
 
-- `engine.Media` is the system's media engine as the engine uses it:
-  `Encoders` and `HDREncoders`, best first, and `Decodes`, whether
+- `engine.Media` is what encodes and decodes on a machine:
+  `Encoders` and `HDREncoders`, best first, `Fallback`, whether an
+  encoder that fails goes on with the next, and `Decodes`, whether
   ffmpeg and the episode's decoder hand decoding to the system's
   decoder. `SystemMedia(goos)` is the one of a system, the table
-  `encoderOrderFor` was.
+  `encoderOrderFor` was, with the fallback.
 - `engine.Machine` keeps it. Empty, as `NewMachine` makes it, it is
-  ffmpeg's own: libx264, then `mpeg4`, for standard video, libx265 for
-  HDR, and decoding on the processor. `UseSystem` hands it the
-  system's.
-- `Machine.EpisodeFrames` makes the episode's decoder, started with
-  `-chip` when the machine's media decodes.
+  ffmpeg's own: libx264, or `mpeg4` where the ffmpeg has no libx264, for
+  standard video, libx265 for HDR, no fallback, and decoding on the
+  processor. `UseSystem` hands it the system's.
+- `Machine.EpisodeFrames` is the one way to make the episode's decoder
+  outside the engine, started with `-chip` when the machine's media
+  decodes.
+- The checks from outside the app run the real app on CI's Mac. Their
+  build, and only theirs, takes the media engine away again with
+  `LeaveTheMediaEngine`, in `appStore` before anything runs.
 - The tests of what the media engine is handed set `media` on their
   own machine, as they set `system` on their engine before.
 
@@ -175,8 +194,15 @@ ffmpeg, VideoToolbox       outside
   short needs an encoder of HEVC in 10 bits, which a Mac has only in its
   media engine, so the test of HDR shorts runs where ffmpeg has libx265,
   on Linux.
+- Costs too: our own code for the graphics chip in the episode's
+  decoder runs in no test, the frame brought off the chip, `chipDecodes`
+  and the way from a failing chip to the processor. Its way to the
+  processor is the same reopen the processor's own failure takes, which
+  the tests make happen. The rest is checked on a real Mac, by the app's
+  log, which says where each video decodes.
 - Buys: no test of our code waits on Apple's media engine, on any
-  machine. A push stops failing for #656 without a CI change.
+  machine, the checks from outside the app among them. A push stops
+  failing for #656 without a CI change.
 - Wrong if: a short or the video preview breaks on a real Mac in a way
   a test of what we hand VideoToolbox would not have caught. Then the
   argument it needed is added to that test, not a run of VideoToolbox.

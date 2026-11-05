@@ -498,7 +498,7 @@ func TestTheEpisodesDecoderStandsAPhoneVideoUp(t *testing.T) {
 		want := first(func(got func(float64, []byte) error) error {
 			return ffmpegFrames(t.Context(), phone, grid.At(grid.Holding(0.5)), w, h, got)
 		})
-		dec := NewEpisodeFrames(program, phone)
+		dec := newEpisodeFrames(program, phone)
 		dec.heard = func(_ slog.Level, line string) {
 			saidMu.Lock()
 			defer saidMu.Unlock()

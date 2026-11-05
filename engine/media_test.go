@@ -2,11 +2,14 @@ package engine
 
 import (
 	"context"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/spf13/afero"
+
+	"framefairy/internal/framewire"
 )
 
 // A machine handed no media engine, as every test's is, reaches nothing
@@ -28,6 +31,23 @@ func TestOnlyAMachineHandedTheMediaEngineReachesIt(t *testing.T) {
 	}
 	if args := own.EpisodeFrames("framefairy-frames", "folge.mp4").args(); !slices.Equal(args, []string{"folge.mp4"}) {
 		t.Errorf("a machine handed no media engine starts the episode's decoder with %v", args)
+	}
+
+	// ffmpeg's own encoder is the only one: one that fails or stalls is
+	// not handed on, so a test whose encoder fails fails.
+	if _, ok := own.encoderAfter(context.Background(), x264, framewire.SDR); ok {
+		t.Error("ffmpeg's own libx264 goes on with another encoder")
+	}
+	if d := own.stallFor(x264, framewire.SDR); d != 0 {
+		t.Errorf("ffmpeg's own libx264 is given up after %s without a frame", d)
+	}
+
+	// Each program's main hands its machine the system's, see UseSystem.
+	program := &Engine{Machine: NewMachine(afero.NewMemMapFs())}
+	program.UseSystem()
+	if want := SystemMedia(runtime.GOOS); !slices.EqualFunc(program.order(false), want.Encoders, Encoder.is) ||
+		program.mediaOf().Decodes != want.Decodes {
+		t.Errorf("UseSystem hands the machine %v, not this system's %v", names(program.order(false)), names(want.Encoders))
 	}
 
 	mac := &Engine{Machine: NewMachine(afero.NewMemMapFs())}

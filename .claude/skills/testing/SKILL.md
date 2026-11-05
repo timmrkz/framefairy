@@ -324,7 +324,7 @@ nothing more than a field, a parameter or an option:
 | random numbers | a source of randomness |
 | a network service, a model, a database | an interface, with a fake the test drives |
 | a program the code runs | its path or a runner |
-| hardware or a system service outside the code, a codec, a driver, a keychain | a value the program hands in, absent by default, see below |
+| hardware or a system service outside the code, a hardware codec, a driver, a keychain | a value the program hands in, absent by default, see below |
 | the end of work | a channel, callback or event the caller gives |
 
 - The program hands in the real thing. A test hands in one it drives.

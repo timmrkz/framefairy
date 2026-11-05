@@ -16,6 +16,8 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/spf13/afero"
+
 	"framefairy/engine"
 	"framefairy/internal/ffmpegtest"
 	"framefairy/internal/fixtures"
@@ -361,7 +363,7 @@ func TestOnlyAFewDecodersNobodyHoldsStandRunning(t *testing.T) {
 			path := fmt.Sprintf("/episode-%d.mp4", i)
 			paths = append(paths, path)
 			// Never started: a decoder runs nothing until it is first asked.
-			p.decoders[path] = engine.NewEpisodeFrames("framefairy-frames", path)
+			p.decoders[path] = engine.NewMachine(afero.NewMemMapFs()).EpisodeFrames("framefairy-frames", path)
 			p.held[path] = 1
 			time.Sleep(2 * time.Millisecond) //nolint:forbidigo // synctest bubble
 		}
