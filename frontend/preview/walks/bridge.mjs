@@ -394,12 +394,11 @@ export async function open(url, { viewport = { width: 1500, height: 1000 }, scal
   // workspace and the start of the clip timeline. It is let go of, the way
   // a person who works in the workspace would, so a hand can reach what is
   // under it. Its button keeps a sidebar that is not kept, so it is
-  // clicked only when the sidebar is kept.
-  if ((await page.locator("aside .head .glyph").getAttribute("aria-pressed")) === "true") {
-    await page.locator("aside .head .glyph").click();
-    await page.mouse.move(750, 500);
-    await sidebarStill(page);
-  }
+  // clicked only when the sidebar is kept, and the pointer moved away
+  // closes one hovering opened.
+  if ((await page.locator("aside .head .glyph").getAttribute("aria-pressed")) === "true") await page.locator("aside .head .glyph").click();
+  await page.mouse.move(750, 500);
+  await sidebarStill(page);
   await page.locator("aside .list li button.pick").first().waitFor();
   await page.locator("aside .list li button.pick").first().click();
   await page.locator(".captions .word").first().waitFor();
