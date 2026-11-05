@@ -197,7 +197,7 @@ names nothing of ours. This is where its words meet this repository.
 ## CI
 
 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs on every pull
-request and every push to `main`, as up to eleven jobs at the same time,
+request and every push to `main`, as up to twelve jobs at the same time,
 so the answer comes back in the time the slowest takes. A first job,
 **plan**, asks `scripts/changed.sh` which parts the change reaches, and
 only those start. Each job runs one make command, `make changed` for its
@@ -217,12 +217,11 @@ the same thing, see [One way to test](BUILD.md#one-way-to-test):
   interface, the walks or the Go side of the app.
 - **fuzz:** `make fuzz` on Linux, the targets of the packages the change
   reaches, going on from the fuzz cache main left.
+- **macos:** `make unit` against our own ffmpeg, which on a Mac leaves
+  out the race detector, which Linux runs.
 - **outside:** `make` on a Mac, which fails if the build prints any
   warning, then the app opened by macOS from a link, see
   [TESTING.md](TESTING.md#from-outside-the-app).
-
-The Go tests on a Mac run once a night on main, not on a pull request,
-see [Mac tests at night](BUILD.md#mac-tests-at-night).
 
 A push to `main` runs every part whole. A pull request of docs alone
 reaches only the test that reads the docs, `internal/naming`, on one

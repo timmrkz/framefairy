@@ -359,9 +359,10 @@ command, `make changed` for its part, the one a person runs, see
 | `image` | Linux | the CI image `build`, `linux`, `fuzz` and the walks run in, see [The CI image](#the-ci-image), by `.github/workflows/ci-image.yml`, which the nightly fuzzing and the security check call too. Asks the registry whether the image for this commit's recipe is there, and builds and pushes it only when it is not |
 | `walks (1/4)` to `walks (4/4)` | Linux, in the CI image | `make changed PART=walks SHARD=1/4` to `4/4` with `WALKTIMEOUT=8m`, a quarter of the runs each by how long they took last, `walk-times.tsv`, so a run that hangs is named in minutes. Every walk walks in WebKit, see Two browsers in [TESTING.md](TESTING.md#two-browsers). On three machines each job took four and three quarter minutes |
 | `fuzz` | Linux, in the CI image | `make changed PART=fuzz SIMTIME=0`, from the fuzz cache main left, see [Tests](#tests) |
+| `macos` | macOS | the ffmpeg we ship, built by its script and kept until the script changes, then `make changed PART=unit` against it, which on a Mac leaves out the race detector, which Linux runs, and the licence server's packages, which never run on a Mac |
 | `outside` | macOS | the ffmpeg and the llama-server we ship, then `make changed PART="build outside"`, `make` with no warnings allowed, then `make outside`: a keychain of its own, then the app opened by macOS from an Unlock link, closed and open, with the local dispenser beside it, see [TESTING.md](TESTING.md#from-outside-the-app). Stopped after 30 minutes |
 
-`linux`, `walks` and `outside` start from Go's build cache as
+`linux`, `walks`, `macos` and `outside` start from Go's build cache as
 main left it after its last push, one cache for each job and for each
 machine of `linux`, saved by main. The build to update to in
 `builds.yml` starts from the cache of `outside`, which runs the same
@@ -372,13 +373,13 @@ it only when `go.sum` changes, so with it a job started from a cache
 weeks old and compiled nearly everything again: a minute on Linux and
 close to two on a Mac, the episode's decoder included.
 
-When a Go test fails in `linux` or in the nightly Mac tests, or a walk in `walks`,
+When a Go test fails in `linux` or `macos`, or a walk in `walks`,
 `scripts/test-failures.sh` names it on the check, with what it printed,
 so the pull request says which test failed without anybody opening the
 log. It reads what go test prints and what gotestsum prints, and
 `scripts/test-failures-test.sh` in `make lint` holds it to both.
 
-Under the Go tests, `linux` and the nightly Mac tests name every test that took over
+Under the Go tests, `linux` and `macos` name every test that took over
 five seconds, slowest first, `SLOWEST` in `ci.yml`, see `make unit`. The
 Mac runs three cores where Linux runs four, and a test that is slow only
 there shows in its log without anybody running it again. Above the
@@ -395,7 +396,7 @@ seconds varied by 17 % from run to run on the M1, so a claim that tests
 got slower or faster needs several runs of each side, with their spread,
 #592.
 
-The Go tests in `linux` and the nightly Mac tests stop after 15 minutes. go test ends a
+The Go tests in `linux` and `macos` stop after 15 minutes. go test ends a
 package that runs over ten minutes by itself, and the tests take about
 three, so the limit only ever ends a run that even go test could not end.
 After them, whichever way they ended, `scripts/leftovers.sh` looks for
@@ -423,43 +424,12 @@ side by side.
 
 Nothing a change reaches is left out to make it quick. Every test runs on Linux under the
 race detector, with the same `FUZZTIME`, and every test of what runs on a
-Mac runs on a Mac too, at night, see [Mac tests at night](#mac-tests-at-night).
-The account runs five Mac jobs at once for every
-branch together, so a push takes one, `outside`, and the app is
+Mac runs on a Mac too. The account runs five Mac jobs at once for every
+branch together, so a push takes two, `macos` and `outside`, and the app is
 built once there. The two fuzz targets about paths are fuzzed on a Mac at
 night, because a case-insensitive filesystem is a different thing to
 explore. The others read text and numbers, which Go reads the same on
 both. The known inputs of every target run on a Mac in `make unit`.
-
-### Mac tests at night
-
-The Go tests on a Mac, `make changed PART=unit` with `EVERYTHING=1`
-against the ffmpeg we ship, run once a night on main, in
-`.github/workflows/mac-nightly.yml`, and by hand from the Actions tab. On
-a Mac that leaves out the race detector, which Linux runs, and the
-licence server's packages, which never run on a Mac.
-
-They ran on every pull request until 5 November 2026. GitHub's Mac is a
-virtual Mac, and now and then its media engine, VideoToolbox, stops
-answering. Every stack kept of such a hang, see `internal/hangdump`, is in
-the call from the virtual Mac to the machine it runs on, which never came
-back, in creating a decoder and in the decoder. Encoders hung the same
-way, Apple's encoder on the processor, `-require_sw`, among them, before
-any stack was kept. The test that waits on it waits with no end, so its
-package ran into its `-timeout` and a pull request that changed nothing on
-a Mac failed. Not once in Tim's 104 report logs. A Mac has no other
-encoder for a short, the ffmpeg we ship has no libx264, so the Mac's tests
-cannot leave the media engine out. At night a hang stops no pull request,
-and `scripts/test-failures.sh` names a stack in that call as the virtual
-Mac's media engine, so a red night that does not say so failed for a
-reason of its own, and is read the way any failure is.
-
-The code every machine shares is tested on Linux on every pull request the
-change reaches. What only a Mac builds or does, the `_darwin.go` files,
-the keychain, the disk's names, Apple's encoders and decoder, is not. A
-session whose change reaches it starts this workflow through the GitHub
-API on its branch, `workflow_dispatch` on `mac-nightly.yml`, and reads that
-run before it says the pull request is ready.
 
 A pull request that changes nothing but docs, any `.md`, `LICENSE`,
 `.vscode/` or `.claude/`, reaches no part, so after `plan` it starts no

@@ -766,16 +766,10 @@ request.
   runs on main.
 - **A Mac only for what is different on a Mac.** The account runs five Mac
   jobs at once, for every branch together, so each Mac job a push takes
-  is a push of someone else's that waits. A push takes one: the build
-  without warnings with the app opened from outside. The Go tests of what
-  ships in the app, for what behaves differently there, decoding and
-  encoding through VideoToolbox, the disk's names, the keychain, run on
-  a Mac at night, because GitHub's virtual Mac's media engine now and
-  then stops answering, and no other encoder on a Mac makes a short. A
-  session whose change reaches what differs on a Mac, VideoToolbox, the
-  keychain, the disk's names or a `_darwin.go` file, starts them through
-  the GitHub API, workflow `mac-nightly.yml` on its branch, and reads
-  that run before it says the pull request is ready. Code
+  is a push of someone else's that waits. A push takes two: the build
+  without warnings with the app opened from outside, and the Go tests of
+  what ships in the app, for what behaves differently there: decoding and
+  encoding through VideoToolbox, the disk's names, the keychain. Code
   that never runs on a Mac, like the licence server, is tested on Linux
   only, and so is anything new of that kind. The race detector runs on
   Linux only, which covers the same Go code. Long fuzzing on a Mac runs
@@ -872,7 +866,7 @@ the skills listed last show their name without what they are for.
 - Work on a branch, open a pull request, and let CI run. CI builds and tests
   on Linux and on macOS, where the build has to be clean of warnings, and
   fuzzes on Linux, and drives the interface against the real Go side, see
-  [docs/TESTING.md](docs/TESTING.md). It is up to eleven jobs at once rather than one after
+  [docs/TESTING.md](docs/TESTING.md). It is up to twelve jobs at once rather than one after
   another, so the answer comes back in the time the slowest takes. Every
   job runs `make changed` for one part of `make test`, see One way to
   test above.
