@@ -692,7 +692,6 @@ func (b *planBuilder) frameAll() {
 	}
 }
 
-
 // work frames one clip and lands it. A framer is a goroutine of its own,
 // so a panic in it is out of reach of the recover that guards the job, and
 // it ended the whole app: the interface, the other lane and whatever was
