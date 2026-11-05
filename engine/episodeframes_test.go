@@ -1194,3 +1194,49 @@ func untilCursors(dec *EpisodeFrames, ok func() bool) {
 		dec.mu.Lock()
 	}
 }
+
+// A draw of captions that the decoder never answers holds the turn of
+// every draw after it. A request given up while it waits for the turn
+// says so, and the one given up while the decoder draws says that, so
+// the caption route's 500 says what it waited for. Four asks once waited
+// out the route's ten seconds on CI's Mac, and nothing said whether they
+// waited on the decoder or on each other, issue #687. Before the turn
+// could be given up, the second draw here waited for the first for good.
+//
+// On the real disk: the decoder is a program, a script here, which says
+// on its error stream that it has the draw and never answers it.
+func TestACaptionDrawGivenUpSaysWhatItWaitedFor(t *testing.T) {
+	program := filepath.Join(t.TempDir(), "frames")
+	script := "#!/bin/sh\nwhile read -r line; do case \"$line\" in draw*) echo \"$line\" >&2 ;; esac; done\n"
+	if err := standin.Write(program, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dec := NewEpisodeFrames(program, "folge.mp4")
+	defer dec.Close()
+	drawing := make(chan struct{}, 1)
+	dec.heard = func(_ slog.Level, line string) {
+		if strings.HasPrefix(line, "draw") {
+			drawing <- struct{}{}
+		}
+	}
+	captions := framewire.Captions{Width: 270, Height: 480, ShortW: 1080, ShortH: 1920, File: "a.ass", Fonts: "fonts"}
+	first, giveUp := context.WithCancel(context.Background())
+	firstErr := make(chan error, 1)
+	go func() {
+		_, err := dec.Captions(first, captions, 1000)
+		firstErr <- err
+	}()
+	// The first holds the turn, and the decoder has its draw.
+	<-drawing
+	second, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := dec.Captions(second, captions, 1040); !errors.Is(err, context.Canceled) ||
+		!strings.Contains(err.Error(), "the captions drawn before these had not finished") {
+		t.Errorf("the draw given up while the one before it was drawn said %v", err)
+	}
+	giveUp()
+	if err := <-firstErr; !errors.Is(err, context.Canceled) ||
+		!strings.Contains(err.Error(), "the video's decoder had not drawn the captions") {
+		t.Errorf("the draw given up while the decoder drew it said %v", err)
+	}
+}
