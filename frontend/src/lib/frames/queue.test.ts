@@ -490,6 +490,31 @@ describe("a frame waiting for its captions", () => {
     expect(calledOff).toBe(1);
   });
 
+  // A clip made with Mark In was sought to the mark and then to its first
+  // sentence, and its card was clicked while the frame of the sentence
+  // waited for the captions the Go side was slow to give. The frame of the
+  // mark came meanwhile, a frame passing, and went up first, so the video
+  // preview changed twice for one click, the picture of another moment
+  // under the clip's captions and then the clip's own frame.
+  test("keeps a frame of an older place off the screen until it is up", async () => {
+    const { q, dress, came } = waiting();
+    q.dressWait = () => () => {};
+    const inside = q as unknown as {
+      shown: { rank: number } | null;
+      passing(rank: number, frame: unknown, seq: number, key?: boolean): void;
+    };
+    const picture = () => ({ width: 2, height: 2, close() {}, clone: () => picture() });
+    const wanted = dress();
+    inside.passing(2, picture(), 1);
+    expect(inside.shown).toBe(null);
+    came();
+    expect(await wanted).toBe(true);
+    // Once nothing waits, a frame passing is put up again, the way it is
+    // under a hand that drags the playhead.
+    inside.passing(2, picture(), 2);
+    expect(inside.shown?.rank).toBe(2);
+  });
+
   test("waits 600 ms of the browser's clock unless a wait is handed in", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const { q, dress } = waiting();
