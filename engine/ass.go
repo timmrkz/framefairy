@@ -601,6 +601,13 @@ func (e *Engine) measureMany(ctx context.Context, blocks []string, s Style,
 	// after the version of its file. Anything else is measured each time.
 	_, keep := FontByName(s.Font)
 	measured, _ := e.captions()
+	// One measure at a time on a machine: two asks for the same clip's
+	// captions at the same moment, as a video opens, each measured every
+	// block. The second now finds them measured.
+	if keep {
+		measured.measuring.Lock()
+		defer measured.measuring.Unlock()
+	}
 	for i, block := range blocks {
 		if box, ok := measured.get(measureKey(block, s, width, size)); ok && keep {
 			out[i] = box
@@ -649,8 +656,10 @@ func measureKey(block string, s Style, width, size int) string {
 // and forgets them all when it is full: the blocks of the clips open now
 // are measured again at once.
 type inkCache struct {
-	mu    sync.Mutex
-	boxes map[string]inkBox
+	// measuring is held while blocks are measured, see measureMany.
+	measuring sync.Mutex
+	mu        sync.Mutex
+	boxes     map[string]inkBox
 }
 
 func (c *inkCache) get(key string) (*inkBox, bool) {

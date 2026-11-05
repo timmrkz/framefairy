@@ -354,7 +354,25 @@ func (d *desk) shut() {
 
 // open starts the app over the library on the disk, the way main does.
 func (d *desk) open() {
+	d.openOn(openStore())
+}
+
+// openAgainOnTheSameComputer closes the app and opens it again, as reopen
+// does, on a machine that knows what the one before learned about this
+// computer's programs, see engine.Machine.LearnFrom: the bridge's reset
+// starts a walk on a fresh app, not on a fresh computer. Opened on a new
+// machine, every walk asked ffmpeg again what the walk before had asked,
+// a third of the processor time of opening a video.
+func (d *desk) openAgainOnTheSameComputer() {
+	before := d.svc.store.machine
+	d.shut()
 	st := openStore()
+	st.machine.LearnFrom(before)
+	d.openOn(st)
+}
+
+// openOn starts the app over st.
+func (d *desk) openOn(st *store) {
 	d.start(st)
 	d.svc.restoreJobs(st.Episodes())
 }

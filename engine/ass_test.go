@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -16,6 +17,7 @@ import (
 	"framefairy/engine/runlog"
 	"framefairy/engine/timed"
 	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/standin"
 )
 
 // Caption text is whatever the guest said, as heard by the recogniser and
@@ -366,6 +368,67 @@ func TestTheMeasureAgreesWithLibass(t *testing.T) {
 		if ink > pen || ink < pen*0.92 {
 			t.Errorf("%s: libass draws %v wide, the measure says %v", font.Name, ink, pen)
 		}
+	}
+}
+
+// Two asks at the same moment to measure the same blocks measure them
+// once: the workspace asks for a clip's captions twice as a video opens,
+// and on a machine that knew nothing yet each ask measured every block.
+//
+// On the real disk: ffmpeg measures the captions, through a script that
+// counts its runs.
+func TestTwoAsksAtOnceMeasureOnce(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
+	if err := e.Preflight(ctx); err != nil {
+		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
+	}
+	asked := filepath.Join(t.TempDir(), "asked")
+	ffmpeg := filepath.Join(t.TempDir(), "ffmpeg")
+	script := "#!/bin/sh\necho \"$*\" >> '" + asked + "'\nexec '" + e.FFmpeg + "' \"$@\"\n"
+	if err := standin.Write(ffmpeg, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runs := func() int {
+		data, err := os.ReadFile(asked)
+		if err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+		return strings.Count(string(data), "\n")
+	}
+	s := ResolveStyle(map[string]any{"font": CaptionFonts()[0].Name, "size": 96.0, "highlight": 0.0})
+	blocks := []string{`{\alpha&H00&}Hamburgefonstiv`, `{\alpha&H00&}und Wagenrad`}
+	measure := func(machine *Machine) {
+		e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), machine)
+		e.FFmpeg = ffmpeg
+		if boxes, ok := e.measureMany(ctx, blocks, s, 1080, int(s.Size)); !ok || len(boxes) != len(blocks) {
+			t.Error("this ffmpeg could not measure the captions")
+		}
+	}
+	measure(NewMachine(disk))
+	once := runs()
+	if once == 0 {
+		t.Fatal("ffmpeg was never asked")
+	}
+	machine := NewMachine(disk)
+	const asks = 4
+	done := make(chan struct{})
+	var start sync.WaitGroup
+	start.Add(1)
+	for range asks {
+		go func() {
+			start.Wait()
+			measure(machine)
+			done <- struct{}{}
+		}()
+	}
+	start.Done()
+	for range asks {
+		<-done
+	}
+	if got := runs() - once; got != once {
+		t.Errorf("%d asks at once ran ffmpeg %d times, one ask runs it %d times", asks, got, once)
 	}
 }
 
