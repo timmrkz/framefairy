@@ -139,17 +139,19 @@ export function noDeadlines(page) {
   page.setDefaultTimeout(0);
 }
 
-// A browser for the walks to open the interface in. WebGPU on, which
-// headless Chromium on Linux only gives when asked, for the step that
-// checks what the GPU draws, ["screen light"]. The video preview itself
+// A browser for the walks to open the interface in. The video preview
 // draws on a 2D canvas here, __flatScreen, because headless Chromium gives
 // nothing back from a WebGPU canvas, and the walks read the frame on
-// screen from the canvas. See screen.ts. The counts of the lines a page
-// runs are Chromium's, so WALKCOVERAGE counts in Chromium only. name is
-// the browser, the walks' unless said, see browserFor.
-export async function newBrowser(name = browserFor()) {
+// screen from the canvas. See screen.ts. gpu turns WebGPU on, which
+// headless Chromium on Linux only gives when asked, for the one step that
+// checks what the GPU draws, ["screen light"]: on for every page, it cost
+// every walk a twentieth of the processor time of opening its video. The
+// counts of the lines a page runs are Chromium's, so WALKCOVERAGE counts
+// in Chromium only. name is the browser, the walks' unless said, see
+// browserFor.
+export async function newBrowser(name = browserFor(), { gpu = false } = {}) {
   if (coverage && name !== "chromium") throw new Error("WALKCOVERAGE counts lines through Chromium's own tools, so it walks in Chromium only, WALKBROWSER=chromium");
-  const browser = await launch(name, ["--enable-unsafe-webgpu"]);
+  const browser = await launch(name, gpu ? ["--enable-unsafe-webgpu"] : []);
   if (traces) {
     const plain = browser.newPage.bind(browser);
     browser.newPage = async (options) => {
@@ -366,13 +368,13 @@ if (traces) {
 // play is shown and read on any machine, issues #534 and #588. "sound"
 // is the sound card's, as the app runs without a walk, for what a walk
 // checks on the sound's own time, see soundCard in common/steps.mjs.
-export async function open(url, { viewport = { width: 1500, height: 1000 }, scale = 1, again = null, browser: given = null, named = browserFor(), still = false, clock = "frames" } = {}) {
+export async function open(url, { viewport = { width: 1500, height: 1000 }, scale = 1, again = null, browser: given = null, named = browserFor(), still = false, clock = "frames", gpu = false } = {}) {
   // The episode the way the bridge found it, whatever the walk before did.
   if (!again) {
     const reset = await fetch(new URL("/reset", url), { method: "POST" });
     if (!reset.ok) throw new Error(`the bridge did not reset: ${await reset.text()}`);
   }
-  const browser = again ?? given ?? (await newBrowser(named));
+  const browser = again ?? given ?? (await newBrowser(named, { gpu }));
   // A page of its own in a context of its own, which browser.newPage
   // makes, so nothing a page before it kept is there.
   // A page still asks the system for less motion, the way a person can
