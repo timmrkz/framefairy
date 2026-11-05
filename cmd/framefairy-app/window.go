@@ -72,6 +72,13 @@ type WindowView struct {
 	// for may be, in seconds, as they are set.
 	Shortest float64 `json:"shortest"`
 	Longest  float64 `json:"longest"`
+	// Hidden is that the range picker leaves the window out: the whole
+	// video is being transcribed, which is about all of it and not about
+	// the window, Tim, 5 November. It comes back once the transcription is
+	// told to stop, by Stop transcribing, a search or a clip made by hand,
+	// and once it ends. The workspace shows it back from the press of Stop
+	// transcribing, see Episode.svelte.
+	Hidden bool `json:"hidden,omitempty"`
 }
 
 // windowFor is the window of the video whose state st is, on a video of
@@ -95,7 +102,7 @@ func (s *FrameFairy) windowFor(ctx context.Context, path string, st VideoState, 
 		return o.Limits(r, duration, w.To-w.From, s.store.Settings().targetFor(w.To-w.From))
 	}
 	view := func(w KeptWindow, l engine.WindowLimits) *WindowView {
-		return &WindowView{KeptWindow: w, WindowLimits: l, Shortest: o.Min, Longest: o.Max}
+		return &WindowView{KeptWindow: w, WindowLimits: l, Shortest: o.Min, Longest: o.Max, Hidden: wholeHeard(st.Jobs)}
 	}
 	l := limits(w)
 	if searchHolds(st.Jobs) {
@@ -170,6 +177,17 @@ func (s *FrameFairy) windowFor(ctx context.Context, path string, st VideoState, 
 func searchHolds(jobs []Job) bool {
 	for _, j := range jobs {
 		if j.Kind == engine.JobSearch && (j.going() || (j.unfinished() && !j.Aside)) {
+			return true
+		}
+	}
+	return false
+}
+
+// wholeHeard says whether the whole video is being transcribed: its
+// transcription runs or waits its turn, and was not told to stop.
+func wholeHeard(jobs []Job) bool {
+	for _, j := range jobs {
+		if j.Kind == engine.JobTranscribe && j.going() && !j.Stopping {
 			return true
 		}
 	}

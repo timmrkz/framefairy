@@ -437,7 +437,7 @@ What stays a package variable on purpose, each with why:
   the update key, which are the program's by nature.
 - `theProbe` in `probe_outside.go`, which only the build for the checks
   from outside has, one listener on a fixed port for the one app.
-- Tables that never change, `writtenBack`, `recordingEndings`,
+- Tables that never change, `recordingEndings`,
   `transcriptFormats`, `pictureID`.
 - In the engine, `disk`, the real disk, which is never swapped,
   `DecoderSaid`, the app's log for the decoder's lines, set once by

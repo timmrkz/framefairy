@@ -410,6 +410,9 @@ export interface WindowView extends KeptWindow {
   // How long the clips a search asks for may be, as they are set.
   shortest: number;
   longest: number;
+  // The range picker leaves the window out: the whole video is being
+  // transcribed, which is about all of it and not about the window.
+  hidden?: boolean;
 }
 
 // How many searches have read each part of an episode. Any window can be
@@ -1231,6 +1234,13 @@ export function onDropped(fn: (d: Added) => void): () => void {
 // times a second, see VideoState.
 export function onVideoState(fn: (state: VideoState) => void): () => void {
   return Events.On("video", (ev) => fn(ev.data as VideoState));
+}
+
+// What the setup and the settings show of the models, sent whole when the
+// models folder changed outside the app, a model deleted in Finder or put
+// there by hand, see tellSetup in reconcile.go.
+export function onSetup(fn: (state: SetupState) => void): () => void {
+  return Events.On("setup", (ev) => fn(ev.data as SetupState));
 }
 
 export function clock(seconds: number): string {

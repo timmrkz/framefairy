@@ -101,9 +101,6 @@ func main() {
 		}
 	})
 	svc.jobs.news = svc.told
-	// What changes in the folders of the videos, whoever changed it, is
-	// looked at as it happens, see reconcile.go.
-	svc.watch = newWatching(svc.reconcile)
 	// A failure is said once, as it happens, see notice.go.
 	svc.jobs.notice = quietly(func(n Notice) {
 		if app != nil {
@@ -139,6 +136,18 @@ func main() {
 			app.Event.Emit("report-about", text)
 		}
 	}
+	// How far the loudness is measured is in the video's state.
+	svc.levels = newMeasuring(svc.store.machine, svc.told)
+	// What changes in the folders of the videos, whoever changed it, is
+	// looked at as it happens, and every video once now, see reconcile.go.
+	// It comes once every field it can reach is set, since the watch hands
+	// a change on from a goroutine of its own from the first look on.
+	svc.setupNews = quietly(func(state SetupState) {
+		if app != nil {
+			app.Event.Emit("setup", state)
+		}
+	})
+	svc.watchTheDisk()
 	// The searches and renders that were cut off or failed the last time
 	// say so where their work was.
 	svc.restoreJobs(st.Episodes())
@@ -149,8 +158,6 @@ func main() {
 	// this has to be one of them. Code after app.Run only runs on the other
 	// systems, and left a llama-server behind on every Mac that quit during
 	// a search.
-	// How far the loudness is measured is in the video's state.
-	svc.levels = newMeasuring(svc.store.machine, svc.told)
 	quit := sync.OnceFunc(func() {
 		svc.watch.stop()
 		svc.news.stop()
@@ -393,6 +400,12 @@ type FrameFairy struct {
 	// deletion is never taken for one made outside it.
 	watch       *watching
 	reconciling sync.Mutex
+	// setupNews sends what the setup and the settings show of the
+	// models to the window when the models folder changed outside the
+	// app, see reconcile.go, and setupSent is what it sent last, kept
+	// under reconciling.
+	setupNews func(SetupState)
+	setupSent *SetupState
 	// Finding and installing a newer build of the app, see updates.go.
 	updates *updating
 	// What Cmd+Q does, see quit.go.

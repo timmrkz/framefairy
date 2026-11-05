@@ -619,6 +619,30 @@ export const steps = {
     await page.locator(`${card} button.bin[aria-label^="Remove "]`).first().click();
     await settle(page);
   },
+  // ["model gone", which]
+  //                    deletes the first "language" or "speech" model on
+  //                    this machine outside the app, the way Finder does,
+  //                    and the settings list one model fewer under the
+  //                    Downloaded models of its card, with nothing clicked
+  //                    and the app never brought to the front. Only a
+  //                    machine made new by ["first run"] has its models
+  //                    on the disk, the bridge's own are stand-ins
+  async "model gone"(walk, arg) {
+    const { page } = walk;
+    const card = arg === "language" ? ".card.finding" : ".card.speech";
+    const fold = page.locator(`${card} button.disclose-row`);
+    if ((await fold.getAttribute("aria-expanded")) !== "true") await fold.click();
+    await settle(page);
+    const bins = () => page.locator(`${card} button.bin[aria-label^="Remove "]`).count();
+    const before = await bins();
+    if (before < 1) {
+      walk.wrong = `the settings list no downloaded ${arg} model to delete`;
+      return;
+    }
+    await control(url, `/model-gone?kind=${arg}`);
+    // Hangs, as every wait of a walk does, if the settings never show it.
+    await seenUntil(page, url, bins, (n) => n === before - 1);
+  },
   // ["refused", card]  the gesture before it shook the "finding" or the
   //                    "speech" card and opened no list and no box, the
   //                    settings name the models they named at "settings",

@@ -662,6 +662,13 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		}
 		answer(w, nil, b.makeFresh(memory<<30))
 	})
+	// A model deleted outside the app, the way Tim removed one from the
+	// models folder in Finder: the first of the kind, "language" or
+	// "speech", that is here. It answers the model's name.
+	mux.HandleFunc("/model-gone", func(w http.ResponseWriter, r *http.Request) {
+		name, err := modelGone(r.URL.Query().Get("kind"))
+		answer(w, name, err)
+	})
 	mux.HandleFunc("/reopen", func(w http.ResponseWriter, r *http.Request) {
 		closed, err := b.reopen()
 		answer(w, closed, err)
@@ -1146,13 +1153,19 @@ func openBridge(t *testing.T) *bridge {
 		}
 		svc.showReport = func(string) error { return nil }
 		// What the first run downloads, once a walk made the machine new.
-		// What arrives is as much of a model as the app looks for.
+		// What arrives is as much of a model as the app looks for, and it
+		// lands the way the engine's download lands it: written under a
+		// name of its own and renamed into place whole.
 		svc.installSpeech = func(_ *engine.Machine, ctx context.Context, log *runlog.Log, m engine.SpeechModel, dir string) error {
 			return b.arriving(ctx, log, "speech", m.Download, func() error {
-				if err := os.MkdirAll(filepath.Join(dir, m.Name), 0o755); err != nil {
+				staging := filepath.Join(dir, m.Name+".unpacking")
+				if err := os.MkdirAll(staging, 0o755); err != nil {
 					return err
 				}
-				return os.WriteFile(filepath.Join(dir, m.Name, "tokens.txt"), []byte("the stand-in hears\n"), 0o644)
+				if err := os.WriteFile(filepath.Join(staging, "tokens.txt"), []byte("the stand-in hears\n"), 0o644); err != nil {
+					return err
+				}
+				return os.Rename(staging, filepath.Join(dir, m.Name))
 			})
 		}
 		svc.installLanguage = func(_ *engine.Machine, ctx context.Context, log *runlog.Log, m engine.LanguageModel, dir string) error {
@@ -1160,10 +1173,18 @@ func openBridge(t *testing.T) *bridge {
 				if err := os.MkdirAll(dir, 0o755); err != nil {
 					return err
 				}
-				return os.WriteFile(filepath.Join(dir, m.Name), []byte("GGUF, the stand-in finds clips"), 0o644)
+				part := filepath.Join(dir, m.Name+".part")
+				if err := os.WriteFile(part, []byte("GGUF, the stand-in finds clips"), 0o644); err != nil {
+					return err
+				}
+				return os.Rename(part, filepath.Join(dir, m.Name))
 			})
 		}
 	}
+	// The setup the app sends when the models change is the bridge's
+	// machine's, like the one every call answers with, so the desk starts
+	// again only once it knows the bridge.
+	d.setup = func(state SetupState) SetupState { return standInsSetup(state, b.fresh.Load()) }
 	d.start(d.svc.store)
 	fixtures.Copy(t, "walk-120s.mp4", b.first)
 	if added, err := d.svc.addEpisodes([]string{b.first}); err != nil || len(added) != 1 {
@@ -1427,7 +1448,9 @@ func (b *bridge) makeFresh(memory int64) error {
 	b.arrive = map[string]chan struct{}{"speech": make(chan struct{}), "clip": make(chan struct{})}
 	b.mu.Unlock()
 	b.fresh.Store(&freshMachine{memory: memory})
-	if err := os.RemoveAll(engine.ModelsDir()); err != nil {
+	// The folder over the models goes too: the app never ran here, so
+	// the first run's download makes both, see modelsMade.
+	if err := os.RemoveAll(filepath.Dir(engine.ModelsDir())); err != nil {
 		return err
 	}
 	if err := b.d.svc.RemoveEpisode(b.first, false); err != nil {
@@ -1437,6 +1460,32 @@ func (b *bridge) makeFresh(memory int64) error {
 	return b.d.svc.store.UpdateSettings(func(s *Settings) {
 		s.Planner, s.Chosen, s.LLMModel = planner, false, ""
 	})
+}
+
+// modelGone deletes the first model of a kind that is here, "language" or
+// "speech", from the models folder, the way Finder does, and says which.
+//
+// On the real disk: the models folder is the one the app watches, in the
+// bridge's home.
+func modelGone(kind string) (string, error) {
+	dir := engine.ModelsDir()
+	switch kind {
+	case "language":
+		for _, m := range engine.LanguageModels() {
+			if m.Installed(dir) {
+				return m.Name, os.Remove(filepath.Join(dir, m.Name))
+			}
+		}
+	case "speech":
+		for _, m := range engine.SpeechModels() {
+			if m.Installed(dir) {
+				return m.Name, os.RemoveAll(filepath.Join(dir, m.Name))
+			}
+		}
+	default:
+		return "", fmt.Errorf("no kind of model is called %q", kind)
+	}
+	return "", fmt.Errorf("no %s model is here", kind)
 }
 
 // freshMachine is the bridge's machine on its first run, see /fresh: the

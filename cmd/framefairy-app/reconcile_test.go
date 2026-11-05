@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 
 	"framefairy/engine"
 	"framefairy/engine/fileio"
+	"framefairy/engine/runlog"
 )
 
 // The files on the disk are the truth, and others than the app write them:
@@ -196,7 +198,7 @@ func diskLibrary(t *testing.T, prepare ...func(video string)) (*FrameFairy, stri
 		}
 	})
 	t.Cleanup(svc.news.stop)
-	svc.watch = newWatching(svc.reconcile)
+	svc.watch = newWatching(svc.reconcile, "")
 	if svc.watch == nil {
 		t.Fatal("the disk cannot be watched here")
 	}
@@ -364,5 +366,187 @@ func shortGoes(t *testing.T, svc *FrameFairy, video string, sent chan string, pl
 	newsUntil(sent, video, func() bool { return shortOf() == "" })
 	if v, _ := svc.store.machine.Episode(video).ReadPlan(plan); !v.Clips[0].Rendered {
 		t.Error("the clip whose short was deleted no longer says it was rendered")
+	}
+}
+
+// On the real disk: the system's own watch on the models folder is what is
+// tested, the way Finder's changes reach it. It sets HOME, which the whole
+// process shares, so it runs on its own.
+//
+// A model deleted in Finder is gone from the setup and the settings at
+// once, and so is the whole models folder. Made again and a model put back
+// in it, it is there again at once.
+func TestAModelDeletedOrAddedOutsideTheAppIsSentToTheWindowAtOnce(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	models := engine.ModelsDir()
+	model := engine.LanguageModels()[0]
+	put := func() {
+		t.Helper()
+		// Moved into place whole, the way a download lands.
+		part := filepath.Join(models, model.Name+".part")
+		if err := os.WriteFile(part, []byte("GGUF a model"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Rename(part, filepath.Join(models, model.Name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.MkdirAll(models, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	put()
+
+	svc := withJobs(&FrameFairy{store: openStoreIn(afero.NewOsFs(), filepath.Join(home, "config"))})
+	sent := make(chan SetupState, 64)
+	svc.setupNews = func(state SetupState) { sent <- state }
+	svc.watchTheDisk()
+	t.Cleanup(svc.watch.stop)
+	installed := func(state SetupState) bool {
+		i := slices.IndexFunc(state.Language, func(m LanguageModelView) bool { return m.Name == model.Name })
+		return i >= 0 && state.Language[i].Installed
+	}
+	until := func(holds func(SetupState) bool) {
+		t.Helper()
+		for state := range sent {
+			if holds(state) {
+				return
+			}
+		}
+	}
+	if !installed(svc.Setup(t.Context())) {
+		t.Fatalf("%s is not installed before", model.Name)
+	}
+
+	if err := os.Remove(filepath.Join(models, model.Name)); err != nil {
+		t.Fatal(err)
+	}
+	until(func(s SetupState) bool { return !installed(s) })
+
+	put()
+	until(installed)
+
+	// The folder deleted and put back whole, the way a backup puts it
+	// back, is watched again, before the reconcile that sent its news
+	// lets go.
+	if err := os.RemoveAll(models); err != nil {
+		t.Fatal(err)
+	}
+	until(func(s SetupState) bool { return !installed(s) })
+	back := filepath.Join(home, "back")
+	if err := os.MkdirAll(back, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(back, model.Name), []byte("GGUF a model"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(back, models); err != nil {
+		t.Fatal(err)
+	}
+	until(installed)
+	if err := os.Remove(filepath.Join(models, model.Name)); err != nil {
+		t.Fatal(err)
+	}
+	until(func(s SetupState) bool { return !installed(s) })
+
+	// A model copied in by hand is made empty and written after, and it
+	// is a model once it is written. Another model put in place whole
+	// after it is made says the empty one was looked at, so what follows
+	// is only the write.
+	if err := os.WriteFile(filepath.Join(models, model.Name), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	other := engine.LanguageModels()[1]
+	if err := os.WriteFile(filepath.Join(home, other.Name), []byte("GGUF another model"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(filepath.Join(home, other.Name), filepath.Join(models, other.Name)); err != nil {
+		t.Fatal(err)
+	}
+	until(func(s SetupState) bool {
+		i := slices.IndexFunc(s.Language, func(m LanguageModelView) bool { return m.Name == other.Name })
+		return i >= 0 && s.Language[i].Installed
+	})
+	copied, err := os.OpenFile(filepath.Join(models, model.Name), os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := copied.WriteString("GGUF a model"); err != nil {
+		t.Fatal(err)
+	}
+	if err := copied.Close(); err != nil {
+		t.Fatal(err)
+	}
+	until(installed)
+
+	// A speech model is a folder, and one copied in by hand is made
+	// before its tokens.txt is written into it. The other model deleted
+	// after says the folder was looked at, and is watched.
+	speech := engine.SpeechModels()[0]
+	if err := os.Mkdir(filepath.Join(models, speech.Name), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(models, other.Name)); err != nil {
+		t.Fatal(err)
+	}
+	until(func(s SetupState) bool {
+		return !slices.ContainsFunc(s.Language, func(m LanguageModelView) bool { return m.Name == other.Name && m.Installed })
+	})
+	if err := os.WriteFile(filepath.Join(models, speech.Name, "tokens.txt"), []byte("the model hears\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	until(func(s SetupState) bool {
+		return slices.ContainsFunc(s.Speech, func(m SpeechModelView) bool { return m.Name == speech.Name && m.Installed })
+	})
+}
+
+// On a machine the app never ran on there is no models folder and no
+// folder over it to watch, and the first run's download makes both. A
+// model it downloaded and Finder deleted later is gone from the settings
+// at once too.
+//
+// On the real disk: the watch hears the models folder the app looks in, in
+// a home of the test's own. It sets HOME for the whole process, so it is
+// not parallel.
+func TestAModelTheFirstRunDownloadedIsWatched(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	models := engine.ModelsDir()
+	model := engine.LanguageModels()[0]
+
+	svc := &FrameFairy{store: openStoreIn(afero.NewOsFs(), filepath.Join(home, "config"))}
+	svc.installLanguage = func(_ *engine.Machine, _ context.Context, _ *runlog.Log, m engine.LanguageModel, dir string) error {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+		return os.WriteFile(filepath.Join(dir, m.Name), []byte("GGUF a model"), 0o644)
+	}
+	ended := make(chan Job, 8)
+	svc.jobs = newQueue(svc.store, func(u JobUpdate) {
+		if u.Job.Kind == "llm" && u.Job.State != JobQueued && u.Job.State != JobRunning {
+			ended <- u.Job
+		}
+	}, func(string) {})
+	sent := make(chan SetupState, 64)
+	svc.setupNews = func(state SetupState) { sent <- state }
+	svc.watchTheDisk()
+	t.Cleanup(svc.watch.stop)
+	if _, err := os.Stat(filepath.Dir(models)); !os.IsNotExist(err) {
+		t.Fatalf("the folder over the models is there before the first run: %v", err)
+	}
+
+	svc.InstallLanguageModel(model.Name)
+	if job := <-ended; job.State != JobDone {
+		t.Fatalf("the download ended %s: %s", job.State, job.Error)
+	}
+	if err := os.Remove(filepath.Join(models, model.Name)); err != nil {
+		t.Fatal(err)
+	}
+	// Hangs, until go test ends it, if the deletion is never heard.
+	for state := range sent {
+		i := slices.IndexFunc(state.Language, func(m LanguageModelView) bool { return m.Name == model.Name })
+		if i >= 0 && !state.Language[i].Installed {
+			return
+		}
 	}
 }
