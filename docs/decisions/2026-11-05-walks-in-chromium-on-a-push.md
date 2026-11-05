@@ -17,20 +17,23 @@ in far less time."
 Since 31 October every walk of a push walks in Playwright's WebKit for
 Linux. That WebKit is WPE, which draws every frame through OpenGL, and a
 machine with no graphics chip, CI's or a cloud session's, runs that on
-the processor, through Mesa's llvmpipe. Drawing was 42 % of the walks'
-CPU. Every walk, walked in each browser once in a cloud session of four
-cores, six walkers, at the same commit:
+the processor, through Mesa's llvmpipe. Drawing was 37 % of the
+processor time of every walk in WebKit, measured once in a cloud session
+on 3 November, see #692. Every walk, walked in each browser once in a
+cloud session of four cores, six walkers, at the same commit, the
+seconds the walkers walked together:
 
-| all walks, one run each | WebKit, before | Chromium, after | change |
-| --- | ---: | ---: | ---: |
-| walking, walkers together (s) | 5353 | 3467 | 35 % faster |
-| the sequences (s) | 4144 | 2694 | 35 % faster |
-| the random walks (s) | 1209 | 773 | 36 % faster |
+| All walks, one run each | WebKit, before (s) | Chromium, after (s) | Change      |
+| ----------------------- | -----------------: | ------------------: | ----------- |
+| every run               |               5353 |                3467 | 35 % faster |
+| the sequences           |               4144 |                2694 | 35 % faster |
+| the random walks        |               1209 |                 773 | 36 % faster |
 
 One run each, so there is no spread. The cuts made before in this pull
 request, a page kept for each walker and two drawing threads, took the
-four CI jobs from 1248 to 1219 s of machine time, 2 % faster. The browser
-is the cost that is left.
+four CI jobs from 1248 to 1219 s of machine time, 2 % faster, one run
+each and inside the noise, so the page kept was taken out again. The
+browser is the cost that is left.
 
 ## Five simulations
 
@@ -106,7 +109,11 @@ Playwright      Chromium (Windows), every pull request and every night,
 - A pull request walks 35 % less, measured in a session, and the pull
   request measures it again in CI.
 - A fault only WebKit has is found by the night, a day late, and the
-  walk that found it is fixed, never kept out of WebKit.
+  walk that found it is fixed, never kept out of WebKit. No pull request
+  waits on the night, so a red night is read by the weekly triage, which
+  matches every red run of main's, the nightly ones among them, to an
+  issue, see [TRIAGE.md](../TRIAGE.md#every-week). So a WebKit fault is
+  logged within the week, not in the morning.
 - The CI image keeps both browsers while the night walks in WebKit. A
   push could take an image with Chromium alone, once Ubuntu's snapshot
   serves a rebuild in the time a job has.

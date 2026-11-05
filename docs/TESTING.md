@@ -65,7 +65,8 @@ the walks in Chromium count the lines they run. The WebKit is Playwright's own b
 for Linux, which takes real key presses, and CI's image holds it beside
 the Chromium, see `.github/ci-image/Dockerfile`. It draws every frame through OpenGL,
 which a machine without a graphics chip runs on the CPU, and drawing is
-42 % of the walks' CPU there, so the walks give it two threads to draw
+37 % of the walks' CPU there, measured once over every walk in a cloud
+session, so the walks give it two threads to draw
 with rather than one a core, see `drawingThreads` in `walks/bridge.mjs`. A cloud session gets it
 from the SessionStart hook, see `scripts/cloud-webkit.sh`, and walks one
 sequence in it the way it walks one in Chromium. `SLOW` and
@@ -1118,8 +1119,9 @@ of that run, and keeps the time it had for a run that the test's time
 stopped, since how long a run that hung was stopped after says nothing of
 how long it takes. The times that count are CI's, so the file is best made
 from the logs of the walks jobs, which end on the time of every run they
-walked. On four machines, while every walk walked in WebKit, the jobs took
-223 to 377 seconds, setup included. More
+walked. On four machines the jobs took 181 to 226 seconds in Chromium, in
+three runs on 5 November, and 223 to 377 while every walk walked in
+WebKit, setup included. More
 bridges on a machine do not help: on four cores eight bridges finished a
 share no sooner than six and broke three walks that wait on the clock.
 
