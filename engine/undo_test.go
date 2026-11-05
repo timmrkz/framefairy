@@ -488,3 +488,53 @@ func TestASearchLandsWhileItsPlanIsEditedUndoneAndRemoved(t *testing.T) {
 		t.Errorf("the plan is %q now", id)
 	}
 }
+
+// The undo's snapshot is the one the app takes, Episode.TakeSnapshot, and
+// it reads each plan from the file rather than trusting its stamp. Two
+// edits in one tick of the clock that leave a plan the same size keep its
+// stamp on a drive with no file numbers, which memory is too, and the
+// second edit is still an edit.
+func TestAnEditThatKeepsThePlansStampIsStillAnEdit(t *testing.T) {
+	fsys := afero.NewMemMapFs()
+	source := "/v/folge.mp4"
+	if err := afero.WriteFile(fsys, source, []byte("video"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan := filepath.Join(LogsDir(source), "clips.json")
+	if err := afero.WriteFile(fsys, plan, []byte(aRealisticPlan(2)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	info, err := fsys.Stat(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Taken now: a file in memory says how it is when asked, not when
+	// it was stated.
+	size, was := info.Size(), info.ModTime()
+	ep := NewMachine(fsys).Episode(source)
+	if len(ep.Plans()) != 1 {
+		t.Fatal("the plan is not held")
+	}
+	before := ep.TakeSnapshot(nil)
+	// The same size, and the same time.
+	edit := strings.Replace(aRealisticPlan(2), `"crop_x":120`, `"crop_x":480`, 1)
+	if err := afero.WriteFile(fsys, plan, []byte(edit), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := fsys.Chtimes(plan, was, was); err != nil {
+		t.Fatal(err)
+	}
+	if now, _ := fsys.Stat(plan); now.Size() != size || !now.ModTime().Equal(was) {
+		t.Fatal("the edit changed the plan's stamp, so this tests nothing")
+	}
+	change := ChangeBetween(before, ep.TakeSnapshot(nil))
+	if change == nil {
+		t.Fatal("an edit that kept the plan's stamp is missing from the undo")
+	}
+	if _, err := change.Undo(); err != nil {
+		t.Fatal(err)
+	}
+	if got := planAt(t, fsys, plan).data; strings.Contains(string(got), "480") {
+		t.Errorf("the undo did not put the crop back:\n%s", got)
+	}
+}

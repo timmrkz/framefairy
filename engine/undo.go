@@ -48,19 +48,29 @@ type Snapshot struct {
 }
 
 // TakeSnapshot is the files an edit of the episode can change, its
-// plans, as the episode holds them, so a plan no edit changed is not read
-// again. An undo of the change it is the start of is recorded in rec, the
-// way the edit was.
+// plans. Which plans there are is asked of the episode, and each is read
+// from the file: an edit is a reader that must not trust a stamp, since
+// two edits that leave a plan the same size within one tick of the clock
+// keep its stamp on a drive with no file numbers, and the second would
+// then be missing from the undo. An undo of the change it is the start
+// of is recorded in rec, the way the edit was.
 func (ep *Episode) TakeSnapshot(rec *Records) *Snapshot {
-	return snapshotOf(ep.m.Files, rec, LogsDir(ep.source), ep.Plans())
+	plans := ep.Plans()
+	paths := make([]string, len(plans))
+	for i, p := range plans {
+		paths[i] = p.Path
+	}
+	return snapshotOf(ep.m.Files, rec, LogsDir(ep.source), paths)
 }
 
-// snapshotOf is the snapshot of the plans of the episode in logsDir, each
-// with the bytes it was read from.
-func snapshotOf(fsys afero.Fs, rec *Records, logsDir string, plans []PlanSummary) *Snapshot {
+// snapshotOf is the snapshot of these plans of the episode in logsDir,
+// each read from the file.
+func snapshotOf(fsys afero.Fs, rec *Records, logsDir string, plans []string) *Snapshot {
 	s := &Snapshot{fsys: fsys, records: rec, logsDir: logsDir, files: map[string]fileState{}}
-	for _, p := range plans {
-		s.files[p.Path] = fileState{there: true, body: p.data}
+	for _, path := range plans {
+		if st := readState(fsys, path); st.there {
+			s.files[path] = st
+		}
 	}
 	return s
 }
