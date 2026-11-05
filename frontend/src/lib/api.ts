@@ -1233,6 +1233,13 @@ export function onVideoState(fn: (state: VideoState) => void): () => void {
   return Events.On("video", (ev) => fn(ev.data as VideoState));
 }
 
+// What the setup and the settings show of the models, sent whole when the
+// models folder changed outside the app, a model deleted in Finder or put
+// there by hand, see tellSetup in reconcile.go.
+export function onSetup(fn: (state: SetupState) => void): () => void {
+  return Events.On("setup", (ev) => fn(ev.data as SetupState));
+}
+
 export function clock(seconds: number): string {
   if (!isFinite(seconds) || seconds < 0) seconds = 0;
   const h = Math.floor(seconds / 3600);

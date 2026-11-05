@@ -23,7 +23,7 @@
   // Nothing here is a box over the workspace. Until both models are here
   // there is no workspace to put a box over, so this is the whole app.
   import { onMount } from "svelte";
-  import { api, errorText, languageRow, memorySize, speechRow, type ModelRow, type SetupState } from "../lib/api";
+  import { api, errorText, languageRow, memorySize, onSetup, speechRow, type ModelRow, type SetupState } from "../lib/api";
   import { cloudModelIn, cloudValue, finderOptions, providerOf } from "../lib/finding";
   import { shownFolder } from "../lib/paths";
   import ApiKey from "../components/ApiKey.svelte";
@@ -122,7 +122,12 @@
     }
   }
 
-  onMount(reload);
+  // A model deleted or added outside the app shows at once, sent whole by
+  // the Go side.
+  onMount(() => {
+    reload();
+    return onSetup((state) => (setup = state));
+  });
 </script>
 
 <section class="setup">

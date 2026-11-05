@@ -63,7 +63,15 @@ the same plain button, and none is lit over the others. The model the app
 recommends for this machine says so under the pointer. A model that
 does not fit would swap, and a model that swaps answers in
 minutes rather than seconds. A `.gguf` already in `~/.framefairy/models`
-is used as it is, whether the app fetched it or not.
+is used as it is, whether the app fetched it or not. The app watches that
+folder, and the one over it, so a model deleted in Finder or put there by
+hand shows in the setup and the settings at once: the Go side sends what
+they show of the models whole, on the `setup` event, see `tellSetup` in
+`reconcile.go`, and only when it changed. The app's own download is not
+heard while it writes its part file, only as it is renamed into place.
+A model copied in by hand is heard as it is written, and so is the
+`tokens.txt` of a speech model's folder, and every look at the library,
+as the app comes back to the front, looks at the models too.
 
 **A download is work in hand, and it looks it.** The row of the model
 on its way wears the beam and the fill for how far it has come across the
@@ -343,9 +351,9 @@ its work folder, so deleting that folder by hand, in Finder, is the same as
 **Remove** with the folder deleted: the video leaves the list, its work
 stops, and adding it again starts it from nothing. The app watches the
 folders of every video in the list, so it hears of such a change at once,
-whoever made it, and it reads the whole list again as it starts and
-whenever it comes back to the front, for whatever the watch could not
-hear. Either way the change lands in `reconcile`, in `reconcile.go`, which
+whoever made it. It looks at every video once as it starts, before the
+window can ask about any, and again whenever it comes back to the front,
+for whatever the watch could not hear. Either way the change lands in `reconcile`, in `reconcile.go`, which
 reads the disk and lets go of every video whose folder is gone, closing its
 workspace if it was open. A video whose file went or came back says so in
 the sidebar at once. A video's shorts are watched too, each file and not
@@ -357,8 +365,7 @@ the folder alone, because the app writes a folder back whenever it is asked
 about the video, the chosen clip and the waveform among other things: Tim
 deleted a folder, opened the video, and a folder was there again with
 nothing of its own in it, plan row 2.247. A folder written back like that is
-deleted again once the video is let go. Videos added before the mark get it
-once, as the app starts, if their folder holds work of its own. A video deleted
+deleted again once the video is let go. A video deleted
 together with its folder leaves the list the same way, plan row 2.250. Only
 a video whose own folder is gone too, on a drive taken out or in a folder
 moved away, keeps its place and says File not found until it is back, see
