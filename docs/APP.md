@@ -226,6 +226,13 @@ nothing up, so the frame stays as it is. Stop transcribing stops everything on t
 range picker in the frame it is clicked: the dots stay where they are,
 because what the speech model was still hearing is let go, and the frame
 stands still and fades out.
+The window's mark is left off the range picker while the whole video is
+transcribed, because the work is about all of the video and not the
+window, Tim's ask of 5 November. The Go side says so in the window it
+sends, and the mark comes back once the transcription is told to stop,
+by Stop transcribing, a search or a clip made by hand, or ends. On Stop
+transcribing it comes back in the frame of the click, as the part's
+frame starts to fade.
 The dots follow the work again once other work hears, or once the video
 is transcribed to its end, which a stop on its last piece can still
 bring. The video's
