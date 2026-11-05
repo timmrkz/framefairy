@@ -112,7 +112,7 @@ A drop is the one way into the library that does not come from a box the
 system draws. Wails hands the dropped paths to the page and the page
 hands them back, so the paths pass through the page on their way. They
 meet the same checks as Add's: a video's extension, a picture the
-decoder can read, and no link, see `linkedEpisode`. That was decided
+decoder can read, and no link, see `engine.Episode.Linked`. That was decided
 knowingly, since the page is the app's own.
 
 The app opens on the episode that was open when it was left. With no
@@ -348,7 +348,10 @@ whenever it comes back to the front, for whatever the watch could not
 hear. Either way the change lands in `reconcile`, in `reconcile.go`, which
 reads the disk and lets go of every video whose folder is gone, closing its
 workspace if it was open. A video whose file went or came back says so in
-the sidebar at once. It tells a deleted folder by a mark the
+the sidebar at once. A video's shorts are watched too, each file and not
+its folder, which can be any folder with any number of files in it, so a
+short deleted or moved in Finder is gone from its clip at once, and **Show
+in folder** with it, while the clip still says it was rendered. It tells a deleted folder by a mark the
 folder carries from the moment the video is added, `added.json`, and not by
 the folder alone, because the app writes a folder back whenever it is asked
 about the video, the chosen clip and the waveform among other things: Tim
@@ -392,7 +395,7 @@ A file is added as a video when all of this holds:
 | --- | --- |
 | Its name ends in `.mp4`, `.mov`, `.m4v` or `.mkv`, in capitals or not | `IsVideo` in `engine/episode.go` |
 | The decoder reads a first frame from it, or says nothing for 30 s | `undecodable` in `cmd/framefairy-app/library.go` |
-| Neither it nor the work folder beside it is a link | `linkedEpisode` in `cmd/framefairy-app/settings.go` |
+| Neither it nor the work folder beside it is a link | `Episode.Linked` in `engine/owns.go` |
 | No video in the list would share its work folder, as `ep.mp4` and `ep.mov` would | `AddEpisodes` in `cmd/framefairy-app/settings.go` |
 
 The ending decides first. A file with another ending is left out by its

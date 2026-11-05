@@ -1605,7 +1605,7 @@ func (b *bridge) reset() error {
 			continue
 		}
 		if err := os.RemoveAll(filepath.Join(b.d.home, e.Name())); err != nil {
-			return err
+			return fmt.Errorf("%w, and what was written into it meanwhile is %s", err, leftIn(filepath.Join(b.d.home, e.Name())))
 		}
 	}
 	for _, dir := range []string{workOf(b.first), filepath.Join(b.d.home, "config")} {
@@ -1618,6 +1618,25 @@ func (b *bridge) reset() error {
 	freshDecoders()
 	b.d.reopen()
 	return nil
+}
+
+// leftIn names what is in dir, a folder the reset could not remove
+// because something wrote into it while it went. The reset failed once
+// with only "directory not empty", issue #561 and #632 came that way too,
+// and the name of the file says which part of the app still wrote.
+func leftIn(dir string) string {
+	var left []string
+	_ = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err == nil && path != dir {
+			rel, _ := filepath.Rel(dir, path)
+			left = append(left, rel)
+		}
+		return nil
+	})
+	if len(left) == 0 {
+		return "nothing now"
+	}
+	return strings.Join(left, ", ")
 }
 
 // endReport ends the report of the app a walk ran, the way the app's

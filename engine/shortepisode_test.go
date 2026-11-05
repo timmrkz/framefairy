@@ -100,11 +100,11 @@ func TestAShortEpisodeGetsItsClipAgainOnceRemoved(t *testing.T) {
 		t.Fatalf("first plan: %d clips, %v", len(clips), err)
 	}
 	removed := clips[0].ID
-	before := TakeSnapshot(disk, nil, p.LogsDir())
+	before := snapshotAt(disk, p.LogsDir())
 	if err := SetRejected(disk, nil, first, removed, true); err != nil {
 		t.Fatal(err)
 	}
-	removal := ChangeBetween(before, TakeSnapshot(disk, nil, p.LogsDir()))
+	removal := ChangeBetween(before, snapshotAt(disk, p.LogsDir()))
 
 	plan, err := p.Search(ctx, req, Host{})
 	if err != nil {

@@ -31,7 +31,7 @@ func TestACaptionEdgeDraggedWithShiftLandsOnAWord(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			fsys, path := editablePlanPath(t)
 			tr := editableTranscript()
-			view, err := ShapeCaptionTime(fsys, path, "01", c.word, c.edge, c.hand, true, tr, nil)
+			view, err := ShapeCaptionTime(planAt(t, fsys, path), "01", c.word, c.edge, c.hand, true, tr, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -42,7 +42,7 @@ func TestACaptionEdgeDraggedWithShiftLandsOnAWord(t *testing.T) {
 			if !strings.Contains(strings.Join(got, " | "), c.wants) {
 				t.Errorf("dragged with shift to %.2f: %q, want %q", c.hand, got, c.wants)
 			}
-			saved, err := ClipCaptionsView(fsys, path, "01", tr, nil)
+			saved, err := ClipCaptionsView(planAt(t, fsys, path), "01", tr, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

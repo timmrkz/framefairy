@@ -249,6 +249,11 @@ func LoadClips(fsys afero.Fs, path string) (Plan, []Clip, error) {
 	if err != nil {
 		return Plan{}, nil, err
 	}
+	return parseClips(data)
+}
+
+// parseClips is LoadClips of the bytes of a plan file.
+func parseClips(data []byte) (Plan, []Clip, error) {
 	var top any
 	if err := decodeJSON(data, &top); err != nil {
 		return Plan{}, nil, err

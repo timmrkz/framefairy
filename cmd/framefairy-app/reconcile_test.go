@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"slices"
@@ -11,6 +12,7 @@ import (
 	"github.com/spf13/afero"
 
 	"framefairy/engine"
+	"framefairy/engine/fileio"
 )
 
 // The files on the disk are the truth, and others than the app write them:
@@ -145,8 +147,14 @@ func TestAChangeIsHintedForTheVideoItCanChange(t *testing.T) {
 		{filepath.Join("/home/tim/videos", "start.mp4"), false},
 		{work + "-old", false},
 		{"/home/tim/videos/you", false},
+		{"/home/tim/Shorts/youtube/eins.mp4", true},
+		{"/home/tim/Shorts/youtube/eins.part.mp4", false},
+		{"/home/tim/Shorts/youtube/zwei.mp4", false},
+		{"/home/tim/Shorts/youtube", false},
+		{"/home/tim/Shorts/start/eins.mp4", false},
 	} {
-		if got := touches(video, []string{c.path}); got != c.want {
+		shorts := []string{"/home/tim/Shorts/youtube/eins.mp4"}
+		if got := touches(video, []string{c.path}) || touchesShort(shorts, []string{c.path}); got != c.want {
 			t.Errorf("a change at %s touches %s: %v, want %v", c.path, video, got, c.want)
 		}
 	}
@@ -155,8 +163,9 @@ func TestAChangeIsHintedForTheVideoItCanChange(t *testing.T) {
 // On the real disk: diskLibrary is the app over a library on the real
 // disk, watched, with one video in it, and where the sidebar's news of the
 // library goes and the states sent to the workspace. The system's watch
-// hears only the real disk.
-func diskLibrary(t *testing.T) (*FrameFairy, string, chan string, chan string) {
+// hears only the real disk. Each of prepare is given the video before the
+// library is read, which starts the watch.
+func diskLibrary(t *testing.T, prepare ...func(video string)) (*FrameFairy, string, chan string, chan string) {
 	t.Helper()
 	dir := t.TempDir()
 	files := afero.NewOsFs()
@@ -193,6 +202,9 @@ func diskLibrary(t *testing.T) (*FrameFairy, string, chan string, chan string) {
 	}
 	t.Cleanup(svc.clearing.Wait)
 	t.Cleanup(svc.watch.stop)
+	for _, p := range prepare {
+		p(video)
+	}
 	// Reading the library is what starts the watch, as it does in the app.
 	svc.Library()
 	return svc, video, told, sent
@@ -251,4 +263,106 @@ func TestAPlanWrittenByTheCommandLineIsSentToTheWorkspaceAtOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	newsUntil(sent, video, func() bool { return true })
+}
+
+// On the real disk: the system's own watch on a short is what is tested,
+// the way Finder's changes reach it.
+//
+// A short deleted in Finder is gone from its clip at once: the workspace
+// is sent the video's state, and the clip has no short, so Show in folder
+// goes. The plan still says the clip was rendered.
+func TestAShortDeletedInFinderIsGoneFromItsClipAtOnce(t *testing.T) {
+	t.Parallel()
+	var plan, short string
+	svc, video, _, sent := diskLibrary(t, func(video string) {
+		plan, short = renderedShort(t, video)
+	})
+	shortGoes(t, svc, video, sent, plan, short)
+}
+
+// On the real disk: the system's own watch on a short is what is tested,
+// the way Finder's changes reach it.
+//
+// A short rendered while the app is open is watched from the moment its
+// plan says so, so deleting it in Finder is heard at once as well.
+func TestAShortRenderedWhileTheAppIsOpenIsWatched(t *testing.T) {
+	t.Parallel()
+	svc, video, _, sent := diskLibrary(t)
+	plan, short := renderedShort(t, video)
+	// The plan written is heard, and the watch follows it before the
+	// reconcile that sent the news lets go. The news is read until a
+	// reconcile has followed it, since what came before the plan, its
+	// temporary file, can be heard on its own.
+	watched := func() bool {
+		svc.reconciling.Lock()
+		defer svc.reconciling.Unlock()
+		return slices.Contains(svc.watch.w.WatchList(), fileio.ResolvePath(short))
+	}
+	newsUntil(sent, video, watched)
+	shortGoes(t, svc, video, sent, plan, short)
+}
+
+// On the real disk: the short is what the system's watch hears, see the
+// tests above.
+//
+// renderedShort writes a short of the first clip of video's plan and the
+// plan that says it was rendered, the way a render does, and gives both.
+func renderedShort(t *testing.T, video string) (plan, short string) {
+	t.Helper()
+	shorts := filepath.Join(filepath.Dir(filepath.Dir(video)), "Shorts", "youtube")
+	if err := os.MkdirAll(shorts, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	short = filepath.Join(shorts, "eins.mp4")
+	if err := os.WriteFile(short, []byte("a short"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(short)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal([]byte(historyPlan), &body); err != nil {
+		t.Fatal(err)
+	}
+	body["shorts"] = map[string]any{"01": map[string]any{
+		"folder": shorts, "name": "eins.mp4", "size": info.Size(), "modified": info.ModTime().UnixNano()}}
+	data, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Put in place whole, the way editPlan writes a plan.
+	plan = filepath.Join(engine.LogsDir(video), "clips.json")
+	if err := fileio.WriteAtomic(afero.NewOsFs(), plan, data); err != nil {
+		t.Fatal(err)
+	}
+	return plan, short
+}
+
+// On the real disk: the short is what the system's watch hears, see the
+// tests above.
+//
+// shortGoes deletes short and hears the workspace told that the first
+// clip of plan has no short any more, though it was rendered.
+func shortGoes(t *testing.T, svc *FrameFairy, video string, sent chan string, plan, short string) {
+	t.Helper()
+	shortOf := func() string {
+		v, err := svc.store.machine.Episode(video).ReadPlan(plan)
+		if err != nil || len(v.Clips) == 0 {
+			t.Fatalf("the plan read %v", err)
+		}
+		return v.Clips[0].Short
+	}
+	// The engine names a short by where its folder leads. On a Mac the
+	// temporary folder is under /var, which leads to /private/var.
+	if got, want := shortOf(), fileio.ResolvePath(short); got != want {
+		t.Fatalf("the clip's short is %q before, want %s", got, want)
+	}
+	if err := os.Remove(short); err != nil {
+		t.Fatal(err)
+	}
+	newsUntil(sent, video, func() bool { return shortOf() == "" })
+	if v, _ := svc.store.machine.Episode(video).ReadPlan(plan); !v.Clips[0].Rendered {
+		t.Error("the clip whose short was deleted no longer says it was rendered")
+	}
 }

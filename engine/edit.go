@@ -1059,7 +1059,11 @@ type CaptionEdit struct {
 // words, for the app's log.
 func SetCaptionTime(fsys afero.Fs, planPath, clipID string, word float64, edge string, at float64,
 	toWords bool, t *Transcript, look *Look) (CaptionEdit, error) {
-	moved, err := moveCaptionEdge(fsys, planPath, clipID, word, edge, at, toWords, t, look)
+	plan, clip, err := planClip(fsys, planPath, clipID)
+	if err != nil {
+		return CaptionEdit{}, err
+	}
+	moved, err := moveCaptionEdge(plan, clip, word, edge, at, toWords, t, look)
 	if err != nil {
 		return CaptionEdit{}, err
 	}
@@ -1205,7 +1209,7 @@ func startFloor(before, c LaidCaption) float64 {
 // break in other places when the face or the size changes, and a word stays
 // what it is. The word is the one the caption was laid out from, a word
 // removed among them, see Caption.Opens.
-func moveCaptionEdge(fsys afero.Fs, planPath, clipID string, word float64, edge string,
+func moveCaptionEdge(plan Plan, clip Clip, word float64, edge string,
 	at float64, toWords bool, t *Transcript, look *Look) (captionEdge, error) {
 	if edge != "start" && edge != "end" {
 		return captionEdge{}, renderErr("a caption has a start and an end, not %s", runes.Scrub(edge, 20))
@@ -1213,10 +1217,6 @@ func moveCaptionEdge(fsys afero.Fs, planPath, clipID string, word float64, edge 
 	reset := math.IsNaN(at)
 	if !reset && (math.IsInf(at, 0) || at < 0 || at > MaxEpisodeSeconds) {
 		return captionEdge{}, renderErr("a caption cannot be moved to %s", num.Fixed(at, 3))
-	}
-	plan, clip, err := planClip(fsys, planPath, clipID)
-	if err != nil {
-		return captionEdge{}, err
 	}
 	// Only a caption of the clip that begins or ends on the word. A caption
 	// is made of its words and of nothing else.

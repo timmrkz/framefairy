@@ -79,7 +79,7 @@ func TestTheVideoPreviewsCaptionFileIsTheShorts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	view, err := ClipCaptionsView(disk, plan, "01", words, &Look{Style: style, Source: info})
+	view, err := ClipCaptionsView(planAt(t, disk, plan), "01", words, &Look{Style: style, Source: info})
 	if err != nil {
 		t.Fatal(err)
 	}

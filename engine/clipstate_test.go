@@ -36,7 +36,7 @@ func oneClipPlan(t *testing.T, fsys afero.Fs, start, end float64) (logs, path st
 // shownWords is what clip 01 of a plan shows, its captions' words.
 func shownWords(t *testing.T, fsys afero.Fs, path string, tr *Transcript) string {
 	t.Helper()
-	view, err := ClipCaptionsView(fsys, path, "01", tr, nil)
+	view, err := ClipCaptionsView(planAt(t, fsys, path), "01", tr, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestAClipMadeAgainHasTheCaptionsItsRemovedOneLost(t *testing.T) {
 	fsys, path := writePlanAt(t, captionPlan)
 	logs := filepath.Dir(path)
 	tr := readAgain(fsys, logs, captionHeard())
-	before, err := ClipCaptionsView(fsys, path, "01", tr, nil)
+	before, err := ClipCaptionsView(planAt(t, fsys, path), "01", tr, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestAClipMadeAgainHasTheCaptionsItsRemovedOneLost(t *testing.T) {
 	if err := afero.WriteFile(fsys, hand, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	again, err := ClipCaptionsView(fsys, hand, "h01", readAgain(fsys, logs, captionHeard()), nil)
+	again, err := ClipCaptionsView(planAt(t, fsys, hand), "h01", readAgain(fsys, logs, captionHeard()), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +114,7 @@ func TestACaptionRemovedInOneClipIsRemovedThereAlone(t *testing.T) {
 	fsys, path := writePlanAt(t, plan)
 	logs := filepath.Dir(path)
 	tr := readAgain(fsys, logs, captionHeard())
-	before, err := ClipCaptionsView(fsys, path, "02", tr, nil)
+	before, err := ClipCaptionsView(planAt(t, fsys, path), "02", tr, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func TestACaptionRemovedInOneClipIsRemovedThereAlone(t *testing.T) {
 		t.Fatal(err)
 	}
 	fresh := readAgain(fsys, logs, captionHeard())
-	other, err := ClipCaptionsView(fsys, path, "02", fresh, nil)
+	other, err := ClipCaptionsView(planAt(t, fsys, path), "02", fresh, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +136,7 @@ func TestACaptionRemovedInOneClipIsRemovedThereAlone(t *testing.T) {
 		if err := SetRejected(fsys, nil, path, "01", removed); err != nil {
 			t.Fatal(err)
 		}
-		own, err := ClipCaptionsView(fsys, path, "01", readAgain(fsys, logs, captionHeard()), nil)
+		own, err := ClipCaptionsView(planAt(t, fsys, path), "01", readAgain(fsys, logs, captionHeard()), nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -165,7 +165,7 @@ func TestAClipMadeByHandAgainIsTheClipMadeTheFirstTime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	first, err := ClipCaptionsView(disk, p.HandPlanPath(), "h01", tr, nil)
+	first, err := ClipCaptionsView(planAt(t, disk, p.HandPlanPath()), "h01", tr, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +186,7 @@ func TestAClipMadeByHandAgainIsTheClipMadeTheFirstTime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	again, err := ClipCaptionsView(disk, p.HandPlanPath(), "h02", tr, nil)
+	again, err := ClipCaptionsView(planAt(t, disk, p.HandPlanPath()), "h02", tr, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -241,7 +241,7 @@ func TestACorrectionGoesWithItsClip(t *testing.T) {
 // shownWordsOf is what one clip of a plan shows, its captions' words.
 func shownWordsOf(t *testing.T, fsys afero.Fs, path, id string, tr *Transcript) string {
 	t.Helper()
-	view, err := ClipCaptionsView(fsys, path, id, tr, nil)
+	view, err := ClipCaptionsView(planAt(t, fsys, path), id, tr, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

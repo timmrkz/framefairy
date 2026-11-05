@@ -99,8 +99,8 @@ func (s *FrameFairy) editMoving(path string, playhead *[2]float64, fn func() err
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	held := s.clock()
-	logs := engine.LogsDir(path)
-	before := engine.TakeSnapshot(s.store.files, s.store.records, logs)
+	ep := s.store.machine.Episode(path)
+	before := ep.TakeSnapshot(s.store.records)
 	read := s.clock()
 	heightWas := s.store.Settings().CaptionY
 	err := fn()
@@ -109,7 +109,7 @@ func (s *FrameFairy) editMoving(path string, playhead *[2]float64, fn func() err
 	}
 	written := s.clock()
 	// A search can land a clip while the edit runs. It is not the edit's.
-	change := engine.ChangeBetween(before, engine.TakeSnapshot(s.store.files, s.store.records, logs)).LeaveOutNewClips()
+	change := engine.ChangeBetween(before, ep.TakeSnapshot(s.store.records)).LeaveOutNewClips()
 	if change != nil {
 		s.told(path)
 	}
