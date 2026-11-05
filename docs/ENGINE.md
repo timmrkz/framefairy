@@ -680,7 +680,10 @@ The machine holds the file system, the records, the `tool.Runner`, the
 about the machine: whether the system's video decoder failed here,
 which decoder each episode used, the encoders and the subtitle filter
 of each ffmpeg, by the ffmpeg, the encoder a run names and the system,
-and the face detector. So a Mac whose system decoder failed once
+and the face detector. It keeps what ffmpeg and ffprobe said, see What
+ffmpeg and ffprobe said, kept, and the time limit of a decode, empty for
+`context.WithTimeout` and set by a test that ends the decode itself. So
+a Mac whose system decoder failed once
 decodes on the processor for every job after it, not only for the rest
 of that job. An `Engine` keeps what belongs to its one job: the log,
 what it spent, the switches of its run, the hearing and the read-ahead.
@@ -719,10 +722,10 @@ The app makes an engine for every job, every caption it draws and every
 video it reads. Each used to ask ffprobe five questions about the episode,
 ffmpeg for its filters and a test caption, and both tools for their
 versions, though nothing had changed. `engine/probed.go` keeps those
-answers for the process, by the path, size and modification time of the
-tool and of the file, so a file written again or a tool replaced is asked
-again. `Probe`, `pictureStart`, `SubtitleFilter` and `Preflight` ask it
-first. A probe whose context was stopped is not kept, and no caller can
+answers on the program's `Machine`, by the path, size and modification
+time of the tool and of the file, so a file written again or a tool
+replaced is asked again. `Probe`, `pictureStart`, `lastMoment`,
+`SubtitleFilter` and `Preflight` ask it first. A probe whose context was stopped is not kept, and no caller can
 change what is kept through the `SourceInfo` it was given. What a render
 reads of each piece it cuts, `unevenPieces`, is its own stretch of the
 file and is read every time.

@@ -16,26 +16,23 @@ import (
 // system's decoder, and, if always is set, never finishes at all. When it
 // does finish it reports one camera switch, at 5 s into what it read.
 //
-// The time limit of whatever it runs for ends the moment it says it
-// hangs, see timeLimit, so a test waits on no limit of the clock. A hang
-// with no limit of timeLimit to end fails the test. Not
-// parallel: timeLimit is a package variable.
+// The time limit of whatever m decodes ends the moment it says it hangs,
+// see Machine.timeLimit, so a test waits on no limit of the clock. A hang
+// with no limit of m's to end fails the test.
 //
 // On the real disk: the stand-in ffmpeg is a program that is run.
-func stuckFFmpeg(t *testing.T, always bool) string {
+func stuckFFmpeg(t *testing.T, m *Machine, always bool) string {
 	t.Helper()
 	pipe, hangs := standin.Hangs(t)
 	var mu sync.Mutex
 	var last context.CancelFunc
-	was := timeLimit
-	timeLimit = func(ctx context.Context, _ time.Duration) (context.Context, context.CancelFunc) {
+	m.timeLimit = func(ctx context.Context, _ time.Duration) (context.Context, context.CancelFunc) {
 		ctx, cancel := context.WithCancel(ctx)
 		mu.Lock()
 		last = cancel
 		mu.Unlock()
 		return ctx, cancel
 	}
-	t.Cleanup(func() { timeLimit = was })
 	go func() {
 		for range hangs {
 			mu.Lock()
@@ -43,7 +40,7 @@ func stuckFFmpeg(t *testing.T, always bool) string {
 			last = nil
 			mu.Unlock()
 			if end == nil {
-				t.Error("ffmpeg hangs with no time limit of timeLimit to end it, so it waits on the clock")
+				t.Error("ffmpeg hangs with no time limit of the machine's to end it, so it waits on the clock")
 				continue
 			}
 			end()

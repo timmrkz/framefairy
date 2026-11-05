@@ -1,10 +1,12 @@
 package engine
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/spf13/afero"
 
@@ -54,6 +56,15 @@ type Machine struct {
 
 	facesOnce sync.Once
 	faces     *faceDetector
+
+	// probes is what ffmpeg and ffprobe said, kept while they and the
+	// file asked about stay as they are, see probed.go.
+	probes probeCache
+	// timeLimit ends a decode that has run out of its time, see
+	// decodeWithin. Empty, it is context.WithTimeout. A test ends the
+	// work itself once the stand-in for ffmpeg says it hangs, so it waits
+	// for no limit on the real clock.
+	timeLimit func(context.Context, time.Duration) (context.Context, context.CancelFunc)
 
 	// keys is where the keys are kept, and oldKeys where the first ones
 	// were, see keys.go, and savedFirst reads a saved key before one in
