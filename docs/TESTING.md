@@ -1052,17 +1052,8 @@ run once the others are done. Each sequence opens the app afresh with
 Every walker hands its sequences to one node of its own, `sequences.mjs
 --serve`, which reads the name of the next sequence from its input,
 says `walking` in a line of its own as it begins and how it went in
-another as it ends, and keeps one browser for all of them. A sequence
-that passed hands its page on, and the next loads the app on it again,
-its storage emptied and what the walk listened for and routed
-forgotten, since a new page in WebKit is a web process of its own: an
-open took 1.3 s and 2.7 s of CPU on a new page, and 0.8 s and 1.9 s on
-the same page again. A page is opened anew after a sequence that failed,
-that put in Playwright's fake clock or a script of its own run on every
-load, that opened a second page or the report window, or that asked for
-the motion or the clock another way, see `reusable` in
-`walks/bridge.mjs`, so it keeps nothing a sequence before it kept.
-Starting node, Playwright and
+another as it ends, and keeps one browser for all of them. Each sequence still opens a page in a context of its own, so it
+keeps nothing a sequence before it kept. Starting node, Playwright and
 Chromium for every sequence was 1.45 s and 1.2 s of CPU each time, 220
 times, issue #526. A sequence that throws ends its node, and the next
 sequence starts a new one, so nothing a throw left behind walks on. What

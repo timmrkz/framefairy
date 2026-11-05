@@ -257,17 +257,6 @@ export function traceAs(title, names = [title]) {
   filmingNow = tracingWhich === "film" || (tracingWhich === "light" && names.some((n) => n in filmedList));
 }
 
-// The trace of a page loaded again for the next sequence, under its
-// name, the one before thrown away, since that sequence passed.
-async function traceAgain(page) {
-  const context = page.context();
-  if (!tracing.has(context)) return;
-  tracing.delete(context);
-  requestLogs.delete(context);
-  await context.tracing.stop();
-  await traced(page);
-}
-
 async function traced(page) {
   if (tracingWhich === "none") return;
   const context = page.context();
@@ -377,23 +366,27 @@ if (traces) {
 // play is shown and read on any machine, issues #534 and #588. "sound"
 // is the sound card's, as the app runs without a walk, for what a walk
 // checks on the sound's own time, see soundCard in common/steps.mjs.
-export async function open(url, { viewport = { width: 1500, height: 1000 }, scale = 1, again = null, browser: given = null, named = browserFor(), still = false, clock = "frames", reuse = null } = {}) {
-  const how = { viewport, scale, still, clock };
-  // reuse is the page the sequence before passed on. It is left before the
-  // bridge resets, so nothing it still has on its way reaches the Go side
-  // while the episode is put back: a library written while it was reset
-  // stopped the reset with "file exists".
-  const kept = reuse && reusable(reuse, how) ? reuse : null;
-  if (kept) await leave(kept);
-  else await reuse?.context().close();
+export async function open(url, { viewport = { width: 1500, height: 1000 }, scale = 1, again = null, browser: given = null, named = browserFor(), still = false, clock = "frames" } = {}) {
   // The episode the way the bridge found it, whatever the walk before did.
   if (!again) {
     const reset = await fetch(new URL("/reset", url), { method: "POST" });
     if (!reset.ok) throw new Error(`the bridge did not reset: ${await reset.text()}`);
   }
   const browser = again ?? given ?? (await newBrowser(named));
+  // A page of its own in a context of its own, which browser.newPage
+  // makes, so nothing a page before it kept is there.
+  // A page still asks the system for less motion, the way a person can
+  // in the Mac's settings, so the app leaves out what it animates and
+  // the walk does not wait for it, see still in sequences.mjs.
+  const page = await browser.newPage({ viewport, deviceScaleFactor: scale, reducedMotion: still ? "reduce" : "no-preference" });
+  noDeadlines(page);
+  await page.addInitScript((clock) => {
+    window.__flatScreen = true;
+    window.__playClock = clock;
+  }, clock);
+  await slowDown(page);
   const errors = [];
-  const page = kept ? await loadAgain(kept, viewport, errors) : await newPage(browser, how, errors);
+  threw(page, errors);
   await page.goto(url);
   await page.locator("aside li", { hasText: ".mp4" }).first().waitFor();
   await page.locator("aside li", { hasText: ".mp4" }).first().click();
@@ -412,80 +405,6 @@ export async function open(url, { viewport = { width: 1500, height: 1000 }, scal
   await settle(page);
   await page.evaluate(() => document.body.focus());
   return { browser, page, errors };
-}
-
-// A page of its own in a context of its own, which browser.newPage
-// makes, so nothing a page before it kept is there.
-// A page still asks the system for less motion, the way a person can
-// in the Mac's settings, so the app leaves out what it animates and
-// the walk does not wait for it, see still in sequences.mjs.
-async function newPage(browser, how, errors) {
-  const { viewport, scale, still, clock } = how;
-  const page = await browser.newPage({ viewport, deviceScaleFactor: scale, reducedMotion: still ? "reduce" : "no-preference" });
-  page.__opened = how;
-  noDeadlines(page);
-  await page.addInitScript((clock) => {
-    window.__flatScreen = true;
-    window.__playClock = clock;
-  }, clock);
-  // What a walk adds to the page that loading it again does not take
-  // away marks it as one not to load again, see reusable.
-  const addInitScript = page.addInitScript.bind(page);
-  page.addInitScript = (...args) => {
-    page.__kept = true;
-    return addInitScript(...args);
-  };
-  await slowDown(page);
-  threw(page, errors);
-  return page;
-}
-
-// Whether the page the sequence before walked on can be loaded again for
-// the next, rather than a new one opened: a new page in WebKit is a web
-// process of its own, 1.4 s of CPU, which loading the same page again
-// does not start. Only a page opened the same way, alone in its context,
-// with nothing added that a load keeps, Playwright's fake clock or a
-// script of the walk's own run on every load, and with no window beside
-// it, like the report window.
-function reusable(page, how) {
-  if (page.isClosed() || page.__kept || page.__clock) return false;
-  if (page.context().pages().length !== 1 || page.context().browser().contexts().length !== 1) return false;
-  return Object.entries(how).every(([k, v]) => JSON.stringify(page.__opened[k]) === JSON.stringify(v));
-}
-
-// The app left on a page to be loaded again: what the walk listened for
-// and what it routed forgotten, the app's storage emptied and the app
-// itself left for a blank page, so it has nothing more to say to the Go
-// side. Then the keys and the button are let go and the hand put where a
-// new page has it, on the blank page, where they reach nothing.
-async function leave(page) {
-  await page.unrouteAll({ behavior: "ignoreErrors" });
-  await page.removeAllListeners();
-  leaving.add(page);
-  try {
-    await page.evaluate(() => {
-      window.__leave?.();
-      localStorage.clear();
-      sessionStorage.clear();
-    });
-    await page.goto("about:blank");
-  } finally {
-    leaving.delete(page);
-  }
-  for (const key of ["Shift", "Control", "Alt", "Meta"]) await page.keyboard.up(key);
-  await page.mouse.up();
-  await page.mouse.move(0, 0);
-}
-
-// The page left by leave made ready for the next sequence, as a new page
-// would be. Its trace starts again under the next sequence's name.
-async function loadAgain(page, viewport, errors) {
-  await page.context().clearCookies();
-  await page.setViewportSize(viewport);
-  for (const k of Object.keys(page)) if (k.startsWith("__") && k !== "__opened") delete page[k];
-  await traceAgain(page);
-  threw(page, errors);
-  return page;
 }
 
 // Waits until the app has nothing on its way: no call out, no timer of
