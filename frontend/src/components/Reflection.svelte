@@ -13,7 +13,7 @@
   // second and stops once it has arrived, so a paused video costs nothing.
   import { onMount } from "svelte";
   import type { Picture } from "../lib/frames/picture";
-  import { COLS, ROWS, ease, mirrored, pixels, share } from "../lib/frames/reflection";
+  import { COLS, ROWS, clear, ease, mirrored, share, unseen } from "../lib/frames/reflection";
 
   let { shown = true }: { shown?: boolean } = $props();
 
@@ -21,17 +21,23 @@
   let canvas: HTMLCanvasElement;
   let g: CanvasRenderingContext2D | null = null;
   let image: ImageData | null = null;
-  const now = new Float32Array(COLS * ROWS * 3);
-  const goal = new Float32Array(COLS * ROWS * 3);
+  // What is drawn and what it settles towards, red, green, blue and alpha
+  // of each cell. Clear until the first frame.
+  const now = new Float32Array(COLS * ROWS * 4);
+  const goal = new Float32Array(COLS * ROWS * 4);
   let request = 0;
   let last = 0;
 
   // The frame put on the video preview, or null for the black it shows
-  // without one. It is read at once and not kept.
+  // without one, which the reflection fades out on. It is read at once and
+  // not kept. The first frame fades in with its own colours, not from
+  // black.
   export function take(frame: Picture | null) {
     const d = frame?.data;
-    if (frame && d) mirrored(d, frame.width, frame.height, frame.light, goal);
-    else goal.fill(0);
+    if (frame && d) {
+      mirrored(d, frame.width, frame.height, frame.light, goal);
+      if (unseen(now)) for (let i = 0; i < now.length; i += 4) now.set(goal.subarray(i, i + 3), i);
+    } else clear(goal);
     if (!request) {
       last = performance.now();
       request = requestAnimationFrame(step);
@@ -48,14 +54,14 @@
     last = t;
     const left = ease(now, goal, share(dt / 1000));
     if (g && image) {
-      pixels(now, image.data);
+      image.data.set(now);
       g.putImageData(image, 0, 0);
     }
     if (left >= 0.5) request = requestAnimationFrame(step);
   }
 
   onMount(() => {
-    g = canvas.getContext("2d", { alpha: false });
+    g = canvas.getContext("2d");
     image = new ImageData(COLS, ROWS);
     return () => cancelAnimationFrame(request);
   });

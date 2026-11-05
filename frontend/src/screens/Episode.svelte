@@ -4115,6 +4115,24 @@
     height: var(--row-h);
   }
 
+  /* A button in the row that cannot be pressed is dimmed by its colours,
+     not by opacity as everywhere else, because the reflection of the video
+     preview lies behind the row and would show through it, see
+     Reflection.svelte. The colours are what the opacity of --dimmed gave
+     over the app's own ground, --ink-0, so it looks the same as before. */
+  .detail .row button:disabled {
+    opacity: 1;
+    background: color-mix(in srgb, var(--ink-2) calc(var(--dimmed) * 100%), var(--ink-0));
+    border-color: color-mix(in srgb, var(--line) calc(var(--dimmed) * 100%), var(--ink-0));
+    color: color-mix(in srgb, var(--text) calc(var(--dimmed) * 100%), var(--ink-0));
+  }
+
+  .detail .row button.primary:disabled {
+    background: color-mix(in srgb, var(--accent) calc(var(--dimmed) * 100%), var(--ink-0));
+    border-color: color-mix(in srgb, var(--accent) calc(var(--dimmed) * 100%), var(--ink-0));
+    color: color-mix(in srgb, #fff calc(var(--dimmed) * 100%), var(--ink-0));
+  }
+
 
   /* A whole number of pixels high, so everything in it sits on whole
      pixels. No line under it: the veil over the top of the list is what

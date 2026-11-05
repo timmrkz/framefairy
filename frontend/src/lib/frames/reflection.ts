@@ -6,8 +6,8 @@
 //
 // It costs playback nothing it would notice: the frame is read on the
 // processor where it already is, at COLS by ROWS cells of four pixels
-// each, a few thousand pixels however large the video, never read back
-// from the GPU and never decoded again.
+// each, 9216 pixels however large the video, never read back from the GPU
+// and never decoded again.
 
 import { toSDR, type Light } from "./light";
 
@@ -27,11 +27,12 @@ const SPREAD = 2;
 const words = new Uint32Array(COLS * ROWS * SPREAD * SPREAD);
 const colours = new Uint8ClampedArray(words.length * 4);
 
-// The frame as COLS by ROWS colours of 0 to 255, red, green and blue, row
-// after row, upside down: the frame's top row is the reflection's bottom,
-// the row nearest to the person. The colours are the ones the video
-// preview shows, standard video with its look and HDR cut at white, see
-// light.ts. data is the frame's bytes, 4 a pixel, see picture.ts.
+// The frame as COLS by ROWS colours of 0 to 255, red, green, blue and an
+// opaque alpha, row after row, upside down: the frame's top row is the
+// reflection's bottom, the row nearest to the person. The colours are the
+// ones the video preview shows, standard video with its look and HDR cut
+// at white, see light.ts. data is the frame's bytes, 4 a pixel, see
+// picture.ts.
 export function mirrored(data: Uint8Array, width: number, height: number, light: Light, into: Float32Array) {
   const across = COLS * SPREAD;
   const down = ROWS * SPREAD;
@@ -45,7 +46,7 @@ export function mirrored(data: Uint8Array, width: number, height: number, light:
   toSDR(light, new Uint8Array(words.buffer), colours);
   const n = SPREAD * SPREAD;
   for (let r = 0; r < ROWS; r++) {
-    const at = (ROWS - 1 - r) * COLS * 3;
+    const at = (ROWS - 1 - r) * COLS * 4;
     for (let c = 0; c < COLS; c++) {
       let red = 0;
       let green = 0;
@@ -58,9 +59,10 @@ export function mirrored(data: Uint8Array, width: number, height: number, light:
           blue += colours[i + 2];
         }
       }
-      into[at + c * 3] = red / n;
-      into[at + c * 3 + 1] = green / n;
-      into[at + c * 3 + 2] = blue / n;
+      into[at + c * 4] = red / n;
+      into[at + c * 4 + 1] = green / n;
+      into[at + c * 4 + 2] = blue / n;
+      into[at + c * 4 + 3] = 255;
     }
   }
 }
@@ -81,12 +83,15 @@ export function ease(now: Float32Array, then: Float32Array, by: number): number 
   return left;
 }
 
-// The colours as a 2D canvas takes them, opaque.
-export function pixels(from: Float32Array, into: Uint8ClampedArray) {
-  for (let p = 0, i = 0; p < from.length; p += 3, i += 4) {
-    into[i] = from[p];
-    into[i + 1] = from[p + 1];
-    into[i + 2] = from[p + 2];
-    into[i + 3] = 255;
-  }
+// Black in the video preview, which has no frame: the colours kept and
+// the alpha gone, so the reflection fades out where it was rather than
+// darkening the foot of the app.
+export function clear(into: Float32Array) {
+  for (let i = 3; i < into.length; i += 4) into[i] = 0;
+}
+
+// Whether nothing is seen of it yet, as before its first frame.
+export function unseen(from: Float32Array): boolean {
+  for (let i = 3; i < from.length; i += 4) if (from[i] > 0) return false;
+  return true;
 }

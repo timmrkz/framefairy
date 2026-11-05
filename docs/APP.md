@@ -473,11 +473,16 @@ the middle of it, blurred and faded out upwards. It lies behind
 everything in the workspace, so it only shows in the room between the
 controls, and nothing that is read or worked with changes. A new frame
 is settled on over a quarter of a second, so a cut fades over rather
-than flashing. It reads the frame the video preview already has, a few
-thousand of its pixels, and nothing else, so playback does not notice
-it, see `frontend/src/lib/frames/reflection.ts` and
+than flashing, and while the video preview shows black it fades out
+rather than darkening the foot of the app. It reads the frame the video
+preview already has, 9216 of its pixels, and nothing else, so playback
+does no work for it but that and a blur, see
+`frontend/src/lib/frames/reflection.ts` and
 `frontend/src/components/Reflection.svelte`. How tall, wide, blurred and
-strong it is are the `--reflection-` tokens in `app.css`.
+strong it is are the `--reflection-` tokens in `app.css`. A button in
+the row under the clip timeline that cannot be pressed is dimmed by its
+colours there rather than by opacity, so the reflection does not show
+through it.
 
 The video preview plays the episode from its own queue of frames, see
 `frontend/src/lib/frames/`. The app reads the samples of the picture and

@@ -72,11 +72,20 @@ export const steps = {
       if (reflected.some((v, i) => Math.abs(v - shown[i]) > 24)) wrong.push(`its quarters read ${say(reflected)} where the video preview's read ${say(shown)}`);
       // The quarters have to differ, or a reflection of anything would do.
       if (Math.max(...shown) - Math.min(...shown) < 40) wrong.push(`the video preview's quarters read ${say(shown)}, too alike to tell a reflection of them from any other`);
-      // What a person works with, which the reflection lies behind.
+      // What a person works with, which the reflection lies behind. Each
+      // inside its rounded corners, where the workspace, and with it the
+      // reflection, shows by design.
+      const round = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--radius-s")) || 0;
       const kept = [...document.querySelectorAll(".detail .row button, .detail .row .timecode, .detail canvas")]
-        .map((e) => e.getBoundingClientRect())
-        .filter((b) => b.width > 0 && b.height > 0 && b.bottom > box.top)
-        .map((b) => ({ x: b.left, y: b.top, w: b.width, h: b.height }));
+        .map((e) => ({ e, b: e.getBoundingClientRect() }))
+        .filter(({ b }) => b.width > 2 * round && b.height > 2 * round && b.bottom > box.top)
+        .map(({ e, b }) => ({
+          name: e.getAttribute("aria-label") || e.getAttribute("title")?.slice(0, 40) || e.className || e.tagName,
+          x: b.left + round,
+          y: b.top + round,
+          w: b.width - 2 * round,
+          h: b.height - 2 * round,
+        }));
       // The room under the controls, under the middle of the app.
       const room = { x: W / 2 - 100, y: H - 20, w: 200, h: 16 };
       return { wrong: wrong.join(", "), kept, room, dpr: devicePixelRatio };
@@ -91,16 +100,21 @@ export const steps = {
       await letClockGo(page);
       return;
     }
-    // The app as it is, and with the reflection hidden.
+    // The app as it is, and with the reflection drawn as bright as it
+    // goes. Both are the same layers, so the only pixels that differ are
+    // the ones the reflection reaches. Hidden, it was another set of
+    // layers, and the edge of an icon was painted a step of colour apart.
     const seen = (await page.screenshot()).toString("base64");
-    const hide = await page.addStyleTag({ content: "canvas.reflection { visibility: hidden !important }" });
+    const bright = await page.addStyleTag({
+      content: "canvas.reflection { opacity: 1 !important; filter: blur(var(--reflection-blur)) brightness(4) !important }",
+    });
     await realFrames(page, 2);
-    const without = (await page.screenshot()).toString("base64");
-    await hide.evaluate((e) => e.remove());
+    const brightened = (await page.screenshot()).toString("base64");
+    await bright.evaluate((e) => e.remove());
     await realFrames(page, 2);
     await letClockGo(page);
     const told = await page.evaluate(
-      async ({ seen, without, kept, room, dpr }) => {
+      async ({ seen, bright, kept, room, dpr }) => {
         const read = async (b64) => {
           const img = new Image();
           img.src = `data:image/png;base64,${b64}`;
@@ -113,7 +127,7 @@ export const steps = {
           return (b) => g.getImageData(Math.round(b.x * dpr), Math.round(b.y * dpr), Math.round(b.w * dpr), Math.round(b.h * dpr)).data;
         };
         const a = await read(seen);
-        const b = await read(without);
+        const b = await read(bright);
         // The largest step of any colour between the two, over a box.
         const most = (box) => {
           const x = a(box);
@@ -122,13 +136,14 @@ export const steps = {
           for (let i = 0; i < x.length; i++) if (i % 4 !== 3) m = Math.max(m, Math.abs(x[i] - y[i]));
           return m;
         };
-        const changed = kept.map(most).filter((m) => m > 0).length;
+        const changed = kept.map((k) => ({ name: k.name, by: most(k) })).filter((k) => k.by > 0);
         return { changed, of: kept.length, room: most(room) };
       },
-      { seen, without, ...placed },
+      { seen, bright: brightened, ...placed },
     );
-    if (told.changed) walk.wrong = `the reflection changed ${told.changed} of the ${told.of} controls and tracks it lies under, where it should lie behind them`;
-    else if (told.room < 3) walk.wrong = `the reflection does not show in the room under the controls: it changes it by ${told.room} of 255 at most`;
+    if (told.changed.length)
+      walk.wrong = `the reflection changed ${told.changed.length} of the ${told.of} controls and tracks it lies under, where it should lie behind them: ${told.changed.map((k) => `${k.name} by ${k.by} of 255`).join(", ")}`;
+    else if (told.room < 8) walk.wrong = `the reflection does not show in the room under the controls: made bright it changes it by ${told.room} of 255 at most`;
   },
   // ["read ahead", key] rests until what the video preview reads ahead is
   //                    in, presses the key and checks that the frame it
