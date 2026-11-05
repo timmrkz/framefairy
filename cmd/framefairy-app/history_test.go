@@ -27,7 +27,7 @@ func anEpisodeWithAPlan(t *testing.T) (*FrameFairy, string, string) {
 	svc, eps := memoryLibrary(t, "ep.mp4")
 	mine := eps[0]
 	svc.jobs = newQueue(svc.store, func(JobUpdate) {}, func(string) {})
-	plan := filepath.Join(svc.project(mine).LogsDir(), "clips.json")
+	plan := filepath.Join(engine.LogsDir(mine), "clips.json")
 	if err := afero.WriteFile(svc.store.files, plan, []byte(historyPlan), 0o644); err != nil {
 		t.Fatal(err)
 	}

@@ -3,6 +3,8 @@ package engine
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -10,6 +12,7 @@ import (
 
 	"github.com/spf13/afero"
 
+	"framefairy/engine/fileio"
 	"framefairy/engine/num"
 	"framefairy/engine/timed"
 )
@@ -29,7 +32,7 @@ func TestAVideosTranscriptIsReadOnceForEveryoneUntilItIsWritten(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st := Status(m, source, "/models/modell", nil); st.Covered != 3 {
+	if st := m.Episode(source).Status("/models/modell", nil); st.Covered != 3 {
 		t.Fatalf("the status says heard to %v, want 3", st.Covered)
 	}
 	if again, _ := m.Episode(source).Transcript("/models/modell", nil); again != first {
@@ -83,7 +86,7 @@ func TestListingTheLibraryLetsGoOfNoTranscript(t *testing.T) {
 	list := func() []*keptRead[heardSoFar] {
 		var reads []*keptRead[heardSoFar]
 		for _, video := range videos {
-			if st := Status(m, video, "/models/modell", nil); !st.Transcribed || st.Covered != 3 || st.Said == nil {
+			if st := m.Episode(video).Status("/models/modell", nil); !st.Transcribed || st.Covered != 3 || st.Said == nil {
 				t.Fatalf("%s listed as heard to %v, done %v, said %v", video, st.Covered, st.Transcribed, st.Said)
 			}
 			ep := m.Episode(video)
@@ -276,4 +279,348 @@ func TestATranscriptReadThatPanicsLetsGoOfItsWaiters(t *testing.T) {
 			t.Fatalf("after a panic the video gave %v, %v, not a new read", r, err)
 		}
 	})
+}
+
+// planRead is the read the episode keeps of the plan at path, nil for none.
+func planRead(ep *Episode, path string) *keptRead[PlanSummary] {
+	ep.m.held.Lock()
+	defer ep.m.held.Unlock()
+	if slot := ep.plans[path]; slot != nil {
+		return slot.read
+	}
+	return nil
+}
+
+// planOpens is a disk that counts how often a plan file is opened, to
+// read it, the one way a plan is read. With a gate, the first plan opened
+// is held open, read from no further, until the gate is closed, and
+// opened is closed once it is held there.
+type planOpens struct {
+	afero.Fs
+	n            atomic.Int64
+	gate, opened chan struct{}
+	once         sync.Once
+}
+
+func (f *planOpens) Open(name string) (afero.File, error) {
+	file, err := f.Fs.Open(name)
+	f.held(name)
+	return file, err
+}
+
+func (f *planOpens) OpenFile(name string, flag int, perm os.FileMode) (afero.File, error) {
+	file, err := f.Fs.OpenFile(name, flag, perm)
+	f.held(name)
+	return file, err
+}
+
+func (f *planOpens) held(name string) {
+	if ok, _ := filepath.Match("clips*.json", filepath.Base(name)); !ok {
+		return
+	}
+	f.n.Add(1)
+	if f.gate == nil {
+		return
+	}
+	first := false
+	f.once.Do(func() {
+		first = true
+		close(f.opened)
+	})
+	if first {
+		<-f.gate
+	}
+}
+
+// heldPlan is a video with one plan of two clips, on a disk that holds
+// the first read of a plan open until the gate is closed.
+func heldPlan(t *testing.T) (*Machine, *planOpens, string, string) {
+	t.Helper()
+	counted := &planOpens{Fs: afero.NewMemMapFs()}
+	source := "/v/folge.mp4"
+	if err := afero.WriteFile(counted, source, []byte("video"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan := filepath.Join(LogsDir(source), "clips.json")
+	if err := fileio.WriteAtomic(counted, plan, []byte(aRealisticPlan(2))); err != nil {
+		t.Fatal(err)
+	}
+	counted.n.Store(0)
+	counted.gate, counted.opened = make(chan struct{}), make(chan struct{})
+	return NewMachine(counted), counted, source, plan
+}
+
+// Everyone who asks for a plan while it is being read waits for that one
+// read and gets what it read: the clip list, the status, the window and
+// a plan read alone, twenty of them at once. The read is held open until
+// all twenty wait, which testing/synctest's Wait says, and the plan file
+// is opened once.
+func TestEveryoneAskingWhileAPlanIsReadWaitsForThatRead(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		m, counted, source, plan := heldPlan(t)
+		ep := m.Episode(source)
+		type answer struct {
+			clips int
+			err   error
+		}
+		answers := make(chan answer, 21)
+		go func() {
+			v, err := ep.ReadPlan(plan)
+			if err != nil {
+				answers <- answer{err: err}
+				return
+			}
+			answers <- answer{clips: len(v.Clips)}
+		}()
+		<-counted.opened
+		for i := range 20 {
+			go func() {
+				switch i % 4 {
+				case 0:
+					ps := ep.Plans()
+					if len(ps) != 1 {
+						answers <- answer{err: fmt.Errorf("listed %d plans", len(ps))}
+						return
+					}
+					answers <- answer{clips: ps[0].Clips}
+				case 1:
+					st := m.Episode(source).Status("", nil)
+					if len(st.Plans) != 1 {
+						answers <- answer{err: fmt.Errorf("the status lists %d plans", len(st.Plans))}
+						return
+					}
+					answers <- answer{clips: st.Plans[0].Clips}
+				case 2:
+					s, err := ep.Plan(plan)
+					answers <- answer{clips: len(s.AllClips()), err: err}
+				default:
+					v, err := ep.ReadPlan(plan)
+					if err != nil {
+						answers <- answer{err: err}
+						return
+					}
+					answers <- answer{clips: len(v.Clips)}
+				}
+			}()
+		}
+		synctest.Wait()
+		if n := counted.n.Load(); n != 1 {
+			t.Errorf("with twenty asking while the plan is read, it was opened %d times", n)
+		}
+		close(counted.gate)
+		for range 21 {
+			if a := <-answers; a.err != nil || a.clips != 2 {
+				t.Errorf("an ask got %d clips, %v, want the 2 read", a.clips, a.err)
+			}
+		}
+		if n := counted.n.Load(); n != 1 {
+			t.Errorf("the plan was opened %d times, want once for all", n)
+		}
+	})
+}
+
+// A plan written again while it is being read: the read in hand gives
+// the plan as it was, and is kept by the stamp it was asked with, so the
+// next ask sees the new stamp and reads the new plan. A read kept under
+// the stamp of the file as it is after would show the old clips until
+// the next write.
+func TestAPlanWrittenWhileItIsReadIsReadAgain(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		m, counted, source, plan := heldPlan(t)
+		ep := m.Episode(source)
+		before := make(chan int)
+		go func() {
+			v, err := ep.ReadPlan(plan)
+			if err != nil {
+				t.Error(err)
+				before <- 0
+				return
+			}
+			before <- len(v.Clips)
+		}()
+		<-counted.opened
+		if err := fileio.WriteAtomic(counted, plan, []byte(aRealisticPlan(3))); err != nil {
+			t.Fatal(err)
+		}
+		close(counted.gate)
+		if n := <-before; n != 2 {
+			t.Errorf("the read in hand gave %d clips, want the 2 it opened", n)
+		}
+		v, err := ep.ReadPlan(plan)
+		if err != nil || len(v.Clips) != 3 {
+			t.Fatalf("after the write the plan read %v, want its 3 clips", err)
+		}
+		if n := counted.n.Load(); n != 2 {
+			t.Errorf("the plan was opened %d times, want twice, once for each write", n)
+		}
+	})
+}
+
+// A video let go of while its plan is read: the read in hand ends with
+// what it read, and the video asked for again is a new Episode that reads
+// its plan afresh, without waiting on the read of the one let go.
+func TestAVideoLetGoWhileItsPlanIsReadReadsAfresh(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		m, counted, source, plan := heldPlan(t)
+		old := m.Episode(source)
+		first := make(chan error)
+		go func() {
+			_, err := old.ReadPlan(plan)
+			first <- err
+		}()
+		<-counted.opened
+		m.Forget(source)
+		fresh := m.Episode(source)
+		if fresh == old {
+			t.Fatal("the video let go of was given its old Episode")
+		}
+		if v, err := fresh.ReadPlan(plan); err != nil || len(v.Clips) != 2 {
+			t.Errorf("the video asked for again read %v", err)
+		}
+		close(counted.gate)
+		if err := <-first; err != nil {
+			t.Errorf("the read in hand ended with %v", err)
+		}
+		if n := counted.n.Load(); n != 2 {
+			t.Errorf("the plan was opened %d times, want once by each Episode", n)
+		}
+	})
+}
+
+// A video's plans are read once for the clip list, the status and the
+// window alike, each again only when its file changed, whoever wrote it.
+// A plan removed is let go of, and a plan that does not parse is left
+// out and read again on the next question.
+func TestAPlanIsReadOnceUntilItsFileChanges(t *testing.T) {
+	counted := &planOpens{Fs: afero.NewMemMapFs()}
+	fsys := afero.Fs(counted)
+	m := NewMachine(fsys)
+	source := "/v/folge.mp4"
+	if err := afero.WriteFile(fsys, source, []byte("video"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	logs := LogsDir(source)
+	first, second := filepath.Join(logs, "clips.json"), filepath.Join(logs, "clips-0-1800.json")
+	write := func(path string, clips int) {
+		t.Helper()
+		if err := afero.WriteFile(fsys, path, []byte(aRealisticPlan(clips)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(first, 2)
+	write(second, 3)
+	counted.n.Store(0)
+	ep := m.Episode(source)
+
+	plans := ep.Plans()
+	if len(plans) != 2 {
+		t.Fatalf("listed %d plans, want 2", len(plans))
+	}
+	read := planRead(ep, first)
+	if st := ep.Status("", nil); len(st.Plans) != 2 || !st.EverSearched {
+		t.Errorf("the status lists %d plans, searched %v", len(st.Plans), st.EverSearched)
+	}
+	if view, err := ep.ReadPlan(first); err != nil || len(view.Clips) != 2 {
+		t.Fatalf("the plan read for display gave %v", err)
+	}
+	if s, err := ep.Plan(second); err != nil || len(s.AllClips()) != 3 {
+		t.Fatalf("the plan asked for alone gave %v", err)
+	}
+	_ = ep.Plans()
+	if planRead(ep, first) != read {
+		t.Error("the plan was read again though its file did not change")
+	}
+	if n := counted.n.Load(); n != 2 {
+		t.Errorf("two plans asked about five times were opened %d times, want once each", n)
+	}
+
+	write(first, 4)
+	counted.n.Store(0)
+	if view, err := ep.ReadPlan(first); err != nil || len(view.Clips) != 4 {
+		t.Fatalf("the plan written again read %v, want its 4 clips", err)
+	}
+	_ = ep.Plans()
+	if planRead(ep, first) == read {
+		t.Error("the plan written again was not read again")
+	}
+	if n := counted.n.Load(); n != 1 {
+		t.Errorf("one plan written again was opened %d times, want once", n)
+	}
+
+	if err := fsys.Remove(second); err != nil {
+		t.Fatal(err)
+	}
+	if plans := ep.Plans(); len(plans) != 1 || plans[0].Path != first {
+		t.Errorf("after a plan was removed the episode lists %d", len(plans))
+	}
+	if planRead(ep, second) != nil {
+		t.Error("the plan removed is still held")
+	}
+
+	if err := afero.WriteFile(fsys, second, []byte("{"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if plans := ep.Plans(); len(plans) != 1 {
+		t.Errorf("a plan that does not parse was listed, %d plans", len(plans))
+	}
+	if planRead(ep, second) != nil {
+		t.Error("a plan that does not parse was kept as an answer")
+	}
+}
+
+// The plans asked for from everywhere at once while they are written and
+// removed, under the race detector. Once all is still, the episode says
+// what the files say.
+func TestPlansHeldFromEverywhereAtOnce(t *testing.T) {
+	fsys := afero.NewMemMapFs()
+	m := NewMachine(fsys)
+	source := "/v/folge.mp4"
+	if err := afero.WriteFile(fsys, source, []byte("video"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan := filepath.Join(LogsDir(source), "clips.json")
+	if err := afero.WriteFile(fsys, plan, []byte(aRealisticPlan(2)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	other := filepath.Join(LogsDir(source), "clips-0-1800.json")
+	var wg sync.WaitGroup
+	for i := range 100 {
+		wg.Go(func() {
+			ep := m.Episode(source)
+			switch i % 5 {
+			case 0:
+				_ = fileio.WriteAtomic(fsys, plan, []byte(aRealisticPlan(1+i%7)))
+			case 4:
+				if i%2 == 0 {
+					_ = fileio.WriteAtomic(fsys, other, []byte(aRealisticPlan(2)))
+				} else {
+					_ = fsys.Remove(other)
+				}
+			case 1:
+				for _, p := range ep.Plans() {
+					_ = p.View()
+				}
+			case 2:
+				_ = ep.Status("", nil)
+				if i%10 == 2 {
+					m.Forget(source)
+				}
+			default:
+				_, _ = ep.ReadPlan(plan)
+			}
+		})
+	}
+	wg.Wait()
+
+	// Still now: one plan of three clips, and the other gone.
+	if err := fileio.WriteAtomic(fsys, plan, []byte(aRealisticPlan(3))); err != nil {
+		t.Fatal(err)
+	}
+	if err := fsys.Remove(other); err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	plans := m.Episode(source).Plans()
+	if len(plans) != 1 || plans[0].Path != plan || plans[0].Clips != 3 {
+		t.Errorf("after the writes the episode lists %+v, want the one plan of 3 clips", plans)
+	}
 }

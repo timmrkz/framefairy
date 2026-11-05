@@ -93,9 +93,11 @@ type EpisodeFrames struct {
 	// How the picture's brightness is coded, as the decoder found it in
 	// the file when a cursor of picture first opened it.
 	light framewire.Light
-	// The cursor of captions, one at a time, see Captions.
-	captionsMu sync.Mutex
-	captions   *captionsCursor
+	// The cursor of captions, one draw at a time, see Captions. The turn
+	// is a channel of one, so a draw waiting for the one before it gives
+	// up when its request does.
+	captionsTurn chan struct{}
+	captions     *captionsCursor
 }
 
 // place is where a cursor of picture stands, or where a stream wants one:
@@ -127,7 +129,7 @@ var ErrFramesClosed = errors.New("the video's decoder was closed")
 // from program. Nothing starts until a stream is asked for.
 func NewEpisodeFrames(program, path string) *EpisodeFrames {
 	return &EpisodeFrames{program: program, path: path, answers: map[uint32]chan framewire.Record{},
-		placed: map[uint32]place{}, finishing: map[uint32]place{}, used: time.Now()}
+		placed: map[uint32]place{}, finishing: map[uint32]place{}, used: time.Now(), captionsTurn: make(chan struct{}, 1)}
 }
 
 // cursorsKept is how many cursors of picture a decoder keeps open for the
@@ -760,8 +762,16 @@ func (f *EpisodeFrames) Captions(ctx context.Context, captions framewire.Caption
 		return framewire.Layer{}, fmt.Errorf("captions cannot be drawn %d by %d of %d by %d",
 			captions.Width, captions.Height, captions.ShortW, captions.ShortH)
 	}
-	f.captionsMu.Lock()
-	defer f.captionsMu.Unlock()
+	// A request that gives up says which wait it gave up on, this one or
+	// the decoder's answer below, so a route that answers 500 says what
+	// it waited for. Four asks once waited out the caption route's ten
+	// seconds on CI's Mac, issue #687, and nothing said which.
+	select {
+	case f.captionsTurn <- struct{}{}:
+	case <-ctx.Done():
+		return framewire.Layer{}, fmt.Errorf("the captions drawn before these had not finished: %w", ctx.Err())
+	}
+	defer func() { <-f.captionsTurn }()
 	f.mu.Lock()
 	if err := f.start(); err != nil {
 		f.mu.Unlock()
@@ -815,7 +825,7 @@ func (f *EpisodeFrames) Captions(ctx context.Context, captions framewire.Caption
 				_ = f.send(c.gone, "close %d", c.id)
 			}
 			f.mu.Unlock()
-			return framewire.Record{}, ctx.Err()
+			return framewire.Record{}, fmt.Errorf("the video's decoder had not drawn the captions: %w", ctx.Err())
 		}
 	}
 	if c.held != held {

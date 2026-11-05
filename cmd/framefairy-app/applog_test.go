@@ -367,7 +367,7 @@ func TestEditsAreLogged(t *testing.T) {
 func TestAnEditOfAClipsWordsSaysHowManyItChanges(t *testing.T) {
 	svc, mine, plan := anEpisodeWithAPlan(t)
 	heardEpisode(t, svc, mine, 30, [][3]any{{10.1, 10.4, "eins"}, {10.5, 10.9, "zwei"}, {11.0, 11.4, "drei"}})
-	old := filepath.Join(svc.project(mine).LogsDir(), "corrections.json")
+	old := filepath.Join(engine.LogsDir(mine), "corrections.json")
 	if err := afero.WriteFile(svc.store.files, old, []byte(`{"10100": "Einz", "10500": ""}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -424,8 +424,8 @@ func TestAnEditOfAClipsWordsSaysHowManyItChanges(t *testing.T) {
 // words, as far as seconds, the way a transcription leaves it.
 func heardEpisode(t *testing.T, svc *FrameFairy, path string, seconds float64, words [][3]any) {
 	t.Helper()
-	p := svc.project(path)
-	info, err := p.Files.Stat(path)
+	fsys, logs := svc.store.files, engine.LogsDir(path)
+	info, err := fsys.Stat(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -444,17 +444,19 @@ func heardEpisode(t *testing.T, svc *FrameFairy, path string, seconds float64, w
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := p.Files.MkdirAll(p.LogsDir(), 0o755); err != nil {
+	if err := fsys.MkdirAll(logs, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := afero.WriteFile(p.Files, filepath.Join(p.LogsDir(), engine.TranscriptName(nil)), body, 0o644); err != nil {
+	if err := afero.WriteFile(fsys, filepath.Join(logs, engine.TranscriptName(nil)), body, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	frames := make([]byte, 4*int(seconds/timed.FrameSeconds))
-	if err := afero.WriteFile(p.Files, filepath.Join(p.LogsDir(), "words.frames"), frames, 0o644); err != nil {
+	if err := afero.WriteFile(fsys, filepath.Join(logs, "words.frames"), frames, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := p.Transcript(); err != nil {
+	// Read past heardIn, which looks for the corrections of before once
+	// for each video, so a test that writes them after still has them told.
+	if _, err := svc.store.machine.Episode(path).Transcript(model, svc.store.Settings().options().SilenceDB); err != nil {
 		t.Fatalf("the transcript written is not read: %v", err)
 	}
 }

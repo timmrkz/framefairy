@@ -8,7 +8,7 @@
 // whatever its container, and a file whose frames come at uneven times
 // shows the frames its short will have.
 
-import { FRAME_HAIR } from "../flow";
+import { heldMicros } from "../flow";
 
 // The frames of the short, as the engine names them, see
 // engine.SourceInfo.Grid: count of them, one every den/num seconds from
@@ -143,10 +143,15 @@ export function rankOf(s: Samples, at: number): number {
 }
 
 // The rank of the frame that holds a moment: the last one shown at or
-// before it, or one that begins up to FRAME_HAIR after it, the way frameAt
-// in lib/flow.ts counts. Before the first frame it is the first.
+// before it, or one that begins up to FRAME_HAIR after it, counted to the
+// microsecond the way frameAt in lib/flow.ts counts. The moment's ticks
+// are whole, worked out from its whole seconds and the rest apart, so no
+// product comes near 2^53 and a frame's ticks compare with them exactly.
+// Before the first frame it is the first.
 export function rankAt(s: Samples, at: number): number {
-  const ticks = (at + FRAME_HAIR) * s.timescale;
+  const us = heldMicros(at);
+  const seconds = Math.floor(us / 1_000_000);
+  const ticks = seconds * s.timescale + Math.floor(((us - seconds * 1_000_000) * s.timescale) / 1_000_000);
   let lo = 0;
   let hi = s.count - 1;
   if (hi < 0) return 0;

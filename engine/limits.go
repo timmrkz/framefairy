@@ -47,14 +47,14 @@ const (
 )
 
 // Limits is what a window of length seconds on a video of duration seconds
-// may be with the room r, the clip lengths in p's settings and typed clips
-// asked for it, 0 for none.
-func (p *Project) Limits(r RoomAndLines, duration, length float64, typed int) WindowLimits {
+// may be with the room r, the clip lengths in o and typed clips asked for
+// it, 0 for none.
+func (o Options) Limits(r RoomAndLines, duration, length float64, typed int) WindowLimits {
 	most := duration
 	if longest := r.Longest(duration); longest > 0 {
 		most = longest
 	}
-	shortest, longest := p.Base.Min, p.Base.Max
+	shortest, longest := o.Min, o.Max
 	l := WindowLimits{Most: most, By: r.By, Typed: typed}
 	l.ClipsAtMost = max(1, min(mostClipsAsked, int(math.Floor((most+0.01)/math.Max(shortest, 1)))))
 	l.Typed = min(typed, l.ClipsAtMost)

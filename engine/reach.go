@@ -7,8 +7,8 @@ import (
 
 // Reach is how far a window may reach in one search, from the room and the
 // weight of every line heard so far. The engine places its windows with
-// it, see Project.PlaceWindow, and the app holds the range picker to it,
-// see Limits, so a window it places is one the workspace leaves as it
+// it, see Episode.PlaceWindow, and the app holds the range picker to it,
+// see Options.Limits, so a window it places is one the workspace leaves as it
 // is: the app once capped its windows at the video's average rate and
 // the workspace at its densest stretch, and cut every window the app
 // placed again, found by the fourth review of #458.
@@ -24,8 +24,8 @@ type Reach struct {
 // RoomAndLines is what a reach is made from: the room one search has
 // with a video's settings, the weight of every line heard of it so far,
 // the parts heard, and what a second weighs outside them. The engine
-// places a window with it, see Project.PlaceWindow, and works out what a
-// window may be, see Project.Limits, so both start from the same numbers.
+// places a window with it, see Episode.PlaceWindow, and works out what a
+// window may be, see Options.Limits, so both start from the same numbers.
 type RoomAndLines struct {
 	Room
 	Lines []LineWeight
@@ -35,17 +35,10 @@ type RoomAndLines struct {
 	Rate  float64
 }
 
-// RoomAndLines is what one search of the project's video can read with
-// its settings, over t, what has been heard of it, nil before anything
-// is.
-func (p *Project) RoomAndLines(t *Transcript) RoomAndLines {
-	return p.RoomWith(Weigh(t))
-}
-
 // Weigh is the part of a RoomAndLines that comes from t alone, its lines,
 // the parts heard and the rate, with no room. Weighing every line of a
 // long video is the slow part, so what reads it often keeps it for as
-// long as t is the same, and hands it to RoomWith.
+// long as t is the same, see TranscriptRead.Weighed.
 func Weigh(t *Transcript) RoomAndLines {
 	r := RoomAndLines{Rate: SpokenChars}
 	if t != nil {
@@ -56,10 +49,16 @@ func Weigh(t *Transcript) RoomAndLines {
 	return r
 }
 
-// RoomWith is w, weighed by Weigh, with the room one search of the
-// project's video has with its settings.
-func (p *Project) RoomWith(w RoomAndLines) RoomAndLines {
-	w.Room = SearchRoom(p.Files, p.Base, p.LogsDir())
+// Room is what one search of the episode's video can read with the
+// settings o, over its transcript as far as it is heard, with the lines
+// weighed once for each read of it, see TranscriptRead.Weighed. A
+// transcript that cannot be read is nothing heard yet.
+func (ep *Episode) Room(o Options) RoomAndLines {
+	w := Weigh(nil)
+	if h, err := ep.Transcript(o.ASRModel, o.SilenceDB); err == nil {
+		w = h.Weighed()
+	}
+	w.Room = SearchRoom(ep.m.Files, o, LogsDir(ep.source))
 	return w
 }
 

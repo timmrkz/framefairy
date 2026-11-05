@@ -31,6 +31,9 @@ func CorrectedTranscript(t *Transcript, clips []Clip) *Transcript {
 // summary, for CorrectedTranscript.
 func (s PlanSummary) AllClips() []Clip { return s.clips }
 
+// Plan is the summary's plan as it was read, shared and only read.
+func (s PlanSummary) Plan() Plan { return s.plan }
+
 // TranscriptText is the transcript as plain text for a person to read:
 // sentences in paragraphs, the way the model reads them, see
 // writeSentences, each paragraph opening on a line of its own with the

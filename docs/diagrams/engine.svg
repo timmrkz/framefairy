@@ -47,8 +47,8 @@
 <text class="c" x="84" y="221">speech: hearing, the transcript, words</text>
 <rect class="chip" x="351" y="206" width="309" height="22" rx="6"/>
 <text class="c" x="359" y="221">training: the records of answers and actions</text>
-<rect class="chip" x="76" y="234" width="518" height="22" rx="6"/>
-<text class="c" x="84" y="249">Machine, with each video&#x27;s Episode: its files as read, kept by their stamps</text>
+<rect class="chip" x="76" y="234" width="574" height="22" rx="6"/>
+<text class="c" x="84" y="249">Machine, each video&#x27;s Episode: its transcript, plans, status, room and window, by stamp</text>
 <rect class="box" x="64" y="290" width="672" height="90" rx="8"/>
 <text class="n" x="76" y="312">the log of a run</text>
 <text class="p" x="76" y="330">engine/runlog/</text>
@@ -94,6 +94,8 @@
 <text class="c" x="555" y="567">Exists</text>
 <rect class="chip" x="607" y="552" width="54" height="22" rx="6"/>
 <text class="c" x="615" y="567">IsFile</text>
+<rect class="chip" x="667" y="552" width="56" height="22" rx="6"/>
+<text class="c" x="675" y="567">Stamp</text>
 <rect class="box" x="64" y="608" width="672" height="90" rx="8"/>
 <text class="n" x="76" y="630">numbers, the same on every platform</text>
 <text class="p" x="76" y="648">engine/num/</text>

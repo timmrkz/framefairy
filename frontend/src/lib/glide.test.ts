@@ -41,9 +41,12 @@ describe("the glide of a crop over its marks", () => {
 
   test("finds the mark on the playhead's frame", () => {
     const marks = [{ at: 10.52, x: 100 }];
-    // The playhead anywhere in the frame, the last moment of it too.
+    // The playhead anywhere in the frame, the last moment of it too. A
+    // hair before the next frame's start is in the next frame, the way
+    // the engine counts it, see heldMicros in flow.ts.
     expect(markOn(marks, 10.53, 25)).toEqual(marks[0]);
-    expect(markOn(marks, 10.559, 25)).toEqual(marks[0]);
+    expect(markOn(marks, 10.558, 25)).toEqual(marks[0]);
+    expect(markOn(marks, 10.559, 25)).toBeNull();
     expect(markOn(marks, 10.56, 25)).toBeNull();
   });
 });

@@ -216,20 +216,21 @@ func lengthWithin(size, most, step, least float64) float64 {
 	return size
 }
 
-// PlaceWindow is where the project's video of duration seconds gets its
-// window when nobody has drawn one, from what was searched of it and
-// what one search can read of it, r, the same the range picker fits a
-// window to, see placeWindow.
-func (p *Project) PlaceWindow(r RoomAndLines, duration float64) PlacedWindow {
-	passes := SearchPasses(PlanSummaries(p.Files, p.LogsDir()), duration)
-	return placeWindow(passes, duration, p.Base.Min, r.Longest(duration))
+// PlaceWindow is where the episode's video of duration seconds gets its
+// window when nobody has drawn one, from what was searched of it, its
+// plans, and what one search can read of it with the settings o, r, the
+// same the range picker fits a window to, see placeWindow.
+func (ep *Episode) PlaceWindow(o Options, r RoomAndLines, duration float64) PlacedWindow {
+	passes := SearchPasses(ep.Plans(), duration)
+	return placeWindow(passes, duration, o.Min, r.Longest(duration))
 }
 
 // WindowAfter is where the window goes after the search req found its
 // clips, from where it ended and length long, the length the window was
 // made, or the search's own where that is 0, and no longer than what one
-// search can read of it now, r, see moveWindowOn.
-func (p *Project) WindowAfter(r RoomAndLines, req PlanRequest, length, duration float64) PlacedWindow {
+// search can read of it now, r, with the shortest clip of o, see
+// moveWindowOn.
+func (o Options) WindowAfter(r RoomAndLines, req PlanRequest, length, duration float64) PlacedWindow {
 	ended := req.To
 	if ended <= 0 {
 		ended = duration
@@ -237,5 +238,5 @@ func (p *Project) WindowAfter(r RoomAndLines, req PlanRequest, length, duration 
 	if length <= 0 {
 		length = ended - req.From
 	}
-	return moveWindowOn(ended, length, duration, p.Base.Min, r.Longest(duration))
+	return moveWindowOn(ended, length, duration, o.Min, r.Longest(duration))
 }

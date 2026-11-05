@@ -1,8 +1,19 @@
 package main
 
 import (
+	"fmt"
 	"math"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+
+	"github.com/spf13/afero"
+
+	"framefairy/engine"
+	"framefairy/engine/fileio"
 )
 
 // The number keys ask the engine where a share of the chosen clip lands,
@@ -18,5 +29,134 @@ func TestAShareOfAClipIsAMomentOfThatClip(t *testing.T) {
 	}
 	if _, err := svc.ShareOfClip(mine, plan, "09", 0.5); err == nil {
 		t.Error("a share of a clip the plan does not have was answered")
+	}
+}
+
+// planOpens is a disk that counts how often a plan file is opened, to
+// read it, the one way a plan is read.
+type planOpens struct {
+	afero.Fs
+	n atomic.Int64
+}
+
+func (f *planOpens) Open(name string) (afero.File, error) {
+	f.count(name)
+	return f.Fs.Open(name)
+}
+
+func (f *planOpens) OpenFile(name string, flag int, perm os.FileMode) (afero.File, error) {
+	f.count(name)
+	return f.Fs.OpenFile(name, flag, perm)
+}
+
+func (f *planOpens) count(name string) {
+	if ok, _ := filepath.Match("clips*.json", filepath.Base(name)); ok {
+		f.n.Add(1)
+	}
+}
+
+// The library, the cards of what was said and the captions' look, which
+// a drag asks for on every step, read a plan once between them, and again
+// only once it changed. A video removed from the library lets go of its
+// plans, and one added again reads them afresh. Issue #608.
+func TestTheAppReadsAPlanOnceUntilItChanges(t *testing.T) {
+	counted := &planOpens{Fs: afero.NewMemMapFs()}
+	st := openStoreIn(counted, "/home/tim/config/FrameFairy")
+	video := "/home/tim/videos/ep.mp4"
+	if err := afero.WriteFile(counted, video, []byte("not really a video"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := markAdded(counted, video); err != nil {
+		t.Fatal(err)
+	}
+	st.episodes = []string{video}
+	svc := &FrameFairy{store: st}
+	svc.jobs = newQueue(svc.store, func(JobUpdate) {}, func(string) {})
+	plan := filepath.Join(engine.LogsDir(video), "clips.json")
+	if err := fileio.WriteAtomic(counted, plan, []byte(historyPlan)); err != nil {
+		t.Fatal(err)
+	}
+	ask := func() {
+		t.Helper()
+		_ = svc.Library()
+		_ = svc.Episode(video)
+		if _, err := svc.Sentences(video); err != nil {
+			t.Fatal(err)
+		}
+		for range 3 {
+			_ = svc.captionLook(video, plan)
+		}
+	}
+
+	counted.n.Store(0)
+	ask()
+	ask()
+	if n := counted.n.Load(); n != 1 {
+		t.Errorf("the plan was opened %d times, want once", n)
+	}
+
+	if err := fileio.WriteAtomic(counted, plan, []byte(strings.Replace(historyPlan, "eins", "one", 1))); err != nil {
+		t.Fatal(err)
+	}
+	counted.n.Store(0)
+	ask()
+	if n := counted.n.Load(); n != 1 {
+		t.Errorf("the plan written again was opened %d times, want once", n)
+	}
+
+	if err := svc.RemoveEpisode(video, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.store.AddEpisodes([]string{video}); err != nil {
+		t.Fatal(err)
+	}
+	counted.n.Store(0)
+	ask()
+	if n := counted.n.Load(); n != 1 {
+		t.Errorf("the plan of a video added again was opened %d times, want once, read afresh", n)
+	}
+}
+
+// The library, the cards, the caption look and the status asked from
+// many goroutines at once while the plan is written again and the video
+// is removed from the library and added back, under the race detector.
+// Once all is still, the app shows the plan as its file says.
+func TestThePlansAskedThroughTheAppFromEverywhereAtOnce(t *testing.T) {
+	svc, video, plan := anEpisodeWithAPlan(t)
+	var wg sync.WaitGroup
+	for i := range 60 {
+		wg.Go(func() {
+			switch i % 6 {
+			case 0:
+				body := strings.Replace(historyPlan, "eins", fmt.Sprintf("eins %d", i), 1)
+				_ = fileio.WriteAtomic(svc.store.files, plan, []byte(body))
+			case 1:
+				_ = svc.Library()
+			case 2:
+				_ = svc.Episode(video)
+			case 3:
+				_, _ = svc.Sentences(video)
+			case 4:
+				_ = svc.captionLook(video, plan)
+			default:
+				if i%12 == 5 {
+					_ = svc.RemoveEpisode(video, false)
+				} else {
+					_, _ = svc.store.AddEpisodes([]string{video})
+				}
+			}
+		})
+	}
+	wg.Wait()
+
+	if _, err := svc.store.AddEpisodes([]string{video}); err != nil {
+		t.Fatal(err)
+	}
+	if err := fileio.WriteAtomic(svc.store.files, plan, []byte(strings.Replace(historyPlan, "eins", "last", 1))); err != nil {
+		t.Fatal(err)
+	}
+	v, err := svc.store.machine.Episode(video).ReadPlan(plan)
+	if err != nil || len(v.Clips) != 2 || v.Clips[0].Slug != "last" {
+		t.Errorf("once still, the plan read %v, want the one written last", err)
 	}
 }

@@ -219,7 +219,7 @@ func captionsEpisode(t *testing.T) (*FrameFairy, string, *engine.CaptionsView) {
 	ffmpegtest.Need(t)
 	needDecoder(t)
 	svc, mine, _ := library(t)
-	plan := filepath.Join(svc.project(mine).LogsDir(), "clips.json")
+	plan := filepath.Join(engine.LogsDir(mine), "clips.json")
 	if err := os.MkdirAll(filepath.Dir(plan), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -314,7 +314,7 @@ func TestTheCaptionsRouteAnswersManyAtOnce(t *testing.T) {
 	}
 	wg.Go(func() {
 		for range 6 {
-			if _, err := svc.Captions(mine, filepath.Join(svc.project(mine).LogsDir(), "clips.json"), "01"); err != nil {
+			if _, err := svc.Captions(mine, filepath.Join(engine.LogsDir(mine), "clips.json"), "01"); err != nil {
 				t.Error(err)
 			}
 		}
@@ -398,7 +398,7 @@ func TestTheLookOfAVideoThatCannotBeReadIsAskedOnce(t *testing.T) {
 	// Not parallel: it replaces probeVideo for the whole package.
 	svc, mine, _ := library(t)
 	_, read := testLog(t)
-	plan := filepath.Join(svc.project(mine).LogsDir(), "clips.json")
+	plan := filepath.Join(engine.LogsDir(mine), "clips.json")
 	asked := 0
 	was := probeVideo
 	probeVideo = func(ctx context.Context, path string) (engine.SourceInfo, error) {

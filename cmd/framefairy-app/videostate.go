@@ -62,7 +62,7 @@ func (s *FrameFairy) State(ctx context.Context, path string) (VideoState, error)
 	plans := st.Status.Plans
 	if st.Status.Missing {
 		// A video whose file is gone keeps its clips, see Clips.
-		plans = plansOf(s.store.files, path)
+		plans = s.plansOf(path)
 	}
 	info := sources.lastOf(path)
 	if !st.Status.Missing {

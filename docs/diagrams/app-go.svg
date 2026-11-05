@@ -55,7 +55,7 @@
 <rect class="box" x="64" y="360" width="672" height="106" rx="8"/>
 <text class="n" x="76" y="382">the engine</text>
 <text class="p" x="76" y="400">engine/</text>
-<text class="q" x="76" y="416">reached through engine.Project, and engine.Machine with each video&#x27;s Episode</text>
+<text class="q" x="76" y="416">jobs through engine.Project, and what a video holds through engine.Machine and its Episode</text>
 <rect class="chip" x="76" y="426" width="103" height="22" rx="6"/>
 <text class="c" x="84" y="441">engine/runlog</text>
 <rect class="chip" x="185" y="426" width="96" height="22" rx="6"/>
