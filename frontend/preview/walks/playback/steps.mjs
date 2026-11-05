@@ -6,11 +6,130 @@
 // the helpers only these steps use. See docs/TESTING.md.
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { addHEVC, ask, caughtUp, chosen, clickOnTrack, cropFrame, drag, engineState, episodeOn, filmedOnScreen, fromSidebar, handles, high, holdSound, loudness, middle, news, nextNews, nextPaint, playUntil, pressPlay, preview, readShort, recordFrames, sameLook, sayLook, seekTo, settle, shortFrames, shownOnPlayhead, timeline, xOf, reload, pageUntil, inside } from "../bridge.mjs";
+import { addHEVC, ask, holdClock, letClockGo, realFrames, runClock, caughtUp, chosen, clickOnTrack, cropFrame, drag, engineState, episodeOn, filmedOnScreen, fromSidebar, handles, high, holdSound, loudness, middle, news, nextNews, nextPaint, playUntil, pressPlay, preview, readShort, recordFrames, sameLook, sayLook, seekTo, settle, shortFrames, shownOnPlayhead, timeline, xOf, reload, pageUntil, inside } from "../bridge.mjs";
 import { onePiece, pieceCount, rate, restAhead, shortOf, url } from "../common/steps.mjs";
 import { overlaid, stillFrame } from "../rules.mjs";
 
 export const steps = {
+  // ["reflection"]     the reflection at the foot of the workspace, #717:
+  //                    once it has settled, on the time a held clock is
+  //                    run on, it holds the picture of the video preview,
+  //                    its left on the left and its right on the right, it
+  //                    lies along the bottom edge of the app under the
+  //                    middle of it, four fifths of its width and 100 px
+  //                    tall, and it shows in the room under the controls
+  //                    and changes no pixel of a control or of the clip
+  //                    timeline
+  async reflection(walk) {
+    const { page } = walk;
+    await settle(page);
+    await holdClock(page);
+    // A new frame is settled on over a quarter of a second, so two
+    // seconds leave it there to within a step of colour.
+    await runClock(page, 2000);
+    const placed = await page.evaluate(() => {
+      const r = document.querySelector("canvas.reflection");
+      const screen = document.querySelector(".screen canvas");
+      if (!r || !screen) return { wrong: r ? "the video preview has no canvas" : "the workspace has no reflection" };
+      const box = r.getBoundingClientRect();
+      const W = innerWidth;
+      const H = innerHeight;
+      const wrong = [];
+      if (Math.abs(box.bottom - H) > 0.5) wrong.push(`its foot stands at ${box.bottom.toFixed(1)}, the app's at ${H}`);
+      if (Math.abs(box.height - 100) > 0.5) wrong.push(`it is ${box.height.toFixed(1)} px tall, not 100`);
+      if (Math.abs(box.width - Math.floor(0.8 * W)) > 1) wrong.push(`it is ${box.width.toFixed(1)} px wide, not four fifths of ${W}`);
+      if (Math.abs(box.left + box.width / 2 - W / 2) > 1) wrong.push(`its middle stands at ${(box.left + box.width / 2).toFixed(1)}, the app's at ${W / 2}`);
+      // The reflection's colours, a column of quarters across, against
+      // the video preview's over the same quarters of the frame. The
+      // walks' video preview is a 2D canvas, see __flatScreen, so it reads
+      // back. Black bars around the frame are left out, and so is the
+      // frame's lower half, where the captions are drawn over it, which
+      // the reflection leaves out. The frame's upper half is the
+      // reflection's lower half, the reflection being upside down.
+      const mean = (g, x0, y0, w, h) => {
+        const d = g.getImageData(x0, y0, w, h).data;
+        let sum = 0;
+        for (let i = 0; i < d.length; i += 4) sum += (d[i] + d[i + 1] + d[i + 2]) / 3;
+        return sum / (d.length / 4);
+      };
+      const rg = r.getContext("2d");
+      const sg = screen.getContext("2d");
+      const sw = screen.width;
+      const sh = screen.height;
+      // The cameras' picture is 16 by 9, drawn as large as the canvas
+      // allows, in its middle.
+      const fw = Math.round(Math.min(sw, (sh * 16) / 9));
+      const fh = Math.round((fw * 9) / 16);
+      const fx = Math.round((sw - fw) / 2);
+      const fy = Math.round((sh - fh) / 2);
+      const reflected = [];
+      const shown = [];
+      for (let q = 0; q < 4; q++) {
+        reflected.push(mean(rg, (q * r.width) / 4, r.height / 2, r.width / 4, r.height / 2));
+        shown.push(mean(sg, fx + Math.round((q * fw) / 4), fy, Math.round(fw / 4), Math.round(fh / 2)));
+      }
+      const say = (v) => v.map((x) => x.toFixed(0)).join(", ");
+      if (reflected.some((v, i) => Math.abs(v - shown[i]) > 24)) wrong.push(`its quarters read ${say(reflected)} where the video preview's read ${say(shown)}`);
+      // The quarters have to differ, or a reflection of anything would do.
+      if (Math.max(...shown) - Math.min(...shown) < 40) wrong.push(`the video preview's quarters read ${say(shown)}, too alike to tell a reflection of them from any other`);
+      // What a person works with, which the reflection lies behind.
+      const kept = [...document.querySelectorAll(".detail .row button, .detail .row .timecode, .detail canvas")]
+        .map((e) => e.getBoundingClientRect())
+        .filter((b) => b.width > 0 && b.height > 0 && b.bottom > box.top)
+        .map((b) => ({ x: b.left, y: b.top, w: b.width, h: b.height }));
+      // The room under the controls, under the middle of the app.
+      const room = { x: W / 2 - 100, y: H - 20, w: 200, h: 16 };
+      return { wrong: wrong.join(", "), kept, room, dpr: devicePixelRatio };
+    });
+    if (placed.wrong) {
+      walk.wrong = `the reflection: ${placed.wrong}`;
+      await letClockGo(page);
+      return;
+    }
+    if (!placed.kept.length) {
+      walk.wrong = "the reflection reaches no control or clip timeline, so nothing tells whether it lies behind them";
+      await letClockGo(page);
+      return;
+    }
+    // The app as it is, and with the reflection hidden.
+    const seen = (await page.screenshot()).toString("base64");
+    const hide = await page.addStyleTag({ content: "canvas.reflection { visibility: hidden !important }" });
+    await realFrames(page, 2);
+    const without = (await page.screenshot()).toString("base64");
+    await hide.evaluate((e) => e.remove());
+    await realFrames(page, 2);
+    await letClockGo(page);
+    const told = await page.evaluate(
+      async ({ seen, without, kept, room, dpr }) => {
+        const read = async (b64) => {
+          const img = new Image();
+          img.src = `data:image/png;base64,${b64}`;
+          await img.decode();
+          const c = document.createElement("canvas");
+          c.width = img.naturalWidth;
+          c.height = img.naturalHeight;
+          const g = c.getContext("2d", { willReadFrequently: true });
+          g.drawImage(img, 0, 0);
+          return (b) => g.getImageData(Math.round(b.x * dpr), Math.round(b.y * dpr), Math.round(b.w * dpr), Math.round(b.h * dpr)).data;
+        };
+        const a = await read(seen);
+        const b = await read(without);
+        // The largest step of any colour between the two, over a box.
+        const most = (box) => {
+          const x = a(box);
+          const y = b(box);
+          let m = 0;
+          for (let i = 0; i < x.length; i++) if (i % 4 !== 3) m = Math.max(m, Math.abs(x[i] - y[i]));
+          return m;
+        };
+        const changed = kept.map(most).filter((m) => m > 0).length;
+        return { changed, of: kept.length, room: most(room) };
+      },
+      { seen, without, ...placed },
+    );
+    if (told.changed) walk.wrong = `the reflection changed ${told.changed} of the ${told.of} controls and tracks it lies under, where it should lie behind them`;
+    else if (told.room < 3) walk.wrong = `the reflection does not show in the room under the controls: it changes it by ${told.room} of 255 at most`;
+  },
   // ["read ahead", key] rests until what the video preview reads ahead is
   //                    in, presses the key and checks that the frame it
   //                    lands on was there already, read while the hand

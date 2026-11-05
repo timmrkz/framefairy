@@ -4,6 +4,19 @@
 // for the steps of every folder. See ../sequences.mjs.
 export default [
   {
+    // #717, Tim's idea: the video preview leaves a faint reflection at the
+    // foot of the workspace, as if the video shone towards him, and it
+    // lies behind every control, so nothing that is read or worked with
+    // changes. The two cameras' backdrops and subjects make the quarters
+    // of the picture differ, so the reflection has to hold this picture.
+    name: "the video preview leaves a faint reflection at the foot of the workspace, behind the controls",
+    steps: [
+      ["add cameras", 30, 12],
+      ["wait for", "Search"],
+      ["reflection"],
+    ],
+  },
+  {
     // Tim's idea (2.269): paused, the frames of the word after the playhead
     // and of the word before are read while the hand rests, so Shift and an
     // arrow find their frame there. Before, a step to the next word read on
