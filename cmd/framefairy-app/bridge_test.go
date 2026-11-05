@@ -1548,6 +1548,28 @@ func (b *bridge) close() ([]Job, error) {
 // words the walks before it had heard.
 //
 // On the real disk: it puts back the library where ffmpeg and the episode's decoder read the episode.
+// leftIn names what is in a folder the reset could not remove, each file
+// with how long ago it was written, so a failed reset says what wrote into
+// the folder while it was removed, and when.
+func leftIn(dir string) string {
+	var left []string
+	_ = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil || path == dir {
+			return nil
+		}
+		rel, _ := filepath.Rel(dir, path)
+		if info, err := d.Info(); err == nil && !d.IsDir() {
+			rel += fmt.Sprintf(" (%d bytes, written %d ms ago)", info.Size(), time.Since(info.ModTime()).Milliseconds()) //nolint:forbidigo // how long ago, said in an error, waits on nothing
+		}
+		left = append(left, rel)
+		return nil
+	})
+	if len(left) == 0 {
+		return "nothing"
+	}
+	return strings.Join(left, ", ")
+}
+
 func (b *bridge) reset() error {
 	// A recording the walk before left running is still in hand, and
 	// tells the bus every desk shares what it hears. The app opened again numbers
@@ -1605,7 +1627,7 @@ func (b *bridge) reset() error {
 			continue
 		}
 		if err := os.RemoveAll(filepath.Join(b.d.home, e.Name())); err != nil {
-			return err
+			return fmt.Errorf("%w, and in it now %s", err, leftIn(filepath.Join(b.d.home, e.Name())))
 		}
 	}
 	for _, dir := range []string{workOf(b.first), filepath.Join(b.d.home, "config")} {
