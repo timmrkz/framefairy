@@ -705,6 +705,9 @@ func ownName(c Clip, name string) bool {
 // as much as one in the work folder does, and nothing else in that folder
 // does, not even a file of the same name another episode wrote.
 func (ep *Episode) IsShort(path string) bool {
+	if ep.Linked() != "" {
+		return false
+	}
 	// A short is what ffmpeg wrote, so it is on the disk and its path is
 	// resolved there, whatever fsys the plans are read from, see files.go.
 	real := fileio.ResolvePath(path)

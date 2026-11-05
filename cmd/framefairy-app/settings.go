@@ -281,7 +281,7 @@ func (s *store) AddEpisodes(paths []string) ([]string, error) {
 		if err != nil || seen[abs] {
 			continue
 		}
-		if why := linkedEpisode(s.files, abs); why != "" {
+		if why := s.machine.Episode(abs).Linked(); why != "" {
 			clash = append(clash, why)
 			continue
 		}
@@ -307,24 +307,6 @@ func (s *store) AddEpisodes(paths []string) ([]string, error) {
 		return added, errors.New(strings.Join(clash, ", ") + ", so it cannot be added")
 	}
 	return added, nil
-}
-
-// linkedEpisode says why a video cannot be an episode because it, or the
-// work folder beside it, is a link, or "" when neither is. A link inside
-// a work folder is judged by where it leads, see Known, but the folder
-// itself was taken as it was found: a zip with episode.mp4 and an
-// episode.framefairy that led to the home folder made every file there
-// the episode's, to read, to serve and to write into.
-func linkedEpisode(files afero.Fs, video string) string {
-	if info, err := fileio.LstatIn(files, video); err == nil && info.Mode()&os.ModeSymlink != 0 {
-		return filepath.Base(video) + " is a link, which the app does not follow"
-	}
-	work := engine.WorkDir(video)
-	if info, err := fileio.LstatIn(files, work); err == nil && (info.Mode()&os.ModeSymlink != 0 || !info.IsDir()) {
-		return filepath.Base(work) + " beside " + filepath.Base(video) +
-			" is a link or not a folder, which the app does not follow"
-	}
-	return ""
 }
 
 func (s *store) RemoveEpisode(path string) error {
@@ -422,7 +404,7 @@ var writtenBack = map[string]bool{
 // since leaves the list as it would now.
 func (s *store) markEarlier() {
 	for _, ep := range s.Episodes() {
-		if marked(s.files, ep) || linkedEpisode(s.files, ep) != "" {
+		if marked(s.files, ep) || s.machine.Episode(ep).Linked() != "" {
 			continue
 		}
 		work := engine.WorkDir(ep)
@@ -481,55 +463,39 @@ func (s *store) clearLetGo(path string) (bool, error) {
 
 // Known reports whether a file belongs to an episode in the library: the
 // episode itself, something in its work folder, or the short of one of its
-// clips wherever it was rendered into, see engine.IsShort. Only those files
-// are served to the interface and shown in a folder.
-//
-// A path is judged by where it really leads. A link inside a work folder
-// can point anywhere, and a name is not a promise, so both the path and the
-// folder it has to be inside are resolved before they are compared.
+// clips wherever it was rendered into. Only those files are served to the
+// interface and shown in a folder. Each video says whether a path is its
+// own, by where the path really leads, see engine.Episode.Owns and
+// engine.Episode.IsShort.
 func (s *store) Known(path string) bool {
-	clean := filepath.Clean(path)
-	real := fileio.ResolveIn(s.files, clean)
 	episodes := s.Episodes()
 	for _, ep := range episodes {
-		// An episode whose video or work folder has become a link since
-		// it was added is no longer one: everything under the folder it
-		// leads to would count as the episode's.
-		if linkedEpisode(s.files, ep) != "" {
-			continue
-		}
-		if clean == ep || real == fileio.ResolveIn(s.files, ep) {
-			return true
-		}
-		work := fileio.ResolveIn(s.files, engine.WorkDir(ep)) + string(filepath.Separator)
-		if len(real) > len(work) && real[:len(work)] == work {
+		if s.machine.Episode(ep).Owns(path) {
 			return true
 		}
 	}
 	// A short outside every work folder, in the folder the settings name
 	// for shorts, is the one file outside them that belongs to an episode.
-	// The plans are only read for a file that could be one.
+	// The plans are only looked through for a file that could be one.
+	real := fileio.ResolveIn(s.files, path)
 	if !strings.EqualFold(filepath.Ext(real), ".mp4") {
 		return false
 	}
 	for _, ep := range episodes {
-		if linkedEpisode(s.files, ep) == "" && s.machine.Episode(ep).IsShort(real) {
+		if s.machine.Episode(ep).IsShort(real) {
 			return true
 		}
 	}
 	return false
 }
 
-// PlanOf reports whether plan is a plan of the episode at path: both in the
-// library, and the plan in that episode's own logs folder, where plans are
-// kept. Known alone takes any file of any episode, so a plan of one
-// episode given with the path of another would be edited against the
-// wrong video, the wrong words and the wrong history.
+// PlanOf reports whether plan is a plan of the episode at path: the
+// episode in the library, and the plan its own, in its logs folder, see
+// engine.Episode.HasPlan. Known alone takes any file of any episode, so a
+// plan of one episode given with the path of another would be edited
+// against the wrong video, the wrong words and the wrong history.
 func (s *store) PlanOf(path, plan string) bool {
-	if !s.Known(path) || !s.Known(plan) {
-		return false
-	}
-	return filepath.Dir(fileio.ResolveIn(s.files, plan)) == fileio.ResolveIn(s.files, engine.LogsDir(path))
+	return s.Known(path) && s.machine.Episode(path).HasPlan(plan)
 }
 
 // targetFor is the target typed for a window as long as this one, or 0,
