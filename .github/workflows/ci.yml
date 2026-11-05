@@ -154,7 +154,7 @@ jobs:
   # Go's build cache: setup-go keeps it by go.sum alone and saves it only
   # when go.sum changes, so a job started from one that was weeks old and
   # compiled nearly everything again, a minute here and close to two on a
-  # Mac. The jobs that compile most, linux, walks, macos and outside, take theirs
+  # Mac. The jobs that compile most, linux, walks and outside, take theirs
   # from the cache main saved last, one for each job, because each
   # compiles with other flags, and one for each machine of linux, since
   # each keeps the results of other tests. Main saves it after every
@@ -451,84 +451,6 @@ jobs:
             ~/.cache/go-build
           key: fuzz-v2-${{ runner.os }}-${{ github.sha }}
 
-  # The Go tests on Tim's platform, against the ffmpeg we ship, built by
-  # the same script a release uses, so what renders here is what renders
-  # on a customer's Mac: LGPL, without libx264, encoding through
-  # VideoToolbox. The build takes a while once and is kept until
-  # scripts/build-ffmpeg.sh changes.
-  #
-  # make unit on a Mac leaves out the race detector and the licence
-  # server's packages, see the Makefile, the same as on Tim's Mac. What
-  # differs here, decoding, encoding, the disk, the keychain, is all still
-  # tested. The build with no warnings allowed is in the job outside,
-  # which builds the app anyway.
-  macos:
-    needs: plan
-    if: contains(needs.plan.outputs.mac, ' unit ')
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 2
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: false
-      # Go's build cache, kept by main after every push, see above the job
-      # linux.
-      - id: gocache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/go/pkg/mod
-            ~/Library/Caches/go-build
-          key: go-v1-macos-${{ runner.os }}-${{ github.sha }}
-          restore-keys: go-v1-macos-${{ runner.os }}-
-      # The checksum of the pins of the tools that build them, in the
-      # keys below, so a newer tool builds them again, see
-      # scripts/build-tools.sh.
-      - id: tools
-        run: echo "recipe=$(sh scripts/build-tools.sh --recipe)" >> "$GITHUB_OUTPUT"
-      - id: ffmpeg
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .build/ffmpeg
-          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}-${{ steps.tools.outputs.recipe }}
-      # What builds the ffmpeg we ship, at the versions requirements.txt
-      # pins, see scripts/build-tools.sh. With the ffmpeg from the cache,
-      # only pkg-config, with which the episode's decoder finds its
-      # libraries.
-      - name: What builds them
-        run: |
-          sh scripts/build-tools.sh .build/tools ${{ steps.ffmpeg.outputs.cache-hit == 'true' && 'pkgconf' || '' }}
-          echo "$PWD/.build/tools/bin" >> "$GITHUB_PATH"
-      - name: The ffmpeg we ship
-        if: steps.ffmpeg.outputs.cache-hit != 'true'
-        run: sh scripts/build-ffmpeg.sh .build/ffmpeg
-      - name: ffmpeg on the path, for the tests
-        run: |
-          .build/ffmpeg/bin/ffmpeg -hide_banner -encoders | grep videotoolbox
-          echo "$PWD/.build/ffmpeg/bin" >> "$GITHUB_PATH"
-      # With a limit and a look at what is left, as in the job linux.
-      - name: Go tests
-        timeout-minutes: 15
-        run: |
-          make frames
-          make changed PART=unit 2>&1 | tee unit.log
-          status=${PIPESTATUS[0]}
-          if [ "$status" -ne 0 ]; then sh scripts/test-failures.sh unit.log; fi
-          exit "$status"
-      - name: Nothing left running
-        if: always()
-        run: sh scripts/leftovers.sh
-      - if: ${{ !cancelled() && (github.ref == 'refs/heads/main' || steps.gocache.outputs.cache-matched-key == '') }}
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/go/pkg/mod
-            ~/Library/Caches/go-build
-          key: go-v1-macos-${{ runner.os }}-${{ github.sha }}
-
   # The app on a Mac, opened from outside it: a link in the letter a buyer
   # gets, handed to macOS with the app closed and with it open, with the
   # local dispenser running beside it. See From outside the app in
@@ -570,8 +492,8 @@ jobs:
           node-version-file: .node-version
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      # The same ffmpeg and llama-server as the job macos, from the same
-      # caches: the app runs no other, so make stops without them.
+      # The same ffmpeg and llama-server as the nightly Mac tests, from the
+      # same caches: the app runs no other, so make stops without them.
       # The checksum of the pins of the tools that build them, in the
       # keys below, so a newer tool builds them again, see
       # scripts/build-tools.sh.
@@ -587,7 +509,8 @@ jobs:
         with:
           path: .build/llama
           key: llama-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-llama.sh') }}-${{ steps.tools.outputs.recipe }}
-      # As in the job macos, with cmake too when the llama-server is built.
+      # As in the nightly Mac tests, with cmake too when the llama-server is
+      # built.
       - name: What builds them
         run: |
           sh scripts/build-tools.sh .build/tools ${{ (steps.ffmpeg.outputs.cache-hit == 'true' && steps.llama.outputs.cache-hit == 'true') && 'pkgconf' || '' }}
