@@ -148,7 +148,7 @@ func TestAShapeIsWhatTheGestureSaves(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			fsys, path := editablePlanPath(t)
 			before, _ := afero.ReadFile(fsys, path)
-			shown, err := ShapeClipView(fsys, path, "01", c.g, tr, 0.1, nil)
+			shown, err := ShapeClipView(planAt(t, fsys, path), "01", c.g, tr, 0.1, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -169,7 +169,7 @@ func TestAShapeIsWhatTheGestureSaves(t *testing.T) {
 			if fmt.Sprint(shown.Pieces) != fmt.Sprint(saved) {
 				t.Errorf("shown %v, saved %v", shown.Pieces, saved)
 			}
-			landed, err := ClipCaptionsView(fsys, path, "01", tr, nil)
+			landed, err := ClipCaptionsView(planAt(t, fsys, path), "01", tr, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -192,7 +192,7 @@ func TestAShapeIsWhatTheGestureSaves(t *testing.T) {
 		{Kind: "move", Index: 5, From: 10, To: 11},
 		{Kind: "join", From: 20},
 	} {
-		if _, err := ShapeClip(fsys, path, "01", g, tr, 0.1); err == nil {
+		if _, err := ShapeClip(planAt(t, fsys, path), "01", g, tr, 0.1); err == nil {
 			t.Errorf("%+v was shown", g)
 		}
 		if err := Reshape(fsys, nil, path, "01", g, tr, 0.1); err == nil {
@@ -225,7 +225,7 @@ func TestAWordAnEdgeCutsIntoIsCaptionedWhileItIsSaid(t *testing.T) {
 			if err := TrimClip(fsys, path, "01", c.start, 13.1, tr, 0.1, ToFrames); err != nil {
 				t.Fatal(err)
 			}
-			view, err := ClipCaptionsView(fsys, path, "01", tr, nil)
+			view, err := ClipCaptionsView(planAt(t, fsys, path), "01", tr, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -251,7 +251,7 @@ func TestAWordAnEdgeCutsIntoIsCaptionedWhileItIsSaid(t *testing.T) {
 func TestClipCaptionsComeBackOnTheClipClock(t *testing.T) {
 	fsys, path := editablePlanPath(t)
 	tr := editableTranscript()
-	view, err := ClipCaptionsView(fsys, path, "01", tr, nil)
+	view, err := ClipCaptionsView(planAt(t, fsys, path), "01", tr, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -296,7 +296,7 @@ func TestClipCaptionsComeBackOnTheClipClock(t *testing.T) {
 		t.Errorf("colours %+v", s)
 	}
 
-	if _, err := ClipCaptionsView(fsys, path, "99", tr, nil); err == nil {
+	if _, err := ClipCaptionsView(planAt(t, fsys, path), "99", tr, nil); err == nil {
 		t.Error("a clip that is not in the plan was accepted")
 	}
 }
@@ -434,7 +434,7 @@ func TestTheCaptionLineMovesInStepsAndComesBack(t *testing.T) {
 	}
 
 	// What the app draws sits in the same place.
-	view, err := ClipCaptionsView(fsys, editedPlan, "01", editableTranscript(), nil)
+	view, err := ClipCaptionsView(planAt(t, fsys, editedPlan), "01", editableTranscript(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -788,7 +788,7 @@ func TestCaptionColoursReachTheRenderAndThePreview(t *testing.T) {
 	if err := SetCaptionStyle(fsys, path, map[string]any{"highlight_colour": "#00aa00"}); err != nil {
 		t.Fatal(err)
 	}
-	if view, _ := ClipCaptionsView(fsys, path, "01", tr, nil); view.Style.HighlightColour != "rgba(0, 170, 0, 1)" {
+	if view, _ := ClipCaptionsView(planAt(t, fsys, path), "01", tr, nil); view.Style.HighlightColour != "rgba(0, 170, 0, 1)" {
 		t.Errorf("the pill is %s", view.Style.HighlightColour)
 	}
 	// A highlight with an opacity is kept whole, and the pill is as clear
@@ -796,7 +796,7 @@ func TestCaptionColoursReachTheRenderAndThePreview(t *testing.T) {
 	if err := SetCaptionStyle(fsys, path, map[string]any{"highlight_colour": "&H6600AA00"}); err != nil {
 		t.Fatal(err)
 	}
-	if view, _ := ClipCaptionsView(fsys, path, "01", tr, nil); view.Style.HighlightColour != "rgba(0, 170, 0, 0.6)" {
+	if view, _ := ClipCaptionsView(planAt(t, fsys, path), "01", tr, nil); view.Style.HighlightColour != "rgba(0, 170, 0, 0.6)" {
 		t.Errorf("the pill is %s", view.Style.HighlightColour)
 	}
 	if plan, _, err := LoadClips(fsys, path); err != nil {
@@ -804,7 +804,7 @@ func TestCaptionColoursReachTheRenderAndThePreview(t *testing.T) {
 	} else if s := ResolveStyle(plan.CaptionStyle()); s.HighlightColour != "&H00AA00&" || s.HighlightAlpha != "66" {
 		t.Errorf("the render would draw the pill %s at %s", s.HighlightColour, s.HighlightAlpha)
 	}
-	view, err := ClipCaptionsView(fsys, path, "01", tr, nil)
+	view, err := ClipCaptionsView(planAt(t, fsys, path), "01", tr, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -975,7 +975,7 @@ func TestTheWordsShownAreTheWordsTheCaptionsLight(t *testing.T) {
 		t.Fatal(err)
 	}
 	stops := ShowWords(tr.Of(clip).WordsBetween(10, 14), ResolveStyle(captionStyle(loaded, clip)), tr.Language)
-	view, err := ClipCaptionsView(fsys, path, "01", tr, nil)
+	view, err := ClipCaptionsView(planAt(t, fsys, path), "01", tr, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1000,7 +1000,7 @@ func TestTheWordsShownAreTheWordsTheCaptionsLight(t *testing.T) {
 	// clip dragged onto the second half of the long word starts the clip
 	// there, and the playhead is on that start, in line with the edge.
 	half := stops[1]
-	shaped, err := ShapeClip(fsys, path, "01", Gesture{Kind: "trim", Edge: "start", From: half.Start + 0.01,
+	shaped, err := ShapeClip(planAt(t, fsys, path), "01", Gesture{Kind: "trim", Edge: "start", From: half.Start + 0.01,
 		ToWords: true, Frames: at25}, tr, 0.1)
 	if err != nil {
 		t.Fatal(err)
@@ -1245,7 +1245,7 @@ func TestACutsEdgeTakesThePlayheadTheWayTheClipsEdgesDo(t *testing.T) {
 			t.Parallel()
 			fsys, path := cutsPlanPath(t)
 			c.g.Frames = at25
-			shaped, err := ShapeClip(fsys, path, "02", c.g, tr, 0.1)
+			shaped, err := ShapeClip(planAt(t, fsys, path), "02", c.g, tr, 0.1)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1262,7 +1262,7 @@ func TestACutsEdgeTakesThePlayheadTheWayTheClipsEdgesDo(t *testing.T) {
 	// Both edges of a cut moved at once, the way a clip moved whole is,
 	// leave the playhead where it is.
 	fsys, path := cutsPlanPath(t)
-	shaped, err := ShapeClip(fsys, path, "02", Gesture{Kind: "move", From: 20.5, To: 24.5, Frames: at25}, tr, 0.1)
+	shaped, err := ShapeClip(planAt(t, fsys, path), "02", Gesture{Kind: "move", From: 20.5, To: 24.5, Frames: at25}, tr, 0.1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1314,7 +1314,7 @@ func TestAnEdgeOnWordsGoesTheWayOfTheHand(t *testing.T) {
 			fsys, path := writePlanAt(t, plan)
 			c.g.ToWords = true
 			c.g.Frames = at25
-			shaped, err := ShapeClip(fsys, path, "02", c.g, tr, 0.1)
+			shaped, err := ShapeClip(planAt(t, fsys, path), "02", c.g, tr, 0.1)
 			if err != nil {
 				t.Fatal(err)
 			}

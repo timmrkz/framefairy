@@ -2,6 +2,7 @@ package main
 
 import (
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/rs/zerolog"
@@ -39,7 +40,7 @@ func (s *FrameFairy) reconcile(changed []string) {
 	defer s.reconciling.Unlock()
 	follow := changed == nil
 	for _, ep := range s.store.Episodes() {
-		if changed != nil && !touches(ep, changed) {
+		if changed != nil && !touches(ep, changed) && !touchesShort(s.shortsOf(ep), changed) {
 			continue
 		}
 		if s.letGoIfRemoved(ep) {
@@ -58,10 +59,20 @@ func (s *FrameFairy) reconcile(changed []string) {
 			follow = true
 			s.listChanged(ep)
 		}
+		// A plan written may name a short just rendered.
+		if writesPlan(ep, changed) {
+			follow = true
+		}
 	}
 	if follow {
-		s.watch.follow(s.store.files, s.store.Episodes())
+		s.watch.follow(s.store.files, s.store.Episodes(), s.shortsOf)
 	}
+}
+
+// shortsOf is the shorts of a video, as its plans say, see
+// engine.Episode.Shorts.
+func (s *FrameFairy) shortsOf(video string) []string {
+	return s.store.machine.Episode(video).Shorts()
 }
 
 // touches says whether a change at one of the paths can change what the
@@ -72,6 +83,30 @@ func touches(video string, changed []string) bool {
 	sep := string(filepath.Separator)
 	for _, p := range changed {
 		if p == video || p == work || strings.HasPrefix(p, work+sep) || strings.HasPrefix(video, p+sep) {
+			return true
+		}
+	}
+	return false
+}
+
+// touchesShort says whether one of the paths is one of a video's shorts,
+// a short deleted or moved in Finder. It is asked only when touches says
+// no, because the shorts are read from the plans.
+func touchesShort(shorts, changed []string) bool {
+	for _, p := range changed {
+		if slices.Contains(shorts, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// writesPlan says whether one of the paths is a plan of video, which a
+// render writes the folder of its short into.
+func writesPlan(video string, changed []string) bool {
+	logs := engine.LogsDir(video)
+	for _, p := range changed {
+		if ok, _ := filepath.Match("clips*.json", filepath.Base(p)); ok && filepath.Dir(p) == logs {
 			return true
 		}
 	}

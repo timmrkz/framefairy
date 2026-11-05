@@ -110,8 +110,15 @@ func TestAShortBeingWrittenIsNotCounted(t *testing.T) {
 	if err := recordShort(disk, plan, "01", filepath.Join(out, "done.mp4")); err != nil {
 		t.Fatal(err)
 	}
-	if got := NewMachine(disk).Episode(source).Status("", nil).Rendered; got != 1 {
+	ep := NewMachine(disk).Episode(source)
+	if got := ep.Status("", nil).Rendered; got != 1 {
 		t.Errorf("%d rendered, want 1", got)
+	}
+	// Its shorts, for the app to watch: the one the plan noted, and none
+	// it did not note, though they are in the same folder.
+	want := fileio.ResolvePath(filepath.Join(out, "done.mp4"))
+	if got := ep.Shorts(); len(got) != 1 || got[0] != want {
+		t.Errorf("the shorts are %v, want %s", got, want)
 	}
 }
 
@@ -250,7 +257,7 @@ func TestAShortInTheOutputFolderIsTheClipsShort(t *testing.T) {
 	if c := shortOfClip(t, plan, "01"); c.Short != "" || c.Rendered {
 		t.Errorf("a clip never rendered says it is, at %q", c.Short)
 	}
-	if IsShort(disk, source, other) {
+	if NewMachine(disk).Episode(source).IsShort(other) {
 		t.Error("another episode's short is taken for this clip's")
 	}
 
@@ -261,7 +268,7 @@ func TestAShortInTheOutputFolderIsTheClipsShort(t *testing.T) {
 	if got := shortOfClip(t, plan, "01").Short; got != short {
 		t.Errorf("the clip says its short is %q, not %q", got, short)
 	}
-	if !IsShort(disk, source, short) {
+	if !NewMachine(disk).Episode(source).IsShort(short) {
 		t.Error("the short in the folder for shorts is not the clip's")
 	}
 	if n := rendered(); n != 1 {
@@ -271,7 +278,7 @@ func TestAShortInTheOutputFolderIsTheClipsShort(t *testing.T) {
 	if err := os.WriteFile(beside, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if IsShort(disk, source, beside) || IsShort(disk, source, shorts) || IsShort(disk, source, other) {
+	if NewMachine(disk).Episode(source).IsShort(beside) || NewMachine(disk).Episode(source).IsShort(shorts) || NewMachine(disk).Episode(source).IsShort(other) {
 		t.Error("what is beside the short is taken for one")
 	}
 
@@ -281,7 +288,7 @@ func TestAShortInTheOutputFolderIsTheClipsShort(t *testing.T) {
 	if c := shortOfClip(t, plan, "01"); c.Short != "" || !c.Rendered {
 		t.Errorf("a short removed by hand is still the clip's, at %q, or the clip no longer says it was rendered", c.Short)
 	}
-	if IsShort(disk, source, short) {
+	if NewMachine(disk).Episode(source).IsShort(short) {
 		t.Error("a short removed by hand is still taken for the clip's")
 	}
 	if n := rendered(); n != 1 {
@@ -314,7 +321,7 @@ func TestARenderAgainWritesOverOnlyItsOwnShort(t *testing.T) {
 	if again, want := placeShort(t, plan, dir, "01"), filepath.Join(dir, "wort 2.mp4"); again != want {
 		t.Errorf("rendered again after its short was written over by hand, the short went to %s, not %s", again, want)
 	}
-	if IsShort(disk, source, short) {
+	if NewMachine(disk).Episode(source).IsShort(short) {
 		t.Error("the file written over by hand is still taken for the clip's short")
 	}
 
@@ -366,7 +373,7 @@ func TestTwoEpisodesKeepTheirOwnShorts(t *testing.T) {
 				if got := shortOfClip(t, ep.plan, "01").Short; got != ep.short {
 					t.Errorf("the clip of episode %d says its short is %q, not %q", i+1, got, ep.short)
 				}
-				if other := eps[1-i]; IsShort(disk, ep.source, other.short) {
+				if other := eps[1-i]; NewMachine(disk).Episode(ep.source).IsShort(other.short) {
 					t.Errorf("episode %d takes %s for its own", i+1, other.short)
 				}
 			}

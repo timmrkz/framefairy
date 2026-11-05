@@ -597,8 +597,12 @@ func TestPlansHeldFromEverywhereAtOnce(t *testing.T) {
 					_ = fsys.Remove(other)
 				}
 			case 1:
+				// The views of a drag share the plan the episode holds.
 				for _, p := range ep.Plans() {
 					_ = p.View()
+					_, _ = ClipShareTime(p, "01", 0.5)
+					_, _ = ClipCaptionsView(p, "01", &Transcript{}, nil)
+					_, _ = ShapeClipView(p, "01", Gesture{Kind: "trim", Edge: "start", From: 1}, &Transcript{}, 0, nil)
 				}
 			case 2:
 				_ = ep.Status("", nil)
@@ -606,7 +610,13 @@ func TestPlansHeldFromEverywhereAtOnce(t *testing.T) {
 					m.Forget(source)
 				}
 			default:
+				// What an edit and a path check ask of the episode.
 				_, _ = ep.ReadPlan(plan)
+				_ = ep.TakeSnapshot(nil)
+				_ = ep.Shorts()
+				_ = ep.IsShort("/v/out/clip-01.mp4")
+				_ = ep.Owns(plan)
+				_ = ep.HasPlan(plan)
 			}
 		})
 	}
@@ -623,4 +633,25 @@ func TestPlansHeldFromEverywhereAtOnce(t *testing.T) {
 	if len(plans) != 1 || plans[0].Path != plan || plans[0].Clips != 3 {
 		t.Errorf("after the writes the episode lists %+v, want the one plan of 3 clips", plans)
 	}
+}
+
+// planAt is the plan file at path as a video's Episode holds it, for a
+// test of a view, which takes the plan held rather than a path.
+func planAt(t testing.TB, fsys afero.Fs, path string) PlanSummary {
+	t.Helper()
+	s, err := summaryOf(fsys, path)
+	if err != nil {
+		t.Fatalf("the plan %s is not read: %v", filepath.Base(path), err)
+	}
+	return s
+}
+
+// snapshotAt is the snapshot of the plans in logs as they are now, the
+// way Episode.TakeSnapshot takes it.
+func snapshotAt(fsys afero.Fs, logs string) *Snapshot {
+	var paths []string
+	for _, p := range PlanSummaries(fsys, logs) {
+		paths = append(paths, p.Path)
+	}
+	return snapshotOf(fsys, nil, logs, paths)
 }

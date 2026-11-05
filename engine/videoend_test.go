@@ -44,7 +44,7 @@ func TestAClipEndsWhereTheVideoDoes(t *testing.T) {
 				t.Fatal(err)
 			}
 			c.g.Frames = nearTheEnd
-			shaped, err := ShapeClip(fsys, path, "01", c.g, nearTheEndWords, 0.1)
+			shaped, err := ShapeClip(planAt(t, fsys, path), "01", c.g, nearTheEndWords, 0.1)
 			if err != nil {
 				t.Fatal(err)
 			}

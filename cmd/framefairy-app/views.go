@@ -156,7 +156,11 @@ func (s *FrameFairy) Captions(path, planPath, clipID string) (*engine.CaptionsVi
 	if err != nil {
 		return nil, err
 	}
-	view, err := engine.ClipCaptionsView(s.store.files, planPath, clipID, t, s.captionLook(path, planPath))
+	summary, err := s.heldPlan(path, planPath)
+	if err != nil {
+		return nil, err
+	}
+	view, err := engine.ClipCaptionsView(summary, clipID, t, s.lookOf(path, summary))
 	captionTracks.keep(path, view)
 	return view, err
 }
@@ -168,7 +172,11 @@ func (s *FrameFairy) ShareOfClip(path, planPath, clipID string, share float64) (
 	if !s.store.PlanOf(path, planPath) {
 		return 0, errNotInLibrary
 	}
-	return engine.ClipShareTime(s.store.files, planPath, clipID, share)
+	summary, err := s.heldPlan(path, planPath)
+	if err != nil {
+		return 0, err
+	}
+	return engine.ClipShareTime(summary, clipID, share)
 }
 
 // captionLook is how the captions of the clips of planPath of the episode
@@ -181,7 +189,19 @@ func (s *FrameFairy) ShareOfClip(path, planPath, clipID string, share float64) (
 // The plan is read through the video's Episode, which reads it again only
 // when its file changed, since a drag asks for the look on every step.
 func (s *FrameFairy) captionLook(path, planPath string) *engine.Look {
-	summary, _ := s.store.machine.Episode(path).Plan(planPath)
+	summary, _ := s.heldPlan(path, planPath)
+	return s.lookOf(path, summary)
+}
+
+// heldPlan is the plan at planPath of the video at path, as the video's
+// Episode holds it, read again only when its file changed. What it gives
+// is shared and only read.
+func (s *FrameFairy) heldPlan(path, planPath string) (engine.PlanSummary, error) {
+	return s.store.machine.Episode(path).Plan(planPath)
+}
+
+// lookOf is captionLook of a plan already in hand.
+func (s *FrameFairy) lookOf(path string, summary engine.PlanSummary) *engine.Look {
 	plan := summary.Plan()
 	style, err := s.store.Settings().options().CaptionLook(plan)
 	if err != nil {
@@ -270,7 +290,10 @@ func (s *FrameFairy) ArrivingCaptions(jobID string, n int) (*engine.CaptionsView
 				if err != nil {
 					return nil, err
 				}
-				view := engine.ArrivingCaptionsView(s.store.files, plan, u, t, s.captionLook(j.Episode, plan))
+				// The plan the clip goes into may not be written yet, and
+				// its captions are then in the plan's own style.
+				summary, _ := s.heldPlan(j.Episode, plan)
+				view := engine.ArrivingCaptionsView(summary, u, t, s.lookOf(j.Episode, summary))
 				captionTracks.keep(j.Episode, view)
 				return view, nil
 			}
