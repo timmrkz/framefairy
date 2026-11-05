@@ -72,6 +72,7 @@
   import { wordFramesOf, type WordFrame } from "../lib/frames/captions";
   import RangeWindow from "../components/RangeWindow.svelte";
   import Player, { type PlayerOffers } from "../components/Player.svelte";
+  import Reflection from "../components/Reflection.svelte";
   import Busy from "../components/Busy.svelte";
   import ClipList from "../components/ClipList.svelte";
   import SaidList from "../components/SaidList.svelte";
@@ -173,6 +174,7 @@
     else if (hovered === key) hovered = "";
   }
   let player = $state<Player>();
+  let reflection = $state<Reflection>();
   let timeline = $state<ClipTimeline>();
   // The column the video preview and the range picker stand in, which a
   // clip fitted on the clip timeline is centred under.
@@ -2854,6 +2856,7 @@
      layout below is the browser's own work from there on. -->
 <section bind:this={root} style="--ar: {ratio}">
   {#if source}
+    <Reflection bind:this={reflection} shown={!status?.missing} />
     <div class="stage">
       <div class="settings">
         <div class="group asks">
@@ -3209,6 +3212,7 @@
           {path}
           {source}
           missing={!!status?.missing}
+          onframe={(frame) => reflection?.take(frame)}
           clip={shownClip}
           making={making?.key}
           opening={!opened}
@@ -3702,6 +3706,10 @@
     flex: 1;
     min-height: 0;
     overflow: auto;
+    /* What the reflection of the video preview is placed in, and kept
+       behind everything else in, see Reflection.svelte. */
+    position: relative;
+    isolation: isolate;
   }
 
   /* Every height a whole number of pixels, where the browser can do the

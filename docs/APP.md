@@ -466,6 +466,19 @@ Selecting an episode opens its workspace. It is three columns, the settings
 on the left, the video preview in the middle and the clips on the right, with
 the clip up close under all three. It fits the app without scrolling.
 
+The video preview leaves a faint reflection at the foot of the workspace,
+as if the video shone towards the person in front of it: the frame on
+screen, upside down, stretched along the bottom edge of the app under
+the middle of it, blurred and faded out upwards. It lies behind
+everything in the workspace, so it only shows in the room between the
+controls, and nothing that is read or worked with changes. A new frame
+is settled on over a quarter of a second, so a cut fades over rather
+than flashing. It reads the frame the video preview already has, a few
+thousand of its pixels, and nothing else, so playback does not notice
+it, see `frontend/src/lib/frames/reflection.ts` and
+`frontend/src/components/Reflection.svelte`. How tall, wide, blurred and
+strong it is are the `--reflection-` tokens in `app.css`.
+
 The video preview plays the episode from its own queue of frames, see
 `frontend/src/lib/frames/`. The app reads the samples of the picture and
 the sound straight from the episode file, a range at a time, decodes them
