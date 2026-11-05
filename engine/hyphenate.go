@@ -45,10 +45,30 @@ type hyphenator struct {
 	joints *hyphenator
 }
 
-var (
-	hyphenatorsMu sync.Mutex
-	hyphenators   = map[string]*hyphenator{}
-)
+// hyphenators is the hyphenator of each language the program has patterns
+// for, each read the first time it is asked for. The table is made once
+// from the patterns built into the program and never changes after, so it
+// is the same for every machine and every test, and no cache that one can
+// fill for another.
+var hyphenators = func() map[string]func() *hyphenator {
+	table := map[string]func() *hyphenator{}
+	names, _ := fs.Glob(hyphenationFiles, "hyphenation/hyph-*.pat.txt")
+	for _, name := range names {
+		code, _, _ := strings.Cut(strings.TrimPrefix(name, "hyphenation/hyph-"), "-")
+		code = strings.TrimSuffix(code, ".pat.txt")
+		if _, ok := table[code]; ok {
+			continue
+		}
+		table[code] = sync.OnceValue(func() *hyphenator {
+			h := loadPatterns(patternFile(code))
+			if h != nil {
+				h.joints = loadPatterns(jointsFile(code))
+			}
+			return h
+		})
+	}
+	return table
+}()
 
 // patternFile is the pattern file of a language, as ISO 639-1: the one
 // named for it, or the one whose tag begins with it, like de-1996 for
@@ -87,17 +107,10 @@ func jointsFile(code string) string {
 // hyphenatorFor gives the hyphenator of a language, as ISO 639-1, or nil
 // when there are no patterns for it. Each is read once.
 func hyphenatorFor(code string) *hyphenator {
-	hyphenatorsMu.Lock()
-	defer hyphenatorsMu.Unlock()
-	if h, ok := hyphenators[code]; ok {
-		return h
+	if read, ok := hyphenators[code]; ok {
+		return read()
 	}
-	h := loadPatterns(patternFile(code))
-	if h != nil {
-		h.joints = loadPatterns(jointsFile(code))
-	}
-	hyphenators[code] = h
-	return h
+	return nil
 }
 
 // loadPatterns reads one pattern file and the fewest letters its header

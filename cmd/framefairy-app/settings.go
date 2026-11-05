@@ -189,7 +189,6 @@ func openStoreIn(files afero.Fs, dir string) *store {
 	s.load("library.json", &s.episodes)
 	s.settings.tidy()
 	s.apply(s.settings)
-	s.markEarlier()
 	return s
 }
 
@@ -387,46 +386,6 @@ func deletedOutside(files afero.Fs, video string) bool {
 	return err == nil && dir.IsDir()
 }
 
-// writtenBack are the files the app writes into a video's folder when it
-// is asked about the video, opened or its waveform drawn, whether the
-// folder is there or not. A folder that holds nothing else was written
-// back after it was deleted.
-var writtenBack = map[string]bool{
-	chosenFile:                             true,
-	filepath.Join("logs", "levels.json"):   true,
-	filepath.Join("logs", "levels.frames"): true,
-}
-
-// markEarlier marks the folders of the videos added before there was a
-// mark, once, as the library is read: every folder that holds work of
-// its own. A folder that holds only what the app writes back is not
-// marked, so a folder deleted under an earlier version and written back
-// since leaves the list as it would now.
-func (s *store) markEarlier() {
-	for _, ep := range s.Episodes() {
-		if marked(s.files, ep) || s.machine.Episode(ep).Linked() != "" {
-			continue
-		}
-		work := engine.WorkDir(ep)
-		own := afero.Walk(s.files, work, func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				return err
-			}
-			rel, _ := filepath.Rel(work, path)
-			if info.Mode().IsRegular() && !writtenBack[rel] {
-				return errOwnWork
-			}
-			return nil
-		})
-		if errors.Is(own, errOwnWork) {
-			_ = markAdded(s.files, ep)
-		}
-	}
-}
-
-// errOwnWork ends the look through a folder at its first file of work.
-var errOwnWork = errors.New("work of its own")
-
 // letGo takes a video whose folder was deleted outside the app out of the
 // library, and says whether it did: of two reads of the library at once,
 // one lets it go.
@@ -458,7 +417,7 @@ func (s *store) clearLetGo(path string) (bool, error) {
 	if _, err := fileio.LstatIn(s.files, engine.WorkDir(path)); err != nil {
 		return false, nil
 	}
-	return true, engine.DeleteWork(s.files, path)
+	return true, s.machine.DeleteWork(path)
 }
 
 // Known reports whether a file belongs to an episode in the library: the

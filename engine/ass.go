@@ -590,7 +590,7 @@ func bandSlot(block string, size int) int {
 // measureMany measures any number of blocks, a frame at a time, so a clip
 // with many words stays inside the height one frame can have. A block
 // measured before in the same face, size and width is not measured again,
-// see measured, so the caption file of a clip is made again in a moment
+// see Machine.measured, so the caption file of a clip is made again in a moment
 // whenever the video preview needs it in another colour or place.
 func (e *Engine) measureMany(ctx context.Context, blocks []string, s Style,
 	width, size int) ([]*inkBox, bool) {
@@ -600,6 +600,7 @@ func (e *Engine) measureMany(ctx context.Context, blocks []string, s Style,
 	// see measureKey, and so is one of the machine's, whose copy is named
 	// after the version of its file. Anything else is measured each time.
 	_, keep := FontByName(s.Font)
+	measured, _ := e.captions()
 	for i, block := range blocks {
 		if box, ok := measured.get(measureKey(block, s, width, size)); ok && keep {
 			out[i] = box
@@ -651,8 +652,6 @@ type inkCache struct {
 	mu    sync.Mutex
 	boxes map[string]inkBox
 }
-
-var measured = &inkCache{boxes: map[string]inkBox{}}
 
 func (c *inkCache) get(key string) (*inkBox, bool) {
 	c.mu.Lock()

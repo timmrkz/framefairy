@@ -61,9 +61,10 @@ func TestAFileIsProbedOnceUntilItChanges(t *testing.T) {
 	if err := os.WriteFile(video, []byte("a video"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	machine := &Machine{}
 	probe := func() SourceInfo {
 		t.Helper()
-		e := &Engine{Machine: &Machine{}, Log: runlog.New(io.Discard, false, false), FFprobe: ffprobe}
+		e := &Engine{Machine: machine, Log: runlog.New(io.Discard, false, false), FFprobe: ffprobe}
 		info, err := e.Probe(ctx, video)
 		if err != nil {
 			t.Fatal(err)
@@ -99,6 +100,13 @@ func TestAFileIsProbedOnceUntilItChanges(t *testing.T) {
 	probe()
 	if got := runs(); got != 2*once {
 		t.Errorf("a file written again was asked about %d times, not %d", got-once, once)
+	}
+
+	// Another machine, another program's or another test's, keeps its own.
+	machine = &Machine{}
+	probe()
+	if got := runs(); got != 3*once {
+		t.Errorf("a second machine was asked about the file %d times, not %d", got-2*once, once)
 	}
 }
 
@@ -138,9 +146,10 @@ func TestTheSubtitleSyntaxIsFoundOnceForEveryEngine(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ffmpeg, runs := countingTool(t, "ffmpeg")
+	machine := &Machine{}
 	find := func() string {
 		t.Helper()
-		e := &Engine{Machine: &Machine{}, Log: runlog.New(io.Discard, false, false), FFmpeg: ffmpeg}
+		e := &Engine{Machine: machine, Log: runlog.New(io.Discard, false, false), FFmpeg: ffmpeg}
 		template, err := e.SubtitleFilter(ctx)
 		if err != nil {
 			t.Fatal(err)
@@ -161,7 +170,7 @@ func TestTheSubtitleSyntaxIsFoundOnceForEveryEngine(t *testing.T) {
 }
 
 // Preflight asks ffmpeg and ffprobe for their versions once for the
-// process, not once for every engine the app makes.
+// program's machine, not once for every engine the app makes.
 //
 // On the real disk: the stand-ins are programs the engine runs.
 func TestEveryToolIsAskedItsVersionOnce(t *testing.T) {
@@ -177,8 +186,9 @@ func TestEveryToolIsAskedItsVersionOnce(t *testing.T) {
 		}
 		return n
 	}
+	machine := &Machine{}
 	for range 3 {
-		e := &Engine{Machine: &Machine{}, Log: runlog.New(io.Discard, false, false), FFmpeg: ffmpeg, FFprobe: ffprobe,
+		e := &Engine{Machine: machine, Log: runlog.New(io.Discard, false, false), FFmpeg: ffmpeg, FFprobe: ffprobe,
 			SkipCaptions: true}
 		// The stand-in knows no encoder, so Preflight fails past the
 		// versions. It must fail there, not on either tool.

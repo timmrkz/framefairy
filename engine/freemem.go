@@ -30,9 +30,13 @@ import (
 // ---------------------------------------------------------------------------
 
 // freeMemory is how much memory the system can give a program now, in
-// bytes, or zero when it will not say. A variable, so a test can be any
-// machine in any state.
-var freeMemory = FreeMemory
+// bytes, or zero when it will not say, see Machine.free.
+func (m *Machine) freeMemory() int64 {
+	if m.free != nil {
+		return m.free()
+	}
+	return FreeMemory()
+}
 
 // FreeMemory is how much memory the system can give a program now, in
 // bytes, or zero when it cannot tell. Memory the system only uses to cache
@@ -109,13 +113,18 @@ func modelNeeds(model string, ctx int) int64 {
 // roomForModel says why a model cannot be started with a context of ctx
 // tokens in the memory that is free now, or nothing when it can, or when
 // the system does not say what is free.
-func roomForModel(model string, ctx int) error {
-	free := freeMemory()
+func (m *Machine) roomForModel(model string, ctx int) error {
+	// A model whose needs are not known is not checked, so the system is
+	// not asked what is free.
 	need := modelNeeds(model, ctx)
-	if free <= 0 || need <= 0 || need <= free {
+	if need <= 0 {
 		return nil
 	}
-	return tooLittleMemory(need, free, otherServers())
+	free := m.freeMemory()
+	if free <= 0 || need <= free {
+		return nil
+	}
+	return tooLittleMemory(need, free, m.otherServers())
 }
 
 // ErrNoRoom is a model that does not fit in the memory free now. A search
@@ -155,13 +164,13 @@ func (e *Engine) roomBeforeSearch(opts Options, seconds float64) error {
 	if err != nil {
 		return nil
 	}
-	host.mu.Lock()
-	held := host.model != nil
-	host.mu.Unlock()
+	e.host.mu.Lock()
+	held := e.host.model != nil
+	e.host.mu.Unlock()
 	if held {
 		return nil
 	}
-	return roomForModel(local.Model, warmSize(local.Model, seconds, opts.MaxTokens))
+	return e.roomForModel(local.Model, e.warmSize(local.Model, seconds, opts.MaxTokens))
 }
 
 // inGB is a size in gigabytes the way the app says a model's size, in
@@ -170,10 +179,19 @@ func inGB(n int64) string {
 	return strconv.FormatFloat(float64(n)/1e9, 'f', 1, 64) + " GB"
 }
 
-// otherServers is the process numbers of the llama-servers running now.
-// Before a model is started none of this program's own is, so any there
-// is holds memory somebody else started it for.
-var otherServers = func() []string {
+// otherServers is the process numbers of the llama-servers running now,
+// see Machine.servers. Before a model is started none of this program's
+// own is, so any there is holds memory somebody else started it for.
+func (m *Machine) otherServers() []string {
+	if m.servers != nil {
+		return m.servers()
+	}
+	return runningServers()
+}
+
+// runningServers is the process numbers of the llama-servers the system
+// runs now.
+func runningServers() []string {
 	if runtime.GOOS == "windows" {
 		return nil
 	}

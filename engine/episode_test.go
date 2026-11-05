@@ -68,7 +68,7 @@ func TestAnEpisodeRemembersItHasBeenSearched(t *testing.T) {
 		t.Errorf("status after a search %+v", st)
 	}
 
-	if err := DeleteWork(fsys, source); err != nil {
+	if err := NewMachine(fsys).DeleteWork(source); err != nil {
 		t.Fatal(err)
 	}
 	if NewMachine(fsys).Episode(source).EverSearched() {

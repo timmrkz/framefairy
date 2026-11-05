@@ -73,6 +73,9 @@ type fontShelf struct {
 	faces   []machineFace
 	byName  map[string]int
 	scanned time.Time
+	// metrics is what was read of each face, which the shelf forgets
+	// whenever it reads the folders again, see face.
+	metrics metricsCache
 }
 
 var shelf = &fontShelf{}
@@ -90,7 +93,7 @@ func UseFontFolders(fsys afero.Fs, dirs []string) {
 	shelf.fsys, shelf.dirs = fsys, dirs
 	shelf.faces, shelf.byName, shelf.scanned = nil, nil, time.Time{}
 	shelf.mu.Unlock()
-	forgetMetrics()
+	shelf.metrics.forget()
 }
 
 // FontFolders are the folders a system keeps its fonts in, the user's own
@@ -162,7 +165,7 @@ func (s *fontShelf) scan() {
 	s.mu.Lock()
 	s.faces, s.byName, s.scanned = faces, byName, time.Now()
 	s.mu.Unlock()
-	forgetMetrics()
+	s.metrics.forget()
 }
 
 // all is every face on the shelf, read the first time it is asked for.

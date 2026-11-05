@@ -404,7 +404,7 @@ func (e *Engine) SubtitleFilter(ctx context.Context) (string, error) {
 	}
 	key, keep := keyFor("subtitle filter", e.FFmpeg, "")
 	if keep {
-		if template, ok := recall[string](key); ok {
+		if template, ok := recall[string](e.Machine, key); ok {
 			learned.mu.Lock()
 			learned.subtitleTemplate = template
 			learned.mu.Unlock()
@@ -462,7 +462,7 @@ func (e *Engine) SubtitleFilter(ctx context.Context) (string, error) {
 			learned.subtitleTemplate = candidate
 			learned.mu.Unlock()
 			if keep {
-				remember(key, candidate)
+				remember(e.Machine, key, candidate)
 			}
 			e.Log.Detail("subtitle filter syntax: %s", chain)
 			return candidate, nil
@@ -497,7 +497,7 @@ func (e *Engine) Preflight(ctx context.Context) error {
 	// A tool that ran once runs again until it is replaced, so each is
 	// asked once for the process, the way the subtitle syntax is.
 	ffmpegKey, keepFFmpeg := keyFor("ffmpeg version", e.FFmpeg, "")
-	first, ran := recall[string](ffmpegKey)
+	first, ran := recall[string](e.Machine, ffmpegKey)
 	if !ran {
 		version := e.Runner.Run(ctx, "", e.FFmpeg, "-version")
 		if version.Code != 0 {
@@ -509,20 +509,20 @@ func (e *Engine) Preflight(ctx context.Context) error {
 			first = lines[0]
 		}
 		if keepFFmpeg {
-			remember(ffmpegKey, first)
+			remember(e.Machine, ffmpegKey, first)
 		}
 	}
 	e.Log.Detail("%s", first)
 
 	ffprobeKey, keepFFprobe := keyFor("ffprobe version", e.FFprobe, "")
-	if _, ran := recall[bool](ffprobeKey); !ran {
+	if _, ran := recall[bool](e.Machine, ffprobeKey); !ran {
 		if e.Runner.Run(ctx, "", e.FFprobe, "-version").Code != 0 {
 			e.Log.ClearProgress()
 			return renderErr("%s is missing, which usually means a partial ffmpeg install.",
 				e.FFprobe)
 		}
 		if keepFFprobe {
-			remember(ffprobeKey, true)
+			remember(e.Machine, ffprobeKey, true)
 		}
 	}
 	// Which encoder, before anything is spent. It used to insist on
@@ -745,13 +745,13 @@ func clockSeconds(text string) (float64, bool) {
 func (e *Engine) pictureStart(ctx context.Context, path string) float64 {
 	key, keep := keyFor("picture start", e.FFprobe, path)
 	if keep {
-		if start, ok := recall[float64](key); ok {
+		if start, ok := recall[float64](e.Machine, key); ok {
 			return start
 		}
 	}
 	start, read := e.readPictureStart(ctx, path)
 	if read && keep && ctx.Err() == nil {
-		remember(key, start)
+		remember(e.Machine, key, start)
 	}
 	return start
 }
@@ -785,7 +785,7 @@ func (e *Engine) readPictureStart(ctx context.Context, path string) (float64, bo
 func (e *Engine) Probe(ctx context.Context, path string) (SourceInfo, error) {
 	key, keep := keyFor("probe", e.FFprobe, path)
 	if keep {
-		if info, ok := recall[SourceInfo](key); ok {
+		if info, ok := recall[SourceInfo](e.Machine, key); ok {
 			return info.clone(), nil
 		}
 	}
@@ -793,7 +793,7 @@ func (e *Engine) Probe(ctx context.Context, path string) (SourceInfo, error) {
 	// A probe stopped halfway may have read no sound or no uneven frames
 	// without failing, which is not what the file holds.
 	if err == nil && keep && ctx.Err() == nil {
-		remember(key, info.clone())
+		remember(e.Machine, key, info.clone())
 	}
 	return info, err
 }
@@ -1217,11 +1217,10 @@ func (e *Engine) keyBefore(ctx context.Context, path string, s SourceInfo, at in
 // for an episode of hours, so the answer is kept for as long as the file
 // stays as it is.
 func (e *Engine) lastMoment(ctx context.Context, path string, start float64) float64 {
-	stamp := ""
-	if info, err := os.Stat(path); err == nil {
-		stamp = fmt.Sprintf("%s|%d|%d|%v", path, info.Size(), info.ModTime().UnixNano(), start)
-		if end, ok := lastMoments.Load(stamp); ok {
-			return end.(float64)
+	key, keep := keyFor("last moment from "+strconv.FormatFloat(start, 'g', -1, 64), e.FFprobe, path)
+	if keep {
+		if end, ok := recall[float64](e.Machine, key); ok {
+			return end
 		}
 	}
 	res := e.Runner.Run(ctx, "", e.FFprobe, "-v", "error", "-select_streams", "v:0",
@@ -1245,12 +1244,8 @@ func (e *Engine) lastMoment(ctx context.Context, path string, start float64) flo
 		}
 		end = max(end, pts+length-start)
 	}
-	if stamp != "" {
-		lastMoments.Store(stamp, end)
+	if keep && ctx.Err() == nil {
+		remember(e.Machine, key, end)
 	}
 	return end
 }
-
-// lastMoments is what lastMoment found, by the file's path, size, time
-// and start.
-var lastMoments sync.Map

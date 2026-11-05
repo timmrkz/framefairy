@@ -275,7 +275,7 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 	// before anything is loaded or paid for. The app never draws one, and
 	// the command line hears why, see room.go.
 	if !haveReply {
-		if err := windowFits(e.Files, lines, opts); err != nil {
+		if err := e.windowFits(lines, opts); err != nil {
 			return nil, err
 		}
 	}
@@ -654,8 +654,8 @@ func saveFit(fsys afero.Fs, cachePath, key, fit string, how *localAnswer) {
 
 // windowFits says whether the transcript of a window fits in one request to
 // the model that is going to read it.
-func windowFits(fsys afero.Fs, lines []Line, opts PlanOptions) error {
-	room := planRoom(fsys, opts)
+func (m *Machine) windowFits(lines []Line, opts PlanOptions) error {
+	room := m.planRoom(opts)
 	recipe := opts.recipe()
 	have := runes.Len(recipe.Request(lines, recipe.units(lines), opts)) - runes.Len(recipe.Request(nil, nil, opts))
 	if have <= room.Chars {

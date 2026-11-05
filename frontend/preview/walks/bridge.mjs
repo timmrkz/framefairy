@@ -46,28 +46,35 @@ function fallbackBrowser() {
 }
 let fellBack;
 
-// The browser a walk runs in: WebKit, which the app runs in on a Mac and
-// on Linux, for every walk and sequence. WALKBROWSER names another, as
-// the nightly walks name Chromium, which the app runs in on Windows.
-// Playwright brings a WebKit of its own for Linux, which takes real key
-// presses. SLOW and WALKCOVERAGE work through Chromium's own tools, so
-// either walks every walk in Chromium unless WALKBROWSER says otherwise.
-// See Two browsers in docs/TESTING.md.
+// The browser a walk runs in: Chromium, which the app runs in on
+// Windows, for every walk and sequence. WALKBROWSER names another, as the
+// nightly walks name WebKit, which the app runs in on a Mac and on Linux.
+// Playwright's WebKit for Linux draws every frame on the CPU, so the same
+// walks took 54 % longer in it in a cloud session, and a push walks in
+// Chromium. SLOW and WALKCOVERAGE work through Chromium's own tools. See
+// Two browsers in docs/TESTING.md.
 const asked = process.env.WALKBROWSER || "";
 if (asked && asked !== "chromium" && asked !== "webkit") {
   throw new Error(`WALKBROWSER is chromium or webkit, not ${asked}`);
 }
 export function browserFor() {
-  if (asked) return asked;
-  if (Number(process.env.SLOW) > 1 || process.env.WALKCOVERAGE) return "chromium";
-  return "webkit";
+  return asked || "chromium";
 }
+// Playwright's WebKit on Linux draws every frame through OpenGL, which a
+// machine with no graphics chip, a cloud session's or CI's, runs on the
+// CPU in Mesa's llvmpipe. llvmpipe splits each frame over a thread per
+// core, and with six walkers on four cores those threads mostly wait on
+// each other: a frame that changed one digit took 38 ms of CPU on four
+// threads and 28 ms on two, and a share of the walks took 11 % less CPU
+// on two. LP_NUM_THREADS from outside still wins.
+const drawingThreads = "2";
+
 async function launch(name, args) {
   // An interrupt is the walk's own to answer, see keepTraces, not
   // Playwright's, which would close the browser under the traces.
   if (name === "webkit") {
     try {
-      return await webkit.launch({ handleSIGINT: !traces });
+      return await webkit.launch({ handleSIGINT: !traces, env: { ...process.env, LP_NUM_THREADS: process.env.LP_NUM_THREADS ?? drawingThreads } });
     } catch (e) {
       // There is no older WebKit to fall back on, as there is a Chromium.
       if (!String(e?.message).includes("Executable doesn't exist")) throw e;

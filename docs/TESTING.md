@@ -51,26 +51,30 @@ can show:
 | | Runs | For | Why this way |
 | --- | --- | --- | --- |
 | plain code | Go tests and Vitest, once | every rule that can be said without a page: what a dictation does to the text, where an arrow key takes the cursor, how far a field scrolls | no browser decides it, so a second browser would test the same code twice. It is the quickest test and the easiest to read |
-| the walks | every walk and sequence on every pull request that reaches them, in WebKit, and all of them in Chromium every night | what a person does, against the real Go side, in the engine the app runs in | the engines differ where people type and look: the cursor, the selection, the focus, scrolling, fonts and layout. Nearly every bug Tim met in Report a Problem, #574, was WebKit's alone and passed in Chromium. The Mac ships first, and Windows is not built yet |
+| the walks | every walk and sequence on every pull request that reaches them, in Chromium, and all of them in both browsers every night | what a person does, against the real Go side, in the engines the app runs in | the engines differ where people type and look: the cursor, the selection, the focus, scrolling, fonts and layout. Nearly every bug Tim met in Report a Problem, #574, was WebKit's alone and passed in Chromium, so WebKit is walked every night. Playwright's WebKit for Linux draws every frame on the processor, so a push walks in Chromium, which walked the same walks 35 % sooner |
 | what only a Mac does | a step that acts out the Mac's behaviour on purpose, and the rule it protects in plain code | how AppKit reaches WebKit: a cursor revealed in the middle of a field, a button that takes no focus from a click, a mouse entering as a plain move | no browser on Linux has it, WebKit's Linux ports included, so a walk can only play it, as `attach, as on a Mac` does |
 
 The walks are the same walks in both browsers, and the browser is a
 setting of the harness, `browserFor` in `walks/bridge.mjs`, never a second
-set. A pull request walks each in one browser, so the second browser
-costs CI no job and no time: walking every walk in both would take twice
-the machines, or twice as long on the same ones, see
-[the decision](decisions/2026-10-31-walks-in-two-browsers.md). The nightly
-walks, `walks-nightly.yml`, walk in Chromium, `WALKBROWSER=chromium`, so
-both engines are walked every day. The WebKit is Playwright's own build
+set. A pull request walks each in Chromium, and the nightly walks,
+`walks-nightly.yml`, walk each in both, the walks in WebKit on four
+machines of their own, `WALKBROWSER=webkit`, so a pull request waits for
+one browser and both engines are walked every day, see
+[the decision](decisions/2026-11-05-walks-in-chromium-on-a-push.md). Only
+the walks in Chromium count the lines they run. The WebKit is Playwright's own build
 for Linux, which takes real key presses, and CI's image holds it beside
-the Chromium, see `.github/ci-image/Dockerfile`. A cloud session gets it
+the Chromium, see `.github/ci-image/Dockerfile`. It draws every frame through OpenGL,
+which a machine without a graphics chip runs on the CPU, and drawing is
+37 % of the walks' CPU there, measured once over every walk in a cloud
+session, so the walks give it two threads to draw
+with rather than one a core, see `drawingThreads` in `walks/bridge.mjs`. A cloud session gets it
 from the SessionStart hook, see `scripts/cloud-webkit.sh`, and walks one
 sequence in it the way it walks one in Chromium. `SLOW` and
-`WALKCOVERAGE` work through Chromium's own tools, so either walks every
-walk in Chromium, and says so when `WALKBROWSER=webkit` asks for WebKit.
+`WALKCOVERAGE` work through Chromium's own tools, and say so when
+`WALKBROWSER=webkit` asks for WebKit.
 
-A walk that only passes in Chromium is a walk to fix, never one to keep
-there: the app on a Mac is WebKit. What WebKit finds is fixed where its cause
+A walk that fails in WebKit at night is a walk to fix, never one to keep
+out of it: the app on a Mac is WebKit. What WebKit finds is fixed where its cause
 is. A walk that reads what the two engines write differently, like the
 name of a font in quotes or without, is fixed in the walk. What a person
 on a Mac would see too, like a hover WebKit works out only when the
@@ -1111,10 +1115,13 @@ each share starts its longest runs first, so no bridge is left with a
 minute of work after the others are done. Every third run, as it was,
 left one machine a minute behind. A run the file does not know counts as
 the median. `make walks WALKTIMES=1` writes the file again from the times
-of that run, best on the whole set on a quiet machine, and keeps the time
-it had for a run that the test's time stopped, since how long a run that
-hung was stopped after says nothing of how long it takes. On three machines
-each job still took four and three quarter minutes, setup included. More
+of that run, and keeps the time it had for a run that the test's time
+stopped, since how long a run that hung was stopped after says nothing of
+how long it takes. The times that count are CI's, so the file is best made
+from the logs of the walks jobs, which end on the time of every run they
+walked. On four machines the jobs took 181 to 226 seconds in Chromium, in
+three runs on 5 November, and 223 to 377 while every walk walked in
+WebKit, setup included. More
 bridges on a machine do not help: on four cores eight bridges finished a
 share no sooner than six and broke three walks that wait on the clock.
 
@@ -1481,21 +1488,22 @@ What the code takes from outside, so a test can drive it:
 | What | Handed in as | Where |
 | --- | --- | --- |
 | the time of day | `now func() time.Time` | `signer.WithClock` in `licence/signer/signer.go`, `Now` in `licence/dispenser/engine.go`, `now` on the app, which times an edit, in `cmd/framefairy-app/main.go` |
-| a wait the app sets between two things it does, where a bubble does not fit | a function that gives the channel the wait ends on | `after` on the updates in `cmd/framefairy-app/updates.go`, which a test hands the looks in through, see `TestARegularLookReplacesTheBuildReady`, `leaving` in `engine/ffmpeg.go`, how long ffmpeg or llama-server has to end once it is asked to stop, and `idleFor` in `engine/modelhost.go`, how long a model nobody holds is kept |
-| a time limit on another program | a function that gives the context the limit ends | `timeLimit` in `engine/analysis.go`, which `stuckFFmpeg` in `engine/stuck_unix_test.go` ends the moment its ffmpeg says through a named pipe that it hangs |
+| a wait the app sets between two things it does, where a bubble does not fit | a function that gives the channel the wait ends on | `after` on the updates in `cmd/framefairy-app/updates.go`, which a test hands the looks in through, see `TestARegularLookReplacesTheBuildReady`, `leaving` in `engine/ffmpeg.go`, how long ffmpeg or llama-server has to end once it is asked to stop, and `idle` on the model host of `engine.Machine`, `engine/modelhost.go`, how long a model nobody holds is kept, set on the test's own machine |
+| a time limit on another program | a function that gives the context the limit ends | `timeLimit` on `engine.Machine`, `engine/machine.go`, which `stuckFFmpeg` in `engine/stuck_unix_test.go` ends the moment its ffmpeg says through a named pipe that it hangs |
 | another program saying it hangs | a channel | `standin.Hangs` in `internal/standin/hangs_unix.go`, a named pipe a stand-in writes `hangs` into. It is heard as `stuck` on the engine, a render that has stopped making frames, in `engine/ffmpeg.go`, and as `frameLate` on the app, a video whose first frame is late, in `cmd/framefairy-app/library.go` |
 | the end of the quiet of a recording | a channel | `still` on the listening in `cmd/framefairy-app/listen.go`, which the bridge's microphone says once the person in a walk has fallen silent |
 | the two clocks of a recording, its level readings and its passes | channels | `beats` on the listening in `cmd/framefairy-app/listen.go`, which the bridge hands its steps through, see `TestARecordingRunsOnTheBeatsItIsHanded` |
-| a loading llama-server saying it is up | its output | `hearReady` in `engine/local.go`, and `lookAgain`, the look every half second for a server that says nothing, which `TestAServerThatWillNotStopIsKilledAtOnce` takes away |
+| a loading llama-server saying it is up | its output | `hearReady` in `engine/local.go`, and `lookAgain` on the machine's link to llama-server, the look every half second for a server that says nothing, which `TestAServerThatWillNotStopIsKilledAtOnce` takes away on its own machine |
 | how often work that reads from another program saves | a count of reads | `levelsReads` on the engine, `engine/levels.go`, in place of `levelsDefault` of the clock |
-| the network | an `http.Client` with a transport of the test's | `localClient` in `engine/local.go`, and the network of `engine.Machine`, `network` in `engine/machine.go`, which a machine `NewMachine` makes does not have, so it reaches nothing until a test hands it one, with `neverAnswers`, `streamFrom` and `stopsAfter` in `engine/local_test.go`, so the stall of a model or a download is waited for in a bubble |
+| the network | an `http.Client` with a transport of the test's | `client` on the machine's link to llama-server, `engine/local.go`, and the network of `engine.Machine`, `network` in `engine/machine.go`, which a machine `NewMachine` makes does not have, so it reaches nothing until a test hands it one, with `neverAnswers`, `streamFrom` and `stopsAfter` in `engine/local_test.go`, so the stall of a model or a download is waited for in a bubble |
 | timers inside goroutines | `testing/synctest` around the test | the lint fixture `scripts/testdata/lint/go/signals`, the dictation tests in `cmd/framefairy-app/listen_test.go`, `TestOnlyAFewDecodersNobodyHoldsStandRunning` in `cmd/framefairy-app/frames_test.go`, and the tests of a health check and of a model that keeps talking in `engine/local_test.go`, which ask llama-server through `neverAnswers` and `streamFrom`, transports with no network |
+| the machine's memory, how much is free and which other llama-servers run | functions on the machine | `memory`, `free` and `servers` on `engine.Machine`, empty for what the system says, see `machineWith` in `engine/room_test.go` |
 | the disk | `afero.Fs` | `engine/files.go`, the project and the app's store |
 | the keychain | a key store on the machine | `keys` and `oldKeys` on `engine.Machine`, empty in a machine `NewMachine` makes, so it keeps no key. A test of the keys puts `memKeys` from `engine/keys_test.go` there, see `keychains` |
 | random numbers | `io.Reader` | `signer.WithRandom` |
 | the model, the recogniser | an interface with a fake | the fake recogniser and fake llama-server in `engine/project_test.go` |
 | a program we run | its path | ffmpeg and the decoder through `FRAMEFAIRY_FRAMES` |
-| asking another program to stop | a function | `interrupt` in `engine/leftover.go`, which a test wraps to hear which servers left behind were asked |
+| asking another program to stop | a function | `interrupt` on the machine's notes of its servers, `engine/leftover.go`, which a test sets on its own machine to hear which servers left behind were asked |
 | a lock that has to wait | `waits(path)`, called as the lock of a file starts to wait for another holder | `engine/fileio/lock.go` and `engine/fileio/lock_unix.go`, waited on through `waitsOn` in `engine/fileio/lock_test.go` |
 | the end of work | a callback the caller gives, a channel closed at every change, a channel closed when the work ends, or a `sync.WaitGroup` | `emit` in `newQueue`, and `until` on `queue.changed`, `cmd/framefairy-app/jobs.go`, `changed` on the updates in `cmd/framefairy-app/updates.go`, `done` of a measuring in `cmd/framefairy-app/levels.go`, `Arrived` in `updates/fetch.go`, `clearing` in `cmd/framefairy-app/main.go`, `news` on the model host in `engine/modelhost.go`, waited on by `untilHost`, `cursors` on the episode's decoder in `engine/episodeframes.go`, waited on by `untilCursors`. A stand-in program says it is up on its output, or ends once it has said what the test reads, as in `engine/leftover_test.go` and `engine/local_test.go` |
 
