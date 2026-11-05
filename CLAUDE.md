@@ -771,7 +771,11 @@ request.
   ships in the app, for what behaves differently there, decoding and
   encoding through VideoToolbox, the disk's names, the keychain, run on
   a Mac at night, because GitHub's virtual Mac's media engine now and
-  then stops answering, and no other encoder on a Mac makes a short. Code
+  then stops answering, and no other encoder on a Mac makes a short. A
+  session whose change reaches what differs on a Mac, VideoToolbox, the
+  keychain, the disk's names or a `_darwin.go` file, starts them through
+  the GitHub API, workflow `mac-nightly.yml` on its branch, and reads
+  that run before it says the pull request is ready. Code
   that never runs on a Mac, like the licence server, is tested on Linux
   only, and so is anything new of that kind. The race detector runs on
   Linux only, which covers the same Go code. Long fuzzing on a Mac runs

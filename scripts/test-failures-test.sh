@@ -61,6 +61,21 @@ else
 	sed 's/^/\t/' "$work/hung"
 	fail=1
 fi
+# A hang dump whose stack is inside the virtual Mac's call to its host
+# says it is the virtual Mac's, and one without it does not.
+sed '/^panic: test timed out/i\
+== hangdump: the programs process 4242 started, 1 of them, before go test'"'"'s -timeout\
+    VTParavirtualizationGuestSendMessageWithIOSurfacesToHostAndCopyReplySync' \
+	"$data/gotestsum.txt" >"$work/host.txt"
+sh "$here/test-failures.sh" "$work/host.txt" >"$work/host"
+if head -n 1 "$work/host" | grep -q "^::error title=A program a test started hung in the virtual Mac's media engine::" &&
+	! head -n 1 "$work/hung" | grep -q 'virtual Mac'; then
+	printf 'ok  \t%s\n' "a hang in the virtual Mac's media engine is named as its own"
+else
+	printf 'FAIL\t%s\n' "a hang in the virtual Mac's media engine is named as its own"
+	sed 's/^/\t/' "$work/host"
+	fail=1
+fi
 grep -q '== hangdump' "$data/gotestsum.txt" "$data/gotest.txt" && {
 	printf 'FAIL\t%s\n' "a log with no hang dump names no hang"
 	fail=1

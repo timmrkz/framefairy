@@ -3,15 +3,18 @@
 # docs/BUILD.md.
 #
 # GitHub's Mac is a virtual Mac, and its media engine, VideoToolbox, now
-# and then stops answering: the call from the virtual Mac to the machine
-# it runs on never comes back, in the decoder, in an encoder, even in
-# Apple's encoder on the processor, -require_sw. Whatever test waits on it
-# waits with no end, and its package runs into its -timeout. No Mac
-# people use has done it. A Mac has no other encoder for a short, so the
-# Mac's tests cannot leave the media engine out, and they run here,
-# where a hang stops no pull request and names itself in its own run.
-# On a pull request every one of these tests runs on Linux, under the
-# race detector.
+# and then stops answering. Every stack kept of such a hang is in the
+# call from the virtual Mac to the machine it runs on, which never came
+# back, in creating a decoder and in the decoder. Encoders hung the same
+# way, Apple's encoder on the processor, -require_sw, among them, before
+# any stack was kept. Whatever test waits on it waits with no end, and
+# its package runs into its -timeout. Not once in Tim's 104 report logs.
+# A Mac has no other encoder for a short, so the Mac's tests cannot leave
+# the media engine out, and they run here, where a hang stops no pull
+# request, and scripts/test-failures.sh names it as the virtual Mac's.
+# The code all machines share is tested on Linux on every pull request.
+# What only a Mac builds or does waits for the night, unless the pull
+# request starts this workflow on its branch, see Mac tests at night.
 name: Nightly Mac tests
 
 on:

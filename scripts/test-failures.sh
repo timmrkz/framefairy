@@ -14,14 +14,22 @@
 #
 # When a program a test started hung, internal/hangdump wrote its stack
 # into the log, and the first error says so, because whoever reads the
-# check would not open the log to find it.
+# check would not open the log to find it. A stack inside the call GitHub's
+# virtual Mac makes to the machine it runs on is the virtual Mac's media
+# engine, which stops answering now and then and no Mac people use has
+# been seen to, so the error says that too, and a red run that does not
+# say it failed for a reason of its own.
 set -eu
 
 log=${1:?say which log of go test to read}
 
 most=10
 if grep -q '== hangdump: the programs' "$log"; then
-	echo '::error title=A program a test started hung::Its stack is in this job'"'"'s log, between == hangdump and == hangdump: end.'
+	if grep -q 'VTParavirtualizationGuest' "$log"; then
+		echo '::error title=A program a test started hung in the virtual Mac'"'"'s media engine::VideoToolbox called the machine the virtual Mac runs on and never heard back, a hang of GitHub'"'"'s virtual Mac and not of our code. Its stack is in this job'"'"'s log, between == hangdump and == hangdump: end.'
+	else
+		echo '::error title=A program a test started hung::Its stack is in this job'"'"'s log, between == hangdump and == hangdump: end.'
+	fi
 	most=9
 fi
 

@@ -441,17 +441,25 @@ licence server's packages, which never run on a Mac.
 
 They ran on every pull request until 5 November 2026. GitHub's Mac is a
 virtual Mac, and now and then its media engine, VideoToolbox, stops
-answering: the call from the virtual Mac to the machine it runs on never
-comes back, in creating a decoder, in the decoder, in an encoder, and in
-Apple's encoder on the processor, `-require_sw`, too. The test that waits
-on it waits with no end, so its package ran into its `-timeout` and a pull
-request that changed nothing on a Mac failed. No Mac people use did it,
-in 104 report logs. A Mac has no other encoder for a short, the ffmpeg we
-ship has no libx264, so the Mac's tests cannot leave the media engine
-out. At night a hang stops no pull request, names itself in its run with
-the stack of every program, see `internal/hangdump`, and is read the
-way any failure is. Every one of these tests also runs on Linux on every
-pull request the change reaches.
+answering. Every stack kept of such a hang, see `internal/hangdump`, is in
+the call from the virtual Mac to the machine it runs on, which never came
+back, in creating a decoder and in the decoder. Encoders hung the same
+way, Apple's encoder on the processor, `-require_sw`, among them, before
+any stack was kept. The test that waits on it waits with no end, so its
+package ran into its `-timeout` and a pull request that changed nothing on
+a Mac failed. Not once in Tim's 104 report logs. A Mac has no other
+encoder for a short, the ffmpeg we ship has no libx264, so the Mac's tests
+cannot leave the media engine out. At night a hang stops no pull request,
+and `scripts/test-failures.sh` names a stack in that call as the virtual
+Mac's media engine, so a red night that does not say so failed for a
+reason of its own, and is read the way any failure is.
+
+The code every machine shares is tested on Linux on every pull request the
+change reaches. What only a Mac builds or does, the `_darwin.go` files,
+the keychain, the disk's names, Apple's encoders and decoder, is not. A
+session whose change reaches it starts this workflow through the GitHub
+API on its branch, `workflow_dispatch` on `mac-nightly.yml`, and reads that
+run before it says the pull request is ready.
 
 A pull request that changes nothing but docs, any `.md`, `LICENSE`,
 `.vscode/` or `.claude/`, reaches no part, so after `plan` it starts no

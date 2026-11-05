@@ -1636,9 +1636,6 @@ func (b *bridge) reset() error {
 	b.chrome = Chrome{}
 	b.arrive = nil
 	b.mu.Unlock()
-	// After the gates are open and the stand-ins let go, so every call
-	// held there ends.
-	defer b.calls.stop()()
 	b.fresh.Store(nil)
 	b.d.pictureMu.Lock()
 	b.d.pictures = nil
@@ -1665,6 +1662,13 @@ func (b *bridge) reset() error {
 	endReport(b.d.svc.report)
 	// A log a walk started lives in the home, which goes next.
 	theLog.close()
+	// A call of the page before writes into a work folder while it is
+	// removed, issue #709. stop waits for every call still running here
+	// and now, once the gates are open and the work, the watch and the
+	// stand-ins have stopped, so nothing a call waits on is still held,
+	// and turns away the calls that come after it. What it returns lets
+	// calls through again as the reset ends.
+	defer b.calls.stop()()
 	entries, err := os.ReadDir(b.d.home)
 	if err != nil {
 		return err
