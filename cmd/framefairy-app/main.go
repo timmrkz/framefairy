@@ -70,6 +70,10 @@ func main() {
 	engine.UseMachineFonts()
 	go engine.RefreshFonts()
 	st := appStore()
+	// The videos are probed on the program's one machine, so what ffprobe
+	// said of a video is said once for the library, the video preview and
+	// every job alike.
+	sources.machine = st.machine
 
 	var app *application.App
 	emit := func(u JobUpdate) {

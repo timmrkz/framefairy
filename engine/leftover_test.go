@@ -90,7 +90,7 @@ func asked(m *Machine) func() []int {
 func noteIn(t *testing.T) (*Machine, string) {
 	t.Helper()
 	dir := filepath.Join(t.TempDir(), "llama-servers")
-	m := NewMachine(disk)
+	m := memoryUnasked(NewMachine(disk))
 	m.notes.dir = func() string { return dir }
 	return m, dir
 }

@@ -147,7 +147,7 @@ func TestTheServerLogIsKeptBeforeTheLogsFolderExists(t *testing.T) {
 	logDir := filepath.Join(dir, "episode.framefairy", "logs")
 	logFile := filepath.Join(logDir, "llm-server.log")
 
-	e := NewEngine(runlog.New(io.Discard, false, false), NewMachine(disk))
+	e := NewEngine(runlog.New(io.Discard, false, false), memoryUnasked(NewMachine(disk)))
 	if _, _, err := e.startServer(context.Background(), LocalModel{Server: server, Model: model}, 16384, logDir); err == nil {
 		t.Fatal("a server that ended while it loaded was taken for loaded")
 	}
@@ -349,7 +349,7 @@ func launchStandIn(t *testing.T, dir, name string) string {
 		t.Fatal(err)
 	}
 	logDir := filepath.Join(dir, name)
-	e := NewEngine(runlog.New(io.Discard, false, false), NewMachine(disk))
+	e := NewEngine(runlog.New(io.Discard, false, false), memoryUnasked(NewMachine(disk)))
 	_, _, _ = e.startServer(context.Background(), LocalModel{Server: server, Model: model}, 16384, logDir)
 	body, _ := os.ReadFile(filepath.Join(logDir, "llm-server.log"))
 	return string(body)

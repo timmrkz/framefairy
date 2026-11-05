@@ -102,3 +102,11 @@ func toolsFromThePath() {
 		}
 	}
 }
+
+// memoryUnasked is m starting its fake servers whatever the machine the
+// tests run on has free, so what is free is not asked of the system.
+// TestTheMemoryFreeNow asks it.
+func memoryUnasked(m *Machine) *Machine {
+	m.free = func() int64 { return 0 }
+	return m
+}

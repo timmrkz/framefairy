@@ -351,12 +351,13 @@ func TestThoughtIsCountedInTokens(t *testing.T) {
 //
 // On the real disk: a search runs ffmpeg on the episode.
 func TestEverySideOfAComparisonHasItsOwnServer(t *testing.T) {
+	t.Parallel()
 	source := testEpisode(t, "40")
 	var asked int32
 	server := fakeModel(t, &asked)
 	defer server.Close()
 	var started, stopped atomic.Int32
-	machine := NewMachine(disk)
+	machine := memoryUnasked(NewMachine(disk))
 	machine.host.launch = func(_ *Engine, _ context.Context, _ LocalModel, _ int, _ string) (string, func(), error) {
 		started.Add(1)
 		var once sync.Once
