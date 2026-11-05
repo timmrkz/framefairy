@@ -513,7 +513,7 @@ func (s *store) Known(path string) bool {
 		return false
 	}
 	for _, ep := range episodes {
-		if linkedEpisode(s.files, ep) == "" && engine.IsShort(s.files, ep, real) {
+		if linkedEpisode(s.files, ep) == "" && s.machine.Episode(ep).IsShort(real) {
 			return true
 		}
 	}

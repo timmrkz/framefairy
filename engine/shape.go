@@ -64,9 +64,12 @@ type Shaped struct {
 	Clip Clip `json:"-"`
 }
 
-// ShapeClip works out what a gesture makes of a clip, and writes nothing.
-func ShapeClip(fsys afero.Fs, planPath, clipID string, g Gesture, t *Transcript, keepPause float64) (Shaped, error) {
-	plan, clip, err := planClip(fsys, planPath, clipID)
+// ShapeClip works out what a gesture makes of a clip of the plan s, as
+// its video's Episode holds it, and writes nothing. It reads no file, so
+// a drag reads none on each step of the hand.
+func ShapeClip(s PlanSummary, clipID string, g Gesture, t *Transcript, keepPause float64) (Shaped, error) {
+	plan := s.plan
+	clip, err := s.clip(clipID)
 	if err != nil {
 		return Shaped{}, err
 	}
@@ -74,11 +77,7 @@ func ShapeClip(fsys afero.Fs, planPath, clipID string, g Gesture, t *Transcript,
 	if err != nil {
 		return Shaped{}, err
 	}
-	data, err := afero.ReadFile(fsys, planPath)
-	if err != nil {
-		return Shaped{}, err
-	}
-	value, err := decodeOrdered(data)
+	value, err := decodeOrdered(s.data)
 	if err != nil {
 		return Shaped{}, err
 	}

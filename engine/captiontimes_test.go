@@ -218,7 +218,7 @@ func TestCaptionTimesFromAPlanAreChecked(t *testing.T) {
 // when each appears and goes on the clip's clock.
 func shownCaptions(t *testing.T, fsys afero.Fs, path string, tr *Transcript) []string {
 	t.Helper()
-	view, err := ClipCaptionsView(fsys, path, "01", tr, nil)
+	view, err := ClipCaptionsView(planAt(t, fsys, path), "01", tr, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -345,7 +345,7 @@ func TestAMovedEdgeStaysWhenItsWordIsRemoved(t *testing.T) {
 	if got := shownCaptions(t, fsys, path, tr); got[0] != "0.00-0.85 eins" {
 		t.Errorf("zwei removed in the caption box: %q", got)
 	}
-	if view, _ := ClipCaptionsView(fsys, path, "01", tr, nil); !view.Captions[0].EndMoved {
+	if view, _ := ClipCaptionsView(planAt(t, fsys, path), "01", tr, nil); !view.Captions[0].EndMoved {
 		t.Error("the edge where the hand put it is not said to be")
 	}
 }
@@ -401,7 +401,7 @@ func TestAnEdgeMovedOutStaysWhenItsWordIsRemoved(t *testing.T) {
 	if err := SetWordText(fsys, path, "01", 12.0, "", tr); err != nil {
 		t.Fatal(err)
 	}
-	view, err := ClipCaptionsView(fsys, path, "01", tr, nil)
+	view, err := ClipCaptionsView(planAt(t, fsys, path), "01", tr, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -449,12 +449,12 @@ func TestAnEdgeShowsWhatItSaves(t *testing.T) {
 		edge string
 		at   float64
 	}{{10.6, "end", 10.7}, {10.6, "end", 11.05}, {12.0, "start", 12.5}, {12.0, "start", 10.5}, {10.0, "start", 10.95}} {
-		view, err := ShapeCaptionTime(fsys, path, "01", step.word, step.edge, step.at, false, tr, nil)
+		view, err := ShapeCaptionTime(planAt(t, fsys, path), "01", step.word, step.edge, step.at, false, tr, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
 		plan, _ := afero.ReadFile(fsys, path)
-		if _, err := ShapeCaptionTime(fsys, path, "01", step.word, step.edge, step.at, false, tr, nil); err != nil {
+		if _, err := ShapeCaptionTime(planAt(t, fsys, path), "01", step.word, step.edge, step.at, false, tr, nil); err != nil {
 			t.Fatal(err)
 		}
 		if now, _ := afero.ReadFile(fsys, path); !bytes.Equal(now, plan) {
@@ -463,7 +463,7 @@ func TestAnEdgeShowsWhatItSaves(t *testing.T) {
 		if _, err := SetCaptionTime(fsys, path, "01", step.word, step.edge, step.at, false, tr, nil); err != nil {
 			t.Fatal(err)
 		}
-		saved, err := ClipCaptionsView(fsys, path, "01", tr, nil)
+		saved, err := ClipCaptionsView(planAt(t, fsys, path), "01", tr, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -486,7 +486,7 @@ func TestOnlyACaptionEdgeIsMoved(t *testing.T) {
 		if _, err := SetCaptionTime(fsys, path, "01", c.word, c.edge, 10.7, false, tr, nil); err == nil {
 			t.Errorf("the %s of a caption on the word at %.1f was moved", c.edge, c.word)
 		}
-		if _, err := ShapeCaptionTime(fsys, path, "01", c.word, c.edge, 10.7, false, tr, nil); err == nil {
+		if _, err := ShapeCaptionTime(planAt(t, fsys, path), "01", c.word, c.edge, 10.7, false, tr, nil); err == nil {
 			t.Errorf("the %s of a caption on the word at %.1f was shown moved", c.edge, c.word)
 		}
 	}
@@ -524,7 +524,7 @@ func TestAnEdgePutBackShowsItsWords(t *testing.T) {
 	if err := SetWordText(fsys, path, "01", 10.6, "", tr); err != nil {
 		t.Fatal(err)
 	}
-	view, err := ClipCaptionsView(fsys, path, "01", tr, nil)
+	view, err := ClipCaptionsView(planAt(t, fsys, path), "01", tr, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -566,7 +566,7 @@ func TestAnEdgeIsMovedOnTheClockItIsDrawnOn(t *testing.T) {
 	look := &Look{Source: SourceInfo{FPSNum: 25, FPSDen: 1}}
 	shown := func() []CaptionView {
 		t.Helper()
-		view, err := ClipCaptionsView(fsys, path, "01", tr, look)
+		view, err := ClipCaptionsView(planAt(t, fsys, path), "01", tr, look)
 		if err != nil {
 			t.Fatal(err)
 		}

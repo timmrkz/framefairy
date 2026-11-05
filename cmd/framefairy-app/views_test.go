@@ -55,10 +55,12 @@ func (f *planOpens) count(name string) {
 	}
 }
 
-// The library, the cards of what was said and the captions' look, which
-// a drag asks for on every step, read a plan once between them, and again
-// only once it changed. A video removed from the library lets go of its
-// plans, and one added again reads them afresh. Issue #608.
+// The library, the cards of what was said, a drag on the clip timeline,
+// step by step, the captions of a clip and a share of it read a plan once
+// between them, and again only once it changed. A video removed from the
+// library lets go of its plans, and one added again reads them afresh.
+// Issue #608, whose Done when is that dragging an edge reads no plan
+// file that has not changed.
 func TestTheAppReadsAPlanOnceUntilItChanges(t *testing.T) {
 	counted := &planOpens{Fs: afero.NewMemMapFs()}
 	st := openStoreIn(counted, "/home/tim/config/FrameFairy")
@@ -83,8 +85,17 @@ func TestTheAppReadsAPlanOnceUntilItChanges(t *testing.T) {
 		if _, err := svc.Sentences(video); err != nil {
 			t.Fatal(err)
 		}
-		for range 3 {
-			_ = svc.captionLook(video, plan)
+		for i := range 3 {
+			g := engine.Gesture{Kind: "trim", Edge: "start", From: 10.2 + 0.1*float64(i)}
+			if _, err := svc.Shape(video, plan, "01", g); err != nil {
+				t.Fatalf("a step of the drag: %v", err)
+			}
+		}
+		if _, err := svc.Captions(video, plan, "01"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.ShareOfClip(video, plan, "02", 0.5); err != nil {
+			t.Fatal(err)
 		}
 	}
 

@@ -624,3 +624,20 @@ func TestPlansHeldFromEverywhereAtOnce(t *testing.T) {
 		t.Errorf("after the writes the episode lists %+v, want the one plan of 3 clips", plans)
 	}
 }
+
+// planAt is the plan file at path as a video's Episode holds it, for a
+// test of a view, which takes the plan held rather than a path.
+func planAt(t testing.TB, fsys afero.Fs, path string) PlanSummary {
+	t.Helper()
+	s, err := summaryOf(fsys, path)
+	if err != nil {
+		t.Fatalf("the plan %s is not read: %v", filepath.Base(path), err)
+	}
+	return s
+}
+
+// snapshotAt is the snapshot of the plans in logs as they are now, the
+// way Episode.TakeSnapshot takes it.
+func snapshotAt(fsys afero.Fs, logs string) *Snapshot {
+	return snapshotOf(fsys, nil, logs, PlanSummaries(fsys, logs))
+}

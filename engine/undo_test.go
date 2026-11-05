@@ -18,11 +18,11 @@ import (
 // it changed, the way the app records every edit.
 func edited(t *testing.T, fsys afero.Fs, logs string, edit func() error) *Change {
 	t.Helper()
-	before := TakeSnapshot(fsys, nil, logs)
+	before := snapshotAt(fsys, logs)
 	if err := edit(); err != nil {
 		t.Fatal(err)
 	}
-	change := ChangeBetween(before, TakeSnapshot(fsys, nil, logs))
+	change := ChangeBetween(before, snapshotAt(fsys, logs))
 	if change == nil {
 		t.Fatal("the edit changed nothing")
 	}
@@ -353,9 +353,9 @@ func TestASearchLandsWhileItsPlanIsEditedUndoneAndRemoved(t *testing.T) {
 	edit := func(fn func() error) {
 		hist.Lock()
 		defer hist.Unlock()
-		before := TakeSnapshot(fsys, nil, logs)
+		before := snapshotAt(fsys, logs)
 		_ = fn()
-		if change := ChangeBetween(before, TakeSnapshot(fsys, nil, logs)).LeaveOutNewClips(); change != nil {
+		if change := ChangeBetween(before, snapshotAt(fsys, logs)).LeaveOutNewClips(); change != nil {
 			undo, redo = append(undo, change), nil
 		}
 	}

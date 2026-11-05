@@ -299,6 +299,128 @@ would have to hand out a plan the shaping copies before it changes it.
 Part 4 opens every file of the video through the episode anyway, which
 is where that copy belongs.
 
+## Part 4: the plans a gesture reads, and whose a path is
+
+Tim asked on 5 November for part 4 of this record and step 4 of #673,
+the shorts folder watched, in one pull request. Part 4 is what #608
+still asks: "dragging an edge read no ... plan file that has not
+changed", and "path checks for a video's own files become a question to
+its `Episode`". Counted from the code on main at 3f10c93:
+
+- A gesture reads its plan three times per step of the hand:
+  `ShapeClipView` calls `ShapeClip`, which reads it through `planClip`
+  and again as ordered JSON, and then `planClip` once more. The caption
+  edge, the captions of a clip, the share of a clip and the captions of
+  a clip on its way read it once each. Each is a view: it writes
+  nothing.
+- The edits read the plan too, under the lock of `editPlan`, and must:
+  what they write is made from the file as it is at that moment.
+- `IsShort` and the undo's `TakeSnapshot` list every plan of a video
+  with `PlanSummaries`, which reads and parses them all, and the
+  snapshot reads each again for its bytes, twice per edit.
+- Whether a path is a video's own is asked 51 times in the app, through
+  `store.Known` and `store.PlanOf`, which resolve every link of the path
+  and compare strings, and `linkedEpisode`.
+
+### 1. Who may know about whom: a view takes the read the episode holds
+
+The episode hands out the plan it holds, `Episode.Plan`, and every view
+takes that read rather than a path: `ShapeClip`, `ShapeClipView`,
+`ShapeCaptionTime`, `ClipCaptionsView`, `ClipShareTime` and
+`ArrivingCaptionsView` take a `PlanSummary`. The summary keeps the bytes
+it was parsed from, so the ordered read of a gesture decodes them
+rather than the file. The edits keep reading the file under the lock.
+`IsShort` and the snapshot ask the episode for its plans. Whose a path
+is becomes the episode's to say, `Episode.Owns` and `Episode.HasPlan`,
+by where the path really leads, the way `Known` judges it today. Cost:
+one pull request, the view functions' first argument, and the app's
+calls of them.
+
+### 2. One primitive: the edits read through the episode too
+
+Every read of a plan goes through the episode, the edits' as well, so
+nothing reads a plan file but `Episode.plan`. An edit asks under the
+lock, the stamp has changed if anyone wrote, and the episode reads it
+again. But an edit has to read the file as it is under the lock even
+when the stamp has not moved, two writes in one tick on a drive that
+keeps no inode, and the episode would have to be told to read anyway.
+That is a second way into the episode for one caller, and the stamp
+already covers every case but that one. Dropped: an edit is the one
+reader that must not trust a stamp.
+
+### 3. A boundary the kernel holds: `os.Root` on the work folder
+
+The episode opens its work folder with `os.OpenRoot`, and every file of
+it is opened through that root, so a link inside it can lead nowhere
+outside, whatever happens between a check and an open. `#608` named it.
+But the engine reads its files through the `afero.Fs` it is handed, so
+a test runs in memory, and an `os.Root` is a folder on the disk. Either
+the episode reads through an `afero.Fs` made over an `os.Root` on the
+real disk and through a plain one in memory, two ways of opening a file
+of which the tests check one, or the tests go back to the disk. And a
+root holds the folder it was opened on: a work folder deleted and made
+again, which `Remove` with Delete and adding the video again do, leaves
+a root on a folder that is gone. What it buys is a check that cannot be
+raced. Today's check resolves every link at the moment it asks, and the
+race needs someone who can write into the person's own work folder,
+who could change the plans themselves. Dropped. It is the step to take
+if the app ever opens files of a folder it did not make.
+
+### 4. Names, not paths: the interface names a plan by its file name
+
+The interface sends `clips-0-1800.json`, never a path, and the episode
+finds it in its own logs folder, so a plan of another video cannot be
+named at all and `PlanOf` goes. It takes the check away rather than
+moving it. But every binding that edits a clip changes, the interface's
+calls with them, the walks and the bridge, about forty places, for a
+check that is cheap and in one place once it is the episode's. Kept for
+later, as its own change: it is the interface's shape, not the
+episode's.
+
+### 5. What a test has to build: views over values
+
+The view functions take the plan and the clip as values, `Plan` and
+`Clip`, and the app finds them in the summary. A test of a gesture
+builds a plan in memory and no file. That is 1 with the lookup moved up
+into the app, which then knows how a clip is found in a plan, by its id
+or its file name, `planClip`'s rule. The summary is the value a test
+builds anyway, from the same bytes.
+
+### What converges
+
+1, 2 and 5 agree that a view takes the read the episode holds, and 2
+and 3 that a check on the plans' file is the edit's and the lock's.
+3 and 4 each remove a check rather than move it, and both cost more
+than the check they remove. So: simulation 1. The views take a
+`PlanSummary`, which keeps its bytes, the edits keep reading under the
+lock, `IsShort` and `TakeSnapshot` ask the episode, and whose a path is
+is `Episode.Owns` and `Episode.HasPlan`. `os.Root` is left out, and
+`#608` closes with its Done when met: the library and a drag read no
+file that has not changed, the app keeps no transcript of its own, and
+no `NewProject(nil` is left.
+
+```
+app bindings                 ask Machine.Episode: Owns, HasPlan, Plan
+engine views                 take the PlanSummary the episode holds
+engine edits                 read the file under editPlan's lock
+engine.Episode               plans with their bytes, by stamp
+```
+
+### Step 4 of #673: the shorts folders watched
+
+Where a clip's short is, the plan says, `recordOf`, and whether it is
+still there is asked each time the clip list is made, `shortOf`. So a
+short deleted in Finder shows as gone the next time the app makes the
+list, and nothing makes it until the video's state is sent again. The
+watch looks at the video's folder, its work folder and its logs, and
+the shorts are in another folder, the one the settings name with the
+video's name in it. The episode says which folders its shorts are in,
+`Episode.ShortFolders`, from the plans it holds, and the watch takes
+them as it takes the work folder. A change in one is a change of that
+video, so its state is sent again. A render records a new folder in the
+plan, so a plan written makes the watch follow again. Nothing else
+needs to know: the list already asks the disk.
+
 ## What follows
 
 - It costs four pull requests, three about one kind of file each and
