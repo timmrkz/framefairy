@@ -81,21 +81,25 @@ export const steps = {
     }
     const calls = await page.evaluate(() => window.__calls.length);
     await page.keyboard.press(arg);
-    if (standing) {
-      await settle(page);
-      await holdSound(page, false);
-    }
+    if (standing) await settle(page);
     // The press asks for the clip in the keydown itself, see inOutKey in
     // Episode.svelte, so once it is in, a press that asked for none never
     // will. I or O on a playhead inside a clip makes none, as it should,
     // and the waits below then waited for good on a clip never asked for,
-    // issue #701. The walk fails at once and says where the playhead was.
-    const asked = await page.evaluate((from) => window.__calls.slice(from).some((c) => c.name === "MakeClip"), calls);
-    if (!asked) {
-      const at = Number(await page.evaluate(() => document.querySelector(".screen")?.dataset.playhead));
+    // issue #701. The walk fails at once and says where the playhead was
+    // when the press came, read while the play still stands there.
+    const pressed = await page.evaluate(
+      (from) => ({
+        asked: window.__calls.slice(from).some((c) => c.name === "MakeClip"),
+        at: Number(document.querySelector(".screen")?.dataset.playhead),
+      }),
+      calls,
+    );
+    if (standing) await holdSound(page, false);
+    if (!pressed.asked) {
       const clip = (await ask(page, "Clips", path)).find((c) => c.key === was);
       const from = clip ? `, the clip chosen runs ${clip.start.toFixed(2)} to ${clip.end.toFixed(2)} s` : "";
-      walk.wrong = `${arg} made no clip: the press asked for none, with the playhead at ${at.toFixed(2)} s${from}`;
+      walk.wrong = `${arg} made no clip: the press asked for none, with the playhead at ${pressed.at.toFixed(2)} s${from}`;
       if (late) await letHeld(page).catch(() => {});
       await stop();
       return;
