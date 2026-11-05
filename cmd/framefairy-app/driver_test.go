@@ -132,15 +132,12 @@ func (d *desk) start(st *store) {
 			return svc.State(context.Background(), path)
 		}, func(v VideoState) { d.bus.send("video", v) })
 		svc.jobs.news = svc.told
-		// The library is on the real disk, so the walks change its
-		// folders from outside the app the way Finder does.
 		svc.setupNews = func(state SetupState) {
 			if d.setup != nil {
 				state = d.setup(state)
 			}
 			d.bus.send("setup", state)
 		}
-		svc.watchTheDisk()
 		svc.jobs.notice = func(n Notice) { d.bus.send("notice", n) }
 	}
 	d.svc.listening.say = func(x Dictation) {
@@ -187,6 +184,11 @@ func (d *desk) start(st *store) {
 	}
 	if d.bus != nil {
 		d.svc.levels = newMeasuring(d.svc.store.machine, svc.told)
+		// The library is on the real disk, so the walks change its
+		// folders from outside the app the way Finder does. The watch
+		// starts once every field it can reach is set, the way main
+		// starts it.
+		svc.watchTheDisk()
 	}
 	// Whatever is still running when the test ends is stopped before its
 	// folder goes.

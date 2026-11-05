@@ -14,9 +14,10 @@ import (
 )
 
 // watching keeps a watch on the folders the files of the videos in the
-// library are in, and hands every path that changed in them to heard,
-// which is reconcile, whoever changed it: the person in Finder, the
-// command line, a sync service, or the app itself. The system says what
+// library are in, and on the models folder and the one over it, and hands
+// every path that changed in them to heard, which is reconcile, whoever
+// changed it: the person in Finder, the command line, a sync service, or
+// the app itself. The system says what
 // changed through fsnotify: kqueue on macOS, inotify on Linux,
 // ReadDirectoryChangesW on Windows.
 //
@@ -77,9 +78,8 @@ func (ws *watching) follow(files afero.Fs, videos []string, shortsOf func(video 
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
 	want := map[string]bool{}
-	if ws.models != "" {
-		want[ws.models] = true
-		want[filepath.Dir(ws.models)] = true
+	for _, dir := range ws.modelFolders() {
+		want[dir] = true
 	}
 	for _, v := range videos {
 		for _, dir := range watchedOf(v, shortsOf(v)) {
@@ -112,15 +112,19 @@ func (ws *watching) follow(files afero.Fs, videos []string, shortsOf func(video 
 		return
 	}
 	ws.watched = len(now)
-	folders, entries := 0, 0
+	folders, entries, models := 0, 0, 0
 	for _, dir := range now {
+		if slices.Contains(ws.modelFolders(), dir) {
+			models++
+			continue
+		}
 		if list, err := afero.ReadDir(files, dir); err == nil {
 			folders++
 			entries += len(list)
 		}
 	}
 	theLog.line(zerolog.InfoLevel, "files").Int("videos", len(videos)).Int("folders", folders).
-		Int("shorts", len(now)-folders).Int("files", entries).
+		Int("shorts", len(now)-folders-models).Int("files", entries).Int("models", models).
 		Msg("the folders of the videos are watched for changes")
 }
 
@@ -168,42 +172,56 @@ func (ws *watching) run() {
 
 // heardOf adds the path of an event to changed, once. A change of a
 // file's permissions alone is left out: Spotlight and backups touch them
-// all the time, and nothing the app has depends on them. So is a write
-// to a file in the folder of the models or the one over it: a download
-// writes there for minutes, and whether a model is there is told by a
-// file made, deleted or renamed.
+// all the time, and nothing the app has depends on them. So is what the
+// app's own download writes, see downloading.
 func (ws *watching) heardOf(changed []string, ev fsnotify.Event) []string {
-	if ev.Op == fsnotify.Chmod || slices.Contains(changed, ev.Name) {
-		return changed
-	}
-	if ev.Op == fsnotify.Write && ws.overModels(ev.Name) {
+	if ev.Op == fsnotify.Chmod || slices.Contains(changed, ev.Name) || ws.downloading(ev.Name) {
 		return changed
 	}
 	return append(changed, ev.Name)
 }
 
-// overModels says whether path is the folder over the models folder or
-// anything in it, the models folder too.
-func (ws *watching) overModels(path string) bool {
-	if ws == nil || ws.models == "" {
+// downloading says whether path is where a download of the app writes a
+// model before it is one, its part file or the folder it unpacks into,
+// which it writes for minutes. Only the rename into place makes a model,
+// and that is heard under the model's own name. Any other write in the
+// models folder is heard, since a model copied there by hand, with Finder
+// or cp, is made empty and becomes a model as it is written, see
+// Installed in the engine.
+func (ws *watching) downloading(path string) bool {
+	if ws == nil || ws.models == "" || filepath.Dir(path) != ws.models {
 		return false
 	}
-	over := filepath.Dir(ws.models)
-	return path == over || strings.HasPrefix(path, over+string(filepath.Separator))
+	return strings.HasSuffix(path, ".part") || strings.HasSuffix(path, ".unpacking")
+}
+
+// modelFolders is what is watched for the models: the models folder, the
+// folder over it, which holds it, and the folder of each speech model,
+// since a speech model is a folder whose tokens.txt says it is there, and
+// one copied in by hand is written into after the folder is made.
+func (ws *watching) modelFolders() []string {
+	if ws == nil || ws.models == "" {
+		return nil
+	}
+	dirs := []string{filepath.Dir(ws.models), ws.models}
+	for _, m := range engine.SpeechModels() {
+		dirs = append(dirs, filepath.Join(ws.models, m.Name))
+	}
+	return dirs
 }
 
 // modelsIn says whether a change at one of the paths can change which
-// models are here, and whether the models folder itself was made or
-// deleted, which the watch then follows.
+// models are here, and whether one of the folders modelFolders names was
+// made or deleted, which the watch then follows.
 func (ws *watching) modelsIn(changed []string) (models, folder bool) {
 	if ws == nil || ws.models == "" {
 		return false, false
 	}
-	sep := string(filepath.Separator)
+	folders := ws.modelFolders()[1:]
 	for _, p := range changed {
-		if p == ws.models {
+		if slices.Contains(folders, p) {
 			models, folder = true, true
-		} else if strings.HasPrefix(p, ws.models+sep) {
+		} else if strings.HasPrefix(p, ws.models+string(filepath.Separator)) {
 			models = true
 		}
 	}

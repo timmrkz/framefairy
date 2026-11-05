@@ -426,22 +426,78 @@ func TestAModelDeletedOrAddedOutsideTheAppIsSentToTheWindowAtOnce(t *testing.T) 
 	put()
 	until(installed)
 
-	// The folder deleted and made again is watched again, before the
-	// reconcile that sent its news lets go.
+	// The folder deleted and put back whole, the way a backup puts it
+	// back, is watched again, before the reconcile that sent its news
+	// lets go.
 	if err := os.RemoveAll(models); err != nil {
 		t.Fatal(err)
 	}
 	until(func(s SetupState) bool { return !installed(s) })
-	if err := os.MkdirAll(models, 0o755); err != nil {
+	back := filepath.Join(home, "back")
+	if err := os.MkdirAll(back, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	until(func(SetupState) bool {
-		svc.reconciling.Lock()
-		defer svc.reconciling.Unlock()
-		return slices.Contains(svc.watch.w.WatchList(), models)
-	})
-	put()
+	if err := os.WriteFile(filepath.Join(back, model.Name), []byte("GGUF a model"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(back, models); err != nil {
+		t.Fatal(err)
+	}
 	until(installed)
+	if err := os.Remove(filepath.Join(models, model.Name)); err != nil {
+		t.Fatal(err)
+	}
+	until(func(s SetupState) bool { return !installed(s) })
+
+	// A model copied in by hand is made empty and written after, and it
+	// is a model once it is written. Another model put in place whole
+	// after it is made says the empty one was looked at, so what follows
+	// is only the write.
+	if err := os.WriteFile(filepath.Join(models, model.Name), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	other := engine.LanguageModels()[1]
+	if err := os.WriteFile(filepath.Join(home, other.Name), []byte("GGUF another model"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(filepath.Join(home, other.Name), filepath.Join(models, other.Name)); err != nil {
+		t.Fatal(err)
+	}
+	until(func(s SetupState) bool {
+		i := slices.IndexFunc(s.Language, func(m LanguageModelView) bool { return m.Name == other.Name })
+		return i >= 0 && s.Language[i].Installed
+	})
+	copied, err := os.OpenFile(filepath.Join(models, model.Name), os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := copied.WriteString("GGUF a model"); err != nil {
+		t.Fatal(err)
+	}
+	if err := copied.Close(); err != nil {
+		t.Fatal(err)
+	}
+	until(installed)
+
+	// A speech model is a folder, and one copied in by hand is made
+	// before its tokens.txt is written into it. The other model deleted
+	// after says the folder was looked at, and is watched.
+	speech := engine.SpeechModels()[0]
+	if err := os.Mkdir(filepath.Join(models, speech.Name), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(models, other.Name)); err != nil {
+		t.Fatal(err)
+	}
+	until(func(s SetupState) bool {
+		return !slices.ContainsFunc(s.Language, func(m LanguageModelView) bool { return m.Name == other.Name && m.Installed })
+	})
+	if err := os.WriteFile(filepath.Join(models, speech.Name, "tokens.txt"), []byte("the model hears\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	until(func(s SetupState) bool {
+		return slices.ContainsFunc(s.Speech, func(m SpeechModelView) bool { return m.Name == speech.Name && m.Installed })
+	})
 }
 
 // On a machine the app never ran on there is no models folder and no

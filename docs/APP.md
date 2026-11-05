@@ -67,8 +67,11 @@ is used as it is, whether the app fetched it or not. The app watches that
 folder, and the one over it, so a model deleted in Finder or put there by
 hand shows in the setup and the settings at once: the Go side sends what
 they show of the models whole, on the `setup` event, see `tellSetup` in
-`reconcile.go`. A write inside the folder is not heard, because a download
-writes there for minutes, only a file made, deleted or renamed.
+`reconcile.go`, and only when it changed. The app's own download is not
+heard while it writes its part file, only as it is renamed into place.
+A model copied in by hand is heard as it is written, and so is the
+`tokens.txt` of a speech model's folder, and every look at the library,
+as the app comes back to the front, looks at the models too.
 
 **A download is work in hand, and it looks it.** The row of the model
 on its way wears the beam and the fill for how far it has come across the

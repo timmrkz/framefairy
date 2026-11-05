@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -35,14 +36,17 @@ import (
 // What changes inside the work folder is the app's own work most of the
 // time, and the sidebar hears of that from the jobs, see listChanged.
 // Then the watch follows the library, when a folder it watches or would
-// watch was made or deleted.
+// watch was made or deleted. A change in the models folder, and every
+// look at the whole library, sends the setup and the settings what they
+// show of the models, see tellSetup.
 func (s *FrameFairy) reconcile(changed []string) {
 	s.reconciling.Lock()
 	defer s.reconciling.Unlock()
 	follow := changed == nil
 	// A model deleted or added outside the app shows in the setup and
-	// the settings at once.
-	if models, folder := s.watch.modelsIn(changed); models {
+	// the settings at once, and a look at every video looks at the
+	// models too, for whatever the watch could not hear.
+	if models, folder := s.watch.modelsIn(changed); models || changed == nil {
 		s.tellSetup()
 		follow = follow || folder
 	}
@@ -89,11 +93,19 @@ func (s *FrameFairy) watchTheDisk() {
 }
 
 // tellSetup sends the window what the setup and the settings show of the
-// models, the way they read it with Setup.
+// models, the way they read it with Setup, when it is not what was sent
+// last: a model copied in by hand is written for minutes, and each write
+// is heard. It runs inside reconcile, whose lock keeps setupSent.
 func (s *FrameFairy) tellSetup() {
-	if s.setupNews != nil {
-		s.setupNews(s.Setup(context.Background()))
+	if s.setupNews == nil {
+		return
 	}
+	state := s.Setup(context.Background())
+	if s.setupSent != nil && reflect.DeepEqual(*s.setupSent, state) {
+		return
+	}
+	s.setupSent = &state
+	s.setupNews(state)
 }
 
 // modelsMade is the app's word to itself that a download may have made

@@ -276,9 +276,10 @@ func TestTheAppNeverOpensOnAVideoDeletedOutsideIt(t *testing.T) {
 	if err := writeChosen(files, gone, chosen{Opened: 2}); err != nil {
 		t.Fatal(err)
 	}
-	// The app starts: it looks at the disk before the window asks.
-	svc.watchTheDisk()
-	t.Cleanup(svc.watch.stop)
+	// The app starts: it looks at the disk before the window asks, the
+	// look watchTheDisk takes, here without the watch, which would hear
+	// the real disk under a library in memory.
+	svc.reconcile(nil)
 	t.Cleanup(svc.clearing.Wait)
 	if opened := svc.Opened(10); slices.Contains(opened, gone) || !slices.Contains(opened, stays) {
 		t.Errorf("the app opens on %v, want %s and not %s", opened, stays, gone)

@@ -1151,13 +1151,19 @@ func openBridge(t *testing.T) *bridge {
 	b := &bridge{t: t, d: d, words: words, sound: snd, first: filepath.Join(d.home, "erste-erinnerung.mp4"), kept: t.TempDir(),
 		gates: map[string]*gate{}, fails: map[string]string{}}
 	// What the first run downloads, once a walk made the machine new.
-	// What arrives is as much of a model as the app looks for.
+	// What arrives is as much of a model as the app looks for, and it
+	// lands the way the engine's download lands it: written under a name
+	// of its own and renamed into place whole.
 	installSpeech = func(_ *engine.Machine, ctx context.Context, log *runlog.Log, m engine.SpeechModel, dir string) error {
 		return b.arriving(ctx, log, "speech", m.Download, func() error {
-			if err := os.MkdirAll(filepath.Join(dir, m.Name), 0o755); err != nil {
+			staging := filepath.Join(dir, m.Name+".unpacking")
+			if err := os.MkdirAll(staging, 0o755); err != nil {
 				return err
 			}
-			return os.WriteFile(filepath.Join(dir, m.Name, "tokens.txt"), []byte("the stand-in hears\n"), 0o644)
+			if err := os.WriteFile(filepath.Join(staging, "tokens.txt"), []byte("the stand-in hears\n"), 0o644); err != nil {
+				return err
+			}
+			return os.Rename(staging, filepath.Join(dir, m.Name))
 		})
 	}
 	installLanguage = func(_ *engine.Machine, ctx context.Context, log *runlog.Log, m engine.LanguageModel, dir string) error {
@@ -1165,7 +1171,11 @@ func openBridge(t *testing.T) *bridge {
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				return err
 			}
-			return os.WriteFile(filepath.Join(dir, m.Name), []byte("GGUF, the stand-in finds clips"), 0o644)
+			part := filepath.Join(dir, m.Name+".part")
+			if err := os.WriteFile(part, []byte("GGUF, the stand-in finds clips"), 0o644); err != nil {
+				return err
+			}
+			return os.Rename(part, filepath.Join(dir, m.Name))
 		})
 	}
 	// The setup the app sends when the models change is the bridge's
