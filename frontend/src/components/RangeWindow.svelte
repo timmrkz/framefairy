@@ -511,7 +511,8 @@
       else, drag a triangle to make it shorter or longer, and double-click to put it back. Moved
       off a search that stopped, Search starts afresh where they are. It is at least as long as its clips need and at most as long as
       the model reads at once, and flashes red when a triangle runs into either. While clips are
-      being found, the window is drawn over the track. How far a search has come is on its cards in
+      being found, the window is drawn over the track. While the whole video is transcribed, the
+      marks are left out, because that work is about all of it. How far a search has come is on its cards in
       the clip list.
     </Info>
   </span>

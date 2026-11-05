@@ -133,7 +133,13 @@ func TestTheWindowIsHiddenWhileTheWholeVideoIsTranscribed(t *testing.T) {
 		{"stopping", []Job{{State: JobRunning, Stopping: true, JobRecord: engine.JobRecord{Kind: engine.JobTranscribe}}}, false},
 		{"stopped", []Job{{State: JobStopped, JobRecord: engine.JobRecord{Kind: engine.JobTranscribe}}}, false},
 		{"done", []Job{{State: JobDone, JobRecord: engine.JobRecord{Kind: engine.JobTranscribe}}}, false},
+		{"cancelled", []Job{{State: JobCancelled, JobRecord: engine.JobRecord{Kind: engine.JobTranscribe}}}, false},
+		{"interrupted", []Job{{State: JobInterrupted, JobRecord: engine.JobRecord{Kind: engine.JobTranscribe}}}, false},
 		{"a search", []Job{{State: JobRunning, JobRecord: engine.JobRecord{Kind: engine.JobSearch}}}, false},
+		{"a search that stops it", []Job{
+			{State: JobRunning, Stopping: true, JobRecord: engine.JobRecord{Kind: engine.JobTranscribe}},
+			{State: JobQueued, JobRecord: engine.JobRecord{Kind: engine.JobSearch}},
+		}, false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()

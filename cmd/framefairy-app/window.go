@@ -74,8 +74,10 @@ type WindowView struct {
 	Longest  float64 `json:"longest"`
 	// Hidden is that the range picker leaves the window out: the whole
 	// video is being transcribed, which is about all of it and not about
-	// the window, Tim, 5 November. It comes back on Stop transcribing, and
-	// when a search stops the transcription.
+	// the window, Tim, 5 November. It comes back once the transcription is
+	// told to stop, by Stop transcribing, a search or a clip made by hand,
+	// and once it ends. The workspace shows it back from the press of Stop
+	// transcribing, see Episode.svelte.
 	Hidden bool `json:"hidden,omitempty"`
 }
 
