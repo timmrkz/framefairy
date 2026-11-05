@@ -1508,7 +1508,10 @@ export const steps = {
       return job?.state === "running" || job?.state === "queued";
     };
     while ((await running()) && (await onePiece(page, url, path)));
-    await settle(page);
+    // The search has ended on the Go side, and the page hears so a moment
+    // later. Settled alone, a quick page was read before it heard, and
+    // its head still said Cancelling.
+    await caughtUp(page, url, (await ask(page, "Jobs")).filter((j) => j.episode === path));
     const head = await page.evaluate(() => document.querySelector(".listhead button.search")?.textContent.replace(/\s+/g, " ").trim());
     if (head !== "Continue") walk.wrong = `after Cancel the head says ${head}, not Continue`;
   },

@@ -15,10 +15,11 @@
 # is not named there passes without ever seeing what it checks. Walked with
 # the motion it does see it, so a step left out of moving fails here.
 #
-# They walk in Chromium, the engine the app runs in on Windows, where the
-# walks in ci.yml walk in WebKit, which it runs in on a Mac, so both are
-# walked every day, and Chromium's line counts are the ones coverage
-# reads. See Two browsers in docs/TESTING.md.
+# They walk in both browsers, on four machines each. The walks in ci.yml
+# walk in Chromium, the engine the app runs in on Windows, and here they
+# walk in WebKit too, the engine of the Mac, so both are walked every day.
+# Only Chromium counts the lines of the interface, so the walks in
+# Chromium are the ones that count. See Two browsers in docs/TESTING.md.
 name: Nightly walks with motion, and coverage
 
 on:
@@ -36,25 +37,27 @@ jobs:
       packages: write
     uses: ./.github/workflows/ci-image.yml
 
-  # The same as the walks in ci.yml, with STILL=none, in Chromium.
+  # The same as the walks in ci.yml, with STILL=none, in Chromium
+  # counting lines. The walks in WebKit below take the same steps.
   walks:
     needs: image
-    name: walks
+    name: walks (${{ matrix.browser }}, ${{ matrix.shard }})
     strategy:
       fail-fast: false
       matrix:
+        browser: [chromium]
         shard: [1/4, 2/4, 3/4, 4/4]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    defaults:
+    defaults: &bash
       run:
         shell: bash -e {0}
-    container:
+    container: &walks-container
       image: ${{ needs.image.outputs.walks }}
       options: --init --ipc=host
       volumes:
         - /home/runner/work:/home/runner/work
-    steps:
+    steps: &walks-steps
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # The checkout is the runner's user's and the job runs as root, see
       # the walks in ci.yml.
@@ -63,21 +66,22 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      # The walks here build with coverage, which is a build of its own,
-      # so they keep a cache of their own beside the one ci.yml keeps for
-      # the walks, and take that one when theirs is not there yet. Saved
-      # once for each go.sum, so a night adds no cache of its own to the
-      # ten gigabytes the repository may keep, and what changed since is
-      # built again.
+      # The walks in Chromium build with coverage, which is a build of its
+      # own, so they keep a cache of their own beside the one ci.yml keeps
+      # for the walks, and take that one when theirs is not there yet.
+      # Saved once for each go.sum, so a night adds no cache of its own to
+      # the ten gigabytes the repository may keep, and what changed since
+      # is built again. The walks in WebKit build as ci.yml does and take
+      # its cache.
       - id: gocache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: go-v2-walks-coverage-${{ runner.os }}-${{ hashFiles('go.sum') }}
+          key: go-v2-walks-${{ matrix.browser == 'chromium' && 'coverage-' || '' }}${{ runner.os }}-${{ hashFiles('go.sum') }}
           restore-keys: |
-            go-v2-walks-coverage-${{ runner.os }}-
+            go-v2-walks-${{ matrix.browser == 'chromium' && 'coverage-' || '' }}${{ runner.os }}-
             go-v2-walks-${{ runner.os }}-
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -97,7 +101,7 @@ jobs:
       - name: Sequences and walks with motion
         id: walks
         run: |
-          make walks STILL=none WALKBROWSER=chromium WALKSHARD=${{ matrix.shard }} WALKTIMEOUT=12m COVERAGE=.build/coverage 2>&1 | tee walks.log
+          make walks STILL=none WALKBROWSER=${{ matrix.browser }} WALKSHARD=${{ matrix.shard }} WALKTIMEOUT=12m ${{ matrix.browser == 'chromium' && 'COVERAGE=.build/coverage' || '' }} 2>&1 | tee walks.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then sh scripts/test-failures.sh walks.log; fi
           exit "$status"
@@ -107,19 +111,20 @@ jobs:
       - if: failure() && steps.walks.outcome == 'failure'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: walk-traces-${{ strategy.job-index }}
+          name: walk-traces-${{ matrix.browser }}-${{ strategy.job-index }}
           path: .build/walk-traces
           retention-days: 14
           if-no-files-found: ignore
-      # The shares build the same, so one of them saves.
-      - if: ${{ !cancelled() && steps.gocache.outputs.cache-hit != 'true' && strategy.job-index == 0 }}
+      # The shares in Chromium build the same, so one of them saves.
+      - if: ${{ !cancelled() && steps.gocache.outputs.cache-hit != 'true' && matrix.browser == 'chromium' && matrix.shard == '1/4' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
           key: go-v2-walks-coverage-${{ runner.os }}-${{ hashFiles('go.sum') }}
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      - if: matrix.browser == 'chromium'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-walks-${{ strategy.job-index }}
           path: |
@@ -128,6 +133,24 @@ jobs:
           if-no-files-found: error
           # They lie under .build, which upload-artifact counts as hidden.
           include-hidden-files: true
+
+  # The same walks in WebKit, the steps above with YAML's anchors, in a
+  # job of their own: Codecov takes the walks' counts only when every
+  # share of the job that counted them passed, and a share failing in
+  # WebKit says nothing about what Chromium counted.
+  walks-webkit:
+    needs: image
+    name: walks (${{ matrix.browser }}, ${{ matrix.shard }})
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [webkit]
+        shard: [1/4, 2/4, 3/4, 4/4]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults: *bash
+    container: *walks-container
+    steps: *walks-steps
 
   # The Go tests, counting the lines they run, in three shares like the
   # job linux in ci.yml, without the race detector, which the counts do

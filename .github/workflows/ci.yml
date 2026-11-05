@@ -266,14 +266,15 @@ jobs:
       packages: write
     uses: ./.github/workflows/ci-image.yml
 
-  # The interface in WebKit against the real Go side: the sequences of
+  # The interface in Chromium against the real Go side: the sequences of
   # the cases found by hand and the walks, see docs/TESTING.md. It needs
-  # what the Go tests need, the interface's Node, and the WebKit
+  # what the Go tests need, the interface's Node, and the Chromium
   # Playwright drives, all of it in the image ci-image.yml keeps, which
   # the job runs in.
   #
-  # Every walk walks in WebKit, the engine the app runs in on a Mac, see
-  # Two browsers in docs/TESTING.md. The nightly walks walk in Chromium.
+  # Every walk walks in Chromium, the engine the app runs in on Windows,
+  # see Two browsers in docs/TESTING.md. The nightly walks walk in WebKit,
+  # the engine of the Mac, too.
   #
   # On four machines, each with a quarter of the runs by how long they took
   # last, see frontend/preview/walks/walk-times.tsv: on one the runs took

@@ -1605,7 +1605,7 @@ func (b *bridge) reset() error {
 			continue
 		}
 		if err := os.RemoveAll(filepath.Join(b.d.home, e.Name())); err != nil {
-			return fmt.Errorf("%w, and what was written into it meanwhile is %s", err, leftIn(filepath.Join(b.d.home, e.Name())))
+			return fmt.Errorf("%w, and in it now %s", err, leftIn(filepath.Join(b.d.home, e.Name())))
 		}
 	}
 	for _, dir := range []string{workOf(b.first), filepath.Join(b.d.home, "config")} {
@@ -1620,21 +1620,26 @@ func (b *bridge) reset() error {
 	return nil
 }
 
-// leftIn names what is in dir, a folder the reset could not remove
-// because something wrote into it while it went. The reset failed once
-// with only "directory not empty", issue #561 and #632 came that way too,
-// and the name of the file says which part of the app still wrote.
+// leftIn names what is in a folder the reset could not remove, each file
+// with how long ago it was written, so a failed reset says what wrote into
+// the folder while it was removed, and when.
+//
+// On the real disk: it reads the folder reset could not remove there.
 func leftIn(dir string) string {
 	var left []string
 	_ = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
-		if err == nil && path != dir {
-			rel, _ := filepath.Rel(dir, path)
-			left = append(left, rel)
+		if err != nil || path == dir {
+			return nil
 		}
+		rel, _ := filepath.Rel(dir, path)
+		if info, err := d.Info(); err == nil && !d.IsDir() {
+			rel += fmt.Sprintf(" (%d bytes, written %d ms ago)", info.Size(), time.Since(info.ModTime()).Milliseconds()) //nolint:forbidigo // how long ago, said in an error, waits on nothing
+		}
+		left = append(left, rel)
 		return nil
 	})
 	if len(left) == 0 {
-		return "nothing now"
+		return "nothing"
 	}
 	return strings.Join(left, ", ")
 }
@@ -1824,6 +1829,7 @@ func TestWalks(t *testing.T) {
 	var unwalked atomic.Int32
 
 	walkers := min(envNumber("WALKERS", runtime.NumCPU()*3/2), len(runs))
+	started := time.Now()
 	todo := make(chan walkRun, len(runs))
 	for _, r := range runs {
 		todo <- r
@@ -1885,6 +1891,19 @@ func TestWalks(t *testing.T) {
 		})
 	}
 	wg.Wait()
+	// Where this machine's time went, every run by what it took, so a slow
+	// walks job says which runs made it slow. Written to the file
+	// WALKSUMMARY names, which make walks prints after go test, since go
+	// test prints nothing a passing test said. On the clock only to be
+	// read, never waited on.
+	//
+	// On the real disk: make walks reads the file once go test has ended.
+	if file := os.Getenv("WALKSUMMARY"); file != "" {
+		summary := walkSummary(took, len(runs), walkers, time.Since(started).Seconds()) //nolint:forbidigo // the seconds the walks took, reported, never waited on
+		if err := os.WriteFile(file, []byte(summary), 0o644); err != nil {
+			t.Error(err)
+		}
+	}
 	if left := len(todo); left > 0 {
 		t.Errorf("%d runs were not walked, since no bridge started", left)
 	}
@@ -2540,11 +2559,75 @@ func writeWalkTimes(names []string, before, now map[string]float64) string {
 	return out.String()
 }
 
+// walkSummary says where a machine's walks spent their time: how many
+// runs its walkers walked, the seconds they took together against the
+// seconds the walkers had, and what every run took, slowest first. Every number stands right in its column, so the table
+// reads in a terminal as it does on GitHub.
+func walkSummary(took map[string]float64, runs, walkers int, wall float64) string {
+	type run struct {
+		name    string
+		seconds float64
+	}
+	var all []run
+	sum := 0.0
+	for name, s := range took {
+		all = append(all, run{name, s})
+		sum += s
+	}
+	slices.SortFunc(all, func(a, b run) int {
+		return cmp.Or(cmp.Compare(b.seconds, a.seconds), strings.Compare(a.name, b.name))
+	})
+	busy := 0.0
+	if wall > 0 && walkers > 0 {
+		busy = 100 * sum / (wall * float64(walkers))
+	}
+	var out strings.Builder
+	several := "walkers"
+	if walkers == 1 {
+		several = "walker"
+	}
+	fmt.Fprintf(&out, "%d of %d runs on %d %s in %.0f s, %.0f s of walking together, the walkers busy %.0f %% of the time\n", len(all), runs, walkers, several, wall, sum, busy)
+	if len(all) == 0 {
+		return out.String()
+	}
+	width := max(len("Seconds"), len(fmt.Sprintf("%.0f", all[0].seconds)))
+	name := len("Run")
+	for _, r := range all {
+		name = max(name, len(r.name))
+	}
+	fmt.Fprintf(&out, "| %*s | %-*s |\n", width, "Seconds", name, "Run")
+	fmt.Fprintf(&out, "| %s: | %s |\n", strings.Repeat("-", width-1), strings.Repeat("-", name))
+	for _, r := range all {
+		fmt.Fprintf(&out, "| %*.0f | %-*s |\n", width, r.seconds, name, r.name)
+	}
+	return out.String()
+}
+
 func envNumber(name string, otherwise int) int {
 	if n, err := strconv.Atoi(os.Getenv(name)); err == nil && n > 0 {
 		return n
 	}
 	return otherwise
+}
+
+// The summary of a machine's walks counts what its walkers did against the
+// time they had, and lists the slowest runs first, each column lined up.
+func TestTheWalksSummarySaysWhereTheTimeWent(t *testing.T) {
+	took := map[string]float64{"sequences.mjs SEQUENCE=short": 4.4, "playback.mjs SEED=1": 83, "timeline.mjs SEED=2": 9.6, "words.mjs SEED=1": 12}
+	got := walkSummary(took, 5, 2, 60)
+	want := "4 of 5 runs on 2 walkers in 60 s, 109 s of walking together, the walkers busy 91 % of the time\n" +
+		"| Seconds | Run                          |\n" +
+		"| ------: | ---------------------------- |\n" +
+		"|      83 | playback.mjs SEED=1          |\n" +
+		"|      12 | words.mjs SEED=1             |\n" +
+		"|      10 | timeline.mjs SEED=2          |\n" +
+		"|       4 | sequences.mjs SEQUENCE=short |\n"
+	if got != want {
+		t.Errorf("the summary is\n%s\nwant\n%s", got, want)
+	}
+	if got := walkSummary(nil, 3, 2, 0); got != "0 of 3 runs on 2 walkers in 0 s, 0 s of walking together, the walkers busy 0 % of the time\n" {
+		t.Errorf("with no runs walked the summary is %q", got)
+	}
 }
 
 // Split two ways or three, the shares of the walks hold every run once,
