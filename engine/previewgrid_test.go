@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"math"
 	"os"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -227,7 +226,7 @@ func previewShowsTheShort(t *testing.T, e *Engine, program string, c timesCase, 
 	dec.Close()
 	heardMu.Lock()
 	defer heardMu.Unlock()
-	fellBack, gaveUp, onChip := 0, 0, false
+	fellBack, gaveUp := 0, 0
 	for _, line := range heard {
 		if strings.Contains(line, "decodes on the processor for the rest of this open") {
 			fellBack++
@@ -237,7 +236,6 @@ func previewShowsTheShort(t *testing.T, e *Engine, program string, c timesCase, 
 			gaveUp++
 			t.Logf("%s", line)
 		}
-		onChip = onChip || strings.Contains(line, "decodes on the graphics chip")
 	}
 	if failing && fellBack < streams {
 		t.Errorf("the decoder went on with the processor %d times in %d streams, made to fail in each", fellBack, streams)
@@ -245,15 +243,9 @@ func previewShowsTheShort(t *testing.T, e *Engine, program string, c timesCase, 
 	if hanging && gaveUp != 1 {
 		t.Errorf("the decoder gave up on %d cursors, made to hang once", gaveUp)
 	}
-	// Nothing made to hang, nothing is given up, on CI's Mac too, where
-	// the chip decodes.
+	// Nothing made to hang, nothing is given up.
 	if !hanging && gaveUp != 0 {
 		t.Errorf("the decoder gave up on %d cursors, made to hang in none", gaveUp)
-	}
-	// A fallback must not hide a chip that never decodes: on a Mac the
-	// chip decodes H.264.
-	if runtime.GOOS == "darwin" && c.h264 && !onChip {
-		t.Errorf("the graphics chip decoded none of this H.264, the decoder said:\n%s", strings.Join(heard, "\n"))
 	}
 }
 

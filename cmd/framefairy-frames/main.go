@@ -8,7 +8,12 @@
 // takes. It is a program of its own, so a crash ends only it. See
 // docs/VIDEO-PREVIEW.md, The episode's decoder.
 //
-//	framefairy-frames <episode>
+//	framefairy-frames [-chip] <episode>
+//
+// With -chip it decodes on the graphics chip where the chip takes the
+// file, VideoToolbox on a Mac, and on the processor otherwise. The engine
+// passes it when its machine was handed the system's media engine, as
+// each program's is and no test's is, see engine.Media.
 //
 // It reads requests on standard input and answers on standard output, see
 // internal/framewire. Each cursor works on a goroutine of its own, so a
@@ -37,13 +42,18 @@ import (
 )
 
 func main() {
-	if len(os.Args) != 2 {
-		fmt.Fprintln(os.Stderr, "usage: framefairy-frames <episode>")
+	args := os.Args[1:]
+	chip := len(args) == 2 && args[0] == "-chip"
+	if chip {
+		args = args[1:]
+	}
+	if len(args) != 1 {
+		fmt.Fprintln(os.Stderr, "usage: framefairy-frames [-chip] <episode>")
 		os.Exit(2)
 	}
 	astiav.SetLogLevel(astiav.LogLevelError)
 	astiav.SetLogCallback(logged)
-	d := &decoder{path: os.Args[1], out: bufio.NewWriterSize(os.Stdout, 1<<20), cursors: map[uint32]*cursor{}, layers: map[uint32]*layer{}}
+	d := &decoder{path: args[0], out: bufio.NewWriterSize(os.Stdout, 1<<20), cursors: map[uint32]*cursor{}, layers: map[uint32]*layer{}}
 	// The episode is opened once here, so a file that cannot be read says so
 	// before anything is asked of it.
 	probe, err := openVideo(d.path)
@@ -53,7 +63,7 @@ func main() {
 	}
 	info("opened %s", probe.about())
 	probe.close()
-	if runtime.GOOS == "darwin" {
+	if chip && runtime.GOOS == "darwin" {
 		if t := astiav.FindHardwareDeviceTypeByName("videotoolbox"); t != astiav.HardwareDeviceTypeNone {
 			hw, err := astiav.CreateHardwareDeviceContext(t, "", nil, 0)
 			if err != nil {

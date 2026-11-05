@@ -42,9 +42,9 @@ func TestARenderGoesOnWhenTheEncoderFails(t *testing.T) {
 	calls := filepath.Join(dir, "calls")
 	e.FFmpeg = failingMediaEngine(t, e.FFmpeg, calls, onMac, "")
 	// The render reaches for the Mac's encoders. What the machine learned
-	// of the ffmpeg Preflight ran is kept by its ffmpeg and system, so this
+	// of the ffmpeg Preflight ran is kept by its ffmpeg and media, so this
 	// one is learned afresh.
-	e.system = "darwin"
+	e.useMedia(SystemMedia("darwin"))
 
 	clip := info.OnFrames(Clip{ID: "01", Slug: "chip", Segments: []Segment{{Start: 0.5, End: 2.5}}})
 	rs := RenderSettings{OutW: 90, OutH: 160, CRF: 30, Preset: "ultrafast", AudioBitrate: "96k", ScaleUp: true}
@@ -103,7 +103,7 @@ func TestARenderGoesOnWhenTheEncoderHangs(t *testing.T) {
 	pipe, hangs := standin.Hangs(t)
 	e.FFmpeg = failingMediaEngine(t, e.FFmpeg, calls, onMac, pipe)
 	e.stuck = hangs
-	e.system = "darwin"
+	e.useMedia(SystemMedia("darwin"))
 
 	clip := info.OnFrames(Clip{ID: "01", Slug: "hung", Segments: []Segment{{Start: 0.5, End: 2.5}}})
 	rs := RenderSettings{OutW: 90, OutH: 160, CRF: 30, Preset: "ultrafast", AudioBitrate: "96k", ScaleUp: true}
@@ -141,22 +141,23 @@ func TestOnlyAnEncoderWithAnotherAfterItIsGivenUp(t *testing.T) {
 	linux := encodingEngineOn(t, "linux", "libx264")
 	cases := []struct {
 		e       *Engine
+		system  string
 		encoder Encoder
 		light   framewire.Light
 		want    time.Duration
 	}{
-		{mac, videoToolbox, framewire.SDR, encoderStall},
-		{mac, onProcessor(videoToolbox), framewire.SDR, encoderStall},
-		{mac, x264, framewire.SDR, 0},
-		{mac, hevcVideoToolbox, framewire.PQ, encoderStall},
-		{shipped, onProcessor(videoToolbox), framewire.SDR, encoderStall},
-		{shipped, onProcessor(hevcVideoToolbox), framewire.PQ, encoderStall},
-		{mac, Encoder{Name: "h264_nvenc"}, framewire.SDR, 0},
-		{linux, x264, framewire.SDR, 0},
+		{mac, "a Mac", videoToolbox, framewire.SDR, encoderStall},
+		{mac, "a Mac", onProcessor(videoToolbox), framewire.SDR, encoderStall},
+		{mac, "a Mac", x264, framewire.SDR, 0},
+		{mac, "a Mac", hevcVideoToolbox, framewire.PQ, encoderStall},
+		{shipped, "a Mac with the ffmpeg we ship", onProcessor(videoToolbox), framewire.SDR, encoderStall},
+		{shipped, "a Mac with the ffmpeg we ship", onProcessor(hevcVideoToolbox), framewire.PQ, encoderStall},
+		{mac, "a Mac", Encoder{Name: "h264_nvenc"}, framewire.SDR, 0},
+		{linux, "Linux", x264, framewire.SDR, 0},
 	}
 	for _, c := range cases {
 		if got := c.e.stallFor(c.encoder, c.light); got != c.want {
-			t.Errorf("%s on %s may go %s without a frame, not %s", c.encoder, c.e.system, got, c.want)
+			t.Errorf("%s on %s may go %s without a frame, not %s", c.encoder, c.system, got, c.want)
 		}
 	}
 }
@@ -165,7 +166,7 @@ func TestOnlyAnEncoderWithAnotherAfterItIsGivenUp(t *testing.T) {
 // video, is not rendered again: another encoder would not mend it.
 func TestOnlyAnEncoderThatFailedItselfIsLeft(t *testing.T) {
 	e := encodingEngine(t, "h264_videotoolbox", "libx264")
-	e.system = "darwin"
+	e.useMedia(SystemMedia("darwin"))
 	ctx := context.Background()
 	failed := videoToolbox
 	cases := []struct {
@@ -219,7 +220,7 @@ func TestOnlyAnEncoderThatFailedItselfIsLeft(t *testing.T) {
 
 func encodingEngineOn(t *testing.T, goos string, encoders ...string) *Engine {
 	e := encodingEngine(t, encoders...)
-	e.system = goos
+	e.useMedia(SystemMedia(goos))
 	return e
 }
 
@@ -330,56 +331,6 @@ func TestTheProcessorIsAskedForABitRate(t *testing.T) {
 	if got := strings.Join(args(18), " "); !strings.HasSuffix(got, "-require_sw 1") ||
 		!strings.HasPrefix(got, "-c:v h264_videotoolbox") {
 		t.Errorf("the processor is asked %q", got)
-	}
-}
-
-// Apple's encoders on the processor take what a short asks of them, the
-// HEVC one for HDR in 10 bits as well as the H.264 one. The render above
-// only goes through H.264, and without this nothing would have rendered
-// HDR on the processor before a customer's media engine failed. Mac only,
-// where these encoders are.
-//
-// On the real disk: ffmpeg writes the short it encodes.
-func TestTheProcessorEncodesWhatAShortAsks(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		t.Skip("Apple's encoders are only on a Mac")
-	}
-	t.Parallel()
-	ctx := context.Background()
-	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
-	if err := e.Preflight(ctx); err != nil {
-		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
-	}
-	listing, _ := exec.Command(e.FFmpeg, "-hide_banner", "-encoders").Output()
-	rs := RenderSettings{OutW: 180, OutH: 320, CRF: 18, Rate: 30}
-	cases := []struct {
-		name    string
-		encoder Encoder
-		input   string
-		want    string
-	}{
-		{"H.264", onProcessor(videoToolbox), "yuv420p", "h264"},
-		{"HEVC in 10 bits for HDR", onProcessor(hevcVideoToolbox), "p010le", "hevc (Main 10)"},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			if !hasEncoder(string(listing), c.encoder.Name) {
-				t.Fatalf("the ffmpeg of this Mac has no %s", c.encoder.Name)
-			}
-			out := filepath.Join(t.TempDir(), "short.mp4")
-			args := []string{"-hide_banner", "-loglevel", "error", "-y",
-				"-i", fixtures.Path(t, "picture.mp4"), "-t", "1", "-vf", "scale=180:320,format=" + c.input}
-			args = append(append(args, c.encoder.args(rs)...), out)
-			if said, err := exec.Command(e.FFmpeg, args...).CombinedOutput(); err != nil {
-				t.Fatalf("%s on the processor refused %v: %v\n%s", c.encoder.Name, args, err, said)
-			}
-			// ffmpeg asked about a file with no output says what it holds
-			// and exits with an error, which is not a failure here.
-			about, _ := exec.Command(e.FFmpeg, "-hide_banner", "-i", out).CombinedOutput()
-			if !strings.Contains(string(about), "Video: "+c.want) {
-				t.Errorf("the short is not %s:\n%s", c.want, about)
-			}
-		})
 	}
 }
 

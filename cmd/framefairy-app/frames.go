@@ -441,7 +441,10 @@ func (p *previews) decoder(path string) (*engine.EpisodeFrames, error) {
 	}
 	d := p.decoders[path]
 	if d == nil {
-		d = engine.NewEpisodeFrames(program, path)
+		// On the program's machine, which main hands the system's media
+		// engine, so the app's decoder decodes on the graphics chip and a
+		// test's on the processor.
+		d = sources.machine.EpisodeFrames(program, path)
 		p.decoders[path] = d
 		if !p.reaping {
 			p.reaping = true

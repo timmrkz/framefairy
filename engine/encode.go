@@ -35,9 +35,9 @@ type Encoder struct {
 	// Every encoder has its own idea of what a number means and most of
 	// them do not have -crf at all.
 	Quality func(rs RenderSettings) []string
-	// Picture is how an encoder of HDR is asked for 10 bits, its profile
-	// and the tag Apple's players look for. Standard video is H.264 in
-	// 8 bits, asked the same of every encoder, see BuildCommand.
+	// Picture is what the encoder is asked for the picture it writes: for
+	// H.264 its profile and 8 bits, and for HDR 10 bits, its profile and
+	// the tag Apple's players look for.
 	Picture []string
 	// Options is anything else the encoder is asked for every short, like
 	// asking VideoToolbox to encode on the processor, see onProcessor.
@@ -82,6 +82,25 @@ var x264 = Encoder{
 	Quality: func(rs RenderSettings) []string {
 		return []string{"-preset", rs.Preset, "-crf", strconv.Itoa(rs.CRF)}
 	},
+	Picture: h264Picture,
+}
+
+// h264Picture is what every encoder of H.264 is asked for a short of
+// standard video: 8 bits, in the profile every player takes.
+var h264Picture = []string{"-profile:v", "high", "-pix_fmt", "yuv420p"}
+
+// mpeg4 is ffmpeg's own encoder of MPEG-4 part 2, in every ffmpeg, the
+// LGPL one we build among them. A machine handed no media engine encodes
+// with it where its ffmpeg has no libx264, as a test's machine on a Mac
+// does, see Media. No program takes it, because each hands its machine
+// the system's media engine. Its -q:v runs from 2, the best, to 31, and
+// six steps of CRF are about one of it.
+var mpeg4 = Encoder{
+	Name: "mpeg4",
+	Quality: func(rs RenderSettings) []string {
+		return []string{"-q:v", strconv.Itoa(min(max(2+rs.CRF/6, 2), 31))}
+	},
+	Picture: []string{"-pix_fmt", "yuv420p"},
 }
 
 // videoToolbox is Apple's encoder, in the media engine rather than the
@@ -98,6 +117,7 @@ var x264 = Encoder{
 var videoToolbox = Encoder{
 	Name:    "h264_videotoolbox",
 	Quality: toolboxQuality,
+	Picture: h264Picture,
 }
 
 func toolboxQuality(rs RenderSettings) []string {
@@ -173,48 +193,62 @@ var known = map[string]Encoder{
 	videoToolbox.Name: videoToolbox,
 }
 
-// hdrEncoderOrder is what to try for an HDR short, best first. Windows
-// and Linux have no encoder of HEVC in 10 bits in the ffmpeg we ship, which
-// is a question for docs/PACKAGING.md.
-func hdrEncoderOrder(goos string) []Encoder {
-	if goos == "darwin" {
-		return []Encoder{hevcVideoToolbox, onProcessor(hevcVideoToolbox), x265}
-	}
-	return []Encoder{x265}
+// Media is the system's media engine as the engine uses it: the encoders
+// a short reaches for, best first, and whether decoding goes to the
+// system's own decoder. It is the one part of making a short that is not
+// ffmpeg's own code, differs from one machine to the next, and is not
+// ours, so a machine is handed it, as it is handed the keychain, see
+// Machine.UseSystem. A machine handed none has ffmpeg's own codecs on the
+// processor, see ffmpegsOwn, so no test of our code reaches it. What it
+// is handed is checked as an argument list, against a stand-in ffmpeg.
+// See docs/decisions/2026-11-05-the-systems-media-engine-handed-in.md.
+type Media struct {
+	// Encoders are for a short of standard video and HDREncoders for one
+	// in HDR, best first. The first one this ffmpeg has is used, and one
+	// that fails in its own words goes on with the next, see nextEncoder.
+	Encoders, HDREncoders []Encoder
+	// Decodes says that decoding goes to the system's own decoder where it
+	// takes the file: ffmpeg's -hwaccel auto, and the graphics chip in
+	// the episode's decoder, see Machine.EpisodeFrames.
+	Decodes bool
 }
 
-// encoderOrder is what to try on this system, best first. The first one
-// this ffmpeg actually has is the one used.
+// ffmpegsOwn is the media of a machine handed none: ffmpeg's own
+// encoders and decoders on the processor.
+var ffmpegsOwn = Media{Encoders: []Encoder{x264, mpeg4}, HDREncoders: []Encoder{x265}}
+
+// SystemMedia is the media engine of a system, goos as runtime.GOOS
+// names it.
 //
-// Windows and Linux get their own entries when those builds are made.
-// Windows has h264_mf and Linux has VA-API or openh264, and neither is
-// written here yet because neither has been run. A guess in this table
-// would render every short on that system.
-func encoderOrder() []Encoder { return encoderOrderFor(runtime.GOOS) }
+// On a Mac it is VideoToolbox, then Apple's encoder on the processor,
+// then libx264 where the ffmpeg has it. Windows and Linux get their own
+// encoders when those builds are made. Windows has h264_mf and Linux has
+// VA-API or openh264, and neither is written here yet because neither
+// has been run. A guess in this table would render every short on that
+// system. They decode through whatever system decoder their ffmpeg is
+// built with, today none, so ffmpeg decodes on the processor by itself.
+// HEVC in 10 bits for HDR is in Apple's media engine, and elsewhere only
+// libx265, which the ffmpeg we ship does not have, a question for
+// docs/PACKAGING.md.
+func SystemMedia(goos string) Media {
+	if goos == "darwin" {
+		return Media{
+			Encoders:    []Encoder{videoToolbox, onProcessor(videoToolbox), x264},
+			HDREncoders: []Encoder{hevcVideoToolbox, onProcessor(hevcVideoToolbox), x265},
+			Decodes:     true,
+		}
+	}
+	return Media{Encoders: []Encoder{x264}, HDREncoders: []Encoder{x265}, Decodes: true}
+}
 
 // order is what this engine reaches for, for a short of standard video
-// or of HDR, on its system, see Engine.system.
+// or of HDR, from its machine's media.
 func (e *Engine) order(hdr bool) []Encoder {
-	goos := e.system
-	if goos == "" {
-		goos = runtime.GOOS
-	}
+	media := e.mediaOf()
 	if hdr {
-		return hdrEncoderOrder(goos)
+		return media.HDREncoders
 	}
-	return encoderOrderFor(goos)
-}
-
-// Split from the above so the table can be read on any machine. The order
-// for macOS is the one that matters most and the machine that runs the
-// tests in a cloud session is not a Mac.
-func encoderOrderFor(goos string) []Encoder {
-	switch goos {
-	case "darwin":
-		return []Encoder{videoToolbox, onProcessor(videoToolbox), x264}
-	default:
-		return []Encoder{x264}
-	}
+	return media.Encoders
 }
 
 // VideoEncoder is the encoder this run uses, found once for its ffmpeg and
@@ -246,8 +280,9 @@ func (e *Engine) VideoEncoder(ctx context.Context) (Encoder, error) {
 		if !ok {
 			// Something we have no quality mapping for. Take it at its
 			// word and let it use its own defaults rather than passing a
-			// number that means something else to it.
-			chosen = Encoder{Name: e.WantEncoder, Quality: func(RenderSettings) []string { return nil }}
+			// number that means something else to it. It is named as the
+			// encoder of standard video, which is H.264.
+			chosen = Encoder{Name: e.WantEncoder, Quality: func(RenderSettings) []string { return nil }, Picture: h264Picture}
 		}
 		learned.keepEncoder(chosen)
 		return chosen, nil
@@ -408,7 +443,7 @@ func (e *Engine) encoderAfter(ctx context.Context, failed Encoder, light framewi
 func EncoderNames() string {
 	var names []string
 	seen := map[string]bool{}
-	for _, candidate := range encoderOrder() {
+	for _, candidate := range SystemMedia(runtime.GOOS).Encoders {
 		if !seen[candidate.Name] {
 			names = append(names, candidate.Name)
 		}

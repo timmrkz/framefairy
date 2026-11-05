@@ -34,9 +34,10 @@ func tailRunes(s string, n int) string {
 //
 // If it fails on a machine, for a file or a driver that will not have it,
 // the same work is done again on the processor and every decode after it
-// goes there straight away.
+// goes there straight away. A machine handed no media engine decodes on
+// the processor from the start, see Media.
 func (e *Engine) decodeFlags() []string {
-	if e.softDecode.Load() {
+	if !e.mediaOf().Decodes || e.softDecode.Load() {
 		return nil
 	}
 	return []string{"-hwaccel", "auto"}

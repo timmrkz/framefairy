@@ -129,10 +129,6 @@ type Engine struct {
 	// changed it wait.
 	checkpointEvery time.Duration
 	levelsReads     int
-	// system is the system whose encoders a render reaches for, see
-	// encoderOrderFor, this one unless a test says otherwise, so the order
-	// of a Mac can be run on any machine.
-	system string
 	// stuck, when set, says a render has stopped making frames, and its
 	// encoder is given up then as well as after encoderStall of the
 	// clock. A test sets it, so it waits for no stall of the clock.

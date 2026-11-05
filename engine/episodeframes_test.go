@@ -11,7 +11,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -316,15 +315,9 @@ func TestTheEpisodesDecoderHandsOverTheKeyFrameFirst(t *testing.T) {
 		t.Run(enc.name, func(t *testing.T) {
 			t.Parallel()
 			path := fixtures.Path(t, enc.file)
-			// How far apart on average the frames compared may be. On a
-			// Mac the episode's decoder decodes HEVC on the chip, and the
-			// ffmpeg it is compared with on the processor, issue #581.
-			// The chip's scaler and the processor's round differently, see
-			// TestTheEpisodesDecoderPlaysTheFilesPeopleBring.
+			// How far apart on average the frames compared may be. Both
+			// decode on the processor, on a test's machine, see Media.
 			apart := 2.0
-			if runtime.GOOS == "darwin" && strings.HasPrefix(enc.name, "HEVC") {
-				apart = 6
-			}
 			grid := gridOf(t, path)
 			// Every frame of the episode as ffmpeg decodes it from the
 			// start, by its place on the grid. Read on from the start,
@@ -340,8 +333,8 @@ func TestTheEpisodesDecoderHandsOverTheKeyFrameFirst(t *testing.T) {
 			// A frame of the decoder said to be at the moment at is
 			// within apart of ffmpeg's frame there, and nearer to it than
 			// to ffmpeg's frames before and after. Two frames side by side
-			// are 4 to 10 apart on average, so the chip's rounding alone
-			// would let a frame off by one pass, the review of #589.
+			// are 4 to 10 apart on average, so a looser limit would let a
+			// frame off by one pass, the review of #589.
 			same := func(what string, data []byte, at float64) {
 				t.Helper()
 				r := grid.Holding(at)
@@ -608,8 +601,8 @@ func TestTheEpisodesDecoderPlaysTheFilesPeopleBring(t *testing.T) {
 				if math.Abs(got[i]-want[i]) > 1e-6 {
 					t.Fatalf("%s from %.2f: frame %d at %.4f, the ffmpeg program's at %.4f", k.name, from, i, got[i], want[i])
 				}
-				// The chip's scaler and the processor's round differently.
-				if d := meanDiff(gotData[i], wantData[i]); d > 6 {
+				// Both decode on the processor, on a test's machine, see Media.
+				if d := meanDiff(gotData[i], wantData[i]); d > 2 {
 					t.Fatalf("%s from %.2f: frame %d differs from the ffmpeg program's by %.2f on average", k.name, from, i, d)
 				}
 			}

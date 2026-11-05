@@ -36,6 +36,16 @@ func twoCameras(t *testing.T) (string, SourceInfo) {
 // framingEngine frames by what is in focus rather than by faces. These
 // tests are about how a clip is framed, and looking for faces in
 // every sampled frame under the race detector is most of a minute.
+// decodingMachine is a machine handed a Mac's media engine, whose system
+// decoder a stand-in ffmpeg plays, so what framing does when the system's
+// decoder fails is tested on any machine, and no test waits on a real
+// one, see Media.
+func decodingMachine() *Machine {
+	m := NewMachine(afero.NewMemMapFs())
+	m.useMedia(SystemMedia("darwin"))
+	return m
+}
+
 func framingEngine() *Engine {
 	e := NewEngine(runlog.New(io.Discard, false, false), NewMachine(afero.NewMemMapFs()))
 	e.NoFaces = true
@@ -94,6 +104,7 @@ func TestFramingDecodesOnTheProcessorWhenTheSystemWillNot(t *testing.T) {
 		t.Fatal(err)
 	}
 	e := framingEngine()
+	e.useMedia(SystemMedia("darwin"))
 	e.FFmpeg = refusing
 	segments, err := e.ClipSegments(context.Background(), path, []timed.Span{{Start: 7, End: 13}}, source, 202, nil)
 	if err != nil {
@@ -126,7 +137,7 @@ func TestTheNextJobDecodesOnTheProcessorOnceTheSystemWouldNot(t *testing.T) {
 	if err := standin.Write(refusing, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	machine := NewMachine(afero.NewMemMapFs())
+	machine := decodingMachine()
 	job := func() {
 		e := NewEngine(runlog.New(io.Discard, false, false), machine)
 		e.FFmpeg, e.NoFaces = refusing, true
@@ -189,7 +200,7 @@ func TestHwaccelsIn(t *testing.T) {
 // ten minutes, in TestNewAndCancelInEitherOrder and the engine's tests
 // alike. Not parallel: stuckFFmpeg sets timeLimit, a package variable.
 func TestFramingGoesOnWhenTheSystemDecoderHangs(t *testing.T) {
-	e := NewEngine(runlog.New(io.Discard, false, false), NewMachine(afero.NewMemMapFs()))
+	e := NewEngine(runlog.New(io.Discard, false, false), decodingMachine())
 	e.FFmpeg = stuckFFmpeg(t, false)
 	used := e.decoderUsed(context.Background(), "episode.mp4", 10.2)
 	if used != "the processor" {
@@ -201,7 +212,7 @@ func TestFramingGoesOnWhenTheSystemDecoderHangs(t *testing.T) {
 
 	// A frame pulled on its own is ended the same way. One that is not
 	// ends the test at go test's -timeout.
-	e = NewEngine(runlog.New(io.Discard, false, false), NewMachine(afero.NewMemMapFs()))
+	e = NewEngine(runlog.New(io.Discard, false, false), decodingMachine())
 	e.FFmpeg = stuckFFmpeg(t, false)
 	if got := e.sampleGray(context.Background(), "episode.mp4", 10, 0.1, FaceWidth, FaceHeight, 1); len(got) != 0 {
 		t.Errorf("a frame pulled with a system decoder that hangs gave %d frames from a stand-in that has none", len(got))
@@ -214,7 +225,7 @@ func TestFramingGoesOnWhenTheSystemDecoderHangs(t *testing.T) {
 // minutes, and nothing ended it: the search would have waited for good.
 // Not parallel: stuckFFmpeg sets timeLimit, a package variable.
 func TestReadingFramesThatHangsIsEnded(t *testing.T) {
-	e := NewEngine(runlog.New(io.Discard, false, false), NewMachine(afero.NewMemMapFs()))
+	e := NewEngine(runlog.New(io.Discard, false, false), decodingMachine())
 	e.FFmpeg = stuckFFmpeg(t, false)
 	if _, err := e.readSpan(context.Background(), "episode.mp4", 10, 20); err != nil {
 		t.Fatal(err)
@@ -224,7 +235,7 @@ func TestReadingFramesThatHangsIsEnded(t *testing.T) {
 	}
 
 	// One that hangs either way gives no frames rather than no clip.
-	e = NewEngine(runlog.New(io.Discard, false, false), NewMachine(afero.NewMemMapFs()))
+	e = NewEngine(runlog.New(io.Discard, false, false), decodingMachine())
 	e.FFmpeg = stuckFFmpeg(t, true)
 	if frames, err := e.readSpan(context.Background(), "episode.mp4", 10, 20); err != nil || len(frames) != 0 {
 		t.Errorf("an ffmpeg that always hangs: %d frames, %v", len(frames), err)
@@ -262,7 +273,7 @@ func TestASystemDecoderThatWillNotEndIsLeftBehind(t *testing.T) {
 	})
 
 	var said bytes.Buffer
-	e := NewEngine(runlog.New(&said, false, false), NewMachine(afero.NewMemMapFs()))
+	e := NewEngine(runlog.New(&said, false, false), decodingMachine())
 	e.FFmpeg, e.Runner = stuckFFmpeg(t, false), stuck
 	used := e.decoderUsed(context.Background(), "episode.mp4", 10.2)
 	if used != "the processor" || !e.softDecode.Load() {
@@ -274,13 +285,13 @@ func TestASystemDecoderThatWillNotEndIsLeftBehind(t *testing.T) {
 
 	// Pulling one frame, and reading the frames of a span as ffmpeg
 	// decodes it, are left the same way.
-	e = NewEngine(runlog.New(io.Discard, false, false), NewMachine(afero.NewMemMapFs()))
+	e = NewEngine(runlog.New(io.Discard, false, false), decodingMachine())
 	e.FFmpeg, e.Runner = stuckFFmpeg(t, true), stuck
 	if got := e.sampleGray(context.Background(), "episode.mp4", 10, 0.1, FaceWidth, FaceHeight, 1); len(got) != 0 {
 		t.Errorf("an ffmpeg left behind gave %d frames", len(got))
 	}
 	said.Reset()
-	e = NewEngine(runlog.New(&said, false, false), NewMachine(afero.NewMemMapFs()))
+	e = NewEngine(runlog.New(&said, false, false), decodingMachine())
 	e.FFmpeg, e.Runner = stuckFFmpeg(t, true), stuck
 	if frames, err := e.readSpan(context.Background(), "episode.mp4", 10, 20); err != nil || len(frames) != 0 {
 		t.Errorf("an ffmpeg left behind while it reads the frames: %d frames, %v", len(frames), err)
