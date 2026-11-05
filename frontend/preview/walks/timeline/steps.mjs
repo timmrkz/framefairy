@@ -112,13 +112,27 @@ export const steps = {
     const y = box.y + box.h / 2;
     await page.mouse.move(x, y);
     if (walk.dragShift) await page.keyboard.down("Shift");
-    await page.mouse.down();
-    for (let i = 1; i <= 20; i++) {
-      await page.mouse.move(x + (px * i) / 20, y);
-      await nextPaint(page);
+    // The sound the paused video preview opens while the edge is dragged.
+    // Held under the hand, each place shows its frame alone, so only the
+    // press may cue a play and open its sound, not every move after it.
+    let sounds = 0;
+    const opened = (r) => new URL(r.url()).pathname === "/frames/sound" && sounds++;
+    page.on("request", opened);
+    try {
+      await page.mouse.down();
+      for (let i = 1; i <= 20; i++) {
+        await page.mouse.move(x + (px * i) / 20, y);
+        await nextPaint(page);
+      }
+    } finally {
+      page.off("request", opened);
     }
     await page.mouse.up();
     if (walk.dragShift) await page.keyboard.up("Shift");
+    if (sounds > 1) {
+      walk.wrong = `the paused video preview opened its sound ${sounds} times while the ${which} edge was dragged, not at most once`;
+      return;
+    }
     await watch.step("drag edge", s);
     await page.evaluate(() => (window.__followWatch = false));
   },
