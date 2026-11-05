@@ -38,26 +38,26 @@ jobs:
     uses: ./.github/workflows/ci-image.yml
 
   # The same as the walks in ci.yml, with STILL=none, in Chromium
-  # counting lines and in WebKit.
+  # counting lines. The walks in WebKit below take the same steps.
   walks:
     needs: image
     name: walks (${{ matrix.browser }}, ${{ matrix.shard }})
     strategy:
       fail-fast: false
       matrix:
-        browser: [chromium, webkit]
+        browser: [chromium]
         shard: [1/4, 2/4, 3/4, 4/4]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    defaults:
+    defaults: &bash
       run:
         shell: bash -e {0}
-    container:
+    container: &walks-container
       image: ${{ needs.image.outputs.walks }}
       options: --init --ipc=host
       volumes:
         - /home/runner/work:/home/runner/work
-    steps:
+    steps: &walks-steps
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # The checkout is the runner's user's and the job runs as root, see
       # the walks in ci.yml.
@@ -111,7 +111,7 @@ jobs:
       - if: failure() && steps.walks.outcome == 'failure'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: walk-traces-${{ strategy.job-index }}
+          name: walk-traces-${{ matrix.browser }}-${{ strategy.job-index }}
           path: .build/walk-traces
           retention-days: 14
           if-no-files-found: ignore
@@ -133,6 +133,24 @@ jobs:
           if-no-files-found: error
           # They lie under .build, which upload-artifact counts as hidden.
           include-hidden-files: true
+
+  # The same walks in WebKit, the steps above with YAML's anchors, in a
+  # job of their own: Codecov takes the walks' counts only when every
+  # share of the job that counted them passed, and a share failing in
+  # WebKit says nothing about what Chromium counted.
+  walks-webkit:
+    needs: image
+    name: walks (${{ matrix.browser }}, ${{ matrix.shard }})
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [webkit]
+        shard: [1/4, 2/4, 3/4, 4/4]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults: *bash
+    container: *walks-container
+    steps: *walks-steps
 
   # The Go tests, counting the lines they run, in three shares like the
   # job linux in ci.yml, without the race detector, which the counts do
