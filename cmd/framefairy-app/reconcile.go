@@ -39,7 +39,7 @@ func (s *FrameFairy) reconcile(changed []string) {
 	defer s.reconciling.Unlock()
 	follow := changed == nil
 	for _, ep := range s.store.Episodes() {
-		if changed != nil && !touches(ep, changed) {
+		if changed != nil && !touches(ep, s.shortsOf(ep), changed) {
 			continue
 		}
 		if s.letGoIfRemoved(ep) {
@@ -58,20 +58,48 @@ func (s *FrameFairy) reconcile(changed []string) {
 			follow = true
 			s.listChanged(ep)
 		}
+		// A plan written may name a folder a short was rendered into.
+		if writesPlan(ep, changed) {
+			follow = true
+		}
 	}
 	if follow {
-		s.watch.follow(s.store.files, s.store.Episodes())
+		s.watch.follow(s.store.files, s.store.Episodes(), s.shortsOf)
 	}
+}
+
+// shortsOf is the folders the shorts of a video were rendered into, as
+// its plans say, see engine.Episode.ShortFolders.
+func (s *FrameFairy) shortsOf(video string) []string {
+	return s.store.machine.Episode(video).ShortFolders()
 }
 
 // touches says whether a change at one of the paths can change what the
 // app has of video: the video itself, its work folder or anything in it,
-// or a folder the video is in.
-func touches(video string, changed []string) bool {
+// a folder the video is in, or a file in a folder its shorts were
+// rendered into, a short deleted or moved in Finder.
+func touches(video string, shorts, changed []string) bool {
 	work := engine.WorkDir(video)
 	sep := string(filepath.Separator)
 	for _, p := range changed {
 		if p == video || p == work || strings.HasPrefix(p, work+sep) || strings.HasPrefix(video, p+sep) {
+			return true
+		}
+		for _, folder := range shorts {
+			if p == folder || strings.HasPrefix(p, folder+sep) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// writesPlan says whether one of the paths is a plan of video, which a
+// render writes the folder of its short into.
+func writesPlan(video string, changed []string) bool {
+	logs := engine.LogsDir(video)
+	for _, p := range changed {
+		if ok, _ := filepath.Match("clips*.json", filepath.Base(p)); ok && filepath.Dir(p) == logs {
 			return true
 		}
 	}

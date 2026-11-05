@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"slices"
@@ -145,8 +146,13 @@ func TestAChangeIsHintedForTheVideoItCanChange(t *testing.T) {
 		{filepath.Join("/home/tim/videos", "start.mp4"), false},
 		{work + "-old", false},
 		{"/home/tim/videos/you", false},
+		{"/home/tim/Shorts/youtube/eins.mp4", true},
+		{"/home/tim/Shorts/youtube", true},
+		{"/home/tim/Shorts/youtube-old/eins.mp4", false},
+		{"/home/tim/Shorts/start/eins.mp4", false},
 	} {
-		if got := touches(video, []string{c.path}); got != c.want {
+		shorts := []string{"/home/tim/Shorts/youtube"}
+		if got := touches(video, shorts, []string{c.path}); got != c.want {
 			t.Errorf("a change at %s touches %s: %v, want %v", c.path, video, got, c.want)
 		}
 	}
@@ -155,8 +161,9 @@ func TestAChangeIsHintedForTheVideoItCanChange(t *testing.T) {
 // On the real disk: diskLibrary is the app over a library on the real
 // disk, watched, with one video in it, and where the sidebar's news of the
 // library goes and the states sent to the workspace. The system's watch
-// hears only the real disk.
-func diskLibrary(t *testing.T) (*FrameFairy, string, chan string, chan string) {
+// hears only the real disk. Each of prepare is given the video before the
+// library is read, which starts the watch.
+func diskLibrary(t *testing.T, prepare ...func(video string)) (*FrameFairy, string, chan string, chan string) {
 	t.Helper()
 	dir := t.TempDir()
 	files := afero.NewOsFs()
@@ -193,6 +200,9 @@ func diskLibrary(t *testing.T) (*FrameFairy, string, chan string, chan string) {
 	}
 	t.Cleanup(svc.clearing.Wait)
 	t.Cleanup(svc.watch.stop)
+	for _, p := range prepare {
+		p(video)
+	}
 	// Reading the library is what starts the watch, as it does in the app.
 	svc.Library()
 	return svc, video, told, sent
@@ -251,4 +261,60 @@ func TestAPlanWrittenByTheCommandLineIsSentToTheWorkspaceAtOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	newsUntil(sent, video, func() bool { return true })
+}
+
+// On the real disk: the system's own watch on the folder a short was
+// rendered into is what is tested, the way Finder's changes reach it.
+//
+// A short deleted in Finder is gone from its clip at once: the workspace
+// is sent the video's state, and the clip has no short, so Show in folder
+// goes. The plan still says the clip was rendered.
+func TestAShortDeletedInFinderIsGoneFromItsClipAtOnce(t *testing.T) {
+	t.Parallel()
+	var plan, short string
+	svc, video, _, sent := diskLibrary(t, func(video string) {
+		shorts := filepath.Join(filepath.Dir(filepath.Dir(video)), "Shorts", "youtube")
+		if err := os.MkdirAll(shorts, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		short = filepath.Join(shorts, "eins.mp4")
+		if err := os.WriteFile(short, []byte("a short"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		info, err := os.Stat(short)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var body map[string]any
+		if err := json.Unmarshal([]byte(historyPlan), &body); err != nil {
+			t.Fatal(err)
+		}
+		body["shorts"] = map[string]any{"01": map[string]any{
+			"folder": shorts, "name": "eins.mp4", "size": info.Size(), "modified": info.ModTime().UnixNano()}}
+		data, err := json.Marshal(body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		plan = filepath.Join(engine.LogsDir(video), "clips.json")
+		if err := os.WriteFile(plan, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	})
+	shortOf := func() string {
+		v, err := svc.store.machine.Episode(video).ReadPlan(plan)
+		if err != nil || len(v.Clips) == 0 {
+			t.Fatalf("the plan read %v", err)
+		}
+		return v.Clips[0].Short
+	}
+	if got := shortOf(); got != short {
+		t.Fatalf("the clip's short is %q before, want %s", got, short)
+	}
+	if err := os.Remove(short); err != nil {
+		t.Fatal(err)
+	}
+	newsUntil(sent, video, func() bool { return shortOf() == "" })
+	if v, _ := svc.store.machine.Episode(video).ReadPlan(plan); !v.Clips[0].Rendered {
+		t.Error("the clip whose short was deleted no longer says it was rendered")
+	}
 }

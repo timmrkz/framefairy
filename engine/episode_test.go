@@ -110,8 +110,14 @@ func TestAShortBeingWrittenIsNotCounted(t *testing.T) {
 	if err := recordShort(disk, plan, "01", filepath.Join(out, "done.mp4")); err != nil {
 		t.Fatal(err)
 	}
-	if got := NewMachine(disk).Episode(source).Status("", nil).Rendered; got != 1 {
+	ep := NewMachine(disk).Episode(source)
+	if got := ep.Status("", nil).Rendered; got != 1 {
 		t.Errorf("%d rendered, want 1", got)
+	}
+	// The folders its shorts are in, for the app to watch: the one the
+	// plan noted, once, and none it did not note.
+	if got := ep.ShortFolders(); len(got) != 1 || got[0] != fileio.ResolvePath(out) {
+		t.Errorf("the shorts are said to be in %v, want %s", got, out)
 	}
 }
 

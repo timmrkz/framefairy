@@ -639,6 +639,23 @@ func shortOf(plan Plan, c Clip) string {
 	return short
 }
 
+// ShortFolders is every folder the plans say a short of the episode was
+// rendered into, each once, sorted, so the app can watch them: a short
+// deleted or moved there in Finder is then gone from its clip at once,
+// see shortOf.
+func (ep *Episode) ShortFolders() []string {
+	var out []string
+	for _, plan := range ep.Plans() {
+		for _, c := range plan.clips {
+			if rec, ok := recordOf(plan.plan, c); ok && !slices.Contains(out, rec.folder) {
+				out = append(out, rec.folder)
+			}
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
 // renderedOf says whether a clip was rendered. It is the plan's record
 // alone, see recordShort, and not the file: a short is uploaded and then
 // removed from its folder, or written over by hand, and the clip was

@@ -47,20 +47,23 @@ func newWatching(heard func(changed []string)) *watching {
 }
 
 // watchedOf is the folders watched for a video: the one it is in, which
-// holds the video and its work folder, the work folder, and its logs,
-// which hold the transcript, the plans and the loudness. A folder that is
-// not there yet is watched once it is, since its making is a change in
-// the folder above it.
-func watchedOf(video string) []string {
+// holds the video and its work folder, the work folder, its logs, which
+// hold the transcript, the plans and the loudness, and the folders its
+// shorts were rendered into, which the plans say, see
+// engine.Episode.ShortFolders. A folder that is not there yet is watched
+// once it is, since its making is a change in the folder above it.
+func watchedOf(video string, shorts []string) []string {
 	work := engine.WorkDir(video)
-	return []string{filepath.Dir(video), work, filepath.Join(work, "logs")}
+	return append([]string{filepath.Dir(video), work, filepath.Join(work, "logs")}, shorts...)
 }
 
 // follow watches the folders of these videos that are there, and no
-// other. It is called after every look at the library, so the watch
-// follows what was added, removed, deleted and made again, the way the
-// library itself does.
-func (ws *watching) follow(files afero.Fs, videos []string) {
+// other, with the folders shortsOf says each video's shorts are in. It
+// is called after every look at the library, and after a plan is
+// written, which may name a folder a short was rendered into, so the
+// watch follows what was added, removed, deleted, made again and
+// rendered, the way the library itself does.
+func (ws *watching) follow(files afero.Fs, videos []string, shortsOf func(video string) []string) {
 	if ws == nil {
 		return
 	}
@@ -68,7 +71,7 @@ func (ws *watching) follow(files afero.Fs, videos []string) {
 	defer ws.mu.Unlock()
 	want := map[string]bool{}
 	for _, v := range videos {
-		for _, dir := range watchedOf(v) {
+		for _, dir := range watchedOf(v, shortsOf(v)) {
 			want[dir] = true
 		}
 	}
