@@ -678,7 +678,7 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		answer(w, true, nil)
 	})
 	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mediaMiddleware(b.d.svc.store)(reportMiddleware(b.d.svc.report)(http.FileServer(http.Dir(dist)))).ServeHTTP(w, r)
+		mediaMiddleware(b.d.svc)(reportMiddleware(b.d.svc.report)(http.FileServer(http.Dir(dist)))).ServeHTTP(w, r)
 	}))
 	return mux
 }
@@ -1615,7 +1615,7 @@ func (b *bridge) reset() error {
 	}
 	// After the work has stopped, so nothing hears on past it.
 	b.words.from(b.said)
-	freshDecoders()
+	freshDecoders(&b.d.svc.previews)
 	b.d.reopen()
 	return nil
 }
@@ -1665,8 +1665,7 @@ func endReport(r *reporting) {
 // should have shown its key frame showed none, issue #552. The next
 // stream starts a decoder again, with its cursors warmed as the app's
 // first are. A hold the walk before took is kept, so its release finds it.
-func freshDecoders() {
-	p := openPreviews
+func freshDecoders(p *previews) {
 	p.mu.Lock()
 	streams, decoders := p.open, p.decoders
 	p.open, p.decoders = nil, nil

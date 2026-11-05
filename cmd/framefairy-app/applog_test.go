@@ -167,11 +167,11 @@ func TestFramesRequestsAreLogged(t *testing.T) {
 	})
 	// The same failure for the same video again, once a frame: written
 	// once, and counted after. It wrote two lines a frame before, found by
-	// the second review. failures is the package's own, so it is cleared
-	// for this test, which nothing else runs beside.
-	failures.mu.Lock()
-	clear(failures.last)
-	failures.mu.Unlock()
+	// the second review. The log is the package's own, so what it
+	// counted is cleared for this test, which nothing else runs beside.
+	theLog.repeats.mu.Lock()
+	clear(theLog.repeats.last)
+	theLog.repeats.mu.Unlock()
 	for _, at := range []string{"1.6", "1.64", "1.68"} {
 		serve("/frames/captions?path=/videos/start.mp4&at="+at+"&w=270&h=480", func(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "the captions could not be drawn", http.StatusInternalServerError)

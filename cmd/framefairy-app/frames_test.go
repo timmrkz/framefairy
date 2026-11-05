@@ -16,6 +16,8 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/spf13/afero"
+
 	"framefairy/engine"
 	"framefairy/internal/ffmpegtest"
 	"framefairy/internal/fixtures"
@@ -31,7 +33,7 @@ func TestTheFramesRouteStreamsAnEpisode(t *testing.T) {
 	needDecoder(t)
 	svc, mine, _ := library(t)
 	fixtures.Copy(t, "small-10s.mp4", mine)
-	handler := mediaMiddleware(svc.store)(http.NotFoundHandler())
+	handler := mediaMiddleware(svc)(http.NotFoundHandler())
 	get := func(path string, q url.Values) *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, httptest.NewRequest("GET", path+"?"+q.Encode(), nil))
@@ -116,7 +118,7 @@ func TestTheFramesRouteSaysAnHDREpisodesLight(t *testing.T) {
 	svc, mine, _ := library(t)
 	// The tags are what says HDR, so any picture tagged HLG will do.
 	fixtures.Copy(t, "small-hlg.mp4", mine)
-	handler := mediaMiddleware(svc.store)(http.NotFoundHandler())
+	handler := mediaMiddleware(svc)(http.NotFoundHandler())
 	get := func(path string, q url.Values) *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, httptest.NewRequest("GET", path+"?"+q.Encode(), nil))
@@ -148,7 +150,7 @@ func TestTheFramesRouteSaysWhenAnEpisodeEnds(t *testing.T) {
 	needDecoder(t)
 	svc, mine, _ := library(t)
 	fixtures.Copy(t, "small-1s.mp4", mine)
-	handler := mediaMiddleware(svc.store)(http.NotFoundHandler())
+	handler := mediaMiddleware(svc)(http.NotFoundHandler())
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/open?"+url.Values{"path": {mine}, "w": {"32"}, "h": {"18"}, "grid": {gridOf(t, mine)}}.Encode(), nil))
 	var opened struct{ ID string }
@@ -180,7 +182,7 @@ func TestTheFramesRouteSaysAStoppedStreamWasClosed(t *testing.T) {
 	needDecoder(t)
 	svc, mine, _ := library(t)
 	fixtures.Copy(t, "small-10s.mp4", mine)
-	handler := mediaMiddleware(svc.store)(http.NotFoundHandler())
+	handler := mediaMiddleware(svc)(http.NotFoundHandler())
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/open?"+url.Values{"path": {mine}, "w": {"32"}, "h": {"18"}, "grid": {gridOf(t, mine)}}.Encode(), nil))
 	var opened struct{ ID string }
@@ -188,11 +190,11 @@ func TestTheFramesRouteSaysAStoppedStreamWasClosed(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Held by a pull that is on its way as the stream is stopped.
-	s := openPreviews.get(opened.ID)
+	s := svc.previews.get(opened.ID)
 	if s == nil {
 		t.Fatal("the stream is not open")
 	}
-	openPreviews.close(opened.ID)
+	svc.previews.close(opened.ID)
 	<-s.done
 	read := httptest.NewRecorder()
 	writeFrames(read, httptest.NewRequest("GET", "/frames/read?id="+opened.ID, nil), s, 4, 0)
@@ -212,7 +214,7 @@ func TestTheFramesRouteSaysAStoppedStreamWasClosed(t *testing.T) {
 // gone with it. Plan row 2.156, step 3 of docs/VIDEO-PREVIEW.md.
 func TestTheFramesRouteHasNoSecondDecoder(t *testing.T) {
 	svc, _, _ := library(t)
-	handler := mediaMiddleware(svc.store)(http.NotFoundHandler())
+	handler := mediaMiddleware(svc)(http.NotFoundHandler())
 	for _, route := range []string{"/frames/native?codec=hvc1&cw=320&ch=180&w=160&h=90", "/frames/decode?id=nobody"} {
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, httptest.NewRequest("POST", route, strings.NewReader("config")))
@@ -230,7 +232,7 @@ func TestTheFramesRouteStreamsSound(t *testing.T) {
 	needDecoder(t)
 	svc, mine, _ := library(t)
 	fixtures.Copy(t, "small-4s.mp4", mine)
-	handler := mediaMiddleware(svc.store)(http.NotFoundHandler())
+	handler := mediaMiddleware(svc)(http.NotFoundHandler())
 	get := func(path string, q url.Values) *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, httptest.NewRequest("GET", path+"?"+q.Encode(), nil))
@@ -309,7 +311,7 @@ func TestTheFramesRouteKeepsTheDecoderOfAnOpenEpisode(t *testing.T) {
 	needDecoder(t)
 	svc, mine, _ := library(t)
 	fixtures.Copy(t, "small-4s.mp4", mine)
-	handler := mediaMiddleware(svc.store)(http.NotFoundHandler())
+	handler := mediaMiddleware(svc)(http.NotFoundHandler())
 	get := func(route string) int {
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, httptest.NewRequest("GET", route+"?"+url.Values{"path": {mine}}.Encode(), nil))
@@ -319,22 +321,22 @@ func TestTheFramesRouteKeepsTheDecoderOfAnOpenEpisode(t *testing.T) {
 		t.Fatalf("hold answered %d", code)
 	}
 	has := func() bool {
-		openPreviews.mu.Lock()
-		defer openPreviews.mu.Unlock()
-		return openPreviews.decoders[mine] != nil
+		svc.previews.mu.Lock()
+		defer svc.previews.mu.Unlock()
+		return svc.previews.decoders[mine] != nil
 	}
 	if !has() {
 		t.Fatal("a hold started no decoder")
 	}
 	// Reaped as if everything had stood unused for ever.
-	openPreviews.reapOnce(-time.Hour)
+	svc.previews.reapOnce(-time.Hour)
 	if !has() {
 		t.Fatal("the decoder of an episode held open was closed for standing unused")
 	}
 	if code := get("/frames/release"); code != http.StatusNoContent {
 		t.Fatalf("release answered %d", code)
 	}
-	openPreviews.reapOnce(-time.Hour)
+	svc.previews.reapOnce(-time.Hour)
 	if has() {
 		t.Error("the decoder of an episode let go of was kept")
 	}
@@ -390,7 +392,7 @@ func TestOnlyAFewDecodersNobodyHoldsStandRunning(t *testing.T) {
 // page hands it back with a stream it opens.
 func gridOf(t *testing.T, path string) string {
 	t.Helper()
-	info, err := sources.probe(context.Background(), path)
+	info, err := engine.NewEngine(engineLog("files", path), engine.NewMachine(afero.NewOsFs())).Probe(context.Background(), path)
 	if err != nil {
 		t.Fatal(err)
 	}

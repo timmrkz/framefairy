@@ -31,6 +31,13 @@ func TestThePlacedWindowFitsTheRoomTheRangePickerReads(t *testing.T) {
 	}
 }
 
+// lasting stands in for ffprobe, for a video in memory as long as duration.
+func lasting(duration float64) func(context.Context, string) (engine.SourceInfo, error) {
+	return func(context.Context, string) (engine.SourceInfo, error) {
+		return engine.SourceInfo{Duration: duration}, nil
+	}
+}
+
 // anUnevenVideo is a video of an hour, heard all through, slow speech for
 // its first half hour and fast and long words after it, so one search
 // reads less than a window of it. It probes as an hour long.
@@ -49,9 +56,9 @@ func anUnevenVideo(t *testing.T) (*FrameFairy, string, float64) {
 		words = append(words, [3]any{at, at + 0.4, fmt.Sprintf("%s%d", word, len(words))})
 	}
 	heardEpisode(t, svc, source, duration, words)
-	// A file in memory has no stamp on the real disk, which is what the
-	// probes are kept by, so the one there is stands for it.
-	svc.probes = &probed{info: map[string]engine.SourceInfo{"": {Duration: duration}}}
+	// A file in memory is no file ffprobe can read, so it probes as an
+	// hour long.
+	svc.probeVideo = lasting(duration)
 	return svc, source, duration
 }
 
@@ -186,7 +193,7 @@ func TestATargetTypedOnOneVideoStaysWhenAnotherIsFitted(t *testing.T) {
 		}
 		heardEpisode(t, svc, ep, duration, words)
 	}
-	svc.probes = &probed{info: map[string]engine.SourceInfo{"": {Duration: duration}}}
+	svc.probeVideo = lasting(duration)
 	ctx := context.Background()
 	most := func(ep string) float64 {
 		st, err := svc.State(ctx, ep)

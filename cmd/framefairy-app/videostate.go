@@ -64,7 +64,7 @@ func (s *FrameFairy) State(ctx context.Context, path string) (VideoState, error)
 		// A video whose file is gone keeps its clips, see Clips.
 		plans = s.plansOf(path)
 	}
-	info := sources.lastOf(path)
+	info := s.probes.lastOf(path)
 	if !st.Status.Missing {
 		// A video that cannot be read now still has its status, its jobs
 		// and its clips, as a missing one does, so the workspace says what
