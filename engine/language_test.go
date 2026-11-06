@@ -604,7 +604,7 @@ func TestTheCacheIsWorkedOutFromTheShape(t *testing.T) {
 }
 
 // What llama-server said it took, on an M2 Max with Gemma 4 26B A4B and a
-// search of the first half hour, at log level 4 in llm-server.log. The
+// search of the first half hour, at log level 4 in its log. The
 // weights are the file, mapped: llama.cpp counts the part of it the
 // processor reads and the part the graphics side reads apart, but they are
 // the same pages of one file. What a model is judged to need has to cover

@@ -1,16 +1,17 @@
 package engine
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -122,13 +123,36 @@ func TestServerStamp(t *testing.T) {
 	}
 }
 
-// The model is loaded ahead of the first search of a new episode, while
-// nothing has made the episode's logs folder yet. The server's output is
-// the only record of what the model took from memory, so it is kept even
-// then.
+// heardSaying is a machine whose programs say their lines into the
+// lines it returns, one "from pid level: line" each, see ProgramSaid.
 //
-// On the real disk: the stand-in llama-server is a program that is run, and its log is a file.
-func TestTheServerLogIsKeptBeforeTheLogsFolderExists(t *testing.T) {
+// On the real disk: it starts stand-in programs, which read their model
+// from the disk.
+func heardSaying() (*Machine, func() []string) {
+	m := memoryUnasked(NewMachine(disk))
+	var mu sync.Mutex
+	var lines []string
+	m.Said = func(from, video string, pid int, level slog.Level, line string) {
+		mu.Lock()
+		defer mu.Unlock()
+		lines = append(lines, fmt.Sprintf("%s %d %s: %s", from, pid, level, line))
+	}
+	return m, func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return slices.Clone(lines)
+	}
+}
+
+// Every line llama-server writes reaches the program's log as
+// "llama-server", with its process, at the level llama.cpp marks it with,
+// without the time it puts before it, and with the model's description
+// when the load fails. The error quotes its last lines, since a report of
+// a problem holds the log and nothing else, #664.
+//
+// On the real disk: the stand-in llama-server is a program that is run.
+func TestWhatTheServerSaysIsInTheLog(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("the stand-in for llama-server is a shell script")
 	}
@@ -136,7 +160,12 @@ func TestTheServerLogIsKeptBeforeTheLogsFolderExists(t *testing.T) {
 	server := filepath.Join(dir, "llama-server")
 	// It says what it was started with and ends, so the start is over
 	// once it has said it.
-	script := "#!/bin/sh\necho \"buffer size stand-in $*\"\n"
+	script := "#!/bin/sh\n" +
+		"echo \"0.00.000.100 I build: 11430 args $*\"\n" +
+		"echo \"0.00.001.000 I print_info: file type   = Q4_K - Medium\"\n" +
+		"echo \"0.00.002.000 W llama_context: n_ctx_seq (16384) < n_ctx_train\"\n" +
+		"echo \"0.00.003.000 E llama_model_load: error loading model\" >&2\n" +
+		"printf 'srv    main: exiting'\n"
 	if err := standin.Write(server, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -144,20 +173,84 @@ func TestTheServerLogIsKeptBeforeTheLogsFolderExists(t *testing.T) {
 	if err := os.WriteFile(model, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	logDir := filepath.Join(dir, "episode.framefairy", "logs")
-	logFile := filepath.Join(logDir, "llm-server.log")
-
-	e := NewEngine(runlog.New(io.Discard, false, false), memoryUnasked(NewMachine(disk)))
-	if _, _, err := e.startServer(context.Background(), LocalModel{Server: server, Model: model}, 16384, logDir); err == nil {
+	m, said := heardSaying()
+	e := NewEngine(runlog.New(io.Discard, false, false), m)
+	_, _, err := e.startServer(context.Background(), LocalModel{Server: server, Model: model}, 16384)
+	if err == nil {
 		t.Fatal("a server that ended while it loaded was taken for loaded")
 	}
-	body, _ := os.ReadFile(logFile)
-	if !strings.Contains(string(body), "buffer size") {
-		t.Fatalf("no server output in %s, got %q", logFile, body)
+	lines := said()
+	if len(lines) == 0 {
+		t.Fatal("the server said nothing into the log")
 	}
-	// What the model took from memory is only in the log from level 4.
-	if !strings.Contains(string(body), "-lv 4") {
-		t.Errorf("llama-server was not asked to say what it took from memory: %q", body)
+	var pid int
+	if _, err := fmt.Sscanf(lines[0], "llama-server %d DEBUG: started, process", &pid); err != nil || pid <= 0 {
+		t.Fatalf("the first line says no start with its process: %q", lines[0])
+	}
+	for _, want := range []string{
+		"DEBUG: build: 11430 args ",
+		"DEBUG: print_info: file type   = Q4_K - Medium",
+		"WARN: llama_context: n_ctx_seq (16384) < n_ctx_train",
+		"ERROR: llama_model_load: error loading model",
+		"DEBUG: srv    main: exiting",
+	} {
+		prefix := fmt.Sprintf("llama-server %d %s", pid, want)
+		if !slices.ContainsFunc(lines, func(l string) bool { return strings.HasPrefix(l, prefix) }) {
+			t.Errorf("no line %q in %q", want, lines)
+		}
+	}
+	// What the model took from memory is only said from level 4, and at
+	// level 5 the server writes every request and answer whole, which is
+	// the transcript, and a report must never hold it.
+	if !strings.Contains(strings.Join(lines, "\n"), " -lv 4 ") {
+		t.Errorf("llama-server was not started at level 4: %q", lines)
+	}
+	if !strings.Contains(err.Error(), "error loading model") {
+		t.Errorf("the error does not say what the server said last: %v", err)
+	}
+}
+
+// The description of a model file the app knows is left out of the log
+// of a load that works: it is the same on every load, and the file is
+// held to its SHA256 before it starts. It is said when the load fails.
+// Everything else is said as it comes, and a mark that the server is
+// ready is heard however its line is split over writes.
+func TestTheModelsDescriptionIsSaidOnlyWhenTheLoadFails(t *testing.T) {
+	t.Parallel()
+	for _, failed := range []bool{false, true} {
+		var lines []string
+		ready := make(chan struct{}, 8)
+		o := &serverOutput{ready: ready, said: func(_ int, level slog.Level, line string) {
+			lines = append(lines, level.String()+": "+line)
+		}}
+		o.begin(7)
+		lines = nil
+		for _, w := range []string{
+			"0.00.001.000 I llama_model_loader: - kv   0: general.architecture str = gemma3\n",
+			"0.00.002.000 I print_info: n_ctx_train = 131072\n0.00.003.000 I load_tensors: loading model ",
+			"tensors\n0.00.004.000 I main: model lo", "aded\n",
+		} {
+			if n, err := o.Write([]byte(w)); n != len(w) || err != nil {
+				t.Fatalf("Write(%q) = %d, %v", w, n, err)
+			}
+		}
+		o.settle(failed)
+		_, _ = o.Write([]byte("0.00.005.000 I print_info: said after the load\n"))
+		want := []string{"DEBUG: load_tensors: loading model tensors", "DEBUG: main: model loaded"}
+		if failed {
+			want = append(want, "DEBUG: llama_model_loader: - kv   0: general.architecture str = gemma3",
+				"DEBUG: print_info: n_ctx_train = 131072")
+		}
+		want = append(want, "DEBUG: print_info: said after the load")
+		if !slices.Equal(lines, want) {
+			t.Errorf("failed %v: the log holds %q, want %q", failed, lines, want)
+		}
+		if len(ready) != 1 {
+			t.Errorf("failed %v: heard ready %d times, want once", failed, len(ready))
+		}
+		if got := o.loadLines(); len(got) != 2 {
+			t.Errorf("failed %v: the lines that begin a part of the load are %q", failed, got)
+		}
 	}
 }
 
@@ -183,7 +276,7 @@ func TestAServerThatWillNotStopIsKilledAtOnce(t *testing.T) {
 	}
 	e := NewEngine(runlog.New(io.Discard, false, false), machine)
 	e.Runner.Leave = func(time.Duration) <-chan time.Time { return up }
-	_, stop, err := e.startServer(context.Background(), LocalModel{Server: os.Args[0], Model: model}, 4096, "")
+	_, stop, err := e.startServer(context.Background(), LocalModel{Server: os.Args[0], Model: model}, 4096)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,7 +288,7 @@ func TestAServerThatWillNotStopIsKilledAtOnce(t *testing.T) {
 
 // The wait for a loading server ends on its own word that it may be ready,
 // however its output is split into writes, and each such line is heard
-// once. Everything it says still reaches its log.
+// once. Everything it says still reaches the log.
 func TestTheServerIsHeardSayingItIsReady(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -213,11 +306,13 @@ func TestTheServerIsHeardSayingItIsReady(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			var log bytes.Buffer
+			var log strings.Builder
 			ready := make(chan struct{}, 8)
-			h := &hearReady{out: &log, ready: ready}
+			o := &serverOutput{ready: ready, said: func(_ int, _ slog.Level, line string) { log.WriteString(line + "\n") }}
+			o.begin(7)
+			log.Reset()
 			for _, w := range c.writes {
-				if n, err := h.Write([]byte(w)); n != len(w) || err != nil {
+				if n, err := o.Write([]byte(w)); n != len(w) || err != nil {
 					t.Fatalf("Write(%q) = %d, %v", w, n, err)
 				}
 			}
@@ -330,7 +425,7 @@ func (neverAnswers) RoundTrip(r *http.Request) (*http.Response, error) {
 
 // launchStandIn starts a stand-in llama-server that says what it was
 // handed and ends, and returns what it said. Each name is a launch of its
-// own, with a log of its own.
+// own.
 //
 // On the real disk: the stand-in llama-server is a program that is run, and its log is a file.
 func launchStandIn(t *testing.T, dir, name string) string {
@@ -348,11 +443,10 @@ func launchStandIn(t *testing.T, dir, name string) string {
 	if err := os.WriteFile(model, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	logDir := filepath.Join(dir, name)
-	e := NewEngine(runlog.New(io.Discard, false, false), memoryUnasked(NewMachine(disk)))
-	_, _, _ = e.startServer(context.Background(), LocalModel{Server: server, Model: model}, 16384, logDir)
-	body, _ := os.ReadFile(filepath.Join(logDir, "llm-server.log"))
-	return string(body)
+	m, said := heardSaying()
+	e := NewEngine(runlog.New(io.Discard, false, false), m)
+	_, _, _ = e.startServer(context.Background(), LocalModel{Server: server, Model: model}, 16384)
+	return strings.Join(said(), "\n")
 }
 
 // A llama-server the app starts answers only to the app: it is handed a
@@ -448,7 +542,7 @@ func TestALocalModelThatStopsAnsweringIsGivenUpOn(t *testing.T) {
 		e := quietEngine()
 		e.llama.client = &http.Client{Transport: stopsAfter(`data: {"choices":[],"prompt_progress":{"total":100,"cache":0,"processed":50}}` + "\n\n")}
 		var stopped atomic.Int32
-		e.host.launch = func(_ *Engine, _ context.Context, _ LocalModel, _ int, _ string) (string, func(), error) {
+		e.host.launch = func(_ *Engine, _ context.Context, _ LocalModel, _ int) (string, func(), error) {
 			var once sync.Once
 			return "http://llama-server", func() { once.Do(func() { stopped.Add(1) }) }, nil
 		}
@@ -568,35 +662,26 @@ func (w pipeWriter) WriteHeader(int)     {}
 // known. A part whose line is missing goes to the part before it.
 func TestLoadingIsToldInItsParts(t *testing.T) {
 	t.Parallel()
-	// On the real disk: loadPhases reads the log llama-server writes
-	// itself, which is always on the disk, see startServer.
-	path := filepath.Join(t.TempDir(), "llm-server.log")
-	log := strings.Join([]string{
-		"0.00.012.000 I build: 11430",
+	lines := []string{
 		"0.01.500.000 I srv    load_model: loading model '/models/gemma.gguf'",
 		"0.02.000.000 I load_tensors: loading model tensors, this can take a while... (load_mode = mmap)",
 		"0.17.000.000 I llama_context: constructing llama_context",
 		"0.18.000.000 I common_init_from_params: warming up the model with an empty run - please wait",
 		"0.23.500.000 I srv    main: model loaded",
-	}, "\n")
-	if err := os.WriteFile(path, []byte(log), 0o644); err != nil {
-		t.Fatal(err)
 	}
-	got := loadPhases(path, 24)
+	got := loadPhases(lines, 24)
 	want := []loadPhase{{"starting", 2}, {"reading the model", 15}, {"making room for the context", 1},
 		{"warming up", 5.5}, {"getting ready to answer", 0.5}}
 	if fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Errorf("the parts are %v, want %v", got, want)
 	}
 	// No warm-up line: its time is the context's.
-	short := strings.Replace(log, "warming up the model", "something else", 1)
-	if err := os.WriteFile(path, []byte(short), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if got := loadPhases(path, 24); len(got) != 4 || got[2].seconds != 6.5 {
+	short := slices.Clone(lines)
+	short[3] = strings.Replace(short[3], "warming up the model", "something else", 1)
+	if got := loadPhases(short, 24); len(got) != 4 || got[2].seconds != 6.5 {
 		t.Errorf("without the warm-up's line the parts are %v", got)
 	}
-	if loadPhases(filepath.Join(t.TempDir(), "none.log"), 24) != nil {
-		t.Error("a log that is not there has parts")
+	if loadPhases(nil, 24) != nil {
+		t.Error("a load that said nothing has parts")
 	}
 }

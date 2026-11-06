@@ -18,13 +18,6 @@ import (
 	"framefairy/internal/wake"
 )
 
-// DecoderSaid, when set, hears every line an episode's decoder writes on
-// its error stream, and when it starts and stops, which the app keeps in
-// its log, each with its level: ffmpeg's errors and a decoder that stopped
-// by itself are errors, what it says for the log alone is debug. It is
-// set once, before any decoder starts.
-var DecoderSaid func(video string, level slog.Level, line string)
-
 // DecoderInfo starts a line the decoder writes only for the log: what it
 // opened and how, what it is doing and how long it took. Only its other
 // lines, ffmpeg's errors, say why it failed.
@@ -35,12 +28,6 @@ const DecoderInfo = "info: "
 // failing a frame that the processor then decoded. It is not why a
 // decoder failed, so it is kept with the warnings and not with the errors.
 const DecoderWarning = "warning: "
-
-func decoderSaid(video string, level slog.Level, line string) {
-	if DecoderSaid != nil {
-		DecoderSaid(video, level, line)
-	}
-}
 
 // EpisodeFrames is the episode's decoder as the Go side sees it: one
 // framefairy-frames for one episode, started when the episode opens in the
@@ -55,8 +42,13 @@ type EpisodeFrames struct {
 	// chip says the decoder may decode on the graphics chip, which it is
 	// started with -chip for, see Machine.EpisodeFrames.
 	chip bool
+	// said hears every line it writes on its error stream, and when it
+	// starts and stops, as "decoder", each with its level: ffmpeg's errors
+	// and a decoder that stopped by itself are errors, what it says for
+	// the log alone is debug. It is the machine's, see Machine.Said.
+	said ProgramSaid
 	// What a test adds to the decoder's environment, and hears of all it
-	// says on its error stream, the way DecoderSaid does, and what it does
+	// says on its error stream, the way said does, and what it does
 	// between the decoder's end and the reason for it being known.
 	env    []string
 	heard  func(level slog.Level, line string)
@@ -135,6 +127,7 @@ var ErrFramesClosed = errors.New("the video's decoder was closed")
 func (m *Machine) EpisodeFrames(program, path string) *EpisodeFrames {
 	f := newEpisodeFrames(program, path)
 	f.chip = m.mediaOf().Decodes
+	f.said = m.Said
 	return f
 }
 
@@ -252,7 +245,8 @@ func (f *EpisodeFrames) start() error {
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("the video's decoder could not start: %w", err)
 	}
-	decoderSaid(f.path, slog.LevelDebug, fmt.Sprintf("started, process %d", cmd.Process.Pid))
+	pid := cmd.Process.Pid
+	f.said.say("decoder", f.path, pid, slog.LevelDebug, fmt.Sprintf("started, process %d", pid))
 	f.cmd, f.in, f.gone = cmd, in, make(chan struct{})
 	f.idle, f.answers, f.nextID = [2][]uint32{}, map[uint32]chan framewire.Record{}, 0
 	f.placed, f.finishing = map[uint32]place{}, map[uint32]place{}
@@ -274,7 +268,7 @@ func (f *EpisodeFrames) start() error {
 			} else {
 				said.add(line)
 			}
-			decoderSaid(f.path, level, line)
+			f.said.say("decoder", f.path, pid, level, line)
 			if f.heard != nil {
 				f.heard(level, line)
 			}
@@ -308,9 +302,9 @@ func (f *EpisodeFrames) start() error {
 		f.mu.Lock()
 		f.err = fmt.Errorf("the video's decoder stopped: %v %s", werr, said.String())
 		if gone == f.closed {
-			decoderSaid(f.path, slog.LevelDebug, fmt.Sprintf("process %d closed", cmd.Process.Pid))
+			f.said.say("decoder", f.path, pid, slog.LevelDebug, fmt.Sprintf("process %d closed", pid))
 		} else {
-			decoderSaid(f.path, slog.LevelError, fmt.Sprintf("process %d stopped by itself: %v", cmd.Process.Pid, werr))
+			f.said.say("decoder", f.path, pid, slog.LevelError, fmt.Sprintf("process %d stopped by itself: %v", pid, werr))
 		}
 		close(gone)
 		f.mu.Unlock()

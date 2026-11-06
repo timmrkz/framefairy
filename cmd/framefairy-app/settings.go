@@ -191,6 +191,7 @@ func appStore() *store {
 // everything read and written through files.
 func openStoreIn(files afero.Fs, dir string) *store {
 	machine := engine.NewMachine(files)
+	machine.Said = theLog.said
 	s := &store{dir: dir, files: files, records: machine.Records, machine: machine, settings: defaultSettings(), adding: make(chan struct{}, 1)}
 	s.load("settings.json", &s.settings)
 	s.load("library.json", &s.episodes)

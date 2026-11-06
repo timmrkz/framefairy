@@ -116,7 +116,7 @@ than read with the eye:
 | `time` | the moment, to the millisecond, with the Mac's offset from UTC |
 | `level` | `error`, `warn`, `info`, `debug` or `trace` |
 | `run` | one start of the app, so a restart is seen and two runs never mix |
-| `from` | the part that wrote it: `app`, `window`, `files`, `decoder`, `jobs`, `edits`, `updates`, `levels`, `model`, `setup`, `report`, `captions`, `wails` |
+| `from` | the part that wrote it: `app`, `window`, `files`, `decoder`, `llama-server`, `jobs`, `edits`, `updates`, `levels`, `model`, `setup`, `report`, `captions`, `wails` |
 | `video` | the video it is about, by file name, where there is one |
 | `act` | what the person did that led to it, see below |
 | `msg` | what happened, in words |
@@ -127,7 +127,9 @@ Other fields come where they mean something: `stream` for the frames,
 it reads, `removed` for a word corrected to nothing, `out` and `back` for
 how many words a caption edge took out and put back, `ms` for how long
 something took,
-`status`, `bytes` and `said` for a call, `build` when the app starts,
+`status`, `bytes` and `said` for a call, `pid` for a line a program
+the app started wrote, the decoder or llama-server, `build` when the app
+starts,
 `plans`, `clips` and `cards` for the cards of what was said, how many
 and never what they read.
 

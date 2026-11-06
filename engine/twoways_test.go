@@ -26,7 +26,7 @@ func TestAMissingModelSaysTheWayOnOfEachFrontEnd(t *testing.T) {
 			"Download it in the settings, under Speech model.", "--asr-model"},
 		{"no clip model", none, "Download one in the settings, under Clip model.", "--llm-model"},
 		{"several clip models", several, "Choose one in the settings, under Clip model.", "--llm-model"},
-		{"killed while loading", stoppedLoading("llama-server", errors.New("signal: killed"), "/home/tim/logs"),
+		{"killed while loading", stoppedLoading("llama-server", errors.New("signal: killed"), "load_tensors: loading model tensors"),
 			"choose a smaller clip model in the settings", "pgrep -fl llama-server"},
 		{"another server holds memory", tooLittleMemory(2e9, 1e9, []string{"4534"}),
 			"Quit the program that started it.", "kill 4534"},

@@ -23,7 +23,6 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"gopkg.in/natefinch/lumberjack.v2"
 
-	"framefairy/engine"
 	"framefairy/engine/runlog"
 )
 
@@ -383,9 +382,17 @@ func (l *appLog) started() {
 	l.open(appLogPath())
 	l.takeStandardLog()
 	l.line(zerolog.InfoLevel, "app").Str("build", runningVersion()).Str("os", runtime.GOOS).Str("arch", runtime.GOARCH).Msg("started")
-	engine.DecoderSaid = func(video string, level slog.Level, line string) {
-		l.line(fromSlog(level), "decoder").Str("video", filepath.Base(video)).Msg(line)
+}
+
+// said writes a line a program the engine started wrote for the log, from
+// that program with its process, and the video it works on when it works
+// on one, see engine.ProgramSaid.
+func (l *appLog) said(from, video string, pid int, level slog.Level, line string) {
+	entry := l.line(fromSlog(level), from).Int("pid", pid)
+	if video != "" {
+		entry = entry.Str("video", filepath.Base(video))
 	}
+	entry.Msg(line)
 }
 
 // takeStandardLog writes what is said through the standard library's log,

@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"os"
 	"os/signal"
@@ -442,6 +443,18 @@ func main() {
 	// with the keychain and the network.
 	machine := engine.NewMachine(afero.NewOsFs())
 	machine.UseSystem()
+	// What llama-server says is the run's to say too: its errors and
+	// warnings always, the rest with --verbose.
+	machine.Said = func(from, _ string, pid int, level slog.Level, line string) {
+		switch {
+		case level >= slog.LevelError:
+			log.Error("%s %d: %s", from, pid, line)
+		case level >= slog.LevelWarn:
+			log.Warn("%s %d: %s", from, pid, line)
+		default:
+			log.Detail("%s %d: %s", from, pid, line)
+		}
+	}
 	e := engine.NewEngine(log, machine)
 	// The one folder the records go in, for the whole run, the way the app
 	// keeps it from its settings.
