@@ -73,9 +73,7 @@ export default [
     // back and forth, because one drag catches it about half the time.
     name: "a cut's left edge dragged shows the frames before the cut, never one after it",
     steps: [
-      ["add", 40, "25"],
-      ["wait for", "Search"],
-      ["cards", 1],
+      ["added", 40, "25"],
       ["cut at", 0.5],
       ["drag edge", "cut from", -60],
       ["nothing past the cut"],
@@ -302,9 +300,7 @@ export default [
     // brought its frames back as filmed, not rotated.
     name: "a rotated part turns with its own frames under a dragged playhead, and stays rotated as its end moves",
     steps: [
-      ["add", 30, "25", "turned"],
-      ["wait for", "Search"],
-      ["cards", 1],
+      ["added", 30, "25", "turned"],
       ["cut at", 0.5],
       ["cuts", 1],
       ["rotate at", 0.75],
@@ -326,9 +322,7 @@ export default [
     // rotation lost when it was kept on each piece.
     name: "a rotated part keeps its rotation when the cut before it is put back and made again",
     steps: [
-      ["add", 30, "25", "turned"],
-      ["wait for", "Search"],
-      ["cards", 1],
+      ["added", 30, "25", "turned"],
       ["cut at", 0.5],
       ["cuts", 1],
       ["rotate at", 0.75],
@@ -351,9 +345,7 @@ export default [
     // engine to it.
     name: "a rotated part keeps its keyframe, and has the rotate icon drawn in its middle",
     steps: [
-      ["add", 30, "25", "turned"],
-      ["wait for", "Search"],
-      ["cards", 1],
+      ["added", 30, "25", "turned"],
       ["cut at", 0.5],
       ["cuts", 1],
       ["keyframe at", 0.75],
@@ -379,9 +371,7 @@ export default [
     // glide, and glide.cases.json the window and the engine to each other.
     name: "keyframes put with C glide the crop from one to the next in the video preview, frame by frame",
     steps: [
-      ["add", 30, "25"],
-      ["wait for", "Search"],
-      ["cards", 1],
+      ["added", 30, "25"],
       ["hold", "SetCropMark"],
       ["keyframe at", 0.2],
       ["keyframe at", 0.8],
@@ -399,9 +389,7 @@ export default [
     // not glide, the crop stood still on both sides. Plan row 2.238.
     name: "a keyframe before a cut glides to one after it",
     steps: [
-      ["add", 30, "25"],
-      ["wait for", "Search"],
-      ["cards", 1],
+      ["added", 30, "25"],
       ["keyframe at", 0.2],
       ["keyframe at", 0.8],
       ["drag crop", 400],
@@ -416,9 +404,7 @@ export default [
     // half a pixel and a pixel to the right of its line. Plan row 2.234.
     name: "a thumbnail and a keyframe on the playhead's frame stand centred on its line",
     steps: [
-      ["add", 30, "25"],
-      ["wait for", "Search"],
-      ["cards", 1],
+      ["added", 30, "25"],
       ["thumbnail at", 0.1],
       ["keyframe at", 0.1],
       ["on the playhead", 2],
@@ -434,9 +420,7 @@ export default [
     // only one frame in.
     name: "a keyframe goes on a clip's first and last frame with C, and comes off with C",
     steps: [
-      ["add", 30, "25"],
-      ["wait for", "Search"],
-      ["cards", 1],
+      ["added", 30, "25"],
       ["keyframe on", "last"],
       ["keyframe on", "first"],
     ],
@@ -447,9 +431,7 @@ export default [
     // so the glide was lost to one click.
     name: "Put the crop back after Automatic crop brings back the keyframes and their glide",
     steps: [
-      ["add", 30, "25"],
-      ["wait for", "Search"],
-      ["cards", 1],
+      ["added", 30, "25"],
       ["keyframe at", 0.2],
       ["keyframe at", 0.8],
       ["drag crop", 400],
@@ -468,9 +450,7 @@ export default [
     // hand while held and on the start of the frame once saved.
     name: "a keyframe dragged past the clip's edge stops on its first or last frame and stays where it was let go",
     steps: [
-      ["add", 30, "25"],
-      ["wait for", "Search"],
-      ["cards", 1],
+      ["added", 30, "25"],
       ["keyframe at", 0.5],
       ["keyframe past", "end"],
       ["keyframe past", "start"],
@@ -483,9 +463,7 @@ export default [
     // on the keyframe over it at the same x removed the keyframe.
     name: "a press on the track and then on the keyframe over it is no double-click",
     steps: [
-      ["add", 30, "25"],
-      ["wait for", "Search"],
-      ["cards", 1],
+      ["added", 30, "25"],
       ["keyframe at", 0.5],
       ["press under, then on the keyframe"],
     ],
@@ -497,9 +475,7 @@ export default [
     // the hand and removed with a double-click, the way a cut is.
     name: "a thumbnail mark lights under the hand and a double-click removes it",
     steps: [
-      ["add", 30, "25"],
-      ["wait for", "Search"],
-      ["cards", 1],
+      ["added", 30, "25"],
       ["thumbnail at", 0.5],
       ["thumbnail at", 0.2],
       ["under the hand", "thumbnail"],
@@ -513,9 +489,7 @@ export default [
     // focus and the word kept it.
     name: "a click on a thumbnail or a keyframe while a word is open ends the correction, and the captions follow",
     steps: [
-      ["add", 30, "25"],
-      ["wait for", "Search"],
-      ["cards", 1],
+      ["added", 30, "25"],
       ["thumbnail at", 0.1],
       ["keyframe at", 0.9],
       ["open a word, then the mark", "thumbnail"],

@@ -598,6 +598,11 @@ export class FrameQueue {
   // The Go side's frames, from the episode's decoder: every frame drawn,
   // whatever the file. Null only until the queue is open.
   private app: AppFrames | null = null;
+  // For the walks, which read how the frames came, see awake in
+  // Player.svelte.
+  get appFrames(): AppFrames | null {
+    return this.app;
+  }
   private closed = false;
   private trouble = "";
   // Every step the queue takes on its way to a picture and a play, for
@@ -818,8 +823,6 @@ export class FrameQueue {
     app.trace = (line) => this.trace(line);
     app.onPassing = (rank, frame, seq, key) => this.passing(rank, frame, seq, key);
     app.paused = () => this.state !== "playing" && this.state !== "starting";
-    // For the walks, which read how the frames came.
-    (window as unknown as { __appFrames?: AppFrames }).__appFrames = app;
     return app;
   }
 

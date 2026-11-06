@@ -171,6 +171,7 @@ each with a POST:
 | `/fresh`, `/fresh?memory=8`, `/fresh?arrive=speech`, `/fresh?arrive=clip` | makes the bridge's machine one the app never ran on: no model, no video in the app and nothing said yet about how clips are found, on a machine of 32 GB like Tim's, or of the gigabytes `memory` gives, so the setup offers the same models on every machine. A key saved there is kept by the bridge, never the keychain, and counted as there. A walk opens the page again to see the setup. Download there runs as a job like any other, through a stand-in that says it has fetched two fifths and holds there until `arrive` lets that kind of model arrive, so a walk sees both downloads at once for as long as it looks, on any machine. `/reset` makes the machine the bridge's again |
 | `/reopen` | closes the app and opens it again, the way quitting and starting it does: the work stops and how it ended is read back. It answers with the jobs as the app left them, once nothing ran any more |
 | `/reset` | the app as it was once its first episode was searched: the models answer quickly, every episode a walk added is gone, the work folder and the settings are what they were, the speech stand-in goes on from the word it had come to then, the episode's decoders the walk before left are closed, and the app is opened again on them, on a machine that keeps only what the one before learned about the computer's programs, what ffmpeg offers and what it said about files that stay as they are, see `engine.Machine.LearnFrom`. So a video a walk adds is heard with the same words, however many walks came before it, and a walk that moves the playhead far starts from no decoder rather than one left where the walk before stopped, which let a drag go on without a key frame, issue #552 |
+| `/reset?seconds=30&rate=25&timing=turned&in=mkv` | the same, with a second video in the app, of the kind `add` picks with the same words, heard and searched the way adding it and its first search leave it, and answers with its path. The first bridge asked for a kind adds it and keeps what the app made of it, and every bridge after it puts that back, see the `added` step |
 
 To open it by hand:
 
@@ -1043,7 +1044,19 @@ next run. `make walks WALKS=40` looks further.
 They run side by side, half as many again as the machine has cores, or
 `WALKERS`. Each runs against a bridge of its own, which `TestWalks`
 starts as a process of its own on a free port, because a desk sets
-`HOME` for the whole process it is in. Every sequence is a run of its
+`HOME` for the whole process it is in. The first bridge hears and
+searches its episode, and the others start from a copy of what it made,
+the work folder and the settings with the paths of its home written as
+their own, see `keepHome` and `takeHome`, so the six bridges of a job
+do that work once. A bridge's start, once each in a cloud session, so
+with no spread:
+
+| Measured | Hearing itself | From the copy | Change |
+| --- | ---: | ---: | --- |
+| Wall (s) | 1.88 | 0.50 | 73 % faster |
+| CPU (s) | 2.88 | 0.43 | 85 % less |
+
+Every sequence is a run of its
 own, the same as a walk, handed to whichever bridge is free next: the
 walks first, since each takes most of a minute, and the sequences behind
 them, most of them a few seconds long, so no bridge is left with a long
@@ -1053,8 +1066,26 @@ run once the others are done. Each sequence opens the app afresh with
 Every walker hands its sequences to one node of its own, `sequences.mjs
 --serve`, which reads the name of the next sequence from its input,
 says `walking` in a line of its own as it begins and how it went in
-another as it ends, and keeps one browser for all of them. Each sequence still opens a page in a context of its own, so it
-keeps nothing a sequence before it kept. Starting node, Playwright and
+another as it ends, and keeps one browser for all of them. A sequence
+that passed leaves its page to the next, which opens the app on it again,
+`letGo` and `openAgain` in `walks/bridge.mjs`. Opening the video, the
+whole machine's CPU, ten times each after three to warm up, in a cloud
+session, with the spread of the new page's:
+
+| Measured | New page | Page opened again | Change |
+| --- | ---: | ---: | --- |
+| CPU (s) | 0.98 | 0.75 | 23 % less, ± 4 % |
+| Wall (s) | 0.52 | 0.34 | 35 % faster |
+
+As the sequence passes, what it left on the page goes, its listeners,
+routes and init scripts, what the app kept in the page's storage, the
+pointer and the keys, and its trace, and the page leaves the app. The
+bridge serves every file with `no-store`, so a sequence fetches what it
+needs whichever walked before it, a font too, which the app lets a page
+keep for a day, so the walks fetch it where Tim's Mac takes it from its
+cache. A page whose clock a walk took, the page of a sequence that
+failed, and every page while the walks count the lines they run, are
+closed. Starting node, Playwright and
 Chromium for every sequence was 1.45 s and 1.2 s of CPU each time, 220
 times, issue #526. A sequence that throws ends its node, and the next
 sequence starts a new one, so nothing a throw left behind walks on. What
@@ -1081,7 +1112,19 @@ motion and was left out of `moving` fails there.
 A video a walk adds is a copy of one committed in
 `internal/fixtures/testdata/`, named by what the walk asked for, see
 `walkFixture` in `cmd/framefairy-app/bridge_test.go`, and made by its
-recipe in `internal/fixtures/fixtures_test.go`. A walk that asks for a
+recipe in `internal/fixtures/fixtures_test.go`. A sequence that only
+needs a video of a kind to work on, and is not about adding one, starts
+with `["added", 30, "25", "turned"]` rather than `add` and the wait for
+its first clip: `/reset` with the same words puts the bridge back with
+that video in the app, heard and searched, `startWith` in
+`bridge_test.go`. The first bridge asked for a kind adds it and keeps
+what the app made of it in a folder all the bridges of the walks share,
+and every bridge after it puts that back, so the add, 2.5 s of CPU and
+1.9 s on its own in a cloud session, is paid once for each kind. So
+what the interface shows while the first search of a 29.97 fps, a
+Matroska, an uneven, a late or a turned video comes in is no longer
+walked, only of the kind the sequences about adding add, since the
+interface does the same for every kind. A walk that asks for a
 length or a kind none of them has is refused with the name it wanted,
 and gets it by a recipe of its own. Only the camera's videos of
 `speed.mjs` and `smooth.mjs` are made when they are asked for, see
@@ -1119,7 +1162,12 @@ of that run, and keeps the time it had for a run that the test's time
 stopped, since how long a run that hung was stopped after says nothing of
 how long it takes. The times that count are CI's, so the file is best made
 from the logs of the walks jobs, which end on the time of every run they
-walked. On four machines the jobs took 181 to 226 seconds in Chromium, in
+walked, and before them the CPU the whole machine spent while the walks
+ran, from `/proc/stat` on Linux, and the CPU of the bridges, Go with the
+ffmpeg and the decoders they started. The machine's is the one to
+compare a change to the speed of the walks by, since CI's machine runs
+nothing else, and the browsers' renderers are in no program's own
+count: Chromium's zygote starts them, and no program waits for them. On four machines the jobs took 181 to 226 seconds in Chromium, in
 three runs on 5 November, and 223 to 377 while every walk walked in
 WebKit, setup included. More
 bridges on a machine do not help: on four cores eight bridges finished a

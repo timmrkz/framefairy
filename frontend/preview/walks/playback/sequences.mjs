@@ -23,9 +23,7 @@ export default [
     // in the open stream, or opened one, while the hand waited.
     name: "a step to the word beside finds its frame read while the hand rested",
     steps: [
-      ["add", 40, "25"],
-      ["wait for", "Search"],
-      ["cards", 1],
+      ["added", 40, "25"],
       ["heard"],
       ["read ahead", "Shift+ArrowRight"],
       ["read ahead", "Shift+ArrowRight"],
@@ -81,9 +79,7 @@ export default [
     // lies where the two rules used to part.
     name: "the video preview on a clip's edges shows the frames its short starts and ends on",
     steps: [
-      ["add", 40, "30000/1001", "late"],
-      ["wait for", "Search"],
-      ["cards", 1],
+      ["added", 40, "30000/1001", "late"],
       ["trim", "start", 20],
       ["cut at", 0.3],
       ["cut at", 0.7],
@@ -102,9 +98,7 @@ export default [
     // of their own, as in the walk on a clip's edges above.
     name: "a video in Matroska shows in the video preview the frames its short has",
     steps: [
-      ["add", 40, "30000/1001", "late", "mkv"],
-      ["wait for", "Search"],
-      ["cards", 1],
+      ["added", 40, "30000/1001", "late", "mkv"],
       ["trim", "start", 20],
       ["cut at", 0.3],
       ["cut at", 0.7],
@@ -123,9 +117,7 @@ export default [
     // this the app.
     name: "a short of a phone's uneven frames shows what the video preview shows",
     steps: [
-      ["add", 40, "30000/1001", "uneven"],
-      ["wait for", "Search"],
-      ["cards", 1],
+      ["added", 40, "30000/1001", "uneven"],
       ["cut at", 0.3],
       ["cut at", 0.7],
       ["cuts", 2],
@@ -144,9 +136,7 @@ export default [
     // the app.
     name: "a part of a phone's video rotated with R stands up in the video preview and in its short",
     steps: [
-      ["add", 30, "25", "turned"],
-      ["wait for", "Search"],
-      ["cards", 1],
+      ["added", 30, "25", "turned"],
       ["cut at", 0.5],
       ["cuts", 1],
       ["hold", "RotatePart"],
@@ -163,9 +153,7 @@ export default [
     // sound from where the picture starts.
     name: "a short of a picture that starts after its sound shows what the video preview shows",
     steps: [
-      ["add", 40, "30000/1001", "late"],
-      ["wait for", "Search"],
-      ["cards", 1],
+      ["added", 40, "30000/1001", "late"],
       ["trim", "start", -60],
       ["cut at", 0.3],
       ["cut at", 0.7],

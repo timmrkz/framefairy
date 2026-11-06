@@ -30,6 +30,16 @@ export const steps = {
     await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());
     await watch.step("add", s);
   },
+  // ["added", seconds, rate, timing, inside]
+  //                    as the first step of a sequence: the sequence
+  //                    starts with a video like the one ["add", ...] adds,
+  //                    heard and searched, and the app open on its clip.
+  //                    The bridges of the walks add each kind once and
+  //                    hand it to every sequence after, see startWith in
+  //                    bridge_test.go, so a sequence about something else
+  //                    than adding a video does not wait for its first
+  //                    clip. A sequence about adding one adds it
+  async added() {},
   // ["label", [words, how]]
   //                    walks the pointer down the column of the three dots,
   //                    where every row it is on has to be lit with its dots
