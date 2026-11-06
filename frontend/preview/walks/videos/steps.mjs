@@ -1170,7 +1170,7 @@ export const steps = {
       // steps let on above are not all heard by the time the dots move,
       // so the hold first lets a piece that was being heard end, and
       // the Go side tells how far it got before the next piece waits.
-      // The dots are read once the window has heard that news too: read
+      // The dots are read once the app has heard that news too: read
       // after a settle, which does not wait for news, they were read
       // before it, and moved by a piece heard before the press, #732.
       await control(url, "/speech?hold=one");
