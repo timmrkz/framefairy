@@ -1900,15 +1900,19 @@ export const steps = {
     const left = await page.evaluate((ids) => [...document.querySelectorAll("li[data-key]")].filter((li) => ids.includes(li.dataset.key.split("/")[0])).length, hand);
     if (left) walk.wrong = `${left} cards of clips made by hand are in the list`;
   },
-  // ["cancel fades"]  presses Cancel on a search, and two frames on the
-  //                    frame over its window is fading and standing still,
-  //                    with the window at rest under it
+  // ["cancel fades"]  presses Cancel on a search, and the frame over its
+  //                    window goes fading and standing still, its fade
+  //                    runs to its end, and the window is at rest under it
   async "cancel fades"(walk, arg, s) {
     const { page, watch } = walk;
-    // Cancel pressed on a search: two frames on, the frame over its
-    // window is fading and standing still, with the window at rest
-    // under it, long before the search has stopped. Tim found it
-    // dropped abruptly, his report of 24 October, 21.42.
+    // Cancel pressed on a search: the frame over its window fades,
+    // standing still, with the window at rest under it, long before the
+    // search has stopped. Tim found it dropped abruptly, his report of
+    // 24 October, 21.42. The frame is read the moment the app changes
+    // it, and its fade from the animation the app starts on it, which
+    // runs on the page's own time. Read two frames after the press
+    // instead, the fade was over: on a busy runner in WebKit with
+    // motion the two frames took 753 ms, and the fade takes 400, #733.
     const seen = await page.evaluate(
       () =>
         new Promise((done) => {
@@ -1916,21 +1920,28 @@ export const steps = {
           const button = pane.querySelector(".listhead button.search");
           const frames = () => [...document.querySelectorAll(".searched")];
           const before = frames().filter((p) => !p.classList.contains("going")).length;
+          const changed = new MutationObserver(() => {
+            const going = frames().filter((p) => p.classList.contains("going"));
+            const left = frames().length - going.length;
+            // Not drawn yet: the frame still stands as it did.
+            if (!going.length && left === before) return;
+            changed.disconnect();
+            // The fade is the one animation on it that its stylesheet
+            // did not start: its breath stands still while it goes.
+            const fades = going.flatMap((p) => p.getAnimations()).filter((a) => !(a instanceof CSSAnimation) && !(a instanceof CSSTransition));
+            const seen = { before, going: going.length, left, fades: fades.length };
+            const end = (ended) => done({ ...seen, ended, rest: !!document.querySelector(".aim") });
+            Promise.all(fades.map((a) => a.finished)).then(
+              () => end(true),
+              () => end(false),
+            );
+          });
+          changed.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["class"] });
           button.click();
-          requestAnimationFrame(() =>
-            requestAnimationFrame(() =>
-              done({
-                before,
-                going: frames().filter((p) => p.classList.contains("going")).length,
-                left: frames().filter((p) => !p.classList.contains("going")).length,
-                rest: !!document.querySelector(".aim"),
-              }),
-            ),
-          );
         }),
     );
     if (seen.before !== 1) walk.wrong = `before Cancel, ${seen.before} frames over the window`;
-    else if (seen.going !== 1 || seen.left !== 0 || !seen.rest)
+    else if (seen.going !== 1 || seen.left !== 0 || seen.fades !== 1 || !seen.ended || !seen.rest)
       walk.wrong = `the window's frame does not fade at Cancel: ${JSON.stringify(seen)}`;
     await watch.step("head", s);
     return;
