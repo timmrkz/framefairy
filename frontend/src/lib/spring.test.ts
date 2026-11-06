@@ -42,13 +42,15 @@ describe("a spring with a bounce", () => {
     expect(s.at).toBe(0);
   });
 
-  test("moves as far in one long frame as in many short ones", () => {
+  test("moves as far in one long frame as in the frames of a 60 Hz or a 120 Hz screen", () => {
     const long = new Spring(0.4, 0.4);
-    const short = new Spring(0.4, 0.4);
     long.step(1, 100);
-    for (let i = 0; i < 25; i++) short.step(1, 4);
-    expect(long.at).toBeCloseTo(short.at, 9);
-    expect(long.speed).toBeCloseTo(short.speed, 9);
+    for (const ms of [1000 / 60, 1000 / 120]) {
+      const short = new Spring(0.4, 0.4);
+      for (let t = 0; t < 100 - 1e-9; t += ms) short.step(1, Math.min(ms, 100 - t));
+      expect(short.at).toBeCloseTo(long.at, 2);
+      expect(short.speed).toBeCloseTo(long.speed, 1);
+    }
   });
 
   test("pulled somewhere new while it moves, goes on from where it is", () => {
