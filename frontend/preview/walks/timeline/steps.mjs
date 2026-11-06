@@ -5,7 +5,7 @@
 // showed before it and the step's name. A sequence of any folder can take
 // it. Below them the helpers only these steps use. See docs/TESTING.md.
 import { execFileSync } from "node:child_process";
-import { BITS, ask, caughtUp, chosen, clickOnTrack, drag, engineState, episodeOn, handles, high, hold, holdSound, inside, letHeld, middle, news, nextNews, nextPaint, pageUntil, playUntil, pressOnTrack, preview, seenUntil, settle, shownOnPlayhead, timeline, xOf } from "../bridge.mjs";
+import { BITS, ask, caughtUp, chosen, clickOnTrack, drag, engineState, episodeOn, handles, high, hold, holdSound, inside, letHeld, middle, news, nextNews, nextPaint, pageUntil, playUntil, pressOnTrack, pressPlay, preview, seenUntil, settle, shownOnPlayhead, timeline, xOf } from "../bridge.mjs";
 import { pieceCount, rate, url } from "../common/steps.mjs";
 
 export const steps = {
@@ -685,7 +685,7 @@ export const steps = {
   //                    px in twenty steps while it plays, reading the
   //                    playhead and the frame on screen on every animation
   //                    frame from before the hand takes hold to after it
-  //                    lets go
+  //                    lets go, and pauses the play
   async "drag while playing"(walk, arg) {
     const { page } = walk;
     const [edge, px] = arg;
@@ -702,12 +702,16 @@ export const steps = {
     await settle(page);
     await page.evaluate(() => document.body.focus());
     await preview(page, 0.2);
-    if (!(await page.evaluate(() => !!document.querySelector('button[aria-label="Pause"]')))) {
-      await page.keyboard.press("Space");
+    // Played with the sound card held until the app has settled on the
+    // press, see pressPlay. A settle while the clip played in WebKit with
+    // motion waited 8 to 12 s for the play, which ran to the clip's end
+    // meanwhile, and the drag came after it, issue #715.
+    if (!(await page.evaluate(() => !!document.querySelector('button[aria-label="Pause"]'))) && !(await pressPlay(page))) {
+      walk.wrong = "the space bar started no play";
+      return;
     }
     // Each wait is in the episode's time, read off the playhead, see
-    // playUntil, once the app has settled on the press.
-    await settle(page);
+    // playUntil.
     await playUntil(page, { most: 0.7 });
     await page.evaluate(() => {
       window.__played = [];
@@ -741,6 +745,9 @@ export const steps = {
     // play does, until it has read thirty, counted on the page.
     await pageUntil(page, () => window.__played.length >= 30 || !document.querySelector('button[aria-label="Pause"]'));
     await page.evaluate(() => (window.__playWatch = false));
+    // Paused in the frame the watch ended, so what comes next settles on
+    // a clip that stands. Left to play, the settle waited for its end.
+    await playUntil(page, { most: 0, pause: true });
     await settle(page);
   },
   // ["end back past the playhead", share]

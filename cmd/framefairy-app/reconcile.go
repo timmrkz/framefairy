@@ -47,8 +47,12 @@ func (s *FrameFairy) reconcile(changed []string) {
 	// the settings at once, and a look at every video looks at the
 	// models too, for whatever the watch could not hear.
 	if models, folder := s.watch.modelsIn(changed); models || changed == nil {
+		// A models folder made is watched before it is read, so a model
+		// written into it in between is heard, issue #722.
+		if folder {
+			s.watch.follow(s.store.files, s.store.Episodes(), s.shortsOf)
+		}
 		s.tellSetup()
-		follow = follow || folder
 	}
 	for _, ep := range s.store.Episodes() {
 		if changed != nil && !touches(ep, changed) && !touchesShort(s.shortsOf(ep), changed) {

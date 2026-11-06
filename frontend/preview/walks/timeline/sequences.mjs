@@ -519,7 +519,6 @@ export default [
       ["cuts", 1],
       ["drag while playing", "cut", 40],
       ["played through"],
-      ["press", "Space"],
       ["drag while playing", "end", -60],
       ["played through"],
     ],
