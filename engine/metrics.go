@@ -126,11 +126,16 @@ func (c *metricsCache) forget() {
 	c.mu.Unlock()
 }
 
-// face reads the tables of a font once and keeps them.
+// face reads the tables of a font once and keeps them. A face the
+// program carries is read from bundledMetrics, whichever Fonts asks, a nil
+// one too. One of the machine's is kept by the Fonts that found it.
 func (fonts *Fonts) face(name string) (*faceMetrics, bool) {
-	if fonts == nil {
-		f := fonts.readFace(name)
+	if bundled, ok := bundledMetrics[name]; ok {
+		f := bundled()
 		return f, f != nil
+	}
+	if fonts == nil {
+		return nil, false
 	}
 	c := &fonts.metrics
 	c.mu.Lock()
@@ -151,11 +156,37 @@ func (fonts *Fonts) face(name string) (*faceMetrics, bool) {
 	return f, f != nil
 }
 
+// bundledMetrics are the tables of the faces the program carries, each
+// read the first time it is measured. They are read from the files built
+// into the program and are the same for every machine and every test, as
+// the hyphenation patterns are, so a test that measures one fills nothing
+// another could see differently. A nil Fonts measures them without
+// reading a face again for every line, which the word model's tests do
+// thousands of times.
+var bundledMetrics = func() map[string]func() *faceMetrics {
+	table := map[string]func() *faceMetrics{}
+	for _, font := range captionFonts {
+		table[font.Name] = sync.OnceValue(func() *faceMetrics {
+			data, err := fontBundle.ReadFile(FontsFolder + "/" + font.File)
+			if err != nil {
+				return nil
+			}
+			return readMetrics(data)
+		})
+	}
+	return table
+}()
+
 func (fonts *Fonts) readFace(name string) *faceMetrics {
 	data, ok := fonts.Bytes(name)
 	if !ok {
 		return nil
 	}
+	return readMetrics(data)
+}
+
+// readMetrics reads what measuring text needs of a font file.
+func readMetrics(data []byte) *faceMetrics {
 	head := table(data, "head")
 	hhea := table(data, "hhea")
 	hmtx := table(data, "hmtx")

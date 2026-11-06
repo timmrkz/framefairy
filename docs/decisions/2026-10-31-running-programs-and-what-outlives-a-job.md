@@ -569,14 +569,29 @@ call:
   face's file as well as its metrics. Carrying the `Fonts` gives the
   later steps the same faces the style was resolved against, with no
   second lookup path.
-- The pure functions that resolve a plan's style, `Gesture.change`,
-  `captionsGo`, `ClipDrawing`, `ShapeClip`, `Reshape` and
-  `SetCaptionStyle`, take a `*Fonts` rather than a resolved `Style`. Each
-  resolves the style of the plan it is changing, after the change, so
-  its caller cannot resolve it first. That is the cost C named, an
-  argument each, but typed as the one concrete thing, and nil offers the
-  bundled faces, so a test of a gesture still builds nothing.
+- The exported functions that resolve a plan's style, `ShapeClip`,
+  `Reshape`, `ClipDrawing` and `SetCaptionStyle`, take a `*Fonts` rather
+  than a resolved `Style`. `Reshape` reads the plan itself, so its caller
+  has no style to hand it, and `SetCaptionStyle` checks the values it is
+  given, a font among them, against the faces there are. `ShapeClip` and
+  `Reshape` resolve the clip's style once and hand it to `Gesture.change`
+  and `captionsGo`, which take the `Style`, as B said. That is the cost C
+  named, an argument each, but typed as the one concrete thing, and nil
+  offers the bundled faces, so a test of a gesture still builds nothing.
   `captionsView` reads it from its `Look`.
+
+A was rejected because a gesture could read the disk. With this design it
+still can, the first time it asks for a face of the machine, which reads
+the font folders once and the face's file once. That is no worse than the
+shelf, and nothing of a video is read.
+
+What the faces the program carries measure is read once for the program,
+in `bundledMetrics` in `engine/metrics.go`, whichever `Fonts` asks, a nil
+one too. Like the hyphenation patterns, it is read from files built into
+the program and is the same for every machine and every test, so it is
+no cache one machine fills for another. Without it, a nil `Fonts` read
+Inter Black again for every line it measured, and `FuzzPlanEdits` took
+twice as long.
 
 D's snapshot was left out. `Fonts` keeps the lock the shelf had, because
 nothing showed readers waiting on it, and the change was large enough

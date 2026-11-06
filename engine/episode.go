@@ -988,7 +988,9 @@ type Look struct {
 	Style  map[string]any
 	Source SourceInfo
 	// Fonts are the faces the captions are measured and drawn in, the
-	// machine's, see Machine.Fonts. Empty, the bundled ones alone.
+	// machine's, see Machine.Fonts. The app always sets it, so the caption
+	// box measures a face of the machine the way the short draws it.
+	// Empty, the bundled ones alone, which only a test wants.
 	Fonts *Fonts
 }
 

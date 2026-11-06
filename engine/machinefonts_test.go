@@ -18,8 +18,8 @@ import (
 )
 
 // The fonts installed on the machine are offered beside ours, see
-// machinefonts.go. Each test puts its faces on a shelf of its own, so they
-// run side by side.
+// machinefonts.go. Each test makes Fonts of its own, so they run side by
+// side.
 
 // namedFace is a bundled face under another name, the way a face the
 // machine has would be.
@@ -72,9 +72,9 @@ func collection(faces ...[]byte) []byte {
 	return out
 }
 
-// onShelf is a shelf of its own holding files in memory, one folder each,
-// in the order given.
-func onShelf(t *testing.T, folders ...map[string][]byte) *Fonts {
+// fontsIn are Fonts of their own that offer the faces in files in memory,
+// one folder each, in the order given.
+func fontsIn(t *testing.T, folders ...map[string][]byte) *Fonts {
 	t.Helper()
 	fonts := new(Fonts)
 	fonts.Use(fontFolders(t, folders...))
@@ -147,7 +147,7 @@ func (trippingFile) ReadAt([]byte, int64) (int, error) { panic("a font nobody re
 func TestTheMachinesFontsAreOfferedAfterOurs(t *testing.T) {
 	t.Parallel()
 	narrow := namedFace(t, "Anton", "Test Narrow")
-	fonts := onShelf(t,
+	fonts := fontsIn(t,
 		map[string][]byte{
 			"Narrow.ttf": narrow,
 			// One file with two faces, the way macOS keeps a family.
@@ -209,7 +209,7 @@ func TestTheMachinesFontsAreOfferedAfterOurs(t *testing.T) {
 // of their own, the way Pages offers a font.
 func TestAFaceIsOfferedInItsFamily(t *testing.T) {
 	t.Parallel()
-	fonts := onShelf(t, map[string][]byte{
+	fonts := fontsIn(t, map[string][]byte{
 		// The way Apple names a face: the typographic family, and a family
 		// for older programs that holds the width.
 		"Type.ttc": collection(
@@ -280,11 +280,11 @@ func TestTheWidthAndLeanOfAFace(t *testing.T) {
 
 func TestTheCopyOfAMachineFaceIsThatFaceAlone(t *testing.T) {
 	t.Parallel()
-	fonts := onShelf(t, map[string][]byte{"Pair.ttc": collection(
+	fonts := fontsIn(t, map[string][]byte{"Pair.ttc": collection(
 		namedFace(t, "Archivo Black", "Test Wide"), namedFace(t, DefaultFont, "Test Heavy"))})
 	face, ok := fonts.find("Test Heavy")
 	if !ok {
-		t.Fatal("Test Heavy is not on the shelf")
+		t.Fatal("Test Heavy is not offered")
 	}
 	data, ok := fonts.Bytes("Test Heavy")
 	if !ok {
@@ -310,7 +310,7 @@ func TestTheCopyOfAMachineFaceIsThatFaceAlone(t *testing.T) {
 // it asked for, so the Font field can tell. One the machine has is kept.
 func TestAFaceNobodyHasIsDrawnInOurs(t *testing.T) {
 	t.Parallel()
-	fonts := onShelf(t, map[string][]byte{"Narrow.ttf": namedFace(t, "Anton", "Test Narrow")})
+	fonts := fontsIn(t, map[string][]byte{"Narrow.ttf": namedFace(t, "Anton", "Test Narrow")})
 	s := fonts.Style(map[string]any{"font": "Gone Grotesk"})
 	if s.Font != DefaultFont || s.Missing != "Gone Grotesk" {
 		t.Errorf("drawn in %q with %q missing", s.Font, s.Missing)
@@ -332,7 +332,7 @@ func TestAFaceNobodyHasIsDrawnInOurs(t *testing.T) {
 // once.
 func TestInstallCopiesAMachineFace(t *testing.T) {
 	t.Parallel()
-	fonts := onShelf(t, map[string][]byte{"Narrow.ttf": namedFace(t, "Anton", "Test Narrow")})
+	fonts := fontsIn(t, map[string][]byte{"Narrow.ttf": namedFace(t, "Anton", "Test Narrow")})
 	dir := t.TempDir()
 	if err := fonts.Install(dir, "Test Narrow"); err != nil {
 		t.Fatal(err)
@@ -366,7 +366,7 @@ func TestInstallCopiesAMachineFace(t *testing.T) {
 // On the real disk: ffmpeg reads the copy.
 func TestAMachineFaceReachesLibass(t *testing.T) {
 	t.Parallel()
-	fonts := onShelf(t, map[string][]byte{"Narrow.ttf": namedFace(t, "Anton", "Test Narrow")})
+	fonts := fontsIn(t, map[string][]byte{"Narrow.ttf": namedFace(t, "Anton", "Test Narrow")})
 	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
 	if err := e.Preflight(context.Background()); err != nil {
 		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
@@ -491,9 +491,9 @@ func shortHead(data []byte, n uint32) []byte {
 // The app reads the font folders as it starts, on a goroutine of its own,
 // while a video opening asks for the list, a caption is measured and the
 // word typed fetches its face. All of it at once finds every face.
-func TestTheShelfIsReadFromSeveralAtOnce(t *testing.T) {
+func TestTheFontsAreReadFromSeveralAtOnce(t *testing.T) {
 	t.Parallel()
-	fonts := onShelf(t, map[string][]byte{
+	fonts := fontsIn(t, map[string][]byte{
 		"Narrow.ttf": namedFace(t, "Anton", "Test Narrow"),
 		"Pair.ttc":   collection(tinyFace("Tiny", 400), tinyFace("Tiny Heavy", 900)),
 	})
@@ -528,7 +528,7 @@ func TestTheShelfIsReadFromSeveralAtOnce(t *testing.T) {
 // hundred names in one row, 2026-10-27.
 func TestTheFacesAreCountedByWhereTheyComeFrom(t *testing.T) {
 	t.Parallel()
-	fonts := onShelf(t, map[string][]byte{
+	fonts := fontsIn(t, map[string][]byte{
 		"Narrow.ttf": namedFace(t, "Anton", "Test Narrow"),
 		"Pair.ttc":   collection(tinyFace("Tiny", 400), tinyFace("Tiny Heavy", 900)),
 	})
