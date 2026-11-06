@@ -486,11 +486,16 @@ controls, and nothing that is read or worked with changes. A new frame
 is settled on over a quarter of a second, so a cut fades over rather
 than flashing, and while the video preview shows black it fades out
 rather than darkening the foot of the app. It reads the frame the video
-preview already has, 9216 of its pixels, and nothing else, so playback
-does no work for it but that and a blur, see
-`frontend/src/lib/frames/reflection.ts` and
-`frontend/src/components/Reflection.svelte`. How tall, wide, blurred and
-strong it is are the `--reflection-` tokens in `app.css`. A button in
+preview already has, 9216 of its pixels, and nothing else, and blurs and
+fades those 64 by 36 cells itself, so playback does no work for it but
+that, see `frontend/src/lib/frames/reflection.ts` and
+`frontend/src/components/Reflection.svelte`. The stylesheet only
+stretches the cells over the band, with no filter and no mask: a blur
+there is worked out anew over the whole band every time the reflection
+changes, which without a graphics chip took more of the processor than
+the video. How tall and wide it is are the `--reflection-` tokens in
+`app.css`, how blurred and how strong are `BLUR` and `STRENGTH` in
+`reflection.ts`. A button in
 the row under the clip timeline that cannot be pressed is dimmed by its
 colours there rather than by opacity, so the reflection does not show
 through it.

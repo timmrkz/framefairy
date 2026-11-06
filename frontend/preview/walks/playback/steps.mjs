@@ -46,11 +46,18 @@ export const steps = {
       // frame's lower half, where the captions are drawn over it, which
       // the reflection leaves out. The frame's upper half is the
       // reflection's lower half, the reflection being upside down.
+      // Each pixel counts as much as it is seen, so the reflection's cells
+      // faded out at its sides and top, whose colours are rounded to a
+      // few steps, count for little.
       const mean = (g, x0, y0, w, h) => {
         const d = g.getImageData(x0, y0, w, h).data;
         let sum = 0;
-        for (let i = 0; i < d.length; i += 4) sum += (d[i] + d[i + 1] + d[i + 2]) / 3;
-        return sum / (d.length / 4);
+        let seen = 0;
+        for (let i = 0; i < d.length; i += 4) {
+          sum += ((d[i] + d[i + 1] + d[i + 2]) / 3) * (d[i + 3] / 255);
+          seen += d[i + 3] / 255;
+        }
+        return seen ? sum / seen : 0;
       };
       const rg = r.getContext("2d");
       const sg = screen.getContext("2d");
@@ -69,7 +76,12 @@ export const steps = {
         shown.push(mean(sg, fx + Math.round((q * fw) / 4), fy, Math.round(fw / 4), Math.round(fh / 2)));
       }
       const say = (v) => v.map((x) => x.toFixed(0)).join(", ");
-      if (reflected.some((v, i) => Math.abs(v - shown[i]) > 24)) wrong.push(`its quarters read ${say(reflected)} where the video preview's read ${say(shown)}`);
+      // The blur reaches over a quarter into the next, so a quarter of
+      // the reflection is a mix of its neighbours, but the brightest and
+      // the darkest stay where they are in the picture.
+      const most = (v, by) => v.indexOf(by(...v));
+      if (most(reflected, Math.max) !== most(shown, Math.max) || most(reflected, Math.min) !== most(shown, Math.min))
+        wrong.push(`its quarters read ${say(reflected)} where the video preview's read ${say(shown)}`);
       // The quarters have to differ, or a reflection of anything would do.
       if (Math.max(...shown) - Math.min(...shown) < 40) wrong.push(`the video preview's quarters read ${say(shown)}, too alike to tell a reflection of them from any other`);
       // What a person works with, which the reflection lies behind. Each
@@ -106,7 +118,7 @@ export const steps = {
     // layers, and the edge of an icon was painted a step of colour apart.
     const seen = (await page.screenshot()).toString("base64");
     const bright = await page.addStyleTag({
-      content: "canvas.reflection { opacity: 1 !important; filter: blur(var(--reflection-blur)) brightness(4) !important }",
+      content: "canvas.reflection { filter: brightness(8) !important }",
     });
     await realFrames(page, 2);
     const brightened = (await page.screenshot()).toString("base64");
