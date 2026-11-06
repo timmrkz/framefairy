@@ -1048,9 +1048,15 @@ starts as a process of its own on a free port, because a desk sets
 searches its episode, and the others start from a copy of what it made,
 the work folder and the settings with the paths of its home written as
 their own, see `keepHome` and `takeHome`, so the six bridges of a job
-do that work once: a bridge started from the copy was up in 0.50 s and
-0.43 s of CPU, one that heard and searched for itself in 1.88 s and
-2.88 s, once each in a cloud session. Every sequence is a run of its
+do that work once. A bridge's start, once each in a cloud session, so
+with no spread:
+
+| Measured | Hearing itself | From the copy | Change |
+| --- | ---: | ---: | --- |
+| Wall (s) | 1.88 | 0.50 | 73 % faster |
+| CPU (s) | 2.88 | 0.43 | 85 % less |
+
+Every sequence is a run of its
 own, the same as a walk, handed to whichever bridge is free next: the
 walks first, since each takes most of a minute, and the sequences behind
 them, most of them a few seconds long, so no bridge is left with a long
@@ -1062,14 +1068,24 @@ Every walker hands its sequences to one node of its own, `sequences.mjs
 says `walking` in a line of its own as it begins and how it went in
 another as it ends, and keeps one browser for all of them. A sequence
 that passed leaves its page to the next, which opens the app on it again,
-`openAgain` in `walks/bridge.mjs`: opening the video took 0.74 s of CPU
-on a page opened again and 0.98 s on a new one, ten times each in a
-cloud session, ± 9 % and ± 4 %. What the sequence left on the page goes
-first, its listeners, routes and init scripts, what the app kept in the
-page's storage, the pointer and the keys, and its trace, and the bridge
-serves every file with `no-store`, so a sequence fetches what it needs
-whichever walked before it. A page whose clock a walk took, and the
-page of a sequence that failed, are closed. Starting node, Playwright and
+`letGo` and `openAgain` in `walks/bridge.mjs`. Opening the video, the
+whole machine's CPU, ten times each after three to warm up, in a cloud
+session, with the spread of the new page's:
+
+| Measured | New page | Page opened again | Change |
+| --- | ---: | ---: | --- |
+| CPU (s) | 0.98 | 0.75 | 23 % less, ± 4 % |
+| Wall (s) | 0.52 | 0.34 | 35 % faster |
+
+As the sequence passes, what it left on the page goes, its listeners,
+routes and init scripts, what the app kept in the page's storage, the
+pointer and the keys, and its trace, and the page leaves the app. The
+bridge serves every file with `no-store`, so a sequence fetches what it
+needs whichever walked before it, a font too, which the app lets a page
+keep for a day, so the walks fetch it where Tim's Mac takes it from its
+cache. A page whose clock a walk took, the page of a sequence that
+failed, and every page while the walks count the lines they run, are
+closed. Starting node, Playwright and
 Chromium for every sequence was 1.45 s and 1.2 s of CPU each time, 220
 times, issue #526. A sequence that throws ends its node, and the next
 sequence starts a new one, so nothing a throw left behind walks on. What
@@ -1104,7 +1120,11 @@ that video in the app, heard and searched, `startWith` in
 `bridge_test.go`. The first bridge asked for a kind adds it and keeps
 what the app made of it in a folder all the bridges of the walks share,
 and every bridge after it puts that back, so the add, 2.5 s of CPU and
-1.9 s on its own in a cloud session, is paid once for each kind. A walk that asks for a
+1.9 s on its own in a cloud session, is paid once for each kind. So
+what the interface shows while the first search of a 29.97 fps, a
+Matroska, an uneven, a late or a turned video comes in is no longer
+walked, only of the kind the sequences about adding add, since the
+interface does the same for every kind. A walk that asks for a
 length or a kind none of them has is refused with the name it wanted,
 and gets it by a recipe of its own. Only the camera's videos of
 `speed.mjs` and `smooth.mjs` are made when they are asked for, see
@@ -1142,10 +1162,12 @@ of that run, and keeps the time it had for a run that the test's time
 stopped, since how long a run that hung was stopped after says nothing of
 how long it takes. The times that count are CI's, so the file is best made
 from the logs of the walks jobs, which end on the time of every run they
-walked, and before them the CPU the walkers took, Node with its
-browser, and the bridges, Go with the ffmpeg and the decoders it
-started, which varies less from one run to the next than the seconds
-do, so a change to the speed of the walks is compared by it. On four machines the jobs took 181 to 226 seconds in Chromium, in
+walked, and before them the CPU the whole machine spent while the walks
+ran, from `/proc/stat` on Linux, and the CPU of the bridges, Go with the
+ffmpeg and the decoders they started. The machine's is the one to
+compare a change to the speed of the walks by, since CI's machine runs
+nothing else, and the browsers' renderers are in no program's own
+count: Chromium's zygote starts them, and no program waits for them. On four machines the jobs took 181 to 226 seconds in Chromium, in
 three runs on 5 November, and 223 to 377 while every walk walked in
 WebKit, setup included. More
 bridges on a machine do not help: on four cores eight bridges finished a

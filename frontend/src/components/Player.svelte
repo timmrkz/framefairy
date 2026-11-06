@@ -13,13 +13,15 @@
   };
 
   // The video previews that are awake, the one woken last at the end. The
-  // walks read the captions and the frames of the one on screen, and a
-  // workspace built behind it, to be kept, wakes after it and sleeps
-  // again once it is ready. A handle each video preview set as it was
-  // made pointed the walks at the one built last, asleep.
-  const awake: { layers: Layers; queue: () => Queue | null }[] = [];
-  Object.defineProperty(window, "__captionLayers", { configurable: true, get: () => awake.at(-1)?.layers });
-  Object.defineProperty(window, "__appFrames", { configurable: true, get: () => awake.at(-1)?.queue()?.appFrames ?? undefined });
+  // walks read the captions and the frames of the one on screen: the one
+  // in the workspace in front, or the one woken last while none is in
+  // front yet. A workspace built behind it, to be kept, wakes after it and
+  // sleeps again once it is ready. A handle each video preview set as it
+  // was made pointed the walks at the one built last, asleep.
+  const awake: { layers: Layers; queue: () => Queue | null; front: () => boolean }[] = [];
+  const onScreen = () => awake.findLast((p) => p.front()) ?? awake.at(-1);
+  Object.defineProperty(window, "__captionLayers", { configurable: true, get: () => onScreen()?.layers });
+  Object.defineProperty(window, "__appFrames", { configurable: true, get: () => onScreen()?.queue()?.appFrames ?? undefined });
 </script>
 
 <script lang="ts">
@@ -1337,7 +1339,7 @@
   );
   // For the walks, which wait until the captions over the frame are
   // drawn, while this video preview is awake, see awake.
-  const forWalks = { layers, queue: () => queue };
+  const forWalks = { layers, queue: () => queue, front: () => !!shell?.closest(".workspace.front") };
   // While a word is typed, libass draws the caption without it and the
   // caption box draws only what is typed, where libass puts the word, see
   // typed. Before libass knows where the words stand, the caption box
