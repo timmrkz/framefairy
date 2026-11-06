@@ -153,7 +153,7 @@ func TestTheFirstWindowFollowsTheVideo(t *testing.T) {
 		{"an hour", 3600, 0, PlacedWindow{timed.Window{Start: 0, End: 900}, 900}},
 		{"four hours", 4 * 3600, 0, PlacedWindow{timed.Window{Start: 0, End: 1800}, 1800}},
 		{"2:40:10 is half an hour, not 23 minutes, #594", 9609.664, 0, PlacedWindow{timed.Window{Start: 0, End: 1800}, 1800}},
-		{"a little over four hours, 30:02 a window, on the step", 4*3600 + 15, 0, PlacedWindow{timed.Window{Start: 0, End: 1800}, 1800}},
+		{"a little over four hours, on the step", 4*3600 + 15, 0, PlacedWindow{timed.Window{Start: 0, End: 1800}, 1800}},
 		{"ten minutes is searched whole", 600, 0, PlacedWindow{timed.Window{Start: 0, End: 600}, 600}},
 		{"a quarter of an hour too", 900, 0, PlacedWindow{timed.Window{Start: 0, End: 900}, 900}},
 		{"no longer than a search reads", 3600, 700, PlacedWindow{timed.Window{Start: 0, End: 690}, 690}},

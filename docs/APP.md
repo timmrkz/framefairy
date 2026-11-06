@@ -1354,9 +1354,9 @@ bubble scrolled by those eight pixels.
       a length a person reads at a glance and never one like 23 minutes,
       and longer videos keep windows of 30. A video of 15 minutes or less
       is one window. The episode is walked from its start in windows that
-      long, so each starts on a multiple of its length, on the range
-      picker's lines for a long video, and the last one takes what is
-      left. When the window moves on by itself, after a search, it takes
+      long, so each starts on a multiple of its length, and a window of
+      half an hour starts on the range picker's lines of a long video.
+      The last one takes what is left. When the window moves on by itself, after a search, it takes
       the next one. See `engine/suggest.go`.
       The search hears the episode to the end of the window and then
       finds. Until it finds, the first row of the clip list says Waiting

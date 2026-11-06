@@ -26,8 +26,9 @@ const leastWindow = 10 * 60
 // windowLengths are the lengths the square root rule is rounded to,
 // lengths a person reads at a glance: four hours still get half an hour,
 // one hour 15 minutes and half an hour 10, and nothing between them gets
-// an odd length like 23 minutes. None is shorter than leastWindow, and
-// half an hour lies on the range picker's lines of a long video.
+// an odd length like 23 minutes. None is shorter than leastWindow. A
+// window of half an hour starts on the range picker's lines of a long
+// video, whose lines are every 15 or 30 minutes.
 var windowLengths = []float64{10 * 60, 15 * 60, 20 * 60, 30 * 60}
 
 // SuggestedWindow is how long each window of an episode is, in seconds:

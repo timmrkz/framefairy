@@ -286,6 +286,41 @@ func TestAServerThatWillNotStopIsKilledAtOnce(t *testing.T) {
 	stop()
 }
 
+// A load that fails quotes what the server said last that says why: its
+// newest errors, or its newest lines when it said no error, cut from the
+// front, so the end of a long line is never what is lost. The quote is
+// what the toast says to the person whose model did not load.
+func TestAFailedLoadQuotesTheNewestOfWhatTheServerSaid(t *testing.T) {
+	t.Parallel()
+	long := strings.Repeat("ggml_metal_init: loaded kernel_mul_mv_q4_0_f32 ", 6)
+	for _, c := range []struct {
+		name, last string
+		lines      []string
+	}{
+		{"its errors", "ggml_metal_buffer_init: error: failed to allocate buffer, size = 15360.00 MiB",
+			[]string{long, "ggml_metal_buffer_init: error: failed to allocate buffer, size = 15360.00 MiB", long}},
+		{"its last lines without an error", "srv load_model: the model has no vocabulary", []string{long, long, long,
+			"srv load_model: the model has no vocabulary"}},
+	} {
+		o := &serverOutput{ready: make(chan struct{}, 1), said: func(int, slog.Level, string) {}}
+		o.begin(7)
+		for i, line := range c.lines {
+			mark := "I"
+			if strings.Contains(line, "error") {
+				mark = "E"
+			}
+			_, _ = fmt.Fprintf(o, "0.00.%03d.000 %s %s\n", i, mark, line)
+		}
+		quote := o.lastLines()
+		if !strings.HasSuffix(quote, c.last) {
+			t.Errorf("%s: the quote ends %q, want it to end with %q", c.name, quote, c.last)
+		}
+		if n := len([]rune(quote)); n > 401 {
+			t.Errorf("%s: the quote is %d letters long", c.name, n)
+		}
+	}
+}
+
 // The wait for a loading server ends on its own word that it may be ready,
 // however its output is split into writes, and each such line is heard
 // once. Everything it says still reaches the log.

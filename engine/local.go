@@ -509,7 +509,9 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int)
 		}
 		if time.Since(started) > 10*time.Minute {
 			stop()
-			return "", nil, renderErr("the language model did not finish loading within 10 minutes")
+			out.settle(true)
+			return "", nil, renderErr("%s", runes.Format("the language model did not finish loading within 10 minutes.%s",
+				saidLast(out.lastLines())))
 		}
 	}
 }
@@ -550,7 +552,9 @@ type serverOutput struct {
 	part []byte
 	// loading are the lines that hold one of loadMarks.
 	loading []string
-	last    tail
+	// last are the last lines it said, and errors the last of its errors,
+	// which say best why a load failed.
+	last, errors tail
 	// held is the description of the model while it loads, and settled
 	// that the load is over and nothing more is held.
 	held    []string
@@ -610,6 +614,9 @@ func (o *serverOutput) heard(line string) {
 		return
 	}
 	o.last.add(text)
+	if level >= slog.LevelError {
+		o.errors.add(text)
+	}
 	if !o.settled && level < slog.LevelWarn && describesTheModel(text) {
 		o.held = append(o.held, text)
 		return
@@ -637,10 +644,23 @@ func (o *serverOutput) settle(say bool) {
 }
 
 // lastLines are the last lines the server said, for an error.
+// lastLines are the last lines the server said, for an error: its last
+// errors when it said any, and its last lines otherwise, as many of the
+// newest as fit in 400 letters, since the newest say why it stopped.
 func (o *serverOutput) lastLines() string {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	return o.last.String()
+	lines := o.errors.lines
+	if len(lines) == 0 {
+		lines = o.last.lines
+	}
+	const most = 400
+	joined := strings.Join(lines, " ")
+	quote := []rune(runes.Scrub(joined, len(joined)))
+	if len(quote) > most {
+		quote = append([]rune("…"), quote[len(quote)-most:]...)
+	}
+	return string(quote)
 }
 
 // loadLines are the lines that began a part of the load, see loadPhases.
@@ -1002,16 +1022,22 @@ func localAsk(m LocalModel, r Recipe, messages []chatMessage, units, count,
 	return ask, maxTokens
 }
 
+// saidLast is what an error quotes of what llama-server said last, last,
+// see serverOutput.lastLines, and nothing when it said nothing.
+func saidLast(last string) string {
+	if last == "" {
+		return ""
+	}
+	return runes.Format(" It said last: %s", last)
+}
+
 // stoppedLoading is llama-server, server, that ended with exitErr while it
 // loaded the model, the last lines it said in last. Killed while loading
 // is what macOS does when memory runs out, most often because a model is
 // already loaded by another llama-server.
 func stoppedLoading(server string, exitErr error, last string) error {
 	stopped := runes.Format("%s stopped while loading the model (%v).", server, exitErr)
-	output := ""
-	if last != "" {
-		output = runes.Format(" It said last: %s", last)
-	}
+	output := saidLast(last)
 	if !strings.Contains(fmt.Sprint(exitErr), "killed") {
 		return renderErr("%s", stopped+output)
 	}
