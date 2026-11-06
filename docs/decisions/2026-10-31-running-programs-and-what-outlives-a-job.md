@@ -470,3 +470,81 @@ What stays a package variable on purpose, each with why:
   code wherever a style is resolved, so moving it reaches every caller
   of `FontByName`, `FontBytes` and `InstallFont`, and is a change of its
   own.
+
+## The font shelf, #728
+
+Added on 6 November 2026, after #720 left the shelf as the last package
+variable #607 names. Tim chose to keep #607 open for it and move it in a
+pull request of its own. Measured on main at 3b46bbc: `shelf` in
+`engine/machinefonts.go` holds the font folders, the faces found in them
+and the metrics read of each face. It is read by 35 lines of shipped code
+in 15 files and by about 90 lines of tests, and two tests swap it for the
+whole process with `UseFontFolders`, so they run alone.
+
+What makes it more than a field to move: the shelf is read from code that
+holds no machine. `ResolveStyle` asks it whether the font a style names is
+there, and falls back to ours when it is not. `TextWidth`, `FontScale` and
+`Thickening` read a face's metrics through it. Through those, the word
+model's pure functions reach it, `Gesture.change` and `captionsGo` in
+`shape.go`, `ClipDrawing` and `captionsView` in `episode.go`,
+`SetCaptionStyle` in `edit.go`, none of which has an engine.
+
+### A. Where state lives: a field of the machine, and every caller takes it
+
+`Machine.Fonts`, ready as its zero value, holds what the shelf holds, and
+every function that reads it takes the machine: `ResolveStyle(m, style)`,
+`TextWidth(m, ...)`, down to the gesture. Plain and complete, but the
+machine then runs through the word model, which is pure on purpose, so a
+gesture could read the disk. And a test of a gesture needs a machine for
+no reason of its own. Loses.
+
+### B. What changes together: the face is resolved once, with the style
+
+What a caption needs of its face, its name, whether it was missing, its
+weight, its alias for libass and its metrics, changes together with the
+style that names it. So `Fonts.Style(overrides)` on the machine resolves
+the style and its face in one step, and the `Style` carries a `Face`, a
+small value with the face's metrics. Everything after works from the
+`Style` it is handed, the word model included, with no lookup of its own.
+The machine resolves where one is at hand: an `Engine`, an `Episode`, the
+app. The pure functions that resolve a plan's style today, like
+`Gesture.change` and `captionsGo`, are handed the resolved `Style` by
+their caller instead, which costs each one an argument but no machine.
+`captionsView` already takes a `Look`, which carries it.
+
+### C. What Go and its libraries already have: an interface handed in
+
+A `FontSource` interface, the way `fs.FS` stands for files, handed to
+whatever measures text. The machine's shelf implements it and a test hands
+in a map. It keeps the pure functions free of the machine, but every one
+of them gains an argument, as in A, only typed as an interface, and the
+metrics cache has to sit behind it as well. Loses to B, which hands the
+pure functions nothing new.
+
+### D. Who may know about whom: a snapshot of the fonts
+
+The machine hands out the faces found as an immutable snapshot, replaced
+whole when the folders are read again, the way `atomic.Pointer` replaces a
+config. Readers never lock. It is how the shelf should keep its faces
+inside, and B keeps it that way: `Machine.Fonts` swaps its snapshot on
+`RefreshFonts`. As a design of its own it says nothing about how the
+snapshot reaches the pure functions, which is the question. Taken into B.
+
+### E. What a test has to build: the bundled faces with nothing to set
+
+A test of captions should see our bundled faces with nothing to build, and
+a test of the machine's fonts should put faces in memory without touching
+any other test. B gives both: a `Fonts` zero value offers the bundled
+faces only, and a test of the machine's fonts makes a machine of its own
+and points its `Fonts` at a memory folder. `UseFontFolders` goes, so the
+two tests that set it run side by side.
+
+### What converges
+
+B, with D's snapshot inside `Fonts`. The shelf becomes `Machine.Fonts`.
+`Style` carries its `Face`, and the word model reads metrics from it.
+`UseMachineFonts` and `RefreshFonts` become methods of `Fonts`, called by
+`main` on the program's machine. The app's font list and the window's
+font requests ask the store's machine. Done when no package variable in
+`engine/` or `cmd/framefairy-app/` holds a cache or a seam, which closes
+#607.
