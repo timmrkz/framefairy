@@ -368,8 +368,8 @@ if (traces) {
 // play is shown and read on any machine, issues #534 and #588. "sound"
 // is the sound card's, as the app runs without a walk, for what a walk
 // checks on the sound's own time, see soundCard in common/steps.mjs.
-// kept is the page the sequence before walked in, opened on again when it
-// can be, see openAgain, and closed when it cannot.
+// kept is the page the sequence before passed in, opened on again when it
+// can be, see letGo and openAgain, and closed when it cannot.
 export async function open(url, { viewport = { width: 1500, height: 1000 }, scale = 1, again = null, browser: given = null, named = browserFor(), still = false, clock = "frames", gpu = false, start = null, kept = null } = {}) {
   const reused = kept && (await openAgain(kept, { viewport, scale, still }));
   if (kept && !reused) await kept.context().close();
@@ -383,8 +383,9 @@ export async function open(url, { viewport = { width: 1500, height: 1000 }, scal
     if (start) video = (await reset.json()).split("/").pop();
   }
   const browser = again ?? given ?? (await newBrowser(named, { gpu }));
-  // A page of its own in a context of its own, which browser.newPage
-  // makes, so nothing a page before it kept is there.
+  // The page the sequence before passed in, or a page of its own in a
+  // context of its own, which browser.newPage makes, so nothing a page
+  // before it kept is there, see letGo.
   // A page still asks the system for less motion, the way a person can
   // in the Mac's settings, so the app leaves out what it animates and
   // the walk does not wait for it, see still in sequences.mjs.
@@ -429,19 +430,23 @@ export async function open(url, { viewport = { width: 1500, height: 1000 }, scal
   return { browser, page, errors };
 }
 
-// A page a sequence passed in, made ready for the next sequence of its
-// walker to open the app on, or null when it cannot be. Opening the video
-// on it again took 0.74 CPU-s, against 0.98 on a new page, ten times
-// each in a cloud session. What the sequence left on it goes first: its
-// listeners, its routes and its init scripts, what the app kept in the
-// page's storage, where the pointer was and the keys still down, and its
-// trace, which starts again for the next. The bridge serves nothing a
-// page may keep, see noStore in bridge_test.go, so a sequence fetches
-// what it needs whichever sequence walked before it. A page whose clock
-// a walk took, see fakeClock, which cannot be given back, is not opened
-// again, nor one of another scale or filmed otherwise.
-async function openAgain(page, { viewport, scale, still }) {
-  if (page.isClosed() || page.__clock || page.__scale !== scale || page.__filming !== filmingNow) return null;
+// Lets go of the app on a page its sequence passed in, as the sequence
+// ends, and gives the page back for the next sequence of its walker to
+// open the app on with openAgain, or null when it cannot be. Opening the
+// video on a page opened again took 0.75 CPU-s, against 0.98 on a new
+// page, ten times each in a cloud session. What the sequence left on the
+// page goes at once, so nothing of it runs beside a sequence walked in a
+// browser of its own meanwhile: its listeners, its routes and its init
+// scripts, what the app kept in the page's storage, where the pointer was
+// and the keys still down, and its trace, which a failure after it then
+// does not keep under its own name. The bridge serves nothing a page may
+// keep, see noStore in bridge_test.go, so a sequence fetches what it
+// needs whichever sequence walked before it. A page whose clock a walk
+// took, see fakeClock, which cannot be given back, is not kept, nor any
+// page while the walks count the lines they run, whose counts a page
+// keeps until it is closed, and a node that throws closes nothing.
+export async function letGo(page) {
+  if (coverage || page.isClosed() || page.__clock) return null;
   try {
     await page.evaluate(() => {
       localStorage.clear();
@@ -454,21 +459,33 @@ async function openAgain(page, { viewport, scale, still }) {
   await page.removeAllListeners(undefined, { behavior: "ignoreErrors" });
   await page.unrouteAll({ behavior: "ignoreErrors" });
   for (const script of page.__scripts.splice(0)) await script.dispose();
+  const context = page.context();
+  if (tracing.delete(context)) {
+    await context.tracing.stopChunk();
+    page.__traced = true;
+  }
   await page.goto("about:blank");
   // Off the page, where a new page's pointer is: the rail of the sidebar
   // opens under it.
   await page.mouse.up();
   await page.mouse.move(-1, -1);
   for (const key of ["Shift", "Control", "Alt", "Meta"]) await page.keyboard.up(key);
-  await page.setViewportSize(viewport);
-  await page.emulateMedia({ reducedMotion: still ? "reduce" : "no-preference" });
   page.__held = false;
   page.__traceStep = false;
   page.__pressed = undefined;
-  if (tracing.has(page.context())) {
-    const { tracing: t } = page.context();
-    await t.stopChunk();
-    await t.startChunk({ title: tracedAs });
+  return page;
+}
+
+// The page letGo gave back, set up for the next sequence, or null when it
+// is of another scale or filmed otherwise than the sequence wants.
+async function openAgain(page, { viewport, scale, still }) {
+  if (page.isClosed() || page.__scale !== scale || page.__filming !== filmingNow) return null;
+  await page.setViewportSize(viewport);
+  await page.emulateMedia({ reducedMotion: still ? "reduce" : "no-preference" });
+  if (page.__traced) {
+    const context = page.context();
+    await context.tracing.startChunk({ title: tracedAs });
+    tracing.add(context);
     hearRequests(page);
   }
   return page;

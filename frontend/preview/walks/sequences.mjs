@@ -14,7 +14,7 @@
 // The episode is the bridge's, so the words are the sentences its speech
 // stand-in says: "Ich war vielleicht sechs Jahre alt, als mich auf dem
 // Schulhof irgendein Typ geschubst hat."
-import { browserFor, chosen, keepTraces, newBrowser, open, settle, shown, shownOnPlayhead, traceAs, traceStep } from "./bridge.mjs";
+import { browserFor, chosen, keepTraces, letGo, newBrowser, open, settle, shown, shownOnPlayhead, traceAs, traceStep } from "./bridge.mjs";
 import { clock, moving, soundCard, started, still, url } from "./common/steps.mjs";
 import { filmed } from "./filmed.mjs";
 import { existsSync, readFileSync } from "node:fs";
@@ -121,8 +121,9 @@ if (only === "--names") {
 // a line of its own on standard input as JSON, for TestWalks to hand one
 // walker its sequences without starting node, Playwright and Chromium
 // again for each, 1.45 s and 1.2 s of CPU a sequence, issue #526. Each
-// still starts with /reset and pages of its own, so it walks the same as
-// alone. What a sequence prints begins with a line of its own, walking,
+// still starts with /reset, and on the page the sequence before passed
+// in, once that let go of all it left, see letGo in bridge.mjs, so it
+// walks the same as alone. What a sequence prints begins with a line of its own, walking,
 // see walkingLine, so what the node says between two sequences is told
 // from either. It ends in a line that starts with walked, see walkedLine,
 // then "ok" or "FAIL", or "threw" when it threw and this node ends, so a
@@ -556,9 +557,10 @@ async function walkingSequence(seq, shared) {
   if (failed) console.log(`      after ${done.join(", ")}\n      ${failed.replaceAll("\n", "\n      ")}`);
   if (failed) await keepTraces();
   if (browser === shared) {
-    // The page a sequence passed in is kept for the next, and every other
-    // page, the report window's or a second window's, goes.
-    const keep = failed || main.isClosed() ? null : main;
+    // The page a sequence passed in is kept for the next, once it has let
+    // go of the app, and every other page, the report window's or a second
+    // window's, goes.
+    const keep = failed ? null : await letGo(main);
     await Promise.all(shared.contexts().filter((c) => c !== keep?.context()).map((c) => c.close()));
     spare = keep;
   } else await browser.close();
