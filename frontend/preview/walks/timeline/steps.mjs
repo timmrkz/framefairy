@@ -1278,16 +1278,23 @@ export const steps = {
     // millisecond or less after it included, see frameAt in
     // lib/flow.ts, as the bars carry it, its number modulo 2 ** BITS.
     const holds = (at) => Math.floor((at + 0.001) * fps) % 2 ** BITS;
-    // Each still stretch is read from 200 ms after the hand stopped:
-    // the press puts the playhead under the hand at once, and from
-    // there it stands. The picture takes as long as the machine needs
-    // to decode the frame under the hand, and the frames passing on
-    // the way are drawn, so on a busy machine a frame was still on its
-    // way 200 ms in. So the picture is read from where its frame
-    // landed, which has to be within the stretch, and from there
-    // nothing else is drawn.
+    // How many frames had been read by a moment of the walk's.
+    const readBy = (t) => played.filter(([at]) => at < t).length;
+    // Each still stretch is read from the second animation frame after
+    // the page heard the hand, from, given as the frames read by then:
+    // the press puts the playhead under the hand at once, in the first
+    // frame after it, see lib/scrub.ts, and from there it stands. The walk reads each frame as it begins,
+    // before the app's own work in it, so the first frame it reads
+    // after the hand still shows the playhead from before. Read from
+    // 200 ms after the hand instead, a busy runner whose frames came a
+    // quarter of a second apart read that first frame, and the playhead
+    // seemed to move under a hand that held still. The picture takes as
+    // long as the machine needs to decode the frame under the hand, and
+    // the frames passing on the way are drawn. So the picture is read
+    // from where its frame landed, which has to be within the stretch,
+    // and from there nothing else is drawn.
     const stood = (from, to, what) => {
-      const got = during(from + 200, to);
+      const got = played.slice(from + 1).filter(([t]) => t < to);
       if (got.length < 10) return `only ${got.length} animation frames were read ${what}`;
       const ats = new Set(got.map(([, at]) => at));
       if (ats.size > 1) {
@@ -1305,12 +1312,12 @@ export const steps = {
     };
     // From when the page heard the press, and the last move, which a
     // busy runner delivered long after the walk sent them.
-    const first = stood(Math.max(hand.down, hand.heardDown ?? 0), hand.moves, "while the hand held still on the press");
+    const first = stood(Math.max(readBy(hand.down), hand.heardDown ?? 0), hand.moves, "while the hand held still on the press");
     if (typeof first === "string") {
       walk.wrong = first;
       return;
     }
-    const second = stood(Math.max(hand.still, hand.heardMove ?? 0), hand.up, "while the hand held still where it moved to");
+    const second = stood(Math.max(readBy(hand.still), hand.heardMove ?? 0), hand.up, "while the hand held still where it moved to");
     if (typeof second === "string") {
       walk.wrong = second;
       return;
@@ -1323,7 +1330,9 @@ export const steps = {
       walk.wrong = "the button said Play while the hand held the playhead";
       return;
     }
-    const after = during(hand.up + 300, Infinity);
+    // And after the hand let go, from the second frame after the page
+    // heard it, the same way.
+    const after = played.slice(Math.max(readBy(hand.up), hand.heardUp ?? 0) + 1);
     if (after.length < 10) {
       walk.wrong = `only ${after.length} animation frames were read after the hand let go`;
       return;

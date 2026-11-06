@@ -1166,9 +1166,15 @@ export const steps = {
         return;
       }
       // Then held with a piece of the audio in it, so the press comes
-      // while that piece is being heard, the way Tim pressed it.
+      // while that piece is being heard, the way Tim pressed it. The
+      // steps let on above are not all heard by the time the dots move,
+      // so the hold first lets a piece that was being heard end, and
+      // the Go side tells how far it got before the next piece waits.
+      // The dots are read once the app has heard that news too: read
+      // after a settle, which does not wait for news, they were read
+      // before it, and moved by a piece heard before the press, #732.
       await control(url, "/speech?hold=one");
-      await settle(page);
+      await caughtUp(page, url);
       const held = await page.evaluate(() => window.dotsNow());
       const after = await pick("Stop transcribing");
       if (after.said !== "Stop transcribing") walk.wrong = `the menu of a video being transcribed says ${JSON.stringify(after.said)}, not Stop transcribing`;

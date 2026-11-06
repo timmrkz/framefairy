@@ -676,10 +676,13 @@ export const steps = {
       // stretch from there, not from when the walk moved the hand.
       if (!window.__handHeard) {
         window.__handHeard = true;
-        // The event's own time, on the clock the frames are read on.
-        const heard = (name) => (e) => window.__hand && (window.__hand[name] = e.timeStamp);
+        // How many frames the walk had read when the page handled the
+        // event. Not the event's own time, which is when it was sent
+        // and can be a frame or more before the page handles it.
+        const heard = (name) => () => window.__hand && (window.__hand[name] = window.__played.length);
         addEventListener("pointerdown", heard("heardDown"), true);
         addEventListener("pointermove", heard("heardMove"), true);
+        addEventListener("pointerup", heard("heardUp"), true);
       }
       window.__playWatch = true;
       const tick = () => {
@@ -714,18 +717,18 @@ export const steps = {
     await hand("up");
     await page.mouse.up();
     // After the hand lets go, the play goes on for a second of the
-    // episode's own time, which "nailed" reads from 300 ms on. A play
-    // that stopped ends this at once, and "nailed" says so.
+    // episode's own time, which "nailed" reads from the second frame
+    // after the page heard the hand let go. A play that stopped ends
+    // this at once, and "nailed" says so.
     await playUntil(page, { most: 1 });
     // A second of the episode is sixty animation frames and more on a
-    // machine at rest, and on a busy runner in WebKit five came after
-    // the 300 ms, too few to prove anything by. So the watch goes on
-    // while the play does, until "nailed" has ten to read, counted on
-    // the page.
-    await pageUntil(
-      page,
-      () => window.__played.filter(([t]) => t > window.__hand.up + 300).length >= 10 || !document.querySelector('button[aria-label="Pause"]'),
-    );
+    // machine at rest, and on a busy runner in WebKit five came, too
+    // few to prove anything by. So the watch goes on while the play
+    // does, until "nailed" has ten to read, counted on the page.
+    await pageUntil(page, () => {
+      const from = Math.max(window.__played.filter(([t]) => t < window.__hand.up).length, window.__hand.heardUp ?? 0) + 1;
+      return window.__played.length - from >= 10 || !document.querySelector('button[aria-label="Pause"]');
+    });
     await page.evaluate(() => (window.__playWatch = false));
     await settle(page);
   },
