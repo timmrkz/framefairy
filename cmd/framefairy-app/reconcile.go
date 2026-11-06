@@ -38,18 +38,15 @@ import (
 // Then the watch follows the library, when a folder it watches or would
 // watch was made or deleted. A change in the models folder, and every
 // look at the whole library, sends the setup and the settings what they
-// show of the models, see tellSetup.
+// show of the models, see tellSetup, once the watch follows: a folder
+// is watched before it is read, so a file written into it after the read
+// is heard. Read first, a speech model's tokens.txt written as the news
+// went out was never heard, #722.
 func (s *FrameFairy) reconcile(changed []string) {
 	s.reconciling.Lock()
 	defer s.reconciling.Unlock()
-	follow := changed == nil
-	// A model deleted or added outside the app shows in the setup and
-	// the settings at once, and a look at every video looks at the
-	// models too, for whatever the watch could not hear.
-	if models, folder := s.watch.modelsIn(changed); models || changed == nil {
-		s.tellSetup()
-		follow = follow || folder
-	}
+	models, folder := s.watch.modelsIn(changed)
+	follow := changed == nil || folder
 	for _, ep := range s.store.Episodes() {
 		if changed != nil && !touches(ep, changed) && !touchesShort(s.shortsOf(ep), changed) {
 			continue
@@ -76,7 +73,13 @@ func (s *FrameFairy) reconcile(changed []string) {
 		}
 	}
 	if follow {
-		s.watch.follow(s.store.files, s.store.Episodes(), s.shortsOf)
+		s.watch.follow(s.store.files, s.store.Episodes(), s.shortsOf, changed)
+	}
+	// A model deleted or added outside the app shows in the setup and
+	// the settings at once, and a look at every video looks at the
+	// models too, for whatever the watch could not hear.
+	if models || changed == nil {
+		s.tellSetup()
 	}
 }
 
