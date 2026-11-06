@@ -6,6 +6,7 @@ import type { Play } from "../src/lib/frames/queue";
 // is told.
 function played() {
   const card = { state: "running" as AudioContextState, held: 0, started: 0 };
+  const told: (() => void)[] = [];
   const play = {
     playing: true as boolean,
     audio: {
@@ -19,7 +20,9 @@ function played() {
       resume: async () => {
         card.started++;
         card.state = "running";
+        for (const tell of told) tell();
       },
+      addEventListener: (_: string, tell: () => void) => told.push(tell),
     } as unknown as AudioContext,
   } satisfies Play;
   return { play, card, clock: walkClock(play) };
@@ -115,6 +118,20 @@ describe("the walk's clock", () => {
     expect(card).toMatchObject({ state: "suspended", held: 1, started: 0 });
     await holdSound(play, "hand", false);
     expect(card).toMatchObject({ state: "running", started: 1 });
+  });
+
+  // A play on the sound card's own clock has no tick of the walk's. The
+  // hand held the card before the space bar, the app started it as the
+  // play began, and the play ran to the clip's end while the walk
+  // settled. The card is held again the moment it runs.
+  test("holds the sound card for the hand once the app has started it, with no tick", async () => {
+    const { play, card } = played();
+    card.state = "suspended";
+    await holdSound(play, "hand", true);
+    await play.audio.resume();
+    expect(card).toMatchObject({ state: "suspended", held: 1, started: 1 });
+    await holdSound(play, "hand", false);
+    expect(card).toMatchObject({ state: "running", started: 2 });
   });
 
   // A frame the queue says is nowhere, see unshown in queue.ts, holds

@@ -41,11 +41,23 @@ export function walkClock(play: Play): PlayClock {
 // a play that never moved. Started again only by a hand or a frame that
 // had held it, it stood for good. Settles once the sound card has done
 // what it was told.
+//
+// A play on the sound card's own clock has no tick of the walk's to hold
+// the card again, so the card is held again the moment it says it runs.
+// Without it a play the hand held from before the space bar ran on the
+// sound card's time while the walk settled, to the clip's end, in the
+// walks that listen to the sound.
 const holders = new WeakMap<Play, Set<string>>();
 const starting = new WeakMap<Play, Promise<void>>();
 export function holdSound(play: Play, who: string, held: boolean): Promise<void> {
   let by = holders.get(play);
-  if (!by) holders.set(play, (by = new Set()));
+  if (!by) {
+    const holding = (by = new Set());
+    holders.set(play, holding);
+    play.audio.addEventListener("statechange", () => {
+      if (holding.size && play.audio.state === "running") void play.audio.suspend();
+    });
+  }
   if (held) by.add(who);
   else by.delete(who);
   if (by.size) return play.audio.state === "running" ? play.audio.suspend() : Promise.resolve();
