@@ -76,12 +76,7 @@ export const steps = {
         shown.push(mean(sg, fx + Math.round((q * fw) / 4), fy, Math.round(fw / 4), Math.round(fh / 2)));
       }
       const say = (v) => v.map((x) => x.toFixed(0)).join(", ");
-      // The blur reaches over a quarter into the next, so a quarter of
-      // the reflection is a mix of its neighbours, but the brightest and
-      // the darkest stay where they are in the picture.
-      const most = (v, by) => v.indexOf(by(...v));
-      if (most(reflected, Math.max) !== most(shown, Math.max) || most(reflected, Math.min) !== most(shown, Math.min))
-        wrong.push(`its quarters read ${say(reflected)} where the video preview's read ${say(shown)}`);
+      if (reflected.some((v, i) => Math.abs(v - shown[i]) > 24)) wrong.push(`its quarters read ${say(reflected)} where the video preview's read ${say(shown)}`);
       // The quarters have to differ, or a reflection of anything would do.
       if (Math.max(...shown) - Math.min(...shown) < 40) wrong.push(`the video preview's quarters read ${say(shown)}, too alike to tell a reflection of them from any other`);
       // What a person works with, which the reflection lies behind. Each
