@@ -297,27 +297,47 @@ func filesUnder(t *testing.T, dir string) []string {
 }
 
 // A request for captions whose time runs out says what it was waiting
-// on, the probe, the caption file or the decoder, in its answer and so in
-// the app's log. Four asks once answered only "context deadline
-// exceeded", and nothing said what had held them, issue #687. The test
-// ends each request's time at once, at whatever step it has come to.
+// on, the probe or the drawing, the caption file or the decoder, in its
+// answer and so in the app's log. Four asks once answered only "context
+// deadline exceeded", and nothing said what had held them, issue #687.
+// The test ends each request's time at the step it chooses, by its own
+// hand, never by the clock.
 //
 // On the real disk: the decoder is a program of its own and reads the
 // episode there.
 func TestACaptionRequestOutOfTimeSaysWhatItWaitedOn(t *testing.T) {
 	svc, mine, view := captionsEpisode(t)
+	var timeUp context.CancelFunc
 	svc.previews.within = func(asked context.Context) (context.Context, context.CancelFunc) {
 		ctx, cancel := context.WithCancel(asked)
-		cancel()
+		timeUp = cancel
 		return ctx, cancel
 	}
 	handler := mediaMiddleware(svc)(http.NotFoundHandler())
-	q := url.Values{"path": {mine}, "track": {view.Track}, "at": {"10.2"}, "w": {"270"}, "h": {"480"}}
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/captions?"+q.Encode(), nil))
-	said := rec.Body.String()
-	if rec.Code != http.StatusInternalServerError || !strings.Contains(said, "took more than the 10s a request for captions may take") {
-		t.Errorf("the captions out of time answered %d %q", rec.Code, said)
+	for i, c := range []struct {
+		step  string
+		probe func(ctx context.Context, path string) (engine.SourceInfo, error)
+	}{
+		{"probing the video", func(ctx context.Context, _ string) (engine.SourceInfo, error) {
+			timeUp()
+			<-ctx.Done()
+			return engine.SourceInfo{}, ctx.Err()
+		}},
+		{"drawing the captions", func(_ context.Context, path string) (engine.SourceInfo, error) {
+			info, err := svc.probeOnDisk(context.Background(), path)
+			timeUp()
+			return info, err
+		}},
+	} {
+		svc.probeVideo = c.probe
+		// Another colour for each, so its caption file is a new one.
+		q := url.Values{"path": {mine}, "track": {view.Track}, "at": {"10.2"}, "w": {"270"}, "h": {"480"}, "text": {fmt.Sprintf("#00ff%02d", i)}}
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/captions?"+q.Encode(), nil))
+		said := rec.Body.String()
+		if rec.Code != http.StatusInternalServerError || !strings.HasPrefix(said, c.step+" took more than the 10s a request for captions may take") {
+			t.Errorf("the captions out of time while %s answered %d %q", c.step, rec.Code, said)
+		}
 	}
 }
 
@@ -333,6 +353,13 @@ func TestACaptionRequestOutOfTimeSaysWhatItWaitedOn(t *testing.T) {
 // episode and the caption file from there.
 func TestTheCaptionsRouteAnswersManyAtOnce(t *testing.T) {
 	svc, mine, view := captionsEpisode(t)
+	// No time limit: what this proves is the answers among many, not how
+	// long a busy machine takes. A request that waits on something that
+	// never answers holds the test until go test's -timeout, which dumps
+	// every goroutine, and so says what it waited on, issue #687.
+	svc.previews.within = func(asked context.Context) (context.Context, context.CancelFunc) {
+		return context.WithCancel(asked)
+	}
 	handler := mediaMiddleware(svc)(http.NotFoundHandler())
 	type ask struct {
 		at, size, draft int
