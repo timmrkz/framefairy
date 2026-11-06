@@ -2215,9 +2215,9 @@ func TestWalks(t *testing.T) {
 	}
 	var tookMu sync.Mutex
 	took := map[string]float64{}
-	// The processor time of the programs the walks ran, by kind, see
+	// The processor time of the bridges, with what they started, see
 	// cpuOf, held under tookMu too.
-	spent := map[string]float64{}
+	var bridged time.Duration
 
 	// The traces of the runs that fail, see keepTraces in walks/bridge.mjs.
 	// Those a run before kept are let go of, so the folder holds this
@@ -2247,6 +2247,10 @@ func TestWalks(t *testing.T) {
 	var unwalked atomic.Int32
 
 	walkers := min(envNumber("WALKERS", runtime.NumCPU()*3/2), len(runs))
+	// The machine's processor time while the walks run, the browsers'
+	// renderers in it, which no program that waits for its children
+	// counts: Chromium's zygote starts them.
+	busyBefore, busy := machineCPU()
 	started := time.Now()
 	todo := make(chan walkRun, len(runs))
 	for _, r := range runs {
@@ -2284,14 +2288,12 @@ func TestWalks(t *testing.T) {
 			// The walker's sequences, walked one after another by one
 			// node, see sequencer.
 			seqs := &sequencer{run: []string{node, filepath.Join(walks, "sequences.mjs"), "--serve"}, dir: walks, env: env}
-			var walked time.Duration
 			defer func() {
 				seqs.stop(ctx)
-				bridged := stopBridge()
+				cpu := stopBridge()
 				tookMu.Lock()
 				defer tookMu.Unlock()
-				spent[walkersSpent] += (walked + seqs.spent).Seconds()
-				spent[bridgesSpent] += bridged.Seconds()
+				bridged += cpu
 			}()
 			for r := range todo {
 				if ctx.Err() != nil {
@@ -2305,9 +2307,7 @@ func TestWalks(t *testing.T) {
 				if r.sequence != "" {
 					err = seqs.walk(ctx, r.sequence, &out)
 				} else {
-					var cpu time.Duration
-					cpu, err = walk(ctx, node, []string{filepath.Join(walks, r.script)}, walks, append(env, r.env...), &out)
-					walked += cpu
+					err = walk(ctx, node, []string{filepath.Join(walks, r.script)}, walks, append(env, r.env...), &out)
 				}
 				seconds := time.Since(began).Seconds() //nolint:forbidigo // the seconds a walk took, reported, never waited on
 				// A run the test's time stopped says nothing of how long it
@@ -2344,6 +2344,10 @@ func TestWalks(t *testing.T) {
 	//
 	// On the real disk: make walks reads the file once go test has ended.
 	if file := os.Getenv("WALKSUMMARY"); file != "" {
+		spent := map[string]float64{bridgesSpent: bridged.Seconds()}
+		if after, ok := machineCPU(); ok && busy {
+			spent[machineSpent] = (after - busyBefore).Seconds()
+		}
 		summary := walkSummary(took, spent, len(runs), walkers, time.Since(started).Seconds()) //nolint:forbidigo // the seconds the walks took, reported, never waited on
 		if err := os.WriteFile(file, []byte(summary), 0o644); err != nil {
 			t.Error(err)
@@ -2439,7 +2443,7 @@ func TestAWalkThatHangsIsStoppedWithWhatItSaid(t *testing.T) {
 	}()
 	// tail -f waits for more forever, the way a walk waits on a signal
 	// that never comes.
-	_, err := walk(ctx, "sh", []string{"-c", "echo halfway; exec tail -f /dev/null"}, "", nil, out)
+	err := walk(ctx, "sh", []string{"-c", "echo halfway; exec tail -f /dev/null"}, "", nil, out)
 	if err == nil || !strings.Contains(err.Error(), "time ran out") {
 		t.Errorf("a walk that hangs ends with %v, want that its time ran out", err)
 	}
@@ -2456,17 +2460,17 @@ func TestAWalkThatHangsIsStoppedWithWhatItSaid(t *testing.T) {
 		<-out.said
 		stop()
 	}()
-	_, err = walk(ctx, "sh", []string{"-c", `trap 'kill $!; echo "trace: kept"; exit 1' INT; echo halfway; tail -f /dev/null >/dev/null & wait`}, "", nil, out)
+	err = walk(ctx, "sh", []string{"-c", `trap 'kill $!; echo "trace: kept"; exit 1' INT; echo halfway; tail -f /dev/null >/dev/null & wait`}, "", nil, out)
 	if err == nil || !strings.Contains(err.Error(), "time ran out") {
 		t.Errorf("a walk that hangs and keeps its traces ends with %v, want that its time ran out", err)
 	}
 	if !strings.Contains(out.String(), "trace: kept") {
 		t.Errorf("what a walk that was stopped said on its way out is not kept: %q", out.String())
 	}
-	if _, err := walk(context.Background(), "sh", []string{"-c", "echo done"}, "", nil, io.Discard); err != nil {
+	if err := walk(context.Background(), "sh", []string{"-c", "echo done"}, "", nil, io.Discard); err != nil {
 		t.Errorf("a walk that ends gives %v", err)
 	}
-	if _, err := walk(context.Background(), "sh", []string{"-c", "exit 1"}, "", nil, io.Discard); err == nil || strings.Contains(err.Error(), "time ran out") {
+	if err := walk(context.Background(), "sh", []string{"-c", "exit 1"}, "", nil, io.Discard); err == nil || strings.Contains(err.Error(), "time ran out") {
 		t.Errorf("a walk that fails gives %v, want its own failure", err)
 	}
 }
@@ -2633,10 +2637,10 @@ func (s *saying) String() string { return s.buf.String() }
 // running are stopped, time enough to end them and report.
 const walkGrace = time.Minute
 
-// walk runs one walk, name with args in dir, writes what it prints to
-// out and says what processor time it took, see cpuOf. One still running when ctx ends is stopped, and says so, and what
+// walk runs one walk, name with args in dir, and writes what it prints to
+// out. One still running when ctx ends is stopped, and says so, and what
 // it printed until then is in out.
-func walk(ctx context.Context, name string, args []string, dir string, env []string, out io.Writer) (time.Duration, error) {
+func walk(ctx context.Context, name string, args []string, dir string, env []string, out io.Writer) error {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir, cmd.Env = dir, env
 	cmd.Stdout, cmd.Stderr = out, out
@@ -2647,9 +2651,9 @@ func walk(ctx context.Context, name string, args []string, dir string, env []str
 	cmd.WaitDelay = walkStopping
 	err := cmd.Run()
 	if err != nil && ctx.Err() != nil {
-		return cpuOf(cmd), errors.New("it had not ended when the test's time ran out, and was stopped")
+		return errors.New("it had not ended when the test's time ran out, and was stopped")
 	}
-	return cpuOf(cmd), err
+	return err
 }
 
 // sequencer is one node that walks sequence after sequence on one bridge,
@@ -2676,8 +2680,6 @@ type sequencer struct {
 	// last is the sequence the node walked last, which a node that ends
 	// between two sequences is told by.
 	last string
-	// spent is the processor time of the nodes that ended, see cpuOf.
-	spent time.Duration
 }
 
 // walkStopping is how long a walk that was interrupted has to keep its
@@ -2820,7 +2822,7 @@ func (s *sequencer) stop(ctx context.Context) {
 		select {
 		case _, ok := <-s.lines:
 			if !ok {
-				s.gone()
+				s.cmd = nil
 				return
 			}
 		case <-ctx.Done():
@@ -2847,7 +2849,7 @@ func (s *sequencer) interrupt(out io.Writer) {
 		case l, ok := <-s.lines:
 			if !ok {
 				_ = s.in.Close()
-				s.gone()
+				s.cmd = nil
 				return
 			}
 			fmt.Fprintln(out, l)
@@ -2868,19 +2870,13 @@ func (s *sequencer) kill() {
 	_ = s.cmd.Process.Kill()
 	for range s.lines {
 	}
-	s.gone()
-}
-
-// gone lets go of the node that ended, and counts what it spent.
-func (s *sequencer) gone() {
-	<-s.ended
-	s.spent += cpuOf(s.cmd)
 	s.cmd = nil
 }
 
 // cpuOf is the processor time of a program that ended. On Linux it holds
-// the programs it started and waited for too: a node's browser, a
-// bridge's ffmpeg and decoders.
+// the programs it started and waited for too: a bridge's ffmpeg and
+// decoders. Not a node's browser's renderers, which Chromium's zygote
+// starts, see machineCPU.
 func cpuOf(cmd *exec.Cmd) time.Duration {
 	if cmd.ProcessState == nil {
 		return 0
@@ -3029,9 +3025,42 @@ func writeWalkTimes(names []string, before, now map[string]float64) string {
 
 // The kinds of program whose processor time the walks summary gives.
 const (
-	walkersSpent = "the walkers, Node and its browser"
+	machineSpent = "the whole machine, the browsers in it"
 	bridgesSpent = "the bridges, Go with ffmpeg and the decoder"
 )
+
+// machineCPU is the processor time the machine has been busy since it
+// started, from /proc/stat, on Linux only. CI's machine runs the walks
+// and nothing else, so what it spent while they ran is what they cost.
+//
+// On the real disk: /proc is the kernel's.
+func machineCPU() (time.Duration, bool) {
+	stat, err := os.ReadFile("/proc/stat")
+	if err != nil {
+		return 0, false
+	}
+	return busyOf(string(stat))
+}
+
+// busyOf reads the time the machine was busy from the first line of
+// /proc/stat, in the kernel's ticks of a hundredth of a second: user,
+// nice, system, irq, softirq and steal, but not idle and iowait.
+func busyOf(stat string) (time.Duration, bool) {
+	line, _, _ := strings.Cut(stat, "\n")
+	f := strings.Fields(line)
+	if len(f) < 9 || f[0] != "cpu" {
+		return 0, false
+	}
+	var ticks int64
+	for _, i := range []int{1, 2, 3, 6, 7, 8} {
+		n, err := strconv.ParseInt(f[i], 10, 64)
+		if err != nil {
+			return 0, false
+		}
+		ticks += n
+	}
+	return time.Duration(ticks) * 10 * time.Millisecond, true
+}
 
 // walkSummary says where a machine's walks spent their time: how many
 // runs its walkers walked, the seconds they took together against the
@@ -3102,12 +3131,12 @@ func envNumber(name string, otherwise int) int {
 // lists the slowest runs first, each column lined up.
 func TestTheWalksSummarySaysWhereTheTimeWent(t *testing.T) {
 	took := map[string]float64{"sequences.mjs SEQUENCE=short": 4.4, "playback.mjs SEED=1": 83, "timeline.mjs SEED=2": 9.6, "words.mjs SEED=1": 12}
-	spent := map[string]float64{walkersSpent: 151.4, bridgesSpent: 38}
+	spent := map[string]float64{machineSpent: 151.4, bridgesSpent: 38}
 	got := walkSummary(took, spent, 5, 2, 60)
 	want := "4 of 5 runs on 2 walkers in 60 s, 109 s of walking together, the walkers busy 91 % of the time\n" +
 		"| CPU (s) | Programs                                    |\n" +
 		"| ------: | ------------------------------------------- |\n" +
-		"|     151 | the walkers, Node and its browser           |\n" +
+		"|     151 | the whole machine, the browsers in it       |\n" +
 		"|      38 | the bridges, Go with ffmpeg and the decoder |\n" +
 		"| Seconds | Run                          |\n" +
 		"| ------: | ---------------------------- |\n" +
@@ -3179,9 +3208,8 @@ func TestAHomeKeptByOneBridgeIsTakenByAnother(t *testing.T) {
 	}
 }
 
-// A program's processor time holds what the programs it started took:
-// the walks summary counts a node with its browser and a bridge with its
-// ffmpeg.
+// A program's processor time holds what the programs it started and
+// waited for took: the walks summary counts a bridge with its ffmpeg.
 func TestTheProcessorTimeOfAProgramHoldsWhatItStarted(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS != "linux" {
@@ -3194,6 +3222,22 @@ func TestTheProcessorTimeOfAProgramHoldsWhatItStarted(t *testing.T) {
 	}
 	if cpu := cpuOf(cmd); cpu < 20*time.Millisecond {
 		t.Errorf("a shell whose child counted took %s, want the child's counting in it", cpu)
+	}
+}
+
+// The machine's busy time is read from the first line of /proc/stat, in
+// hundredths of a second, without the time it was idle or waited on the
+// disk, and nothing else passes for it.
+func TestTheMachinesBusyTimeIsReadFromProcStat(t *testing.T) {
+	t.Parallel()
+	got, ok := busyOf("cpu  100 20 30 5000 400 6 7 8 0 0\ncpu0 50 10 15 2500 200 3 3 4 0 0\n")
+	if want := 1710 * time.Millisecond; !ok || got != want {
+		t.Errorf("the machine was busy %s, %v, want %s", got, ok, want)
+	}
+	for _, stat := range []string{"", "cpu0 1 2 3 4 5 6 7 8\n", "cpu  1 2 x 4 5 6 7 8\n", "cpu  1 2 3\n"} {
+		if _, ok := busyOf(stat); ok {
+			t.Errorf("%q was read as the machine's busy time", stat)
+		}
 	}
 }
 
