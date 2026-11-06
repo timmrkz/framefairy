@@ -113,15 +113,23 @@ export type Over = {
 // Player.svelte, and a quarter turn clockwise takes the top left corner to
 // the top right.
 export function turned(u: number, v: number, turn: number): [number, number] {
+  const [a, b, c, d, e, f] = turning(turn);
+  return [a * u + b * v + c, d * u + e * v + f];
+}
+
+// turned as the numbers of its sum, worked out once for a turn: the point
+// as shown is a·u + b·v + c across and d·u + e·v + f down. laidPart turns
+// every pixel it draws, and worked the quarter turns out again for each.
+function turning(turn: number): [number, number, number, number, number, number] {
   switch (quarters(turn)) {
     case 1:
-      return [1 - v, u];
+      return [0, -1, 1, 1, 0, 0];
     case 2:
-      return [1 - u, 1 - v];
+      return [-1, 0, 1, 0, -1, 1];
     case 3:
-      return [v, 1 - u];
+      return [0, 1, 0, -1, 0, 1];
     default:
-      return [u, v];
+      return [1, 0, 0, 0, 1, 0];
   }
 }
 
@@ -229,18 +237,20 @@ export function laidPart(
   const texel = (x: number, y: number, c: number) =>
     lift && x >= 0 && y >= 0 && x < lift.layer.w && y < lift.layer.h ? lift.layer.pixels[(y * lift.layer.w + x) * 4 + c] : 0;
   const laid = [0, 0, 0, 0];
+  const [ta, tb, tc, td, te, tf] = turning(o.turn);
   for (let y = y0; y < y1; y++) {
+    const v = (y + 0.5) / h;
+    const sy = v * fh - 0.5;
+    const iy = Math.floor(sy);
+    const fy = sy - iy;
     for (let x = x0; x < x1; x++) {
       const u = (x + 0.5) / w;
-      const v = (y + 0.5) / h;
       // The frame between its four nearest pixels.
       const sx = u * fw - 0.5;
-      const sy = v * fh - 0.5;
       const ix = Math.floor(sx);
-      const iy = Math.floor(sy);
       const fx = sx - ix;
-      const fy = sy - iy;
-      const [du, dv] = turned(u, v, o.turn);
+      const du = ta * u + tb * v + tc;
+      const dv = td * u + te * v + tf;
       const pu = (du - u0) / (u1 - u0);
       const pv = (dv - v0) / (v1 - v0);
       const inside = l.w > 0 && l.h > 0 && pu >= 0 && pu < 1 && pv >= 0 && pv < 1;

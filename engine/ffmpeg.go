@@ -396,6 +396,10 @@ const noLibassHelp = "this ffmpeg was built without libass, so it cannot burn in
 // once for as long as the ffmpeg stays as it is, see probed.go.
 func (e *Engine) SubtitleFilter(ctx context.Context) (string, error) {
 	learned := e.learnedFor()
+	// One ask at a time finds it: the workspace asks for a clip's
+	// captions twice as a video opens, and each ask ran ffmpeg for itself.
+	learned.finding.Lock()
+	defer learned.finding.Unlock()
 	learned.mu.Lock()
 	template := learned.subtitleTemplate
 	learned.mu.Unlock()

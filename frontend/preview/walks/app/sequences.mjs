@@ -4,6 +4,14 @@
 // for the steps of every folder. See ../sequences.mjs.
 export default [
   {
+    // Opening a video asked for the captions of its clip a second time,
+    // as the video's state was taken as if a clip had been edited, and
+    // for its sentences a second time, as they were asked for before the
+    // video's length was in. The first answers were thrown away.
+    name: "a video opened asks for its clip's captions and its sentences once",
+    steps: [["asked once", "Captions", "Sentences"]],
+  },
+  {
     // Plan row 2.189. Cmd+Z and Cmd+Y come from the app's menu, which
     // the workspace answers with its own undo. On every other page they go
     // to the field being typed in, which did nothing before Report a
