@@ -227,8 +227,14 @@ export const steps = {
       }
       window.__loudness = [];
     });
-    await page.keyboard.press("Space");
-    await settle(page);
+    // Played with the sound card held until the app has settled on the
+    // press, see pressPlay. A settle while the clip played in WebKit with
+    // motion lasted until the play had ended, and the walk then found it
+    // ended.
+    if (!(await pressPlay(page))) {
+      walk.wrong = "the space bar started no play";
+      return;
+    }
     // The app has done what the space bar set going, but a play
     // starting waits for its first frames and the sound card, which
     // are no call and no timer, so it is heard from the queue: the
@@ -535,10 +541,13 @@ export const steps = {
     await seekTo(page, segs[0].start + 0.5, fps);
     await page.evaluate(() => document.body.focus());
     // L at once, before the walk waits for anything, see "loop through
-    // the end".
+    // the end", with the sound card held until the app has settled on the
+    // two keys, see pressPlay.
+    await holdSound(page, true);
     await page.keyboard.press("Space");
     await page.keyboard.press("l");
     await settle(page);
+    await holdSound(page, false);
     // Round the end and half a second into the second time through, by
     // the playhead, where the sound card is held while the walk switches
     // the loop off, so a busy runner cannot take the play on to the end
@@ -563,8 +572,10 @@ export const steps = {
     // switched off in.
     await seekTo(page, end - 1, fps);
     await page.evaluate(() => document.body.focus());
-    await page.keyboard.press("Space");
-    await settle(page);
+    if (!(await pressPlay(page))) {
+      walk.wrong = `the space bar started no play from ${(end - 1).toFixed(3)}`;
+      return;
+    }
     const again = await playUntil(page, { most: 2 });
     if (again.playing || Math.abs(again.at - end) > 1 / fps + 0.01) {
       walk.wrong = `played again from ${(end - 1).toFixed(3)} with the loop off, the play ${again.playing ? "went on" : "stopped"} at ${again.at.toFixed(3)}, past the clip's end at ${end.toFixed(3)}`;
@@ -1096,10 +1107,12 @@ export const steps = {
       walk.wrong = `the video preview never showed the frame at ${(end - 3).toFixed(2)}`;
       return;
     }
-    await page.keyboard.press("Space");
+    if (!(await pressPlay(page))) {
+      walk.wrong = `the space bar started no play from ${(end - 3).toFixed(2)}`;
+      return;
+    }
     // Until the play stops, or has gone on three seconds past the end,
     // in the episode's time, see playUntil.
-    await settle(page);
     const now = await playUntil(page, { most: 6 });
     const stopped = !now.playing && now.at >= end - 0.1;
     if (!stopped) {
@@ -1178,14 +1191,15 @@ export const steps = {
     if (walk.wrong) return;
     const from = await page.evaluate(() => ({ at: Number(document.querySelector(".screen").dataset.playhead), frame: window.__pictured() }));
     await page.evaluate(() => document.body.focus());
-    await page.keyboard.press("Space");
-    // Half a second of the episode, read off the playhead, and then
-    // whether the picture went on with it.
-    await settle(page);
-    await playUntil(page, { past: from.at + 0.5 });
+    if (!(await pressPlay(page))) {
+      walk.wrong = `the space bar started no play from the frame at ${from.at.toFixed(3)}, shown before its key frame`;
+      return;
+    }
+    // Half a second of the episode, read off the playhead, paused there,
+    // and then whether the picture went on with it.
+    await playUntil(page, { past: from.at + 0.5, pause: true });
     await settle(page);
     const plays = await page.evaluate((from) => window.__pictured() > from.frame + 1, from);
-    await page.keyboard.press("Space");
     if (!plays) walk.wrong = `the space bar did not play from the frame at ${from.at.toFixed(3)}, shown before its key frame`;
   },
   // ["no browser decoder"]

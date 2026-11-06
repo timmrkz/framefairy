@@ -8,7 +8,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { basename } from "node:path";
-import { ask, caughtUp, clickOnTrack, control, cropPixels, engineState, episodeOn, fromSidebar, handles, high, news, nextNews, nextPaint, open, pageUntil, playUntil, seekTo, settle, shortFramesFrom, shown, shownOnPlayhead, xOf } from "../bridge.mjs";
+import { ask, caughtUp, clickOnTrack, control, cropPixels, engineState, episodeOn, fromSidebar, handles, high, news, nextNews, nextPaint, open, pageUntil, playUntil, pressPlay, seekTo, settle, shortFramesFrom, shown, shownOnPlayhead, xOf } from "../bridge.mjs";
 import { canLook, clickCard, clickedFromAhead, clock, onePiece, rate, restAhead, shortOf, shotClips, still, url } from "../common/steps.mjs";
 import { describe } from "../rules.mjs";
 
@@ -1679,11 +1679,14 @@ export const steps = {
     const stop = await watchPills(page);
     try {
       await page.evaluate(() => document.body.focus());
-      await page.keyboard.press("Space");
-      // So many seconds of the episode, read off the playhead.
-      await settle(page);
-      const played = await playUntil(page, { past: from + arg - 1e-6 });
-      if (!(played.at >= from + arg - 1e-6)) walk.wrong = `the play from ${from.toFixed(2)} stopped at ${played.at.toFixed(2)}, before it went on ${arg} s`;
+      // Played with the sound card held until the app has settled on the
+      // press, see pressPlay. So many seconds of the episode, read off the
+      // playhead.
+      if (!(await pressPlay(page))) walk.wrong = `the space bar started no play from ${from.toFixed(2)}`;
+      else {
+        const played = await playUntil(page, { past: from + arg - 1e-6 });
+        if (!(played.at >= from + arg - 1e-6)) walk.wrong = `the play from ${from.toFixed(2)} stopped at ${played.at.toFixed(2)}, before it went on ${arg} s`;
+      }
     } finally {
       // Paused, however the play ended.
       await page.evaluate(() => {
