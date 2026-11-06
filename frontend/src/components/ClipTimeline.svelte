@@ -1919,6 +1919,14 @@
     const target = event.currentTarget as HTMLElement;
     target.setPointerCapture(event.pointerId);
     gripping = true;
+    // A paused video preview is held under the hand while an edge, a cut
+    // or a caption is dragged, the way it is while the playhead is: each
+    // place shows its frame alone, and the play is cued where the hand
+    // lets go. Cued at every place, it opened and decoded the sound there
+    // for every move of the drag, a third of what a drag cost, and nobody
+    // heard it. A play goes on under the hand as it did.
+    const holds = !playing;
+    if (holds) onhold?.(true);
     const startX = event.clientX;
     const pressed = timeAt(startX);
     let moved = false;
@@ -1931,6 +1939,7 @@
       target.removeEventListener("pointerup", up);
       target.removeEventListener("pointercancel", up);
       gripping = false;
+      if (holds) onhold?.(false);
       void grip.release?.(moved);
     };
     target.addEventListener("pointermove", move);

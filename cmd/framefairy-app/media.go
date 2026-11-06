@@ -3,11 +3,7 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
-	"os"
 	"sync"
-
-	"github.com/spf13/afero"
 
 	"framefairy/engine"
 )
@@ -49,20 +45,14 @@ type GridView struct {
 	Count  int     `json:"count"`
 }
 
-// sources are the episodes probed, by path, size and when they were
-// written, for the app and for the video preview's streams alike.
-var sources = &probed{machine: engine.NewMachine(afero.NewOsFs())}
-
+// probed keeps what each video was probed as last, by path alone, for a
+// video whose file has gone since. What ffprobe said of a file that is
+// there is kept by the app's machine, while the file and ffprobe stay as
+// they are, see engine.Engine.Probe, so the app, the video preview and
+// every job ask ffprobe once between them. FrameFairy keeps it. Its zero
+// value is ready.
 type probed struct {
-	// machine reads the episode on the real disk, where the stamp below
-	// is taken. The probes are the app's one set, made before main, which
-	// hands them the program's machine before anything is probed, so the
-	// probes and the jobs ask ffprobe once between them.
-	machine *engine.Machine
-	mu      sync.Mutex
-	info    map[string]engine.SourceInfo
-	// last is what each episode was probed as last, by path alone, for a
-	// video whose file has gone since.
+	mu   sync.Mutex
 	last map[string]engine.SourceInfo
 }
 
@@ -74,39 +64,29 @@ func (p *probed) lastOf(path string) engine.SourceInfo {
 	return p.last[path]
 }
 
+// probe is what the video at path is, its frames among it, asked of
+// probeVideo when a test handed one in and of ffprobe on the app's
+// machine otherwise.
 func (s *FrameFairy) probe(ctx context.Context, path string) (engine.SourceInfo, error) {
-	if s.probes != nil {
-		return s.probes.probe(ctx, path)
+	ask := s.probeVideo
+	if ask == nil {
+		ask = s.probeOnDisk
 	}
-	return sources.probe(ctx, path)
-}
-
-func (p *probed) probe(ctx context.Context, path string) (engine.SourceInfo, error) {
-	stamp := ""
-	if info, err := os.Stat(path); err == nil {
-		stamp = fmt.Sprintf("%s|%d|%d", path, info.Size(), info.ModTime().UnixNano())
-	}
-	p.mu.Lock()
-	cached, ok := p.info[stamp]
-	p.mu.Unlock()
-	if ok {
-		return cached, nil
-	}
-	// ffprobe reads the episode, and the stamp above is taken from the
-	// same disk.
-	e := engine.NewEngine(engineLog("files", path), p.machine)
-	info, err := e.Probe(ctx, path)
-	if err == nil && stamp != "" {
-		p.mu.Lock()
-		if p.info == nil {
-			p.info = map[string]engine.SourceInfo{}
-			p.last = map[string]engine.SourceInfo{}
+	info, err := ask(ctx, path)
+	if err == nil {
+		s.probes.mu.Lock()
+		if s.probes.last == nil {
+			s.probes.last = map[string]engine.SourceInfo{}
 		}
-		p.info[stamp] = info
-		p.last[path] = info
-		p.mu.Unlock()
+		s.probes.last[path] = info
+		s.probes.mu.Unlock()
 	}
 	return info, err
+}
+
+// probeOnDisk asks ffprobe on the app's machine, which keeps the answer.
+func (s *FrameFairy) probeOnDisk(ctx context.Context, path string) (engine.SourceInfo, error) {
+	return engine.NewEngine(engineLog("files", path), s.store.machine).Probe(ctx, path)
 }
 
 // Source probes an episode.

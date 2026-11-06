@@ -72,6 +72,7 @@
   import { wordFramesOf, type WordFrame } from "../lib/frames/captions";
   import RangeWindow from "../components/RangeWindow.svelte";
   import Player, { type PlayerOffers } from "../components/Player.svelte";
+  import Reflection from "../components/Reflection.svelte";
   import Busy from "../components/Busy.svelte";
   import ClipList from "../components/ClipList.svelte";
   import SaidList from "../components/SaidList.svelte";
@@ -173,6 +174,7 @@
     else if (hovered === key) hovered = "";
   }
   let player = $state<Player>();
+  let reflection = $state<Reflection>();
   let timeline = $state<ClipTimeline>();
   // The column the video preview and the range picker stand in, which a
   // clip fitted on the clip timeline is centred under.
@@ -437,10 +439,16 @@
   // seen as a blink by Tim.
   let sentencesAsked = 0;
   let sentencesOf = "";
+  // Whether the video's state and its picture are in as the workspace
+  // opens, see openEpisode. The sentences are asked for once they are:
+  // asked before, with a length of nothing for the video, they were asked
+  // again the moment its length came, and the first answer was thrown
+  // away.
+  let stateRead = $state(false);
   $effect(() => {
     const of = path;
     const key = `${savedKey}|${cutsKey}|${captionsChanged}`;
-    if (!saved.length) return;
+    if (!saved.length || !stateRead) return;
     // While the search is closed, what was read stays until it opens.
     if (!saying && sentencesOf.startsWith(`${of}|`)) return;
     if (sentencesOf === `${of}|${key}`) return;
@@ -1197,6 +1205,18 @@
     }
   }
 
+  // The video's state read as the workspace opens. Nothing was edited, so
+  // a clip that is as the session already had it stays the very same
+  // clip: taken as new, the clip on screen asked for its captions and its
+  // sentences a second time while the first ask was still on its way.
+  async function readClips() {
+    try {
+      session.take(await api.state(path));
+    } catch (err) {
+      oops(errorText(err));
+    }
+  }
+
   // The workspace opening: where the playhead opens comes first, before
   // anything else is asked. The video's state, which says the clip it was
   // last worked on, and its picture are asked at once, the video preview
@@ -1207,7 +1227,7 @@
   async function openEpisode() {
     try {
       const [, picture] = await Promise.all([
-        refreshClips(),
+        readClips(),
         // A file that is missing has no picture to say.
         api.source(path).catch(() => null),
       ]);
@@ -1216,6 +1236,7 @@
       );
       if (!status) return;
       if (!status.missing) source = picture;
+      stateRead = true;
       keepRemovedTrue();
       // The video preview is drawn for the picture before the clip is
       // shown, so showing it puts the playhead there. The Go side opens a
@@ -1228,6 +1249,7 @@
     } catch (err) {
       oops(errorText(err));
     } finally {
+      stateRead = true;
       opened = true;
       tell(`opened, the playhead at ${time.toFixed(3)} s`);
     }
@@ -2855,6 +2877,7 @@
      layout below is the browser's own work from there on. -->
 <section bind:this={root} style="--ar: {ratio}">
   {#if source}
+    <Reflection bind:this={reflection} shown={!status?.missing} />
     <div class="stage">
       <div class="settings">
         <div class="group asks">
@@ -3210,6 +3233,7 @@
           {path}
           {source}
           missing={!!status?.missing}
+          onframe={(frame) => reflection?.take(frame)}
           clip={shownClip}
           making={making?.key}
           opening={!opened}
@@ -3703,6 +3727,10 @@
     flex: 1;
     min-height: 0;
     overflow: auto;
+    /* What the reflection of the video preview is placed in, and kept
+       behind everything else in, see Reflection.svelte. */
+    position: relative;
+    isolation: isolate;
   }
 
   /* Every height a whole number of pixels, where the browser can do the
@@ -4106,6 +4134,24 @@
      choosing one never moves the two tracks above it. */
   .detail .row {
     height: var(--row-h);
+  }
+
+  /* A button in the row that cannot be pressed is dimmed by its colours,
+     not by opacity as everywhere else, because the reflection of the video
+     preview lies behind the row and would show through it, see
+     Reflection.svelte. The colours are what the opacity of --dimmed gave
+     over the app's own ground, --ink-0, so it looks the same as before. */
+  .detail .row button:disabled {
+    opacity: 1;
+    background: color-mix(in srgb, var(--ink-2) calc(var(--dimmed) * 100%), var(--ink-0));
+    border-color: color-mix(in srgb, var(--line) calc(var(--dimmed) * 100%), var(--ink-0));
+    color: color-mix(in srgb, var(--text) calc(var(--dimmed) * 100%), var(--ink-0));
+  }
+
+  .detail .row button.primary:disabled {
+    background: color-mix(in srgb, var(--accent) calc(var(--dimmed) * 100%), var(--ink-0));
+    border-color: color-mix(in srgb, var(--accent) calc(var(--dimmed) * 100%), var(--ink-0));
+    color: color-mix(in srgb, #fff calc(var(--dimmed) * 100%), var(--ink-0));
   }
 
 

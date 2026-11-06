@@ -22,7 +22,8 @@ const [vw, vh] = (process.env.VIEWPORT ?? "1728x1080").split("x").map(Number);
 
 // On the sound card's clock, as the app plays without a walk: how evenly
 // it plays is what is timed.
-const { browser, page } = await open(url, { viewport: { width: vw, height: vh }, scale, clock: "sound" });
+// GPU=1 needs a browser with WebGPU on, see newBrowser.
+const { browser, page } = await open(url, { viewport: { width: vw, height: vh }, scale, clock: "sound", gpu: process.env.GPU === "1" });
 try {
   if (process.env.GPU === "1") {
     await page.addInitScript(() => (window.__flatScreen = false));

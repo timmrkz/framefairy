@@ -284,10 +284,14 @@ label the video still has. The pill shows only what is kept or still on
 its way.
 
 The sidebar is a narrow rail until the pointer reaches the left edge, and it
-opens over the workspace while it is there. The mark at the top keeps it
-open, and clicking it while it is open closes it at once, even with the
+opens over the workspace while it is there. The button at the top keeps it
+open, with one click, whether hovering opened it or it was a rail.
+Clicking it while the sidebar is kept closes it at once, even with the
 pointer still on it. Hovering opens it again once the pointer has left and
-come back. It closes when the app's window loses the focus, as it does
+come back. The button says which it will do, in its title and its icon:
+a panel with the arrow out to keep it, the arrow in to close it, the way
+Notion's sidebar does, since a sidebar hovering opened looks the same as
+one kept open. It closes when the app's window loses the focus, as it does
 to the report window Bugs opens, since a Mac tells the window nothing
 of the pointer going then, and the next move of the pointer says where
 it is. Only the keyboard going into it opens it, not the focus coming
@@ -472,6 +476,24 @@ sliver is inside the bar.
 Selecting an episode opens its workspace. It is three columns, the settings
 on the left, the video preview in the middle and the clips on the right, with
 the clip up close under all three. It fits the app without scrolling.
+
+The video preview leaves a faint reflection at the foot of the workspace,
+as if the video shone towards the person in front of it: the frame on
+screen, upside down, stretched along the bottom edge of the app under
+the middle of it, blurred and faded out upwards. It lies behind
+everything in the workspace, so it only shows in the room between the
+controls, and nothing that is read or worked with changes. A new frame
+is settled on over a quarter of a second, so a cut fades over rather
+than flashing, and while the video preview shows black it fades out
+rather than darkening the foot of the app. It reads the frame the video
+preview already has, 9216 of its pixels, and nothing else, so playback
+does no work for it but that and a blur, see
+`frontend/src/lib/frames/reflection.ts` and
+`frontend/src/components/Reflection.svelte`. How tall, wide, blurred and
+strong it is are the `--reflection-` tokens in `app.css`. A button in
+the row under the clip timeline that cannot be pressed is dimmed by its
+colours there rather than by opacity, so the reflection does not show
+through it.
 
 The video preview plays the episode from its own queue of frames, see
 `frontend/src/lib/frames/`. The app reads the samples of the picture and

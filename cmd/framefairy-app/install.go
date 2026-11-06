@@ -171,7 +171,7 @@ func startInstall(target, from string) error {
 }
 
 // runningApp is the .app this program runs from, or empty.
-var runningApp = func() string {
+func runningApp() string {
 	exe, err := os.Executable()
 	if err != nil {
 		return ""

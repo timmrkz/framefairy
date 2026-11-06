@@ -622,7 +622,11 @@ scan made once is out of date the week after.
   in the build tools, but for those `frontend/audit-ci.jsonc` lets through
   by number and by the path it comes in on, each with why: a warning with
   no fix yet in a tool that never ships, like deepmerge through the Svelte
-  build plugin in #579. Either failing is a red check.
+  build plugin in #579. A warning that has a fix the package bringing it
+  does not accept yet is fixed instead, by pinning the fixed version in
+  `overrides` in `frontend/package.json`, like minimatch 11 under ESLint,
+  and the pin is taken out once that package accepts the fix. Either
+  failing is a red check.
 - **The tools we build ourselves**, and the pins Dependabot cannot move,
   which nothing else watches: `scripts/upstream.sh` compares ffmpeg, the
   four libraries it is built with, llama.cpp, the speech library and Node

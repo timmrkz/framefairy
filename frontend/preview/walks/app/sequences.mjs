@@ -4,6 +4,14 @@
 // for the steps of every folder. See ../sequences.mjs.
 export default [
   {
+    // Opening a video asked for the captions of its clip a second time,
+    // as the video's state was taken as if a clip had been edited, and
+    // for its sentences a second time, as they were asked for before the
+    // video's length was in. The first answers were thrown away.
+    name: "a video opened asks for its clip's captions and its sentences once",
+    steps: [["asked once", "Captions", "Sentences"]],
+  },
+  {
     // Plan row 2.189. Cmd+Z and Cmd+Y come from the app's menu, which
     // the workspace answers with its own undo. On every other page they go
     // to the field being typed in, which did nothing before Report a
@@ -102,6 +110,12 @@ export default [
     // back into the app.
     name: "The sidebar stays shut under a pointer that does not move, and while the app is not in front",
     steps: [["mission control"]],
+  },
+  {
+    // Tim hovered the sidebar open and clicked its button to keep it, and
+    // it closed, on 29 October, in his report's log, #615.
+    name: "One click on the sidebar's button keeps a sidebar hovering opened, and the next closes it",
+    steps: [["keep the sidebar"]],
   },
   {
     // Tim's logs showed the sidebar opened by the pointer closing again

@@ -1555,11 +1555,18 @@ export class FrameQueue {
     return this.state === "playing";
   }
 
+  // Told of every frame put on screen, or of null for black, by what
+  // shows it again somewhere else: the reflection at the foot of the
+  // workspace, see Reflection.svelte. The frame is only lent, read at once
+  // and never kept, the way the screen reads it.
+  painted: ((frame: Picture | null) => void) | null = null;
+
   // The frame on screen, see screen.ts. Fresh when it is put up for the
   // newest gesture, see over.
   private paint(fresh = false) {
     const s = this.shown;
     this.screen?.draw(s?.frame ?? null, s && this.over ? this.over.at(this.shownAt(s.rank), s.frame.light, fresh) : null);
+    this.painted?.(s?.frame ?? null);
   }
 
   // The frame on screen drawn again, for what lies over it has changed.

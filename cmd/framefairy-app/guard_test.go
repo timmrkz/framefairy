@@ -150,7 +150,7 @@ func TestTheFramesRouteDoesNotFollowLinksOutOfTheLibrary(t *testing.T) {
 	if err := os.Symlink(secret, link); err != nil {
 		t.Skipf("no symlinks here: %s", err)
 	}
-	handler := mediaMiddleware(svc.store)(http.NotFoundHandler())
+	handler := mediaMiddleware(svc)(http.NotFoundHandler())
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/release?path="+url.QueryEscape(link), nil))
 	if rec.Code != http.StatusNotFound {
@@ -186,7 +186,7 @@ func TestALinkedWorkFolderOrVideoIsNoEpisode(t *testing.T) {
 	if svc.store.Known(mine) {
 		t.Error("an episode whose work folder is a link is still in the library")
 	}
-	handler := mediaMiddleware(svc.store)(http.NotFoundHandler())
+	handler := mediaMiddleware(svc)(http.NotFoundHandler())
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/release?path="+
 		url.QueryEscape(filepath.Join(engine.WorkDir(mine), "secret.txt")), nil))
@@ -229,7 +229,7 @@ func TestTheFramesRouteTakesFilesOnly(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(work, "logs"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	handler := mediaMiddleware(svc.store)(http.NotFoundHandler())
+	handler := mediaMiddleware(svc)(http.NotFoundHandler())
 	for _, path := range []string{work, filepath.Join(work, "logs")} {
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/release?path="+url.QueryEscape(path), nil))
@@ -253,7 +253,7 @@ func TestTheFramesRouteServesKnownEpisodesOnly(t *testing.T) {
 	if err := os.WriteFile(stranger, []byte("not an episode"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	handler := mediaMiddleware(svc.store)(http.NotFoundHandler())
+	handler := mediaMiddleware(svc)(http.NotFoundHandler())
 	for _, c := range []struct {
 		path, size string
 		want       int

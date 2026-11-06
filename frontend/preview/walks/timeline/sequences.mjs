@@ -4,6 +4,16 @@
 // file, and in common/ for the steps of every folder. See ../sequences.mjs.
 export default [
   {
+    // A paused video preview is held under the hand while an edge is
+    // dragged, and cues its play only where the hand lets go. The play
+    // after it starts with its sound.
+    name: "a play after an edge dragged while paused is heard",
+    steps: [
+      ["drag edge", "end", -40],
+      ["heard"],
+    ],
+  },
+  {
     // Issue #281, Tim's idea: while the playhead is dragged faster than
     // the frames under it can be decoded, the video preview shows the key
     // frame decoding starts from, the way established players scrub, and
