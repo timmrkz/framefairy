@@ -4,7 +4,7 @@
 // the step's argument, what the caption box showed before it and the step's
 // name. A sequence of any folder can take it. Below them the helpers only
 // these steps use. See docs/TESTING.md.
-import { ask, caughtUp, control, fromSidebar, letClockGo, letHeld, nextPaint, noDeadlines, pageUntil, runClock, seenUntil, settle, sidebarStill, slowDown } from "../bridge.mjs";
+import { ask, caughtUp, control, fromSidebar, holdClock, letClockGo, letHeld, letPageTimeGo, nextPaint, noDeadlines, pageUntil, runClock, seenUntil, settle, sidebarStill, slowDown } from "../bridge.mjs";
 import { dropOn, standsAt, stillStands, toastSays, toastsSay, url } from "../common/steps.mjs";
 
 // The two notes of dictation, E5 and B5 in Hz, going up as it starts and
@@ -921,116 +921,123 @@ export const steps = {
   },
   // ["microphone moves"]
   //                    while it listens, the microphone grows with the hum
-  //                    smoothly and in its place, falls back in its pause
-  //                    like a level meter's needle, and is drawn white
+  //                    on a spring, in its place: it goes a little past the
+  //                    size of the voice and settles, falls back in the
+  //                    pause a little under its rest and settles, never
+  //                    jumps and never grows past 23 px, and is drawn white
   async "microphone moves"(walk) {
     const { page } = walk;
     // While it listens, the microphone moves with the voice it hears,
     // so a person knows they are heard. Watched here once rather than
-    // in every dictate step, since it takes seconds of the hum, issue
-    // #543.
+    // in every dictate step, issue #543.
     const now = await page.locator("button.dictate").getAttribute("aria-label");
     if (now !== "Stop") {
       walk.wrong = `the microphone button says ${now}, so there is nothing listening to watch`;
       return;
     }
-    // It moves enough to be seen, smoothly, and in its place. From
-    // the hum through its pause until the hum is heard again, every
-    // frame, the size it is drawn at, its middle and the size of its
-    // own box, so the walk sees it grow and fall back. A
-    // microphone 16 px at rest grows by at least six tenths of that
-    // for every step of loudness: by a third it grew 3 px for a voice
-    // talking, and Tim could hardly see it. Its box keeps one size
-    // and its middle keeps still: a size that changed snapped to
-    // whole pixels and shook on Tim's Mac. It falls back no faster
-    // than a level meter's needle, a third of a second for the whole
-    // way: jumping to every reading shook too.
-    // The recording goes on a tenth of a second a frame while the walk
-    // watches, see /microphone, so the hum, its pause and the hum after
-    // it each stand for frames on the page.
-    let watched = false;
-    const watching = page.evaluate(
-      () =>
-        new Promise((done) => {
-          const b = document.querySelector("button.dictate");
-          const xs = [];
-          // Every size the app writes, at the time of the frame it
-          // wrote it in, so each step is matched with the time it
-          // went by. Read on the walk's own frames, a step showed one
-          // frame late once the walk's frame came before the app's,
-          // and was set against the gap after it: a step of 100 ms
-          // after a long frame, seen across a short one, read six
-          // times too fast on a busy machine, issue #354.
-          const writes = [];
-          const wrote = new MutationObserver(() => {
-            const icon = b.querySelector("svg");
-            writes.push({ t: document.timeline.currentTime, w: icon.getBoundingClientRect().width });
-          });
-          wrote.observe(b, { subtree: true, attributes: true, attributeFilter: ["style"] });
-          // The pause is a loudness of nothing, and the hum after it
-          // ends the watch, or the recording ending does.
-          let paused = false;
-          const step = (now) => {
-            const icon = b.querySelector("svg");
-            const r = icon.getBoundingClientRect();
-            xs.push({
-              t: now,
-              w: r.width,
-              x: r.left + r.width / 2,
-              y: r.top + r.height / 2,
-              box: getComputedStyle(icon).width,
-              loud: parseFloat(b.dataset.loud),
-              size: Number(icon.getAttribute("width")),
-            });
-            const loud = parseFloat(b.dataset.loud);
-            paused ||= loud === 0;
-            const over = (paused && loud > 0) || b.getAttribute("aria-label") !== "Stop";
-            if (!over) requestAnimationFrame(step);
-            else {
-              wrote.disconnect();
-              done({ xs, writes });
-            }
-          };
-          requestAnimationFrame(step);
-        }),
-    );
-    void watching.then(() => (watched = true));
-    while (!watched) {
-      await control(url, "/microphone?until=tenth");
-      await nextPaint(page);
-    }
-    const { xs: track, writes } = await watching;
-    const widest = Math.max(...track.map((f) => f.w));
-    const loudest = Math.max(...track.map((f) => f.loud));
-    const boxes = [...new Set(track.map((f) => f.box))];
-    const drift = Math.max(...track.map((f) => Math.hypot(f.x - track[0].x, f.y - track[0].y)));
-    // The sizes the app wrote are the sizes drawn, or the fall is
-    // timed from nothing and passes whatever it does.
-    const written = writes.map((f) => f.w);
-    const narrowest = Math.min(...track.map((f) => f.w));
-    if (writes.length < 2 || Math.abs(Math.max(...written) - widest) > 0.5 || Math.abs(Math.min(...written) - narrowest) > 0.5) {
-      walk.wrong = `the walk saw ${writes.length} sizes written for a microphone drawn from ${narrowest.toFixed(1)} to ${widest.toFixed(1)} px, so it cannot time its fall`;
+    // It hangs on a spring the loudness pulls, issue #739: Tim asked for
+    // a bounce. The app's time is held, so it moves only as the walk runs
+    // the clock, a frame of 16 ms at a time, and what it does is the same
+    // on every machine. Every size it is given is kept, from the style
+    // the app writes, in order: each change says the style before it, so
+    // a run of frames that ends before the page reads them loses none.
+    await holdClock(page);
+    await page.evaluate(() => {
+      const grows = document.querySelector("button.dictate .grows");
+      const changes = [];
+      const o = new MutationObserver((rs) => changes.push(...rs));
+      o.observe(grows, { attributes: true, attributeFilter: ["style"], attributeOldValue: true });
+      const size = (style) => 28 * Number(/scale\(([\d.]+)\)/.exec(style ?? "")?.[1] ?? 16 / 28);
+      // The sizes it was given since the last time, and how it stands now.
+      window.__mic = () => {
+        const all = [...changes.splice(0), ...o.takeRecords()];
+        const icon = grows.querySelector("svg");
+        const r = icon.getBoundingClientRect();
+        return {
+          sizes: [...all.slice(1).map((c) => size(c.oldValue)), ...(all.length ? [size(grows.getAttribute("style"))] : [])],
+          shown: { w: r.width, x: r.left + r.width / 2, y: r.top + r.height / 2, box: getComputedStyle(icon).width },
+          loud: parseFloat(document.querySelector("button.dictate").dataset.loud),
+        };
+      };
+    });
+    // tenths hands the app tenths of a second of the hum until it is in
+    // the pause, or out of it, and says how loud the microphone is then.
+    const tenths = async (quiet) => {
+      for (;;) {
+        await control(url, "/microphone?until=tenth");
+        await caughtUp(page, url);
+        const loud = await page.evaluate(() => parseFloat(document.querySelector("button.dictate").dataset.loud));
+        if ((loud === 0) === quiet) return loud;
+      }
+    };
+    const run = async (ms) => {
+      await page.clock.runFor(ms);
+      await settle(page);
+      return page.evaluate(() => window.__mic());
+    };
+    await tenths(true);
+    const rest = await run(1500);
+    const loud = await tenths(false);
+    const rise = await run(1000);
+    await tenths(true);
+    const fall = await run(1500);
+    await letPageTimeGo(page);
+    const steps = (from, sizes) => Math.max(...sizes.map((w, k) => Math.abs(w - (k ? sizes[k - 1] : from))));
+    const voice = 16 + 6 * loud;
+    const grown = rise.sizes.at(-1);
+    const widest = Math.max(...rise.sizes);
+    const narrowest = Math.min(...fall.sizes);
+    if (loud < 0.3 || !rise.sizes.length || !fall.sizes.length) {
+      walk.wrong = `the walk saw the hum at a loudness of ${loud}, ${rise.sizes.length} sizes as it rose and ${fall.sizes.length} as it fell, so there was nothing to watch`;
       return;
     }
-    let fastest = 0;
-    for (let k = 1; k < writes.length; k++) {
-      const dt = writes[k].t - writes[k - 1].t;
-      if (dt > 0) fastest = Math.max(fastest, (writes[k - 1].w - writes[k].w) / track[0].size / dt);
-    }
-    if (widest < 16 * (1 + 0.6 * loudest) - 0.5) {
-      walk.wrong = `the microphone hardly grew with the voice, ${widest.toFixed(1)} px wide at most at a loudness of ${loudest}`;
+    if (Math.abs(rest.shown.w - 16) > 0.5 || Math.abs(rise.shown.w - grown) > 0.5) {
+      walk.wrong = `the microphone is drawn ${rest.shown.w.toFixed(1)} px wide at rest and ${rise.shown.w.toFixed(1)} px for a voice it was given ${grown.toFixed(1)} px for, so the sizes the walk read are not the ones drawn`;
       return;
     }
-    if (boxes.length > 1) {
-      walk.wrong = `the microphone changes the size of its box as it grows, ${boxes.join(", ")}, which snaps to whole pixels and shakes`;
+    // It settles at the size of the voice: from 16 px at rest by 6 px for
+    // a raised voice, with room in its button of 32 px to bounce. It went
+    // up to 28 px before, and Tim wondered whether that was too large.
+    if (Math.abs(grown - voice) > 0.1) {
+      walk.wrong = `the microphone settled at ${grown.toFixed(2)} px for a voice at a loudness of ${loud}, not at ${voice.toFixed(2)} px`;
       return;
     }
+    if (widest > 23) {
+      walk.wrong = `the microphone grew to ${widest.toFixed(2)} px, larger than the 23 px it may reach as it bounces`;
+      return;
+    }
+    // It bounces: past the size of the voice on the way up, and under its
+    // rest on the way down, by a few hundredths of how far it went, and it
+    // comes to rest there. Following like a meter's needle it never went
+    // past, and Tim found it stiff.
+    if (widest - grown < 0.04 * (grown - 16)) {
+      walk.wrong = `the microphone rose to ${widest.toFixed(2)} px and settled at ${grown.toFixed(2)} px, so it did not bounce past the voice`;
+      return;
+    }
+    if (narrowest > 16 - 0.04 * (grown - 16) || narrowest < 15) {
+      walk.wrong = `the microphone fell back to ${narrowest.toFixed(2)} px at its least, not a little under its rest of 16 px`;
+      return;
+    }
+    if (Math.abs(fall.sizes.at(-1) - 16) > 0.01) {
+      walk.wrong = `the microphone came to rest at ${fall.sizes.at(-1).toFixed(2)} px after the voice, not at 16 px`;
+      return;
+    }
+    // It never jumps: a frame moves it 1 px at most, where going straight
+    // to a reading moved it by all the way at once.
+    const jump = Math.max(steps(16, rise.sizes), steps(grown, fall.sizes));
+    if (jump > 1) {
+      walk.wrong = `the microphone moved ${jump.toFixed(2)} px in one frame, so it jumped rather than sprang`;
+      return;
+    }
+    // Its box keeps one size and its middle keeps still: a size that
+    // changed snapped to whole pixels and shook on Tim's Mac.
+    if (rest.shown.box !== rise.shown.box) {
+      walk.wrong = `the microphone changes the size of its box as it grows, ${rest.shown.box} and ${rise.shown.box}, which snaps to whole pixels and shakes`;
+      return;
+    }
+    const drift = Math.hypot(rise.shown.x - rest.shown.x, rise.shown.y - rest.shown.y);
     if (drift > 0.5) {
       walk.wrong = `the middle of the microphone moved by ${drift.toFixed(2)} px as it grew`;
-      return;
-    }
-    if (fastest > 0.003) {
-      walk.wrong = `the microphone fell back by ${(fastest * 1000).toFixed(1)} of its size a second, faster than a level meter's needle`;
       return;
     }
     // It is drawn white, like every icon in the app, as the paperclip

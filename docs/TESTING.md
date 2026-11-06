@@ -568,11 +568,12 @@ Enter or Escape, or with `ends` lets it stop by itself and say why, or
 with `start` only starts it, with `hearing` waits for more to be said
 and settled, so it is kept however the recording ends, and with
 `settled` waits for the words before the pause, `microphone moves`
-watches the microphone while it listens, from the hum through its pause
-until the hum comes back: it grows with the voice, keeps its box and its
-middle, falls back no faster than a level meter's needle and is drawn
-white. It runs in one walk, not in every `dictate`, because each watch
-takes seconds of the hum, see #543. `click heard` clicks
+watches the microphone while it listens, with the app's time held and
+run on by hand, a frame of 16 ms at a time: it springs to the size of
+the hum a little past it and settles, falls back in the pause a little
+under its rest and settles, never jumps a pixel in a frame, keeps its
+box and its middle and is drawn white. It runs in one walk, not in
+every `dictate`, see #543. `click heard` clicks
 into the first word still being heard and sees it settled with the
 cursor in it, with what the Go side tells the window held back from
 reading the word to the click, `window.__pauseEvents` in
@@ -593,8 +594,8 @@ are, `ended` until the recording is over and `tenth` for one step, see
 `sound` in `cmd/framefairy-app/walksound_test.go`. `dictate` asks for
 words before it looks for them, and for something settled before it ends
 a recording, since the stand-in hears new words each time and the end
-could otherwise write down none. `microphone moves` asks for a tenth a
-frame while it watches. With `ends`
+could otherwise write down none. `microphone moves` asks for tenths
+until the hum or the pause begins, with the app's time held. With `ends`
 the person falls silent once the phrase they are on is said, through
 `/microphone?silent=1`. A recording there stops by itself for want of
 words as soon as that phrase is said, since the bridge says the quiet is

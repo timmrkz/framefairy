@@ -23,6 +23,7 @@
   // A line in the app's log. said is the words being dictated here.
   import { said as log } from "../lib/said";
   import { changed, Dictating, edit, type Ask, type Span } from "../lib/dictating";
+  import { Spring } from "../lib/spring";
   import { Undo } from "../lib/undo";
   import { caretBox, landing } from "../lib/caret";
   import { revealed } from "../lib/reveal";
@@ -354,26 +355,26 @@
   let unheard = $state("");
 
   // How far the microphone has grown, from 0 at rest to 1 for a raised
-  // voice. It follows the loudness the way the needle of a level meter
-  // does: up with the voice at once, in about a twentieth of a second,
-  // and back down slowly, in about a third, so it swells with a word and
-  // settles between words. Moving straight to every reading, ten a
-  // second, it shook. It is worked out every frame, so it moves between
-  // readings rather than jumping to them, and it is written straight to
-  // the icon as a scale: no layout, no transition, nothing else moves.
+  // voice. It hangs on a spring that each reading, ten a second, pulls to
+  // the loudness: it swells with a word, goes a little past it and
+  // settles, and falls back between words with a small bounce under its
+  // rest, see lib/spring.ts. A bounce of 0.4 in 0.4 s, which Apple calls
+  // about as bouncy as an interface goes: Tim asked for a bounce, and
+  // followed like a meter's needle, with none, it looked stiff (#739).
+  // It is worked out every frame, so it moves between readings rather
+  // than jumping to them, and it is written straight to the icon as a
+  // scale: no layout, no transition, nothing else moves.
   let mic = $state<HTMLSpanElement>();
-  let grown = 0;
+  const grown = new Spring(0.4, 0.4);
   let frame = 0;
   let then = 0;
   const still = matchMedia("(prefers-reduced-motion: reduce)");
   function grow(now: number) {
     const target = listening && !still.matches ? loud : 0;
-    const dt = then ? Math.min(now - then, 100) : 16;
-    grown += (target - grown) * (1 - Math.exp(-dt / (target > grown ? 50 : 300)));
-    if (Math.abs(target - grown) < 0.002) grown = target;
-    if (mic) mic.style.transform = `scale(${(16 + 12 * grown) / 28})`;
+    const rests = grown.step(target, then ? Math.min(now - then, 100) : 16);
+    if (mic) mic.style.transform = `scale(${(16 + 6 * grown.at) / 28})`;
     then = now;
-    frame = grown === target ? 0 : requestAnimationFrame(grow);
+    frame = rests ? 0 : requestAnimationFrame(grow);
     if (!frame) then = 0;
   }
   $effect(() => {
@@ -1002,12 +1003,14 @@
   }
 
   /* The microphone moves with the voice it hears, so the person sees they
-     are heard. It grows from 16 px to 28 px about its middle, in a box of
-     28 px that never changes, so nothing in the row moves and the icon
-     does not shift by a pixel as it grows. It is drawn at its largest and
-     scaled down to rest, with a line as much thicker, so at rest it is
-     the icon every other button has, and grown it is drawn from a picture
-     at least as large as it is shown, never one blown up: WebKit draws a
+     are heard. It grows from 16 px to 22 px about its middle, and a
+     little past that as it bounces, in a box of 28 px that never changes,
+     so nothing in the row moves and the icon does not shift by a pixel as
+     it grows. It went up to 28 px, nearly the button's 32, and Tim
+     wondered whether that was too large (#739). It is drawn at 28 px and scaled
+     down to rest, with a line as much thicker, so at rest it is the icon
+     every other button has, and grown it is drawn from a picture at
+     least as large as it is shown, never one blown up: WebKit draws a
      scale of a small picture blurred, and a size that changed instead
      snapped to whole pixels as it grew and shook. It stays white, like
      every icon in the app. */
