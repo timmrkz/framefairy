@@ -92,6 +92,32 @@ func (l *leaving) closing() {
 	l.mu.Unlock()
 }
 
+// closeDown is the one way the app stops everything it started, on the
+// way out. main runs it as the shutdown hook and as what Cmd+Q stops, and
+// the walks' bridge runs it on the app it closes before it removes that
+// app's folders. Once it returns, nothing the app started writes into a
+// video's work folder or the config folder: the watch and the news, the
+// models, the jobs with any ffmpeg they run, a recording, the caption
+// files of the video preview and a draft of Report a Problem. A part that
+// writes is stopped here, or the bridge's reset fails on it with
+// "directory not empty", the way it did each time on a writer the fixes
+// before had not named, issue #713. It says whether the jobs stopped in
+// time.
+func (s *FrameFairy) closeDown() bool {
+	s.watch.stop()
+	s.news.stop()
+	s.store.machine.CloseModels()
+	s.CancelListening()
+	stopped := s.stopAll()
+	// A caption file goes on being made after the request that asked for
+	// it is gone, and a draft the report window saved as it closed may be
+	// waiting on its lock. In the app the process ending cuts both off,
+	// half written.
+	s.store.machine.ClosePreviews()
+	s.report.end()
+	return stopped
+}
+
 // stopAll stops everything the app started, on the way out, after the
 // models: the jobs, and with them any ffmpeg they run, the measuring of
 // loudness, and a build that is ready goes in place.
@@ -106,18 +132,20 @@ func (l *leaving) closing() {
 // not, each delete gives up after stopWait of its own, and quitting is
 // not held that much longer.
 //
-// The models are closed in main, by the machine's CloseModels, just
-// before this, in the same hook as the watch and the news, so what the
-// window is told and what runs stop together.
-func (s *FrameFairy) stopAll() {
+// The models are closed by closeDown, just before this, with the watch
+// and the news, so what the window is told and what runs stop together.
+// It says whether the jobs stopped in time.
+func (s *FrameFairy) stopAll() bool {
 	// A WaitGroup takes no new work while it is waited for, so a video let
 	// go from here on is cleared where it is let go.
 	s.clearMu.Lock()
 	s.quitting = true
 	s.clearMu.Unlock()
-	if s.jobs.shutDown() {
+	stopped := s.jobs.shutDown()
+	if stopped {
 		s.clearing.Wait()
 	}
 	s.levels.shutDown()
 	s.updates.installOnQuit()
+	return stopped
 }

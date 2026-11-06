@@ -746,11 +746,11 @@ func (h *heldWrite) Rename(from, to string) error {
 	return err
 }
 
-// The bridge ends the report of the app a walk ran before it removes the
-// config folder: a save the page sent as the walk ended, held here as it
-// makes the folder, is let finish,
-// whole, and a save after it writes nothing, so no file is made in the
-// folder while it is removed and no draft lands in the next walk's.
+// The report ends as the app closes down, which the bridge does before it
+// removes the config folder: a save the page sent as the walk ended, held
+// here as it makes the folder, is let finish, whole, and a save after it
+// writes nothing, so no file is made in the folder while it is removed
+// and no draft lands in the next walk's.
 // Issue #632, where a draft written during the reset failed it with
 // "directory not empty".
 func TestAnEndedReportWritesNothingMore(t *testing.T) {
@@ -764,7 +764,7 @@ func TestAnEndedReportWritesNothingMore(t *testing.T) {
 	<-held.at
 	ended := make(chan bool, 1)
 	go func() {
-		endReport(r)
+		r.end()
 		ended <- held.written.Load()
 	}()
 	close(held.free)

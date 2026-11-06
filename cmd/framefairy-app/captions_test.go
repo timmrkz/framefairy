@@ -235,6 +235,66 @@ func captionsEpisode(t *testing.T) (*FrameFairy, string, *engine.CaptionsView) {
 	return svc, mine, view
 }
 
+// Once the app has closed down, nothing it started writes into a folder
+// it leaves: the video preview's caption ask is told the video is gone
+// and makes no caption file, and a draft of Report a Problem saves
+// nothing. The walks' bridge closes the app this way before it removes
+// its folders, and the part of it that went on writing failed the removal
+// with "directory not empty", each time one the reset had not named,
+// issue #713.
+//
+// On the real disk: the decoder is a program of its own and reads the
+// episode there.
+func TestNothingWritesOnceTheAppHasClosedDown(t *testing.T) {
+	svc, mine, view := captionsEpisode(t)
+	svc.report = newReporting(svc.store.machine, filepath.Join(t.TempDir(), "report"))
+	handler := mediaMiddleware(svc)(http.NotFoundHandler())
+	ask := func() *httptest.ResponseRecorder {
+		q := url.Values{"path": {mine}, "track": {view.Track}, "at": {"10.2"}, "w": {"270"}, "h": {"480"}}
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/captions?"+q.Encode(), nil))
+		return rec
+	}
+	if rec := ask(); rec.Code != http.StatusOK {
+		t.Fatalf("the captions before the app closed answered %d %s", rec.Code, rec.Body.String())
+	}
+	before := filesUnder(t, engine.WorkDir(mine))
+	if !svc.closeDown() {
+		t.Fatal("the app did not stop its work in time")
+	}
+	// Another colour, so its caption file would be a new one.
+	q := url.Values{"path": {mine}, "track": {view.Track}, "at": {"10.2"}, "w": {"270"}, "h": {"480"}, "text": {"#00ff00"}}
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/captions?"+q.Encode(), nil))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("a caption ask once the app closed answered %d %s", rec.Code, rec.Body.String())
+	}
+	if err := svc.SaveReportText("typed as the app quit"); err == nil {
+		t.Error("a draft of the report was saved once the app closed")
+	}
+	if after := filesUnder(t, engine.WorkDir(mine)); !reflect.DeepEqual(after, before) {
+		t.Errorf("the work folder held %v before the app closed and %v after", before, after)
+	}
+}
+
+// filesUnder names every file under dir.
+//
+// On the real disk: it reads the folder the decoder and libass write to.
+func filesUnder(t *testing.T, dir string) []string {
+	t.Helper()
+	var files []string
+	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			files = append(files, path)
+		}
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return files
+}
+
 // The video preview asks for a layer for every frame it plays, a few at
 // once, and while a drag drafts colours and the height, and some of those
 // asks are dropped half way when the frame they were for is no longer

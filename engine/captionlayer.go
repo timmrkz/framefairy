@@ -360,6 +360,9 @@ type trackCache struct {
 	dirs   map[string][]string
 	// The folders being deleted, by how many hold them, see hold.
 	held map[string]int
+	// closed is set once the app is on its way out, and from then on no
+	// caption file is started anywhere, see close.
+	closed bool
 }
 
 // previewFile is a caption file of the video preview, and whether it
@@ -473,21 +476,7 @@ func (c *trackCache) hold(dir string) (release func()) {
 	c.mu.Lock()
 	c.held[dir]++
 	c.mu.Unlock()
-	for {
-		c.mu.Lock()
-		var on chan struct{}
-		for _, m := range c.making {
-			if within(dir, m.work) {
-				on = m.done
-				break
-			}
-		}
-		c.mu.Unlock()
-		if on == nil {
-			break
-		}
-		<-on
-	}
+	c.made(func(work string) bool { return within(dir, work) })
 	return sync.OnceFunc(func() {
 		c.mu.Lock()
 		defer c.mu.Unlock()
@@ -497,9 +486,42 @@ func (c *trackCache) hold(dir string) (release func()) {
 	})
 }
 
+// close starts no caption file anywhere from now on, and returns once
+// those on their way are made or have failed, see Machine.ClosePreviews.
+func (c *trackCache) close() {
+	c.mu.Lock()
+	c.closed = true
+	c.mu.Unlock()
+	c.made(func(string) bool { return true })
+}
+
+// made returns once no caption file is on its way into a work folder
+// that in takes, each made or failed. hold and close start none there
+// first.
+func (c *trackCache) made(in func(work string) bool) {
+	for {
+		c.mu.Lock()
+		var on chan struct{}
+		for _, m := range c.making {
+			if in(m.work) {
+				on = m.done
+				break
+			}
+		}
+		c.mu.Unlock()
+		if on == nil {
+			return
+		}
+		<-on
+	}
+}
+
 // holding says whether work is inside a folder being deleted, see hold.
 // The caller holds c.mu.
 func (c *trackCache) holding(work string) bool {
+	if c.closed {
+		return true
+	}
 	for dir := range c.held {
 		if within(dir, work) {
 			return true
@@ -521,6 +543,18 @@ func within(dir, path string) bool {
 func (m *Machine) HoldPreviews(dir string) (release func()) {
 	_, previewTracks := m.captions()
 	return previewTracks.hold(dir)
+}
+
+// ClosePreviews writes no caption file of the video preview from now on,
+// anywhere, and returns once none is being written. It is for the way out
+// of the app, after which a request for captions is told the folder is
+// gone, the way it is while a work folder is deleted, see HoldPreviews.
+// Without it a file on its way as the app quits is cut off half written,
+// and one written while the walks' bridge removed the app's folders
+// failed the removal, issue #713.
+func (m *Machine) ClosePreviews() {
+	_, previewTracks := m.captions()
+	previewTracks.close()
 }
 
 // used moves a file kept to the end of its folder's list, so the files
