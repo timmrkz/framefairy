@@ -469,7 +469,7 @@ What stays a package variable on purpose, each with why:
   seam, and is what #607 has left. Its fonts are read by the caption
   code wherever a style is resolved, so moving it reaches every caller
   of `FontByName`, `FontBytes` and `InstallFont`, and is a change of its
-  own.
+  own, made in #728, see the next section.
 
 ## The font shelf, #728
 
@@ -548,3 +548,36 @@ B, with D's snapshot inside `Fonts`. The shelf becomes `Machine.Fonts`.
 font requests ask the store's machine. Done when no package variable in
 `engine/` or `cmd/framefairy-app/` holds a cache or a seam, which closes
 #607.
+
+### What was built, and where it left the design
+
+`Machine.Fonts` is the shelf, a value ready as its zero value, which offers
+the bundled faces alone. `UseSystem` points it at the machine's font
+folders, and `Use` at any others, a test's in memory. `FontByName`,
+`FontBytes`, `InstallFont`, `CaptionFonts` and the rest became its
+methods, and `ResolveStyle` became `Fonts.Style`. `UseFontFolders`,
+`UseMachineFonts` and `RefreshFonts` are gone, and the tests of the
+machine's fonts each make a `Fonts` of their own and run side by side.
+
+Two things came out otherwise than B said, once the code was read call by
+call:
+
+- A `Style` carries the `Fonts` it was resolved by, not a `Face` value.
+  The caption code asks for faces by name after the style is resolved:
+  the room for a line measures the style's face, and a caption file
+  installs it beside itself for libass. A `Face` would have to carry the
+  face's file as well as its metrics. Carrying the `Fonts` gives the
+  later steps the same faces the style was resolved against, with no
+  second lookup path.
+- The pure functions that resolve a plan's style, `Gesture.change`,
+  `captionsGo`, `ClipDrawing`, `ShapeClip`, `Reshape` and
+  `SetCaptionStyle`, take a `*Fonts` rather than a resolved `Style`. Each
+  resolves the style of the plan it is changing, after the change, so
+  its caller cannot resolve it first. That is the cost C named, an
+  argument each, but typed as the one concrete thing, and nil offers the
+  bundled faces, so a test of a gesture still builds nothing.
+  `captionsView` reads it from its `Look`.
+
+D's snapshot was left out. `Fonts` keeps the lock the shelf had, because
+nothing showed readers waiting on it, and the change was large enough
+without it.

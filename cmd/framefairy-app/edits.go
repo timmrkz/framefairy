@@ -119,7 +119,7 @@ func (s *FrameFairy) SetCaptionStyle(ctx context.Context, path, plan, font strin
 	if size > 0 {
 		values["size"] = size
 	}
-	return s.edit(path, func() error { return engine.SetCaptionStyle(s.store.files, plan, values) })
+	return s.edit(path, func() error { return engine.SetCaptionStyle(s.store.files, plan, values, &s.store.machine.Fonts) })
 }
 
 // SetCaptionColours changes the colour of the caption text, of the box
@@ -154,7 +154,7 @@ func (s *FrameFairy) SetCaptionColours(ctx context.Context, path, plan, text str
 		}
 		values["highlight_colour"] = colour
 	}
-	return s.edit(path, func() error { return engine.SetCaptionStyle(s.store.files, plan, values) })
+	return s.edit(path, func() error { return engine.SetCaptionStyle(s.store.files, plan, values, &s.store.machine.Fonts) })
 }
 
 // SetCaptionSwitch turns one of the switches of the captions column on or
@@ -171,7 +171,7 @@ func (s *FrameFairy) SetCaptionSwitch(ctx context.Context, path, plan, which str
 		return fmt.Errorf("%q is no switch of the captions", which)
 	}
 	return s.edit(path, func() error {
-		return engine.SetCaptionStyle(s.store.files, plan, map[string]any{which: on})
+		return engine.SetCaptionStyle(s.store.files, plan, map[string]any{which: on}, &s.store.machine.Fonts)
 	})
 }
 
@@ -493,7 +493,7 @@ func (s *FrameFairy) Reshape(ctx context.Context, path, plan, clipID string, g e
 	}
 	g.Frames = s.frames(ctx, path)
 	if err := s.editMoving(path, &playhead, func() error {
-		return engine.Reshape(s.store.files, s.store.records, plan, clipID, g, t, s.store.Settings().options().KeepPause)
+		return engine.Reshape(s.store.files, s.store.records, plan, clipID, g, t, s.store.Settings().options().KeepPause, &s.store.machine.Fonts)
 	}); err != nil {
 		return ClipEntry{}, err
 	}

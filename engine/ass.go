@@ -57,6 +57,9 @@ type Style struct {
 	// light is the light of the short the colours are written for, see
 	// inLight.
 	light framewire.Light
+	// fonts are the faces the style was resolved among, which measure
+	// its words and give its face to libass, see Fonts.Style.
+	fonts *Fonts
 }
 
 // DefaultStyle is the caption look used unless a plan or a flag says
@@ -203,9 +206,10 @@ func cleanColour(value any, fallback string) string {
 	return text
 }
 
-// ResolveStyle merges overrides onto the defaults and validates every value
-// by type. Unknown keys are ignored and colours must look like colours.
-func ResolveStyle(overrides map[string]any) Style {
+// Style merges overrides onto the defaults and validates every value by
+// type, with the font among these faces. Unknown keys are ignored and
+// colours must look like colours.
+func (f *Fonts) Style(overrides map[string]any) Style {
 	s := map[string]any{}
 	for k, v := range DefaultStyle {
 		s[k] = v
@@ -225,7 +229,7 @@ func ResolveStyle(overrides map[string]any) Style {
 	// A face nobody has would leave libass to pick any face at all, and
 	// the measuring to guess, so the captions are drawn in ours and the
 	// style says which one it asked for.
-	if _, ok := FontByName(font); !ok {
+	if _, ok := f.ByName(font); !ok {
 		font, missing = DefaultFont, font
 	}
 	border := int(number("border_style"))
@@ -233,6 +237,7 @@ func ResolveStyle(overrides map[string]any) Style {
 		border = 4
 	}
 	return Style{
+		fonts:         f,
 		Font:          font,
 		Missing:       missing,
 		Size:          math.Max(8, math.Min(number("size"), 400)),
@@ -485,7 +490,7 @@ func (e *Engine) measureASS(ctx context.Context, blocks []string, s Style,
 			"ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, " +
 			"Alignment, MarginL, MarginR, MarginV, Encoding",
 		fmt.Sprintf("Style: M,%s,%d,&H00FFFFFF,&H00FFFFFF,&H00FFFFFF,"+
-			"&H00FFFFFF,%d,0,0,0,100,100,0,0,1,0,0,2,0,0,0,1", AssFontName(s.Font), size, int(s.Bold)),
+			"&H00FFFFFF,%d,0,0,0,100,100,0,0,1,0,0,2,0,0,0,1", s.fonts.AssName(s.Font), size, int(s.Bold)),
 		"", "[Events]",
 		"Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, " +
 			"Effect, Text",
@@ -517,7 +522,7 @@ func (e *Engine) measureASS(ctx context.Context, blocks []string, s Style,
 	}
 	// Measuring has to use the same face as the render, or the pills behind
 	// the words come out the wrong size.
-	if err := InstallFont(tmp, s.Font); err != nil {
+	if err := s.fonts.Install(tmp, s.Font); err != nil {
 		e.Log.Detail("measuring the captions: %s", err)
 		return nil, false
 	}
@@ -598,7 +603,7 @@ func (e *Engine) measureMany(ctx context.Context, blocks []string, s Style,
 	// A face the program carries is the same file whatever its name finds,
 	// see measureKey, and so is one of the machine's, whose copy is named
 	// after the version of its file. Anything else is measured each time.
-	_, keep := FontByName(s.Font)
+	_, keep := s.fonts.ByName(s.Font)
 	measured, _ := e.captions()
 	key := func(i int) string { return measureKey(blocks[i], s, width, size) }
 	// Each block is measured by one ask at a time: a block another ask is
@@ -840,7 +845,7 @@ func (e *Engine) CaptionTrack(ctx context.Context, laid []LaidCaption, width, he
 // measured and the captions are drawn plain instead.
 func (e *Engine) captionTrack(ctx context.Context, laid []LaidCaption, width, height int,
 	overrides map[string]any, source SourceInfo) ([]byte, bool, error) {
-	s := ResolveStyle(overrides).inLight(source.Light())
+	s := e.Fonts.Style(overrides).inLight(source.Light())
 	if s.Highlight {
 		track, err := e.highlighted(ctx, laid, width, height, s, source)
 		if track != nil || err != nil {
@@ -963,8 +968,8 @@ Style: Box,%s,%d,%s,%s,%s,%s,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 `, width, height, s.matrix(),
-		AssFontName(s.Font), size, s.Primary, s.Primary, s.OutlineColour, s.boxColour(), int(s.Bold),
+		s.fonts.AssName(s.Font), size, s.Primary, s.Primary, s.OutlineColour, s.boxColour(), int(s.Bold),
 		captionBorder, outline, shadow, marginH, marginH, marginV,
-		AssFontName(s.Font), size, s.Primary, s.Primary, s.Primary, s.Primary)
+		s.fonts.AssName(s.Font), size, s.Primary, s.Primary, s.Primary, s.Primary)
 
 }

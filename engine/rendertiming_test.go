@@ -158,7 +158,7 @@ func checkRenderTiming(t *testing.T, clip Clip) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	style := ResolveStyle(nil)
+	style := new(Fonts).Style(nil)
 	if !style.Highlight {
 		t.Fatal("the default style has no highlight to check")
 	}

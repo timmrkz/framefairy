@@ -112,8 +112,8 @@ func bestCmap(cmap []byte) []byte {
 }
 
 // metricsCache is what was read of each face by its name. A name may be
-// another file once the shelf reads the machine's fonts again, so the
-// shelf keeps it and forgets it then, see fontShelf.
+// another file once the machine's fonts are read again, so Fonts keeps
+// it and forgets it then.
 type metricsCache struct {
 	mu    sync.Mutex
 	faces map[string]*faceMetrics
@@ -127,8 +127,12 @@ func (c *metricsCache) forget() {
 }
 
 // face reads the tables of a font once and keeps them.
-func face(name string) (*faceMetrics, bool) {
-	c := &shelf.metrics
+func (fonts *Fonts) face(name string) (*faceMetrics, bool) {
+	if fonts == nil {
+		f := fonts.readFace(name)
+		return f, f != nil
+	}
+	c := &fonts.metrics
 	c.mu.Lock()
 	f, seen := c.faces[name]
 	c.mu.Unlock()
@@ -137,7 +141,7 @@ func face(name string) (*faceMetrics, bool) {
 	}
 	// Read without the lock, because finding a face of the machine may read
 	// its font folders, which forgets every face read before.
-	f = readFace(name)
+	f = fonts.readFace(name)
 	c.mu.Lock()
 	if c.faces == nil {
 		c.faces = map[string]*faceMetrics{}
@@ -147,8 +151,8 @@ func face(name string) (*faceMetrics, bool) {
 	return f, f != nil
 }
 
-func readFace(name string) *faceMetrics {
-	data, ok := FontBytes(name)
+func (fonts *Fonts) readFace(name string) *faceMetrics {
+	data, ok := fonts.Bytes(name)
 	if !ok {
 		return nil
 	}
@@ -275,8 +279,8 @@ func (f *faceMetrics) advance(r rune) float64 {
 // TextWidth is how wide a line of text comes out at a size, in the same
 // unit as the size. It reports false for a face neither the program nor the
 // machine has.
-func TextWidth(font, text string, size float64) (float64, bool) {
-	f, ok := face(font)
+func (fonts *Fonts) TextWidth(font, text string, size float64) (float64, bool) {
+	f, ok := fonts.face(font)
 	if !ok {
 		return 0, false
 	}
@@ -287,11 +291,11 @@ func TextWidth(font, text string, size float64) (float64, bool) {
 	return total * size * f.scale, true
 }
 
-// FontScale is the em size a caption size comes out as, as a share of that
+// Scale is the em size a caption size comes out as, as a share of that
 // size. The app draws captions itself and needs it, because a font size
 // in a browser is the em square.
-func FontScale(font string) float64 {
-	f, ok := face(font)
+func (fonts *Fonts) Scale(font string) float64 {
+	f, ok := fonts.face(font)
 	if !ok {
 		return 1
 	}

@@ -574,7 +574,7 @@ func TestCuttingByHandIsRecordedAsTrainingData(t *testing.T) {
 		fsys, path, records := trainingFixture(t)
 		// Between zwei and drei, inside the model's second piece, where it
 		// left the audio running.
-		if err := Reshape(fsys, records, path, "01", Gesture{Kind: "cut", From: 15.5, To: 16.5, ToWords: true}, trainingTranscript(), 0.1); err != nil {
+		if err := Reshape(fsys, records, path, "01", Gesture{Kind: "cut", From: 15.5, To: 16.5, ToWords: true}, trainingTranscript(), 0.1, nil); err != nil {
 			t.Fatal(err)
 		}
 		d := lastDecision(t, records)
@@ -594,7 +594,7 @@ func TestCuttingByHandIsRecordedAsTrainingData(t *testing.T) {
 
 	t.Run("a cut of the model's thrown away", func(t *testing.T) {
 		fsys, path, records := trainingFixture(t)
-		if err := Reshape(fsys, records, path, "01", Gesture{Kind: "join", From: 13}, trainingTranscript(), 0.1); err != nil {
+		if err := Reshape(fsys, records, path, "01", Gesture{Kind: "join", From: 13}, trainingTranscript(), 0.1, nil); err != nil {
 			t.Fatal(err)
 		}
 		d := lastDecision(t, records)
@@ -616,7 +616,7 @@ func TestCuttingByHandIsRecordedAsTrainingData(t *testing.T) {
 		fsys, path, records := trainingFixture(t)
 		// To frames, because moving a cut a little is exactly what the
 		// snapping would undo.
-		if err := Reshape(fsys, records, path, "01", Gesture{Kind: "move", Index: 0, From: 11.5, To: 14.6}, trainingTranscript(), 0.1); err != nil {
+		if err := Reshape(fsys, records, path, "01", Gesture{Kind: "move", Index: 0, From: 11.5, To: 14.6}, trainingTranscript(), 0.1, nil); err != nil {
 			t.Fatal(err)
 		}
 		d := lastDecision(t, records)
@@ -643,13 +643,13 @@ func TestCuttingByHandIsRecordedAsTrainingData(t *testing.T) {
 		// moving through the same place must not add up to a correction.
 		fsys, path, records := trainingFixture(t)
 		tr := trainingTranscript()
-		if err := Reshape(fsys, records, path, "01", Gesture{Kind: "join", From: 13}, tr, 0.1); err != nil {
+		if err := Reshape(fsys, records, path, "01", Gesture{Kind: "join", From: 13}, tr, 0.1, nil); err != nil {
 			t.Fatal(err)
 		}
 		// Exactly the part that was put back, sent as it stands, which
 		// is what the timeline does: snapping something already snapped
 		// would move it.
-		if err := Reshape(fsys, records, path, "01", Gesture{Kind: "cut", From: 12, To: 14}, tr, 0.1); err != nil {
+		if err := Reshape(fsys, records, path, "01", Gesture{Kind: "cut", From: 12, To: 14}, tr, 0.1, nil); err != nil {
 			t.Fatal(err)
 		}
 		d := lastDecision(t, records)

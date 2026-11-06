@@ -440,7 +440,7 @@ func (e *Engine) SubtitleFilter(ctx context.Context) (string, error) {
 		320, 180, map[string]any{"radius": 0.0, "highlight": 0.0}); err != nil {
 		return "", err
 	}
-	if err := InstallFont(tmp, DefaultFont); err != nil {
+	if err := e.Fonts.Install(tmp, DefaultFont); err != nil {
 		return "", err
 	}
 	// The bundled font first, so that what is probed is what is run.

@@ -49,7 +49,7 @@ func (d *CaptionDrawing) name() string {
 // moves, a colour being picked or the captions being dragged up or down,
 // which the video preview shows on the way and saves when the hand lets
 // go. Only these are taken from the interface, and every one is checked
-// the way a plan's style is, see ResolveStyle.
+// the way a plan's style is, see Fonts.Style.
 var CaptionDrafts = []string{"primary", "back_colour", "highlight_colour", "highlight",
 	"text", "box", "margin_v"}
 
@@ -75,7 +75,7 @@ type CaptionLayer struct {
 func (e *Engine) PreviewCaptions(ctx context.Context, dec *EpisodeFrames, work string, d *CaptionDrawing,
 	drafts map[string]any, source SourceInfo, rs RenderSettings, at float64, width, height int) (CaptionLayer, error) {
 	style := d.drafted(drafts)
-	resolved := ResolveStyle(style)
+	resolved := e.Fonts.Style(style)
 	if len(d.Laid) == 0 || !resolved.Text {
 		return CaptionLayer{Scale: 1}, nil
 	}
@@ -175,7 +175,7 @@ func (d *CaptionDrawing) Lifted(part string) *CaptionDrawing {
 func (e *Engine) PreviewWordFrames(ctx context.Context, d *CaptionDrawing, drafts map[string]any,
 	source SourceInfo, rs RenderSettings) [][]WordFrame {
 	style := d.drafted(drafts)
-	if len(d.Laid) == 0 || !ResolveStyle(style).Text {
+	if len(d.Laid) == 0 || !e.Fonts.Style(style).Text {
 		return nil
 	}
 	frames := e.WordFrames(ctx, d.Laid, rs.OutW, rs.OutH, style, source.Light())
@@ -271,7 +271,7 @@ func (e *Engine) previewTrack(ctx context.Context, work string, d *CaptionDrawin
 		}
 		// Kept for the rest of the run, so it says once why it has no
 		// pill, after the lines that say what could not be measured.
-		if !pill && ResolveStyle(style).Highlight {
+		if !pill && e.Fonts.Style(style).Highlight {
 			e.Log.Warn("the caption file of the video preview has no pill, the words could not be measured")
 		}
 		// A measurement cut short leaves a track without its pill, which
@@ -298,7 +298,7 @@ func (e *Engine) previewTrack(ctx context.Context, work string, d *CaptionDrawin
 			}
 		}
 		previewTracks.written(dir, file)
-		if err := InstallFont(dir, font); err != nil {
+		if err := e.Fonts.Install(dir, font); err != nil {
 			return previewFile{}, err
 		}
 		e.Log.Detail("made the caption file %s of the video preview in %d ms", filepath.Base(file), time.Since(started).Milliseconds())

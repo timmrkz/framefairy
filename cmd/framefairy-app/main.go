@@ -66,11 +66,11 @@ func main() {
 	// Started again to put a new build in place once the app has quit.
 	installIfAsked()
 	go tidyTemp(os.TempDir(), time.Now())
-	// The fonts installed on the Mac are offered for captions beside ours.
-	// Their folders are read once now, so the Font list opens at once.
-	engine.UseMachineFonts()
-	go engine.RefreshFonts()
 	st := appStore()
+	// The fonts installed on the Mac are offered for captions beside ours,
+	// see appStore. Their folders are read once now, so the Font list
+	// opens at once.
+	go st.machine.Fonts.Refresh()
 
 	var app *application.App
 	emit := func(u JobUpdate) {
@@ -336,7 +336,7 @@ func mediaMiddleware(s *FrameFairy) application.Middleware {
 				// as the render: one built into the program, or the copy of
 				// one installed on the machine. Only a face of that list is
 				// served, found by its name, never by a path.
-				data, ok := engine.FontBytes(r.URL.Query().Get("name"))
+				data, ok := s.store.machine.Fonts.Bytes(r.URL.Query().Get("name"))
 				if !ok {
 					http.NotFound(w, r)
 					return

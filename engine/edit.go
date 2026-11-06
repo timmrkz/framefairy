@@ -962,11 +962,11 @@ func SetCrop(fsys afero.Fs, planPath, clipID string, at float64, left int, frame
 // the settings the workspace offers can be changed here, and a value the
 // render would quietly replace with its default is refused rather than
 // written to the plan.
-func SetCaptionStyle(fsys afero.Fs, planPath string, values map[string]any) error {
+func SetCaptionStyle(fsys afero.Fs, planPath string, values map[string]any, fonts *Fonts) error {
 	if len(values) == 0 {
 		return nil
 	}
-	checked := ResolveStyle(values)
+	checked := fonts.Style(values)
 	for key, value := range values {
 		switch key {
 		case "font":

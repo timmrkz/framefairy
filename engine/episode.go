@@ -929,7 +929,7 @@ type ShapedView struct {
 // see ShapeClip.
 func ShapeClipView(s PlanSummary, clipID string, g Gesture, t *Transcript, keepPause float64,
 	look *Look) (*ShapedView, error) {
-	shaped, err := ShapeClip(s, clipID, g, t, keepPause)
+	shaped, err := ShapeClip(s, clipID, g, t, keepPause, look.fonts())
 	if err != nil {
 		return nil, err
 	}
@@ -987,6 +987,17 @@ func findIn(clips []Clip, clipID, planPath string) (Clip, error) {
 type Look struct {
 	Style  map[string]any
 	Source SourceInfo
+	// Fonts are the faces the captions are measured and drawn in, the
+	// machine's, see Machine.Fonts. Empty, the bundled ones alone.
+	Fonts *Fonts
+}
+
+// fonts are the faces of l, the bundled ones when l has none.
+func (l *Look) fonts() *Fonts {
+	if l == nil {
+		return nil
+	}
+	return l.Fonts
 }
 
 // drawing is what the captions of clip of plan are drawn from in l.
@@ -996,9 +1007,9 @@ func (l *Look) drawing(plan Plan, clip Clip, t *Transcript) *CaptionDrawing {
 		if l != nil {
 			source = l.Source
 		}
-		return ClipDrawing(plan.CaptionStyle(), clip, t, source)
+		return ClipDrawing(plan.CaptionStyle(), clip, t, source, l.fonts())
 	}
-	return ClipDrawing(l.Style, clip, t, l.Source)
+	return ClipDrawing(l.Style, clip, t, l.Source, l.Fonts)
 }
 
 // captionStyle is the plan's own look for the captions of clip, which is
@@ -1015,10 +1026,10 @@ func captionStyle(plan Plan, clip Clip) map[string]any {
 // clip as the plan has it, a fraction of a millisecond off the frames at
 // 29.97 frames a second, and lit a word a frame earlier or later than the
 // short on about a third of the clips of several pieces.
-func ClipDrawing(style map[string]any, clip Clip, t *Transcript, source SourceInfo) *CaptionDrawing {
+func ClipDrawing(style map[string]any, clip Clip, t *Transcript, source SourceInfo, fonts *Fonts) *CaptionDrawing {
 	clip = source.OnFrames(clip)
 	style = clipStyle(style, clip)
-	return &CaptionDrawing{Laid: ClipCaptions(clip, t, ResolveStyle(style)), Style: style, Clip: clip}
+	return &CaptionDrawing{Laid: ClipCaptions(clip, t, fonts.Style(style)), Style: style, Clip: clip}
 }
 
 // ArrivingCaptionsView is the captions of a clip on its way, from the
@@ -1044,13 +1055,13 @@ func captionsView(plan Plan, clip Clip, t *Transcript, look *Look) *CaptionsView
 	t = t.Of(clip)
 	drawing := look.drawing(plan, clip, t)
 	clip, laid := drawing.Clip, drawing.Laid
-	s := ResolveStyle(drawing.Style)
+	s := look.fonts().Style(drawing.Style)
 
 	// The render authors every measure against a 1920 pixel tall frame and
 	// scales by the real height.
 	const authored = 1920.0
-	em := FontScale(s.Font)
-	weight, thicken := Thickening(s.Font, s.Bold)
+	em := s.fonts.Scale(s.Font)
+	weight, thicken := s.fonts.Thickening(s.Font, s.Bold)
 	pieces := make([]PieceView, 0, len(clip.Segments))
 	for _, p := range clip.Segments {
 		pieces = append(pieces, PieceView{Start: p.Start, End: p.End})

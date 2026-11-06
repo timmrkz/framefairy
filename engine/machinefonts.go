@@ -60,10 +60,13 @@ type machineFace struct {
 	alias string
 }
 
-// fontShelf is what the machine has, read from its font folders. It holds
-// nothing until a program says where to look, see UseMachineFonts, so a
-// test sees only the bundled faces unless it puts some on the shelf.
-type fontShelf struct {
+// Fonts are the faces captions can be written in: the ones the program
+// carries, and the machine's own once a program says where to look, see
+// UseMachine. A machine keeps them, see Machine.Fonts, so a test that
+// puts faces on its own machine changes no other test. Its zero value
+// offers the bundled faces alone. A nil Fonts offers them too, without
+// keeping what it measured, for a caller that has no machine.
+type Fonts struct {
 	// reading is held while the folders are read, so a second caller
 	// waits for the one reading rather than reading them all again.
 	reading sync.Mutex
@@ -73,27 +76,24 @@ type fontShelf struct {
 	faces   []machineFace
 	byName  map[string]int
 	scanned time.Time
-	// metrics is what was read of each face, which the shelf forgets
+	// metrics is what was read of each face, which Fonts forgets
 	// whenever it reads the folders again, see face.
 	metrics metricsCache
 }
 
-var shelf = &fontShelf{}
-
-// UseMachineFonts offers the fonts installed on this machine beside the
+// UseMachine offers the fonts installed on this machine beside the
 // bundled ones. The programs call it as they start. The folders are read
-// the first time a face is looked for, and again by RefreshFonts.
-func UseMachineFonts() { UseFontFolders(disk, FontFolders()) }
+// the first time a face is looked for, and again by Refresh.
+func (f *Fonts) UseMachine() { f.Use(disk, FontFolders()) }
 
-// UseFontFolders puts the faces in dirs of fsys on the shelf, in place of
-// whatever was there. A test that calls it changes the faces every test of
-// its package sees, so it does not run beside the tests that draw captions.
-func UseFontFolders(fsys afero.Fs, dirs []string) {
-	shelf.mu.Lock()
-	shelf.fsys, shelf.dirs = fsys, dirs
-	shelf.faces, shelf.byName, shelf.scanned = nil, nil, time.Time{}
-	shelf.mu.Unlock()
-	shelf.metrics.forget()
+// Use offers the faces in dirs of fsys, in place of whatever was offered.
+// A test of the machine's fonts calls it on a machine of its own.
+func (f *Fonts) Use(fsys afero.Fs, dirs []string) {
+	f.mu.Lock()
+	f.fsys, f.dirs = fsys, dirs
+	f.faces, f.byName, f.scanned = nil, nil, time.Time{}
+	f.mu.Unlock()
+	f.metrics.forget()
 }
 
 // FontFolders are the folders a system keeps its fonts in, the user's own
@@ -135,25 +135,28 @@ func FontFolders() []string {
 	return dirs
 }
 
-// RefreshFonts reads the font folders again, so a font installed while the
+// Refresh reads the font folders again, so a font installed while the
 // app runs is offered the next time the list is opened. It reads them at
 // most once a second, however often it is asked.
-func RefreshFonts() {
-	shelf.mu.Lock()
-	fresh := time.Since(shelf.scanned) < time.Second
-	shelf.mu.Unlock()
+func (f *Fonts) Refresh() {
+	if f == nil {
+		return
+	}
+	f.mu.Lock()
+	fresh := time.Since(f.scanned) < time.Second
+	f.mu.Unlock()
 	if !fresh {
-		shelf.scan()
+		f.scan()
 	}
 }
 
-// scan reads every font folder and puts what it found on the shelf.
-func (s *fontShelf) scan() {
-	s.reading.Lock()
-	defer s.reading.Unlock()
-	s.mu.Lock()
-	fsys, dirs := s.fsys, s.dirs
-	s.mu.Unlock()
+// scan reads every font folder and keeps what it found.
+func (f *Fonts) scan() {
+	f.reading.Lock()
+	defer f.reading.Unlock()
+	f.mu.Lock()
+	fsys, dirs := f.fsys, f.dirs
+	f.mu.Unlock()
 	var faces []machineFace
 	if fsys != nil {
 		faces = findFaces(fsys, dirs)
@@ -162,39 +165,45 @@ func (s *fontShelf) scan() {
 	for i, face := range faces {
 		byName[face.font.Name] = i
 	}
-	s.mu.Lock()
-	s.faces, s.byName, s.scanned = faces, byName, time.Now()
-	s.mu.Unlock()
-	s.metrics.forget()
+	f.mu.Lock()
+	f.faces, f.byName, f.scanned = faces, byName, time.Now()
+	f.mu.Unlock()
+	f.metrics.forget()
 }
 
-// all is every face on the shelf, read the first time it is asked for.
-func (s *fontShelf) all() []machineFace {
-	s.mu.Lock()
-	ready := !s.scanned.IsZero()
-	s.mu.Unlock()
+// all is every face of the machine, read the first time it is asked for.
+func (f *Fonts) all() []machineFace {
+	if f == nil {
+		return nil
+	}
+	f.mu.Lock()
+	ready := !f.scanned.IsZero()
+	f.mu.Unlock()
 	if !ready {
-		s.reading.Lock()
-		s.mu.Lock()
-		ready = !s.scanned.IsZero()
-		s.mu.Unlock()
-		s.reading.Unlock()
+		f.reading.Lock()
+		f.mu.Lock()
+		ready = !f.scanned.IsZero()
+		f.mu.Unlock()
+		f.reading.Unlock()
 		if !ready {
-			s.scan()
+			f.scan()
 		}
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.faces
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.faces
 }
 
-// find is the face of that name on the shelf.
-func (s *fontShelf) find(name string) (machineFace, bool) {
-	s.all()
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if i, ok := s.byName[name]; ok {
-		return s.faces[i], true
+// find is the machine's face of that name.
+func (f *Fonts) find(name string) (machineFace, bool) {
+	if f == nil {
+		return machineFace{}, false
+	}
+	f.all()
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if i, ok := f.byName[name]; ok {
+		return f.faces[i], true
 	}
 	return machineFace{}, false
 }
@@ -609,10 +618,13 @@ func faceWeight(os2, head []byte) int {
 
 // machineFontBytes is the face copied out of its file under its alias, a
 // font file of one face.
-func machineFontBytes(face machineFace) ([]byte, error) {
-	shelf.mu.Lock()
-	fsys := shelf.fsys
-	shelf.mu.Unlock()
+func (f *Fonts) machineFontBytes(face machineFace) ([]byte, error) {
+	if f == nil {
+		return nil, fs.ErrNotExist
+	}
+	f.mu.Lock()
+	fsys := f.fsys
+	f.mu.Unlock()
 	if fsys == nil {
 		return nil, fs.ErrNotExist
 	}

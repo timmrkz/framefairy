@@ -457,7 +457,7 @@ type GrowFrom struct {
 // out in the style overrides make. Nothing when they cannot be measured.
 func (e *Engine) WordFrames(ctx context.Context, laid []LaidCaption, width, height int,
 	overrides map[string]any, light framewire.Light) [][]WordFrame {
-	s := ResolveStyle(overrides).inLight(light)
+	s := e.Fonts.Style(overrides).inLight(light)
 	scale := float64(height) / 1920.0
 	size := max(12, num.Round(s.Size*scale))
 	layouts, ok := e.layWords(ctx, laid, s, width, size)

@@ -16,12 +16,12 @@ import (
 // machine with nothing installed still renders a short that looks right.
 
 func TestEveryFaceWeOfferIsInTheBundle(t *testing.T) {
-	fonts := CaptionFonts()
+	fonts := new(Fonts).Caption()
 	if len(fonts) < 3 {
 		t.Fatalf("only %d faces are offered", len(fonts))
 	}
 	for _, font := range fonts {
-		data, ok := FontBytes(font.Name)
+		data, ok := new(Fonts).Bytes(font.Name)
 		if !ok || len(data) < 10_000 {
 			t.Errorf("%s is %d bytes", font.Name, len(data))
 			continue
@@ -42,12 +42,12 @@ func TestEveryFaceWeOfferIsInTheBundle(t *testing.T) {
 			t.Errorf("%s is offered as weight %d, the face says %d", font.Name, font.Weight, got)
 		}
 	}
-	if _, ok := FontByName("Comic Sans MS"); ok {
+	if _, ok := new(Fonts).ByName("Comic Sans MS"); ok {
 		t.Error("a face nobody bundled was found")
 	}
 	// What a plan gets without saying anything has to be one of ours.
-	if _, ok := FontByName(ResolveStyle(nil).Font); !ok {
-		t.Errorf("the default face %q is not bundled", ResolveStyle(nil).Font)
+	if _, ok := new(Fonts).ByName(new(Fonts).Style(nil).Font); !ok {
+		t.Errorf("the default face %q is not bundled", new(Fonts).Style(nil).Font)
 	}
 }
 
@@ -73,20 +73,20 @@ func TestTheFacesLibassThickensAreKnown(t *testing.T) {
 		{"Comic Sans MS", 1, 400, true},
 		{"Comic Sans MS", 0, 400, false},
 	} {
-		weight, thicken := Thickening(c.font, c.bold)
+		weight, thicken := new(Fonts).Thickening(c.font, c.bold)
 		if weight != c.weight || (thicken != 0) != c.thicken || (thicken != 0 && thicken != 1.0/64) {
 			t.Errorf("%s at bold %g is weight %d thickened by %g, want weight %d thickened %t", c.font, c.bold, weight, thicken, c.weight, c.thicken)
 		}
 	}
 }
 
-// On the real disk: InstallFont puts the face where ffmpeg's captions read it.
-func TestInstallFontLeavesTheFaceAndItsLicenceBehind(t *testing.T) {
+// On the real disk: Install puts the face where ffmpeg's captions read it.
+func TestInstallLeavesTheFaceAndItsLicenceBehind(t *testing.T) {
 	dir := t.TempDir()
-	if err := InstallFont(dir, DefaultFont); err != nil {
+	if err := new(Fonts).Install(dir, DefaultFont); err != nil {
 		t.Fatal(err)
 	}
-	font, _ := FontByName(DefaultFont)
+	font, _ := new(Fonts).ByName(DefaultFont)
 	for _, name := range []string{font.File, font.Licence} {
 		info, err := os.Stat(filepath.Join(dir, FontsFolder, name))
 		if err != nil || info.Size() == 0 {
@@ -105,7 +105,7 @@ func TestInstallFontLeavesTheFaceAndItsLicenceBehind(t *testing.T) {
 	if err := os.Chtimes(path, at, at); err != nil {
 		t.Fatal(err)
 	}
-	if err := InstallFont(dir, DefaultFont); err != nil {
+	if err := new(Fonts).Install(dir, DefaultFont); err != nil {
 		t.Fatal(err)
 	}
 	if after, err := os.Stat(path); err != nil || !after.ModTime().Equal(at) {
@@ -113,7 +113,7 @@ func TestInstallFontLeavesTheFaceAndItsLicenceBehind(t *testing.T) {
 	}
 
 	// A face we do not ship is the machine's business, not an error.
-	if err := InstallFont(dir, "Helvetica"); err != nil {
+	if err := new(Fonts).Install(dir, "Helvetica"); err != nil {
 		t.Errorf("an unknown face: %v", err)
 	}
 	if entries, _ := os.ReadDir(filepath.Join(dir, FontsFolder)); len(entries) != 2 {
@@ -135,7 +135,7 @@ func TestABundledFaceReachesLibass(t *testing.T) {
 	}
 	width, size := 1080, 96
 	measure := func(name string) *inkBox {
-		s := ResolveStyle(map[string]any{"font": name, "highlight": 0.0})
+		s := new(Fonts).Style(map[string]any{"font": name, "highlight": 0.0})
 		boxes, ok := e.measureMany(context.Background(),
 			[]string{`{\alpha&H00&}Hamburgefonstiv`}, s, width, size)
 		if !ok || len(boxes) != 1 || boxes[0] == nil {
