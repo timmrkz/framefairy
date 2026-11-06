@@ -676,8 +676,10 @@ export const steps = {
       // stretch from there, not from when the walk moved the hand.
       if (!window.__handHeard) {
         window.__handHeard = true;
-        // The event's own time, on the clock the frames are read on.
-        const heard = (name) => (e) => window.__hand && (window.__hand[name] = e.timeStamp);
+        // How many frames the walk had read when the page handled the
+        // event. Not the event's own time, which is when it was sent
+        // and can be a frame or more before the page handles it.
+        const heard = (name) => () => window.__hand && (window.__hand[name] = window.__played.length);
         addEventListener("pointerdown", heard("heardDown"), true);
         addEventListener("pointermove", heard("heardMove"), true);
       }
