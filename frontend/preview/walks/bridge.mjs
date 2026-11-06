@@ -368,11 +368,19 @@ if (traces) {
 // play is shown and read on any machine, issues #534 and #588. "sound"
 // is the sound card's, as the app runs without a walk, for what a walk
 // checks on the sound's own time, see soundCard in common/steps.mjs.
-export async function open(url, { viewport = { width: 1500, height: 1000 }, scale = 1, again = null, browser: given = null, named = browserFor(), still = false, clock = "frames", gpu = false } = {}) {
-  // The episode the way the bridge found it, whatever the walk before did.
+// kept is the page the sequence before walked in, opened on again when it
+// can be, see openAgain, and closed when it cannot.
+export async function open(url, { viewport = { width: 1500, height: 1000 }, scale = 1, again = null, browser: given = null, named = browserFor(), still = false, clock = "frames", gpu = false, start = null, kept = null } = {}) {
+  const reused = kept && (await openAgain(kept, { viewport, scale, still }));
+  if (kept && !reused) await kept.context().close();
+  // The episode the way the bridge found it, whatever the walk before did,
+  // and with start a second video, heard and searched, which the app
+  // opens on, see startWith in bridge_test.go.
+  let video = ".mp4";
   if (!again) {
-    const reset = await fetch(new URL("/reset", url), { method: "POST" });
+    const reset = await fetch(new URL(`/reset${start ? `?${new URLSearchParams(start)}` : ""}`, url), { method: "POST" });
     if (!reset.ok) throw new Error(`the bridge did not reset: ${await reset.text()}`);
+    if (start) video = (await reset.json()).split("/").pop();
   }
   const browser = again ?? given ?? (await newBrowser(named, { gpu }));
   // A page of its own in a context of its own, which browser.newPage
@@ -380,18 +388,30 @@ export async function open(url, { viewport = { width: 1500, height: 1000 }, scal
   // A page still asks the system for less motion, the way a person can
   // in the Mac's settings, so the app leaves out what it animates and
   // the walk does not wait for it, see still in sequences.mjs.
-  const page = await browser.newPage({ viewport, deviceScaleFactor: scale, reducedMotion: still ? "reduce" : "no-preference" });
-  noDeadlines(page);
+  let page = reused;
+  if (!page) {
+    page = await browser.newPage({ viewport, deviceScaleFactor: scale, reducedMotion: still ? "reduce" : "no-preference" });
+    page.__scale = scale;
+    page.__filming = filmingNow;
+    page.__scripts = [];
+    const add = page.addInitScript.bind(page);
+    page.addInitScript = async (...script) => {
+      const added = await add(...script);
+      page.__scripts.push(added);
+      return added;
+    };
+    noDeadlines(page);
+    await slowDown(page);
+  }
   await page.addInitScript((clock) => {
     window.__flatScreen = true;
     window.__playClock = clock;
   }, clock);
-  await slowDown(page);
   const errors = [];
   threw(page, errors);
   await page.goto(url);
-  await page.locator("aside li", { hasText: ".mp4" }).first().waitFor();
-  await page.locator("aside li", { hasText: ".mp4" }).first().click();
+  await page.locator("aside li", { hasText: video }).first().waitFor();
+  await page.locator("aside li", { hasText: video }).first().click();
   // The sidebar of a new library is pinned open, over the left of the
   // workspace and the start of the clip timeline. It is let go of, the way
   // a person who works in the workspace would, so a hand can reach what is
@@ -407,6 +427,51 @@ export async function open(url, { viewport = { width: 1500, height: 1000 }, scal
   await settle(page);
   await page.evaluate(() => document.body.focus());
   return { browser, page, errors };
+}
+
+// A page a sequence passed in, made ready for the next sequence of its
+// walker to open the app on, or null when it cannot be. Opening the video
+// on it again took 0.74 CPU-s, against 0.98 on a new page, ten times
+// each in a cloud session. What the sequence left on it goes first: its
+// listeners, its routes and its init scripts, what the app kept in the
+// page's storage, where the pointer was and the keys still down, and its
+// trace, which starts again for the next. The bridge serves nothing a
+// page may keep, see noStore in bridge_test.go, so a sequence fetches
+// what it needs whichever sequence walked before it. A page whose clock
+// a walk took, see fakeClock, which cannot be given back, is not opened
+// again, nor one of another scale or filmed otherwise.
+async function openAgain(page, { viewport, scale, still }) {
+  if (page.isClosed() || page.__clock || page.__scale !== scale || page.__filming !== filmingNow) return null;
+  try {
+    await page.evaluate(() => {
+      localStorage.clear();
+      sessionStorage.clear();
+      window.__leave?.();
+    });
+  } catch {
+    return null;
+  }
+  await page.removeAllListeners(undefined, { behavior: "ignoreErrors" });
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  for (const script of page.__scripts.splice(0)) await script.dispose();
+  await page.goto("about:blank");
+  // Off the page, where a new page's pointer is: the rail of the sidebar
+  // opens under it.
+  await page.mouse.up();
+  await page.mouse.move(-1, -1);
+  for (const key of ["Shift", "Control", "Alt", "Meta"]) await page.keyboard.up(key);
+  await page.setViewportSize(viewport);
+  await page.emulateMedia({ reducedMotion: still ? "reduce" : "no-preference" });
+  page.__held = false;
+  page.__traceStep = false;
+  page.__pressed = undefined;
+  if (tracing.has(page.context())) {
+    const { tracing: t } = page.context();
+    await t.stopChunk();
+    await t.startChunk({ title: tracedAs });
+    hearRequests(page);
+  }
+  return page;
 }
 
 // Waits until the app has nothing on its way: no call out, no timer of

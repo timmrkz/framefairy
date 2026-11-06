@@ -206,9 +206,7 @@ export default [
     // TestARenderCutsOnWholeFrames holds the engine to it, this the app.
     name: "a render of a 29.97 fps episode cuts on whole frames",
     steps: [
-      ["add", 40, "30000/1001"],
-      ["wait for", "Search"],
-      ["cards", 1],
+      ["added", 40, "30000/1001"],
       ["cut at", 0.3],
       ["cut at", 0.7],
       ["cuts", 2],

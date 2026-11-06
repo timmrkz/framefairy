@@ -621,9 +621,7 @@ export default [
     // over them, and only a step from word to word bounces.
     name: "a step onto a word pops it over the paused frame",
     steps: [
-      ["add", 40, "25"],
-      ["wait for", "Search"],
-      ["cards", 1],
+      ["added", 40, "25"],
       ["step onto words and see them pop", 6],
       ["step frame by frame and see nothing pop", 40],
     ],

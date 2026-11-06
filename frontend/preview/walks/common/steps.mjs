@@ -268,6 +268,16 @@ export function clock(seq) {
   return seq.steps.some(([what]) => soundCard.has(what)) ? "sound" : "frames";
 }
 
+// What a sequence that starts with ["added", ...] starts with, as the
+// bridge's /reset takes it: a second video of so many seconds, at a rate,
+// with a timing and in Matroska, the way ["add", ...] picks one, already
+// heard and searched, with the app open on its clip. Or null.
+export function started(seq) {
+  const [what, seconds, rate, timing, inside] = seq.steps[0] ?? [];
+  if (what !== "added") return null;
+  return { seconds, ...(rate && { rate }), ...(timing && { timing }), ...(inside && { in: inside }) };
+}
+
 // Holds files over the app and drops them, the way the runtime reports a
 // drag from Finder, its start and where it is, and a drop, see wails-bridge.ts, somewhere left of the
 // middle and below it, over whatever the page has there. Says what was

@@ -15,7 +15,7 @@
 // stand-in says: "Ich war vielleicht sechs Jahre alt, als mich auf dem
 // Schulhof irgendein Typ geschubst hat."
 import { browserFor, chosen, keepTraces, newBrowser, open, settle, shown, shownOnPlayhead, traceAs, traceStep } from "./bridge.mjs";
-import { clock, moving, soundCard, still, url } from "./common/steps.mjs";
+import { clock, moving, soundCard, started, still, url } from "./common/steps.mjs";
 import { filmed } from "./filmed.mjs";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -56,6 +56,9 @@ for (const own of [captionsSteps, timelineSteps, playbackSteps, clipsSteps, sear
 
 const only = process.argv[2] ?? "";
 let failures = 0;
+// The page the last sequence of --serve passed in, for the next, see
+// openAgain in bridge.mjs.
+let spare = null;
 
 // --names lists the sequences, one name a line, for make walks to hand
 // out one at a time to as many bridges as it runs, see TestWalks. SEQUENCE
@@ -73,6 +76,13 @@ if (only === "--names") {
   // that each add a step can pick the same name, in one folder or in two.
   if (stepTwice.length) {
     console.log(`two steps are called ${JSON.stringify(stepTwice[0])}`);
+    process.exit(1);
+  }
+  // added is what a sequence starts with, which only the first step can
+  // say, see started.
+  const late = sequences.find((q) => q.steps.slice(1).some(([what]) => what === "added"));
+  if (late) {
+    console.log(`${JSON.stringify(late.name)} says added after its first step`);
     process.exit(1);
   }
   // A step renamed and left in moving by its old name would be walked
@@ -186,7 +196,12 @@ async function walkingSequence(seq, shared) {
   // A sequence that checks what the GPU draws walks in a browser of its
   // own with WebGPU on, see newBrowser.
   const gpu = seq.steps.some(([what]) => what === "screen light");
-  const opened = await open(url, { browser: gpu ? null : shared, named: browserFor(), still: still(seq), clock: clock(seq), gpu });
+  // A sequence that starts with a video it only works on starts with it
+  // added and searched once for every bridge of the walks, see started.
+  // The page the sequence before passed in, see openAgain in bridge.mjs.
+  const before = gpu ? null : spare;
+  if (!gpu) spare = null;
+  const opened = await open(url, { browser: gpu ? null : shared, named: browserFor(), still: still(seq), clock: clock(seq), gpu, start: started(seq), kept: before });
   const { browser, errors } = opened;
   // The page the steps act on: the app's window, or the report window
   // once Bugs opened it. The watch keeps to the app's window.
@@ -540,7 +555,12 @@ async function walkingSequence(seq, shared) {
   console.log(`${failed ? "FAIL" : "ok  "}  ${took} s  ${browserFor().padEnd(8)}  ${seq.name}`);
   if (failed) console.log(`      after ${done.join(", ")}\n      ${failed.replaceAll("\n", "\n      ")}`);
   if (failed) await keepTraces();
-  if (browser === shared) await Promise.all(shared.contexts().map((c) => c.close()));
-  else await browser.close();
+  if (browser === shared) {
+    // The page a sequence passed in is kept for the next, and every other
+    // page, the report window's or a second window's, goes.
+    const keep = failed || main.isClosed() ? null : main;
+    await Promise.all(shared.contexts().filter((c) => c !== keep?.context()).map((c) => c.close()));
+    spare = keep;
+  } else await browser.close();
   return Boolean(failed);
 }
