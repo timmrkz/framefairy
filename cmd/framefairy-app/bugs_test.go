@@ -746,8 +746,8 @@ func (h *heldWrite) Rename(from, to string) error {
 	return err
 }
 
-// The report ends as the app closes down, which the bridge does before it
-// removes the config folder: a save the page sent as the walk ended, held
+// The report ends as the bridge closes the app, before it removes the
+// config folder: a save the page sent as the walk ended, held
 // here as it makes the folder, is let finish, whole, and a save after it
 // writes nothing, so no file is made in the folder while it is removed
 // and no draft lands in the next walk's.

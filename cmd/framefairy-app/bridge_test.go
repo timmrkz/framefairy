@@ -1934,16 +1934,36 @@ func (b *bridge) reopen() ([]Job, error) {
 
 // close closes the app the way quitting does, and says the jobs it
 // closed on. Nothing runs and nothing hears the disk until open.
-//
-// A recording the walk left running is dropped with it: it tells the bus
-// every desk shares what it hears, and the app opened again numbers its
-// recordings from 1, so the next walk's Dictate would take those words
-// for its own.
 func (b *bridge) close() ([]Job, error) {
-	if !b.words.whileClosing(b.d.svc.closeDown) {
+	if !b.words.whileClosing(func() bool { return quit(b.d.svc) }) {
 		return nil, fmt.Errorf("the app did not stop its work in time")
 	}
 	return b.d.svc.jobs.list(), nil
+}
+
+// quit closes the app the one way it closes itself, closeDown, and then
+// stops what the end of the app's process stops in the app, since the
+// bridge opens the app again in the same process. The bridge's reset
+// named the app's parts one by one before, and each time a part it did
+// not name wrote into a work folder while the reset removed it and failed
+// with "directory not empty": a caption file of the video preview, issue
+// #561, a draft of Report a Problem, #632, a call of the page, #709, so
+// it closes the app whole now, issue #713. It says whether the jobs
+// stopped in time.
+//
+// What the process ending stops besides: a recording, which tells the bus
+// every desk shares what it hears, and the app opened again numbers its
+// recordings from 1, so the next walk's Dictate would take those words
+// for its own. The caption files of the video preview, which go on being
+// made after the request that asked is gone. The report, whose draft the
+// page saves as a walk ends. The page's calls are the reset's, see
+// pageCalls.
+func quit(svc *FrameFairy) bool {
+	stopped := svc.closeDown()
+	svc.CancelListening()
+	svc.store.machine.ClosePreviews()
+	svc.report.end()
+	return stopped
 }
 
 // reset puts the app back the way it was once the first episode was
@@ -1983,15 +2003,10 @@ func (b *bridge) reset() error {
 	b.d.reportMade.Store(0)
 	b.d.reportFronted.Store(0)
 	b.d.exported.Store(nil)
-	// The app is closed the one way it closes itself, so whatever part of
-	// it writes is stopped before its folders go, a recording too, see
-	// close. The reset named the
-	// parts one by one before, and each time the next part it did not name
-	// wrote into a work folder while it was removed and failed it with
-	// "directory not empty": a caption file of the video preview, issue
-	// #561, a draft of Report a Problem, #632, and a call of the page,
-	// #709, issue #713.
-	if !b.d.svc.closeDown() {
+	// The app is closed the way it quits, and what its process ending
+	// stops is stopped too, so no part of it writes while its folders go,
+	// see quit.
+	if !quit(b.d.svc) {
 		return fmt.Errorf("the app did not stop its work in time")
 	}
 	// A log a walk started lives in the home, which goes next.

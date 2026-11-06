@@ -93,29 +93,19 @@ func (l *leaving) closing() {
 }
 
 // closeDown is the one way the app stops everything it started, on the
-// way out. main runs it as the shutdown hook and as what Cmd+Q stops, and
-// the walks' bridge runs it on the app it closes before it removes that
-// app's folders. Once it returns, nothing the app started writes into a
-// video's work folder or the config folder: the watch and the news, the
-// models, the jobs with any ffmpeg they run, a recording, the caption
-// files of the video preview and a draft of Report a Problem. A part that
-// writes is stopped here, or the bridge's reset fails on it with
-// "directory not empty", the way it did each time on a writer the fixes
-// before had not named, issue #713. It says whether the jobs stopped in
-// time.
+// way out: the watch and the news, the models, the jobs with any ffmpeg
+// they run, the measuring of loudness. main runs it as the shutdown hook
+// and as what Cmd+Q stops, and the walks' bridge runs it on the app it
+// closes, see bridge.quit. A part that is to stop on the way out stops
+// here, so the bridge stops it too: the bridge named the parts one by one,
+// and each time a part it did not name wrote into a work folder while the
+// bridge removed it and failed with "directory not empty", issue #713.
+// It says whether the jobs stopped in time.
 func (s *FrameFairy) closeDown() bool {
 	s.watch.stop()
 	s.news.stop()
 	s.store.machine.CloseModels()
-	s.CancelListening()
-	stopped := s.stopAll()
-	// A caption file goes on being made after the request that asked for
-	// it is gone, and a draft the report window saved as it closed may be
-	// waiting on its lock. In the app the process ending cuts both off,
-	// half written.
-	s.store.machine.ClosePreviews()
-	s.report.end()
-	return stopped
+	return s.stopAll()
 }
 
 // stopAll stops everything the app started, on the way out, after the

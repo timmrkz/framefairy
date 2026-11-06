@@ -236,17 +236,16 @@ func captionsEpisode(t *testing.T) (*FrameFairy, string, *engine.CaptionsView) {
 	return svc, mine, view
 }
 
-// Once the app has closed down, nothing it started writes into a folder
-// it leaves: the video preview's caption ask is told the video is gone
-// and makes no caption file, and a draft of Report a Problem saves
-// nothing. The walks' bridge closes the app this way before it removes
-// its folders, and the part of it that went on writing failed the removal
-// with "directory not empty", each time one the reset had not named,
-// issue #713.
+// Once the bridge has closed the app, nothing it started writes into a
+// folder it leaves: the video preview's caption ask is told the video is
+// gone and makes no caption file, and a draft of Report a Problem saves
+// nothing. The bridge removes the folders next, and the part of the app
+// that went on writing failed the removal with "directory not empty",
+// each time one the reset had not named, issue #713.
 //
 // On the real disk: the decoder is a program of its own and reads the
 // episode there.
-func TestNothingWritesOnceTheAppHasClosedDown(t *testing.T) {
+func TestNothingWritesOnceTheBridgeHasClosedTheApp(t *testing.T) {
 	svc, mine, view := captionsEpisode(t)
 	svc.report = newReporting(svc.store.machine, filepath.Join(t.TempDir(), "report"))
 	handler := mediaMiddleware(svc)(http.NotFoundHandler())
@@ -260,7 +259,7 @@ func TestNothingWritesOnceTheAppHasClosedDown(t *testing.T) {
 		t.Fatalf("the captions before the app closed answered %d %s", rec.Code, rec.Body.String())
 	}
 	before := filesUnder(t, engine.WorkDir(mine))
-	if !svc.closeDown() {
+	if !quit(svc) {
 		t.Fatal("the app did not stop its work in time")
 	}
 	// Another colour, so its caption file would be a new one.

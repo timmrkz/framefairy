@@ -551,12 +551,12 @@ func (m *Machine) HoldPreviews(dir string) (release func()) {
 }
 
 // ClosePreviews writes no caption file of the video preview from now on,
-// anywhere, and returns once none is being written. It is for the way out
-// of the app, after which a request for captions is told the folder is
-// gone, the way it is while a work folder is deleted, see HoldPreviews.
-// Without it a file on its way as the app quits is cut off half written,
-// and one written while the walks' bridge removed the app's folders
-// failed the removal, issue #713.
+// anywhere, and returns once none is being written. A request for
+// captions is then told the folder is gone, the way it is while a work
+// folder is deleted, see HoldPreviews. The walks' bridge closes the
+// previews of the app it closes, the way the process ending cuts them
+// off: a caption file written while it removed the app's folders failed
+// the removal, issue #713.
 func (m *Machine) ClosePreviews() {
 	_, previewTracks := m.captions()
 	previewTracks.close()

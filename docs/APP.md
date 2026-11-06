@@ -3084,7 +3084,8 @@ carries a number that grows with every change, so a state that arrives
 late never puts a job back to where it was. A job a newer state of its
 video no longer holds is one the Go side forgot, and it goes. Nothing is
 read again on a timer: a state that was lost is put right by the next.
-Quitting the app stops the model and every job before the app goes.
+Quitting the app stops the model, every job and the time of removed work
+before the app goes, all in `closeDown` in `quit.go`.
 
 **Quitting.** Cmd+Q dims the app at once and says what happens next.
 The first press only asks, Press ⌘Q again to quit, for three seconds, the

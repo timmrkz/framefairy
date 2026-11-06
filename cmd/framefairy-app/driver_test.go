@@ -316,10 +316,11 @@ func (d *desk) render(path, plan string) {
 	d.svc.Render(path, engine.RenderRequest{Plan: plan})
 }
 
-// close quits the app, the way the window's close button does.
+// close quits the app, the way the window's close button does, through
+// the one way the app closes itself, see closeDown.
 func (d *desk) close() {
 	d.t.Helper()
-	if !d.svc.jobs.shutDown() {
+	if !d.svc.closeDown() {
 		d.t.Fatal("the app did not stop its work in time")
 	}
 }
