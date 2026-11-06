@@ -239,6 +239,49 @@ export const steps = {
     if (!walk.wrong && (await page.evaluate(() => document.querySelector("aside").classList.contains("open"))))
       walk.wrong = "the sidebar stays open with no menu and the pointer away from it";
   },
+  // ["keep the sidebar"]
+  //                    hovers the rail open and clicks the button at its
+  //                    top, the way Tim did to keep it: the sidebar stays
+  //                    open once the pointer has left it, and the button
+  //                    now says it closes it, with another icon. A second
+  //                    click closes it under the pointer, and the button
+  //                    says it keeps it again, #615
+  async "keep the sidebar"(walk) {
+    const { page } = walk;
+    const button = page.locator("aside .head .glyph");
+    const seen = async () => ({
+      open: await page.evaluate(() => document.querySelector("aside").classList.contains("open")),
+      title: await button.getAttribute("title"),
+      pressed: await button.getAttribute("aria-pressed"),
+      icon: await button.innerHTML(),
+    });
+    await page.mouse.move(750, 400);
+    await sidebarStill(page);
+    await page.mouse.move(20, 500);
+    await sidebarStill(page);
+    const hovered = await seen();
+    if (!hovered.open || hovered.pressed !== "false" || hovered.title !== "Keep the sidebar open") {
+      walk.wrong = `the sidebar hovering opened shows ${JSON.stringify({ ...hovered, icon: undefined })}, open with a button that keeps it`;
+      return;
+    }
+    await button.click();
+    await page.mouse.move(750, 400);
+    await sidebarStill(page);
+    const kept = await seen();
+    if (!kept.open) walk.wrong = "one click on the button of a sidebar hovering opened did not keep it open once the pointer left";
+    else if (kept.pressed !== "true" || kept.title !== "Close the sidebar") walk.wrong = `the kept sidebar's button says ${JSON.stringify({ pressed: kept.pressed, title: kept.title })}, not that it closes it`;
+    else if (kept.icon === hovered.icon) walk.wrong = "the button wears the same icon whether the sidebar is kept or not";
+    if (walk.wrong) return;
+    await page.mouse.move(20, 500);
+    await sidebarStill(page);
+    await button.click();
+    await sidebarStill(page);
+    const closed = await seen();
+    if (closed.open) walk.wrong = "a click on the button of a kept sidebar did not close it under the pointer";
+    else if (closed.pressed !== "false" || closed.title !== "Keep the sidebar open" || closed.icon !== hovered.icon) walk.wrong = `once closed, the button says ${JSON.stringify({ pressed: closed.pressed, title: closed.title })}, not that it keeps it`;
+    await page.mouse.move(750, 400);
+    await sidebarStill(page);
+  },
   // ["settings"]       opens the settings from the sidebar, and remembers
   //                    the models they name
   async settings(walk) {
