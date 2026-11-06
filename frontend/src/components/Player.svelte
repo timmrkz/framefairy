@@ -1,4 +1,7 @@
 <script lang="ts" module>
+  import type { CaptionLayers as Layers } from "../lib/frames/captions";
+  import type { FrameQueue as Queue } from "../lib/frames/queue";
+
   // What the row above the clip timeline has to offer for the video
   // preview. The buttons sit in that row now, so what they are for has to
   // travel out of here.
@@ -8,6 +11,15 @@
     // What the caption box says about itself while it is dragged.
     hint: string;
   };
+
+  // The video previews that are awake, the one woken last at the end. The
+  // walks read the captions and the frames of the one on screen, and a
+  // workspace built behind it, to be kept, wakes after it and sleeps
+  // again once it is ready. A handle each video preview set as it was
+  // made pointed the walks at the one built last, asleep.
+  const awake: { layers: Layers; queue: () => Queue | null }[] = [];
+  Object.defineProperty(window, "__captionLayers", { configurable: true, get: () => awake.at(-1)?.layers });
+  Object.defineProperty(window, "__appFrames", { configurable: true, get: () => awake.at(-1)?.queue()?.appFrames ?? undefined });
 </script>
 
 <script lang="ts">
@@ -220,6 +232,8 @@
     if (!stop) q = untrack(() => open(video));
     return () => {
       stop?.();
+      const at = awake.indexOf(forWalks);
+      if (at >= 0) awake.splice(at, 1);
       if (!q) return;
       const going: FrameQueue = q;
       said(`video preview: closed, ${untrack(() => sleeping) ? "the workspace sleeps" : untrack(() => missing) ? "the file is gone" : "the workspace went"}`, { video: path });
@@ -257,6 +271,7 @@
     q.over = { at: overAt, coming: comingAt, ready: readyAt };
     q.painted = (frame) => onframe?.(frame);
     queue = q;
+    awake.push(forWalks);
     const opened = queueOpened;
     queueOpened = [];
     for (const done of opened) done();
@@ -1320,8 +1335,9 @@
     (text, video) => said(text, { level: "warn", video }),
     () => captionsLost++,
   );
-  // For the walks, which wait until the captions over the frame are drawn.
-  (window as unknown as { __captionLayers?: CaptionLayers }).__captionLayers = layers;
+  // For the walks, which wait until the captions over the frame are
+  // drawn, while this video preview is awake, see awake.
+  const forWalks = { layers, queue: () => queue };
   // While a word is typed, libass draws the caption without it and the
   // caption box draws only what is typed, where libass puts the word, see
   // typed. Before libass knows where the words stand, the caption box
