@@ -313,7 +313,7 @@ func TestTheReaperEndsOnceNothingIsLeftToReap(t *testing.T) {
 		var p previews
 		path := "/videos/start.mp4"
 		p.mu.Lock()
-		p.decoders = map[string]*engine.EpisodeFrames{path: engine.NewEpisodeFrames("framefairy-frames", path)}
+		p.decoders = map[string]*engine.EpisodeFrames{path: engine.NewMachine(afero.NewMemMapFs()).EpisodeFrames("framefairy-frames", path)}
 		p.reaping = true
 		p.mu.Unlock()
 		ended := make(chan struct{})
@@ -395,7 +395,7 @@ func TestOnlyAFewDecodersNobodyHoldsStandRunning(t *testing.T) {
 			path := fmt.Sprintf("/episode-%d.mp4", i)
 			paths = append(paths, path)
 			// Never started: a decoder runs nothing until it is first asked.
-			p.decoders[path] = engine.NewEpisodeFrames("framefairy-frames", path)
+			p.decoders[path] = engine.NewMachine(afero.NewMemMapFs()).EpisodeFrames("framefairy-frames", path)
 			p.held[path] = 1
 			time.Sleep(2 * time.Millisecond) //nolint:forbidigo // synctest bubble
 		}

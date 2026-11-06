@@ -70,8 +70,6 @@ type timesCase struct {
 	rate string
 	// How long the file is, seven seconds when nought.
 	seconds int
-	// Its picture is H.264, which a Mac decodes on its graphics chip.
-	h264 bool
 	// A file only the video preview's test takes, see
 	// TestTheVideoPreviewShowsTheFramesOfTheShort: one whose frames keep to
 	// their rate, which TestARenderCutsOnWholeFrames renders.
@@ -104,15 +102,15 @@ var timesCases = []timesCase{
 	// the picture, in Matroska, with frames left out under load. Its
 	// frames begin on whole milliseconds, some exactly a hair after the
 	// moment they hold, #266.
-	{name: "obs_mkv", file: "obs.mkv", rate: "30/1", h264: true},
+	{name: "obs_mkv", file: "obs.mkv", rate: "30/1"},
 	// MPEG-TS, which OBS also records and camcorders write, has no index
 	// of its key frames, so a seek lands between two. A key frame every
 	// two seconds puts every jump of the test inside a GOP.
-	{name: "mpegts", file: "ts.ts", rate: "30000/1001", h264: true},
+	{name: "mpegts", file: "ts.ts", rate: "30000/1001"},
 	// What OBS records in MPEG-TS with its key frame every 250 frames,
 	// more than eight seconds, and frames left out under load, so most
 	// stretches Probe reads hold no key frame.
-	{name: "held_ts", file: "held.ts", rate: "30/1", seconds: 20, h264: true},
+	{name: "held_ts", file: "held.ts", rate: "30/1", seconds: 20},
 	// MPEG-PS, .mpg and .vob, the way a DVD or an old camcorder holds
 	// MPEG-2 and MP2. It has no index of its key frames either, and
 	// ffmpeg stamps no time on some of its packets, #268.
@@ -133,7 +131,7 @@ var timesCases = []timesCase{
 	{name: "mpegps_intra", file: "intra.mpg", rate: "30000/1001"},
 	// What OBS leaves of a Matroska recording when it crashes: no
 	// duration and no index of its key frames, plan row 2.203.
-	{name: "crashed_mkv", file: "crashed.mkv", rate: "30000/1001", h264: true},
+	{name: "crashed_mkv", file: "crashed.mkv", rate: "30000/1001"},
 }
 
 // timesEpisode is the episode of a case: its frames carry their numbers

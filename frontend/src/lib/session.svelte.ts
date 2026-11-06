@@ -8,6 +8,7 @@
 // docs/decisions/2026-11-01-every-rule-of-the-workspace-in-go.md.
 import type { ClipEntry, CoverageView, EpisodeStatus, Job, KeptWindow, VideoState, WindowView } from "./api";
 import type { JobStore } from "./state.svelte";
+import { said } from "./said";
 import { unchanged } from "./unchanged";
 
 // What the workspace does when the app chose another clip, see
@@ -100,12 +101,22 @@ export class EpisodeSession {
   // is in its clips, so the clip is chosen with them. Held for the pick's
   // answer, the card was gone and nothing chosen for as long as the answer
   // took on a busy machine, issue #697.
+  // Each state that says another clip than the one on screen is logged,
+  // held or taken, with its rev and the card it says the clip was: a walk
+  // saw a card on its way gone for half a second before its clip was
+  // chosen, and nothing said which state had taken it.
   private choose(state: VideoState) {
     const written = !!state.chosenCard && state.chosenCard === this.chosen;
-    if (this.picks.holds(state) && !written) return;
     const now = state.chosen ?? "";
+    const card = state.chosenCard ? `, written as the card ${state.chosenCard}` : "";
+    const says = `the state of rev ${state.rev} says ${now || "no clip"} is chosen${card}`;
+    if (this.picks.holds(state) && !written) {
+      if (now !== this.chosen) said(`clip list: ${says}, held while the pick of ${this.chosen || "no clip"} is on its way`, { video: this.path });
+      return;
+    }
     if (now === this.chosen) return;
     const before = this.chosen;
+    said(`clip list: ${says}, in place of ${before || "no clip"}`, { video: this.path });
     this.chosen = now;
     this.chose(now, before, state.chosenCard ?? "");
   }

@@ -324,6 +324,7 @@ nothing more than a field, a parameter or an option:
 | random numbers | a source of randomness |
 | a network service, a model, a database | an interface, with a fake the test drives |
 | a program the code runs | its path or a runner |
+| hardware or a system service outside the code, a hardware codec, a driver, a keychain | a value the program hands in, absent by default, see below |
 | the end of work | a channel, callback or event the caller gives |
 
 - The program hands in the real thing. A test hands in one it drives.
@@ -339,6 +340,43 @@ nothing more than a field, a parameter or an option:
   needed it got a sleep instead.
 - The interface the same: a module that keeps time takes its timer, or
   is tested under fake timers.
+
+### Test up to the boundary you own
+
+A product hands work to systems it does not own: the operating system's
+media engine, a graphics driver, a keychain, a service in the cloud. What
+the product owns is what it hands over, the arguments, the request, the
+order of the calls. What the system then does with them is the system's
+code, on the machine the test happens to run on, which is rarely a
+machine people use. A test that runs it tests the system: a virtual
+machine's media engine that hangs says nothing about the product. This
+is ports and adapters, Alistair Cockburn's hexagonal architecture: the
+product meets the outside at a port, the real system is the adapter
+behind it, and a test stands in for the adapter.
+
+- **The product does not reach for the system by itself.** It is handed
+  it, the way it is handed the network: the program's own `main` hands
+  the real one, and what a test makes gets none, so it runs the plain
+  path in the product's own code or a stand-in. Code that picks the
+  system by the operating system it finds itself on reaches it from
+  every test on that system too.
+- **What is handed over is the test.** A stand-in records the arguments
+  or the request, and the test checks them against what the real system
+  took on a real machine, argument by argument. It runs on every machine
+  in milliseconds, and a change to what the system is asked shows there
+  first.
+- **The line is what differs between machines.** A library the project
+  builds itself and runs the same everywhere may run in a test, because
+  what it makes of the product's input is the product's behaviour. What
+  changes from one machine to the next, hardware, a driver, a system
+  framework, is behind the port.
+- **When a real machine breaks the contract,** the input that broke it
+  goes into the test of what is handed over, and the adapter is fixed
+  for it. A run of the real system in CI is not the answer, because CI's
+  machine is not the one that broke.
+- Something that fails on one machine and passes on another is first a
+  question of whether the test reaches past the boundary, before it is a
+  question of the product, section 6.
 
 ### Shapes that test well
 
@@ -409,7 +447,9 @@ happening there. A bug report asks the same.
      CI runner and its virtual hardware, on a busy machine, with a
      stand-in program or a file made for the test? Look there first.
      What the environment's own hardware or programs do is fixed in how
-     the test uses them, never in the product. What the test fed the
+     the test uses them, never in the product, and a test that reaches
+     them at all is the first thing to change, see Test up to the
+     boundary you own in section 5. What the test fed the
      product decides it, not where it ran: input from outside, like a
      fuzzer's bytes, or an order of the product's own work that a busy
      machine only made likelier, is the product's to fix.

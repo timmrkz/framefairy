@@ -183,6 +183,7 @@ func appStore() *store {
 	st := openStore()
 	st.machine.UseSystem()
 	st.machine.PreferSavedKeys()
+	probeMedia(st.machine)
 	return st
 }
 

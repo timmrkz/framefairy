@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -26,25 +25,25 @@ import (
 //
 // The media engine is made to fail by a stand-in for ffmpeg that fails
 // every render not asked for the processor, the way VideoToolbox does. A
-// render on the processor goes to the real ffmpeg: on a Mac with Apple's
-// encoder as it is asked, which proves the processor takes what the
-// render asks of it, and elsewhere with libx264 in its place, which proves
-// the way round on any machine.
+// render on the processor goes to the real ffmpeg with ffmpeg's own
+// encoder in Apple's place, on every machine, so no test waits on Apple's
+// encoder, see Media. What Apple's encoder on the processor is handed is
+// TestWhatApplesEncodersAreHanded.
 //
 // On the real disk: ffmpeg reads the episode and renders the short.
 func TestARenderGoesOnWhenTheEncoderFails(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	e, onMac, dir, source, info := encoderFailure(t)
+	e, own, dir, source, info := encoderFailure(t)
 
 	var log bytes.Buffer
 	e.Log = runlog.New(&log, false, false)
 	calls := filepath.Join(dir, "calls")
-	e.FFmpeg = failingMediaEngine(t, e.FFmpeg, calls, onMac, "")
+	e.FFmpeg = failingMediaEngine(t, e.FFmpeg, calls, own, "")
 	// The render reaches for the Mac's encoders. What the machine learned
-	// of the ffmpeg Preflight ran is kept by its ffmpeg and system, so this
+	// of the ffmpeg Preflight ran is kept by its ffmpeg and media, so this
 	// one is learned afresh.
-	e.system = "darwin"
+	e.useMedia(SystemMedia("darwin"))
 
 	clip := info.OnFrames(Clip{ID: "01", Slug: "chip", Segments: []Segment{{Start: 0.5, End: 2.5}}})
 	rs := RenderSettings{OutW: 90, OutH: 160, CRF: 30, Preset: "ultrafast", AudioBitrate: "96k", ScaleUp: true}
@@ -93,7 +92,7 @@ func TestARenderGoesOnWhenTheEncoderFails(t *testing.T) {
 func TestARenderGoesOnWhenTheEncoderHangs(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	e, onMac, dir, source, info := encoderFailure(t)
+	e, own, dir, source, info := encoderFailure(t)
 
 	var log bytes.Buffer
 	e.Log = runlog.New(&log, false, false)
@@ -101,9 +100,9 @@ func TestARenderGoesOnWhenTheEncoderHangs(t *testing.T) {
 	// The media engine says when it hangs, and the render takes it to
 	// have stopped making frames then, rather than after a minute.
 	pipe, hangs := standin.Hangs(t)
-	e.FFmpeg = failingMediaEngine(t, e.FFmpeg, calls, onMac, pipe)
+	e.FFmpeg = failingMediaEngine(t, e.FFmpeg, calls, own, pipe)
 	e.stuck = hangs
-	e.system = "darwin"
+	e.useMedia(SystemMedia("darwin"))
 
 	clip := info.OnFrames(Clip{ID: "01", Slug: "hung", Segments: []Segment{{Start: 0.5, End: 2.5}}})
 	rs := RenderSettings{OutW: 90, OutH: 160, CRF: 30, Preset: "ultrafast", AudioBitrate: "96k", ScaleUp: true}
@@ -141,22 +140,23 @@ func TestOnlyAnEncoderWithAnotherAfterItIsGivenUp(t *testing.T) {
 	linux := encodingEngineOn(t, "linux", "libx264")
 	cases := []struct {
 		e       *Engine
+		system  string
 		encoder Encoder
 		light   framewire.Light
 		want    time.Duration
 	}{
-		{mac, videoToolbox, framewire.SDR, encoderStall},
-		{mac, onProcessor(videoToolbox), framewire.SDR, encoderStall},
-		{mac, x264, framewire.SDR, 0},
-		{mac, hevcVideoToolbox, framewire.PQ, encoderStall},
-		{shipped, onProcessor(videoToolbox), framewire.SDR, encoderStall},
-		{shipped, onProcessor(hevcVideoToolbox), framewire.PQ, encoderStall},
-		{mac, Encoder{Name: "h264_nvenc"}, framewire.SDR, 0},
-		{linux, x264, framewire.SDR, 0},
+		{mac, "a Mac", videoToolbox, framewire.SDR, encoderStall},
+		{mac, "a Mac", onProcessor(videoToolbox), framewire.SDR, encoderStall},
+		{mac, "a Mac", x264, framewire.SDR, 0},
+		{mac, "a Mac", hevcVideoToolbox, framewire.PQ, encoderStall},
+		{shipped, "a Mac with the ffmpeg we ship", onProcessor(videoToolbox), framewire.SDR, encoderStall},
+		{shipped, "a Mac with the ffmpeg we ship", onProcessor(hevcVideoToolbox), framewire.PQ, encoderStall},
+		{mac, "a Mac", Encoder{Name: "h264_nvenc"}, framewire.SDR, 0},
+		{linux, "Linux", x264, framewire.SDR, 0},
 	}
 	for _, c := range cases {
 		if got := c.e.stallFor(c.encoder, c.light); got != c.want {
-			t.Errorf("%s on %s may go %s without a frame, not %s", c.encoder, c.e.system, got, c.want)
+			t.Errorf("%s on %s may go %s without a frame, not %s", c.encoder, c.system, got, c.want)
 		}
 	}
 }
@@ -165,7 +165,7 @@ func TestOnlyAnEncoderWithAnotherAfterItIsGivenUp(t *testing.T) {
 // video, is not rendered again: another encoder would not mend it.
 func TestOnlyAnEncoderThatFailedItselfIsLeft(t *testing.T) {
 	e := encodingEngine(t, "h264_videotoolbox", "libx264")
-	e.system = "darwin"
+	e.useMedia(SystemMedia("darwin"))
 	ctx := context.Background()
 	failed := videoToolbox
 	cases := []struct {
@@ -219,7 +219,7 @@ func TestOnlyAnEncoderThatFailedItselfIsLeft(t *testing.T) {
 
 func encodingEngineOn(t *testing.T, goos string, encoders ...string) *Engine {
 	e := encodingEngine(t, encoders...)
-	e.system = goos
+	e.useMedia(SystemMedia(goos))
 	return e
 }
 
@@ -233,14 +233,10 @@ func encodingEngineOn(t *testing.T, goos string, encoders ...string) *Engine {
 // elsewhere.
 //
 // On the real disk: the stand-in ffmpeg is a program that is run.
-func failingMediaEngine(t *testing.T, real, calls string, onMac bool, hangs string) string {
+func failingMediaEngine(t *testing.T, real, calls, own string, hangs string) string {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("the stand-in is a shell script")
-	}
-	toX264 := "1"
-	if onMac {
-		toX264 = ""
 	}
 	fail := `echo '[h264_videotoolbox @ 0x6000013c] Error encoding frame: -12912' >&2
   echo '[vost#0:0/h264_videotoolbox @ 0x6000013d] Error submitting video frame to the encoder' >&2
@@ -264,15 +260,14 @@ case " $* " in
   ` + fail + ` ;;
 *) exec "$real" "$@" ;;
 esac
-# On the processor: all ffmpeg says is kept for the test, and elsewhere
-# than on a Mac libx264 encodes in Apple's place.
-x264='` + toX264 + `'
+# On the processor: all ffmpeg says is kept for the test, and ffmpeg's
+# own encoder encodes in Apple's place, without what only Apple's takes.
 for a in "$@"; do
   if [ -n "$skip" ]; then skip=; shift; continue; fi
   case "$a" in
     error) set -- "$@" verbose ;;
-    h264_videotoolbox) if [ -n "$x264" ]; then set -- "$@" libx264; else set -- "$@" "$a"; fi ;;
-    -require_sw|-q:v) if [ -n "$x264" ]; then skip=1; else set -- "$@" "$a"; fi ;;
+    h264_videotoolbox) set -- "$@" '` + own + `' ;;
+    -require_sw|-profile:v) skip=1 ;;
     *) set -- "$@" "$a" ;;
   esac
   shift
@@ -333,56 +328,6 @@ func TestTheProcessorIsAskedForABitRate(t *testing.T) {
 	}
 }
 
-// Apple's encoders on the processor take what a short asks of them, the
-// HEVC one for HDR in 10 bits as well as the H.264 one. The render above
-// only goes through H.264, and without this nothing would have rendered
-// HDR on the processor before a customer's media engine failed. Mac only,
-// where these encoders are.
-//
-// On the real disk: ffmpeg writes the short it encodes.
-func TestTheProcessorEncodesWhatAShortAsks(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		t.Skip("Apple's encoders are only on a Mac")
-	}
-	t.Parallel()
-	ctx := context.Background()
-	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
-	if err := e.Preflight(ctx); err != nil {
-		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
-	}
-	listing, _ := exec.Command(e.FFmpeg, "-hide_banner", "-encoders").Output()
-	rs := RenderSettings{OutW: 180, OutH: 320, CRF: 18, Rate: 30}
-	cases := []struct {
-		name    string
-		encoder Encoder
-		input   string
-		want    string
-	}{
-		{"H.264", onProcessor(videoToolbox), "yuv420p", "h264"},
-		{"HEVC in 10 bits for HDR", onProcessor(hevcVideoToolbox), "p010le", "hevc (Main 10)"},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			if !hasEncoder(string(listing), c.encoder.Name) {
-				t.Fatalf("the ffmpeg of this Mac has no %s", c.encoder.Name)
-			}
-			out := filepath.Join(t.TempDir(), "short.mp4")
-			args := []string{"-hide_banner", "-loglevel", "error", "-y",
-				"-i", fixtures.Path(t, "picture.mp4"), "-t", "1", "-vf", "scale=180:320,format=" + c.input}
-			args = append(append(args, c.encoder.args(rs)...), out)
-			if said, err := exec.Command(e.FFmpeg, args...).CombinedOutput(); err != nil {
-				t.Fatalf("%s on the processor refused %v: %v\n%s", c.encoder.Name, args, err, said)
-			}
-			// ffmpeg asked about a file with no output says what it holds
-			// and exits with an error, which is not a failure here.
-			about, _ := exec.Command(e.FFmpeg, "-hide_banner", "-i", out).CombinedOutput()
-			if !strings.Contains(string(about), "Video: "+c.want) {
-				t.Errorf("the short is not %s:\n%s", c.want, about)
-			}
-		})
-	}
-}
-
 // An ffmpeg that crashes says nothing of it itself, and a render that
 // ended with one line of macOS's on CI's Mac could not say whether ffmpeg
 // had crashed, issue #570. What ffmpeg said ends with the signal that
@@ -418,27 +363,26 @@ func TestAnFFmpegEndedByASignalSaysSo(t *testing.T) {
 }
 
 // encoderFailure is what both tests of a failing encoder start from: an
-// engine whose ffmpeg can encode on the processor, whether it has the
-// Mac's media engine, a folder of the test's own and the 15 s test
-// episode, which both only read.
+// engine whose ffmpeg can encode on the processor, ffmpeg's own encoder it
+// encodes with, a folder of the test's own and the 15 s test episode,
+// which both only read.
 //
 // On the real disk: ffprobe and the stand-in read the episode.
-func encoderFailure(t *testing.T) (e *Engine, onMac bool, dir, source string, info SourceInfo) {
+func encoderFailure(t *testing.T) (e *Engine, own string, dir, source string, info SourceInfo) {
 	t.Helper()
 	ctx := context.Background()
 	e = NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
 	if err := e.Preflight(ctx); err != nil {
 		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}
-	listing, _ := exec.Command(e.FFmpeg, "-hide_banner", "-encoders").Output()
-	onMac = hasEncoder(string(listing), "h264_videotoolbox")
-	if !onMac && !hasEncoder(string(listing), "libx264") {
-		ffmpegtest.Unusable(t, "this ffmpeg has neither VideoToolbox nor libx264")
-	}
-	source = fixtures.Path(t, "episode-15s.mp4")
-	info, err := e.Probe(ctx, source)
+	chosen, err := e.VideoEncoder(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return e, onMac, t.TempDir(), source, info
+	source = fixtures.Path(t, "episode-15s.mp4")
+	info, err = e.Probe(ctx, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return e, chosen.Name, t.TempDir(), source, info
 }

@@ -1256,7 +1256,10 @@ saw a crop change at a camera switch in his own podcast, which has two,
 and a clip now has one crop, #396.
 The decoding is asked of the system's own video decoder,
 VideoToolbox on macOS, and falls back to the processor by itself where
-there is none, which today is every Windows and Linux build. If the system
+there is none, which today is every Windows and Linux build. Only a
+machine handed the system's media engine asks it, the app's and the
+command line's, see `engine.Media`. A test's machine decodes on the
+processor from the start. If the system
 decoder refuses a file, the same work is done again on the processor and
 everything after it goes there too. The same happens when reading a
 span's frames runs out of time, a minute and four times the span: ffmpeg

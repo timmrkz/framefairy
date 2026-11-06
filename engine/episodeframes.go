@@ -52,6 +52,9 @@ func decoderSaid(video string, level slog.Level, line string) {
 type EpisodeFrames struct {
 	program string
 	path    string
+	// chip says the decoder may decode on the graphics chip, which it is
+	// started with -chip for, see Machine.EpisodeFrames.
+	chip bool
 	// What a test adds to the decoder's environment, and hears of all it
 	// says on its error stream, the way DecoderSaid does, and what it does
 	// between the decoder's end and the reason for it being known.
@@ -125,9 +128,22 @@ const (
 // again.
 var ErrFramesClosed = errors.New("the video's decoder was closed")
 
-// NewEpisodeFrames is the episode's decoder for the episode at path, run
-// from program. Nothing starts until a stream is asked for.
-func NewEpisodeFrames(program, path string) *EpisodeFrames {
+// EpisodeFrames is the episode's decoder for the episode at path, run
+// from program, which decodes on the graphics chip where the machine's
+// media engine decodes, see Media. Nothing starts until a stream is
+// asked for.
+func (m *Machine) EpisodeFrames(program, path string) *EpisodeFrames {
+	f := newEpisodeFrames(program, path)
+	f.chip = m.mediaOf().Decodes
+	return f
+}
+
+// newEpisodeFrames is the episode's decoder for the episode at path, run
+// from program, which decodes on the processor. Nothing starts until a
+// stream is asked for. Outside the engine a decoder is made by
+// Machine.EpisodeFrames, so whether it may use the graphics chip is the
+// machine's to say.
+func newEpisodeFrames(program, path string) *EpisodeFrames {
 	return &EpisodeFrames{program: program, path: path, answers: map[uint32]chan framewire.Record{},
 		placed: map[uint32]place{}, finishing: map[uint32]place{}, used: time.Now(), captionsTurn: make(chan struct{}, 1)}
 }
@@ -196,6 +212,15 @@ func (f *EpisodeFrames) warm(gone chan struct{}) {
 	}
 }
 
+// args is what the program is started with: the episode, after -chip
+// when it may decode on the graphics chip.
+func (f *EpisodeFrames) args() []string {
+	if f.chip {
+		return []string{"-chip", f.path}
+	}
+	return []string{f.path}
+}
+
 // start runs the program if it does not run. Under the lock.
 func (f *EpisodeFrames) start() error {
 	if f.cmd != nil {
@@ -207,7 +232,7 @@ func (f *EpisodeFrames) start() error {
 			return nil
 		}
 	}
-	cmd := exec.Command(f.program, f.path)
+	cmd := exec.Command(f.program, f.args()...)
 	if f.env != nil {
 		cmd.Env = append(os.Environ(), f.env...)
 	}

@@ -159,7 +159,7 @@ func (s *FrameFairy) serveCaptions(w http.ResponseWriter, r *http.Request) {
 	source, err := s.probe(ctx, path)
 	if err == nil {
 		var dec *engine.EpisodeFrames
-		dec, err = p.decoder(st.machine.Tools, path)
+		dec, err = p.decoder(st.machine, path)
 		if err == nil {
 			// The short's size as the render takes it, which is what the
 			// caption file is laid out at.

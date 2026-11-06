@@ -67,7 +67,7 @@ with the boxes one level down under it.
 | 3 | `updates/`, `notices/` | finding, checking and fetching a newer build, and the licences of what the app is made of | |
 | 4 the engine | `engine/` | every rule about a video: words, clips, edges, windows, captions, crops, rendering, the models, the files of a work folder, the training records | anything about the screen, a binding or a click |
 | 4 | `engine.Project` | the steps one video takes, the same for both front ends | a second way to run a step |
-| 4 | `engine.Machine` | what a program keeps for its whole life and shares with every `Engine` it makes: the files, the records, the `tool.Runner` and `tool.Finder`, the keychain and the network it was handed, what was learned about the machine, and the one `engine.Episode` of each video, which keeps its own rules, made once in each `main` | what belongs to one job, which stays on its `Engine`, and a rule of its own |
+| 4 | `engine.Machine` | what a program keeps for its whole life and shares with every `Engine` it makes: the files, the records, the `tool.Runner` and `tool.Finder`, the keychain, the network and the system's media engine it was handed, what was learned about the machine, and the one `engine.Episode` of each video, which keeps its own rules, made once in each `main` | what belongs to one job, which stays on its `Engine`, and a rule of its own |
 | 4 | `engine/timed/` | the types every part of the engine uses for a moment of a video: a piece of text with its times, a span, a window, a loudness reading, the 10 ms grid of the sound | a function or a rule, and a type only one part uses |
 | 4 | `engine/runlog/` | the log of a run: timestamped lines in the terminal, the progress line one piece of work can hold, steps with how long they took, and every line and progress as an event, which reaches the app through one `Sink` | a rule of a feature. A job says what happens and the log says it |
 | 4 | `engine/tool/` | finding our own ffmpeg, ffprobe and llama-server, each checked against the sum `make` built in, by a `Finder` each program makes once, and running a program as an argument list, stopped once its work is called off, with how it stops held on a `Runner` | anything about a video, and a cache or a seam as a package variable |
@@ -138,6 +138,7 @@ What to do today, and what changes once the issue named is built.
 | keep something between two jobs, a cache or a fact about the machine | a field on `engine.Machine`, in `engine/machine.go`, which a program makes once and hands to every `Engine`. What only the app keeps, a field of `FrameFairy` or of the part of it that uses it, ready as its zero value. Never a package variable, and never a new `Engine` made only to get it. The font shelf is the one package variable left, #607 |
 | let a test stand in for the system in the app: the keychain, the microphone, ffprobe, a download, Finder | a field of `FrameFairy`, or of the part that uses it, the system's own when it is empty. The test sets it on the app it made and runs beside the others. Never a package variable a test swaps |
 | reach the keychain, a company or a model's download from the engine | through `engine.Machine`, whose keys and network are empty in a machine `NewMachine` makes, so it keeps no key and reaches nothing. Each program hands it the system's with `UseSystem` in `main`, the app through `appStore`, see the decision record [2026-10-31-running-programs-and-what-outlives-a-job.md](decisions/2026-10-31-running-programs-and-what-outlives-a-job.md#the-keys-and-the-network-648). Never a switch on whether a test is running. A part outside the engine that reaches the network, like `updates/`, is handed its client by `main`. llama-server on this machine is reached through the machine too, its client, its keys and the one server it keeps loaded in `engine/modelhost.go` |
+| encode or decode through the system's own hardware, VideoToolbox on a Mac | through the machine's `engine.Media`, which `UseSystem` hands it in `main` and which is empty in a machine `NewMachine` makes, so a test's machine encodes and decodes with ffmpeg's own code on the processor. The episode's decoder is told by `-chip`, from `Machine.EpisodeFrames`, the one way to make one outside the engine. Whether to reach the media engine is never decided by `runtime.GOOS` where a video is encoded or decoded. Only `SystemMedia` reads the system, to say which media engine it has, and the decoder reads it only to know which kind of chip it was told it may use. The checks from outside the app take it away again, `LeaveTheMediaEngine` in the build only they use. See the decision record [2026-11-05-the-systems-media-engine-handed-in.md](decisions/2026-11-05-the-systems-media-engine-handed-in.md) |
 | read a file of a video | through the `afero.Fs` the code was given, with `fileio.SafeChildIn` for a path in a work folder. Not `os`. A video's transcript, plans and status, through its `Episode`, and whether a path is the video's own, `Episode.Owns` and `Episode.HasPlan`. A view of a clip, a gesture or its captions, takes the plan the `Episode` holds. An edit reads the file itself, and `editPlan` again under its lock |
 | change a plan | `editPlan` in `engine/edit.go` |
 | notice a change made to a video's files, or to the models, outside the app | `reconcile` in `cmd/framefairy-app/reconcile.go`, which the watch in `watch.go` hands every change to, in a video's folders, its shorts, `Episode.Shorts`, and the models folder, and which runs once as the app starts, `watchTheDisk`, and as the library is read. Never a check of its own in a binding |
@@ -150,7 +151,7 @@ What to do today, and what changes once the issue named is built.
 | add a kind of work to the queue | a kind in `engine/jobs.go`, started with `addSteps` in `cmd/framefairy-app/jobs.go`, so it gets the lanes, the recover and the record every job has |
 | copy a rule of the engine into TypeScript | don't, and no `.cases.json` makes it right. The interface asks Go, or reads the answer from the state. Where it must answer while a hand drags, Go sends what the drag needs as data, see [2026-11-01-every-rule-of-the-workspace-in-go.md](decisions/2026-11-01-every-rule-of-the-workspace-in-go.md) |
 | add a check to CI | a make target, and its rule in `scripts/changed.sh` with its case in `scripts/changed-test.sh`, see BUILD.md |
-| fake something in a test | the clock, the disk and the models are handed in. Use the fakes there are, in `engine/project_test.go` and `internal/standin/` |
+| fake something in a test | the clock, the disk, the models and the system's media engine are handed in. Use the fakes there are, in `engine/project_test.go` and `internal/standin/`. What the media engine is handed is checked as an argument list against a stand-in ffmpeg, never by running it |
 | give a test a video or a sound | a file committed in `internal/fixtures/testdata/`, read with `fixtures.Path`, or copied with `fixtures.Copy` by a test that changes it or writes beside it, or with `fixtures.CopyTo` where nothing can end the test, like a route a walk calls, made by its recipe in `internal/fixtures/fixtures_test.go`. One that is there before a new one, see the decision record [2026-11-01-committed-test-fixtures.md](decisions/2026-11-01-committed-test-fixtures.md). Never made by ffmpeg while the test runs |
 
 ## Invariants
@@ -213,6 +214,13 @@ which reads this file.
     one while it runs. Held by `TestNoTestMakesItsOwnFixture` in
     `internal/ffmpegtest`, and by `TestEveryFixtureIsMadeByItsRecipe` in
     `internal/fixtures`.
+12. No test reaches the system's media engine. A machine is handed it in
+    each program's `main`, and one a test makes has none, so a render,
+    framing and the episode's decoder run ffmpeg's own code on the
+    processor. Held by `UseSystem` being the one place that hands it, by
+    `Machine.EpisodeFrames` being the one way to make the episode's
+    decoder outside the engine, and by
+    `TestOnlyAMachineHandedTheMediaEngineReachesIt`.
 
 ## Boundaries
 
@@ -232,7 +240,7 @@ other side relies on, and the pull request says so.
 - The files of a work folder and of the config folder, which an older
   and a newer build both read, `chosen.json` and the settings among
   them, see #612.
-- `internal/framewire`, between the decoder and the engine.
+- `internal/framewire` and the decoder's one argument besides the episode, `-chip`, between the decoder and the engine.
 - The update feed and the licence key, which the builds of customers
   read.
 

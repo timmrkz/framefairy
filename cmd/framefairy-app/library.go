@@ -139,7 +139,7 @@ func (s *FrameFairy) undecodable(video string, late <-chan struct{}) string {
 	if err != nil {
 		return err.Error()
 	}
-	dec, err := s.previews.decoder(s.store.machine.Tools, abs)
+	dec, err := s.previews.decoder(s.store.machine, abs)
 	if err != nil {
 		return strings.TrimSuffix(err.Error(), ".")
 	}

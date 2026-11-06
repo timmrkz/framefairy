@@ -206,6 +206,12 @@ func probeMiddleware(next application.Middleware) application.Middleware {
 	}
 }
 
+// probeMedia takes the system's media engine away from the app's machine,
+// so the checks from outside, which run on CI's virtual Mac, decode and
+// encode with ffmpeg's own codecs and never wait on Apple's media engine,
+// see engine.Media. What they check is the app.
+func probeMedia(m *engine.Machine) { m.LeaveTheMediaEngine() }
+
 // startProbe listens for the test. The app does not wait for it: a probe
 // that cannot listen says so in the log, and the test finds nobody there.
 func startProbe(svc *FrameFairy) {

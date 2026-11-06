@@ -193,16 +193,12 @@ func (e *Engine) buildCommand(ctx context.Context, clip Clip, sourcePath string,
 	}
 	cmd := append([]string{e.FFmpeg, "-hide_banner", "-loglevel", "error", "-stats", "-y"},
 		pieceInputs(clip, sourcePath, source)...)
-	light := source.Light()
 	cmd = append(cmd,
 		"-filter_complex", graph,
 		"-map", videoLabel, "-map", audioLabel,
 	)
 	rs.Rate = source.FPS()
 	cmd = append(cmd, encoder.args(rs)...)
-	if light == framewire.SDR {
-		cmd = append(cmd, "-profile:v", "high", "-pix_fmt", "yuv420p")
-	}
 	cmd = append(cmd,
 		"-fps_mode", "cfr",
 		"-r", source.FPSString(),

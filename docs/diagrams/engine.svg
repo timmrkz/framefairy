@@ -48,7 +48,7 @@
 <rect class="chip" x="351" y="206" width="309" height="22" rx="6"/>
 <text class="c" x="359" y="221">training: the records of answers and actions</text>
 <rect class="chip" x="76" y="234" width="596" height="22" rx="6"/>
-<text class="c" x="84" y="249">Machine, each video&#x27;s Episode: transcript, plans, status, window, whose a path is, by stamp</text>
+<text class="c" x="84" y="249">Machine: media engine, keys, network. Episode: transcript, plans, status, window, whose a path is</text>
 <rect class="box" x="64" y="290" width="672" height="90" rx="8"/>
 <text class="n" x="76" y="312">the log of a run</text>
 <text class="p" x="76" y="330">engine/runlog/</text>

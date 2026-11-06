@@ -101,7 +101,7 @@ func TestTheVideoPreviewDrawsTheShortsCaptions(t *testing.T) {
 		t.Fatalf("the short has %d frames with captions and %d without", len(with), len(without))
 	}
 
-	dec := NewEpisodeFrames(program, source)
+	dec := newEpisodeFrames(program, source)
 	defer dec.Close()
 	fonts := filepath.Join(captions, FontsFolder)
 	// The episode's moment each frame of the short shows.
@@ -304,7 +304,7 @@ func TestTheVideoPreviewDrawsTheCaptionsSmallerAsTheShortWouldShowThem(t *testin
 	// The decoder is the video's, so it opens one, though no frame of it
 	// is drawn on.
 	source := fixtures.Path(t, "lossless.mkv")
-	dec := NewEpisodeFrames(program, source)
+	dec := newEpisodeFrames(program, source)
 	defer dec.Close()
 	draw := func(w, h, shortW, shortH int, ms int64) framewire.Layer {
 		t.Helper()
@@ -485,7 +485,7 @@ func TestTheWordLiftedOutAndTheRestAreTheCaptionAtRest(t *testing.T) {
 	clip := info.OnFrames(Clip{ID: "01", Slug: "lift", Segments: []Segment{{Start: 0, End: 2.5}}})
 	tr := &Transcript{Words: []timed.Cue{{Start: 0.2, End: 0.6, Text: "Das"}, {Start: 0.6, End: 1.6, Text: "respektvoll"}, {Start: 1.6, End: 2.0, Text: "ist."}}, Language: "de"}
 	d := captionsView(Plan{}, clip, tr, nil).Drawing()
-	dec := NewEpisodeFrames(program, source)
+	dec := newEpisodeFrames(program, source)
 	defer dec.Close()
 	const w, h = 270, 480
 	rs := RenderSettings{OutW: 540, OutH: 960, ScaleUp: true}

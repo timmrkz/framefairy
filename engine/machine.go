@@ -5,6 +5,7 @@ import (
 	"errors"
 	"maps"
 	"net/http"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -112,14 +113,44 @@ type Machine struct {
 	keys, oldKeys keyStore
 	savedFirst    atomic.Bool
 	network       http.RoundTripper
+	// media is the system's media engine, which a render, framing and the
+	// episode's decoder use, see Media. Nil in a machine NewMachine makes,
+	// whose videos are decoded and encoded by ffmpeg's own code on the
+	// processor, so a test never waits on the system's, which GitHub's
+	// virtual Mac now and then never answers. What an ffmpeg offers is
+	// learned for the media it was asked with, see learnedFor.
+	media *Media
 }
 
-// UseSystem hands the machine the system's keychain and its network.
-// Each program calls it once, in main, on the machine it hands every
-// Engine.
+// UseSystem hands the machine the system's keychain, its network and its
+// media engine. Each program calls it once, in main, on the machine it
+// hands every Engine.
 func (m *Machine) UseSystem() {
 	m.keys, m.oldKeys = systemKeys(), legacyKeys()
 	m.network = http.DefaultTransport
+	m.useMedia(SystemMedia(runtime.GOOS))
+}
+
+// useMedia hands the machine a media engine, the system's in UseSystem
+// and another system's in a test, which checks what that one is handed
+// against a stand-in ffmpeg.
+func (m *Machine) useMedia(media Media) { m.media = &media }
+
+// LeaveTheMediaEngine takes the system's media engine away from a machine
+// UseSystem handed it, so it encodes and decodes with ffmpeg's own codecs
+// on the processor, as a test's machine does. Only the build the checks
+// from outside the app drive calls it, before anything is decoded, see
+// probe_outside.go in cmd/framefairy-app: what it checks is the app,
+// not Apple's media engine on a CI runner.
+func (m *Machine) LeaveTheMediaEngine() { m.media = nil }
+
+// mediaOf is the machine's media engine, or ffmpeg's own when it was
+// handed none.
+func (m *Machine) mediaOf() Media {
+	if m.media == nil {
+		return ffmpegsOwn
+	}
+	return *m.media
 }
 
 // transport is the machine's network, or offline when it was handed none.
@@ -190,9 +221,10 @@ func (m *Machine) captions() (*inkCache, *trackCache) {
 }
 
 // toolAsk is what decides what an ffmpeg offers: the ffmpeg, the encoder
-// the run names, if it names one, and the system its encoders are for.
+// the run names, if it names one, and the media its encoders are from.
 type toolAsk struct {
-	ffmpeg, want, system string
+	ffmpeg, want string
+	media        *Media
 }
 
 // learnedTool is what one ffmpeg was found to offer, each found the first
@@ -209,10 +241,10 @@ type learnedTool struct {
 }
 
 // learnedFor is what this engine's ffmpeg was found to offer, kept on the
-// machine. A run that names another ffmpeg or another encoder learns its
-// own.
+// machine. A run that names another ffmpeg, another encoder or runs on
+// other media learns its own.
 func (e *Engine) learnedFor() *learnedTool {
-	ask := toolAsk{ffmpeg: e.FFmpeg, want: e.WantEncoder, system: e.system}
+	ask := toolAsk{ffmpeg: e.FFmpeg, want: e.WantEncoder, media: e.media}
 	if found, ok := e.learned.Load(ask); ok {
 		return found.(*learnedTool)
 	}

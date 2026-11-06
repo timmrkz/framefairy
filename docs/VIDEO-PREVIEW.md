@@ -152,7 +152,10 @@ closed for standing unused.
   [PACKAGING.md](PACKAGING.md) before the first release. It speaks
   `internal/framewire` with the Go side, `engine.EpisodeFrames`.
 - It keeps cursors, each the file open with its index read and a picture
-  decoder ready, with the graphics chip where there is one. The chip only
+  decoder ready, with the graphics chip where there is one and the
+  engine started it with `-chip`, which it does on a machine handed the
+  system's media engine, the app's and the command line's and no
+  test's, see `engine.Media`. The chip only
   decodes: the frame is brought out as it is, and one chain on the
   processor scales it to the size of the canvas, the same chain on every
   system and for every file. Scaling on the chip as well was a second
