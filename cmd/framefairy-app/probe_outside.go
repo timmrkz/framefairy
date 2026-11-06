@@ -8,7 +8,6 @@ package main
 // anybody on this machine who asks, and it presses buttons.
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -493,8 +492,11 @@ func (p *probe) search(w http.ResponseWriter, r *http.Request) {
 	var letGo []func()
 	if quit {
 		for _, lane := range []string{LaneHearing, LaneFinding} {
-			_, release, err := p.svc.jobs.lanes.take(context.Background(), lane, plainTurn)
+			_, release, err := p.svc.jobs.lanes.take(r.Context(), lane, plainTurn)
 			if err != nil {
+				for _, release := range letGo {
+					release()
+				}
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}

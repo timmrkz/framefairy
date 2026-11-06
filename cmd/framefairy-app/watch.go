@@ -32,7 +32,9 @@ import (
 // app adds it, and the one set last wins. Its own hears nothing written
 // in the folder, so a speech model's tokens.txt, or a model in a models
 // folder put back from a backup, went unheard, issue #722. Two watchers
-// keep the app's watch on a folder the only one in its watcher.
+// keep the app's watch on a folder the only one in its watcher. The races
+// are fsnotify's own issue 783, still open, and once it is fixed one
+// watcher is enough again.
 type watching struct {
 	byDepth [2]*fsnotify.Watcher
 	heard   func(changed []string)
@@ -132,8 +134,9 @@ func (ws *watching) follow(files afero.Fs, videos []string, shortsOf func(video 
 		}
 	}
 	// How much is watched, and how many files are in the folders,
-	// which on macOS each take a file descriptor of their own: what
-	// the decision record asked to be measured on a real library.
+	// which on macOS each take a file descriptor of their own, and each
+	// folder two, one in each watcher: what the decision record asked
+	// to be measured on a real library.
 	now := ws.watchList()
 	if len(now) == ws.watched {
 		return

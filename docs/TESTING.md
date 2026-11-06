@@ -1373,7 +1373,10 @@ open. It presses a button the
 way a click does, found by its words, and it quits the app. It adds a
 video the way Add does once a file is picked, and asks for a search the
 way Search does, and with that it can quit in the same moment, stopping
-everything first the way the second Cmd+Q does. Which app is
+everything first the way the second Cmd+Q does. It holds the lanes the
+search takes its first turn in until the stop has run, so the stop
+always comes before the search's first step, the way it does for a
+person, whose speech model takes seconds to load. Which app is
 in front comes from `lsappinfo`, which needs no permission a runner does
 not have. The app's log goes to `~/Library/Logs/FrameFairy-outside.log`
 as well, and the test shows it when a check fails.
