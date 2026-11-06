@@ -341,12 +341,15 @@ export const steps = {
       // Held, or the recorder is collected while it records.
       window.__recorder = [node, hush];
     });
-    if (!(await page.evaluate(() => !!document.querySelector('button[aria-label="Pause"]')))) {
-      await page.keyboard.press("Space");
+    // Played with the sound card held until the app has settled on the
+    // press, see pressPlay. Not held, a settle in WebKit with motion
+    // lasted until the play had reached the clip's end, and L came after.
+    if (!(await page.evaluate(() => !!document.querySelector('button[aria-label="Pause"]'))) && !(await pressPlay(page))) {
+      walk.wrong = "the space bar started no play";
+      return;
     }
     // Each wait is in the episode's time, read off the playhead, see
-    // playUntil, once the app has settled on the press.
-    await settle(page);
+    // playUntil.
     await playUntil(page, { most: 0.3 });
     // What the play had started, thrown away and handed over twice
     // before the presses of L, see the frame queue's stats.
