@@ -1595,6 +1595,9 @@ func (b *bridge) close() ([]Job, error) {
 // the episode's work folder and the app's settings are what they were, the
 // speech stand-in says next the word it said next then, and the app is
 // opened again on them, so nothing a walk did is kept in memory either.
+// Only what the app learned about this computer's programs is kept, the
+// way it is kept across walks on one computer, see
+// desk.openAgainOnTheSameComputer.
 // Every walk starts from the same place, and a seed walks the same way
 // every time: a video it adds is heard with the same words, however many
 // words the walks before it had heard.
@@ -1668,7 +1671,7 @@ func (b *bridge) reset() error {
 	// After the work has stopped, so nothing hears on past it.
 	b.words.from(b.said)
 	freshDecoders(&b.d.svc.previews)
-	b.d.reopen()
+	b.d.openAgainOnTheSameComputer()
 	return nil
 }
 

@@ -8,6 +8,14 @@ import { ask, chosen, control, engineState, fromSidebar, nextPaint, seekTo, seen
 import { rate, url } from "../common/steps.mjs";
 
 export const steps = {
+  // ["asked once", name...]
+  //                    since the page opened, the interface asked the Go
+  //                    side for each call named exactly once
+  async "asked once"(walk, names) {
+    const calls = await walk.page.evaluate(() => window.__calls.map((c) => c.name));
+    const twice = names.map((n) => [n, calls.filter((c) => c === n).length]).filter(([, k]) => k !== 1);
+    if (twice.length) walk.wrong = `opening the video asked for ${twice.map(([n, k]) => `${n} ${k} times`).join(", ")}, not once each`;
+  },
   // ["first run"]      makes the bridge's machine one the app never ran
   //                    on and opens the app again: a card for each model,
   //                    nothing downloading until Download is pressed,

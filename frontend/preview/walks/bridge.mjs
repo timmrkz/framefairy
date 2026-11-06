@@ -139,17 +139,19 @@ export function noDeadlines(page) {
   page.setDefaultTimeout(0);
 }
 
-// A browser for the walks to open the interface in. WebGPU on, which
-// headless Chromium on Linux only gives when asked, for the step that
-// checks what the GPU draws, ["screen light"]. The video preview itself
+// A browser for the walks to open the interface in. The video preview
 // draws on a 2D canvas here, __flatScreen, because headless Chromium gives
 // nothing back from a WebGPU canvas, and the walks read the frame on
-// screen from the canvas. See screen.ts. The counts of the lines a page
-// runs are Chromium's, so WALKCOVERAGE counts in Chromium only. name is
-// the browser, the walks' unless said, see browserFor.
-export async function newBrowser(name = browserFor()) {
+// screen from the canvas. See screen.ts. gpu turns WebGPU on, which
+// headless Chromium on Linux only gives when asked, for the one step that
+// checks what the GPU draws, ["screen light"]: on for every page, it cost
+// every walk a twentieth of the processor time of opening its video. The
+// counts of the lines a page runs are Chromium's, so WALKCOVERAGE counts
+// in Chromium only. name is the browser, the walks' unless said, see
+// browserFor.
+export async function newBrowser(name = browserFor(), { gpu = false } = {}) {
   if (coverage && name !== "chromium") throw new Error("WALKCOVERAGE counts lines through Chromium's own tools, so it walks in Chromium only, WALKBROWSER=chromium");
-  const browser = await launch(name, ["--enable-unsafe-webgpu"]);
+  const browser = await launch(name, gpu ? ["--enable-unsafe-webgpu"] : []);
   if (traces) {
     const plain = browser.newPage.bind(browser);
     browser.newPage = async (options) => {
@@ -366,13 +368,13 @@ if (traces) {
 // play is shown and read on any machine, issues #534 and #588. "sound"
 // is the sound card's, as the app runs without a walk, for what a walk
 // checks on the sound's own time, see soundCard in common/steps.mjs.
-export async function open(url, { viewport = { width: 1500, height: 1000 }, scale = 1, again = null, browser: given = null, named = browserFor(), still = false, clock = "frames" } = {}) {
+export async function open(url, { viewport = { width: 1500, height: 1000 }, scale = 1, again = null, browser: given = null, named = browserFor(), still = false, clock = "frames", gpu = false } = {}) {
   // The episode the way the bridge found it, whatever the walk before did.
   if (!again) {
     const reset = await fetch(new URL("/reset", url), { method: "POST" });
     if (!reset.ok) throw new Error(`the bridge did not reset: ${await reset.text()}`);
   }
-  const browser = again ?? given ?? (await newBrowser(named));
+  const browser = again ?? given ?? (await newBrowser(named, { gpu }));
   // A page of its own in a context of its own, which browser.newPage
   // makes, so nothing a page before it kept is there.
   // A page still asks the system for less motion, the way a person can
@@ -593,12 +595,17 @@ async function chosenPath(page, seen) {
 }
 
 // The clip a reading of readChosen is of, by its plan and id as the
-// engine names them.
-async function chosenClip(page, seen) {
+// engine names them, and the clips of its episode the engine said that
+// in, which engineState can take rather than ask for again.
+async function chosenClipAndClips(page, seen) {
   const path = await chosenPath(page, seen);
-  if (!path || !seen.key) return null;
-  const entry = (await ask(page, "Clips", path)).find((c) => c.key === seen.key);
-  return entry ? { path, plan: entry.plan, clip: entry.id } : null;
+  if (!path || !seen.key) return { at: null, clips: null };
+  const clips = await ask(page, "Clips", path);
+  const entry = clips.find((c) => c.key === seen.key);
+  return { at: entry ? { path, plan: entry.plan, clip: entry.id } : null, clips };
+}
+async function chosenClip(page, seen) {
+  return (await chosenClipAndClips(page, seen)).at;
 }
 
 // Which episode is on screen: the one the sidebar marks as the current
@@ -619,9 +626,12 @@ export async function chosen(page) {
 
 // What the engine says about the clip on screen, asked directly: its
 // captions and its pieces, on the episode's clock. A walk compares what is
-// on screen with this, and this before a step with this after it.
-export async function engineState(page, at) {
-  return page.evaluate(async ({ path, plan, clip }) => {
+// on screen with this, and this before a step with this after it. clips,
+// when given, are the clips of the episode settledScreen read in the same
+// settled moment, so they are not asked for a second time after every
+// step.
+export async function engineState(page, at, clips = null) {
+  return page.evaluate(async ({ at: { path, plan, clip }, read }) => {
     const ask = async (name, args) => {
       const answer = await fetch("/call", {
         method: "POST",
@@ -630,14 +640,14 @@ export async function engineState(page, at) {
       });
       return answer.json();
     };
-    const [captions, clips] = await Promise.all([ask("Captions", [path, plan, clip]), ask("Clips", [path])]);
+    const [captions, clips] = await Promise.all([ask("Captions", [path, plan, clip]), read ?? ask("Clips", [path])]);
     const entry = clips.find((c) => c.plan === plan && (c.id === clip || c.basename === clip));
     // Each piece with its crop, the keyframes that glide it and its
     // rotation, which are steps of the history as the edges are, issue
     // #248.
     const pieces = (entry?.segments ?? []).map((s) => ({ start: s.start, end: s.end, cropX: s.cropX ?? null, marks: s.marks ?? [], rotate: s.rotate ?? 0 }));
     return { ...captions, segments: pieces };
-  }, at);
+  }, { at, read: clips });
 }
 
 // What the clip timeline shows: where the clip starts and ends and where
@@ -696,7 +706,8 @@ export async function settledScreen(page) {
     },
     [Boolean(page.__held), readChosen.toString(), readShown.toString(), readTimeline.toString()],
   );
-  return { at: await chosenClip(page, seen), now: seen.now, drawn: seen.drawn };
+  const { at, clips } = await chosenClipAndClips(page, seen);
+  return { at, clips, now: seen.now, drawn: seen.drawn };
 }
 
 // Where everything a hand can take hold of on the clip timeline is on

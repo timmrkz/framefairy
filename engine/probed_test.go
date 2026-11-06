@@ -7,8 +7,11 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/spf13/afero"
 
 	"framefairy/engine/runlog"
 	"framefairy/internal/standin"
@@ -199,5 +202,106 @@ func TestEveryToolIsAskedItsVersionOnce(t *testing.T) {
 	}
 	if got := versions(); got != 2 {
 		t.Errorf("three engines asked for a version %d times, not once for each tool", got)
+	}
+}
+
+// A machine that learned from another asks ffmpeg and ffprobe nothing the
+// other was already told, and keeps none of the other's jobs. The walks'
+// bridge opens the app again for every walk, and each walk asked the same
+// ffmpeg again what the walk before it had asked.
+//
+// On the real disk: the stand-ins are programs the engine runs, and what
+// is kept is kept by the file's size and time there.
+func TestAMachineThatLearnedFromAnotherAsksNothingAgain(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ffmpeg, ffmpegRuns := countingTool(t, "ffmpeg")
+	ffprobe, ffprobeRuns := countingTool(t, "ffprobe")
+	video := filepath.Join(t.TempDir(), "episode.mp4")
+	if err := os.WriteFile(video, []byte("a video"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ask := func(machine *Machine) {
+		t.Helper()
+		e := &Engine{Machine: machine, Log: runlog.New(io.Discard, false, false), FFmpeg: ffmpeg, FFprobe: ffprobe}
+		if _, err := e.SubtitleFilter(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := e.Probe(ctx, video); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before := NewMachine(afero.NewMemMapFs())
+	ask(before)
+	ffmpegOnce, ffprobeOnce := ffmpegRuns(), ffprobeRuns()
+	if ffmpegOnce == 0 || ffprobeOnce == 0 {
+		t.Fatalf("the stand-ins were asked %d and %d times", ffmpegOnce, ffprobeOnce)
+	}
+	before.episodes = map[string]*Episode{video: {}}
+
+	after := NewMachine(afero.NewMemMapFs())
+	after.LearnFrom(before)
+	ask(after)
+	if got := ffmpegRuns(); got != ffmpegOnce {
+		t.Errorf("the machine that learned asked ffmpeg %d more times", got-ffmpegOnce)
+	}
+	if got := ffprobeRuns(); got != ffprobeOnce {
+		t.Errorf("the machine that learned asked ffprobe %d more times", got-ffprobeOnce)
+	}
+	if after.Tools != before.Tools {
+		t.Error("the machine that learned checks the programs again")
+	}
+	if len(after.episodes) != 0 {
+		t.Errorf("the machine that learned holds the other's videos %v", after.episodes)
+	}
+	if _, tracks := after.captions(); tracks == nil {
+		t.Error("the machine that learned has nowhere to keep its own caption files")
+	} else if _, theirs := before.captions(); tracks == theirs {
+		t.Error("the machine that learned shares the other's caption files")
+	}
+}
+
+// Two engines that ask a machine at the same moment how its ffmpeg wants
+// a subtitle file named wait for one answer: the workspace asks for the
+// captions of a clip twice as a video opens, and on a machine that knew
+// nothing yet each asked ffmpeg for itself.
+//
+// On the real disk: the stand-in ffmpeg is a program the engine runs.
+func TestTwoAsksAtOnceRunOneSubtitleProbe(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ffmpeg, runs := countingTool(t, "ffmpeg")
+	once := func() int {
+		e := &Engine{Machine: &Machine{}, Log: runlog.New(io.Discard, false, false), FFmpeg: ffmpeg}
+		if _, err := e.SubtitleFilter(ctx); err != nil {
+			t.Fatal(err)
+		}
+		return runs()
+	}()
+	machine := &Machine{}
+	const asks = 8
+	answers := make(chan string, asks)
+	var start sync.WaitGroup
+	start.Add(1)
+	for range asks {
+		go func() {
+			e := &Engine{Machine: machine, Log: runlog.New(io.Discard, false, false), FFmpeg: ffmpeg}
+			start.Wait()
+			template, err := e.SubtitleFilter(ctx)
+			if err != nil {
+				t.Error(err)
+			}
+			answers <- template
+		}()
+	}
+	start.Done()
+	first := <-answers
+	for range asks - 1 {
+		if got := <-answers; got != first {
+			t.Errorf("one ask was told %q, another %q", got, first)
+		}
+	}
+	if got := runs() - once; got != once {
+		t.Errorf("%d asks at once ran ffmpeg %d times, one ask runs it %d times", asks, got, once)
 	}
 }
