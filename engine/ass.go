@@ -701,11 +701,14 @@ func (e *Engine) measureBlocks(ctx context.Context, blocks []string, missing []i
 }
 
 // measureKey is what a block's ink depends on.
-// The face is known by its name, which is enough for a face the program
-// carries, see fontBundle: one name is always the same file. A face left
-// to the machine is not kept, see measureMany.
+// The face is known by the name the caption file asks libass for. For a
+// face the program carries that is its name, which is always the same
+// file, see fontBundle. For one of the machine's it is the name of its
+// copy, which changes with the version of its file, so a font updated
+// while the app runs is measured again. A face nobody has is not kept,
+// see measureMany.
 func measureKey(block string, s Style, width, size int) string {
-	return fmt.Sprintf("%s\x00%d\x00%v\x00%d\x00%s", s.Font, size, s.Bold, width, block)
+	return fmt.Sprintf("%s\x00%d\x00%v\x00%d\x00%s", s.fonts.AssName(s.Font), size, s.Bold, width, block)
 }
 
 // inkCache keeps the ink of blocks measured before, up to a few thousand,

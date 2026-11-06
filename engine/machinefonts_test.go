@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/spf13/afero"
 
@@ -325,6 +326,34 @@ func TestAFaceNobodyHasIsDrawnInOurs(t *testing.T) {
 	}
 	if err := SetCaptionStyle(afero.NewMemMapFs(), "/plan.json", map[string]any{"font": "Gone Grotesk"}, fonts); err == nil {
 		t.Error("a face nobody has was set as the caption font")
+	}
+}
+
+// A face of the machine whose file was updated while the app runs is
+// measured again, because what a block of captions measured is kept under
+// the name of the copy libass draws, which changes with the file. Kept
+// under the face's own name, the highlight was sized by the old file.
+func TestAnUpdatedFaceIsMeasuredAgain(t *testing.T) {
+	t.Parallel()
+	fsys, dirs := fontFolders(t, map[string][]byte{"Narrow.ttf": namedFace(t, "Anton", "Test Narrow")})
+	fonts := new(Fonts)
+	fonts.Use(fsys, dirs)
+	s := fonts.Style(map[string]any{"font": "Test Narrow"})
+	before := measureKey("Jahre", s, 1080, 96)
+	updated := filepath.Join(dirs[0], "Narrow.ttf")
+	if err := afero.WriteFile(fsys, updated, namedFace(t, "Archivo Black", "Test Narrow"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	later := time.Unix(1_900_000_000, 0)
+	if err := fsys.Chtimes(updated, later, later); err != nil {
+		t.Fatal(err)
+	}
+	fonts.scan()
+	if after := measureKey("Jahre", s, 1080, 96); after == before {
+		t.Error("the updated face is measured under the key of the old one")
+	}
+	if ours := fonts.Style(nil); measureKey("Jahre", ours, 1080, 96) != measureKey("Jahre", new(Fonts).Style(nil), 1080, 96) {
+		t.Error("a bundled face is measured under a key of its machine")
 	}
 }
 
