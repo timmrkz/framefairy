@@ -1909,10 +1909,11 @@ export const steps = {
     // standing still, with the window at rest under it, long before the
     // search has stopped. Tim found it dropped abruptly, his report of
     // 24 October, 21.42. The frame is read the moment the app changes
-    // it, and its fade from the animation the app starts on it, which
-    // runs on the page's own time. Read two frames after the press
-    // instead, the fade was over: on a busy runner in WebKit with
-    // motion the two frames took 753 ms, and the fade takes 400, #733.
+    // it, and its fade is the animation the browser runs on it, heard
+    // as it starts and as it ends, on the page's own time. Read two
+    // frames after the press instead, the fade was over: on a busy
+    // runner in WebKit with motion the two frames took 753 ms, and the
+    // fade takes 400, #733.
     const seen = await page.evaluate(
       () =>
         new Promise((done) => {
@@ -1920,28 +1921,44 @@ export const steps = {
           const button = pane.querySelector(".listhead button.search");
           const frames = () => [...document.querySelectorAll(".searched")];
           const before = frames().filter((p) => !p.classList.contains("going")).length;
+          const seen = { before };
+          // The animations started on the frame from the press on. The
+          // fade is the one that runs for a while: Svelte starts one of
+          // no length first, and the fade once that has ended.
+          const animate = Element.prototype.animate;
+          const end = (more) => {
+            Element.prototype.animate = animate;
+            changed.disconnect();
+            done({ ...seen, ...more, rest: !!document.querySelector(".aim") });
+          };
+          Element.prototype.animate = function (...args) {
+            const animation = animate.apply(this, args);
+            if (this.classList.contains("searched") && (args[1]?.duration ?? 0) > 0) {
+              seen.started = true;
+              const opacity = animation.effect.getKeyframes().map((k) => Number(k.opacity));
+              const fade = { fades: this.classList.contains("going") && this.isConnected, from: opacity[0], to: opacity.at(-1) };
+              animation.finished.then(
+                () => end({ ...fade, ended: true }),
+                () => end({ ...fade, ended: false }),
+              );
+            }
+            return animation;
+          };
           const changed = new MutationObserver(() => {
             const going = frames().filter((p) => p.classList.contains("going"));
             const left = frames().length - going.length;
             // Not drawn yet: the frame still stands as it did.
-            if (!going.length && left === before) return;
-            changed.disconnect();
-            // The fade is the one animation on it that its stylesheet
-            // did not start: its breath stands still while it goes.
-            const fades = going.flatMap((p) => p.getAnimations()).filter((a) => !(a instanceof CSSAnimation) && !(a instanceof CSSTransition));
-            const seen = { before, going: going.length, left, fades: fades.length };
-            const end = (ended) => done({ ...seen, ended, rest: !!document.querySelector(".aim") });
-            Promise.all(fades.map((a) => a.finished)).then(
-              () => end(true),
-              () => end(false),
-            );
+            if (seen.going === undefined && !going.length && left === before) return;
+            if (seen.going === undefined) Object.assign(seen, { going: going.length, left });
+            // Gone with no fade started on it, cut away.
+            if (!frames().length && !seen.started) end({ fades: false });
           });
           changed.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["class"] });
           button.click();
         }),
     );
     if (seen.before !== 1) walk.wrong = `before Cancel, ${seen.before} frames over the window`;
-    else if (seen.going !== 1 || seen.left !== 0 || seen.fades !== 1 || !seen.ended || !seen.rest)
+    else if (seen.going !== 1 || seen.left !== 0 || !seen.fades || !seen.ended || !(seen.from > seen.to) || seen.to !== 0 || !seen.rest)
       walk.wrong = `the window's frame does not fade at Cancel: ${JSON.stringify(seen)}`;
     await watch.step("head", s);
     return;
