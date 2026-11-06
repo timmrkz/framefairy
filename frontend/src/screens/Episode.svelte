@@ -72,6 +72,7 @@
   import { wordFramesOf, type WordFrame } from "../lib/frames/captions";
   import RangeWindow from "../components/RangeWindow.svelte";
   import Player, { type PlayerOffers } from "../components/Player.svelte";
+  import Reflection from "../components/Reflection.svelte";
   import Busy from "../components/Busy.svelte";
   import ClipList from "../components/ClipList.svelte";
   import SaidList from "../components/SaidList.svelte";
@@ -173,6 +174,7 @@
     else if (hovered === key) hovered = "";
   }
   let player = $state<Player>();
+  let reflection = $state<Reflection>();
   let timeline = $state<ClipTimeline>();
   // The column the video preview and the range picker stand in, which a
   // clip fitted on the clip timeline is centred under.
@@ -2875,6 +2877,7 @@
      layout below is the browser's own work from there on. -->
 <section bind:this={root} style="--ar: {ratio}">
   {#if source}
+    <Reflection bind:this={reflection} shown={!status?.missing} />
     <div class="stage">
       <div class="settings">
         <div class="group asks">
@@ -3230,6 +3233,7 @@
           {path}
           {source}
           missing={!!status?.missing}
+          onframe={(frame) => reflection?.take(frame)}
           clip={shownClip}
           making={making?.key}
           opening={!opened}
@@ -3723,6 +3727,10 @@
     flex: 1;
     min-height: 0;
     overflow: auto;
+    /* What the reflection of the video preview is placed in, and kept
+       behind everything else in, see Reflection.svelte. */
+    position: relative;
+    isolation: isolate;
   }
 
   /* Every height a whole number of pixels, where the browser can do the
@@ -4126,6 +4134,24 @@
      choosing one never moves the two tracks above it. */
   .detail .row {
     height: var(--row-h);
+  }
+
+  /* A button in the row that cannot be pressed is dimmed by its colours,
+     not by opacity as everywhere else, because the reflection of the video
+     preview lies behind the row and would show through it, see
+     Reflection.svelte. The colours are what the opacity of --dimmed gave
+     over the app's own ground, --ink-0, so it looks the same as before. */
+  .detail .row button:disabled {
+    opacity: 1;
+    background: color-mix(in srgb, var(--ink-2) calc(var(--dimmed) * 100%), var(--ink-0));
+    border-color: color-mix(in srgb, var(--line) calc(var(--dimmed) * 100%), var(--ink-0));
+    color: color-mix(in srgb, var(--text) calc(var(--dimmed) * 100%), var(--ink-0));
+  }
+
+  .detail .row button.primary:disabled {
+    background: color-mix(in srgb, var(--accent) calc(var(--dimmed) * 100%), var(--ink-0));
+    border-color: color-mix(in srgb, var(--accent) calc(var(--dimmed) * 100%), var(--ink-0));
+    color: color-mix(in srgb, #fff calc(var(--dimmed) * 100%), var(--ink-0));
   }
 
 

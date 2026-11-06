@@ -28,6 +28,7 @@
   import { movieOf } from "../lib/frames/movie";
   import { CaptionLayers, quarters, type CaptionAsk, type Over, type Showing, type WordFrame } from "../lib/frames/captions";
   import { shownColour, type Light } from "../lib/frames/light";
+  import type { Picture } from "../lib/frames/picture";
   import Info from "./Info.svelte";
   import {
     captionYStep,
@@ -71,6 +72,7 @@
     frameStart = $bindable(NaN),
     sleeping = false,
     missing = false,
+    onframe,
   }: {
     path: string;
     source: SourceView;
@@ -152,6 +154,10 @@
     // shows nothing of what it showed, and a toast says why, see
     // Episode.svelte.
     missing?: boolean;
+    // Told of every frame put on the canvas, or of null for black, which
+    // is only lent and read at once, for the reflection of the video
+    // preview at the foot of the workspace, see Reflection.svelte.
+    onframe?: (frame: Picture | null) => void;
   } = $props();
 
   let screen: HTMLDivElement;
@@ -249,6 +255,7 @@
     const q = new FrameQueue(canvas, video, movieOf(source), woken);
     q.trace = (line) => said(`video preview: ${line}`, { video: path });
     q.over = { at: overAt, coming: comingAt, ready: readyAt };
+    q.painted = (frame) => onframe?.(frame);
     queue = q;
     const opened = queueOpened;
     queueOpened = [];
