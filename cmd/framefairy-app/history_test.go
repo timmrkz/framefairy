@@ -180,7 +180,7 @@ func TestCaptionColoursAreSavedAndUndone(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return engine.ResolveStyle(p.CaptionStyle())
+		return svc.store.machine.Fonts.Style(p.CaptionStyle())
 	}
 	if err := svc.SetCaptionColours(ctx, mine, plan, "#ffcc00", 0.5, "#102030", 0.25, "#00aa00", 0.6); err != nil {
 		t.Fatal(err)
@@ -233,7 +233,7 @@ func TestCaptionSwitchesAreSwitchedAndUndone(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return engine.ResolveStyle(p.CaptionStyle()).Highlight
+		return svc.store.machine.Fonts.Style(p.CaptionStyle()).Highlight
 	}
 	if !on() {
 		t.Fatal("a new plan starts without the highlight")

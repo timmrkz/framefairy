@@ -67,7 +67,7 @@ with the boxes one level down under it.
 | 3 | `updates/`, `notices/` | finding, checking and fetching a newer build, and the licences of what the app is made of | |
 | 4 the engine | `engine/` | every rule about a video: words, clips, edges, windows, captions, crops, rendering, the models, the files of a work folder, the training records | anything about the screen, a binding or a click |
 | 4 | `engine.Project` | the steps one video takes, the same for both front ends | a second way to run a step |
-| 4 | `engine.Machine` | what a program keeps for its whole life and shares with every `Engine` it makes: the files, the records, the `tool.Runner` and `tool.Finder`, the keychain, the network and the system's media engine it was handed, what was learned about the machine, and the one `engine.Episode` of each video, which keeps its own rules, made once in each `main` | what belongs to one job, which stays on its `Engine`, and a rule of its own |
+| 4 | `engine.Machine` | what a program keeps for its whole life and shares with every `Engine` it makes: the files, the records, the `tool.Runner` and `tool.Finder`, the keychain, the network, the system's media engine and the fonts installed on the machine it was handed, what was learned about the machine, and the one `engine.Episode` of each video, which keeps its own rules, made once in each `main` | what belongs to one job, which stays on its `Engine`, and a rule of its own |
 | 4 | `engine/timed/` | the types every part of the engine uses for a moment of a video: a piece of text with its times, a span, a window, a loudness reading, the 10 ms grid of the sound | a function or a rule, and a type only one part uses |
 | 4 | `engine/runlog/` | the log of a run: timestamped lines in the terminal, the progress line one piece of work can hold, steps with how long they took, and every line and progress as an event, which reaches the app through one `Sink` | a rule of a feature. A job says what happens and the log says it |
 | 4 | `engine/tool/` | finding our own ffmpeg, ffprobe and llama-server, each checked against the sum `make` built in, by a `Finder` each program makes once, and running a program as an argument list, stopped once its work is called off, with how it stops held on a `Runner` | anything about a video, and a cache or a seam as a package variable |
@@ -135,7 +135,7 @@ What to do today, and what changes once the issue named is built.
 | show the interface a new fact about a video | a field of `VideoState` in `cmd/framefairy-app/videostate.go`, or of what it holds, the status and the clip views, which the session keeps. Never a new event of its own or a poll |
 | tell the window that something about a video changed | `told` on `*FrameFairy`, or the queue's `moved` for a job, which send the video's state, at most four times a second and always after the last change, one at a time, with at most one more waiting however slow a read is. Nothing else sends it |
 | keep what a video's file said, so the next question does not read it again | its `engine.Episode`, by the file's stamp. Never a cache of its own in the app or a package variable |
-| keep something between two jobs, a cache or a fact about the machine | a field on `engine.Machine`, in `engine/machine.go`, which a program makes once and hands to every `Engine`. What only the app keeps, a field of `FrameFairy` or of the part of it that uses it, ready as its zero value. Never a package variable, and never a new `Engine` made only to get it. The font shelf is the one package variable left, #607 |
+| keep something between two jobs, a cache or a fact about the machine | a field on `engine.Machine`, in `engine/machine.go`, which a program makes once and hands to every `Engine`. What only the app keeps, a field of `FrameFairy` or of the part of it that uses it, ready as its zero value. Never a package variable, and never a new `Engine` made only to get it. The faces captions can be written in are `Machine.Fonts`, and a `Style` made from them carries them, so code that only has a style measures and installs through the right ones |
 | let a test stand in for the system in the app: the keychain, the microphone, ffprobe, a download, Finder | a field of `FrameFairy`, or of the part that uses it, the system's own when it is empty. The test sets it on the app it made and runs beside the others. Never a package variable a test swaps |
 | reach the keychain, a company or a model's download from the engine | through `engine.Machine`, whose keys and network are empty in a machine `NewMachine` makes, so it keeps no key and reaches nothing. Each program hands it the system's with `UseSystem` in `main`, the app through `appStore`, see the decision record [2026-10-31-running-programs-and-what-outlives-a-job.md](decisions/2026-10-31-running-programs-and-what-outlives-a-job.md#the-keys-and-the-network-648). Never a switch on whether a test is running. A part outside the engine that reaches the network, like `updates/`, is handed its client by `main`. llama-server on this machine is reached through the machine too, its client, its keys and the one server it keeps loaded in `engine/modelhost.go` |
 | encode or decode through the system's own hardware, VideoToolbox on a Mac | through the machine's `engine.Media`, which `UseSystem` hands it in `main` and which is empty in a machine `NewMachine` makes, so a test's machine encodes and decodes with ffmpeg's own code on the processor. The episode's decoder is told by `-chip`, from `Machine.EpisodeFrames`, the one way to make one outside the engine. Whether to reach the media engine is never decided by `runtime.GOOS` where a video is encoded or decoded. Only `SystemMedia` reads the system, to say which media engine it has, and the decoder reads it only to know which kind of chip it was told it may use. The checks from outside the app take it away again, `LeaveTheMediaEngine` in the build only they use. See the decision record [2026-11-05-the-systems-media-engine-handed-in.md](decisions/2026-11-05-the-systems-media-engine-handed-in.md) |
@@ -195,9 +195,8 @@ which reads this file.
    reads what nobody checked.
 7. Nothing is learned twice. What outlives a job is kept, not worked out
    again for each job. Held by `engine.Machine`, which each program
-   makes once and hands to every `Engine`, by `FrameFairy` for what
-   only the app keeps, and by the review for the font shelf, which #607
-   still has to move onto it.
+   makes once and hands to every `Engine`, and by `FrameFairy` for what
+   only the app keeps.
 8. Every path is judged by where it really leads, inside the library.
    Held by `SafeChild` in `engine/fileio/`, each video's
    `engine.Episode`, `Owns` and `HasPlan`, which the store's `Known` and
@@ -253,9 +252,6 @@ copies what it finds nearby, so these are not the pattern for new code.
   `frontend/src/lib/rotate.ts`, and the two held to Go by a shared case
   file, `frontend/src/lib/glide.ts` and `frontend/src/lib/flow.ts`'s
   frames, #610.
-- What the engine learns kept in a package variable rather than on
-  `engine.Machine`, the font shelf in `engine/machinefonts.go`, which a
-  test also swaps for the whole process with `UseFontFolders`, #607.
 
 ## Changing the architecture
 

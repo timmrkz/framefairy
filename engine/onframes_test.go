@@ -38,7 +38,7 @@ func TestACutMovedOnFramesStaysOpen(t *testing.T) {
 		{Kind: "move", Edge: "to", From: 11.1, To: 11.12, Frames: at5},
 		{Kind: "move", Edge: "from", From: 11.88, To: 11.9, Frames: at5},
 	} {
-		shaped, err := ShapeClip(planAt(t, fsys, path), "01", g, tr, 0.1)
+		shaped, err := ShapeClip(planAt(t, fsys, path), "01", g, tr, 0.1, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -94,7 +94,7 @@ func TestACaptionIsBurnedIntoAnHDRShortAtTheReferenceWhite(t *testing.T) {
 		{framewire.PQ, "smpte2084", 0.5807},
 	} {
 		dir := t.TempDir()
-		s := ResolveStyle(nil).inLight(c.light)
+		s := new(Fonts).Style(nil).inLight(c.light)
 		header := assHeader(s, 64, 64, 12, 3, 0, 0, 0, 0)
 		ass := header + "\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n" +
 			"Dialogue: 0,0:00:00.00,0:00:05.00,Caption,,0,0,0,,{\\an7\\pos(0,0)\\bord0\\shad0\\p1}m 0 0 l 64 0 64 64 0 64{\\p0}\n"

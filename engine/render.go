@@ -687,7 +687,7 @@ func (e *Engine) renderShort(ctx context.Context, clip Clip, sourcePath string,
 
 	assName := ""
 	// Captions switched off in the app are left out like --no-captions.
-	if len(cues) > 0 && !e.SkipCaptions && ResolveStyle(style).Text {
+	if len(cues) > 0 && !e.SkipCaptions && e.Fonts.Style(style).Text {
 		// ffmpeg runs with the caption directory as its working directory, so
 		// the ass filter can reference a bare filename. That sidesteps the
 		// filter-graph escaping rules for colons and backslashes in paths.
@@ -700,7 +700,7 @@ func (e *Engine) renderShort(ctx context.Context, clip Clip, sourcePath string,
 		}
 		// The face travels with the program, so the render never depends on
 		// what is installed on the machine.
-		if err := InstallFont(captionDir, ResolveStyle(style).Font); err != nil {
+		if err := e.Fonts.Install(captionDir, e.Fonts.Style(style).Font); err != nil {
 			return "", err
 		}
 		assName = clip.Basename() + ".ass"

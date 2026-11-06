@@ -516,7 +516,7 @@ func TestAShortRendersWithoutCaptionsWhenTheyAreOff(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := SetCaptionStyle(disk, plan, map[string]any{"text": false}); err != nil {
+	if err := SetCaptionStyle(disk, plan, map[string]any{"text": false}, nil); err != nil {
 		t.Fatal(err)
 	}
 	p.Base.Out = t.TempDir()

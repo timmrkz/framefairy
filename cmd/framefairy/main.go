@@ -431,9 +431,6 @@ func main() {
 		return
 	}
 
-	// --font takes the fonts installed on the machine too.
-	engine.UseMachineFonts()
-
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -441,6 +438,8 @@ func main() {
 	// The one machine of the run, made once here, see engine.Machine,
 	// with the keychain and the network.
 	machine := engine.NewMachine(afero.NewOsFs())
+	// The system's fonts among it, so --font takes the fonts installed on
+	// the machine too.
 	machine.UseSystem()
 	e := engine.NewEngine(log, machine)
 	// The one folder the records go in, for the whole run, the way the app

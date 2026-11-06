@@ -67,13 +67,13 @@ type Shaped struct {
 // ShapeClip works out what a gesture makes of a clip of the plan s, as
 // its video's Episode holds it, and writes nothing. It reads no file, so
 // a drag reads none on each step of the hand.
-func ShapeClip(s PlanSummary, clipID string, g Gesture, t *Transcript, keepPause float64) (Shaped, error) {
+func ShapeClip(s PlanSummary, clipID string, g Gesture, t *Transcript, keepPause float64, fonts *Fonts) (Shaped, error) {
 	plan := s.plan
 	clip, err := s.clip(clipID)
 	if err != nil {
 		return Shaped{}, err
 	}
-	change, playhead, err := g.change(plan, clip, t, keepPause)
+	change, playhead, err := g.change(clip, t, keepPause, fonts.Style(captionStyle(plan, clip)))
 	if err != nil {
 		return Shaped{}, err
 	}
@@ -113,12 +113,12 @@ func ShapeClip(s PlanSummary, clipID string, g Gesture, t *Transcript, keepPause
 
 // Reshape makes a gesture's change to a clip and saves it, the same change
 // ShapeClip shows while the hand moves. The edit is recorded in rec.
-func Reshape(fsys afero.Fs, rec *Records, planPath, clipID string, g Gesture, t *Transcript, keepPause float64) error {
+func Reshape(fsys afero.Fs, rec *Records, planPath, clipID string, g Gesture, t *Transcript, keepPause float64, fonts *Fonts) error {
 	plan, clip, err := planClip(fsys, planPath, clipID)
 	if err != nil {
 		return err
 	}
-	change, _, err := g.change(plan, clip, t, keepPause)
+	change, _, err := g.change(clip, t, keepPause, fonts.Style(captionStyle(plan, clip)))
 	if err != nil {
 		return err
 	}
@@ -126,8 +126,9 @@ func Reshape(fsys afero.Fs, rec *Records, planPath, clipID string, g Gesture, t 
 }
 
 // change is what a gesture does to a clip's pieces, with its edges where
-// they land, and where the playhead goes while it is made.
-func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) (
+// they land, and where the playhead goes while it is made. s is the
+// clip's caption style, whose words the edges land on.
+func (g Gesture) change(clip Clip, t *Transcript, keepPause float64, s Style) (
 	pieceChange, float64, error) {
 	t = t.Of(clip)
 	if !num.IsFinite(g.From) || !num.IsFinite(g.To) {
@@ -139,7 +140,6 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 	// The words an edge lands on are the words the captions show, halves
 	// of a hyphenated word and all, see ShowWords.
 	stops := func(from, to float64) []timed.Cue {
-		s := ResolveStyle(captionStyle(plan, clip))
 		return ShowWords(t.WordsBetween(from-60, to+60), s, t.Language)
 	}
 	first := clip.Segments[0].Start
@@ -152,7 +152,7 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 		if g.ToWords {
 			words = stops(math.Min(g.From, first), math.Max(g.To, last))
 			if g.Edge == "end" {
-				goes = captionsGo(plan, runOn(clip, g.From), t)
+				goes = captionsGo(runOn(clip, g.From), t, s)
 			}
 		}
 		switch g.Edge {
@@ -237,7 +237,7 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 			joined.Segments = append(append([]Segment{}, clip.Segments[:i]...),
 				Segment{Start: clip.Segments[i].Start, End: clip.Segments[i+1].End})
 			joined.Segments = append(joined.Segments, clip.Segments[i+2:]...)
-			from, to = snapCut(words, captionsGo(plan, joined, t), from, to, keepPause)
+			from, to = snapCut(words, captionsGo(joined, t, s), from, to, keepPause)
 		} else {
 			from, to = g.onFrame(from), g.onFrame(to)
 		}
@@ -363,9 +363,9 @@ func (g Gesture) landEnd(words []timed.Cue, goes []float64, at, keepPause float6
 // stays up a little after its last word and its block shows that. An edge
 // that only knew the words went past the end of the block Tim was looking
 // at, into it, and the block shrank under the edge. Only an end inside a
-// piece is one: a caption a cut cuts short goes where the cut is.
-func captionsGo(plan Plan, clip Clip, t *Transcript) []float64 {
-	s := ResolveStyle(captionStyle(plan, clip))
+// piece is one: a caption a cut cuts short goes where the cut is. s is the
+// clip's caption style.
+func captionsGo(clip Clip, t *Transcript, s Style) []float64 {
 	var ends []float64
 	for _, c := range ClipCaptions(clip, t, s) {
 		at := EpisodeTime(clip, c.End)

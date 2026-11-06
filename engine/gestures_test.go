@@ -16,22 +16,22 @@ const (
 
 func TrimClip(fsys afero.Fs, planPath, clipID string, start, end float64, t *Transcript, keepPause float64, snap Snap) error {
 	return Reshape(fsys, nil, planPath, clipID, Gesture{Kind: "trim", Edge: "both", From: start, To: end,
-		ToWords: bool(snap)}, t, keepPause)
+		ToWords: bool(snap)}, t, keepPause, nil)
 }
 
 func CutClip(fsys afero.Fs, planPath, clipID string, from, to float64, t *Transcript, keepPause float64, snap Snap) error {
 	return Reshape(fsys, nil, planPath, clipID, Gesture{Kind: "cut", From: from, To: to, ToWords: bool(snap)},
-		t, keepPause)
+		t, keepPause, nil)
 }
 
 func MoveCut(fsys afero.Fs, planPath, clipID string, index int, from, to float64, t *Transcript, keepPause float64,
 	snap Snap) error {
 	return Reshape(fsys, nil, planPath, clipID, Gesture{Kind: "move", Index: index, From: from, To: to,
-		ToWords: bool(snap)}, t, keepPause)
+		ToWords: bool(snap)}, t, keepPause, nil)
 }
 
 func JoinCut(fsys afero.Fs, planPath, clipID string, at float64, t *Transcript) error {
-	return Reshape(fsys, nil, planPath, clipID, Gesture{Kind: "join", From: at}, t, 0.1)
+	return Reshape(fsys, nil, planPath, clipID, Gesture{Kind: "join", From: at}, t, 0.1, nil)
 }
 
 // The frames of an episode at 25 and at 5 frames a second, from the start
