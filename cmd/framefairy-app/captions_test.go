@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 
@@ -293,6 +294,31 @@ func filesUnder(t *testing.T, dir string) []string {
 		t.Fatal(err)
 	}
 	return files
+}
+
+// A request for captions whose time runs out says what it was waiting
+// on, the probe, the caption file or the decoder, in its answer and so in
+// the app's log. Four asks once answered only "context deadline
+// exceeded", and nothing said what had held them, issue #687. The test
+// ends each request's time at once, at whatever step it has come to.
+//
+// On the real disk: the decoder is a program of its own and reads the
+// episode there.
+func TestACaptionRequestOutOfTimeSaysWhatItWaitedOn(t *testing.T) {
+	svc, mine, view := captionsEpisode(t)
+	svc.previews.within = func(asked context.Context) (context.Context, context.CancelFunc) {
+		ctx, cancel := context.WithCancel(asked)
+		cancel()
+		return ctx, cancel
+	}
+	handler := mediaMiddleware(svc)(http.NotFoundHandler())
+	q := url.Values{"path": {mine}, "track": {view.Track}, "at": {"10.2"}, "w": {"270"}, "h": {"480"}}
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/captions?"+q.Encode(), nil))
+	said := rec.Body.String()
+	if rec.Code != http.StatusInternalServerError || !strings.Contains(said, "took more than the 10s a request for captions may take") {
+		t.Errorf("the captions out of time answered %d %q", rec.Code, said)
+	}
 }
 
 // The video preview asks for a layer for every frame it plays, a few at

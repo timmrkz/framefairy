@@ -81,7 +81,9 @@ func (e *Engine) PreviewCaptions(ctx context.Context, dec *EpisodeFrames, work s
 	}
 	track, err := e.previewTrack(ctx, work, d, style, resolved.Font, source, rs.OutW, rs.OutH)
 	if err != nil {
-		return CaptionLayer{}, err
+		// Each error says what was waited on, so a request that ran out
+		// of time says where, issue #687.
+		return CaptionLayer{}, fmt.Errorf("the caption file: %w", err)
 	}
 	shortW, shortH := rs.OutW, rs.OutH
 	if piece := source.PieceShowing(d.Clip, at); piece >= 0 {
@@ -96,6 +98,9 @@ func (e *Engine) PreviewCaptions(ctx context.Context, dec *EpisodeFrames, work s
 	scale := 1.0
 	if track.pill {
 		scale = d.PopScale(source, at)
+	}
+	if err != nil {
+		err = fmt.Errorf("the episode's decoder drawing the captions: %w", err)
 	}
 	return CaptionLayer{l, scale, time.Since(drew)}, err
 }
