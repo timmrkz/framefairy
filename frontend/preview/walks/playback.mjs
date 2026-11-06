@@ -6,7 +6,7 @@
 //
 //   SEED=12 STEPS=25 BRIDGE_URL=http://127.0.0.1:8123/ node playback.mjs
 import { begin, walk } from "./walk.mjs";
-import { handles, inside, middle, high, ask, recordFrames, preview, engineState, drag, settle, playFor, playUntil } from "./bridge.mjs";
+import { handles, inside, middle, high, ask, recordFrames, preview, engineState, drag, settle, playFor, playUntil, pressPlay } from "./bridge.mjs";
 import { overlaid } from "./rules.mjs";
 
 const w = await begin({ steps: 25 });
@@ -147,8 +147,13 @@ const gestures = [
       const length = p[p.length - 1].end - p[0].start;
       const stop = await recordFrames(page, frame);
       await page.evaluate(() => document.body.focus());
-      await page.keyboard.press("Space");
-      await settle(page);
+      // Played with the sound card held until the app has settled on the
+      // press, see pressPlay. Not held, a settle in WebKit with motion
+      // lasted as long as the play, and the loop below came after its end.
+      if (!(await pressPlay(page))) {
+        await stop();
+        return off("the space bar started no play");
+      }
       const end = p[p.length - 1].end;
       // Half the time L loops the clip on the way and L again stops the
       // loop a moment before the end, once the next time through is worked

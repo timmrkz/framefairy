@@ -1189,7 +1189,14 @@ browser's frames go by and answers if nothing came in between. The timer
 that writes the log is left out, the same as its calls, marked
 `logOnly` in `said.ts`. A longer timer is how long something stays on
 screen, which a walk turns on itself with `holdClock`, and while the
-app's time is held `settle` does not wait for timers at all. The same
+app's time is held `settle` does not wait for timers at all. While a
+clip plays, the page never stands still for long, and in WebKit with
+motion a settle waits until the play has stopped, at the clip's end. So
+a step that reads a play reads it where the play draws, in the frame or
+the change it waits for, and a step that starts one starts it with
+`pressPlay`, or holds the sound card with `holdSound` around a key it
+presses while the clip plays, so the settle ends before the play
+begins. The same
 walk now takes about 15 seconds, and a busy machine makes it slower
 without making it check a step sooner. Steps that come sooner meet the
 app's own sense of time where a person's hand has one: the clip
@@ -1366,7 +1373,10 @@ open. It presses a button the
 way a click does, found by its words, and it quits the app. It adds a
 video the way Add does once a file is picked, and asks for a search the
 way Search does, and with that it can quit in the same moment, stopping
-everything first the way the second Cmd+Q does. Which app is
+everything first the way the second Cmd+Q does. It holds the lanes the
+search takes its first turn in until the stop has run, so the stop
+always comes before the search's first step, the way it does for a
+person, whose speech model takes seconds to load. Which app is
 in front comes from `lsappinfo`, which needs no permission a runner does
 not have. The app's log goes to `~/Library/Logs/FrameFairy-outside.log`
 as well, and the test shows it when a check fails.

@@ -298,7 +298,7 @@ func TestAShortRenderedWhileTheAppIsOpenIsWatched(t *testing.T) {
 	watched := func() bool {
 		svc.reconciling.Lock()
 		defer svc.reconciling.Unlock()
-		return slices.Contains(svc.watch.w.WatchList(), fileio.ResolvePath(short))
+		return slices.Contains(svc.watch.watchList(), fileio.ResolvePath(short))
 	}
 	newsUntil(sent, video, watched)
 	shortGoes(t, svc, video, sent, plan, short)
