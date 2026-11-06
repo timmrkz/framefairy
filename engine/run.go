@@ -761,7 +761,7 @@ func (r *runner) render(ctx context.Context, plan Plan, clips []Clip) error {
 	if err != nil {
 		return err
 	}
-	if missing := ResolveStyle(style).Missing; missing != "" {
+	if missing := r.e.Fonts.Style(style).Missing; missing != "" {
 		log.Warn("%s is not a font on this machine, the captions are drawn in %s", runes.Scrub(missing, 64), DefaultFont)
 	}
 
@@ -821,7 +821,7 @@ func (r *runner) render(ctx context.Context, plan Plan, clips []Clip) error {
 	for _, clip := range clips {
 		// Rendered on the source's frames, and captioned on them too, see
 		// ClipDrawing.
-		drawing := ClipDrawing(style, clip, heard, source)
+		drawing := ClipDrawing(style, clip, heard, source, &r.e.Fonts)
 		clip := drawing.Clip
 		cues := drawing.Laid
 		cueMap[clip.Basename()] = cues

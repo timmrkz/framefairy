@@ -188,6 +188,7 @@ func wordsLanguage(words []timed.Cue) string {
 
 // captionRoom is how wide a caption line may be, and how wide a text is.
 type captionRoom struct {
+	fonts     *Fonts
 	font      string
 	size      float64
 	room      float64
@@ -198,7 +199,7 @@ type captionRoom struct {
 }
 
 func roomFor(s Style) captionRoom {
-	return captionRoom{font: s.Font, size: s.Size, room: CaptionRoom(s), wrapChars: s.WrapChars}
+	return captionRoom{fonts: s.fonts, font: s.Font, size: s.Size, room: CaptionRoom(s), wrapChars: s.WrapChars}
 }
 
 // width is how wide a text is drawn. A face the program cannot measure is
@@ -207,7 +208,7 @@ func (r captionRoom) width(text string) float64 {
 	if r.measured != nil {
 		*r.measured++
 	}
-	if width, ok := TextWidth(r.font, text, r.size); ok {
+	if width, ok := r.fonts.TextWidth(r.font, text, r.size); ok {
 		return width
 	}
 	return float64(runes.Len(text)) * r.room / float64(max(r.wrapChars, 1))

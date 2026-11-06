@@ -1185,7 +1185,7 @@ func openBridge(t *testing.T) *bridge {
 	// A font installed on the bridge's computer: Anton under a name of its
 	// own, so the Font list has a face of the machine to offer, and libass
 	// and the word typed are drawn from its copy.
-	anton, _ := engine.FontBytes("Anton")
+	anton, _ := new(engine.Fonts).Bytes("Anton")
 	narrow, err := engine.NamedFace(anton, "Bridge Narrow")
 	if err != nil {
 		t.Fatal(err)
@@ -1198,8 +1198,8 @@ func openBridge(t *testing.T) *bridge {
 	// Inter Black, so picking it keeps the look of the face it replaces.
 	// And enough families after it for the list to be longer than it may
 	// be tall, the way a Mac's is, which is when its rows were squeezed.
-	inter, _ := engine.FontBytes(engine.DefaultFont)
-	archivo, _ := engine.FontBytes("Archivo Black")
+	inter, _ := new(engine.Fonts).Bytes(engine.DefaultFont)
+	archivo, _ := new(engine.Fonts).Bytes("Archivo Black")
 	faces := map[string][]byte{}
 	if faces["Bridge Sans.ttf"], err = engine.StyledFace(archivo, "Bridge Sans", "Regular"); err != nil {
 		t.Fatal(err)
@@ -1218,8 +1218,6 @@ func openBridge(t *testing.T) *bridge {
 			t.Fatal(err)
 		}
 	}
-	engine.UseFontFolders(installed, []string{"/Library/Fonts"})
-	t.Cleanup(func() { engine.UseFontFolders(nil, nil) })
 	// Dictate on Report a Problem records the bridge's microphone, at the
 	// pace the walk asks for it, see sound and /microphone. Once the
 	// person has fallen silent and the phrase they were on is said, the
@@ -1244,6 +1242,9 @@ func openBridge(t *testing.T) *bridge {
 	b := &bridge{t: t, d: d, words: words, sound: snd, first: filepath.Join(d.home, "erste-erinnerung.mp4"), kept: t.TempDir(),
 		gates: map[string]*gate{}, fails: map[string]string{}}
 	d.fit = func(svc *FrameFairy) {
+		// Every opening of the app finds the fonts installed on the
+		// bridge's computer.
+		svc.store.machine.Fonts.Use(installed, []string{"/Library/Fonts"})
 		svc.listening.mic = snd.open
 		// A report goes on the bridge's own Desktop and is shown nowhere.
 		svc.reportFolder = func() string {

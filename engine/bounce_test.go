@@ -60,7 +60,7 @@ func shortRowsAt(t *testing.T, rate string, words []timed.Cue, end float64, top,
 	if err := e.writeASS(ctx, laid, filepath.Join(dir, "01.ass"), shortW, shortH, nil, info); err != nil {
 		t.Fatal(err)
 	}
-	if err := InstallFont(dir, ResolveStyle(nil).Font); err != nil {
+	if err := new(Fonts).Install(dir, new(Fonts).Style(nil).Font); err != nil {
 		t.Fatal(err)
 	}
 	return e, info, laid, graphFrames(t, e, clip, source, info, rs, dir, "01.ass",
@@ -111,7 +111,7 @@ func bounceEpisode(t *testing.T, rate string, words []timed.Cue, end float64) (e
 		t.Fatal(err)
 	}
 	clip = info.OnFrames(Clip{ID: "01", Slug: "bounce", Segments: []Segment{{Start: 0, End: end}}})
-	laid = ClipCaptions(clip, &Transcript{Words: words, Language: "de"}, ResolveStyle(nil))
+	laid = ClipCaptions(clip, &Transcript{Words: words, Language: "de"}, new(Fonts).Style(nil))
 	return e, source, info, clip, laid
 }
 
@@ -164,7 +164,7 @@ func TestThePillLeavesRoomRoundItsWord(t *testing.T) {
 		t.Fatalf("the words should make one caption of one line, not %+v", laid)
 	}
 	const w, h = shortW, shortH
-	style := ResolveStyle(nil)
+	style := new(Fonts).Style(nil)
 	pill := pillColour(t, style)
 	box := func(f []byte) (left, right, top, bottom int) { return pillBox(f, pill, bounceRows) }
 	// "respektvoll" lights at 0.50 s, frame 25, and is lit until "ist."
@@ -288,7 +288,7 @@ func TestTheWordAndItsPillPopTogether(t *testing.T) {
 	if len(laid) != 1 || len(laid[0].Words) != 1 {
 		t.Fatalf("the word should make one caption, not %+v", laid)
 	}
-	pill := pillColour(t, ResolveStyle(nil))
+	pill := pillColour(t, new(Fonts).Style(nil))
 	// The ink of the word, the white of its letters anywhere.
 	ink := func(f []byte) (left, right, top, bottom int) {
 		left, right, top, bottom = shortW, -1, bounceRows, -1
@@ -372,7 +372,7 @@ func TestAWordsFirstFrameShowsItAtRest(t *testing.T) {
 	if len(frames) <= rest {
 		t.Fatalf("the short has %d frames", len(frames))
 	}
-	pill := pillColour(t, ResolveStyle(nil))
+	pill := pillColour(t, new(Fonts).Style(nil))
 	width := func(k int) float64 {
 		l, r, _, _ := pillBox(frames[k], pill, bounceRows)
 		if r < 0 {
@@ -409,7 +409,7 @@ func TestThePillAtRestNeverReachesAnotherLine(t *testing.T) {
 	if len(laid) != 1 || len(laid[0].Lines) != 2 || len(laid[0].Lines[1]) == 0 || laid[0].Lines[1][0].Text != "Leute" {
 		t.Fatalf("the words should make one caption of two lines, the second from Leute, not %+v", laid)
 	}
-	style := ResolveStyle(nil)
+	style := new(Fonts).Style(nil)
 	size := float64(num.Round(style.Size))
 	pill := pillColour(t, style)
 
@@ -520,7 +520,7 @@ func TestEveryPillOfALineIsOneHeightAndClearOfTheOther(t *testing.T) {
 	if _, err := e.SubtitleFilter(ctx); err != nil {
 		ffmpegtest.Unusable(t, "this ffmpeg cannot draw captions: %v", err)
 	}
-	style := ResolveStyle(nil)
+	style := new(Fonts).Style(nil)
 	size := num.Round(style.Size)
 	clear := math.Round(float64(size) * lineClear)
 	for _, second := range []string{"Leute", "Ägypten", ""} {
@@ -638,7 +638,7 @@ func everyWordPops(t *testing.T, rate string) {
 		{Start: 0.64, End: 0.76, Text: "so"}, {Start: 0.76, End: 0.96, Text: "ein"}, {Start: 0.96, End: 1.24, Text: "gutes"}, {Start: 1.24, End: 1.64, Text: "ja"}}
 	_, info, _, frames := shortRowsAt(t, rate, words, 1.64, bounceTop, bounceRows)
 	fps := float64(info.FPSNum) / float64(info.FPSDen)
-	pill := pillColour(t, ResolveStyle(nil))
+	pill := pillColour(t, new(Fonts).Style(nil))
 
 	// The frames each word is lit on, by where its pill stands: a word's
 	// pill keeps its middle through its pop.
@@ -708,7 +708,7 @@ func TestPopScaleIsWhatLibassDrawsAbove100Fps(t *testing.T) {
 	words := []timed.Cue{{Start: 0.10, End: 0.30, Text: "Das"}, {Start: 0.30, End: 0.42, Text: "ist"}, {Start: 0.42, End: 0.70, Text: "gut"}}
 	_, info, laid, frames := shortRowsAt(t, "120", words, 0.70, bounceTop, bounceRows)
 	d := &CaptionDrawing{Laid: laid, Clip: info.OnFrames(Clip{ID: "01", Slug: "bounce", Segments: []Segment{{Start: 0, End: 0.70}}})}
-	pill := pillColour(t, ResolveStyle(nil))
+	pill := pillColour(t, new(Fonts).Style(nil))
 	fps := float64(info.FPSNum) / float64(info.FPSDen)
 	// Each word by where its pill stands, which keeps its middle through
 	// its pop, and its width at rest from its first frame. That frame may
@@ -767,7 +767,7 @@ func TestWordsLitIsWhatTheShortLights(t *testing.T) {
 		}
 	}
 	together := 0
-	pill := pillColour(t, ResolveStyle(nil))
+	pill := pillColour(t, new(Fonts).Style(nil))
 	first, _ := info.pieceFrames(clip.Segments[0].Start, clip.Segments[0].End)
 	none, changes := 0, 0
 	was := CaptionShowing{-1, -1, -1}

@@ -71,7 +71,7 @@ func TestTheVideoPreviewDrawsTheShortsCaptions(t *testing.T) {
 	// episode's.
 	clip := info.OnFrames(Clip{ID: "01", Slug: "layer",
 		Segments: []Segment{{Start: 0.1, End: 1.4}, {Start: 1.9, End: 2.8}}})
-	style := ResolveStyle(nil)
+	style := new(Fonts).Style(nil)
 	laid := ClipCaptions(clip, &Transcript{Words: words, Language: "de"}, style)
 	const w, h = 540, 960
 	rs := RenderSettings{OutW: w, OutH: h, ScaleUp: true}
@@ -87,7 +87,7 @@ func TestTheVideoPreviewDrawsTheShortsCaptions(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(captions, "01.ass"), track, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := InstallFont(captions, style.Font); err != nil {
+	if err := new(Fonts).Install(captions, style.Font); err != nil {
 		t.Fatal(err)
 	}
 	// The short's frames, with captions and without, through the render's
@@ -251,7 +251,7 @@ func TestOneCaptionFileIsMadeOnceForManyAtOnce(t *testing.T) {
 		for i := range files {
 			wg.Go(func() {
 				var made previewFile
-				made, errs[i] = e.previewTrack(ctx, work, d, d.Style, ResolveStyle(d.Style).Font, SourceInfo{}, 540, 960)
+				made, errs[i] = e.previewTrack(ctx, work, d, d.Style, new(Fonts).Style(d.Style).Font, SourceInfo{}, 540, 960)
 				files[i] = made.file
 			})
 		}
@@ -287,7 +287,7 @@ func TestTheVideoPreviewDrawsTheCaptionsSmallerAsTheShortWouldShowThem(t *testin
 	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
 	words := []timed.Cue{{Start: 0.20, End: 0.40, Text: "Das"}, {Start: 0.50, End: 1.00, Text: "respektvoll"}, {Start: 1.00, End: 1.30, Text: "ist."}}
 	clip := Clip{ID: "01", Slug: "small", Segments: []Segment{{Start: 0, End: 1.4}}}
-	laid := ClipCaptions(clip, &Transcript{Words: words, Language: "de"}, ResolveStyle(nil))
+	laid := ClipCaptions(clip, &Transcript{Words: words, Language: "de"}, new(Fonts).Style(nil))
 	const W, H, by = 1080, 1920, 3
 	track, err := e.CaptionTrack(ctx, laid, W, H, nil, SourceInfo{})
 	if err != nil {
@@ -298,7 +298,7 @@ func TestTheVideoPreviewDrawsTheCaptionsSmallerAsTheShortWouldShowThem(t *testin
 	if err := os.WriteFile(file, track, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := InstallFont(dir, ResolveStyle(nil).Font); err != nil {
+	if err := new(Fonts).Install(dir, new(Fonts).Style(nil).Font); err != nil {
 		t.Fatal(err)
 	}
 	// The decoder is the video's, so it opens one, though no frame of it
@@ -407,7 +407,7 @@ func TestTheWordBeingTypedIsLeftOutInItsPlace(t *testing.T) {
 		view := captionsView(Plan{}, clip, tr, nil)
 		d := view.Drawing()
 		d.Style = style
-		shown := shownTag(ResolveStyle(style).Primary)
+		shown := shownTag(new(Fonts).Style(style).Primary)
 		normal, err := e.CaptionTrack(ctx, d.Laid, 540, 960, style, SourceInfo{})
 		if err != nil {
 			t.Fatal(err)
@@ -534,7 +534,7 @@ func TestACaptionFileIsNeverWrittenIntoAWorkFolderThatIsGone(t *testing.T) {
 	tr := &Transcript{Words: []timed.Cue{{Start: 0.2, End: 0.6, Text: "Das"}, {Start: 0.6, End: 1.2, Text: "respektvoll"}, {Start: 1.2, End: 1.5, Text: "ist."}}, Language: "de"}
 	d := captionsView(Plan{}, clip, tr, nil).Drawing()
 	work := filepath.Join(t.TempDir(), "folge.framefairy")
-	_, err := e.previewTrack(ctx, work, d, d.Style, ResolveStyle(d.Style).Font, SourceInfo{}, 540, 960)
+	_, err := e.previewTrack(ctx, work, d, d.Style, new(Fonts).Style(d.Style).Font, SourceInfo{}, 540, 960)
 	if !errors.Is(err, ErrNoWorkFolder) {
 		t.Errorf("a caption file for a work folder that is gone gave %v", err)
 	}
@@ -561,7 +561,7 @@ func TestWritingCaptionsNeverMakesTheWorkFolder(t *testing.T) {
 	if err := writeWhole(dir, filepath.Join(dir, "a.ass"), []byte("[Script Info]\n")); err == nil {
 		t.Errorf("a caption file was written into a folder that is gone")
 	}
-	if err := InstallFont(dir, DefaultFont); err == nil {
+	if err := new(Fonts).Install(dir, DefaultFont); err == nil {
 		t.Errorf("a face was written into a folder that is gone")
 	}
 	if _, err := os.Stat(work); !os.IsNotExist(err) {

@@ -42,6 +42,10 @@ type Machine struct {
 	// see ProgramSaid. It is set once, before any program starts, and
 	// nil hears nothing.
 	Said ProgramSaid
+	// Fonts are the faces captions can be written in, the bundled ones
+	// and, once the program calls UseMachine, the machine's own, read
+	// from its font folders and kept with what was measured of each.
+	Fonts Fonts
 
 	// softDecode is set once decoding through the system's own video
 	// decoder has failed on this machine, and every decode after it, by
@@ -126,10 +130,11 @@ type Machine struct {
 	media *Media
 }
 
-// UseSystem hands the machine the system's keychain, its network and its
-// media engine. Each program calls it once, in main, on the machine it
-// hands every Engine.
+// UseSystem hands the machine the system's keychain, its network, its
+// media engine and its installed fonts. Each program calls it once, in
+// main, on the machine it hands every Engine.
 func (m *Machine) UseSystem() {
+	m.Fonts.UseMachine()
 	m.keys, m.oldKeys = systemKeys(), legacyKeys()
 	m.network = http.DefaultTransport
 	m.useMedia(SystemMedia(runtime.GOOS))

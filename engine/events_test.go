@@ -412,7 +412,7 @@ func TestRemovingAWordLeavesItsCaptionWhole(t *testing.T) {
 		{Start: 61.45, End: 62.1, Text: "auf"}, {Start: 62.15, End: 62.4, Text: "dem"}, {Start: 62.45, End: 63, Text: "Schulhof."},
 		{Start: 64, End: 64.4, Text: "Und"}, {Start: 64.45, End: 64.9, Text: "dann"}}
 	_, path := oneClipPlan(t, fsys, 59.9, 65)
-	style := ResolveStyle(nil)
+	style := new(Fonts).Style(nil)
 	laid := func(tr *Transcript) string {
 		var out []string
 		for _, c := range ClipCaptions(clipByID(t, fsys, path, "01"), tr, style) {

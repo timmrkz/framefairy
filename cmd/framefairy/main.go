@@ -432,9 +432,6 @@ func main() {
 		return
 	}
 
-	// --font takes the fonts installed on the machine too.
-	engine.UseMachineFonts()
-
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -442,6 +439,8 @@ func main() {
 	// The one machine of the run, made once here, see engine.Machine,
 	// with the keychain and the network.
 	machine := engine.NewMachine(afero.NewOsFs())
+	// The system's fonts among it, so --font takes the fonts installed on
+	// the machine too.
 	machine.UseSystem()
 	// What llama-server says is the run's to say too: its errors and
 	// warnings always, the rest with --verbose.

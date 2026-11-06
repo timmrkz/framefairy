@@ -577,7 +577,7 @@ func (s *FrameFairy) CheckSetup(ctx context.Context) []Check {
 	}
 	out = append(out, decoding)
 
-	out = append(out, fontsCheck(engine.FontCounts()))
+	out = append(out, fontsCheck(s.store.machine.Fonts.Counts()))
 
 	asrDir := opts.ASRModel
 	if asrDir == "" {

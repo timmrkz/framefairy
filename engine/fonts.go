@@ -97,23 +97,23 @@ func init() {
 	}
 }
 
-// CaptionFonts are the faces captions can be written in, in the order they
+// Caption is the faces captions can be written in, in the order they
 // are offered: the ones the program ships with, then the machine's own by
 // name.
-func CaptionFonts() []CaptionFont {
+func (f *Fonts) Caption() []CaptionFont {
 	out := append([]CaptionFont(nil), captionFonts...)
-	for _, face := range shelf.all() {
+	for _, face := range f.all() {
 		out = append(out, face.font)
 	}
 	return out
 }
 
-// FontCounts says how many faces captions can be written in: the ones the
+// Counts says how many faces captions can be written in: the ones the
 // program ships with and the machine's own. The settings say the two
 // numbers rather than every name, which the font list beside the captions
 // already shows, each in its own face.
-func FontCounts() (bundled, machine int) {
-	return len(captionFonts), len(shelf.all())
+func (f *Fonts) Counts() (bundled, machine int) {
+	return len(captionFonts), len(f.all())
 }
 
 // Thickening is how libass draws a face at a bold, see ass_font.c in
@@ -125,10 +125,10 @@ func FontCounts() (bundled, machine int) {
 // ass_glyph_embolden. Bold is the caption style's: 1 or -1 is 700, 0 or
 // less is 400, and anything else is the weight itself. A face the bundle
 // nor the machine has counts as 400.
-func Thickening(font string, bold float64) (weight int, thicken float64) {
+func (f *Fonts) Thickening(font string, bold float64) (weight int, thicken float64) {
 	weight = 400
-	if f, ok := FontByName(font); ok {
-		weight = f.Weight
+	if face, ok := f.ByName(font); ok {
+		weight = face.Weight
 	}
 	asked := int(bold)
 	switch {
@@ -143,30 +143,30 @@ func Thickening(font string, bold float64) (weight int, thicken float64) {
 	return weight, thicken
 }
 
-// FontByName finds a face by the name it is offered under, a bundled one
+// ByName finds a face by the name it is offered under, a bundled one
 // first.
-func FontByName(name string) (CaptionFont, bool) {
+func (f *Fonts) ByName(name string) (CaptionFont, bool) {
 	for _, font := range captionFonts {
 		if font.Name == name {
 			return font, true
 		}
 	}
-	if face, ok := shelf.find(name); ok {
+	if face, ok := f.find(name); ok {
 		return face.font, true
 	}
 	return CaptionFont{}, false
 }
 
-// FontBytes gives the file of a face. For one of the machine's it is the
+// Bytes gives the file of a face. For one of the machine's it is the
 // copy the captions are drawn from, see machinefonts.go.
-func FontBytes(name string) ([]byte, bool) {
-	font, ok := FontByName(name)
+func (f *Fonts) Bytes(name string) ([]byte, bool) {
+	font, ok := f.ByName(name)
 	if !ok {
 		return nil, false
 	}
 	if font.Machine {
-		face, _ := shelf.find(name)
-		data, err := machineFontBytes(face)
+		face, _ := f.find(name)
+		data, err := f.machineFontBytes(face)
 		return data, err == nil
 	}
 	data, err := fontBundle.ReadFile(FontsFolder + "/" + font.File)
@@ -176,11 +176,11 @@ func FontBytes(name string) ([]byte, bool) {
 	return data, true
 }
 
-// AssFontName is the name a caption file asks libass for to get the face
+// AssName is the name a caption file asks libass for to get the face
 // offered as name: the name itself for a bundled face, and the name of
 // its copy for one of the machine's, see machinefonts.go.
-func AssFontName(name string) string {
-	if face, ok := shelf.find(name); ok && !isBundled(name) {
+func (f *Fonts) AssName(name string) string {
+	if face, ok := f.find(name); ok && !isBundled(name) {
 		return face.alias
 	}
 	return name
@@ -195,17 +195,17 @@ func isBundled(name string) bool {
 	return false
 }
 
-// InstallFont writes the face a caption style asks for into dir/fonts, with
+// Install writes the face a caption style asks for into dir/fonts, with
 // its licence beside it when it is one of ours, so the render finds it
 // with nothing else to look for. A face nobody has is not an error: the
 // style has already put DefaultFont in its place.
-func InstallFont(dir, name string) error {
-	font, ok := FontByName(name)
+func (f *Fonts) Install(dir, name string) error {
+	font, ok := f.ByName(name)
 	if !ok {
 		return nil
 	}
 	if font.Machine {
-		return installMachineFont(dir, name)
+		return f.installMachine(dir, name)
 	}
 	// Inside dir, which is there, and never dir itself, so a folder that
 	// went under it stays gone, see foldersIn.
@@ -231,11 +231,11 @@ func InstallFont(dir, name string) error {
 	return nil
 }
 
-// installMachineFont writes the copy of a face of the machine into
+// installMachine writes the copy of a face of the machine into
 // dir/fonts. Its file is named after the face and the version of the file
 // it came from, so one that is there already is the same face.
-func installMachineFont(dir, name string) error {
-	face, ok := shelf.find(name)
+func (f *Fonts) installMachine(dir, name string) error {
+	face, ok := f.find(name)
 	if !ok {
 		return nil
 	}
@@ -247,7 +247,7 @@ func installMachineFont(dir, name string) error {
 	if info, err := os.Stat(path); err == nil && info.Size() > 0 {
 		return nil
 	}
-	data, err := machineFontBytes(face)
+	data, err := f.machineFontBytes(face)
 	if err != nil {
 		return err
 	}

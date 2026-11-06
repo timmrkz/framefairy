@@ -208,7 +208,7 @@ func (s *FrameFairy) lookOf(path string, summary engine.PlanSummary) *engine.Loo
 		theLog.line(zerolog.WarnLevel, "captions").Err(err).Msg("the settings' caption look is not one the render takes")
 		style = plan.CaptionStyle()
 	}
-	return &engine.Look{Style: style, Source: s.unprobed.source(path, s.probe)}
+	return &engine.Look{Style: style, Source: s.unprobed.source(path, s.probe), Fonts: &s.store.machine.Fonts}
 }
 
 // failedProbes keeps the videos whose frames could not be read, a video
@@ -305,8 +305,8 @@ func (s *FrameFairy) ArrivingCaptions(jobID string, n int) (*engine.CaptionsView
 // with the program, then the ones installed on this machine.
 func (s *FrameFairy) Fonts() []engine.CaptionFont {
 	// Read again, so a font installed while the app runs is in the list.
-	engine.RefreshFonts()
-	return engine.CaptionFonts()
+	s.store.machine.Fonts.Refresh()
+	return s.store.machine.Fonts.Caption()
 }
 
 // clipEntry is one clip as it is now, read from its own plan alone. An

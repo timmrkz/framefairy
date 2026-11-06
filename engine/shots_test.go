@@ -66,7 +66,7 @@ func TestACutPutBackOverAnOldSwitchLeavesOnePiece(t *testing.T) {
 		fsys, path := writePlanAt(t, strings.Replace(shotsPlan, `"segments": [`,
 			`"found_segments": [{"start": 9.6, "end": 12.8, "crop_x": 300}, {"start": 12.8, "end": 16.0, "crop_x": 900}], "segments": [`, 1))
 		g := Gesture{Kind: "cut", From: 12.0, To: 13.5, ToWords: bool(snap), Frames: at25}
-		if err := Reshape(fsys, nil, path, "01", g, tr, 0.1); err != nil {
+		if err := Reshape(fsys, nil, path, "01", g, tr, 0.1, nil); err != nil {
 			t.Fatal(err)
 		}
 		cut := ClipCuts(clipByID(t, fsys, path, "01"))
@@ -74,11 +74,11 @@ func TestACutPutBackOverAnOldSwitchLeavesOnePiece(t *testing.T) {
 			t.Fatalf("with snap %v the clip has the cuts %+v", snap, cut)
 		}
 		join := Gesture{Kind: "join", From: (cut[0].From + cut[0].To) / 2}
-		shaped, err := ShapeClip(planAt(t, fsys, path), "01", join, tr, 0.1)
+		shaped, err := ShapeClip(planAt(t, fsys, path), "01", join, tr, 0.1, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := Reshape(fsys, nil, path, "01", join, tr, 0.1); err != nil {
+		if err := Reshape(fsys, nil, path, "01", join, tr, 0.1, nil); err != nil {
 			t.Fatal(err)
 		}
 		one := []Segment{{Start: 9.6, End: 16, CropX: intPtr(300)}}
@@ -133,7 +133,7 @@ func TestAnOldClipKeepsTheCropPlacedByHand(t *testing.T) {
 		{Start: 12.8, End: 16, CropX: intPtr(700), Moved: true}}
 	shotsAre(t, fsys, path, "as loaded", placed)
 	g := Gesture{Kind: "cut", From: 12.0, To: 13.5, ToWords: bool(ToWords), Frames: at25}
-	if err := Reshape(fsys, nil, path, "01", g, shotsTranscript(), 0.1); err != nil {
+	if err := Reshape(fsys, nil, path, "01", g, shotsTranscript(), 0.1, nil); err != nil {
 		t.Fatal(err)
 	}
 	for _, p := range clipByID(t, fsys, path, "01").Segments {
