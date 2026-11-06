@@ -24,9 +24,18 @@ import (
 // Like every method here it does nothing on a nil watching, which is what
 // a test that builds the service by hand has, and what a program has
 // whose system would not watch.
+//
+// A folder is watched by one of two watchers, by how deep it is, so no
+// watcher watches a folder and the folder it is in. On macOS a watcher
+// that watches a folder watches what is in it too, and when a folder is
+// made in it, it sets its own watch on the new one in the same moment the
+// app adds it, and the one set last wins. Its own hears nothing written
+// in the folder, so a speech model's tokens.txt, or a model in a models
+// folder put back from a backup, went unheard, issue #722. Two watchers
+// keep the app's watch on a folder the only one in its watcher.
 type watching struct {
-	w     *fsnotify.Watcher
-	heard func(changed []string)
+	byDepth [2]*fsnotify.Watcher
+	heard   func(changed []string)
 	// models is the folder the models are kept in, watched with the
 	// folder over it, so a model deleted or added outside the app shows
 	// at once. Empty for none.
@@ -42,15 +51,32 @@ type watching struct {
 // models folder models, or none when it is empty. It watches nothing
 // until follow names the videos.
 func newWatching(heard func(changed []string), models string) *watching {
-	w, err := fsnotify.NewWatcher()
-	if err != nil {
-		theLog.line(zerolog.WarnLevel, "files").Err(err).
-			Msg("the disk cannot be watched, so a change made outside the app shows once the app comes back to the front")
-		return nil
+	ws := &watching{heard: heard, models: models, done: make(chan struct{})}
+	for i := range ws.byDepth {
+		w, err := fsnotify.NewWatcher()
+		if err != nil {
+			theLog.line(zerolog.WarnLevel, "files").Err(err).
+				Msg("the disk cannot be watched, so a change made outside the app shows once the app comes back to the front")
+			for _, made := range ws.byDepth[:i] {
+				_ = made.Close()
+			}
+			return nil
+		}
+		ws.byDepth[i] = w
 	}
-	ws := &watching{w: w, heard: heard, models: models, done: make(chan struct{})}
 	go ws.run()
 	return ws
+}
+
+// watcherOf is the watcher that watches path: the one of its depth, so a
+// folder and the folder it is in are never watched by the same one.
+func (ws *watching) watcherOf(path string) *fsnotify.Watcher {
+	return ws.byDepth[strings.Count(filepath.Clean(path), string(filepath.Separator))%2]
+}
+
+// watchList is everything watched, by both watchers.
+func (ws *watching) watchList() []string {
+	return append(ws.byDepth[0].WatchList(), ws.byDepth[1].WatchList()...)
 }
 
 // watchedOf is what is watched for a video: the folder it is in, which
@@ -86,20 +112,21 @@ func (ws *watching) follow(files afero.Fs, videos []string, shortsOf func(video 
 			want[dir] = true
 		}
 	}
-	have := ws.w.WatchList()
-	for _, dir := range have {
+	for _, dir := range ws.watchList() {
 		if !want[dir] {
-			_ = ws.w.Remove(dir)
+			_ = ws.watcherOf(dir).Remove(dir)
 		}
 	}
+	// Each folder is added again even when it is watched already. On
+	// Linux a folder deleted stays on the list until the system says so
+	// of the folder itself, which can come after the folder put back is
+	// heard, and only adding it again watches the folder that is there
+	// now, issue #722. Adding a folder that is watched changes nothing.
 	for dir := range want {
-		if slices.Contains(have, dir) {
-			continue
-		}
 		if _, err := files.Stat(dir); err != nil {
 			continue
 		}
-		if err := ws.w.Add(dir); err != nil {
+		if err := ws.watcherOf(dir).Add(dir); err != nil {
 			theLog.line(zerolog.WarnLevel, "files").Str("folder", dir).Err(err).
 				Msg("a folder of a video cannot be watched, so a change in it shows once the app comes back to the front")
 		}
@@ -107,7 +134,7 @@ func (ws *watching) follow(files afero.Fs, videos []string, shortsOf func(video 
 	// How much is watched, and how many files are in the folders,
 	// which on macOS each take a file descriptor of their own: what
 	// the decision record asked to be measured on a real library.
-	now := ws.w.WatchList()
+	now := ws.watchList()
 	if len(now) == ws.watched {
 		return
 	}
@@ -134,32 +161,41 @@ func (ws *watching) follow(files afero.Fs, videos []string, shortsOf func(video 
 // or a folder of many files deleted, are looked at once.
 func (ws *watching) run() {
 	defer close(ws.done)
+	a, b := ws.byDepth[0], ws.byDepth[1]
 	for {
 		var changed []string
+		var ev fsnotify.Event
+		var err error
+		ok := true
 		select {
-		case ev, ok := <-ws.w.Events:
-			if !ok {
-				return
-			}
-			changed = ws.heardOf(changed, ev)
-		case err, ok := <-ws.w.Errors:
-			if !ok {
-				return
-			}
+		case ev, ok = <-a.Events:
+		case ev, ok = <-b.Events:
+		case err, ok = <-a.Errors:
+		case err, ok = <-b.Errors:
+		}
+		if !ok {
+			return
+		}
+		if err != nil {
 			// The system's queue of changes ran over, most often, so
 			// which changed is not known: every video is looked at.
 			theLog.line(zerolog.WarnLevel, "files").Err(err).Msg("the watch on the disk missed a change, so every video is looked at")
 			ws.heard(nil)
 			continue
 		}
+		changed = ws.heardOf(changed, ev)
 		for more := true; more; {
 			select {
-			case ev, ok := <-ws.w.Events:
-				if !ok {
-					more = false
-					break
+			case ev, ok := <-a.Events:
+				more = ok
+				if ok {
+					changed = ws.heardOf(changed, ev)
 				}
-				changed = ws.heardOf(changed, ev)
+			case ev, ok := <-b.Events:
+				more = ok
+				if ok {
+					changed = ws.heardOf(changed, ev)
+				}
 			default:
 				more = false
 			}
@@ -233,6 +269,8 @@ func (ws *watching) stop() {
 	if ws == nil {
 		return
 	}
-	_ = ws.w.Close()
+	for _, w := range ws.byDepth {
+		_ = w.Close()
+	}
 	<-ws.done
 }
