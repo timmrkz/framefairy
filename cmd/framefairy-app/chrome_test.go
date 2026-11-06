@@ -88,12 +88,9 @@ func TestAWindowThatCannotAnswerLeavesTheBarAlone(t *testing.T) {
 // Dragging the app by its corner raises one of these a frame and almost
 // none of them change anything, so the interface is told only what is new.
 func TestTheWindowIsToldOnlyWhatChanged(t *testing.T) {
+	t.Parallel()
 	answer := chromeRaw{bar: 52, left: 20, right: 92}
-	was := measureChrome
-	measureChrome = func(*application.WebviewWindow) chromeRaw { return answer }
-	defer func() { measureChrome = was }()
-
-	c := &chromeWatch{}
+	c := &chromeWatch{ask: func(*application.WebviewWindow) chromeRaw { return answer }}
 	said := 0
 	// publish without an app says nothing, so the counting is done here on
 	// the same comparison publish makes.
@@ -121,17 +118,15 @@ func TestTheWindowIsToldOnlyWhatChanged(t *testing.T) {
 // Each window has a title bar of its own. With the app's window in
 // fullscreen, the report window beside it still has its buttons, and its
 // name stays clear of them. Found in the review of #217, where the report
-// window followed the app's window. It changes measureChrome, a package
-// variable, so it runs alone.
+// window followed the app's window.
 func TestEachWindowHasATitleBarOfItsOwn(t *testing.T) {
-	was := measureChrome
-	measureChrome = func(*application.WebviewWindow) chromeRaw {
+	t.Parallel()
+	ask := func(*application.WebviewWindow) chromeRaw {
 		return chromeRaw{bar: 52, left: 20, right: 92}
 	}
-	defer func() { measureChrome = was }()
-	s := &FrameFairy{chrome: &chromeWatch{event: chromeEvent("app")}}
+	s := &FrameFairy{chrome: &chromeWatch{event: chromeEvent("app"), ask: ask}}
 	s.chrome.set(true)
-	s.reportChrome.Store(&chromeWatch{event: chromeEvent("report")})
+	s.reportChrome.Store(&chromeWatch{event: chromeEvent("report"), ask: ask})
 	if got := s.Chrome("app"); got.Right != 0 {
 		t.Fatalf("the app's window in fullscreen gave %+v, want no buttons", got)
 	}
@@ -146,16 +141,11 @@ func TestEachWindowHasATitleBarOfItsOwn(t *testing.T) {
 // A report says what macOS answered about the title bar, in points with
 // their fractions and with the close button's frame, and what the
 // interface was told, once for each change. The frame is what #399 was
-// read from. It changes measureChrome, a package variable, so it runs
-// alone.
+// read from. It reads what the package's log wrote, so it runs alone.
 func TestTheLogSaysWhatMacOSAnswered(t *testing.T) {
 	_, read := testLog(t)
 	answer := chromeRaw{bar: 29.5, left: 12, right: 72, closeTop: 6, closeBottom: 22}
-	was := measureChrome
-	measureChrome = func(*application.WebviewWindow) chromeRaw { return answer }
-	defer func() { measureChrome = was }()
-
-	c := &chromeWatch{event: chromeEvent("app")}
+	c := &chromeWatch{event: chromeEvent("app"), ask: func(*application.WebviewWindow) chromeRaw { return answer }}
 	c.publish()
 	c.publish()
 	lines := read()

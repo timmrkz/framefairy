@@ -62,13 +62,12 @@ import (
 // and y, where the captions sit, as SetCaptionsHeight takes it. Each is
 // checked as the edit that saves it checks it.
 
-// captionTracks are the drawings of the caption views the interface was
-// given lately, by their tracks, each with the episode it belongs to. A
-// view is asked for again whenever the captions change, so the latest few
-// hundred are plenty. The one used last goes last, so the captions on
-// screen are never the ones forgotten, however many a drag makes.
-var captionTracks = &tracks{drawings: map[string]trackOf{}}
-
+// tracks are the drawings of the caption views the interface was given
+// lately, by their tracks, each with the episode it belongs to. A view is
+// asked for again whenever the captions change, so the latest few hundred
+// are plenty. The one used last goes last, so the captions on screen are
+// never the ones forgotten, however many a drag makes. The video
+// preview's streams keep them, see previews. Its zero value is ready.
 type tracks struct {
 	mu       sync.Mutex
 	drawings map[string]trackOf
@@ -90,6 +89,9 @@ func (t *tracks) keep(episode string, v *engine.CaptionsView) {
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if t.drawings == nil {
+		t.drawings = map[string]trackOf{}
+	}
 	t.used(v.Track)
 	t.drawings[v.Track] = trackOf{episode: episode, drawing: v.Drawing()}
 	for len(t.order) > tracksKept {
@@ -119,10 +121,11 @@ func (t *tracks) used(track string) {
 // serveCaptions answers /frames/captions. The engine's caption code runs
 // here outside a job, so a panic in it fails the request, not the app,
 // see mediaMiddleware.
-func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Request) {
+func (s *FrameFairy) serveCaptions(w http.ResponseWriter, r *http.Request) {
+	st, p := s.store, &s.previews
 	q := r.URL.Query()
 	path := q.Get("path")
-	kept, ok := captionTracks.get(q.Get("track"))
+	kept, ok := p.tracks.get(q.Get("track"))
 	if !ok || kept.episode != path || !episodeFile(st, path) {
 		http.NotFound(w, r)
 		return
@@ -153,10 +156,10 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
-	source, err := sources.probe(ctx, path)
+	source, err := s.probe(ctx, path)
 	if err == nil {
 		var dec *engine.EpisodeFrames
-		dec, err = p.decoder(path)
+		dec, err = p.decoder(st.machine.Tools, path)
 		if err == nil {
 			// The short's size as the render takes it, which is what the
 			// caption file is laid out at.
@@ -184,7 +187,7 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 				// is the only place that shows it. Counted, and said once
 				// the clip stops asking, see layerTally.
 				if source.FPSNum > 0 {
-					layers.add(path, l.Drew, time.Duration(float64(time.Second)*float64(source.FPSDen)/float64(source.FPSNum)))
+					p.layers.add(path, l.Drew, time.Duration(float64(time.Second)*float64(source.FPSDen)/float64(source.FPSNum)))
 				}
 				// What the layer shows, which the caption box over it shows.
 				showing := kept.drawing.Showing(source, at)
@@ -219,10 +222,11 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 // serveWordFrames answers /frames/captions/words: where libass puts the
 // words of a view, so the caption box frames the word libass drew. Like
 // the captions, it runs outside a job, so a panic fails the request.
-func (p *previews) serveWordFrames(st *store, w http.ResponseWriter, r *http.Request) {
+func (s *FrameFairy) serveWordFrames(w http.ResponseWriter, r *http.Request) {
+	st := s.store
 	q := r.URL.Query()
 	path := q.Get("path")
-	kept, ok := captionTracks.get(q.Get("track"))
+	kept, ok := s.previews.tracks.get(q.Get("track"))
 	if !ok || kept.episode != path || !episodeFile(st, path) {
 		http.NotFound(w, r)
 		return
@@ -234,7 +238,7 @@ func (p *previews) serveWordFrames(st *store, w http.ResponseWriter, r *http.Req
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
-	source, err := sources.probe(ctx, path)
+	source, err := s.probe(ctx, path)
 	if err != nil {
 		// The app's log says it once, with the reason, see logged.
 		if r.Context().Err() == nil {
@@ -291,7 +295,8 @@ func captionDrafts(get func(string) string) (map[string]any, error) {
 // none for a while, the end of a stretch of playing or stepping. A line
 // for every layer slower than a frame was most of the log while a clip
 // played, and the report's memory of the last lines held minutes rather
-// than the hour it is sized for.
+// than the hour it is sized for. The video preview's streams keep it, see
+// previews. Its zero value is ready.
 type layerTally struct {
 	mu      sync.Mutex
 	byVideo map[string]*tally
@@ -302,8 +307,6 @@ type tally struct {
 	worst       time.Duration
 	quiet       *time.Timer
 }
-
-var layers = &layerTally{byVideo: map[string]*tally{}}
 
 // layersQuiet is how long a video asks for no layer before its stretch
 // is said to have ended.
@@ -316,6 +319,9 @@ func (lt *layerTally) add(path string, drew, frame time.Duration) {
 	defer lt.mu.Unlock()
 	t := lt.byVideo[path]
 	if t == nil {
+		if lt.byVideo == nil {
+			lt.byVideo = map[string]*tally{}
+		}
 		t = &tally{}
 		lt.byVideo[path] = t
 		t.quiet = time.AfterFunc(layersQuiet, func() { lt.said(path) })

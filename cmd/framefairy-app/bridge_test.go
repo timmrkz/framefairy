@@ -685,7 +685,7 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		answer(w, true, nil)
 	})
 	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mediaMiddleware(b.d.svc.store)(reportMiddleware(b.d.svc.report)(http.FileServer(http.Dir(dist)))).ServeHTTP(w, r)
+		mediaMiddleware(b.d.svc)(reportMiddleware(b.d.svc.report)(http.FileServer(http.Dir(dist)))).ServeHTTP(w, r)
 	}))
 	return mux
 }
@@ -1081,7 +1081,7 @@ func openBridge(t *testing.T) *bridge {
 		o.Width, o.Height = 360, 640
 		o.Preset = "ultrafast"
 	}
-	standIns.Store(&fakes)
+	d.fakes = fakes
 	// A font installed on the bridge's computer: Anton under a name of its
 	// own, so the Font list has a face of the machine to offer, and libass
 	// and the word typed are drawn from its copy.
@@ -1130,10 +1130,10 @@ func openBridge(t *testing.T) *bridge {
 	d.still = snd.still
 	d.beats = snd.beats()
 	d.told = snd.tell
-	openMicrophone = snd.open
 	// The desk is started again with a bus, before anything is in it.
 	d.svc.jobs.shutDown()
 	d.svc.watch.stop()
+	d.svc.store.standIns = fakes
 	d.bus = newBus()
 	// The bridge's microphone talks for as long as a walk takes steps of
 	// a recording, so one also stops after a minute, 600 steps, long after
@@ -1141,42 +1141,45 @@ func openBridge(t *testing.T) *bridge {
 	// more words ends there.
 	d.most = 60 * engine.SampleRate
 	d.time = newWalkTime()
-	// A report goes on the bridge's own Desktop and is shown nowhere.
-	reportFolder = func() string {
-		desk := filepath.Join(d.home, "Desktop")
-		_ = os.MkdirAll(desk, 0o755)
-		return desk
-	}
-	showReport = func(string) error { return nil }
 	b := &bridge{t: t, d: d, words: words, sound: snd, first: filepath.Join(d.home, "erste-erinnerung.mp4"), kept: t.TempDir(),
 		gates: map[string]*gate{}, fails: map[string]string{}}
-	// What the first run downloads, once a walk made the machine new.
-	// What arrives is as much of a model as the app looks for, and it
-	// lands the way the engine's download lands it: written under a name
-	// of its own and renamed into place whole.
-	installSpeech = func(_ *engine.Machine, ctx context.Context, log *runlog.Log, m engine.SpeechModel, dir string) error {
-		return b.arriving(ctx, log, "speech", m.Download, func() error {
-			staging := filepath.Join(dir, m.Name+".unpacking")
-			if err := os.MkdirAll(staging, 0o755); err != nil {
-				return err
-			}
-			if err := os.WriteFile(filepath.Join(staging, "tokens.txt"), []byte("the stand-in hears\n"), 0o644); err != nil {
-				return err
-			}
-			return os.Rename(staging, filepath.Join(dir, m.Name))
-		})
-	}
-	installLanguage = func(_ *engine.Machine, ctx context.Context, log *runlog.Log, m engine.LanguageModel, dir string) error {
-		return b.arriving(ctx, log, "clip", m.Download, func() error {
-			if err := os.MkdirAll(dir, 0o755); err != nil {
-				return err
-			}
-			part := filepath.Join(dir, m.Name+".part")
-			if err := os.WriteFile(part, []byte("GGUF, the stand-in finds clips"), 0o644); err != nil {
-				return err
-			}
-			return os.Rename(part, filepath.Join(dir, m.Name))
-		})
+	d.fit = func(svc *FrameFairy) {
+		svc.listening.mic = snd.open
+		// A report goes on the bridge's own Desktop and is shown nowhere.
+		svc.reportFolder = func() string {
+			desk := filepath.Join(d.home, "Desktop")
+			_ = os.MkdirAll(desk, 0o755)
+			return desk
+		}
+		svc.showReport = func(string) error { return nil }
+		// What the first run downloads, once a walk made the machine new.
+		// What arrives is as much of a model as the app looks for, and it
+		// lands the way the engine's download lands it: written under a
+		// name of its own and renamed into place whole.
+		svc.installSpeech = func(_ *engine.Machine, ctx context.Context, log *runlog.Log, m engine.SpeechModel, dir string) error {
+			return b.arriving(ctx, log, "speech", m.Download, func() error {
+				staging := filepath.Join(dir, m.Name+".unpacking")
+				if err := os.MkdirAll(staging, 0o755); err != nil {
+					return err
+				}
+				if err := os.WriteFile(filepath.Join(staging, "tokens.txt"), []byte("the stand-in hears\n"), 0o644); err != nil {
+					return err
+				}
+				return os.Rename(staging, filepath.Join(dir, m.Name))
+			})
+		}
+		svc.installLanguage = func(_ *engine.Machine, ctx context.Context, log *runlog.Log, m engine.LanguageModel, dir string) error {
+			return b.arriving(ctx, log, "clip", m.Download, func() error {
+				if err := os.MkdirAll(dir, 0o755); err != nil {
+					return err
+				}
+				part := filepath.Join(dir, m.Name+".part")
+				if err := os.WriteFile(part, []byte("GGUF, the stand-in finds clips"), 0o644); err != nil {
+					return err
+				}
+				return os.Rename(part, filepath.Join(dir, m.Name))
+			})
+		}
 	}
 	// The setup the app sends when the models change is the bridge's
 	// machine's, like the one every call answers with, so the desk starts
@@ -1667,7 +1670,7 @@ func (b *bridge) reset() error {
 	}
 	// After the work has stopped, so nothing hears on past it.
 	b.words.from(b.said)
-	freshDecoders()
+	freshDecoders(&b.d.svc.previews)
 	b.d.openAgainOnTheSameComputer()
 	return nil
 }
@@ -1717,8 +1720,7 @@ func endReport(r *reporting) {
 // should have shown its key frame showed none, issue #552. The next
 // stream starts a decoder again, with its cursors warmed as the app's
 // first are. A hold the walk before took is kept, so its release finds it.
-func freshDecoders() {
-	p := openPreviews
+func freshDecoders(p *previews) {
 	p.mu.Lock()
 	streams, decoders := p.open, p.decoders
 	p.open, p.decoders = nil, nil

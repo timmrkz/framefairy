@@ -159,6 +159,12 @@ type store struct {
 	// changed is told when the settings change. It is told under the
 	// store's lock, so it only takes note.
 	changed func()
+	// standIns, when a test sets it, readies every engine the app makes
+	// on this store in place of the speech model the app carries: a
+	// stand-in speech model and a stand-in language model, with
+	// everything else run as it is, see setUp. It is set before the
+	// store is handed to the app.
+	standIns func(*engine.Engine, *engine.Options)
 }
 
 func openStore() *store {

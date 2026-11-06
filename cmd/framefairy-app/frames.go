@@ -49,17 +49,13 @@ import (
 // the transcription read it by: a stream of it is read like a stream of
 // frames, each frame engine.SoundChunk moments of it.
 //
-// openPreviews are the streams of the app, one set however many times the
-// handler is made.
-var openPreviews = &previews{tools: tool.NewFinder()}
-
+// previews are the streams of the video preview, one set for the app,
+// which FrameFairy keeps, and the captions drawn over them. Its zero value
+// is ready. The episode's decoder is found by the finder of the app's
+// machine, so it is checked once for the program, as ffmpeg is.
 type previews struct {
-	// tools finds the episode's decoder beside the app, checked. The
-	// streams are the app's one set, made before main, so they keep a
-	// finder of their own for the one program only they run.
-	tools *tool.Finder
-	mu    sync.Mutex
-	open  map[string]*preview
+	mu   sync.Mutex
+	open map[string]*preview
 	// The episode's decoder of each episode a stream was asked of, see
 	// engine.EpisodeFrames. One whose episode is open in the video preview
 	// is held, by how many times, and is never closed for standing unused:
@@ -69,6 +65,10 @@ type previews struct {
 	held     map[string]int
 	// Started with the first stream, it closes the ones nobody pulls.
 	reaping bool
+	// tracks are the caption views the window was given, and layers
+	// counts the caption layers drawn, see captions.go.
+	tracks tracks
+	layers layerTally
 }
 
 // A stream that nobody has pulled from for this long is closed, and at
@@ -125,14 +125,17 @@ func (a *atomicTime) get() time.Time {
 	return a.t
 }
 
-func (p *previews) serve(st *store, w http.ResponseWriter, r *http.Request) {
+// serveFrames answers the requests for the video preview's streams, its
+// captions and its decoder.
+func (s *FrameFairy) serveFrames(w http.ResponseWriter, r *http.Request) {
+	st, p := s.store, &s.previews
 	q := r.URL.Query()
 	switch r.URL.Path {
 	case "/frames/open", "/frames/sound":
 		p.serveOpen(st, w, r)
 	case "/frames/read":
-		s := p.get(q.Get("id"))
-		if s == nil {
+		stream := p.get(q.Get("id"))
+		if stream == nil {
 			http.NotFound(w, r)
 			return
 		}
@@ -141,11 +144,11 @@ func (p *previews) serve(st *store, w http.ResponseWriter, r *http.Request) {
 		if err != nil || math.IsNaN(skip) || math.IsInf(skip, 0) {
 			skip = 0
 		}
-		writeFrames(w, r, s, min(max(n, 1), 16), skip)
+		writeFrames(w, r, stream, min(max(n, 1), 16), skip)
 	case "/frames/captions":
-		p.serveCaptions(st, w, r)
+		s.serveCaptions(w, r)
 	case "/frames/captions/words":
-		p.serveWordFrames(st, w, r)
+		s.serveWordFrames(w, r)
 	case "/frames/close":
 		p.close(q.Get("id"))
 		w.WriteHeader(http.StatusNoContent)
@@ -160,7 +163,7 @@ func (p *previews) serve(st *store, w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		if err := p.hold(path); err != nil {
+		if err := p.hold(st.machine.Tools, path); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -193,7 +196,7 @@ func (p *previews) serveOpen(st *store, w http.ResponseWriter, r *http.Request) 
 			http.Error(w, "a sound stream needs a rate and a number of channels", http.StatusBadRequest)
 			return
 		}
-		dec, err := p.decoder(path)
+		dec, err := p.decoder(st.machine.Tools, path)
 		run = func(ctx context.Context, got func(float64, []byte) error) error {
 			if err != nil {
 				return err
@@ -221,7 +224,7 @@ func (p *previews) serveOpen(st *store, w http.ResponseWriter, r *http.Request) 
 		times = engine.NewPreviewTimes()
 		skip = new(atomic.Uint64)
 		skipped := func() float64 { return math.Float64frombits(skip.Load()) }
-		dec, err := p.decoder(path)
+		dec, err := p.decoder(st.machine.Tools, path)
 		if err == nil {
 			light = dec.Light
 		}
@@ -360,8 +363,8 @@ func episodeFile(st *store, path string) bool {
 // cursors opened, as the episode opens in the video preview, and keeps it
 // until release. The frame queue holds it for as long as it has the
 // episode, see AppFrames in lib/frames/app.ts.
-func (p *previews) hold(path string) error {
-	d, err := p.decoder(path)
+func (p *previews) hold(tools *tool.Finder, path string) error {
+	d, err := p.decoder(tools, path)
 	if err != nil {
 		return err
 	}
@@ -428,9 +431,9 @@ func (p *previews) spare() {
 // decoder is the episode's decoder for the episode at path, started by a
 // hold or on its first stream. It ships beside the app, as ffmpeg does, and an app
 // without it says so the way it says a missing ffmpeg: there is no second
-// way to the frames.
-func (p *previews) decoder(path string) (*engine.EpisodeFrames, error) {
-	program, err := p.tools.Find("FRAMEFAIRY_FRAMES", "framefairy-frames")
+// way to the frames. tools finds it, the finder of the app's machine.
+func (p *previews) decoder(tools *tool.Finder, path string) (*engine.EpisodeFrames, error) {
+	program, err := tools.Find("FRAMEFAIRY_FRAMES", "framefairy-frames")
 	if err != nil {
 		return nil, err
 	}
@@ -454,13 +457,18 @@ func (p *previews) decoder(path string) (*engine.EpisodeFrames, error) {
 func (p *previews) reap() {
 	for {
 		time.Sleep(previewIdle / 4)
-		p.reapOnce(previewIdle)
+		if !p.reapOnce(previewIdle) {
+			return
+		}
 	}
 }
 
 // reapOnce closes the streams nobody has pulled for idle, and the decoders
-// nobody holds that have stood unused for three times that.
-func (p *previews) reapOnce(idle time.Duration) {
+// nobody holds that have stood unused for three times that. It says
+// whether any is left. Once none is, the reaping ends, and the next
+// stream or decoder starts it again, so a set of streams the app or a
+// test is done with leaves nothing running.
+func (p *previews) reapOnce(idle time.Duration) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	for path, d := range p.decoders {
@@ -477,6 +485,11 @@ func (p *previews) reapOnce(idle time.Duration) {
 			delete(p.open, id)
 		}
 	}
+	if len(p.decoders) == 0 && len(p.open) == 0 {
+		p.reaping = false
+		return false
+	}
+	return true
 }
 
 // writeFrames answers a pull: the next frame once ffmpeg has it, and up to

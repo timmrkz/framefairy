@@ -26,6 +26,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/events"
 
 	"framefairy/engine"
+	"framefairy/engine/runlog"
 	"framefairy/notices"
 	"framefairy/updates"
 )
@@ -70,10 +71,6 @@ func main() {
 	engine.UseMachineFonts()
 	go engine.RefreshFonts()
 	st := appStore()
-	// The videos are probed on the program's one machine, so what ffprobe
-	// said of a video is said once for the library, the video preview and
-	// every job alike.
-	sources.machine = st.machine
 
 	var app *application.App
 	emit := func(u JobUpdate) {
@@ -187,7 +184,7 @@ func main() {
 		Assets: application.AssetOptions{
 			Handler: interfaceHandler(),
 			Middleware: func(next http.Handler) http.Handler {
-				return probeMiddleware(mediaMiddleware(st))(reportMiddleware(svc.report)(next))
+				return probeMiddleware(mediaMiddleware(svc))(reportMiddleware(svc.report)(next))
 			},
 		},
 		Mac: application.MacOptions{
@@ -320,7 +317,7 @@ func main() {
 // page: the video preview reads nothing of the file itself, see
 // docs/VIDEO-PREVIEW.md, step 5. Only files that belong to an episode in
 // the library are decoded.
-func mediaMiddleware(st *store) application.Middleware {
+func mediaMiddleware(s *FrameFairy) application.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Wails serves each request on a goroutine of its own with no
@@ -354,7 +351,7 @@ func mediaMiddleware(st *store) application.Middleware {
 				return
 			}
 			if strings.HasPrefix(r.URL.Path, "/frames/") {
-				logged(w, r, func(w http.ResponseWriter, r *http.Request) { openPreviews.serve(st, w, r) })
+				logged(w, r, s.serveFrames)
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -437,9 +434,28 @@ type FrameFairy struct {
 	// link is what became of the last framefairy:// link, waiting for
 	// the settings, see licence.go.
 	link *LicenceLink
-	// probes are the videos probed, sources unless a test hands in its
-	// own, see probe.
-	probes *probed
+	// probes are what each video was probed as last, unprobed the videos
+	// that could not be read lately, and previews the streams of the video
+	// preview, see probe, lookOf and serveFrames.
+	probes   probed
+	unprobed failedProbes
+	previews previews
+	// probeVideo stands in for ffprobe in tests, see probe.
+	probeVideo func(ctx context.Context, path string) (engine.SourceInfo, error)
+	// licences stands in for the keychain of the app's machine in tests,
+	// see keys.
+	licences keychain
+	// reportFolder is where a report is put, the Desktop when it is
+	// empty, and showReport how it is shown, in Finder when it is empty,
+	// see ReportProblem. A test hands in its own.
+	reportFolder func() string
+	showReport   func(path string) error
+	// installSpeech and installLanguage install a model through the
+	// machine's network when they are empty, see InstallSpeechModel. The
+	// bridge a walk drives hands in its own, so a walk never downloads a
+	// model.
+	installSpeech   func(m *engine.Machine, ctx context.Context, log *runlog.Log, model engine.SpeechModel, dir string) error
+	installLanguage func(m *engine.Machine, ctx context.Context, log *runlog.Log, model engine.LanguageModel, dir string) error
 	// clipboard stands in for the system's in tests, see copyText.
 	clipboard func(string) bool
 	// saveBox stands in for the system's save box in tests, see saveAs.

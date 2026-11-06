@@ -197,14 +197,6 @@ func (s *FrameFairy) Setup(ctx context.Context) SetupState {
 	return state
 }
 
-// installSpeech and installLanguage are what the setup and the settings
-// install a model with, through the machine's network. The bridge a walk
-// drives stands in for them, so a walk never downloads a model.
-var (
-	installSpeech   = (*engine.Machine).InstallSpeechModel
-	installLanguage = (*engine.Machine).InstallLanguageModel
-)
-
 // InstallSpeechModel fetches a model and unpacks it, as a job, so it wears
 // the same beam and the same fill as every other piece of work and can be
 // cancelled the same way.
@@ -221,7 +213,11 @@ func (s *FrameFairy) InstallSpeechModel(name string) Job {
 	return s.jobs.addOnce("", "model", model.Title,
 		func(ctx context.Context, p *engine.Project) (string, error) {
 			defer s.modelsMade()
-			return "", installSpeech(p.Engine().Machine, ctx, p.Log(), model, engine.ModelsDir())
+			install := s.installSpeech
+			if install == nil {
+				install = (*engine.Machine).InstallSpeechModel
+			}
+			return "", install(p.Engine().Machine, ctx, p.Log(), model, engine.ModelsDir())
 		})
 }
 
@@ -256,7 +252,11 @@ func (s *FrameFairy) InstallLanguageModel(name string) Job {
 	return s.jobs.addOnce("", "llm", model.Title,
 		func(ctx context.Context, p *engine.Project) (string, error) {
 			defer s.modelsMade()
-			if err := installLanguage(p.Engine().Machine, ctx, p.Log(), model, engine.ModelsDir()); err != nil {
+			install := s.installLanguage
+			if install == nil {
+				install = (*engine.Machine).InstallLanguageModel
+			}
+			if err := install(p.Engine().Machine, ctx, p.Log(), model, engine.ModelsDir()); err != nil {
 				return "", err
 			}
 			// The only model there is may be the one in use now.

@@ -44,12 +44,21 @@ type LicenceLink struct {
 	Reason string `json:"reason"`
 }
 
-// The keychain, as the licence row uses it, the one the app's machine was
-// handed. Tests put a map in its place.
-var (
-	savedLicence = (*engine.Machine).SavedLicence
-	saveLicence  = (*engine.Machine).SaveLicence
-)
+// keychain is where the licence row reads and keeps the key: the
+// keychain the app's machine was handed, unless a test hands the app one
+// of its own, see FrameFairy.licences.
+type keychain interface {
+	SavedLicence() (about string, saved bool)
+	SaveLicence(text string, testKeys bool) (string, error)
+}
+
+// keys is the keychain the licence row uses.
+func (s *FrameFairy) keys() keychain {
+	if s.licences != nil {
+		return s.licences
+	}
+	return s.machine()
+}
 
 // machine is the app's machine, the one its store holds.
 func (s *FrameFairy) machine() *engine.Machine {
@@ -61,7 +70,7 @@ func (s *FrameFairy) machine() *engine.Machine {
 
 // Licence is the Licence row as it stands.
 func (s *FrameFairy) Licence() LicenceState {
-	about, saved := savedLicence(s.machine())
+	about, saved := s.keys().SavedLicence()
 	s.mu.Lock()
 	waiting := s.link != nil
 	s.mu.Unlock()
@@ -71,7 +80,7 @@ func (s *FrameFairy) Licence() LicenceState {
 // SaveLicence checks a key and keeps it. An empty key takes the kept one
 // off the machine. The errors start small, to sit inside a sentence.
 func (s *FrameFairy) SaveLicence(key string) (LicenceState, error) {
-	if _, err := saveLicence(s.machine(), key, testKeys()); err != nil {
+	if _, err := s.keys().SaveLicence(key, testKeys()); err != nil {
 		return s.Licence(), err
 	}
 	return s.Licence(), nil
@@ -118,7 +127,7 @@ func (s *FrameFairy) openedWith(raw string) {
 		theLog.line(zerolog.InfoLevel, "app").Err(err).Msg("a link the app does not take")
 		return
 	}
-	l := linkOutcome(s.machine(), k, testKeys())
+	l := linkOutcome(s.keys(), k, testKeys())
 	s.mu.Lock()
 	s.link = &l
 	s.mu.Unlock()
@@ -137,17 +146,17 @@ func (s *FrameFairy) openedWith(raw string) {
 // because every key unlocks the same app and nothing is lost by it, and
 // the settings say which key went. A key that does not check changes
 // nothing, so a Mac that was licensed stays licensed.
-func linkOutcome(m *engine.Machine, k licence.Key, testKeys bool) LicenceLink {
+func linkOutcome(keys keychain, k licence.Key, testKeys bool) LicenceLink {
 	_, l, err := engine.CheckLicence(string(k), testKeys)
 	if err != nil {
 		return LicenceLink{What: "refused", Reason: err.Error()}
 	}
 	about := engine.DescribeLicence(l)
-	before, saved := savedLicence(m)
+	before, saved := keys.SavedLicence()
 	if saved && before == about {
 		return LicenceLink{What: "same", About: about}
 	}
-	if _, err := saveLicence(m, string(k), testKeys); err != nil {
+	if _, err := keys.SaveLicence(string(k), testKeys); err != nil {
 		return LicenceLink{What: "refused", Reason: err.Error()}
 	}
 	if !saved {

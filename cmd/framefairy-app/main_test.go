@@ -110,7 +110,7 @@ func TestNothingServesTheBytesOfAFile(t *testing.T) {
 	if _, err := st.AddEpisodes([]string{source}); err != nil {
 		t.Fatal(err)
 	}
-	handler := mediaMiddleware(st)(http.NotFoundHandler())
+	handler := mediaMiddleware(&FrameFairy{store: st})(http.NotFoundHandler())
 
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/media/?path="+url.QueryEscape(source), nil))
