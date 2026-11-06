@@ -2144,10 +2144,15 @@ function captionsLost(page) {
 // way too and the closest is taken: libass puts a drawing on whole pixels,
 // and the short, made smaller to compare, lands half a pixel from where
 // the preview draws it at the size it shows it.
-const look = (v) => {
+const lookOf = (v) => {
   const c = Math.min(Math.max(v / 255, 0), 1);
   return 255 * Math.pow(c, Math.max(0.891, 0.98 - 0.31 * c));
 };
+// Every channel is a byte, so the look of each of the 256 is worked out
+// once. Worked out for every channel of every pixel, it was a third of
+// what the sequence that compares the captions with the short took.
+const looks = Float64Array.from({ length: 256 }, (_, v) => lookOf(v));
+const look = (v) => looks[v];
 
 function captionDiff(rgba, rgb, w, h, channels = 4) {
   const luma = (d, i, n, f) => 0.2126 * f(d[n * i]) + 0.7152 * f(d[n * i + 1]) + 0.0722 * f(d[n * i + 2]);
