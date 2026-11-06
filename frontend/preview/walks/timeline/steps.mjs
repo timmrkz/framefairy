@@ -1330,7 +1330,9 @@ export const steps = {
       walk.wrong = "the button said Play while the hand held the playhead";
       return;
     }
-    const after = during(hand.up + 300, Infinity);
+    // And after the hand let go, from the second frame after the page
+    // heard it, the same way.
+    const after = played.slice(Math.max(readBy(hand.up), hand.heardUp ?? 0) + 1);
     if (after.length < 10) {
       walk.wrong = `only ${after.length} animation frames were read after the hand let go`;
       return;
