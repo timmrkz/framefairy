@@ -1189,7 +1189,12 @@ browser's frames go by and answers if nothing came in between. The timer
 that writes the log is left out, the same as its calls, marked
 `logOnly` in `said.ts`. A longer timer is how long something stays on
 screen, which a walk turns on itself with `holdClock`, and while the
-app's time is held `settle` does not wait for timers at all. The same
+app's time is held `settle` does not wait for timers at all. While a
+clip plays, the page never stands still for long, and in WebKit with
+motion a settle waits until the play has stopped, at the clip's end. So
+a step that reads a play reads it where the play draws, in the frame or
+the change it waits for, and a step that starts one waits for its Pause
+button, never for a settle. The same
 walk now takes about 15 seconds, and a busy machine makes it slower
 without making it check a step sooner. Steps that come sooner meet the
 app's own sense of time where a person's hand has one: the clip

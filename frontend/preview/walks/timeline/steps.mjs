@@ -685,7 +685,7 @@ export const steps = {
   //                    px in twenty steps while it plays, reading the
   //                    playhead and the frame on screen on every animation
   //                    frame from before the hand takes hold to after it
-  //                    lets go
+  //                    lets go, and pauses the play
   async "drag while playing"(walk, arg) {
     const { page } = walk;
     const [edge, px] = arg;
@@ -706,8 +706,11 @@ export const steps = {
       await page.keyboard.press("Space");
     }
     // Each wait is in the episode's time, read off the playhead, see
-    // playUntil, once the app has settled on the press.
-    await settle(page);
+    // playUntil, once the play shows. Not once the app has settled on the
+    // press: while a clip plays in WebKit with motion nothing settles, so
+    // the settle waited 8 to 12 s for the play, which ran to the clip's
+    // end meanwhile, and the drag came after it, issue #715.
+    await pageUntil(page, () => !!document.querySelector('button[aria-label="Pause"]'));
     await playUntil(page, { most: 0.7 });
     await page.evaluate(() => {
       window.__played = [];
@@ -741,6 +744,9 @@ export const steps = {
     // play does, until it has read thirty, counted on the page.
     await pageUntil(page, () => window.__played.length >= 30 || !document.querySelector('button[aria-label="Pause"]'));
     await page.evaluate(() => (window.__playWatch = false));
+    // Paused in the frame the watch ended, so what comes next settles on
+    // a clip that stands. Left to play, the settle waited for its end.
+    await playUntil(page, { most: 0, pause: true });
     await settle(page);
   },
   // ["end back past the playhead", share]
