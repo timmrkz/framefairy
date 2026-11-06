@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { BLUR, COLS, ROWS, STRENGTH, band, clear, ease, mirrored, painted, share, spread } from "./reflection";
+import { BLUR, COLS, ROWS, band, clear, ease, mirrored, painted, share, spread } from "./reflection";
 
 // A frame of standard video, w by h, each pixel given as [r, g, b] of 0 to
 // 1023 the way the Go side packs them, red lowest, see picture.ts.
@@ -136,19 +136,22 @@ describe("the reflection blurred and faded over its band", () => {
   }
 
   test("thins out towards the edges of the band, as the stylesheet's blur did over nothing beyond it", () => {
-    const into = spreadOf(() => [1023, 1023, 1023]);
-    // In the middle of the foot row, where nothing fades it: the share of
-    // the bell the band covers across, times the share it covers down,
-    // times how strong it is.
+    // A band narrow enough for the bell to reach past its edge from the
+    // part the sides do not fade. Of two cells of the foot row there, the
+    // one nearer the edge has less of the band under its bell, and so
+    // less light, by as much as the share of the bell the band covers.
+    const narrow = 300;
+    const cells = new Float32Array(COLS * ROWS * 4);
+    mirrored(frame(64, 36, () => [1023, 1023, 1023]), 64, 36, "", cells);
+    const into = new Float32Array(COLS * ROWS * 4);
+    spread(cells, band(narrow, high), into);
     const r = ROWS - 1;
-    const c = COLS / 2;
-    const cw = wide / COLS;
-    const ch = high / ROWS;
-    const acrossShare = below(((COLS - c - 0.5) * cw) / BLUR) - below((-(c + 0.5) * cw) / BLUR);
-    const downShare = below((0.5 * ch) / BLUR) - below((-(ROWS - 0.5) * ch) / BLUR);
-    const up = 1 - (0.55 * (0.5 / ROWS)) / 0.35;
-    const side = 1;
-    expect(grey(into, r, c) / 255).toBeCloseTo(acrossShare * downShare * STRENGTH * up * side, 3);
+    const cw = narrow / COLS;
+    const covered = (c: number) => below(((COLS - c - 0.5) * cw) / BLUR) - below((-(c + 0.5) * cw) / BLUR);
+    const near = COLS / 4 + 1;
+    const middle = COLS / 2;
+    expect(grey(into, r, near) / grey(into, r, middle)).toBeCloseTo(covered(near) / covered(middle), 3);
+    expect(covered(near)).toBeLessThan(covered(middle) - 0.05);
   });
 
   test("keeps the colour of a frame of one colour everywhere it is seen", () => {

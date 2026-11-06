@@ -40,8 +40,11 @@
     settle();
   }
 
-  function settle() {
+  // A new band shows at once, on the next step: only a change of picture
+  // is settled on.
+  function settle(at = false) {
     if (laid) spread(cells, laid, goal);
+    if (at) now.set(goal);
     if (!request) {
       last = performance.now();
       request = requestAnimationFrame(step);
@@ -74,7 +77,7 @@
       // Nothing measured while the workspace is put away, see App.svelte.
       if (!canvas.isConnected || !box.width || !box.height) return;
       laid = band(box.width, box.height);
-      settle();
+      settle(true);
     });
     watch.observe(canvas);
     return () => {
