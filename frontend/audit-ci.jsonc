@@ -10,17 +10,6 @@
     // never ships in the app, and no fixed deepmerge exists yet. Let
     // through by that path alone, so deepmerge brought in by anything
     // else still fails.
-    "GHSA-gcqx-w48m-w2h4|@sveltejs/vite-plugin-svelte>deepmerge",
-    // minimatch before 11.0.1 can take long over a glob pattern made to
-    // amplify, found in #634. Only ESLint and the TypeScript rules it runs
-    // use it, on the patterns of our own config, and they never ship.
-    // Their newest releases still take minimatch 10, so there is no fix
-    // they accept yet. Let through only where the path to it runs through
-    // ESLint's packages. The path npm audit gives changes when the
-    // advisory's data changes, with nothing changed on our side, so it is
-    // matched by that and not word for word. The last is the copy at the
-    // top of node_modules, which is ESLint's own.
-    "GHSA-g3hv-75wg-m249|*eslint*>minimatch*",
-    "GHSA-g3hv-75wg-m249|minimatch>"
+    "GHSA-gcqx-w48m-w2h4|@sveltejs/vite-plugin-svelte>deepmerge"
   ]
 }
