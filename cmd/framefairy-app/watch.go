@@ -70,9 +70,8 @@ func watchedOf(video string, shorts []string) []string {
 // after every look at the library, and after a plan is written, which
 // may name a short just rendered, so the
 // watch follows what was added, removed, deleted, made again and
-// rendered, the way the library itself does. changed is what the change
-// named, nil after a look at the whole library.
-func (ws *watching) follow(files afero.Fs, videos []string, shortsOf func(video string) []string, changed []string) {
+// rendered, the way the library itself does.
+func (ws *watching) follow(files afero.Fs, videos []string, shortsOf func(video string) []string) {
 	if ws == nil {
 		return
 	}
@@ -94,22 +93,11 @@ func (ws *watching) follow(files afero.Fs, videos []string, shortsOf func(video 
 		}
 	}
 	for dir := range want {
-		watched := slices.Contains(have, dir)
-		// A folder the change named may be one deleted and made again,
-		// the way a backup puts the models folder back. Its old watch is
-		// still listed until the system says the old folder is gone,
-		// which comes after the change that made the new one and is not
-		// handed on while the folder over it is watched, so nothing would
-		// follow it. Its watch is made again on the folder there now.
-		again := watched && slices.Contains(changed, dir)
-		if watched && !again {
+		if slices.Contains(have, dir) {
 			continue
 		}
 		if _, err := files.Stat(dir); err != nil {
 			continue
-		}
-		if again {
-			_ = ws.w.Remove(dir)
 		}
 		if err := ws.w.Add(dir); err != nil {
 			theLog.line(zerolog.WarnLevel, "files").Str("folder", dir).Err(err).
