@@ -1193,8 +1193,10 @@ app's time is held `settle` does not wait for timers at all. While a
 clip plays, the page never stands still for long, and in WebKit with
 motion a settle waits until the play has stopped, at the clip's end. So
 a step that reads a play reads it where the play draws, in the frame or
-the change it waits for, and a step that starts one waits for its Pause
-button, never for a settle. The same
+the change it waits for, and a step that starts one starts it with
+`pressPlay`, or holds the sound card with `holdSound` around a key it
+presses while the clip plays, so the settle ends before the play
+begins. The same
 walk now takes about 15 seconds, and a busy machine makes it slower
 without making it check a step sooner. Steps that come sooner meet the
 app's own sense of time where a person's hand has one: the clip

@@ -5,7 +5,7 @@
 // showed before it and the step's name. A sequence of any folder can take
 // it. Below them the helpers only these steps use. See docs/TESTING.md.
 import { execFileSync } from "node:child_process";
-import { BITS, ask, caughtUp, chosen, clickOnTrack, drag, engineState, episodeOn, handles, high, hold, holdSound, inside, letHeld, middle, news, nextNews, nextPaint, pageUntil, playUntil, pressOnTrack, preview, seenUntil, settle, shownOnPlayhead, timeline, xOf } from "../bridge.mjs";
+import { BITS, ask, caughtUp, chosen, clickOnTrack, drag, engineState, episodeOn, handles, high, hold, holdSound, inside, letHeld, middle, news, nextNews, nextPaint, pageUntil, playUntil, pressOnTrack, pressPlay, preview, seenUntil, settle, shownOnPlayhead, timeline, xOf } from "../bridge.mjs";
 import { pieceCount, rate, url } from "../common/steps.mjs";
 
 export const steps = {
@@ -702,15 +702,16 @@ export const steps = {
     await settle(page);
     await page.evaluate(() => document.body.focus());
     await preview(page, 0.2);
-    if (!(await page.evaluate(() => !!document.querySelector('button[aria-label="Pause"]')))) {
-      await page.keyboard.press("Space");
+    // Played with the sound card held until the app has settled on the
+    // press, see pressPlay. A settle while the clip played in WebKit with
+    // motion waited 8 to 12 s for the play, which ran to the clip's end
+    // meanwhile, and the drag came after it, issue #715.
+    if (!(await page.evaluate(() => !!document.querySelector('button[aria-label="Pause"]'))) && !(await pressPlay(page))) {
+      walk.wrong = "the space bar started no play";
+      return;
     }
     // Each wait is in the episode's time, read off the playhead, see
-    // playUntil, once the play shows. Not once the app has settled on the
-    // press: while a clip plays in WebKit with motion nothing settles, so
-    // the settle waited 8 to 12 s for the play, which ran to the clip's
-    // end meanwhile, and the drag came after it, issue #715.
-    await pageUntil(page, () => !!document.querySelector('button[aria-label="Pause"]'));
+    // playUntil.
     await playUntil(page, { most: 0.7 });
     await page.evaluate(() => {
       window.__played = [];

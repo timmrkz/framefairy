@@ -1717,13 +1717,14 @@ export const steps = {
           video: !chosen || chosen.classList.contains("dim"),
         };
       });
-    // Played here and not by a step of its own: a step settles, and a
-    // settle while a clip plays in WebKit with motion waited until the
-    // play had run to the clip's end, so the key met a clip that stood,
-    // issue #714.
-    if (how === "playing" && !(await place()).playing) {
-      await page.keyboard.press("Space");
-      await pageUntil(page, () => !!document.querySelector('button[aria-label="Pause"]'));
+    // Played here, with the sound card held until the app has settled on
+    // the press, see pressPlay, and not by a step of its own: a step
+    // settles, and a settle while a clip plays in WebKit with motion
+    // waited until the play had run to the clip's end, so the key met a
+    // clip that stood, issue #714.
+    if (how === "playing" && !(await place()).playing && !(await pressPlay(page))) {
+      walk.wrong = "the space bar started no play";
+      return;
     }
     if (how === "from the video") {
       const g = await handles(page);
@@ -1772,16 +1773,13 @@ export const steps = {
     }
     const was = await place();
     // Every place the page draws the playhead after the key, among them
-    // the one the key put it in, and whether it played as it was drawn
-    // there. The key asks the engine first, so a play goes on a little
+    // the one the key put it in. The key asks the engine first, so a play goes on a little
     // meanwhile, and the place it is put in is not always the first. A
     // playhead already there changes nothing, and stays where it was.
     await page.evaluate(() => {
       const screen = document.querySelector(".screen");
       window.__sharedTo = [];
-      const look = new MutationObserver(() =>
-        window.__sharedTo.push({ at: Number(screen.dataset.playhead), playing: !!document.querySelector('button[aria-label="Pause"]') }),
-      );
+      const look = new MutationObserver(() => window.__sharedTo.push({ at: Number(screen.dataset.playhead) }));
       const listen = () => look.observe(screen, { attributes: true, attributeFilter: ["data-playhead"] });
       window.addEventListener("keydown", listen, { capture: true, once: true });
       // Let go of once the step has read it, moved or not, so a later
@@ -1791,28 +1789,19 @@ export const steps = {
         window.removeEventListener("keydown", listen, { capture: true });
       };
     });
+    // Playing, the key is pressed with the sound card held until the app
+    // has settled on it, so the play stands where the key put it and the
+    // settle can end. Not held, a settle while a clip played in WebKit
+    // with motion waited until the play had run to the clip's end, so 5
+    // seemed to have stopped it, issue #714.
+    if (was.playing) await holdSound(page, true);
     await page.keyboard.press(key);
-    // A play is read where the key drew its playhead, not after a settle:
-    // while a clip plays in WebKit with motion nothing settles, and the
-    // settle waited until the play had run to the clip's end, so 5 seemed
-    // to have stopped it, issue #714. The wait ends once the playhead is
-    // drawn where the key puts it, or the play has stopped, or it has been
-    // drawn thirty times without, counted on the page.
-    if (was.playing) {
-      await pageUntil(
-        page,
-        (want) =>
-          window.__sharedTo.some((d) => Math.abs(d.at - want) <= 1e-6) ||
-          window.__sharedTo.length >= 30 ||
-          !!document.querySelector('button[aria-label="Play"]'),
-        want,
-      );
-    } else await settle(page);
+    await settle(page);
     const drawn = await page.evaluate(() => (window.__sharedDone(), window.__sharedTo));
     const landed = drawn.find((d) => Math.abs(d.at - want) <= 1e-6) ?? drawn[0];
     const to = landed?.at ?? was.at;
     const now = await place();
-    if (landed) now.playing = landed.playing;
+    if (was.playing) await holdSound(page, false);
     const inCut = pieces.some((p, i) => i > 0 && to >= pieces[i - 1].end && to < p.start);
     if (Math.abs(to - want) > 1e-6) {
       walk.wrong = `${key} put the playhead at ${to.toFixed(3)} s, not ${want.toFixed(3)} s, ${Number(key) * 10} % of the clip's ${kept.toFixed(3)} s kept`;
