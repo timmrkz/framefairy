@@ -30,7 +30,7 @@ func harnessFrames(paths []string) (http.Handler, error) {
 	if _, err := st.AddEpisodes(paths); err != nil {
 		return nil, err
 	}
-	return mediaMiddleware(st)(http.NotFoundHandler()), nil
+	return mediaMiddleware(&FrameFairy{store: st})(http.NotFoundHandler()), nil
 }
 
 // TestHarnessFrames serves harnessFrames until it is stopped, for

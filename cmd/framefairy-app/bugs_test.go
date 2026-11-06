@@ -135,15 +135,14 @@ func TestAWindowGoneBeforeItWasMadeIsNotOpen(t *testing.T) {
 
 // Pictures are decoded before the draft is taken, so while ten are being
 // read, Bugs, the window closing and the text being kept wait for none of
-// them. Found in the review of #217. It holds a decode with decoding, a
-// package variable, so it runs alone.
+// them. Found in the review of #217. It holds a decode with the report's
+// decoding.
 func TestNothingWaitsOnAPictureBeingDecoded(t *testing.T) {
+	t.Parallel()
 	r := newReporting(engine.NewMachine(afero.NewMemMapFs()), "/config/report")
 	s := &FrameFairy{report: r}
 	hold, held := make(chan struct{}), make(chan struct{})
-	was := decoding
-	decoding = func() { close(held); <-hold }
-	defer func() { decoding = was }()
+	r.decoding = func() { close(held); <-hold }
 	done := make(chan ReportDraft)
 	// Made here, because pngOf fails the test with t.Fatal, which ends
 	// only the goroutine it is called in.
@@ -413,12 +412,9 @@ func TestAReportHoldsThePictures(t *testing.T) {
 		t.Fatal(err)
 	}
 	testLog(t)
-	was := showReport
-	showReport = func(string) error { return nil }
-	t.Cleanup(func() { showReport = was })
 
 	st := &store{dir: t.TempDir(), files: disk, settings: defaultSettings(), adding: make(chan struct{}, 1)}
-	f := &FrameFairy{store: st, report: newReporting(engine.NewMachine(afero.NewMemMapFs()), "/config/report")}
+	f := &FrameFairy{store: st, report: newReporting(engine.NewMachine(afero.NewMemMapFs()), "/config/report"), showReport: func(string) error { return nil }}
 	f.Acted(Act{ID: "a1", What: "picked a video", Video: filepath.Join(home, "Movies", "start.mp4")})
 	f.Acted(Act{ID: "r1", What: "clicked Report"})
 	f.report.attach("drop", []handed{{name: "a.png", data: pngOf(t, 12, 8)}, {name: "b.png", data: pngOf(t, 8, 12)}})

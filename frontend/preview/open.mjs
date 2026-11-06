@@ -298,9 +298,11 @@ export async function workspace({
   if (why) await refuse(`the video preview shows no picture: ${why}`);
 
   // The sidebar lies over the settings column when it is open, so it is
-  // put away first or it covers half of what is being looked at.
+  // put away first or it covers half of what is being looked at. Its
+  // button lets go of a sidebar that is kept, and the pointer moved away
+  // closes one hovering opened.
   if (await page.evaluate(() => document.querySelector("aside")?.classList.contains("open"))) {
-    await page.locator("aside .head .glyph").click();
+    if ((await page.locator("aside .head .glyph").getAttribute("aria-pressed")) === "true") await page.locator("aside .head .glyph").click();
     await page.mouse.move(width / 2, height / 2);
     await settled(page);
   }

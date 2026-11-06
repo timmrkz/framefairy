@@ -183,7 +183,10 @@ async function walkSequence(seq, shared = null) {
 async function walkingSequence(seq, shared) {
   const began = performance.now();
   traceAs(seq.name);
-  const opened = await open(url, { browser: shared, named: browserFor(), still: still(seq), clock: clock(seq) });
+  // A sequence that checks what the GPU draws walks in a browser of its
+  // own with WebGPU on, see newBrowser.
+  const gpu = seq.steps.some(([what]) => what === "screen light");
+  const opened = await open(url, { browser: gpu ? null : shared, named: browserFor(), still: still(seq), clock: clock(seq), gpu });
   const { browser, errors } = opened;
   // The page the steps act on: the app's window, or the report window
   // once Bugs opened it. The watch keeps to the app's window.
@@ -537,7 +540,7 @@ async function walkingSequence(seq, shared) {
   console.log(`${failed ? "FAIL" : "ok  "}  ${took} s  ${browserFor().padEnd(8)}  ${seq.name}`);
   if (failed) console.log(`      after ${done.join(", ")}\n      ${failed.replaceAll("\n", "\n      ")}`);
   if (failed) await keepTraces();
-  if (shared) await Promise.all(shared.contexts().map((c) => c.close()));
+  if (browser === shared) await Promise.all(shared.contexts().map((c) => c.close()));
   else await browser.close();
   return Boolean(failed);
 }

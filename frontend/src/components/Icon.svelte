@@ -3,7 +3,8 @@
   // and many desktop apps draw with, so none of them is one we made up
   // and they all share one hand. The app knows them by what they are for,
   // here, and nowhere else names a Lucide icon. Plan row 2.199.
-  import PanelLeft from "@lucide/svelte/icons/panel-left";
+  import PanelLeftOpen from "@lucide/svelte/icons/panel-left-open";
+  import PanelLeftClose from "@lucide/svelte/icons/panel-left-close";
   import SquarePlus from "@lucide/svelte/icons/square-plus";
   import Folder from "@lucide/svelte/icons/folder";
   import Trash2 from "@lucide/svelte/icons/trash-2";
@@ -53,7 +54,11 @@
   };
 
   const glyphs: Record<string, Component<any>> = {
-    sidebar: PanelLeft,
+    // What the sidebar button does: keep the sidebar open, with the
+    // arrow out, or close it, with the arrow in. A sidebar hover opened
+    // looks the same as one kept open, so one icon could not say which.
+    "sidebar-keep": PanelLeftOpen,
+    "sidebar-close": PanelLeftClose,
     plus: SquarePlus,
     folder: Folder,
     trash: Trash2,

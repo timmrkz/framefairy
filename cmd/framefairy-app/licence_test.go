@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -59,28 +60,33 @@ func TestKeyFromLink(t *testing.T) {
 }
 
 // fakeKeychain stands in for the keychain the licence row uses, so no
-// test reaches the Mac's own.
-type fakeKeychain struct{ key, about string }
+// test reaches the Mac's own. A test hands it to the app it makes.
+type fakeKeychain struct {
+	mu         sync.Mutex
+	key, about string
+}
 
-func useFakeKeychain(t *testing.T) *fakeKeychain {
-	t.Helper()
-	f := &fakeKeychain{}
-	read, keep := savedLicence, saveLicence
-	t.Cleanup(func() { savedLicence, saveLicence = read, keep })
-	savedLicence = func(*engine.Machine) (string, bool) { return f.about, f.key != "" }
-	saveLicence = func(_ *engine.Machine, text string, test bool) (string, error) {
-		if strings.TrimSpace(text) == "" {
-			f.key, f.about = "", ""
-			return "", nil
-		}
-		_, l, err := engine.CheckLicence(text, test)
-		if err != nil {
-			return "", err
-		}
-		f.key, f.about = text, engine.DescribeLicence(l)
-		return f.about, nil
+func (f *fakeKeychain) SavedLicence() (string, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.about, f.key != ""
+}
+
+func (f *fakeKeychain) SaveLicence(text string, test bool) (string, error) {
+	if strings.TrimSpace(text) == "" {
+		f.mu.Lock()
+		f.key, f.about = "", ""
+		f.mu.Unlock()
+		return "", nil
 	}
-	return f
+	_, l, err := engine.CheckLicence(text, test)
+	if err != nil {
+		return "", err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.key, f.about = text, engine.DescribeLicence(l)
+	return f.about, nil
 }
 
 // testKey is a key from the test signer, told apart by its ID.
@@ -100,9 +106,10 @@ func testKey(t *testing.T, id byte) string {
 // The buyer clicks Unlock in the mail, and a Mac with no key is unlocked
 // by the link alone: the settings only say so.
 func TestALinkUnlocksAMacWithNoKey(t *testing.T) {
-	kc := useFakeKeychain(t)
+	t.Parallel()
+	kc := &fakeKeychain{}
 	k := testKey(t, 1)
-	s := &FrameFairy{}
+	s := &FrameFairy{licences: kc}
 	s.openedWith("framefairy://unlock?key=" + k)
 	if st := s.Licence(); !st.Saved || !st.Waiting {
 		t.Fatalf("after the link: %+v", st)
@@ -122,12 +129,13 @@ func TestALinkUnlocksAMacWithNoKey(t *testing.T) {
 // place of the one kept at once, and says which one went. The same key
 // again changes nothing.
 func TestALinkReplacesAKeptKeyAndSaysWhichWent(t *testing.T) {
-	kc := useFakeKeychain(t)
+	t.Parallel()
+	kc := &fakeKeychain{}
 	first, second := testKey(t, 1), testKey(t, 2)
-	if _, err := saveLicence(nil, first, true); err != nil {
+	if _, err := kc.SaveLicence(first, true); err != nil {
 		t.Fatal(err)
 	}
-	s := &FrameFairy{}
+	s := &FrameFairy{licences: kc}
 	s.openedWith("framefairy://unlock?key=" + first)
 	if got := s.TakeLicenceLink(); got != (LicenceLink{What: "same", About: kc.about}) {
 		t.Fatalf("the same key: %+v", got)
@@ -145,12 +153,13 @@ func TestALinkReplacesAKeptKeyAndSaysWhichWent(t *testing.T) {
 
 // A key that does not check leaves the key kept where it is.
 func TestARefusedLinkLeavesTheKeptKey(t *testing.T) {
-	kc := useFakeKeychain(t)
+	t.Parallel()
+	kc := &fakeKeychain{}
 	first := testKey(t, 1)
-	if _, err := saveLicence(nil, first, true); err != nil {
+	if _, err := kc.SaveLicence(first, true); err != nil {
 		t.Fatal(err)
 	}
-	s := &FrameFairy{}
+	s := &FrameFairy{licences: kc}
 	s.openedWith("framefairy://unlock?key=" + aKey[:len(aKey)-2] + "AA")
 	if got := s.TakeLicenceLink(); got.What != "refused" || got.Reason == "" {
 		t.Fatalf("%+v", got)
@@ -164,9 +173,10 @@ func TestARefusedLinkLeavesTheKeptKey(t *testing.T) {
 // is kept. A test key in a build from the workflow is the one Tim met: the
 // reason has to be the whole of it.
 func TestALinkWithAKeyThisBuildRefuses(t *testing.T) {
-	kc := useFakeKeychain(t)
+	t.Parallel()
+	kc := &fakeKeychain{}
 	k := testKey(t, 1)
-	got := linkOutcome(nil, licence.Key(k), false)
+	got := linkOutcome(kc, licence.Key(k), false)
 	if got.What != "refused" || !strings.Contains(got.Reason, "test key") {
 		t.Fatalf("%+v", got)
 	}
@@ -177,8 +187,9 @@ func TestALinkWithAKeyThisBuildRefuses(t *testing.T) {
 
 // A link the app does not take leaves nothing waiting.
 func TestALinkNotTakenLeavesNothing(t *testing.T) {
-	useFakeKeychain(t)
-	s := &FrameFairy{}
+	t.Parallel()
+	kc := &fakeKeychain{}
+	s := &FrameFairy{licences: kc}
 	s.openedWith("framefairy://unlock?key=" + aKey + "&more=1")
 	if s.Licence().Waiting || s.TakeLicenceLink() != (LicenceLink{}) {
 		t.Fatal("a link the app does not take left something waiting")

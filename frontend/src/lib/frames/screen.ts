@@ -83,6 +83,8 @@ class FlatScreen implements Screen {
   // The frame as 8-bit colours, HDR cut at white, as an SDR screen shows
   // it.
   private sdr: ImageData | null = null;
+  // The part the captions fall on, kept while its size stays.
+  private laid: ImageData | null = null;
   // The pixels the frame at its own size was made from, which a frame
   // drawn again over the same pixels, as a bounce does, does not make
   // again.
@@ -119,7 +121,8 @@ class FlatScreen implements Screen {
     // drawn again with them laid over it, before its look.
     const part = over && laidPart(d, frame.width, frame.height, at.w, at.h, over);
     if (part) {
-      const img = new ImageData(part.w, part.h);
+      if (this.laid?.width !== part.w || this.laid.height !== part.h) this.laid = new ImageData(part.w, part.h);
+      const img = this.laid;
       toSDR(frame.light, part.data, img.data);
       this.g.putImageData(img, at.x + part.x, at.y + part.y);
     }

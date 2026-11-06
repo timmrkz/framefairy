@@ -58,6 +58,10 @@ type appLog struct {
 	recent recentLines
 	// The person's last act, which the Go side's lines carry, see Acted.
 	act atomic.Pointer[string]
+	// repeats is the failures of the captions said lately, see logged. The
+	// log keeps them because they decide which lines it writes, and the
+	// log is the program's one.
+	repeats repeatedFailures
 }
 
 // The log is at most 10 MB of lines in use and three older files
@@ -566,7 +570,8 @@ func (r *recorded) Unwrap() http.ResponseWriter { return r.ResponseWriter }
 
 // repeatedFailures keeps the failures of the captions said lately, by
 // video and reason, so one that goes on is written once a while and
-// counted in between.
+// counted in between. The log keeps it, since it decides which lines the
+// log writes. Its zero value is ready.
 type repeatedFailures struct {
 	mu   sync.Mutex
 	last map[string]*repeat
@@ -577,11 +582,16 @@ type repeat struct {
 	count int
 }
 
-var failures = &repeatedFailures{last: map[string]*repeat{}}
-
 // failuresQuiet is how long the same failure is counted rather than
 // written again.
 const failuresQuiet = 10 * time.Second
+
+// forget lets go of every failure counted, as a log opened again starts.
+func (f *repeatedFailures) forget() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.last = nil
+}
 
 // seen notes a failure of the video at path for reason, and gives -1
 // while it is counted, or how many times it came since it was last
@@ -596,8 +606,8 @@ func (f *repeatedFailures) seen(path, reason string) int {
 		r.count++
 		return -1
 	}
-	if len(f.last) > 256 {
-		clear(f.last)
+	if f.last == nil || len(f.last) > 256 {
+		f.last = map[string]*repeat{}
 	}
 	before := 0
 	if r != nil {
@@ -665,7 +675,7 @@ func logged(w http.ResponseWriter, r *http.Request, serve func(http.ResponseWrit
 		if !failed {
 			return
 		}
-		repeated := failures.seen(q.Get("path"), fmt.Sprintf("%d %s", rec.status, rec.body))
+		repeated := theLog.repeats.seen(q.Get("path"), fmt.Sprintf("%d %s", rec.status, rec.body))
 		if repeated < 0 {
 			return
 		}

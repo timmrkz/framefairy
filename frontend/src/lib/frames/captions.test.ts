@@ -124,6 +124,49 @@ describe("a layer of captions", () => {
   });
 });
 
+// The bytes laidPart draws, folded into one number, for a frame and a
+// layer with a lifted word, at every turn and at three sizes drawn. Taken
+// from laidPart as it was before it worked out the turn once per draw,
+// which must not change a byte.
+describe("the captions laid over a frame", () => {
+  const GOLDEN = [
+    323565770, 3856472616, 1175872813, 3206193675, 2511689848, 519284877, 1068100129, 4257049211, 4203286498,
+    3705036025, 2969228961, 2078544639, 3705036025, 2969228961, 2078544639, 3206193675, 2511689848, 519284877,
+  ];
+  function sample(turn: number, w: number, h: number): number {
+    const fw = 12;
+    const fh = 9;
+    const frameWords = new Uint32Array(fw * fh);
+    for (let i = 0; i < frameWords.length; i++) frameWords[i] = word((i * 37) % 1024, (i * 91) % 1024, (i * 13) % 1024);
+    const ink = (i: number) => [(i * 29) % 256, (i * 53) % 256, (i * 71) % 256, (i * 97) % 256];
+    const pixels = (n: number) => new Uint8Array(Array.from({ length: n }, (_, i) => ink(i)).flat());
+    const lift = { layer: { x: 2, y: 1, w: 2, h: 2, pixels: pixels(4) }, scale: 1.3 };
+    const o: Over = {
+      layer: { x: 1, y: 1, w: 5, h: 3, pixels: pixels(15), lift } as Layer,
+      size: [8, 6],
+      left: 0.1,
+      width: 0.8,
+      turn,
+    };
+    const part = laidPart(new Uint8Array(frameWords.buffer), fw, fh, w, h, o);
+    if (!part) return -1;
+    let sum = (part.x * 31 + part.y * 17 + part.w * 7 + part.h) >>> 0;
+    for (const v of new Uint32Array(part.data.buffer)) sum = (Math.imul(sum, 16777619) ^ v) >>> 0;
+    return sum;
+  }
+
+  it("draws the same bytes at every turn and size", () => {
+    const got = [0, -90, 90, 180, -180, 270].flatMap((turn) =>
+      [
+        [12, 9],
+        [24, 18],
+        [17, 13],
+      ].map(([w, h]) => sample(turn, w, h)),
+    );
+    expect(got).toEqual(GOLDEN);
+  });
+});
+
 describe("the layers of the captions", () => {
   afterEach(() => vi.unstubAllGlobals());
 

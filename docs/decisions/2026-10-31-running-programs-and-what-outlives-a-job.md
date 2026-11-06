@@ -360,3 +360,113 @@ are tables no test sets, and stay tables: a test that asks a company
 hands its machine a network that carries the real addresses to a server
 of its own, `cloud` in `engine/provider_test.go`, and checks the address
 each request was meant for.
+
+## The app's caches and seams, #649 and #650
+
+Added on 5 November 2026, in the pull request that moves them. The
+decision above already says each cache and seam goes onto a field, each
+with its area, and that what the engine learns goes on the machine. What
+was left to decide is where the app's own go, the caches only the app
+keeps and the seams only the app's tests set. Measured on main at
+669dd1a: six caches, `sources`, `unprobed`, `openPreviews`,
+`captionTracks`, `layers` and `failures`, and thirteen seams in nine
+files, which the tests set in 77 places.
+
+### A. Where state lives: one struct of seams on FrameFairy
+
+Every seam goes into one `seams` struct on `FrameFairy`, the way the
+machine holds the engine's. One place to look. But the seams belong to
+parts that `FrameFairy` only holds, `listening`, `chromeWatch`,
+`updating`, `reporting`, and each of those would reach up to the app
+for a field of its own, which none of them does for anything else.
+Loses.
+
+### B. What changes together: a field of the part that uses it
+
+The microphone changes with the recording, the measure of the title bar
+with the watch of the title bar, the .app an update replaces with the
+update. So each seam is a field of the part that uses it, the system's
+own when it is empty, the way `http.Client` keeps its `Transport` and
+the machine keeps its `Runner`. A test sets it on the part it made. The
+caches go the same way: the streams of the video preview keep the
+caption tracks and the tally of layers drawn over them, the log keeps
+the count of the failures it writes, and `FrameFairy` keeps the probes
+and the streams, each ready as its zero value, so the 48 places a test
+makes a `FrameFairy` with a literal make a working one.
+
+Its cost is a seam a test forgets. A field left empty is the system's
+own, so a test that forgets the microphone listens to the real one and
+a test that forgets `showReport` opens Finder. Every test that builds
+the whole app goes through the desk, whose `fit` sets the seams a walk
+reaches, the microphone, the report's folder and Finder, and the
+downloads, so a forgotten seam is left to a test that builds one part by
+hand and calls that part. Such a test names the seam it needs on the
+line beside its call, where a reviewer sees it.
+
+### C. What Go and its libraries already have: options to a constructor
+
+`newFrameFairy(options ...)`, the functional options of many Go
+libraries. A test passes the seams it needs. But `main` builds the app
+in steps, each part handed what the part before it made, and the tests
+build it the same way through the desk. A constructor would be a second
+way to build the app, beside the one both use. Loses.
+
+### D. Who may know about whom: interfaces handed in by main
+
+Each system the app reaches, the microphone, the keychain, Finder, the
+downloads, becomes an interface `main` hands in, and nothing has a
+default. The app then knows nothing of the machine it runs on. But
+every test that makes an app would have to hand in all of them, and a
+test that forgets one gets a nil interface and a panic far from where
+it forgot. The keychain is the one place an interface pays, since two
+methods go together, and there it is used.
+
+### E. What a test has to build: one builder that sets every stand-in
+
+A test should build what it needs in one call and get nothing real by
+accident. So one builder, `testApp(t)`, makes a `FrameFairy` with every
+seam set to a stand-in that fails the test when it is used unasked,
+and a test swaps in the one it means to use. A forgotten seam then
+fails loudly instead of reaching the machine, which B cannot promise.
+But the seams still have to live somewhere the builder can set them,
+which is B's fields, so E is a builder on top of B rather than a home of
+its own. And most tests build one part, a `listening`, an `updating`,
+a `reporting`, not the app, so the builder would grow one variant per
+part. The desk is that builder already for the tests that build the
+whole app. Loses as a home, kept as the desk.
+
+### What converges
+
+B, with D's interface for the keychain, `keychain` in `licence.go`,
+since its two methods are read and written together. The speech and
+language stand-ins are the one seam that is not the app's own part's:
+every engine the app makes is readied by `jobOptions` from the store,
+the job queue, the captions and a recording among them, so they are a
+field of the store, `standIns`, read as a recording starts. What
+ffprobe said of a file was kept twice, by the machine and by the app's
+`sources`, so the app's copy goes and `FrameFairy` keeps only what a
+video was probed as last, for a video whose file has gone. That is not
+the engine's `Episode`'s to keep: an `Episode` holds reads of the work
+folder, each checked against the stamps of the files it came from, and
+drops them when the files change, while what is wanted here is the last
+thing known of a source file that has stopped answering, which only the
+interface asks for. `stopWait`
+was never set by a test, so it is a constant.
+
+What stays a package variable on purpose, each with why:
+
+- `theLog`, the build's version and channel, the embedded interface and
+  the update key, which are the program's by nature.
+- `theProbe` in `probe_outside.go`, which only the build for the checks
+  from outside has, one listener on a fixed port for the one app.
+- Tables that never change, `recordingEndings`,
+  `transcriptFormats`, `pictureID`.
+- In the engine, `disk`, the real disk, which is never swapped,
+  `DecoderSaid`, the app's log for the decoder's lines, set once by
+  `main`, `fileio.locks` and `tool.sums`, see above, and the tables of
+  the hyphenation, the fillers and the recipes.
+- The font shelf in `engine/machinefonts.go`, which is a cache and a
+  seam, and is what #607 has left. Its fonts are read by the caption
+  code wherever a style is resolved, so moving it reaches every caller
+  of `FontByName`, `FontBytes` and `InstallFont`, and is a change of its
+  own.

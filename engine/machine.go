@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"maps"
 	"net/http"
 	"runtime"
 	"sync"
@@ -180,6 +181,36 @@ func NewMachine(files afero.Fs) *Machine {
 	return &Machine{Files: files, Records: NewRecords(files, "", ""), Tools: tool.NewFinder()}
 }
 
+// LearnFrom hands this new machine what before learned about the computer
+// both run on: which programs were checked, what each ffmpeg offers, what
+// ffmpeg and ffprobe said about files that stay as they are, and the ink of
+// caption blocks in the faces the program carries. Each answer is kept
+// under what it depends on, so it holds here as it held there. Nothing of
+// the jobs comes with it: no episode, record, key, model, caption file or
+// choice of decoder. It is called before any job runs on the machine.
+//
+// The walks' bridge starts every walk on an app opened again on the same
+// computer, and without it each walk asked ffmpeg again, twice over, what
+// the walk before it had already asked.
+func (m *Machine) LearnFrom(before *Machine) {
+	m.Tools = before.Tools
+	before.learned.Range(func(ask, found any) bool {
+		m.learned.Store(ask, found)
+		return true
+	})
+	before.probes.mu.Lock()
+	answers := maps.Clone(before.probes.answers)
+	before.probes.mu.Unlock()
+	m.probes.mu.Lock()
+	m.probes.answers = answers
+	m.probes.mu.Unlock()
+	ink, _ := before.captions()
+	m.captionsOnce.Do(func() {
+		m.measured = ink
+		m.previewTracks = newTrackCache()
+	})
+}
+
 // captions is the machine's caches of caption work, made once.
 func (m *Machine) captions() (*inkCache, *trackCache) {
 	m.captionsOnce.Do(func() {
@@ -199,6 +230,10 @@ type toolAsk struct {
 // learnedTool is what one ffmpeg was found to offer, each found the first
 // time a job needs it.
 type learnedTool struct {
+	// finding is held while the subtitle filter is found, so a second
+	// ask at the same moment waits for the first one's answer instead of
+	// asking ffmpeg again, see SubtitleFilter.
+	finding          sync.Mutex
 	mu               sync.Mutex
 	encoder          Encoder
 	hdrEncoder       Encoder

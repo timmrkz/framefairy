@@ -76,10 +76,10 @@ func TestAddTakesAVideoWhoseFirstFrameIsLate(t *testing.T) {
 	t.Setenv("FRAMEFAIRY_FRAMES", hung)
 	abs, _ := filepath.Abs(good)
 	t.Cleanup(func() {
-		openPreviews.mu.Lock()
-		dec := openPreviews.decoders[abs]
-		delete(openPreviews.decoders, abs)
-		openPreviews.mu.Unlock()
+		d.svc.previews.mu.Lock()
+		dec := d.svc.previews.decoders[abs]
+		delete(d.svc.previews.decoders, abs)
+		d.svc.previews.mu.Unlock()
 		if dec != nil {
 			dec.Close()
 		}

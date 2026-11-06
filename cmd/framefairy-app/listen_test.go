@@ -68,15 +68,9 @@ func listenWith(t *testing.T, samples []float32) (*FrameFairy, func() []map[stri
 func listenTo(t *testing.T, samples []float32) *FrameFairy {
 	t.Helper()
 	s := &speech{}
-	fakes := func(e *engine.Engine, o *engine.Options) { e.OpenRecognizer = s.open }
-	standIns.Store(&fakes)
-	was := openMicrophone
-	openMicrophone = func() microphone { return &playingMicrophone{samples: samples} }
-	t.Cleanup(func() {
-		standIns.Store(nil)
-		openMicrophone = was
-	})
-	f := &FrameFairy{}
+	f := &FrameFairy{store: memoryStore()}
+	f.store.standIns = func(e *engine.Engine, o *engine.Options) { e.OpenRecognizer = s.open }
+	f.listening.mic = func() microphone { return &playingMicrophone{samples: samples} }
 	// A recording still being written down when the test ends wrote its
 	// last lines into a log whose folder was being removed, and on the
 	// Mac the removal then found the folder not empty, issue #441. So
@@ -105,6 +99,7 @@ func bubbleLog(t *testing.T) func() []map[string]any {
 // words, never what they were, under the act that started it. Plan row
 // 2.189.
 func TestWhatIsSaidIsWrittenDown(t *testing.T) {
+	// Not parallel: bubbleLog points the program's one log at this test.
 	read := bubbleLog(t)
 	synctest.Test(t, func(t *testing.T) {
 		f := listenTo(t, tone(3))
@@ -147,6 +142,7 @@ func TestWhatIsSaidIsWrittenDown(t *testing.T) {
 //
 // On the real disk: a speech model is a folder the speech library loads.
 func TestListeningSaysWhyNothingWasWrittenDown(t *testing.T) {
+	// Not parallel: bubbleLog points the program's one log at this test.
 	bubbleLog(t)
 	synctest.Test(t, func(t *testing.T) {
 		f := listenTo(t, make([]float32, 2*engine.SampleRate))
@@ -157,10 +153,9 @@ func TestListeningSaysWhyNothingWasWrittenDown(t *testing.T) {
 			t.Errorf("silence gives %v, want that the microphone heard nothing", err)
 		}
 
-		standIns.Store(nil)
 		started := false
-		openMicrophone = func() microphone { started = true; return &playingMicrophone{} }
 		f = &FrameFairy{store: memoryStore()}
+		f.listening.mic = func() microphone { started = true; return &playingMicrophone{} }
 		f.store.settings.ASRModel = t.TempDir()
 		if _, err := f.Listen(); err != errNoSpeechModel || started {
 			t.Errorf("without a speech model Listen gives %v and the microphone started %v", err, started)
@@ -175,8 +170,7 @@ func TestListeningSaysWhyNothingWasWrittenDown(t *testing.T) {
 //
 // On the real disk: a speech model is a folder the speech library loads.
 func TestListeningFindsTheInstalledSpeechModel(t *testing.T) {
-	listenWith(t, nil)
-	standIns.Store(nil)
+	testLog(t)
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("FRAMEFAIRY_ASR_MODEL", "")
 	dir := engine.DefaultModelDir()
@@ -189,8 +183,8 @@ func TestListeningFindsTheInstalledSpeechModel(t *testing.T) {
 		}
 	}
 	// The microphone does not start, so nothing tries to load the files.
-	openMicrophone = func() microphone { return brokenMicrophone{} }
 	f := &FrameFairy{store: memoryStore()}
+	f.listening.mic = func() microphone { return brokenMicrophone{} }
 	f.store.settings.ASRModel = ""
 	if _, err := f.Listen(); err == nil || err == errNoSpeechModel {
 		t.Errorf("with the speech model in its usual place Listen gives %v, want it to reach the microphone", err)
@@ -207,6 +201,7 @@ func (brokenMicrophone) stop()                       {}
 // calls without waiting: every recording ends with words or nothing, never
 // a hang, a panic or a race. Plan row 2.189.
 func TestListeningAtOnce(t *testing.T) {
+	// Not parallel: bubbleLog points the program's one log at this test.
 	bubbleLog(t)
 	synctest.Test(t, func(t *testing.T) {
 		f := listenTo(t, tone(1))
@@ -278,7 +273,7 @@ func dictating(t *testing.T, set ...func(*listening)) (*FrameFairy, *talkingMicr
 	t.Helper()
 	f := listenTo(t, nil)
 	mic := &talkingMicrophone{}
-	openMicrophone = func() microphone { return mic }
+	f.listening.mic = func() microphone { return mic }
 	told := make(chan Dictation, 100)
 	f.listening.say = func(d Dictation) { told <- d }
 	for _, s := range set {
@@ -308,6 +303,7 @@ func awaitTold(t *testing.T, told chan Dictation, ok func(Dictation) bool) Dicta
 // Stopping gives every piece, the last included. Tim asked for it.
 // Plan row 2.189.
 func TestWordsAppearWhileTheyAreSaid(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		f, mic, told := dictating(t)
 		mic.say(tone(2))
@@ -336,6 +332,7 @@ func TestWordsAppearWhileTheyAreSaid(t *testing.T) {
 // Dropping a recording drops what was said: the recording ends at once, the window is
 // told nothing more about it, and nothing is left to stop. Plan row 2.189.
 func TestDroppingARecording(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		f, mic, told := dictating(t)
 		mic.say(tone(2))
@@ -369,13 +366,14 @@ func TestDroppingARecording(t *testing.T) {
 // still talking, and says why, rather than letting them talk on for
 // nothing. Plan row 2.189.
 func TestListeningSaysAtOnceWhenTheSpeechModelFails(t *testing.T) {
+	// Not parallel: bubbleLog points the program's one log at this test.
 	bubbleLog(t)
 	synctest.Test(t, func(t *testing.T) {
 		f := listenTo(t, tone(1))
 		broken := &speech{}
 		broken.breaks(errors.New("the file is damaged"))
 		fakes := func(e *engine.Engine, o *engine.Options) { e.OpenRecognizer = broken.open }
-		standIns.Store(&fakes)
+		f.store.standIns = fakes
 		told := make(chan Dictation, 10)
 		f.listening.say = func(d Dictation) { told <- d }
 		if _, err := f.Listen(); err != nil {
@@ -421,12 +419,13 @@ func (sentences) Close() {}
 // it no full stop and the words after it no capital. Tim got "there
 // should be some text. written right in front of me." Plan row 2.189.
 func TestAPauseIsNoFullStop(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		f, mic, told := dictating(t)
 		fakes := func(e *engine.Engine, o *engine.Options) {
 			e.OpenRecognizer = func(string) (engine.Recognizer, error) { return sentences{}, nil }
 		}
-		standIns.Store(&fakes)
+		f.store.standIns = fakes
 		f.CancelListening()
 		if _, err := f.Listen(); err != nil {
 			t.Fatal(err)
@@ -506,7 +505,7 @@ func dictatingTo(t *testing.T, v *voices, set ...func(*listening)) (*FrameFairy,
 	fakes := func(e *engine.Engine, o *engine.Options) {
 		e.OpenRecognizer = func(string) (engine.Recognizer, error) { return v, nil }
 	}
-	standIns.Store(&fakes)
+	f.store.standIns = fakes
 	// The recording dictating started is dropped and over before the
 	// next one starts. Both read the same beats, and one that was still
 	// loading the speech model could take the test's pass in its last
@@ -554,6 +553,7 @@ func room(t *testing.T, mic *talkingMicrophone) {
 // minutes, which the room fills with 6000 pieces of its noise and took
 // over a second.
 func TestListeningStopsByItself(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		// The longest a recording can be is short too, so a quiet stop
 		// that is broken fails at once, on the wrong reason, rather than
@@ -595,6 +595,7 @@ func TestListeningStopsByItself(t *testing.T) {
 // In the bubble the quiet of two minutes passes on a fake clock, and
 // synctest.Wait says when Stop is waiting for the words.
 func TestStopWhileItStopsByItself(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		v := &voices{}
 		f, mic, told := dictatingTo(t, v)
@@ -633,6 +634,7 @@ func TestStopWhileItStopsByItself(t *testing.T) {
 // talked for minutes, and once it hears the room the window is told that
 // too. The review of #190 asked for it. Plan row 2.189.
 func TestAMicrophoneThatHearsNothingIsSaidAtOnce(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		f, mic, told := dictatingTo(t, &voices{})
 		defer f.CancelListening()
@@ -651,6 +653,7 @@ func TestAMicrophoneThatHearsNothingIsSaidAtOnce(t *testing.T) {
 // corrected while the person talks on, and what follows is heard from
 // where they ended. Tim could not click into them. Plan row 2.189.
 func TestClickingWhatIsHeardSettlesIt(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		f, mic, told := dictatingTo(t, &voices{})
 		mic.say(tone(2))
@@ -677,6 +680,7 @@ func TestClickingWhatIsHeardSettlesIt(t *testing.T) {
 // place of that one, which it holds, so nothing is written twice.
 // Plan row 2.189.
 func TestClickingWhatWasHeardBeforeAPause(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		f, mic, told := dictatingTo(t, &voices{})
 		mic.say(tone(2))
@@ -701,6 +705,7 @@ func TestClickingWhatWasHeardBeforeAPause(t *testing.T) {
 // on its own. Tim said a lot quickly and pressed Shift+Enter, and the
 // words written down after went below the new line, issue #573.
 func TestANewLineCutsWhatWasSaidWhereItWasTyped(t *testing.T) {
+	t.Parallel()
 	levels, passes := make(chan time.Time), make(chan time.Time)
 	measured, passed := make(chan struct{}, 1), make(chan struct{}, 1)
 	f, mic, told := dictatingTo(t, &voices{}, func(l *listening) {
@@ -739,6 +744,7 @@ func TestANewLineCutsWhatWasSaidWhereItWasTyped(t *testing.T) {
 // machine would hold up every answer after it. The review of #574 found
 // the pieces' ends unread by any test.
 func TestACutAfterAPauseHoldsOnlyWhatFollowedIt(t *testing.T) {
+	t.Parallel()
 	levels, passes := make(chan time.Time), make(chan time.Time)
 	measured, passed := make(chan struct{}, 1), make(chan struct{}, 1)
 	v := &voices{}
@@ -789,6 +795,7 @@ func TestACutAfterAPauseHoldsOnlyWhatFollowedIt(t *testing.T) {
 // once by the pause after it, and from then on the passes ask the speech
 // model nothing and tell the window nothing, until somebody speaks again.
 func TestSilenceChangesNothing(t *testing.T) {
+	t.Parallel()
 	levels, passes := make(chan time.Time), make(chan time.Time)
 	measured, passed := make(chan struct{}, 1), make(chan struct{}, 1)
 	v := &voices{}
@@ -836,16 +843,17 @@ func TestSilenceChangesNothing(t *testing.T) {
 // testing/synctest bubble, so the speech model is slower than the words on
 // any machine, and by exactly as much.
 func TestASlowSpeechModelIsSaidOnce(t *testing.T) {
+	// Not parallel: bubbleLog points the program's one log at this test.
 	read := bubbleLog(t)
 	synctest.Test(t, func(t *testing.T) {
 		f := listenTo(t, nil)
 		mic := &talkingMicrophone{}
-		openMicrophone = func() microphone { return mic }
+		f.listening.mic = func() microphone { return mic }
 		v := &voices{slow: 3 * listenEvery}
 		fakes := func(e *engine.Engine, o *engine.Options) {
 			e.OpenRecognizer = func(string) (engine.Recognizer, error) { return v, nil }
 		}
-		standIns.Store(&fakes)
+		f.store.standIns = fakes
 		if _, err := f.Listen(); err != nil {
 			t.Fatal(err)
 		}
@@ -882,6 +890,7 @@ func TestASlowSpeechModelIsSaidOnce(t *testing.T) {
 // The bubble's clock is fake, so each piece said is followed by exactly
 // one tenth of a second in which the window is told once.
 func TestTheMicrophoneSaysHowLoud(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		var mu sync.Mutex
 		var levels []float64
@@ -922,6 +931,7 @@ func TestTheMicrophoneSaysHowLoud(t *testing.T) {
 // The bridge hands them, so a walk hears a recording at its own pace,
 // #551.
 func TestARecordingRunsOnTheBeatsItIsHanded(t *testing.T) {
+	t.Parallel()
 	levels, passes := make(chan time.Time), make(chan time.Time)
 	measured, passed := make(chan struct{}, 1), make(chan struct{}, 1)
 	loud := make(chan float64, 10)
@@ -971,6 +981,7 @@ func TestARecordingRunsOnTheBeatsItIsHanded(t *testing.T) {
 // next window took it up again with every word he had said. Plan row
 // 2.244.
 func TestClosingTheReportWindowDropsTheRecording(t *testing.T) {
+	// Not parallel: bubbleLog points the program's one log at this test.
 	read := bubbleLog(t)
 	synctest.Test(t, func(t *testing.T) {
 		f := listenTo(t, tone(30))
@@ -1003,6 +1014,7 @@ func TestClosingTheReportWindowDropsTheRecording(t *testing.T) {
 // Stop a few times in a row, said nothing, and was given "yeah yeah".
 // Plan row 2.244.
 func TestNobodySpeakingIsWrittenDownAsNothing(t *testing.T) {
+	// Not parallel: bubbleLog points the program's one log at this test.
 	read := bubbleLog(t)
 	synctest.Test(t, func(t *testing.T) {
 		room := tone(3)

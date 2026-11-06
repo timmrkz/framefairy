@@ -39,7 +39,7 @@ func (s *FrameFairy) Clips(ctx context.Context, path string) ([]ClipEntry, error
 	// file is gone, and the list stays as it was, so nothing is said twice
 	// and nothing seems lost. Its crops are fitted to the picture it had,
 	// or left as the plan keeps them when the app never saw it.
-	info := sources.lastOf(path)
+	info := s.probes.lastOf(path)
 	if _, err := s.store.files.Stat(path); err == nil {
 		if info, err = s.probe(ctx, path); err != nil {
 			return nil, err
@@ -161,7 +161,7 @@ func (s *FrameFairy) Captions(path, planPath, clipID string) (*engine.CaptionsVi
 		return nil, err
 	}
 	view, err := engine.ClipCaptionsView(summary, clipID, t, s.lookOf(path, summary))
-	captionTracks.keep(path, view)
+	s.previews.tracks.keep(path, view)
 	return view, err
 }
 
@@ -208,20 +208,14 @@ func (s *FrameFairy) lookOf(path string, summary engine.PlanSummary) *engine.Loo
 		theLog.line(zerolog.WarnLevel, "captions").Err(err).Msg("the settings' caption look is not one the render takes")
 		style = plan.CaptionStyle()
 	}
-	return &engine.Look{Style: style, Source: unprobed.source(path)}
+	return &engine.Look{Style: style, Source: s.unprobed.source(path, s.probe)}
 }
 
-// probeVideo reads what the video at path is, its frames among it.
-var probeVideo = func(ctx context.Context, path string) (engine.SourceInfo, error) {
-	return sources.probe(ctx, path)
-}
-
-// unprobed keeps the videos whose frames could not be read, a video on a
-// drive that is not plugged in. A drag on the clip timeline asks for the
-// captions' look on every step, and such a video was asked of ffprobe and
-// warned about on every one of them. It is asked again after a while.
-var unprobed = &failedProbes{since: map[string]time.Time{}}
-
+// failedProbes keeps the videos whose frames could not be read, a video
+// on a drive that is not plugged in. A drag on the clip timeline asks for
+// the captions' look on every step, and such a video was asked of ffprobe
+// and warned about on every one of them. It is asked again after a while.
+// FrameFairy keeps it. Its zero value is ready.
 type failedProbes struct {
 	mu    sync.Mutex
 	since map[string]time.Time
@@ -231,9 +225,10 @@ type failedProbes struct {
 // before it is asked again.
 const probeAgain = 5 * time.Second
 
-// source is what the video at path is, or nothing while it cannot be
-// read. The first failure of a stretch is said, with the reason.
-func (f *failedProbes) source(path string) engine.SourceInfo {
+// source is what probe says the video at path is, or nothing while it
+// cannot be read. The first failure of a stretch is said, with the
+// reason.
+func (f *failedProbes) source(path string, probe func(context.Context, string) (engine.SourceInfo, error)) engine.SourceInfo {
 	f.mu.Lock()
 	failed, known := f.since[path]
 	f.mu.Unlock()
@@ -242,13 +237,16 @@ func (f *failedProbes) source(path string) engine.SourceInfo {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	source, err := probeVideo(ctx, path)
+	source, err := probe(ctx, path)
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if err != nil {
 		if !known {
 			theLog.line(zerolog.WarnLevel, "captions").Str("video", filepath.Base(path)).Err(err).
 				Msg("the video's frames are not known, so its captions are timed on the plan's clock")
+		}
+		if f.since == nil {
+			f.since = map[string]time.Time{}
 		}
 		f.since[path] = time.Now()
 		return engine.SourceInfo{}
@@ -294,7 +292,7 @@ func (s *FrameFairy) ArrivingCaptions(jobID string, n int) (*engine.CaptionsView
 				// its captions are then in the plan's own style.
 				summary, _ := s.heldPlan(j.Episode, plan)
 				view := engine.ArrivingCaptionsView(summary, u, t, s.lookOf(j.Episode, summary))
-				captionTracks.keep(j.Episode, view)
+				s.previews.tracks.keep(j.Episode, view)
 				return view, nil
 			}
 		}

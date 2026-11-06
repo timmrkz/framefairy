@@ -29,7 +29,7 @@ func TestTheCaptionsRouteDrawsAViewsCaptions(t *testing.T) {
 	// On the real disk: the decoder is a program of its own and reads the
 	// episode and the caption file from there.
 	svc, mine, view := captionsEpisode(t)
-	handler := mediaMiddleware(svc.store)(http.NotFoundHandler())
+	handler := mediaMiddleware(svc)(http.NotFoundHandler())
 	draw := func(q url.Values) (*httptest.ResponseRecorder, framewire.Layer) {
 		t.Helper()
 		rec := httptest.NewRecorder()
@@ -147,7 +147,7 @@ func TestTheWordFramesRouteSaysWhereLibassPutTheWords(t *testing.T) {
 	// On the real disk: the words are measured by ffmpeg, which reads the
 	// caption file from there.
 	svc, mine, view := captionsEpisode(t)
-	handler := mediaMiddleware(svc.store)(http.NotFoundHandler())
+	handler := mediaMiddleware(svc)(http.NotFoundHandler())
 	ask := func(q url.Values) (int, [][]engine.WordFrame) {
 		t.Helper()
 		rec := httptest.NewRecorder()
@@ -247,7 +247,7 @@ func captionsEpisode(t *testing.T) (*FrameFairy, string, *engine.CaptionsView) {
 // episode and the caption file from there.
 func TestTheCaptionsRouteAnswersManyAtOnce(t *testing.T) {
 	svc, mine, view := captionsEpisode(t)
-	handler := mediaMiddleware(svc.store)(http.NotFoundHandler())
+	handler := mediaMiddleware(svc)(http.NotFoundHandler())
 	type ask struct {
 		at, size, draft int
 	}
@@ -368,7 +368,7 @@ func TestTheCaptionsOfAVideoWhoseFolderIsGoneWriteNothingBack(t *testing.T) {
 	// On the real disk: the decoder is a program of its own and reads the
 	// episode and the caption file from there.
 	svc, mine, view := captionsEpisode(t)
-	handler := mediaMiddleware(svc.store)(http.NotFoundHandler())
+	handler := mediaMiddleware(svc)(http.NotFoundHandler())
 	if err := os.RemoveAll(engine.WorkDir(mine)); err != nil {
 		t.Fatal(err)
 	}
@@ -395,17 +395,15 @@ func TestTheCaptionsOfAVideoWhoseFolderIsGoneWriteNothingBack(t *testing.T) {
 // while, see unprobed.
 func TestTheLookOfAVideoThatCannotBeReadIsAskedOnce(t *testing.T) {
 	// On the real disk: ffprobe is asked for the video, which is not there.
-	// Not parallel: it replaces probeVideo for the whole package.
+	// Not parallel: it reads what the package's log wrote.
 	svc, mine, _ := library(t)
 	_, read := testLog(t)
 	plan := filepath.Join(engine.LogsDir(mine), "clips.json")
 	asked := 0
-	was := probeVideo
-	probeVideo = func(ctx context.Context, path string) (engine.SourceInfo, error) {
+	svc.probeVideo = func(ctx context.Context, path string) (engine.SourceInfo, error) {
 		asked++
-		return was(ctx, path)
+		return svc.probeOnDisk(ctx, path)
 	}
-	t.Cleanup(func() { probeVideo = was })
 	for range 20 {
 		if look := svc.captionLook(mine, plan); look.Source.FPSNum != 0 {
 			t.Fatalf("a video that is not there has frames: %+v", look.Source)

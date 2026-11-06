@@ -88,7 +88,7 @@ var errNotKept = errors.New("is not a picture or a screen recording")
 // else its file held, and takes a still of its first frame for the tile.
 // It gives the recording's size and length, the ending it is kept under,
 // the still as a PNG and the recording.
-func (g handed) recording(m *engine.Machine, reader string) (ReportPicture, []byte, []byte, error) {
+func (g handed) recording(m *engine.Machine, reader string, decoding func()) (ReportPicture, []byte, []byte, error) {
 	// On the real disk: ffprobe and ffmpeg read the recording from a file
 	// of the app's own, which is gone again when this returns.
 	dir, err := os.MkdirTemp("", "framefairy-recording-")

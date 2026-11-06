@@ -437,10 +437,16 @@
   // seen as a blink by Tim.
   let sentencesAsked = 0;
   let sentencesOf = "";
+  // Whether the video's state and its picture are in as the workspace
+  // opens, see openEpisode. The sentences are asked for once they are:
+  // asked before, with a length of nothing for the video, they were asked
+  // again the moment its length came, and the first answer was thrown
+  // away.
+  let stateRead = $state(false);
   $effect(() => {
     const of = path;
     const key = `${savedKey}|${cutsKey}|${captionsChanged}`;
-    if (!saved.length) return;
+    if (!saved.length || !stateRead) return;
     // While the search is closed, what was read stays until it opens.
     if (!saying && sentencesOf.startsWith(`${of}|`)) return;
     if (sentencesOf === `${of}|${key}`) return;
@@ -1197,6 +1203,18 @@
     }
   }
 
+  // The video's state read as the workspace opens. Nothing was edited, so
+  // a clip that is as the session already had it stays the very same
+  // clip: taken as new, the clip on screen asked for its captions and its
+  // sentences a second time while the first ask was still on its way.
+  async function readClips() {
+    try {
+      session.take(await api.state(path));
+    } catch (err) {
+      oops(errorText(err));
+    }
+  }
+
   // The workspace opening: where the playhead opens comes first, before
   // anything else is asked. The video's state, which says the clip it was
   // last worked on, and its picture are asked at once, the video preview
@@ -1207,7 +1225,7 @@
   async function openEpisode() {
     try {
       const [, picture] = await Promise.all([
-        refreshClips(),
+        readClips(),
         // A file that is missing has no picture to say.
         api.source(path).catch(() => null),
       ]);
@@ -1216,6 +1234,7 @@
       );
       if (!status) return;
       if (!status.missing) source = picture;
+      stateRead = true;
       keepRemovedTrue();
       // The video preview is drawn for the picture before the clip is
       // shown, so showing it puts the playhead there. The Go side opens a
@@ -1228,6 +1247,7 @@
     } catch (err) {
       oops(errorText(err));
     } finally {
+      stateRead = true;
       opened = true;
       tell(`opened, the playhead at ${time.toFixed(3)} s`);
     }

@@ -140,6 +140,10 @@ type reporting struct {
 	stop func()
 	// The video of the last act that named one, which a report names.
 	video string
+	// decoding is told each time a picture or a recording handed to the
+	// report is about to be decoded. A test hands in its own, to hold a
+	// decode and see that nothing waits on it.
+	decoding func()
 }
 
 func newReporting(machine *engine.Machine, dir string) *reporting {
@@ -530,7 +534,7 @@ func (r *reporting) attach(how string, all []handed) ReportDraft {
 	got := make([]read, len(all))
 	for i, g := range all {
 		got[i].name = tidyName(g.name)
-		got[i].pic, got[i].body, got[i].film, got[i].err = g.attachment(r.machine)
+		got[i].pic, got[i].body, got[i].film, got[i].err = g.attachment(r.machine, r.decoding)
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -580,14 +584,13 @@ func (r *reporting) attach(how string, all []handed) ReportDraft {
 	return r.shown(strings.Join(why, ". "))
 }
 
-// decoding is told each time a picture is about to be decoded. A test
-// puts its own in here, to hold a decode and see that nothing waits on it.
-var decoding = func() {}
-
 // attachment reads what was handed to the report: a picture, see picture,
 // or a screen recording, see recording.go. It gives the picture, or the
 // still of the recording, as a PNG, and the recording.
-func (g handed) attachment(m *engine.Machine) (ReportPicture, []byte, []byte, error) {
+func (g handed) attachment(m *engine.Machine, decoding func()) (ReportPicture, []byte, []byte, error) {
+	if decoding == nil {
+		decoding = func() {}
+	}
 	if g.err != nil {
 		return ReportPicture{}, nil, nil, g.err
 	}
@@ -595,16 +598,16 @@ func (g handed) attachment(m *engine.Machine) (ReportPicture, []byte, []byte, er
 		return ReportPicture{}, nil, nil, errTooBig
 	}
 	if reader := sniffRecording(g.data); reader != "" {
-		return g.recording(m, reader)
+		return g.recording(m, reader, decoding)
 	}
-	pic, body, err := g.picture()
+	pic, body, err := g.picture(decoding)
 	return pic, body, nil, err
 }
 
 // picture decodes a picture handed to the report and writes it again as a
 // PNG of its pixels alone, so nothing else the file held, a photo's place
 // or its camera, goes with a report.
-func (g handed) picture() (ReportPicture, []byte, error) {
+func (g handed) picture(decoding func()) (ReportPicture, []byte, error) {
 	cfg, format, err := image.DecodeConfig(bytes.NewReader(g.data))
 	if err != nil || (format != "png" && format != "jpeg") {
 		return ReportPicture{}, nil, errNotKept

@@ -506,23 +506,21 @@ func TestAModelDeletedOrAddedOutsideTheAppIsSentToTheWindowAtOnce(t *testing.T) 
 // at once too.
 //
 // On the real disk: the watch hears the models folder the app looks in, in
-// a home of the test's own. It replaces the download the setup installs
-// with, which every test in the package shares, so it is not parallel.
+// a home of the test's own. It sets HOME for the whole process, so it is
+// not parallel.
 func TestAModelTheFirstRunDownloadedIsWatched(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	models := engine.ModelsDir()
 	model := engine.LanguageModels()[0]
-	was := installLanguage
-	installLanguage = func(_ *engine.Machine, _ context.Context, _ *runlog.Log, m engine.LanguageModel, dir string) error {
+
+	svc := &FrameFairy{store: openStoreIn(afero.NewOsFs(), filepath.Join(home, "config"))}
+	svc.installLanguage = func(_ *engine.Machine, _ context.Context, _ *runlog.Log, m engine.LanguageModel, dir string) error {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return err
 		}
 		return os.WriteFile(filepath.Join(dir, m.Name), []byte("GGUF a model"), 0o644)
 	}
-	t.Cleanup(func() { installLanguage = was })
-
-	svc := &FrameFairy{store: openStoreIn(afero.NewOsFs(), filepath.Join(home, "config"))}
 	ended := make(chan Job, 8)
 	svc.jobs = newQueue(svc.store, func(u JobUpdate) {
 		if u.Job.Kind == "llm" && u.Job.State != JobQueued && u.Job.State != JobRunning {
