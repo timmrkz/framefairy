@@ -1344,26 +1344,38 @@ export const steps = {
   },
   // ["played through"] since "drag while playing", the play went on as if
   //                    no hand were there: the playhead never went back nor
-  //                    stood still for longer than a frame of the video and
-  //                    150 ms, since it moves once a frame (#446), and no
-  //                    frame drawn was older than the one before it
+  //                    stood still for more of the page's refreshes than a
+  //                    frame of the video and 150 ms take, since it moves
+  //                    once a frame (#446), and no frame drawn was older
+  //                    than the one before it
   async "played through"(walk) {
     const { page } = walk;
     const played = await page.evaluate(() => window.__played ?? []);
     const frame = 1000 / (await rate(page));
+    // Counted in refreshes, not in milliseconds: the playhead can only be
+    // seen to move when the page refreshes, and WebKit with motion on a
+    // busy runner refreshed three times a second. A frame of 200 ms then
+    // stood for a refresh or two, 390 ms by the page's clock with no
+    // frame late, and a limit in milliseconds failed it, issue #715. A
+    // refresh is the typical gap between two of the page's frames.
+    const gaps = played.slice(1).map(([t], i) => t - played[i][0]).sort((a, b) => a - b);
+    const refresh = gaps[Math.floor(gaps.length / 2)] ?? 1000 / 60;
+    const most = Math.ceil((frame + 150) / refresh);
     let still = 0;
     let longest = 0;
     for (let i = 1; i < played.length && !walk.wrong; i++) {
-      const [t, at, n] = played[i];
-      const [t0, at0, n0] = played[i - 1];
+      const [, at, n] = played[i];
+      const [, at0, n0] = played[i - 1];
       if (at < at0 - 1e-6) walk.wrong = `the playhead went back from ${at0.toFixed(3)} to ${at.toFixed(3)} while the hand was on the edge`;
       else if (n >= 0 && n0 >= 0 && n < n0) walk.wrong = `frame ${n} was drawn after frame ${n0} while the hand was on the edge`;
-      if (at === at0) still += t - t0;
+      if (at === at0) still++;
       else still = 0;
       longest = Math.max(longest, still);
     }
     if (!walk.wrong && played.length < 30) walk.wrong = `only ${played.length} animation frames were read`;
-    if (!walk.wrong && longest > frame + 150) walk.wrong = `the playhead stood still for ${longest.toFixed(0)} ms while the hand was on the edge, a frame is ${frame.toFixed(0)} ms`;
+    if (!walk.wrong && longest > most) {
+      walk.wrong = `the playhead stood still for ${longest} refreshes while the hand was on the edge, ${most} at most at ${refresh.toFixed(0)} ms a refresh, a frame is ${frame.toFixed(0)} ms`;
+    }
   },
   // ["stopped at its end"]
   //                    since "loop off near the end", the presses of L
