@@ -728,3 +728,23 @@ func logged(w http.ResponseWriter, r *http.Request, serve func(http.ResponseWrit
 	}
 	ev.Int("status", rec.status).Int64("bytes", rec.bytes).Int64("ms", took.Milliseconds()).Msg(what)
 }
+
+// jobSaid writes what the engine of a job said into the app's log: a
+// warning at warn and a line of news, which decoder framed a video or how
+// long the model took to load, at info. Only warnings reached it before,
+// so no report said whether framing ran on the graphics chip, and a check
+// that turned the chip off on every Mac went unseen for three weeks.
+// A job's progress, steps and details stay in its own log.
+func jobSaid(job *Job, ev runlog.Event) {
+	level := zerolog.InfoLevel
+	if ev.Kind == runlog.EventWarn {
+		level = zerolog.WarnLevel
+	}
+	theLog.jobLine(level, job).Msg(ev.Text)
+}
+
+// inTheAppLog says whether a job's engine event goes into the app's log,
+// see jobSaid.
+func inTheAppLog(kind runlog.EventKind) bool {
+	return kind == runlog.EventWarn || kind == runlog.EventInfo
+}
