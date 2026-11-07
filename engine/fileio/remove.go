@@ -33,7 +33,7 @@ func RemoveFolderIn(fsys afero.Fs, path string) error {
 	}
 	if info.IsDir() {
 		if err := emptyFolder(path, info); err != nil {
-			return err
+			return fmt.Errorf("the folder %s could not be deleted: %w", path, err)
 		}
 	}
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {

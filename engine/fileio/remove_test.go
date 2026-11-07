@@ -159,3 +159,24 @@ func TestAWorkFolderInMemoryIsDeleted(t *testing.T) {
 		t.Errorf("the video is %q, %v", got, err)
 	}
 }
+
+// A link put where the work folder was, after the delete looked and
+// before it opened the folder, leads somewhere else, and nothing there is
+// deleted. Lstat cannot be made to look at one folder and OpenRoot open
+// another in a test, so the test hands emptyFolder what Lstat said of
+// another folder, which is what the swap looks like from inside.
+//
+// On the real disk: os.SameFile tells two folders apart only there.
+func TestAFolderSwappedWhileItIsDeletedIsLeftAlone(t *testing.T) {
+	video, work := aWorkFolder(t, t.TempDir())
+	looked, err := os.Lstat(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := emptyFolder(work, looked); err == nil {
+		t.Error("a folder other than the one looked at was emptied without a word")
+	}
+	kept(t, filepath.Join(work, "added.json"), `{"added":"2026-11-06T10:31:57Z"}`)
+	kept(t, filepath.Join(work, "logs", "a.json"), "{}")
+	kept(t, video, "the video")
+}

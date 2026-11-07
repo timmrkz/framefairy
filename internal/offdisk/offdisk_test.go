@@ -188,7 +188,8 @@ func programsWritten(name string, src []byte) ([]string, error) {
 
 // aFolder says whether a mode is os.ModeDir with a number, the mode of a
 // folder, which no program is. A folder's bit for running is the one that
-// lets it be searched.
+// lets it be searched. os.Chmod takes no notice of os.ModeDir, so it is
+// only how a test says the path is a folder, and the check takes its word.
 func aFolder(mode ast.Expr) bool {
 	or, ok := mode.(*ast.BinaryExpr)
 	if !ok || or.Op != token.OR {
