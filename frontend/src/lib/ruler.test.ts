@@ -76,6 +76,24 @@ describe("dragStep", () => {
     expect(dragStep(20000, 300, 900)).toBe(900);
   });
 
+  test("lands on every line of the ruler the range picker draws, at any width", () => {
+    // What Tim asked for, over videos of ten minutes to ten hours and
+    // range pickers from narrow to wide, with times from 4:00 to 10:00:00
+    // wide: every line is a whole number of steps from the start, and a
+    // step is about eight pixels or more unless it is the ruler's own.
+    for (const duration of [600, 1503, 3600, 4500, 7200, 9609.58, 14423, 36000]) {
+      for (let width = 300; width <= 2000; width += 10) {
+        for (const label of [25, 32, 46]) {
+          const ruler = rulerStep(duration, width, label, pickerSteps(duration));
+          const step = dragStep(duration, width, ruler);
+          const at = `${duration} s on ${width} px`;
+          expect(ruler % step, at).toBe(0);
+          if (step !== ruler) expect((step / duration) * width, at).toBeGreaterThanOrEqual(8);
+        }
+      }
+    }
+  });
+
   test("is the ruler's own step when no round step fits", () => {
     expect(dragStep(100 * 3600, 50, 7200)).toBe(7200);
   });
