@@ -55,7 +55,7 @@
   import { rgbToHex } from "../lib/colour";
   import { asleep, keysElsewhere } from "../lib/keys";
   import { pictureOf, pieceHolding, rotationAt, shownAt } from "../lib/rotate";
-  import { glidingLeft } from "../lib/glide";
+  import { heldLeft } from "../lib/keyframes";
 
   let {
     path,
@@ -705,27 +705,28 @@
   });
 
   // The left edge of the crop on the frame on the canvas, in pixels of the
-  // picture: gliding over the piece's keyframes frame by frame while the
-  // clip plays, the way the render crops it, or standing still. Plan row
-  // 3.26.
+  // picture: that of the piece's keyframe it holds from, switching on each
+  // keyframe's frame while the clip plays, the way the render crops it, or
+  // the piece's own. Plan row 3.26 and #750.
   const cropLeft = $derived.by(() => {
     if (!clip || cropped < 0 || !picture.width || !picture.cropWidth) return null;
     return leftOn(clip, cropped, frameAt, picture, place !== "video");
   });
 
   // The left edge of the crop of a piece on the frame that starts at a
-  // moment, in pixels of the picture, gliding or standing still.
+  // moment, in pixels of the picture, held from a keyframe or the piece's
+  // own.
   function leftOn(
     c: ClipEntry,
     at: number,
     frame: number,
     pic: { width: number; cropWidth: number },
-    glides: boolean,
+    steered: boolean,
   ): number {
-    const gliding = glides
-      ? glidingLeft(c.segments[at]?.marks, frame, source.fps, source.videoStart ?? 0, pic.cropWidth, pic.width)
+    const held = steered
+      ? heldLeft(c.segments[at]?.marks, frame, source.fps, source.videoStart ?? 0, pic.cropWidth, pic.width)
       : null;
-    return gliding ?? c.cropLefts[at] ?? (pic.width - pic.cropWidth) / 2;
+    return held ?? c.cropLefts[at] ?? (pic.width - pic.cropWidth) / 2;
   }
 
   // The crop's left edge as the video preview shows it now, which a crop

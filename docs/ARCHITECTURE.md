@@ -250,7 +250,7 @@ copies what it finds nearby, so these are not the pattern for new code.
 
 - Rules of the engine in `frontend/src/lib/flow.ts` and
   `frontend/src/lib/rotate.ts`, and the two held to Go by a shared case
-  file, `frontend/src/lib/glide.ts` and `frontend/src/lib/flow.ts`'s
+  file, `frontend/src/lib/keyframes.ts` and `frontend/src/lib/flow.ts`'s
   frames, #610.
 
 ## Changing the architecture

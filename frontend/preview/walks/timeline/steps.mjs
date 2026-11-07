@@ -1581,6 +1581,18 @@ export const steps = {
       };
     }, arg);
   },
+  // ["playhead at", share]
+  //                    a click on the clip timeline puts the playhead that
+  //                    share of the way from the clip's start to its end,
+  //                    and the video preview shows the frame there
+  async "playhead at"(walk, arg) {
+    const { page } = walk;
+    const g = await handles(page);
+    const from = g.start.x + g.start.w;
+    await clickOnTrack(page, from + arg * (g.end.x - from), high(g.track));
+    await settle(page);
+    await shownOnPlayhead(page);
+  },
   // ["playhead on", edge]
   //                    the playhead is on the frame the clip's "start" or
   //                    "end" edge is on

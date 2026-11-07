@@ -724,7 +724,7 @@ export async function engineState(page, at, clips = null) {
     };
     const [captions, clips] = await Promise.all([ask("Captions", [path, plan, clip]), read ?? ask("Clips", [path])]);
     const entry = clips.find((c) => c.plan === plan && (c.id === clip || c.basename === clip));
-    // Each piece with its crop, the keyframes that glide it and its
+    // Each piece with its crop, the keyframes that steer it and its
     // rotation, which are steps of the history as the edges are, issue
     // #248.
     const pieces = (entry?.segments ?? []).map((s) => ({ start: s.start, end: s.end, cropX: s.cropX ?? null, marks: s.marks ?? [], rotate: s.rotate ?? 0 }));

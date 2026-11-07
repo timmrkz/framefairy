@@ -12,20 +12,19 @@ import (
 	"framefairy/engine/num"
 )
 
-// A crop that follows, plan row 3.26. A person puts keyframes on frames
-// of a clip, the way thumbnails are put, each with the crop where it
-// stands on that frame. No keyframe, or one, is a crop that stands still. Two
-// or more make it move: it glides from each keyframe to the next over the
-// whole time between them, easing out of the first and into the next, so
-// the tempo is where the keyframes are, and two keyframes a frame apart are an
-// instant move. See docs/ROTATE-AND-FOLLOW.md.
+// Keyframes, plan row 3.26 and #750. A person puts keyframes on frames of
+// a clip, the way thumbnails are put, each with the crop where it stands on
+// that frame. A keyframe is a turning point: the crop switches on its frame
+// and holds until the next keyframe, and before the first it is the clip's
+// own. So one keyframe where the camera switches is all a switch takes,
+// and the crop after it moves without the crop before it. See
+// docs/ROTATE-AND-FOLLOW.md.
 //
 // A mark is a moment of the video, like a thumbnail, and belongs to the
 // turn the picture had when the mark was placed. The keyframes that steer
-// a piece are those of its turn in the whole clip, so a glide goes on
-// across a cut by the clip's clock, the time the short plays, with nothing of the time the
-// cut took out. A glide used to stop at a cut, so a keyframe before one and
-// the next after it did not glide at all, found by Tim, plan row 2.238. A
+// a piece are those of its turn in the whole clip, so a keyframe holds
+// across a cut by the clip's clock, the time the short plays, with nothing
+// of the time the cut took out. A
 // rotated part is turned another way, so its crop still starts at its cut. A
 // keyframe a trim or a cut left outside the clip stays in the plan and
 // comes back with its piece. A part rotated again keeps its keyframes,
@@ -124,8 +123,8 @@ func readCropMarks(raw any, spans []Rotation) []CropMark {
 // is rotated, see rotationOf. A keyframe that lies in no piece
 // steers nothing. A keyframe is given to a piece at the moment of the video
 // it would be at on that piece's stretch were nothing cut out, the clip's
-// clock read from the piece's start, so the glide, which is worked out on
-// frames of the video, runs across a cut the way the short plays it. In
+// clock read from the piece's start, so the crop, which is worked out on
+// frames of the video, holds across a cut the way the short plays it. In
 // the piece's own part, where nothing is cut out, that is its own moment.
 func markedPieces(segments []Segment, turns []int, marks []CropMark) {
 	if len(marks) == 0 {
@@ -168,7 +167,7 @@ func markedPieces(segments []Segment, turns []int, marks []CropMark) {
 
 // markFrame is the frame of the video a moment means, by the frame rate
 // and the grid the frames are on, see nearestFrame, and the millisecond
-// where the rate is not known. The glide is worked out on these.
+// where the rate is not known. The crop is worked out on these.
 func (s SourceInfo) markFrame(at float64) int64 {
 	if s.FPSNum <= 0 || s.FPSDen <= 0 {
 		return int64(math.Round(at * 1000))
@@ -223,145 +222,108 @@ func (s SourceInfo) onFrames(marks []CropMark, cropW, width int) []frameMark {
 	return out
 }
 
-// glideX is the left edge of the crop on frame k, gliding over keyframes on
-// frames in order. Before the first keyframe it stands where the first is,
-// after the last where the last is. Between two it moves the whole way,
-// by smoothstep, u²(3-2u), which starts and settles gently the way a
-// camera operator pans.
+// heldX is the left edge of the crop on frame k: that of the last keyframe
+// on or before it, or base, the crop of the piece, before the first. A
+// keyframe is a turning point, Tim's word on #750: the crop switches on its
+// frame and holds until the next keyframe, so one keyframe at a camera
+// switch is all a switch takes. The crop used to glide from one keyframe
+// to the next, so one keyframe stood still and a switch took two, a frame
+// apart.
 //
-// The edge is not rounded to a pixel of the picture. A slow glide moves
-// less than a pixel a frame, and rounded it stood still for frames and
-// then jumped, which was the stutter Tim saw on #192. The render places
-// it to the pixel of the short instead, see glideCrop.
-//
-// The render works the same sum out in ffmpeg, see glideExpr, and the
-// video preview in lib/glide.ts, step by step in the same order, each a
-// double rounded on its own, so the three agree. Each step is converted
-// on its own here, which keeps Go from fusing a multiply and an add into
-// one instruction, as it may on arm64.
-func glideX(marks []frameMark, k int64) float64 {
-	if k <= marks[0].k {
-		return float64(marks[0].x)
-	}
-	for i := 1; i < len(marks); i++ {
-		b := marks[i]
-		if k >= b.k {
-			continue
+// The render works the same choice out in ffmpeg, see holdExpr, and the
+// video preview in lib/keyframes.ts, so the three agree on every frame.
+func heldX(marks []frameMark, k int64, base int) int {
+	x := base
+	for _, m := range marks {
+		if m.k > k {
+			break
 		}
-		a := marks[i-1]
-		u := float64(k-a.k) / float64(b.k-a.k)
-		ease := float64(float64(u*u) * float64(3-float64(2*u)))
-		return float64(a.x) + float64(float64(b.x-a.x)*ease)
+		x = m.x
 	}
-	return float64(marks[len(marks)-1].x)
+	return x
 }
 
-// glideMargin is how much wider than the crop the render first cuts a
-// gliding crop out of the picture, on an even pixel, so the rest of the
-// way can be taken to the pixel of the short.
-const glideMargin = 2
-
-// glideCrop is how the render places a gliding crop whose left edge is x
-// on a picture so wide: first a cut glideMargin wider than the crop, on
-// the even pixel at or left of x, kept inside the picture, and then, once
-// that is scaled to wide pixels, the crop from off pixels into it. scaled
-// is how many pixels wide the cut is once scaled, and its own width where
-// it is not. glideExpr writes the same steps for ffmpeg.
-func glideCrop(x float64, cropW, width, scaled int) (cut, off int) {
-	most := width - cropW - glideMargin
-	most -= most % 2
-	at := min(float64(2*math.Floor(float64(x/2))), float64(most))
-	in := float64(float64(float64(x-at)*float64(scaled)) / float64(cropW+glideMargin))
-	return int(at), int(math.Floor(float64(in + 0.5)))
-}
-
-// glideExpr is glideX as an ffmpeg expression for the crop filter of a
-// piece whose first frame is frame first of the video, see glideCrop for
-// the two steps the render takes with it. The crop filter
-// counts the frames it is given as n, from nought, so frame k of the video
-// is n+first. Every step is written in the order glideX takes it. The
-// stretches between keyframes are found by halving, so the expression nests
-// as deep as the number of keyframes has binary digits: ffmpeg refuses one
-// nested deeper than a hundred, and one if per keyframe made a clip of ninety
-// keyframes unrenderable.
-func glideExpr(marks []frameMark, first int64) string {
+// holdExpr is heldX as an ffmpeg expression for the crop filter of a piece
+// whose first frame is frame first of the video, starting at the left edge
+// start and switching to each of steps on its frame. The crop filter counts
+// the frames it is given as n, from nought, so frame k of the video is
+// n+first. The switches are found by halving, so the expression nests as
+// deep as the number of keyframes has binary digits: ffmpeg refuses one
+// nested deeper than a hundred, and one if per keyframe made a clip of
+// ninety keyframes unrenderable.
+func holdExpr(start int, steps []frameMark, first int64) string {
 	k := "(n+" + strconv.FormatInt(first, 10) + ")"
 	if first < 0 {
 		k = "(n-" + strconv.FormatInt(-first, 10) + ")"
 	}
-	last := marks[len(marks)-1]
-	if len(marks) == 1 {
-		return strconv.Itoa(last.x)
+	// value i is start for nought and the left edge of steps[i-1] after.
+	value := func(i int) int {
+		if i == 0 {
+			return start
+		}
+		return steps[i-1].x
 	}
-	// The glide over the stretches lo to hi, stretch i running from keyframe
-	// i-1 to keyframe i.
-	var between func(lo, hi int) string
-	between = func(lo, hi int) string {
+	var pick func(lo, hi int) string
+	pick = func(lo, hi int) string {
 		if lo == hi {
-			a, b := marks[lo-1], marks[lo]
-			u := fmt.Sprintf("((%s-%d)/%d)", k, a.k, b.k-a.k)
-			return fmt.Sprintf("(%d+%d*(%s*%s*(3-2*%s)))", a.x, b.x-a.x, u, u, u)
+			return strconv.Itoa(value(lo))
 		}
 		mid := (lo + hi + 1) / 2
-		return fmt.Sprintf("if(lt(%s,%d),%s,%s)", k, marks[mid-1].k, between(lo, mid-1), between(mid, hi))
+		return fmt.Sprintf("if(lt(%s,%d),%s,%s)", k, steps[mid-1].k, pick(lo, mid-1), pick(mid, hi))
 	}
-	return fmt.Sprintf("if(lte(%s,%d),%d,if(gte(%s,%d),%d,%s))", k, marks[0].k, marks[0].x, k, last.k, last.x, between(1, len(marks)-1))
+	return pick(0, len(steps))
 }
 
 // cropFilters are the filters that crop a piece for the render and scale
 // it to outW by outH, or leave it as cropped where those are the crop's
-// own size. A crop that stands still is one cut on an even pixel. One
-// that glides is cut glideMargin wider on an even pixel, scaled, and
-// cropped again to the pixel of the short, see glideCrop, in deep, the
-// picture's colours with no chroma shared between two columns, so the
-// last crop can start on any of them.
-func (s SourceInfo) cropFilters(seg Segment, cropW, cropH, cropY, width, outW, outH int, scale, deep string) []string {
-	still := func(x int) []string {
-		out := []string{fmt.Sprintf("crop=%d:%d:%d:%d", cropW, cropH, x, cropY)}
+// own size. Every left edge is on an even pixel, the way the colours of a
+// picture are shared between two columns, so a crop that switches at its
+// keyframes is one crop filter whose left edge is worked out on every
+// frame, see holdExpr.
+func (s SourceInfo) cropFilters(seg Segment, cropW, cropH, cropY, width, outW, outH int, scale string) []string {
+	scaled := func(crop string) []string {
+		out := []string{crop}
 		if outW != cropW || outH != cropH {
 			out = append(out, fmt.Sprintf("scale=%d:%d:%s", outW, outH, scale))
 		}
 		return out
 	}
+	base := ClampCropX(seg.CropX, cropW, width)
 	if len(seg.Marks) == 0 {
-		return still(ClampCropX(seg.CropX, cropW, width))
+		return scaled(fmt.Sprintf("crop=%d:%d:%d:%d", cropW, cropH, base, cropY))
 	}
 	marks := s.onFrames(seg.Marks, cropW, width)
-	first := s.markFrame(seg.Start)
-	if s.FPSNum > 0 && s.FPSDen > 0 {
-		first, _ = s.pieceFrames(seg.Start, seg.End)
+	if s.FPSNum <= 0 || s.FPSDen <= 0 {
+		return scaled(fmt.Sprintf("crop=%d:%d:%d:%d", cropW, cropH, heldX(marks, s.markFrame(seg.Start), base), cropY))
 	}
-	moves := false
+	first, end := s.pieceFrames(seg.Start, seg.End)
+	start := heldX(marks, first, base)
+	// The switches inside the piece, each to a crop other than the one
+	// before it.
+	var steps []frameMark
+	x := start
 	for _, m := range marks {
-		moves = moves || m.x != marks[0].x
+		if m.k <= first || m.k >= end || m.x == x {
+			continue
+		}
+		steps = append(steps, m)
+		x = m.x
 	}
-	if !moves || width-cropW < glideMargin || s.FPSNum <= 0 || s.FPSDen <= 0 {
-		return still(ClampCropX(intPtr(int(glideX(marks, first))), cropW, width))
+	if len(steps) == 0 {
+		return scaled(fmt.Sprintf("crop=%d:%d:%d:%d", cropW, cropH, start, cropY))
 	}
-	scaled := cropW + glideMargin
-	if outW != cropW || outH != cropH {
-		scaled = int(math.Round(float64(scaled) * float64(outW) / float64(cropW)))
-	}
-	most := width - cropW - glideMargin
-	most -= most % 2
-	x := glideExpr(marks, first)
-	at := fmt.Sprintf("min(2*floor(%s/2),%d)", x, most)
-	out := []string{fmt.Sprintf("crop=%d:%d:'%s':%d", cropW+glideMargin, cropH, at, cropY)}
-	if scaled != cropW+glideMargin {
-		out = append(out, fmt.Sprintf("scale=%d:%d:%s", scaled, outH, scale))
-	}
-	return append(out, "format="+deep,
-		fmt.Sprintf("crop=%d:%d:'floor((%s-%s)*%d/%d+0.5)':0:exact=1", outW, outH, x, at, scaled, cropW+glideMargin))
+	return scaled(fmt.Sprintf("crop=%d:%d:'%s':%d", cropW, cropH, holdExpr(start, steps, first), cropY))
 }
 
 // CropAt is the left edge of a piece's crop on the frame that holds a
-// moment, on the picture: still, or gliding over its keyframes, where the
-// render places it to the pixel of the short.
-func (s SourceInfo) CropAt(seg Segment, at float64, cropW, width int) float64 {
+// moment, on the picture: that of the keyframe it holds from, or the
+// piece's own.
+func (s SourceInfo) CropAt(seg Segment, at float64, cropW, width int) int {
+	base := ClampCropX(seg.CropX, cropW, width)
 	if len(seg.Marks) == 0 {
-		return float64(ClampCropX(seg.CropX, cropW, width))
+		return base
 	}
-	return glideX(s.onFrames(seg.Marks, cropW, width), s.frameHolding(at))
+	return heldX(s.onFrames(seg.Marks, cropW, width), s.frameHolding(at), base)
 }
 
 // cropMarksOf is the keyframes a clip of a plan being edited has, as the
@@ -449,7 +411,7 @@ func SetCropMark(fsys afero.Fs, planPath, clipID string, from, to float64, x int
 			// from is the keyframe's own moment, so it is found on its own
 			// frame, wherever in the frame a hand edit or an older plan
 			// put it. Two keyframes a hand edit put on one frame go together,
-			// the later one moving, because the glide only ever used it.
+			// the later one moving, because the crop only ever used it.
 			for i := range marks {
 				if frames.markFrame(marks[i].At) == frames.markFrame(from) {
 					m := marks[i]
@@ -489,27 +451,21 @@ func SetCropMark(fsys afero.Fs, planPath, clipID string, from, to float64, x int
 }
 
 // cropShown is the left edge of the crop a piece of a plan being edited
-// shows on the frame a moment means: gliding over the keyframes of its turn
-// in the clip, each kept inside a picture so wide for a crop so wide the
-// way the render keeps it, or the crop of its turn, or nil where it
+// shows on the frame a moment means: that of the keyframe of its turn in
+// the clip it holds from, kept inside a picture so wide for a crop so wide
+// the way the render keeps it, or the crop of its turn, or nil where it
 // stands in the middle. A width no wider than the crop is a picture not
 // known, and the keyframes are taken as they are.
 func cropShown(c *object, pieces []*object, target int, at float64, frames SourceInfo, cropW, width int) *int {
-	spans := rotationsOf(c)
-	segments := make([]Segment, len(pieces))
-	turns := make([]int, len(pieces))
-	for i, seg := range pieces {
-		segments[i] = Segment{Start: number(seg.values[keyStart]), End: number(seg.values[keyEnd])}
-		turns[i] = rotationOf(seg, spans)
-	}
-	markedPieces(segments, turns, cropMarksOf(c))
-	if marks := segments[target].Marks; len(marks) > 0 {
+	if i := markHolding(c, pieces, target, at, frames); i >= 0 {
 		if width <= cropW {
 			width = math.MaxInt32
 		}
-		left := int(math.Round(glideX(frames.onFrames(marks, cropW, width), frames.frameHolding(at))))
+		x := cropMarksOf(c)[i].X
+		left := ClampCropX(&x, cropW, width)
 		return &left
 	}
+	spans := rotationsOf(c)
 	key := keyCropX
 	if rotationOf(pieces[target], spans) != 0 {
 		key = keyCropXTurned
@@ -518,6 +474,37 @@ func cropShown(c *object, pieces []*object, target int, at float64, frames Sourc
 		return &n
 	}
 	return nil
+}
+
+// markHolding is which of a clip's keyframes the crop of a piece of a plan
+// being edited holds from on the frame a moment means, by its index, or
+// minus one before the first keyframe of the piece's turn, where the crop
+// is the piece's own. It is the keyframe heldX would take, found on the
+// clip's clock the way markedPieces gives a piece its keyframes.
+func markHolding(c *object, pieces []*object, target int, at float64, frames SourceInfo) int {
+	spans := rotationsOf(c)
+	segments := make([]Segment, len(pieces))
+	turns := make([]int, len(pieces))
+	for i, seg := range pieces {
+		segments[i] = Segment{Start: number(seg.values[keyStart]), End: number(seg.values[keyEnd])}
+		turns[i] = rotationOf(seg, spans)
+	}
+	marks := cropMarksOf(c)
+	// Each keyframe given on its own, so the one the piece holds from is
+	// known by where it stands in the clip's list.
+	k := frames.frameHolding(at)
+	holding, from := -1, int64(math.MinInt64)
+	for i, m := range marks {
+		alone := make([]Segment, len(segments))
+		copy(alone, segments)
+		markedPieces(alone, turns, []CropMark{m})
+		for _, on := range alone[target].Marks {
+			if f := frames.markFrame(on.At); f <= k && f >= from {
+				holding, from = i, f
+			}
+		}
+	}
+	return holding
 }
 
 // marksText is a clip's keyframes for the log, each its moment and left

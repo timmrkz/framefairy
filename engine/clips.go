@@ -31,8 +31,8 @@ type Segment struct {
 	// Marks is the keyframes that steer the piece's crop, those of the
 	// pieces turned the way it is in the whole clip, in time order, each at the moment of
 	// the video it would be at on the piece's stretch were nothing cut
-	// out, see markedPieces. With any, the crop glides over them and CropX
-	// is not used, see CropMark.
+	// out, see markedPieces. The crop is CropX before the first and each
+	// keyframe's from its frame on, see CropMark.
 	Marks []CropMark
 }
 

@@ -86,7 +86,7 @@
   import Colour from "../components/Colour.svelte";
   import { act, said } from "../lib/said";
   import { pieceHolding, rotated, rotationAt } from "../lib/rotate";
-  import { markOn } from "../lib/glide";
+  import { markOn } from "../lib/keyframes";
   import { toasts } from "../lib/toast.svelte";
 
   let {
@@ -1513,7 +1513,7 @@
   );
 
   // A keyframe added, moved or removed: the diamond shows at once, and the
-  // glide it makes comes back with the clip. A from below nought adds one
+  // crop it switches to comes back with the clip. A from below nought adds one
   // at to with its crop at x, a to below nought removes the one at from.
   async function setCropMark(clip: ClipEntry, from: number, to: number, x: number) {
     const ms = (t: number) => Math.round(t * 1000);
@@ -3527,8 +3527,8 @@
           </button>
           <!-- A keyframe on the frame under the playhead, made the way a
                thumbnail is: a plus to put one with the crop where it stands,
-               a minus when the playhead stands on one. With two or more the
-               crop glides from each to the next. Plan row 3.26. -->
+               a minus when the playhead stands on one. The crop switches on
+               its frame and holds until the next one, #750. -->
           <button
             class="glyph"
             aria-label={cropHere !== null ? "Remove this keyframe" : "Put a keyframe on this frame"}
@@ -3537,7 +3537,7 @@
             title={cropHere !== null
               ? "Remove the keyframe at the playhead. K does the same"
               : inShort
-                ? "Put a keyframe on the frame under the playhead, with the crop where it stands. With two or more the crop moves from each to the next. K does the same"
+                ? "Put a keyframe on the frame under the playhead. The crop switches there and holds until the next keyframe. K does the same"
                 : "Put the playhead in the clip to put a keyframe on the frame there"}
           >
             <Icon name={cropHere !== null ? "keyframe-remove" : "keyframe-add"} />

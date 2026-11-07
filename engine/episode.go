@@ -508,8 +508,9 @@ type SegmentView struct {
 	// Rotate is how far a person rotated the piece, in degrees to the left,
 	// and the crop is on the picture rotated, see Segment.Rotate.
 	Rotate int `json:"rotate"`
-	// Marks is the keyframes that steer the piece's crop, which glides
-	// over them, see Segment.Marks. With none, the crop stands at CropX.
+	// Marks is the keyframes that steer the piece's crop, which switches
+	// on each and holds until the next, see Segment.Marks. Before the
+	// first, and with none, the crop stands at CropX.
 	Marks []CropMarkView `json:"marks"`
 }
 

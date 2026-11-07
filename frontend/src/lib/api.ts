@@ -248,8 +248,9 @@ export interface Segment {
   // 270, by the stretch of the clip's rotations it lies in. Its crop is on
   // the picture rotated, see lib/rotate.ts.
   rotate?: number;
-  // The keyframes that steer the piece's crop, which glides over them,
-  // see lib/glide.ts. With none the crop stands at cropX.
+  // The keyframes that steer the piece's crop, which switches on each and
+  // holds until the next, see lib/keyframes.ts. Before the first, and with
+  // none, the crop stands at cropX.
   marks?: CropMark[];
 }
 

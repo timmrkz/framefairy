@@ -1,14 +1,14 @@
 import { describe, expect, test } from "vitest";
-import cases from "./glide.cases.json";
-import { frameOf, glideX, glidingLeft, markOn, type FrameMark } from "./glide";
+import cases from "./keyframes.cases.json";
+import { frameOf, heldLeft, heldX, markOn, type FrameMark } from "./keyframes";
 
 // The same table the engine is held to, in engine/cropmarks_test.go, so
 // the crop frame in the video preview stands on every frame where the
 // render crops it.
-describe("the glide of a crop over its marks", () => {
+describe("the crop a keyframe holds", () => {
   test("is the engine's on every frame", () => {
     const marks = cases.marks as FrameMark[];
-    for (const [k, want] of cases.frames) expect([k, glideX(marks, k)]).toEqual([k, want]);
+    for (const [k, want] of cases.frames) expect([k, heldX(marks, k) ?? cases.base]).toEqual([k, want]);
   });
 
   test("counts frames the way the engine does", () => {
@@ -20,23 +20,26 @@ describe("the glide of a crop over its marks", () => {
     expect(frameOf(0.5, 25, 0.1)).toBe(10);
   });
 
-  test("stands still with no mark or one, and keeps the crop inside the picture", () => {
-    expect(glidingLeft(undefined, 3, 25, 0, 608, 1920)).toBeNull();
-    expect(glidingLeft([], 3, 25, 0, 608, 1920)).toBeNull();
-    expect(glidingLeft([{ at: 1, x: 500 }], 3, 25, 0, 608, 1920)).toBe(500);
-    expect(glidingLeft([{ at: 1, x: 1800 }], 3, 25, 0, 608, 1920)).toBe(1312);
+  test("is the piece's own before the first keyframe, and kept inside the picture after it", () => {
+    expect(heldLeft(undefined, 3, 25, 0, 608, 1920)).toBeNull();
+    expect(heldLeft([], 3, 25, 0, 608, 1920)).toBeNull();
+    expect(heldLeft([{ at: 1, x: 500 }], 0.5, 25, 0, 608, 1920)).toBeNull();
+    expect(heldLeft([{ at: 1, x: 500 }], 3, 25, 0, 608, 1920)).toBe(500);
+    expect(heldLeft([{ at: 1, x: 1800 }], 3, 25, 0, 608, 1920)).toBe(1312);
   });
 
-  test("glides between two marks of a piece, by the frame", () => {
+  test("switches on the keyframe's own frame, with no glide", () => {
     const marks = [
       { at: 10.2, x: 100 },
       { at: 10.8, x: 300 },
     ];
-    // Frame 263 lies 8 of the 15 frames on, where smoothstep has gone
-    // 55 % of the way: 209.985.
-    expect(glidingLeft(marks, 10.52, 25, 0, 608, 1920)).toBeCloseTo(209.985, 3);
-    expect(glidingLeft(marks, 9, 25, 0, 608, 1920)).toBe(100);
-    expect(glidingLeft(marks, 12, 25, 0, 608, 1920)).toBe(300);
+    // The frame before the second keyframe still has the first one's
+    // crop, and the second one's frame has its own.
+    expect(heldLeft(marks, 10.2, 25, 0, 608, 1920)).toBe(100);
+    expect(heldLeft(marks, 10.52, 25, 0, 608, 1920)).toBe(100);
+    expect(heldLeft(marks, 10.79, 25, 0, 608, 1920)).toBe(100);
+    expect(heldLeft(marks, 10.8, 25, 0, 608, 1920)).toBe(300);
+    expect(heldLeft(marks, 12, 25, 0, 608, 1920)).toBe(300);
   });
 
   test("finds the mark on the playhead's frame", () => {

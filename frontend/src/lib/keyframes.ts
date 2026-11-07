@@ -1,8 +1,9 @@
-// A crop that follows, plan row 3.26. The crop of a piece with keyframes
-// glides from each keyframe to the next, see CropMark in engine/cropmarks.go,
-// and the video preview places its crop frame by the same sum the render
-// gives ffmpeg, so what plays is what renders. glide.cases.json holds this
-// file and the engine to the same left edge on every frame.
+// Keyframes, plan row 3.26 and #750. A keyframe is a turning point: the
+// crop of a piece switches on its frame and holds until the next one, see
+// CropMark and heldX in engine/cropmarks.go. The video preview places its
+// crop frame by the same choice the render gives ffmpeg, so what plays is
+// what renders. keyframes.cases.json holds this file and the engine to the
+// same left edge on every frame.
 
 import type { CropMark } from "./api";
 import { frameAt } from "./flow";
@@ -16,24 +17,16 @@ export function frameOf(at: number, fps: number, videoStart = 0): number {
   return Math.floor((at - videoStart) * fps + 0.5);
 }
 
-// The left edge of the crop on frame k, gliding over keyframes on frames in
-// order: still before the first and after the last, and between two the
-// whole way by smoothstep, u²(3-2u). It is not rounded to a pixel of the
-// picture, because a slow glide moves less than one a frame and rounded
-// it stood and then jumped, see glideCrop in engine/cropmarks.go, which
-// places it to the pixel of the short. Each step is the engine's glideX,
-// in its order, so the two agree.
-export function glideX(marks: FrameMark[], k: number): number {
-  if (k <= marks[0][0]) return marks[0][1];
-  for (let i = 1; i < marks.length; i++) {
-    const [kb, xb] = marks[i];
-    if (k >= kb) continue;
-    const [ka, xa] = marks[i - 1];
-    const u = (k - ka) / (kb - ka);
-    const ease = u * u * (3 - 2 * u);
-    return xa + (xb - xa) * ease;
+// The left edge of the crop on frame k: that of the last keyframe on or
+// before it, or null before the first, where the crop is the piece's own.
+// The engine's heldX, which takes the piece's crop for null.
+export function heldX(marks: FrameMark[], k: number): number | null {
+  let x: number | null = null;
+  for (const [km, xm] of marks) {
+    if (km > k) break;
+    x = xm;
   }
-  return marks[marks.length - 1][1];
+  return x;
 }
 
 // A crop's left edge kept inside the picture and on an even pixel, the
@@ -44,9 +37,10 @@ export function clampLeft(left: number, cropWidth: number, width: number): numbe
 }
 
 // The left edge of a piece's crop on the frame that holds a moment, the
-// frame on the canvas, gliding over the piece's keyframes, or null for a piece
-// with none, whose crop stands still.
-export function glidingLeft(
+// frame on the canvas: that of the keyframe it holds from, or null before
+// the piece's first keyframe and for a piece with none, whose crop is its
+// own.
+export function heldLeft(
   marks: CropMark[] | undefined,
   at: number,
   fps: number,
@@ -62,7 +56,7 @@ export function glidingLeft(
     if (last && last[0] === mark[0]) onFrames[onFrames.length - 1] = mark;
     else onFrames.push(mark);
   }
-  return glideX(onFrames, frameAt(at, 1 / fps, videoStart));
+  return heldX(onFrames, frameAt(at, 1 / fps, videoStart));
 }
 
 // The keyframe of a clip on the frame that holds a moment, the playhead's,

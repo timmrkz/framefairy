@@ -2646,8 +2646,8 @@ reasoning is in [THUMBNAILS.md](THUMBNAILS.md).
 
 ### Keyframes
 
-A crop that moves while a clip plays, for a person who shifts in the seat
-or walks across the picture. Plan row 3.26, the design is in
+A crop that changes while a clip plays, for a camera switch or a person
+who moves across the picture. Plan row 3.26 and #750, the design is in
 [ROTATE-AND-FOLLOW.md](ROTATE-AND-FOLLOW.md).
 
 - **The keyframe button**, beside the thumbnail button under the clip
@@ -2656,25 +2656,21 @@ or walks across the picture. Plan row 3.26, the design is in
   button it is not a mode: its icon is a diamond with a plus, and with a
   minus while the playhead stands on a keyframe, where a click removes
   it.
-- **No keyframe, or one, is a crop that stands still.** With two or more the
-  crop glides from each to the next over the whole time between them,
-  starting and settling gently, the way a camera operator pans. The
-  tempo is where the keyframes are: two far apart are a slow drift, and
-  two a frame apart are an instant move. A keyframe moves the crop of
-  the whole clip, and a glide goes on across a cut by the time the
-  short plays, so a keyframe before a cut and one after it glide from one
-  to the other the way they would were the cut a moment of the clip, and
-  nothing jumps at the cut. A glide used to stop at a cut, so those two
-  did not glide at all, found by Tim. A part turned with Rotate has
-  a crop of its own, so its crop still starts at its cut.
-- **Dragging the crop frame places the crop, and nothing else.** With the
-  playhead on a keyframe it moves that keyframe. Anywhere else it moves
-  the crop of the whole clip, every keyframe of it by the same distance,
-  kept inside the picture.
-- **The video preview follows the glide frame by frame** while the clip
-  plays, so what plays is what renders. The glide is not rounded to a
-  pixel of the video, and the short places it to its own pixel, so a slow
-  glide moves on every frame instead of standing and jumping.
+- **A keyframe is a turning point.** The crop switches on its frame and
+  holds until the next keyframe. Before the first keyframe it is the
+  clip's own crop. So a camera switch takes one keyframe, put where the
+  camera switches, and nothing glides. Tim asked for this on #750: the
+  crop used to glide from one keyframe to the next, so one keyframe stood
+  still and a switch took two, a frame apart. A keyframe holds across a
+  cut by the time the short plays. A part turned with Rotate has a crop
+  of its own, so its crop still starts at its cut.
+- **Dragging the crop frame places the crop of the part under the
+  playhead, and nothing else.** On a keyframe or after one, it moves that
+  keyframe's crop, which holds until the next keyframe. Before the first
+  keyframe it moves the clip's own crop. Either way the parts before and
+  after keep theirs.
+- **The video preview switches the crop on the keyframe's own frame**
+  while the clip plays, so what plays is what renders.
 - **Each keyframe is a diamond** centred on the clip's top rule on the
   clip timeline, drawn and lit the way a thumbnail is: filled in the
   app's light colour, and white while the playhead is on its frame, the
@@ -2688,12 +2684,12 @@ or walks across the picture. Plan row 3.26, the design is in
   the clip's edge it stops on the first or last frame and does not jump.
 - **Automatic crop** removes every keyframe of the clip and brings back
   the crop the engine found, and **Put the crop back** brings back the
-  keyframes with the crop. Removing the first of two keyframes leaves the
-  crop standing at the other for the whole clip, as removing a keyframe
-  does in Resolve and Premiere. Rotating a part keeps its keyframes. Each
+  keyframes with the crop. Removing a keyframe gives its part the crop of
+  the part before it, the keyframe before or the clip's own. Rotating a
+  part keeps its keyframes. Each
   was placed on the picture turned one way, and steers the part only while
   it is turned that way: turned another way, it waits, and four turns
-  bring its glide back. A crop placed on the frame of a keyframe that
+  bring it back. A crop placed on the frame of a keyframe that
   waits takes it to the picture as it stands. Tim found the diamonds gone
   after a turn, issue #348.
 - **Undo** takes back adding, moving and removing one.
