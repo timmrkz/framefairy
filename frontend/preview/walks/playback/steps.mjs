@@ -1850,13 +1850,13 @@ export const steps = {
     else if (ran.at < to) walk.wrong = `the play went back from ${to.toFixed(3)} s to ${ran.at.toFixed(3)} s after ${key}`;
     await watch.step("press", s, page);
   },
-  // ["holds across the cut"]
+  // ["crop holds across the cut"]
   //                    the clip's first keyframe lies before its first
   //                    cut, and with the playhead put on a frame after the
   //                    cut, the crop frame stands where that keyframe put
   //                    it, held across the cut by the time the short plays,
   //                    not on the clip's own crop
-  async "holds across the cut"(walk) {
+  async "crop holds across the cut"(walk) {
     const { page } = walk;
     const on = await chosen(page);
     const entry = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
@@ -1886,7 +1886,7 @@ export const steps = {
     if (want === own) walk.wrong = `the keyframe before the cut stands at ${want}, where the clip's own crop is, so nothing is held`;
     else if (got !== want) walk.wrong = `after the cut, on frame ${k}, the crop frame stands at ${got}, the keyframe before the cut holds it at ${want}`;
   },
-  // ["holds"]          with the playhead put by a click on the clip
+  // ["crop holds"]     with the playhead put by a click on the clip
   //                    timeline on the frame before each keyframe of the
   //                    first piece that has one, on the keyframe's own
   //                    frame and half way to the next, the crop frame in
@@ -1895,7 +1895,7 @@ export const steps = {
   //                    piece's own crop before its first keyframe and from
   //                    each keyframe's frame on that keyframe's, and at
   //                    least one keyframe switches it
-  // ["holds while playing"]
+  // ["crop holds while playing"]
   //                    plays from four frames before the first keyframe
   //                    that switches the crop, on a clock that moves on to
   //                    the next frame only once the one before is up,
@@ -1907,7 +1907,7 @@ export const steps = {
   //                    where the render crops it, and the frames shown run
   //                    across the switch, so it comes on the keyframe's own
   //                    frame and not a frame before or after
-  async "holds while playing"(walk, arg, s, what) {
+  async "crop holds while playing"(walk, arg, s, what) {
     const { page } = walk;
     const on = await chosen(page);
     const entry = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
@@ -1930,7 +1930,7 @@ export const steps = {
     // The episode is a filmed one, at a camera's rate, whose frame
     // number is read off the canvas from its bands.
     await filmedOnScreen(page);
-    if (what === "holds") {
+    if (what === "crop holds") {
       const problems = [];
       const frames = [];
       inside.forEach((k, i) => {
@@ -2203,7 +2203,7 @@ export const steps = {
 
 // Steps that take the same body as the step they are walked by.
 steps["only the video"] = steps["the clip shown"];
-steps["holds"] = steps["holds while playing"];
+steps["crop holds"] = steps["crop holds while playing"];
 
 // What is wrong with the short Render wrote, against the video preview, or
 // null. The frame of the short that stands for a moment is the frame of

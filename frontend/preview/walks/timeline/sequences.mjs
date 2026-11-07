@@ -379,8 +379,8 @@ export default [
       ["playhead at", 0.75],
       ["drag crop", 300],
       ["keyframes", 1],
-      ["holds"],
-      ["holds while playing"],
+      ["crop holds"],
+      ["crop holds while playing"],
       ["under the hand", "crop"],
       ["remove mark", "crop"],
       ["keyframes", 0],
@@ -400,7 +400,7 @@ export default [
       ["playhead at", 0.85],
       ["drag crop", -300],
       ["keyframes", 2],
-      ["holds"],
+      ["crop holds"],
     ],
   },
   {
@@ -416,7 +416,7 @@ export default [
       ["keyframes", 1],
       ["cut at", 0.5],
       ["cuts", 1],
-      ["holds across the cut"],
+      ["crop holds across the cut"],
     ],
   },
   {
@@ -460,7 +460,7 @@ export default [
       ["keyframes", 0],
       ["button", "Put the crop back"],
       ["keyframes", 2],
-      ["holds"],
+      ["crop holds"],
     ],
   },
   {
