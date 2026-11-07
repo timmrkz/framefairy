@@ -558,18 +558,22 @@ func RotatePart(fsys afero.Fs, planPath, clipID string, at float64, frames Sourc
 
 // PiecesMeet is the most two pieces of a clip may stand apart and still
 // play straight on, with no cut between them: the edge of a rotated part,
-// not a cut. The window reads pieces by the same rule,
-// partOf in lib/rotate.ts.
+// not a cut. The window reads which pieces are one part from the views,
+// see partsOf.
 const PiecesMeet = 0.0005
+
+// piecesMeet says whether a piece starting at start plays straight on
+// from one ending at end, with no cut between them.
+func piecesMeet(end, start float64) bool { return start-end <= PiecesMeet }
 
 // partOf is the first and last of the pieces around one that play straight
 // on from each other, with no cut between them.
 func partOf(pieces []*object, i int) (int, int) {
 	first, last := i, i
-	for first > 0 && number(pieces[first].values[keyStart])-number(pieces[first-1].values[keyEnd]) <= PiecesMeet {
+	for first > 0 && piecesMeet(number(pieces[first-1].values[keyEnd]), number(pieces[first].values[keyStart])) {
 		first--
 	}
-	for last+1 < len(pieces) && number(pieces[last+1].values[keyStart])-number(pieces[last].values[keyEnd]) <= PiecesMeet {
+	for last+1 < len(pieces) && piecesMeet(number(pieces[last].values[keyEnd]), number(pieces[last+1].values[keyStart])) {
 		last++
 	}
 	return first, last

@@ -234,7 +234,8 @@ export interface Gesture {
 // What a gesture makes of a clip: its pieces, where the playhead goes while
 // an edge is dragged, below nought when it stays, and its captions.
 export interface Shaped {
-  pieces: { start: number; end: number }[];
+  // Each with its part, see Segment.part.
+  pieces: { start: number; end: number; part: number }[];
   playhead: number;
   captions: CaptionsView;
 }
@@ -251,6 +252,10 @@ export interface Segment {
   // The keyframes that steer the piece's crop, which glides over them,
   // see lib/glide.ts. With none the crop stands at cropX.
   marks?: CropMark[];
+  // The part of the clip the piece is in, counted from nought: pieces that
+  // play straight on from each other, with no cut between them, have the
+  // same, see engine.PieceView.
+  part?: number;
 }
 
 // A crop placed by hand on one frame: the moment the frame starts, the

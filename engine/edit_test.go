@@ -162,10 +162,7 @@ func TestAShapeIsWhatTheGestureSaves(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			var saved []PieceView
-			for _, seg := range clips[0].Segments {
-				saved = append(saved, PieceView{seg.Start, seg.End})
-			}
+			saved := pieceViews(clips[0].Segments)
 			if fmt.Sprint(shown.Pieces) != fmt.Sprint(saved) {
 				t.Errorf("shown %v, saved %v", shown.Pieces, saved)
 			}

@@ -522,3 +522,52 @@ func TestTheEpisodesDecoderStandsAPhoneVideoUp(t *testing.T) {
 		}
 	}
 }
+
+// The window reads which pieces make one part from the views of a clip,
+// and keeps no rule of its own about where one ends: pieces of one part
+// carry the same Part, and R at any of them turns those pieces and no
+// other. A gap of 0.4 ms is no cut, PiecesMeet, and 0.6 ms is.
+func TestThePartsAClipViewSaysAreThePartsRTurns(t *testing.T) {
+	t.Parallel()
+	const plan = `{
+  "source": "ep.mp4",
+  "clips": [
+    {"id": "01", "slug": "eins",
+     "segments": [{"start": 10.0, "end": 11.0, "crop_x": 120},
+                  {"start": 11.0004, "end": 12.0, "crop_x": 120},
+                  {"start": 12.0006, "end": 13.0, "crop_x": 120},
+                  {"start": 14.0, "end": 15.0, "crop_x": 120}]}
+  ]
+}`
+	for i, middle := range []float64{10.5, 11.5, 12.5, 14.5} {
+		fsys, path := writePlanAt(t, plan)
+		view, err := ReadPlan(fsys, path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		segs := view.Clips[0].Segments
+		if got := fmt.Sprint(partsOfView(segs)); got != "[0 0 1 2]" {
+			t.Fatalf("the parts are %s, want [0 0 1 2]", got)
+		}
+		rotate(t, fsys, path, middle)
+		turns, _ := rotations(t, fsys, path)
+		for k, turn := range turns {
+			if same := segs[k].Part == segs[i].Part; same != (turn != 0) {
+				t.Errorf("R at %.1f s: piece %d of part %d turned %d, piece %d is of part %d",
+					middle, k, segs[k].Part, turn, i, segs[i].Part)
+			}
+		}
+	}
+	// What a gesture shows while the hand moves says the same.
+	if got := fmt.Sprint(pieceViews([]Segment{{Start: 1, End: 2}, {Start: 2.0004, End: 3}, {Start: 4, End: 5}})); got != "[{1 2 0} {2.0004 3 0} {4 5 1}]" {
+		t.Errorf("the pieces shaped are %s", got)
+	}
+}
+
+func partsOfView(segs []SegmentView) []int {
+	parts := make([]int, 0, len(segs))
+	for _, s := range segs {
+		parts = append(parts, s.Part)
+	}
+	return parts
+}

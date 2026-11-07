@@ -51,6 +51,37 @@ type Gesture struct {
 type PieceView struct {
 	Start float64 `json:"start"`
 	End   float64 `json:"end"`
+	// Part counts the parts of the clip, the pieces that play straight on
+	// from each other with no cut between them, from nought: pieces of one
+	// part have the same, see partsOf.
+	Part int `json:"part"`
+}
+
+// partsOf is the part of each piece, a piece at a time from the first, by
+// where each starts and ends: a piece that plays straight on from the one
+// before is in its part, and one after a cut starts the next. Every view
+// of a clip's pieces carries it, so the window reads parts and keeps no
+// rule of where one ends.
+func partsOf(n int, start, end func(i int) float64) []int {
+	parts := make([]int, n)
+	for i := 1; i < n; i++ {
+		parts[i] = parts[i-1]
+		if !piecesMeet(end(i-1), start(i)) {
+			parts[i]++
+		}
+	}
+	return parts
+}
+
+// pieceViews is the pieces of a clip as the window sees them, each with
+// its part.
+func pieceViews(segs []Segment) []PieceView {
+	parts := partsOf(len(segs), func(i int) float64 { return segs[i].Start }, func(i int) float64 { return segs[i].End })
+	views := make([]PieceView, 0, len(segs))
+	for i, s := range segs {
+		views = append(views, PieceView{Start: s.Start, End: s.End, Part: parts[i]})
+	}
+	return views
 }
 
 // Shaped is what a gesture makes of a clip.
@@ -105,9 +136,9 @@ func ShapeClip(s PlanSummary, clipID string, g Gesture, t *Transcript, keepPause
 	shaped.Clip.Segments = nil
 	for _, seg := range out {
 		start, end := number(seg.values[keyStart]), number(seg.values[keyEnd])
-		shaped.Pieces = append(shaped.Pieces, PieceView{start, end})
 		shaped.Clip.Segments = append(shaped.Clip.Segments, Segment{Start: start, End: end})
 	}
+	shaped.Pieces = pieceViews(shaped.Clip.Segments)
 	return shaped, nil
 }
 
