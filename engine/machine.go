@@ -47,10 +47,14 @@ type Machine struct {
 	// from its font folders and kept with what was measured of each.
 	Fonts Fonts
 
-	// softDecode is set once decoding through the system's own video
-	// decoder has failed on this machine, and every decode after it, by
-	// any job, is done on the processor.
+	// softDecode is set once the system's own video decoder has hung on
+	// this machine, and every decode after it, by any job, is done on the
+	// processor.
 	softDecode atomic.Bool
+	// refused holds the episode files the system's video decoder would
+	// not take, which are decoded on the processor from then on, while
+	// other files still go to it.
+	refused sync.Map
 	// decoders holds, per episode file, which decoder framing was found to
 	// use, so it is looked up and reported once.
 	decoders sync.Map

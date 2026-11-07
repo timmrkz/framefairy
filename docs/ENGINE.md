@@ -697,9 +697,10 @@ its own machine: the time limit of a decode, empty for
 unused, the client to llama-server, how a server that will not stop is
 looked at again, how a leftover server is asked to stop, and the three
 facts of memory. So
-a Mac whose system decoder failed once
+a Mac whose system decoder hung once
 decodes on the processor for every job after it, not only for the rest
-of that job. An `Engine` keeps what belongs to its one job: the log,
+of that job, and a file it would not take is decoded on the processor by
+every job after it. An `Engine` keeps what belongs to its one job: the log,
 what it spent, the switches of its run, the hearing and the read-ahead.
 See [decisions/2026-10-31-running-programs-and-what-outlives-a-job.md](decisions/2026-10-31-running-programs-and-what-outlives-a-job.md).
 
@@ -1261,9 +1262,11 @@ machine handed the system's media engine asks it, the app's and the
 command line's, see `engine.Media`. A test's machine decodes on the
 processor from the start. If the system
 decoder refuses a file, the same work is done again on the processor and
-everything after it goes there too. The same happens when reading a
-span's frames runs out of time, a minute and four times the span: ffmpeg
-has hung there once, and a search waited on it for good. If the processor
+every decode of that file after it goes there too, while other files
+still go to the system's decoder. When reading a span's frames runs
+out of time, a minute and four times the span, it is read again on the
+processor, and so is every decode after it, of any file: ffmpeg has hung
+there once, and a search waited on it for good. If the processor
 runs out of time as well, the clip is framed without that span's frames,
 with a warning, rather than the clip failing. Which decoder does the work is found
 once per episode file, by decoding one frame the way framing does and
@@ -1445,7 +1448,8 @@ is, and in the detail lines of `--verbose`.
 
 A search is three kinds of work that no longer wait on each other, in
 `engine/planbuild.go`. The model writes on the graphics side of the
-machine, framing decodes video with ffmpeg on the processor, and writing a
+machine, framing decodes video with ffmpeg on the system's video decoder where
+there is one, and writing a
 clip to the plan is a few kilobytes. So each clip is framed by one of
 several framers while the model goes on writing, and written to the plan
 the moment it is framed. There are as many framers as a third of the

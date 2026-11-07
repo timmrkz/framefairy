@@ -88,7 +88,10 @@ func fmtCrop(x *int) string {
 }
 
 // A system decoder that will not take the file is gone round, not failed
-// on: the same work is done on the processor, and so is everything after.
+// on: the same work is done on the processor, and so is everything after
+// with that file. Another file still goes to the system's decoder, so one
+// odd file does not take the graphics chip from every video until the app
+// quits.
 //
 // On the real disk: the stand-in ffmpeg is a program that is run.
 func TestFramingDecodesOnTheProcessorWhenTheSystemWillNot(t *testing.T) {
@@ -110,8 +113,14 @@ func TestFramingDecodesOnTheProcessorWhenTheSystemWillNot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("framing failed instead of going round: %v", err)
 	}
-	if len(segments) != 1 || segments[0].CropX == nil || !e.softDecode.Load() {
-		t.Errorf("segments %+v, on the processor from now on: %v", segments, e.softDecode.Load())
+	if len(segments) != 1 || segments[0].CropX == nil {
+		t.Errorf("segments %+v, want one with its crop", segments)
+	}
+	if e.decodeFlags(path) != nil {
+		t.Error("the file the system's decoder would not take is still handed to it")
+	}
+	if e.softDecode.Load() || e.decodeFlags("another.mp4") == nil {
+		t.Error("one file the system's decoder would not take took it from every other file")
 	}
 }
 
@@ -228,8 +237,45 @@ func TestASystemDecoderThatWorksIsKept(t *testing.T) {
 		t.Errorf("the log says a decoder that worked gave no frame: %q", said.String())
 	}
 	next := NewEngine(runlog.New(io.Discard, false, false), machine)
-	if next.decodeFlags() == nil {
+	if next.decodeFlags("episode.mp4") == nil {
 		t.Error("the next job does not decode on the system's decoder")
+	}
+}
+
+// A clip framed with a system decoder that works is framed on it from the
+// first check to the last frame read, and its crop is placed. The stand-in
+// says it decodes through VideoToolbox, the way ffmpeg does on a Mac, and
+// hands the work to the real ffmpeg.
+//
+// On the real disk: the stand-in ffmpeg is a program that is run.
+func TestAClipIsFramedOnASystemDecoderThatWorks(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("the stand-in is a shell script")
+	}
+	path, source := twoCameras(t)
+	real, _ := exec.LookPath("ffmpeg")
+	working := filepath.Join(t.TempDir(), "ffmpeg")
+	script := "#!/bin/sh\ncase \"$*\" in *-hwaccel*) echo 'Using auto hwaccel type videotoolbox with new default device.' >&2;; esac\n" +
+		"exec \"" + real + "\" \"$@\"\n"
+	if err := standin.Write(working, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var said bytes.Buffer
+	e := NewEngine(runlog.New(&said, false, false), decodingMachine())
+	e.FFmpeg, e.NoFaces = working, true
+	segments, err := e.ClipSegments(context.Background(), path, []timed.Span{{Start: 7, End: 13}}, source, 202, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(segments) != 1 || segments[0].CropX == nil {
+		t.Errorf("segments %+v, want one with its crop", segments)
+	}
+	if e.softDecode.Load() {
+		t.Errorf("framing left the system's decoder that worked:\n%s", said.String())
+	}
+	if !strings.Contains(said.String(), "framing decodes video on VideoToolbox") {
+		t.Errorf("the log does not say framing decoded on VideoToolbox:\n%s", said.String())
 	}
 }
 

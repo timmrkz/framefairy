@@ -26,7 +26,7 @@ func TestOnlyAMachineHandedTheMediaEngineReachesIt(t *testing.T) {
 			}
 		}
 	}
-	if flags := own.decodeFlags(); flags != nil {
+	if flags := own.decodeFlags("folge.mp4"); flags != nil {
 		t.Errorf("a machine handed no media engine decodes with %v", flags)
 	}
 	if args := own.EpisodeFrames("framefairy-frames", "folge.mp4").args(); !slices.Equal(args, []string{"folge.mp4"}) {
@@ -58,7 +58,7 @@ func TestOnlyAMachineHandedTheMediaEngineReachesIt(t *testing.T) {
 	if order := mac.order(true); len(order) == 0 || !order[0].is(hevcVideoToolbox) {
 		t.Errorf("a Mac reaches for %v first for HDR", names(order))
 	}
-	if flags := mac.decodeFlags(); !slices.Equal(flags, []string{"-hwaccel", "auto"}) {
+	if flags := mac.decodeFlags("folge.mp4"); !slices.Equal(flags, []string{"-hwaccel", "auto"}) {
 		t.Errorf("a Mac decodes with %v", flags)
 	}
 	if args := mac.EpisodeFrames("framefairy-frames", "folge.mp4").args(); !slices.Equal(args, []string{"-chip", "folge.mp4"}) {

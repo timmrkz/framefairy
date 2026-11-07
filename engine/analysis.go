@@ -32,12 +32,17 @@ func tailRunes(s string, n int) string {
 // which case ffmpeg decodes on the processor by itself. Frames come back to
 // memory either way, so the filters after it never know the difference.
 //
-// If it fails on a machine, for a file or a driver that will not have it,
-// the same work is done again on the processor and every decode after it
-// goes there straight away. A machine handed no media engine decodes on
-// the processor from the start, see Media.
-func (e *Engine) decodeFlags() []string {
+// A file it will not take is done again on the processor, and so is every
+// decode of that file after it, while other files still go to the system's
+// decoder. One that hangs is gone round the same way, and every decode
+// after it, of any file, goes to the processor straight away. A machine
+// handed no media engine decodes on the processor from the start, see
+// Media.
+func (e *Engine) decodeFlags(path string) []string {
 	if !e.mediaOf().Decodes || e.softDecode.Load() {
+		return nil
+	}
+	if _, refused := e.refused.Load(path); refused {
 		return nil
 	}
 	return []string{"-hwaccel", "auto"}
@@ -55,15 +60,16 @@ func (e *Engine) decoderUsed(ctx context.Context, path string, at float64) strin
 		return found.(string)
 	}
 	used := "the processor"
-	if flags := e.decodeFlags(); flags != nil {
+	if flags := e.decodeFlags(path); flags != nil {
 		args := append([]string{"-hide_banner", "-loglevel", "verbose"}, flags...)
 		args = append(args, "-ss", num.Fixed(at, 3), "-i", path, "-an", "-frames:v", "1", "-f", "null", "-")
 		probeCtx, cancel := e.decodeWithin(ctx, frameLimit)
 		said := e.Runner.Run(probeCtx, "", e.FFmpeg, args...)
-		// Whether the limit ended it is read before cancel, which sets
-		// the same error on every probe and so took every working
-		// decoder for one that hung.
-		hung := probeCtx.Err() != nil
+		// A hang is a probe that failed with its time run out. The time
+		// is read before cancel, which sets the same error on every probe
+		// and so took every decoder that worked for one that hung. One
+		// that gave its frame as the time ran out worked.
+		hung := said.Code != 0 && probeCtx.Err() != nil
 		cancel()
 		if ctx.Err() != nil {
 			return ""
@@ -208,17 +214,18 @@ func (e *Engine) readSpan(ctx context.Context, path string, start, end float64) 
 		timedOut = ctx.Err() == nil && readCtx.Err() != nil
 		return code, stderr
 	}
-	flags := e.decodeFlags()
+	flags := e.decodeFlags(path)
 	code, stderr := read(flags)
 	// A system decoder that fails, or that says it worked and gave no
 	// frames, is gone round: the same read on the processor, and every
-	// read after it.
+	// read of this file after it, or of any file once it hung.
 	if flags != nil && ctx.Err() == nil && (code != 0 || raw.Len() < FaceWidth*FaceHeight) {
-		e.softDecode.Store(true)
 		if timedOut {
+			e.softDecode.Store(true)
 			e.Log.Warn("reading frames for the crop stopped moving with the system's video decoder, decoding on the processor from now on")
 		} else {
-			e.Log.Detail("the system's video decoder did not take this file, decoding on the processor")
+			e.refused.Store(path, true)
+			e.Log.Info("the system's video decoder did not take this file, decoding it on the processor")
 		}
 		code, stderr = read(nil)
 	}
@@ -264,6 +271,7 @@ func (e *Engine) readSpan(ctx context.Context, path string, start, end float64) 
 func (e *Engine) sampleGray(ctx context.Context, path string, start, duration float64,
 	width, height, frames int) [][]byte {
 	rate := math.Max(1.0, float64(frames)/math.Max(duration, 0.1))
+	hung := false
 	pull := func(flags []string) []byte {
 		args := append([]string{"-hide_banner", "-loglevel", "error"}, flags...)
 		args = append(args,
@@ -275,14 +283,20 @@ func (e *Engine) sampleGray(ctx context.Context, path string, start, duration fl
 		pullCtx, cancel := e.decodeWithin(ctx, time.Duration(frames)*frameLimit)
 		defer cancel()
 		raw, _ := e.Runner.Bytes(pullCtx, "", e.FFmpeg, args...)
+		hung = ctx.Err() == nil && pullCtx.Err() != nil
 		return raw
 	}
-	flags := e.decodeFlags()
+	flags := e.decodeFlags(path)
 	raw := pull(flags)
 	size := width * height
 	if len(raw) < size && flags != nil && ctx.Err() == nil {
+		gaveUp := hung
 		if raw = pull(nil); len(raw) >= size {
-			e.softDecode.Store(true)
+			if gaveUp {
+				e.softDecode.Store(true)
+			} else {
+				e.refused.Store(path, true)
+			}
 		}
 	}
 	var out [][]byte
