@@ -33,7 +33,7 @@ import (
 // carried on behind a search by itself, the two needed a menu nobody could
 // read.
 func (s *FrameFairy) Transcribe(path string) Job {
-	label := jobLabel(engine.JobTranscribe, false)
+	label := jobLabel(engine.JobRecord{Kind: engine.JobTranscribe})
 	if !s.store.Known(path) {
 		return s.jobs.refuse(path, engine.JobTranscribe, label, notInLibrary)
 	}
@@ -59,7 +59,7 @@ func (s *FrameFairy) transcribe(path string, part timed.Window) Job {
 	// One that stopped is taken up by this one, which writes the record
 	// again in its place.
 	s.jobs.settle(path, engine.JobTranscribe, "")
-	return s.jobs.addSteps(path, engine.JobTranscribe, jobLabel(engine.JobTranscribe, false), true, func(j *Job) {
+	return s.jobs.addSteps(path, engine.JobTranscribe, jobLabel(engine.JobRecord{Kind: engine.JobTranscribe, To: part.End}), true, func(j *Job) {
 		j.JobRecord.ID, j.From, j.To = engine.TranscribeID, part.Start, part.End
 	}, func(ctx context.Context, p *engine.Project, host engine.Host) (string, error) {
 		return "", p.TranscribeJob(ctx, part, host)

@@ -604,16 +604,20 @@ func stopsAsStopped(kind string) bool {
 	return makesClips(kind) || kind == engine.JobTranscribe
 }
 
-// jobLabel is what a job is called, by what it does.
-func jobLabel(kind string, preview bool) string {
+// jobLabel is what a job is called, by what it does, the record it keeps
+// or would keep.
+func jobLabel(rec engine.JobRecord) string {
 	switch {
-	case kind == engine.JobRender && preview:
+	case rec.Kind == engine.JobRender && rec.Preview:
 		return "Preview"
-	case kind == engine.JobRender:
+	case rec.Kind == engine.JobRender:
 		return "Render"
-	case kind == engine.JobClip:
+	case rec.Kind == engine.JobClip:
 		return "Make a clip"
-	case kind == engine.JobTranscribe:
+	case rec.Kind == engine.JobTranscribe && rec.To > 0:
+		// The part of the clip chosen not heard yet, see hearChosen.
+		return "Transcribe the clip"
+	case rec.Kind == engine.JobTranscribe:
 		return "Transcribe whole video"
 	}
 	return "Find clips"
@@ -635,7 +639,7 @@ func (q *queue) restore(episodes []string) {
 			q.mu.Lock()
 			q.next++
 			job := &Job{ID: fmt.Sprintf("job-%d", q.next), Episode: episode, JobRecord: rec,
-				Label: jobLabel(rec.Kind, rec.Preview), State: state, Queued: rec.Asked,
+				Label: jobLabel(rec), State: state, Queued: rec.Asked,
 				Lane: laneFor(rec.Kind), Underway: rec.Underway(), cancel: func() {}, ctx: context.Background()}
 			q.stampLocked(job)
 			q.jobs = append(q.jobs, job)
