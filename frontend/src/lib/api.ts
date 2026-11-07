@@ -248,8 +248,9 @@ export interface Segment {
   // 270, by the stretch of the clip's rotations it lies in. Its crop is on
   // the picture rotated, see lib/rotate.ts.
   rotate?: number;
-  // The keyframes that steer the piece's crop, which glides over them,
-  // see lib/glide.ts. With none the crop stands at cropX.
+  // The keyframes that steer the piece's crop, which switches on each and
+  // holds until the next, see ClipEntry.cropSteps. Before the first, and
+  // with none, the crop stands at cropX.
   marks?: CropMark[];
 }
 
@@ -260,6 +261,13 @@ export interface CropMark {
   at: number;
   x: number;
   turn?: number;
+}
+
+// A piece's crop from a frame of the video on, until the next step, see
+// engine.CropStep.
+export interface CropStep {
+  frame: number;
+  x: number;
 }
 
 // A stretch of the video a person rotated deg degrees to the left, 90,
@@ -451,6 +459,10 @@ export interface ClipEntry extends ClipView {
   key: string;
   plan: string;
   cropLefts: number[];
+  // For each piece with keyframes, how its crop switches over its frames,
+  // worked out by the engine, and null for a piece whose crop is its
+  // cropLefts throughout. See engine.CropSteps.
+  cropSteps?: (CropStep[] | null)[];
   // On the answer to an edit, when the edit was written, on the clock a
   // video's state is read by, see VideoState.
   rev?: number;

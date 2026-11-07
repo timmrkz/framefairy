@@ -51,7 +51,7 @@ func (s *FrameFairy) SetCrop(ctx context.Context, path, plan, clipID string, at 
 	}
 	cw := s.cropWidth(upright)
 	left = max(0, min(left, upright.Width-cw))
-	if err := s.edit(path, func() error { return engine.SetCrop(s.store.files, plan, clipID, at, left, info, cw) }); err != nil {
+	if err := s.edit(path, func() error { return engine.SetCrop(s.store.files, plan, clipID, at, left, info) }); err != nil {
 		return ClipEntry{}, err
 	}
 	return s.answer(ctx, path, plan, clipID)

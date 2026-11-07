@@ -86,7 +86,7 @@
   import Colour from "../components/Colour.svelte";
   import { act, said } from "../lib/said";
   import { pieceHolding, rotated, rotationAt } from "../lib/rotate";
-  import { markOn } from "../lib/glide";
+  import { markOn } from "../lib/keyframes";
   import { toasts } from "../lib/toast.svelte";
 
   let {
@@ -1513,7 +1513,7 @@
   );
 
   // A keyframe added, moved or removed: the diamond shows at once, and the
-  // glide it makes comes back with the clip. A from below nought adds one
+  // crop it switches to comes back with the clip. A from below nought adds one
   // at to with its crop at x, a to below nought removes the one at from.
   async function setCropMark(clip: ClipEntry, from: number, to: number, x: number) {
     const ms = (t: number) => Math.round(t * 1000);
@@ -1536,7 +1536,7 @@
     }
   }
 
-  // The button and C: a keyframe on the frame under the playhead, with
+  // The button and K: a keyframe on the frame under the playhead, with
   // the crop where it stands there now, or the one there removed, so what
   // one click adds one click takes away.
   function toggleCropMark() {
@@ -1705,10 +1705,12 @@
     void rotatePart();
   }
 
-  // C puts a keyframe on the frame under the playhead, or removes the one
-  // there, the keyframe button's key, the way T is the thumbnail's.
+  // K puts a keyframe on the frame under the playhead, or removes the one
+  // there, the keyframe button's key, the way T is the thumbnail's. K for
+  // keyframe, the word the button says. It was C while keyframes were
+  // called crop marks, and Tim asked for K on #750.
   function cropMarkKey(event: KeyboardEvent) {
-    if (event.key !== "c" && event.key !== "C") return;
+    if (event.key !== "k" && event.key !== "K") return;
     if (!workspaceKey(event, root)) return;
     if (!current) return;
     event.preventDefault();
@@ -2040,10 +2042,12 @@
       return best;
     });
     const lefts = current.cropLefts;
+    const steps = current.cropSteps;
     return {
       ...current,
       segments: reshaped.pieces.map((p, i) => ({ ...old[from[i]], start: p.start, end: p.end })),
       cropLefts: from.map((i) => lefts[i]),
+      cropSteps: steps && from.map((i) => steps[i] ?? null),
     };
   });
   const shownCaptions = $derived.by(() => {
@@ -3525,17 +3529,17 @@
           </button>
           <!-- A keyframe on the frame under the playhead, made the way a
                thumbnail is: a plus to put one with the crop where it stands,
-               a minus when the playhead stands on one. With two or more the
-               crop glides from each to the next. Plan row 3.26. -->
+               a minus when the playhead stands on one. The crop switches on
+               its frame and holds until the next one, #750. -->
           <button
             class="glyph"
             aria-label={cropHere !== null ? "Remove this keyframe" : "Put a keyframe on this frame"}
             disabled={renderingCurrent || (cropHere === null && !inShort)}
             onclick={toggleCropMark}
             title={cropHere !== null
-              ? "Remove the keyframe at the playhead. C does the same"
+              ? "Remove the keyframe at the playhead. K does the same"
               : inShort
-                ? "Put a keyframe on the frame under the playhead, with the crop where it stands. With two or more the crop moves from each to the next. C does the same"
+                ? "Put a keyframe on the frame under the playhead. The crop switches there and holds until the next keyframe. K does the same"
                 : "Put the playhead in the clip to put a keyframe on the frame there"}
           >
             <Icon name={cropHere !== null ? "keyframe-remove" : "keyframe-add"} />

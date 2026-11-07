@@ -133,7 +133,7 @@ func TestRotateTurnsTheStretchOfThePartAndFourTurnsBringItBack(t *testing.T) {
 func TestACropOnARotatedPieceMovesThePiecesTurnedAlike(t *testing.T) {
 	fsys, path := rotatablePlanPath(t)
 	rotate(t, fsys, path, 13.5)
-	if err := SetCrop(fsys, path, "01", 13.5, 400, SourceInfo{}, 0); err != nil {
+	if err := SetCrop(fsys, path, "01", 13.5, 400, SourceInfo{}); err != nil {
 		t.Fatal(err)
 	}
 	_, crops := rotations(t, fsys, path)
@@ -145,7 +145,7 @@ func TestACropOnARotatedPieceMovesThePiecesTurnedAlike(t *testing.T) {
 	}
 	// Both parts turned: every piece is turned alike and shares the crop.
 	rotate(t, fsys, path, 10.5)
-	if err := SetCrop(fsys, path, "01", 13.5, 500, SourceInfo{}, 0); err != nil {
+	if err := SetCrop(fsys, path, "01", 13.5, 500, SourceInfo{}); err != nil {
 		t.Fatal(err)
 	}
 	turns, crops := rotations(t, fsys, path)
@@ -168,7 +168,7 @@ func TestACropOnARotatedPieceMovesThePiecesTurnedAlike(t *testing.T) {
 func TestAPartTurnedLikeAnotherTakesItsCrop(t *testing.T) {
 	fsys, path := rotatablePlanPath(t)
 	rotate(t, fsys, path, 13.5)
-	if err := SetCrop(fsys, path, "01", 13.5, 400, SourceInfo{}, 0); err != nil {
+	if err := SetCrop(fsys, path, "01", 13.5, 400, SourceInfo{}); err != nil {
 		t.Fatal(err)
 	}
 	rotate(t, fsys, path, 10.5)
@@ -198,7 +198,7 @@ func TestAPartTurnedLikeAnotherTakesItsCrop(t *testing.T) {
 func TestAPieceStandingAsFilmedCarriesNoTurnedCrop(t *testing.T) {
 	fsys, path := rotatablePlanPath(t)
 	rotate(t, fsys, path, 10.5)
-	if err := SetCrop(fsys, path, "01", 10.5, 400, SourceInfo{}, 0); err != nil {
+	if err := SetCrop(fsys, path, "01", 10.5, 400, SourceInfo{}); err != nil {
 		t.Fatal(err)
 	}
 	reshape(t, fsys, path, Gesture{Kind: "trim", Edge: "end", From: 13.8})
@@ -221,7 +221,7 @@ func TestAPieceStandingAsFilmedCarriesNoTurnedCrop(t *testing.T) {
 func TestACropPlacedByHandSurvivesARotationTakenBack(t *testing.T) {
 	fsys, path := rotatablePlanPath(t)
 	rotate(t, fsys, path, 11.5) // the part before the cut turns 90
-	if err := SetCrop(fsys, path, "01", 13.5, 400, SourceInfo{}, 0); err != nil {
+	if err := SetCrop(fsys, path, "01", 13.5, 400, SourceInfo{}); err != nil {
 		t.Fatal(err)
 	}
 	for range 3 { // three more quarter turns stand it as filmed again
@@ -255,7 +255,7 @@ func TestACropPlacedByHandSurvivesARotationTakenBack(t *testing.T) {
 func TestAnEditElsewhereLeavesARotatedCropAlone(t *testing.T) {
 	fsys, path := rotatablePlanPath(t)
 	rotate(t, fsys, path, 13.5)
-	if err := SetCrop(fsys, path, "01", 13.5, 500, SourceInfo{}, 0); err != nil {
+	if err := SetCrop(fsys, path, "01", 13.5, 500, SourceInfo{}); err != nil {
 		t.Fatal(err)
 	}
 	before, err := afero.ReadFile(fsys, path)
@@ -304,7 +304,7 @@ func TestARotationStaysWithTheVideoAsTheClipIsCut(t *testing.T) {
 	t.Run("the cut put back and made again", func(t *testing.T) {
 		fsys, path := rotatablePlanPath(t)
 		rotate(t, fsys, path, 13.5)
-		if err := SetCrop(fsys, path, "01", 13.5, 700, SourceInfo{}, 0); err != nil {
+		if err := SetCrop(fsys, path, "01", 13.5, 700, SourceInfo{}); err != nil {
 			t.Fatal(err)
 		}
 		reshape(t, fsys, path, Gesture{Kind: "join", From: 12.5})

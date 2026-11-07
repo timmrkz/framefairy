@@ -1,8 +1,8 @@
-# Rotating a part of a clip, and a crop that follows
+# Rotating a part of a clip, and keyframes
 
 Plan rows 3.25 to 3.28 and 2.190 in [GUI-PLAN.md](GUI-PLAN.md). Rotate,
-3.25, is built, see Rotate in [APP.md](APP.md). The crop that follows is
-still a proposal.
+3.25, is built, see Rotate in [APP.md](APP.md), and so are keyframes,
+3.26, see Keyframes there.
 
 ## What Tim wants to fix
 
@@ -14,6 +14,12 @@ where the whole picture spins. He wants to mark that part with cuts, rotate
 it upright, and place the crop on a few frames by hand with the movement
 between them worked out for him. No numbers, no curves, no curve editor,
 and nothing changes for a video that is fine as it is.
+
+Later, on #750, Tim found a glide between keyframes hard to work with for
+a camera switch, and asked for a keyframe as a turning point instead: the
+crop switches on it and holds until the next. That is what keyframes do
+now, see section 4, and nothing glides. A person who drifts across the
+picture takes a keyframe at each step.
 
 ## What the app has today
 
@@ -88,51 +94,47 @@ Tim decided this on #188: a keyframe is made the way a thumbnail is,
 with a button and a key, and dragging the crop frame only places the
 crop.
 
-- **C, and a keyframe button** in the row under the clip timeline beside
+- **K, and a keyframe button** in the row under the clip timeline beside
   the thumbnail button, puts a keyframe on the frame under the playhead,
   with the crop where it stands there now. With the playhead on a crop
-  keyframe, the button or C removes it, the way the thumbnail button does.
+  keyframe, the button or K removes it, the way the thumbnail button does.
   Its icon is the crop frame with a plus, and with a minus while the
   playhead stands on a keyframe.
-- **Dragging the crop frame places the crop, and nothing else.** With the
-  playhead on a keyframe, it moves that keyframe's crop. Anywhere else it
-  moves the crop of the whole clip, every keyframe of it by the same
-  distance, which is today's drag for a clip with no keyframes.
-- **No keyframe, or one, is a crop that stands still**, today's behaviour.
-  **Two or more make it move**: it glides from each keyframe to the next.
-  Before the first keyframe it stands where the first one is, after the last
-  it stands where the last one is.
+- **A keyframe is a turning point**, Tim's word on #750. The crop
+  switches on its frame and holds until the next keyframe. Before the
+  first keyframe it is the clip's own crop. One keyframe where the camera
+  switches is a camera switch.
+- **Dragging the crop frame places the crop of the part under the
+  playhead, and nothing else.** On a keyframe or after one, it moves that
+  keyframe's crop. Before the first, it moves the clip's own crop, which
+  is today's drag for a clip with no keyframes. The parts before and after
+  keep theirs.
 - **What is happening is shown while it happens.** While a clip plays,
-  the crop frame in the video preview follows the glide frame by frame,
-  so what plays is what renders.
+  the crop frame in the video preview switches on the keyframe's own
+  frame, so what plays is what renders.
 
-### 4. The tempo is where the keyframes are
+### 4. One rule: a keyframe holds until the next
 
-There is no speed to set. The keyframes say where the crop is and when, and
-three rules work out the rest:
+There is nothing to set. Each keyframe says where the crop is from its
+frame on, and the next keyframe takes over from its own frame:
 
-- **A glide takes the whole time between two keyframes.** It starts gently,
-  moves steadily and settles gently, the way a camera operator pans. A
-  person who shifts in the seat over ten seconds gets two keyframes ten
-  seconds apart and a slow drift. That is the common case, and it needs
-  nothing more.
-- **Two keyframes close together are a quick move.** Placed a frame apart,
-  the move is instant. A move at one moment after a long hold is a keyframe
-  just before the move, where the crop already stands, and one just after
-  it. Dragging a keyframe along the clip timeline changes when it applies,
-  so the tempo is changed by moving a keyframe and never by typing a number.
-- **A glide goes on across a cut, by the time the short plays.** A cut
-  takes time out of the clip, not out of the glide, so a keyframe before
-  a cut and one after it glide from one to the other with nothing jumping
-  at the cut. A rotated part has a crop and keyframes of its
-  own, so the rotate case needs nothing at all: the rotated part begins at
-  the cut over the spin, and its crop is there from its first frame. The
-  first design stopped every glide at a cut, and Tim found a keyframe
-  before a cut and one after it did not glide at all, plan row 2.238.
+- **The switch is instant.** A camera switch is cut, not panned, so the
+  crop switches on the keyframe's frame, with nothing in between.
+- **A drag changes one part.** The part runs from a keyframe to the next,
+  or from the clip's start to the first keyframe. Dragging a keyframe along
+  the clip timeline moves where the switch is.
+- **A keyframe holds across a cut, by the time the short plays.** A cut
+  takes time out of the clip, so a keyframe before a cut keeps its crop
+  after the cut until the next keyframe. A rotated part has a crop and
+  keyframes of its own, so the rotate case needs nothing at all: the
+  rotated part begins at the cut over the spin, and its crop is there from
+  its first frame.
 
-Later, with 3.28, the engine times a glide by the picture: between two
-keyframes the crop moves when the face it follows moves, and the even glide
-is what it does where it finds no face.
+The first design glided the crop from one keyframe to the next over the
+whole time between them, easing out and in, so the tempo was where the
+keyframes were. One keyframe then stood still, and a camera switch took
+two keyframes a frame apart. Tim found that odd on #750 and asked for the
+keyframe as a turning point.
 
 ### 5. Where the keyframes are on the clip timeline
 
@@ -165,7 +167,7 @@ two above:
   over the spin and the rotation, and R or Undo takes them back.
 - **It follows a subject that moves.** Where the faces in a clip do not
   settle on one place, the engine puts keyframes at a few moments
-  itself instead of one, and the glide does the rest. Marks made by
+  itself instead of one. Marks made by
   hand override its keyframes.
 
 ## How it is built
@@ -181,14 +183,13 @@ two above:
   `BuildFilterGraph` puts `transpose` before the crop of a rotated piece
   and gives the crop a left edge that changes with the frame, an ffmpeg
   expression in the frame built from the keyframes, worked out on whole
-  frames, and placed to the pixel of the short, see `glideCrop` in
-  docs/ENGINE.md, so the render and the video preview agree within half a
-  pixel of the short.
+  frames, see `holdExpr` in docs/ENGINE.md, so the render and the video
+  preview agree on every frame.
   The face finder samples rotated frames for a rotated part, so its
   automatic crop is found on the upright picture.
 - **The app.** The video preview rotates the frame it draws, with a
   transform on the canvas, and the crop frame reads its left edge from
-  the same glide the engine uses, in `lib/`, with a test that compares
+  the steps the engine works out and sends with the clip, `CropSteps`, with a test that compares
   both on the same keyframes. The clip timeline draws a keyframe with the thumbnail's mark, one
   component with an icon of its own, and the rotate icon on a
   rotated part and its glow, through masks. `Rotate`,
@@ -198,7 +199,7 @@ two above:
   clip, so like the crop today nothing is recorded.
 - **Proof.** A test video in `engine/testdata` with a part rotated a
   quarter: a render test that reads the short back and finds the part
-  upright, a test that the crop of a render with two keyframes is where the
-  glide says on chosen frames, and walks that press R and C and drag the
+  upright, a test that the crop of a render with keyframes is where they
+  hold it on every frame, and walks that press R and K and drag the
   crop, checking the canvas and the plan, so Tim does not have to
   try it by hand to know it holds.

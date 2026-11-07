@@ -102,7 +102,10 @@ export function rotated(clip: ClipEntry, source: SourceView, at: number): ClipEn
     const middle = Math.floor((picture.width - picture.cropWidth) / 2);
     return middle - (middle % 2);
   });
-  return { ...clip, rotations, segments, cropLefts };
+  // The crop steps of the part turned are the engine's to work out again,
+  // and until its answer comes the part shows its crop in the middle.
+  const cropSteps = clip.cropSteps?.map((steps, k) => (k < first || k > last ? steps : null));
+  return { ...clip, rotations, segments, cropLefts, cropSteps };
 }
 
 // The rotations with the stretch from from to to turned deg degrees, and

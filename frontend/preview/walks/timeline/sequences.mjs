@@ -364,39 +364,65 @@ export default [
     ],
   },
   {
-    // Plan row 3.26: keyframes put with C, the second dragged to another
-    // place, glide the crop from the one to the other, in the video
-    // preview frame by frame while it plays as the render crops it.
-    // TestTheRenderGlidesTheCropOverTheMarks holds the render to the same
-    // glide, and glide.cases.json the window and the engine to each other.
-    name: "keyframes put with C glide the crop from one to the next in the video preview, frame by frame",
+    // Tim's camera switch, #750: one keyframe put with K where the camera
+    // switches, and the crop dragged after it. The crop switches on the
+    // keyframe's own frame and holds, and the part before keeps the
+    // clip's own crop, in the video preview frame by frame while it plays
+    // as the render crops it. TestTheRenderSwitchesTheCropAtEachKeyframe
+    // holds the render to the same, and keyframes.cases.json the window
+    // and the engine to each other.
+    name: "one keyframe put with K switches the crop there, and a drag on either side of it moves only that side",
     steps: [
       ["added", 30, "25"],
       ["hold", "SetCropMark"],
-      ["keyframe at", 0.2],
-      ["keyframe at", 0.8],
-      ["drag crop", 400],
-      ["keyframes", 2],
-      ["glides"],
-      ["glides while playing"],
+      ["keyframe at", 0.5],
+      ["crop before", 0.25],
+      ["playhead at", 0.75],
+      ["drag crop", 300],
+      ["crop kept", 0.25],
+      ["crop before", 0.75],
+      ["playhead at", 0.25],
+      ["drag crop", -150],
+      ["crop kept", 0.75],
+      ["keyframes", 1],
+      ["crop holds"],
+      ["crop holds while playing"],
       ["under the hand", "crop"],
       ["remove mark", "crop"],
-      ["keyframes", 1],
+      ["keyframes", 0],
     ],
   },
   {
-    // Found by Tim: a keyframe before a cut and the next one after it did
-    // not glide, the crop stood still on both sides. Plan row 2.238.
-    name: "a keyframe before a cut glides to one after it",
+    // Two keyframes, #750: each switches the crop on its own frame and
+    // holds it until the next, and a drag between them moves that part
+    // alone.
+    name: "two keyframes each hold their crop until the next",
+    steps: [
+      ["added", 30, "25"],
+      ["keyframe at", 0.3],
+      ["playhead at", 0.5],
+      ["drag crop", 150],
+      ["keyframe at", 0.7],
+      ["playhead at", 0.85],
+      ["drag crop", -300],
+      ["keyframes", 2],
+      ["crop holds"],
+    ],
+  },
+  {
+    // A keyframe before a cut holds its crop across it, by the time the
+    // short plays. A glide once stopped at a cut, found by Tim, plan row
+    // 2.238.
+    name: "a keyframe before a cut holds its crop after it",
     steps: [
       ["added", 30, "25"],
       ["keyframe at", 0.2],
-      ["keyframe at", 0.8],
-      ["drag crop", 400],
-      ["keyframes", 2],
+      ["playhead at", 0.3],
+      ["drag crop", 300],
+      ["keyframes", 1],
       ["cut at", 0.5],
       ["cuts", 1],
-      ["glides across the cut"],
+      ["crop holds across the cut"],
     ],
   },
   {
@@ -418,7 +444,7 @@ export default [
   {
     // Found by Tim on #192: C put no mark on a clip's first or last frame,
     // only one frame in.
-    name: "a keyframe goes on a clip's first and last frame with C, and comes off with C",
+    name: "a keyframe goes on a clip's first and last frame with K, and comes off with K",
     steps: [
       ["added", 30, "25"],
       ["keyframe on", "last"],
@@ -428,8 +454,8 @@ export default [
   {
     // Found on #192: Automatic crop took the keyframes of the angle away
     // with the crop, and Put the crop back brought back the crop alone,
-    // so the glide was lost to one click.
-    name: "Put the crop back after Automatic crop brings back the keyframes and their glide",
+    // so what the keyframes did was lost to one click.
+    name: "Put the crop back after Automatic crop brings back the keyframes and their crops",
     steps: [
       ["added", 30, "25"],
       ["keyframe at", 0.2],
@@ -440,7 +466,7 @@ export default [
       ["keyframes", 0],
       ["button", "Put the crop back"],
       ["keyframes", 2],
-      ["glides"],
+      ["crop holds"],
     ],
   },
   {

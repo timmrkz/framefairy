@@ -1388,7 +1388,7 @@ export const steps = {
     await settle(page);
     // R works on the frame the video preview shows, inShort in
     // Episode.svelte, and the turn read is that frame's, so R is
-    // pressed once it is the playhead's frame, as C is, see keyframe
+    // pressed once it is the playhead's frame, as K is, see keyframe
     // at. On a busy machine R was pressed while the video preview
     // still showed the frame from before the click, issue #320.
     await shownOnPlayhead(page);
@@ -1403,7 +1403,7 @@ export const steps = {
   //                    puts the playhead in the clip, this share of the
   //                    way along it, with a click on the clip timeline,
   //                    waits for the video preview to show that frame, and
-  //                    presses C, and the clip timeline has to show a crop
+  //                    presses K, and the clip timeline has to show a crop
   //                    mark lit on the playhead's frame within 300 ms,
   //                    before a held answer comes
   async "keyframe at"(walk, arg, s) {
@@ -1412,27 +1412,27 @@ export const steps = {
     const from = g.start.x + g.start.w;
     await clickOnTrack(page, from + arg * (g.end.x - from), high(g.track));
     await settle(page);
-    // C puts the keyframe on the frame the video preview shows, so it
+    // K puts the keyframe on the frame the video preview shows, so it
     // is pressed once that is the playhead's frame, see thumbnail at.
     await shownOnPlayhead(page);
     const count = () => page.evaluate(() => document.querySelectorAll(".clip-timeline .cropdot").length);
     const before = await count();
     const took = await keyShows(
       page,
-      "c",
+      "k",
       (b) => document.querySelectorAll(".clip-timeline .cropdot").length > b && !!document.querySelector(".clip-timeline .cropdot.here"),
       before,
     );
-    if (took < 0) walk.wrong = "C put no keyframe on the playhead's frame";
-    else if (took > 300) walk.wrong = `the keyframe showed ${took} ms after C, not at once`;
+    if (took < 0) walk.wrong = "K put no keyframe on the playhead's frame";
+    else if (took > 300) walk.wrong = `the keyframe showed ${took} ms after K, not at once`;
     await watch.step("press", s);
     await settle(page);
   },
   // ["keyframe on", "last"]
   //                    a click on the clip's end edge, which leaves the
   //                    playhead on the end with the last frame on the
-  //                    video preview, then C: a keyframe comes on the
-  //                    clip's last frame and its diamond lights, and C again
+  //                    video preview, then K: a keyframe comes on the
+  //                    clip's last frame and its diamond lights, and K again
   //                    removes it
   // ["keyframe on", "first"]
   //                    a click on the clip's start edge and three steps
@@ -1456,10 +1456,10 @@ export const steps = {
         await settle(page);
       }
     }
-    // C puts the keyframe on the frame the video preview shows, so it is
+    // K puts the keyframe on the frame the video preview shows, so it is
     // pressed once the playhead stands on the clip's frame and the video
     // preview shows that frame, both the app's own word. settle does not
-    // count the frame on its way from the decoder, and under load C once
+    // count the frame on its way from the decoder, and under load the key once
     // came while the video preview still showed the clip's start, #559.
     await pageUntil(
       page,
@@ -1474,17 +1474,17 @@ export const steps = {
     const marks = async () => (await entry()).cropMarks ?? [];
     const before = (await marks()).length;
     const lit = () => page.evaluate(() => !!document.querySelector(".clip-timeline .cropdot.here"));
-    await page.keyboard.press("c");
+    await page.keyboard.press("k");
     await settle(page);
     const got = await marks();
     const near = got.find((m) => Math.abs(m.at - want) < 0.5 / src.fps);
     if (got.length <= before) {
       const at = await page.evaluate(() => document.querySelector(".screen").dataset.playhead);
-      walk.wrong = `C put no keyframe with the playhead at ${Number(at).toFixed(4)} s, on the clip's ${arg} frame at ${want.toFixed(4)} s`;
+      walk.wrong = `K put no keyframe with the playhead at ${Number(at).toFixed(4)} s, on the clip's ${arg} frame at ${want.toFixed(4)} s`;
       return;
     }
     if (!near) {
-      walk.wrong = `C put a keyframe at ${got.map((m) => m.at).join(", ")}, not on the clip's ${arg} frame at ${want.toFixed(3)} s`;
+      walk.wrong = `K put a keyframe at ${got.map((m) => m.at).join(", ")}, not on the clip's ${arg} frame at ${want.toFixed(3)} s`;
       return;
     }
     await settle(page);
@@ -1492,9 +1492,9 @@ export const steps = {
       walk.wrong = `the keyframe on the clip's ${arg} frame does not light while that frame is on the video preview`;
       return;
     }
-    await page.keyboard.press("c");
+    await page.keyboard.press("k");
     await settle(page);
-    if ((await marks()).length > before) walk.wrong = `C again did not remove the keyframe on the clip's ${arg} frame`;
+    if ((await marks()).length > before) walk.wrong = `K again did not remove the keyframe on the clip's ${arg} frame`;
     await settle(page);
   },
   // ["thumbnail at", share]
@@ -1580,6 +1580,37 @@ export const steps = {
         return real(input, init);
       };
     }, arg);
+  },
+  // ["playhead at", share]
+  //                    a click on the clip timeline puts the playhead that
+  //                    share of the way from the clip's start to its end,
+  //                    and the video preview shows the frame there
+  async "playhead at"(walk, arg) {
+    await playheadAt(walk.page, arg);
+  },
+  // ["crop before", share]
+  //                    puts the playhead that share of the way into the
+  //                    clip and keeps where the crop frame stands there in
+  //                    the video preview
+  // ["crop kept", share]
+  //                    with the playhead put there again, the crop frame
+  //                    stands where it stood at ["crop before", share], so
+  //                    a drag of the crop elsewhere left that part alone
+  async "crop before"(walk, arg) {
+    const { page } = walk;
+    await playheadAt(page, arg);
+    walk.cropBefore = { ...walk.cropBefore, [arg]: await cropShown(page) };
+  },
+  async "crop kept"(walk, arg) {
+    const { page } = walk;
+    const was = walk.cropBefore?.[arg];
+    if (was === undefined) {
+      walk.wrong = `no crop was kept at ${arg} of the clip to compare with`;
+      return;
+    }
+    await playheadAt(page, arg);
+    const now = await cropShown(page);
+    if (now !== was) walk.wrong = `${arg} of the way into the clip the crop frame stood at ${was} and stands at ${now} after a drag elsewhere`;
   },
   // ["playhead on", edge]
   //                    the playhead is on the frame the clip's "start" or
@@ -2069,4 +2100,21 @@ function inACut(played, pieces, frame) {
     if (inside) return `the playhead stood at ${inside[0].toFixed(3)} while it played, inside the cut from ${a.toFixed(3)} to ${b.toFixed(3)}`;
   }
   return null;
+}
+
+// Puts the playhead that share of the way from the clip's start to its end
+// by a click on the clip timeline, once the video preview shows the frame
+// there.
+async function playheadAt(page, share) {
+  const g = await handles(page);
+  const from = g.start.x + g.start.w;
+  await clickOnTrack(page, from + share * (g.end.x - from), high(g.track));
+  await settle(page);
+  await shownOnPlayhead(page);
+}
+
+// Where the crop frame stands in the video preview, in pixels of the
+// picture.
+function cropShown(page) {
+  return page.evaluate(() => Number(document.querySelector(".screen").dataset.crop));
 }

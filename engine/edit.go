@@ -506,7 +506,7 @@ func autoCrop(seg *object) any {
 // placed, and the crop it has unrotated is kept as it was, so a part
 // rotated back has it again. So are the keyframes of the stretch:
 // each was placed on the picture turned one way and waits while it is
-// turned another, see CropMark, so four turns bring the glide back. Tim
+// turned another, see CropMark, so four turns bring them back. Tim
 // found the diamonds removed with the turn, issue #348. Framing is not a
 // judgement of the clip, so nothing is recorded for training.
 func RotatePart(fsys afero.Fs, planPath, clipID string, at float64, frames SourceInfo) error {
@@ -878,13 +878,11 @@ func applyCut(pieces []*object, from, to float64) []*object {
 // automatic placement is kept, so ResetCrop can bring it back. Framing is
 // not a judgement of the clip, so nothing is recorded for training.
 //
-// With keyframes, see CropMark, a crop placed on the frame of a mark moves
-// that mark alone. Placed anywhere else, every mark of the turn moves by
-// as far as the crop shown there did, so a glide keeps its shape. frames
-// is the video, for the frame a moment means, and cropW how wide the crop
-// is on the picture as the piece at the moment stands, for where a crop
-// that was never placed stands.
-func SetCrop(fsys afero.Fs, planPath, clipID string, at float64, left int, frames SourceInfo, cropW int) error {
+// With keyframes, see CropMark, a crop placed after a keyframe is that
+// keyframe's, and holds until the next one. Placed before the first
+// keyframe of its turn, it is the clip's own crop, and no keyframe moves.
+// frames is the video, for the frame a moment means.
+func SetCrop(fsys afero.Fs, planPath, clipID string, at float64, left int, frames SourceInfo) error {
 	if left < 0 {
 		return renderErr("the crop cannot start left of the picture")
 	}
@@ -902,7 +900,6 @@ func SetCrop(fsys afero.Fs, planPath, clipID string, at float64, left int, frame
 		spans := rotationsOf(c)
 		turn := rotationOf(pieces[target], spans)
 		marks := cropMarksOf(c)
-		ofTurn := marksTurned(marks, turn)
 		// The keyframe on the frame takes the crop, also one that waits,
 		// placed on the picture turned another way: it is the diamond
 		// under the playhead, and from now on it is on the picture as it
@@ -910,30 +907,19 @@ func SetCrop(fsys afero.Fs, planPath, clipID string, at float64, left int, frame
 		for i := range marks {
 			if frames.markFrame(marks[i].At) == frames.frameHolding(at) {
 				marks[i].X = left
-				marks[i].Turn = rotationOf(pieces[target], spans)
+				marks[i].Turn = turn
 				setCropMarks(c, marks)
 				return nil
 			}
 		}
-		if len(ofTurn) > 0 {
-			width := frames.Rotated(turn).Width
-			shown := (width - cropW) / 2
-			if x := cropShown(c, pieces, target, at, frames, cropW, width); x != nil {
-				shown = *x
-			}
-			// A mark moved with the rest stays in the picture, or the
-			// render would hold it at the edge while the others move on,
-			// and the next drag would move it from a place nobody sees.
-			for i := range marks {
-				if ofTurn[i] {
-					x := max(0, marks[i].X+left-shown)
-					if width > cropW {
-						x = min(x, width-cropW)
-					}
-					marks[i].X = x - x%2
-				}
-			}
+		// After a keyframe the crop is that keyframe's until the next one,
+		// so the drag places it there and nowhere else, Tim's turning
+		// point on #750. Before the first it is the clip's own crop, below,
+		// which no keyframe after it changes.
+		if i := markHolding(c, pieces, target, at, frames); i >= 0 {
+			marks[i].X = left
 			setCropMarks(c, marks)
+			return nil
 		}
 		// The crop as filmed is the whole clip's, so a piece that is
 		// turned keeps it too, for when it is turned back. A rotated

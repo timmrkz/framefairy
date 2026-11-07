@@ -100,7 +100,7 @@ func TestACutPutBackOverAnOldSwitchLeavesOnePiece(t *testing.T) {
 // Automatic crop brings back the one its first piece was found with.
 func TestACropOnAnOldClipIsTheCropOfTheWholeClip(t *testing.T) {
 	fsys, path := writePlanAt(t, shotsPlan)
-	if err := SetCrop(fsys, path, "01", 15, 700, SourceInfo{}, 0); err != nil {
+	if err := SetCrop(fsys, path, "01", 15, 700, SourceInfo{}); err != nil {
 		t.Fatal(err)
 	}
 	shotsAre(t, fsys, path, "after a crop placed on the second camera", []Segment{

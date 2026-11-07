@@ -21,6 +21,10 @@ type ClipEntry struct {
 	Key       string `json:"key"`
 	Plan      string `json:"plan"`
 	CropLefts []int  `json:"cropLefts"`
+	// CropSteps is, for each piece with keyframes, how its crop switches
+	// over its frames, see engine.CropSteps, and null for a piece whose
+	// crop is CropLefts throughout.
+	CropSteps [][]engine.CropStep `json:"cropSteps"`
 	// Rev is, on the answer to an edit, the number the edit took from the
 	// clock of the jobs once it was written, see VideoState.Rev. The
 	// window takes no state of the video read before it. A clip in a
@@ -91,6 +95,10 @@ func (s *FrameFairy) entryOf(plan string, c engine.ClipView, info engine.SourceI
 		upright := info.Rotated(seg.Rotate)
 		cw := s.cropWidth(upright)
 		entry.CropLefts = append(entry.CropLefts, engine.ClampCropX(seg.CropX, cw, upright.Width))
+		entry.CropSteps = append(entry.CropSteps, info.CropSteps(seg, cw, upright.Width))
+	}
+	if entry.CropSteps == nil {
+		entry.CropSteps = make([][]engine.CropStep, len(entry.CropLefts))
 	}
 	return entry
 }
