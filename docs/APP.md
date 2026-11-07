@@ -3389,14 +3389,12 @@ Empty paths use the same defaults as the command line, which keeps every
 flag. Under the paths is what the check looked at, found or not, with the
 check's own words and **Check again**, though the check runs again by
 itself whenever a setting changes: which ffmpeg, ffprobe and llama-server,
-which of the system's own video decoders it can use, VideoToolbox on a Mac
-or decoding on the processor, and how many caption faces there are, the
+and how many caption faces there are, the
 ones the app carries inside itself and the machine's own, `6 built in,
 412 from this machine`. The names are the font list's beside the captions,
 each in its own face, and were once a wall of a few hundred here. The
 models and the keys are said in their own sections, so the check leaves
-them out here. Which decoder a file really went through is in the log of
-its search.
+them out here.
 
 **A path is written one way everywhere**, in full, from the top of the
 disk: `/Users/tim/.framefairy/models`, `/Applications/Frame
