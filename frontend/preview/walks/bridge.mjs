@@ -1122,7 +1122,7 @@ const STRIP = 12 / 180;
 // nothing drawn on it is black, and so are the bars of frame 0, so whether
 // there is a picture is read from the grey under the bars, which no frame
 // has black.
-async function reader(page) {
+export async function reader(page) {
   await page.evaluate(([bits, strip]) => {
     if (window.__pictured) return;
     window.__pictured = () => {

@@ -14,6 +14,16 @@ export default [
     ],
   },
   {
+    // Issue #755, found by Tim on youtube.mp4: dragging a clip's start
+    // later, the captions over the video preview blinked off for a frame
+    // each time the start passed a frame, and dragged earlier they did
+    // not. The clip was handed to the video preview a frame before the
+    // playhead went with the edge, and the frame on screen, out of the
+    // clip by then, was drawn again with no captions.
+    name: "the captions stay over the video preview while the clip's start is dragged later",
+    steps: [["watch captions"], ["drag edge", "start", 40], ["captions stayed"]],
+  },
+  {
     // Issue #281, Tim's idea: while the playhead is dragged faster than
     // the frames under it can be decoded, the video preview shows the key
     // frame decoding starts from, the way established players scrub, and
