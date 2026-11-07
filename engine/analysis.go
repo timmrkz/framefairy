@@ -60,12 +60,16 @@ func (e *Engine) decoderUsed(ctx context.Context, path string, at float64) strin
 		args = append(args, "-ss", num.Fixed(at, 3), "-i", path, "-an", "-frames:v", "1", "-f", "null", "-")
 		probeCtx, cancel := e.decodeWithin(ctx, frameLimit)
 		said := e.Runner.Run(probeCtx, "", e.FFmpeg, args...)
+		// Whether the limit ended it is read before cancel, which sets
+		// the same error on every probe and so took every working
+		// decoder for one that hung.
+		hung := probeCtx.Err() != nil
 		cancel()
 		if ctx.Err() != nil {
 			return ""
 		}
 		used = decoderIn(said.Stderr)
-		if probeCtx.Err() != nil {
+		if hung {
 			// A system decoder that does not give one frame in that time
 			// has stopped working. VideoToolbox on CI's virtual Mac did,
 			// and the framing waited on it until the test run was killed.

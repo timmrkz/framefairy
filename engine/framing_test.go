@@ -193,6 +193,46 @@ func TestHwaccelsIn(t *testing.T) {
 	}
 }
 
+// A system decoder that gives its frame at once is kept, and so is every
+// decode after it. The check once read its time limit after ending it,
+// and took every decoder that worked for one that hung: on Tim's Mac each
+// first framing of a run said the chip gave no frame in 15 s, a third of
+// a second after it began, and framed on the processor from then on.
+//
+// On the real disk: the stand-in ffmpeg is a program that is run.
+func TestASystemDecoderThatWorksIsKept(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("the stand-in is a shell script")
+	}
+	working := filepath.Join(t.TempDir(), "ffmpeg")
+	script := "#!/bin/sh\necho 'Using auto hwaccel type videotoolbox with new default device.' >&2\n"
+	if err := standin.Write(working, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var said bytes.Buffer
+	machine := decodingMachine()
+	// A limit nothing ends, so the test does not hang on the clock's.
+	machine.timeLimit = func(ctx context.Context, _ time.Duration) (context.Context, context.CancelFunc) {
+		return context.WithCancel(ctx)
+	}
+	e := NewEngine(runlog.New(&said, false, false), machine)
+	e.FFmpeg = working
+	if used := e.decoderUsed(context.Background(), "episode.mp4", 10.2); used != "VideoToolbox" {
+		t.Errorf("the decoder used is %q, want VideoToolbox", used)
+	}
+	if e.softDecode.Load() {
+		t.Error("a system decoder that gave its frame is not used from now on")
+	}
+	if strings.Contains(said.String(), "gave no frame") {
+		t.Errorf("the log says a decoder that worked gave no frame: %q", said.String())
+	}
+	next := NewEngine(runlog.New(io.Discard, false, false), machine)
+	if next.decodeFlags() == nil {
+		t.Error("the next job does not decode on the system's decoder")
+	}
+}
+
 // A system decoder that never gives the one frame framing first asks it
 // for is ended, and the framing goes on with the processor decoding. On
 // CI's virtual Mac VideoToolbox hung there four times between 10 and 13
