@@ -239,3 +239,74 @@ func TestPathAClipMadeByHandIsEditedAndUndone(t *testing.T) {
 		t.Errorf("%d clips made by hand after undo and redo, want both", n)
 	}
 }
+
+// A clip dragged longer, out over a part of the video nothing has heard
+// yet, has that part heard by itself, and only that part, so its captions
+// come where it now reaches. Tim dragged the start of a clip made with O
+// back past what it had heard, and it showed no captions there, issue
+// #745.
+//
+// On the real disk: ffmpeg and the episode's decoder read the episode.
+func TestPathAClipDraggedLongerIsHeardWhereItNowReaches(t *testing.T) {
+	d := open(t)
+	ep := d.episode("longer", minutes5)
+	if _, err := d.svc.store.AddEpisodes([]string{ep}); err != nil {
+		t.Fatal(err)
+	}
+	// O at 200 s hears back to 154 s, a clip's longest and two
+	// sentences' reach, see engine.ClipRequest.
+	if done := d.waitFor(d.out(ep, 200).ID); done.State != JobDone {
+		t.Fatalf("made %+v", done)
+	}
+	made := d.madeByHand(ep)
+	if len(made) != 1 || len(made[0].Unheard) != 0 {
+		t.Fatalf("made %+v", made)
+	}
+	c := made[0]
+	ctx := context.Background()
+	heardBefore := d.speech.seconds()
+	if _, err := d.svc.Reshape(ctx, ep, c.Plan, c.ID, engine.Gesture{Kind: "trim", Edge: "start", From: 120},
+		[2]float64{c.Start, 120}); err != nil {
+		t.Fatal(err)
+	}
+	st, err := d.svc.State(ctx, ep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var entry ClipEntry
+	for _, e := range st.Clips {
+		if e.Key == c.Key {
+			entry = e
+		}
+	}
+	if st.Chosen != c.Key || entry.Start != 120 || len(entry.Unheard) != 1 ||
+		entry.Unheard[0][0] != 120 || math.Abs(entry.Unheard[0][1]-154) > 0.5 {
+		t.Fatalf("dragged to 120 s, %q is chosen and the clip is %+v, not heard %v", st.Chosen, entry.ClipView, entry.Unheard)
+	}
+	hearing, ok := d.svc.jobs.find(ep, engine.JobTranscribe)
+	if !ok || hearing.From != 120 || math.Abs(hearing.To-154) > 0.5 {
+		t.Fatalf("the part not heard is heard by %+v", hearing)
+	}
+	if done := d.waitFor(hearing.ID); done.State != JobDone {
+		t.Fatalf("the part ended %+v", done)
+	}
+	if heard := d.speech.seconds() - heardBefore; heard < 30 || heard > 40 {
+		t.Errorf("%.1f s heard for the 34 s the clip brought in", heard)
+	}
+	for _, e := range d.clips(ep) {
+		if e.Key == c.Key && len(e.Unheard) != 0 {
+			t.Errorf("once heard, the clip still has %v not heard", e.Unheard)
+		}
+	}
+	view, err := d.svc.Captions(ep, c.Plan, c.ID)
+	if err != nil || len(view.Captions) == 0 || view.Captions[0].Start > 3 {
+		t.Fatalf("the clip dragged to 120 s has its first caption at %+v, %v", view, err)
+	}
+	// Heard whole, the next state asks for nothing more.
+	if _, err := d.svc.State(ctx, ep); err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := d.svc.jobs.find(ep, engine.JobTranscribe); again.ID != hearing.ID {
+		t.Errorf("a clip heard whole is heard again by %+v", again)
+	}
+}

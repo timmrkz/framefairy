@@ -202,6 +202,30 @@ func Unheard(fsys afero.Fs, source, asrModelDir string, span timed.Window) []tim
 	return gapsIn(HeardParts(fsys, source, asrModelDir), span)
 }
 
+// Unheard is what of a clip's pieces its transcript has not heard yet, in
+// order, given every part it has heard, see HeardParts. A clip shows the
+// words said in its pieces, so a part of them not heard is a part of it
+// with no captions, issue #745.
+func (v ClipView) Unheard(heard [][2]float64) []timed.Window {
+	var out []timed.Window
+	for _, s := range v.Segments {
+		out = append(out, gapsIn(heard, timed.Window{Start: s.Start, End: s.End})...)
+	}
+	return out
+}
+
+// ClipUnheard is the part of the episode to hear for a clip to show all
+// its captions: from where the first part of it not heard yet starts to
+// where the last ends, see ClipView.Unheard. It is false when the clip is
+// heard whole.
+func ClipUnheard(v ClipView, heard [][2]float64) (timed.Window, bool) {
+	gaps := v.Unheard(heard)
+	if len(gaps) == 0 {
+		return timed.Window{}, false
+	}
+	return timed.Window{Start: gaps[0].Start, End: gaps[len(gaps)-1].End}, true
+}
+
 // shortestGap is the shortest stretch not heard that is worth hearing, in
 // seconds. Anything shorter holds no word.
 const shortestGap = 0.1

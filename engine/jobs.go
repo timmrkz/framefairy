@@ -66,8 +66,9 @@ const (
 	JobRender = "render"
 	// JobClip is a clip made by hand, see MakeClip.
 	JobClip = "clip"
-	// JobTranscribe is the whole episode heard to its end, with no search
-	// after, see TranscribeJob.
+	// JobTranscribe is the episode heard with no search after, the whole
+	// of it to its end or the part an edit brought into a clip, see
+	// TranscribeJob.
 	JobTranscribe = "transcribe"
 )
 
@@ -75,8 +76,8 @@ const (
 // a time, and a new one takes the place of the last.
 const SearchID = "search"
 
-// TranscribeID is the id of an episode's transcription to its end. An
-// episode has one at a time.
+// TranscribeID is the id of an episode's transcription, to its end or of
+// a part. An episode has one at a time.
 const TranscribeID = "transcribe"
 
 // JobRecord is what the work folder keeps about a job.
@@ -85,7 +86,7 @@ type JobRecord struct {
 	Kind string `json:"kind"`
 
 	// A search: the window, To 0 for the end of the episode, and the
-	// numbers it asks for.
+	// numbers it asks for. A transcription: the part it hears, the same.
 	From   float64 `json:"from,omitempty"`
 	To     float64 `json:"to,omitempty"`
 	Count  int     `json:"count,omitempty"`
@@ -144,6 +145,12 @@ func (r JobRecord) PlanPath(source string, duration float64) string {
 // Clip is what a clip made by hand asks for.
 func (r JobRecord) Clip() ClipRequest {
 	return ClipRequest{At: r.At, Backward: r.Backward}
+}
+
+// Part is the part of the episode a transcription hears, with no end for
+// the whole episode to its end, see TranscribeJob.
+func (r JobRecord) Part() timed.Window {
+	return timed.Window{Start: r.From, End: r.To}
 }
 
 // Underway is the clip a job kept in this record had on the way, so a job
@@ -323,7 +330,8 @@ func saneJob(source string, r *JobRecord) bool {
 			return false
 		}
 	case JobTranscribe:
-		if r.ID != TranscribeID || r.Step == StepFinding || r.Step == StepFraming || r.Step == StepRendering {
+		if r.ID != TranscribeID || !finite(r.From) || !finite(r.To) || (r.To > 0 && r.To <= r.From) ||
+			r.Step == StepFinding || r.Step == StepFraming || r.Step == StepRendering {
 			return false
 		}
 	case JobClip:
@@ -609,25 +617,27 @@ func (p *Project) Search(ctx context.Context, req PlanRequest, host Host) (plan 
 	return p.Plan(stepCtx, req)
 }
 
-// TranscribeJob hears the whole episode, from wherever the transcript has
-// not heard it yet to its end, and nothing after: Transcribe whole video in
-// a video's menu. It keeps a record like a search, so an app closed while
-// it hears says so, and carries on from what was heard. Its hearing gives
-// way to every search and clip made by hand, which the app's lanes decide.
-func (p *Project) TranscribeJob(ctx context.Context, host Host) (err error) {
-	j := p.startJob(JobRecord{ID: TranscribeID, Kind: JobTranscribe}, host)
+// TranscribeJob hears a part of the episode, wherever the transcript has
+// not heard it yet, and nothing after. A part with no end is the whole
+// episode to its end: Transcribe whole video in a video's menu. A part
+// with an end is what an edit brought into a clip, see ClipUnheard. It
+// keeps a record like a search, so an app closed while it hears says so,
+// and carries on from what was heard. Its hearing gives way to every
+// search and clip made by hand, which the app's lanes decide.
+func (p *Project) TranscribeJob(ctx context.Context, part timed.Window, host Host) (err error) {
+	j := p.startJob(JobRecord{ID: TranscribeID, Kind: JobTranscribe, From: part.Start, To: part.End}, host)
 	defer j.end(&err)
 	if ctx.Err() != nil {
 		return ErrCancelled
 	}
-	end, err := p.windowEnd(ctx, PlanRequest{})
+	end, err := p.windowEnd(ctx, PlanRequest{To: part.End})
 	if err != nil {
 		return err
 	}
 	stepOf := func(ctx context.Context, step string) (context.Context, func(), error) {
 		return j.turn(ctx, step)
 	}
-	letGo, err := p.hear(ctx, stepOf, timed.Window{Start: 0, End: end})
+	letGo, err := p.hear(ctx, stepOf, timed.Window{Start: part.Start, End: end})
 	letGo()
 	return err
 }

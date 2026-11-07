@@ -511,7 +511,10 @@ func (q *queue) turn(job *Job, opts engine.Options) engine.Turn {
 	// see engine.Turn. The engine asks for a job's turns one after another.
 	var holding func()
 	return func(ctx context.Context, step string, waits func()) (context.Context, func(), error) {
-		lane, kind := laneOfStep(job.Kind, step, onThisMachine)
+		q.mu.Lock()
+		part := job.To > 0
+		q.mu.Unlock()
+		lane, kind := laneOfStep(job.Kind, step, part, onThisMachine)
 		// Which lane a step waits for and whether its model is on this
 		// machine, so a log says why a transcription waited on a search.
 		theLog.jobLine(zerolog.DebugLevel, job).Str("step", step).Str("lane", lane).

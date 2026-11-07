@@ -126,7 +126,7 @@ func TestFindingTakesHearingBack(t *testing.T) {
 func TestFindingInTheCloudLeavesHearingAlone(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		l := newLanes()
-		lane, kind := laneOfStep("search", "finding", false)
+		lane, kind := laneOfStep("search", "finding", false, false)
 		hearing, heard := given(t, l, LaneHearing, hearingTurn)
 		_, found := given(t, l, lane, kind)
 		if hearing.Err() != nil {
@@ -136,7 +136,7 @@ func TestFindingInTheCloudLeavesHearingAlone(t *testing.T) {
 		again, _ := waiting(t, l, LaneHearing, hearingTurn)
 		comes(t, again, "hearing while a search finds in the cloud")()
 		found()
-		if _, kind := laneOfStep("search", "finding", true); kind != findingTurn {
+		if _, kind := laneOfStep("search", "finding", false, true); kind != findingTurn {
 			t.Error("finding with the model on this machine no longer holds hearing up")
 		}
 	})
@@ -449,8 +449,13 @@ func TestTurnsFromEverywhereAtOnce(t *testing.T) {
 // Every wait is on a turn coming or a turn's context ending, and which of
 // two comes first is read from the one channel that gets it.
 func TestTheWholeVideoHearsLast(t *testing.T) {
-	if lane, kind := laneOfStep(engine.JobTranscribe, "hearing", true); lane != LaneHearing || kind != wholeHearingTurn {
+	if lane, kind := laneOfStep(engine.JobTranscribe, "hearing", false, true); lane != LaneHearing || kind != wholeHearingTurn {
 		t.Fatalf("the whole video hears in %s as %d", lane, kind)
+	}
+	// The part of a clip a hand brought in is heard the way a clip made
+	// by hand is, ahead of the searches, issue #745.
+	if lane, kind := laneOfStep(engine.JobTranscribe, "hearing", true, true); lane != LaneHearing || kind != handHearingTurn {
+		t.Fatalf("the part of a clip hears in %s as %d", lane, kind)
 	}
 	synctest.Test(t, func(t *testing.T) {
 		l := newLanes()

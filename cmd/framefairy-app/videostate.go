@@ -76,12 +76,13 @@ func (s *FrameFairy) State(ctx context.Context, path string) (VideoState, error)
 			st.Coverage = coverageOf(plans, info.Duration)
 		}
 	}
-	st.Clips = s.clipsOf(plans, info)
+	st.Clips = s.clipsOf(plans, info, st.Status.Heard)
 	searchesEnded(st.Jobs, st.Status, info.Duration)
 	if !st.Status.Missing {
 		st.Window = s.windowFor(ctx, path, st, info.Duration)
 	}
 	st.Chosen, st.ChosenCard = s.chosenFor(path, st)
+	s.hearChosen(path, st)
 	return st, nil
 }
 

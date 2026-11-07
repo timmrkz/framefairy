@@ -142,6 +142,9 @@ func (s *FrameFairy) Continue(id, click string) Job {
 		return s.makeClip(path, carry.Clip(), carry.ID, click, false)
 	}
 	if carry.Kind == engine.JobTranscribe {
+		if carry.To > 0 {
+			return s.transcribe(path, carry.Part())
+		}
 		return s.Transcribe(path)
 	}
 	return s.render(path, carry.Render(), carry)

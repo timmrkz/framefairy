@@ -13,10 +13,12 @@ import (
 
 	"framefairy/engine"
 	"framefairy/engine/fileio"
+	"framefairy/engine/timed"
 )
 
 // Transcribe whole video and Export transcript, the two items about the
-// words of a video in its menu in the sidebar, issue #432.
+// words of a video in its menu in the sidebar, issue #432, and the part of
+// a clip not heard yet, heard by itself, issue #745.
 
 // Transcribe hears the whole video to its end, with no search after:
 // Transcribe video in its menu. It is a job like a search, with a record,
@@ -40,14 +42,74 @@ func (s *FrameFairy) Transcribe(path string) Job {
 			return s.jobs.refuse(path, engine.JobTranscribe, label, errClipsFirst)
 		}
 	}
+	// The part of a clip being heard is part of the whole video, which
+	// takes its place and hears on from what it heard.
+	for _, j := range s.jobs.list() {
+		if j.Episode == path && j.Kind == engine.JobTranscribe && j.going() && j.To > 0 {
+			s.CancelJob(j.ID)
+			s.jobs.waitJob(j.ID)
+		}
+	}
+	return s.transcribe(path, timed.Window{})
+}
+
+// transcribe queues the video's transcription of a part, the whole video
+// to its end for a part with no end, see engine.Project.TranscribeJob.
+func (s *FrameFairy) transcribe(path string, part timed.Window) Job {
 	// One that stopped is taken up by this one, which writes the record
 	// again in its place.
 	s.jobs.settle(path, engine.JobTranscribe, "")
-	return s.jobs.addSteps(path, engine.JobTranscribe, label, true, func(j *Job) {
-		j.JobRecord.ID = engine.TranscribeID
+	return s.jobs.addSteps(path, engine.JobTranscribe, jobLabel(engine.JobTranscribe, false), true, func(j *Job) {
+		j.JobRecord.ID, j.From, j.To = engine.TranscribeID, part.Start, part.End
 	}, func(ctx context.Context, p *engine.Project, host engine.Host) (string, error) {
-		return "", p.TranscribeJob(ctx, host)
+		return "", p.TranscribeJob(ctx, part, host)
 	})
+}
+
+// hearChosen has the part of the clip chosen that is not heard yet heard,
+// by itself, the way a video is heard as it is added, issue #745. An edge
+// dragged out, a cut put back, an undo or a redo can bring into a clip a
+// part of the video no search and no clip made by hand has heard, and
+// the clip has no captions there until it is heard. st is the state of
+// the video just read, see State.
+//
+// It leaves a video alone while its transcription runs, which hears the
+// part or leaves it for the state read once it ends, and a part asked for
+// already that stopped or failed, which a hand carries on, so a hearing
+// that fails is not asked for again on every state. A video never heard
+// is the first search's to hear.
+func (s *FrameFairy) hearChosen(path string, st VideoState) {
+	if s.jobs == nil || st.Status.Missing || len(st.Status.Heard) == 0 || st.Chosen == "" {
+		return
+	}
+	var part timed.Window
+	found := false
+	for _, c := range st.Clips {
+		if c.Key == st.Chosen && len(c.Unheard) > 0 {
+			part, found = engine.ClipUnheard(c.ClipView, st.Status.Heard)
+		}
+	}
+	if !found {
+		return
+	}
+	var last *Job
+	for i, j := range st.Jobs {
+		if j.Kind != engine.JobTranscribe {
+			continue
+		}
+		if j.going() {
+			return
+		}
+		if last == nil || j.Seq > last.Seq {
+			last = &st.Jobs[i]
+		}
+	}
+	if last != nil && last.State != JobDone && last.To > 0 && last.From <= part.Start && last.To >= part.End {
+		return
+	}
+	theLog.line(zerolog.InfoLevel, "app").Str("video", filepath.Base(path)).Str("clip", st.Chosen).
+		Float64("from", part.Start).Float64("to", part.End).Msg("the part of the clip chosen not heard yet is heard")
+	s.transcribe(path, part)
 }
 
 // errClipsFirst is Transcribe video asked for while the work on the
@@ -59,7 +121,9 @@ const errClipsFirst = "the video's clips are being found, transcribe it once tha
 // video asked for, see Transcribe. What it heard stays.
 func (s *FrameFairy) stopTranscribing(path, why string) {
 	for _, j := range s.jobs.list() {
-		if j.Episode == path && j.Kind == engine.JobTranscribe && j.going() {
+		// The part of a clip is heard in turn with the search's window,
+		// not stopped by it, or its clip would wait for words for good.
+		if j.Episode == path && j.Kind == engine.JobTranscribe && j.going() && j.To <= 0 {
 			theLog.jobLine(zerolog.InfoLevel, &j).Str("why", why).Msg("the whole video's transcription is stopped for the work on its clips")
 			s.CancelJob(j.ID)
 		}

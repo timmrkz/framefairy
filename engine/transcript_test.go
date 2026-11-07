@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -1166,6 +1167,43 @@ func TestATranscriptIsDoneWhenNothingIsLeftToHear(t *testing.T) {
 		}
 		if unheard := len(gapsIn(file.heard(), timed.Window{Start: 0, End: 600})) == 0; unheard != c.done && len(c.parts) > 0 {
 			t.Errorf("%s: done says %v and what is left to hear disagrees", c.name, c.done)
+		}
+	}
+}
+
+// A clip says what of its pieces is not heard yet, and the part of the
+// episode to hear for all its captions, from the first such part to the
+// last. A clip dragged out over a part nothing heard showed no captions
+// there, issue #745.
+func TestAClipSaysWhatOfItIsNotHeardYet(t *testing.T) {
+	t.Parallel()
+	heard := [][2]float64{{0, 100}, {150, 200}, {260, 300}}
+	piece := func(start, end float64) SegmentView { return SegmentView{Start: start, End: end} }
+	for _, c := range []struct {
+		name   string
+		pieces []SegmentView
+		gaps   []timed.Window
+		hear   timed.Window
+	}{
+		{"heard whole", []SegmentView{piece(20, 50)}, nil, timed.Window{}},
+		{"its start dragged back past what was heard", []SegmentView{piece(120, 180)},
+			[]timed.Window{{Start: 120, End: 150}}, timed.Window{Start: 120, End: 150}},
+		{"its end dragged on past what was heard", []SegmentView{piece(170, 230)},
+			[]timed.Window{{Start: 200, End: 230}}, timed.Window{Start: 200, End: 230}},
+		{"over two parts heard and the gaps around them", []SegmentView{piece(90, 280)},
+			[]timed.Window{{Start: 100, End: 150}, {Start: 200, End: 260}}, timed.Window{Start: 100, End: 260}},
+		{"a cut over a gap needs none of it", []SegmentView{piece(80, 100), piece(150, 190)}, nil, timed.Window{}},
+		{"two pieces, each with a gap", []SegmentView{piece(90, 120), piece(190, 210)},
+			[]timed.Window{{Start: 100, End: 120}, {Start: 200, End: 210}}, timed.Window{Start: 100, End: 210}},
+		{"a sliver too short to hold a word", []SegmentView{piece(50, 100.05)}, nil, timed.Window{}},
+	} {
+		v := ClipView{Segments: c.pieces}
+		if got := v.Unheard(heard); !slices.Equal(got, c.gaps) {
+			t.Errorf("%s: not heard %v, want %v", c.name, got, c.gaps)
+		}
+		hear, ok := ClipUnheard(v, heard)
+		if hear != c.hear || ok != (c.gaps != nil) {
+			t.Errorf("%s: hears %v %v, want %v", c.name, hear, ok, c.hear)
 		}
 	}
 }

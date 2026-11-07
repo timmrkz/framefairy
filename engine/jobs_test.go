@@ -676,7 +676,7 @@ func TestATranscriptionHearsTheWholeEpisodeAndNothingElse(t *testing.T) {
 		}
 		return ctx, func() {}, nil
 	}
-	if err := p.TranscribeJob(context.Background(), Host{Turn: turn}); err != nil {
+	if err := p.TranscribeJob(context.Background(), timed.Window{}, Host{Turn: turn}); err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
 	if _, done := Coverage(disk, p.Source, p.Base.ASRModel); !done {
@@ -690,8 +690,43 @@ func TestATranscriptionHearsTheWholeEpisodeAndNothingElse(t *testing.T) {
 	}
 	// Heard to the end, there is nothing left to wait for.
 	turns = nil
-	if err := p.TranscribeJob(context.Background(), Host{Turn: turn}); err != nil || len(turns) != 0 {
+	if err := p.TranscribeJob(context.Background(), timed.Window{}, Host{Turn: turn}); err != nil || len(turns) != 0 {
 		t.Errorf("again: %v, turns %v", err, turns)
+	}
+}
+
+// A transcription of a part hears that part and no more, and keeps the
+// part in its record, so one carried on hears the same part. It is how a
+// clip dragged out over a part nobody heard gets its words, issue #745.
+//
+// On the real disk: ffmpeg reads the episode the transcription hears.
+func TestATranscriptionOfAPartHearsThatPart(t *testing.T) {
+	t.Parallel()
+	p, asked := searchProject(t, nil)
+	part := timed.Window{Start: 10, End: 20}
+	var turns []string
+	turn := func(ctx context.Context, step string, _ func()) (context.Context, func(), error) {
+		turns = append(turns, step)
+		if rec := ReadJobs(disk, p.Source); len(rec) != 1 || rec[0].Kind != JobTranscribe || rec[0].Part() != part {
+			t.Errorf("waiting for %s, the records say %+v", step, rec)
+		}
+		return ctx, func() {}, nil
+	}
+	if err := p.TranscribeJob(context.Background(), part, Host{Turn: turn}); err != nil {
+		t.Fatalf("%v %s", err, p.LastError())
+	}
+	if gaps := Unheard(disk, p.Source, p.Base.ASRModel, part); len(gaps) != 0 {
+		t.Errorf("the part left %v unheard", gaps)
+	}
+	heard := HeardParts(disk, p.Source, p.Base.ASRModel)
+	if len(heard) == 0 || heard[0][0] > 10 || heard[0][0] < 5 || heard[len(heard)-1][1] > 25 {
+		t.Errorf("hearing 10 to 20 s heard %v", heard)
+	}
+	if strings.Join(turns, " ") != "hearing" || *asked != 0 {
+		t.Errorf("turns %v, the model asked %d times", turns, *asked)
+	}
+	if rec := ReadJobs(disk, p.Source); len(rec) != 0 {
+		t.Errorf("a finished transcription keeps %+v", rec)
 	}
 }
 
