@@ -46,11 +46,18 @@ export const steps = {
       // frame's lower half, where the captions are drawn over it, which
       // the reflection leaves out. The frame's upper half is the
       // reflection's lower half, the reflection being upside down.
+      // Each pixel counts as much as it is seen, so the reflection's cells
+      // faded out at its sides and top, whose colours are rounded to a
+      // few steps, count for little.
       const mean = (g, x0, y0, w, h) => {
         const d = g.getImageData(x0, y0, w, h).data;
         let sum = 0;
-        for (let i = 0; i < d.length; i += 4) sum += (d[i] + d[i + 1] + d[i + 2]) / 3;
-        return sum / (d.length / 4);
+        let seen = 0;
+        for (let i = 0; i < d.length; i += 4) {
+          sum += ((d[i] + d[i + 1] + d[i + 2]) / 3) * (d[i + 3] / 255);
+          seen += d[i + 3] / 255;
+        }
+        return seen ? sum / seen : 0;
       };
       const rg = r.getContext("2d");
       const sg = screen.getContext("2d");
@@ -106,7 +113,7 @@ export const steps = {
     // layers, and the edge of an icon was painted a step of colour apart.
     const seen = (await page.screenshot()).toString("base64");
     const bright = await page.addStyleTag({
-      content: "canvas.reflection { opacity: 1 !important; filter: blur(var(--reflection-blur)) brightness(4) !important }",
+      content: "canvas.reflection { filter: brightness(8) !important }",
     });
     await realFrames(page, 2);
     const brightened = (await page.screenshot()).toString("base64");

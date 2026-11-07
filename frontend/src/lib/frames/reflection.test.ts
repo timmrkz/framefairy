@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { COLS, ROWS, clear, ease, mirrored, share, unseen } from "./reflection";
+import { BLUR, COLS, ROWS, band, clear, ease, mirrored, painted, share, spread } from "./reflection";
 
 // A frame of standard video, w by h, each pixel given as [r, g, b] of 0 to
 // 1023 the way the Go side packs them, red lowest, see picture.ts.
@@ -80,10 +80,132 @@ describe("the reflection settling on a new frame", () => {
   });
 
   test("fades out on black in the video preview, keeping its colours, rather than going dark", () => {
-    const into = new Float32Array([10, 20, 30, 255, 40, 50, 60, 255]);
-    expect(unseen(into)).toBe(false);
-    clear(into);
-    expect([...into]).toEqual([10, 20, 30, 0, 40, 50, 60, 0]);
-    expect(unseen(into)).toBe(true);
+    const b = band(1200, 100);
+    const cells = new Float32Array(COLS * ROWS * 4);
+    mirrored(frame(64, 36, () => [1023, 0, 0]), 64, 36, "", cells);
+    const now = new Float32Array(COLS * ROWS * 4);
+    spread(cells, b, now);
+    clear(cells);
+    const goal = new Float32Array(COLS * ROWS * 4);
+    spread(cells, b, goal);
+    expect(Math.max(...goal)).toBe(0);
+    ease(now, goal, share(0.25));
+    const bytes = new Uint8ClampedArray(now.length);
+    painted(now, bytes);
+    const i = ((ROWS - 1) * COLS + COLS / 2) * 4;
+    expect(bytes[i + 3]).toBeGreaterThan(0);
+    expect([bytes[i], bytes[i + 1], bytes[i + 2]]).toEqual([255, 0, 0]);
+  });
+
+  test("fades in on its first frame with that frame's colours, not from black", () => {
+    const cells = new Float32Array(COLS * ROWS * 4);
+    mirrored(frame(64, 36, () => [0, 0, 1023]), 64, 36, "", cells);
+    const goal = new Float32Array(COLS * ROWS * 4);
+    spread(cells, band(1200, 100), goal);
+    const now = new Float32Array(COLS * ROWS * 4);
+    ease(now, goal, share(0.05));
+    const bytes = new Uint8ClampedArray(now.length);
+    painted(now, bytes);
+    const i = ((ROWS - 1) * COLS + COLS / 2) * 4;
+    expect(bytes[i + 3]).toBeGreaterThan(0);
+    expect([bytes[i], bytes[i + 1], bytes[i + 2]]).toEqual([0, 0, 255]);
+  });
+});
+
+// The share of a bell of width 1 below x, added up finely, to check the
+// blur against without the error function it is worked out with.
+function below(x: number): number {
+  let sum = 0;
+  const step = 0.001;
+  for (let t = -8; t < x; t += step) sum += Math.exp((-(t + step / 2) * (t + step / 2)) / 2) * step;
+  return sum / Math.sqrt(2 * Math.PI);
+}
+
+describe("the reflection blurred and faded over its band", () => {
+  // A band as the walks lay it out, four fifths of 1500 pixels by 100.
+  const wide = 1200;
+  const high = 100;
+  const grey = (cells: Float32Array, r: number, c: number) => cells[(r * COLS + c) * 4 + 3];
+
+  function spreadOf(at: (x: number, y: number) => [number, number, number]) {
+    const cells = new Float32Array(COLS * ROWS * 4);
+    mirrored(frame(COLS * 2, ROWS * 2, at), COLS * 2, ROWS * 2, "", cells);
+    const into = new Float32Array(COLS * ROWS * 4);
+    spread(cells, band(wide, high), into);
+    return into;
+  }
+
+  test("thins out towards the edges of the band, as the stylesheet's blur did over nothing beyond it", () => {
+    // A band narrow enough for the bell to reach past its edge from the
+    // part the sides do not fade. Of two cells of the foot row there, the
+    // one nearer the edge has less of the band under its bell, and so
+    // less light, by as much as the share of the bell the band covers.
+    const narrow = 300;
+    const cells = new Float32Array(COLS * ROWS * 4);
+    mirrored(frame(64, 36, () => [1023, 1023, 1023]), 64, 36, "", cells);
+    const into = new Float32Array(COLS * ROWS * 4);
+    spread(cells, band(narrow, high), into);
+    const r = ROWS - 1;
+    const cw = narrow / COLS;
+    const covered = (c: number) => below(((COLS - c - 0.5) * cw) / BLUR) - below((-(c + 0.5) * cw) / BLUR);
+    const near = COLS / 4 + 1;
+    const middle = COLS / 2;
+    expect(grey(into, r, near) / grey(into, r, middle)).toBeCloseTo(covered(near) / covered(middle), 3);
+    expect(covered(near)).toBeLessThan(covered(middle) - 0.05);
+  });
+
+  test("keeps the colour of a frame of one colour everywhere it is seen", () => {
+    const cells = new Float32Array(COLS * ROWS * 4);
+    mirrored(frame(64, 36, () => [1023, 512, 0]), 64, 36, "", cells);
+    const colour = [...cells.subarray(0, 3)].map((v) => Math.round(v));
+    const into = spreadOf(() => [1023, 512, 0]);
+    const bytes = new Uint8ClampedArray(into.length);
+    painted(into, bytes);
+    for (const [r, c] of [
+      [ROWS - 1, COLS / 2],
+      [ROWS / 2, COLS / 4],
+      [5, (3 * COLS) / 4],
+    ]) {
+      const i = (r * COLS + c) * 4;
+      expect([bytes[i], bytes[i + 1], bytes[i + 2]]).toEqual(colour);
+    }
+  });
+
+  test("fades out at the sides and upwards, the way the stops of the gradients said", () => {
+    const into = spreadOf(() => [1023, 1023, 1023]);
+    const foot = ROWS - 1;
+    // Nothing at the very sides, strongest from a quarter in to three
+    // quarters, and from the foot to a third of the way up already less
+    // than half.
+    expect(grey(into, foot, 0)).toBeLessThan(grey(into, foot, COLS / 4) / 10);
+    expect(grey(into, foot, COLS - 1)).toBeLessThan(grey(into, foot, (3 * COLS) / 4) / 10);
+    const third = ROWS - 1 - Math.round(0.35 * ROWS);
+    expect(grey(into, third, COLS / 2)).toBeLessThan(grey(into, foot, COLS / 2) * 0.5);
+    expect(grey(into, 0, COLS / 2)).toBeLessThan(grey(into, foot, COLS / 2) / 50);
+  });
+
+  test("blurs across by as many pixels of the app as BLUR says, however wide the band", () => {
+    // A white left half and a black right half: the edge blurred, the
+    // colour at the middle of the band is half way, and a bell's width
+    // further on it is the share of the bell beyond that, in pixels of
+    // the app, so the same in a wide band and in a narrow one.
+    for (const w of [1200, 600]) {
+      const cells = new Float32Array(COLS * ROWS * 4);
+      mirrored(frame(COLS * 2, ROWS * 2, (x) => (x < COLS ? [1023, 1023, 1023] : [0, 0, 0])), COLS * 2, ROWS * 2, "", cells);
+      const into = new Float32Array(COLS * ROWS * 4);
+      spread(cells, band(w, high), into);
+      const r = ROWS - 1;
+      const cell = w / COLS;
+      const c = COLS / 2 + Math.round(BLUR / cell) - 1;
+      // The middle of that cell, from the edge, in bells.
+      const x = ((c + 0.5 - COLS / 2) * cell) / BLUR;
+      const lit = into[(r * COLS + c) * 4] / into[(r * COLS + c) * 4 + 3];
+      const bandFrom = ((c + 0.5) * cell) / BLUR;
+      const bandTo = ((COLS - c - 0.5) * cell) / BLUR;
+      // White from the band's left edge to its middle, of all the band
+      // the bell covers.
+      const expected = (below(-x) - below(-bandFrom)) / (below(bandTo) - below(-bandFrom));
+      expect(lit).toBeCloseTo(expected, 2);
+    }
   });
 });
