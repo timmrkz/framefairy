@@ -33,11 +33,13 @@
   // The frame put on the video preview, or null for the black it shows
   // without one, which the reflection fades out on. It is read at once and
   // not kept. The same frame put up again, for what lies over it changed,
-  // is the same reflection, and is not read again.
-  let taken: Picture | null | undefined;
+  // is the same reflection, and is not read again: a frame is known by
+  // when it starts, its size and its light, never by holding on to it.
+  let taken: string | undefined;
   export function take(frame: Picture | null) {
-    if (frame === taken) return;
-    taken = frame;
+    const known = frame ? `${frame.timestamp} ${frame.width} ${frame.height} ${frame.light}` : "";
+    if (known === taken) return;
+    taken = known;
     const d = frame?.data;
     if (frame && d) mirrored(d, frame.width, frame.height, frame.light, cells);
     else clear(cells);
@@ -109,7 +111,6 @@
     width: var(--reflection-w);
     height: var(--reflection-h);
     pointer-events: none;
-    will-change: transform;
   }
 
   /* On a whole pixel, see Everything lands on a whole pixel in CLAUDE.md. */
