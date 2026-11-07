@@ -16,8 +16,7 @@ import (
 // Machine is what a program keeps for its whole life and shares with every
 // job it runs: where files are read and written, the records, how the
 // programs it calls are found and run, and what was learned about this
-// machine on the way, which video decoder works here, which encoders and
-// subtitle filter its ffmpeg has, and the face detector. Each program
+// machine on the way, which encoders and subtitle filter its ffmpeg has, and the face detector. Each program
 // makes one in main and hands it to every Engine it makes, so what one job
 // learned the next one knows. An Engine keeps only what belongs to its one
 // job. See docs/decisions/2026-10-31-running-programs-and-what-outlives-a-job.md.
@@ -107,8 +106,8 @@ type Machine struct {
 	keys, oldKeys keyStore
 	savedFirst    atomic.Bool
 	network       http.RoundTripper
-	// media is the system's media engine, which a render, framing and the
-	// episode's decoder use, see Media. Nil in a machine NewMachine makes,
+	// media is the system's media engine, which a render and the episode's
+	// decoder use, see Media. Nil in a machine NewMachine makes,
 	// whose videos are decoded and encoded by ffmpeg's own code on the
 	// processor, so a test never waits on the system's, which GitHub's
 	// virtual Mac now and then never answers. What an ffmpeg offers is

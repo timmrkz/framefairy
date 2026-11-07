@@ -13,9 +13,9 @@ import (
 )
 
 // A machine handed no media engine, as every test's is, reaches nothing
-// of the system's: no encoder of Apple's, no -hwaccel, and an episode's
-// decoder that is never told it may use the graphics chip. Handed a
-// Mac's, it reaches for all three. That is the whole difference between a
+// of the system's: no encoder of Apple's, and an episode's decoder that is
+// never told it may use the graphics chip. Handed a Mac's, it reaches for
+// both. Framing reaches for neither, see TestAMacFramesOnTheProcessor. That is the whole difference between a
 // test's machine and the app's, see Media.
 func TestOnlyAMachineHandedTheMediaEngineReachesIt(t *testing.T) {
 	own := &Engine{Machine: NewMachine(afero.NewMemMapFs())}

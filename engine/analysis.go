@@ -22,55 +22,6 @@ func tailRunes(s string, n int) string {
 	return string(r[len(r)-n:])
 }
 
-// Framing decodes on the processor, on every machine. It reads a few
-// small grey frames of each span a clip keeps, through short ffmpeg runs,
-// and on Tim's M2 Max a clip framed on the system's video decoder took
-// about four times as long, 4.0 s against 1.0 s, one run each, because
-// every run sets the decoder up again. The checks, time limits and
-// fallbacks that went with it are gone with it: the decoder they guarded
-// only ever hung on CI's virtual Mac. The video preview, which decodes
-// frame after frame, keeps the graphics chip, see Machine.EpisodeFrames.
-
-// SystemDecoders lists the system video decoders this ffmpeg can hand
-// decoding to, as ffmpeg -hwaccels names them.
-func (e *Engine) SystemDecoders(ctx context.Context) []string {
-	said := e.Runner.Run(ctx, "", e.FFmpeg, "-hide_banner", "-hwaccels")
-	if said.Code != 0 {
-		return nil
-	}
-	return hwaccelsIn(said.Stdout)
-}
-
-func hwaccelsIn(out string) []string {
-	var names []string
-	listed := false
-	for _, line := range strings.Split(out, "\n") {
-		line = strings.TrimSpace(line)
-		switch {
-		case strings.HasPrefix(line, "Hardware acceleration methods"):
-			listed = true
-		case listed && line != "" && runes.Len(line) <= 20 && !strings.ContainsAny(line, " :"):
-			names = append(names, line)
-		}
-	}
-	return names
-}
-
-// DecoderName is how a system decoder is called where a person reads it.
-func DecoderName(name string) string {
-	switch name {
-	case "videotoolbox":
-		return "VideoToolbox"
-	case "d3d11va", "d3d12va", "dxva2":
-		return "DirectX " + name
-	case "vaapi":
-		return "VA-API"
-	case "cuda":
-		return "CUDA"
-	}
-	return runes.Scrub(name, 20)
-}
-
 // frameStep is how far apart the frames the crop is measured on are.
 const frameStep = 0.4
 
@@ -83,7 +34,7 @@ type grayFrame struct {
 // readSpan reads the grey frames of one span a clip keeps, FaceWidth by
 // FaceHeight, one every frameStep from its start and the one a tenth of a
 // second before its end, each with its moment. It is one decode of the
-// span.
+// span, on the processor, on every machine, see Framing in ENGINE.md.
 func (e *Engine) readSpan(ctx context.Context, path string, start, end float64) ([]grayFrame, error) {
 	from := math.Max(0, start-0.5)
 	last := math.Max(end-0.1, start) - from

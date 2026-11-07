@@ -85,7 +85,8 @@ func fmtCrop(x *int) string {
 
 // A Mac frames a clip on the processor, never on the graphics chip. On
 // Tim's M2 Max framing a clip on the chip took about four times as long,
-// and a check of the chip had warned on every run that it gave no frame.
+// one run each, and a check of the chip had warned on every run that it
+// gave no frame.
 // The stand-in writes down what each ffmpeg was asked and hands the work
 // to the real ffmpeg.
 //
@@ -114,7 +115,15 @@ func TestAMacFramesOnTheProcessor(t *testing.T) {
 	if len(segments) != 1 || segments[0].CropX == nil {
 		t.Errorf("segments %+v, want one with its crop", segments)
 	}
+	// A part whose read gave none of its frames is pulled on its own, see
+	// samplePositions.
+	if got := e.sampleGray(context.Background(), path, 10, 0.1, FaceWidth, FaceHeight, 1); len(got) != 1 {
+		t.Errorf("a frame pulled on its own gave %d frames", len(got))
+	}
 	runs, _ := os.ReadFile(asked)
+	if !strings.Contains(string(runs), "-frames:v 1") {
+		t.Errorf("no frame was pulled on its own, so that read is not checked:\n%s", runs)
+	}
 	if !strings.Contains(string(runs), path) {
 		t.Fatalf("framing never asked ffmpeg for the video: %q", runs)
 	}
@@ -123,21 +132,5 @@ func TestAMacFramesOnTheProcessor(t *testing.T) {
 	}
 	if strings.Contains(said.String(), "video decoder") {
 		t.Errorf("framing said something about a video decoder:\n%s", said.String())
-	}
-}
-
-func TestHwaccelsIn(t *testing.T) {
-	out := "Hardware acceleration methods:\nvideotoolbox\n\n"
-	if got := hwaccelsIn(out); len(got) != 1 || got[0] != "videotoolbox" {
-		t.Errorf("read %v", got)
-	}
-	if got := hwaccelsIn("Hardware acceleration methods:\n\n"); len(got) != 0 {
-		t.Errorf("an ffmpeg with none read as %v", got)
-	}
-	if got := hwaccelsIn("some banner line\nvaapi\n"); len(got) != 0 {
-		t.Errorf("names outside the list were read: %v", got)
-	}
-	if DecoderName("videotoolbox") != "VideoToolbox" || DecoderName("vaapi") != "VA-API" {
-		t.Error("the names are not the ones a person knows")
 	}
 }

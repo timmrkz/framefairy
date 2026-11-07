@@ -1251,10 +1251,12 @@ saw a crop change at a camera switch in his own podcast, which has two,
 and a clip now has one crop, #396.
 Framing decodes on the processor, on every machine. On Tim's M2 Max a
 clip framed on VideoToolbox took about four times as long, 4.0 s against
-1.0 s, one run each, because framing starts a few short ffmpeg runs and
-each one sets the system's decoder up again. The checks, time limits and
-fallbacks framing had for the system's decoder went with it: the decoder
-only ever hung on CI's virtual Mac. The video preview keeps the graphics
+1.0 s, one run each and different clips, likely because framing starts a
+few short ffmpeg runs and each one sets the system's decoder up again.
+The checks, time limits and fallbacks framing had for the system's
+decoder went with it: the decoder only ever hung on CI's virtual Mac.
+Framing's ffmpeg has no time limit of its own since. Cancel stops it like
+any other, and one that does not end is left behind after five seconds. The video preview keeps the graphics
 chip, see [VIDEO-PREVIEW.md](VIDEO-PREVIEW.md). The crop
 centres on the largest face found. Where too few frames contain a face, it
 goes to the part of the frame with the most fine detail, which is whatever
@@ -1423,8 +1425,7 @@ is, and in the detail lines of `--verbose`.
 
 A search is three kinds of work that no longer wait on each other, in
 `engine/planbuild.go`. The model writes on the graphics side of the
-machine, framing decodes video with ffmpeg on the system's video decoder where
-there is one, and writing a
+machine, framing decodes video with ffmpeg on the processor, and writing a
 clip to the plan is a few kilobytes. So each clip is framed by one of
 several framers while the model goes on writing, and written to the plan
 the moment it is framed. There are as many framers as a third of the
