@@ -35,44 +35,83 @@ import (
 // keep the app's watch on a folder the only one in its watcher. The races
 // are fsnotify's own issue 783, still open, and once it is fixed one
 // watcher is enough again.
+//
+// A folder a watcher watches already is never added to it again. On
+// macOS fsnotify adds it again with the descriptor it opened for the
+// folder, and when the folder was deleted in the same moment, fsnotify
+// had closed that descriptor and closed it a second time, which closes
+// whatever file the app had opened under the same number since: the
+// folder a test was removing, in the one that failed, issue #722. A
+// folder deleted is let go by its watcher by itself, which then says so
+// of the folder, and that change brings the follow that watches the
+// folder put back, see reconcile.
 type watching struct {
-	byDepth [2]*fsnotify.Watcher
+	byDepth [2]watcher
 	heard   func(changed []string)
 	// models is the folder the models are kept in, watched with the
 	// folder over it, so a model deleted or added outside the app shows
 	// at once. Empty for none.
 	models string
-	// mu keeps follow to one at a time, and watched is what the last one
-	// counted, so the count is said only when it changed.
+	// mu keeps follow to one at a time, and away from stop, and watched
+	// is what the last one counted, so the count is said only when it
+	// changed. stopped says the watchers are closed, so nothing asks them
+	// anything after.
 	mu      sync.Mutex
 	watched int
+	stopped bool
 	done    chan struct{}
 }
+
+// watcher is what the watch asks of one of the system's watches on
+// folders: fsnotify's, see systemWatcher, and in a test one it holds, so
+// what the app asks of the system is seen and the system is not run.
+type watcher interface {
+	Add(name string) error
+	Remove(name string) error
+	WatchList() []string
+	Close() error
+	events() <-chan fsnotify.Event
+	errors() <-chan error
+}
+
+// systemWatcher is fsnotify's watcher: kqueue on macOS, inotify on Linux,
+// ReadDirectoryChangesW on Windows.
+type systemWatcher struct{ *fsnotify.Watcher }
+
+func (w systemWatcher) events() <-chan fsnotify.Event { return w.Events }
+func (w systemWatcher) errors() <-chan error          { return w.Errors }
 
 // newWatching starts a watch that hands what changed to heard, with the
 // models folder models, or none when it is empty. It watches nothing
 // until follow names the videos.
 func newWatching(heard func(changed []string), models string) *watching {
-	ws := &watching{heard: heard, models: models, done: make(chan struct{})}
-	for i := range ws.byDepth {
+	var byDepth [2]watcher
+	for i := range byDepth {
 		w, err := fsnotify.NewWatcher()
 		if err != nil {
 			theLog.line(zerolog.WarnLevel, "files").Err(err).
 				Msg("the disk cannot be watched, so a change made outside the app shows once the app comes back to the front")
-			for _, made := range ws.byDepth[:i] {
+			for _, made := range byDepth[:i] {
 				_ = made.Close()
 			}
 			return nil
 		}
-		ws.byDepth[i] = w
+		byDepth[i] = systemWatcher{w}
 	}
+	return watchingWith(heard, models, byDepth)
+}
+
+// watchingWith starts a watch with these two watchers, one for each
+// depth, see watcherOf.
+func watchingWith(heard func(changed []string), models string, byDepth [2]watcher) *watching {
+	ws := &watching{byDepth: byDepth, heard: heard, models: models, done: make(chan struct{})}
 	go ws.run()
 	return ws
 }
 
 // watcherOf is the watcher that watches path: the one of its depth, so a
 // folder and the folder it is in are never watched by the same one.
-func (ws *watching) watcherOf(path string) *fsnotify.Watcher {
+func (ws *watching) watcherOf(path string) watcher {
 	return ws.byDepth[strings.Count(filepath.Clean(path), string(filepath.Separator))%2]
 }
 
@@ -105,6 +144,9 @@ func (ws *watching) follow(files afero.Fs, videos []string, shortsOf func(video 
 	}
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
+	if ws.stopped {
+		return
+	}
 	want := map[string]bool{}
 	for _, dir := range ws.modelFolders() {
 		want[dir] = true
@@ -114,17 +156,23 @@ func (ws *watching) follow(files afero.Fs, videos []string, shortsOf func(video 
 			want[dir] = true
 		}
 	}
+	// A folder that is gone is let go by its watcher by itself, so only
+	// one that is still there is taken off, and a watched one is never
+	// added again, see watching.
+	watched := map[string]bool{}
 	for _, dir := range ws.watchList() {
-		if !want[dir] {
+		watched[dir] = true
+		if want[dir] {
+			continue
+		}
+		if _, err := files.Stat(dir); err == nil {
 			_ = ws.watcherOf(dir).Remove(dir)
 		}
 	}
-	// Each folder is added again even when it is watched already. On
-	// Linux a folder deleted stays on the list until the system says so
-	// of the folder itself, which can come after the folder put back is
-	// heard, and only adding it again watches the folder that is there
-	// now, issue #722. Adding a folder that is watched changes nothing.
 	for dir := range want {
+		if watched[dir] {
+			continue
+		}
 		if _, err := files.Stat(dir); err != nil {
 			continue
 		}
@@ -165,16 +213,17 @@ func (ws *watching) follow(files afero.Fs, videos []string, shortsOf func(video 
 func (ws *watching) run() {
 	defer close(ws.done)
 	a, b := ws.byDepth[0], ws.byDepth[1]
+	aEvents, bEvents, aErrors, bErrors := a.events(), b.events(), a.errors(), b.errors()
 	for {
 		var changed []string
 		var ev fsnotify.Event
 		var err error
 		ok := true
 		select {
-		case ev, ok = <-a.Events:
-		case ev, ok = <-b.Events:
-		case err, ok = <-a.Errors:
-		case err, ok = <-b.Errors:
+		case ev, ok = <-aEvents:
+		case ev, ok = <-bEvents:
+		case err, ok = <-aErrors:
+		case err, ok = <-bErrors:
 		}
 		if !ok {
 			return
@@ -189,12 +238,12 @@ func (ws *watching) run() {
 		changed = ws.heardOf(changed, ev)
 		for more := true; more; {
 			select {
-			case ev, ok := <-a.Events:
+			case ev, ok := <-aEvents:
 				more = ok
 				if ok {
 					changed = ws.heardOf(changed, ev)
 				}
-			case ev, ok := <-b.Events:
+			case ev, ok := <-bEvents:
 				more = ok
 				if ok {
 					changed = ws.heardOf(changed, ev)
@@ -267,13 +316,19 @@ func (ws *watching) modelsIn(changed []string) (models, folder bool) {
 	return models, folder
 }
 
-// stop ends the watch and returns once nothing more is handed on.
+// stop ends the watch and returns once nothing more is handed on. It
+// waits for a follow under way, and no follow asks the watchers anything
+// after: a watcher asked to add a folder while it closes closed the
+// folder's descriptor twice on macOS, see watching.
 func (ws *watching) stop() {
 	if ws == nil {
 		return
 	}
+	ws.mu.Lock()
+	ws.stopped = true
 	for _, w := range ws.byDepth {
 		_ = w.Close()
 	}
+	ws.mu.Unlock()
 	<-ws.done
 }
