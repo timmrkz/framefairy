@@ -27,7 +27,10 @@ export async function begin({ steps: usual = 60 } = {}) {
   // can throw before the walk's first step, and that is as worth a trace
   // as any step is, so everything after the page is open keeps one.
   try {
-    const { browser, page, errors } = await open(url);
+    // Less motion, as every sequence that looks at none, see still in
+    // common/steps.mjs. STILL=none walks it with the motion, as the walks
+    // do every night.
+    const { browser, page, errors } = await open(url, { still: process.env.STILL !== "none" });
     if (process.env.HEVC) await addHEVC(url, page);
     const watch = new Watch(page, await chosen(page), errors);
     return { url, seed, steps, rng: random(seed), browser, page, watch };

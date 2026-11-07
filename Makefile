@@ -578,7 +578,7 @@ WALKERS ?=
 WALKSHARD ?=
 WALKTIMES ?=
 WALKSUMMARY = $(CURDIR)/$(STAMPS)/walk-summary.txt
-# STILL=none walks every sequence with the app's motion, see moving in
+# STILL=none walks every sequence and random walk with the app's motion, see moving in
 # frontend/preview/walks/common/steps.mjs.
 STILL ?=
 # How long the runs may take before go test stops them. TestWalks stops
