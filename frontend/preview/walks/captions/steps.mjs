@@ -1028,6 +1028,52 @@ export const steps = {
     const box = s.map((w) => w.text).join(" ");
     if (box !== arg) walk.wrong = `the caption box reads "${box}", not "${arg}"`;
   },
+  // ["drag captions", px]
+  //                    takes the caption box by its edge and drags it up by
+  //                    px pixels in steps: the Height field follows the
+  //                    hand on a height the Go side offers, see
+  //                    engine.CaptionStart, and what is saved on letting go
+  //                    is the height the field showed last
+  async "drag captions"(walk, arg, s) {
+    const { page, settled, watch } = walk;
+    const { heights } = await ask(page, "CaptionStart");
+    const field = page.locator("label.setting", { hasText: "Height" }).locator("input");
+    const box = await page.locator(".screen .captions .box").first().boundingBox();
+    const x = box.x + 2;
+    const y = box.y + box.height / 2;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    const shown = [];
+    for (let k = 1; k <= 8; k++) {
+      await page.mouse.move(x, y - (arg * k) / 8);
+      await nextPaint(page);
+      shown.push(Number(await field.inputValue()));
+    }
+    await page.mouse.up();
+    await watch.step("drag captions", s);
+    await settled();
+    const off = shown.filter((h) => !heights.includes(h));
+    const saved = Math.round((await engineState(page, watch.at)).style.marginV * 1920);
+    const last = shown.at(-1);
+    if (off.length) walk.wrong = `the Height field showed ${off.join(", ")} while dragged, which the Go side does not offer`;
+    else if (saved !== last) walk.wrong = `the Height field showed ${last} as the hand let go, and ${saved} was saved`;
+    else if (Number(await field.inputValue()) !== saved) walk.wrong = `${saved} was saved and the Height field reads ${await field.inputValue()}`;
+  },
+  // ["captions put back"]
+  //                    clicks Put the captions back: the captions sit where
+  //                    the Go side says they start out, and the Height field
+  //                    says so
+  async "captions put back"(walk, arg, s) {
+    const { page, settled, watch } = walk;
+    const start = await ask(page, "CaptionStart");
+    await page.locator('button[aria-label="Put the captions back"]').click();
+    await watch.step("captions put back", s);
+    await settled();
+    const field = page.locator("label.setting", { hasText: "Height" }).locator("input");
+    const saved = Math.round((await engineState(page, watch.at)).style.marginV * 1920);
+    if (saved !== start.y) walk.wrong = `the captions sit ${saved} from the bottom after Put the captions back, not ${start.y}`;
+    else if (Number(await field.inputValue()) !== start.y) walk.wrong = `the Height field reads ${await field.inputValue()} after Put the captions back, not ${start.y}`;
+  },
   // ["font", name]     picks this family in the captions column, and waits
   //                    for the captions drawn in it
   // ["style", name]    picks this style of the family, and waits for the

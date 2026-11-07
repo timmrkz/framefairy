@@ -45,8 +45,7 @@
   import type { Picture } from "../lib/frames/picture";
   import Info from "./Info.svelte";
   import {
-    captionYStep,
-    snapCaptionY,
+    nearestHeight,
     type CaptionsView,
     type ClipEntry,
     type CropMark,
@@ -64,6 +63,8 @@
     making,
     captions = null,
     captionsDue = false,
+    captionHeights = [],
+    captionStep = 0,
     wordFrames = null,
     drafts = {},
     time = $bindable(0),
@@ -118,6 +119,12 @@
     // beside it says what you are doing as you do it. Letting go saves,
     // this only shows.
     oncaptionmoved?: (y: number) => void;
+    // The heights the captions may sit at, from the lowest up, as the Go
+    // side has them, see engine.CaptionStart. A drag lands on the nearest.
+    captionHeights?: number[];
+    // How far apart two of those heights are, for the grid shown while
+    // the captions are dragged.
+    captionStep?: number;
     oncrop?: (at: number, left: number) => Promise<void>;
     onresetcrop?: (at: number) => Promise<void>;
     // Puts a keyframe back at a moment with its crop, the way the clip
@@ -1572,7 +1579,7 @@
         // drag, so whatever it selected on the way goes.
         window.getSelection()?.removeAllRanges();
       }
-      dragCaptions = snapCaptionY(start + (from - e.clientY) * scale);
+      dragCaptions = nearestHeight(captionHeights, start + (from - e.clientY) * scale);
       oncaptionmoved?.(dragCaptions);
     };
     const up = async () => {
@@ -1846,7 +1853,7 @@
     {#if dragCaptions !== null}
       <div
         class="grid"
-        style="left: {box.left}%; width: {box.width}%; --step: {px(captionYStep / 1920)}"
+        style="left: {box.left}%; width: {box.width}%; --step: {px(captionStep / 1920)}"
       ></div>
     {/if}
     <!-- Captions switched off in the captions column are not drawn, so the

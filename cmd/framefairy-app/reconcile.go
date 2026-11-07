@@ -74,8 +74,11 @@ func (s *FrameFairy) reconcile(changed []string) {
 			follow = true
 			s.listChanged(ep)
 		}
-		// A plan written may name a short just rendered.
-		if writesPlan(ep, changed) {
+		// A plan written may name a short just rendered, and a short
+		// rendered again replaces the file watched, whose watch its
+		// watcher lets go of, so the new one is watched by the follow
+		// the old one's going brings, see watching.
+		if writesPlan(ep, changed) || touchesShort(s.shortsOf(ep), changed) {
 			follow = true
 		}
 	}

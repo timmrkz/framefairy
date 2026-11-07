@@ -83,8 +83,11 @@ var DefaultStyle = map[string]any{
 	"bold":         1.0,
 	"margin_h":     70.0,
 	// Distance from the bottom of the frame. Shorts and Reels park their own
-	// UI over roughly the bottom fifth, so captions sit above it.
-	"margin_v": 300.0,
+	// UI over roughly the bottom fifth, so captions sit above it. On a step
+	// of CaptionYStep, as every height a hand can place is: at 300 the app
+	// drew the captions at 320, SnapCaptionY's step, while its Height field
+	// and Put the captions back said 300.
+	"margin_v": 320.0,
 	// Characters in one caption, across at most two lines. Long enough to
 	// hold a phrase, short enough that the text can be big.
 	"max_chars":  38.0,
@@ -307,6 +310,47 @@ const (
 
 // DefaultCaptionY is where the captions sit when nobody has placed them.
 var DefaultCaptionY = DefaultStyle["margin_v"].(float64)
+
+// CaptionStart is how the captions look before anybody changes them, the
+// look DefaultStyle gives, and the heights a hand may put them at. The app
+// offers these in its controls and puts the captions back to them, so the
+// interface keeps no copy of either.
+type CaptionStart struct {
+	Font string  `json:"font"`
+	Size float64 `json:"size"`
+	// Y is where the captions sit, and Heights every height they may sit
+	// at, from the lowest up, as the distance from the bottom of a
+	// 1080x1920 frame. A drag lands on the one nearest the hand, the one
+	// SnapCaptionY gives.
+	Y       float64   `json:"y"`
+	Heights []float64 `json:"heights"`
+	// Step is how far apart two heights are, for the field the height is
+	// typed in and the grid shown while the captions are dragged.
+	Step float64 `json:"step"`
+	// The colours, the way the video preview draws them, see WebColour.
+	Primary         string `json:"primary"`
+	Box             string `json:"box"`
+	HighlightColour string `json:"highlightColour"`
+}
+
+// StartingCaptions is the captions as they start out: the style a clip
+// with no style of its own is drawn in, the one Fonts.Style gives.
+func StartingCaptions() CaptionStart {
+	s := new(Fonts).Style(nil)
+	start := CaptionStart{
+		Font:            s.Font,
+		Size:            s.Size,
+		Y:               s.MarginV,
+		Step:            CaptionYStep,
+		Primary:         WebColour(s.Primary),
+		Box:             WebColour(s.BackColour),
+		HighlightColour: s.HighlightWeb(),
+	}
+	for y := float64(CaptionYMin); y <= CaptionYMax; y += CaptionYStep {
+		start.Heights = append(start.Heights, y)
+	}
+	return start
+}
 
 // SnapCaptionY puts a hand-placed caption line on the nearest step and
 // inside the frame.
