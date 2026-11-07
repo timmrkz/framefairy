@@ -20,12 +20,11 @@
   import { onMount, untrack } from "svelte";
   import { fade } from "svelte/transition";
   import { clock } from "../lib/api";
-  import { gridStep } from "../lib/flow";
   import { hoverClip } from "../lib/hover";
   import Busy from "./Busy.svelte";
   import Info from "./Info.svelte";
   import { scrub as scrubPlayhead } from "../lib/scrub";
-  import { fitsAt, pickerSteps, rulerStep, timeWidth } from "../lib/ruler";
+  import { dragStep, fitsAt, pickerSteps, rulerStep, timeWidth } from "../lib/ruler";
 
   let {
     duration,
@@ -250,14 +249,18 @@
     );
   }
 
+  // The step of the ruler, a line every so often, see ticks below. A
+  // dragged edge lands on its lines.
+  const ruled = $derived(
+    duration > 0 && width > 0 ? rulerStep(duration, width, timeWidth(clock(duration)), pickerSteps(duration)) : 0,
+  );
+
   // An edge dragged lands on a round step, so a window is something that
-  // can be said out loud: the smallest round step still about eight pixels
-  // wide on the track, five minutes on a four hour episode and five seconds
-  // on a six minute one. The ends of the episode win over it. The window
-  // snapped this way before it was taken away, and Tim missed it.
-  // The Go side places the app's own windows on one of the same steps,
-  // chosen from the episode alone, see PlaceStep in engine/windows.go.
-  const grid = $derived(width > 0 && duration > 0 ? gridStep(duration, width) : 0);
+  // can be said out loud, and every line of the ruler is one of its
+  // places, see dragStep in lib/ruler.ts. The ends of the episode win over
+  // it. The window snapped this way before it was taken away, and Tim
+  // missed it.
+  const grid = $derived(ruled > 0 ? dragStep(duration, width, ruled) : 0);
 
   function round(t: number): number {
     return grid > 0 ? Math.round(t / grid) * grid : Math.round(t);
@@ -422,13 +425,12 @@
   // A time every so often, the smallest step that leaves room for the
   // times, and each written where it ends clear of the track's edge, see
   // lib/ruler.ts. Which there are is decided from the width, a frame after
-  // a resize, and where they stand by the stylesheet, at once.
+  // a resize, and where they stand by the stylesheet, at once. Its step,
+  // ruled, is worked out above, beside the drag's.
   const ticks = $derived.by(() => {
-    if (!duration || !width) return [];
-    const label = timeWidth(clock(duration));
-    const step = rulerStep(duration, width, label, pickerSteps(duration));
+    if (!ruled) return [];
     const out: { t: number; label: boolean }[] = [];
-    for (let t = step; t < duration; t += step) {
+    for (let t = ruled; t < duration; t += ruled) {
       out.push({ t, label: fitsAt(share(t) * width, timeWidth(clock(t)), width) });
     }
     return out;

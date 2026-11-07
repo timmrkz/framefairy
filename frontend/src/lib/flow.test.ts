@@ -10,7 +10,6 @@ import {
   Newest,
   mergeJob,
   timesIn,
-  gridStep,
   insideClip,
   inEpisode,
   endInEpisode,
@@ -355,16 +354,6 @@ describe("a job's news", () => {
     let list = heard;
     for (const got of read) list = mergeJob(list, got) ?? list;
     expect(list).toEqual([job("running", 5)]);
-  });
-});
-
-describe("a dragged window lands on the range picker's step", () => {
-  const hours = 14423;
-
-  test("the step is the smallest round one still eight pixels wide", () => {
-    expect(gridStep(hours, 915)).toBe(300);
-    expect(gridStep(hours, 1370)).toBe(120);
-    expect(gridStep(360, 915)).toBe(5);
   });
 });
 

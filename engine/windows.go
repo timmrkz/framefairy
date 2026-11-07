@@ -126,7 +126,7 @@ func FollowingWindow(ended, length, duration, least float64) timed.Window {
 }
 
 // placeSteps are the round steps a window the app places lands on, the
-// same as the range picker's, see gridStep in frontend/src/lib/flow.ts.
+// same as the range picker's, see dragStep in frontend/src/lib/ruler.ts.
 var placeSteps = []float64{1, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800}
 
 // PlaceStep is the round step a window the app places lands on: the
