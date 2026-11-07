@@ -123,6 +123,8 @@ func TestA(t *testing.T) {
 	os.OpenFile(video, os.O_CREATE|os.O_WRONLY, 0o644)
 	os.Chmod(video, 0o600)
 	standin.Write(script, body, 0o755)
+	os.Chmod(folder, os.ModeDir|0o300)
+	os.Chmod(script, os.ModeSetuid|0o755)
 }
 `
 	found, err := programsWritten("x_test.go", []byte(src))
@@ -135,6 +137,7 @@ func TestA(t *testing.T) {
 		"x_test.go:6 writes a file with os.WriteFile",
 		"x_test.go:7 writes a file with os.OpenFile",
 		"x_test.go:8 writes a file with os.Chmod",
+		"x_test.go:15 writes a file with os.Chmod",
 	}
 	if fmt.Sprint(found) != fmt.Sprint(want) {
 		t.Errorf("found\n%s\nwant\n%s", strings.Join(found, "\n"), strings.Join(want, "\n"))
@@ -173,11 +176,32 @@ func programsWritten(name string, src []byte) ([]string, error) {
 				return true
 			}
 		}
+		if aFolder(call.Args[at]) {
+			return true
+		}
 		found = append(found, fmt.Sprintf("%s:%d writes a file with os.%s", name,
 			fset.Position(call.Pos()).Line, sel.Sel.Name))
 		return true
 	})
 	return found, nil
+}
+
+// aFolder says whether a mode is os.ModeDir with a number, the mode of a
+// folder, which no program is. A folder's bit for running is the one that
+// lets it be searched. os.Chmod takes no notice of os.ModeDir, so it is
+// only how a test says the path is a folder, and the check takes its word.
+func aFolder(mode ast.Expr) bool {
+	or, ok := mode.(*ast.BinaryExpr)
+	if !ok || or.Op != token.OR {
+		return false
+	}
+	sel, ok := or.X.(*ast.SelectorExpr)
+	if !ok || sel.Sel.Name != "ModeDir" {
+		return false
+	}
+	pkg, ok := sel.X.(*ast.Ident)
+	lit, isLit := or.Y.(*ast.BasicLit)
+	return ok && pkg.Name == "os" && isLit && lit.Kind == token.INT
 }
 
 // The check finds the tests it is there for and lets the others be.

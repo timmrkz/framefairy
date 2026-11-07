@@ -1,9 +1,9 @@
 package engine
 
 import (
-	"os"
 	"path/filepath"
 
+	"framefairy/engine/fileio"
 	"framefairy/engine/runlog"
 )
 
@@ -17,7 +17,8 @@ func (p *Project) Engine() *Engine { return p.engine }
 // that letting go of a video really does leave nothing behind: transcript,
 // clip sets, captions, previews and renders. The training records are not
 // in there, they live in one folder of their own, so they outlive it. The
-// episode file itself is never touched. No caption file of the video
+// episode file itself is never touched, and the folder the episode is in
+// is never opened, see fileio.RemoveFolderIn. No caption file of the video
 // preview is written into it while it goes, see HoldPreviews.
 func (m *Machine) DeleteWork(source string) error {
 	work := WorkDir(source)
@@ -25,8 +26,5 @@ func (m *Machine) DeleteWork(source string) error {
 		return renderErr("refusing to delete %s", work)
 	}
 	defer m.HoldPreviews(work)()
-	if err := m.Files.RemoveAll(work); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	return nil
+	return fileio.RemoveFolderIn(m.Files, work)
 }
