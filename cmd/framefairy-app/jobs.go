@@ -1106,16 +1106,16 @@ func (q *queue) runJob(job *Job) {
 		if ev.Kind == runlog.EventDetail {
 			return
 		}
-		// A warning and a line of news are in app.log too, which a report
-		// carries and the job's own log in the video's work folder is not.
+		// A warning is in app.log too, which a report carries and the
+		// job's own log in the video's work folder is not.
 		// It is written from the job as it stands under the queue's lock,
 		// since the step the job is in is written there while the engine
 		// warns, see heard.
-		if inTheAppLog(ev.Kind) {
+		if ev.Kind == runlog.EventWarn {
 			q.mu.Lock()
 			seen := *job
 			q.mu.Unlock()
-			jobSaid(&seen, ev)
+			theLog.jobLine(zerolog.WarnLevel, &seen).Msg(ev.Text)
 		}
 		copied := ev
 		// A hearing that begins another part has saved the part before

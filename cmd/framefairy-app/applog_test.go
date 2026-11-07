@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -19,7 +18,6 @@ import (
 	"testing"
 	"time"
 
-	"framefairy/engine/runlog"
 	"framefairy/engine/timed"
 
 	"github.com/rs/zerolog"
@@ -688,33 +686,5 @@ func TestTheLogCanBeRemovedWhole(t *testing.T) {
 	// The lines said while it went count too, so at least the seven.
 	if n, _ := gone["lines"].(float64); gone == nil || gone["files"] != float64(2) || n < 7 {
 		t.Fatalf("the new log says %v, want what went", gone)
-	}
-}
-
-// What the engine of a job tells, a warning or a line of news like which
-// decoder framed the video, is in the app's log under the job. Only the
-// warnings were, so a report never said whether framing ran on the
-// graphics chip. Its progress and its details stay in the job's own log.
-func TestAJobsNewsIsInTheAppsLog(t *testing.T) {
-	_, read := testLog(t)
-	job := &Job{ID: "job-4", Kind: "clip", Episode: "/videos/start.mp4"}
-	log := runlog.New(io.Discard, false, false)
-	log.SetSink(func(ev runlog.Event) {
-		if inTheAppLog(ev.Kind) {
-			jobSaid(job, ev)
-		}
-	})
-	log.Info("framing decodes video on %s", "VideoToolbox")
-	log.Warn("reading frames for the crop stopped moving")
-	log.Detail("the system's video decoder did not take this file")
-	log.Progress("measuring the crop")
-	lines := read()
-	has(t, find(lines, "framing decodes video on VideoToolbox"),
-		map[string]any{"level": "info", "from": "jobs", "job": "job-4", "kind": "clip", "video": "start.mp4"})
-	has(t, find(lines, "reading frames for the crop stopped moving"), map[string]any{"level": "warn", "job": "job-4"})
-	for _, quiet := range []string{"the system's video decoder did not take this file", "measuring the crop"} {
-		if find(lines, quiet) != nil {
-			t.Errorf("%q from the job's own log is in the app's log", quiet)
-		}
 	}
 }

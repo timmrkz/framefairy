@@ -58,11 +58,9 @@ names a screenshot, since that is the name a person sees on the Desktop.
 It never holds the video, its transcript or its captions. That leaves
 out the jobs folder of a video too, since what a search sent the model
 is the video's words. A search's start and end, and why it failed, are
-in the log, and so is every warning and every line of news a job gives
-as it goes, a `warn` or an `info` line of `jobs` with the job's own
-words: a clip that could not be framed, a model that could not be loaded
-ahead of a search, which decoder framed the video, how long the model
-took to load. Its details and its progress stay in the job's own log. Paths under the
+in the log, and so is every warning a job gives as it goes, a `warn`
+line of `jobs` with the job's own words: a clip that could not be
+framed, or a model that could not be loaded ahead of a search. Paths under the
 home folder are written as `~`, so the Mac's user name does not travel.
 The customer sees what is in it before sending: Finder shows the zip, and
 the zip holds plain text and the pictures they attached.
@@ -160,7 +158,7 @@ guesswork.
 | --- | --- |
 | `error` | something failed: a decoder that stopped, ffmpeg's errors, a call that failed, an exception in the window |
 | `warn` | something went wrong and the app carried on: a play that has not started after 3 s, a call slower than 150 ms, an act that took over 150 ms to reach the screen, an edit of the clips that took over 100 ms |
-| `info` | the acts, the app starting, a video opening, a job starting and ending and its news on the way |
+| `info` | the acts, the app starting, a video opening, a job starting and ending |
 | `debug` | the steps between: a stream opened, a first frame, the sound card's state, a decoder held and let go |
 | `trace` | lines that come with every frame or every pull |
 
