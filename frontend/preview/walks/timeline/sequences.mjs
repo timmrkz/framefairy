@@ -29,6 +29,9 @@ export default [
       ["watch captions"],
       ["drag edge", "end", -40],
       ["captions stayed"],
+      ["watch captions"],
+      ["drag edge", "start", 160],
+      ["captions stayed"],
     ],
   },
   {

@@ -446,14 +446,15 @@ export const steps = {
   // ["watch captions"] from now on reads, on every animation frame, the
   //                    frame on the canvas of the video preview and how
   //                    many of its pixels are the white of the captions
-  //                    libass drew over it
+  //                    libass drew over it, and whether the crop frame
+  //                    stands over it
   async "watch captions"(walk) {
     await watchCaptions(walk.page);
   },
   // ["captions stayed"] since "watch captions", the captions were seen,
   //                    and a frame that stayed on the video preview kept
-  //                    them: they never went off over a picture that did
-  //                    not change. Tim saw them blink off for a frame each
+  //                    them and the crop frame: neither went off over a
+  //                    picture that did not change. Tim saw them blink off for a frame each
   //                    time a clip's start dragged later passed a frame,
   //                    issue #755.
   async "captions stayed"(walk) {
@@ -461,11 +462,17 @@ export const steps = {
       window.__captionWatch.on = false;
       return window.__captionWatch.seen;
     });
-    const off = seen.findIndex(([n, ink], i) => i > 0 && n >= 0 && n === seen[i - 1][0] && seen[i - 1][1] > 0 && ink === 0);
+    // The captions, then the crop frame, gone over a frame that stayed.
+    const gone = (k, what) => {
+      const off = seen.findIndex((s, i) => i > 0 && s[0] >= 0 && s[0] === seen[i - 1][0] && seen[i - 1][k] && !s[k]);
+      if (off < 0) return "";
+      const back = seen.slice(off).findIndex((s) => s[k]);
+      return `frame ${seen[off][0]} stayed on the video preview and its ${what} went off for ${back < 0 ? "good" : `${back} animation frames`}, after ${off} of ${seen.length}`;
+    };
     if (!seen.some(([, ink]) => ink > 0)) walk.wrong = `no captions were seen over the ${seen.length} frames read`;
-    else if (off >= 0) {
-      const back = seen.slice(off).findIndex(([, ink]) => ink > 0);
-      walk.wrong = `frame ${seen[off][0]} stayed on the video preview and its captions went off for ${back < 0 ? "good" : `${back} animation frames`}, after ${off} of ${seen.length}`;
+    else {
+      const why = gone(1, "captions") || gone(2, "crop frame");
+      if (why) walk.wrong = why;
     }
   },
   // ["went the hand's way", which]
@@ -2104,7 +2111,7 @@ async function watchCaptions(page) {
       const d = g.getImageData(0, 0, s.width, s.height).data;
       let ink = 0;
       for (let i = 0; i < d.length; i += 4) if (d[i] > 245 && d[i + 1] > 245 && d[i + 2] > 245) ink++;
-      watch.seen.push([window.__pictured(), ink]);
+      watch.seen.push([window.__pictured(), ink, !!document.querySelector(".atop .frame")]);
     };
     look();
   });
