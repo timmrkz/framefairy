@@ -371,13 +371,19 @@ export default [
     // as the render crops it. TestTheRenderSwitchesTheCropAtEachKeyframe
     // holds the render to the same, and keyframes.cases.json the window
     // and the engine to each other.
-    name: "one keyframe put with K switches the crop there, and a drag after it moves only the part after it",
+    name: "one keyframe put with K switches the crop there, and a drag on either side of it moves only that side",
     steps: [
       ["added", 30, "25"],
       ["hold", "SetCropMark"],
       ["keyframe at", 0.5],
+      ["crop before", 0.25],
       ["playhead at", 0.75],
       ["drag crop", 300],
+      ["crop kept", 0.25],
+      ["crop before", 0.75],
+      ["playhead at", 0.25],
+      ["drag crop", -150],
+      ["crop kept", 0.75],
       ["keyframes", 1],
       ["crop holds"],
       ["crop holds while playing"],

@@ -1586,12 +1586,31 @@ export const steps = {
   //                    share of the way from the clip's start to its end,
   //                    and the video preview shows the frame there
   async "playhead at"(walk, arg) {
+    await playheadAt(walk.page, arg);
+  },
+  // ["crop before", share]
+  //                    puts the playhead that share of the way into the
+  //                    clip and keeps where the crop frame stands there in
+  //                    the video preview
+  // ["crop kept", share]
+  //                    with the playhead put there again, the crop frame
+  //                    stands where it stood at ["crop before", share], so
+  //                    a drag of the crop elsewhere left that part alone
+  async "crop before"(walk, arg) {
     const { page } = walk;
-    const g = await handles(page);
-    const from = g.start.x + g.start.w;
-    await clickOnTrack(page, from + arg * (g.end.x - from), high(g.track));
-    await settle(page);
-    await shownOnPlayhead(page);
+    await playheadAt(page, arg);
+    walk.cropBefore = { ...walk.cropBefore, [arg]: await cropShown(page) };
+  },
+  async "crop kept"(walk, arg) {
+    const { page } = walk;
+    const was = walk.cropBefore?.[arg];
+    if (was === undefined) {
+      walk.wrong = `no crop was kept at ${arg} of the clip to compare with`;
+      return;
+    }
+    await playheadAt(page, arg);
+    const now = await cropShown(page);
+    if (now !== was) walk.wrong = `${arg} of the way into the clip the crop frame stood at ${was} and stands at ${now} after a drag elsewhere`;
   },
   // ["playhead on", edge]
   //                    the playhead is on the frame the clip's "start" or
@@ -2081,4 +2100,21 @@ function inACut(played, pieces, frame) {
     if (inside) return `the playhead stood at ${inside[0].toFixed(3)} while it played, inside the cut from ${a.toFixed(3)} to ${b.toFixed(3)}`;
   }
   return null;
+}
+
+// Puts the playhead that share of the way from the clip's start to its end
+// by a click on the clip timeline, once the video preview shows the frame
+// there.
+async function playheadAt(page, share) {
+  const g = await handles(page);
+  const from = g.start.x + g.start.w;
+  await clickOnTrack(page, from + share * (g.end.x - from), high(g.track));
+  await settle(page);
+  await shownOnPlayhead(page);
+}
+
+// Where the crop frame stands in the video preview, in pixels of the
+// picture.
+function cropShown(page) {
+  return page.evaluate(() => Number(document.querySelector(".screen").dataset.crop));
 }
