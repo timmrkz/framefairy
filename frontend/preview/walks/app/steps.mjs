@@ -1226,6 +1226,15 @@ const workspaceParts = (page) =>
     for (const [k, b] of Object.entries(parts)) if (b) out[k] = { x: b.left, y: b.top, w: b.width, h: b.height };
     const rows = [...document.querySelectorAll(".detail .row")].map((e) => e.getBoundingClientRect().bottom);
     out.app = { w: innerWidth, h: innerHeight, foot: Math.max(...rows) };
+    // The two sides beside the picture, measured from the app's own
+    // edges: the rail and a space in front of the settings, and the edge
+    // after the clips, so the picture stands in the middle of the app.
+    const stage = document.querySelector(".stage");
+    if (stage) {
+      const [l, , r] = getComputedStyle(stage).gridTemplateColumns.split(" ").map(parseFloat);
+      const token = (n) => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(n));
+      out.sides = [token("--rail") + token("--gap") + l, r + token("--edge")];
+    }
     return out;
   });
 
@@ -1329,15 +1338,10 @@ async function resizeProblem(page) {
     const seen = [];
     for (const [width, height] of sizes) {
       await page.setViewportSize({ width, height });
-      const parts = await workspaceParts(page);
-      // The two sides measured from the app's own edges, the rail and a
-      // space in front of the settings and the edge after the clips, so
-      // the picture stands in the middle of the app.
-      const [left, right] = await page.evaluate(() => {
-        const [l, , r] = getComputedStyle(document.querySelector(".stage")).gridTemplateColumns.split(" ").map(parseFloat);
-        const token = (n) => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(n));
-        return [token("--rail") + token("--gap") + l, r + token("--edge")];
-      });
+      // Where every part stands and the two sides, read in one call.
+      const { sides, ...parts } = await workspaceParts(page);
+      if (!sides) return `at ${width} by ${height} there is no workspace`;
+      const [left, right] = sides;
       if (Math.abs(left - right) > 1) return `at ${width} by ${height} the sides beside the picture are ${left} and ${right} wide from the app's edges`;
       for (const [k, b] of Object.entries(parts)) {
         if (k === "app") continue;
