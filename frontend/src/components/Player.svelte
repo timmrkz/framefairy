@@ -723,9 +723,7 @@
     pic: { width: number; cropWidth: number },
     steered: boolean,
   ): number {
-    const held = steered
-      ? heldLeft(c.segments[at]?.marks, frame, source.fps, source.videoStart ?? 0, pic.cropWidth, pic.width)
-      : null;
+    const held = steered ? heldLeft(c.cropSteps?.[at], frame, source.fps, source.videoStart ?? 0) : null;
     return held ?? c.cropLefts[at] ?? (pic.width - pic.cropWidth) / 2;
   }
 

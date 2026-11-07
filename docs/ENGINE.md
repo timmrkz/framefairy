@@ -1229,8 +1229,9 @@ keyframes a frame apart. The render gives ffmpeg the same choice as one
 crop whose left edge is an expression in the frame, `holdExpr`, nested by
 halving so a hundred keyframes stay under the depth ffmpeg takes. Every left
 edge is on an even pixel, so the crop needs no second step. The video
-preview works the crop out in `lib/keyframes.ts`, and the two are held to
-one table, `frontend/src/lib/keyframes.cases.json`. A crop placed by hand
+preview is sent the same, each piece's first frame and switches on frames,
+`CropSteps`, with the clip, and only looks up the step for the frame it
+shows, in `lib/keyframes.ts`. A crop placed by hand
 on a mark's frame moves that mark, after a mark it moves the mark it holds
 from, and before the first mark it moves the clip's own crop, `SetCrop`,
 on the pieces turned the way the one there is, and no other mark. Automatic

@@ -4,9 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"encoding/json"
 	"math"
-	"os"
 	"os/exec"
 	"reflect"
 	"regexp"
@@ -64,35 +62,42 @@ func TestTheCropHoldsFromEachKeyframeToTheNext(t *testing.T) {
 	}
 }
 
-// The video preview works the crop out in lib/keyframes.ts, and the render
-// in ffmpeg. Both are held to the keyframes and the left edge on each frame
-// in frontend/src/lib/keyframes.cases.json, so the video preview shows on
-// every frame the crop the short has. keyframes.test.ts holds the window
-// to it.
-//
-// On the real disk: what is read is the interface's own source.
-func TestTheHoldIsTheOneTheVideoPreviewWorksOut(t *testing.T) {
+// The video preview takes the crop of each frame from the steps the engine
+// sends, so it shows on every frame the crop the render crops by: the
+// piece's start, and each switch inside it, on the frames heldX switches on.
+func TestTheVideoPreviewIsSentTheCropsTheRenderCropsBy(t *testing.T) {
 	t.Parallel()
-	data, err := os.ReadFile("../frontend/src/lib/keyframes.cases.json")
-	if err != nil {
-		t.Fatal(err)
+	source := SourceInfo{Width: 480, Height: 270, FPSNum: 25, FPSDen: 1}
+	view := SegmentView{Start: 0.4, End: 3.0, CropX: intPtr(50), Marks: []CropMarkView{
+		{At: 0.2, X: 10}, {At: 0.8, X: 0}, {At: 1.6, X: 328}, {At: 1.64, X: 100}, {At: 2.0, X: 100}, {At: 2.6, X: 500}, {At: 3.2, X: 30},
+	}}
+	// Before the piece the keyframe at 0.2 s holds, 500 is kept inside the
+	// picture, and the keyframes that change nothing, or come after the
+	// piece, are no steps.
+	want := []CropStep{{10, 10}, {20, 0}, {40, 328}, {41, 100}, {65, 328}}
+	if got := source.CropSteps(view, 152, 480); !reflect.DeepEqual(got, want) {
+		t.Errorf("the piece's crop steps are %v, not %v", got, want)
 	}
-	var fixture struct {
-		Marks  [][2]int64 `json:"marks"`
-		Base   int        `json:"base"`
-		Frames [][2]int64 `json:"frames"`
+	seg := Segment{Start: view.Start, End: view.End, CropX: view.CropX}
+	for _, m := range view.Marks {
+		seg.Marks = append(seg.Marks, CropMark{At: m.At, X: m.X})
 	}
-	if err := json.Unmarshal(data, &fixture); err != nil {
-		t.Fatal(err)
-	}
-	var marks []frameMark
-	for _, m := range fixture.Marks {
-		marks = append(marks, frameMark{k: m[0], x: int(m[1])})
-	}
-	for _, f := range fixture.Frames {
-		if got := heldX(marks, f[0], fixture.Base); got != int(f[1]) {
-			t.Errorf("on frame %d the crop is at %d, the window has %d", f[0], got, f[1])
+	marks := source.onFrames(seg.Marks, 152, 480)
+	for k := int64(10); k < 75; k++ {
+		x := want[0].X
+		for _, step := range want {
+			if step.Frame <= k {
+				x = step.X
+			}
 		}
+		if render := heldX(marks, k, 50); x != render {
+			t.Errorf("on frame %d the video preview is sent %d, the render crops at %d", k, x, render)
+		}
+	}
+	// A piece whose crop is its own throughout is sent none, and the
+	// window shows its own crop.
+	if got := source.CropSteps(SegmentView{Start: 1, End: 2, CropX: intPtr(50), Marks: []CropMarkView{{At: 1.5, X: 50}}}, 152, 480); got != nil {
+		t.Errorf("a piece that never switches is sent the steps %v", got)
 	}
 }
 
@@ -285,7 +290,7 @@ func TestACropMarkIsPutMovedAndRemovedLikeAThumbnail(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := loadedClip(t, fsys, path).CropMarks; len(got) != 1 || got[0] != (CropMark{At: 10.52, X: 300}) {
-		t.Fatalf("C at 10.557 s made %v, not a mark on the frame from 10.52 s", got)
+		t.Fatalf("K at 10.557 s made %v, not a mark on the frame from 10.52 s", got)
 	}
 	for _, c := range []struct {
 		name     string

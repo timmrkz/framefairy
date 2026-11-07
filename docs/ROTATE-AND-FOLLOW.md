@@ -15,6 +15,12 @@ it upright, and place the crop on a few frames by hand with the movement
 between them worked out for him. No numbers, no curves, no curve editor,
 and nothing changes for a video that is fine as it is.
 
+Later, on #750, Tim found a glide between keyframes hard to work with for
+a camera switch, and asked for a keyframe as a turning point instead: the
+crop switches on it and holds until the next. That is what keyframes do
+now, see section 4, and nothing glides. A person who drifts across the
+picture takes a keyframe at each step.
+
 ## What the app has today
 
 - A clip is a list of pieces, `Segment` in `engine/clips.go`. Each piece
@@ -183,7 +189,7 @@ two above:
   automatic crop is found on the upright picture.
 - **The app.** The video preview rotates the frame it draws, with a
   transform on the canvas, and the crop frame reads its left edge from
-  the same rule the engine uses, in `lib/keyframes.ts`, with a test that compares
+  the steps the engine works out and sends with the clip, `CropSteps`, with a test that compares
   both on the same keyframes. The clip timeline draws a keyframe with the thumbnail's mark, one
   component with an icon of its own, and the rotate icon on a
   rotated part and its glow, through masks. `Rotate`,

@@ -2042,10 +2042,12 @@
       return best;
     });
     const lefts = current.cropLefts;
+    const steps = current.cropSteps;
     return {
       ...current,
       segments: reshaped.pieces.map((p, i) => ({ ...old[from[i]], start: p.start, end: p.end })),
       cropLefts: from.map((i) => lefts[i]),
+      cropSteps: steps && from.map((i) => steps[i] ?? null),
     };
   });
   const shownCaptions = $derived.by(() => {

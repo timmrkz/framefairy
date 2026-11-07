@@ -288,6 +288,27 @@ func holdExpr(start int, steps []frameMark, first int64) string {
 	return pick(0, len(steps))
 }
 
+// heldCrops is how the crop of a piece with keyframes runs over its frames,
+// on a video whose frame rate is known: its first frame, the left edge it
+// starts with there, and each switch inside the piece after it, to a crop
+// other than the one before it. The render and the video preview both take
+// it, see cropFilters and CropSteps.
+func (s SourceInfo) heldCrops(seg Segment, cropW, width int) (first int64, start int, steps []frameMark) {
+	base := ClampCropX(seg.CropX, cropW, width)
+	marks := s.onFrames(seg.Marks, cropW, width)
+	first, end := s.pieceFrames(seg.Start, seg.End)
+	start = heldX(marks, first, base)
+	x := start
+	for _, m := range marks {
+		if m.k <= first || m.k >= end || m.x == x {
+			continue
+		}
+		steps = append(steps, m)
+		x = m.x
+	}
+	return first, start, steps
+}
+
 // cropFilters are the filters that crop a piece for the render and scale
 // it to outW by outH, or leave it as cropped where those are the crop's
 // own size. Every left edge is on an even pixel, the way the colours of a
@@ -306,27 +327,49 @@ func (s SourceInfo) cropFilters(seg Segment, cropW, cropH, cropY, width, outW, o
 	if len(seg.Marks) == 0 {
 		return scaled(fmt.Sprintf("crop=%d:%d:%d:%d", cropW, cropH, base, cropY))
 	}
-	marks := s.onFrames(seg.Marks, cropW, width)
 	if s.FPSNum <= 0 || s.FPSDen <= 0 {
+		marks := s.onFrames(seg.Marks, cropW, width)
 		return scaled(fmt.Sprintf("crop=%d:%d:%d:%d", cropW, cropH, heldX(marks, s.markFrame(seg.Start), base), cropY))
 	}
-	first, end := s.pieceFrames(seg.Start, seg.End)
-	start := heldX(marks, first, base)
-	// The switches inside the piece, each to a crop other than the one
-	// before it.
-	var steps []frameMark
-	x := start
-	for _, m := range marks {
-		if m.k <= first || m.k >= end || m.x == x {
-			continue
-		}
-		steps = append(steps, m)
-		x = m.x
-	}
+	first, start, steps := s.heldCrops(seg, cropW, width)
 	if len(steps) == 0 {
 		return scaled(fmt.Sprintf("crop=%d:%d:%d:%d", cropW, cropH, start, cropY))
 	}
 	return scaled(fmt.Sprintf("crop=%d:%d:'%s':%d", cropW, cropH, holdExpr(start, steps, first), cropY))
+}
+
+// CropStep is the left edge of a piece's crop from a frame of the video
+// on, until the next step. Frame counts the video's frames the way the
+// video preview counts the frame it shows, see frameAt in lib/flow.ts.
+type CropStep struct {
+	Frame int64 `json:"frame"`
+	X     int   `json:"x"`
+}
+
+// CropSteps is how the crop of a piece runs over its frames, worked out
+// here for the video preview so the window keeps no rule of its own about
+// keyframes: its first frame with the left edge it starts with, and each
+// switch after it, the same the render crops by. Nil for a piece whose crop
+// is its own throughout, or a video whose frame rate is not known, where
+// the window shows the piece's own crop. cropW and width are the crop and
+// the picture as the piece stands, rotated or not.
+func (s SourceInfo) CropSteps(v SegmentView, cropW, width int) []CropStep {
+	if len(v.Marks) == 0 || s.FPSNum <= 0 || s.FPSDen <= 0 || width <= 0 {
+		return nil
+	}
+	seg := Segment{Start: v.Start, End: v.End, CropX: v.CropX}
+	for _, m := range v.Marks {
+		seg.Marks = append(seg.Marks, CropMark{At: m.At, X: m.X, Turn: m.Turn})
+	}
+	first, start, steps := s.heldCrops(seg, cropW, width)
+	if len(steps) == 0 && start == ClampCropX(seg.CropX, cropW, width) {
+		return nil
+	}
+	out := []CropStep{{Frame: first, X: start}}
+	for _, m := range steps {
+		out = append(out, CropStep{Frame: m.k, X: m.x})
+	}
+	return out
 }
 
 // CropAt is the left edge of a piece's crop on the frame that holds a
@@ -462,32 +505,6 @@ func SetCropMark(fsys afero.Fs, planPath, clipID string, from, to float64, x int
 		setCropMarks(c, kept)
 		return nil
 	})
-}
-
-// cropShown is the left edge of the crop a piece of a plan being edited
-// shows on the frame a moment means: that of the keyframe of its turn in
-// the clip it holds from, kept inside a picture so wide for a crop so wide
-// the way the render keeps it, or the crop of its turn, or nil where it
-// stands in the middle. A width no wider than the crop is a picture not
-// known, and the keyframes are taken as they are.
-func cropShown(c *object, pieces []*object, target int, at float64, frames SourceInfo, cropW, width int) *int {
-	if i := markHolding(c, pieces, target, at, frames); i >= 0 {
-		if width <= cropW {
-			width = math.MaxInt32
-		}
-		x := cropMarksOf(c)[i].X
-		left := ClampCropX(&x, cropW, width)
-		return &left
-	}
-	spans := rotationsOf(c)
-	key := keyCropX
-	if rotationOf(pieces[target], spans) != 0 {
-		key = keyCropXTurned
-	}
-	if n, ok := num.AsInt(pieces[target].values[key]); ok {
-		return &n
-	}
-	return nil
 }
 
 // markHolding is which of a clip's keyframes the crop of a piece of a plan
