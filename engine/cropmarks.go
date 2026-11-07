@@ -26,8 +26,9 @@ import (
 // across a cut by the clip's clock, the time the short plays, with nothing
 // of the time the cut took out. A
 // rotated part is turned another way, so its crop still starts at its cut. A
-// keyframe a trim or a cut left outside the clip stays in the plan and
-// comes back with its piece. A part rotated again keeps its keyframes,
+// keyframe a trim or a cut left outside the clip stays in the plan, still
+// switches the crop from the next frame kept, and its diamond comes back
+// with its piece. A part rotated again keeps its keyframes,
 // which wait while the picture is turned another way and steer again once
 // it is turned back, issue #348: the diamonds used to go with the turn.
 
@@ -120,12 +121,19 @@ func readCropMarks(raw any, spans []Rotation) []CropMark {
 
 // markedPieces gives each piece of a clip the keyframes that steer it:
 // the keyframes of its turn in the whole clip. turns is how far each piece
-// is rotated, see rotationOf. A keyframe that lies in no piece
-// steers nothing. A keyframe is given to a piece at the moment of the video
-// it would be at on that piece's stretch were nothing cut out, the clip's
-// clock read from the piece's start, so the crop, which is worked out on
-// frames of the video, holds across a cut the way the short plays it. In
-// the piece's own part, where nothing is cut out, that is its own moment.
+// is rotated, see rotationOf. A keyframe is given to a piece at the moment
+// of the video it would be at on that piece's stretch were nothing cut
+// out, the clip's clock read from the piece's start, so the crop, which is
+// worked out on frames of the video, holds across a cut the way the short
+// plays it. In the piece's own part, where nothing is cut out, that is its
+// own moment.
+//
+// A keyframe in a cut, or before the clip's start, still switches the crop:
+// it holds from the first frame kept after it, the way it would were the cut
+// taken back. A camera switch often lies in the pause a cut takes out, and a
+// keyframe left out there played the new angle with the old crop for the
+// rest of the clip, found by the review of #752. A keyframe after the clip's
+// end steers nothing.
 func markedPieces(segments []Segment, turns []int, marks []CropMark) {
 	if len(marks) == 0 {
 		return
@@ -142,16 +150,22 @@ func markedPieces(segments []Segment, turns []int, marks []CropMark) {
 	}
 	for _, m := range marks {
 		holder := -1
+		var onClip float64
 		for i, s := range segments {
-			if m.At >= s.Start-frameHair && m.At < s.End-frameHair {
-				holder = i
+			if m.At < s.Start-frameHair {
+				// In a cut or before the clip: from the start of the next
+				// piece kept.
+				holder, onClip = i, into[i]
+				break
+			}
+			if m.At < s.End-frameHair {
+				holder, onClip = i, into[i]+m.At-s.Start
 				break
 			}
 		}
 		if holder < 0 {
 			continue
 		}
-		onClip := into[holder] + m.At - segments[holder].Start
 		for i := range segments {
 			if turns[i] != m.Turn {
 				continue

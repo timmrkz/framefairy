@@ -495,3 +495,46 @@ func TestAKeyframeOfAnOlderPlanBelongsToThePictureItLiesOn(t *testing.T) {
 		t.Errorf("the rotated part is steered by %v", got)
 	}
 }
+
+// A keyframe a cut or a trim covers still switches the crop, from the
+// first frame kept after it. A camera switch often lies in the pause a cut
+// takes out, and the keyframe there was dropped, so the new angle played
+// with the old crop, found by the review of #752.
+func TestAKeyframeACutOrATrimCoversStillSwitchesTheCrop(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		shape Gesture
+		piece int
+		at    float64
+	}{
+		{"a trim of the start past it", Gesture{Kind: "trim", Edge: "start", From: 10.8}, 0, 10.9},
+		{"a cut over it", Gesture{Kind: "cut", From: 10.4, To: 10.8}, 1, 10.9},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			fsys, path := rotatablePlanPath(t)
+			cropMarks(t, fsys, path, CropMark{At: 10.6, X: 600})
+			reshape(t, fsys, path, c.shape)
+			clip := loadedClip(t, fsys, path)
+			if len(clip.CropMarks) != 0 {
+				t.Errorf("the hidden keyframe is on screen: %v", clip.CropMarks)
+			}
+			for i, seg := range clip.Segments {
+				if seg.End <= c.at && i < c.piece {
+					continue
+				}
+				at := max(c.at, seg.Start)
+				if got := at25.CropAt(seg, at, 608, 1920); got != 600 {
+					t.Errorf("piece %d at %.2f s has the crop at %d, not the hidden keyframe's 600", i, at, got)
+				}
+			}
+			// A drag there moves the keyframe that holds, and the clip's
+			// own crop stays.
+			if err := SetCrop(fsys, path, "01", c.at, 500, at25); err != nil {
+				t.Fatal(err)
+			}
+			if seg := loadedClip(t, fsys, path).Segments[c.piece]; at25.CropAt(seg, c.at, 608, 1920) != 500 || seg.CropX == nil || *seg.CropX != 120 {
+				t.Errorf("after a drag to 500 the piece has the crop %d and its own %v", at25.CropAt(seg, c.at, 608, 1920), seg.CropX)
+			}
+		})
+	}
+}
