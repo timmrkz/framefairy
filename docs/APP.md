@@ -1697,9 +1697,11 @@ bubble scrolled by those eight pixels.
       where the window starts and the right two where it ends. A bar
       drags the whole window and keeps its length, and a double-click on
       any of it puts it back where the app would have it. An edge lands
-      on a round step, the smallest one still about eight pixels wide,
-      five minutes on a four hour episode and five seconds on a six
-      minute one, and the ends of the episode win over the step. Every
+      on a round step, the smallest one still about eight pixels wide
+      that the ruler's step is a whole number of, so every line on the
+      range picker is a place an edge can land: five minutes on a four
+      hour episode and five seconds on a six minute one, and the ends of
+      the episode win over the step. Every
       window the app places itself lands on a step of the same kind,
       chosen from the length of the video alone and never from how wide
       the app is, about a 180th of the video, two minutes for four hours,
