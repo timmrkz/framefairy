@@ -154,9 +154,10 @@ func (s *FrameFairy) serveCaptions(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	ctx, cancel := p.captionsWithin(r.Context())
 	defer cancel()
 	source, err := s.probe(ctx, path)
+	err = waitedOn(ctx, r, "probing the video", err)
 	if err == nil {
 		var dec *engine.EpisodeFrames
 		dec, err = p.decoder(st.machine, path)
@@ -177,6 +178,7 @@ func (s *FrameFairy) serveCaptions(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			l, err = e.PreviewCaptions(ctx, dec, engine.WorkDir(path), drawing, drafts, source, o.RenderSettings(), at, width, height)
+			err = waitedOn(ctx, r, "drawing the captions", err)
 			if errors.Is(err, engine.ErrNoWorkFolder) {
 				http.NotFound(w, r)
 				return
@@ -236,10 +238,10 @@ func (s *FrameFairy) serveWordFrames(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	ctx, cancel := s.previews.captionsWithin(r.Context())
 	defer cancel()
 	source, err := s.probe(ctx, path)
-	if err != nil {
+	if err = waitedOn(ctx, r, "probing the video", err); err != nil {
 		// The app's log says it once, with the reason, see logged.
 		if r.Context().Err() == nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -253,6 +255,32 @@ func (s *FrameFairy) serveWordFrames(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(frames)
+}
+
+// captionsWait is how long a request for captions may take. A layer that
+// comes later is for a frame the video preview has long moved on from.
+const captionsWait = 10 * time.Second
+
+// captionsWithin is the context a request for captions runs in: the
+// request's own, ended after captionsWait.
+func (p *previews) captionsWithin(asked context.Context) (context.Context, context.CancelFunc) {
+	if p.within != nil {
+		return p.within(asked)
+	}
+	return context.WithTimeout(asked, captionsWait)
+}
+
+// waitedOn is err, saying which step of a request for captions it came
+// in when the request's time ran out, so its answer and the app's log
+// say what took the time. Four asks among many once answered only
+// "context deadline exceeded", and nothing said whether the probe, the
+// caption file or the decoder held them, issue #687. A request called off
+// by the page is not told anything, see serveCaptions.
+func waitedOn(within context.Context, r *http.Request, step string, err error) error {
+	if err == nil || within.Err() == nil || r.Context().Err() != nil {
+		return err
+	}
+	return fmt.Errorf("%s took more than the %s a request for captions may take: %w", step, captionsWait, err)
 }
 
 // captionDrafts are the drafts of a request for captions as the engine

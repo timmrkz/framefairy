@@ -775,6 +775,51 @@ func TestNoCaptionFileIsStartedInAFolderBeingDeleted(t *testing.T) {
 	}
 }
 
+// Once the app is on its way out no caption file is started anywhere, and
+// ClosePreviews returns only after the one on its way is made, so nothing
+// is written into a folder the walks' bridge then removes, issue #713.
+func TestNoCaptionFileIsStartedOnceTheAppCloses(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		c := newTrackCache()
+		started, let := make(chan struct{}), make(chan struct{})
+		go func() {
+			_, _ = c.once(context.Background(), quiet, "/videos/a.framefairy", "on its way", func(context.Context) (previewFile, error) {
+				close(started)
+				<-let
+				return previewFile{file: "a.ass"}, nil
+			})
+		}()
+		<-started
+		closed := make(chan struct{})
+		go func() {
+			c.close()
+			close(closed)
+		}()
+		synctest.Wait()
+		select {
+		case <-closed:
+			t.Fatal("the previews closed while a caption file was being written")
+		default:
+		}
+		close(let)
+		<-closed
+		built := 0
+		build := func(context.Context) (previewFile, error) {
+			built++
+			return previewFile{file: "x.ass"}, nil
+		}
+		for _, work := range []string{"/videos/a.framefairy", "/videos/b.framefairy", "/elsewhere/c.framefairy"} {
+			if _, err := c.once(context.Background(), quiet, work, work, build); !errors.Is(err, ErrNoWorkFolder) {
+				t.Errorf("a caption file in %s once the app closed gave %v", work, err)
+			}
+		}
+		if built != 0 {
+			t.Errorf("%d caption files were made once the app closed", built)
+		}
+	})
+}
+
 // The first caption file written into a folder in a run removes what an
 // earlier run left half written, but not the file another build is
 // writing beside it at that moment, for other captions: removed, its

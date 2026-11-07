@@ -99,6 +99,29 @@ func TestRemovedWorkIsForgottenWhenItsTimeIsUp(t *testing.T) {
 	})
 }
 
+// Removed work is not forgotten once the app has closed, nor work removed
+// as it closes: its time ends with the app, the way the process ending
+// ends it. The walks' bridge opens the app again in the same process, and
+// a timer left running forgot a search's record in the next walk's video,
+// found in the review of the fix for issue #713.
+func TestRemovedWorkIsNotForgottenOnceTheAppHasClosed(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s, eps, ids := stoppedSearches(t, "removed.mp4", "late.mp4")
+		_, _ = s.RemoveWork(context.Background(), ids[0])
+		if !s.jobs.shutDown() {
+			t.Fatal("the app did not stop its work in time")
+		}
+		_, _ = s.RemoveWork(context.Background(), ids[1])
+		time.Sleep(2 * removalTime) //nolint:forbidigo // synctest bubble
+		synctest.Wait()
+		for i, ep := range eps {
+			if engine.ReadSearch(s.store.files, ep) == nil {
+				t.Errorf("the search of %s was forgotten once the app had closed", []string{"the video removed before", "the video removed as"}[i])
+			}
+		}
+	})
+}
+
 // Everything the window can do to removed work at once, from several
 // goroutines, while the jobs are listed: removed, held, let go, put back
 // and removed again. Once all is still, each job is either stopped with

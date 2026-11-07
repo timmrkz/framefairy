@@ -155,7 +155,7 @@ func (q *queue) away(id string, change func(*Job, time.Time) bool, forget func(s
 		stop()
 		delete(q.removals, id)
 	}
-	if a := job.Away; a != nil && a.Until != 0 {
+	if a := job.Away; a != nil && a.Until != 0 && !q.shut {
 		q.removals[id] = q.time.AfterFunc(time.UnixMilli(a.Until).Sub(q.time.Now()), func() {
 			q.mu.Lock()
 			delete(q.removals, id)
