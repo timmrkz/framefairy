@@ -1160,16 +1160,10 @@ left one machine a minute behind. A run the file does not know counts as
 the median. `make walks WALKTIMES=1` writes the file again from the times
 of that run, and keeps the time it had for a run that the test's time
 stopped, since how long a run that hung was stopped after says nothing of
-how long it takes. The times that count are CI's, so the file is made
+how long it takes. The times that count are CI's, so the file is best made
 from the logs of the walks jobs, which end on the time of every run they
-walked: each run's time is the median of its times in three runs on main,
-since one run says little. Between three runs a walk's time differed by
-8 % in the middle and by up to 40 %. A file that is not made again goes
-stale as the walks change: on 7 November it was a day old, and in one
-run the four jobs walked 698, 540, 885 and 618 s together. Made again
-from two other runs, the same times would have shared out as 678, 693,
-697 and 673 s, so the slowest job walked a fifth less. Before the times,
-each log gives the CPU the whole machine spent while the walks ran, from `/proc/stat` on Linux, and the CPU of the bridges, Go with the
+walked, and before them the CPU the whole machine spent while the walks
+ran, from `/proc/stat` on Linux, and the CPU of the bridges, Go with the
 ffmpeg and the decoders they started. The machine's is the one to
 compare a change to the speed of the walks by, since CI's machine runs
 nothing else, and the browsers' renderers are in no program's own
