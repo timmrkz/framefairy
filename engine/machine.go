@@ -1,14 +1,12 @@
 package engine
 
 import (
-	"context"
 	"errors"
 	"maps"
 	"net/http"
 	"runtime"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/spf13/afero"
 
@@ -47,17 +45,6 @@ type Machine struct {
 	// from its font folders and kept with what was measured of each.
 	Fonts Fonts
 
-	// softDecode is set once the system's own video decoder has hung on
-	// this machine, and every decode after it, by any job, is done on the
-	// processor.
-	softDecode atomic.Bool
-	// refused holds the episode files the system's video decoder would
-	// not take, which are decoded on the processor from then on, while
-	// other files still go to it.
-	refused sync.Map
-	// decoders holds, per episode file, which decoder framing was found to
-	// use, so it is looked up and reported once.
-	decoders sync.Map
 	// learned is what each ffmpeg was found to offer, by what was asked,
 	// see learnedFor.
 	learned sync.Map
@@ -74,11 +61,6 @@ type Machine struct {
 	// probes is what ffmpeg and ffprobe said, kept while they and the
 	// file asked about stay as they are, see probed.go.
 	probes probeCache
-	// timeLimit ends a decode that has run out of its time, see
-	// decodeWithin. Empty, it is context.WithTimeout. A test ends the
-	// work itself once the stand-in for ffmpeg says it hangs, so it waits
-	// for no limit on the real clock.
-	timeLimit func(context.Context, time.Duration) (context.Context, context.CancelFunc)
 
 	// measured is the ink of the caption blocks libass measured, see
 	// measureMany, and previewTracks the caption files of the video

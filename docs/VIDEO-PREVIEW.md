@@ -173,10 +173,8 @@ closed for standing unused.
   because ffmpeg starts a lost VideoToolbox session again by itself, as
   after the Mac slept. The log says it as a warning, with all ffmpeg
   said about why. Before, the cursor failed and the video preview stood
-  still, one CI run in four, plan row 2.215. The engine's framing falls
-  back for good after one hang, see `softDecode`, and for the file
-  after one refusal, because it runs the
-  ffmpeg program on a whole window and has no frame to go on from. mpv
+  still, one CI run in four, plan row 2.215. The engine's framing
+  decodes on the processor from the start, see ENGINE.md. mpv
   waits for three failed frames in a row before it falls back, and
   ffmpeg's program skips the frame, neither of which keeps the frames
   of the short. `FRAMEFAIRY_FRAMES_FAIL_AFTER=n` makes the decoder fail

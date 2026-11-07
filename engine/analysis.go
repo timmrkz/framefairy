@@ -8,12 +8,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"framefairy/engine/num"
 	"framefairy/engine/runes"
 	"framefairy/engine/timed"
-	"framefairy/engine/tool"
 )
 
 func tailRunes(s string, n int) string {
@@ -24,82 +22,17 @@ func tailRunes(s string, n int) string {
 	return string(r[len(r)-n:])
 }
 
-// decodeFlags asks ffmpeg to decode on the system's own video decoder
-// where there is one. On macOS that is VideoToolbox, which our ffmpeg is
-// built with, and it takes the decoding off the processor, which is most of
-// what framing costs and most of what spins the fans. A Windows or Linux
-// build gets whatever decoder it is built with, and today that is none, in
-// which case ffmpeg decodes on the processor by itself. Frames come back to
-// memory either way, so the filters after it never know the difference.
-//
-// A file it will not take is done again on the processor, and so is every
-// decode of that file after it, while other files still go to the system's
-// decoder. One that hangs is gone round the same way, and every decode
-// after it, of any file, goes to the processor straight away. A machine
-// handed no media engine decodes on the processor from the start, see
-// Media.
-func (e *Engine) decodeFlags(path string) []string {
-	if !e.mediaOf().Decodes || e.softDecode.Load() {
-		return nil
-	}
-	if _, refused := e.refused.Load(path); refused {
-		return nil
-	}
-	return []string{"-hwaccel", "auto"}
-}
-
-// decoderUsed says which decoder ffmpeg really uses for this file, by
-// decoding one frame the way framing does and reading what ffmpeg says
-// about it. It is found once per file and written to the log, so a search
-// says whether the system's decoder did the work or the processor did.
-// "auto" picks the system's decoder without a word unless asked to talk,
-// and falls back to the processor for a file it will not take, which is
-// why this asks rather than assumes.
-func (e *Engine) decoderUsed(ctx context.Context, path string, at float64) string {
-	if found, ok := e.decoders.Load(path); ok {
-		return found.(string)
-	}
-	used := "the processor"
-	if flags := e.decodeFlags(path); flags != nil {
-		args := append([]string{"-hide_banner", "-loglevel", "verbose"}, flags...)
-		args = append(args, "-ss", num.Fixed(at, 3), "-i", path, "-an", "-frames:v", "1", "-f", "null", "-")
-		probeCtx, cancel := e.decodeWithin(ctx, frameLimit)
-		said := e.Runner.Run(probeCtx, "", e.FFmpeg, args...)
-		// A hang is a probe that failed with its time run out. The time
-		// is read before cancel, which sets the same error on every probe
-		// and so took every decoder that worked for one that hung. One
-		// that gave its frame as the time ran out worked.
-		hung := said.Code != 0 && probeCtx.Err() != nil
-		cancel()
-		if ctx.Err() != nil {
-			return ""
-		}
-		used = decoderIn(said.Stderr)
-		if hung {
-			// A system decoder that does not give one frame in that time
-			// has stopped working. VideoToolbox on CI's virtual Mac did,
-			// and the framing waited on it until the test run was killed.
-			// One that went on even once it was stopped, as it did on the
-			// same Mac, is left behind, see tool.LeaveAfter.
-			e.softDecode.Store(true)
-			if said.Left {
-				e.Log.Warn("the system's video decoder gave no frame in %s and %s, decoding on the processor from now on",
-					frameLimit, tool.LeftBehind)
-			} else {
-				e.Log.Warn("the system's video decoder gave no frame in %s, decoding on the processor from now on", frameLimit)
-			}
-			used = "the processor"
-		}
-	}
-	if _, known := e.decoders.LoadOrStore(path, used); !known {
-		e.Log.Info("framing decodes video on %s", used)
-	}
-	return used
-}
+// Framing decodes on the processor, on every machine. It reads a few
+// small grey frames of each span a clip keeps, through short ffmpeg runs,
+// and on Tim's M2 Max a clip framed on the system's video decoder took
+// about four times as long, 4.0 s against 1.0 s, one run each, because
+// every run sets the decoder up again. The checks, time limits and
+// fallbacks that went with it are gone with it: the decoder they guarded
+// only ever hung on CI's virtual Mac. The video preview, which decodes
+// frame after frame, keeps the graphics chip, see Machine.EpisodeFrames.
 
 // SystemDecoders lists the system video decoders this ffmpeg can hand
-// decoding to, as ffmpeg -hwaccels names them. Whether a file really goes
-// through one is decided per file, and is in the log of the search.
+// decoding to, as ffmpeg -hwaccels names them.
 func (e *Engine) SystemDecoders(ctx context.Context) []string {
 	said := e.Runner.Run(ctx, "", e.FFmpeg, "-hide_banner", "-hwaccels")
 	if said.Code != 0 {
@@ -138,44 +71,6 @@ func DecoderName(name string) string {
 	return runes.Scrub(name, 20)
 }
 
-// decoderIn reads the decoder from what ffmpeg says with -loglevel verbose.
-func decoderIn(stderr string) string {
-	const marker = "Using auto hwaccel type "
-	if strings.Contains(stderr, "Failed setup for format") {
-		return "the processor"
-	}
-	at := strings.Index(stderr, marker)
-	if at < 0 {
-		return "the processor"
-	}
-	words := runes.Fields(stderr[at+len(marker):])
-	if len(words) == 0 {
-		return "the processor"
-	}
-	return DecoderName(words[0])
-}
-
-// frameLimit is how long decoding a single frame may take before the
-// system's decoder is taken to have stopped working: far past the second
-// an honest decode takes, of any file.
-const frameLimit = 15 * time.Second
-
-// spanLimit is how long reading the frames of a span of so many seconds
-// may take before it is ended: a minute, and four times the span on top,
-// where an honest run takes a few seconds.
-func spanLimit(span float64) time.Duration {
-	return time.Minute + time.Duration(4*span*float64(time.Second))
-}
-
-// decodeWithin is ctx ended once limit has passed, see frameLimit and
-// spanLimit, or as the machine's timeLimit ends it.
-func (m *Machine) decodeWithin(ctx context.Context, limit time.Duration) (context.Context, context.CancelFunc) {
-	if m.timeLimit != nil {
-		return m.timeLimit(ctx, limit)
-	}
-	return context.WithTimeout(ctx, limit)
-}
-
 // frameStep is how far apart the frames the crop is measured on are.
 const frameStep = 0.4
 
@@ -197,47 +92,12 @@ func (e *Engine) readSpan(ctx context.Context, path string, start, end float64) 
 		"scale=%d:%d,format=gray,showinfo@frames",
 		num.Fixed(start-from, 6), num.Fixed(end-from, 6), num.Fixed(frameStep-0.001, 3),
 		num.Fixed(last, 6), num.Fixed(last, 6), FaceWidth, FaceHeight)
-	// A read that runs out of time is ended. ffmpeg has hung here once,
-	// decoding through the system's decoder, and a search waited on it for
-	// good. It takes seconds, so the limit is far past any honest run.
-	limit := spanLimit(end - start)
-	timedOut := false
 	var raw bytes.Buffer
-	read := func(flags []string) (int, string) {
-		raw.Reset()
-		args := append([]string{"-hide_banner"}, flags...)
-		args = append(args, "-ss", num.Fixed(from, 3), "-to", num.Fixed(end+0.5, 3), "-i", path, "-an",
-			"-vf", grey, "-fps_mode", "passthrough", "-f", "rawvideo", "pipe:1")
-		readCtx, cancel := e.decodeWithin(ctx, limit)
-		defer cancel()
-		code, stderr := e.runFFmpegTo(readCtx, args, "reading frames for the crop", end-start+1.0, "", &raw)
-		timedOut = ctx.Err() == nil && readCtx.Err() != nil
-		return code, stderr
-	}
-	flags := e.decodeFlags(path)
-	code, stderr := read(flags)
-	// A system decoder that fails, or that says it worked and gave no
-	// frames, is gone round: the same read on the processor, and every
-	// read of this file after it, or of any file once it hung.
-	if flags != nil && ctx.Err() == nil && (code != 0 || raw.Len() < FaceWidth*FaceHeight) {
-		if timedOut {
-			e.softDecode.Store(true)
-			e.Log.Warn("reading frames for the crop stopped moving with the system's video decoder, decoding on the processor from now on")
-		} else {
-			e.refused.Store(path, true)
-			e.Log.Info("the system's video decoder did not take this file, decoding it on the processor")
-		}
-		code, stderr = read(nil)
-	}
+	args := []string{"-hide_banner", "-ss", num.Fixed(from, 3), "-to", num.Fixed(end+0.5, 3), "-i", path, "-an",
+		"-vf", grey, "-fps_mode", "passthrough", "-f", "rawvideo", "pipe:1"}
+	code, stderr := e.runFFmpegTo(ctx, args, "reading frames for the crop", end-start+1.0, "", &raw)
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
-	}
-	if code != 0 && timedOut {
-		// The span is then measured a frame at a time, see
-		// samplePositions. No clip at all is far worse.
-		e.Log.Warn("reading frames for the crop between %s and %s took longer than %s and was ended",
-			HMS(start), HMS(end), limit)
-		return nil, nil
 	}
 	if code != 0 {
 		return nil, renderErr("reading frames for the crop failed:\n%s", tailRunes(runes.Trim(stderr), 400))
@@ -271,34 +131,12 @@ func (e *Engine) readSpan(ctx context.Context, path string, start, end float64) 
 func (e *Engine) sampleGray(ctx context.Context, path string, start, duration float64,
 	width, height, frames int) [][]byte {
 	rate := math.Max(1.0, float64(frames)/math.Max(duration, 0.1))
-	hung := false
-	pull := func(flags []string) []byte {
-		args := append([]string{"-hide_banner", "-loglevel", "error"}, flags...)
-		args = append(args,
-			"-ss", num.Fixed(start, 3), "-t", num.Fixed(duration, 3), "-i", path,
-			"-vf", fmt.Sprintf("fps=%s,scale=%d:%d,format=gray", num.Fixed(rate, 4), width, height),
-			"-frames:v", strconv.Itoa(frames), "-f", "rawvideo", "-")
-		// A system decoder that hangs gives nothing, and is gone round
-		// below like one that failed.
-		pullCtx, cancel := e.decodeWithin(ctx, time.Duration(frames)*frameLimit)
-		defer cancel()
-		raw, _ := e.Runner.Bytes(pullCtx, "", e.FFmpeg, args...)
-		hung = ctx.Err() == nil && pullCtx.Err() != nil
-		return raw
-	}
-	flags := e.decodeFlags(path)
-	raw := pull(flags)
+	args := []string{"-hide_banner", "-loglevel", "error",
+		"-ss", num.Fixed(start, 3), "-t", num.Fixed(duration, 3), "-i", path,
+		"-vf", fmt.Sprintf("fps=%s,scale=%d:%d,format=gray", num.Fixed(rate, 4), width, height),
+		"-frames:v", strconv.Itoa(frames), "-f", "rawvideo", "-"}
+	raw, _ := e.Runner.Bytes(ctx, "", e.FFmpeg, args...)
 	size := width * height
-	if len(raw) < size && flags != nil && ctx.Err() == nil {
-		gaveUp := hung
-		if raw = pull(nil); len(raw) >= size {
-			if gaveUp {
-				e.softDecode.Store(true)
-			} else {
-				e.refused.Store(path, true)
-			}
-		}
-	}
 	var out [][]byte
 	for i := 0; i+size <= len(raw); i += size {
 		out = append(out, raw[i:i+size])
@@ -566,7 +404,6 @@ func (e *Engine) ClipSegments(ctx context.Context, path string, spans []timed.Sp
 	ordered := append([]timed.Span(nil), spans...)
 	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].Start < ordered[j].Start })
 	work.start(ordered)
-	e.decoderUsed(ctx, path, ordered[0].Start)
 
 	var kept []timed.Span
 	var read []grayFrame
