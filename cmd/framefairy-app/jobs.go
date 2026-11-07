@@ -440,8 +440,10 @@ func (q *queue) queueFor(episode, kind, label, plan string, clips []string, once
 
 // addSteps queues a search or a render: work that takes a turn in a lane
 // for each of its steps. It runs from the start, waiting for its first
-// turn. With once, it hands back the job of the kind that already runs for
-// the episode instead, looked for under the same lock, see addOnce.
+// turn. With once, it hands back the job of the kind and the record that
+// already runs for the episode instead, looked for under the same lock,
+// see addOnce. The record tells a clip's part from the whole video, which
+// run side by side, see transcribe.
 func (q *queue) addSteps(episode, kind, label string, once bool, prepare func(*Job),
 	steps func(ctx context.Context, p *engine.Project, host engine.Host) (string, error)) Job {
 	q.mu.Lock()
@@ -458,10 +460,15 @@ func (q *queue) addSteps(episode, kind, label string, once bool, prepare func(*J
 		return q.refuse(episode, kind, label, "the app is relaunching into a new build", prepare)
 	}
 	if once {
+		var record Job
+		if prepare != nil {
+			prepare(&record)
+		}
 		for _, j := range q.jobs {
 			// One that was called off and is still stopping is not it: Search
 			// pressed right after Cancel is a new search.
-			if j.Episode == episode && j.Kind == kind && j.going() && j.ctx.Err() == nil {
+			if j.Episode == episode && j.Kind == kind && j.JobRecord.ID == record.JobRecord.ID && j.going() &&
+				j.ctx.Err() == nil {
 				already := *j
 				q.mu.Unlock()
 				return already

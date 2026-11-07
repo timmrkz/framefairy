@@ -173,9 +173,10 @@ export class JobStore {
   // menu, the newest there is: running, or stopped, cut off or failed,
   // which its menu offers to carry on. One that is done has nothing to say,
   // and neither has one settled, carried on by the next or forgotten with
-  // its video when the video left the library.
+  // its video when the video left the library. A transcription with an
+  // end is the part of a clip the Go side hears by itself, not this one.
   transcription(path: string): Job | undefined {
-    const last = this.list.findLast((j) => j.episode === path && j.kind === "transcribe");
+    const last = this.list.findLast((j) => j.episode === path && j.kind === "transcribe" && !j.to);
     if (!outstanding(last)) return undefined;
     return last;
   }

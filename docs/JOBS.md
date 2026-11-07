@@ -72,16 +72,18 @@ hand of the same video stops it the same way, and it is refused while
 they run, `stopTranscribing` and `errClipsFirst` in `export.go`, Tim's
 report of 26 October, 12.27.
 
-The same job hears a part of the video when an edit brings into the
-clip chosen a part no search or clip made by hand has heard yet: an edge
-dragged out, a cut put back, an undo or a redo, issue #745. The app
+A transcription also hears a part of the video when an edit brings into
+the clip chosen a part no search or clip made by hand has heard yet: an
+edge dragged out, a cut put back, an undo or a redo, issue #745. The app
 starts it by itself, `hearChosen` in `export.go`, from the state it reads
-of the video, so the clip's captions come where it now reaches. Its record
-keeps the part in `from` and `to`, and Continue hears the same part. It
-hears the way a clip made by hand does, ahead of the searches, because
-somebody waits on its words, and a search does not stop it. It is not
-asked for again while one runs, nor after the same part stopped or
-failed, which a hand carries on. Transcribe whole video takes its place.
+of the video, so the clip's captions come where it now reaches. It keeps
+a record of its own, `transcribe-part`, with the part in `from` and `to`,
+beside the whole video's, so the two run side by side. It hears the way a
+clip made by hand does, ahead of the searches and of the whole video,
+which gives it the lane and carries on once the part is heard, because
+somebody waits on its words. A search does not stop it. It is not asked
+for again while one runs, nor after the same part failed or was stopped,
+and one the app was closed on carries on by itself.
 
 A clip made
 by hand goes **waiting**, **hearing** where the transcript does not reach

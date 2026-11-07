@@ -76,9 +76,16 @@ const (
 // a time, and a new one takes the place of the last.
 const SearchID = "search"
 
-// TranscribeID is the id of an episode's transcription, to its end or of
-// a part. An episode has one at a time.
+// TranscribeID is the id of an episode's transcription to its end. An
+// episode has one at a time.
 const TranscribeID = "transcribe"
+
+// TranscribePartID is the id of an episode's transcription of the part an
+// edit brought into a clip. It has a record of its own beside the whole
+// episode's, so the two run side by side: the part takes the lane of
+// hearing from the whole episode, which carries on once the part is
+// heard. An episode has one at a time.
+const TranscribePartID = "transcribe-part"
 
 // JobRecord is what the work folder keeps about a job.
 type JobRecord struct {
@@ -330,7 +337,10 @@ func saneJob(source string, r *JobRecord) bool {
 			return false
 		}
 	case JobTranscribe:
-		if r.ID != TranscribeID || !finite(r.From) || !finite(r.To) || (r.To > 0 && r.To <= r.From) ||
+		// The whole episode has no part, a part has an end after its start.
+		part := r.ID == TranscribePartID
+		if (r.ID != TranscribeID && !part) || !finite(r.From) || !finite(r.To) ||
+			(part && r.To <= r.From) || (!part && (r.From != 0 || r.To != 0)) ||
 			r.Step == StepFinding || r.Step == StepFraming || r.Step == StepRendering {
 			return false
 		}
@@ -620,12 +630,16 @@ func (p *Project) Search(ctx context.Context, req PlanRequest, host Host) (plan 
 // TranscribeJob hears a part of the episode, wherever the transcript has
 // not heard it yet, and nothing after. A part with no end is the whole
 // episode to its end: Transcribe whole video in a video's menu. A part
-// with an end is what an edit brought into a clip, see ClipUnheard. It
-// keeps a record like a search, so an app closed while it hears says so,
+// with an end is what an edit brought into a clip, see ClipUnheard, with
+// a record of its own, see TranscribePartID. It keeps a record like a search, so an app closed while it hears says so,
 // and carries on from what was heard. Its hearing gives way to every
 // search and clip made by hand, which the app's lanes decide.
 func (p *Project) TranscribeJob(ctx context.Context, part timed.Window, host Host) (err error) {
-	j := p.startJob(JobRecord{ID: TranscribeID, Kind: JobTranscribe, From: part.Start, To: part.End}, host)
+	id := TranscribeID
+	if part.End > 0 {
+		id = TranscribePartID
+	}
+	j := p.startJob(JobRecord{ID: id, Kind: JobTranscribe, From: part.Start, To: part.End}, host)
 	defer j.end(&err)
 	if ctx.Err() != nil {
 		return ErrCancelled

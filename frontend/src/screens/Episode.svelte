@@ -506,18 +506,10 @@
   // The look comes from its own job and not from whether a search runs:
   // a search with a model in the cloud does not hold up the hearing, found
   // by the second review of #458.
-  // A transcription of the part of a clip not heard yet, which the app
-  // starts by itself once an edit brings it in, frames what is left of
-  // that part alone, issue #745.
   const wholePart = $derived.by((): [number, number] | null => {
     if (!wholeWork || wholeStopping) return null;
-    const from = wholeWork.from ?? 0;
-    const to = wholeWork.to || Infinity;
-    const gaps = unheard
-      .filter(([a, b]) => b > from && a < to)
-      .map(([a, b]): [number, number] => [Math.max(a, from), Math.min(b, to)]);
     const edge = wholeHearing && live ? live[1] : -1;
-    const gap = (edge >= 0 && gaps.find(([a]) => Math.abs(a - edge) < 0.5)) || gaps[0];
+    const gap = (edge >= 0 && unheard.find(([a]) => Math.abs(a - edge) < 0.5)) || unheard[0];
     return gap ?? null;
   });
   // The clip list and the cards of what was said take turns in one

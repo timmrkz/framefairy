@@ -187,7 +187,8 @@ func searchHolds(jobs []Job) bool {
 // transcription runs or waits its turn, and was not told to stop.
 func wholeHeard(jobs []Job) bool {
 	for _, j := range jobs {
-		if j.Kind == engine.JobTranscribe && j.going() && !j.Stopping {
+		// The part of a clip has an end, and is about that clip.
+		if j.Kind == engine.JobTranscribe && j.To <= 0 && j.going() && !j.Stopping {
 			return true
 		}
 	}

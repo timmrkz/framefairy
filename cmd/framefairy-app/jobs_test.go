@@ -1067,7 +1067,7 @@ func TestAJobReachesTheWindowWithEverythingItsRecordSays(t *testing.T) {
 			Clips: []string{"c2"}, Step: engine.StepRendering, Asked: asked},
 		{ID: "clip-9", Kind: engine.JobClip, At: 95.5, Backward: true, Step: engine.StepFailed,
 			Error: "nobody speaks there", Asked: asked},
-		{ID: engine.TranscribeID, Kind: engine.JobTranscribe, From: 600, To: 1800,
+		{ID: engine.TranscribePartID, Kind: engine.JobTranscribe, From: 600, To: 1800,
 			Step: engine.StepStopped, Asked: asked},
 	} {
 		if err := engine.WriteJob(s.store.files, eps[0], rec); err != nil {
@@ -1238,10 +1238,27 @@ func TestATranscriptionSaysItIsStoppingFromTheMomentItIsTold(t *testing.T) {
 	if held().Stopping {
 		t.Fatal("the transcription says it is stopping before it was told")
 	}
+	// The part of a clip, heard beside it, is not stopped: its clip
+	// would wait for words for good, issue #745.
+	partStarted, partLetGo := make(chan struct{}), make(chan struct{})
+	part := svc.jobs.addSteps(ep, engine.JobTranscribe, "Transcribe the clip", true, func(j *Job) {
+		j.JobRecord.ID, j.From, j.To = engine.TranscribePartID, 120, 150
+	}, func(ctx context.Context, p *engine.Project, host engine.Host) (string, error) {
+		close(partStarted)
+		<-partLetGo
+		return "", nil
+	})
+	<-partStarted
 	svc.stopTranscribing(ep, "a search")
 	if j := held(); j.State != JobRunning || !j.Stopping {
 		t.Errorf("told to stop, the transcription is %s, stopping %v", j.State, j.Stopping)
 	}
+	for _, j := range svc.jobs.list() {
+		if j.ID == part.ID && (j.State != JobRunning || j.Stopping || j.ctx.Err() != nil) {
+			t.Errorf("a search stopped the part of a clip too: %s, stopping %v", j.State, j.Stopping)
+		}
+	}
+	close(partLetGo)
 	close(letGo)
 	for j := range news {
 		if j.ID != job.ID || j.State == JobQueued || j.State == JobRunning {
