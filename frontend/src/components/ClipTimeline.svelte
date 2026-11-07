@@ -202,7 +202,12 @@
     // The clip as a drag of an edge or a cut has it, its pieces and the
     // captions the engine made for them, or null when no drag is shaping
     // it. The video preview shows the same clip as the timeline on the way.
-    onshape?: (shape: { cues: CaptionCue[]; pieces: { start: number; end: number }[]; track?: string } | null) => void;
+    // Playhead is where the playhead goes with the edge dragged, which it
+    // reaches a frame after the clip is handed over, see seekSoon, and
+    // nothing while it stays where it is.
+    onshape?: (
+      shape: { cues: CaptionCue[]; pieces: { start: number; end: number }[]; track?: string; playhead?: number } | null,
+    ) => void;
     // The clip's thumbnails, the moments of the episode the render takes a
     // picture of the short at. Each is a mark along the foot of the track.
     thumbnails?: number[];
@@ -434,6 +439,7 @@
     cues: CaptionCue[];
     track?: string;
     held: CaptionCue[];
+    playhead?: number;
   }>(null);
   let nextGesture: Gesture | null = null;
   let asking = false;
@@ -501,14 +507,21 @@
     asking = true;
     try {
       const answer = await api.shape(path, asked.plan, asked.id, g);
-      if (mine === shapeFor && clip?.key === asked.key && answer) {
-        shaped = { pieces: answer.pieces, cues: answer.captions?.captions ?? [], track: answer.captions?.track, held };
-      }
       // The playhead goes with the edge being dragged, so it is on the
       // clip, even a hair outside the pieces drawn so far. Not while the
       // episode plays: only the space bar and a click on the clip
       // timeline change a play, and an edge is neither, see edgesWhilePlaying.
-      if (following === owner && clip?.key === asked.key && answer && answer.playhead >= 0 && !playing) {
+      const follows = following === owner && clip?.key === asked.key && !!answer && answer.playhead >= 0 && !playing;
+      if (mine === shapeFor && clip?.key === asked.key && answer) {
+        shaped = {
+          pieces: answer.pieces,
+          cues: answer.captions?.captions ?? [],
+          track: answer.captions?.track,
+          held,
+          playhead: follows ? answer.playhead : undefined,
+        };
+      }
+      if (follows && answer) {
         leftAt = answer.playhead;
         seekSoon(answer.playhead, "clip");
       }
@@ -1453,7 +1466,11 @@
   // The clip as a gesture shapes it goes to the video preview too, so it
   // shows the same clip as the timeline while the hand moves.
   $effect(() => {
-    onshape?.(shapedShown && shaped ? { cues: shaped.cues, pieces: shaped.pieces, track: shaped.track } : null);
+    onshape?.(
+      shapedShown && shaped
+        ? { cues: shaped.cues, pieces: shaped.pieces, track: shaped.track, playhead: shaped.playhead }
+        : null,
+    );
   });
   const shownCues = $derived(shapedShown && shaped ? shaped.cues : captions);
   // The captions are put in the episode by the pieces they were made for.

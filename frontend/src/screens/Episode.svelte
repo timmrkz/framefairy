@@ -2024,6 +2024,7 @@
     cues: NonNullable<CaptionsView["captions"]>;
     pieces: { start: number; end: number }[];
     track?: string;
+    playhead?: number;
   } | null>(null);
   // Each piece keeps the framing of the piece it came from, the way the
   // engine keeps it when the edit lands.
@@ -3235,6 +3236,7 @@
           missing={!!status?.missing}
           onframe={(frame) => reflection?.take(frame)}
           clip={shownClip}
+          heading={reshaped?.playhead ?? null}
           making={making?.key}
           opening={!opened}
           bind:pictured

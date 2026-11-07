@@ -61,6 +61,7 @@
     path,
     source,
     clip,
+    heading = null,
     making,
     captions = null,
     captionsDue = false,
@@ -91,6 +92,11 @@
     path: string;
     source: SourceView;
     clip: ClipEntry | null;
+    // Where the playhead is on its way to while the hand drags an edge of
+    // the clip: the frame the clip now starts or ends on. The clip
+    // timeline hands over the clip as the edge leaves it, and puts the
+    // playhead there a frame later, see overAt.
+    heading?: number | null;
     // The key of the clip on its way that is chosen, which the video
     // preview has nothing of yet but the place of the playhead, see claim.
     making?: string;
@@ -1486,6 +1492,13 @@
       held = null;
     }
     if (light !== shownLight) shownLight = light;
+    // The frame on screen drawn again after an edge dragged over it left it
+    // out of the clip, while the playhead goes with the edge to a frame
+    // the clip has: it keeps what lay over it until that frame is put up
+    // with its own. Drawn with none, the captions blinked off for a frame
+    // each time a start dragged later passed a frame, and an end dragged
+    // earlier, and Tim saw them flicker, issue #755.
+    if (!fresh && drawnOver && heading !== null && !framesClip(frame) && framesClip(heading)) return drawnOver;
     const ask = captionAsk;
     const f = ask && framesClip(frame) ? framingOf(frame) : null;
     const size = f && layerSize(f);
