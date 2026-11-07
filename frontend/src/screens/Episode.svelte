@@ -1536,7 +1536,7 @@
     }
   }
 
-  // The button and C: a keyframe on the frame under the playhead, with
+  // The button and K: a keyframe on the frame under the playhead, with
   // the crop where it stands there now, or the one there removed, so what
   // one click adds one click takes away.
   function toggleCropMark() {
@@ -1705,10 +1705,12 @@
     void rotatePart();
   }
 
-  // C puts a keyframe on the frame under the playhead, or removes the one
-  // there, the keyframe button's key, the way T is the thumbnail's.
+  // K puts a keyframe on the frame under the playhead, or removes the one
+  // there, the keyframe button's key, the way T is the thumbnail's. K for
+  // keyframe, the word the button says. It was C while keyframes were
+  // called crop marks, and Tim asked for K on #750.
   function cropMarkKey(event: KeyboardEvent) {
-    if (event.key !== "c" && event.key !== "C") return;
+    if (event.key !== "k" && event.key !== "K") return;
     if (!workspaceKey(event, root)) return;
     if (!current) return;
     event.preventDefault();
@@ -3533,9 +3535,9 @@
             disabled={renderingCurrent || (cropHere === null && !inShort)}
             onclick={toggleCropMark}
             title={cropHere !== null
-              ? "Remove the keyframe at the playhead. C does the same"
+              ? "Remove the keyframe at the playhead. K does the same"
               : inShort
-                ? "Put a keyframe on the frame under the playhead, with the crop where it stands. With two or more the crop moves from each to the next. C does the same"
+                ? "Put a keyframe on the frame under the playhead, with the crop where it stands. With two or more the crop moves from each to the next. K does the same"
                 : "Put the playhead in the clip to put a keyframe on the frame there"}
           >
             <Icon name={cropHere !== null ? "keyframe-remove" : "keyframe-add"} />

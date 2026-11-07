@@ -2652,7 +2652,7 @@ or walks across the picture. Plan row 3.26, the design is in
 
 - **The keyframe button**, beside the thumbnail button under the clip
   timeline, puts a keyframe on the frame under the playhead, with the
-  crop where it stands there now. **C** does the same. Like the thumbnail
+  crop where it stands there now. **K** does the same. Like the thumbnail
   button it is not a mode: its icon is a diamond with a plus, and with a
   minus while the playhead stands on a keyframe, where a click removes
   it.

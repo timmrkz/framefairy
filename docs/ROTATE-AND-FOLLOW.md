@@ -88,10 +88,10 @@ Tim decided this on #188: a keyframe is made the way a thumbnail is,
 with a button and a key, and dragging the crop frame only places the
 crop.
 
-- **C, and a keyframe button** in the row under the clip timeline beside
+- **K, and a keyframe button** in the row under the clip timeline beside
   the thumbnail button, puts a keyframe on the frame under the playhead,
   with the crop where it stands there now. With the playhead on a crop
-  keyframe, the button or C removes it, the way the thumbnail button does.
+  keyframe, the button or K removes it, the way the thumbnail button does.
   Its icon is the crop frame with a plus, and with a minus while the
   playhead stands on a keyframe.
 - **Dragging the crop frame places the crop, and nothing else.** With the

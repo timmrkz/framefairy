@@ -291,7 +291,7 @@ func TestACropMarkThatDoesNotHoldIsLeftOut(t *testing.T) {
 	}
 }
 
-// C puts a mark on the start of the frame it means, a drag moves it to
+// K puts a mark on the start of the frame it means, a drag moves it to
 // another frame with its crop, and a double-click removes it. A mark has
 // to be in the clip, and one frame holds one.
 func TestACropMarkIsPutMovedAndRemovedLikeAThumbnail(t *testing.T) {
