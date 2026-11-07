@@ -1083,7 +1083,7 @@ func TestAJobReachesTheWindowWithEverythingItsRecordSays(t *testing.T) {
 			"plan": "/home/tim/videos/talk.framefairy/logs/clips.json", "clips": []any{"c2"}},
 		"clip": {"label": "Make a clip", "state": "failed", "step": "failed", "at": 95.5, "backward": true,
 			"error": "nobody speaks there"},
-		"transcribe": {"label": "Transcribe whole video", "state": "stopped", "step": "stopped", "from": 600.0,
+		"transcribe": {"label": "Transcribe the clip", "state": "stopped", "step": "stopped", "from": 600.0,
 			"to": 1800.0, "lane": "hearing"},
 	}
 	ids := map[string]bool{}
