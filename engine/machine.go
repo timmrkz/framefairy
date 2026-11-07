@@ -38,6 +38,10 @@ type Machine struct {
 	// Tools finds the programs the engine runs and checks each is the one
 	// the program was built with, once while the file stays as it is.
 	Tools *tool.Finder
+	// Said hears what the programs the engine starts write for the log,
+	// see ProgramSaid. It is set once, before any program starts, and
+	// nil hears nothing.
+	Said ProgramSaid
 	// Fonts are the faces captions can be written in, the bundled ones
 	// and, once the program calls UseMachine, the machine's own, read
 	// from its font folders and kept with what was measured of each.

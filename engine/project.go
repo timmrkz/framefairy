@@ -272,7 +272,7 @@ func (p *Project) warmAhead(ctx context.Context, req PlanRequest) {
 // warm is warmModel with the model found.
 func (p *Project) warm(ctx context.Context, req PlanRequest, local LocalModel) (ReadAhead, error) {
 	size := p.engine.warmSize(local.Model, req.To-req.From, p.Base.MaxTokens)
-	_, release, err := p.engine.warmModel(ctx, local, size, p.LogsDir())
+	_, release, err := p.engine.warmModel(ctx, local, size)
 	if errors.Is(err, errModelBusy) {
 		return ReadAhead{}, nil
 	}

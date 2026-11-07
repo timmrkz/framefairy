@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -64,7 +63,7 @@ func (k *keeping) keep(st *store, said string) string {
 	e := engine.NewEngine(engineLog("model", ""), st.machine)
 	opts := jobOptions(st, e)
 	started := time.Now()
-	loaded, err := e.KeepModel(context.Background(), opts, filepath.Dir(appLogPath()))
+	loaded, err := e.KeepModel(context.Background(), opts)
 	switch {
 	case err != nil:
 		reason := err.Error()

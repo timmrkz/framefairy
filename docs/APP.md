@@ -1349,16 +1349,20 @@ bubble scrolled by those eight pixels.
       part one area of the workspace from another.
     - **A new episode finds its first clips by itself.** Adding a video is
       all it takes: the Go side asks for its first search, of the first
-      of the equal windows the episode is cut into, and no longer than the
-      model can read at once, and the range picker goes to that window.
+      window of the episode, and no longer than the model can read at
+      once, and the range picker goes to that window.
       **The windows grow with the episode**, as the square root of its
       length, so a short episode shows its first clips soon and a long one
-      is not cut into dozens: half an hour makes three windows of 10
-      minutes, an hour four of 15, two hours six of 20 and four hours
-      eight of 30. None is shorter than 10 minutes, so a video of 15
-      minutes is one window, and the windows are equal, so no scrap is
-      left at the end. When the window moves on by itself, after a search,
-      it takes the next one. See `engine/suggest.go`.
+      is not cut into dozens: half an hour makes windows of 10 minutes,
+      an hour of 15, two hours of 20 and four hours of 30. The rule is
+      rounded to the nearest of 10, 15, 20 and 30 minutes, so a window is
+      a length a person reads at a glance and never one like 23 minutes,
+      and longer videos keep windows of 30. A video of 15 minutes or less
+      is one window. The episode is walked from its start in windows that
+      long, so each starts on a multiple of its length, and a window of
+      half an hour starts on the range picker's lines of a long video.
+      The last one takes what is left. When the window moves on by itself, after a search, it takes
+      the next one. See `engine/suggest.go`.
       The search hears the episode to the end of the window and then
       finds. Until it finds, the first row of the clip list says Waiting
       for the transcript, and the window is locked for as long as the

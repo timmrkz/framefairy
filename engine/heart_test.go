@@ -358,7 +358,7 @@ func TestEverySideOfAComparisonHasItsOwnServer(t *testing.T) {
 	defer server.Close()
 	var started, stopped atomic.Int32
 	machine := memoryUnasked(NewMachine(disk))
-	machine.host.launch = func(_ *Engine, _ context.Context, _ LocalModel, _ int, _ string) (string, func(), error) {
+	machine.host.launch = func(_ *Engine, _ context.Context, _ LocalModel, _ int) (string, func(), error) {
 		started.Add(1)
 		var once sync.Once
 		return server.URL, func() { once.Do(func() { stopped.Add(1) }) }, nil

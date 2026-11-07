@@ -209,7 +209,7 @@ func hostedFake(t *testing.T, m *Machine, fake *fakeReader) {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(fake.serve))
 	memoryUnasked(m)
-	m.host.launch = func(_ *Engine, _ context.Context, _ LocalModel, _ int, _ string) (string, func(), error) {
+	m.host.launch = func(_ *Engine, _ context.Context, _ LocalModel, _ int) (string, func(), error) {
 		return server.URL, func() {}, nil
 	}
 	t.Cleanup(func() {
@@ -595,9 +595,9 @@ func TestASearchOfAWindowStillToBeHeardLoadsTheModelAsItHears(t *testing.T) {
 	hostedFake(t, p.engine.Machine, fake)
 	hosted := p.engine.host.launch
 	loaded := make(chan struct{}, 4)
-	p.engine.host.launch = func(e *Engine, ctx context.Context, m LocalModel, size int, logDir string) (string, func(), error) {
+	p.engine.host.launch = func(e *Engine, ctx context.Context, m LocalModel, size int) (string, func(), error) {
 		loaded <- struct{}{}
-		return hosted(e, ctx, m, size, logDir)
+		return hosted(e, ctx, m, size)
 	}
 	letGo := make(chan struct{})
 	var heard int32

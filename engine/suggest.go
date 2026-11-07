@@ -23,20 +23,32 @@ const windowFactor = 3.75
 // whole.
 const leastWindow = 10 * 60
 
-// SuggestedWindow is how long each window of an episode is, in seconds.
-// The episode is cut into equal windows as close to the square root rule
-// as divide it evenly, so the last is as long as the others and no scrap is
-// left at the end. None is shorter than leastWindow.
+// windowLengths are the lengths the square root rule is rounded to,
+// lengths a person reads at a glance: four hours still get half an hour,
+// one hour 15 minutes and half an hour 10, and nothing between them gets
+// an odd length like 23 minutes. None is shorter than leastWindow. A
+// window of half an hour starts on the range picker's lines of a long
+// video, whose lines are every 15 or 30 minutes.
+var windowLengths = []float64{10 * 60, 15 * 60, 20 * 60, 30 * 60}
+
+// SuggestedWindow is how long each window of an episode is, in seconds:
+// the square root rule rounded to the nearest of windowLengths, nearest
+// as a share of it, so 24 minutes is nearer 20 than 30 and 25 nearer 30.
+// The episode is walked in windows this long from its start, so each
+// starts on a multiple of it, and the last one takes what is left, see
+// NextWindow and OnStep.
 func SuggestedWindow(duration float64) float64 {
 	if duration <= leastWindow {
 		return math.Max(duration, 0)
 	}
-	ideal := math.Max(math.Sqrt(windowFactor*duration/60)*60, leastWindow)
-	n := math.Max(math.Round(duration/ideal), 1)
-	if duration/n < leastWindow {
-		n = math.Max(math.Floor(duration/leastWindow), 1)
+	ideal := math.Sqrt(windowFactor*duration/60) * 60
+	best := windowLengths[0]
+	for _, length := range windowLengths[1:] {
+		if math.Abs(math.Log(ideal/length)) < math.Abs(math.Log(ideal/best)) {
+			best = length
+		}
 	}
-	return duration / n
+	return best
 }
 
 // clipsApart is how many clip lengths of a half hour window there are for

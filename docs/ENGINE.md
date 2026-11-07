@@ -1680,12 +1680,21 @@ llama-server -m ~/.framefairy/models/gemma-4-26B_q4_0-it.gguf -c 65536 -ngl 999 
 framefairy episode.mp4 --llm-url http://127.0.0.1:8080
 ```
 
-The server's output is kept in `logs/llm-server.log` of the video it
-was loaded for, at log level 4, which is the first level where llama.cpp
-says what it took from memory. The model the app keeps is loaded for no
-video, so its server writes `llm-server.log` in the app's own log folder,
-`~/Library/Logs/Frame Fairy/` on a Mac, for as long as it runs, and a
-search that uses it leaves none in its `logs/`.
+**Every line the server writes goes into the app's log**, from
+`llama-server` with its `pid`, through `Machine.Said`, the same way the
+video's decoder says its lines, see `engine/said.go`. Its level is
+llama.cpp's own mark on the line, `E` an error, `W` a warning and the rest
+`debug`, and the time llama.cpp puts before it is left out, since the line
+has its own. It runs at log level 4, the first level where llama.cpp says
+what it took from memory. Level 5 writes every request and answer whole,
+which is the transcript, so a report of a problem would hold it, and a
+test holds the level at 4. The description of the model file, its
+`print_info` and `llama_model_loader` lines, is left out of a load that
+works, because it is the same on every load and every model of the app's
+list is held to its SHA256 before it starts. It is said when the load
+fails, or when the file is not one the app knows. A server that stops
+while it loads quotes its last lines in the error. The command line
+shows its errors and warnings, and the rest with `--verbose`.
 
 **A server the engine starts answers only to the engine.** Left to
 itself, llama-server answers anybody: every program on the machine, and
