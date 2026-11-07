@@ -571,7 +571,7 @@ and settled, so it is kept however the recording ends, and with
 watches the microphone while it listens, with the app's time held and
 run on by hand, a frame of 16 ms at a time: it springs to the size of
 the hum a little past it and settles, falls back in the pause a little
-under its rest and settles, never jumps a pixel in a frame, keeps its
+under its rest and settles, never jumps half its way in a frame, keeps its
 box and its middle and is drawn white. It runs in one walk, not in
 every `dictate`, see #543. `click heard` clicks
 into the first word still being heard and sees it settled with the

@@ -358,21 +358,23 @@
   // voice. It hangs on a spring that each reading, ten a second, pulls to
   // the loudness: it swells with a word, goes a little past it and
   // settles, and falls back between words with a small bounce under its
-  // rest, see lib/spring.ts. A bounce of 0.4 in 0.4 s, which Apple calls
-  // about as bouncy as an interface goes: Tim asked for a bounce, and
-  // followed like a meter's needle, with none, it looked stiff (#739).
+  // rest, see lib/spring.ts. A bounce of 0.5 in 0.25 s, a little past
+  // what Apple calls as bouncy as an interface goes, and quick: followed
+  // like a meter's needle, with none, it looked stiff, and on a spring of
+  // 0.4 in 0.4 s Tim still saw it slow and hardly bouncing (#739). It
+  // reaches nine tenths of a reading in about 0.1 s, the time between two.
   // It is worked out every frame, so it moves between readings rather
   // than jumping to them, and it is written straight to the icon as a
   // scale: no layout, no transition, nothing else moves.
   let mic = $state<HTMLSpanElement>();
-  const grown = new Spring(0.4, 0.4);
+  const grown = new Spring(0.25, 0.5);
   let frame = 0;
   let then = 0;
   const still = matchMedia("(prefers-reduced-motion: reduce)");
   function grow(now: number) {
     const target = listening && !still.matches ? loud : 0;
     const rests = grown.step(target, then ? Math.min(now - then, 100) : 16);
-    if (mic) mic.style.transform = `scale(${(16 + 6 * grown.at) / 28})`;
+    if (mic) mic.style.transform = `scale(${(16 + 8 * grown.at) / 28})`;
     then = now;
     frame = rests ? 0 : requestAnimationFrame(grow);
     if (!frame) then = 0;
@@ -1003,7 +1005,7 @@
   }
 
   /* The microphone moves with the voice it hears, so the person sees they
-     are heard. It grows from 16 px to 22 px about its middle, and a
+     are heard. It grows from 16 px to 24 px about its middle, and a
      little past that as it bounces, in a box of 28 px that never changes,
      so nothing in the row moves and the icon does not shift by a pixel as
      it grows. It went up to 28 px, nearly the button's 32, and Tim

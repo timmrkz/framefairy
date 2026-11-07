@@ -924,7 +924,7 @@ export const steps = {
   //                    on a spring, in its place: it goes a little past the
   //                    size of the voice and settles, falls back in the
   //                    pause a little under its rest and settles, never
-  //                    jumps and never grows past 23 px, and is drawn white
+  //                    jumps and never grows past 26 px, and is drawn white
   async "microphone moves"(walk) {
     const { page } = walk;
     // While it listens, the microphone moves with the voice it hears,
@@ -983,7 +983,7 @@ export const steps = {
     const fall = await run(1500);
     await letPageTimeGo(page);
     const steps = (from, sizes) => Math.max(...sizes.map((w, k) => Math.abs(w - (k ? sizes[k - 1] : from))));
-    const voice = 16 + 6 * loud;
+    const voice = 16 + 8 * loud;
     const grown = rise.sizes.at(-1);
     const widest = Math.max(...rise.sizes);
     const narrowest = Math.min(...fall.sizes);
@@ -995,15 +995,15 @@ export const steps = {
       walk.wrong = `the microphone is drawn ${rest.shown.w.toFixed(1)} px wide at rest and ${rise.shown.w.toFixed(1)} px for a voice it was given ${grown.toFixed(1)} px for, so the sizes the walk read are not the ones drawn`;
       return;
     }
-    // It settles at the size of the voice: from 16 px at rest by 6 px for
+    // It settles at the size of the voice: from 16 px at rest by 8 px for
     // a raised voice, with room in its button of 32 px to bounce. It went
     // up to 28 px before, and Tim wondered whether that was too large.
     if (Math.abs(grown - voice) > 0.1) {
       walk.wrong = `the microphone settled at ${grown.toFixed(2)} px for a voice at a loudness of ${loud}, not at ${voice.toFixed(2)} px`;
       return;
     }
-    if (widest > 23) {
-      walk.wrong = `the microphone grew to ${widest.toFixed(2)} px, larger than the 23 px it may reach as it bounces`;
+    if (widest > 26) {
+      walk.wrong = `the microphone grew to ${widest.toFixed(2)} px, larger than the 26 px it may reach as it bounces`;
       return;
     }
     // It bounces: past the size of the voice on the way up, and under its
@@ -1014,7 +1014,7 @@ export const steps = {
       walk.wrong = `the microphone rose to ${widest.toFixed(2)} px and settled at ${grown.toFixed(2)} px, so it did not bounce past the voice`;
       return;
     }
-    if (narrowest > 16 - 0.04 * (grown - 16) || narrowest < 15) {
+    if (narrowest > 16 - 0.04 * (grown - 16) || narrowest < 14) {
       walk.wrong = `the microphone fell back to ${narrowest.toFixed(2)} px at its least, not a little under its rest of 16 px`;
       return;
     }
@@ -1022,10 +1022,11 @@ export const steps = {
       walk.wrong = `the microphone came to rest at ${fall.sizes.at(-1).toFixed(2)} px after the voice, not at 16 px`;
       return;
     }
-    // It never jumps: a frame moves it 1 px at most, where going straight
-    // to a reading moved it by all the way at once.
+    // It never jumps: a frame moves it less than half the way to the size
+    // of the voice, where going straight to a reading moved it all the
+    // way at once.
     const jump = Math.max(steps(16, rise.sizes), steps(grown, fall.sizes));
-    if (jump > 1) {
+    if (jump >= 0.5 * (grown - 16)) {
       walk.wrong = `the microphone moved ${jump.toFixed(2)} px in one frame, so it jumped rather than sprang`;
       return;
     }

@@ -3534,7 +3534,8 @@ loudness ten times a second, and the microphone hangs on a spring that
 each reading pulls, worked out every frame, the way the Mac moves what
 bounces: it swells with a word, goes a little past it and settles, and
 falls back between words with a small bounce under its rest. It grows
-from 16 px to 22 px for a raised voice, see `frontend/src/lib/spring.ts`.
+from 16 px to 24 px for a raised voice, quickly, in about a tenth of
+a second, see `frontend/src/lib/spring.ts`.
 Following like a meter's needle, with no bounce and up to 28 px, Tim
 found it stiff (#739). It grows by a scale from a drawing at its largest
 size, so it stays sharp and in its place, and it stays white. The
