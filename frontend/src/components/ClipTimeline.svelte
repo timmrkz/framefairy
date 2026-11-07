@@ -59,7 +59,7 @@
   import { asleep, keysElsewhere } from "../lib/keys";
   import { said } from "../lib/said";
   import Info from "./Info.svelte";
-  import { PIECES_MEET, rotationAt } from "../lib/rotate";
+  import { rotationAt } from "../lib/rotate";
 
   let {
     path,
@@ -430,7 +430,7 @@
   let hand = $state<Gesture | null>(null);
   let saving = $state(false);
   let shaped = $state<null | {
-    pieces: { start: number; end: number }[];
+    pieces: { start: number; end: number; part: number }[];
     cues: CaptionCue[];
     track?: string;
     held: CaptionCue[];
@@ -615,7 +615,7 @@
   // wash parts under the hand and the count under the timeline follows the
   // drag. What is happening is shown while it happens.
   const drawnPieces = $derived(
-    shapedShown && shaped ? shaped.pieces : segments.map((s) => ({ start: s.start, end: s.end })),
+    shapedShown && shaped ? shaped.pieces : segments.map((s) => ({ start: s.start, end: s.end, part: s.part })),
   );
   const start = $derived(drawnPieces.length ? drawnPieces[0].start : 0);
   const end = $derived(drawnPieces.length ? drawnPieces[drawnPieces.length - 1].end : 0);
@@ -1742,17 +1742,16 @@
   const markChange = (kind: MarkKind) => (kind === "thumbnail" ? onthumbnail : oncropmark);
 
   // The stretch each piece the clip draws is rotated in, for the rotate
-  // icon in the middle of its wash: the pieces that play
-  // straight on from each other turned alike, as partOf in lib/rotate.ts reads a part, from the first
-  // one's start to the last one's end, or null for a piece as filmed.
-  // Issue #348.
+  // icon in the middle of its wash: the pieces of one part, as the Go side
+  // says each piece's part, turned alike, from the first one's start to the
+  // last one's end, or null for a piece as filmed. Issue #348.
   const turnedRuns = $derived.by(() => {
     const turns = drawnPieces.map((p) => rotationAt(clip?.rotations, p.start));
     return drawnPieces.map((p, i) => {
       if (!turns[i]) return null;
       let first = i;
       let last = i;
-      const meets = (a: number, b: number) => drawnPieces[b].start - drawnPieces[a].end <= PIECES_MEET && turns[a] === turns[b];
+      const meets = (a: number, b: number) => drawnPieces[b].part === drawnPieces[a].part && turns[a] === turns[b];
       while (first > 0 && meets(first - 1, first)) first--;
       while (last + 1 < drawnPieces.length && meets(last, last + 1)) last++;
       return { from: drawnPieces[first].start, to: drawnPieces[last].end };

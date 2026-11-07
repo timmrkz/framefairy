@@ -59,7 +59,12 @@ this order, because what happens now comes first:
    see below. An issue a session opened that is mostly done is
    rewritten to what is left. One Tim opened gets a comment that says
    what is left. Each closing says in one line which pull request or
-   decision closed it. A closed issue with a sub-issue still open is
+   decision closed it. One that waits for its next failure to say why,
+   with nothing to work on until then, because nothing failed since its
+   last trace or log, is closed as not planned with a comment that it
+   is reopened once it fails again, with the run and its trace. An open
+   issue nobody can act on is asked about at every triage and answered
+   the same way each time. A closed issue with a sub-issue still open is
    reopened, a problem or any other parent, because a parent closes only
    after the last of its sub-issues.
 5. **Problems that come back**, in even weeks of the year, see below.

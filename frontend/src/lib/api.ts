@@ -234,7 +234,8 @@ export interface Gesture {
 // What a gesture makes of a clip: its pieces, where the playhead goes while
 // an edge is dragged, below nought when it stays, and its captions.
 export interface Shaped {
-  pieces: { start: number; end: number }[];
+  // Each with its part, see Segment.part.
+  pieces: { start: number; end: number; part: number }[];
   playhead: number;
   captions: CaptionsView;
 }
@@ -251,6 +252,10 @@ export interface Segment {
   // The keyframes that steer the piece's crop, which glides over them,
   // see lib/glide.ts. With none the crop stands at cropX.
   marks?: CropMark[];
+  // The part of the clip the piece is in, counted from nought: pieces that
+  // play straight on from each other, with no cut between them, have the
+  // same, see engine.PieceView.
+  part: number;
 }
 
 // A crop placed by hand on one frame: the moment the frame starts, the
@@ -922,6 +927,7 @@ export const api = {
   reshape: (path: string, plan: string, clip: string, g: Gesture, playhead: [number, number]) =>
     call<ClipEntry>("Reshape", path, plan, clip, g, playhead),
   fonts: () => call<CaptionFont[]>("Fonts"),
+  captionStart: () => call<CaptionStart>("CaptionStart"),
   waveform: (path: string, from: number, to: number, buckets: number) =>
     call<number[]>("Waveform", path, from, to, buckets),
   render: (path: string, req: RenderRequest) => call<Job>("Render", path, req),
@@ -1346,34 +1352,29 @@ export function errorText(err: unknown): string {
   }
 }
 
-// Where the captions may sit, as the distance from the bottom of a
-// 1080x1920 frame. The same steps the engine snaps to.
-// Where the captions sit when nobody has placed them, as the distance from
-// the bottom of a 1080x1920 frame. The same number as DefaultStyle in the
-// engine.
-// What the captions look like when nobody has changed them. The same
-// values as DefaultStyle in the engine, so putting them back here and
-// rendering with no settings at all come to the same picture.
-export const captionFontDefault = "Inter Black";
-// The colours the captions start out in: white text on a black box that
-// lets half the picture through, as the engine's own style has them.
-export const captionTextDefault = "#ffffff";
-export const captionTextOpacityDefault = 100;
-export const captionBoxDefault = "#000000";
-export const captionOpacityDefault = 50;
-// The pill behind the word being spoken, as the engine's own style has it.
-export const captionHighlightDefault = "#942192";
-export const captionHighlightOpacityDefault = 100;
-export const captionSizeDefault = 96;
-export const captionYDefault = 300;
-export const captionYStep = 40;
-export const captionYMin = 120;
-export const captionYMax = 1560;
+// How the captions look before anybody changes them, and the heights they
+// may sit at, as the Go side has them, see engine.CaptionStart. The
+// interface keeps no copy of either.
+export interface CaptionStart {
+  font: string;
+  size: number;
+  // Where the captions sit, and every height they may sit at, from the
+  // lowest up, as the distance from the bottom of a 1080x1920 frame.
+  y: number;
+  heights: number[];
+  // How far apart two heights are.
+  step: number;
+  primary: string;
+  box: string;
+  highlightColour: string;
+}
 
-export function snapCaptionY(y: number): number {
-  if (!isFinite(y)) return 300;
-  const step = Math.round(y / captionYStep) * captionYStep;
-  return Math.max(captionYMin, Math.min(step, captionYMax));
+// The height of these nearest to y, which is where a drag of the captions
+// lands, and the higher of two as near. With none, y as it is.
+export function nearestHeight(heights: number[], y: number): number {
+  let best: number | undefined;
+  for (const h of heights) if (best === undefined || Math.abs(h - y) <= Math.abs(best - y)) best = h;
+  return best ?? y;
 }
 
 // Where the playhead lands when it is stepped by words, which is what

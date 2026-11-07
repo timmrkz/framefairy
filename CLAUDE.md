@@ -169,9 +169,10 @@ thing belongs. In short:
   opened for him, unless Tim puts them in another order. What is
   happening now comes before that order, because the labels lag behind
   it: a test that has just failed on main, or an issue that comes with
-  its trace or its log, goes before an older one still waiting for its
-  next failure to show why. Following the evidence in hand gets a fix
-  done sooner. An incident under an open `problem` issue is taken up
+  its trace or its log, goes before an older one with less in hand.
+  Following the evidence in hand gets a fix done sooner. An issue that
+  can only wait for its next failure is not kept open, see What can
+  close in [docs/TRIAGE.md](docs/TRIAGE.md). An incident under an open `problem` issue is taken up
   as its problem, see
   [Problems that come back](docs/TRIAGE.md#problems-that-come-back).
   The session says which it picked and why.

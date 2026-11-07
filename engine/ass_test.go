@@ -3,6 +3,7 @@ package engine
 import (
 	"bytes"
 	"context"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -650,5 +651,49 @@ func TestTheBoxCanBeSwitchedOff(t *testing.T) {
 	}
 	if s := new(Fonts).Style(nil); !s.Text || !s.Box {
 		t.Errorf("text and box are on until they are switched off: %+v", s)
+	}
+}
+
+// The captions as they start out are the look a clip with no style of its
+// own is drawn in, and the heights offered are every height a hand-placed
+// caption can land on: each one lands on itself, and wherever a hand lets
+// go, the caption lands on the nearest of them. The app offers these and
+// keeps no copy of either, see CaptionStart.
+func TestTheCaptionsStartOutInTheLookAClipWithNoStyleOfItsOwnHas(t *testing.T) {
+	t.Parallel()
+	start := StartingCaptions()
+	s := new(Fonts).Style(nil)
+	if start.Font != s.Font || start.Size != s.Size || start.Y != s.MarginV {
+		t.Errorf("starts in %s at %v, %v from the bottom, a clip with no style has %s at %v, %v",
+			start.Font, start.Size, start.Y, s.Font, s.Size, s.MarginV)
+	}
+	if start.Primary != WebColour(s.Primary) || start.Box != WebColour(s.BackColour) ||
+		start.HighlightColour != s.HighlightWeb() {
+		t.Errorf("starts in %s on %s with %s, a clip with no style has %s on %s with %s",
+			start.Primary, start.Box, start.HighlightColour,
+			WebColour(s.Primary), WebColour(s.BackColour), s.HighlightWeb())
+	}
+	if !slices.Contains(start.Heights, start.Y) {
+		t.Errorf("the captions start at %v, which is not a height offered, so the app draws them at %v",
+			start.Y, SnapCaptionY(start.Y))
+	}
+	for i, y := range start.Heights {
+		if SnapCaptionY(y) != y {
+			t.Errorf("%v is offered and lands on %v", y, SnapCaptionY(y))
+		}
+		if i > 0 && y-start.Heights[i-1] != start.Step {
+			t.Errorf("%v follows %v, the step says %v", y, start.Heights[i-1], start.Step)
+		}
+	}
+	for y := -400.0; y <= 2400; y += 7 {
+		landed := SnapCaptionY(y)
+		if !slices.Contains(start.Heights, landed) {
+			t.Fatalf("%v lands on %v, which is not offered", y, landed)
+		}
+		for _, h := range start.Heights {
+			if math.Abs(h-y) < math.Abs(landed-y) {
+				t.Errorf("%v lands on %v, and %v is nearer", y, landed, h)
+			}
+		}
 	}
 }
