@@ -63,6 +63,76 @@ export const steps = {
     await page.mouse.dblclick(middle(g.cuts[arg - 1]), high(g.track));
     await watch.step("join", s);
   },
+  // ["drag past what was heard"]
+  //                    on a video heard as far as its first search's
+  //                    window, makes a clip with O two hundred seconds past
+  //                    it, pinches the clip timeline out, drags the clip's
+  //                    start back eighty seconds, over a part nothing has
+  //                    heard yet, lets go and pinches back in on it. The
+  //                    app hears that part by itself, and the clip timeline
+  //                    then has caption blocks of words said in it, issue
+  //                    #745
+  async "drag past what was heard"(walk, arg, s) {
+    const { page, watch } = walk;
+    const path = await episodeOn(page);
+    const heardTo = Math.max(...((await ask(page, "Episode", path)).heard ?? [[0, 0]]).map(([, b]) => b));
+    // O hears back a clip's longest and two sentences' reach, 46 s, see
+    // engine.ClipRequest, so the clip's words began after this.
+    const at = heardTo + 200;
+    const reach = at - 46;
+    const have = (await ask(page, "Clips", path)).length;
+    await ask(page, "MakeClip", path, at, true);
+    await pageUntil(page, (n) => document.querySelectorAll("aside ol li[data-key]:not(.next)").length >= n, have + 1);
+    await settle(page);
+    const made = await chosen(page);
+    const before = (await ask(page, "Clips", path)).find((c) => c.plan === made.plan && c.id === made.clip);
+    if (!before || before.start < reach || before.unheard?.length) {
+      walk.wrong = `the clip made with O at ${at.toFixed(1)} s is ${JSON.stringify(before)}, not heard whole after ${reach.toFixed(1)} s`;
+      return;
+    }
+    // Pinched out, so the start can go far back on the track.
+    let g = await handles(page);
+    await page.mouse.move(g.track.x + g.track.w / 2, high(g.track));
+    await page.keyboard.down("Control");
+    await page.mouse.wheel(0, 230);
+    await page.keyboard.up("Control");
+    await settle(page);
+    g = await handles(page);
+    const to = before.start - 80;
+    const x = await xOf(page, to);
+    if (!inside(g.track, x)) {
+      walk.wrong = `${to.toFixed(1)} s is not on the clip timeline pinched out`;
+      return;
+    }
+    await drag(page, middle(g.start), high(g.track), x - middle(g.start), false);
+    await watch.step("trim", s);
+    const after = (await ask(page, "Clips", path)).find((c) => c.plan === made.plan && c.id === made.clip);
+    if (!(after.start < reach - 20)) {
+      walk.wrong = `the start dragged to ${to.toFixed(1)} s stands at ${after.start.toFixed(1)} s`;
+      return;
+    }
+    // Pinched back in on the new start, where the blocks have room.
+    g = await handles(page);
+    await page.mouse.move(middle(g.start), high(g.track));
+    await page.keyboard.down("Control");
+    await page.mouse.wheel(0, -230);
+    await page.keyboard.up("Control");
+    await settle(page);
+    // The words of the part nobody had heard come once it is heard, by
+    // themselves: a block whose first word is said before the clip's
+    // words began.
+    await pageUntil(
+      page,
+      (reach) => [...document.querySelectorAll(".clip-timeline .caption[data-first]")].some((b) => Number(b.dataset.first) < reach),
+      reach,
+    );
+    await settle(page);
+    const hearing = (await ask(page, "Jobs")).findLast((j) => j.episode === path && j.kind === "transcribe");
+    console.log(JSON.stringify({ heardTo, at, before: before.start, after: after.start, hearing }));
+    if (!hearing || hearing.state !== "done" || Math.abs(hearing.from - after.start) > 0.5 || hearing.to > reach + 1) {
+      walk.wrong = `the part from ${after.start.toFixed(1)} to ${reach.toFixed(1)} s was heard by ${JSON.stringify(hearing)}`;
+    }
+  },
   // ["trim", edge, px] drags the clip's "start" or "end" edge by px
   async trim(walk, arg, s) {
     const { page, watch } = walk;

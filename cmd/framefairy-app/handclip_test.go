@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"framefairy/engine"
+	"framefairy/engine/timed"
 )
 
 // madeByHand are the clips of an episode made with I and O.
@@ -237,5 +238,146 @@ func TestPathAClipMadeByHandIsEditedAndUndone(t *testing.T) {
 	}
 	if n := len(d.madeByHand(ep)); n != 2 {
 		t.Errorf("%d clips made by hand after undo and redo, want both", n)
+	}
+}
+
+// A clip dragged longer, out over a part of the video nothing has heard
+// yet, has that part heard by itself, and only that part, so its captions
+// come where it now reaches. Tim dragged the start of a clip made with O
+// back past what it had heard, and it showed no captions there, issue
+// #745.
+//
+// On the real disk: ffmpeg and the episode's decoder read the episode.
+func TestPathAClipDraggedLongerIsHeardWhereItNowReaches(t *testing.T) {
+	d := open(t)
+	ep := d.episode("longer", minutes5)
+	if _, err := d.svc.store.AddEpisodes([]string{ep}); err != nil {
+		t.Fatal(err)
+	}
+	// O at 200 s hears back to 154 s, a clip's longest and two
+	// sentences' reach, see engine.ClipRequest.
+	if done := d.waitFor(d.out(ep, 200).ID); done.State != JobDone {
+		t.Fatalf("made %+v", done)
+	}
+	made := d.madeByHand(ep)
+	if len(made) != 1 || len(made[0].Unheard) != 0 {
+		t.Fatalf("made %+v", made)
+	}
+	c := made[0]
+	ctx := context.Background()
+	heardBefore := d.speech.seconds()
+	if _, err := d.svc.Reshape(ctx, ep, c.Plan, c.ID, engine.Gesture{Kind: "trim", Edge: "start", From: 120},
+		[2]float64{c.Start, 120}); err != nil {
+		t.Fatal(err)
+	}
+	st, err := d.svc.State(ctx, ep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var entry ClipEntry
+	for _, e := range st.Clips {
+		if e.Key == c.Key {
+			entry = e
+		}
+	}
+	if st.Chosen != c.Key || entry.Start != 120 || len(entry.Unheard) != 1 ||
+		entry.Unheard[0][0] != 120 || math.Abs(entry.Unheard[0][1]-154) > 0.5 {
+		t.Fatalf("dragged to 120 s, %q is chosen and the clip is %+v, not heard %v", st.Chosen, entry.ClipView, entry.Unheard)
+	}
+	hearing, ok := d.svc.jobs.find(ep, engine.JobTranscribe)
+	if !ok || hearing.JobRecord.ID != engine.TranscribePartID || hearing.From != 120 || math.Abs(hearing.To-154) > 0.5 {
+		t.Fatalf("the part not heard is heard by %+v", hearing)
+	}
+	if done := d.waitFor(hearing.ID); done.State != JobDone {
+		t.Fatalf("the part ended %+v", done)
+	}
+	if heard := d.speech.seconds() - heardBefore; heard < 30 || heard > 40 {
+		t.Errorf("%.1f s heard for the 34 s the clip brought in", heard)
+	}
+	for _, e := range d.clips(ep) {
+		if e.Key == c.Key && len(e.Unheard) != 0 {
+			t.Errorf("once heard, the clip still has %v not heard", e.Unheard)
+		}
+	}
+	view, err := d.svc.Captions(ep, c.Plan, c.ID)
+	if err != nil || len(view.Captions) == 0 || view.Captions[0].Start > 3 {
+		t.Fatalf("the clip dragged to 120 s has its first caption at %+v, %v", view, err)
+	}
+	// Heard whole, the next state asks for nothing more.
+	if _, err := d.svc.State(ctx, ep); err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := d.svc.jobs.find(ep, engine.JobTranscribe); again.ID != hearing.ID {
+		t.Errorf("a clip heard whole is heard again by %+v", again)
+	}
+}
+
+// What of the clip chosen is heard by itself, and when it waits, issue
+// #745. A part that failed is not asked for again, or every state read
+// would ask for it and fail again, up to several times a second. One the
+// app was closed on carries on by itself. The whole video being
+// transcribed holds no part up, which takes the lane from it.
+func TestThePartOfTheClipChosenIsHeardUnlessItFailed(t *testing.T) {
+	t.Parallel()
+	// Heard 0 to 100 s and 150 to 300 s, the clip dragged back to 120 s.
+	heard := [][2]float64{{0, 100}, {150, 300}}
+	clip := ClipEntry{Key: "clips/c1", ClipView: engine.ClipView{Start: 120, End: 180,
+		Segments: []engine.SegmentView{{Start: 120, End: 180}}}, Unheard: [][2]float64{{120, 150}}}
+	part := timed.Window{Start: 120, End: 150}
+	transcription := func(id, state string, from, to float64) Job {
+		j := Job{Kind: engine.JobTranscribe, State: state, Seq: 1}
+		j.JobRecord.ID, j.From, j.To = id, from, to
+		return j
+	}
+	for _, c := range []struct {
+		name   string
+		chosen string
+		jobs   []Job
+		hear   bool
+	}{
+		{"nothing runs", "clips/c1", nil, true},
+		{"no clip is chosen", "", nil, false},
+		{"another clip is chosen", "clips/c2", nil, false},
+		{"the whole video is transcribed", "clips/c1",
+			[]Job{transcription(engine.TranscribeID, JobRunning, 0, 0)}, true},
+		{"a part is heard already", "clips/c1",
+			[]Job{transcription(engine.TranscribePartID, JobRunning, 100, 110)}, false},
+		{"the same part failed", "clips/c1",
+			[]Job{transcription(engine.TranscribePartID, JobFailed, 120, 150)}, false},
+		{"the same part was stopped by hand", "clips/c1",
+			[]Job{transcription(engine.TranscribePartID, JobStopped, 120, 150)}, false},
+		{"a smaller part failed", "clips/c1",
+			[]Job{transcription(engine.TranscribePartID, JobFailed, 130, 150)}, true},
+		{"the app was closed on the same part", "clips/c1",
+			[]Job{transcription(engine.TranscribePartID, JobInterrupted, 120, 150)}, true},
+		{"the whole video failed", "clips/c1",
+			[]Job{transcription(engine.TranscribeID, JobFailed, 0, 0)}, true},
+	} {
+		st := VideoState{Status: engine.EpisodeStatus{Heard: heard}, Clips: []ClipEntry{clip},
+			Chosen: c.chosen, Jobs: c.jobs}
+		got, hear := partToHear(st)
+		if hear != c.hear || (hear && got != part) {
+			t.Errorf("%s: hears %v %v, want %v", c.name, hear, got, c.hear)
+		}
+	}
+}
+
+// The whole video and the part of a clip are two transcriptions, which
+// run side by side, and asking for either again while it runs gives the
+// one that runs, issue #745.
+func TestAClipsPartIsHeardBesideTheWholeVideo(t *testing.T) {
+	t.Parallel()
+	svc, eps := memoryLibrary(t, "ep.mp4")
+	svc.jobs = newIdleQueue(svc.store, func(JobUpdate) {}, func(string) {})
+	whole := svc.Transcribe(eps[0])
+	part := svc.transcribe(eps[0], timed.Window{Start: 120, End: 150})
+	if whole.ID == part.ID || whole.JobRecord.ID != engine.TranscribeID || part.JobRecord.ID != engine.TranscribePartID {
+		t.Fatalf("the whole video is %+v, the part %+v", whole, part)
+	}
+	if again := svc.transcribe(eps[0], timed.Window{Start: 120, End: 150}); again.ID != part.ID {
+		t.Errorf("the part asked for again is %s, not the one that runs, %s", again.ID, part.ID)
+	}
+	if again := svc.Transcribe(eps[0]); again.ID != whole.ID {
+		t.Errorf("the whole video asked for again is %s, not the one that runs, %s", again.ID, whole.ID)
 	}
 }

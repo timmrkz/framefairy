@@ -440,8 +440,10 @@ func (q *queue) queueFor(episode, kind, label, plan string, clips []string, once
 
 // addSteps queues a search or a render: work that takes a turn in a lane
 // for each of its steps. It runs from the start, waiting for its first
-// turn. With once, it hands back the job of the kind that already runs for
-// the episode instead, looked for under the same lock, see addOnce.
+// turn. With once, it hands back the job of the kind and the record that
+// already runs for the episode instead, looked for under the same lock,
+// see addOnce. The record tells a clip's part from the whole video, which
+// run side by side, see transcribe.
 func (q *queue) addSteps(episode, kind, label string, once bool, prepare func(*Job),
 	steps func(ctx context.Context, p *engine.Project, host engine.Host) (string, error)) Job {
 	q.mu.Lock()
@@ -458,10 +460,15 @@ func (q *queue) addSteps(episode, kind, label string, once bool, prepare func(*J
 		return q.refuse(episode, kind, label, "the app is relaunching into a new build", prepare)
 	}
 	if once {
+		var record Job
+		if prepare != nil {
+			prepare(&record)
+		}
 		for _, j := range q.jobs {
 			// One that was called off and is still stopping is not it: Search
 			// pressed right after Cancel is a new search.
-			if j.Episode == episode && j.Kind == kind && j.going() && j.ctx.Err() == nil {
+			if j.Episode == episode && j.Kind == kind && j.JobRecord.ID == record.JobRecord.ID && j.going() &&
+				j.ctx.Err() == nil {
 				already := *j
 				q.mu.Unlock()
 				return already
@@ -511,7 +518,10 @@ func (q *queue) turn(job *Job, opts engine.Options) engine.Turn {
 	// see engine.Turn. The engine asks for a job's turns one after another.
 	var holding func()
 	return func(ctx context.Context, step string, waits func()) (context.Context, func(), error) {
-		lane, kind := laneOfStep(job.Kind, step, onThisMachine)
+		q.mu.Lock()
+		part := job.To > 0
+		q.mu.Unlock()
+		lane, kind := laneOfStep(job.Kind, step, part, onThisMachine)
 		// Which lane a step waits for and whether its model is on this
 		// machine, so a log says why a transcription waited on a search.
 		theLog.jobLine(zerolog.DebugLevel, job).Str("step", step).Str("lane", lane).
@@ -601,16 +611,20 @@ func stopsAsStopped(kind string) bool {
 	return makesClips(kind) || kind == engine.JobTranscribe
 }
 
-// jobLabel is what a job is called, by what it does.
-func jobLabel(kind string, preview bool) string {
+// jobLabel is what a job is called, by what it does, the record it keeps
+// or would keep.
+func jobLabel(rec engine.JobRecord) string {
 	switch {
-	case kind == engine.JobRender && preview:
+	case rec.Kind == engine.JobRender && rec.Preview:
 		return "Preview"
-	case kind == engine.JobRender:
+	case rec.Kind == engine.JobRender:
 		return "Render"
-	case kind == engine.JobClip:
+	case rec.Kind == engine.JobClip:
 		return "Make a clip"
-	case kind == engine.JobTranscribe:
+	case rec.Kind == engine.JobTranscribe && rec.To > 0:
+		// The part of the clip chosen not heard yet, see hearChosen.
+		return "Transcribe the clip"
+	case rec.Kind == engine.JobTranscribe:
 		return "Transcribe whole video"
 	}
 	return "Find clips"
@@ -632,7 +646,7 @@ func (q *queue) restore(episodes []string) {
 			q.mu.Lock()
 			q.next++
 			job := &Job{ID: fmt.Sprintf("job-%d", q.next), Episode: episode, JobRecord: rec,
-				Label: jobLabel(rec.Kind, rec.Preview), State: state, Queued: rec.Asked,
+				Label: jobLabel(rec), State: state, Queued: rec.Asked,
 				Lane: laneFor(rec.Kind), Underway: rec.Underway(), cancel: func() {}, ctx: context.Background()}
 			q.stampLocked(job)
 			q.jobs = append(q.jobs, job)
