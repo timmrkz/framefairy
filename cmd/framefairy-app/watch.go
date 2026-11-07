@@ -55,10 +55,13 @@ type watching struct {
 	// mu keeps follow to one at a time, and away from stop, and watched
 	// is what the last one counted, so the count is said only when it
 	// changed. stopped says the watchers are closed, so nothing asks them
-	// anything after.
+	// anything after. refused is the folders a watcher would not take,
+	// so each is said once and not at every follow, which on Tim's Mac
+	// said the same folder 139 times.
 	mu      sync.Mutex
 	watched int
 	stopped bool
+	refused map[string]bool
 	done    chan struct{}
 }
 
@@ -104,7 +107,7 @@ func newWatching(heard func(changed []string), models string) *watching {
 // watchingWith starts a watch with these two watchers, one for each
 // depth, see watcherOf.
 func watchingWith(heard func(changed []string), models string, byDepth [2]watcher) *watching {
-	ws := &watching{byDepth: byDepth, heard: heard, models: models, done: make(chan struct{})}
+	ws := &watching{byDepth: byDepth, heard: heard, models: models, refused: map[string]bool{}, done: make(chan struct{})}
 	go ws.run()
 	return ws
 }
@@ -176,9 +179,20 @@ func (ws *watching) follow(files afero.Fs, videos []string, shortsOf func(video 
 		if _, err := files.Stat(dir); err != nil {
 			continue
 		}
-		if err := ws.watcherOf(dir).Add(dir); err != nil {
+		err := ws.watcherOf(dir).Add(dir)
+		if err == nil {
+			delete(ws.refused, dir)
+			continue
+		}
+		if !ws.refused[dir] {
 			theLog.line(zerolog.WarnLevel, "files").Str("folder", dir).Err(err).
 				Msg("a folder of a video cannot be watched, so a change in it shows once the app comes back to the front")
+		}
+		ws.refused[dir] = true
+	}
+	for dir := range ws.refused {
+		if !want[dir] {
+			delete(ws.refused, dir)
 		}
 	}
 	// How much is watched, and how many files are in the folders,

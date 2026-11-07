@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -23,8 +24,10 @@ type heldWatcher struct {
 	asked     []string
 	afterward []string
 	closed    bool
-	ev        chan fsnotify.Event
-	errs      chan error
+	// refuses is what Add answers for a folder it will not watch.
+	refuses map[string]error
+	ev      chan fsnotify.Event
+	errs    chan error
 }
 
 func newHeldWatcher(watching ...string) *heldWatcher {
@@ -42,6 +45,9 @@ func (w *heldWatcher) Add(name string) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.ask("add " + name)
+	if err := w.refuses[name]; err != nil {
+		return err
+	}
 	if !slices.Contains(w.watching, name) {
 		w.watching = append(w.watching, name)
 	}
@@ -233,5 +239,53 @@ func TestAFolderIsNeverWatchedByTheWatcherOfTheFolderItIsIn(t *testing.T) {
 		if ws.watcherOf(dir) == ws.watcherOf(filepath.Dir(dir)) {
 			t.Errorf("%s is watched by the watcher of %s, the folder it is in", dir, filepath.Dir(dir))
 		}
+	}
+}
+
+// A folder a watcher will not take is said in the log once, not at every
+// look at the library, and said again only after it was watched once
+// more. On Tim's Mac a folder macOS keeps to itself was said 139 times.
+func TestAFolderThatCannotBeWatchedIsSaidOnce(t *testing.T) {
+	_, read := testLog(t) // the log is the program's one, so not parallel
+	files := afero.NewMemMapFs()
+	video := filepath.Join("/home", "tim", "Movies", "episode.mp4")
+	logs := filepath.Join(engine.WorkDir(video), "logs")
+	if err := files.MkdirAll(logs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	held := [2]*heldWatcher{newHeldWatcher(), newHeldWatcher()}
+	ws := watchingWith(func([]string) {}, "", [2]watcher{held[0], held[1]})
+	t.Cleanup(ws.stop)
+	folder := filepath.Dir(video)
+	refusing := ws.watcherOf(folder).(*heldWatcher)
+	refusing.refuses = map[string]error{folder: errors.New("operation not permitted")}
+	said := func() int {
+		n := 0
+		for _, line := range read() {
+			if line["msg"] == "a folder of a video cannot be watched, so a change in it shows once the app comes back to the front" && line["folder"] == folder {
+				n++
+			}
+		}
+		return n
+	}
+
+	for range 3 {
+		ws.follow(files, []string{video}, func(string) []string { return nil })
+	}
+	if n := said(); n != 1 {
+		t.Fatalf("the folder that cannot be watched is said %d times after three looks, want once", n)
+	}
+
+	refusing.mu.Lock()
+	refusing.refuses = nil
+	refusing.mu.Unlock()
+	ws.follow(files, []string{video}, func(string) []string { return nil })
+	refusing.mu.Lock()
+	refusing.refuses = map[string]error{folder: errors.New("operation not permitted")}
+	refusing.watching = nil
+	refusing.mu.Unlock()
+	ws.follow(files, []string{video}, func(string) []string { return nil })
+	if n := said(); n != 2 {
+		t.Errorf("the folder refused again after it was watched is said %d times in all, want twice", n)
 	}
 }

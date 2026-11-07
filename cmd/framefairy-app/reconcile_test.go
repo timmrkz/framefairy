@@ -304,6 +304,56 @@ func TestAShortRenderedWhileTheAppIsOpenIsWatched(t *testing.T) {
 	shortGoes(t, svc, video, sent, plan, short)
 }
 
+// On the real disk: the system's own watch on a short is what is tested,
+// the way a render's file put in place reaches it.
+//
+// A short rendered again is put in place over the one watched, and the
+// watcher lets go of the file that was there. The watch watches the new
+// one from the reconcile that hears the old one go, so deleting it in
+// Finder is heard at once too.
+func TestAShortRenderedAgainIsWatchedAgain(t *testing.T) {
+	t.Parallel()
+	var plan, short string
+	svc, video, _, sent := diskLibrary(t, func(video string) {
+		plan, short = renderedShort(t, video)
+	})
+	// A watch of its own, which says when a reconcile heard the short.
+	heard := make(chan struct{}, 64)
+	svc.watch.stop()
+	svc.watch = newWatching(func(changed []string) {
+		svc.reconcile(changed)
+		if slices.Contains(changed, fileio.ResolvePath(short)) {
+			heard <- struct{}{}
+		}
+	}, "")
+	t.Cleanup(svc.watch.stop)
+	svc.Library()
+
+	// Rendered again: written beside it and put in place whole, as old as
+	// the one the plan says, so the plan still names it.
+	info, err := os.Stat(short)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(short+".new", []byte("a short"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(short+".new", info.ModTime(), info.ModTime()); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(short+".new", short); err != nil {
+		t.Fatal(err)
+	}
+	<-heard
+	svc.reconciling.Lock()
+	watched := slices.Contains(svc.watch.watchList(), fileio.ResolvePath(short))
+	svc.reconciling.Unlock()
+	if !watched {
+		t.Fatal("the short rendered again is not watched")
+	}
+	shortGoes(t, svc, video, sent, plan, short)
+}
+
 // On the real disk: the short is what the system's watch hears, see the
 // tests above.
 //
