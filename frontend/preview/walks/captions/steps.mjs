@@ -1053,7 +1053,7 @@ export const steps = {
     await watch.step("drag captions", s);
     await settled();
     const off = shown.filter((h) => !heights.includes(h));
-    const saved = Math.round((await engineState(page, watch.at)).captions.style.marginV * 1920);
+    const saved = Math.round((await engineState(page, watch.at)).style.marginV * 1920);
     const last = shown.at(-1);
     if (off.length) walk.wrong = `the Height field showed ${off.join(", ")} while dragged, which the Go side does not offer`;
     else if (saved !== last) walk.wrong = `the Height field showed ${last} as the hand let go, and ${saved} was saved`;
@@ -1070,7 +1070,7 @@ export const steps = {
     await watch.step("captions put back", s);
     await settled();
     const field = page.locator("label.setting", { hasText: "Height" }).locator("input");
-    const saved = Math.round((await engineState(page, watch.at)).captions.style.marginV * 1920);
+    const saved = Math.round((await engineState(page, watch.at)).style.marginV * 1920);
     if (saved !== start.y) walk.wrong = `the captions sit ${saved} from the bottom after Put the captions back, not ${start.y}`;
     else if (Number(await field.inputValue()) !== start.y) walk.wrong = `the Height field reads ${await field.inputValue()} after Put the captions back, not ${start.y}`;
   },

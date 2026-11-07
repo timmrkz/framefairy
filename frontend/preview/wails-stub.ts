@@ -115,8 +115,19 @@ const applyCut = (list: Piece[], from: number, to: number): Piece[] => {
   return out;
 };
 
+// Each piece with its part, the way the Go side numbers them, see
+// engine.PieceView: a piece that starts where the one before ends is in
+// its part, one after a cut starts the next.
+const withParts = <P extends { start: number; end: number }>(list: P[]): (P & { part: number })[] => {
+  let part = 0;
+  return list.map((p, i) => {
+    if (i > 0 && p.start - list[i - 1].end > 0.0005) part++;
+    return { ...p, part };
+  });
+};
+
 const clip = (n: number, start: number, title: string, rendered: boolean) => {
-  const segments = pieces(n, start);
+  const segments = withParts(pieces(n, start));
   const first = segments.length ? segments[0].start : start;
   const last = segments.length ? segments[segments.length - 1].end : start;
   return {
@@ -1608,8 +1619,9 @@ const Answers = {
         return Promise.resolve({
           font: "Inter Black",
           size: 96,
-          y: 300,
+          y: 320,
           heights: Array.from({ length: 37 }, (_, i) => 120 + 40 * i),
+          step: 40,
           primary: "rgba(255, 255, 255, 1)",
           box: "rgba(0, 0, 0, 0.498)",
           highlightColour: "rgba(148, 33, 146, 1)",
@@ -1967,7 +1979,7 @@ const Answers = {
           return Promise.resolve(clip(Number(id), at, title, rendered));
         }
         return Promise.resolve({
-          pieces: out.pieces.map((p) => ({ start: p.start, end: p.end })),
+          pieces: withParts(out.pieces.map((p) => ({ start: p.start, end: p.end }))),
           playhead: out.playhead,
           captions: { captions: captionCues(id, out.pieces), style: {} },
         });

@@ -64,6 +64,7 @@
     captions = null,
     captionsDue = false,
     captionHeights = [],
+    captionStep = 0,
     wordFrames = null,
     drafts = {},
     time = $bindable(0),
@@ -121,6 +122,9 @@
     // The heights the captions may sit at, from the lowest up, as the Go
     // side has them, see engine.CaptionStart. A drag lands on the nearest.
     captionHeights?: number[];
+    // How far apart two of those heights are, for the grid shown while
+    // the captions are dragged.
+    captionStep?: number;
     oncrop?: (at: number, left: number) => Promise<void>;
     onresetcrop?: (at: number) => Promise<void>;
     // Puts a keyframe back at a moment with its crop, the way the clip
@@ -1849,7 +1853,7 @@
     {#if dragCaptions !== null}
       <div
         class="grid"
-        style="left: {box.left}%; width: {box.width}%; --step: {px((captionHeights.length > 1 ? captionHeights[1] - captionHeights[0] : 0) / 1920)}"
+        style="left: {box.left}%; width: {box.width}%; --step: {px(captionStep / 1920)}"
       ></div>
     {/if}
     <!-- Captions switched off in the captions column are not drawn, so the

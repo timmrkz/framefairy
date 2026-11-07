@@ -2983,7 +2983,7 @@
               {#if captionsMoved}
                 <button
                   class="quiet glyph"
-                  title="Put the captions back as they start out: {startLook?.font}, {startLook?.size}, {startLook?.y} from the bottom, white on a half clear black box"
+                  title="Put the captions back as they start out: {startLook?.font}, {startLook?.size}, {startLook?.y} from the bottom, in the colours they start in"
                   aria-label="Put the captions back"
                   onclick={putCaptionsBack}
                 >
@@ -3229,7 +3229,7 @@
                   type="number"
                   min={start?.heights[0]}
                   max={start?.heights.at(-1)}
-                  step={start ? start.heights[1] - start.heights[0] : undefined}
+                  step={start?.step}
                   value={Math.round(captionY)}
                   onchange={(e) => setCaptionsHeight(Number(e.currentTarget.value))}
                 /><span class="unit">px</span>
@@ -3273,6 +3273,7 @@
             captionY = y;
           }}
           captionHeights={start?.heights ?? []}
+          captionStep={start?.step ?? 0}
           {strip}
         />
       </div>

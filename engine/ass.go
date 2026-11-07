@@ -83,8 +83,11 @@ var DefaultStyle = map[string]any{
 	"bold":         1.0,
 	"margin_h":     70.0,
 	// Distance from the bottom of the frame. Shorts and Reels park their own
-	// UI over roughly the bottom fifth, so captions sit above it.
-	"margin_v": 300.0,
+	// UI over roughly the bottom fifth, so captions sit above it. On a step
+	// of CaptionYStep, as every height a hand can place is: at 300 the app
+	// drew the captions at 320, SnapCaptionY's step, while its Height field
+	// and Put the captions back said 300.
+	"margin_v": 320.0,
 	// Characters in one caption, across at most two lines. Long enough to
 	// hold a phrase, short enough that the text can be big.
 	"max_chars":  38.0,
@@ -321,22 +324,27 @@ type CaptionStart struct {
 	// SnapCaptionY gives.
 	Y       float64   `json:"y"`
 	Heights []float64 `json:"heights"`
+	// Step is how far apart two heights are, for the field the height is
+	// typed in and the grid shown while the captions are dragged.
+	Step float64 `json:"step"`
 	// The colours, the way the video preview draws them, see WebColour.
 	Primary         string `json:"primary"`
 	Box             string `json:"box"`
 	HighlightColour string `json:"highlightColour"`
 }
 
-// StartingCaptions is the captions as they start out.
+// StartingCaptions is the captions as they start out: the style a clip
+// with no style of its own is drawn in, the one Fonts.Style gives.
 func StartingCaptions() CaptionStart {
+	s := new(Fonts).Style(nil)
 	start := CaptionStart{
-		Font:    DefaultStyle["font"].(string),
-		Size:    DefaultStyle["size"].(float64),
-		Y:       DefaultCaptionY,
-		Primary: WebColour(DefaultStyle["primary"].(string)),
-		Box:     WebColour(DefaultStyle["back_colour"].(string)),
-		HighlightColour: Style{HighlightColour: highlightColour(DefaultStyle["highlight_colour"], "")}.
-			HighlightWeb(),
+		Font:            s.Font,
+		Size:            s.Size,
+		Y:               s.MarginV,
+		Step:            CaptionYStep,
+		Primary:         WebColour(s.Primary),
+		Box:             WebColour(s.BackColour),
+		HighlightColour: s.HighlightWeb(),
 	}
 	for y := float64(CaptionYMin); y <= CaptionYMax; y += CaptionYStep {
 		start.Heights = append(start.Heights, y)

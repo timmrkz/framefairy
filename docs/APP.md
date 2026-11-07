@@ -1322,7 +1322,7 @@ bubble scrolled by those eight pixels.
   that suits one video suits the next one, so the drag saves it as a setting
   rather than as an edit of that clip. It stands as **Height** with the other
   caption settings on the left, where it can be typed instead, and **Put the
-  captions back** appears under it once it is not the standard 300. A click
+  captions back** appears under it once it is not the standard 320. A click
   on the box without dragging plays or pauses.
 - **Moving the crop:** drag the frame sideways when the automatic crop is
   off. The frame is there while the playhead is in the clip, and only

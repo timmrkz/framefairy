@@ -673,9 +673,16 @@ func TestTheCaptionsStartOutInTheLookAClipWithNoStyleOfItsOwnHas(t *testing.T) {
 			start.Primary, start.Box, start.HighlightColour,
 			WebColour(s.Primary), WebColour(s.BackColour), s.HighlightWeb())
 	}
-	for _, y := range start.Heights {
+	if !slices.Contains(start.Heights, start.Y) {
+		t.Errorf("the captions start at %v, which is not a height offered, so the app draws them at %v",
+			start.Y, SnapCaptionY(start.Y))
+	}
+	for i, y := range start.Heights {
 		if SnapCaptionY(y) != y {
 			t.Errorf("%v is offered and lands on %v", y, SnapCaptionY(y))
+		}
+		if i > 0 && y-start.Heights[i-1] != start.Step {
+			t.Errorf("%v follows %v, the step says %v", y, start.Heights[i-1], start.Step)
 		}
 	}
 	for y := -400.0; y <= 2400; y += 7 {

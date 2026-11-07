@@ -20,7 +20,7 @@ export function pictureOf(source: SourceView, rotate: number): { width: number; 
 // The first and last of the pieces around the one at i that play straight
 // on from each other, with no cut between them: the pieces of its part, as
 // the Go side says each piece's part, see engine.PieceView.
-export function partOf(pieces: { part?: number }[], i: number): [number, number] {
+export function partOf(pieces: { part: number }[], i: number): [number, number] {
   let first = i;
   let last = i;
   while (first > 0 && pieces[first - 1].part === pieces[i].part) first--;

@@ -569,11 +569,14 @@ func piecesMeet(end, start float64) bool { return start-end <= PiecesMeet }
 // partOf is the first and last of the pieces around one that play straight
 // on from each other, with no cut between them.
 func partOf(pieces []*object, i int) (int, int) {
+	parts := partsOf(len(pieces),
+		func(j int) float64 { return number(pieces[j].values[keyStart]) },
+		func(j int) float64 { return number(pieces[j].values[keyEnd]) })
 	first, last := i, i
-	for first > 0 && piecesMeet(number(pieces[first-1].values[keyEnd]), number(pieces[first].values[keyStart])) {
+	for first > 0 && parts[first-1] == parts[i] {
 		first--
 	}
-	for last+1 < len(pieces) && piecesMeet(number(pieces[last].values[keyEnd]), number(pieces[last+1].values[keyStart])) {
+	for last+1 < len(pieces) && parts[last+1] == parts[i] {
 		last++
 	}
 	return first, last

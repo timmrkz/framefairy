@@ -255,7 +255,7 @@ export interface Segment {
   // The part of the clip the piece is in, counted from nought: pieces that
   // play straight on from each other, with no cut between them, have the
   // same, see engine.PieceView.
-  part?: number;
+  part: number;
 }
 
 // A crop placed by hand on one frame: the moment the frame starts, the
@@ -1362,6 +1362,8 @@ export interface CaptionStart {
   // lowest up, as the distance from the bottom of a 1080x1920 frame.
   y: number;
   heights: number[];
+  // How far apart two heights are.
+  step: number;
   primary: string;
   box: string;
   highlightColour: string;
