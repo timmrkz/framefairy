@@ -357,8 +357,12 @@ closed for standing unused.
   new clip's frame goes up, and all of it changes in that one frame,
   `held` in `Player.svelte`. Tim saw a clip card clicked move the crop
   frame first, the picture a few frames later and the captions a few after
-  that, issue #383. Nothing waits under a dragging hand, which follows the
-  hand.
+  that, issue #383. The same hold keeps the crop frame and the captions
+  over the frame on screen while an edge dragged over it leaves it out of
+  the clip, until the frame the playhead goes to with the edge goes up.
+  Tim saw the captions blink off for a frame each time a start dragged
+  later passed a frame, issue #755. Nothing waits under a dragging hand,
+  which follows the hand.
 
 ## Speed
 
