@@ -1100,15 +1100,12 @@ frame, the word that grows as it is opened, the card that shakes and the
 microphone that grows as it hears, `moving` in `common/steps.mjs`. The app
 then leaves out what it animates, the info marks' fade and the pops
 among it, so the settle waits for none of it. On main those two were
-179 s of the 1976 s all runs took one after another. The random walks
-look at none of it and ask for less motion too: with it, the browser took
-15 to 45 % more processor time over a random walk, and the timeline walk
-half as long again. The
-sequences with those steps keep the motion, so the app is still walked
-the way it moves on Tim's Mac. A new step that looks at motion
+179 s of the 1976 s all runs took one after another. The sequences with
+those steps and every random walk keep the motion, so the app is still
+walked the way it moves on Tim's Mac. A new step that looks at motion
 goes into `moving`, or it passes without ever seeing what it checks, and
 `--names` fails on a name in `moving` or `soundCard` that is no step. `make walks
-STILL=none` walks every sequence and every random walk with the motion, and
+STILL=none` walks every sequence with the motion, and
 `walks-nightly.yml` does so on main every night, so a step that looks at
 motion and was left out of `moving` fails there.
 

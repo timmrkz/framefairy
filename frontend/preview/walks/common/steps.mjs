@@ -232,13 +232,9 @@ export const url = process.env.BRIDGE_URL ?? "http://127.0.0.1:8123/";
 // it hears. A sequence with none of them asks for less motion, which the
 // app honours by leaving out what it animates, so the settle waits for
 // none of it: the pops and the info marks' fade were 179 s of the 1976 s
-// all runs took on main. A random walk looks at none of them and asks for
-// less motion too, see walk.mjs: with the motion the browser took 15 to
-// 45 % more processor time over a random walk, and the timeline walk half
-// as long again. A sequence with one
-// of them walks the app the way it moves on Tim's Mac, and so does every
-// run at night, see STILL below. A new step that looks at motion goes in
-// here, or it passes without ever seeing what it checks.
+// all runs took on main. A sequence with one of them, and every random
+// walk, walks the app the way it moves on Tim's Mac. A new step that looks
+// at motion goes in here, or it passes without ever seeing what it checks.
 export const moving = new Set([
   "count pops",
   "pops",
@@ -250,9 +246,8 @@ export const moving = new Set([
   "microphone moves",
 ]);
 
-// STILL=none walks every sequence and every random walk with the motion,
-// for a failure that might hide behind it, the way the walks do every
-// night.
+// STILL=none walks every sequence with the motion, for a failure that
+// might hide behind it.
 export function still(seq) {
   return process.env.STILL !== "none" && !seq.steps.some(([what]) => moving.has(what));
 }
