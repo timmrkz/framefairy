@@ -308,6 +308,42 @@ const (
 // DefaultCaptionY is where the captions sit when nobody has placed them.
 var DefaultCaptionY = DefaultStyle["margin_v"].(float64)
 
+// CaptionStart is how the captions look before anybody changes them, the
+// look DefaultStyle gives, and the heights a hand may put them at. The app
+// offers these in its controls and puts the captions back to them, so the
+// interface keeps no copy of either.
+type CaptionStart struct {
+	Font string  `json:"font"`
+	Size float64 `json:"size"`
+	// Y is where the captions sit, and Heights every height they may sit
+	// at, from the lowest up, as the distance from the bottom of a
+	// 1080x1920 frame. A drag lands on the one nearest the hand, the one
+	// SnapCaptionY gives.
+	Y       float64   `json:"y"`
+	Heights []float64 `json:"heights"`
+	// The colours, the way the video preview draws them, see WebColour.
+	Primary         string `json:"primary"`
+	Box             string `json:"box"`
+	HighlightColour string `json:"highlightColour"`
+}
+
+// StartingCaptions is the captions as they start out.
+func StartingCaptions() CaptionStart {
+	start := CaptionStart{
+		Font:    DefaultStyle["font"].(string),
+		Size:    DefaultStyle["size"].(float64),
+		Y:       DefaultCaptionY,
+		Primary: WebColour(DefaultStyle["primary"].(string)),
+		Box:     WebColour(DefaultStyle["back_colour"].(string)),
+		HighlightColour: Style{HighlightColour: highlightColour(DefaultStyle["highlight_colour"], "")}.
+			HighlightWeb(),
+	}
+	for y := float64(CaptionYMin); y <= CaptionYMax; y += CaptionYStep {
+		start.Heights = append(start.Heights, y)
+	}
+	return start
+}
+
 // SnapCaptionY puts a hand-placed caption line on the nearest step and
 // inside the frame.
 func SnapCaptionY(y float64) float64 {

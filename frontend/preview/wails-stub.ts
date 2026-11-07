@@ -1602,6 +1602,18 @@ const Answers = {
         (window as any).__settings = { ...was, ...kept };
         return videoState(String(args[0]));
       }
+      // How the captions start out, the way the engine has them, see
+      // engine.CaptionStart.
+      case "CaptionStart":
+        return Promise.resolve({
+          font: "Inter Black",
+          size: 96,
+          y: 300,
+          heights: Array.from({ length: 37 }, (_, i) => 120 + 40 * i),
+          primary: "rgba(255, 255, 255, 1)",
+          box: "rgba(0, 0, 0, 0.498)",
+          highlightColour: "rgba(148, 33, 146, 1)",
+        });
       case "GetSettings":
         return Promise.resolve({ llmModel: "", asrModel: "", planner: (window as any).__planner || "local", apiModel: "claude-sonnet-5", target: 0, min: 20, max: 30, highlightColour: "#b4236f", appColour: "#942192", outputDir: "", captionY: 240, trainingDir: "", ...((window as any).__settings ?? {}) });
       // What the settings page saves, kept, so a probe can read what was
