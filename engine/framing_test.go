@@ -245,7 +245,7 @@ func TestASystemDecoderThatWorksIsKept(t *testing.T) {
 // A clip framed with a system decoder that works is framed on it from the
 // first check to the last frame read, and its crop is placed. The stand-in
 // says it decodes through VideoToolbox, the way ffmpeg does on a Mac, and
-// hands the work to the real ffmpeg.
+// hands the work to the real ffmpeg on the processor.
 //
 // On the real disk: the stand-in ffmpeg is a program that is run.
 func TestAClipIsFramedOnASystemDecoderThatWorks(t *testing.T) {
@@ -256,7 +256,13 @@ func TestAClipIsFramedOnASystemDecoderThatWorks(t *testing.T) {
 	path, source := twoCameras(t)
 	real, _ := exec.LookPath("ffmpeg")
 	working := filepath.Join(t.TempDir(), "ffmpeg")
-	script := "#!/bin/sh\ncase \"$*\" in *-hwaccel*) echo 'Using auto hwaccel type videotoolbox with new default device.' >&2;; esac\n" +
+	// It takes -hwaccel and its value off before the real ffmpeg runs,
+	// so no test reaches a system decoder, see Media.
+	script := "#!/bin/sh\nskip= hw=\nfor a; do shift\n" +
+		"  if [ -n \"$skip\" ]; then skip=; continue; fi\n" +
+		"  if [ \"$a\" = -hwaccel ]; then skip=1 hw=1; continue; fi\n" +
+		"  set -- \"$@\" \"$a\"\ndone\n" +
+		"[ -n \"$hw\" ] && echo 'Using auto hwaccel type videotoolbox with new default device.' >&2\n" +
 		"exec \"" + real + "\" \"$@\"\n"
 	if err := standin.Write(working, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
