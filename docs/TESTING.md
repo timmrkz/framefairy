@@ -775,9 +775,9 @@ printed, and every walk writes `walking`, `walked` or `failed` with its
 name to stderr as it starts and ends, so a walk that hung is named,
 issue #443. And a check counts what the app drew against the frames the
 screen drew, not against a number: a bounce is drawn on every frame the
-screen drew while it lasted, and the crop frame of a glide stands in a
-place of its own on every frame the play showed, so frames the screen
-did not draw make no jump, issue #442.
+screen drew while it lasted, and the crop frame of a keyframe stands
+where the render crops it on every frame the play showed, so frames the
+screen did not draw make no jump, issue #442.
 
 Where how many frames the screen draws decides what a walk can see, the
 walk gives the app its frames or its time instead. The bounce after a
@@ -790,10 +790,10 @@ drew two and missed the peak, issues #328, #329 and #460. A frame whose
 captions a walk holds back waits for them as long as they take, by a
 wait the walk hands the frame queue, `dressWait` in
 `lib/frames/queue.ts`, where on the browser's clock the walk's own steps
-used up the 600 ms it waits, issue #468. And a glide read while it plays
-goes on until the video preview has shown ten frames or come to the next
-keyframe, not for two seconds, in which a busy machine showed two, issue
-#464.
+used up the 600 ms it waits, issue #468. And a crop read while it plays
+goes on until the video preview has shown ten frames or come to the end
+of the piece, not for two seconds, in which a busy machine showed two,
+issue #464.
 
 Every walk plays on the walk's clock, `preview/clock.ts`. The page the
 walks run on hands it to every frame queue it makes, see `FrameQueue.clock`

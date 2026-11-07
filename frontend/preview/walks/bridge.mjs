@@ -874,7 +874,7 @@ export async function nextPaint(page, n = 1) {
 // in Player.svelte. It says true then, and false when a layer of captions
 // is given up on first, data-captions-lost, counted from lost, the count
 // read before the gesture, since a layer can be given up on while the
-// walk settles after it. T and C put a mark on the frame shown, the frame
+// walk settles after it. T and K put a mark on the frame shown, the frame
 // a person sees, and the caption box shows what was drawn on it, and on a
 // busy machine both come a moment after the playhead. It waits on the
 // page changing, never on the clock, so a frame that never comes is ended
