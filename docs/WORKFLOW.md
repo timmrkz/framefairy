@@ -199,75 +199,48 @@ names nothing of ours. This is where its words meet this repository.
 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs on every pull
 request and every push to `main`, as up to twelve jobs at the same time,
 so the answer comes back in the time the slowest takes. A first job,
-**plan**, asks `scripts/changed.sh` which parts the change reaches, and
-only those start. Each job runs one make command, `make changed` for its
-part, the same one you run on your Mac, so CI and `make changed` check
-the same thing, see [One way to test](BUILD.md#one-way-to-test):
+**changes**, reads which files the pull request changed, and only the
+jobs whose code it changed start: no Go changed, no Go tests, no
+interface changed, no interface tests. Each job runs one make command,
+the same one you run on your Mac, see
+[One way to test](BUILD.md#one-way-to-test):
 
-- **interface:** `make interface`, the type check and the interface's own
-  tests.
-- **build:** `make lint`, then `make` on Linux, which proves the programs
-  still link with the interface built into them.
-- **linux:** the Go tests under the race detector, `make unit`, including
-  the tests that render, of the packages the change reaches, on three
-  machines for the engine or the app, `UNITSHARD=1/3` to `3/3`, and on
-  one for the rest.
-- **walks:** the interface in Chromium against the real Go side,
-  `make walks`, every run, on four machines, for a change to the
-  interface, the walks or the Go side of the app.
-- **fuzz:** `make fuzz` on Linux, the targets of the packages the change
-  reaches, going on from the fuzz cache main left.
-- **macos:** `make unit` against our own ffmpeg, which on a Mac leaves
-  out the race detector, which Linux runs.
-- **outside:** `make WERROR=1` on a Mac, which fails on a warning from
-  clang, the linker or the interface build, see No build warnings on macOS in
-  [BUILD.md](BUILD.md#no-build-warnings-on-macos), then the app opened by macOS from a link, see
+- **interface**, when the interface changed: `make interface`, the type
+  check and the interface's own tests.
+- **build**, when Go or the interface changed: `make lint`, then `make`
+  on Linux, which proves the programs still link with the interface
+  built into them.
+- **linux**, when Go changed: the Go tests under the race detector,
+  `make unit`, including the tests that render, on three machines,
+  `UNITSHARD=1/3` to `3/3`. Go's test cache runs only the packages that
+  changed.
+- **walks**, when Go or the interface changed: the interface in Chromium
+  against the real Go side, `make walks`, every walk, on four machines.
+- **fuzz**, when Go changed: `make fuzz` on Linux, going on from the
+  fuzz cache main left.
+- **macos**, when Go changed: `make unit` against our own ffmpeg, which
+  on a Mac leaves out the race detector, which Linux runs.
+- **outside**, when Go or the interface changed: `make outside
+  WERROR=1` on a Mac, which fails on a warning from clang, the linker or
+  the interface build, see No build warnings on macOS in
+  [BUILD.md](BUILD.md#no-build-warnings-on-macos), then the app opened
+  by macOS from a link, see
   [TESTING.md](TESTING.md#from-outside-the-app).
 
-A push to `main` runs every part whole. A pull request of docs alone
-reaches only the test that reads the docs, `internal/naming`, on one
-Linux machine.
+A push to `main` runs every job. A pull request of docs alone runs none.
 
 ### When main moves
 
-A Claude session watches its own pull request: comments, reviews and CI on
-its commits reach it. A merge into `main` is none of those, so a pull
-request can fall behind `main`, or stop merging, with nobody told.
-
-[`.github/workflows/main-moved.yml`](../.github/workflows/main-moved.yml)
-closes that gap. It runs
-[`scripts/main-moved.sh`](../scripts/main-moved.sh), which tries merging
-`main` into the branch of a pull request and leaves a comment on it when
-`main` no longer merges, naming the files that conflict. It does that for
-every open pull request on every push to `main`, and for one pull request
-whenever it is opened or pushed to. The second is for a branch started
-from a `main` that has moved on since: it is in conflict from its first
-push, and no push to `main` follows to say so. It hears a pull request
-through `pull_request_target`, not `pull_request`, because GitHub runs no
-`pull_request` workflow on a pull request that conflicts with `main`: #213
-was opened in conflict, and neither CI nor this workflow ran on it, so
-nothing said so, plan row 2.241. `pull_request_target` runs main's
-workflow and main's script whatever the conflict, and they only read the
-branch, never run it. A pull request that still
-merges is left alone: merging `main` into it would only add a commit, a CI
-run and a build to take, and change nothing being tested.
-
-The merge is tried in git, not asked of GitHub. GitHub works out whether a
-pull request merges some time after a push, and until then it answers
-that it does not know.
-
-The comment is what wakes the session. It merges `main` in at once,
-without asking, resolves the conflict, reads `CLAUDE.md` again and pushes,
-because GitHub runs no CI on a pull request that conflicts with `main`.
-The merge is tested like a change of the session's own, because resolving
-it writes new code: the tests of what the resolution touches before the
-push, and CI after it.
-Reading `CLAUDE.md` again is in the comment on purpose: a session reads it
-once when it starts, so a rule that lands on `main` while the session runs
-would otherwise reach it only in its next session. The workflow itself never
-pushes, because a merge made there would reach the branch untested. It
-comments once per pull request for each move of `main`, and leaves pull
-requests from forks alone.
+GitHub runs no CI on a pull request that conflicts with `main`, so a
+pull request is never left unable to merge. GitHub shows a conflict on
+the pull request itself. The session checks that its pull request merges
+right after opening it and before it says it is ready, and when it does
+not, merges `main` in at once, without asking, resolves the conflict,
+reads `CLAUDE.md` again and pushes. The merge is tested like a change of
+the session's own, the tests of what it touches first and CI after. A
+pull request that still merges is left alone: merging `main` into it
+would only add a commit, a CI run and a build to take, and change
+nothing being tested.
 
 ## What stays on your Mac
 

@@ -510,7 +510,7 @@ func FuzzPlanEdits(f *testing.F) {
 		// the fuzzer grows scripts without end. When the plan was flushed to
 		// the disk, a script of hundreds of edits took most of a second, and
 		// shrinking one that reached new code took a minute, so the fuzzing
-		// seemed to hang, see scripts/fuzz.sh.
+		// seemed to hang, see make fuzz.
 		if len(script) > 3*planEditsRead {
 			script = script[:3*planEditsRead]
 		}

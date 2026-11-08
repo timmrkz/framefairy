@@ -1,14 +1,17 @@
-# Runs on every pull request and on every push to main, with one command
-# in every job: make changed, for that job's part of make test, see
-# scripts/changed.sh. On a pull request it runs what the change reaches
-# and nothing more, the same as make changed does on any machine. A push
-# to main runs every part whole, EVERYTHING=1 below. Each job holds only
-# what its machine needs around that command: the checkout, Go and Node,
-# the caches and the image.
+# Every job runs one make command, the same one anybody runs on their own
+# machine, see One way to test in docs/BUILD.md. Around it a job has only
+# what its machine needs: the checkout and .github/actions/prepare.
 #
-# The first job, plan, asks the same script which parts have work, so a
-# job with nothing to do never starts a machine. No branch rule requires
-# a check, so nothing waits on a job that was never started.
+# A pull request starts only the jobs whose code it changed: the Go jobs
+# when Go changed, the interface's tests when the interface changed, and
+# the jobs that test the whole app, the build, the walks and the app
+# opened from outside, when either did. What counts as which is the two
+# filters of the job changes, below. A change to the docs alone starts
+# nothing. A push to main starts every job. Inside a Go job Go's own test
+# cache, restored from main, runs only the packages whose code changed.
+#
+# No branch rule requires a check, so nothing waits on a job that was
+# never started.
 name: CI
 
 on:
@@ -16,167 +19,124 @@ on:
   push:
     branches: [main]
 
-# Reading the code is all CI does, so its token can do nothing more.
 permissions:
   contents: read
 
 # A second push makes the first answer worthless, so it is stopped rather
-# than left to finish. It frees the runners for the push that replaced it.
-# Never on main, where every commit's result is worth having on its own.
+# than left to finish. Never on main, where every commit's result is worth
+# having on its own.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 # A cache whose download stalls is given up after a minute, and the job
-# goes on as if there were no cache, where it would wait ten. Restoring the
-# walks' system packages once took 2 min 22 s on one runner and 3 s on the
-# others, which put the job at seven minutes.
+# goes on as if there were no cache, where it would wait ten.
 #
 # A Go test waits on signals, never on the clock, so one whose signal never
 # comes hangs. go test ends it after UNITTIMEOUT and prints every
-# goroutine, see make unit, well before a job's five minutes are up. The
-# checks from outside the app wait on the app the same way, and go test
-# ends them after OUTSIDETIMEOUT, see make outside.
-#
-# SLOWEST names, under the Go tests of every job, the tests that took
-# longer, so a slow test on any machine, the Mac above all, shows without
-# a second run. See make unit.
-#
-# What a change is: on a pull request, what its merge commit changed
-# against the main it sits on, its first parent, which is why every
-# checkout fetches two commits.
+# goroutine, well under a job's five minutes. The checks from outside the
+# app end the same way after OUTSIDETIMEOUT.
 env:
-  EVERYTHING: ${{ github.event_name == 'push' && '1' || '' }}
-  BASE: ${{ github.event_name == 'pull_request' && 'HEAD^1' || '' }}
   SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
   UNITTIMEOUT: 4m
   OUTSIDETIMEOUT: 2m
-  SLOWEST: 5s
 
 jobs:
-  # The parts with work, for the Linux jobs and for the Mac jobs, each a
-  # line of words with a space on either side, which the jobs below look
-  # for. It needs Go, to know which packages import which.
-  plan:
+  # What the pull request changed, by the files GitHub lists for it. Go is
+  # every file outside frontend/, the docs and .claude/, so a script, the
+  # Makefile or a workflow is Go. The interface is frontend/, the
+  # Makefile, the workflows and the Node pin. See One way to test in
+  # docs/BUILD.md.
+  changes:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
-      linux: ${{ steps.parts.outputs.linux }}
-      mac: ${{ steps.parts.outputs.mac }}
-      unit: ${{ steps.parts.outputs.unit }}
+      go: ${{ github.event_name == 'push' || steps.filter.outputs.go == 'true' }}
+      interface: ${{ github.event_name == 'push' || steps.filter.outputs.interface == 'true' }}
+      app: ${{ github.event_name == 'push' || steps.filter.outputs.go == 'true' || steps.filter.outputs.interface == 'true' }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: filter
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
-          fetch-depth: 2
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: true
-      # The parts with work on Linux and on a Mac, and how many machines
-      # the unit tests need, as unit=["1/3","2/3","3/3"].
-      - id: parts
-        run: |
-          linux=$(make -s changed MODE=parts)
-          mac=$(make -s changed MODE=parts UNAME=Darwin)
-          shares=$(make -s changed MODE=shares)
-          echo "Linux: ${linux:-nothing}"
-          echo "Mac: ${mac:-nothing}"
-          echo "$shares"
-          echo "linux= $linux " >> "$GITHUB_OUTPUT"
-          echo "mac= $mac " >> "$GITHUB_OUTPUT"
-          echo "$shares" >> "$GITHUB_OUTPUT"
+          predicate-quantifier: every
+          filters: |
+            go:
+              - '**'
+              - '!frontend/**'
+              - '!docs/**'
+              - '!**/*.md'
+              - '!.claude/**'
+              - '!LICENSE'
+            interface:
+              - '{frontend/**,.github/**,.node-version,Makefile}'
 
-  # First back, by a long way. It needs Node and nothing else: no Go, no
-  # system libraries, no build.
+  # The machine the Linux jobs run on, with every system package they use,
+  # so none waits on the Ubuntu mirror, see ci-image.yml.
+  image:
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/ci-image.yml
+
+  # Needs Node and nothing else, so it is first back by a long way.
   interface:
-    needs: plan
-    if: contains(needs.plan.outputs.linux, ' interface ')
+    needs: changes
+    if: needs.changes.outputs.interface == 'true'
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 2
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      # ESLint among it, see frontend/eslint.config.js.
-      - name: Type check and interface tests
-        run: make changed PART=interface
+      - run: make interface
 
-  # make lint, then the build of everything, the interface included,
-  # which is what proves the programs still link and that Go can embed
-  # what make built, without the tools we ship, which nothing builds for
-  # Linux yet. In the CI image, so the build waits on no mirror.
+  # make lint, then the programs and the interface built, which proves they
+  # still link and that Go can embed what make built. Without the tools we
+  # ship, which nothing builds for Linux yet.
   build:
-    needs: [plan, image]
-    if: contains(needs.plan.outputs.linux, ' lint ') || contains(needs.plan.outputs.linux, ' build ')
+    needs: [changes, image]
+    if: needs.changes.outputs.app == 'true'
     runs-on: ubuntu-24.04
-    defaults:
-      run:
-        shell: bash -e {0}
+    timeout-minutes: 15
     container: ${{ needs.image.outputs.ref }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/prepare
         with:
-          fetch-depth: 2
-      # In the image the job runs as root, and the checkout is the
-      # runner's user's, see the walks.
-      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .node-version
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: true
-      # make installs nothing here, so INSTALL=1 fetches the golangci-lint
+          node: npm
+      # make installs nothing in CI, so INSTALL=1 fetches the golangci-lint
       # the Makefile pins, and nothing else.
-      - name: golangci-lint
-        run: make golangci-lint INSTALL=1
-      - name: Lint and build
-        run: make changed PART="lint build"
+      - run: make golangci-lint INSTALL=1
+      - run: make lint
+      - run: make NOTOOLS=1
 
-  # The Go tests a change reaches, under the race detector, which also
-  # runs the seed corpus of their fuzz targets. ffmpeg is here because the tests that render skip
-  # without it, and they are worth having.
+  # The Go tests under the race detector, the seeds of the fuzz targets
+  # among them, on three machines, a third of the tests each by their
+  # names, see UNITSHARD in the Makefile: on one they took six minutes.
+  # Each machine keeps a cache of its own, since each keeps the results of
+  # other tests.
   #
-  # On three machines for a change that reaches the engine or the app, a
-  # third of the tests each, SHARD=1/3 to 3/3, see UNITSHARD in the
-  # Makefile. On one machine those tests took six minutes, and no job
-  # takes over five. A change that reaches neither takes one machine,
-  # SHARD=1/1, see --shares in scripts/changed.sh. Each machine keeps a cache of its own,
-  # since each keeps the results of other tests.
-  #
-  # Go's build cache: setup-go keeps it by go.sum alone and saves it only
-  # when go.sum changes, so a job started from one that was weeks old and
-  # compiled nearly everything again, a minute here and close to two on a
-  # Mac. The jobs that compile most, linux, walks, macos and outside, take theirs
-  # from the cache main saved last, one for each job, because each
-  # compiles with other flags, and one for each machine of linux, since
-  # each keeps the results of other tests. Main saves it after every
-  # push. A pull
-  # request saves one only when it found none, before main has saved one
-  # or after GitHub dropped it, so its next push starts warm. Otherwise it
-  # saves nothing: a cache a pull request writes is its own, and the
-  # upload would cost every run.
-  #
-  # In the CI image, see ci-image.yml, as the walks are and for the same
-  # reasons, so no machine waits on the Ubuntu mirror.
+  # The runners' work folder is mounted where it is on a runner, because
+  # the ffmpeg we ship comes from a cache filled on a runner, and its
+  # pkg-config files name the folder it was built in.
   linux:
-    needs: [plan, image]
-    if: contains(needs.plan.outputs.linux, ' unit ')
+    needs: [changes, image]
+    if: needs.changes.outputs.go == 'true'
     strategy:
       fail-fast: false
       matrix:
-        shard: ${{ fromJSON(needs.plan.outputs.unit) }}
+        shard: [1/3, 2/3, 3/3]
     runs-on: ubuntu-24.04
-    defaults:
-      run:
-        shell: bash -e {0}
+    timeout-minutes: 15
     container:
       image: ${{ needs.image.outputs.ref }}
       options: --init
@@ -184,71 +144,17 @@ jobs:
         - /home/runner/work:/home/runner/work
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/prepare
         with:
-          fetch-depth: 2
-      # The checkout is the runner's user's and the job runs as root, see
-      # the walks.
-      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: false
-      # make checks for npm before it builds anything, and the image has
-      # no Node, which a runner has.
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .node-version
-      # Go's build cache, kept by main after every push, see above the job
-      # linux. v2 since the job runs in the image, see the walks.
-      - id: gocache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
           key: go-v3-linux-${{ runner.os }}-${{ strategy.job-index }}-${{ github.sha }}
           restore-keys: go-v3-linux-${{ runner.os }}-${{ strategy.job-index }}-
-      # The episode's decoder, which the tests and the walks play through,
-      # built against the ffmpeg we ship, see docs/VIDEO-PREVIEW.md. That
-      # ffmpeg is built once and kept until scripts/build-ffmpeg.sh
-      # changes. The tests still take the system's ffmpeg from the PATH,
-      # because ours has no H.264 encoder on Linux, see TOOLS_FIRST.
-      - id: ffmpeg
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .build/ffmpeg
-          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}
-      - name: The ffmpeg we ship
-        if: steps.ffmpeg.outputs.cache-hit != 'true'
-        run: sh scripts/build-ffmpeg.sh .build/ffmpeg
-      - name: The episode's decoder
-        run: make frames
-      # A test that fails is named on the check, see
-      # scripts/test-failures.sh, so finding it needs no log.
-      #
-      # go test stops a package that runs over ten minutes by itself, with
-      # the stack of every goroutine, and the tests take three. The limit is
-      # for when even that does not end it: a job once waited half an hour
-      # on what a failed test had left running, until it was cancelled by
-      # hand.
-      - name: Go tests
-        id: tests
-        timeout-minutes: 15
-        run: |
-          make changed PART=unit SHARD=${{ matrix.shard }} 2>&1 | tee unit.log
-          status=${PIPESTATUS[0]}
-          if [ "$status" -ne 0 ]; then sh scripts/test-failures.sh unit.log; fi
-          exit "$status"
-      # Whichever way the tests ended, what they left running is named on
-      # the check and stopped, see scripts/leftovers.sh.
-      - name: Nothing left running
-        if: always()
-        run: sh scripts/leftovers.sh
-      # Only after the tests ran to their end, whether or not they passed,
-      # since they built everything either way: a job that stopped before
-      # them, or was cancelled during them, has built little, and its cache
-      # would be found first by every run after.
-      - if: ${{ !cancelled() && steps.tests.outcome != 'skipped' && (github.ref == 'refs/heads/main' || steps.gocache.outputs.cache-matched-key == '') }}
+          node: node
+          ffmpeg: true
+      - id: tests
+        run: make unit UNITSHARD=${{ matrix.shard }}
+      # Only on main, and only once the tests ran, since they built
+      # everything either way. A cache a pull request writes is its own.
+      - if: github.ref == 'refs/heads/main' && !cancelled() && steps.tests.outcome != 'skipped'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -256,57 +162,22 @@ jobs:
             ~/.cache/go-build
           key: go-v3-linux-${{ runner.os }}-${{ strategy.job-index }}-${{ github.sha }}
 
-  # The machine the build, the walks and the Linux Go jobs run on, see
-  # .github/workflows/ci-image.yml, which finds it or builds it.
-  image:
-    needs: plan
-    if: contains(needs.plan.outputs.linux, ' lint ') || contains(needs.plan.outputs.linux, ' build ') || contains(needs.plan.outputs.linux, ' unit ') || contains(needs.plan.outputs.linux, ' fuzz ') || contains(needs.plan.outputs.linux, ' walks ')
-    permissions:
-      contents: read
-      packages: write
-    uses: ./.github/workflows/ci-image.yml
-
-  # The interface in Chromium against the real Go side: the sequences of
-  # the cases found by hand and the walks, see docs/TESTING.md. It needs
-  # what the Go tests need, the interface's Node, and the Chromium
-  # Playwright drives, all of it in the image ci-image.yml keeps, which
-  # the job runs in.
-  #
-  # Each part of the app walks in WebKit, the engine the app runs in on a
-  # Mac, once it has moved there, and in Chromium until then, in the same
-  # jobs, see frontend/preview/walks/webkit.mjs and Two browsers in
-  # docs/TESTING.md, #380. The nightly walks walk in Chromium.
-  #
-  # On four machines, each with a quarter of the runs by how long they took
-  # last, see frontend/preview/walks/walk-times.tsv: on one the runs took
-  # five and a half minutes after two of setting up, on two each still took
-  # six with a cold build cache, and on three each job took four and three
-  # quarters, too close to five. More walkers on a machine of four cores
-  # finish no sooner and break walks that wait on the clock.
-  #
-  # In the container as root, which is how GitHub runs one, with the IPC
-  # of the machine, as Playwright says to for Chromium, whose shared memory
-  # would not fit the 64 MB a container has, and with an init process,
-  # which Playwright asks for too, so what Chromium leaves behind is
-  # reaped. The runners' work folder is also where it is on the machine,
-  # because the ffmpeg we ship comes from a cache the job linux filled
-  # when it still ran on a runner, and its pkg-config files name the
-  # folder it was built in there. The next one is built in the image, and
-  # then the mount can go, here and in linux.
+  # The interface in Chromium against the real Go side, see
+  # docs/TESTING.md, on four machines, each with a quarter of the walks by
+  # how long they took last, frontend/preview/walks/walk-times.tsv. A
+  # quarter takes about two and a half minutes, so one that hangs is
+  # stopped and named after eight. Playwright asks for the machine's IPC,
+  # since Chromium's shared memory does not fit a container's 64 MB, and
+  # an init process to reap what it leaves.
   walks:
-    needs: [plan, image]
-    if: contains(needs.plan.outputs.linux, ' walks ')
+    needs: [changes, image]
+    if: needs.changes.outputs.app == 'true'
     strategy:
       fail-fast: false
       matrix:
         shard: [1/4, 2/4, 3/4, 4/4]
     runs-on: ubuntu-24.04
-    # A container runs a step with sh, where ${PIPESTATUS[0]} is no word.
-    # bash as a runner has it, without pipefail, so a walk that fails still
-    # reaches the step that names it.
-    defaults:
-      run:
-        shell: bash -e {0}
+    timeout-minutes: 15
     container:
       image: ${{ needs.image.outputs.walks }}
       options: --init --ipc=host
@@ -314,65 +185,16 @@ jobs:
         - /home/runner/work:/home/runner/work
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/prepare
         with:
-          fetch-depth: 2
-      # The checkout belongs to the runner's user and the job runs as root,
-      # so git refuses the folder as someone else's, and go build, which
-      # asks git for the commit it stamps, fails with it.
-      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: false
-      # Go's build cache, kept by main after every push, see above the job
-      # linux. v2 since the job runs in the image: actions/cache keeps a
-      # path by where it lies from the work folder, and the home of a
-      # container is another place than a runner's.
-      - id: gocache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
           key: go-v2-walks-${{ runner.os }}-${{ github.sha }}
           restore-keys: go-v2-walks-${{ runner.os }}-
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .node-version
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-      # The episode's decoder, which the tests and the walks play through,
-      # built against the ffmpeg we ship, see docs/VIDEO-PREVIEW.md. That
-      # ffmpeg is built once and kept until scripts/build-ffmpeg.sh
-      # changes, by the job linux, whose cache this only reads, so one
-      # machine builds it and not five. The tests still take the system's ffmpeg from
-      # the PATH, because ours has no H.264 encoder on Linux, see
-      # TOOLS_FIRST.
-      - id: ffmpeg
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .build/ffmpeg
-          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}
-      - name: The ffmpeg we ship
-        if: steps.ffmpeg.outputs.cache-hit != 'true'
-        run: sh scripts/build-ffmpeg.sh .build/ffmpeg
-      - name: The episode's decoder
-        run: make frames
-      # A walk or a sequence that breaks a rule is named on the check, see
-      # scripts/test-failures.sh. A share takes about two and a half
-      # minutes, so one that hangs is stopped and named after eight rather
-      # than holding the machine for the half hour make walks gives by
-      # hand.
-      - name: Sequences and walks
-        id: walks
-        run: |
-          make changed PART=walks SHARD=${{ matrix.shard }} WALKTIMEOUT=8m 2>&1 | tee walks.log
-          status=${PIPESTATUS[0]}
-          if [ "$status" -ne 0 ]; then sh scripts/test-failures.sh walks.log; fi
-          exit "$status"
-      # The traces of the walks that failed, threw or hung, kept with the
-      # run as walk-traces-0 to walk-traces-3 by share, see Finding why a
-      # walk failed in docs/TESTING.md.
+          node: npm
+          ffmpeg: true
+      - id: walks
+        run: make walks WALKSHARD=${{ matrix.shard }} WALKTIMEOUT=8m
+      # The trace of every walk that failed, see Finding why a walk failed
+      # in docs/TESTING.md.
       - if: failure() && steps.walks.outcome == 'failure'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -380,9 +202,7 @@ jobs:
           path: .build/walk-traces
           retention-days: 14
           if-no-files-found: ignore
-      # Only after walks that passed: a share that stopped early has built
-      # little, and a cache saved from it is found first by every run after.
-      - if: steps.walks.outcome == 'success' && (github.ref == 'refs/heads/main' || steps.gocache.outputs.cache-matched-key == '') && strategy.job-index == 0
+      - if: github.ref == 'refs/heads/main' && steps.walks.outcome == 'success' && strategy.job-index == 0
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -390,62 +210,28 @@ jobs:
             ~/.cache/go-build
           key: go-v2-walks-${{ runner.os }}-${{ github.sha }}
 
-  # Looking for new crashers, which is the part that does not need to hold
-  # anything else up.
-  #
-  # Go keeps what it learned in its build cache: the inputs that reached
-  # new code, and each package built with the coverage counters fuzzing
-  # needs. Both are kept between runs, saved by main and by the nightly
-  # fuzzing and taken up by every pull request. So a run goes on from where
-  # the last one stopped instead of finding the same easy inputs again, and
-  # does not build every package before it starts. What a pull request
-  # finds is not saved, because a cache a pull request writes is its own.
-  #
-  # In the CI image, as the job linux is. The nightly fuzzing runs in it
-  # too, because the two share the cache, which keeps a path by where it
-  # lies, see the walks: v2 since they moved there together.
+  # Every fuzz target for 10000 executions. Go keeps the inputs that
+  # reached new code in its build cache, which main and the nightly
+  # fuzzing save, so a run goes on from where the last one stopped. The
+  # licence dispenser's simulation is fuzzed at night only, SIMTIME=0.
   fuzz:
-    needs: [plan, image]
-    if: contains(needs.plan.outputs.linux, ' fuzz ')
+    needs: [changes, image]
+    if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-24.04
-    defaults:
-      run:
-        shell: bash -e {0}
+    timeout-minutes: 15
     container:
       image: ${{ needs.image.outputs.ref }}
       options: --init
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/prepare
         with:
-          fetch-depth: 2
-      # The checkout is the runner's user's and the job runs as root, see
-      # the walks.
-      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: false
-      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
           key: fuzz-v2-${{ runner.os }}-${{ github.sha }}
           restore-keys: fuzz-v2-${{ runner.os }}-
-      # make checks for npm before it builds anything, and the image has
-      # no Node, which a runner has.
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .node-version
-      # The licence dispenser's simulation is fuzzed at night only, see
-      # SIMTIME in scripts/fuzz.sh. Its known seeds run in the job linux.
-      - name: Fuzz
-        id: fuzz
-        run: make changed PART=fuzz SIMTIME=0
-      # Only after the fuzzing ran to its end: a job that stopped before it,
-      # or was cancelled during it, has built little, and its cache would be
-      # found first by every run after.
-      - if: ${{ !cancelled() && steps.fuzz.outcome != 'skipped' && github.ref == 'refs/heads/main' }}
+          node: node
+      - id: fuzz
+        run: make fuzz SIMTIME=0
+      - if: github.ref == 'refs/heads/main' && !cancelled() && steps.fuzz.outcome != 'skipped'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -453,77 +239,24 @@ jobs:
             ~/.cache/go-build
           key: fuzz-v2-${{ runner.os }}-${{ github.sha }}
 
-  # The Go tests on Tim's platform, against the ffmpeg we ship, built by
-  # the same script a release uses, so what renders here is what renders
-  # on a customer's Mac: LGPL, without libx264, encoding through
-  # VideoToolbox. The build takes a while once and is kept until
-  # scripts/build-ffmpeg.sh changes.
-  #
-  # make unit on a Mac leaves out the race detector and the licence
-  # server's packages, see the Makefile, the same as on Tim's Mac. What
-  # differs here, decoding, encoding, the disk, the keychain, is all still
-  # tested. The build with no warnings allowed is in the job outside,
-  # which builds the app anyway.
+  # The Go tests on Tim's platform, against the ffmpeg we ship, which
+  # encodes through VideoToolbox as a customer's does. make unit on a Mac
+  # leaves out the race detector and the licence server, see the Makefile.
   macos:
-    needs: plan
-    if: contains(needs.plan.outputs.mac, ' unit ')
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
     runs-on: macos-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/prepare
         with:
-          fetch-depth: 2
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: false
-      # Go's build cache, kept by main after every push, see above the job
-      # linux.
-      - id: gocache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/go/pkg/mod
-            ~/Library/Caches/go-build
           key: go-v1-macos-${{ runner.os }}-${{ github.sha }}
           restore-keys: go-v1-macos-${{ runner.os }}-
-      # The checksum of the pins of the tools that build them, in the
-      # keys below, so a newer tool builds them again, see
-      # scripts/build-tools.sh.
-      - id: tools
-        run: echo "recipe=$(sh scripts/build-tools.sh --recipe)" >> "$GITHUB_OUTPUT"
-      - id: ffmpeg
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .build/ffmpeg
-          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}-${{ steps.tools.outputs.recipe }}
-      # What builds the ffmpeg we ship, at the versions requirements.txt
-      # pins, see scripts/build-tools.sh. With the ffmpeg from the cache,
-      # only pkg-config, with which the episode's decoder finds its
-      # libraries.
-      - name: What builds them
-        run: |
-          sh scripts/build-tools.sh .build/tools ${{ steps.ffmpeg.outputs.cache-hit == 'true' && 'pkgconf' || '' }}
-          echo "$PWD/.build/tools/bin" >> "$GITHUB_PATH"
-      - name: The ffmpeg we ship
-        if: steps.ffmpeg.outputs.cache-hit != 'true'
-        run: sh scripts/build-ffmpeg.sh .build/ffmpeg
-      - name: ffmpeg on the path, for the tests
-        run: |
-          .build/ffmpeg/bin/ffmpeg -hide_banner -encoders | grep videotoolbox
-          echo "$PWD/.build/ffmpeg/bin" >> "$GITHUB_PATH"
-      # With a limit and a look at what is left, as in the job linux.
-      - name: Go tests
-        timeout-minutes: 15
-        run: |
-          make frames
-          make changed PART=unit 2>&1 | tee unit.log
-          status=${PIPESTATUS[0]}
-          if [ "$status" -ne 0 ]; then sh scripts/test-failures.sh unit.log; fi
-          exit "$status"
-      - name: Nothing left running
-        if: always()
-        run: sh scripts/leftovers.sh
-      - if: ${{ !cancelled() && (github.ref == 'refs/heads/main' || steps.gocache.outputs.cache-matched-key == '') }}
+          ffmpeg: true
+      - id: tests
+        run: make unit
+      - if: github.ref == 'refs/heads/main' && !cancelled() && steps.tests.outcome != 'skipped'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -531,75 +264,26 @@ jobs:
             ~/Library/Caches/go-build
           key: go-v1-macos-${{ runner.os }}-${{ github.sha }}
 
-  # The app on a Mac, opened from outside it: a link in the letter a buyer
-  # gets, handed to macOS with the app closed and with it open, with the
-  # local dispenser running beside it. See From outside the app in
-  # docs/TESTING.md. Its own job, because it is the only one that needs a
-  # keychain of its own, a dispenser and an app registered with Launch
-  # Services, and none of that belongs on the machines the other jobs use.
-  # It builds the app first, with no warning allowed, which is also the
-  # build the Mac has to pass, so the app is built once on a Mac in CI
-  # rather than twice.
+  # The app built on a Mac with no warning allowed, WERROR=1, and then
+  # opened from outside it: a link in the letter a buyer gets, handed to
+  # macOS with the app closed and with it open, with the local dispenser
+  # beside it. See From outside the app in docs/TESTING.md. Its cache is
+  # the one builds.yml starts from too, since both build the app with the
+  # same flags.
   outside:
-    needs: plan
-    if: contains(needs.plan.outputs.mac, ' outside ')
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
     runs-on: macos-latest
-    # The app is opened by macOS and nothing ends it but the test. A run
-    # that hangs stops here, not at GitHub's six hours.
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/prepare
         with:
-          fetch-depth: 2
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: false
-      # Go's build cache, kept by main after every push, see above the job
-      # linux. It is the cache of the app built on a Mac, which the build
-      # to update to in builds.yml starts from too, because both run make
-      # with the same flags. Only the link differs, and Go caches no link.
-      - id: gocache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/go/pkg/mod
-            ~/Library/Caches/go-build
           key: go-v1-app-${{ runner.os }}-${{ github.sha }}
           restore-keys: go-v1-app-${{ runner.os }}-
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .node-version
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-      # The same ffmpeg and llama-server as the job macos, from the same
-      # caches: the app runs no other, so make stops without them.
-      # The checksum of the pins of the tools that build them, in the
-      # keys below, so a newer tool builds them again, see
-      # scripts/build-tools.sh.
-      - id: tools
-        run: echo "recipe=$(sh scripts/build-tools.sh --recipe)" >> "$GITHUB_OUTPUT"
-      - id: ffmpeg
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .build/ffmpeg
-          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}-${{ steps.tools.outputs.recipe }}
-      - id: llama
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .build/llama
-          key: llama-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-llama.sh') }}-${{ steps.tools.outputs.recipe }}
-      # As in the job macos, with cmake too when the llama-server is built.
-      - name: What builds them
-        run: |
-          sh scripts/build-tools.sh .build/tools ${{ (steps.ffmpeg.outputs.cache-hit == 'true' && steps.llama.outputs.cache-hit == 'true') && 'pkgconf' || '' }}
-          echo "$PWD/.build/tools/bin" >> "$GITHUB_PATH"
-      - name: The ffmpeg we ship
-        if: steps.ffmpeg.outputs.cache-hit != 'true'
-        run: sh scripts/build-ffmpeg.sh .build/ffmpeg
-      - name: The llama-server we ship
-        if: steps.llama.outputs.cache-hit != 'true'
-        run: sh scripts/build-llama.sh .build/llama
+          node: npm
+          ffmpeg: true
+          llama: true
       # Unlock writes the key to the default keychain. A locked one puts a
       # box on screen that nobody here can answer, so this one is made
       # unlocked, never locks again and becomes the default.
@@ -611,17 +295,12 @@ jobs:
           security unlock-keychain -p outside "$kc"
           security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
           security default-keychain -d user -s "$kc"
-      # Tim's platform, so the build has to be clean: with WERROR=1 a
-      # warning from clang, the linker, Vite or Svelte fails it, see the
-      # Makefile. make outside builds on what it built.
-      - name: Built without warnings and opened from outside
-        env:
-          WERROR: 1
-        run: make changed PART="build outside"
-      - if: ${{ !cancelled() && (github.ref == 'refs/heads/main' || steps.gocache.outputs.cache-matched-key == '') }}
+      - id: outside
+        run: make outside WERROR=1
+      - if: github.ref == 'refs/heads/main' && !cancelled() && steps.outside.outcome != 'skipped'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
             ~/Library/Caches/go-build
-          key: ${{ steps.gocache.outputs.cache-primary-key }}
+          key: go-v1-app-${{ runner.os }}-${{ github.sha }}

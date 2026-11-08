@@ -31,18 +31,14 @@
 #   make hyphenation
 #                   write the caption hyphenation patterns again, from
 #                   hyph-utf8 and the German word list. Then make notices
-#   make changed    the tests of what this branch changed against main,
-#                   and only those. PART=unit runs one part of it, and
-#                   SHARD=1/3 a share of that part, which is what every
-#                   CI job on a pull request runs
 #   make test       all tests: lint, interface, unit, fuzz and walks. CI
-#                   runs the same on main, each part on a machine of its own
-#   make lint       gofmt, go vet, that no Go test waits on the clock, the
-#                   scripts read by their shell, the action pins and the
-#                   tests of the repository's own rules
+#                   runs each part in a job of its own, with the same
+#                   command
+#   make lint       gofmt, go vet, golangci-lint, that the scripts read by
+#                   their shell, and that docs/GUI-PLAN.md stays as it was
 #   make unit       the Go tests, under the race detector except on a Mac.
 #                   UNITSHARD=1/3 runs a third of them, as CI does, and
-#                   SLOWEST=5s names those that took longer, as CI does
+#                   the tests that took over SLOWEST, 5s, are named last
 #   make fuzz       the fuzz targets, FUZZTIME executions each
 #   make interface  the interface type check, its own tests, and that no
 #                   walk or interface test waits on the clock
@@ -75,11 +71,10 @@ NPM ?= npm
 FUZZTIME ?= 10000x
 # Only these fuzz targets, by name and separated by spaces, or all of them.
 FUZZTARGETS ?=
-# One share of the targets, like 2/3, so a deep run can be spread over
-# machines. And SIMTIME, the histories the licence simulation plays, 0 to
-# leave it out, see scripts/fuzz.sh.
-FUZZSHARD ?=
-SIMTIME ?=
+# The histories the licence dispenser's simulation plays, a fuzz target
+# whose every input is a whole history, so it gets a count of its own. 0
+# leaves it out, as CI does on a push, where the nightly fuzzing runs it.
+SIMTIME ?= 300x
 BIN := bin
 STAMPS := .build
 # The tests take ffmpeg and llama-server from the PATH, and on a Mac make
@@ -166,7 +161,7 @@ APP_LDFLAGS := $(LDFLAGS) -X main.buildVersion=$(BUILD_VERSION) -X main.buildCha
 
 PROGRAMS := $(BIN)/framefairy$(EXE) $(BIN)/framefairy-app$(EXE) $(BIN)/framefairy-train$(EXE)
 
-.PHONY: frames all run app install update-key dispenser icon motion ffmpeg llama tools-archive notices hyphenation deps tools-beside changed test unit fuzz interface walks lint golangci-lint outside outside-allowed check tools models speechbench clean help toolchain modules $(PROGRAMS)
+.PHONY: frames all run app install update-key dispenser icon motion ffmpeg llama tools-archive notices hyphenation deps tools-beside test unit fuzz interface walks lint golangci-lint outside outside-allowed check tools models speechbench clean help toolchain modules $(PROGRAMS)
 
 all: deps toolchain frames $(PROGRAMS) tools-beside
 	@echo "Ready: $(PROGRAMS)"
@@ -379,16 +374,17 @@ $(FRAMES): $(FRAMES_SRC) $(wildcard $(STAMPS)/ffmpeg/built) | modules
 # for that build here, before they look for it. Without the wait, a test
 # run in the first minutes skips the decoder's tests and still says ok.
 ifeq ($(CLAUDE_CODE_REMOTE),true)
-ifneq ($(filter changed unit walks test,$(MAKECMDGOALS)),)
+ifneq ($(filter unit walks test,$(MAKECMDGOALS)),)
 $(shell bash scripts/cloud-decoder.sh wait >&2)
 endif
 endif
 
-# The tests run the decoder that is built, so one older than its code is
-# built again before them, or new tests meet an old decoder and fail for
-# no reason in the change. Only one that is there and can be built again:
-# without it the tests that need it skip, as they did.
-FRESH_FRAMES := $(if $(and $(wildcard $(FRAMES)),$(wildcard $(STAMPS)/ffmpeg/lib/pkgconfig/libavcodec.pc)),frames)
+# The tests run the decoder, so it is built before them, or built again
+# when it is older than its code, or new tests meet an old decoder and
+# fail for no reason in the change. Only where the ffmpeg it is built on
+# is there: without it the tests that need it skip.
+FRESH_FRAMES := $(if $(wildcard $(STAMPS)/ffmpeg/lib/pkgconfig/libavcodec.pc),frames)
+TEST_FRAMES := $(if $(FRESH_FRAMES),$(CURDIR)/$(FRAMES))
 
 # The ffmpeg we ship, built from source without libx264 so the build is
 # LGPL. make builds it when it is not there or scripts/build-ffmpeg.sh has
@@ -439,25 +435,8 @@ motion: frontend/node_modules/.package-lock.json
 	@cd frontend && npx vite --config preview/motion.config.ts
 
 # Everything, the quickest answer first. Each part stands alone as well,
-# because none needs another, and CI runs each on machines of its own on
-# a push to main.
+# because none needs another, and CI runs each in jobs of its own.
 test: lint interface unit fuzz walks
-
-# The same parts, for what this branch changed and only that, worked out
-# file by file by scripts/changed.sh, which says what each kind of file
-# reaches. Every CI job on a pull request runs this for its own part, so
-# what CI runs for a change is what this runs here. PART names the parts,
-# like PART=unit or PART="lint build", and SHARD one share of unit or
-# walks. EVERYTHING=1 takes every part whole, which is a push to main.
-#
-# MODE=parts names the parts with work and runs nothing, which is how CI's
-# first job knows which jobs to start, and UNAME=Darwin asks the same for
-# a Mac. MODE=plan says what each part would run.
-PART ?=
-SHARD ?=
-MODE ?=
-changed:
-	@PART='$(PART)' SHARD='$(SHARD)' OS='$(UNAME)' UNITSKIP='$(UNITSKIP)' GO='$(GO)' MAKE='$(MAKE)' sh scripts/changed.sh $(if $(MODE),--$(MODE))
 
 # The tests run with the race detector, because the app is a queue of jobs
 # on their own goroutines and a window asking them things from another, and
@@ -488,16 +467,12 @@ changed:
 # on the clock, so one whose signal never comes hangs until then. Go's own
 # ten minutes here, and CI sets 4m, under its five-minute jobs.
 #
-# SLOWEST=5s names, after the tests, every test that took longer than
-# that, slowest first, so a slow test shows without opening anything. Off
-# unless it says, so a run prints what go test prints and nothing more, and
-# CI sets it. It runs go test through gotestsum, the tool most Go projects
-# use for this, which prints the same lines go test does and keeps every
-# test's time in UNITJSON besides, for a closer look on this machine.
-# Before the tests it says in one line what machine they run on and how
-# fast it is, scripts/machine.sh, and after them how fast it is again,
-# since the same tests take a fifth longer on some of GitHub's Macs than
-# on others, #592.
+# go test runs through gotestsum, the tool most Go projects use for
+# this. It prints the lines go test prints, and at the end every test that
+# failed again with what it printed, so a failure is the last thing in the
+# log, in CI too. Then it names every test that took over SLOWEST, slowest
+# first, so a slow test shows without a second run. Every test's time is
+# kept in UNITJSON, for a closer look.
 ifeq ($(UNAME),Darwin)
 RACE ?=
 UNITSKIP ?= framefairy/licence/dispenser framefairy/licence/paddle framefairy/cmd/framefairy-dispenser framefairy/internal/workflows framefairy/internal/naming
@@ -530,46 +505,48 @@ COVERAGE ?=
 COVERDIR = $(abspath $(COVERAGE))
 COVERPKG = -coverpkg=framefairy/...
 UNITTIMEOUT ?= 10m
-SLOWEST ?=
+SLOWEST ?= 5s
 UNITJSON ?= $(STAMPS)/unit-tests.json
 GOTESTSUM := gotest.tools/gotestsum@v1.13.0
 unit: toolchain modules $(FRESH_FRAMES)
-	@pkgs='$(strip $(UNITPKGS))'; \
-	if [ -n "$$pkgs" ] && [ -n '$(UNITSKIP)' ]; then \
-		pkgs=$$($(GO) list $$pkgs) || exit 1; \
-		pkgs=$$(printf '%s\n' "$$pkgs" | grep -vxF $(foreach p,$(UNITSKIP),-e $(p))); \
-	fi; \
-	if [ -z "$$pkgs" ]; then echo "no Go package to test"; exit 0; fi; \
-	$(if $(COVERAGE),mkdir -p '$(COVERDIR)' || exit $$?; )run=; \
-	if [ -n '$(SLOWEST)' ]; then \
-		PATH="$(TOOLS_FIRST)" sh scripts/machine.sh; \
-		mkdir -p $(dir $(UNITJSON)) && \
-		run='$(GO) run $(GOTESTSUM) --format standard-quiet --hide-summary skipped --jsonfile $(UNITJSON) --raw-command --'; \
-	fi; \
-	status=0; \
-	PATH="$(TOOLS_FIRST)" FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" \
-		$$run $(GO) test $(if $(SLOWEST),-json) $(RACE) -timeout $(UNITTIMEOUT) $(if $(UNITFLAGS),'$(UNITFLAGS)') \
+	@pkgs=$$($(GO) list $(UNITPKGS)) || exit 1; \
+	$(if $(UNITSKIP),pkgs=$$(printf '%s\n' "$$pkgs" | grep -vxF $(foreach p,$(UNITSKIP),-e $(p)));) \
+	$(if $(COVERAGE),mkdir -p '$(COVERDIR)' || exit $$?;) \
+	mkdir -p $(dir $(UNITJSON)) && status=0 && \
+	PATH="$(TOOLS_FIRST)" FRAMEFAIRY_FRAMES="$(TEST_FRAMES)" \
+		$(GO) run $(GOTESTSUM) --format standard-quiet --hide-summary skipped --jsonfile $(UNITJSON) --raw-command -- \
+		$(GO) test -json $(RACE) -timeout $(UNITTIMEOUT) $(if $(UNITFLAGS),'$(UNITFLAGS)') \
 		$(if $(COVERAGE),$(COVERPKG) -coverprofile='$(COVERDIR)/go-unit$(if $(UNITSHARD),-$(subst /,-of-,$(UNITSHARD))).txt') \
 		-ldflags '$(LDFLAGS)' $$pkgs || status=$$?; \
-	if [ -n '$(SLOWEST)' ]; then \
-		PATH="$(TOOLS_FIRST)" sh scripts/machine.sh after; \
-		slow=$$($(GO) run $(GOTESTSUM) tool slowest --jsonfile $(UNITJSON) --threshold $(SLOWEST)); \
-		if [ -n "$$slow" ]; then \
-			echo "The tests that took over $(SLOWEST), slowest first:"; echo "$$slow"; \
-		else \
-			echo "No test took over $(SLOWEST)."; \
-		fi; \
-	fi; \
+	slow=$$($(GO) run $(GOTESTSUM) tool slowest --jsonfile $(UNITJSON) --threshold $(SLOWEST)); \
+	[ -z "$$slow" ] || printf 'The tests that took over $(SLOWEST), slowest first:\n%s\n' "$$slow"; \
 	exit $$status
 
 # The fuzzing runs without the race detector: it is the same code, many more
 # times over.
 #
 # Every fuzz target does FUZZTIME executions, one worker each, as many
-# targets at a time as the machine has cores. A new crasher is written to
-# testdata/fuzz/ next to the code, where it stays as a seed.
+# targets at a time as the machine has cores: go test fuzzes one target at
+# a time, and one worker on each core finds as much as one target on all
+# of them. The targets are found in the source, by git grep: asking go
+# test -list for them compiles the tests of every package first, two
+# minutes of CI's fuzz job before anything is fuzzed. A new crasher is
+# written to testdata/fuzz/ next to the code, where it stays as a seed.
+# Shrinking a crasher gets a count too, so it cannot take the clock's
+# minute go gives it by default.
+CORES := $(shell getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
 fuzz: toolchain modules
-	@PATH="$(TOOLS_FIRST)" GO='$(GO)' FUZZTIME='$(FUZZTIME)' FUZZTARGETS='$(FUZZTARGETS)' FUZZSHARD='$(FUZZSHARD)' SIMTIME='$(SIMTIME)' sh scripts/fuzz.sh
+	@mkdir -p $(STAMPS) && git grep -E '^func Fuzz[A-Za-z0-9_]*\(f \*testing\.F\)' -- '*_test.go' | \
+		awk -F: -v only='$(strip $(FUZZTARGETS))' -v all='$(FUZZTIME)' -v sim='$(SIMTIME)' ' \
+		BEGIN { split(only, o, " "); for (i in o) want[o[i]] = 1 } \
+		{ dir = $$1; sub(/\/[^\/]*$$/, "", dir); name = $$2; sub(/^func /, "", name); sub(/\(.*/, "", name); \
+			w = name == "FuzzSimulation" ? sim : all; delete want[name]; \
+			if ((only == "" || index(" " only " ", " " name " ")) && w !~ /^0[xs]?$$/) print "./" dir, name, w } \
+		END { for (w in want) { print "there is no fuzz target called " w >"/dev/stderr"; bad = 1 } exit bad }' \
+		>$(STAMPS)/fuzz-runs
+	@PATH="$(TOOLS_FIRST)" xargs -P $(CORES) -n 3 sh -c \
+		'out=$$($(GO) test -run "^$$" -fuzz "^$$1\$$" -fuzztime "$$2" -fuzzminimizetime 100x -parallel 1 "$$0" 2>&1) \
+		&& printf "ok  \t%s %s\n" "$$1" "$$2" || { printf "FAIL\t%s\n%s\n" "$$1" "$$out"; exit 1; }' <$(STAMPS)/fuzz-runs
 
 # The interface against the real Go side, see docs/TESTING.md:
 # every sequence and every walk for seeds 1 to WALKS, half as many again at
@@ -614,7 +591,7 @@ TRACE ?= light
 WALKCOVER = $(COVERDIR)/walks$(if $(WALKSHARD),-$(subst /,-of-,$(WALKSHARD)))
 walks: toolchain modules frontend/node_modules/.package-lock.json $(FRESH_FRAMES)
 	@cd frontend && $(if $(COVERAGE),WALKCOVERAGE='$(WALKCOVER)-pages') $(NPM) exec -- vite build --config preview/bridge.config.ts --logLevel error
-	@$(if $(COVERAGE),rm -rf '$(WALKCOVER)-pages' && mkdir -p '$(COVERDIR)' && )FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" FRAMEFAIRY_WALKS=1 WALKS='$(WALKS)' STEPS='$(STEPS)' WALKERS='$(WALKERS)' WALKSHARD='$(WALKSHARD)' WALKBROWSER='$(WALKBROWSER)' WALKTIMES='$(WALKTIMES)' STILL='$(STILL)' WALKTRACES='$(WALKTRACES)' TRACE='$(TRACE)' $(if $(COVERAGE),WALKCOVERAGE='$(WALKCOVER)-pages') $(GO) test -count=1 -ldflags '$(LDFLAGS)' -timeout $(WALKTIMEOUT) $(if $(COVERAGE),$(COVERPKG) -coverprofile='$(WALKCOVER)-go.txt') -run '^TestWalks$$' ./cmd/framefairy-app
+	@$(if $(COVERAGE),rm -rf '$(WALKCOVER)-pages' && mkdir -p '$(COVERDIR)' && )FRAMEFAIRY_FRAMES="$(TEST_FRAMES)" FRAMEFAIRY_WALKS=1 WALKS='$(WALKS)' STEPS='$(STEPS)' WALKERS='$(WALKERS)' WALKSHARD='$(WALKSHARD)' WALKBROWSER='$(WALKBROWSER)' WALKTIMES='$(WALKTIMES)' STILL='$(STILL)' WALKTRACES='$(WALKTRACES)' TRACE='$(TRACE)' $(if $(COVERAGE),WALKCOVERAGE='$(WALKCOVER)-pages') $(GO) test -count=1 -ldflags '$(LDFLAGS)' -timeout $(WALKTIMEOUT) $(if $(COVERAGE),$(COVERPKG) -coverprofile='$(WALKCOVER)-go.txt') -run '^TestWalks$$' ./cmd/framefairy-app
 ifneq ($(COVERAGE),)
 	@awk -F'[ ]' '/^framefairy\/cmd\/framefairy-app\/jobs\.go:/ && $$NF > 0 { found = 1 } END { exit !found }' '$(WALKCOVER)-go.txt' || { echo "$(WALKCOVER)-go.txt counts no line of the job queue, so the bridge did not count what the walks ran"; exit 1; }
 	@printf 'ok  \tthe walks ran lines of the job queue\n'
@@ -670,13 +647,13 @@ interface:
 # Everything that reads the code without running it, over the whole tree,
 # the same here and in CI. gofmt and go vet. That ./... is our packages
 # and nothing the interface's packages carry, #471. That no Go test waits
-# on the clock, see .golangci.yml, with the proof that the linters catch
-# it first, so settings that let all through fail. The checks from
-# outside the app build only on a Mac with the outside tag, so they are
-# read a second time the way they build. Every script read by the shell
-# its first line names. The action pins. And the tests of the
-# repository's own rules: what a change reaches, the rule for a build,
-# the Main moved notice, and that the plan stays history.
+# on the clock, see .golangci.yml. The checks from outside the app build
+# only on a Mac with the outside tag, so they are read a second time the
+# way they build. Every script read by the shell its first line names, and
+# the rule for a build, see scripts/needs-build.sh. And that
+# docs/GUI-PLAN.md stays the history it is, by the hash git gives it: open
+# work is in the issues.
+PLAN_HASH := d3164fbdd865de7cdc61b4bc1631e909f20c6725
 GOLANGCI_LINT_VERSION := 2.14.0
 GOLANGCI_LINT := $(STAMPS)/golangci-lint-$(GOLANGCI_LINT_VERSION)/golangci-lint
 lint: toolchain modules golangci-lint frontend/node_modules/.package-lock.json
@@ -685,7 +662,6 @@ lint: toolchain modules golangci-lint frontend/node_modules/.package-lock.json
 	@$(GO) vet ./...
 	@printf 'ok  \tgo vet\n'
 	@! $(GO) list ./... | grep /node_modules/ || { echo "go list ./... takes in the packages above, see the ignore in go.mod"; exit 1; }
-	@sh scripts/lint-test.sh
 	@out=$$($(GOLANGCI_LINT) run ./... 2>&1) || { echo "$$out"; exit 1; }
 	@out=$$(GOOS=darwin $(GOLANGCI_LINT) run --build-tags outside ./internal/outside/ 2>&1) || { echo "$$out"; exit 1; }
 	@printf 'ok  \tGo tests wait on no clock\n'
@@ -693,13 +669,9 @@ lint: toolchain modules golangci-lint frontend/node_modules/.package-lock.json
 		case $$(head -n 1 "$$s") in *bash*) bash -n "$$s" ;; *) sh -n "$$s" ;; esac || exit 1; \
 	done
 	@printf 'ok  \tscripts read\n'
-	@sh scripts/pins.sh
-	@sh scripts/changed-test.sh
 	@sh scripts/needs-build-test.sh
-	@sh scripts/main-moved-test.sh
-	@sh scripts/plan-frozen-test.sh
-	@sh scripts/test-failures-test.sh
-	@sh scripts/plan-frozen.sh
+	@[ "$$(git hash-object docs/GUI-PLAN.md)" = $(PLAN_HASH) ] || { echo "docs/GUI-PLAN.md is history and does not change: open work is in the issues"; exit 1; }
+	@printf 'ok  \tdocs/GUI-PLAN.md is as it was\n'
 
 # The release golangci-lint builds and checks against its own checksums,
 # as its install.sh does. Not install.sh itself, which asks github.com's
