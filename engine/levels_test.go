@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -397,5 +398,151 @@ func TestAMeasuringLeavesOnlyForAView(t *testing.T) {
 	}
 	if st.leave(int(50/timed.FrameSeconds), view) {
 		t.Error("a measuring left for a view measured already")
+	}
+}
+
+// writes counts what is written into the files of a folder, and how often
+// one of them is flushed to the drive.
+type writes struct {
+	afero.Fs
+	under   string
+	mu      sync.Mutex
+	bytes   map[string]int
+	times   map[string]int
+	flushed int
+}
+
+func (w *writes) OpenFile(name string, flag int, perm os.FileMode) (afero.File, error) {
+	f, err := w.Fs.OpenFile(name, flag, perm)
+	if err != nil || !strings.HasPrefix(name, w.under) {
+		return f, err
+	}
+	return &counted{File: f, w: w}, nil
+}
+
+type counted struct {
+	afero.File
+	w *writes
+}
+
+func (c *counted) note(n int) {
+	c.w.mu.Lock()
+	defer c.w.mu.Unlock()
+	// A file written beside its name and moved onto it is counted by its
+	// name, see fileio.Replace.
+	name := filepath.Base(c.Name())
+	for _, kept := range []string{"levels.frames", "levels.json"} {
+		if strings.Contains(name, kept) {
+			name = kept
+		}
+	}
+	c.w.bytes[name] += n
+	c.w.times[name]++
+}
+
+func (c *counted) Write(b []byte) (int, error) {
+	n, err := c.File.Write(b)
+	c.note(n)
+	return n, err
+}
+
+func (c *counted) WriteAt(b []byte, off int64) (int, error) {
+	n, err := c.File.WriteAt(b, off)
+	c.note(n)
+	return n, err
+}
+
+func (c *counted) Sync() error {
+	c.w.mu.Lock()
+	c.w.flushed++
+	c.w.mu.Unlock()
+	return c.File.Sync()
+}
+
+// A long video's loudness is written as it is measured, each frame once,
+// where it belongs in the file, and never flushed to the drive: it can be
+// measured again. Written whole every half second, the frames of a four
+// hour video were 5.8 MB rewritten and flushed twice a second, issue
+// #609.
+//
+// On the real disk: ffmpeg measures the episode.
+func TestALongMeasuringWritesEachFrameOnceAndFlushesNothing(t *testing.T) {
+	t.Parallel()
+	ffmpegtest.Need(t)
+	source := fixtures.Copy(t, "grey-300s.mp4", filepath.Join(t.TempDir(), "episode.mp4"))
+	w := &writes{Fs: disk, under: WorkDir(source), bytes: map[string]int{}, times: map[string]int{}}
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(w))
+	e.FFmpeg = "ffmpeg"
+	e.levelsReads = 4
+	if err := e.MeasureLevels(context.Background(), source, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	l := ReadLevels(disk, source)
+	// 300 s are 30000 frames of 10 ms, and AAC's last packet reaches a
+	// few frames past them.
+	if !l.Done || len(l.Frames) < 30000 || len(l.Frames) > 30010 {
+		t.Fatalf("done %v, %d frames", l.Done, len(l.Frames))
+	}
+	if w.times["levels.frames"] < 10 {
+		t.Fatalf("the frames were written %d times while 300 s were measured", w.times["levels.frames"])
+	}
+	if got, want := w.bytes["levels.frames"], 4*len(l.Frames); got != want {
+		t.Errorf("%d bytes written for %d frames of 4 bytes", got, len(l.Frames))
+	}
+	if w.flushed != 0 {
+		t.Errorf("flushed to the drive %d times", w.flushed)
+	}
+}
+
+// A frames file that is gone or cut short while the loudness is measured
+// is written whole at the next write, not only from where the new frames
+// go: the hole would read as 0 dB, a full waveform that is never measured
+// again.
+func TestAFramesFileCutShortIsWrittenWholeAgain(t *testing.T) {
+	fsys := afero.NewMemMapFs()
+	logs := "/videos/episode.framefairy/logs"
+	if err := fsys.MkdirAll(logs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, framesAt := levelsPaths(logs)
+	st := &levelState{end: -1, whole: true}
+	for n := range 100 {
+		st.put(n, -20)
+	}
+	if err := writeLevels(fsys, logs, sourceStamp{}, st); err != nil {
+		t.Fatal(err)
+	}
+	for _, cut := range []func(){
+		func() {
+			f, err := fsys.OpenFile(framesAt, os.O_WRONLY, 0o644)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_ = f.Truncate(40)
+			f.Close()
+		},
+		func() { _ = fsys.Remove(framesAt) },
+	} {
+		cut()
+		at := len(st.frames)
+		for n := at; n < at+100; n++ {
+			st.put(n, -30)
+		}
+		if err := writeLevels(fsys, logs, sourceStamp{}, st); err != nil {
+			t.Fatal(err)
+		}
+		raw, err := afero.ReadFile(fsys, framesAt)
+		if err != nil || len(raw) != 4*(at+100) {
+			t.Fatalf("the frames file holds %d bytes for %d frames: %v", len(raw), at+100, err)
+		}
+		for n := range at + 100 {
+			want := float32(-20)
+			if n >= 100 {
+				want = -30
+			}
+			if got := math.Float32frombits(binary.LittleEndian.Uint32(raw[4*n:])); got != want {
+				t.Fatalf("frame %d reads %v dB, not %v", n, got, want)
+			}
+		}
 	}
 }
