@@ -87,6 +87,24 @@ export default [
     ],
   },
   {
+    // Issue #759. Tim looked at another video while the search of the
+    // one he had added found its first clip, and when he went back its
+    // clip timeline had no waveform until he clicked around. The clip
+    // timeline of the video away from the screen took the clip and drew
+    // its waveform out of the page, a pixel high and black.
+    name: "a video gone back to after its first clip came while it was away has its waveform",
+    steps: [
+      ["speech", "hold"],
+      ["add", 120],
+      ["waveform"],
+      ["away", 20],
+      ["speech", "go"],
+      ["first clip before"],
+      ["episode"],
+      ["waveform"],
+    ],
+  },
+  {
     // Step 3 of docs/VIDEO-PREVIEW.md: Add asks the episode's decoder for a
     // file's first frame, and leaves out a file with no picture, with the
     // reason, where before it was taken and the video preview failed on it.
