@@ -898,7 +898,11 @@ from the settings alike. Only the one in front is awake. A kept one is
 taken out of the page, `shelf` in `App.svelte`, so a resize of the app
 lays out one workspace and nothing that looks the workspace up by the
 document finds a second one, and it keeps what is drawn on its canvases
-and how far its clip list was scrolled. Its video preview lets go of
+and how far its clip list was scrolled. Nothing is drawn on a canvas
+while it is out of the page, where it has no height and no colour of its
+own: a waveform drawn there came out a pixel high and black. The clip
+timeline draws its waveform again as it comes back, `inPage` in
+`ClipTimeline.svelte`. The video preview of a kept one lets go of
 everything costly, `sleeping` in `Player.svelte`:
 the frame queue is closed, with its decoder on the Go side, the frames it
 kept and its sound card, and only what it played and the frame on the
