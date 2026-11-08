@@ -1,38 +1,11 @@
 import { describe, expect, test } from "vitest";
-import type { Samples } from "./movie";
+import { ticks, type Samples } from "./movie";
 import { AudioPlan, fade, FADE, heard, Keeper, Program, stillFeed, VideoPlan } from "./plan";
 
-// A track the way a file holds one, without the file: n samples of `step`
-// ticks, key frames every `gop`, and, for a picture with B-frames, the
-// decode order of each group of four I/P B B shown as I B B P.
-function track(n: number, timescale: number, step: number, gop: number, opts: { bframes?: boolean; shift?: number } = {}): Samples {
-  const pts = new Float64Array(n);
-  const duration = new Float64Array(n).fill(step);
-  const key = new Uint8Array(n);
-  const order = new Uint32Array(n);
-  const rank = new Uint32Array(n);
-  for (let i = 0; i < n; i++) {
-    let shown = i;
-    if (opts.bframes) {
-      // Decode order 0 3 1 2 | 4 7 5 6 ...: the P of each four first.
-      const base = i - (i % 4);
-      shown = base + [0, 3, 1, 2][i % 4];
-    }
-    pts[i] = shown * step + (opts.shift ?? 0);
-    key[i] = i % gop === 0 ? 1 : 0;
-  }
-  for (let i = 0; i < n; i++) order[i] = i;
-  order.sort((a, b) => pts[a] - pts[b]);
-  for (let r = 0; r < n; r++) rank[order[r]] = r;
-  return {
-    count: n,
-    timescale,
-    pts,
-    duration,
-    key,
-    order,
-    rank,
-  };
+// A track the way the Go side hands one over: n samples of `step` ticks
+// one after another, the first at `shift`.
+function track(n: number, timescale: number, step: number, shift = 0): Samples {
+  return { count: n, timescale, start: shift, step };
 }
 
 // The clip of the proof in the harness: three pieces, two cuts, no edge on
@@ -46,9 +19,9 @@ const clip = [
   { start: 63.05, end: 65.0 },
 ];
 const frame = 0.04;
-// Ten minutes at 25 a second, a key frame every four seconds.
-const video = track(15000, 12800, 512, 100);
-const shownAt = (r: number) => video.pts[video.order[r]] / 12800;
+// Ten minutes at 25 a second.
+const video = track(15000, 12800, 512);
+const shownAt = (r: number) => ticks(video, r) / 12800;
 
 describe("Program", () => {
   const p = new Program(clip, false);
@@ -244,14 +217,18 @@ describe("VideoPlan", () => {
     expect(p.at(11)).toBeCloseTo(0.42);
   });
 
-  test("feeds each piece from the key frame before it, and carries a run on inside what it decoded", () => {
-    // The first piece from 56, the second from 60, and the third, which
-    // starts at 63.05 inside the group of pictures the second is in, goes on
-    // from where the second stopped rather than from 60 again.
+  test("feeds each piece from its first frame, and carries a run on into the piece right after it", () => {
+    // Every frame is its own key frame. The first piece from 57, the
+    // second from 60.28. The third starts at 63.04, after frames the
+    // second never fed, so it starts a run of its own.
     expect(plan.runs.map((r) => [r.key, r.last])).toEqual([
-      [1400, 1487],
-      [1500, 1624],
+      [1425, 1487],
+      [1507, 1553],
+      [1576, 1624],
     ]);
+    const on = new VideoPlan(video, frame, new Program([{ start: 10, end: 10.4 }, { start: 10.4, end: 10.8 }], false), 0);
+    on.extend(Infinity);
+    expect(on.runs.map((r) => [r.key, r.last])).toEqual([[250, 269]]);
   });
 
   test("changed under the play, it draws the piece in hand to its new end and the new pieces after it", () => {
@@ -328,10 +305,10 @@ describe("VideoPlan", () => {
     expect(drawn.slice(-2)).toEqual(["61.44", "57.00"]);
   });
 
-  test("a loop starts a run back at the first piece's key frame", () => {
+  test("a loop starts a run back at the first piece's first frame", () => {
     const loop = new VideoPlan(video, frame, new Program(clip, true), 0);
     loop.extend(new Program(clip, true).length * 2 + 1);
-    expect(loop.runs.slice(0, 4).map((r) => r.key)).toEqual([1400, 1500, 1400, 1500]);
+    expect(loop.runs.slice(0, 4).map((r) => r.key)).toEqual([1425, 1507, 1576, 1425]);
     // The seam of the loop is a cut: the clip's last frame, then its first.
     const drawn: string[] = [];
     for (let k = 0; k < 170; k++) drawn.push(shownAt(loop.need(k)!.rank).toFixed(2));
@@ -345,94 +322,32 @@ describe("VideoPlan", () => {
     const mid = new VideoPlan(video, frame, program, p0);
     mid.extend(Infinity);
     expect(shownAt(mid.need(0)!.rank)).toBeCloseTo(61.0);
-    expect(mid.runs[0].key).toBe(1500);
+    expect(mid.runs[0].key).toBe(1525);
   });
 
   test("keeps exactly the frames it draws and closes the rest unseen", () => {
     const kept: number[] = [];
     for (const run of plan.runs) {
       const keeper = new Keeper(plan, run);
-      for (let d = run.key; d <= run.last; d++) if (keeper.offer(video.rank[d])) kept.push(video.rank[d]);
+      for (let d = run.key; d <= run.last; d++) if (keeper.offer(d)) kept.push(d);
     }
     const drawn = new Set<number>();
     for (let k = 0; k <= plan.lastK; k++) drawn.add(plan.need(k)!.rank);
     expect(kept).toEqual([...drawn]);
   });
-
-  test("with B-frames the last sample fed is the last one any drawn frame needs", () => {
-    const b = track(15000, 12800, 512, 100, { bframes: true });
-    const p = new VideoPlan(b, frame, new Program([{ start: 10.01, end: 10.5 }], false), 0);
-    p.extend(Infinity);
-    const run = p.runs[0];
-    const needed = new Set<number>();
-    for (let k = 0; k <= p.lastK; k++) needed.add(b.order[p.need(k)!.rank]);
-    expect(run.key).toBe(200);
-    expect(run.last).toBe(Math.max(...needed));
-    // Shown 10.48 is the P decoded at 263 after the Bs before it, so 262
-    // and 263 both have to go in.
-    expect(run.last).toBeGreaterThanOrEqual(262);
-  });
-});
-
-// Frames at times of their own, in ticks: a phone's, a little early or
-// late, or a screen recorder's, left out where nothing moved, or a picture
-// that starts after the sound. Every frame is a key frame.
-function framesAt(timescale: number, begins: number[]): Samples {
-  const n = begins.length;
-  const ticks = Float64Array.from(begins);
-  return {
-    count: n,
-    timescale,
-    pts: ticks,
-    duration: Float64Array.from(ticks, (t, i) => (i + 1 < n ? ticks[i + 1] - t : 20)),
-    key: new Uint8Array(n).fill(1),
-    order: Uint32Array.from({ length: n }, (_, i) => i),
-    rank: Uint32Array.from({ length: n }, (_, i) => i),
-  };
-}
-
-describe("VideoPlan on frames at uneven times", () => {
-  // In ticks of 1/600 s: the picture starts at 0.25 s, then frames of 20,
-  // 25, 15 and 20 ticks, one held for 200 and two more.
-  const uneven = framesAt(600, [150, 170, 195, 210, 230, 430, 450, 470]);
-  const begins = (r: number) => uneven.pts[r] / 600;
-
-  test("draws the frame that holds each moment, each where it begins, and the first before the picture starts", () => {
-    const p = new VideoPlan(uneven, 1 / 30, new Program([{ start: 0.1, end: 0.34 }, { start: 0.5, end: 0.76 }], false), 0);
-    p.extend(Infinity);
-    const drawn: number[] = [];
-    for (let k = 0; k <= p.lastK; k++) drawn.push(p.need(k)!.rank);
-    // The first piece: the picture's first frame from the start of the
-    // piece, before the picture has begun, then the frames that begin in
-    // it, up to the one that holds the moment a frame of the rate before
-    // its end, 0.3067, the frame the render ends it with. The second
-    // piece starts inside the held frame and ends the same way.
-    expect(drawn).toEqual([0, 1, 4, 5]);
-    expect(p.at(0)).toBeCloseTo(0);
-    expect(p.at(1)).toBeCloseTo(begins(1) - 0.1);
-    // The second piece starts at 0.24 on the program with the held frame,
-    // and its next frame is drawn where it begins, 0.2167 s later.
-    expect(p.at(2)).toBeCloseTo(0.24);
-    expect(p.at(3)).toBeCloseTo(0.24 + begins(5) - 0.5);
-  });
 });
 
 describe("stillFeed", () => {
-  test("decodes from the key frame before to the frame that holds the moment", () => {
-    expect(stillFeed(video, 63.05)).toEqual({ key: 1500, last: 1576, rank: 1576 });
-    const b = track(15000, 12800, 512, 100, { bframes: true });
-    // 10.04 is a B shown second and decoded third.
-    const f = stillFeed(b, 10.05);
-    expect(b.pts[b.order[f.rank]] / 12800).toBeCloseTo(10.04);
-    expect(f.key).toBe(200);
-    expect(f.last).toBe(b.order[f.rank]);
+  test("decodes the frame that holds the moment, and only it", () => {
+    expect(stillFeed(video, 63.05)).toEqual({ key: 1576, last: 1576, rank: 1576 });
+    expect(stillFeed(video, 0)).toEqual({ key: 0, last: 0, rank: 0 });
   });
 });
 
 describe("AudioPlan", () => {
   // Opus at 48 kHz, 960 samples a packet, moved back by its pre-skip of
   // 312, the way ffmpeg writes it.
-  const opus = track(30001, 48000, 960, 1, { shift: -312 });
+  const opus = track(30001, 48000, 960, -312);
   const program = new Program(clip, false);
   const plan = new AudioPlan(opus, 48000, program, 0);
   plan.extend(Infinity);
@@ -479,44 +394,6 @@ describe("AudioPlan", () => {
     // 312 left out of the front: what came out is the last 648.
     expect(short.to - short.from).toBe(648);
     expect(short.out).toBe(full.out + 312);
-  });
-
-  // AAC at 48 kHz decodes 1024 samples a packet, whatever the file says.
-  // Tim's start.mp4 says its packets last 1008, 1056 and 1008 in turn, on
-  // a clock of the sample rate. A track that counts 600 ticks a second,
-  // the way QuickTime writes a movie, starts each packet on the nearest
-  // tick, 12.8 ticks a packet. Placed by its stamp, a packet missed the
-  // one before at most packets, by 16 samples in the first file.
-  const aac = (timescale: number, at: (i: number) => number) => {
-    const n = 6000;
-    const t = track(n, timescale, 1, 1);
-    for (let i = 0; i < n; i++) {
-      t.pts[i] = at(i);
-      t.duration[i] = at(i + 1) - at(i);
-    }
-    return t;
-  };
-  test.each([
-    ["in turns of 1008, 1056 and 1008", aac(48000, (i) => i * 1024 + [0, -16, 16][i % 3])],
-    ["on a clock of 600 ticks a second", aac(600, (i) => Math.round((i * 1024 * 600) / 48000))],
-  ])("what the decoder puts out follows on to the sample, with packets %s", (_, t) => {
-    const p = new AudioPlan(t, 48000, new Program([{ start: 10, end: 20 }], false), 0);
-    p.extend(Infinity);
-    const [run] = p.runs;
-    let missed = 0;
-    let end = -1;
-    for (let j = run.first; j <= run.last; j++) {
-      const byStamp = p.slices(run, j, 1024).at(-1);
-      for (const s of p.decoded(run, j, 1024)) {
-        if (end >= 0) expect(s.out).toBe(end);
-        end = s.out + (s.to - s.from);
-      }
-      if (byStamp && byStamp.out + (byStamp.to - byStamp.from) !== end) missed++;
-    }
-    // The ten seconds are heard whole, to the sample, and placed by their
-    // stamps they would have missed.
-    expect(end - run.stretches[0].out).toBe(10 * 48000);
-    expect(missed).toBeGreaterThan(100);
   });
 
   test("a packet after one that came out as nothing goes where its stamp says", () => {

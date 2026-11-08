@@ -54,16 +54,7 @@ describe("AppFrames", () => {
     // handed over.
     vi.stubGlobal("fetch", () => new Promise(() => {}));
     const n = 200;
-    const order = Uint32Array.from({ length: n }, (_, i) => i);
-    const samples = {
-      count: n,
-      timescale: 25,
-      pts: Float64Array.from(order),
-      duration: new Float64Array(n).fill(1),
-      key: new Uint8Array(n).fill(1),
-      order,
-      rank: order,
-    };
+    const samples = { count: n, timescale: 25, start: 0, step: 1 };
     const track: VideoTrack = { kind: "video", width: 4, height: 2, samples, frame: 1 / 25 };
     const app = new AppFrames("/v.mp4", track, () => ({ width: 4, height: 2 }), () => {});
     const picture = (rank: number) => new Picture(new Uint8Array(4 * 2 * 4), 4, 2, rank * 40000);
@@ -134,16 +125,7 @@ describe("AppFrames", () => {
 // not kept is never handed over.
 function frames(size: () => { width: number; height: number }, rate = 25) {
   const n = 200;
-  const order = Uint32Array.from({ length: n }, (_, i) => i);
-  const samples = {
-    count: n,
-    timescale: rate,
-    pts: Float64Array.from(order),
-    duration: new Float64Array(n).fill(1),
-    key: new Uint8Array(n).fill(1),
-    order,
-    rank: order,
-  };
+  const samples = { count: n, timescale: rate, start: 0, step: 1 };
   const track: VideoTrack = { kind: "video", width: 4, height: 2, samples, frame: 1 / rate };
   const app = new AppFrames("/v.mp4", track, size, () => {});
   const picture = (rank: number, w: number, h: number) => new Picture(new Uint8Array(w * h * 4), w, h, rank * 40000);

@@ -21,21 +21,7 @@ const rateOf = (rate: string): [number, number] => {
 // file's own times say it, on a clock of a thousand ticks to every one of
 // the rate's, so the start is on it too.
 function samplesAt(num: number, den: number, start: number, count: number): Samples {
-  const pts = new Float64Array(count);
-  const order = new Uint32Array(count);
-  for (let k = 0; k < count; k++) {
-    pts[k] = Math.round(start * num * 1000) + k * den * 1000;
-    order[k] = k;
-  }
-  return {
-    count,
-    timescale: num * 1000,
-    pts,
-    duration: new Float64Array(count).fill(den * 1000),
-    key: new Uint8Array(count).fill(1),
-    order,
-    rank: order,
-  };
+  return { count, timescale: num * 1000, start: Math.round(start * num * 1000), step: den * 1000 };
 }
 
 describe("the frame that holds an edge", () => {

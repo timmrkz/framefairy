@@ -37,7 +37,7 @@ import type { Light } from "./light";
 import { screenOf, type Screen } from "./screen";
 import { describeEvenness, Even, type Source } from "./even";
 import { frames as framePool } from "./pool";
-import { rankAt, type AudioTrack, type Movie, type VideoTrack } from "./movie";
+import { rankAt, ticks, type AudioTrack, type Movie, type VideoTrack } from "./movie";
 import {
   AudioPlan,
   fade,
@@ -508,7 +508,7 @@ function describe(m: Movie): string {
   const v = m.video;
   const a = m.audio;
   const picture = v
-    ? `${v.width}x${v.height}, ${v.samples.count} frames of ${(v.frame * 1000).toFixed(2)} ms, the first at ${(v.samples.pts[0] / v.samples.timescale).toFixed(3)} s`
+    ? `${v.width}x${v.height}, ${v.samples.count} frames of ${(v.frame * 1000).toFixed(2)} ms, the first at ${(ticks(v.samples, 0) / v.samples.timescale).toFixed(3)} s`
     : "no picture";
   const sound = a ? `${a.sampleRate} Hz, ${a.channels} channels` : "no sound";
   return `${m.duration.toFixed(3)} s, ${picture}, ${sound}`;
@@ -1642,7 +1642,7 @@ export class FrameQueue {
 
   private shownAt(rank: number): number {
     const s = this.video!.samples;
-    return s.pts[s.order[rank]] / s.timescale;
+    return ticks(s, rank) / s.timescale;
   }
 
   // ---- A paused frame on its own
@@ -1690,10 +1690,12 @@ export class FrameQueue {
     slot.firstRank = feed.rank;
     for (let i = feed.key; i <= feed.last; i++) {
       if (ticket !== this.ticket || slot.decoder.state !== "configured") return gaveUp();
-      const ts = stamp(0, s.pts[i] / s.timescale);
-      slot.fed.set(ts, s.rank[i]);
-      const holds = s.rank[i] === feed.rank;
-      slot.decoder.decode(ts, s.key[i] === 1, NO_DATA, s.rank[i], holds, feed.rank, holds);
+      // Every frame is its own key frame, in the order it is shown, see
+      // Samples.
+      const ts = stamp(0, ticks(s, i) / s.timescale);
+      slot.fed.set(ts, i);
+      const holds = i === feed.rank;
+      slot.decoder.decode(ts, true, NO_DATA, i, holds, feed.rank, holds);
     }
     try {
       await slot.decoder.flush();
@@ -2199,13 +2201,13 @@ export class FrameQueue {
       const hungry = busy === 0 && slot.ready.length === 0;
       if (busy >= 3 || (slot.ready.length + slot.coming >= DEPTH && !hungry)) return;
       const i = slot.next;
-      const ts = stamp(run.id, s.pts[i] / s.timescale);
-      const rank = s.rank[i];
+      const ts = stamp(run.id, ticks(s, i) / s.timescale);
+      const rank = i;
       slot.fed.set(ts, rank);
       const wanted = rank >= slot.firstRank && rank <= run.lastRank;
       if (wanted) slot.coming++;
       const place = wanted && first?.run === run.id && first.rank === rank;
-      slot.decoder.decode(ts, s.key[i] === 1, NO_DATA, rank, wanted, slot.firstRank, place);
+      slot.decoder.decode(ts, true, NO_DATA, rank, wanted, slot.firstRank, place);
       slot.next++;
     }
     // Everything fed. Once no later piece can carry the run on, the decoder
@@ -2293,8 +2295,8 @@ export class FrameQueue {
       }
       if (this.soundReach - heard >= ahead || dec.decodeQueueSize >= 8) return;
       const j = this.soundNext;
-      const ts = stamp(run.id, s.pts[j] / s.timescale);
-      this.soundFed.push({ ts, run, j, length: (s.duration[j] / s.timescale) * 1e6 });
+      const ts = stamp(run.id, ticks(s, j) / s.timescale);
+      this.soundFed.push({ ts, run, j, length: (s.step / s.timescale) * 1e6 });
       this.soundNext++;
       const p = plan.packet(j);
       for (const sl of plan.slices(run, j, p.n)) this.soundReach = Math.max(this.soundReach, sl.out + (sl.to - sl.from));

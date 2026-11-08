@@ -16,7 +16,7 @@
 // - A frame is decoded at the size of the canvas and no larger.
 // - The queue's second decoder asks for the piece after a cut while the
 //   first plays, so a stream for it is open before it is needed.
-import { rankOf, type VideoTrack } from "./movie";
+import { rankOf, ticks, type VideoTrack } from "./movie";
 import type { Picture } from "./picture";
 import { pictures, pull, type Pulled } from "./pull";
 import { frames as framePool } from "./pool";
@@ -489,7 +489,7 @@ export class AppFrames {
 
   ptsOf(rank: number): number {
     const s = this.track.samples;
-    return s.pts[s.order[Math.max(0, Math.min(rank, s.count - 1))]] / s.timescale;
+    return ticks(s, Math.max(0, Math.min(rank, s.count - 1))) / s.timescale;
   }
 
   // The hand takes hold of the playhead, or lets go of it, see
