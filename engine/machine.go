@@ -67,10 +67,6 @@ type Machine struct {
 	captionsOnce  sync.Once
 	measured      *inkCache
 	previewTracks *trackCache
-	// grows wakes whoever waits for a transcript to grow, see
-	// transcriptGrows. The job that hears and the search that reads ahead
-	// share the machine, so the news goes from one to the other.
-	grows transcriptNews
 	// framing turns an entry of a model's answer into a clip, see
 	// planBuilder.work. Empty, it is planBuilder.frame. A test puts in one
 	// that panics.

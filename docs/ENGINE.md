@@ -685,8 +685,7 @@ about the machine: the encoders and the subtitle filter
 of each ffmpeg, by the ffmpeg, the encoder a run names and the system,
 and the face detector. It keeps what ffmpeg and ffprobe said, see What
 ffmpeg and ffprobe said, kept, the caption blocks libass measured, the
-caption files of the video preview, and the news that a transcript grew,
-which the job that hears and the search that reads ahead share. It holds
+caption files of the video preview. It holds
 the local model too: the one llama-server the program keeps loaded, in
 `engine/modelhost.go`, the client and the keys that reach it, the notes
 about the servers this program started, in `engine/leftover.go`, and
@@ -699,7 +698,7 @@ its own machine: the framing of a clip, empty for
 unused, the client to llama-server, how a server that will not stop is
 looked at again, how a leftover server is asked to stop, and the three
 facts of memory. An `Engine` keeps what belongs to its one job: the log,
-what it spent, the switches of its run, the hearing and the read-ahead.
+what it spent, the switches of its run and the hearing.
 See [decisions/2026-10-31-running-programs-and-what-outlives-a-job.md](decisions/2026-10-31-running-programs-and-what-outlives-a-job.md).
 
 The machine also gives the one `Episode` of each video,
@@ -1533,11 +1532,9 @@ at its size. A search of a bigger window loads it again with more, and
 that is kept. It is first loaded once a llama-server a crashed run left
 behind is stopped, so the two are never in memory together, and it is
 given up before its file is removed. So even the first search of a new
-video finds it loaded, and its transcript is read into it while it is
-heard, see below. Loaded only when a video was added, the model was
-still loading for much of the time a window was heard, a half hour in
-about 22 seconds on an M2 Max, so little of the transcript could be read
-ahead. Kept idle it
+video finds it loaded. Loaded only when a video was added, the model
+was still loading for much of the time a window was heard, a half hour
+in about 22 seconds on an M2 Max. Kept idle it
 costs less than its size: llama.cpp maps the weights from the file and
 holds them wired for the graphics chip only for three minutes after the
 last use, `keep_alive_s` in `ggml-metal-device.m`, so the system can take
@@ -1567,41 +1564,18 @@ out, which is what a second model beside one already loaded does on a
 a server from an earlier run still holding its model. The server runs one ask at a time (`-np 1`) with
 the whole context for it.
 
-**The transcript is read before the search asks.** Reading the prompt
-takes the model about 30 seconds for a half hour window on an M2 Max, and
-the prompt is mostly the transcript. The first search of a new video is
-asked for while its transcript is still being heard, so while it grows,
-the model loaded ahead is given what of the window's transcript is
-settled to read, every time a part heard is written, and keeps it, in
-`engine/readahead.go`. `Project.Search` starts it by itself, beside its
-hearing, whenever some of its window is still to be heard. The search
-then reads only the rest. What is read
-is the start of the search's own prompt, token for token: the transcript
-is written out by the search's request, `searchRequest`, from every line
-heard but the last, which may still grow, laid out by llama-server with
-the model's template, and of its tokens only those the request with one
-line more starts with too. A model that looks back over a window, as
-Gemma 4 does, cannot go back to an earlier point of what it read without
-a checkpoint, so anything else would be read again from the start.
-Reading ahead stops once the window is heard, and when the search asks,
-a read still under way is called off and what it read is kept: a read
-after the ask would take the server back to the start of the search's
-prompt, and the question that follows the answer would be read again.
-Only the model this program loaded ahead of the search is read into,
-only while nobody else holds it, and never one it would have to load:
-a search of any video that wants the model while it reads, or another
-model, or more room, calls the read off, and has the model as soon as
-the read lets go of it. Between a search's answer and its question about
-the clips that did not fit, the model is still the search's, so no read
-puts its own prompt where the search's was, `saved` on the model held.
-A server that runs already,
-`--llm-url`, is left alone. Only a request that starts with the
-transcript is read ahead of, which of the recipes is `middle`. A line
-read can still be written out differently once more is heard, because
-the loudness a pause is told from is the mean of all that is heard, and
-then it is read again, issue #437.
-The search's line in the log says how much of its prompt was new. Each
-read leaves two checkpoints, and llama-server keeps 32 by itself, about
+**The search reads its prompt once, when it asks.** A half hour window
+is about 8000 tokens, read in about 10 seconds on an M2 Max. The
+transcript used to be read into the model while it was still being
+heard, so the search would find most of its prompt read. But a line
+heard before is written out again when more is heard, because the
+loudness a pause is told from is the mean of all that is heard, and a
+model that looks back over a window, as Gemma 4 does, then reads it all
+again from the start. On Tim's Mac on 8 November the transcript was
+read three times while it was heard, the search read it a fourth time,
+and 12.8 seconds of reading saved nothing. Issue #762.
+The search's line in the log says how much of its prompt was new. An
+ask leaves checkpoints, and llama-server keeps 32 by itself, about
 200 MiB each for Gemma 4, so it is told to keep three, the three the
 memory a model is judged by holds, `--ctx-checkpoints`. Issue #242.
 The server keeps no copies of earlier prompts either, `--cache-ram 0`.
@@ -1609,8 +1583,7 @@ By itself it keeps up to 8 GiB of them, a copy of the slot whenever an
 ask keeps less than half of what the slot holds, and since the window
 moves on after every search, each search left a copy there until the
 app quit, counted nowhere. What a copy saved is read again instead: a
-window searched again after another, and a new video's transcript read
-ahead when the read gave way to a search of another video. Issue #433.
+window searched again after another. Issue #433.
 
 **A model that does not fit is not started.** Before llama-server starts,
 what the model needs at the context it is started with, the same
@@ -1897,7 +1870,6 @@ macOS keychain of `engine/keys_darwin.go`, in the frames decoder of
   suggest.go    how long a window is, how many clips a search asks for
                 and how long the model may think, when nobody has said
   room.go       how much one search can read
-  readahead.go  the transcript read ahead of a search
   modelhost.go  the local model, kept running between the asks that want it
   probed.go     what ffmpeg can do and what a file holds, asked once a
                 process and kept by the file's size and time

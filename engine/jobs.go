@@ -560,9 +560,6 @@ func (p *Project) Search(ctx context.Context, req PlanRequest, host Host) (plan 
 	j := p.startJob(JobRecord{ID: SearchID, Kind: JobSearch, From: req.From, To: req.To,
 		Count: req.Count, Min: req.Min, Max: req.Max, Replan: req.Replan, Pass: req.Pass}, host)
 	defer j.end(&err)
-	// Whatever is read ahead of the search ends with it, however it ends,
-	// see readahead.go.
-	defer p.engine.ahead.close()
 	// Called off before it was asked for, by a Cancel that reached the app
 	// first, it keeps its record and does nothing else.
 	if ctx.Err() != nil {
@@ -587,10 +584,9 @@ func (p *Project) Search(ctx context.Context, req PlanRequest, host Host) (plan 
 	if err := p.engine.roomBeforeSearch(p.Base, end-req.From); err != nil {
 		return "", err
 	}
-	// The model loads while the window is still being heard, and reads
-	// the transcript of it as it is heard, so the search has nothing to
-	// wait for once it comes to finding and finds most of its prompt read.
-	if p.readsAhead(timed.Window{Start: req.From, End: end}) {
+	// The model loads while the window is still being heard, so the
+	// search has no load to wait for once it comes to finding.
+	if p.loadsAhead(timed.Window{Start: req.From, End: end}) {
 		go p.warmAhead(ctx, req)
 	}
 	stepOf := func(ctx context.Context, step string) (context.Context, func(), error) {

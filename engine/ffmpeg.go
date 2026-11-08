@@ -134,11 +134,6 @@ type Engine struct {
 	// clock. A test sets it, so it waits for no stall of the clock.
 	stuck <-chan struct{}
 
-	// ahead lets the transcript be read into the local model ahead of
-	// the search this engine runs, until the search asks, see
-	// readahead.go.
-	ahead aheadGate
-
 	mu sync.Mutex
 	// hearingWhole is how much audio, in seconds, the job hearing in
 	// turns set out to hear when it started, see Project.hear, so a

@@ -223,33 +223,43 @@ func (m *Machine) warmSize(model string, seconds float64, maxTokens int) int {
 }
 
 // warmModel loads the local model for a search of req while it hears
-// its window, so the search finds it loaded, and has it read the
-// transcript of the window as it is heard, so the search finds most of
-// its prompt read, see readahead.go. It blocks while the window is heard,
-// and returns with what was read once all of it is heard, ctx ends, a
-// read fails, or the search this project runs next asks or ends, which
-// is how it is told: it is for the search Search runs on the same
-// project. The model then waits a few minutes for the search. With the
-// API, or a server that is already running, there is nothing to load and
-// nothing is read ahead, and with another model in use it waits for
-// nothing: the search loads its own when it gets its turn.
-func (p *Project) warmModel(ctx context.Context, req PlanRequest) (ReadAhead, error) {
+// its window, so the search finds it loaded. The model then waits a few
+// minutes for the search, which reads the whole of its prompt once, when
+// it asks. With the API, or a server that is already running, there is
+// nothing to load, and with another model in use it waits for nothing:
+// the search loads its own when it gets its turn.
+//
+// The transcript used to be read into the model while it was heard, so
+// the search would find most of its prompt read. A line heard before is
+// written out again when more is heard, so the model read the same
+// transcript over and over, and on Tim's Mac a search read it four times
+// and kept none of it. Issue #762.
+func (p *Project) warmModel(ctx context.Context, req PlanRequest) error {
 	opts := p.Base
 	if opts.Planner != "local" || opts.LLMURL != "" {
-		return ReadAhead{}, nil
+		return nil
 	}
 	local, err := p.engine.resolveLocal(opts)
 	if err != nil {
-		return ReadAhead{}, err
+		return err
 	}
-	return p.warm(ctx, req, *local)
+	size := p.engine.warmSize(local.Model, req.To-req.From, p.Base.MaxTokens)
+	_, release, err := p.engine.warmModel(ctx, *local, size)
+	if errors.Is(err, errModelBusy) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	release(warmKeep)
+	return nil
 }
 
-// readsAhead says whether a search of window loads the model while it
-// hears, see warmAhead: only when some of the window is still to be
+// loadsAhead says whether a search of window loads the model while it
+// hears, see warmModel: only when some of the window is still to be
 // heard. A window heard already goes straight to finding, which loads
 // the model itself.
-func (p *Project) readsAhead(window timed.Window) bool {
+func (p *Project) loadsAhead(window timed.Window) bool {
 	return len(Unheard(p.Files, p.Source, p.Base.ASRModel, window)) > 0
 }
 
@@ -260,27 +270,13 @@ func (p *Project) readsAhead(window timed.Window) bool {
 func (p *Project) warmAhead(ctx context.Context, req PlanRequest) {
 	defer func() {
 		if caught := recover(); caught != nil {
-			p.engine.Log.Warn("reading ahead of the search stopped unexpectedly: %v", caught)
+			p.engine.Log.Warn("loading the model ahead of the search stopped unexpectedly: %v", caught)
 			p.engine.Log.Detail("%s", debug.Stack())
 		}
 	}()
-	if _, err := p.warmModel(ctx, req); err != nil && ctx.Err() == nil {
+	if err := p.warmModel(ctx, req); err != nil && ctx.Err() == nil {
 		p.engine.Log.Warn("the model could not be loaded ahead of the search: %s", err)
 	}
-}
-
-// warm is warmModel with the model found.
-func (p *Project) warm(ctx context.Context, req PlanRequest, local LocalModel) (ReadAhead, error) {
-	size := p.engine.warmSize(local.Model, req.To-req.From, p.Base.MaxTokens)
-	_, release, err := p.engine.warmModel(ctx, local, size)
-	if errors.Is(err, errModelBusy) {
-		return ReadAhead{}, nil
-	}
-	if err != nil {
-		return ReadAhead{}, err
-	}
-	release(warmKeep)
-	return p.readAhead(ctx, req, local, size), nil
 }
 
 // PlanName is the plan file for a window, or for the whole episode when

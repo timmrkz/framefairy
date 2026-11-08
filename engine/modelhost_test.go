@@ -252,7 +252,7 @@ func TestASearchWaitsForTheModelBeingLoaded(t *testing.T) {
 }
 
 // Everything the app and its jobs can do to the model at once: warm-ups,
-// searches, reads ahead, the app keeping a model and giving it up, the app
+// searches, the app keeping a model and giving it up, the app
 // closing. Whatever order they come in, no more than one model is ever in
 // memory, none is left running once everybody has let go, and none loads
 // after the app has closed them.
@@ -278,13 +278,6 @@ func TestTheModelHeldFromEverywhereAtOnce(t *testing.T) {
 			case 3:
 				host.keepOnly("")
 				return
-			case 5:
-				ctx, giveWay := context.WithCancelCause(context.Background())
-				if _, release, ok := host.holdIdle(m.Model, size, giveWay); ok {
-					<-ctx.Done()
-					release(0)
-				}
-				return
 			}
 			hold := e.holdModel
 			if i%4 == 0 {
@@ -304,13 +297,6 @@ func TestTheModelHeldFromEverywhereAtOnce(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	// A read that no search called off is let go of before the app closes.
-	host.mu.Lock()
-	if h := host.model; h != nil && h.giveWay != nil {
-		h.giveWay(errModelBusy)
-		h.giveWay = nil
-	}
-	host.mu.Unlock()
 	s.machine.CloseModels()
 	if loaded, _ := e.keep(context.Background(), gemma, 0); loaded {
 		t.Error("the model was kept after the app had closed them")
@@ -586,123 +572,6 @@ func TestEveryJobOfAProgramSharesItsModel(t *testing.T) {
 	s.machine.CloseModels()
 	if s.running.Load() != 0 {
 		t.Errorf("%d models still running after the app closed them during a search", s.running.Load())
-	}
-}
-
-// A model kept is held by nobody, so the transcript can be read into it
-// ahead of a search, and a search of another size replaces it with one
-// that is kept in turn.
-func TestAKeptModelIsFreeToReadInto(t *testing.T) {
-	t.Parallel()
-	s := useStandIn(t)
-	host := &s.machine.host
-	e := s.engine()
-	ctx := context.Background()
-	if _, err := e.keep(ctx, gemma, 0); err != nil {
-		t.Fatal(err)
-	}
-	size := s.machine.warmSize("gemma", 0, 0)
-	_, release, ok := host.holdIdle("gemma", size, func(error) {})
-	if !ok {
-		t.Fatal("the kept model cannot be read into")
-	}
-	release(warmKeep)
-	_, release, err := e.holdModel(ctx, gemma, size*2)
-	if err != nil {
-		t.Fatal(err)
-	}
-	release(0)
-	if s.started.Load() != 2 || s.running.Load() != 1 || !host.modelReady("gemma", size*2) {
-		t.Errorf("after a bigger search: %d loads, %d running", s.started.Load(), s.running.Load())
-	}
-}
-
-// A search that needs more room than a read holds, or another model,
-// calls the read off and has the model once the read lets go of it. It
-// used to wait for the read to end by itself, which can take as long as
-// reading the whole transcript of another video again.
-func TestABiggerSearchCallsOffARead(t *testing.T) {
-	t.Parallel()
-	s := useStandIn(t)
-	host := &s.machine.host
-	e := s.engine()
-	ctx := context.Background()
-	if _, release, err := e.warmModel(ctx, gemma, 32768); err != nil {
-		t.Fatal(err)
-	} else {
-		release(warmKeep)
-	}
-	reading, giveWay := context.WithCancelCause(ctx)
-	_, release, ok := host.holdIdle("gemma", 32768, giveWay)
-	if !ok {
-		t.Fatal("the idle model cannot be read into")
-	}
-	got := make(chan error, 1)
-	go func() {
-		_, release, err := e.holdModel(ctx, gemma, 65536)
-		if err == nil {
-			release(0)
-		}
-		got <- err
-	}()
-	// The read ends when it is called off, as readHeard does.
-	<-reading.Done()
-	if !errors.Is(context.Cause(reading), errModelBusy) {
-		t.Errorf("the read was called off with %v", context.Cause(reading))
-	}
-	release(0)
-	if err := <-got; err != nil {
-		t.Fatal(err)
-	}
-	if s.started.Load() != 2 || s.peak.Load() != 1 {
-		t.Errorf("%d loads, at most %d at once, want 2 and 1", s.started.Load(), s.peak.Load())
-	}
-}
-
-// Between a search's answer and its question about the clips that did not
-// fit, the model is the search's still: a read ahead of another video
-// would put its own prompt in the one slot, and the question would read
-// the whole prompt again. Once the search is done with it, it can be read
-// into, and a model the app keeps the same.
-func TestAReadWaitsForTheSearchToComeBack(t *testing.T) {
-	t.Parallel()
-	s := useStandIn(t)
-	host := &s.machine.host
-	e := s.engine()
-	ctx := context.Background()
-	if _, err := e.keep(ctx, gemma, 0); err != nil {
-		t.Fatal(err)
-	}
-	size := s.machine.warmSize("gemma", 0, 0)
-	_, release, err := e.holdModel(ctx, gemma, size)
-	if err != nil {
-		t.Fatal(err)
-	}
-	release(fitKeep)
-	if _, _, ok := host.holdIdle("gemma", size, func(error) {}); ok {
-		t.Error("a read took the model the search is coming back for")
-	}
-	_, release, err = e.holdModel(ctx, gemma, size)
-	if err != nil {
-		t.Fatal(err)
-	}
-	release(0)
-	_, release, ok := host.holdIdle("gemma", size, func(error) {})
-	if !ok {
-		t.Fatal("the model is not free to read into once the search is done")
-	}
-	release(0)
-	// A warm-up keeps the model for the search to come, and that search
-	// starts with the transcript, so it may be read into.
-	_, release, err = e.warmModel(ctx, gemma, size)
-	if err != nil {
-		t.Fatal(err)
-	}
-	release(warmKeep)
-	if _, release, ok := host.holdIdle("gemma", size, func(error) {}); !ok {
-		t.Error("a warmed model cannot be read into")
-	} else {
-		release(0)
 	}
 }
 
