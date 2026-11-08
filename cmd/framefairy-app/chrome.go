@@ -52,6 +52,10 @@ type chromeRaw struct {
 type chromeWatch struct {
 	app    *application.App
 	window *application.WebviewWindow
+	// ask asks the system where the furniture is, askSystem when it is
+	// empty. A test hands in its own, so nothing in this file needs the
+	// app on screen or a main thread to be tested.
+	ask func(window *application.WebviewWindow) chromeRaw
 	// The event the interface of this window is told on, since each window
 	// has a title bar of its own: the app's window can be fullscreen while
 	// the report window beside it is not.
@@ -70,10 +74,8 @@ type chromeWatch struct {
 	told bool
 }
 
-// measureChrome is what asks the system. A test puts its own in here, so
-// nothing in this file needs the app on screen or a main thread to be
-// tested.
-var measureChrome = func(window *application.WebviewWindow) chromeRaw {
+// askSystem asks the system where the furniture of window is.
+func askSystem(window *application.WebviewWindow) chromeRaw {
 	if window == nil {
 		return chromeRaw{}
 	}
@@ -92,7 +94,11 @@ func (c *chromeWatch) measure() Chrome {
 
 // measured is measure with what the system answered beside it.
 func (c *chromeWatch) measured() (Chrome, chromeRaw) {
-	raw := measureChrome(c.window)
+	ask := c.ask
+	if ask == nil {
+		ask = askSystem
+	}
+	raw := ask(c.window)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.settle(raw), raw

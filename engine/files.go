@@ -11,10 +11,9 @@ import "github.com/spf13/afero"
 // takes it as its first argument. The training records and the timings
 // of past searches are held the same way, by Records, which the engine and
 // the app's store own and hand to the edits that record, see records.go.
-// The fonts installed on the machine are the one shelf the whole program
-// shares, as the disk is, because a caption style names a face wherever
-// it is resolved. The programs put the disk's font folders on it and a
-// test puts fonts in memory, see UseFontFolders.
+// The fonts installed on the machine are read through the Fonts a machine
+// keeps, see Machine.Fonts. The programs point it at the disk's font
+// folders, and a test points its own at fonts in memory.
 //
 // What an outside program reads or writes, ffmpeg, the frames decoder,
 // llama-server, is on the real disk whatever the engine is given, because

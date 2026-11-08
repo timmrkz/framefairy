@@ -183,7 +183,11 @@ What it has is written every half second, frames first and the json
 after, which gives the parts measured as frame numbers and, once a run
 has reached the end of the audio, how many frames it has. So `ReadLevels`
 never hands out a reading the json does not vouch for, and the waveform
-grows as it runs. Levels of a file that has changed since are none, and a
+grows as it runs. Only the frames measured since the last write are
+written, where they belong in the file, and neither file is flushed to
+the drive, because the loudness can be measured again: written whole and
+flushed each time, four hours were 158 MB written and 104 full flushes,
+`F_FULLFSYNC` on macOS, now 5.8 MB and none. Levels of a file that has changed since are none, and a
 measuring cut off carries on with the parts it has. Version 1 of the file
 ran from the start with no gaps and is measured again. `Levels.Over` lays
 these over the transcript's readings, so the waveform has whatever either
@@ -559,7 +563,7 @@ the removed ones too, and asked for other moments, see version 4 in
 those all the same is left out and said in the log, the same measure as a
 moment given twice. A pass that brings nothing new writes a plan with no
 clips, so it still counts as a pass. `SearchPasses` cuts the episode into
-parts by how many searches have read them, and `Project.PlaceWindow` puts the
+parts by how many searches have read them, and `Episode.PlaceWindow` puts the
 next window where the fewest have been, earliest first, for the app's Search
 and for `--next` on the command line alike. A plan
 carries the window it was made over in `planned_with`. No part of an
@@ -677,14 +681,68 @@ hands it to every `Engine` it makes. The app makes an engine for every
 job, caption and frame stream, and the command line one for its run.
 The machine holds the file system, the records, the `tool.Runner`, the
 `tool.Finder` with the tools it already checked, and what was learned
-about the machine: whether the system's video decoder failed here,
-which decoder each episode used, the encoders and the subtitle filter
+about the machine: the encoders and the subtitle filter
 of each ffmpeg, by the ffmpeg, the encoder a run names and the system,
-and the face detector. So a Mac whose system decoder failed once
-decodes on the processor for every job after it, not only for the rest
-of that job. An `Engine` keeps what belongs to its one job: the log,
+and the face detector. It keeps what ffmpeg and ffprobe said, see What
+ffmpeg and ffprobe said, kept, the caption blocks libass measured, the
+caption files of the video preview, and the news that a transcript grew,
+which the job that hears and the search that reads ahead share. It holds
+the local model too: the one llama-server the program keeps loaded, in
+`engine/modelhost.go`, the client and the keys that reach it, the notes
+about the servers this program started, in `engine/leftover.go`, and
+the check of a model file in hand. And it holds what the machine says of
+its memory, how much it has, how much is free and which other
+llama-servers run on it, in `engine/room.go` and `engine/freemem.go`.
+Each seam is a field that is empty for the real thing, set by a test on
+its own machine: the framing of a clip, empty for
+`planBuilder.frame`, how the host starts a server and how long it waits
+unused, the client to llama-server, how a server that will not stop is
+looked at again, how a leftover server is asked to stop, and the three
+facts of memory. An `Engine` keeps what belongs to its one job: the log,
 what it spent, the switches of its run, the hearing and the read-ahead.
 See [decisions/2026-10-31-running-programs-and-what-outlives-a-job.md](decisions/2026-10-31-running-programs-and-what-outlives-a-job.md).
+
+The machine also gives the one `Episode` of each video,
+`Machine.Episode` in `engine/held.go`. The files of a video are the
+truth, and the app, the command line, a person in Finder or a sync
+service may write them, so an episode keeps each read with the stamp of
+the files it came from, their size, time and the number the system gives
+each file, `fileio.Stamp`, looks at them on every question, and
+reads again only what changed, once however many ask at once. It holds
+the transcript, which `Status` and the app read through it, with its
+lines weighed and the edges of what is said worked out once for each
+read. The transcripts of the last ten videos asked about are kept. What
+`Status` says of a transcript, done, the parts heard and where its lines
+start and end, is kept for every video, so listing the library lets go
+of no transcript, and "no transcript yet" is kept by its stamp as well.
+It holds every plan of the video too, each by its own file's stamp,
+`Episode.Plans` and `Episode.Plan`, which the status, the clip list, the
+window, the caption look and the word counts of an edit read, and a plan
+that does not parse is left out and read again. A video that leaves the
+library is let go of, `Machine.Forget`. The
+status is asked of the episode, `Episode.Status`, and so are the room
+one search can read, `Episode.Room`, and where the window goes,
+`Episode.PlaceWindow`, with the settings handed in, for the app and for
+`--next` alike. What reads no file,
+the window's limits and where it goes after a search, is the settings'
+own, `Options.Limits` and `Options.WindowAfter`. The app makes no
+`Project` to ask any of it. A view of a clip takes the plan the episode
+holds, with the bytes it was read from: a gesture while the hand moves,
+`ShapeClip` and `ShapeClipView`, a caption edge, `ShapeCaptionTime`, the
+captions of a clip and of one on its way, and a share of a clip, so a
+drag reads no file. An edit reads the plan file itself and trusts no
+stamp: `editPlan` reads it again under its lock, and `Reshape`,
+`SetCaptionTime` and `RemoveCaption` read it with `planClip` before, to
+work out the change. The undo's snapshot, `Episode.TakeSnapshot`, asks
+the episode which plans there are and reads each from the file for the
+same reason. Whether a file is a clip's short, `Episode.IsShort`, asks
+the episode for its plans, and `Episode.Shorts` names every short the
+plans say was rendered, for the app to watch. Whose a path is, is the episode's to say:
+`Episode.Owns` for the video and what is in its work folder, by where
+the path really leads, `Episode.HasPlan` for a plan right in its logs
+folder, and `Episode.Linked` for a video or work folder that is a link
+and owns nothing. See
+[decisions/2026-11-03-one-episode-per-video.md](decisions/2026-11-03-one-episode-per-video.md).
 
 ### What ffmpeg and ffprobe said, kept
 
@@ -692,13 +750,15 @@ The app makes an engine for every job, every caption it draws and every
 video it reads. Each used to ask ffprobe five questions about the episode,
 ffmpeg for its filters and a test caption, and both tools for their
 versions, though nothing had changed. `engine/probed.go` keeps those
-answers for the process, by the path, size and modification time of the
-tool and of the file, so a file written again or a tool replaced is asked
-again. `Probe`, `pictureStart`, `SubtitleFilter` and `Preflight` ask it
-first. A probe whose context was stopped is not kept, and no caller can
+answers on the program's `Machine`, by the path, size and modification
+time of the tool and of the file, so a file written again or a tool
+replaced is asked again. `Probe`, `pictureStart`, `lastMoment`,
+`SubtitleFilter` and `Preflight` ask it first. A probe whose context was stopped is not kept, and no caller can
 change what is kept through the `SourceInfo` it was given. What a render
-reads of each piece it cuts, `unevenPieces`, is its own stretch of the
-file and is read every time.
+reads of each piece it cuts, how its frames come, `unevenIn`, and in a
+file with no index of its key frames where it is read from, `keyBefore`,
+is kept the same way, by the piece, so a clip rendered again asks
+ffprobe nothing it asked before.
 
 ### Frames at their own times
 
@@ -1195,27 +1255,15 @@ measure a crop for each camera, and to compare the frames either side of
 a cut to know whether the clip came back to the same camera. Tim never
 saw a crop change at a camera switch in his own podcast, which has two,
 and a clip now has one crop, #396.
-The decoding is asked of the system's own video decoder,
-VideoToolbox on macOS, and falls back to the processor by itself where
-there is none, which today is every Windows and Linux build. If the system
-decoder refuses a file, the same work is done again on the processor and
-everything after it goes there too. The same happens when reading a
-span's frames runs out of time, a minute and four times the span: ffmpeg
-has hung there once, and a search waited on it for good. If the processor
-runs out of time as well, the clip is framed without that span's frames,
-with a warning, rather than the clip failing. Which decoder does the work is found
-once per episode file, by decoding one frame the way framing does and
-reading what ffmpeg says, and written to the log as `framing decodes
-video on VideoToolbox` or `on the processor`. A single frame has 15 s,
-`frameLimit`, there and wherever framing pulls one frame: VideoToolbox
-has given none and said nothing on a virtual Mac, and a system decoder
-that misses the limit is gone round on the processor from then on, by
-every job of the program, see What outlives a job. An
-ffmpeg that is stopped has five seconds to end, `LeaveAfter` in
-`engine/tool/run.go`, and one that is still there after them is left
-behind, with a warning that says so, and the search goes on without it.
-On the same Mac an ffmpeg went on in VideoToolbox for eight minutes after
-it was killed, and the search waited on it until the test run was ended. The crop
+Framing decodes on the processor, on every machine. On Tim's M2 Max a
+clip framed on VideoToolbox took about four times as long, 4.0 s against
+1.0 s, one run each and different clips, likely because framing starts a
+few short ffmpeg runs and each one sets the system's decoder up again.
+The checks, time limits and fallbacks framing had for the system's
+decoder went with it: the decoder only ever hung on CI's virtual Mac.
+Framing's ffmpeg has no time limit of its own since. Cancel stops it like
+any other, and one that does not end is left behind after five seconds. The video preview keeps the graphics
+chip, see [VIDEO-PREVIEW.md](VIDEO-PREVIEW.md). The crop
 centres on the largest face found. Where too few frames contain a face, it
 goes to the part of the frame with the most fine detail, which is whatever
 the camera focused on. The built-in face detector looks for faces turned
@@ -1606,7 +1654,7 @@ of a half hour and in proportion to the square root of other windows,
 unless `--count` says. Both are in `engine/suggest.go`, with
 their cases in `engine/suggest_test.go`. The app sends what
 they come to for the video's window, with the window's limits, see
-`Project.Limits` in `engine/limits.go`.
+`Options.Limits` in `engine/limits.go`.
 
 A run reports how fast the model read and wrote, for instance
 `read 38,210 tok at 850 tok/s`. Loading a 14 GB model takes a while, so when
@@ -1618,12 +1666,21 @@ llama-server -m ~/.framefairy/models/gemma-4-26B_q4_0-it.gguf -c 65536 -ngl 999 
 framefairy episode.mp4 --llm-url http://127.0.0.1:8080
 ```
 
-The server's output is kept in `logs/llm-server.log` of the video it
-was loaded for, at log level 4, which is the first level where llama.cpp
-says what it took from memory. The model the app keeps is loaded for no
-video, so its server writes `llm-server.log` in the app's own log folder,
-`~/Library/Logs/Frame Fairy/` on a Mac, for as long as it runs, and a
-search that uses it leaves none in its `logs/`.
+**Every line the server writes goes into the app's log**, from
+`llama-server` with its `pid`, through `Machine.Said`, the same way the
+video's decoder says its lines, see `engine/said.go`. Its level is
+llama.cpp's own mark on the line, `E` an error, `W` a warning and the rest
+`debug`, and the time llama.cpp puts before it is left out, since the line
+has its own. It runs at log level 4, the first level where llama.cpp says
+what it took from memory. Level 5 writes every request and answer whole,
+which is the transcript, so a report of a problem would hold it, and a
+test holds the level at 4. The description of the model file, its
+`print_info` and `llama_model_loader` lines, is left out of a load that
+works, because it is the same on every load and every model of the app's
+list is held to its SHA256 before it starts. It is said when the load
+fails, or when the file is not one the app knows. A server that stops
+while it loads quotes its last lines in the error. The command line
+shows its errors and warnings, and the rest with `--verbose`.
 
 **A server the engine starts answers only to the engine.** Left to
 itself, llama-server answers anybody: every program on the machine, and
@@ -1633,7 +1690,7 @@ is on the loopback and new every time, but a page can try every port in a
 few seconds. So each server is handed a key of its own when it starts, in
 its environment as `LLAMA_API_KEY` and not on its command line, where any
 program could read it, and `--no-slots` switches the list off. The key
-goes only with a request to the server it was made for, see `serverKeys`
+goes only with a request to the server it was made for, see the keys of `llamaLink`
 in `engine/local.go`. A server given with `--llm-url`, started by hand as
 above, gets no key and needs none.
 
@@ -1742,7 +1799,8 @@ macOS keychain of `engine/keys_darwin.go`, in the frames decoder of
 
 ```
   audio.go      reading the audio, word timing, loudness
-  transcript.go the transcript cache and the speech model location
+  transcript.go the transcript file and the speech model location
+  held.go       what a program holds of each video's files, by their stamps
   words.go      the one list of words an episode says, see WORDS.md
   speech.go     the speech models there are, and installing one
   lines.go      lines, cuts and captions, all built from words

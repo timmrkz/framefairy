@@ -3,10 +3,12 @@ package engine
 import (
 	"bytes"
 	"context"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -16,6 +18,7 @@ import (
 	"framefairy/engine/runlog"
 	"framefairy/engine/timed"
 	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/standin"
 )
 
 // Caption text is whatever the guest said, as heard by the recogniser and
@@ -38,14 +41,14 @@ func TestEscapeASSTextNeutralisesOverrides(t *testing.T) {
 	}
 }
 
-func TestResolveStyleValidatesEveryValue(t *testing.T) {
-	s := ResolveStyle(nil)
+func TestAStyleValidatesEveryValue(t *testing.T) {
+	s := new(Fonts).Style(nil)
 	if s.Font != "Inter Black" || s.Size != 96 || !s.Highlight {
 		t.Fatalf("defaults %+v", s)
 	}
 	// A colour that is not a colour, a size out of any sane range, a font
 	// with a comma in it, and a key nobody knows.
-	s = ResolveStyle(map[string]any{
+	s = new(Fonts).Style(map[string]any{
 		"primary":          "rot",
 		"highlight_colour": "not a colour",
 		"size":             1e9,
@@ -77,7 +80,7 @@ func TestResolveStyleValidatesEveryValue(t *testing.T) {
 	}
 	// The colours a plan may set are accepted in the forms people write.
 	for _, value := range []any{"#B4236F", "B4236F", "&H6F23B4&"} {
-		if got := ResolveStyle(map[string]any{"highlight_colour": value}).HighlightColour; got != "&H6F23B4&" {
+		if got := new(Fonts).Style(map[string]any{"highlight_colour": value}).HighlightColour; got != "&H6F23B4&" {
 			t.Errorf("highlight_colour %v gave %q", value, got)
 		}
 	}
@@ -108,12 +111,12 @@ func TestCaptionLinesWrapSoTheyFitTheFrame(t *testing.T) {
 
 	// A face the program carries is measured, so where a line breaks depends
 	// on how wide the words really are at that size.
-	s := ResolveStyle(map[string]any{"size": 96.0})
+	s := new(Fonts).Style(map[string]any{"size": 96.0})
 	lines := captionLines(caption, roomFor(s))
 	held := 0
 	for _, line := range lines {
 		held += len(line)
-		width, ok := TextWidth(s.Font, cueText(line), s.Size)
+		width, ok := new(Fonts).TextWidth(s.Font, cueText(line), s.Size)
 		if !ok || width > CaptionRoom(s) {
 			t.Errorf("%q is %v wide, the room is %v", cueText(line), width, CaptionRoom(s))
 		}
@@ -123,15 +126,15 @@ func TestCaptionLinesWrapSoTheyFitTheFrame(t *testing.T) {
 	}
 
 	// The same caption at a bigger size needs more lines.
-	big := ResolveStyle(map[string]any{"size": 200.0})
+	big := new(Fonts).Style(map[string]any{"size": 200.0})
 	if len(captionLines(caption, roomFor(big))) <= len(lines) {
 		t.Errorf("at size 200 it still takes %d lines", len(captionLines(caption, roomFor(big))))
 	}
 
 	// A face that cannot be measured leaves the character count to decide,
-	// as it always did. A style never names one, ResolveStyle draws a face
+	// as it always did. A style never names one, Fonts.Style draws a face
 	// nobody has in ours, so the room is asked for one by hand.
-	plain := roomFor(ResolveStyle(map[string]any{"wrap_chars": 12}))
+	plain := roomFor(new(Fonts).Style(map[string]any{"wrap_chars": 12}))
 	plain.font = "Gone Grotesk"
 	lines = captionLines(caption, plain)
 	if len(lines) != 2 || len(lines[0]) != 2 || len(lines[1]) != 3 {
@@ -146,7 +149,7 @@ func TestCaptionLinesWrapSoTheyFitTheFrame(t *testing.T) {
 // of the clip smaller either. It is hyphenated at the size that was chosen.
 func TestAWordTooWideIsHyphenated(t *testing.T) {
 	long := "Donaudampfschifffahrtsgesellschaftskapitaensmuetze"
-	s := ResolveStyle(map[string]any{"size": 96.0})
+	s := new(Fonts).Style(map[string]any{"size": 96.0})
 	short := Caption{Start: 2, End: 3, Text: "und dann", Words: []timed.Cue{{Start: 2, End: 2.4, Text: "und"}, {Start: 2.5, End: 3, Text: "dann"}}}
 	laid := LayOutCaptions([]Caption{
 		{Start: 0, End: 2, Text: "die " + long, Words: []timed.Cue{{Start: 0, End: 0.2, Text: "die"}, {Start: 0.2, End: 2, Text: long}}},
@@ -158,7 +161,7 @@ func TestAWordTooWideIsHyphenated(t *testing.T) {
 	var joined string
 	var flat []timed.Cue
 	for _, line := range laid[0].Lines {
-		width, ok := TextWidth(s.Font, cueText(line), s.Size)
+		width, ok := new(Fonts).TextWidth(s.Font, cueText(line), s.Size)
 		if !ok || width > CaptionRoom(s) {
 			t.Errorf("%q is %v wide, the room is %v", cueText(line), width, CaptionRoom(s))
 		}
@@ -280,7 +283,7 @@ func TestAWordBreaksWhereTheLanguageAllows(t *testing.T) {
 // the size a caption is really drawn at. The last syllable that fits
 // would give Suchmaschinenopti- and mierung.
 func TestAGermanWordBreaksWhereItsPartsJoin(t *testing.T) {
-	r := roomFor(ResolveStyle(map[string]any{"font": "Inter Black", "size": 96.0}))
+	r := roomFor(new(Fonts).Style(map[string]any{"font": "Inter Black", "size": 96.0}))
 	de := hyphenatorFor("de")
 	if de == nil || de.joints == nil {
 		t.Fatal("no joints for German")
@@ -328,7 +331,7 @@ func TestAWordTooWideGetsACaptionOfItsOwn(t *testing.T) {
 		{Start: 0.1, End: 0.3, Text: "mit"}, {Start: 0.3, End: 1.6, Text: "Suchmaschinenoptimierung"}, {Start: 1.6, End: 2.0, Text: "Geld"},
 		{Start: 2.0, End: 2.5, Text: "verdient."},
 	}
-	alone := TooWide(ResolveStyle(map[string]any{"font": "Inter Black", "size": 96.0}))
+	alone := TooWide(new(Fonts).Style(map[string]any{"font": "Inter Black", "size": 96.0}))
 	var texts []string
 	for _, c := range Captions(clip, words, 38, alone) {
 		texts = append(texts, c.Text)
@@ -353,8 +356,8 @@ func TestTheMeasureAgreesWithLibass(t *testing.T) {
 	if err := e.Preflight(context.Background()); err != nil {
 		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}
-	for _, font := range CaptionFonts() {
-		s := ResolveStyle(map[string]any{"font": font.Name, "size": 96.0, "highlight": 0.0})
+	for _, font := range new(Fonts).Caption() {
+		s := new(Fonts).Style(map[string]any{"font": font.Name, "size": 96.0, "highlight": 0.0})
 		text := "Hamburgefonstiv und Wagenrad"
 		boxes, ok := e.measureMany(context.Background(),
 			[]string{`{\alpha&H00&}` + text}, s, 1920, int(s.Size))
@@ -362,10 +365,97 @@ func TestTheMeasureAgreesWithLibass(t *testing.T) {
 			ffmpegtest.Unusable(t, "this ffmpeg cannot measure captions")
 		}
 		ink := float64(boxes[0].right - boxes[0].left)
-		pen, _ := TextWidth(font.Name, text, s.Size)
+		pen, _ := new(Fonts).TextWidth(font.Name, text, s.Size)
 		if ink > pen || ink < pen*0.92 {
 			t.Errorf("%s: libass draws %v wide, the measure says %v", font.Name, ink, pen)
 		}
+	}
+}
+
+// Two asks at the same moment to measure the same blocks measure them
+// once: the workspace asks for a clip's captions twice as a video opens,
+// and on a machine that knew nothing yet each ask measured every block.
+//
+// On the real disk: ffmpeg measures the captions, through a script that
+// counts its runs.
+func TestTwoAsksAtOnceMeasureOnce(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
+	if err := e.Preflight(ctx); err != nil {
+		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
+	}
+	asked := filepath.Join(t.TempDir(), "asked")
+	ffmpeg := filepath.Join(t.TempDir(), "ffmpeg")
+	script := "#!/bin/sh\necho \"$*\" >> '" + asked + "'\nexec '" + e.FFmpeg + "' \"$@\"\n"
+	if err := standin.Write(ffmpeg, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runs := func() int {
+		data, err := os.ReadFile(asked)
+		if err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+		return strings.Count(string(data), "\n")
+	}
+	s := new(Fonts).Style(map[string]any{"font": new(Fonts).Caption()[0].Name, "size": 96.0, "highlight": 0.0})
+	blocks := []string{`{\alpha&H00&}Hamburgefonstiv`, `{\alpha&H00&}und Wagenrad`}
+	other := []string{`{\alpha&H00&}Ein ganz anderer Satz`}
+	measureThese := func(machine *Machine, blocks []string) {
+		e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), machine)
+		e.FFmpeg = ffmpeg
+		if boxes, ok := e.measureMany(ctx, blocks, s, 1080, int(s.Size)); !ok || len(boxes) != len(blocks) || slices.Contains(boxes, nil) {
+			t.Error("this ffmpeg could not measure the captions")
+		}
+	}
+	measure := func(machine *Machine) { measureThese(machine, blocks) }
+	measure(NewMachine(disk))
+	once := runs()
+	if once == 0 {
+		t.Fatal("ffmpeg was never asked")
+	}
+	machine := NewMachine(disk)
+	const asks = 4
+	done := make(chan struct{})
+	var start sync.WaitGroup
+	start.Add(1)
+	for range asks {
+		go func() {
+			start.Wait()
+			measure(machine)
+			done <- struct{}{}
+		}()
+	}
+	start.Done()
+	for range asks {
+		<-done
+	}
+	if got := runs() - once; got != once {
+		t.Errorf("%d asks at once ran ffmpeg %d times, one ask runs it %d times", asks, got, once)
+	}
+
+	// Asks for other blocks at the same moment each measure their own,
+	// as many runs as one after the other.
+	before := runs()
+	sequential := NewMachine(disk)
+	measureThese(sequential, blocks)
+	measureThese(sequential, other)
+	apart := runs() - before
+	before = runs()
+	together := NewMachine(disk)
+	start.Add(1)
+	for _, these := range [][]string{blocks, other} {
+		go func() {
+			start.Wait()
+			measureThese(together, these)
+			done <- struct{}{}
+		}()
+	}
+	start.Done()
+	<-done
+	<-done
+	if got := runs() - before; got != apart {
+		t.Errorf("two asks for other blocks at once ran ffmpeg %d times, one after the other %d", got, apart)
 	}
 }
 
@@ -379,7 +469,7 @@ func writeCaptionFile(t *testing.T, captions []Caption) string {
 	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
 	path := filepath.Join(t.TempDir(), "clip.ass")
 	overrides := map[string]any{"radius": 0.0, "highlight": 0.0}
-	laid := LayOutCaptions(withWords(captions), ResolveStyle(overrides), "de")
+	laid := LayOutCaptions(withWords(captions), new(Fonts).Style(overrides), "de")
 	err := e.WriteASS(context.Background(), laid, path, 1080, 1920, overrides)
 	if err != nil {
 		t.Fatal(err)
@@ -397,7 +487,7 @@ func captionTrackOf(t *testing.T, captions []Caption) string {
 	t.Helper()
 	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(afero.NewMemMapFs()))
 	overrides := map[string]any{"radius": 0.0, "highlight": 0.0}
-	laid := LayOutCaptions(withWords(captions), ResolveStyle(overrides), "de")
+	laid := LayOutCaptions(withWords(captions), new(Fonts).Style(overrides), "de")
 	track, err := e.CaptionTrack(context.Background(), laid, 1080, 1920, overrides, SourceInfo{})
 	if err != nil {
 		t.Fatal(err)
@@ -503,15 +593,15 @@ func withoutDialogue(lines []string) []string {
 	})
 }
 
-// FuzzResolveStyle checks the other half: values from a plan's caption_style
+// FuzzStyle checks the other half: values from a plan's caption_style
 // object end up in the file's header, so every one of them has to come back
 // inside its bounds and free of anything that could shift a field.
-func FuzzResolveStyle(f *testing.F) {
+func FuzzStyle(f *testing.F) {
 	f.Add("Inter Black", "#B4236F", "&H00FFFFFF", 96.0, 20)
 	f.Add("Fett,Bold", "rot", "x", 1e9, -4)
 	f.Add("a\nStyle: b", "&HFFFFFFFF&", "&H", 0.0, 9999)
 	f.Fuzz(func(t *testing.T, font, highlight, primary string, size float64, wrap int) {
-		s := ResolveStyle(map[string]any{
+		s := new(Fonts).Style(map[string]any{
 			"font": font, "highlight_colour": highlight, "primary": primary,
 			"size": size, "wrap_chars": wrap,
 		})
@@ -541,7 +631,7 @@ func TestTheBoxCanBeSwitchedOff(t *testing.T) {
 	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
 	write := func(style map[string]any) string {
 		path := filepath.Join(t.TempDir(), "clip.ass")
-		laid := LayOutCaptions([]Caption{{Start: 0, End: 2, Text: "zwei worte"}}, ResolveStyle(style), "de")
+		laid := LayOutCaptions([]Caption{{Start: 0, End: 2, Text: "zwei worte"}}, new(Fonts).Style(style), "de")
 		if err := e.WriteASS(context.Background(), laid, path, 1080, 1920, style); err != nil {
 			t.Fatal(err)
 		}
@@ -556,10 +646,54 @@ func TestTheBoxCanBeSwitchedOff(t *testing.T) {
 	if strings.Contains(off, "&H40102030") || !strings.Contains(off, "&HFF102030") {
 		t.Errorf("the box switched off is still drawn:\n%s", off)
 	}
-	if s := ResolveStyle(map[string]any{"back_colour": "&H40102030", "box": 0.0}); s.BackColour != "&H40102030" || s.Box {
+	if s := new(Fonts).Style(map[string]any{"back_colour": "&H40102030", "box": 0.0}); s.BackColour != "&H40102030" || s.Box {
 		t.Errorf("the colour of a box switched off was not kept: %+v", s)
 	}
-	if s := ResolveStyle(nil); !s.Text || !s.Box {
+	if s := new(Fonts).Style(nil); !s.Text || !s.Box {
 		t.Errorf("text and box are on until they are switched off: %+v", s)
+	}
+}
+
+// The captions as they start out are the look a clip with no style of its
+// own is drawn in, and the heights offered are every height a hand-placed
+// caption can land on: each one lands on itself, and wherever a hand lets
+// go, the caption lands on the nearest of them. The app offers these and
+// keeps no copy of either, see CaptionStart.
+func TestTheCaptionsStartOutInTheLookAClipWithNoStyleOfItsOwnHas(t *testing.T) {
+	t.Parallel()
+	start := StartingCaptions()
+	s := new(Fonts).Style(nil)
+	if start.Font != s.Font || start.Size != s.Size || start.Y != s.MarginV {
+		t.Errorf("starts in %s at %v, %v from the bottom, a clip with no style has %s at %v, %v",
+			start.Font, start.Size, start.Y, s.Font, s.Size, s.MarginV)
+	}
+	if start.Primary != WebColour(s.Primary) || start.Box != WebColour(s.BackColour) ||
+		start.HighlightColour != s.HighlightWeb() {
+		t.Errorf("starts in %s on %s with %s, a clip with no style has %s on %s with %s",
+			start.Primary, start.Box, start.HighlightColour,
+			WebColour(s.Primary), WebColour(s.BackColour), s.HighlightWeb())
+	}
+	if !slices.Contains(start.Heights, start.Y) {
+		t.Errorf("the captions start at %v, which is not a height offered, so the app draws them at %v",
+			start.Y, SnapCaptionY(start.Y))
+	}
+	for i, y := range start.Heights {
+		if SnapCaptionY(y) != y {
+			t.Errorf("%v is offered and lands on %v", y, SnapCaptionY(y))
+		}
+		if i > 0 && y-start.Heights[i-1] != start.Step {
+			t.Errorf("%v follows %v, the step says %v", y, start.Heights[i-1], start.Step)
+		}
+	}
+	for y := -400.0; y <= 2400; y += 7 {
+		landed := SnapCaptionY(y)
+		if !slices.Contains(start.Heights, landed) {
+			t.Fatalf("%v lands on %v, which is not offered", y, landed)
+		}
+		for _, h := range start.Heights {
+			if math.Abs(h-y) < math.Abs(landed-y) {
+				t.Errorf("%v lands on %v, and %v is nearer", y, landed, h)
+			}
+		}
 	}
 }

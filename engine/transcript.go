@@ -455,7 +455,7 @@ func (e *Engine) loadTranscript(ctx context.Context, source string, window timed
 					return
 				}
 				part := timed.Window{Start: gap.Start, End: math.Min(covered, gap.End)}
-				if err := addHeard(e.Files, path, stamp, model, duration, part, raw, frames, read.Start); err != nil {
+				if err := e.addHeard(path, stamp, model, duration, part, raw, frames, read.Start); err != nil {
 					e.Log.Detail("could not save the transcript so far: %s", err)
 				}
 			}
@@ -463,7 +463,7 @@ func (e *Engine) loadTranscript(ctx context.Context, source string, window timed
 			if err != nil {
 				return err
 			}
-			if err := addHeard(e.Files, path, stamp, model, duration, gap, t.RawWords, t.Frames, read.Start); err != nil {
+			if err := e.addHeard(path, stamp, model, duration, gap, t.RawWords, t.Frames, read.Start); err != nil {
 				return renderErr("could not save the transcript: %s", err)
 			}
 			words += len(t.RawWords)
@@ -494,10 +494,10 @@ func (e *Engine) loadTranscript(ctx context.Context, source string, window timed
 // part it starts in. The same word heard twice can start a few hundredths
 // apart, so a word of the new part that starts within a tenth of a second
 // of the neighbour's word across the join is that word again, and left out.
-func addHeard(fsys afero.Fs, path string, stamp sourceStamp, model string, duration float64, part timed.Window,
+func (m *Machine) addHeard(path string, stamp sourceStamp, model string, duration float64, part timed.Window,
 	raw []timed.Cue, frames []float32, read float64) error {
-	defer fileio.Lock(fsys, path)()
-	file, had, hadFrames, ok := readTranscriptFile(fsys, path, stamp, model)
+	defer fileio.Lock(m.Files, path)()
+	file, had, hadFrames, ok := readTranscriptFile(m.Files, path, stamp, model)
 	var parts [][2]float64
 	if ok {
 		parts = file.heard()
@@ -573,21 +573,22 @@ func addHeard(fsys afero.Fs, path string, stamp sourceStamp, model string, durat
 		stored[i] = [2]num.Float{num.Float(p[0]), num.Float(p[1])}
 	}
 	end := num.Float(num.RoundTo(duration, 3))
-	err := writeTranscript(fsys, path, transcriptFile{Version: transcriptVersion, Source: stamp, Model: model,
+	err := writeTranscript(m.Files, path, transcriptFile{Version: transcriptVersion, Source: stamp, Model: model,
 		To: end, Mean: num.Float(num.RoundTo(meanOfFrames(heard), 3)), Parts: stored, End: end,
 		Words: storedWords(words)}, all)
 	if err == nil {
-		transcriptGrew(path)
+		m.transcriptGrew(path)
 	}
 	return err
 }
 
-// grows wakes whoever waits for an episode's transcript to grow, by the
-// path of its words. Every part heard is written by addHeard, whichever
-// job heard it, so that is where the news goes out. The local model reads
-// the transcript of a search's window as it grows, see readahead.go, and
-// waits on this rather than looking at the file now and then.
-var grows struct {
+// transcriptNews wakes whoever waits for an episode's transcript to grow,
+// by the path of its words. Every part heard is written by addHeard,
+// whichever job heard it, so that is where the news goes out. The local
+// model reads the transcript of a search's window as it grows, see
+// readahead.go, and waits on this rather than looking at the file now and
+// then. The machine keeps it, see Machine.grows.
+type transcriptNews struct {
 	mu    sync.Mutex
 	waits map[string]chan struct{}
 }
@@ -595,29 +596,29 @@ var grows struct {
 // transcriptGrows is closed the next time the transcript at path gains
 // what was heard. It is taken before the transcript is read, so a part
 // written in between is not missed.
-func transcriptGrows(path string) <-chan struct{} {
-	grows.mu.Lock()
-	defer grows.mu.Unlock()
+func (m *Machine) transcriptGrows(path string) <-chan struct{} {
+	m.grows.mu.Lock()
+	defer m.grows.mu.Unlock()
 	path = filepath.Clean(path)
-	if grows.waits == nil {
-		grows.waits = map[string]chan struct{}{}
+	if m.grows.waits == nil {
+		m.grows.waits = map[string]chan struct{}{}
 	}
-	wait, ok := grows.waits[path]
+	wait, ok := m.grows.waits[path]
 	if !ok {
 		wait = make(chan struct{})
-		grows.waits[path] = wait
+		m.grows.waits[path] = wait
 	}
 	return wait
 }
 
 // transcriptGrew wakes whoever waits on the transcript at path.
-func transcriptGrew(path string) {
-	grows.mu.Lock()
-	defer grows.mu.Unlock()
+func (m *Machine) transcriptGrew(path string) {
+	m.grows.mu.Lock()
+	defer m.grows.mu.Unlock()
 	path = filepath.Clean(path)
-	if wait, ok := grows.waits[path]; ok {
+	if wait, ok := m.grows.waits[path]; ok {
 		close(wait)
-		delete(grows.waits, path)
+		delete(m.grows.waits, path)
 	}
 }
 

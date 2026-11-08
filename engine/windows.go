@@ -126,7 +126,7 @@ func FollowingWindow(ended, length, duration, least float64) timed.Window {
 }
 
 // placeSteps are the round steps a window the app places lands on, the
-// same as the range picker's, see gridStep in frontend/src/lib/flow.ts.
+// same as the range picker's, see dragStep in frontend/src/lib/ruler.ts.
 var placeSteps = []float64{1, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800}
 
 // PlaceStep is the round step a window the app places lands on: the
@@ -151,9 +151,9 @@ func PlaceStep(duration float64) float64 {
 // length, which is never less than one step. The ends of the episode win
 // over the step, and an end that would leave a scrap too short for a
 // clip, least, or shorter than a step, takes it in rather than leaving it
-// behind. The episode's own windows are an even share of it, 30:02 of a
-// little over four hours, and a window that long lay a few seconds off
-// the range picker's lines, which shows as a pixel.
+// behind. A window that starts or ends a few seconds off the step, like
+// one after a search that ended there, lies off the range picker's
+// lines, which shows as a pixel.
 func OnStep(w timed.Window, length, duration, step, least float64) timed.Window {
 	from := math.Min(math.Max(math.Round(w.Start/step)*step, 0), duration)
 	size := math.Max(math.Round(length/step)*step, step)
@@ -216,20 +216,21 @@ func lengthWithin(size, most, step, least float64) float64 {
 	return size
 }
 
-// PlaceWindow is where the project's video of duration seconds gets its
-// window when nobody has drawn one, from what was searched of it and
-// what one search can read of it, r, the same the range picker fits a
-// window to, see placeWindow.
-func (p *Project) PlaceWindow(r RoomAndLines, duration float64) PlacedWindow {
-	passes := SearchPasses(PlanSummaries(p.Files, p.LogsDir()), duration)
-	return placeWindow(passes, duration, p.Base.Min, r.Longest(duration))
+// PlaceWindow is where the episode's video of duration seconds gets its
+// window when nobody has drawn one, from what was searched of it, its
+// plans, and what one search can read of it with the settings o, r, the
+// same the range picker fits a window to, see placeWindow.
+func (ep *Episode) PlaceWindow(o Options, r RoomAndLines, duration float64) PlacedWindow {
+	passes := SearchPasses(ep.Plans(), duration)
+	return placeWindow(passes, duration, o.Min, r.Longest(duration))
 }
 
 // WindowAfter is where the window goes after the search req found its
 // clips, from where it ended and length long, the length the window was
 // made, or the search's own where that is 0, and no longer than what one
-// search can read of it now, r, see moveWindowOn.
-func (p *Project) WindowAfter(r RoomAndLines, req PlanRequest, length, duration float64) PlacedWindow {
+// search can read of it now, r, with the shortest clip of o, see
+// moveWindowOn.
+func (o Options) WindowAfter(r RoomAndLines, req PlanRequest, length, duration float64) PlacedWindow {
 	ended := req.To
 	if ended <= 0 {
 		ended = duration
@@ -237,5 +238,5 @@ func (p *Project) WindowAfter(r RoomAndLines, req PlanRequest, length, duration 
 	if length <= 0 {
 		length = ended - req.From
 	}
-	return moveWindowOn(ended, length, duration, p.Base.Min, r.Longest(duration))
+	return moveWindowOn(ended, length, duration, o.Min, r.Longest(duration))
 }

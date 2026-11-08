@@ -206,9 +206,7 @@ export default [
     // TestARenderCutsOnWholeFrames holds the engine to it, this the app.
     name: "a render of a 29.97 fps episode cuts on whole frames",
     steps: [
-      ["add", 40, "30000/1001"],
-      ["wait for", "Search"],
-      ["cards", 1],
+      ["added", 40, "30000/1001"],
       ["cut at", 0.3],
       ["cut at", 0.7],
       ["cuts", 2],
@@ -224,6 +222,18 @@ export default [
     // a restart too, because where the short went is kept on disk.
     name: "a short rendered into the folder for shorts is known as rendered",
     steps: [["render"], ["rendered"], ["by its words"], ["restart"], ["rendered"]],
+  },
+  {
+    // Issue #392: a render the app closed on came back after the restart
+    // as a job that said it was cut off, and nothing showed it. The clip
+    // looked as if it was never rendered or asked for, there was no
+    // Continue, and its record stayed in the work folder.
+    name: "a render cut off by the app closing says so at its Render button, and Continue carries it on",
+    steps: [["render cut off", "continue"]],
+  },
+  {
+    name: "a render cut off by the app closing can be removed, and is forgotten",
+    steps: [["render cut off", "remove"]],
   },
   {
     // Issue #384: Tim rendered a clip, uploaded the short and removed it
@@ -318,6 +328,18 @@ export default [
     steps: [
       ["trim", "start", 300],
       ["make while playing", "o"],
+      ["made on the clip"],
+    ],
+  },
+  {
+    // Issue #697: a busy machine wrote the clip made with O before the
+    // pick of its card had its answer, and for a frame no card was
+    // chosen and the clip timeline was dimmed. The clip is written while
+    // the answer to the pick is held, so it is that order every time.
+    name: "a clip made with O is not dimmed when it is written before its card's pick has its answer",
+    steps: [
+      ["trim", "start", 300],
+      ["make with its pick late", "o"],
       ["made on the clip"],
     ],
   },

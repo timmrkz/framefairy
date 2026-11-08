@@ -220,7 +220,7 @@ numbers, and `done`, the clips it has finished, written as each one is.
 - It is read as untrusted, like every file on disk: a record that is not
   one is no record, and a render's plan has to be one of the episode's
   own plans.
-- Whether an episode has ever been searched is `EverSearched`: it has a
+- Whether an episode has ever been searched is `Episode.EverSearched`: it has a
   plan or a `jobs/` folder. That took the place of `looked`.
 
 The record is the truth. The app keeps a job nowhere else, and the
@@ -255,10 +255,10 @@ that `failed`, with its reason. Adding a video asks for
 its first search, of the video's window, which the Go side places then:
 the first of the windows the video is cut into, see
 `engine.SuggestedWindow`, on a round step, and no longer than the model
-can read at once, see `engine.Project.PlaceWindow`, kept by
+can read at once, see `engine.Episode.PlaceWindow`, kept by
 `videoWindow` in `cmd/framefairy-app/window.go`. Every search starts on
 the video's window, and one that found its clips moves the window on
-before it says it is done, see `engine.Project.WindowAfter`. Cancel on a search that runs marks its
+before it says it is done, see `engine.Options.WindowAfter`. Cancel on a search that runs marks its
 record stopped as it ends. A new search takes the record of one that
 stopped away. A render or a clip made by hand that stopped has only
 Continue, see row 2.169 in [GUI-PLAN.md](GUI-PLAN.md). Search on an episode waits for a search that
@@ -456,12 +456,13 @@ will be, `Clip` on `Underway`, the clip set's file name and the id the
 builder gave it when it queued it, and the list keeps the card's row for
 the clip. They were two rows, the card's going and the clip's coming, and
 between the two the list was a row short for an instant, which a list
-scrolled down answered by jumping. The card is held from the moment it
-leaves the job's list in the same pass that builds the list, `OnTheWay`
-in `frontend/src/lib/arriving.ts`: an effect held it a render late, so
-every card went away, left a row still to come in its place and slid back
-open before it became its clip, which at the end of a search read as the
-whole list blinking. A clip made by hand is chosen the moment
+scrolled down answered by jumping. The cards come from the jobs of the
+video's state the workspace keeps, `EpisodeSession.jobs`, the state its
+clips come from, so a card leaves the job's list in the very state that
+holds its clip. The card was once held until a later state came, first
+by an effect a render late, so every card went away, left a row still to
+come in its place and slid back open before it became its clip, which at
+the end of a search read as the whole list blinking. A clip made by hand is chosen the moment
 the key is pressed, as its card, and the card that is chosen stays chosen
 as the clip, unless another has been chosen since. It was chosen only once
 it landed, so for the seconds it took nothing on the clip timeline said

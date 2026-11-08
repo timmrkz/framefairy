@@ -119,7 +119,7 @@ func (s *FrameFairy) SetCaptionStyle(ctx context.Context, path, plan, font strin
 	if size > 0 {
 		values["size"] = size
 	}
-	return s.edit(path, func() error { return engine.SetCaptionStyle(s.store.files, plan, values) })
+	return s.edit(path, func() error { return engine.SetCaptionStyle(s.store.files, plan, values, &s.store.machine.Fonts) })
 }
 
 // SetCaptionColours changes the colour of the caption text, of the box
@@ -154,7 +154,7 @@ func (s *FrameFairy) SetCaptionColours(ctx context.Context, path, plan, text str
 		}
 		values["highlight_colour"] = colour
 	}
-	return s.edit(path, func() error { return engine.SetCaptionStyle(s.store.files, plan, values) })
+	return s.edit(path, func() error { return engine.SetCaptionStyle(s.store.files, plan, values, &s.store.machine.Fonts) })
 }
 
 // SetCaptionSwitch turns one of the switches of the captions column on or
@@ -171,7 +171,7 @@ func (s *FrameFairy) SetCaptionSwitch(ctx context.Context, path, plan, which str
 		return fmt.Errorf("%q is no switch of the captions", which)
 	}
 	return s.edit(path, func() error {
-		return engine.SetCaptionStyle(s.store.files, plan, map[string]any{which: on})
+		return engine.SetCaptionStyle(s.store.files, plan, map[string]any{which: on}, &s.store.machine.Fonts)
 	})
 }
 
@@ -292,7 +292,7 @@ func hold(n, low, high float64) float64 {
 // followTheHeight takes the hand-placed caption line off the clips of an
 // episode, so every one of them sits where the setting says.
 func (s *FrameFairy) followTheHeight(path string) error {
-	for _, plan := range plansOf(s.store.files, path) {
+	for _, plan := range s.plansOf(path) {
 		if !s.store.PlanOf(path, plan.Path) {
 			continue
 		}
@@ -373,7 +373,7 @@ func (s *FrameFairy) SetCaptionTime(ctx context.Context, path, plan, clipID stri
 	// Which edge, of the caption on which word, where to, and what it did
 	// to the words: a caption that ended up other than the person meant is
 	// read back from these.
-	line := s.wordCounts(editLine(editLevel(err), path, clipID, time.Since(began)).Err(err), plan, clipID)
+	line := s.wordCounts(editLine(editLevel(err), path, clipID, time.Since(began)).Err(err), path, plan, clipID)
 	line = line.Str("edge", edge).Float64("word", word)
 	if math.IsNaN(at) {
 		line = line.Bool("reset", true)
@@ -405,8 +405,12 @@ func (s *FrameFairy) ShapeCaptionTime(path, plan, clipID string, word float64, e
 	if err != nil {
 		return nil, err
 	}
-	view, err := engine.ShapeCaptionTime(s.store.files, plan, clipID, word, edge, at, toWords, t, s.captionLook(path, plan))
-	captionTracks.keep(path, view)
+	summary, err := s.heldPlan(path, plan)
+	if err != nil {
+		return nil, err
+	}
+	view, err := engine.ShapeCaptionTime(summary, clipID, word, edge, at, toWords, t, s.lookOf(path, summary))
+	s.previews.tracks.keep(path, view)
 	return view, err
 }
 
@@ -463,10 +467,14 @@ func (s *FrameFairy) Shape(path, plan, clipID string, g engine.Gesture) (*engine
 		return nil, err
 	}
 	g.Frames = s.frames(context.Background(), path)
-	view, err := engine.ShapeClipView(s.store.files, plan, clipID, g, t, s.store.Settings().options().KeepPause,
-		s.captionLook(path, plan))
+	summary, err := s.heldPlan(path, plan)
+	if err != nil {
+		return nil, err
+	}
+	view, err := engine.ShapeClipView(summary, clipID, g, t, s.store.Settings().options().KeepPause,
+		s.lookOf(path, summary))
 	if err == nil {
-		captionTracks.keep(path, view.Captions)
+		s.previews.tracks.keep(path, view.Captions)
 	}
 	return view, err
 }
@@ -485,7 +493,7 @@ func (s *FrameFairy) Reshape(ctx context.Context, path, plan, clipID string, g e
 	}
 	g.Frames = s.frames(ctx, path)
 	if err := s.editMoving(path, &playhead, func() error {
-		return engine.Reshape(s.store.files, s.store.records, plan, clipID, g, t, s.store.Settings().options().KeepPause)
+		return engine.Reshape(s.store.files, s.store.records, plan, clipID, g, t, s.store.Settings().options().KeepPause, &s.store.machine.Fonts)
 	}); err != nil {
 		return ClipEntry{}, err
 	}

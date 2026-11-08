@@ -9,7 +9,6 @@ import (
 	"runtime/debug"
 	"slices"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -107,6 +106,18 @@ type Job struct {
 	// Aside is, for a search that stopped, that the video's window was
 	// moved off the window it was about, see markAside.
 	Aside bool `json:"aside,omitempty"`
+	// Away is, for work that stopped and was removed, how its removal
+	// stands, see removal.go.
+	Away *JobAway `json:"away,omitempty"`
+	// Stopping is, for work that runs, that it was told to stop and has
+	// not ended yet, from the moment it was told: by its own Stop or
+	// Cancel, or as work on the clips stops the video's transcription,
+	// see stopTranscribing. The interface says Stopping from it.
+	Stopping bool `json:"stopping,omitempty"`
+	// Ended is, for a search that is over or stopped, how it ended, see
+	// engine.SearchEnded, set as the video's state is read, so the
+	// interface picks the words and works nothing out.
+	Ended string `json:"ended,omitempty"`
 	// Seq grows with every change to any job, and is set under the queue's
 	// lock, so of two snapshots of a job the later one has the larger
 	// number. News is sent after the lock is let go, so two changes made
@@ -149,6 +160,19 @@ type Job struct {
 // going says whether a job is queued or running.
 func (j *Job) going() bool { return j.State == JobQueued || j.State == JobRunning }
 
+// callOff tells a job to stop. One waiting its turn is called off then and
+// there, and one that runs is stopping until its work ends. The caller
+// holds the queue's lock and stamps the job.
+func (j *Job) callOff() {
+	j.cancel()
+	switch j.State {
+	case JobQueued:
+		j.State = JobCancelled
+	case JobRunning:
+		j.Stopping = true
+	}
+}
+
 // unfinished is a job that ended before it was done, interrupted, stopped
 // or failed, and says so where its work was until Continue carries it on
 // or it is settled.
@@ -156,9 +180,19 @@ func (j *Job) unfinished() bool {
 	return j.State == JobInterrupted || j.State == JobStopped || j.State == JobFailed
 }
 
-// JobUpdate is what the interface receives on the "job" event.
+// JobUpdate is what the interface receives on the "job" event, for a
+// job of no video, see toWindow.
 type JobUpdate struct {
 	Job Job `json:"job"`
+}
+
+// toWindow says whether a job's news goes to the window on the "job"
+// event. A video's jobs reach it in the video's state alone, one channel,
+// so its clips, its window and the clip chosen change in the same frame
+// as the job that changed them, issue #513. A job of no video, a model
+// being downloaded, has no state, and is sent as it is.
+func toWindow(u JobUpdate) bool {
+	return u.Job.Episode == ""
 }
 
 // Lanes the queue runs side by side, one for each kind of machinery a step
@@ -215,6 +249,11 @@ type queue struct {
 	news func(episode string)
 	// notice is told each failure to say, once, see notice.go.
 	notice func(Notice)
+	// removals stops the timer of each removed job, which forgets it
+	// when its time is up, and time is the clock they run on, see
+	// removal.go.
+	removals map[string]func() bool
+	time     timeKeeper
 }
 
 // moved says a job changed the state of its video.
@@ -235,11 +274,12 @@ func (q *queue) stamp() uint64 {
 
 // ofVideo is the jobs of one video the workspace shows as they are now,
 // and the number the clock of the jobs gives this moment, see
-// VideoState.Rev. Those are the jobs queued or running and, of those
-// over, the newest of each kind. The queue keeps every job since the app
-// opened, and every older one's last news reached the window long ago, so
-// a state sent four times a second does not carry the renders of the
-// whole day.
+// VideoState.Rev. Those are the jobs queued or running, those that ended
+// before they were done and still say so, and of the rest the newest of
+// each kind. The state is the one way a video's jobs reach the window,
+// so a job that is not in it is one the window forgets. The queue keeps
+// every job since the app opened, so a state sent four times a second
+// does not carry the renders of the whole day.
 func (q *queue) ofVideo(episode string) ([]Job, uint64) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -253,7 +293,7 @@ func (q *queue) ofVideo(episode string) ([]Job, uint64) {
 	}
 	out := []Job{}
 	for _, j := range q.jobs {
-		if j.Episode == episode && (j.going() || newest[j.Kind] == j) {
+		if j.Episode == episode && (j.going() || j.unfinished() || newest[j.Kind] == j) {
 			out = append(out, *j)
 		}
 	}
@@ -272,7 +312,7 @@ func (q *queue) stampLocked(j *Job) {
 // newQueue builds the queue.
 func newQueue(s *store, emit func(JobUpdate), notify func(string)) *queue {
 	q := &queue{store: s, notify: quietly(notify), closed: map[string]int{},
-		lanes: newLanes(), calledOff: map[string]string{}}
+		lanes: newLanes(), calledOff: map[string]string{}, removals: map[string]func() bool{}, time: systemTime{}}
 	tell := quietly(emit)
 	q.emit = func(u JobUpdate) {
 		// The video's state is due before the job's news goes out, so
@@ -683,9 +723,8 @@ func (q *queue) cancel(id string) {
 		q.mu.Unlock()
 		return
 	}
-	job.cancel()
-	if job.State == JobQueued {
-		job.State = JobCancelled
+	if job.going() {
+		job.callOff()
 	}
 	// Always said, also for a job that had already ended: the window asked
 	// because it thinks the job is still going, and without an answer it
@@ -699,7 +738,7 @@ func (q *queue) cancel(id string) {
 // How long a job is given to stop after it is told to. A render has an
 // ffmpeg to end and a transcription has what it has heard to save, so
 // stopping is not instant.
-var stopWait = 15 * time.Second
+const stopWait = 15 * time.Second
 
 // closeEpisode stops every job of an episode and lets nothing new be
 // queued for it until the reopen it hands back is called. Closing and
@@ -707,20 +746,17 @@ var stopWait = 15 * time.Second
 func (q *queue) closeEpisode(episode string) (reopen func()) {
 	q.mu.Lock()
 	q.closed[episode]++
-	var queued []Job
+	var told []Job
 	for _, j := range q.jobs {
 		if j.Episode != episode || !j.going() {
 			continue
 		}
-		j.cancel()
-		if j.State == JobQueued {
-			j.State = JobCancelled
-			q.stampLocked(j)
-			queued = append(queued, *j)
-		}
+		j.callOff()
+		q.stampLocked(j)
+		told = append(told, *j)
 	}
 	q.mu.Unlock()
-	for _, j := range queued {
+	for _, j := range told {
 		q.emit(JobUpdate{Job: j})
 	}
 	var once sync.Once
@@ -786,21 +822,28 @@ func (q *queue) until(done func(jobs []*Job) bool, expire <-chan time.Time) bool
 	}
 }
 
-// shutDown stops every job and waits, at most stopWait, for the running
-// ones to end and their goroutines to be done. The app calls it on the way out. A render's ffmpeg and a
+// shutDown stops every job and the time of removed work, and waits, at
+// most stopWait, for the running ones to end and their goroutines to be
+// done. The app calls it on the way out. A render's ffmpeg and a
 // transcription were left running after the app had gone, and a
 // transcription keeps the file it writes open, so the next start found it
 // half written by a program nobody could see.
 func (q *queue) shutDown() bool {
 	q.mu.Lock()
 	q.shut = true
+	// Removed work is forgotten by a timer of its own, which the process
+	// ending stops in the app. The walks' bridge opens the app again in
+	// the same process, on the same clock, and a timer left running
+	// forgot the record of a search in the next walk's first video, found
+	// in the review of the fix for issue #713.
+	for _, stop := range q.removals {
+		stop()
+	}
+	clear(q.removals)
 	for _, j := range q.jobs {
 		if j.going() {
-			j.cancel()
-			if j.State == JobQueued {
-				j.State = JobCancelled
-				q.stampLocked(j)
-			}
+			j.callOff()
+			q.stampLocked(j)
 		}
 	}
 	q.mu.Unlock()
@@ -865,10 +908,7 @@ func (q *queue) stopClips(episode, click string) {
 			continue
 		}
 		j.byHand = j.JobRecord.ID != ""
-		j.cancel()
-		if j.State == JobQueued {
-			j.State = JobCancelled
-		}
+		j.callOff()
 		q.stampLocked(j)
 		stopped = append(stopped, *j)
 	}
@@ -889,6 +929,7 @@ func (q *queue) settle(episode, kind, record string) {
 		if j.Episode == episode && j.Kind == kind && (record == "" || j.JobRecord.ID == record) &&
 			j.unfinished() && j.JobRecord.ID != "" {
 			j.State = JobSettled
+			j.Away = nil
 			q.stampLocked(j)
 			settled = append(settled, *j)
 		}
@@ -953,6 +994,7 @@ func (q *queue) settleRefused(id string) {
 	for _, j := range q.jobs {
 		if j.ID == id && j.State == JobFailed && j.JobRecord.ID == "" {
 			j.State = JobSettled
+			j.Away = nil
 			q.stampLocked(j)
 			settled = append(settled, *j)
 		}
@@ -1165,6 +1207,7 @@ func (q *queue) runJob(job *Job) {
 	log.SetSink(nil)
 	q.update(job, func(j *Job) {
 		j.Progress = nil
+		j.Stopping = false
 		j.Result = result
 		if j.ending != nil {
 			j.JobRecord, j.ending = *j.ending, nil
@@ -1206,26 +1249,20 @@ func (q *queue) runJob(job *Job) {
 // serveCaptions, so the two never decide it apart.
 func jobOptions(st *store, e *engine.Engine) engine.Options {
 	opts := st.Settings().options()
-	setUp(e, &opts)
+	st.setUp(e, &opts)
 	return opts
 }
 
 // setUp readies the engine and the options a job runs with: the speech
-// model the app carries, unless a test has put stand-ins in standIns.
-func setUp(e *engine.Engine, o *engine.Options) {
-	if f := standIns.Load(); f != nil {
-		(*f)(e, o)
+// model the app carries, unless a test handed the store stand-ins, see
+// store.standIns.
+func (st *store) setUp(e *engine.Engine, o *engine.Options) {
+	if st != nil && st.standIns != nil {
+		st.standIns(e, o)
 		return
 	}
 	e.OpenRecognizer = asr.Open
 }
-
-// standIns is how the path tests hand the app a stand-in speech model and a
-// stand-in language model and run everything else as it is. It is read by
-// every job and written by the tests, from goroutines of their own, so it
-// is atomic: a job still finishing from one test read it while the next
-// test put its own in, which the race detector caught.
-var standIns atomic.Pointer[func(*engine.Engine, *engine.Options)]
 
 // run does the work of a job and turns a panic into a job that failed. A
 // desktop app that dies takes the interface, the other lane and whatever

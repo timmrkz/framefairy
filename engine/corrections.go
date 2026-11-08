@@ -310,10 +310,11 @@ func putBack(heard []timed.Cue, i int, text string, removed func(j int) bool) ma
 // as it was: the caption goes and leaves its time empty, and the one
 // before it goes when it did, see Captions.
 func RemoveCaption(fsys afero.Fs, planPath, clipID string, first float64, t *Transcript, look *Look) error {
-	view, err := ClipCaptionsView(fsys, planPath, clipID, t, look)
+	plan, clip, err := planClip(fsys, planPath, clipID)
 	if err != nil {
 		return err
 	}
+	view := captionsView(plan, clip, t, look)
 	var cue *CaptionView
 	for i := range view.Captions {
 		if math.Abs(view.Captions[i].First-first) < 1e-6 && len(view.Captions[i].Lines) > 0 {
@@ -323,10 +324,6 @@ func RemoveCaption(fsys afero.Fs, planPath, clipID string, first float64, t *Tra
 	}
 	if cue == nil {
 		return renderErr("there is no caption at %s", HMS(first))
-	}
-	_, clip, err := planClip(fsys, planPath, clipID)
-	if err != nil {
-		return err
 	}
 	t = t.Of(clip)
 	// The heard words of the caption, each with the part of it the

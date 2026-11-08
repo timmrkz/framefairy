@@ -197,14 +197,6 @@ func (s *FrameFairy) Setup(ctx context.Context) SetupState {
 	return state
 }
 
-// installSpeech and installLanguage are what the setup and the settings
-// install a model with, through the machine's network. The bridge a walk
-// drives stands in for them, so a walk never downloads a model.
-var (
-	installSpeech   = (*engine.Machine).InstallSpeechModel
-	installLanguage = (*engine.Machine).InstallLanguageModel
-)
-
 // InstallSpeechModel fetches a model and unpacks it, as a job, so it wears
 // the same beam and the same fill as every other piece of work and can be
 // cancelled the same way.
@@ -220,7 +212,12 @@ func (s *FrameFairy) InstallSpeechModel(name string) Job {
 	// folder, and the interface can ask twice by being opened twice.
 	return s.jobs.addOnce("", "model", model.Title,
 		func(ctx context.Context, p *engine.Project) (string, error) {
-			return "", installSpeech(p.Engine().Machine, ctx, p.Log(), model, engine.ModelsDir())
+			defer s.modelsMade()
+			install := s.installSpeech
+			if install == nil {
+				install = (*engine.Machine).InstallSpeechModel
+			}
+			return "", install(p.Engine().Machine, ctx, p.Log(), model, engine.ModelsDir())
 		})
 }
 
@@ -254,7 +251,12 @@ func (s *FrameFairy) InstallLanguageModel(name string) Job {
 	// One at a time, however often it is asked for.
 	return s.jobs.addOnce("", "llm", model.Title,
 		func(ctx context.Context, p *engine.Project) (string, error) {
-			if err := installLanguage(p.Engine().Machine, ctx, p.Log(), model, engine.ModelsDir()); err != nil {
+			defer s.modelsMade()
+			install := s.installLanguage
+			if install == nil {
+				install = (*engine.Machine).InstallLanguageModel
+			}
+			if err := install(p.Engine().Machine, ctx, p.Log(), model, engine.ModelsDir()); err != nil {
 				return "", err
 			}
 			// The only model there is may be the one in use now.
@@ -477,7 +479,7 @@ func (s *FrameFairy) RemoveLanguageModel(name string) error {
 	// The model kept loaded maps its file, which Windows would then not
 	// let go of. It is given up first, and the settings changed below
 	// have the model that is left kept again.
-	engine.KeepNone()
+	s.store.machine.KeepNone()
 	if err := engine.RemoveLanguageModel(model, engine.ModelsDir()); err != nil {
 		s.keeping.ask()
 		return err
@@ -558,24 +560,7 @@ func (s *FrameFairy) CheckSetup(ctx context.Context) []Check {
 	}
 	out = append(out, ff, probe)
 
-	// Which of the system's own video decoders framing can use. It is not
-	// a requirement, the processor decodes where there is none, so it is
-	// never a problem. What a file really went through is in the log of
-	// its search.
-	decoding := Check{Name: "Video decoding", OK: true, Detail: "on the processor"}
-	if ff.OK {
-		var names []string
-		for _, name := range e.SystemDecoders(ctx) {
-			names = append(names, engine.DecoderName(name))
-		}
-		if len(names) > 0 {
-			decoding.Detail = strings.Join(names, ", ") + ", falling back to the processor for a " +
-				"file it does not take. The log of a search says which one it used"
-		}
-	}
-	out = append(out, decoding)
-
-	out = append(out, fontsCheck(engine.FontCounts()))
+	out = append(out, fontsCheck(s.store.machine.Fonts.Counts()))
 
 	asrDir := opts.ASRModel
 	if asrDir == "" {

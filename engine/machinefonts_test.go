@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/spf13/afero"
 
@@ -18,14 +19,14 @@ import (
 )
 
 // The fonts installed on the machine are offered beside ours, see
-// machinefonts.go. These tests put faces on the shelf, which every test of
-// the package sees, so none of them runs beside another.
+// machinefonts.go. Each test makes Fonts of its own, so they run side by
+// side.
 
 // namedFace is a bundled face under another name, the way a face the
 // machine has would be.
 func namedFace(t testing.TB, bundled, name string) []byte {
 	t.Helper()
-	data, ok := FontBytes(bundled)
+	data, ok := new(Fonts).Bytes(bundled)
 	if !ok {
 		t.Fatalf("%s is not bundled", bundled)
 	}
@@ -40,7 +41,7 @@ func namedFace(t testing.TB, bundled, name string) []byte {
 // the name table, the way a face the machine has names its family.
 func styledFace(t testing.TB, bundled string, names map[uint16]string) []byte {
 	t.Helper()
-	data, ok := FontBytes(bundled)
+	data, ok := new(Fonts).Bytes(bundled)
 	if !ok {
 		t.Fatalf("%s is not bundled", bundled)
 	}
@@ -72,9 +73,18 @@ func collection(faces ...[]byte) []byte {
 	return out
 }
 
-// onShelf puts files on a shelf in memory, one folder each, in the order
-// given, and takes them off again when the test ends.
-func onShelf(t *testing.T, folders ...map[string][]byte) {
+// fontsIn are Fonts of their own that offer the faces in files in memory,
+// one folder each, in the order given.
+func fontsIn(t *testing.T, folders ...map[string][]byte) *Fonts {
+	t.Helper()
+	fonts := new(Fonts)
+	fonts.Use(fontFolders(t, folders...))
+	return fonts
+}
+
+// fontFolders puts files in folders in memory, one folder each, in the
+// order given.
+func fontFolders(t *testing.T, folders ...map[string][]byte) (afero.Fs, []string) {
 	t.Helper()
 	fsys := afero.NewMemMapFs()
 	var dirs []string
@@ -91,8 +101,7 @@ func onShelf(t *testing.T, folders ...map[string][]byte) {
 			}
 		}
 	}
-	UseFontFolders(fsys, dirs)
-	t.Cleanup(func() { UseFontFolders(nil, nil) })
+	return fsys, dirs
 }
 
 func fontNames(fonts []CaptionFont) []string {
@@ -137,8 +146,9 @@ type trippingFile struct{ afero.File }
 func (trippingFile) ReadAt([]byte, int64) (int, error) { panic("a font nobody read before") }
 
 func TestTheMachinesFontsAreOfferedAfterOurs(t *testing.T) {
+	t.Parallel()
 	narrow := namedFace(t, "Anton", "Test Narrow")
-	onShelf(t,
+	fonts := fontsIn(t,
 		map[string][]byte{
 			"Narrow.ttf": narrow,
 			// One file with two faces, the way macOS keeps a family.
@@ -157,7 +167,7 @@ func TestTheMachinesFontsAreOfferedAfterOurs(t *testing.T) {
 		// The same name in a folder read later is the first one's.
 		map[string][]byte{"Again.otf": namedFace(t, "Archivo Black", "Test Narrow")},
 	)
-	got := strings.Join(fontNames(CaptionFonts()), ", ")
+	got := strings.Join(fontNames(fonts.Caption()), ", ")
 	want := "Inter Black, Anton, Archivo Black, Test Heavy, Test Narrow, Test Wide"
 	if got != want {
 		t.Fatalf("offered %s, want %s", got, want)
@@ -171,22 +181,22 @@ func TestTheMachinesFontsAreOfferedAfterOurs(t *testing.T) {
 		{"Test Wide", 400, "Archivo Black"},
 		{"Test Heavy", 900, DefaultFont},
 	} {
-		font, ok := FontByName(c.name)
+		font, ok := fonts.ByName(c.name)
 		if !ok || !font.Machine || font.Weight != c.weight {
 			t.Errorf("%s is %+v", c.name, font)
 		}
 		// Measured from its own file, so a line breaks where libass breaks
 		// it, the same as the face it was made from.
-		ours, _ := TextWidth(c.like, "Hamburgefonstiv", 96)
-		theirs, ok := TextWidth(c.name, "Hamburgefonstiv", 96)
+		ours, _ := fonts.TextWidth(c.like, "Hamburgefonstiv", 96)
+		theirs, ok := fonts.TextWidth(c.name, "Hamburgefonstiv", 96)
 		if !ok || theirs != ours {
 			t.Errorf("%s measures %g, %s %g", c.name, theirs, c.like, ours)
 		}
-		if weight, _ := Thickening(c.name, 1); weight != c.weight {
+		if weight, _ := fonts.Thickening(c.name, 1); weight != c.weight {
 			t.Errorf("%s thickens as weight %d", c.name, weight)
 		}
 	}
-	if font, _ := FontByName("Anton"); font.Machine {
+	if font, _ := fonts.ByName("Anton"); font.Machine {
 		t.Error("Anton installed on the machine took the place of ours")
 	}
 }
@@ -199,7 +209,8 @@ func TestTheMachinesFontsAreOfferedAfterOurs(t *testing.T) {
 // has there, so the list of families is short and the styles are a list
 // of their own, the way Pages offers a font.
 func TestAFaceIsOfferedInItsFamily(t *testing.T) {
-	onShelf(t, map[string][]byte{
+	t.Parallel()
+	fonts := fontsIn(t, map[string][]byte{
 		// The way Apple names a face: the typographic family, and a family
 		// for older programs that holds the width.
 		"Type.ttc": collection(
@@ -223,7 +234,7 @@ func TestAFaceIsOfferedInItsFamily(t *testing.T) {
 		{"Test Type Light", "Test Type", "Light", ""},
 		{"Odd Face", "Odd Face", "Regular", ""},
 	} {
-		font, ok := FontByName(c.name)
+		font, ok := fonts.ByName(c.name)
 		if !ok || font.Family != c.family || font.Style != c.style || font.PostScript != c.postscript {
 			t.Errorf("%s is %+v, want %s, %s, %s", c.name, font, c.family, c.style, c.postscript)
 		}
@@ -233,6 +244,7 @@ func TestAFaceIsOfferedInItsFamily(t *testing.T) {
 // How wide a face is and whether it leans are read the way OS/2 and head
 // say them, so a family picked keeps the look of the one it replaced.
 func TestTheWidthAndLeanOfAFace(t *testing.T) {
+	t.Parallel()
 	os2 := func(width, selection uint16) []byte {
 		data := make([]byte, 96)
 		binary.BigEndian.PutUint16(data[6:], width)
@@ -268,13 +280,14 @@ func TestTheWidthAndLeanOfAFace(t *testing.T) {
 }
 
 func TestTheCopyOfAMachineFaceIsThatFaceAlone(t *testing.T) {
-	onShelf(t, map[string][]byte{"Pair.ttc": collection(
+	t.Parallel()
+	fonts := fontsIn(t, map[string][]byte{"Pair.ttc": collection(
 		namedFace(t, "Archivo Black", "Test Wide"), namedFace(t, DefaultFont, "Test Heavy"))})
-	face, ok := shelf.find("Test Heavy")
+	face, ok := fonts.find("Test Heavy")
 	if !ok {
-		t.Fatal("Test Heavy is not on the shelf")
+		t.Fatal("Test Heavy is not offered")
 	}
-	data, ok := FontBytes("Test Heavy")
+	data, ok := fonts.Bytes("Test Heavy")
 	if !ok {
 		t.Fatal("no copy of Test Heavy")
 	}
@@ -282,10 +295,10 @@ func TestTheCopyOfAMachineFaceIsThatFaceAlone(t *testing.T) {
 	if len(faces) != 1 || faces[0].name != face.alias || faces[0].weight != 900 {
 		t.Fatalf("the copy holds %+v, want one face named %q of weight 900", faces, face.alias)
 	}
-	if got := AssFontName("Test Heavy"); got != face.alias {
+	if got := fonts.AssName("Test Heavy"); got != face.alias {
 		t.Errorf("a caption file asks for %q, want %q", got, face.alias)
 	}
-	if got := AssFontName("Anton"); got != "Anton" {
+	if got := fonts.AssName("Anton"); got != "Anton" {
 		t.Errorf("a caption file asks for %q for Anton", got)
 	}
 	// Its checksums add up, as a font file's should.
@@ -297,45 +310,75 @@ func TestTheCopyOfAMachineFaceIsThatFaceAlone(t *testing.T) {
 // A style that names a face nobody has is drawn in ours, and says which one
 // it asked for, so the Font field can tell. One the machine has is kept.
 func TestAFaceNobodyHasIsDrawnInOurs(t *testing.T) {
-	onShelf(t, map[string][]byte{"Narrow.ttf": namedFace(t, "Anton", "Test Narrow")})
-	s := ResolveStyle(map[string]any{"font": "Gone Grotesk"})
+	t.Parallel()
+	fonts := fontsIn(t, map[string][]byte{"Narrow.ttf": namedFace(t, "Anton", "Test Narrow")})
+	s := fonts.Style(map[string]any{"font": "Gone Grotesk"})
 	if s.Font != DefaultFont || s.Missing != "Gone Grotesk" {
 		t.Errorf("drawn in %q with %q missing", s.Font, s.Missing)
 	}
-	s = ResolveStyle(map[string]any{"font": "Test Narrow"})
+	s = fonts.Style(map[string]any{"font": "Test Narrow"})
 	if s.Font != "Test Narrow" || s.Missing != "" {
 		t.Errorf("drawn in %q with %q missing", s.Font, s.Missing)
 	}
 	header := assHeader(s, 1080, 1920, 96, 4, 0, 0, 70, 300)
-	if !strings.Contains(header, "Style: Caption,"+AssFontName("Test Narrow")+",") {
+	if !strings.Contains(header, "Style: Caption,"+fonts.AssName("Test Narrow")+",") {
 		t.Errorf("the caption file asks for another face:\n%s", header)
 	}
-	if err := SetCaptionStyle(afero.NewMemMapFs(), "/plan.json", map[string]any{"font": "Gone Grotesk"}); err == nil {
+	if err := SetCaptionStyle(afero.NewMemMapFs(), "/plan.json", map[string]any{"font": "Gone Grotesk"}, fonts); err == nil {
 		t.Error("a face nobody has was set as the caption font")
+	}
+}
+
+// A face of the machine whose file was updated while the app runs is
+// measured again, because what a block of captions measured is kept under
+// the name of the copy libass draws, which changes with the file. Kept
+// under the face's own name, the highlight was sized by the old file.
+func TestAnUpdatedFaceIsMeasuredAgain(t *testing.T) {
+	t.Parallel()
+	fsys, dirs := fontFolders(t, map[string][]byte{"Narrow.ttf": namedFace(t, "Anton", "Test Narrow")})
+	fonts := new(Fonts)
+	fonts.Use(fsys, dirs)
+	s := fonts.Style(map[string]any{"font": "Test Narrow"})
+	before := measureKey("Jahre", s, 1080, 96)
+	updated := filepath.Join(dirs[0], "Narrow.ttf")
+	if err := afero.WriteFile(fsys, updated, namedFace(t, "Archivo Black", "Test Narrow"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	later := time.Unix(1_900_000_000, 0)
+	if err := fsys.Chtimes(updated, later, later); err != nil {
+		t.Fatal(err)
+	}
+	fonts.scan()
+	if after := measureKey("Jahre", s, 1080, 96); after == before {
+		t.Error("the updated face is measured under the key of the old one")
+	}
+	if ours := fonts.Style(nil); measureKey("Jahre", ours, 1080, 96) != measureKey("Jahre", new(Fonts).Style(nil), 1080, 96) {
+		t.Error("a bundled face is measured under a key of its machine")
 	}
 }
 
 // On the real disk: the copy is written where ffmpeg's captions read it,
 // once.
-func TestInstallFontCopiesAMachineFace(t *testing.T) {
-	onShelf(t, map[string][]byte{"Narrow.ttf": namedFace(t, "Anton", "Test Narrow")})
+func TestInstallCopiesAMachineFace(t *testing.T) {
+	t.Parallel()
+	fonts := fontsIn(t, map[string][]byte{"Narrow.ttf": namedFace(t, "Anton", "Test Narrow")})
 	dir := t.TempDir()
-	if err := InstallFont(dir, "Test Narrow"); err != nil {
+	if err := fonts.Install(dir, "Test Narrow"); err != nil {
 		t.Fatal(err)
 	}
-	font, _ := FontByName("Test Narrow")
+	font, _ := fonts.ByName("Test Narrow")
 	path := filepath.Join(dir, FontsFolder, font.File)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want, _ := FontBytes("Test Narrow"); !bytes.Equal(data, want) {
+	if want, _ := fonts.Bytes("Test Narrow"); !bytes.Equal(data, want) {
 		t.Error("the copy beside the captions is not the face")
 	}
 	if err := os.WriteFile(path, []byte("kept"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := InstallFont(dir, "Test Narrow"); err != nil {
+	if err := fonts.Install(dir, "Test Narrow"); err != nil {
 		t.Fatal(err)
 	}
 	if again, _ := os.ReadFile(path); string(again) != "kept" {
@@ -351,13 +394,14 @@ func TestInstallFontCopiesAMachineFace(t *testing.T) {
 //
 // On the real disk: ffmpeg reads the copy.
 func TestAMachineFaceReachesLibass(t *testing.T) {
-	onShelf(t, map[string][]byte{"Narrow.ttf": namedFace(t, "Anton", "Test Narrow")})
+	t.Parallel()
+	fonts := fontsIn(t, map[string][]byte{"Narrow.ttf": namedFace(t, "Anton", "Test Narrow")})
 	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
 	if err := e.Preflight(context.Background()); err != nil {
 		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}
 	measure := func(name string) *inkBox {
-		s := ResolveStyle(map[string]any{"font": name, "highlight": 0.0})
+		s := fonts.Style(map[string]any{"font": name, "highlight": 0.0})
 		boxes, ok := e.measureMany(context.Background(),
 			[]string{`{\alpha&H00&}Hamburgefonstiv`}, s, 1080, 96)
 		if !ok || len(boxes) != 1 || boxes[0] == nil {
@@ -441,6 +485,7 @@ func tinyFace(name string, weight uint16) []byte {
 }
 
 func TestATinyFaceIsAFace(t *testing.T) {
+	t.Parallel()
 	data := tinyFace("Tiny Bold", 700)
 	faces := readSfntFaces(bytes.NewReader(data), int64(len(data)))
 	if len(faces) != 1 || faces[0].name != "Tiny Bold" || faces[0].weight != 700 {
@@ -451,6 +496,7 @@ func TestATinyFaceIsAFace(t *testing.T) {
 // A face whose head table is cut short is no face, because the copy a
 // caption needs could not be made of it. Fuzzing found one in CI.
 func TestAFaceWithAShortHeadIsNoFace(t *testing.T) {
+	t.Parallel()
 	data := shortHead(tinyFace("Tiny", 400), 8)
 	if faces := readSfntFaces(bytes.NewReader(data), int64(len(data))); len(faces) != 0 {
 		t.Fatalf("read %+v", faces)
@@ -474,8 +520,9 @@ func shortHead(data []byte, n uint32) []byte {
 // The app reads the font folders as it starts, on a goroutine of its own,
 // while a video opening asks for the list, a caption is measured and the
 // word typed fetches its face. All of it at once finds every face.
-func TestTheShelfIsReadFromSeveralAtOnce(t *testing.T) {
-	onShelf(t, map[string][]byte{
+func TestTheFontsAreReadFromSeveralAtOnce(t *testing.T) {
+	t.Parallel()
+	fonts := fontsIn(t, map[string][]byte{
 		"Narrow.ttf": namedFace(t, "Anton", "Test Narrow"),
 		"Pair.ttc":   collection(tinyFace("Tiny", 400), tinyFace("Tiny Heavy", 900)),
 	})
@@ -485,17 +532,17 @@ func TestTheShelfIsReadFromSeveralAtOnce(t *testing.T) {
 			for range 20 {
 				switch i % 4 {
 				case 0:
-					RefreshFonts()
+					fonts.Refresh()
 				case 1:
-					if n := len(CaptionFonts()); n != 6 {
+					if n := len(fonts.Caption()); n != 6 {
 						t.Errorf("%d faces offered", n)
 					}
 				case 2:
-					if _, ok := TextWidth("Test Narrow", "Jahre", 96); !ok {
+					if _, ok := fonts.TextWidth("Test Narrow", "Jahre", 96); !ok {
 						t.Error("Test Narrow was not measured")
 					}
 				case 3:
-					if _, ok := FontBytes("Tiny Heavy"); !ok {
+					if _, ok := fonts.Bytes("Tiny Heavy"); !ok {
 						t.Error("no copy of Tiny Heavy")
 					}
 				}
@@ -509,15 +556,16 @@ func TestTheShelfIsReadFromSeveralAtOnce(t *testing.T) {
 // program carries and the machine's own, each counted once. Tim saw a few
 // hundred names in one row, 2026-10-27.
 func TestTheFacesAreCountedByWhereTheyComeFrom(t *testing.T) {
-	onShelf(t, map[string][]byte{
+	t.Parallel()
+	fonts := fontsIn(t, map[string][]byte{
 		"Narrow.ttf": namedFace(t, "Anton", "Test Narrow"),
 		"Pair.ttc":   collection(tinyFace("Tiny", 400), tinyFace("Tiny Heavy", 900)),
 	})
-	bundled, machine := FontCounts()
+	bundled, machine := fonts.Counts()
 	if bundled != len(captionFonts) || machine != 3 {
 		t.Errorf("counted %d built in and %d from the machine, want %d and 3", bundled, machine, len(captionFonts))
 	}
-	if all := len(CaptionFonts()); bundled+machine != all {
+	if all := len(fonts.Caption()); bundled+machine != all {
 		t.Errorf("counted %d in all, the list offers %d", bundled+machine, all)
 	}
 }

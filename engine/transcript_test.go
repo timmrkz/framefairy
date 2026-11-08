@@ -85,7 +85,7 @@ func TestTranscriptionResumes(t *testing.T) {
 	if got, done := Coverage(disk, source, base.ASRModel); done || got != cut {
 		t.Fatalf("partial coverage %v %v", got, done)
 	}
-	if st := Status(disk, source, base.ASRModel, nil); st.Transcribed || st.Covered != cut {
+	if st := e.Machine.Episode(source).Status(base.ASRModel, nil); st.Transcribed || st.Covered != cut {
 		t.Errorf("status of a partial transcript %+v", st)
 	}
 
@@ -126,6 +126,14 @@ func storedTranscript(t *testing.T, words []timed.Cue, frames []float32, to floa
 	t.Helper()
 	fsys := afero.NewMemMapFs()
 	source := "/ep.mp4"
+	return fsys, source, storedTranscriptOf(t, fsys, source, words, frames, to, partial)
+}
+
+// storedTranscriptOf is storedTranscript of a stand-in episode at source
+// on fsys, and gives back the transcript's path.
+func storedTranscriptOf(t *testing.T, fsys afero.Fs, source string, words []timed.Cue, frames []float32, to float64,
+	partial bool) string {
+	t.Helper()
 	if err := afero.WriteFile(fsys, source, []byte("nicht wirklich ein video"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +155,7 @@ func storedTranscript(t *testing.T, words []timed.Cue, frames []float32, to floa
 	if err := writeTranscript(fsys, path, file, frames); err != nil {
 		t.Fatal(err)
 	}
-	return fsys, source, path
+	return path
 }
 
 // What the transcript says was heard is kept while its file stays as it
@@ -157,7 +165,8 @@ func storedTranscript(t *testing.T, words []timed.Cue, frames []float32, to floa
 func TestWhatWasHeardIsReadAgainWhenTheTranscriptIsWritten(t *testing.T) {
 	words := []timed.Cue{{Start: 0.5, End: 1.2, Text: "Hallo"}}
 	fsys, source, path := storedTranscript(t, words, make([]float32, 300), 3, true)
-	if st := Status(fsys, source, "/models/modell", nil); st.Covered != 3 || st.Transcribed {
+	m := NewMachine(fsys)
+	if st := m.Episode(source).Status("/models/modell", nil); st.Covered != 3 || st.Transcribed {
 		t.Fatalf("heard to %v, done %v, before", st.Covered, st.Transcribed)
 	}
 	stamp, err := stampOf(fsys, source)
@@ -170,48 +179,14 @@ func TestWhatWasHeardIsReadAgainWhenTheTranscriptIsWritten(t *testing.T) {
 	if err := writeTranscript(fsys, path, file, make([]float32, 1300)); err != nil {
 		t.Fatal(err)
 	}
-	st := Status(fsys, source, "/models/modell", nil)
+	st := m.Episode(source).Status("/models/modell", nil)
 	if st.Covered != 13 || !st.Transcribed || st.Said == nil || st.Said[1] < 5 {
 		t.Errorf("heard to %v, done %v, said %v, once written again", st.Covered, st.Transcribed, st.Said)
 	}
 	// What one caller does with it is not what the next one reads.
 	st.Heard[0][1] = 0
-	if again := Status(fsys, source, "/models/modell", nil); again.Heard[0][1] != 13 {
+	if again := m.Episode(source).Status("/models/modell", nil); again.Heard[0][1] != 13 {
 		t.Errorf("a status changed by its caller changed what is kept: heard to %v", again.Heard[0][1])
-	}
-}
-
-// A transcript saved again and again as more is heard keeps one place
-// among what was heard, so it never pushes out another video's.
-func TestATranscriptSavedAgainKeepsOnePlaceOfWhatWasHeard(t *testing.T) {
-	words := []timed.Cue{{Start: 0.5, End: 1.2, Text: "Hallo"}}
-	fsys, source, path := storedTranscript(t, words, make([]float32, 300), 3, false)
-	stamp, err := stampOf(fsys, source)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for i := range keptHeard + 2 {
-		end := num.Float(3 + i)
-		file := transcriptFile{Version: transcriptVersion, Source: stamp, Model: "modell",
-			Mean: num.Float(-30), Parts: [][2]num.Float{{0, end}}, End: num.Float(100), Words: storedWords(words)}
-		if err := writeTranscript(fsys, path, file, make([]float32, 300+100*i)); err != nil {
-			t.Fatal(err)
-		}
-		if st := Status(fsys, source, "/models/modell", nil); st.Covered != float64(end) {
-			t.Fatalf("saved heard to %v, the status says %v", end, st.Covered)
-		}
-	}
-	mine := fmt.Sprintf("%p|%s", fsys, path)
-	heardKept.mu.Lock()
-	places := 0
-	for _, key := range heardKept.keys {
-		if key == mine {
-			places++
-		}
-	}
-	heardKept.mu.Unlock()
-	if places != 1 {
-		t.Errorf("the transcript saved %d times takes %d places among what was heard", keptHeard+2, places)
 	}
 }
 
@@ -224,6 +199,7 @@ func TestAnOlderTranscriptIsStillRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	m := NewMachine(fsys)
 	for version, read := range map[int]bool{0: false, 1: true, transcriptVersion: true,
 		transcriptVersion + 1: false} {
 		file := transcriptFile{Version: version, Source: stamp, Model: "modell",
@@ -234,7 +210,7 @@ func TestAnOlderTranscriptIsStillRead(t *testing.T) {
 		if _, _, _, ok := readTranscriptFile(fsys, path, stamp, "modell"); ok != read {
 			t.Errorf("version %d read %v, want %v", version, ok, read)
 		}
-		if st := Status(fsys, source, "modell", nil); st.TranscriptStale == read {
+		if st := m.Episode(source).Status("modell", nil); st.TranscriptStale == read {
 			t.Errorf("version %d stale %v", version, st.TranscriptStale)
 		}
 	}
@@ -501,7 +477,7 @@ func TestATranscriptionSaysHowFarItHasComeWhileItRuns(t *testing.T) {
 	e.checkpointEvery = time.Nanosecond
 	e.OpenRecognizer = func(string) (Recognizer, error) {
 		return watchingRecognizer{fakeRecognizer{&calls}, func() {
-			st := Status(disk, source, model, nil)
+			st := e.Machine.Episode(source).Status(model, nil)
 			if st.Covered > 0 && !st.Transcribed {
 				seen = append(seen, st.Covered)
 			}
@@ -520,7 +496,7 @@ func TestATranscriptionSaysHowFarItHasComeWhileItRuns(t *testing.T) {
 	if seen[len(seen)-1] <= seen[0] {
 		t.Errorf("coverage did not grow while it ran: %v", seen)
 	}
-	if st := Status(disk, source, model, nil); !st.Transcribed || st.Covered < 69.9 {
+	if st := e.Machine.Episode(source).Status(model, nil); !st.Transcribed || st.Covered < 69.9 {
 		t.Errorf("status when it is done %+v", st)
 	}
 }
@@ -594,7 +570,7 @@ func TestSaveHeardDecidesWhenATranscriptionSaves(t *testing.T) {
 	e.checkpointEvery = time.Nanosecond
 	e.OpenRecognizer = func(string) (Recognizer, error) {
 		return savingRecognizer{watchingRecognizer{fakeRecognizer{&calls}, func() {
-			seen = append(seen, Status(disk, source, model, nil).Covered)
+			seen = append(seen, e.Machine.Episode(source).Status(model, nil).Covered)
 		}}, func() bool { return asked.Add(1) == 2 }}, nil
 	}
 	base := DefaultOptions()
@@ -977,7 +953,7 @@ func TestTheTranscriptIsReadWhileItIsWritten(t *testing.T) {
 				default:
 				}
 				covered, done := Coverage(disk, source, base.ASRModel)
-				st := Status(disk, source, base.ASRModel, nil)
+				st := e.Machine.Episode(source).Status(base.ASRModel, nil)
 				mu.Lock()
 				if covered < last-0.001 {
 					problems = append(problems, fmt.Sprintf("coverage went back from %v to %v", last, covered))

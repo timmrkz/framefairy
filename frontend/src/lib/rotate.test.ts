@@ -9,9 +9,9 @@ const phone = { width: 1080, height: 1920, cropWidth: 1080, cropHeight: 1920, tu
 const clip = {
   key: "c",
   segments: [
-    { start: 10, end: 11.1, cropX: null, moved: false },
-    { start: 11.1, end: 12, cropX: null, moved: false },
-    { start: 13, end: 14, cropX: null, moved: false },
+    { start: 10, end: 11.1, cropX: null, moved: false, part: 0 },
+    { start: 11.1, end: 12, cropX: null, moved: false, part: 0 },
+    { start: 13, end: 14, cropX: null, moved: false, part: 1 },
   ],
   rotations: [],
   cropLefts: [0, 0, 0],

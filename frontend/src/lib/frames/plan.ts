@@ -24,12 +24,13 @@
 //   whatever moment the play began at. A grid that began where the play
 //   began drew each frame up to a frame late, and a play begun inside a
 //   frame never drew the last frame of a piece at all.
-// - A run is what one decoder is fed in one go, in decode order, from a
-//   key frame on. A piece that starts after the last one ends, inside what
-//   has already been decoded, carries the run on. Any other piece starts a
-//   new run, from the key frame before it.
+// - A run is what one decoder is fed in one go, the frames in the order
+//   they are shown, from the first frame of its piece. Every frame the Go
+//   side hands over is its own key frame, see Samples. A piece that starts
+//   with the frame right after the last one fed carries the run on. Any
+//   other piece starts a new run, from its own first frame.
 import type { Source } from "./even";
-import { rankAt, type Samples } from "./movie";
+import { rankAt, ticks, type Samples } from "./movie";
 
 export type Piece = { start: number; end: number };
 
@@ -60,6 +61,8 @@ export class Program {
   private times: number;
   // Where a running play took in a change of the clip, see spliced.
   private splice: Splice | null = null;
+  // Whether the loop was switched while it played, see loopOn.
+  private switched = false;
 
   constructor(pieces: Piece[], loop: boolean) {
     this.times = loop ? Infinity : 1;
@@ -114,10 +117,14 @@ export class Program {
     return this.splice?.visit ?? null;
   }
 
-  // Whether a running play took in a change, see spliced. Such a program
-  // is only for the play under way: a new play builds its own.
-  get spliced(): boolean {
-    return this.splice !== null;
+  // Whether a running play took in a change, see spliced, or had its loop
+  // switched, see loopOn and loopOff. Such a program is only for the play
+  // under way: a new play builds its own. One whose loop was switched off
+  // in its second time through ends after that time through, and the
+  // next play of the clip, from a moment before its end, went on round
+  // it.
+  get changedWhilePlaying(): boolean {
+    return this.splice !== null || this.switched;
   }
 
   get loop(): boolean {
@@ -149,12 +156,14 @@ export class Program {
   // The loop switched on while it plays: it goes on and on from here.
   loopOn() {
     this.times = Infinity;
+    this.switched = true;
   }
 
   // The loop switched off while it plays, at a position on the program: it
   // ends at the end of the time through that position is in.
   loopOff(pos: number) {
     this.times = this.length > 0 ? Math.floor(Math.max(pos - this.shift, 0) / this.length) + 1 : 1;
+    this.switched = true;
   }
 
   // The v-th piece played, or null past the end of a program that does not
@@ -213,22 +222,12 @@ export class Program {
 // with next the first of them.
 type Splice = { before: Program; v: number; visit: Visit; next: number; base: number };
 
-// The key frame decoding has to start from for the frame shown rank-th:
-// the last one, in decode order, before that frame, that is not shown
-// after it.
-export function keyBefore(s: Samples, rank: number): number {
-  let key = s.order[rank];
-  while (key > 0 && !(s.key[key] && s.rank[key] <= rank)) key--;
-  return key;
-}
-
-// What a paused frame is decoded from: the key frame before it to the
-// frame itself, in decode order. A frame shown before it but decoded after
-// it is not needed, and the decoder is flushed after the last sample so the
-// frame comes out without waiting for more.
+// What a paused frame is decoded from: the frame that holds the moment,
+// which is its own key frame, see Samples. The decoder is flushed after it
+// so the frame comes out without waiting for more.
 export function stillFeed(s: Samples, at: number): { key: number; last: number; rank: number } {
   const rank = rankAt(s, at);
-  return { key: keyBefore(s, rank), last: s.order[rank], rank };
+  return { key: rank, last: rank, rank };
 }
 
 // One frame on the program: which run decodes it, and which frame of the
@@ -284,8 +283,7 @@ export class VideoPlan {
 
   // Where a frame of the episode begins, in seconds.
   private begins(rank: number): number {
-    const s = this.samples;
-    return s.pts[s.order[rank]] / s.timescale;
+    return ticks(this.samples, rank) / this.samples.timescale;
   }
 
   private posOf(sp: Span, k: number): number {
@@ -390,9 +388,9 @@ export class VideoPlan {
     const s = this.samples;
     const was = sp.first + (sp.kLast - sp.kFirst);
     const b = Math.max(sp.first, rankAt(s, Math.max(visit.start + (sp.from - sp.visit.from), visit.end - this.frame)));
-    // The frames it now draws that it did not, each first in decode order.
-    let needs = Infinity;
-    for (let r = was + 1; r <= b; r++) needs = Math.min(needs, s.order[r]);
+    // The first frame it now draws that it did not, in the order they are
+    // decoded, which is the order they are shown.
+    const needs = b > was ? was + 1 : Infinity;
     const fed = fedTo(run);
     if (fed > needs) return null;
     return () => {
@@ -406,8 +404,7 @@ export class VideoPlan {
       run.lastRank = b;
       run.last = 0;
       for (const o of this.spans) {
-        if (o.run !== run.id) continue;
-        for (let r = o.first; r <= o.first + (o.kLast - o.kFirst); r++) run.last = Math.max(run.last, s.order[r]);
+        if (o.run === run.id) run.last = Math.max(run.last, o.first + (o.kLast - o.kFirst));
       }
       if (fed > run.last) run.sealed = true;
       this.nextK = sp.kLast + 1;
@@ -457,9 +454,10 @@ export class VideoPlan {
     const kFirst = this.nextK;
     const kLast = kFirst + (b - a);
     this.nextK = kLast + 1;
-    const key = keyBefore(s, a);
-    let last = s.order[a];
-    for (let r = a; r <= b; r++) if (s.order[r] > last) last = s.order[r];
+    // Every frame is its own key frame, decoded in the order it is shown,
+    // see Samples.
+    const key = a;
+    const last = b;
     const span: Span = { visit, run: 0, kFirst, kLast, first: a, from, to };
     const run = this.runs[this.runs.length - 1];
     if (run && !run.sealed && run.key <= key && key <= run.last + 1 && a >= run.lastRank) {
@@ -613,7 +611,7 @@ export class AudioPlan {
   packet(j: number): { at: number; n: number } {
     const s = this.samples;
     const scale = this.rate / s.timescale;
-    return { at: Math.round(s.pts[j] * scale), n: Math.round(s.duration[j] * scale) };
+    return { at: Math.round(ticks(s, j) * scale), n: Math.round(s.step * scale) };
   }
 
   // The first packet that holds sample x or anything after it.
@@ -772,15 +770,14 @@ export class AudioPlan {
   // The slices of packet j as it came out of the decoder, straight after
   // what came out of the packet before it. A decoder puts its sound out as
   // one stream, and a player counts its samples: the stamps only say where
-  // the stream starts. They need not say more to the sample. Every AAC
-  // packet decodes to 1024 samples, but Tim's start.mp4 says its packets
-  // last 1008, 1056 and 1008 in turn, and a clock of 600 ticks a second,
-  // QuickTime's, says where a packet starts only to the nearest 80 samples
-  // at 48 kHz. Placed by its stamp, a packet missed the one before at most
-  // packets, a gap or an overlap heard as a click, a crackle over the whole
-  // play. So only the first packet that comes out of a run goes where its
-  // stamp says, and one after a packet that came out as nothing, since
-  // then the stream itself has a gap.
+  // the stream starts. They need not say more to the sample. The Go side
+  // hands the sound over in packets of the same length one after another,
+  // see PACKET in movie.ts, so the stamps and the stream agree. When the
+  // packets came from the file, Tim's start.mp4 gave stamps that missed by
+  // up to 80 samples, a click heard over the whole play. So only the first
+  // packet that comes out of a run goes where its stamp says, and one
+  // after a packet that came out as nothing, since then the stream itself
+  // has a gap.
   decoded(run: AudioRun, j: number, got: number): Slice[] {
     const p = this.packet(j);
     const at = run.end !== undefined && run.endPacket === j - 1 ? run.end : p.at + Math.max(0, p.n - got);

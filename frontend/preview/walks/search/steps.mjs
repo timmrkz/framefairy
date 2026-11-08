@@ -5,7 +5,7 @@
 // caption box showed before it and the step's name. A sequence of any
 // folder can take it. Below them the helpers only these steps use. See
 // docs/TESTING.md.
-import { ask, caughtUp, clipList, control, drag, episodeOn, fakeClock, fromSidebar, news, nextNews, nextPaint, pageUntil, pressHead, realFrames, runClock, seenUntil, settle } from "../bridge.mjs";
+import { ask, caughtUp, clipList, control, drag, episodeOn, fromSidebar, holdClock, letClockGo, letPageTimeGo, news, nextNews, nextPaint, pageUntil, pressHead, realFrames, runClock, seenUntil, settle, holdSound } from "../bridge.mjs";
 import { clockOf, nextCall, onePiece, toastSays, url } from "../common/steps.mjs";
 
 export const steps = {
@@ -1069,7 +1069,15 @@ export const steps = {
         });
         await field.focus();
         await page.keyboard.press("Space");
-        await watch.step("press", s);
+        // Held from the moment it plays while the walk reads and the
+        // watch looks at the step, which on a busy runner in WebKit took
+        // the whole clip: the play stopped at its end, the field took the
+        // keyboard back, as it does once a play the space bar started
+        // from it is paused, and the walk's space bar to stop it played
+        // the clip again.
+        // Or until the space bar typed into the field, which plays nothing.
+        await pageUntil(page, () => !!document.querySelector('button[aria-label="Pause"]') || document.querySelector(".listhead .search input")?.value !== "");
+        await holdSound(page, true);
         const started = await page.evaluate(() => ({
           typed: document.querySelector(".listhead .search input")?.value ?? null,
           focused: document.activeElement?.getAttribute("aria-label") ?? document.activeElement?.tagName ?? null,
@@ -1077,6 +1085,8 @@ export const steps = {
           at: Number(document.querySelector(".screen")?.dataset.playhead),
         }));
         const first = await topRow();
+        await watch.step("press", s);
+        await holdSound(page, false);
         if (started.typed !== "") walk.wrong = `the space bar in the empty search field typed "${started.typed}"`;
         else if (started.focused === "Search transcript") walk.wrong = "the space bar in the empty search field left the keyboard in it";
         else if (!started.playing) walk.wrong = "the space bar in the empty search field did not play";
@@ -1112,6 +1122,18 @@ export const steps = {
       // plays on is turned to the top, found by Tim. The list is made
       // as high as the cards down to the playhead's, so the next is
       // below it.
+      // The space bar to play, held the same way from the moment it
+      // plays while the watch looks at the step, which on a busy runner
+      // in WebKit took the whole clip, so the walk read the list only
+      // once the play had stopped at the clip's end.
+      const playHeld = async () => {
+        await page.evaluate(() => document.activeElement?.blur());
+        await page.keyboard.press("Space");
+        await pageUntil(page, () => !!document.querySelector('button[aria-label="Pause"]'));
+        await holdSound(page, true);
+        await watch.step("press", s);
+        await holdSound(page, false);
+      };
       if (!walk.wrong && own.length >= 2) {
         // First with both cards in view: playing into the next card
         // leaves the list where it is.
@@ -1128,9 +1150,7 @@ export const steps = {
         }, [`s${own[0].start}|${chosenKey}`, `s${own[1].start}|${chosenKey}`]);
         if (!both.seen) walk.wrong = "the chosen clip's first two cards are not both in view, so the list standing still could not be seen";
         else {
-          await page.evaluate(() => document.activeElement?.blur());
-          await page.keyboard.press("Space");
-          await watch.step("press", s);
+          await playHeld();
           const frames = await playedTo(page, own[1].start + 0.3, () => ({ scrolled: document.querySelector(".scroll.list").scrollTop }), true);
           const moved = frames.find((now) => now.scrolled !== both.scrolled);
           await page.keyboard.press("Space");
@@ -1153,9 +1173,7 @@ export const steps = {
         }, `s${own[0].start}|${chosenKey}`);
         await nextPaint(page, 2);
         const from = await page.evaluate(() => document.querySelector(".scroll.list").scrollTop);
-        await page.evaluate(() => document.activeElement?.blur());
-        await page.keyboard.press("Space");
-        await watch.step("press", s);
+        await playHeld();
         const frames = await playedTo(
           page,
           own[1].start + 0.3,
@@ -1490,7 +1508,10 @@ export const steps = {
       return job?.state === "running" || job?.state === "queued";
     };
     while ((await running()) && (await onePiece(page, url, path)));
-    await settle(page);
+    // The search has ended on the Go side, and the page hears so a moment
+    // later. Settled alone, a quick page was read before it heard, and
+    // its head still said Cancelling.
+    await caughtUp(page, url, (await ask(page, "Jobs")).filter((j) => j.episode === path));
     const head = await page.evaluate(() => document.querySelector(".listhead button.search")?.textContent.replace(/\s+/g, " ").trim());
     if (head !== "Continue") walk.wrong = `after Cancel the head says ${head}, not Continue`;
   },
@@ -1695,7 +1716,7 @@ export const steps = {
   //                    range picker at once. With "put back" that is
   //                    clicked, and the card says Stopped again and the
   //                    work stays. With "for good" the time runs down, the
-  //                    card goes and the Go side calls the work off
+  //                    Go side forgets the work, and the card goes
   async "remove stopped"(walk, arg, s) {
     const { page, removeTime, watch } = walk;
     const card = page.locator(`li[data-key^="${walk.handJob}/"]`).first();
@@ -1706,9 +1727,10 @@ export const steps = {
       walk.wrong = "the card that stopped has no bin to remove it with";
       return;
     }
-    // The time a remove runs is run on by hand, so nothing waits on
-    // the clock: everything else goes on in step with it.
-    await fakeClock(page);
+    // The time a remove runs is run on by hand, on both sides, so
+    // nothing waits on the clock: everything else goes on in step with
+    // it, and a busy machine spends none of it.
+    await holdClock(page);
     // The marks of clips on their way on the range picker, the card's
     // among them.
     const waiting = () => page.evaluate(() => document.querySelectorAll(".clipmark.waiting").length);
@@ -1740,22 +1762,28 @@ export const steps = {
       // would have called the work off by now, and what that set
       // going has come back.
       await runClock(page, (removeTime + 1) * 1000);
-      await settle(page);
+      await caughtUp(page, url);
       const state = await stateOf();
       if (!back) walk.wrong = "Put it back did not bring back the card that said Stopped";
       else if ((await waiting()) !== marked) walk.wrong = `put back, the range picker has ${await waiting()} marks of clips on their way, not ${marked}`;
       else if (state !== "stopped") walk.wrong = `put back, the work of the clip is ${state}, not stopped`;
     } else {
       // The time stands still under the hand, see Busy, so the hand
-      // goes off the list, and then it runs out.
+      // goes off the list, and then it runs out. The Go side keeps the
+      // time and forgets the work, and the list hears so in the video's
+      // state.
       await page.mouse.move(5, 5);
-      await runClock(page, (removeTime + 1) * 1000);
+      // The hand going off lets the Go side's time run on, and that call
+      // is back before the time is run on.
       await settle(page);
+      await runClock(page, (removeTime + 1) * 1000);
+      await caughtUp(page, url);
       const gone = await page.evaluate((k) => !document.querySelector(`li[data-key="${k}"]`), key);
       const state = await stateOf();
       if (!gone) walk.wrong = "the card that stopped is still in the list after its time ran down";
       else if (state !== "settled") walk.wrong = `removed, the work of the clip is ${state}, not settled`;
     }
+    await letClockGo(page);
     await watch.step("wait", s);
   },
   // ["failed red"]     the row of the search that failed, the video's dot
@@ -1802,9 +1830,9 @@ export const steps = {
       walk.wrong = `the row "${was}" has no bin to remove the search with`;
       return;
     }
-    // The time a remove runs is run on by hand, so nothing waits on
-    // the clock.
-    await fakeClock(page);
+    // The time a remove runs is run on by hand, on both sides, so
+    // nothing waits on the clock.
+    await holdClock(page);
     await row.locator("button.drop").click();
     // Removed takes its place in the frame of the click.
     await realFrames(page);
@@ -1814,12 +1842,18 @@ export const steps = {
       return;
     }
     if (arg === "away and back") {
+      // The sidebar slides and the video picked takes its place in the
+      // app's frames, which stand still while its time is held, so the
+      // page's time runs while it goes away and back. The Go side's time
+      // stays held, and it is the Go side that forgets the search.
+      await letPageTimeGo(page);
       const buttons = page.locator("aside button.episode");
       const mine = await buttons.evaluateAll((all) => all.findIndex((b) => b.classList.contains("current")));
       await fromSidebar(page, () => buttons.nth(mine === 0 ? 1 : 0).click());
       await settle(page);
       await fromSidebar(page, () => buttons.nth(mine).click());
       await settle(page);
+      await holdClock(page);
       const again = await removedStrip(page, `${lead}:has(.gone)`);
       if (again) {
         walk.wrong = `back on the video, ${again}`;
@@ -1833,23 +1867,29 @@ export const steps = {
       const back = (await page.evaluate((lead) => document.querySelector(`${lead}.stopped .title`)?.textContent.trim(), lead)) === was;
       // Past the time a remove runs, so a put back that only hid it
       // would have forgotten the search by now.
-      await runClock(page, (removeTime + 1) * 1000);
       await settle(page);
+      await runClock(page, (removeTime + 1) * 1000);
+      await caughtUp(page, url);
       const now = await search();
       if (!back) walk.wrong = `Put it back did not bring back the row "${was}"`;
       else if (now?.id !== job || now.state === "settled") walk.wrong = `put back, the search is ${now?.id} ${now?.state}, not ${job} as it stopped`;
     } else {
       // The time stands still under the hand, see Busy, so the hand
-      // goes off the list, and then it runs out. The Go side is asked
-      // to forget the search, and settle waits for its answer.
+      // goes off the list, and then it runs out. The Go side keeps the
+      // time and forgets the search, and the list hears so in the
+      // video's state.
       await page.mouse.move(5, 5);
-      await runClock(page, (removeTime + 1) * 1000);
+      // The hand going off lets the Go side's time run on, and that call
+      // is back before the time is run on.
       await settle(page);
+      await runClock(page, (removeTime + 1) * 1000);
+      await caughtUp(page, url);
       const left = await page.evaluate(() => document.querySelectorAll("li.next.stopped, li.next .gone").length);
       const now = await search();
       if (left) walk.wrong = `${left} rows or cards of the search are still in the list after its time ran down`;
       else if (now?.state !== "settled") walk.wrong = `removed, the search is ${now?.state}, not settled`;
     }
+    await letClockGo(page);
     await watch.step("wait", s);
   },
   // ["no hand card"]   no card of a clip made by hand is in the list
@@ -1860,15 +1900,22 @@ export const steps = {
     const left = await page.evaluate((ids) => [...document.querySelectorAll("li[data-key]")].filter((li) => ids.includes(li.dataset.key.split("/")[0])).length, hand);
     if (left) walk.wrong = `${left} cards of clips made by hand are in the list`;
   },
-  // ["cancel fades"]  presses Cancel on a search, and two frames on the
-  //                    frame over its window is fading and standing still,
-  //                    with the window at rest under it
+  // ["cancel fades"]  presses Cancel on a search, and in the frame of the
+  //                    press the frame over its window goes, standing
+  //                    still, the window at rest under it, and its fade
+  //                    runs from seen to gone for longer than a glance
   async "cancel fades"(walk, arg, s) {
     const { page, watch } = walk;
-    // Cancel pressed on a search: two frames on, the frame over its
-    // window is fading and standing still, with the window at rest
-    // under it, long before the search has stopped. Tim found it
-    // dropped abruptly, his report of 24 October, 21.42.
+    // Cancel pressed on a search: the frame over its window fades,
+    // standing still, with the window at rest under it, long before the
+    // search has stopped. Tim found it dropped abruptly, his report of
+    // 24 October, 21.42. The press changes the frame before the next
+    // animation frame, so the frame is read the moment the app changes
+    // it and must have changed by then. Its fade is the animation the
+    // browser runs on it, heard as it starts and as it ends. Read two
+    // frames after the press instead, the fade was over: on a busy
+    // runner in WebKit with motion the two frames took 753 ms, and the
+    // fade takes 400, #733.
     const seen = await page.evaluate(
       () =>
         new Promise((done) => {
@@ -1876,21 +1923,59 @@ export const steps = {
           const button = pane.querySelector(".listhead button.search");
           const frames = () => [...document.querySelectorAll(".searched")];
           const before = frames().filter((p) => !p.classList.contains("going")).length;
+          const seen = { before };
+          const frame = frames()[0];
+          let ended = false;
+          const end = (more) => {
+            if (ended) return;
+            ended = true;
+            if (frame) delete frame.animate;
+            changed.disconnect();
+            done({ ...seen, ...more, rest: !!document.querySelector(".aim") });
+          };
+          // The animations started on the frame. The fade is the one
+          // that runs for a while: Svelte starts one of no length first,
+          // and the fade once that has ended. It has to last longer than
+          // six frames at 60 Hz, or it is seen as the frame dropped.
+          if (frame)
+            frame.animate = function (...args) {
+              const animation = Element.prototype.animate.apply(this, args);
+              if ((args[1]?.duration ?? 0) > 0) {
+                seen.started = true;
+                const opacity = animation.effect.getKeyframes().map((k) => Number(k.opacity));
+                const fade = {
+                  fades: this.classList.contains("going") && this.isConnected,
+                  from: opacity[0],
+                  to: opacity.at(-1),
+                  long: animation.effect.getComputedTiming().duration > 100,
+                };
+                animation.finished.then(
+                  () => end({ ...fade, ended: true }),
+                  () => end({ ...fade, ended: false }),
+                );
+              }
+              return animation;
+            };
+          const changed = new MutationObserver(() => {
+            const going = frames().filter((p) => p.classList.contains("going"));
+            const left = frames().length - going.length;
+            // Not changed yet: the frame still stands as it did.
+            if (seen.going === undefined && !going.length && left === before) return;
+            if (seen.going === undefined) Object.assign(seen, { going: going.length, left });
+            // Gone with no fade started on it, cut away.
+            if (!frames().length && !seen.started) end({ fades: false });
+          });
+          changed.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["class"] });
           button.click();
-          requestAnimationFrame(() =>
-            requestAnimationFrame(() =>
-              done({
-                before,
-                going: frames().filter((p) => p.classList.contains("going")).length,
-                left: frames().filter((p) => !p.classList.contains("going")).length,
-                rest: !!document.querySelector(".aim"),
-              }),
-            ),
-          );
+          // By the first frame after the press, the frame has changed.
+          requestAnimationFrame(() => {
+            if (seen.going === undefined) end({ late: true });
+          });
         }),
     );
     if (seen.before !== 1) walk.wrong = `before Cancel, ${seen.before} frames over the window`;
-    else if (seen.going !== 1 || seen.left !== 0 || !seen.rest)
+    else if (seen.late) walk.wrong = "the window's frame did not change in the frame of the press of Cancel";
+    else if (seen.going !== 1 || seen.left !== 0 || !seen.fades || !seen.ended || !seen.long || !(seen.from > seen.to) || seen.to !== 0 || !seen.rest)
       walk.wrong = `the window's frame does not fade at Cancel: ${JSON.stringify(seen)}`;
     await watch.step("head", s);
     return;
@@ -1945,6 +2030,74 @@ export const steps = {
       walk.wrong = `the window drawn is ${drawn.from}–${drawn.to} s, the one kept ${JSON.stringify(kept)}`;
     }
     return;
+  },
+  // ["ends in one frame"]
+  //                    lets the speech go on to a search that hears its
+  //                    window, and from the first frame its end shows,
+  //                    the head no longer saying Cancel or the window
+  //                    marked at rest, every frame shows what the end
+  //                    leaves: the head, the window's marks, no window
+  //                    lit over the track, the playhead and the clip
+  //                    chosen where they end up, never one of them on its
+  //                    way there. Tim saw the window's highlight come, its
+  //                    marks put in place and moved a frame later, and
+  //                    then the clip chosen and the playhead jump to it
+  async "ends in one frame"(walk, arg, s) {
+    const { page, watch } = walk;
+    await page.evaluate(() => {
+      const pane = () => [...document.querySelectorAll("aside")].find((a) => a.querySelector(".listhead"));
+      window.__endsShown = () => {
+        const tip = (sel) => document.querySelector(`.aim .tip.top.${sel}`)?.getAttribute("aria-valuenow") ?? "";
+        const card = pane()?.querySelector("ol li[data-key].current, ol li[data-key] button.pick.current")?.closest("li");
+        return {
+          head: (pane()?.querySelector(".listhead button.search")?.textContent ?? "").replace(/\s+/g, " ").trim(),
+          aim: `${tip("from")}–${tip("to")}`,
+          playhead: document.querySelector(".screen")?.dataset.playhead ?? "",
+          card: card?.dataset.key ?? "",
+          // The window drawn over the track at rest, not waiting for its
+          // search: a frame that fades out as its search ends still
+          // waits, so this is a highlight that came.
+          lit: document.querySelectorAll(".searched .window.frame:not(.waiting)").length,
+        };
+      };
+      window.__ends = new Promise((done) => {
+        const seen = [];
+        let after = -1;
+        const frame = () => {
+          const now = window.__endsShown();
+          seen.push(now);
+          if (after < 0 && now.head !== "Cancel" && now.head !== "Cancelling") after = seen.length;
+          if (after >= 0 && seen.length - after >= 30) return done(seen);
+          requestAnimationFrame(frame);
+        };
+        requestAnimationFrame(frame);
+      });
+    });
+    await control(url, "/speech?go");
+    walk.speechHeld = false;
+    const seen = await page.evaluate(() => window.__ends);
+    // Everything the Go side said by now has been heard and drawn, so
+    // the screen is where the end of the search leaves it.
+    await caughtUp(page, url);
+    const last = await page.evaluate(() => window.__endsShown());
+    const said = (f) => `${f.head}, the window ${f.aim} s${f.lit ? ", lit over the track" : ""}, the playhead at ${f.playhead} s, clip ${f.card || "none"}`;
+    const running = seen[0];
+    const end = seen.findIndex((f) => f.head !== running.head || f.aim !== running.aim);
+    if (running.head !== "Cancel") {
+      walk.wrong = `the head said ${running.head} before the speech went on, so no search was hearing`;
+      return;
+    }
+    if (last.head !== "Search" || !last.card) {
+      walk.wrong = `the search ended on ${said(last)}, not on Search with a clip chosen`;
+      return;
+    }
+    const between = seen.slice(end).filter((f) => said(f) !== said(last));
+    if (between.length) {
+      walk.wrong = `of the ${seen.length - end} frames from the search's end, ${between.length} showed a state on the way: ${[...new Set(between.map(said))].join(" | ")}, before ${said(last)}`;
+      return;
+    }
+    console.log(`      the search's end showed in frame ${end} of ${seen.length}, as ${said(last)}`);
+    await watch.step("ends in one frame", s);
   },
   // ["dots begin at the window"]
   //                    once a search heard its window and the window moved
@@ -2029,7 +2182,7 @@ export const steps = {
 // on either side of it, or stands anywhere but where it is laid out, or
 // null. Removed fills its card from edge to edge and does not move, issue
 // #431. The row is the Removed's offset parent, see li in ClipList.svelte.
-// The app's clock is held while a remove runs, see fakeClock, so a slide
+// The app's clock is held while a remove runs, see holdClock, so a slide
 // in would stand at its start and be read here.
 async function removedStrip(page, row) {
   const boxes = await page.evaluate((sel) => {

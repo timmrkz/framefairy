@@ -79,13 +79,13 @@ func TestTheVideoPreviewsCaptionFileIsTheShorts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	view, err := ClipCaptionsView(disk, plan, "01", words, &Look{Style: style, Source: info})
+	view, err := ClipCaptionsView(planAt(t, disk, plan), "01", words, &Look{Style: style, Source: info})
 	if err != nil {
 		t.Fatal(err)
 	}
 	d := view.Drawing()
 	rs := base.RenderSettings()
-	file, err := e.previewTrack(ctx, t.TempDir(), d, d.drafted(nil), ResolveStyle(d.Style).Font, info, rs.OutW, rs.OutH)
+	file, err := e.previewTrack(ctx, t.TempDir(), d, d.drafted(nil), new(Fonts).Style(d.Style).Font, info, rs.OutW, rs.OutH)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -351,28 +351,25 @@ func TestThoughtIsCountedInTokens(t *testing.T) {
 //
 // On the real disk: a search runs ffmpeg on the episode.
 func TestEverySideOfAComparisonHasItsOwnServer(t *testing.T) {
+	t.Parallel()
 	source := testEpisode(t, "40")
 	var asked int32
 	server := fakeModel(t, &asked)
 	defer server.Close()
 	var started, stopped atomic.Int32
-	was := launch
-	launch = func(_ *Engine, _ context.Context, _ LocalModel, _ int, _ string) (string, func(), error) {
+	machine := memoryUnasked(NewMachine(disk))
+	machine.host.launch = func(_ *Engine, _ context.Context, _ LocalModel, _ int) (string, func(), error) {
 		started.Add(1)
 		var once sync.Once
 		return server.URL, func() { once.Do(func() { stopped.Add(1) }) }, nil
 	}
-	t.Cleanup(func() {
-		StopModels()
-		launch = was
-	})
-	StopModels()
+	t.Cleanup(machine.StopModels)
 	model := filepath.Join(t.TempDir(), "model.gguf")
 	if err := os.WriteFile(model, []byte("gguf"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	var heard int32
-	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), machine)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	opts := DefaultOptions()
 	opts.Source = source

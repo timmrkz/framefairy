@@ -38,7 +38,7 @@ import (
 const listenMost = 10 * 60 * engine.SampleRate
 
 // microphone records, mono at engine.SampleRate. The tests put in one that
-// plays samples, see openMicrophone.
+// plays samples, see listening.mic.
 type microphone interface {
 	// start hands what it records to heard, from a goroutine of its own,
 	// until stop.
@@ -46,11 +46,11 @@ type microphone interface {
 	stop()
 }
 
-// openMicrophone gives the microphone a recording uses.
-var openMicrophone = func() microphone { return &systemMicrophone{} }
-
 // listening holds the recording in hand, at most one at a time.
 type listening struct {
+	// mic gives the microphone a recording uses, the system's when it is
+	// empty. A test hands in one that plays samples.
+	mic   func() microphone
 	mu    sync.Mutex
 	now   *recording
 	count int
@@ -150,8 +150,11 @@ const listenUnheard = 2 * engine.SampleRate
 // CancelListening. Each keeps what it heard apart, so a recording started
 // while the one before is still being written down never takes its sound.
 type recording struct {
-	id      int
-	mic     microphone
+	id  int
+	mic microphone
+	// speech loads the speech model that writes it down, see
+	// speechOpener.
+	speech  func(dir string) (engine.Recognizer, error)
 	started time.Time
 	// act is what the person did that started it, which its log lines
 	// carry, not whatever they are at by the time it is written down.
@@ -282,17 +285,24 @@ func (r *recording) recorded() []float32 {
 	return r.samples
 }
 
-// openSpeech loads the speech model for a recording, the way a job gets
-// it, but one copy of it rather than the pool a transcription hears with,
-// see asr.OpenOne.
-func openSpeech(dir string) (engine.Recognizer, error) {
-	var e engine.Engine
-	setUp(&e, &engine.Options{})
-	if standIns.Load() == nil {
-		e.OpenRecognizer = asr.OpenOne
+// speechOpener is how a recording loads the speech model, the way a job
+// gets it, but one copy of it rather than the pool a transcription hears
+// with, see asr.OpenOne. It is decided as the recording starts.
+func (st *store) speechOpener() func(dir string) (engine.Recognizer, error) {
+	if !st.standingIn() {
+		return asr.OpenOne
 	}
-	return e.OpenRecognizer(dir)
+	fakes := st.standIns
+	return func(dir string) (engine.Recognizer, error) {
+		var e engine.Engine
+		fakes(&e, &engine.Options{})
+		return e.OpenRecognizer(dir)
+	}
 }
+
+// standingIn says whether a test handed the store stand-ins for the
+// models, see standIns.
+func (st *store) standingIn() bool { return st != nil && st.standIns != nil }
 
 // errNoSpeechModel is what Listen says when there is nothing to write
 // down with.
@@ -318,12 +328,16 @@ func (f *FrameFairy) Listen() (int, error) {
 	if dir == "" {
 		dir = engine.DefaultModelDir()
 	}
-	if standIns.Load() == nil && asr.Check(dir) != nil {
+	if !f.store.standingIn() && asr.Check(dir) != nil {
 		return 0, errNoSpeechModel
+	}
+	mic := l.mic
+	if mic == nil {
+		mic = func() microphone { return &systemMicrophone{} }
 	}
 	l.count++
 	l.last = nil
-	r := &recording{id: l.count, mic: openMicrophone(), started: time.Now(), act: theLog.acting(), most: cmp.Or(l.most, listenMost),
+	r := &recording{id: l.count, mic: mic(), speech: f.store.speechOpener(), started: time.Now(), act: theLog.acting(), most: cmp.Or(l.most, listenMost),
 		peak: -200, over: make(chan struct{}), ended: make(chan struct{}), written: make(chan writtenDown, 1)}
 	if err := r.mic.start(r.heard); err != nil {
 		theLog.line(zerolog.WarnLevel, "listen").Err(err).Msg("the microphone could not start")
@@ -391,7 +405,7 @@ func (l *listening) write(r *recording, dir string, every, quiet time.Duration) 
 			l.endItself(r, Dictation{Said: []string{}, Error: out.err.Error()})
 		}
 	}()
-	rec, err := openSpeech(dir)
+	rec, err := r.speech(dir)
 	if err != nil {
 		r.line(zerolog.ErrorLevel).Err(err).Msg("the speech model could not load")
 		out.err = fmt.Errorf("the speech model could not load: %s", err)

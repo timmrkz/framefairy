@@ -1,7 +1,10 @@
 package main
 
 import (
+	"context"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/rs/zerolog"
@@ -33,13 +36,26 @@ import (
 // What changes inside the work folder is the app's own work most of the
 // time, and the sidebar hears of that from the jobs, see listChanged.
 // Then the watch follows the library, when a folder it watches or would
-// watch was made or deleted.
+// watch was made or deleted. A change in the models folder, and every
+// look at the whole library, sends the setup and the settings what they
+// show of the models, see tellSetup.
 func (s *FrameFairy) reconcile(changed []string) {
 	s.reconciling.Lock()
 	defer s.reconciling.Unlock()
 	follow := changed == nil
+	// A model deleted or added outside the app shows in the setup and
+	// the settings at once, and a look at every video looks at the
+	// models too, for whatever the watch could not hear.
+	if models, folder := s.watch.modelsIn(changed); models || changed == nil {
+		// A models folder made is watched before it is read, so a model
+		// written into it in between is heard, issue #722.
+		if folder {
+			s.watch.follow(s.store.files, s.store.Episodes(), s.shortsOf)
+		}
+		s.tellSetup()
+	}
 	for _, ep := range s.store.Episodes() {
-		if changed != nil && !touches(ep, changed) {
+		if changed != nil && !touches(ep, changed) && !touchesShort(s.shortsOf(ep), changed) {
 			continue
 		}
 		if s.letGoIfRemoved(ep) {
@@ -58,10 +74,60 @@ func (s *FrameFairy) reconcile(changed []string) {
 			follow = true
 			s.listChanged(ep)
 		}
+		// A plan written may name a short just rendered, and a short
+		// rendered again replaces the file watched, whose watch its
+		// watcher lets go of, so the new one is watched by the follow
+		// the old one's going brings, see watching.
+		if writesPlan(ep, changed) || touchesShort(s.shortsOf(ep), changed) {
+			follow = true
+		}
 	}
 	if follow {
-		s.watch.follow(s.store.files, s.store.Episodes())
+		s.watch.follow(s.store.files, s.store.Episodes(), s.shortsOf)
 	}
+}
+
+// watchTheDisk starts the watch on the folders of the videos and takes
+// the first look at every one of them, as the app starts and before the
+// window can ask about any. A video deleted outside the app while it was
+// closed is then let go before anything opens it or writes into its
+// folder: Tim deleted two videos with their folders, an earlier version
+// wrote the chosen clip back into one, and the app opened on it after an
+// update and said it was not in the library.
+func (s *FrameFairy) watchTheDisk() {
+	s.watch = newWatching(s.reconcile, engine.ModelsDir())
+	s.reconcile(nil)
+}
+
+// tellSetup sends the window what the setup and the settings show of the
+// models, the way they read it with Setup, when it is not what was sent
+// last: a model copied in by hand is written for minutes, and each write
+// is heard. It runs inside reconcile, whose lock keeps setupSent.
+func (s *FrameFairy) tellSetup() {
+	if s.setupNews == nil {
+		return
+	}
+	state := s.Setup(context.Background())
+	if s.setupSent != nil && reflect.DeepEqual(*s.setupSent, state) {
+		return
+	}
+	s.setupSent = &state
+	s.setupNews(state)
+}
+
+// modelsMade is the app's word to itself that a download may have made
+// the models folder, and the folder over it. The watch follows a folder
+// only once it is there, and on a machine the app never ran on neither
+// is, so without it a model the first run downloaded and Finder deleted
+// later would go on showing until the next look at the library.
+func (s *FrameFairy) modelsMade() {
+	s.reconcile([]string{engine.ModelsDir()})
+}
+
+// shortsOf is the shorts of a video, as its plans say, see
+// engine.Episode.Shorts.
+func (s *FrameFairy) shortsOf(video string) []string {
+	return s.store.machine.Episode(video).Shorts()
 }
 
 // touches says whether a change at one of the paths can change what the
@@ -72,6 +138,30 @@ func touches(video string, changed []string) bool {
 	sep := string(filepath.Separator)
 	for _, p := range changed {
 		if p == video || p == work || strings.HasPrefix(p, work+sep) || strings.HasPrefix(video, p+sep) {
+			return true
+		}
+	}
+	return false
+}
+
+// touchesShort says whether one of the paths is one of a video's shorts,
+// a short deleted or moved in Finder. It is asked only when touches says
+// no, because the shorts are read from the plans.
+func touchesShort(shorts, changed []string) bool {
+	for _, p := range changed {
+		if slices.Contains(shorts, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// writesPlan says whether one of the paths is a plan of video, which a
+// render writes the folder of its short into.
+func writesPlan(video string, changed []string) bool {
+	logs := engine.LogsDir(video)
+	for _, p := range changed {
+		if ok, _ := filepath.Match("clips*.json", filepath.Base(p)); ok && filepath.Dir(p) == logs {
 			return true
 		}
 	}

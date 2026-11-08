@@ -360,3 +360,239 @@ are tables no test sets, and stay tables: a test that asks a company
 hands its machine a network that carries the real addresses to a server
 of its own, `cloud` in `engine/provider_test.go`, and checks the address
 each request was meant for.
+
+## The app's caches and seams, #649 and #650
+
+Added on 5 November 2026, in the pull request that moves them. The
+decision above already says each cache and seam goes onto a field, each
+with its area, and that what the engine learns goes on the machine. What
+was left to decide is where the app's own go, the caches only the app
+keeps and the seams only the app's tests set. Measured on main at
+669dd1a: six caches, `sources`, `unprobed`, `openPreviews`,
+`captionTracks`, `layers` and `failures`, and thirteen seams in nine
+files, which the tests set in 77 places.
+
+### A. Where state lives: one struct of seams on FrameFairy
+
+Every seam goes into one `seams` struct on `FrameFairy`, the way the
+machine holds the engine's. One place to look. But the seams belong to
+parts that `FrameFairy` only holds, `listening`, `chromeWatch`,
+`updating`, `reporting`, and each of those would reach up to the app
+for a field of its own, which none of them does for anything else.
+Loses.
+
+### B. What changes together: a field of the part that uses it
+
+The microphone changes with the recording, the measure of the title bar
+with the watch of the title bar, the .app an update replaces with the
+update. So each seam is a field of the part that uses it, the system's
+own when it is empty, the way `http.Client` keeps its `Transport` and
+the machine keeps its `Runner`. A test sets it on the part it made. The
+caches go the same way: the streams of the video preview keep the
+caption tracks and the tally of layers drawn over them, the log keeps
+the count of the failures it writes, and `FrameFairy` keeps the probes
+and the streams, each ready as its zero value, so the 48 places a test
+makes a `FrameFairy` with a literal make a working one.
+
+Its cost is a seam a test forgets. A field left empty is the system's
+own, so a test that forgets the microphone listens to the real one and
+a test that forgets `showReport` opens Finder. Every test that builds
+the whole app goes through the desk, whose `fit` sets the seams a walk
+reaches, the microphone, the report's folder and Finder, and the
+downloads, so a forgotten seam is left to a test that builds one part by
+hand and calls that part. Such a test names the seam it needs on the
+line beside its call, where a reviewer sees it.
+
+### C. What Go and its libraries already have: options to a constructor
+
+`newFrameFairy(options ...)`, the functional options of many Go
+libraries. A test passes the seams it needs. But `main` builds the app
+in steps, each part handed what the part before it made, and the tests
+build it the same way through the desk. A constructor would be a second
+way to build the app, beside the one both use. Loses.
+
+### D. Who may know about whom: interfaces handed in by main
+
+Each system the app reaches, the microphone, the keychain, Finder, the
+downloads, becomes an interface `main` hands in, and nothing has a
+default. The app then knows nothing of the machine it runs on. But
+every test that makes an app would have to hand in all of them, and a
+test that forgets one gets a nil interface and a panic far from where
+it forgot. The keychain is the one place an interface pays, since two
+methods go together, and there it is used.
+
+### E. What a test has to build: one builder that sets every stand-in
+
+A test should build what it needs in one call and get nothing real by
+accident. So one builder, `testApp(t)`, makes a `FrameFairy` with every
+seam set to a stand-in that fails the test when it is used unasked,
+and a test swaps in the one it means to use. A forgotten seam then
+fails loudly instead of reaching the machine, which B cannot promise.
+But the seams still have to live somewhere the builder can set them,
+which is B's fields, so E is a builder on top of B rather than a home of
+its own. And most tests build one part, a `listening`, an `updating`,
+a `reporting`, not the app, so the builder would grow one variant per
+part. The desk is that builder already for the tests that build the
+whole app. Loses as a home, kept as the desk.
+
+### What converges
+
+B, with D's interface for the keychain, `keychain` in `licence.go`,
+since its two methods are read and written together. The speech and
+language stand-ins are the one seam that is not the app's own part's:
+every engine the app makes is readied by `jobOptions` from the store,
+the job queue, the captions and a recording among them, so they are a
+field of the store, `standIns`, read as a recording starts. What
+ffprobe said of a file was kept twice, by the machine and by the app's
+`sources`, so the app's copy goes and `FrameFairy` keeps only what a
+video was probed as last, for a video whose file has gone. That is not
+the engine's `Episode`'s to keep: an `Episode` holds reads of the work
+folder, each checked against the stamps of the files it came from, and
+drops them when the files change, while what is wanted here is the last
+thing known of a source file that has stopped answering, which only the
+interface asks for. `stopWait`
+was never set by a test, so it is a constant.
+
+What stays a package variable on purpose, each with why:
+
+- `theLog`, the build's version and channel, the embedded interface and
+  the update key, which are the program's by nature.
+- `theProbe` in `probe_outside.go`, which only the build for the checks
+  from outside has, one listener on a fixed port for the one app.
+- Tables that never change, `recordingEndings`,
+  `transcriptFormats`, `pictureID`.
+- In the engine, `disk`, the real disk, which is never swapped,
+  `DecoderSaid`, the app's log for the decoder's lines, set once by
+  `main`, `fileio.locks` and `tool.sums`, see above, and the tables of
+  the hyphenation, the fillers and the recipes.
+- The font shelf in `engine/machinefonts.go`, which is a cache and a
+  seam, and is what #607 has left. Its fonts are read by the caption
+  code wherever a style is resolved, so moving it reaches every caller
+  of `FontByName`, `FontBytes` and `InstallFont`, and is a change of its
+  own, made in #728, see the next section.
+
+## The font shelf, #728
+
+Added on 6 November 2026, after #720 left the shelf as the last package
+variable #607 names. Tim chose to keep #607 open for it and move it in a
+pull request of its own. Measured on main at 3b46bbc: `shelf` in
+`engine/machinefonts.go` holds the font folders, the faces found in them
+and the metrics read of each face. It is read by 35 lines of shipped code
+in 15 files and by about 90 lines of tests, and two tests swap it for the
+whole process with `UseFontFolders`, so they run alone.
+
+What makes it more than a field to move: the shelf is read from code that
+holds no machine. `ResolveStyle` asks it whether the font a style names is
+there, and falls back to ours when it is not. `TextWidth`, `FontScale` and
+`Thickening` read a face's metrics through it. Through those, the word
+model's pure functions reach it, `Gesture.change` and `captionsGo` in
+`shape.go`, `ClipDrawing` and `captionsView` in `episode.go`,
+`SetCaptionStyle` in `edit.go`, none of which has an engine.
+
+### A. Where state lives: a field of the machine, and every caller takes it
+
+`Machine.Fonts`, ready as its zero value, holds what the shelf holds, and
+every function that reads it takes the machine: `ResolveStyle(m, style)`,
+`TextWidth(m, ...)`, down to the gesture. Plain and complete, but the
+machine then runs through the word model, which is pure on purpose, so a
+gesture could read the disk. And a test of a gesture needs a machine for
+no reason of its own. Loses.
+
+### B. What changes together: the face is resolved once, with the style
+
+What a caption needs of its face, its name, whether it was missing, its
+weight, its alias for libass and its metrics, changes together with the
+style that names it. So `Fonts.Style(overrides)` on the machine resolves
+the style and its face in one step, and the `Style` carries a `Face`, a
+small value with the face's metrics. Everything after works from the
+`Style` it is handed, the word model included, with no lookup of its own.
+The machine resolves where one is at hand: an `Engine`, an `Episode`, the
+app. The pure functions that resolve a plan's style today, like
+`Gesture.change` and `captionsGo`, are handed the resolved `Style` by
+their caller instead, which costs each one an argument but no machine.
+`captionsView` already takes a `Look`, which carries it.
+
+### C. What Go and its libraries already have: an interface handed in
+
+A `FontSource` interface, the way `fs.FS` stands for files, handed to
+whatever measures text. The machine's shelf implements it and a test hands
+in a map. It keeps the pure functions free of the machine, but every one
+of them gains an argument, as in A, only typed as an interface, and the
+metrics cache has to sit behind it as well. Loses to B, which hands the
+pure functions nothing new.
+
+### D. Who may know about whom: a snapshot of the fonts
+
+The machine hands out the faces found as an immutable snapshot, replaced
+whole when the folders are read again, the way `atomic.Pointer` replaces a
+config. Readers never lock. It is how the shelf should keep its faces
+inside, and B keeps it that way: `Machine.Fonts` swaps its snapshot on
+`RefreshFonts`. As a design of its own it says nothing about how the
+snapshot reaches the pure functions, which is the question. Taken into B.
+
+### E. What a test has to build: the bundled faces with nothing to set
+
+A test of captions should see our bundled faces with nothing to build, and
+a test of the machine's fonts should put faces in memory without touching
+any other test. B gives both: a `Fonts` zero value offers the bundled
+faces only, and a test of the machine's fonts makes a machine of its own
+and points its `Fonts` at a memory folder. `UseFontFolders` goes, so the
+two tests that set it run side by side.
+
+### What converges
+
+B, with D's snapshot inside `Fonts`. The shelf becomes `Machine.Fonts`.
+`Style` carries its `Face`, and the word model reads metrics from it.
+`UseMachineFonts` and `RefreshFonts` become methods of `Fonts`, called by
+`main` on the program's machine. The app's font list and the window's
+font requests ask the store's machine. Done when no package variable in
+`engine/` or `cmd/framefairy-app/` holds a cache or a seam, which closes
+#607.
+
+### What was built, and where it left the design
+
+`Machine.Fonts` is the shelf, a value ready as its zero value, which offers
+the bundled faces alone. `UseSystem` points it at the machine's font
+folders, and `Use` at any others, a test's in memory. `FontByName`,
+`FontBytes`, `InstallFont`, `CaptionFonts` and the rest became its
+methods, and `ResolveStyle` became `Fonts.Style`. `UseFontFolders`,
+`UseMachineFonts` and `RefreshFonts` are gone, and the tests of the
+machine's fonts each make a `Fonts` of their own and run side by side.
+
+Two things came out otherwise than B said, once the code was read call by
+call:
+
+- A `Style` carries the `Fonts` it was resolved by, not a `Face` value.
+  The caption code asks for faces by name after the style is resolved:
+  the room for a line measures the style's face, and a caption file
+  installs it beside itself for libass. A `Face` would have to carry the
+  face's file as well as its metrics. Carrying the `Fonts` gives the
+  later steps the same faces the style was resolved against, with no
+  second lookup path.
+- The exported functions that resolve a plan's style, `ShapeClip`,
+  `Reshape`, `ClipDrawing` and `SetCaptionStyle`, take a `*Fonts` rather
+  than a resolved `Style`. `Reshape` reads the plan itself, so its caller
+  has no style to hand it, and `SetCaptionStyle` checks the values it is
+  given, a font among them, against the faces there are. `ShapeClip` and
+  `Reshape` resolve the clip's style once and hand it to `Gesture.change`
+  and `captionsGo`, which take the `Style`, as B said. That is the cost C
+  named, an argument each, but typed as the one concrete thing, and nil
+  offers the bundled faces, so a test of a gesture still builds nothing.
+  `captionsView` reads it from its `Look`.
+
+A was rejected because a gesture could read the disk. With this design it
+still can, the first time it asks for a face of the machine, which reads
+the font folders once and the face's file once. That is no worse than the
+shelf, and nothing of a video is read.
+
+What the faces the program carries measure is read once for the program,
+in `bundledMetrics` in `engine/metrics.go`, whichever `Fonts` asks, a nil
+one too. Like the hyphenation patterns, it is read from files built into
+the program and is the same for every machine and every test, so it is
+no cache one machine fills for another. Without it, a nil `Fonts` read
+Inter Black again for every line it measured, and `FuzzPlanEdits` took
+twice as long.
+
+D's snapshot was left out. `Fonts` keeps the lock the shelf had, because
+nothing showed readers waiting on it, and the change was large enough
+without it.

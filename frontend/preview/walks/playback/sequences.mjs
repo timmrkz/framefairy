@@ -4,15 +4,26 @@
 // for the steps of every folder. See ../sequences.mjs.
 export default [
   {
+    // #717, Tim's idea: the video preview leaves a faint reflection at the
+    // foot of the workspace, as if the video shone towards him, and it
+    // lies behind every control, so nothing that is read or worked with
+    // changes. The two cameras' backdrops and subjects make the quarters
+    // of the picture differ, so the reflection has to hold this picture.
+    name: "the video preview leaves a faint reflection at the foot of the workspace, behind the controls",
+    steps: [
+      ["add cameras", 30, 12],
+      ["wait for", "Search"],
+      ["reflection"],
+    ],
+  },
+  {
     // Tim's idea (2.269): paused, the frames of the word after the playhead
     // and of the word before are read while the hand rests, so Shift and an
     // arrow find their frame there. Before, a step to the next word read on
     // in the open stream, or opened one, while the hand waited.
     name: "a step to the word beside finds its frame read while the hand rested",
     steps: [
-      ["add", 40, "25"],
-      ["wait for", "Search"],
-      ["cards", 1],
+      ["added", 40, "25"],
       ["heard"],
       ["read ahead", "Shift+ArrowRight"],
       ["read ahead", "Shift+ArrowRight"],
@@ -68,9 +79,7 @@ export default [
     // lies where the two rules used to part.
     name: "the video preview on a clip's edges shows the frames its short starts and ends on",
     steps: [
-      ["add", 40, "30000/1001", "late"],
-      ["wait for", "Search"],
-      ["cards", 1],
+      ["added", 40, "30000/1001", "late"],
       ["trim", "start", 20],
       ["cut at", 0.3],
       ["cut at", 0.7],
@@ -89,9 +98,7 @@ export default [
     // of their own, as in the walk on a clip's edges above.
     name: "a video in Matroska shows in the video preview the frames its short has",
     steps: [
-      ["add", 40, "30000/1001", "late", "mkv"],
-      ["wait for", "Search"],
-      ["cards", 1],
+      ["added", 40, "30000/1001", "late", "mkv"],
       ["trim", "start", 20],
       ["cut at", 0.3],
       ["cut at", 0.7],
@@ -110,9 +117,7 @@ export default [
     // this the app.
     name: "a short of a phone's uneven frames shows what the video preview shows",
     steps: [
-      ["add", 40, "30000/1001", "uneven"],
-      ["wait for", "Search"],
-      ["cards", 1],
+      ["added", 40, "30000/1001", "uneven"],
       ["cut at", 0.3],
       ["cut at", 0.7],
       ["cuts", 2],
@@ -131,9 +136,7 @@ export default [
     // the app.
     name: "a part of a phone's video rotated with R stands up in the video preview and in its short",
     steps: [
-      ["add", 30, "25", "turned"],
-      ["wait for", "Search"],
-      ["cards", 1],
+      ["added", 30, "25", "turned"],
       ["cut at", 0.5],
       ["cuts", 1],
       ["hold", "RotatePart"],
@@ -150,9 +153,7 @@ export default [
     // sound from where the picture starts.
     name: "a short of a picture that starts after its sound shows what the video preview shows",
     steps: [
-      ["add", 40, "30000/1001", "late"],
-      ["wait for", "Search"],
-      ["cards", 1],
+      ["added", 40, "30000/1001", "late"],
       ["trim", "start", -60],
       ["cut at", 0.3],
       ["cut at", 0.7],
@@ -236,6 +237,16 @@ export default [
       ["loop off near the end", 2],
       ["stopped at its end"],
     ],
+  },
+  {
+    // The loop switched on while the clip played, let go round and
+    // switched off in the second time through stopped the play at the
+    // end. The next play of the clip, from a moment before its end with
+    // the loop off, went on round it: it kept the program of the play
+    // before, which was to end after the second time through. A busy
+    // runner in WebKit found it, #380.
+    name: "a play after the loop was switched off on the way plays the clip once",
+    steps: [["loop off, then again", 3]],
   },
   {
     // Tim switched the loop on early in a clip with a cut, let it run, and
@@ -366,10 +377,8 @@ export default [
       ["share", "5", "past the cut"],
       ["share", "9"],
       ["share", "0"],
-      ["press", "Space"],
-      ["share", "5"],
-      ["press", "Space"],
-      ["share", "9"],
+      ["share", "5", "playing"],
+      ["share", "9", "playing"],
       ["share", "5", "from the video"],
       ["share", "0"],
       ["share", "5", "in a word"],

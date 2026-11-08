@@ -384,7 +384,7 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 			return b.chrome, nil
 		},
 	}
-	mux.Handle("/call", callHandler(svc, own, b.held, b.fresh.Load))
+	mux.Handle("/call", b.calls.serve(callHandler(svc, own, b.held, b.fresh.Load)))
 	mux.Handle("/events", b.d.bus)
 	answer := func(w http.ResponseWriter, v any, err error) {
 		if err != nil {
@@ -395,7 +395,17 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		_ = json.NewEncoder(w).Encode(v)
 	}
 	mux.HandleFunc("/reset", func(w http.ResponseWriter, r *http.Request) {
-		answer(w, nil, b.reset())
+		if err := b.reset(); err != nil {
+			answer(w, nil, err)
+			return
+		}
+		if !r.URL.Query().Has("seconds") {
+			answer(w, nil, nil)
+			return
+		}
+		q := r.URL.Query()
+		path, err := b.startWith(q.Get("seconds"), q.Get("rate"), q.Get("timing"), q.Get("in") == "mkv")
+		answer(w, path, err)
 	})
 	// A mark sent down the events behind everything the Go side told the
 	// interface before it. A page that has heard the mark has heard all
@@ -407,6 +417,29 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		n := b.marks.Add(1)
 		b.d.bus.send("mark", n)
 		answer(w, n, nil)
+	})
+	// The clock removed work is timed by, run on by run milliseconds,
+	// with every call due by then made before it answers, the way a walk
+	// runs the page's clock on, see runClock in walks/bridge.mjs.
+	mux.HandleFunc("/clock", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		if q.Has("hold") {
+			b.d.time.hold()
+			answer(w, true, nil)
+			return
+		}
+		if q.Has("go") {
+			b.d.time.letGo()
+			answer(w, true, nil)
+			return
+		}
+		ms, err := strconv.Atoi(q.Get("run"))
+		if err != nil || ms < 0 {
+			http.Error(w, "run says how many milliseconds to run the clock on", http.StatusBadRequest)
+			return
+		}
+		b.d.time.run(time.Duration(ms) * time.Millisecond)
+		answer(w, ms, nil)
 	})
 	mux.HandleFunc("/pick", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
@@ -639,6 +672,13 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		}
 		answer(w, nil, b.makeFresh(memory<<30))
 	})
+	// A model deleted outside the app, the way Tim removed one from the
+	// models folder in Finder: the first of the kind, "language" or
+	// "speech", that is here. It answers the model's name.
+	mux.HandleFunc("/model-gone", func(w http.ResponseWriter, r *http.Request) {
+		name, err := modelGone(r.URL.Query().Get("kind"))
+		answer(w, name, err)
+	})
 	mux.HandleFunc("/reopen", func(w http.ResponseWriter, r *http.Request) {
 		closed, err := b.reopen()
 		answer(w, closed, err)
@@ -655,10 +695,30 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		answer(w, true, nil)
 	})
 	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mediaMiddleware(b.d.svc.store)(reportMiddleware(b.d.svc.report)(http.FileServer(http.Dir(dist)))).ServeHTTP(w, r)
+		mediaMiddleware(b.d.svc)(reportMiddleware(b.d.svc.report)(http.FileServer(http.Dir(dist)))).ServeHTTP(noStore{w}, r)
 	}))
 	return mux
 }
+
+// noStore has the page fetch every file of the bridge again, whatever the
+// app says it may keep, like a font for a day. A walker opens sequence
+// after sequence on one page, see openAgain in walks/bridge.mjs, and a
+// sequence then finds what it needs the way a new page does, whichever
+// sequence walked before it.
+type noStore struct{ http.ResponseWriter }
+
+func (w noStore) WriteHeader(code int) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w noStore) Write(p []byte) (int, error) {
+	w.Header().Set("Cache-Control", "no-store")
+	return w.ResponseWriter.Write(p)
+}
+
+// Unwrap hands http.ResponseController the writer underneath.
+func (w noStore) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 // prose is the stand-in speech model of the bridge. It says sentences
 // rather than one word over and over, so a word on screen twice, or one
@@ -942,6 +1002,76 @@ type bridge struct {
 	// arrive lets the download of a kind of model, "speech" or "clip",
 	// arrive, closed by the walk, see arriving.
 	arrive map[string]chan struct{}
+	// calls are the page's calls running in the Go side, which the reset
+	// waits for, see pageCalls.
+	calls pageCalls
+	// prepared is the folder the bridges of the walks keep the videos
+	// they started a walk with in, see startWith, or "" for this
+	// bridge's own.
+	prepared string
+}
+
+// pageCalls are the calls of a page the Go side is running. A walk's page
+// is closed before the next walk resets the bridge, and a call it had sent
+// runs on in the Go side all the same: the page going away does not stop
+// a method, and a call held at a gate is let through when the reset opens
+// the gates. Such a call wrote into a video's work folder while the reset
+// removed it, and the reset failed with "directory not empty", issue
+// #709. The reset waits for every call that runs, and a call that comes
+// while it resets is the page's before it and is turned away, the way the
+// app's process ending takes its calls with it.
+type pageCalls struct {
+	mu       sync.Mutex
+	running  int
+	stopping bool
+	// idle is closed once the last call that runs has ended, while a
+	// reset waits for it.
+	idle chan struct{}
+}
+
+// serve runs a call, unless a reset is running.
+func (c *pageCalls) serve(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c.mu.Lock()
+		if c.stopping {
+			c.mu.Unlock()
+			http.Error(w, "the page that made this call was left behind by a reset", http.StatusGone)
+			return
+		}
+		c.running++
+		c.mu.Unlock()
+		defer func() {
+			c.mu.Lock()
+			defer c.mu.Unlock()
+			c.running--
+			if c.running == 0 && c.idle != nil {
+				close(c.idle)
+				c.idle = nil
+			}
+		}()
+		h.ServeHTTP(w, r)
+	})
+}
+
+// stop waits for every call that runs to end, and turns away every call
+// that comes until done is called.
+func (c *pageCalls) stop() (done func()) {
+	c.mu.Lock()
+	c.stopping = true
+	var idle chan struct{}
+	if c.running > 0 {
+		c.idle = make(chan struct{})
+		idle = c.idle
+	}
+	c.mu.Unlock()
+	if idle != nil {
+		<-idle
+	}
+	return func() {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		c.stopping = false
+	}
 }
 
 // updatesAs gives the app updates the way a walk asks for them: a build
@@ -1051,11 +1181,11 @@ func openBridge(t *testing.T) *bridge {
 		o.Width, o.Height = 360, 640
 		o.Preset = "ultrafast"
 	}
-	standIns.Store(&fakes)
+	d.fakes = fakes
 	// A font installed on the bridge's computer: Anton under a name of its
 	// own, so the Font list has a face of the machine to offer, and libass
 	// and the word typed are drawn from its copy.
-	anton, _ := engine.FontBytes("Anton")
+	anton, _ := new(engine.Fonts).Bytes("Anton")
 	narrow, err := engine.NamedFace(anton, "Bridge Narrow")
 	if err != nil {
 		t.Fatal(err)
@@ -1068,8 +1198,8 @@ func openBridge(t *testing.T) *bridge {
 	// Inter Black, so picking it keeps the look of the face it replaces.
 	// And enough families after it for the list to be longer than it may
 	// be tall, the way a Mac's is, which is when its rows were squeezed.
-	inter, _ := engine.FontBytes(engine.DefaultFont)
-	archivo, _ := engine.FontBytes("Archivo Black")
+	inter, _ := new(engine.Fonts).Bytes(engine.DefaultFont)
+	archivo, _ := new(engine.Fonts).Bytes("Archivo Black")
 	faces := map[string][]byte{}
 	if faces["Bridge Sans.ttf"], err = engine.StyledFace(archivo, "Bridge Sans", "Regular"); err != nil {
 		t.Fatal(err)
@@ -1088,8 +1218,6 @@ func openBridge(t *testing.T) *bridge {
 			t.Fatal(err)
 		}
 	}
-	engine.UseFontFolders(installed, []string{"/Library/Fonts"})
-	t.Cleanup(func() { engine.UseFontFolders(nil, nil) })
 	// Dictate on Report a Problem records the bridge's microphone, at the
 	// pace the walk asks for it, see sound and /microphone. Once the
 	// person has fallen silent and the phrase they were on is said, the
@@ -1100,49 +1228,79 @@ func openBridge(t *testing.T) *bridge {
 	d.still = snd.still
 	d.beats = snd.beats()
 	d.told = snd.tell
-	openMicrophone = snd.open
 	// The desk is started again with a bus, before anything is in it.
 	d.svc.jobs.shutDown()
 	d.svc.watch.stop()
+	d.svc.store.standIns = fakes
 	d.bus = newBus()
 	// The bridge's microphone talks for as long as a walk takes steps of
 	// a recording, so one also stops after a minute, 600 steps, long after
 	// every sequence has heard what it waits for, and a walk waiting for
 	// more words ends there.
 	d.most = 60 * engine.SampleRate
-	d.start(d.svc.store)
-	// A report goes on the bridge's own Desktop and is shown nowhere.
-	reportFolder = func() string {
-		desk := filepath.Join(d.home, "Desktop")
-		_ = os.MkdirAll(desk, 0o755)
-		return desk
-	}
-	showReport = func(string) error { return nil }
+	d.time = newWalkTime()
 	b := &bridge{t: t, d: d, words: words, sound: snd, first: filepath.Join(d.home, "erste-erinnerung.mp4"), kept: t.TempDir(),
 		gates: map[string]*gate{}, fails: map[string]string{}}
-	// What the first run downloads, once a walk made the machine new.
-	// What arrives is as much of a model as the app looks for.
-	installSpeech = func(_ *engine.Machine, ctx context.Context, log *runlog.Log, m engine.SpeechModel, dir string) error {
-		return b.arriving(ctx, log, "speech", m.Download, func() error {
-			if err := os.MkdirAll(filepath.Join(dir, m.Name), 0o755); err != nil {
-				return err
-			}
-			return os.WriteFile(filepath.Join(dir, m.Name, "tokens.txt"), []byte("the stand-in hears\n"), 0o644)
-		})
+	d.fit = func(svc *FrameFairy) {
+		// Every opening of the app finds the fonts installed on the
+		// bridge's computer.
+		svc.store.machine.Fonts.Use(installed, []string{"/Library/Fonts"})
+		svc.listening.mic = snd.open
+		// A report goes on the bridge's own Desktop and is shown nowhere.
+		svc.reportFolder = func() string {
+			desk := filepath.Join(d.home, "Desktop")
+			_ = os.MkdirAll(desk, 0o755)
+			return desk
+		}
+		svc.showReport = func(string) error { return nil }
+		// What the first run downloads, once a walk made the machine new.
+		// What arrives is as much of a model as the app looks for, and it
+		// lands the way the engine's download lands it: written under a
+		// name of its own and renamed into place whole.
+		svc.installSpeech = func(_ *engine.Machine, ctx context.Context, log *runlog.Log, m engine.SpeechModel, dir string) error {
+			return b.arriving(ctx, log, "speech", m.Download, func() error {
+				staging := filepath.Join(dir, m.Name+".unpacking")
+				if err := os.MkdirAll(staging, 0o755); err != nil {
+					return err
+				}
+				if err := os.WriteFile(filepath.Join(staging, "tokens.txt"), []byte("the stand-in hears\n"), 0o644); err != nil {
+					return err
+				}
+				return os.Rename(staging, filepath.Join(dir, m.Name))
+			})
+		}
+		svc.installLanguage = func(_ *engine.Machine, ctx context.Context, log *runlog.Log, m engine.LanguageModel, dir string) error {
+			return b.arriving(ctx, log, "clip", m.Download, func() error {
+				if err := os.MkdirAll(dir, 0o755); err != nil {
+					return err
+				}
+				part := filepath.Join(dir, m.Name+".part")
+				if err := os.WriteFile(part, []byte("GGUF, the stand-in finds clips"), 0o644); err != nil {
+					return err
+				}
+				return os.Rename(part, filepath.Join(dir, m.Name))
+			})
+		}
 	}
-	installLanguage = func(_ *engine.Machine, ctx context.Context, log *runlog.Log, m engine.LanguageModel, dir string) error {
-		return b.arriving(ctx, log, "clip", m.Download, func() error {
-			if err := os.MkdirAll(dir, 0o755); err != nil {
-				return err
-			}
-			return os.WriteFile(filepath.Join(dir, m.Name), []byte("GGUF, the stand-in finds clips"), 0o644)
-		})
-	}
+	// The setup the app sends when the models change is the bridge's
+	// machine's, like the one every call answers with, so the desk starts
+	// again only once it knows the bridge.
+	d.setup = func(state SetupState) SetupState { return standInsSetup(state, b.fresh.Load()) }
+	d.start(d.svc.store)
+	b.prepared = os.Getenv("FRAMEFAIRY_BRIDGE_PREPARED")
 	fixtures.Copy(t, "walk-120s.mp4", b.first)
-	if added, err := d.svc.addEpisodes([]string{b.first}); err != nil || len(added) != 1 {
-		t.Fatalf("adding %s: %v", b.first, err)
+	if from := os.Getenv("FRAMEFAIRY_BRIDGE_FROM"); from != "" {
+		// The episode as another bridge of the same walks heard and
+		// searched it, so the six bridges of a job do that work once.
+		if err := b.takeHome(from); err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		if added, err := d.svc.addEpisodes([]string{b.first}); err != nil || len(added) != 1 {
+			t.Fatalf("adding %s: %v", b.first, err)
+		}
+		d.idle(b.first)
 	}
-	d.idle(b.first)
 	if len(d.clips(b.first)) == 0 {
 		t.Fatalf("the episode has no clip to work on: %+v", d.svc.jobs.list())
 	}
@@ -1152,7 +1310,252 @@ func openBridge(t *testing.T) *bridge {
 		}
 	}
 	b.said = words.at()
+	if keep := os.Getenv("FRAMEFAIRY_BRIDGE_KEEP"); keep != "" {
+		if err := b.keepHome(keep); err != nil {
+			t.Fatal(err)
+		}
+	}
 	return b
+}
+
+// startWith puts a second video in the app reset a moment ago, heard and
+// searched, the way Add and its first search leave it, for a walk that
+// only needs a video of this kind to work on: seconds long, filmed at
+// rate, with its frames timed by timing and in Matroska with mkv, see
+// pick. It says where the video is. The first bridge of the walks to be
+// asked for a kind adds it and keeps what the app made of it in the
+// folder FRAMEFAIRY_BRIDGE_PREPARED names, and every bridge after it
+// puts that back, so the work of hearing and searching it is done once
+// for all of them. Two bridges asked at once both add it, and the folder
+// keeps the first, which holds the same. Either way the app is opened
+// again on what is on the disk, so a walk finds the same app whichever
+// bridge made the video.
+//
+// On the real disk: the bridges of the walks are processes of their own, and ffmpeg reads the video.
+func (b *bridge) startWith(seconds, rate, timing string, mkv bool) (string, error) {
+	n, err := strconv.Atoi(seconds)
+	if err != nil || n < 10 || n > 3600 {
+		return "", fmt.Errorf("%q is no length of a video to start with", seconds)
+	}
+	if rate != "" && !frameRate.MatchString(rate) {
+		return "", fmt.Errorf("%q is no frame rate", rate)
+	}
+	if timing != "" && timing != "uneven" && timing != "late" && timing != "turned" {
+		return "", fmt.Errorf("%q is no timing of frames", timing)
+	}
+	file := walkFixture(n, rate, 0, timing, false)
+	if mkv {
+		file = strings.TrimSuffix(file, ".mp4") + ".mkv"
+	}
+	// Named by its kind, so it never meets a video a walk picks next,
+	// folge-1 and on.
+	path := filepath.Join(b.d.home, file)
+	if err := fixtures.CopyTo(file, path); err != nil {
+		return "", err
+	}
+	prepared := b.prepared
+	if prepared == "" {
+		prepared = filepath.Join(b.kept, "prepared")
+	}
+	if err := os.MkdirAll(prepared, 0o755); err != nil {
+		return "", err
+	}
+	kept := filepath.Join(prepared, file)
+	work := filepath.Base(workOf(path))
+	if _, err := os.Stat(kept); err == nil {
+		if err := b.stopForTheDisk(); err != nil {
+			return "", err
+		}
+		home, err := os.ReadFile(filepath.Join(kept, "home"))
+		if err != nil {
+			return "", err
+		}
+		said, err := os.ReadFile(filepath.Join(kept, "said"))
+		if err != nil {
+			return "", err
+		}
+		next, err := strconv.Atoi(string(said))
+		if err != nil {
+			return "", err
+		}
+		// The library names both videos, so the settings come back whole.
+		if err := os.RemoveAll(filepath.Join(b.d.home, "config")); err != nil {
+			return "", err
+		}
+		for _, dir := range []string{work, "config"} {
+			if err := copyHomed(filepath.Join(kept, dir), filepath.Join(b.d.home, dir), string(home), b.d.home); err != nil {
+				return "", err
+			}
+		}
+		if err := takeStamp(kept, path); err != nil {
+			return "", err
+		}
+		b.words.from(next)
+	} else {
+		added := b.d.svc.takeFiles("add", []string{path})
+		if added.Error != "" || len(added.Added) != 1 {
+			return "", fmt.Errorf("adding %s: %s", file, added.Error)
+		}
+		b.d.idle(path)
+		if len(b.d.clips(path)) == 0 {
+			return "", fmt.Errorf("%s has no clip once searched: %+v", file, b.d.svc.jobs.list())
+		}
+		if err := b.stopForTheDisk(); err != nil {
+			return "", err
+		}
+		staging, err := os.MkdirTemp(filepath.Dir(kept), file+".")
+		if err != nil {
+			return "", err
+		}
+		for _, dir := range []string{work, "config"} {
+			if err := os.CopyFS(filepath.Join(staging, dir), os.DirFS(filepath.Join(b.d.home, dir))); err != nil {
+				return "", err
+			}
+		}
+		if err := os.WriteFile(filepath.Join(staging, "said"), []byte(strconv.Itoa(b.words.at())), 0o644); err != nil {
+			return "", err
+		}
+		if err := os.WriteFile(filepath.Join(staging, "home"), []byte(b.d.home), 0o644); err != nil {
+			return "", err
+		}
+		if err := keepStamp(staging, path); err != nil {
+			return "", err
+		}
+		// Whole or not at all. Another bridge that kept it first keeps
+		// its own, which holds the same.
+		if err := os.Rename(staging, kept); err != nil {
+			_ = os.RemoveAll(staging)
+		}
+	}
+	b.d.openAgainOnTheSameComputer()
+	b.d.idle(path)
+	return path, nil
+}
+
+// stopForTheDisk stops the work and the watch on the folders of the app,
+// the way reset does before it puts the folders back, so the app does not
+// hear its own folders being written.
+func (b *bridge) stopForTheDisk() error {
+	if !b.d.svc.jobs.shutDown() {
+		return fmt.Errorf("the app did not stop its work in time")
+	}
+	b.d.svc.levels.shutDown()
+	b.d.svc.watch.stop()
+	return nil
+}
+
+// keepHome writes the episode's work folder and the app's settings as
+// they were once the episode was first searched into dir, with the word
+// the speech stand-in says next then and the home they name, for the
+// other bridges of the walks to start from, see takeHome.
+//
+// On the real disk: the bridges of the walks are processes of their own.
+func (b *bridge) keepHome(dir string) error {
+	staging := dir + ".writing"
+	if err := os.CopyFS(staging, os.DirFS(b.kept)); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(staging, "said"), []byte(strconv.Itoa(b.said)), 0o644); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(staging, "home"), []byte(b.d.home), 0o644); err != nil {
+		return err
+	}
+	if err := keepStamp(staging, b.first); err != nil {
+		return err
+	}
+	// Whole or not at all: a bridge that finds the folder finds all of it.
+	return os.Rename(staging, dir)
+}
+
+// takeHome puts the episode's work folder and the app's settings another
+// bridge kept with keepHome in this bridge's home, the home they name
+// written as this one's, and opens the app again on them, with the speech
+// stand-in going on from the word that bridge's went on from.
+//
+// On the real disk: the bridges of the walks are processes of their own.
+func (b *bridge) takeHome(dir string) error {
+	said, err := os.ReadFile(filepath.Join(dir, "said"))
+	if err != nil {
+		return err
+	}
+	n, err := strconv.Atoi(string(said))
+	if err != nil {
+		return err
+	}
+	home, err := os.ReadFile(filepath.Join(dir, "home"))
+	if err != nil {
+		return err
+	}
+	b.d.svc.watch.stop()
+	if err := takeStamp(dir, b.first); err != nil {
+		return err
+	}
+	for _, name := range []string{filepath.Base(workOf(b.first)), "config"} {
+		if err := copyHomed(filepath.Join(dir, name), filepath.Join(b.d.home, name), string(home), b.d.home); err != nil {
+			return err
+		}
+	}
+	b.words.from(n)
+	b.d.openAgainOnTheSameComputer()
+	b.d.idle(b.first)
+	return nil
+}
+
+// keepStamp writes when the video was last changed into dir, for
+// takeStamp. The transcript is stamped with it, so a copy of the video
+// with a time of its own is a video never heard.
+//
+// On the real disk: the bridges of the walks are processes of their own.
+func keepStamp(dir, video string) error {
+	info, err := os.Stat(video)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "modified"), []byte(strconv.FormatInt(info.ModTime().UnixNano(), 10)), 0o644)
+}
+
+// takeStamp gives the video the time keepStamp wrote into dir.
+//
+// On the real disk: the bridges of the walks are processes of their own.
+func takeStamp(dir, video string) error {
+	kept, err := os.ReadFile(filepath.Join(dir, "modified"))
+	if err != nil {
+		return err
+	}
+	n, err := strconv.ParseInt(string(kept), 10, 64)
+	if err != nil {
+		return err
+	}
+	at := time.Unix(0, n)
+	return os.Chtimes(video, at, at)
+}
+
+// copyHomed copies the folder from to the folder to, with every file
+// that names the home it was made in, from, naming home instead: the
+// library and the settings hold the paths of the videos and folders in
+// it.
+//
+// On the real disk: it copies what one bridge made into another's home.
+func copyHomed(from, to, was, home string) error {
+	return filepath.WalkDir(from, func(path string, e os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(from, path)
+		if err != nil {
+			return err
+		}
+		dst := filepath.Join(to, rel)
+		if e.IsDir() {
+			return os.MkdirAll(dst, 0o755)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(dst, bytes.ReplaceAll(data, []byte(was), []byte(home)), 0o644)
+	})
 }
 
 func workOf(video string) string {
@@ -1400,7 +1803,9 @@ func (b *bridge) makeFresh(memory int64) error {
 	b.arrive = map[string]chan struct{}{"speech": make(chan struct{}), "clip": make(chan struct{})}
 	b.mu.Unlock()
 	b.fresh.Store(&freshMachine{memory: memory})
-	if err := os.RemoveAll(engine.ModelsDir()); err != nil {
+	// The folder over the models goes too: the app never ran here, so
+	// the first run's download makes both, see modelsMade.
+	if err := os.RemoveAll(filepath.Dir(engine.ModelsDir())); err != nil {
 		return err
 	}
 	if err := b.d.svc.RemoveEpisode(b.first, false); err != nil {
@@ -1410,6 +1815,32 @@ func (b *bridge) makeFresh(memory int64) error {
 	return b.d.svc.store.UpdateSettings(func(s *Settings) {
 		s.Planner, s.Chosen, s.LLMModel = planner, false, ""
 	})
+}
+
+// modelGone deletes the first model of a kind that is here, "language" or
+// "speech", from the models folder, the way Finder does, and says which.
+//
+// On the real disk: the models folder is the one the app watches, in the
+// bridge's home.
+func modelGone(kind string) (string, error) {
+	dir := engine.ModelsDir()
+	switch kind {
+	case "language":
+		for _, m := range engine.LanguageModels() {
+			if m.Installed(dir) {
+				return m.Name, os.Remove(filepath.Join(dir, m.Name))
+			}
+		}
+	case "speech":
+		for _, m := range engine.SpeechModels() {
+			if m.Installed(dir) {
+				return m.Name, os.RemoveAll(filepath.Join(dir, m.Name))
+			}
+		}
+	default:
+		return "", fmt.Errorf("no kind of model is called %q", kind)
+	}
+	return "", fmt.Errorf("no %s model is here", kind)
 }
 
 // freshMachine is the bridge's machine on its first run, see /fresh: the
@@ -1504,14 +1935,35 @@ func (b *bridge) reopen() ([]Job, error) {
 // close closes the app the way quitting does, and says the jobs it
 // closed on. Nothing runs and nothing hears the disk until open.
 func (b *bridge) close() ([]Job, error) {
-	if !b.words.whileClosing(b.d.svc.jobs.shutDown) {
+	if !b.words.whileClosing(func() bool { return quit(b.d.svc) }) {
 		return nil, fmt.Errorf("the app did not stop its work in time")
 	}
-	closed := b.d.svc.jobs.list()
-	b.d.svc.levels.shutDown()
-	b.d.svc.CancelListening()
-	b.d.shut()
-	return closed, nil
+	return b.d.svc.jobs.list(), nil
+}
+
+// quit closes the app the one way it closes itself, closeDown, and then
+// stops what the end of the app's process stops in the app, since the
+// bridge opens the app again in the same process. The bridge's reset
+// named the app's parts one by one before, and each time a part it did
+// not name wrote into a work folder while the reset removed it and failed
+// with "directory not empty": a caption file of the video preview, issue
+// #561, a draft of Report a Problem, #632, a call of the page, #709, so
+// it closes the app whole now, issue #713. It says whether the jobs
+// stopped in time.
+//
+// What the process ending stops besides: a recording, which tells the bus
+// every desk shares what it hears, and the app opened again numbers its
+// recordings from 1, so the next walk's Dictate would take those words
+// for its own. The caption files of the video preview, which go on being
+// made after the request that asked is gone. The report, whose draft the
+// page saves as a walk ends. The page's calls are the reset's, see
+// pageCalls.
+func quit(svc *FrameFairy) bool {
+	stopped := svc.closeDown()
+	svc.CancelListening()
+	svc.store.machine.ClosePreviews()
+	svc.report.end()
+	return stopped
 }
 
 // reset puts the app back the way it was once the first episode was
@@ -1519,17 +1971,15 @@ func (b *bridge) close() ([]Job, error) {
 // the episode's work folder and the app's settings are what they were, the
 // speech stand-in says next the word it said next then, and the app is
 // opened again on them, so nothing a walk did is kept in memory either.
+// Only what the app learned about this computer's programs is kept, the
+// way it is kept across walks on one computer, see
+// desk.openAgainOnTheSameComputer.
 // Every walk starts from the same place, and a seed walks the same way
 // every time: a video it adds is heard with the same words, however many
 // words the walks before it had heard.
 //
 // On the real disk: it puts back the library where ffmpeg and the episode's decoder read the episode.
 func (b *bridge) reset() error {
-	// A recording the walk before left running is still in hand, and
-	// tells the bus every desk shares what it hears. The app opened again numbers
-	// its recordings from 1, so the next walk's Dictate would take those
-	// words for its own.
-	b.d.svc.CancelListening()
 	b.sound.silent.Store(false)
 	b.words.release()
 	b.words.wordless.Store(false)
@@ -1553,25 +2003,21 @@ func (b *bridge) reset() error {
 	b.d.reportMade.Store(0)
 	b.d.reportFronted.Store(0)
 	b.d.exported.Store(nil)
-	if !b.d.svc.jobs.shutDown() {
+	// The app is closed the way it quits, and what its process ending
+	// stops is stopped too, so no part of it writes while its folders go,
+	// see quit.
+	if !quit(b.d.svc) {
 		return fmt.Errorf("the app did not stop its work in time")
 	}
-	b.d.svc.levels.shutDown()
-	// The watch on the folders hears the reset delete them, and reconcile
-	// would let the videos go and write the library into the config
-	// folder while it is put back. The app opened again watches anew.
-	b.d.svc.watch.stop()
-	// A caption file the video preview asked for goes on being written
-	// after the page that asked is gone, and one written into a work
-	// folder while it was removed failed the reset with "directory not
-	// empty", issue #561. The work folders go the way the app deletes
-	// one, see engine.DeleteWork.
-	defer engine.HoldPreviews(b.d.home)()
-	// So does a draft of Report a Problem the page saved as the walk
-	// ended, in the config folder, issue #632.
-	endReport(b.d.svc.report)
 	// A log a walk started lives in the home, which goes next.
 	theLog.close()
+	// What the process ending does besides: the page's calls the Go side
+	// still runs end with it. stop waits for every call still running
+	// here and now, once the gates are open and the app has closed, so
+	// nothing a call waits on is still held, and turns away the calls that
+	// come after it. What it returns lets calls through again as the reset
+	// ends.
+	defer b.calls.stop()()
 	entries, err := os.ReadDir(b.d.home)
 	if err != nil {
 		return err
@@ -1581,7 +2027,7 @@ func (b *bridge) reset() error {
 			continue
 		}
 		if err := os.RemoveAll(filepath.Join(b.d.home, e.Name())); err != nil {
-			return err
+			return fmt.Errorf("%w, and in it now %s", err, leftIn(filepath.Join(b.d.home, e.Name())))
 		}
 	}
 	for _, dir := range []string{workOf(b.first), filepath.Join(b.d.home, "config")} {
@@ -1591,23 +2037,33 @@ func (b *bridge) reset() error {
 	}
 	// After the work has stopped, so nothing hears on past it.
 	b.words.from(b.said)
-	freshDecoders()
-	b.d.reopen()
+	freshDecoders(&b.d.svc.previews)
+	b.d.openAgainOnTheSameComputer()
 	return nil
 }
 
-// endReport ends the report of the app a walk ran, the way the app's
-// process ending would: a write in hand is let finish, and every write
-// after it fails, so nothing lands in the config folder while it is
-// removed, or in the next walk's once it is put back. A save the page
-// sent as the walk ended may be waiting on the lock, and the app opened
-// again is a reporting of its own, so the old one is never written
-// through again. Every write of the report goes through its files under
-// its lock, see bugs.go.
-func endReport(r *reporting) {
-	r.mu.Lock()
-	r.files = afero.NewReadOnlyFs(r.files)
-	r.mu.Unlock()
+// leftIn names what is in a folder the reset could not remove, each file
+// with how long ago it was written, so a failed reset says what wrote into
+// the folder while it was removed, and when.
+//
+// On the real disk: it reads the folder reset could not remove there.
+func leftIn(dir string) string {
+	var left []string
+	_ = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil || path == dir {
+			return nil
+		}
+		rel, _ := filepath.Rel(dir, path)
+		if info, err := d.Info(); err == nil && !d.IsDir() {
+			rel += fmt.Sprintf(" (%d bytes, written %d ms ago)", info.Size(), time.Since(info.ModTime()).Milliseconds()) //nolint:forbidigo // how long ago, said in an error, waits on nothing
+		}
+		left = append(left, rel)
+		return nil
+	})
+	if len(left) == 0 {
+		return "nothing"
+	}
+	return strings.Join(left, ", ")
 }
 
 // freshDecoders closes the streams and the episode's decoders the walk
@@ -1617,8 +2073,7 @@ func endReport(r *reporting) {
 // should have shown its key frame showed none, issue #552. The next
 // stream starts a decoder again, with its cursors warmed as the app's
 // first are. A hold the walk before took is kept, so its release finds it.
-func freshDecoders() {
-	p := openPreviews
+func freshDecoders(p *previews) {
 	p.mu.Lock()
 	streams, decoders := p.open, p.decoders
 	p.open, p.decoders = nil, nil
@@ -1752,6 +2207,9 @@ func TestWalks(t *testing.T) {
 	}
 	var tookMu sync.Mutex
 	took := map[string]float64{}
+	// The processor time of the bridges, with what they started, see
+	// cpuOf, held under tookMu too.
+	var bridged time.Duration
 
 	// The traces of the runs that fail, see keepTraces in walks/bridge.mjs.
 	// Those a run before kept are let go of, so the folder holds this
@@ -1781,17 +2239,39 @@ func TestWalks(t *testing.T) {
 	var unwalked atomic.Int32
 
 	walkers := min(envNumber("WALKERS", runtime.NumCPU()*3/2), len(runs))
+	// The machine's processor time while the walks run, the browsers'
+	// renderers in it, which no program that waits for its children
+	// counts: Chromium's zygote starts them.
+	busyBefore, busy := machineCPU()
+	started := time.Now()
 	todo := make(chan walkRun, len(runs))
 	for _, r := range runs {
 		todo <- r
 	}
 	close(todo)
-	// The bridges start at once, each in its walker, since each takes a
-	// few seconds to hear and search its episode.
+	// The first bridge hears and searches its episode and keeps what the
+	// app made of it, and the others start from a copy, so the six of a
+	// job do that work once. What a walk starts with is kept for all of
+	// them too, see startWith. The bridges are processes of their own,
+	// so what they share is in folders.
+	home := filepath.Join(t.TempDir(), "home")
+	prepared := t.TempDir()
+	first := make(chan struct{})
+	firstFailed := false
 	var wg sync.WaitGroup
-	for range walkers {
+	for i := range walkers {
 		wg.Go(func() {
-			url, err := startBridge(t)
+			starts := []string{"FRAMEFAIRY_BRIDGE_PREPARED=" + prepared}
+			if i == 0 {
+				starts = append(starts, "FRAMEFAIRY_BRIDGE_KEEP="+home)
+			} else if <-first; !firstFailed {
+				starts = append(starts, "FRAMEFAIRY_BRIDGE_FROM="+home)
+			}
+			url, stopBridge, err := startBridge(t, starts...)
+			if i == 0 {
+				firstFailed = err != nil
+				close(first)
+			}
 			if err != nil {
 				t.Error(err)
 				return
@@ -1800,7 +2280,13 @@ func TestWalks(t *testing.T) {
 			// The walker's sequences, walked one after another by one
 			// node, see sequencer.
 			seqs := &sequencer{run: []string{node, filepath.Join(walks, "sequences.mjs"), "--serve"}, dir: walks, env: env}
-			defer seqs.stop(ctx)
+			defer func() {
+				seqs.stop(ctx)
+				cpu := stopBridge()
+				tookMu.Lock()
+				defer tookMu.Unlock()
+				bridged += cpu
+			}()
 			for r := range todo {
 				if ctx.Err() != nil {
 					unwalked.Add(1)
@@ -1842,6 +2328,23 @@ func TestWalks(t *testing.T) {
 		})
 	}
 	wg.Wait()
+	// Where this machine's time went, every run by what it took, so a slow
+	// walks job says which runs made it slow. Written to the file
+	// WALKSUMMARY names, which make walks prints after go test, since go
+	// test prints nothing a passing test said. On the clock only to be
+	// read, never waited on.
+	//
+	// On the real disk: make walks reads the file once go test has ended.
+	if file := os.Getenv("WALKSUMMARY"); file != "" {
+		spent := map[string]float64{bridgesSpent: bridged.Seconds()}
+		if after, ok := machineCPU(); ok && busy {
+			spent[machineSpent] = (after - busyBefore).Seconds()
+		}
+		summary := walkSummary(took, spent, len(runs), walkers, time.Since(started).Seconds()) //nolint:forbidigo // the seconds the walks took, reported, never waited on
+		if err := os.WriteFile(file, []byte(summary), 0o644); err != nil {
+			t.Error(err)
+		}
+	}
 	if left := len(todo); left > 0 {
 		t.Errorf("%d runs were not walked, since no bridge started", left)
 	}
@@ -1862,20 +2365,22 @@ func TestWalks(t *testing.T) {
 }
 
 // startBridge starts TestBridge in a process of its own, on a free port,
-// and gives back where it answers. It is stopped when the test ends.
-func startBridge(t *testing.T) (string, error) {
+// and gives back where it answers, and stop, which ends it and says what
+// processor time it took, see cpuOf. It is stopped when the test ends,
+// if stop was not called before.
+func startBridge(t *testing.T, env ...string) (string, func() time.Duration, error) {
 	cmd := exec.Command(os.Args[0], bridgeArgs(flag.Lookup("test.gocoverdir").Value.String())...)
-	cmd.Env = append(os.Environ(), "FRAMEFAIRY_BRIDGE=127.0.0.1:0", "FRAMEFAIRY_BRIDGE_WALKER=1", "FRAMEFAIRY_WALKS=")
+	cmd.Env = append(append(os.Environ(), "FRAMEFAIRY_BRIDGE=127.0.0.1:0", "FRAMEFAIRY_BRIDGE_WALKER=1", "FRAMEFAIRY_WALKS="), env...)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	// What it says, read until it says where it answers and let go of
 	// after that.
 	said, says := io.Pipe()
 	cmd.Stdout, cmd.Stderr = says, says
 	if err := cmd.Start(); err != nil {
-		return "", err
+		return "", nil, err
 	}
 	ended := make(chan struct{})
 	go func() {
@@ -1883,10 +2388,12 @@ func startBridge(t *testing.T) (string, error) {
 		_ = says.Close()
 		close(ended)
 	}()
-	t.Cleanup(func() {
+	stop := sync.OnceValue(func() time.Duration {
 		_ = stdin.Close()
 		<-ended
+		return cpuOf(cmd)
 	})
+	t.Cleanup(func() { stop() })
 	lines := bufio.NewScanner(said)
 	var before []string
 	for lines.Scan() {
@@ -1894,11 +2401,11 @@ func startBridge(t *testing.T) (string, error) {
 		if rest, ok := strings.CutPrefix(line, "bridge on "); ok {
 			url, _, _ := strings.Cut(rest, " ")
 			go func() { _, _ = io.Copy(io.Discard, said) }()
-			return url + "/", nil
+			return url + "/", stop, nil
 		}
 		before = append(before, line)
 	}
-	return "", fmt.Errorf("the bridge did not start:\n%s", strings.Join(before, "\n"))
+	return "", nil, fmt.Errorf("the bridge did not start:\n%s", strings.Join(before, "\n"))
 }
 
 // bridgeArgs is how TestWalks starts a bridge. When go test counts the
@@ -1960,6 +2467,31 @@ func TestAWalkThatHangsIsStoppedWithWhatItSaid(t *testing.T) {
 	}
 }
 
+func TestAWalkersNodeThatEndsOnItsOwnIsHeardToItsLastLine(t *testing.T) {
+	// A node that ended on its own lost what it said last, issue #684:
+	// what it printed went through a copy that cmd.Wait cut off a moment
+	// after the node ended, and the copy waited on the reading. Here the
+	// node begins, is handed its sequence, says its last line and ends,
+	// all before anything it said is read.
+	s := &sequencer{run: []string{"sh", "-c", `printf '\036walking\n'; read -r name; echo "$name said this last"`}}
+	defer s.stop(context.Background())
+	if err := s.start(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.WriteString(s.in, "ends\n"); err != nil {
+		t.Fatal(err)
+	}
+	<-s.ended
+	var out bytes.Buffer
+	err := s.walk(context.Background(), "ends", &out)
+	if err == nil || !strings.Contains(err.Error(), "its node ended before it had walked") {
+		t.Errorf("a sequence whose node ended in it gives %v, want that its node ended before it had walked", err)
+	}
+	if out.String() != "ends said this last\n" {
+		t.Errorf("a sequence whose node ended in it printed %q, want what the node said last", out.String())
+	}
+}
+
 // A walker's sequences are walked by one node, one after another, and
 // each says how it went: passed, failed, or threw, which ends the node, so
 // the next starts in a new one. A node that ends before its sequence is
@@ -1981,8 +2513,8 @@ func TestAWalkersSequencesAreWalkedByOneNode(t *testing.T) {
 		esac
 	done`
 	// The node's child that holds its output, killed with nothing else,
-	// lingers no longer than it takes to see that it is let go of.
-	s := &sequencer{run: []string{"sh", "-c", serve}, linger: time.Millisecond}
+	// is not waited for.
+	s := &sequencer{run: []string{"sh", "-c", serve}}
 	defer s.stop(context.Background())
 	walked := func(name string) (string, error) {
 		t.Helper()
@@ -2129,23 +2661,18 @@ type sequencer struct {
 	run []string
 	dir string
 	env []string
-	// linger is how long a node that ended may hold its output open,
-	// walkLinger unless set.
-	linger time.Duration
-	cmd    *exec.Cmd
-	in     io.WriteCloser
-	// lines is what the node prints, a line at a time, closed when it
-	// has ended.
+	cmd *exec.Cmd
+	in  io.WriteCloser
+	// lines is what the node prints, a line at a time, closed once
+	// everything it printed before it ended has been read.
 	lines chan string
+	// ended is closed when the node has ended, before what it printed
+	// last is read.
+	ended chan struct{}
 	// last is the sequence the node walked last, which a node that ends
 	// between two sequences is told by.
 	last string
 }
-
-// walkLinger is how long a walk's node that ended may hold its output
-// open. The browser a stopped walk started may hold it open, and what it
-// says then is not worth waiting for.
-const walkLinger = 5 * time.Second
 
 // walkStopping is how long a walk that was interrupted has to keep its
 // traces and end before it is killed.
@@ -2223,35 +2750,57 @@ func (s *sequencer) walk(ctx context.Context, name string, out io.Writer) error 
 func (s *sequencer) start() error {
 	cmd := exec.Command(s.run[0], s.run[1:]...)
 	cmd.Dir, cmd.Env = s.dir, s.env
-	cmd.WaitDelay = cmp.Or(s.linger, walkLinger)
 	in, err := cmd.StdinPipe()
 	if err != nil {
 		return err
 	}
-	said, says := io.Pipe()
-	cmd.Stdout, cmd.Stderr = says, says
-	if err := cmd.Start(); err != nil {
+	// The node prints into a pipe of the app's own, not through a copy
+	// that cmd.Wait stops: that copy was cut off a moment after the node
+	// ended, with what it said last still on its way, whenever the
+	// reading was slower than the moment, issue #684.
+	said, says, err := os.Pipe()
+	if err != nil {
 		return err
 	}
-	lines := make(chan string)
+	cmd.Stdout, cmd.Stderr = says, says
+	if err := cmd.Start(); err != nil {
+		_, _ = said.Close(), says.Close()
+		return err
+	}
+	lines, ended := make(chan string), make(chan struct{})
 	go func() {
-		read := bufio.NewScanner(said)
-		read.Buffer(nil, 1<<24)
-		for read.Scan() {
-			lines <- read.Text()
+		defer said.Close()
+		defer close(lines)
+		read := bufio.NewReader(said)
+		for {
+			l, err := read.ReadString('\n')
+			l, last := strings.CutSuffix(strings.TrimSuffix(l, "\n"), nodeEndedLine)
+			if l != "" || (err == nil && !last) {
+				lines <- l
+			}
+			if last || err != nil {
+				return
+			}
 		}
-		close(lines)
-		// What it says after the reading stopped, a line too long, is
-		// let go of, so it never waits to be heard.
-		_, _ = io.Copy(io.Discard, said)
 	}()
+	// Once the node has ended, everything it printed is in the pipe, and
+	// the line put in after it is read after all of it. What a child of
+	// the node still says after that, a browser a stopped walk started,
+	// is not waited for: the reading ends at that line, whoever else
+	// holds the pipe open.
 	go func() {
 		_ = cmd.Wait()
+		close(ended)
+		_, _ = io.WriteString(says, nodeEndedLine+"\n")
 		_ = says.Close()
 	}()
-	s.cmd, s.in, s.lines, s.last = cmd, in, lines, ""
+	s.cmd, s.in, s.lines, s.ended, s.last = cmd, in, lines, ended, ""
 	return nil
 }
+
+// nodeEndedLine is the line put into a node's output after it ended, see
+// start, which ends the reading of what it said.
+const nodeEndedLine = "\x1enode ended"
 
 // stop has the node end, if one runs, by telling it there is nothing
 // more to walk, so it closes its browser itself. It is killed if that has
@@ -2314,6 +2863,17 @@ func (s *sequencer) kill() {
 	for range s.lines {
 	}
 	s.cmd = nil
+}
+
+// cpuOf is the processor time of a program that ended. On Linux it holds
+// the programs it started and waited for too: a bridge's ffmpeg and
+// decoders. Not a node's browser's renderers, which Chromium's zygote
+// starts, see machineCPU.
+func cpuOf(cmd *exec.Cmd) time.Duration {
+	if cmd.ProcessState == nil {
+		return 0
+	}
+	return cmd.ProcessState.UserTime() + cmd.ProcessState.SystemTime()
 }
 
 // walkScripts are the walks in the folder: every script that walks with
@@ -2455,11 +3015,222 @@ func writeWalkTimes(names []string, before, now map[string]float64) string {
 	return out.String()
 }
 
+// The kinds of program whose processor time the walks summary gives.
+const (
+	machineSpent = "the whole machine, the browsers in it"
+	bridgesSpent = "the bridges, Go with ffmpeg and the decoder"
+)
+
+// machineCPU is the processor time the machine has been busy since it
+// started, from /proc/stat, on Linux only. CI's machine runs the walks
+// and nothing else, so what it spent while they ran is what they cost.
+//
+// On the real disk: /proc is the kernel's.
+func machineCPU() (time.Duration, bool) {
+	stat, err := os.ReadFile("/proc/stat")
+	if err != nil {
+		return 0, false
+	}
+	return busyOf(string(stat))
+}
+
+// busyOf reads the time the machine was busy from the first line of
+// /proc/stat, in the kernel's ticks of a hundredth of a second: user,
+// nice, system, irq, softirq and steal, but not idle and iowait.
+func busyOf(stat string) (time.Duration, bool) {
+	line, _, _ := strings.Cut(stat, "\n")
+	f := strings.Fields(line)
+	if len(f) < 9 || f[0] != "cpu" {
+		return 0, false
+	}
+	var ticks int64
+	for _, i := range []int{1, 2, 3, 6, 7, 8} {
+		n, err := strconv.ParseInt(f[i], 10, 64)
+		if err != nil {
+			return 0, false
+		}
+		ticks += n
+	}
+	return time.Duration(ticks) * 10 * time.Millisecond, true
+}
+
+// walkSummary says where a machine's walks spent their time: how many
+// runs its walkers walked, the seconds they took together against the
+// seconds the walkers had, the processor time of each kind of program
+// in spent, and what every run took, slowest first. Every number stands
+// right in its column, so the tables read in a terminal as they do on
+// GitHub. The processor time varies less from one run to the next than
+// the seconds do, so it is what a change to the speed of the walks is
+// compared by.
+func walkSummary(took, spent map[string]float64, runs, walkers int, wall float64) string {
+	sum := 0.0
+	for _, s := range took {
+		sum += s
+	}
+	busy := 0.0
+	if wall > 0 && walkers > 0 {
+		busy = 100 * sum / (wall * float64(walkers))
+	}
+	var out strings.Builder
+	several := "walkers"
+	if walkers == 1 {
+		several = "walker"
+	}
+	fmt.Fprintf(&out, "%d of %d runs on %d %s in %.0f s, %.0f s of walking together, the walkers busy %.0f %% of the time\n", len(took), runs, walkers, several, wall, sum, busy)
+	table(&out, "CPU (s)", "Programs", spent)
+	table(&out, "Seconds", "Run", took)
+	return out.String()
+}
+
+// table writes rows as a markdown table, the largest number first, under
+// the heads number and name. It writes nothing when there are no rows.
+func table(out io.Writer, number, name string, rows map[string]float64) {
+	type row struct {
+		name  string
+		value float64
+	}
+	var all []row
+	for n, v := range rows {
+		all = append(all, row{n, v})
+	}
+	if len(all) == 0 {
+		return
+	}
+	slices.SortFunc(all, func(a, b row) int {
+		return cmp.Or(cmp.Compare(b.value, a.value), strings.Compare(a.name, b.name))
+	})
+	width := max(len(number), len(fmt.Sprintf("%.0f", all[0].value)))
+	names := len(name)
+	for _, r := range all {
+		names = max(names, len(r.name))
+	}
+	fmt.Fprintf(out, "| %*s | %-*s |\n", width, number, names, name)
+	fmt.Fprintf(out, "| %s: | %s |\n", strings.Repeat("-", width-1), strings.Repeat("-", names))
+	for _, r := range all {
+		fmt.Fprintf(out, "| %*.0f | %-*s |\n", width, r.value, names, r.name)
+	}
+}
+
 func envNumber(name string, otherwise int) int {
 	if n, err := strconv.Atoi(os.Getenv(name)); err == nil && n > 0 {
 		return n
 	}
 	return otherwise
+}
+
+// The summary of a machine's walks counts what its walkers did against the
+// time they had, gives the processor time of each kind of program, and
+// lists the slowest runs first, each column lined up.
+func TestTheWalksSummarySaysWhereTheTimeWent(t *testing.T) {
+	took := map[string]float64{"sequences.mjs SEQUENCE=short": 4.4, "playback.mjs SEED=1": 83, "timeline.mjs SEED=2": 9.6, "words.mjs SEED=1": 12}
+	spent := map[string]float64{machineSpent: 151.4, bridgesSpent: 38}
+	got := walkSummary(took, spent, 5, 2, 60)
+	want := "4 of 5 runs on 2 walkers in 60 s, 109 s of walking together, the walkers busy 91 % of the time\n" +
+		"| CPU (s) | Programs                                    |\n" +
+		"| ------: | ------------------------------------------- |\n" +
+		"|     151 | the whole machine, the browsers in it       |\n" +
+		"|      38 | the bridges, Go with ffmpeg and the decoder |\n" +
+		"| Seconds | Run                          |\n" +
+		"| ------: | ---------------------------- |\n" +
+		"|      83 | playback.mjs SEED=1          |\n" +
+		"|      12 | words.mjs SEED=1             |\n" +
+		"|      10 | timeline.mjs SEED=2          |\n" +
+		"|       4 | sequences.mjs SEQUENCE=short |\n"
+	if got != want {
+		t.Errorf("the summary is\n%s\nwant\n%s", got, want)
+	}
+	if got := walkSummary(nil, nil, 3, 2, 0); got != "0 of 3 runs on 2 walkers in 0 s, 0 s of walking together, the walkers busy 0 % of the time\n" {
+		t.Errorf("with no runs walked the summary is %q", got)
+	}
+}
+
+// What one bridge kept is copied into another's home with every path to
+// the first home naming the second, in folders and files alike, and the
+// video keeps the time it was last changed, which its transcript is
+// stamped with.
+//
+// On the real disk: the bridges of the walks are processes of their own,
+// and share what they keep through folders.
+func TestAHomeKeptByOneBridgeIsTakenByAnother(t *testing.T) {
+	t.Parallel()
+	was, home := t.TempDir(), t.TempDir()
+	kept := filepath.Join(t.TempDir(), "kept")
+	library := `["` + was + `/a.mp4","` + was + `/b.mp4"]`
+	if err := os.MkdirAll(filepath.Join(kept, "config", "FrameFairy"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(kept, "config", "FrameFairy", "library.json"), []byte(library), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := copyHomed(filepath.Join(kept, "config"), filepath.Join(home, "config"), was, home); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(home, "config", "FrameFairy", "library.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `["` + home + `/a.mp4","` + home + `/b.mp4"]`; string(got) != want {
+		t.Errorf("the library taken is %s, want %s", got, want)
+	}
+
+	video := filepath.Join(was, "a.mp4")
+	if err := os.WriteFile(video, []byte("a video"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	then := time.Date(2026, 11, 6, 9, 30, 0, 123456789, time.UTC)
+	if err := os.Chtimes(video, then, then); err != nil {
+		t.Fatal(err)
+	}
+	if err := keepStamp(kept, video); err != nil {
+		t.Fatal(err)
+	}
+	copied := filepath.Join(home, "a.mp4")
+	if err := os.WriteFile(copied, []byte("a video"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := takeStamp(kept, copied); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(copied)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.ModTime().Equal(then) {
+		t.Errorf("the video copied was last changed %s, want %s as the one kept", info.ModTime(), then)
+	}
+}
+
+// A program's processor time holds what the programs it started and
+// waited for took: the walks summary counts a bridge with its ffmpeg.
+func TestTheProcessorTimeOfAProgramHoldsWhatItStarted(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS != "linux" {
+		t.Skip("the walks summary counts the programs a program started on Linux")
+	}
+	// The shell only waits, its child counts to 200000.
+	cmd := exec.Command("sh", "-c", `sh -c 'i=0; while [ $i -lt 200000 ]; do i=$((i+1)); done' & wait`)
+	if err := cmd.Run(); err != nil {
+		t.Fatal(err)
+	}
+	if cpu := cpuOf(cmd); cpu < 20*time.Millisecond {
+		t.Errorf("a shell whose child counted took %s, want the child's counting in it", cpu)
+	}
+}
+
+// The machine's busy time is read from the first line of /proc/stat, in
+// hundredths of a second, without the time it was idle or waited on the
+// disk, and nothing else passes for it.
+func TestTheMachinesBusyTimeIsReadFromProcStat(t *testing.T) {
+	t.Parallel()
+	got, ok := busyOf("cpu  100 20 30 5000 400 6 7 8 0 0\ncpu0 50 10 15 2500 200 3 3 4 0 0\n")
+	if want := 1710 * time.Millisecond; !ok || got != want {
+		t.Errorf("the machine was busy %s, %v, want %s", got, ok, want)
+	}
+	for _, stat := range []string{"", "cpu0 1 2 3 4 5 6 7 8\n", "cpu  1 2 x 4 5 6 7 8\n", "cpu  1 2 3\n"} {
+		if _, ok := busyOf(stat); ok {
+			t.Errorf("%q was read as the machine's busy time", stat)
+		}
+	}
 }
 
 // Split two ways or three, the shares of the walks hold every run once,

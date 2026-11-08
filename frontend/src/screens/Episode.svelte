@@ -3,23 +3,12 @@
   import { fade } from "svelte/transition";
   import {
     api,
-    captionFontDefault,
-    captionBoxDefault,
-    captionHighlightDefault,
-    captionHighlightOpacityDefault,
-    captionOpacityDefault,
-    captionTextDefault,
-    captionTextOpacityDefault,
-    captionSizeDefault,
-    captionYDefault,
-    captionYMax,
-    captionYMin,
-    captionYStep,
     clock,
     errorText,
     intoWord,
-    snapCaptionY,
+    nearestHeight,
     type CaptionFont,
+    type CaptionStart,
     type CaptionsView,
     type CaptionSwitch,
     type ClipEntry,
@@ -30,11 +19,12 @@
     type SourceView,
     type Word,
     type Sentence,
+    type VideoState,
     onUndo,
     onVideoState,
   } from "../lib/api";
   import { jobs } from "../lib/state.svelte";
-  import { EpisodeSession, type WorkMoves } from "../lib/session.svelte";
+  import { EpisodeSession, type Chose } from "../lib/session.svelte";
   import {
     Heard,
     covers,
@@ -66,17 +56,19 @@
     type Removed,
     type Told,
   } from "../lib/removed";
-  import { arriving, OnTheWay, type Arriving, type Away } from "../lib/arriving";
+  import { arriving, type Arriving, type Away } from "../lib/arriving";
   import { holdAhead } from "../lib/frames/queue";
   import { wordFramesOf, type WordFrame } from "../lib/frames/captions";
   import RangeWindow from "../components/RangeWindow.svelte";
   import Player, { type PlayerOffers } from "../components/Player.svelte";
+  import Reflection from "../components/Reflection.svelte";
   import Busy from "../components/Busy.svelte";
   import ClipList from "../components/ClipList.svelte";
   import SaidList from "../components/SaidList.svelte";
   import SearchField from "../components/SearchField.svelte";
   import ClipTimeline, { type ClipNumbers } from "../components/ClipTimeline.svelte";
   import Icon from "../components/Icon.svelte";
+  import RemovedRow from "../components/Removed.svelte";
   import Info from "../components/Info.svelte";
   import Confirm from "../components/Confirm.svelte";
   import Pick from "../components/Pick.svelte";
@@ -145,7 +137,7 @@
   // A click has to show at once, long before the job it starts reports in.
   // The store keeps the press, the same for this work as for the whole
   // video heard from its menu.
-  const starting = $derived(jobs.isStarting(path, "clips"));
+  const starting = $derived(jobs.isStarting(path, "clips", "search"));
   // The press of Search or Continue the work in hand was asked for by. Cancel
   // names it, so it stops that search whether or not the Go side has heard
   // of it yet, see stopWork.
@@ -171,6 +163,7 @@
     else if (hovered === key) hovered = "";
   }
   let player = $state<Player>();
+  let reflection = $state<Reflection>();
   let timeline = $state<ClipTimeline>();
   // The column the video preview and the range picker stand in, which a
   // clip fitted on the clip timeline is centred under.
@@ -230,7 +223,7 @@
 
   const duration = $derived(source?.duration ?? 0);
   // What the window and a search of it may be, which the Go side works
-  // out and sends with it, see engine.Project.Limits: the window no longer
+  // out and sends with it, see engine.Options.Limits: the window no longer
   // than the model reads in one request anywhere on the video and no
   // shorter than the clips typed need at their shortest, and the clip
   // count and the shortest length held to that longest window, so
@@ -257,13 +250,6 @@
   const transcribing = $derived(working?.step === "hearing" ? working : undefined);
   const finding = $derived(working?.step === "finding");
   const renderingJob = $derived(jobs.active(path, "rendering"));
-  // Whether work is running, as a plain yes or no. The Go side sends a job
-  // event about once a second, and every one of them replaces the job
-  // object, so anything that watches the job itself is torn down and set
-  // up again that often. A timer that watches one never fires at all,
-  // which is what stopped the transcript from being read again while it
-  // grew, and with it the first search.
-  const isFinding = $derived(!!finding);
   // A render is shown by the Render button it was started from, which
   // fills up and becomes Cancel. The head of the clip list is about
   // finding clips, so a render is not its business, and it runs in a lane
@@ -291,15 +277,6 @@
   const wholeWork = $derived(jobs.transcribing(path));
   const isTranscribing = $derived(!!hearing);
   const busy = $derived(searching || starting);
-  // A search that found its clips is over, and the state that holds the
-  // window it moved on to has not come yet: the job's news travels apart
-  // from the video's state until #606's one channel. The search's frame
-  // stays where it is until then, so the range picker never shows the
-  // window back where the search was, between the search and the next.
-  const movingOn = $derived.by(() => {
-    const last = jobs.list.findLast((j) => j.episode === path && j.kind === "search");
-    return last?.state === "done" && (last.seq ?? 0) > session.rev;
-  });
   // What the search is doing right now, in the step's own words, see
   // lib/steps.ts.
   const doing = $derived(working ? stepLine(working).what : "");
@@ -382,22 +359,18 @@
   // search the press asked for even if Cancel reaches it first.
   function stopWork() {
     if (!busy || stopping) return;
-    jobs.stop(path, "clips");
-    void api.stopClipWork(path, click);
+    jobs.stopJob(path, "clips", () => api.stopClipWork(path, click));
   }
 
   // The Render button's Cancel stops the render and nothing else. It
   // called the clip list's Cancel, which stopped the search and every
   // clip on its way, and left the render running.
-  let renderStopping = $state(false);
+  const renderStopping = $derived(jobs.isStopping(path, "render"));
   function stopRender() {
-    if (!renderingJob) return;
-    renderStopping = true;
-    api.cancelJob(renderingJob.id);
+    const job = renderingJob;
+    if (!job) return;
+    jobs.stopJob(path, "render", () => api.cancelJob(job.id));
   }
-  $effect(() => {
-    if (!renderingJob) renderStopping = false;
-  });
 
   // Continue, on everything of the clip list that stopped: the search
   // carries on from what it left, on the window it was about, which the
@@ -407,7 +380,7 @@
     if (!stopped || !search) return;
     const id = search.id;
     const press = begin();
-    for (const job of handStopped) void api.continueJob(job.id, press).then((j) => jobs.apply(j));
+    for (const job of handStopped) jobs.startJob(path, "clips", () => api.continueJob(job.id, press), "hand").catch((err) => oops(errorText(err)));
     void asked(() => api.continueJob(id, press));
   }
   // What the transcript on disk has heard.
@@ -455,10 +428,16 @@
   // seen as a blink by Tim.
   let sentencesAsked = 0;
   let sentencesOf = "";
+  // Whether the video's state and its picture are in as the workspace
+  // opens, see openEpisode. The sentences are asked for once they are:
+  // asked before, with a length of nothing for the video, they were asked
+  // again the moment its length came, and the first answer was thrown
+  // away.
+  let stateRead = $state(false);
   $effect(() => {
     const of = path;
     const key = `${savedKey}|${cutsKey}|${captionsChanged}`;
-    if (!saved.length) return;
+    if (!saved.length || !stateRead) return;
     // While the search is closed, what was read stays until it opens.
     if (!saying && sentencesOf.startsWith(`${of}|`)) return;
     if (sentencesOf === `${of}|${key}`) return;
@@ -864,8 +843,8 @@
     const how = byHand ? "Cancel stopped the search" : "The app was closed";
     // Stopped before it had heard its window, which is the first half of
     // every search of a window not heard yet: Continue hears the rest of
-    // it and then finds.
-    if (!covers(saved, start, end)) {
+    // it and then finds. The Go side says which, see engine.SearchEnded.
+    if (search.ended === "hearing") {
       return {
         ...span,
         what,
@@ -929,11 +908,21 @@
   // The clips on their way, from every job of the episode alike: the
   // search's, from the moment the model names each, and the ones made with
   // I and O, from the moment the key is pressed. See lib/arriving.ts.
+  // They come from the jobs of the newest state of the video kept, the
+  // state its clips come from, so a card becomes its clip in one step:
+  // never a gap where it was, and never the two of them at once. A job
+  // that state does not hold yet, one a press has just started, is taken
+  // as Go answered the press: it has written no clip yet, so its cards
+  // show at once and hand over in the state that holds it.
+  const wayJobs = $derived([
+    ...session.jobs,
+    ...jobs.forEpisode(path).filter((j) => !session.jobs.some((k) => k.id === j.id)),
+  ]);
   const arrivingNow = $derived(
     arriving(
-      jobs.forEpisode(path),
+      wayJobs,
       () => stopping,
-      (job) => void api.continueJob(job.id, "").then((j) => jobs.apply(j)),
+      (job) => void jobs.startJob(path, "clips", () => api.continueJob(job.id, ""), "hand").catch((err) => oops(errorText(err))),
       {
         remove: (job) => putAside(job.id),
         away: (job) => awayOf(job.id),
@@ -944,115 +933,70 @@
   // A clip made by hand that stopped can be removed, so it is not made,
   // issue #257, and so can a search that stopped, issue #431. Its card
   // says Removed and offers it back for as long as a removed clip's row
-  // does, and only then is the work called off, and the Go side forgets
-  // its record, see cancelSteps. The time is the
-  // episode's, kept by the job the way a search's row that found nothing
-  // is, see lib/removed.ts: it runs on while another video is open, and
-  // work whose time ran out while it was away is called off on coming
-  // back. By the job: the moment its time runs out, and 0 once it has.
-  let putAway = $state<Told>(untrack(() => takeUpTold(path, Date.now(), "put away")));
+  // does, and then the work is forgotten, its record and all. The time is
+  // the Go side's, kept by the job, see removal.go: it runs on while
+  // another video is open, a hand on the row holds it, and the job says
+  // how it stands, in away. Here it is only drawn. A press shows in its
+  // frame: what was pressed is kept until the answer, which is the video's
+  // state with the job as it now stands.
+  let pressedAway = $state<Record<string, "away" | "back">>({});
 
-  function putAside(job: string) {
-    putAway = { ...putAway, [job]: Date.now() + secondThoughts * 1000 };
-    said(`clip list: the work of ${job} that stopped removed, ${secondThoughts} s to put it back`, { level: "info", video: path });
+  // Work that could not be removed or put back is as it was, and why is
+  // said whole in a toast, never pressed into its row or card, where it
+  // is cut to a line, issue #431.
+  async function removal(job: string, press: "away" | "back", call: () => Promise<VideoState>) {
+    pressedAway = { ...pressedAway, [job]: press };
+    try {
+      session.take(await call());
+    } catch (err) {
+      const why = `${press === "away" ? "Could not remove it" : "Could not put it back"}: ${errorText(err)}`;
+      said(`clip list: the work of ${job} that stopped, ${why}`, { level: "warn", video: path });
+      toasts.say(where(), why, { video: path, report: true });
+    } finally {
+      const { [job]: _, ...rest } = pressedAway;
+      pressedAway = rest;
+    }
   }
 
+  function putAside(job: string) {
+    said(`clip list: the work of ${job} that stopped removed`, { level: "info", video: path });
+    void removal(job, "away", () => api.removeWork(job));
+  }
+
+  // The number of each hold and let go of removed work sent to Go, one
+  // more each time, so Go leaves out one that arrives after a later one,
+  // see HoldRemoval in removal.go.
+  let holdPress = 0;
   function awayOf(job: string): Away | undefined {
-    if (!(job in putAway)) return undefined;
-    const until = putAway[job];
+    const press = pressedAway[job];
+    const away = jobs.list.find((j) => j.id === job)?.away;
+    if (press === "back" || (!away && press !== "away")) return undefined;
+    const whole = away?.whole ?? secondThoughts;
+    const left = !away ? whole : away.until ? (away.until - Date.now()) / 1000 : away.left;
     return {
-      // Once called off, the row has no time left, and stays until the
-      // job says it is gone.
-      spent: until === 0 ? secondThoughts : toldSpent(until),
+      spent: Math.min(whole, Math.max(0, whole - left)),
       // A search is removed in its row and in each of its cards on the
       // way at once, and the hand on any of them holds them all.
       together: `away ${job}`,
       onputback: () => {
-        if (putAway[job] === 0) return;
-        const { [job]: _, ...rest } = putAway;
-        putAway = rest;
         said(`clip list: the work of ${job} that stopped put back`, { level: "info", video: path });
+        void removal(job, "back", () => api.putWorkBack(job));
       },
-      onend: () => callOff(job),
-      onresume: (left) => {
-        if (putAway[job]) putAway = { ...putAway, [job]: Date.now() + left * 1000 };
+      onhold: (held) => {
+        api.holdRemoval(job, held, ++holdPress).catch((err) => {
+          said(`clip list: the time of the work of ${job} removed could not be ${held ? "held" : "let go"}: ${errorText(err)}`, { level: "warn", video: path });
+        });
       },
     };
   }
-
-  function callOff(job: string) {
-    if (putAway[job] === 0) return;
-    putAway = { ...putAway, [job]: 0 };
-    said(`clip list: the work of ${job} that stopped is called off and forgotten`, { level: "info", video: path });
-    send(job);
-  }
-
-  // Work that could not be called off is as it was, Stopped with
-  // Continue, and why is said whole in a toast, never pressed into its
-  // row or card, where it is cut to a line, issue #431.
-  function send(job: string) {
-    api.cancelJob(job).catch((err) => {
-      const { [job]: _, ...rest } = putAway;
-      putAway = rest;
-      const why = `Could not remove it: ${errorText(err)}`;
-      said(`clip list: the work of ${job} that stopped could not be removed, ${why}`, { level: "warn", video: path });
-      toasts.say(where(), why, { video: path, report: true });
-    });
-  }
-
-  // Work whose time ran out while the video was away is called off now.
-  for (const [job, until] of Object.entries(untrack(() => putAway))) if (until === 0) send(job);
-
-  // A card whose work was called off goes when its job says so, and what
-  // was kept of its time goes with it. So does one whose job runs again.
-  // A job not heard of yet, as the video opens, keeps its time.
-  $effect(() => {
-    const here = new Set(arrivingNow.filter((a) => a.stopped).map((a) => a.job));
-    // The search's own row, which stands while it has no clip on the way.
-    if (halted && search) here.add(search.id);
-    const known = new Set(jobs.forEpisode(path).map((j) => j.id));
-    untrack(() => {
-      const kept = Object.entries(putAway).filter(([job, until]) => here.has(job) || (until !== 0 && !known.has(job)));
-      if (kept.length < Object.keys(putAway).length) putAway = Object.fromEntries(kept);
-    });
-  });
-  // A clip that has just been written keeps its card until a state of the
-  // video holds it, so the card becomes the clip in one step: never a gap
-  // where it was, and never the two of them at once. See OnTheWay in
-  // lib/arriving.ts. The card goes in the same step that puts the list on
-  // screen, with the first state read after the job's news that it was
-  // written, which the Go side sends by itself.
-  const cardsOnTheWay = new OnTheWay();
-  const seqOf = (job: string) => jobs.list.find((j) => j.id === job)?.seq ?? 0;
-  const onTheWay = $derived(cardsOnTheWay.cards(arrivingNow, seqOf, session.rev));
-  // The search the list last counted rows for, and how many of its clips
-  // the newest state of the video holds: what it had written when the
-  // state was read, because the plan is written before the job says so.
-  let searchSeen = $state("");
-  $effect(() => {
-    const id = working?.id;
-    if (!id || id === untrack(() => searchSeen)) return;
-    searchSeen = id;
-  });
-  const readWritten = $derived(session.wrote(searchSeen));
+  const onTheWay = $derived(arrivingNow);
 
   // How many clips the search has written and has on the way. It says so
   // itself, so a clip made by hand while it runs is not counted as one of
-  // its own.
-  const searchTook = $derived((working?.written ?? 0) + (working?.underway?.length ?? 0));
-  // Clips the search has written that no read of the list has brought in
-  // yet, and that have no card on the way either: a clip can be written
-  // between two job events and never be on the way in either. Each keeps
-  // a row of its own until the list has it, during the search and after
-  // it ended alike, so the list is never a row short while the read is in
-  // the air.
-  const lastSearch = $derived(jobs.forEpisode(path).find((j) => j.id === searchSeen));
-  const unread = $derived(
-    Math.max(
-      0,
-      (lastSearch?.written ?? 0) - readWritten - onTheWay.filter((a) => a.held && a.job === searchSeen).length,
-    ),
-  );
+  // its own. Read from the state the cards and the clips come from, so
+  // the rows still to come and the cards add up in every frame.
+  const searchKept = $derived(session.jobs.find((j) => j.id === working?.id));
+  const searchTook = $derived((searchKept?.written ?? 0) + (searchKept?.underway?.length ?? 0));
   // Every clip the episode had was removed, and nothing is on its way:
   // the first row still to come says so, in the words a row that says how
   // work ended uses, rather than leaving empty rows that look like nothing
@@ -1081,10 +1025,11 @@
   const foundNothing = $derived.by(() => {
     if (busy || stopped) return null;
     const last = jobs.forEpisode(path).findLast((j) => j.kind === "search");
-    // A Continue counts what the search it carries on wrote: one called
-    // off once its clips were written had nothing left to write, and its
-    // row said Nothing new found, Tim's report of 25 October, 21.40.
-    if (last?.state !== "done" || (last.written ?? 0) + (last.carried ?? 0) > 0) return null;
+    // The Go side says how it ended, see engine.SearchEnded. A Continue
+    // counts what the search it carries on wrote: one called off once its
+    // clips were written had nothing left to write, and its row said
+    // Nothing new found, Tim's report of 25 October, 21.40.
+    if (last?.state !== "done" || (last.ended !== "nothing" && last.ended !== "short")) return null;
     const job = last.id;
     if (told[job] === 0) return null;
     const fades = {
@@ -1099,8 +1044,7 @@
     const start = last.from ?? 0;
     const end = last.to && last.to > 0 ? last.to : duration;
     const window = `Window ${clock(start)} to ${clock(end)}`;
-    // Shortest as the search was asked for it, not as it is now.
-    if (duration > 0 && duration < (last.min || min)) {
+    if (last.ended === "short") {
       return {
         job,
         what: "Nothing new found",
@@ -1132,12 +1076,12 @@
         ? // The rows the search itself was asked for, not what the
           // workspace would ask for now: the first search of an episode
           // is asked for by the Go side.
-          (working?.whole ? 0 : Math.max(0, (working?.count || count) - searchTook)) + unread
+          working?.whole ? 0 : Math.max(0, (working?.count || count) - searchTook)
         : shown.length === 0 && onTheWay.length === 0 && closing.length === 0
-          ? Math.max(count, unread)
+          ? count
           : // Clips a search wrote before it was cut off stay, and one row
             // after them says what became of the rest.
-            unread + (stopped || foundNothing ? 1 : 0)),
+            stopped || foundNothing ? 1 : 0),
   );
   // Whether the window has been searched before, all of it or a part.
   // Search then looks there again, for moments its searches did not bring,
@@ -1176,6 +1120,36 @@
       (!renderingJob.clips?.length || renderingJob.clips.includes(current.id)),
   );
 
+  // A render of the clip that ended before it was done: cut off by the app
+  // closing, or failed. It says so at the clip's Render button, after a
+  // restart too, with Continue, and it can be removed the way a clip made
+  // by hand that stopped can, issue #392. It showed nowhere, so the clip
+  // looked as if it was never asked for and its record stayed.
+  const renderLeft = $derived(
+    current
+      ? jobs.list.findLast(
+          (j) =>
+            j.episode === path &&
+            j.kind === "render" &&
+            !j.preview &&
+            unfinished(j) &&
+            j.plan === current.plan &&
+            (!j.clips?.length || j.clips.includes(current.id)),
+        )
+      : undefined,
+  );
+  const renderAway = $derived(renderLeft ? awayOf(renderLeft.id) : undefined);
+
+  // Continue on a render that ended before it was done carries it on from
+  // its record, see Continue in search.go.
+  async function carryOnRender(job: Job, clip: ClipEntry) {
+    try {
+      await jobs.startJob(path, "render", () => api.continueJob(job.id, ""), clip.key);
+    } catch (err) {
+      oops(errorText(err));
+    }
+  }
+
   // The window put back where the app places it, a double-click on its
   // marks. The Go side places it, as it places every window the app
   // chooses, and answers with the state that holds it.
@@ -1207,17 +1181,26 @@
   }
 
   // The video's state read again, and kept in its session when no newer
-  // one is there already. A read for what a search wrote, found, keeps
-  // every clip the read says is as it was, the very same clip: a search
-  // only adds clips. Each read made every clip a new one, the clip on
-  // screen too, and its captions were asked for and drawn again each time,
-  // the clip timeline and the caption box with them, while nothing about
-  // it had changed. Plan row 2.242. Every other read is for an edit of the
-  // clips or of their captions, and takes them all as new, so the captions
-  // of the clip on screen are read again with them.
-  async function refreshClips(found = false) {
+  // one is there already. A read is for an edit of the clips or of their
+  // captions, and takes them all as new, so the captions of the clip on
+  // screen are read again with them. What a search writes comes in the
+  // states the Go side sends, which keep every clip that is as it was the
+  // very same clip, see EpisodeSession.take.
+  async function refreshClips() {
     try {
-      session.take(await api.state(path), !found);
+      session.take(await api.state(path), true);
+    } catch (err) {
+      oops(errorText(err));
+    }
+  }
+
+  // The video's state read as the workspace opens. Nothing was edited, so
+  // a clip that is as the session already had it stays the very same
+  // clip: taken as new, the clip on screen asked for its captions and its
+  // sentences a second time while the first ask was still on its way.
+  async function readClips() {
+    try {
+      session.take(await api.state(path));
     } catch (err) {
       oops(errorText(err));
     }
@@ -1233,7 +1216,7 @@
   async function openEpisode() {
     try {
       const [, picture] = await Promise.all([
-        refreshClips(),
+        readClips(),
         // A file that is missing has no picture to say.
         api.source(path).catch(() => null),
       ]);
@@ -1242,6 +1225,7 @@
       );
       if (!status) return;
       if (!status.missing) source = picture;
+      stateRead = true;
       keepRemovedTrue();
       // The video preview is drawn for the picture before the clip is
       // shown, so showing it puts the playhead there. The Go side opens a
@@ -1254,6 +1238,7 @@
     } catch (err) {
       oops(errorText(err));
     } finally {
+      stateRead = true;
       opened = true;
       tell(`opened, the playhead at ${time.toFixed(3)} s`);
     }
@@ -1357,7 +1342,6 @@
     return () => {
       setAside(path, $state.snapshot(removed));
       setAsideTold(path, $state.snapshot(told));
-      setAsideTold(path, $state.snapshot(putAway), "put away");
     };
   });
 
@@ -1589,16 +1573,13 @@
   // A job can be over before its answer comes back to the press, its news
   // heard first on a busy machine, so the Go side answers the pick of its
   // card with the clip it was written as, see choose.go, issue #508.
-  let pressed = $state<"in" | "out" | null>(null);
-  const makingIn = $derived(pressed === "in" || handRunning.some((j) => !j.backward));
-  const makingOut = $derived(pressed === "out" || handRunning.some((j) => !!j.backward));
+  const makingIn = $derived(jobs.isStarting(path, "clips", "in") || handRunning.some((j) => !j.backward));
+  const makingOut = $derived(jobs.isStarting(path, "clips", "out") || handRunning.some((j) => !!j.backward));
   async function makeClip(backward: boolean) {
     if (duration <= 0) return;
-    pressed = backward ? "out" : "in";
-    jobs.clipsAsked(path);
     try {
-      const job = await api.makeClip(path, time, backward);
-      jobs.apply(job);
+      const at = time;
+      const job = await jobs.startJob(path, "clips", () => api.makeClip(path, at, backward), backward ? "out" : "in");
       const now = jobs.list.find((j) => j.id === job.id) ?? job;
       const key = `${job.id}/1`;
       if (now.state !== "failed") {
@@ -1613,8 +1594,6 @@
       showChosen();
     } catch (err) {
       oops(errorText(err));
-    } finally {
-      pressed = null;
     }
   }
   // The clip on its way that is chosen, drawn on the clip timeline the way
@@ -2034,6 +2013,7 @@
     cues: NonNullable<CaptionsView["captions"]>;
     pieces: { start: number; end: number }[];
     track?: string;
+    playhead?: number;
   } | null>(null);
   // Each piece keeps the framing of the piece it came from, the way the
   // engine keeps it when the edit lands.
@@ -2355,7 +2335,28 @@
   // Where the captions sit, for every clip of every episode. Dragging the
   // box in the video preview is the same thing as typing the number in the
   // settings column, and both stay for the next video.
-  let captionY = $state(captionYDefault);
+  let captionY = $state(0);
+  // How the captions start out, and the heights they may sit at, as the Go
+  // side has them, see engine.CaptionStart. Nothing is offered as moved
+  // until it is here.
+  let start = $state<CaptionStart | null>(null);
+  const startLook = $derived.by(() => {
+    if (!start) return null;
+    const text = splitColour(start.primary);
+    const box = splitColour(start.box);
+    const highlight = splitColour(start.highlightColour);
+    return {
+      font: start.font,
+      size: Math.round(start.size),
+      y: Math.round(start.y),
+      text: text.hex,
+      textOpacity: Math.round(text.alpha * 100),
+      box: box.hex,
+      opacity: Math.round(box.alpha * 100),
+      highlight: highlight.hex,
+      highlightOpacity: Math.round(highlight.alpha * 100),
+    };
+  });
   // What the captions looked like before they were put back, so the way
   // back is a way there and back again. Putting them back is one click,
   // and one click has to be undoable as easily. It is dropped the moment
@@ -2380,8 +2381,8 @@
   const captionsNow = $derived({
     // The face the video asks for, even one this machine lacks, so putting
     // the captions back as they start out is offered for it too.
-    font: captions?.style.missing || (captions?.style.font ?? captionFontDefault),
-    size: Math.round(captions?.style.chosenSize ?? captionSizeDefault),
+    font: captions?.style.missing || (captions?.style.font ?? startLook?.font ?? ""),
+    size: Math.round(captions?.style.chosenSize ?? startLook?.size ?? 0),
     y: Math.round(captionY),
     text: splitColour(captions?.style.primary ?? "").hex,
     textOpacity: Math.round(splitColour(captions?.style.primary ?? "").alpha * 100),
@@ -2394,21 +2395,23 @@
     opacity: Math.round(splitColour(captions?.style.box ?? "rgba(0, 0, 0, 0.5)").alpha * 100),
   });
   const coloursMoved = $derived(
-    captionsNow.text !== captionTextDefault ||
-      captionsNow.textOpacity !== captionTextOpacityDefault ||
-      captionsNow.highlight !== captionHighlightDefault ||
-      captionsNow.highlightOpacity !== captionHighlightOpacityDefault ||
-      captionsNow.box !== captionBoxDefault ||
-      captionsNow.opacity !== captionOpacityDefault,
+    startLook !== null &&
+      (captionsNow.text !== startLook.text ||
+        captionsNow.textOpacity !== startLook.textOpacity ||
+        captionsNow.highlight !== startLook.highlight ||
+        captionsNow.highlightOpacity !== startLook.highlightOpacity ||
+        captionsNow.box !== startLook.box ||
+        captionsNow.opacity !== startLook.opacity),
   );
   const captionsMoved = $derived(
-    captionsNow.font !== captionFontDefault ||
-      captionsNow.size !== captionSizeDefault ||
-      captionsNow.y !== captionYDefault ||
-      !captionsNow.highlightOn ||
-      !captionsNow.textOn ||
-      !captionsNow.boxOn ||
-      coloursMoved,
+    startLook !== null &&
+      (captionsNow.font !== startLook.font ||
+        captionsNow.size !== startLook.size ||
+        captionsNow.y !== startLook.y ||
+        !captionsNow.highlightOn ||
+        !captionsNow.textOn ||
+        !captionsNow.boxOn ||
+        coloursMoved),
   );
 
   // Everything about the captions back to how it starts out: the face, the
@@ -2416,21 +2419,23 @@
   // the whole group and not beside one row of it.
   async function putCaptionsBack() {
     const was = captionsNow;
-    if (captionsNow.font !== captionFontDefault || captionsNow.size !== captionSizeDefault) {
-      await setCaptionStyle(captionFontDefault, captionSizeDefault);
+    const look = startLook;
+    if (!look) return;
+    if (captionsNow.font !== look.font || captionsNow.size !== look.size) {
+      await setCaptionStyle(look.font, look.size);
     }
-    if (captionsNow.y !== captionYDefault) await resetCaptionsHeight();
+    if (captionsNow.y !== look.y) await resetCaptionsHeight();
     if (!captionsNow.highlightOn) await setCaptionSwitch("highlight", true);
     if (!captionsNow.textOn) await setCaptionSwitch("text", true);
     if (!captionsNow.boxOn) await setCaptionSwitch("box", true);
     if (coloursMoved) {
       await setCaptionColours(
-        captionTextDefault,
-        captionTextOpacityDefault,
-        captionBoxDefault,
-        captionOpacityDefault,
-        captionHighlightDefault,
-        captionHighlightOpacityDefault,
+        look.text,
+        look.textOpacity,
+        look.box,
+        look.opacity,
+        look.highlight,
+        look.highlightOpacity,
       );
     }
     captionsWere = was;
@@ -2470,7 +2475,7 @@
   async function setCaptionsHeight(y: number) {
     const was = captionY;
     captionsWere = null;
-    captionY = snapCaptionY(y);
+    captionY = nearestHeight(start?.heights ?? [], y);
     try {
       await api.setCaptionsHeight(path, captionY);
       // The clips come again, so the captions of the one on screen are read
@@ -2484,7 +2489,7 @@
 
   async function resetCaptionsHeight() {
     const was = captionY;
-    captionY = captionYDefault;
+    captionY = start?.y ?? captionY;
     try {
       await api.resetCaptionsHeight(path);
       await refreshClips();
@@ -2549,10 +2554,8 @@
     findClips(false);
   }
 
-  // A click shows at once: the list opens its rows and the head says
-  // Cancel before the job has reported in. It gives the press its name.
+  // The name of a press of Search or Continue, which Cancel names.
   function begin(): string {
-    jobs.press(path, "clips");
     click = `${Date.now()}-${++clicks}`;
     return click;
   }
@@ -2577,20 +2580,17 @@
     );
   }
 
-  // Search and Continue alike. The Go side answers with the search, and one
-  // it would not start, while the app closes or the episode is being
-  // removed, comes back failed already. It never runs, so nothing would
-  // ever end the start the click showed: the head stood on Cancel, greyed
-  // out, over Finding clips. Its row says why instead, with Continue, the
-  // way any search that failed does.
+  // Search and Continue alike. A click shows at once: the list opens its
+  // rows and the head says Cancel before the job has reported in, see
+  // startJob. The Go side answers with the search, and one it would not
+  // start, while the app closes or the episode is being removed, comes
+  // back failed already. It never runs, and its row says why, with
+  // Continue, the way any search that failed does.
   async function asked(ask: () => Promise<Job>) {
     try {
-      const job = await ask();
-      jobs.apply(job);
+      await jobs.startJob(path, "clips", ask, "search");
     } catch (err) {
       oops(errorText(err));
-    } finally {
-      jobs.answered(path, "clips");
     }
   }
 
@@ -2624,7 +2624,7 @@
       // The caption height is kept in the settings, so an undo of a drag
       // is read back from there.
       const settings = await api.getSettings();
-      captionY = settings.captionY || captionYDefault;
+      captionY = settings.captionY || (start?.y ?? 0);
       onchange();
       // The Go side chose the clip the step changed, which the state read in
       // load says, and the move chose shows it.
@@ -2642,24 +2642,12 @@
   }
   onMount(() => onUndo(undo));
 
-  // The job has reported in, so the placeholder can give way to it.
-  $effect(() => {
-    if (working) untrack(() => jobs.answered(path, "clips"));
-  });
-
-  // The clip a render was asked for, from the click until the job is
-  // there, so the button fills from the moment it is pressed.
-  let renderAsked = $state("");
-  $effect(() => {
-    if (renderingJob) renderAsked = "";
-  });
-
+  // A render, which fills its button from the moment it is pressed, see
+  // startJob.
   async function render(clip: ClipEntry) {
-    renderAsked = clip.key;
     try {
-      session.asked(await api.render(path, { Plan: clip.plan, Clips: [clip.id], Preview: false }));
+      await jobs.startJob(path, "render", () => api.render(path, { Plan: clip.plan, Clips: [clip.id], Preview: false }), clip.key);
     } catch (err) {
-      renderAsked = "";
       oops(errorText(err));
     }
   }
@@ -2713,67 +2701,24 @@
     return () => (dropped = true);
   });
 
-  // The model answers a search with the whole set at once, and the clips
-  // land in the plan file there and then. The list is taken again while a
-  // search runs, so they show up the moment they exist instead of when the
-  // job has wrapped up.
-
-
-  // While the transcript grows, the covered part of the timeline grows.
-
-
-  // How the workspace meets the video's work moving on. The session says
-  // each move once, as the job store keeps the snapshot that makes it,
-  // see lib/session.svelte.ts. Each was an effect here that kept the value
-  // from before and compared it with the next, issue #606. It hears from
-  // the moment the workspace is on the page, as the effects did.
-  const moves: WorkMoves = {
-    // The app chose another clip, see choose.go: a search's first clip or
-    // its earliest, the clip beside one removed or one put back, the clip
-    // an undo changed, or a clip made by hand that was written, whose card
-    // was chosen. It is shown the way a hand's pick is, the playhead on it
-    // while the video is paused. Playing, a card that became its clip
-    // keeps the playhead, which is on the clip it was made on, written now
-    // under its own key, see claim in Player.svelte.
-    chose: (key, before, card) => {
-      if (!opened) return;
-      void show(key, paused);
-      // A card written as its clip while it plays: the play goes on as a
-      // play of the clip.
-      if (card && card === before && !paused) player?.claim(before);
-    },
-    // And when the whole video's work ends, which no search's hearing says:
-    // the workspace kept what it read last, so stopped on its last pieces
-    // the video was heard to its end and the dots stayed, found by the
-    // second review of #458.
-    transcribed: () => load(),
-    // How far the episode has been heard is read again when the hearing
-    // stops, so the range picker's edge lands on what was saved.
-    heard: () => {
-      onchange();
-      load();
-    },
-    // A search that ends: the list shows what it found, and the window
-    // moves on. How it ended otherwise is said by the search itself, in the
-    // row its next clip would have appeared in.
-    searched: (ended) => {
-      jobs.answered(path, "clips");
-      onchange();
-      // The window walks on from where the search ended, which the Go
-      // side did before the search said it was done, so it comes in the
-      // state that holds the clips found, see windowOn. The clip it chose
-      // comes in it too, see the move chose.
-      void load();
-    },
-    // A render this workspace started: the list shows what was rendered.
-    // One that failed says why in a toast, which the Go side tells, see
-    // notice.go.
-    rendered: () => {
-      onchange();
-      void load();
-    },
+  // The app chose another clip, see choose.go: a search's first clip or
+  // its earliest, the clip beside one removed or one put back, the clip
+  // an undo changed, or a clip made by hand that was written, whose card
+  // was chosen. It is shown the way a hand's pick is, the playhead on it
+  // while the video is paused. Playing, a card that became its clip
+  // keeps the playhead, which is on the clip it was made on, written now
+  // under its own key, see claim in Player.svelte. Everything else the
+  // video's work changes, the clips a search wrote, how far the video is
+  // heard, the window moved on, comes in the video's state, issue #606:
+  // nothing waits for the work to end and reads the video again.
+  const chose: Chose = (key, before, card) => {
+    if (!opened) return;
+    void show(key, paused);
+    // A card written as its clip while it plays: the play goes on as a
+    // play of the clip.
+    if (card && card === before && !paused) player?.claim(before);
   };
-  onMount(() => session.open(moves, onVideoState));
+  onMount(() => session.open(chose, onVideoState));
 
   // Playing moves nothing. An editor's timeline follows its playhead while
   // it plays, and that is a setting there, off as often as on, because a
@@ -2883,24 +2828,6 @@
     };
   });
 
-  // One timer for as long as the workspace is open, and it decides what to
-  // do each time it fires. It is not an effect: an effect that mentions
-  // running work is torn down and set up again on every job event, about
-  // once a second, so its timer would never fire at all.
-  onMount(() => {
-    const timer = setInterval(() => {
-      // Asleep, nothing is read: waking reads it all once.
-      if (away) return;
-      if (isFinding) {
-        // Each clip lands in the plan the moment it is framed, while the
-        // model is still writing the next, so the list is read again as
-        // the search runs.
-        void refreshClips(true);
-      }
-    }, 2000);
-    return () => clearInterval(timer);
-  });
-
   onMount(() => {
     installFonts()
       .then((list) => (fonts = list))
@@ -2912,8 +2839,9 @@
   });
 
   function readSettings() {
-    api.getSettings().then((settings) => {
-      captionY = settings.captionY || captionYDefault;
+    Promise.all([api.getSettings(), api.captionStart()]).then(([settings, starts]) => {
+      start = starts;
+      captionY = settings.captionY || starts.y;
     });
   }
 </script>
@@ -2923,8 +2851,9 @@
     {duration}
     {from}
     {to}
-    shown={(busy || movingOn) && !stopping}
+    shown={busy && !stopping}
     resumes={!!stopped}
+    hidden={!!win?.hidden && !wholeStopping}
     {marks}
     {selected}
     {hovered}
@@ -2964,6 +2893,7 @@
      layout below is the browser's own work from there on. -->
 <section bind:this={root} style="--ar: {ratio}">
   {#if source}
+    <Reflection bind:this={reflection} shown={!status?.missing} />
     <div class="stage">
       <div class="settings">
         <div class="group asks">
@@ -3054,7 +2984,7 @@
               {#if captionsMoved}
                 <button
                   class="quiet glyph"
-                  title="Put the captions back as they start out: {captionFontDefault}, {captionSizeDefault}, {captionYDefault} from the bottom, white on a half clear black box"
+                  title="Put the captions back as they start out: {startLook?.font}, {startLook?.size}, {startLook?.y} from the bottom, in the colours they start in"
                   aria-label="Put the captions back"
                   onclick={putCaptionsBack}
                 >
@@ -3298,9 +3228,9 @@
                 <input
                   class="num"
                   type="number"
-                  min={captionYMin}
-                  max={captionYMax}
-                  step={captionYStep}
+                  min={start?.heights[0]}
+                  max={start?.heights.at(-1)}
+                  step={start?.step}
                   value={Math.round(captionY)}
                   onchange={(e) => setCaptionsHeight(Number(e.currentTarget.value))}
                 /><span class="unit">px</span>
@@ -3319,7 +3249,9 @@
           {path}
           {source}
           missing={!!status?.missing}
+          onframe={(frame) => reflection?.take(frame)}
           clip={shownClip}
+          heading={reshaped?.playhead ?? null}
           making={making?.key}
           opening={!opened}
           bind:pictured
@@ -3342,6 +3274,8 @@
             captionsWere = null;
             captionY = y;
           }}
+          captionHeights={start?.heights ?? []}
+          captionStep={start?.step ?? 0}
           {strip}
         />
       </div>
@@ -3717,7 +3651,36 @@
           <!-- The one act that matters, so it says how it is going in the
                button it was started from, and becomes the way to stop it,
                the same as Search does for a search. -->
-          {@const inHand = renderingCurrent || renderAsked === current.key}
+          {@const inHand = renderingCurrent || jobs.isStarting(path, "render", current.key)}
+          {#if !inHand && renderLeft && renderAway}
+            <span class="renderaway">
+              <RemovedRow
+                spent={renderAway.spent}
+                together={renderAway.together}
+                onputback={renderAway.onputback}
+                onhold={renderAway.onhold}
+              />
+            </span>
+          {:else if !inHand && renderLeft}
+            {@const left = renderLeft}
+            <button
+              class="drop quiet danger"
+              title="Remove this render, so it is not carried on"
+              aria-label="Remove the render that was cut off"
+              onclick={() => putAside(left.id)}><Icon name="trash" /></button
+            >
+            <button
+              class="primary render"
+              class:failed={left.state === "failed"}
+              onclick={() => carryOnRender(left, current)}
+              disabled={!!working}
+              title={working
+                ? "Carry the render on once the work running now is done"
+                : left.state === "failed"
+                  ? "The render failed. Continue renders the clip again"
+                  : "The render was cut off when the app closed. Continue carries it on"}>Continue</button
+            >
+          {:else}
           <button
             class="primary render"
             onclick={() => (inHand ? stopRender() : render(current))}
@@ -3735,6 +3698,7 @@
                 ? "Render again"
                 : "Render"}</button
           >
+          {/if}
         {/if}
       </div>
     </div>
@@ -3782,6 +3746,10 @@
     flex: 1;
     min-height: 0;
     overflow: auto;
+    /* What the reflection of the video preview is placed in, and kept
+       behind everything else in, see Reflection.svelte. */
+    position: relative;
+    isolation: isolate;
   }
 
   /* Every height a whole number of pixels, where the browser can do the
@@ -4187,6 +4155,24 @@
     height: var(--row-h);
   }
 
+  /* A button in the row that cannot be pressed is dimmed by its colours,
+     not by opacity as everywhere else, because the reflection of the video
+     preview lies behind the row and would show through it, see
+     Reflection.svelte. The colours are what the opacity of --dimmed gave
+     over the app's own ground, --ink-0, so it looks the same as before. */
+  .detail .row button:disabled {
+    opacity: 1;
+    background: color-mix(in srgb, var(--ink-2) calc(var(--dimmed) * 100%), var(--ink-0));
+    border-color: color-mix(in srgb, var(--line) calc(var(--dimmed) * 100%), var(--ink-0));
+    color: color-mix(in srgb, var(--text) calc(var(--dimmed) * 100%), var(--ink-0));
+  }
+
+  .detail .row button.primary:disabled {
+    background: color-mix(in srgb, var(--accent) calc(var(--dimmed) * 100%), var(--ink-0));
+    border-color: color-mix(in srgb, var(--accent) calc(var(--dimmed) * 100%), var(--ink-0));
+    color: color-mix(in srgb, #fff calc(var(--dimmed) * 100%), var(--ink-0));
+  }
+
 
   /* A whole number of pixels high, so everything in it sits on whole
      pixels. No line under it: the veil over the top of the list is what
@@ -4221,4 +4207,21 @@
   }
 
 
+
+  /* A render removed says so in the place of its buttons, the way a row
+     of the clip list does, as high as the controls beside it. */
+  .renderaway {
+    display: flex;
+  }
+
+  .renderaway :global(.gone) {
+    height: var(--control-h);
+    border-radius: var(--radius-s);
+  }
+
+  /* A render that failed says so in the red of an error, the way the row
+     of a search that failed does. */
+  .render.failed {
+    color: var(--err);
+  }
 </style>

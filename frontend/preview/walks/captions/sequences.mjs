@@ -5,6 +5,16 @@
 // ../sequences.mjs.
 export default [
   {
+    // The heights the captions may sit at, and where they start out, come
+    // from the Go side, see engine.CaptionStart. The interface kept a copy
+    // of both, which could drift from the engine's, issue #610.
+    name: "the captions dragged land on a height the Go side offers, and put back sit where they start out",
+    steps: [
+      ["drag captions", 120],
+      ["captions put back"],
+    ],
+  },
+  {
     name: "delete removes the framed word and nothing else",
     steps: [
       ["mark", "start"],
@@ -621,9 +631,7 @@ export default [
     // over them, and only a step from word to word bounces.
     name: "a step onto a word pops it over the paused frame",
     steps: [
-      ["add", 40, "25"],
-      ["wait for", "Search"],
-      ["cards", 1],
+      ["added", 40, "25"],
       ["step onto words and see them pop", 6],
       ["step frame by frame and see nothing pop", 40],
     ],

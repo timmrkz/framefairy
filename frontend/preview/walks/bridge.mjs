@@ -6,7 +6,6 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { dirname, join, relative, resolve } from "node:path";
 import { chromium, webkit } from "playwright";
 import { filmed as filmedList } from "./filmed.mjs";
-import { inChromium } from "./webkit.mjs";
 
 // The Chromium the pinned Playwright was made for. CI's image holds only
 // its headless shell, which a headless launch finds by itself, so there
@@ -47,31 +46,35 @@ function fallbackBrowser() {
 }
 let fellBack;
 
-// The browser a walk runs in: WebKit, which the app runs in on a Mac and
-// on Linux, for every part of the app that has moved there, webkit.mjs,
-// and Chromium, which the app runs in on Windows, for the rest and for
-// the random walks until the last part has moved. WALKBROWSER names one
-// for every walk, as the nightly walks do for Chromium. Playwright brings
-// a WebKit of its own for Linux, which takes real key presses. SLOW and
-// WALKCOVERAGE work through Chromium's own tools, so either walks every
-// walk in Chromium unless WALKBROWSER says otherwise. See Two browsers in
-// docs/TESTING.md.
+// The browser a walk runs in: Chromium, which the app runs in on
+// Windows, for every walk and sequence. WALKBROWSER names another, as the
+// nightly walks name WebKit, which the app runs in on a Mac and on Linux.
+// Playwright's WebKit for Linux draws every frame on the CPU, so the same
+// walks took 54 % longer in it in a cloud session, and a push walks in
+// Chromium. SLOW and WALKCOVERAGE work through Chromium's own tools. See
+// Two browsers in docs/TESTING.md.
 const asked = process.env.WALKBROWSER || "";
 if (asked && asked !== "chromium" && asked !== "webkit") {
   throw new Error(`WALKBROWSER is chromium or webkit, not ${asked}`);
 }
-export function browserFor(part) {
-  if (asked) return asked;
-  if (Number(process.env.SLOW) > 1 || process.env.WALKCOVERAGE) return "chromium";
-  if (part === undefined) return inChromium.length ? "chromium" : "webkit";
-  return inChromium.includes(part) ? "chromium" : "webkit";
+export function browserFor() {
+  return asked || "chromium";
 }
+// Playwright's WebKit on Linux draws every frame through OpenGL, which a
+// machine with no graphics chip, a cloud session's or CI's, runs on the
+// CPU in Mesa's llvmpipe. llvmpipe splits each frame over a thread per
+// core, and with six walkers on four cores those threads mostly wait on
+// each other: a frame that changed one digit took 38 ms of CPU on four
+// threads and 28 ms on two, and a share of the walks took 11 % less CPU
+// on two. LP_NUM_THREADS from outside still wins.
+const drawingThreads = "2";
+
 async function launch(name, args) {
   // An interrupt is the walk's own to answer, see keepTraces, not
   // Playwright's, which would close the browser under the traces.
   if (name === "webkit") {
     try {
-      return await webkit.launch({ handleSIGINT: !traces });
+      return await webkit.launch({ handleSIGINT: !traces, env: { ...process.env, LP_NUM_THREADS: process.env.LP_NUM_THREADS ?? drawingThreads } });
     } catch (e) {
       // There is no older WebKit to fall back on, as there is a Chromium.
       if (!String(e?.message).includes("Executable doesn't exist")) throw e;
@@ -136,17 +139,19 @@ export function noDeadlines(page) {
   page.setDefaultTimeout(0);
 }
 
-// A browser for the walks to open the interface in. WebGPU on, which
-// headless Chromium on Linux only gives when asked, for the step that
-// checks what the GPU draws, ["screen light"]. The video preview itself
+// A browser for the walks to open the interface in. The video preview
 // draws on a 2D canvas here, __flatScreen, because headless Chromium gives
 // nothing back from a WebGPU canvas, and the walks read the frame on
-// screen from the canvas. See screen.ts. The counts of the lines a page
-// runs are Chromium's, so WALKCOVERAGE counts in Chromium only. name is
-// the browser, a random walk's unless said, see browserFor.
-export async function newBrowser(name = browserFor()) {
+// screen from the canvas. See screen.ts. gpu turns WebGPU on, which
+// headless Chromium on Linux only gives when asked, for the one step that
+// checks what the GPU draws, ["screen light"]: on for every page, it cost
+// every walk a twentieth of the processor time of opening its video. The
+// counts of the lines a page runs are Chromium's, so WALKCOVERAGE counts
+// in Chromium only. name is the browser, the walks' unless said, see
+// browserFor.
+export async function newBrowser(name = browserFor(), { gpu = false } = {}) {
   if (coverage && name !== "chromium") throw new Error("WALKCOVERAGE counts lines through Chromium's own tools, so it walks in Chromium only, WALKBROWSER=chromium");
-  const browser = await launch(name, ["--enable-unsafe-webgpu"]);
+  const browser = await launch(name, gpu ? ["--enable-unsafe-webgpu"] : []);
   if (traces) {
     const plain = browser.newPage.bind(browser);
     browser.newPage = async (options) => {
@@ -363,45 +368,127 @@ if (traces) {
 // play is shown and read on any machine, issues #534 and #588. "sound"
 // is the sound card's, as the app runs without a walk, for what a walk
 // checks on the sound's own time, see soundCard in common/steps.mjs.
-export async function open(url, { viewport = { width: 1500, height: 1000 }, scale = 1, again = null, browser: given = null, named = browserFor(), still = false, clock = "frames" } = {}) {
-  // The episode the way the bridge found it, whatever the walk before did.
+// kept is the page the sequence before passed in, opened on again when it
+// can be, see letGo and openAgain, and closed when it cannot.
+export async function open(url, { viewport = { width: 1500, height: 1000 }, scale = 1, again = null, browser: given = null, named = browserFor(), still = false, clock = "frames", gpu = false, start = null, kept = null } = {}) {
+  const reused = kept && (await openAgain(kept, { viewport, scale, still }));
+  if (kept && !reused) await kept.context().close();
+  // The episode the way the bridge found it, whatever the walk before did,
+  // and with start a second video, heard and searched, which the app
+  // opens on, see startWith in bridge_test.go.
+  let video = ".mp4";
   if (!again) {
-    const reset = await fetch(new URL("/reset", url), { method: "POST" });
+    const reset = await fetch(new URL(`/reset${start ? `?${new URLSearchParams(start)}` : ""}`, url), { method: "POST" });
     if (!reset.ok) throw new Error(`the bridge did not reset: ${await reset.text()}`);
+    if (start) video = (await reset.json()).split("/").pop();
   }
-  const browser = again ?? given ?? (await newBrowser(named));
-  // A page of its own in a context of its own, which browser.newPage
-  // makes, so nothing a page before it kept is there.
+  const browser = again ?? given ?? (await newBrowser(named, { gpu }));
+  // The page the sequence before passed in, or a page of its own in a
+  // context of its own, which browser.newPage makes, so nothing a page
+  // before it kept is there, see letGo.
   // A page still asks the system for less motion, the way a person can
   // in the Mac's settings, so the app leaves out what it animates and
   // the walk does not wait for it, see still in sequences.mjs.
-  const page = await browser.newPage({ viewport, deviceScaleFactor: scale, reducedMotion: still ? "reduce" : "no-preference" });
-  noDeadlines(page);
+  let page = reused;
+  if (!page) {
+    page = await browser.newPage({ viewport, deviceScaleFactor: scale, reducedMotion: still ? "reduce" : "no-preference" });
+    page.__scale = scale;
+    page.__filming = filmingNow;
+    page.__scripts = [];
+    const add = page.addInitScript.bind(page);
+    page.addInitScript = async (...script) => {
+      const added = await add(...script);
+      page.__scripts.push(added);
+      return added;
+    };
+    noDeadlines(page);
+    await slowDown(page);
+  }
   await page.addInitScript((clock) => {
     window.__flatScreen = true;
     window.__playClock = clock;
   }, clock);
-  await slowDown(page);
   const errors = [];
-  page.on("pageerror", (e) => errors.push(String(e)));
+  threw(page, errors);
   await page.goto(url);
-  await page.locator("aside li", { hasText: ".mp4" }).first().waitFor();
-  await page.locator("aside li", { hasText: ".mp4" }).first().click();
+  await page.locator("aside li", { hasText: video }).first().waitFor();
+  await page.locator("aside li", { hasText: video }).first().click();
   // The sidebar of a new library is pinned open, over the left of the
   // workspace and the start of the clip timeline. It is let go of, the way
   // a person who works in the workspace would, so a hand can reach what is
-  // under it.
-  if (await page.evaluate(() => document.querySelector("aside")?.classList.contains("open"))) {
-    await page.locator("aside .head .glyph").click();
-    await page.mouse.move(750, 500);
-    await sidebarStill(page);
-  }
+  // under it. Its button keeps a sidebar that is not kept, so it is
+  // clicked only when the sidebar is kept, and the pointer moved away
+  // closes one hovering opened.
+  if ((await page.locator("aside .head .glyph").getAttribute("aria-pressed")) === "true") await page.locator("aside .head .glyph").click();
+  await page.mouse.move(750, 500);
+  await sidebarStill(page);
   await page.locator("aside .list li button.pick").first().waitFor();
   await page.locator("aside .list li button.pick").first().click();
   await page.locator(".captions .word").first().waitFor();
   await settle(page);
   await page.evaluate(() => document.body.focus());
   return { browser, page, errors };
+}
+
+// Lets go of the app on a page its sequence passed in, as the sequence
+// ends, and gives the page back for the next sequence of its walker to
+// open the app on with openAgain, or null when it cannot be. Opening the
+// video on a page opened again took 0.75 CPU-s, against 0.98 on a new
+// page, ten times each in a cloud session. What the sequence left on the
+// page goes at once, so nothing of it runs beside a sequence walked in a
+// browser of its own meanwhile: its listeners, its routes and its init
+// scripts, what the app kept in the page's storage, where the pointer was
+// and the keys still down, and its trace, which a failure after it then
+// does not keep under its own name. The bridge serves nothing a page may
+// keep, see noStore in bridge_test.go, so a sequence fetches what it
+// needs whichever sequence walked before it. A page whose clock a walk
+// took, see fakeClock, which cannot be given back, is not kept, nor any
+// page while the walks count the lines they run, whose counts a page
+// keeps until it is closed, and a node that throws closes nothing.
+export async function letGo(page) {
+  if (coverage || page.isClosed() || page.__clock) return null;
+  try {
+    await page.evaluate(() => {
+      localStorage.clear();
+      sessionStorage.clear();
+      window.__leave?.();
+    });
+  } catch {
+    return null;
+  }
+  await page.removeAllListeners(undefined, { behavior: "ignoreErrors" });
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  for (const script of page.__scripts.splice(0)) await script.dispose();
+  const context = page.context();
+  if (tracing.delete(context)) {
+    await context.tracing.stopChunk();
+    page.__traced = true;
+  }
+  await page.goto("about:blank");
+  // Off the page, where a new page's pointer is: the rail of the sidebar
+  // opens under it.
+  await page.mouse.up();
+  await page.mouse.move(-1, -1);
+  for (const key of ["Shift", "Control", "Alt", "Meta"]) await page.keyboard.up(key);
+  page.__held = false;
+  page.__traceStep = false;
+  page.__pressed = undefined;
+  return page;
+}
+
+// The page letGo gave back, set up for the next sequence, or null when it
+// is of another scale or filmed otherwise than the sequence wants.
+async function openAgain(page, { viewport, scale, still }) {
+  if (page.isClosed() || page.__scale !== scale || page.__filming !== filmingNow) return null;
+  await page.setViewportSize(viewport);
+  await page.emulateMedia({ reducedMotion: still ? "reduce" : "no-preference" });
+  if (page.__traced) {
+    const context = page.context();
+    await context.tracing.startChunk({ title: tracedAs });
+    tracing.add(context);
+    hearRequests(page);
+  }
+  return page;
 }
 
 // Waits until the app has nothing on its way: no call out, no timer of
@@ -479,6 +566,9 @@ export async function holdClock(page) {
     const after = await pageNow(page);
     if (after !== at) throw new Error(`pauseAt did not hold the clock: it went from ${at} to ${after}`);
   }
+  // The Go side's clock for the time removed work has stands still with
+  // it, see walkTime in walktime_test.go.
+  await control(page.url(), "/clock?hold");
   page.__held = true;
 }
 
@@ -486,12 +576,27 @@ export async function holdClock(page) {
 const pageNow = (page) => page.evaluate(() => Date.now());
 
 // Runs the app's held time on by ms, every timer and frame on the way
-// firing in turn, and holds it again there.
+// firing in turn, and holds it again there. The Go side's clock for the
+// time removed work has runs on with it, first, so work whose time is up
+// is forgotten there before the page sees its own time run out, see
+// walkTime in walktime_test.go.
 export async function runClock(page, ms) {
+  await control(page.url(), `/clock?run=${Math.round(ms)}`);
   await page.clock.runFor(ms);
 }
 
+// Lets the app's time run again and leaves the Go side's held, for a
+// walk that takes the app somewhere its frames and timers have to run,
+// another video and back, while the time removed work has stands still.
+// The Go side keeps that time, so the page running on draws it and
+// decides nothing. holdClock holds the page again.
+export async function letPageTimeGo(page) {
+  await page.clock.resume();
+  page.__held = false;
+}
+
 export async function letClockGo(page) {
+  await control(page.url(), "/clock?go");
   await page.clock.resume();
   page.__held = false;
 }
@@ -572,12 +677,17 @@ async function chosenPath(page, seen) {
 }
 
 // The clip a reading of readChosen is of, by its plan and id as the
-// engine names them.
-async function chosenClip(page, seen) {
+// engine names them, and the clips of its episode the engine said that
+// in, which engineState can take rather than ask for again.
+async function chosenClipAndClips(page, seen) {
   const path = await chosenPath(page, seen);
-  if (!path || !seen.key) return null;
-  const entry = (await ask(page, "Clips", path)).find((c) => c.key === seen.key);
-  return entry ? { path, plan: entry.plan, clip: entry.id } : null;
+  if (!path || !seen.key) return { at: null, clips: null };
+  const clips = await ask(page, "Clips", path);
+  const entry = clips.find((c) => c.key === seen.key);
+  return { at: entry ? { path, plan: entry.plan, clip: entry.id } : null, clips };
+}
+async function chosenClip(page, seen) {
+  return (await chosenClipAndClips(page, seen)).at;
 }
 
 // Which episode is on screen: the one the sidebar marks as the current
@@ -598,9 +708,12 @@ export async function chosen(page) {
 
 // What the engine says about the clip on screen, asked directly: its
 // captions and its pieces, on the episode's clock. A walk compares what is
-// on screen with this, and this before a step with this after it.
-export async function engineState(page, at) {
-  return page.evaluate(async ({ path, plan, clip }) => {
+// on screen with this, and this before a step with this after it. clips,
+// when given, are the clips of the episode settledScreen read in the same
+// settled moment, so they are not asked for a second time after every
+// step.
+export async function engineState(page, at, clips = null) {
+  return page.evaluate(async ({ at: { path, plan, clip }, read }) => {
     const ask = async (name, args) => {
       const answer = await fetch("/call", {
         method: "POST",
@@ -609,14 +722,14 @@ export async function engineState(page, at) {
       });
       return answer.json();
     };
-    const [captions, clips] = await Promise.all([ask("Captions", [path, plan, clip]), ask("Clips", [path])]);
+    const [captions, clips] = await Promise.all([ask("Captions", [path, plan, clip]), read ?? ask("Clips", [path])]);
     const entry = clips.find((c) => c.plan === plan && (c.id === clip || c.basename === clip));
     // Each piece with its crop, the keyframes that glide it and its
     // rotation, which are steps of the history as the edges are, issue
     // #248.
     const pieces = (entry?.segments ?? []).map((s) => ({ start: s.start, end: s.end, cropX: s.cropX ?? null, marks: s.marks ?? [], rotate: s.rotate ?? 0 }));
     return { ...captions, segments: pieces };
-  }, at);
+  }, { at, read: clips });
 }
 
 // What the clip timeline shows: where the clip starts and ends and where
@@ -675,7 +788,8 @@ export async function settledScreen(page) {
     },
     [Boolean(page.__held), readChosen.toString(), readShown.toString(), readTimeline.toString()],
   );
-  return { at: await chosenClip(page, seen), now: seen.now, drawn: seen.drawn };
+  const { at, clips } = await chosenClipAndClips(page, seen);
+  return { at, clips, now: seen.now, drawn: seen.drawn };
 }
 
 // Where everything a hand can take hold of on the clip timeline is on
@@ -770,6 +884,20 @@ export async function shownOnPlayhead(page, { captions = false, lost } = {}) {
   return page.locator(".screen").evaluate(
     (screen, [fps, start, captions, lost]) =>
       new Promise((done) => {
+        // The moment whose frame shows for a playhead at, by the clip
+        // timeline's handles: a frame before the end on the end itself,
+        // and never before the start of the clip's last piece.
+        const edgeOfClip = (at, fps) => {
+          const box = document.querySelector(".clip-timeline");
+          const value = (el) => Number(el?.getAttribute("aria-valuenow"));
+          const end = value(box?.querySelector('[aria-label="Clip end"]'));
+          if (!Number.isFinite(end) || at !== end) return at;
+          const ends = [...(box?.querySelectorAll(".cutedge") ?? [])]
+            .filter((e) => /cut \d+ ends/.test(e.getAttribute("aria-label") ?? ""))
+            .map(value);
+          const last = Math.max(value(box.querySelector('[aria-label="Clip start"]')), ...ends.filter(Number.isFinite));
+          return Math.max(last, at - 1 / fps);
+        };
         const since = lost ?? screen.dataset.captionsLost ?? "";
         const gone = () => captions && (screen.dataset.captionsLost ?? "") !== since;
         const up = () => {
@@ -777,8 +905,12 @@ export async function shownOnPlayhead(page, { captions = false, lost } = {}) {
           const shown = Number(screen.dataset.shown);
           // The frame that holds the playhead, one that begins a
           // millisecond or less after it included, see frameAt in
-          // lib/flow.ts.
-          const begins = start + Math.floor((at - start + 0.001) * fps) / fps;
+          // lib/flow.ts. On the clip's end itself it is the clip's last
+          // frame, the one that holds the moment a frame before the end,
+          // where a play of the clip stops, see settle in
+          // lib/frames/queue.ts. A step that lands on the end shows it.
+          const held = edgeOfClip(at, fps);
+          const begins = start + Math.floor((held - start + 0.001) * fps) / fps;
           if (!Number.isFinite(shown) || Math.abs(shown - begins) >= 0.5 / fps) return false;
           return !captions || (screen.dataset.captioned !== undefined && Number(screen.dataset.captioned) === shown);
         };
@@ -812,10 +944,12 @@ export async function shownOnPlayhead(page, { captions = false, lost } = {}) {
 // a play still going is paused in the frame the wait ends, inside the
 // page: pressed a trip later, the play went on further the busier the
 // machine, and a clip that reached its end in between would play again
-// from its start.
-export async function playUntil(page, { past = Infinity, most = Infinity, from = NaN, pause = false } = {}) {
+// from its start. With hold, a play still going is held where it is in
+// that frame instead, sound and picture, see holdSound, until the walk
+// lets it go.
+export async function playUntil(page, { past = Infinity, most = Infinity, from = NaN, pause = false, hold = false } = {}) {
   return page.evaluate(
-    ([past, most, from, pause]) =>
+    ([past, most, from, pause, hold]) =>
       new Promise((done) => {
         let last = Number.isFinite(from) ? from : Number(document.querySelector(".screen")?.dataset.playhead);
         let gone = 0;
@@ -830,6 +964,7 @@ export async function playUntil(page, { past = Infinity, most = Infinity, from =
             document.body.dispatchEvent(new KeyboardEvent("keydown", key));
             document.body.dispatchEvent(new KeyboardEvent("keyup", key));
           }
+          if (playing && hold) void window.__holdSound(true);
           return { at, playing, gone };
         };
         const now = look();
@@ -842,7 +977,7 @@ export async function playUntil(page, { past = Infinity, most = Infinity, from =
         });
         watch.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-playhead", "aria-label"] });
       }),
-    [past === Infinity ? Number.MAX_VALUE : past, most === Infinity ? Number.MAX_VALUE : most, from, pause],
+    [past === Infinity ? Number.MAX_VALUE : past, most === Infinity ? Number.MAX_VALUE : most, from, pause, hold],
   );
 }
 
@@ -855,30 +990,40 @@ export async function holdSound(page, held) {
   await page.evaluate((held) => window.__holdSound(held), held);
 }
 
+// Presses the space bar to play, with the sound card held from before the
+// press until the app has settled on it, so the play starts and stands at
+// its first frame meanwhile, see holdSound. Not held, a settle while a
+// play runs lasted as long as the play on a busy runner, which answered
+// the app's calls for the frames the whole way, and the play had reached
+// the clip's end before the walk looked, issue #705. Says whether it
+// plays.
+export async function pressPlay(page) {
+  await holdSound(page, true);
+  await page.keyboard.press("Space");
+  await settle(page);
+  const playing = await page.evaluate(() => !document.querySelector('button[aria-label="Play"]'));
+  await holdSound(page, false);
+  return playing;
+}
+
 // Plays from the playhead until it has gone on by seconds of the episode,
 // or until the play has stopped by itself at the clip's end, and pauses it
 // there, see playUntil. Says false, and plays nothing, when the space bar
 // did not start a play, once the app has settled on the press.
 export async function playFor(page, seconds) {
   const from = await page.evaluate(() => document.querySelector(".screen")?.dataset.playhead ?? null);
-  await page.keyboard.press("Space");
-  await settle(page);
-  const now = await page.evaluate(() => ({
-    playing: !document.querySelector('button[aria-label="Play"]'),
-    at: document.querySelector(".screen")?.dataset.playhead ?? null,
-  }));
-  if (!now.playing) return now.at !== from;
+  if (!(await pressPlay(page))) return (await page.evaluate(() => document.querySelector(".screen")?.dataset.playhead ?? null)) !== from;
   await playUntil(page, { most: seconds, from: Number(from), pause: true });
   return true;
 }
 
 // How many times the Go side has told the interface something of a name,
-// "job" above all, counted from the first time a walk asks, so it can wait
-// for the next. The bridge sends every event to every page listening, so
+// "video" above all, the state of a video, which carries its jobs,
+// counted from the first time a walk asks, so it can wait for the next. The bridge sends every event to every page listening, so
 // the walk listens beside the app and takes nothing from it.
 // The first ask waits until the walk is listening, so nothing the Go side
 // says after it is missed.
-export async function news(page, name = "job") {
+export async function news(page, name = "video") {
   return page.evaluate(async (name) => {
     if (!window.__news) {
       window.__news = {};
@@ -920,7 +1065,7 @@ export async function caughtUp(page, url, jobs = []) {
 // often than seen, a count news gave, and says how often now. It waits
 // for good: news that never comes is a walk that hangs, ended by the
 // -timeout of make walks with the step it was in printed, see walk.mjs.
-export async function nextNews(page, seen, name = "job") {
+export async function nextNews(page, seen, name = "video") {
   await page.evaluate(
     ([name, seen]) =>
       new Promise((done) => ((window.__news[name] ?? 0) > seen ? done() : window.__newsWaiting.push({ name, seen, done }))),
@@ -977,7 +1122,7 @@ const STRIP = 12 / 180;
 // nothing drawn on it is black, and so are the bars of frame 0, so whether
 // there is a picture is read from the grey under the bars, which no frame
 // has black.
-async function reader(page) {
+export async function reader(page) {
   await page.evaluate(([bits, strip]) => {
     if (window.__pictured) return;
     window.__pictured = () => {
@@ -1174,6 +1319,33 @@ export async function fromSidebar(page, click) {
         watch.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
       }),
   );
+}
+
+// Loads the page again, the way a walk opens the app again after it
+// closed. The page is told first that it is being left, so a call it has
+// out answers nothing rather than throwing, see __leave in
+// wails-bridge.ts. WebKit still writes each call it cuts off on the
+// console as an error, "Fetch API cannot load ... due to access control
+// checks", though the page caught it, and Playwright hands that on as the
+// page having thrown, so those are not counted while the page is left.
+const leaving = new WeakSet();
+export async function reload(page) {
+  leaving.add(page);
+  try {
+    await page.evaluate(() => window.__leave?.());
+    await page.reload();
+  } finally {
+    leaving.delete(page);
+  }
+}
+
+// What the page threw, without what WebKit wrote of the calls it cut off
+// as the walk loaded the page again, see reload.
+function threw(page, errors) {
+  page.on("pageerror", (e) => {
+    if (leaving.has(page) && String(e).includes("due to access control checks")) return;
+    errors.push(String(e));
+  });
 }
 
 // Until fn, run in the page with arg, says true. It is asked again each

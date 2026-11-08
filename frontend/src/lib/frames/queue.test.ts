@@ -360,7 +360,7 @@ describe("the picture standing still", () => {
       shown: unknown;
       report(drew?: boolean, passing?: boolean): void;
     };
-    inside.video = { width: 1920, height: 1080, samples: { pts: [0], order: [0], timescale: 25 } };
+    inside.video = { width: 1920, height: 1080, samples: { count: 1, timescale: 25, start: 0, step: 1 } };
     const frame = (width: number, height: number) => ({ frame: { width, height, close() {} }, run: -1, rank: 0 });
     inside.shown = frame(640, 360);
     return { q, inside, frame };
@@ -449,7 +449,7 @@ describe("a frame waiting for its captions", () => {
       movieOf({ duration: 120, width: 2, height: 2, grid: { origin: 0, start: 0, num: 25, den: 1, count: 3000 } }),
     );
     const inside = q as unknown as { video: unknown; dress(rank: number): Promise<boolean> | null };
-    inside.video = { width: 2, height: 2, samples: { pts: [0, 1, 2], order: [0, 1, 2], timescale: 25 } };
+    inside.video = { width: 2, height: 2, samples: { count: 3, timescale: 25, start: 0, step: 1 } };
     let came = () => {};
     q.over = {
       at: () => null,
@@ -488,6 +488,31 @@ describe("a frame waiting for its captions", () => {
     expect(await wanted).toBe(true);
     expect(q.stats.bare).toBe(0);
     expect(calledOff).toBe(1);
+  });
+
+  // A clip made with Mark In was sought to the mark and then to its first
+  // sentence, and its card was clicked while the frame of the sentence
+  // waited for the captions the Go side was slow to give. The frame of the
+  // mark came meanwhile, a frame passing, and went up first, so the video
+  // preview changed twice for one click, the picture of another moment
+  // under the clip's captions and then the clip's own frame.
+  test("keeps a frame of an older place off the screen until it is up", async () => {
+    const { q, dress, came } = waiting();
+    q.dressWait = () => () => {};
+    const inside = q as unknown as {
+      shown: { rank: number } | null;
+      passing(rank: number, frame: unknown, seq: number, key?: boolean): void;
+    };
+    const picture = () => ({ width: 2, height: 2, close() {}, clone: () => picture() });
+    const wanted = dress();
+    inside.passing(2, picture(), 1);
+    expect(inside.shown).toBe(null);
+    came();
+    expect(await wanted).toBe(true);
+    // Once nothing waits, a frame passing is put up again, the way it is
+    // under a hand that drags the playhead.
+    inside.passing(2, picture(), 2);
+    expect(inside.shown?.rank).toBe(2);
   });
 
   test("waits 600 ms of the browser's clock unless a wait is handed in", async () => {
@@ -615,7 +640,7 @@ describe("a frame decoded for a play", () => {
       movieOf({ duration: 120, width: 2, height: 2, grid: { origin: 0, start: 0, num: 25, den: 1, count: 3000 } }),
     );
     const inside = q as unknown as { video: unknown; frameOut(slot: unknown, frame: unknown): void };
-    inside.video = { width: 2, height: 2, samples: { pts: [0, 1, 2], order: [0, 1, 2], timescale: 25 } };
+    inside.video = { width: 2, height: 2, samples: { count: 3, timescale: 25, start: 0, step: 1 } };
     const asked: number[] = [];
     const drawn: number[] = [];
     q.over = {

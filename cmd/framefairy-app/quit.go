@@ -92,6 +92,22 @@ func (l *leaving) closing() {
 	l.mu.Unlock()
 }
 
+// closeDown is the one way the app stops everything it started, on the
+// way out: the watch and the news, the models, the jobs with any ffmpeg
+// they run, the measuring of loudness. main runs it as the shutdown hook
+// and as what Cmd+Q stops, and the walks' bridge runs it on the app it
+// closes, see bridge.quit. A part that is to stop on the way out stops
+// here, so the bridge stops it too: the bridge named the parts one by one,
+// and each time a part it did not name wrote into a work folder while the
+// bridge removed it and failed with "directory not empty", issue #713.
+// It says whether the jobs stopped in time.
+func (s *FrameFairy) closeDown() bool {
+	s.watch.stop()
+	s.news.stop()
+	s.store.machine.CloseModels()
+	return s.stopAll()
+}
+
 // stopAll stops everything the app started, on the way out, after the
 // models: the jobs, and with them any ffmpeg they run, the measuring of
 // loudness, and a build that is ready goes in place.
@@ -106,18 +122,20 @@ func (l *leaving) closing() {
 // not, each delete gives up after stopWait of its own, and quitting is
 // not held that much longer.
 //
-// The models stay in main, engine.CloseModels, before this: they are the
-// engine's for the whole process until #647, and a test that quits must
-// not close the models of every other test.
-func (s *FrameFairy) stopAll() {
+// The models are closed by closeDown, just before this, with the watch
+// and the news, so what the window is told and what runs stop together.
+// It says whether the jobs stopped in time.
+func (s *FrameFairy) stopAll() bool {
 	// A WaitGroup takes no new work while it is waited for, so a video let
 	// go from here on is cleared where it is let go.
 	s.clearMu.Lock()
 	s.quitting = true
 	s.clearMu.Unlock()
-	if s.jobs.shutDown() {
+	stopped := s.jobs.shutDown()
+	if stopped {
 		s.clearing.Wait()
 	}
 	s.levels.shutDown()
 	s.updates.installOnQuit()
+	return stopped
 }

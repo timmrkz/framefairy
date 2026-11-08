@@ -95,7 +95,10 @@ removed. Nothing is prepared before the first play.
    and started it again for a gesture that changed the program. #152 had
    spliced the new program into the running play in 366 lines, and was
    closed for it. Loop was the first exception, 2.150 and 2.183, which
-   changes only where the play ends. Then the play kept the pieces it
+   changes only where the play ends. That end is the play's own: the
+   next play builds its program again, `Program.changedWhilePlaying`.
+   Kept, a loop switched off in the second time through sent the next
+   play round the clip's end once more. Then the play kept the pieces it
    started with while an edge or a cut was dragged, because starting it
    again at every step of the hand stuttered. Tim found the cost of that
    on #277: he pulled the end of a clip in, played it, put the end back
@@ -149,7 +152,10 @@ closed for standing unused.
   [PACKAGING.md](PACKAGING.md) before the first release. It speaks
   `internal/framewire` with the Go side, `engine.EpisodeFrames`.
 - It keeps cursors, each the file open with its index read and a picture
-  decoder ready, with the graphics chip where there is one. The chip only
+  decoder ready, with the graphics chip where there is one and the
+  engine started it with `-chip`, which it does on a machine handed the
+  system's media engine, the app's and the command line's and no
+  test's, see `engine.Media`. The chip only
   decodes: the frame is brought out as it is, and one chain on the
   processor scales it to the size of the canvas, the same chain on every
   system and for every file. Scaling on the chip as well was a second
@@ -167,9 +173,8 @@ closed for standing unused.
   because ffmpeg starts a lost VideoToolbox session again by itself, as
   after the Mac slept. The log says it as a warning, with all ffmpeg
   said about why. Before, the cursor failed and the video preview stood
-  still, one CI run in four, plan row 2.215. The engine's framing falls
-  back for good after one failure, see `softDecode`, because it runs the
-  ffmpeg program on a whole window and has no frame to go on from. mpv
+  still, one CI run in four, plan row 2.215. The engine's framing
+  decodes on the processor from the start, see ENGINE.md. mpv
   waits for three failed frames in a row before it falls back, and
   ffmpeg's program skips the frame, neither of which keeps the frames
   of the short. `FRAMEFAIRY_FRAMES_FAIL_AFTER=n` makes the decoder fail
@@ -351,8 +356,12 @@ closed for standing unused.
   new clip's frame goes up, and all of it changes in that one frame,
   `held` in `Player.svelte`. Tim saw a clip card clicked move the crop
   frame first, the picture a few frames later and the captions a few after
-  that, issue #383. Nothing waits under a dragging hand, which follows the
-  hand.
+  that, issue #383. The same hold keeps the crop frame and the captions
+  over the frame on screen while an edge dragged over it leaves it out of
+  the clip, until the frame the playhead goes to with the edge goes up.
+  Tim saw the captions blink off for a frame each time a start dragged
+  later passed a frame, issue #755. Nothing waits under a dragging hand,
+  which follows the hand.
 
 ## Speed
 

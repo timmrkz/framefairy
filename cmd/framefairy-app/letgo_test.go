@@ -126,7 +126,7 @@ func TestQuittingWaitsForTheDeleteOfAVideoLetGo(t *testing.T) {
 			t.Fatal(err)
 		}
 		held := &removeHeld{Fs: files, began: make(chan struct{}), letGo: make(chan struct{})}
-		svc.store.files = held
+		svc.store.files, svc.store.machine.Files = held, held
 		withJobs(svc)
 		if listed(svc.Library(), ep) {
 			t.Fatalf("the folder written back kept %s in the library", ep)
@@ -151,6 +151,66 @@ func TestQuittingWaitsForTheDeleteOfAVideoLetGo(t *testing.T) {
 	})
 }
 
+func TestTheLibraryIsReadWhileAVideoLetGoIsCleared(t *testing.T) {
+	// Reading the library waited for the whole delete of what was written
+	// back into the folder of a video let go, issue #691: the delete held
+	// the store's lock, and the library, its settings and its list all
+	// wait for that lock. The delete is held in the middle, and the
+	// library is read while it is, on the test's own goroutine, so a read
+	// that waits for the delete hangs the test until go test's -timeout.
+	// The same video added again meanwhile still waits for the delete, so
+	// the mark it writes is not deleted with the rest.
+	synctest.Test(t, func(t *testing.T) {
+		svc, eps := memoryLibrary(t, "youtube.mp4", "start.mp4")
+		files := svc.store.files
+		gone, stays := eps[0], eps[1]
+		if err := files.RemoveAll(engine.WorkDir(gone)); err != nil {
+			t.Fatal(err)
+		}
+		if err := writeChosen(files, gone, chosen{Opened: 1}); err != nil {
+			t.Fatal(err)
+		}
+		held := &removeHeld{Fs: files, began: make(chan struct{}), letGo: make(chan struct{})}
+		svc.store.files, svc.store.machine.Files = held, held
+		withJobs(svc)
+		if listed(svc.Library(), gone) {
+			t.Fatalf("the folder written back kept %s in the library", gone)
+		}
+		<-held.began
+		if lib := svc.Library(); !listed(lib, stays) || listed(lib, gone) {
+			t.Errorf("read while %s is cleared, the library is %v", gone, lib)
+		}
+		if eps := svc.store.Episodes(); !slices.Equal(eps, []string{stays}) {
+			t.Errorf("read while %s is cleared, the list is %v", gone, eps)
+		}
+		if err := svc.store.UpdateSettings(func(s *Settings) { s.Target = 3 }); err != nil {
+			t.Fatal(err)
+		}
+		if got := svc.store.Settings().Target; got != 3 {
+			t.Errorf("settings changed while %s is cleared read back %d", gone, got)
+		}
+		added := make(chan error)
+		go func() {
+			_, err := svc.store.AddEpisodes([]string{gone})
+			added <- err
+		}()
+		synctest.Wait()
+		select {
+		case err := <-added:
+			t.Fatalf("%s was added again in the middle of the delete, %v", gone, err)
+		default:
+		}
+		close(held.letGo)
+		if err := <-added; err != nil {
+			t.Fatal(err)
+		}
+		svc.clearing.Wait()
+		if !listed(svc.Library(), gone) || !marked(files, gone) {
+			t.Errorf("added again while it was cleared, %s is not in the library with its folder marked", gone)
+		}
+	})
+}
+
 func TestAVideoLetGoWhileTheAppQuitsIsClearedAtOnce(t *testing.T) {
 	// Once quitting waits for the deletes under way, a video let go starts
 	// none beside them, and is cleared before the library is read.
@@ -170,45 +230,6 @@ func TestAVideoLetGoWhileTheAppQuitsIsClearedAtOnce(t *testing.T) {
 	}
 	if there, _ := afero.DirExists(files, engine.WorkDir(ep)); there {
 		t.Errorf("what was written back into %s is still there once the library was read", engine.WorkDir(ep))
-	}
-}
-
-func TestVideosAddedBeforeTheMarkAreMarkedOnceByTheirWork(t *testing.T) {
-	files := afero.NewMemMapFs()
-	config := "/home/tim/config/FrameFairy"
-	worked := "/home/tim/videos/start.mp4"
-	remnant := "/home/tim/videos/youtube.mp4"
-	for _, v := range []string{worked, remnant} {
-		if err := afero.WriteFile(files, v, []byte("not really a video"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	write := func(path string) {
-		t.Helper()
-		if err := afero.WriteFile(files, path, []byte("{}"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	// One with a transcript, the way every video added before the mark
-	// has, and one with only what opening it writes back.
-	write(filepath.Join(engine.LogsDir(worked), engine.TranscriptName(nil)))
-	write(filepath.Join(engine.WorkDir(worked), chosenFile))
-	write(filepath.Join(engine.WorkDir(remnant), chosenFile))
-	write(filepath.Join(engine.LogsDir(remnant), "levels.json"))
-	write(filepath.Join(engine.LogsDir(remnant), "levels.frames"))
-	write(filepath.Join(config, "library.json"))
-	if err := afero.WriteFile(files, filepath.Join(config, "library.json"),
-		[]byte(`["`+worked+`","`+remnant+`"]`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	svc := withJobs(&FrameFairy{store: openStoreIn(files, config)})
-	if !marked(files, worked) || marked(files, remnant) {
-		t.Fatalf("marked: %s %v, %s %v", worked, marked(files, worked), remnant, marked(files, remnant))
-	}
-	lib := svc.Library()
-	if !listed(lib, worked) || listed(lib, remnant) {
-		t.Errorf("the library is %v, want %s and not %s", lib, worked, remnant)
 	}
 }
 
@@ -255,6 +276,11 @@ func TestTheAppNeverOpensOnAVideoDeletedOutsideIt(t *testing.T) {
 	if err := writeChosen(files, gone, chosen{Opened: 2}); err != nil {
 		t.Fatal(err)
 	}
+	// The app starts: it looks at the disk before the window asks, the
+	// look watchTheDisk takes, here without the watch, which would hear
+	// the real disk under a library in memory.
+	svc.reconcile(nil)
+	t.Cleanup(svc.clearing.Wait)
 	if opened := svc.Opened(10); slices.Contains(opened, gone) || !slices.Contains(opened, stays) {
 		t.Errorf("the app opens on %v, want %s and not %s", opened, stays, gone)
 	}

@@ -34,11 +34,6 @@ type faceMetrics struct {
 	cache map[rune]float64
 }
 
-var (
-	facesMu sync.Mutex
-	faces   = map[string]*faceMetrics{}
-)
-
 func u16(b []byte, at int) (uint16, bool) {
 	if at < 0 || at+2 > len(b) {
 		return 0, false
@@ -116,36 +111,82 @@ func bestCmap(cmap []byte) []byte {
 	return best
 }
 
-// forgetMetrics drops what was read of every face, for when the faces of
-// the machine are read again and a name may now be another file.
-func forgetMetrics() {
-	facesMu.Lock()
-	faces = map[string]*faceMetrics{}
-	facesMu.Unlock()
+// metricsCache is what was read of each face by its name. A name may be
+// another file once the machine's fonts are read again, so Fonts keeps
+// it and forgets it then.
+type metricsCache struct {
+	mu    sync.Mutex
+	faces map[string]*faceMetrics
 }
 
-// face reads the tables of a font once and keeps them.
-func face(name string) (*faceMetrics, bool) {
-	facesMu.Lock()
-	f, seen := faces[name]
-	facesMu.Unlock()
+// forget drops what was read of every face.
+func (c *metricsCache) forget() {
+	c.mu.Lock()
+	c.faces = nil
+	c.mu.Unlock()
+}
+
+// face reads the tables of a font once and keeps them. A face the
+// program carries is read from bundledMetrics, whichever Fonts asks, a nil
+// one too. One of the machine's is kept by the Fonts that found it.
+func (fonts *Fonts) face(name string) (*faceMetrics, bool) {
+	if bundled, ok := bundledMetrics[name]; ok {
+		f := bundled()
+		return f, f != nil
+	}
+	if fonts == nil {
+		return nil, false
+	}
+	c := &fonts.metrics
+	c.mu.Lock()
+	f, seen := c.faces[name]
+	c.mu.Unlock()
 	if seen {
 		return f, f != nil
 	}
 	// Read without the lock, because finding a face of the machine may read
 	// its font folders, which forgets every face read before.
-	f = readFace(name)
-	facesMu.Lock()
-	faces[name] = f
-	facesMu.Unlock()
+	f = fonts.readFace(name)
+	c.mu.Lock()
+	if c.faces == nil {
+		c.faces = map[string]*faceMetrics{}
+	}
+	c.faces[name] = f
+	c.mu.Unlock()
 	return f, f != nil
 }
 
-func readFace(name string) *faceMetrics {
-	data, ok := FontBytes(name)
+// bundledMetrics are the tables of the faces the program carries, each
+// read the first time it is measured. They are read from the files built
+// into the program and are the same for every machine and every test, as
+// the hyphenation patterns are, so a test that measures one fills nothing
+// another could see differently. A nil Fonts measures them without
+// reading a face again for every line, which the word model's tests do
+// thousands of times.
+var bundledMetrics = func() map[string]func() *faceMetrics {
+	table := map[string]func() *faceMetrics{}
+	for _, font := range captionFonts {
+		table[font.Name] = sync.OnceValue(func() *faceMetrics {
+			data, err := fontBundle.ReadFile(FontsFolder + "/" + font.File)
+			if err != nil {
+				return nil
+			}
+			return readMetrics(data)
+		})
+	}
+	return table
+}()
+
+func (fonts *Fonts) readFace(name string) *faceMetrics {
+	data, ok := fonts.Bytes(name)
 	if !ok {
 		return nil
 	}
+	return readMetrics(data)
+}
+
+// readMetrics reads what measuring text needs of a font file.
+func readMetrics(data []byte) *faceMetrics {
 	head := table(data, "head")
 	hhea := table(data, "hhea")
 	hmtx := table(data, "hmtx")
@@ -269,8 +310,8 @@ func (f *faceMetrics) advance(r rune) float64 {
 // TextWidth is how wide a line of text comes out at a size, in the same
 // unit as the size. It reports false for a face neither the program nor the
 // machine has.
-func TextWidth(font, text string, size float64) (float64, bool) {
-	f, ok := face(font)
+func (fonts *Fonts) TextWidth(font, text string, size float64) (float64, bool) {
+	f, ok := fonts.face(font)
 	if !ok {
 		return 0, false
 	}
@@ -281,11 +322,11 @@ func TextWidth(font, text string, size float64) (float64, bool) {
 	return total * size * f.scale, true
 }
 
-// FontScale is the em size a caption size comes out as, as a share of that
+// Scale is the em size a caption size comes out as, as a share of that
 // size. The app draws captions itself and needs it, because a font size
 // in a browser is the em square.
-func FontScale(font string) float64 {
-	f, ok := face(font)
+func (fonts *Fonts) Scale(font string) float64 {
+	f, ok := fonts.face(font)
 	if !ok {
 		return 1
 	}

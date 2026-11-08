@@ -90,7 +90,7 @@ func TestAClipMadeByHand(t *testing.T) {
 	if !strings.HasPrefix(c.Title, "wort") {
 		t.Errorf("titled %q, want its first words", c.Title)
 	}
-	st := Status(disk, source, p.Base.ASRModel, p.Base.SilenceDB)
+	st := NewMachine(disk).Episode(source).Status(p.Base.ASRModel, p.Base.SilenceDB)
 	// What is said is the edges of the lines a clip made by hand is made
 	// of, so the app knows where I and O can make one.
 	lined, err := p.Transcript()
@@ -151,8 +151,8 @@ func TestAClipMadeByHand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	arriving := ArrivingCaptionsView(disk, p.HandPlanPath(), *cut, heard, nil)
-	written, err := ClipCaptionsView(disk, p.HandPlanPath(), c.ID, heard, nil)
+	arriving := ArrivingCaptionsView(planAt(t, disk, p.HandPlanPath()), *cut, heard, nil)
+	written, err := ClipCaptionsView(planAt(t, disk, p.HandPlanPath()), c.ID, heard, nil)
 	if arriving == nil || err != nil || len(arriving.Captions) == 0 || len(arriving.Captions) != len(written.Captions) {
 		t.Errorf("captions on the way %v, written %v %v", arriving, written, err)
 	}

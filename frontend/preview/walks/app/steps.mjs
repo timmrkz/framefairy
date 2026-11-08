@@ -4,10 +4,18 @@
 // walk so far, the step's argument, what the caption box showed before it
 // and the step's name. A sequence of any folder can take it. Below them the
 // helpers only these steps use. See docs/TESTING.md.
-import { ask, chosen, control, engineState, fromSidebar, nextPaint, seekTo, seenUntil, settle, sidebarStill } from "../bridge.mjs";
+import { ask, chosen, control, engineState, fromSidebar, nextPaint, seekTo, seenUntil, settle, sidebarStill, reload } from "../bridge.mjs";
 import { rate, url } from "../common/steps.mjs";
 
 export const steps = {
+  // ["asked once", name...]
+  //                    since the page opened, the interface asked the Go
+  //                    side for each call named exactly once
+  async "asked once"(walk, names) {
+    const calls = await walk.page.evaluate(() => window.__calls.map((c) => c.name));
+    const twice = names.map((n) => [n, calls.filter((c) => c === n).length]).filter(([, k]) => k !== 1);
+    if (twice.length) walk.wrong = `opening the video asked for ${twice.map(([n, k]) => `${n} ${k} times`).join(", ")}, not once each`;
+  },
   // ["first run"]      makes the bridge's machine one the app never ran
   //                    on and opens the app again: a card for each model,
   //                    nothing downloading until Download is pressed,
@@ -18,7 +26,7 @@ export const steps = {
   async "first run"(walk) {
     const { page } = walk;
     await control(url, "/fresh");
-    await page.reload();
+    await reload(page);
     const card = (name) => page.locator(".setup .area", { has: page.locator("h2", { hasText: name }) });
     const [speech, clip] = [card("Speech model"), card("Clip model")];
     await clip.locator("li").first().waitFor();
@@ -106,7 +114,7 @@ export const steps = {
   async "first run small"(walk) {
     const { page } = walk;
     await control(url, "/fresh?memory=8");
-    await page.reload();
+    await reload(page);
     const card = (name) => page.locator(".setup .area", { has: page.locator("h2", { hasText: name }) });
     const [speech, clip] = [card("Speech model"), card("Clip model")];
     await speech.locator("li").first().waitFor();
@@ -230,6 +238,49 @@ export const steps = {
     await sidebarStill(page);
     if (!walk.wrong && (await page.evaluate(() => document.querySelector("aside").classList.contains("open"))))
       walk.wrong = "the sidebar stays open with no menu and the pointer away from it";
+  },
+  // ["keep the sidebar"]
+  //                    hovers the rail open and clicks the button at its
+  //                    top, the way Tim did to keep it: the sidebar stays
+  //                    open once the pointer has left it, and the button
+  //                    now says it closes it, with another icon. A second
+  //                    click closes it under the pointer, and the button
+  //                    says it keeps it again, #615
+  async "keep the sidebar"(walk) {
+    const { page } = walk;
+    const button = page.locator("aside .head .glyph");
+    const seen = async () => ({
+      open: await page.evaluate(() => document.querySelector("aside").classList.contains("open")),
+      title: await button.getAttribute("title"),
+      pressed: await button.getAttribute("aria-pressed"),
+      icon: await button.innerHTML(),
+    });
+    await page.mouse.move(750, 400);
+    await sidebarStill(page);
+    await page.mouse.move(20, 500);
+    await sidebarStill(page);
+    const hovered = await seen();
+    if (!hovered.open || hovered.pressed !== "false" || hovered.title !== "Keep the sidebar open") {
+      walk.wrong = `the sidebar hovering opened shows ${JSON.stringify({ ...hovered, icon: undefined })}, open with a button that keeps it`;
+      return;
+    }
+    await button.click();
+    await page.mouse.move(750, 400);
+    await sidebarStill(page);
+    const kept = await seen();
+    if (!kept.open) walk.wrong = "one click on the button of a sidebar hovering opened did not keep it open once the pointer left";
+    else if (kept.pressed !== "true" || kept.title !== "Close the sidebar") walk.wrong = `the kept sidebar's button says ${JSON.stringify({ pressed: kept.pressed, title: kept.title })}, not that it closes it`;
+    else if (kept.icon === hovered.icon) walk.wrong = "the button wears the same icon whether the sidebar is kept or not";
+    if (walk.wrong) return;
+    await page.mouse.move(20, 500);
+    await sidebarStill(page);
+    await button.click();
+    await sidebarStill(page);
+    const closed = await seen();
+    if (closed.open) walk.wrong = "a click on the button of a kept sidebar did not close it under the pointer";
+    else if (closed.pressed !== "false" || closed.title !== "Keep the sidebar open" || closed.icon !== hovered.icon) walk.wrong = `once closed, the button says ${JSON.stringify({ pressed: closed.pressed, title: closed.title })}, not that it keeps it`;
+    await page.mouse.move(750, 400);
+    await sidebarStill(page);
   },
   // ["settings"]       opens the settings from the sidebar, and remembers
   //                    the models they name
@@ -619,6 +670,30 @@ export const steps = {
     await page.locator(`${card} button.bin[aria-label^="Remove "]`).first().click();
     await settle(page);
   },
+  // ["model gone", which]
+  //                    deletes the first "language" or "speech" model on
+  //                    this machine outside the app, the way Finder does,
+  //                    and the settings list one model fewer under the
+  //                    Downloaded models of its card, with nothing clicked
+  //                    and the app never brought to the front. Only a
+  //                    machine made new by ["first run"] has its models
+  //                    on the disk, the bridge's own are stand-ins
+  async "model gone"(walk, arg) {
+    const { page } = walk;
+    const card = arg === "language" ? ".card.finding" : ".card.speech";
+    const fold = page.locator(`${card} button.disclose-row`);
+    if ((await fold.getAttribute("aria-expanded")) !== "true") await fold.click();
+    await settle(page);
+    const bins = () => page.locator(`${card} button.bin[aria-label^="Remove "]`).count();
+    const before = await bins();
+    if (before < 1) {
+      walk.wrong = `the settings list no downloaded ${arg} model to delete`;
+      return;
+    }
+    await control(url, `/model-gone?kind=${arg}`);
+    // Hangs, as every wait of a walk does, if the settings never show it.
+    await seenUntil(page, url, bins, (n) => n === before - 1);
+  },
   // ["refused", card]  the gesture before it shook the "finding" or the
   //                    "speech" card and opened no list and no box, the
   //                    settings name the models they named at "settings",
@@ -799,7 +874,7 @@ export const steps = {
     const { page } = walk;
     const path = await page.evaluate(() => [...window.__calls].reverse().find((c) => c.name === "State")?.args[0]);
     await control(url, "/reopen");
-    await page.reload();
+    await reload(page);
     await page.locator("aside li", { hasText: path.split("/").pop() }).first().waitFor();
     await fromSidebar(page, () => page.locator("aside li", { hasText: path.split("/").pop() }).first().click());
     await settle(page);

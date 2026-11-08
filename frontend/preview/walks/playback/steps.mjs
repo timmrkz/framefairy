@@ -6,11 +6,152 @@
 // the helpers only these steps use. See docs/TESTING.md.
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { addHEVC, ask, caughtUp, chosen, clickOnTrack, cropFrame, drag, engineState, episodeOn, filmedOnScreen, fromSidebar, handles, high, loudness, middle, news, nextNews, nextPaint, playUntil, preview, readShort, recordFrames, sameLook, sayLook, seekTo, settle, shortFrames, shownOnPlayhead, xOf } from "../bridge.mjs";
+import { addHEVC, ask, holdClock, letClockGo, realFrames, runClock, caughtUp, chosen, clickOnTrack, cropFrame, drag, engineState, episodeOn, filmedOnScreen, fromSidebar, handles, high, holdSound, loudness, middle, news, nextNews, nextPaint, playUntil, pressPlay, preview, readShort, recordFrames, sameLook, sayLook, seekTo, settle, shortFrames, shownOnPlayhead, timeline, xOf, reload, pageUntil, inside } from "../bridge.mjs";
 import { onePiece, pieceCount, rate, restAhead, shortOf, url } from "../common/steps.mjs";
 import { overlaid, stillFrame } from "../rules.mjs";
 
 export const steps = {
+  // ["reflection"]     the reflection at the foot of the workspace, #717:
+  //                    once it has settled, on the time a held clock is
+  //                    run on, it holds the picture of the video preview,
+  //                    its left on the left and its right on the right, it
+  //                    lies along the bottom edge of the app under the
+  //                    middle of it, four fifths of its width and 100 px
+  //                    tall, and it shows in the room under the controls
+  //                    and changes no pixel of a control or of the clip
+  //                    timeline
+  async reflection(walk) {
+    const { page } = walk;
+    await settle(page);
+    await holdClock(page);
+    // A new frame is settled on over a quarter of a second, so two
+    // seconds leave it there to within a step of colour.
+    await runClock(page, 2000);
+    const placed = await page.evaluate(() => {
+      const r = document.querySelector("canvas.reflection");
+      const screen = document.querySelector(".screen canvas");
+      if (!r || !screen) return { wrong: r ? "the video preview has no canvas" : "the workspace has no reflection" };
+      const box = r.getBoundingClientRect();
+      const W = innerWidth;
+      const H = innerHeight;
+      const wrong = [];
+      if (Math.abs(box.bottom - H) > 0.5) wrong.push(`its foot stands at ${box.bottom.toFixed(1)}, the app's at ${H}`);
+      if (Math.abs(box.height - 100) > 0.5) wrong.push(`it is ${box.height.toFixed(1)} px tall, not 100`);
+      if (Math.abs(box.width - Math.floor(0.8 * W)) > 1) wrong.push(`it is ${box.width.toFixed(1)} px wide, not four fifths of ${W}`);
+      if (Math.abs(box.left + box.width / 2 - W / 2) > 1) wrong.push(`its middle stands at ${(box.left + box.width / 2).toFixed(1)}, the app's at ${W / 2}`);
+      // The reflection's colours, a column of quarters across, against
+      // the video preview's over the same quarters of the frame. The
+      // walks' video preview is a 2D canvas, see __flatScreen, so it reads
+      // back. Black bars around the frame are left out, and so is the
+      // frame's lower half, where the captions are drawn over it, which
+      // the reflection leaves out. The frame's upper half is the
+      // reflection's lower half, the reflection being upside down.
+      // Each pixel counts as much as it is seen, so the reflection's cells
+      // faded out at its sides and top, whose colours are rounded to a
+      // few steps, count for little.
+      const mean = (g, x0, y0, w, h) => {
+        const d = g.getImageData(x0, y0, w, h).data;
+        let sum = 0;
+        let seen = 0;
+        for (let i = 0; i < d.length; i += 4) {
+          sum += ((d[i] + d[i + 1] + d[i + 2]) / 3) * (d[i + 3] / 255);
+          seen += d[i + 3] / 255;
+        }
+        return seen ? sum / seen : 0;
+      };
+      const rg = r.getContext("2d");
+      const sg = screen.getContext("2d");
+      const sw = screen.width;
+      const sh = screen.height;
+      // The cameras' picture is 16 by 9, drawn as large as the canvas
+      // allows, in its middle.
+      const fw = Math.round(Math.min(sw, (sh * 16) / 9));
+      const fh = Math.round((fw * 9) / 16);
+      const fx = Math.round((sw - fw) / 2);
+      const fy = Math.round((sh - fh) / 2);
+      const reflected = [];
+      const shown = [];
+      for (let q = 0; q < 4; q++) {
+        reflected.push(mean(rg, (q * r.width) / 4, r.height / 2, r.width / 4, r.height / 2));
+        shown.push(mean(sg, fx + Math.round((q * fw) / 4), fy, Math.round(fw / 4), Math.round(fh / 2)));
+      }
+      const say = (v) => v.map((x) => x.toFixed(0)).join(", ");
+      if (reflected.some((v, i) => Math.abs(v - shown[i]) > 24)) wrong.push(`its quarters read ${say(reflected)} where the video preview's read ${say(shown)}`);
+      // The quarters have to differ, or a reflection of anything would do.
+      if (Math.max(...shown) - Math.min(...shown) < 40) wrong.push(`the video preview's quarters read ${say(shown)}, too alike to tell a reflection of them from any other`);
+      // What a person works with, which the reflection lies behind. Each
+      // inside its rounded corners, where the workspace, and with it the
+      // reflection, shows by design.
+      const round = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--radius-s")) || 0;
+      const kept = [...document.querySelectorAll(".detail .row button, .detail .row .timecode, .detail canvas")]
+        .map((e) => ({ e, b: e.getBoundingClientRect() }))
+        .filter(({ b }) => b.width > 2 * round && b.height > 2 * round && b.bottom > box.top)
+        .map(({ e, b }) => ({
+          name: e.getAttribute("aria-label") || e.getAttribute("title")?.slice(0, 40) || e.className || e.tagName,
+          x: b.left + round,
+          y: b.top + round,
+          w: b.width - 2 * round,
+          h: b.height - 2 * round,
+        }));
+      // The room under the controls, under the middle of the app.
+      const room = { x: W / 2 - 100, y: H - 20, w: 200, h: 16 };
+      return { wrong: wrong.join(", "), kept, room, dpr: devicePixelRatio };
+    });
+    if (placed.wrong) {
+      walk.wrong = `the reflection: ${placed.wrong}`;
+      await letClockGo(page);
+      return;
+    }
+    if (!placed.kept.length) {
+      walk.wrong = "the reflection reaches no control or clip timeline, so nothing tells whether it lies behind them";
+      await letClockGo(page);
+      return;
+    }
+    // The app as it is, and with the reflection drawn as bright as it
+    // goes. Both are the same layers, so the only pixels that differ are
+    // the ones the reflection reaches. Hidden, it was another set of
+    // layers, and the edge of an icon was painted a step of colour apart.
+    const seen = (await page.screenshot()).toString("base64");
+    const bright = await page.addStyleTag({
+      content: "canvas.reflection { filter: brightness(8) !important }",
+    });
+    await realFrames(page, 2);
+    const brightened = (await page.screenshot()).toString("base64");
+    await bright.evaluate((e) => e.remove());
+    await realFrames(page, 2);
+    await letClockGo(page);
+    const told = await page.evaluate(
+      async ({ seen, bright, kept, room, dpr }) => {
+        const read = async (b64) => {
+          const img = new Image();
+          img.src = `data:image/png;base64,${b64}`;
+          await img.decode();
+          const c = document.createElement("canvas");
+          c.width = img.naturalWidth;
+          c.height = img.naturalHeight;
+          const g = c.getContext("2d", { willReadFrequently: true });
+          g.drawImage(img, 0, 0);
+          return (b) => g.getImageData(Math.round(b.x * dpr), Math.round(b.y * dpr), Math.round(b.w * dpr), Math.round(b.h * dpr)).data;
+        };
+        const a = await read(seen);
+        const b = await read(bright);
+        // The largest step of any colour between the two, over a box.
+        const most = (box) => {
+          const x = a(box);
+          const y = b(box);
+          let m = 0;
+          for (let i = 0; i < x.length; i++) if (i % 4 !== 3) m = Math.max(m, Math.abs(x[i] - y[i]));
+          return m;
+        };
+        const changed = kept.map((k) => ({ name: k.name, by: most(k) })).filter((k) => k.by > 0);
+        return { changed, of: kept.length, room: most(room) };
+      },
+      { seen, bright: brightened, ...placed },
+    );
+    if (told.changed.length)
+      walk.wrong = `the reflection changed ${told.changed.length} of the ${told.of} controls and tracks it lies under, where it should lie behind them: ${told.changed.map((k) => `${k.name} by ${k.by} of 255`).join(", ")}`;
+    else if (told.room < 8) walk.wrong = `the reflection does not show in the room under the controls: made bright it changes it by ${told.room} of 255 at most`;
+  },
   // ["read ahead", key] rests until what the video preview reads ahead is
   //                    in, presses the key and checks that the frame it
   //                    lands on was there already, read while the hand
@@ -93,8 +234,14 @@ export const steps = {
       }
       window.__loudness = [];
     });
-    await page.keyboard.press("Space");
-    await settle(page);
+    // Played with the sound card held until the app has settled on the
+    // press, see pressPlay. A settle while the clip played in WebKit with
+    // motion lasted until the play had ended, and the walk then found it
+    // ended.
+    if (!(await pressPlay(page))) {
+      walk.wrong = "the space bar started no play";
+      return;
+    }
     // The app has done what the space bar set going, but a play
     // starting waits for its first frames and the sound card, which
     // are no call and no timer, so it is heard from the queue: the
@@ -201,12 +348,15 @@ export const steps = {
       // Held, or the recorder is collected while it records.
       window.__recorder = [node, hush];
     });
-    if (!(await page.evaluate(() => !!document.querySelector('button[aria-label="Pause"]')))) {
-      await page.keyboard.press("Space");
+    // Played with the sound card held until the app has settled on the
+    // press, see pressPlay. Not held, a settle in WebKit with motion
+    // lasted until the play had reached the clip's end, and L came after.
+    if (!(await page.evaluate(() => !!document.querySelector('button[aria-label="Pause"]'))) && !(await pressPlay(page))) {
+      walk.wrong = "the space bar started no play";
+      return;
     }
     // Each wait is in the episode's time, read off the playhead, see
-    // playUntil, once the app has settled on the press.
-    await settle(page);
+    // playUntil.
     await playUntil(page, { most: 0.3 });
     // What the play had started, thrown away and handed over twice
     // before the presses of L, see the frame queue's stats.
@@ -225,7 +375,13 @@ export const steps = {
         if (!window.__playWatch) return;
         const at = Number(document.querySelector(".screen")?.dataset.playhead);
         const playing = !!document.querySelector('button[aria-label="Pause"]');
-        window.__played.push([performance.now(), at, window.__pictured(), playing]);
+        // Where on the program the sound card is heard, by its own time
+        // less the latency it says it has, the way Web Audio has it: the
+        // moment the play is to stop at, whatever the page's frames do.
+        const q = window.__frameQueue;
+        const a = q.audio;
+        const heard = q.c0 === null ? NaN : q.m0 / a.sampleRate + (a.currentTime - q.c0) - ((a.outputLatency || 0) + (a.baseLatency || 0));
+        window.__played.push([performance.now(), at, window.__pictured(), playing, heard]);
         requestAnimationFrame(tick);
       };
       requestAnimationFrame(tick);
@@ -303,9 +459,13 @@ export const steps = {
     if (!(await page.evaluate(() => !!document.querySelector('button[aria-label="Pause"]')))) {
       await page.keyboard.press("Space");
     }
+    // L at once, before the walk waits for anything: a busy runner in
+    // WebKit took 8 s to settle after the space bar, and the play had
+    // ended at the clip's end before L came, #380. Should it have gone
+    // round meanwhile, the watch below waits for the next time round.
+    await page.keyboard.press("l");
     await settle(page);
     await playUntil(page, { most: 0.3 });
-    await page.keyboard.press("l");
     await page.evaluate(() => {
       window.__played = [];
       window.__playWatch = true;
@@ -364,6 +524,73 @@ export const steps = {
       walk.wrong = `${(off[0] - played[round][0]).toFixed(0)} ms after the playhead came round to ${played[round][1].toFixed(3)}, it stood at ${off[1].toFixed(3)} and the video preview showed ${off[2] >= 0 ? (off[2] / fps).toFixed(3) : "nothing it could read"}`;
     }
   },
+  // ["loop off, then again", seconds]
+  //                    drags the clip's start to so many seconds before
+  //                    its end, plays it from its start with L at once,
+  //                    lets it go round its end, switches the loop off
+  //                    with L in the second time through and lets it stop
+  //                    at the end, then plays it again from a second
+  //                    before its end with the loop off: that play stops
+  //                    at the end too
+  async "loop off, then again"(walk, arg, s) {
+    const { page, watch } = walk;
+    // Short, so going round takes seconds and not the whole clip.
+    const was = (await engineState(page, watch.at)).segments;
+    const end = was.at(-1).end;
+    const g = await handles(page);
+    const t = await timeline(page);
+    await drag(page, middle(g.start), high(g.track), (await xOf(page, end - arg)) - (await xOf(page, t.start)), false);
+    await watch.step("trim", s);
+    const segs = (await engineState(page, watch.at)).segments;
+    const length = segs.reduce((sum, x) => sum + (x.end - x.start), 0);
+    if (segs.at(-1).end !== end || length > arg + 1) {
+      walk.wrong = `the clip runs ${length.toFixed(2)} s to ${segs.at(-1).end.toFixed(2)} after its start was dragged, not ${arg} s to ${end.toFixed(2)}`;
+      return;
+    }
+    const fps = await rate(page);
+    await seekTo(page, segs[0].start + 0.5, fps);
+    await page.evaluate(() => document.body.focus());
+    // L at once, before the walk waits for anything, see "loop through
+    // the end", with the sound card held until the app has settled on the
+    // two keys, see pressPlay.
+    await holdSound(page, true);
+    await page.keyboard.press("Space");
+    await page.keyboard.press("l");
+    await settle(page);
+    await holdSound(page, false);
+    // Round the end and half a second into the second time through, by
+    // the playhead, where the sound card is held while the walk switches
+    // the loop off, so a busy runner cannot take the play on to the end
+    // of that time through first.
+    const round = await playUntil(page, { most: length });
+    await holdSound(page, true);
+    await page.keyboard.press("l");
+    await settle(page);
+    await holdSound(page, false);
+    if (!round.playing) {
+      walk.wrong = `the play stopped at ${round.at.toFixed(3)} with the loop on, before it went round`;
+      return;
+    }
+    const first = await playUntil(page, { most: length + 1 });
+    if (first.playing || Math.abs(first.at - end) > 1 / fps + 0.01) {
+      walk.wrong = `with the loop switched off in the second time through, the play ${first.playing ? "went on" : "stopped"} at ${first.at.toFixed(3)}, the clip ends at ${end.toFixed(3)}`;
+      return;
+    }
+    // The play after: a loop switched while a play went on belongs to
+    // that play, and the next one plays the clip once. It played on
+    // round the end, to the end of the time through the loop was
+    // switched off in.
+    await seekTo(page, end - 1, fps);
+    await page.evaluate(() => document.body.focus());
+    if (!(await pressPlay(page))) {
+      walk.wrong = `the space bar started no play from ${(end - 1).toFixed(3)}`;
+      return;
+    }
+    const again = await playUntil(page, { most: 2 });
+    if (again.playing || Math.abs(again.at - end) > 1 / fps + 0.01) {
+      walk.wrong = `played again from ${(end - 1).toFixed(3)} with the loop off, the play ${again.playing ? "went on" : "stopped"} at ${again.at.toFixed(3)}, past the clip's end at ${end.toFixed(3)}`;
+    }
+  },
   // ["loop off as the sound crosses the end"]
   //                    puts the playhead near the clip's end, plays it with
   //                    the loop on, holds the page 250 ms as the playhead
@@ -385,9 +612,11 @@ export const steps = {
     if (!(await page.evaluate(() => !!document.querySelector('button[aria-label="Pause"]')))) {
       await page.keyboard.press("Space");
     }
-    await settle(page);
-    await playUntil(page, { most: 0.3 });
+    // L at once, before the walk waits for anything: a busy runner in
+    // WebKit settled after the space bar only once the play had ended
+    // at the clip's end, so L came too late, see "loop through the end".
     await page.keyboard.press("l");
+    await settle(page);
     // The playhead moves once a frame of the video (#446), so it is on
     // the clip's last frame up to a frame before the end. The page is
     // held from there until the sound card has played past the end,
@@ -435,17 +664,33 @@ export const steps = {
   async "press while playing"(walk, arg) {
     const { page } = walk;
     await preview(page, 0.2);
+    // Settled before the play, not while it plays: a busy runner in
+    // WebKit took seconds to settle, the play ran to the clip's end
+    // meanwhile, and after the hand let go nothing played, #380.
+    await settle(page);
     if (!(await page.evaluate(() => !!document.querySelector('button[aria-label="Pause"]')))) {
       await page.keyboard.press("Space");
     }
     // The play's waits in the episode's time, read off the playhead,
     // and the hand's in the page's frames, since a press may stop the
     // playhead.
-    await settle(page);
     await playUntil(page, { most: 0.7 });
     await page.evaluate(() => {
       window.__played = [];
       window.__hand = {};
+      // When the page hears the hand, which on a busy runner in WebKit
+      // came long after the walk sent it: "nailed" reads each still
+      // stretch from there, not from when the walk moved the hand.
+      if (!window.__handHeard) {
+        window.__handHeard = true;
+        // How many frames the walk had read when the page handled the
+        // event. Not the event's own time, which is when it was sent
+        // and can be a frame or more before the page handles it.
+        const heard = (name) => () => window.__hand && (window.__hand[name] = window.__played.length);
+        addEventListener("pointerdown", heard("heardDown"), true);
+        addEventListener("pointermove", heard("heardMove"), true);
+        addEventListener("pointerup", heard("heardUp"), true);
+      }
       window.__playWatch = true;
       const tick = () => {
         if (!window.__playWatch) return;
@@ -479,9 +724,18 @@ export const steps = {
     await hand("up");
     await page.mouse.up();
     // After the hand lets go, the play goes on for a second of the
-    // episode's own time, which "nailed" reads from 300 ms on. A play
-    // that stopped ends this at once, and "nailed" says so.
+    // episode's own time, which "nailed" reads from the second frame
+    // after the page heard the hand let go. A play that stopped ends
+    // this at once, and "nailed" says so.
     await playUntil(page, { most: 1 });
+    // A second of the episode is sixty animation frames and more on a
+    // machine at rest, and on a busy runner in WebKit five came, too
+    // few to prove anything by. So the watch goes on while the play
+    // does, until "nailed" has ten to read, counted on the page.
+    await pageUntil(page, () => {
+      const from = Math.max(window.__played.filter(([t]) => t < window.__hand.up).length, window.__hand.heardUp ?? 0) + 1;
+      return window.__played.length - from >= 10 || !document.querySelector('button[aria-label="Pause"]');
+    });
     await page.evaluate(() => (window.__playWatch = false));
     await settle(page);
   },
@@ -502,7 +756,16 @@ export const steps = {
   async "play from"(walk, arg, s) {
     const { page, watch } = walk;
     const [where, seconds, key] = arg;
-    const g = await handles(page);
+    let g = await handles(page);
+    // A play before this one that went on past the clip took the clip
+    // timeline's view with it, and the clip is out of it. The hand
+    // brings the clip back with a click on it on the range picker, the
+    // way a person would, before it clicks the clip timeline.
+    if (!inside(g.track, g.start.x) && !inside(g.track, g.end.x)) {
+      await page.locator(".track .clipmark.selected").click();
+      await settle(page);
+      g = await handles(page);
+    }
     const from = g.start.x + g.start.w;
     const x = where === "before" ? (g.track.x + g.start.x) / 2 : from + 0.2 * (g.end.x - from);
     if (where === "before" && g.start.x - g.track.x < 40) {
@@ -515,8 +778,7 @@ export const steps = {
     const stop = await recordFrames(page, 1 / (await rate(page)));
     await page.evaluate(() => document.body.focus());
     const began = (await page.evaluate(() => Number(document.querySelector(".screen").dataset.playhead))) || 0;
-    await page.keyboard.press("Space");
-    await settle(page);
+    await pressPlay(page);
     // With a key, it is pressed every 0.4 s of the play, counted from
     // where the skip before landed, the way a hand skips ahead while
     // it watches.
@@ -858,10 +1120,12 @@ export const steps = {
       walk.wrong = `the video preview never showed the frame at ${(end - 3).toFixed(2)}`;
       return;
     }
-    await page.keyboard.press("Space");
+    if (!(await pressPlay(page))) {
+      walk.wrong = `the space bar started no play from ${(end - 3).toFixed(2)}`;
+      return;
+    }
     // Until the play stops, or has gone on three seconds past the end,
     // in the episode's time, see playUntil.
-    await settle(page);
     const now = await playUntil(page, { most: 6 });
     const stopped = !now.playing && now.at >= end - 0.1;
     if (!stopped) {
@@ -940,14 +1204,15 @@ export const steps = {
     if (walk.wrong) return;
     const from = await page.evaluate(() => ({ at: Number(document.querySelector(".screen").dataset.playhead), frame: window.__pictured() }));
     await page.evaluate(() => document.body.focus());
-    await page.keyboard.press("Space");
-    // Half a second of the episode, read off the playhead, and then
-    // whether the picture went on with it.
-    await settle(page);
-    await playUntil(page, { past: from.at + 0.5 });
+    if (!(await pressPlay(page))) {
+      walk.wrong = `the space bar started no play from the frame at ${from.at.toFixed(3)}, shown before its key frame`;
+      return;
+    }
+    // Half a second of the episode, read off the playhead, paused there,
+    // and then whether the picture went on with it.
+    await playUntil(page, { past: from.at + 0.5, pause: true });
     await settle(page);
     const plays = await page.evaluate((from) => window.__pictured() > from.frame + 1, from);
-    await page.keyboard.press("Space");
     if (!plays) walk.wrong = `the space bar did not play from the frame at ${from.at.toFixed(3)}, shown before its key frame`;
   },
   // ["no browser decoder"]
@@ -965,7 +1230,7 @@ export const steps = {
       }
     });
     const name = (await episodeOn(page)).split("/").pop();
-    await page.reload();
+    await reload(page);
     await page.locator("aside li", { hasText: name }).first().waitFor();
     await fromSidebar(page, () => page.locator("aside li", { hasText: name }).first().click());
     await page.locator("aside ol li[data-key] button.pick").first().click();
@@ -1106,26 +1371,38 @@ export const steps = {
   },
   // ["played through"] since "drag while playing", the play went on as if
   //                    no hand were there: the playhead never went back nor
-  //                    stood still for longer than a frame of the video and
-  //                    150 ms, since it moves once a frame (#446), and no
-  //                    frame drawn was older than the one before it
+  //                    stood still for more of the page's refreshes than a
+  //                    frame of the video and 150 ms take, since it moves
+  //                    once a frame (#446), and no frame drawn was older
+  //                    than the one before it
   async "played through"(walk) {
     const { page } = walk;
     const played = await page.evaluate(() => window.__played ?? []);
     const frame = 1000 / (await rate(page));
+    // Counted in refreshes, not in milliseconds: the playhead can only be
+    // seen to move when the page refreshes, and WebKit with motion on a
+    // busy runner refreshed three times a second. A frame of 200 ms then
+    // stood for a refresh or two, 390 ms by the page's clock with no
+    // frame late, and a limit in milliseconds failed it, issue #715. A
+    // refresh is the typical gap between two of the page's frames.
+    const gaps = played.slice(1).map(([t], i) => t - played[i][0]).sort((a, b) => a - b);
+    const refresh = gaps[Math.floor(gaps.length / 2)] ?? 1000 / 60;
+    const most = Math.ceil((frame + 150) / refresh);
     let still = 0;
     let longest = 0;
     for (let i = 1; i < played.length && !walk.wrong; i++) {
-      const [t, at, n] = played[i];
-      const [t0, at0, n0] = played[i - 1];
+      const [, at, n] = played[i];
+      const [, at0, n0] = played[i - 1];
       if (at < at0 - 1e-6) walk.wrong = `the playhead went back from ${at0.toFixed(3)} to ${at.toFixed(3)} while the hand was on the edge`;
       else if (n >= 0 && n0 >= 0 && n < n0) walk.wrong = `frame ${n} was drawn after frame ${n0} while the hand was on the edge`;
-      if (at === at0) still += t - t0;
+      if (at === at0) still++;
       else still = 0;
       longest = Math.max(longest, still);
     }
     if (!walk.wrong && played.length < 30) walk.wrong = `only ${played.length} animation frames were read`;
-    if (!walk.wrong && longest > frame + 150) walk.wrong = `the playhead stood still for ${longest.toFixed(0)} ms while the hand was on the edge, a frame is ${frame.toFixed(0)} ms`;
+    if (!walk.wrong && longest > most) {
+      walk.wrong = `the playhead stood still for ${longest} refreshes while the hand was on the edge, ${most} at most at ${refresh.toFixed(0)} ms a refresh, a frame is ${frame.toFixed(0)} ms`;
+    }
   },
   // ["stopped at its end"]
   //                    since "loop off near the end", the presses of L
@@ -1134,10 +1411,11 @@ export const steps = {
   //                    at the ends of a silence where the frame queue says
   //                    it handed the sound card its sound late, nothing
   //                    was heard after the clip's end, the play
-  //                    stopped within 400 ms of the playhead reaching it,
-  //                    and no frame drawn from then on is from before the
-  //                    last second of the clip, so nothing of the clip's
-  //                    start played again
+  //                    stopped within two animation frames of the sound
+  //                    card being heard past it, and no frame drawn from
+  //                    the playhead reaching it on is
+  //                    from before the last second of the clip, so
+  //                    nothing of the clip's start played again
   async "stopped at its end"(walk) {
     const { page } = walk;
     if (!walk.loopEnd) {
@@ -1153,8 +1431,20 @@ export const steps = {
       return;
     }
     const [reached] = played[i];
-    const stopped = played.slice(i).find(([, , , playing]) => !playing);
+    const drawn = played.slice(i).findIndex(([, , , playing]) => !playing);
+    const stopped = drawn < 0 ? undefined : played[i + drawn];
     const old = played.slice(i).find(([, , n]) => n >= 0 && n / fps < end - 1);
+    // The play stops on the page's next frames once the sound card is
+    // heard past the end of what it plays, counted in frames drawn, never
+    // in milliseconds: a busy machine draws its frames late, and a stop
+    // that came as it should took 413 ms by the page's clock, issue #696.
+    // A machine that draws late draws fewer frames, and one whose sound
+    // comes late is heard past the end later, so neither moves the count.
+    const most = 2;
+    const { programEnd: pend } = walk.loopEnd;
+    const heardEnd = played.findIndex(([, , , , h]) => h >= pend);
+    const lag = stopped && heardEnd >= 0 ? i + drawn - heardEnd : 0;
+    if (stopped) console.log(`      the play stopped ${lag} animation frames after the sound card was heard past the clip's end, ${drawn} after the playhead reached it`);
     // The sound, sample by sample. The bridge's episode sounds a steady
     // tone, so a click is a step in it: from one sample to the next the
     // tone bends by its second difference, never more than a few
@@ -1214,7 +1504,7 @@ export const steps = {
     else if (clicks) walk.wrong = `the sound clicked ${clicks} times, the first ${(-firstClick).toFixed(0)} ms before the end`;
     else if (after) walk.wrong = `${after} samples of sound were heard after the clip's end`;
     else if (!stopped) walk.wrong = `the play went on for ${(played.at(-1)[0] - reached).toFixed(0)} ms with the playhead at the clip's end`;
-    else if (stopped[0] - reached > 400) walk.wrong = `the play stopped ${(stopped[0] - reached).toFixed(0)} ms after the playhead reached the clip's end`;
+    else if (lag > most) walk.wrong = `the play stopped ${lag} animation frames after the sound card was heard past the clip's end, not within ${most}`;
     else if (old) walk.wrong = `frame ${(old[2] / fps).toFixed(3)} was drawn ${(old[0] - reached).toFixed(0)} ms after the playhead reached the clip's end at ${end.toFixed(3)}`;
   },
   // ["heard some"]     waits until the engine has a sentence of the video
@@ -1428,6 +1718,9 @@ export const steps = {
   // ["share", key, "past the cut"]
   //                    the same, and the playhead lands after the clip's
   //                    first cut
+  // ["share", key, "playing"]
+  //                    the same, with the clip played first by the space
+  //                    bar, the key pressed once its Pause button shows
   // ["share", key, "from the video"]
   //                    the same, after a click on the clip timeline
   //                    before the clip, which dims it: the key brings the
@@ -1451,6 +1744,15 @@ export const steps = {
           video: !chosen || chosen.classList.contains("dim"),
         };
       });
+    // Played here, with the sound card held until the app has settled on
+    // the press, see pressPlay, and not by a step of its own: a step
+    // settles, and a settle while a clip plays in WebKit with motion
+    // waited until the play had run to the clip's end, so the key met a
+    // clip that stood, issue #714.
+    if (how === "playing" && !(await place()).playing && !(await pressPlay(page))) {
+      walk.wrong = "the space bar started no play";
+      return;
+    }
     if (how === "from the video") {
       const g = await handles(page);
       if (g.start.x - g.track.x < 40) {
@@ -1498,14 +1800,13 @@ export const steps = {
     }
     const was = await place();
     // Every place the page draws the playhead after the key, among them
-    // the one the key put it in. The key asks the engine first, so a play
-    // goes on a little meanwhile, and the place it is put in is not
-    // always the first. A playhead already there changes nothing, and
-    // stays where it was.
+    // the one the key put it in. The key asks the engine first, so a play goes on a little
+    // meanwhile, and the place it is put in is not always the first. A
+    // playhead already there changes nothing, and stays where it was.
     await page.evaluate(() => {
       const screen = document.querySelector(".screen");
       window.__sharedTo = [];
-      const look = new MutationObserver(() => window.__sharedTo.push(Number(screen.dataset.playhead)));
+      const look = new MutationObserver(() => window.__sharedTo.push({ at: Number(screen.dataset.playhead) }));
       const listen = () => look.observe(screen, { attributes: true, attributeFilter: ["data-playhead"] });
       window.addEventListener("keydown", listen, { capture: true, once: true });
       // Let go of once the step has read it, moved or not, so a later
@@ -1515,11 +1816,19 @@ export const steps = {
         window.removeEventListener("keydown", listen, { capture: true });
       };
     });
+    // Playing, the key is pressed with the sound card held until the app
+    // has settled on it, so the play stands where the key put it and the
+    // settle can end. Not held, a settle while a clip played in WebKit
+    // with motion waited until the play had run to the clip's end, so 5
+    // seemed to have stopped it, issue #714.
+    if (was.playing) await holdSound(page, true);
     await page.keyboard.press(key);
     await settle(page);
     const drawn = await page.evaluate(() => (window.__sharedDone(), window.__sharedTo));
-    const to = drawn.find((at) => Math.abs(at - want) <= 1e-6) ?? drawn[0] ?? was.at;
+    const landed = drawn.find((d) => Math.abs(d.at - want) <= 1e-6) ?? drawn[0];
+    const to = landed?.at ?? was.at;
     const now = await place();
+    if (was.playing) await holdSound(page, false);
     const inCut = pieces.some((p, i) => i > 0 && to >= pieces[i - 1].end && to < p.start);
     if (Math.abs(to - want) > 1e-6) {
       walk.wrong = `${key} put the playhead at ${to.toFixed(3)} s, not ${want.toFixed(3)} s, ${Number(key) * 10} % of the clip's ${kept.toFixed(3)} s kept`;

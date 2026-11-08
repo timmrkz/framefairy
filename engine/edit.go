@@ -558,18 +558,25 @@ func RotatePart(fsys afero.Fs, planPath, clipID string, at float64, frames Sourc
 
 // PiecesMeet is the most two pieces of a clip may stand apart and still
 // play straight on, with no cut between them: the edge of a rotated part,
-// not a cut. The window reads pieces by the same rule,
-// partOf in lib/rotate.ts.
+// not a cut. The window reads which pieces are one part from the views,
+// see partsOf.
 const PiecesMeet = 0.0005
+
+// piecesMeet says whether a piece starting at start plays straight on
+// from one ending at end, with no cut between them.
+func piecesMeet(end, start float64) bool { return start-end <= PiecesMeet }
 
 // partOf is the first and last of the pieces around one that play straight
 // on from each other, with no cut between them.
 func partOf(pieces []*object, i int) (int, int) {
+	parts := partsOf(len(pieces),
+		func(j int) float64 { return number(pieces[j].values[keyStart]) },
+		func(j int) float64 { return number(pieces[j].values[keyEnd]) })
 	first, last := i, i
-	for first > 0 && number(pieces[first].values[keyStart])-number(pieces[first-1].values[keyEnd]) <= PiecesMeet {
+	for first > 0 && parts[first-1] == parts[i] {
 		first--
 	}
-	for last+1 < len(pieces) && number(pieces[last+1].values[keyStart])-number(pieces[last].values[keyEnd]) <= PiecesMeet {
+	for last+1 < len(pieces) && parts[last+1] == parts[i] {
 		last++
 	}
 	return first, last
@@ -962,11 +969,11 @@ func SetCrop(fsys afero.Fs, planPath, clipID string, at float64, left int, frame
 // the settings the workspace offers can be changed here, and a value the
 // render would quietly replace with its default is refused rather than
 // written to the plan.
-func SetCaptionStyle(fsys afero.Fs, planPath string, values map[string]any) error {
+func SetCaptionStyle(fsys afero.Fs, planPath string, values map[string]any, fonts *Fonts) error {
 	if len(values) == 0 {
 		return nil
 	}
-	checked := ResolveStyle(values)
+	checked := fonts.Style(values)
 	for key, value := range values {
 		switch key {
 		case "font":
@@ -1059,7 +1066,11 @@ type CaptionEdit struct {
 // words, for the app's log.
 func SetCaptionTime(fsys afero.Fs, planPath, clipID string, word float64, edge string, at float64,
 	toWords bool, t *Transcript, look *Look) (CaptionEdit, error) {
-	moved, err := moveCaptionEdge(fsys, planPath, clipID, word, edge, at, toWords, t, look)
+	plan, clip, err := planClip(fsys, planPath, clipID)
+	if err != nil {
+		return CaptionEdit{}, err
+	}
+	moved, err := moveCaptionEdge(plan, clip, word, edge, at, toWords, t, look)
 	if err != nil {
 		return CaptionEdit{}, err
 	}
@@ -1205,7 +1216,7 @@ func startFloor(before, c LaidCaption) float64 {
 // break in other places when the face or the size changes, and a word stays
 // what it is. The word is the one the caption was laid out from, a word
 // removed among them, see Caption.Opens.
-func moveCaptionEdge(fsys afero.Fs, planPath, clipID string, word float64, edge string,
+func moveCaptionEdge(plan Plan, clip Clip, word float64, edge string,
 	at float64, toWords bool, t *Transcript, look *Look) (captionEdge, error) {
 	if edge != "start" && edge != "end" {
 		return captionEdge{}, renderErr("a caption has a start and an end, not %s", runes.Scrub(edge, 20))
@@ -1213,10 +1224,6 @@ func moveCaptionEdge(fsys afero.Fs, planPath, clipID string, word float64, edge 
 	reset := math.IsNaN(at)
 	if !reset && (math.IsInf(at, 0) || at < 0 || at > MaxEpisodeSeconds) {
 		return captionEdge{}, renderErr("a caption cannot be moved to %s", num.Fixed(at, 3))
-	}
-	plan, clip, err := planClip(fsys, planPath, clipID)
-	if err != nil {
-		return captionEdge{}, err
 	}
 	// Only a caption of the clip that begins or ends on the word. A caption
 	// is made of its words and of nothing else.

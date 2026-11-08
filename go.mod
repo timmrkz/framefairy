@@ -6,7 +6,7 @@ require (
 	github.com/abadojack/whatlanggo v1.0.1
 	github.com/asticode/go-astiav v0.43.0
 	github.com/fsnotify/fsnotify v1.10.1
-	github.com/gen2brain/malgo v0.11.26
+	github.com/gen2brain/malgo v0.11.27
 	github.com/k2-fsa/sherpa-onnx-go v1.13.8
 	github.com/rs/zerolog v1.35.1
 	github.com/speedata/hyphenation v1.0.4

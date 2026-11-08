@@ -26,6 +26,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/events"
 
 	"framefairy/engine"
+	"framefairy/engine/runlog"
 	"framefairy/notices"
 	"framefairy/updates"
 )
@@ -65,15 +66,15 @@ func main() {
 	// Started again to put a new build in place once the app has quit.
 	installIfAsked()
 	go tidyTemp(os.TempDir(), time.Now())
-	// The fonts installed on the Mac are offered for captions beside ours.
-	// Their folders are read once now, so the Font list opens at once.
-	engine.UseMachineFonts()
-	go engine.RefreshFonts()
 	st := appStore()
+	// The fonts installed on the Mac are offered for captions beside ours,
+	// see appStore. Their folders are read once now, so the Font list
+	// opens at once.
+	go st.machine.Fonts.Refresh()
 
 	var app *application.App
 	emit := func(u JobUpdate) {
-		if app != nil {
+		if app != nil && toWindow(u) {
 			app.Event.Emit("job", u)
 		}
 	}
@@ -100,9 +101,6 @@ func main() {
 		}
 	})
 	svc.jobs.news = svc.told
-	// What changes in the folders of the videos, whoever changed it, is
-	// looked at as it happens, see reconcile.go.
-	svc.watch = newWatching(svc.reconcile)
 	// A failure is said once, as it happens, see notice.go.
 	svc.jobs.notice = quietly(func(n Notice) {
 		if app != nil {
@@ -138,6 +136,18 @@ func main() {
 			app.Event.Emit("report-about", text)
 		}
 	}
+	// How far the loudness is measured is in the video's state.
+	svc.levels = newMeasuring(svc.store.machine, svc.told)
+	// What changes in the folders of the videos, whoever changed it, is
+	// looked at as it happens, and every video once now, see reconcile.go.
+	// It comes once every field it can reach is set, since the watch hands
+	// a change on from a goroutine of its own from the first look on.
+	svc.setupNews = quietly(func(state SetupState) {
+		if app != nil {
+			app.Event.Emit("setup", state)
+		}
+	})
+	svc.watchTheDisk()
 	// The searches and renders that were cut off or failed the last time
 	// say so where their work was.
 	svc.restoreJobs(st.Episodes())
@@ -148,14 +158,7 @@ func main() {
 	// this has to be one of them. Code after app.Run only runs on the other
 	// systems, and left a llama-server behind on every Mac that quit during
 	// a search.
-	// How far the loudness is measured is in the video's state.
-	svc.levels = newMeasuring(svc.store.machine, svc.told)
-	quit := sync.OnceFunc(func() {
-		svc.watch.stop()
-		svc.news.stop()
-		engine.CloseModels()
-		svc.stopAll()
-	})
+	quit := sync.OnceFunc(func() { svc.closeDown() })
 	// What Cmd+Q does, see quit.go. The hook above stays for whatever
 	// ends the app without asking, a signal from the terminal among them.
 	leave := &leaving{
@@ -176,7 +179,7 @@ func main() {
 		Assets: application.AssetOptions{
 			Handler: interfaceHandler(),
 			Middleware: func(next http.Handler) http.Handler {
-				return probeMiddleware(mediaMiddleware(st))(reportMiddleware(svc.report)(next))
+				return probeMiddleware(mediaMiddleware(svc))(reportMiddleware(svc.report)(next))
 			},
 		},
 		Mac: application.MacOptions{
@@ -289,7 +292,7 @@ func main() {
 
 	// A llama-server the last run left behind, because it crashed or was
 	// killed, is stopped before this run loads a model of its own.
-	if engine.StopLeftoverServer() {
+	if st.machine.StopLeftoverServer() {
 		theLog.line(zerolog.InfoLevel, "model").Msg("stopped a llama-server the last run of the app left behind")
 	}
 	go svc.keeping.run(st)
@@ -309,7 +312,7 @@ func main() {
 // page: the video preview reads nothing of the file itself, see
 // docs/VIDEO-PREVIEW.md, step 5. Only files that belong to an episode in
 // the library are decoded.
-func mediaMiddleware(st *store) application.Middleware {
+func mediaMiddleware(s *FrameFairy) application.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Wails serves each request on a goroutine of its own with no
@@ -328,7 +331,7 @@ func mediaMiddleware(st *store) application.Middleware {
 				// as the render: one built into the program, or the copy of
 				// one installed on the machine. Only a face of that list is
 				// served, found by its name, never by a path.
-				data, ok := engine.FontBytes(r.URL.Query().Get("name"))
+				data, ok := s.store.machine.Fonts.Bytes(r.URL.Query().Get("name"))
 				if !ok {
 					http.NotFound(w, r)
 					return
@@ -343,7 +346,7 @@ func mediaMiddleware(st *store) application.Middleware {
 				return
 			}
 			if strings.HasPrefix(r.URL.Path, "/frames/") {
-				logged(w, r, func(w http.ResponseWriter, r *http.Request) { openPreviews.serve(st, w, r) })
+				logged(w, r, s.serveFrames)
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -392,6 +395,12 @@ type FrameFairy struct {
 	// deletion is never taken for one made outside it.
 	watch       *watching
 	reconciling sync.Mutex
+	// setupNews sends what the setup and the settings show of the
+	// models to the window when the models folder changed outside the
+	// app, see reconcile.go, and setupSent is what it sent last, kept
+	// under reconciling.
+	setupNews func(SetupState)
+	setupSent *SetupState
 	// Finding and installing a newer build of the app, see updates.go.
 	updates *updating
 	// What Cmd+Q does, see quit.go.
@@ -403,12 +412,8 @@ type FrameFairy struct {
 	// The local model kept loaded while the app is open, see keep.go.
 	keeping *keeping
 	mu      sync.Mutex
-	// The transcripts of the episodes worked on last, each kept while the
-	// files it was read from stay as they were, with its lines weighed,
-	// see transcript.
-	said keptReads[*heard]
-	// toldOld is the videos whose old corrections.json was said to be
-	// left unread, so it is said once, see oldCorrections.
+	// toldOld is the videos whose old corrections.json was looked for, so
+	// it is looked for and said once, see oldCorrections.
 	toldOld sync.Map
 	// histories are the undo and redo of each episode, see history.go.
 	histories map[string]*history
@@ -424,9 +429,28 @@ type FrameFairy struct {
 	// link is what became of the last framefairy:// link, waiting for
 	// the settings, see licence.go.
 	link *LicenceLink
-	// probes are the videos probed, sources unless a test hands in its
-	// own, see probe.
-	probes *probed
+	// probes are what each video was probed as last, unprobed the videos
+	// that could not be read lately, and previews the streams of the video
+	// preview, see probe, lookOf and serveFrames.
+	probes   probed
+	unprobed failedProbes
+	previews previews
+	// probeVideo stands in for ffprobe in tests, see probe.
+	probeVideo func(ctx context.Context, path string) (engine.SourceInfo, error)
+	// licences stands in for the keychain of the app's machine in tests,
+	// see keys.
+	licences keychain
+	// reportFolder is where a report is put, the Desktop when it is
+	// empty, and showReport how it is shown, in Finder when it is empty,
+	// see ReportProblem. A test hands in its own.
+	reportFolder func() string
+	showReport   func(path string) error
+	// installSpeech and installLanguage install a model through the
+	// machine's network when they are empty, see InstallSpeechModel. The
+	// bridge a walk drives hands in its own, so a walk never downloads a
+	// model.
+	installSpeech   func(m *engine.Machine, ctx context.Context, log *runlog.Log, model engine.SpeechModel, dir string) error
+	installLanguage func(m *engine.Machine, ctx context.Context, log *runlog.Log, model engine.LanguageModel, dir string) error
 	// clipboard stands in for the system's in tests, see copyText.
 	clipboard func(string) bool
 	// saveBox stands in for the system's save box in tests, see saveAs.

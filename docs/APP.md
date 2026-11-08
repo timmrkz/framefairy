@@ -63,7 +63,15 @@ the same plain button, and none is lit over the others. The model the app
 recommends for this machine says so under the pointer. A model that
 does not fit would swap, and a model that swaps answers in
 minutes rather than seconds. A `.gguf` already in `~/.framefairy/models`
-is used as it is, whether the app fetched it or not.
+is used as it is, whether the app fetched it or not. The app watches that
+folder, and the one over it, so a model deleted in Finder or put there by
+hand shows in the setup and the settings at once: the Go side sends what
+they show of the models whole, on the `setup` event, see `tellSetup` in
+`reconcile.go`, and only when it changed. The app's own download is not
+heard while it writes its part file, only as it is renamed into place.
+A model copied in by hand is heard as it is written, and so is the
+`tokens.txt` of a speech model's folder, and every look at the library,
+as the app comes back to the front, looks at the models too.
 
 **A download is work in hand, and it looks it.** The row of the model
 on its way wears the beam and the fill for how far it has come across the
@@ -112,7 +120,7 @@ A drop is the one way into the library that does not come from a box the
 system draws. Wails hands the dropped paths to the page and the page
 hands them back, so the paths pass through the page on their way. They
 meet the same checks as Add's: a video's extension, a picture the
-decoder can read, and no link, see `linkedEpisode`. That was decided
+decoder can read, and no link, see `engine.Episode.Linked`. That was decided
 knowingly, since the page is the app's own.
 
 The app opens on the episode that was open when it was left. With no
@@ -218,6 +226,13 @@ nothing up, so the frame stays as it is. Stop transcribing stops everything on t
 range picker in the frame it is clicked: the dots stay where they are,
 because what the speech model was still hearing is let go, and the frame
 stands still and fades out.
+The window's mark is left off the range picker while the whole video is
+transcribed, because the work is about all of the video and not the
+window, Tim's ask of 5 November. The Go side says so in the window it
+sends, and the mark comes back once the transcription is told to stop,
+by Stop transcribing, a search or a clip made by hand, or ends. On Stop
+transcribing it comes back in the frame of the click, as the part's
+frame starts to fade.
 The dots follow the work again once other work hears, or once the video
 is transcribed to its end, which a stop on its last piece can still
 bring. The video's
@@ -269,10 +284,14 @@ label the video still has. The pill shows only what is kept or still on
 its way.
 
 The sidebar is a narrow rail until the pointer reaches the left edge, and it
-opens over the workspace while it is there. The mark at the top keeps it
-open, and clicking it while it is open closes it at once, even with the
+opens over the workspace while it is there. The button at the top keeps it
+open, with one click, whether hovering opened it or it was a rail.
+Clicking it while the sidebar is kept closes it at once, even with the
 pointer still on it. Hovering opens it again once the pointer has left and
-come back. It closes when the app's window loses the focus, as it does
+come back. The button says which it will do, in its title and its icon:
+a panel with the arrow out to keep it, the arrow in to close it, the way
+Notion's sidebar does, since a sidebar hovering opened looks the same as
+one kept open. It closes when the app's window loses the focus, as it does
 to the report window Bugs opens, since a Mac tells the window nothing
 of the pointer going then, and the next move of the pointer says where
 it is. Only the keyboard going into it opens it, not the focus coming
@@ -343,19 +362,21 @@ its work folder, so deleting that folder by hand, in Finder, is the same as
 **Remove** with the folder deleted: the video leaves the list, its work
 stops, and adding it again starts it from nothing. The app watches the
 folders of every video in the list, so it hears of such a change at once,
-whoever made it, and it reads the whole list again as it starts and
-whenever it comes back to the front, for whatever the watch could not
-hear. Either way the change lands in `reconcile`, in `reconcile.go`, which
+whoever made it. It looks at every video once as it starts, before the
+window can ask about any, and again whenever it comes back to the front,
+for whatever the watch could not hear. Either way the change lands in `reconcile`, in `reconcile.go`, which
 reads the disk and lets go of every video whose folder is gone, closing its
 workspace if it was open. A video whose file went or came back says so in
-the sidebar at once. It tells a deleted folder by a mark the
+the sidebar at once. A video's shorts are watched too, each file and not
+its folder, which can be any folder with any number of files in it, so a
+short deleted or moved in Finder is gone from its clip at once, and **Show
+in folder** with it, while the clip still says it was rendered. It tells a deleted folder by a mark the
 folder carries from the moment the video is added, `added.json`, and not by
 the folder alone, because the app writes a folder back whenever it is asked
 about the video, the chosen clip and the waveform among other things: Tim
 deleted a folder, opened the video, and a folder was there again with
 nothing of its own in it, plan row 2.247. A folder written back like that is
-deleted again once the video is let go. Videos added before the mark get it
-once, as the app starts, if their folder holds work of its own. A video deleted
+deleted again once the video is let go. A video deleted
 together with its folder leaves the list the same way, plan row 2.250. Only
 a video whose own folder is gone too, on a drive taken out or in a folder
 moved away, keeps its place and says File not found until it is back, see
@@ -392,7 +413,7 @@ A file is added as a video when all of this holds:
 | --- | --- |
 | Its name ends in `.mp4`, `.mov`, `.m4v` or `.mkv`, in capitals or not | `IsVideo` in `engine/episode.go` |
 | The decoder reads a first frame from it, or says nothing for 30 s | `undecodable` in `cmd/framefairy-app/library.go` |
-| Neither it nor the work folder beside it is a link | `linkedEpisode` in `cmd/framefairy-app/settings.go` |
+| Neither it nor the work folder beside it is a link | `Episode.Linked` in `engine/owns.go` |
 | No video in the list would share its work folder, as `ep.mp4` and `ep.mov` would | `AddEpisodes` in `cmd/framefairy-app/settings.go` |
 
 The ending decides first. A file with another ending is left out by its
@@ -455,6 +476,29 @@ sliver is inside the bar.
 Selecting an episode opens its workspace. It is three columns, the settings
 on the left, the video preview in the middle and the clips on the right, with
 the clip up close under all three. It fits the app without scrolling.
+
+The video preview leaves a faint reflection at the foot of the workspace,
+as if the video shone towards the person in front of it: the frame on
+screen, upside down, stretched along the bottom edge of the app under
+the middle of it, blurred and faded out upwards. It lies behind
+everything in the workspace, so it only shows in the room between the
+controls, and nothing that is read or worked with changes. A new frame
+is settled on over a quarter of a second, so a cut fades over rather
+than flashing, and while the video preview shows black it fades out
+rather than darkening the foot of the app. It reads the frame the video
+preview already has, 9216 of its pixels, and nothing else, and blurs and
+fades those 64 by 36 cells itself, so playback does no work for it but
+that, see `frontend/src/lib/frames/reflection.ts` and
+`frontend/src/components/Reflection.svelte`. The stylesheet only
+stretches the cells over the band, with no filter and no mask: a blur
+there is worked out anew over the whole band every time the reflection
+changes, which without a graphics chip took more of the processor than
+the video. How tall and wide it is are the `--reflection-` tokens in
+`app.css`, how blurred and how strong are `BLUR` and `STRENGTH` in
+`reflection.ts`. A button in
+the row under the clip timeline that cannot be pressed is dimmed by its
+colours there rather than by opacity, so the reflection does not show
+through it.
 
 The video preview plays the episode from its own queue of frames, see
 `frontend/src/lib/frames/`. The app reads the samples of the picture and
@@ -898,9 +942,9 @@ episode's decoder is asked for as the workspace starts to build,
 `holdAhead` in `lib/frames/queue.ts`, rather than once the workspace
 knows what the episode is. The clip timeline asks for its words and its waveform
 once the episode has answered, and never twice for the same view. The
-Go side keeps the transcripts of the last ten episodes read, `keptReads`
-in `words.go`, and reads one once however many calls ask for it at the
-same moment: a workspace opening asked for the same transcript up to
+engine holds the transcripts of the last ten videos read, each by its
+`engine.Episode`, and reads one once however many calls ask for it at
+the same moment, and again only once a file of it changed: a workspace opening asked for the same transcript up to
 seven times, and each read it from the file. The longest window the range
 picker may draw is worked out without a search from every line, which
 took forty milliseconds of an hour's transcript in the frame the
@@ -1278,7 +1322,7 @@ bubble scrolled by those eight pixels.
   that suits one video suits the next one, so the drag saves it as a setting
   rather than as an edit of that clip. It stands as **Height** with the other
   caption settings on the left, where it can be typed instead, and **Put the
-  captions back** appears under it once it is not the standard 300. A click
+  captions back** appears under it once it is not the standard 320. A click
   on the box without dragging plays or pauses.
 - **Moving the crop:** drag the frame sideways when the automatic crop is
   off. The frame is there while the playhead is in the clip, and only
@@ -1305,16 +1349,20 @@ bubble scrolled by those eight pixels.
       part one area of the workspace from another.
     - **A new episode finds its first clips by itself.** Adding a video is
       all it takes: the Go side asks for its first search, of the first
-      of the equal windows the episode is cut into, and no longer than the
-      model can read at once, and the range picker goes to that window.
+      window of the episode, and no longer than the model can read at
+      once, and the range picker goes to that window.
       **The windows grow with the episode**, as the square root of its
       length, so a short episode shows its first clips soon and a long one
-      is not cut into dozens: half an hour makes three windows of 10
-      minutes, an hour four of 15, two hours six of 20 and four hours
-      eight of 30. None is shorter than 10 minutes, so a video of 15
-      minutes is one window, and the windows are equal, so no scrap is
-      left at the end. When the window moves on by itself, after a search,
-      it takes the next one. See `engine/suggest.go`.
+      is not cut into dozens: half an hour makes windows of 10 minutes,
+      an hour of 15, two hours of 20 and four hours of 30. The rule is
+      rounded to the nearest of 10, 15, 20 and 30 minutes, so a window is
+      a length a person reads at a glance and never one like 23 minutes,
+      and longer videos keep windows of 30. A video of 15 minutes or less
+      is one window. The episode is walked from its start in windows that
+      long, so each starts on a multiple of its length, and a window of
+      half an hour starts on the range picker's lines of a long video.
+      The last one takes what is left. When the window moves on by itself, after a search, it takes
+      the next one. See `engine/suggest.go`.
       The search hears the episode to the end of the window and then
       finds. Until it finds, the first row of the clip list says Waiting
       for the transcript, and the window is locked for as long as the
@@ -1568,7 +1616,7 @@ bubble scrolled by those eight pixels.
       short by the end of the episode, and the one after it, at the
       start, is as long as the window was made again.
       **A video has one window**. The engine places it, see
-      `engine.Project.PlaceWindow`, and the Go side keeps it, see
+      `engine.Episode.PlaceWindow`, and the Go side keeps it, see
       `cmd/framefairy-app/window.go`. It is kept beside the clip last
       worked on in `chosen.json`, so the workspace opens on it again,
       after a restart too. A video that has none gets the window where
@@ -1649,9 +1697,11 @@ bubble scrolled by those eight pixels.
       where the window starts and the right two where it ends. A bar
       drags the whole window and keeps its length, and a double-click on
       any of it puts it back where the app would have it. An edge lands
-      on a round step, the smallest one still about eight pixels wide,
-      five minutes on a four hour episode and five seconds on a six
-      minute one, and the ends of the episode win over the step. Every
+      on a round step, the smallest one still about eight pixels wide
+      that the ruler's step is a whole number of, so every line on the
+      range picker is a place an edge can land: five minutes on a four
+      hour episode and five seconds on a six minute one, and the ends of
+      the episode win over the step. Every
       window the app places itself lands on a step of the same kind,
       chosen from the length of the video alone and never from how wide
       the app is, about a 180th of the video, two minutes for four hours,
@@ -3038,13 +3088,15 @@ twenty are kept, see `engine.OpenJobLog`. That file is where a failure is
 looked into. Work that belongs to no episode, a model being fetched,
 keeps none.
 
-The list of jobs is kept current by the news the Go side sends about every job.
-Each piece of news carries a number that grows with every change, so a
-piece that arrives late never puts a job back to where it was. While
-anything runs, the list is also read again every five seconds, so a piece
-of news that was lost costs a few seconds and never a job that looks as if
-it runs for ever. Quitting the app stops the model and every job before
-the app goes.
+The list of jobs is kept current by the states of the videos the Go side
+sends, each with every job of its video there is to say anything about,
+and by the news of a model being downloaded, which has no video. Each job
+carries a number that grows with every change, so a state that arrives
+late never puts a job back to where it was. A job a newer state of its
+video no longer holds is one the Go side forgot, and it goes. Nothing is
+read again on a timer: a state that was lost is put right by the next.
+Quitting the app stops the model, every job and the time of removed work
+before the app goes, all in `closeDown` in `quit.go`.
 
 **Quitting.** Cmd+Q dims the app at once and says what happens next.
 The first press only asks, Press ⌘Q again to quit, for three seconds, the
@@ -3339,14 +3391,12 @@ Empty paths use the same defaults as the command line, which keeps every
 flag. Under the paths is what the check looked at, found or not, with the
 check's own words and **Check again**, though the check runs again by
 itself whenever a setting changes: which ffmpeg, ffprobe and llama-server,
-which of the system's own video decoders it can use, VideoToolbox on a Mac
-or decoding on the processor, and how many caption faces there are, the
+and how many caption faces there are, the
 ones the app carries inside itself and the machine's own, `6 built in,
 412 from this machine`. The names are the font list's beside the captions,
 each in its own face, and were once a wall of a few hundred here. The
 models and the keys are said in their own sections, so the check leaves
-them out here. Which decoder a file really went through is in the log of
-its search.
+them out here.
 
 **A path is written one way everywhere**, in full, from the top of the
 disk: `/Users/tim/.framefairy/models`, `/Applications/Frame
@@ -3490,9 +3540,14 @@ the speech model hears words in a room where nobody speaks: Tim pressed
 Dictate and Stop a few times without a word and was given "yeah yeah".
 The microphone in the button grows and shrinks with the voice it
 hears, so the person sees they are heard. The Go side tells its
-loudness ten times a second, and the window follows it every frame the
-way a level meter's needle does, up at once and back down in about a
-third of a second. It grows by a scale from a drawing at its largest
+loudness ten times a second, and the microphone hangs on a spring that
+each reading pulls, worked out every frame, the way the Mac moves what
+bounces: it swells with a word, goes a little past it and settles, and
+falls back between words with a small bounce under its rest. It grows
+from 16 px to 24 px for a raised voice, quickly, in about a tenth of
+a second, see `frontend/src/lib/spring.ts`.
+Following like a meter's needle, with no bounce and up to 28 px, Tim
+found it stiff (#739). It grows by a scale from a drawing at its largest
 size, so it stays sharp and in its place, and it stays white. The
 beam stays the sign that it listens, because running work shows the beam
 on the control it was started from.

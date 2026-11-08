@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"slices"
@@ -11,6 +13,8 @@ import (
 	"github.com/spf13/afero"
 
 	"framefairy/engine"
+	"framefairy/engine/fileio"
+	"framefairy/engine/runlog"
 )
 
 // The files on the disk are the truth, and others than the app write them:
@@ -145,8 +149,14 @@ func TestAChangeIsHintedForTheVideoItCanChange(t *testing.T) {
 		{filepath.Join("/home/tim/videos", "start.mp4"), false},
 		{work + "-old", false},
 		{"/home/tim/videos/you", false},
+		{"/home/tim/Shorts/youtube/eins.mp4", true},
+		{"/home/tim/Shorts/youtube/eins.part.mp4", false},
+		{"/home/tim/Shorts/youtube/zwei.mp4", false},
+		{"/home/tim/Shorts/youtube", false},
+		{"/home/tim/Shorts/start/eins.mp4", false},
 	} {
-		if got := touches(video, []string{c.path}); got != c.want {
+		shorts := []string{"/home/tim/Shorts/youtube/eins.mp4"}
+		if got := touches(video, []string{c.path}) || touchesShort(shorts, []string{c.path}); got != c.want {
 			t.Errorf("a change at %s touches %s: %v, want %v", c.path, video, got, c.want)
 		}
 	}
@@ -155,8 +165,9 @@ func TestAChangeIsHintedForTheVideoItCanChange(t *testing.T) {
 // On the real disk: diskLibrary is the app over a library on the real
 // disk, watched, with one video in it, and where the sidebar's news of the
 // library goes and the states sent to the workspace. The system's watch
-// hears only the real disk.
-func diskLibrary(t *testing.T) (*FrameFairy, string, chan string, chan string) {
+// hears only the real disk. Each of prepare is given the video before the
+// library is read, which starts the watch.
+func diskLibrary(t *testing.T, prepare ...func(video string)) (*FrameFairy, string, chan string, chan string) {
 	t.Helper()
 	dir := t.TempDir()
 	files := afero.NewOsFs()
@@ -187,12 +198,15 @@ func diskLibrary(t *testing.T) (*FrameFairy, string, chan string, chan string) {
 		}
 	})
 	t.Cleanup(svc.news.stop)
-	svc.watch = newWatching(svc.reconcile)
+	svc.watch = newWatching(svc.reconcile, "")
 	if svc.watch == nil {
 		t.Fatal("the disk cannot be watched here")
 	}
 	t.Cleanup(svc.clearing.Wait)
 	t.Cleanup(svc.watch.stop)
+	for _, p := range prepare {
+		p(video)
+	}
 	// Reading the library is what starts the watch, as it does in the app.
 	svc.Library()
 	return svc, video, told, sent
@@ -251,4 +265,338 @@ func TestAPlanWrittenByTheCommandLineIsSentToTheWorkspaceAtOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	newsUntil(sent, video, func() bool { return true })
+}
+
+// On the real disk: the system's own watch on a short is what is tested,
+// the way Finder's changes reach it.
+//
+// A short deleted in Finder is gone from its clip at once: the workspace
+// is sent the video's state, and the clip has no short, so Show in folder
+// goes. The plan still says the clip was rendered.
+func TestAShortDeletedInFinderIsGoneFromItsClipAtOnce(t *testing.T) {
+	t.Parallel()
+	var plan, short string
+	svc, video, _, sent := diskLibrary(t, func(video string) {
+		plan, short = renderedShort(t, video)
+	})
+	shortGoes(t, svc, video, sent, plan, short)
+}
+
+// On the real disk: the system's own watch on a short is what is tested,
+// the way Finder's changes reach it.
+//
+// A short rendered while the app is open is watched from the moment its
+// plan says so, so deleting it in Finder is heard at once as well.
+func TestAShortRenderedWhileTheAppIsOpenIsWatched(t *testing.T) {
+	t.Parallel()
+	svc, video, _, sent := diskLibrary(t)
+	plan, short := renderedShort(t, video)
+	// The plan written is heard, and the watch follows it before the
+	// reconcile that sent the news lets go. The news is read until a
+	// reconcile has followed it, since what came before the plan, its
+	// temporary file, can be heard on its own.
+	watched := func() bool {
+		svc.reconciling.Lock()
+		defer svc.reconciling.Unlock()
+		return slices.Contains(svc.watch.watchList(), fileio.ResolvePath(short))
+	}
+	newsUntil(sent, video, watched)
+	shortGoes(t, svc, video, sent, plan, short)
+}
+
+// On the real disk: the system's own watch on a short is what is tested,
+// the way a render's file put in place reaches it.
+//
+// A short rendered again is put in place over the one watched, and the
+// watcher lets go of the file that was there. The watch watches the new
+// one from the reconcile that hears the old one go, so deleting it in
+// Finder is heard at once too.
+func TestAShortRenderedAgainIsWatchedAgain(t *testing.T) {
+	t.Parallel()
+	var plan, short string
+	svc, video, _, sent := diskLibrary(t, func(video string) {
+		plan, short = renderedShort(t, video)
+	})
+	// A watch of its own, which says when a reconcile heard the short.
+	heard := make(chan struct{}, 64)
+	svc.watch.stop()
+	svc.watch = newWatching(func(changed []string) {
+		svc.reconcile(changed)
+		if slices.Contains(changed, fileio.ResolvePath(short)) {
+			heard <- struct{}{}
+		}
+	}, "")
+	t.Cleanup(svc.watch.stop)
+	svc.Library()
+
+	// Rendered again: written beside it and put in place whole, as old as
+	// the one the plan says, so the plan still names it.
+	info, err := os.Stat(short)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(short+".new", []byte("a short"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(short+".new", info.ModTime(), info.ModTime()); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(short+".new", short); err != nil {
+		t.Fatal(err)
+	}
+	<-heard
+	svc.reconciling.Lock()
+	watched := slices.Contains(svc.watch.watchList(), fileio.ResolvePath(short))
+	svc.reconciling.Unlock()
+	if !watched {
+		t.Fatal("the short rendered again is not watched")
+	}
+	shortGoes(t, svc, video, sent, plan, short)
+}
+
+// On the real disk: the short is what the system's watch hears, see the
+// tests above.
+//
+// renderedShort writes a short of the first clip of video's plan and the
+// plan that says it was rendered, the way a render does, and gives both.
+func renderedShort(t *testing.T, video string) (plan, short string) {
+	t.Helper()
+	shorts := filepath.Join(filepath.Dir(filepath.Dir(video)), "Shorts", "youtube")
+	if err := os.MkdirAll(shorts, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	short = filepath.Join(shorts, "eins.mp4")
+	if err := os.WriteFile(short, []byte("a short"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(short)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal([]byte(historyPlan), &body); err != nil {
+		t.Fatal(err)
+	}
+	body["shorts"] = map[string]any{"01": map[string]any{
+		"folder": shorts, "name": "eins.mp4", "size": info.Size(), "modified": info.ModTime().UnixNano()}}
+	data, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Put in place whole, the way editPlan writes a plan.
+	plan = filepath.Join(engine.LogsDir(video), "clips.json")
+	if err := fileio.WriteAtomic(afero.NewOsFs(), plan, data); err != nil {
+		t.Fatal(err)
+	}
+	return plan, short
+}
+
+// On the real disk: the short is what the system's watch hears, see the
+// tests above.
+//
+// shortGoes deletes short and hears the workspace told that the first
+// clip of plan has no short any more, though it was rendered.
+func shortGoes(t *testing.T, svc *FrameFairy, video string, sent chan string, plan, short string) {
+	t.Helper()
+	shortOf := func() string {
+		v, err := svc.store.machine.Episode(video).ReadPlan(plan)
+		if err != nil || len(v.Clips) == 0 {
+			t.Fatalf("the plan read %v", err)
+		}
+		return v.Clips[0].Short
+	}
+	// The engine names a short by where its folder leads. On a Mac the
+	// temporary folder is under /var, which leads to /private/var.
+	if got, want := shortOf(), fileio.ResolvePath(short); got != want {
+		t.Fatalf("the clip's short is %q before, want %s", got, want)
+	}
+	if err := os.Remove(short); err != nil {
+		t.Fatal(err)
+	}
+	newsUntil(sent, video, func() bool { return shortOf() == "" })
+	if v, _ := svc.store.machine.Episode(video).ReadPlan(plan); !v.Clips[0].Rendered {
+		t.Error("the clip whose short was deleted no longer says it was rendered")
+	}
+}
+
+// On the real disk: the system's own watch on the models folder is what is
+// tested, the way Finder's changes reach it. It sets HOME, which the whole
+// process shares, so it runs on its own.
+//
+// A model deleted in Finder is gone from the setup and the settings at
+// once, and so is the whole models folder. Made again and a model put back
+// in it, it is there again at once.
+func TestAModelDeletedOrAddedOutsideTheAppIsSentToTheWindowAtOnce(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	models := engine.ModelsDir()
+	model := engine.LanguageModels()[0]
+	put := func() {
+		t.Helper()
+		// Moved into place whole, the way a download lands.
+		part := filepath.Join(models, model.Name+".part")
+		if err := os.WriteFile(part, []byte("GGUF a model"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Rename(part, filepath.Join(models, model.Name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.MkdirAll(models, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	put()
+
+	svc := withJobs(&FrameFairy{store: openStoreIn(afero.NewOsFs(), filepath.Join(home, "config"))})
+	sent := make(chan SetupState, 64)
+	svc.setupNews = func(state SetupState) { sent <- state }
+	svc.watchTheDisk()
+	t.Cleanup(svc.watch.stop)
+	installed := func(state SetupState) bool {
+		i := slices.IndexFunc(state.Language, func(m LanguageModelView) bool { return m.Name == model.Name })
+		return i >= 0 && state.Language[i].Installed
+	}
+	until := func(holds func(SetupState) bool) {
+		t.Helper()
+		for state := range sent {
+			if holds(state) {
+				return
+			}
+		}
+	}
+	if !installed(svc.Setup(t.Context())) {
+		t.Fatalf("%s is not installed before", model.Name)
+	}
+
+	if err := os.Remove(filepath.Join(models, model.Name)); err != nil {
+		t.Fatal(err)
+	}
+	until(func(s SetupState) bool { return !installed(s) })
+
+	put()
+	until(installed)
+
+	// The folder deleted and put back whole, the way a backup puts it
+	// back, is watched again, before the reconcile that sent its news
+	// lets go.
+	if err := os.RemoveAll(models); err != nil {
+		t.Fatal(err)
+	}
+	until(func(s SetupState) bool { return !installed(s) })
+	back := filepath.Join(home, "back")
+	if err := os.MkdirAll(back, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(back, model.Name), []byte("GGUF a model"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(back, models); err != nil {
+		t.Fatal(err)
+	}
+	until(installed)
+	if err := os.Remove(filepath.Join(models, model.Name)); err != nil {
+		t.Fatal(err)
+	}
+	until(func(s SetupState) bool { return !installed(s) })
+
+	// A model copied in by hand is made empty and written after, and it
+	// is a model once it is written. Another model put in place whole
+	// after it is made says the empty one was looked at, so what follows
+	// is only the write.
+	if err := os.WriteFile(filepath.Join(models, model.Name), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	other := engine.LanguageModels()[1]
+	if err := os.WriteFile(filepath.Join(home, other.Name), []byte("GGUF another model"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(filepath.Join(home, other.Name), filepath.Join(models, other.Name)); err != nil {
+		t.Fatal(err)
+	}
+	until(func(s SetupState) bool {
+		i := slices.IndexFunc(s.Language, func(m LanguageModelView) bool { return m.Name == other.Name })
+		return i >= 0 && s.Language[i].Installed
+	})
+	copied, err := os.OpenFile(filepath.Join(models, model.Name), os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := copied.WriteString("GGUF a model"); err != nil {
+		t.Fatal(err)
+	}
+	if err := copied.Close(); err != nil {
+		t.Fatal(err)
+	}
+	until(installed)
+
+	// A speech model is a folder, and one copied in by hand is made
+	// before its tokens.txt is written into it. The other model deleted
+	// after says the folder was looked at, and is watched.
+	speech := engine.SpeechModels()[0]
+	if err := os.Mkdir(filepath.Join(models, speech.Name), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(models, other.Name)); err != nil {
+		t.Fatal(err)
+	}
+	until(func(s SetupState) bool {
+		return !slices.ContainsFunc(s.Language, func(m LanguageModelView) bool { return m.Name == other.Name && m.Installed })
+	})
+	if err := os.WriteFile(filepath.Join(models, speech.Name, "tokens.txt"), []byte("the model hears\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	until(func(s SetupState) bool {
+		return slices.ContainsFunc(s.Speech, func(m SpeechModelView) bool { return m.Name == speech.Name && m.Installed })
+	})
+}
+
+// On a machine the app never ran on there is no models folder and no
+// folder over it to watch, and the first run's download makes both. A
+// model it downloaded and Finder deleted later is gone from the settings
+// at once too.
+//
+// On the real disk: the watch hears the models folder the app looks in, in
+// a home of the test's own. It sets HOME for the whole process, so it is
+// not parallel.
+func TestAModelTheFirstRunDownloadedIsWatched(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	models := engine.ModelsDir()
+	model := engine.LanguageModels()[0]
+
+	svc := &FrameFairy{store: openStoreIn(afero.NewOsFs(), filepath.Join(home, "config"))}
+	svc.installLanguage = func(_ *engine.Machine, _ context.Context, _ *runlog.Log, m engine.LanguageModel, dir string) error {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+		return os.WriteFile(filepath.Join(dir, m.Name), []byte("GGUF a model"), 0o644)
+	}
+	ended := make(chan Job, 8)
+	svc.jobs = newQueue(svc.store, func(u JobUpdate) {
+		if u.Job.Kind == "llm" && u.Job.State != JobQueued && u.Job.State != JobRunning {
+			ended <- u.Job
+		}
+	}, func(string) {})
+	sent := make(chan SetupState, 64)
+	svc.setupNews = func(state SetupState) { sent <- state }
+	svc.watchTheDisk()
+	t.Cleanup(svc.watch.stop)
+	if _, err := os.Stat(filepath.Dir(models)); !os.IsNotExist(err) {
+		t.Fatalf("the folder over the models is there before the first run: %v", err)
+	}
+
+	svc.InstallLanguageModel(model.Name)
+	if job := <-ended; job.State != JobDone {
+		t.Fatalf("the download ended %s: %s", job.State, job.Error)
+	}
+	if err := os.Remove(filepath.Join(models, model.Name)); err != nil {
+		t.Fatal(err)
+	}
+	// Hangs, until go test ends it, if the deletion is never heard.
+	for state := range sent {
+		i := slices.IndexFunc(state.Language, func(m LanguageModelView) bool { return m.Name == model.Name })
+		if i >= 0 && !state.Language[i].Installed {
+			return
+		}
+	}
 }

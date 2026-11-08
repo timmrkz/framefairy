@@ -136,6 +136,46 @@ func TestPathClosedWhileAClipIsHeard(t *testing.T) {
 	}
 }
 
+// A clip made with I or O is the clip chosen from the press, before the
+// workspace picks its card, and once it is written it is the clip it was
+// written as, said with the card it was. So no state of the video between
+// the press and the pick has the card gone and nothing chosen, which a
+// busy machine showed when the clip was written before the pick came,
+// issue #697.
+//
+// On the real disk: ffmpeg and the episode's decoder read the episode.
+func TestPathAClipMadeByHandIsChosenFromThePress(t *testing.T) {
+	d := open(t)
+	ep := d.episode("chosen", minutes5)
+	if _, err := d.svc.store.AddEpisodes([]string{ep}); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	in, let := d.speech.hold()
+	j := d.out(ep, 40)
+	<-in
+	card := j.ID + "/1"
+	st, err := d.svc.State(ctx, ep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Chosen != card {
+		t.Errorf("while the clip made with O was on its way, %q was chosen, not its card %q", st.Chosen, card)
+	}
+	let()
+	done := d.waitFor(j.ID)
+	if done.State != JobDone {
+		t.Fatalf("made %+v", done)
+	}
+	st, err = d.svc.State(ctx, ep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Chosen != done.Result || st.ChosenCard != card {
+		t.Errorf("once the clip %q was written, %q was chosen, from the card %q", done.Result, st.Chosen, st.ChosenCard)
+	}
+}
+
 // An edit to a clip made by hand is undone and redone like an edit to any
 // clip, and a clip made by hand after it, which goes into the same set,
 // is not an edit and does not stand in the way.

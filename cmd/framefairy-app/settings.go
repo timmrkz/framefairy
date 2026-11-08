@@ -133,8 +133,16 @@ func (s Settings) options() engine.Options {
 // store keeps the settings and the list of episodes in the user's
 // configuration folder. Plain JSON files, no database.
 type store struct {
-	mu  sync.Mutex
-	dir string
+	mu sync.Mutex
+	// adding is held by an Add and by the delete of what was written back
+	// into the folder of a video let go, see clearLetGo, so the two take
+	// turns. It is taken before mu and never under it. The delete waits
+	// on the disk for as long as a work folder takes to go, and holding mu
+	// for that long held every read of the library and the settings with
+	// it. A channel of one, so an Add that waits on it is one a synctest
+	// bubble sees waiting.
+	adding chan struct{}
+	dir    string
 	// files is where the library's episodes and their work folders are
 	// read and written, the real disk in the app. See engine/files.go.
 	files afero.Fs
@@ -151,6 +159,12 @@ type store struct {
 	// changed is told when the settings change. It is told under the
 	// store's lock, so it only takes note.
 	changed func()
+	// standIns, when a test sets it, readies every engine the app makes
+	// on this store in place of the speech model the app carries: a
+	// stand-in speech model and a stand-in language model, with
+	// everything else run as it is, see setUp. It is set before the
+	// store is handed to the app.
+	standIns func(*engine.Engine, *engine.Options)
 }
 
 func openStore() *store {
@@ -169,6 +183,7 @@ func appStore() *store {
 	st := openStore()
 	st.machine.UseSystem()
 	st.machine.PreferSavedKeys()
+	probeMedia(st.machine)
 	return st
 }
 
@@ -176,12 +191,12 @@ func appStore() *store {
 // everything read and written through files.
 func openStoreIn(files afero.Fs, dir string) *store {
 	machine := engine.NewMachine(files)
-	s := &store{dir: dir, files: files, records: machine.Records, machine: machine, settings: defaultSettings()}
+	machine.Said = theLog.said
+	s := &store{dir: dir, files: files, records: machine.Records, machine: machine, settings: defaultSettings(), adding: make(chan struct{}, 1)}
 	s.load("settings.json", &s.settings)
 	s.load("library.json", &s.episodes)
 	s.settings.tidy()
 	s.apply(s.settings)
-	s.markEarlier()
 	return s
 }
 
@@ -257,6 +272,8 @@ func (s *store) Episodes() []string {
 // transcript, the same clip sets, the same rendered names. The second of
 // them is not added, and the caller is told which.
 func (s *store) AddEpisodes(paths []string) ([]string, error) {
+	s.adding <- struct{}{}
+	defer func() { <-s.adding }()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	seen := map[string]bool{}
@@ -271,7 +288,7 @@ func (s *store) AddEpisodes(paths []string) ([]string, error) {
 		if err != nil || seen[abs] {
 			continue
 		}
-		if why := linkedEpisode(s.files, abs); why != "" {
+		if why := s.machine.Episode(abs).Linked(); why != "" {
 			clash = append(clash, why)
 			continue
 		}
@@ -297,24 +314,6 @@ func (s *store) AddEpisodes(paths []string) ([]string, error) {
 		return added, errors.New(strings.Join(clash, ", ") + ", so it cannot be added")
 	}
 	return added, nil
-}
-
-// linkedEpisode says why a video cannot be an episode because it, or the
-// work folder beside it, is a link, or "" when neither is. A link inside
-// a work folder is judged by where it leads, see Known, but the folder
-// itself was taken as it was found: a zip with episode.mp4 and an
-// episode.framefairy that led to the home folder made every file there
-// the episode's, to read, to serve and to write into.
-func linkedEpisode(files afero.Fs, video string) string {
-	if info, err := fileio.LstatIn(files, video); err == nil && info.Mode()&os.ModeSymlink != 0 {
-		return filepath.Base(video) + " is a link, which the app does not follow"
-	}
-	work := engine.WorkDir(video)
-	if info, err := fileio.LstatIn(files, work); err == nil && (info.Mode()&os.ModeSymlink != 0 || !info.IsDir()) {
-		return filepath.Base(work) + " beside " + filepath.Base(video) +
-			" is a link or not a folder, which the app does not follow"
-	}
-	return ""
 }
 
 func (s *store) RemoveEpisode(path string) error {
@@ -395,46 +394,6 @@ func deletedOutside(files afero.Fs, video string) bool {
 	return err == nil && dir.IsDir()
 }
 
-// writtenBack are the files the app writes into a video's folder when it
-// is asked about the video, opened or its waveform drawn, whether the
-// folder is there or not. A folder that holds nothing else was written
-// back after it was deleted.
-var writtenBack = map[string]bool{
-	chosenFile:                             true,
-	filepath.Join("logs", "levels.json"):   true,
-	filepath.Join("logs", "levels.frames"): true,
-}
-
-// markEarlier marks the folders of the videos added before there was a
-// mark, once, as the library is read: every folder that holds work of
-// its own. A folder that holds only what the app writes back is not
-// marked, so a folder deleted under an earlier version and written back
-// since leaves the list as it would now.
-func (s *store) markEarlier() {
-	for _, ep := range s.Episodes() {
-		if marked(s.files, ep) || linkedEpisode(s.files, ep) != "" {
-			continue
-		}
-		work := engine.WorkDir(ep)
-		own := afero.Walk(s.files, work, func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				return err
-			}
-			rel, _ := filepath.Rel(work, path)
-			if info.Mode().IsRegular() && !writtenBack[rel] {
-				return errOwnWork
-			}
-			return nil
-		})
-		if errors.Is(own, errOwnWork) {
-			_ = markAdded(s.files, ep)
-		}
-	}
-}
-
-// errOwnWork ends the look through a folder at its first file of work.
-var errOwnWork = errors.New("work of its own")
-
 // letGo takes a video whose folder was deleted outside the app out of the
 // library, and says whether it did: of two reads of the library at once,
 // one lets it go.
@@ -450,70 +409,60 @@ func (s *store) letGo(path string) (bool, error) {
 
 // clearLetGo deletes what was written into the folder of a video let go
 // after its folder was deleted, unless the video was added again since.
-// Under the store's lock, so an Add of the same video waits for it.
+// It holds adding, so an Add of the same video waits for the delete, and
+// the mark the Add writes is not deleted with the rest. The store's lock is held
+// only to read the library: only an Add puts a video in it, so the
+// answer holds for the whole delete.
 func (s *store) clearLetGo(path string) (bool, error) {
+	s.adding <- struct{}{}
+	defer func() { <-s.adding }()
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	if slices.Contains(s.episodes, path) || marked(s.files, path) {
+	again := slices.Contains(s.episodes, path)
+	s.mu.Unlock()
+	if again || marked(s.files, path) {
 		return false, nil
 	}
 	if _, err := fileio.LstatIn(s.files, engine.WorkDir(path)); err != nil {
 		return false, nil
 	}
-	return true, engine.DeleteWork(s.files, path)
+	return true, s.machine.DeleteWork(path)
 }
 
 // Known reports whether a file belongs to an episode in the library: the
 // episode itself, something in its work folder, or the short of one of its
-// clips wherever it was rendered into, see engine.IsShort. Only those files
-// are served to the interface and shown in a folder.
-//
-// A path is judged by where it really leads. A link inside a work folder
-// can point anywhere, and a name is not a promise, so both the path and the
-// folder it has to be inside are resolved before they are compared.
+// clips wherever it was rendered into. Only those files are served to the
+// interface and shown in a folder. Each video says whether a path is its
+// own, by where the path really leads, see engine.Episode.Owns and
+// engine.Episode.IsShort.
 func (s *store) Known(path string) bool {
-	clean := filepath.Clean(path)
-	real := fileio.ResolveIn(s.files, clean)
 	episodes := s.Episodes()
 	for _, ep := range episodes {
-		// An episode whose video or work folder has become a link since
-		// it was added is no longer one: everything under the folder it
-		// leads to would count as the episode's.
-		if linkedEpisode(s.files, ep) != "" {
-			continue
-		}
-		if clean == ep || real == fileio.ResolveIn(s.files, ep) {
-			return true
-		}
-		work := fileio.ResolveIn(s.files, engine.WorkDir(ep)) + string(filepath.Separator)
-		if len(real) > len(work) && real[:len(work)] == work {
+		if s.machine.Episode(ep).Owns(path) {
 			return true
 		}
 	}
 	// A short outside every work folder, in the folder the settings name
 	// for shorts, is the one file outside them that belongs to an episode.
-	// The plans are only read for a file that could be one.
+	// The plans are only looked through for a file that could be one.
+	real := fileio.ResolveIn(s.files, path)
 	if !strings.EqualFold(filepath.Ext(real), ".mp4") {
 		return false
 	}
 	for _, ep := range episodes {
-		if linkedEpisode(s.files, ep) == "" && engine.IsShort(s.files, ep, real) {
+		if s.machine.Episode(ep).IsShort(real) {
 			return true
 		}
 	}
 	return false
 }
 
-// PlanOf reports whether plan is a plan of the episode at path: both in the
-// library, and the plan in that episode's own logs folder, where plans are
-// kept. Known alone takes any file of any episode, so a plan of one
-// episode given with the path of another would be edited against the
-// wrong video, the wrong words and the wrong history.
+// PlanOf reports whether plan is a plan of the episode at path: the
+// episode in the library, and the plan its own, in its logs folder, see
+// engine.Episode.HasPlan. Known alone takes any file of any episode, so a
+// plan of one episode given with the path of another would be edited
+// against the wrong video, the wrong words and the wrong history.
 func (s *store) PlanOf(path, plan string) bool {
-	if !s.Known(path) || !s.Known(plan) {
-		return false
-	}
-	return filepath.Dir(fileio.ResolveIn(s.files, plan)) == fileio.ResolveIn(s.files, engine.LogsDir(path))
+	return s.Known(path) && s.machine.Episode(path).HasPlan(plan)
 }
 
 // targetFor is the target typed for a window as long as this one, or 0,

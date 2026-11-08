@@ -48,10 +48,10 @@ func TestTheEncoderIsChosenFromWhatThisFFmpegHas(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("an ffmpeg with nothing we can drive says so", func(t *testing.T) {
-		e := encodingEngine(t, "wmv2", "mpeg4")
+		e := encodingEngine(t, "wmv2")
 		_, err := e.VideoEncoder(ctx)
 		if err == nil {
-			t.Fatal("took an ffmpeg with no H.264 encoder")
+			t.Fatal("took an ffmpeg with no encoder of ours")
 		}
 		if !strings.Contains(err.Error(), "libx264") {
 			t.Errorf("the message does not say what it looked for: %v", err)
@@ -99,7 +99,7 @@ func TestEachEncoderIsAskedInItsOwnLanguage(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		want := []string{"-c:v", "libx264", "-preset", "slow", "-crf", "18"}
+		want := []string{"-c:v", "libx264", "-preset", "slow", "-crf", "18", "-profile:v", "high", "-pix_fmt", "yuv420p"}
 		if strings.Join(got, " ") != strings.Join(want, " ") {
 			t.Errorf("got %v", got)
 		}
@@ -164,7 +164,7 @@ func TestEachEncoderIsAskedInItsOwnLanguage(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if strings.Join(got, " ") != "-c:v h264_nvenc" {
+		if strings.Join(got, " ") != "-c:v h264_nvenc -profile:v high -pix_fmt yuv420p" {
 			t.Errorf("got %v", got)
 		}
 	})
@@ -175,7 +175,7 @@ func TestEachEncoderIsAskedInItsOwnLanguage(t *testing.T) {
 // running this in a cloud session is not a Mac, so a test that only ran on
 // darwin would never run at all until CI reached the macOS job.
 func TestEachSystemReachesForItsOwnEncoderFirst(t *testing.T) {
-	mac := encoderOrderFor("darwin")
+	mac := SystemMedia("darwin").Encoders
 	if len(mac) == 0 || mac[0].Name != "h264_videotoolbox" {
 		t.Errorf("a Mac would not reach for Apple's encoder first: %v", names(mac))
 	}
@@ -184,10 +184,13 @@ func TestEachSystemReachesForItsOwnEncoderFirst(t *testing.T) {
 	if len(mac) < 2 || mac[len(mac)-1].Name != "libx264" {
 		t.Errorf("libx264 is not the fallback on a Mac: %v", names(mac))
 	}
+	if hdr := SystemMedia("darwin").HDREncoders; len(hdr) == 0 || hdr[0].Name != "hevc_videotoolbox" {
+		t.Errorf("a Mac would not reach for Apple's encoder first for HDR: %v", names(hdr))
+	}
 	// Every entry has to be one we know how to ask for a quality, or the
 	// render silently takes the encoder's defaults.
 	for _, goos := range []string{"darwin", "linux", "windows"} {
-		for _, candidate := range encoderOrderFor(goos) {
+		for _, candidate := range SystemMedia(goos).Encoders {
 			if _, ok := known[candidate.Name]; !ok {
 				t.Errorf("%s reaches for %s, which has no quality mapping",
 					goos, candidate.Name)
@@ -195,6 +198,9 @@ func TestEachSystemReachesForItsOwnEncoderFirst(t *testing.T) {
 			if candidate.Quality == nil {
 				t.Errorf("%s has no quality arguments", candidate.Name)
 			}
+		}
+		if !SystemMedia(goos).Decodes {
+			t.Errorf("%s does not hand decoding to its own decoder", goos)
 		}
 	}
 }

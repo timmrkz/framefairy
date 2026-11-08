@@ -5,7 +5,7 @@
 // showed before it and the step's name. A sequence of any folder can take
 // it. Below them the helpers only these steps use. See docs/TESTING.md.
 import { execFileSync } from "node:child_process";
-import { BITS, ask, caughtUp, chosen, clickOnTrack, drag, engineState, episodeOn, handles, high, hold, holdSound, inside, letHeld, middle, news, nextNews, nextPaint, pageUntil, playUntil, pressOnTrack, preview, seenUntil, settle, shownOnPlayhead, timeline, xOf } from "../bridge.mjs";
+import { BITS, ask, caughtUp, chosen, clickOnTrack, drag, engineState, episodeOn, handles, high, hold, holdSound, inside, letHeld, middle, news, nextNews, nextPaint, pageUntil, playUntil, pressOnTrack, pressPlay, preview, reader, seenUntil, settle, shownOnPlayhead, timeline, xOf } from "../bridge.mjs";
 import { pieceCount, rate, url } from "../common/steps.mjs";
 
 export const steps = {
@@ -112,13 +112,27 @@ export const steps = {
     const y = box.y + box.h / 2;
     await page.mouse.move(x, y);
     if (walk.dragShift) await page.keyboard.down("Shift");
-    await page.mouse.down();
-    for (let i = 1; i <= 20; i++) {
-      await page.mouse.move(x + (px * i) / 20, y);
-      await nextPaint(page);
+    // The sound the paused video preview opens while the edge is dragged.
+    // Held under the hand, each place shows its frame alone, so only the
+    // press may cue a play and open its sound, not every move after it.
+    let sounds = 0;
+    const opened = (r) => new URL(r.url()).pathname === "/frames/sound" && sounds++;
+    page.on("request", opened);
+    try {
+      await page.mouse.down();
+      for (let i = 1; i <= 20; i++) {
+        await page.mouse.move(x + (px * i) / 20, y);
+        await nextPaint(page);
+      }
+    } finally {
+      page.off("request", opened);
     }
     await page.mouse.up();
     if (walk.dragShift) await page.keyboard.up("Shift");
+    if (sounds > 1) {
+      walk.wrong = `the paused video preview opened its sound ${sounds} times while the ${which} edge was dragged, not at most once`;
+      return;
+    }
     await watch.step("drag edge", s);
     await page.evaluate(() => (window.__followWatch = false));
   },
@@ -429,6 +443,38 @@ export const steps = {
       walk.wrong = `the playhead came onto the ${arg} ${on} frames after the press, a press on the track takes ${walk.held.trackFrames}`;
     }
   },
+  // ["watch captions"] from now on reads, on every animation frame, the
+  //                    frame on the canvas of the video preview and how
+  //                    many of its pixels are the white of the captions
+  //                    libass drew over it, and whether the crop frame
+  //                    stands over it
+  async "watch captions"(walk) {
+    await watchCaptions(walk.page);
+  },
+  // ["captions stayed"] since "watch captions", the captions were seen,
+  //                    and a frame that stayed on the video preview kept
+  //                    them and the crop frame: neither went off over a
+  //                    picture that did not change. Tim saw them blink off for a frame each
+  //                    time a clip's start dragged later passed a frame,
+  //                    issue #755.
+  async "captions stayed"(walk) {
+    const seen = await walk.page.evaluate(() => {
+      window.__captionWatch.on = false;
+      return window.__captionWatch.seen;
+    });
+    // The captions, then the crop frame, gone over a frame that stayed.
+    const gone = (k, what) => {
+      const off = seen.findIndex((s, i) => i > 0 && s[0] >= 0 && s[0] === seen[i - 1][0] && seen[i - 1][k] && !s[k]);
+      if (off < 0) return "";
+      const back = seen.slice(off).findIndex((s) => s[k]);
+      return `frame ${seen[off][0]} stayed on the video preview and its ${what} went off for ${back < 0 ? "good" : `${back} animation frames`}, after ${off} of ${seen.length}`;
+    };
+    if (!seen.some(([, ink]) => ink > 0)) walk.wrong = `no captions were seen over the ${seen.length} frames read`;
+    else {
+      const why = gone(1, "captions") || gone(2, "crop frame");
+      if (why) walk.wrong = why;
+    }
+  },
   // ["went the hand's way", which]
   //                    since "drag edge", the edge never stood on the far
   //                    side of where it was pressed from the way the hand
@@ -671,7 +717,7 @@ export const steps = {
   //                    px in twenty steps while it plays, reading the
   //                    playhead and the frame on screen on every animation
   //                    frame from before the hand takes hold to after it
-  //                    lets go
+  //                    lets go, and pauses the play
   async "drag while playing"(walk, arg) {
     const { page } = walk;
     const [edge, px] = arg;
@@ -688,12 +734,16 @@ export const steps = {
     await settle(page);
     await page.evaluate(() => document.body.focus());
     await preview(page, 0.2);
-    if (!(await page.evaluate(() => !!document.querySelector('button[aria-label="Pause"]')))) {
-      await page.keyboard.press("Space");
+    // Played with the sound card held until the app has settled on the
+    // press, see pressPlay. A settle while the clip played in WebKit with
+    // motion waited 8 to 12 s for the play, which ran to the clip's end
+    // meanwhile, and the drag came after it, issue #715.
+    if (!(await page.evaluate(() => !!document.querySelector('button[aria-label="Pause"]'))) && !(await pressPlay(page))) {
+      walk.wrong = "the space bar started no play";
+      return;
     }
     // Each wait is in the episode's time, read off the playhead, see
-    // playUntil, once the app has settled on the press.
-    await settle(page);
+    // playUntil.
     await playUntil(page, { most: 0.7 });
     await page.evaluate(() => {
       window.__played = [];
@@ -721,7 +771,15 @@ export const steps = {
     }
     await page.mouse.up();
     await playUntil(page, { most: 0.5 });
+    // Half a second of the episode is thirty animation frames and more
+    // on a machine at rest, and on a busy runner in WebKit it was five,
+    // too few to prove anything by, #380. So the watch goes on while the
+    // play does, until it has read thirty, counted on the page.
+    await pageUntil(page, () => window.__played.length >= 30 || !document.querySelector('button[aria-label="Pause"]'));
     await page.evaluate(() => (window.__playWatch = false));
+    // Paused in the frame the watch ended, so what comes next settles on
+    // a clip that stands. Left to play, the settle waited for its end.
+    await playUntil(page, { most: 0, pause: true });
     await settle(page);
   },
   // ["end back past the playhead", share]
@@ -744,14 +802,16 @@ export const steps = {
     await page.evaluate(() => document.body.focus());
     await preview(page, 0.2);
     await page.keyboard.press("Space");
-    await settle(page);
-    await playUntil(page, { most: 0.3 });
     // The play is a fifth of the clip from its end, and on the sound
     // card's clock a busy runner ran it to the end before the hand let
     // go, so the walk had nothing to prove, issue #583. The sound card is
-    // held while the hand takes the end back, as long as the machine
-    // needs, and the play goes on from there once it lets go.
+    // held from a moment into the play while the walk settles and the
+    // hand takes the end back, as long as the machine needs, and the
+    // play goes on from there once it lets go. Held only after the
+    // settle, the play had run on through it, #380.
+    await playUntil(page, { most: 0.3 });
     await holdSound(page, true);
+    await settle(page);
     const starts = await page.evaluate(() => window.__frameQueue.stats.starts);
     await page.evaluate(() => {
       window.__played = [];
@@ -840,8 +900,12 @@ export const steps = {
       await page.evaluate(() => document.body.focus());
       await preview(page, 0.2);
       await page.keyboard.press("Space");
-      await settle(page);
+      // Played a moment, then held while the walk settles and acts, see
+      // below: a busy runner in WebKit took seconds to settle, and the
+      // play had run past the end before the hand came, #380.
       await playUntil(page, { most: 0.2 });
+      await holdSound(page, true);
+      await settle(page);
     };
     const pullIn = async () => {
       const g = await handles(page);
@@ -858,6 +922,13 @@ export const steps = {
     };
     if (when === "paused") await pullIn();
     await play();
+    // The play is a fifth of the clip before the new end, and a busy
+    // runner in WebKit played it to the end before Undo and Redo were
+    // taken, so the walk had nothing to prove, #380. The sound card is
+    // held from a moment into the play, see play, while the hand drags
+    // and takes the menu, as long as the machine needs, and the play
+    // goes on from there once it lets go, the way "end back past the
+    // playhead" does, issue #583.
     const starts = await page.evaluate(() => window.__frameQueue.stats.starts);
     await record();
     if (when !== "paused") await pullIn();
@@ -867,6 +938,7 @@ export const steps = {
       await settle(page);
     }
     const [atBack, playingAtBack] = await page.evaluate(() => [Number(document.querySelector(".screen").dataset.playhead), !!document.querySelector('button[aria-label="Pause"]')]);
+    await holdSound(page, false);
     const pieces = (await engineState(page, watch.at)).segments;
     const end = pieces.at(-1).end;
     const want = menu.length % 2 ? oldEnd : newEnd;
@@ -916,8 +988,12 @@ export const steps = {
     await page.evaluate(() => document.body.focus());
     await preview(page, 0.2);
     await page.keyboard.press("Space");
-    await settle(page);
+    // Played a moment, then held while the walk settles and takes the
+    // menu, so the play cannot reach the cut first on a busy machine,
+    // see "end in and back".
     await playUntil(page, { most: 0.2 });
+    await holdSound(page, true);
+    await settle(page);
     const starts = await page.evaluate(() => window.__frameQueue.stats.starts);
     await page.evaluate(() => {
       window.__played = [];
@@ -934,6 +1010,7 @@ export const steps = {
     await page.evaluate((m) => window.__menu(m), what);
     await settle(page);
     const [atBack, playingAtBack] = await page.evaluate(() => [Number(document.querySelector(".screen").dataset.playhead), !!document.querySelector('button[aria-label="Pause"]')]);
+    await holdSound(page, false);
     const pieces = (await engineState(page, watch.at)).segments;
     // A second past the cut, whichever side of the menu it is on.
     const past = Math.max(...[...cutsOf(before), ...cutsOf(pieces)].map(([, b]) => b)) + 1;
@@ -1233,16 +1310,23 @@ export const steps = {
     // millisecond or less after it included, see frameAt in
     // lib/flow.ts, as the bars carry it, its number modulo 2 ** BITS.
     const holds = (at) => Math.floor((at + 0.001) * fps) % 2 ** BITS;
-    // Each still stretch is read from 200 ms after the hand stopped:
-    // the press puts the playhead under the hand at once, and from
-    // there it stands. The picture takes as long as the machine needs
-    // to decode the frame under the hand, and the frames passing on
-    // the way are drawn, so on a busy machine a frame was still on its
-    // way 200 ms in. So the picture is read from where its frame
-    // landed, which has to be within the stretch, and from there
-    // nothing else is drawn.
+    // How many frames had been read by a moment of the walk's.
+    const readBy = (t) => played.filter(([at]) => at < t).length;
+    // Each still stretch is read from the second animation frame after
+    // the page heard the hand, from, given as the frames read by then:
+    // the press puts the playhead under the hand at once, in the first
+    // frame after it, see lib/scrub.ts, and from there it stands. The walk reads each frame as it begins,
+    // before the app's own work in it, so the first frame it reads
+    // after the hand still shows the playhead from before. Read from
+    // 200 ms after the hand instead, a busy runner whose frames came a
+    // quarter of a second apart read that first frame, and the playhead
+    // seemed to move under a hand that held still. The picture takes as
+    // long as the machine needs to decode the frame under the hand, and
+    // the frames passing on the way are drawn. So the picture is read
+    // from where its frame landed, which has to be within the stretch,
+    // and from there nothing else is drawn.
     const stood = (from, to, what) => {
-      const got = during(from + 200, to);
+      const got = played.slice(from + 1).filter(([t]) => t < to);
       if (got.length < 10) return `only ${got.length} animation frames were read ${what}`;
       const ats = new Set(got.map(([, at]) => at));
       if (ats.size > 1) {
@@ -1258,12 +1342,14 @@ export const steps = {
       if (other) return `frame ${other[2]} was drawn after frame ${holds(at)} had landed ${what}`;
       return at;
     };
-    const first = stood(hand.down, hand.moves, "while the hand held still on the press");
+    // From when the page heard the press, and the last move, which a
+    // busy runner delivered long after the walk sent them.
+    const first = stood(Math.max(readBy(hand.down), hand.heardDown ?? 0), hand.moves, "while the hand held still on the press");
     if (typeof first === "string") {
       walk.wrong = first;
       return;
     }
-    const second = stood(hand.still, hand.up, "while the hand held still where it moved to");
+    const second = stood(Math.max(readBy(hand.still), hand.heardMove ?? 0), hand.up, "while the hand held still where it moved to");
     if (typeof second === "string") {
       walk.wrong = second;
       return;
@@ -1276,7 +1362,9 @@ export const steps = {
       walk.wrong = "the button said Play while the hand held the playhead";
       return;
     }
-    const after = during(hand.up + 300, Infinity);
+    // And after the hand let go, from the second frame after the page
+    // heard it, the same way.
+    const after = played.slice(Math.max(readBy(hand.up), hand.heardUp ?? 0) + 1);
     if (after.length < 10) {
       walk.wrong = `only ${after.length} animation frames were read after the hand let go`;
       return;
@@ -1996,6 +2084,37 @@ function watchEdge(page, label) {
     };
     tick();
   }, label);
+}
+
+// Reads on every animation frame, until "captions stayed" stops it, the
+// number of the frame on the canvas of the video preview, see reader, and
+// how many pixels of the canvas's lower half, where the captions stand,
+// are white, as libass draws their letters. The picture of the bridge's
+// episode is grey and never that light. Its own, so a watch that was
+// stopped stops even when the next has begun, as watchEdge does.
+async function watchCaptions(page) {
+  await reader(page);
+  await page.evaluate(() => {
+    const watch = { seen: [], on: true };
+    window.__captionWatch = watch;
+    const s = document.createElement("canvas");
+    const g = s.getContext("2d", { willReadFrequently: true });
+    const look = () => {
+      if (!watch.on) return;
+      requestAnimationFrame(look);
+      const c = document.querySelector(".screen canvas");
+      if (!c?.width || !c.height) return;
+      const top = Math.floor(c.height / 2);
+      s.width = c.width;
+      s.height = c.height - top;
+      g.drawImage(c, 0, top, s.width, s.height, 0, 0, s.width, s.height);
+      const d = g.getImageData(0, 0, s.width, s.height).data;
+      let ink = 0;
+      for (let i = 0; i < d.length; i += 4) if (d[i] > 245 && d[i + 1] > 245 && d[i + 2] > 245) ink++;
+      watch.seen.push([window.__pictured(), ink, !!document.querySelector(".atop .frame")]);
+    };
+    look();
+  });
 }
 
 // The cuts between a clip's pieces, each from where a piece ends to where

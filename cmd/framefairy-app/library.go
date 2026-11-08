@@ -28,7 +28,7 @@ func (s *FrameFairy) Library() []engine.EpisodeStatus {
 	opts := s.store.Settings().options()
 	out := []engine.EpisodeStatus{}
 	for _, ep := range s.store.Episodes() {
-		out = append(out, engine.Status(s.store.files, ep, opts.ASRModel, opts.SilenceDB))
+		out = append(out, s.store.machine.Episode(ep).Status(opts.ASRModel, opts.SilenceDB))
 	}
 	return out
 }
@@ -41,7 +41,7 @@ func (s *FrameFairy) Episode(path string) engine.EpisodeStatus {
 		return engine.EpisodeStatus{}
 	}
 	opts := s.store.Settings().options()
-	return engine.Status(s.store.files, path, opts.ASRModel, opts.SilenceDB)
+	return s.store.machine.Episode(path).Status(opts.ASRModel, opts.SilenceDB)
 }
 
 // ChooseFolder asks for a folder, the way a Mac app asks where to save
@@ -92,7 +92,7 @@ func (s *FrameFairy) addEpisodes(videos []string) ([]string, error) {
 	// nothing to show, and the render nothing to cut.
 	var take, refused []string
 	for _, v := range videos {
-		if why := undecodable(v, s.frameLate); why != "" {
+		if why := s.undecodable(v, s.frameLate); why != "" {
 			refused = append(refused, fmt.Sprintf("the picture of %s cannot be decoded, %s", filepath.Base(v), why))
 			continue
 		}
@@ -134,12 +134,12 @@ const firstFrameWait = 30 * time.Second
 // out as "context deadline exceeded" after 30 s, which would have told a
 // person their video could not be decoded. Such a video is taken, and
 // the video preview shows how its decoder does.
-func undecodable(video string, late <-chan struct{}) string {
+func (s *FrameFairy) undecodable(video string, late <-chan struct{}) string {
 	abs, err := filepath.Abs(video)
 	if err != nil {
 		return err.Error()
 	}
-	dec, err := openPreviews.decoder(abs)
+	dec, err := s.previews.decoder(s.store.machine, abs)
 	if err != nil {
 		return strings.TrimSuffix(err.Error(), ".")
 	}
@@ -158,7 +158,7 @@ func undecodable(video string, late <-chan struct{}) string {
 	// On the grid of its short, or on one of a single frame where the
 	// probe finds none, so a file with no picture is refused in the
 	// decoder's own words.
-	info, _ := sources.probe(ctx, abs)
+	info, _ := s.probe(ctx, abs)
 	grid := info.Grid()
 	if !grid.Valid() {
 		grid = framewire.Grid{Num: 1, Den: 1, Count: 1}
@@ -228,7 +228,9 @@ func (s *FrameFairy) RemoveEpisode(path string, deleteWork bool) error {
 	s.reconciling.Lock()
 	defer s.reconciling.Unlock()
 	if deleteWork {
-		if err := engine.DeleteWork(s.store.files, path); err != nil {
+		if err := s.store.machine.DeleteWork(path); err != nil {
+			theLog.line(zerolog.WarnLevel, "library").Str("video", filepath.Base(path)).Err(err).
+				Msg("the work folder of a video being removed could not be deleted, so the video stays")
 			return err
 		}
 	}
@@ -238,6 +240,8 @@ func (s *FrameFairy) RemoveEpisode(path string, deleteWork bool) error {
 	}
 	removed = true
 	s.jobs.forgetEpisode(path)
+	theLog.line(zerolog.InfoLevel, "library").Str("video", filepath.Base(path)).Bool("work_deleted", deleteWork).
+		Msg("the video is removed")
 	return nil
 }
 

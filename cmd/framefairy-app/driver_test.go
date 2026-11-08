@@ -58,7 +58,16 @@ type desk struct {
 	// listening.beats, and told hears each Dictation the app tells the
 	// window, so the bridge knows what a step of a recording told.
 	beats *listenBeats
+	// fakes readies every engine of every opening of the app with the
+	// stand-ins, see store.standIns, and fit hands every opening what
+	// the bridge stands in for, the microphone, the report's folder and
+	// the downloads of the models, when set.
+	fakes func(*engine.Engine, *engine.Options)
+	fit   func(*FrameFairy)
 	told  func(Dictation)
+	// time, when set, is the clock removed work is timed by in every
+	// opening of the app, see timeKeeper in removal.go.
+	time *walkTime
 	// The report windows Bugs made and brought forward, the window the
 	// app would have made, and the pictures its open box hands over
 	// next, see bugs.go.
@@ -70,6 +79,11 @@ type desk struct {
 	// exported is where the app last saved a file through the system's
 	// save box, which the desk stands in for, see start.
 	exported atomic.Pointer[string]
+	// setup, when set, is how the desk's machine shows the setup, the
+	// way every call that answers with it shows it, see standInsSetup.
+	// What the app sends by itself when the models change is shown the
+	// same way.
+	setup func(SetupState) SetupState
 }
 
 // open starts the app over a new, empty library. Adding a video asks the
@@ -98,8 +112,8 @@ func open(t *testing.T) *desk {
 		o.Width, o.Height = 360, 640
 		o.Preset = "ultrafast"
 	}
-	standIns.Store(&fakes)
-	t.Cleanup(func() { standIns.Store(nil) })
+	d.fakes = fakes
+	st.standIns = fakes
 	d.start(st)
 	return d
 }
@@ -107,8 +121,15 @@ func open(t *testing.T) *desk {
 // start runs the app over a store.
 func (d *desk) start(st *store) {
 	d.svc = &FrameFairy{store: st}
-	d.svc.jobs = newQueue(st, func(u JobUpdate) { d.bus.send("job", u) },
-		func(episode string) { d.bus.send("episode", episode) })
+	toJob := func(u JobUpdate) {
+		if toWindow(u) {
+			d.bus.send("job", u)
+		}
+	}
+	d.svc.jobs = newQueue(st, toJob, func(episode string) { d.bus.send("episode", episode) })
+	if d.time != nil {
+		d.svc.jobs.time = d.time
+	}
 	svc := d.svc
 	// A video's state is sent only to a window, which a path test has
 	// none of.
@@ -117,9 +138,12 @@ func (d *desk) start(st *store) {
 			return svc.State(context.Background(), path)
 		}, func(v VideoState) { d.bus.send("video", v) })
 		svc.jobs.news = svc.told
-		// The library is on the real disk, so the walks change its
-		// folders from outside the app the way Finder does.
-		svc.watch = newWatching(svc.reconcile)
+		svc.setupNews = func(state SetupState) {
+			if d.setup != nil {
+				state = d.setup(state)
+			}
+			d.bus.send("setup", state)
+		}
 		svc.jobs.notice = func(n Notice) { d.bus.send("notice", n) }
 	}
 	d.svc.listening.say = func(x Dictation) {
@@ -166,6 +190,11 @@ func (d *desk) start(st *store) {
 	}
 	if d.bus != nil {
 		d.svc.levels = newMeasuring(d.svc.store.machine, svc.told)
+		// The library is on the real disk, so the walks change its
+		// folders from outside the app the way Finder does. The watch
+		// starts once every field it can reach is set, the way main
+		// starts it.
+		svc.watchTheDisk()
 	}
 	// Whatever is still running when the test ends is stopped before its
 	// folder goes.
@@ -175,6 +204,9 @@ func (d *desk) start(st *store) {
 		svc.jobs.shutDown()
 	})
 	logJobsOnFailure(d.t, svc.jobs)
+	if d.fit != nil {
+		d.fit(d.svc)
+	}
 }
 
 // episode puts a copy of the video of this many seconds in the library's
@@ -284,10 +316,11 @@ func (d *desk) render(path, plan string) {
 	d.svc.Render(path, engine.RenderRequest{Plan: plan})
 }
 
-// close quits the app, the way the window's close button does.
+// close quits the app, the way the window's close button does, through
+// the one way the app closes itself, see closeDown.
 func (d *desk) close() {
 	d.t.Helper()
-	if !d.svc.jobs.shutDown() {
+	if !d.svc.closeDown() {
 		d.t.Fatal("the app did not stop its work in time")
 	}
 }
@@ -331,7 +364,26 @@ func (d *desk) shut() {
 
 // open starts the app over the library on the disk, the way main does.
 func (d *desk) open() {
+	d.openOn(openStore())
+}
+
+// openAgainOnTheSameComputer closes the app and opens it again, as reopen
+// does, on a machine that knows what the one before learned about this
+// computer's programs, see engine.Machine.LearnFrom: the bridge's reset
+// starts a walk on a fresh app, not on a fresh computer. Opened on a new
+// machine, every walk asked ffmpeg again what the walk before had asked,
+// a third of the processor time of opening a video.
+func (d *desk) openAgainOnTheSameComputer() {
+	before := d.svc.store.machine
+	d.shut()
 	st := openStore()
+	st.machine.LearnFrom(before)
+	d.openOn(st)
+}
+
+// openOn starts the app over st, with the desk's stand-ins.
+func (d *desk) openOn(st *store) {
+	st.standIns = d.fakes
 	d.start(st)
 	d.svc.restoreJobs(st.Episodes())
 }

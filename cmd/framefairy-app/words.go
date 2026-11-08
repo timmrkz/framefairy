@@ -4,10 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -16,75 +14,26 @@ import (
 	"framefairy/engine"
 )
 
-// transcript is the whole-episode transcript, read once and kept, for the
-// calls the timeline makes over and over as it is moved. A four hour
-// transcript is megabytes of words and levels, and reading it for every
-// swipe made the timeline crawl and the waveform arrive in steps.
-//
-// project is the episode at path with the settings as they are now, for
-// what reads or edits its files without running a step.
-func (s *FrameFairy) project(path string) *engine.Project {
-	return s.projectWith(path, s.store.Settings().options())
-}
-
-// projectWith is project with the settings given.
-func (s *FrameFairy) projectWith(path string, opts engine.Options) *engine.Project {
-	p := engine.NewProject(nil, path, opts)
-	p.Files = s.store.files
-	return p
-}
-
-// The transcripts of the last keptTranscripts episodes are kept, as many as
-// the app keeps workspaces of, so going back to one reads nothing. One was
-// kept, so every episode picked read its transcript again. And it is read
-// once however many ask at once: an episode opening asks for its words, its
-// waveform, its captions and its room together, and each read the whole
-// file for itself, up to seven times.
-//
-// What it hands out is shared, so only what reads goes through here.
-func (s *FrameFairy) transcript(p *engine.Project) (*engine.Transcript, error) {
-	h, err := s.heardIn(p)
+// transcript is the whole-episode transcript as the engine holds it, see
+// engine.Episode, for the calls the timeline makes over and over as it is
+// moved. A four hour transcript is megabytes of words and levels, and
+// reading it for every swipe made the timeline crawl and the waveform
+// arrive in steps. What it hands out is shared, so only what reads goes
+// through here.
+func (s *FrameFairy) transcript(path string) (*engine.Transcript, error) {
+	h, err := s.heardIn(path)
 	if err != nil {
 		return nil, err
 	}
 	return h.Transcript, nil
 }
 
-// heard is a transcript as it was read, with its lines weighed for what
-// a search can read, see engine.Weigh. They are weighed the first time
-// they are asked for and kept with the transcript they are of, so they
-// are read again together and never from two reads of the file.
-type heard struct {
-	*engine.Transcript
-	weighed func() engine.RoomAndLines
-}
-
-// heardIn is the transcript of p's video as it is kept, see transcript.
-func (s *FrameFairy) heardIn(p *engine.Project) (*heard, error) {
-	return s.said.get(p.Source, transcriptStamp(p), func() (*heard, error) {
-		s.oldCorrections(p)
-		t, err := p.Transcript()
-		if err != nil {
-			return nil, err
-		}
-		return &heard{Transcript: t, weighed: sync.OnceValue(func() engine.RoomAndLines { return engine.Weigh(t) })}, nil
-	})
-}
-
-// transcriptStamp is how the files a transcript is read from are now, the
-// size and the time of each, so what is kept of one is read again only
-// once they changed.
-func transcriptStamp(p *engine.Project) string {
-	stamp := ""
-	for _, file := range engine.TranscriptFiles(p.LogsDir()) {
-		info, err := p.Files.Stat(file)
-		if err != nil {
-			stamp += "|-"
-			continue
-		}
-		stamp += fmt.Sprintf("|%d,%d", info.Size(), info.ModTime().UnixNano())
-	}
-	return stamp
+// heardIn is the transcript of the video at path as the engine holds it,
+// with the settings as they are now, see transcript.
+func (s *FrameFairy) heardIn(path string) (*engine.TranscriptRead, error) {
+	s.oldCorrections(path)
+	o := s.store.Settings().options()
+	return s.store.machine.Episode(path).Transcript(o.ASRModel, o.SilenceDB)
 }
 
 // oldCorrections says once, at info, that a video still has the
@@ -92,30 +41,32 @@ func transcriptStamp(p *engine.Project) string {
 // how many words it held. Corrections and removed words are a clip's now,
 // and the file is left where it is and unread, so a report of a fix gone
 // after the update explains itself. It never says what the words read.
-func (s *FrameFairy) oldCorrections(p *engine.Project) {
-	file := filepath.Join(p.LogsDir(), "corrections.json")
-	data, err := afero.ReadFile(p.Files, file)
-	if err != nil {
+func (s *FrameFairy) oldCorrections(path string) {
+	file := filepath.Join(engine.LogsDir(path), "corrections.json")
+	// Looked for once for each video in a run, since the file only ever
+	// comes from before 2.249, and not on every read of the transcript.
+	if _, looked := s.toldOld.LoadOrStore(file, true); looked {
 		return
 	}
-	if _, told := s.toldOld.LoadOrStore(file, true); told {
+	data, err := afero.ReadFile(s.store.files, file)
+	if err != nil {
 		return
 	}
 	var words map[string]any
 	_ = json.Unmarshal(data, &words)
-	theLog.line(zerolog.InfoLevel, "edits").Str("video", filepath.Base(p.Source)).Int("words", len(words)).
+	theLog.line(zerolog.InfoLevel, "edits").Str("video", filepath.Base(path)).Int("words", len(words)).
 		Msg("the corrections of the whole video from before are left unread")
 }
 
 // wordCounts adds to the line of an edit of a clip's words how many words
 // the clip corrects and how many it removes once the edit is made, never
 // which, so a word come back or a fix gone is read from the log alone.
-func (s *FrameFairy) wordCounts(line *zerolog.Event, plan, clipID string) *zerolog.Event {
-	_, clips, err := engine.LoadClips(s.store.files, plan)
+func (s *FrameFairy) wordCounts(line *zerolog.Event, path, plan, clipID string) *zerolog.Event {
+	summary, err := s.store.machine.Episode(path).Plan(plan)
 	if err != nil {
 		return line
 	}
-	for _, c := range clips {
+	for _, c := range summary.AllClips() {
 		if c.ID == clipID {
 			return line.Int("corrections", len(c.Corrections)).Int("removed_words", len(c.RemovedWords))
 		}
@@ -123,78 +74,11 @@ func (s *FrameFairy) wordCounts(line *zerolog.Event, plan, clipID string) *zerol
 	return line
 }
 
-// keptTranscripts is how many episodes' transcripts are kept, the same as
-// KEPT in App.svelte.
-const keptTranscripts = 10
-
-// keptReads keeps what was read for the last few keys, each with the stamp
-// of what it was read from, and reads a key once however many ask at once.
-// The zero value keeps keptTranscripts.
-type keptReads[T any] struct {
-	mu   sync.Mutex
-	held map[string]*keptRead[T]
-	uses uint64
-}
-
-// keptRead is one key's read: as stamp says its source was, or still being
-// read until done is closed.
-type keptRead[T any] struct {
-	stamp string
-	v     T
-	err   error
-	done  chan struct{}
-	used  uint64
-}
-
-// get gives what read gives for key, read again only when stamp has
-// changed. A failure is not kept: the next ask reads again.
-func (k *keptReads[T]) get(key, stamp string, read func() (T, error)) (T, error) {
-	k.mu.Lock()
-	k.uses++
-	if r := k.held[key]; r != nil && r.stamp == stamp {
-		r.used = k.uses
-		k.mu.Unlock()
-		<-r.done
-		return r.v, r.err
-	}
-	r := &keptRead[T]{stamp: stamp, used: k.uses, done: make(chan struct{})}
-	if k.held == nil {
-		k.held = map[string]*keptRead[T]{}
-	}
-	k.held[key] = r
-	for len(k.held) > keptTranscripts {
-		oldest := ""
-		for other, o := range k.held {
-			if oldest == "" || o.used < k.held[oldest].used {
-				oldest = other
-			}
-		}
-		delete(k.held, oldest)
-	}
-	k.mu.Unlock()
-	// However the read ends, a panic too, whoever waits is let go and a
-	// failure is not kept. The failure is taken out first, so a waiter let
-	// go that asks again reads again rather than finding it.
-	defer func() {
-		if r.err != nil {
-			k.mu.Lock()
-			if k.held[key] == r {
-				delete(k.held, key)
-			}
-			k.mu.Unlock()
-		}
-		close(r.done)
-	}()
-	r.err = fmt.Errorf("the read stopped before it finished")
-	r.v, r.err = read()
-	return r.v, r.err
-}
-
 // words is what an episode says, see engine/words.go, from the transcript
 // read once and kept. An episode not transcribed yet says nothing, which
 // is an empty answer and not a failure.
 func (s *FrameFairy) words(path string) (*engine.Transcript, error) {
-	t, err := s.transcript(s.project(path))
+	t, err := s.transcript(path)
 	if errors.Is(err, engine.ErrNoTranscript) {
 		return &engine.Transcript{}, nil
 	}
@@ -231,7 +115,7 @@ func (s *FrameFairy) Sentences(path string) (cards []engine.SentenceView, err er
 		return nil, errNotInLibrary
 	}
 	began := time.Now()
-	plans := plansOf(s.store.files, path)
+	plans := s.plansOf(path)
 	var clips []engine.ClipSaid
 	// How long the cards took and how many there were, so a report of a
 	// transcript that came empty or slow says so. Never a word of them.
@@ -276,7 +160,7 @@ func (s *FrameFairy) SetWord(ctx context.Context, path, plan, clipID string, sta
 		return engine.SetWordText(s.store.files, plan, clipID, start, text, t)
 	})
 	// Where the word is and whether it was removed, never what it reads.
-	line := s.wordCounts(editLine(editLevel(err), path, clipID, time.Since(began)).Err(err), plan, clipID)
+	line := s.wordCounts(editLine(editLevel(err), path, clipID, time.Since(began)).Err(err), path, plan, clipID)
 	line.Float64("word", start).Bool("removed", strings.TrimSpace(text) == "").Msg("a word was corrected")
 	if err != nil {
 		return ClipEntry{}, err
@@ -303,7 +187,7 @@ func (s *FrameFairy) RemoveWord(ctx context.Context, path, plan, clipID string, 
 		return engine.RemoveWord(s.store.files, plan, clipID, start, part, t)
 	})
 	// Where the word is and which of its words, never what it reads.
-	line := s.wordCounts(editLine(editLevel(err), path, clipID, time.Since(began)).Err(err), plan, clipID)
+	line := s.wordCounts(editLine(editLevel(err), path, clipID, time.Since(began)).Err(err), path, plan, clipID)
 	line.Float64("word", start).Int("part", part).Msg("a word was removed")
 	if err != nil {
 		return ClipEntry{}, err
@@ -329,7 +213,7 @@ func (s *FrameFairy) RemoveCaption(ctx context.Context, path, plan, clipID strin
 	err = s.edit(path, func() error {
 		return engine.RemoveCaption(s.store.files, plan, clipID, first, t, look)
 	})
-	line := s.wordCounts(editLine(editLevel(err), path, clipID, time.Since(began)).Err(err), plan, clipID)
+	line := s.wordCounts(editLine(editLevel(err), path, clipID, time.Since(began)).Err(err), path, plan, clipID)
 	line.Float64("word", first).Msg("a caption was removed")
 	if err != nil {
 		return ClipEntry{}, err

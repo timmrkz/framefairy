@@ -201,8 +201,8 @@ export class Watch {
     // clip before. With no clip of the engine's on screen, a clip still
     // on its way among them, there is nothing of the engine's to hold the
     // screen to, and the clip on screen before is not it.
-    const { at, now, drawn } = await settledScreen(page);
-    const after = at ? await engineState(page, at) : null;
+    const { at, clips, now, drawn } = await settledScreen(page);
+    const after = at ? await engineState(page, at, clips) : null;
     const moved = JSON.stringify(at) !== JSON.stringify(this.at);
     if (moved) {
       this.at = at;

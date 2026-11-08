@@ -40,7 +40,7 @@ func keyedTranscript(silenceDB float64) *Transcript {
 // clipSays is the words a clip's captions show, in order.
 func clipSays(t *testing.T, fsys afero.Fs, path string, tr *Transcript) string {
 	t.Helper()
-	view, err := ClipCaptionsView(fsys, path, "01", tr, nil)
+	view, err := ClipCaptionsView(planAt(t, fsys, path), "01", tr, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,7 +271,7 @@ func TestAMovedCaptionEdgeHoldsWhenTheSilenceLevelMoves(t *testing.T) {
 	fsys, path := captionPlanPath(t)
 	opening := func(tr *Transcript) CaptionView {
 		t.Helper()
-		view, err := ClipCaptionsView(fsys, path, "01", tr, nil)
+		view, err := ClipCaptionsView(planAt(t, fsys, path), "01", tr, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -315,7 +315,7 @@ func TestAMovedCaptionFromBeforeIsReadAndKeptAnew(t *testing.T) {
 }`)
 	second := func(tr *Transcript) CaptionView {
 		t.Helper()
-		view, err := ClipCaptionsView(fsys, path, "01", tr, nil)
+		view, err := ClipCaptionsView(planAt(t, fsys, path), "01", tr, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

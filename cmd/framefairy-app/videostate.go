@@ -62,9 +62,9 @@ func (s *FrameFairy) State(ctx context.Context, path string) (VideoState, error)
 	plans := st.Status.Plans
 	if st.Status.Missing {
 		// A video whose file is gone keeps its clips, see Clips.
-		plans = plansOf(s.store.files, path)
+		plans = s.plansOf(path)
 	}
-	info := sources.lastOf(path)
+	info := s.probes.lastOf(path)
 	if !st.Status.Missing {
 		// A video that cannot be read now still has its status, its jobs
 		// and its clips, as a missing one does, so the workspace says what
@@ -77,6 +77,7 @@ func (s *FrameFairy) State(ctx context.Context, path string) (VideoState, error)
 		}
 	}
 	st.Clips = s.clipsOf(plans, info)
+	searchesEnded(st.Jobs, st.Status, info.Duration)
 	if !st.Status.Missing {
 		st.Window = s.windowFor(ctx, path, st, info.Duration)
 	}
@@ -233,5 +234,22 @@ func (n *videoNews) stop() {
 	n.mu.Unlock()
 	for _, sent := range going {
 		<-sent
+	}
+}
+
+// searchesEnded says of each search among jobs that is done or stopped
+// how it ended, from the video's status and its length, see
+// engine.SearchEnded.
+func searchesEnded(jobs []Job, status engine.EpisodeStatus, duration float64) {
+	heard := status.Heard
+	if status.Transcribed {
+		heard = [][2]float64{{0, duration}}
+	}
+	for i := range jobs {
+		j := &jobs[i]
+		if j.Kind != engine.JobSearch || (j.State != JobDone && !j.unfinished()) {
+			continue
+		}
+		j.Ended = engine.SearchEnded(j.JobRecord, j.State == JobDone, j.Written+j.Carried, heard, duration)
 	}
 }

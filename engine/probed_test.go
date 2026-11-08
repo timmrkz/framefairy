@@ -2,13 +2,18 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/spf13/afero"
 
 	"framefairy/engine/runlog"
 	"framefairy/internal/standin"
@@ -61,9 +66,10 @@ func TestAFileIsProbedOnceUntilItChanges(t *testing.T) {
 	if err := os.WriteFile(video, []byte("a video"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	machine := &Machine{}
 	probe := func() SourceInfo {
 		t.Helper()
-		e := &Engine{Machine: &Machine{}, Log: runlog.New(io.Discard, false, false), FFprobe: ffprobe}
+		e := &Engine{Machine: machine, Log: runlog.New(io.Discard, false, false), FFprobe: ffprobe}
 		info, err := e.Probe(ctx, video)
 		if err != nil {
 			t.Fatal(err)
@@ -99,6 +105,13 @@ func TestAFileIsProbedOnceUntilItChanges(t *testing.T) {
 	probe()
 	if got := runs(); got != 2*once {
 		t.Errorf("a file written again was asked about %d times, not %d", got-once, once)
+	}
+
+	// Another machine, another program's or another test's, keeps its own.
+	machine = &Machine{}
+	probe()
+	if got := runs(); got != 3*once {
+		t.Errorf("a second machine was asked about the file %d times, not %d", got-2*once, once)
 	}
 }
 
@@ -138,9 +151,10 @@ func TestTheSubtitleSyntaxIsFoundOnceForEveryEngine(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ffmpeg, runs := countingTool(t, "ffmpeg")
+	machine := &Machine{}
 	find := func() string {
 		t.Helper()
-		e := &Engine{Machine: &Machine{}, Log: runlog.New(io.Discard, false, false), FFmpeg: ffmpeg}
+		e := &Engine{Machine: machine, Log: runlog.New(io.Discard, false, false), FFmpeg: ffmpeg}
 		template, err := e.SubtitleFilter(ctx)
 		if err != nil {
 			t.Fatal(err)
@@ -161,7 +175,7 @@ func TestTheSubtitleSyntaxIsFoundOnceForEveryEngine(t *testing.T) {
 }
 
 // Preflight asks ffmpeg and ffprobe for their versions once for the
-// process, not once for every engine the app makes.
+// program's machine, not once for every engine the app makes.
 //
 // On the real disk: the stand-ins are programs the engine runs.
 func TestEveryToolIsAskedItsVersionOnce(t *testing.T) {
@@ -177,8 +191,9 @@ func TestEveryToolIsAskedItsVersionOnce(t *testing.T) {
 		}
 		return n
 	}
+	machine := &Machine{}
 	for range 3 {
-		e := &Engine{Machine: &Machine{}, Log: runlog.New(io.Discard, false, false), FFmpeg: ffmpeg, FFprobe: ffprobe,
+		e := &Engine{Machine: machine, Log: runlog.New(io.Discard, false, false), FFmpeg: ffmpeg, FFprobe: ffprobe,
 			SkipCaptions: true}
 		// The stand-in knows no encoder, so Preflight fails past the
 		// versions. It must fail there, not on either tool.
@@ -189,5 +204,221 @@ func TestEveryToolIsAskedItsVersionOnce(t *testing.T) {
 	}
 	if got := versions(); got != 2 {
 		t.Errorf("three engines asked for a version %d times, not once for each tool", got)
+	}
+}
+
+// A machine that learned from another asks ffmpeg and ffprobe nothing the
+// other was already told, and keeps none of the other's jobs. The walks'
+// bridge opens the app again for every walk, and each walk asked the same
+// ffmpeg again what the walk before it had asked.
+//
+// On the real disk: the stand-ins are programs the engine runs, and what
+// is kept is kept by the file's size and time there.
+func TestAMachineThatLearnedFromAnotherAsksNothingAgain(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ffmpeg, ffmpegRuns := countingTool(t, "ffmpeg")
+	ffprobe, ffprobeRuns := countingTool(t, "ffprobe")
+	video := filepath.Join(t.TempDir(), "episode.mp4")
+	if err := os.WriteFile(video, []byte("a video"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ask := func(machine *Machine) {
+		t.Helper()
+		e := &Engine{Machine: machine, Log: runlog.New(io.Discard, false, false), FFmpeg: ffmpeg, FFprobe: ffprobe}
+		if _, err := e.SubtitleFilter(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := e.Probe(ctx, video); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before := NewMachine(afero.NewMemMapFs())
+	ask(before)
+	ffmpegOnce, ffprobeOnce := ffmpegRuns(), ffprobeRuns()
+	if ffmpegOnce == 0 || ffprobeOnce == 0 {
+		t.Fatalf("the stand-ins were asked %d and %d times", ffmpegOnce, ffprobeOnce)
+	}
+	before.episodes = map[string]*Episode{video: {}}
+
+	after := NewMachine(afero.NewMemMapFs())
+	after.LearnFrom(before)
+	ask(after)
+	if got := ffmpegRuns(); got != ffmpegOnce {
+		t.Errorf("the machine that learned asked ffmpeg %d more times", got-ffmpegOnce)
+	}
+	if got := ffprobeRuns(); got != ffprobeOnce {
+		t.Errorf("the machine that learned asked ffprobe %d more times", got-ffprobeOnce)
+	}
+	if after.Tools != before.Tools {
+		t.Error("the machine that learned checks the programs again")
+	}
+	if len(after.episodes) != 0 {
+		t.Errorf("the machine that learned holds the other's videos %v", after.episodes)
+	}
+	if _, tracks := after.captions(); tracks == nil {
+		t.Error("the machine that learned has nowhere to keep its own caption files")
+	} else if _, theirs := before.captions(); tracks == theirs {
+		t.Error("the machine that learned shares the other's caption files")
+	}
+}
+
+// Two engines that ask a machine at the same moment how its ffmpeg wants
+// a subtitle file named wait for one answer: the workspace asks for the
+// captions of a clip twice as a video opens, and on a machine that knew
+// nothing yet each asked ffmpeg for itself.
+//
+// On the real disk: the stand-in ffmpeg is a program the engine runs.
+func TestTwoAsksAtOnceRunOneSubtitleProbe(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ffmpeg, runs := countingTool(t, "ffmpeg")
+	once := func() int {
+		e := &Engine{Machine: &Machine{}, Log: runlog.New(io.Discard, false, false), FFmpeg: ffmpeg}
+		if _, err := e.SubtitleFilter(ctx); err != nil {
+			t.Fatal(err)
+		}
+		return runs()
+	}()
+	machine := &Machine{}
+	const asks = 8
+	answers := make(chan string, asks)
+	var start sync.WaitGroup
+	start.Add(1)
+	for range asks {
+		go func() {
+			e := &Engine{Machine: machine, Log: runlog.New(io.Discard, false, false), FFmpeg: ffmpeg}
+			start.Wait()
+			template, err := e.SubtitleFilter(ctx)
+			if err != nil {
+				t.Error(err)
+			}
+			answers <- template
+		}()
+	}
+	start.Done()
+	first := <-answers
+	for range asks - 1 {
+		if got := <-answers; got != first {
+			t.Errorf("one ask was told %q, another %q", got, first)
+		}
+	}
+	if got := runs() - once; got != once {
+		t.Errorf("%d asks at once ran ffmpeg %d times, one ask runs it %d times", asks, got, once)
+	}
+}
+
+// A stand-in ffprobe for the pieces of a clip, which counts its runs:
+// the frames of the piece read from 9.96 s come off the grid, every other
+// piece's are even, and a file is read with a key frame every second.
+//
+// On the real disk: the stand-in is a program the engine runs.
+func piecesTool(t *testing.T) (path string, runs func() int) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("the stand-in is a shell script")
+	}
+	dir := t.TempDir()
+	asked := filepath.Join(dir, "asked")
+	path = filepath.Join(dir, "ffprobe")
+	keys := ""
+	for s := 0; s <= 30; s++ {
+		keys += fmt.Sprintf(`%d.000000,%d,K_\n`, s, s+1)
+	}
+	script := `#!/bin/sh
+echo "$*" >> '` + asked + `'
+case "$*" in
+*packet=dts_time*) printf '` + keys + `' ;;
+*"-read_intervals 9.960%"*) printf '9.960000,1,K_\n9.973000,2,__\n' ;;
+esac
+`
+	if err := standin.Write(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return path, func() int {
+		data, err := os.ReadFile(asked)
+		if os.IsNotExist(err) {
+			return 0
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.Count(string(data), "\n")
+	}
+}
+
+// How the frames come at the edges of a piece, and where a piece is read
+// from in a file with no index of its key frames, is read once for a
+// file, and what is kept is what was read. A render asked ffprobe at
+// every piece edge of every clip, every time, issue #609.
+//
+// On the real disk: the stand-in ffprobe is a program that is run, and
+// what is kept is kept by the file's stamp there.
+func TestThePiecesOfAClipAreReadOnceUntilTheFileChanges(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ffprobe, runs := piecesTool(t)
+	video := filepath.Join(t.TempDir(), "episode.ts")
+	if err := os.WriteFile(video, []byte("a video"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	machine := &Machine{}
+	pieces := []Segment{{Start: 2, End: 4}, {Start: 10, End: 12.5}}
+	read := func(info SourceInfo, segs []Segment) SourceInfo {
+		t.Helper()
+		e := &Engine{Machine: machine, Log: runlog.New(io.Discard, false, false), FFprobe: ffprobe}
+		return e.keyedPieces(ctx, video, e.unevenPieces(ctx, video, info, segs), segs)
+	}
+	even := SourceInfo{FPSNum: 25, FPSDen: 1, Duration: 60, hasClock: true}
+	// The second piece is read from a frame before it, 9.96 s, where the
+	// stand-in's frames come 13 ms apart.
+	uneven := [][2]float64{{10, 12.5}}
+	if got := read(even, pieces).unevenAt; !slices.Equal(got, uneven) {
+		t.Fatalf("read uneven at %v, not %v", got, uneven)
+	}
+	if got := runs(); got != 2 {
+		t.Fatalf("ffprobe was asked %d times for two pieces", got)
+	}
+	if got := read(even, pieces).unevenAt; !slices.Equal(got, uneven) {
+		t.Errorf("kept uneven at %v, not %v", got, uneven)
+	}
+	if got := runs(); got != 2 {
+		t.Errorf("the same pieces read again asked ffprobe %d more times", got-2)
+	}
+	// Another piece is read on its own.
+	read(even, append(slices.Clone(pieces), Segment{Start: 20, End: 21}))
+	if got := runs(); got != 3 {
+		t.Errorf("a new piece asked ffprobe %d times, not once", got-2)
+	}
+
+	// In a file with no index of its key frames, where each piece is read
+	// from is kept too. A piece read from a frame before it, 1.96 s and
+	// 9.96 s, is read a millisecond before the key frame before the last
+	// one by then: the start of the file, and 8 s.
+	unindexed := even
+	unindexed.unindexed = true
+	before := runs()
+	first := read(unindexed, pieces)
+	asked := runs() - before
+	want := []pieceKey{{2, 4, 0}, {10, 12.5, 7_999_000}}
+	if asked == 0 || !slices.Equal(first.keyAt, want) {
+		t.Fatalf("the pieces of a file with no index were read %d times, from %v, not %v", asked, first.keyAt, want)
+	}
+	if got := read(unindexed, pieces).keyAt; !slices.Equal(got, want) {
+		t.Errorf("kept the pieces read from %v, not %v", got, want)
+	}
+	if got := runs() - before; got != asked {
+		t.Errorf("the key frames of the same pieces were asked again, %d runs, not %d", got, asked)
+	}
+
+	// Written again, it is another file.
+	later := time.Now().Add(time.Minute)
+	if err := os.Chtimes(video, later, later); err != nil {
+		t.Fatal(err)
+	}
+	before = runs()
+	read(even, pieces)
+	if got := runs() - before; got != 2 {
+		t.Errorf("a file written again was read %d times for two pieces", got)
 	}
 }

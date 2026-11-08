@@ -115,8 +115,19 @@ const applyCut = (list: Piece[], from: number, to: number): Piece[] => {
   return out;
 };
 
+// Each piece with its part, the way the Go side numbers them, see
+// engine.PieceView: a piece that starts where the one before ends is in
+// its part, one after a cut starts the next.
+const withParts = <P extends { start: number; end: number }>(list: P[]): (P & { part: number })[] => {
+  let part = 0;
+  return list.map((p, i) => {
+    if (i > 0 && p.start - list[i - 1].end > 0.0005) part++;
+    return { ...p, part };
+  });
+};
+
 const clip = (n: number, start: number, title: string, rendered: boolean) => {
-  const segments = pieces(n, start);
+  const segments = withParts(pieces(n, start));
   const first = segments.length ? segments[0].start : start;
   const last = segments.length ? segments[segments.length - 1].end : start;
   return {
@@ -644,8 +655,13 @@ function searchAt(s: FakeSearch, now = Date.now()) {
 }
 function searchJob(s: FakeSearch) {
   const now = searchAt(s);
-  const base = { id: s.id, episode: "/eps/ep.mp4", kind: "search", label: "Find clips", state: now.state, step: now.step, from: s.from, to: s.to, count: s.count, queued: "", lane: now.step === "hearing" ? "hearing" : "finding", error: s.error, result: now.state === "done" ? "/eps/ep.framefairy/logs/clips.json" : undefined };
-  if (now.state !== "running") return base;
+  const base = { id: s.id, episode: "/eps/ep.mp4", kind: "search", label: "Find clips", state: now.state, step: now.step, from: s.from, to: s.to, count: s.count, queued: "", lane: now.step === "hearing" ? "hearing" : "finding", error: s.error, result: now.state === "done" ? "/eps/ep.framefairy/logs/clips.json" : undefined, away: awayOf(s.id, now.state), stopping: now.state === "running" && s.cancelledAt !== undefined ? true : undefined };
+  if (now.state !== "running") {
+    // How it ended, as the Go side says it, see engine.SearchEnded.
+    const end = s.to > 0 ? s.to : fullLength;
+    const ended = now.state === "done" ? (now.found > 0 ? "found" : "nothing") : now.covered >= end - 0.5 ? "finding" : "hearing";
+    return { ...base, ended };
+  }
   if (now.step === "hearing") {
     // How far and how long, to the end of the window it hears for, the way
     // the engine reports it. A made-up time left here hid that the engine
@@ -805,6 +821,8 @@ function handJob(h: FakeHand) {
   const running = now.state === "running";
   return {
     id: h.id, episode: "/eps/ep.mp4", kind: "clip", label: "Make a clip", state: now.state,
+    away: awayOf(h.id, now.state),
+    stopping: now.state === "running" && h.cancelledAt !== undefined ? true : undefined,
     step: now.step, at: h.at, backward: h.backward, queued: "",
     lane: now.step === "hearing" ? "hearing" : "framing",
     result: now.state === "done" ? `clips-hand.json/h0${h.n}` : undefined,
@@ -907,6 +925,28 @@ export const Call = {
     return late(method, answer).finally(back);
   },
 };
+
+// Work that stopped and was removed, the way removal.go keeps it: the
+// moment it is forgotten, 0 while a hand holds its row, how many seconds
+// are left then, and how many it had. Its time is kept here, not by the
+// interface, and once it is up the work is forgotten.
+type Removal = { until: number; left: number; whole: number; press?: number };
+// Not __removals, which counts the videos removed, see RemoveEpisode.
+const removals = (): Record<string, Removal> => ((window as any).__removedWork ??= {});
+function forgetDue(now = Date.now()) {
+  for (const [id, r] of Object.entries(removals())) {
+    if (!r.until || r.until > now) continue;
+    delete removals()[id];
+    ((window as any).__cancels ??= []).push(id);
+    const hand = hands().find((h) => h.id === id);
+    if (hand) hand.settled = true;
+    const search = fakeSearches().find((f) => f.id === id);
+    if (search) search.settled = true;
+  }
+}
+function awayOf(id: string, state: string): Removal | undefined {
+  return state === "settled" ? undefined : removals()[id];
+}
 
 // The state of the video, the way the Go side reads it: its jobs first,
 // and the clock read with them, then the rest.
@@ -1573,6 +1613,19 @@ const Answers = {
         (window as any).__settings = { ...was, ...kept };
         return videoState(String(args[0]));
       }
+      // How the captions start out, the way the engine has them, see
+      // engine.CaptionStart.
+      case "CaptionStart":
+        return Promise.resolve({
+          font: "Inter Black",
+          size: 96,
+          y: 320,
+          heights: Array.from({ length: 37 }, (_, i) => 120 + 40 * i),
+          step: 40,
+          primary: "rgba(255, 255, 255, 1)",
+          box: "rgba(0, 0, 0, 0.498)",
+          highlightColour: "rgba(148, 33, 146, 1)",
+        });
       case "GetSettings":
         return Promise.resolve({ llmModel: "", asrModel: "", planner: (window as any).__planner || "local", apiModel: "claude-sonnet-5", target: 0, min: 20, max: 30, highlightColour: "#b4236f", appColour: "#942192", outputDir: "", captionY: 240, trainingDir: "", ...((window as any).__settings ?? {}) });
       // What the settings page saves, kept, so a probe can read what was
@@ -1595,7 +1648,6 @@ const Answers = {
         const out = [
           { name: "ffmpeg", ok: true, version: "8.1.3", detail: "The one this app was built with: its SHA-256 matches the one built in.", path: "/Applications/Frame Fairy.app/Contents/MacOS/ffmpeg", sha256: "e1ba46e814d383b96be780d1a7c49e1c4eecef1619615a241974dc122e2f1a2e" },
           { name: "ffprobe", ok: true, version: "8.1.3", detail: "The one this app was built with: its SHA-256 matches the one built in.", path: "/Applications/Frame Fairy.app/Contents/MacOS/ffprobe", sha256: "5b0c9e2d7a41f8836c2e0b1d94f7a6c35e8d21b0a97f4c6e3d58b2a1f0c9e7d4" },
-          { name: "Video decoding", ok: true, detail: "VideoToolbox, falling back to the processor for a file it does not take. The log of a search says which one it used" },
           { name: "Caption fonts", ok: true, detail: "6 built in, 412 from this machine" },
           { name: "Speech model", ok: true, detail: "/Users/tim/.framefairy/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8" },
         ];
@@ -1734,6 +1786,7 @@ const Answers = {
         return Promise.resolve({ done: true, clip: "clips.json/03" });
       }
       case "Jobs": {
+        forgetDue();
         const searches = [...fakeSearches().map(searchJob), ...hands().map(handJob)];
         // A render running on the first clip, so the Render button has
         // work of its own to show.
@@ -1925,7 +1978,7 @@ const Answers = {
           return Promise.resolve(clip(Number(id), at, title, rendered));
         }
         return Promise.resolve({
-          pieces: out.pieces.map((p) => ({ start: p.start, end: p.end })),
+          pieces: withParts(out.pieces.map((p) => ({ start: p.start, end: p.end }))),
           playhead: out.playhead,
           captions: { captions: captionCues(id, out.pieces), style: {} },
         });
@@ -1961,6 +2014,27 @@ const Answers = {
           }
         }
         return Promise.resolve(null);
+      }
+      case "RemoveWork": {
+        const was = removals()[String(args[0])];
+        if (!was) removals()[String(args[0])] = { until: Date.now() + 10000, left: 0, whole: 10 };
+        return videoState("/eps/ep.mp4");
+      }
+      case "HoldRemoval": {
+        const id = String(args[0]);
+        const was = removals()[id];
+        // A hold or let go older than the last one taken is left out,
+        // as Go does, see HoldRemoval in removal.go.
+        const press = Number(args[2] ?? 0);
+        if (was && press <= (was.press ?? 0)) return Promise.resolve(null);
+        if (was) was.press = press;
+        if (was && args[1] && was.until) removals()[id] = { until: 0, left: Math.max(0, (was.until - Date.now()) / 1000), whole: was.whole, press };
+        if (was && !args[1] && !was.until) removals()[id] = { until: Date.now() + was.left * 1000, left: 0, whole: was.whole, press };
+        return Promise.resolve(null);
+      }
+      case "PutWorkBack": {
+        delete removals()[String(args[0])];
+        return videoState("/eps/ep.mp4");
       }
       case "CancelJob": {
         (window as any).__stopped = true;
@@ -2306,9 +2380,10 @@ export const Events = {
     // called off stays in the interface's hands.
     const told = new Map<string, string>();
     const searchTimer = setInterval(() => {
+      forgetDue();
       for (const job of [...fakeSearches().map(searchJob), ...hands().map(handJob), ...((window as any).__refused ?? [])] as any[]) {
         const s = { id: job.id };
-        const key = `${job.state}`;
+        const key = `${job.state} ${JSON.stringify(job.away ?? null)}`;
         if (job.state !== "running" && told.get(s.id) === key) continue;
         told.set(s.id, key);
         if (job.progress) {

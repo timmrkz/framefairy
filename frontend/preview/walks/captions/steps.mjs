@@ -8,8 +8,8 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { basename } from "node:path";
-import { ask, clickOnTrack, control, cropPixels, engineState, episodeOn, fromSidebar, handles, high, news, nextNews, nextPaint, open, pageUntil, playUntil, seekTo, settle, shortFramesFrom, shown, shownOnPlayhead, xOf } from "../bridge.mjs";
-import { canLook, clickCard, clickedFromAhead, clock, rate, restAhead, shortOf, shotClips, still, url } from "../common/steps.mjs";
+import { ask, caughtUp, clickOnTrack, control, cropPixels, engineState, episodeOn, fromSidebar, handles, high, news, nextNews, nextPaint, open, pageUntil, playUntil, pressPlay, seekTo, settle, shortFramesFrom, shown, shownOnPlayhead, xOf } from "../bridge.mjs";
+import { canLook, clickCard, clickedFromAhead, clock, onePiece, rate, restAhead, shortOf, shotClips, still, url } from "../common/steps.mjs";
 import { describe } from "../rules.mjs";
 
 export const steps = {
@@ -424,6 +424,28 @@ export const steps = {
       walk.wrong = `the captions over the frame of "${arg}" did not come`;
       return;
     }
+    // Until the engine has said where libass puts the words, which the
+    // caption box stands its words on. The layer of the frame is no sign
+    // of it: on a busy runner the answer came 190 ms after the layer, as
+    // the words were read shut, so they were read where the browser
+    // first set them and moved when the word was opened.
+    const framed = await page.locator(".detail").evaluate(
+      (detail) =>
+        new Promise((done) => {
+          const answered = () => detail.dataset.answered !== undefined;
+          if (answered()) return done(detail.dataset.framed === detail.dataset.answered);
+          const seen = new MutationObserver(() => {
+            if (!answered()) return;
+            seen.disconnect();
+            done(detail.dataset.framed === detail.dataset.answered);
+          });
+          seen.observe(detail, { attributes: true, attributeFilter: ["data-answered"] });
+        }),
+    );
+    if (!framed) {
+      walk.wrong = `the engine did not say where libass puts the words of the captions over "${arg}"`;
+      return;
+    }
     await settled();
     const shut = await look();
     if (!shut) {
@@ -800,12 +822,20 @@ export const steps = {
       }
       return -1;
     };
-    // The first frame of every word, where the highlight bounces, and
-    // a frame in its middle, where it has settled.
+    // The first frame that shows every word, where the highlight
+    // bounces, and the frame in its middle, where it has settled, each
+    // aimed at the middle of its frame. A word that starts inside a
+    // frame is first shown by the frame after, and aimed at half a
+    // frame past its start the walk stood on the edge between the two,
+    // where a click a pixel either side picked one or the other: WebKit
+    // lays the clip timeline out a fraction of a pixel off Chromium, and
+    // landed on the frame before, #380.
     const words = (state.captions ?? []).flatMap((c) => c.lines.flatMap((l) => l.words));
     const moments = words
-      .flatMap((w) => [w.start + 0.5 / fps, (w.start + w.end) / 2])
-      .map(into)
+      .flatMap((w) => {
+        const [first, middle] = [into(w.start), into((w.start + w.end) / 2)];
+        return [first === null ? null : (Math.ceil(first * fps - 0.001) + 0.5) / fps, middle === null ? null : (Math.floor(middle * fps) + 0.5) / fps];
+      })
       .filter((at) => at !== null);
     let compared = 0;
     let apart = 0;
@@ -998,6 +1028,52 @@ export const steps = {
     const box = s.map((w) => w.text).join(" ");
     if (box !== arg) walk.wrong = `the caption box reads "${box}", not "${arg}"`;
   },
+  // ["drag captions", px]
+  //                    takes the caption box by its edge and drags it up by
+  //                    px pixels in steps: the Height field follows the
+  //                    hand on a height the Go side offers, see
+  //                    engine.CaptionStart, and what is saved on letting go
+  //                    is the height the field showed last
+  async "drag captions"(walk, arg, s) {
+    const { page, settled, watch } = walk;
+    const { heights } = await ask(page, "CaptionStart");
+    const field = page.locator("label.setting", { hasText: "Height" }).locator("input");
+    const box = await page.locator(".screen .captions .box").first().boundingBox();
+    const x = box.x + 2;
+    const y = box.y + box.height / 2;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    const shown = [];
+    for (let k = 1; k <= 8; k++) {
+      await page.mouse.move(x, y - (arg * k) / 8);
+      await nextPaint(page);
+      shown.push(Number(await field.inputValue()));
+    }
+    await page.mouse.up();
+    await watch.step("drag captions", s);
+    await settled();
+    const off = shown.filter((h) => !heights.includes(h));
+    const saved = Math.round((await engineState(page, watch.at)).style.marginV * 1920);
+    const last = shown.at(-1);
+    if (off.length) walk.wrong = `the Height field showed ${off.join(", ")} while dragged, which the Go side does not offer`;
+    else if (saved !== last) walk.wrong = `the Height field showed ${last} as the hand let go, and ${saved} was saved`;
+    else if (Number(await field.inputValue()) !== saved) walk.wrong = `${saved} was saved and the Height field reads ${await field.inputValue()}`;
+  },
+  // ["captions put back"]
+  //                    clicks Put the captions back: the captions sit where
+  //                    the Go side says they start out, and the Height field
+  //                    says so
+  async "captions put back"(walk, arg, s) {
+    const { page, settled, watch } = walk;
+    const start = await ask(page, "CaptionStart");
+    await page.locator('button[aria-label="Put the captions back"]').click();
+    await watch.step("captions put back", s);
+    await settled();
+    const field = page.locator("label.setting", { hasText: "Height" }).locator("input");
+    const saved = Math.round((await engineState(page, watch.at)).style.marginV * 1920);
+    if (saved !== start.y) walk.wrong = `the captions sit ${saved} from the bottom after Put the captions back, not ${start.y}`;
+    else if (Number(await field.inputValue()) !== start.y) walk.wrong = `the Height field reads ${await field.inputValue()} after Put the captions back, not ${start.y}`;
+  },
   // ["font", name]     picks this family in the captions column, and waits
   //                    for the captions drawn in it
   // ["style", name]    picks this style of the family, and waits for the
@@ -1037,21 +1113,23 @@ export const steps = {
     const { page, watch } = walk;
     // With the transcript open while the work hears, where the first
     // part not transcribed yet begins, against how far the saved
-    // transcript reaches, over nine of the job's news.
+    // transcript reaches, over nine pieces of audio heard.
     const path = await episodeOn(page);
     await page.evaluate(() => document.querySelector('.listhead button[aria-label="Search the transcript"]').click());
     await watch.step("click", s);
     // Where its dots end on the right, too, which must not move while
     // its left edge does: centred, the pattern walked back and forth
     // as the edge passed over it, found by Tim. Read in every frame
-    // until the work has told the app how far it heard nine times,
-    // with what the saved transcript holds asked after each.
-    const from = await news(page);
+    // until the nine pieces are heard and the state that says so is on
+    // screen, with what the saved transcript holds asked after each. A
+    // piece is counted, not a state: one piece can bring more than one
+    // state of the video, and one state can carry more than one piece.
     const times = 9;
     const sampled = page.evaluate(
-      ([from, times]) =>
+      () =>
         new Promise((done) => {
           const seen = [];
+          window.__giveWayDone = false;
           const tick = () => {
             const u = document.querySelector(".track .unheard");
             let now = null;
@@ -1065,21 +1143,23 @@ export const steps = {
               };
             }
             if (!seen.length || JSON.stringify(seen.at(-1)) !== JSON.stringify(now)) seen.push(now);
-            if ((window.__news.job ?? 0) >= from + times) done(seen);
+            if (window.__giveWayDone) done(seen);
             else requestAnimationFrame(tick);
           };
           requestAnimationFrame(tick);
         }),
-      [from, times],
     );
     const saves = new Set();
-    for (let seen = from; seen < from + times; ) {
-      // With the speech held, a piece more is heard for each news.
-      if (walk.speechHeld) await control(url, "/speech?step=1");
-      seen = await nextNews(page, seen);
+    for (let piece = 0; piece < times; piece++) {
+      // With the speech held, a piece more is heard each time, and the
+      // state that carries it is on screen before the next.
+      if (walk.speechHeld) await onePiece(page, url, path);
+      else await nextNews(page, await news(page));
+      await caughtUp(page, url);
       const status = await ask(page, "Episode", path).catch(() => null);
       saves.add(JSON.stringify(status?.heard ?? null));
     }
+    await page.evaluate(() => (window.__giveWayDone = true));
     const samples = await sampled;
     const edges = samples.map((d) => d?.left ?? null);
     const dots = samples.filter(Boolean);
@@ -1087,7 +1167,7 @@ export const steps = {
     const moves = edges.filter((v, i) => i && v !== null && edges[i - 1] !== null && v !== edges[i - 1]).length;
     if (edges.every((v) => v === null)) walk.wrong = "no part was not transcribed yet while the work heard";
     else if (moves < Math.max(4, 2 * saves.size))
-      walk.wrong = `the first part not transcribed yet moved ${moves} times over ${times} of the job's news while the saved transcript changed ${saves.size - 1} times, so it gives way as the transcript is saved, not as the work hears`;
+      walk.wrong = `the first part not transcribed yet moved ${moves} times over ${times} pieces of audio heard while the saved transcript changed ${saves.size - 1} times, so it gives way as the transcript is saved, not as the work hears`;
     else {
       // The samples taken while the edge moved, from the first move
       // to the last, the dots' right end in each.
@@ -1645,11 +1725,14 @@ export const steps = {
     const stop = await watchPills(page);
     try {
       await page.evaluate(() => document.body.focus());
-      await page.keyboard.press("Space");
-      // So many seconds of the episode, read off the playhead.
-      await settle(page);
-      const played = await playUntil(page, { past: from + arg - 1e-6 });
-      if (!(played.at >= from + arg - 1e-6)) walk.wrong = `the play from ${from.toFixed(2)} stopped at ${played.at.toFixed(2)}, before it went on ${arg} s`;
+      // Played with the sound card held until the app has settled on the
+      // press, see pressPlay. So many seconds of the episode, read off the
+      // playhead.
+      if (!(await pressPlay(page))) walk.wrong = `the space bar started no play from ${from.toFixed(2)}`;
+      else {
+        const played = await playUntil(page, { past: from + arg - 1e-6 });
+        if (!(played.at >= from + arg - 1e-6)) walk.wrong = `the play from ${from.toFixed(2)} stopped at ${played.at.toFixed(2)}, before it went on ${arg} s`;
+      }
     } finally {
       // Paused, however the play ended.
       await page.evaluate(() => {
@@ -2110,10 +2193,15 @@ function captionsLost(page) {
 // way too and the closest is taken: libass puts a drawing on whole pixels,
 // and the short, made smaller to compare, lands half a pixel from where
 // the preview draws it at the size it shows it.
-const look = (v) => {
+const lookOf = (v) => {
   const c = Math.min(Math.max(v / 255, 0), 1);
   return 255 * Math.pow(c, Math.max(0.891, 0.98 - 0.31 * c));
 };
+// Every channel is a byte, so the look of each of the 256 is worked out
+// once. Worked out for every channel of every pixel, it was a third of
+// what the sequence that compares the captions with the short took.
+const looks = Float64Array.from({ length: 256 }, (_, v) => lookOf(v));
+const look = (v) => looks[v];
 
 function captionDiff(rgba, rgb, w, h, channels = 4) {
   const luma = (d, i, n, f) => 0.2126 * f(d[n * i]) + 0.7152 * f(d[n * i + 1]) + 0.0722 * f(d[n * i + 2]);

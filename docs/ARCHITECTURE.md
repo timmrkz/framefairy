@@ -44,7 +44,9 @@ of one package, so nothing holds them apart yet.
 The drawings are plain SVG in `docs/diagrams/`, a box a `rect` with its
 texts and a chip a small `rect` with its text, and they follow the
 reader's light or dark theme, on a background of their own. A change
-that moves a box changes its drawing in the same pull request.
+that adds a part, moves a box, or changes what a box holds or how it is
+reached changes its drawing in the same pull request, as the line it
+changes in this file does.
 `internal/naming` checks that every path a drawing names exists, written
 from the top of the repository, and that every drawing shown here is
 there.
@@ -65,11 +67,11 @@ with the boxes one level down under it.
 | 3 | `updates/`, `notices/` | finding, checking and fetching a newer build, and the licences of what the app is made of | |
 | 4 the engine | `engine/` | every rule about a video: words, clips, edges, windows, captions, crops, rendering, the models, the files of a work folder, the training records | anything about the screen, a binding or a click |
 | 4 | `engine.Project` | the steps one video takes, the same for both front ends | a second way to run a step |
-| 4 | `engine.Machine` | what a program keeps for its whole life and shares with every `Engine` it makes: the files, the records, the `tool.Runner` and `tool.Finder`, the keychain and the network it was handed, and what was learned about the machine, made once in each `main` | what belongs to one job, which stays on its `Engine`, and a rule of its own |
+| 4 | `engine.Machine` | what a program keeps for its whole life and shares with every `Engine` it makes: the files, the records, the `tool.Runner` and `tool.Finder`, the keychain, the network, the system's media engine and the fonts installed on the machine it was handed, what was learned about the machine, and the one `engine.Episode` of each video, which keeps its own rules, made once in each `main` | what belongs to one job, which stays on its `Engine`, and a rule of its own |
 | 4 | `engine/timed/` | the types every part of the engine uses for a moment of a video: a piece of text with its times, a span, a window, a loudness reading, the 10 ms grid of the sound | a function or a rule, and a type only one part uses |
 | 4 | `engine/runlog/` | the log of a run: timestamped lines in the terminal, the progress line one piece of work can hold, steps with how long they took, and every line and progress as an event, which reaches the app through one `Sink` | a rule of a feature. A job says what happens and the log says it |
 | 4 | `engine/tool/` | finding our own ffmpeg, ffprobe and llama-server, each checked against the sum `make` built in, by a `Finder` each program makes once, and running a program as an argument list, stopped once its work is called off, with how it stops held on a `Runner` | anything about a video, and a cache or a seam as a package variable |
-| 4 | `engine/fileio/` | a path and a file in whatever `afero.Fs` it is handed: where a path really leads, whether a name stays inside its folder, a file replaced in one step, and one edit of a file at a time, inside the program and across programs | anything about a video or a plan, and a cache or a seam as a package variable |
+| 4 | `engine/fileio/` | a path and a file in whatever `afero.Fs` it is handed: where a path really leads, whether a name stays inside its folder, a file replaced in one step, whether a file changed since it was read, one edit of a file at a time, inside the program and across programs, and a folder deleted through itself, `RemoveFolderIn`, never through the folder above it | anything about a video or a plan, and a cache or a seam as a package variable |
 | 4 | `engine/num/` over `engine/runes/` | numbers rounded, summed, read and written the same on every platform, from JSON values too, and text counted, cut, trimmed and quoted by its characters, and scrubbed when it comes from outside | a rule of a feature, and anything about a file of a video |
 | 5 the frames decoder | `cmd/framefairy-frames/` | turning a video into the frames, sound and captions of the video preview. The engine starts one for each video | anything but decoding. It is a child process |
 | 6 small libraries | `licence/`, `internal/wake/`, `internal/framewire/` | the format of a licence key, how a waiter hears that something changed, and the wire between the engine and the decoder | |
@@ -79,9 +81,8 @@ models and the work folders.
 
 Outside the picture, not shipped in the app: `frontend/preview/` holds
 the walks, in `frontend/preview/walks/`, which do what a person does
-against the real Go side, in WebKit for the parts that have moved there
-and in Chromium for the rest, and at night all in Chromium, see
-[decisions/2026-10-31-walks-in-two-browsers.md](decisions/2026-10-31-walks-in-two-browsers.md),
+against the real Go side, in Chromium, and at night in WebKit too, see
+[decisions/2026-11-05-walks-in-chromium-on-a-push.md](decisions/2026-11-05-walks-in-chromium-on-a-push.md),
 and the harness they run in. `train/` and
 `cmd/framefairy-train/` read the training records, `cmd/framefairy-release/`
 and `licence/signer/` sign builds and keys, `licence/dispenser/` is the
@@ -98,11 +99,13 @@ waiting for the day the two disagree.
 | everything about a video | its work folder, `<video>.framefairy/`, the truth the app keeps in step with | the engine, and from outside the app the person in Finder, the command line and a sync service, which `reconcile` in `cmd/framefairy-app/reconcile.go` hears of through the watch on the disk, see the decision record [2026-11-01-the-app-in-step-with-its-files.md](decisions/2026-11-01-the-app-in-step-with-its-files.md) |
 | what is chosen in a video, its clip and window | in memory, in the video's record beside its undo steps, `picked` in `cmd/framefairy-app/chosen.go`, behind a lock of its own, and written through to `chosen.json` in its work folder, which is read only the first time | the app's Go side |
 | the library and the settings | the app's config folder | the app's Go side |
-| the models, notes about running servers, the training records | `~/.framefairy/` | the engine |
-| what was learned about the machine while a program runs: the decoder that works, the encoders and subtitle filter of each ffmpeg, the face detector, the tools already checked | `engine.Machine`, one for each program, in memory | the engine |
+| the models, notes about running servers, the training records | `~/.framefairy/` | the engine, and for the models from outside the app the person in Finder, which `reconcile` hears of through the watch on the models folder and sends to the setup and the settings, see `tellSetup` |
+| what a video's files said, as read: its transcript so far and its plans | the video's one `engine.Episode`, which `Machine.Episode` gives, `engine/held.go`. It keeps each read with the stamp of the files it was read from, `fileio.Stamp`, and reads again only what changed, whoever wrote it, see the decision record [2026-11-03-one-episode-per-video.md](decisions/2026-11-03-one-episode-per-video.md) | the engine, as the files are read. Nothing tells it a file changed |
+| what was learned about the machine while a program runs: the encoders and subtitle filter of each ffmpeg, the face detector, the tools already checked | `engine.Machine`, one for each program, in memory | the engine |
 | what runs now, and the lane each job holds or waits for | the job queue, in memory | the app's Go side |
 | the step a job is in, and what it was asked for | its `engine.JobRecord`, on disk and in the job the queue holds, which keeps each record the engine tells it through the job's `engine.Host` | the engine |
-| what is on screen | the interface's stores, and a video's status, clips, coverage, clip chosen and window in its `EpisodeSession`, `frontend/src/lib/session.svelte.ts`, which keeps the newest `VideoState`, and a hand's pick or move of the window until Go answers it | from what Go sends. Today `Episode.svelte` also works out from what changed that a search started, see Not to copy |
+| how a job stands beyond its step: that it is stopping, how a search ended, how long removed work has left | the job the queue holds, `Stopping`, `Ended` and `Away` in `cmd/framefairy-app/jobs.go`, and the timer of each removal in the queue, see `removal.go` | the app's Go side |
+| what is on screen | the interface's stores, and a video's status, clips, coverage, jobs, clip chosen and window in its `EpisodeSession`, `frontend/src/lib/session.svelte.ts`, which keeps the newest `VideoState`, and a hand's pick or move of the window until Go answers it | from what Go sends, and nothing else. What a hand pressed is kept by the job store until Go answers, see `startJob` |
 
 ## The programs that run
 
@@ -125,15 +128,21 @@ What to do today, and what changes once the issue named is built.
 
 | I need to | It goes |
 | --- | --- |
-| decide where an edge, a word or a window lands | the engine: `engine/shape.go` for a gesture, `engine.Project` for a window. The interface asks and draws the answer |
-| do something in the workspace when a video's work moves on | today a move of `EpisodeSession` in `frontend/src/lib/session.svelte.ts`, never an effect that keeps the value from before. Once #606 is built, nothing in the interface: Go decides what follows and sends it, the way it already chooses the clip and fits the window, in `cmd/framefairy-app/choose.go` and `window.go`, and sends both in the video's state, and tells a failure once, see [2026-11-01-every-rule-of-the-workspace-in-go.md](decisions/2026-11-01-every-rule-of-the-workspace-in-go.md) |
+| decide where an edge, a word or a window lands | the engine: `engine/shape.go` for a gesture, `engine.Episode` and `engine.Options` for a window. The interface asks and draws the answer |
+| do something in the workspace when a video's work moves on | nothing in the interface: Go decides what follows and sends it in the video's state, the clip it chose and the window it fitted, in `cmd/framefairy-app/choose.go` and `window.go`, how a search ended, that work is stopping and how long removed work has left, and tells a failure once. The interface draws the newest state, and never waits for work to end to read the video again or keeps a value from before to compare, see [2026-11-01-every-rule-of-the-workspace-in-go.md](decisions/2026-11-01-every-rule-of-the-workspace-in-go.md) |
+| show a press of a video's work before Go has answered it | `startJob` or `stopJob` of the job store, `frontend/src/lib/state.svelte.ts`, which keeps the press until Go answers with the job or says the work is stopping. Never a flag of the control's own |
+| give a person time to take something back that Go then does | the job keeps the time, `JobAway` in `cmd/framefairy-app/removal.go`, on the queue's clock, which the bridge hands the walks, and the interface draws it and says only that a hand holds it |
 | show the interface a new fact about a video | a field of `VideoState` in `cmd/framefairy-app/videostate.go`, or of what it holds, the status and the clip views, which the session keeps. Never a new event of its own or a poll |
 | tell the window that something about a video changed | `told` on `*FrameFairy`, or the queue's `moved` for a job, which send the video's state, at most four times a second and always after the last change, one at a time, with at most one more waiting however slow a read is. Nothing else sends it |
-| keep something between two jobs, a cache or a fact about the machine | a field on `engine.Machine`, in `engine/machine.go`, which a program makes once and hands to every `Engine`. Never a package variable, and never a new `Engine` made only to get it. #607 moves the package variables still left onto it |
-| reach the keychain, a company or a model's download from the engine | through `engine.Machine`, whose keys and network are empty in a machine `NewMachine` makes, so it keeps no key and reaches nothing. Each program hands it the system's with `UseSystem` in `main`, the app through `appStore`, see the decision record [2026-10-31-running-programs-and-what-outlives-a-job.md](decisions/2026-10-31-running-programs-and-what-outlives-a-job.md#the-keys-and-the-network-648). Never a switch on whether a test is running. A part outside the engine that reaches the network, like `updates/`, is handed its client by `main`. llama-server on this machine is reached by a package variable in `engine/local.go`, which #607 moves |
-| read a file of a video | through the `afero.Fs` the code was given, with `fileio.SafeChildIn` for a path in a work folder. Not `os`. Once #608 is built, through the video's `Episode` |
+| keep what a video's file said, so the next question does not read it again | its `engine.Episode`, by the file's stamp. Never a cache of its own in the app or a package variable |
+| keep something between two jobs, a cache or a fact about the machine | a field on `engine.Machine`, in `engine/machine.go`, which a program makes once and hands to every `Engine`. What only the app keeps, a field of `FrameFairy` or of the part of it that uses it, ready as its zero value. Never a package variable, and never a new `Engine` made only to get it. The faces captions can be written in are `Machine.Fonts`, and a `Style` made from them carries them, so code that only has a style measures and installs through the right ones |
+| let a test stand in for the system in the app: the keychain, the microphone, ffprobe, a download, Finder | a field of `FrameFairy`, or of the part that uses it, the system's own when it is empty. The test sets it on the app it made and runs beside the others. Never a package variable a test swaps |
+| reach the keychain, a company or a model's download from the engine | through `engine.Machine`, whose keys and network are empty in a machine `NewMachine` makes, so it keeps no key and reaches nothing. Each program hands it the system's with `UseSystem` in `main`, the app through `appStore`, see the decision record [2026-10-31-running-programs-and-what-outlives-a-job.md](decisions/2026-10-31-running-programs-and-what-outlives-a-job.md#the-keys-and-the-network-648). Never a switch on whether a test is running. A part outside the engine that reaches the network, like `updates/`, is handed its client by `main`. llama-server on this machine is reached through the machine too, its client, its keys and the one server it keeps loaded in `engine/modelhost.go` |
+| encode or decode through the system's own hardware, VideoToolbox on a Mac | through the machine's `engine.Media`, which `UseSystem` hands it in `main` and which is empty in a machine `NewMachine` makes, so a test's machine encodes and decodes with ffmpeg's own code on the processor. The episode's decoder is told by `-chip`, from `Machine.EpisodeFrames`, the one way to make one outside the engine. Whether to reach the media engine is never decided by `runtime.GOOS` where a video is encoded or decoded. Only `SystemMedia` reads the system, to say which media engine it has, and the decoder reads it only to know which kind of chip it was told it may use. The checks from outside the app take it away again, `LeaveTheMediaEngine` in the build only they use. See the decision record [2026-11-05-the-systems-media-engine-handed-in.md](decisions/2026-11-05-the-systems-media-engine-handed-in.md) |
+| read a file of a video | through the `afero.Fs` the code was given, with `fileio.SafeChildIn` for a path in a work folder. Not `os`. A video's transcript, plans and status, through its `Episode`, and whether a path is the video's own, `Episode.Owns` and `Episode.HasPlan`. A view of a clip, a gesture or its captions, takes the plan the `Episode` holds. An edit reads the file itself, and `editPlan` again under its lock |
 | change a plan | `editPlan` in `engine/edit.go` |
-| notice a change made to a video's files outside the app | `reconcile` in `cmd/framefairy-app/reconcile.go`, which the watch in `watch.go` hands every change to, and which runs as the library is read. Never a check of its own in a binding |
+| notice a change made to a video's files, or to the models, outside the app | `reconcile` in `cmd/framefairy-app/reconcile.go`, which the watch in `watch.go` hands every change to, in a video's folders, its shorts, `Episode.Shorts`, and the models folder, and which runs once as the app starts, `watchTheDisk`, and as the library is read. Never a check of its own in a binding |
+| tell the window that the models changed | `tellSetup` in `reconcile.go`, which sends `SetupState` whole on the `setup` event. The setup and the settings take it the way they take the answer of `Setup` |
 | start a goroutine that runs code which can panic, like layout of words a person typed | a deferred recover where that work comes in, which turns a panic into that work's error and logs the stack where the work has a log, as `engine/planbuild.go` does. A goroutine that only waits, counts or hands on gets none. A parser of outside bytes has its fuzz target first |
 | say that something went wrong | an error that keeps its kind with `%w`, returned to the caller. The app turns it into a row or a toast, and a job that fails is told once by the queue, a `Notice` from `cmd/framefairy-app/notice.go`, which the interface shows in a toast and never decides. It logs through `theLog`, never `log.Printf`, which forbidigo refuses. An engine the app makes outside a job logs through `engineLog(part, video)` in `cmd/framefairy-app/applog.go`, never to `io.Discard`. An engine is made for each job and takes its log then, and what outlives the job is on the machine it is handed |
 | add a call between the interface and Go | a method on `*FrameFairy` in the file of its kind in `cmd/framefairy-app/`, and its call in `frontend/src/lib/api.ts`. `bindings_test.go` checks the name and the arguments |
@@ -142,7 +151,7 @@ What to do today, and what changes once the issue named is built.
 | add a kind of work to the queue | a kind in `engine/jobs.go`, started with `addSteps` in `cmd/framefairy-app/jobs.go`, so it gets the lanes, the recover and the record every job has |
 | copy a rule of the engine into TypeScript | don't, and no `.cases.json` makes it right. The interface asks Go, or reads the answer from the state. Where it must answer while a hand drags, Go sends what the drag needs as data, see [2026-11-01-every-rule-of-the-workspace-in-go.md](decisions/2026-11-01-every-rule-of-the-workspace-in-go.md) |
 | add a check to CI | a make target, which one job of `ci.yml` runs as it stands, `make <target>`. A new kind of file joins one of the two filters of its job `changes`. Never a script that picks, runs or reports tests, see [2026-11-08-one-make-target-per-ci-job.md](decisions/2026-11-08-one-make-target-per-ci-job.md) and BUILD.md |
-| fake something in a test | the clock, the disk and the models are handed in. Use the fakes there are, in `engine/project_test.go` and `internal/standin/` |
+| fake something in a test | the clock, the disk, the models and the system's media engine are handed in. Use the fakes there are, in `engine/project_test.go` and `internal/standin/`. What the media engine is handed is checked as an argument list against a stand-in ffmpeg, never by running it |
 | give a test a video or a sound | a file committed in `internal/fixtures/testdata/`, read with `fixtures.Path`, or copied with `fixtures.Copy` by a test that changes it or writes beside it, or with `fixtures.CopyTo` where nothing can end the test, like a route a walk calls, made by its recipe in `internal/fixtures/fixtures_test.go`. One that is there before a new one, see the decision record [2026-11-01-committed-test-fixtures.md](decisions/2026-11-01-committed-test-fixtures.md). Never made by ffmpeg while the test runs |
 
 ## Invariants
@@ -168,9 +177,17 @@ which reads this file.
 5. The files on the disk are the truth about a video, and others than
    the app write them. Go is the one that reads them for the interface,
    and the interface shows what Go sends. A change from outside lands in
-   `reconcile` and nowhere else. Held by the review, by its design once
-   #606 is built, and by the watch, see
-   [the decision record](decisions/2026-11-01-the-app-in-step-with-its-files.md).
+   `reconcile` and nowhere else. Held by its design: a video's jobs and
+   everything they change reach the window only in its `VideoState`, the
+   session keeps the newest, the cards on their way come from the jobs
+   of the state the clips come from, and the interface keeps nothing of
+   a video's work but a press Go has not answered yet. How long a row
+   that says what became of something stays on screen, a clip removed by
+   hand or a search that found nothing, is the interface's, like a
+   toast's: it is how the news is shown, not what happened to the work.
+   And by the watch,
+   see [the decision record](decisions/2026-11-01-the-app-in-step-with-its-files.md),
+   and by the review.
 6. A job that goes wrong fails itself, not the app. Held by a recover
    at each place work comes into the Go side: around every job, every
    request of the window in `mediaMiddleware`, every callback of Wails
@@ -178,11 +195,12 @@ which reads this file.
    reads what nobody checked.
 7. Nothing is learned twice. What outlives a job is kept, not worked out
    again for each job. Held by `engine.Machine`, which each program
-   makes once and hands to every `Engine`, and by the review for what
-   #607 still has to move onto it.
+   makes once and hands to every `Engine`, and by `FrameFairy` for what
+   only the app keeps.
 8. Every path is judged by where it really leads, inside the library.
-   Held by `SafeChild` in `engine/fileio/` and the store's `Known`, and
-   their fuzz targets.
+   Held by `SafeChild` in `engine/fileio/`, each video's
+   `engine.Episode`, `Owns` and `HasPlan`, which the store's `Known` and
+   `PlanOf` ask, and their tests and fuzz targets.
 9. What comes from outside is read by code made for it, never parsed on
    the way: a model answer by the stream readers in `engine/stream.go`,
    `ExtractJSONObject` and `ValidatePlan`, a plan by `LoadClips`, a
@@ -195,6 +213,13 @@ which reads this file.
     one while it runs. Held by `TestNoTestMakesItsOwnFixture` in
     `internal/ffmpegtest`, and by `TestEveryFixtureIsMadeByItsRecipe` in
     `internal/fixtures`.
+12. No test reaches the system's media engine. A machine is handed it in
+    each program's `main`, and one a test makes has none, so a render,
+    framing and the episode's decoder run ffmpeg's own code on the
+    processor. Held by `UseSystem` being the one place that hands it, by
+    `Machine.EpisodeFrames` being the one way to make the episode's
+    decoder outside the engine, and by
+    `TestOnlyAMachineHandedTheMediaEngineReachesIt`.
 
 ## Boundaries
 
@@ -203,14 +228,18 @@ other side relies on, and the pull request says so.
 
 - The bindings on `*FrameFairy` and `frontend/src/lib/api.ts`.
 - The `video` event, `VideoState`, whose `rev` is on the clock of the
-  jobs' `seq`, so the window can tell which of two came later.
+  jobs' `seq`, so the window can tell which of two came later. It is the
+  one way a video's jobs reach the window, and it holds every job of the
+  video there is to say anything about. The `job` event carries only a
+  job of no video, a model being downloaded, see `toWindow`.
 - The `notice` event, `Notice`, a failure told once as it happens, which
   is no fact of a video's state.
 - `engine.Project`, the steps a front end may take.
+- `engine.Episode`, with `engine.Options` handed in, the questions a front end asks of a video's files: its transcript, plans, status, room and window, and whose a path is.
 - The files of a work folder and of the config folder, which an older
   and a newer build both read, `chosen.json` and the settings among
   them, see #612.
-- `internal/framewire`, between the decoder and the engine.
+- `internal/framewire` and the decoder's one argument besides the episode, `-chip`, between the decoder and the engine.
 - The update feed and the licence key, which the builds of customers
   read.
 
@@ -223,23 +252,6 @@ copies what it finds nearby, so these are not the pattern for new code.
   `frontend/src/lib/rotate.ts`, and the two held to Go by a shared case
   file, `frontend/src/lib/glide.ts` and `frontend/src/lib/flow.ts`'s
   frames, #610.
-- The transcript cache in `cmd/framefairy-app/words.go`, with the lines weighed for what a search can read kept beside each transcript, #608.
-- What the engine learns kept in package variables rather than on
-  `engine.Machine`, like the probes in `engine/probed.go`, and the app's
-  own that keep a machine or a finder of their own, `sources` in
-  `cmd/framefairy-app/media.go` and `openPreviews` in
-  `cmd/framefairy-app/frames.go`, #607.
-- The effects in `frontend/src/screens/Episode.svelte` that compare an
-  old value with a new one to notice that a search started,
-  `searchSeen`, the reads of the video's state it asks for after work
-  moves on, the poll of the job list and its own timer, #606. Work that
-  moves on is said by `EpisodeSession`, see the decision
-  record
-  [2026-10-30-a-videos-state-in-one-session.md](decisions/2026-10-30-a-videos-state-in-one-session.md).
-- What the interface decides about a video's work and its workspace:
-  the moves of `EpisodeSession` and how a search ended, #606. Go decides each of
-  them and sends it, see
-  [2026-11-01-every-rule-of-the-workspace-in-go.md](decisions/2026-11-01-every-rule-of-the-workspace-in-go.md).
 
 ## Changing the architecture
 

@@ -18,7 +18,7 @@ func TestThePlacedWindowFitsTheRoomTheRangePickerReads(t *testing.T) {
 	t.Parallel()
 	svc, source, duration := anUnevenVideo(t)
 
-	reach := svc.roomAndLines(svc.project(source)).Longest(duration)
+	reach := svc.store.machine.Episode(source).Room(svc.store.Settings().options()).Longest(duration)
 	if reach >= engine.SuggestedWindow(duration) {
 		t.Fatalf("one search reads %v s, no less than a window, so this proves nothing", reach)
 	}
@@ -28,6 +28,13 @@ func TestThePlacedWindowFitsTheRoomTheRangePickerReads(t *testing.T) {
 	}
 	if got.From != 0 || got.Length <= 0 {
 		t.Errorf("the window %+v is not the first of the video", got)
+	}
+}
+
+// lasting stands in for ffprobe, for a video in memory as long as duration.
+func lasting(duration float64) func(context.Context, string) (engine.SourceInfo, error) {
+	return func(context.Context, string) (engine.SourceInfo, error) {
+		return engine.SourceInfo{Duration: duration}, nil
 	}
 }
 
@@ -49,9 +56,9 @@ func anUnevenVideo(t *testing.T) (*FrameFairy, string, float64) {
 		words = append(words, [3]any{at, at + 0.4, fmt.Sprintf("%s%d", word, len(words))})
 	}
 	heardEpisode(t, svc, source, duration, words)
-	// A file in memory has no stamp on the real disk, which is what the
-	// probes are kept by, so the one there is stands for it.
-	svc.probes = &probed{info: map[string]engine.SourceInfo{"": {Duration: duration}}}
+	// A file in memory is no file ffprobe can read, so it probes as an
+	// hour long.
+	svc.probeVideo = lasting(duration)
 	return svc, source, duration
 }
 
@@ -74,7 +81,7 @@ func TestTheStateCarriesTheWindowFittedToWhatASearchReads(t *testing.T) {
 	if w == nil {
 		t.Fatal("the state carries no window")
 	}
-	reach := svc.roomAndLines(svc.project(source)).Longest(duration)
+	reach := svc.store.machine.Episode(source).Room(svc.store.Settings().options()).Longest(duration)
 	if math.Abs(w.Most-reach) > 0.01 || w.Most >= duration {
 		t.Errorf("the window may be %v s long, not the %v s one search reads", w.Most, reach)
 	}
@@ -111,6 +118,52 @@ func TestASearchHoldsItsWindowAsItIs(t *testing.T) {
 			}
 			if st.Window == nil || st.Window.To != duration {
 				t.Errorf("a search %s on the window and the window came as %+v", state, st.Window)
+			}
+		})
+	}
+}
+
+// While the whole video is transcribed the state says the window is not
+// drawn, because that work is about all of the video, Tim, 5 November.
+// It is drawn again once the transcription was told to stop or ended,
+// and a search that holds the window is drawn as ever.
+func TestTheWindowIsHiddenWhileTheWholeVideoIsTranscribed(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name   string
+		jobs   []Job
+		hidden bool
+	}{
+		{"nothing runs", nil, false},
+		{"transcribing", []Job{{State: JobRunning, JobRecord: engine.JobRecord{Kind: engine.JobTranscribe}}}, true},
+		{"waiting its turn", []Job{{State: JobQueued, JobRecord: engine.JobRecord{Kind: engine.JobTranscribe}}}, true},
+		{"stopping", []Job{{State: JobRunning, Stopping: true, JobRecord: engine.JobRecord{Kind: engine.JobTranscribe}}}, false},
+		{"stopped", []Job{{State: JobStopped, JobRecord: engine.JobRecord{Kind: engine.JobTranscribe}}}, false},
+		{"done", []Job{{State: JobDone, JobRecord: engine.JobRecord{Kind: engine.JobTranscribe}}}, false},
+		{"cancelled", []Job{{State: JobCancelled, JobRecord: engine.JobRecord{Kind: engine.JobTranscribe}}}, false},
+		{"interrupted", []Job{{State: JobInterrupted, JobRecord: engine.JobRecord{Kind: engine.JobTranscribe}}}, false},
+		{"a search", []Job{{State: JobRunning, JobRecord: engine.JobRecord{Kind: engine.JobSearch}}}, false},
+		{"a search that stops it", []Job{
+			{State: JobRunning, Stopping: true, JobRecord: engine.JobRecord{Kind: engine.JobTranscribe}},
+			{State: JobQueued, JobRecord: engine.JobRecord{Kind: engine.JobSearch}},
+		}, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			svc, source, _ := anUnevenVideo(t)
+			svc.jobs.mu.Lock()
+			for i := range c.jobs {
+				j := c.jobs[i]
+				j.ID, j.Episode = fmt.Sprintf("j%d", i), source
+				svc.jobs.jobs = append(svc.jobs.jobs, &j)
+			}
+			svc.jobs.mu.Unlock()
+			st, err := svc.State(context.Background(), source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if st.Window == nil || st.Window.Hidden != c.hidden {
+				t.Errorf("the window came as %+v, not hidden %v", st.Window, c.hidden)
 			}
 		})
 	}
@@ -186,7 +239,7 @@ func TestATargetTypedOnOneVideoStaysWhenAnotherIsFitted(t *testing.T) {
 		}
 		heardEpisode(t, svc, ep, duration, words)
 	}
-	svc.probes = &probed{info: map[string]engine.SourceInfo{"": {Duration: duration}}}
+	svc.probeVideo = lasting(duration)
 	ctx := context.Background()
 	most := func(ep string) float64 {
 		st, err := svc.State(ctx, ep)
@@ -267,6 +320,29 @@ func TestAWindowTakesEverythingAtOnce(t *testing.T) {
 	}
 	w := st.Window
 	if w == nil || w.To-w.From > w.Most+0.01 || w.To-w.From < w.Least-0.01 || w.To > duration {
+		t.Fatalf("the window came as %+v", w)
+	}
+	if kept := keptWindow(svc, source); kept == nil || !sameWindow(*kept, w.KeptWindow) {
+		t.Errorf("the window kept is %+v, the one in the state %+v", kept, w.KeptWindow)
+	}
+}
+
+// A window kept a little past the video's end, as one written by another
+// program or dragged to the edge can be, is fitted and kept like any
+// other. The state compared the window cut at the end with the one in the
+// file, never found them the same, and tried again for good.
+func TestAWindowKeptPastTheEndIsFittedOnce(t *testing.T) {
+	t.Parallel()
+	svc, source, duration := anUnevenVideo(t)
+	if err := svc.chooseWindow(source, 900, duration+0.3, duration-900+0.3, true); err != nil {
+		t.Fatal(err)
+	}
+	st, err := svc.State(context.Background(), source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := st.Window
+	if w == nil || w.To-w.From > w.Most+0.01 || w.To > duration {
 		t.Fatalf("the window came as %+v", w)
 	}
 	if kept := keptWindow(svc, source); kept == nil || !sameWindow(*kept, w.KeptWindow) {

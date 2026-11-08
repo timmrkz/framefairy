@@ -158,6 +158,9 @@ func (cs *channelServer) publicKey() string {
 	return base64.StdEncoding.EncodeToString(cs.key.Public().(ed25519.PublicKey))
 }
 
+// inApplications is the app a test's build is put in place of.
+func inApplications() string { return "/Applications/Frame Fairy.app" }
+
 // An updating as the app makes it, reading from the server above, and
 // what it has sent so far. The states are sent from the updating's own
 // goroutines, so they are read through sent, under the same lock. It is a
@@ -623,10 +626,16 @@ func TestAPickStopsTheDownloadBefore(t *testing.T) {
 		return s.Phase == "downloading" && s.Next == "0.3.0-main.5"
 	})
 
+	before := len(sent(nil))
 	_ = c.Follow("pr-20")
 	after := len(sent(nil))
-	// At once, before any check has answered.
-	if s := c.State(); s.Picked != "pr-20" || s.Phase != "checking" || s.Next != "" || s.Follows != "pr-20" {
+	// At once, before any check has answered: the state the pick itself
+	// sends. The state read after Follow returns is no proof of that,
+	// since the check Follow starts may already have found pr-20 and be
+	// downloading it, which is how this failed on CI's Mac.
+	if picked := sent(nil)[before:after]; len(picked) == 0 {
+		t.Errorf("the pick sent no state")
+	} else if s := picked[0]; s.Picked != "pr-20" || s.Phase != "checking" || s.Next != "" || s.Follows != "pr-20" {
 		t.Errorf("right after the pick: %+v", s)
 	}
 	s := waitFor(t, c, "ready with pr-20", func(s UpdateState) bool {
@@ -900,13 +909,11 @@ func TestCheckReadsTheListAtOnce(t *testing.T) {
 //
 // On the real disk: an update is a program that is unpacked on the disk and put in place.
 func TestANewerBuildReplacesTheOneReady(t *testing.T) {
-	was := runningApp
-	runningApp = func() string { return "/Applications/Frame Fairy.app" }
-	t.Cleanup(func() { runningApp = was })
-
+	t.Parallel()
 	cs := newChannelServer(t)
 	cs.publish(t, [3]string{"main", "0.3.0-main.5", "five"})
 	c, _ := newTestUpdating(t, cs, false)
+	c.app = inApplications
 	cleanStaged(t, c)
 	var mu sync.Mutex
 	var from string
@@ -1015,12 +1022,11 @@ func TestARegularLookReplacesTheBuildReady(t *testing.T) {
 //
 // On the real disk: an update is a program that is unpacked on the disk and put in place.
 func TestABuildBeingPutInPlaceStays(t *testing.T) {
-	was := runningApp
-	runningApp = func() string { return "/Applications/Frame Fairy.app" }
-	t.Cleanup(func() { runningApp = was })
+	t.Parallel()
 	cs := newChannelServer(t)
 	cs.publish(t, [3]string{"main", "0.3.0-main.5", "five"})
 	c, _ := newTestUpdating(t, cs, false)
+	c.app = inApplications
 	cleanStaged(t, c)
 	c.install = func(string, string) error { return nil }
 	_ = c.Follow("main")
@@ -1042,6 +1048,7 @@ func TestABuildBeingPutInPlaceStays(t *testing.T) {
 // so after a restart a build made on the Mac showed the pull request
 // closed in the list and Not checked yet under it.
 func TestAChannelGoneIsSaidInOnePlace(t *testing.T) {
+	t.Parallel()
 	cs := newChannelServer(t)
 	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"}, [3]string{"pr-20", "0.3.0-pr20.9", "twenty"})
 	// Pull request 138 picked in a run before, as updates.json gives it
@@ -1056,9 +1063,7 @@ func TestAChannelGoneIsSaidInOnePlace(t *testing.T) {
 
 	// A build that is ready, of a pull request that is then closed, is
 	// not installed on the way out while the page says it is closed.
-	was := runningApp
-	runningApp = func() string { return "/Applications/Frame Fairy.app" }
-	t.Cleanup(func() { runningApp = was })
+	c.app = inApplications
 	var started int
 	c.install = func(string, string) error { started++; return nil }
 	_ = c.Follow("pr-20")

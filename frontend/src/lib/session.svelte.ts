@@ -1,32 +1,21 @@
 // A video's session in the workspace, issue #606. It keeps the video's
-// state as Go sends it, the newest there is, and it says when the video's
-// work moves on, once, as the job store keeps each snapshot of a job, so
-// no effect in the workspace has to keep a value from before and compare
-// it with the next. See
-// docs/decisions/2026-10-30-a-videos-state-in-one-session.md.
+// state as Go sends it, the newest there is, and says when the app chose
+// another clip, once. Everything the video's work changes comes in that
+// state, the clips a search wrote, how far the video is heard, what a
+// render made, so nothing waits for the work to move on and reads the
+// video again. See
+// docs/decisions/2026-10-30-a-videos-state-in-one-session.md and
+// docs/decisions/2026-11-01-every-rule-of-the-workspace-in-go.md.
 import type { ClipEntry, CoverageView, EpisodeStatus, Job, KeptWindow, VideoState, WindowView } from "./api";
-import { live } from "./flow";
 import type { JobStore } from "./state.svelte";
+import { said } from "./said";
 import { unchanged } from "./unchanged";
 
-// What the workspace does when the video's work moves on. When one
-// snapshot says more than one of them, they come in this order.
-export interface WorkMoves {
-  // The app chose another clip, see cmd/framefairy-app/choose.go, in
-  // place of before, the clip chosen until then. card is the card the
-  // clip was on its way as, when it was chosen because that card was
-  // written as it, or nothing.
-  chose(key: string, before: string, card: string): void;
-  // The search has stopped hearing the video: it went on to find clips,
-  // or it ended while it heard.
-  heard(search: Job): void;
-  // The search is over, however it ended.
-  searched(search: Job): void;
-  // Transcribe whole video, from the video's menu, is over.
-  transcribed(job: Job): void;
-  // A render that was asked for here is over.
-  rendered(render: Job): void;
-}
+// What the workspace does when the app chose another clip, see
+// cmd/framefairy-app/choose.go, in place of before, the clip chosen until
+// then. card is the card the clip was on its way as, when it was chosen
+// because that card was written as it, or nothing.
+export type Chose = (key: string, before: string, card: string) => void;
 
 export class EpisodeSession {
   // The video's state, from the newest VideoState kept: null until the
@@ -34,11 +23,12 @@ export class EpisodeSession {
   status = $state<EpisodeStatus | null>(null);
   clips = $state<ClipEntry[]>([]);
   coverage = $state<CoverageView>({ passes: [] });
-  // The rev of the newest state kept, and how many clips each job had
-  // written in it. A state read after a job's news, rev past its seq,
-  // holds every clip the job had said it wrote by then.
+  // The rev of the newest state kept.
   rev = $state(0);
-  private written = $state<Record<string, number>>({});
+  // The video's jobs in the newest state kept, the clips on their way
+  // among them. They come with the clips, so a card on its way becomes its
+  // clip in the state that holds the clip, never a frame before or after.
+  jobs = $state<Job[]>([]);
   // The rev of the newest answer to an edit: a state read before it
   // knows nothing of the edit, and would put back what it changed.
   private floor = 0;
@@ -47,8 +37,6 @@ export class EpisodeSession {
   private holds = 0;
   private waiting: VideoState | null = null;
   private waitingFresh = false;
-  // The work asked for in this workspace that is not over yet.
-  private asking = new Set<string>();
   // The clip chosen, by a hand or by the app, and the video's window, from
   // the newest state kept, or what a hand did while the Go side has not
   // answered it, see Hand.
@@ -56,28 +44,22 @@ export class EpisodeSession {
   window = $state<WindowView | null>(null);
   private picks = new Hand();
   private places = new Hand();
-  private moves: WorkMoves = { chose() {}, heard() {}, searched() {}, transcribed() {}, rendered() {} };
+  private chose: Chose = () => {};
 
   constructor(
     readonly path: string,
     private store: JobStore,
   ) {}
 
-  // The workspace is on the page: from now on the session hears every
-  // snapshot of a job the store keeps and says what the video's work did
-  // with moves, and takes every state of the video hear brings, onVideoState
-  // in lib/api.ts. The function it returns is for when the workspace is
-  // gone, and then it hears nothing more.
-  open(moves: WorkMoves, hear: (fn: (state: VideoState) => void) => () => void = () => () => {}): () => void {
-    this.moves = moves;
-    const off = this.store.watch((before, after) => this.seen(before, after));
-    const unheard = hear((state) => {
+  // The workspace is on the page: from now on the session says when the
+  // app chose another clip with chose, and takes every state of the video
+  // hear brings, onVideoState in lib/api.ts. The function it returns is
+  // for when the workspace is gone, and then it hears nothing more.
+  open(chose: Chose, hear: (fn: (state: VideoState) => void) => () => void = () => () => {}): () => void {
+    this.chose = chose;
+    return hear((state) => {
       if (state.video === this.path) this.take(state);
     });
-    return () => {
-      off();
-      unheard();
-    };
   }
 
   // A state of the video, sent by the Go side or read by the workspace.
@@ -100,7 +82,7 @@ export class EpisodeSession {
       this.status = same(this.status, state.status);
       this.clips = fresh ? state.clips : unchanged(this.clips, state.clips);
       this.coverage = same(this.coverage, state.coverage);
-      this.written = Object.fromEntries(state.jobs.map((j) => [j.id, j.written ?? 0]));
+      this.jobs = state.jobs;
       kept = true;
       this.choose(state);
       this.frame(state);
@@ -108,22 +90,35 @@ export class EpisodeSession {
       // A newer state came first, and still the captions are read again.
       this.clips = this.clips.map((c) => ({ ...c }));
     }
-    for (const job of state.jobs) {
-      const had = this.store.list.find((j) => j.id === job.id);
-      if (!had || (job.seq ?? 0) > (had.seq ?? 0)) this.store.apply(job);
-    }
+    this.store.take(state);
     return kept;
   }
 
   // The clip a state says is chosen, once no pick is on its way that the
-  // state was read before.
+  // state was read before. A state that says the card picked was written
+  // as its clip is read after the pick, whenever its answer comes: the Go
+  // side had the pick, the card is gone from the state's jobs and its clip
+  // is in its clips, so the clip is chosen with them. Held for the pick's
+  // answer, the card was gone and nothing chosen for as long as the answer
+  // took on a busy machine, issue #697.
+  // Each state that says another clip than the one on screen is logged,
+  // held or taken, with its rev and the card it says the clip was: a walk
+  // saw a card on its way gone for half a second before its clip was
+  // chosen, and nothing said which state had taken it.
   private choose(state: VideoState) {
-    if (this.picks.holds(state)) return;
+    const written = !!state.chosenCard && state.chosenCard === this.chosen;
     const now = state.chosen ?? "";
+    const card = state.chosenCard ? `, written as the card ${state.chosenCard}` : "";
+    const says = `the state of rev ${state.rev} says ${now || "no clip"} is chosen${card}`;
+    if (this.picks.holds(state) && !written) {
+      if (now !== this.chosen) said(`clip list: ${says}, held while the pick of ${this.chosen || "no clip"} is on its way`, { video: this.path });
+      return;
+    }
     if (now === this.chosen) return;
     const before = this.chosen;
+    said(`clip list: ${says}, in place of ${before || "no clip"}`, { video: this.path });
     this.chosen = now;
-    this.moves.chose(now, before, state.chosenCard ?? "");
+    this.chose(now, before, state.chosenCard ?? "");
   }
 
   // The window a state says, once no move of a hand is on its way that the
@@ -160,12 +155,6 @@ export class EpisodeSession {
     );
   }
 
-  // How many clips the job had written in the newest state kept, which
-  // are in its clips.
-  wrote(job: string): number {
-    return this.written[job] ?? 0;
-  }
-
   // One clip as an edit left it, from the edit's answer. No state read
   // before the edit is kept after it.
   put(clip: ClipEntry) {
@@ -198,40 +187,6 @@ export class EpisodeSession {
         this.take(next, fresh);
       }
     }
-  }
-
-  // Work asked for here, a render, by the job the Go side answered with.
-  // What the Go side says of a job travels apart
-  // from the answer to the call, so a job can be over in the store before
-  // the answer comes back, its news heard first on a busy machine, issue
-  // #508. Then it is said at once, from what the store knows of it.
-  asked(job: Job) {
-    const now = this.store.list.find((j) => j.id === job.id) ?? job;
-    if (live(now)) {
-      this.asking.add(job.id);
-      return;
-    }
-    this.over(now);
-  }
-
-  private seen(before: Job | undefined, after: Job) {
-    if (after.episode !== this.path) return;
-    const was = live(before);
-    const now = live(after);
-    switch (after.kind) {
-      case "search":
-        if (was && before?.step === "hearing" && !(now && after.step === "hearing")) this.moves.heard(after);
-        if (was && !now) this.moves.searched(after);
-        break;
-      case "transcribe":
-        if (was && !now) this.moves.transcribed(after);
-        break;
-    }
-    if (!now && this.asking.delete(after.id)) this.over(after);
-  }
-
-  private over(job: Job) {
-    if (job.kind === "render") this.moves.rendered(job);
   }
 }
 

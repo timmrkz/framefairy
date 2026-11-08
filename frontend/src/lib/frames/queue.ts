@@ -37,7 +37,7 @@ import type { Light } from "./light";
 import { screenOf, type Screen } from "./screen";
 import { describeEvenness, Even, type Source } from "./even";
 import { frames as framePool } from "./pool";
-import { rankAt, type AudioTrack, type Movie, type VideoTrack } from "./movie";
+import { rankAt, ticks, type AudioTrack, type Movie, type VideoTrack } from "./movie";
 import {
   AudioPlan,
   fade,
@@ -508,7 +508,7 @@ function describe(m: Movie): string {
   const v = m.video;
   const a = m.audio;
   const picture = v
-    ? `${v.width}x${v.height}, ${v.samples.count} frames of ${(v.frame * 1000).toFixed(2)} ms, the first at ${(v.samples.pts[0] / v.samples.timescale).toFixed(3)} s`
+    ? `${v.width}x${v.height}, ${v.samples.count} frames of ${(v.frame * 1000).toFixed(2)} ms, the first at ${(ticks(v.samples, 0) / v.samples.timescale).toFixed(3)} s`
     : "no picture";
   const sound = a ? `${a.sampleRate} Hz, ${a.channels} channels` : "no sound";
   return `${m.duration.toFixed(3)} s, ${picture}, ${sound}`;
@@ -598,6 +598,11 @@ export class FrameQueue {
   // The Go side's frames, from the episode's decoder: every frame drawn,
   // whatever the file. Null only until the queue is open.
   private app: AppFrames | null = null;
+  // For the walks, which read how the frames came, see awake in
+  // Player.svelte.
+  get appFrames(): AppFrames | null {
+    return this.app;
+  }
   private closed = false;
   private trouble = "";
   // Every step the queue takes on its way to a picture and a play, for
@@ -702,6 +707,10 @@ export class FrameQueue {
   // it, and the one that has it, each by its ticket and rank, see dressed.
   private dressing = "";
   private dressedKey = "";
+  // The ticket whose frame is decoded or on its way and waits for what
+  // lies over it, see dress, and -1 when none waits. A frame passing is
+  // not put up meanwhile, see passing.
+  private dressFor = -1;
   private scratch: Float32Array[] = [];
 
   // path is the episode's, and movie what the engine says of it, see
@@ -814,8 +823,6 @@ export class FrameQueue {
     app.trace = (line) => this.trace(line);
     app.onPassing = (rank, frame, seq, key) => this.passing(rank, frame, seq, key);
     app.paused = () => this.state !== "playing" && this.state !== "starting";
-    // For the walks, which read how the frames came.
-    (window as unknown as { __appFrames?: AppFrames }).__appFrames = app;
     return app;
   }
 
@@ -1036,10 +1043,11 @@ export class FrameQueue {
     this.start(this.at);
   }
 
-  // A program a running play took a change into is that play's alone, see
-  // Program.spliced: a new play or a paused frame builds its own.
+  // A program a running play took a change into, or switched the loop
+  // of, is that play's alone, see Program.changedWhilePlaying: a new play
+  // or a paused frame builds its own.
   private unsplice() {
-    if (this.built?.spliced) this.built = null;
+    if (this.built?.changedWhilePlaying) this.built = null;
   }
 
   // Takes a program as the one play plays, and says whether it is another
@@ -1478,8 +1486,17 @@ export class FrameQueue {
   // frame on screen, and once it is up, a frame passing has to be nearer
   // still. It says nothing of the ask it came for, whose own frame still
   // comes and replaces it, so a key frame never stays once the hand rests.
+  //
+  // Nor while the frame of the newest gesture waits for what lies over it.
+  // A clip card clicked puts up the clip's first frame with its captions,
+  // in one change, and a frame of an older place came in between: a clip
+  // made with Mark In was sought to the mark and then to its first
+  // sentence, the mark's frame came while the clip's waited for its
+  // captions, and it went up first, the picture of another moment under
+  // the clip's captions, then the clip's own frame.
   private passing(rank: number, frame: Picture, seq: number, key = false) {
     if (this.closed || (this.state !== "paused" && this.state !== "cued") || this.putFor === this.ticket) return;
+    if (this.dressFor === this.ticket) return;
     if (seq <= this.shownAsked) return;
     if ((key || this.shownKey) && this.shown && !this.nearer(rank, this.shown.rank)) return;
     if (!key) this.shownAsked = seq;
@@ -1541,11 +1558,18 @@ export class FrameQueue {
     return this.state === "playing";
   }
 
+  // Told of every frame put on screen, or of null for black, by what
+  // shows it again somewhere else: the reflection at the foot of the
+  // workspace, see Reflection.svelte. The frame is only lent, read at once
+  // and never kept, the way the screen reads it.
+  painted: ((frame: Picture | null) => void) | null = null;
+
   // The frame on screen, see screen.ts. Fresh when it is put up for the
   // newest gesture, see over.
   private paint(fresh = false) {
     const s = this.shown;
     this.screen?.draw(s?.frame ?? null, s && this.over ? this.over.at(this.shownAt(s.rank), s.frame.light, fresh) : null);
+    this.painted?.(s?.frame ?? null);
   }
 
   // The frame on screen drawn again, for what lies over it has changed.
@@ -1570,10 +1594,12 @@ export class FrameQueue {
     const ticket = this.ticket;
     const asked = performance.now();
     this.stats.waitedForDress++;
+    this.dressFor = ticket;
     let stop = () => {};
     const late = new Promise<"late">((done) => (stop = this.dressWait(() => done("late"))));
     return Promise.race([came.then(() => "came" as const), late]).then((how) => {
       stop();
+      if (this.dressFor === ticket) this.dressFor = -1;
       const wanted = ticket === this.ticket && !this.closed;
       if (how === "late" && wanted) {
         this.stats.bare++;
@@ -1616,7 +1642,7 @@ export class FrameQueue {
 
   private shownAt(rank: number): number {
     const s = this.video!.samples;
-    return s.pts[s.order[rank]] / s.timescale;
+    return ticks(s, rank) / s.timescale;
   }
 
   // ---- A paused frame on its own
@@ -1664,10 +1690,12 @@ export class FrameQueue {
     slot.firstRank = feed.rank;
     for (let i = feed.key; i <= feed.last; i++) {
       if (ticket !== this.ticket || slot.decoder.state !== "configured") return gaveUp();
-      const ts = stamp(0, s.pts[i] / s.timescale);
-      slot.fed.set(ts, s.rank[i]);
-      const holds = s.rank[i] === feed.rank;
-      slot.decoder.decode(ts, s.key[i] === 1, NO_DATA, s.rank[i], holds, feed.rank, holds);
+      // Every frame is its own key frame, in the order it is shown, see
+      // Samples.
+      const ts = stamp(0, ticks(s, i) / s.timescale);
+      slot.fed.set(ts, i);
+      const holds = i === feed.rank;
+      slot.decoder.decode(ts, true, NO_DATA, i, holds, feed.rank, holds);
     }
     try {
       await slot.decoder.flush();
@@ -2173,13 +2201,13 @@ export class FrameQueue {
       const hungry = busy === 0 && slot.ready.length === 0;
       if (busy >= 3 || (slot.ready.length + slot.coming >= DEPTH && !hungry)) return;
       const i = slot.next;
-      const ts = stamp(run.id, s.pts[i] / s.timescale);
-      const rank = s.rank[i];
+      const ts = stamp(run.id, ticks(s, i) / s.timescale);
+      const rank = i;
       slot.fed.set(ts, rank);
       const wanted = rank >= slot.firstRank && rank <= run.lastRank;
       if (wanted) slot.coming++;
       const place = wanted && first?.run === run.id && first.rank === rank;
-      slot.decoder.decode(ts, s.key[i] === 1, NO_DATA, rank, wanted, slot.firstRank, place);
+      slot.decoder.decode(ts, true, NO_DATA, rank, wanted, slot.firstRank, place);
       slot.next++;
     }
     // Everything fed. Once no later piece can carry the run on, the decoder
@@ -2267,8 +2295,8 @@ export class FrameQueue {
       }
       if (this.soundReach - heard >= ahead || dec.decodeQueueSize >= 8) return;
       const j = this.soundNext;
-      const ts = stamp(run.id, s.pts[j] / s.timescale);
-      this.soundFed.push({ ts, run, j, length: (s.duration[j] / s.timescale) * 1e6 });
+      const ts = stamp(run.id, ticks(s, j) / s.timescale);
+      this.soundFed.push({ ts, run, j, length: (s.step / s.timescale) * 1e6 });
       this.soundNext++;
       const p = plan.packet(j);
       for (const sl of plan.slices(run, j, p.n)) this.soundReach = Math.max(this.soundReach, sl.out + (sl.to - sl.from));

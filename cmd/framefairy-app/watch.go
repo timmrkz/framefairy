@@ -3,6 +3,7 @@ package main
 import (
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 
 	"github.com/fsnotify/fsnotify"
@@ -13,98 +14,209 @@ import (
 )
 
 // watching keeps a watch on the folders the files of the videos in the
-// library are in, and hands every path that changed in them to heard,
-// which is reconcile, whoever changed it: the person in Finder, the
-// command line, a sync service, or the app itself. The system says what
+// library are in, and on the models folder and the one over it, and hands
+// every path that changed in them to heard, which is reconcile, whoever
+// changed it: the person in Finder, the command line, a sync service, or
+// the app itself. The system says what
 // changed through fsnotify: kqueue on macOS, inotify on Linux,
 // ReadDirectoryChangesW on Windows.
 //
 // Like every method here it does nothing on a nil watching, which is what
 // a test that builds the service by hand has, and what a program has
 // whose system would not watch.
+//
+// A folder is watched by one of two watchers, by how deep it is, so no
+// watcher watches a folder and the folder it is in. On macOS a watcher
+// that watches a folder watches what is in it too, and when a folder is
+// made in it, it sets its own watch on the new one in the same moment the
+// app adds it, and the one set last wins. Its own hears nothing written
+// in the folder, so a speech model's tokens.txt, or a model in a models
+// folder put back from a backup, went unheard, issue #722. Two watchers
+// keep the app's watch on a folder the only one in its watcher. The races
+// are fsnotify's own issue 783, still open, and once it is fixed one
+// watcher is enough again.
+//
+// A folder a watcher watches already is never added to it again. On
+// macOS fsnotify adds it again with the descriptor it opened for the
+// folder, and when the folder was deleted in the same moment, fsnotify
+// had closed that descriptor and closed it a second time, which closes
+// whatever file the app had opened under the same number since: the
+// folder a test was removing, in the one that failed, issue #722. A
+// folder deleted is let go by its watcher by itself, which then says so
+// of the folder, and that change brings the follow that watches the
+// folder put back, see reconcile.
 type watching struct {
-	w     *fsnotify.Watcher
-	heard func(changed []string)
-	// mu keeps follow to one at a time, and folders is what the last one
-	// counted, so the count is said only when it changed.
+	byDepth [2]watcher
+	heard   func(changed []string)
+	// models is the folder the models are kept in, watched with the
+	// folder over it, so a model deleted or added outside the app shows
+	// at once. Empty for none.
+	models string
+	// mu keeps follow to one at a time, and away from stop, and watched
+	// is what the last one counted, so the count is said only when it
+	// changed. stopped says the watchers are closed, so nothing asks them
+	// anything after. refused is the folders a watcher would not take,
+	// so each is said once and not at every follow, which on Tim's Mac
+	// said the same folder 139 times.
 	mu      sync.Mutex
-	folders int
+	watched int
+	stopped bool
+	refused map[string]bool
 	done    chan struct{}
 }
 
-// newWatching starts a watch that hands what changed to heard. It
-// watches nothing until follow names the videos.
-func newWatching(heard func(changed []string)) *watching {
-	w, err := fsnotify.NewWatcher()
-	if err != nil {
-		theLog.line(zerolog.WarnLevel, "files").Err(err).
-			Msg("the disk cannot be watched, so a change made outside the app shows once the app comes back to the front")
-		return nil
+// watcher is what the watch asks of one of the system's watches on
+// folders: fsnotify's, see systemWatcher, and in a test one it holds, so
+// what the app asks of the system is seen and the system is not run.
+type watcher interface {
+	Add(name string) error
+	Remove(name string) error
+	WatchList() []string
+	Close() error
+	events() <-chan fsnotify.Event
+	errors() <-chan error
+}
+
+// systemWatcher is fsnotify's watcher: kqueue on macOS, inotify on Linux,
+// ReadDirectoryChangesW on Windows.
+type systemWatcher struct{ *fsnotify.Watcher }
+
+func (w systemWatcher) events() <-chan fsnotify.Event { return w.Events }
+func (w systemWatcher) errors() <-chan error          { return w.Errors }
+
+// newWatching starts a watch that hands what changed to heard, with the
+// models folder models, or none when it is empty. It watches nothing
+// until follow names the videos.
+func newWatching(heard func(changed []string), models string) *watching {
+	var byDepth [2]watcher
+	for i := range byDepth {
+		w, err := fsnotify.NewWatcher()
+		if err != nil {
+			theLog.line(zerolog.WarnLevel, "files").Err(err).
+				Msg("the disk cannot be watched, so a change made outside the app shows once the app comes back to the front")
+			for _, made := range byDepth[:i] {
+				_ = made.Close()
+			}
+			return nil
+		}
+		byDepth[i] = systemWatcher{w}
 	}
-	ws := &watching{w: w, heard: heard, done: make(chan struct{})}
+	return watchingWith(heard, models, byDepth)
+}
+
+// watchingWith starts a watch with these two watchers, one for each
+// depth, see watcherOf.
+func watchingWith(heard func(changed []string), models string, byDepth [2]watcher) *watching {
+	ws := &watching{byDepth: byDepth, heard: heard, models: models, refused: map[string]bool{}, done: make(chan struct{})}
 	go ws.run()
 	return ws
 }
 
-// watchedOf is the folders watched for a video: the one it is in, which
-// holds the video and its work folder, the work folder, and its logs,
-// which hold the transcript, the plans and the loudness. A folder that is
-// not there yet is watched once it is, since its making is a change in
-// the folder above it.
-func watchedOf(video string) []string {
+// watcherOf is the watcher that watches path: the one of its depth, so a
+// folder and the folder it is in are never watched by the same one.
+func (ws *watching) watcherOf(path string) watcher {
+	return ws.byDepth[strings.Count(filepath.Clean(path), string(filepath.Separator))%2]
+}
+
+// watchList is everything watched, by both watchers.
+func (ws *watching) watchList() []string {
+	return append(ws.byDepth[0].WatchList(), ws.byDepth[1].WatchList()...)
+}
+
+// watchedOf is what is watched for a video: the folder it is in, which
+// holds the video and its work folder, the work folder, its logs, which
+// hold the transcript, the plans and the loudness, and its shorts, which
+// the plans say, see engine.Episode.Shorts. A folder that is not there
+// yet is watched once it is, since its making is a change in the folder
+// above it. A short that is not there is not watched, and a short
+// rendered again is watched again once its plan is written.
+func watchedOf(video string, shorts []string) []string {
 	work := engine.WorkDir(video)
-	return []string{filepath.Dir(video), work, filepath.Join(work, "logs")}
+	return append([]string{filepath.Dir(video), work, filepath.Join(work, "logs")}, shorts...)
 }
 
 // follow watches the folders of these videos that are there, and no
-// other. It is called after every look at the library, so the watch
-// follows what was added, removed, deleted and made again, the way the
-// library itself does.
-func (ws *watching) follow(files afero.Fs, videos []string) {
+// other, with the shorts shortsOf says each video has. It is called
+// after every look at the library, and after a plan is written, which
+// may name a short just rendered, so the
+// watch follows what was added, removed, deleted, made again and
+// rendered, the way the library itself does.
+func (ws *watching) follow(files afero.Fs, videos []string, shortsOf func(video string) []string) {
 	if ws == nil {
 		return
 	}
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
+	if ws.stopped {
+		return
+	}
 	want := map[string]bool{}
+	for _, dir := range ws.modelFolders() {
+		want[dir] = true
+	}
 	for _, v := range videos {
-		for _, dir := range watchedOf(v) {
+		for _, dir := range watchedOf(v, shortsOf(v)) {
 			want[dir] = true
 		}
 	}
-	have := ws.w.WatchList()
-	for _, dir := range have {
-		if !want[dir] {
-			_ = ws.w.Remove(dir)
+	// A folder that is gone is let go by its watcher by itself, so only
+	// one that is still there is taken off, and a watched one is never
+	// added again, see watching.
+	watched := map[string]bool{}
+	for _, dir := range ws.watchList() {
+		watched[dir] = true
+		if want[dir] {
+			continue
+		}
+		if _, err := files.Stat(dir); err == nil {
+			_ = ws.watcherOf(dir).Remove(dir)
 		}
 	}
 	for dir := range want {
-		if slices.Contains(have, dir) {
+		if watched[dir] {
 			continue
 		}
-		if info, err := files.Stat(dir); err != nil || !info.IsDir() {
+		if _, err := files.Stat(dir); err != nil {
 			continue
 		}
-		if err := ws.w.Add(dir); err != nil {
+		err := ws.watcherOf(dir).Add(dir)
+		if err == nil {
+			delete(ws.refused, dir)
+			continue
+		}
+		if !ws.refused[dir] {
 			theLog.line(zerolog.WarnLevel, "files").Str("folder", dir).Err(err).
 				Msg("a folder of a video cannot be watched, so a change in it shows once the app comes back to the front")
 		}
+		ws.refused[dir] = true
 	}
-	// How many folders are watched, and how many files are in them,
-	// which on macOS each take a file descriptor of their own: what
-	// the decision record asked to be measured on a real library.
-	now := ws.w.WatchList()
-	if len(now) == ws.folders {
+	for dir := range ws.refused {
+		if !want[dir] {
+			delete(ws.refused, dir)
+		}
+	}
+	// How much is watched, and how many files are in the folders,
+	// which on macOS each take a file descriptor of their own, and each
+	// folder two, one in each watcher: what the decision record asked
+	// to be measured on a real library.
+	now := ws.watchList()
+	if len(now) == ws.watched {
 		return
 	}
-	ws.folders = len(now)
-	entries := 0
+	ws.watched = len(now)
+	folders, entries, models := 0, 0, 0
 	for _, dir := range now {
+		if slices.Contains(ws.modelFolders(), dir) {
+			models++
+			continue
+		}
 		if list, err := afero.ReadDir(files, dir); err == nil {
+			folders++
 			entries += len(list)
 		}
 	}
-	theLog.line(zerolog.InfoLevel, "files").Int("videos", len(videos)).Int("folders", len(now)).Int("files", entries).
+	theLog.line(zerolog.InfoLevel, "files").Int("videos", len(videos)).Int("folders", folders).
+		Int("shorts", len(now)-folders-models).Int("files", entries).Int("models", models).
 		Msg("the folders of the videos are watched for changes")
 }
 
@@ -114,32 +226,42 @@ func (ws *watching) follow(files afero.Fs, videos []string) {
 // or a folder of many files deleted, are looked at once.
 func (ws *watching) run() {
 	defer close(ws.done)
+	a, b := ws.byDepth[0], ws.byDepth[1]
+	aEvents, bEvents, aErrors, bErrors := a.events(), b.events(), a.errors(), b.errors()
 	for {
 		var changed []string
+		var ev fsnotify.Event
+		var err error
+		ok := true
 		select {
-		case ev, ok := <-ws.w.Events:
-			if !ok {
-				return
-			}
-			changed = heardOf(changed, ev)
-		case err, ok := <-ws.w.Errors:
-			if !ok {
-				return
-			}
+		case ev, ok = <-aEvents:
+		case ev, ok = <-bEvents:
+		case err, ok = <-aErrors:
+		case err, ok = <-bErrors:
+		}
+		if !ok {
+			return
+		}
+		if err != nil {
 			// The system's queue of changes ran over, most often, so
 			// which changed is not known: every video is looked at.
 			theLog.line(zerolog.WarnLevel, "files").Err(err).Msg("the watch on the disk missed a change, so every video is looked at")
 			ws.heard(nil)
 			continue
 		}
+		changed = ws.heardOf(changed, ev)
 		for more := true; more; {
 			select {
-			case ev, ok := <-ws.w.Events:
-				if !ok {
-					more = false
-					break
+			case ev, ok := <-aEvents:
+				more = ok
+				if ok {
+					changed = ws.heardOf(changed, ev)
 				}
-				changed = heardOf(changed, ev)
+			case ev, ok := <-bEvents:
+				more = ok
+				if ok {
+					changed = ws.heardOf(changed, ev)
+				}
 			default:
 				more = false
 			}
@@ -152,19 +274,75 @@ func (ws *watching) run() {
 
 // heardOf adds the path of an event to changed, once. A change of a
 // file's permissions alone is left out: Spotlight and backups touch them
-// all the time, and nothing the app has depends on them.
-func heardOf(changed []string, ev fsnotify.Event) []string {
-	if ev.Op == fsnotify.Chmod || slices.Contains(changed, ev.Name) {
+// all the time, and nothing the app has depends on them. So is what the
+// app's own download writes, see downloading.
+func (ws *watching) heardOf(changed []string, ev fsnotify.Event) []string {
+	if ev.Op == fsnotify.Chmod || slices.Contains(changed, ev.Name) || ws.downloading(ev.Name) {
 		return changed
 	}
 	return append(changed, ev.Name)
 }
 
-// stop ends the watch and returns once nothing more is handed on.
+// downloading says whether path is where a download of the app writes a
+// model before it is one, its part file or the folder it unpacks into,
+// which it writes for minutes. Only the rename into place makes a model,
+// and that is heard under the model's own name. Any other write in the
+// models folder is heard, since a model copied there by hand, with Finder
+// or cp, is made empty and becomes a model as it is written, see
+// Installed in the engine.
+func (ws *watching) downloading(path string) bool {
+	if ws == nil || ws.models == "" || filepath.Dir(path) != ws.models {
+		return false
+	}
+	return strings.HasSuffix(path, ".part") || strings.HasSuffix(path, ".unpacking")
+}
+
+// modelFolders is what is watched for the models: the models folder, the
+// folder over it, which holds it, and the folder of each speech model,
+// since a speech model is a folder whose tokens.txt says it is there, and
+// one copied in by hand is written into after the folder is made.
+func (ws *watching) modelFolders() []string {
+	if ws == nil || ws.models == "" {
+		return nil
+	}
+	dirs := []string{filepath.Dir(ws.models), ws.models}
+	for _, m := range engine.SpeechModels() {
+		dirs = append(dirs, filepath.Join(ws.models, m.Name))
+	}
+	return dirs
+}
+
+// modelsIn says whether a change at one of the paths can change which
+// models are here, and whether one of the folders modelFolders names was
+// made or deleted, which the watch then follows.
+func (ws *watching) modelsIn(changed []string) (models, folder bool) {
+	if ws == nil || ws.models == "" {
+		return false, false
+	}
+	folders := ws.modelFolders()[1:]
+	for _, p := range changed {
+		if slices.Contains(folders, p) {
+			models, folder = true, true
+		} else if strings.HasPrefix(p, ws.models+string(filepath.Separator)) {
+			models = true
+		}
+	}
+	return models, folder
+}
+
+// stop ends the watch and returns once nothing more is handed on. It
+// waits for a follow under way, and no follow asks the watchers anything
+// after: a watcher asked to add a folder while it closes closed the
+// folder's descriptor twice on macOS, see watching.
 func (ws *watching) stop() {
 	if ws == nil {
 		return
 	}
-	_ = ws.w.Close()
+	ws.mu.Lock()
+	ws.stopped = true
+	for _, w := range ws.byDepth {
+		_ = w.Close()
+	}
+	ws.mu.Unlock()
 	<-ws.done
 }

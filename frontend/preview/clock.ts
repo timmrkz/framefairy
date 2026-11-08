@@ -25,18 +25,50 @@ export function walkClock(play: Play): PlayClock {
 // walks/bridge.mjs and issue #583. The sound card runs again only once
 // nobody holds it, and only while a play goes on: a play the app pauses or
 // ends holds it itself, and a play that starts starts it. Held again on
-// every tick it is wanted, since the app may have started it meanwhile.
-// Settles once the sound card has done what it was told.
+// every tick, whoever holds it, since the app may have started it
+// meanwhile: a play asked for starts the sound card a moment after its
+// Pause button shows, so a hand that held it in between held a card that
+// was not running yet, and the play then ran to the clip's end on the
+// sound card's time, issue #702.
+//
+// Nobody holding it, the card runs for as long as a play goes on,
+// whoever stopped it: the browser suspends a card on its own too. WebKit
+// suspends it when its media session is interrupted, and when the
+// interruption is over before the suspension is done, the card stays
+// suspended and nobody is told, see suspendPlayback in WebKit's
+// AudioContext.cpp. A card made while its session was interrupted ran
+// for 98 ms of a play and then stood, and the walk waited six minutes on
+// a play that never moved. Started again only by a hand or a frame that
+// had held it, it stood for good. Settles once the sound card has done
+// what it was told.
+//
+// A play on the sound card's own clock has no tick of the walk's to hold
+// the card again, so the card is held again the moment it says it runs.
+// Without it a play the hand held from before the space bar ran on the
+// sound card's time while the walk settled, to the clip's end, in the
+// walks that listen to the sound.
 const holders = new WeakMap<Play, Set<string>>();
+const starting = new WeakMap<Play, Promise<void>>();
 export function holdSound(play: Play, who: string, held: boolean): Promise<void> {
   let by = holders.get(play);
-  if (!by) holders.set(play, (by = new Set()));
-  if (held) {
-    by.add(who);
-    return play.audio.state === "running" ? play.audio.suspend() : Promise.resolve();
+  if (!by) {
+    const holding = (by = new Set());
+    holders.set(play, holding);
+    play.audio.addEventListener("statechange", () => {
+      if (holding.size && play.audio.state === "running") void play.audio.suspend();
+    });
   }
-  if (!by.delete(who) || by.size) return Promise.resolve();
-  return play.playing && play.audio.state === "suspended" ? play.audio.resume() : Promise.resolve();
+  if (held) by.add(who);
+  else by.delete(who);
+  if (by.size) return play.audio.state === "running" ? play.audio.suspend() : Promise.resolve();
+  if (!play.playing || play.audio.state === "running" || play.audio.state === "closed") return Promise.resolve();
+  // Asked once, not again on every tick while the browser takes its time.
+  let start = starting.get(play);
+  if (!start) {
+    start = play.audio.resume().finally(() => starting.delete(play));
+    starting.set(play, start);
+  }
+  return start;
 }
 
 // Hands every queue the page makes the walk's clock, unless the walk asked

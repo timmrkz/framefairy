@@ -172,13 +172,19 @@
     asking = false;
   }
 
-  // The button does what it says at once: open, it closes the sidebar, even
-  // with the pointer still on it. Hover opens it again once the pointer has
-  // left and come back.
+  // The button keeps the sidebar open or lets it go, the one thing hover
+  // cannot do, so it acts on the pin and not on whether the sidebar is
+  // open. Not kept, a click keeps it, whether hovering opened it or it was
+  // a rail. Kept, a click closes it at once, even with the pointer still
+  // on it, and hover opens it again once the pointer has left and come
+  // back. Tim clicked it on a sidebar hovering opened, to keep it, and it
+  // closed.
   function toggleBar() {
-    why = open ? "its button closed it" : "its button pinned it";
-    shell.set(!open);
-    if (open) near = false;
+    const keep = !shell.pinned;
+    if (keep && open) said("sidebar: kept open, its button pinned it");
+    else why = keep ? "its button pinned it" : "its button closed it";
+    shell.set(keep);
+    if (!keep) near = false;
   }
 
   // Every time the sidebar opens or closes, and what did it, so a report
@@ -273,14 +279,10 @@
   // without waiting for the job's first news.
   async function transcribe(ep: EpisodeStatus) {
     said(`video menu: transcribe whole video`, { video: ep.source });
-    jobs.press(ep.source, "whole");
     try {
-      const job = await api.transcribe(ep.source);
-      jobs.apply(job);
+      await jobs.startJob(ep.source, "whole", () => api.transcribe(ep.source));
     } catch (err) {
       toasts.say("transcribe whole video", errorText(err), { video: ep.source });
-    } finally {
-      jobs.answered(ep.source, "whole");
     }
   }
 
@@ -815,10 +817,10 @@
       <button
         class="quiet glyph"
         onclick={toggleBar}
-        aria-pressed={open}
-        title={open ? "Close the sidebar" : "Keep the sidebar open"}
+        aria-pressed={shell.pinned}
+        title={shell.pinned ? "Close the sidebar" : "Keep the sidebar open"}
       >
-        <Icon name="sidebar" />
+        <Icon name={shell.pinned ? "sidebar-close" : "sidebar-keep"} />
       </button>
       <h2>Videos</h2>
       {#if episodes.length > 1}
@@ -874,9 +876,8 @@
               onstoptranscribe={() => {
                 const work = jobs.transcribing(ep.source);
                 if (!work) return;
-                jobs.stop(ep.source, "whole");
                 said("video menu: stop transcribing", { video: ep.source });
-                void api.cancelJob(work.id);
+                jobs.stopJob(ep.source, "whole", () => api.cancelJob(work.id));
               }}
               onexport={(format) => exportTranscript(ep, format)}
             />

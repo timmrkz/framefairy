@@ -51,30 +51,30 @@ can show:
 | | Runs | For | Why this way |
 | --- | --- | --- | --- |
 | plain code | Go tests and Vitest, once | every rule that can be said without a page: what a dictation does to the text, where an arrow key takes the cursor, how far a field scrolls | no browser decides it, so a second browser would test the same code twice. It is the quickest test and the easiest to read |
-| the walks | every walk and sequence on every pull request that reaches them, in WebKit for each part `walks/webkit.mjs` no longer names and in Chromium for the rest, and all of them in Chromium every night | what a person does, against the real Go side, in the engine the app runs in | the engines differ where people type and look: the cursor, the selection, the focus, scrolling, fonts and layout. Nearly every bug Tim met in Report a Problem, #574, was WebKit's alone and passed in Chromium. The Mac ships first, and Windows is not built yet |
+| the walks | every walk and sequence on every pull request that reaches them, in Chromium, and all of them in both browsers every night | what a person does, against the real Go side, in the engines the app runs in | the engines differ where people type and look: the cursor, the selection, the focus, scrolling, fonts and layout. Nearly every bug Tim met in Report a Problem, #574, was WebKit's alone and passed in Chromium, so WebKit is walked every night. Playwright's WebKit for Linux draws every frame on the processor, so a push walks in Chromium, which walked the same walks 35 % sooner |
 | what only a Mac does | a step that acts out the Mac's behaviour on purpose, and the rule it protects in plain code | how AppKit reaches WebKit: a cursor revealed in the middle of a field, a button that takes no focus from a click, a mouse entering as a plain move | no browser on Linux has it, WebKit's Linux ports included, so a walk can only play it, as `attach, as on a Mac` does |
 
 The walks are the same walks in both browsers, and the browser is a
 setting of the harness, `browserFor` in `walks/bridge.mjs`, never a second
-set. A pull request walks each in one browser, so the second browser
-costs CI no job and no time: walking every walk in both would take twice
-the machines, or twice as long on the same ones, see
-[the decision](decisions/2026-10-31-walks-in-two-browsers.md). The nightly
-walks, `walks-nightly.yml`, walk in Chromium, `WALKBROWSER=chromium`, so
-both engines are walked every day. The WebKit is Playwright's own build
+set. A pull request walks each in Chromium, and the nightly walks,
+`walks-nightly.yml`, walk each in both, the walks in WebKit on four
+machines of their own, `WALKBROWSER=webkit`, so a pull request waits for
+one browser and both engines are walked every day, see
+[the decision](decisions/2026-11-05-walks-in-chromium-on-a-push.md). Only
+the walks in Chromium count the lines they run. The WebKit is Playwright's own build
 for Linux, which takes real key presses, and CI's image holds it beside
-the Chromium, see `.github/ci-image/Dockerfile`. A cloud session gets it
+the Chromium, see `.github/ci-image/Dockerfile`. It draws every frame through OpenGL,
+which a machine without a graphics chip runs on the CPU, and drawing is
+37 % of the walks' CPU there, measured once over every walk in a cloud
+session, so the walks give it two threads to draw
+with rather than one a core, see `drawingThreads` in `walks/bridge.mjs`. A cloud session gets it
 from the SessionStart hook, see `scripts/cloud-webkit.sh`, and walks one
 sequence in it the way it walks one in Chromium. `SLOW` and
-`WALKCOVERAGE` work through Chromium's own tools, so either walks every
-walk in Chromium, and says so when `WALKBROWSER=webkit` asks for WebKit.
+`WALKCOVERAGE` work through Chromium's own tools, and say so when
+`WALKBROWSER=webkit` asks for WebKit.
 
-Until every part of the app has moved to WebKit, #380,
-`walks/webkit.mjs` names the parts that still walk in Chromium, and the
-random walks walk there too. A part moves in a pull request of its own,
-which fixes what WebKit finds in it, so each stays a size to review. A walk
-that only passes in Chromium is a walk to fix, not a part to keep there:
-the app on a Mac is WebKit. What WebKit finds is fixed where its cause
+A walk that fails in WebKit at night is a walk to fix, never one to keep
+out of it: the app on a Mac is WebKit. What WebKit finds is fixed where its cause
 is. A walk that reads what the two engines write differently, like the
 name of a font in quotes or without, is fixed in the walk. What a person
 on a Mac would see too, like a hover WebKit works out only when the
@@ -166,10 +166,12 @@ each with a POST:
 | `/speech?hold`, `/speech?step=N`, `/speech?go` | `hold` stops the speech model hearing, once the pieces it is hearing are heard, so a transcript stays where it is while a walk looks at it, cancels it or presses something during it. `step=N` lets N pieces more be heard while it is held, and a walk waits on the news of the work, not for the step. With `&save` what is heard so far is saved once the next piece is heard: the app saves a long transcription every 8 s of real time, and the bridge saves it part way only then, through `SaveHeard`, which the engine asks the speech model in place of its clock, so a walk sees a transcript saved part way on any machine. `go` lets it hear on by itself. Closing the app with `/reopen` lets every piece through while the app closes, the way a piece being heard ends as it quits, and the speech stays held after. With `&from=0` it says its sentences again from the first word, so a video added next is heard with the words of the bridge's episode and its clip has the same name |
 | `/chrome?bar=30&left=12&right=72` | the app's window as macOS lays it out, in points: the title bar's height and where its buttons start and end. It goes through what the Go side does with an answer from macOS and is told to the page the way a resize is. Until it is asked, and again after `/reset`, the title bar is the one every other system draws |
 | `/hold?call=Search&gate=shut&times=K&answer=1&fail=why` | with `gate=shut`, the calls of that name wait before they reach the Go side until `gate=open`, every one of them, or the next K with `times`, the way a busy machine delivers them late, so a walk can press something and look while the Go side has not heard of the call yet, and lets it through once it has looked, on any machine. A walk holds a call with `hold` in `walks/bridge.mjs` and lets it go with `letHeld`: the page sets the held call aside, so `settle` waits for everything else meanwhile, and the watch lets go of whatever is still held before it compares the screen with the engine. With `answer=1` the call reaches the Go side at once and only its answer waits for `gate=open`, so the news of what it set going comes before it, `hold(page, name, true)`. With `fail` the next call fails with that reason instead of reaching the Go side, the way a full disk refuses a save. `/reset` opens every gate |
+| `/clock?run=MS` | runs the clock removed work is timed by on by MS milliseconds, and makes every call due by then before it answers. The Go side keeps that time and forgets the work once it is up, see `removal.go`, and `runClock` in `walks/bridge.mjs` runs it on with the page's clock, so the ten seconds a walk runs on are the same ten seconds on both sides, on any machine. `/clock?hold` holds it with the page's clock and `/clock?go` lets it go again, see `holdClock` and `letClockGo`, so while a walk holds the page's time a busy machine spends none of Go's either. Let go, it goes as the system's clock does |
 | `/updates?from=main&stored=pr-143&list=main,pr-143` | gives the app's Updates page the app's own updating and Wails' updater, reading a channel list the bridge serves on this machine: a build from the channel `from`, or made on the Mac without it, with `stored` picked by a build before it, and the channels of `list`, each with a newer build that downloads in a moment. Until it is asked, and again after `/reset`, the Updates page's calls are answered with nothing like the rest. Relaunch always is |
 | `/fresh`, `/fresh?memory=8`, `/fresh?arrive=speech`, `/fresh?arrive=clip` | makes the bridge's machine one the app never ran on: no model, no video in the app and nothing said yet about how clips are found, on a machine of 32 GB like Tim's, or of the gigabytes `memory` gives, so the setup offers the same models on every machine. A key saved there is kept by the bridge, never the keychain, and counted as there. A walk opens the page again to see the setup. Download there runs as a job like any other, through a stand-in that says it has fetched two fifths and holds there until `arrive` lets that kind of model arrive, so a walk sees both downloads at once for as long as it looks, on any machine. `/reset` makes the machine the bridge's again |
 | `/reopen` | closes the app and opens it again, the way quitting and starting it does: the work stops and how it ended is read back. It answers with the jobs as the app left them, once nothing ran any more |
-| `/reset` | the app as it was once its first episode was searched: the models answer quickly, every episode a walk added is gone, the work folder and the settings are what they were, the speech stand-in goes on from the word it had come to then, the episode's decoders the walk before left are closed, and the app is opened again on them. So a video a walk adds is heard with the same words, however many walks came before it, and a walk that moves the playhead far starts from no decoder rather than one left where the walk before stopped, which let a drag go on without a key frame, issue #552 |
+| `/reset` | the app closed the one way it quits, `closeDown` in `quit.go`, and what the end of its process stops stopped too, see `quit` in `bridge_test.go`, so nothing it started writes while its folders go, and then as it was once its first episode was searched: the models answer quickly, every episode a walk added is gone, the work folder and the settings are what they were, the speech stand-in goes on from the word it had come to then, the episode's decoders the walk before left are closed, and the app is opened again on them, on a machine that keeps only what the one before learned about the computer's programs, what ffmpeg offers and what it said about files that stay as they are, see `engine.Machine.LearnFrom`. So a video a walk adds is heard with the same words, however many walks came before it, and a walk that moves the playhead far starts from no decoder rather than one left where the walk before stopped, which let a drag go on without a key frame, issue #552 |
+| `/reset?seconds=30&rate=25&timing=turned&in=mkv` | the same, with a second video in the app, of the kind `add` picks with the same words, heard and searched the way adding it and its first search leave it, and answers with its path. The first bridge asked for a kind adds it and keeps what the app made of it, and every bridge after it puts that back, see the `added` step |
 
 To open it by hand:
 
@@ -566,11 +568,12 @@ Enter or Escape, or with `ends` lets it stop by itself and say why, or
 with `start` only starts it, with `hearing` waits for more to be said
 and settled, so it is kept however the recording ends, and with
 `settled` waits for the words before the pause, `microphone moves`
-watches the microphone while it listens, from the hum through its pause
-until the hum comes back: it grows with the voice, keeps its box and its
-middle, falls back no faster than a level meter's needle and is drawn
-white. It runs in one walk, not in every `dictate`, because each watch
-takes seconds of the hum, see #543. `click heard` clicks
+watches the microphone while it listens, with the app's time held and
+run on by hand, a frame of 16 ms at a time: it springs to the size of
+the hum a little past it and settles, falls back in the pause a little
+under its rest and settles, never jumps half its way in a frame, keeps its
+box and its middle and is drawn white. It runs in one walk, not in
+every `dictate`, see #543. `click heard` clicks
 into the first word still being heard and sees it settled with the
 cursor in it, with what the Go side tells the window held back from
 reading the word to the click, `window.__pauseEvents` in
@@ -591,8 +594,8 @@ are, `ended` until the recording is over and `tenth` for one step, see
 `sound` in `cmd/framefairy-app/walksound_test.go`. `dictate` asks for
 words before it looks for them, and for something settled before it ends
 a recording, since the stand-in hears new words each time and the end
-could otherwise write down none. `microphone moves` asks for a tenth a
-frame while it watches. With `ends`
+could otherwise write down none. `microphone moves` asks for tenths
+until the hum or the pause begins, with the app's time held. With `ends`
 the person falls silent once the phrase they are on is said, through
 `/microphone?silent=1`. A recording there stops by itself for want of
 words as soon as that phrase is said, since the bridge says the quiet is
@@ -943,8 +946,9 @@ it hang, #508.
    of the page before and after each call no walk records: eight
    sequences took 41 % longer with them in a cloud session, and with
    the film a walks job in CI went over its five minutes. In CI a walks
-   job that failed keeps the folder with the run as `walk-traces-0` to
-   `walk-traces-3`, one for each share, for 14 days.
+   job that failed, on a push or at night, keeps the folder with the run
+   as `walk-traces-0` to `walk-traces-3`, one for each share, for 14
+   days.
    A session finds it with the GitHub tools,
    `list_workflow_run_artifacts` for the run and
    `download_workflow_run_artifact`, which gives a link to the zip. The
@@ -1041,7 +1045,19 @@ next run. `make walks WALKS=40` looks further.
 They run side by side, half as many again as the machine has cores, or
 `WALKERS`. Each runs against a bridge of its own, which `TestWalks`
 starts as a process of its own on a free port, because a desk sets
-`HOME` for the whole process it is in. Every sequence is a run of its
+`HOME` for the whole process it is in. The first bridge hears and
+searches its episode, and the others start from a copy of what it made,
+the work folder and the settings with the paths of its home written as
+their own, see `keepHome` and `takeHome`, so the six bridges of a job
+do that work once. A bridge's start, once each in a cloud session, so
+with no spread:
+
+| Measured | Hearing itself | From the copy | Change |
+| --- | ---: | ---: | --- |
+| Wall (s) | 1.88 | 0.50 | 73 % faster |
+| CPU (s) | 2.88 | 0.43 | 85 % less |
+
+Every sequence is a run of its
 own, the same as a walk, handed to whichever bridge is free next: the
 walks first, since each takes most of a minute, and the sequences behind
 them, most of them a few seconds long, so no bridge is left with a long
@@ -1051,8 +1067,26 @@ run once the others are done. Each sequence opens the app afresh with
 Every walker hands its sequences to one node of its own, `sequences.mjs
 --serve`, which reads the name of the next sequence from its input,
 says `walking` in a line of its own as it begins and how it went in
-another as it ends, and keeps one Chromium for all of them. Each sequence still opens a page in a context of its own, so it
-keeps nothing a sequence before it kept. Starting node, Playwright and
+another as it ends, and keeps one browser for all of them. A sequence
+that passed leaves its page to the next, which opens the app on it again,
+`letGo` and `openAgain` in `walks/bridge.mjs`. Opening the video, the
+whole machine's CPU, ten times each after three to warm up, in a cloud
+session, with the spread of the new page's:
+
+| Measured | New page | Page opened again | Change |
+| --- | ---: | ---: | --- |
+| CPU (s) | 0.98 | 0.75 | 23 % less, ± 4 % |
+| Wall (s) | 0.52 | 0.34 | 35 % faster |
+
+As the sequence passes, what it left on the page goes, its listeners,
+routes and init scripts, what the app kept in the page's storage, the
+pointer and the keys, and its trace, and the page leaves the app. The
+bridge serves every file with `no-store`, so a sequence fetches what it
+needs whichever walked before it, a font too, which the app lets a page
+keep for a day, so the walks fetch it where Tim's Mac takes it from its
+cache. A page whose clock a walk took, the page of a sequence that
+failed, and every page while the walks count the lines they run, are
+closed. Starting node, Playwright and
 Chromium for every sequence was 1.45 s and 1.2 s of CPU each time, 220
 times, issue #526. A sequence that throws ends its node, and the next
 sequence starts a new one, so nothing a throw left behind walks on. What
@@ -1079,7 +1113,19 @@ motion and was left out of `moving` fails there.
 A video a walk adds is a copy of one committed in
 `internal/fixtures/testdata/`, named by what the walk asked for, see
 `walkFixture` in `cmd/framefairy-app/bridge_test.go`, and made by its
-recipe in `internal/fixtures/fixtures_test.go`. A walk that asks for a
+recipe in `internal/fixtures/fixtures_test.go`. A sequence that only
+needs a video of a kind to work on, and is not about adding one, starts
+with `["added", 30, "25", "turned"]` rather than `add` and the wait for
+its first clip: `/reset` with the same words puts the bridge back with
+that video in the app, heard and searched, `startWith` in
+`bridge_test.go`. The first bridge asked for a kind adds it and keeps
+what the app made of it in a folder all the bridges of the walks share,
+and every bridge after it puts that back, so the add, 2.5 s of CPU and
+1.9 s on its own in a cloud session, is paid once for each kind. So
+what the interface shows while the first search of a 29.97 fps, a
+Matroska, an uneven, a late or a turned video comes in is no longer
+walked, only of the kind the sequences about adding add, since the
+interface does the same for every kind. A walk that asks for a
 length or a kind none of them has is refused with the name it wanted,
 and gets it by a recipe of its own. Only the camera's videos of
 `speed.mjs` and `smooth.mjs` are made when they are asked for, see
@@ -1113,10 +1159,18 @@ each share starts its longest runs first, so no bridge is left with a
 minute of work after the others are done. Every third run, as it was,
 left one machine a minute behind. A run the file does not know counts as
 the median. `make walks WALKTIMES=1` writes the file again from the times
-of that run, best on the whole set on a quiet machine, and keeps the time
-it had for a run that the test's time stopped, since how long a run that
-hung was stopped after says nothing of how long it takes. On three machines
-each job still took four and three quarter minutes, setup included. More
+of that run, and keeps the time it had for a run that the test's time
+stopped, since how long a run that hung was stopped after says nothing of
+how long it takes. The times that count are CI's, so the file is best made
+from the logs of the walks jobs, which end on the time of every run they
+walked, and before them the CPU the whole machine spent while the walks
+ran, from `/proc/stat` on Linux, and the CPU of the bridges, Go with the
+ffmpeg and the decoders they started. The machine's is the one to
+compare a change to the speed of the walks by, since CI's machine runs
+nothing else, and the browsers' renderers are in no program's own
+count: Chromium's zygote starts them, and no program waits for them. On four machines the jobs took 181 to 226 seconds in Chromium, in
+three runs on 5 November, and 223 to 377 while every walk walked in
+WebKit, setup included. More
 bridges on a machine do not help: on four cores eight bridges finished a
 share no sooner than six and broke three walks that wait on the clock.
 
@@ -1136,7 +1190,14 @@ browser's frames go by and answers if nothing came in between. The timer
 that writes the log is left out, the same as its calls, marked
 `logOnly` in `said.ts`. A longer timer is how long something stays on
 screen, which a walk turns on itself with `holdClock`, and while the
-app's time is held `settle` does not wait for timers at all. The same
+app's time is held `settle` does not wait for timers at all. While a
+clip plays, the page never stands still for long, and in WebKit with
+motion a settle waits until the play has stopped, at the clip's end. So
+a step that reads a play reads it where the play draws, in the frame or
+the change it waits for, and a step that starts one starts it with
+`pressPlay`, or holds the sound card with `holdSound` around a key it
+presses while the clip plays, so the settle ends before the play
+begins. The same
 walk now takes about 15 seconds, and a busy machine makes it slower
 without making it check a step sooner. Steps that come sooner meet the
 app's own sense of time where a person's hand has one: the clip
@@ -1313,7 +1374,10 @@ open. It presses a button the
 way a click does, found by its words, and it quits the app. It adds a
 video the way Add does once a file is picked, and asks for a search the
 way Search does, and with that it can quit in the same moment, stopping
-everything first the way the second Cmd+Q does. Which app is
+everything first the way the second Cmd+Q does. It holds the lanes the
+search takes its first turn in until the stop has run, so the stop
+always comes before the search's first step, the way it does for a
+person, whose speech model takes seconds to load. Which app is
 in front comes from `lsappinfo`, which needs no permission a runner does
 not have. The app's log goes to `~/Library/Logs/FrameFairy-outside.log`
 as well, and the test shows it when a check fails.
@@ -1483,21 +1547,21 @@ What the code takes from outside, so a test can drive it:
 | What | Handed in as | Where |
 | --- | --- | --- |
 | the time of day | `now func() time.Time` | `signer.WithClock` in `licence/signer/signer.go`, `Now` in `licence/dispenser/engine.go`, `now` on the app, which times an edit, in `cmd/framefairy-app/main.go` |
-| a wait the app sets between two things it does, where a bubble does not fit | a function that gives the channel the wait ends on | `after` on the updates in `cmd/framefairy-app/updates.go`, which a test hands the looks in through, see `TestARegularLookReplacesTheBuildReady`, `leaving` in `engine/ffmpeg.go`, how long ffmpeg or llama-server has to end once it is asked to stop, and `idleFor` in `engine/modelhost.go`, how long a model nobody holds is kept |
-| a time limit on another program | a function that gives the context the limit ends | `timeLimit` in `engine/analysis.go`, which `stuckFFmpeg` in `engine/stuck_unix_test.go` ends the moment its ffmpeg says through a named pipe that it hangs |
+| a wait the app sets between two things it does, where a bubble does not fit | a function that gives the channel the wait ends on | `after` on the updates in `cmd/framefairy-app/updates.go`, which a test hands the looks in through, see `TestARegularLookReplacesTheBuildReady`, `leaving` in `engine/ffmpeg.go`, how long ffmpeg or llama-server has to end once it is asked to stop, and `idle` on the model host of `engine.Machine`, `engine/modelhost.go`, how long a model nobody holds is kept, set on the test's own machine |
 | another program saying it hangs | a channel | `standin.Hangs` in `internal/standin/hangs_unix.go`, a named pipe a stand-in writes `hangs` into. It is heard as `stuck` on the engine, a render that has stopped making frames, in `engine/ffmpeg.go`, and as `frameLate` on the app, a video whose first frame is late, in `cmd/framefairy-app/library.go` |
 | the end of the quiet of a recording | a channel | `still` on the listening in `cmd/framefairy-app/listen.go`, which the bridge's microphone says once the person in a walk has fallen silent |
 | the two clocks of a recording, its level readings and its passes | channels | `beats` on the listening in `cmd/framefairy-app/listen.go`, which the bridge hands its steps through, see `TestARecordingRunsOnTheBeatsItIsHanded` |
-| a loading llama-server saying it is up | its output | `hearReady` in `engine/local.go`, and `lookAgain`, the look every half second for a server that says nothing, which `TestAServerThatWillNotStopIsKilledAtOnce` takes away |
+| a loading llama-server saying it is up | its output | `hearReady` in `engine/local.go`, and `lookAgain` on the machine's link to llama-server, the look every half second for a server that says nothing, which `TestAServerThatWillNotStopIsKilledAtOnce` takes away on its own machine |
 | how often work that reads from another program saves | a count of reads | `levelsReads` on the engine, `engine/levels.go`, in place of `levelsDefault` of the clock |
-| the network | an `http.Client` with a transport of the test's | `localClient` in `engine/local.go`, and the network of `engine.Machine`, `network` in `engine/machine.go`, which a machine `NewMachine` makes does not have, so it reaches nothing until a test hands it one, with `neverAnswers`, `streamFrom` and `stopsAfter` in `engine/local_test.go`, so the stall of a model or a download is waited for in a bubble |
+| the network | an `http.Client` with a transport of the test's | `client` on the machine's link to llama-server, `engine/local.go`, and the network of `engine.Machine`, `network` in `engine/machine.go`, which a machine `NewMachine` makes does not have, so it reaches nothing until a test hands it one, with `neverAnswers`, `streamFrom` and `stopsAfter` in `engine/local_test.go`, so the stall of a model or a download is waited for in a bubble |
 | timers inside goroutines | `testing/synctest` around the test | the dictation tests in `cmd/framefairy-app/listen_test.go`, `TestOnlyAFewDecodersNobodyHoldsStandRunning` in `cmd/framefairy-app/frames_test.go`, and the tests of a health check and of a model that keeps talking in `engine/local_test.go`, which ask llama-server through `neverAnswers` and `streamFrom`, transports with no network |
+| the machine's memory, how much is free and which other llama-servers run | functions on the machine | `memory`, `free` and `servers` on `engine.Machine`, empty for what the system says, see `machineWith` in `engine/room_test.go` |
 | the disk | `afero.Fs` | `engine/files.go`, the project and the app's store |
 | the keychain | a key store on the machine | `keys` and `oldKeys` on `engine.Machine`, empty in a machine `NewMachine` makes, so it keeps no key. A test of the keys puts `memKeys` from `engine/keys_test.go` there, see `keychains` |
 | random numbers | `io.Reader` | `signer.WithRandom` |
 | the model, the recogniser | an interface with a fake | the fake recogniser and fake llama-server in `engine/project_test.go` |
 | a program we run | its path | ffmpeg and the decoder through `FRAMEFAIRY_FRAMES` |
-| asking another program to stop | a function | `interrupt` in `engine/leftover.go`, which a test wraps to hear which servers left behind were asked |
+| asking another program to stop | a function | `interrupt` on the machine's notes of its servers, `engine/leftover.go`, which a test sets on its own machine to hear which servers left behind were asked |
 | a lock that has to wait | `waits(path)`, called as the lock of a file starts to wait for another holder | `engine/fileio/lock.go` and `engine/fileio/lock_unix.go`, waited on through `waitsOn` in `engine/fileio/lock_test.go` |
 | the end of work | a callback the caller gives, a channel closed at every change, a channel closed when the work ends, or a `sync.WaitGroup` | `emit` in `newQueue`, and `until` on `queue.changed`, `cmd/framefairy-app/jobs.go`, `changed` on the updates in `cmd/framefairy-app/updates.go`, `done` of a measuring in `cmd/framefairy-app/levels.go`, `Arrived` in `updates/fetch.go`, `clearing` in `cmd/framefairy-app/main.go`, `news` on the model host in `engine/modelhost.go`, waited on by `untilHost`, `cursors` on the episode's decoder in `engine/episodeframes.go`, waited on by `untilCursors`. A stand-in program says it is up on its output, or ends once it has said what the test reads, as in `engine/leftover_test.go` and `engine/local_test.go` |
 
@@ -1507,7 +1571,7 @@ interface tests, as `frontend/src/lib/frames/captions.test.ts` does, and
 Playwright's clock in the walks, through `fakeClock`, `holdClock`,
 `runClock` and `letClockGo` in `walks/bridge.mjs`. In a bubble,
 `synctest.Wait` tells a test that every goroutine of the bubble waits, as
-the asks at once for a transcript in `cmd/framefairy-app/kept_test.go`
+the asks at once for a transcript in `engine/held_test.go`
 use it. The end-to-end tests
 are the walks, against the real Go side through the bridge, and the
 rules every walk checks after every step are in `walks/rules.mjs`.

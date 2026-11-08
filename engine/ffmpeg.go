@@ -129,10 +129,6 @@ type Engine struct {
 	// changed it wait.
 	checkpointEvery time.Duration
 	levelsReads     int
-	// system is the system whose encoders a render reaches for, see
-	// encoderOrderFor, this one unless a test says otherwise, so the order
-	// of a Mac can be run on any machine.
-	system string
 	// stuck, when set, says a render has stopped making frames, and its
 	// encoder is given up then as well as after encoderStall of the
 	// clock. A test sets it, so it waits for no stall of the clock.
@@ -396,6 +392,10 @@ const noLibassHelp = "this ffmpeg was built without libass, so it cannot burn in
 // once for as long as the ffmpeg stays as it is, see probed.go.
 func (e *Engine) SubtitleFilter(ctx context.Context) (string, error) {
 	learned := e.learnedFor()
+	// One ask at a time finds it: the workspace asks for a clip's
+	// captions twice as a video opens, and each ask ran ffmpeg for itself.
+	learned.finding.Lock()
+	defer learned.finding.Unlock()
 	learned.mu.Lock()
 	template := learned.subtitleTemplate
 	learned.mu.Unlock()
@@ -404,7 +404,7 @@ func (e *Engine) SubtitleFilter(ctx context.Context) (string, error) {
 	}
 	key, keep := keyFor("subtitle filter", e.FFmpeg, "")
 	if keep {
-		if template, ok := recall[string](key); ok {
+		if template, ok := recall[string](e.Machine, key); ok {
 			learned.mu.Lock()
 			learned.subtitleTemplate = template
 			learned.mu.Unlock()
@@ -440,7 +440,7 @@ func (e *Engine) SubtitleFilter(ctx context.Context) (string, error) {
 		320, 180, map[string]any{"radius": 0.0, "highlight": 0.0}); err != nil {
 		return "", err
 	}
-	if err := InstallFont(tmp, DefaultFont); err != nil {
+	if err := e.Fonts.Install(tmp, DefaultFont); err != nil {
 		return "", err
 	}
 	// The bundled font first, so that what is probed is what is run.
@@ -462,7 +462,7 @@ func (e *Engine) SubtitleFilter(ctx context.Context) (string, error) {
 			learned.subtitleTemplate = candidate
 			learned.mu.Unlock()
 			if keep {
-				remember(key, candidate)
+				remember(e.Machine, key, candidate)
 			}
 			e.Log.Detail("subtitle filter syntax: %s", chain)
 			return candidate, nil
@@ -497,7 +497,7 @@ func (e *Engine) Preflight(ctx context.Context) error {
 	// A tool that ran once runs again until it is replaced, so each is
 	// asked once for the process, the way the subtitle syntax is.
 	ffmpegKey, keepFFmpeg := keyFor("ffmpeg version", e.FFmpeg, "")
-	first, ran := recall[string](ffmpegKey)
+	first, ran := recall[string](e.Machine, ffmpegKey)
 	if !ran {
 		version := e.Runner.Run(ctx, "", e.FFmpeg, "-version")
 		if version.Code != 0 {
@@ -509,20 +509,20 @@ func (e *Engine) Preflight(ctx context.Context) error {
 			first = lines[0]
 		}
 		if keepFFmpeg {
-			remember(ffmpegKey, first)
+			remember(e.Machine, ffmpegKey, first)
 		}
 	}
 	e.Log.Detail("%s", first)
 
 	ffprobeKey, keepFFprobe := keyFor("ffprobe version", e.FFprobe, "")
-	if _, ran := recall[bool](ffprobeKey); !ran {
+	if _, ran := recall[bool](e.Machine, ffprobeKey); !ran {
 		if e.Runner.Run(ctx, "", e.FFprobe, "-version").Code != 0 {
 			e.Log.ClearProgress()
 			return renderErr("%s is missing, which usually means a partial ffmpeg install.",
 				e.FFprobe)
 		}
 		if keepFFprobe {
-			remember(ffprobeKey, true)
+			remember(e.Machine, ffprobeKey, true)
 		}
 	}
 	// Which encoder, before anything is spent. It used to insist on
@@ -745,13 +745,13 @@ func clockSeconds(text string) (float64, bool) {
 func (e *Engine) pictureStart(ctx context.Context, path string) float64 {
 	key, keep := keyFor("picture start", e.FFprobe, path)
 	if keep {
-		if start, ok := recall[float64](key); ok {
+		if start, ok := recall[float64](e.Machine, key); ok {
 			return start
 		}
 	}
 	start, read := e.readPictureStart(ctx, path)
 	if read && keep && ctx.Err() == nil {
-		remember(key, start)
+		remember(e.Machine, key, start)
 	}
 	return start
 }
@@ -785,7 +785,7 @@ func (e *Engine) readPictureStart(ctx context.Context, path string) (float64, bo
 func (e *Engine) Probe(ctx context.Context, path string) (SourceInfo, error) {
 	key, keep := keyFor("probe", e.FFprobe, path)
 	if keep {
-		if info, ok := recall[SourceInfo](key); ok {
+		if info, ok := recall[SourceInfo](e.Machine, key); ok {
 			return info.clone(), nil
 		}
 	}
@@ -793,7 +793,7 @@ func (e *Engine) Probe(ctx context.Context, path string) (SourceInfo, error) {
 	// A probe stopped halfway may have read no sound or no uneven frames
 	// without failing, which is not what the file holds.
 	if err == nil && keep && ctx.Err() == nil {
-		remember(key, info.clone())
+		remember(e.Machine, key, info.clone())
 	}
 	return info, err
 }
@@ -986,7 +986,26 @@ func (e *Engine) uneven(ctx context.Context, path string, info SourceInfo) bool 
 // A file with no index of its key frames is read from the key frame
 // keyBefore finds, since ffprobe lands between two there, see unindexed.
 // A file it cannot read is taken as even, the way it was taken before.
+// What ffprobe said is kept by the file's stamp, see probed.go, so a
+// clip rendered again, or a clip of a render that comes again with the
+// same piece, asks it once.
 func (e *Engine) unevenIn(ctx context.Context, path string, info SourceInfo, at, span float64) bool {
+	key, keep := keyFor(fmt.Sprintf("uneven from %g for %g", at, span), e.FFprobe, path)
+	if keep {
+		if uneven, ok := recall[bool](e.Machine, key); ok {
+			return uneven
+		}
+	}
+	uneven, read := e.readUneven(ctx, path, info, at, span)
+	if read && keep && ctx.Err() == nil {
+		remember(e.Machine, key, uneven)
+	}
+	return uneven
+}
+
+// readUneven is unevenIn asking ffprobe, and whether ffprobe read the
+// file.
+func (e *Engine) readUneven(ctx context.Context, path string, info SourceInfo, at, span float64) (uneven, read bool) {
 	frame := float64(info.FPSDen) / float64(info.FPSNum)
 	first := info.origin + info.VideoStart
 	from := num.Fixed(info.origin+at, 3)
@@ -1003,7 +1022,7 @@ func (e *Engine) unevenIn(ctx context.Context, path string, info SourceInfo, at,
 		"-read_intervals", from+"%"+num.Fixed(info.origin+at+span, 3),
 		"-show_entries", "packet=pts_time,pos,flags", "-of", "csv=p=0", path)
 	if res.Code != 0 {
-		return false
+		return false, false
 	}
 	var begins []float64
 	unstamped := 0
@@ -1032,7 +1051,7 @@ func (e *Engine) unevenIn(ctx context.Context, path string, info SourceInfo, at,
 	for i, t := range begins {
 		k := (t - first) / frame
 		if math.Abs(k-math.Round(k))*frame > frameHair {
-			return true
+			return true, true
 		}
 		if i == 0 {
 			continue
@@ -1043,11 +1062,11 @@ func (e *Engine) unevenIn(ctx context.Context, path string, info SourceInfo, at,
 		// them, #268.
 		gap := math.Round((t - begins[i-1]) / frame)
 		if gap < 1 || int(gap)-1 > unstamped {
-			return true
+			return true, true
 		}
 		unstamped -= int(gap) - 1
 	}
-	return false
+	return false, true
 }
 
 // stamped tells whether a packet of a file, by where ffprobe says it lies
@@ -1156,7 +1175,29 @@ func (s SourceInfo) keyAtOf(seg Segment) (int64, bool) {
 // and further back while there are not two key frames among them. Where
 // there is one, the file is read from its start. None is found where the
 // picture has no key frame before the moment at all.
+//
+// What ffprobe said is kept by the file's stamp, see unevenIn.
 func (e *Engine) keyBefore(ctx context.Context, path string, s SourceInfo, at int64) (int64, bool) {
+	type found struct {
+		at int64
+		ok bool
+	}
+	key, keep := keyFor("key before "+strconv.FormatInt(at, 10), e.FFprobe, path)
+	if keep {
+		if k, ok := recall[found](e.Machine, key); ok {
+			return k.at, k.ok
+		}
+	}
+	k, ok, read := e.readKeyBefore(ctx, path, s, at)
+	if read && keep && ctx.Err() == nil {
+		remember(e.Machine, key, found{k, ok})
+	}
+	return k, ok
+}
+
+// readKeyBefore is keyBefore asking ffprobe, and whether ffprobe read the
+// file.
+func (e *Engine) readKeyBefore(ctx context.Context, path string, s SourceInfo, at int64) (key int64, ok, read bool) {
 	moment := float64(at) / 1e6
 	for span := 2.0; span <= 128; span *= 2 {
 		from := max(moment-span, 0)
@@ -1169,7 +1210,7 @@ func (e *Engine) keyBefore(ctx context.Context, path string, s SourceInfo, at in
 			"-read_intervals", interval,
 			"-show_entries", "packet=dts_time,pos,flags", "-of", "csv=p=0", path)
 		if res.Code != 0 {
-			return 0, false
+			return 0, false, false
 		}
 		// The key frames decoded by the moment, in the order they are,
 		// each with the stamp of the last packet stamped at or before it,
@@ -1200,13 +1241,13 @@ func (e *Engine) keyBefore(ctx context.Context, path string, s SourceInfo, at in
 			}
 		}
 		if n := len(decoded); n >= 2 && !math.IsInf(decoded[n-2], -1) {
-			return max(int64(math.Round((decoded[n-2]-frameHair)*1e6)), 0), true
+			return max(int64(math.Round((decoded[n-2]-frameHair)*1e6)), 0), true, true
 		}
 		if from == 0 {
-			return 0, len(decoded) > 0
+			return 0, len(decoded) > 0, true
 		}
 	}
-	return 0, false
+	return 0, false, true
 }
 
 // lastMoment is where the last packet of a file's picture ends, counted
@@ -1217,11 +1258,10 @@ func (e *Engine) keyBefore(ctx context.Context, path string, s SourceInfo, at in
 // for an episode of hours, so the answer is kept for as long as the file
 // stays as it is.
 func (e *Engine) lastMoment(ctx context.Context, path string, start float64) float64 {
-	stamp := ""
-	if info, err := os.Stat(path); err == nil {
-		stamp = fmt.Sprintf("%s|%d|%d|%v", path, info.Size(), info.ModTime().UnixNano(), start)
-		if end, ok := lastMoments.Load(stamp); ok {
-			return end.(float64)
+	key, keep := keyFor("last moment from "+strconv.FormatFloat(start, 'g', -1, 64), e.FFprobe, path)
+	if keep {
+		if end, ok := recall[float64](e.Machine, key); ok {
+			return end
 		}
 	}
 	res := e.Runner.Run(ctx, "", e.FFprobe, "-v", "error", "-select_streams", "v:0",
@@ -1245,12 +1285,8 @@ func (e *Engine) lastMoment(ctx context.Context, path string, start float64) flo
 		}
 		end = max(end, pts+length-start)
 	}
-	if stamp != "" {
-		lastMoments.Store(stamp, end)
+	if keep && ctx.Err() == nil {
+		remember(e.Machine, key, end)
 	}
 	return end
 }
-
-// lastMoments is what lastMoment found, by the file's path, size, time
-// and start.
-var lastMoments sync.Map

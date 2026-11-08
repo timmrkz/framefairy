@@ -163,13 +163,11 @@ func TestBundleOf(t *testing.T) {
 // Quitting with a build ready starts the step, once, for the app it runs
 // from. With nothing ready, or after Relaunch, it starts nothing.
 func TestQuittingWithABuildReadyInstallsIt(t *testing.T) {
-	was := runningApp
-	runningApp = func() string { return "/Applications/Frame Fairy.app" }
-	t.Cleanup(func() { runningApp = was })
-
+	t.Parallel()
 	cs := newChannelServer(t)
 	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"})
 	c, _ := newTestUpdating(t, cs, false)
+	c.app = inApplications
 	cleanStaged(t, c)
 	var started [][2]string
 	c.install = func(target, from string) error {

@@ -8,11 +8,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -234,8 +236,8 @@ func contextFor(promptChars, maxTokens int) int {
 // and a search waiting on it waits for good, with every video's
 // transcription held up behind it, see lanes.go in the app. The client has
 // no timeout of its own, because a whole answer takes minutes. Plan row
-// 2.224. A variable so a test can make it short.
-var localStall = 2 * time.Minute
+// 2.224.
+const localStall = 2 * time.Minute
 
 // promptBatch is how many tokens of the prompt llama-server reads before
 // it says how far it has come, its logical batch, `-b`. Its own default is
@@ -282,10 +284,29 @@ type readerFunc func([]byte) (int, error)
 
 func (f readerFunc) Read(p []byte) (int, error) { return f(p) }
 
-var localClient = &http.Client{
-	CheckRedirect: func(*http.Request, []*http.Request) error {
+// llamaLink is how a program reaches the llama-servers it starts, kept
+// on its machine, see Machine.llama.
+type llamaLink struct {
+	// keys holds the key of each server, by its address, see authorize.
+	keys sync.Map
+	// client carries every request to a llama-server, one that follows
+	// no redirect when it is empty. A test hands in one with a transport
+	// of its own.
+	client *http.Client
+	// lookAgain is the wait before the next look at a loading server that
+	// has said nothing, time.After when it is empty, so a test can take
+	// it away and prove the server's own word is enough.
+	lookAgain func(time.Duration) <-chan time.Time
+}
+
+// localClient is the client of the llama-servers on m.
+func (m *Machine) localClient() *http.Client {
+	if m.llama.client != nil {
+		return m.llama.client
+	}
+	return &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
 		return http.ErrUseLastResponse
-	},
+	}}
 }
 
 // A llama-server the app starts answers only to the app. Left to itself
@@ -300,8 +321,8 @@ var localClient = &http.Client{
 // program on the machine could read it, and the list of what it is
 // working on is switched off. The key lives as long as the server, by
 // its address, and only goes with a request to that address. An address
-// given by hand, a server somebody else started, gets no key.
-var serverKeys sync.Map
+// given by hand, a server somebody else started, gets no key. The keys
+// are kept in llamaLink.keys.
 
 func newServerKey() (string, error) {
 	b := make([]byte, 32)
@@ -312,28 +333,27 @@ func newServerKey() (string, error) {
 }
 
 // authorize puts the key of the server at url on a request to it.
-func authorize(request *http.Request, url string) {
-	if key, ok := serverKeys.Load(url); ok {
+func (m *Machine) authorize(request *http.Request, url string) {
+	if key, ok := m.llama.keys.Load(url); ok {
 		request.Header.Set("Authorization", "Bearer "+key.(string))
 	}
 }
 
 // stopGrace is how long llama-server has to go by itself once it is asked
 // to. Idle, it goes well inside it.
-var stopGrace = 500 * time.Millisecond
+const stopGrace = 500 * time.Millisecond
 
 // startServer runs llama-server and waits until the model is loaded.
-func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
-	logDir string) (string, func(), error) {
+func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int) (string, func(), error) {
 	if _, err := os.Stat(m.Model); err != nil {
 		return "", nil, renderErr("the language model %s cannot be read: %s", m.Model, err)
 	}
-	if err := CheckModelFile(m.Model, ""); err != nil {
+	if err := e.CheckModelFile(m.Model, ""); err != nil {
 		return "", nil, err
 	}
 	// A model that does not fit in the memory free now is not started:
 	// macOS would kill it while it loads, see freemem.go.
-	if err := roomForModel(m.Model, contextSize); err != nil {
+	if err := e.roomForModel(m.Model, contextSize); err != nil {
 		return "", nil, err
 	}
 	server, err := e.serverToRun(m.Server)
@@ -360,7 +380,7 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 		// a token.
 		"-lv", "4",
 		// Nothing reads what the server is working on, and it is the
-		// transcript, see serverKeys.
+		// transcript, see llamaLink.keys.
 		"--no-slots",
 		// How far it has read the prompt is said once a batch, see
 		// promptBatch.
@@ -394,36 +414,26 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 	cmd := exec.Command(server, args...)
 	cmd.Env = append(os.Environ(), "LLAMA_API_KEY="+key)
 	// The server says when it is up, see readyMarks, and the wait for it
-	// ends on that line rather than on the next look of a clock.
+	// ends on that line rather than on the next look of a clock. What it
+	// says goes into the program's log a line at a time, see serverOutput.
 	ready := make(chan struct{}, 1)
-	heard := &hearReady{out: io.Discard, ready: ready}
-	cmd.Stdout, cmd.Stderr = heard, heard
-	var logFile *os.File
-	if logDir != "" {
-		// The model can be loaded ahead of a search, before anything else
-		// of the episode has made its logs folder. Without the folder the
-		// log was lost, and with it the only record of what the model
-		// took from memory. The log is llama-server's own output, so it
-		// is on the disk, see files.go.
-		if err = os.MkdirAll(logDir, 0o755); err == nil {
-			logFile, err = os.Create(filepath.Join(logDir, "llm-server.log"))
-		}
-		if err != nil {
-			e.Log.Warn("llama-server's output is not kept: %s", err)
-		} else {
-			heard.out = logFile
-		}
+	out := &serverOutput{ready: ready, said: func(pid int, level slog.Level, line string) {
+		e.Said.say("llama-server", "", pid, level, line)
+	}}
+	// The description of a model file the app does not know is kept, since
+	// it is all that says what the file is.
+	if !e.knownModelFile(m.Model) {
+		out.settle(false)
 	}
+	cmd.Stdout, cmd.Stderr = out, out
 	if err := cmd.Start(); err != nil {
-		if logFile != nil {
-			logFile.Close()
-		}
 		return "", nil, renderErr("cannot start %s: %s", server, err)
 	}
+	out.begin(cmd.Process.Pid)
 	// Written down while it runs, so a server an app that crashed left
 	// behind is found and stopped the next time the app starts.
-	noteServer(serverNote{PID: cmd.Process.Pid, Port: port, Model: m.Model})
-	serverKeys.Store(url, key)
+	e.noteServer(serverNote{PID: cmd.Process.Pid, Port: port, Model: m.Model})
+	e.llama.keys.Store(url, key)
 	// exited is closed once the server has gone, and exitErr says how. Only
 	// the goroutine that waits for it writes them, so stopping it never
 	// reads the process's state while that goroutine writes it.
@@ -433,7 +443,7 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 		exitErr = cmd.Wait()
 		close(exited)
 	}()
-	var closeLog sync.Once
+	var forget sync.Once
 	stop := func() {
 		select {
 		case <-exited:
@@ -453,12 +463,9 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 				<-exited
 			}
 		}
-		closeLog.Do(func() {
-			forgetServer(cmd.Process.Pid)
-			serverKeys.Delete(url)
-			if logFile != nil {
-				logFile.Close()
-			}
+		forget.Do(func() {
+			e.forgetServer(cmd.Process.Pid)
+			e.llama.keys.Delete(url)
 		})
 	}
 
@@ -475,21 +482,23 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 			return "", nil, ctx.Err()
 		case <-exited:
 			stop()
-			return "", nil, stoppedLoading(server, exitErr, logDir)
+			// What it said before it stopped is all said by now: the wait
+			// for it ends after its output is read.
+			out.settle(true)
+			return "", nil, stoppedLoading(server, exitErr, out.lastLines())
 		case <-ready:
-		case <-lookAgain(500 * time.Millisecond):
+		case <-e.lookAgain(500 * time.Millisecond):
 		}
 		// How far the loading is, is the search's to say: it knows how long
 		// it took before.
-		if healthy(ctx, url) {
+		if e.healthy(ctx, url) {
 			took := time.Since(started).Seconds()
 			// What loading costs is worth knowing in its parts, to know
 			// which of them to make shorter.
+			out.settle(false)
 			var parts []string
-			if logFile != nil {
-				for _, p := range loadPhases(logFile.Name(), took) {
-					parts = append(parts, num.Fixed(p.seconds, 1)+"s "+p.name)
-				}
+			for _, p := range loadPhases(out.loadLines(), took) {
+				parts = append(parts, num.Fixed(p.seconds, 1)+"s "+p.name)
 			}
 			if len(parts) > 0 {
 				e.Log.Info("model loaded in %ss: %s", num.Fixed(took, 1), strings.Join(parts, ", "))
@@ -500,74 +509,184 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 		}
 		if time.Since(started) > 10*time.Minute {
 			stop()
-			return "", nil, renderErr("the language model did not finish loading within 10 minutes")
+			out.settle(true)
+			return "", nil, renderErr("%s", runes.Format("the language model did not finish loading within 10 minutes.%s",
+				saidLast(out.lastLines())))
 		}
 	}
 }
 
 // lookAgain is the wait before the next look at a loading server that has
-// said nothing, a variable so a test can take it away and prove the
-// server's own word is enough.
-var lookAgain = time.After
+// said nothing, see llamaLink.lookAgain.
+func (m *Machine) lookAgain(d time.Duration) <-chan time.Time {
+	if m.llama.lookAgain != nil {
+		return m.llama.lookAgain(d)
+	}
+	return time.After(d)
+}
 
 // readyMarks are the lines llama-server writes once it may be ready: b11430
 // says "model loaded" once the model is in memory and "server is listening"
 // once it takes requests. Either is followed by a look at its health, which
 // decides. An earlier line about its HTTP server listening while it still
 // loads is looked at too, and found not ready yet.
-var readyMarks = [][]byte{[]byte("model loaded"), []byte("server is listening")}
+var readyMarks = []string{"model loaded", "server is listening"}
 
-// hearReady passes llama-server's output on to out and says on ready
-// whenever a line of it holds one of readyMarks. It keeps the end of what
-// came before, so a mark split over two writes is heard too.
-type hearReady struct {
-	out   io.Writer
+// serverOutput hears llama-server's output a line at a time. It says on
+// ready whenever a line holds one of readyMarks, hands every line to the
+// log, see llamaLine, and keeps the lines that begin a part of the load,
+// see loadPhases, and the last few, which an error while loading quotes.
+// The description of the model file is held back while the model loads,
+// and said only when the load fails, see describesTheModel. exec calls
+// Write from one goroutine, and the rest is read from another.
+type serverOutput struct {
+	said  func(pid int, level slog.Level, line string)
 	ready chan<- struct{}
-	tail  []byte
+
+	mu sync.Mutex
+	// pid is the server's process, known once it has begun, and until
+	// then what it writes waits in part, so its start is said first.
+	pid int
+	// part is what is not said yet: a line not ended, or everything
+	// written before the start is known.
+	part []byte
+	// loading are the lines that hold one of loadMarks.
+	loading []string
+	// last are the last lines it said, and errors the last of its errors,
+	// which say best why a load failed.
+	last, errors tail
+	// held is the description of the model while it loads, and settled
+	// that the load is over and nothing more is held.
+	held    []string
+	settled bool
 }
 
-func (h *hearReady) Write(p []byte) (int, error) {
-	// A log that cannot be written is no reason to stop hearing the
-	// server, nor to stop the server, which would be sent a broken pipe.
-	_, _ = h.out.Write(p)
-	seen := append(h.tail, p...)
-	// What is kept is the end a mark split over two writes may begin in,
-	// and nothing of a mark already heard, so no mark is heard twice.
-	from := len(seen)
-	for _, mark := range readyMarks {
-		from = min(from, len(seen)-len(mark)+1)
+func (o *serverOutput) Write(p []byte) (int, error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.part = append(o.part, p...)
+	if o.pid != 0 {
+		o.lines()
 	}
-	from = max(from, 0)
+	return len(p), nil
+}
+
+// begin says the server started as process pid, and what it said already.
+func (o *serverOutput) begin(pid int) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.pid = pid
+	o.said(pid, slog.LevelDebug, fmt.Sprintf("started, process %d", pid))
+	o.lines()
+}
+
+// lines takes every line ended in part. o.mu is held.
+func (o *serverOutput) lines() {
+	from := 0
+	for {
+		end := bytes.IndexByte(o.part[from:], '\n')
+		if end < 0 {
+			break
+		}
+		o.heard(string(bytes.TrimRight(o.part[from:from+end], "\r")))
+		from += end + 1
+	}
+	o.part = append(o.part[:0], o.part[from:]...)
+}
+
+// heard takes one line of the server's output. o.mu is held.
+func (o *serverOutput) heard(line string) {
 	for _, mark := range readyMarks {
-		if at := bytes.LastIndex(seen, mark); at >= 0 {
-			from = max(from, at+len(mark))
+		if strings.Contains(line, mark) {
 			select {
-			case h.ready <- struct{}{}:
+			case o.ready <- struct{}{}:
 			default:
 			}
 		}
 	}
-	h.tail = append(h.tail[:0], seen[from:]...)
-	return len(p), nil
+	for _, mark := range loadMarks {
+		if strings.Contains(line, mark.mark) {
+			o.loading = append(o.loading, line)
+		}
+	}
+	level, text := llamaLine(line)
+	if text == "" {
+		return
+	}
+	o.last.add(text)
+	if level >= slog.LevelError {
+		o.errors.add(text)
+	}
+	if !o.settled && level < slog.LevelWarn && describesTheModel(text) {
+		o.held = append(o.held, text)
+		return
+	}
+	o.said(o.pid, level, text)
+}
+
+// settle ends the load: the description of the model held back is said
+// when say is set, after a load that failed, and let go of otherwise, and
+// what comes after it is said as it comes. A line the server did not end
+// before it stopped is said too.
+func (o *serverOutput) settle(say bool) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if say && len(o.part) > 0 {
+		o.heard(string(o.part))
+		o.part = o.part[:0]
+	}
+	if say {
+		for _, line := range o.held {
+			o.said(o.pid, slog.LevelDebug, line)
+		}
+	}
+	o.held, o.settled = nil, true
+}
+
+// lastLines are the last lines the server said, for an error.
+// lastLines are the last lines the server said, for an error: its last
+// errors when it said any, and its last lines otherwise, as many of the
+// newest as fit in 400 letters, since the newest say why it stopped.
+func (o *serverOutput) lastLines() string {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	lines := o.errors.lines
+	if len(lines) == 0 {
+		lines = o.last.lines
+	}
+	const most = 400
+	joined := strings.Join(lines, " ")
+	quote := []rune(runes.Scrub(joined, len(joined)))
+	if len(quote) > most {
+		quote = append([]rune("…"), quote[len(quote)-most:]...)
+	}
+	return string(quote)
+}
+
+// loadLines are the lines that began a part of the load, see loadPhases.
+func (o *serverOutput) loadLines() []string {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return slices.Clone(o.loading)
 }
 
 // healthWait is how long one look at a loading server may take. A server
 // that took the connection and never answers would otherwise hold the
 // load past Cancel and past quitting, since the client has no timeout of
 // its own: an answer from the model takes minutes.
-var healthWait = 2 * time.Second
+const healthWait = 2 * time.Second
 
 // healthy says whether the server at url says it is ready, asking for no
 // longer than healthWait and no longer than ctx lasts.
-func healthy(ctx context.Context, url string) bool {
+func (m *Machine) healthy(ctx context.Context, url string) bool {
 	ctx, cancel := context.WithTimeout(ctx, healthWait)
 	defer cancel()
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url+"/health", nil)
 	if err != nil {
 		return false
 	}
-	authorize(request, url)
-	response, err := localClient.Do(request)
+	m.authorize(request, url)
+	response, err := m.localClient().Do(request)
 	if err != nil {
 		return false
 	}
@@ -590,20 +709,16 @@ var loadMarks = []struct{ mark, name string }{
 	{"model loaded", "getting ready to answer"},
 }
 
-// loadPhases reads from llama-server's log how long each part of loading
-// took, the last ending when took seconds had gone by. Each line starts
+// loadPhases reads from the lines llama-server wrote how long each part
+// of loading took, the last ending when took seconds had gone by. Each line starts
 // with the time since it started, minutes, seconds, milliseconds and
 // microseconds, as in 0.19.335.706. A part whose line is not there is
 // left out, and its time goes to the part before it.
-func loadPhases(logPath string, took float64) []loadPhase {
-	data, err := os.ReadFile(logPath)
-	if err != nil {
-		return nil
-	}
+func loadPhases(lines []string, took float64) []loadPhase {
 	phases := []loadPhase{{"starting", 0}}
 	began := 0.0
 	next := 0
-	for _, line := range strings.Split(string(data), "\n") {
+	for _, line := range lines {
 		for i := next; i < len(loadMarks); i++ {
 			if !strings.Contains(line, loadMarks[i].mark) {
 				continue
@@ -718,11 +833,11 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 				chars += runes.Len(message.Content)
 			}
 		}
-		size := localContextFor(m.Model, chars, maxTokens)
-		if !modelReady(m.Model, size) {
+		size := e.localContextFor(m.Model, chars, maxTokens)
+		if !e.host.modelReady(m.Model, size) {
 			listen.part(partLoading)
 		}
-		held, release, err := e.holdModel(ctx, m, size, logDir)
+		held, release, err := e.holdModel(ctx, m, size)
 		if err != nil {
 			return nil, err
 		}
@@ -765,7 +880,7 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 		return nil, err
 	}
 	request.Header.Set("content-type", "application/json")
-	authorize(request, url)
+	e.authorize(request, url)
 	gaveUp := func() error {
 		return renderErr("the local model stopped answering: nothing came from it for %s seconds, "+
 			"so it was stopped. Press Continue to start it afresh.", num.Fixed(localStall.Seconds(), 0))
@@ -779,7 +894,7 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 	defer watch.Stop()
 
 	started := time.Now()
-	response, err := localClient.Do(request)
+	response, err := e.localClient().Do(request)
 	if err != nil {
 		if stalled.Load() {
 			return nil, gaveUp()
@@ -907,13 +1022,22 @@ func localAsk(m LocalModel, r Recipe, messages []chatMessage, units, count,
 	return ask, maxTokens
 }
 
+// saidLast is what an error quotes of what llama-server said last, last,
+// see serverOutput.lastLines, and nothing when it said nothing.
+func saidLast(last string) string {
+	if last == "" {
+		return ""
+	}
+	return runes.Format(" It said last: %s", last)
+}
+
 // stoppedLoading is llama-server, server, that ended with exitErr while it
-// loaded the model, its output in logDir. Killed while loading is what
-// macOS does when memory runs out, most often because a model is already
-// loaded by another llama-server.
-func stoppedLoading(server string, exitErr error, logDir string) error {
+// loaded the model, the last lines it said in last. Killed while loading
+// is what macOS does when memory runs out, most often because a model is
+// already loaded by another llama-server.
+func stoppedLoading(server string, exitErr error, last string) error {
 	stopped := runes.Format("%s stopped while loading the model (%v).", server, exitErr)
-	output := runes.Format(" Its output is in %s", filepath.Join(logDir, "llm-server.log"))
+	output := saidLast(last)
 	if !strings.Contains(fmt.Sprint(exitErr), "killed") {
 		return renderErr("%s", stopped+output)
 	}

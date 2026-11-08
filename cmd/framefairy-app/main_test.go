@@ -110,7 +110,7 @@ func TestNothingServesTheBytesOfAFile(t *testing.T) {
 	if _, err := st.AddEpisodes([]string{source}); err != nil {
 		t.Fatal(err)
 	}
-	handler := mediaMiddleware(st)(http.NotFoundHandler())
+	handler := mediaMiddleware(&FrameFairy{store: st})(http.NotFoundHandler())
 
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/media/?path="+url.QueryEscape(source), nil))
@@ -150,7 +150,7 @@ func TestAnEpisodeWithoutATranscriptReadsEmpty(t *testing.T) {
 	if err != nil || sentences == nil || len(sentences) != 0 {
 		t.Errorf("sentences got %v, %v", sentences, err)
 	}
-	if room := svc.roomAndLines(svc.project(source)); len(room.Lines) != 0 || room.Chars <= 0 || room.Rate != engine.SpokenChars {
+	if room := svc.store.machine.Episode(source).Room(svc.store.Settings().options()); len(room.Lines) != 0 || room.Chars <= 0 || room.Rate != engine.SpokenChars {
 		t.Errorf("room %+v", room)
 	}
 }

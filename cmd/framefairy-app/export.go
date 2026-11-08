@@ -113,16 +113,18 @@ func (s *FrameFairy) ExportTranscript(path, format string) (saved string, err er
 			Int("words", words).Int("bytes", bytes).Int64("ms", time.Since(began).Milliseconds()).Err(err).
 			Msg("the transcript was exported")
 	}()
-	if _, done := engine.Coverage(s.store.files, path, s.store.Settings().ASRModel); !done {
+	// Whole or not is asked of the same read as the words exported.
+	h, err := s.heardIn(path)
+	if errors.Is(err, engine.ErrNoTranscript) || (err == nil && !h.Done) {
 		return "", errNotWhole
 	}
-	t, err := s.words(path)
 	if err != nil {
 		return "", err
 	}
+	t := h.Transcript
 	// The plans oldest first, so of two clips that correct the same word
 	// differently, the one in the plan changed last is read.
-	plans := plansOf(s.store.files, path)
+	plans := s.plansOf(path)
 	slices.Reverse(plans)
 	var clips []engine.Clip
 	for _, summary := range plans {

@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
-	"github.com/spf13/afero"
 
 	"framefairy/engine"
 )
@@ -40,13 +39,13 @@ func (s *FrameFairy) Clips(ctx context.Context, path string) ([]ClipEntry, error
 	// file is gone, and the list stays as it was, so nothing is said twice
 	// and nothing seems lost. Its crops are fitted to the picture it had,
 	// or left as the plan keeps them when the app never saw it.
-	info := sources.lastOf(path)
+	info := s.probes.lastOf(path)
 	if _, err := s.store.files.Stat(path); err == nil {
 		if info, err = s.probe(ctx, path); err != nil {
 			return nil, err
 		}
 	}
-	return s.clipsOf(plansOf(s.store.files, path), info), nil
+	return s.clipsOf(s.plansOf(path), info), nil
 }
 
 // clipsOf is the clips of these plans, in time order, their crops fitted
@@ -62,12 +61,13 @@ func (s *FrameFairy) clipsOf(plans []engine.PlanSummary, info engine.SourceInfo)
 	return out
 }
 
-// plansOf lists the plans of an episode, each read once. It is what the
-// clip list, the coverage and the edits over every plan need, and all
-// they need: they used to ask engine.Status, which also parses the whole
+// plansOf lists the plans of an episode, as its engine Episode holds
+// them, each read again only when its file changed. It is what the clip
+// list, the coverage and the edits over every plan need, and all they
+// need: they used to ask engine.Status, which also parses the whole
 // transcript, 71 ms on an episode of four hours, for every click.
-func plansOf(fsys afero.Fs, path string) []engine.PlanSummary {
-	return engine.PlanSummaries(fsys, engine.LogsDir(path))
+func (s *FrameFairy) plansOf(path string) []engine.PlanSummary {
+	return s.store.machine.Episode(path).Plans()
 }
 
 // cropWidth is how wide the crop of a short is in the episode's pixels,
@@ -132,7 +132,7 @@ func (s *FrameFairy) Coverage(ctx context.Context, path string) (CoverageView, e
 	if err != nil {
 		return CoverageView{}, err
 	}
-	return coverageOf(plansOf(s.store.files, path), info.Duration), nil
+	return coverageOf(s.plansOf(path), info.Duration), nil
 }
 
 // coverageOf is how often each part of an episode this long was searched
@@ -156,8 +156,12 @@ func (s *FrameFairy) Captions(path, planPath, clipID string) (*engine.CaptionsVi
 	if err != nil {
 		return nil, err
 	}
-	view, err := engine.ClipCaptionsView(s.store.files, planPath, clipID, t, s.captionLook(path, planPath))
-	captionTracks.keep(path, view)
+	summary, err := s.heldPlan(path, planPath)
+	if err != nil {
+		return nil, err
+	}
+	view, err := engine.ClipCaptionsView(summary, clipID, t, s.lookOf(path, summary))
+	s.previews.tracks.keep(path, view)
 	return view, err
 }
 
@@ -168,7 +172,11 @@ func (s *FrameFairy) ShareOfClip(path, planPath, clipID string, share float64) (
 	if !s.store.PlanOf(path, planPath) {
 		return 0, errNotInLibrary
 	}
-	return engine.ClipShareTime(s.store.files, planPath, clipID, share)
+	summary, err := s.heldPlan(path, planPath)
+	if err != nil {
+		return 0, err
+	}
+	return engine.ClipShareTime(summary, clipID, share)
 }
 
 // captionLook is how the captions of the clips of planPath of the episode
@@ -177,27 +185,37 @@ func (s *FrameFairy) ShareOfClip(path, planPath, clipID string, share float64) (
 // engine.ClipDrawing. The video preview once took the style apart from
 // the render and the clip off the frames, and lit some words a frame from
 // where the short lights them.
+//
+// The plan is read through the video's Episode, which reads it again only
+// when its file changed, since a drag asks for the look on every step.
 func (s *FrameFairy) captionLook(path, planPath string) *engine.Look {
-	plan, _, _ := engine.LoadClips(s.store.files, planPath)
+	summary, _ := s.heldPlan(path, planPath)
+	return s.lookOf(path, summary)
+}
+
+// heldPlan is the plan at planPath of the video at path, as the video's
+// Episode holds it, read again only when its file changed. What it gives
+// is shared and only read.
+func (s *FrameFairy) heldPlan(path, planPath string) (engine.PlanSummary, error) {
+	return s.store.machine.Episode(path).Plan(planPath)
+}
+
+// lookOf is captionLook of a plan already in hand.
+func (s *FrameFairy) lookOf(path string, summary engine.PlanSummary) *engine.Look {
+	plan := summary.Plan()
 	style, err := s.store.Settings().options().CaptionLook(plan)
 	if err != nil {
 		theLog.line(zerolog.WarnLevel, "captions").Err(err).Msg("the settings' caption look is not one the render takes")
 		style = plan.CaptionStyle()
 	}
-	return &engine.Look{Style: style, Source: unprobed.source(path)}
+	return &engine.Look{Style: style, Source: s.unprobed.source(path, s.probe), Fonts: &s.store.machine.Fonts}
 }
 
-// probeVideo reads what the video at path is, its frames among it.
-var probeVideo = func(ctx context.Context, path string) (engine.SourceInfo, error) {
-	return sources.probe(ctx, path)
-}
-
-// unprobed keeps the videos whose frames could not be read, a video on a
-// drive that is not plugged in. A drag on the clip timeline asks for the
-// captions' look on every step, and such a video was asked of ffprobe and
-// warned about on every one of them. It is asked again after a while.
-var unprobed = &failedProbes{since: map[string]time.Time{}}
-
+// failedProbes keeps the videos whose frames could not be read, a video
+// on a drive that is not plugged in. A drag on the clip timeline asks for
+// the captions' look on every step, and such a video was asked of ffprobe
+// and warned about on every one of them. It is asked again after a while.
+// FrameFairy keeps it. Its zero value is ready.
 type failedProbes struct {
 	mu    sync.Mutex
 	since map[string]time.Time
@@ -207,9 +225,10 @@ type failedProbes struct {
 // before it is asked again.
 const probeAgain = 5 * time.Second
 
-// source is what the video at path is, or nothing while it cannot be
-// read. The first failure of a stretch is said, with the reason.
-func (f *failedProbes) source(path string) engine.SourceInfo {
+// source is what probe says the video at path is, or nothing while it
+// cannot be read. The first failure of a stretch is said, with the
+// reason.
+func (f *failedProbes) source(path string, probe func(context.Context, string) (engine.SourceInfo, error)) engine.SourceInfo {
 	f.mu.Lock()
 	failed, known := f.since[path]
 	f.mu.Unlock()
@@ -218,13 +237,16 @@ func (f *failedProbes) source(path string) engine.SourceInfo {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	source, err := probeVideo(ctx, path)
+	source, err := probe(ctx, path)
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if err != nil {
 		if !known {
 			theLog.line(zerolog.WarnLevel, "captions").Str("video", filepath.Base(path)).Err(err).
 				Msg("the video's frames are not known, so its captions are timed on the plan's clock")
+		}
+		if f.since == nil {
+			f.since = map[string]time.Time{}
 		}
 		f.since[path] = time.Now()
 		return engine.SourceInfo{}
@@ -266,8 +288,11 @@ func (s *FrameFairy) ArrivingCaptions(jobID string, n int) (*engine.CaptionsView
 				if err != nil {
 					return nil, err
 				}
-				view := engine.ArrivingCaptionsView(s.store.files, plan, u, t, s.captionLook(j.Episode, plan))
-				captionTracks.keep(j.Episode, view)
+				// The plan the clip goes into may not be written yet, and
+				// its captions are then in the plan's own style.
+				summary, _ := s.heldPlan(j.Episode, plan)
+				view := engine.ArrivingCaptionsView(summary, u, t, s.lookOf(j.Episode, summary))
+				s.previews.tracks.keep(j.Episode, view)
 				return view, nil
 			}
 		}
@@ -280,9 +305,14 @@ func (s *FrameFairy) ArrivingCaptions(jobID string, n int) (*engine.CaptionsView
 // with the program, then the ones installed on this machine.
 func (s *FrameFairy) Fonts() []engine.CaptionFont {
 	// Read again, so a font installed while the app runs is in the list.
-	engine.RefreshFonts()
-	return engine.CaptionFonts()
+	s.store.machine.Fonts.Refresh()
+	return s.store.machine.Fonts.Caption()
 }
+
+// CaptionStart is how the captions look before anybody changes them, and
+// the heights they may sit at, which the captions column offers and a
+// drag of the captions lands on.
+func (s *FrameFairy) CaptionStart() engine.CaptionStart { return engine.StartingCaptions() }
 
 // clipEntry is one clip as it is now, read from its own plan alone. An
 // edit answers with it, and it used to be found in the whole clip list,
@@ -310,7 +340,7 @@ func (s *FrameFairy) clipEntry(ctx context.Context, path, plan, clipID string) (
 	if err != nil {
 		return ClipEntry{}, err
 	}
-	view, err := engine.ReadPlan(s.store.files, plan)
+	view, err := s.store.machine.Episode(path).ReadPlan(plan)
 	if err != nil {
 		return ClipEntry{}, err
 	}

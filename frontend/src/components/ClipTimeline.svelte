@@ -59,7 +59,7 @@
   import { asleep, keysElsewhere } from "../lib/keys";
   import { said } from "../lib/said";
   import Info from "./Info.svelte";
-  import { PIECES_MEET, rotationAt } from "../lib/rotate";
+  import { rotationAt } from "../lib/rotate";
 
   let {
     path,
@@ -202,7 +202,12 @@
     // The clip as a drag of an edge or a cut has it, its pieces and the
     // captions the engine made for them, or null when no drag is shaping
     // it. The video preview shows the same clip as the timeline on the way.
-    onshape?: (shape: { cues: CaptionCue[]; pieces: { start: number; end: number }[]; track?: string } | null) => void;
+    // Playhead is where the playhead goes with the edge dragged, which it
+    // reaches a frame after the clip is handed over, see seekSoon, and
+    // nothing while it stays where it is.
+    onshape?: (
+      shape: { cues: CaptionCue[]; pieces: { start: number; end: number }[]; track?: string; playhead?: number } | null,
+    ) => void;
     // The clip's thumbnails, the moments of the episode the render takes a
     // picture of the short at. Each is a mark along the foot of the track.
     thumbnails?: number[];
@@ -430,10 +435,11 @@
   let hand = $state<Gesture | null>(null);
   let saving = $state(false);
   let shaped = $state<null | {
-    pieces: { start: number; end: number }[];
+    pieces: { start: number; end: number; part: number }[];
     cues: CaptionCue[];
     track?: string;
     held: CaptionCue[];
+    playhead?: number;
   }>(null);
   let nextGesture: Gesture | null = null;
   let asking = false;
@@ -501,14 +507,21 @@
     asking = true;
     try {
       const answer = await api.shape(path, asked.plan, asked.id, g);
-      if (mine === shapeFor && clip?.key === asked.key && answer) {
-        shaped = { pieces: answer.pieces, cues: answer.captions?.captions ?? [], track: answer.captions?.track, held };
-      }
       // The playhead goes with the edge being dragged, so it is on the
       // clip, even a hair outside the pieces drawn so far. Not while the
       // episode plays: only the space bar and a click on the clip
       // timeline change a play, and an edge is neither, see edgesWhilePlaying.
-      if (following === owner && clip?.key === asked.key && answer && answer.playhead >= 0 && !playing) {
+      const follows = following === owner && clip?.key === asked.key && !!answer && answer.playhead >= 0 && !playing;
+      if (mine === shapeFor && clip?.key === asked.key && answer) {
+        shaped = {
+          pieces: answer.pieces,
+          cues: answer.captions?.captions ?? [],
+          track: answer.captions?.track,
+          held,
+          playhead: follows ? answer.playhead : undefined,
+        };
+      }
+      if (follows && answer) {
         leftAt = answer.playhead;
         seekSoon(answer.playhead, "clip");
       }
@@ -615,7 +628,7 @@
   // wash parts under the hand and the count under the timeline follows the
   // drag. What is happening is shown while it happens.
   const drawnPieces = $derived(
-    shapedShown && shaped ? shaped.pieces : segments.map((s) => ({ start: s.start, end: s.end })),
+    shapedShown && shaped ? shaped.pieces : segments.map((s) => ({ start: s.start, end: s.end, part: s.part })),
   );
   const start = $derived(drawnPieces.length ? drawnPieces[0].start : 0);
   const end = $derived(drawnPieces.length ? drawnPieces[drawnPieces.length - 1].end : 0);
@@ -1453,7 +1466,11 @@
   // The clip as a gesture shapes it goes to the video preview too, so it
   // shows the same clip as the timeline while the hand moves.
   $effect(() => {
-    onshape?.(shapedShown && shaped ? { cues: shaped.cues, pieces: shaped.pieces, track: shaped.track } : null);
+    onshape?.(
+      shapedShown && shaped
+        ? { cues: shaped.cues, pieces: shaped.pieces, track: shaped.track, playhead: shaped.playhead }
+        : null,
+    );
   });
   const shownCues = $derived(shapedShown && shaped ? shaped.cues : captions);
   // The captions are put in the episode by the pieces they were made for.
@@ -1742,17 +1759,16 @@
   const markChange = (kind: MarkKind) => (kind === "thumbnail" ? onthumbnail : oncropmark);
 
   // The stretch each piece the clip draws is rotated in, for the rotate
-  // icon in the middle of its wash: the pieces that play
-  // straight on from each other turned alike, as partOf in lib/rotate.ts reads a part, from the first
-  // one's start to the last one's end, or null for a piece as filmed.
-  // Issue #348.
+  // icon in the middle of its wash: the pieces of one part, as the Go side
+  // says each piece's part, turned alike, from the first one's start to the
+  // last one's end, or null for a piece as filmed. Issue #348.
   const turnedRuns = $derived.by(() => {
     const turns = drawnPieces.map((p) => rotationAt(clip?.rotations, p.start));
     return drawnPieces.map((p, i) => {
       if (!turns[i]) return null;
       let first = i;
       let last = i;
-      const meets = (a: number, b: number) => drawnPieces[b].start - drawnPieces[a].end <= PIECES_MEET && turns[a] === turns[b];
+      const meets = (a: number, b: number) => drawnPieces[b].part === drawnPieces[a].part && turns[a] === turns[b];
       while (first > 0 && meets(first - 1, first)) first--;
       while (last + 1 < drawnPieces.length && meets(last, last + 1)) last++;
       return { from: drawnPieces[first].start, to: drawnPieces[last].end };
@@ -1919,6 +1935,14 @@
     const target = event.currentTarget as HTMLElement;
     target.setPointerCapture(event.pointerId);
     gripping = true;
+    // A paused video preview is held under the hand while an edge, a cut
+    // or a caption is dragged, the way it is while the playhead is: each
+    // place shows its frame alone, and the play is cued where the hand
+    // lets go. Cued at every place, it opened and decoded the sound there
+    // for every move of the drag, a third of what a drag cost, and nobody
+    // heard it. A play goes on under the hand as it did.
+    const holds = !playing;
+    if (holds) onhold?.(true);
     const startX = event.clientX;
     const pressed = timeAt(startX);
     let moved = false;
@@ -1931,6 +1955,7 @@
       target.removeEventListener("pointerup", up);
       target.removeEventListener("pointercancel", up);
       gripping = false;
+      if (holds) onhold?.(false);
       void grip.release?.(moved);
     };
     target.addEventListener("pointermove", move);

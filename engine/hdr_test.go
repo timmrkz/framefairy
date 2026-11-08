@@ -25,14 +25,32 @@ func TestAnHDREpisodeMakesAnHDRShort(t *testing.T) {
 	if err := e.Preflight(ctx); err != nil {
 		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}
+	// A test's machine has ffmpeg's own encoders, see Media: H.264 where
+	// its ffmpeg has libx264, MPEG-4 part 2 otherwise, and HEVC in 10 bits
+	// for HDR only where it has libx265, which the LGPL ffmpeg on a Mac
+	// does not. There the HDR shorts are left to the machines that have
+	// it, Linux in CI, and the standard short is still checked.
+	standard, err := e.VideoEncoder(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	codec := "h264"
+	if standard.Name == mpeg4.Name {
+		codec = "mpeg4"
+	}
+	_, noHDR := e.HDREncoder(ctx)
 	for _, c := range []struct {
 		name, file string
 		codec, trc string
 	}{
 		{"HLG", "colour-hlg-10.mp4", "hevc", "arib-std-b67"},
 		{"PQ", "colour-pq-10.mp4", "hevc", "smpte2084"},
-		{"BT.709", "colour-bt709-tv.mp4", "h264", "bt709"},
+		{"BT.709", "colour-bt709-tv.mp4", codec, "bt709"},
 	} {
+		if c.codec == "hevc" && noHDR != nil {
+			t.Logf("%s: not rendered, %v", c.name, noHDR)
+			continue
+		}
 		dir := t.TempDir()
 		source := fixtures.Path(t, c.file)
 		info, err := e.Probe(ctx, source)

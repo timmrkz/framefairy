@@ -9,8 +9,8 @@ func roomOfLines(chars int, heardTo, rate float64) RoomAndLines {
 	return RoomAndLines{Room: Room{Chars: chars, By: "context"}, Lines: r.lines, Heard: r.heard, Rate: rate}
 }
 
-func limitsWith(shortest, longest float64) *Project {
-	return &Project{Base: Options{Min: shortest, Max: longest}}
+func limitsWith(shortest, longest float64) Options {
+	return Options{Min: shortest, Max: longest}
 }
 
 // What a window and its search may be: room for the clips typed, no more

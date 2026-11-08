@@ -18,13 +18,6 @@ import (
 	"framefairy/internal/wake"
 )
 
-// DecoderSaid, when set, hears every line an episode's decoder writes on
-// its error stream, and when it starts and stops, which the app keeps in
-// its log, each with its level: ffmpeg's errors and a decoder that stopped
-// by itself are errors, what it says for the log alone is debug. It is
-// set once, before any decoder starts.
-var DecoderSaid func(video string, level slog.Level, line string)
-
 // DecoderInfo starts a line the decoder writes only for the log: what it
 // opened and how, what it is doing and how long it took. Only its other
 // lines, ffmpeg's errors, say why it failed.
@@ -36,12 +29,6 @@ const DecoderInfo = "info: "
 // decoder failed, so it is kept with the warnings and not with the errors.
 const DecoderWarning = "warning: "
 
-func decoderSaid(video string, level slog.Level, line string) {
-	if DecoderSaid != nil {
-		DecoderSaid(video, level, line)
-	}
-}
-
 // EpisodeFrames is the episode's decoder as the Go side sees it: one
 // framefairy-frames for one episode, started when the episode opens in the
 // video preview, see Ready, and kept while it is open, with the file open
@@ -52,8 +39,16 @@ func decoderSaid(video string, level slog.Level, line string) {
 type EpisodeFrames struct {
 	program string
 	path    string
+	// chip says the decoder may decode on the graphics chip, which it is
+	// started with -chip for, see Machine.EpisodeFrames.
+	chip bool
+	// said hears every line it writes on its error stream, and when it
+	// starts and stops, as "decoder", each with its level: ffmpeg's errors
+	// and a decoder that stopped by itself are errors, what it says for
+	// the log alone is debug. It is the machine's, see Machine.Said.
+	said ProgramSaid
 	// What a test adds to the decoder's environment, and hears of all it
-	// says on its error stream, the way DecoderSaid does, and what it does
+	// says on its error stream, the way said does, and what it does
 	// between the decoder's end and the reason for it being known.
 	env    []string
 	heard  func(level slog.Level, line string)
@@ -93,9 +88,11 @@ type EpisodeFrames struct {
 	// How the picture's brightness is coded, as the decoder found it in
 	// the file when a cursor of picture first opened it.
 	light framewire.Light
-	// The cursor of captions, one at a time, see Captions.
-	captionsMu sync.Mutex
-	captions   *captionsCursor
+	// The cursor of captions, one draw at a time, see Captions. The turn
+	// is a channel of one, so a draw waiting for the one before it gives
+	// up when its request does.
+	captionsTurn chan struct{}
+	captions     *captionsCursor
 }
 
 // place is where a cursor of picture stands, or where a stream wants one:
@@ -123,11 +120,25 @@ const (
 // again.
 var ErrFramesClosed = errors.New("the video's decoder was closed")
 
-// NewEpisodeFrames is the episode's decoder for the episode at path, run
-// from program. Nothing starts until a stream is asked for.
-func NewEpisodeFrames(program, path string) *EpisodeFrames {
+// EpisodeFrames is the episode's decoder for the episode at path, run
+// from program, which decodes on the graphics chip where the machine's
+// media engine decodes, see Media. Nothing starts until a stream is
+// asked for.
+func (m *Machine) EpisodeFrames(program, path string) *EpisodeFrames {
+	f := newEpisodeFrames(program, path)
+	f.chip = m.mediaOf().Decodes
+	f.said = m.Said
+	return f
+}
+
+// newEpisodeFrames is the episode's decoder for the episode at path, run
+// from program, which decodes on the processor. Nothing starts until a
+// stream is asked for. Outside the engine a decoder is made by
+// Machine.EpisodeFrames, so whether it may use the graphics chip is the
+// machine's to say.
+func newEpisodeFrames(program, path string) *EpisodeFrames {
 	return &EpisodeFrames{program: program, path: path, answers: map[uint32]chan framewire.Record{},
-		placed: map[uint32]place{}, finishing: map[uint32]place{}, used: time.Now()}
+		placed: map[uint32]place{}, finishing: map[uint32]place{}, used: time.Now(), captionsTurn: make(chan struct{}, 1)}
 }
 
 // cursorsKept is how many cursors of picture a decoder keeps open for the
@@ -194,6 +205,15 @@ func (f *EpisodeFrames) warm(gone chan struct{}) {
 	}
 }
 
+// args is what the program is started with: the episode, after -chip
+// when it may decode on the graphics chip.
+func (f *EpisodeFrames) args() []string {
+	if f.chip {
+		return []string{"-chip", f.path}
+	}
+	return []string{f.path}
+}
+
 // start runs the program if it does not run. Under the lock.
 func (f *EpisodeFrames) start() error {
 	if f.cmd != nil {
@@ -205,7 +225,7 @@ func (f *EpisodeFrames) start() error {
 			return nil
 		}
 	}
-	cmd := exec.Command(f.program, f.path)
+	cmd := exec.Command(f.program, f.args()...)
 	if f.env != nil {
 		cmd.Env = append(os.Environ(), f.env...)
 	}
@@ -225,7 +245,8 @@ func (f *EpisodeFrames) start() error {
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("the video's decoder could not start: %w", err)
 	}
-	decoderSaid(f.path, slog.LevelDebug, fmt.Sprintf("started, process %d", cmd.Process.Pid))
+	pid := cmd.Process.Pid
+	f.said.say("decoder", f.path, pid, slog.LevelDebug, fmt.Sprintf("started, process %d", pid))
 	f.cmd, f.in, f.gone = cmd, in, make(chan struct{})
 	f.idle, f.answers, f.nextID = [2][]uint32{}, map[uint32]chan framewire.Record{}, 0
 	f.placed, f.finishing = map[uint32]place{}, map[uint32]place{}
@@ -247,7 +268,7 @@ func (f *EpisodeFrames) start() error {
 			} else {
 				said.add(line)
 			}
-			decoderSaid(f.path, level, line)
+			f.said.say("decoder", f.path, pid, level, line)
 			if f.heard != nil {
 				f.heard(level, line)
 			}
@@ -281,9 +302,9 @@ func (f *EpisodeFrames) start() error {
 		f.mu.Lock()
 		f.err = fmt.Errorf("the video's decoder stopped: %v %s", werr, said.String())
 		if gone == f.closed {
-			decoderSaid(f.path, slog.LevelDebug, fmt.Sprintf("process %d closed", cmd.Process.Pid))
+			f.said.say("decoder", f.path, pid, slog.LevelDebug, fmt.Sprintf("process %d closed", pid))
 		} else {
-			decoderSaid(f.path, slog.LevelError, fmt.Sprintf("process %d stopped by itself: %v", cmd.Process.Pid, werr))
+			f.said.say("decoder", f.path, pid, slog.LevelError, fmt.Sprintf("process %d stopped by itself: %v", pid, werr))
 		}
 		close(gone)
 		f.mu.Unlock()
@@ -760,8 +781,16 @@ func (f *EpisodeFrames) Captions(ctx context.Context, captions framewire.Caption
 		return framewire.Layer{}, fmt.Errorf("captions cannot be drawn %d by %d of %d by %d",
 			captions.Width, captions.Height, captions.ShortW, captions.ShortH)
 	}
-	f.captionsMu.Lock()
-	defer f.captionsMu.Unlock()
+	// A request that gives up says which wait it gave up on, this one or
+	// the decoder's answer below, so a route that answers 500 says what
+	// it waited for. Four asks once waited out the caption route's ten
+	// seconds on CI's Mac, issue #687, and nothing said which.
+	select {
+	case f.captionsTurn <- struct{}{}:
+	case <-ctx.Done():
+		return framewire.Layer{}, fmt.Errorf("the captions drawn before these had not finished: %w", ctx.Err())
+	}
+	defer func() { <-f.captionsTurn }()
 	f.mu.Lock()
 	if err := f.start(); err != nil {
 		f.mu.Unlock()
@@ -815,7 +844,7 @@ func (f *EpisodeFrames) Captions(ctx context.Context, captions framewire.Caption
 				_ = f.send(c.gone, "close %d", c.id)
 			}
 			f.mu.Unlock()
-			return framewire.Record{}, ctx.Err()
+			return framewire.Record{}, fmt.Errorf("the video's decoder had not drawn the captions: %w", ctx.Err())
 		}
 	}
 	if c.held != held {

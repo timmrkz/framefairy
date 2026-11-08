@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"sync"
 	"time"
@@ -54,6 +55,14 @@ func init() {
 		return
 	}
 	log.SetOutput(io.MultiWriter(os.Stderr, f))
+	// A crash, an unrecovered panic or a fatal error of the runtime, is
+	// printed to stderr only, and an app macOS starts has none anyone
+	// reads. So the app that went in the middle of a check said nothing,
+	// and the check only saw its connection end. Written here too, the
+	// log the test shows has why.
+	if err := debug.SetCrashOutput(f, debug.CrashOptions{}); err != nil {
+		log.Printf("the crash output is not in this log: %v", err) //nolint:forbidigo // the checks from outside read the file the standard log writes
+	}
 }
 
 // probePage is the route the page sends what it shows to. It is on the
@@ -196,6 +205,12 @@ func probeMiddleware(next application.Middleware) application.Middleware {
 		})
 	}
 }
+
+// probeMedia takes the system's media engine away from the app's machine,
+// so the checks from outside, which run on CI's virtual Mac, decode and
+// encode with ffmpeg's own codecs and never wait on Apple's media engine,
+// see engine.Media. What they check is the app.
+func probeMedia(m *engine.Machine) { m.LeaveTheMediaEngine() }
 
 // startProbe listens for the test. The app does not wait for it: a probe
 // that cannot listen says so in the log, and the test finds nobody there.
@@ -466,18 +481,43 @@ func (p *probe) search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	set := p.svc.store.Settings()
+	quit := q.Get("quit") == "1"
+	// Asked for as the app quits, the search is cut off before its first
+	// step has run, the way a person's search is, whose speech model
+	// takes seconds to load. The probe holds the lanes a search takes its
+	// first turn in until the stop has run, so it waits for its turn and
+	// is stopped there. Without the hold the setup's speech model, which
+	// fails the moment it opens, failed the search before the stop on a
+	// busy Mac, issue #723, and Failed was then the true outcome.
+	var letGo []func()
+	if quit {
+		for _, lane := range []string{LaneHearing, LaneFinding} {
+			_, release, err := p.svc.jobs.lanes.take(r.Context(), lane, plainTurn)
+			if err != nil {
+				for _, release := range letGo {
+					release()
+				}
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			letGo = append(letGo, release)
+		}
+	}
 	job := p.svc.Search(q.Get("video"), engine.PlanRequest{From: from, To: to, Count: 1, Min: set.Min, Max: set.Max}, "")
-	if q.Get("quit") == "1" {
+	if quit {
 		// Stopped before the answer goes, so the search is cut off where
 		// it stands, in the moment it was asked for.
 		p.svc.leave.stop()
+		for _, release := range letGo {
+			release()
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(job)
 	if f, ok := w.(http.Flusher); ok {
 		f.Flush()
 	}
-	if q.Get("quit") == "1" {
+	if quit {
 		go p.quitNow()
 	}
 }

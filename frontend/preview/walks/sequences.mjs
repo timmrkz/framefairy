@@ -14,10 +14,9 @@
 // The episode is the bridge's, so the words are the sentences its speech
 // stand-in says: "Ich war vielleicht sechs Jahre alt, als mich auf dem
 // Schulhof irgendein Typ geschubst hat."
-import { browserFor, chosen, keepTraces, newBrowser, open, settle, shown, shownOnPlayhead, traceAs, traceStep } from "./bridge.mjs";
-import { clock, moving, soundCard, still, url } from "./common/steps.mjs";
+import { browserFor, chosen, keepTraces, letGo, newBrowser, open, settle, shown, shownOnPlayhead, traceAs, traceStep } from "./bridge.mjs";
+import { clock, moving, soundCard, started, still, url } from "./common/steps.mjs";
 import { filmed } from "./filmed.mjs";
-import { inChromium } from "./webkit.mjs";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -41,10 +40,7 @@ import { steps as appSteps } from "./app/steps.mjs";
 import { steps as commonSteps } from "./common/steps.mjs";
 
 // Every sequence, in the order of the folders they are kept in.
-// Each knows its part, the folder, which says the browser it walks in, see
-// browserFor in bridge.mjs.
-const parts = { captions, timeline, playback, clips, search, videos, report, app };
-export const sequences = Object.entries(parts).flatMap(([part, own]) => own.map((q) => Object.assign(q, { part })));
+export const sequences = [captions, timeline, playback, clips, search, videos, report, app].flat();
 
 // Every step by its name, from every folder. A name in two folders would
 // walk whichever came last, so it is named by --names and fails.
@@ -60,19 +56,15 @@ for (const own of [captionsSteps, timelineSteps, playbackSteps, clipsSteps, sear
 
 const only = process.argv[2] ?? "";
 let failures = 0;
+// The page the last sequence of --serve passed in, for the next, see
+// openAgain in bridge.mjs.
+let spare = null;
 
 // --names lists the sequences, one name a line, for make walks to hand
 // out one at a time to as many bridges as it runs, see TestWalks. SEQUENCE
 // walks the one of that name and no other, where a part of a name could
 // be a part of two.
 if (only === "--names") {
-  // A part webkit.mjs names that is no folder would keep nothing in
-  // Chromium and look as if it did.
-  const noPart = inChromium.filter((p) => !parts[p]);
-  if (noPart.length) {
-    console.log(`webkit.mjs names ${JSON.stringify(noPart[0])}, which is no part`);
-    process.exit(1);
-  }
   const names = sequences.map((q) => q.name);
   const twice = names.filter((n, i) => names.indexOf(n) !== i);
   if (twice.length) {
@@ -84,6 +76,13 @@ if (only === "--names") {
   // that each add a step can pick the same name, in one folder or in two.
   if (stepTwice.length) {
     console.log(`two steps are called ${JSON.stringify(stepTwice[0])}`);
+    process.exit(1);
+  }
+  // added is what a sequence starts with, which only the first step can
+  // say, see started.
+  const late = sequences.find((q) => q.steps.slice(1).some(([what]) => what === "added"));
+  if (late) {
+    console.log(`${JSON.stringify(late.name)} says added after its first step`);
     process.exit(1);
   }
   // A step renamed and left in moving by its old name would be walked
@@ -122,17 +121,18 @@ if (only === "--names") {
 // a line of its own on standard input as JSON, for TestWalks to hand one
 // walker its sequences without starting node, Playwright and Chromium
 // again for each, 1.45 s and 1.2 s of CPU a sequence, issue #526. Each
-// still starts with /reset and pages of its own, so it walks the same as
-// alone. What a sequence prints begins with a line of its own, walking,
+// still starts with /reset, and on the page the sequence before passed
+// in, once that let go of all it left, see letGo in bridge.mjs, so it
+// walks the same as alone. What a sequence prints begins with a line of its own, walking,
 // see walkingLine, so what the node says between two sequences is told
 // from either. It ends in a line that starts with walked, see walkedLine,
 // then "ok" or "FAIL", or "threw" when it threw and this node ends, so a
 // sequence after it starts in a new one.
 if (only === "--serve") {
   const { createInterface } = await import("node:readline");
-  // A browser of each kind, opened when a sequence first asks for it.
-  const browsers = {};
-  const browserOf = async (seq) => (browsers[browserFor(seq.part)] ??= await newBrowser(browserFor(seq.part)));
+  // The browser, opened when the first sequence asks for it.
+  let browser;
+  const browserOf = async () => (browser ??= await newBrowser());
   for await (const line of createInterface({ input: process.stdin })) {
     await mark("walking");
     const name = JSON.parse(line);
@@ -143,14 +143,14 @@ if (only === "--serve") {
       continue;
     }
     try {
-      await said((await walkSequence(seq, await browserOf(seq))) ? "FAIL" : "ok");
+      await said((await walkSequence(seq, await browserOf())) ? "FAIL" : "ok");
     } catch (e) {
       console.log(e?.stack ?? String(e));
       await said("threw");
       process.exit(1);
     }
   }
-  for (const browser of Object.values(browsers)) await browser.close();
+  await browser?.close();
   process.exit(0);
 }
 
@@ -194,7 +194,15 @@ async function walkSequence(seq, shared = null) {
 async function walkingSequence(seq, shared) {
   const began = performance.now();
   traceAs(seq.name);
-  const opened = await open(url, { browser: shared, named: browserFor(seq.part), still: still(seq), clock: clock(seq) });
+  // A sequence that checks what the GPU draws walks in a browser of its
+  // own with WebGPU on, see newBrowser.
+  const gpu = seq.steps.some(([what]) => what === "screen light");
+  // A sequence that starts with a video it only works on starts with it
+  // added and searched once for every bridge of the walks, see started.
+  // The page the sequence before passed in, see openAgain in bridge.mjs.
+  const before = gpu ? null : spare;
+  if (!gpu) spare = null;
+  const opened = await open(url, { browser: gpu ? null : shared, named: browserFor(), still: still(seq), clock: clock(seq), gpu, start: started(seq), kept: before });
   const { browser, errors } = opened;
   // The page the steps act on: the app's window, or the report window
   // once Bugs opened it. The watch keeps to the app's window.
@@ -545,10 +553,16 @@ async function walkingSequence(seq, shared) {
   }
   const failed = wrong ?? (watch.failed && `broke: ${watch.failed.rule}\n${watch.failed.detail}`);
   const took = ((performance.now() - began) / 1000).toFixed(1).padStart(5);
-  console.log(`${failed ? "FAIL" : "ok  "}  ${took} s  ${browserFor(seq.part).padEnd(8)}  ${seq.name}`);
+  console.log(`${failed ? "FAIL" : "ok  "}  ${took} s  ${browserFor().padEnd(8)}  ${seq.name}`);
   if (failed) console.log(`      after ${done.join(", ")}\n      ${failed.replaceAll("\n", "\n      ")}`);
   if (failed) await keepTraces();
-  if (shared) await Promise.all(shared.contexts().map((c) => c.close()));
-  else await browser.close();
+  if (browser === shared) {
+    // The page a sequence passed in is kept for the next, once it has let
+    // go of the app, and every other page, the report window's or a second
+    // window's, goes.
+    const keep = failed ? null : await letGo(main);
+    await Promise.all(shared.contexts().filter((c) => c !== keep?.context()).map((c) => c.close()));
+    spare = keep;
+  } else await browser.close();
   return Boolean(failed);
 }

@@ -56,6 +56,8 @@
 <text class="c" x="385" y="255">updates</text>
 <rect class="chip" x="446" y="240" width="36" height="22" rx="6"/>
 <text class="c" x="454" y="255">log</text>
+<rect class="chip" x="488" y="240" width="143" height="22" rx="6"/>
+<text class="c" x="496" y="255">watch and reconcile</text>
 <rect class="box" x="64" y="296" width="213" height="54" rx="8"/>
 <text class="n" x="76" y="318">speech recogniser</text>
 <text class="p" x="76" y="336">asr/</text>
@@ -68,7 +70,7 @@
 <rect class="box" x="64" y="366" width="672" height="134" rx="8"/>
 <text class="n" x="76" y="388">the engine</text>
 <text class="p" x="76" y="406">engine/</text>
-<text class="q" x="76" y="422">reached through engine.Project</text>
+<text class="q" x="76" y="422">jobs through engine.Project, and what a video holds through engine.Machine and its Episode</text>
 <rect class="chip" x="76" y="432" width="43" height="22" rx="6"/>
 <text class="c" x="84" y="447">hear</text>
 <rect class="chip" x="125" y="432" width="56" height="22" rx="6"/>
@@ -83,6 +85,8 @@
 <text class="c" x="434" y="447">training records</text>
 <rect class="chip" x="555" y="432" width="103" height="22" rx="6"/>
 <text class="c" x="563" y="447">engine/runlog</text>
+<rect class="chip" x="573" y="460" width="150" height="22" rx="6"/>
+<text class="c" x="581" y="475">each video&#x27;s Episode</text>
 <rect class="chip" x="76" y="460" width="96" height="22" rx="6"/>
 <text class="c" x="84" y="475">engine/timed</text>
 <rect class="chip" x="178" y="460" width="83" height="22" rx="6"/>
@@ -115,6 +119,6 @@
 <text class="c" x="146" y="771">llama-server</text>
 <rect class="chip" x="240" y="756" width="83" height="22" rx="6"/>
 <text class="c" x="248" y="771">the models</text>
-<rect class="chip" x="329" y="756" width="123" height="22" rx="6"/>
-<text class="c" x="337" y="771">the work folders</text>
+<rect class="chip" x="329" y="756" width="284" height="22" rx="6"/>
+<text class="c" x="337" y="771">the work folders, which others write too</text>
 </svg>

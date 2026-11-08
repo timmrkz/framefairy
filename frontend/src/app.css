@@ -167,6 +167,14 @@
   /* Between the edge of the app and what is in it, which is not a gap
      between two things and so is its own number. */
   --edge: 24px;
+  /* The reflection of the video preview at the foot of the workspace, as
+     Tim set it in the mockups of #717: a band as tall as this along the
+     bottom edge of the app, four fifths of its width and under the middle
+     of it, where the picture is. How blurred and how strong it is are
+     drawn into the canvas, see BLUR and STRENGTH in
+     lib/frames/reflection.ts. */
+  --reflection-h: 100px;
+  --reflection-w: 80dvw;
 
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Ubuntu, sans-serif;
   --size-s: 12px;

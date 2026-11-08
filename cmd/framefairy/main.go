@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"os"
 	"os/signal"
@@ -431,9 +432,6 @@ func main() {
 		return
 	}
 
-	// --font takes the fonts installed on the machine too.
-	engine.UseMachineFonts()
-
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -441,7 +439,19 @@ func main() {
 	// The one machine of the run, made once here, see engine.Machine,
 	// with the keychain and the network.
 	machine := engine.NewMachine(afero.NewOsFs())
+	// The system's fonts among it, so --font takes the fonts installed on
+	// the machine too.
 	machine.UseSystem()
+	// What llama-server says is the run's to say too: its errors always,
+	// the rest with --verbose. It warns on every load about things a run
+	// cannot change, like a context shorter than the model was trained on.
+	machine.Said = func(from, _ string, pid int, level slog.Level, line string) {
+		if level >= slog.LevelError {
+			log.Error("%s %d: %s", from, pid, line)
+			return
+		}
+		log.Detail("%s %d: %s", from, pid, line)
+	}
 	e := engine.NewEngine(log, machine)
 	// The one folder the records go in, for the whole run, the way the app
 	// keeps it from its settings.
@@ -461,7 +471,7 @@ func main() {
 	// does not fit: macOS kills the new one while it loads. The app stops
 	// such a server when it starts, and the command line does the same.
 	// One whose program still runs, the app's own, is left alone.
-	if engine.StopLeftoverServer() {
+	if machine.StopLeftoverServer() {
 		log.Info("stopped a llama-server an earlier run left behind")
 	}
 	var code int
@@ -485,7 +495,7 @@ func main() {
 	// that would stop it dies with this program, which left llama-server
 	// running with the model in memory after every run, so it is stopped
 	// here, as the app stops it when it quits.
-	engine.CloseModels()
+	machine.CloseModels()
 	if events != nil {
 		// os.Exit skips deferred calls, so the file is closed here.
 		log.SetSink(nil)

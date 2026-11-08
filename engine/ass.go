@@ -57,6 +57,9 @@ type Style struct {
 	// light is the light of the short the colours are written for, see
 	// inLight.
 	light framewire.Light
+	// fonts are the faces the style was resolved among, which measure
+	// its words and give its face to libass, see Fonts.Style.
+	fonts *Fonts
 }
 
 // DefaultStyle is the caption look used unless a plan or a flag says
@@ -80,8 +83,11 @@ var DefaultStyle = map[string]any{
 	"bold":         1.0,
 	"margin_h":     70.0,
 	// Distance from the bottom of the frame. Shorts and Reels park their own
-	// UI over roughly the bottom fifth, so captions sit above it.
-	"margin_v": 300.0,
+	// UI over roughly the bottom fifth, so captions sit above it. On a step
+	// of CaptionYStep, as every height a hand can place is: at 300 the app
+	// drew the captions at 320, SnapCaptionY's step, while its Height field
+	// and Put the captions back said 300.
+	"margin_v": 320.0,
 	// Characters in one caption, across at most two lines. Long enough to
 	// hold a phrase, short enough that the text can be big.
 	"max_chars":  38.0,
@@ -203,9 +209,10 @@ func cleanColour(value any, fallback string) string {
 	return text
 }
 
-// ResolveStyle merges overrides onto the defaults and validates every value
-// by type. Unknown keys are ignored and colours must look like colours.
-func ResolveStyle(overrides map[string]any) Style {
+// Style merges overrides onto the defaults and validates every value by
+// type, with the font among these faces. Unknown keys are ignored and
+// colours must look like colours.
+func (f *Fonts) Style(overrides map[string]any) Style {
 	s := map[string]any{}
 	for k, v := range DefaultStyle {
 		s[k] = v
@@ -225,7 +232,7 @@ func ResolveStyle(overrides map[string]any) Style {
 	// A face nobody has would leave libass to pick any face at all, and
 	// the measuring to guess, so the captions are drawn in ours and the
 	// style says which one it asked for.
-	if _, ok := FontByName(font); !ok {
+	if _, ok := f.ByName(font); !ok {
 		font, missing = DefaultFont, font
 	}
 	border := int(number("border_style"))
@@ -233,6 +240,7 @@ func ResolveStyle(overrides map[string]any) Style {
 		border = 4
 	}
 	return Style{
+		fonts:         f,
 		Font:          font,
 		Missing:       missing,
 		Size:          math.Max(8, math.Min(number("size"), 400)),
@@ -302,6 +310,47 @@ const (
 
 // DefaultCaptionY is where the captions sit when nobody has placed them.
 var DefaultCaptionY = DefaultStyle["margin_v"].(float64)
+
+// CaptionStart is how the captions look before anybody changes them, the
+// look DefaultStyle gives, and the heights a hand may put them at. The app
+// offers these in its controls and puts the captions back to them, so the
+// interface keeps no copy of either.
+type CaptionStart struct {
+	Font string  `json:"font"`
+	Size float64 `json:"size"`
+	// Y is where the captions sit, and Heights every height they may sit
+	// at, from the lowest up, as the distance from the bottom of a
+	// 1080x1920 frame. A drag lands on the one nearest the hand, the one
+	// SnapCaptionY gives.
+	Y       float64   `json:"y"`
+	Heights []float64 `json:"heights"`
+	// Step is how far apart two heights are, for the field the height is
+	// typed in and the grid shown while the captions are dragged.
+	Step float64 `json:"step"`
+	// The colours, the way the video preview draws them, see WebColour.
+	Primary         string `json:"primary"`
+	Box             string `json:"box"`
+	HighlightColour string `json:"highlightColour"`
+}
+
+// StartingCaptions is the captions as they start out: the style a clip
+// with no style of its own is drawn in, the one Fonts.Style gives.
+func StartingCaptions() CaptionStart {
+	s := new(Fonts).Style(nil)
+	start := CaptionStart{
+		Font:            s.Font,
+		Size:            s.Size,
+		Y:               s.MarginV,
+		Step:            CaptionYStep,
+		Primary:         WebColour(s.Primary),
+		Box:             WebColour(s.BackColour),
+		HighlightColour: s.HighlightWeb(),
+	}
+	for y := float64(CaptionYMin); y <= CaptionYMax; y += CaptionYStep {
+		start.Heights = append(start.Heights, y)
+	}
+	return start
+}
 
 // SnapCaptionY puts a hand-placed caption line on the nearest step and
 // inside the frame.
@@ -485,7 +534,7 @@ func (e *Engine) measureASS(ctx context.Context, blocks []string, s Style,
 			"ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, " +
 			"Alignment, MarginL, MarginR, MarginV, Encoding",
 		fmt.Sprintf("Style: M,%s,%d,&H00FFFFFF,&H00FFFFFF,&H00FFFFFF,"+
-			"&H00FFFFFF,%d,0,0,0,100,100,0,0,1,0,0,2,0,0,0,1", AssFontName(s.Font), size, int(s.Bold)),
+			"&H00FFFFFF,%d,0,0,0,100,100,0,0,1,0,0,2,0,0,0,1", s.fonts.AssName(s.Font), size, int(s.Bold)),
 		"", "[Events]",
 		"Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, " +
 			"Effect, Text",
@@ -517,7 +566,7 @@ func (e *Engine) measureASS(ctx context.Context, blocks []string, s Style,
 	}
 	// Measuring has to use the same face as the render, or the pills behind
 	// the words come out the wrong size.
-	if err := InstallFont(tmp, s.Font); err != nil {
+	if err := s.fonts.Install(tmp, s.Font); err != nil {
 		e.Log.Detail("measuring the captions: %s", err)
 		return nil, false
 	}
@@ -590,23 +639,82 @@ func bandSlot(block string, size int) int {
 // measureMany measures any number of blocks, a frame at a time, so a clip
 // with many words stays inside the height one frame can have. A block
 // measured before in the same face, size and width is not measured again,
-// see measured, so the caption file of a clip is made again in a moment
+// see Machine.measured, so the caption file of a clip is made again in a moment
 // whenever the video preview needs it in another colour or place.
 func (e *Engine) measureMany(ctx context.Context, blocks []string, s Style,
 	width, size int) ([]*inkBox, bool) {
 	out := make([]*inkBox, len(blocks))
-	var missing []int
 	// A face the program carries is the same file whatever its name finds,
 	// see measureKey, and so is one of the machine's, whose copy is named
 	// after the version of its file. Anything else is measured each time.
-	_, keep := FontByName(s.Font)
-	for i, block := range blocks {
-		if box, ok := measured.get(measureKey(block, s, width, size)); ok && keep {
-			out[i] = box
-		} else {
+	_, keep := s.fonts.ByName(s.Font)
+	measured, _ := e.captions()
+	key := func(i int) string { return measureKey(blocks[i], s, width, size) }
+	// Each block is measured by one ask at a time: a block another ask is
+	// measuring now is waited for, not measured again. Two asks for the
+	// same clip's captions at the same moment, as a video opens, each
+	// measured every block. Asks for other blocks do not wait.
+	var missing, others []int
+	var claimed []string
+	var waits []<-chan struct{}
+	if !keep {
+		for i := range blocks {
 			missing = append(missing, i)
 		}
+	} else {
+		keys := make([]string, len(blocks))
+		for i := range blocks {
+			keys[i] = key(i)
+		}
+		// All the blocks are claimed at once, so two asks for the same
+		// clip never share its blocks out between them and measure them
+		// in more frames than one ask would.
+		boxes, wait := measured.claim(keys)
+		for i := range blocks {
+			switch {
+			case boxes[i] != nil:
+				out[i] = boxes[i]
+			case wait[i] != nil:
+				others = append(others, i)
+				waits = append(waits, wait[i])
+			default:
+				missing = append(missing, i)
+				claimed = append(claimed, keys[i])
+			}
+		}
 	}
+	ok := e.measureBlocks(ctx, blocks, missing, out, s, width, size, keep)
+	// Let go of what this ask measured before waiting for the others, so
+	// two asks that wait for each other's blocks never wait for good.
+	measured.letGo(claimed)
+	if !ok {
+		return nil, false
+	}
+	var again []int
+	for k, i := range others {
+		select {
+		case <-waits[k]:
+		case <-ctx.Done():
+			return nil, false
+		}
+		if box, found := measured.get(key(i)); found {
+			out[i] = box
+		} else {
+			// The other ask failed or found no ink, so it is measured here.
+			again = append(again, i)
+		}
+	}
+	if !e.measureBlocks(ctx, blocks, again, out, s, width, size, keep) {
+		return nil, false
+	}
+	return out, true
+}
+
+// measureBlocks measures the blocks at the indexes missing, a frame at a
+// time, into out, and keeps what it measured when keep.
+func (e *Engine) measureBlocks(ctx context.Context, blocks []string, missing []int, out []*inkBox,
+	s Style, width, size int, keep bool) bool {
+	measured, _ := e.captions()
 	for start := 0; start < len(missing); {
 		end, height := start, 0
 		for end < len(missing) {
@@ -623,7 +731,7 @@ func (e *Engine) measureMany(ctx context.Context, blocks []string, s Style,
 		}
 		boxes, ok := e.measureASS(ctx, batch, s, width, size)
 		if !ok {
-			return nil, false
+			return false
 		}
 		for k, i := range missing[start:end] {
 			out[i] = boxes[k]
@@ -633,15 +741,18 @@ func (e *Engine) measureMany(ctx context.Context, blocks []string, s Style,
 		}
 		start = end
 	}
-	return out, true
+	return true
 }
 
 // measureKey is what a block's ink depends on.
-// The face is known by its name, which is enough for a face the program
-// carries, see fontBundle: one name is always the same file. A face left
-// to the machine is not kept, see measureMany.
+// The face is known by the name the caption file asks libass for. For a
+// face the program carries that is its name, which is always the same
+// file, see fontBundle. For one of the machine's it is the name of its
+// copy, which changes with the version of its file, so a font updated
+// while the app runs is measured again. A face nobody has is not kept,
+// see measureMany.
 func measureKey(block string, s Style, width, size int) string {
-	return fmt.Sprintf("%s\x00%d\x00%v\x00%d\x00%s", s.Font, size, s.Bold, width, block)
+	return fmt.Sprintf("%s\x00%d\x00%v\x00%d\x00%s", s.fonts.AssName(s.Font), size, s.Bold, width, block)
 }
 
 // inkCache keeps the ink of blocks measured before, up to a few thousand,
@@ -650,9 +761,49 @@ func measureKey(block string, s Style, width, size int) string {
 type inkCache struct {
 	mu    sync.Mutex
 	boxes map[string]inkBox
+	// measuring is the blocks an ask is measuring now, each closed when
+	// that ask lets go of it, see measureMany.
+	measuring map[string]chan struct{}
 }
 
-var measured = &inkCache{boxes: map[string]inkBox{}}
+// claim is the box of each key that is known. For one that is not, its
+// wait is closed once the ask measuring it now lets go of it, or nil when
+// no ask is, and then that key is this ask's to measure and to let go of.
+// The keys are claimed under one lock, so an ask gets every block no
+// other ask is measuring.
+func (c *inkCache) claim(keys []string) (boxes []*inkBox, wait []<-chan struct{}) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	boxes = make([]*inkBox, len(keys))
+	wait = make([]<-chan struct{}, len(keys))
+	for i, key := range keys {
+		if b, ok := c.boxes[key]; ok {
+			boxes[i] = &b
+			continue
+		}
+		if w, ok := c.measuring[key]; ok {
+			wait[i] = w
+			continue
+		}
+		if c.measuring == nil {
+			c.measuring = map[string]chan struct{}{}
+		}
+		c.measuring[key] = make(chan struct{})
+	}
+	return boxes, wait
+}
+
+// letGo says the blocks of keys are measured, or will not be.
+func (c *inkCache) letGo(keys []string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, key := range keys {
+		if w, ok := c.measuring[key]; ok {
+			close(w)
+			delete(c.measuring, key)
+		}
+	}
+}
 
 func (c *inkCache) get(key string) (*inkBox, bool) {
 	c.mu.Lock()
@@ -741,7 +892,7 @@ func (e *Engine) CaptionTrack(ctx context.Context, laid []LaidCaption, width, he
 // measured and the captions are drawn plain instead.
 func (e *Engine) captionTrack(ctx context.Context, laid []LaidCaption, width, height int,
 	overrides map[string]any, source SourceInfo) ([]byte, bool, error) {
-	s := ResolveStyle(overrides).inLight(source.Light())
+	s := e.Fonts.Style(overrides).inLight(source.Light())
 	if s.Highlight {
 		track, err := e.highlighted(ctx, laid, width, height, s, source)
 		if track != nil || err != nil {
@@ -864,8 +1015,8 @@ Style: Box,%s,%d,%s,%s,%s,%s,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 `, width, height, s.matrix(),
-		AssFontName(s.Font), size, s.Primary, s.Primary, s.OutlineColour, s.boxColour(), int(s.Bold),
+		s.fonts.AssName(s.Font), size, s.Primary, s.Primary, s.OutlineColour, s.boxColour(), int(s.Bold),
 		captionBorder, outline, shadow, marginH, marginH, marginV,
-		AssFontName(s.Font), size, s.Primary, s.Primary, s.Primary, s.Primary)
+		s.fonts.AssName(s.Font), size, s.Primary, s.Primary, s.Primary, s.Primary)
 
 }

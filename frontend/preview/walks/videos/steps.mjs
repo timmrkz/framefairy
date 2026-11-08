@@ -7,7 +7,7 @@
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
-import { ask, caughtUp, clipList, control, episodeOn, fromSidebar, hold, letHeld, news, nextNews, pageUntil, seenUntil, settle, sidebarStill } from "../bridge.mjs";
+import { ask, caughtUp, clipList, control, episodeOn, fromSidebar, hold, letHeld, news, nextNews, pageUntil, seenUntil, settle, sidebarStill, reload } from "../bridge.mjs";
 import { dropOn, halfOf, standsAt, stillStands, toastSays, url } from "../common/steps.mjs";
 
 export const steps = {
@@ -30,6 +30,16 @@ export const steps = {
     await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());
     await watch.step("add", s);
   },
+  // ["added", seconds, rate, timing, inside]
+  //                    as the first step of a sequence: the sequence
+  //                    starts with a video like the one ["add", ...] adds,
+  //                    heard and searched, and the app open on its clip.
+  //                    The bridges of the walks add each kind once and
+  //                    hand it to every sequence after, see startWith in
+  //                    bridge_test.go, so a sequence about something else
+  //                    than adding a video does not wait for its first
+  //                    clip. A sequence about adding one adds it
+  async added() {},
   // ["label", [words, how]]
   //                    walks the pointer down the column of the three dots,
   //                    where every row it is on has to be lit with its dots
@@ -542,7 +552,7 @@ export const steps = {
     }
     if (closed) {
       await control(url, "/open");
-      await page.reload();
+      await reload(page);
     } else if (arg !== "in front") {
       // The person went to Finder and came back: the app lost the
       // keyboard and has it again.
@@ -711,8 +721,10 @@ export const steps = {
   //                    pulses, with no number in its row. Once the work
   //                    runs, the range picker frames the part it works
   //                    on, breathing with the motes, over that part's
-  //                    dots. "search stops it" clicks Search in the head
-  //                    with the model holding its answer and a piece of
+  //                    dots, and the window is no longer marked, which
+  //                    it was before the click. "search stops it" clicks
+  //                    Search in the head with the model holding its
+  //                    answer and a piece of
   //                    the audio held in the speech: while the whole
   //                    video's transcription still ends, its frame is
   //                    going and the menu says Transcribe video and
@@ -724,6 +736,8 @@ export const steps = {
   //                    frame is fading, standing still, the menu has
   //                    closed, and once the speech hears on and the job
   //                    ends the dots are where they were at the click.
+  //                    The window is marked again from the frame of the
+  //                    click on.
   //                    Opened again the menu says Transcribe video at
   //                    once. "waits for the search", while the video's
   //                    first search transcribes its window with the
@@ -796,6 +810,9 @@ export const steps = {
                 // there as work in hand or going.
                 framed: !!document.querySelector(".part:not(.going) .window.frame.locked"),
                 going: !!document.querySelector(".part.going .window.frame.locked"),
+                // The window's mark, left out while the whole video is
+                // transcribed.
+                aim: !!document.querySelector(".aim"),
                 dots: window.dotsNow(),
               }),
             );
@@ -838,7 +855,7 @@ export const steps = {
       }
       await control(url, "/speech?go");
       for (let seen = await news(page); await searching(); ) seen = await nextNews(page, seen);
-      await settle(page);
+      await caughtUp(page, url);
       await reopen();
       const after = await item();
       await page.keyboard.press("Escape");
@@ -858,7 +875,9 @@ export const steps = {
       const runs = async () => (await ask(page, "Jobs")).some((j) => j.episode === source && (j.state === "running" || j.state === "queued"));
       for (let seen = await news(page); await runs(); ) seen = await nextNews(page, seen);
       await control(url, "/speech?hold");
-      await settle(page);
+      // Go says nothing runs, and the state it sent since, which says so
+      // to the dot, is heard before the dot is looked at.
+      await caughtUp(page, url);
       if (await page.locator("aside li:has(button.episode.current) .dot.busy").count()) {
         walk.wrong = "the video's dot pulses with nothing running";
         return;
@@ -867,6 +886,12 @@ export const steps = {
       // not transcribed yet still shows its dots.
       if (await page.locator(".window.frame.locked").count()) {
         walk.wrong = "with nothing running, the range picker frames a part as work in hand";
+        return;
+      }
+      // And the window is marked where Search looks, so that it is gone
+      // below is the transcription's doing.
+      if (!(await page.locator(".aim").count())) {
+        walk.wrong = "with nothing running, the range picker does not mark the window";
         return;
       }
       if (arg === "continue" && !(await page.locator(".unheard").count())) {
@@ -950,14 +975,22 @@ export const steps = {
         });
       // It hears once the Go side says so. Queued first, for as long as
       // a busy machine takes, its frame is on hold and sheds nothing.
-      const hears = async () =>
-        (await ask(page, "Jobs")).some((j) => j.episode === source && j.kind === "transcribe" && j.state === "running" && j.step === "hearing");
+      let hearing;
+      const hears = async () => {
+        hearing = (await ask(page, "Jobs")).find((j) => j.episode === source && j.kind === "transcribe" && j.state === "running" && j.step === "hearing");
+        return !!hearing;
+      };
       for (let seen = await news(page); !(await hears()); ) seen = await nextNews(page, seen);
-      await settle(page);
+      // The page hears it in the video's state, which may come after the
+      // Go side said so to the walk.
+      await caughtUp(page, url, [hearing]);
       const look = await framed();
       if (!look.frame) walk.wrong = `while the whole video is transcribed, the range picker frames no part of it`;
       else if (!look.motes) walk.wrong = `while the whole video is transcribed, its frame on the range picker sheds no motes`;
       else if (!look.dots) walk.wrong = `while the whole video is transcribed, the part it works on shows no dots under its frame`;
+      // The work is about all of the video, so the window is left out,
+      // Tim's ask of 5 November.
+      else if (await page.locator(".aim").count()) walk.wrong = "while the whole video is transcribed, the range picker still marks the window";
       return;
     }
     const whole = async () => (await ask(page, "Library")).find((e) => e.source === source)?.transcribed;
@@ -1005,6 +1038,10 @@ export const steps = {
       await control(url, "/speech?hold=one");
       await settle(page);
       await page.locator(".listhead button.search").click();
+      // The Go side says the transcription is stopping the moment the
+      // search is asked for, and the menu reads it from the video's
+      // state, the news the search's answer is sent behind.
+      await caughtUp(page, url);
       await reopen();
       const ending = await item();
       await page.keyboard.press("Escape");
@@ -1106,7 +1143,7 @@ export const steps = {
       await nextNews(page, read, "episode");
       const runs = async () => (await ask(page, "Jobs")).some((j) => j.episode === source && j.kind === "transcribe" && (j.state === "running" || j.state === "queued"));
       for (let seen = await news(page); await runs(); ) seen = await nextNews(page, seen);
-      await settle(page);
+      await caughtUp(page, url);
       if (!(await whole())) walk.wrong = "stopped on its last piece, the video was not heard to its end";
       else if (await page.locator(".unheard").count()) walk.wrong = "the video is transcribed to its end, and the range picker still shows dots on a part";
       return;
@@ -1129,9 +1166,15 @@ export const steps = {
         return;
       }
       // Then held with a piece of the audio in it, so the press comes
-      // while that piece is being heard, the way Tim pressed it.
+      // while that piece is being heard, the way Tim pressed it. The
+      // steps let on above are not all heard by the time the dots move,
+      // so the hold first lets a piece that was being heard end, and
+      // the Go side tells how far it got before the next piece waits.
+      // The dots are read once the app has heard that news too: read
+      // after a settle, which does not wait for news, they were read
+      // before it, and moved by a piece heard before the press, #732.
       await control(url, "/speech?hold=one");
-      await settle(page);
+      await caughtUp(page, url);
       const held = await page.evaluate(() => window.dotsNow());
       const after = await pick("Stop transcribing");
       if (after.said !== "Stop transcribing") walk.wrong = `the menu of a video being transcribed says ${JSON.stringify(after.said)}, not Stop transcribing`;
@@ -1141,6 +1184,9 @@ export const steps = {
       // of 23 October.
       else if (after.framed) walk.wrong = "the frame after Stop transcribing was clicked, the range picker still frames the part as work in hand";
       else if (!after.going) walk.wrong = "the frame after Stop transcribing was clicked, the whole video's frame was cut away and does not fade";
+      // And the window is marked again in that frame, not once the Go
+      // side has said the work stops.
+      else if (!after.aim) walk.wrong = "the frame after Stop transcribing was clicked, the range picker does not mark the window again";
       // The dot is the video's, and its first search may still hear, so
       // it is not looked at: the menu says what became of the click.
       if (walk.wrong) {
@@ -1166,12 +1212,14 @@ export const steps = {
       await nextNews(page, read, "episode");
       const runs = async () => (await ask(page, "Jobs")).some((j) => j.episode === source && j.kind === "transcribe" && (j.state === "running" || j.state === "queued"));
       for (let seen = await news(page); await runs(); ) seen = await nextNews(page, seen);
-      await settle(page);
+      await caughtUp(page, url);
       // Not one dot moves sideways either: centred again as the work
       // stopped, every dot jumped, Tim's report of 24 October.
       const dots = await page.evaluate(() => window.dotsNow());
       if (dots !== held) {
         walk.wrong = `after Stop transcribing the dots moved, from ${held} to ${dots}`;
+      } else if (!(await page.locator(".aim").count())) {
+        walk.wrong = "after Stop transcribing, the range picker does not mark the window again";
       }
       return;
     }
@@ -1182,7 +1230,7 @@ export const steps = {
       await page.keyboard.press("Escape");
       await menu.waitFor({ state: "detached" });
       for (let seen = await news(page); !(await whole()); ) seen = await nextNews(page, seen);
-      await settle(page);
+      await caughtUp(page, url);
       await row.hover();
       await row.locator("button.more").click();
       await menu.waitFor();

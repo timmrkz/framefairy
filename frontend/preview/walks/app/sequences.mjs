@@ -4,6 +4,14 @@
 // for the steps of every folder. See ../sequences.mjs.
 export default [
   {
+    // Opening a video asked for the captions of its clip a second time,
+    // as the video's state was taken as if a clip had been edited, and
+    // for its sentences a second time, as they were asked for before the
+    // video's length was in. The first answers were thrown away.
+    name: "a video opened asks for its clip's captions and its sentences once",
+    steps: [["asked once", "Captions", "Sentences"]],
+  },
+  {
     // Plan row 2.189. Cmd+Z and Cmd+Y come from the app's menu, which
     // the workspace answers with its own undo. On every other page they go
     // to the field being typed in, which did nothing before Report a
@@ -104,10 +112,24 @@ export default [
     steps: [["mission control"]],
   },
   {
+    // Tim hovered the sidebar open and clicked its button to keep it, and
+    // it closed, on 29 October, in his report's log, #615.
+    name: "One click on the sidebar's button keeps a sidebar hovering opened, and the next closes it",
+    steps: [["keep the sidebar"]],
+  },
+  {
     // Tim's logs showed the sidebar opened by the pointer closing again
     // within 100 ms one time in three, on a leave no hand made, #540.
     name: "The sidebar opened by the pointer stays open on a leave with no move, and closes on a real one",
     steps: [["leave with no move"]],
+  },
+  {
+    // A language model was removed from ~/.framefairy/models outside the
+    // app on 29 October, in Tim's report logs, and the settings went on
+    // showing it until they were opened again, #673. The first run
+    // lays the models on the disk, where Finder can delete one.
+    name: "a model deleted outside the app is gone from the settings at once",
+    steps: [["first run"], ["settings"], ["model gone", "language"]],
   },
   {
     // Tim chose another model in the settings while a search ran, and

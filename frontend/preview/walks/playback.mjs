@@ -6,12 +6,13 @@
 //
 //   SEED=12 STEPS=25 BRIDGE_URL=http://127.0.0.1:8123/ node playback.mjs
 import { begin, walk } from "./walk.mjs";
-import { handles, inside, middle, high, ask, recordFrames, preview, engineState, drag, settle, playFor, playUntil } from "./bridge.mjs";
+import { handles, inside, middle, high, ask, recordFrames, preview, engineState, drag, settle, playFor, playUntil, pressPlay } from "./bridge.mjs";
 import { overlaid } from "./rules.mjs";
 
 const w = await begin({ steps: 25 });
 const { page, rng, watch } = w;
-const frame = 1 / (await ask(page, "Source", watch.at.path)).fps;
+const fps = (await ask(page, "Source", watch.at.path)).fps;
+const frame = 1 / fps;
 const at = () => preview(page, frame);
 
 // Whether a press of the space bar plays the clip rather than the episode
@@ -51,13 +52,19 @@ function overlaysFollow(overlays, state) {
 // the frame on screen is the one that holds it, or where a play stopped on
 // the clip's end, the frame that holds the moment a frame before it, the
 // last the short shows, see frameAt in lib/flow.ts. Read before and after
-// the app has settled, so whatever the pause set going has ended.
+// the app has settled, so whatever the pause set going has ended. A moment
+// a hair before a frame's start is in that frame, counted as the engine
+// counts it, in whole microseconds: a pause a millisecond before a frame
+// showed that frame, and the walk, counting in seconds, wanted the one
+// before, issue #704. At a whole rate, which every video of the walks has,
+// the count is exact.
+const holding = (t) => Math.floor((Math.round((t + 0.001) * 1_000_000) * fps) / 1_000_000);
 async function staysPaused(what) {
   const a = await at();
   await settle(page);
   const b = await at();
-  const holds = Math.floor((b.at + 0.001) / frame) * frame;
-  const endsOn = Math.floor((b.at - frame + 0.001) / frame) * frame;
+  const holds = holding(b.at) * frame;
+  const endsOn = holding(b.at - frame) * frame;
   const pictured = Math.abs(b.frame - holds) < 1e-6 || Math.abs(b.frame - endsOn) < 1e-6;
   if (!a.paused || !b.paused || Math.abs(a.at - b.at) > 1e-3 || !pictured) {
     watch.broke(
@@ -133,12 +140,20 @@ const gestures = [
       await nearEnd(p, g);
       if (!(await playsClip())) return off("a click on the clip timeline put the playhead on the video");
       const from = (await at()).at;
-      // A clip at its end starts over, so as long as the whole clip.
-      const length = p.reduce((sum, x) => sum + (x.end - x.start), 0);
+      // A clip at its end starts over, so as long as the whole clip, from
+      // its first piece's start to its last piece's end: playUntil counts
+      // the jump over each cut as time gone on, so the pieces alone come
+      // short of the end by the cuts between them.
+      const length = p[p.length - 1].end - p[0].start;
       const stop = await recordFrames(page, frame);
       await page.evaluate(() => document.body.focus());
-      await page.keyboard.press("Space");
-      await settle(page);
+      // Played with the sound card held until the app has settled on the
+      // press, see pressPlay. Not held, a settle in WebKit with motion
+      // lasted as long as the play, and the loop below came after its end.
+      if (!(await pressPlay(page))) {
+        await stop();
+        return off("the space bar started no play");
+      }
       const end = p[p.length - 1].end;
       // Half the time L loops the clip on the way and L again stops the
       // loop a moment before the end, once the next time through is worked

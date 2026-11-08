@@ -10,7 +10,6 @@ import {
   Newest,
   mergeJob,
   timesIn,
-  gridStep,
   insideClip,
   inEpisode,
   endInEpisode,
@@ -358,16 +357,6 @@ describe("a job's news", () => {
   });
 });
 
-describe("a dragged window lands on the range picker's step", () => {
-  const hours = 14423;
-
-  test("the step is the smallest round one still eight pixels wide", () => {
-    expect(gridStep(hours, 915)).toBe(300);
-    expect(gridStep(hours, 1370)).toBe(120);
-    expect(gridStep(360, 915)).toBe(5);
-  });
-});
-
 describe("the word lit in a caption", () => {
   const lines = [
     { words: [{ start: 1.0 }, { start: 1.4 }] },
@@ -395,8 +384,16 @@ describe("frames are counted from where the picture starts", () => {
   const frame = 0.04;
   test("a moment falls in the picture's own frame", () => {
     expect(frameAt(0.25, frame, 0.25)).toBe(0);
-    expect(frameAt(0.289, frame, 0.25)).toBe(0);
+    expect(frameAt(0.288, frame, 0.25)).toBe(0);
+    // A hair before the next frame's start is in that frame, the way the
+    // engine counts it, see heldMicros.
+    expect(frameAt(0.289, frame, 0.25)).toBe(1);
     expect(frameAt(0.29, frame, 0.25)).toBe(1);
+    // Counted to the microsecond, as the engine's frameHolding counts:
+    // frame 2 at 29.97 starts at 0.0667333 s, so a hair and a microsecond
+    // before it is frame 1, and a hair before it frame 2.
+    expect(frameAt(0.065733, 1001 / 30000)).toBe(1);
+    expect(frameAt(0.065734, 1001 / 30000)).toBe(2);
     expect(frameAt(1.0, frame, 0.25)).toBe(18);
     // Counted from the file, 1.0 is frame 25, a frame the picture has not.
     expect(frameAt(1.0, frame)).toBe(25);

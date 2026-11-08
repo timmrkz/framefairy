@@ -234,7 +234,8 @@ export interface Gesture {
 // What a gesture makes of a clip: its pieces, where the playhead goes while
 // an edge is dragged, below nought when it stays, and its captions.
 export interface Shaped {
-  pieces: { start: number; end: number }[];
+  // Each with its part, see Segment.part.
+  pieces: { start: number; end: number; part: number }[];
   playhead: number;
   captions: CaptionsView;
 }
@@ -251,6 +252,10 @@ export interface Segment {
   // The keyframes that steer the piece's crop, which glides over them,
   // see lib/glide.ts. With none the crop stands at cropX.
   marks?: CropMark[];
+  // The part of the clip the piece is in, counted from nought: pieces that
+  // play straight on from each other, with no cut between them, have the
+  // same, see engine.PieceView.
+  part: number;
 }
 
 // A crop placed by hand on one frame: the moment the frame starts, the
@@ -410,6 +415,9 @@ export interface WindowView extends KeptWindow {
   // How long the clips a search asks for may be, as they are set.
   shortest: number;
   longest: number;
+  // The range picker leaves the window out: the whole video is being
+  // transcribed, which is about all of it and not about the window.
+  hidden?: boolean;
 }
 
 // How many searches have read each part of an episode. Any window can be
@@ -584,6 +592,18 @@ export interface Job {
   // A search that stopped whose window the video's window was moved off,
   // so it is set aside, see markAside in window.go.
   aside?: boolean;
+  // For a search that is over or stopped, how it ended, as the Go side
+  // says it, see engine.SearchEnded: "found", "nothing", "short",
+  // "hearing" or "finding".
+  ended?: "found" | "nothing" | "short" | "hearing" | "finding";
+  // For work that stopped and was removed, how its removal stands, see
+  // removal.go: the moment it is forgotten, in milliseconds since the
+  // epoch and 0 while a hand holds its row, then how many seconds are
+  // left, and how many it had in all.
+  away?: { until: number; left: number; whole: number };
+  // For work that runs, that it was told to stop and has not ended yet,
+  // from the moment it was told, see Job.Stopping in jobs.go.
+  stopping?: boolean;
   // Grows with every change to any job. Of two snapshots of a job, the one
   // with the larger number is the later one.
   seq?: number;
@@ -907,6 +927,7 @@ export const api = {
   reshape: (path: string, plan: string, clip: string, g: Gesture, playhead: [number, number]) =>
     call<ClipEntry>("Reshape", path, plan, clip, g, playhead),
   fonts: () => call<CaptionFont[]>("Fonts"),
+  captionStart: () => call<CaptionStart>("CaptionStart"),
   waveform: (path: string, from: number, to: number, buckets: number) =>
     call<number[]>("Waveform", path, from, to, buckets),
   render: (path: string, req: RenderRequest) => call<Job>("Render", path, req),
@@ -1031,6 +1052,12 @@ export const api = {
   redo: (path: string) => call<Undone>("Redo", path),
   jobs: () => call<Job[]>("Jobs"),
   cancelJob: (id: string) => call<void>("CancelJob", id),
+  // Remove work that stopped, hold its time while a hand is on its row,
+  // and put it back. The Go side keeps the time and forgets the work once
+  // it is up. Removing and putting back answer with the video's state.
+  removeWork: (id: string) => call<VideoState>("RemoveWork", id),
+  holdRemoval: (id: string, held: boolean, press: number) => call<void>("HoldRemoval", id, held, press),
+  putWorkBack: (id: string) => call<VideoState>("PutWorkBack", id),
   reveal: (path: string) => call<void>("Reveal", path),
   // No words take the label away, and the answer is then null.
   setLabel: (path: string, text: string, colour: string) => call<Label | null>("SetLabel", path, text, colour),
@@ -1215,6 +1242,13 @@ export function onVideoState(fn: (state: VideoState) => void): () => void {
   return Events.On("video", (ev) => fn(ev.data as VideoState));
 }
 
+// What the setup and the settings show of the models, sent whole when the
+// models folder changed outside the app, a model deleted in Finder or put
+// there by hand, see tellSetup in reconcile.go.
+export function onSetup(fn: (state: SetupState) => void): () => void {
+  return Events.On("setup", (ev) => fn(ev.data as SetupState));
+}
+
 export function clock(seconds: number): string {
   if (!isFinite(seconds) || seconds < 0) seconds = 0;
   const h = Math.floor(seconds / 3600);
@@ -1318,34 +1352,29 @@ export function errorText(err: unknown): string {
   }
 }
 
-// Where the captions may sit, as the distance from the bottom of a
-// 1080x1920 frame. The same steps the engine snaps to.
-// Where the captions sit when nobody has placed them, as the distance from
-// the bottom of a 1080x1920 frame. The same number as DefaultStyle in the
-// engine.
-// What the captions look like when nobody has changed them. The same
-// values as DefaultStyle in the engine, so putting them back here and
-// rendering with no settings at all come to the same picture.
-export const captionFontDefault = "Inter Black";
-// The colours the captions start out in: white text on a black box that
-// lets half the picture through, as the engine's own style has them.
-export const captionTextDefault = "#ffffff";
-export const captionTextOpacityDefault = 100;
-export const captionBoxDefault = "#000000";
-export const captionOpacityDefault = 50;
-// The pill behind the word being spoken, as the engine's own style has it.
-export const captionHighlightDefault = "#942192";
-export const captionHighlightOpacityDefault = 100;
-export const captionSizeDefault = 96;
-export const captionYDefault = 300;
-export const captionYStep = 40;
-export const captionYMin = 120;
-export const captionYMax = 1560;
+// How the captions look before anybody changes them, and the heights they
+// may sit at, as the Go side has them, see engine.CaptionStart. The
+// interface keeps no copy of either.
+export interface CaptionStart {
+  font: string;
+  size: number;
+  // Where the captions sit, and every height they may sit at, from the
+  // lowest up, as the distance from the bottom of a 1080x1920 frame.
+  y: number;
+  heights: number[];
+  // How far apart two heights are.
+  step: number;
+  primary: string;
+  box: string;
+  highlightColour: string;
+}
 
-export function snapCaptionY(y: number): number {
-  if (!isFinite(y)) return 300;
-  const step = Math.round(y / captionYStep) * captionYStep;
-  return Math.max(captionYMin, Math.min(step, captionYMax));
+// The height of these nearest to y, which is where a drag of the captions
+// lands, and the higher of two as near. With none, y as it is.
+export function nearestHeight(heights: number[], y: number): number {
+  let best: number | undefined;
+  for (const h of heights) if (best === undefined || Math.abs(h - y) <= Math.abs(best - y)) best = h;
+  return best ?? y;
 }
 
 // Where the playhead lands when it is stepped by words, which is what

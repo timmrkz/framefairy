@@ -33,8 +33,9 @@ A session looks over the issues once a week, started by a routine on
 claude.ai. It changes no file, so it opens no pull request. It works in
 this order, because what happens now comes first:
 
-1. **Main's CI runs of the last seven days.** Every red run is matched
-   to an issue. A red run with none gets one.
+1. **Main's CI runs of the last seven days**, the nightly runs among
+   them, the walks and the fuzzing, which no pull request waits on.
+   Every red run is matched to an issue. A red run with none gets one.
 2. **Labels.** Every open issue without a priority or a size gets one
    from the table in [WORKFLOW.md](WORKFLOW.md#priority-and-size). An
    issue whose facts changed is looked at again, a flaky test seen
@@ -58,7 +59,12 @@ this order, because what happens now comes first:
    see below. An issue a session opened that is mostly done is
    rewritten to what is left. One Tim opened gets a comment that says
    what is left. Each closing says in one line which pull request or
-   decision closed it. A closed issue with a sub-issue still open is
+   decision closed it. One that waits for its next failure to say why,
+   with nothing to work on until then, because nothing failed since its
+   last trace or log, is closed as not planned with a comment that it
+   is reopened once it fails again, with the run and its trace. An open
+   issue nobody can act on is asked about at every triage and answered
+   the same way each time. A closed issue with a sub-issue still open is
    reopened, a problem or any other parent, because a parent closes only
    after the last of its sub-issues.
 5. **Problems that come back**, in even weeks of the year, see below.
