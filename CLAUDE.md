@@ -563,7 +563,8 @@ messages, pull request text, code comments and chat replies.
   and `make models` is left for the command line, which has no window to
   ask in.
 - **Build with make.** `make` must finish without any warning on macOS, see
-  [docs/BUILD.md](docs/BUILD.md). CI fails on any warning in the macOS build.
+  [docs/BUILD.md](docs/BUILD.md). CI fails the macOS build on a warning from
+  clang, Apple's linker or the interface build, with `WERROR=1`.
   It must also stay quick when there is nothing to do: everything `make`
   decides before it builds is a `command -v` or a file test, never a
   package manager asked what it has.

@@ -1,6 +1,6 @@
 /// <reference types="vitest/config" />
 import { mkdirSync, writeFileSync } from "node:fs";
-import { createLogger, defineConfig, type Plugin } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 
 // Every package that ends up in the bundle has its licence shown in the
@@ -38,22 +38,22 @@ function notices(): Plugin {
 
 // With WERROR=1, which make passes on and CI sets for the Mac build, a
 // warning fails the build: every warning is printed as before, and the
-// build then ends with a status that is not zero. Vite and Rolldown warn
-// through Vite's logger, Svelte through the plugin's onwarn.
+// build then ends with a status that is not zero. What is counted is what
+// is printed. Vite's logger and Rolldown print with console.warn, Node
+// prints its own, like a deprecation, through the process's warning
+// event, and the Svelte plugin hands each to onwarn below.
 const strict = process.env.WERROR === "1";
 function warned(): void {
   if (strict) process.exitCode = 1;
 }
-const logger = createLogger();
-const { warn, warnOnce } = logger;
-logger.warn = (message, options) => {
-  warned();
-  warn(message, options);
-};
-logger.warnOnce = (message, options) => {
-  warned();
-  warnOnce(message, options);
-};
+if (strict) {
+  const warn = console.warn.bind(console);
+  console.warn = (...args: unknown[]) => {
+    warned();
+    warn(...args);
+  };
+  process.on("warning", warned);
+}
 
 // The app calls Go methods by name, so there are no generated bindings to
 // load here. The build goes next to the app's Go code, because Go can only
@@ -61,7 +61,6 @@ logger.warnOnce = (message, options) => {
 // on every build, while dist/.keep stays so Go can embed dist/ before the
 // first build.
 export default defineConfig({
-  customLogger: logger,
   server: {
     host: "127.0.0.1",
     port: Number(process.env.WAILS_VITE_PORT) || 9245,
@@ -79,15 +78,17 @@ export default defineConfig({
     chunkSizeWarningLimit: 1000,
     // Rolldown warns when its plugins took most of a build's time, which
     // depends on how fast the machine is and says nothing about the code.
-    // On CI's Mac it came on every build, and with WERROR=1 it failed it.
+    // It came once on CI's Mac, on 8 November, and WERROR=1 failed on it.
     rolldownOptions: {
       checks: { bundlerTimings: false },
     },
   },
   plugins: [
     svelte({
+      // The plugin prints no warning about a package's own component, so
+      // that one is not counted either.
       onwarn(warning, handler) {
-        warned();
+        if (!warning.filename?.includes("node_modules")) warned();
         handler(warning);
       },
     }),

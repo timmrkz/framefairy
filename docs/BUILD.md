@@ -675,12 +675,15 @@ It also sets `CGO_ENABLED=1`, which the speech library needs, and
 environment in [WORKFLOW.md](WORKFLOW.md) uses.
 
 CI checks the same on every pull request. Its job `outside` builds with
-`WERROR=1`, and then any warning fails the build where it comes from:
+`WERROR=1`, and then a warning fails the build where it comes from:
 clang's, with `-Werror` in `CGO_CFLAGS` and `CGO_CXXFLAGS`, Apple's
 linker's, with `-Wl,-fatal_warnings` in `CGO_LDFLAGS`, and the interface
-build's, Vite's, Rolldown's and Svelte's, through `frontend/vite.config.ts`.
-Each warning is printed as always. Without `WERROR` a warning is only
-printed, so a Mac of one's own builds on.
+build's, Vite's, Rolldown's, Svelte's and Node's, through
+`frontend/vite.config.ts`, which counts every warning printed. Each is
+printed as always. The few lines Go and make print as warnings of their
+own are not counted. Rolldown's note that plugins took most of a build's
+time is off, because it depends on how fast the machine is. Without
+`WERROR` a warning is only printed, so a Mac of one's own builds on.
 
 The programs therefore need macOS 13 Ventura or newer, which Go 1.27 needs
 anyway.
