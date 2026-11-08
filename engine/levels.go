@@ -546,6 +546,13 @@ func writeLevels(fsys afero.Fs, logs string, stamp sourceStamp, st *levelState) 
 		reach = parts[len(parts)-1][1]
 	}
 	from, to := st.fresh[0], min(st.fresh[1], reach)
+	// A frames file that is gone or shorter than where the new frames go,
+	// removed while the measuring ran or cut off by a power cut, would
+	// read as 0 dB in the hole, loud and never measured again. It is
+	// written whole instead.
+	if info, err := fsys.Stat(framesAt); err != nil || info.Size() < int64(from)*4 {
+		st.whole = true
+	}
 	flags := os.O_WRONLY | os.O_CREATE
 	if st.whole {
 		from, to = 0, reach

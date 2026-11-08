@@ -24,10 +24,11 @@
 //   whatever moment the play began at. A grid that began where the play
 //   began drew each frame up to a frame late, and a play begun inside a
 //   frame never drew the last frame of a piece at all.
-// - A run is what one decoder is fed in one go, in decode order, from a
-//   key frame on. A piece that starts after the last one ends, inside what
-//   has already been decoded, carries the run on. Any other piece starts a
-//   new run, from the key frame before it.
+// - A run is what one decoder is fed in one go, the frames in the order
+//   they are shown, from the first frame of its piece. Every frame the Go
+//   side hands over is its own key frame, see Samples. A piece that starts
+//   with the frame right after the last one fed carries the run on. Any
+//   other piece starts a new run, from its own first frame.
 import type { Source } from "./even";
 import { rankAt, ticks, type Samples } from "./movie";
 
@@ -769,15 +770,14 @@ export class AudioPlan {
   // The slices of packet j as it came out of the decoder, straight after
   // what came out of the packet before it. A decoder puts its sound out as
   // one stream, and a player counts its samples: the stamps only say where
-  // the stream starts. They need not say more to the sample. Every AAC
-  // packet decodes to 1024 samples, but Tim's start.mp4 says its packets
-  // last 1008, 1056 and 1008 in turn, and a clock of 600 ticks a second,
-  // QuickTime's, says where a packet starts only to the nearest 80 samples
-  // at 48 kHz. Placed by its stamp, a packet missed the one before at most
-  // packets, a gap or an overlap heard as a click, a crackle over the whole
-  // play. So only the first packet that comes out of a run goes where its
-  // stamp says, and one after a packet that came out as nothing, since
-  // then the stream itself has a gap.
+  // the stream starts. They need not say more to the sample. The Go side
+  // hands the sound over in packets of the same length one after another,
+  // see PACKET in movie.ts, so the stamps and the stream agree. When the
+  // packets came from the file, Tim's start.mp4 gave stamps that missed by
+  // up to 80 samples, a click heard over the whole play. So only the first
+  // packet that comes out of a run goes where its stamp says, and one
+  // after a packet that came out as nothing, since then the stream itself
+  // has a gap.
   decoded(run: AudioRun, j: number, got: number): Slice[] {
     const p = this.packet(j);
     const at = run.end !== undefined && run.endPacket === j - 1 ? run.end : p.at + Math.max(0, p.n - got);

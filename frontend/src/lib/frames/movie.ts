@@ -57,8 +57,8 @@ export type AudioTrack = {
 // ticks into seconds. Every frame of the grid is one the Go side makes and
 // shows in the order it comes, so a sample is its own key frame and its own
 // place in the order, and nothing about them is kept: the arrays a
-// WebCodecs decoder needed for that took about 25 MB for three hours at 60
-// frames a second.
+// WebCodecs decoder needed for that took about 29 MB for three hours at 60
+// frames a second with its sound.
 export type Samples = {
   count: number;
   timescale: number;

@@ -337,6 +337,24 @@ describe("VideoPlan", () => {
   });
 });
 
+describe("VideoPlan on a picture that starts after its sound", () => {
+  // In ticks of 1/600 s, 30 frames a second, the first at 0.25 s.
+  const late = track(30, 600, 20, 150);
+
+  test("draws the first frame from the start of a piece that begins before it, then each frame where it begins", () => {
+    const p = new VideoPlan(late, 1 / 30, new Program([{ start: 0.1, end: 0.4 }], false), 0);
+    p.extend(Infinity);
+    const drawn: number[] = [];
+    for (let k = 0; k <= p.lastK; k++) drawn.push(p.need(k)!.rank);
+    // The frames that begin at 0.25, 0.2833, 0.3167 and 0.35, the last
+    // the one that holds a frame before the piece's end, 0.3667.
+    expect(drawn).toEqual([0, 1, 2, 3]);
+    expect(p.at(0)).toBeCloseTo(0);
+    expect(p.at(1)).toBeCloseTo(0.28333 - 0.1, 4);
+    expect(p.at(3)).toBeCloseTo(0.35 - 0.1, 4);
+  });
+});
+
 describe("stillFeed", () => {
   test("decodes the frame that holds the moment, and only it", () => {
     expect(stillFeed(video, 63.05)).toEqual({ key: 1576, last: 1576, rank: 1576 });

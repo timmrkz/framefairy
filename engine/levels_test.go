@@ -493,3 +493,56 @@ func TestALongMeasuringWritesEachFrameOnceAndFlushesNothing(t *testing.T) {
 		t.Errorf("flushed to the drive %d times", w.flushed)
 	}
 }
+
+// A frames file that is gone or cut short while the loudness is measured
+// is written whole at the next write, not only from where the new frames
+// go: the hole would read as 0 dB, a full waveform that is never measured
+// again.
+func TestAFramesFileCutShortIsWrittenWholeAgain(t *testing.T) {
+	fsys := afero.NewMemMapFs()
+	logs := "/videos/episode.framefairy/logs"
+	if err := fsys.MkdirAll(logs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, framesAt := levelsPaths(logs)
+	st := &levelState{end: -1, whole: true}
+	for n := range 100 {
+		st.put(n, -20)
+	}
+	if err := writeLevels(fsys, logs, sourceStamp{}, st); err != nil {
+		t.Fatal(err)
+	}
+	for _, cut := range []func(){
+		func() {
+			f, err := fsys.OpenFile(framesAt, os.O_WRONLY, 0o644)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_ = f.Truncate(40)
+			f.Close()
+		},
+		func() { _ = fsys.Remove(framesAt) },
+	} {
+		cut()
+		at := len(st.frames)
+		for n := at; n < at+100; n++ {
+			st.put(n, -30)
+		}
+		if err := writeLevels(fsys, logs, sourceStamp{}, st); err != nil {
+			t.Fatal(err)
+		}
+		raw, err := afero.ReadFile(fsys, framesAt)
+		if err != nil || len(raw) != 4*(at+100) {
+			t.Fatalf("the frames file holds %d bytes for %d frames: %v", len(raw), at+100, err)
+		}
+		for n := range at + 100 {
+			want := float32(-20)
+			if n >= 100 {
+				want = -30
+			}
+			if got := math.Float32frombits(binary.LittleEndian.Uint32(raw[4*n:])); got != want {
+				t.Fatalf("frame %d reads %v dB, not %v", n, got, want)
+			}
+		}
+	}
+}
