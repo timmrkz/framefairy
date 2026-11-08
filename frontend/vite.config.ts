@@ -77,6 +77,12 @@ export default defineConfig({
     outDir: "../cmd/framefairy-app/dist/app",
     emptyOutDir: true,
     chunkSizeWarningLimit: 1000,
+    // Rolldown warns when its plugins took most of a build's time, which
+    // depends on how fast the machine is and says nothing about the code.
+    // On CI's Mac it came on every build, and with WERROR=1 it failed it.
+    rolldownOptions: {
+      checks: { bundlerTimings: false },
+    },
   },
   plugins: [
     svelte({
