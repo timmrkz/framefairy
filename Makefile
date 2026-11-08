@@ -104,11 +104,14 @@ UNAME := $(shell uname -s 2>/dev/null)
 # libraries' own.
 MACOS_MIN := 13.0
 LDFLAGS :=
-# WERROR=1 fails the build on any warning, the way CI holds the Mac build
-# to none: clang's with -Werror, Apple's linker's with -fatal_warnings, and
-# Vite's, Rolldown's and Svelte's through frontend/vite.config.ts. Each
-# warning is still printed where it comes from. Off by default, so a
-# warning on a Mac of one's own is read and not in the way.
+# WERROR=1 fails the build on a warning, the way CI holds the Mac build to
+# none: on a Mac clang's, with -Werror, and Apple's linker's, with
+# -fatal_warnings, and everywhere the interface build's, Vite's,
+# Rolldown's, Svelte's and Node's, through frontend/vite.config.ts. Each
+# warning is still printed where it comes from. Go and make print few
+# warnings of their own, and those are not counted. Off by default, so a
+# warning on a Mac of one's own is read and not in the way. A failed
+# interface build leaves no index.html, so the next make builds it again.
 WERROR ?=
 CWARNINGS := $(if $(filter 1,$(WERROR)),-Werror)
 ifeq ($(UNAME),Darwin)
@@ -253,7 +256,7 @@ $(UI_BUILT): $(UI_SOURCES)
 		exit 1; }
 	@$(MAKE) -s --no-print-directory frontend/node_modules/.package-lock.json
 	@echo "Building the interface"
-	@cd frontend && WERROR='$(WERROR)' $(NPM) run --silent build -- --logLevel warn
+	@cd frontend && WERROR='$(WERROR)' $(NPM) run --silent build -- --logLevel warn || { rm -f $@; exit 1; }
 
 # The programs are always handed to go build, which rebuilds only what
 # changed and takes a moment otherwise.
