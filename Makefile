@@ -104,11 +104,23 @@ UNAME := $(shell uname -s 2>/dev/null)
 # libraries' own.
 MACOS_MIN := 13.0
 LDFLAGS :=
+# WERROR=1 fails the build on any warning, the way CI holds the Mac build
+# to none: clang's with -Werror, Apple's linker's with -fatal_warnings, and
+# Vite's, Rolldown's and Svelte's through frontend/vite.config.ts. Each
+# warning is still printed where it comes from. Off by default, so a
+# warning on a Mac of one's own is read and not in the way.
+WERROR ?=
+CWARNINGS := $(if $(filter 1,$(WERROR)),-Werror)
 ifeq ($(UNAME),Darwin)
 TOOLS_FIRST := $(CURDIR)/$(BIN):$(PATH)
 export MACOSX_DEPLOYMENT_TARGET := $(MACOS_MIN)
-export CGO_CFLAGS := -O2 -g -mmacosx-version-min=$(MACOS_MIN)
-export CGO_CXXFLAGS := -O2 -g -mmacosx-version-min=$(MACOS_MIN)
+export CGO_CFLAGS := -O2 -g -mmacosx-version-min=$(MACOS_MIN) $(CWARNINGS)
+export CGO_CXXFLAGS := -O2 -g -mmacosx-version-min=$(MACOS_MIN) $(CWARNINGS)
+# Go hands CGO_LDFLAGS to the linker of every program with C in it, which
+# on a Mac is every program here.
+ifeq ($(WERROR),1)
+export CGO_LDFLAGS := -O2 -g -Wl,-fatal_warnings
+endif
 LDFLAGS := -extldflags=-mmacosx-version-min=$(MACOS_MIN)
 # The episode's decoder links ffmpeg's static libraries, and pkg-config
 # names some of them more than once, each library listing what it needs.
@@ -241,7 +253,7 @@ $(UI_BUILT): $(UI_SOURCES)
 		exit 1; }
 	@$(MAKE) -s --no-print-directory frontend/node_modules/.package-lock.json
 	@echo "Building the interface"
-	@cd frontend && $(NPM) run --silent build -- --logLevel warn
+	@cd frontend && WERROR='$(WERROR)' $(NPM) run --silent build -- --logLevel warn
 
 # The programs are always handed to go build, which rebuilds only what
 # changed and takes a moment otherwise.

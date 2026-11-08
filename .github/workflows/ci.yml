@@ -611,10 +611,12 @@ jobs:
           security unlock-keychain -p outside "$kc"
           security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
           security default-keychain -d user -s "$kc"
-      # Tim's platform, so the build has to be clean: on a Mac a warning
-      # from clang or the linker fails the build part, see
-      # scripts/changed.sh. make outside builds on what it built.
+      # Tim's platform, so the build has to be clean: with WERROR=1 a
+      # warning from clang, the linker, Vite or Svelte fails it, see the
+      # Makefile. make outside builds on what it built.
       - name: Built without warnings and opened from outside
+        env:
+          WERROR: 1
         run: make changed PART="build outside"
       - if: ${{ !cancelled() && (github.ref == 'refs/heads/main' || steps.gocache.outputs.cache-matched-key == '') }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

@@ -33,8 +33,8 @@
 #   walks      make walks, every run, for the interface the app shows,
 #              the walks themselves and anything that reaches the app's
 #              Go side
-#   build      make, for anything that ships. On a Mac the build may
-#              print no warning
+#   build      make, for anything that ships. On a Mac in CI the build
+#              may print no warning, see WERROR in the Makefile
 #   outside    make outside, on a Mac in CI, for anything that ships
 #
 # A file it knows nothing about reaches the build, so a file nobody
@@ -491,20 +491,9 @@ for p in $ran; do
 		# Away from a Mac nothing builds the tools we ship, and make
 		# stops without them, so there the build proves the programs
 		# build and says it goes without. On a Mac it builds them, and
-		# a warning from clang or the linker fails it.
+		# with WERROR=1, which CI sets, a warning fails it.
 		if [ "$OS" = Darwin ]; then
-			log=$(mktemp)
-			status=0
-			$MAKE -s --no-print-directory 2>&1 | tee "$log" || status=1
-			# tee hides make's own status, so a failed build is read
-			# from what it printed as well.
-			if [ "$status" = 0 ] && grep -iE "warning|deprecated" "$log" >/dev/null; then
-				grep -iE "warning|deprecated" "$log"
-				echo "FAIL	the build printed warnings, see above"
-				status=1
-			fi
-			rm -f "$log"
-			[ "$status" = 0 ] || exit 1
+			$MAKE -s --no-print-directory
 		else
 			$MAKE -s --no-print-directory NOTOOLS=1
 		fi

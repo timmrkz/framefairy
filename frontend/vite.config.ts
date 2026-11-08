@@ -1,6 +1,6 @@
 /// <reference types="vitest/config" />
 import { mkdirSync, writeFileSync } from "node:fs";
-import { defineConfig, type Plugin } from "vite";
+import { createLogger, defineConfig, type Plugin } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 
 // Every package that ends up in the bundle has its licence shown in the
@@ -36,12 +36,32 @@ function notices(): Plugin {
   };
 }
 
+// With WERROR=1, which make passes on and CI sets for the Mac build, a
+// warning fails the build: every warning is printed as before, and the
+// build then ends with a status that is not zero. Vite and Rolldown warn
+// through Vite's logger, Svelte through the plugin's onwarn.
+const strict = process.env.WERROR === "1";
+function warned(): void {
+  if (strict) process.exitCode = 1;
+}
+const logger = createLogger();
+const { warn, warnOnce } = logger;
+logger.warn = (message, options) => {
+  warned();
+  warn(message, options);
+};
+logger.warnOnce = (message, options) => {
+  warned();
+  warnOnce(message, options);
+};
+
 // The app calls Go methods by name, so there are no generated bindings to
 // load here. The build goes next to the app's Go code, because Go can only
 // embed files from its own folder. It goes into dist/app/, which is emptied
 // on every build, while dist/.keep stays so Go can embed dist/ before the
 // first build.
 export default defineConfig({
+  customLogger: logger,
   server: {
     host: "127.0.0.1",
     port: Number(process.env.WAILS_VITE_PORT) || 9245,
@@ -50,15 +70,23 @@ export default defineConfig({
   // Vite warns about a chunk over 500 kB because a web page downloads it.
   // The app reads its interface from its own binary, so the size of one
   // chunk costs nothing the warning is about, and the build fails on any
-  // warning. The bundle passed 500 kB with the bounce after a word step.
-  // The limit stays, at twice that, to catch a library pulled in by
-  // mistake.
+  // warning, see WERROR above. The bundle passed 500 kB with the bounce
+  // after a word step. The limit stays, at twice that, to catch a library
+  // pulled in by mistake.
   build: {
     outDir: "../cmd/framefairy-app/dist/app",
     emptyOutDir: true,
     chunkSizeWarningLimit: 1000,
   },
-  plugins: [svelte(), notices()],
+  plugins: [
+    svelte({
+      onwarn(warning, handler) {
+        warned();
+        handler(warning);
+      },
+    }),
+    notices(),
+  ],
   // Which lines the interface's own tests run, counted only when asked,
   // make interface COVERAGE=, for the nightly snapshot in Codecov, see
   // Coverage in docs/TESTING.md. The components are counted by the walks,

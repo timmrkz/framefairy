@@ -360,7 +360,7 @@ command, `make changed` for its part, the one a person runs, see
 | `walks (1/4)` to `walks (4/4)` | Linux, in the CI image | `make changed PART=walks SHARD=1/4` to `4/4` with `WALKTIMEOUT=8m`, a quarter of the runs each by how long they took last, `walk-times.tsv`, so a run that hangs is named in minutes. Each part of the app walks in WebKit once it has moved there, and in Chromium until then, see Two browsers in [TESTING.md](TESTING.md#two-browsers). On three machines each job took four and three quarter minutes |
 | `fuzz` | Linux, in the CI image | `make changed PART=fuzz SIMTIME=0`, from the fuzz cache main left, see [Tests](#tests) |
 | `macos` | macOS | the ffmpeg we ship, built by its script and kept until the script changes, then `make changed PART=unit` against it, which on a Mac leaves out the race detector, which Linux runs, and the licence server's packages, which never run on a Mac |
-| `outside` | macOS | the ffmpeg and the llama-server we ship, then `make changed PART="build outside"`, `make` with no warnings allowed, then `make outside`: a keychain of its own, then the app opened by macOS from an Unlock link, closed and open, with the local dispenser beside it, see [TESTING.md](TESTING.md#from-outside-the-app). Stopped after 30 minutes |
+| `outside` | macOS | the ffmpeg and the llama-server we ship, then `make changed PART="build outside"`, `make` with `WERROR=1`, so no warning is allowed, then `make outside`: a keychain of its own, then the app opened by macOS from an Unlock link, closed and open, with the local dispenser beside it, see [TESTING.md](TESTING.md#from-outside-the-app). Stopped after 30 minutes |
 
 `linux`, `walks`, `macos` and `outside` start from Go's build cache as
 main left it after its last push, one cache for each job and for each
@@ -674,8 +674,13 @@ It also sets `CGO_ENABLED=1`, which the speech library needs, and
 `GOTOOLCHAIN` already set in the environment wins, which the cloud
 environment in [WORKFLOW.md](WORKFLOW.md) uses.
 
-CI checks the same on every pull request. Its macOS job fails when the build
-prints any warning.
+CI checks the same on every pull request. Its job `outside` builds with
+`WERROR=1`, and then any warning fails the build where it comes from:
+clang's, with `-Werror` in `CGO_CFLAGS` and `CGO_CXXFLAGS`, Apple's
+linker's, with `-Wl,-fatal_warnings` in `CGO_LDFLAGS`, and the interface
+build's, Vite's, Rolldown's and Svelte's, through `frontend/vite.config.ts`.
+Each warning is printed as always. Without `WERROR` a warning is only
+printed, so a Mac of one's own builds on.
 
 The programs therefore need macOS 13 Ventura or newer, which Go 1.27 needs
 anyway.
