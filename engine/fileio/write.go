@@ -12,6 +12,29 @@ func WriteAtomic(fsys afero.Fs, path string, body []byte) error {
 	return Replace(fsys, path, "."+filepath.Base(path)+"-*", body, nil)
 }
 
+// WriteUnflushed replaces the file at path with body in one step as far
+// as any reader is concerned, like WriteAtomic, but flushes nothing to the
+// drive: after a power cut it may hold neither. It is for what can be made
+// again, which a full flush on every write would only slow down.
+func WriteUnflushed(fsys afero.Fs, path string, body []byte) error {
+	tmp, err := afero.TempFile(fsys, filepath.Dir(path), "."+filepath.Base(path)+"-*")
+	if err != nil {
+		return err
+	}
+	name := tmp.Name()
+	_, err = tmp.Write(body)
+	if closeErr := tmp.Close(); err == nil {
+		err = closeErr
+	}
+	if err == nil {
+		err = fsys.Rename(name, path)
+	}
+	if err != nil {
+		fsys.Remove(name)
+	}
+	return err
+}
+
 // Replace writes body beside path, under a temporary name made from
 // pattern, and moves it onto path. check, if there is one, reads the
 // temporary file first, and a file it refuses is never moved.

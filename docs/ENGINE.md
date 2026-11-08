@@ -183,7 +183,11 @@ What it has is written every half second, frames first and the json
 after, which gives the parts measured as frame numbers and, once a run
 has reached the end of the audio, how many frames it has. So `ReadLevels`
 never hands out a reading the json does not vouch for, and the waveform
-grows as it runs. Levels of a file that has changed since are none, and a
+grows as it runs. Only the frames measured since the last write are
+written, where they belong in the file, and neither file is flushed to
+the drive, because the loudness can be measured again: written whole and
+flushed each time, four hours were 158 MB written and 104 full flushes,
+`F_FULLFSYNC` on macOS, now 5.8 MB and none. Levels of a file that has changed since are none, and a
 measuring cut off carries on with the parts it has. Version 1 of the file
 ran from the start with no gaps and is measured again. `Levels.Over` lays
 these over the transcript's readings, so the waveform has whatever either
@@ -751,8 +755,10 @@ time of the tool and of the file, so a file written again or a tool
 replaced is asked again. `Probe`, `pictureStart`, `lastMoment`,
 `SubtitleFilter` and `Preflight` ask it first. A probe whose context was stopped is not kept, and no caller can
 change what is kept through the `SourceInfo` it was given. What a render
-reads of each piece it cuts, `unevenPieces`, is its own stretch of the
-file and is read every time.
+reads of each piece it cuts, how its frames come, `unevenIn`, and in a
+file with no index of its key frames where it is read from, `keyBefore`,
+is kept the same way, by the piece, so a clip rendered again asks
+ffprobe nothing it asked before.
 
 ### Frames at their own times
 

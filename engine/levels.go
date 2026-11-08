@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io"
 	"math"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -206,6 +207,11 @@ type levelState struct {
 	got    []bool
 	// end is how many frames the audio has, or -1 while nobody knows.
 	end int
+	// fresh is the frames put since they were last written, from and to,
+	// the second not included, see writeLevels. whole says the frames
+	// file holds nothing of this measuring yet, so it is written whole.
+	fresh [2]int
+	whole bool
 }
 
 func (s *levelState) put(n int, f float32) {
@@ -214,6 +220,11 @@ func (s *levelState) put(n int, f float32) {
 		s.got = append(s.got, false)
 	}
 	s.frames[n], s.got[n] = f, true
+	if s.fresh[1] <= s.fresh[0] {
+		s.fresh = [2]int{n, n + 1}
+	} else {
+		s.fresh = [2]int{min(s.fresh[0], n), max(s.fresh[1], n+1)}
+	}
 }
 
 func (s *levelState) has(n int) bool { return n < len(s.got) && s.got[n] }
@@ -316,6 +327,9 @@ func (e *Engine) MeasureLevels(ctx context.Context, source string, focus func() 
 			st.put(n, had.Frames[n])
 		}
 	}
+	// What was measured before is in the frames file already. Without it,
+	// the file is of a measuring of the file before it changed, or of none.
+	st.fresh, st.whole = [2]int{}, len(had.Parts) == 0
 	tell := func() {
 		if err := writeLevels(e.Files, logs, stamp, st); err == nil && progress != nil {
 			progress(st.measured())
@@ -515,8 +529,15 @@ func (e *Engine) readLevels(ctx context.Context, r io.Reader, put func(float32) 
 	}
 }
 
-// writeLevels writes the frames and then the json that says which are
-// measured, each replaced in one step.
+// writeLevels writes the frames measured since it last wrote, where they
+// are in the frames file, and then the json that says which are measured,
+// replaced in one step. A measuring of a long video writes what it has
+// twice a second, and writing all of it each time rewrote megabytes for
+// the few frames that were new.
+//
+// Neither is flushed to the drive. The loudness can be measured again,
+// and a full flush, F_FULLFSYNC on macOS, is kept for what cannot, the
+// plans and the transcripts, see fileio.Replace.
 func writeLevels(fsys afero.Fs, logs string, stamp sourceStamp, st *levelState) error {
 	meta, framesAt := levelsPaths(logs)
 	parts := st.parts()
@@ -524,13 +545,30 @@ func writeLevels(fsys afero.Fs, logs string, stamp sourceStamp, st *levelState) 
 	if len(parts) > 0 {
 		reach = parts[len(parts)-1][1]
 	}
-	var raw bytes.Buffer
-	if err := binary.Write(&raw, binary.LittleEndian, st.frames[:reach]); err != nil {
-		return err
+	from, to := st.fresh[0], min(st.fresh[1], reach)
+	flags := os.O_WRONLY | os.O_CREATE
+	if st.whole {
+		from, to = 0, reach
+		flags |= os.O_TRUNC
 	}
-	if err := fileio.WriteAtomic(fsys, framesAt, raw.Bytes()); err != nil {
-		return err
+	if to > from || st.whole {
+		f, err := fsys.OpenFile(framesAt, flags, 0o644)
+		if err != nil {
+			return err
+		}
+		raw := make([]byte, 4*(to-from))
+		for i, frame := range st.frames[from:to] {
+			binary.LittleEndian.PutUint32(raw[4*i:], math.Float32bits(frame))
+		}
+		_, err = f.WriteAt(raw, int64(from)*4)
+		if closeErr := f.Close(); err == nil {
+			err = closeErr
+		}
+		if err != nil {
+			return err
+		}
 	}
+	st.fresh, st.whole = [2]int{}, false
 	file := levelsFile{Version: levelsVersion, Source: stamp, Parts: parts, Done: st.done()}
 	if st.end >= 0 {
 		file.End = st.end
@@ -539,5 +577,5 @@ func writeLevels(fsys afero.Fs, logs string, stamp sourceStamp, st *levelState) 
 	if err != nil {
 		return err
 	}
-	return fileio.WriteAtomic(fsys, meta, body)
+	return fileio.WriteUnflushed(fsys, meta, body)
 }
