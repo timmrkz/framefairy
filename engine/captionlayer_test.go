@@ -865,3 +865,175 @@ func TestTheCaptionFilesKeptAreTheOnesUsedLast(t *testing.T) {
 		t.Errorf("after a was used the folder keeps %v", got)
 	}
 }
+
+// A step of the caption size draws the captions that show on the frame
+// from a file of their own, measured in a moment, while the clip's whole
+// file is made, issue #360. That file draws on its frames exactly what
+// the whole file draws there, every frame of a clip of three captions,
+// each word lit in turn, the pop included.
+//
+// On the real disk: ffmpeg measures the words and the decoder reads the
+// caption files and their fonts.
+func TestTheCaptionsShowingDrawnAloneAreTheClipsWholeFileThere(t *testing.T) {
+	program := os.Getenv("FRAMEFAIRY_FRAMES")
+	if program == "" {
+		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
+	}
+	t.Parallel()
+	ctx := context.Background()
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
+	var words []timed.Cue
+	at := 0.2
+	for _, said := range strings.Fields("Das ist respektvoll und dann haben wir einfach weitergemacht, weil es keinen anderen Weg gab.") {
+		words = append(words, timed.Cue{Start: at, End: at + 0.25, Text: said})
+		at += 0.3
+	}
+	clip := Clip{ID: "01", Slug: "alone", Segments: []Segment{{Start: 0, End: 4.2}}}
+	style := new(Fonts).Style(nil)
+	d := &CaptionDrawing{Laid: ClipCaptions(clip, &Transcript{Words: words, Language: "de"}, style), Clip: clip}
+	if len(d.Laid) < 3 {
+		t.Fatalf("the clip has %d captions, the test wants three or more", len(d.Laid))
+	}
+	const w, h = 540, 960
+	dir := t.TempDir()
+	if err := new(Fonts).Install(dir, style.Font); err != nil {
+		t.Fatal(err)
+	}
+	written := map[string]string{}
+	file := func(laid []LaidCaption) string {
+		t.Helper()
+		track, err := e.CaptionTrack(ctx, laid, w, h, nil, SourceInfo{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		name := filepath.Join(dir, fmt.Sprintf("%d.ass", len(written)))
+		if was, ok := written[string(track)]; ok {
+			return was
+		}
+		if err := os.WriteFile(name, track, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		written[string(track)] = name
+		return name
+	}
+	whole := file(d.Laid)
+	dec := newEpisodeFrames(program, fixtures.Path(t, "lossless.mkv"))
+	defer dec.Close()
+	draw := func(file string, ms int64) framewire.Layer {
+		t.Helper()
+		l, err := dec.Captions(ctx, framewire.Captions{Width: w, Height: h, ShortW: w, ShortH: h,
+			File: file, Fonts: filepath.Join(dir, FontsFolder)}, ms)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return l
+	}
+	alone := 0
+	for ms := int64(0); ms < 4200; ms += 40 {
+		part := d.showing(ms)
+		if part == nil {
+			continue
+		}
+		alone++
+		want, got := draw(whole, ms), draw(file(part.Laid), ms)
+		if got.X != want.X || got.Y != want.Y || got.W != want.W || got.H != want.H || !bytes.Equal(got.Pixels, want.Pixels) {
+			t.Errorf("at %d ms the %d captions showing drew %dx%d at %d,%d, and the clip's whole file %dx%d at %d,%d, or other pixels",
+				ms, len(part.Laid), got.W, got.H, got.X, got.Y, want.W, want.H, want.X, want.Y)
+		}
+	}
+	if alone < 50 {
+		t.Errorf("only %d moments were drawn from the captions showing alone", alone)
+	}
+}
+
+// The captions that show are measured by the ask that wants them now, and
+// not waited for while another ask measures the same words, as the word
+// frames and the clip's whole file do at every step of the size: the ask
+// of a few blocks then waited for a measuring of every block of the clip.
+// Here the other ask never lets go, so a wait would hang the test.
+//
+// On the real disk: ffmpeg measures the words.
+func TestTheCaptionsShowingAreMeasuredWithoutWaitingForAnotherAsk(t *testing.T) {
+	ffmpegtest.Need(t)
+	t.Parallel()
+	ctx := context.Background()
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
+	s := e.Fonts.Style(nil)
+	blocks := []string{"Das ist", "respektvoll"}
+	const width, size = 540, 48
+	keys := []string{measureKey(blocks[0], s, width, size), measureKey(blocks[1], s, width, size)}
+	measured, _ := e.captions()
+	if boxes, _ := measured.claim(keys); boxes[0] != nil || boxes[1] != nil {
+		t.Fatal("the words were measured before")
+	}
+	defer measured.letGo(keys)
+	s.alone = true
+	boxes, ok := e.measureMany(ctx, blocks, s, width, size)
+	if !ok || len(boxes) != 2 || boxes[0] == nil || boxes[1] == nil {
+		t.Fatalf("measured alone: %v, %v", boxes, ok)
+	}
+	if boxes[1].right-boxes[1].left <= boxes[0].right-boxes[0].left {
+		t.Errorf("respektvoll is %d wide and Das ist %d", boxes[1].right-boxes[1].left, boxes[0].right-boxes[0].left)
+	}
+}
+
+// A size stepped with the arrow keys starts the clip's whole caption file
+// at every step. The file started for a size the hand has left is called
+// off, so it does not measure on beside the steps after it, unless a
+// request waits for it.
+//
+// It runs in a bubble, so the test knows when every build waits.
+func TestACaptionFileStartedForASizeLeftIsCalledOff(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		c := newTrackCache()
+		ctx := context.Background()
+		calledOff := make(chan string, 3)
+		until := func(name string) func(context.Context) (previewFile, error) {
+			return func(ctx context.Context) (previewFile, error) {
+				<-ctx.Done()
+				calledOff <- name
+				return previewFile{}, ctx.Err()
+			}
+		}
+		release := make(chan struct{})
+		last := func(context.Context) (previewFile, error) {
+			<-release
+			return previewFile{file: "98.ass"}, nil
+		}
+		if err := c.start(ctx, quiet, "/w", "size 96", "clip 01", until("96")); err != nil {
+			t.Fatal(err)
+		}
+		if err := c.start(ctx, quiet, "/w", "size 97", "clip 01", until("97")); err != nil {
+			t.Fatal(err)
+		}
+		if got := <-calledOff; got != "96" {
+			t.Errorf("the file called off is %s, want 96", got)
+		}
+		// Another clip's file is not this place's.
+		if err := c.start(ctx, quiet, "/w", "size 97 of 02", "clip 02", until("97 of 02")); err != nil {
+			t.Fatal(err)
+		}
+		// A request waits for the file of 97, so it is not called off.
+		waited := make(chan error, 1)
+		go func() {
+			_, err := c.once(ctx, quiet, "/w", "size 97", nil)
+			waited <- err
+		}()
+		synctest.Wait()
+		if err := c.start(ctx, quiet, "/w", "size 98", "clip 01", last); err != nil {
+			t.Fatal(err)
+		}
+		synctest.Wait()
+		select {
+		case got := <-calledOff:
+			t.Errorf("the file of %s was called off", got)
+		default:
+		}
+		close(release)
+		// The files nobody called off end when their time is up.
+		if err := <-waited; !errors.Is(err, context.DeadlineExceeded) {
+			t.Errorf("the request waiting for 97 got %v", err)
+		}
+	})
+}

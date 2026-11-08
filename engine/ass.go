@@ -57,6 +57,13 @@ type Style struct {
 	// light is the light of the short the colours are written for, see
 	// inLight.
 	light framewire.Light
+	// alone says the words are measured now, by this ask: a block another
+	// ask is measuring is measured again rather than waited for, see
+	// measureMany. The captions the video preview shows at once are
+	// measured so, a few blocks, while the clip's whole caption file and
+	// its word frames measure every block of the clip, and a wait for
+	// those let the few wait for all of them.
+	alone bool
 	// fonts are the faces the style was resolved among, which measure
 	// its words and give its face to libass, see Fonts.Style.
 	fonts *Fonts
@@ -657,11 +664,20 @@ func (e *Engine) measureMany(ctx context.Context, blocks []string, s Style,
 	var missing, others []int
 	var claimed []string
 	var waits []<-chan struct{}
-	if !keep {
+	switch {
+	case !keep:
 		for i := range blocks {
 			missing = append(missing, i)
 		}
-	} else {
+	case s.alone:
+		for i := range blocks {
+			if box, found := measured.get(key(i)); found {
+				out[i] = box
+			} else {
+				missing = append(missing, i)
+			}
+		}
+	default:
 		keys := make([]string, len(blocks))
 		for i := range blocks {
 			keys[i] = key(i)
@@ -883,16 +899,20 @@ func (e *Engine) writeASS(ctx context.Context, laid []LaidCaption, path string,
 // starts on. See docs/CAPTIONS.md.
 func (e *Engine) CaptionTrack(ctx context.Context, laid []LaidCaption, width, height int,
 	overrides map[string]any, source SourceInfo) ([]byte, error) {
-	track, _, err := e.captionTrack(ctx, laid, width, height, overrides, source)
+	track, _, err := e.captionTrack(ctx, laid, width, height, overrides, source, false)
 	return track, err
 }
 
 // captionTrack is CaptionTrack, and whether it draws the pill of the lit
 // word: not with the highlight off, nor when the words could not be
 // measured and the captions are drawn plain instead.
+//
+// alone measures the words without waiting for another ask measuring the
+// same, see Style.alone.
 func (e *Engine) captionTrack(ctx context.Context, laid []LaidCaption, width, height int,
-	overrides map[string]any, source SourceInfo) ([]byte, bool, error) {
+	overrides map[string]any, source SourceInfo, alone bool) ([]byte, bool, error) {
 	s := e.Fonts.Style(overrides).inLight(source.Light())
+	s.alone = alone
 	if s.Highlight {
 		track, err := e.highlighted(ctx, laid, width, height, s, source)
 		if track != nil || err != nil {

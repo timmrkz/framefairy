@@ -219,7 +219,11 @@ func captionsEpisode(t *testing.T) (*FrameFairy, string, *engine.CaptionsView) {
 	t.Helper()
 	ffmpegtest.Need(t)
 	needDecoder(t)
-	svc, mine, _ := library(t)
+	svc, mine, home := library(t)
+	// A caption file the video preview goes on making after its request,
+	// the clip's whole file after the captions showing, is written before
+	// the test's folder is removed.
+	t.Cleanup(func() { svc.store.machine.HoldPreviews(home)() })
 	plan := filepath.Join(engine.LogsDir(mine), "clips.json")
 	if err := os.MkdirAll(filepath.Dir(plan), 0o755); err != nil {
 		t.Fatal(err)
