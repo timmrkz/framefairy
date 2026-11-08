@@ -986,7 +986,26 @@ func (e *Engine) uneven(ctx context.Context, path string, info SourceInfo) bool 
 // A file with no index of its key frames is read from the key frame
 // keyBefore finds, since ffprobe lands between two there, see unindexed.
 // A file it cannot read is taken as even, the way it was taken before.
+// What ffprobe said is kept by the file's stamp, see probed.go, so a
+// clip rendered again, or a clip of a render that comes again with the
+// same piece, asks it once.
 func (e *Engine) unevenIn(ctx context.Context, path string, info SourceInfo, at, span float64) bool {
+	key, keep := keyFor(fmt.Sprintf("uneven from %g for %g", at, span), e.FFprobe, path)
+	if keep {
+		if uneven, ok := recall[bool](e.Machine, key); ok {
+			return uneven
+		}
+	}
+	uneven, read := e.readUneven(ctx, path, info, at, span)
+	if read && keep && ctx.Err() == nil {
+		remember(e.Machine, key, uneven)
+	}
+	return uneven
+}
+
+// readUneven is unevenIn asking ffprobe, and whether ffprobe read the
+// file.
+func (e *Engine) readUneven(ctx context.Context, path string, info SourceInfo, at, span float64) (uneven, read bool) {
 	frame := float64(info.FPSDen) / float64(info.FPSNum)
 	first := info.origin + info.VideoStart
 	from := num.Fixed(info.origin+at, 3)
@@ -1003,7 +1022,7 @@ func (e *Engine) unevenIn(ctx context.Context, path string, info SourceInfo, at,
 		"-read_intervals", from+"%"+num.Fixed(info.origin+at+span, 3),
 		"-show_entries", "packet=pts_time,pos,flags", "-of", "csv=p=0", path)
 	if res.Code != 0 {
-		return false
+		return false, false
 	}
 	var begins []float64
 	unstamped := 0
@@ -1032,7 +1051,7 @@ func (e *Engine) unevenIn(ctx context.Context, path string, info SourceInfo, at,
 	for i, t := range begins {
 		k := (t - first) / frame
 		if math.Abs(k-math.Round(k))*frame > frameHair {
-			return true
+			return true, true
 		}
 		if i == 0 {
 			continue
@@ -1043,11 +1062,11 @@ func (e *Engine) unevenIn(ctx context.Context, path string, info SourceInfo, at,
 		// them, #268.
 		gap := math.Round((t - begins[i-1]) / frame)
 		if gap < 1 || int(gap)-1 > unstamped {
-			return true
+			return true, true
 		}
 		unstamped -= int(gap) - 1
 	}
-	return false
+	return false, true
 }
 
 // stamped tells whether a packet of a file, by where ffprobe says it lies
@@ -1156,7 +1175,29 @@ func (s SourceInfo) keyAtOf(seg Segment) (int64, bool) {
 // and further back while there are not two key frames among them. Where
 // there is one, the file is read from its start. None is found where the
 // picture has no key frame before the moment at all.
+//
+// What ffprobe said is kept by the file's stamp, see unevenIn.
 func (e *Engine) keyBefore(ctx context.Context, path string, s SourceInfo, at int64) (int64, bool) {
+	type found struct {
+		at int64
+		ok bool
+	}
+	key, keep := keyFor("key before "+strconv.FormatInt(at, 10), e.FFprobe, path)
+	if keep {
+		if k, ok := recall[found](e.Machine, key); ok {
+			return k.at, k.ok
+		}
+	}
+	k, ok, read := e.readKeyBefore(ctx, path, s, at)
+	if read && keep && ctx.Err() == nil {
+		remember(e.Machine, key, found{k, ok})
+	}
+	return k, ok
+}
+
+// readKeyBefore is keyBefore asking ffprobe, and whether ffprobe read the
+// file.
+func (e *Engine) readKeyBefore(ctx context.Context, path string, s SourceInfo, at int64) (key int64, ok, read bool) {
 	moment := float64(at) / 1e6
 	for span := 2.0; span <= 128; span *= 2 {
 		from := max(moment-span, 0)
@@ -1169,7 +1210,7 @@ func (e *Engine) keyBefore(ctx context.Context, path string, s SourceInfo, at in
 			"-read_intervals", interval,
 			"-show_entries", "packet=dts_time,pos,flags", "-of", "csv=p=0", path)
 		if res.Code != 0 {
-			return 0, false
+			return 0, false, false
 		}
 		// The key frames decoded by the moment, in the order they are,
 		// each with the stamp of the last packet stamped at or before it,
@@ -1200,13 +1241,13 @@ func (e *Engine) keyBefore(ctx context.Context, path string, s SourceInfo, at in
 			}
 		}
 		if n := len(decoded); n >= 2 && !math.IsInf(decoded[n-2], -1) {
-			return max(int64(math.Round((decoded[n-2]-frameHair)*1e6)), 0), true
+			return max(int64(math.Round((decoded[n-2]-frameHair)*1e6)), 0), true, true
 		}
 		if from == 0 {
-			return 0, len(decoded) > 0
+			return 0, len(decoded) > 0, true
 		}
 	}
-	return 0, false
+	return 0, false, true
 }
 
 // lastMoment is where the last packet of a file's picture ends, counted
