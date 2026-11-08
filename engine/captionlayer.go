@@ -314,7 +314,9 @@ func (e *Engine) previewTrackAt(ctx context.Context, work string, d *CaptionDraw
 // How previewTrackMade asks for a caption file: made is the file, made
 // now if it is not there yet, and kept only the file there already.
 // started starts making it and does not wait for it, and alone makes it
-// now with its words measured alone, see Style.alone.
+// now with its words measured alone, see Style.alone. kept and started
+// call off the whole file started for another size of the clip, see
+// trackCache.start.
 type trackAsk int
 
 const (
@@ -339,63 +341,80 @@ func (e *Engine) previewTrackMade(ctx context.Context, work string, d *CaptionDr
 	key := fmt.Sprintf("%s\x00%s\x00%+v\x00%s\x00%d/%d\x00%dx%d", dir, d.name(), style, source.Light(),
 		source.FPSNum, source.FPSDen, outW, outH)
 	_, previewTracks := e.captions()
-	if ask == kept {
-		if made, ok := previewTracks.kept(key); ok {
+	build := func(ctx context.Context) (previewFile, error) {
+		return e.buildPreviewTrack(ctx, work, dir, d, style, font, source, outW, outH, ask == alone)
+	}
+	switch ask {
+	case kept:
+		if made, ok := previewTracks.keptAt(key, previewPlace(dir, d, outW, outH)); ok {
 			return made, nil
 		}
 		return previewFile{}, errNotMade
-	}
-	build := func(ctx context.Context) (previewFile, error) {
-		began := time.Now()
-		track, pill, err := e.captionTrack(ctx, d.Laid, outW, outH, style, source, ask == alone)
-		if err != nil {
-			return previewFile{}, err
-		}
-		// Kept for the rest of the run, so it says once why it has no
-		// pill, after the lines that say what could not be measured.
-		if !pill && e.Fonts.Style(style).Highlight {
-			e.Log.Warn("the caption file of the video preview has no pill, the words could not be measured")
-		}
-		// A measurement cut short leaves a track without its pill, which
-		// would be kept as the real one.
-		if err := ctx.Err(); err != nil {
-			return previewFile{}, err
-		}
-		sum := sha256.Sum256(track)
-		file, err := fileio.SafeChild(dir, hex.EncodeToString(sum[:12])+".ass")
-		if err != nil {
-			return previewFile{}, err
-		}
-		// The name is made from what is in it, so a file of that name
-		// already holds it.
-		if _, err := os.Stat(file); err != nil {
-			// The work folder is made by adding a video, never here: one
-			// deleted outside the app while the video preview still asked
-			// for captions was written back, and the video stayed.
-			if err := foldersIn(work, PreviewCaptionsFolder); err != nil {
-				return previewFile{}, err
-			}
-			if err := writeWhole(dir, file, track); err != nil {
-				return previewFile{}, err
-			}
-		}
-		previewTracks.written(dir, file)
-		if err := e.Fonts.Install(dir, font); err != nil {
-			return previewFile{}, err
-		}
-		e.Log.Detail("made the caption file %s of the video preview, of %d captions, in %d ms",
-			filepath.Base(file), len(d.Laid), time.Since(began).Milliseconds())
-		return previewFile{file, pill}, nil
-	}
-	if ask == started {
-		lift := ""
-		if len(d.Laid) > 0 {
-			lift = d.Laid[0].Lift
-		}
-		place := fmt.Sprintf("%s\x00%s\x00%s\x00%dx%d", dir, d.Clip.ID, lift, outW, outH)
-		return previewFile{}, previewTracks.start(ctx, e.Log, work, key, place, build)
+	case started:
+		return previewFile{}, previewTracks.start(ctx, e.Log, work, key, previewPlace(dir, d, outW, outH), build)
 	}
 	return previewTracks.once(ctx, e.Log, work, key, build)
+}
+
+// previewPlace is where a clip's whole caption file is drawn: the clip,
+// the way its words are lifted, and the size of the short. Every style of
+// it is the same place, so the file of a size the hand has left is called
+// off when the next one starts, see trackCache.start.
+func previewPlace(dir string, d *CaptionDrawing, outW, outH int) string {
+	lift := ""
+	if len(d.Laid) > 0 {
+		lift = d.Laid[0].Lift
+	}
+	return fmt.Sprintf("%s\x00%s\x00%s\x00%dx%d", dir, d.Clip.ID, lift, outW, outH)
+}
+
+// buildPreviewTrack makes the caption file of d in the folder dir of the
+// work folder work, see previewTrack.
+func (e *Engine) buildPreviewTrack(ctx context.Context, work, dir string, d *CaptionDrawing, style map[string]any,
+	font string, source SourceInfo, outW, outH int, alone bool) (previewFile, error) {
+	began := time.Now()
+	track, pill, err := e.captionTrack(ctx, d.Laid, outW, outH, style, source, alone)
+	if err != nil {
+		return previewFile{}, err
+	}
+	// A measurement cut short leaves a track without its pill, which
+	// would be kept as the real one. A file called off says nothing, so
+	// a size stepped with the arrow keys does not log at every step that
+	// the words could not be measured.
+	if err := ctx.Err(); err != nil {
+		return previewFile{}, err
+	}
+	// Kept for the rest of the run, so it says once why it has no
+	// pill, after the lines that say what could not be measured.
+	if !pill && e.Fonts.Style(style).Highlight {
+		e.Log.Warn("the caption file of the video preview has no pill, the words could not be measured")
+	}
+	sum := sha256.Sum256(track)
+	file, err := fileio.SafeChild(dir, hex.EncodeToString(sum[:12])+".ass")
+	if err != nil {
+		return previewFile{}, err
+	}
+	// The name is made from what is in it, so a file of that name
+	// already holds it.
+	if _, err := os.Stat(file); err != nil {
+		// The work folder is made by adding a video, never here: one
+		// deleted outside the app while the video preview still asked
+		// for captions was written back, and the video stayed.
+		if err := foldersIn(work, PreviewCaptionsFolder); err != nil {
+			return previewFile{}, err
+		}
+		if err := writeWhole(dir, file, track); err != nil {
+			return previewFile{}, err
+		}
+	}
+	_, previewTracks := e.captions()
+	previewTracks.written(dir, file)
+	if err := e.Fonts.Install(dir, font); err != nil {
+		return previewFile{}, err
+	}
+	e.Log.Detail("made the caption file %s of the video preview, of %d captions, in %d ms",
+		filepath.Base(file), len(d.Laid), time.Since(began).Milliseconds())
+	return previewFile{file, pill}, nil
 }
 
 // foldersIn makes the folders of path inside the work folder work, one at
@@ -458,6 +477,9 @@ type trackCache struct {
 	// started is the file started last for each place it is drawn in, see
 	// start.
 	started map[string]*making
+	// ending holds the files called off and started again under their key
+	// while they end, so made still waits for them.
+	ending map[*making]bool
 }
 
 // previewFile is a caption file of the video preview, and whether it
@@ -474,14 +496,16 @@ type making struct {
 	work string
 	made previewFile
 	err  error
-	// waiting is how many requests wait for it, and cancel calls it off.
-	waiting int
-	cancel  context.CancelFunc
+	// waiting is how many requests wait for it, cancel calls it off, and
+	// calledOff says it was, so no request joins it while it ends.
+	waiting   int
+	cancel    context.CancelFunc
+	calledOff bool
 }
 
 func newTrackCache() *trackCache {
 	return &trackCache{files: map[string]previewFile{}, making: map[string]*making{}, dirs: map[string][]string{},
-		held: map[string]int{}, started: map[string]*making{}}
+		held: map[string]int{}, started: map[string]*making{}, ending: map[*making]bool{}}
 }
 
 const previewTracksKept = 256
@@ -533,7 +557,7 @@ func (c *trackCache) once(ctx context.Context, log *runlog.Log, work, key string
 // caption size stepped with the arrow keys started a whole file at every
 // step, and each measured the clip on beside the steps after it.
 func (c *trackCache) start(ctx context.Context, log *runlog.Log, work, key, place string, build func(context.Context) (previewFile, error)) error {
-	if _, ok := c.kept(key); ok {
+	if _, ok := c.keptAt(key, place); ok {
 		return nil
 	}
 	m, err := c.onItsWay(ctx, log, work, key, build, false)
@@ -542,11 +566,33 @@ func (c *trackCache) start(ctx context.Context, log *runlog.Log, work, key, plac
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if was := c.started[place]; was != nil && was != m && was.waiting == 0 {
-		was.cancel()
-	}
+	c.leave(place, m)
 	c.started[place] = m
 	return nil
+}
+
+// keptAt is kept, for a file drawn in place: the file started there for
+// another size is called off once this one is drawn instead, as start
+// does, so a step back to a size whose file is there leaves no file of
+// the size before it measuring on.
+func (c *trackCache) keptAt(key, place string) (previewFile, bool) {
+	made, ok := c.kept(key)
+	if ok {
+		c.mu.Lock()
+		c.leave(place, nil)
+		delete(c.started, place)
+		c.mu.Unlock()
+	}
+	return made, ok
+}
+
+// leave calls off the file started in place, unless it is m or a request
+// waits for it. It is called under c.mu.
+func (c *trackCache) leave(place string, m *making) {
+	if was := c.started[place]; was != nil && was != m && was.waiting == 0 {
+		was.calledOff = true
+		was.cancel()
+	}
 }
 
 // kept is the file made for key, while it is still there.
@@ -571,9 +617,12 @@ func (c *trackCache) onItsWay(ctx context.Context, log *runlog.Log, work, key st
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	m, ok := c.making[key]
-	if !ok {
+	if !ok || m.calledOff {
 		if c.holding(work) {
 			return nil, ErrNoWorkFolder
+		}
+		if ok {
+			c.ending[m] = true
 		}
 		bctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), previewTrackLimit)
 		m = &making{done: make(chan struct{}), work: work, cancel: cancel}
@@ -583,7 +632,12 @@ func (c *trackCache) onItsWay(ctx context.Context, log *runlog.Log, work, key st
 			made, err := buildSafely(bctx, log, build)
 			c.mu.Lock()
 			m.made, m.err = made, err
-			delete(c.making, key)
+			// A file called off may have been started again under the
+			// same key while this one ended.
+			if c.making[key] == m {
+				delete(c.making, key)
+			}
+			delete(c.ending, m)
 			for place, was := range c.started {
 				if was == m {
 					delete(c.started, place)
@@ -659,6 +713,11 @@ func (c *trackCache) made(in func(work string) bool) {
 			if in(m.work) {
 				on = m.done
 				break
+			}
+		}
+		for m := range c.ending {
+			if on == nil && in(m.work) {
+				on = m.done
 			}
 		}
 		c.mu.Unlock()

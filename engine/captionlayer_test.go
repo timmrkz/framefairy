@@ -882,27 +882,25 @@ func TestTheCaptionsShowingDrawnAloneAreTheClipsWholeFileThere(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
-	var words []timed.Cue
-	at := 0.2
-	for _, said := range strings.Fields("Das ist respektvoll und dann haben wir einfach weitergemacht, weil es keinen anderen Weg gab.") {
-		words = append(words, timed.Cue{Start: at, End: at + 0.25, Text: said})
-		at += 0.3
-	}
-	clip := Clip{ID: "01", Slug: "alone", Segments: []Segment{{Start: 0, End: 4.2}}}
+	// The captions showing are measured on a machine of their own, alone,
+	// as a step of the size measures them before the clip's whole file,
+	// so none of their words comes from the measuring of the whole file.
+	first := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
+	d := threeCaptions(t, "01", nil)
 	style := new(Fonts).Style(nil)
-	d := &CaptionDrawing{Laid: ClipCaptions(clip, &Transcript{Words: words, Language: "de"}, style), Clip: clip}
-	if len(d.Laid) < 3 {
-		t.Fatalf("the clip has %d captions, the test wants three or more", len(d.Laid))
-	}
 	const w, h = 540, 960
 	dir := t.TempDir()
 	if err := new(Fonts).Install(dir, style.Font); err != nil {
 		t.Fatal(err)
 	}
 	written := map[string]string{}
-	file := func(laid []LaidCaption) string {
+	file := func(laid []LaidCaption, alone bool) string {
 		t.Helper()
-		track, err := e.CaptionTrack(ctx, laid, w, h, nil, SourceInfo{})
+		by := e
+		if alone {
+			by = first
+		}
+		track, _, err := by.captionTrack(ctx, laid, w, h, nil, SourceInfo{}, alone)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -916,7 +914,7 @@ func TestTheCaptionsShowingDrawnAloneAreTheClipsWholeFileThere(t *testing.T) {
 		written[string(track)] = name
 		return name
 	}
-	whole := file(d.Laid)
+	whole := file(d.Laid, false)
 	dec := newEpisodeFrames(program, fixtures.Path(t, "lossless.mkv"))
 	defer dec.Close()
 	draw := func(file string, ms int64) framewire.Layer {
@@ -928,21 +926,134 @@ func TestTheCaptionsShowingDrawnAloneAreTheClipsWholeFileThere(t *testing.T) {
 		}
 		return l
 	}
-	alone := 0
+	moments := 0
 	for ms := int64(0); ms < 4200; ms += 40 {
 		part := d.showing(ms)
 		if part == nil {
 			continue
 		}
-		alone++
-		want, got := draw(whole, ms), draw(file(part.Laid), ms)
+		moments++
+		want, got := draw(whole, ms), draw(file(part.Laid, true), ms)
 		if got.X != want.X || got.Y != want.Y || got.W != want.W || got.H != want.H || !bytes.Equal(got.Pixels, want.Pixels) {
 			t.Errorf("at %d ms the %d captions showing drew %dx%d at %d,%d, and the clip's whole file %dx%d at %d,%d, or other pixels",
 				ms, len(part.Laid), got.W, got.H, got.X, got.Y, want.W, want.H, want.X, want.Y)
 		}
 	}
-	if alone < 50 {
-		t.Errorf("only %d moments were drawn from the captions showing alone", alone)
+	if moments < 50 {
+		t.Errorf("only %d moments were drawn from the captions showing alone", moments)
+	}
+}
+
+// threeCaptions is a clip of three captions or more, of a German sentence
+// a word every 0.3 s, laid out in the style that overrides make.
+func threeCaptions(t *testing.T, id string, overrides map[string]any) *CaptionDrawing {
+	t.Helper()
+	var words []timed.Cue
+	at := 0.2
+	for _, said := range strings.Fields("Das ist respektvoll und dann haben wir einfach weitergemacht, weil es keinen anderen Weg gab.") {
+		words = append(words, timed.Cue{Start: at, End: at + 0.25, Text: said})
+		at += 0.3
+	}
+	clip := Clip{ID: id, Slug: "alone", Segments: []Segment{{Start: 0, End: 4.2}}}
+	d := &CaptionDrawing{Laid: ClipCaptions(clip, &Transcript{Words: words, Language: "de"}, new(Fonts).Style(overrides)), Clip: clip}
+	if len(d.Laid) < 3 {
+		t.Fatalf("the clip has %d captions, the test wants three or more", len(d.Laid))
+	}
+	return d
+}
+
+// A step of the caption size draws its frame from a file of the captions
+// showing, starts the clip's whole file after it, and draws from the
+// whole file once it is there, issue #360.
+//
+// On the real disk: ffmpeg measures the words, and the caption files are
+// written into the work folder.
+func TestASizeStepDrawsTheCaptionsShowingFirstAndTheWholeFileAfter(t *testing.T) {
+	ffmpegtest.Need(t)
+	t.Parallel()
+	ctx := context.Background()
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
+	work := t.TempDir()
+	d := threeCaptions(t, "01", nil)
+	font := e.Fonts.Style(nil).Font
+	const w, h = 540, 960
+	m := int64(centiseconds((d.Laid[1].Start+d.Laid[1].End)/2)) * 10
+	shown, err := e.previewTrackAt(ctx, work, d, nil, font, SourceInfo{}, w, h, m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, previewTracks := e.captions()
+	previewTracks.mu.Lock()
+	files, making := len(previewTracks.files), len(previewTracks.making)
+	previewTracks.mu.Unlock()
+	if files+making != 2 {
+		t.Errorf("after the first frame %d files are kept and %d on their way, want the captions showing and the whole file", files, making)
+	}
+	// The whole file started is waited for here, not made again.
+	whole, err := e.previewTrack(ctx, work, d, nil, font, SourceInfo{}, w, h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lines, all := dialogues(t, shown.file), dialogues(t, whole.file); lines == 0 || lines >= all {
+		t.Errorf("the first frame drew from a file of %d lines, and the whole file has %d", lines, all)
+	}
+	again, err := e.previewTrackAt(ctx, work, d, nil, font, SourceInfo{}, w, h, m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.file != whole.file {
+		t.Errorf("once the whole file is there the frame drew from %s, want %s", again.file, whole.file)
+	}
+}
+
+// dialogues is how many lines the caption file at path draws.
+//
+// On the real disk: the engine writes the caption files the decoder reads.
+func dialogues(t *testing.T, path string) int {
+	t.Helper()
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.Count(string(body), "\nDialogue:")
+}
+
+// Every size of a clip is drawn in one place, so the whole file of a size
+// left is called off, and another clip or another size of the short is a
+// place of its own.
+func TestEverySizeOfAClipIsDrawnInOnePlace(t *testing.T) {
+	small, large := threeCaptions(t, "01", map[string]any{"size": 60.0}), threeCaptions(t, "01", map[string]any{"size": 140.0})
+	if small.name() == large.name() {
+		t.Fatal("the two sizes lay the captions out the same")
+	}
+	if previewPlace("/w", small, 540, 960) != previewPlace("/w", large, 540, 960) {
+		t.Error("two sizes of one clip are drawn in two places")
+	}
+	if previewPlace("/w", small, 540, 960) == previewPlace("/w", threeCaptions(t, "02", nil), 540, 960) {
+		t.Error("two clips are drawn in one place")
+	}
+	if previewPlace("/w", small, 540, 960) == previewPlace("/w", small, 1080, 1920) {
+		t.Error("two sizes of the short are drawn in one place")
+	}
+}
+
+// A whole file called off as the hand steps on says nothing: it said
+// that the words could not be measured, at every step of the size.
+//
+// On the real disk: the measuring writes its frame for ffmpeg.
+func TestACaptionFileCalledOffSaysNothing(t *testing.T) {
+	t.Parallel()
+	var log bytes.Buffer
+	e := NewEngine(runlog.New(&log, false, true), NewMachine(disk))
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := e.buildPreviewTrack(ctx, "/nowhere", "/nowhere/captions", threeCaptions(t, "01", nil), nil,
+		"", SourceInfo{}, 540, 960, false)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("the file called off ended with %v", err)
+	}
+	if strings.Contains(log.String(), "no pill") {
+		t.Errorf("the file called off logged:\n%s", log.String())
 	}
 }
 
@@ -1034,6 +1145,89 @@ func TestACaptionFileStartedForASizeLeftIsCalledOff(t *testing.T) {
 		// The files nobody called off end when their time is up.
 		if err := <-waited; !errors.Is(err, context.DeadlineExceeded) {
 			t.Errorf("the request waiting for 97 got %v", err)
+		}
+	})
+}
+
+// A size stepped to and back again starts its whole file again, while the
+// one called off for it is still ending: a request that joined the one
+// called off failed with its "context canceled". A folder is still held
+// until the one called off has ended, so nothing is written into a work
+// folder being deleted.
+//
+// It runs in a bubble, so the test knows when every build waits.
+func TestACaptionFileCalledOffIsStartedAgainWhenItsSizeComesBack(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		c := newTrackCache()
+		ctx := context.Background()
+		calledOff, ended := make(chan struct{}), make(chan struct{})
+		slow := func(ctx context.Context) (previewFile, error) {
+			<-ctx.Done()
+			close(calledOff)
+			<-ended
+			return previewFile{}, ctx.Err()
+		}
+		made := func(file string) func(context.Context) (previewFile, error) {
+			return func(context.Context) (previewFile, error) { return previewFile{file: file}, nil }
+		}
+		if err := c.start(ctx, quiet, "/w", "size 96", "clip 01", slow); err != nil {
+			t.Fatal(err)
+		}
+		if err := c.start(ctx, quiet, "/w", "size 97", "clip 01", made("97.ass")); err != nil {
+			t.Fatal(err)
+		}
+		<-calledOff
+		got, err := c.once(ctx, quiet, "/w", "size 96", made("96.ass"))
+		if err != nil || got.file != "96.ass" {
+			t.Errorf("the size come back got %v, %v", got, err)
+		}
+		held := make(chan struct{})
+		go func() {
+			c.hold("/w")
+			close(held)
+		}()
+		synctest.Wait()
+		select {
+		case <-held:
+			t.Error("the folder was held while a file called off was still ending in it")
+		default:
+		}
+		close(ended)
+		<-held
+	})
+}
+
+// A step to a size whose whole file is there already calls off the whole
+// file started for the size before it.
+//
+// On the real disk: a file kept is kept only while it is there.
+func TestAWholeFileThereCallsOffTheOneStartedBeforeIt(t *testing.T) {
+	t.Parallel()
+	there := filepath.Join(t.TempDir(), "99.ass")
+	if err := os.WriteFile(there, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	synctest.Test(t, func(t *testing.T) {
+		c := newTrackCache()
+		c.files["size 99"] = previewFile{file: there}
+		calledOff := make(chan struct{})
+		slow := func(ctx context.Context) (previewFile, error) {
+			<-ctx.Done()
+			close(calledOff)
+			return previewFile{}, ctx.Err()
+		}
+		if err := c.start(context.Background(), quiet, "/w", "size 98", "clip 01", slow); err != nil {
+			t.Fatal(err)
+		}
+		if got, ok := c.keptAt("size 99", "clip 01"); !ok || got.file != there {
+			t.Fatalf("the file of 99 is %v, %v", got, ok)
+		}
+		synctest.Wait()
+		select {
+		case <-calledOff:
+		default:
+			t.Error("the file of 98 was not called off")
 		}
 	})
 }
