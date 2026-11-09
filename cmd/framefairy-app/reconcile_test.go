@@ -489,7 +489,8 @@ func TestAModelDeletedOrAddedOutsideTheAppIsSentToTheWindowAtOnce(t *testing.T) 
 	// before fsnotify watches the file itself, on macOS, so a write right
 	// after its news can come before that watch and go unheard. The test
 	// wrote one there, and hung on CI's Mac, issue #722. A copy of a real
-	// model writes for minutes, and each write after the first is heard.
+	// model writes for minutes, and each write once fsnotify watches the
+	// file is heard.
 	if err := os.RemoveAll(models); err != nil {
 		t.Fatal(err)
 	}
@@ -529,8 +530,11 @@ func TestAModelDeletedOrAddedOutsideTheAppIsSentToTheWindowAtOnce(t *testing.T) 
 	until(func(s SetupState) bool { return !installed(s) })
 
 	// A speech model is a folder, and one copied in by hand is made
-	// before its tokens.txt is written into it. The other model deleted
-	// after says the folder was looked at, and is watched.
+	// before its tokens.txt is put into it. The other model deleted after
+	// says the folder was looked at, and is watched. The tokens.txt is put
+	// in whole, so the folder's watch hears it, for a file made empty in
+	// it and written after could be written before fsnotify watches the
+	// file, see above.
 	speech := engine.SpeechModels()[0]
 	if err := os.Mkdir(filepath.Join(models, speech.Name), 0o755); err != nil {
 		t.Fatal(err)
@@ -541,7 +545,11 @@ func TestAModelDeletedOrAddedOutsideTheAppIsSentToTheWindowAtOnce(t *testing.T) 
 	until(func(s SetupState) bool {
 		return !slices.ContainsFunc(s.Language, func(m LanguageModelView) bool { return m.Name == other.Name && m.Installed })
 	})
-	if err := os.WriteFile(filepath.Join(models, speech.Name, "tokens.txt"), []byte("the model hears\n"), 0o644); err != nil {
+	tokens := filepath.Join(home, "tokens.txt")
+	if err := os.WriteFile(tokens, []byte("the model hears\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(tokens, filepath.Join(models, speech.Name, "tokens.txt")); err != nil {
 		t.Fatal(err)
 	}
 	until(func(s SetupState) bool {
