@@ -161,8 +161,8 @@ func (t *Transcript) correctFew(corrections map[string]string) bool {
 // are about, by the millisecond the recogniser heard it start, which
 // nothing moves. They used to be kept by the millisecond it starts once it
 // is moved onto the sound, which the silence level moves, and the app
-// measures that level from the audio heard so far, so it moves while the
-// rest of a video is heard. When it moved, the corrections and removed
+// measured that level from the audio heard so far, so it moved while the
+// rest of a video was heard. When it moved, the corrections and removed
 // words of every clip over the words it moved no longer met their words,
 // without a word said. Plan row 2.254.
 //

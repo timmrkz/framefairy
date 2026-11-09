@@ -293,7 +293,7 @@ func readEpisodeTranscript(fsys afero.Fs, source, asrModelDir string) (transcrip
 
 // sliceTranscript cuts a window out of the episode's transcript, so no part
 // of the audio is ever heard twice. It has to have heard all of the window.
-// The noise floor stays the one measured over all that was heard.
+// The noise floor is the video's, see videoLevel.
 func sliceTranscript(fsys afero.Fs, path string, stamp sourceStamp, model string, window timed.Window,
 	silenceDB *float64) (*Transcript, bool) {
 	file, words, frames, ok := readTranscriptFile(fsys, path, stamp, model)
@@ -478,6 +478,24 @@ func (e *Engine) loadTranscript(ctx context.Context, source string, window timed
 	if len(had) > 0 && len(gaps) > 0 {
 		e.Log.Info("hearing %s of the window that is not heard yet, from %s", HMS(todo), HMS(gaps[0].Start))
 	}
+	// The level the silence is told from is the video's, measured once
+	// before its first word is heard and kept with its transcript, see
+	// videoLevel.
+	level := float64(file.Mean)
+	if !ok && len(gaps) > 0 {
+		e.Log.Progress("measuring the loudness")
+		level, err = e.videoLevel(ctx, source, duration)
+		e.Log.ClearProgress()
+		if err != nil {
+			return nil, err
+		}
+		floor := NoiseFloor(level)
+		if silenceDB != nil {
+			floor = *silenceDB
+		}
+		e.Log.Info("the video's mean level is %s dB, so below %s dB is silence",
+			num.Fixed(level, 1), num.Fixed(floor, 0))
+	}
 
 	err = e.Log.Step("transcribing the audio", func() error {
 		// The model kept loaded, see speechhost.go, or loaded now.
@@ -504,7 +522,7 @@ func (e *Engine) loadTranscript(ctx context.Context, source string, window timed
 					return
 				}
 				part := timed.Window{Start: gap.Start, End: math.Min(covered, gap.End)}
-				if err := e.addHeard(path, stamp, model, duration, part, raw, frames, read.Start); err != nil {
+				if err := e.addHeard(path, stamp, model, duration, level, part, raw, frames, read.Start); err != nil {
 					e.Log.Detail("could not save the transcript so far: %s", err)
 				}
 			}
@@ -512,7 +530,7 @@ func (e *Engine) loadTranscript(ctx context.Context, source string, window timed
 			if err != nil {
 				return err
 			}
-			if err := e.addHeard(path, stamp, model, duration, gap, t.RawWords, t.Frames, read.Start); err != nil {
+			if err := e.addHeard(path, stamp, model, duration, level, gap, t.RawWords, t.Frames, read.Start); err != nil {
 				return renderErr("could not save the transcript: %s", err)
 			}
 			words += len(t.RawWords)
@@ -543,7 +561,10 @@ func (e *Engine) loadTranscript(ctx context.Context, source string, window timed
 // part it starts in. The same word heard twice can start a few hundredths
 // apart, so a word of the new part that starts within a tenth of a second
 // of the neighbour's word across the join is that word again, and left out.
-func (m *Machine) addHeard(path string, stamp sourceStamp, model string, duration float64, part timed.Window,
+//
+// level is the video's, see videoLevel. A transcript keeps the level it
+// was started with, so the first part written sets it for good.
+func (m *Machine) addHeard(path string, stamp sourceStamp, model string, duration, level float64, part timed.Window,
 	raw []timed.Cue, frames []float32, read float64) error {
 	defer fileio.Lock(m.Files, path)()
 	file, had, hadFrames, ok := readTranscriptFile(m.Files, path, stamp, model)
@@ -611,11 +632,15 @@ func (m *Machine) addHeard(path string, stamp sourceStamp, model string, duratio
 	sort.SliceStable(words, func(i, j int) bool { return words[i].Start < words[j].Start })
 	parts = joinParts(append(parts, [2]float64{num.RoundTo(part.Start, 3), num.RoundTo(part.End, 3)}))
 
-	var heard []float32
-	for n, f := range all {
-		if heardFrame(n) || inParts(parts, (float64(n)+0.5)*timed.FrameSeconds) {
-			heard = append(heard, f)
-		}
+	// The level the silence is told from is the video's and never moves.
+	// Taken again over all that was heard, it moved with every part, and
+	// with it where the words already heard start and end, the lines they
+	// make and the pauses the prompt marks: text already written changed,
+	// so the model read it all again, and a clip found early moved its
+	// edges, issue #762.
+	mean := float64(file.Mean)
+	if !ok {
+		mean = num.RoundTo(level, 3)
 	}
 	stored := make([][2]num.Float, len(parts))
 	for i, p := range parts {
@@ -623,7 +648,7 @@ func (m *Machine) addHeard(path string, stamp sourceStamp, model string, duratio
 	}
 	end := num.Float(num.RoundTo(duration, 3))
 	err := writeTranscript(m.Files, path, transcriptFile{Version: transcriptVersion, Source: stamp, Model: model,
-		To: end, Mean: num.Float(num.RoundTo(meanOfFrames(heard), 3)), Parts: stored, End: end,
+		To: end, Mean: num.Float(mean), Parts: stored, End: end,
 		Words: storedWords(words)}, all)
 	if err == nil {
 		m.transcriptGrew(path)

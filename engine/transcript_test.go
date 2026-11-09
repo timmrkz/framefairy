@@ -1247,3 +1247,80 @@ func TestAClipKeepsAStretchHeardAroundIt(t *testing.T) {
 		}
 	}
 }
+
+// The level the silence is told from is the video's, the same however its
+// hearing is cut into parts and whenever those are saved. It was taken
+// from what was heard, first again after every part, then from the first
+// part saved, so a slow machine that saved room noise alone first found
+// no pause in that video at all, issue #762.
+//
+// On the real disk: ffmpeg reads the episode the speech model hears.
+func TestTheLevelIsTheVideosHoweverItIsHeard(t *testing.T) {
+	t.Parallel()
+	hear := func(every time.Duration, first *timed.Window) float64 {
+		t.Helper()
+		source := testEpisode(t, "70")
+		var calls int32
+		e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
+		e.checkpointEvery = every
+		e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&calls}, nil }
+		base := DefaultOptions()
+		base.ASRModel = t.TempDir()
+		p := NewProject(e, source, base)
+		if first != nil {
+			if _, err := e.LoadTranscript(context.Background(), source, *first, 70, p.LogsDir(), base.ASRModel,
+				nil); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := p.Transcribe(context.Background()); err != nil {
+			t.Fatalf("%v %s", err, p.LastError())
+		}
+		stamp, _ := stampOf(disk, source)
+		file, _, _, ok := readTranscriptFile(disk, filepath.Join(p.LogsDir(), "words.json"), stamp,
+			filepath.Base(base.ASRModel))
+		if !ok {
+			t.Fatal("cannot read the transcript")
+		}
+		level, err := e.videoLevel(context.Background(), source, 70)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := float64(file.Mean), num.RoundTo(level, 3); got != want {
+			t.Errorf("the transcript keeps a level of %.3f dB, the video's is %.3f dB", got, want)
+		}
+		return float64(file.Mean)
+	}
+	whole := hear(time.Hour, nil)
+	if saved := hear(time.Nanosecond, nil); saved != whole {
+		t.Errorf("saved after every piece the level is %.3f dB, in one go %.3f dB", saved, whole)
+	}
+	if middle := hear(time.Nanosecond, &timed.Window{Start: 30, End: 40}); middle != whole {
+		t.Errorf("heard from the middle first the level is %.3f dB, in one go %.3f dB", middle, whole)
+	}
+}
+
+// A long video has its level measured at places spread over all of it,
+// each as long as the next, and a short one whole.
+func TestTheLevelIsMeasuredAllOverTheVideo(t *testing.T) {
+	t.Parallel()
+	if spots := levelSpotsIn(levelSpots * levelSpot); len(spots) != 1 || spots[0] != [2]int{0, math.MaxInt} {
+		t.Errorf("a video of %.0f s is measured at %v, want whole", levelSpots*levelSpot, spots)
+	}
+	for _, hours := range []float64{0.5, 1, 4} {
+		duration := hours * 3600
+		spots := levelSpotsIn(duration)
+		if len(spots) != levelSpots {
+			t.Fatalf("a video of %.1f h is measured at %d places, want %d", hours, len(spots), levelSpots)
+		}
+		share := duration / levelSpots
+		for i, s := range spots {
+			from := float64(s[0]) * timed.FrameSeconds
+			to := from + float64(s[1])*timed.FrameSeconds
+			if s[1] != int(levelSpot/timed.FrameSeconds) || from < float64(i)*share || to > float64(i+1)*share {
+				t.Errorf("place %d of a video of %.1f h is %.2f to %.2f s, want %.0f s inside %.2f to %.2f s",
+					i, hours, from, to, levelSpot, float64(i)*share, float64(i+1)*share)
+			}
+		}
+	}
+}

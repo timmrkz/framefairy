@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/afero"
 
 	"framefairy/engine/fileio"
+	"framefairy/engine/num"
 	"framefairy/engine/runes"
 	"framefairy/engine/timed"
 )
@@ -264,8 +265,20 @@ func (p *Project) warmAhead(ctx context.Context, req PlanRequest) {
 			p.engine.Log.Detail("%s", debug.Stack())
 		}
 	}()
-	if _, err := p.warmModel(ctx, req); err != nil && ctx.Err() == nil {
+	ahead, err := p.warmModel(ctx, req)
+	if err != nil && ctx.Err() == nil {
 		p.engine.Log.Warn("the model could not be loaded ahead of the search: %s", err)
+	}
+	if ahead.Reads > 0 {
+		p.engine.Log.Info("read %s tokens ahead of the search in %d reads and %s s, %s held",
+			num.Thousands(ahead.Read), ahead.Reads, num.Fixed(ahead.Seconds, 1), num.Thousands(ahead.Tokens))
+	}
+	// Text once heard never changes, so a line read ahead is never written
+	// out again. When one is, it is a bug, and the model read it twice: a
+	// warning, so it is in the app's log, which a report carries.
+	if ahead.Rewritten > 0 {
+		p.engine.Log.Warn("%d reads ahead of the search found a line read before written out differently, "+
+			"so the model read it again", ahead.Rewritten)
 	}
 }
 

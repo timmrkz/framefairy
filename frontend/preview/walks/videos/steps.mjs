@@ -465,6 +465,36 @@ export const steps = {
     await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());
     await watch.step("add", s);
   },
+  // ["away", seconds]  adds a video of so many seconds with Add and waits
+  //                    until it is in front, so the video on screen before
+  //                    is asleep, out of the page, and ["episode"] goes
+  //                    back to it
+  async away(walk, arg) {
+    const { page } = walk;
+    walk.episodeBefore = await episodeOn(page);
+    const name = basename(walk.episodeBefore);
+    await control(url, `/pick?seconds=${arg}`);
+    await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());
+    await pageUntil(
+      page,
+      (name) => {
+        const on = document.querySelector("aside button.episode.current .name")?.textContent;
+        return !!on && on !== name && document.querySelectorAll(".workspace").length === 1;
+      },
+      name,
+    );
+  },
+  // ["first clip before"]
+  //                    waits until the search of the video ["away"] left
+  //                    has its first clip, and the interface has heard it
+  async "first clip before"(walk) {
+    const { page } = walk;
+    const before = walk.episodeBefore;
+    for (let seen = await news(page, "video"); !(await ask(page, "Clips", before))?.length; ) {
+      seen = await nextNews(page, seen, "video");
+    }
+    await caughtUp(page, url);
+  },
   // ["episode"]        opens the episode on screen before again
   async episode(walk) {
     const { page } = walk;
