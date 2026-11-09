@@ -24,18 +24,15 @@ The bottom line, always, and nothing else in it. Architecture: one word,
 better, the same or worse, against docs/ARCHITECTURE.md. Speed: for the
 app, or for CI when only the tests or the build change. One word, and
 when it is faster or slower, the change in percent with its spread,
-`12 % faster, ± 3 %`, or `one run` in place of the spread. When parts
-went different ways, it is slower, with the slower part's number, since
-that is what waits for Tim's yes. A part with no number reads
-`slower, not timed` or `faster, not timed`. The same only when the change
-adds and takes away no work that runs. A measured change is its number,
-even inside its spread, `2 % faster, ± 5 %`. Everything else goes in
-Proof: what was measured, where and how often, the parts, CI when the
-app changed too, what was read from the code, where each new thing went,
-and what a slower change buys. For example, a change that renders 64 %
-faster but sends the app more each time, with no before to compare,
-reads `slower, not timed`, and Proof has the 64 % and the cost. See
-Every change knows its speed in CLAUDE.md.
+`12 % faster, ± 3 %`, or `one run` in place of the spread. It is the
+change overall, on what a person waits on. A part that got slower is
+said in Proof, and its trade-off waits for Tim's yes in the reply. The
+same only when the change adds and takes away no work that runs. A
+measured change is its number, even inside its spread,
+`2 % faster, ± 5 %`. Everything else goes in Proof: what was measured,
+where and how often, the parts, CI when the app changed too, what was
+read from the code, where each new thing went, and what a slower part
+buys. See Every change knows its speed in CLAUDE.md.
 -->
 
 ## Root cause
