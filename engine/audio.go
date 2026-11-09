@@ -86,7 +86,9 @@ type Transcript struct {
 	Start  float64
 	// Silence threshold in dB. Anything quieter counts as a pause.
 	Floor float64
-	// Mean level in dB over the whole window.
+	// Mean level in dB the silence is told from: the video's, see
+	// videoLevel, for the episode's transcript, and over what was read
+	// for a reading on its own, see Transcribe.
 	Mean float64
 	// Heard are the parts of the episode the words are for, in seconds, in
 	// order and apart. The frames outside them read -90. Only the
@@ -690,7 +692,6 @@ func (e *Engine) transcribe(ctx context.Context, path string, window timed.Windo
 	}
 	sort.SliceStable(raw, func(i, j int) bool { return raw[i].Start < raw[j].Start })
 	t.hear(raw)
-	e.Log.Detail("mean level %s dB, treating below %s dB as silence",
-		num.Fixed(t.Mean, 1), num.Fixed(t.Floor, 0))
+	e.Log.Detail("this reading's mean level is %s dB", num.Fixed(t.Mean, 1))
 	return t, nil
 }

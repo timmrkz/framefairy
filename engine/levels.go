@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/afero"
@@ -585,4 +586,112 @@ func writeLevels(fsys afero.Fs, logs string, stamp sourceStamp, st *levelState) 
 		return err
 	}
 	return fileio.WriteUnflushed(fsys, meta, body)
+}
+
+// levelSpots is how many places of a video its level is measured at, and
+// levelSpot how long each is, in seconds, see videoLevel.
+const (
+	levelSpots = 30
+	levelSpot  = 10.0
+	// levelReaders is how many places are measured at once.
+	levelReaders = 4
+)
+
+// videoLevel is the mean level of a video's sound, in dB, which the
+// silence between its words is told from, see NoiseFloor. It is measured
+// before the first word is heard, at levelSpots places spread evenly over
+// the video, each levelSpot long, or over the whole of a video shorter
+// than they add up to. That is a few seconds of decoding however long the
+// video is.
+//
+// It is a property of the file alone, so the same video gets the same
+// level on every machine, however its hearing is cut into parts and
+// whenever those are saved. Taken from what was heard so far, it moved
+// with every part, and with it where the words already heard start and
+// end, the lines they make and the pauses the prompt marks, issue #762.
+// Taken from the first part saved, it depended on how fast the machine
+// heard: a slow one could save room noise alone first, and then no pause
+// was found in that video at all.
+func (e *Engine) videoLevel(ctx context.Context, source string, duration float64) (float64, error) {
+	picture := e.pictureStart(ctx, source)
+	spots := levelSpotsIn(duration)
+	got := make([][]float32, len(spots))
+	errs := make([]error, len(spots))
+	// Each place is an ffmpeg of its own, which spends most of its time
+	// starting and seeking, so a few run at once. The frames are joined in
+	// the order of the places, so the mean is the same to the last bit
+	// whichever ends first.
+	free := make(chan struct{}, levelReaders)
+	var wg sync.WaitGroup
+	for i, spot := range spots {
+		wg.Go(func() {
+			free <- struct{}{}
+			defer func() { <-free }()
+			got[i], errs[i] = e.levelsAt(ctx, source, spot[0], spot[1], picture)
+		})
+	}
+	wg.Wait()
+	if err := errors.Join(errs...); err != nil {
+		return 0, err
+	}
+	var frames []float32
+	for _, g := range got {
+		frames = append(frames, g...)
+	}
+	return num.RoundTo(meanOfFrames(frames), 3), nil
+}
+
+// levelSpotsIn is where a video of duration seconds has its level
+// measured, as the frame each place starts at and how many frames it is:
+// levelSpots places, each in the middle of its share of the video, or the
+// whole of a video too short for them.
+func levelSpotsIn(duration float64) [][2]int {
+	if duration <= levelSpots*levelSpot {
+		return [][2]int{{0, math.MaxInt}}
+	}
+	step := duration / levelSpots
+	frames := int(math.Round(levelSpot / timed.FrameSeconds))
+	spots := make([][2]int, levelSpots)
+	for i := range spots {
+		spots[i] = [2]int{int(math.Floor((float64(i)*step + (step-levelSpot)/2) / timed.FrameSeconds)), frames}
+	}
+	return spots
+}
+
+// levelsAt measures count loudness frames from frame start on, fewer
+// where the audio ends first.
+func (e *Engine) levelsAt(ctx context.Context, source string, start, count int, picture float64) ([]float32, error) {
+	run, stop := context.WithCancel(ctx)
+	defer stop()
+	cmd := e.Runner.Command(run, e.FFmpeg, audioFrom(source, start, picture)...)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
+		return nil, renderErr("cannot start %s: %s", e.FFmpeg, err)
+	}
+	var frames []float32
+	end, readErr := e.readLevels(run, bufio.NewReaderSize(stdout, 1<<20), func(f float32) bool {
+		frames = append(frames, f)
+		return len(frames) < count
+	}, func() bool { return true })
+	if !end {
+		// Enough heard: ffmpeg is still writing, and is told to stop
+		// rather than left to write into a pipe nobody reads.
+		stop()
+	}
+	waitErr := cmd.Wait()
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	if readErr != nil {
+		return nil, readErr
+	}
+	if end && waitErr != nil {
+		return nil, renderErr("ffmpeg could not read the audio: %s", strings.TrimSpace(stderr.String()))
+	}
+	return frames, nil
 }
