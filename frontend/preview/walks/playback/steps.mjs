@@ -1895,10 +1895,6 @@ export const steps = {
   //                    piece's own crop before its first keyframe and from
   //                    each keyframe's frame on that keyframe's, and at
   //                    least one keyframe switches it
-  // ["crop holds while playing", "glide"]
-  //                    the same across the last frames of the piece's
-  //                    first glide, from a circle into the next, and on
-  //                    past it
   // ["crop holds while playing"]
   //                    plays from four frames before the first keyframe
   //                    that switches the crop, on a clock that moves on to
@@ -1964,16 +1960,7 @@ export const steps = {
       if (problems.length) walk.wrong = problems.join("; ");
       return;
     }
-    // Across a glide's last frames into its circle, a circle after a
-    // circle, or across the first switch.
-    const circles = piece.marks
-      .filter((m, i) => m.glide && piece.marks[i - 1]?.glide && m.at >= piece.start && m.at < piece.end)
-      .map((m) => frameOf(m.at));
-    if (arg === "glide" && !circles.length) {
-      walk.wrong = "no keyframe of the piece is a circle the crop glides into from a circle";
-      return;
-    }
-    const at = arg === "glide" ? circles[0] - 2 : switches[0];
+    const at = switches[0];
     const g = await handles(page);
     await clickOnTrack(page, await xOf(page, (Math.max(first, at - 4) + 0.5) / src.fps), high(g.track));
     await settle(page);

@@ -671,6 +671,23 @@ A test is code we keep. It must still be right and readable in a year.
   browser engine or a platform of its own, run the same steps there too
   before saying it works there. Typing, focus, hover, painting and timing
   are where engines differ.
+- **Behaviour over time runs on the test's clock, faster than real
+  time.** A play, an animation, a glide, a fade, a timeout: anything that
+  unfolds over time takes its time from outside, and the test steps that
+  clock moment by moment, so thirty seconds of play are the few frames
+  where something changes, checked in milliseconds. A test that lets real
+  time run to see what happens over it is waiting, section 4. What
+  happens on each moment is a rule, tested in the core on every moment,
+  section 3. The end-to-end test checks once that the interface shows
+  what the core says, at the moments where it changes.
+- **A new end-to-end test is the last resort.** Each one pays its setup,
+  starting the product and loading its fixture, on every push, and that
+  is mostly more than its steps. A new case of a behaviour goes into the
+  core's unit tests, and what the person sees of it into an end-to-end
+  test that is there already, as more steps. A feature that touches the
+  end-to-end tests shows that they take no longer than on the main
+  branch, section 8, and a new one says why no test there could take its
+  steps.
 
 ## 12. CI holds the rules
 
@@ -771,6 +788,7 @@ wrong, and this skill wins:
 3. Nothing already tested it, or the old test was strengthened instead.
 4. It failed on the main branch, for the reason given, and passes now.
 5. It never waits, and nothing in it defeats the test cache.
-6. A change to tests or CI has its numbers against the main branch.
+6. A change to tests or CI has its numbers against the main branch, and
+   the end-to-end tests take no longer than they did there.
 7. CI passed on the last commit, and every rule here that CI does not
    check yet has an issue asking for the check.

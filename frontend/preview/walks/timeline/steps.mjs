@@ -1690,7 +1690,8 @@ export const steps = {
   // ["crop kept", share]
   //                    with the playhead put there again, the crop frame
   //                    stands where it stood at ["crop before", share], so
-  //                    a drag of the crop elsewhere left that part alone
+  //                    what came between left that part alone, or put it
+  //                    back
   async "crop before"(walk, arg) {
     const { page } = walk;
     await playheadAt(page, arg);
@@ -1705,7 +1706,7 @@ export const steps = {
     }
     await playheadAt(page, arg);
     const now = await cropShown(page);
-    if (now !== was) walk.wrong = `${arg} of the way into the clip the crop frame stood at ${was} and stands at ${now} after a drag elsewhere`;
+    if (now !== was) walk.wrong = `${arg} of the way into the clip the crop frame stood at ${was} and stands at ${now} now`;
   },
   // ["playhead on", edge]
   //                    the playhead is on the frame the clip's "start" or
