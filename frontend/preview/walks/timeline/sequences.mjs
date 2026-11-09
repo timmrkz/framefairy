@@ -445,10 +445,13 @@ export default [
   },
   {
     // Found by Tim on #192: C put no mark on a clip's first or last frame,
-    // only one frame in.
+    // only one frame in. Found by Tim on #752: on a video whose picture
+    // starts 4 ms after its sound, the way OBS records, the video preview
+    // showed the frame before the playhead's, so K was not offered on the
+    // clip's first frame and a keyframe was never the one shown.
     name: "a keyframe goes on a clip's first and last frame with K, and comes off with K",
     steps: [
-      ["added", 30, "25"],
+      ["added", 30, "25", "late4ms"],
       ["keyframe on", "last"],
       ["keyframe on", "first"],
     ],

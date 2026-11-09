@@ -1318,6 +1318,12 @@ func openBridge(t *testing.T) *bridge {
 	return b
 }
 
+// frameTimings are the timings a walk's video may have, each a fixture
+// of its own, see filmed in internal/fixtures: a phone's uneven frames, a
+// picture a quarter of a second or 4 ms after its sound, and a phone's
+// picture stored on its side.
+var frameTimings = map[string]bool{"uneven": true, "late": true, "late4ms": true, "turned": true}
+
 // startWith puts a second video in the app reset a moment ago, heard and
 // searched, the way Add and its first search leave it, for a walk that
 // only needs a video of this kind to work on: seconds long, filmed at
@@ -1340,7 +1346,7 @@ func (b *bridge) startWith(seconds, rate, timing string, mkv bool) (string, erro
 	if rate != "" && !frameRate.MatchString(rate) {
 		return "", fmt.Errorf("%q is no frame rate", rate)
 	}
-	if timing != "" && timing != "uneven" && timing != "late" && timing != "turned" {
+	if timing != "" && !frameTimings[timing] {
 		return "", fmt.Errorf("%q is no timing of frames", timing)
 	}
 	file := walkFixture(n, rate, 0, timing, false)
@@ -1599,7 +1605,7 @@ func (b *bridge) pick(seconds, rate, switchAt, timing string, hevc, namesake, bo
 	if rate != "" && !frameRate.MatchString(rate) {
 		return "", fmt.Errorf("%q is no frame rate", rate)
 	}
-	if timing != "" && timing != "uneven" && timing != "late" && timing != "turned" {
+	if timing != "" && !frameTimings[timing] {
 		return "", fmt.Errorf("%q is no timing of frames", timing)
 	}
 	at, err := strconv.ParseFloat(switchAt, 64)

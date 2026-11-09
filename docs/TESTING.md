@@ -114,6 +114,10 @@ clock of 1/90000 s so that ffprobe reads it as a true 0.25 s after it,
 7 frames, 0.233 s, which is on the grid of the file's start, so frames
 counted from the file and from the picture were the same frames there and
 a mistake between the two could not be seen.
+`late4ms` is a picture at 25 frames a second that starts 4 ms after its
+sound, the way OBS recorded Tim's episodes: its grid of whole frames
+starts inside its first tick of 1/25 s, so a frame counted in whole ticks
+comes out one early.
 
 A video filmed by two cameras, which `/pick` makes with a switch, has the
 same strip, and below it each camera looks at a chequerboard on its own
