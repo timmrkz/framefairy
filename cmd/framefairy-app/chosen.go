@@ -239,6 +239,13 @@ func (s *FrameFairy) pick(path, key string) error {
 		return errors.New("that is not the key of a clip")
 	}
 	_, err := s.chosenIn(path).with(s.store.files, path, func(p *picked) bool {
+		// A card picked after it became its clip is that clip, rule 7,
+		// so a state read before the pick and answered after it says
+		// the clip too, and never the card its list has left out, which
+		// chose nothing for a frame, issue #697.
+		if key == p.card && p.became != "" {
+			key = p.became
+		}
 		// A clip a hand chose is no longer the one a removal chose, so
 		// putting a removed clip back after it chooses nothing, rule 5.
 		p.kept.Clip, p.instead = key, nil
