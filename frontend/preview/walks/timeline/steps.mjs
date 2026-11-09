@@ -5,7 +5,7 @@
 // showed before it and the step's name. A sequence of any folder can take
 // it. Below them the helpers only these steps use. See docs/TESTING.md.
 import { execFileSync } from "node:child_process";
-import { BITS, ask, caughtUp, chosen, clickOnTrack, control, drag, engineState, episodeOn, handles, high, hold, holdSound, inside, letHeld, middle, news, nextNews, nextPaint, pageUntil, playUntil, pressOnTrack, pressPlay, preview, seenUntil, settle, shownOnPlayhead, timeline, xOf } from "../bridge.mjs";
+import { BITS, ask, caughtUp, chosen, clickOnTrack, control, drag, engineState, episodeOn, handles, high, hold, holdSound, inside, letHeld, middle, news, nextNews, nextPaint, pageUntil, playUntil, pressOnTrack, pressPlay, preview, reader, seenUntil, settle, shownOnPlayhead, timeline, xOf } from "../bridge.mjs";
 import { pieceCount, rate, url } from "../common/steps.mjs";
 
 export const steps = {
@@ -572,6 +572,38 @@ export const steps = {
     else if (on < 0) walk.wrong = `the playhead came onto the ${arg} only after 150 ms`;
     else if (on > walk.held.trackFrames) {
       walk.wrong = `the playhead came onto the ${arg} ${on} frames after the press, a press on the track takes ${walk.held.trackFrames}`;
+    }
+  },
+  // ["watch captions"] from now on reads, on every animation frame, the
+  //                    frame on the canvas of the video preview and how
+  //                    many of its pixels are the white of the captions
+  //                    libass drew over it, and whether the crop frame
+  //                    stands over it
+  async "watch captions"(walk) {
+    await watchCaptions(walk.page);
+  },
+  // ["captions stayed"] since "watch captions", the captions were seen,
+  //                    and a frame that stayed on the video preview kept
+  //                    them and the crop frame: neither went off over a
+  //                    picture that did not change. Tim saw them blink off for a frame each
+  //                    time a clip's start dragged later passed a frame,
+  //                    issue #755.
+  async "captions stayed"(walk) {
+    const seen = await walk.page.evaluate(() => {
+      window.__captionWatch.on = false;
+      return window.__captionWatch.seen;
+    });
+    // The captions, then the crop frame, gone over a frame that stayed.
+    const gone = (k, what) => {
+      const off = seen.findIndex((s, i) => i > 0 && s[0] >= 0 && s[0] === seen[i - 1][0] && seen[i - 1][k] && !s[k]);
+      if (off < 0) return "";
+      const back = seen.slice(off).findIndex((s) => s[k]);
+      return `frame ${seen[off][0]} stayed on the video preview and its ${what} went off for ${back < 0 ? "good" : `${back} animation frames`}, after ${off} of ${seen.length}`;
+    };
+    if (!seen.some(([, ink]) => ink > 0)) walk.wrong = `no captions were seen over the ${seen.length} frames read`;
+    else {
+      const why = gone(1, "captions") || gone(2, "crop frame");
+      if (why) walk.wrong = why;
     }
   },
   // ["went the hand's way", which]
@@ -2183,6 +2215,37 @@ function watchEdge(page, label) {
     };
     tick();
   }, label);
+}
+
+// Reads on every animation frame, until "captions stayed" stops it, the
+// number of the frame on the canvas of the video preview, see reader, and
+// how many pixels of the canvas's lower half, where the captions stand,
+// are white, as libass draws their letters. The picture of the bridge's
+// episode is grey and never that light. Its own, so a watch that was
+// stopped stops even when the next has begun, as watchEdge does.
+async function watchCaptions(page) {
+  await reader(page);
+  await page.evaluate(() => {
+    const watch = { seen: [], on: true };
+    window.__captionWatch = watch;
+    const s = document.createElement("canvas");
+    const g = s.getContext("2d", { willReadFrequently: true });
+    const look = () => {
+      if (!watch.on) return;
+      requestAnimationFrame(look);
+      const c = document.querySelector(".screen canvas");
+      if (!c?.width || !c.height) return;
+      const top = Math.floor(c.height / 2);
+      s.width = c.width;
+      s.height = c.height - top;
+      g.drawImage(c, 0, top, s.width, s.height, 0, 0, s.width, s.height);
+      const d = g.getImageData(0, 0, s.width, s.height).data;
+      let ink = 0;
+      for (let i = 0; i < d.length; i += 4) if (d[i] > 245 && d[i + 1] > 245 && d[i + 2] > 245) ink++;
+      watch.seen.push([window.__pictured(), ink, !!document.querySelector(".atop .frame")]);
+    };
+    look();
+  });
 }
 
 // The cuts between a clip's pieces, each from where a piece ends to where

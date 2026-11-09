@@ -1935,14 +1935,35 @@ func (b *bridge) reopen() ([]Job, error) {
 // close closes the app the way quitting does, and says the jobs it
 // closed on. Nothing runs and nothing hears the disk until open.
 func (b *bridge) close() ([]Job, error) {
-	if !b.words.whileClosing(b.d.svc.jobs.shutDown) {
+	if !b.words.whileClosing(func() bool { return quit(b.d.svc) }) {
 		return nil, fmt.Errorf("the app did not stop its work in time")
 	}
-	closed := b.d.svc.jobs.list()
-	b.d.svc.levels.shutDown()
-	b.d.svc.CancelListening()
-	b.d.shut()
-	return closed, nil
+	return b.d.svc.jobs.list(), nil
+}
+
+// quit closes the app the one way it closes itself, closeDown, and then
+// stops what the end of the app's process stops in the app, since the
+// bridge opens the app again in the same process. The bridge's reset
+// named the app's parts one by one before, and each time a part it did
+// not name wrote into a work folder while the reset removed it and failed
+// with "directory not empty": a caption file of the video preview, issue
+// #561, a draft of Report a Problem, #632, a call of the page, #709, so
+// it closes the app whole now, issue #713. It says whether the jobs
+// stopped in time.
+//
+// What the process ending stops besides: a recording, which tells the bus
+// every desk shares what it hears, and the app opened again numbers its
+// recordings from 1, so the next walk's Dictate would take those words
+// for its own. The caption files of the video preview, which go on being
+// made after the request that asked is gone. The report, whose draft the
+// page saves as a walk ends. The page's calls are the reset's, see
+// pageCalls.
+func quit(svc *FrameFairy) bool {
+	stopped := svc.closeDown()
+	svc.CancelListening()
+	svc.store.machine.ClosePreviews()
+	svc.report.end()
+	return stopped
 }
 
 // reset puts the app back the way it was once the first episode was
@@ -1959,11 +1980,6 @@ func (b *bridge) close() ([]Job, error) {
 //
 // On the real disk: it puts back the library where ffmpeg and the episode's decoder read the episode.
 func (b *bridge) reset() error {
-	// A recording the walk before left running is still in hand, and
-	// tells the bus every desk shares what it hears. The app opened again numbers
-	// its recordings from 1, so the next walk's Dictate would take those
-	// words for its own.
-	b.d.svc.CancelListening()
 	b.sound.silent.Store(false)
 	b.words.release()
 	b.words.wordless.Store(false)
@@ -1987,31 +2003,20 @@ func (b *bridge) reset() error {
 	b.d.reportMade.Store(0)
 	b.d.reportFronted.Store(0)
 	b.d.exported.Store(nil)
-	if !b.d.svc.jobs.shutDown() {
+	// The app is closed the way it quits, and what its process ending
+	// stops is stopped too, so no part of it writes while its folders go,
+	// see quit.
+	if !quit(b.d.svc) {
 		return fmt.Errorf("the app did not stop its work in time")
 	}
-	b.d.svc.levels.shutDown()
-	// The watch on the folders hears the reset delete them, and reconcile
-	// would let the videos go and write the library into the config
-	// folder while it is put back. The app opened again watches anew.
-	b.d.svc.watch.stop()
-	// A caption file the video preview asked for goes on being written
-	// after the page that asked is gone, and one written into a work
-	// folder while it was removed failed the reset with "directory not
-	// empty", issue #561. The work folders go the way the app deletes
-	// one, see engine.Machine.DeleteWork.
-	defer b.d.svc.store.machine.HoldPreviews(b.d.home)()
-	// So does a draft of Report a Problem the page saved as the walk
-	// ended, in the config folder, issue #632.
-	endReport(b.d.svc.report)
 	// A log a walk started lives in the home, which goes next.
 	theLog.close()
-	// A call of the page before writes into a work folder while it is
-	// removed, issue #709. stop waits for every call still running here
-	// and now, once the gates are open and the work, the watch and the
-	// stand-ins have stopped, so nothing a call waits on is still held,
-	// and turns away the calls that come after it. What it returns lets
-	// calls through again as the reset ends.
+	// What the process ending does besides: the page's calls the Go side
+	// still runs end with it. stop waits for every call still running
+	// here and now, once the gates are open and the app has closed, so
+	// nothing a call waits on is still held, and turns away the calls that
+	// come after it. What it returns lets calls through again as the reset
+	// ends.
 	defer b.calls.stop()()
 	entries, err := os.ReadDir(b.d.home)
 	if err != nil {
@@ -2059,20 +2064,6 @@ func leftIn(dir string) string {
 		return "nothing"
 	}
 	return strings.Join(left, ", ")
-}
-
-// endReport ends the report of the app a walk ran, the way the app's
-// process ending would: a write in hand is let finish, and every write
-// after it fails, so nothing lands in the config folder while it is
-// removed, or in the next walk's once it is put back. A save the page
-// sent as the walk ended may be waiting on the lock, and the app opened
-// again is a reporting of its own, so the old one is never written
-// through again. Every write of the report goes through its files under
-// its lock, see bugs.go.
-func endReport(r *reporting) {
-	r.mu.Lock()
-	r.files = afero.NewReadOnlyFs(r.files)
-	r.mu.Unlock()
 }
 
 // freshDecoders closes the streams and the episode's decoders the walk

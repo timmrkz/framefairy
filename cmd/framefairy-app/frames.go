@@ -68,6 +68,10 @@ type previews struct {
 	// counts the caption layers drawn, see captions.go.
 	tracks tracks
 	layers layerTally
+	// within gives the context a request for captions runs in, see
+	// captionsWithin. Nil in the app. A test hands in its own, to end a
+	// request's time at once, never by the clock.
+	within func(context.Context) (context.Context, context.CancelFunc)
 }
 
 // A stream that nobody has pulled from for this long is closed, and at

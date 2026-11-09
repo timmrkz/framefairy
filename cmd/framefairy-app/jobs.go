@@ -839,14 +839,24 @@ func (q *queue) until(done func(jobs []*Job) bool, expire <-chan time.Time) bool
 	}
 }
 
-// shutDown stops every job and waits, at most stopWait, for the running
-// ones to end and their goroutines to be done. The app calls it on the way out. A render's ffmpeg and a
+// shutDown stops every job and the time of removed work, and waits, at
+// most stopWait, for the running ones to end and their goroutines to be
+// done. The app calls it on the way out. A render's ffmpeg and a
 // transcription were left running after the app had gone, and a
 // transcription keeps the file it writes open, so the next start found it
 // half written by a program nobody could see.
 func (q *queue) shutDown() bool {
 	q.mu.Lock()
 	q.shut = true
+	// Removed work is forgotten by a timer of its own, which the process
+	// ending stops in the app. The walks' bridge opens the app again in
+	// the same process, on the same clock, and a timer left running
+	// forgot the record of a search in the next walk's first video, found
+	// in the review of the fix for issue #713.
+	for _, stop := range q.removals {
+		stop()
+	}
+	clear(q.removals)
 	for _, j := range q.jobs {
 		if j.going() {
 			j.callOff()

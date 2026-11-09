@@ -112,3 +112,11 @@ func (mc *Machine) modelArrived(dir string, m LanguageModel, path string) {
 	}
 	noteModelChecked(record, checks, m, info)
 }
+
+// knownModelFile is whether the file at path is a model of the app's list
+// in the models folder, whose content CheckModelFile holds to its SHA256,
+// so what the file is, is known before llama-server says it.
+func (mc *Machine) knownModelFile(path string) bool {
+	known, ok := LanguageModelByName(filepath.Base(path))
+	return ok && known.SHA256 != "" && filepath.Clean(filepath.Dir(path)) == filepath.Clean(ModelsDir())
+}

@@ -7,12 +7,11 @@
 # in one, ci.yml, fuzz-nightly.yml, security.yml and walks-nightly.yml.
 #
 # It is kept in GitHub's container registry under a sum of what goes into
-# it: the Dockerfile, scripts/ci-packages.sh, which it runs, and the
-# version of Playwright the interface pins. So nearly every run only asks
-# the registry whether that image is there, and builds and pushes one only
-# when one of them changed. The step that builds stops after ten minutes,
-# as the system packages of the other jobs do. A file the Dockerfile
-# comes to read joins the sum and the sparse checkout below.
+# it: the Dockerfile and the version of Playwright the interface pins. So
+# nearly every run only asks the registry whether that image is there, and
+# builds and pushes one only when one of them changed. The step that
+# builds stops after ten minutes. A file the Dockerfile comes to read joins
+# the sum and the sparse checkout below.
 name: CI image
 
 on:
@@ -41,13 +40,12 @@ jobs:
         with:
           sparse-checkout: |
             .github/ci-image/Dockerfile
-            scripts/ci-packages.sh
             frontend/package-lock.json
           sparse-checkout-cone-mode: false
       - id: tag
         run: |
           playwright=$(jq -r '.packages["node_modules/playwright"].version' frontend/package-lock.json)
-          sum=$({ echo "playwright $playwright"; cat .github/ci-image/Dockerfile scripts/ci-packages.sh; } | sha256sum | cut -c1-16)
+          sum=$({ echo "playwright $playwright"; cat .github/ci-image/Dockerfile; } | sha256sum | cut -c1-16)
           echo "playwright=$playwright" >> "$GITHUB_OUTPUT"
           echo "ref=ghcr.io/${GITHUB_REPOSITORY}-ci:$sum" >> "$GITHUB_OUTPUT"
           echo "walks=ghcr.io/${GITHUB_REPOSITORY}-ci:$sum-walks" >> "$GITHUB_OUTPUT"

@@ -71,14 +71,14 @@ func TestTheSpeechModelKeptIsLoadedOnce(t *testing.T) {
 	opts := DefaultOptions()
 	opts.ASRModel = "speech"
 	opts.Planner = "api"
-	loaded, err := e.KeepModel(context.Background(), opts, t.TempDir())
+	loaded, err := e.KeepModel(context.Background(), opts)
 	if err != nil || !loaded {
 		t.Fatalf("keeping the speech model: loaded %v, %v", loaded, err)
 	}
 	for range 3 {
 		hearOnce(t, speechEngine(m, &c), "speech")
 	}
-	if loaded, _ := e.KeepModel(context.Background(), opts, t.TempDir()); loaded {
+	if loaded, _ := e.KeepModel(context.Background(), opts); loaded {
 		t.Error("the speech model kept was loaded again")
 	}
 	if got := c.loads.Load(); got != 3 {
@@ -91,7 +91,7 @@ func TestTheSpeechModelKeptIsLoadedOnce(t *testing.T) {
 	if got := c.closes.Load(); got != 3 {
 		t.Errorf("closed %d times once the app quit, want 3", got)
 	}
-	if loaded, _ := e.KeepModel(context.Background(), opts, t.TempDir()); loaded {
+	if loaded, _ := e.KeepModel(context.Background(), opts); loaded {
 		t.Error("a speech model was kept after the app quit")
 	}
 }

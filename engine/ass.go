@@ -57,6 +57,13 @@ type Style struct {
 	// light is the light of the short the colours are written for, see
 	// inLight.
 	light framewire.Light
+	// alone says the words are measured now, by this ask: a block another
+	// ask is measuring is measured again rather than waited for, see
+	// measureMany. The captions the video preview shows at once are
+	// measured so, a few blocks, while the clip's whole caption file and
+	// its word frames measure every block of the clip, and a wait for
+	// those let the few wait for all of them.
+	alone bool
 	// fonts are the faces the style was resolved among, which measure
 	// its words and give its face to libass, see Fonts.Style.
 	fonts *Fonts
@@ -83,8 +90,11 @@ var DefaultStyle = map[string]any{
 	"bold":         1.0,
 	"margin_h":     70.0,
 	// Distance from the bottom of the frame. Shorts and Reels park their own
-	// UI over roughly the bottom fifth, so captions sit above it.
-	"margin_v": 300.0,
+	// UI over roughly the bottom fifth, so captions sit above it. On a step
+	// of CaptionYStep, as every height a hand can place is: at 300 the app
+	// drew the captions at 320, SnapCaptionY's step, while its Height field
+	// and Put the captions back said 300.
+	"margin_v": 320.0,
 	// Characters in one caption, across at most two lines. Long enough to
 	// hold a phrase, short enough that the text can be big.
 	"max_chars":  38.0,
@@ -307,6 +317,47 @@ const (
 
 // DefaultCaptionY is where the captions sit when nobody has placed them.
 var DefaultCaptionY = DefaultStyle["margin_v"].(float64)
+
+// CaptionStart is how the captions look before anybody changes them, the
+// look DefaultStyle gives, and the heights a hand may put them at. The app
+// offers these in its controls and puts the captions back to them, so the
+// interface keeps no copy of either.
+type CaptionStart struct {
+	Font string  `json:"font"`
+	Size float64 `json:"size"`
+	// Y is where the captions sit, and Heights every height they may sit
+	// at, from the lowest up, as the distance from the bottom of a
+	// 1080x1920 frame. A drag lands on the one nearest the hand, the one
+	// SnapCaptionY gives.
+	Y       float64   `json:"y"`
+	Heights []float64 `json:"heights"`
+	// Step is how far apart two heights are, for the field the height is
+	// typed in and the grid shown while the captions are dragged.
+	Step float64 `json:"step"`
+	// The colours, the way the video preview draws them, see WebColour.
+	Primary         string `json:"primary"`
+	Box             string `json:"box"`
+	HighlightColour string `json:"highlightColour"`
+}
+
+// StartingCaptions is the captions as they start out: the style a clip
+// with no style of its own is drawn in, the one Fonts.Style gives.
+func StartingCaptions() CaptionStart {
+	s := new(Fonts).Style(nil)
+	start := CaptionStart{
+		Font:            s.Font,
+		Size:            s.Size,
+		Y:               s.MarginV,
+		Step:            CaptionYStep,
+		Primary:         WebColour(s.Primary),
+		Box:             WebColour(s.BackColour),
+		HighlightColour: s.HighlightWeb(),
+	}
+	for y := float64(CaptionYMin); y <= CaptionYMax; y += CaptionYStep {
+		start.Heights = append(start.Heights, y)
+	}
+	return start
+}
 
 // SnapCaptionY puts a hand-placed caption line on the nearest step and
 // inside the frame.
@@ -613,11 +664,20 @@ func (e *Engine) measureMany(ctx context.Context, blocks []string, s Style,
 	var missing, others []int
 	var claimed []string
 	var waits []<-chan struct{}
-	if !keep {
+	switch {
+	case !keep:
 		for i := range blocks {
 			missing = append(missing, i)
 		}
-	} else {
+	case s.alone:
+		for i := range blocks {
+			if box, found := measured.get(key(i)); found {
+				out[i] = box
+			} else {
+				missing = append(missing, i)
+			}
+		}
+	default:
 		keys := make([]string, len(blocks))
 		for i := range blocks {
 			keys[i] = key(i)
@@ -839,16 +899,20 @@ func (e *Engine) writeASS(ctx context.Context, laid []LaidCaption, path string,
 // starts on. See docs/CAPTIONS.md.
 func (e *Engine) CaptionTrack(ctx context.Context, laid []LaidCaption, width, height int,
 	overrides map[string]any, source SourceInfo) ([]byte, error) {
-	track, _, err := e.captionTrack(ctx, laid, width, height, overrides, source)
+	track, _, err := e.captionTrack(ctx, laid, width, height, overrides, source, false)
 	return track, err
 }
 
 // captionTrack is CaptionTrack, and whether it draws the pill of the lit
 // word: not with the highlight off, nor when the words could not be
 // measured and the captions are drawn plain instead.
+//
+// alone measures the words without waiting for another ask measuring the
+// same, see Style.alone.
 func (e *Engine) captionTrack(ctx context.Context, laid []LaidCaption, width, height int,
-	overrides map[string]any, source SourceInfo) ([]byte, bool, error) {
+	overrides map[string]any, source SourceInfo, alone bool) ([]byte, bool, error) {
 	s := e.Fonts.Style(overrides).inLight(source.Light())
+	s.alone = alone
 	if s.Highlight {
 		track, err := e.highlighted(ctx, laid, width, height, s, source)
 		if track != nil || err != nil {

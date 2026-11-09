@@ -139,7 +139,7 @@ func TestAWindowTheAppPlacesLandsOnTheStep(t *testing.T) {
 	}
 }
 
-// A new video's window is the first of the equal windows it is cut into,
+// A new video's window is the first of the round windows it is walked in,
 // on a round step, the whole of a short one, and no longer than one
 // search can read. The first search and the workspace both take it from
 // here, so the window searched is the window drawn, #458.
@@ -152,7 +152,8 @@ func TestTheFirstWindowFollowsTheVideo(t *testing.T) {
 		{"half an hour", 1800, 0, PlacedWindow{timed.Window{Start: 0, End: 600}, 600}},
 		{"an hour", 3600, 0, PlacedWindow{timed.Window{Start: 0, End: 900}, 900}},
 		{"four hours", 4 * 3600, 0, PlacedWindow{timed.Window{Start: 0, End: 1800}, 1800}},
-		{"a little over four hours, 30:02 a window, on the step", 4*3600 + 15, 0, PlacedWindow{timed.Window{Start: 0, End: 1800}, 1800}},
+		{"2:40:10 is half an hour, not 23 minutes, #594", 9609.664, 0, PlacedWindow{timed.Window{Start: 0, End: 1800}, 1800}},
+		{"a little over four hours, on the step", 4*3600 + 15, 0, PlacedWindow{timed.Window{Start: 0, End: 1800}, 1800}},
 		{"ten minutes is searched whole", 600, 0, PlacedWindow{timed.Window{Start: 0, End: 600}, 600}},
 		{"a quarter of an hour too", 900, 0, PlacedWindow{timed.Window{Start: 0, End: 900}, 900}},
 		{"no longer than a search reads", 3600, 700, PlacedWindow{timed.Window{Start: 0, End: 690}, 690}},
@@ -206,6 +207,8 @@ func TestTheWindowMovesOnAsLongAsItWasMade(t *testing.T) {
 		want                    PlacedWindow
 	}{
 		{"on from where it ended", 900, 900, 3600, 0, PlacedWindow{timed.Window{Start: 900, End: 1800}, 900}},
+		{"2:40:10 walks on in half hours, on the range picker's lines", 1800, 1800, 9609.664, 0, PlacedWindow{timed.Window{Start: 1800, End: 3600}, 1800}},
+		{"and its last one takes what is left", 9000, 1800, 9609.664, 0, PlacedWindow{timed.Window{Start: 9000, End: 9609.664}, 1800}},
 		{"the last one is cut, its length kept", 3000, 900, 3600, 0, PlacedWindow{timed.Window{Start: 3000, End: 3600}, 900}},
 		{"cut to what a search reads, on the step", 900, 900, 3600, 700, PlacedWindow{timed.Window{Start: 900, End: 1590}, 690}},
 	} {

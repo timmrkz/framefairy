@@ -360,7 +360,7 @@ describe("the picture standing still", () => {
       shown: unknown;
       report(drew?: boolean, passing?: boolean): void;
     };
-    inside.video = { width: 1920, height: 1080, samples: { pts: [0], order: [0], timescale: 25 } };
+    inside.video = { width: 1920, height: 1080, samples: { count: 1, timescale: 25, start: 0, step: 1 } };
     const frame = (width: number, height: number) => ({ frame: { width, height, close() {} }, run: -1, rank: 0 });
     inside.shown = frame(640, 360);
     return { q, inside, frame };
@@ -449,7 +449,7 @@ describe("a frame waiting for its captions", () => {
       movieOf({ duration: 120, width: 2, height: 2, grid: { origin: 0, start: 0, num: 25, den: 1, count: 3000 } }),
     );
     const inside = q as unknown as { video: unknown; dress(rank: number): Promise<boolean> | null };
-    inside.video = { width: 2, height: 2, samples: { pts: [0, 1, 2], order: [0, 1, 2], timescale: 25 } };
+    inside.video = { width: 2, height: 2, samples: { count: 3, timescale: 25, start: 0, step: 1 } };
     let came = () => {};
     q.over = {
       at: () => null,
@@ -640,7 +640,7 @@ describe("a frame decoded for a play", () => {
       movieOf({ duration: 120, width: 2, height: 2, grid: { origin: 0, start: 0, num: 25, den: 1, count: 3000 } }),
     );
     const inside = q as unknown as { video: unknown; frameOut(slot: unknown, frame: unknown): void };
-    inside.video = { width: 2, height: 2, samples: { pts: [0, 1, 2], order: [0, 1, 2], timescale: 25 } };
+    inside.video = { width: 2, height: 2, samples: { count: 3, timescale: 25, start: 0, step: 1 } };
     const asked: number[] = [];
     const drawn: number[] = [];
     q.over = {

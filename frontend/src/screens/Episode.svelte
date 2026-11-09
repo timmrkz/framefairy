@@ -3,23 +3,12 @@
   import { fade } from "svelte/transition";
   import {
     api,
-    captionFontDefault,
-    captionBoxDefault,
-    captionHighlightDefault,
-    captionHighlightOpacityDefault,
-    captionOpacityDefault,
-    captionTextDefault,
-    captionTextOpacityDefault,
-    captionSizeDefault,
-    captionYDefault,
-    captionYMax,
-    captionYMin,
-    captionYStep,
     clock,
     errorText,
     intoWord,
-    snapCaptionY,
+    nearestHeight,
     type CaptionFont,
+    type CaptionStart,
     type CaptionsView,
     type CaptionSwitch,
     type ClipEntry,
@@ -2024,6 +2013,7 @@
     cues: NonNullable<CaptionsView["captions"]>;
     pieces: { start: number; end: number }[];
     track?: string;
+    playhead?: number;
   } | null>(null);
   // Each piece keeps the framing of the piece it came from, the way the
   // engine keeps it when the edit lands.
@@ -2345,7 +2335,28 @@
   // Where the captions sit, for every clip of every episode. Dragging the
   // box in the video preview is the same thing as typing the number in the
   // settings column, and both stay for the next video.
-  let captionY = $state(captionYDefault);
+  let captionY = $state(0);
+  // How the captions start out, and the heights they may sit at, as the Go
+  // side has them, see engine.CaptionStart. Nothing is offered as moved
+  // until it is here.
+  let start = $state<CaptionStart | null>(null);
+  const startLook = $derived.by(() => {
+    if (!start) return null;
+    const text = splitColour(start.primary);
+    const box = splitColour(start.box);
+    const highlight = splitColour(start.highlightColour);
+    return {
+      font: start.font,
+      size: Math.round(start.size),
+      y: Math.round(start.y),
+      text: text.hex,
+      textOpacity: Math.round(text.alpha * 100),
+      box: box.hex,
+      opacity: Math.round(box.alpha * 100),
+      highlight: highlight.hex,
+      highlightOpacity: Math.round(highlight.alpha * 100),
+    };
+  });
   // What the captions looked like before they were put back, so the way
   // back is a way there and back again. Putting them back is one click,
   // and one click has to be undoable as easily. It is dropped the moment
@@ -2370,8 +2381,8 @@
   const captionsNow = $derived({
     // The face the video asks for, even one this machine lacks, so putting
     // the captions back as they start out is offered for it too.
-    font: captions?.style.missing || (captions?.style.font ?? captionFontDefault),
-    size: Math.round(captions?.style.chosenSize ?? captionSizeDefault),
+    font: captions?.style.missing || (captions?.style.font ?? startLook?.font ?? ""),
+    size: Math.round(captions?.style.chosenSize ?? startLook?.size ?? 0),
     y: Math.round(captionY),
     text: splitColour(captions?.style.primary ?? "").hex,
     textOpacity: Math.round(splitColour(captions?.style.primary ?? "").alpha * 100),
@@ -2384,21 +2395,23 @@
     opacity: Math.round(splitColour(captions?.style.box ?? "rgba(0, 0, 0, 0.5)").alpha * 100),
   });
   const coloursMoved = $derived(
-    captionsNow.text !== captionTextDefault ||
-      captionsNow.textOpacity !== captionTextOpacityDefault ||
-      captionsNow.highlight !== captionHighlightDefault ||
-      captionsNow.highlightOpacity !== captionHighlightOpacityDefault ||
-      captionsNow.box !== captionBoxDefault ||
-      captionsNow.opacity !== captionOpacityDefault,
+    startLook !== null &&
+      (captionsNow.text !== startLook.text ||
+        captionsNow.textOpacity !== startLook.textOpacity ||
+        captionsNow.highlight !== startLook.highlight ||
+        captionsNow.highlightOpacity !== startLook.highlightOpacity ||
+        captionsNow.box !== startLook.box ||
+        captionsNow.opacity !== startLook.opacity),
   );
   const captionsMoved = $derived(
-    captionsNow.font !== captionFontDefault ||
-      captionsNow.size !== captionSizeDefault ||
-      captionsNow.y !== captionYDefault ||
-      !captionsNow.highlightOn ||
-      !captionsNow.textOn ||
-      !captionsNow.boxOn ||
-      coloursMoved,
+    startLook !== null &&
+      (captionsNow.font !== startLook.font ||
+        captionsNow.size !== startLook.size ||
+        captionsNow.y !== startLook.y ||
+        !captionsNow.highlightOn ||
+        !captionsNow.textOn ||
+        !captionsNow.boxOn ||
+        coloursMoved),
   );
 
   // Everything about the captions back to how it starts out: the face, the
@@ -2406,21 +2419,23 @@
   // the whole group and not beside one row of it.
   async function putCaptionsBack() {
     const was = captionsNow;
-    if (captionsNow.font !== captionFontDefault || captionsNow.size !== captionSizeDefault) {
-      await setCaptionStyle(captionFontDefault, captionSizeDefault);
+    const look = startLook;
+    if (!look) return;
+    if (captionsNow.font !== look.font || captionsNow.size !== look.size) {
+      await setCaptionStyle(look.font, look.size);
     }
-    if (captionsNow.y !== captionYDefault) await resetCaptionsHeight();
+    if (captionsNow.y !== look.y) await resetCaptionsHeight();
     if (!captionsNow.highlightOn) await setCaptionSwitch("highlight", true);
     if (!captionsNow.textOn) await setCaptionSwitch("text", true);
     if (!captionsNow.boxOn) await setCaptionSwitch("box", true);
     if (coloursMoved) {
       await setCaptionColours(
-        captionTextDefault,
-        captionTextOpacityDefault,
-        captionBoxDefault,
-        captionOpacityDefault,
-        captionHighlightDefault,
-        captionHighlightOpacityDefault,
+        look.text,
+        look.textOpacity,
+        look.box,
+        look.opacity,
+        look.highlight,
+        look.highlightOpacity,
       );
     }
     captionsWere = was;
@@ -2460,7 +2475,7 @@
   async function setCaptionsHeight(y: number) {
     const was = captionY;
     captionsWere = null;
-    captionY = snapCaptionY(y);
+    captionY = nearestHeight(start?.heights ?? [], y);
     try {
       await api.setCaptionsHeight(path, captionY);
       // The clips come again, so the captions of the one on screen are read
@@ -2474,7 +2489,7 @@
 
   async function resetCaptionsHeight() {
     const was = captionY;
-    captionY = captionYDefault;
+    captionY = start?.y ?? captionY;
     try {
       await api.resetCaptionsHeight(path);
       await refreshClips();
@@ -2609,7 +2624,7 @@
       // The caption height is kept in the settings, so an undo of a drag
       // is read back from there.
       const settings = await api.getSettings();
-      captionY = settings.captionY || captionYDefault;
+      captionY = settings.captionY || (start?.y ?? 0);
       onchange();
       // The Go side chose the clip the step changed, which the state read in
       // load says, and the move chose shows it.
@@ -2831,8 +2846,9 @@
   });
 
   function readSettings() {
-    api.getSettings().then((settings) => {
-      captionY = settings.captionY || captionYDefault;
+    Promise.all([api.getSettings(), api.captionStart()]).then(([settings, starts]) => {
+      start = starts;
+      captionY = settings.captionY || starts.y;
     });
   }
 </script>
@@ -2975,7 +2991,7 @@
               {#if captionsMoved}
                 <button
                   class="quiet glyph"
-                  title="Put the captions back as they start out: {captionFontDefault}, {captionSizeDefault}, {captionYDefault} from the bottom, white on a half clear black box"
+                  title="Put the captions back as they start out: {startLook?.font}, {startLook?.size}, {startLook?.y} from the bottom, in the colours they start in"
                   aria-label="Put the captions back"
                   onclick={putCaptionsBack}
                 >
@@ -3219,9 +3235,9 @@
                 <input
                   class="num"
                   type="number"
-                  min={captionYMin}
-                  max={captionYMax}
-                  step={captionYStep}
+                  min={start?.heights[0]}
+                  max={start?.heights.at(-1)}
+                  step={start?.step}
                   value={Math.round(captionY)}
                   onchange={(e) => setCaptionsHeight(Number(e.currentTarget.value))}
                 /><span class="unit">px</span>
@@ -3242,6 +3258,7 @@
           missing={!!status?.missing}
           onframe={(frame) => reflection?.take(frame)}
           clip={shownClip}
+          heading={reshaped?.playhead ?? null}
           making={making?.key}
           opening={!opened}
           bind:pictured
@@ -3264,6 +3281,8 @@
             captionsWere = null;
             captionY = y;
           }}
+          captionHeights={start?.heights ?? []}
+          captionStep={start?.step ?? 0}
           {strip}
         />
       </div>

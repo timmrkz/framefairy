@@ -36,6 +36,25 @@ function notices(): Plugin {
   };
 }
 
+// With WERROR=1, which make passes on and CI sets for the Mac build, a
+// warning fails the build: every warning is printed as before, and the
+// build then ends with a status that is not zero. What is counted is what
+// is printed. Vite's logger and Rolldown print with console.warn, Node
+// prints its own, like a deprecation, through the process's warning
+// event, and the Svelte plugin hands each to onwarn below.
+const strict = process.env.WERROR === "1";
+function warned(): void {
+  if (strict) process.exitCode = 1;
+}
+if (strict) {
+  const warn = console.warn.bind(console);
+  console.warn = (...args: unknown[]) => {
+    warned();
+    warn(...args);
+  };
+  process.on("warning", warned);
+}
+
 // The app calls Go methods by name, so there are no generated bindings to
 // load here. The build goes next to the app's Go code, because Go can only
 // embed files from its own folder. It goes into dist/app/, which is emptied
@@ -50,15 +69,31 @@ export default defineConfig({
   // Vite warns about a chunk over 500 kB because a web page downloads it.
   // The app reads its interface from its own binary, so the size of one
   // chunk costs nothing the warning is about, and the build fails on any
-  // warning. The bundle passed 500 kB with the bounce after a word step.
-  // The limit stays, at twice that, to catch a library pulled in by
-  // mistake.
+  // warning, see WERROR above. The bundle passed 500 kB with the bounce
+  // after a word step. The limit stays, at twice that, to catch a library
+  // pulled in by mistake.
   build: {
     outDir: "../cmd/framefairy-app/dist/app",
     emptyOutDir: true,
     chunkSizeWarningLimit: 1000,
+    // Rolldown warns when its plugins took most of a build's time, which
+    // depends on how fast the machine is and says nothing about the code.
+    // It came once on CI's Mac, on 8 November, and WERROR=1 failed on it.
+    rolldownOptions: {
+      checks: { bundlerTimings: false },
+    },
   },
-  plugins: [svelte(), notices()],
+  plugins: [
+    svelte({
+      // The plugin prints no warning about a package's own component, so
+      // that one is not counted either.
+      onwarn(warning, handler) {
+        if (!warning.filename?.includes("node_modules")) warned();
+        handler(warning);
+      },
+    }),
+    notices(),
+  ],
   // Which lines the interface's own tests run, counted only when asked,
   // make interface COVERAGE=, for the nightly snapshot in Codecov, see
   // Coverage in docs/TESTING.md. The components are counted by the walks,

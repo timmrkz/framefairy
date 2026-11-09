@@ -45,8 +45,7 @@
   import type { Picture } from "../lib/frames/picture";
   import Info from "./Info.svelte";
   import {
-    captionYStep,
-    snapCaptionY,
+    nearestHeight,
     type CaptionsView,
     type ClipEntry,
     type CropMark,
@@ -61,9 +60,12 @@
     path,
     source,
     clip,
+    heading = null,
     making,
     captions = null,
     captionsDue = false,
+    captionHeights = [],
+    captionStep = 0,
     wordFrames = null,
     drafts = {},
     time = $bindable(0),
@@ -91,6 +93,11 @@
     path: string;
     source: SourceView;
     clip: ClipEntry | null;
+    // Where the playhead is on its way to while the hand drags an edge of
+    // the clip: the frame the clip now starts or ends on. The clip
+    // timeline hands over the clip as the edge leaves it, and puts the
+    // playhead there a frame later, see held.
+    heading?: number | null;
     // The key of the clip on its way that is chosen, which the video
     // preview has nothing of yet but the place of the playhead, see claim.
     making?: string;
@@ -118,6 +125,12 @@
     // beside it says what you are doing as you do it. Letting go saves,
     // this only shows.
     oncaptionmoved?: (y: number) => void;
+    // The heights the captions may sit at, from the lowest up, as the Go
+    // side has them, see engine.CaptionStart. A drag lands on the nearest.
+    captionHeights?: number[];
+    // How far apart two of those heights are, for the grid shown while
+    // the captions are dragged.
+    captionStep?: number;
     oncrop?: (at: number, left: number) => Promise<void>;
     onresetcrop?: (at: number) => Promise<void>;
     // Puts a keyframe back at a moment with its crop, the way the clip
@@ -760,12 +773,34 @@
   // overAt. Shown is what was on screen in the last frame drawn: the crop
   // as shares of the picture, the turn, the crop's left edge for the
   // probes, the captions laid over the canvas, and whose clip.
+  //
+  // The same hold keeps the frame on screen as it was while an edge
+  // dragged over it leaves it out of the clip and the playhead goes with
+  // the edge to a frame the clip has, see heading: the clip timeline
+  // hands over the clip a frame before the playhead follows. Until the
+  // frame the playhead goes to is put up, the frame on screen keeps its
+  // crop frame and its captions. Drawn as the clip now was, both went off
+  // for a frame each time a start dragged later passed a frame, and an
+  // end dragged earlier, and Tim saw the captions flicker, issue #755.
   type Overlaid = { key: string; crop: typeof crop; turn: number; left: number | null };
   let held = $state.raw<(Overlaid & { over: Over | null; since: number }) | null>(null);
   let last: Overlaid = { key: "", crop: null, turn: 0, left: null };
   let drawnOver: Over | null = null;
+  // The frame drawn last, as overAt was asked for it.
+  let drawnAt = NaN;
+  // Whether the frame drawn at a moment is one the clip the hand is
+  // shaping left out, while the playhead goes to a frame it has.
+  const leftBehind = (frame: number) =>
+    heading !== null && Number.isFinite(frame) && !framesClip(frame) && framesClip(heading);
+  // The hold begins at whichever comes first once the clip moved on: the
+  // frame on screen drawn again, or the clip's own change, which reach
+  // this component in either order.
+  function holdLeftBehind(frame: number) {
+    if (!held && queue && leftBehind(frame)) held = { ...last, over: drawnOver, since: performance.now() };
+  }
   $effect.pre(() => {
     const now = { key: clip?.key ?? "", crop, turn, left: crop?.inside ? (dragLeft ?? cropLeft) : null };
+    holdLeftBehind(drawnAt);
     if (!held) last = now;
   });
   // A seek to another clip than the one on screen holds what is over the
@@ -1479,10 +1514,16 @@
   // the caption box, see onScreen. Fresh is a frame put up for the newest
   // gesture, which ends a hold, and anything else the frame on screen drawn
   // again, which during a hold is drawn with what lay over it before.
+  // A frame the clip being shaped left out does not end a hold, though it
+  // was put up for a gesture: a seek to where the edge was a moment ago
+  // can land after the clip has moved on.
   function overAt(frame: number, light: Light, fresh = false): Over | null {
+    drawnAt = frame;
+    holdLeftBehind(frame);
     if (held) {
-      if (!fresh) return held.over;
-      said(`video preview: clip ${clip?.id ?? "none"} has its frame up at ${frame.toFixed(3)} s, ${Math.round(performance.now() - held.since)} ms after it was picked`, { video: path });
+      if (!fresh || leftBehind(frame)) return held.over;
+      if (held.key !== (clip?.key ?? ""))
+        said(`video preview: clip ${clip?.id ?? "none"} has its frame up at ${frame.toFixed(3)} s, ${Math.round(performance.now() - held.since)} ms after it was picked`, { video: path });
       held = null;
     }
     if (light !== shownLight) shownLight = light;
@@ -1572,7 +1613,7 @@
         // drag, so whatever it selected on the way goes.
         window.getSelection()?.removeAllRanges();
       }
-      dragCaptions = snapCaptionY(start + (from - e.clientY) * scale);
+      dragCaptions = nearestHeight(captionHeights, start + (from - e.clientY) * scale);
       oncaptionmoved?.(dragCaptions);
     };
     const up = async () => {
@@ -1846,7 +1887,7 @@
     {#if dragCaptions !== null}
       <div
         class="grid"
-        style="left: {box.left}%; width: {box.width}%; --step: {px(captionYStep / 1920)}"
+        style="left: {box.left}%; width: {box.width}%; --step: {px(captionStep / 1920)}"
       ></div>
     {/if}
     <!-- Captions switched off in the captions column are not drawn, so the

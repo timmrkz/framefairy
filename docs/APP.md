@@ -1322,7 +1322,7 @@ bubble scrolled by those eight pixels.
   that suits one video suits the next one, so the drag saves it as a setting
   rather than as an edit of that clip. It stands as **Height** with the other
   caption settings on the left, where it can be typed instead, and **Put the
-  captions back** appears under it once it is not the standard 300. A click
+  captions back** appears under it once it is not the standard 320. A click
   on the box without dragging plays or pauses.
 - **Moving the crop:** drag the frame sideways when the automatic crop is
   off. The frame is there while the playhead is in the clip, and only
@@ -1349,16 +1349,20 @@ bubble scrolled by those eight pixels.
       part one area of the workspace from another.
     - **A new episode finds its first clips by itself.** Adding a video is
       all it takes: the Go side asks for its first search, of the first
-      of the equal windows the episode is cut into, and no longer than the
-      model can read at once, and the range picker goes to that window.
+      window of the episode, and no longer than the model can read at
+      once, and the range picker goes to that window.
       **The windows grow with the episode**, as the square root of its
       length, so a short episode shows its first clips soon and a long one
-      is not cut into dozens: half an hour makes three windows of 10
-      minutes, an hour four of 15, two hours six of 20 and four hours
-      eight of 30. None is shorter than 10 minutes, so a video of 15
-      minutes is one window, and the windows are equal, so no scrap is
-      left at the end. When the window moves on by itself, after a search,
-      it takes the next one. See `engine/suggest.go`.
+      is not cut into dozens: half an hour makes windows of 10 minutes,
+      an hour of 15, two hours of 20 and four hours of 30. The rule is
+      rounded to the nearest of 10, 15, 20 and 30 minutes, so a window is
+      a length a person reads at a glance and never one like 23 minutes,
+      and longer videos keep windows of 30. A video of 15 minutes or less
+      is one window. The episode is walked from its start in windows that
+      long, so each starts on a multiple of its length, and a window of
+      half an hour starts on the range picker's lines of a long video.
+      The last one takes what is left. When the window moves on by itself, after a search, it takes
+      the next one. See `engine/suggest.go`.
       The search hears the episode to the end of the window and then
       finds. Until it finds, the first row of the clip list says Waiting
       for the transcript, and the window is locked for as long as the
@@ -1696,9 +1700,11 @@ bubble scrolled by those eight pixels.
       where the window starts and the right two where it ends. A bar
       drags the whole window and keeps its length, and a double-click on
       any of it puts it back where the app would have it. An edge lands
-      on a round step, the smallest one still about eight pixels wide,
-      five minutes on a four hour episode and five seconds on a six
-      minute one, and the ends of the episode win over the step. Every
+      on a round step, the smallest one still about eight pixels wide
+      that the ruler's step is a whole number of, so every line on the
+      range picker is a place an edge can land: five minutes on a four
+      hour episode and five seconds on a six minute one, and the ends of
+      the episode win over the step. Every
       window the app places itself lands on a step of the same kind,
       chosen from the length of the video alone and never from how wide
       the app is, about a 180th of the video, two minutes for four hours,
@@ -3092,7 +3098,8 @@ carries a number that grows with every change, so a state that arrives
 late never puts a job back to where it was. A job a newer state of its
 video no longer holds is one the Go side forgot, and it goes. Nothing is
 read again on a timer: a state that was lost is put right by the next.
-Quitting the app stops the model and every job before the app goes.
+Quitting the app stops the model, every job and the time of removed work
+before the app goes, all in `closeDown` in `quit.go`.
 
 **Quitting.** Cmd+Q dims the app at once and says what happens next.
 The first press only asks, Press ⌘Q again to quit, for three seconds, the
@@ -3387,14 +3394,12 @@ Empty paths use the same defaults as the command line, which keeps every
 flag. Under the paths is what the check looked at, found or not, with the
 check's own words and **Check again**, though the check runs again by
 itself whenever a setting changes: which ffmpeg, ffprobe and llama-server,
-which of the system's own video decoders it can use, VideoToolbox on a Mac
-or decoding on the processor, and how many caption faces there are, the
+and how many caption faces there are, the
 ones the app carries inside itself and the machine's own, `6 built in,
 412 from this machine`. The names are the font list's beside the captions,
 each in its own face, and were once a wall of a few hundred here. The
 models and the keys are said in their own sections, so the check leaves
-them out here. Which decoder a file really went through is in the log of
-its search.
+them out here.
 
 **A path is written one way everywhere**, in full, from the top of the
 disk: `/Users/tim/.framefairy/models`, `/Applications/Frame
@@ -3538,9 +3543,14 @@ the speech model hears words in a room where nobody speaks: Tim pressed
 Dictate and Stop a few times without a word and was given "yeah yeah".
 The microphone in the button grows and shrinks with the voice it
 hears, so the person sees they are heard. The Go side tells its
-loudness ten times a second, and the window follows it every frame the
-way a level meter's needle does, up at once and back down in about a
-third of a second. It grows by a scale from a drawing at its largest
+loudness ten times a second, and the microphone hangs on a spring that
+each reading pulls, worked out every frame, the way the Mac moves what
+bounces: it swells with a word, goes a little past it and settles, and
+falls back between words with a small bounce under its rest. It grows
+from 16 px to 24 px for a raised voice, quickly, in about a tenth of
+a second, see `frontend/src/lib/spring.ts`.
+Following like a meter's needle, with no bounce and up to 28 px, Tim
+found it stiff (#739). It grows by a scale from a drawing at its largest
 size, so it stays sharp and in its place, and it stays white. The
 beam stays the sign that it listens, because running work shows the beam
 on the control it was started from.

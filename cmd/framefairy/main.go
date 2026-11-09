@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"os"
 	"os/signal"
@@ -441,6 +442,16 @@ func main() {
 	// The system's fonts among it, so --font takes the fonts installed on
 	// the machine too.
 	machine.UseSystem()
+	// What llama-server says is the run's to say too: its errors always,
+	// the rest with --verbose. It warns on every load about things a run
+	// cannot change, like a context shorter than the model was trained on.
+	machine.Said = func(from, _ string, pid int, level slog.Level, line string) {
+		if level >= slog.LevelError {
+			log.Error("%s %d: %s", from, pid, line)
+			return
+		}
+		log.Detail("%s %d: %s", from, pid, line)
+	}
 	e := engine.NewEngine(log, machine)
 	// The one folder the records go in, for the whole run, the way the app
 	// keeps it from its settings.

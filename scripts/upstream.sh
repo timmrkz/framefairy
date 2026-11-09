@@ -38,7 +38,7 @@ harfbuzz=$(pinned HARFBUZZ_VERSION scripts/build-ffmpeg.sh)
 libass=$(pinned LIBASS_VERSION scripts/build-ffmpeg.sh)
 llama=$(pinned LLAMA_VERSION scripts/build-llama.sh)
 node=$(cat .node-version)
-snapshot=$(pinned SNAPSHOT scripts/ci-packages.sh)
+snapshot=$(pinned 'ARG SNAPSHOT' .github/ci-image/Dockerfile)
 sherpa=$(awk '/k2-fsa\/sherpa-onnx-go /{ print $2; exit }' go.mod | sed 's/^v//')
 
 out=""

@@ -329,6 +329,11 @@ func (s *FrameFairy) Fonts() []engine.CaptionFont {
 	return s.store.machine.Fonts.Caption()
 }
 
+// CaptionStart is how the captions look before anybody changes them, and
+// the heights they may sit at, which the captions column offers and a
+// drag of the captions lands on.
+func (s *FrameFairy) CaptionStart() engine.CaptionStart { return engine.StartingCaptions() }
+
 // clipEntry is one clip as it is now, read from its own plan alone. An
 // edit answers with it, and it used to be found in the whole clip list,
 // which read every plan of the episode and its transcript for one clip.

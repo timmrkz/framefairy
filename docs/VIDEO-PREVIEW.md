@@ -173,9 +173,8 @@ closed for standing unused.
   because ffmpeg starts a lost VideoToolbox session again by itself, as
   after the Mac slept. The log says it as a warning, with all ffmpeg
   said about why. Before, the cursor failed and the video preview stood
-  still, one CI run in four, plan row 2.215. The engine's framing falls
-  back for good after one failure, see `softDecode`, because it runs the
-  ffmpeg program on a whole window and has no frame to go on from. mpv
+  still, one CI run in four, plan row 2.215. The engine's framing
+  decodes on the processor from the start, see ENGINE.md. mpv
   waits for three failed frames in a row before it falls back, and
   ffmpeg's program skips the frame, neither of which keeps the frames
   of the short. `FRAMEFAIRY_FRAMES_FAIL_AFTER=n` makes the decoder fail
@@ -357,8 +356,12 @@ closed for standing unused.
   new clip's frame goes up, and all of it changes in that one frame,
   `held` in `Player.svelte`. Tim saw a clip card clicked move the crop
   frame first, the picture a few frames later and the captions a few after
-  that, issue #383. Nothing waits under a dragging hand, which follows the
-  hand.
+  that, issue #383. The same hold keeps the crop frame and the captions
+  over the frame on screen while an edge dragged over it leaves it out of
+  the clip, until the frame the playhead goes to with the edge goes up.
+  Tim saw the captions blink off for a frame each time a start dragged
+  later passed a frame, issue #755. Nothing waits under a dragging hand,
+  which follows the hand.
 
 ## Speed
 

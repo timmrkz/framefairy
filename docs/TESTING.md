@@ -170,7 +170,7 @@ each with a POST:
 | `/updates?from=main&stored=pr-143&list=main,pr-143` | gives the app's Updates page the app's own updating and Wails' updater, reading a channel list the bridge serves on this machine: a build from the channel `from`, or made on the Mac without it, with `stored` picked by a build before it, and the channels of `list`, each with a newer build that downloads in a moment. Until it is asked, and again after `/reset`, the Updates page's calls are answered with nothing like the rest. Relaunch always is |
 | `/fresh`, `/fresh?memory=8`, `/fresh?arrive=speech`, `/fresh?arrive=clip` | makes the bridge's machine one the app never ran on: no model, no video in the app and nothing said yet about how clips are found, on a machine of 32 GB like Tim's, or of the gigabytes `memory` gives, so the setup offers the same models on every machine. A key saved there is kept by the bridge, never the keychain, and counted as there. A walk opens the page again to see the setup. Download there runs as a job like any other, through a stand-in that says it has fetched two fifths and holds there until `arrive` lets that kind of model arrive, so a walk sees both downloads at once for as long as it looks, on any machine. `/reset` makes the machine the bridge's again |
 | `/reopen` | closes the app and opens it again, the way quitting and starting it does: the work stops and how it ended is read back. It answers with the jobs as the app left them, once nothing ran any more |
-| `/reset` | the app as it was once its first episode was searched: the models answer quickly, every episode a walk added is gone, the work folder and the settings are what they were, the speech stand-in goes on from the word it had come to then, the episode's decoders the walk before left are closed, and the app is opened again on them, on a machine that keeps only what the one before learned about the computer's programs, what ffmpeg offers and what it said about files that stay as they are, see `engine.Machine.LearnFrom`. So a video a walk adds is heard with the same words, however many walks came before it, and a walk that moves the playhead far starts from no decoder rather than one left where the walk before stopped, which let a drag go on without a key frame, issue #552 |
+| `/reset` | the app closed the one way it quits, `closeDown` in `quit.go`, and what the end of its process stops stopped too, see `quit` in `bridge_test.go`, so nothing it started writes while its folders go, and then as it was once its first episode was searched: the models answer quickly, every episode a walk added is gone, the work folder and the settings are what they were, the speech stand-in goes on from the word it had come to then, the episode's decoders the walk before left are closed, and the app is opened again on them, on a machine that keeps only what the one before learned about the computer's programs, what ffmpeg offers and what it said about files that stay as they are, see `engine.Machine.LearnFrom`. So a video a walk adds is heard with the same words, however many walks came before it, and a walk that moves the playhead far starts from no decoder rather than one left where the walk before stopped, which let a drag go on without a key frame, issue #552 |
 | `/reset?seconds=30&rate=25&timing=turned&in=mkv` | the same, with a second video in the app, of the kind `add` picks with the same words, heard and searched the way adding it and its first search leave it, and answers with its path. The first bridge asked for a kind adds it and keeps what the app made of it, and every bridge after it puts that back, see the `added` step |
 
 To open it by hand:
@@ -568,11 +568,12 @@ Enter or Escape, or with `ends` lets it stop by itself and say why, or
 with `start` only starts it, with `hearing` waits for more to be said
 and settled, so it is kept however the recording ends, and with
 `settled` waits for the words before the pause, `microphone moves`
-watches the microphone while it listens, from the hum through its pause
-until the hum comes back: it grows with the voice, keeps its box and its
-middle, falls back no faster than a level meter's needle and is drawn
-white. It runs in one walk, not in every `dictate`, because each watch
-takes seconds of the hum, see #543. `click heard` clicks
+watches the microphone while it listens, with the app's time held and
+run on by hand, a frame of 16 ms at a time: it springs to the size of
+the hum a little past it and settles, falls back in the pause a little
+under its rest and settles, never jumps half its way in a frame, keeps its
+box and its middle and is drawn white. It runs in one walk, not in
+every `dictate`, see #543. `click heard` clicks
 into the first word still being heard and sees it settled with the
 cursor in it, with what the Go side tells the window held back from
 reading the word to the click, `window.__pauseEvents` in
@@ -593,8 +594,8 @@ are, `ended` until the recording is over and `tenth` for one step, see
 `sound` in `cmd/framefairy-app/walksound_test.go`. `dictate` asks for
 words before it looks for them, and for something settled before it ends
 a recording, since the stand-in hears new words each time and the end
-could otherwise write down none. `microphone moves` asks for a tenth a
-frame while it watches. With `ends`
+could otherwise write down none. `microphone moves` asks for tenths
+until the hum or the pause begins, with the app's time held. With `ends`
 the person falls silent once the phrase they are on is said, through
 `/microphone?silent=1`. A recording there stops by itself for want of
 words as soon as that phrase is said, since the bridge says the quiet is
@@ -1248,7 +1249,7 @@ No test waits on the clock in
 
 CI runs it in the jobs `walks`, the only ones with the browsers, which
 come in the CI image they run in, see [The CI image](BUILD.md#the-ci-image), on
-every pull request but one of docs alone.
+every pull request that changes Go or the interface.
 
 A walk that breaks a rule leaves a picture of the app at that moment in
 `/tmp/walk-<seed>.png`.
@@ -1281,7 +1282,7 @@ pulled the first word of the next caption up into the room it left, and
 the walks, once the rule was that a removal changes no caption, that a
 caption whose first word was removed waited for the word after it. The
 engine now lays the captions out as if a removed word were still there,
-`TestRemovingAWordPullsNoWordUp`. Then the walks in `make changed` found
+`TestRemovingAWordPullsNoWordUp`. Then the walks in CI found
 that a word corrected to a short one and then removed took the room of
 what the recogniser had heard, ten letters where it had read three, and
 the caption overflowed. A removal now keeps what the word read,
@@ -1547,14 +1548,13 @@ What the code takes from outside, so a test can drive it:
 | --- | --- | --- |
 | the time of day | `now func() time.Time` | `signer.WithClock` in `licence/signer/signer.go`, `Now` in `licence/dispenser/engine.go`, `now` on the app, which times an edit, in `cmd/framefairy-app/main.go` |
 | a wait the app sets between two things it does, where a bubble does not fit | a function that gives the channel the wait ends on | `after` on the updates in `cmd/framefairy-app/updates.go`, which a test hands the looks in through, see `TestARegularLookReplacesTheBuildReady`, `leaving` in `engine/ffmpeg.go`, how long ffmpeg or llama-server has to end once it is asked to stop, and `idle` on the model host of `engine.Machine`, `engine/modelhost.go`, how long a model nobody holds is kept, set on the test's own machine |
-| a time limit on another program | a function that gives the context the limit ends | `timeLimit` on `engine.Machine`, `engine/machine.go`, which `stuckFFmpeg` in `engine/stuck_unix_test.go` ends the moment its ffmpeg says through a named pipe that it hangs |
 | another program saying it hangs | a channel | `standin.Hangs` in `internal/standin/hangs_unix.go`, a named pipe a stand-in writes `hangs` into. It is heard as `stuck` on the engine, a render that has stopped making frames, in `engine/ffmpeg.go`, and as `frameLate` on the app, a video whose first frame is late, in `cmd/framefairy-app/library.go` |
 | the end of the quiet of a recording | a channel | `still` on the listening in `cmd/framefairy-app/listen.go`, which the bridge's microphone says once the person in a walk has fallen silent |
 | the two clocks of a recording, its level readings and its passes | channels | `beats` on the listening in `cmd/framefairy-app/listen.go`, which the bridge hands its steps through, see `TestARecordingRunsOnTheBeatsItIsHanded` |
 | a loading llama-server saying it is up | its output | `hearReady` in `engine/local.go`, and `lookAgain` on the machine's link to llama-server, the look every half second for a server that says nothing, which `TestAServerThatWillNotStopIsKilledAtOnce` takes away on its own machine |
 | how often work that reads from another program saves | a count of reads | `levelsReads` on the engine, `engine/levels.go`, in place of `levelsDefault` of the clock |
 | the network | an `http.Client` with a transport of the test's | `client` on the machine's link to llama-server, `engine/local.go`, and the network of `engine.Machine`, `network` in `engine/machine.go`, which a machine `NewMachine` makes does not have, so it reaches nothing until a test hands it one, with `neverAnswers`, `streamFrom` and `stopsAfter` in `engine/local_test.go`, so the stall of a model or a download is waited for in a bubble |
-| timers inside goroutines | `testing/synctest` around the test | the lint fixture `scripts/testdata/lint/go/signals`, the dictation tests in `cmd/framefairy-app/listen_test.go`, `TestOnlyAFewDecodersNobodyHoldsStandRunning` in `cmd/framefairy-app/frames_test.go`, and the tests of a health check and of a model that keeps talking in `engine/local_test.go`, which ask llama-server through `neverAnswers` and `streamFrom`, transports with no network |
+| timers inside goroutines | `testing/synctest` around the test | the dictation tests in `cmd/framefairy-app/listen_test.go`, `TestOnlyAFewDecodersNobodyHoldsStandRunning` in `cmd/framefairy-app/frames_test.go`, and the tests of a health check and of a model that keeps talking in `engine/local_test.go`, which ask llama-server through `neverAnswers` and `streamFrom`, transports with no network |
 | the machine's memory, how much is free and which other llama-servers run | functions on the machine | `memory`, `free` and `servers` on `engine.Machine`, empty for what the system says, see `machineWith` in `engine/room_test.go` |
 | the disk | `afero.Fs` | `engine/files.go`, the project and the app's store |
 | the keychain | a key store on the machine | `keys` and `oldKeys` on `engine.Machine`, empty in a machine `NewMachine` makes, so it keeps no key. A test of the keys puts `memKeys` from `engine/keys_test.go` there, see `keychains` |
@@ -1586,10 +1586,11 @@ its first line there, `bubbleLog` in
 The skill's "ask the coverage" is the nightly report in Codecov, see
 [Coverage](#coverage).
 
-The skill's "run only what a change reaches" is `make changed` here, one
-script for every machine, `scripts/changed.sh`: a pull request runs the
-packages, parts and walks its change reaches, and main runs all of them,
-see [One way to test](BUILD.md#one-way-to-test).
+The skill's "run only what a change reaches" is the two filters of CI's
+job `changes` here, and Go's own test cache inside a Go job: a pull
+request starts the jobs whose code it changed, those run the packages
+that changed, and main runs all of them, see
+[One way to test](BUILD.md#one-way-to-test).
 
 What CI holds of the skill's rules today: golangci-lint's `forbidigo` in
 `make lint` for the clock, for a context with a deadline and for a check

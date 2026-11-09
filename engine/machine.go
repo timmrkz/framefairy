@@ -1,14 +1,12 @@
 package engine
 
 import (
-	"context"
 	"errors"
 	"maps"
 	"net/http"
 	"runtime"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/spf13/afero"
 
@@ -18,8 +16,7 @@ import (
 // Machine is what a program keeps for its whole life and shares with every
 // job it runs: where files are read and written, the records, how the
 // programs it calls are found and run, and what was learned about this
-// machine on the way, which video decoder works here, which encoders and
-// subtitle filter its ffmpeg has, and the face detector. Each program
+// machine on the way, which encoders and subtitle filter its ffmpeg has, and the face detector. Each program
 // makes one in main and hands it to every Engine it makes, so what one job
 // learned the next one knows. An Engine keeps only what belongs to its one
 // job. See docs/decisions/2026-10-31-running-programs-and-what-outlives-a-job.md.
@@ -38,18 +35,15 @@ type Machine struct {
 	// Tools finds the programs the engine runs and checks each is the one
 	// the program was built with, once while the file stays as it is.
 	Tools *tool.Finder
+	// Said hears what the programs the engine starts write for the log,
+	// see ProgramSaid. It is set once, before any program starts, and
+	// nil hears nothing.
+	Said ProgramSaid
 	// Fonts are the faces captions can be written in, the bundled ones
 	// and, once the program calls UseMachine, the machine's own, read
 	// from its font folders and kept with what was measured of each.
 	Fonts Fonts
 
-	// softDecode is set once decoding through the system's own video
-	// decoder has failed on this machine, and every decode after it, by
-	// any job, is done on the processor.
-	softDecode atomic.Bool
-	// decoders holds, per episode file, which decoder framing was found to
-	// use, so it is looked up and reported once.
-	decoders sync.Map
 	// learned is what each ffmpeg was found to offer, by what was asked,
 	// see learnedFor.
 	learned sync.Map
@@ -66,11 +60,6 @@ type Machine struct {
 	// probes is what ffmpeg and ffprobe said, kept while they and the
 	// file asked about stay as they are, see probed.go.
 	probes probeCache
-	// timeLimit ends a decode that has run out of its time, see
-	// decodeWithin. Empty, it is context.WithTimeout. A test ends the
-	// work itself once the stand-in for ffmpeg says it hangs, so it waits
-	// for no limit on the real clock.
-	timeLimit func(context.Context, time.Duration) (context.Context, context.CancelFunc)
 
 	// measured is the ink of the caption blocks libass measured, see
 	// measureMany, and previewTracks the caption files of the video
@@ -120,8 +109,8 @@ type Machine struct {
 	keys, oldKeys keyStore
 	savedFirst    atomic.Bool
 	network       http.RoundTripper
-	// media is the system's media engine, which a render, framing and the
-	// episode's decoder use, see Media. Nil in a machine NewMachine makes,
+	// media is the system's media engine, which a render and the episode's
+	// decoder use, see Media. Nil in a machine NewMachine makes,
 	// whose videos are decoded and encoded by ffmpeg's own code on the
 	// processor, so a test never waits on the system's, which GitHub's
 	// virtual Mac now and then never answers. What an ffmpeg offers is

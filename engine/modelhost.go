@@ -53,11 +53,11 @@ const warmKeep = 5 * time.Minute
 // launchFor starts llama-server, through the host's launch when a test
 // put a stand-in there, so what is held and let go of can be tested
 // without a model, and through Engine.startServer when it is empty.
-func (host *modelHost) launchFor(e *Engine, ctx context.Context, m LocalModel, size int, logDir string) (string, func(), error) {
+func (host *modelHost) launchFor(e *Engine, ctx context.Context, m LocalModel, size int) (string, func(), error) {
 	if host.launch != nil {
-		return host.launch(e, ctx, m, size, logDir)
+		return host.launch(e, ctx, m, size)
 	}
-	return e.startServer(ctx, m, size, logDir)
+	return e.startServer(ctx, m, size)
 }
 
 // errModelBusy is a warm-up finding another model in use. A warm-up is
@@ -122,7 +122,7 @@ type modelHost struct {
 	idled func()
 	// launch and idle are the host's seams, see launchFor and idleFor.
 	// A test puts its own on its own machine.
-	launch func(e *Engine, ctx context.Context, m LocalModel, size int, logDir string) (string, func(), error)
+	launch func(e *Engine, ctx context.Context, m LocalModel, size int) (string, func(), error)
 	idle   func(keep time.Duration, gone func()) (callOff func() bool)
 }
 
@@ -174,9 +174,8 @@ func (host *modelHost) modelThere(model string) bool {
 // starting it if nobody has, and the release that lets go of it. keep is
 // how long it may stay loaded after the last holder lets go, and for that
 // long no read ahead takes it, see saved.
-func (e *Engine) holdModel(ctx context.Context, m LocalModel, size int,
-	logDir string) (string, func(keep time.Duration), error) {
-	return e.hold(ctx, m, size, logDir, false)
+func (e *Engine) holdModel(ctx context.Context, m LocalModel, size int) (string, func(keep time.Duration), error) {
+	return e.hold(ctx, m, size, false)
 }
 
 // holdIdle is holdModel for the transcript read ahead of a search, see
@@ -211,12 +210,11 @@ func (host *modelHost) holdIdle(model string, size int, giveWay context.CancelCa
 
 // warmModel is holdModel for a warm-up. It never waits for another model
 // in use and never puts one aside: it gives up with errModelBusy.
-func (e *Engine) warmModel(ctx context.Context, m LocalModel, size int,
-	logDir string) (string, func(keep time.Duration), error) {
-	return e.hold(ctx, m, size, logDir, true)
+func (e *Engine) warmModel(ctx context.Context, m LocalModel, size int) (string, func(keep time.Duration), error) {
+	return e.hold(ctx, m, size, true)
 }
 
-func (e *Engine) hold(ctx context.Context, m LocalModel, size int, logDir string,
+func (e *Engine) hold(ctx context.Context, m LocalModel, size int,
 	warmUp bool) (string, func(keep time.Duration), error) {
 	release := (*hostedModel).releaseSearch
 	if warmUp {
@@ -239,7 +237,7 @@ func (e *Engine) hold(ctx context.Context, m LocalModel, size int, logDir string
 			host.mu.Unlock()
 			return "", nil, ErrCancelled
 		case h == nil:
-			return e.load(ctx, m, size, logDir, release)
+			return e.load(ctx, m, size, release)
 		case h.model == m.Model && h.size >= size:
 			h.users++
 			host.news.WakeLocked()
@@ -299,7 +297,7 @@ func (e *Engine) hold(ctx context.Context, m LocalModel, size int, logDir string
 // load starts the model with nobody else holding one. host.mu is held on
 // the way in and let go of here.
 func (e *Engine) load(ctx context.Context, m LocalModel, size int,
-	logDir string, release func(*hostedModel, time.Duration)) (string, func(keep time.Duration), error) {
+	release func(*hostedModel, time.Duration)) (string, func(keep time.Duration), error) {
 	host := &e.host
 	h := &hostedModel{host: host, model: m.Model, size: size, ready: make(chan struct{}), users: 1}
 	host.model = h
@@ -309,7 +307,7 @@ func (e *Engine) load(ctx context.Context, m LocalModel, size int,
 	// The load ends when the ask gives up or when the app stops the models.
 	loading, cancel := context.WithCancel(ctx)
 	unwatch := context.AfterFunc(down, cancel)
-	url, stop, err := host.launchFor(e, loading, m, size, logDir)
+	url, stop, err := host.launchFor(e, loading, m, size)
 	unwatch()
 	cancel()
 
@@ -449,7 +447,7 @@ func (host *modelHost) keepOnly(model string) {
 // already, nothing is kept, and a model kept before goes. A model that
 // does not fit in the memory free now is not loaded, the error says why,
 // and the first search loads it when it fits.
-func (e *Engine) KeepModel(ctx context.Context, opts Options, logDir string) (bool, error) {
+func (e *Engine) KeepModel(ctx context.Context, opts Options) (bool, error) {
 	heard, speechErr := e.keepSpeech(ctx, speechModel(opts))
 	if opts.Planner != "local" || opts.LLMURL != "" {
 		e.host.keepOnly("")
@@ -460,7 +458,7 @@ func (e *Engine) KeepModel(ctx context.Context, opts Options, logDir string) (bo
 		e.host.keepOnly("")
 		return heard, err
 	}
-	loaded, err := e.keep(ctx, *local, opts.MaxTokens, logDir)
+	loaded, err := e.keep(ctx, *local, opts.MaxTokens)
 	if err == nil {
 		err = speechErr
 	}
@@ -479,7 +477,7 @@ func (m *Machine) KeepNone() {
 // already is left as it is, at whatever size: it is kept by its name, and
 // loading it again at another size would cost the whole load, and what was
 // read into it, for nothing a search needs.
-func (e *Engine) keep(ctx context.Context, local LocalModel, maxTokens int, logDir string) (bool, error) {
+func (e *Engine) keep(ctx context.Context, local LocalModel, maxTokens int) (bool, error) {
 	e.host.keepOnly(local.Model)
 	if e.host.modelThere(local.Model) {
 		return false, nil
@@ -488,7 +486,7 @@ func (e *Engine) keep(ctx context.Context, local LocalModel, maxTokens int, logD
 	if err := e.roomForModel(local.Model, size); err != nil {
 		return false, err
 	}
-	_, release, err := e.warmModel(ctx, local, size, logDir)
+	_, release, err := e.warmModel(ctx, local, size)
 	if errors.Is(err, errModelBusy) {
 		// Another model in use, which the first search after it replaces.
 		return false, nil

@@ -101,7 +101,7 @@ maker's `config.json`, and what it needs is the weights, plus the cache at
 the context the first search asks for, plus the checkpoints llama-server
 keeps of a window, plus llama.cpp's own working memory. llama-server runs
 at log level 4, because its own default leaves the memory out, and from
-there it writes into `llm-server.log` what each of these took.
+there it says in the app's log what each of these took.
 
 Measured on an M2 Max with Gemma 4 26B A4B and a search of the first half
 hour, at 65 536 tokens of context:

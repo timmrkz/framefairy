@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"sync"
 	"testing"
 
@@ -18,15 +19,18 @@ func TestSuggestedWindow(t *testing.T) {
 	for _, c := range []struct{ Duration, Window float64 }{
 		{300, 300},
 		{600, 600},
-		{900, 900},
+		{900, 600},
 		{1200, 600},
-		{1500, 750},
+		{1500, 600},
 		{1800, 600},
 		{2700, 900},
 		{3600, 900},
-		{5400, 1080},
+		{5400, 1200},
 		{7200, 1200},
+		// The video of #594, 2:40:10, whose windows were 23 minutes.
+		{9609.664, 1800},
 		{14400, 1800},
+		{8 * 3600, 1800},
 	} {
 		if got := SuggestedWindow(c.Duration); math.Abs(got-c.Window) > 0.5 {
 			t.Errorf("an episode of %s: windows of %s, want %s", HMS(c.Duration), HMS(got), HMS(c.Window))
@@ -34,16 +38,12 @@ func TestSuggestedWindow(t *testing.T) {
 	}
 }
 
-// The windows divide the episode evenly and none is shorter than the
-// least, whatever the episode's length.
-func TestSuggestedWindowsDivideEvenly(t *testing.T) {
-	for d := 1.0; d < 6*3600; d += 37 {
+// A window is a length a person reads at a glance, whatever the
+// episode's length, and none is shorter than the least.
+func TestSuggestedWindowsAreRoundLengths(t *testing.T) {
+	for d := leastWindow + 1.0; d < 6*3600; d += 37 {
 		w := SuggestedWindow(d)
-		n := d / w
-		if math.Abs(n-math.Round(n)) > 1e-6 {
-			t.Fatalf("%s: %s windows", HMS(d), trimFloat(n))
-		}
-		if d > leastWindow && w < leastWindow-1e-6 {
+		if !slices.Contains(windowLengths, w) {
 			t.Fatalf("%s: windows of %s", HMS(d), HMS(w))
 		}
 	}

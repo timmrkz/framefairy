@@ -126,7 +126,7 @@ func FollowingWindow(ended, length, duration, least float64) timed.Window {
 }
 
 // placeSteps are the round steps a window the app places lands on, the
-// same as the range picker's, see gridStep in frontend/src/lib/flow.ts.
+// same as the range picker's, see dragStep in frontend/src/lib/ruler.ts.
 var placeSteps = []float64{1, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800}
 
 // PlaceStep is the round step a window the app places lands on: the
@@ -151,9 +151,9 @@ func PlaceStep(duration float64) float64 {
 // length, which is never less than one step. The ends of the episode win
 // over the step, and an end that would leave a scrap too short for a
 // clip, least, or shorter than a step, takes it in rather than leaving it
-// behind. The episode's own windows are an even share of it, 30:02 of a
-// little over four hours, and a window that long lay a few seconds off
-// the range picker's lines, which shows as a pixel.
+// behind. A window that starts or ends a few seconds off the step, like
+// one after a search that ended there, lies off the range picker's
+// lines, which shows as a pixel.
 func OnStep(w timed.Window, length, duration, step, least float64) timed.Window {
 	from := math.Min(math.Max(math.Round(w.Start/step)*step, 0), duration)
 	size := math.Max(math.Round(length/step)*step, step)

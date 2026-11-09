@@ -158,12 +158,7 @@ func main() {
 	// this has to be one of them. Code after app.Run only runs on the other
 	// systems, and left a llama-server behind on every Mac that quit during
 	// a search.
-	quit := sync.OnceFunc(func() {
-		svc.watch.stop()
-		svc.news.stop()
-		svc.store.machine.CloseModels()
-		svc.stopAll()
-	})
+	quit := sync.OnceFunc(func() { svc.closeDown() })
 	// What Cmd+Q does, see quit.go. The hook above stays for whatever
 	// ends the app without asking, a signal from the terminal among them.
 	leave := &leaving{

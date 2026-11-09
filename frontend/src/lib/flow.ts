@@ -75,18 +75,6 @@ export function gapsIn(parts: Parts, from: number, to: number): Parts {
 // SearchPasses in engine/windows.go.
 export type Passes = { from: number; to: number; times: number }[];
 
-// The round step a window's edges land on, on a range picker width pixels
-// wide: the smallest round step still about eight pixels wide, so a window
-// is something that can be said out loud. Five minutes for four hours on
-// a narrow range picker, five seconds for six minutes. A drag lands on it.
-// The windows the app places land on one of the same steps, chosen from
-// the episode alone, see PlaceStep in engine/windows.go.
-export function gridStep(duration: number, width: number): number {
-  const steps = [1, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800];
-  const least = (duration / Math.max(width, 1)) * 8;
-  return steps.find((step) => step >= least) ?? 1800;
-}
-
 // How many searches have read any of from..to, the most of them.
 export function timesIn(passes: Passes, from: number, to: number): number {
   let most = 0;
