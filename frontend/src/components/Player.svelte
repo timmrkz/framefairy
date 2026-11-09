@@ -55,7 +55,7 @@
   import { rgbToHex } from "../lib/colour";
   import { asleep, keysElsewhere } from "../lib/keys";
   import { pictureOf, pieceHolding, rotationAt, shownAt } from "../lib/rotate";
-  import { heldLeft } from "../lib/keyframes";
+  import { heldLeft, markOn } from "../lib/keyframes";
 
   let {
     path,
@@ -726,6 +726,18 @@
     const held = steered ? heldLeft(c.cropSteps?.[at], frame, source.fps, source.videoStart ?? 0) : null;
     return held ?? c.cropLefts[at] ?? (pic.width - pic.cropWidth) / 2;
   }
+
+  // Whether a drag places the crop here: with the playhead on a keyframe,
+  // whose diamond or circle is lit then, so what is moved is seen, or in a
+  // piece no keyframe steers, which has one crop of its own. Anywhere else
+  // the crop frame shows the crop as the short has it, held or gliding,
+  // and takes only a click, Tim on #750. The engine refuses a drag there
+  // too, see engine.SetCrop.
+  const cropMovable = $derived(
+    !!clip &&
+      (!clip.segments[cropped]?.marks?.length ||
+        markOn(clip.cropMarks, frameAt, source.fps, source.videoStart ?? 0) !== null),
+  );
 
   // The crop's left edge as the video preview shows it now, which a crop
   // mark put on this frame keeps.
@@ -1621,9 +1633,11 @@
     const scale = picture.width / screen.clientWidth;
     const most = picture.width - picture.cropWidth;
     let moved = false;
+    // Off a keyframe a drag moves nothing, and is still no click.
+    const movable = cropMovable;
     const move = (e: PointerEvent) => {
       if (Math.abs(e.clientX - startX) > 2) moved = true;
-      if (!moved) return;
+      if (!moved || !movable) return;
       dragLeft = Math.round(Math.max(0, Math.min(most, start + (e.clientX - startX) * scale)));
     };
     const up = async () => {
@@ -1632,7 +1646,7 @@
       target.removeEventListener("pointercancel", up);
       if (!moved || dragLeft === null) {
         dragLeft = null;
-        toggle();
+        if (!moved) toggle();
         return;
       }
       savingCrop = true;
@@ -1809,7 +1823,7 @@
         The space bar plays and pauses, and so does a click on the picture. With the playhead on
         the chosen clip it plays the clip, its cuts jumped, and anywhere else the video straight
         on, with nothing of the clip over it. Drag the crop frame
-        sideways to place it, and the black box up or down for the captions. Click a word in the
+        sideways to place it, in a clip with keyframes with the playhead on one, and the black box up or down for the captions. Click a word in the
         caption box to correct it, or walk to it with Shift and the arrows and press Enter: Enter
         saves it, Escape leaves it, and two words split it in two. Delete removes the word in the
         frame, and so does saving it empty.
@@ -1837,8 +1851,12 @@
       <div
         class="crop"
         class:held={dragLeft !== null}
+        class:fixed={!cropMovable}
         style="left: {shownCrop.left}%; width: {shownCrop.width}%"
-        title="Drag sideways to place the crop"
+        title={cropMovable
+          ? "Drag sideways to place the crop"
+          : "The crop as the short has it here. Put the playhead on a keyframe to place its crop"}
+        data-movable={cropMovable}
         onpointerdown={dragCrop}
       ></div>
     {/if}
@@ -2163,6 +2181,12 @@
 
   .crop.held {
     cursor: grabbing;
+  }
+
+  /* Off a keyframe, in a piece the keyframes steer, the crop is shown and
+     not moved, so it takes the hand the picture does. */
+  .crop.fixed {
+    cursor: default;
   }
 
   /* The shade over the picture beside the crop is the shadow of the

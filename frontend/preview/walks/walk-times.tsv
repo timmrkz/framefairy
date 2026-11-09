@@ -61,6 +61,7 @@
  12	sequences.mjs SEQUENCE=a step to the word beside finds its frame read while the hand rested
  12	sequences.mjs SEQUENCE=an edge dragged while the clip plays changes nothing that plays
  12	sequences.mjs SEQUENCE=the walks' video has words that share a frame at the start, in the middle and at the end of a caption
+ 12	sequences.mjs SEQUENCE=a keyframe put with G glides the crop into it from the keyframe before
  11	sequences.mjs SEQUENCE=The settings say each thing once, in one way
  11	sequences.mjs SEQUENCE=a keyframe dragged past the clip's edge stops on its first or last frame and stays where it was let go
  11	sequences.mjs SEQUENCE=a model a search finds clips with is not changed or removed under it
@@ -75,7 +76,7 @@
  10	sequences.mjs SEQUENCE=a video whose file is moved away says so once, in a toast, and shows again once it is back
  10	sequences.mjs SEQUENCE=a video whose file is moved away while the app is in front says File not found at once
  10	sequences.mjs SEQUENCE=an edge dragged with shift goes the way of the hand
- 10	sequences.mjs SEQUENCE=one keyframe put with K switches the crop there, and a drag on either side of it moves only that side
+ 10	sequences.mjs SEQUENCE=one keyframe put with K switches the crop there, and the crop is placed only with the playhead on it
  10	sequences.mjs SEQUENCE=undo takes back a crop moved, a word corrected and a font picked, in turn, and redo does them again
   9	sequences.mjs SEQUENCE=Shift and the arrows walk onto a part not transcribed yet and off it
   9	sequences.mjs SEQUENCE=a clip made with O while the episode plays is not dimmed

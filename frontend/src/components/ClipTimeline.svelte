@@ -14,9 +14,12 @@
   // The shapes of a keyframe and a thumbnail on the clip timeline:
   // Lucide's diamond and camera, the icons of their
   // buttons, drawn filled rather than as a line, the camera with its lens
-  // left open. Plan row 2.234.
+  // left open. Plan row 2.234. A keyframe the crop glides into is the
+  // circle of its button, round where the diamond's points say the crop
+  // switches, #750, and about as much of the track as the diamond covers.
   const DIAMOND =
     "M2.7 10.3a2.41 2.41 0 0 0 0 3.41l7.59 7.59a2.41 2.41 0 0 0 3.41 0l7.59-7.59a2.41 2.41 0 0 0 0-3.41l-7.59-7.59a2.41 2.41 0 0 0-3.41 0Z";
+  const CIRCLE = "M12 3.5a8.5 8.5 0 1 0 0 17a8.5 8.5 0 1 0 0-17Z";
   const CAMERA =
     "M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z";
 </script>
@@ -210,8 +213,8 @@
     // was let go, both in the episode.
     onthumbnail?: (from: number, to: number) => Promise<void>;
     // The clip's keyframes, each a crop placed by hand on one frame. Each
-    // is a diamond on the foot line of the track, under the thumbnails. Plan
-    // row 3.26.
+    // is a diamond, or a circle for one the crop glides into, on the top
+    // rule of the track. Plan row 3.26.
     cropMarks?: CropMark[];
     // A keyframe dragged to another frame, from where it was to where it
     // was let go, or removed, with to below nought.
@@ -1736,9 +1739,29 @@
   );
   const cropDots = $derived(
     cropMarks
-      .map((m) => ({ at: m.at, shown: shownAt("crop", m.at) }))
+      .map((m) => ({ at: m.at, shown: shownAt("crop", m.at), glide: !!m.glide }))
       .filter((m) => m.shown >= view.from && m.shown <= view.to),
   );
+  // The stretch the crop glides over into each circle, from the keyframe
+  // before it on the picture turned alike, or for the first from where the
+  // clip is first turned that way, as shares of the track. It is drawn
+  // along the top rule, brightening into the circle, so the two marks read
+  // as joined, Tim's ask on #750, the look he picked from a sheet.
+  const glideLines = $derived.by(() => {
+    const out: { at: number; left: number; width: number }[] = [];
+    cropMarks.forEach((m, i) => {
+      if (!m.glide) return;
+      const turn = m.turn ?? 0;
+      const before = cropMarks.slice(0, i).findLast((b) => (b.turn ?? 0) === turn);
+      const from = before
+        ? shownAt("crop", before.at)
+        : (clip?.segments.find((s) => (s.rotate ?? 0) === turn)?.start ?? m.at);
+      const left = Math.max(0, x(onFrame(from)));
+      const right = Math.min(100, x(onFrame(shownAt("crop", m.at))));
+      if (right > left) out.push({ at: m.at, left, width: right - left });
+    });
+    return out;
+  });
   const markChange = (kind: MarkKind) => (kind === "thumbnail" ? onthumbnail : oncropmark);
 
   // The stretch each piece the clip draws is rotated in, for the rotate
@@ -2254,6 +2277,9 @@
             {@render solid(CAMERA, 18, true)}
           </div>
         {/each}
+        {#each glideLines as g (g.at)}
+          <div class="glide" style="left: {g.left}%; width: {g.width}%" data-glide={g.at}></div>
+        {/each}
         {#each cropDots as m, i (m.at)}
           <div
             class="mark cropdot"
@@ -2266,12 +2292,15 @@
             aria-valuenow={m.shown}
             title={locked
               ? "A keyframe. Click to see it"
-              : "A keyframe, where the crop stands on this frame. Click to see it, drag it to another frame, double-click to remove it"}
+              : m.glide
+                ? "A keyframe the crop glides into from the one before. With the playhead on it, drag the crop to place it. Click to see it, drag it to another frame, double-click to remove it"
+                : "A keyframe the crop switches on. With the playhead on it, drag the crop to place it. Click to see it, drag it to another frame, double-click to remove it"}
             data-grip="mark"
             data-kind="crop"
+            data-glide={m.glide || undefined}
             data-at={m.at}
           >
-            {@render solid(DIAMOND, 18)}
+            {@render solid(m.glide ? CIRCLE : DIAMOND, 18)}
           </div>
         {/each}
       </div>
@@ -2733,6 +2762,20 @@
      track's border and a pixel in from it. */
   .cropdot {
     top: calc(var(--frame-line) / 2 - 9px);
+  }
+
+  /* The stretch the crop glides over into a circle, over the top rule and
+     as thick: the rule's own colour where it leaves the keyframe before,
+     brightening to the brightest point of the app's colour at the circle,
+     so it reads as the way into it. Under the marks, which stand on it.
+     Number 3 of a sheet of nine drawn for Tim on #750. */
+  .glide {
+    position: absolute;
+    top: 0;
+    height: var(--frame-line);
+    background: linear-gradient(90deg, var(--accent-hi), var(--accent-lit));
+    pointer-events: none;
+    z-index: 6;
   }
 
   /* A thumbnail is centred on the clip's bottom rule, at the other end of

@@ -365,24 +365,25 @@ export default [
   },
   {
     // Tim's camera switch, #750: one keyframe put with K where the camera
-    // switches, and the crop dragged after it. The crop switches on the
-    // keyframe's own frame and holds, and the part before keeps the
-    // clip's own crop, in the video preview frame by frame while it plays
-    // as the render crops it. TestTheRenderSwitchesTheCropAtEachKeyframe
-    // holds the render to the same, and keyframes.cases.json the window
-    // and the engine to each other.
-    name: "one keyframe put with K switches the crop there, and a drag on either side of it moves only that side",
+    // switches, and the crop dragged with the playhead on it. The crop
+    // switches on the keyframe's own frame and holds, and the part before
+    // keeps the clip's own crop, in the video preview frame by frame while
+    // it plays as the render crops it. Off the keyframe the crop frame
+    // shows the crop and a drag moves nothing, Tim on #750.
+    // TestTheVideoPreviewIsSentTheCropsTheRenderCropsBy holds the steps
+    // the window is sent to the render.
+    name: "one keyframe put with K switches the crop there, and the crop is placed only with the playhead on it",
     steps: [
       ["added", 30, "25"],
       ["hold", "SetCropMark"],
-      ["keyframe at", 0.5],
       ["crop before", 0.25],
-      ["playhead at", 0.75],
+      ["keyframe at", 0.5],
       ["drag crop", 300],
       ["crop kept", 0.25],
       ["crop before", 0.75],
       ["playhead at", 0.25],
       ["drag crop", -150],
+      ["crop kept", 0.25],
       ["crop kept", 0.75],
       ["keyframes", 1],
       ["crop holds"],
@@ -394,16 +395,13 @@ export default [
   },
   {
     // Two keyframes, #750: each switches the crop on its own frame and
-    // holds it until the next, and a drag between them moves that part
-    // alone.
+    // holds it until the next, each placed with the playhead on it.
     name: "two keyframes each hold their crop until the next",
     steps: [
       ["added", 30, "25"],
       ["keyframe at", 0.3],
-      ["playhead at", 0.5],
       ["drag crop", 150],
       ["keyframe at", 0.7],
-      ["playhead at", 0.85],
       ["drag crop", -300],
       ["keyframes", 2],
       ["crop holds"],
@@ -417,12 +415,36 @@ export default [
     steps: [
       ["added", 30, "25"],
       ["keyframe at", 0.2],
-      ["playhead at", 0.3],
       ["drag crop", 300],
       ["keyframes", 1],
       ["cut at", 0.5],
       ["cuts", 1],
       ["crop holds across the cut"],
+    ],
+  },
+  {
+    // Tim's glide, #750: G puts a circle the crop glides into from the
+    // keyframe before, over the whole time between them, joined to it by a
+    // line along the top rule. In the video preview the crop frame moves
+    // on every frame of the glide where the render crops it, still and
+    // played. K on the circle makes it a diamond, G a circle again, and G
+    // on the circle removes it.
+    name: "a keyframe put with G glides the crop into it from the keyframe before",
+    steps: [
+      ["added", 30, "25"],
+      ["keyframe at", 0.2],
+      ["drag crop", -300],
+      ["glide at", 0.8],
+      ["drag crop", 300],
+      ["glides", 1],
+      ["crop holds"],
+      ["crop holds while playing", "glide"],
+      ["keyframe key", ["k", "diamond"]],
+      ["glides", 0],
+      ["keyframe key", ["g", "circle"]],
+      ["glides", 1],
+      ["keyframe key", ["g", "none"]],
+      ["keyframes", 1],
     ],
   },
   {

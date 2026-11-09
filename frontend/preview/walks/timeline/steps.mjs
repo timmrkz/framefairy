@@ -1403,30 +1403,86 @@ export const steps = {
   //                    puts the playhead in the clip, this share of the
   //                    way along it, with a click on the clip timeline,
   //                    waits for the video preview to show that frame, and
-  //                    presses K, and the clip timeline has to show a crop
-  //                    mark lit on the playhead's frame within 300 ms,
+  //                    presses K, and the clip timeline has to show a
+  //                    diamond lit on the playhead's frame within 300 ms,
   //                    before a held answer comes
+  // ["glide at", share]
+  //                    the same with G, and a circle
   async "keyframe at"(walk, arg, s) {
+    await keyframeAt(walk, arg, s, "k");
+  },
+  async "glide at"(walk, arg, s) {
+    await keyframeAt(walk, arg, s, "g");
+  },
+  // ["keyframe key", [key, kind]]
+  //                    with the playhead on a keyframe, presses K or G,
+  //                    and the mark on the playhead's frame has to become a
+  //                    "diamond" or a "circle", or go, "none", within 300
+  //                    ms, and the engine has to have it so
+  async "keyframe key"(walk, arg, s) {
     const { page, watch } = walk;
-    const g = await handles(page);
-    const from = g.start.x + g.start.w;
-    await clickOnTrack(page, from + arg * (g.end.x - from), high(g.track));
-    await settle(page);
-    // K puts the keyframe on the frame the video preview shows, so it
-    // is pressed once that is the playhead's frame, see thumbnail at.
-    await shownOnPlayhead(page);
-    const count = () => page.evaluate(() => document.querySelectorAll(".clip-timeline .cropdot").length);
-    const before = await count();
+    const [key, kind] = arg;
+    const here = () =>
+      page.evaluate(() => {
+        const e = document.querySelector(".clip-timeline .cropdot.here");
+        return e ? (e.dataset.glide ? "circle" : "diamond") : "none";
+      });
+    const before = await here();
     const took = await keyShows(
       page,
-      "k",
-      (b) => document.querySelectorAll(".clip-timeline .cropdot").length > b && !!document.querySelector(".clip-timeline .cropdot.here"),
-      before,
+      key,
+      (want) => {
+        const e = document.querySelector(".clip-timeline .cropdot.here");
+        return (e ? (e.dataset.glide ? "circle" : "diamond") : "none") === want;
+      },
+      kind,
     );
-    if (took < 0) walk.wrong = "K put no keyframe on the playhead's frame";
-    else if (took > 300) walk.wrong = `the keyframe showed ${took} ms after K, not at once`;
+    if (took < 0) walk.wrong = `${key.toUpperCase()} on the ${before} left it a ${await here()}, not a ${kind}`;
+    else if (took > 300) walk.wrong = `the ${kind} showed ${took} ms after ${key.toUpperCase()}, not at once`;
     await watch.step("press", s);
     await settle(page);
+    const on = await chosen(page);
+    const marks = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip)?.cropMarks ?? [];
+    const glides = marks.filter((m) => m.glide).length;
+    if (!walk.wrong && kind === "circle" && glides === 0) walk.wrong = "the engine has no keyframe the crop glides into";
+    if (!walk.wrong && kind === "diamond" && glides !== 0) walk.wrong = `the engine still has ${glides} keyframes the crop glides into`;
+  },
+  // ["glides", n]      the clip timeline draws n glide lines along the top
+  //                    rule, each from the keyframe before a circle to the
+  //                    circle, as thick as the rule, on it, brightening
+  //                    into the circle, and under the marks
+  async glides(walk, arg) {
+    const { page } = walk;
+    await settle(page);
+    const got = await page.evaluate(() => {
+      const box = (e) => e.getBoundingClientRect();
+      const dots = [...document.querySelectorAll(".clip-timeline .cropdot")].map((e) => ({ x: box(e).left + box(e).width / 2, glide: !!e.dataset.glide }));
+      const rule = document.querySelector(".clip-timeline .frames .frame");
+      return {
+        dots,
+        rule: rule ? { top: box(rule).top, line: parseFloat(getComputedStyle(rule).borderTopWidth) } : null,
+        lines: [...document.querySelectorAll(".clip-timeline .glide")].map((e) => {
+          const css = getComputedStyle(e);
+          return { left: box(e).left, right: box(e).right, top: box(e).top, height: box(e).height, image: css.backgroundImage, z: Number(css.zIndex) };
+        }),
+        markZ: Number(getComputedStyle(document.querySelector(".clip-timeline .cropdot") ?? document.body).zIndex),
+      };
+    });
+    if (got.lines.length !== arg) {
+      walk.wrong = `the clip timeline draws ${got.lines.length} glide lines, not ${arg}`;
+      return;
+    }
+    const near = (a, b) => Math.abs(a - b) <= 1.5;
+    for (const l of got.lines) {
+      const into = got.dots.find((d) => d.glide && near(d.x, l.right));
+      const from = got.dots.find((d) => near(d.x, l.left));
+      if (!into) walk.wrong = `a glide line ends at ${l.right.toFixed(1)} px, on no circle`;
+      else if (!from) walk.wrong = `a glide line starts at ${l.left.toFixed(1)} px, on no keyframe`;
+      else if (got.rule && (!near(l.top, got.rule.top) || !near(l.height, got.rule.line)))
+        walk.wrong = `a glide line stands ${l.top.toFixed(1)} px down and ${l.height.toFixed(1)} px thick, not on the top rule at ${got.rule.top.toFixed(1)} px, ${got.rule.line} px thick`;
+      else if (!l.image.startsWith("linear-gradient")) walk.wrong = `a glide line is drawn with ${l.image}, not brightening into its circle`;
+      else if (!(l.z < got.markZ)) walk.wrong = `a glide line is drawn over the keyframes`;
+    }
   },
   // ["keyframe on", "last"]
   //                    a click on the clip's end edge, which leaves the
@@ -1788,16 +1844,18 @@ export const steps = {
     const dots = await page.evaluate(() => document.querySelectorAll(".clip-timeline .cropdot").length);
     // Drawn as a diamond, the shape editors draw a keyframe in, and
     // the keyframe button's own: Lucide's diamond, filled, as a
-    // thumbnail is Lucide's camera filled. Plan row 2.234.
+    // thumbnail is Lucide's camera filled. Plan row 2.234. One the crop
+    // glides into is a circle, #750.
     const shapes = await page.evaluate(() =>
       [...document.querySelectorAll(".clip-timeline .cropdot")].map((e) => e.querySelector("svg path")?.getAttribute("d") ?? "nothing"),
     );
+    const diamond = (d) => d.startsWith("M2.7 10.3a2.41 2.41 0 0 0 0 3.41l7.59 7.59");
     const sizes = await page.evaluate(() => [...document.querySelectorAll(".clip-timeline .cropdot")].map((e) => e.getBoundingClientRect().width));
     if (got.length !== arg) walk.wrong = `the engine has ${got.length} keyframes, not ${arg}`;
     else if (new Set(got.map((m) => m.x)).size !== arg) walk.wrong = `the keyframes stand at ${got.map((m) => m.x).join(", ")}, not each at its own place`;
     else if (dots !== arg) walk.wrong = `the clip timeline draws ${dots} keyframes, not ${arg}`;
-    else if (shapes.some((c) => !c.startsWith("M2.7 10.3a2.41 2.41 0 0 0 0 3.41l7.59 7.59")))
-      walk.wrong = `a keyframe is not drawn as a diamond: ${shapes.join(", ")}`;
+    else if (shapes.some((d, i) => diamond(d) === !!got[i]?.glide))
+      walk.wrong = `a keyframe is not drawn as its kind, a diamond to switch and a circle to glide: ${shapes.join(", ")}`;
     else if (sizes.some((w) => w !== 18)) walk.wrong = `a keyframe is ${sizes.join(", ")} px wide, not 18 px like a thumbnail, found too small by Tim on #192`;
   },
   // ["scrub", from, to] reads the frame on the video preview's canvas, by
@@ -2034,6 +2092,38 @@ steps["scrub far"] = steps["click far"];
 // it is how long the app took to answer the key, not how long a busy
 // machine took to hand the key over. -1 when it does not hold once the
 // app has settled on the key.
+// keyframeAt puts the playhead this share of the way along the clip with
+// a click on the clip timeline, waits for the video preview to show that
+// frame, and presses key, K or G, and the clip timeline has to show a new
+// mark lit on the playhead's frame within 300 ms, a diamond for K and a
+// circle for G, before a held answer comes.
+async function keyframeAt(walk, share, s, key) {
+  const { page, watch } = walk;
+  const g = await handles(page);
+  const from = g.start.x + g.start.w;
+  await clickOnTrack(page, from + share * (g.end.x - from), high(g.track));
+  await settle(page);
+  // The key puts the keyframe on the frame the video preview shows, so it
+  // is pressed once that is the playhead's frame, see thumbnail at.
+  await shownOnPlayhead(page);
+  const count = () => page.evaluate(() => document.querySelectorAll(".clip-timeline .cropdot").length);
+  const before = await count();
+  const took = await keyShows(
+    page,
+    key,
+    ([b, glide]) => {
+      const here = document.querySelector(".clip-timeline .cropdot.here");
+      return document.querySelectorAll(".clip-timeline .cropdot").length > b && !!here && !!here.dataset.glide === glide;
+    },
+    [before, key === "g"],
+  );
+  const kind = key === "g" ? "circle" : "diamond";
+  if (took < 0) walk.wrong = `${key.toUpperCase()} put no ${kind} on the playhead's frame`;
+  else if (took > 300) walk.wrong = `the ${kind} showed ${took} ms after ${key.toUpperCase()}, not at once`;
+  await watch.step("press", s);
+  await settle(page);
+}
+
 async function keyShows(page, key, shows, arg) {
   await page.evaluate(
     ([source, arg]) => {

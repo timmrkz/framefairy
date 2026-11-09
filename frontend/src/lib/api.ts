@@ -248,9 +248,9 @@ export interface Segment {
   // 270, by the stretch of the clip's rotations it lies in. Its crop is on
   // the picture rotated, see lib/rotate.ts.
   rotate?: number;
-  // The keyframes that steer the piece's crop, which switches on each and
-  // holds until the next, see ClipEntry.cropSteps. Before the first, and
-  // with none, the crop stands at cropX.
+  // The keyframes that steer the piece's crop, which switches on each or
+  // glides into it, and holds until the next, see ClipEntry.cropSteps.
+  // Before the first, and with none, the crop stands at cropX.
   marks?: CropMark[];
 }
 
@@ -261,6 +261,9 @@ export interface CropMark {
   at: number;
   x: number;
   turn?: number;
+  // A circle, which the crop glides into from the keyframe before, rather
+  // than a diamond it switches on.
+  glide?: boolean;
 }
 
 // A piece's crop from a frame of the video on, until the next step, see
@@ -1007,8 +1010,10 @@ export const api = {
   // A keyframe added, moved or removed. A from below nought adds one at to
   // with its crop at x, a to below nought removes the one at from, and
   // both move it with its crop.
-  setCropMark: (path: string, plan: string, clip: string, from: number, to: number, x: number) =>
-    call<ClipEntry>("SetCropMark", path, plan, clip, from, to, x),
+  setCropMark: (path: string, plan: string, clip: string, from: number, to: number, x: number, glide: boolean) =>
+    call<ClipEntry>("SetCropMark", path, plan, clip, from, to, x, glide),
+  setCropGlide: (path: string, plan: string, clip: string, at: number, glide: boolean) =>
+    call<ClipEntry>("SetCropGlide", path, plan, clip, at, glide),
   clipPlayed: (plan: string, clip: string) => call<void>("ClipPlayed", plan, clip),
   removeClip: (path: string, plan: string, clip: string, removed: boolean) =>
     call<ClipEntry>("RemoveClip", path, plan, clip, removed),

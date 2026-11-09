@@ -19,6 +19,17 @@ describe("the crop a keyframe holds", () => {
     expect(heldLeft(steps, 0.1, 25, 0)).toBe(100);
   });
 
+  test("is the step of each frame of a glide, off the whole pixel", () => {
+    // A glide is a step on every frame, 3000 of them here, and the step
+    // asked for is found by halving.
+    const steps = Array.from({ length: 3000 }, (_, i) => ({ frame: 10 + i, x: 100 + i * 0.25 }));
+    expect(heldLeft(steps, 0.4, 25, 0)).toBe(100);
+    expect(heldLeft(steps, 0.52, 25, 0)).toBe(100.75);
+    expect(heldLeft(steps, 100, 25, 0)).toBe(100 + 2490 * 0.25);
+    expect(heldLeft(steps, 1000, 25, 0)).toBe(100 + 2999 * 0.25);
+    expect(heldLeft(steps, 0, 25, 0)).toBe(100);
+  });
+
   test("is the piece's own where the engine sent no steps", () => {
     expect(heldLeft(undefined, 3, 25, 0)).toBeNull();
     expect(heldLeft(null, 3, 25, 0)).toBeNull();

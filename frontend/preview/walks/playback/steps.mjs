@@ -1881,8 +1881,8 @@ export const steps = {
     }
     const k = await filmedOnScreen(page);
     const got = Number(await page.evaluate(() => document.querySelector(".screen").dataset.crop));
-    const want = holdOf(q, src)(k);
-    const own = holdOf({ ...q, marks: [] }, src)(k);
+    const want = holdOf(q, src, entry)(k);
+    const own = holdOf({ ...q, marks: [] }, src, entry)(k);
     if (want === own) walk.wrong = `the keyframe before the cut stands at ${want}, where the clip's own crop is, so nothing is held`;
     else if (got !== want) walk.wrong = `after the cut, on frame ${k}, the crop frame stands at ${got}, the keyframe before the cut holds it at ${want}`;
   },
@@ -1895,6 +1895,9 @@ export const steps = {
   //                    piece's own crop before its first keyframe and from
   //                    each keyframe's frame on that keyframe's, and at
   //                    least one keyframe switches it
+  // ["crop holds while playing", "glide"]
+  //                    the same across the last frames of the glide into
+  //                    the piece's first circle and on past it
   // ["crop holds while playing"]
   //                    plays from four frames before the first keyframe
   //                    that switches the crop, on a clock that moves on to
@@ -1918,7 +1921,7 @@ export const steps = {
       walk.wrong = "no piece of the clip has a keyframe";
       return;
     }
-    const hold = holdOf(piece, src);
+    const hold = holdOf(piece, src, entry);
     const inside = piece.marks.filter((m) => m.at >= piece.start && m.at < piece.end).map((m) => frameOf(m.at));
     const first = frameOf(piece.start);
     const switches = inside.filter((k) => k > first && hold(k - 1) !== hold(k));
@@ -1960,7 +1963,14 @@ export const steps = {
       if (problems.length) walk.wrong = problems.join("; ");
       return;
     }
-    const at = switches[0];
+    // Across a glide's last frames into its circle, or across the first
+    // switch.
+    const circles = piece.marks.filter((m) => m.glide && m.at >= piece.start && m.at < piece.end).map((m) => frameOf(m.at));
+    if (arg === "glide" && !circles.length) {
+      walk.wrong = "no keyframe of the piece is a circle the crop glides into";
+      return;
+    }
+    const at = arg === "glide" ? circles[0] - 2 : switches[0];
     const g = await handles(page);
     await clickOnTrack(page, await xOf(page, (Math.max(first, at - 4) + 0.5) / src.fps), high(g.track));
     await settle(page);
@@ -2427,26 +2437,40 @@ async function edgesAsRendered(page) {
 }
 
 // The left edge of the crop on each frame of the video, for frame numbers
-// counted from the picture's first frame, the way the engine's heldX and
-// lib/keyframes.ts work it out, see keyframes.cases.json: the piece's own
-// crop before its first keyframe, and from each keyframe's frame on, that
-// keyframe's.
-function holdOf(piece, src) {
+// counted from the picture's first frame, the way the engine's cropRun
+// works it out, written again here so the walk does not take the window's
+// word for it: the piece's own crop before its first keyframe, and from
+// each keyframe's frame on, that keyframe's. Into a circle the crop glides
+// from the keyframe before, or for the first from where the clip starts,
+// by smoothstep, each step a double in the order the engine takes it, so
+// the two agree to the bit. The walks' clips are not rotated, so where the
+// crop of the clip begins is its start, read on the piece's clock.
+function holdOf(piece, src, entry) {
   const v0 = src.videoStart ?? 0;
   const most = src.width - src.cropWidth;
   const even = (x) => {
     const c = Math.max(0, Math.min(x, most));
     return c - (c % 2);
   };
+  const frame = (at) => Math.floor((at - v0) * src.fps + 0.5);
   const base = even(piece.cropX ?? Math.floor(most / 2));
-  const on = (piece.marks ?? []).map((m) => [Math.floor((m.at - v0) * src.fps + 0.5), even(m.x)]);
+  const on = (piece.marks ?? []).map((m) => ({ k: frame(m.at), x: even(m.x), glide: !!m.glide }));
+  let into = 0;
+  for (const p of entry?.segments ?? []) {
+    if (p.start >= piece.start) break;
+    into += p.end - p.start;
+  }
+  const from = { k: frame(piece.start - into), x: base };
   return (k) => {
-    let x = base;
-    for (const [km, xm] of on) {
-      if (km > k) break;
-      x = xm;
+    let i = on.findIndex((m) => m.k > k);
+    if (i < 0) i = on.length;
+    const a = i > 0 ? on[i - 1] : from;
+    const b = on[i];
+    if (b && b.glide && b.k > a.k && b.x !== a.x && k >= a.k) {
+      const u = (k - a.k) / (b.k - a.k);
+      return a.x + (b.x - a.x) * (u * u * (3 - 2 * u));
     }
-    return x;
+    return a.x;
   };
 }
 
