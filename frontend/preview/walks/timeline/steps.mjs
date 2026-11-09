@@ -155,15 +155,21 @@ export const steps = {
     const { page, watch } = walk;
     const path = await episodeOn(page);
     const heardTo = Math.max(...((await ask(page, "Episode", path)).heard ?? [[0, 0]]).map(([, b]) => b));
-    const current = () =>
-      page.evaluate(() => document.querySelector("aside ol li[data-key] button.pick.current")?.closest("li")?.dataset.key ?? "");
+    // The row chosen: a card on its way is the row itself, a clip the
+    // button in it.
+    const chosenRow = "aside ol li[data-key].next.current, aside ol li[data-key] button.pick.current";
+    const current = () => page.evaluate((r) => document.querySelector(r)?.closest("li")?.dataset.key ?? "", chosenRow);
     const before = await current();
     await control(url, "/speech?hold");
     await ask(page, "MakeClip", path, heardTo + 200, true);
-    await pageUntil(page, (was) => {
-      const li = document.querySelector("aside ol li[data-key] button.pick.current")?.closest("li");
-      return !!li && li.dataset.key !== was && li.classList.contains("next");
-    }, before);
+    await pageUntil(
+      page,
+      ([r, was]) => {
+        const li = document.querySelector(r)?.closest("li");
+        return !!li && li.dataset.key !== was && li.classList.contains("next");
+      },
+      [chosenRow, before],
+    );
     await settle(page);
     const card = await current();
     const where = () =>
