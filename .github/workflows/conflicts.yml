@@ -6,7 +6,11 @@
 # request is opened or pushed to, that one, since it may conflict from
 # the start. git merge-tree merges in memory, without a checkout of
 # either side, and no code of the pull request runs. A pull request from
-# a fork is left alone. The comment says what is so and asks nothing: a
+# a fork is left alone. It hears a pull request through
+# pull_request_target, because GitHub runs no pull_request workflow on one
+# that conflicts. GitHub blocks that event in a public repository unless
+# the repository's Actions policy allows it for this file, from 2 December
+# 2026 and in brownouts before, see When main moves in docs/WORKFLOW.md. The comment says what is so and asks nothing: a
 # session reads it as news and checks on GitHub itself, see When main
 # moves in docs/WORKFLOW.md.
 name: Conflicts

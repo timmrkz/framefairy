@@ -224,3 +224,62 @@ func braces(glob string) []string {
 	}
 	return out
 }
+
+// The workflows the repository's Actions policy allows to run on
+// pull_request_target. GitHub blocks that event in a public repository
+// unless a policy names the workflow file, from 2 December 2026, and in
+// brownouts before. A workflow added here needs a line in that policy too,
+// see When main moves in docs/WORKFLOW.md.
+var targetAllowed = map[string]bool{"conflicts.yml": true}
+
+// Only the workflows the policy names run on pull_request_target, and
+// they check out main alone. The event runs with a token that writes,
+// whatever the pull request holds, so a checkout of the pull request's
+// code there would run a stranger's code with it.
+//
+// On the real disk: what is read is the repository's own workflows.
+func TestPullRequestTargetOnlyWhereAllowed(t *testing.T) {
+	t.Parallel()
+	files, err := filepath.Glob(filepath.Join("..", "..", ".github", "workflows", "*.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range files {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var wf struct {
+			On   map[string]any `yaml:"on"`
+			Jobs map[string]struct {
+				Steps []struct {
+					Uses string            `yaml:"uses"`
+					With map[string]string `yaml:"with"`
+				} `yaml:"steps"`
+			} `yaml:"jobs"`
+		}
+		if err := yaml.Unmarshal(b, &wf); err != nil {
+			// The event list written as a word or a list: no
+			// pull_request_target in a form this test reads, and
+			// TestEveryWorkflowReads says whether it is YAML.
+			if strings.Contains(string(b), "pull_request_target") {
+				t.Errorf("%s names pull_request_target in a form this test cannot read", filepath.Base(f))
+			}
+			continue
+		}
+		if _, ok := wf.On["pull_request_target"]; !ok {
+			continue
+		}
+		name := filepath.Base(f)
+		if !targetAllowed[name] {
+			t.Errorf("%s runs on pull_request_target, which GitHub blocks unless the Actions policy names it: add it there and to targetAllowed, or use pull_request", name)
+		}
+		for job, j := range wf.Jobs {
+			for _, s := range j.Steps {
+				if strings.HasPrefix(s.Uses, "actions/checkout@") && s.With["ref"] != "main" {
+					t.Errorf("%s: job %s checks out %q on pull_request_target, where only main is safe", name, job, s.With["ref"])
+				}
+			}
+		}
+	}
+}

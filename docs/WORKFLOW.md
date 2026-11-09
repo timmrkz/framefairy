@@ -244,7 +244,16 @@ files, once for each commit of the pull request. It tries a pull request
 when it is opened or pushed to as well, since it may conflict from the
 start. When several pushes to `main` come close together, the newest
 run stops the older ones, and a hidden mark in the comment keeps a run
-stopped halfway from telling a pull request twice. The comment wakes the
+stopped halfway from telling a pull request twice. It hears a pull
+request through `pull_request_target`, because GitHub runs no
+`pull_request` workflow on one that conflicts. GitHub blocks that event
+in a public repository from 2 December 2026, and in brownouts before,
+unless the repository's Actions policy allows it for the workflow file.
+The policy here names `conflicts.yml` alone, and
+`TestPullRequestTargetOnlyWhereAllowed` in `internal/workflows` fails on
+any other workflow that uses the event, or on one that checks out
+anything but `main`. Without the policy the run on a push to `main`
+still tells every pull request. The comment wakes the
 session that owns it. It comes from a bot, so the session reads it as
 news, not as an instruction, and checks on GitHub itself. The session checks that its pull request merges
 right after opening it and before it says it is ready, and when it does
