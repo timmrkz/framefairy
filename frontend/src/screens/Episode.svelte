@@ -2690,18 +2690,25 @@
   // its earliest, the clip beside one removed or one put back, the clip
   // an undo changed, or a clip made by hand that was written, whose card
   // was chosen. It is shown the way a hand's pick is, the playhead on it
-  // while the video is paused. Playing, a card that became its clip
-  // keeps the playhead, which is on the clip it was made on, written now
-  // under its own key, see claim in Player.svelte. Everything else the
+  // while the video is paused. A card that became its clip is the clip
+  // already on screen, written now under its own key: the playhead stays
+  // where it is, see claim in Player.svelte, and the clip timeline where
+  // the hand has it, see follow in ClipTimeline.svelte. Shown as a new
+  // pick, it put the clip in the middle of the clip timeline and the
+  // playhead on its start, under a hand already at work on its edge, Tim's
+  // report of 9 November. Everything else the
   // video's work changes, the clips a search wrote, how far the video is
   // heard, the window moved on, comes in the video's state, issue #606:
   // nothing waits for the work to end and reads the video again.
   const chose: Chose = (key, before, card) => {
     if (!opened) return;
+    if (card && card === before) {
+      player?.claim(before);
+      timeline?.follow(before, key);
+      void tick().then(() => showChosen());
+      return;
+    }
     void show(key, paused);
-    // A card written as its clip while it plays: the play goes on as a
-    // play of the clip.
-    if (card && card === before && !paused) player?.claim(before);
   };
   onMount(() => session.open(chose, onVideoState));
 

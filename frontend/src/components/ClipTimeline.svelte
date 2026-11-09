@@ -915,6 +915,14 @@
     load(from, from + span);
   }
 
+  // A card on its way written as its clip is the same clip under a new
+  // key, so the view stays where it is, held by the hand or not. Taken
+  // for a new clip, the view was laid out afresh around it, under a hand
+  // already at work on it, Tim's report of 9 November.
+  export function follow(from: string, to: string) {
+    if (viewFor === from) viewFor = to;
+  }
+
   // Where the timeline sits when nobody has moved it: the clip with a little
   // room around it, or the minute around the playhead.
   // A double-click fits the clip to the view, unless it lands on a cut, in

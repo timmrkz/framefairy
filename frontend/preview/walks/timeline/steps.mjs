@@ -5,7 +5,7 @@
 // showed before it and the step's name. A sequence of any folder can take
 // it. Below them the helpers only these steps use. See docs/TESTING.md.
 import { execFileSync } from "node:child_process";
-import { BITS, ask, caughtUp, chosen, clickOnTrack, drag, engineState, episodeOn, handles, high, hold, holdSound, inside, letHeld, middle, news, nextNews, nextPaint, pageUntil, playUntil, pressOnTrack, pressPlay, preview, seenUntil, settle, shownOnPlayhead, timeline, xOf } from "../bridge.mjs";
+import { BITS, ask, caughtUp, chosen, clickOnTrack, control, drag, engineState, episodeOn, handles, high, hold, holdSound, inside, letHeld, middle, news, nextNews, nextPaint, pageUntil, playUntil, pressOnTrack, pressPlay, preview, seenUntil, settle, shownOnPlayhead, timeline, xOf } from "../bridge.mjs";
 import { pieceCount, rate, url } from "../common/steps.mjs";
 
 export const steps = {
@@ -134,10 +134,65 @@ export const steps = {
     const hearing = (await ask(page, "Jobs")).findLast(
       (j) => j.episode === path && j.kind === "transcribe" && j.label === "Transcribe the clip",
     );
-    console.log(JSON.stringify({ heardTo, at, before: before.start, after: after.start, hearing }));
     if (!hearing || hearing.state !== "done" || Math.abs(hearing.from - after.start) > 0.5 || hearing.to > reach + 1) {
       walk.wrong = `the part from ${after.start.toFixed(1)} s was heard by ${JSON.stringify(hearing)}`;
     }
+  },
+  // ["swipe while it is made"]
+  //                    on a video heard as far as its first search's
+  //                    window, holds the speech model and makes a clip
+  //                    with O two hundred seconds past it, so its card
+  //                    stays on its way while it waits to be heard. The
+  //                    clip timeline is swiped by hand, the speech let go,
+  //                    and once the card is written as its clip the clip
+  //                    timeline is where the hand put it and the playhead
+  //                    where it was. Laid out afresh, the clip jumped back
+  //                    to the middle under a hand already at work on it,
+  //                    issue #767
+  async "swipe while it is made"(walk, arg, s) {
+    const { page, watch } = walk;
+    const path = await episodeOn(page);
+    const heardTo = Math.max(...((await ask(page, "Episode", path)).heard ?? [[0, 0]]).map(([, b]) => b));
+    const current = () =>
+      page.evaluate(() => document.querySelector("aside ol li[data-key] button.pick.current")?.closest("li")?.dataset.key ?? "");
+    const before = await current();
+    await control(url, "/speech?hold");
+    await ask(page, "MakeClip", path, heardTo + 200, true);
+    await pageUntil(page, (was) => {
+      const li = document.querySelector("aside ol li[data-key] button.pick.current")?.closest("li");
+      return !!li && li.dataset.key !== was && li.classList.contains("next");
+    }, before);
+    await settle(page);
+    const card = await current();
+    const where = () =>
+      page.evaluate(() => ({
+        x: document.querySelector(".clip-timeline .playhead")?.getBoundingClientRect().left ?? NaN,
+        at: Number(document.querySelector(".screen")?.dataset.playhead),
+      }));
+    const fitted = await where();
+    const box = await page.evaluate(() => {
+      const b = document.querySelector(".clip-timeline .track").getBoundingClientRect();
+      return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
+    });
+    await page.mouse.move(box.x, box.y);
+    await page.mouse.wheel(120, 0);
+    await settle(page);
+    const swiped = await where();
+    if (!(Math.abs(swiped.x - fitted.x) > 20)) {
+      walk.wrong = `the swipe moved the clip timeline ${(swiped.x - fitted.x).toFixed(1)} px`;
+      await control(url, "/speech?go");
+      return;
+    }
+    await control(url, "/speech?go");
+    const written = await seenUntil(page, url, current, (key) => key !== card && key !== before);
+    await settle(page);
+    const after = await where();
+    if (Math.abs(after.x - swiped.x) > 1 || Math.abs(after.at - swiped.at) > 0.001) {
+      walk.wrong =
+        `the card ${card} written as ${written} moved the playhead on the clip timeline from ${swiped.x.toFixed(1)} px ` +
+        `to ${after.x.toFixed(1)} px, and from ${swiped.at.toFixed(3)} s to ${after.at.toFixed(3)} s`;
+    }
+    await watch.step("swipe", s);
   },
   // ["trim", edge, px] drags the clip's "start" or "end" edge by px
   async trim(walk, arg, s) {

@@ -1467,6 +1467,9 @@ bubble scrolled by those eight pixels.
       "Placing the crop" or "Fitting to the length". It hands
       over to the clip itself in one step, holding its place until the
       list has read the clip, so there is never a gap and never two cards.
+      Chosen, it stays the clip on screen as it hands over: the playhead
+      stays where it is and the clip timeline where the hand has it,
+      because it is the same clip under the name it is written as.
       A clip made with I or O comes in the same way, see below, because
       every job says which clips it has on the way the same way, see
       [JOBS.md](JOBS.md).
