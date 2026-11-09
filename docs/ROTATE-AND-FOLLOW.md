@@ -17,9 +17,11 @@ and nothing changes for a video that is fine as it is.
 
 Later, on #750, Tim found a glide between keyframes hard to work with for
 a camera switch, and asked for a keyframe as a turning point instead: the
-crop switches on it and holds until the next. That is what keyframes do
-now, see section 4, and nothing glides. A person who drifts across the
-picture takes a keyframe at each step.
+crop switches on it and holds until the next. He then wanted the glide
+back as a choice, and picked how from clickable mockups: two kinds of
+keyframe, a diamond the crop switches on and a circle it glides into,
+each with its key and its button. That is what keyframes do now, see
+section 4.
 
 ## What the app has today
 
@@ -94,35 +96,45 @@ Tim decided this on #188: a keyframe is made the way a thumbnail is,
 with a button and a key, and dragging the crop frame only places the
 crop.
 
-- **K, and a keyframe button** in the row under the clip timeline beside
-  the thumbnail button, puts a keyframe on the frame under the playhead,
-  with the crop where it stands there now. With the playhead on a crop
-  keyframe, the button or K removes it, the way the thumbnail button does.
-  Its icon is the crop frame with a plus, and with a minus while the
-  playhead stands on a keyframe.
-- **A keyframe is a turning point**, Tim's word on #750. The crop
-  switches on its frame and holds until the next keyframe. Before the
-  first keyframe it is the clip's own crop. One keyframe where the camera
+- **K and G, and two keyframe buttons** in the row under the clip
+  timeline beside the thumbnail button, put a keyframe on the frame under
+  the playhead, with the crop where it stands there now: K a diamond, where
+  the crop switches, and G a circle, which the crop glides into. With the
+  playhead on a keyframe of its kind, the button or its key removes it,
+  the way the thumbnail button does, and on one of the other kind it
+  turns it into its own. Their icons are a diamond and a circle with a
+  plus, and with a minus while the playhead stands on one of their kind.
+  The shapes are Tim's: the diamond is pointed, an instant change, and the
+  circle round and smooth, a glide.
+- **A keyframe is a turning point**, Tim's word on #750. From its frame
+  on, the crop is the keyframe's until the next keyframe. Before the
+  first keyframe it is the clip's own crop. One diamond where the camera
   switches is a camera switch.
-- **Dragging the crop frame places the crop of the part under the
-  playhead, and nothing else.** On a keyframe or after one, it moves that
-  keyframe's crop. Before the first, it moves the clip's own crop, which
-  is today's drag for a clip with no keyframes. The parts before and after
-  keep theirs.
+- **The crop frame is dragged only with the playhead on a keyframe**, Tim
+  on #750, and moves that keyframe's crop. The keyframe is lit then, so
+  what moves is seen. Anywhere else the crop frame shows the crop as the
+  short has it, held or gliding, and a drag moves nothing. A clip with no
+  keyframes has one crop, today's drag anywhere in it.
 - **What is happening is shown while it happens.** While a clip plays,
   the crop frame in the video preview switches on the keyframe's own
   frame, so what plays is what renders.
 
 ### 4. One rule: a keyframe holds until the next
 
-There is nothing to set. Each keyframe says where the crop is from its
-frame on, and the next keyframe takes over from its own frame:
+Each keyframe says where the crop is from its frame on, and the next
+keyframe takes over from its own frame. Its kind says how the crop gets
+there:
 
-- **The switch is instant.** A camera switch is cut, not panned, so the
-  crop switches on the keyframe's frame, with nothing in between.
-- **A drag changes one part.** The part runs from a keyframe to the next,
-  or from the clip's start to the first keyframe. Dragging a keyframe along
-  the clip timeline moves where the switch is.
+- **Into a diamond the switch is instant.** A camera switch is cut, not
+  panned, so the crop switches on the keyframe's frame, with nothing in
+  between.
+- **Into a circle the crop glides** from the keyframe before, over the
+  whole time between them, easing out and in the way a camera operator
+  pans, and reaches the circle's crop on its frame. Into a first circle it
+  glides from the clip's start. So a person who walks across the picture
+  takes a keyframe where the walk starts and a circle where it ends.
+- **A drag places one keyframe.** Dragging a keyframe along the clip
+  timeline moves where its switch or the end of its glide is.
 - **A keyframe holds across a cut, by the time the short plays.** A cut
   takes time out of the clip, so a keyframe before a cut keeps its crop
   after the cut until the next keyframe. A rotated part has a crop and
@@ -134,7 +146,10 @@ The first design glided the crop from one keyframe to the next over the
 whole time between them, easing out and in, so the tempo was where the
 keyframes were. One keyframe then stood still, and a camera switch took
 two keyframes a frame apart. Tim found that odd on #750 and asked for the
-keyframe as a turning point.
+keyframe as a turning point, with the glide kept as the circle's way in.
+Mockups of five ways to offer it, a glide key, a menu on the keyframe, a
+switch with a length, a pan across a part and a movement recorded while
+playing, are kept in the project's files, and Tim chose the two keys.
 
 ### 5. Where the keyframes are on the clip timeline
 
@@ -146,12 +161,15 @@ their own:
   another icon. A click puts the playhead on it, a drag moves it to
   another frame, a double-click removes it, and it lights under the hand
   and while the playhead is on its frame.
-- **They are stacked, not set side by side.** The thumbnail stands inside
-  the track, a few pixels above its foot, as it does today. The keyframe
-  is a small diamond centred on the foot line itself, half in the track and
-  half below it. So on the same frame the diamond sits just under the
-  thumbnail, both on the frame's line, and each takes its own click,
-  drag and double-click.
+- **They stand at either end of the playhead's line.** The thumbnail is
+  centred on the clip's bottom rule and the keyframe on its top rule, a
+  diamond or a circle. So on the same frame both are on the frame's line,
+  and each takes its own click, drag and double-click.
+- **A circle is joined to the keyframe before it** by a line on the top
+  rule, as thick as the rule, from the rule's own colour brightening into
+  the light colour at the circle, so the two read as one glide over the
+  clip's wash. Tim asked for the join, and this is number 3 of a sheet
+  of nine drawn for him.
 - **Automatic crop** removes every keyframe of the clip and brings back the
   placement the engine found.
 

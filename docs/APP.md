@@ -2650,28 +2650,33 @@ A crop that changes while a clip plays, for a camera switch or a person
 who moves across the picture. Plan row 3.26 and #750, the design is in
 [ROTATE-AND-FOLLOW.md](ROTATE-AND-FOLLOW.md).
 
-- **The keyframe button**, beside the thumbnail button under the clip
-  timeline, puts a keyframe on the frame under the playhead, with the
-  crop where it stands there now. **K** does the same. Like the thumbnail
-  button it is not a mode: its icon is a diamond with a plus, and with a
-  minus while the playhead stands on a keyframe, where a click removes
-  it.
-- **A keyframe is a turning point.** The crop switches on its frame and
-  holds until the next keyframe. Before the first keyframe it is the
-  clip's own crop. So a camera switch takes one keyframe, put where the
-  camera switches, and nothing glides. Tim asked for this on #750: the
-  crop used to glide from one keyframe to the next, so one keyframe stood
-  still and a switch took two, a frame apart. A keyframe holds across a
-  cut by the time the short plays. A part turned with Rotate has a crop
-  of its own, so its crop still starts at its cut.
-- **Dragging the crop frame places the crop of the part under the
-  playhead, and nothing else.** On a keyframe or after one, it moves that
-  keyframe's crop, which holds until the next keyframe. Before the first
-  keyframe it moves the clip's own crop. Either way the parts before and
-  after keep theirs.
-- **The video preview switches the crop on the keyframe's own frame**
-  while the clip plays, so what plays is what renders.
-- **Each keyframe is a diamond** centred on the clip's top rule on the
+- **Two keyframe buttons**, beside the thumbnail button under the clip
+  timeline, each put a keyframe on the frame under the playhead, with the
+  crop where it stands there now. **K** puts a diamond, where the crop
+  switches, and **G** a circle, which the crop glides into. Like the
+  thumbnail button neither is a mode: the icon is a diamond or a circle
+  with a plus, and with a minus while the playhead stands on a keyframe
+  of its kind, where a click removes it. On a keyframe of the other kind
+  the button turns it into its own. Tim chose the two buttons from
+  mockups on #750.
+- **A keyframe is a turning point.** From its frame on, the crop is the
+  keyframe's until the next keyframe. Before the first keyframe it is the
+  clip's own crop. Into a diamond the crop switches on its frame, so a
+  camera switch takes one keyframe, put where the camera switches. Into a
+  circle it glides from the keyframe before, over the whole time between
+  them, easing out and in, and from the clip's start into a first circle.
+  So a person who walks across takes a keyframe where the walk starts and
+  a circle where it ends. A keyframe holds across a cut by the time the
+  short plays. A part turned with Rotate has a crop of its own, so its
+  crop still starts at its cut.
+- **The crop frame is dragged only with the playhead on a keyframe**, and
+  moves that keyframe's crop, Tim's rule on #750, so what moves is the
+  diamond or the circle lit under the playhead. Anywhere else the crop
+  frame shows the crop as the short has it, and a drag moves nothing. A
+  clip with no keyframes has one crop, dragged anywhere in it.
+- **The video preview switches and glides the crop on the keyframes'
+  own frames** while the clip plays, so what plays is what renders.
+- **Each keyframe is a diamond or a circle** centred on the clip's top rule on the
   clip timeline, drawn and lit the way a thumbnail is: filled in the
   app's light colour, and white while the playhead is on its frame, the
   clip's first and last frame included. It is 18 px, larger than it was
@@ -2682,6 +2687,9 @@ who moves across the picture. Plan row 3.26 and #750, the design is in
   double-click removes it. While it is dragged it stands on the start of
   the frame under the hand, where it stays once let go, so dragged past
   the clip's edge it stops on the first or last frame and does not jump.
+  A circle is joined to the keyframe before it by a line on the top rule,
+  as thick as the rule, that brightens from the rule's colour into the
+  light colour at the circle, so the two read as one glide.
 - **Automatic crop** removes every keyframe of the clip and brings back
   the crop the engine found, and **Put the crop back** brings back the
   keyframes with the crop. Removing a keyframe gives its part the crop of
