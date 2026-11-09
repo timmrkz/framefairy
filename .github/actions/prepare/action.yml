@@ -6,8 +6,14 @@
 # Go's build cache: setup-go keeps it by go.sum alone and saves it only
 # when go.sum changes, so a job started from one weeks old and compiled
 # nearly everything again. So each job restores the cache main saved last
-# for it, key and restore-keys, and saves its own at its end on main, see
-# ci.yml.
+# for it, key and restore-keys, and saves its own at its end on main
+# through .github/actions/save, with only what the job used. Restoring
+# one and saving it again with what was new kept everything ever built:
+# a Linux test job restored 669 MB where it used about 214.
+#
+# The modules come from their own cache, the zips Go downloaded, one for
+# each go.sum, so a module no longer in go.sum is gone with it. Go unpacks
+# them itself.
 #
 # The ffmpeg we ship is built once by the script a release uses and kept
 # until that script changes. On a Mac its cache is keyed on the pins of
@@ -65,15 +71,30 @@ runs:
       uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
       with:
         node-version-file: .node-version
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/go/pkg/mod/cache/download
+        key: gomod-${{ runner.os }}-${{ hashFiles('go.sum') }}
     - id: go
       if: inputs.key != ''
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
-        path: |
-          ~/go/pkg/mod
-          ${{ runner.os == 'macOS' && '~/Library/Caches/go-build' || '~/.cache/go-build' }}
+        path: ${{ runner.os == 'macOS' && '~/Library/Caches/go-build' || '~/.cache/go-build' }}
         key: ${{ inputs.key }}
         restore-keys: ${{ inputs.restore-keys }}
+    # Go marks an entry of its build cache as used by its time, when that
+    # is an hour old or more. So every entry is made old here, and what is
+    # still old at the job's end was not used, see .github/actions/save.
+    # The inputs fuzzing found stay, and so does Go's own trim, which this
+    # job would otherwise run on entries it has not reached yet.
+    - if: inputs.key != ''
+      shell: bash
+      run: |
+        cache=$(go env GOCACHE)
+        mkdir -p "$cache"
+        touch -t 200001010000 "$RUNNER_TEMP/go-cache-aged"
+        find "$cache" -mindepth 2 -maxdepth 2 ! -path "$cache/fuzz/*" -exec touch -t 200001010000 {} +
+        date +%s > "$cache/trim.txt"
 
     - id: tools
       if: inputs.ffmpeg == 'true' && runner.os == 'macOS'

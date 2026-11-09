@@ -222,8 +222,8 @@ jobs:
         if: steps.needs.outputs.run == 'true'
         uses: ./.github/actions/prepare
         with:
-          key: go-v1-app-${{ runner.os }}-${{ needs.which.outputs.sha }}
-          restore-keys: go-v1-app-${{ runner.os }}-
+          key: go-v2-app-${{ runner.os }}-${{ needs.which.outputs.sha }}
+          restore-keys: go-v2-app-${{ runner.os }}-
           node: npm
           ffmpeg: true
           llama: true
@@ -240,12 +240,10 @@ jobs:
       # warm. Otherwise the job outside saves it: an upload here would sit
       # between every push and its build on the Updates page.
       - if: steps.needs.outputs.run == 'true' && steps.prepare.outputs.matched-key == ''
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: ./.github/actions/save
         with:
-          path: |
-            ~/go/pkg/mod
-            ~/Library/Caches/go-build
-          key: go-v1-app-${{ runner.os }}-${{ needs.which.outputs.sha }}
+          key: go-v2-app-${{ runner.os }}-${{ needs.which.outputs.sha }}
+          save: true
 
       # One entry at the top, Frame Fairy.app, which is what Wails' updater
       # asks of a zip. --norsrc, because ditto otherwise adds a ._ file

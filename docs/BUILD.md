@@ -336,9 +336,16 @@ command, the one a person runs:
 | `macos` | macOS | Go | `make unit` against the ffmpeg we ship, built by its script and kept until the script changes. On a Mac it leaves out the race detector, which Linux runs, and the licence server's packages, which never run on a Mac |
 | `outside` | macOS | Go or the interface | `make outside WERROR=1`: the app built with the ffmpeg and the llama-server we ship and no warning allowed, see [No build warnings on macOS](#no-build-warnings-on-macos), then a keychain of its own, then the app opened by macOS from an Unlock link, closed and open, with the local dispenser beside it, see [TESTING.md](TESTING.md#from-outside-the-app). Stopped after 30 minutes |
 
-`linux`, `walks`, `macos` and `outside` start from Go's build cache as
-main left it after its last push, one cache for each job and for each
-machine of `linux`, saved by main. The build to update to in
+Every job but `interface` starts from Go's build cache as main left it
+after its last push, one cache for each job and for each machine of
+`linux`, saved by main through `.github/actions/save`. It saves only
+what the job used: `.github/actions/prepare` makes every entry old when
+it restores the cache, Go marks what it reads, and what is still old at
+the end goes. Restoring a cache and saving it again with what was new
+kept everything ever built, and a Linux test job restored 669 MB where
+it used about 214. Every run says in its log how much of the cache it
+used. The modules have a cache of their own, the zips Go downloaded, one
+for each `go.sum`. The build to update to in
 `builds.yml` starts from the cache of `outside`, which runs the same
 `make`, and saves none of its own, so no upload sits between a push and
 its build on the Updates page. setup-go keeps the cache by `go.sum`

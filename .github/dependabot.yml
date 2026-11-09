@@ -53,7 +53,7 @@ updates:
         update-types: [minor, patch]
   - package-ecosystem: github-actions
     # The workflows, and the setup every CI job shares.
-    directories: [/, /.github/actions/prepare]
+    directories: [/, /.github/actions/prepare, /.github/actions/save]
     schedule:
       interval: weekly
     groups:

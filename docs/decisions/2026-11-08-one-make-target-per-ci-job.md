@@ -75,9 +75,9 @@ a tool already does it:
 | `pins.sh` | every action pinned to a commit, one Node | `internal/workflows`, the Go test that already read every workflow |
 | `plan-frozen.sh` and its test | `docs/GUI-PLAN.md` never changes | one line of `make lint`, its git hash |
 | `lint-test.sh` and its fixtures | that the linters' settings catch a wait on the clock, the standard log and the inputs the app may not take | removed: a test of the tools' own settings, with its cost said under What follows |
-| `main-moved.sh`, its test, `main-moved.yml` | a comment when a pull request stops merging | removed: GitHub shows a conflict on the pull request, and a session checks before it says ready |
+| `main-moved.sh`, its test, `main-moved.yml` | a comment when a pull request stops merging | `conflicts.yml`, a few lines around `git merge-tree`. GitHub sends no event for a conflict, so the comment is the only way to wake the session, and it did wake this one when #757 made #758 conflict |
 | `ci-packages.sh` | the CI image's system packages | in the Dockerfile |
-| the steps every job repeated | Go, Node, the cache, the ffmpeg we ship | `.github/actions/prepare`, once |
+| the steps every job repeated | Go, Node, the cache, the ffmpeg we ship | `.github/actions/prepare`, once, and `.github/actions/save`, which keeps only what the job used of Go's cache |
 
 What stays is the build, not the CI: the scripts that configure, compile
 and pack ffmpeg, llama-server and the app, the setup of cloud sessions,

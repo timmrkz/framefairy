@@ -47,8 +47,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/prepare
         with:
-          key: fuzz-v2-${{ runner.os }}-${{ github.sha }}
-          restore-keys: fuzz-v2-${{ runner.os }}-
+          key: fuzz-v3-${{ runner.os }}-${{ github.sha }}
+          restore-keys: fuzz-v3-${{ runner.os }}-
           node: node
       # 600 histories of 400 steps, about a minute on one core while the
       # others fuzz the rest.
@@ -71,12 +71,10 @@ jobs:
           retention-days: 30
       # Only after the fuzzing ran to its end, see the job fuzz of ci.yml.
       - if: ${{ !cancelled() && steps.fuzz.outcome != 'skipped' }}
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: ./.github/actions/save
         with:
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-          key: fuzz-v2-${{ runner.os }}-nightly-${{ github.run_id }}
+          key: fuzz-v3-${{ runner.os }}-nightly-${{ github.run_id }}
+          save: true
 
   # The two targets about paths, on the disk a customer has.
   macos:
@@ -86,8 +84,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/prepare
         with:
-          key: fuzz-v1-${{ runner.os }}-${{ github.sha }}
-          restore-keys: fuzz-v1-${{ runner.os }}-
+          key: fuzz-v2-${{ runner.os }}-${{ github.sha }}
+          restore-keys: fuzz-v2-${{ runner.os }}-
       - name: Fuzz the targets about paths
         run: make fuzz FUZZTIME=2m FUZZTARGETS='FuzzSafeChild FuzzKnownStaysInTheLibrary'
       - name: What crashed
@@ -103,9 +101,7 @@ jobs:
           path: ${{ runner.temp }}/crashers
           retention-days: 30
       - if: ${{ !cancelled() }}
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: ./.github/actions/save
         with:
-          path: |
-            ~/go/pkg/mod
-            ~/Library/Caches/go-build
-          key: fuzz-v1-${{ runner.os }}-nightly-${{ github.run_id }}
+          key: fuzz-v2-${{ runner.os }}-nightly-${{ github.run_id }}
+          save: true

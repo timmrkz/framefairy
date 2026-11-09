@@ -1,0 +1,33 @@
+# Go's build cache, with only what this job used, saved for the next job
+# of its kind to start from. .github/actions/prepare made every entry old
+# when it restored the cache, so what is still old was not used, and goes:
+# the packages of an older commit, a module no longer in go.sum, a test
+# removed since. The inputs fuzzing found stay. Every run says how much it
+# kept, and only main saves, since a cache a pull request writes is its
+# own.
+name: Save
+description: Go's build cache, trimmed to what the job used, saved on main
+
+inputs:
+  key:
+    description: The key to save the cache under.
+    required: true
+  save:
+    description: true saves it, otherwise it is only trimmed and measured.
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        cache=$(go env GOCACHE)
+        [ -f "$RUNNER_TEMP/go-cache-aged" ] || exit 0
+        before=$(du -sm "$cache" | cut -f1)
+        find "$cache" -mindepth 2 -maxdepth 2 ! -path "$cache/fuzz/*" ! -newer "$RUNNER_TEMP/go-cache-aged" -exec rm -rf {} +
+        echo "Go's build cache: $(du -sm "$cache" | cut -f1) MB used of $before MB"
+    - if: inputs.save == 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.os == 'macOS' && '~/Library/Caches/go-build' || '~/.cache/go-build' }}
+        key: ${{ inputs.key }}

@@ -114,18 +114,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/prepare
         with:
-          key: go-v1-build-${{ runner.os }}-${{ github.sha }}
-          restore-keys: go-v1-build-${{ runner.os }}-
+          key: go-v2-build-${{ runner.os }}-${{ github.sha }}
+          restore-keys: go-v2-build-${{ runner.os }}-
           node: npm
       - id: build
         run: make lint all NOTOOLS=1
-      - if: github.ref == 'refs/heads/main' && steps.build.outcome == 'success'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - if: steps.build.outcome == 'success'
+        uses: ./.github/actions/save
         with:
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-          key: go-v1-build-${{ runner.os }}-${{ github.sha }}
+          key: go-v2-build-${{ runner.os }}-${{ github.sha }}
+          save: ${{ github.ref == 'refs/heads/main' }}
 
   # The Go tests under the race detector, the seeds of the fuzz targets
   # among them, on three machines, a third of the tests each by their
@@ -154,21 +152,19 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/prepare
         with:
-          key: go-v3-linux-${{ runner.os }}-${{ strategy.job-index }}-${{ github.sha }}
-          restore-keys: go-v3-linux-${{ runner.os }}-${{ strategy.job-index }}-
+          key: go-v4-linux-${{ runner.os }}-${{ strategy.job-index }}-${{ github.sha }}
+          restore-keys: go-v4-linux-${{ runner.os }}-${{ strategy.job-index }}-
           node: node
           ffmpeg: true
       - id: tests
         run: make unit UNITSHARD=${{ matrix.shard }}
       # Only on main, and only once the tests ran, since they built
       # everything either way. A cache a pull request writes is its own.
-      - if: github.ref == 'refs/heads/main' && !cancelled() && steps.tests.outcome != 'skipped'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - if: ${{ !cancelled() && steps.tests.outcome != 'skipped' }}
+        uses: ./.github/actions/save
         with:
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-          key: go-v3-linux-${{ runner.os }}-${{ strategy.job-index }}-${{ github.sha }}
+          key: go-v4-linux-${{ runner.os }}-${{ strategy.job-index }}-${{ github.sha }}
+          save: ${{ github.ref == 'refs/heads/main' }}
 
   # The interface in Chromium against the real Go side, see
   # docs/TESTING.md, on four machines, each with a quarter of the walks by
@@ -195,8 +191,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/prepare
         with:
-          key: go-v2-walks-${{ runner.os }}-${{ github.sha }}
-          restore-keys: go-v2-walks-${{ runner.os }}-
+          key: go-v3-walks-${{ runner.os }}-${{ github.sha }}
+          restore-keys: go-v3-walks-${{ runner.os }}-
           node: npm
           ffmpeg: true
       - id: walks
@@ -210,13 +206,11 @@ jobs:
           path: .build/walk-traces
           retention-days: 14
           if-no-files-found: ignore
-      - if: github.ref == 'refs/heads/main' && steps.walks.outcome == 'success' && strategy.job-index == 0
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - if: steps.walks.outcome == 'success' && strategy.job-index == 0
+        uses: ./.github/actions/save
         with:
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-          key: go-v2-walks-${{ runner.os }}-${{ github.sha }}
+          key: go-v3-walks-${{ runner.os }}-${{ github.sha }}
+          save: ${{ github.ref == 'refs/heads/main' }}
 
   # Every fuzz target for 10000 executions. Go keeps the inputs that
   # reached new code in its build cache, which main and the nightly
@@ -234,18 +228,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/prepare
         with:
-          key: fuzz-v2-${{ runner.os }}-${{ github.sha }}
-          restore-keys: fuzz-v2-${{ runner.os }}-
+          key: fuzz-v3-${{ runner.os }}-${{ github.sha }}
+          restore-keys: fuzz-v3-${{ runner.os }}-
           node: node
       - id: fuzz
         run: make fuzz SIMTIME=0
-      - if: github.ref == 'refs/heads/main' && !cancelled() && steps.fuzz.outcome != 'skipped'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - if: ${{ !cancelled() && steps.fuzz.outcome != 'skipped' }}
+        uses: ./.github/actions/save
         with:
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-          key: fuzz-v2-${{ runner.os }}-${{ github.sha }}
+          key: fuzz-v3-${{ runner.os }}-${{ github.sha }}
+          save: ${{ github.ref == 'refs/heads/main' }}
 
   # The Go tests on Tim's platform, against the ffmpeg we ship, which
   # encodes through VideoToolbox as a customer's does. make unit on a Mac
@@ -259,18 +251,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/prepare
         with:
-          key: go-v1-macos-${{ runner.os }}-${{ github.sha }}
-          restore-keys: go-v1-macos-${{ runner.os }}-
+          key: go-v2-macos-${{ runner.os }}-${{ github.sha }}
+          restore-keys: go-v2-macos-${{ runner.os }}-
           ffmpeg: true
       - id: tests
         run: make unit
-      - if: github.ref == 'refs/heads/main' && !cancelled() && steps.tests.outcome != 'skipped'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - if: ${{ !cancelled() && steps.tests.outcome != 'skipped' }}
+        uses: ./.github/actions/save
         with:
-          path: |
-            ~/go/pkg/mod
-            ~/Library/Caches/go-build
-          key: go-v1-macos-${{ runner.os }}-${{ github.sha }}
+          key: go-v2-macos-${{ runner.os }}-${{ github.sha }}
+          save: ${{ github.ref == 'refs/heads/main' }}
 
   # The app built on a Mac with no warning allowed, WERROR=1, and then
   # opened from outside it: a link in the letter a buyer gets, handed to
@@ -287,8 +277,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/prepare
         with:
-          key: go-v1-app-${{ runner.os }}-${{ github.sha }}
-          restore-keys: go-v1-app-${{ runner.os }}-
+          key: go-v2-app-${{ runner.os }}-${{ github.sha }}
+          restore-keys: go-v2-app-${{ runner.os }}-
           node: npm
           ffmpeg: true
           llama: true
@@ -305,10 +295,8 @@ jobs:
           security default-keychain -d user -s "$kc"
       - id: outside
         run: make outside WERROR=1
-      - if: github.ref == 'refs/heads/main' && !cancelled() && steps.outside.outcome != 'skipped'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - if: ${{ !cancelled() && steps.outside.outcome != 'skipped' }}
+        uses: ./.github/actions/save
         with:
-          path: |
-            ~/go/pkg/mod
-            ~/Library/Caches/go-build
-          key: go-v1-app-${{ runner.os }}-${{ github.sha }}
+          key: go-v2-app-${{ runner.os }}-${{ github.sha }}
+          save: ${{ github.ref == 'refs/heads/main' }}
