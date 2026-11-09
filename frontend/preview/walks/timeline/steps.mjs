@@ -214,10 +214,14 @@ export const steps = {
     const moved = await where();
     await page.mouse.up();
     await settle(page);
-    if (Math.abs(moved.x - (after.x + 60)) > 2 || !(moved.at > after.at)) {
+    // The playhead is drawn on the start of its frame, so it stands up to
+    // a frame short of the hand. A frame is as wide as the time the hand's
+    // 60 px moved it, over the frames a second.
+    const frameWide = 60 / Math.max(moved.at - after.at, 1e-6) / (await rate(page));
+    if (Math.abs(moved.x - (after.x + 60)) > frameWide + 1 || !(moved.at > after.at)) {
       walk.wrong =
         `the hand moved 60 px on from ${after.x.toFixed(1)} px once ${written} was written, ` +
-        `and the playhead went to ${moved.x.toFixed(1)} px, ${moved.at.toFixed(3)} s`;
+        `and the playhead went to ${moved.x.toFixed(1)} px, ${moved.at.toFixed(3)} s, more than a frame of ${frameWide.toFixed(1)} px off`;
     }
     await watch.step("swipe", s);
   },
