@@ -22,7 +22,7 @@
 # with their majors: an action's major is mostly the Node it runs on, and
 # CI runs every one of them. Each action is pinned to a commit with its full
 # version in the comment beside it, # v7.0.2 and never # v7, and Dependabot
-# moves the two together. scripts/pins.sh checks it.
+# moves the two together. internal/workflows checks it.
 version: 2
 updates:
   - package-ecosystem: gomod
@@ -52,7 +52,8 @@ updates:
         patterns: ["*"]
         update-types: [minor, patch]
   - package-ecosystem: github-actions
-    directory: /
+    # The workflows, and the setup every CI job shares.
+    directories: [/, /.github/actions/prepare, /.github/actions/save]
     schedule:
       interval: weekly
     groups:
@@ -64,7 +65,7 @@ updates:
       interval: weekly
     # The image's Node is the one .node-version pins, which Dependabot
     # cannot move, so scripts/upstream.sh watches both and they move
-    # together. scripts/pins.sh fails when they part, #591.
+    # together. internal/workflows fails when they part, #591.
     ignore:
       - dependency-name: node
     groups:

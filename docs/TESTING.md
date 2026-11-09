@@ -1249,7 +1249,7 @@ No test waits on the clock in
 
 CI runs it in the jobs `walks`, the only ones with the browsers, which
 come in the CI image they run in, see [The CI image](BUILD.md#the-ci-image), on
-every pull request but one of docs alone.
+every pull request that changes Go or the interface.
 
 A walk that breaks a rule leaves a picture of the app at that moment in
 `/tmp/walk-<seed>.png`.
@@ -1282,7 +1282,7 @@ pulled the first word of the next caption up into the room it left, and
 the walks, once the rule was that a removal changes no caption, that a
 caption whose first word was removed waited for the word after it. The
 engine now lays the captions out as if a removed word were still there,
-`TestRemovingAWordPullsNoWordUp`. Then the walks in `make changed` found
+`TestRemovingAWordPullsNoWordUp`. Then the walks in CI found
 that a word corrected to a short one and then removed took the room of
 what the recogniser had heard, ten letters where it had read three, and
 the caption overflowed. A removal now keeps what the word read,
@@ -1554,7 +1554,7 @@ What the code takes from outside, so a test can drive it:
 | a loading llama-server saying it is up | its output | `hearReady` in `engine/local.go`, and `lookAgain` on the machine's link to llama-server, the look every half second for a server that says nothing, which `TestAServerThatWillNotStopIsKilledAtOnce` takes away on its own machine |
 | how often work that reads from another program saves | a count of reads | `levelsReads` on the engine, `engine/levels.go`, in place of `levelsDefault` of the clock |
 | the network | an `http.Client` with a transport of the test's | `client` on the machine's link to llama-server, `engine/local.go`, and the network of `engine.Machine`, `network` in `engine/machine.go`, which a machine `NewMachine` makes does not have, so it reaches nothing until a test hands it one, with `neverAnswers`, `streamFrom` and `stopsAfter` in `engine/local_test.go`, so the stall of a model or a download is waited for in a bubble |
-| timers inside goroutines | `testing/synctest` around the test | the lint fixture `scripts/testdata/lint/go/signals`, the dictation tests in `cmd/framefairy-app/listen_test.go`, `TestOnlyAFewDecodersNobodyHoldsStandRunning` in `cmd/framefairy-app/frames_test.go`, and the tests of a health check and of a model that keeps talking in `engine/local_test.go`, which ask llama-server through `neverAnswers` and `streamFrom`, transports with no network |
+| timers inside goroutines | `testing/synctest` around the test | the dictation tests in `cmd/framefairy-app/listen_test.go`, `TestOnlyAFewDecodersNobodyHoldsStandRunning` in `cmd/framefairy-app/frames_test.go`, and the tests of a health check and of a model that keeps talking in `engine/local_test.go`, which ask llama-server through `neverAnswers` and `streamFrom`, transports with no network |
 | the machine's memory, how much is free and which other llama-servers run | functions on the machine | `memory`, `free` and `servers` on `engine.Machine`, empty for what the system says, see `machineWith` in `engine/room_test.go` |
 | the disk | `afero.Fs` | `engine/files.go`, the project and the app's store |
 | the keychain | a key store on the machine | `keys` and `oldKeys` on `engine.Machine`, empty in a machine `NewMachine` makes, so it keeps no key. A test of the keys puts `memKeys` from `engine/keys_test.go` there, see `keychains` |
@@ -1586,10 +1586,11 @@ its first line there, `bubbleLog` in
 The skill's "ask the coverage" is the nightly report in Codecov, see
 [Coverage](#coverage).
 
-The skill's "run only what a change reaches" is `make changed` here, one
-script for every machine, `scripts/changed.sh`: a pull request runs the
-packages, parts and walks its change reaches, and main runs all of them,
-see [One way to test](BUILD.md#one-way-to-test).
+The skill's "run only what a change reaches" is the two filters of CI's
+job `changes` here, and Go's own test cache inside a Go job: a pull
+request starts the jobs whose code it changed, those run the packages
+that changed, and main runs all of them, see
+[One way to test](BUILD.md#one-way-to-test).
 
 What CI holds of the skill's rules today: golangci-lint's `forbidigo` in
 `make lint` for the clock, for a context with a deadline and for a check

@@ -1,0 +1,136 @@
+# What every CI job sets up before its one make command: Go, Node when it
+# asks, Go's build cache from main, and the ffmpeg we ship when it asks,
+# which make builds the episode's decoder against. One place, so the jobs
+# of ci.yml and of the nightly workflows set up the same way.
+#
+# Go's build cache: setup-go keeps it by go.sum alone and saves it only
+# when go.sum changes, so a job started from one weeks old and compiled
+# nearly everything again. So each job restores the cache main saved last
+# for it, key and restore-keys, and saves its own at its end on main
+# through .github/actions/save, with only what the job used. Restoring
+# one and saving it again with what was new kept everything ever built:
+# a Linux test job restored 669 MB where it used about 214.
+#
+# The modules come from their own cache, the zips Go downloaded, one for
+# each go.sum, so a module no longer in go.sum is gone with it. Go unpacks
+# them itself.
+#
+# The ffmpeg we ship is built once by the script a release uses and kept
+# until that script changes. On a Mac its cache is keyed on the pins of
+# the tools that build it too, see scripts/build-tools.sh, and llama-server
+# comes with it when the job asks, for the app.
+name: Prepare
+description: Go, Node, the build cache and the ffmpeg we ship, for one CI job
+
+inputs:
+  key:
+    description: The Go build cache to restore, by its key. Empty restores none.
+    default: ""
+  restore-keys:
+    description: The prefixes of an older cache to take when the key is not there.
+    default: ""
+  node:
+    description: npm for Node with the interface's packages cached, node for Node alone, empty for none.
+    default: ""
+  ffmpeg:
+    description: true brings the ffmpeg we ship, from its cache or built.
+    default: "false"
+  llama:
+    description: true brings the llama-server we ship too, on a Mac.
+    default: "false"
+
+outputs:
+  cache-hit:
+    description: true when the Go build cache of the key itself was there.
+    value: ${{ steps.go.outputs.cache-hit }}
+  matched-key:
+    description: The key of the Go build cache it found, by the key or a prefix, empty when none.
+    value: ${{ steps.go.outputs.cache-matched-key }}
+
+runs:
+  using: composite
+  steps:
+    # In the CI image a job runs as root and the checkout is the runner's
+    # user's, so git refuses the folder, and go build, which asks git for
+    # the commit it stamps, fails with it.
+    - shell: bash
+      run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version-file: go.mod
+        cache: false
+    - if: inputs.node == 'npm'
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version-file: .node-version
+        cache: npm
+        cache-dependency-path: frontend/package-lock.json
+    # make looks for npm before it builds anything, and the image has no
+    # Node, which a runner has.
+    - if: inputs.node == 'node'
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version-file: .node-version
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/go/pkg/mod/cache/download
+        key: gomod-${{ runner.os }}-${{ hashFiles('go.sum') }}
+    - id: go
+      if: inputs.key != ''
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.os == 'macOS' && '~/Library/Caches/go-build' || '~/.cache/go-build' }}
+        key: ${{ inputs.key }}
+        restore-keys: ${{ inputs.restore-keys }}
+    # Go marks an entry of its build cache as used by its time, when that
+    # is an hour old or more. So every entry is made old here, and what is
+    # still old at the job's end was not used, see .github/actions/save.
+    # The inputs fuzzing found stay, and so does Go's own trim, which this
+    # job would otherwise run on entries it has not reached yet.
+    - if: inputs.key != ''
+      shell: bash
+      run: |
+        cache=$(go env GOCACHE)
+        mkdir -p "$cache"
+        touch -t 200001010000 "$RUNNER_TEMP/go-cache-aged"
+        find "$cache" -mindepth 2 -maxdepth 2 ! -path "$cache/fuzz/*" -exec touch -t 200001010000 {} +
+        date +%s > "$cache/trim.txt"
+
+    - id: tools
+      if: inputs.ffmpeg == 'true' && runner.os == 'macOS'
+      shell: bash
+      run: echo "recipe=-$(sh scripts/build-tools.sh --recipe)" >> "$GITHUB_OUTPUT"
+    - id: ffmpeg
+      if: inputs.ffmpeg == 'true'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: .build/ffmpeg
+        key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}${{ steps.tools.outputs.recipe }}
+    - id: llama
+      if: inputs.llama == 'true'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: .build/llama
+        key: llama-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-llama.sh') }}${{ steps.tools.outputs.recipe }}
+    # On a Mac, what builds them, at the versions requirements.txt pins,
+    # or only pkg-config, which the decoder needs, when both came from the
+    # cache. The CI image has its own.
+    - if: inputs.ffmpeg == 'true' && runner.os == 'macOS'
+      shell: bash
+      run: |
+        sh scripts/build-tools.sh .build/tools ${{ (steps.ffmpeg.outputs.cache-hit == 'true' && (inputs.llama != 'true' || steps.llama.outputs.cache-hit == 'true')) && 'pkgconf' || '' }}
+        echo "$PWD/.build/tools/bin" >> "$GITHUB_PATH"
+    - if: inputs.ffmpeg == 'true' && steps.ffmpeg.outputs.cache-hit != 'true'
+      shell: bash
+      run: sh scripts/build-ffmpeg.sh .build/ffmpeg
+    - if: inputs.llama == 'true' && steps.llama.outputs.cache-hit != 'true'
+      shell: bash
+      run: sh scripts/build-llama.sh .build/llama
+    # The tests take ffmpeg from the path. On Linux the system's, because
+    # ours has no H.264 encoder there. On a Mac ours, which encodes
+    # through VideoToolbox, as a customer's does.
+    - if: inputs.ffmpeg == 'true' && runner.os == 'macOS'
+      shell: bash
+      run: |
+        .build/ffmpeg/bin/ffmpeg -hide_banner -encoders | grep videotoolbox
+        echo "$PWD/.build/ffmpeg/bin" >> "$GITHUB_PATH"
