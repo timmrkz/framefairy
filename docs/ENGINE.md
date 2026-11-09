@@ -1240,7 +1240,8 @@ and does not stutter. The video
 preview is sent the same, each piece's first frame and every frame its
 crop moves on after, `CropSteps`, a step a frame through a glide, with the
 clip, and only looks up the step for the frame it
-shows, in `lib/keyframes.ts`. A crop placed by hand
+shows, in `lib/keyframes.ts`. The clip timeline is sent where each glide
+runs, `Glides`, and only draws it. A crop placed by hand
 on a mark's frame moves that mark, and in a piece the marks steer it is
 placed nowhere else, Tim's rule on #750, so what moves is the mark lit
 under the playhead. A piece no mark steers has the clip's own crop,

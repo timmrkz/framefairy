@@ -932,7 +932,7 @@ func SetCrop(fsys afero.Fs, planPath, clipID string, at float64, left int, frame
 		}
 		markedPieces(steered, turns, marks)
 		if len(steered[target].Marks) > 0 {
-			return renderErr("put the playhead on a keyframe to move the crop")
+			return renderErr("put the playhead on a keyframe to move the crop, or press K or G to put one there")
 		}
 		// The crop as filmed is the whole clip's, so a piece that is
 		// turned keeps it too, for when it is turned back. A rotated

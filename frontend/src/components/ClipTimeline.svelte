@@ -1759,26 +1759,18 @@
       .map((m) => ({ at: m.at, shown: shownAt("crop", m.at), glide: !!m.glide }))
       .filter((m) => m.shown >= view.from && m.shown <= view.to),
   );
-  // The stretch the crop glides over into each circle, from the keyframe
-  // before it on the picture turned alike, or for the first from where the
-  // clip is first turned that way, as shares of the track. It is drawn
-  // along the top rule, brightening into the circle, so the two marks read
-  // as joined, Tim's ask on #750, the look he picked from a sheet.
-  const glideLines = $derived.by(() => {
-    const out: { at: number; left: number; width: number }[] = [];
-    cropMarks.forEach((m, i) => {
-      if (!m.glide) return;
-      const turn = m.turn ?? 0;
-      const before = cropMarks.slice(0, i).findLast((b) => (b.turn ?? 0) === turn);
-      const from = before
-        ? shownAt("crop", before.at)
-        : (clip?.segments.find((s) => (s.rotate ?? 0) === turn)?.start ?? m.at);
-      const left = Math.max(0, x(onFrame(from)));
-      const right = Math.min(100, x(onFrame(shownAt("crop", m.at))));
-      if (right > left) out.push({ at: m.at, left, width: right - left });
-    });
-    return out;
-  });
+  // The stretches the crop glides over, each into a circle, as the engine
+  // works them out, see engine.Glides, as shares of the track. Each is
+  // drawn along the top rule, brightening into the circle, so the two
+  // marks read as joined, Tim's ask on #750, in the look proposed on a
+  // sheet for him. A keyframe being dragged takes the ends on it along.
+  const glideLines = $derived(
+    (clip?.glides ?? []).flatMap((g) => {
+      const left = Math.max(0, x(onFrame(shownAt("crop", g.from))));
+      const right = Math.min(100, x(onFrame(shownAt("crop", g.to))));
+      return right > left ? [{ key: `${g.from}-${g.to}`, left, width: right - left }] : [];
+    }),
+  );
   const markChange = (kind: MarkKind) => (kind === "thumbnail" ? onthumbnail : oncropmark);
 
   // The stretch each piece the clip draws is rotated in, for the rotate
@@ -2293,8 +2285,8 @@
             {@render solid(CAMERA, 18, true)}
           </div>
         {/each}
-        {#each glideLines as g (g.at)}
-          <div class="glide" style="left: {g.left}%; width: {g.width}%" data-glide={g.at}></div>
+        {#each glideLines as g (g.key)}
+          <div class="glide" style="left: {g.left}%; width: {g.width}%"></div>
         {/each}
         {#each cropDots as m, i (m.at)}
           <div

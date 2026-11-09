@@ -135,7 +135,7 @@
     onresetcrop?: (at: number) => Promise<void>;
     // Puts a keyframe back at a moment with its crop, the way the clip
     // timeline puts one, for the marks a reset took away.
-    oncropmark?: (from: number, to: number, x: number) => Promise<void>;
+    oncropmark?: (from: number, to: number, x: number, glide?: boolean) => Promise<void>;
     // Puts the captions at a distance from the bottom of a 1080x1920
     // frame. There is one place for every clip of every episode, so this
     // saves a setting rather than editing the clip.
@@ -1728,7 +1728,7 @@
     savingCrop = true;
     try {
       if (back.left !== null) await oncrop(back.at, back.left);
-      for (const m of back.marks) await oncropmark?.(-1, m.at, m.x);
+      for (const m of back.marks) await oncropmark?.(-1, m.at, m.x, !!m.glide);
       undoCrop = null;
     } finally {
       savingCrop = false;
@@ -1896,7 +1896,7 @@
         style="left: {shownCrop.left}%; width: {shownCrop.width}%"
         title={cropMovable
           ? "Drag sideways to place the crop"
-          : "The crop as the short has it here. Put the playhead on a keyframe to place its crop"}
+          : "The crop as the short has it here. Put the playhead on a keyframe to place its crop, or press K or G to put one here"}
         data-movable={cropMovable}
         onpointerdown={dragCrop}
       ></div>

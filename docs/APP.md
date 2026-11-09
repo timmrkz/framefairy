@@ -2674,8 +2674,11 @@ who moves across the picture. Plan row 3.26 and #750, the design is in
 - **The crop frame is dragged only with the playhead on a keyframe**, and
   moves that keyframe's crop, Tim's rule on #750, so what moves is the
   diamond or the circle lit under the playhead. Anywhere else the crop
-  frame shows the crop as the short has it, and a drag moves nothing. A
-  clip with no keyframes has one crop, dragged anywhere in it.
+  frame shows the crop as the short has it, and a drag moves nothing,
+  and its title says to press K or G to put a keyframe there. That is
+  also how the crop before the first keyframe, or after one a trim or a
+  cut hides, is placed. A clip with no keyframes has one crop, dragged
+  anywhere in it.
 - **The video preview switches and glides the crop on the keyframes'
   own frames** while the clip plays, so what plays is what renders.
 - **Each keyframe is a diamond or a circle** centred on the clip's top rule on the
@@ -2691,7 +2694,10 @@ who moves across the picture. Plan row 3.26 and #750, the design is in
   the clip's edge it stops on the first or last frame and does not jump.
   A circle is joined to the keyframe before it by a line on the top rule,
   as thick as the rule, that brightens from the rule's colour into the
-  light colour at the circle, so the two read as one glide.
+  light colour at the circle, so the two read as one glide. The engine
+  says where each glide runs, `Glides`, so the line starts where the
+  short's glide does, at a keyframe a cut hides too, and a circle with
+  the crop the one before has gets no line.
 - **Automatic crop** removes every keyframe of the clip and brings back
   the crop the engine found, and **Put the crop back** brings back the
   keyframes with the crop. Removing a keyframe gives its part the crop of

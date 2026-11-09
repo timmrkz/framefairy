@@ -172,6 +172,41 @@ func TestTheVideoPreviewIsSentTheCropsTheRenderCropsBy(t *testing.T) {
 	}
 }
 
+// The clip timeline is sent where the crop glides, the way the render
+// glides it, so the line it draws says what the short does: from the
+// keyframe before, hidden by a cut or not, into each circle, cut to the
+// piece, and no line into a circle with the crop it already has.
+func TestTheClipTimelineIsSentWhereTheCropGlides(t *testing.T) {
+	t.Parallel()
+	source := SourceInfo{Width: 480, Height: 270, FPSNum: 25, FPSDen: 1}
+	view := SegmentView{Start: 1.0, End: 3.0, CropX: intPtr(50), MarksFrom: 1.0, Marks: []CropMarkView{
+		{At: 0.6, X: 10}, {At: 1.4, X: 200, Glide: true}, {At: 2.0, X: 200, Glide: true}, {At: 2.4, X: 300}, {At: 2.8, X: 0, Glide: true}, {At: 3.6, X: 100, Glide: true},
+	}}
+	// The keyframe at 0.6 s, before the piece, starts the first glide on
+	// the piece's first frame. The circle at 2.0 s has the crop it already
+	// has. The glide into the circle after the piece is cut at its end.
+	want := []GlideSpan{{1.0, 1.4}, {2.4, 2.8}, {2.8, 3.0}}
+	if got := source.Glides(view, 152, 480); !reflect.DeepEqual(got, want) {
+		t.Errorf("the piece's glides are %v, not %v", got, want)
+	}
+	// Every frame inside a glide is a frame the render moves the crop on.
+	run := source.runOf(segmentOf(view), 152, 480)
+	for _, g := range want {
+		for k := source.markFrame(g.From) + 1; k < source.markFrame(g.To); k++ {
+			if run.at(k) == run.at(k-1) {
+				t.Errorf("frame %d is in the glide %v, and the render holds the crop there", k, g)
+			}
+		}
+	}
+	// A first circle glides from where the crop of its turn begins.
+	if got := source.Glides(SegmentView{Start: 1, End: 2, CropX: intPtr(50), MarksFrom: 0.6, Marks: []CropMarkView{{At: 1.6, X: 300, Glide: true}}}, 152, 480); !reflect.DeepEqual(got, []GlideSpan{{1.0, 1.6}}) {
+		t.Errorf("the first circle's glide is %v, not from the piece's start to 1.6 s", got)
+	}
+	if got := source.Glides(SegmentView{Start: 1, End: 2, CropX: intPtr(50), Marks: []CropMarkView{{At: 1.5, X: 100}}}, 152, 480); got != nil {
+		t.Errorf("a piece that only switches is sent the glides %v", got)
+	}
+}
+
 // sentOn is the left edge the video preview takes from steps on frame k,
 // the way lib/keyframes.ts looks it up.
 func sentOn(steps []CropStep, k int64) float64 {
@@ -707,6 +742,18 @@ func TestAKeyframeACutOrATrimCoversStillSwitchesTheCrop(t *testing.T) {
 			// screen, moves nothing.
 			if err := SetCrop(fsys, path, "01", c.at, 500, at25); err == nil {
 				t.Error("a crop dragged on no keyframe was taken")
+			}
+			// K there, as the crop frame says, puts a keyframe on screen
+			// whose crop the drag places.
+			if err := SetCropMark(fsys, path, "01", -1, c.at, 600, false, at25); err != nil {
+				t.Fatal(err)
+			}
+			if err := SetCrop(fsys, path, "01", c.at, 500, at25); err != nil {
+				t.Fatalf("a crop dragged on the keyframe put there was refused: %v", err)
+			}
+			seg := loadedClip(t, fsys, path).Segments[c.piece]
+			if got := at25.CropAt(seg, c.at, 608, 1920); got != 500 {
+				t.Errorf("with a keyframe put on the hidden one's piece, the crop there stands at %v, not 500", got)
 			}
 		})
 	}

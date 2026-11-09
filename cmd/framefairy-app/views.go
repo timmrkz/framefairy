@@ -25,6 +25,9 @@ type ClipEntry struct {
 	// over its frames, see engine.CropSteps, and null for a piece whose
 	// crop is CropLefts throughout.
 	CropSteps [][]engine.CropStep `json:"cropSteps"`
+	// Glides is where the crop glides, over every piece, for the clip
+	// timeline to draw, see engine.Glides.
+	Glides []engine.GlideSpan `json:"glides"`
 	// Rev is, on the answer to an edit, the number the edit took from the
 	// clock of the jobs once it was written, see VideoState.Rev. The
 	// window takes no state of the video read before it. A clip in a
@@ -96,9 +99,13 @@ func (s *FrameFairy) entryOf(plan string, c engine.ClipView, info engine.SourceI
 		cw := s.cropWidth(upright)
 		entry.CropLefts = append(entry.CropLefts, engine.ClampCropX(seg.CropX, cw, upright.Width))
 		entry.CropSteps = append(entry.CropSteps, info.CropSteps(seg, cw, upright.Width))
+		entry.Glides = append(entry.Glides, info.Glides(seg, cw, upright.Width)...)
 	}
 	if entry.CropSteps == nil {
 		entry.CropSteps = make([][]engine.CropStep, len(entry.CropLefts))
+	}
+	if entry.Glides == nil {
+		entry.Glides = []engine.GlideSpan{}
 	}
 	return entry
 }

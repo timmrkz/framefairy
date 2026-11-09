@@ -278,6 +278,14 @@ export interface CropStep {
   x: number;
 }
 
+// A stretch the crop glides over, from the frame the glide starts on to
+// the circle's frame, each as the moment its frame starts. See
+// engine.GlideSpan.
+export interface GlideSpan {
+  from: number;
+  to: number;
+}
+
 // A stretch of the video a person rotated deg degrees to the left, 90,
 // 180 or 270. A null from or to runs to that end of the video. See
 // engine.Rotation.
@@ -471,6 +479,9 @@ export interface ClipEntry extends ClipView {
   // worked out by the engine, and null for a piece whose crop is its
   // cropLefts throughout. See engine.CropSteps.
   cropSteps?: (CropStep[] | null)[];
+  // Where the crop glides, each glide into a circle cut to a piece, worked
+  // out by the engine, see engine.Glides.
+  glides?: GlideSpan[];
   // On the answer to an edit, when the edit was written, on the clock a
   // video's state is read by, see VideoState.
   rev?: number;

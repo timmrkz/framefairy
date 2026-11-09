@@ -510,10 +510,7 @@ func (s SourceInfo) CropSteps(v SegmentView, cropW, width int) []CropStep {
 	if len(v.Marks) == 0 || s.FPSNum <= 0 || s.FPSDen <= 0 || width <= 0 {
 		return nil
 	}
-	seg := Segment{Start: v.Start, End: v.End, CropX: v.CropX, MarksFrom: v.MarksFrom}
-	for _, m := range v.Marks {
-		seg.Marks = append(seg.Marks, CropMark{At: m.At, X: m.X, Turn: m.Turn, Glide: m.Glide})
-	}
+	seg := segmentOf(v)
 	r := s.runOf(seg, cropW, width)
 	first, end := s.pieceFrames(seg.Start, seg.End)
 	var out []CropStep
@@ -524,6 +521,47 @@ func (s SourceInfo) CropSteps(v SegmentView, cropW, width int) []CropStep {
 	}
 	if len(out) == 1 && out[0].X == float64(r.base) {
 		return nil
+	}
+	return out
+}
+
+// segmentOf is a piece as the window is sent it, with its keyframes.
+func segmentOf(v SegmentView) Segment {
+	seg := Segment{Start: v.Start, End: v.End, CropX: v.CropX, MarksFrom: v.MarksFrom}
+	for _, m := range v.Marks {
+		seg.Marks = append(seg.Marks, CropMark{At: m.At, X: m.X, Turn: m.Turn, Glide: m.Glide})
+	}
+	return seg
+}
+
+// GlideSpan is a stretch of the video the crop glides over, from the
+// frame the glide starts on to the frame of the keyframe it glides into,
+// each as the moment its frame starts.
+type GlideSpan struct {
+	From float64 `json:"from"`
+	To   float64 `json:"to"`
+}
+
+// Glides is where the crop of a piece glides, each glide cut to the
+// piece's own frames, for the clip timeline to draw: it starts where the
+// render starts it, at the keyframe before or where the crop of the turn
+// begins, hidden by a cut or not, and a keyframe that glides to the crop
+// it already has is no glide. Nil where the crop never glides.
+func (s SourceInfo) Glides(v SegmentView, cropW, width int) []GlideSpan {
+	if len(v.Marks) == 0 || s.FPSNum <= 0 || s.FPSDen <= 0 || width <= 0 {
+		return nil
+	}
+	r := s.runOf(segmentOf(v), cropW, width)
+	first, end := s.pieceFrames(v.Start, v.End)
+	var out []GlideSpan
+	for i, b := range r.marks {
+		if !r.gliding(i) {
+			continue
+		}
+		from, to := max(r.before(i).k, first), min(b.k, end)
+		if from < to {
+			out = append(out, GlideSpan{From: s.keptAt(from), To: s.keptAt(to)})
+		}
 	}
 	return out
 }
