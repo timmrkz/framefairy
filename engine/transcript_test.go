@@ -1207,3 +1207,38 @@ func TestAClipSaysWhatOfItIsNotHeardYet(t *testing.T) {
 		}
 	}
 }
+
+// A clip keeps room heard on each side of it, topped up a side at a time
+// once it is short, so an edge dragged out finds its words there, Tim on
+// #745.
+func TestAClipKeepsRoomHeardOnEachSide(t *testing.T) {
+	t.Parallel()
+	clip := func(start, end float64) ClipView {
+		return ClipView{Start: start, End: end, Segments: []SegmentView{{Start: start, End: end}}}
+	}
+	for _, c := range []struct {
+		name  string
+		heard [][2]float64
+		clip  ClipView
+		hear  timed.Window
+	}{
+		{"made with O, heard back to before its start and not after", [][2]float64{{154, 200}}, clip(177, 200),
+			timed.Window{Start: 200, End: 260}},
+		{"then before it", [][2]float64{{154, 260}}, clip(177, 200), timed.Window{Start: 117, End: 154}},
+		{"room before, none after", [][2]float64{{100, 200}}, clip(177, 200), timed.Window{Start: 200, End: 260}},
+		{"room on both sides", [][2]float64{{100, 270}}, clip(177, 200), timed.Window{}},
+		{"short on one side, not yet under half", [][2]float64{{140, 240}}, clip(177, 200), timed.Window{}},
+		{"under half after a drag", [][2]float64{{100, 260}}, clip(125, 200), timed.Window{Start: 65, End: 100}},
+		{"the side with less room goes first", [][2]float64{{160, 210}}, clip(177, 200),
+			timed.Window{Start: 200 + 10, End: 260}},
+		{"at the start of the video", [][2]float64{{0, 100}}, clip(10, 40), timed.Window{}},
+		{"at its end, which caps the room", [][2]float64{{200, 300}}, clip(270, 290), timed.Window{}},
+		{"a gap in the room", [][2]float64{{100, 150}, {160, 270}}, clip(177, 200),
+			timed.Window{Start: 150, End: 160}},
+	} {
+		got, hear := ClipRoom(c.clip, c.heard, 300, 60, 30)
+		if hear != (c.hear != timed.Window{}) || got != c.hear {
+			t.Errorf("%s: hears %v %v, want %v", c.name, hear, got, c.hear)
+		}
+	}
+}

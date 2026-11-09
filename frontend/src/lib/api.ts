@@ -573,6 +573,9 @@ export interface Job {
   // for the end of the episode.
   from?: number;
   to?: number;
+  // A transcription's part that is room kept heard beside a clip made by
+  // hand, which nobody waits on yet, issue #745.
+  room?: boolean;
   // A clip made by hand: the moment I or O was pressed at, and whether it
   // was O.
   at?: number;

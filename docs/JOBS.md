@@ -72,18 +72,28 @@ hand of the same video stops it the same way, and it is refused while
 they run, `stopTranscribing` and `errClipsFirst` in `export.go`, Tim's
 report of 26 October, 12.27.
 
-A transcription also hears a part of the video when an edit brings into
-the clip chosen a part no search or clip made by hand has heard yet: an
-edge dragged out, a cut put back, an undo or a redo, issue #745. The app
-starts it by itself, `hearChosen` in `export.go`, from the state it reads
-of the video, so the clip's captions come where it now reaches. It keeps
-a record of its own, `transcribe-part`, with the part in `from` and `to`,
-beside the whole video's, so the two run side by side. It hears the way a
-clip made by hand does, ahead of the searches and of the whole video,
-which gives it the lane and carries on once the part is heard, because
-somebody waits on its words. A search does not stop it. It is not asked
-for again while one runs, nor after the same part failed or was stopped,
-and one the app was closed on carries on by itself.
+A transcription also hears a part of the video by itself, for the clip
+chosen, issue #745, `hearChosen` in `export.go`, from the state the app
+reads of the video:
+
+- **What of the clip is not heard yet**, which an edge dragged out, a cut
+  put back, an undo or a redo can bring in. Somebody waits on its words,
+  so it hears the way a clip made by hand does, ahead of the searches and
+  of the whole video.
+- **Room beside a clip made by hand**, so an edge dragged out finds its
+  words there already and nobody waits. A minute on each side is kept
+  heard, and a side is topped up once less than 30 s of it is heard,
+  the side with less room first, `engine.ClipRoom`. Its record says
+  `room`, and it hears in turn with the searches, so I, O and a part of
+  a clip still go first.
+
+Either keeps a record of its own, `transcribe-part`, with the part in
+`from` and `to`, beside the whole video's, so the two run side by side:
+the whole video gives the part the lane and carries on once the part is
+heard. A search does not stop it. One part is heard at a time, the next
+once the state is read after it. A part is not asked for again after the
+same part failed or was stopped, and one the app was closed on carries
+on by itself.
 
 A clip made
 by hand goes **waiting**, **hearing** where the transcript does not reach

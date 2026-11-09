@@ -94,8 +94,12 @@ type JobRecord struct {
 
 	// A search: the window, To 0 for the end of the episode, and the
 	// numbers it asks for. A transcription: the part it hears, the same.
-	From   float64 `json:"from,omitempty"`
-	To     float64 `json:"to,omitempty"`
+	From float64 `json:"from,omitempty"`
+	To   float64 `json:"to,omitempty"`
+	// A transcription of a part: Room says it is room kept heard beside a
+	// clip, heard ahead of an edge dragged out, which nobody waits on
+	// yet, see ClipRoom. Without it the part is in the clip already.
+	Room   bool    `json:"room,omitempty"`
 	Count  int     `json:"count,omitempty"`
 	Min    float64 `json:"min,omitempty"`
 	Max    float64 `json:"max,omitempty"`
@@ -340,7 +344,7 @@ func saneJob(source string, r *JobRecord) bool {
 		// The whole episode has no part, a part has an end after its start.
 		part := r.ID == TranscribePartID
 		if (r.ID != TranscribeID && !part) || !finite(r.From) || !finite(r.To) ||
-			(part && r.To <= r.From) || (!part && (r.From != 0 || r.To != 0)) ||
+			(part && r.To <= r.From) || (!part && (r.From != 0 || r.To != 0 || r.Room)) ||
 			r.Step == StepFinding || r.Step == StepFraming || r.Step == StepRendering {
 			return false
 		}
@@ -634,12 +638,13 @@ func (p *Project) Search(ctx context.Context, req PlanRequest, host Host) (plan 
 // a record of its own, see TranscribePartID. It keeps a record like a search, so an app closed while it hears says so,
 // and carries on from what was heard. Its hearing gives way to every
 // search and clip made by hand, which the app's lanes decide.
-func (p *Project) TranscribeJob(ctx context.Context, part timed.Window, host Host) (err error) {
+// room says a part is room kept beside a clip, see JobRecord.Room.
+func (p *Project) TranscribeJob(ctx context.Context, part timed.Window, room bool, host Host) (err error) {
 	id := TranscribeID
 	if part.End > 0 {
 		id = TranscribePartID
 	}
-	j := p.startJob(JobRecord{ID: id, Kind: JobTranscribe, From: part.Start, To: part.End}, host)
+	j := p.startJob(JobRecord{ID: id, Kind: JobTranscribe, From: part.Start, To: part.End, Room: room && part.End > 0}, host)
 	defer j.end(&err)
 	if ctx.Err() != nil {
 		return ErrCancelled

@@ -519,9 +519,9 @@ func (q *queue) turn(job *Job, opts engine.Options) engine.Turn {
 	var holding func()
 	return func(ctx context.Context, step string, waits func()) (context.Context, func(), error) {
 		q.mu.Lock()
-		part := job.To > 0
+		rec := job.JobRecord
 		q.mu.Unlock()
-		lane, kind := laneOfStep(job.Kind, step, part, onThisMachine)
+		lane, kind := laneOfStep(rec, step, onThisMachine)
 		// Which lane a step waits for and whether its model is on this
 		// machine, so a log says why a transcription waited on a search.
 		theLog.jobLine(zerolog.DebugLevel, job).Str("step", step).Str("lane", lane).
@@ -621,6 +621,9 @@ func jobLabel(rec engine.JobRecord) string {
 		return "Render"
 	case rec.Kind == engine.JobClip:
 		return "Make a clip"
+	case rec.Kind == engine.JobTranscribe && rec.Room:
+		// Room beside the clip chosen, see hearChosen.
+		return "Transcribe around the clip"
 	case rec.Kind == engine.JobTranscribe && rec.To > 0:
 		// The part of the clip chosen not heard yet, see hearChosen.
 		return "Transcribe the clip"

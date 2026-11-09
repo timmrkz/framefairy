@@ -285,19 +285,21 @@ func (l *lanes) dropLocked(a *ask) {
 	}
 }
 
-// laneOfStep is the lane a step of a kind of job runs in, and how it
-// takes its turn. part says whether a transcription hears a part rather
-// than the whole video: the part of a clip a hand brought in, which
-// somebody waits on the way they wait on a clip made by hand, issue #745.
-// local says whether the job's language model runs on this machine,
-// where finding holds hearing up.
-func laneOfStep(kind, step string, part, local bool) (string, turnKind) {
+// laneOfStep is the lane a step of a job runs in, and how it takes its
+// turn, by what the job's record says. A transcription of a part of a
+// clip, which a hand brought in, is somebody's wait the way a clip made
+// by hand is, and room kept beside a clip hears in turn with the
+// searches, ahead of the whole video, issue #745. local says whether the
+// job's language model runs on this machine, where finding holds hearing
+// up.
+func laneOfStep(rec engine.JobRecord, step string, local bool) (string, turnKind) {
 	switch step {
 	case "hearing":
-		if kind == engine.JobClip || (kind == engine.JobTranscribe && part) {
+		part := rec.Kind == engine.JobTranscribe && rec.To > 0
+		switch {
+		case rec.Kind == engine.JobClip || (part && !rec.Room):
 			return LaneHearing, handHearingTurn
-		}
-		if kind == engine.JobTranscribe {
+		case rec.Kind == engine.JobTranscribe && !part:
 			return LaneHearing, wholeHearingTurn
 		}
 		return LaneHearing, hearingTurn

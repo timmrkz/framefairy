@@ -143,7 +143,7 @@ func (s *FrameFairy) Continue(id, click string) Job {
 	}
 	if carry.Kind == engine.JobTranscribe {
 		if carry.To > 0 {
-			return s.transcribe(path, carry.Part())
+			return s.transcribe(path, carry.Part(), carry.Room)
 		}
 		return s.Transcribe(path)
 	}

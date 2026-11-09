@@ -67,11 +67,12 @@ export const steps = {
   //                    on a video heard as far as its first search's
   //                    window, makes a clip with O two hundred seconds past
   //                    it, pinches the clip timeline out, drags the clip's
-  //                    start back eighty seconds, over a part nothing has
-  //                    heard yet, lets go and pinches back in on it. The
-  //                    app hears that part by itself, and the clip timeline
-  //                    then has caption blocks of words said in it, issue
-  //                    #745
+  //                    start back a hundred and twenty seconds, past the
+  //                    minute the app keeps heard beside a clip made by
+  //                    hand, lets go and pinches back in on it. The app
+  //                    hears that part by itself, ahead of the room, and
+  //                    the clip timeline then has caption blocks of words
+  //                    said in it, issue #745
   async "drag past what was heard"(walk, arg, s) {
     const { page, watch } = walk;
     const path = await episodeOn(page);
@@ -94,11 +95,11 @@ export const steps = {
     let g = await handles(page);
     await page.mouse.move(g.track.x + g.track.w / 2, high(g.track));
     await page.keyboard.down("Control");
-    await page.mouse.wheel(0, 230);
+    await page.mouse.wheel(0, 330);
     await page.keyboard.up("Control");
     await settle(page);
     g = await handles(page);
-    const to = before.start - 80;
+    const to = before.start - 120;
     const x = await xOf(page, to);
     if (!inside(g.track, x)) {
       walk.wrong = `${to.toFixed(1)} s is not on the clip timeline pinched out`;
@@ -115,22 +116,25 @@ export const steps = {
     g = await handles(page);
     await page.mouse.move(middle(g.start), high(g.track));
     await page.keyboard.down("Control");
-    await page.mouse.wheel(0, -230);
+    await page.mouse.wheel(0, -330);
     await page.keyboard.up("Control");
     await settle(page);
     // The words of the part nobody had heard come once it is heard, by
-    // themselves: a block whose first word is said before the clip's
-    // words began.
+    // themselves: a block whose first word is said within ten seconds of
+    // the clip's new start, past the room.
+    const first = after.start + 10;
     await pageUntil(
       page,
-      (reach) => [...document.querySelectorAll(".clip-timeline .caption[data-first]")].some((b) => Number(b.dataset.first) < reach),
-      reach,
+      (first) => [...document.querySelectorAll(".clip-timeline .caption[data-first]")].some((b) => Number(b.dataset.first) < first),
+      first,
     );
     await settle(page);
-    const hearing = (await ask(page, "Jobs")).findLast((j) => j.episode === path && j.kind === "transcribe");
+    // Heard as a part of the clip, not as room beside it, and only so far
+    // as nothing had heard it.
+    const hearing = (await ask(page, "Jobs")).findLast((j) => j.episode === path && j.kind === "transcribe" && !j.room);
     console.log(JSON.stringify({ heardTo, at, before: before.start, after: after.start, hearing }));
     if (!hearing || hearing.state !== "done" || Math.abs(hearing.from - after.start) > 0.5 || hearing.to > reach + 1) {
-      walk.wrong = `the part from ${after.start.toFixed(1)} to ${reach.toFixed(1)} s was heard by ${JSON.stringify(hearing)}`;
+      walk.wrong = `the part from ${after.start.toFixed(1)} s was heard by ${JSON.stringify(hearing)}`;
     }
   },
   // ["trim", edge, px] drags the clip's "start" or "end" edge by px
@@ -1766,7 +1770,7 @@ export const steps = {
     });
     await page.mouse.move(Number.isFinite(line) ? line : g.track.x + g.track.w / 2, high(g.track));
     await page.keyboard.down("Control");
-    await page.mouse.wheel(0, -230);
+    await page.mouse.wheel(0, -330);
     await page.keyboard.up("Control");
     await settle(page);
     await page.mouse.move(g.track.x + g.track.w / 2, g.track.y + g.track.h + 80);

@@ -692,7 +692,7 @@ func TestATranscriptionHearsTheWholeEpisodeAndNothingElse(t *testing.T) {
 		}
 		return ctx, func() {}, nil
 	}
-	if err := p.TranscribeJob(context.Background(), timed.Window{}, Host{Turn: turn}); err != nil {
+	if err := p.TranscribeJob(context.Background(), timed.Window{}, false, Host{Turn: turn}); err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
 	if _, done := Coverage(disk, p.Source, p.Base.ASRModel); !done {
@@ -706,7 +706,7 @@ func TestATranscriptionHearsTheWholeEpisodeAndNothingElse(t *testing.T) {
 	}
 	// Heard to the end, there is nothing left to wait for.
 	turns = nil
-	if err := p.TranscribeJob(context.Background(), timed.Window{}, Host{Turn: turn}); err != nil || len(turns) != 0 {
+	if err := p.TranscribeJob(context.Background(), timed.Window{}, false, Host{Turn: turn}); err != nil || len(turns) != 0 {
 		t.Errorf("again: %v, turns %v", err, turns)
 	}
 }
@@ -729,7 +729,7 @@ func TestATranscriptionOfAPartHearsThatPart(t *testing.T) {
 		}
 		return ctx, func() {}, nil
 	}
-	if err := p.TranscribeJob(context.Background(), part, Host{Turn: turn}); err != nil {
+	if err := p.TranscribeJob(context.Background(), part, false, Host{Turn: turn}); err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
 	if gaps := Unheard(disk, p.Source, p.Base.ASRModel, part); len(gaps) != 0 {

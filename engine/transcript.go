@@ -226,6 +226,39 @@ func ClipUnheard(v ClipView, heard [][2]float64) (timed.Window, bool) {
 	return timed.Window{Start: gaps[0].Start, End: gaps[len(gaps)-1].End}, true
 }
 
+// ClipRoom is the part of the episode to hear next so that a clip keeps
+// room heard on each side of it, around seconds up to the ends of the
+// episode, so an edge dragged out finds its words there already. A side
+// is topped up only once what is heard next to the clip there is shorter
+// than least, so the room is heard in steps of at least around minus
+// least seconds, not a sliver at every drag. The side with less room goes
+// first, one side at a time. It is false when both sides have room
+// enough, or the episode's length is not known. Tim, on #745.
+func ClipRoom(v ClipView, heard [][2]float64, duration, around, least float64) (timed.Window, bool) {
+	if duration <= 0 || v.End <= v.Start {
+		return timed.Window{}, false
+	}
+	before := gapsIn(heard, timed.Window{Start: max(0, v.Start-around), End: v.Start})
+	after := gapsIn(heard, timed.Window{Start: v.End, End: min(duration, v.End+around)})
+	roomBefore, roomAfter := around, around
+	if len(before) > 0 {
+		roomBefore = v.Start - before[len(before)-1].End
+	}
+	if len(after) > 0 {
+		roomAfter = after[0].Start - v.End
+	}
+	span := func(gaps []timed.Window) timed.Window {
+		return timed.Window{Start: gaps[0].Start, End: gaps[len(gaps)-1].End}
+	}
+	switch {
+	case roomBefore < least && (roomBefore <= roomAfter || roomAfter >= least):
+		return span(before), true
+	case roomAfter < least:
+		return span(after), true
+	}
+	return timed.Window{}, false
+}
+
 // shortestGap is the shortest stretch not heard that is worth hearing, in
 // seconds. Anything shorter holds no word.
 const shortestGap = 0.1

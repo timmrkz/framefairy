@@ -84,7 +84,7 @@ func (s *FrameFairy) State(ctx context.Context, path string) (VideoState, error)
 		st.Window = s.windowFor(ctx, path, st, info.Duration)
 	}
 	st.Chosen, st.ChosenCard = s.chosenFor(path, st)
-	s.hearChosen(path, st)
+	s.hearChosen(path, st, info.Duration)
 	return st, nil
 }
 

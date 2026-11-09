@@ -42,68 +42,94 @@ func (s *FrameFairy) Transcribe(path string) Job {
 			return s.jobs.refuse(path, engine.JobTranscribe, label, errClipsFirst)
 		}
 	}
-	return s.transcribe(path, timed.Window{})
+	return s.transcribe(path, timed.Window{}, false)
 }
 
 // transcribe queues the video's transcription of a part, the whole video
 // to its end for a part with no end, see engine.Project.TranscribeJob.
 // The whole video and a clip's part each have their record, and run side
 // by side: the part takes the lane of hearing from the whole video, which
-// carries on once the part is heard, see lanes.go.
-func (s *FrameFairy) transcribe(path string, part timed.Window) Job {
+// carries on once the part is heard, see lanes.go. room says the part is
+// room kept beside a clip, see partToHear.
+func (s *FrameFairy) transcribe(path string, part timed.Window, room bool) Job {
 	id := engine.TranscribeID
 	if part.End > 0 {
 		id = engine.TranscribePartID
 	}
+	rec := engine.JobRecord{ID: id, Kind: engine.JobTranscribe, From: part.Start, To: part.End, Room: room && part.End > 0}
 	// One that stopped is taken up by this one, which writes the record
 	// again in its place.
 	s.jobs.settle(path, engine.JobTranscribe, id)
-	return s.jobs.addSteps(path, engine.JobTranscribe, jobLabel(engine.JobRecord{Kind: engine.JobTranscribe, To: part.End}), true, func(j *Job) {
-		j.JobRecord.ID, j.From, j.To = id, part.Start, part.End
+	return s.jobs.addSteps(path, engine.JobTranscribe, jobLabel(rec), true, func(j *Job) {
+		j.JobRecord.ID, j.From, j.To, j.Room = rec.ID, rec.From, rec.To, rec.Room
 	}, func(ctx context.Context, p *engine.Project, host engine.Host) (string, error) {
-		return "", p.TranscribeJob(ctx, part, host)
+		return "", p.TranscribeJob(ctx, part, rec.Room, host)
 	})
 }
 
-// hearChosen has the part of the clip chosen that is not heard yet heard,
-// by itself, the way a video is heard as it is added, issue #745. An edge
-// dragged out, a cut put back, an undo or a redo can bring into a clip a
-// part of the video no search and no clip made by hand has heard, and
-// the clip has no captions there until it is heard. st is the state of
-// the video just read, see State, and partToHear says what is heard.
-func (s *FrameFairy) hearChosen(path string, st VideoState) {
+// The room kept heard on each side of a clip made by hand, so an edge
+// dragged out finds its words there already, and how short a side gets
+// before it is topped up, in seconds, see engine.ClipRoom. Tim on #745:
+// nobody using the app should wait for the transcription. Half the room
+// is a step of 30 s or more, which the speech model hears in a few
+// seconds, while an edge is dragged through the 30 s still heard.
+const (
+	roomAround = 60.0
+	roomLeast  = 30.0
+)
+
+// hearChosen has the clip chosen heard, by itself, the way a video is
+// heard as it is added, issue #745: first whatever of the clip is not
+// heard yet, which an edge dragged out, a cut put back, an undo or a redo
+// can bring in, and then, for a clip made by hand, room on each side of
+// it. st is the state of the video just read, see State, duration the
+// video's length, and partToHear says what is heard.
+func (s *FrameFairy) hearChosen(path string, st VideoState, duration float64) {
 	if s.jobs == nil {
 		return
 	}
-	part, ok := partToHear(st)
+	part, room, ok := partToHear(st, duration)
 	if !ok {
 		return
 	}
+	msg := "the part of the clip chosen not heard yet is heard"
+	if room {
+		msg = "room beside the clip chosen is heard"
+	}
 	theLog.line(zerolog.InfoLevel, "app").Str("video", filepath.Base(path)).Str("clip", st.Chosen).
-		Float64("from", part.Start).Float64("to", part.End).Msg("the part of the clip chosen not heard yet is heard")
-	s.transcribe(path, part)
+		Float64("from", part.Start).Float64("to", part.End).Msg(msg)
+	s.transcribe(path, part, room)
 }
 
-// partToHear is the part of the clip chosen in st that is not heard yet,
-// and whether it is to be heard now. A video never heard is the first
-// search's to hear. While a clip's part is heard, the next part waits for
-// the state read once it ends. The whole video being transcribed does not
-// hold it up: the part goes first, see transcribe. A part that failed is
-// not asked for again, or every state would ask and fail again, and
-// neither is one stopped by hand. One the app was closed on carries on.
-func partToHear(st VideoState) (timed.Window, bool) {
+// partToHear is the part of the clip chosen in st to hear now, and
+// whether it is room beside the clip rather than a part of it. What of
+// the clip is not heard yet goes first, and somebody waits on it. Then a
+// clip made by hand keeps room heard on each side, see engine.ClipRoom,
+// which nobody waits on yet. A clip a search found lies in the window the
+// search heard. A video never heard is the first search's to hear.
+//
+// While a part is heard, the next waits for the state read once it ends.
+// The whole video being transcribed does not hold it up: the part goes
+// first, see transcribe. A part that failed is not asked for again, or
+// every state would ask and fail again, and neither is one stopped by
+// hand. One the app was closed on carries on.
+func partToHear(st VideoState, duration float64) (part timed.Window, room bool, ok bool) {
 	if st.Status.Missing || len(st.Status.Heard) == 0 || st.Chosen == "" {
-		return timed.Window{}, false
+		return timed.Window{}, false, false
 	}
-	var part timed.Window
 	found := false
 	for _, c := range st.Clips {
-		if c.Key == st.Chosen && len(c.Unheard) > 0 {
-			part, found = engine.ClipUnheard(c.ClipView, st.Status.Heard)
+		if c.Key != st.Chosen {
+			continue
+		}
+		if part, found = engine.ClipUnheard(c.ClipView, st.Status.Heard); !found &&
+			strings.HasPrefix(c.Key, engine.HandPlanName+"/") {
+			part, found = engine.ClipRoom(c.ClipView, st.Status.Heard, duration, roomAround, roomLeast)
+			room = found
 		}
 	}
 	if !found {
-		return timed.Window{}, false
+		return timed.Window{}, false, false
 	}
 	var last *Job
 	for i, j := range st.Jobs {
@@ -111,7 +137,7 @@ func partToHear(st VideoState) (timed.Window, bool) {
 			continue
 		}
 		if j.going() {
-			return timed.Window{}, false
+			return timed.Window{}, false, false
 		}
 		if last == nil || j.Seq > last.Seq {
 			last = &st.Jobs[i]
@@ -119,9 +145,9 @@ func partToHear(st VideoState) (timed.Window, bool) {
 	}
 	if last != nil && (last.State == JobFailed || last.State == JobStopped) &&
 		last.From <= part.Start && last.To >= part.End {
-		return timed.Window{}, false
+		return timed.Window{}, false, false
 	}
-	return part, true
+	return part, room, true
 }
 
 // errClipsFirst is Transcribe video asked for while the work on the
