@@ -33,13 +33,15 @@ func TestAChangeOfTheSettingsKeepsTheModelAgain(t *testing.T) {
 
 // The keeper says why it keeps no model, and the reason it returns is what
 // keeps it from saying the same again after every search. The API needs
-// no model, so there is nothing to say.
+// no local model, and the speech model is kept all the same, so what is
+// said then is why the speech model is not.
 func TestTheKeeperSaysWhyItKeepsNoModel(t *testing.T) {
 	t.Parallel()
 	st := openStoreIn(afero.NewMemMapFs(), "/config")
 	if err := st.UpdateSettings(func(s *Settings) {
 		s.Planner = "local"
 		s.LLMModel = "/nowhere/gemma.gguf"
+		s.ASRModel = "/nowhere/parakeet"
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +56,7 @@ func TestTheKeeperSaysWhyItKeepsNoModel(t *testing.T) {
 	if err := st.UpdateSettings(func(s *Settings) { s.Planner = "api" }); err != nil {
 		t.Fatal(err)
 	}
-	if said := k.keep(st, said); said != "" {
-		t.Errorf("with the API there is a reason to keep no model: %q", said)
+	if said := k.keep(st, said); !strings.Contains(said, "speech model") {
+		t.Errorf("with the API, a speech model that is not there was kept, or said as %q", said)
 	}
 }

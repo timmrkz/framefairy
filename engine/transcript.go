@@ -480,13 +480,15 @@ func (e *Engine) loadTranscript(ctx context.Context, source string, window timed
 	}
 
 	err = e.Log.Step("transcribing the audio", func() error {
-		e.Log.Progress("loading the speech model")
-		rec, err := e.OpenRecognizer(modelDir)
-		e.Log.ClearProgress()
+		// The model kept loaded, see speechhost.go, or loaded now.
+		rec, release, err := e.speech(ctx, modelDir)
 		if err != nil {
+			if ctx.Err() != nil {
+				return err
+			}
 			return noSpeechModel(modelDir, err)
 		}
-		defer rec.Close()
+		defer release()
 		started := time.Now()
 		// A job that hears in turns counts over all it set out to hear,
 		// so what it heard in the turns before this one is done already.

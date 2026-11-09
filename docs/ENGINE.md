@@ -1531,6 +1531,22 @@ which halved the record on every such search. A record from before the
 fitting and the framing were timed per clip measured something else, and
 is replaced.
 
+**The speech model is kept loaded too**, the same way and by the same
+call, `KeepModel`, and the same keeper in the app, from the moment the
+app opens until it closes. It is loaded first, because a video added is
+heard before it is searched. The speech model the program holds is in
+`engine/speechhost.go`: every hearing uses the one loaded, several at
+once included, since its copies each hear a piece at a time, and one that
+nobody holds and that is not the one kept goes as the last hearing lets
+go of it, which is how the command line hears. Loaded for each hearing,
+four copies of it on an M2 Max, it took about 5 s every time, Tim's
+report of 9 November 2026: a part of a dragged clip of 15 s, heard in
+under a second, took 5.7 s, and the stretch around a clip, stopped three
+times by those parts, loaded it again each time it carried on. Kept, it
+holds about 0.9 GB a copy for as long as the app is open. It is given up
+before its files are removed, and the model left is kept again. The time
+a load took is in the log, `speech model loaded in`.
+
 **The model is loaded before the search needs it.** Loading took
 llama-server about 24 seconds when it was first measured, and 9.0 on
 Tim's M2 Max on 21 October 2026, 7.4 of them reading the model file,

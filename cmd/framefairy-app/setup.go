@@ -217,7 +217,13 @@ func (s *FrameFairy) InstallSpeechModel(name string) Job {
 			if install == nil {
 				install = (*engine.Machine).InstallSpeechModel
 			}
-			return "", install(p.Engine().Machine, ctx, p.Log(), model, engine.ModelsDir())
+			if err := install(p.Engine().Machine, ctx, p.Log(), model, engine.ModelsDir()); err != nil {
+				return "", err
+			}
+			// The model just installed is kept loaded, the way the
+			// language model is.
+			s.keeping.ask()
+			return "", nil
 		})
 }
 
@@ -508,6 +514,11 @@ func (s *FrameFairy) RemoveSpeechModel(name string) error {
 	if err := s.speechLocked(); err != nil {
 		return err
 	}
+	// The model kept loaded holds its files open, the way the language
+	// model's server maps its file. It is given up first, and the model
+	// that is left kept again.
+	s.store.machine.KeepNone()
+	defer s.keeping.ask()
 	return engine.RemoveSpeechModel(model, engine.ModelsDir())
 }
 

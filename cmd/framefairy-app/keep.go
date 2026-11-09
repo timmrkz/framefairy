@@ -11,12 +11,15 @@ import (
 	"framefairy/engine"
 )
 
-// keeping keeps the local model loaded while the app is open, see
-// KeepModel in engine/modelhost.go: from the start, again whenever the
-// settings or an install change which model the app finds clips with, and
-// after every search, which may have put it aside for another.
-// A video added then finds the model loaded, and its transcript is read
-// into it while it is heard, so its first search starts at once.
+// keeping keeps the models loaded while the app is open, the speech model
+// and the local model, see KeepModel in engine/modelhost.go: from the
+// start, again whenever the settings or an install change which models
+// the app hears and finds clips with, and after every search, which may
+// have put the local model aside for another. A video added then finds
+// both loaded: it is heard at once, and its transcript is read into the
+// local model while it is heard, so its first search starts at once.
+// A part of a clip heard without the speech model kept waited about 5 s
+// for it to load, every time, Tim's report of 9 November.
 type keeping struct {
 	// wake asks for the model the settings name to be kept. One ask
 	// waiting is enough, whatever changed since.

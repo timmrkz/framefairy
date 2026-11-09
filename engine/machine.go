@@ -90,6 +90,9 @@ type Machine struct {
 	// host is the one local model this program keeps loaded, see
 	// modelhost.go.
 	host modelHost
+	// speechHost is the one speech model it keeps loaded, see
+	// speechhost.go.
+	speechHost speechHost
 	// llama is how the program reaches the llama-servers it starts, and
 	// notes are what it writes down of each, see leftover.go.
 	llama llamaLink
