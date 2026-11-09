@@ -1645,7 +1645,13 @@
   // foot of the list. Where the playhead is not put anywhere, while the
   // video plays, it is on the clip from the moment the clip is there,
   // see claim in Player.svelte.
+  //
+  // The playhead follows the card's start only while it is where the app
+  // put it and no hand holds it. A hand that pressed the playhead while
+  // the card waited had it pulled out from under it to the clip's start
+  // as the clip's pieces came, Tim's report of 9 November, issue #767.
   let followingMade = "";
+  let followedTo = NaN;
   $effect(() => {
     const m = making;
     if (!m) return;
@@ -1655,17 +1661,27 @@
     const first = !followingMade.startsWith(`${m.key}:`);
     followingMade = mark;
     untrack(() => {
+      const ours = !handHolds && (first || Math.abs(time - followedTo) < 0.05);
       // The seek is a gesture about a clip the video preview does not have
       // yet, so the playhead is put on it after.
-      if (paused && Math.abs(time - start) > 0.05) {
+      if (paused && ours && Math.abs(time - start) > 0.05) {
         player?.seek(start);
         player?.claim();
       } else if (first) player?.claim();
+      if (ours) followedTo = start;
     });
     // After the card has slid open and the list has moved it, 200 ms and
     // 180 ms in ClipList.svelte.
     setTimeout(showChosen, 240);
   });
+
+  // Whether a hand holds the playhead, on the clip timeline or the range
+  // picker, which the video preview is told so it shows each place alone.
+  let handHolds = false;
+  function holdPlayhead(held: boolean) {
+    handHolds = held;
+    player?.hold(held);
+  }
 
   function inOutKey(event: KeyboardEvent) {
     const out = event.key === "o" || event.key === "O";
@@ -2868,7 +2884,7 @@
     onmark={select}
     playhead={time}
     onseek={seekTo}
-    onhold={(held) => player?.hold(held)}
+    onhold={holdPlayhead}
     dimmed={!onClip}
     locked={busy}
     {unheard}
@@ -3464,7 +3480,7 @@
         bind:drawn
         onseek={(t, about, wordStep) => player?.seek(t, about, wordStep)}
         onahead={readAhead}
-        onhold={(held) => player?.hold(held)}
+        onhold={holdPlayhead}
         dimmed={!onClip}
         onreshape={(g, playhead) => (current ? reshape(current, g, playhead) : Promise.resolve())}
         onwalkclip={walkClip}
