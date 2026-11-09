@@ -11,9 +11,9 @@
     "lint": "eslint \"preview/walks/**/*.mjs\" \"preview/*.mjs\" \"preview/frames/*.mjs\" \"src/**/*.ts\""
   },
   "dependencies": {
-    "@lucide/svelte": "1.67.0",
+    "@lucide/svelte": "1.70.0",
     "@wailsio/runtime": "3.0.0-beta.23",
-    "bits-ui": "^2.20.3"
+    "bits-ui": "^2.20.6"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
@@ -25,11 +25,11 @@
     "eslint-plugin-playwright": "2.12.2",
     "globals": "17.14.0",
     "monocart-coverage-reports": "3.2.0",
-    "playwright": "1.64.1",
+    "playwright": "1.65.0",
     "svelte": "^5.57.3",
     "svelte-check": "^4.7.8",
     "typescript": "^6.0.3",
-    "vite": "^8.3.5",
+    "vite": "^8.3.6",
     "vitest": "^5.0.5"
   },
   "overrides": {
