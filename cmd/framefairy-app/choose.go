@@ -126,7 +126,8 @@ func (s *FrameFairy) chosenFor(path string, st VideoState) (clip, was string) {
 
 // answer is the clip chosen a state says, and the card it was, with the
 // lock held: the clip chosen, or for a state older than the newest that
-// chose, the clip chosen before when its clips do not hold the one now.
+// chose, the clip chosen before when its clips do not hold the one now,
+// and for a card chosen whose clip the state holds, that clip.
 func (p *picked) answer(st VideoState) (string, string) {
 	now := p.kept.Clip
 	if st.Rev != 0 && st.Rev < p.decided && !holdsClip(st.Clips, now) && card(st.Jobs, now) == nil {
@@ -137,6 +138,14 @@ func (p *picked) answer(st VideoState) (string, string) {
 	}
 	if now != "" && now == p.became {
 		return now, p.card
+	}
+	// A card whose clip this state holds is that clip, rule 7, whatever
+	// the state was read before: a hand picks a card its window still
+	// shows after its clip was written, and a state answered after the
+	// pick said the card was chosen, which a list that holds its clip
+	// leaves out, so for a frame nothing was chosen, issue #697.
+	if clip := landedClip(st, now); clip != "" {
+		return clip, now
 	}
 	return now, ""
 }
