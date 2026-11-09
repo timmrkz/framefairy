@@ -65,9 +65,9 @@ type ReadAhead struct {
 	// was heard later wrote an earlier line out differently.
 	Tokens, Read int
 	// Rewritten is how many reads found a line read before written out
-	// differently. The loudness a pause is told from is the mean of all
-	// that is heard, so a part heard later can move where an earlier word
-	// starts or ends, and with it a pause the request marks, issue #437.
+	// differently. It should stay 0: the silence level a word is moved
+	// onto the sound by is the first part's, kept, so a part heard later
+	// no longer moves an earlier word, see addHeard, issue #762.
 	Rewritten int
 	// Seconds is how long the reading took, in all.
 	Seconds float64

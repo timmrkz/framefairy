@@ -155,6 +155,17 @@ cuts its parts inside words on purpose and gets every word once.
 A transcript written before version 3 ran from the start without a gap and
 is read as that one part, up to where carrying on would have started.
 
+The silence level a word is moved onto the sound by comes from the
+loudness of the first part heard, `mean` in the file, and is kept from
+then on, `addHeard`. It used to be taken again over all that was heard
+after every part, so it moved while a video was heard, and with it where
+the words already heard start and end, the lines they make and the pauses
+the prompt marks. Text already written then changed under the model
+reading it, and a clip found early moved its edges, issue #762. A level
+kept is a little less right for a video whose first part is unlike the
+rest, but `NoiseFloor` holds it between -55 and -35 dB, and what is
+heard stays as it was heard.
+
 ## The loudness of the whole episode
 
 The waveform is the loudness every 10 ms, and the transcription measures it
@@ -1597,9 +1608,12 @@ puts its own prompt where the search's was, `saved` on the model held.
 A server that runs already,
 `--llm-url`, is left alone. Only a request that starts with the
 transcript is read ahead of, which of the recipes is `middle`. A line
-read can still be written out differently once more is heard, because
-the loudness a pause is told from is the mean of all that is heard, and
-then it is read again, issue #437.
+read is never written out differently once more is heard, because the
+silence level stays the first part's, see Heard in parts. On Tim's Mac
+on 8 November, before that, the lines moved three times while a new
+video was heard, the model read its transcript four times, and reading
+ahead saved nothing, issue #762. The log still says when a read finds
+a line written out differently, which now points at a bug.
 The search's line in the log says how much of its prompt was new. Each
 read leaves two checkpoints, and llama-server keeps 32 by itself, about
 200 MiB each for Gemma 4, so it is told to keep three, the three the

@@ -345,13 +345,13 @@ func TestTheTranscriptIsReadAheadOfTheSearch(t *testing.T) {
 	}
 }
 
-// A part heard later can write a line read before out differently: the
-// loudness a pause is told from is the mean of all that is heard, so a
-// quieter part moves it, and with it where a word after a pause starts,
-// and the pause the request marks. The read after it says so, reads from
-// where the two part, and the search still finds the last read held.
-// Issue #437 is about keeping the line as it was.
-func TestALineReadBeforeAndWrittenOutAgainIsReadAgain(t *testing.T) {
+// A part heard later never writes a line read before out differently.
+// The loudness a pause is told from was the mean of all that is heard, so
+// a quieter part moved it, and with it where a word after a pause starts,
+// and the pause the request marks: the model read everything again from
+// that line, and on Tim's Mac reading ahead saved nothing, issue #762.
+// The level is now the first part's, kept, so what is read stays read.
+func TestALineReadBeforeIsNeverWrittenOutAgain(t *testing.T) {
 	t.Parallel()
 	fake := &fakeReader{reads: make(chan []int, 16), asks: make(chan fakeAsk, 4)}
 	m := NewMachine(afero.NewMemMapFs())
@@ -392,14 +392,15 @@ func TestALineReadBeforeAndWrittenOutAgainIsReadAgain(t *testing.T) {
 	first := <-fake.reads
 	v.hear(20, 40)
 	second := <-fake.reads
-	if commonPrefix(first, second) >= len(first) {
-		t.Fatalf("the quiet part changed nothing read before, so this test proves nothing")
+	if shared := commonPrefix(first, second); shared != len(first) {
+		t.Fatalf("the quiet part wrote out again what was read before: the second read shares %d of "+
+			"the first's %d tokens", shared, len(first))
 	}
 	v.hear(40, 60)
 	ahead := <-warmed
-	if ahead.Rewritten != 1 || ahead.Read <= ahead.Tokens || ahead.Tokens != len(second) {
-		t.Errorf("the reads ahead are said to be %+v, want one written out again, more read than "+
-			"held, and %d held", ahead, len(second))
+	if ahead.Rewritten != 0 || ahead.Read != ahead.Tokens || ahead.Tokens != len(second) {
+		t.Errorf("the reads ahead are said to be %+v, want nothing written out again, nothing read "+
+			"twice, and %d held", ahead, len(second))
 	}
 	_ = v.ask(ctx, req)
 	if search := <-fake.asks; search.held != len(second) {

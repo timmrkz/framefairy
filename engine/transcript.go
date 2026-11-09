@@ -246,7 +246,7 @@ func readEpisodeTranscript(fsys afero.Fs, source, asrModelDir string) (transcrip
 
 // sliceTranscript cuts a window out of the episode's transcript, so no part
 // of the audio is ever heard twice. It has to have heard all of the window.
-// The noise floor stays the one measured over all that was heard.
+// The noise floor is the one of the first part heard, see addHeard.
 func sliceTranscript(fsys afero.Fs, path string, stamp sourceStamp, model string, window timed.Window,
 	silenceDB *float64) (*Transcript, bool) {
 	file, words, frames, ok := readTranscriptFile(fsys, path, stamp, model)
@@ -562,11 +562,21 @@ func (m *Machine) addHeard(path string, stamp sourceStamp, model string, duratio
 	sort.SliceStable(words, func(i, j int) bool { return words[i].Start < words[j].Start })
 	parts = joinParts(append(parts, [2]float64{num.RoundTo(part.Start, 3), num.RoundTo(part.End, 3)}))
 
-	var heard []float32
-	for n, f := range all {
-		if heardFrame(n) || inParts(parts, (float64(n)+0.5)*timed.FrameSeconds) {
-			heard = append(heard, f)
+	// The level the silence is told from is the first part's, and it is
+	// kept from then on. Taken again over all that is heard, it moved with
+	// every part, and with it where the words already heard start and end,
+	// the lines they make and the pauses the prompt marks: text already
+	// written changed, so the model read it all again, and a clip found
+	// early moved its edges, issue #762.
+	mean := float64(file.Mean)
+	if !ok {
+		var heard []float32
+		for n, f := range all {
+			if inParts(parts, (float64(n)+0.5)*timed.FrameSeconds) {
+				heard = append(heard, f)
+			}
 		}
+		mean = num.RoundTo(meanOfFrames(heard), 3)
 	}
 	stored := make([][2]num.Float, len(parts))
 	for i, p := range parts {
@@ -574,7 +584,7 @@ func (m *Machine) addHeard(path string, stamp sourceStamp, model string, duratio
 	}
 	end := num.Float(num.RoundTo(duration, 3))
 	err := writeTranscript(m.Files, path, transcriptFile{Version: transcriptVersion, Source: stamp, Model: model,
-		To: end, Mean: num.Float(num.RoundTo(meanOfFrames(heard), 3)), Parts: stored, End: end,
+		To: end, Mean: num.Float(mean), Parts: stored, End: end,
 		Words: storedWords(words)}, all)
 	if err == nil {
 		m.transcriptGrew(path)
