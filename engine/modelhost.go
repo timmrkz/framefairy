@@ -383,8 +383,8 @@ func (m *Machine) KeepNone() {
 
 // keep is KeepModel with the model found. A model loaded or loading
 // already is left as it is, at whatever size: it is kept by its name, and
-// loading it again at another size would cost the whole load, and what was
-// read into it, for nothing a search needs.
+// loading it again at another size would cost the whole load for nothing
+// a search needs.
 func (e *Engine) keep(ctx context.Context, local LocalModel, maxTokens int) (bool, error) {
 	e.host.keepOnly(local.Model)
 	if e.host.modelThere(local.Model) {

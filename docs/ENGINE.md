@@ -1565,7 +1565,7 @@ a server from an earlier run still holding its model. The server runs one ask at
 the whole context for it.
 
 **The search reads its prompt once, when it asks.** A half hour window
-is about 8000 tokens, read in about 10 seconds on an M2 Max. The
+is 7700 to 10100 tokens, read in 10 to 14 seconds on an M2 Max. The
 transcript used to be read into the model while it was still being
 heard, so the search would find most of its prompt read. But a line
 heard before is written out again when more is heard, because the
@@ -1573,7 +1573,11 @@ loudness a pause is told from is the mean of all that is heard, and a
 model that looks back over a window, as Gemma 4 does, then reads it all
 again from the start. On Tim's Mac on 8 November the transcript was
 read three times while it was heard, the search read it a fourth time,
-and 12.8 seconds of reading saved nothing. Issue #762.
+and 12.8 seconds of reading saved nothing. Where no line moved, on a
+later window of a video heard far already, reading ahead did save 6 to
+10 seconds of a search of about 70, and that is what reading once
+costs. It was given up for a search that is simple and works the same
+every time. Issue #762.
 The search's line in the log says how much of its prompt was new. An
 ask leaves checkpoints, and llama-server keeps 32 by itself, about
 200 MiB each for Gemma 4, so it is told to keep three, the three the

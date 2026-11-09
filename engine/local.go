@@ -367,8 +367,8 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int)
 	args := []string{"-m", m.Model, "--host", "127.0.0.1", "--port", itoa(port),
 		"-c", itoa(contextSize), "-ngl", "999",
 		// One ask at a time, with the whole context for it. It also keeps
-		// what one ask read for the next, so a search that follows a
-		// warm-up finds the start of its prompt already read. Left to
+		// what one ask read for the next, so a search's question about the
+		// clips that did not fit finds its prompt already read. Left to
 		// itself the server makes four slots and a sliding window cache
 		// for each, which is memory nothing uses, and the memory a model
 		// is judged by assumes one. See windowSpare in language.go.

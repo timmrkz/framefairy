@@ -228,12 +228,6 @@ func (m *Machine) warmSize(model string, seconds float64, maxTokens int) int {
 // it asks. With the API, or a server that is already running, there is
 // nothing to load, and with another model in use it waits for nothing:
 // the search loads its own when it gets its turn.
-//
-// The transcript used to be read into the model while it was heard, so
-// the search would find most of its prompt read. A line heard before is
-// written out again when more is heard, so the model read the same
-// transcript over and over, and on Tim's Mac a search read it four times
-// and kept none of it. Issue #762.
 func (p *Project) warmModel(ctx context.Context, req PlanRequest) error {
 	opts := p.Base
 	if opts.Planner != "local" || opts.LLMURL != "" {
