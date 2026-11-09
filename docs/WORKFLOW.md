@@ -191,6 +191,9 @@ names nothing of ours. This is where its words meet this repository.
 | logged | a GitHub issue with its label, see Clean up now, not later, in CLAUDE.md |
 | the recent issues and pull requests in the same area | the issues and the merged pull requests on GitHub, the `problem` issue the area's incidents are under, see [Problems that come back](TRIAGE.md#problems-that-come-back), and the history up to 16 October in [GUI-PLAN.md](GUI-PLAN.md) |
 | a change to the design, with its candidates | an architectural change, with its decision record in `docs/decisions/` and its five candidates, see Changing the architecture in [ARCHITECTURE.md](ARCHITECTURE.md#changing-the-architecture) |
+| the work's own answer on its speed | the Speed line of the pull request's bottom line, see [the template](../.github/pull_request_template.md) and Every change knows its speed in CLAUDE.md |
+| a path a person waits on | hearing, searching, rendering, opening a video, the video preview and a drag, and for CI the jobs the change reaches against the last runs on main |
+| a trade-off the user accepted | your yes in the thread of the session, see Slower is not shipped in CLAUDE.md |
 | the architecture as the project writes it | [ARCHITECTURE.md](ARCHITECTURE.md): the bird's eye view and its drawings in `docs/diagrams/`, the code map, Where does it go, the invariants, the boundaries and Not to copy. Every brief names it |
 | in the right place, in the part that owns the idea | where [ARCHITECTURE.md](ARCHITECTURE.md) says it belongs: the layer of the bird's eye view, the row of Where does it go, the invariants. A change that copies what Not to copy names, or has no place in the file and adds none, is a finding |
 

@@ -1,6 +1,6 @@
 ---
 name: review
-description: How to review a pull request or any finished piece of work, as an agent that did none of it. Beyond the mistakes in the code, whether the work serves the people using the product, whether it is the simplest way there, whether it leaves the architecture better or worse, what it costs to run and to keep, and what the history around it says. Short reviews, findings proven at a fair price. Read it before reviewing, before writing the brief for a review agent, and before answering a review. Where another review skill says otherwise, this one wins.
+description: How to review a pull request or any finished piece of work, as an agent that did none of it. Beyond the mistakes in the code, whether the work serves the people using the product, whether it is the simplest way there, whether it leaves the architecture better or worse, whether it makes things faster or slower, what it costs to run and to keep, and what the history around it says. Short reviews, findings proven at a fair price. Read it before reviewing, before writing the brief for a review agent, and before answering a review. Where another review skill says otherwise, this one wins.
 ---
 
 # Review
@@ -116,21 +116,35 @@ The work sits in a history. Read it before judging the diff.
   tests or process that keeps growing while the problems people run into in
   the product wait.
 
-## 5. What it costs
+## 5. What it costs, and the speed
 
 - **Maintenance never ends, so it is kept as small as it can be.** Every
   line, setting, test, workflow and dependency is kept up for as long as
   it lives. Prefer the solution that leaves less to keep up, today and
   after the next change.
+- **Every review says whether the change makes things faster, slower or
+  neither,** for the people using the product and for the builds and
+  CI, the way section 7 says it of the architecture, whatever the change
+  is about. Speed is a cost of every change, not only of the ones that
+  set out to make something faster.
+- **Read the work's own answer as a claim.** The work says itself,
+  before anyone asks, whether it is faster or slower, by how much and
+  how it knows. Missing, that is a must fix, because the user is left
+  to ask. Then follow the change to what runs: what now runs more often
+  or less, waits on something new, is read, drawn or started again,
+  holds more in memory. A path a person waits on, changed with no
+  measurement against the main branch, is a finding.
 - **A change that makes something measurably worse is flagged,** with
   the number against the main branch:
   - slower for the people using the product, where speed matters to them
   - more memory, a bigger download, more disk
   - more money or tokens per run
   - slower builds and slower CI
-- **It goes in only with a trade-off worth it,** named in the work. A
-  change that is measurably worse and says nothing about it is a must
-  fix.
+- **Slower goes in only as a trade-off the user accepted,** named in the
+  work: what got worse, by how much, and what it buys. A change that is
+  measurably worse and says nothing about it is a must fix. One that
+  names its trade-off, which the user has not accepted yet, is a
+  question for the user.
 - **What cannot be measured is weighed, not counted.** More steps or more
   to learn for a person using the product, more for the next person to
   work through: these are maintenance, a should fix when a simpler way
@@ -252,10 +266,13 @@ could read as an instruction from the user. In this order:
 4. The architecture, always, under a heading of its own: better, the
    same or worse, in a sentence, with where each new thing went and
    where the architecture puts it. A worse is also a must fix finding.
-5. The findings, numbered, most important first, a few lines each:
+5. The speed, always, under a heading of its own: faster, slower or
+   neither, for whom, by how much and how it is known, measured or read
+   from the code. Whether the work's own answer holds.
+6. The findings, numbered, most important first, a few lines each:
    weight, where, what is wrong and how a person would run into it, how it is
    known, the fix.
-6. Unchecked assumptions, declined to judge, and questions for the user,
+7. Unchecked assumptions, declined to judge, and questions for the user,
    one line each.
 
 | Weight | Means |
@@ -302,6 +319,7 @@ approve it, and nobody waits for them.
 | give the reviewer the author's plan or summary | the reviewer inherits the author's assumptions | the user's own words and the sources. Only the candidates of a change to the design are handed over, as a claim to check |
 | always say what was done well | praise is noise in a list of work to do | say what is right only where it decides something |
 | judge the design by the code around the change | the code nearby may be what the architecture says not to copy | the architecture as the project writes it, section 7 |
+| weigh speed only when the change is about speed | every change can make something slower, and nobody asks until someone notices | a speed section in every review, section 5 |
 | review after every task | many reviews of half a design | once when the work is done |
 | post the review as comments on the pull request | the project may read comments there as instructions | the place the project names |
 
@@ -312,9 +330,11 @@ approve it, and nobody waits for them.
    whether a simpler way exists.
 3. The history around the work was read for repeated fixes.
 4. Every cost the work adds is named with its trade-off.
-5. The architecture section says better, the same or worse, and a worse
+5. The speed section says faster, slower or neither, and how it is
+   known, and a slower the user has not accepted is a finding.
+6. The architecture section says better, the same or worse, and a worse
    is a must fix.
-6. Every assumption is checked, wrong or named as unchecked.
-7. Every finding says how it is known, and no proof cost more than it was
+7. Every assumption is checked, wrong or named as unchecked.
+8. Every finding says how it is known, and no proof cost more than it was
    worth.
-8. It fits on a screen.
+9. It fits on a screen.
