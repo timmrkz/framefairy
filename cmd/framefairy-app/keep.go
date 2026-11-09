@@ -14,8 +14,8 @@ import (
 // KeepModel in engine/modelhost.go: from the start, again whenever the
 // settings or an install change which model the app finds clips with, and
 // after every search, which may have put it aside for another.
-// A video added then finds the model loaded, so its first search has no
-// load to wait for.
+// A video added then finds the model loaded, and its transcript is read
+// into it while it is heard, so its first search starts at once.
 type keeping struct {
 	// wake asks for the model the settings name to be kept. One ask
 	// waiting is enough, whatever changed since.

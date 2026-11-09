@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/spf13/afero"
@@ -572,9 +573,53 @@ func (m *Machine) addHeard(path string, stamp sourceStamp, model string, duratio
 		stored[i] = [2]num.Float{num.Float(p[0]), num.Float(p[1])}
 	}
 	end := num.Float(num.RoundTo(duration, 3))
-	return writeTranscript(m.Files, path, transcriptFile{Version: transcriptVersion, Source: stamp, Model: model,
+	err := writeTranscript(m.Files, path, transcriptFile{Version: transcriptVersion, Source: stamp, Model: model,
 		To: end, Mean: num.Float(num.RoundTo(meanOfFrames(heard), 3)), Parts: stored, End: end,
 		Words: storedWords(words)}, all)
+	if err == nil {
+		m.transcriptGrew(path)
+	}
+	return err
+}
+
+// transcriptNews wakes whoever waits for an episode's transcript to grow,
+// by the path of its words. Every part heard is written by addHeard,
+// whichever job heard it, so that is where the news goes out. The local
+// model reads the transcript of a search's window as it grows, see
+// readahead.go, and waits on this rather than looking at the file now and
+// then. The machine keeps it, see Machine.grows.
+type transcriptNews struct {
+	mu    sync.Mutex
+	waits map[string]chan struct{}
+}
+
+// transcriptGrows is closed the next time the transcript at path gains
+// what was heard. It is taken before the transcript is read, so a part
+// written in between is not missed.
+func (m *Machine) transcriptGrows(path string) <-chan struct{} {
+	m.grows.mu.Lock()
+	defer m.grows.mu.Unlock()
+	path = filepath.Clean(path)
+	if m.grows.waits == nil {
+		m.grows.waits = map[string]chan struct{}{}
+	}
+	wait, ok := m.grows.waits[path]
+	if !ok {
+		wait = make(chan struct{})
+		m.grows.waits[path] = wait
+	}
+	return wait
+}
+
+// transcriptGrew wakes whoever waits on the transcript at path.
+func (m *Machine) transcriptGrew(path string) {
+	m.grows.mu.Lock()
+	defer m.grows.mu.Unlock()
+	path = filepath.Clean(path)
+	if wait, ok := m.grows.waits[path]; ok {
+		close(wait)
+		delete(m.grows.waits, path)
+	}
 }
 
 // joinParts puts parts in order and makes one of any that touch or overlap.

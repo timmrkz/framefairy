@@ -26,7 +26,8 @@ import (
 // warm-up keeps it a few minutes for the search it was loaded for.
 //
 // The app keeps its model loaded for as long as it is open, see KeepModel,
-// so even the first search of a new video finds it loaded. Loaded
+// so even the first search of a new video finds it loaded, and the
+// transcript is read into it while it is heard, see readahead.go. Loaded
 // ahead only when a video was added, it was still loading when a half hour
 // had been heard. A model kept idle costs less than its size: llama.cpp
 // maps the weights from the file and holds them wired for the graphics
@@ -77,6 +78,14 @@ type hostedModel struct {
 	ready chan struct{}
 	users int
 	idle  func() bool
+	// giveWay calls off the transcript being read ahead of a search, see
+	// holdIdle, nil when none is.
+	giveWay context.CancelCauseFunc
+	// saved runs while a search that let go of the model with a keep may
+	// still come back for it, with the question about the clips that did
+	// not fit. A read ahead does not take it then, because the read would
+	// put its own prompt where the search's was, see release.
+	saved *time.Timer
 }
 
 // One model at a time, never two. Two of them do not fit in the memory of
@@ -163,9 +172,40 @@ func (host *modelHost) modelThere(model string) bool {
 
 // holdModel gives the address of llama-server with this model loaded,
 // starting it if nobody has, and the release that lets go of it. keep is
-// how long it may stay loaded after the last holder lets go.
+// how long it may stay loaded after the last holder lets go, and for that
+// long no read ahead takes it, see saved.
 func (e *Engine) holdModel(ctx context.Context, m LocalModel, size int) (string, func(keep time.Duration), error) {
 	return e.hold(ctx, m, size, false)
+}
+
+// holdIdle is holdModel for the transcript read ahead of a search, see
+// readahead.go: the address of llama-server with this model, and the
+// release, only while it is loaded, big enough and held by nobody, and
+// no search has let go of it for a moment only. It never loads a model,
+// waits for one or puts one aside, so a search never waits for a load a
+// read started. Any search that asks for a model while the read is under
+// way, this one or another, of any size, calls the read off with giveWay
+// first, so it never waits behind a read either.
+func (host *modelHost) holdIdle(model string, size int, giveWay context.CancelCauseFunc) (string, func(keep time.Duration), bool) {
+	host.mu.Lock()
+	defer host.mu.Unlock()
+	h := host.model
+	if host.closed || h == nil || h.model != model || h.size < size || !loaded(h) || h.err != nil ||
+		h.users > 0 || h.saved != nil {
+		return "", nil, false
+	}
+	h.users++
+	h.giveWay = giveWay
+	if h.idle != nil {
+		h.idle()
+		h.idle = nil
+	}
+	return h.url, func(keep time.Duration) {
+		host.mu.Lock()
+		h.giveWay = nil
+		host.mu.Unlock()
+		h.release(keep)
+	}, true
 }
 
 // warmModel is holdModel for a warm-up. It never waits for another model
@@ -176,11 +216,22 @@ func (e *Engine) warmModel(ctx context.Context, m LocalModel, size int) (string,
 
 func (e *Engine) hold(ctx context.Context, m LocalModel, size int,
 	warmUp bool) (string, func(keep time.Duration), error) {
-	release := (*hostedModel).release
+	release := (*hostedModel).releaseSearch
+	if warmUp {
+		release = (*hostedModel).release
+	}
 	host := &e.host
 	for {
 		host.mu.Lock()
 		h := host.model
+		if !warmUp && h != nil && h.giveWay != nil {
+			// A search wants the model the transcript is being read into,
+			// or its memory for another, and the read is called off. A
+			// search of the same size has it at once, any other waits
+			// only for the read to let go.
+			h.giveWay(errModelBusy)
+			h.giveWay = nil
+		}
 		switch {
 		case host.closed:
 			host.mu.Unlock()
@@ -285,6 +336,18 @@ func (e *Engine) load(ctx context.Context, m LocalModel, size int,
 // release lets go of the model. The last one to let go decides how long it
 // stays.
 func (h *hostedModel) release(keep time.Duration) {
+	h.let(keep, false)
+}
+
+// releaseSearch is release for a search, which may come back for the
+// model within keep with a second question that starts with the same
+// prompt. No read ahead takes the model in that time, so the prompt is
+// still in the one slot when the search comes back.
+func (h *hostedModel) releaseSearch(keep time.Duration) {
+	h.let(keep, true)
+}
+
+func (h *hostedModel) let(keep time.Duration, search bool) {
 	host := h.host
 	host.mu.Lock()
 	defer host.mu.Unlock()
@@ -297,6 +360,18 @@ func (h *hostedModel) release(keep time.Duration) {
 	if host.model != h {
 		// It was replaced or stopped. Nothing of it is running.
 		return
+	}
+	h.unsaveLocked()
+	if search && keep > 0 {
+		var saved *time.Timer
+		saved = time.AfterFunc(keep, func() {
+			host.mu.Lock()
+			defer host.mu.Unlock()
+			if h.saved == saved {
+				h.saved = nil
+			}
+		})
+		h.saved = saved
 	}
 	if host.kept == h.model {
 		return
@@ -320,8 +395,18 @@ func (h *hostedModel) release(keep time.Duration) {
 	})
 }
 
+// unsaveLocked ends the time a search kept the model for itself, see
+// saved. host.mu is held.
+func (h *hostedModel) unsaveLocked() {
+	if h.saved != nil {
+		h.saved.Stop()
+		h.saved = nil
+	}
+}
+
 // shutLocked stops the server. host.mu is held.
 func (h *hostedModel) shutLocked() {
+	h.unsaveLocked()
 	if h.idle != nil {
 		h.idle()
 		h.idle = nil
@@ -383,8 +468,8 @@ func (m *Machine) KeepNone() {
 
 // keep is KeepModel with the model found. A model loaded or loading
 // already is left as it is, at whatever size: it is kept by its name, and
-// loading it again at another size would cost the whole load for nothing
-// a search needs.
+// loading it again at another size would cost the whole load, and what was
+// read into it, for nothing a search needs.
 func (e *Engine) keep(ctx context.Context, local LocalModel, maxTokens int) (bool, error) {
 	e.host.keepOnly(local.Model)
 	if e.host.modelThere(local.Model) {

@@ -367,8 +367,8 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int)
 	args := []string{"-m", m.Model, "--host", "127.0.0.1", "--port", itoa(port),
 		"-c", itoa(contextSize), "-ngl", "999",
 		// One ask at a time, with the whole context for it. It also keeps
-		// what one ask read for the next, so a search's question about the
-		// clips that did not fit finds its prompt already read. Left to
+		// what one ask read for the next, so a search that follows a
+		// warm-up finds the start of its prompt already read. Left to
 		// itself the server makes four slots and a sliding window cache
 		// for each, which is memory nothing uses, and the memory a model
 		// is judged by assumes one. See windowSpare in language.go.
@@ -386,8 +386,9 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int)
 		// promptBatch.
 		"-b", itoa(promptBatch),
 		// No more copies of the window than the memory a model is judged
-		// by holds, see checkpoints in language.go. llama.cpp keeps 32 of
-		// them by itself, gigabytes of them.
+		// by holds, see checkpoints in language.go. The transcript read
+		// ahead of a search, see readahead.go, makes two with every read,
+		// and llama.cpp keeps 32 of them by itself, gigabytes of them.
 		"--ctx-checkpoints", itoa(checkpoints),
 		// No copies of earlier prompts. Left to itself the server keeps up
 		// to 8 GiB of them in ordinary memory, a copy of the whole slot,
@@ -397,8 +398,9 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int)
 		// for a half hour window with Gemma 4, kept until the app quits.
 		// The memory a model is judged by counts none of it. What the copy
 		// saved is read again instead: a window searched again after
-		// another. That is rare, and a half hour window is read in about
-		// 10 seconds. Issue #433.
+		// another, and the transcript of a new video read ahead, when the
+		// read gave way to a search of another video. Both are rare, and
+		// a half hour window is read in about 30 seconds. Issue #433.
 		"--cache-ram", "0",
 		// Without the cache the server says at every start that it cannot
 		// keep idle slots in it, a warning about nothing.
@@ -816,6 +818,10 @@ type chatMessage struct {
 
 func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages []chatMessage,
 	units, count, maxTokens int, logDir, promptFile string, listen *Listener) (*localAnswer, error) {
+	// Nothing more of the transcript is read ahead of this search: the
+	// server reads one thing at a time, and the asks after this one build
+	// on what it leaves there, see readahead.go.
+	e.ahead.close()
 	url := strings.TrimRight(m.URL, "/")
 	var stalled atomic.Bool
 	if url == "" {
@@ -935,9 +941,9 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 		reading, writing = t.PromptPerSecond, t.PredictedPerSecond
 	}
 	// A prompt that starts the way the one before did is read only from
-	// where it differs, the question about the clips that did not fit
-	// above all, see fit.go, and the count of what was read says so, with
-	// how long it took. All of it at that speed is what it would have taken.
+	// where it differs, the transcript read ahead of a search above all,
+	// see readahead.go, and the count of what was read says so, with how
+	// long it took. All of it at that speed is what it would have taken.
 	fresh := ""
 	if t := answer.Timings; t != nil && t.PromptN > 0 && t.PromptN < answer.PromptTokens {
 		fresh = fmt.Sprintf(", %s of them new in %ss", num.Thousands(t.PromptN), num.Fixed(t.PromptMS/1000, 1))
@@ -962,7 +968,9 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 }
 
 // localAsk is what llama-server is asked for these messages, and the most
-// it may write. A search asks with it.
+// it may write. A search asks with it, and the transcript read ahead of a
+// search is laid out by the server from the same, so it is laid out the
+// way the search's is, see readahead.go.
 func localAsk(m LocalModel, r Recipe, messages []chatMessage, units, count,
 	maxTokens int) (map[string]any, int) {
 	// A run works the budget out from its window before it asks, see

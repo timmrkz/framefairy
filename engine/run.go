@@ -302,7 +302,9 @@ func (opts Options) forSpan(span timed.Window) Options {
 }
 
 // askedWith is what of a run's options the model is asked with. The plan
-// a run makes is asked with these and what the run knows besides.
+// a run makes is asked with these and what the run knows besides, and the
+// transcript read ahead of a search is written out with the same, so what
+// is read ahead is the start of what the search asks, see readahead.go.
 func askedWith(opts Options) PlanOptions {
 	return PlanOptions{
 		Count: opts.Count, MinLen: opts.Min, MaxLen: opts.Max, Context: opts.Context,
@@ -561,7 +563,8 @@ func speechModel(opts Options) string {
 }
 
 // searchLines are the lines a search asks about, from the transcript of
-// its window.
+// its window. The transcript read ahead of a search is made of the same,
+// see readahead.go.
 func searchLines(t *Transcript, opts Options) []Line {
 	return BuildLines(t.Words, t.Levels(), opts.MaxPause)
 }

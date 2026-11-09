@@ -204,7 +204,9 @@ type savedReply struct {
 const fitKeep = 30 * time.Second
 
 // searchRequest is what a search asks the model about these lines: the
-// recipe it asks with, the units it numbers and the request.
+// recipe it asks with, the units it numbers and the request. The
+// transcript read ahead of a search is written out the same way, see
+// readahead.go.
 func searchRequest(lines []Line, opts PlanOptions) (Recipe, [][2]int, string) {
 	recipe := opts.recipe()
 	units := recipe.units(lines)
