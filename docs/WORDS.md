@@ -40,7 +40,8 @@ against the millisecond the recogniser heard the word start, which
 nothing moves, written `h61200`, and not against where the word starts on
 the sound, which the silence level moves, see `heardIndex` in
 `engine/words.go`. That level used to move while the rest of a video was
-heard. It is now the first part's and kept, see `addHeard`, but
+heard. It is now the video's, measured once before its first word is
+heard and kept, see `videoLevel`, but
 `--silence-db` on the command line still sets another. Two words heard
 starting in the same millisecond each have a key of their own, the second
 the next millisecond free. A key kept the old way, the bare millisecond on

@@ -156,15 +156,22 @@ A transcript written before version 3 ran from the start without a gap and
 is read as that one part, up to where carrying on would have started.
 
 The silence level a word is moved onto the sound by comes from the
-loudness of the first part heard, `mean` in the file, and is kept from
-then on, `addHeard`. It used to be taken again over all that was heard
+video's own loudness, measured before its first word is heard and kept
+with its transcript as `mean`, see `videoLevel` and `addHeard`. It is the
+mean over 30 places of 10 s spread evenly over the video, or over the
+whole of a video shorter than that, a few seconds of decoding however
+long the video is. It used to be taken again over all that was heard
 after every part, so it moved while a video was heard, and with it where
 the words already heard start and end, the lines they make and the pauses
 the prompt marks. Text already written then changed under the model
-reading it, and a clip found early moved its edges, issue #762. A level
-kept is a little less right for a video whose first part is unlike the
-rest, but `NoiseFloor` holds it between -55 and -35 dB, and what is
-heard stays as it was heard.
+reading it, and a clip found early moved its edges, issue #762. Taken
+from the first part saved instead, it depended on how fast the machine
+heard, and a slow one that saved room noise alone first found no pause in
+that video at all. Measured from the file, the same video has the same
+level on every machine, however its hearing is cut into parts.
+`TestTheLevelIsTheVideosHoweverItIsHeard` hears one video three ways and
+gets one level. A transcript written by an older build keeps the level
+that build left in it.
 
 ## The loudness of the whole episode
 
@@ -1609,11 +1616,13 @@ A server that runs already,
 `--llm-url`, is left alone. Only a request that starts with the
 transcript is read ahead of, which of the recipes is `middle`. A line
 read is never written out differently once more is heard, because the
-silence level stays the first part's, see Heard in parts. On Tim's Mac
-on 8 November, before that, the lines moved three times while a new
-video was heard, the model read its transcript four times, and reading
-ahead saved nothing, issue #762. The log still says when a read finds
-a line written out differently, which now points at a bug.
+silence level is the video's and never moves, see Heard in parts. On
+Tim's Mac on 8 November, before that, the model read its transcript four
+times while a new video was heard, and reading ahead saved nothing, issue
+#762, most likely because the moving level moved its lines. Each search
+says in its job's log how much was read ahead of it, and a read that
+finds a line written out differently is a warning in the app's log,
+which a report carries, because it points at a bug.
 The search's line in the log says how much of its prompt was new. Each
 read leaves two checkpoints, and llama-server keeps 32 by itself, about
 200 MiB each for Gemma 4, so it is told to keep three, the three the

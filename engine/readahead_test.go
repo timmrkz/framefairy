@@ -244,10 +244,22 @@ func videoReadAhead(t *testing.T, m *Machine, name string) *readAheadOf {
 func (v *readAheadOf) hear(from, to float64) {
 	v.t.Helper()
 	words, frames := v.speak(from, to)
-	if err := v.p.engine.addHeard(v.path, v.stamp, "parakeet", 120, timed.Window{Start: from, End: to}, words, frames,
-		from); err != nil {
+	if err := v.p.engine.addHeard(v.path, v.stamp, "parakeet", 120, v.level(), timed.Window{Start: from, End: to},
+		words, frames, from); err != nil {
 		v.t.Fatal(err)
 	}
+}
+
+// level is the video's, over all of its 120 s as the tests speak it, in
+// the parts they hear it in, the way videoLevel measures a short video
+// whole before its first word is heard.
+func (v *readAheadOf) level() float64 {
+	var all []float32
+	for from := 0.0; from < 120; from += 20 {
+		_, frames := v.speak(from, from+20)
+		all = append(all, frames...)
+	}
+	return meanOfFrames(all)
 }
 
 // warm reads ahead of a search of req until it is over, and sends what
@@ -350,7 +362,8 @@ func TestTheTranscriptIsReadAheadOfTheSearch(t *testing.T) {
 // a quieter part moved it, and with it where a word after a pause starts,
 // and the pause the request marks: the model read everything again from
 // that line, and on Tim's Mac reading ahead saved nothing, issue #762.
-// The level is now the first part's, kept, so what is read stays read.
+// The level is now the video's, measured before its first word is heard,
+// so what is read stays read.
 func TestALineReadBeforeIsNeverWrittenOutAgain(t *testing.T) {
 	t.Parallel()
 	fake := &fakeReader{reads: make(chan []int, 16), asks: make(chan fakeAsk, 4)}
@@ -374,8 +387,8 @@ func TestALineReadBeforeIsNeverWrittenOutAgain(t *testing.T) {
 			}
 			return words, frames
 		}
-		// Quiet, so the mean falls and the hum of the first part is
-		// heard as sound.
+		// Quiet, so the mean of what is heard falls once this is heard,
+		// and the hum of the first part would be heard as sound.
 		for i, f := range frames {
 			if f == -20 {
 				frames[i] = -50

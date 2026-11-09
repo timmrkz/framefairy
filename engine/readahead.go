@@ -66,8 +66,9 @@ type ReadAhead struct {
 	Tokens, Read int
 	// Rewritten is how many reads found a line read before written out
 	// differently. It should stay 0: the silence level a word is moved
-	// onto the sound by is the first part's, kept, so a part heard later
-	// no longer moves an earlier word, see addHeard, issue #762.
+	// onto the sound by is the video's, kept, so a part heard later no
+	// longer moves an earlier word, see videoLevel, issue #762. When it
+	// is not, the search warns, see warmAhead.
 	Rewritten int
 	// Seconds is how long the reading took, in all.
 	Seconds float64
