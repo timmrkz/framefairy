@@ -560,23 +560,6 @@ func (s *FrameFairy) CheckSetup(ctx context.Context) []Check {
 	}
 	out = append(out, ff, probe)
 
-	// Which of the system's own video decoders framing can use. It is not
-	// a requirement, the processor decodes where there is none, so it is
-	// never a problem. What a file really went through is in the log of
-	// its search.
-	decoding := Check{Name: "Video decoding", OK: true, Detail: "on the processor"}
-	if ff.OK {
-		var names []string
-		for _, name := range e.SystemDecoders(ctx) {
-			names = append(names, engine.DecoderName(name))
-		}
-		if len(names) > 0 {
-			decoding.Detail = strings.Join(names, ", ") + ", falling back to the processor for a " +
-				"file it does not take. The log of a search says which one it used"
-		}
-	}
-	out = append(out, decoding)
-
 	out = append(out, fontsCheck(s.store.machine.Fonts.Counts()))
 
 	asrDir := opts.ASRModel

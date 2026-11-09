@@ -50,24 +50,26 @@ export type AudioTrack = {
 };
 
 // The frames of the picture, or the packets of the sound, in the order
-// they are shown. Times are in the track's own ticks, counted from the
-// start of the file, as the engine counts every moment. seconds() gives
-// seconds. Every frame of the grid is one a decoder can start at, and is
-// shown in the order it comes, so key, order and rank are the same for
-// every frame: they are kept so that the plan reads one kind of track.
+// they are shown, one after another on a grid: sample i starts step ticks
+// after sample i - 1, the first at start, and each lasts step. Times are in
+// the track's own ticks, counted from the start of the file, as the engine
+// counts every moment. ticks() gives where a sample starts, seconds() turns
+// ticks into seconds. Every frame of the grid is one the Go side makes and
+// shows in the order it comes, so a sample is its own key frame and its own
+// place in the order, and nothing about them is kept: the arrays a
+// WebCodecs decoder needed for that took about 29 MB for three hours at 60
+// frames a second with its sound.
 export type Samples = {
   count: number;
   timescale: number;
-  // When the sample is shown, in ticks, and how long it lasts.
-  pts: Float64Array;
-  duration: Float64Array;
-  // Whether decoding can start at this sample.
-  key: Uint8Array;
-  // The samples in the order they are shown: order[r] is the sample shown
-  // r-th, and rank[i] is where sample i comes in that order.
-  order: Uint32Array;
-  rank: Uint32Array;
+  start: number;
+  step: number;
 };
+
+// Where sample i starts, in ticks.
+export function ticks(s: Samples, i: number): number {
+  return s.start + i * s.step;
+}
 
 export type Movie = {
   // Seconds, as the engine's probe says.
@@ -88,43 +90,26 @@ export function movieOf(s: Source): Movie {
   if (g && g.num > 0 && g.den > 0 && g.count > 0) {
     // Ticks of 1/num seconds, so every frame is a whole number of them
     // after the start.
-    const at0 = g.start * g.num;
-    const pts = new Float64Array(g.count);
-    for (let r = 0; r < g.count; r++) pts[r] = at0 + r * g.den;
     movie.video = {
       kind: "video",
       width: s.width,
       height: s.height,
       frame: g.den / g.num,
       grid: g,
-      samples: even(pts, g.num, g.den),
+      samples: { count: g.count, timescale: g.num, start: g.start * g.num, step: g.den },
     };
   }
   const rate = s.soundRate ?? 0;
   if (rate > 0 && (s.soundChannels ?? 0) > 0) {
     const count = Math.max(1, Math.ceil((s.duration * rate) / PACKET));
-    const pts = new Float64Array(count);
-    for (let j = 0; j < count; j++) pts[j] = j * PACKET;
-    movie.audio = { kind: "audio", sampleRate: rate, channels: s.soundChannels!, samples: even(pts, rate, PACKET) };
+    movie.audio = {
+      kind: "audio",
+      sampleRate: rate,
+      channels: s.soundChannels!,
+      samples: { count, timescale: rate, start: 0, step: PACKET },
+    };
   }
   return movie;
-}
-
-// Samples one after another, each as long as every other, every one a
-// key, in the order they are shown.
-function even(pts: Float64Array, timescale: number, length: number): Samples {
-  const count = pts.length;
-  const order = new Uint32Array(count);
-  for (let i = 0; i < count; i++) order[i] = i;
-  return {
-    count,
-    timescale,
-    pts,
-    duration: new Float64Array(count).fill(length),
-    key: new Uint8Array(count).fill(1),
-    order,
-    rank: order,
-  };
 }
 
 // Seconds from ticks.
@@ -137,8 +122,8 @@ export function seconds(s: Samples, ticks: number): number {
 export function rankOf(s: Samples, at: number): number {
   const r = rankAt(s, at);
   if (r + 1 >= s.count) return r;
-  const here = s.pts[s.order[r]] / s.timescale;
-  const next = s.pts[s.order[r + 1]] / s.timescale;
+  const here = ticks(s, r) / s.timescale;
+  const next = ticks(s, r + 1) / s.timescale;
   return Math.abs(next - at) < Math.abs(here - at) ? r + 1 : r;
 }
 
@@ -151,13 +136,13 @@ export function rankOf(s: Samples, at: number): number {
 export function rankAt(s: Samples, at: number): number {
   const us = heldMicros(at);
   const seconds = Math.floor(us / 1_000_000);
-  const ticks = seconds * s.timescale + Math.floor(((us - seconds * 1_000_000) * s.timescale) / 1_000_000);
+  const held = seconds * s.timescale + Math.floor(((us - seconds * 1_000_000) * s.timescale) / 1_000_000);
   let lo = 0;
   let hi = s.count - 1;
   if (hi < 0) return 0;
   while (lo < hi) {
     const mid = (lo + hi + 1) >> 1;
-    if (s.pts[s.order[mid]] <= ticks) lo = mid;
+    if (ticks(s, mid) <= held) lo = mid;
     else hi = mid - 1;
   }
   return lo;

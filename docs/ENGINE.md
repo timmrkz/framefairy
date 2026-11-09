@@ -183,7 +183,11 @@ What it has is written every half second, frames first and the json
 after, which gives the parts measured as frame numbers and, once a run
 has reached the end of the audio, how many frames it has. So `ReadLevels`
 never hands out a reading the json does not vouch for, and the waveform
-grows as it runs. Levels of a file that has changed since are none, and a
+grows as it runs. Only the frames measured since the last write are
+written, where they belong in the file, and neither file is flushed to
+the drive, because the loudness can be measured again: written whole and
+flushed each time, four hours were 158 MB written and 104 full flushes,
+`F_FULLFSYNC` on macOS, now 5.8 MB and none. Levels of a file that has changed since are none, and a
 measuring cut off carries on with the parts it has. Version 1 of the file
 ran from the start with no gaps and is measured again. `Levels.Over` lays
 these over the transcript's readings, so the waveform has whatever either
@@ -677,8 +681,7 @@ hands it to every `Engine` it makes. The app makes an engine for every
 job, caption and frame stream, and the command line one for its run.
 The machine holds the file system, the records, the `tool.Runner`, the
 `tool.Finder` with the tools it already checked, and what was learned
-about the machine: whether the system's video decoder failed here,
-which decoder each episode used, the encoders and the subtitle filter
+about the machine: the encoders and the subtitle filter
 of each ffmpeg, by the ffmpeg, the encoder a run names and the system,
 and the face detector. It keeps what ffmpeg and ffprobe said, see What
 ffmpeg and ffprobe said, kept, the caption blocks libass measured, the
@@ -691,15 +694,11 @@ the check of a model file in hand. And it holds what the machine says of
 its memory, how much it has, how much is free and which other
 llama-servers run on it, in `engine/room.go` and `engine/freemem.go`.
 Each seam is a field that is empty for the real thing, set by a test on
-its own machine: the time limit of a decode, empty for
-`context.WithTimeout`, the framing of a clip, empty for
+its own machine: the framing of a clip, empty for
 `planBuilder.frame`, how the host starts a server and how long it waits
 unused, the client to llama-server, how a server that will not stop is
 looked at again, how a leftover server is asked to stop, and the three
-facts of memory. So
-a Mac whose system decoder failed once
-decodes on the processor for every job after it, not only for the rest
-of that job. An `Engine` keeps what belongs to its one job: the log,
+facts of memory. An `Engine` keeps what belongs to its one job: the log,
 what it spent, the switches of its run, the hearing and the read-ahead.
 See [decisions/2026-10-31-running-programs-and-what-outlives-a-job.md](decisions/2026-10-31-running-programs-and-what-outlives-a-job.md).
 
@@ -756,8 +755,10 @@ time of the tool and of the file, so a file written again or a tool
 replaced is asked again. `Probe`, `pictureStart`, `lastMoment`,
 `SubtitleFilter` and `Preflight` ask it first. A probe whose context was stopped is not kept, and no caller can
 change what is kept through the `SourceInfo` it was given. What a render
-reads of each piece it cuts, `unevenPieces`, is its own stretch of the
-file and is read every time.
+reads of each piece it cuts, how its frames come, `unevenIn`, and in a
+file with no index of its key frames where it is read from, `keyBefore`,
+is kept the same way, by the piece, so a clip rendered again asks
+ffprobe nothing it asked before.
 
 ### Frames at their own times
 
@@ -1261,30 +1262,15 @@ measure a crop for each camera, and to compare the frames either side of
 a cut to know whether the clip came back to the same camera. Tim never
 saw a crop change at a camera switch in his own podcast, which has two,
 and a clip now has one crop, #396.
-The decoding is asked of the system's own video decoder,
-VideoToolbox on macOS, and falls back to the processor by itself where
-there is none, which today is every Windows and Linux build. Only a
-machine handed the system's media engine asks it, the app's and the
-command line's, see `engine.Media`. A test's machine decodes on the
-processor from the start. If the system
-decoder refuses a file, the same work is done again on the processor and
-everything after it goes there too. The same happens when reading a
-span's frames runs out of time, a minute and four times the span: ffmpeg
-has hung there once, and a search waited on it for good. If the processor
-runs out of time as well, the clip is framed without that span's frames,
-with a warning, rather than the clip failing. Which decoder does the work is found
-once per episode file, by decoding one frame the way framing does and
-reading what ffmpeg says, and written to the log as `framing decodes
-video on VideoToolbox` or `on the processor`. A single frame has 15 s,
-`frameLimit`, there and wherever framing pulls one frame: VideoToolbox
-has given none and said nothing on a virtual Mac, and a system decoder
-that misses the limit is gone round on the processor from then on, by
-every job of the program, see What outlives a job. An
-ffmpeg that is stopped has five seconds to end, `LeaveAfter` in
-`engine/tool/run.go`, and one that is still there after them is left
-behind, with a warning that says so, and the search goes on without it.
-On the same Mac an ffmpeg went on in VideoToolbox for eight minutes after
-it was killed, and the search waited on it until the test run was ended. The crop
+Framing decodes on the processor, on every machine. On Tim's M2 Max a
+clip framed on VideoToolbox took about four times as long, 4.0 s against
+1.0 s, one run each and different clips, likely because framing starts a
+few short ffmpeg runs and each one sets the system's decoder up again.
+The checks, time limits and fallbacks framing had for the system's
+decoder went with it: the decoder only ever hung on CI's virtual Mac.
+Framing's ffmpeg has no time limit of its own since. Cancel stops it like
+any other, and one that does not end is left behind after five seconds. The video preview keeps the graphics
+chip, see [VIDEO-PREVIEW.md](VIDEO-PREVIEW.md). The crop
 centres on the largest face found. Where too few frames contain a face, it
 goes to the part of the frame with the most fine detail, which is whatever
 the camera focused on. The built-in face detector looks for faces turned

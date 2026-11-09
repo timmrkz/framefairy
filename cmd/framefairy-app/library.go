@@ -229,6 +229,8 @@ func (s *FrameFairy) RemoveEpisode(path string, deleteWork bool) error {
 	defer s.reconciling.Unlock()
 	if deleteWork {
 		if err := s.store.machine.DeleteWork(path); err != nil {
+			theLog.line(zerolog.WarnLevel, "library").Str("video", filepath.Base(path)).Err(err).
+				Msg("the work folder of a video being removed could not be deleted, so the video stays")
 			return err
 		}
 	}
@@ -238,6 +240,8 @@ func (s *FrameFairy) RemoveEpisode(path string, deleteWork bool) error {
 	}
 	removed = true
 	s.jobs.forgetEpisode(path)
+	theLog.line(zerolog.InfoLevel, "library").Str("video", filepath.Base(path)).Bool("work_deleted", deleteWork).
+		Msg("the video is removed")
 	return nil
 }
 

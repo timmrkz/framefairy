@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { movieOf, PACKET, rankAt, rankOf } from "./movie";
+import { movieOf, PACKET, rankAt, rankOf, ticks } from "./movie";
 
 describe("movieOf", () => {
   test("is the frames the engine names and the sound in packets after one another", () => {
@@ -16,18 +16,14 @@ describe("movieOf", () => {
     const v = m.video!;
     expect(v.samples.count).toBe(210);
     expect(v.frame).toBeCloseTo(1001 / 30000, 12);
-    expect(v.samples.pts[0] / v.samples.timescale).toBeCloseTo(0.016433, 9);
-    expect(v.samples.pts[100] / v.samples.timescale).toBeCloseTo(0.016433 + (100 * 1001) / 30000, 9);
-    // Every frame of the grid can be asked for on its own, in the order
-    // it is shown.
-    expect(v.samples.key.every((k) => k === 1)).toBe(true);
-    expect(v.samples.order[57]).toBe(57);
-    expect(v.samples.rank[57]).toBe(57);
+    expect(ticks(v.samples, 0) / v.samples.timescale).toBeCloseTo(0.016433, 9);
+    expect(ticks(v.samples, 100) / v.samples.timescale).toBeCloseTo(0.016433 + (100 * 1001) / 30000, 9);
+    expect(ticks(v.samples, 209) / v.samples.timescale).toBeCloseTo(0.016433 + (209 * 1001) / 30000, 9);
     const a = m.audio!;
     expect([a.sampleRate, a.channels]).toEqual([48000, 2]);
     expect(a.samples.count).toBe(Math.ceil((7 * 48000) / PACKET));
-    expect(a.samples.pts[3]).toBe(3 * PACKET);
-    expect(a.samples.duration[3]).toBe(PACKET);
+    expect(ticks(a.samples, 3)).toBe(3 * PACKET);
+    expect(a.samples.step).toBe(PACKET);
   });
 
   test("has no picture without a grid and no sound without a rate", () => {

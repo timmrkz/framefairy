@@ -16,7 +16,7 @@
 // - A frame is decoded at the size of the canvas and no larger.
 // - The queue's second decoder asks for the piece after a cut while the
 //   first plays, so a stream for it is open before it is needed.
-import { rankOf, type VideoTrack } from "./movie";
+import { rankOf, ticks, type VideoTrack } from "./movie";
 import type { Picture } from "./picture";
 import { pictures, pull, type Pulled } from "./pull";
 import { frames as framePool } from "./pool";
@@ -489,7 +489,7 @@ export class AppFrames {
 
   ptsOf(rank: number): number {
     const s = this.track.samples;
-    return s.pts[s.order[Math.max(0, Math.min(rank, s.count - 1))]] / s.timescale;
+    return ticks(s, Math.max(0, Math.min(rank, s.count - 1))) / s.timescale;
   }
 
   // The hand takes hold of the playhead, or lets go of it, see
@@ -561,8 +561,13 @@ export class AppFrames {
   // Asked at once, the frame under the hand came 80 to 120 ms later when a
   // drag of the playhead let go, measured with speed.mjs: the frames read
   // ahead competed with it for the decoder and for the streams.
+  //
+  // What was read ahead before is withdrawn without letting the walks go
+  // that wait on rested: they go once the new ranks are in. Let go
+  // between the two, a walk pressed the key for the word beside with its
+  // frame still to come.
   ahead(ranks: number[]) {
-    this.still();
+    this.withdraw();
     this.aheadWanted = [...ranks];
     this.aheadNow();
   }
@@ -688,10 +693,14 @@ export class AppFrames {
   // The hand asks again: what was read ahead for where it was is not
   // wanted any more.
   still() {
+    this.withdraw();
+    this.settleRest();
+  }
+
+  private withdraw() {
     this.aheadWanted = null;
     for (const w of this.aheadOf) w.gone = true;
     this.aheadOf.clear();
-    this.settleRest();
   }
 
   route(w: Waiter) {

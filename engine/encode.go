@@ -214,9 +214,9 @@ type Media struct {
 	// has, see nextEncoder and stallFor. Without it the encoders are one
 	// for each kind of ffmpeg, and the one chosen is the only one.
 	Fallback bool
-	// Decodes says that decoding goes to the system's own decoder where it
-	// takes the file: ffmpeg's -hwaccel auto, and the graphics chip in
-	// the episode's decoder, see Machine.EpisodeFrames.
+	// Decodes says that the episode's decoder of the video preview
+	// decodes on the graphics chip, see Machine.EpisodeFrames. Framing
+	// decodes on the processor whatever this says.
 	Decodes bool
 }
 

@@ -5,6 +5,16 @@
 // ../sequences.mjs.
 export default [
   {
+    // The heights the captions may sit at, and where they start out, come
+    // from the Go side, see engine.CaptionStart. The interface kept a copy
+    // of both, which could drift from the engine's, issue #610.
+    name: "the captions dragged land on a height the Go side offers, and put back sit where they start out",
+    steps: [
+      ["drag captions", 120],
+      ["captions put back"],
+    ],
+  },
+  {
     name: "delete removes the framed word and nothing else",
     steps: [
       ["mark", "start"],

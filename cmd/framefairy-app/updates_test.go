@@ -626,10 +626,16 @@ func TestAPickStopsTheDownloadBefore(t *testing.T) {
 		return s.Phase == "downloading" && s.Next == "0.3.0-main.5"
 	})
 
+	before := len(sent(nil))
 	_ = c.Follow("pr-20")
 	after := len(sent(nil))
-	// At once, before any check has answered.
-	if s := c.State(); s.Picked != "pr-20" || s.Phase != "checking" || s.Next != "" || s.Follows != "pr-20" {
+	// At once, before any check has answered: the state the pick itself
+	// sends. The state read after Follow returns is no proof of that,
+	// since the check Follow starts may already have found pr-20 and be
+	// downloading it, which is how this failed on CI's Mac.
+	if picked := sent(nil)[before:after]; len(picked) == 0 {
+		t.Errorf("the pick sent no state")
+	} else if s := picked[0]; s.Picked != "pr-20" || s.Phase != "checking" || s.Next != "" || s.Follows != "pr-20" {
 		t.Errorf("right after the pick: %+v", s)
 	}
 	s := waitFor(t, c, "ready with pr-20", func(s UpdateState) bool {

@@ -1322,7 +1322,7 @@ bubble scrolled by those eight pixels.
   that suits one video suits the next one, so the drag saves it as a setting
   rather than as an edit of that clip. It stands as **Height** with the other
   caption settings on the left, where it can be typed instead, and **Put the
-  captions back** appears under it once it is not the standard 300. A click
+  captions back** appears under it once it is not the standard 320. A click
   on the box without dragging plays or pauses.
 - **Moving the crop:** drag the frame sideways when the automatic crop is
   off. The frame is there while the playhead is in the clip, and only
@@ -1697,9 +1697,11 @@ bubble scrolled by those eight pixels.
       where the window starts and the right two where it ends. A bar
       drags the whole window and keeps its length, and a double-click on
       any of it puts it back where the app would have it. An edge lands
-      on a round step, the smallest one still about eight pixels wide,
-      five minutes on a four hour episode and five seconds on a six
-      minute one, and the ends of the episode win over the step. Every
+      on a round step, the smallest one still about eight pixels wide
+      that the ruler's step is a whole number of, so every line on the
+      range picker is a place an edge can land: five minutes on a four
+      hour episode and five seconds on a six minute one, and the ends of
+      the episode win over the step. Every
       window the app places itself lands on a step of the same kind,
       chosen from the length of the video alone and never from how wide
       the app is, about a 180th of the video, two minutes for four hours,
@@ -3393,14 +3395,12 @@ Empty paths use the same defaults as the command line, which keeps every
 flag. Under the paths is what the check looked at, found or not, with the
 check's own words and **Check again**, though the check runs again by
 itself whenever a setting changes: which ffmpeg, ffprobe and llama-server,
-which of the system's own video decoders it can use, VideoToolbox on a Mac
-or decoding on the processor, and how many caption faces there are, the
+and how many caption faces there are, the
 ones the app carries inside itself and the machine's own, `6 built in,
 412 from this machine`. The names are the font list's beside the captions,
 each in its own face, and were once a wall of a few hundred here. The
 models and the keys are said in their own sections, so the check leaves
-them out here. Which decoder a file really went through is in the log of
-its search.
+them out here.
 
 **A path is written one way everywhere**, in full, from the top of the
 disk: `/Users/tim/.framefairy/models`, `/Applications/Frame

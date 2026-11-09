@@ -13,9 +13,9 @@ import (
 )
 
 // A machine handed no media engine, as every test's is, reaches nothing
-// of the system's: no encoder of Apple's, no -hwaccel, and an episode's
-// decoder that is never told it may use the graphics chip. Handed a
-// Mac's, it reaches for all three. That is the whole difference between a
+// of the system's: no encoder of Apple's, and an episode's decoder that is
+// never told it may use the graphics chip. Handed a Mac's, it reaches for
+// both. Framing reaches for neither, see TestAMacFramesOnTheProcessor. That is the whole difference between a
 // test's machine and the app's, see Media.
 func TestOnlyAMachineHandedTheMediaEngineReachesIt(t *testing.T) {
 	own := &Engine{Machine: NewMachine(afero.NewMemMapFs())}
@@ -25,9 +25,6 @@ func TestOnlyAMachineHandedTheMediaEngineReachesIt(t *testing.T) {
 				t.Errorf("a machine handed no media engine reaches for %s", c)
 			}
 		}
-	}
-	if flags := own.decodeFlags(); flags != nil {
-		t.Errorf("a machine handed no media engine decodes with %v", flags)
 	}
 	if args := own.EpisodeFrames("framefairy-frames", "folge.mp4").args(); !slices.Equal(args, []string{"folge.mp4"}) {
 		t.Errorf("a machine handed no media engine starts the episode's decoder with %v", args)
@@ -57,9 +54,6 @@ func TestOnlyAMachineHandedTheMediaEngineReachesIt(t *testing.T) {
 	}
 	if order := mac.order(true); len(order) == 0 || !order[0].is(hevcVideoToolbox) {
 		t.Errorf("a Mac reaches for %v first for HDR", names(order))
-	}
-	if flags := mac.decodeFlags(); !slices.Equal(flags, []string{"-hwaccel", "auto"}) {
-		t.Errorf("a Mac decodes with %v", flags)
 	}
 	if args := mac.EpisodeFrames("framefairy-frames", "folge.mp4").args(); !slices.Equal(args, []string{"-chip", "folge.mp4"}) {
 		t.Errorf("a Mac starts the episode's decoder with %v", args)

@@ -115,8 +115,19 @@ const applyCut = (list: Piece[], from: number, to: number): Piece[] => {
   return out;
 };
 
+// Each piece with its part, the way the Go side numbers them, see
+// engine.PieceView: a piece that starts where the one before ends is in
+// its part, one after a cut starts the next.
+const withParts = <P extends { start: number; end: number }>(list: P[]): (P & { part: number })[] => {
+  let part = 0;
+  return list.map((p, i) => {
+    if (i > 0 && p.start - list[i - 1].end > 0.0005) part++;
+    return { ...p, part };
+  });
+};
+
 const clip = (n: number, start: number, title: string, rendered: boolean) => {
-  const segments = pieces(n, start);
+  const segments = withParts(pieces(n, start));
   const first = segments.length ? segments[0].start : start;
   const last = segments.length ? segments[segments.length - 1].end : start;
   return {
@@ -1603,6 +1614,19 @@ const Answers = {
         (window as any).__settings = { ...was, ...kept };
         return videoState(String(args[0]));
       }
+      // How the captions start out, the way the engine has them, see
+      // engine.CaptionStart.
+      case "CaptionStart":
+        return Promise.resolve({
+          font: "Inter Black",
+          size: 96,
+          y: 320,
+          heights: Array.from({ length: 37 }, (_, i) => 120 + 40 * i),
+          step: 40,
+          primary: "rgba(255, 255, 255, 1)",
+          box: "rgba(0, 0, 0, 0.498)",
+          highlightColour: "rgba(148, 33, 146, 1)",
+        });
       case "GetSettings":
         return Promise.resolve({ llmModel: "", asrModel: "", planner: (window as any).__planner || "local", apiModel: "claude-sonnet-5", target: 0, min: 20, max: 30, highlightColour: "#b4236f", appColour: "#942192", outputDir: "", captionY: 240, trainingDir: "", ...((window as any).__settings ?? {}) });
       // What the settings page saves, kept, so a probe can read what was
@@ -1625,7 +1649,6 @@ const Answers = {
         const out = [
           { name: "ffmpeg", ok: true, version: "8.1.3", detail: "The one this app was built with: its SHA-256 matches the one built in.", path: "/Applications/Frame Fairy.app/Contents/MacOS/ffmpeg", sha256: "e1ba46e814d383b96be780d1a7c49e1c4eecef1619615a241974dc122e2f1a2e" },
           { name: "ffprobe", ok: true, version: "8.1.3", detail: "The one this app was built with: its SHA-256 matches the one built in.", path: "/Applications/Frame Fairy.app/Contents/MacOS/ffprobe", sha256: "5b0c9e2d7a41f8836c2e0b1d94f7a6c35e8d21b0a97f4c6e3d58b2a1f0c9e7d4" },
-          { name: "Video decoding", ok: true, detail: "VideoToolbox, falling back to the processor for a file it does not take. The log of a search says which one it used" },
           { name: "Caption fonts", ok: true, detail: "6 built in, 412 from this machine" },
           { name: "Speech model", ok: true, detail: "/Users/tim/.framefairy/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8" },
         ];
@@ -1966,7 +1989,7 @@ const Answers = {
           return Promise.resolve(clip(Number(id), at, title, rendered));
         }
         return Promise.resolve({
-          pieces: out.pieces.map((p) => ({ start: p.start, end: p.end })),
+          pieces: withParts(out.pieces.map((p) => ({ start: p.start, end: p.end }))),
           playhead: out.playhead,
           captions: { captions: captionCues(id, out.pieces), style: {} },
         });

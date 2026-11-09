@@ -54,16 +54,7 @@ describe("AppFrames", () => {
     // handed over.
     vi.stubGlobal("fetch", () => new Promise(() => {}));
     const n = 200;
-    const order = Uint32Array.from({ length: n }, (_, i) => i);
-    const samples = {
-      count: n,
-      timescale: 25,
-      pts: Float64Array.from(order),
-      duration: new Float64Array(n).fill(1),
-      key: new Uint8Array(n).fill(1),
-      order,
-      rank: order,
-    };
+    const samples = { count: n, timescale: 25, start: 0, step: 1 };
     const track: VideoTrack = { kind: "video", width: 4, height: 2, samples, frame: 1 / 25 };
     const app = new AppFrames("/v.mp4", track, () => ({ width: 4, height: 2 }), () => {});
     const picture = (rank: number) => new Picture(new Uint8Array(4 * 2 * 4), 4, 2, rank * 40000);
@@ -134,16 +125,7 @@ describe("AppFrames", () => {
 // not kept is never handed over.
 function frames(size: () => { width: number; height: number }, rate = 25) {
   const n = 200;
-  const order = Uint32Array.from({ length: n }, (_, i) => i);
-  const samples = {
-    count: n,
-    timescale: rate,
-    pts: Float64Array.from(order),
-    duration: new Float64Array(n).fill(1),
-    key: new Uint8Array(n).fill(1),
-    order,
-    rank: order,
-  };
+  const samples = { count: n, timescale: rate, start: 0, step: 1 };
   const track: VideoTrack = { kind: "video", width: 4, height: 2, samples, frame: 1 / rate };
   const app = new AppFrames("/v.mp4", track, size, () => {});
   const picture = (rank: number, w: number, h: number) => new Picture(new Uint8Array(w * h * 4), w, h, rank * 40000);
@@ -432,6 +414,35 @@ describe("a slow drag to the left", () => {
     await pulls(2);
     expect(asked[1].url).toContain("n=1");
     expect(app.stats.keyFirst).toBe(1);
+    app.close();
+  });
+});
+
+describe("the frames read while the hand rests", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  // The walks wait on rested before a step to the word beside, and the
+  // step must find its frame kept. Asked again for other words while the
+  // first frame was on its way, ahead let the walk go before it had set
+  // what it reads now, so the walk pressed the key with the frame still
+  // to come, on the CI run of #757.
+  test("keep the walks waiting while they are asked again for other words", async () => {
+    const { app, asked, pulls } = goSide();
+    app.paused = () => true;
+    app.ahead([75]);
+    await pulls(1);
+    const order: string[] = [];
+    const rested = app.rested().then(() => order.push("rested"));
+    app.ahead([75, 30]);
+    // What a rest let go of runs in the microtasks after it.
+    for (let i = 0; i < 4; i++) await Promise.resolve();
+    order.push("frame given");
+    asked[0].give([74, 75]);
+    await pulls(2);
+    order.push("frame given");
+    asked[1].give([30]);
+    await rested;
+    expect(order).toEqual(["frame given", "frame given", "rested"]);
     app.close();
   });
 });

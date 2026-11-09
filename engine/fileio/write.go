@@ -12,6 +12,14 @@ func WriteAtomic(fsys afero.Fs, path string, body []byte) error {
 	return Replace(fsys, path, "."+filepath.Base(path)+"-*", body, nil)
 }
 
+// WriteUnflushed replaces the file at path with body in one step as far
+// as any reader is concerned, like WriteAtomic, but flushes nothing to the
+// drive: after a power cut it may hold neither. It is for what can be made
+// again, which a full flush on every write would only slow down.
+func WriteUnflushed(fsys afero.Fs, path string, body []byte) error {
+	return replace(fsys, path, "."+filepath.Base(path)+"-*", body, nil, false)
+}
+
 // Replace writes body beside path, under a temporary name made from
 // pattern, and moves it onto path. check, if there is one, reads the
 // temporary file first, and a file it refuses is never moved.
@@ -23,6 +31,11 @@ func WriteAtomic(fsys afero.Fs, path string, body []byte) error {
 // full flush, F_FULLFSYNC, which is the one the drive does not keep in
 // its own cache. In memory both flushes are nothing.
 func Replace(fsys afero.Fs, path, pattern string, body []byte, check func(tmp string) error) error {
+	return replace(fsys, path, pattern, body, check, true)
+}
+
+// replace is Replace, flushed to the drive or not.
+func replace(fsys afero.Fs, path, pattern string, body []byte, check func(tmp string) error, flush bool) error {
 	dir := filepath.Dir(path)
 	tmp, err := afero.TempFile(fsys, dir, pattern)
 	if err != nil {
@@ -30,7 +43,7 @@ func Replace(fsys afero.Fs, path, pattern string, body []byte, check func(tmp st
 	}
 	name := tmp.Name()
 	_, err = tmp.Write(body)
-	if err == nil {
+	if err == nil && flush {
 		err = tmp.Sync()
 	}
 	if closeErr := tmp.Close(); err == nil {
@@ -48,6 +61,9 @@ func Replace(fsys afero.Fs, path, pattern string, body []byte, check func(tmp st
 	}
 	// The move is kept by the folder, so the folder is flushed too. A
 	// system that cannot open a folder for that, Windows, keeps it anyway.
+	if !flush {
+		return nil
+	}
 	if d, err := fsys.Open(dir); err == nil {
 		_ = d.Sync()
 		d.Close()

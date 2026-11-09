@@ -1,8 +1,9 @@
 // Package fileio is how the engine and the app treat a path and a file of
 // a video's work folder, in whatever file system they are handed, the real
 // disk or memory: where a path really leads, whether a name stays inside
-// its folder, a file replaced in one step, and one edit of a file at a
-// time. It knows nothing of plans, transcripts or videos.
+// its folder, a file replaced in one step, one edit of a file at a time,
+// and a folder deleted without its own folder above it ever opened. It
+// knows nothing of plans, transcripts or videos.
 package fileio
 
 import (

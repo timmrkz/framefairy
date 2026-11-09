@@ -509,9 +509,12 @@ type SegmentView struct {
 	// and the crop is on the picture rotated, see Segment.Rotate.
 	Rotate int `json:"rotate"`
 	// Marks is the keyframes that steer the piece's crop, which switches
-	// on each and holds until the next, see Segment.Marks. Before the
-	// first, and with none, the crop stands at CropX.
+	// on each or glides into it, and holds until the next, see
+	// Segment.Marks. Before the first, and with none, the crop stands at
+	// CropX.
 	Marks []CropMarkView `json:"marks"`
+	// Part is the part of the clip the piece is in, see PieceView.Part.
+	Part int `json:"part"`
 	// MarksFrom is where a glide into the first keyframe starts, see
 	// Segment.MarksFrom. The window is sent the crop worked out, see
 	// SourceInfo.CropSteps, so it is not sent this.
@@ -602,8 +605,10 @@ func (s PlanSummary) View() *PlanView {
 		for _, r := range c.Rotations {
 			v.Rotations = append(v.Rotations, rotationView(r))
 		}
-		for _, s := range c.Segments {
-			v.Segments = append(v.Segments, SegmentView{s.Start, s.End, s.CropX, s.Moved, s.Rotate, cropMarkViews(s.Marks), s.MarksFrom})
+		parts := pieceViews(c.Segments)
+		for i, s := range c.Segments {
+			v.Segments = append(v.Segments, SegmentView{s.Start, s.End, s.CropX, s.Moved, s.Rotate,
+				cropMarkViews(s.Marks), parts[i].Part, s.MarksFrom})
 		}
 		v.Rendered = renderedOf(plan, c)
 		v.Short = shortOf(plan, c)
@@ -1069,10 +1074,7 @@ func captionsView(plan Plan, clip Clip, t *Transcript, look *Look) *CaptionsView
 	const authored = 1920.0
 	em := s.fonts.Scale(s.Font)
 	weight, thicken := s.fonts.Thickening(s.Font, s.Bold)
-	pieces := make([]PieceView, 0, len(clip.Segments))
-	for _, p := range clip.Segments {
-		pieces = append(pieces, PieceView{Start: p.Start, End: p.End})
-	}
+	pieces := pieceViews(clip.Segments)
 	view := &CaptionsView{Captions: []CaptionView{}, Pieces: pieces, Style: CaptionStyleView{
 		Font: s.Font, Missing: s.Missing, Size: s.Size * em / authored, LineHeight: 1 / em,
 		ChosenSize: s.Size, Bold: s.Bold != 0, Weight: weight, Thicken: thicken,
