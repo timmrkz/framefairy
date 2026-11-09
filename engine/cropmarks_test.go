@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"math"
 	"os/exec"
 	"reflect"
@@ -776,4 +777,25 @@ func TestAGlideIntoTheFirstKeyframeStartsWhereTheClipDoes(t *testing.T) {
 			t.Errorf("at %.2f s the crop stands at %v, not %v", h.at, got, h.want)
 		}
 	}
+}
+
+// BenchmarkTheWindowIsSentAGlide is what one clip that glides over the
+// whole of its 30 s at 30 fps costs each state of the video sent to the
+// window: its crop steps and its glides worked out, and written as JSON.
+func BenchmarkTheWindowIsSentAGlide(b *testing.B) {
+	source := SourceInfo{Width: 1920, Height: 1080, FPSNum: 30, FPSDen: 1}
+	view := SegmentView{Start: 0, End: 30, CropX: intPtr(100), MarksFrom: 0, Marks: []CropMarkView{{At: 29.9, X: 1300, Glide: true}}}
+	var size int
+	for b.Loop() {
+		steps, glides := source.CropSteps(view, 608, 1920), source.Glides(view, 608, 1920)
+		out, err := json.Marshal(struct {
+			Steps  []CropStep  `json:"cropSteps"`
+			Glides []GlideSpan `json:"glides"`
+		}{steps, glides})
+		if err != nil {
+			b.Fatal(err)
+		}
+		size = len(out)
+	}
+	b.ReportMetric(float64(size), "bytes/clip")
 }
