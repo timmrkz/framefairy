@@ -143,12 +143,14 @@ export const steps = {
   //                    window, holds the speech model and makes a clip
   //                    with O two hundred seconds past it, so its card
   //                    stays on its way while it waits to be heard. The
-  //                    clip timeline is swiped by hand, the speech let go,
-  //                    and once the card is written as its clip the clip
-  //                    timeline is where the hand put it and the playhead
-  //                    where it was. Laid out afresh, the clip jumped back
-  //                    to the middle under a hand already at work on it,
-  //                    issue #767
+  //                    clip timeline is swiped by hand and the playhead
+  //                    pressed and held, the way Tim's log of 9 November
+  //                    has it, and the speech let go. Once the card is
+  //                    written as its clip, the clip timeline is where the
+  //                    hand put it and the playhead under the hand, and it
+  //                    follows the hand as it moves on. Laid out afresh,
+  //                    the clip jumped back to the middle and the playhead
+  //                    to its start, under a hand at work, issue #767
   async "swipe while it is made"(walk, arg, s) {
     const { page, watch } = walk;
     const path = await episodeOn(page);
@@ -183,14 +185,33 @@ export const steps = {
       await control(url, "/speech?go");
       return;
     }
+    // The playhead pressed where it stands, and held across the write.
+    const hand = swiped.x + 1;
+    await page.mouse.move(hand, box.y);
+    await page.mouse.down();
+    await settle(page);
+    const held = await where();
     await control(url, "/speech?go");
     const written = await seenUntil(page, url, current, (key) => key !== card && key !== before);
     await settle(page);
     const after = await where();
-    if (Math.abs(after.x - swiped.x) > 1 || Math.abs(after.at - swiped.at) > 0.001) {
+    if (Math.abs(after.x - held.x) > 1 || Math.abs(after.at - held.at) > 0.001) {
       walk.wrong =
-        `the card ${card} written as ${written} moved the playhead on the clip timeline from ${swiped.x.toFixed(1)} px ` +
-        `to ${after.x.toFixed(1)} px, and from ${swiped.at.toFixed(3)} s to ${after.at.toFixed(3)} s`;
+        `the card ${card} written as ${written} moved the playhead held on the clip timeline from ${held.x.toFixed(1)} px ` +
+        `to ${after.x.toFixed(1)} px, and from ${held.at.toFixed(3)} s to ${after.at.toFixed(3)} s`;
+      await page.mouse.up();
+      return;
+    }
+    // And the hand goes on: the playhead follows it.
+    await page.mouse.move(hand + 60, box.y);
+    await settle(page);
+    const moved = await where();
+    await page.mouse.up();
+    await settle(page);
+    if (Math.abs(moved.x - (after.x + 60)) > 2 || !(moved.at > after.at)) {
+      walk.wrong =
+        `the hand moved 60 px on from ${after.x.toFixed(1)} px once ${written} was written, ` +
+        `and the playhead went to ${moved.x.toFixed(1)} px, ${moved.at.toFixed(3)} s`;
     }
     await watch.step("swipe", s);
   },

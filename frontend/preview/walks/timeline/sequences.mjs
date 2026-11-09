@@ -11,9 +11,10 @@ export default [
     steps: [["speech", "go"], ["add", 1500], ["wait for", "Search"], ["drag past what was heard"]],
   },
   {
-    // Tim made a clip with O and moved the clip timeline while it was
-    // made. Once it was written, the clip timeline put it back in the
-    // middle and undid what his hand had done, issue #767.
+    // Tim made a clip with O, moved the clip timeline and held the
+    // playhead while it was made. Once it was written, the clip timeline
+    // put it back in the middle and the playhead on its start, and undid
+    // what his hand was doing, issue #767.
     name: "a clip made with O stays where the hand moved the clip timeline once it is written",
     steps: [["speech", "go"], ["add", 1500], ["wait for", "Search"], ["swipe while it is made"]],
   },
