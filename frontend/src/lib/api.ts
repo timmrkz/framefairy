@@ -266,7 +266,7 @@ export interface CropMark {
   at: number;
   x: number;
   turn?: number;
-  // A circle, which the crop glides into from the keyframe before, rather
+  // A circle, which the crop glides to from a circle before it, rather
   // than a diamond it switches on.
   glide?: boolean;
 }
@@ -479,7 +479,7 @@ export interface ClipEntry extends ClipView {
   // worked out by the engine, and null for a piece whose crop is its
   // cropLefts throughout. See engine.CropSteps.
   cropSteps?: (CropStep[] | null)[];
-  // Where the crop glides, each glide into a circle cut to a piece, worked
+  // Where the crop glides, each glide from a circle into the next cut to a piece, worked
   // out by the engine, see engine.Glides.
   glides?: GlideSpan[];
   // On the answer to an edit, when the edit was written, on the clock a

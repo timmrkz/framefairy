@@ -450,10 +450,10 @@ export default [
     // on every frame of the glide where the render crops it, still and
     // played. K on the circle makes it a diamond, G a circle again, and G
     // on the circle removes it.
-    name: "a keyframe put with G glides the crop into it from the keyframe before",
+    name: "two circles put with G glide the crop from one into the other",
     steps: [
       ["added", 30, "25"],
-      ["keyframe at", 0.2],
+      ["glide at", 0.2],
       ["drag crop", -300],
       ["glide at", 0.8],
       ["drag crop", 300],
@@ -503,7 +503,7 @@ export default [
     name: "Put the crop back after Automatic crop brings back the keyframes, their crops and their kinds",
     steps: [
       ["added", 30, "25"],
-      ["keyframe at", 0.2],
+      ["glide at", 0.2],
       ["glide at", 0.8],
       ["drag crop", 400],
       ["keyframes", 2],

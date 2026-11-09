@@ -218,7 +218,7 @@
     // was let go, both in the episode.
     onthumbnail?: (from: number, to: number) => Promise<void>;
     // The clip's keyframes, each a crop placed by hand on one frame. Each
-    // is a diamond, or a circle for one the crop glides into, on the top
+    // is a diamond, or a circle, which the crop glides to from a circle, on the top
     // rule of the track. Plan row 3.26.
     cropMarks?: CropMark[];
     // A keyframe dragged to another frame, from where it was to where it
@@ -1759,11 +1759,12 @@
       .map((m) => ({ at: m.at, shown: shownAt("crop", m.at), glide: !!m.glide }))
       .filter((m) => m.shown >= view.from && m.shown <= view.to),
   );
-  // The stretches the crop glides over, each into a circle, as the engine
-  // works them out, see engine.Glides, as shares of the track. Each is
-  // drawn along the top rule, brightening into the circle, so the two
-  // marks read as joined, Tim's ask on #750, in the look proposed on a
-  // sheet for him. A keyframe being dragged takes the ends on it along.
+  // The stretches the crop glides over, each from a circle into the next,
+  // as the engine works them out, see engine.Glides, as shares of the
+  // track. Each is drawn along the top rule, from dark to light, so the
+  // two circles read as joined, Tim's ask on #750, in the look he picked
+  // from a sheet, number 4. A keyframe being dragged takes the ends on it
+  // along.
   const glideLines = $derived(
     (clip?.glides ?? []).flatMap((g) => {
       const left = Math.max(0, x(onFrame(shownAt("crop", g.from))));
@@ -2301,7 +2302,7 @@
             title={locked
               ? "A keyframe. Click to see it"
               : m.glide
-                ? "A keyframe the crop glides into from the one before. With the playhead on it, drag the crop to place it. Click to see it, drag it to another frame, double-click to remove it"
+                ? "A gliding keyframe. From one of these the crop glides into the next. With the playhead on it, drag the crop to place it. Click to see it, drag it to another frame, double-click to remove it"
                 : "A keyframe the crop switches on. With the playhead on it, drag the crop to place it. Click to see it, drag it to another frame, double-click to remove it"}
             data-grip="mark"
             data-kind="crop"
@@ -2772,16 +2773,17 @@
     top: calc(var(--frame-line) / 2 - 9px);
   }
 
-  /* The stretch the crop glides over into a circle, over the top rule and
-     as thick: the rule's own colour where it leaves the keyframe before,
-     brightening to the brightest point of the app's colour at the circle,
-     so it reads as the way into it. Under the marks, which stand on it.
-     Number 3 of a sheet of nine drawn for Tim on #750. */
+  /* The stretch the crop glides over from a circle into the next, over the
+     top rule and as thick: the black of the well where it leaves the first
+     circle, brightening to the brightest point of the app's colour at the
+     second, so it reads as the way from one into the other. Under the
+     marks, which stand on it. Number 4 of a sheet of nine drawn for Tim on
+     #750, his pick. */
   .glide {
     position: absolute;
     top: 0;
     height: var(--frame-line);
-    background: linear-gradient(90deg, var(--accent-hi), var(--accent-lit));
+    background: linear-gradient(90deg, var(--well), var(--accent-lit));
     pointer-events: none;
     z-index: 6;
   }

@@ -1459,6 +1459,10 @@ export const steps = {
         const e = document.querySelector(".clip-timeline .cropdot.here");
         return e ? (e.dataset.glide ? "circle" : "diamond") : "none";
       });
+    const on = await chosen(page);
+    const circles = async () =>
+      ((await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip)?.cropMarks ?? []).filter((m) => m.glide).length;
+    const had = await circles();
     const before = await here();
     if (before === "none") {
       walk.wrong = `the playhead is on no keyframe for ${key.toUpperCase()} to change`;
@@ -1477,16 +1481,15 @@ export const steps = {
     else if (took > 300) walk.wrong = `the ${kind} showed ${took} ms after ${key.toUpperCase()}, not at once`;
     await watch.step("press", s);
     await settle(page);
-    const on = await chosen(page);
-    const marks = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip)?.cropMarks ?? [];
-    const glides = marks.filter((m) => m.glide).length;
-    if (!walk.wrong && kind === "circle" && glides === 0) walk.wrong = "the engine has no keyframe the crop glides into";
-    if (!walk.wrong && kind === "diamond" && glides !== 0) walk.wrong = `the engine still has ${glides} keyframes the crop glides into`;
+    // The engine has one circle more or fewer, as the mark became.
+    const want = had + (kind === "circle") - (before === "circle");
+    const has = await circles();
+    if (!walk.wrong && has !== want) walk.wrong = `the engine has ${has} circles after ${key.toUpperCase()} on the ${before}, not ${want}`;
   },
   // ["glides", n]      the clip timeline draws n glide lines along the top
-  //                    rule, each from the keyframe before a circle to the
-  //                    circle, as thick as the rule, on it, brightening
-  //                    into the circle, and under the marks
+  //                    rule, each from a circle to the next circle, as
+  //                    thick as the rule, on it, brightening into the
+  //                    second circle, and under the marks
   async glides(walk, arg) {
     const { page } = walk;
     await settle(page);
@@ -1511,9 +1514,9 @@ export const steps = {
     const near = (a, b) => Math.abs(a - b) <= 1.5;
     for (const l of got.lines) {
       const into = got.dots.find((d) => d.glide && near(d.x, l.right));
-      const from = got.dots.find((d) => near(d.x, l.left));
+      const from = got.dots.find((d) => d.glide && near(d.x, l.left));
       if (!into) walk.wrong = `a glide line ends at ${l.right.toFixed(1)} px, on no circle`;
-      else if (!from) walk.wrong = `a glide line starts at ${l.left.toFixed(1)} px, on no keyframe`;
+      else if (!from) walk.wrong = `a glide line starts at ${l.left.toFixed(1)} px, on no circle`;
       else if (got.rule && (!near(l.top, got.rule.top) || !near(l.height, got.rule.line)))
         walk.wrong = `a glide line stands ${l.top.toFixed(1)} px down and ${l.height.toFixed(1)} px thick, not on the top rule at ${got.rule.top.toFixed(1)} px, ${got.rule.line} px thick`;
       else if (!l.image.startsWith("linear-gradient")) walk.wrong = `a glide line is drawn with ${l.image}, not brightening into its circle`;

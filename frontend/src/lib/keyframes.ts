@@ -1,7 +1,7 @@
 // Keyframes, plan row 3.26 and #750. A keyframe is a turning point: from
 // its frame on, the crop of a piece is the keyframe's until the next one.
-// A diamond switches the crop on its frame, and a circle has it glide in
-// from the keyframe before. The engine works out how each piece's crop
+// A diamond switches the crop on its frame, and from a circle the crop
+// glides into the next circle. The engine works out how each piece's crop
 // runs over its frames, the same the render crops by, and sends it with
 // the clip as cropSteps, see engine.CropSteps, a step on every frame of a
 // glide. The window keeps no rule of its own about it: it only takes the

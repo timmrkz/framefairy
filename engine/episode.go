@@ -515,10 +515,6 @@ type SegmentView struct {
 	Marks []CropMarkView `json:"marks"`
 	// Part is the part of the clip the piece is in, see PieceView.Part.
 	Part int `json:"part"`
-	// MarksFrom is where a glide into the first keyframe starts, see
-	// Segment.MarksFrom. The window is sent the crop worked out, see
-	// SourceInfo.CropSteps, so it is not sent this.
-	MarksFrom float64 `json:"-"`
 }
 
 // WordView is one word. In a caption it also says which word of the
@@ -608,7 +604,7 @@ func (s PlanSummary) View() *PlanView {
 		parts := pieceViews(c.Segments)
 		for i, s := range c.Segments {
 			v.Segments = append(v.Segments, SegmentView{s.Start, s.End, s.CropX, s.Moved, s.Rotate,
-				cropMarkViews(s.Marks), parts[i].Part, s.MarksFrom})
+				cropMarkViews(s.Marks), parts[i].Part})
 		}
 		v.Rendered = renderedOf(plan, c)
 		v.Short = shortOf(plan, c)

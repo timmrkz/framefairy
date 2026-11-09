@@ -19,8 +19,8 @@ Later, on #750, Tim found a glide between keyframes hard to work with for
 a camera switch, and asked for a keyframe as a turning point instead: the
 crop switches on it and holds until the next. He then wanted the glide
 back as a choice, and picked how from clickable mockups: two kinds of
-keyframe, a diamond the crop switches on and a circle it glides into,
-each with its key and its button. That is what keyframes do now, see
+keyframe, a diamond the crop switches on and a circle, with the crop
+gliding from one circle into the next, each with its key and its button. That is what keyframes do now, see
 section 4.
 
 ## What the app has today
@@ -99,7 +99,7 @@ crop.
 - **K and G, and two keyframe buttons** in the row under the clip
   timeline beside the thumbnail button, put a keyframe on the frame under
   the playhead, with the crop where it stands there now: K a diamond, where
-  the crop switches, and G a circle, which the crop glides into. With the
+  the crop switches, and G a circle, between which the crop glides. With the
   playhead on a keyframe of its kind, the button or its key removes it,
   the way the thumbnail button does, and on one of the other kind it
   turns it into its own. Their icons are a diamond and a circle with a
@@ -128,11 +128,13 @@ there:
 - **Into a diamond the switch is instant.** A camera switch is cut, not
   panned, so the crop switches on the keyframe's frame, with nothing in
   between.
-- **Into a circle the crop glides** from the keyframe before, over the
-  whole time between them, easing out and in the way a camera operator
-  pans, and reaches the circle's crop on its frame. Into a first circle it
-  glides from the clip's start. So a person who walks across the picture
-  takes a keyframe where the walk starts and a circle where it ends.
+- **From a circle the crop glides into the next circle**, over the whole
+  time between them, easing out and in the way a camera operator pans,
+  and reaches the second circle's crop on its frame. A glide runs only
+  between circles, Tim's rule: a diamond is an instant switch with
+  nothing before or after it, so into a circle after a diamond, or into
+  the first, the crop switches. So a person who walks across the picture
+  takes a circle where the walk starts and a circle where it ends.
 - **A drag places one keyframe.** Dragging a keyframe along the clip
   timeline moves where its switch or the end of its glide is.
 - **A keyframe holds across a cut, by the time the short plays.** A cut
@@ -146,7 +148,7 @@ The first design glided the crop from one keyframe to the next over the
 whole time between them, easing out and in, so the tempo was where the
 keyframes were. One keyframe then stood still, and a camera switch took
 two keyframes a frame apart. Tim found that odd on #750 and asked for the
-keyframe as a turning point, with the glide kept as the circle's way in.
+keyframe as a turning point, with the glide kept between circles.
 Mockups of five ways to offer it, a glide key, a menu on the keyframe, a
 switch with a length, a pan across a part and a movement recorded while
 playing, are kept in the project's files, and Tim chose the two keys.
@@ -165,11 +167,11 @@ their own:
   centred on the clip's bottom rule and the keyframe on its top rule, a
   diamond or a circle. So on the same frame both are on the frame's line,
   and each takes its own click, drag and double-click.
-- **A circle is joined to the keyframe before it** by a line on the top
-  rule, as thick as the rule, from the rule's own colour brightening into
-  the light colour at the circle, so the two read as one glide over the
-  clip's wash. Tim asked for the join, and this is number 3 of a sheet
-  of nine drawn for him.
+- **Two circles in a row are joined** by a line on the top rule, as thick
+  as the rule, from the well's black brightening into the light colour at
+  the second circle, so the two read as one glide over the clip's wash.
+  Three in a row have two lines, and a diamond has none. Tim asked for the
+  join and picked this look, number 4 of a sheet of nine drawn for him.
 - **Automatic crop** removes every keyframe of the clip and brings back the
   placement the engine found.
 

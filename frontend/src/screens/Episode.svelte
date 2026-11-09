@@ -1544,7 +1544,8 @@
 
   // The two keyframe buttons, K and G: a keyframe on the frame under the
   // playhead, with the crop where it stands there now, a diamond the crop
-  // switches on for K and a circle it glides into for G. On a keyframe of
+  // switches on for K and a circle for G, which the crop glides to from a
+  // circle before. On a keyframe of
   // the button's own kind it is removed, so what one click adds one click
   // takes away, and on one of the other kind it becomes the button's.
   // Tim chose the two buttons from mockups on #750.
@@ -3573,8 +3574,8 @@
           <!-- The two keyframes, each made the way a thumbnail is: a plus to
                put one on the frame under the playhead with the crop where it
                stands, a minus when the playhead stands on one of its kind.
-               A diamond, where the crop switches, and a circle, which the
-               crop glides into from the keyframe before, #750. -->
+               A diamond, where the crop switches, and a circle: from one
+               circle the crop glides into the next, #750. -->
           <button
             class="glyph"
             aria-label={cropHere === null
@@ -3589,7 +3590,7 @@
                 ? "Put a keyframe on the frame under the playhead. The crop switches there and holds until the next keyframe. K does the same"
                 : "Put the playhead in the clip to put a keyframe on the frame there"
               : cropHere.glide
-                ? "Make the keyframe at the playhead switch the crop instead of gliding into it. K does the same"
+                ? "Make the keyframe at the playhead a switch, with no glide into or out of it. K does the same"
                 : "Remove the keyframe at the playhead. K does the same"}
           >
             <Icon name={cropHere !== null && !cropHere.glide ? "keyframe-remove" : "keyframe-add"} />
@@ -3597,19 +3598,19 @@
           <button
             class="glyph"
             aria-label={cropHere === null
-              ? "Put a keyframe the crop glides into"
+              ? "Put a gliding keyframe"
               : cropHere.glide
                 ? "Remove this keyframe"
-                : "Make the crop glide into this keyframe"}
+                : "Make this keyframe a gliding one"}
             disabled={renderingCurrent || (cropHere === null && !inShort)}
             onclick={() => toggleCropMark(true)}
             title={cropHere === null
               ? inShort
-                ? "Put a keyframe on the frame under the playhead that the crop glides into from the keyframe before, and holds until the next. G does the same"
+                ? "Put a gliding keyframe on the frame under the playhead. From one of these the crop glides into the next. G does the same"
                 : "Put the playhead in the clip to put a keyframe on the frame there"
               : cropHere.glide
                 ? "Remove the keyframe at the playhead. G does the same"
-                : "Make the crop glide into the keyframe at the playhead instead of switching there. G does the same"}
+                : "Make the keyframe at the playhead a gliding one, which the crop glides to from a gliding keyframe before. G does the same"}
           >
             <Icon name={cropHere !== null && cropHere.glide ? "glide-remove" : "glide-add"} />
           </button>

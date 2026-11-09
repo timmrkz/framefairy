@@ -64,22 +64,23 @@ func TestTheCropHoldsFromEachKeyframeToTheNext(t *testing.T) {
 	}
 }
 
-// Into a circle the crop glides from the keyframe before, over the whole
+// From a circle the crop glides into the next circle, over the whole
 // time between them, easing out and in, and reaches it on its frame. Into
-// the first keyframe it glides from the piece's own crop, from where the
-// crop of its turn begins. After a circle it holds like after a diamond.
-func TestTheCropGlidesIntoACircleFromTheKeyframeBefore(t *testing.T) {
+// the first circle, and into a circle after a diamond, it switches: a
+// diamond is a switch, and nothing happens before or after it, Tim on
+// #750. After a circle it holds like after a diamond.
+func TestTheCropGlidesOnlyFromACircleIntoTheNext(t *testing.T) {
 	t.Parallel()
 	run := cropRun{marks: []frameMark{
-		{k: 10, x: 100}, {k: 20, x: 300, glide: true}, {k: 30, x: 300}, {k: 40, x: 0, glide: true}, {k: 41, x: 50, glide: true},
-	}, base: 500, from: 4}
+		{k: 10, x: 100, glide: true}, {k: 20, x: 300, glide: true}, {k: 30, x: 300}, {k: 40, x: 0, glide: true}, {k: 41, x: 50, glide: true}, {k: 50, x: 200, glide: true},
+	}, base: 500}
 	for _, c := range []struct {
 		k    int64
 		want float64
 	}{
 		{0, 500}, {9, 500},
 		{10, 100}, {15, 200}, {20, 300}, {25, 300}, {30, 300},
-		{35, 150}, {40, 0}, {41, 50}, {60, 50},
+		{35, 300}, {39, 300}, {40, 0}, {41, 50}, {50, 200}, {60, 200},
 	} {
 		if got := run.at(c.k); math.Abs(got-c.want) > 1e-9 {
 			t.Errorf("on frame %d the crop is at %v, not %v", c.k, got, c.want)
@@ -88,16 +89,6 @@ func TestTheCropGlidesIntoACircleFromTheKeyframeBefore(t *testing.T) {
 	// Eased: a third of the way in it has gone less than a third.
 	if got := run.at(13); got <= 100 || got >= 100+200.0/3 {
 		t.Errorf("a third of the way into the glide the crop is at %v", got)
-	}
-
-	first := cropRun{marks: []frameMark{{k: 10, x: 100, glide: true}}, base: 500, from: 4}
-	for _, c := range []struct {
-		k    int64
-		want float64
-	}{{0, 500}, {4, 500}, {7, 300}, {10, 100}, {20, 100}} {
-		if got := first.at(c.k); math.Abs(got-c.want) > 1e-9 {
-			t.Errorf("gliding into the first keyframe, on frame %d the crop is at %v, not %v", c.k, got, c.want)
-		}
 	}
 }
 
@@ -108,7 +99,7 @@ func TestTheCropGlidesIntoACircleFromTheKeyframeBefore(t *testing.T) {
 func TestASlowGlideMovesOnEveryFrameOfTheShort(t *testing.T) {
 	t.Parallel()
 	const cropW, width, scaled = 608, 1920, 1084
-	run := cropRun{marks: []frameMark{{k: 0, x: 400}, {k: 100, x: 700, glide: true}}}
+	run := cropRun{marks: []frameMark{{k: 0, x: 400, glide: true}, {k: 100, x: 700, glide: true}}}
 	cut, off := glideCrop(run.at(0), cropW, width, scaled)
 	was := float64(cut) + float64(off)*float64(cropW+glideMargin)/scaled
 	for k := int64(1); k < 100; k++ {
@@ -154,8 +145,10 @@ func TestTheVideoPreviewIsSentTheCropsTheRenderCropsBy(t *testing.T) {
 
 	// A glide is a step on every frame it moves, each where the render
 	// has it.
-	view.Marks[5].Glide = true
-	seg.Marks[5].Glide = true
+	for _, i := range []int{4, 5} {
+		view.Marks[i].Glide = true
+		seg.Marks[i].Glide = true
+	}
 	steps := source.CropSteps(view, 152, 480)
 	run = source.runOf(seg, 152, 480)
 	for k := int64(10); k < 75; k++ {
@@ -174,19 +167,21 @@ func TestTheVideoPreviewIsSentTheCropsTheRenderCropsBy(t *testing.T) {
 }
 
 // The clip timeline is sent where the crop glides, the way the render
-// glides it, so the line it draws says what the short does: from the
-// keyframe before, hidden by a cut or not, into each circle, cut to the
-// piece, and no line into a circle with the crop it already has.
+// glides it, so the line it draws says what the short does: from a
+// circle, hidden by a cut or not, into the next circle, cut to the piece,
+// and no line into a circle with the crop it already has, or into one
+// after a diamond.
 func TestTheClipTimelineIsSentWhereTheCropGlides(t *testing.T) {
 	t.Parallel()
 	source := SourceInfo{Width: 480, Height: 270, FPSNum: 25, FPSDen: 1}
-	view := SegmentView{Start: 1.0, End: 3.0, CropX: intPtr(50), MarksFrom: 1.0, Marks: []CropMarkView{
-		{At: 0.6, X: 10}, {At: 1.4, X: 200, Glide: true}, {At: 2.0, X: 200, Glide: true}, {At: 2.4, X: 300}, {At: 2.8, X: 0, Glide: true}, {At: 3.6, X: 100, Glide: true},
+	view := SegmentView{Start: 1.0, End: 3.0, CropX: intPtr(50), Marks: []CropMarkView{
+		{At: 0.6, X: 10, Glide: true}, {At: 1.4, X: 200, Glide: true}, {At: 2.0, X: 200, Glide: true}, {At: 2.4, X: 300}, {At: 2.8, X: 0, Glide: true}, {At: 3.6, X: 100, Glide: true},
 	}}
-	// The keyframe at 0.6 s, before the piece, starts the first glide on
+	// The circle at 0.6 s, before the piece, starts the first glide on
 	// the piece's first frame. The circle at 2.0 s has the crop it already
-	// has. The glide into the circle after the piece is cut at its end.
-	want := []GlideSpan{{1.0, 1.4}, {2.4, 2.8}, {2.8, 3.0}}
+	// has, and the one at 2.8 s comes after a diamond. The glide into the
+	// circle after the piece is cut at its end.
+	want := []GlideSpan{{1.0, 1.4}, {2.8, 3.0}}
 	if got := source.Glides(view, 152, 480); !reflect.DeepEqual(got, want) {
 		t.Errorf("the piece's glides are %v, not %v", got, want)
 	}
@@ -199,9 +194,10 @@ func TestTheClipTimelineIsSentWhereTheCropGlides(t *testing.T) {
 			}
 		}
 	}
-	// A first circle glides from where the crop of its turn begins.
-	if got := source.Glides(SegmentView{Start: 1, End: 2, CropX: intPtr(50), MarksFrom: 0.6, Marks: []CropMarkView{{At: 1.6, X: 300, Glide: true}}}, 152, 480); !reflect.DeepEqual(got, []GlideSpan{{1.0, 1.6}}) {
-		t.Errorf("the first circle's glide is %v, not from the piece's start to 1.6 s", got)
+	// A first circle, and a circle after a diamond, are where the crop
+	// switches.
+	if got := source.Glides(SegmentView{Start: 1, End: 2, CropX: intPtr(50), Marks: []CropMarkView{{At: 1.2, X: 300, Glide: true}, {At: 1.4, X: 100}, {At: 1.6, X: 300, Glide: true}}}, 152, 480); got != nil {
+		t.Errorf("a first circle and a circle after a diamond are sent the glides %v", got)
 	}
 	if got := source.Glides(SegmentView{Start: 1, End: 2, CropX: intPtr(50), Marks: []CropMarkView{{At: 1.5, X: 100}}}, 152, 480); got != nil {
 		t.Errorf("a piece that only switches is sent the glides %v", got)
@@ -362,7 +358,7 @@ func TestTheRenderGlidesIntoAsManyKeyframesAsAClipMayHave(t *testing.T) {
 	source := SourceInfo{Width: 480, Height: 270, FPSNum: 25, FPSDen: 1}
 	seg := Segment{Start: 0, End: 9}
 	for i := range MaxCropMarks {
-		seg.Marks = append(seg.Marks, CropMark{At: 0.2 + float64(i)*0.08, X: (i * 37) % 329, Glide: i%2 == 1})
+		seg.Marks = append(seg.Marks, CropMark{At: 0.2 + float64(i)*0.08, X: (i * 37) % 329, Glide: i%3 != 0})
 	}
 	run := source.runOf(seg, 152, 480)
 	for n, got := range renderedLefts(t, source, seg, 215) {
@@ -760,11 +756,16 @@ func TestAKeyframeACutOrATrimCoversStillSwitchesTheCrop(t *testing.T) {
 	}
 }
 
-// A glide into the first keyframe starts where the clip does, from the
-// clip's own crop, and holds after it across a cut.
-func TestAGlideIntoTheFirstKeyframeStartsWhereTheClipDoes(t *testing.T) {
+// A glide between two circles in two pieces runs across the cut between
+// them, and the crop holds after the second across the next cut. A first
+// circle alone switches, like a diamond.
+func TestAGlideBetweenTwoCirclesRunsAcrossACut(t *testing.T) {
 	fsys, path := rotatablePlanPath(t)
 	cropMarks(t, fsys, path, CropMark{At: 11.52, X: 600, Glide: true})
+	if got := at25.CropAt(loadedClip(t, fsys, path).Segments[0], 10.76, 608, 1920); got != 120 {
+		t.Errorf("before a first circle alone the crop stands at %v, not the clip's own 120", got)
+	}
+	cropMarks(t, fsys, path, CropMark{At: 10.0, X: 120, Glide: true})
 	c := loadedClip(t, fsys, path)
 	for _, h := range []struct {
 		piece int
@@ -784,7 +785,7 @@ func TestAGlideIntoTheFirstKeyframeStartsWhereTheClipDoes(t *testing.T) {
 // window: its crop steps and its glides worked out, and written as JSON.
 func BenchmarkTheWindowIsSentAGlide(b *testing.B) {
 	source := SourceInfo{Width: 1920, Height: 1080, FPSNum: 30, FPSDen: 1}
-	view := SegmentView{Start: 0, End: 30, CropX: intPtr(100), MarksFrom: 0, Marks: []CropMarkView{{At: 29.9, X: 1300, Glide: true}}}
+	view := SegmentView{Start: 0, End: 30, CropX: intPtr(100), Marks: []CropMarkView{{At: 0, X: 100, Glide: true}, {At: 29.9, X: 1300, Glide: true}}}
 	var size int
 	for b.Loop() {
 		steps, glides := source.CropSteps(view, 608, 1920), source.Glides(view, 608, 1920)

@@ -2664,11 +2664,13 @@ who moves across the picture. Plan row 3.26 and #750, the design is in
 - **A keyframe is a turning point.** From its frame on, the crop is the
   keyframe's until the next keyframe. Before the first keyframe it is the
   clip's own crop. Into a diamond the crop switches on its frame, so a
-  camera switch takes one keyframe, put where the camera switches. Into a
-  circle it glides from the keyframe before, over the whole time between
-  them, easing out and in, and from the clip's start into a first circle.
-  So a person who walks across takes a keyframe where the walk starts and
-  a circle where it ends. A keyframe holds across a cut by the time the
+  camera switch takes one keyframe, put where the camera switches. From a
+  circle the crop glides into the next circle, over the whole time between
+  them, easing out and in. A glide runs only between circles, Tim's rule
+  on #750: a diamond is an instant switch with nothing before or after it,
+  so into a circle after a diamond, or into the first, the crop switches.
+  So a person who walks across takes a circle where the walk starts and a
+  circle where it ends. A keyframe holds across a cut by the time the
   short plays. A part turned with Rotate has a crop of its own, so its
   crop still starts at its cut.
 - **The crop frame is dragged only with the playhead on a keyframe**, and
@@ -2692,12 +2694,13 @@ who moves across the picture. Plan row 3.26 and #750, the design is in
   double-click removes it. While it is dragged it stands on the start of
   the frame under the hand, where it stays once let go, so dragged past
   the clip's edge it stops on the first or last frame and does not jump.
-  A circle is joined to the keyframe before it by a line on the top rule,
-  as thick as the rule, that brightens from the rule's colour into the
-  light colour at the circle, so the two read as one glide. The engine
-  says where each glide runs, `Glides`, so the line starts where the
-  short's glide does, at a keyframe a cut hides too, and a circle with
-  the crop the one before has gets no line.
+  Two circles in a row are joined by a line on the top rule, as thick as
+  the rule, from the well's black brightening into the light colour at
+  the second, so the two read as one glide. Three circles in a row have
+  two lines, and a diamond has none. Tim picked the look from a sheet of
+  nine. The engine says where each glide runs, `Glides`, so the line
+  starts where the short's glide does, at a circle a cut hides too, and a
+  circle with the crop the one before has gets no line.
 - **Automatic crop** removes every keyframe of the clip and brings back
   the crop the engine found, and **Put the crop back** brings back the
   keyframes with the crop. Removing a keyframe gives its part the crop of

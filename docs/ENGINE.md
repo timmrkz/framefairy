@@ -1225,10 +1225,11 @@ the video preview need nothing new. A keyframe is a turning point: from its
 frame on the crop is the keyframe's until the next one, and before the first
 it is the piece's own, `cropRun.at`, on the frames of the video. A diamond
 switches the crop on its frame, so one keyframe where the camera switches is
-all a switch takes, Tim's ask on #750. A circle, `glide`, has the crop glide
-into it from the keyframe before, over the whole time between them, by
-smoothstep, and into the first keyframe from where the crop of the piece's
-turn begins, `Segment.MarksFrom`. `SetCropGlide` turns one kind into the
+all a switch takes, Tim's ask on #750. From a circle, `glide`, the crop
+glides into the next circle, over the whole time between them, by
+smoothstep, `cropRun.gliding`. A glide runs only between circles, Tim's
+rule: into a circle after a diamond, or into the first, the crop switches.
+`SetCropGlide` turns one kind into the
 other. A piece that only switches is cropped by one crop whose left edge
 is an expression in the frame, `holdExpr`, nested by halving so a hundred
 keyframes stay under the depth ffmpeg takes, every left edge on an even

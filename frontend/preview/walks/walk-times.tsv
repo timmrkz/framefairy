@@ -61,7 +61,7 @@
  12	sequences.mjs SEQUENCE=a step to the word beside finds its frame read while the hand rested
  12	sequences.mjs SEQUENCE=an edge dragged while the clip plays changes nothing that plays
  12	sequences.mjs SEQUENCE=the walks' video has words that share a frame at the start, in the middle and at the end of a caption
- 12	sequences.mjs SEQUENCE=a keyframe put with G glides the crop into it from the keyframe before
+ 12	sequences.mjs SEQUENCE=two circles put with G glide the crop from one into the other
  11	sequences.mjs SEQUENCE=The settings say each thing once, in one way
  11	sequences.mjs SEQUENCE=a keyframe dragged past the clip's edge stops on its first or last frame and stays where it was let go
  11	sequences.mjs SEQUENCE=a model a search finds clips with is not changed or removed under it
@@ -84,7 +84,6 @@
   9	sequences.mjs SEQUENCE=a press on an edge or a mark puts the playhead on it at once
   9	sequences.mjs SEQUENCE=an end dragged back past the playing playhead plays on into the video
   9	sequences.mjs SEQUENCE=the picture comes back after the playhead reached the end of the episode
-  8	sequences.mjs SEQUENCE=two keyframes each hold their crop until the next
   8	sequences.mjs SEQUENCE=I after the last word is not offered, and says why
   8	sequences.mjs SEQUENCE=Moving the cursor up while dictating keeps it in view, and the words coming in leave the field where it is
   8	sequences.mjs SEQUENCE=Shift and the arrows skip 5 seconds outside a clip, past where the transcript ends
@@ -108,6 +107,7 @@
   8	sequences.mjs SEQUENCE=an end pulled in while the clip plays, undone and redone, stops at the new end
   8	sequences.mjs SEQUENCE=the number keys put the playhead that many tenths into the clip, past its cut, playing or paused
   8	sequences.mjs SEQUENCE=the parts not transcribed yet give way as the work hears
+  8	sequences.mjs SEQUENCE=two keyframes each hold their crop until the next
   7	sequences.mjs SEQUENCE=Clear asks first, empties the words and the pictures, and undo brings them back
   7	sequences.mjs SEQUENCE=Shift and the arrows turn the page of the clip list
   7	sequences.mjs SEQUENCE=While dictating, the field follows the words while its end is in view, wherever the cursor is
