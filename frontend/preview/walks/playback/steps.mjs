@@ -1477,7 +1477,25 @@ export const steps = {
       const [a, b] = [xs[from][0], xs[k][0]];
       if (b - a >= 64 && late.some(([p, q]) => a <= q + 128 && b >= p - 128)) silences.push([a, b]);
     }
-    const lateHere = (f) => silences.some(([a, b]) => f >= a - 1 && f <= b + 2);
+    // The play's first stretch is put on the sound card a lead ahead of
+    // its clock, START_LEAD in lib/frames/queue.ts. A sound card that has
+    // rendered past it by the time the stretch is put there starts it at
+    // its next buffer, from its first sample, and stops it where it was
+    // to end, so it is heard late by as much and clicks at its end, where
+    // the next stretch comes on time. The page reads the sound card's
+    // clock before it has caught up, so the stretch is not counted late
+    // there. CI's Chromium on a busy runner began it 208 frames late and
+    // clicked 4096 frames in, the length of a stretch, CHUNK in the same
+    // file, issue #466. The program's sound begins at the frame the clock
+    // starts, or the frame after where its first sample is faded to
+    // nothing, and a click within the first stretch of a play heard later
+    // is the machine's. A longer stretch would only make this stricter.
+    const startFrame = Math.round(c0 * sr);
+    const begun = xs.find(([f, x]) => f >= startFrame && x !== 0)?.[0];
+    const startedLate = begun !== undefined && begun > startFrame + 1;
+    const lateStart = (f) => startedLate && f >= startFrame && f <= startFrame + 4096 + 2;
+    if (startedLate) console.log(`      the sound card began the play's sound ${begun - startFrame} frames after its clock started`);
+    const lateHere = (f) => lateStart(f) || silences.some(([a, b]) => f >= a - 1 && f <= b + 2);
     let clicks = 0;
     let firstClick = null;
     let after = 0;
@@ -1496,7 +1514,7 @@ export const steps = {
         firstClick ??= ((f - endFrame) / sr) * 1000;
       }
     }
-    if (starved) console.log(`      ${starved} clicks where the page handed the sound card its sound late, ${silences.length} silences heard`);
+    if (starved) console.log(`      ${starved} clicks where the sound card was handed its sound late or began it late, ${silences.length} silences heard`);
     if (walk.loopEnd.starts) walk.wrong = `the play started over ${walk.loopEnd.starts} times while L was pressed`;
     else if (walk.loopEnd.thrown) walk.wrong = `the presses of L took ${walk.loopEnd.thrown} stretches of sound off the sound card before they had played`;
     else if (walk.loopEnd.twice) walk.wrong = `the presses of L handed the sound card ${walk.loopEnd.twice} stretches of sound it had already been handed`;
