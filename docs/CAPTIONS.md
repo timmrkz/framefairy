@@ -178,7 +178,24 @@ its own, so an ask called off leaves the others waiting their answer, and
 each ask waits only as long as it is wanted. It is written whole under a
 name of its own and then
 renamed into place, so no ask reads half a file. A file that could not be
-made is not remembered, so the next ask tries again. The folder keeps the
+made is not remembered, so the next ask tries again.
+
+Until the clip's whole file is there, a frame draws from a file of only
+the captions that show on it, `CaptionDrawing.showing`, measured by its
+own ask and not waited for behind another ask measuring the same words,
+`Style.alone`. libass draws each caption from its own events at their
+own places, so that file draws there what the whole file draws. Only
+when a word of another caption cannot be measured does the whole file
+fall back to plain boxes, and then the frame drawn first shows a pill
+the whole file has not. The whole file is then started without a wait,
+`trackCache.start`, and the whole file started before it for the same
+clip at the same size of the short, `previewPlace`, is called off when
+no ask waits for it. So is one that is no longer drawn because the
+whole file of the new size is there already. A file called off says
+nothing in the log. A step of the caption size measured every word of
+the clip again before it showed, about 320 ms for a clip of 25 s in a
+cloud session, and Tim saw the captions stutter as he stepped the size
+with the arrow keys. The captions that show take about 60 ms. The folder keeps the
 256 used last and removes the rest, those of earlier runs first, and what
 an earlier run left half written. A file half written a moment ago is
 another ask's, made beside it, and stays. The caption file is never what makes the work folder: a folder without its mark gets no caption file, and one gone by the moment the file is written gets none either, `ErrNoWorkFolder`. The folders the file and its face go in are made one at a time inside the work folder, `foldersIn`, and never with everything above them, so a deletion that crosses the write leaves the folder gone, which CI's run of that walk caught. The video preview went on asking for captions after Tim's folder was deleted in Finder, and wrote the folder back before the app let the video go, which main's walk for 2.247 found on #201.
