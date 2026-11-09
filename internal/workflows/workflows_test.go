@@ -232,18 +232,26 @@ func braces(glob string) []string {
 // see When main moves in docs/WORKFLOW.md.
 var targetAllowed = map[string]bool{"conflicts.yml": true}
 
-// Only the workflows the policy names run on pull_request_target, and
-// they check out main alone. The event runs with a token that writes,
-// whatever the pull request holds, so a checkout of the pull request's
-// code there would run a stranger's code with it.
+// Only the workflows the policy names run on pull_request_target, each
+// of them does, and they check out main alone. The event runs with a token
+// that writes, whatever the pull request holds, so a checkout of the pull
+// request's code there would run a stranger's code with it. conflicts.yml
+// needs the event: GitHub runs no pull_request workflow on a pull request
+// that conflicts, so on pull_request it would never tell one that
+// conflicts from its first push.
 //
 // On the real disk: what is read is the repository's own workflows.
 func TestPullRequestTargetOnlyWhereAllowed(t *testing.T) {
 	t.Parallel()
-	files, err := filepath.Glob(filepath.Join("..", "..", ".github", "workflows", "*.yml"))
-	if err != nil {
-		t.Fatal(err)
+	var files []string
+	for _, ext := range []string{"*.yml", "*.yaml"} {
+		found, err := filepath.Glob(filepath.Join("..", "..", ".github", "workflows", ext))
+		if err != nil {
+			t.Fatal(err)
+		}
+		files = append(files, found...)
 	}
+	seen := map[string]bool{}
 	for _, f := range files {
 		b, err := os.ReadFile(f)
 		if err != nil {
@@ -255,6 +263,7 @@ func TestPullRequestTargetOnlyWhereAllowed(t *testing.T) {
 				Steps []struct {
 					Uses string            `yaml:"uses"`
 					With map[string]string `yaml:"with"`
+					Run  string            `yaml:"run"`
 				} `yaml:"steps"`
 			} `yaml:"jobs"`
 		}
@@ -271,15 +280,28 @@ func TestPullRequestTargetOnlyWhereAllowed(t *testing.T) {
 			continue
 		}
 		name := filepath.Base(f)
+		seen[name] = true
 		if !targetAllowed[name] {
-			t.Errorf("%s runs on pull_request_target, which GitHub blocks unless the Actions policy names it: add it there and to targetAllowed, or use pull_request", name)
+			t.Errorf("%s runs on pull_request_target, which GitHub blocks unless the Actions policy names it: add it there and to targetAllowed", name)
 		}
 		for job, j := range wf.Jobs {
 			for _, s := range j.Steps {
 				if strings.HasPrefix(s.Uses, "actions/checkout@") && s.With["ref"] != "main" {
 					t.Errorf("%s: job %s checks out %q on pull_request_target, where only main is safe", name, job, s.With["ref"])
 				}
+				if moves.MatchString(s.Run) {
+					t.Errorf("%s: job %s moves its checkout in a run step on pull_request_target, where only main is safe", name, job)
+				}
 			}
 		}
 	}
+	for name := range targetAllowed {
+		if !seen[name] {
+			t.Errorf("%s no longer runs on pull_request_target, so it no longer hears a pull request that conflicts from its first push", name)
+		}
+	}
 }
+
+// A run step that puts other code in the working tree than the checkout
+// of main.
+var moves = regexp.MustCompile(`\bgit\s+(checkout|switch|reset|restore|worktree|pull|merge|cherry-pick|rebase)(\s|$)`)

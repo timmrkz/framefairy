@@ -249,7 +249,7 @@ request through `pull_request_target`, because GitHub runs no
 `pull_request` workflow on one that conflicts. GitHub blocks that event
 in a public repository from 2 December 2026, and in brownouts before,
 unless the repository's Actions policy allows it for the workflow file.
-The policy here names `conflicts.yml` alone, and
+The policy is to name `conflicts.yml` alone, and
 `TestPullRequestTargetOnlyWhereAllowed` in `internal/workflows` fails on
 any other workflow that uses the event, or on one that checks out
 anything but `main`. Without the policy the run on a push to `main`
