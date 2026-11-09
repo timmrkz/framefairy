@@ -225,7 +225,7 @@ func (s SourceInfo) frameStartHolding(at float64) float64 {
 }
 
 // frameMark is a keyframe on its frame, with its left edge kept inside
-// the picture, and whether the crop glides into it.
+// the picture, and whether it is a circle.
 type frameMark struct {
 	k     int64
 	x     int
@@ -533,11 +533,14 @@ type GlideSpan struct {
 	To   float64 `json:"to"`
 }
 
-// Glides is where the crop of a piece glides, each glide cut to the
-// piece's own frames, for the clip timeline to draw: it starts where the
-// render starts it, at the circle before, hidden by a cut or not, and a
-// circle with the crop the one before has is no glide. Nil where the crop
-// never glides.
+// Glides is where the crop of a piece glides, from each circle into the
+// circle after it, each glide cut to the piece's own frames, for the clip
+// timeline to draw, hidden by a cut or not. Two circles in a row are
+// joined even while their crops are the same and nothing moves yet, which
+// is how a circle put after a circle starts, so the line comes with the
+// key and not only once a crop is dragged: Tim on #750, "if there are like
+// three glide frames in sequence, then we have two gradient lines". Nil
+// where no circle follows a circle.
 func (s SourceInfo) Glides(v SegmentView, cropW, width int) []GlideSpan {
 	if len(v.Marks) == 0 || s.FPSNum <= 0 || s.FPSDen <= 0 || width <= 0 {
 		return nil
@@ -546,10 +549,10 @@ func (s SourceInfo) Glides(v SegmentView, cropW, width int) []GlideSpan {
 	first, end := s.pieceFrames(v.Start, v.End)
 	var out []GlideSpan
 	for i, b := range r.marks {
-		if !r.gliding(i) {
+		if i == 0 || !r.marks[i-1].glide || !b.glide {
 			continue
 		}
-		from, to := max(r.before(i).k, first), min(b.k, end)
+		from, to := max(r.marks[i-1].k, first), min(b.k, end)
 		if from < to {
 			out = append(out, GlideSpan{From: s.keptAt(from), To: s.keptAt(to)})
 		}
@@ -721,7 +724,7 @@ func SetCropGlide(fsys afero.Fs, planPath, clipID string, at float64, glide bool
 }
 
 // marksText is a clip's keyframes for the log, each its moment and left
-// edge, and a tilde for one the crop glides into.
+// edge, and a tilde for a circle.
 func marksText(marks []CropMark) string {
 	parts := make([]string, len(marks))
 	for i, m := range marks {

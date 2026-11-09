@@ -21,8 +21,8 @@ import (
 )
 
 // Keyframes, plan row 3.26 and #750: a keyframe put on a frame of a clip
-// switches its crop there, or the crop glides into it from the keyframe
-// before, and the crop holds until the next one.
+// switches its crop there, or, a circle after a circle, the crop glides
+// into it, and the crop holds until the next one.
 
 // cropMarks writes keyframes into the clip of rotatablePlan as a person's
 // edits would leave them.
@@ -169,8 +169,8 @@ func TestTheVideoPreviewIsSentTheCropsTheRenderCropsBy(t *testing.T) {
 // The clip timeline is sent where the crop glides, the way the render
 // glides it, so the line it draws says what the short does: from a
 // circle, hidden by a cut or not, into the next circle, cut to the piece,
-// and no line into a circle with the crop it already has, or into one
-// after a diamond.
+// and no line into one after a diamond. Two circles with one crop are
+// joined too, as they are the moment the second is put.
 func TestTheClipTimelineIsSentWhereTheCropGlides(t *testing.T) {
 	t.Parallel()
 	source := SourceInfo{Width: 480, Height: 270, FPSNum: 25, FPSDen: 1}
@@ -178,16 +178,17 @@ func TestTheClipTimelineIsSentWhereTheCropGlides(t *testing.T) {
 		{At: 0.6, X: 10, Glide: true}, {At: 1.4, X: 200, Glide: true}, {At: 2.0, X: 200, Glide: true}, {At: 2.4, X: 300}, {At: 2.8, X: 0, Glide: true}, {At: 3.6, X: 100, Glide: true},
 	}}
 	// The circle at 0.6 s, before the piece, starts the first glide on
-	// the piece's first frame. The circle at 2.0 s has the crop it already
-	// has, and the one at 2.8 s comes after a diamond. The glide into the
-	// circle after the piece is cut at its end.
-	want := []GlideSpan{{1.0, 1.4}, {2.8, 3.0}}
+	// the piece's first frame. The circle at 2.0 s has the crop the one
+	// before has, and is joined to it all the same, and the one at 2.8 s
+	// comes after a diamond. The glide into the circle after the piece is
+	// cut at its end.
+	want := []GlideSpan{{1.0, 1.4}, {1.4, 2.0}, {2.8, 3.0}}
 	if got := source.Glides(view, 152, 480); !reflect.DeepEqual(got, want) {
 		t.Errorf("the piece's glides are %v, not %v", got, want)
 	}
 	// Every frame inside a glide is a frame the render moves the crop on.
 	run := source.runOf(segmentOf(view), 152, 480)
-	for _, g := range want {
+	for _, g := range []GlideSpan{want[0], want[2]} {
 		for k := source.markFrame(g.From) + 1; k < source.markFrame(g.To); k++ {
 			if run.at(k) == run.at(k-1) {
 				t.Errorf("frame %d is in the glide %v, and the render holds the crop there", k, g)

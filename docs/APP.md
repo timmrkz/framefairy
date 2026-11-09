@@ -2655,7 +2655,7 @@ who moves across the picture. Plan row 3.26 and #750, the design is in
 - **Two keyframe buttons**, beside the thumbnail button under the clip
   timeline, each put a keyframe on the frame under the playhead, with the
   crop where it stands there now. **K** puts a diamond, where the crop
-  switches, and **G** a circle, which the crop glides into. Like the
+  switches, and **G** a circle, between which the crop glides. Like the
   thumbnail button neither is a mode: the icon is a diamond or a circle
   with a plus, and with a minus while the playhead stands on a keyframe
   of its kind, where a click removes it. On a keyframe of the other kind
@@ -2699,8 +2699,8 @@ who moves across the picture. Plan row 3.26 and #750, the design is in
   the second, so the two read as one glide. Three circles in a row have
   two lines, and a diamond has none. Tim picked the look from a sheet of
   nine. The engine says where each glide runs, `Glides`, so the line
-  starts where the short's glide does, at a circle a cut hides too, and a
-  circle with the crop the one before has gets no line.
+  starts where the short's glide does, at a circle a cut hides too. The
+  line comes with the second circle, before its crop is dragged.
 - **Automatic crop** removes every keyframe of the clip and brings back
   the crop the engine found, and **Put the crop back** brings back the
   keyframes with the crop. Removing a keyframe gives its part the crop of

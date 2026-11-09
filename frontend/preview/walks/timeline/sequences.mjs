@@ -444,9 +444,9 @@ export default [
     ],
   },
   {
-    // Tim's glide, #750: G puts a circle the crop glides into from the
-    // keyframe before, over the whole time between them, joined to it by a
-    // line along the top rule. In the video preview the crop frame moves
+    // Tim's glide, #750: G puts a circle, and from one circle the crop
+    // glides into the next, over the whole time between them, the two
+    // joined by a line along the top rule as soon as the second is put. In the video preview the crop frame moves
     // on every frame of the glide where the render crops it, still and
     // played. K on the circle makes it a diamond, G a circle again, and G
     // on the circle removes it.
@@ -456,6 +456,7 @@ export default [
       ["glide at", 0.2],
       ["drag crop", -300],
       ["glide at", 0.8],
+      ["glides", 1],
       ["drag crop", 300],
       ["glides", 1],
       ["crop holds"],
