@@ -7,13 +7,12 @@
 # second and held a walks job for twelve minutes, #462.
 #
 # .github/workflows/ci-image.yml builds it and keeps it in GitHub's
-# container registry, tagged by a sum of this file, of
-# scripts/ci-packages.sh and of the Playwright version in
-# frontend/package-lock.json. So a change to any of them makes a new image
-# and an unchanged one is pulled as it is. A file this one comes to read
-# must join that sum and the job's sparse checkout too, or a change to it
-# reuses the old image. Go and Node are not in it: the jobs take them from
-# go.mod and setup-node as every other job does.
+# container registry, tagged by a sum of this file and of the Playwright
+# version in frontend/package-lock.json. So a change to either makes a new
+# image and an unchanged one is pulled as it is. A file this one comes to
+# read must join that sum and the job's sparse checkout too, or a change
+# to it reuses the old image. Go and Node are not in it: the jobs take
+# them from go.mod and setup-node as every other job does.
 #
 # Both images below are pinned to a digest, so the same file always means
 # the same image. Moving them is a change to this file, which builds anew,
@@ -22,20 +21,35 @@ FROM node:22.23.4-bookworm-slim@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10
 
 FROM ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac AS base
 
+# Every package comes from Ubuntu's archive as it stood at SNAPSHOT,
+# through Ubuntu's snapshot service, so the same file builds the same
+# image whatever day it is built, #591. The base image's digest pins what
+# Ubuntu installed, this pins what is added to it, and scripts/upstream.sh
+# says when it is a month old, so the security fixes since come in by
+# moving it. ca-certificates comes first, from the archive of the day,
+# because the snapshot service is reached over https.
+ARG SNAPSHOT=20261030T000000Z
+
 # What a runner has and an Ubuntu image does not: a compiler, git for the
-# checkout, ps for scripts/leftovers.sh, which names what the tests left
-# running, curl, xz and zstd, the last for actions/cache, which keeps
-# what it saves with zstd when it finds it, and finds an entry saved one
-# way only that way. Then what scripts/ci-packages.sh installs for the Go
-# side, GTK and WebKit, and what the walks and the tests use beside it:
-# ffmpeg, which makes the bridge's episode, meson, ninja and nasm, which
-# build the ffmpeg we ship when its cache is missed, and patchelf, which
-# make looks for before it builds. The package lists go after, and so
-# does the script's setting for the downloads, which a job never makes.
+# checkout, ps, curl, xz and zstd, the last for actions/cache, which keeps
+# what it saves with zstd when it finds it. GTK and WebKit, which every Go
+# job compiles the app's package against, the fuzzing too, since one of
+# its targets is there, with pkg-config to find them. And what the walks
+# and the tests use beside it: ffmpeg, which makes the bridge's episode,
+# meson, ninja and nasm, which build the ffmpeg we ship when its cache is
+# missed, and patchelf, which make looks for before it builds. man-db
+# would index every manual page installed, and nobody reads one here. A
+# download that stalls is tried again rather than waited on.
 ENV LANG=C.UTF-8
-RUN --mount=type=bind,source=scripts/ci-packages.sh,target=/tmp/ci-packages.sh \
-	sh /tmp/ci-packages.sh \
-		build-essential ca-certificates curl git procps xz-utils zstd \
+RUN rm -f /var/lib/man-db/auto-update && \
+	printf '%s\n' 'Acquire::Retries "3";' 'Acquire::http::Timeout "20";' >/etc/apt/apt.conf.d/99ci-retries && \
+	apt-get -q update && \
+	apt-get -q install -y --no-install-recommends ca-certificates && \
+	printf 'APT::Snapshot "%s";\n' "$SNAPSHOT" >/etc/apt/apt.conf.d/99ci-snapshot && \
+	apt-get -q update && \
+	apt-get -q install -y --no-install-recommends \
+		pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libsoup-3.0-dev \
+		build-essential curl git procps xz-utils zstd \
 		ffmpeg meson ninja-build nasm patchelf && \
 	rm -rf /etc/apt/apt.conf.d/99ci-retries /var/lib/apt/lists/*
 
