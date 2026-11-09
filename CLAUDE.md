@@ -214,8 +214,10 @@ thing belongs. In short:
   Name bugs you found on the way, including your own.
 - **Every change knows its speed.** Every pull request says in its bottom
   line whether it makes the app faster, slower or the same, and CI too
-  when it changes the tests or the build, by how much and how that is
-  known, before Tim has to ask. The session asks itself while it works:
+  when it changes the tests or the build, before Tim has to ask. The
+  bottom line is a word and, when it is faster or slower, the change as a
+  whole in percent with its spread, nothing more. How it is known and the
+  parts that make it up go in Proof. The session asks itself while it works:
   what runs more often or less, what waits on what, what is read, drawn,
   decoded or started again. A change on a path a person waits on,
   hearing, searching, rendering, opening a video, the video preview, a

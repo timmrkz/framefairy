@@ -20,16 +20,16 @@ not play. Tim found it testing #184. Now it plays."
 - **Speed:** <!-- faster, slower or the same -->
 
 <!--
-The bottom line, always, one sentence each, answered before anyone asks.
-Architecture: better, the same or worse against docs/ARCHITECTURE.md,
-with where each new thing went. Speed: faster, slower or the same, for
-whom, the people using the app or CI, by how much, and how it is known:
-measured, with the number and its spread, or read from the code, with
-why. The same only when the change adds and takes away no work that
-runs, and says why, a word on a button for example. Once measured, it is
-the number, never the same. Slower names what it buys, and that it
-waits for Tim's yes, or where he gave it. The numbers go in Proof. See
-Every change knows its speed in CLAUDE.md.
+The bottom line, always, and nothing else in it. Architecture: one word,
+better, the same or worse, against docs/ARCHITECTURE.md. Speed: one
+word, and when it is faster or slower, the change as a whole in percent
+with its spread, `12 % faster, ± 3 %`, or `one run` in place of the
+spread. When parts went different ways, the slower part, since that is
+what waits for Tim's yes. A change not timed reads `slower, not timed`.
+Everything else goes in Proof: what was measured, where and how often,
+the parts, what was read from the code, where each new thing went, and
+what a slower change buys. See Every change knows its speed in
+CLAUDE.md.
 -->
 
 ## Root cause
