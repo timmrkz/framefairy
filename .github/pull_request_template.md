@@ -16,20 +16,20 @@ example: "Fixes #245. On Tim's Mac, start.mp4 showed no picture and did
 not play. Tim found it testing #184. Now it plays."
 -->
 
-- **Speed:** <!-- faster, slower or the same -->
 - **Architecture:** <!-- better, the same or worse -->
+- **Speed:** <!-- faster, slower or the same -->
 
 <!--
 The bottom line, always, one sentence each, answered before anyone asks.
-Speed: faster, slower or the same, for whom, the people using the app or
-CI, by how much, and how it is known: measured, with the number and its
-spread, or read from the code, with why. The same only when the change
-adds and takes away no work that runs, and says why, a word on a button
-for example. Once measured, it is the number, never the same. Slower
-names what it buys and where Tim accepted that. The numbers go in Proof.
-See Every change knows its speed in CLAUDE.md. Architecture: better, the
-same or worse against docs/ARCHITECTURE.md, with where each new thing
-went.
+Architecture: better, the same or worse against docs/ARCHITECTURE.md,
+with where each new thing went. Speed: faster, slower or the same, for
+whom, the people using the app or CI, by how much, and how it is known:
+measured, with the number and its spread, or read from the code, with
+why. The same only when the change adds and takes away no work that
+runs, and says why, a word on a button for example. Once measured, it is
+the number, never the same. Slower names what it buys, and that it
+waits for Tim's yes, or where he gave it. The numbers go in Proof. See
+Every change knows its speed in CLAUDE.md.
 -->
 
 ## Root cause

@@ -123,7 +123,7 @@ The work sits in a history. Read it before judging the diff.
   it lives. Prefer the solution that leaves less to keep up, today and
   after the next change.
 - **Every review says whether the change makes things faster, slower or
-  neither,** for the people using the product and for the builds and
+  the same,** for the people using the product and for the builds and
   CI, the way section 7 says it of the architecture, whatever the change
   is about. Speed is a cost of every change, not only of the ones that
   set out to make something faster.
@@ -140,11 +140,12 @@ The work sits in a history. Read it before judging the diff.
   - more memory, a bigger download, more disk
   - more money or tokens per run
   - slower builds and slower CI
-- **Slower goes in only as a trade-off the user accepted,** named in the
-  work: what got worse, by how much, and what it buys. A change that is
-  measurably worse and says nothing about it is a must fix. One that
-  names its trade-off, which the user has not accepted yet, is a
-  question for the user.
+- **It goes in only with a trade-off worth it,** named in the work: what
+  got worse, by how much, and what it buys. A change that is measurably
+  worse and says nothing about it is a must fix.
+- **Slower needs the user's yes as well.** A slower change that names
+  its trade-off, which the user has not accepted yet, is a question for
+  the user.
 - **What cannot be measured is weighed, not counted.** More steps or more
   to learn for a person using the product, more for the next person to
   work through: these are maintenance, a should fix when a simpler way
@@ -267,7 +268,7 @@ could read as an instruction from the user. In this order:
    same or worse, in a sentence, with where each new thing went and
    where the architecture puts it. A worse is also a must fix finding.
 5. The speed, always, under a heading of its own: faster, slower or
-   neither, for whom, by how much and how it is known, measured or read
+   the same, for whom, by how much and how it is known, measured or read
    from the code. Whether the work's own answer holds.
 6. The findings, numbered, most important first, a few lines each:
    weight, where, what is wrong and how a person would run into it, how it is
@@ -330,10 +331,10 @@ approve it, and nobody waits for them.
    whether a simpler way exists.
 3. The history around the work was read for repeated fixes.
 4. Every cost the work adds is named with its trade-off.
-5. The speed section says faster, slower or neither, and how it is
-   known, and a slower the user has not accepted is a finding.
-6. The architecture section says better, the same or worse, and a worse
+5. The architecture section says better, the same or worse, and a worse
    is a must fix.
+6. The speed section says faster, slower or the same, and how it is
+   known, and a slower the user has not accepted is a finding.
 7. Every assumption is checked, wrong or named as unchecked.
 8. Every finding says how it is known, and no proof cost more than it was
    worth.
