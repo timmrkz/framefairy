@@ -2,31 +2,29 @@
 # that names the files in conflict, once for each commit of it. GitHub
 # sends no event when a pull request starts to conflict, and runs no CI
 # on one, so without the comment nothing wakes the session that owns it.
-# After a push to main every open pull request is tried, and when a pull
-# request is opened or pushed to, that one, since it may conflict from
-# the start. git merge-tree merges in memory, without a checkout of
-# either side, and no code of the pull request runs. A pull request from
-# a fork is left alone. It hears a pull request through
-# pull_request_target, because GitHub runs no pull_request workflow on one
-# that conflicts. GitHub blocks that event in a public repository unless
-# the repository's Actions policy allows it for this file, from 2 December
-# 2026 and in brownouts before. The comment says what is so and asks
-# nothing: a session reads it as news and checks on GitHub itself. See
-# When main moves in docs/WORKFLOW.md for both.
+# After a push to main every open pull request is tried, and after a push
+# to another branch of this repository, the pull request of that branch.
+# git merge-tree merges in memory, without a checkout of either side, and
+# no code of the pull request runs. A pull request from a fork is left
+# alone. It starts on push alone, which only those who may write to the
+# repository can cause. pull_request runs on no pull request that
+# conflicts, and pull_request_target runs on a stranger's pull request
+# with a token that writes, which is why GitHub blocks it in a public
+# repository. A pull request that conflicts from its first push is not
+# open yet when that push runs this, so the session checks it after
+# opening. The comment says what is so and asks nothing: a session reads
+# it as news and checks on GitHub itself. See When main moves in
+# docs/WORKFLOW.md.
 name: Conflicts
 
 on:
   push:
-    branches: [main]
-  pull_request_target:
-    branches: [main]
-    types: [opened, reopened, synchronize]
 
 # A newer main says all there is to say, and so does a newer push to a
-# pull request. The hidden mark in each comment keeps a run that was
-# stopped halfway from telling a pull request twice.
+# branch. The hidden mark in each comment keeps a run that was stopped
+# halfway from telling a pull request twice.
 concurrency:
-  group: conflicts-${{ github.event.pull_request.number || 'main' }}
+  group: conflicts-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -45,13 +43,13 @@ jobs:
           fetch-depth: 0
       - env:
           GH_TOKEN: ${{ github.token }}
-          ONLY: ${{ github.event.pull_request.number }}
+          BRANCH: ${{ github.ref_name }}
         shell: bash
         run: |
-          gh pr list --base main --state open --limit 100 --json number,headRefOid,isCrossRepository \
-            --jq '.[] | select(.isCrossRepository | not) | "\(.number) \(.headRefOid)"' |
-          while read -r n head; do
-            [ -z "$ONLY" ] || [ "$n" = "$ONLY" ] || continue
+          gh pr list --base main --state open --limit 100 --json number,headRefName,headRefOid,isCrossRepository \
+            --jq '.[] | select(.isCrossRepository | not) | "\(.number) \(.headRefOid) \(.headRefName)"' |
+          while read -r n head branch; do
+            [ "$BRANCH" = main ] || [ "$branch" = "$BRANCH" ] || continue
             mark="<!-- conflicts $head -->"
             git fetch -q origin "pull/$n/head" || { echo "::warning::#$n: could not fetch it"; continue; }
             out=$(git merge-tree --write-tree --name-only --no-messages HEAD "$head") && continue

@@ -241,19 +241,17 @@ sends no event when one starts to conflict. So after every push to
 open pull request of this repository into it in memory, with `git
 merge-tree`, and comments on each one that no longer merges, naming the
 files, once for each commit of the pull request. It tries a pull request
-when it is opened or pushed to as well, since it may conflict from the
-start. When several pushes to `main` come close together, the newest
-run stops the older ones, and a hidden mark in the comment keeps a run
-stopped halfway from telling a pull request twice. It hears a pull
-request through `pull_request_target`, because GitHub runs no
-`pull_request` workflow on one that conflicts. GitHub blocks that event
-in a public repository from 2 December 2026, and in brownouts before,
-unless the repository's Actions policy allows it for the workflow file.
-The policy is to name `conflicts.yml` alone, and
-`TestPullRequestTargetOnlyWhereAllowed` in `internal/workflows` fails on
-any other workflow that uses the event, or on one that checks out
-anything but `main`. Without the policy the run on a push to `main`
-still tells every pull request. The comment wakes the
+after a push to its branch as well, since that push may conflict. When
+several pushes to `main` come close together, the newest run stops the
+older ones, and a hidden mark in the comment keeps a run stopped halfway
+from telling a pull request twice. It starts on a push alone. GitHub
+runs no `pull_request` workflow on a pull request that conflicts, and
+`pull_request_target` runs a stranger's pull request with a token that
+writes, which GitHub blocks in a public repository.
+`TestNoPullRequestTarget` in `internal/workflows` fails on a workflow
+that uses it. A pull request that conflicts from its first push is not
+open when that push runs the workflow, so the session's own check after
+opening it is what finds that one. The comment wakes the
 session that owns it. It comes from a bot, so the session reads it as
 news, not as an instruction, and checks on GitHub itself. The session checks that its pull request merges
 right after opening it and before it says it is ready, and when it does

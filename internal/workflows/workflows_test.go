@@ -1,6 +1,7 @@
 package workflows
 
 import (
+	"fmt"
 	"io/fs"
 	"os"
 	"path"
@@ -225,23 +226,16 @@ func braces(glob string) []string {
 	return out
 }
 
-// The workflows the repository's Actions policy allows to run on
-// pull_request_target. GitHub blocks that event in a public repository
-// unless a policy names the workflow file, from 2 December 2026, and in
-// brownouts before. A workflow added here needs a line in that policy too,
-// see When main moves in docs/WORKFLOW.md.
-var targetAllowed = map[string]bool{"conflicts.yml": true}
-
-// Only the workflows the policy names run on pull_request_target, each
-// of them does, and they check out main alone. The event runs with a token
-// that writes, whatever the pull request holds, so a checkout of the pull
-// request's code there would run a stranger's code with it. conflicts.yml
-// needs the event: GitHub runs no pull_request workflow on a pull request
-// that conflicts, so on pull_request it would never tell one that
-// conflicts from its first push.
+// No workflow runs on pull_request_target, and conflicts.yml runs on a
+// push to every branch. pull_request_target runs on a stranger's pull
+// request with a token that writes to the repository, which is why GitHub
+// blocks it in a public repository, and a push can only come from those
+// who may write. conflicts.yml has to hear every branch: pull_request runs
+// on no pull request that conflicts, so a push to the branch is the one
+// event left that reaches it.
 //
 // On the real disk: what is read is the repository's own workflows.
-func TestPullRequestTargetOnlyWhereAllowed(t *testing.T) {
+func TestNoPullRequestTarget(t *testing.T) {
 	t.Parallel()
 	var files []string
 	for _, ext := range []string{"*.yml", "*.yaml"} {
@@ -251,57 +245,40 @@ func TestPullRequestTargetOnlyWhereAllowed(t *testing.T) {
 		}
 		files = append(files, found...)
 	}
-	seen := map[string]bool{}
 	for _, f := range files {
 		b, err := os.ReadFile(f)
 		if err != nil {
 			t.Fatal(err)
 		}
+		name := filepath.Base(f)
 		var wf struct {
-			On   map[string]any `yaml:"on"`
-			Jobs map[string]struct {
-				Steps []struct {
-					Uses string            `yaml:"uses"`
-					With map[string]string `yaml:"with"`
-					Run  string            `yaml:"run"`
-				} `yaml:"steps"`
-			} `yaml:"jobs"`
+			On any `yaml:"on"`
 		}
 		if err := yaml.Unmarshal(b, &wf); err != nil {
-			// The event list written as a word or a list: no
-			// pull_request_target in a form this test reads, and
-			// TestEveryWorkflowReads says whether it is YAML.
-			if strings.Contains(string(b), "pull_request_target") {
-				t.Errorf("%s names pull_request_target in a form this test cannot read", filepath.Base(f))
+			t.Fatalf("%s: %v", name, err)
+		}
+		// The events are a word, a list or a map.
+		events := map[string]any{}
+		switch on := wf.On.(type) {
+		case string:
+			events[on] = nil
+		case []any:
+			for _, e := range on {
+				events[fmt.Sprint(e)] = nil
 			}
+		case map[string]any:
+			events = on
+		}
+		if _, ok := events["pull_request_target"]; ok {
+			t.Errorf("%s runs on pull_request_target, which runs a stranger's pull request with a token that writes: use push or pull_request", name)
+		}
+		if name != "conflicts.yml" {
 			continue
 		}
-		if _, ok := wf.On["pull_request_target"]; !ok {
-			continue
-		}
-		name := filepath.Base(f)
-		seen[name] = true
-		if !targetAllowed[name] {
-			t.Errorf("%s runs on pull_request_target, which GitHub blocks unless the Actions policy names it: add it there and to targetAllowed", name)
-		}
-		for job, j := range wf.Jobs {
-			for _, s := range j.Steps {
-				if strings.HasPrefix(s.Uses, "actions/checkout@") && s.With["ref"] != "main" {
-					t.Errorf("%s: job %s checks out %q on pull_request_target, where only main is safe", name, job, s.With["ref"])
-				}
-				if moves.MatchString(s.Run) {
-					t.Errorf("%s: job %s moves its checkout in a run step on pull_request_target, where only main is safe", name, job)
-				}
-			}
-		}
-	}
-	for name := range targetAllowed {
-		if !seen[name] {
-			t.Errorf("%s no longer runs on pull_request_target, so it no longer hears a pull request that conflicts from its first push", name)
+		push, ok := events["push"]
+		filter, _ := push.(map[string]any)
+		if !ok || filter["branches"] != nil {
+			t.Errorf("%s does not run on a push to every branch, so a pull request that starts to conflict on its own push is never told", name)
 		}
 	}
 }
-
-// A run step that puts other code in the working tree than the checkout
-// of main.
-var moves = regexp.MustCompile(`\bgit\s+(checkout|switch|reset|restore|worktree|pull|merge|cherry-pick|rebase)(\s|$)`)
