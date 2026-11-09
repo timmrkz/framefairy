@@ -1249,7 +1249,7 @@ No test waits on the clock in
 
 CI runs it in the jobs `walks`, the only ones with the browsers, which
 come in the CI image they run in, see [The CI image](BUILD.md#the-ci-image), on
-every pull request but one of docs alone.
+every pull request that changes Go or the interface.
 
 A walk that breaks a rule leaves a picture of the app at that moment in
 `/tmp/walk-<seed>.png`.

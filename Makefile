@@ -35,7 +35,8 @@
 #                   runs each part in a job of its own, with the same
 #                   command
 #   make lint       gofmt, go vet, golangci-lint, that the scripts read by
-#                   their shell, and that docs/GUI-PLAN.md stays as it was
+#                   their shell, that docs/GUI-PLAN.md stays as it was, and
+#                   the tests of the repository's rules
 #   make unit       the Go tests, under the race detector except on a Mac.
 #                   UNITSHARD=1/3 runs a third of them, as CI does, and
 #                   the tests that took over SLOWEST, 5s, are named last
@@ -475,10 +476,10 @@ test: lint interface unit fuzz walks
 # kept in UNITJSON, for a closer look.
 ifeq ($(UNAME),Darwin)
 RACE ?=
-UNITSKIP ?= framefairy/licence/dispenser framefairy/licence/paddle framefairy/cmd/framefairy-dispenser framefairy/internal/workflows framefairy/internal/naming
+UNITSKIP ?= framefairy/licence/dispenser framefairy/licence/paddle framefairy/cmd/framefairy-dispenser $(LINTPKGS)
 else
 RACE ?= -race
-UNITSKIP ?=
+UNITSKIP ?= $(LINTPKGS)
 endif
 UNITSHARD ?=
 ifeq ($(UNITSHARD),1/1)
@@ -511,6 +512,7 @@ GOTESTSUM := gotest.tools/gotestsum@v1.13.0
 unit: toolchain modules $(FRESH_FRAMES)
 	@pkgs=$$($(GO) list $(UNITPKGS)) || exit 1; \
 	$(if $(UNITSKIP),pkgs=$$(printf '%s\n' "$$pkgs" | grep -vxF $(foreach p,$(UNITSKIP),-e $(p)));) \
+	[ -n "$$pkgs" ] || { echo "no Go package to test"; exit 0; }; \
 	$(if $(COVERAGE),mkdir -p '$(COVERDIR)' || exit $$?;) \
 	mkdir -p $(dir $(UNITJSON)) && status=0 && \
 	PATH="$(TOOLS_FIRST)" FRAMEFAIRY_FRAMES="$(TEST_FRAMES)" \
@@ -544,8 +546,9 @@ fuzz: toolchain modules
 			if ((only == "" || index(" " only " ", " " name " ")) && w !~ /^0[xs]?$$/) print "./" dir, name, w } \
 		END { for (w in want) { print "there is no fuzz target called " w >"/dev/stderr"; bad = 1 } exit bad }' \
 		>$(STAMPS)/fuzz-runs
-	@PATH="$(TOOLS_FIRST)" xargs -P $(CORES) -n 3 sh -c \
+	@PATH="$(TOOLS_FIRST)" xargs -r -P $(CORES) -n 3 sh -c \
 		'out=$$($(GO) test -run "^$$" -fuzz "^$$1\$$" -fuzztime "$$2" -fuzzminimizetime 100x -parallel 1 "$$0" 2>&1) \
+		&& case $$out in *"no fuzz tests"*) false ;; esac \
 		&& printf "ok  \t%s %s\n" "$$1" "$$2" || { printf "FAIL\t%s\n%s\n" "$$1" "$$out"; exit 1; }' <$(STAMPS)/fuzz-runs
 
 # The interface against the real Go side, see docs/TESTING.md:
@@ -654,9 +657,12 @@ interface:
 # on the clock, see .golangci.yml. The checks from outside the app build
 # only on a Mac with the outside tag, so they are read a second time the
 # way they build. Every script read by the shell its first line names, and
-# the rule for a build, see scripts/needs-build.sh. And that
+# the rule for a build, see scripts/needs-build.sh. That
 # docs/GUI-PLAN.md stays the history it is, by the hash git gives it: open
-# work is in the issues.
+# work is in the issues. And the tests of the repository's own rules,
+# LINTPKGS, which read the docs, the workflows and the interface's code,
+# and so run with lint on every pull request rather than with the Go tests.
+LINTPKGS := framefairy/internal/workflows framefairy/internal/naming
 PLAN_HASH := d3164fbdd865de7cdc61b4bc1631e909f20c6725
 GOLANGCI_LINT_VERSION := 2.14.0
 GOLANGCI_LINT := $(STAMPS)/golangci-lint-$(GOLANGCI_LINT_VERSION)/golangci-lint
@@ -676,15 +682,15 @@ lint: toolchain modules golangci-lint frontend/node_modules/.package-lock.json
 	@sh scripts/needs-build-test.sh
 	@[ "$$(git hash-object docs/GUI-PLAN.md)" = $(PLAN_HASH) ] || { echo "docs/GUI-PLAN.md is history and does not change: open work is in the issues"; exit 1; }
 	@printf 'ok  \tdocs/GUI-PLAN.md is as it was\n'
+	@$(GO) test $(LINTPKGS)
 
 # The release golangci-lint builds and checks against its own checksums,
 # as its install.sh does. Not install.sh itself, which asks github.com's
-# release page for the tag, a page a cloud session cannot reach.
+# release page for the tag, a page a cloud session cannot reach. Fetched
+# into the build folder, in CI too, the way Go fetches a module: it
+# installs nothing on the machine.
 golangci-lint: $(GOLANGCI_LINT)
 $(GOLANGCI_LINT):
-ifneq ($(INSTALL),1)
-	@echo "golangci-lint $(GOLANGCI_LINT_VERSION) is missing, and make installs nothing here: make golangci-lint INSTALL=1"; exit 1
-endif
 	@echo "Fetching golangci-lint $(GOLANGCI_LINT_VERSION)"
 	@name=golangci-lint-$(GOLANGCI_LINT_VERSION)-$$(uname -s | tr A-Z a-z)-$$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/'); \
 		url=https://github.com/golangci/golangci-lint/releases/download/v$(GOLANGCI_LINT_VERSION); \

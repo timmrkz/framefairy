@@ -44,9 +44,10 @@ env:
 jobs:
   # What the pull request changed, by the files GitHub lists for it. Go is
   # every file outside frontend/, the docs and .claude/, so a script, the
-  # Makefile or a workflow is Go. The interface is frontend/, the
-  # Makefile, the workflows and the Node pin. See One way to test in
-  # docs/BUILD.md.
+  # Makefile or a workflow is Go, and the files of frontend/ a Go test
+  # reads, goread, which internal/workflows holds to what the tests read.
+  # The interface is frontend/, the Makefile, the workflows and the Node
+  # pin. See One way to test in docs/BUILD.md.
   changes:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -54,9 +55,9 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
-      go: ${{ github.event_name == 'push' || steps.filter.outputs.go == 'true' }}
+      go: ${{ github.event_name == 'push' || steps.filter.outputs.go == 'true' || steps.filter.outputs.goread == 'true' }}
       interface: ${{ github.event_name == 'push' || steps.filter.outputs.interface == 'true' }}
-      app: ${{ github.event_name == 'push' || steps.filter.outputs.go == 'true' || steps.filter.outputs.interface == 'true' }}
+      app: ${{ github.event_name == 'push' || steps.filter.outputs.go == 'true' || steps.filter.outputs.goread == 'true' || steps.filter.outputs.interface == 'true' }}
     steps:
       - id: filter
         if: github.event_name == 'pull_request'
@@ -70,15 +71,15 @@ jobs:
               - '!docs/**'
               - '!**/*.md'
               - '!.claude/**'
-              - '!LICENSE'
+            goread:
+              - 'frontend/src/lib/{api.ts,*.cases.json}'
             interface:
-              - '{frontend/**,.github/**,.node-version,Makefile}'
+              - '{frontend/**,.github/workflows/**,.github/actions/**,.node-version,Makefile}'
 
   # The machine the Linux jobs run on, with every system package they use,
   # so none waits on the Ubuntu mirror, see ci-image.yml.
   image:
     needs: changes
-    if: needs.changes.outputs.app == 'true'
     permissions:
       contents: read
       packages: write
@@ -101,10 +102,11 @@ jobs:
 
   # make lint, then the programs and the interface built, which proves they
   # still link and that Go can embed what make built. Without the tools we
-  # ship, which nothing builds for Linux yet.
+  # ship, which nothing builds for Linux yet. On every pull request,
+  # whatever it changed, since make lint reads the docs and the workflows
+  # too, see One way to test in docs/BUILD.md.
   build:
-    needs: [changes, image]
-    if: needs.changes.outputs.app == 'true'
+    needs: image
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     container: ${{ needs.image.outputs.ref }}
@@ -112,12 +114,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/prepare
         with:
+          key: go-v1-build-${{ runner.os }}-${{ github.sha }}
+          restore-keys: go-v1-build-${{ runner.os }}-
           node: npm
-      # make installs nothing in CI, so INSTALL=1 fetches the golangci-lint
-      # the Makefile pins, and nothing else.
-      - run: make golangci-lint INSTALL=1
-      - run: make lint
-      - run: make NOTOOLS=1
+      - id: build
+        run: make lint all NOTOOLS=1
+      - if: github.ref == 'refs/heads/main' && steps.build.outcome == 'success'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-v1-build-${{ runner.os }}-${{ github.sha }}
 
   # The Go tests under the race detector, the seeds of the fuzz targets
   # among them, on three machines, a third of the tests each by their
@@ -269,7 +277,7 @@ jobs:
   # macOS with the app closed and with it open, with the local dispenser
   # beside it. See From outside the app in docs/TESTING.md. Its cache is
   # the one builds.yml starts from too, since both build the app with the
-  # same flags.
+  # same flags, WERROR=1 among them.
   outside:
     needs: changes
     if: needs.changes.outputs.app == 'true'

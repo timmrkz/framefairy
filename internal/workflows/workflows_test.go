@@ -1,7 +1,9 @@
 package workflows
 
 import (
+	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -116,4 +118,109 @@ func TestNodeIsPinnedOnce(t *testing.T) {
 	if image != node {
 		t.Errorf("the CI image lends Node %s, and .node-version says %s", image, node)
 	}
+}
+
+// read is a path a Go test names to read a file of the interface or the
+// docs, relative to the repository's root however many ../ lead there.
+var read = regexp.MustCompile(`"(?:\.\./)*((?:frontend|docs)/[^"]+)"`)
+
+// A pull request starts the Go tests only when it changes Go, by the
+// filters of the job changes in ci.yml, and Go is no file of frontend/
+// and none of the docs. So a Go test that reads one would not run on the
+// pull request that changes it, and main would find out after the merge.
+// Every file of the interface a Go test reads is in the filter goread,
+// beside go, and only the tests that make lint runs read the docs, since
+// make lint runs on every pull request. The walks, which read
+// frontend/preview, start on a change to the interface.
+//
+// On the real disk: what is read is the repository's own tests and CI.
+func TestWhatAGoTestReadsStartsIt(t *testing.T) {
+	t.Parallel()
+	root := filepath.Join("..", "..")
+	b, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "ci.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ci struct {
+		Jobs map[string]struct {
+			Steps []struct {
+				ID   string            `yaml:"id"`
+				With map[string]string `yaml:"with"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal(b, &ci); err != nil {
+		t.Fatal(err)
+	}
+	var filters map[string][]string
+	for _, s := range ci.Jobs["changes"].Steps {
+		if s.ID == "filter" {
+			if err := yaml.Unmarshal([]byte(s.With["filters"]), &filters); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if len(filters["goread"]) == 0 {
+		t.Fatal("ci.yml's job changes has no filter goread, so this test reads it wrong")
+	}
+	starts := func(file string) bool {
+		for _, p := range filters["goread"] {
+			for _, glob := range braces(p) {
+				if ok, _ := path.Match(glob, file); ok {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	lint := map[string]bool{"internal/workflows": true, "internal/naming": true}
+	found := 0
+	err = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() && (d.Name() == "node_modules" || strings.HasPrefix(d.Name(), ".")) && p != root {
+			return filepath.SkipDir
+		}
+		if d.IsDir() || !strings.HasSuffix(p, "_test.go") {
+			return nil
+		}
+		src, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(root, p)
+		pkg := filepath.ToSlash(filepath.Dir(rel))
+		for _, m := range read.FindAllStringSubmatch(string(src), -1) {
+			file := m[1]
+			found++
+			switch {
+			case lint[pkg], strings.HasPrefix(file, "frontend/preview/"):
+			case strings.HasPrefix(file, "docs/"):
+				t.Errorf("%s reads %s, and a pull request of the docs starts no Go test: read it in a test make lint runs, LINTPKGS", rel, file)
+			case !starts(file):
+				t.Errorf("%s reads %s, which ci.yml's filter goread leaves out: a pull request that changes it starts no Go test. Add it there", rel, file)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found == 0 {
+		t.Fatal("no Go test reads a file of the interface, so this test reads them wrong")
+	}
+}
+
+// braces spells out a glob's one {a,b} the way the filter reads it.
+func braces(glob string) []string {
+	i, j := strings.Index(glob, "{"), strings.Index(glob, "}")
+	if i < 0 || j < i {
+		return []string{glob}
+	}
+	var out []string
+	for _, alt := range strings.Split(glob[i+1:j], ",") {
+		out = append(out, glob[:i]+alt+glob[j+1:])
+	}
+	return out
 }

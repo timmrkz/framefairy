@@ -37,6 +37,9 @@ outputs:
   cache-hit:
     description: true when the Go build cache of the key itself was there.
     value: ${{ steps.go.outputs.cache-hit }}
+  matched-key:
+    description: The key of the Go build cache it found, by the key or a prefix, empty when none.
+    value: ${{ steps.go.outputs.cache-matched-key }}
 
 runs:
   using: composite

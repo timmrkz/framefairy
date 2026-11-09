@@ -207,9 +207,9 @@ the same one you run on your Mac, see
 
 - **interface**, when the interface changed: `make interface`, the type
   check and the interface's own tests.
-- **build**, when Go or the interface changed: `make lint`, then `make`
-  on Linux, which proves the programs still link with the interface
-  built into them.
+- **build**, on every pull request: `make lint all`, the repository's
+  rules, then `make` on Linux, which proves the programs still link with
+  the interface built into them.
 - **linux**, when Go changed: the Go tests under the race detector,
   `make unit`, including the tests that render, on three machines,
   `UNITSHARD=1/3` to `3/3`. Go's test cache runs only the packages that
@@ -227,13 +227,15 @@ the same one you run on your Mac, see
   by macOS from a link, see
   [TESTING.md](TESTING.md#from-outside-the-app).
 
-A push to `main` runs every job. A pull request of docs alone runs none.
+A push to `main` runs every job. A pull request of docs alone runs only
+**build**.
 
 ### When main moves
 
-GitHub runs no CI on a pull request that conflicts with `main`, so a
-pull request is never left unable to merge. GitHub shows a conflict on
-the pull request itself. The session checks that its pull request merges
+GitHub runs no CI on a pull request that conflicts with `main`, and
+sends the session no event when one starts to conflict. GitHub shows the
+conflict on the pull request itself, which is where Tim sees it, and he
+says so in the session's thread. The session checks that its pull request merges
 right after opening it and before it says it is ready, and when it does
 not, merges `main` in at once, without asking, resolves the conflict,
 reads `CLAUDE.md` again and pushes. The merge is tested like a change of

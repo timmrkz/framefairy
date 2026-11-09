@@ -92,7 +92,7 @@ and nothing else. `make INSTALL=0` does the same by hand.
 | `make notices` | writes the licence notices in `notices/` again, for what is pinned by hand: Go, the source trees ffmpeg and llama-server are built from, the speech runtime, the fonts, the hyphenation patterns and the models. Run it when a test says a notice is out of date. The Go modules and the interface's packages need nothing: every build writes theirs. See [THIRD_PARTY.md](THIRD_PARTY.md) |
 | `make hyphenation` | writes the patterns in `engine/hyphenation/` again, which break a word too long for a caption line: hyph-utf8's for 20 languages and the German joints, built from the Trennmuster team's word list, each from the commit `scripts/hyphenation.sh` pins. It needs `patgen`, from `texlive-binaries` on Linux or `texlive` on macOS, takes about five minutes and is only for when a pin moves. Run `make notices` after it. See [ENGINE.md](ENGINE.md) |
 | `make test` | everything below: `lint`, `interface`, `unit`, `fuzz` and `walks`, which is what CI runs, see [One way to test](#one-way-to-test) |
-| `make lint` | everything that reads the code without running it: `gofmt`, `go vet`, that `./...` is our packages alone, golangci-lint, which refuses a new wait on the clock in a Go test, see [No test waits on the clock](#no-test-waits-on-the-clock), every script read by its shell, the test of the rule for a build, `scripts/needs-build-test.sh`, and that `docs/GUI-PLAN.md` is as it was, by the hash git gives it. It fetches the golangci-lint the Makefile pins into `.build/` the first time, unless `INSTALL=0` |
+| `make lint` | everything that reads the code without running it: `gofmt`, `go vet`, that `./...` is our packages alone, golangci-lint, which refuses a new wait on the clock in a Go test, see [No test waits on the clock](#no-test-waits-on-the-clock), every script read by its shell, the test of the rule for a build, `scripts/needs-build-test.sh`, that `docs/GUI-PLAN.md` is as it was, by the hash git gives it, and the tests of the repository's own rules, `internal/workflows` and `internal/naming`, which read the workflows, the docs and the interface's words. It fetches the golangci-lint the Makefile pins into `.build/` the first time, in CI too |
 | `make unit` | every Go test under the race detector, the fuzz seeds included. On a Mac without the race detector and without the licence server's packages, which run on a Linux server only. `RACE=` and `UNITSKIP=` say otherwise. `UNITSHARD=1/3` to `3/3` runs a third of the tests, which is how CI spreads them over three machines. `UNITFLAGS` adds one flag for go test, like `-run`. `UNITPKGS` names the packages, `./...` unless it says. `UNITTIMEOUT` is how long one package's tests may take before go test ends them and prints every goroutine, Go's own 10m unless it says, and 4m in CI: a test waits on signals, so one whose signal never comes hangs until then. go test runs through [gotestsum](https://github.com/gotestyourself/gotestsum), which prints what go test prints and, at the end, every test that failed with what it printed. Then every test that took over `SLOWEST`, 5s, slowest first. Every test's time is kept in `.build/unit-tests.json` for a closer look. `COVERAGE=` a folder counts the lines the tests run, see [Coverage](TESTING.md#coverage) |
 | `make fuzz` | every fuzz target, `FUZZTIME` executions each, looking for new cases. `FUZZTARGETS` names some, `CORES` how many run at once |
 | `make interface` | a type check of the interface, its own tests, and ESLint, which refuses a new wait on the clock in a walk or an interface test, see [No test waits on the clock](#no-test-waits-on-the-clock). Needs only Node. `COVERAGE=` a folder counts the lines its tests run |
@@ -125,14 +125,16 @@ on its own too. CI runs the same parts with the same commands, a job for
 each, see [CI](#ci), so a test runs the same on a Mac, in a cloud session
 and in CI. No script picks, runs or reports a test.
 
-A pull request starts only the jobs whose code it changed, by the two
-filters of the job `changes` in `ci.yml`:
+Every pull request runs `make lint` and the build, in the job `build`,
+whatever it changed, because the repository's own rules read the docs
+and the workflows too. Beyond that, a pull request starts only the jobs
+whose code it changed, by the filters of the job `changes` in `ci.yml`:
 
 | Changed | Starts |
 | --- | --- |
-| Go: any file outside `frontend/`, the docs and `.claude/`, a script, the Makefile and the workflows among them | `build`, `linux`, `fuzz`, `macos`, the walks and `outside` |
-| the interface: `frontend/`, the Makefile, the workflows and `.node-version` | `interface`, `build`, the walks and `outside` |
-| only the docs, `docs/`, any `.md`, `.claude/`, `LICENSE` | nothing |
+| Go: any file outside `frontend/`, the docs and `.claude/`, a script, the Makefile and the workflows among them, and the files of `frontend/` a Go test reads, the filter `goread` | `linux`, `fuzz`, `macos`, the walks and `outside` |
+| the interface: `frontend/`, the Makefile, `.github/workflows/`, `.github/actions/` and `.node-version` | `interface`, the walks and `outside` |
+| only the docs, `docs/`, any `.md`, `.claude/` | only `build` |
 
 A push to main starts every job. Inside a Go job Go's own test cache
 picks the packages: CI restores it from main, so `go test ./...` runs
@@ -140,10 +142,11 @@ again only the packages whose code or test files changed since, and says
 `(cached)` for the rest. The walks test the whole app, its Go side too,
 so they start for either kind of change, and run whole.
 
-A filter can miss a file, which then shows as a test that passes on its
-pull request and fails on main. One does by design: `internal/naming`
-reads the docs and the interface's words, and on a pull request that
-changes only those it runs on main, after the merge.
+A filter that missed a file would show as a test that passes on its
+pull request and fails on main. So `internal/workflows` reads every Go
+test for the files of `frontend/` and `docs/` it names: a file of the
+interface a Go test reads has to be in `goread`, and only the tests
+`make lint` runs may read the docs.
 
 ### Why the walks run whole
 

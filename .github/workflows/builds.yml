@@ -210,73 +210,28 @@ jobs:
             echo "commit=$(echo "$SHA" | cut -c1-12)"
           } >> "$GITHUB_OUTPUT"
 
-      - if: steps.needs.outputs.run == 'true'
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: false
-      # Go's build cache, the one ci.yml's job outside saves on main after
-      # every push, from the same make with the same flags, see above it.
+      # Go, Node, the two programs we ship beside the app, and Go's build
+      # cache, the one ci.yml's job outside saves on main after every
+      # push, from the same make with the same flags, WERROR=1 among them.
       # setup-go keys its cache by go.sum alone and saves it only when
       # go.sum changes, so the build started from one days old and
       # compiled ever more again: make app went from 58 s to 113 s in the
-      # five days after go.sum last changed, #408.
-      - id: gocache
+      # five days after go.sum last changed, #408. The ffmpeg cache is the
+      # one CI keeps, so it is usually there already.
+      - id: prepare
         if: steps.needs.outputs.run == 'true'
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: ./.github/actions/prepare
         with:
-          path: |
-            ~/go/pkg/mod
-            ~/Library/Caches/go-build
           key: go-v1-app-${{ runner.os }}-${{ needs.which.outputs.sha }}
           restore-keys: go-v1-app-${{ runner.os }}-
-      - if: steps.needs.outputs.run == 'true'
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .node-version
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-
-      # The two programs we ship beside the app, built by the same scripts
-      # as a release and kept until those change. The ffmpeg cache is the
-      # one CI keeps, so it is usually there already.
-      # The checksum of the pins of the tools that build them, in the
-      # keys below, so a newer tool builds them again, see
-      # scripts/build-tools.sh.
-      - id: tools
-        if: steps.needs.outputs.run == 'true'
-        run: echo "recipe=$(sh scripts/build-tools.sh --recipe)" >> "$GITHUB_OUTPUT"
-      - id: ffmpeg
-        if: steps.needs.outputs.run == 'true'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .build/ffmpeg
-          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}-${{ steps.tools.outputs.recipe }}
-      - id: llama
-        if: steps.needs.outputs.run == 'true'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .build/llama
-          key: llama-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-llama.sh') }}-${{ steps.tools.outputs.recipe }}
-      # What builds them, at the versions requirements.txt pins, see
-      # scripts/build-tools.sh. With both from the cache, only pkg-config,
-      # with which the episode's decoder finds ffmpeg's libraries.
-      - name: What building them needs
-        if: steps.needs.outputs.run == 'true'
-        run: |
-          sh scripts/build-tools.sh .build/tools ${{ (steps.ffmpeg.outputs.cache-hit == 'true' && steps.llama.outputs.cache-hit == 'true') && 'pkgconf' || '' }}
-          echo "$PWD/.build/tools/bin" >> "$GITHUB_PATH"
-      - name: The ffmpeg we ship
-        if: steps.needs.outputs.run == 'true' && steps.ffmpeg.outputs.cache-hit != 'true'
-        run: sh scripts/build-ffmpeg.sh .build/ffmpeg
-      - name: The llama-server we ship
-        if: steps.needs.outputs.run == 'true' && steps.llama.outputs.cache-hit != 'true'
-        run: sh scripts/build-llama.sh .build/llama
+          node: npm
+          ffmpeg: true
+          llama: true
 
       - name: The app
         if: steps.needs.outputs.run == 'true'
         run: >-
-          make app
+          make app WERROR=1
           BUILD_VERSION='${{ steps.what.outputs.version }}'
           BUILD_CHANNEL='${{ steps.what.outputs.channel }}'
           BUILD_COMMIT='${{ steps.what.outputs.commit }}'
@@ -284,13 +239,13 @@ jobs:
       # Saved here only when none was found, so the next build starts
       # warm. Otherwise the job outside saves it: an upload here would sit
       # between every push and its build on the Updates page.
-      - if: steps.needs.outputs.run == 'true' && steps.gocache.outputs.cache-matched-key == ''
+      - if: steps.needs.outputs.run == 'true' && steps.prepare.outputs.matched-key == ''
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
             ~/Library/Caches/go-build
-          key: ${{ steps.gocache.outputs.cache-primary-key }}
+          key: go-v1-app-${{ runner.os }}-${{ needs.which.outputs.sha }}
 
       # One entry at the top, Frame Fairy.app, which is what Wails' updater
       # asks of a zip. --norsrc, because ditto otherwise adds a ._ file

@@ -297,8 +297,9 @@ thing belongs. In short:
   asking Tim first. Right after opening a pull request, and before a
   reply says it is ready, check on GitHub that it merges, because main
   may have moved since.
-  A pull request is never left unable to merge while it waits for
-  him to test it, because that is a pull request CI does not run on. The
+  GitHub sends no event when a pull request starts to conflict, so a
+  conflict after that shows on the pull request, where Tim sees it and
+  says so in the thread, and the session then merges at once. The
   resolution is new code, so it is pushed the way a change of your own
   is, the tests of what it touches first and CI after, see the tests
   rule below. Read this file again after the merge, because main may have
@@ -699,12 +700,14 @@ messages, pull request text, code comments and chat replies.
   around it: the checkout and `.github/actions/prepare`. A pull request
   starts only the jobs whose code it changed: no Go changed, no Go tests,
   no interface changed, no interface tests, and the walks, which test
-  the whole app, for either. A change to the docs alone runs nothing,
-  and a push to main runs everything. Within a Go job, Go's own test
+  the whole app, for either. Every pull request runs `make lint` and the
+  build, since the repository's rules read the docs too, and a push to
+  main runs everything. Within a Go job, Go's own test
   cache, restored from main, runs only the packages that changed. No
   script picks, runs or reports a test. A check is added to a make
   target, run by a job of `ci.yml`, and a new kind of file joins one of
-  the two filters of its job `changes`. See
+  the filters of its job `changes`, which `internal/workflows` holds to
+  the files the Go tests read. See
   [docs/BUILD.md](docs/BUILD.md#one-way-to-test).
 - **Test fixtures are committed, never made while the tests run.** A
   video or a sound a test reads is a file in

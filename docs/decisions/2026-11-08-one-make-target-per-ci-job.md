@@ -69,12 +69,12 @@ a tool already does it:
 | --- | --- | --- |
 | `changed.sh`, its test, `make changed`, the job `plan` | picking parts and packages | the two filters and Go's cache |
 | `test-failures.sh` and its test | naming a failed test on the check | gotestsum's summary, which `make unit` already ran, ends the log with it |
-| `leftovers.sh` | naming programs a test left running | removed: GitHub ends them with the job, and the job's time limit ends a hang |
+| `leftovers.sh` | naming programs a test left running | removed, with its cost said under What follows |
 | `machine.sh` | the Mac's speed beside its test times, #592 | removed, #592 is closed |
 | `fuzz.sh` | running every fuzz target side by side | a recipe in `make fuzz`, with `git grep` and `xargs` |
 | `pins.sh` | every action pinned to a commit, one Node | `internal/workflows`, the Go test that already read every workflow |
 | `plan-frozen.sh` and its test | `docs/GUI-PLAN.md` never changes | one line of `make lint`, its git hash |
-| `lint-test.sh` and its fixtures | that the linters' settings catch a wait on the clock | removed: a test of the tools' own settings |
+| `lint-test.sh` and its fixtures | that the linters' settings catch a wait on the clock, the standard log and the inputs the app may not take | removed: a test of the tools' own settings, with its cost said under What follows |
 | `main-moved.sh`, its test, `main-moved.yml` | a comment when a pull request stops merging | removed: GitHub shows a conflict on the pull request, and a session checks before it says ready |
 | `ci-packages.sh` | the CI image's system packages | in the Dockerfile |
 | the steps every job repeated | Go, Node, the cache, the ffmpeg we ship | `.github/actions/prepare`, once |
@@ -96,16 +96,26 @@ ci.yml job      machine, the checkout, .github/actions/prepare, and when
 
 Each layer uses only the one under it. Go is every file outside
 `frontend/`, the docs and `.claude/`, so a script, the Makefile or a
-workflow counts as Go. The interface is `frontend/`, the Makefile, the
-workflows and `.node-version`.
+workflow counts as Go, and so is every file of `frontend/` a Go test
+reads, the filter `goread`. The interface is `frontend/`, the Makefile,
+`.github/workflows/`, `.github/actions/` and `.node-version`.
 
 | Job | Starts on a pull request when |
 | --- | --- |
+| `build`, which runs `make lint` | always |
 | `interface` | the interface changed |
-| `build`, `walks`, `outside` | Go or the interface changed |
+| `walks`, `outside` | Go or the interface changed |
 | `linux`, `fuzz`, `macos` | Go changed |
 
-A push to main starts every job. A change to the docs alone starts none.
+A push to main starts every job. `make lint` runs on every pull request,
+because the tests of the repository's own rules, `internal/workflows`
+and `internal/naming`, read the docs and the workflows, so they run
+there and not with the Go tests. `internal/workflows` reads every Go
+test for the files of `frontend/` and `docs/` it names, and fails when
+`goread` leaves one out. That is the candidate missing above, what a
+test reads, which a review of this pull request found: four Go tests
+read the interface's files, and on a filter by kind alone a pull
+request that changed one of them ran none of them.
 A warning fails the Mac build through the compiler, the linker and Vite,
 `WERROR=1`, not a grep. The no-warning rule moved out of `changed.sh`
 into the tools in the first commit of this pull request.
@@ -117,13 +127,27 @@ builds for the Updates page use. `ci.yml` has 220 lines that are not
 comments where it had 385, and the setup they shared, 82, is written
 once. No job waits for a 20 s `plan` any more: the filter answers in
 about 8 s. A pull request of the interface alone starts no Go job, one of
-the docs alone none at all.
+the docs alone only `build`.
 
-It costs a filter that can miss a file, which shows as a test that
-passes on its pull request and fails on main. It costs `internal/naming`
-on pull requests that change only the interface or the docs, since it
-reads both, and runs on main after the merge. It costs the proof that the
-linters catch a wait on the clock, and the check that a test leaves no
-program running. It was wrong if pull requests come back slower than
-before, if main fails on what its pull request passed more than once a
-week, or if a script that chooses or reports a test comes back.
+It costs a filter that can miss a file of a kind no test names, which
+shows as a test that passes on its pull request and fails on main.
+
+It costs the proof that the linters' settings catch a wait on the clock,
+a write to the standard log, and the inputs the app may not take. Each
+rule is still in `.golangci.yml` and `frontend/eslint.config.js`, and a
+change to either is read in review. The inputs are held a second time
+by the signer, `cmd/framefairy-release`, which refuses a build that
+could watch them.
+
+It costs the name of a test that leaves a program running. `go test`
+waits for every program that holds its output before it ends, tried on
+Go 1.27: a test that started `sleep 40` and returned passed after 41 s.
+So such a program holds its job until it ends or the job's time limit
+does, 15 minutes, with the step that hung named but not the test. In
+#254 the job had no time limit, and waited half an hour. A program that
+holds no output is ended by GitHub with the job, and passes unseen.
+
+It was wrong if pull requests come back slower than before, if main
+fails on what its pull request passed more than once a week, if a job
+hangs on a program a test left, or if a script that chooses or reports
+a test comes back.
