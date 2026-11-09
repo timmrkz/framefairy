@@ -1,0 +1,43 @@
+# After every push to main, each open pull request that no longer merges
+# into it is told so in a comment that names the files in conflict.
+# GitHub sends no event when a pull request starts to conflict, and runs
+# no CI on one, so without the comment nothing wakes the session that
+# owns it. git merge-tree merges in memory, without a checkout of either
+# side. See When main moves in docs/WORKFLOW.md.
+name: Conflicts
+
+on:
+  push:
+    branches: [main]
+
+# A newer main says all there is to say.
+concurrency:
+  group: conflicts
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  tell:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for n in $(gh pr list --base main --state open --json number --jq '.[].number'); do
+            git fetch -q origin "pull/$n/head"
+            if ! out=$(git merge-tree --write-tree --name-only --no-messages HEAD FETCH_HEAD); then
+              files=$(printf '%s\n' "$out" | tail -n +2 | sed 's/.*/- `&`/')
+              gh pr comment "$n" --body "main is at $(git rev-parse --short HEAD), and this pull request no longer merges into it. These files conflict:
+
+          $files
+
+          Merge main in, resolve them, read CLAUDE.md again, because main may have changed it, then run the tests of what the resolution touches and push."
+            fi
+          done

@@ -297,9 +297,9 @@ thing belongs. In short:
   asking Tim first. Right after opening a pull request, and before a
   reply says it is ready, check on GitHub that it merges, because main
   may have moved since.
-  GitHub sends no event when a pull request starts to conflict, so a
-  conflict after that shows on the pull request, where Tim sees it and
-  says so in the thread, and the session then merges at once. The
+  GitHub sends no event when a pull request starts to conflict, so
+  `conflicts.yml` comments on each pull request that stops merging after
+  a push to main, and the comment wakes its session. The
   resolution is new code, so it is pushed the way a change of your own
   is, the tests of what it touches first and CI after, see the tests
   rule below. Read this file again after the merge, because main may have

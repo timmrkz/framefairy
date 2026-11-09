@@ -233,9 +233,11 @@ A push to `main` runs every job. A pull request of docs alone runs only
 ### When main moves
 
 GitHub runs no CI on a pull request that conflicts with `main`, and
-sends the session no event when one starts to conflict. GitHub shows the
-conflict on the pull request itself, which is where Tim sees it, and he
-says so in the session's thread. The session checks that its pull request merges
+sends no event when one starts to conflict. So after every push to
+`main`, [`conflicts.yml`](../.github/workflows/conflicts.yml) merges each
+open pull request into it in memory, with `git merge-tree`, and comments
+on each one that no longer merges, naming the files. The comment wakes
+the session that owns it. The session checks that its pull request merges
 right after opening it and before it says it is ready, and when it does
 not, merges `main` in at once, without asking, resolves the conflict,
 reads `CLAUDE.md` again and pushes. The merge is tested like a change of
