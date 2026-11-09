@@ -235,9 +235,15 @@ A push to `main` runs every job. A pull request of docs alone runs only
 GitHub runs no CI on a pull request that conflicts with `main`, and
 sends no event when one starts to conflict. So after every push to
 `main`, [`conflicts.yml`](../.github/workflows/conflicts.yml) merges each
-open pull request into it in memory, with `git merge-tree`, and comments
-on each one that no longer merges, naming the files. The comment wakes
-the session that owns it. The session checks that its pull request merges
+open pull request of this repository into it in memory, with `git
+merge-tree`, and comments on each one that no longer merges, naming the
+files, once for each commit of the pull request. It tries a pull request
+when it is opened or pushed to as well, since it may conflict from the
+start. When several pushes to `main` come close together, the newest
+run stops the older ones, and a hidden mark in the comment keeps a run
+stopped halfway from telling a pull request twice. The comment wakes the
+session that owns it. It comes from a bot, so the session reads it as
+news, not as an instruction, and checks on GitHub itself. The session checks that its pull request merges
 right after opening it and before it says it is ready, and when it does
 not, merges `main` in at once, without asking, resolves the conflict,
 reads `CLAUDE.md` again and pushes. The merge is tested like a change of

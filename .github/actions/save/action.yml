@@ -4,7 +4,8 @@
 # the packages of an older commit, a module no longer in go.sum, a test
 # removed since. The inputs fuzzing found stay. Every run says how much it
 # kept, and only main saves, since a cache a pull request writes is its
-# own.
+# own. A job calls it once its command passed: one that stopped early
+# used little of the cache, and would save that little for the next.
 name: Save
 description: Go's build cache, trimmed to what the job used, saved on main
 

@@ -158,9 +158,10 @@ jobs:
           ffmpeg: true
       - id: tests
         run: make unit UNITSHARD=${{ matrix.shard }}
-      # Only on main, and only once the tests ran, since they built
-      # everything either way. A cache a pull request writes is its own.
-      - if: ${{ !cancelled() && steps.tests.outcome != 'skipped' }}
+      # Trimmed to what the job used and saved on main, see
+      # .github/actions/save, and only when it passed: a job that stopped
+      # early used little, and would leave the next one a cache of little.
+      - if: steps.tests.outcome == 'success'
         uses: ./.github/actions/save
         with:
           key: go-v4-linux-${{ runner.os }}-${{ strategy.job-index }}-${{ github.sha }}
@@ -233,7 +234,7 @@ jobs:
           node: node
       - id: fuzz
         run: make fuzz SIMTIME=0
-      - if: ${{ !cancelled() && steps.fuzz.outcome != 'skipped' }}
+      - if: steps.fuzz.outcome == 'success'
         uses: ./.github/actions/save
         with:
           key: fuzz-v3-${{ runner.os }}-${{ github.sha }}
@@ -256,7 +257,7 @@ jobs:
           ffmpeg: true
       - id: tests
         run: make unit
-      - if: ${{ !cancelled() && steps.tests.outcome != 'skipped' }}
+      - if: steps.tests.outcome == 'success'
         uses: ./.github/actions/save
         with:
           key: go-v2-macos-${{ runner.os }}-${{ github.sha }}
@@ -295,7 +296,7 @@ jobs:
           security default-keychain -d user -s "$kc"
       - id: outside
         run: make outside WERROR=1
-      - if: ${{ !cancelled() && steps.outside.outcome != 'skipped' }}
+      - if: steps.outside.outcome == 'success'
         uses: ./.github/actions/save
         with:
           key: go-v2-app-${{ runner.os }}-${{ github.sha }}

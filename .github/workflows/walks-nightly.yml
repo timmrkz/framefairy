@@ -86,7 +86,7 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
       # The shares in Chromium build the same, so one of them saves.
-      - if: ${{ !cancelled() && steps.prepare.outputs.cache-hit != 'true' && matrix.browser == 'chromium' && matrix.shard == '1/4' }}
+      - if: steps.walks.outcome == 'success' && steps.prepare.outputs.cache-hit != 'true' && matrix.browser == 'chromium' && matrix.shard == '1/4'
         uses: ./.github/actions/save
         with:
           key: go-v3-walks-coverage-${{ runner.os }}-${{ hashFiles('go.sum') }}
@@ -152,7 +152,7 @@ jobs:
       - name: Go tests counting their lines
         id: tests
         run: make unit UNITSHARD=${{ matrix.shard }} RACE= UNITTIMEOUT=4m COVERAGE=.build/coverage
-      - if: ${{ !cancelled() && steps.tests.outcome != 'skipped' && steps.prepare.outputs.cache-hit != 'true' }}
+      - if: steps.tests.outcome == 'success' && steps.prepare.outputs.cache-hit != 'true'
         uses: ./.github/actions/save
         with:
           key: go-v4-coverage-${{ runner.os }}-${{ strategy.job-index }}-${{ hashFiles('go.sum') }}

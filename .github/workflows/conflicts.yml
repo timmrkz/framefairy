@@ -1,23 +1,34 @@
-# After every push to main, each open pull request that no longer merges
-# into it is told so in a comment that names the files in conflict.
-# GitHub sends no event when a pull request starts to conflict, and runs
-# no CI on one, so without the comment nothing wakes the session that
-# owns it. git merge-tree merges in memory, without a checkout of either
-# side. See When main moves in docs/WORKFLOW.md.
+# A pull request that no longer merges into main is told so in a comment
+# that names the files in conflict, once for each commit of it. GitHub
+# sends no event when a pull request starts to conflict, and runs no CI
+# on one, so without the comment nothing wakes the session that owns it.
+# After a push to main every open pull request is tried, and when a pull
+# request is opened or pushed to, that one, since it may conflict from
+# the start. git merge-tree merges in memory, without a checkout of
+# either side, and no code of the pull request runs. A pull request from
+# a fork is left alone. The comment says what is so and asks nothing: a
+# session reads it as news and checks on GitHub itself, see When main
+# moves in docs/WORKFLOW.md.
 name: Conflicts
 
 on:
   push:
     branches: [main]
+  pull_request_target:
+    branches: [main]
+    types: [opened, reopened, synchronize]
 
-# A newer main says all there is to say.
+# A newer main says all there is to say, and so does a newer push to a
+# pull request. The hidden mark in each comment keeps a run that was
+# stopped halfway from telling a pull request twice.
 concurrency:
-  group: conflicts
+  group: conflicts-${{ github.event.pull_request.number || 'main' }}
   cancel-in-progress: true
 
 permissions:
   contents: read
   pull-requests: write
+  issues: write
 
 jobs:
   tell:
@@ -26,18 +37,30 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: main
           fetch-depth: 0
       - env:
           GH_TOKEN: ${{ github.token }}
+          ONLY: ${{ github.event.pull_request.number }}
+        shell: bash
         run: |
-          for n in $(gh pr list --base main --state open --json number --jq '.[].number'); do
-            git fetch -q origin "pull/$n/head"
-            if ! out=$(git merge-tree --write-tree --name-only --no-messages HEAD FETCH_HEAD); then
-              files=$(printf '%s\n' "$out" | tail -n +2 | sed 's/.*/- `&`/')
-              gh pr comment "$n" --body "main is at $(git rev-parse --short HEAD), and this pull request no longer merges into it. These files conflict:
+          gh pr list --base main --state open --limit 100 --json number,headRefOid,isCrossRepository \
+            --jq '.[] | select(.isCrossRepository | not) | "\(.number) \(.headRefOid)"' |
+          while read -r n head; do
+            [ -z "$ONLY" ] || [ "$n" = "$ONLY" ] || continue
+            mark="<!-- conflicts $head -->"
+            git fetch -q origin "pull/$n/head" || { echo "::warning::#$n: could not fetch it"; continue; }
+            out=$(git merge-tree --write-tree --name-only --no-messages HEAD "$head") && continue
+            # 1 and a tree is a conflict, anything else git could not try.
+            [ $? -eq 1 ] && [[ ${out%%$'\n'*} =~ ^[0-9a-f]{40,64}$ ]] ||
+              { echo "::warning::#$n: git merge-tree could not merge it: $out"; continue; }
+            said=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$n/comments" --jq '.[].body') ||
+              { echo "::warning::#$n: could not read its comments"; continue; }
+            case $said in *"$mark"*) continue ;; esac
+            files=$(printf '%s\n' "$out" | tail -n +2 | sed 's/.*/- `&`/')
+            gh pr comment "$n" --body "This pull request at $(git rev-parse --short "$head") no longer merges into main at $(git rev-parse --short HEAD). These files conflict:
 
           $files
 
-          Merge main in, resolve them, read CLAUDE.md again, because main may have changed it, then run the tests of what the resolution touches and push."
-            fi
+          $mark" || echo "::warning::#$n: could not comment"
           done
