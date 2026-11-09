@@ -1488,12 +1488,16 @@ export const steps = {
     // clicked 4096 frames in, the length of a stretch, CHUNK in the same
     // file, issue #466. The program's sound begins at the frame the clock
     // starts, or the frame after where its first sample is faded to
-    // nothing, and a click within the first stretch of a play heard later
-    // is the machine's. A longer stretch would only make this stricter.
+    // nothing. When it was heard later, by less than a stretch, a click
+    // where the first stretch was to end, and at the frame after, is the
+    // machine's. A play here always begins with a whole stretch, since
+    // 0.15 s of sound, SOUND_FIRST, is decoded before it starts.
+    const stretch = 4096;
     const startFrame = Math.round(c0 * sr);
+    const seam = startFrame + stretch;
     const begun = xs.find(([f, x]) => f >= startFrame && x !== 0)?.[0];
-    const startedLate = begun !== undefined && begun > startFrame + 1;
-    const lateStart = (f) => startedLate && f >= startFrame && f <= startFrame + 4096 + 2;
+    const startedLate = begun !== undefined && begun > startFrame + 1 && begun < seam;
+    const lateStart = (f) => startedLate && f >= seam - 1 && f <= seam + 2;
     if (startedLate) console.log(`      the sound card began the play's sound ${begun - startFrame} frames after its clock started`);
     const lateHere = (f) => lateStart(f) || silences.some(([a, b]) => f >= a - 1 && f <= b + 2);
     let clicks = 0;
