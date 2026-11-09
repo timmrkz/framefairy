@@ -1460,6 +1460,10 @@ export const steps = {
         return e ? (e.dataset.glide ? "circle" : "diamond") : "none";
       });
     const before = await here();
+    if (before === "none") {
+      walk.wrong = `the playhead is on no keyframe for ${key.toUpperCase()} to change`;
+      return;
+    }
     const took = await keyShows(
       page,
       key,

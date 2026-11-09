@@ -460,6 +460,7 @@ export default [
       ["glides", 1],
       ["crop holds"],
       ["crop holds while playing", "glide"],
+      ["playhead at", 0.8],
       ["keyframe key", ["k", "diamond"]],
       ["glides", 0],
       ["keyframe key", ["g", "circle"]],
