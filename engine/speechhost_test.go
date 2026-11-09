@@ -71,14 +71,14 @@ func TestTheSpeechModelKeptIsLoadedOnce(t *testing.T) {
 	opts := DefaultOptions()
 	opts.ASRModel = "speech"
 	opts.Planner = "api"
-	loaded, err := e.KeepModel(context.Background(), opts)
+	loaded, err := e.KeepSpeech(context.Background(), opts)
 	if err != nil || !loaded {
 		t.Fatalf("keeping the speech model: loaded %v, %v", loaded, err)
 	}
 	for range 3 {
 		hearOnce(t, speechEngine(m, &c), "speech")
 	}
-	if loaded, _ := e.KeepModel(context.Background(), opts); loaded {
+	if loaded, _ := e.KeepSpeech(context.Background(), opts); loaded {
 		t.Error("the speech model kept was loaded again")
 	}
 	if got := c.loads.Load(); got != 3 {
@@ -91,7 +91,7 @@ func TestTheSpeechModelKeptIsLoadedOnce(t *testing.T) {
 	if got := c.closes.Load(); got != 3 {
 		t.Errorf("closed %d times once the app quit, want 3", got)
 	}
-	if loaded, _ := e.KeepModel(context.Background(), opts); loaded {
+	if loaded, _ := e.KeepSpeech(context.Background(), opts); loaded {
 		t.Error("a speech model was kept after the app quit")
 	}
 }
@@ -110,7 +110,7 @@ func TestTheSpeechModelGivenUpWaitsForTheHearing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m.KeepNone()
+	m.KeepNoSpeech()
 	if c.closes.Load() != 0 {
 		t.Fatal("the model was closed under a hearing")
 	}
@@ -147,7 +147,7 @@ func TestTheSpeechModelIsSharedByHearingsAtOnce(t *testing.T) {
 			case 0:
 				_, _ = e.keepSpeech(context.Background(), "speech")
 			case 1:
-				m.KeepNone()
+				m.KeepNoSpeech()
 			case 2:
 				hearOnce(t, e, "other")
 			default:
@@ -159,5 +159,43 @@ func TestTheSpeechModelIsSharedByHearingsAtOnce(t *testing.T) {
 	m.CloseModels()
 	if loads, closes := c.loads.Load(), c.closes.Load(); loads != closes {
 		t.Errorf("%d loads and %d closes once nobody hears and the app quit", loads, closes)
+	}
+}
+
+// One speech model is in memory at a time, never two, the same as the
+// local model. A model kept while another hears gives way, and says it
+// loaded nothing: it loaded a second copy and threw it away, found by the
+// third review of #746. A hearing of another model waits for the one in
+// use to be let go of, and then takes its place.
+func TestOneSpeechModelIsLoadedAtATime(t *testing.T) {
+	t.Parallel()
+	var c countedSpeech
+	m := NewMachine(afero.NewMemMapFs())
+	e := speechEngine(m, &c)
+	_, release, err := e.speech(context.Background(), "old")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded, err := e.keepSpeech(context.Background(), "new"); loaded || err != nil {
+		t.Errorf("keeping another model while one hears: loaded %v, %v", loaded, err)
+	}
+	gone, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, _, err := e.speech(gone, "new"); err == nil {
+		t.Error("a hearing of another model did not wait for the one in use")
+	}
+	if got := c.loads.Load(); got != 1 {
+		t.Fatalf("%d models loaded while one hears, want 1", got)
+	}
+	release()
+	if got := c.closes.Load(); got != 1 {
+		t.Errorf("the model not kept was closed %d times once let go of, want 1", got)
+	}
+	if loaded, err := e.keepSpeech(context.Background(), "new"); !loaded || err != nil {
+		t.Errorf("keeping the new model once nobody hears: loaded %v, %v", loaded, err)
+	}
+	hearOnce(t, e, "new")
+	if loads, closes := c.loads.Load(), c.closes.Load(); loads != 2 || closes != 1 {
+		t.Errorf("%d loads and %d closes, want 2 and 1", loads, closes)
 	}
 }

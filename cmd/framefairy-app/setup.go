@@ -517,7 +517,7 @@ func (s *FrameFairy) RemoveSpeechModel(name string) error {
 	// The model kept loaded holds its files open, the way the language
 	// model's server maps its file. It is given up first, and the model
 	// that is left kept again.
-	s.store.machine.KeepNone()
+	s.store.machine.KeepNoSpeech()
 	defer s.keeping.ask()
 	return engine.RemoveSpeechModel(model, engine.ModelsDir())
 }

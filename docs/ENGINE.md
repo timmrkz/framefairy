@@ -1517,14 +1517,17 @@ which halved the record on every such search. A record from before the
 fitting and the framing were timed per clip measured something else, and
 is replaced.
 
-**The speech model is kept loaded too**, the same way and by the same
-call, `KeepModel`, and the same keeper in the app, from the moment the
+**The speech model is kept loaded too**, the same way, by `KeepSpeech`
+beside `KeepModel`, and the same keeper in the app, from the moment the
 app opens until it closes. It is loaded first, because a video added is
 heard before it is searched. The speech model the program holds is in
 `engine/speechhost.go`: every hearing uses the one loaded, several at
-once included, since its copies each hear a piece at a time, and one that
-nobody holds and that is not the one kept goes as the last hearing lets
-go of it, which is how the command line hears. Loaded for each hearing,
+once included, since its copies each hear a piece at a time, and the
+app's dictation does too. One that nobody holds and that is not the one
+kept goes as the last hearing lets go of it, which is how the command
+line hears. One is in memory at a time, never two, as with the local
+model: a hearing of another waits for the one in use to be let go of,
+and a keep gives way to it and is asked again when the hearing ends. Loaded for each hearing,
 four copies of it on an M2 Max, it took about 5 s every time, Tim's
 report of 9 November 2026: a part of a dragged clip of 15 s, heard in
 under a second, took 5.7 s, and the stretch around a clip, stopped three

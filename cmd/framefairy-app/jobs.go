@@ -236,9 +236,11 @@ type queue struct {
 	// calledOff is, per episode, the press of Search or Continue the last
 	// Cancel at the head of the clip list was about, see stopClips.
 	calledOff map[string]string
-	// searched is told when a job that makes clips has ended, so the app
-	// keeps its model loaded again, see keep.go: such a job may have put
-	// the kept model aside for another one, or for a bigger copy of it.
+	// searched is told when a job that makes clips or hears has ended, so
+	// the app keeps its models loaded again, see keep.go: such a job may
+	// have put the kept local model aside for another one, or for a bigger
+	// copy of it, and the speech model kept gives way to a hearing with
+	// another.
 	searched func()
 	// changed tells whoever waits on the jobs of every change to one, so
 	// a wait for jobs to stop goes on the moment they have, see until.
@@ -1083,7 +1085,7 @@ func quietly[T any](f func(T)) func(T) {
 }
 
 func (q *queue) runJob(job *Job) {
-	if makesClips(job.Kind) && q.searched != nil {
+	if (makesClips(job.Kind) || job.Kind == engine.JobTranscribe) && q.searched != nil {
 		defer q.searched()
 	}
 	ctx := job.ctx

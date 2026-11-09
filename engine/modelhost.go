@@ -437,40 +437,35 @@ func (host *modelHost) keepOnly(model string) {
 	host.changedLocked()
 }
 
-// KeepModel loads the models opts ask for, if they are not loaded, and
-// keeps them loaded when nobody holds them, until it is called again for
-// other models or none, or the models are stopped: the speech model first,
-// see speechhost.go, which a video added needs first, and then the local
-// model. It says whether it loaded either now. The model is loaded for a window of an hour,
+// KeepModel loads the local model opts ask for, if it is not loaded, and
+// keeps it loaded when nobody holds it, until it is called again for
+// another model or none, or the models are stopped. It says whether it
+// loaded the model now. The model is loaded for a window of an hour,
 // which only sizes its memory: a search that needs more loads it again
 // with more, and that is kept. With the API, or a server that runs
 // already, nothing is kept, and a model kept before goes. A model that
 // does not fit in the memory free now is not loaded, the error says why,
-// and the first search loads it when it fits.
+// and the first search loads it when it fits. The speech model is kept
+// the same way, by KeepSpeech.
 func (e *Engine) KeepModel(ctx context.Context, opts Options) (bool, error) {
-	heard, speechErr := e.keepSpeech(ctx, speechModel(opts))
 	if opts.Planner != "local" || opts.LLMURL != "" {
 		e.host.keepOnly("")
-		return heard, speechErr
+		return false, nil
 	}
 	local, err := e.resolveLocal(opts)
 	if err != nil {
 		e.host.keepOnly("")
-		return heard, err
+		return false, err
 	}
-	loaded, err := e.keep(ctx, *local, opts.MaxTokens)
-	if err == nil {
-		err = speechErr
-	}
-	return loaded || heard, err
+	return e.keep(ctx, *local, opts.MaxTokens)
 }
 
-// KeepNone gives up the models kept loaded, and stops each now when
-// nobody holds it. The app calls it before it removes a model's files,
-// which a server that maps them could otherwise keep from being removed.
+// KeepNone gives up the local model kept loaded, and stops it now when
+// nobody holds it. The app calls it before it removes the model's file,
+// which a server that maps it could otherwise keep from being removed.
+// The speech model is given up the same way by KeepNoSpeech.
 func (m *Machine) KeepNone() {
 	m.host.keepOnly("")
-	m.speechHost.keepNoSpeech(false)
 }
 
 // keep is KeepModel with the model found. A model loaded or loading
