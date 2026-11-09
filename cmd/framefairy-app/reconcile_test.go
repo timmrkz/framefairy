@@ -479,6 +479,17 @@ func TestAModelDeletedOrAddedOutsideTheAppIsSentToTheWindowAtOnce(t *testing.T) 
 	// The folder deleted and put back whole, the way a backup puts it
 	// back, is watched again, before the reconcile that sent its news
 	// lets go.
+	//
+	// A model still being copied in by hand when the folder comes back is
+	// made empty and written after, and it is a model once it is written.
+	// It is made before the folder is watched, so the watch the app puts
+	// on the folder takes it in before the reconcile that follows reads
+	// the folder: a write before that read is read, and one after it is
+	// heard. A file made in a folder watched already is heard as made
+	// before fsnotify watches the file itself, on macOS, so a write right
+	// after its news can come before that watch and go unheard. The test
+	// wrote one there, and hung on CI's Mac, issue #722. A copy of a real
+	// model writes for minutes, and each write after the first is heard.
 	if err := os.RemoveAll(models); err != nil {
 		t.Fatal(err)
 	}
@@ -490,44 +501,32 @@ func TestAModelDeletedOrAddedOutsideTheAppIsSentToTheWindowAtOnce(t *testing.T) 
 	if err := os.WriteFile(filepath.Join(back, model.Name), []byte("GGUF a model"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	other := engine.LanguageModels()[1]
+	if err := os.WriteFile(filepath.Join(back, other.Name), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.Rename(back, models); err != nil {
 		t.Fatal(err)
 	}
 	until(installed)
-	if err := os.Remove(filepath.Join(models, model.Name)); err != nil {
+	copied, err := os.OpenFile(filepath.Join(models, other.Name), os.O_WRONLY, 0)
+	if err != nil {
 		t.Fatal(err)
 	}
-	until(func(s SetupState) bool { return !installed(s) })
-
-	// A model copied in by hand is made empty and written after, and it
-	// is a model once it is written. Another model put in place whole
-	// after it is made says the empty one was looked at, so what follows
-	// is only the write.
-	if err := os.WriteFile(filepath.Join(models, model.Name), nil, 0o644); err != nil {
+	if _, err := copied.WriteString("GGUF another model"); err != nil {
 		t.Fatal(err)
 	}
-	other := engine.LanguageModels()[1]
-	if err := os.WriteFile(filepath.Join(home, other.Name), []byte("GGUF another model"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Rename(filepath.Join(home, other.Name), filepath.Join(models, other.Name)); err != nil {
+	if err := copied.Close(); err != nil {
 		t.Fatal(err)
 	}
 	until(func(s SetupState) bool {
 		i := slices.IndexFunc(s.Language, func(m LanguageModelView) bool { return m.Name == other.Name })
 		return i >= 0 && s.Language[i].Installed
 	})
-	copied, err := os.OpenFile(filepath.Join(models, model.Name), os.O_WRONLY, 0)
-	if err != nil {
+	if err := os.Remove(filepath.Join(models, model.Name)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := copied.WriteString("GGUF a model"); err != nil {
-		t.Fatal(err)
-	}
-	if err := copied.Close(); err != nil {
-		t.Fatal(err)
-	}
-	until(installed)
+	until(func(s SetupState) bool { return !installed(s) })
 
 	// A speech model is a folder, and one copied in by hand is made
 	// before its tokens.txt is written into it. The other model deleted
