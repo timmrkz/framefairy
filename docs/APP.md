@@ -3659,9 +3659,10 @@ wails://wails. The app gets the one prompt from macOS, with the words of
 `NSMicrophoneUsageDescription`, and macOS remembers the answer. A Mac
 that said no hands the app nothing but zeros, and after 2 s of them the
 page says where to allow it, while it goes on recording, since the
-prompt may still be open. One copy of the speech model loads while the
-person talks, with the threads of one of the copies a transcription
-uses, so a transcription beside it keeps the rest, see `asr.OpenOne`.
+prompt may still be open. It hears with the speech model the app keeps
+loaded, see engine/speechhost.go, so the first words come with no load
+and no second copy is held beside it. While a transcription runs, the
+two share its copies, a piece at a time each.
 About every 0.4 s while somebody speaks it writes down again what
 followed the last pause,
 `engine.Settled` says where that is, and a stretch with no pause is

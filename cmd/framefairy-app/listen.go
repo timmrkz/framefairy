@@ -2,6 +2,7 @@ package main
 
 import (
 	"cmp"
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -285,20 +286,38 @@ func (r *recording) recorded() []float32 {
 	return r.samples
 }
 
-// speechOpener is how a recording loads the speech model, the way a job
-// gets it, but one copy of it rather than the pool a transcription hears
-// with, see asr.OpenOne. It is decided as the recording starts.
+// speechOpener is how a recording gets the speech model: the one the app
+// keeps loaded, which every hearing shares, see engine/speechhost.go, so
+// the first words come with no load and no second copy is held beside
+// it. The stand-ins a test handed the store are decided as the recording
+// starts.
 func (st *store) speechOpener() func(dir string) (engine.Recognizer, error) {
-	if !st.standingIn() {
+	if st == nil || st.machine == nil {
 		return asr.OpenOne
 	}
 	fakes := st.standIns
 	return func(dir string) (engine.Recognizer, error) {
-		var e engine.Engine
-		fakes(&e, &engine.Options{})
-		return e.OpenRecognizer(dir)
+		e := engine.NewEngine(engineLog("listen", ""), st.machine)
+		e.OpenRecognizer = asr.Open
+		if fakes != nil {
+			fakes(e, &engine.Options{})
+		}
+		rec, release, err := e.Speech(context.Background(), dir)
+		if err != nil {
+			return nil, err
+		}
+		return heldSpeech{rec, release}, nil
 	}
 }
+
+// heldSpeech is the speech model kept, held by a recording, which lets go
+// of it when it is closed.
+type heldSpeech struct {
+	engine.Recognizer
+	release func()
+}
+
+func (h heldSpeech) Close() { h.release() }
 
 // standingIn says whether a test handed the store stand-ins for the
 // models, see standIns.
