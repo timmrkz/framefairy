@@ -98,7 +98,7 @@ func (e *Engine) BuildFilterGraph(ctx context.Context, clip Clip, source SourceI
 		cropY := (upright.Height - cropH) / 2
 		cropY -= cropY % 2
 		if len(seg.Marks) > 0 {
-			e.Log.Detail("clip %s, piece %d at %ss: the crop switches at the keyframes %s",
+			e.Log.Detail("clip %s, piece %d at %ss: the crop switches or glides at the keyframes %s",
 				clip.ID, i+1, num.Fixed(seg.Start, 3), marksText(seg.Marks))
 		}
 
@@ -108,12 +108,12 @@ func (e *Engine) BuildFilterGraph(ctx context.Context, clip Clip, source SourceI
 		}
 		// Standard video in 8 bits, HDR in 10, each with the episode's own
 		// colour tags on every frame, see colourParams.
-		pixels := "yuv420p"
+		pixels, deep := "yuv420p", "yuv444p"
 		if source.Light() != framewire.SDR {
-			pixels = "yuv420p10le"
+			pixels, deep = "yuv420p10le", "yuv444p10le"
 		}
 		outW, outH := rs.FrameSize(source, seg)
-		chain = append(chain, source.cropFilters(seg, cropW, cropH, cropY, upright.Width, outW, outH, "flags="+flags)...)
+		chain = append(chain, source.cropFilters(seg, cropW, cropH, cropY, upright.Width, outW, outH, "flags="+flags, deep)...)
 		chain = append(chain, "fps="+source.FPSString(), "format="+pixels, "setsar=1")
 		if tags := source.colourParams(); tags != "" {
 			chain = append(chain, tags)

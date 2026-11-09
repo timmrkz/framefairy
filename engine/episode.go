@@ -512,6 +512,10 @@ type SegmentView struct {
 	// on each and holds until the next, see Segment.Marks. Before the
 	// first, and with none, the crop stands at CropX.
 	Marks []CropMarkView `json:"marks"`
+	// MarksFrom is where a glide into the first keyframe starts, see
+	// Segment.MarksFrom. The window is sent the crop worked out, see
+	// SourceInfo.CropSteps, so it is not sent this.
+	MarksFrom float64 `json:"-"`
 }
 
 // WordView is one word. In a caption it also says which word of the
@@ -599,7 +603,7 @@ func (s PlanSummary) View() *PlanView {
 			v.Rotations = append(v.Rotations, rotationView(r))
 		}
 		for _, s := range c.Segments {
-			v.Segments = append(v.Segments, SegmentView{s.Start, s.End, s.CropX, s.Moved, s.Rotate, cropMarkViews(s.Marks)})
+			v.Segments = append(v.Segments, SegmentView{s.Start, s.End, s.CropX, s.Moved, s.Rotate, cropMarkViews(s.Marks), s.MarksFrom})
 		}
 		v.Rendered = renderedOf(plan, c)
 		v.Short = shortOf(plan, c)

@@ -34,6 +34,9 @@ type Segment struct {
 	// out, see markedPieces. The crop is CropX before the first and each
 	// keyframe's from its frame on, see CropMark.
 	Marks []CropMark
+	// MarksFrom is where the crop of the piece's turn begins, read the way
+	// Marks are, the moment a glide into the first keyframe starts from.
+	MarksFrom float64
 }
 
 // Duration of the segment in seconds.

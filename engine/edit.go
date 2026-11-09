@@ -878,10 +878,9 @@ func applyCut(pieces []*object, from, to float64) []*object {
 // automatic placement is kept, so ResetCrop can bring it back. Framing is
 // not a judgement of the clip, so nothing is recorded for training.
 //
-// With keyframes, see CropMark, a crop placed after a keyframe is that
-// keyframe's, and holds until the next one. Placed before the first
-// keyframe of its turn, it is the clip's own crop, and no keyframe moves.
-// frames is the video, for the frame a moment means.
+// With keyframes, see CropMark, a crop placed on a keyframe's frame is
+// that keyframe's, and in a piece the keyframes steer it can be placed
+// nowhere else. frames is the video, for the frame a moment means.
 func SetCrop(fsys afero.Fs, planPath, clipID string, at float64, left int, frames SourceInfo) error {
 	if left < 0 {
 		return renderErr("the crop cannot start left of the picture")
@@ -912,14 +911,21 @@ func SetCrop(fsys afero.Fs, planPath, clipID string, at float64, left int, frame
 				return nil
 			}
 		}
-		// After a keyframe the crop is that keyframe's until the next one,
-		// so the drag places it there and nowhere else, Tim's turning
-		// point on #750. Before the first it is the clip's own crop, below,
-		// which no keyframe after it changes.
-		if i := markHolding(c, pieces, target, at, frames); i >= 0 {
-			marks[i].X = left
-			setCropMarks(c, marks)
-			return nil
+		// Anywhere else in a piece the keyframes steer, the crop frame
+		// shows the crop as the short has it, held or gliding, and a drag
+		// moves nothing: Tim on #750 wanted the crop placed only with the
+		// playhead on a keyframe, whose diamond or circle is lit then, so
+		// what is moved is seen. Only a piece no keyframe steers has a crop
+		// of its own to place anywhere in it.
+		steered := make([]Segment, len(pieces))
+		turns := make([]int, len(pieces))
+		for i, seg := range pieces {
+			steered[i] = Segment{Start: number(seg.values[keyStart]), End: number(seg.values[keyEnd])}
+			turns[i] = rotationOf(seg, spans)
+		}
+		markedPieces(steered, turns, marks)
+		if len(steered[target].Marks) > 0 {
+			return renderErr("put the playhead on a keyframe to move the crop")
 		}
 		// The crop as filmed is the whole clip's, so a piece that is
 		// turned keeps it too, for when it is turned back. A rotated

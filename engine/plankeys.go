@@ -75,10 +75,11 @@ const (
 
 	// keyCropMarks is the crops a person placed on frames of a clip, each
 	// at, the moment the frame starts, x, the left edge of the crop there,
-	// and turn, how far the picture was rotated when it was placed, see
-	// CropMark.
+	// turn, how far the picture was rotated when it was placed, and glide,
+	// true for a keyframe the crop glides into, see CropMark.
 	keyCropMarks = "crop_marks"
 	keyAt        = "at"
 	keyX         = "x"
 	keyTurn      = "turn"
+	keyGlide     = "glide"
 )

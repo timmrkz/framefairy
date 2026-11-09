@@ -321,10 +321,10 @@ func (s *FrameFairy) SetThumbnail(ctx context.Context, path, plan, clipID string
 
 // SetCropMark adds, moves or removes a keyframe of a clip, a crop placed
 // by hand on one frame, see engine.CropMark, and returns the clip as it is
-// now. A from below nought adds one at to with its crop at x, a to below
-// nought removes the one at from, and both moments move the mark with its
-// crop.
-func (s *FrameFairy) SetCropMark(ctx context.Context, path, plan, clipID string, from, to float64, x int) (ClipEntry, error) {
+// now. A from below nought adds one at to with its crop at x, one the crop
+// glides into where glide is true, a to below nought removes the one at
+// from, and both moments move the mark with its crop and its kind.
+func (s *FrameFairy) SetCropMark(ctx context.Context, path, plan, clipID string, from, to float64, x int, glide bool) (ClipEntry, error) {
 	if !s.store.PlanOf(path, plan) {
 		return ClipEntry{}, errNotInLibrary
 	}
@@ -333,7 +333,26 @@ func (s *FrameFairy) SetCropMark(ctx context.Context, path, plan, clipID string,
 		return ClipEntry{}, err
 	}
 	if err := s.edit(path, func() error {
-		return engine.SetCropMark(s.store.files, plan, clipID, from, to, x, info)
+		return engine.SetCropMark(s.store.files, plan, clipID, from, to, x, glide, info)
+	}); err != nil {
+		return ClipEntry{}, err
+	}
+	return s.answer(ctx, path, plan, clipID)
+}
+
+// SetCropGlide makes the keyframe of a clip at a moment one the crop
+// glides into, or one it switches on, see engine.SetCropGlide, and returns
+// the clip as it is now.
+func (s *FrameFairy) SetCropGlide(ctx context.Context, path, plan, clipID string, at float64, glide bool) (ClipEntry, error) {
+	if !s.store.PlanOf(path, plan) {
+		return ClipEntry{}, errNotInLibrary
+	}
+	info, err := s.probe(ctx, path)
+	if err != nil {
+		return ClipEntry{}, err
+	}
+	if err := s.edit(path, func() error {
+		return engine.SetCropGlide(s.store.files, plan, clipID, at, glide, info)
 	}); err != nil {
 		return ClipEntry{}, err
 	}
